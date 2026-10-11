@@ -134,10 +134,11 @@ export function explain(problem: Problem, routes: Record<string, string[]>): Vis
   return problem.visits.map((pv, v) => {
     const s = p.staffOf[v]!;
     if (s < 0) {
+      const own = infeasible.get(v);
       return {
         visitId: pv.id,
         staffId: null,
-        reasons: (infeasible.get(v) ?? []).slice(0, EXPLAIN_REASONS),
+        reasons: own && own.length > 0 ? own.slice(0, EXPLAIN_REASONS) : whyUnassigned(problem, p, v),
         timing: null,
       };
     }
@@ -157,6 +158,54 @@ export function explain(problem: Problem, routes: Record<string, string[]>): Vis
     list.sort((a, b) => Math.abs(b.points) - Math.abs(a.points) || 0);
     return { visitId: pv.id, staffId: problem.staff[s]!.id, reasons: list.slice(0, EXPLAIN_REASONS), timing };
   });
+}
+
+const hm = (m: number) => `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')}`;
+
+/**
+ * 担当の候補はいるのに入らなかった訪問の理由（どの担当も可にならない訪問は Problem.infeasible が持つ）。
+ * 候補ごとに、今の案のその人の列に strict で入るかを試し、入らなければ重なる訪問の時刻を出す。
+ * 候補でない人は可否の原因ごとに人数をまとめる。例「さくら：14:00〜15:00・16:00〜16:45 と重なる」「必要条件：資格に保育士を含む ✗（6人）」
+ */
+function whyUnassigned(problem: Problem, p: Placed, v: number): Reason[] {
+  const pv = problem.visits[v]!;
+  const out: Reason[] = [];
+  const blocked = new Map<string, number>();
+  for (let s = 0; s < problem.staff.length; s++) {
+    const st = problem.staff[s]!;
+    if (!problem.allowed[v]![s]) {
+      const label = notAllowedLabel(problem.reasons[v]![s]!);
+      blocked.set(label, (blocked.get(label) ?? 0) + 1);
+      continue;
+    }
+    const seq = p.seqs[s]!;
+    let fits = false;
+    for (let pos = 0; pos <= seq.length && !fits; pos++) {
+      const t = [...seq];
+      t.splice(pos, 0, v);
+      fits = scheduleRoute(problem, s, t, 'strict') !== null;
+    }
+    const cap = problem.balance?.cap?.[s];
+    if (fits && cap !== undefined && seq.length + 1 > cap) {
+      out.push({ ruleId: BALANCE_RULE_KEY, label: `${st.name}：件数の上限（${cap}件）`, points: INF });
+    } else if (fits) {
+      out.push({ ruleId: 'cost', label: `${st.name}：入れられるが、ほかの訪問との兼ね合いで外れた`, points: 0 });
+    } else {
+      // 約束の幅の前後に作業が重なる訪問（移動も要るので少し広めに見る）
+      const from = pv.earliest - 60;
+      const to = pv.latest + pv.duration + 60;
+      const near = p.timings[s]!.stops.filter((x) => x.end > from && x.start < to).map(
+        (x) => `${hm(x.start)}〜${hm(x.end)}`,
+      );
+      out.push({
+        ruleId: 'time',
+        label: `${st.name}：${near.length > 0 ? `${near.join('・')} の訪問と時間が合わない` : '時間が合わない'}`,
+        points: INF,
+      });
+    }
+  }
+  for (const [label, n] of blocked) out.push({ ruleId: 'notAllowed', label: `${label}（${n}人）`, points: INF });
+  return out;
 }
 
 /** 担当が変わった訪問ID、移動分の差（to−from）、合計点の差（to−from） */

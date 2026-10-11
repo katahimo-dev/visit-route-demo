@@ -558,11 +558,13 @@ export default function PlanPage() {
                       <span className="sub nowrap">{unassigned.length}件</span>
                     </div>
                     {unassigned.map((id) => {
+                      // どの担当も可にならない訪問は infeasible、候補がいるのに入らない訪問は explain が理由を持つ
                       const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
+                      const reasons = inf?.reasons ?? explained.get(id)?.reasons ?? [];
                       return (
                         <div key={id} className="stack" style={{ gap: 2 }}>
                           {card(id)}
-                          {inf?.reasons.map((r) => (
+                          {reasons.map((r) => (
                             <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
                               {r.label}
                               {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
