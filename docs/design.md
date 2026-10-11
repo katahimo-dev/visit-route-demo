@@ -2,7 +2,7 @@
 
 - PRD：[docs/prd.md](prd.md)
 - 作成者：松浦（草案：Claude）
-- 更新日：2026-10-11
+- 更新日：2026-10-11（負担の均等を2乗に・必須で上限、AI案の手直しと固定、比較は別画面。ADR-0004）
 - 状態：合意済み（2026-10-11）
 
 ## 1. 背景と目的
@@ -90,7 +90,7 @@ flowchart LR
 
 ### store（データ一式の保存）
 - 責務：データ一式（`DemoData`）の読み込み・保存・検査・版の移行、JSON の書き出し・読み込み、初期状態に戻す。画面へは React のフック（`useDemoData()`・`update(fn)`）で渡す。
-- 持つデータ（持ち主）：`DemoData`＝`{ version, org, staff[], clients[], visits[], availability[], manualPlans{date→routes}, items[], rules[], compat{clientId→{staffId→-2..2}}, aiPlans{date→AiPlan}, seed }`。localStorage のキー `vrdemo:data:v1` に1つの JSON で置く。
+- 持つデータ（持ち主）：`DemoData`＝`{ version, org, staff[], clients[], visits[], availability[], manualPlans{date→routes}, items[], rules[], compat{clientId→{staffId→-2..2}}, aiPlans{date→AiPlan（routes＝手直し後、generated＝AIが出したまま、pins＝固定）}, seed }`。localStorage のキー `vrdemo:data:v1` に1つの JSON で置く。
 - 提供するAPI：`load(): DemoData`、`save(data)`（300ms 間引き）、`reset(): DemoData`、`exportJson(data): Blob`、`importJson(text): DemoData | ImportError`、`migrate(raw): DemoData`。
 - 依存するもの：seed（初期データ）、zod（検査）。
 - 配置：`src/store/`
@@ -122,7 +122,7 @@ flowchart LR
 ### matching（項目・条件 → 費用表）
 - 責務：項目（`Item`）・スタッフの特性値・訪問先の必要条件と希望・相性・条件（`Rule`）を、solver が読む**問題（`Problem`）**に変換する。①訪問×スタッフの**可否**（必須の条件・相性×・稼働時間帯の外）②訪問×スタッフの**割当費用**（重み付きの条件の合計、分換算）③スタッフごとの負担の目標（均等の条件）④移動・待ちの行列と係数。同じ関数で、訪問×スタッフごとの**理由**（どの条件で何分ぶん）も返す。
 - 持つデータ（持ち主）：なし
-- 提供するAPI：`compile(data: DemoData, date: string): Problem`、`reasonsOf(problem, visitIdx, staffIdx): Reason[]`、`matches(cond: Condition, traits): boolean`
+- 提供するAPI：`compile(data: DemoData, date: string, pins?: 訪問ID→担当ID): Problem`（pins の訪問はその担当だけを可にする）、`matches`、`conditionText`、`scheduleRoute`、`bestInsertion(problem, routes, visitId, staffId)`（手直しで移した訪問を入れる位置：strict で最も費用が少ない位置、入らなければ開始時刻の順に lenient で入れ、違反として見せる）
 - 依存するもの：domain
 - 配置：`src/matching/`
 - 完了の条件：
@@ -155,7 +155,7 @@ flowchart LR
 ### pages（画面）
 - 責務：PoC本体の管理者画面（予定・AI案の比較・稼働時間帯・スタッフ・訪問先）を Firebase なしで動かす。追加の画面：項目、条件（重みのスライダー 0〜5・必須の切り替え。ClassClassify の Setup にならう）、相性の表（訪問先×スタッフ、クリックで ◎→○→空→△→× を回す）、データ（書き出し・読み込み・初期状態に戻す・実データを入れないでの注意書き）。スタッフの今日の順番を見る画面（D16、表示だけ）。
 - 持つデータ（持ち主）：画面の一時状態のみ
-- 提供するAPI：なし（ルートは `#/schedule` `#/plan` `#/rules` `#/items` `#/compat` `#/staff` `#/clients` `#/availability` `#/data` `#/staff-view/:staffId`）
+- 提供するAPI：なし（ルートは `#/schedule` `#/plan`（AI案を作る・手直し・固定・組み直す・予定に採用） `#/compare`（手作業案とAI案の比較、D19） `#/rules` `#/items` `#/compat` `#/staff` `#/clients` `#/availability` `#/data` `#/staff-view/:staffId`）
 - 依存するもの：store・matching・solver（Worker）・evaluate、Leaflet（PoC本体 `RouteMap.tsx` を写す）
 - 配置：`src/pages/`、`src/components/`
 - 完了の条件：
@@ -204,7 +204,7 @@ type RuleType =
   | 'preference'    // 訪問先の希望
   | 'compatibility' // 相性（×は weight にかかわらず必須で外す）
   | 'continuity'    // いつもの担当
-  | 'balance'       // 負担の均等（稼働時間に比例した件数の帯から外れた件数）
+  | 'balance'       // 負担の均等（稼働時間に比例した件数の目安の帯から外れた件数の2乗。hard で上限＝帯の上＋1）
   | 'wait'          // 待ち時間
 interface Rule { id: string; type: RuleType; label: string; weight: number /*0..5, 0.5刻み*/; hard: boolean }
 ```
@@ -218,10 +218,11 @@ interface Rule { id: string; type: RuleType; label: string; weight: number /*0..
 | preference | 重み3 | 満たさない希望1つ＝重み×10点 |
 | compatibility | 重み3 | ◎＝−重み×10、○＝−重み×5、空＝0、△＝＋重み×10、×＝必須で外す |
 | continuity | 重み2 | いつもの担当でない＝重み×10点 |
-| balance | 重み1 | 帯から外れた1件＝重み×10点 |
+| balance | 重み3 | スタッフごとに、目安の帯 [floor, ceil] から外れた件数 e について 重み×10×e² 点（1件外れ＝30点、2件＝120点、3件＝270点）。必須なら 件数 ≤ ceil＋1 |
 | wait | 重み3 | 待ち1分＝重み×0.1点（PoC本体の waitSeconds 0.3 と同じ） |
 | 時間の約束・稼働時間帯 | 必須（固定） | 破らない |
 | 落とした訪問 | 固定 | 1件＝10000点 |
+| 手直しの固定 | 必須（固定） | 固定した訪問は固定した担当だけを可にする（`compile` の `pins`） |
 
 （重み1＝移動10分ぶん。2026-10-11 決定）
 
