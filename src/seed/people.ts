@@ -79,7 +79,7 @@ export const STAFF_SEEDS: StaffSeed[] = [
     shift: std,
     traits: {
       gender: '女性',
-      qualification: ['介護福祉士', '看護師'],
+      qualification: ['介護福祉士', '看護師', '保育士'],
       experience: 12,
       specialty: ['高齢', '話し相手'],
       smoker: false,
@@ -155,7 +155,7 @@ export const STAFF_SEEDS: StaffSeed[] = [
     shift: ['09:00', '17:00'],
     traits: {
       gender: '男性',
-      qualification: ['初任者研修'],
+      qualification: ['保育士', '初任者研修'],
       experience: 1,
       specialty: ['家事'],
       smoker: true,
@@ -212,7 +212,7 @@ export const STAFF_SEEDS: StaffSeed[] = [
     shift: std,
     traits: {
       gender: '男性',
-      qualification: ['初任者研修'],
+      qualification: ['保育士', '初任者研修'],
       experience: 3,
       specialty: ['障害', '話し相手'],
       smoker: true,
