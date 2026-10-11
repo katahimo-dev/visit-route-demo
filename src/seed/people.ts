@@ -48,7 +48,7 @@ export const INITIAL_RULES: Rule[] = [
   { id: 'staffPreference', type: 'staffPreference', label: 'スタッフの希望', weight: 2, hard: false },
   { id: 'compatibility', type: 'compatibility', label: '相性', weight: 3, hard: false },
   { id: 'continuity', type: 'continuity', label: 'いつもの担当', weight: 2, hard: false },
-  { id: 'balance', type: 'balance', label: '負担の均等', weight: 1, hard: false },
+  { id: 'balance', type: 'balance', label: '負担の均等', weight: 3, hard: false },
   { id: 'wait', type: 'wait', label: '待ち時間', weight: 3, hard: false },
 ];
 

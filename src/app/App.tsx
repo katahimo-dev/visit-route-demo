@@ -4,6 +4,7 @@ import { addDays } from '../domain/time';
 import { dateText } from '../lib/common';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientsPage from '../pages/ClientsPage';
+import ComparePage from '../pages/ComparePage';
 import CompatPage from '../pages/CompatPage';
 import DataPage from '../pages/DataPage';
 import ItemsPage from '../pages/ItemsPage';
@@ -39,6 +40,7 @@ export default function App() {
         <Route element={<AdminShell />}>
           <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/plan" element={<PlanPage />} />
+          <Route path="/compare" element={<ComparePage />} />
           <Route path="/rules" element={<RulesPage />} />
           <Route path="/items" element={<ItemsPage />} />
           <Route path="/compat" element={<CompatPage />} />
@@ -84,6 +86,7 @@ function AdminShell() {
         <nav className="top-nav">
           <NavLink to="/schedule">予定</NavLink>
           <NavLink to="/plan">AI案</NavLink>
+          <NavLink to="/compare">比較</NavLink>
           <NavLink to="/rules">条件</NavLink>
           <NavLink to="/items">項目</NavLink>
           <NavLink to="/compat">相性</NavLink>

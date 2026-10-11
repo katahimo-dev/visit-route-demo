@@ -2,17 +2,23 @@
 import type { Problem } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
 
-/** スタッフごとの件数から均等の点（solver・evaluate で同じ） */
+/** 1人の件数が目安の帯 [lo, hi] から外れた件数 */
+export function balanceOff(b: NonNullable<Problem['balance']>, staff: number, count: number): number {
+  const lo = b.lo[staff]!;
+  const hi = b.hi[staff]!;
+  return count < lo ? lo - count : count > hi ? count - hi : 0;
+}
+
+/** スタッフごとの件数から均等の点＝Σ perVisit × 外れた件数²（solver・evaluate で同じ） */
 export function balancePoints(problem: Problem, counts: ArrayLike<number>): number {
   const b = problem.balance;
   if (!b) return 0;
-  let off = 0;
+  let sq = 0;
   for (let i = 0; i < problem.staff.length; i++) {
-    const c = counts[i] ?? 0;
-    if (c < b.lo[i]!) off += b.lo[i]! - c;
-    else if (c > b.hi[i]!) off += c - b.hi[i]!;
+    const e = balanceOff(b, i, counts[i] ?? 0);
+    sq += e * e;
   }
-  return off * b.perVisit;
+  return sq * b.perVisit;
 }
 
 /** 合計点（solver・evaluate で同じ式・同じ順で足す） */

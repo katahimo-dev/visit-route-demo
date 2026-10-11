@@ -70,8 +70,16 @@ function condReasons(
   }
 }
 
-/** その日の問題を作る（キャンセルした訪問・休止中のスタッフ/訪問先は入れない） */
-export function compile(data: DemoData, date: string): Problem {
+/** 手直しで固定した訪問の、固定した担当以外の可否の原因 */
+export const PIN_RULE_ID = 'pin';
+export const PIN_LABEL = '固定（手直し）';
+
+/**
+ * その日の問題を作る（キャンセルした訪問・休止中のスタッフ/訪問先は入れない）。
+ * pins（訪問ID → 担当ID）の訪問は、固定した担当だけを可にする（他の担当は「固定（手直し）」で外す）。
+ * 固定した担当がこの日の問題にいないときは固定を無視する
+ */
+export function compile(data: DemoData, date: string, pins?: Record<string, string>): Problem {
   const terms = data.org.terms;
   const staffDocs = data.staff.filter((s) => s.active);
   const clients = new Map<string, Client>(data.clients.filter((c) => c.active).map((c) => [c.id, c]));
@@ -126,6 +134,7 @@ export function compile(data: DemoData, date: string): Problem {
   }
 
   // --- 可否・割当費用・理由 ---
+  const staffIds = new Set(staff.map((s) => s.id));
   const working = new Set(staff.filter((s, i) => s.slots.length > 0 && places[i]).map((s) => s.id));
   const firstCompat = rules.find((r) => r.type === 'compatibility')?.id ?? 'compatibility';
   const allowed: boolean[][] = [];
@@ -152,6 +161,10 @@ export function compile(data: DemoData, date: string): Problem {
       const level = data.compat[client.id]?.[s.id] ?? 0;
       // 相性×は重み・hard にかかわらず外す
       if (level === -2) out.push({ ruleId: firstCompat, label: '相性×', points: INF });
+      const pin = pins?.[pv.id];
+      if (pin !== undefined && pin !== s.id && staffIds.has(pin)) {
+        out.push({ ruleId: PIN_RULE_ID, label: PIN_LABEL, points: INF });
+      }
       for (const r of rules) {
         const w = r.weight * POINTS_PER_WEIGHT;
         switch (r.type) {
@@ -259,18 +272,23 @@ export function compile(data: DemoData, date: string): Problem {
   }
 
   // --- 負担の均等：可になる訪問の件数を稼働分に比例して配る ---
-  const wBalance = rules.filter((r) => r.type === 'balance').reduce((a, r) => a + r.weight, 0);
+  const balanceRules = rules.filter((r) => r.type === 'balance');
+  const wBalance = balanceRules.reduce((a, r) => a + r.weight, 0);
+  const hardBalance = balanceRules.some((r) => r.hard);
   let balance: Problem['balance'] = null;
-  if (wBalance > 0) {
+  if (wBalance > 0 || hardBalance) {
     const n = visits.length - infeasible.length;
     const cap = staff.map((s) => (working.has(s.id) ? s.slots.reduce((a, x) => a + (x.end - x.start), 0) : 0));
     const total = cap.reduce((a, b) => a + b, 0);
     if (total > 0) {
       const target = cap.map((c) => (n * c) / total);
+      const hi = target.map((t) => Math.ceil(t - 1e-9));
       balance = {
         perVisit: wBalance * POINTS_PER_WEIGHT,
         lo: target.map((t) => Math.floor(t + 1e-9)),
-        hi: target.map((t) => Math.ceil(t - 1e-9)),
+        hi,
+        // 必須なら上限＝目安の上＋1（休みの人は 0＋1。休みの人はもともと可否で外れる）
+        cap: hardBalance ? hi.map((h) => h + 1) : null,
       };
     }
   }

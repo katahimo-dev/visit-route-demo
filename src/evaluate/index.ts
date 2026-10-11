@@ -1,6 +1,6 @@
 // 入口（evaluate：手作業案・AI案を同じ Problem で採点・説明・差分）
 import type { PlanDiff, PlanScore, Problem, Reason, RouteTiming, StopTiming, VisitExplain } from '../contracts/problem';
-import { balancePoints, scheduleRoute, totalPoints } from '../matching';
+import { balanceOff, balancePoints, scheduleRoute, totalPoints } from '../matching';
 
 const INF = Number.POSITIVE_INFINITY;
 /** 説明に出す理由の数 */
@@ -37,6 +37,9 @@ function notAllowedLabel(reasons: Reason[]): string {
   const labels = reasons.filter((r) => r.points === INF).map((r) => r.label);
   return labels.length > 0 ? labels.join('・') : '担当できない組み合わせ';
 }
+
+/** perRule の負担の均等のキー（Problem に条件のIDがないので型の名前。初期データの条件のIDと同じ） */
+export const BALANCE_RULE_KEY = 'balance';
 
 const TIME_LABEL = { time: '時間の約束に間に合わない', slot: '稼働時間帯に作業が収まらない' } as const;
 
@@ -81,6 +84,28 @@ function scorePlaced(problem: Problem, p: Placed): PlanScore {
   let dropped = 0;
   for (let v = 0; v < problem.visits.length; v++) if (p.staffOf[v]! < 0) dropped++;
   const balance = balancePoints(problem, counts);
+  const b = problem.balance;
+  if (b) {
+    // 負担の均等：達成＝目安の帯に収まったスタッフ、違反＝外れたスタッフ（稼働のない人も帯 [0,0] で数える）
+    const e = { hits: 0, misses: 0, points: balance };
+    for (let s = 0; s < problem.staff.length; s++) {
+      if (balanceOff(b, s, counts[s]!) > 0) e.misses++;
+      else e.hits++;
+      // 必須の均等：上限を超えた分（列のあとの方の訪問）を違反にする
+      const cap = b.cap?.[s];
+      if (cap !== undefined && counts[s]! > cap) {
+        for (const v of p.seqs[s]!.slice(cap)) {
+          hardViolations.push({
+            visitId: problem.visits[v]!.id,
+            staffId: problem.staff[s]!.id,
+            kind: 'notAllowed',
+            label: `件数の上限（${cap}件）を超える`,
+          });
+        }
+      }
+    }
+    perRule[BALANCE_RULE_KEY] = e;
+  }
   return {
     total: totalPoints(problem, { travel, wait, assign, balance, dropped }),
     travelMinutes: travel,

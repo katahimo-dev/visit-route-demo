@@ -851,6 +851,24 @@ label.check input {
 .route-item.is-picked {
   box-shadow: 0 0 0 2px var(--primary);
 }
+.plain-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+}
+.route-item.is-pinned {
+  border-color: var(--primary);
+  background: #fff6ee;
+}
+.chip-pin {
+  background: #fde3cc;
+  color: #a2511a;
+  font-weight: 700;
+}
 .reason-box {
   display: flex;
   flex-direction: column;

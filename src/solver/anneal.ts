@@ -2,7 +2,7 @@
 // 初期温度を改悪幅の中央値から・指数冷却・最後に貪欲な仕上げ。止めるのは反復回数（時刻は使わない）
 import type { Problem, SolveOptions, SolveResult, Solver } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
-import { balancePoints, totalPoints } from '../matching/cost';
+import { balanceOff, balancePoints, totalPoints } from '../matching/cost';
 import { routeCost, scheduleRoute } from '../matching/timing';
 
 const INF = Number.POSITIVE_INFINITY;
@@ -50,10 +50,16 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
   const bufD = new Int32Array(V + 1);
 
   const bal = problem.balance;
-  /** 件数を a: da, b: db だけ変えたときの均等の点の差 */
+  const cap = bal?.cap ?? null;
+  /** s の件数を1つ増やしても上限（必須の均等）を超えないか */
+  const roomFor = (s: number): boolean => !cap || counts[s]! + 1 <= cap[s]!;
+  /** 件数を a: da, b: db だけ変えたときの均等の点の差（外れた件数の2乗） */
   const balDelta = (a: number, da: number, b: number, db: number): number => {
     if (!bal) return 0;
-    const one = (s: number, c: number) => (c < bal.lo[s]! ? bal.lo[s]! - c : c > bal.hi[s]! ? c - bal.hi[s]! : 0);
+    const one = (s: number, c: number) => {
+      const e = balanceOff(bal, s, c);
+      return e * e;
+    };
     let d = 0;
     if (a >= 0) d += one(a, counts[a]! + da) - one(a, counts[a]!);
     if (b >= 0 && b !== a) d += one(b, counts[b]! + db) - one(b, counts[b]!);
@@ -132,6 +138,7 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
       const pos = lastPos;
       return { d: c - cost[a]!, apply: () => putAt(a, bufA, lenA, v, pos, c) };
     }
+    if (!roomFor(b)) return null;
     const cA = lenA === 0 ? 0 : routeCost(problem, a, bufA, lenA);
     if (cA === INF) return null;
     const rb = routes[b]!;
@@ -186,11 +193,15 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     return { d: c - cost[s]!, apply: () => setRoute(s, bufB, len, c) };
   };
 
-  /** 未割当の v を b の最良位置に入れる（allowEject なら、入らないとき b の1件と入れ替える） */
+  /**
+   * 未割当の v を b の最良位置に入れる（allowEject なら、入らないとき・件数の上限のとき b の1件と入れ替える。
+   * 入れ替えは件数が変わらないので上限を超えない）
+   */
   const insert = (v: number, b: number, allowEject: boolean): Move => {
     const rb = routes[b]!;
     const len = rb.length;
-    const c = bestInsert(b, v, rb, len);
+    const room = roomFor(b);
+    const c = room ? bestInsert(b, v, rb, len) : INF;
     if (c !== INF) {
       const pos = lastPos;
       return {
@@ -210,6 +221,7 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     if (best === INF) return null;
     const w = rb[bestK]!;
     return {
+      // 入れ替えは件数が変わらない（均等の点は同じ）。未割当の数も同じ
       d: best - cost[b]!,
       apply: () => {
         const lenA = without(rb, len, bestK, bufA);

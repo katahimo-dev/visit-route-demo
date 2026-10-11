@@ -46,8 +46,12 @@ export type Problem = {
   reasons: Reason[][][];
   /** 待ち1分の点 */
   waitPerMinute: number;
-  /** 負担の均等。lo/hi はスタッフごとの件数の帯。外れた1件＝perVisit 点。null は無効 */
-  balance: { perVisit: number; lo: number[]; hi: number[] } | null;
+  /**
+   * 負担の均等。lo/hi はスタッフごとの件数の目安の帯。スタッフごとに帯 [lo,hi] から外れた件数 e について
+   * perVisit × e² 点。cap は必須のときのスタッフごとの件数の上限（＝hi+1。超える割当はしない）、必須でなければ null。
+   * null は無効（重み0 かつ必須でない）
+   */
+  balance: { perVisit: number; lo: number[]; hi: number[]; cap: number[] | null } | null;
   /** どの担当も可にならない訪問と、その原因 */
   infeasible: { visit: number; reasons: Reason[] }[];
 };

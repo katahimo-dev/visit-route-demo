@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, WeightSlider } from '../components/parts';
 import { HARDABLE, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
-import { newId, ruleTypeHelp, ruleTypeLabel } from '../lib/common';
+import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
 import { useDemoData } from '../store';
 
 /** 型ごとの既定（design.md §5 の表）。足したときの初期値 */
@@ -12,7 +12,7 @@ const DEFAULTS: Record<RuleType, { weight: number; hard: boolean }> = {
   staffPreference: { weight: 2, hard: false },
   compatibility: { weight: 3, hard: false },
   continuity: { weight: 2, hard: false },
-  balance: { weight: 1, hard: false },
+  balance: { weight: 3, hard: false },
   wait: { weight: 3, hard: false },
 };
 
@@ -64,6 +64,7 @@ export default function RulesPage() {
               {data.rules.map((r) => {
                 const hardable = HARDABLE.has(r.type);
                 const hard = hardable && r.hard;
+                const locked = weightLocked(r);
                 return (
                   <tr key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
                     <td style={{ minWidth: 160 }}>
@@ -85,10 +86,10 @@ export default function RulesPage() {
                       <WeightSlider
                         label={r.label}
                         value={r.weight}
-                        disabled={hard}
+                        disabled={locked}
                         onChange={(w) => setRule(r.id, { weight: w })}
                       />
-                      {!hard && <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>}
+                      {!locked && <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>}
                     </td>
                     <td className="nowrap">
                       {hardable ? (
