@@ -8,7 +8,7 @@ import type { Reason, VisitExplain } from '../contracts/problem';
 import { minutesToHhmm } from '../domain/time';
 import { diff, score } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
-import { AI_LINE, attempt, deltaText, hasLocation, MANUAL_LINE, pointsText, r0 } from '../lib/common';
+import { AI_LINE, attempt, deltaText, hasLocation, MANUAL_LINE, own, pointsText, r0 } from '../lib/common';
 import { ownerMap, routesOf, useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
 import { CompareTable, explainMap, ReasonBox } from './planParts';
@@ -103,7 +103,7 @@ export default function ComparePage() {
 
   const inProblemStaff = new Set(problem?.staff.map((s) => s.id) ?? []);
   const stopCards = (staffId: string, side: Side) => {
-    const ids = (side === 'manual' ? manualRoutes : aiRoutes)[staffId] ?? [];
+    const ids = own(side === 'manual' ? manualRoutes : aiRoutes, staffId) ?? [];
     if (ids.length === 0) return <span className="sub">訪問なし</span>;
     const ex = side === 'manual' ? manualExplain : aiExplain;
     return (
@@ -169,8 +169,8 @@ export default function ComparePage() {
       if (home && path.length > 1) path.push(home);
       return path;
     };
-    lns.push({ points: pathOf(manualRoutes[mapStaffId] ?? []), color: MANUAL_LINE, dashed: true });
-    if (aiPlan) lns.push({ points: pathOf(aiRoutes[mapStaffId] ?? []), color: AI_LINE });
+    lns.push({ points: pathOf(own(manualRoutes, mapStaffId) ?? []), color: MANUAL_LINE, dashed: true });
+    if (aiPlan) lns.push({ points: pathOf(own(aiRoutes, mapStaffId) ?? []), color: AI_LINE });
     return { points: pts, lines: lns };
   }, [mapStaffId, staffById, visitById, clientById, manualRoutes, aiRoutes, aiPlan]);
 
@@ -232,8 +232,8 @@ export default function ComparePage() {
                 <div>AI案{edited ? '（手直し後）' : ''}</div>
               </div>
               {staffIds.map((id) => {
-                const pm = routeTotals(id, manualRoutes[id] ?? []);
-                const pa = routeTotals(id, aiRoutes[id] ?? []);
+                const pm = routeTotals(id, own(manualRoutes, id) ?? []);
+                const pa = routeTotals(id, own(aiRoutes, id) ?? []);
                 const d = r0((pa?.travelMinutes ?? 0) - (pm?.travelMinutes ?? 0));
                 return (
                   <div key={id} className="compare-row" style={{ borderTopColor: colorOfStaff.get(id) }}>
@@ -245,7 +245,7 @@ export default function ComparePage() {
                     >
                       <strong style={{ color: colorOfStaff.get(id) }}>{staffName(id)}</strong>
                       <span className="sub">
-                        {manualRoutes[id]?.length ?? 0}件 → {aiRoutes[id]?.length ?? 0}件
+                        {own(manualRoutes, id)?.length ?? 0}件 → {own(aiRoutes, id)?.length ?? 0}件
                       </span>
                       {pm && pa && (
                         <>

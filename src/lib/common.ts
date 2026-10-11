@@ -126,6 +126,14 @@ export function attempt<T>(fn: () => T): { value: T | null; error: string | null
   }
 }
 
+/**
+ * 記録（staffId → 訪問ID の列など）から自分のキーだけを引く。ID が constructor・toString など
+ * Object の組み込みの名前でも、組み込みの関数を値と取り違えない（URL の ID・読み込んだデータ）
+ */
+export function own<T>(rec: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(rec, key) ? rec[key] : undefined;
+}
+
 /** 新しい ID（画面で足すもの用） */
 export const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 

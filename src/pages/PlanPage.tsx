@@ -10,7 +10,7 @@ import { NONE } from '../domain/scheduleModel';
 import { minutesToHhmm } from '../domain/time';
 import { diff, score } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
-import { attempt, deltaText, formError, hasLocation, pointsText, r0, staffColor } from '../lib/common';
+import { attempt, deltaText, formError, hasLocation, own, pointsText, r0, staffColor } from '../lib/common';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import { defaultIterations, runSolve } from '../solver';
@@ -217,7 +217,7 @@ export default function PlanPage() {
   const owner = useMemo(() => ownerMap(routes), [routes]);
   const moveTo = (visitId: string, staffId: string) => {
     if (!problem || !aiPlan || running) return;
-    if (owner.get(visitId) === staffId && pins[visitId] === staffId) return;
+    if (owner.get(visitId) === staffId && own(pins, visitId) === staffId) return;
     const p = problem;
     update((d) =>
       patchPlan(d, date, (plan) => ({
@@ -275,7 +275,7 @@ export default function PlanPage() {
     const cols: Record<string, string[]> = {};
     for (const v of visits) {
       const o = ownerOf(v.id) ?? NONE;
-      cols[o] = [...(cols[o] ?? []), v.id];
+      cols[o] = [...(own(cols, o) ?? []), v.id];
     }
     update((d) => ({
       ...d,
@@ -344,7 +344,7 @@ export default function PlanPage() {
     const lns: MapLine[] = [];
     if (!aiPlan) return { points: pts, lines: lns };
     for (const sid of columns) {
-      const ids = routes[sid] ?? [];
+      const ids = own(routes, sid) ?? [];
       if (ids.length === 0) continue;
       const s = staffById.get(sid);
       const color = colorOfStaff.get(sid) ?? staffColor(0);
@@ -375,14 +375,14 @@ export default function PlanPage() {
     const e = explained.get(id);
     const t = e?.timing ?? null;
     const isPicked = picked === id;
-    const pin = pins[id];
+    const pin = own(pins, id);
     const hard = hardOf.get(id);
     const ownerId = owner.get(id) ?? null;
     return (
       <div key={id}>
         {t && (
           <div className="leg-line">
-            {routes[ownerId ?? '']?.[0] === id ? '自宅から ' : '↓ 移動 '}
+            {own(routes, ownerId ?? '')?.[0] === id ? '自宅から ' : '↓ 移動 '}
             {r0(t.travelIn)}分{t.wait > 0 && `（待ち ${r0(t.wait)}分）`}
           </div>
         )}
@@ -574,7 +574,7 @@ export default function PlanPage() {
                   </div>
                 )}
                 {columns.map((sid) => {
-                  const ids = routes[sid] ?? [];
+                  const ids = own(routes, sid) ?? [];
                   const notAllowed = dropTo === sid && dragging !== null && !allowedFor(dragging, sid);
                   return (
                     <div
@@ -604,7 +604,7 @@ export default function PlanPage() {
               <RouteMap points={points} lines={lines} height={420} />
               <div className="row sub" style={{ flexWrap: 'wrap' }}>
                 {columns
-                  .filter((sid) => (routes[sid]?.length ?? 0) > 0)
+                  .filter((sid) => (own(routes, sid)?.length ?? 0) > 0)
                   .map((sid) => (
                     <span key={sid} className="nowrap">
                       <span style={{ color: colorOfStaff.get(sid) }}>━</span> {staffName(sid)}
@@ -710,7 +710,7 @@ function BalanceChips({
 }) {
   const b = problem.balance;
   const rows = problem.staff
-    .map((s, i) => ({ id: s.id, i, n: routes[s.id]?.length ?? 0, working: s.slots.length > 0 }))
+    .map((s, i) => ({ id: s.id, i, n: own(routes, s.id)?.length ?? 0, working: s.slots.length > 0 }))
     .filter((x) => x.working || x.n > 0);
   return (
     <div className="stack" style={{ gap: 4 }}>

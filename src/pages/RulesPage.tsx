@@ -68,14 +68,10 @@ export default function RulesPage() {
                 return (
                   <tr key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
                     <td style={{ minWidth: 160 }}>
-                      <input
+                      <LabelInput
                         value={r.label}
-                        maxLength={40}
-                        aria-label="条件の名前"
-                        onChange={(e) => setRule(r.id, { label: e.target.value })}
-                        onBlur={(e) => {
-                          if (!e.target.value.trim()) setRule(r.id, { label: ruleTypeLabel(r.type, terms) });
-                        }}
+                        onChange={(label) => setRule(r.id, { label })}
+                        fallback={ruleTypeLabel(r.type, terms)}
                       />
                     </td>
                     <td>
@@ -152,5 +148,29 @@ export default function RulesPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 条件の名前の入力。空の名前は保存しない（契約は1文字以上。空のまま保存されると、次に開いたとき
+ * データ全体が読めずに初期状態へ戻ってしまう）。空のまま離れたら型の名前に戻す
+ */
+function LabelInput({ value, onChange, fallback }: { value: string; onChange: (v: string) => void; fallback: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      value={draft ?? value}
+      maxLength={40}
+      aria-label="条件の名前"
+      onChange={(e) => {
+        const t = e.target.value;
+        setDraft(t);
+        if (t.trim()) onChange(t.slice(0, 40));
+      }}
+      onBlur={() => {
+        if (draft !== null && !draft.trim()) onChange(fallback);
+        setDraft(null);
+      }}
+    />
   );
 }

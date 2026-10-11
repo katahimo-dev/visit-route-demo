@@ -108,3 +108,12 @@ describe('warningsOf', () => {
     expect(warningsOf(undefined, null, slots, undefined)).toEqual([]);
   });
 });
+
+describe('reconcile（Object の組み込みの名前の ID）', () => {
+  it('スタッフID が constructor・toString でも、保存した割当に無ければ空の列（Object の組み込みを拾って落ちない）', () => {
+    const vs = [visit('a', '09:00', { staffId: 'constructor' }), visit('b', '10:00')];
+    const view = reconcile({}, vs, ['constructor', 'toString']);
+    expect(view.cols).toEqual({ constructor: ['a'], toString: [] });
+    expect(view.unassigned).toEqual(['b']);
+  });
+});

@@ -17,7 +17,8 @@ export function bestInsertion(
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const [k, ids] of Object.entries(routes)) out[k] = ids.filter((id) => id !== visitId);
-  const col = out[staffId] ?? [];
+  // 自分のキーだけを見る（スタッフID が constructor などでも Object の組み込みを拾わない）
+  const col = Object.hasOwn(out, staffId) ? (out[staffId] ?? []) : [];
   const vIndex = new Map(problem.visits.map((v, i) => [v.id, i]));
   const s = problem.staff.findIndex((x) => x.id === staffId);
   const v = vIndex.get(visitId);

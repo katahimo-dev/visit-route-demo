@@ -69,13 +69,17 @@ describe('書き出し・読み込み', () => {
 });
 
 describe('AI案の手直し（ADR-0004）の移行', () => {
+  // 読み込みで、いない訪問を指す案は直す（repair）ので、その日の本当の訪問IDを使う
+  const [v1 = '', v2 = ''] = createDemoData('2026-10-12')
+    .visits.filter((v) => v.date === '2026-10-12')
+    .map((v) => v.id);
   const old = {
     date: '2026-10-12',
     createdAt: 1,
     seed: 1,
     iterations: 100,
-    routes: { s1: ['v1'], s2: [] },
-    unassigned: ['v2'],
+    routes: { s1: [v1], s2: [] },
+    unassigned: [v2],
     score: 123,
     stopped: false,
     rules: [],
@@ -86,12 +90,12 @@ describe('AI案の手直し（ADR-0004）の移行', () => {
     expect(isImportError(r)).toBe(false);
     expect(r.version).toBe(1);
     const plan = r.aiPlans['2026-10-12']!;
-    expect(plan.generated).toEqual({ routes: { s1: ['v1'], s2: [] }, unassigned: ['v2'], score: 123 });
+    expect(plan.generated).toEqual({ routes: { s1: [v1], s2: [] }, unassigned: [v2], score: 123 });
     expect(plan.pins).toEqual({});
     expect(r.prevAiPlans['2026-10-12']!.pins).toEqual({});
   });
   it('generated・pins があればそのまま', () => {
-    const plan = { ...old, generated: { routes: { s1: [] }, unassigned: [], score: 1 }, pins: { v1: 's1' } };
+    const plan = { ...old, generated: { routes: { s1: [] }, unassigned: [], score: 1 }, pins: { [v1]: 's1' } };
     const d = { ...createDemoData('2026-10-12'), aiPlans: { '2026-10-12': plan } };
     const r = migrate(JSON.parse(JSON.stringify(d))) as DemoData;
     expect(r.aiPlans['2026-10-12']).toEqual(plan);

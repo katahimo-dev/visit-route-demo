@@ -91,7 +91,7 @@ flowchart LR
 ### store（データ一式の保存）
 - 責務：データ一式（`DemoData`）の読み込み・保存・検査・版の移行、JSON の書き出し・読み込み、初期状態に戻す。画面へは React のフック（`useDemoData()`・`update(fn)`）で渡す。
 - 持つデータ（持ち主）：`DemoData`＝`{ version, org, staff[], clients[], visits[], availability[], manualPlans{date→routes}, items[], rules[], compat{clientId→{staffId→-2..2}}, aiPlans{date→AiPlan（routes＝手直し後、generated＝AIが出したまま、pins＝固定）}, seed }`。localStorage のキー `vrdemo:data:v1` に1つの JSON で置く。
-- 提供するAPI：`load(): DemoData`、`save(data)`（300ms 間引き）、`reset(): DemoData`、`exportJson(data): Blob`、`importJson(text): DemoData | ImportError`、`migrate(raw): DemoData`。
+- 提供するAPI：`repair(data)`（契約は通るが中身が食い違うデータを直す：いない人・訪問を指す割当・相性・上書き・固定を除く、ID の重複は最初の1件。`migrate` のあとに必ず通す）、`load(): DemoData`、`save(data)`（300ms 間引き）、`reset(): DemoData`、`exportJson(data): Blob`、`importJson(text): DemoData | ImportError`、`migrate(raw): DemoData`。
 - 依存するもの：seed（初期データ）、zod（検査）。
 - 配置：`src/store/`
 - 完了の条件：

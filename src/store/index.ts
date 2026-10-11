@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DATA_VERSION, type DemoData, demoDataSchema, type ImportError, STORAGE_KEY } from '../contracts/data';
 import { jstDate } from '../domain/time';
 import { createDemoData, DEMO_DAYS, daysFrom } from '../seed';
+import { repair } from './repair';
 
 /** 壊れた JSON の退避先 */
 export const BROKEN_KEY = 'vrdemo:data:broken';
@@ -45,7 +46,10 @@ function describeIssue(issue: z.core.$ZodIssue): string {
 
 const fail = (message: string): ImportError => ({ code: 'INVALID_ARGUMENT', message });
 
-/** 読み込んだ値を、今の版（DATA_VERSION）のデータにする。通らなければ ImportError */
+/**
+ * 読み込んだ値を、今の版（DATA_VERSION）のデータにする。通らなければ ImportError。
+ * 形が通ったら、中身の食い違い（いないスタッフ・訪問を指す案など）を repair で直す（画面を落とさない）
+ */
 export function migrate(raw: unknown): DemoData | ImportError {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return fail('データの形が正しくありません（書き出したファイルではない可能性があります）');
@@ -60,7 +64,7 @@ export function migrate(raw: unknown): DemoData | ImportError {
     const first = r.error.issues[0];
     return fail(first ? describeIssue(first) : 'データの形が正しくありません');
   }
-  return r.data;
+  return repair(r.data);
 }
 
 export function importJson(text: string): DemoData | ImportError {
@@ -149,3 +153,4 @@ export function reset(): DemoData {
 }
 
 export { DemoDataProvider, useDemoData } from './react';
+export { repair } from './repair';

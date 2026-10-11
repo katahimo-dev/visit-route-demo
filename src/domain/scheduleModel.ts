@@ -27,10 +27,12 @@ export function timeOrder(ids: string[], visitById: Map<string, Visit>): string[
 
 /** 保存済み/編集中の割当と、いまある訪問を突き合わせる（消えた訪問を除き、新しい訪問は担当の列か未割当へ） */
 export function reconcile(base: Cols, visits: V[], staffIds: string[]): View {
+  // 自分のキーだけを見る（スタッフID が constructor などでも Object の組み込みを拾わない）
+  const colOf = (k: string): string[] => (Object.hasOwn(base, k) ? (base[k] ?? []) : []);
   const byId = new Map(visits.map((v) => [v.id, v]));
   const placed = new Set<string>();
   const unassigned: string[] = [];
-  for (const id of base[NONE] ?? []) {
+  for (const id of colOf(NONE)) {
     if (byId.has(id) && !placed.has(id)) {
       unassigned.push(id);
       placed.add(id);
@@ -38,7 +40,7 @@ export function reconcile(base: Cols, visits: V[], staffIds: string[]): View {
   }
   const cols: Cols = {};
   for (const s of staffIds) {
-    cols[s] = (base[s] ?? []).filter((id) => byId.has(id) && !placed.has(id));
+    cols[s] = colOf(s).filter((id) => byId.has(id) && !placed.has(id));
     for (const id of cols[s]) placed.add(id);
   }
   for (const v of visits) {
@@ -57,7 +59,7 @@ export function assign(view: View, id: string, to: string, visitById: Map<string
   for (const [k, ids] of Object.entries(view.cols)) cols[k] = ids.filter((x) => x !== id);
   const unassigned = view.unassigned.filter((x) => x !== id);
   if (to === NONE || !visitById.has(id)) return { cols, unassigned: timeOrder([...unassigned, id], visitById) };
-  cols[to] = timeOrder([...(cols[to] ?? []), id], visitById);
+  cols[to] = timeOrder([...((Object.hasOwn(cols, to) ? cols[to] : undefined) ?? []), id], visitById);
   return { cols, unassigned };
 }
 

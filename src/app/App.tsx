@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { addDays } from '../domain/time';
+import { addDays, jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientsPage from '../pages/ClientsPage';
@@ -30,8 +30,13 @@ export default function App() {
     for (const v of data.visits) set.add(v.date);
     return [...set].sort();
   }, [data.baseDate, data.visits]);
-  const [picked, setPicked] = useState(data.baseDate);
-  const date = dates.includes(picked) ? picked : (dates[0] ?? data.baseDate);
+  // 最初は今日（データに今日が無ければ基準日）。日がたってから開いても今日から始める
+  const [picked, setPicked] = useState(() => jstDate(Date.now()));
+  const date = dates.includes(picked)
+    ? picked
+    : dates.includes(data.baseDate)
+      ? data.baseDate
+      : (dates[0] ?? data.baseDate);
 
   return (
     <DayProvider value={{ date, setDate: setPicked, dates }}>

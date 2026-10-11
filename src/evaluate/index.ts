@@ -20,7 +20,8 @@ function place(problem: Problem, routes: Record<string, string[]>): Placed {
   const staffOf = new Int32Array(problem.visits.length).fill(-1);
   const seqs = problem.staff.map((s, si) => {
     const out: number[] = [];
-    for (const id of routes[s.id] ?? []) {
+    // 自分のキーだけを見る（スタッフID が constructor などでも Object の組み込みを拾わない）
+    for (const id of Object.hasOwn(routes, s.id) ? (routes[s.id] ?? []) : []) {
       const v = vIndex.get(id);
       if (v === undefined || staffOf[v]! >= 0) continue;
       staffOf[v] = si;
