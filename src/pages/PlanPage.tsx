@@ -1,28 +1,47 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import { useDay } from '../app/day';
-import { ClientName, WeightSlider } from '../components/parts';
+import { ClientName } from '../components/parts';
 import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
-import type { AiPlan } from '../contracts/data';
-import type { PlanScore, Problem, Reason, VisitExplain } from '../contracts/problem';
-import { HARDABLE } from '../contracts/rules';
+import type { AiPlan, DemoData } from '../contracts/data';
+import type { PlanScore, Problem, SolveResult } from '../contracts/problem';
 import { NONE } from '../domain/scheduleModel';
 import { minutesToHhmm } from '../domain/time';
-import { diff, explain, score } from '../evaluate';
+import { diff, score } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
-import { AI_LINE, attempt, deltaText, formError, hasLocation, MANUAL_LINE, pointsText, r0, r1 } from '../lib/common';
-import { ownerMap, routesOf, useDayModel } from '../lib/useDayModel';
-import { scheduleRoute } from '../matching';
+import { attempt, deltaText, formError, hasLocation, pointsText, r0, staffColor } from '../lib/common';
+import { ownerMap, useDayModel } from '../lib/useDayModel';
+import { bestInsertion, compile } from '../matching';
 import { defaultIterations, runSolve } from '../solver';
-import { useDemoData } from '../store';
+import { explainMap, ReasonBox, WeightPanel } from './planParts';
 
 /**
- * AI案：作る・手作業案と並べて比べる・理由を見る・採用する（PoC本体 PlanPage.tsx を写した）。
- * 担当ごとに1行で、左に手作業案、右に AI案。採点は手作業案もAI案も、いまの条件の同じ物差し（evaluate.score）
+ * AI案（D18・ADR-0004）：AI案を作る → 担当ごとの列で手直し（ドラッグ・担当を選ぶ）→ 動かした訪問は固定 →
+ * 「固定を残して組み直す」で残りを AI が組み直す →「予定に採用」。
+ * AI案の routes は手直し後の今の案、generated は AI が出したまま、pins は固定（訪問ID → 担当ID）。
+ * 手作業案との比較は「比較」の画面（#/compare、D19）
  */
 
 type Progress = { iteration: number; total: number; bestScore: number };
-type Side = 'manual' | 'ai';
+
+/** その日のAI案を書き換える（無ければそのまま） */
+function patchPlan(d: DemoData, date: string, fn: (p: AiPlan) => AiPlan): DemoData {
+  const p = d.aiPlans[date];
+  return p ? { ...d, aiPlans: { ...d.aiPlans, [date]: fn(p) } } : d;
+}
+
+/** 今の案を routes にした AiPlan（unassigned・score は problem で付け直す） */
+function withRoutes(problem: Problem, plan: AiPlan, routes: Record<string, string[]>): AiPlan {
+  const placed = new Set(Object.values(routes).flat());
+  const sc = score(problem, routes);
+  return {
+    ...plan,
+    routes,
+    unassigned: problem.visits.map((v) => v.id).filter((id) => !placed.has(id)),
+    score: sc.total,
+  };
+}
 
 export default function PlanPage() {
   const { date } = useDay();
@@ -31,10 +50,11 @@ export default function PlanPage() {
   const terms = data.org.terms;
   const toast = useToast();
   const [progress, setProgress] = useState<Progress | null>(null);
-  const [running, setRunning] = useState(false);
+  const [running, setRunning] = useState<'create' | 'resolve' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<{ visitId: string; side: Side } | null>(null);
-  const [mapStaff, setMapStaff] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTo, setDropTo] = useState<string | null>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
   const mounted = useRef(true);
 
@@ -53,27 +73,25 @@ export default function PlanPage() {
   }, [date]);
 
   const aiPlan: AiPlan | undefined = data.aiPlans[date];
-  const prevPlan: AiPlan | undefined = data.prevAiPlans[date];
-  const manualRoutes = useMemo(() => routesOf(m.savedView.cols), [m.savedView]);
-  const aiRoutes = useMemo(() => aiPlan?.routes ?? {}, [aiPlan]);
+  const routes = useMemo(() => aiPlan?.routes ?? {}, [aiPlan]);
+  const pins = useMemo(() => aiPlan?.pins ?? {}, [aiPlan]);
+  const pinCount = Object.keys(pins).length;
+  const edited =
+    !!aiPlan && (pinCount > 0 || JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes));
 
-  const manualScore = useMemo(
-    () => (problem ? attempt(() => score(problem, manualRoutes)) : null),
-    [problem, manualRoutes],
+  const curScore = useMemo(
+    () => (problem && aiPlan ? attempt(() => score(problem, routes)) : null),
+    [problem, aiPlan, routes],
   );
-  const aiScore = useMemo(
-    () => (problem && aiPlan ? attempt(() => score(problem, aiRoutes)) : null),
-    [problem, aiPlan, aiRoutes],
+  const genScore = useMemo(
+    () => (problem && aiPlan ? attempt(() => score(problem, aiPlan.generated.routes)) : null),
+    [problem, aiPlan],
   );
-  const manualExplain = useMemo(() => explainMap(problem, manualRoutes), [problem, manualRoutes]);
-  const aiExplain = useMemo(
-    () => (aiPlan ? explainMap(problem, aiRoutes) : new Map<string, VisitExplain>()),
-    [problem, aiPlan, aiRoutes],
+  const genDiff = useMemo(
+    () => (problem && aiPlan ? attempt(() => diff(problem, aiPlan.generated.routes, routes)) : null),
+    [problem, aiPlan, routes],
   );
-  const prevDiff = useMemo(
-    () => (problem && aiPlan && prevPlan ? attempt(() => diff(problem, prevPlan.routes, aiPlan.routes)) : null),
-    [problem, aiPlan, prevPlan],
-  );
+  const explained = useMemo(() => explainMap(aiPlan ? problem : null, routes), [problem, aiPlan, routes]);
   /** AI案を作ったあとに条件（重み・必須）が変わったか */
   const stale = !!aiPlan && JSON.stringify(aiPlan.rules) !== JSON.stringify(data.rules);
 
@@ -85,25 +103,26 @@ export default function PlanPage() {
   const visitLabel = (id: string) =>
     `${visitById.get(id)?.earliestStart ?? ''} ${clientOf(id)?.displayName ?? '（不明）'}`;
 
-  // ---- AI案を作る（compile → runSolve）----
-  const create = () => {
+  // ---- 計算（AI案を作る・固定を残して組み直す）----
+  const check = (): Problem | null => {
     setError(null);
     if (!problem) {
       setError(m.problemError ?? '問題を作れませんでした');
-      return;
+      return null;
     }
     if (problem.visits.length === 0) {
       setError('この日に計算できる訪問がありません');
-      return;
+      return null;
     }
     if (problem.staff.length === 0) {
       setError(`この日に働ける${terms.staff}がいません`);
-      return;
+      return null;
     }
-    const forDate = date;
-    const rulesSnapshot = data.rules;
+    return problem;
+  };
+  const run = (kind: 'create' | 'resolve', target: Problem, onDone: (r: SolveResult) => void) => {
     const started = attempt(() =>
-      runSolve(problem, { seed: data.seed, iterations: defaultIterations(problem) }, (p) => {
+      runSolve(target, { seed: data.seed, iterations: defaultIterations(target) }, (p) => {
         if (mounted.current) setProgress(p);
       }),
     );
@@ -112,31 +131,11 @@ export default function PlanPage() {
       return;
     }
     runRef.current = started.value;
-    setRunning(true);
+    setRunning(kind);
     setProgress(null);
     started.value.promise
       .then((result) => {
-        if (!mounted.current) return;
-        const plan: AiPlan = {
-          date: forDate,
-          createdAt: Date.now(),
-          seed: result.seed,
-          iterations: result.iterations,
-          routes: result.routes,
-          unassigned: result.unassigned,
-          score: result.score,
-          stopped: result.stopped,
-          rules: rulesSnapshot,
-        };
-        update((d) => {
-          const prev = d.aiPlans[forDate];
-          return {
-            ...d,
-            aiPlans: { ...d.aiPlans, [forDate]: plan },
-            prevAiPlans: prev ? { ...d.prevAiPlans, [forDate]: prev } : d.prevAiPlans,
-          };
-        });
-        toast(result.stopped ? '途中までの最良の案を保存しました' : 'AI案を作りました');
+        if (mounted.current) onDone(result);
       })
       .catch((e) => {
         if (mounted.current) setError(`AI案を作れませんでした（${formError(e)}）`);
@@ -144,19 +143,127 @@ export default function PlanPage() {
       .finally(() => {
         runRef.current = null;
         if (mounted.current) {
-          setRunning(false);
+          setRunning(null);
           setProgress(null);
         }
       });
   };
   const stop = () => runRef.current?.stop();
 
-  // ---- この案を採用（D13）：manualPlans と visits.staffId に写す ----
+  /** AI案を作る（固定なし。作ると generated と routes を同じにし、固定を空に） */
+  const create = () => {
+    const p = check();
+    if (!p) return;
+    if (edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？')) return;
+    const forDate = date;
+    const rulesSnapshot = data.rules;
+    run('create', p, (result) => {
+      const plan: AiPlan = {
+        date: forDate,
+        createdAt: Date.now(),
+        seed: result.seed,
+        iterations: result.iterations,
+        routes: result.routes,
+        unassigned: result.unassigned,
+        score: result.score,
+        stopped: result.stopped,
+        rules: rulesSnapshot,
+        generated: { routes: result.routes, unassigned: result.unassigned, score: result.score },
+        pins: {},
+      };
+      update((d) => {
+        const prev = d.aiPlans[forDate];
+        return {
+          ...d,
+          aiPlans: { ...d.aiPlans, [forDate]: plan },
+          prevAiPlans: prev ? { ...d.prevAiPlans, [forDate]: prev } : d.prevAiPlans,
+        };
+      });
+      toast(result.stopped ? '途中までの最良の案を保存しました' : 'AI案を作りました');
+    });
+  };
+
+  /** 固定を残して組み直す（generated は変えない。固定は残す） */
+  const resolve = () => {
+    const p = check();
+    if (!p || !aiPlan) return;
+    const forDate = date;
+    const pinned = attempt(() => compile(data, forDate, aiPlan.pins));
+    if (!pinned.value) {
+      setError(pinned.error);
+      return;
+    }
+    const rulesSnapshot = data.rules;
+    run('resolve', pinned.value, (result) => {
+      update((d) =>
+        patchPlan(d, forDate, (plan) => ({
+          ...withRoutes(p, plan, result.routes),
+          stopped: result.stopped,
+          rules: rulesSnapshot,
+        })),
+      );
+      toast(result.stopped ? '途中までの最良の案で組み直しました' : '固定を残して組み直しました');
+    });
+  };
+
+  // ---- 手直し：訪問を担当へ移す（最も費用の少ない位置に入れて固定）----
+  const allowedFor = (visitId: string, staffId: string): boolean => {
+    if (!problem) return true;
+    const vi = problem.visits.findIndex((v) => v.id === visitId);
+    const si = problem.staff.findIndex((s) => s.id === staffId);
+    if (vi < 0) return true;
+    return si >= 0 && problem.allowed[vi]?.[si] === true;
+  };
+  const owner = useMemo(() => ownerMap(routes), [routes]);
+  const moveTo = (visitId: string, staffId: string) => {
+    if (!problem || !aiPlan || running) return;
+    if (owner.get(visitId) === staffId && pins[visitId] === staffId) return;
+    const p = problem;
+    update((d) =>
+      patchPlan(d, date, (plan) => ({
+        ...withRoutes(
+          p,
+          plan,
+          owner.get(visitId) === staffId ? plan.routes : bestInsertion(p, plan.routes, visitId, staffId),
+        ),
+        pins: { ...plan.pins, [visitId]: staffId },
+      })),
+    );
+    if (!allowedFor(visitId, staffId)) {
+      toast(`${staffName(staffId)}さんは必須の条件に合いません（組み直すとこの訪問は入りません）`);
+    }
+  };
+  const unpin = (visitId: string) => {
+    update((d) =>
+      patchPlan(d, date, (plan) => {
+        const { [visitId]: _, ...rest } = plan.pins;
+        return { ...plan, pins: rest };
+      }),
+    );
+  };
+
+  /** AI案に戻す（手直しと固定を捨てる） */
+  const revert = () => {
+    if (!aiPlan) return;
+    if (!confirm('手直しと固定を捨てて、AIが出したままの案に戻します。よろしいですか？')) return;
+    update((d) =>
+      patchPlan(d, date, (plan) => ({
+        ...plan,
+        routes: plan.generated.routes,
+        unassigned: plan.generated.unassigned,
+        score: plan.generated.score,
+        pins: {},
+      })),
+    );
+    toast('AI案に戻しました');
+  };
+
+  // ---- 予定に採用（D13）：今の案を manualPlans と visits.staffId に写す ----
   const adopt = () => {
     if (!aiPlan || !problem) return;
     if (
       !confirm(
-        'このAI案を手作業案に写します。予定画面の割当（各訪問の担当）が書き換わります。よろしいですか？\n（計算に入れていない訪問の担当はそのままです）',
+        'この案（手直し後）を手作業案に写します。予定画面の割当（各訪問の担当）が書き換わります。よろしいですか？\n（計算に入れていない訪問の担当はそのままです）',
       )
     )
       return;
@@ -179,150 +286,225 @@ export default function PlanPage() {
         return (v.staffId ?? null) === next ? v : { ...v, staffId: next };
       }),
     }));
-    toast('AI案を手作業案に写しました');
+    toast('AI案を予定に採用しました');
   };
 
-  // ---- 担当ごとの比較 ----
-  const staffIds = useMemo(() => {
-    const ids = new Set(
-      [...Object.entries(manualRoutes), ...Object.entries(aiRoutes)].filter(([, v]) => v.length > 0).map(([k]) => k),
+  // ---- 列：その日に働く人（と、今の案で訪問がある人）----
+  const columns = useMemo(() => {
+    const working = new Set(problem?.staff.filter((s) => s.slots.length > 0).map((s) => s.id) ?? []);
+    const withVisits = new Set(
+      Object.entries(routes)
+        .filter(([, ids]) => ids.length > 0)
+        .map(([k]) => k),
     );
-    const order = staff.map((s) => s.id).filter((id) => ids.has(id));
-    return [...order, ...[...ids].filter((id) => !order.includes(id))];
-  }, [manualRoutes, aiRoutes, staff]);
-  const ownerManual = useMemo(() => ownerMap(manualRoutes), [manualRoutes]);
-  const ownerAi = useMemo(() => ownerMap(aiRoutes), [aiRoutes]);
-  const mapStaffId = mapStaff && staffIds.includes(mapStaff) ? mapStaff : (staffIds[0] ?? null);
+    const order = staff.map((s) => s.id).filter((id) => working.has(id) || withVisits.has(id));
+    return [...order, ...[...withVisits].filter((id) => !order.includes(id) && id !== NONE)];
+  }, [problem, routes, staff]);
+  const unassigned = aiPlan?.unassigned ?? [];
+  const hardOf = useMemo(() => {
+    const h = new Map<string, string[]>();
+    for (const v of curScore?.value?.hardViolations ?? []) h.set(v.visitId, [...(h.get(v.visitId) ?? []), v.label]);
+    return h;
+  }, [curScore]);
 
-  /** 1人のルートの移動・待ち（lenient。未実装・対象外なら null） */
-  const routeTotals = (staffId: string, ids: string[]) => {
-    if (!problem) return null;
-    const si = problem.staff.findIndex((s) => s.id === staffId);
-    if (si < 0) return null;
-    const idx = ids.map((id) => problem.visits.findIndex((v) => v.id === id)).filter((i) => i >= 0);
-    return attempt(() => scheduleRoute(problem, si, idx, 'lenient')).value;
-  };
+  const dropProps = (to: string) => ({
+    onDragOver: (e: DragEvent) => {
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (dropTo !== to) setDropTo(to);
+    },
+    onDragLeave: (e: DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTo(null);
+    },
+    onDrop: (e: DragEvent) => {
+      e.preventDefault();
+      const id = e.dataTransfer.getData('text/plain') || dragging;
+      setDragging(null);
+      setDropTo(null);
+      if (id && owner.get(id) !== to) moveTo(id, to);
+    },
+  });
+  const dragProps = (id: string) => ({
+    draggable: !running,
+    onDragStart: (e: DragEvent) => {
+      e.dataTransfer.setData('text/plain', id);
+      e.dataTransfer.effectAllowed = 'move';
+      setDragging(id);
+    },
+    onDragEnd: () => {
+      setDragging(null);
+      setDropTo(null);
+    },
+  });
 
-  const movedLabel = (visitId: string, staffId: string, side: Side): string | null => {
-    if (!aiPlan) return null;
-    if (side === 'ai') {
-      const before = ownerManual.get(visitId);
-      if (before === staffId) return null;
-      return before ? `← ${staffName(before)}から` : '← 未割当から';
-    }
-    const after = ownerAi.get(visitId);
-    if (after === staffId) return null;
-    return after ? `→ AIでは ${staffName(after)}` : '→ AIでは未割当';
-  };
-
-  const inProblemStaff = new Set(problem?.staff.map((s) => s.id) ?? []);
-  const stopCards = (staffId: string, side: Side) => {
-    const ids = (side === 'manual' ? manualRoutes : aiRoutes)[staffId] ?? [];
-    if (ids.length === 0) return <span className="sub">訪問なし</span>;
-    const ex = side === 'manual' ? manualExplain : aiExplain;
-    return (
-      <div className="stack" style={{ gap: 0 }}>
-        {problem && !inProblemStaff.has(staffId) && (
-          <span className="chip chip-red" style={{ alignSelf: 'flex-start' }}>
-            この日は計算に入れていません（休み・休止中など）
-          </span>
-        )}
-        {ids.map((id, i) => {
-          const e = ex.get(id);
-          const t = e?.timing ?? null;
-          const isPicked = picked?.visitId === id && picked.side === side;
-          const moved = movedLabel(id, staffId, side);
-          const hard = (side === 'manual' ? manualScore : aiScore)?.value?.hardViolations.some((h) => h.visitId === id);
-          return (
-            <div key={id}>
-              {t && (
-                <div className="leg-line">
-                  {i === 0 ? '自宅から ' : '↓ 移動 '}
-                  {r0(t.travelIn)}分{t.wait > 0 && `（待ち ${r0(t.wait)}分）`}
-                </div>
-              )}
-              <button
-                type="button"
-                className={`route-item route-btn ${hard ? 'is-red' : moved ? 'is-moved' : ''} ${isPicked ? 'is-picked' : ''}`}
-                onClick={() => setPicked(isPicked ? null : { visitId: id, side })}
-                title="押すと理由を見られます"
-              >
-                <span className="sub nowrap">
-                  {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : (visitById.get(id)?.earliestStart ?? '')}
-                </span>
-                <ClientName client={clientOf(id)} />
-                {moved && <span className="chip chip-move">{moved}</span>}
-                {hard && <span className="chip chip-red">必須の違反</span>}
-              </button>
-              {isPicked && <ReasonBox explain={e} />}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  // ---- 地図：選んだ担当の手作業案（点線）とAI案（実線）----
+  // ---- 地図：今の案（担当ごとの色の実線）----
   const { points, lines } = useMemo(() => {
     const pts: MapPoint[] = [];
     const lns: MapLine[] = [];
-    if (!mapStaffId) return { points: pts, lines: lns };
-    const s = staffById.get(mapStaffId);
-    const home = s && hasLocation(s.home) ? { lat: s.home.lat, lng: s.home.lng } : null;
-    if (home) pts.push({ ...home, label: '家', color: '#8a7a70' });
-    const pathOf = (ids: string[]) => {
-      const path: { lat: number; lng: number }[] = home ? [home] : [];
+    if (!aiPlan) return { points: pts, lines: lns };
+    for (const sid of columns) {
+      const ids = routes[sid] ?? [];
+      if (ids.length === 0) continue;
+      const s = staffById.get(sid);
+      const color = colorOfStaff.get(sid) ?? staffColor(0);
+      const home = s && hasLocation(s.home) ? { lat: s.home.lat, lng: s.home.lng } : null;
+      const path: { lat: number; lng: number }[] = [];
+      if (home) {
+        path.push(home);
+        pts.push({ ...home, label: '家', color });
+      }
       for (const id of ids) {
         const c = clientById.get(visitById.get(id)?.clientId ?? '');
         if (!c || !hasLocation(c.place)) continue;
         path.push({ lat: c.place.lat, lng: c.place.lng });
-        if (!pts.some((p) => p.lat === c.place.lat && p.lng === c.place.lng)) {
-          pts.push({ lat: c.place.lat, lng: c.place.lng, label: initialOf(c.displayName), color: colorOf(c.color) });
-        }
+        pts.push({ lat: c.place.lat, lng: c.place.lng, label: initialOf(c.displayName), color: colorOf(c.color) });
       }
       if (home && path.length > 1) path.push(home);
-      return path;
-    };
-    lns.push({ points: pathOf(manualRoutes[mapStaffId] ?? []), color: MANUAL_LINE, dashed: true });
-    if (aiPlan) lns.push({ points: pathOf(aiRoutes[mapStaffId] ?? []), color: AI_LINE });
-    return { points: pts, lines: lns };
-  }, [mapStaffId, staffById, visitById, clientById, manualRoutes, aiRoutes, aiPlan]);
-
-  // ---- 入らなかった訪問・計算に入れなかった訪問 ----
-  const infeasibleOf = useMemo(() => {
-    const out = new Map<string, Reason[]>();
-    for (const f of problem?.infeasible ?? []) {
-      const v = problem?.visits[f.visit];
-      if (v) out.set(v.id, f.reasons);
+      lns.push({ points: path, color });
     }
-    return out;
-  }, [problem]);
-  const notInProblem = problem ? visits.filter((v) => !problem.visits.some((p) => p.id === v.id)) : [];
+    return { points: pts, lines: lns };
+  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById]);
 
-  const ms = manualScore?.value ?? null;
-  const as = aiScore?.value ?? null;
+  const notInProblem = problem ? visits.filter((v) => !problem.visits.some((p) => p.id === v.id)) : [];
+  const cs = curScore?.value ?? null;
+  const gs = genScore?.value ?? null;
+
+  /** 訪問カード（ドラッグで担当を移す。押すと理由と担当の選択） */
+  const card = (id: string) => {
+    const e = explained.get(id);
+    const t = e?.timing ?? null;
+    const isPicked = picked === id;
+    const pin = pins[id];
+    const hard = hardOf.get(id);
+    const ownerId = owner.get(id) ?? null;
+    return (
+      <div key={id}>
+        {t && (
+          <div className="leg-line">
+            {routes[ownerId ?? '']?.[0] === id ? '自宅から ' : '↓ 移動 '}
+            {r0(t.travelIn)}分{t.wait > 0 && `（待ち ${r0(t.wait)}分）`}
+          </div>
+        )}
+        <div
+          className={`route-item ${hard ? 'is-red' : pin ? 'is-pinned' : ''} ${isPicked ? 'is-picked' : ''} ${dragging === id ? 'is-dragging' : ''}`}
+          data-visit={id}
+          {...dragProps(id)}
+        >
+          {/* ボタン要素の上からはドラッグが始まらない（Chrome）ので、押す所は div にしてキーボードでも開けるようにする */}
+          {/* biome-ignore lint/a11y/useSemanticElements: ドラッグの元にするため button にしない */}
+          <div
+            role="button"
+            tabIndex={0}
+            className="route-btn plain-btn"
+            onClick={() => setPicked(isPicked ? null : id)}
+            onKeyDown={(ev) => {
+              if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                setPicked(isPicked ? null : id);
+              }
+            }}
+            title="押すと理由を見られます。ドラッグで別の担当へ移せます"
+          >
+            <span className="sub nowrap">
+              {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : (visitById.get(id)?.earliestStart ?? '')}
+            </span>
+            <ClientName client={clientOf(id)} />
+          </div>
+          {(pin || hard) && (
+            <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
+              {pin && (
+                <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
+                  📌 固定
+                </span>
+              )}
+              {pin && (
+                <button type="button" className="btn btn-small" onClick={() => unpin(id)} disabled={!!running}>
+                  固定を外す
+                </button>
+              )}
+              {hard?.map((h) => (
+                <span key={h} className="chip chip-red" title="必須の条件の違反">
+                  ✕ {h}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        {isPicked && (
+          <div className="stack" style={{ gap: 4 }}>
+            <ReasonBox explain={e} />
+            <label className="row sub" style={{ gap: 6 }}>
+              担当を選ぶ
+              <select
+                value={ownerId ?? ''}
+                disabled={!!running}
+                onChange={(ev) => {
+                  if (ev.target.value) moveTo(id, ev.target.value);
+                }}
+                aria-label="担当を選ぶ"
+              >
+                {!ownerId && <option value="">未割当</option>}
+                {columns.map((sid) => (
+                  <option key={sid} value={sid}>
+                    {staffName(sid)}
+                    {allowedFor(id, sid) ? '' : '（必須の条件に合わない）'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="plan-layout">
       <div className="stack" style={{ minWidth: 0 }}>
-        <h2>AI案</h2>
+        <div className="spread" style={{ flexWrap: 'wrap' }}>
+          <h2>AI案</h2>
+          <NavLink to="/compare" className="sub">
+            手作業案との比較 →
+          </NavLink>
+        </div>
         <div className="card stack">
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-primary" disabled={running || !problem} onClick={create}>
-              {running ? '作っています…' : 'AI案を作る'}
+            <button type="button" className="btn btn-primary" disabled={!!running || !problem} onClick={create}>
+              {running === 'create' ? '作っています…' : 'AI案を作る'}
             </button>
+            {aiPlan && (
+              <button
+                type="button"
+                className="btn"
+                disabled={!!running || !problem}
+                onClick={resolve}
+                title="固定した訪問の担当は変えずに、残りを AI が組み直します"
+              >
+                {running === 'resolve'
+                  ? '組み直しています…'
+                  : `固定を残して組み直す${pinCount > 0 ? `（固定 ${pinCount}件）` : ''}`}
+              </button>
+            )}
+            {aiPlan && (
+              <button type="button" className="btn" disabled={!!running || !edited} onClick={revert}>
+                AI案に戻す
+              </button>
+            )}
             {running && (
               <button type="button" className="btn" onClick={stop}>
                 止める
               </button>
             )}
-            {aiPlan && !running && (
-              <span className="sub">
-                {new Date(aiPlan.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} に作成（乱数の種{' '}
-                {aiPlan.seed}・{aiPlan.iterations.toLocaleString()}回{aiPlan.stopped && '・途中で止めた案'}）
-              </span>
-            )}
           </div>
+          {aiPlan && !running && (
+            <span className="sub">
+              {new Date(aiPlan.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} に作成（乱数の種{' '}
+              {aiPlan.seed}・{aiPlan.iterations.toLocaleString()}回{aiPlan.stopped && '・途中で止めた案'}）。訪問を別の
+              {terms.staff}の列へドラッグ（または押して担当を選ぶ）と、その{terms.staff}
+              の回る順番の中で最も費用の少ない位置に入り、固定になります。
+            </span>
+          )}
           {running && (
             <div className="stack" style={{ gap: 4 }}>
               <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} style={{ width: '100%' }} />
@@ -337,7 +519,7 @@ export default function PlanPage() {
           {error && <p className="error">{error}</p>}
           {stale && (
             <p className="warn-text">
-              このAI案を作ったあとに条件が変わりました。点数はいまの条件で付け直しています。「再計算」で作り直せます。
+              このAI案を作ったあとに条件が変わりました。点数はいまの条件で付け直しています。「AI案を作る」か「固定を残して組み直す」で作り直せます。
             </p>
           )}
         </div>
@@ -350,97 +532,84 @@ export default function PlanPage() {
           <>
             <div className="card stack">
               <div className="spread" style={{ flexWrap: 'wrap' }}>
-                <h3>手作業案とAI案の比較</h3>
-                <button type="button" className="btn btn-primary" disabled={running} onClick={adopt}>
-                  この案を採用
+                <h3>今の案{edited ? '（手直し後）' : ''}</h3>
+                <button type="button" className="btn btn-primary" disabled={!!running} onClick={adopt}>
+                  予定に採用
                 </button>
               </div>
-              {prevDiff?.value && (
-                <p className="sub">
-                  前回のAI案との差：担当が変わった訪問 {prevDiff.value.changedVisits.length}件・移動{' '}
-                  {deltaText(prevDiff.value.travelDelta, '分')}・合計点 {deltaText(prevDiff.value.scoreDelta, '点')}
-                </p>
+              <PlanSummary current={cs} generated={gs} changed={genDiff?.value?.changedVisits.length ?? 0} />
+              {problem && cs && <BalanceChips problem={problem} routes={routes} staffName={staffName} />}
+              {(curScore?.error || genScore?.error) && (
+                <p className="error">採点できません（{curScore?.error ?? genScore?.error}）</p>
               )}
-              <CompareTable manual={ms} ai={as} rules={data.rules} error={manualScore?.error ?? aiScore?.error} />
             </div>
 
             <div className="card stack">
-              <h3>{terms.staff}ごとの比較（左：手作業案、右：AI案）</h3>
-              <p className="sub">訪問を押すと、その担当になった理由（点の内訳）が出ます。</p>
-              <div className="compare">
-                <div className="compare-row compare-header">
-                  <div />
-                  <div>手作業案（予定画面の割当）</div>
-                  <div>AI案</div>
-                </div>
-                {staffIds.map((id) => {
-                  const pm = routeTotals(id, manualRoutes[id] ?? []);
-                  const pa = routeTotals(id, aiRoutes[id] ?? []);
-                  const d = r0((pa?.travelMinutes ?? 0) - (pm?.travelMinutes ?? 0));
+              <h3>{terms.staff}ごとの順番</h3>
+              <p className="sub">
+                訪問をドラッグして別の{terms.staff}へ移せます。押すと理由（点の内訳）と担当の選択が出ます。📌
+                は固定（組み直しても担当を変えない）。
+              </p>
+              <div className="route-grid">
+                {unassigned.length > 0 && (
+                  <div className="route-col route-col-none">
+                    <div className="spread">
+                      <strong>入らなかった訪問</strong>
+                      <span className="sub nowrap">{unassigned.length}件</span>
+                    </div>
+                    {unassigned.map((id) => {
+                      const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
+                      return (
+                        <div key={id} className="stack" style={{ gap: 2 }}>
+                          {card(id)}
+                          {inf?.reasons.map((r) => (
+                            <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
+                              {r.label}
+                              {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {columns.map((sid) => {
+                  const ids = routes[sid] ?? [];
+                  const notAllowed = dropTo === sid && dragging !== null && !allowedFor(dragging, sid);
                   return (
-                    <div key={id} className="compare-row" style={{ borderTopColor: colorOfStaff.get(id) }}>
-                      <button
-                        type="button"
-                        className={`compare-staff ${mapStaffId === id ? 'is-on' : ''}`}
-                        onClick={() => setMapStaff(id)}
-                        title="地図で見る"
-                      >
-                        <strong style={{ color: colorOfStaff.get(id) }}>{staffName(id)}</strong>
-                        <span className="sub">
-                          {manualRoutes[id]?.length ?? 0}件 → {aiRoutes[id]?.length ?? 0}件
-                        </span>
-                        {pm && pa && (
-                          <>
-                            <span className="sub">
-                              移動 {r0(pm.travelMinutes)}分 → {r0(pa.travelMinutes)}分
-                            </span>
-                            <span className={`chip ${d < 0 ? 'chip-ok' : d > 0 ? 'chip-warn' : ''}`}>
-                              {deltaText(d, '分')}
-                            </span>
-                          </>
-                        )}
-                      </button>
-                      <div className="compare-col">{stopCards(id, 'manual')}</div>
-                      <div className="compare-col">{stopCards(id, 'ai')}</div>
+                    <div
+                      key={sid}
+                      className={['route-col', dropTo === sid ? 'is-drop' : '', notAllowed ? 'is-red' : ''].join(' ')}
+                      style={{ borderTopColor: colorOfStaff.get(sid) }}
+                      data-staff={sid}
+                      {...dropProps(sid)}
+                    >
+                      <div className="spread">
+                        <strong className="ellipsis" style={{ color: colorOfStaff.get(sid) }}>
+                          {staffName(sid)}
+                        </strong>
+                        <span className="sub nowrap">{ids.length}件</span>
+                      </div>
+                      {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
+                      {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
+                      {ids.map((id) => card(id))}
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {aiPlan.unassigned.length > 0 && (
-              <div className="card stack">
-                <h3>AI案で割り当てられなかった訪問</h3>
-                {aiPlan.unassigned.map((id) => {
-                  const inf = infeasibleOf.get(id);
-                  const ex = aiExplain.get(id);
-                  const reasons = inf ?? ex?.reasons ?? [];
-                  return (
-                    <div key={id} className="row" style={{ flexWrap: 'wrap' }}>
-                      <span>{visitLabel(id)}</span>
-                      {inf && <span className="sub">どの{terms.staff}も担当できません：</span>}
-                      {reasons.map((r) => (
-                        <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
-                          {r.label}
-                          {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
-                        </span>
-                      ))}
-                      {reasons.length === 0 && <span className="sub">（原因を出せませんでした）</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
             <div className="card stack">
-              <div className="spread">
-                <h3>地図：{mapStaffId ? staffName(mapStaffId) : ''}（点線：手作業、実線：AI）</h3>
-                <span className="sub">上の比較で{terms.staff}の名前を押すと切り替わります</span>
-              </div>
-              <RouteMap points={points} lines={lines} height={400} />
-              <div className="row sub">
-                <span style={{ color: MANUAL_LINE }}>- - - 手作業</span>
-                <span style={{ color: AI_LINE }}>━━ AI</span>
+              <h3>地図：今の案（実線、{terms.staff}ごとの色。「家」は自宅）</h3>
+              <RouteMap points={points} lines={lines} height={420} />
+              <div className="row sub" style={{ flexWrap: 'wrap' }}>
+                {columns
+                  .filter((sid) => (routes[sid]?.length ?? 0) > 0)
+                  .map((sid) => (
+                    <span key={sid} className="nowrap">
+                      <span style={{ color: colorOfStaff.get(sid) }}>━</span> {staffName(sid)}
+                    </span>
+                  ))}
               </div>
             </div>
           </>
@@ -479,147 +648,94 @@ export default function PlanPage() {
         )}
       </div>
 
-      <WeightPanel running={running} onRecalc={create} canRun={!!problem} />
+      <WeightPanel running={!!running} onRecalc={create} canRun={!!problem} recalcLabel="AI案を作り直す" />
     </div>
   );
 }
 
-/** routes の訪問ごとの説明（未実装なら空） */
-function explainMap(problem: Problem | null, routes: Record<string, string[]>): Map<string, VisitExplain> {
-  if (!problem) return new Map();
-  const r = attempt(() => explain(problem, routes));
-  return new Map((r.value ?? []).map((e) => [e.visitId, e]));
-}
-
-/** 訪問カードを押したときの理由（例「相性◎ −30」「移動12分 +12」） */
-function ReasonBox({ explain: e }: { explain: VisitExplain | undefined }) {
-  if (!e) return <div className="reason-box sub">理由を出せませんでした</div>;
+/** 今の案の合計点・移動・待ち・必須の違反と、AIが出したままとの差 */
+function PlanSummary({
+  current,
+  generated,
+  changed,
+}: {
+  current: PlanScore | null;
+  generated: PlanScore | null;
+  changed: number;
+}) {
+  if (!current) return null;
+  const delta = (a: number, b: number | undefined, unit: string) => {
+    if (b === undefined) return null;
+    const d = a - b;
+    if (Math.round(d * 10) === 0) return null;
+    return <span className={`sub ${d < 0 ? 'ok-text' : 'warn-text'}`}>（{deltaText(d, unit)}）</span>;
+  };
   return (
-    <div className="reason-box">
-      {e.reasons.length === 0 && <span className="sub">点の付く条件はありません</span>}
-      {e.reasons.map((r) => (
-        <div key={`${r.ruleId}:${r.label}`} className="spread">
-          <span>{r.label}</span>
-          <strong className={r.points < 0 ? 'ok-text' : r.points > 0 ? 'warn-text' : ''}>{pointsText(r.points)}</strong>
-        </div>
-      ))}
-      {e.timing && (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <span className="chip" data-testid="plan-total">
+          合計 {r0(current.total)}点{delta(current.total, generated?.total, '点')}
+        </span>
+        <span className="chip">
+          移動 {r0(current.travelMinutes)}分{delta(current.travelMinutes, generated?.travelMinutes, '分')}
+        </span>
+        <span className="chip">
+          待ち {r0(current.waitMinutes)}分{delta(current.waitMinutes, generated?.waitMinutes, '分')}
+        </span>
+        <span className="chip">負担の均等 {pointsText(current.balancePoints)}点</span>
+        <span className={`chip ${current.hardViolations.length > 0 ? 'chip-red' : 'chip-ok'}`}>
+          必須の違反 {current.hardViolations.length}件
+        </span>
+        {current.dropped > 0 && <span className="chip chip-warn">入らなかった訪問 {current.dropped}件</span>}
+      </div>
+      {generated && (
         <span className="sub">
-          着 {minutesToHhmm(e.timing.arrival)}・開始 {minutesToHhmm(e.timing.start)}
-          {e.timing.wait > 0 && `・待ち ${r0(e.timing.wait)}分`}
+          AIが出したまま：合計 {r0(generated.total)}点・移動 {r0(generated.travelMinutes)}分・待ち{' '}
+          {r0(generated.waitMinutes)}分{changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
         </span>
       )}
     </div>
   );
 }
 
-/** 合計点・移動・待ち・距離・条件ごとの達成/違反の比較表 */
-function CompareTable({
-  manual,
-  ai,
-  rules,
-  error,
+/** スタッフごとの件数と目安の帯（帯の外は色、必須の上限を超えたら赤） */
+function BalanceChips({
+  problem,
+  routes,
+  staffName,
 }: {
-  manual: PlanScore | null;
-  ai: PlanScore | null;
-  rules: { id: string; label: string }[];
-  error?: string | null;
+  problem: Problem;
+  routes: Record<string, string[]>;
+  staffName: (id: string) => string;
 }) {
-  if (!manual || !ai) return <p className="sub">採点できません{error ? `（${error}）` : ''}</p>;
-  const row = (label: string, a: number, b: number, unit: string, digits = 0) => {
-    const f = (n: number) => (digits ? r1(n) : r0(n));
-    const d = b - a;
-    return (
-      <tr key={label}>
-        <th>{label}</th>
-        <td className="num">
-          {f(a)}
-          {unit}
-        </td>
-        <td className="num">
-          <strong>
-            {f(b)}
-            {unit}
-          </strong>
-        </td>
-        <td className={`num ${d < 0 ? 'ok-text' : d > 0 ? 'warn-text' : 'sub'}`}>{deltaText(d, unit)}</td>
-      </tr>
-    );
-  };
-  const ruleIds = [...rules.map((r) => r.id), ...Object.keys({ ...manual.perRule, ...ai.perRule })].filter(
-    (id, i, a) => a.indexOf(id) === i,
-  );
-  const labelOf = (id: string) => rules.find((r) => r.id === id)?.label ?? id;
-  const cell = (s: PlanScore, id: string) => {
-    const p = s.perRule[id];
-    if (!p) return <span className="sub">—</span>;
-    return (
-      <span>
-        達成 {p.hits}・違反 <span className={p.misses > 0 ? 'warn-text' : ''}>{p.misses}</span>
-        <span className="sub">（{pointsText(p.points)}）</span>
+  const b = problem.balance;
+  const rows = problem.staff
+    .map((s, i) => ({ id: s.id, i, n: routes[s.id]?.length ?? 0, working: s.slots.length > 0 }))
+    .filter((x) => x.working || x.n > 0);
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <span className="sub">
+        件数の偏り（{b ? '目安の帯は稼働時間に比例' : '負担の均等の条件が無効'}
+        {b?.cap ? '・必須：目安の上＋1件まで' : ''}）
       </span>
-    );
-  };
-  return (
-    <div className="table-scroll">
-      <table className="compare-table">
-        <thead>
-          <tr>
-            <th />
-            <th className="num">手作業案</th>
-            <th className="num">AI案</th>
-            <th className="num">差</th>
-          </tr>
-        </thead>
-        <tbody>
-          {row('合計点（低いほど良い）', manual.total, ai.total, '点')}
-          {row('移動時間', manual.travelMinutes, ai.travelMinutes, '分')}
-          {row('待ち時間', manual.waitMinutes, ai.waitMinutes, '分')}
-          {row('移動距離', manual.meters / 1000, ai.meters / 1000, 'km', 1)}
-          {row('入らなかった訪問', manual.dropped, ai.dropped, '件')}
-          {row('必須の違反', manual.hardViolations.length, ai.hardViolations.length, '件')}
-          {ruleIds.map((id) => (
-            <tr key={id}>
-              <th>{labelOf(id)}</th>
-              <td className="num">{cell(manual, id)}</td>
-              <td className="num">{cell(ai, id)}</td>
-              <td className="num sub">
-                {deltaText((ai.perRule[id]?.points ?? 0) - (manual.perRule[id]?.points ?? 0))}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
+        {rows.map(({ id, i, n }) => {
+          const lo = b?.lo[i] ?? 0;
+          const hi = b?.hi[i] ?? 0;
+          const over = b?.cap ? n > b.cap[i]! : false;
+          const out = b ? n < lo || n > hi : false;
+          const band = lo === hi ? `${lo}` : `${lo}〜${hi}`;
+          return (
+            <span
+              key={id}
+              className={`chip ${over ? 'chip-red' : out ? 'chip-warn' : 'chip-ok'}`}
+              title={b ? `目安 ${band}件` : ''}
+            >
+              {staffName(id)} {n}件{b && <span className="sub">（目安 {band}）</span>}
+            </span>
+          );
+        })}
+      </div>
     </div>
-  );
-}
-
-/** 横の小さな重みの欄（D14）。変えたらすぐ「再計算」できる */
-function WeightPanel({ running, onRecalc, canRun }: { running: boolean; onRecalc: () => void; canRun: boolean }) {
-  const { data, update } = useDemoData();
-  return (
-    <aside className="card stack side-panel">
-      <h3>条件の重み</h3>
-      <span className="sub">重み1＝移動10分ぶん。0で無効。</span>
-      {data.rules.map((r) => (
-        <div key={r.id} className={`stack side-rule ${r.weight === 0 && !r.hard ? 'is-dim' : ''}`} style={{ gap: 2 }}>
-          <span className="side-rule-label">
-            {r.label}
-            {r.hard && HARDABLE.has(r.type) && <span className="chip chip-primary">必須</span>}
-          </span>
-          <WeightSlider
-            label={r.label}
-            value={r.weight}
-            disabled={r.hard && HARDABLE.has(r.type)}
-            onChange={(w) =>
-              update((d) => ({ ...d, rules: d.rules.map((x) => (x.id === r.id ? { ...x, weight: w } : x)) }))
-            }
-          />
-        </div>
-      ))}
-      <button type="button" className="btn btn-small" disabled={running || !canRun} onClick={onRecalc}>
-        再計算
-      </button>
-    </aside>
   );
 }

@@ -55,7 +55,8 @@ export type Condition = z.infer<typeof conditionSchema>;
  * compatibility：◎(2)＝−重み×10、○(1)＝−重み×5、空(0)＝0、△(-1)＝＋重み×10。×(-2) は重み・hard にかかわらず外す
  *               hard なら △ も外す
  * continuity：いつもの担当（usualStaffId）がいる訪問先で、別の人＝重み×10点。hard なら可否で外す
- * balance：稼働時間に比例した件数の帯 [floor, ceil] から外れた1件＝重み×10点（hard は使わない）
+ * balance：スタッフごとに、稼働時間に比例した件数の目安の帯 [floor, ceil] から外れた件数 e について 重み×10×e² 点。
+ *          hard なら件数の上限＝ceil+1（超える割当はしない）
  * wait：待ち1分＝重み×0.1点（hard は使わない）
  * 同じ型の条件が複数あってもよい（重みは足し合わせる）。weight=0 かつ hard=false は無効
  */
@@ -77,6 +78,7 @@ export const HARDABLE: ReadonlySet<RuleType> = new Set([
   'staffPreference',
   'compatibility',
   'continuity',
+  'balance',
 ]);
 
 export const ruleSchema = z.object({

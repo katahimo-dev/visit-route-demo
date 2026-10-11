@@ -1,6 +1,6 @@
 import type { TravelMode } from '../contracts/codes';
 import type { Place, Terms } from '../contracts/documents';
-import type { ItemKind, Op, RuleType } from '../contracts/rules';
+import { HARDABLE, type ItemKind, type Op, type RuleType } from '../contracts/rules';
 import { weekday } from '../domain/time';
 
 /** 画面の共通の表示（呼び方は org.terms から引く。「お客様」「シッター」を直書きしない） */
@@ -58,6 +58,11 @@ export const OPS_BY_KIND: Record<ItemKind, Op[]> = {
   number: ['gte', 'lte', 'is', 'not'],
 };
 
+/** 重みのスライダーを止めるか（必須の条件は重みを使わない。負担の均等は必須でも重みを使う） */
+export function weightLocked(r: { type: RuleType; hard: boolean }): boolean {
+  return r.hard && HARDABLE.has(r.type) && r.type !== 'balance';
+}
+
 /** 条件の型の名前 */
 export function ruleTypeLabel(type: RuleType, t: Terms): string {
   switch (type) {
@@ -96,7 +101,7 @@ export function ruleTypeHelp(type: RuleType, t: Terms): string {
     case 'continuity':
       return `いつもの担当が決まっている${t.client}で、別の人が行くと 重み×10点。必須にすると、いつもの担当だけが行きます。`;
     case 'balance':
-      return `勤務時間に合わせた件数の目安から外れた1件につき 重み×10点。${t.staff}の件数をそろえます（必須にはできません）。`;
+      return `勤務時間に合わせた件数の目安（例：2〜3件）から外れるほど重くします（外れた件数の2乗×重み×10点。1件で30点、2件で120点＜重み3のとき＞）。${t.staff}の件数をそろえます。必須にすると、目安の上限＋1件を超える割当はしません（重みも使います）。`;
     case 'wait':
       return '訪問のあいだの待ち時間1分につき 重み×0.1点（必須にはできません）。';
   }

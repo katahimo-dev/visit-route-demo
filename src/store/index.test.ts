@@ -68,6 +68,36 @@ describe('書き出し・読み込み', () => {
   });
 });
 
+describe('AI案の手直し（ADR-0004）の移行', () => {
+  const old = {
+    date: '2026-10-12',
+    createdAt: 1,
+    seed: 1,
+    iterations: 100,
+    routes: { s1: ['v1'], s2: [] },
+    unassigned: ['v2'],
+    score: 123,
+    stopped: false,
+    rules: [],
+  };
+  it('generated・pins が無い保存データは、generated＝routes の写し・pins＝{} で補って読める（版は上げない）', () => {
+    const d = { ...createDemoData('2026-10-12'), aiPlans: { '2026-10-12': old }, prevAiPlans: { '2026-10-12': old } };
+    const r = migrate(JSON.parse(JSON.stringify(d))) as DemoData;
+    expect(isImportError(r)).toBe(false);
+    expect(r.version).toBe(1);
+    const plan = r.aiPlans['2026-10-12']!;
+    expect(plan.generated).toEqual({ routes: { s1: ['v1'], s2: [] }, unassigned: ['v2'], score: 123 });
+    expect(plan.pins).toEqual({});
+    expect(r.prevAiPlans['2026-10-12']!.pins).toEqual({});
+  });
+  it('generated・pins があればそのまま', () => {
+    const plan = { ...old, generated: { routes: { s1: [] }, unassigned: [], score: 1 }, pins: { v1: 's1' } };
+    const d = { ...createDemoData('2026-10-12'), aiPlans: { '2026-10-12': plan } };
+    const r = migrate(JSON.parse(JSON.stringify(d))) as DemoData;
+    expect(r.aiPlans['2026-10-12']).toEqual(plan);
+  });
+});
+
 describe('load・save', () => {
   it('無ければ初期データを作って保存する', () => {
     const d = load();
