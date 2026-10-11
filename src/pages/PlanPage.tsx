@@ -48,7 +48,9 @@ export default function PlanPage() {
     };
   }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ訪問を外す
-  useEffect(() => setPicked(null), [date]);
+  useEffect(() => {
+    setPicked(null);
+  }, [date]);
 
   const aiPlan: AiPlan | undefined = data.aiPlans[date];
   const prevPlan: AiPlan | undefined = data.prevAiPlans[date];

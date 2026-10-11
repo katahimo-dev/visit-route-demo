@@ -69,8 +69,11 @@ function AdminShell() {
   const terms = data.org.terms;
   const { pathname } = useLocation();
   // 画面を移ったら上へ
+  // 本体はブロックにする（式本体だと戻り値が後始末として呼ばれる。Brave の scrollTo は値を返し「is not a function」になった）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 画面を移ったときだけ
-  useEffect(() => window.scrollTo(0, 0), [pathname]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
   return (
     <div className="app-shell">
       <header className="app-header">
