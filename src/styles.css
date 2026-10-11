@@ -666,3 +666,258 @@ th {
   color: #2f5f99;
   font-weight: 700;
 }
+
+/* デモ版：上部ナビ・日付の切り替え・注意書き */
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.app-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.demo-note {
+  font-size: 0.72rem;
+  color: var(--sub);
+}
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex: 1;
+}
+.top-nav a {
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+.top-nav a.active {
+  background: #fde3dd;
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+.date-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.date-switch select {
+  width: auto;
+  padding: 6px 8px;
+}
+.app-main {
+  padding: 20px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.save-error {
+  background: #fbe1dd;
+  color: var(--danger);
+  font-weight: 700;
+  padding: 8px 16px;
+}
+.error-detail {
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  background: #faf6f2;
+  padding: 8px;
+  border-radius: 8px;
+}
+.ok-text {
+  color: var(--ok);
+  font-weight: 700;
+}
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+}
+
+/* チェックボックス・入力欄 */
+label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  color: var(--ink);
+}
+label.check input {
+  width: auto;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+.field-label {
+  color: var(--sub);
+}
+.cond-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) minmax(140px, 190px) minmax(140px, 1fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.cond-text {
+  font-size: 0.8rem;
+}
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 2px 10px;
+  background: #faf6f2;
+  border-radius: 8px;
+}
+
+/* 重みのスライダー（ClassClassify の Setup にならう。0 で半透明） */
+.weight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.weight input[type="range"] {
+  padding: 0;
+  border: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.weight-value {
+  min-width: 2.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.is-dim {
+  opacity: 0.45;
+}
+.rules-table td {
+  vertical-align: top;
+}
+.rule-help {
+  margin-top: 4px;
+  line-height: 1.5;
+  max-width: 520px;
+}
+
+/* AI案：横の重みの欄・理由 */
+.plan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .plan-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.side-panel {
+  position: sticky;
+  top: 120px;
+  gap: 10px;
+}
+.side-rule-label {
+  font-size: 0.85rem;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.route-btn {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.route-item.is-picked {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.reason-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #faf6f2;
+  font-size: 0.85rem;
+}
+.compare-table th {
+  font-weight: 600;
+}
+
+/* 相性の表 */
+.compat-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  width: auto;
+}
+.compat-table th,
+.compat-table td {
+  padding: 2px;
+  border: 0;
+}
+.compat-head {
+  font-size: 0.8rem;
+  text-align: center !important;
+  white-space: nowrap;
+}
+.compat-btn {
+  width: 44px;
+  height: 36px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: #faf6f2;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--ink);
+}
+.compat-btn.lv2,
+.compat-btn.lv1 {
+  background: #e1f1e7;
+  color: var(--ok);
+}
+.compat-btn.lvm1 {
+  background: #fbefd6;
+  color: #a46d0a;
+}
+.compat-btn.lvm2 {
+  background: #fbe1dd;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* スタッフのスマホ画面風 */
+.phone-wrap {
+  max-width: 440px;
+  margin: 16px auto;
+  padding: 0 12px;
+}
+.phone {
+  border: 10px solid #3b2f2a;
+  border-radius: 32px;
+  background: var(--bg);
+  padding: 16px;
+  min-height: 640px;
+}

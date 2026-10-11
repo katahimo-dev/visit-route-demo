@@ -1,0 +1,100 @@
+import { useRef, useState } from 'react';
+import { useToast } from '../components/Toast';
+import { attempt, formError } from '../lib/common';
+import { exportJson, importJson, useDemoData } from '../store';
+
+/** データ：書き出し・読み込み・初期状態に戻す（D2・D3） */
+export default function DataPage() {
+  const { data, replace, reset, saveError } = useDemoData();
+  const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const download = () => {
+    setError(null);
+    const r = attempt(() => exportJson(data));
+    if (!r.value) {
+      setError(`書き出せませんでした（${r.error}）`);
+      return;
+    }
+    const url = URL.createObjectURL(r.value);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `visit-route-demo-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('書き出しました');
+  };
+
+  const load = async (file: File) => {
+    setError(null);
+    try {
+      const text = await file.text();
+      const r = importJson(text);
+      if ('code' in r) {
+        setError(`読み込めませんでした：${r.message}（いまのデータはそのままです）`);
+        return;
+      }
+      if (!confirm(`「${file.name}」の内容で、いまのデータをすべて置き換えます。よろしいですか？`)) return;
+      replace(r);
+      toast('読み込みました');
+    } catch (e) {
+      setError(`読み込めませんでした：${formError(e)}（いまのデータはそのままです）`);
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const doReset = () => {
+    if (!confirm('データをデモの初期状態に戻します。いまの変更はすべて消えます。よろしいですか？')) return;
+    reset();
+    toast('初期状態に戻しました');
+  };
+
+  return (
+    <div className="stack" style={{ maxWidth: 720 }}>
+      <h2>データ</h2>
+      <div className="card stack">
+        <p>
+          このデモのデータは、<strong>このブラウザの中だけ</strong>に保存しています。サーバーには送りません。
+          実在の人の名前・住所などの個人情報は入れないでください。
+        </p>
+        {saveError && <p className="error">保存できませんでした：{saveError}。書き出して保管してください。</p>}
+      </div>
+
+      <div className="card stack">
+        <h3>書き出す</h3>
+        <p className="sub">データ一式を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。</p>
+        <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
+          ファイルに書き出す
+        </button>
+      </div>
+
+      <div className="card stack">
+        <h3>読み込む</h3>
+        <p className="sub">書き出したファイルを読み込み、いまのデータと置き換えます（置き換える前に確認します）。</p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          aria-label="読み込むファイル"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void load(f);
+          }}
+        />
+        {error && <p className="error">{error}</p>}
+      </div>
+
+      <div className="card stack">
+        <h3>初期状態に戻す</h3>
+        <p className="sub">デモの架空の事業所のデータに戻します。</p>
+        <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={doReset}>
+          デモの初期状態に戻す
+        </button>
+      </div>
+    </div>
+  );
+}

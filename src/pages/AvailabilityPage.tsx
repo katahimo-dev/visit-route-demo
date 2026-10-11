@@ -1,0 +1,159 @@
+import { useMemo, useState } from 'react';
+import { useDay } from '../app/day';
+import { SlotEditor } from '../components/parts';
+import { useToast } from '../components/Toast';
+import type { Availability } from '../contracts/documents';
+import { availabilityOf, type Slot, slotsError, slotsText, toHalfHours } from '../domain/availability';
+import { weekday } from '../domain/time';
+import { byName, WEEKDAY_LABELS } from '../lib/common';
+import { useDemoData } from '../store';
+
+/** セルの短い表示：「9-18」「9:30-12」。休みは「休」 */
+const short = (slots: Slot[]) =>
+  slots.length === 0
+    ? ['休']
+    : slots.map(
+        (s) => `${s.start.replace(/^0/, '').replace(/:00$/, '')}-${s.end.replace(/^0/, '').replace(/:00$/, '')}`,
+      );
+
+/**
+ * 稼働時間帯のカレンダー（スタッフ×日。PoC本体 AvailabilityPage.tsx の簡易版：管理者のみ・データの中の日付だけ）。
+ * 基本の曜日と時間が薄い字、日ごとに変えた日は色付き。セルを押すと下で直せる
+ */
+export default function AvailabilityPage() {
+  const { data, update } = useDemoData();
+  const { date: today, dates } = useDay();
+  const terms = data.org.terms;
+  const toast = useToast();
+  const staff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
+  const overrides = useMemo(
+    () => new Map(data.availability.map((a) => [`${a.staffId}_${a.date}`, a])),
+    [data.availability],
+  );
+  const [picked, setPicked] = useState<{ staffId: string; date: string } | null>(null);
+  const [draft, setDraft] = useState<Slot[]>([]);
+  const pickedStaff = picked ? staff.find((s) => s.id === picked.staffId) : undefined;
+  const pickedOverride = picked ? overrides.get(`${picked.staffId}_${picked.date}`) : undefined;
+
+  const pick = (staffId: string, date: string) => {
+    const s = staff.find((x) => x.id === staffId);
+    if (!s) return;
+    setPicked({ staffId, date });
+    setDraft(toHalfHours(availabilityOf(s, date, overrides.get(`${staffId}_${date}`)).slots));
+  };
+  const save = (slots: Slot[]) => {
+    if (!picked || slotsError(slots)) return;
+    const a: Availability = { staffId: picked.staffId, date: picked.date, slots };
+    update((d) => ({
+      ...d,
+      availability: [...d.availability.filter((x) => !(x.staffId === a.staffId && x.date === a.date)), a],
+    }));
+    setDraft(slots);
+    toast(slots.length === 0 ? '休みにしました' : '時間帯を保存しました');
+  };
+  const reset = () => {
+    if (!picked || !pickedStaff) return;
+    update((d) => ({
+      ...d,
+      availability: d.availability.filter((x) => !(x.staffId === picked.staffId && x.date === picked.date)),
+    }));
+    setDraft(toHalfHours(availabilityOf(pickedStaff, picked.date, null).slots));
+    toast('基本の時間に戻しました');
+  };
+
+  return (
+    <div className="stack">
+      <h2>稼働時間</h2>
+      <div className="card stack">
+        <p className="sub">
+          薄い字は基本の曜日と時間（{terms.staff}
+          の設定）。色の付いた日は、その日だけ変えた時間です。セルを押すと下で変更できます。
+        </p>
+        <div className="table-scroll">
+          <table className="avail-table">
+            <thead>
+              <tr>
+                <th className="avail-name">{terms.staff}</th>
+                {dates.map((d) => (
+                  <th key={d} className={`avail-day dow-${weekday(d)} ${d === today ? 'is-today' : ''}`}>
+                    {Number(d.slice(5, 7))}/{Number(d.slice(8))}
+                    <br />
+                    {WEEKDAY_LABELS[weekday(d)]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {staff.map((s) => (
+                <tr key={s.id}>
+                  <th className="avail-name">{s.name}</th>
+                  {dates.map((d) => {
+                    const o = overrides.get(`${s.id}_${d}`);
+                    const { slots } = availabilityOf(s, d, o);
+                    const isPicked = picked?.staffId === s.id && picked.date === d;
+                    return (
+                      <td key={d} className="avail-cell">
+                        <button
+                          type="button"
+                          className={[
+                            'avail-btn',
+                            o ? 'is-override' : '',
+                            slots.length === 0 ? 'is-off' : '',
+                            isPicked ? 'is-picked' : '',
+                          ].join(' ')}
+                          title={`${s.name} ${d}：${slotsText(slots)}`}
+                          onClick={() => pick(s.id, d)}
+                        >
+                          {short(slots).map((t) => (
+                            <span key={t}>{t}</span>
+                          ))}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {staff.length === 0 && <p className="sub">在籍中の{terms.staff}がいません。</p>}
+      </div>
+
+      {picked && pickedStaff && (
+        <div className="card stack" style={{ maxWidth: 560 }}>
+          <div className="spread">
+            <h3>
+              {pickedStaff.name}・{picked.date.slice(5).replace('-', '/')}（{WEEKDAY_LABELS[weekday(picked.date)]}）
+            </h3>
+            <button type="button" className="btn btn-small" onClick={() => setPicked(null)}>
+              閉じる
+            </button>
+          </div>
+          <p className="sub">
+            基本：{slotsText(availabilityOf(pickedStaff, picked.date, null).slots)}
+            {pickedOverride && '／この日は変更あり'}
+          </p>
+          <SlotEditor value={draft} onChange={setDraft} />
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!!slotsError(draft)}
+              onClick={() => save(draft)}
+            >
+              この時間で保存
+            </button>
+            <button type="button" className="btn" onClick={() => save([])}>
+              休みにする
+            </button>
+            {pickedOverride && (
+              <button type="button" className="btn" onClick={reset}>
+                基本の時間に戻す
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
