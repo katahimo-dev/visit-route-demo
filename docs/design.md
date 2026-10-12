@@ -2,7 +2,7 @@
 
 - PRD：[docs/prd.md](prd.md)
 - 作成者：松浦（草案：Claude）
-- 更新日：2026-10-11（負担の均等を2乗に・必須で上限、AI案の手直しと固定、比較は別画面。ADR-0004）
+- 更新日：2026-10-12（比較を「AI案の条件を変えた記録どうし」に変更、条件のプリセット3種、手作業の割当は seed に入れない。ADR-0005）。2026-10-11：負担の均等を2乗に・必須で上限、AI案の手直しと固定、比較は別画面（ADR-0004）
 - 状態：合意済み（2026-10-11）
 
 ## 1. 背景と目的
@@ -90,8 +90,8 @@ flowchart LR
 
 ### store（データ一式の保存）
 - 責務：データ一式（`DemoData`）の読み込み・保存・検査・版の移行、JSON の書き出し・読み込み、初期状態に戻す。画面へは React のフック（`useDemoData()`・`update(fn)`）で渡す。
-- 持つデータ（持ち主）：`DemoData`＝`{ version, org, staff[], clients[], visits[], availability[], manualPlans{date→routes}, items[], rules[], compat{clientId→{staffId→-2..2}}, aiPlans{date→AiPlan（routes＝手直し後、generated＝AIが出したまま、pins＝固定）}, seed }`。localStorage のキー `vrdemo:data:v1` に1つの JSON で置く。
-- 提供するAPI：`repair(data)`（契約は通るが中身が食い違うデータを直す：いない人・訪問を指す割当・相性・上書き・固定を除く、ID の重複は最初の1件。`migrate` のあとに必ず通す）、`load(): DemoData`、`save(data)`（300ms 間引き）、`reset(): DemoData`、`exportJson(data): Blob`、`importJson(text): DemoData | ImportError`、`migrate(raw): DemoData`。
+- 持つデータ（持ち主）：`DemoData`＝`{ version, org, staff[], clients[], visits[], availability[], manualPlans{date→routes}, items[], rules[], compat{clientId→{staffId→-2..2}}, aiPlans{date→AiPlan（routes＝手直し後、generated＝AIが出したまま、pins＝固定）}, aiRuns{date→AiRun[]（記録。§5）}, seed }`。`prevAiPlans`（前回のAI案）は廃止し、記録に置き換えた。localStorage のキー `vrdemo:data:v1` に1つの JSON で置く。
+- 提供するAPI：`repair(data)`（契約は通るが中身が食い違うデータを直す：いない人・訪問を指す割当・相性・上書き・固定を除く、ID の重複は最初の1件。記録 `aiRuns` も同じに直し、いない人・訪問を指す記録の割当を除き、1日20件を超える分は古いものから捨てる。`migrate` のあとに必ず通す）、`load(): DemoData`、`save(data)`（300ms 間引き）、`reset(): DemoData`、`exportJson(data): Blob`、`importJson(text): DemoData | ImportError`、`migrate(raw): DemoData`。版は1のまま。読み込み時、`prevAiPlans` は捨て、`aiRuns` が無い古いデータは `{}` で補う。
 - 依存するもの：seed（初期データ）、zod（検査）。
 - 配置：`src/store/`
 - 完了の条件：
@@ -100,7 +100,7 @@ flowchart LR
   - [ ] localStorage の容量超過で保存に失敗したら、書き出しを促す表示を出す
 
 ### seed（デモの初期データ）
-- 責務：PoC本体 `scripts/seedDemo.ts` の生成ロジック（仙台・スタッフ8人・訪問先20か所・日ごとの予定・稼働時間帯の上書き・手作業らしい割当）を写し、本デモの項目・条件・相性の初期セットを足す。日付だけで同じ結果が決まる。
+- 責務：PoC本体 `scripts/seedDemo.ts` の生成ロジック（仙台・スタッフ8人・訪問先20か所・日ごとの予定・稼働時間帯の上書き）を写し、本デモの項目・条件・相性の初期セットと、条件のプリセット3種（`src/seed/presets.ts`）を足す。手作業らしい割当は内部でだけ作り、データには入れない（`visits[].staffId` はすべて null、`manualPlans` は空 `{}`）。ただし訪問先の「いつもの担当」（`usualStaffId`）は、その割当で最も多く担当した人にする（継続の条件を試せるように）。日付だけで同じ結果が決まる。
 - 持つデータ（持ち主）：なし
 - 提供するAPI：`createDemoData(today: string): DemoData`（今日から14日分）
 - 依存するもの：domain
@@ -109,6 +109,8 @@ flowchart LR
   - [ ] PoC本体の性別希望（c6・c18 女性、c11 男性）は「性別」項目＋訪問先の必要条件に、NG（c2→s2、c12→s7）は相性「×」になる
   - [ ] 初期の項目は スタッフ側：性別・資格（介護福祉士/看護師/保育士/初任者研修 の複数）・経験年数（数値）・得意（高齢/子ども/障害/家事/話し相手 の複数）・喫煙者・ペット可。訪問先側：ペットあり・喫煙環境・対象（高齢/子ども/障害）。初期の条件は §5 の表の既定値
   - [ ] 同じ日付を渡すと同じデータになる（テスト）
+  - [ ] 手作業の割当が入らない（全訪問の `staffId` が null、`manualPlans` が `{}`）。`usualStaffId` は入る（テスト）
+  - [ ] プリセットは3種（標準・移動を短く・人の組み合わせ重視）。定数で、型ごとに重み・必須を決め、条件（rules）の型ごとに上書きする（§5 の表）
 
 ### domain（PoC本体から写した純粋関数）
 - 責務：時刻（`hhmmToMinutes` など）、距離と移動の概算（`distanceMeters`・`estimateLeg`）、稼働時間帯（`availabilityOf`・`shiftOf`・`withinSlots`）、ルート評価（`evaluateRoute`）、手作業の割当の補助（PoC本体 `web/src/features/admin/schedule/model.ts` の `reconcile`・`assign`・`timesOf`・`warningsOf`）。
@@ -143,7 +145,7 @@ flowchart LR
   - [ ] 全条件の重み0・移動だけのとき、PoC本体の手作業案（seed）より総移動が短い
 
 ### evaluate（採点と説明）
-- 責務：手作業案・AI案のどちらも同じ `Problem` で採点する。合計点、移動・待ち・距離、条件ごとの達成/違反の数、訪問ごとの理由（`相性◎` `希望○ 女性` `資格✓` `継続` `移動+12分`）、守れなかった必須の条件（手作業案は保存を止めず警告だけ）、前回のAI案との差（担当が変わった訪問数・移動の増減）。
+- 責務：AI案（記録・今の案・手作業案のどれも）を同じ `Problem` で採点する。合計点、移動・待ち・距離、条件ごとの達成/違反の数、訪問ごとの理由（`相性◎` `希望○ 女性` `資格✓` `継続` `移動+12分`）、守れなかった必須の条件（手作業案は保存を止めず警告だけ）、記録どうしの差（担当が変わった訪問数・移動の増減。比較画面では A・B ともいまの条件で採点し直す）。
 - 持つデータ（持ち主）：なし
 - 提供するAPI：`score(problem, routes): PlanScore`、`explain(problem, routes): VisitExplain[]`、`diff(a, b): PlanDiff`
 - 依存するもの：matching、domain
@@ -153,13 +155,15 @@ flowchart LR
   - [ ] 理由は分換算の大きい順に3つまで出す
 
 ### pages（画面）
-- 責務：PoC本体の管理者画面（予定・AI案の比較・稼働時間帯・スタッフ・訪問先）を Firebase なしで動かす。追加の画面：項目、条件（重みのスライダー 0〜5・必須の切り替え。ClassClassify の Setup にならう）、相性の表（訪問先×スタッフ、クリックで ◎→○→空→△→× を回す）、データ（書き出し・読み込み・初期状態に戻す・実データを入れないでの注意書き）。スタッフの今日の順番を見る画面（D16、表示だけ）。
+- 責務：PoC本体の管理者画面（予定・AI案の比較・稼働時間帯・スタッフ・訪問先）を Firebase なしで動かす。最初に開く画面は `#/plan`。追加の画面：項目、条件（重みのスライダー 0〜5・必須の切り替え。ClassClassify の Setup にならう）、相性の表（訪問先×スタッフ、クリックで ◎→○→空→△→× を回す）、データ（書き出し・読み込み・初期状態に戻す・実データを入れないでの注意書き）。スタッフの今日の順番を見る画面（D16、表示だけ）。
 - 持つデータ（持ち主）：画面の一時状態のみ
-- 提供するAPI：なし（ルートは `#/schedule` `#/plan`（AI案を作る・手直し・固定・組み直す・予定に採用） `#/compare`（手作業案とAI案の比較、D19） `#/rules` `#/items` `#/compat` `#/staff` `#/clients` `#/availability` `#/data` `#/staff-view/:staffId`）
+- 提供するAPI：なし（ルートは `#/schedule` `#/schedule`（訪問の編集と手作業の割当。AI案を「予定に採用」もここへ写る） `#/plan`（AI案を作る・手直し・固定・組み直す・予定に採用。開いた日にAI案がなければ、標準のプリセットの重みで自動で作る。その日の条件 `data.rules` は書き換えず、作った案の `rules` に標準の重みが残る。重みの欄に「プリセット」のボタン3つ。押すとその日の条件をプリセットの重みにして、すぐAI案を作る。作る・組み直すたびに記録へ1件足す） `#/compare`（AI案の記録どうしの比較、D19・D22。下記） `#/rules` `#/items` `#/compat` `#/staff` `#/clients` `#/availability` `#/data` `#/staff-view/:staffId`）
+- `#/compare` の中身：その日の記録と「今の案（AI案の画面の手直し後）」から任意の2つを A・B に選んで比べる。条件の差（重み・必須が違う条件の一覧）、合計点・移動・待ち・距離・入らなかった訪問・必須の違反、条件ごとの達成/違反（採点は A・B とも、いまの条件の同じ物差し）、担当ごとの順番の左右比較、地図（A：点線、B：実線）。記録の一覧から「AI案の画面で開く」（その記録を今の案にする）と「消す」ができる。手作業案との比較はしない。
 - 依存するもの：store・matching・solver（Worker）・evaluate、Leaflet（PoC本体 `RouteMap.tsx` を写す）
 - 配置：`src/pages/`、`src/components/`
 - 完了の条件：
-  - [ ] 条件の重みを変えて「AI案を作る」→ 10秒以内に左右比較と理由が出る
+  - [ ] 条件の重みを変えて「AI案を作る」→ 10秒以内に点数と理由が出て、記録に1件増える。比較画面で任意の2つの記録を左右に比べられる
+  - [ ] AI案がない日に `#/plan` を開くと、標準のプリセットで自動で作られる。同じ条件・種・固定・結果の記録は増えない
   - [ ] 予定画面のドラッグ割当・警告が PoC本体と同じに動く（必須の条件の違反も赤い枠）
   - [ ] 呼び方は `org.terms` から引き、「お客様」「シッター」を直書きしない。主ボタンはオレンジ1色・1画面1〜2個
 
@@ -182,7 +186,7 @@ flowchart LR
 | store | 関数 | `load / save / reset / exportJson / importJson` | データ一式の保存・入出力 |
 | matching | 関数 | `compile(data, date) → Problem` | 項目・条件 → 可否・費用表 |
 | solver | Worker | `{type:'solve', problem, seed, iterations}` → `{type:'progress', iter, best}` … `{type:'done', result}` | AI案を作る。`{type:'stop'}` で最良案を返して終わる |
-| evaluate | 関数 | `score / explain / diff` | 採点・理由・前回との差 |
+| evaluate | 関数 | `score / explain / diff` | 採点・理由・記録どうしの差 |
 
 ### 項目と条件のデータ（`src/contracts/rules.ts`）
 
@@ -208,6 +212,40 @@ type RuleType =
   | 'wait'          // 待ち時間
 interface Rule { id: string; type: RuleType; label: string; weight: number /*0..5, 0.5刻み*/; hard: boolean }
 ```
+
+### AI案の記録と条件のプリセット（`src/contracts/`、`src/seed/presets.ts`）
+
+```ts
+interface AiRun {
+  id: string
+  no: number                 // その日の通し番号
+  date: string
+  createdAt: string
+  label: string              // プリセットと一致すればその名前、違えば「条件を変えた案」。組み直しは「…・固定n件で組み直し」
+  presetId: string | null    // 一致したプリセット、無ければ null
+  seed: number
+  iterations: number
+  rules: Rule[]              // 作ったときの条件
+  pins: Record<visitId, staffId>
+  routes: ...                // 結果（AiPlan.generated と同じ形）
+  unassigned: ...
+  score: ...
+  stopped: boolean
+}
+// DemoData.aiRuns: Record<date, AiRun[]>
+```
+
+- 記録は、AI案を作る・固定を残して組み直すたびに、その日の `aiRuns` に1件足す。同じ条件（rules）・seed・pins・結果の記録がすでにあれば足さない。1日20件まで、古いものから消す（localStorage の容量のため。ADR-0005）
+- 比較画面は、記録の結果を**いまの条件**（`data.rules`）で採点し直して比べる。記録の `score` は作ったときの条件での点数で、比較には使わない
+- プリセットは `src/seed/presets.ts` の定数3種。型ごとに重み・必須を決め、条件（rules）の型ごとに上書きする
+
+| プリセット | 訪問先の必要条件・スタッフの条件 | 訪問先の希望 | スタッフの希望 | 相性 | いつもの担当 | 負担の均等 | 待ち |
+|---|---|---|---|---|---|---|---|
+| standard「標準」（既定。初期の重み） | 必須 | 3 | 2 | 3 | 2 | 3 | 3 |
+| travel「移動を短く」（移動・待ちを優先） | 必須 | 1 | 1 | 1 | 0.5 | 1 | 3 |
+| people「人の組み合わせ重視」 | 必須 | 5 | 4 | 5 | 4 | 3 | 2 |
+
+（列は条件の型：`clientRequirement`・`staffRequirement`・`clientPreference`・`staffPreference`・`compatibility`・`continuity`・`balance`・`wait`。型の正は `src/contracts/rules.ts`）
 
 ### 費用の物差し（分換算）
 

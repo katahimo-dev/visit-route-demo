@@ -47,6 +47,33 @@ export const aiPlanSchema = z.preprocess((raw) => {
 }, aiPlanObject);
 export type AiPlan = z.infer<typeof aiPlanSchema>;
 
+/** その日の記録の上限（古いものから消す。localStorage の容量） */
+export const MAX_RUNS_PER_DAY = 20;
+
+/**
+ * AI案の記録（ADR-0005）：AI案を作る・固定を残して組み直すたびに、作ったときの条件と結果を1件残す。
+ * 比較の画面で任意の2つを選んで比べる。label はプリセットと一致すればプリセット名、違えば「条件を変えた案」。
+ * presetId は一致したプリセット（無ければ null）。pins は組み直しで残した固定（作ったときは {}）
+ */
+export const aiRunSchema = z.object({
+  id: z.string().min(1).max(100),
+  /** その日の通し番号（1から） */
+  no: z.number().int().min(1),
+  date: dateSchema,
+  createdAt: z.number(),
+  label: z.string().min(1).max(60),
+  presetId: z.string().nullable(),
+  seed: z.number().int(),
+  iterations: z.number().int(),
+  rules: z.array(ruleSchema),
+  pins: z.record(z.string(), z.string()),
+  routes: routesSchema,
+  unassigned: z.array(z.string()),
+  score: z.number(),
+  stopped: z.boolean(),
+});
+export type AiRun = z.infer<typeof aiRunSchema>;
+
 /** データ一式（store だけが書く。design.md §4） */
 export const demoDataSchema = z.object({
   version: z.literal(DATA_VERSION),
@@ -66,8 +93,8 @@ export const demoDataSchema = z.object({
   manualPlans: z.record(z.string(), manualRoutesSchema),
   /** date → 最新のAI案 */
   aiPlans: z.record(z.string(), aiPlanSchema),
-  /** date → 1つ前のAI案（前回との差） */
-  prevAiPlans: z.record(z.string(), aiPlanSchema),
+  /** date → AI案の記録（古い順。ADR-0005）。古い保存データ（無い）は {}。前の版の prevAiPlans は読み込みで捨てる */
+  aiRuns: z.record(z.string(), z.array(aiRunSchema)).default({}),
 });
 export type DemoData = z.infer<typeof demoDataSchema>;
 

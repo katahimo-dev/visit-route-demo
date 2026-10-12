@@ -44,14 +44,37 @@ describe('repair（契約は通るが中身が食い違うデータ）', () => {
     const d = base();
     const [a = '', b = '', c = ''] = visitsOn(d, DAY);
     const p = plan({ s1: [a, 'v-none'], ghost: [b] }, [c, 'v-none2', a], { [a]: 's1', [b]: 'ghost', 'v-none': 's1' });
-    const r = repair({ ...d, aiPlans: { [DAY]: p }, prevAiPlans: { [DAY]: p } });
-    for (const x of [r.aiPlans[DAY]!, r.prevAiPlans[DAY]!]) {
-      expect(x.routes).toEqual({ s1: [a] });
-      expect(x.unassigned).toEqual([c, b]);
-      expect(x.generated.routes).toEqual({ s1: [a] });
-      expect(x.generated.unassigned).toEqual([c, b]);
-      expect(x.pins).toEqual({ [a]: 's1' });
-    }
+    const run = {
+      id: `${DAY}#1`,
+      no: 1,
+      date: DAY,
+      createdAt: 1,
+      label: '標準',
+      presetId: 'standard',
+      seed: 1,
+      iterations: 10,
+      rules: [],
+      pins: p.pins,
+      routes: p.routes,
+      unassigned: p.unassigned,
+      score: 0,
+      stopped: false,
+    };
+    const r = repair({ ...d, aiPlans: { [DAY]: p }, aiRuns: { [DAY]: [run, { ...run, label: '重複' }] } });
+    const x = r.aiPlans[DAY]!;
+    expect(x.routes).toEqual({ s1: [a] });
+    expect(x.unassigned).toEqual([c, b]);
+    expect(x.generated.routes).toEqual({ s1: [a] });
+    expect(x.generated.unassigned).toEqual([c, b]);
+    expect(x.pins).toEqual({ [a]: 's1' });
+    // 記録も同じに直し、ID の重複は最初の1件
+    expect(r.aiRuns[DAY]).toHaveLength(1);
+    expect(r.aiRuns[DAY]![0]).toMatchObject({
+      label: '標準',
+      routes: { s1: [a] },
+      unassigned: [c, b],
+      pins: { [a]: 's1' },
+    });
   });
 
   it('いないスタッフを指す担当・いつもの担当は null、相性・稼働時間帯の上書きのいない人の分は消す', () => {

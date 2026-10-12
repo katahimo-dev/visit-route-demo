@@ -92,7 +92,9 @@ describe('AI案の手直し（ADR-0004）の移行', () => {
     const plan = r.aiPlans['2026-10-12']!;
     expect(plan.generated).toEqual({ routes: { s1: [v1], s2: [] }, unassigned: [v2], score: 123 });
     expect(plan.pins).toEqual({});
-    expect(r.prevAiPlans['2026-10-12']!.pins).toEqual({});
+    // 前の版の prevAiPlans は捨て、記録（aiRuns）は {} で補う
+    expect('prevAiPlans' in r).toBe(false);
+    expect(r.aiRuns).toEqual({});
   });
   it('generated・pins があればそのまま', () => {
     const plan = { ...old, generated: { routes: { s1: [] }, unassigned: [], score: 1 }, pins: { [v1]: 's1' } };

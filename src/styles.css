@@ -939,3 +939,26 @@ label.check input {
   padding: 16px;
   min-height: 640px;
 }
+
+/* プリセット・比較の記録の一覧（ADR-0005） */
+.preset-btn {
+  justify-content: flex-start;
+  text-align: left;
+}
+.preset-btn.is-on {
+  background: #fde3dd;
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+.runs-table td,
+.runs-table th {
+  vertical-align: middle;
+}
+.runs-table tr.is-a td:first-child,
+.runs-table tr.is-b td:nth-child(2) {
+  background: #fde3dd;
+}
+.weights-text {
+  font-size: 0.8rem;
+  color: var(--sub);
+}

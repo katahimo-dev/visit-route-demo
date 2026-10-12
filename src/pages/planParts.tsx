@@ -6,6 +6,7 @@ import { HARDABLE } from '../contracts/rules';
 import { minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, weightLocked } from '../lib/common';
+import { PRESETS, type Preset, presetOf } from '../seed';
 import { useDemoData } from '../store';
 
 /** routes の訪問ごとの説明（未実装なら空） */
@@ -39,13 +40,16 @@ export function ReasonBox({ explain: e }: { explain: VisitExplain | undefined })
 
 /** 合計点・移動・待ち・距離・条件ごとの達成/違反の比較表 */
 export function CompareTable({
-  manual,
-  ai,
+  a: manual,
+  b: ai,
+  labels,
   rules,
   error,
 }: {
-  manual: PlanScore | null;
-  ai: PlanScore | null;
+  a: PlanScore | null;
+  b: PlanScore | null;
+  /** 列の見出し（A・B） */
+  labels: [string, string];
   rules: { id: string; label: string }[];
   error?: string | null;
 }) {
@@ -91,9 +95,9 @@ export function CompareTable({
         <thead>
           <tr>
             <th />
-            <th className="num">手作業案</th>
-            <th className="num">AI案</th>
-            <th className="num">差</th>
+            <th className="num">{labels[0]}</th>
+            <th className="num">{labels[1]}</th>
+            <th className="num">差（B−A）</th>
           </tr>
         </thead>
         <tbody>
@@ -123,17 +127,42 @@ export function CompareTable({
 export function WeightPanel({
   running,
   onRecalc,
+  onPreset,
   canRun,
   recalcLabel = '再計算',
 }: {
   running: boolean;
   onRecalc: () => void;
+  /** プリセットを押した（その重みにして、すぐ作る。ADR-0005） */
+  onPreset?: (p: Preset) => void;
   canRun: boolean;
   recalcLabel?: string;
 }) {
   const { data, update } = useDemoData();
+  const current = presetOf(data.rules);
   return (
     <aside className="card stack side-panel">
+      {onPreset && (
+        <>
+          <h3>プリセット</h3>
+          <span className="sub">押すと、その重みにしてすぐAI案を作ります（作った案は記録に残ります）。</span>
+          <div className="stack" style={{ gap: 4 }}>
+            {PRESETS.map((p, i) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`btn btn-small preset-btn ${current?.id === p.id ? 'is-on' : ''}`}
+                disabled={running || !canRun}
+                onClick={() => onPreset(p)}
+                title={p.note}
+              >
+                {i + 1}. {p.name}
+              </button>
+            ))}
+          </div>
+          <span className="sub">いまの重み：{current ? current.name : 'プリセットから変えた重み'}</span>
+        </>
+      )}
       <h3>条件の重み</h3>
       <span className="sub">重み1＝移動10分ぶん。0で無効。</span>
       {data.rules.map((r) => (

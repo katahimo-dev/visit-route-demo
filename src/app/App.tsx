@@ -53,7 +53,7 @@ export default function App() {
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/availability" element={<AvailabilityPage />} />
           <Route path="/data" element={<DataPage />} />
-          <Route path="*" element={<Navigate to="/schedule" replace />} />
+          <Route path="*" element={<Navigate to="/plan" replace />} />
         </Route>
       </Routes>
     </DayProvider>
@@ -89,8 +89,8 @@ function AdminShell() {
           <span className="demo-note">デモ：データはこのブラウザだけに保存。実在の個人情報は入れない</span>
         </div>
         <nav className="top-nav">
-          <NavLink to="/schedule">予定</NavLink>
           <NavLink to="/plan">AI案</NavLink>
+          <NavLink to="/schedule">予定</NavLink>
           <NavLink to="/compare">比較</NavLink>
           <NavLink to="/rules">条件</NavLink>
           <NavLink to="/items">項目</NavLink>
