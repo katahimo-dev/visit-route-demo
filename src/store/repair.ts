@@ -1,5 +1,5 @@
 // 読み込んだデータの中身の食い違いを直す（store がデータの持ち主。design.md §4）
-import type { AiPlan, DemoData } from '../contracts/data';
+import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
 import type { Availability, Place } from '../contracts/documents';
 import type { Compat } from '../contracts/rules';
 
@@ -36,7 +36,8 @@ function repairPlace(p: Place): Place {
  * - 訪問の担当（staffId）・訪問先のいつもの担当（usualStaffId）が、いないスタッフなら null
  * - 相性・稼働時間帯の上書きの、いない訪問先・スタッフの分は消す（上書きは同じ人・同じ日の最後の1件）
  * - 手作業案（manualPlans）：いないスタッフの列は消し（訪問は担当か未割当に入り直す）、その日にない訪問・重複を除く
- * - AI案（aiPlans・prevAiPlans）：いないスタッフの列の訪問は未割当へ。その日にない訪問・重複を除き、固定はいる訪問・スタッフだけ
+ * - AI案（aiPlans）・AI案の記録（aiRuns）：いないスタッフの列の訪問は未割当へ。その日にない訪問・重複を除き、固定はいる訪問・スタッフだけ。
+ *   記録の ID の重複は最初の1件、1日 MAX_RUNS_PER_DAY 件を超える分は古いものから捨てる
  * - 位置の緯度・経度が片方だけ・範囲外なら未登録にする
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
@@ -107,6 +108,21 @@ export function repair(d: DemoData): DemoData {
   };
   const repairPlans = (plans: DemoData['aiPlans']) =>
     Object.fromEntries(Object.entries(plans).map(([date, p]) => [date, repairPlan(date, p)]));
+  const repairRun = (date: string, r: AiRun): AiRun => {
+    const cur = repairRoutes(date, r.routes, r.unassigned);
+    const pins = Object.fromEntries(
+      Object.entries(r.pins).filter(([vid, sid]) => dateOf.get(vid) === date && staffIds.has(sid)),
+    );
+    return { ...r, date, ...cur, pins };
+  };
+  const aiRuns: DemoData['aiRuns'] = Object.fromEntries(
+    Object.entries(d.aiRuns).map(([date, runs]) => [
+      date,
+      uniqueById(runs)
+        .slice(-MAX_RUNS_PER_DAY)
+        .map((r) => repairRun(date, r)),
+    ]),
+  );
 
   return {
     ...d,
@@ -119,6 +135,6 @@ export function repair(d: DemoData): DemoData {
     availability,
     manualPlans,
     aiPlans: repairPlans(d.aiPlans),
-    prevAiPlans: repairPlans(d.prevAiPlans),
+    aiRuns,
   };
 }

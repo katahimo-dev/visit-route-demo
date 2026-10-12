@@ -61,18 +61,20 @@ export function createDemoData(today: string): DemoData {
     availability: [],
     manualPlans: {},
     aiPlans: {},
-    prevAiPlans: {},
+    aiRuns: {},
   };
-  const withDays = daysFrom(base, today, DEMO_DAYS);
-  // いつもの担当：手作業案で最も多く担当した人（同数なら ID の小さい順）
-  const clients = withDays.clients.map((c) => ({ ...c, usualStaffId: usualStaffOf(withDays, c.id) }));
+  const { data: withDays, owners } = generateDays(base, today, DEMO_DAYS);
+  // いつもの担当：内部で作った手作業らしい割当で最も多く担当した人（同数なら ID の小さい順）
+  const clients = withDays.clients.map((c) => ({ ...c, usualStaffId: usualStaffOf(withDays, owners, c.id) }));
   return { ...withDays, clients };
 }
 
-function usualStaffOf(data: DemoData, clientId: string): string | null {
+function usualStaffOf(data: DemoData, owners: Map<string, string>, clientId: string): string | null {
   const count = new Map<string, number>();
-  for (const v of data.visits)
-    if (v.clientId === clientId && v.staffId) count.set(v.staffId, (count.get(v.staffId) ?? 0) + 1);
+  for (const v of data.visits) {
+    const sid = owners.get(v.id);
+    if (v.clientId === clientId && sid) count.set(sid, (count.get(sid) ?? 0) + 1);
+  }
   let best: string | null = null;
   for (const [id, n] of [...count].sort(([a], [b]) => a.localeCompare(b))) {
     if (best === null || n > (count.get(best) ?? 0)) best = id;
@@ -81,24 +83,32 @@ function usualStaffOf(data: DemoData, clientId: string): string | null {
 }
 
 /**
- * from から n 日分の訪問・稼働時間帯の上書き・手作業案を足す。
+ * from から n 日分の訪問・稼働時間帯の上書きを足す。手作業の割当は入れない（訪問の担当は未割当。ADR-0005）。
  * すでに訪問か手作業案がある日は変えない（既存データを壊さない）。元のデータは書き換えない
  */
 export function daysFrom(data: DemoData, from: string, n: number): DemoData {
+  return generateDays(data, from, n).data;
+}
+
+/** daysFrom の本体。owners は内部で作った手作業らしい割当（訪問ID → 担当。いつもの担当を決めるのに使う） */
+function generateDays(data: DemoData, from: string, n: number): { data: DemoData; owners: Map<string, string> } {
   const have = new Set([...data.visits.map((v) => v.date), ...Object.keys(data.manualPlans)]);
   const visits = [...data.visits];
   const availability = [...data.availability];
-  const manualPlans = { ...data.manualPlans };
+  const owners = new Map<string, string>();
   for (const date of datesFrom(from, n)) {
     if (have.has(date)) continue;
     const day = generateDay(date, data.staff, data.clients, data.compat);
-    visits.push(...day.visits);
+    for (const v of day.visits) {
+      if (v.staffId) owners.set(v.id, v.staffId);
+      visits.push({ ...v, staffId: null });
+    }
     availability.push(
       ...day.availability.filter((a) => !data.availability.some((x) => x.staffId === a.staffId && x.date === date)),
     );
-    manualPlans[date] = day.manualRoutes;
   }
-  return { ...data, visits, availability, manualPlans };
+  return { data: { ...data, visits, availability }, owners };
 }
 
 export { UNASSIGNED_KEY };
+export { applyPreset, PRESETS, type Preset, presetOf } from './presets';
