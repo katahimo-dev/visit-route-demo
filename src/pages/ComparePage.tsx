@@ -78,6 +78,13 @@ export default function ComparePage() {
   const A = byId(sel.a) ?? choices[0];
   const others = choices.filter((c) => c.id !== A?.id);
   const B = byId(sel.b) ?? others.filter((c) => c.id !== CURRENT).at(-1) ?? others.at(-1);
+  /** A・B を選ぶ。もう一方と同じ案を選んだら入れ替える（同じ案どうしを比べない） */
+  const pick = (side: Side, id: string) => {
+    const other = side === 'a' ? B : A;
+    const mine = side === 'a' ? A : B;
+    if (other?.id === id) setSel(side === 'a' ? { a: id, b: mine?.id ?? null } : { a: mine?.id ?? null, b: id });
+    else setSel((s) => ({ ...s, [side]: id }));
+  };
   const aRoutes = useMemo(() => A?.routes ?? {}, [A]);
   const bRoutes = useMemo(() => B?.routes ?? {}, [B]);
 
@@ -108,7 +115,8 @@ export default function ComparePage() {
   const openRun = (r: AiRun) => {
     if (
       aiPlan &&
-      JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes) &&
+      (Object.keys(aiPlan.pins).length > 0 ||
+        JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes)) &&
       !confirm('AI案の画面の手直しを捨てて、この記録を今の案にします。よろしいですか？')
     )
       return;
@@ -134,6 +142,8 @@ export default function ComparePage() {
       ...d,
       aiRuns: { ...d.aiRuns, [date]: (own(d.aiRuns, date) ?? []).filter((x) => x.id !== r.id) },
     }));
+    // 消した記録を選んでいたら既定に戻す
+    setSel((s) => ({ a: s.a === r.id ? null : s.a, b: s.b === r.id ? null : s.b }));
   };
 
   // ---- 条件の差 ----
@@ -333,7 +343,7 @@ export default function ComparePage() {
                           name="pick-a"
                           aria-label={`${c.title} を A にする`}
                           checked={A?.id === c.id}
-                          onChange={() => setSel((s) => ({ ...s, a: c.id }))}
+                          onChange={() => pick('a', c.id)}
                         />
                       </td>
                       <td>
@@ -342,7 +352,7 @@ export default function ComparePage() {
                           name="pick-b"
                           aria-label={`${c.title} を B にする`}
                           checked={B?.id === c.id}
-                          onChange={() => setSel((s) => ({ ...s, b: c.id }))}
+                          onChange={() => pick('b', c.id)}
                         />
                       </td>
                       <td>

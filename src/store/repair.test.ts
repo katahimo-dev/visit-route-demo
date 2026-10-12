@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AiPlan, DemoData } from '../contracts/data';
+import { type AiPlan, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
 import { compile } from '../matching';
 import { createDemoData } from '../seed';
 import { importJson, isImportError, migrate } from './index';
@@ -75,6 +75,29 @@ describe('repair（契約は通るが中身が食い違うデータ）', () => {
       unassigned: [c, b],
       pins: { [a]: 's1' },
     });
+  });
+
+  it('記録は1日 MAX_RUNS_PER_DAY 件まで（古いものから捨てる）', () => {
+    const d = base();
+    const runs = Array.from({ length: MAX_RUNS_PER_DAY + 5 }, (_, i) => ({
+      id: `${DAY}#${i + 1}@${i}`,
+      no: i + 1,
+      date: DAY,
+      createdAt: i,
+      label: '標準',
+      presetId: 'standard',
+      seed: 1,
+      iterations: 10,
+      rules: [],
+      pins: {},
+      routes: {},
+      unassigned: [],
+      score: 0,
+      stopped: false,
+    }));
+    const r = repair({ ...d, aiRuns: { [DAY]: runs } });
+    expect(r.aiRuns[DAY]).toHaveLength(MAX_RUNS_PER_DAY);
+    expect(r.aiRuns[DAY]![0]!.no).toBe(6);
   });
 
   it('いないスタッフを指す担当・いつもの担当は null、相性・稼働時間帯の上書きのいない人の分は消す', () => {

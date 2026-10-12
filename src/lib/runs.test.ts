@@ -27,6 +27,15 @@ describe('AI案の記録（ADR-0005）', () => {
     ]);
   });
 
+  it('最新の記録を消して作り直すと番号は同じでも ID は別（比較の選択を取り違えない）', () => {
+    const d0 = createDemoData(DAY);
+    const d1 = addRun(d0, DAY, { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 });
+    const removed = { ...d1, aiRuns: { [DAY]: [] } };
+    const d2 = addRun(removed, DAY, { rules: d0.rules, pins: {}, result: result({ s1: ['b'] }), createdAt: 2 });
+    expect(d2.aiRuns[DAY]![0]!.no).toBe(d1.aiRuns[DAY]![0]!.no);
+    expect(d2.aiRuns[DAY]![0]!.id).not.toBe(d1.aiRuns[DAY]![0]!.id);
+  });
+
   it('同じ条件・種・固定・結果は足さない', () => {
     const d0 = createDemoData(DAY);
     const x = { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 };

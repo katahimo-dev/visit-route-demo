@@ -15,7 +15,7 @@ import { attempt, deltaText, formError, hasLocation, own, pointsText, r0, staffC
 import { addRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
-import { applyPreset, PRESETS, type Preset } from '../seed';
+import { applyPreset, PRESETS, type Preset, presetOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { explainMap, ReasonBox, WeightPanel } from './planParts';
 
@@ -55,6 +55,8 @@ export default function PlanPage() {
   const toast = useToast();
   const [progress, setProgress] = useState<Progress | null>(null);
   const [running, setRunning] = useState<'create' | 'resolve' | null>(null);
+  /** 計算している日と条件の名前（AI案が無い日の「作っています」の表示） */
+  const [runningFor, setRunningFor] = useState<{ date: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export default function PlanPage() {
   // 画面を離れたら Worker を止める（止めた結果は保存しない）
   useEffect(() => {
     setRunning(null);
+    setRunningFor(null);
     setProgress(null);
     return () => {
       generation.current++;
@@ -102,8 +105,11 @@ export default function PlanPage() {
     [problem, aiPlan, routes],
   );
   const explained = useMemo(() => explainMap(aiPlan ? problem : null, routes), [problem, aiPlan, routes]);
-  /** AI案を作ったあとに条件（重み・必須）が変わったか */
+  /** AI案を作った条件（重み・必須）と、いまの条件が違うか */
   const stale = !!aiPlan && JSON.stringify(aiPlan.rules) !== JSON.stringify(data.rules);
+  /** 自動作成（ADR-0005）：いまの条件を書き換えずに標準のプリセットで作った案（作ったあとに変えたのではない） */
+  const autoMade =
+    stale && !!aiPlan && presetOf(aiPlan.rules)?.id === PRESETS[0]?.id && Object.keys(aiPlan.pins).length === 0;
 
   const staffName = (id: string) => staffById.get(id)?.name ?? '（不明）';
   const clientOf = (visitId: string) => {
@@ -127,7 +133,7 @@ export default function PlanPage() {
     if (target.value.staff.length === 0) return fail(`この日に働ける${terms.staff}がいません`);
     return target.value;
   };
-  const run = (kind: 'create' | 'resolve', target: Problem, onDone: (r: SolveResult) => void) => {
+  const run = (kind: 'create' | 'resolve', target: Problem, label: string, onDone: (r: SolveResult) => void) => {
     const gen = generation.current;
     const live = () => gen === generation.current;
     const started = attempt(() =>
@@ -141,6 +147,7 @@ export default function PlanPage() {
     }
     runRef.current = started.value;
     setRunning(kind);
+    setRunningFor({ date, label });
     setProgress(null);
     started.value.promise
       .then((result) => {
@@ -153,6 +160,7 @@ export default function PlanPage() {
         if (!live()) return;
         runRef.current = null;
         setRunning(null);
+        setRunningFor(null);
         setProgress(null);
       });
   };
@@ -169,7 +177,7 @@ export default function PlanPage() {
     if (mode === 'manual' && edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？')) return;
     const forDate = date;
     const rulesSnapshot = rules;
-    run('create', p, (result) => {
+    run('create', p, `${presetOf(rules)?.name ?? 'いま'}の`, (result) => {
       const plan: AiPlan = {
         date: forDate,
         createdAt: Date.now(),
@@ -203,9 +211,12 @@ export default function PlanPage() {
 
   /** プリセットの重みをその日の条件に当てて、すぐ作る */
   const runPreset = (preset: Preset) => {
+    const rules = applyPreset(data.rules, preset);
+    // 作れない日（訪問が無いなど）は条件も変えない
+    if (!check(rules)) return;
     if (edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？')) return;
     update((d) => ({ ...d, rules: applyPreset(d.rules, preset) }));
-    create(applyPreset(data.rules, preset), 'preset');
+    create(rules, 'preset');
   };
 
   // AI案が無い日は、開いたときにプリセット1（標準）で自動で作る（同じ日に2回は試さない）
@@ -229,7 +240,7 @@ export default function PlanPage() {
     }
     const rulesSnapshot = data.rules;
     const pinsSnapshot = aiPlan.pins;
-    run('resolve', pinned.value, (result) => {
+    run('resolve', pinned.value, `${presetOf(data.rules)?.name ?? 'いま'}の`, (result) => {
       update((d) =>
         addRun(
           patchPlan(d, forDate, (plan) => ({
@@ -556,7 +567,13 @@ export default function PlanPage() {
           )}
           {m.problemError && <p className="error">問題を作れませんでした：{m.problemError}</p>}
           {error && <p className="error">{error}</p>}
-          {stale && (
+          {stale && autoMade && (
+            <p className="sub">
+              この案は、開いたときに{PRESETS[0]?.name}
+              の条件で自動で作った案です（いまの条件とは違います）。点数はいまの条件で付け直しています。いまの条件で作るには「AI案を作る」を押してください。
+            </p>
+          )}
+          {stale && !autoMade && (
             <p className="warn-text">
               このAI案を作ったあとに条件が変わりました。点数はいまの条件で付け直しています。「AI案を作る」か「固定を残して組み直す」で作り直せます。
             </p>
@@ -566,9 +583,11 @@ export default function PlanPage() {
         {!aiPlan ? (
           <div className="card">
             <p className="sub">
-              {running
-                ? `この日のAI案を${PRESETS[0]?.name ?? ''}の条件で作っています…`
-                : 'この日のAI案はまだありません。「AI案を作る」を押してください。'}
+              {runningFor?.date === date
+                ? `この日のAI案を${runningFor.label}条件で作っています…`
+                : running
+                  ? '別の日のAI案を作っています…'
+                  : 'この日のAI案はまだありません。「AI案を作る」を押してください。'}
             </p>
           </div>
         ) : (

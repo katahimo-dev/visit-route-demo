@@ -28,8 +28,9 @@ export function addRun(
     JSON.stringify(r.routes) === JSON.stringify(x.result.routes);
   if (runs.some(same)) return d;
   const no = runs.reduce((m, r) => Math.max(m, r.no), 0) + 1;
+  // 最新の記録を消すと番号は使い回すので、ID には作った時刻も入れて別の記録と取り違えない
   const run: AiRun = {
-    id: `${date}#${no}`,
+    id: `${date}#${no}@${x.createdAt}`,
     no,
     date,
     createdAt: x.createdAt,
