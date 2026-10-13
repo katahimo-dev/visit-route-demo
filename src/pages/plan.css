@@ -294,11 +294,8 @@
     font-size: 0.75rem;
     font-weight: 700;
   }
-  .compare-row > .compare-col:nth-of-type(2)::before {
-    content: 'A';
-  }
-  .compare-row > .compare-col:nth-of-type(3)::before {
-    content: 'B';
+  .compare-col[data-side]::before {
+    content: attr(data-side);
   }
   .runs-table {
     min-width: 560px;

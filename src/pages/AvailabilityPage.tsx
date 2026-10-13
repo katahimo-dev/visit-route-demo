@@ -14,7 +14,7 @@ import './schedule.css';
 /** セルの短い表示：「9-18」「9:30-12」。休みは「休」 */
 const short = (slots: Slot[]) =>
   slots.length === 0
-    ? ['']
+    ? ['休']
     : slots.map(
         (s) => `${s.start.replace(/^0/, '').replace(/:00$/, '')}-${s.end.replace(/^0/, '').replace(/:00$/, '')}`,
       );

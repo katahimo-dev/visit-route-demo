@@ -382,8 +382,17 @@ export default function SchedulePage() {
                         </td>
                         <td className="nowrap">
                           <div className="actions">
-                            <IconButton icon={Pencil} label="編集" onClick={() => setEditing(id)} />
-                            <IconButton icon={Ban} label="取り消す" tone="danger" onClick={() => cancelVisit(v)} />
+                            <IconButton
+                              icon={Pencil}
+                              label={`${clientById.get(v.clientId)?.displayName ?? ''} ${windowText(v)}を編集`}
+                              onClick={() => setEditing(id)}
+                            />
+                            <IconButton
+                              icon={Ban}
+                              label={`${clientById.get(v.clientId)?.displayName ?? ''} ${windowText(v)}を取り消す`}
+                              tone="danger"
+                              onClick={() => cancelVisit(v)}
+                            />
                           </div>
                         </td>
                       </tr>

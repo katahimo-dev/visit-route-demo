@@ -48,7 +48,7 @@ export default function CompatPage() {
       <div className="card stack">
         <div className="compat-legend">
           {LEGEND.map((l) => (
-            <span key={l.mark} className={`legend-item ${l.cls}`}>
+            <span key={l.mark} className={`compat-legend-item ${l.cls}`}>
               <b>{l.mark}</b>
               {l.text}
             </span>

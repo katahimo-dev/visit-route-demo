@@ -437,13 +437,22 @@ export default function ComparePage() {
                       <td className="nowrap">
                         {run && (
                           <div className="actions">
-                            <IconButton icon={ExternalLink} label="AI案の画面で開く" onClick={() => openRun(run)} />
+                            <IconButton
+                              icon={ExternalLink}
+                              label={`${c.title} をAI案の画面で開く`}
+                              onClick={() => openRun(run)}
+                            />
                             <IconButton
                               icon={SlidersHorizontal}
-                              label="この条件にする"
+                              label={`${c.title} の条件にする`}
                               onClick={() => applyRules(run)}
                             />
-                            <IconButton icon={Trash2} label="消す" tone="danger" onClick={() => removeRun(run)} />
+                            <IconButton
+                              icon={Trash2}
+                              label={`${c.title} を消す`}
+                              tone="danger"
+                              onClick={() => removeRun(run)}
+                            />
                           </div>
                         )}
                       </td>
@@ -491,12 +500,12 @@ export default function ComparePage() {
               </table>
             </div>
             {(stale(A) || stale(B)) && (
-              <p className="sub">
+              <div className="sub row">
                 <WithIcon icon={TriangleAlert} size={14}>
                   いまの条件と違う条件で作った案があります
                 </WithIcon>
                 <Hint>下の点数は A・B ともいまの条件で付け直しています。</Hint>
-              </p>
+              </div>
             )}
           </div>
 
@@ -597,8 +606,12 @@ export default function ComparePage() {
                         </>
                       )}
                     </button>
-                    <div className="compare-col">{stopCards(id, 'a')}</div>
-                    <div className="compare-col">{stopCards(id, 'b')}</div>
+                    <div className="compare-col" data-side="A">
+                      {stopCards(id, 'a')}
+                    </div>
+                    <div className="compare-col" data-side="B">
+                      {stopCards(id, 'b')}
+                    </div>
                   </div>
                 );
               })}

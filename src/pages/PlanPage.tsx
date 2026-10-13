@@ -619,22 +619,22 @@ export default function PlanPage() {
           {m.problemError && <p className="error">問題を作れませんでした：{m.problemError}</p>}
           {error && <p className="error">{error}</p>}
           {stale && autoMade && (
-            <p className="sub">
+            <div className="sub row">
               <WithIcon icon={TriangleAlert} size={14}>
                 開いたときに{PRESETS[0]?.name}の条件で自動で作った案です
               </WithIcon>
               <Hint>
                 いまの条件とは違います。点数はいまの条件で付け直しています。いまの条件で作るには「AI案を作る」を押してください。
               </Hint>
-            </p>
+            </div>
           )}
           {stale && !autoMade && (
-            <p className="warn-text">
+            <div className="warn-text row">
               <WithIcon icon={TriangleAlert} size={14}>
                 作ったあとに条件が変わりました
               </WithIcon>
               <Hint>点数はいまの条件で付け直しています。「AI案を作る」か「固定を残して組み直す」で作り直せます。</Hint>
-            </p>
+            </div>
           )}
         </div>
 

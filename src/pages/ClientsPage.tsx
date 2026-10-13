@@ -1,16 +1,4 @@
-import {
-  BadgeCheck,
-  Home,
-  House,
-  MapPin,
-  Pencil,
-  Plus,
-  Repeat,
-  Save,
-  SlidersHorizontal,
-  Sparkles,
-  X,
-} from 'lucide-react';
+import { BadgeCheck, House, MapPin, Pencil, Plus, Repeat, Save, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ConditionsEditor, condText, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor } from '../components/parts';
@@ -242,7 +230,7 @@ export default function ClientsPage() {
           />
           <Hint label="相性について">相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。</Hint>
 
-          <SectionTitle icon={Home}>住所</SectionTitle>
+          <SectionTitle icon={House}>住所</SectionTitle>
           <PlaceEditor value={form.place} onChange={(place) => setForm({ ...form, place })} />
           {error && <p className="error">{error}</p>}
           <div className="row">

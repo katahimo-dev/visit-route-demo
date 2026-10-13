@@ -113,7 +113,6 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  white-space: nowrap;
   padding: 2px 10px;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -173,7 +172,7 @@ label {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  bottom: 96px;
   transform: translateX(-50%);
   background: var(--ink);
   color: #fff;
@@ -361,9 +360,6 @@ tbody tr:hover td {
 }
 .visit-table td {
   vertical-align: middle;
-}
-.visit-table .row-unassigned {
-  background: #fdf7ea;
 }
 .visit-name {
   display: flex;
@@ -1156,15 +1152,6 @@ label.check input {
 .cond-text {
   font-size: 0.8rem;
 }
-.option-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 0 2px 10px;
-  background: #faf6f2;
-  border-radius: 8px;
-}
-
 /* 重みのスライダー（ClassClassify の Setup にならう。0 で半透明） */
 .weight {
   display: flex;
@@ -1190,12 +1177,6 @@ label.check input {
 .rules-table td {
   vertical-align: top;
 }
-.rule-help {
-  margin-top: 4px;
-  line-height: 1.5;
-  max-width: 520px;
-}
-
 /* AI案：横の重みの欄・理由 */
 .plan-layout {
   display: grid;
@@ -1210,7 +1191,7 @@ label.check input {
 }
 .side-panel {
   position: sticky;
-  top: 120px;
+  top: 72px;
   gap: 10px;
 }
 .side-rule-label {
@@ -1338,4 +1319,31 @@ label.check input {
 .weights-text {
   font-size: 0.8rem;
   color: var(--sub);
+}
+
+/* 画面をまたいで使う小物 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.trait-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 160px;
+}
+.trait-chips .chip {
+  padding: 2px 8px;
+}
+a.icon-btn {
+  text-decoration: none;
+}
+a.icon-btn:hover {
+  color: var(--ink);
+  border-color: #d9c8bb;
+  background: var(--soft);
 }

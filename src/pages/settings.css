@@ -1,13 +1,5 @@
 /* 設定系の画面（条件・項目・相性・スタッフ・訪問先・データ）の見た目 */
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
 
 /* ---- 条件 ---- */
 .rules-table .chip-type {
@@ -51,9 +43,9 @@
   cursor: pointer;
 }
 .hard-toggle.is-on {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
+  background: var(--primary-soft);
+  border-color: #f4b9ab;
+  color: var(--primary-dark);
 }
 .hard-toggle:focus-within {
   outline: 2px solid var(--primary-dark);
@@ -154,7 +146,7 @@
   align-items: center;
   gap: 6px 8px;
 }
-.legend-item {
+.compat-legend-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -164,19 +156,19 @@
   white-space: nowrap;
   background: #f3ebe4;
 }
-.legend-item b {
+.compat-legend-item b {
   font-size: 0.95rem;
 }
-.legend-item.lv2,
-.legend-item.lv1 {
+.compat-legend-item.lv2,
+.compat-legend-item.lv1 {
   background: #e1f1e7;
   color: var(--ok);
 }
-.legend-item.lvm1 {
+.compat-legend-item.lvm1 {
   background: #fbefd6;
   color: #a46d0a;
 }
-.legend-item.lvm2 {
+.compat-legend-item.lvm2 {
   background: #fbe1dd;
   color: var(--danger);
 }
@@ -222,27 +214,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.trait-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-width: 160px;
-}
-.trait-chips .chip {
-  padding: 2px 8px;
-}
 .people-table .actions {
   justify-content: flex-start;
 }
-a.icon-btn {
-  text-decoration: none;
-}
-a.icon-btn:hover {
-  color: var(--ink);
-  border-color: #d9c8bb;
-  background: var(--soft);
-}
-
 /* ---- データ ---- */
 .warn-box {
   display: flex;
