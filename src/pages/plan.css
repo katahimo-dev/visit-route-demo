@@ -204,6 +204,9 @@
   height: 4px;
   border-radius: 2px;
 }
+.legend-line-ink {
+  background: var(--ink);
+}
 .legend-line.is-dashed {
   height: 0;
   border-top: 3px dashed currentColor;

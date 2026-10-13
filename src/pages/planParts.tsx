@@ -1,4 +1,4 @@
-// AI案（#/plan）と比較（#/compare）で共通に使う部品
+// 予定（#/plan）と比較（#/compare）で共通に使う部品
 
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -309,7 +309,7 @@ export function WeightPanel({
 
 /**
  * 「いまの重みをプリセットとして保存」（D24。ADR-0008）。押すと名前の欄が出て、入れて保存すると最後に足す。
- * 6つあれば押せない。compact は AI案の右の欄用（小さいボタン）
+ * 6つあれば押せない。compact は予定の画面の右の欄用（小さいボタン）
  */
 export function SavePresetForm({ compact = false, disabled = false }: { compact?: boolean; disabled?: boolean }) {
   const { data, update } = useDemoData();

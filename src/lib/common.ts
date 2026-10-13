@@ -27,8 +27,7 @@ export const STAFF_COLORS = [
 export const staffColor = (i: number): string =>
   STAFF_COLORS[((i % STAFF_COLORS.length) + STAFF_COLORS.length) % STAFF_COLORS.length] ?? '#e8735f';
 
-/** 地図：手作業案は青の点線、AI案はオレンジの実線 */
-export const MANUAL_LINE = '#4a7fc1';
+/** 地図：スタッフ本人の画面のルートの線（オレンジの実線） */
 export const AI_LINE = '#e8735f';
 
 export const hasLocation = (p: Place): p is { address: string; lat: number; lng: number } =>

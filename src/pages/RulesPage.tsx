@@ -242,7 +242,7 @@ function PresetSection() {
   const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
   const current = presetOf(data.rules, data.presets);
-  // AI案の画面の「プリセットを編集する」（#/rules#presets）から来たら、この節を見せる
+  // 予定の画面の「プリセットを編集する」（#/rules#presets）から来たら、この節を見せる
   useEffect(() => {
     if (location.hash === '#presets') ref.current?.scrollIntoView({ block: 'start' });
   }, [location.hash]);
@@ -269,7 +269,7 @@ function PresetSection() {
         icon={LayoutGrid}
         aside={
           <Hint>
-            AI案の画面のプリセットのボタンと、開いた日に自動で作る案に使います。条件の種類ごとに重み・必須を決め、押すとその日の条件の同じ種類に当てます。
+            予定の画面のプリセットのボタンと、開いた日に自動で作る案に使います。条件の種類ごとに重み・必須を決め、押すとその日の条件の同じ種類に当てます。
             {MAX_PRESETS}つまで。変えるとすぐ保存します。
           </Hint>
         }

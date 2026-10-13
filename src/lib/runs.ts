@@ -58,7 +58,7 @@ export function findRun(
   );
 }
 
-/** 記録を今の案（AI案の画面）にする。AIが出したまま＝記録の結果、固定は記録の固定 */
+/** 記録を今の案（予定の画面）にする。AIが出したまま＝記録の結果、固定は記録の固定 */
 export function planOfRun(run: AiRun): AiPlan {
   return {
     date: run.date,

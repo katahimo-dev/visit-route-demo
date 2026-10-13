@@ -87,7 +87,7 @@ export default function DataPage() {
       const counts = `${t.staff} ${r.staff.length}人・${t.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
       if (
         !confirm(
-          `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・手作業の割当は消えます。よろしいですか？`,
+          `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。よろしいですか？`,
         )
       )
         return;
@@ -168,7 +168,7 @@ export default function DataPage() {
       <div className="card stack">
         <SectionTitle icon={Save}>控え（JSON）</SectionTitle>
         <Hint>
-          データ一式（AI案・記録・手作業の割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
+          データ一式（AI案・記録・確定した割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
           下の欄で書き出したファイルを選ぶと、いまのデータと置き換えます（置き換える前に確認します）。
         </Hint>
         <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
@@ -192,7 +192,7 @@ export default function DataPage() {
         <Hint>
           {data.org.terms.staff}・{data.org.terms.client}
           ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。 Excel
-          で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・手作業の割当は消えます）。
+          で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当は消えます）。
           書き方はブックの「使い方」のシートにあります。
         </Hint>
         <div className="row" style={{ flexWrap: 'wrap' }}>

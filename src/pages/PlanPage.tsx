@@ -1,18 +1,24 @@
 import {
+  Ban,
+  CalendarDays,
   Car,
+  ChevronRight,
+  CircleCheck,
   CircleOff,
   Clock,
+  Copy,
   Crown,
   Gauge,
   GitCompareArrows,
   Hourglass,
-  House,
   LayoutGrid,
   ListChecks,
   Map as MapIcon,
   MapPin,
+  Pencil,
   Pin,
   PinOff,
+  Plus,
   RefreshCw,
   Scale,
   ShieldAlert,
@@ -28,23 +34,26 @@ import { NavLink } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
 import { ClientName } from '../components/parts';
-import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
+import { RouteMap } from '../components/RouteMap';
+import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
+import type { Client, Visit } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
-import { NONE } from '../domain/scheduleModel';
-import { minutesToHhmm } from '../domain/time';
+import { type Cols, NONE, timeOrder, windowText } from '../domain/scheduleModel';
+import { addDays } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
-import { colorOf, initialOf } from '../lib/colors';
-import { attempt, deltaText, formError, hasLocation, own, pointsText, r0, staffColor } from '../lib/common';
+import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
+import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, findRun, planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import { applyPreset, matchesPreset, presetOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
+import './schedule.css';
 import {
   AchievementList,
   achievementSummary,
@@ -56,15 +65,20 @@ import {
   SCORE_TEXT,
   WeightPanel,
 } from './planParts';
+import { VisitForm } from './VisitForm';
 
 /**
- * AI案（D18・ADR-0004）：AI案を作る → 担当ごとの列で手直し（ドラッグ・担当を選ぶ）→ 動かした訪問は固定 →
- * 「固定を残して組み直す」で残りを AI が組み直す →「予定に採用」。
+ * 予定（D4・D13・D18・ADR-0004・ADR-0009）：その日の訪問の一覧（追加・編集・取消・前の同じ曜日からコピー）と、
+ * 担当の割り当てを1画面で扱う。AI案を作る → 担当ごとの列で手直し（ドラッグ）→ 動かした訪問は固定 →
+ * 「固定を残して組み直す」で残りを AI が組み直す →「この割当で確定」（manualPlans と各訪問の担当に写す）。
  * AI案の routes は手直し後の今の案、generated は AI が出したまま、pins は固定（訪問ID → 担当ID）。
  * AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（ADR-0008）。作る・組み直すたびに、条件と結果を
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
- * 上部にプリセットごとの案のカード（いまの条件の同じ物差しで採点）を並べ、「この案にする」で今の案にする
+ * プリセットごとの案のカード（いまの条件の同じ物差しで採点）を並べ、「この案にする」で今の案にする
  */
+
+/** 予定の画面の地図・選択で使うルートの集まりのキー（今の案は1つだけ） */
+const PLAN_SET = 'plan';
 
 /** hundred：いまの最良を点数（100点満点）にした値（物差しを作れなければ null） */
 type Progress = { iteration: number; total: number; bestScore: number; hundred: number | null };
@@ -104,21 +118,11 @@ export default function PlanPage() {
   /** 計算している日と条件の名前（AI案が無い日の「作っています」の表示） */
   const [runningFor, setRunningFor] = useState<{ date: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
-  /** 地図で見るスタッフ（列の見出しを押す・訪問を選ぶと、その人のルートだけを地図に出す）。null は全員 */
-  const [focusStaff, setFocusStaff] = useState<string | null>(null);
-  /** 地図で強調する区間（この訪問へ来る移動）。null は無し */
-  const [focusLeg, setFocusLeg] = useState<string | null>(null);
-  /**
-   * 地図で見るスタッフを変える（null は全員）。選んでいた区間・訪問がその人のものでなければ外す
-   * （全員に戻したときも区間の強調は外す）
-   */
-  const focusOn = (sid: string | null) => {
-    setFocusStaff(sid);
-    const ownerOf = (id: string) => owner.get(id) ?? null;
-    if (focusLeg && (sid === null || ownerOf(focusLeg) !== sid)) setFocusLeg(null);
-    if (picked && sid !== null && ownerOf(picked) !== sid) setPicked(null);
-  };
+  /** 地図で見る担当・強調する区間・選んだ訪問（列の見出し・凡例・訪問・区間を押す。予定と比較で共通） */
+  const sel = useRouteSelection(date, (_set, id) => owner.get(id));
+  const { focusStaff, focusOn } = sel;
+  /** 開いている訪問の入力欄（null：閉じている、'new'：足す、それ以外：直す訪問の ID） */
+  const [editing, setEditing] = useState<string | null>(null);
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
   const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -155,11 +159,9 @@ export default function PlanPage() {
       autoTried.current.clear();
     };
   }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ訪問を外す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた入力欄を閉じる
   useEffect(() => {
-    setPicked(null);
-    setFocusStaff(null);
-    setFocusLeg(null);
+    setEditing(null);
   }, [date]);
 
   const aiPlan: AiPlan | undefined = own(data.aiPlans, date);
@@ -426,7 +428,7 @@ export default function PlanPage() {
     -1,
   );
   const missing = presetCards.filter((c) => !c.run).map((c) => c.preset);
-  /** 記録を今の案にする（比較の画面の「AI案の画面で開く」と同じ） */
+  /** 記録を今の案にする（比較の画面の「予定の画面で開く」と同じ） */
   const openRun = (r: AiRun, name: string) => {
     if (edited && !confirm('手直しと固定を捨てて、この案を今の案にします。よろしいですか？')) return;
     update((d) => ({ ...d, aiPlans: { ...d.aiPlans, [date]: planOfRun(r) } }));
@@ -517,12 +519,12 @@ export default function PlanPage() {
     toast('AI案に戻しました');
   };
 
-  // ---- 予定に採用（D13）：今の案を manualPlans と visits.staffId に写す ----
+  // ---- この割当で確定（D13）：今の案を manualPlans と visits.staffId に写す ----
   const adopt = () => {
     if (!aiPlan || !problem) return;
     if (
       !confirm(
-        'この案（手直し後）を手作業案に写します。予定画面の割当（各訪問の担当）が書き換わります。よろしいですか？\n（計算に入れていない訪問の担当はそのままです）',
+        'この割当（手直し後）で確定します。各訪問の担当がこのとおりに書き換わり、スタッフの画面にも出ます。よろしいですか？\n（計算に入れていない訪問の担当はそのままです）',
       )
     )
       return;
@@ -545,7 +547,48 @@ export default function PlanPage() {
         return (v.staffId ?? null) === next ? v : { ...v, staffId: next };
       }),
     }));
-    toast('AI案を予定に採用しました');
+    toast('この割当で確定しました');
+  };
+  /**
+   * 確定の状態：'none' は確定した割当（manualPlans[date]）が無い、'same' は今の案と一致、'diff' は違う。
+   * 比べるのは計算に入れた訪問の担当だけ（計算に入れない訪問は確定しても担当を変えないため）
+   */
+  const confirmState = useMemo((): 'none' | 'same' | 'diff' | null => {
+    if (!aiPlan || !problem) return null;
+    const saved = own(data.manualPlans, date);
+    if (!saved) return 'none';
+    const savedOwner = ownerMap(saved);
+    const aiOwner = ownerMap(aiPlan.routes);
+    return problem.visits.every((v) => (aiOwner.get(v.id) ?? null) === (savedOwner.get(v.id) ?? null))
+      ? 'same'
+      : 'diff';
+  }, [aiPlan, problem, data.manualPlans, date]);
+
+  // ---- 訪問の取消・前の同じ曜日からコピー ----
+  const cancelVisit = (v: Visit) => {
+    if (!confirm('この訪問を取り消しますか？')) return;
+    update((d) => ({ ...d, visits: d.visits.map((x) => (x.id === v.id ? { ...x, cancelled: true } : x)) }));
+    toast('取り消しました');
+  };
+  /** 1週前の訪問（と確定した割当）をこの日に写す。訪問が無い日だけ */
+  const copyFromLastWeek = () => {
+    setError(null);
+    const from = addDays(date, -7);
+    const src = data.visits.filter((v) => v.date === from && !v.cancelled);
+    if (src.length === 0) {
+      setError(`${from} にコピーできる訪問がありません`);
+      return;
+    }
+    if (!confirm(`${from} の訪問（と確定した割当）を ${date} にコピーします。よろしいですか？`)) return;
+    const idMap = new Map(src.map((v) => [v.id, newId('v')]));
+    const copied = src.map((v) => ({ ...v, id: idMap.get(v.id) as string, date }));
+    const cols: Cols = {};
+    for (const [s, ids] of Object.entries(own(data.manualPlans, from) ?? {})) {
+      const mapped = ids.map((id) => idMap.get(id)).filter((x): x is string => !!x);
+      if (mapped.length > 0) cols[s] = mapped;
+    }
+    update((d) => ({ ...d, visits: [...d.visits, ...copied], manualPlans: { ...d.manualPlans, [date]: cols } }));
+    toast(`${src.length}件コピーしました`);
   };
 
   // ---- 列：その日に働く人（と、今の案で訪問がある人）----
@@ -598,168 +641,86 @@ export default function PlanPage() {
   });
 
   // ---- 地図：今の案（担当ごとの色の実線）----
-  const { points, lines } = useMemo(() => {
-    const pts: MapPoint[] = [];
-    const lns: MapLine[] = [];
-    if (!aiPlan) return { points: pts, lines: lns };
-    for (const sid of columns) {
-      if (focusStaff && sid !== focusStaff) continue;
-      const ids = own(routes, sid) ?? [];
-      if (ids.length === 0) continue;
-      const s = staffById.get(sid);
-      const color = colorOfStaff.get(sid) ?? staffColor(0);
-      const home = s && hasLocation(s.home) ? { lat: s.home.lat, lng: s.home.lng } : null;
-      const path: { lat: number; lng: number }[] = [];
-      if (home) {
-        path.push(home);
-        pts.push({ ...home, label: '家', color });
-      }
-      for (const id of ids) {
-        const c = clientById.get(visitById.get(id)?.clientId ?? '');
-        if (!c || !hasLocation(c.place)) continue;
-        const prev = path[path.length - 1];
-        if (id === focusLeg && prev)
-          lns.push({ points: [prev, { lat: c.place.lat, lng: c.place.lng }], color, highlight: true });
-        path.push({ lat: c.place.lat, lng: c.place.lng });
-        pts.push({
-          lat: c.place.lat,
-          lng: c.place.lng,
-          label: initialOf(c.displayName),
-          color: colorOf(c.color),
-          highlight: id === picked || id === focusLeg,
-        });
-      }
-      if (home && path.length > 1) path.push(home);
-      lns.push({ points: path, color });
-    }
-    return { points: pts, lines: lns };
-  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById, focusStaff, picked, focusLeg]);
+  const { points, lines } = useMemo(
+    () =>
+      aiPlan
+        ? buildRouteMap({
+            sets: [{ key: PLAN_SET, routes }],
+            staffOrder: columns,
+            staffById,
+            visitById,
+            clientById,
+            colorOfStaff,
+            focusStaff,
+            picked: sel.picked,
+            focusLeg: sel.focusLeg,
+          })
+        : { points: [], lines: [] },
+    [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById, focusStaff, sel.picked, sel.focusLeg],
+  );
 
+  /** 列の最後の「自宅まで N分」（押すと地図でその区間を強調。もう一度押すと外す。自宅の位置が無い人は出さない） */
+  const homeLeg = (sid: string) => {
+    const t = homeTravel(problem, staffById.get(sid), routes);
+    if (t === null) return null;
+    const x = { id: homeLegKey(sid), set: PLAN_SET };
+    return <LegLine kind="toHome" minutes={t} on={sel.isLeg(x)} onToggle={() => sel.toggleLeg(x)} />;
+  };
+
+  const sortedVisits = useMemo(() => timeOrder([...visitById.keys()], visitById), [visitById]);
   const notInProblem = problem ? visits.filter((v) => !problem.visits.some((p) => p.id === v.id)) : [];
   const cs = curScore?.value ?? null;
   const gs = genScore?.value ?? null;
 
-  /** 訪問カード（ドラッグで担当を移す。押すと理由と担当の選択） */
+  /** 訪問カード（ドラッグで担当を移す。押すと理由） */
   const card = (id: string) => {
-    const e = explained.get(id);
-    const t = e?.timing ?? null;
-    const isPicked = picked === id;
     const pin = own(pins, id);
     const hard = hardOf.get(id);
     const ownerId = owner.get(id) ?? null;
+    const x = { id, set: PLAN_SET };
     return (
-      <div key={id}>
-        {t && (
-          <div className="leg-line">
-            <button
-              type="button"
-              className={`leg-btn ${focusLeg === id ? 'is-on' : ''}`}
-              aria-pressed={focusLeg === id}
-              title={focusLeg === id ? '地図の区間の強調をやめる' : '地図でこの区間を強調する'}
-              onClick={() => {
-                const on = focusLeg !== id;
-                setFocusLeg(on ? id : null);
-                if (on && ownerId) setFocusStaff(ownerId);
-              }}
-            >
-              {own(routes, ownerId ?? '')?.[0] === id ? (
-                <WithIcon icon={House} size={13}>
-                  自宅から {r0(t.travelIn)}分
-                </WithIcon>
-              ) : (
-                <WithIcon icon={Car} size={13}>
-                  {r0(t.travelIn)}分
-                </WithIcon>
-              )}
-            </button>
-            {t.wait > 0 && (
-              <WithIcon icon={Hourglass} size={13}>
-                待ち {r0(t.wait)}分
-              </WithIcon>
+      <VisitCard
+        key={id}
+        visitId={id}
+        timing={explained.get(id)?.timing ?? null}
+        fallbackTime={visitById.get(id)?.earliestStart ?? ''}
+        client={clientOf(id)}
+        first={own(routes, ownerId ?? '')?.[0] === id}
+        legOn={sel.isLeg(x)}
+        onLeg={() => sel.toggleLeg(x)}
+        picked={sel.isPicked(x)}
+        onPick={() => sel.togglePick(x)}
+        tone={hard ? 'red' : pin ? 'pinned' : null}
+        drag={dragProps(id)}
+        dragging={dragging === id}
+        detail={<ReasonBox explain={explained.get(id)} />}
+      >
+        {(pin || hard) && (
+          <div className="row visit-tags">
+            {pin && (
+              <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
+                <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
+                固定
+              </span>
+            )}
+            {hard?.map((h) => (
+              <span key={h} className="chip chip-red" title="必須の条件の違反">
+                <ShieldAlert size={12} aria-hidden="true" />
+                {h}
+              </span>
+            ))}
+            {pin && (
+              <IconButton
+                icon={PinOff}
+                label="固定を外す"
+                className="icon-btn-sm"
+                onClick={() => unpin(id)}
+                disabled={!!running}
+              />
             )}
           </div>
         )}
-        <div
-          className={`route-item ${hard ? 'is-red' : pin ? 'is-pinned' : ''} ${isPicked ? 'is-picked' : ''} ${dragging === id ? 'is-dragging' : ''}`}
-          data-visit={id}
-          {...dragProps(id)}
-        >
-          {/* ボタン要素の上からはドラッグが始まらない（Chrome）ので、押す所は div にしてキーボードでも開けるようにする */}
-          {/* biome-ignore lint/a11y/useSemanticElements: ドラッグの元にするため button にしない */}
-          <div
-            role="button"
-            tabIndex={0}
-            className="route-btn plain-btn"
-            onClick={() => {
-              setPicked(isPicked ? null : id);
-              if (!isPicked && ownerId) setFocusStaff(ownerId);
-            }}
-            onKeyDown={(ev) => {
-              if (ev.key === 'Enter' || ev.key === ' ') {
-                ev.preventDefault();
-                setPicked(isPicked ? null : id);
-                if (!isPicked && ownerId) setFocusStaff(ownerId);
-              }
-            }}
-            title="押すと理由を見られます。ドラッグで別の担当へ移せます"
-          >
-            <span className="visit-time">
-              <Clock size={13} strokeWidth={2.2} aria-hidden="true" />
-              {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : (visitById.get(id)?.earliestStart ?? '')}
-            </span>
-            <ClientName client={clientOf(id)} />
-          </div>
-          {(pin || hard) && (
-            <div className="row visit-tags">
-              {pin && (
-                <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
-                  <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-                  固定
-                </span>
-              )}
-              {hard?.map((h) => (
-                <span key={h} className="chip chip-red" title="必須の条件の違反">
-                  <ShieldAlert size={12} aria-hidden="true" />
-                  {h}
-                </span>
-              ))}
-              {pin && (
-                <IconButton
-                  icon={PinOff}
-                  label="固定を外す"
-                  className="icon-btn-sm"
-                  onClick={() => unpin(id)}
-                  disabled={!!running}
-                />
-              )}
-            </div>
-          )}
-        </div>
-        {isPicked && (
-          <div className="stack" style={{ gap: 4 }}>
-            <ReasonBox explain={e} />
-            <label className="row sub" style={{ gap: 6 }}>
-              担当を選ぶ
-              <select
-                value={ownerId ?? ''}
-                disabled={!!running}
-                onChange={(ev) => {
-                  if (ev.target.value) moveTo(id, ev.target.value);
-                }}
-                aria-label="担当を選ぶ"
-              >
-                {!ownerId && <option value="">未割当</option>}
-                {columns.map((sid) => (
-                  <option key={sid} value={sid}>
-                    {staffName(sid)}
-                    {allowedFor(id, sid) ? '' : '（必須の条件に合わない）'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        )}
-      </div>
+      </VisitCard>
     );
   };
 
@@ -767,15 +728,69 @@ export default function PlanPage() {
     <div className="plan-layout">
       <div className="stack" style={{ minWidth: 0 }}>
         <PageHeader
-          icon={Sparkles}
-          title="AI案"
-          lead={`AIが${terms.staff}ごとの回る順番を組みます。手直しして予定に採用できます`}
+          icon={CalendarDays}
+          title="予定"
+          lead={`その日の訪問と担当の割り当て。AIが組んだ案を手直しして確定します`}
           actions={
-            <NavLink to="/compare" className="plan-compare-link">
-              <WithIcon icon={GitCompareArrows}>比較（記録 {runCount}件）</WithIcon>
-            </NavLink>
+            <>
+              <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
+                <WithIcon icon={Plus}>訪問を追加</WithIcon>
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={copyFromLastWeek}
+                disabled={visits.length > 0 || !!running}
+                title={visits.length > 0 ? 'この日に訪問があるときはコピーできません' : ''}
+              >
+                <WithIcon icon={Copy}>前の同じ曜日からコピー</WithIcon>
+              </button>
+              <NavLink to="/compare" className="plan-compare-link">
+                <WithIcon icon={GitCompareArrows}>比較（記録 {runCount}件）</WithIcon>
+              </NavLink>
+            </>
           }
         />
+        {m.clients.length === 0 && (
+          <div className="card">
+            <p className="sub">先に{terms.client}を登録してください。</p>
+          </div>
+        )}
+        {editing && (
+          <VisitForm
+            key={editing}
+            date={date}
+            visit={editing !== 'new' ? (visitById.get(editing) ?? null) : null}
+            clients={m.clients}
+            onClose={() => setEditing(null)}
+            onSaved={toast}
+          />
+        )}
+        {visits.length === 0 ? (
+          <div className="card">
+            <Empty icon={CalendarDays}>この日の訪問はまだありません</Empty>
+          </div>
+        ) : (
+          <VisitList
+            visits={sortedVisits}
+            visitById={visitById}
+            clientById={clientById}
+            ownerName={(id) => {
+              if (!aiPlan) return null;
+              const o = owner.get(id);
+              return o ? { name: staffName(o), color: colorOfStaff.get(o) } : null;
+            }}
+            notes={(id) => ({
+              outside: !!problem && !problem.visits.some((v) => v.id === id),
+              dropped: !!aiPlan && unassigned.includes(id),
+              pinned: !!own(pins, id),
+              hard: hardOf.get(id),
+            })}
+            clientLabel={terms.client}
+            onEdit={setEditing}
+            onCancel={cancelVisit}
+          />
+        )}
         <div className="card stack">
           <div className="row plan-toolbar">
             <button type="button" className="btn btn-primary" disabled={!!running || !problem} onClick={() => create()}>
@@ -807,8 +822,8 @@ export default function PlanPage() {
               </button>
             )}
             <Hint label="使い方">
-              訪問を別の{terms.staff}の列へドラッグ（または押して担当を選ぶ）と、その{terms.staff}
-              の回る順番の中で最も費用の少ない位置に入り、固定になります。「固定を残して組み直す」は、固定した訪問の担当を変えずに残りを組み直します。
+              訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
+              の回る順番の中で最も費用の少ない位置に入り、固定になります。「固定を残して組み直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
             </Hint>
           </div>
           {aiPlan && !running && (
@@ -976,9 +991,27 @@ export default function PlanPage() {
               <SectionTitle
                 icon={Gauge}
                 aside={
-                  <button type="button" className="btn btn-primary btn-small" disabled={!!running} onClick={adopt}>
-                    予定に採用
-                  </button>
+                  <span className="row" style={{ gap: 6 }}>
+                    {confirmState === 'same' ? (
+                      <span className="chip chip-ok" data-testid="confirm-state">
+                        <CircleCheck size={12} aria-hidden="true" />
+                        確定済み
+                      </span>
+                    ) : (
+                      <span className="chip chip-warn" data-testid="confirm-state">
+                        <TriangleAlert size={12} aria-hidden="true" />
+                        {confirmState === 'diff' ? '未確定の変更あり' : '未確定'}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-small"
+                      disabled={!!running || confirmState === 'same'}
+                      onClick={adopt}
+                    >
+                      この割当で確定
+                    </button>
+                  </span>
                 }
               >
                 今の案{edited ? '（手直し後）' : ''}
@@ -1017,7 +1050,7 @@ export default function PlanPage() {
                 aside={
                   <Hint>
                     訪問をドラッグして別の{terms.staff}
-                    へ移せます。押すと理由（点の内訳）と担当の選択が出ます。ピンは固定（組み直しても担当を変えない）。
+                    へ移せます。押すと理由（点の内訳）が出ます。ピンは固定（組み直しても担当を変えない）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。
                   </Hint>
                 }
               >
@@ -1091,6 +1124,7 @@ export default function PlanPage() {
                       {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
                       {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
                       {ids.map((id) => card(id))}
+                      {homeLeg(sid)}
                     </div>
                   );
                 })}
@@ -1102,14 +1136,7 @@ export default function PlanPage() {
                 icon={MapIcon}
                 aside={
                   focusStaff && (
-                    <button
-                      type="button"
-                      className="btn btn-small"
-                      onClick={() => {
-                        setFocusStaff(null);
-                        setFocusLeg(null);
-                      }}
-                    >
+                    <button type="button" className="btn btn-small" onClick={sel.clear}>
                       全員のルートを見る
                     </button>
                   )
@@ -1118,30 +1145,21 @@ export default function PlanPage() {
                 地図{focusStaff ? `：${staffName(focusStaff)}` : ''}
               </SectionTitle>
               <RouteMap points={points} lines={lines} height={420} />
-              <div className="row sub" style={{ flexWrap: 'wrap' }}>
-                {columns
-                  .filter((sid) => (own(routes, sid)?.length ?? 0) > 0)
-                  .map((sid) => (
-                    <button
-                      key={sid}
-                      type="button"
-                      className={`nowrap legend-item legend-btn ${focusStaff === sid ? 'is-on' : ''}`}
-                      aria-pressed={focusStaff === sid}
-                      onClick={() => focusOn(focusStaff === sid ? null : sid)}
-                    >
-                      <span className="legend-line" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
-                      {staffName(sid)}
-                    </button>
-                  ))}
-                <span className="nowrap legend-item">「家」＝自宅</span>
-              </div>
+              <StaffLegend
+                staffIds={columns.filter((sid) => (own(routes, sid)?.length ?? 0) > 0)}
+                staffName={staffName}
+                colorOfStaff={colorOfStaff}
+                focusStaff={focusStaff}
+                onFocus={focusOn}
+                extra={<span className="nowrap legend-item">「家」＝自宅</span>}
+              />
             </div>
             <MapDock
               target={mapCardRef}
               points={points}
               lines={lines}
               title={`地図${focusStaff ? `：${staffName(focusStaff)}` : ''}`}
-              focusKey={[focusStaff, focusLeg, picked].filter(Boolean).join('|')}
+              focusKey={sel.focusKey}
             />
           </>
         )}
@@ -1361,5 +1379,131 @@ function BalanceChips({
         );
       })}
     </div>
+  );
+}
+
+/** 訪問の一覧の「注意」に出すもの */
+type VisitNotes = {
+  /** 計算に入れていない（訪問先が休止中・位置が未登録など） */
+  outside: boolean;
+  /** 今の案に入らなかった */
+  dropped: boolean;
+  /** 手直しで固定した */
+  pinned: boolean;
+  /** 必須の条件の違反 */
+  hard?: string[];
+};
+
+/**
+ * その日の訪問の一覧（時間・訪問先・所要・担当・注意・編集/取消）。件数が多いので初期は畳む。
+ * 担当は今の案での担当を出すだけ（割り当ては下の列でドラッグする）
+ */
+function VisitList({
+  visits,
+  visitById,
+  clientById,
+  ownerName,
+  notes,
+  clientLabel,
+  onEdit,
+  onCancel,
+}: {
+  /** 開始時刻の順の訪問ID */
+  visits: string[];
+  visitById: Map<string, Visit>;
+  clientById: Map<string, Client>;
+  /** 今の案での担当（AI案が無い・入らなかったときは null） */
+  ownerName: (id: string) => { name: string; color: string | undefined } | null;
+  notes: (id: string) => VisitNotes;
+  clientLabel: string;
+  onEdit: (id: string) => void;
+  onCancel: (v: Visit) => void;
+}) {
+  return (
+    <details className="card visit-list" data-testid="visit-list">
+      <summary className="visit-list-summary">
+        <ChevronRight size={18} className="visit-list-chevron" aria-hidden="true" />
+        <CalendarDays size={18} aria-hidden="true" />
+        <strong>訪問の一覧（{visits.length}件）</strong>
+        <span className="sub">押すと開きます。担当は今の案のものです</span>
+      </summary>
+      <div className="table-scroll">
+        <table className="visit-table">
+          <thead>
+            <tr>
+              <th>
+                <WithIcon icon={Clock} size={14}>
+                  時間
+                </WithIcon>
+              </th>
+              <th>{clientLabel}</th>
+              <th className="num">所要</th>
+              <th>担当</th>
+              <th>注意</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {visits.map((id) => {
+              const v = visitById.get(id);
+              if (!v) return null;
+              const o = ownerName(id);
+              const n = notes(id);
+              const label = `${clientById.get(v.clientId)?.displayName ?? ''} ${windowText(v)}`;
+              return (
+                <tr key={id} className={o ? '' : 'row-unassigned'}>
+                  <td className="nowrap">
+                    <div className="time-cell">
+                      <Clock size={14} aria-hidden="true" />
+                      <span className="time-main">{windowText(v)}</span>
+                      {v.windowKind === 'window' && <span className="time-tag">この間に開始</span>}
+                    </div>
+                  </td>
+                  <td>
+                    <ClientName client={clientById.get(v.clientId)} />
+                    {v.note && <div className="sub">{v.note}</div>}
+                  </td>
+                  <td className="num nowrap">{v.durationMinutes}分</td>
+                  <td className="nowrap">
+                    {o ? (
+                      <span className="row" style={{ gap: 6 }}>
+                        <span className="staff-dot" style={{ background: o.color }} aria-hidden="true" />
+                        {o.name}
+                      </span>
+                    ) : (
+                      <span className="sub">未割当</span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
+                      {n.outside && <span className="chip chip-warn">計算に入れない</span>}
+                      {n.dropped && <span className="chip chip-warn">入らなかった</span>}
+                      {n.pinned && (
+                        <span className="chip chip-pin">
+                          <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
+                          固定
+                        </span>
+                      )}
+                      {n.hard?.map((h) => (
+                        <span key={h} className="chip chip-red" title="必須の条件の違反">
+                          <ShieldAlert size={12} aria-hidden="true" />
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="nowrap">
+                    <div className="actions">
+                      <IconButton icon={Pencil} label={`${label}を編集`} onClick={() => onEdit(id)} />
+                      <IconButton icon={Ban} label={`${label}を取り消す`} tone="danger" onClick={() => onCancel(v)} />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </details>
   );
 }

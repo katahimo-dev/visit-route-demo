@@ -1,6 +1,30 @@
-/* 予定・訪問の入力・スタッフ本人の画面・稼働時間 */
+/* 予定の訪問の一覧・訪問の入力・スタッフ本人の画面・稼働時間 */
 
-/* 訪問一覧：時間列 */
+/* 訪問の一覧（畳める。初期は畳む） */
+.visit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.visit-list-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.visit-list-summary::-webkit-details-marker {
+  display: none;
+}
+.visit-list-chevron {
+  transition: transform 0.15s;
+}
+.visit-list[open] .visit-list-chevron {
+  transform: rotate(90deg);
+}
+
+/* 訪問の一覧：時間列 */
 .visit-table .time-cell {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -28,62 +52,6 @@
 .visit-table .actions {
   display: inline-flex;
   gap: 4px;
-}
-
-/* 担当ごとの列 */
-.route-col .col-name,
-.item-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.count-badge {
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--soft);
-  color: var(--sub);
-  white-space: nowrap;
-}
-.count-badge.is-warn {
-  background: var(--warn);
-  color: #fff;
-}
-.route-col-none {
-  border-style: dashed;
-  border-top-style: solid;
-  background: #fdf7ea;
-}
-.col-hours {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-.chip-off {
-  background: #ece5df;
-  color: var(--sub);
-  font-weight: 700;
-}
-
-/* 保存バー */
-.savebar-state {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  font-weight: 700;
-  color: var(--ok);
-}
-.savebar-state.is-dirty {
-  color: #a46d0a;
-}
-.savebar-note {
-  font-weight: 400;
-}
-.savebar:has(.is-dirty) {
-  border-top: 3px solid var(--warn);
 }
 
 /* スタッフ本人の画面 */
@@ -137,10 +105,4 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-}
-
-@media (max-width: 600px) {
-  .savebar-note {
-    display: none;
-  }
 }

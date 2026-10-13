@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Info } from 'lucide-react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Info, X } from 'lucide-react';
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * 画面の見出し：アイコン＋題名＋ひとこと。右に主ボタンなどを置く
@@ -151,5 +152,67 @@ export function Empty({ icon: Icon, children }: { icon: LucideIcon; children: Re
       <Icon size={28} strokeWidth={1.8} aria-hidden="true" />
       <div>{children}</div>
     </div>
+  );
+}
+
+/**
+ * 右から出る編集の欄（一覧が長くても、押した所から探さずに済む）。後ろは暗くし、Esc・外側・× で閉じる。
+ * 開いたら最初の入力欄に移り、閉じたら押したボタンに戻る
+ */
+export function SidePanel({
+  icon: Icon,
+  title,
+  onClose,
+  children,
+  footer,
+}: {
+  icon: LucideIcon;
+  title: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  /** 下に固定して出す操作（保存・閉じる） */
+  footer?: ReactNode;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const back = document.activeElement as HTMLElement | null;
+    ref.current?.querySelector<HTMLElement>('input, select, textarea')?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+      back?.focus?.();
+    };
+  }, []);
+  // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
+  return createPortal(
+    <div className="drawer-wrap">
+      <button type="button" className="drawer-backdrop" aria-label="閉じる" tabIndex={-1} onClick={onClose} />
+      <section
+        ref={ref}
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof title === 'string' ? title : undefined}
+      >
+        <header className="drawer-head">
+          <h2>
+            <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
+            {title}
+          </h2>
+          <IconButton icon={X} label="閉じる" onClick={onClose} />
+        </header>
+        <div className="drawer-body stack">{children}</div>
+        {footer && <footer className="drawer-foot">{footer}</footer>}
+      </section>
+    </div>,
+    document.body,
   );
 }
