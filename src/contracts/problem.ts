@@ -149,7 +149,7 @@ export type ScoreScale = {
    * 待ち・均等は0。担当の候補がいない訪問は落とした訪問の点
    */
   lowerBound: number;
-  /** 0点：素朴な案（開始の早い順に、入れられる担当のうち直前の場所からの移動が最短の人の最後に足す）の費用 */
+  /** 0点：素朴な案（matching の naiveSeqs：担当できる人の少ない順・開始の早い順に、増える移動が最も少ない担当の最も安い位置に挟む）の費用 */
   naive: number;
   /** 素朴な案（staffId → 訪問ID。回る順） */
   naiveRoutes: Record<string, string[]>;

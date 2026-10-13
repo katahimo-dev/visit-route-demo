@@ -14,7 +14,7 @@ import {
   type VisitExplain,
 } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
-import { balanceOff, balancePoints, scheduleRoute, totalPoints } from '../matching';
+import { balanceOff, balancePoints, naiveSeqs, scheduleRoute, totalPoints } from '../matching';
 
 const INF = Number.POSITIVE_INFINITY;
 /** 説明に出す理由の数 */
@@ -238,32 +238,11 @@ export function diff(problem: Problem, from: Record<string, string[]>, to: Recor
 // ---- 点数（ADR-0007。表示だけ。solver の費用は変えない。下限＝160点・素朴な案＝0点）----
 
 /**
- * 素朴な案：訪問を開始（earliest）の早い順に、可否・件数の上限・時間の約束・稼働時間帯を満たす担当のうち
- * 直前の場所（最後の訪問先、まだ無ければ自宅）からの移動が最短の人の最後に足す。同じなら staff の順で先の人。
- * 入れられない訪問は入らない。乱数・時刻は使わない（決定的）
+ * 素朴な案（staffId → 訪問ID。回る順）。中身は matching の naiveSeqs：開始の早い順に、増える移動が最も少ない担当の、
+ * その順番の中で最も安い位置（strict で入る位置）に挟む。入らない訪問だけ落とす。決定的
  */
 export function naivePlan(problem: Problem): Record<string, string[]> {
-  const order = problem.visits.map((_, i) => i);
-  order.sort((a, b) => problem.visits[a]!.earliest - problem.visits[b]!.earliest || a - b);
-  const seqs: number[][] = problem.staff.map(() => []);
-  const cap = problem.balance?.cap ?? null;
-  for (const v of order) {
-    const to = problem.visits[v]!.point;
-    let best = -1;
-    let bestTravel = INF;
-    for (let s = 0; s < problem.staff.length; s++) {
-      if (!problem.allowed[v]![s]) continue;
-      const seq = seqs[s]!;
-      if (cap && seq.length + 1 > cap[s]!) continue;
-      const last = seq.length > 0 ? problem.visits[seq[seq.length - 1]!]!.point : problem.staff[s]!.point;
-      const t = problem.travel[last]![to]!;
-      if (t >= bestTravel) continue;
-      if (scheduleRoute(problem, s, [...seq, v], 'strict') === null) continue;
-      best = s;
-      bestTravel = t;
-    }
-    if (best >= 0) seqs[best]!.push(v);
-  }
+  const seqs = naiveSeqs(problem);
   const routes: Record<string, string[]> = {};
   problem.staff.forEach((st, s) => {
     routes[st.id] = seqs[s]!.map((v) => problem.visits[v]!.id);

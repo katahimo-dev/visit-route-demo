@@ -45,7 +45,7 @@ import { hundredBreakdown, score, toHundred } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
 import { attempt, hasLocation, newId, r0, staffColor } from '../lib/common';
 import { routesOf, useDayModel } from '../lib/useDayModel';
-import { breakdownText, HundredHint } from './planParts';
+import { breakdownText, HundredHint, RefMark } from './planParts';
 import './schedule.css';
 import { VisitForm } from './VisitForm';
 
@@ -578,7 +578,7 @@ function ScoreSummary({
       <div className="stat-row">
         <Stat
           icon={Gauge}
-          label="手作業案の合計"
+          label={hard > 0 ? '手作業案の合計（参考）' : '手作業案の合計'}
           value={scale ? toHundred(s.total, scale) : '—'}
           unit="点"
           tone="primary"
@@ -596,7 +596,10 @@ function ScoreSummary({
           <Stat icon={UserX} label="未割当" value={unassigned} unit="件" tone={unassigned > 0 ? 'warn' : 'ok'} />
         )}
       </div>
-      {scale && <HundredHint cost={s.total} parts={parts} scale={scale} />}
+      <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+        {scale && <HundredHint cost={s.total} parts={parts} scale={scale} />}
+        {scale && <RefMark hard={hard} />}
+      </div>
     </div>
   );
 }

@@ -34,6 +34,8 @@ const aiPlanObject = z.object({
   rules: z.array(ruleSchema),
   generated: z.object({ routes: routesSchema, unassigned: z.array(z.string()), score: z.number() }),
   pins: z.record(z.string(), z.string()),
+  /** 今の案の元になった記録（AiRun.id。ADR-0008）。古いデータ・記録に無い案は無し */
+  runId: z.string().max(100).optional(),
 });
 export const aiPlanSchema = z.preprocess((raw) => {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;

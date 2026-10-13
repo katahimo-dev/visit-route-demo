@@ -35,7 +35,7 @@ import { planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
 import './plan.css';
-import { CompareTable, explainMap, ReasonBox, SCORE_TEXT } from './planParts';
+import { CompareTable, explainMap, ReasonBox, RefMark, SCORE_TEXT } from './planParts';
 
 /**
  * 比較（D19・D22・ADR-0005）：その日のAI案の記録（作るたびに条件と結果を残したもの）と「今の案」から、
@@ -443,6 +443,7 @@ export default function ComparePage() {
                       </td>
                       <td className="num" title={sc ? `費用 ${r0(sc.total)}（内部の値）` : undefined}>
                         {sc && scale ? `${toHundred(sc.total, scale)}点` : '—'}
+                        {sc && scale && <RefMark hard={sc.hardViolations.length} />}
                       </td>
                       <td className="num">{sc ? `${r0(sc.travelMinutes)}分` : '—'}</td>
                       <td className="num">{sc ? `${sc.dropped}件` : '—'}</td>
@@ -532,7 +533,7 @@ export default function ComparePage() {
                     tone={hundredDelta.d > 0 ? 'ok' : hundredDelta.d < 0 ? 'warn' : 'plain'}
                     value={hundredDelta.d === 0 ? '差なし' : `B が ${deltaText(hundredDelta.d, '')}`}
                     unit={hundredDelta.d === 0 ? undefined : '点'}
-                    note={`${hundredDelta.a}点 → ${hundredDelta.b}点`}
+                    note={`${hundredDelta.a}点 → ${hundredDelta.b}点${as && bs && as.hardViolations.length + bs.hardViolations.length > 0 ? '（参考）' : ''}`}
                   />
                 )}
                 <Stat

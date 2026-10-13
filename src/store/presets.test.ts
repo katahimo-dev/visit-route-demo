@@ -83,3 +83,12 @@ describe('プリセットの repair', () => {
     expect(repair(d).presets[0]).toBe(d.presets[0]);
   });
 });
+
+describe('presets が null の保存データ', () => {
+  it('初期の3つで補う', () => {
+    const d = base();
+    const r = importJson(JSON.stringify({ ...d, presets: null }));
+    if (isImportError(r)) throw new Error(r.message);
+    expect(r.presets).toEqual(INITIAL_PRESETS);
+  });
+});

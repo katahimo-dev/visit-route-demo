@@ -59,9 +59,9 @@ export function migrate(raw: unknown): DemoData | ImportError {
     // 今は版1だけ。将来ここで古い版を順に移行する
     return fail(`データの版（${String(version ?? '不明')}）に対応していません。このデモの版は ${DATA_VERSION} です`);
   }
-  // プリセット（ADR-0008）が無い古いデータは、初期の3種で補う（版は1のまま）
+  // プリセット（ADR-0008）が無い（null も）古いデータは、初期の3種で補う（版は1のまま）
   const o = raw as Record<string, unknown>;
-  const withPresets = o.presets === undefined ? { ...o, presets: initialPresets() } : raw;
+  const withPresets = o.presets === undefined || o.presets === null ? { ...o, presets: initialPresets() } : raw;
   const r = demoDataSchema.safeParse(withPresets, { error: z.locales.ja().localeError });
   if (!r.success) {
     const first = r.error.issues[0];

@@ -56,9 +56,26 @@ export function breakdownText(parts: HundredPart[], n = 2): string {
 /** 点数の説明の文（ADR-0007 追記） */
 export const SCORE_TEXT = `理想と素朴な案のあいだを${SCORE_MULTIPLIER}倍した点。100点を超えることもある`;
 
+/** 必須を守っていない案（手作業案・手直しで必須の条件に合わない担当にした案）の点の印の説明（ADR-0007） */
+export const HARD_NOTE = '必須を守っていない案の点は比べられません（参考の点です）';
+
+/** 必須の違反がある案の点に付ける「参考」の印と説明 */
+export function RefMark({ hard }: { hard: number }) {
+  if (hard <= 0) return null;
+  return (
+    <span className="row" style={{ gap: 4, display: 'inline-flex' }}>
+      <span className="chip chip-warn" data-testid="score-ref">
+        参考
+      </span>
+      <Hint ariaLabel="参考の点の説明">{HARD_NOTE}</Hint>
+    </span>
+  );
+}
+
 /** 点数の決め方と、減点の内訳・内部の費用（説明の中） */
 export function HundredHint({ cost, parts, scale }: { cost: number; parts: HundredPart[]; scale: ScoreScale }) {
-  const shown = parts.filter((x) => Math.abs(x.points) >= 0.05);
+  // 下限より良い成分（0 未満）は内訳に出さない
+  const shown = parts.filter((x) => x.points >= 0.05);
   return (
     <Hint label="点数の決め方">
       {SCORE_TEXT}（高いほど良い）。近い順に機械的に割り当てた素朴な案を0点、理想（届かない下限）を{SCORE_MAX}
@@ -68,7 +85,7 @@ export function HundredHint({ cost, parts, scale }: { cost: number; parts: Hundr
         <>
           <br />
           減点の内訳：
-          {shown.map((x) => `${x.label} ${x.points >= 0 ? '−' : '+'}${r1(Math.abs(x.points))}点`).join('・')}
+          {shown.map((x) => `${x.label} −${r1(x.points)}点`).join('・')}
         </>
       )}
       <br />
@@ -205,6 +222,16 @@ export function CompareTable({
           ))}
         </tbody>
       </table>
+      {scale && (manual.hardViolations.length > 0 || ai.hardViolations.length > 0) && (
+        <p className="sub" data-testid="score-ref">
+          {manual.hardViolations.length > 0 && ai.hardViolations.length > 0
+            ? 'A・B'
+            : manual.hardViolations.length > 0
+              ? 'A'
+              : 'B'}
+          の合計点は参考です：{HARD_NOTE}
+        </p>
+      )}
     </div>
   );
 }
@@ -252,7 +279,7 @@ export function WeightPanel({
             ))}
           </div>
           <span className="sub">いまの重み：{current ? current.name : 'プリセットから変えた重み'}</span>
-          <SavePresetForm compact />
+          <SavePresetForm compact disabled={running} />
           <NavLink to="/rules#presets" className="sub">
             プリセットを編集する
           </NavLink>
@@ -275,7 +302,7 @@ export function WeightPanel({
           <WeightSlider
             label={r.label}
             value={r.weight}
-            disabled={weightLocked(r)}
+            disabled={weightLocked(r) || running}
             onChange={(w) =>
               update((d) => ({ ...d, rules: d.rules.map((x) => (x.id === r.id ? { ...x, weight: w } : x)) }))
             }
@@ -295,7 +322,7 @@ export function WeightPanel({
  * 「いまの重みをプリセットとして保存」（D24。ADR-0008）。押すと名前の欄が出て、入れて保存すると最後に足す。
  * 6つあれば押せない。compact は AI案の右の欄用（小さいボタン）
  */
-export function SavePresetForm({ compact = false }: { compact?: boolean }) {
+export function SavePresetForm({ compact = false, disabled = false }: { compact?: boolean; disabled?: boolean }) {
   const { data, update } = useDemoData();
   const [name, setName] = useState<string | null>(null);
   const full = data.presets.length >= MAX_PRESETS;
@@ -310,7 +337,7 @@ export function SavePresetForm({ compact = false }: { compact?: boolean }) {
       <button
         type="button"
         className={`btn ${compact ? 'btn-small' : ''}`}
-        disabled={full}
+        disabled={full || disabled}
         onClick={() => setName('')}
         title={
           full ? `プリセットは${MAX_PRESETS}つまでです` : 'いまの条件の重み・必須を、新しいプリセットとして足します'
@@ -344,7 +371,7 @@ export function SavePresetForm({ compact = false }: { compact?: boolean }) {
       </label>
       {error && name.trim() !== '' && <span className="error">{error}</span>}
       <div className="row" style={{ gap: 4 }}>
-        <button type="submit" className="btn btn-small" disabled={!!error}>
+        <button type="submit" className="btn btn-small" disabled={!!error || disabled}>
           保存
         </button>
         <button type="button" className="btn btn-small" onClick={() => setName(null)}>

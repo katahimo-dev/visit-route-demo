@@ -1,8 +1,9 @@
-// 焼きなまし（ADR-0003）。ClassClassify の anneal.ts の構成：貪欲な初期解・差分評価・
+// 焼きなまし（ADR-0003）。ClassClassify の anneal.ts の構成：貪欲な初期解（素朴な案の方が良ければそれ）・差分評価・
 // 初期温度を改悪幅の中央値から・指数冷却・最後に貪欲な仕上げ。止めるのは反復回数（時刻は使わない）
 import type { Problem, SolveOptions, SolveResult, Solver } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
 import { balanceOff, balancePoints, totalPoints } from '../matching/cost';
+import { naiveSeqs } from '../matching/naive';
 import { routeCost, scheduleRoute } from '../matching/timing';
 
 const INF = Number.POSITIVE_INFINITY;
@@ -320,6 +321,26 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
   }
   current = recomputeTotal();
 
+  /** 列（staff 添字ごとの訪問添字）を今の状態にする */
+  const loadRoutes = (rs: number[][]) => {
+    for (const v of unassigned.slice()) removeUnassigned(v);
+    routeOf.fill(-1);
+    for (let s = 0; s < S; s++) {
+      const r = rs[s]!;
+      setRoute(s, r, r.length, routeCost(problem, s, r));
+    }
+    for (let v = 0; v < V; v++) if (routeOf[v]! < 0) addUnassigned(v);
+    current = recomputeTotal();
+  };
+
+  // 素朴な案（点数の0点の案）の方が良ければ、そこから始める（AI案の費用 ≤ 素朴な案。決定的）
+  if (V > 0 && S > 0) {
+    const greedy = routes.map((r) => r.slice());
+    const greedyTotal = current;
+    loadRoutes(naiveSeqs(problem));
+    if (!(current < greedyTotal - EPS)) loadRoutes(greedy);
+  }
+
   // --- 初期温度：ランダムな近傍の改悪幅の中央値 ---
   const samples: number[] = [];
   for (let k = 0; k < 300 && V > 0; k++) {
@@ -337,16 +358,7 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
   let iter = 0;
   let finished = false;
 
-  const loadBest = () => {
-    for (const v of unassigned.slice()) removeUnassigned(v);
-    routeOf.fill(-1);
-    for (let s = 0; s < S; s++) {
-      const r = bestRoutes[s]!;
-      setRoute(s, r, r.length, routeCost(problem, s, r));
-    }
-    for (let v = 0; v < V; v++) if (routeOf[v]! < 0) addUnassigned(v);
-    current = recomputeTotal();
-  };
+  const loadBest = () => loadRoutes(bestRoutes);
 
   // --- 最良解に戻して貪欲に仕上げ（よくなる手だけを採る） ---
   const polish = () => {

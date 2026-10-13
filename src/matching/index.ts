@@ -3,4 +3,5 @@ export { compile, PIN_LABEL, PIN_RULE_ID } from './compile';
 export { conditionText, matches } from './conditions';
 export { balanceOff, balancePoints, totalPoints } from './cost';
 export { bestInsertion } from './insertion';
+export { naiveSeqs } from './naive';
 export { fitStart, routeCost, scheduleRoute } from './timing';

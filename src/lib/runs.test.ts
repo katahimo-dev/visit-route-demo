@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_RUNS_PER_DAY } from '../contracts/data';
 import type { SolveResult } from '../contracts/problem';
 import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
-import { addRun, planOfRun, runLabel } from './runs';
+import { addRun, findRun, planOfRun, runLabel } from './runs';
 
 const DAY = '2026-10-12';
 const result = (routes: Record<string, string[]>): SolveResult => ({
@@ -79,5 +79,14 @@ describe('AI案の記録（ADR-0005）', () => {
     expect(p.routes).toEqual({ s1: ['a'] });
     expect(p.generated.routes).toEqual(p.routes);
     expect(p.pins).toEqual({});
+  });
+
+  it('今の案は元の記録の id を持つ（同じ結果の記録は findRun で引ける）', () => {
+    const d0 = createDemoData(DAY);
+    const x = { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 };
+    const d1 = addRun(d0, DAY, x);
+    const run = findRun(d1, DAY, x)!;
+    expect(planOfRun(run).runId).toBe(run.id);
+    expect(findRun(addRun(d1, DAY, { ...x, createdAt: 2 }), DAY, x)?.id).toBe(run.id);
   });
 });

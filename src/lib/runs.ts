@@ -21,12 +21,7 @@ export function addRun(
   x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult; createdAt: number },
 ): DemoData {
   const runs = own(d.aiRuns, date) ?? [];
-  const same = (r: AiRun) =>
-    r.seed === x.result.seed &&
-    JSON.stringify(r.rules) === JSON.stringify(x.rules) &&
-    JSON.stringify(r.pins) === JSON.stringify(x.pins) &&
-    JSON.stringify(r.routes) === JSON.stringify(x.result.routes);
-  if (runs.some(same)) return d;
+  if (findRun(d, date, x)) return d;
   const no = runs.reduce((m, r) => Math.max(m, r.no), 0) + 1;
   // 最新の記録を消すと番号は使い回すので、ID には作った時刻も入れて別の記録と取り違えない
   const run: AiRun = {
@@ -48,6 +43,21 @@ export function addRun(
   return { ...d, aiRuns: { ...d.aiRuns, [date]: [...runs, run].slice(-MAX_RUNS_PER_DAY) } };
 }
 
+/** 同じ条件・種・固定・結果の記録（無ければ undefined。addRun のあとに引くと、足した記録かもとからある記録） */
+export function findRun(
+  d: DemoData,
+  date: string,
+  x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult },
+): AiRun | undefined {
+  return (own(d.aiRuns, date) ?? []).find(
+    (r) =>
+      r.seed === x.result.seed &&
+      JSON.stringify(r.rules) === JSON.stringify(x.rules) &&
+      JSON.stringify(r.pins) === JSON.stringify(x.pins) &&
+      JSON.stringify(r.routes) === JSON.stringify(x.result.routes),
+  );
+}
+
 /** 記録を今の案（AI案の画面）にする。AIが出したまま＝記録の結果、固定は記録の固定 */
 export function planOfRun(run: AiRun): AiPlan {
   return {
@@ -62,5 +72,6 @@ export function planOfRun(run: AiRun): AiPlan {
     rules: run.rules,
     generated: { routes: run.routes, unassigned: run.unassigned, score: run.score },
     pins: run.pins,
+    runId: run.id,
   };
 }
