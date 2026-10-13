@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   ListChecks,
   Map as MapIcon,
+  MapPin,
   Pin,
   PinOff,
   RefreshCw,
@@ -96,6 +97,8 @@ export default function PlanPage() {
   const [runningFor, setRunningFor] = useState<{ date: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  /** 地図で見るスタッフ（列の見出しを押す・訪問を選ぶと、その人のルートだけを地図に出す）。null は全員 */
+  const [focusStaff, setFocusStaff] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTo, setDropTo] = useState<string | null>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
@@ -124,6 +127,7 @@ export default function PlanPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ訪問を外す
   useEffect(() => {
     setPicked(null);
+    setFocusStaff(null);
   }, [date]);
 
   const aiPlan: AiPlan | undefined = own(data.aiPlans, date);
@@ -519,6 +523,7 @@ export default function PlanPage() {
     const lns: MapLine[] = [];
     if (!aiPlan) return { points: pts, lines: lns };
     for (const sid of columns) {
+      if (focusStaff && sid !== focusStaff) continue;
       const ids = own(routes, sid) ?? [];
       if (ids.length === 0) continue;
       const s = staffById.get(sid);
@@ -533,13 +538,19 @@ export default function PlanPage() {
         const c = clientById.get(visitById.get(id)?.clientId ?? '');
         if (!c || !hasLocation(c.place)) continue;
         path.push({ lat: c.place.lat, lng: c.place.lng });
-        pts.push({ lat: c.place.lat, lng: c.place.lng, label: initialOf(c.displayName), color: colorOf(c.color) });
+        pts.push({
+          lat: c.place.lat,
+          lng: c.place.lng,
+          label: initialOf(c.displayName),
+          color: colorOf(c.color),
+          highlight: id === picked,
+        });
       }
       if (home && path.length > 1) path.push(home);
       lns.push({ points: path, color });
     }
     return { points: pts, lines: lns };
-  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById]);
+  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById, focusStaff, picked]);
 
   const notInProblem = problem ? visits.filter((v) => !problem.visits.some((p) => p.id === v.id)) : [];
   const cs = curScore?.value ?? null;
@@ -584,11 +595,15 @@ export default function PlanPage() {
             role="button"
             tabIndex={0}
             className="route-btn plain-btn"
-            onClick={() => setPicked(isPicked ? null : id)}
+            onClick={() => {
+              setPicked(isPicked ? null : id);
+              if (!isPicked && ownerId) setFocusStaff(ownerId);
+            }}
             onKeyDown={(ev) => {
               if (ev.key === 'Enter' || ev.key === ' ') {
                 ev.preventDefault();
                 setPicked(isPicked ? null : id);
+                if (!isPicked && ownerId) setFocusStaff(ownerId);
               }
             }}
             title="押すと理由を見られます。ドラッグで別の担当へ移せます"
@@ -937,20 +952,36 @@ export default function PlanPage() {
                   return (
                     <div
                       key={sid}
-                      className={['route-col', dropTo === sid ? 'is-drop' : '', notAllowed ? 'is-red' : ''].join(' ')}
+                      className={[
+                        'route-col',
+                        dropTo === sid ? 'is-drop' : '',
+                        notAllowed ? 'is-red' : '',
+                        focusStaff === sid ? 'is-focus' : '',
+                        focusStaff && focusStaff !== sid ? 'is-dim-col' : '',
+                      ].join(' ')}
                       style={{ borderTopColor: colorOfStaff.get(sid) }}
                       data-staff={sid}
                       {...dropProps(sid)}
                     >
                       <div className="spread">
-                        <strong className="col-head ellipsis">
+                        <button
+                          type="button"
+                          className="col-head col-focus ellipsis"
+                          aria-pressed={focusStaff === sid}
+                          title={focusStaff === sid ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
+                          onClick={() => {
+                            setFocusStaff(focusStaff === sid ? null : sid);
+                            if (focusStaff !== sid && picked && owner.get(picked) !== sid) setPicked(null);
+                          }}
+                        >
                           <span
                             className="staff-dot"
                             style={{ background: colorOfStaff.get(sid) }}
                             aria-hidden="true"
                           />
                           {staffName(sid)}
-                        </strong>
+                          <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
+                        </button>
                         <span className="chip">{ids.length}件</span>
                       </div>
                       {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
@@ -963,16 +994,33 @@ export default function PlanPage() {
             </div>
 
             <div className="card stack">
-              <SectionTitle icon={MapIcon}>地図</SectionTitle>
+              <SectionTitle
+                icon={MapIcon}
+                aside={
+                  focusStaff && (
+                    <button type="button" className="btn btn-small" onClick={() => setFocusStaff(null)}>
+                      全員のルートを見る
+                    </button>
+                  )
+                }
+              >
+                地図{focusStaff ? `：${staffName(focusStaff)}` : ''}
+              </SectionTitle>
               <RouteMap points={points} lines={lines} height={420} />
               <div className="row sub" style={{ flexWrap: 'wrap' }}>
                 {columns
                   .filter((sid) => (own(routes, sid)?.length ?? 0) > 0)
                   .map((sid) => (
-                    <span key={sid} className="nowrap legend-item">
+                    <button
+                      key={sid}
+                      type="button"
+                      className={`nowrap legend-item legend-btn ${focusStaff === sid ? 'is-on' : ''}`}
+                      aria-pressed={focusStaff === sid}
+                      onClick={() => setFocusStaff(focusStaff === sid ? null : sid)}
+                    >
                       <span className="legend-line" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
                       {staffName(sid)}
-                    </span>
+                    </button>
                   ))}
                 <span className="nowrap legend-item">「家」＝自宅</span>
               </div>

@@ -401,3 +401,68 @@
 .preset-save input {
   width: 100%;
 }
+
+/* 地図で見るスタッフ（列の見出し・凡例を押す）と、選んだ訪問先の強調 */
+.col-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+}
+.col-focus:hover,
+.col-focus[aria-pressed="true"] {
+  background: var(--primary-soft);
+}
+.col-focus-icon {
+  color: var(--sub);
+  opacity: 0;
+}
+.col-focus:hover .col-focus-icon,
+.col-focus[aria-pressed="true"] .col-focus-icon {
+  opacity: 1;
+  color: var(--primary);
+}
+.route-col.is-focus {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.route-col.is-dim-col {
+  opacity: 0.55;
+}
+.legend-btn {
+  border: 1px solid transparent;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.legend-btn:hover,
+.legend-btn.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.map-pin-hl {
+  width: 40px;
+  height: 40px;
+  font-size: 1rem;
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  animation: pin-pulse 1.4s ease-out infinite;
+}
+@keyframes pin-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(232, 115, 95, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgba(232, 115, 95, 0);
+  }
+}

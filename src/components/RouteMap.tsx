@@ -6,7 +6,8 @@ import { useEffect, useRef } from 'react';
  * 地図（国土地理院の淡色地図。APIキー不要）。
  * 線は順番どおりに結ぶ。dashed は手作業案（点線）、実線は AI案。
  */
-export type MapPoint = { lat: number; lng: number; label: string; color: string };
+/** highlight は選んだ訪問先（大きく・輪で囲み・前に出す） */
+export type MapPoint = { lat: number; lng: number; label: string; color: string; highlight?: boolean };
 export type MapLine = { points: { lat: number; lng: number }[]; color: string; dashed?: boolean };
 
 export function RouteMap({
@@ -59,12 +60,14 @@ export function RouteMap({
       ).addTo(g);
     }
     for (const p of points) {
+      const size = p.highlight ? 40 : 28;
       L.marker([p.lat, p.lng], {
+        zIndexOffset: p.highlight ? 1000 : 0,
         icon: L.divIcon({
           className: '',
-          html: `<div class="dot dot-sm" style="background:${p.color};border:2px solid #fff;box-shadow:0 1px 3px #0003">${escapeHtml(p.label)}</div>`,
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
+          html: `<div class="dot ${p.highlight ? 'map-pin-hl' : 'dot-sm'}" style="background:${p.color};border:2px solid #fff;box-shadow:0 1px 3px #0003">${escapeHtml(p.label)}</div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
         }),
       }).addTo(g);
     }
