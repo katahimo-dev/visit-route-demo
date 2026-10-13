@@ -1391,3 +1391,65 @@ a.icon-btn:hover {
   border-color: #d9c8bb;
   background: var(--soft);
 }
+
+/* 画面の外の地図を右下に浮かせる（components/MapDock.tsx） */
+.map-dock {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 900;
+  width: min(380px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(40, 25, 15, 0.22);
+  animation: toast-in 0.2s ease-out;
+}
+.map-dock-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary-dark);
+}
+.map-dock-head strong {
+  flex: 1;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+.map-dock-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+}
+.map-dock-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(40, 25, 15, 0.25);
+}
+@media (max-width: 600px) {
+  .map-dock {
+    right: 12px;
+    bottom: 12px;
+  }
+  .map-dock .map {
+    height: 200px !important;
+  }
+}

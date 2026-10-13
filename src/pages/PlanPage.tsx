@@ -26,6 +26,7 @@ import {
 import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { MapDock } from '../components/MapDock';
 import { ClientName } from '../components/parts';
 import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
@@ -101,6 +102,8 @@ export default function PlanPage() {
   const [focusStaff, setFocusStaff] = useState<string | null>(null);
   /** 地図で強調する区間（この訪問へ来る移動）。null は無し */
   const [focusLeg, setFocusLeg] = useState<string | null>(null);
+  /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
+  const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTo, setDropTo] = useState<string | null>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
@@ -1011,7 +1014,7 @@ export default function PlanPage() {
               </div>
             </div>
 
-            <div className="card stack">
+            <div className="card stack" ref={mapCardRef}>
               <SectionTitle
                 icon={MapIcon}
                 aside={
@@ -1050,6 +1053,13 @@ export default function PlanPage() {
                 <span className="nowrap legend-item">「家」＝自宅</span>
               </div>
             </div>
+            <MapDock
+              target={mapCardRef}
+              points={points}
+              lines={lines}
+              title={`地図${focusStaff ? `：${staffName(focusStaff)}` : ''}`}
+              focusKey={[focusStaff, focusLeg, picked].filter(Boolean).join('|')}
+            />
           </>
         )}
 
