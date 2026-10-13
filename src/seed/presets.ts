@@ -84,3 +84,21 @@ export function matchesPreset(rules: Rule[], preset: Preset): boolean {
 export function presetOf(rules: Rule[], presets: readonly Preset[]): Preset | null {
   return presets.find((p) => matchesPreset(rules, p)) ?? null;
 }
+
+/**
+ * 点数の基準のプリセット（ADR-0010）：id のプリセット、無ければ先頭（プリセットが0件なら null）。
+ * store の repair が id を直すので、ふつうは id のプリセット
+ */
+export function scorePresetOf(presets: readonly Preset[], id: string | undefined): Preset | null {
+  return presets.find((p) => p.id === id) ?? presets[0] ?? null;
+}
+
+/**
+ * 点数の物差しの条件（ADR-0010）：その日の条件に、点数の基準のプリセットの重み・必須を当てたもの。
+ * プリセットのカード・重みの欄で条件の重みを変えても変わらない（条件の追加・削除・名前は反映する）。
+ * プリセットが0件（ありえない）なら条件そのもの
+ */
+export function scoreRulesOf(d: { rules: Rule[]; presets: readonly Preset[]; scorePresetId?: string }): Rule[] {
+  const p = scorePresetOf(d.presets, d.scorePresetId);
+  return p ? applyPreset(d.rules, p) : d.rules;
+}

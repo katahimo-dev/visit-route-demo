@@ -5,12 +5,14 @@ import { availabilityOf, type Slot } from '../domain/availability';
 import { NONE, reconcile, type View } from '../domain/scheduleModel';
 import { normalize } from '../evaluate';
 import { compile } from '../matching';
+import { scorePresetOf, scoreRulesOf } from '../seed';
 import { useDemoData } from '../store';
 import { attempt, byDisplayName, byName, staffColor } from './common';
 
 /**
  * その日の画面で共通に使う形（予定・AI案・スタッフの画面）。
- * 問題（compile）は useMemo。未実装・データの不整合で投げても problemError に文を入れて画面は続ける
+ * 問題（compile）は useMemo。未実装・データの不整合で投げても problemError に文を入れて画面は続ける。
+ * problem・scale はいまの条件（solver の費用）、scoreProblem・scoreScale は点数の基準のプリセットの物差し（ADR-0010）
  */
 export function useDayModel(date: string) {
   const store = useDemoData();
@@ -31,11 +33,31 @@ export function useDayModel(date: string) {
     );
   }, [staff, data.availability, date]);
   const compiled = useMemo(() => attempt(() => compile(data, date)), [data, date]);
-  /** 100点満点の物差し（下限＝100点、1件あたりの超過で減点。ADR-0007 案A） */
+  /** いまの条件の物差し（solver が最小にする費用と同じ。途中の計算・ドラッグの可否に使う） */
   const scale = useMemo(() => {
     const p = compiled.value;
     return p ? attempt(() => normalize(p)).value : null;
   }, [compiled]);
+  /** 点数の基準のプリセット（ADR-0010。プリセットが0件なら null＝いまの条件そのもの） */
+  const scorePreset = useMemo(
+    () => scorePresetOf(data.presets, data.scorePresetId),
+    [data.presets, data.scorePresetId],
+  );
+  /**
+   * 点数の物差しの問題（ADR-0010）：条件に点数の基準のプリセットの重み・必須を当てて作る。
+   * いまの条件と同じなら compile し直さずに同じものを使う（重い compile を二重にしない）
+   */
+  const scoreCompiled = useMemo(() => {
+    const rules = scoreRulesOf(data);
+    if (JSON.stringify(rules) === JSON.stringify(data.rules)) return compiled;
+    return attempt(() => compile({ ...data, rules }, date));
+  }, [data, date, compiled]);
+  /** 100点満点の物差し（下限＝100点、1件あたりの超過で減点。ADR-0007 案A）。点数の基準の条件で作る（ADR-0010） */
+  const scoreScale = useMemo(() => {
+    if (scoreCompiled === compiled) return scale;
+    const p = scoreCompiled.value;
+    return p ? attempt(() => normalize(p)).value : null;
+  }, [scoreCompiled, compiled, scale]);
   /** 保存してある手作業案（訪問の staffId で補う） */
   const savedView: View = useMemo(
     () =>
@@ -60,6 +82,11 @@ export function useDayModel(date: string) {
     problem: compiled.value as Problem | null,
     problemError: compiled.error,
     scale: scale as ScoreScale | null,
+    /** 点数（100点満点）・必須の違反・条件ごとの達成を付ける問題（点数の基準の条件。ADR-0010） */
+    scoreProblem: scoreCompiled.value as Problem | null,
+    scoreScale: scoreScale as ScoreScale | null,
+    /** 点数の基準のプリセットの名前（「物差し：標準」の表示。プリセットが無ければ「いまの条件」） */
+    scoreRulerName: scorePreset?.name ?? 'いまの条件',
     savedView,
   };
 }

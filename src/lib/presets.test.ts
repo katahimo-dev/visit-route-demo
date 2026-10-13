@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_PRESETS } from '../contracts/rules';
-import { createDemoData, INITIAL_PRESETS, presetOf } from '../seed';
+import { naivePlan, normalize, score, toHundred } from '../evaluate';
+import { compile } from '../matching';
+import { applyPreset, createDemoData, INITIAL_PRESETS, presetOf, scorePresetOf, scoreRulesOf } from '../seed';
 import {
   addPresetError,
   addPresetFromRules,
   patchPreset,
   removePreset,
   resetPresets,
+  setScorePreset,
   weightsFromRules,
 } from './presets';
 
@@ -49,5 +52,46 @@ describe('プリセットの編集（ADR-0008）', () => {
     expect(d.presets[0]!.name).toBe('変えた');
     const r = resetPresets(d);
     expect(r.presets).toEqual(INITIAL_PRESETS);
+  });
+});
+
+describe('点数の基準（ADR-0010）', () => {
+  it('基準のプリセットを消すと、基準は残りの先頭に移る。ほかを消しても変わらない', () => {
+    const d = { ...base(), scorePresetId: 'travel' };
+    expect(removePreset(d, 'people').scorePresetId).toBe('travel');
+    expect(removePreset(d, 'travel').scorePresetId).toBe('standard');
+    expect(removePreset({ ...d, scorePresetId: 'standard' }, 'standard').scorePresetId).toBe('travel');
+  });
+
+  it('基準を選べる（無い id は変えない）。初期値に戻すと「標準」', () => {
+    const d = base();
+    expect(setScorePreset(d, 'people').scorePresetId).toBe('people');
+    expect(setScorePreset(d, 'nothing')).toBe(d);
+    expect(resetPresets({ ...d, scorePresetId: 'people' }).scorePresetId).toBe('standard');
+  });
+
+  it('点数の物差しは、プリセットのカードで条件の重みを変えても変わらない。基準を替えると変わる', () => {
+    const d = base();
+    const date = d.visits[0]!.date;
+    const ruler = (x: typeof d) => {
+      const p = compile({ ...x, rules: scoreRulesOf(x) }, date);
+      const routes = naivePlan(p);
+      return {
+        scale: normalize(p),
+        total: score(p, routes).total,
+        hundred: toHundred(score(p, routes).total, normalize(p)),
+      };
+    };
+    const before = ruler(d);
+    for (const pr of INITIAL_PRESETS) {
+      // プリセットのカード＝その日の条件をプリセットの重みにする
+      expect(ruler({ ...d, rules: applyPreset(d.rules, pr) })).toEqual(before);
+    }
+    // 基準を「人の組み合わせ重視」にすると物差しが変わる
+    expect(ruler({ ...d, scorePresetId: 'people' }).scale).not.toEqual(before.scale);
+    // 基準と同じ重みの条件なら、いまの条件そのもの
+    expect(scoreRulesOf(d)).toEqual(d.rules);
+    expect(scorePresetOf(d.presets, 'nothing')?.id).toBe('standard');
+    expect(scoreRulesOf({ rules: d.rules, presets: [] })).toBe(d.rules);
   });
 });

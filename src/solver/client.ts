@@ -14,7 +14,12 @@ let counter = 0;
 export function runSolve(
   problem: Problem,
   options: SolveOptions,
-  onProgress?: (p: { iteration: number; total: number; bestScore: number }) => void,
+  onProgress?: (p: {
+    iteration: number;
+    total: number;
+    bestScore: number;
+    bestRoutes: Record<string, string[]>;
+  }) => void,
 ): { promise: Promise<SolveResult>; stop(): void } {
   counter += 1;
   const requestId = `solve-${counter}`;
@@ -46,7 +51,7 @@ export function runSolve(
       const m = e.data;
       if (settled || m.requestId !== requestId) return;
       if (m.type === 'progress') {
-        onProgress?.({ iteration: m.iteration, total: m.total, bestScore: m.bestScore });
+        onProgress?.({ iteration: m.iteration, total: m.total, bestScore: m.bestScore, bestRoutes: m.bestRoutes });
       } else if (m.type === 'done') {
         cleanup();
         resolve(m.result);

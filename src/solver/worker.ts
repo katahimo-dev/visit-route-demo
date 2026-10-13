@@ -47,6 +47,7 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
             iteration: solver.iteration(),
             total,
             bestScore: solver.bestScore(),
+            bestRoutes: solver.best().routes,
           });
         }
         setTimeout(run, 0);

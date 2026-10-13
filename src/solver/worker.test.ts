@@ -40,5 +40,9 @@ describe('worker', () => {
     expect(done?.type === 'done' && done.result.stopped).toBe(true);
     const progress = posted.find((m) => m.type === 'progress');
     expect(progress).toMatchObject({ requestId: 'b', total: 1e9 });
+    // いまの最良の案も送る（画面が点数の基準の物差しで付け直す。ADR-0010）
+    expect(progress?.type === 'progress' && Object.keys(progress.bestRoutes).sort()).toEqual(
+      problem.staff.map((s) => s.id).sort(),
+    );
   });
 });

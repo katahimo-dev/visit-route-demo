@@ -98,4 +98,37 @@ describe('Excel のプリセットのシート', () => {
     if (isImportError(r)) throw new Error(r.message);
     expect(r.presets).toEqual(d.presets);
   });
+
+  it('点数の基準（ADR-0010）：○ の行が往復し、列が無い・無印なら先頭、○ が2つなら止める', async () => {
+    const d = { ...base(), scorePresetId: 'people' };
+    const round = await importWorkbook(await toBuffer(d), d);
+    if (isImportError(round)) throw new Error(round.message);
+    expect(round.scorePresetId).toBe('people');
+    const noCol = await editAndImport(d, (wb) => {
+      const ws = wb.getWorksheet('プリセット')!;
+      ws.spliceColumns(col(ws, '点数の基準'), 1);
+    });
+    if (isImportError(noCol)) throw new Error(noCol.message);
+    expect(noCol.scorePresetId).toBe('standard');
+    const blank = await editAndImport(d, (wb) => {
+      const ws = wb.getWorksheet('プリセット')!;
+      for (let n = 2; n <= 4; n++) ws.getRow(n).getCell(col(ws, '点数の基準')).value = null;
+    });
+    if (isImportError(blank)) throw new Error(blank.message);
+    expect(blank.scorePresetId).toBe('standard');
+    const two = await editAndImport(d, (wb) => {
+      const ws = wb.getWorksheet('プリセット')!;
+      ws.getRow(2).getCell(col(ws, '点数の基準')).value = '○';
+    });
+    expect(isImportError(two) && two.message).toContain('1行だけ');
+  });
+
+  it('シートが無い古いブックは、いまの点数の基準のまま', async () => {
+    const d = { ...base(), scorePresetId: 'travel' };
+    const r = await editAndImport(d, (wb) => {
+      wb.removeWorksheet(wb.getWorksheet('プリセット')!.id);
+    });
+    if (isImportError(r)) throw new Error(r.message);
+    expect(r.scorePresetId).toBe('travel');
+  });
 });

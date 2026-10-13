@@ -555,8 +555,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   }
   if (errors.any) return errors.toError();
 
-  // プリセット（ADR-0008）。シートが無い古いブックは、いまのプリセットのまま
+  // プリセット（ADR-0008）。シートが無い古いブックは、いまのプリセット・点数の基準のまま
   let presets: Preset[] = base.presets;
+  let scorePresetId = base.scorePresetId;
   const presetWs = wb.getWorksheet(FIXED_SHEETS.presets);
   if (presetWs) {
     const sheet = new Sheet(FIXED_SHEETS.presets, presetWs, errors);
@@ -575,6 +576,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     const ids = new Map<string, number>();
     const presetIds = new Set(base.presets.map((p) => p.id));
     const read: Preset[] = [];
+    /** 点数の基準（ADR-0010）に ○ を付けた行（列が無い・無印なら先頭。migrate の repair が補う） */
+    const marked: { id: string; n: number }[] = [];
     const rows = sheet.rows();
     if (rows.length === 0) errors.add(sheetMsg(FIXED_SHEETS.presets, 'プリセットを1行以上書いてください'));
     if (rows.length > MAX_PRESETS)
@@ -600,10 +603,16 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           ok = false;
         } else weights[t] = { weight: w ?? 0, hard: hardTypes.has(t) };
       }
+      if (r.yes(PRESET_COLS.scoreBase)) {
+        const first = marked[0];
+        if (first) r.err(PRESET_COLS.scoreBase, `${YES} は1行だけにしてください（${first.n}行目にもあります）`);
+        marked.push({ id, n: r.n });
+      }
       if (name !== null && ok) read.push({ id, name, note, weights: weights as Preset['weights'] });
     }
     if (errors.any) return errors.toError();
     presets = read;
+    scorePresetId = marked[0]?.id;
   }
 
   // スタッフ
@@ -852,6 +861,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     aiPlans: {},
     aiRuns: {},
     presets,
+    scorePresetId,
   };
   const r = migrate(next);
   return isImportError(r) ? { ...r, message: `読み込んだ内容に問題があります：${r.message}` } : r;

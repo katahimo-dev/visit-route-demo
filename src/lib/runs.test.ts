@@ -6,7 +6,8 @@ import { score } from '../evaluate';
 import { compile } from '../matching';
 import { client, DATE as FDATE, makeData, staff, visit } from '../matching/fixtures';
 import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
-import { addRun, alignPlan, findRun, planOfRun, runLabel } from './runs';
+import { solve } from '../solver';
+import { addRun, alignPlan, findRun, planOfRun, reusableRun, runLabel } from './runs';
 
 const DAY = '2026-10-12';
 const result = (routes: Record<string, string[]>): SolveResult => ({
@@ -147,5 +148,59 @@ describe('今の案を訪問の変更に合わせる（alignPlan）', () => {
     expect(a.unassigned).toEqual(['v3']);
     expect(a.generated.unassigned).toEqual(['v3']);
     expect(a.score).toBe(score(p, plan.routes).total);
+  });
+});
+
+describe('計算し直さずに使える記録（reusableRun。ADR-0010）', () => {
+  const setup = () => {
+    const d = createDemoData(DAY);
+    const date = d.visits[0]!.date;
+    const rules = applyPreset(d.rules, PRESETS[1]!);
+    const p = compile({ ...d, rules }, date);
+    const r = solve(p, { seed: d.seed, iterations: 2000 });
+    const added = addRun(d, date, { rules, pins: {}, result: r, createdAt: 5 });
+    return { d: added, date, rules, p, runs: added.aiRuns[date]! };
+  };
+
+  it('同じ条件・同じ種・同じデータの記録を返す', () => {
+    const { d, rules, p, runs } = setup();
+    expect(reusableRun(runs, p, rules, d.seed)?.id).toBe(runs[0]!.id);
+  });
+
+  it('条件・種・固定・途中で止めた案が違えば使わない', () => {
+    const { d, rules, p, runs } = setup();
+    expect(reusableRun(runs, p, applyPreset(d.rules, PRESETS[2]!), d.seed)).toBeUndefined();
+    expect(reusableRun(runs, p, rules, d.seed + 1)).toBeUndefined();
+    const pinned = runs.map((r) => ({ ...r, pins: { [p.visits[0]!.id]: p.staff[0]!.id } }));
+    expect(reusableRun(pinned, p, rules, d.seed)).toBeUndefined();
+    expect(
+      reusableRun(
+        runs.map((r) => ({ ...r, stopped: true })),
+        p,
+        rules,
+        d.seed,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('記録のあとに訪問・データが変わったら使わない（訪問の集まり・費用が変わる）', () => {
+    const { d, date, rules, runs } = setup();
+    // 訪問を1件取り消す
+    const cancelled = d.visits.find((v) => v.date === date)!.id;
+    const fewer = compile(
+      { ...d, rules, visits: d.visits.map((v) => (v.id === cancelled ? { ...v, cancelled: true } : v)) },
+      date,
+    );
+    expect(reusableRun(runs, fewer, rules, d.seed)).toBeUndefined();
+    // 訪問の所要を変える（集まりは同じでも費用・時刻が変わる）
+    const longer = compile(
+      {
+        ...d,
+        rules,
+        visits: d.visits.map((v) => (v.date === date ? { ...v, durationMinutes: v.durationMinutes + 30 } : v)),
+      },
+      date,
+    );
+    expect(reusableRun(runs, longer, rules, d.seed)).toBeUndefined();
   });
 });

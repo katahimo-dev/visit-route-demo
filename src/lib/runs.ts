@@ -59,6 +59,36 @@ export function findRun(
   );
 }
 
+/** 記録の費用といまの費用の差の許し（同じ計算なら一致する。浮動小数の誤差だけ許す） */
+const SAME_COST_EPS = 1e-6;
+
+/**
+ * 計算し直さずに使える記録（プリセットのカードを押したときの再計算を省く。ADR-0010）。その日の記録のうち、次をすべて満たす最新のもの：
+ * - 固定なし・途中で止めていない
+ * - 作ったときの条件（rules）が target を作った条件と同じ（名前・ID・重み・必須まで）・乱数の種が同じ
+ * - 記録の案がいまの問題でそのまま有効：訪問の集まりが同じ（どの列か未割当に1回ずつ）・担当はいまの問題の人だけ・必須と時間の違反なし
+ * - いまの問題で付け直した費用が、記録した費用と同じ（訪問・スタッフ・移動・相性などが変わっていれば、たいてい費用が変わる）
+ * 同じ入力からは同じ案になる（solver は決定的）ので、これらが同じなら作り直しても同じ案になるとみなす。無ければ undefined
+ */
+export function reusableRun(runs: readonly AiRun[], target: Problem, rules: Rule[], seed: number): AiRun | undefined {
+  const key = JSON.stringify(rules);
+  const visitIds = new Set(target.visits.map((v) => v.id));
+  const staffIds = new Set(target.staff.map((s) => s.id));
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const r = runs[i]!;
+    if (Object.keys(r.pins).length > 0 || r.stopped || r.seed !== seed || JSON.stringify(r.rules) !== key) continue;
+    const listed = [...Object.values(r.routes).flat(), ...r.unassigned];
+    if (listed.length !== visitIds.size || new Set(listed).size !== listed.length) continue;
+    if (!listed.every((id) => visitIds.has(id))) continue;
+    if (!Object.entries(r.routes).every(([sid, ids]) => ids.length === 0 || staffIds.has(sid))) continue;
+    const sc = score(target, r.routes);
+    if (sc.hardViolations.length > 0 || sc.dropped !== r.unassigned.length) continue;
+    if (Math.abs(sc.total - r.score) > SAME_COST_EPS) continue;
+    return r;
+  }
+  return undefined;
+}
+
 /** 記録を今の案（予定の画面）にする。AIが出したまま＝記録の結果、固定は記録の固定 */
 export function planOfRun(run: AiRun): AiPlan {
   return {

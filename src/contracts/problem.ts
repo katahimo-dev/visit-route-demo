@@ -104,7 +104,16 @@ export type WorkerRequest =
   | { type: 'solve'; requestId: string; problem: Problem; options: SolveOptions }
   | { type: 'stop'; requestId: string };
 export type WorkerResponse =
-  | { type: 'progress'; requestId: string; iteration: number; total: number; bestScore: number }
+  | {
+      type: 'progress';
+      requestId: string;
+      iteration: number;
+      total: number;
+      /** いまの最良の費用（解いている problem の物差し） */
+      bestScore: number;
+      /** いまの最良の案（staffId → 訪問ID）。画面が点数の基準の物差しで付け直すのに使う（ADR-0010） */
+      bestRoutes: Record<string, string[]>;
+    }
   | { type: 'done'; requestId: string; result: SolveResult }
   | { type: 'error'; requestId: string; message: string };
 
@@ -139,6 +148,7 @@ export const SCORE_MAX = 100;
 
 /**
  * 点数の物差し（evaluate.normalize。ADR-0007）。表示だけに使い、solver が最小にする費用は変えない。
+ * 画面では、点数の基準のプリセット（DemoData.scorePresetId）の条件で作った Problem から作る（ADR-0010）。
  * 点数＝round(100 − (費用 − lowerBound) / visits)、0〜100 に収める。visits が0なら100。
  * 「1件あたり、理想より余計にかかった費用（分に換算）だけ減点」（1件あたり10分余計なら90点）
  */

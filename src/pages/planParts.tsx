@@ -20,7 +20,7 @@ import { WeightSlider } from '../components/parts';
 import { Hint, SectionTitle, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
 import type { HundredPart, PlanScore, Problem, RuleAchievement, ScoreScale, VisitExplain } from '../contracts/problem';
-import { HARDABLE, MAX_PRESETS, type Preset, type Rule } from '../contracts/rules';
+import { HARDABLE, MAX_PRESETS, type Rule } from '../contracts/rules';
 import { minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel, weightLocked } from '../lib/common';
@@ -47,6 +47,10 @@ export function breakdownText(parts: HundredPart[], n = 2): string {
 /** 点数の説明の文（ADR-0007 案A） */
 export const SCORE_TEXT = '理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点';
 
+/** 点数の物差しの説明の文（ADR-0010）。name は点数の基準のプリセットの名前 */
+export const rulerText = (name: string) =>
+  `点数はいつも点数の基準のプリセット「${name}」の重みで付けます。プリセットを替えても点数の物差しは変わりません`;
+
 /** 必須を守っていない案（手作業案・手直しで必須の条件に合わない担当にした案）の点の印の説明（ADR-0007） */
 export const HARD_NOTE = '必須を守っていない案の点は比べられません（参考の点です）';
 
@@ -64,13 +68,25 @@ export function RefMark({ hard }: { hard: number }) {
 }
 
 /** 点数の決め方と、減点の内訳・内部の費用（説明の中） */
-export function HundredHint({ cost, parts, scale }: { cost: number; parts: HundredPart[]; scale: ScoreScale }) {
+export function HundredHint({
+  cost,
+  parts,
+  scale,
+  rulerName,
+}: {
+  cost: number;
+  parts: HundredPart[];
+  scale: ScoreScale;
+  /** 点数の基準のプリセットの名前（ADR-0010） */
+  rulerName: string;
+}) {
   // 下限より良い成分（0 未満）は内訳に出さない
   const shown = parts.filter((x) => x.points >= 0.05);
   return (
     <Hint label="点数の決め方">
       {SCORE_TEXT}（高いほど良い。1件あたり10分余計なら90点）。
       理想は、どの訪問もいちばん条件の合う担当にし、移動はどの訪問にもいちばん近い場所から来る（出る）とし、待ちを0にした値です。
+      {rulerText(rulerName)}（条件の画面で基準を選べます）。
       {shown.length > 0 && (
         <>
           <br />
@@ -225,18 +241,21 @@ export function CompareTable({
   );
 }
 
-/** 横の小さな重みの欄（D14）。変えたらすぐ「再計算」できる */
+/**
+ * 横の小さな重みの欄（D14）。変えたらすぐ「再計算」できる。
+ * showPresets：いまの重みの名前・「いまの重みをプリセットとして保存」・プリセットの編集へのリンクを出す
+ * （プリセットで作る・切り替えるのは、予定の画面の正面のプリセットごとの案のカード。ADR-0010）
+ */
 export function WeightPanel({
   running,
   onRecalc,
-  onPreset,
+  showPresets = false,
   canRun,
   recalcLabel = '再計算',
 }: {
   running: boolean;
   onRecalc: () => void;
-  /** プリセットを押した（その重みにして、すぐ作る。ADR-0005） */
-  onPreset?: (p: Preset) => void;
+  showPresets?: boolean;
   canRun: boolean;
   recalcLabel?: string;
 }) {
@@ -244,30 +263,21 @@ export function WeightPanel({
   const current = presetOf(data.rules, data.presets);
   return (
     <aside className="card stack side-panel">
-      {onPreset && (
+      {showPresets && (
         <>
           <SectionTitle
             icon={ListChecks}
-            aside={<Hint>押すと、その重みにしてすぐAI案を作ります（作った案は記録に残ります）。</Hint>}
+            aside={
+              <Hint>
+                プリセットで作る・切り替えるには、正面の「プリセットごとの案」のカードを押します。ここではいまの重みをプリセットとして保存できます。
+              </Hint>
+            }
           >
             プリセット
           </SectionTitle>
-          <div className="stack" style={{ gap: 4 }}>
-            {data.presets.map((p, i) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`btn btn-small preset-btn ${current?.id === p.id ? 'is-on' : ''}`}
-                disabled={running || !canRun}
-                onClick={() => onPreset(p)}
-                title={p.note}
-              >
-                <span className="preset-no">{i + 1}</span>
-                {p.name}
-              </button>
-            ))}
-          </div>
-          <span className="sub">いまの重み：{current ? current.name : 'プリセットから変えた重み'}</span>
+          <span className="sub" data-testid="current-weights">
+            いまの重み：{current ? current.name : 'プリセットから変えた重み'}
+          </span>
           <SavePresetForm compact disabled={running} />
           <NavLink to="/rules#presets" className="sub">
             プリセットを編集する

@@ -45,10 +45,20 @@ export function addPresetFromRules(d: DemoData, name: string, note = ''): DemoDa
   return { ...d, presets: [...d.presets, preset] };
 }
 
-/** プリセットを消す（最後の1つは消さない） */
+/**
+ * プリセットを消す（最後の1つは消さない）。点数の基準のプリセットを消したら、基準は残りの先頭に移る（ADR-0010）
+ */
 export function removePreset(d: DemoData, id: string): DemoData {
   if (d.presets.length <= 1) return d;
-  return { ...d, presets: d.presets.filter((p) => p.id !== id) };
+  const presets = d.presets.filter((p) => p.id !== id);
+  const scorePresetId = presets.some((p) => p.id === d.scorePresetId) ? d.scorePresetId : presets[0]?.id;
+  return { ...d, presets, scorePresetId };
+}
+
+/** 点数の基準のプリセットを変える（ADR-0010。無い id なら変えない） */
+export function setScorePreset(d: DemoData, id: string): DemoData {
+  if (!d.presets.some((p) => p.id === id) || d.scorePresetId === id) return d;
+  return { ...d, scorePresetId: id };
 }
 
 /** プリセットの名前・一言・重みを変える */
@@ -56,7 +66,8 @@ export function patchPreset(d: DemoData, id: string, patch: Partial<Omit<Preset,
   return { ...d, presets: d.presets.map((p) => (p.id === id ? { ...p, ...patch } : p)) };
 }
 
-/** 初期の3種に戻す */
+/** 初期の3種に戻す（点数の基準も先頭の「標準」に戻す） */
 export function resetPresets(d: DemoData): DemoData {
-  return { ...d, presets: initialPresets() };
+  const presets = initialPresets();
+  return { ...d, presets, scorePresetId: presets[0]?.id };
 }

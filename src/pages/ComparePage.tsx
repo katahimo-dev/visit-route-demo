@@ -32,12 +32,13 @@ import { alignPlan, planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
 import './plan.css';
-import { CompareTable, explainMap, ReasonBox, RefMark, SCORE_TEXT } from './planParts';
+import { CompareTable, explainMap, ReasonBox, RefMark, rulerText, SCORE_TEXT } from './planParts';
 
 /**
  * 比較（D19・D22・ADR-0005）：その日のAI案の記録（作るたびに条件と結果を残したもの）と「今の案」から、
  * 任意の2つを A・B に選んで比べる。条件の差・合計と条件ごと・担当ごとの順番・地図（A 点線、B 実線）。
- * 採点は A・B とも、いまの条件の同じ物差し（evaluate.score）。AI案を作る・手直しは「予定」の画面（#/plan）
+ * 採点（点数・必須の違反・条件ごとの達成/違反）は A・B とも、点数の基準のプリセットの同じ物差し（evaluate.score。ADR-0010）。
+ * 訪問ごとの理由はいまの条件。AI案を作る・手直しは「予定」の画面（#/plan）
  */
 
 type Side = 'a' | 'b';
@@ -55,7 +56,20 @@ function weightText(r: Rule | undefined): string {
 export default function ComparePage() {
   const { date } = useDay();
   const m = useDayModel(date);
-  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem, scale } = m;
+  const {
+    data,
+    update,
+    staff,
+    staffById,
+    clientById,
+    colorOfStaff,
+    visits,
+    visitById,
+    problem,
+    scoreProblem,
+    scoreScale: scale,
+    scoreRulerName,
+  } = m;
   const terms = data.org.terms;
   const toast = useToast();
   const navigate = useNavigate();
@@ -114,18 +128,18 @@ export default function ComparePage() {
   const aRoutes = useMemo(() => A?.routes ?? {}, [A]);
   const bRoutes = useMemo(() => B?.routes ?? {}, [B]);
 
-  // ---- 採点（いまの条件の同じ物差し）----
+  // ---- 採点（点数の基準の物差し。ADR-0010）----
   const scores = useMemo(
-    () => new Map(choices.map((c) => [c.id, problem ? attempt(() => score(problem, c.routes)) : null])),
-    [choices, problem],
+    () => new Map(choices.map((c) => [c.id, scoreProblem ? attempt(() => score(scoreProblem, c.routes)) : null])),
+    [choices, scoreProblem],
   );
   const aScore = A ? (scores.get(A.id) ?? null) : null;
   const bScore = B ? (scores.get(B.id) ?? null) : null;
   const aExplain = useMemo(() => explainMap(A ? problem : null, aRoutes), [problem, A, aRoutes]);
   const bExplain = useMemo(() => explainMap(B ? problem : null, bRoutes), [problem, B, bRoutes]);
   const abDiff = useMemo(
-    () => (problem && A && B ? attempt(() => diff(problem, aRoutes, bRoutes)) : null),
-    [problem, A, B, aRoutes, bRoutes],
+    () => (scoreProblem && A && B ? attempt(() => diff(scoreProblem, aRoutes, bRoutes)) : null),
+    [scoreProblem, A, B, aRoutes, bRoutes],
   );
   const stale = (c: Choice | undefined) => !!c && JSON.stringify(c.rules) !== JSON.stringify(data.rules);
 
@@ -357,10 +371,16 @@ export default function ComparePage() {
         <SectionTitle
           icon={History}
           aside={
-            <Hint>
-              予定の画面でAI案を作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した点です（高いほど良い。
-              {SCORE_TEXT}）。理想（届かない下限）は100点です。
-            </Hint>
+            <span className="row" style={{ gap: 6 }}>
+              <span className="sub" data-testid="score-ruler">
+                物差し：{scoreRulerName}
+              </span>
+              <Hint>
+                予定の画面でAI案を作る・組み直すたびに、条件と結果が残ります。{rulerText(scoreRulerName)}
+                （高いほど良い。
+                {SCORE_TEXT}）。理想（届かない下限）は100点です。
+              </Hint>
+            </span>
           }
         >
           この日の記録（{runs.length}件）
@@ -507,7 +527,7 @@ export default function ComparePage() {
                 <WithIcon icon={TriangleAlert} size={14}>
                   いまの条件と違う条件で作った案があります
                 </WithIcon>
-                <Hint>下の点数は A・B ともいまの条件で付け直しています。</Hint>
+                <Hint>下の点数は A・B とも点数の基準のプリセット「{scoreRulerName}」の物差しで付けています。</Hint>
               </div>
             )}
           </div>

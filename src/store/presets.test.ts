@@ -92,3 +92,27 @@ describe('presets が null の保存データ', () => {
     expect(r.presets).toEqual(INITIAL_PRESETS);
   });
 });
+
+describe('点数の基準のプリセット（scorePresetId。ADR-0010）', () => {
+  it('初期データは「標準」', () => {
+    expect(base().scorePresetId).toBe('standard');
+  });
+
+  it('無い古いデータ・存在しない id は先頭のプリセットにする（版は1のまま）', () => {
+    const { scorePresetId: _, ...old } = base();
+    const r = migrate(old);
+    if (isImportError(r)) throw new Error(r.message);
+    expect(r.scorePresetId).toBe(r.presets[0]!.id);
+    const d = base();
+    const moved = repair({ ...d, presets: [d.presets[1]!, d.presets[0]!], scorePresetId: 'nothing' });
+    expect(moved.scorePresetId).toBe('travel');
+  });
+
+  it('あるプリセットを指していればそのまま（書き出し → 読み込みで戻る）', () => {
+    const d = { ...base(), scorePresetId: 'people' };
+    expect(repair(d).scorePresetId).toBe('people');
+    const r = importJson(JSON.stringify(d));
+    if (isImportError(r)) throw new Error(r.message);
+    expect(r.scorePresetId).toBe('people');
+  });
+});
