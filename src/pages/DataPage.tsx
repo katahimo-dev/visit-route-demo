@@ -1,12 +1,26 @@
-import { Database, Download, RotateCcw, Tags, TriangleAlert, Upload } from 'lucide-react';
+import { Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { attempt, formError } from '../lib/common';
-import { exportJson, importJson, useDemoData } from '../store';
+import { exportJson, importJson, isImportError, useDemoData } from '../store';
 import './settings.css';
 
-/** データ：書き出し・読み込み・初期状態に戻す（D2・D3） */
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** Blob をファイルとして保存させる */
+function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** データ：書き出し・読み込み（控えの JSON・Excel）・初期状態に戻す（D2・D3・D23） */
 export default function DataPage() {
   const { data, update, replace, reset, saveError } = useDemoData();
   const [terms, setTerms] = useState(data.org.terms);
@@ -23,7 +37,10 @@ export default function DataPage() {
   };
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const excelRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [excelError, setExcelError] = useState<string | null>(null);
+  const [excelBusy, setExcelBusy] = useState(false);
 
   const download = () => {
     setError(null);
@@ -32,15 +49,49 @@ export default function DataPage() {
       setError(`書き出せませんでした（${r.error}）`);
       return;
     }
-    const url = URL.createObjectURL(r.value);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `visit-route-demo-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveBlob(r.value, `visit-route-demo-${today()}.json`);
     toast('書き出しました');
+  };
+
+  // Excel（ADR-0006）。ExcelJS は重いので、押したときだけ読み込む
+  const downloadExcel = async () => {
+    setExcelError(null);
+    setExcelBusy(true);
+    try {
+      const { exportWorkbook } = await import('../excel');
+      saveBlob(await exportWorkbook(data), `visit-route-demo-${today()}.xlsx`);
+      toast('Excel に書き出しました');
+    } catch (e) {
+      setExcelError(`書き出せませんでした（${formError(e)}）`);
+    } finally {
+      setExcelBusy(false);
+    }
+  };
+
+  const loadExcel = async (file: File) => {
+    setExcelError(null);
+    try {
+      if (
+        !confirm(
+          `「${file.name}」の内容で、いまのデータをすべて置き換えます。AI案・記録・手作業の割当は消えます。よろしいですか？`,
+        )
+      )
+        return;
+      setExcelBusy(true);
+      const { importWorkbook } = await import('../excel');
+      const r = await importWorkbook(await file.arrayBuffer(), data);
+      if (isImportError(r)) {
+        setExcelError(`読み込めませんでした（いまのデータはそのままです）\n${r.message}`);
+        return;
+      }
+      replace(r);
+      toast('Excel を読み込みました');
+    } catch (e) {
+      setExcelError(`読み込めませんでした：${formError(e)}（いまのデータはそのままです）`);
+    } finally {
+      setExcelBusy(false);
+      if (excelRef.current) excelRef.current.value = '';
+    }
   };
 
   const load = async (file: File) => {
@@ -70,7 +121,7 @@ export default function DataPage() {
 
   return (
     <div className="stack" style={{ maxWidth: 720 }}>
-      <PageHeader icon={Database} title="データ" lead="書き出し・読み込み・初期状態に戻す" />
+      <PageHeader icon={Database} title="データ" lead="書き出し・読み込み（控え・Excel）・初期状態に戻す" />
       <div className="warn-box">
         <TriangleAlert size={20} strokeWidth={2.2} aria-hidden="true" />
         <p>
@@ -107,16 +158,14 @@ export default function DataPage() {
       </div>
 
       <div className="card stack">
-        <SectionTitle icon={Download}>書き出す</SectionTitle>
-        <Hint>データ一式を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。</Hint>
+        <SectionTitle icon={Save}>控え（JSON）</SectionTitle>
+        <Hint>
+          データ一式（AI案・記録・手作業の割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
+          下の欄で書き出したファイルを選ぶと、いまのデータと置き換えます（置き換える前に確認します）。
+        </Hint>
         <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
           <WithIcon icon={Download}>ファイルに書き出す</WithIcon>
         </button>
-      </div>
-
-      <div className="card stack">
-        <SectionTitle icon={Upload}>読み込む</SectionTitle>
-        <Hint>書き出したファイルを読み込み、いまのデータと置き換えます（置き換える前に確認します）。</Hint>
         <input
           ref={fileRef}
           type="file"
@@ -128,6 +177,40 @@ export default function DataPage() {
           }}
         />
         {error && <p className="error">{error}</p>}
+      </div>
+
+      <div className="card stack">
+        <SectionTitle icon={FileSpreadsheet}>Excel</SectionTitle>
+        <Hint>
+          {data.org.terms.staff}・{data.org.terms.client}
+          ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。 Excel
+          で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・手作業の割当は消えます）。
+          書き方はブックの「使い方」のシートにあります。
+        </Hint>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button type="button" className="btn" disabled={excelBusy} onClick={() => void downloadExcel()}>
+            <WithIcon icon={FileSpreadsheet}>Excel に書き出す</WithIcon>
+          </button>
+          <button type="button" className="btn" disabled={excelBusy} onClick={() => excelRef.current?.click()}>
+            <WithIcon icon={Upload}>Excel を読み込む</WithIcon>
+          </button>
+        </div>
+        <input
+          ref={excelRef}
+          type="file"
+          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          aria-label="読み込む Excel のファイル"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void loadExcel(f);
+          }}
+        />
+        {excelError && (
+          <p className="error" style={{ whiteSpace: 'pre-line' }}>
+            {excelError}
+          </p>
+        )}
       </div>
 
       <div className="card stack">
