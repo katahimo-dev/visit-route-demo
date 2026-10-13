@@ -3,7 +3,9 @@
 /* 訪問一覧：時間列 */
 .visit-table .time-cell {
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto 1fr;
+  justify-content: start;
+  justify-items: start;
   align-items: center;
   column-gap: 6px;
   row-gap: 2px;
