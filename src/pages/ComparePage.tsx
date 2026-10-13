@@ -1,9 +1,29 @@
+import {
+  Car,
+  CircleOff,
+  Clock,
+  ExternalLink,
+  Gauge,
+  GitCompareArrows,
+  History,
+  Hourglass,
+  House,
+  Map as MapIcon,
+  ShieldAlert,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  UserRound,
+  Users,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientName } from '../components/parts';
 import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
+import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { AiPlan, AiRun } from '../contracts/data';
 import type { Reason, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
@@ -14,6 +34,7 @@ import { AI_LINE, attempt, deltaText, hasLocation, MANUAL_LINE, own, pointsText,
 import { planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
+import './plan.css';
 import { CompareTable, explainMap, ReasonBox } from './planParts';
 
 /**
@@ -195,6 +216,7 @@ export default function ComparePage() {
       <div className="stack" style={{ gap: 0 }}>
         {problem && !inProblemStaff.has(staffId) && (
           <span className="chip chip-red" style={{ alignSelf: 'flex-start' }}>
+            <TriangleAlert size={12} aria-hidden="true" />
             この日は計算に入れていません（休み・休止中など）
           </span>
         )}
@@ -208,8 +230,20 @@ export default function ComparePage() {
             <div key={id}>
               {t && (
                 <div className="leg-line">
-                  {i === 0 ? '自宅から ' : '↓ 移動 '}
-                  {r0(t.travelIn)}分{t.wait > 0 && `（待ち ${r0(t.wait)}分）`}
+                  {i === 0 ? (
+                    <WithIcon icon={House} size={13}>
+                      自宅から {r0(t.travelIn)}分
+                    </WithIcon>
+                  ) : (
+                    <WithIcon icon={Car} size={13}>
+                      {r0(t.travelIn)}分
+                    </WithIcon>
+                  )}
+                  {t.wait > 0 && (
+                    <WithIcon icon={Hourglass} size={13}>
+                      待ち {r0(t.wait)}分
+                    </WithIcon>
+                  )}
                 </div>
               )}
               <button
@@ -218,12 +252,18 @@ export default function ComparePage() {
                 onClick={() => setPicked(isPicked ? null : { visitId: id, side })}
                 title="押すと理由を見られます"
               >
-                <span className="sub nowrap">
+                <span className="visit-time">
+                  <Clock size={13} strokeWidth={2.2} aria-hidden="true" />
                   {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : (visitById.get(id)?.earliestStart ?? '')}
                 </span>
                 <ClientName client={clientOf(id)} />
                 {moved && <span className="chip chip-move">{moved}</span>}
-                {hard && <span className="chip chip-red">必須の違反</span>}
+                {hard && (
+                  <span className="chip chip-red">
+                    <ShieldAlert size={12} aria-hidden="true" />
+                    必須の違反
+                  </span>
+                )}
               </button>
               {isPicked && <ReasonBox explain={e} />}
             </div>
@@ -273,8 +313,9 @@ export default function ComparePage() {
   const unassignedList = (c: Choice, ex: Map<string, VisitExplain>, side: string) =>
     c.unassigned.length === 0 ? null : (
       <div className="stack" style={{ gap: 4 }}>
-        <strong>
-          {side}：{c.title}
+        <strong className="ab-title">
+          <span className={`ab-badge ab-${side.toLowerCase()}`}>{side}</span>
+          {c.title}
         </strong>
         {c.unassigned.map((id) => {
           const inf = infeasibleOf.get(id);
@@ -301,28 +342,41 @@ export default function ComparePage() {
 
   return (
     <div className="stack" style={{ minWidth: 0 }}>
-      <h2>条件を変えた案の比較</h2>
+      <PageHeader
+        icon={GitCompareArrows}
+        title="比較"
+        lead="条件を変えたAI案を2つ選んで比べます"
+        actions={
+          <NavLink to="/plan" className="plan-compare-link">
+            <WithIcon icon={Sparkles}>AI案へ</WithIcon>
+          </NavLink>
+        }
+      />
       {m.problemError && <p className="error">問題を作れませんでした：{m.problemError}</p>}
 
       <div className="card stack">
-        <div className="spread" style={{ flexWrap: 'wrap' }}>
-          <h3>この日の記録（{runs.length}件）</h3>
-          <span className="sub">
-            <NavLink to="/plan">AI案</NavLink>の画面で作る・組み直すたびに、条件と結果が残ります
-          </span>
-        </div>
+        <SectionTitle
+          icon={History}
+          aside={
+            <Hint>
+              AI案の画面で作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した点です（低いほど良い）。
+            </Hint>
+          }
+        >
+          この日の記録（{runs.length}件）
+        </SectionTitle>
         {choices.length === 0 ? (
-          <p className="sub">
+          <Empty icon={History}>
             この日の記録はまだありません。<NavLink to="/plan">AI案</NavLink>
-            の画面を開くと、標準の条件で自動で作ります。プリセットや重みを変えて作ると、ここで比べられます。
-          </p>
+            の画面を開くと、標準の条件で自動で作ります。
+          </Empty>
         ) : (
           <div className="table-scroll">
             <table className="compare-table runs-table">
               <thead>
                 <tr>
-                  <th>A</th>
-                  <th>B</th>
+                  <th className="ab-col">A</th>
+                  <th className="ab-col">B</th>
                   <th>案</th>
                   <th>作った時刻</th>
                   <th className="num">合計点</th>
@@ -337,23 +391,29 @@ export default function ComparePage() {
                   const sc = scores.get(c.id)?.value ?? null;
                   return (
                     <tr key={c.id} className={`${A?.id === c.id ? 'is-a' : ''} ${B?.id === c.id ? 'is-b' : ''}`}>
-                      <td>
-                        <input
-                          type="radio"
-                          name="pick-a"
-                          aria-label={`${c.title} を A にする`}
-                          checked={A?.id === c.id}
-                          onChange={() => pick('a', c.id)}
-                        />
+                      <td className="ab-col">
+                        <label className="ab-pick ab-a">
+                          <input
+                            type="radio"
+                            name="pick-a"
+                            aria-label={`${c.title} を A にする`}
+                            checked={A?.id === c.id}
+                            onChange={() => pick('a', c.id)}
+                          />
+                          <span>A</span>
+                        </label>
                       </td>
-                      <td>
-                        <input
-                          type="radio"
-                          name="pick-b"
-                          aria-label={`${c.title} を B にする`}
-                          checked={B?.id === c.id}
-                          onChange={() => pick('b', c.id)}
-                        />
+                      <td className="ab-col">
+                        <label className="ab-pick ab-b">
+                          <input
+                            type="radio"
+                            name="pick-b"
+                            aria-label={`${c.title} を B にする`}
+                            checked={B?.id === c.id}
+                            onChange={() => pick('b', c.id)}
+                          />
+                          <span>B</span>
+                        </label>
                       </td>
                       <td>
                         {c.title}
@@ -376,16 +436,23 @@ export default function ComparePage() {
                       <td className="num">{sc ? `${sc.dropped}件` : '—'}</td>
                       <td className="nowrap">
                         {run && (
-                          <div className="row" style={{ gap: 4 }}>
-                            <button type="button" className="btn btn-small" onClick={() => openRun(run)}>
-                              AI案の画面で開く
-                            </button>
-                            <button type="button" className="btn btn-small" onClick={() => applyRules(run)}>
-                              この条件にする
-                            </button>
-                            <button type="button" className="btn btn-small" onClick={() => removeRun(run)}>
-                              消す
-                            </button>
+                          <div className="actions">
+                            <IconButton
+                              icon={ExternalLink}
+                              label={`${c.title} をAI案の画面で開く`}
+                              onClick={() => openRun(run)}
+                            />
+                            <IconButton
+                              icon={SlidersHorizontal}
+                              label={`${c.title} の条件にする`}
+                              onClick={() => applyRules(run)}
+                            />
+                            <IconButton
+                              icon={Trash2}
+                              label={`${c.title} を消す`}
+                              tone="danger"
+                              onClick={() => removeRun(run)}
+                            />
                           </div>
                         )}
                       </td>
@@ -396,20 +463,29 @@ export default function ComparePage() {
             </table>
           </div>
         )}
-        <span className="sub">合計点は、いまの条件の同じ物差しで付け直した点です（低いほど良い）。</span>
+        {choices.length === 1 && (
+          <Empty icon={GitCompareArrows}>
+            比べるには案が2つ以上いります。<NavLink to="/plan">AI案</NavLink>
+            の画面でプリセットを押すか、重みを変えて「AI案を作り直す」を押してください。
+          </Empty>
+        )}
       </div>
 
       {A && B && (
         <>
           <div className="card stack">
-            <h3>条件の差</h3>
+            <SectionTitle icon={SlidersHorizontal}>条件の差</SectionTitle>
             <div className="table-scroll">
               <table className="compare-table">
                 <thead>
                   <tr>
                     <th />
-                    <th className="num">A：{A.title}</th>
-                    <th className="num">B：{B.title}</th>
+                    <th className="num">
+                      <span className="ab-badge ab-a">A</span> {A.title}
+                    </th>
+                    <th className="num">
+                      <span className="ab-badge ab-b">B</span> {B.title}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -424,19 +500,46 @@ export default function ComparePage() {
               </table>
             </div>
             {(stale(A) || stale(B)) && (
-              <p className="sub">
-                いまの条件と違う条件で作った案があります。下の点数は A・B ともいまの条件で付け直しています。
-              </p>
+              <div className="sub row">
+                <WithIcon icon={TriangleAlert} size={14}>
+                  いまの条件と違う条件で作った案があります
+                </WithIcon>
+                <Hint>下の点数は A・B ともいまの条件で付け直しています。</Hint>
+              </div>
             )}
           </div>
 
           <div className="card stack">
-            <h3>合計と条件ごと</h3>
+            <SectionTitle icon={Gauge}>合計と条件ごと（A→B）</SectionTitle>
             {abDiff?.value && (
-              <p className="sub">
-                A→B：担当が変わった訪問 {abDiff.value.changedVisits.length}件・移動{' '}
-                {deltaText(abDiff.value.travelDelta, '分')}・合計点 {deltaText(abDiff.value.scoreDelta, '点')}
-              </p>
+              <div className="stat-row">
+                <Stat
+                  icon={Gauge}
+                  label="合計点の差"
+                  tone={abDiff.value.scoreDelta < 0 ? 'ok' : abDiff.value.scoreDelta > 0 ? 'warn' : 'plain'}
+                  value={deltaText(abDiff.value.scoreDelta, '')}
+                  unit={Math.round(abDiff.value.scoreDelta * 10) === 0 ? undefined : '点'}
+                  note={as && bs ? `${r0(as.total)} → ${r0(bs.total)}` : undefined}
+                />
+                <Stat
+                  icon={Car}
+                  label="移動の差"
+                  tone={abDiff.value.travelDelta < 0 ? 'ok' : abDiff.value.travelDelta > 0 ? 'warn' : 'plain'}
+                  value={deltaText(abDiff.value.travelDelta, '')}
+                  unit={Math.round(abDiff.value.travelDelta * 10) === 0 ? undefined : '分'}
+                  note={as && bs ? `${r0(as.travelMinutes)} → ${r0(bs.travelMinutes)}` : undefined}
+                />
+                <Stat icon={Users} label="担当が変わった訪問" value={abDiff.value.changedVisits.length} unit="件" />
+                {as && bs && (as.dropped > 0 || bs.dropped > 0) && (
+                  <Stat
+                    icon={CircleOff}
+                    label="入らない訪問"
+                    tone={bs.dropped > as.dropped ? 'warn' : 'plain'}
+                    value={`${as.dropped} → ${bs.dropped}`}
+                    unit="件"
+                  />
+                )}
+              </div>
             )}
             <CompareTable
               a={as}
@@ -448,13 +551,26 @@ export default function ComparePage() {
           </div>
 
           <div className="card stack">
-            <h3>{terms.staff}ごとの比較（左：A、右：B）</h3>
-            <p className="sub">訪問を押すと、その担当になった理由（点の内訳）が出ます。</p>
+            <SectionTitle
+              icon={Users}
+              aside={
+                <Hint>
+                  訪問を押すと、その担当になった理由（点の内訳）が出ます。{terms.staff}
+                  の名前を押すと地図が切り替わります。
+                </Hint>
+              }
+            >
+              {terms.staff}ごとの比較
+            </SectionTitle>
             <div className="compare">
               <div className="compare-row compare-header">
                 <div />
-                <div>A：{A.title}</div>
-                <div>B：{B.title}</div>
+                <div>
+                  <span className="ab-badge ab-a">A</span> {A.title}
+                </div>
+                <div>
+                  <span className="ab-badge ab-b">B</span> {B.title}
+                </div>
               </div>
               {staffIds.map((id) => {
                 const pa = routeTotals(id, own(aRoutes, id) ?? []);
@@ -468,14 +584,21 @@ export default function ComparePage() {
                       onClick={() => setMapStaff(id)}
                       title="地図で見る"
                     >
-                      <strong style={{ color: colorOfStaff.get(id) }}>{staffName(id)}</strong>
+                      <strong className="col-head">
+                        <span className="staff-dot" style={{ background: colorOfStaff.get(id) }} aria-hidden="true" />
+                        {staffName(id)}
+                      </strong>
                       <span className="sub">
-                        {own(aRoutes, id)?.length ?? 0}件 → {own(bRoutes, id)?.length ?? 0}件
+                        <WithIcon icon={UserRound} size={13}>
+                          {own(aRoutes, id)?.length ?? 0}件 → {own(bRoutes, id)?.length ?? 0}件
+                        </WithIcon>
                       </span>
                       {pa && pb && (
                         <>
                           <span className="sub">
-                            移動 {r0(pa.travelMinutes)}分 → {r0(pb.travelMinutes)}分
+                            <WithIcon icon={Car} size={13}>
+                              {r0(pa.travelMinutes)}分 → {r0(pb.travelMinutes)}分
+                            </WithIcon>
                           </span>
                           <span className={`chip ${d < 0 ? 'chip-ok' : d > 0 ? 'chip-warn' : ''}`}>
                             {deltaText(d, '分')}
@@ -483,8 +606,12 @@ export default function ComparePage() {
                         </>
                       )}
                     </button>
-                    <div className="compare-col">{stopCards(id, 'a')}</div>
-                    <div className="compare-col">{stopCards(id, 'b')}</div>
+                    <div className="compare-col" data-side="A">
+                      {stopCards(id, 'a')}
+                    </div>
+                    <div className="compare-col" data-side="B">
+                      {stopCards(id, 'b')}
+                    </div>
                   </div>
                 );
               })}
@@ -493,41 +620,46 @@ export default function ComparePage() {
 
           {(A.unassigned.length > 0 || B.unassigned.length > 0) && (
             <div className="card stack">
-              <h3>割り当てられなかった訪問</h3>
+              <SectionTitle icon={CircleOff}>割り当てられなかった訪問</SectionTitle>
               {unassignedList(A, aExplain, 'A')}
               {unassignedList(B, bExplain, 'B')}
             </div>
           )}
 
           <div className="card stack">
-            <div className="spread">
-              <h3>地図：{mapStaffId ? staffName(mapStaffId) : ''}（点線：A、実線：B）</h3>
-              <span className="sub">上の比較で{terms.staff}の名前を押すと切り替わります</span>
-            </div>
+            <SectionTitle
+              icon={MapIcon}
+              aside={mapStaffId ? <span className="chip">{staffName(mapStaffId)}</span> : undefined}
+            >
+              地図
+            </SectionTitle>
             <RouteMap points={points} lines={lines} height={400} />
             <div className="row sub">
-              <span style={{ color: MANUAL_LINE }}>- - - A</span>
-              <span style={{ color: AI_LINE }}>━━ B</span>
+              <span className="legend-item">
+                <span className="legend-line is-dashed" style={{ color: MANUAL_LINE }} aria-hidden="true" />
+                A（点線）
+              </span>
+              <span className="legend-item">
+                <span className="legend-line" style={{ background: AI_LINE }} aria-hidden="true" />
+                B（実線）
+              </span>
             </div>
           </div>
         </>
       )}
 
-      {choices.length === 1 && (
-        <div className="card">
-          <p className="sub">
-            比べるには案が2つ以上いります。<NavLink to="/plan">AI案</NavLink>
-            の画面でプリセットを押すか、重みを変えて「AI案を作り直す」を押してください。
-          </p>
-        </div>
-      )}
-
       {notInProblem.length > 0 && (
         <div className="card stack">
-          <h3>計算に入れなかった訪問</h3>
-          <p className="sub">
-            {terms.client}が休止中・位置が未登録などの訪問です（{terms.client}の画面で直せます）。
-          </p>
+          <SectionTitle
+            icon={TriangleAlert}
+            aside={
+              <Hint>
+                {terms.client}が休止中・位置が未登録などの訪問です（{terms.client}の画面で直せます）。
+              </Hint>
+            }
+          >
+            計算に入れなかった訪問
+          </SectionTitle>
           {notInProblem.map((v) => (
             <span key={v.id}>{visitLabel(v.id)}</span>
           ))}

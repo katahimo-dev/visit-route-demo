@@ -1,6 +1,20 @@
 // AI案（#/plan）と比較（#/compare）で共通に使う部品
 
+import type { LucideIcon } from 'lucide-react';
+import {
+  Car,
+  CircleOff,
+  Clock,
+  Gauge,
+  Hourglass,
+  ListChecks,
+  MapPin,
+  RefreshCw,
+  ShieldAlert,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { WeightSlider } from '../components/parts';
+import { Hint, SectionTitle, WithIcon } from '../components/ui';
 import type { PlanScore, Problem, VisitExplain } from '../contracts/problem';
 import { HARDABLE } from '../contracts/rules';
 import { minutesToHhmm } from '../domain/time';
@@ -29,9 +43,15 @@ export function ReasonBox({ explain: e }: { explain: VisitExplain | undefined })
         </div>
       ))}
       {e.timing && (
-        <span className="sub">
-          着 {minutesToHhmm(e.timing.arrival)}・開始 {minutesToHhmm(e.timing.start)}
-          {e.timing.wait > 0 && `・待ち ${r0(e.timing.wait)}分`}
+        <span className="sub reason-timing">
+          <WithIcon icon={Clock} size={13}>
+            着 {minutesToHhmm(e.timing.arrival)}・開始 {minutesToHhmm(e.timing.start)}
+          </WithIcon>
+          {e.timing.wait > 0 && (
+            <WithIcon icon={Hourglass} size={13}>
+              待ち {r0(e.timing.wait)}分
+            </WithIcon>
+          )}
         </span>
       )}
     </div>
@@ -54,12 +74,16 @@ export function CompareTable({
   error?: string | null;
 }) {
   if (!manual || !ai) return <p className="sub">採点できません{error ? `（${error}）` : ''}</p>;
-  const row = (label: string, a: number, b: number, unit: string, digits = 0) => {
+  const row = (icon: LucideIcon, label: string, a: number, b: number, unit: string, digits = 0) => {
     const f = (n: number) => (digits ? r1(n) : r0(n));
     const d = b - a;
     return (
       <tr key={label}>
-        <th>{label}</th>
+        <th>
+          <WithIcon icon={icon} size={15}>
+            {label}
+          </WithIcon>
+        </th>
         <td className="num">
           {f(a)}
           {unit}
@@ -101,12 +125,12 @@ export function CompareTable({
           </tr>
         </thead>
         <tbody>
-          {row('合計点（低いほど良い）', manual.total, ai.total, '点')}
-          {row('移動時間', manual.travelMinutes, ai.travelMinutes, '分')}
-          {row('待ち時間', manual.waitMinutes, ai.waitMinutes, '分')}
-          {row('移動距離', manual.meters / 1000, ai.meters / 1000, 'km', 1)}
-          {row('入らなかった訪問', manual.dropped, ai.dropped, '件')}
-          {row('必須の違反', manual.hardViolations.length, ai.hardViolations.length, '件')}
+          {row(Gauge, '合計点（低いほど良い）', manual.total, ai.total, '点')}
+          {row(Car, '移動時間', manual.travelMinutes, ai.travelMinutes, '分')}
+          {row(Hourglass, '待ち時間', manual.waitMinutes, ai.waitMinutes, '分')}
+          {row(MapPin, '移動距離', manual.meters / 1000, ai.meters / 1000, 'km', 1)}
+          {row(CircleOff, '入らなかった訪問', manual.dropped, ai.dropped, '件')}
+          {row(ShieldAlert, '必須の違反', manual.hardViolations.length, ai.hardViolations.length, '件')}
           {ruleIds.map((id) => (
             <tr key={id}>
               <th>{labelOf(id)}</th>
@@ -144,8 +168,12 @@ export function WeightPanel({
     <aside className="card stack side-panel">
       {onPreset && (
         <>
-          <h3>プリセット</h3>
-          <span className="sub">押すと、その重みにしてすぐAI案を作ります（作った案は記録に残ります）。</span>
+          <SectionTitle
+            icon={ListChecks}
+            aside={<Hint>押すと、その重みにしてすぐAI案を作ります（作った案は記録に残ります）。</Hint>}
+          >
+            プリセット
+          </SectionTitle>
           <div className="stack" style={{ gap: 4 }}>
             {PRESETS.map((p, i) => (
               <button
@@ -156,20 +184,27 @@ export function WeightPanel({
                 onClick={() => onPreset(p)}
                 title={p.note}
               >
-                {i + 1}. {p.name}
+                <span className="preset-no">{i + 1}</span>
+                {p.name}
               </button>
             ))}
           </div>
           <span className="sub">いまの重み：{current ? current.name : 'プリセットから変えた重み'}</span>
         </>
       )}
-      <h3>条件の重み</h3>
-      <span className="sub">重み1＝移動10分ぶん。0で無効。</span>
+      <SectionTitle icon={SlidersHorizontal} aside={<Hint>重み1＝移動10分ぶん。0で無効。</Hint>}>
+        条件の重み
+      </SectionTitle>
       {data.rules.map((r) => (
         <div key={r.id} className={`stack side-rule ${r.weight === 0 && !r.hard ? 'is-dim' : ''}`} style={{ gap: 2 }}>
           <span className="side-rule-label">
             {r.label}
-            {r.hard && HARDABLE.has(r.type) && <span className="chip chip-primary">必須</span>}
+            {r.hard && HARDABLE.has(r.type) && (
+              <span className="chip chip-primary">
+                <ShieldAlert size={12} aria-hidden="true" />
+                必須
+              </span>
+            )}
           </span>
           <WeightSlider
             label={r.label}
@@ -182,7 +217,9 @@ export function WeightPanel({
         </div>
       ))}
       <button type="button" className="btn btn-small" disabled={running || !canRun} onClick={onRecalc}>
-        {recalcLabel}
+        <WithIcon icon={RefreshCw} size={14}>
+          {recalcLabel}
+        </WithIcon>
       </button>
     </aside>
   );

@@ -1,7 +1,20 @@
+import { Award, BadgeCheck, Cigarette, type LucideIcon, PawPrint, Plus, Star, Tag, Trash2, User } from 'lucide-react';
 import type { Condition, Item, ItemTarget, Op, Traits, TraitValue } from '../contracts/rules';
 import { attempt, ITEM_KIND_LABELS, OP_LABELS, OPS_BY_KIND } from '../lib/common';
 import { conditionText } from '../matching';
 import { Check } from './parts';
+import { IconButton, WithIcon } from './ui';
+
+/** 項目の名前に合わせたアイコン（見つからなければ Tag）。表示だけの対応 */
+export function itemIcon(name: string): LucideIcon {
+  if (name.includes('性別')) return User;
+  if (name.includes('資格')) return BadgeCheck;
+  if (name.includes('経験')) return Award;
+  if (name.includes('得意')) return Star;
+  if (name.includes('喫煙')) return Cigarette;
+  if (name.includes('ペット')) return PawPrint;
+  return Tag;
+}
 
 /** 特性（traits）の入力と、条件（項目→演算子→値）の入力 */
 
@@ -108,7 +121,9 @@ export function TraitsEditor({
       {items.map((it) => (
         <div key={it.id} className="field">
           <span className="field-label">
-            {it.name}
+            <WithIcon icon={itemIcon(it.name)} size={14}>
+              {it.name}
+            </WithIcon>
             <span className="sub">（{ITEM_KIND_LABELS[it.kind]}）</span>
           </span>
           <TraitInput item={it} value={value[it.id]} onChange={(v) => onChange({ ...value, [it.id]: v })} />
@@ -225,9 +240,12 @@ export function ConditionsEditor({
               )}
             </div>
             <span className="sub cond-text">{condText(c, item)}</span>
-            <button type="button" className="btn btn-small" onClick={() => onChange(value.filter((_, j) => j !== i))}>
-              消す
-            </button>
+            <IconButton
+              icon={Trash2}
+              label="この条件を消す"
+              tone="danger"
+              onClick={() => onChange(value.filter((_, j) => j !== i))}
+            />
           </div>
         );
       })}
@@ -239,7 +257,7 @@ export function ConditionsEditor({
           disabled={usable.length === 0}
           onClick={add}
         >
-          ＋ 条件を足す
+          <WithIcon icon={Plus}>条件を足す</WithIcon>
         </button>
       )}
       {usable.length === 0 && <span className="sub">使える項目がありません（「項目」の画面で足します）。</span>}
@@ -254,14 +272,16 @@ export function TraitChips({ traits, items }: { traits: Traits; items: { id: str
     if (v === undefined || v === null || (Array.isArray(v) && v.length === 0)) return [];
     const text =
       v === true ? it.name : v === false ? `${it.name}なし` : `${it.name}：${Array.isArray(v) ? v.join('・') : v}`;
-    return [text];
+    return [{ text, icon: itemIcon(it.name) }];
   });
   if (chips.length === 0) return <span className="sub">—</span>;
   return (
-    <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
+    <div className="trait-chips">
       {chips.map((c) => (
-        <span key={c} className="chip">
-          {c}
+        <span key={c.text} className="chip">
+          <WithIcon icon={c.icon} size={13}>
+            {c.text}
+          </WithIcon>
         </span>
       ))}
     </div>

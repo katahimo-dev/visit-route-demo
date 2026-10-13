@@ -1,7 +1,10 @@
+import { Check, Pencil, Plus, X } from 'lucide-react';
 import { useState } from 'react';
+import { SectionTitle, WithIcon } from '../components/ui';
 import { type Client, type Visit, visitSchema } from '../contracts/documents';
 import { formError, newId } from '../lib/common';
 import { useDemoData } from '../store';
+import './schedule.css';
 
 /** 訪問を足す・直す（PoC本体 schedule/VisitForm.tsx を写し、保存先を DemoData にした） */
 
@@ -86,7 +89,7 @@ export function VisitForm({
 
   return (
     <div className="card stack">
-      <h3>{visit ? '訪問を編集' : '訪問を追加'}</h3>
+      <SectionTitle icon={visit ? Pencil : Plus}>{visit ? '訪問を編集' : '訪問を追加'}</SectionTitle>
       <div className="form-grid">
         <label>
           {terms.client}
@@ -147,10 +150,10 @@ export function VisitForm({
       {error && <p className="error">{error}</p>}
       <div className="row">
         <button type="button" className="btn btn-primary" onClick={save}>
-          保存
+          <WithIcon icon={Check}>保存</WithIcon>
         </button>
         <button type="button" className="btn" onClick={onClose}>
-          キャンセル
+          <WithIcon icon={X}>キャンセル</WithIcon>
         </button>
       </div>
     </div>
