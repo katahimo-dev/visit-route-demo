@@ -1,3 +1,21 @@
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Database,
+  FlaskConical,
+  GitCompareArrows,
+  HeartHandshake,
+  House,
+  type LucideIcon,
+  Route as RouteIcon,
+  SlidersHorizontal,
+  Sparkles,
+  Tags,
+  TriangleAlert,
+  UserRound,
+} from 'lucide-react';
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { addDays, jstDate } from '../domain/time';
@@ -71,6 +89,9 @@ function Guarded({ element }: { element: ReactElement }) {
   );
 }
 
+/** 左のメニュー：毎日の作業と、ふだんは触らない設定を分ける */
+type NavItem = { to: string; label: string; icon: LucideIcon };
+
 function AdminShell() {
   const { data, saveError } = useDemoData();
   const terms = data.org.terms;
@@ -81,35 +102,79 @@ function AdminShell() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+  const groups: { title: string; items: NavItem[] }[] = [
+    {
+      title: '毎日の作業',
+      items: [
+        { to: '/plan', label: 'AI案', icon: Sparkles },
+        { to: '/schedule', label: '予定', icon: CalendarDays },
+        { to: '/compare', label: '比較', icon: GitCompareArrows },
+      ],
+    },
+    {
+      title: '人と予定',
+      items: [
+        { to: '/staff', label: terms.staff, icon: UserRound },
+        { to: '/clients', label: terms.client, icon: House },
+        { to: '/availability', label: '稼働時間', icon: Clock },
+      ],
+    },
+    {
+      title: '割当の決まり',
+      items: [
+        { to: '/rules', label: '条件', icon: SlidersHorizontal },
+        { to: '/items', label: '項目', icon: Tags },
+        { to: '/compat', label: '相性', icon: HeartHandshake },
+      ],
+    },
+    {
+      title: 'その他',
+      items: [{ to: '/data', label: 'データ', icon: Database }],
+    },
+  ];
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="app-title">
-          <strong>{data.org.name}</strong>
-          <span className="demo-note">デモ：データはこのブラウザだけに保存。実在の個人情報は入れない</span>
+      <aside className="side-nav">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            <RouteIcon size={20} strokeWidth={2.4} />
+          </span>
+          <div className="brand-text">
+            <strong>{data.org.name}</strong>
+            <span className="demo-badge" title="データはこのブラウザだけに保存。実在の個人情報は入れない">
+              <FlaskConical size={12} aria-hidden="true" />
+              デモ（ブラウザ内に保存）
+            </span>
+          </div>
         </div>
-        <nav className="top-nav">
-          <NavLink to="/plan">AI案</NavLink>
-          <NavLink to="/schedule">予定</NavLink>
-          <NavLink to="/compare">比較</NavLink>
-          <NavLink to="/rules">条件</NavLink>
-          <NavLink to="/items">項目</NavLink>
-          <NavLink to="/compat">相性</NavLink>
-          <NavLink to="/staff">{terms.staff}</NavLink>
-          <NavLink to="/clients">{terms.client}</NavLink>
-          <NavLink to="/availability">稼働時間</NavLink>
-          <NavLink to="/data">データ</NavLink>
+        <nav className="nav-groups">
+          {groups.map((g) => (
+            <div key={g.title} className="nav-group">
+              <span className="nav-group-title">{g.title}</span>
+              {g.items.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} className="nav-link">
+                  <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{label}</span>
+                </NavLink>
+              ))}
+            </div>
+          ))}
         </nav>
-        <DateSwitcher />
-      </header>
-      {saveError && (
-        <div className="save-error">
-          {saveError} <NavLink to="/data">データを書き出す</NavLink>
-        </div>
-      )}
-      <main className="app-main">
-        <Guarded element={<Outlet />} />
-      </main>
+      </aside>
+      <div className="app-body">
+        <header className="app-header">
+          <DateSwitcher />
+        </header>
+        {saveError && (
+          <div className="save-error">
+            <TriangleAlert size={16} aria-hidden="true" />
+            {saveError} <NavLink to="/data">データを書き出す</NavLink>
+          </div>
+        )}
+        <main className="app-main">
+          <Guarded element={<Outlet />} />
+        </main>
+      </div>
     </div>
   );
 }
@@ -120,14 +185,15 @@ function DateSwitcher() {
   const i = dates.indexOf(date);
   return (
     <div className="date-switch">
+      <CalendarDays size={18} className="date-icon" aria-hidden="true" />
       <button
         type="button"
-        className="btn btn-small"
+        className="icon-btn"
         disabled={i <= 0}
         onClick={() => setDate(dates[i - 1] ?? date)}
         aria-label="前の日"
       >
-        ◀
+        <ChevronLeft size={18} aria-hidden="true" />
       </button>
       <select value={date} onChange={(e) => setDate(e.target.value)} aria-label="日付">
         {dates.map((d) => (
@@ -138,12 +204,12 @@ function DateSwitcher() {
       </select>
       <button
         type="button"
-        className="btn btn-small"
+        className="icon-btn"
         disabled={i < 0 || i >= dates.length - 1}
         onClick={() => setDate(dates[i + 1] ?? date)}
         aria-label="次の日"
       >
-        ▶
+        <ChevronRight size={18} aria-hidden="true" />
       </button>
     </div>
   );
