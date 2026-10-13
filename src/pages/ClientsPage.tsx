@@ -1,11 +1,26 @@
+import {
+  BadgeCheck,
+  Home,
+  House,
+  MapPin,
+  Pencil,
+  Plus,
+  Repeat,
+  Save,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ConditionsEditor, condText, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
+import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { type Client, clientSchema } from '../contracts/documents';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, newId } from '../lib/common';
 import { useDemoData } from '../store';
+import './settings.css';
 
 /** 訪問先の一覧と編集（PoC本体 ClientsPage.tsx を写し、性別希望・NG を特性・条件・相性に置き換えた） */
 
@@ -55,71 +70,89 @@ export default function ClientsPage() {
 
   return (
     <div className="stack">
-      <div className="spread">
-        <h2>{terms.client}</h2>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => {
-            setError(null);
-            setIsNew(true);
-            setForm(blank(clients.length));
-          }}
-        >
-          {terms.client}を追加
-        </button>
-      </div>
+      <PageHeader
+        icon={House}
+        title={terms.client}
+        lead={`${terms.client}の住所・特性・条件を決めます`}
+        actions={
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setError(null);
+              setIsNew(true);
+              setForm(blank(clients.length));
+            }}
+          >
+            <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
+          </button>
+        }
+      />
 
       <div className="card table-scroll">
-        <table>
+        <table className="people-table">
           <thead>
             <tr>
               <th>名前</th>
-              <th>住所</th>
               <th>位置</th>
               <th>特性</th>
               <th>必要条件・希望</th>
               <th>いつもの担当</th>
               <th>状態</th>
-              <th />
+              <th aria-label="操作" />
             </tr>
           </thead>
           <tbody>
             {clients.map((c) => (
               <tr key={c.id}>
                 <td>
-                  <span className="row">
+                  <span className="row person-name">
                     <span className="dot dot-sm" style={{ background: colorOf(c.color) }}>
                       {initialOf(c.displayName)}
                     </span>
-                    {c.displayName}
+                    <span className="person-main">
+                      {c.displayName}
+                      {c.place.address && <small className="person-sub">{c.place.address}</small>}
+                    </span>
                   </span>
                 </td>
-                <td>{c.place.address}</td>
-                <td>{hasLocation(c.place) ? 'あり' : <span className="chip chip-warn">未登録</span>}</td>
+                <td>
+                  {hasLocation(c.place) ? (
+                    <span className="chip chip-ok" title="位置あり">
+                      <MapPin size={13} strokeWidth={2.2} aria-hidden="true" />
+                      <span className="sr-only">あり</span>
+                    </span>
+                  ) : (
+                    <span className="chip chip-warn">未登録</span>
+                  )}
+                </td>
                 <td>
                   <TraitChips traits={c.traits} items={clientItems} />
                 </td>
-                <td className="sub">
+                <td className="sub cond-cell">
                   {c.requirements.map((x) => condText(x, itemById.get(x.itemId))).join('、')}
                   {c.requirements.length > 0 && c.preferences.length > 0 && ' ／ 希望：'}
                   {c.preferences.map((x) => condText(x, itemById.get(x.itemId))).join('、')}
                   {c.requirements.length + c.preferences.length === 0 && 'なし'}
                 </td>
-                <td>{staffName(c.usualStaffId)}</td>
+                <td className="nowrap">
+                  {c.usualStaffId && (
+                    <WithIcon icon={Repeat} size={14}>
+                      {staffName(c.usualStaffId)}
+                    </WithIcon>
+                  )}
+                </td>
                 <td>{c.active ? '' : <span className="chip">休止中</span>}</td>
                 <td>
-                  <button
-                    type="button"
-                    className="btn btn-small"
+                  <IconButton
+                    icon={Pencil}
+                    label={`${c.displayName}を編集`}
                     onClick={() => {
                       setError(null);
                       setIsNew(false);
                       setForm(structuredClone(c));
                     }}
-                  >
-                    編集
-                  </button>
+                  />
                 </td>
               </tr>
             ))}
@@ -129,7 +162,9 @@ export default function ClientsPage() {
 
       {form && (
         <div className="card stack">
-          <h3>{isNew ? `${terms.client}を追加` : `${terms.client}を編集`}</h3>
+          <SectionTitle icon={isNew ? Plus : Pencil}>
+            {isNew ? `${terms.client}を追加` : `${terms.client}を編集`}
+          </SectionTitle>
           <div className="form-grid">
             <label>
               表示名
@@ -184,38 +219,38 @@ export default function ClientsPage() {
             </Check>
           </div>
 
-          <h3>特性</h3>
+          <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={clientItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
 
-          <h3>必要条件（{terms.staff}に求めること）</h3>
-          <p className="sub">
+          <SectionTitle icon={SlidersHorizontal}>必要条件（{terms.staff}に求めること）</SectionTitle>
+          <Hint>
             例：性別が女性、資格に看護師を含む。「条件」の画面の「{terms.client}の必要条件」で、必須か重みかを決めます。
-          </p>
+          </Hint>
           <ConditionsEditor
             items={data.items}
             target="staff"
             value={form.requirements}
             onChange={(requirements) => setForm({ ...form, requirements })}
           />
-          <h3>希望</h3>
-          <p className="sub">例：経験年数3以上。満たさないと点が付きます。</p>
+          <SectionTitle icon={Sparkles}>希望</SectionTitle>
+          <Hint>例：経験年数3以上。満たさないと点が付きます。</Hint>
           <ConditionsEditor
             items={data.items}
             target="staff"
             value={form.preferences}
             onChange={(preferences) => setForm({ ...form, preferences })}
           />
-          <p className="sub">相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。</p>
+          <Hint label="相性について">相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。</Hint>
 
-          <h3>住所</h3>
+          <SectionTitle icon={Home}>住所</SectionTitle>
           <PlaceEditor value={form.place} onChange={(place) => setForm({ ...form, place })} />
           {error && <p className="error">{error}</p>}
           <div className="row">
             <button type="button" className="btn btn-primary" onClick={save}>
-              保存
+              <WithIcon icon={Save}>保存</WithIcon>
             </button>
             <button type="button" className="btn" onClick={() => setForm(null)}>
-              閉じる
+              <WithIcon icon={X}>閉じる</WithIcon>
             </button>
           </div>
         </div>

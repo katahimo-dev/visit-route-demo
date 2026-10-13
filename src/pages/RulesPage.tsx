@@ -1,8 +1,36 @@
+import {
+  Dices,
+  Heart,
+  HeartHandshake,
+  Hourglass,
+  type LucideIcon,
+  Plus,
+  Repeat,
+  Scale,
+  ShieldCheck,
+  SlidersHorizontal,
+  ThumbsUp,
+  Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
-import { Check, WeightSlider } from '../components/parts';
+import { WeightSlider } from '../components/parts';
+import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { HARDABLE, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
 import { useDemoData } from '../store';
+import './settings.css';
+
+/** 条件の種類ごとのアイコン（必要条件=盾、希望=ハート／いいね など） */
+const RULE_ICONS: Record<RuleType, LucideIcon> = {
+  clientRequirement: ShieldCheck,
+  staffRequirement: ShieldCheck,
+  clientPreference: Heart,
+  staffPreference: ThumbsUp,
+  compatibility: HeartHandshake,
+  continuity: Repeat,
+  balance: Scale,
+  wait: Hourglass,
+};
 
 /** 型ごとの既定（design.md §5 の表）。足したときの初期値 */
 const DEFAULTS: Record<RuleType, { weight: number; hard: boolean }> = {
@@ -41,23 +69,27 @@ export default function RulesPage() {
 
   return (
     <div className="stack">
-      <h2>条件</h2>
+      <PageHeader
+        icon={SlidersHorizontal}
+        title="条件"
+        lead="重み1＝1件あたり移動10分ぶん。必須は守れなければ担当にしません"
+      />
       <div className="card stack">
-        <p className="sub">
+        <Hint label="点のしくみ">
           AI案は「移動時間＋条件の点」の合計がいちばん低くなる割当を探します。点は移動1分＝1点、
           <strong>重み1＝1件あたり移動10分ぶん</strong>
           （重み5＝50分ぶん）。重み0の条件は使いません。必須にした条件は、点ではなく「守らなければ担当にしない」になります。
           時間の約束と稼働時間帯はいつも必須です。
-        </p>
+        </Hint>
         <div className="table-scroll">
           <table className="rules-table">
             <thead>
               <tr>
                 <th>名前</th>
-                <th>種類と説明</th>
+                <th>種類</th>
                 <th style={{ width: 220 }}>重み</th>
                 <th>必須</th>
-                <th />
+                <th aria-label="操作" />
               </tr>
             </thead>
             <tbody>
@@ -75,8 +107,12 @@ export default function RulesPage() {
                       />
                     </td>
                     <td>
-                      <span className="chip">{ruleTypeLabel(r.type, terms)}</span>
-                      <div className="sub rule-help">{ruleTypeHelp(r.type, terms)}</div>
+                      <span className="chip chip-type">
+                        <WithIcon icon={RULE_ICONS[r.type]} size={14}>
+                          {ruleTypeLabel(r.type, terms)}
+                        </WithIcon>
+                      </span>
+                      <Hint label="説明">{ruleTypeHelp(r.type, terms)}</Hint>
                     </td>
                     <td>
                       <WeightSlider
@@ -89,17 +125,27 @@ export default function RulesPage() {
                     </td>
                     <td className="nowrap">
                       {hardable ? (
-                        <Check checked={r.hard} onChange={(v) => setRule(r.id, { hard: v })}>
-                          必須
-                        </Check>
+                        <label className={`hard-toggle${r.hard ? ' is-on' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={r.hard}
+                            onChange={(e) => setRule(r.id, { hard: e.target.checked })}
+                          />
+                          <WithIcon icon={ShieldCheck} size={14}>
+                            必須
+                          </WithIcon>
+                        </label>
                       ) : (
                         <span className="sub">—</span>
                       )}
                     </td>
                     <td>
-                      <button type="button" className="btn btn-small" onClick={() => remove(r)}>
-                        消す
-                      </button>
+                      <IconButton
+                        icon={Trash2}
+                        label={`条件「${r.label}」を消す`}
+                        tone="danger"
+                        onClick={() => remove(r)}
+                      />
                     </td>
                   </tr>
                 );
@@ -120,18 +166,20 @@ export default function RulesPage() {
             </select>
           </label>
           <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-end' }} onClick={add}>
-            条件を足す
+            <WithIcon icon={Plus}>条件を足す</WithIcon>
           </button>
         </div>
-        <p className="sub">{ruleTypeHelp(addType, terms)}</p>
+        <Hint label="この種類の説明">{ruleTypeHelp(addType, terms)}</Hint>
       </div>
 
-      <div className="card stack" style={{ maxWidth: 560 }}>
-        <h3>乱数の種</h3>
-        <p className="sub">AI案は同じデータ・同じ種からは同じ案になります。種を変えると、別の探し方で案を作ります。</p>
+      <div className="card seed-card">
+        <SectionTitle icon={Dices}>乱数の種</SectionTitle>
+        <Hint label="説明">
+          AI案は同じデータ・同じ種からは同じ案になります。種を変えると、別の探し方で案を作ります。
+        </Hint>
         <div className="row">
           <input
-            style={{ maxWidth: 200 }}
+            className="seed-input"
             inputMode="numeric"
             value={seedValue}
             aria-label="乱数の種"

@@ -1,4 +1,6 @@
+import { Check, House, type LucideIcon, Pencil, Plus, Tags, Trash2, UserRound, X } from 'lucide-react';
 import { useState } from 'react';
+import { Empty, Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import {
   type Condition,
@@ -11,6 +13,7 @@ import {
 } from '../contracts/rules';
 import { ITEM_KIND_LABELS, newId } from '../lib/common';
 import { useDemoData } from '../store';
+import './settings.css';
 
 /**
  * 項目：スタッフの項目・訪問先の項目の2つの表（ClassClassify の列の種類と OptionsEditor にならう）。
@@ -72,18 +75,42 @@ export default function ItemsPage() {
   const terms = data.org.terms;
   return (
     <div className="stack">
-      <h2>項目</h2>
-      <p className="sub">
+      <PageHeader
+        icon={Tags}
+        title="項目"
+        lead={`${terms.staff}や${terms.client}の特性（資格・ペットなど）を決めます`}
+      />
+      <Hint label="使い方">
         {terms.staff}や{terms.client}が持つ特性（資格・経験年数・ペットなど）を決めます。値は「{terms.staff}」「
         {terms.client}」の画面で入れ、条件（必要条件・希望）で使います。
-      </p>
-      <ItemTable target="staff" title={`${terms.staff}の項目`} note={`${terms.client}の必要条件・希望で使います`} />
-      <ItemTable target="client" title={`${terms.client}の項目`} note={`${terms.staff}の必要条件・希望で使います`} />
+      </Hint>
+      <ItemTable
+        target="staff"
+        icon={UserRound}
+        title={`${terms.staff}の項目`}
+        note={`${terms.client}の必要条件・希望で使います`}
+      />
+      <ItemTable
+        target="client"
+        icon={House}
+        title={`${terms.client}の項目`}
+        note={`${terms.staff}の必要条件・希望で使います`}
+      />
     </div>
   );
 }
 
-function ItemTable({ target, title, note }: { target: ItemTarget; title: string; note: string }) {
+function ItemTable({
+  target,
+  icon,
+  title,
+  note,
+}: {
+  target: ItemTarget;
+  icon: LucideIcon;
+  title: string;
+  note: string;
+}) {
   const { data, update } = useDemoData();
   const items = data.items.filter((i) => i.target === target);
   const setItem = (id: string, patch: Partial<Item>) =>
@@ -170,22 +197,28 @@ function ItemTable({ target, title, note }: { target: ItemTarget; title: string;
 
   return (
     <div className="card stack">
-      <div className="spread">
-        <h3>{title}</h3>
-        <button type="button" className="btn btn-small" onClick={add}>
-          ＋ 項目を足す
-        </button>
-      </div>
+      <SectionTitle
+        icon={icon}
+        aside={
+          <button type="button" className="btn btn-small" onClick={add}>
+            <WithIcon icon={Plus} size={14}>
+              項目を足す
+            </WithIcon>
+          </button>
+        }
+      >
+        {title}
+      </SectionTitle>
       <span className="sub">{note}</span>
       <div className="table-scroll">
-        <table>
+        <table className="items-table">
           <thead>
             <tr>
               <th>名前</th>
               <th>種類</th>
               <th>選択肢</th>
               <th>使っている条件</th>
-              <th />
+              <th aria-label="操作" />
             </tr>
           </thead>
           <tbody>
@@ -218,11 +251,23 @@ function ItemTable({ target, title, note }: { target: ItemTarget; title: string;
                       <span className="sub">{it.kind === 'flag' ? 'あり／なし' : '数値を入れる'}</span>
                     )}
                   </td>
-                  <td className="sub">{refs.length > 0 ? `${refs.length}件` : 'なし'}</td>
                   <td>
-                    <button type="button" className="btn btn-small" onClick={() => remove(it)}>
-                      消す
-                    </button>
+                    {refs.length > 0 ? (
+                      <span className="badge-count" title={refs.join('、')}>
+                        {refs.length}
+                        <small>件</small>
+                      </span>
+                    ) : (
+                      <span className="sub">なし</span>
+                    )}
+                  </td>
+                  <td>
+                    <IconButton
+                      icon={Trash2}
+                      label={`項目「${it.name}」を消す`}
+                      tone="danger"
+                      onClick={() => remove(it)}
+                    />
                   </td>
                 </tr>
               );
@@ -230,7 +275,7 @@ function ItemTable({ target, title, note }: { target: ItemTarget; title: string;
           </tbody>
         </table>
       </div>
-      {items.length === 0 && <p className="sub">項目がありません。</p>}
+      {items.length === 0 && <Empty icon={Tags}>項目がありません。</Empty>}
     </div>
   );
 }
@@ -280,51 +325,52 @@ function OptionsEditor({
   const d = draft.trim();
   const renameDup = editing !== null && d !== editing && options.includes(d);
   return (
-    <div className="stack" style={{ gap: 4 }}>
+    <div className="stack" style={{ gap: 6 }}>
       {options.length === 0 && <span className="sub">選択肢がありません</span>}
-      {options.map((o) =>
-        editing === o ? (
-          <form
-            key={o}
-            className="row"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (renameDup) return;
-              if (d && d !== o) onRename(o, d.slice(0, 30));
-              setEditing(null);
-            }}
-          >
-            <input value={draft} maxLength={30} onChange={(e) => setDraft(e.target.value)} aria-label={`${o}の名前`} />
-            <button type="submit" className="btn btn-small" disabled={!d || renameDup}>
-              決定
-            </button>
-            <button type="button" className="btn btn-small" onClick={() => setEditing(null)}>
-              やめる
-            </button>
-          </form>
-        ) : (
-          <div key={o} className="option-row">
-            <span className="grow">{o}</span>
-            <span className="sub">{countOf(o)}件</span>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => {
-                setEditing(o);
-                setDraft(o);
+      <div className="opt-chips">
+        {options.map((o) =>
+          editing === o ? (
+            <form
+              key={o}
+              className="opt-edit"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (renameDup) return;
+                if (d && d !== o) onRename(o, d.slice(0, 30));
+                setEditing(null);
               }}
             >
-              名前
-            </button>
-            <button type="button" className="btn btn-small" onClick={() => onRemove(o)}>
-              消す
-            </button>
-          </div>
-        ),
-      )}
+              <input
+                value={draft}
+                maxLength={30}
+                onChange={(e) => setDraft(e.target.value)}
+                aria-label={`${o}の名前`}
+              />
+              <IconButton icon={Check} label="名前を決める" type="submit" disabled={!d || renameDup} />
+              <IconButton icon={X} label="やめる" onClick={() => setEditing(null)} />
+            </form>
+          ) : (
+            <span key={o} className="opt-chip">
+              <span className="opt-name">{o}</span>
+              <span className="opt-count" title={`${countOf(o)}件で使っています`}>
+                {countOf(o)}
+              </span>
+              <IconButton
+                icon={Pencil}
+                label={`「${o}」の名前を変える`}
+                onClick={() => {
+                  setEditing(o);
+                  setDraft(o);
+                }}
+              />
+              <IconButton icon={Trash2} label={`「${o}」を消す`} tone="danger" onClick={() => onRemove(o)} />
+            </span>
+          ),
+        )}
+      </div>
       {options.length < 30 && (
         <form
-          className="row"
+          className="opt-add"
           onSubmit={(e) => {
             e.preventDefault();
             if (!a || addDup) return;
@@ -333,8 +379,10 @@ function OptionsEditor({
           }}
         >
           <input value={added} maxLength={30} placeholder="選択肢を足す" onChange={(e) => setAdded(e.target.value)} />
-          <button type="submit" className="btn btn-small" disabled={!a || addDup}>
-            足す
+          <button type="submit" className="btn btn-small nowrap" disabled={!a || addDup}>
+            <WithIcon icon={Plus} size={14}>
+              足す
+            </WithIcon>
           </button>
         </form>
       )}

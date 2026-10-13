@@ -1,7 +1,10 @@
+import { Database, Download, RotateCcw, TriangleAlert, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
+import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { attempt, formError } from '../lib/common';
 import { exportJson, importJson, useDemoData } from '../store';
+import './settings.css';
 
 /** データ：書き出し・読み込み・初期状態に戻す（D2・D3） */
 export default function DataPage() {
@@ -55,26 +58,31 @@ export default function DataPage() {
 
   return (
     <div className="stack" style={{ maxWidth: 720 }}>
-      <h2>データ</h2>
-      <div className="card stack">
+      <PageHeader icon={Database} title="データ" lead="書き出し・読み込み・初期状態に戻す" />
+      <div className="warn-box">
+        <TriangleAlert size={20} strokeWidth={2.2} aria-hidden="true" />
         <p>
-          このデモのデータは、<strong>このブラウザの中だけ</strong>に保存しています。サーバーには送りません。
+          データは<strong>このブラウザの中だけ</strong>に保存し、サーバーには送りません。
           実在の人の名前・住所などの個人情報は入れないでください。
         </p>
-        {saveError && <p className="error">保存できませんでした：{saveError}。書き出して保管してください。</p>}
       </div>
+      {saveError && (
+        <div className="card">
+          <p className="error">保存できませんでした：{saveError}。書き出して保管してください。</p>
+        </div>
+      )}
 
       <div className="card stack">
-        <h3>書き出す</h3>
-        <p className="sub">データ一式を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。</p>
+        <SectionTitle icon={Download}>書き出す</SectionTitle>
+        <Hint>データ一式を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。</Hint>
         <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
-          ファイルに書き出す
+          <WithIcon icon={Download}>ファイルに書き出す</WithIcon>
         </button>
       </div>
 
       <div className="card stack">
-        <h3>読み込む</h3>
-        <p className="sub">書き出したファイルを読み込み、いまのデータと置き換えます（置き換える前に確認します）。</p>
+        <SectionTitle icon={Upload}>読み込む</SectionTitle>
+        <Hint>書き出したファイルを読み込み、いまのデータと置き換えます（置き換える前に確認します）。</Hint>
         <input
           ref={fileRef}
           type="file"
@@ -89,10 +97,10 @@ export default function DataPage() {
       </div>
 
       <div className="card stack">
-        <h3>初期状態に戻す</h3>
-        <p className="sub">デモの架空の事業所のデータに戻します。</p>
+        <SectionTitle icon={RotateCcw}>初期状態に戻す</SectionTitle>
+        <Hint>デモの架空の事業所のデータに戻します。いまの変更はすべて消えます。</Hint>
         <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={doReset}>
-          デモの初期状態に戻す
+          <WithIcon icon={RotateCcw}>デモの初期状態に戻す</WithIcon>
         </button>
       </div>
     </div>

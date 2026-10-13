@@ -1,12 +1,28 @@
+import {
+  BadgeCheck,
+  Clock,
+  Home,
+  MapPin,
+  Pencil,
+  Plus,
+  Save,
+  SlidersHorizontal,
+  Smartphone,
+  Sparkles,
+  UserRound,
+  X,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ConditionsEditor, condText, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
+import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
 import { type Staff, staffSchema } from '../contracts/documents';
 import { byName, formError, hasLocation, newId, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
 import { useDemoData } from '../store';
+import './settings.css';
 
 /** スタッフの一覧と編集（PoC本体 StaffPage.tsx を写し、招待・メールを外して特性と条件を足した） */
 
@@ -53,23 +69,27 @@ export default function StaffPage() {
 
   return (
     <div className="stack">
-      <div className="spread">
-        <h2>{terms.staff}</h2>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => {
-            setError(null);
-            setIsNew(true);
-            setForm(blank());
-          }}
-        >
-          {terms.staff}を追加
-        </button>
-      </div>
+      <PageHeader
+        icon={UserRound}
+        title={terms.staff}
+        lead={`${terms.staff}の勤務・特性・条件を決めます`}
+        actions={
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setError(null);
+              setIsNew(true);
+              setForm(blank());
+            }}
+          >
+            <WithIcon icon={Plus}>{terms.staff}を追加</WithIcon>
+          </button>
+        }
+      />
 
       <div className="card table-scroll">
-        <table>
+        <table className="people-table">
           <thead>
             <tr>
               <th>名前</th>
@@ -78,40 +98,61 @@ export default function StaffPage() {
               <th>条件</th>
               <th>自宅の位置</th>
               <th>状態</th>
-              <th />
+              <th aria-label="操作" />
             </tr>
           </thead>
           <tbody>
             {staff.map((s) => (
               <tr key={s.id}>
-                <td>{s.name}</td>
+                <td className="person-name">
+                  <WithIcon icon={UserRound} size={15}>
+                    {s.name}
+                  </WithIcon>
+                </td>
                 <td className="nowrap">
-                  {s.workDays.map((d) => WEEKDAY_LABELS[d]).join('')} {s.shiftStart}〜{s.shiftEnd}
+                  <WithIcon icon={Clock} size={14}>
+                    {s.workDays.map((d) => WEEKDAY_LABELS[d]).join('')} {s.shiftStart}〜{s.shiftEnd}
+                  </WithIcon>
                 </td>
                 <td>
                   <TraitChips traits={s.traits} items={staffItems} />
                 </td>
-                <td className="sub">
+                <td className="sub cond-cell">
                   {[...s.requirements, ...s.preferences].map((c) => condText(c, itemById.get(c.itemId))).join('、') ||
                     'なし'}
                 </td>
-                <td>{hasLocation(s.home) ? 'あり' : <span className="chip chip-warn">未登録</span>}</td>
+                <td>
+                  {hasLocation(s.home) ? (
+                    <span className="chip chip-ok">
+                      <WithIcon icon={MapPin} size={13}>
+                        あり
+                      </WithIcon>
+                    </span>
+                  ) : (
+                    <span className="chip chip-warn">未登録</span>
+                  )}
+                </td>
                 <td>{!s.active && <span className="chip">休止中</span>}</td>
                 <td className="nowrap">
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={() => {
-                      setError(null);
-                      setIsNew(false);
-                      setForm(structuredClone(s));
-                    }}
-                  >
-                    編集
-                  </button>{' '}
-                  <Link className="btn btn-small" to={`/staff-view/${s.id}`}>
-                    {s.name}さんの画面で見る
-                  </Link>
+                  <div className="actions">
+                    <IconButton
+                      icon={Pencil}
+                      label={`${s.name}を編集`}
+                      onClick={() => {
+                        setError(null);
+                        setIsNew(false);
+                        setForm(structuredClone(s));
+                      }}
+                    />
+                    <Link
+                      className="icon-btn tone-plain"
+                      to={`/staff-view/${s.id}`}
+                      title={`${s.name}さんの画面で見る`}
+                      aria-label={`${s.name}さんの画面で見る`}
+                    >
+                      <Smartphone size={16} strokeWidth={2.2} aria-hidden="true" />
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -121,7 +162,9 @@ export default function StaffPage() {
 
       {form && (
         <div className="card stack">
-          <h3>{isNew ? `${terms.staff}を追加` : `${terms.staff}を編集`}</h3>
+          <SectionTitle icon={isNew ? Plus : Pencil}>
+            {isNew ? `${terms.staff}を追加` : `${terms.staff}を編集`}
+          </SectionTitle>
           <div className="form-grid">
             <label>
               名前
@@ -181,21 +224,21 @@ export default function StaffPage() {
             </Check>
           </div>
 
-          <h3>特性</h3>
+          <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={staffItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
 
-          <h3>この{terms.staff}の必要条件</h3>
-          <p className="sub">
+          <SectionTitle icon={SlidersHorizontal}>この{terms.staff}の必要条件</SectionTitle>
+          <Hint>
             {terms.client}の特性に対する条件です（例：ペットがいない）。満たさない{terms.client}は「{terms.staff}
             の必要条件」の条件で点が付くか、必須なら担当にしません。
-          </p>
+          </Hint>
           <ConditionsEditor
             items={data.items}
             target="client"
             value={form.requirements}
             onChange={(requirements) => setForm({ ...form, requirements })}
           />
-          <h3>この{terms.staff}の希望</h3>
+          <SectionTitle icon={Sparkles}>この{terms.staff}の希望</SectionTitle>
           <ConditionsEditor
             items={data.items}
             target="client"
@@ -203,15 +246,15 @@ export default function StaffPage() {
             onChange={(preferences) => setForm({ ...form, preferences })}
           />
 
-          <h3>自宅</h3>
+          <SectionTitle icon={Home}>自宅</SectionTitle>
           <PlaceEditor value={form.home} onChange={(home) => setForm({ ...form, home })} />
           {error && <p className="error">{error}</p>}
           <div className="row">
             <button type="button" className="btn btn-primary" onClick={save}>
-              保存
+              <WithIcon icon={Save}>保存</WithIcon>
             </button>
             <button type="button" className="btn" onClick={() => setForm(null)}>
-              閉じる
+              <WithIcon icon={X}>閉じる</WithIcon>
             </button>
           </div>
         </div>
