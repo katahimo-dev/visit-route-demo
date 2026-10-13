@@ -150,9 +150,15 @@ export function optionNameError(name: string): string | null {
 }
 
 /** 同じ名前がほかにあるか（自分 selfId は除く。前後の空白は無視） */
+/**
+ * 名前の比べ方：全角半角と空白の違いは同じとみなす（Excel の見出しの比べ方と同じ。
+ * 「山田 太郎」と「山田　太郎」「山田太郎」は同じ名前）
+ */
+export const nameKey = (s: string) => s.normalize('NFKC').replace(/\s+/g, '');
+
 export function nameTaken<T extends { id: string }>(xs: T[], nameOf: (x: T) => string, name: string, selfId?: string) {
-  const n = name.trim();
-  return xs.some((x) => x.id !== selfId && nameOf(x).trim() === n);
+  const n = nameKey(name);
+  return xs.some((x) => x.id !== selfId && nameKey(nameOf(x)) === n);
 }
 
 /** 新しい ID（画面で足すもの用） */

@@ -593,4 +593,20 @@ describe('レビューの指摘（ブック）', () => {
     );
     expect(msg).toContain('シート『訪問』の 3行目・『担当』：結合したセルは読めません');
   });
+
+  it('全角半角・空白だけが違う名前は書き出しで止め、読み込みでも重なりとして止める', async () => {
+    const d = base();
+    const s0 = d.staff[0];
+    const s1 = d.staff[1];
+    if (!s0 || !s1) throw new Error('seed にスタッフがいない');
+    const near = { ...d, staff: d.staff.map((s) => (s.id === s1.id ? { ...s, name: s0.name.replace(' ', '　') } : s)) };
+    await expect(exportWorkbook(near)).rejects.toThrow('全角半角・空白だけが違う');
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, d.org.terms.staff);
+        ws.getRow(3).getCell(col(ws, '名前')).value = s0.name.replace(' ', '');
+      }),
+    );
+    expect(msg).toContain('2行目と重なっています');
+  });
 });

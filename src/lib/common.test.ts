@@ -33,3 +33,12 @@ describe('nameTaken（同じ名前がほかにあるか）', () => {
     expect(nameTaken(xs, (x) => x.name, '次郎')).toBe(false);
   });
 });
+
+describe('nameTaken の比べ方', () => {
+  it('全角半角・空白だけが違う名前は同じとみなす', () => {
+    const xs = [{ id: 'a', name: '山田 太郎' }];
+    expect(nameTaken(xs, (x) => x.name, '山田　太郎')).toBe(true);
+    expect(nameTaken(xs, (x) => x.name, '山田太郎')).toBe(true);
+    expect(nameTaken(xs, (x) => x.name, '山田 次郎')).toBe(false);
+  });
+});

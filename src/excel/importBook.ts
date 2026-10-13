@@ -5,7 +5,7 @@ import type { DemoData, ImportError } from '../contracts/data';
 import type { Availability, Client, Org, Staff, Visit } from '../contracts/documents';
 import type { Compat, Condition, Item, ItemTarget, Rule, Traits } from '../contracts/rules';
 import { slotsError } from '../domain/availability';
-import { MAX_OPTIONS, newId, optionNameError } from '../lib/common';
+import { MAX_OPTIONS, nameKey, newId, optionNameError } from '../lib/common';
 import { isImportError, migrate } from '../store';
 import {
   availabilityCols,
@@ -86,7 +86,7 @@ function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
 }
 
 /** 見出しの比べ方（全角半角・コロンの揺れ・空白を許す） */
-export const headerKey = (h: string) => nfkc(h).replace(/\s+/g, '');
+export const headerKey = nameKey;
 
 /** 値 → 文字（前後の空白は落とす。日付・時刻は 2026-10-13・9:00 の形） */
 function textOf(v: Prim): string {
@@ -299,10 +299,15 @@ function idOf(row: Row, h: string, seen: Map<string, number>, prefix: string, us
 
 /** 名前の重なりを調べる（同じ名前があればエラー） */
 function uniqueName(row: Row, h: string, name: string, seen: Map<string, number>) {
-  const before = seen.get(name);
+  // 全角半角・空白だけが違う名前も同じとみなす（見出しで区別できないため）
+  const key = nameKey(name);
+  const before = seen.get(key);
   if (before !== undefined)
-    row.err(h, `「${name}」が ${before}行目と重なっています（名前は重ならないようにしてください）`);
-  else seen.set(name, row.n);
+    row.err(
+      h,
+      `「${name}」が ${before}行目と重なっています（全角半角・空白だけの違いも同じ名前とみなします。名前は重ならないようにしてください）`,
+    );
+  else seen.set(key, row.n);
 }
 
 /** 特性・必要条件・希望の列を項目に結びつける */
