@@ -4,6 +4,7 @@ import type { DemoData, ImportError } from '../contracts/data';
 import type { Condition, Item } from '../contracts/rules';
 import { createDemoData } from '../seed';
 import { isImportError } from '../store';
+import { MAX_FILE_BYTES, MAX_ROWS } from './importBook';
 import { exportWorkbook, importWorkbook } from './index';
 import {
   condsToCell,
@@ -11,8 +12,11 @@ import {
   parseDateText,
   parseSlots,
   parseTimeText,
+  parseTrait,
   personSheetNames,
+  plainNumber,
   serialToTime,
+  traitToCell,
 } from './text';
 
 const base = () => createDemoData('2026-10-13');
@@ -374,19 +378,44 @@ describe('条件のセルの書き方', () => {
     expect(r).toEqual({ ok: true, value: conds });
   });
 
-  it('区切りは「、」のほか「,」「，」「・」、全角の数字・括弧も読む', () => {
-    expect(parseConds(multi, '看護師,保育士')).toEqual({ ok: true, value: [c('q', 'hasAny', ['看護師', '保育士'])] });
-    expect(parseConds(multi, '看護師，保育士・介護福祉士')).toEqual({
-      ok: true,
-      value: [c('q', 'hasAny', ['看護師', '保育士', '介護福祉士'])],
-    });
-    expect(parseConds(choice, '女性, 男性')).toEqual({ ok: true, value: [c('g', 'in', ['女性', '男性'])] });
+  it('区切りは「、」と改行だけ（「・」「,」は選択肢の名前の一部）。全角の数字・括弧も読む', () => {
+    expect(parseConds(multi, '看護師、保育士')).toEqual({ ok: true, value: [c('q', 'hasAny', ['看護師', '保育士'])] });
+    expect(parseConds(multi, '看護師,保育士').ok).toBe(false);
+    expect(parseConds(multi, '看護師・保育士').ok).toBe(false);
+    const dot: Item = { ...multi, options: ['洗濯・掃除', 'A,B'] };
+    expect(parseConds(dot, '洗濯・掃除、A,B')).toEqual({ ok: true, value: [c('q', 'hasAny', ['洗濯・掃除', 'A,B'])] });
+    expect(parseTrait(multi, '看護師\n保育士')).toEqual({ ok: true, value: ['看護師', '保育士'] });
     expect(parseConds(num, '３～５')).toEqual({ ok: true, value: [c('e', 'gte', 3), c('e', 'lte', 5)] });
     expect(parseConds(flag, 'なし(未確認も可)')).toEqual({ ok: true, value: [c('pet', 'not', true)] });
     expect(parseConds(multi, 'すべて:看護師、保育士')).toEqual({
       ok: true,
       value: [c('q', 'hasAll', ['看護師', '保育士'])],
     });
+  });
+
+  it('セル全体が選択肢と同じなら、その選択肢（印と同じ形の名前でも）', () => {
+    const ch: Item = { ...choice, options: ['子ども', '子ども以外'] };
+    expect(parseConds(ch, '子ども以外')).toEqual({ ok: true, value: [c('g', 'is', '子ども以外')] });
+    expect(condsToCell(ch, [c('g', 'not', '子ども以外')])).toBe('子ども以外以外');
+    expect(parseConds(ch, '子ども以外以外')).toEqual({ ok: true, value: [c('g', 'not', '子ども以外')] });
+    const mu: Item = { ...multi, options: ['すべて：x', 'x', 'なし'] };
+    expect(parseConds(mu, 'すべて：x')).toEqual({ ok: true, value: [c('q', 'hasAny', ['すべて：x'])] });
+    expect(parseConds(mu, 'すべて：すべて：x')).toEqual({ ok: true, value: [c('q', 'hasAll', ['すべて：x'])] });
+    // 選択肢から複数の特性：[] は「（なし）」、「なし」は選択肢の「なし」
+    expect(traitToCell(mu, [])).toBe('（なし）');
+    expect(parseTrait(mu, '（なし）')).toEqual({ ok: true, value: [] });
+    expect(parseTrait(mu, '(なし)')).toEqual({ ok: true, value: [] });
+    expect(parseTrait(mu, 'なし')).toEqual({ ok: true, value: ['なし'] });
+  });
+
+  it('数は指数表記にしない（読み戻せる形）', () => {
+    expect(plainNumber(1e-7)).toBe('0.0000001');
+    expect(plainNumber(1e21)).toBe('1000000000000000000000');
+    expect(plainNumber(-2.5)).toBe('-2.5');
+    for (const v of [1e-7, 1e21, 0.1 + 0.2, -1.5]) {
+      const conds = [c('e', 'gte', v)];
+      expect(parseConds(num, condsToCell(num, conds))).toEqual({ ok: true, value: conds });
+    }
   });
 
   it('読めない書き方はエラー', () => {
@@ -404,6 +433,9 @@ describe('値の読み取り', () => {
     expect(parseTimeText('24:00')).toBeNull();
     expect(serialToTime(0.375)).toBe('09:00');
     expect(serialToTime(0.5 + 1 / 1440)).toBe('12:01');
+    // 1 以上（「9」と書いた・日付つき）は時刻として読まない
+    expect(serialToTime(9)).toBeNull();
+    expect(serialToTime(1)).toBeNull();
     expect(parseDateText('2026-10-13')).toBe('2026-10-13');
     expect(parseDateText('2026/1/3')).toBe('2026-01-03');
     expect(parseDateText('2026/2/30')).toBeNull();
@@ -413,5 +445,152 @@ describe('値の読み取り', () => {
     ]);
     expect(parseSlots('休み')).toEqual([]);
     expect(parseSlots('朝だけ')).toBeNull();
+  });
+});
+
+describe('レビューの指摘（ブック）', () => {
+  it('選択肢に「、」があると書き出さない（場所を示す）。「・」「,」の選択肢と（なし）は往復する', async () => {
+    const d = base();
+    const bad: DemoData = {
+      ...d,
+      items: d.items.map((i) => (i.id === 'specialty' ? { ...i, options: [...i.options, '洗濯、掃除'] } : i)),
+    };
+    await expect(exportWorkbook(bad)).rejects.toThrow('項目「得意」の選択肢「洗濯、掃除」');
+    const good: DemoData = {
+      ...d,
+      items: d.items.map((i) => (i.id === 'specialty' ? { ...i, options: [...i.options, '洗濯・掃除', 'A,B'] } : i)),
+      staff: d.staff.map((s, i) =>
+        i === 0
+          ? { ...s, traits: { ...s.traits, specialty: ['洗濯・掃除', 'A,B'] } }
+          : i === 1
+            ? { ...s, traits: { ...s.traits, specialty: [] } }
+            : s,
+      ),
+    };
+    expect(ok(await importWorkbook(await toBuffer(good), good))).toEqual(withoutPlans(good));
+  });
+
+  it('見出しは全角半角・コロンの揺れを許す。項目の列が無ければ止める', async () => {
+    const d = base();
+    const names = personSheetNames(d.org.terms);
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const v = sheet(wb, '訪問');
+        v.getRow(1).getCell(col(v, '開始（早）')).value = '開始(早)';
+        const s = sheet(wb, names.staff);
+        s.getRow(1).getCell(col(s, '特性：性別')).value = '特性:性別';
+      }),
+    );
+    expect(r).toEqual(withoutPlans(d));
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const s = sheet(wb, names.staff);
+        s.spliceColumns(col(s, '特性：性別'), 1);
+      }),
+    );
+    expect(msg).toContain(`シート『${names.staff}』に列『特性：性別』がありません`);
+    const msg2 = fail(
+      await editAndImport(d, (wb) => {
+        const s = sheet(wb, names.staff);
+        s.getRow(1).getCell(s.columnCount + 1).value = '特性：身長';
+      }),
+    );
+    expect(msg2).toContain('見出し『特性：身長』の項目が');
+  });
+
+  it('数式のエラー・結果の無い数式は場所付きのエラー', async () => {
+    const d = base();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const v = sheet(wb, '訪問');
+        v.getRow(2).getCell(col(v, '担当')).value = { formula: 'VLOOKUP(1,A:A,1,0)', result: { error: '#N/A' } };
+        v.getRow(3).getCell(col(v, 'メモ')).value = { formula: 'B2' } as ExcelJS.CellValue;
+      }),
+    );
+    expect(msg).toContain('シート『訪問』の 2行目・『担当』：数式のエラー（#N/A）');
+    expect(msg).toContain('シート『訪問』の 3行目・『メモ』：数式の結果が保存されていません');
+  });
+
+  it('遠くの行の空白は無視し、行数・ファイルの大きさの上限を超えたら止める', async () => {
+    const d = base();
+    ok(
+      await editAndImport(d, (wb) => {
+        sheet(wb, '訪問').getRow(1_048_000).getCell(30).value = ' ';
+      }),
+    );
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, '稼働時間');
+        for (let n = 2; n <= MAX_ROWS + 2; n++) ws.getRow(n).getCell(3).value = 'x';
+      }),
+    );
+    expect(msg).toContain('シート『稼働時間』：行が多すぎます');
+    expect(fail(await importWorkbook(new ArrayBuffer(MAX_FILE_BYTES + 1), d))).toContain('ファイルが大きすぎます');
+  }, 30_000);
+
+  it('条件の名前は重なってよい。項目の名前は対象ごとに一意（対象をまたぐのはよい）', async () => {
+    const d = base();
+    const dupRule: DemoData = {
+      ...d,
+      rules: d.rules.map((r, i) => (i === 1 ? { ...r, label: d.rules[0]?.label ?? '' } : r)),
+    };
+    expect(ok(await importWorkbook(await toBuffer(dupRule), dupRule))).toEqual(withoutPlans(dupRule));
+    // 訪問先の項目「対象」をスタッフの項目「性別」と同じ名前に
+    const cross: DemoData = { ...d, items: d.items.map((i) => (i.id === 'target' ? { ...i, name: '性別' } : i)) };
+    expect(ok(await importWorkbook(await toBuffer(cross), cross))).toEqual(withoutPlans(cross));
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, '項目');
+        ws.getRow(3).getCell(col(ws, '名前')).value = '性別';
+      }),
+    );
+    expect(msg).toContain('シート『項目』の 3行目・『名前』：「性別」が 2行目と重なっています');
+  });
+
+  it('ID に __proto__ などは使えない・長さの上限・稼働時間の同じ人と日の重なり', async () => {
+    const d = base();
+    const names = personSheetNames(d.org.terms);
+    const withAvail: DemoData = {
+      ...d,
+      availability: [{ staffId: d.staff[0]?.id ?? '', date: '2026-10-14', slots: [] }],
+    };
+    const msg = fail(
+      await editAndImport(withAvail, (wb) => {
+        sheet(wb, names.client).getRow(2).getCell(1).value = '__proto__';
+        const s = sheet(wb, names.staff);
+        s.getRow(3).getCell(col(s, '名前')).value = 'x'.repeat(51);
+        const c = sheet(wb, names.client);
+        c.getRow(3).getCell(col(c, 'メモ')).value = 'x'.repeat(501);
+        sheet(wb, '稼働時間').addRow([d.staff[0]?.name, '2026-10-14', '9:00-12:00']);
+      }),
+    );
+    expect(msg).toContain(`シート『${names.client}』の 2行目・『ID』：「__proto__」は ID に使えません`);
+    expect(msg).toContain(`シート『${names.staff}』の 3行目・『名前』：50文字までです`);
+    expect(msg).toContain(`シート『${names.client}』の 3行目・『メモ』：500文字までです`);
+    expect(msg).toContain('シート『稼働時間』の 3行目・『日付』：同じスタッフ・同じ日の行が 2行目にもあります');
+  });
+
+  it('呼び方が2つ同じなら書き出さない・読み込まない', async () => {
+    const d = base();
+    const same: DemoData = { ...d, org: { ...d.org, terms: { staff: 'スタッフ', client: 'スタッフ' } } };
+    await expect(exportWorkbook(same)).rejects.toThrow('呼び方');
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        sheet(wb, '事業所').getRow(5).getCell(2).value = d.org.terms.staff;
+      }),
+    );
+    expect(msg).toContain('シート『事業所』の 5行目・『値』：呼び方（訪問する人）と同じです');
+  });
+
+  it('結合したセルは黙って読まずに場所付きのエラー', async () => {
+    const d = base();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const v = sheet(wb, '訪問');
+        const c = col(v, '担当');
+        v.mergeCells(2, c, 3, c);
+      }),
+    );
+    expect(msg).toContain('シート『訪問』の 3行目・『担当』：結合したセルは読めません');
   });
 });

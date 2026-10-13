@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { type Client, clientSchema } from '../contracts/documents';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
-import { byDisplayName, byName, formError, hasLocation, newId } from '../lib/common';
+import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
 import { useDemoData } from '../store';
 import './settings.css';
 
@@ -41,6 +41,11 @@ export default function ClientsPage() {
   const save = () => {
     if (!form) return;
     setError(null);
+    // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
+    if (nameTaken(data.clients, (x) => x.displayName, form.displayName, form.id)) {
+      setError(`「${form.displayName.trim()}」と同じ名前の${terms.client}がいます。名前を変えてください`);
+      return;
+    }
     try {
       const c = clientSchema.parse(form);
       update((d) => ({

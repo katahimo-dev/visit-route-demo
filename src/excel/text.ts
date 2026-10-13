@@ -3,7 +3,7 @@
 import type { Industry, TravelMode } from '../contracts/codes';
 import type { Terms } from '../contracts/documents';
 import { type Condition, type Item, RULE_TYPES, type RuleType, type TraitValue } from '../contracts/rules';
-import { ITEM_KIND_LABELS, ruleTypeLabel, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
+import { EMPTY_OPTION_MARK, ITEM_KIND_LABELS, ruleTypeLabel, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
 
 /** 業種の表示名（Excel の「事業所」シートだけで使う） */
 export const INDUSTRY_LABELS: Record<Industry, string> = {
@@ -26,10 +26,13 @@ export const ALL_PREFIX = 'すべて：';
 /** 全角の数字・記号を半角に（数・時刻・日付・決まった語を読むときだけ使う。名前には使わない） */
 export const nfkc = (s: string) => s.normalize('NFKC').trim();
 
-/** 「、」「,」「，」「・」で区切った値（空は除く） */
+/** 選択肢から複数の特性で「確認済みで1つもない」（選択肢には使えない） */
+export const EMPTY_MULTI = EMPTY_OPTION_MARK;
+
+/** 「、」か改行で区切った値（空は除く。「・」「,」は区切らない＝選択肢の名前に使える） */
 export const splitList = (s: string): string[] =>
   s
-    .split(/[、,，・]/)
+    .split(/[、\r\n]/)
     .map((x) => x.trim())
     .filter((x) => x !== '');
 
@@ -79,10 +82,10 @@ export function parseTimeText(s: string): string | null {
 /** 分（0〜1439）→ "HH:mm" */
 const minutesToHhmm = (m: number) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 
-/** Excel の時刻のシリアル値（0 以上 1 未満の日の割合）→ "HH:mm" */
+/** Excel の時刻のシリアル値（0 以上 1 未満の日の割合）→ "HH:mm"。1 以上（日付つき・「9」のような数）は読まない */
 export function serialToTime(n: number): string | null {
-  if (!Number.isFinite(n) || n < 0) return null;
-  const m = Math.round((n % 1) * 1440);
+  if (!Number.isFinite(n) || n < 0 || n >= 1) return null;
+  const m = Math.round(n * 1440);
   return m >= 1440 ? null : minutesToHhmm(m);
 }
 
@@ -194,7 +197,7 @@ export function traitToCell(item: Item, v: TraitValue | undefined): string | num
     case 'flag':
       return v === true ? 'あり' : v === false ? 'なし' : String(v);
     case 'multi':
-      if (Array.isArray(v)) return v.length === 0 ? 'なし' : v.join('、');
+      if (Array.isArray(v)) return v.length === 0 ? EMPTY_MULTI : v.join('、');
       return String(v);
     case 'number':
       return typeof v === 'number' ? v : String(v);
@@ -242,7 +245,10 @@ export function parseTrait(item: Item, cell: string | number | boolean): Parsed<
         : ok(o);
     }
     case 'multi': {
-      if (nfkc(s) === 'なし' && !item.options.includes('なし')) return ok([]);
+      // セル全体が1つの選択肢と同じなら、その1つ（区切りの記号を含む名前でも読む）
+      const whole = matchOption(item.options, s);
+      if (whole !== null) return ok([whole]);
+      if (nfkc(s) === nfkc(EMPTY_MULTI)) return ok([]);
       return matchOptions(item, splitList(s));
     }
     case 'number': {
@@ -254,7 +260,18 @@ export function parseTrait(item: Item, cell: string | number | boolean): Parsed<
 
 // ---- 条件 ----
 
-const numText = (v: TraitValue) => String(v);
+/** 数 → 文字（指数表記「1e-7」にしない。読み戻すと同じ数になる最短の小数） */
+export function plainNumber(n: number): string {
+  const s = String(n);
+  if (!/e/i.test(s)) return s;
+  if (Number.isInteger(n)) return BigInt(n).toString();
+  for (let d = 1; d <= 100; d++) {
+    const t = n.toFixed(d);
+    if (Number(t) === n) return t;
+  }
+  return n.toFixed(100);
+}
+const numText = (v: TraitValue) => (typeof v === 'number' ? plainNumber(v) : String(v));
 const listOf = (v: TraitValue): string[] => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []);
 
 /** 1つの条件の書き方（書けない形は null） */
@@ -322,6 +339,9 @@ function parseCondLine(item: Item, line: string): Parsed<Condition[]> {
     }
     case 'choice': {
       const t = line.trim();
+      // 行全体が選択肢と同じなら、その1つ（「…以外」で終わる名前の選択肢でも読む）
+      const whole = matchOption(item.options, t);
+      if (whole !== null) return ok([{ itemId: id, op: 'is', value: whole }]);
       if (t.endsWith('以外')) {
         const r = matchOptions(item, [t.slice(0, -2).trim()]);
         return r.ok ? ok([{ itemId: id, op: 'not', value: r.value[0] ?? '' }]) : r;
@@ -336,6 +356,8 @@ function parseCondLine(item: Item, line: string): Parsed<Condition[]> {
       ]);
     }
     case 'multi': {
+      const whole = matchOption(item.options, line.trim());
+      if (whole !== null) return ok([{ itemId: id, op: 'hasAny', value: [whole] }]);
       const m = /^すべて[:：](.*)$/.exec(line.trim()) ?? /^すべて:(.*)$/.exec(nfkc(line));
       const r = matchOptions(item, splitList(m ? (m[1] ?? '') : line));
       if (!r.ok) return r;
@@ -362,7 +384,7 @@ function parseCondLine(item: Item, line: string): Parsed<Condition[]> {
   }
 }
 
-/** セル → 1つの項目にかかる条件（空＝問わない。改行で複数） */
+/** セル → 1つの項目にかかる条件（空＝問わない。改行で区切ると、1行が1つの条件） */
 export function parseConds(item: Item, cell: string): Parsed<Condition[]> {
   const out: Condition[] = [];
   for (const line of cell.split(/\r?\n/)) {

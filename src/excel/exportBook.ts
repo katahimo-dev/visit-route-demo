@@ -10,6 +10,7 @@ import {
   RULE_TYPES,
   type Traits,
 } from '../contracts/rules';
+import { optionNameError } from '../lib/common';
 import {
   availabilityCols,
   CLIENT_COLS,
@@ -27,6 +28,7 @@ import {
   ALL_PREFIX,
   condsToCell,
   DAY_OFF,
+  EMPTY_MULTI,
   FIXED_SHEETS,
   FLAG_COND_TEXTS,
   hhmmToCell,
@@ -41,6 +43,12 @@ import {
   workDaysText,
   YES,
 } from './text';
+
+/** 相性（自分のキーだけを引く。ID が constructor などでも組み込みの値を拾わない） */
+function compatOf(data: DemoData, cid: string, sid: string): CompatLevel {
+  const row = Object.hasOwn(data.compat, cid) ? data.compat[cid] : undefined;
+  return (row && Object.hasOwn(row, sid) ? row[sid] : 0) ?? 0;
+}
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -162,13 +170,13 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     '・読み込むと、AI案・AI案の記録・手作業の割当は消えます（控えが要るときは、先に「控え（JSON）」を書き出してください）。',
     '・1行目は見出しです。見出しの名前は変えないでください。列の順番は入れ替えてもかまいません。',
     '・「ID」の列：空の行は新しく足します。いまある行の ID は変えないでください。行を消すと、その人・訪問などは消えます。',
-    `・人や項目は名前で書きます（${t.staff}の名前・${t.client}の表示名・項目の名前・条件の名前は、それぞれ重ならないようにしてください）。`,
+    `・人や項目は名前で書きます（${t.staff}の名前・${t.client}の表示名、同じ対象の項目の名前は、それぞれ重ならないようにしてください）。`,
     '・○ は「はい」、空は「いいえ」です。日付は 2026-10-13、時刻は 9:00 の形で書きます。',
     '・プルダウンがある欄は、一覧から選んでください。',
     '',
     'シート',
     `・${FIXED_SHEETS.org}：事業所名・業種・呼び方など。「項目」と「値」の2列です。`,
-    `・${FIXED_SHEETS.items}：${t.staff}・${t.client}の特性の項目。種類は「${ITEM_KINDS.map((k) => itemKindLabels[k]).join('」「')}」。選択肢は「、」で区切ります。`,
+    `・${FIXED_SHEETS.items}：${t.staff}・${t.client}の特性の項目。種類は「${ITEM_KINDS.map((k) => itemKindLabels[k]).join('」「')}」。選択肢は「、」か改行で区切ります（選択肢の名前に「、」と改行、「${EMPTY_MULTI}」は使えません）。`,
     `・${FIXED_SHEETS.rules}：AI案を作るときの条件（重み 0〜5、0.5刻み。必須は ○）。`,
     `・${names.staff}：${t.staff}の一覧。勤務する曜日は「月火水木金」のように書きます。`,
     `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。いつもの担当は${t.staff}の名前で書きます。`,
@@ -179,7 +187,7 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     '特性の書き方（「特性：項目名」の列。空は未確認）',
     '・あり/なし：「あり」「なし」',
     '・選択肢から1つ：選択肢そのもの（例：女性）',
-    '・選択肢から複数：「、」で区切る（例：看護師、保育士）。「なし」と書くと、確認済みで1つもない',
+    `・選択肢から複数：「、」か改行で区切る（例：看護師、保育士）。「${EMPTY_MULTI}」と書くと、確認済みで1つもない`,
     '・数値：数（例：5）',
     '',
     '条件の書き方（「必要条件：項目名」「希望：項目名」の列。相手の特性に対する条件です。空は問わない）',
@@ -188,7 +196,8 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     `・選択肢から複数：「看護師、保育士」（どれかを含む）、「${ALL_PREFIX}看護師、保育士」（すべて含む）`,
     '・数値：「3以上」「5以下」「3〜5」「3」（等しい）「3以外」',
     '・同じ項目に条件を2つ以上つけるときは、セルの中で改行して1行に1つずつ書きます。',
-    '・区切りは「、」のほか「,」「，」「・」も使えます。1人の必要条件・希望は、それぞれ20件までです。',
+    '・選択肢の区切りは「、」だけです（「・」「,」は選択肢の名前の一部として読みます）。1人の必要条件・希望は、それぞれ20件までです。',
+    '・セル全体が1つの選択肢の名前と同じなら、その選択肢として読みます（「…以外」で終わる名前の選択肢でも）。',
     '',
     '読み込めないとき',
     '・名前の重なり、いない人の名前、読めない日付・時刻・数、選択肢にない値があると、場所（シート・行・列）を示して止まります。いまのデータは変わりません。',
@@ -196,7 +205,26 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
 }
 
 /** DemoData → Excel のブック（.xlsx の Blob） */
+/**
+ * 書き出せないデータ（読み込み直せないもの）を見つける。あれば場所付きの文、なければ null。
+ * 選択肢の名前の「、」・改行・「（なし）」（区切り・空の印と区別できない）と、同じ2つの呼び方（項目の対象を区別できない）
+ */
+export function exportProblem(data: DemoData): string | null {
+  const t = data.org.terms;
+  if (t.staff.trim() === t.client.trim())
+    return `呼び方（訪問する人・訪問先）が同じ「${t.staff}」なので書き出せません。データの画面の「呼び方」で変えてください`;
+  for (const it of data.items) {
+    for (const o of it.options) {
+      const e = optionNameError(o);
+      if (e) return `項目「${it.name}」の選択肢「${o}」：${e}。項目の画面で名前を変えてから書き出してください`;
+    }
+  }
+  return null;
+}
+
 export async function exportWorkbook(data: DemoData): Promise<Blob> {
+  const problem = exportProblem(data);
+  if (problem) throw new Error(problem);
   const t = data.org.terms;
   const names = personSheetNames(t);
   const wb = new ExcelJS.Workbook();
@@ -372,7 +400,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
     headers: [`${t.client}＼${t.staff}`, ...data.staff.map((s) => s.name)],
     rows: data.clients.map((c) => [
       c.displayName,
-      ...data.staff.map((s) => COMPAT_LABELS[(data.compat[c.id]?.[s.id] ?? 0) as CompatLevel] ?? ''),
+      ...data.staff.map((s) => COMPAT_LABELS[compatOf(data, c.id, s.id)] ?? ''),
     ]),
     lists: data.staff.map((_, i) => ({ col: i + 2, values: ['◎', '○', '△', '×'] })),
     freezeCols: 1,

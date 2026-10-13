@@ -11,7 +11,7 @@ import {
   type Traits,
   type TraitValue,
 } from '../contracts/rules';
-import { ITEM_KIND_LABELS, newId } from '../lib/common';
+import { ITEM_KIND_LABELS, nameTaken, newId, optionNameError } from '../lib/common';
 import { useDemoData } from '../store';
 import './settings.css';
 
@@ -117,7 +117,10 @@ function ItemTable({
     update((d) => ({ ...d, items: d.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
 
   const add = () => {
-    const name = `新しい項目${items.length + 1}`;
+    // 同じ対象の中で重ならない名前（Excel では対象ごとに名前で項目を引く。ADR-0006）
+    let no = items.length + 1;
+    while (items.some((i) => i.name === `新しい項目${no}`)) no++;
+    const name = `新しい項目${no}`;
     update((d) => ({ ...d, items: [...d.items, { id: newId('i'), name, target, kind: 'flag', options: [] }] }));
   };
   const remove = (item: Item) => {
@@ -237,7 +240,11 @@ function ItemTable({
               return (
                 <tr key={it.id}>
                   <td style={{ minWidth: 140 }}>
-                    <NameInput value={it.name} onCommit={(name) => setItem(it.id, { name })} />
+                    <NameInput
+                      value={it.name}
+                      taken={(name) => nameTaken(items, (x) => x.name, name, it.id)}
+                      onCommit={(name) => setItem(it.id, { name })}
+                    />
                   </td>
                   <td>
                     <select value={it.kind} onChange={(e) => changeKind(it, e.target.value as ItemKind)}>
@@ -290,26 +297,40 @@ function ItemTable({
   );
 }
 
-/** 名前の入力。空のままでは確定しない */
-function NameInput({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+/** 名前の入力。空のまま・同じ対象のほかの項目と同じ名前では確定しない */
+function NameInput({
+  value,
+  taken,
+  onCommit,
+}: {
+  value: string;
+  taken: (name: string) => boolean;
+  onCommit: (v: string) => void;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
   const v = draft ?? value;
+  const dup = draft !== null && v.trim() !== '' && taken(v.trim().slice(0, 30));
   const commit = () => {
-    const t = v.trim();
-    if (t && t !== value) onCommit(t.slice(0, 30));
+    const t = v.trim().slice(0, 30);
+    if (t && taken(t)) return; // 重なる名前は確定しない（入力はそのまま残してエラーを出す）
+    if (t && t !== value) onCommit(t);
     setDraft(null);
   };
   return (
-    <input
-      value={v}
-      maxLength={30}
-      aria-label="項目の名前"
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') commit();
-      }}
-    />
+    <>
+      <input
+        value={v}
+        maxLength={30}
+        aria-label="項目の名前"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+        }}
+        aria-invalid={dup}
+      />
+      {dup && <span className="error">同じ名前の項目があります</span>}
+    </>
   );
 }
 
@@ -332,8 +353,10 @@ function OptionsEditor({
   const [added, setAdded] = useState('');
   const a = added.trim();
   const addDup = options.includes(a);
+  const addBad = a ? optionNameError(a) : null;
   const d = draft.trim();
   const renameDup = editing !== null && d !== editing && options.includes(d);
+  const renameBad = editing !== null && d ? optionNameError(d) : null;
   return (
     <div className="stack" style={{ gap: 6 }}>
       {options.length === 0 && <span className="sub">選択肢がありません</span>}
@@ -345,7 +368,7 @@ function OptionsEditor({
               className="opt-edit"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (renameDup) return;
+                if (renameDup || renameBad) return;
                 if (d && d !== o) onRename(o, d.slice(0, 30));
                 setEditing(null);
               }}
@@ -356,7 +379,7 @@ function OptionsEditor({
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label={`${o}の名前`}
               />
-              <IconButton icon={Check} label="名前を決める" type="submit" disabled={!d || renameDup} />
+              <IconButton icon={Check} label="名前を決める" type="submit" disabled={!d || renameDup || !!renameBad} />
               <IconButton icon={X} label="やめる" onClick={() => setEditing(null)} />
             </form>
           ) : (
@@ -383,13 +406,13 @@ function OptionsEditor({
           className="opt-add"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!a || addDup) return;
+            if (!a || addDup || addBad) return;
             onAdd(a.slice(0, 30));
             setAdded('');
           }}
         >
           <input value={added} maxLength={30} placeholder="選択肢を足す" onChange={(e) => setAdded(e.target.value)} />
-          <button type="submit" className="btn btn-small nowrap" disabled={!a || addDup}>
+          <button type="submit" className="btn btn-small nowrap" disabled={!a || addDup || !!addBad}>
             <WithIcon icon={Plus} size={14}>
               足す
             </WithIcon>
@@ -397,6 +420,7 @@ function OptionsEditor({
         </form>
       )}
       {addDup && <span className="error">同じ選択肢があります</span>}
+      {(addBad ?? renameBad) && <span className="error">{addBad ?? renameBad}</span>}
     </div>
   );
 }

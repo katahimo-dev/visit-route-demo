@@ -5,7 +5,7 @@ import type { DemoData, ImportError } from '../contracts/data';
 import type { Availability, Client, Org, Staff, Visit } from '../contracts/documents';
 import type { Compat, Condition, Item, ItemTarget, Rule, Traits } from '../contracts/rules';
 import { slotsError } from '../domain/availability';
-import { newId } from '../lib/common';
+import { MAX_OPTIONS, newId, optionNameError } from '../lib/common';
 import { isImportError, migrate } from '../store';
 import {
   availabilityCols,
@@ -14,10 +14,13 @@ import {
   ORG_HEADERS,
   ORG_KEYS,
   PREF_PREFIX,
+  prefHeader,
   REQ_PREFIX,
   RULE_COLS,
+  reqHeader,
   STAFF_COLS,
   TRAIT_PREFIX,
+  traitHeader,
   visitCols,
 } from './layout';
 import {
@@ -48,24 +51,42 @@ import {
 
 /** まとめて返すエラーの数の上限 */
 const MAX_ERRORS = 10;
+/** 読み込むファイルの大きさの上限（バイト） */
+export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/** 1つのシートの行数の上限（見出しを除く、空でない行） */
+export const MAX_ROWS = 10_000;
+/** ID に使えない名前（JavaScript のオブジェクトの組み込みの名前。キーにすると壊れる） */
+const RESERVED_IDS = new Set(['__proto__', 'constructor', 'prototype']);
 /** 1人の必要条件・希望の上限（contracts/documents.ts の max） */
 const MAX_CONDS = 20;
 
 type Prim = string | number | boolean | Date | null;
+/** 読めないセル（数式のエラー・結果の無い数式） */
+type Bad = { bad: string };
+const isBad = (v: Prim | Bad): v is Bad => typeof v === 'object' && v !== null && !(v instanceof Date);
 
 /** ExcelJS のセルの値を、ふつうの値にする（リッチテキスト・数式の結果・リンクも読む） */
-function prim(v: ExcelJS.CellValue | undefined): Prim {
+function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
   if (v === null || v === undefined) return null;
   if (v instanceof Date) return v;
   if (typeof v === 'string') return v.trim() === '' ? null : v;
   if (typeof v === 'number' || typeof v === 'boolean') return v;
   if (typeof v === 'object') {
+    if ('error' in v) return { bad: `数式のエラー（${String(v.error)}）になっています` };
+    if ('formula' in v || 'sharedFormula' in v) {
+      const result = (v as { result?: ExcelJS.CellValue }).result;
+      if (result === undefined)
+        return { bad: '数式の結果が保存されていません（Excel で開いて保存し直すか、値を直接書いてください）' };
+      return prim(result);
+    }
     if ('richText' in v && Array.isArray(v.richText)) return prim(v.richText.map((r) => r.text).join(''));
-    if ('result' in v) return prim(v.result as ExcelJS.CellValue);
     if ('text' in v && typeof v.text === 'string') return prim(v.text);
   }
   return null;
 }
+
+/** 見出しの比べ方（全角半角・コロンの揺れ・空白を許す） */
+export const headerKey = (h: string) => nfkc(h).replace(/\s+/g, '');
 
 /** 値 → 文字（前後の空白は落とす。日付・時刻は 2026-10-13・9:00 の形） */
 function textOf(v: Prim): string {
@@ -106,8 +127,8 @@ class Row {
     readonly n: number,
   ) {}
   raw(h: string): Prim {
-    const c = this.sheet.cols.get(h);
-    return c === undefined ? null : prim(this.sheet.ws.getRow(this.n).getCell(c).value);
+    const c = this.sheet.cols.get(headerKey(h));
+    return c === undefined ? null : this.sheet.read(this.n, c, h);
   }
   text(h: string): string {
     return textOf(this.raw(h));
@@ -116,9 +137,19 @@ class Row {
     this.sheet.errors.add(`シート『${this.sheet.name}』の ${this.n}行目・『${h}』：${msg}`);
     return null;
   }
-  required(h: string): string | null {
+  required(h: string, max?: number): string | null {
     const t = this.text(h);
-    return t === '' ? this.err(h, '空にはできません') : t;
+    if (t === '') return this.err(h, '空にはできません');
+    return this.limit(h, t, max);
+  }
+  /** 文字数の上限（contracts の max）。超えたらエラーにして null */
+  limit(h: string, t: string, max?: number): string | null {
+    if (max !== undefined && t.length > max) return this.err(h, `${max}文字までです（いま${t.length}文字）`);
+    return t;
+  }
+  /** 空でもよい文字（上限を超えたらエラーにして ''） */
+  optional(h: string, max: number): string {
+    return this.limit(h, this.text(h), max) ?? '';
   }
   date(h: string): string | null {
     const v = this.raw(h);
@@ -173,52 +204,88 @@ class Row {
 }
 
 class Sheet {
+  /** 見出しの比べ方（headerKey）→ 列番号 */
   readonly cols = new Map<string, number>();
-  /** 見出しの並び（列番号の順） */
-  readonly headers: { name: string; col: number }[] = [];
+  /** 見出しの並び（列番号の順。name は書いてあるまま） */
+  readonly headers: { name: string; key: string; col: number }[] = [];
+  /** 空でない行の番号（2行目から） */
+  readonly rowNumbers: number[] = [];
   constructor(
     readonly name: string,
     readonly ws: ExcelJS.Worksheet,
     readonly errors: Errors,
   ) {
-    const head = ws.getRow(1);
     for (let c = 1; c <= ws.columnCount; c++) {
-      const h = textOf(prim(head.getCell(c).value));
+      const h = textOf(this.read(1, c, `${c}列目の見出し`));
       if (h === '') continue;
-      if (this.cols.has(h)) {
+      const key = headerKey(h);
+      if (this.cols.has(key)) {
         errors.add(sheetMsg(name, `見出し『${h}』の列が2つあります`));
         continue;
       }
-      this.cols.set(h, c);
-      this.headers.push({ name: h, col: c });
+      this.cols.set(key, c);
+      this.headers.push({ name: h, key, col: c });
     }
+    // 値のある行だけを回す（遠くの行に空白が1つあっても、100万行を回さない）
+    ws.eachRow({ includeEmpty: false }, (row, n) => {
+      if (n === 1 || this.rowNumbers.length > MAX_ROWS) return;
+      let any = false;
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (!any && prim(cell.value) !== null) any = true;
+      });
+      if (any) this.rowNumbers.push(n);
+    });
+    if (this.rowNumbers.length > MAX_ROWS) {
+      errors.add(sheetMsg(name, `行が多すぎます（${MAX_ROWS.toLocaleString()}行まで）`));
+      this.rowNumbers.length = 0;
+    }
+  }
+  /** 1つのセルを読む（数式のエラーなどは場所付きのエラーにして空とみなす） */
+  read(n: number, col: number, h: string): Prim {
+    const cell = this.ws.getRow(n).getCell(col);
+    // 結合したセルの下・右のセルは、左上の値が入って見える。黙って同じ値を読まないよう止める
+    if (cell.isMerged && cell.master !== cell) {
+      this.errors.add(
+        `シート『${this.name}』の ${n}行目・『${h}』：結合したセルは読めません。結合を外して1つずつ書いてください`,
+      );
+      return null;
+    }
+    const v = prim(cell.value);
+    if (!isBad(v)) return v;
+    this.errors.add(`シート『${this.name}』の ${n}行目・『${h}』：${v.bad}`);
+    return null;
+  }
+  has(h: string): boolean {
+    return this.cols.has(headerKey(h));
   }
   /** 必須の列があるか（無ければエラー） */
   require(hs: readonly string[]): boolean {
     let ok = true;
     for (const h of hs) {
-      if (!this.cols.has(h)) {
+      if (!this.has(h)) {
         this.errors.add(sheetMsg(this.name, `『${h}』の列がありません（1行目の見出しを確かめてください）`));
         ok = false;
       }
     }
     return ok;
   }
-  /** 2行目からの、空でない行 */
+  /** 2行目からの、見出しのある列に値がある行 */
   rows(): Row[] {
-    const out: Row[] = [];
-    for (let n = 2; n <= this.ws.rowCount; n++) {
-      const row = this.ws.getRow(n);
-      if (this.headers.some((h) => prim(row.getCell(h.col).value) !== null)) out.push(new Row(this, n));
-    }
-    return out;
+    return this.rowNumbers
+      .filter((n) => {
+        const row = this.ws.getRow(n);
+        return this.headers.some((h) => prim(row.getCell(h.col).value) !== null);
+      })
+      .map((n) => new Row(this, n));
   }
 }
 
 /** ID の列：空なら新しい ID、同じ ID が2行あればエラー */
-function idOf(row: Row, h: string, seen: Map<string, number>, prefix: string, used: Set<string>): string {
+function idOf(row: Row, h: string, seen: Map<string, number>, prefix: string, used: Set<string>, max: number): string {
   const t = row.text(h);
   if (t !== '') {
+    if (RESERVED_IDS.has(t)) row.err(h, `「${t}」は ID に使えません`);
+    row.limit(h, t, max);
     const before = seen.get(t);
     if (before !== undefined) row.err(h, `ID「${t}」が ${before}行目と重なっています`);
     seen.set(t, row.n);
@@ -244,30 +311,35 @@ interface PersonCols {
   reqs: { h: string; item: Item }[];
   prefs: { h: string; item: Item }[];
 }
-function personCols(sheet: Sheet, items: Item[], own: ItemTarget, fixed: Set<string>): PersonCols {
+function personCols(sheet: Sheet, items: Item[], own: ItemTarget, fixed: readonly string[]): PersonCols {
   const out: PersonCols = { traits: [], reqs: [], prefs: [] };
   const other: ItemTarget = own === 'staff' ? 'client' : 'staff';
-  for (const { name } of sheet.headers) {
-    if (fixed.has(name)) continue;
-    const kind = name.startsWith(TRAIT_PREFIX)
-      ? 'traits'
-      : name.startsWith(REQ_PREFIX)
-        ? 'reqs'
-        : name.startsWith(PREF_PREFIX)
-          ? 'prefs'
-          : null;
-    if (!kind) continue; // 知らない列は読まない（メモ書きの列など）
-    const prefix = kind === 'traits' ? TRAIT_PREFIX : kind === 'reqs' ? REQ_PREFIX : PREF_PREFIX;
-    const itemName = name.slice(prefix.length).trim();
-    const target = kind === 'traits' ? own : other;
-    const item = items.find((i) => i.target === target && i.name === itemName);
+  const fixedKeys = new Set(fixed.map(headerKey));
+  const prefixes = [
+    ['traits', headerKey(TRAIT_PREFIX), own],
+    ['reqs', headerKey(REQ_PREFIX), other],
+    ['prefs', headerKey(PREF_PREFIX), other],
+  ] as const;
+  for (const { name, key } of sheet.headers) {
+    if (fixedKeys.has(key)) continue;
+    const hit = prefixes.find(([, p]) => key.startsWith(p));
+    if (!hit) continue; // 知らない列は読まない（メモ書きの列など）
+    const [kind, prefix, target] = hit;
+    const itemKey = key.slice(prefix.length);
+    const item = items.find((i) => i.target === target && headerKey(i.name) === itemKey);
     if (!item) {
-      sheet.errors.add(
-        sheetMsg(sheet.name, `見出し『${name}』の項目「${itemName}」が、シート『${FIXED_SHEETS.items}』にありません`),
-      );
+      sheet.errors.add(sheetMsg(sheet.name, `見出し『${name}』の項目が、シート『${FIXED_SHEETS.items}』にありません`));
       continue;
     }
     out[kind].push({ h: name, item });
+  }
+  // 項目のシートにある項目の列が無ければ止める（列を消すと特性・条件が黙って消えるため）
+  for (const [kind, , target] of prefixes) {
+    const header = kind === 'traits' ? traitHeader : kind === 'reqs' ? reqHeader : prefHeader;
+    for (const it of items.filter((i) => i.target === target)) {
+      if (!out[kind].some((c) => c.item === it))
+        sheet.errors.add(`シート『${sheet.name}』に列『${header(it)}』がありません`);
+    }
   }
   return out;
 }
@@ -276,13 +348,13 @@ function readPerson(
   row: Row,
   cols: PersonCols,
 ): { traits: Traits; requirements: Condition[]; preferences: Condition[] } {
-  const traits: Traits = {};
+  const traits = new Map<string, Traits[string]>();
   for (const { h, item } of cols.traits) {
     const v = row.raw(h);
     const cell = v === null ? '' : typeof v === 'number' || typeof v === 'boolean' ? v : textOf(v);
     const r = parseTrait(item, cell);
     if (!r.ok) row.err(h, r.error);
-    else if (r.value !== undefined) traits[item.id] = r.value;
+    else if (r.value !== undefined) traits.set(item.id, r.value);
   }
   const conds = (list: { h: string; item: Item }[], label: string) => {
     const out: Condition[] = [];
@@ -295,7 +367,11 @@ function readPerson(
       row.err(list[0]?.h ?? label, `${label}は1人${MAX_CONDS}件までです（いま${out.length}件）`);
     return out;
   };
-  return { traits, requirements: conds(cols.reqs, '必要条件'), preferences: conds(cols.prefs, '希望') };
+  return {
+    traits: Object.fromEntries(traits),
+    requirements: conds(cols.reqs, '必要条件'),
+    preferences: conds(cols.prefs, '希望'),
+  };
 }
 
 const COMPAT_SYMBOLS: Record<string, 2 | 1 | -1 | -2> = {
@@ -312,6 +388,9 @@ const COMPAT_SYMBOLS: Record<string, 2 | 1 | -1 | -2> = {
 
 /** Excel のブック → DemoData。読めなければ、場所付きの日本語の ImportError */
 export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<DemoData | ImportError> {
+  if (buf.byteLength > MAX_FILE_BYTES) {
+    return { code: 'INVALID_ARGUMENT', message: `ファイルが大きすぎます（${MAX_FILE_BYTES / 1024 / 1024}MB まで）` };
+  }
   const wb = new ExcelJS.Workbook();
   try {
     await wb.xlsx.load(buf);
@@ -355,9 +434,11 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   };
   const staffTerm = termOf(staffTermRow);
   const clientTerm = termOf(clientTermRow);
+  if (staffTerm !== null && staffTerm === clientTerm)
+    clientTermRow?.err(V, '呼び方（訪問する人）と同じです。別の呼び方にしてください');
   if (errors.any || staffTerm === null || clientTerm === null) return errors.toError();
   const terms = { staff: staffTerm, client: clientTerm };
-  const orgName = nameRow?.required(V) ?? '';
+  const orgName = nameRow?.required(V, 100) ?? '';
   const industryText = industryRow?.required(V) ?? null;
   const industry = industryText === null ? null : lookup(INDUSTRY_LABELS, industryText);
   if (industryText !== null && industry === null)
@@ -410,21 +491,27 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   const items: Item[] = [];
   {
     const ids = new Map<string, number>();
-    const seen = new Map<string, number>();
+    // 項目の名前は対象ごとに重ならない（対象が違えば同じ名前でもよい）
+    const seen = { staff: new Map<string, number>(), client: new Map<string, number>() };
     for (const r of itemSheet.rows()) {
-      const id = idOf(r, ITEM_COLS.id, ids, 'i', used);
-      const name = r.required(ITEM_COLS.name);
-      if (name !== null) uniqueName(r, ITEM_COLS.name, name, seen);
+      const id = idOf(r, ITEM_COLS.id, ids, 'i', used, 50);
+      const name = r.required(ITEM_COLS.name, 30);
       const tText = r.required(ITEM_COLS.target);
       const target = tText === null ? null : lookup({ staff: terms.staff, client: terms.client }, tText);
       if (tText !== null && target === null)
         r.err(ITEM_COLS.target, `「${terms.staff}」か「${terms.client}」で書いてください`);
+      if (name !== null && target) uniqueName(r, ITEM_COLS.name, name, seen[target]);
       const kText = r.required(ITEM_COLS.kind);
       const kind = kText === null ? null : lookup(itemKindLabels, kText);
       if (kText !== null && kind === null)
         r.err(ITEM_COLS.kind, `「${Object.values(itemKindLabels).join('」「')}」のどれかで書いてください`);
       const options = kind === 'choice' || kind === 'multi' ? splitList(r.text(ITEM_COLS.options)) : [];
       if (new Set(options).size !== options.length) r.err(ITEM_COLS.options, '同じ選択肢が2つあります');
+      if (options.length > MAX_OPTIONS) r.err(ITEM_COLS.options, `選択肢は${MAX_OPTIONS}個までです`);
+      for (const o of options) {
+        const e = optionNameError(o);
+        if (e) r.err(ITEM_COLS.options, `「${o}」：${e}`);
+      }
       if (name !== null && target && kind) items.push({ id, name, target, kind, options });
     }
   }
@@ -434,12 +521,10 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   {
     const labels = ruleTypeLabels(terms);
     const ids = new Map<string, number>();
-    const seen = new Map<string, number>();
+    // 条件の名前はどこからも参照しないので、重なってもよい
     for (const r of ruleSheet.rows()) {
-      const id = idOf(r, RULE_COLS.id, ids, 'r', used);
-      const label = r.required(RULE_COLS.label);
-      if (label !== null) uniqueName(r, RULE_COLS.label, label, seen);
-      if (label !== null && label.length > 40) r.err(RULE_COLS.label, '名前は40文字までです');
+      const id = idOf(r, RULE_COLS.id, ids, 'r', used, 50);
+      const label = r.required(RULE_COLS.label, 40);
       const tText = r.required(RULE_COLS.type);
       const type = tText === null ? null : lookup(labels, tText);
       if (tText !== null && type === null) r.err(RULE_COLS.type, '一覧にない種類です（プルダウンから選んでください）');
@@ -456,13 +541,13 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   const staff: Staff[] = [];
   const staffByName = new Map<string, string>();
   {
-    const cols = personCols(staffSheet, items, 'staff', new Set(Object.values(STAFF_COLS)));
+    const cols = personCols(staffSheet, items, 'staff', Object.values(STAFF_COLS));
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
     const C = STAFF_COLS;
     for (const r of staffSheet.rows()) {
-      const id = idOf(r, C.id, ids, 's', used);
-      const name = r.required(C.name);
+      const id = idOf(r, C.id, ids, 's', used, 100);
+      const name = r.required(C.name, 50);
       if (name !== null) {
         uniqueName(r, C.name, name, seen);
         staffByName.set(name, id);
@@ -476,7 +561,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const shiftStart = r.time(C.shiftStart);
       const shiftEnd = r.time(C.shiftEnd);
       const active = r.yes(C.active);
-      const address = r.text(C.address);
+      const address = r.optional(C.address, 200);
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });
       const p = readPerson(r, cols);
@@ -513,24 +598,24 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   const clients: Client[] = [];
   const clientByName = new Map<string, string>();
   {
-    const cols = personCols(clientSheet, items, 'client', new Set(Object.values(CLIENT_COLS)));
+    const cols = personCols(clientSheet, items, 'client', Object.values(CLIENT_COLS));
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
     const C = CLIENT_COLS;
     for (const r of clientSheet.rows()) {
-      const id = idOf(r, C.id, ids, 'c', used);
-      const displayName = r.required(C.name);
+      const id = idOf(r, C.id, ids, 'c', used, 100);
+      const displayName = r.required(C.name, 50);
       if (displayName !== null) {
         uniqueName(r, C.name, displayName, seen);
         clientByName.set(displayName, id);
       }
       const color = r.num(C.color, { int: true, min: 1, max: 8, required: true });
       const active = r.yes(C.active);
-      const address = r.text(C.address);
+      const address = r.optional(C.address, 200);
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });
       const usualStaffId = staffId(r, C.usualStaff, false);
-      const note = r.text(C.note);
+      const note = r.optional(C.note, 500);
       const p = readPerson(r, cols);
       if (
         displayName !== null &&
@@ -564,7 +649,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   };
 
   // 相性（行＝利用者さん、列＝スタッフ）
-  const compat: Compat = {};
+  const compat = new Map<string, Compat[string]>();
   {
     const staffCols: { col: number; id: string; name: string }[] = [];
     for (const h of compatSheet.headers) {
@@ -581,10 +666,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     }
     const firstHeader = compatSheet.headers.find((h) => h.col === 1)?.name ?? `${terms.client}`;
     const seen = new Map<string, number>();
-    for (let n = 2; n <= compatSheet.ws.rowCount; n++) {
-      const wsRow = compatSheet.ws.getRow(n);
-      const name = textOf(prim(wsRow.getCell(1).value));
-      const cells = staffCols.map((s) => ({ s, v: textOf(prim(wsRow.getCell(s.col).value)) }));
+    for (const n of compatSheet.rowNumbers) {
+      const name = textOf(compatSheet.read(n, 1, firstHeader));
+      const cells = staffCols.map((s) => ({ s, v: textOf(compatSheet.read(n, s.col, s.name)) }));
       if (name === '' && cells.every((c) => c.v === '')) continue;
       const row = new Row(compatSheet, n);
       if (name === '') {
@@ -597,19 +681,20 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         continue;
       }
       uniqueName(row, firstHeader, name, seen);
-      const out: Record<string, 2 | 1 | -1 | -2> = {};
+      const out = new Map<string, 2 | 1 | -1 | -2>();
       for (const { s, v } of cells) {
         if (v === '') continue;
         const level = COMPAT_SYMBOLS[v] ?? COMPAT_SYMBOLS[nfkc(v)];
         if (level === undefined) row.err(s.name, '◎・○・△・× か空で書いてください');
-        else out[s.id] = level;
+        else out.set(s.id, level);
       }
-      if (Object.keys(out).length > 0) compat[cid] = out;
+      if (out.size > 0) compat.set(cid, Object.fromEntries(out));
     }
   }
 
   // 稼働時間
   const availability: Availability[] = [];
+  const availSeen = new Map<string, number>();
   for (const r of availSheet.rows()) {
     const sid = staffId(r, ac.staff, true);
     const date = r.date(ac.date);
@@ -621,7 +706,16 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         ? '時間は30分単位で書いてください'
         : slotsError(slots);
       if (bad) r.err(ac.slots, bad);
-      else if (sid && date) availability.push({ staffId: sid, date, slots });
+      else if (sid && date) {
+        const key = `${sid}\u0000${date}`;
+        const before = availSeen.get(key);
+        if (before !== undefined)
+          r.err(ac.date, `同じ${terms.staff}・同じ日の行が ${before}行目にもあります（1日1行にしてください）`);
+        else {
+          availSeen.set(key, r.n);
+          availability.push({ staffId: sid, date, slots });
+        }
+      }
     }
   }
 
@@ -630,7 +724,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   {
     const ids = new Map<string, number>();
     for (const r of visitSheet.rows()) {
-      const id = idOf(r, vc.id, ids, 'v', used);
+      const id = idOf(r, vc.id, ids, 'v', used, 100);
       const date = r.date(vc.date);
       const cid = clientId(r, vc.client);
       const kText = r.required(vc.windowKind);
@@ -644,7 +738,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const duration = r.num(vc.duration, { int: true, min: 5, max: 720, required: true });
       const sid = staffId(r, vc.staff, false);
       const cancelled = r.yes(vc.cancelled);
-      const note = r.text(vc.note);
+      const note = r.optional(vc.note, 200);
       if (
         date &&
         cid &&
@@ -682,7 +776,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     rules,
     staff,
     clients,
-    compat,
+    compat: Object.fromEntries(compat),
     visits,
     availability,
     manualPlans: {},

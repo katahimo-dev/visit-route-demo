@@ -2,11 +2,13 @@ import { Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAle
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
+import { jstDate } from '../domain/time';
 import { attempt, formError } from '../lib/common';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
 import './settings.css';
 
-const today = () => new Date().toISOString().slice(0, 10);
+/** ファイル名の日付（日本時間） */
+const today = () => jstDate(Date.now());
 
 /** Blob をファイルとして保存させる */
 function saveBlob(blob: Blob, name: string) {
@@ -28,7 +30,9 @@ export default function DataPage() {
   useEffect(() => {
     setTerms(data.org.terms);
   }, [data.org.terms]);
-  const termsOk = terms.client.trim() !== '' && terms.staff.trim() !== '';
+  // 2つが同じだと、項目の対象・Excel のシートを区別できない
+  const termsSame = terms.client.trim() !== '' && terms.client.trim() === terms.staff.trim();
+  const termsOk = terms.client.trim() !== '' && terms.staff.trim() !== '' && !termsSame;
   const termsChanged = terms.client.trim() !== data.org.terms.client || terms.staff.trim() !== data.org.terms.staff;
   const saveTerms = () => {
     const next = { client: terms.client.trim(), staff: terms.staff.trim() };
@@ -71,19 +75,22 @@ export default function DataPage() {
   const loadExcel = async (file: File) => {
     setExcelError(null);
     try {
-      if (
-        !confirm(
-          `「${file.name}」の内容で、いまのデータをすべて置き換えます。AI案・記録・手作業の割当は消えます。よろしいですか？`,
-        )
-      )
-        return;
       setExcelBusy(true);
+      // 先に読んで検査し、通ったら件数を見せて確かめる（取り消しならデータは変えない）
       const { importWorkbook } = await import('../excel');
       const r = await importWorkbook(await file.arrayBuffer(), data);
       if (isImportError(r)) {
         setExcelError(`読み込めませんでした（いまのデータはそのままです）\n${r.message}`);
         return;
       }
+      const t = r.org.terms;
+      const counts = `${t.staff} ${r.staff.length}人・${t.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
+      if (
+        !confirm(
+          `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・手作業の割当は消えます。よろしいですか？`,
+        )
+      )
+        return;
       replace(r);
       toast('Excel を読み込みました');
     } catch (e) {
@@ -155,6 +162,7 @@ export default function DataPage() {
             変える
           </button>
         </div>
+        {termsSame && <p className="error">訪問する人と訪問先に、同じ呼び方は使えません</p>}
       </div>
 
       <div className="card stack">
