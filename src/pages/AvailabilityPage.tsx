@@ -1,9 +1,9 @@
-import { Clock, Coffee, Pencil, RotateCcw, Save, X } from 'lucide-react';
+import { Clock, Coffee, Pencil, RotateCcw, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useDay } from '../app/day';
 import { SlotEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
-import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
+import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import type { Availability } from '../contracts/documents';
 import { availabilityOf, type Slot, slotsError, slotsText, toHalfHours } from '../domain/availability';
 import { weekday } from '../domain/time';
@@ -143,41 +143,38 @@ export default function AvailabilityPage() {
       </div>
 
       {picked && pickedStaff && (
-        <div className="card stack" style={{ maxWidth: 560 }}>
-          <div className="spread">
-            <SectionTitle icon={Clock}>
-              {pickedStaff.name}・{picked.date.slice(5).replace('-', '/')}（{WEEKDAY_LABELS[weekday(picked.date)]}）
-            </SectionTitle>
-            <button type="button" className="btn btn-small" onClick={() => setPicked(null)}>
-              <WithIcon icon={X} size={14}>
-                閉じる
-              </WithIcon>
-            </button>
-          </div>
+        <SidePanel
+          narrow
+          icon={Clock}
+          title={`${pickedStaff.name}・${picked.date.slice(5).replace('-', '/')}（${WEEKDAY_LABELS[weekday(picked.date)]}）`}
+          onClose={() => setPicked(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!!slotsError(draft)}
+                onClick={() => save(draft)}
+              >
+                <WithIcon icon={Save}>この時間で保存</WithIcon>
+              </button>
+              <button type="button" className="btn" onClick={() => save([])}>
+                <WithIcon icon={Coffee}>休みにする</WithIcon>
+              </button>
+              {pickedOverride && (
+                <button type="button" className="btn" onClick={reset}>
+                  <WithIcon icon={RotateCcw}>基本の時間に戻す</WithIcon>
+                </button>
+              )}
+            </>
+          }
+        >
           <p className="sub">
             基本：{slotsText(availabilityOf(pickedStaff, picked.date, null).slots)}
             {pickedOverride && '／この日は変更あり'}
           </p>
           <SlotEditor value={draft} onChange={setDraft} />
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!!slotsError(draft)}
-              onClick={() => save(draft)}
-            >
-              <WithIcon icon={Save}>この時間で保存</WithIcon>
-            </button>
-            <button type="button" className="btn" onClick={() => save([])}>
-              <WithIcon icon={Coffee}>休みにする</WithIcon>
-            </button>
-            {pickedOverride && (
-              <button type="button" className="btn" onClick={reset}>
-                <WithIcon icon={RotateCcw}>基本の時間に戻す</WithIcon>
-              </button>
-            )}
-          </div>
-        </div>
+        </SidePanel>
       )}
     </div>
   );

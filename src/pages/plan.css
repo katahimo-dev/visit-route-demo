@@ -204,6 +204,9 @@
   height: 4px;
   border-radius: 2px;
 }
+.legend-line-ink {
+  background: var(--ink);
+}
 .legend-line.is-dashed {
   height: 0;
   border-top: 3px dashed currentColor;
@@ -485,4 +488,22 @@
   border-color: var(--primary);
   background: var(--primary-soft);
   color: var(--primary-dark);
+}
+
+/* 担当の列の見出しの下：その日の稼働時間帯と「この日だけ変更」・休み */
+.col-hours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.item-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.chip-off {
+  background: #ece5df;
+  color: var(--sub);
+  font-weight: 700;
 }

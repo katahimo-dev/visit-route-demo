@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Info } from 'lucide-react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Info, X } from 'lucide-react';
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * 画面の見出し：アイコン＋題名＋ひとこと。右に主ボタンなどを置く
@@ -151,5 +152,102 @@ export function Empty({ icon: Icon, children }: { icon: LucideIcon; children: Re
       <Icon size={28} strokeWidth={1.8} aria-hidden="true" />
       <div>{children}</div>
     </div>
+  );
+}
+
+/** 欄の中で Tab で移れるもの */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * 右から出る編集の欄（一覧が長くても、押した所から探さずに済む）。後ろは暗くし、Esc・×・閉じるボタンで閉じる
+ * （未保存の入力を失わないよう、後ろを押しても閉じない）。
+ * 開いたら最初の入力欄（無ければ欄そのもの）に移り、Tab は欄の中で回し、閉じたら押したボタンに戻る
+ */
+export function SidePanel({
+  icon: Icon,
+  title,
+  onClose,
+  children,
+  footer,
+  narrow = false,
+}: {
+  icon: LucideIcon;
+  title: ReactNode;
+  /** 中身が少ない欄（稼働時間など）は幅を狭くする */
+  narrow?: boolean;
+  onClose: () => void;
+  children: ReactNode;
+  /** 下に固定して出す操作（保存・閉じる） */
+  footer?: ReactNode;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const titleId = useId();
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const back = document.activeElement as HTMLElement | null;
+    const first = ref.current?.querySelector<HTMLElement>('input, select, textarea');
+    if (first) first.focus();
+    else ref.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      // 日本語の変換中の Esc は変換の取り消しなので閉じない
+      if (e.key === 'Escape' && !e.isComposing) {
+        closeRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !ref.current) return;
+      const list = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+      const head = list[0];
+      const tail = list.at(-1);
+      if (!head || !tail) {
+        e.preventDefault();
+        return;
+      }
+      const at = document.activeElement;
+      const inside = at instanceof Node && ref.current.contains(at);
+      if (e.shiftKey && (!inside || at === head || at === ref.current)) {
+        e.preventDefault();
+        tail.focus();
+      } else if (!e.shiftKey && (!inside || at === tail)) {
+        e.preventDefault();
+        head.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+      back?.focus?.();
+    };
+  }, []);
+  // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
+  return createPortal(
+    <div className="drawer-wrap">
+      <div className="drawer-backdrop" aria-hidden="true" />
+      <section
+        ref={ref}
+        className={`drawer ${narrow ? 'is-narrow' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
+        <header className="drawer-head">
+          <h2 id={titleId}>
+            <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
+            {title}
+          </h2>
+          <IconButton icon={X} label="閉じる" onClick={onClose} />
+        </header>
+        <div className="drawer-body stack">{children}</div>
+        {footer && <footer className="drawer-foot">{footer}</footer>}
+      </section>
+    </div>,
+    document.body,
   );
 }

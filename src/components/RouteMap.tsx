@@ -4,11 +4,11 @@ import { useEffect, useRef } from 'react';
 
 /**
  * 地図（国土地理院の淡色地図。APIキー不要）。
- * 線は順番どおりに結ぶ。dashed は手作業案（点線）、実線は AI案。
+ * 線は順番どおりに結ぶ。dashed は点線（比較の A）、実線は今の案・比較の B。
  */
 /** highlight は選んだ訪問先（大きく・輪で囲み・前に出す） */
 export type MapPoint = { lat: number; lng: number; label: string; color: string; highlight?: boolean };
-/** highlight は選んだ区間（太く・前に出す）。区間があるときは、ほかの線を薄くする */
+/** highlight は選んだ区間（太く・前に出す。dashed なら点線のまま）。区間があるときは、ほかの線を薄くする */
 export type MapLine = { points: { lat: number; lng: number }[]; color: string; dashed?: boolean; highlight?: boolean };
 
 export function RouteMap({
@@ -60,7 +60,13 @@ export function RouteMap({
       const latlngs = line.points.map((p) => [p.lat, p.lng] as [number, number]);
       if (line.highlight) {
         L.polyline(latlngs, { color: '#fff', weight: 12, opacity: 0.95 }).addTo(g);
-        L.polyline(latlngs, { color: line.color, weight: 7, opacity: 1 }).addTo(g);
+        // 点線の区間（比較の A）は強調しても点線のまま
+        L.polyline(latlngs, {
+          color: line.color,
+          weight: 7,
+          opacity: 1,
+          dashArray: line.dashed ? '12 10' : undefined,
+        }).addTo(g);
         continue;
       }
       L.polyline(latlngs, {

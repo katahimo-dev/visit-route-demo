@@ -180,7 +180,7 @@ label {
   padding: 12px 18px;
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(40, 25, 15, 0.25);
-  z-index: 1000;
+  z-index: 1200;
   animation: toast-in 0.2s ease-out;
 }
 @keyframes toast-in {
@@ -368,11 +368,6 @@ tbody tr:hover td {
   gap: 8px;
   min-width: 0;
 }
-.staff-select {
-  min-width: 170px;
-  padding: 6px 8px;
-  border-left-width: 6px;
-}
 .route-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
@@ -387,19 +382,6 @@ tbody tr:hover td {
   border-top: 6px solid var(--line);
   border-radius: 14px;
   min-width: 0;
-}
-.savebar {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--card);
-  border-radius: var(--radius);
-  box-shadow: 0 -2px 10px rgba(80, 50, 30, 0.12);
-  z-index: 5;
 }
 
 /* ログイン：デモのスタッフを選ぶ */
@@ -544,14 +526,6 @@ tbody tr:hover td {
   color: var(--danger);
   font-weight: 700;
 }
-.staff-select.is-red {
-  border-color: var(--danger);
-  border-left-width: 6px;
-  box-shadow: 0 0 0 1px var(--danger);
-}
-.route-col.is-off {
-  background: #faf6f2;
-}
 .route-col-none {
   border-top-color: var(--warn);
   background: #fdf7ea;
@@ -585,6 +559,10 @@ tbody tr:hover td {
 }
 .route-item.is-dragging {
   opacity: 0.4;
+}
+/* ドラッグしないカード（比較の画面） */
+.route-item.is-static {
+  cursor: default;
 }
 .segmented {
   display: inline-flex;
@@ -1451,5 +1429,78 @@ a.icon-btn:hover {
   }
   .map-dock .map {
     height: 200px !important;
+  }
+}
+
+/* 右から出る編集の欄（SidePanel）。地図（Leaflet の重なり 1000 未満）より前、トーストより後ろ */
+.drawer-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  justify-content: flex-end;
+}
+.drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(59, 47, 42, 0.35);
+  cursor: default;
+  animation: drawer-fade 0.15s ease-out;
+}
+.drawer:focus {
+  outline: none;
+}
+.drawer {
+  position: relative;
+  width: min(640px, 100vw);
+  height: 100%;
+  background: var(--card);
+  box-shadow: -10px 0 40px rgba(40, 25, 15, 0.2);
+  display: flex;
+  flex-direction: column;
+  animation: drawer-in 0.2s ease-out;
+}
+.drawer.is-narrow {
+  width: min(440px, 100vw);
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-head h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1rem;
+}
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+}
+.drawer-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--soft);
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes drawer-fade {
+  from {
+    opacity: 0;
   }
 }

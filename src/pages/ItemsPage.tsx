@@ -83,6 +83,8 @@ export default function ItemsPage() {
       <Hint label="使い方">
         {terms.staff}や{terms.client}が持つ特性（資格・経験年数・ペットなど）を決めます。値は「{terms.staff}」「
         {terms.client}」の画面で入れ、条件（必要条件・希望）で使います。
+        選択肢の横の数字は、その選択肢に当てはまる人数です（ここでは変えられません。「{terms.staff}」「{terms.client}
+        」の画面で特性を直すと変わります）。「使っている条件」は、この項目を条件に使っている数です。
       </Hint>
       <ItemTable
         target="staff"
@@ -229,7 +231,9 @@ function ItemTable({
             <tr>
               <th>名前</th>
               <th>種類</th>
-              <th>選択肢</th>
+              <th>
+                選択肢<span className="th-note">（数字は当てはまる人数）</span>
+              </th>
               <th>使っている条件</th>
               <th aria-label="操作" />
             </tr>
@@ -260,6 +264,7 @@ function ItemTable({
                       <OptionsEditor
                         options={it.options}
                         countOf={(o) => optionCount(data, it, o)}
+                        who={target === 'staff' ? data.org.terms.staff : data.org.terms.client}
                         onAdd={(o) => setItem(it.id, { options: [...it.options, o] })}
                         onRename={(from, to) => renameOption(it, from, to)}
                         onRemove={(o) => removeOption(it, o)}
@@ -334,16 +339,19 @@ function NameInput({
   );
 }
 
-/** 選択肢の一覧（使っている件数）・追加・名前の変更・削除（ClassClassify RosterEditor の OptionsEditor にならう） */
+/** 選択肢の一覧（当てはまる人数）・追加・名前の変更・削除（ClassClassify RosterEditor の OptionsEditor にならう） */
 function OptionsEditor({
   options,
   countOf,
+  who,
   onAdd,
   onRename,
   onRemove,
 }: {
   options: string[];
   countOf: (o: string) => number;
+  /** 値を持つ側の呼び方（数字の説明に使う） */
+  who: string;
   onAdd: (o: string) => void;
   onRename: (from: string, to: string) => void;
   onRemove: (o: string) => void;
@@ -385,8 +393,11 @@ function OptionsEditor({
           ) : (
             <span key={o} className="opt-chip">
               <span className="opt-name">{o}</span>
-              <span className="opt-count" title={`${countOf(o)}件で使っています`}>
-                {countOf(o)}
+              <span
+                className="opt-count"
+                title={`${who}のうち${countOf(o)}人が「${o}」です。人数は${who}の画面で特性を直すと変わります`}
+              >
+                {countOf(o)}人
               </span>
               <IconButton
                 icon={Pencil}

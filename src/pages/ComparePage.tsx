@@ -1,37 +1,34 @@
 import {
+  CalendarDays,
   Car,
   CircleOff,
-  Clock,
   ExternalLink,
   Gauge,
   GitCompareArrows,
   History,
-  Hourglass,
-  House,
   Map as MapIcon,
   ShieldAlert,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   TriangleAlert,
   UserRound,
   Users,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
-import { ClientName } from '../components/parts';
-import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
+import { MapDock } from '../components/MapDock';
+import { RouteMap } from '../components/RouteMap';
+import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { AiPlan, AiRun } from '../contracts/data';
 import type { Reason, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
-import { minutesToHhmm } from '../domain/time';
 import { diff, score, toHundred } from '../evaluate';
-import { colorOf, initialOf } from '../lib/colors';
-import { AI_LINE, attempt, deltaText, hasLocation, MANUAL_LINE, own, pointsText, r0 } from '../lib/common';
-import { planOfRun } from '../lib/runs';
+import { attempt, deltaText, own, pointsText, r0 } from '../lib/common';
+import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
+import { alignPlan, planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
 import './plan.css';
@@ -40,11 +37,11 @@ import { CompareTable, explainMap, ReasonBox, RefMark, SCORE_TEXT } from './plan
 /**
  * 比較（D19・D22・ADR-0005）：その日のAI案の記録（作るたびに条件と結果を残したもの）と「今の案」から、
  * 任意の2つを A・B に選んで比べる。条件の差・合計と条件ごと・担当ごとの順番・地図（A 点線、B 実線）。
- * 採点は A・B とも、いまの条件の同じ物差し（evaluate.score）。AI案を作る・手直しは「AI案」の画面（#/plan）
+ * 採点は A・B とも、いまの条件の同じ物差し（evaluate.score）。AI案を作る・手直しは「予定」の画面（#/plan）
  */
 
 type Side = 'a' | 'b';
-/** 比べる候補：記録1件か、今の案（AI案の画面の手直し後） */
+/** 比べる候補：記録1件か、今の案（予定の画面の手直し後） */
 type Choice = { id: string; title: string; rules: Rule[]; routes: Record<string, string[]>; unassigned: string[] };
 const CURRENT = 'current';
 
@@ -62,17 +59,22 @@ export default function ComparePage() {
   const terms = data.org.terms;
   const toast = useToast();
   const navigate = useNavigate();
-  const [picked, setPicked] = useState<{ visitId: string; side: Side } | null>(null);
-  const [mapStaff, setMapStaff] = useState<string | null>(null);
   const [sel, setSel] = useState<{ a: string | null; b: string | null }>({ a: null, b: null });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ訪問・案を外す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ案を外す（選んだ訪問・区間は useRouteSelection が外す）
   useEffect(() => {
-    setPicked(null);
     setSel({ a: null, b: null });
   }, [date]);
+  /** 地図で見る担当・強調する区間・選んだ訪問（予定の画面と共通。集まりのキーは 'a'・'b'） */
+  const rs = useRouteSelection(date, (set, id) => (set === 'a' ? ownerA : ownerB).get(id));
+  /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
+  const mapCardRef = useRef<HTMLDivElement>(null);
 
   const runs: AiRun[] = useMemo(() => own(data.aiRuns, date) ?? [], [data.aiRuns, date]);
-  const aiPlan: AiPlan | undefined = own(data.aiPlans, date);
+  /** 今の案（予定の画面と同じく、取り消した・足した訪問に合わせて整える） */
+  const aiPlan: AiPlan | undefined = useMemo(() => {
+    const p = own(data.aiPlans, date);
+    return p && problem ? alignPlan(problem, p) : p;
+  }, [data.aiPlans, date, problem]);
   const choices: Choice[] = useMemo(() => {
     const out: Choice[] = runs.map((r) => ({
       id: r.id,
@@ -86,7 +88,7 @@ export default function ComparePage() {
     if (aiPlan && !runs.some((r) => key(r.routes) === key(aiPlan.routes))) {
       out.push({
         id: CURRENT,
-        title: '今の案（AI案の画面）',
+        title: '今の案（予定の画面）',
         rules: aiPlan.rules,
         routes: aiPlan.routes,
         unassigned: aiPlan.unassigned,
@@ -103,8 +105,11 @@ export default function ComparePage() {
   const pick = (side: Side, id: string) => {
     const other = side === 'a' ? B : A;
     const mine = side === 'a' ? A : B;
+    if (mine?.id === id) return;
     if (other?.id === id) setSel(side === 'a' ? { a: id, b: mine?.id ?? null } : { a: mine?.id ?? null, b: id });
     else setSel((s) => ({ ...s, [side]: id }));
+    // 比べる案が変わると選んだ訪問・区間の持ち主も変わるので外す
+    rs.reset();
   };
   const aRoutes = useMemo(() => A?.routes ?? {}, [A]);
   const bRoutes = useMemo(() => B?.routes ?? {}, [B]);
@@ -138,7 +143,7 @@ export default function ComparePage() {
       aiPlan &&
       (Object.keys(aiPlan.pins).length > 0 ||
         JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes)) &&
-      !confirm('AI案の画面の手直しを捨てて、この記録を今の案にします。よろしいですか？')
+      !confirm('予定の画面の手直しを捨てて、この記録を今の案にします。よろしいですか？')
     )
       return;
     update((d) => ({ ...d, aiPlans: { ...d.aiPlans, [date]: planOfRun(r) } }));
@@ -163,8 +168,9 @@ export default function ComparePage() {
       ...d,
       aiRuns: { ...d.aiRuns, [date]: (own(d.aiRuns, date) ?? []).filter((x) => x.id !== r.id) },
     }));
-    // 消した記録を選んでいたら既定に戻す
+    // 消した記録を選んでいたら既定に戻す（既定の A・B も変わりうるので、選んだ訪問・区間も外す）
     setSel((s) => ({ a: s.a === r.id ? null : s.a, b: s.b === r.id ? null : s.b }));
+    rs.reset();
   };
 
   // ---- 条件の差 ----
@@ -188,7 +194,6 @@ export default function ComparePage() {
   }, [aRoutes, bRoutes, staff]);
   const ownerA = useMemo(() => ownerMap(aRoutes), [aRoutes]);
   const ownerB = useMemo(() => ownerMap(bRoutes), [bRoutes]);
-  const mapStaffId = mapStaff && staffIds.includes(mapStaff) ? mapStaff : (staffIds[0] ?? null);
 
   /** 1人のルートの移動・待ち（lenient。対象外なら null） */
   const routeTotals = (staffId: string, ids: string[]) => {
@@ -209,9 +214,12 @@ export default function ComparePage() {
 
   const inProblemStaff = new Set(problem?.staff.map((s) => s.id) ?? []);
   const stopCards = (staffId: string, side: Side) => {
-    const ids = own(side === 'a' ? aRoutes : bRoutes, staffId) ?? [];
+    const routes = side === 'a' ? aRoutes : bRoutes;
+    const ids = own(routes, staffId) ?? [];
     if (ids.length === 0) return <span className="sub">訪問なし</span>;
     const ex = side === 'a' ? aExplain : bExplain;
+    const back = homeTravel(problem, staffById.get(staffId), routes);
+    const homeX = { id: homeLegKey(staffId), set: side };
     return (
       <div className="stack" style={{ gap: 0 }}>
         {problem && !inProblemStaff.has(staffId) && (
@@ -222,82 +230,64 @@ export default function ComparePage() {
         )}
         {ids.map((id, i) => {
           const e = ex.get(id);
-          const t = e?.timing ?? null;
-          const isPicked = picked?.visitId === id && picked.side === side;
           const moved = movedLabel(id, staffId, side);
           const hard = (side === 'a' ? aScore : bScore)?.value?.hardViolations.some((h) => h.visitId === id);
+          const x = { id, set: side };
           return (
-            <div key={id}>
-              {t && (
-                <div className="leg-line">
-                  {i === 0 ? (
-                    <WithIcon icon={House} size={13}>
-                      自宅から {r0(t.travelIn)}分
-                    </WithIcon>
-                  ) : (
-                    <WithIcon icon={Car} size={13}>
-                      {r0(t.travelIn)}分
-                    </WithIcon>
-                  )}
-                  {t.wait > 0 && (
-                    <WithIcon icon={Hourglass} size={13}>
-                      待ち {r0(t.wait)}分
-                    </WithIcon>
+            <VisitCard
+              key={id}
+              visitId={id}
+              timing={e?.timing ?? null}
+              fallbackTime={visitById.get(id)?.earliestStart ?? ''}
+              client={clientOf(id)}
+              first={i === 0}
+              legOn={rs.isLeg(x)}
+              onLeg={() => rs.toggleLeg(x)}
+              picked={rs.isPicked(x)}
+              onPick={() => rs.togglePick(x)}
+              tone={hard ? 'red' : moved ? 'moved' : null}
+              detail={<ReasonBox explain={e} />}
+            >
+              {(moved || hard) && (
+                <div className="row visit-tags">
+                  {moved && <span className="chip chip-move">{moved}</span>}
+                  {hard && (
+                    <span className="chip chip-red">
+                      <ShieldAlert size={12} aria-hidden="true" />
+                      必須の違反
+                    </span>
                   )}
                 </div>
               )}
-              <button
-                type="button"
-                className={`route-item route-btn ${hard ? 'is-red' : moved ? 'is-moved' : ''} ${isPicked ? 'is-picked' : ''}`}
-                onClick={() => setPicked(isPicked ? null : { visitId: id, side })}
-                title="押すと理由を見られます"
-              >
-                <span className="visit-time">
-                  <Clock size={13} strokeWidth={2.2} aria-hidden="true" />
-                  {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : (visitById.get(id)?.earliestStart ?? '')}
-                </span>
-                <ClientName client={clientOf(id)} />
-                {moved && <span className="chip chip-move">{moved}</span>}
-                {hard && (
-                  <span className="chip chip-red">
-                    <ShieldAlert size={12} aria-hidden="true" />
-                    必須の違反
-                  </span>
-                )}
-              </button>
-              {isPicked && <ReasonBox explain={e} />}
-            </div>
+            </VisitCard>
           );
         })}
+        {back !== null && (
+          <LegLine kind="toHome" minutes={back} on={rs.isLeg(homeX)} onToggle={() => rs.toggleLeg(homeX)} />
+        )}
       </div>
     );
   };
 
-  // ---- 地図：選んだ担当の A（点線）と B（実線）----
-  const { points, lines } = useMemo(() => {
-    const pts: MapPoint[] = [];
-    const lns: MapLine[] = [];
-    if (!mapStaffId) return { points: pts, lines: lns };
-    const s = staffById.get(mapStaffId);
-    const home = s && hasLocation(s.home) ? { lat: s.home.lat, lng: s.home.lng } : null;
-    if (home) pts.push({ ...home, label: '家', color: '#8a7a70' });
-    const pathOf = (ids: string[]) => {
-      const path: { lat: number; lng: number }[] = home ? [home] : [];
-      for (const id of ids) {
-        const c = clientById.get(visitById.get(id)?.clientId ?? '');
-        if (!c || !hasLocation(c.place)) continue;
-        path.push({ lat: c.place.lat, lng: c.place.lng });
-        if (!pts.some((p) => p.lat === c.place.lat && p.lng === c.place.lng)) {
-          pts.push({ lat: c.place.lat, lng: c.place.lng, label: initialOf(c.displayName), color: colorOf(c.color) });
-        }
-      }
-      if (home && path.length > 1) path.push(home);
-      return path;
-    };
-    lns.push({ points: pathOf(own(aRoutes, mapStaffId) ?? []), color: MANUAL_LINE, dashed: true });
-    lns.push({ points: pathOf(own(bRoutes, mapStaffId) ?? []), color: AI_LINE });
-    return { points: pts, lines: lns };
-  }, [mapStaffId, staffById, visitById, clientById, aRoutes, bRoutes]);
+  // ---- 地図：A（点線）と B（実線）。線の色は担当の色。担当を選ぶとその人だけ ----
+  const { points, lines } = useMemo(
+    () =>
+      buildRouteMap({
+        sets: [
+          { key: 'a', routes: aRoutes, dashed: true },
+          { key: 'b', routes: bRoutes },
+        ],
+        staffOrder: staffIds,
+        staffById,
+        visitById,
+        clientById,
+        colorOfStaff,
+        focusStaff: rs.focusStaff,
+        picked: rs.picked,
+        focusLeg: rs.focusLeg,
+      }),
+    [aRoutes, bRoutes, staffIds, staffById, visitById, clientById, colorOfStaff, rs.focusStaff, rs.picked, rs.focusLeg],
+  );
 
   const infeasibleOf = useMemo(() => {
     const out = new Map<string, Reason[]>();
@@ -357,7 +347,7 @@ export default function ComparePage() {
         lead="条件を変えたAI案を2つ選んで比べます"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
-            <WithIcon icon={Sparkles}>AI案へ</WithIcon>
+            <WithIcon icon={CalendarDays}>予定へ</WithIcon>
           </NavLink>
         }
       />
@@ -368,7 +358,7 @@ export default function ComparePage() {
           icon={History}
           aside={
             <Hint>
-              AI案の画面で作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した点です（高いほど良い。
+              予定の画面でAI案を作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した点です（高いほど良い。
               {SCORE_TEXT}）。理想（届かない下限）は100点です。
             </Hint>
           }
@@ -377,7 +367,7 @@ export default function ComparePage() {
         </SectionTitle>
         {choices.length === 0 ? (
           <Empty icon={History}>
-            この日の記録はまだありません。<NavLink to="/plan">AI案</NavLink>
+            この日の記録はまだありません。<NavLink to="/plan">予定</NavLink>
             の画面を開くと、標準の条件で自動で作ります。
           </Empty>
         ) : (
@@ -452,7 +442,7 @@ export default function ComparePage() {
                           <div className="actions">
                             <IconButton
                               icon={ExternalLink}
-                              label={`${c.title} をAI案の画面で開く`}
+                              label={`${c.title} を予定の画面で開く`}
                               onClick={() => openRun(run)}
                             />
                             <IconButton
@@ -478,7 +468,7 @@ export default function ComparePage() {
         )}
         {choices.length === 1 && (
           <Empty icon={GitCompareArrows}>
-            比べるには案が2つ以上いります。<NavLink to="/plan">AI案</NavLink>
+            比べるには案が2つ以上いります。<NavLink to="/plan">予定</NavLink>
             の画面でプリセットを押すか、重みを変えて「AI案を作り直す」を押してください。
           </Empty>
         )}
@@ -571,8 +561,9 @@ export default function ComparePage() {
               icon={Users}
               aside={
                 <Hint>
-                  訪問を押すと、その担当になった理由（点の内訳）が出ます。{terms.staff}
-                  の名前を押すと地図が切り替わります。
+                  訪問を押すと、その担当になった理由（点の内訳）が出て、地図でその訪問先を強調します。{terms.staff}
+                  の名前を押すと地図がその人だけになります（もう一度で全員）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間（A
+                  は点線、B は実線）を強調します。
                 </Hint>
               }
             >
@@ -596,9 +587,10 @@ export default function ComparePage() {
                   <div key={id} className="compare-row" style={{ borderTopColor: colorOfStaff.get(id) }}>
                     <button
                       type="button"
-                      className={`compare-staff ${mapStaffId === id ? 'is-on' : ''}`}
-                      onClick={() => setMapStaff(id)}
-                      title="地図で見る"
+                      className={`compare-staff ${rs.focusStaff === id ? 'is-on' : ''}`}
+                      aria-pressed={rs.focusStaff === id}
+                      onClick={() => rs.focusOn(rs.focusStaff === id ? null : id)}
+                      title={rs.focusStaff === id ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
                     >
                       <strong className="col-head">
                         <span className="staff-dot" style={{ background: colorOfStaff.get(id) }} aria-hidden="true" />
@@ -642,25 +634,48 @@ export default function ComparePage() {
             </div>
           )}
 
-          <div className="card stack">
+          <div className="card stack" ref={mapCardRef}>
             <SectionTitle
               icon={MapIcon}
-              aside={mapStaffId ? <span className="chip">{staffName(mapStaffId)}</span> : undefined}
+              aside={
+                rs.focusStaff && (
+                  <button type="button" className="btn btn-small" onClick={rs.clear}>
+                    全員のルートを見る
+                  </button>
+                )
+              }
             >
-              地図
+              地図{rs.focusStaff ? `：${staffName(rs.focusStaff)}` : ''}
             </SectionTitle>
             <RouteMap points={points} lines={lines} height={400} />
-            <div className="row sub">
-              <span className="legend-item">
-                <span className="legend-line is-dashed" style={{ color: MANUAL_LINE }} aria-hidden="true" />
-                A（点線）
-              </span>
-              <span className="legend-item">
-                <span className="legend-line" style={{ background: AI_LINE }} aria-hidden="true" />
-                B（実線）
-              </span>
-            </div>
+            <StaffLegend
+              staffIds={staffIds}
+              staffName={staffName}
+              colorOfStaff={colorOfStaff}
+              focusStaff={rs.focusStaff}
+              onFocus={rs.focusOn}
+              extra={
+                <>
+                  <span className="legend-item">
+                    <span className="legend-line is-dashed" aria-hidden="true" />
+                    A（点線）
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-line legend-line-ink" aria-hidden="true" />
+                    B（実線）
+                  </span>
+                  <span className="nowrap legend-item">「家」＝自宅</span>
+                </>
+              }
+            />
           </div>
+          <MapDock
+            target={mapCardRef}
+            points={points}
+            lines={lines}
+            title={`地図${rs.focusStaff ? `：${staffName(rs.focusStaff)}` : ''}（A 点線・B 実線）`}
+            focusKey={rs.focusKey}
+          />
         </>
       )}
 

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
-import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
+import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { type Client, clientSchema } from '../contracts/documents';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
@@ -151,10 +151,24 @@ export default function ClientsPage() {
       </div>
 
       {form && (
-        <div className="card stack">
-          <SectionTitle icon={isNew ? Plus : Pencil}>
-            {isNew ? `${terms.client}を追加` : `${terms.client}を編集`}
-          </SectionTitle>
+        <SidePanel
+          icon={isNew ? Plus : Pencil}
+          title={
+            isNew ? `${terms.client}を追加` : `${terms.client}を編集：${form.displayName.trim() || '（名前なし）'}`
+          }
+          onClose={() => setForm(null)}
+          footer={
+            <>
+              <button type="button" className="btn btn-primary" onClick={save}>
+                <WithIcon icon={Save}>保存</WithIcon>
+              </button>
+              <button type="button" className="btn" onClick={() => setForm(null)}>
+                <WithIcon icon={X}>閉じる</WithIcon>
+              </button>
+              {error && <span className="error">{error}</span>}
+            </>
+          }
+        >
           <div className="form-grid">
             <label>
               表示名
@@ -234,16 +248,7 @@ export default function ClientsPage() {
 
           <SectionTitle icon={House}>住所</SectionTitle>
           <PlaceEditor value={form.place} onChange={(place) => setForm({ ...form, place })} />
-          {error && <p className="error">{error}</p>}
-          <div className="row">
-            <button type="button" className="btn btn-primary" onClick={save}>
-              <WithIcon icon={Save}>保存</WithIcon>
-            </button>
-            <button type="button" className="btn" onClick={() => setForm(null)}>
-              <WithIcon icon={X}>閉じる</WithIcon>
-            </button>
-          </div>
-        </div>
+        </SidePanel>
       )}
     </div>
   );

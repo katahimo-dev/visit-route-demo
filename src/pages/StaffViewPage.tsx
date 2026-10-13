@@ -14,7 +14,7 @@ import './schedule.css';
 
 /**
  * スタッフのスマホ画面風の「今日の順番」（D16。表示だけで記録はしない）。
- * 手作業案（予定画面の割当）が決まっていればそれを、無ければ AI案を出す
+ * 確定した割当（予定の画面の「この割当で確定」）があればそれを、無ければ AI案を出す
  */
 export default function StaffViewPage() {
   const { staffId = '' } = useParams();

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { jstDate } from '../domain/time';
-import { attempt, formError } from '../lib/common';
+import { attempt, formError, isStaleBuild } from '../lib/common';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
 import './settings.css';
 
@@ -23,6 +23,10 @@ function saveBlob(blob: Blob, name: string) {
 }
 
 /** データ：書き出し・読み込み（控えの JSON・Excel）・初期状態に戻す（D2・D3・D23） */
+/** 画面を開いたあとに新しい版が公開されて、Excel の部品を読めなかったとき */
+const STALE_TEXT =
+  '新しい版が公開されたため、Excel の部品を読み込めませんでした。「画面を読み直す」を押してから、もう一度お試しください（データはそのままです）';
+
 export default function DataPage() {
   const { data, update, replace, reset, saveError } = useDemoData();
   const [terms, setTerms] = useState(data.org.terms);
@@ -66,7 +70,7 @@ export default function DataPage() {
       saveBlob(await exportWorkbook(data), `visit-route-demo-${today()}.xlsx`);
       toast('Excel に書き出しました');
     } catch (e) {
-      setExcelError(`書き出せませんでした（${formError(e)}）`);
+      setExcelError(isStaleBuild(e) ? STALE_TEXT : `書き出せませんでした（${formError(e)}）`);
     } finally {
       setExcelBusy(false);
     }
@@ -87,14 +91,16 @@ export default function DataPage() {
       const counts = `${t.staff} ${r.staff.length}人・${t.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
       if (
         !confirm(
-          `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・手作業の割当は消えます。よろしいですか？`,
+          `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。よろしいですか？`,
         )
       )
         return;
       replace(r);
       toast('Excel を読み込みました');
     } catch (e) {
-      setExcelError(`読み込めませんでした：${formError(e)}（いまのデータはそのままです）`);
+      setExcelError(
+        isStaleBuild(e) ? STALE_TEXT : `読み込めませんでした：${formError(e)}（いまのデータはそのままです）`,
+      );
     } finally {
       setExcelBusy(false);
       if (excelRef.current) excelRef.current.value = '';
@@ -168,7 +174,7 @@ export default function DataPage() {
       <div className="card stack">
         <SectionTitle icon={Save}>控え（JSON）</SectionTitle>
         <Hint>
-          データ一式（AI案・記録・手作業の割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
+          データ一式（AI案・記録・確定した割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
           下の欄で書き出したファイルを選ぶと、いまのデータと置き換えます（置き換える前に確認します）。
         </Hint>
         <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
@@ -192,7 +198,7 @@ export default function DataPage() {
         <Hint>
           {data.org.terms.staff}・{data.org.terms.client}
           ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。 Excel
-          で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・手作業の割当は消えます）。
+          で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当は消えます）。
           書き方はブックの「使い方」のシートにあります。
         </Hint>
         <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -218,6 +224,17 @@ export default function DataPage() {
           <p className="error" style={{ whiteSpace: 'pre-line' }}>
             {excelError}
           </p>
+        )}
+        {excelError === STALE_TEXT && (
+          <button
+            type="button"
+            className="btn"
+            style={{ alignSelf: 'flex-start' }}
+            // 保存は間引いているので、書き終わるのを少し待ってから読み直す
+            onClick={() => setTimeout(() => location.reload(), 500)}
+          >
+            <WithIcon icon={RotateCcw}>画面を読み直す</WithIcon>
+          </button>
         )}
       </div>
 

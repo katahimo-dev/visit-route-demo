@@ -11,7 +11,6 @@ import {
   type LucideIcon,
   Route as RouteIcon,
   SlidersHorizontal,
-  Sparkles,
   Tags,
   TriangleAlert,
   UserRound,
@@ -28,7 +27,6 @@ import DataPage from '../pages/DataPage';
 import ItemsPage from '../pages/ItemsPage';
 import PlanPage from '../pages/PlanPage';
 import RulesPage from '../pages/RulesPage';
-import SchedulePage from '../pages/SchedulePage';
 import StaffPage from '../pages/StaffPage';
 import StaffViewPage from '../pages/StaffViewPage';
 import { useDemoData } from '../store';
@@ -61,7 +59,8 @@ export default function App() {
       <Routes>
         <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
         <Route element={<AdminShell />}>
-          <Route path="/schedule" element={<SchedulePage />} />
+          {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
+          <Route path="/schedule" element={<Navigate to="/plan" replace />} />
           <Route path="/plan" element={<PlanPage />} />
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/rules" element={<RulesPage />} />
@@ -106,8 +105,7 @@ function AdminShell() {
     {
       title: '毎日の作業',
       items: [
-        { to: '/plan', label: 'AI案', icon: Sparkles },
-        { to: '/schedule', label: '予定', icon: CalendarDays },
+        { to: '/plan', label: '予定', icon: CalendarDays },
         { to: '/compare', label: '比較', icon: GitCompareArrows },
       ],
     },

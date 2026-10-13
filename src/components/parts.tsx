@@ -6,7 +6,7 @@ import { colorOf, initialOf } from '../lib/colors';
 import { hasLocation } from '../lib/common';
 import { RouteMap } from './RouteMap';
 
-/** 訪問先の色の丸と名前（予定画面と AI案の画面で同じ見た目にする） */
+/** 訪問先の色の丸と名前（予定・比較の画面で同じ見た目にする） */
 export function ClientName({ client }: { client: Client | undefined }) {
   return (
     <div className="visit-name">
@@ -42,11 +42,15 @@ export function PlaceEditor({ value, onChange }: { value: Place; onChange: (p: P
           </button>
         )}
       </div>
-      <span className="sub">地図をクリックすると、その位置にピンを置けます（位置は直線距離の概算に使います）</span>
+      <span className="sub">
+        {hasLocation(value)
+          ? '位置を変えるときは「位置を消す」を押してから、地図をクリックしてください（うっかり動かさないため）'
+          : '地図をクリックした所にピンを置きます（位置は直線距離の概算に使います）'}
+      </span>
       <RouteMap
         height={220}
         points={hasLocation(value) ? [{ lat: value.lat, lng: value.lng, label: '●', color: '#e8735f' }] : []}
-        onPick={(p) => onChange({ ...value, lat: p.lat, lng: p.lng })}
+        onPick={hasLocation(value) ? undefined : (p) => onChange({ ...value, lat: p.lat, lng: p.lng })}
       />
     </div>
   );

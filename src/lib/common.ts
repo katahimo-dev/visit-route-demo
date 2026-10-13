@@ -27,8 +27,7 @@ export const STAFF_COLORS = [
 export const staffColor = (i: number): string =>
   STAFF_COLORS[((i % STAFF_COLORS.length) + STAFF_COLORS.length) % STAFF_COLORS.length] ?? '#e8735f';
 
-/** 地図：手作業案は青の点線、AI案はオレンジの実線 */
-export const MANUAL_LINE = '#4a7fc1';
+/** 地図：スタッフ本人の画面のルートの線（オレンジの実線） */
 export const AI_LINE = '#e8735f';
 
 export const hasLocation = (p: Place): p is { address: string; lat: number; lng: number } =>
@@ -108,6 +107,15 @@ export function ruleTypeHelp(type: RuleType, t: Terms): string {
 }
 
 /** 入力検査（zod）などの失敗を画面に出す文にする */
+/**
+ * 画面を開いたあとに新しい版が公開され、あとから読む部品（Excel など）のファイルが無くなったときのエラーか。
+ * ブラウザごとに文言が違う（Chrome・Firefox・Safari）
+ */
+export function isStaleBuild(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e);
+  return /dynamically imported module|Importing a module script failed|Unable to preload/i.test(m);
+}
+
 export function formError(e: unknown): string {
   if (e && typeof e === 'object' && 'issues' in e) {
     const issues = (e as { issues: { path: PropertyKey[]; message: string }[] }).issues;
