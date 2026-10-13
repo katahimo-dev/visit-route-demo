@@ -109,6 +109,16 @@ export default function PlanPage() {
   const [focusStaff, setFocusStaff] = useState<string | null>(null);
   /** 地図で強調する区間（この訪問へ来る移動）。null は無し */
   const [focusLeg, setFocusLeg] = useState<string | null>(null);
+  /**
+   * 地図で見るスタッフを変える（null は全員）。選んでいた区間・訪問がその人のものでなければ外す
+   * （全員に戻したときも区間の強調は外す）
+   */
+  const focusOn = (sid: string | null) => {
+    setFocusStaff(sid);
+    const ownerOf = (id: string) => owner.get(id) ?? null;
+    if (focusLeg && (sid === null || ownerOf(focusLeg) !== sid)) setFocusLeg(null);
+    if (picked && sid !== null && ownerOf(picked) !== sid) setPicked(null);
+  };
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
   const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -1065,8 +1075,7 @@ export default function PlanPage() {
                           aria-pressed={focusStaff === sid}
                           title={focusStaff === sid ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
                           onClick={() => {
-                            setFocusStaff(focusStaff === sid ? null : sid);
-                            if (focusStaff !== sid && picked && owner.get(picked) !== sid) setPicked(null);
+                            focusOn(focusStaff === sid ? null : sid);
                           }}
                         >
                           <span
@@ -1118,7 +1127,7 @@ export default function PlanPage() {
                       type="button"
                       className={`nowrap legend-item legend-btn ${focusStaff === sid ? 'is-on' : ''}`}
                       aria-pressed={focusStaff === sid}
-                      onClick={() => setFocusStaff(focusStaff === sid ? null : sid)}
+                      onClick={() => focusOn(focusStaff === sid ? null : sid)}
                     >
                       <span className="legend-line" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
                       {staffName(sid)}

@@ -238,7 +238,7 @@ export function diff(problem: Problem, from: Record<string, string[]>, to: Recor
 // ---- 点数（ADR-0007。表示だけ。solver の費用は変えない。下限＝160点・素朴な案＝0点）----
 
 /**
- * 素朴な案（staffId → 訪問ID。回る順）。中身は matching の naiveSeqs：開始の早い順に、増える移動が最も少ない担当の、
+ * 素朴な案（staffId → 訪問ID。回る順）。中身は matching の naiveSeqs：担当できる人の少ない順（同じなら開始の早い順）に、増える移動が最も少ない担当の、
  * その順番の中で最も安い位置（strict で入る位置）に挟む。入らない訪問だけ落とす。決定的
  */
 export function naivePlan(problem: Problem): Record<string, string[]> {
@@ -350,7 +350,7 @@ export function toHundred(cost: number, scale: ScoreScale): number {
 
 /**
  * 減点の内訳：費用の成分ごとの下限からの超過 × 160/(naive − lowerBound)（点数と同じ倍率）。大きい順。
- * 合計は 160−点数（丸めと 0 で止めた分を除く）。naive ≤ lowerBound なら空
+ * 合計は 160−点数（丸めと 0 で止めた分を除く。画面では 0 未満の成分を出さないので、表示の合計とは合わないことがある）。naive ≤ lowerBound なら空
  */
 export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Problem): HundredPart[] {
   const span = scale.naive - scale.lowerBound;
