@@ -20,7 +20,7 @@ import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
 import { type Staff, staffSchema } from '../contracts/documents';
-import { byName, formError, hasLocation, newId, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
+import { byName, formError, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
 import { useDemoData } from '../store';
 import './settings.css';
 
@@ -54,6 +54,11 @@ export default function StaffPage() {
   const save = () => {
     if (!form) return;
     setError(null);
+    // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
+    if (nameTaken(data.staff, (x) => x.name, form.name, form.id)) {
+      setError(`「${form.name.trim()}」と同じ名前の${terms.staff}がいます。名前を変えてください`);
+      return;
+    }
     try {
       const s = staffSchema.parse(form);
       update((d) => ({

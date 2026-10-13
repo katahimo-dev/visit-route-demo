@@ -134,6 +134,33 @@ export function own<T>(rec: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(rec, key) ? rec[key] : undefined;
 }
 
+/** 1つの項目の選択肢の数の上限（contracts/rules.ts の itemSchema） */
+export const MAX_OPTIONS = 30;
+/** 選択肢から複数の「確認済みで1つもない」を Excel で表す印（選択肢の名前には使えない。ADR-0006） */
+export const EMPTY_OPTION_MARK = '（なし）';
+/**
+ * 選択肢の名前に使えないもの。Excel では「、」と改行で選択肢を区切り、「（なし）」を空の印に使うため（ADR-0006）。
+ * 使えれば null
+ */
+export function optionNameError(name: string): string | null {
+  if (/[、\r\n]/.test(name)) return '選択肢の名前に「、」と改行は使えません';
+  if (name.normalize('NFKC').trim() === EMPTY_OPTION_MARK.normalize('NFKC'))
+    return `「${EMPTY_OPTION_MARK}」は選択肢の名前に使えません`;
+  return null;
+}
+
+/** 同じ名前がほかにあるか（自分 selfId は除く。前後の空白は無視） */
+/**
+ * 名前の比べ方：全角半角と空白の違いは同じとみなす（Excel の見出しの比べ方と同じ。
+ * 「山田 太郎」と「山田　太郎」「山田太郎」は同じ名前）
+ */
+export const nameKey = (s: string) => s.normalize('NFKC').replace(/\s+/g, '');
+
+export function nameTaken<T extends { id: string }>(xs: T[], nameOf: (x: T) => string, name: string, selfId?: string) {
+  const n = nameKey(name);
+  return xs.some((x) => x.id !== selfId && nameKey(nameOf(x)) === n);
+}
+
 /** 新しい ID（画面で足すもの用） */
 export const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 

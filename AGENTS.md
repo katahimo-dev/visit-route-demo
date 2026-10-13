@@ -22,6 +22,7 @@ src/
   matching/    … 項目・条件 → Problem（可否・費用表）と理由
   solver/      … 焼きなまし（solve 純粋関数 ＋ worker.ts）
   evaluate/    … 採点・説明・差分
+  excel/       … DemoData と Excel のブックの変換（ADR-0006。データは書き換えない）
   pages/ components/ … 画面
 .github/workflows/deploy.yml … test → build → GitHub Pages
 docs/ … prd.md / design.md / adr/ / handoff/
