@@ -1,0 +1,306 @@
+/* AI案・比較の画面の見た目（plan.css） */
+
+.plan-compare-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.plan-compare-link:hover {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+
+/* 上部のボタン列と、作成時刻などの小さな1行 */
+.plan-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plan-toolbar .hint {
+  margin-left: auto;
+}
+.plan-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sub);
+  font-size: 0.75rem;
+}
+
+/* 色の丸・列の見出し */
+.staff-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.col-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 件数の偏り：横棒（目安の帯と件数） */
+.balance {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #faf6f2;
+}
+.balance-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+.balance-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 120px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.balance-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+.balance-bar {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: #efe6de;
+  overflow: hidden;
+}
+.balance-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 5px;
+  background: rgba(46, 125, 80, 0.22);
+  border-left: 2px solid var(--ok);
+  border-right: 2px solid var(--ok);
+}
+.balance-fill {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 999px;
+}
+.balance-fill.tone-ok {
+  background: var(--ok);
+}
+.balance-fill.tone-warn {
+  background: #d99a1f;
+}
+.balance-fill.tone-red {
+  background: var(--danger);
+}
+.balance-num {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.balance-num small {
+  color: var(--sub);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+.balance-num.tone-warn {
+  color: #a46d0a;
+}
+.balance-num.tone-red {
+  color: var(--danger);
+}
+
+/* 順番カード：時刻を強く、移動・待ちは小さく */
+.route-item {
+  gap: 6px;
+}
+.visit-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sub);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.visit-tags {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.visit-tags .icon-btn {
+  margin-left: auto;
+}
+.icon-btn-sm {
+  width: 26px;
+  height: 26px;
+}
+.leg-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.col-head + .chip {
+  flex-shrink: 0;
+}
+.reason-timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+/* プリセット・重みのパネル */
+.side-panel .section-title h2 {
+  font-size: 0.95rem;
+}
+.preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preset-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f3ebe4;
+  color: var(--sub);
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.preset-btn.is-on .preset-no {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* 地図の凡例 */
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-line {
+  display: inline-block;
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+}
+.legend-line.is-dashed {
+  height: 0;
+  border-top: 3px dashed currentColor;
+  border-radius: 0;
+}
+
+/* 比較：A・B の目印と選択 */
+.ab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.ab-badge.ab-a,
+.ab-pick.ab-a input:checked + span {
+  background: #8a7a70;
+}
+.ab-badge.ab-b,
+.ab-pick.ab-b input:checked + span {
+  background: var(--primary);
+}
+.ab-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.runs-table .ab-col {
+  width: 44px;
+  text-align: center;
+}
+.ab-pick {
+  display: inline-flex;
+  cursor: pointer;
+}
+.ab-pick input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+}
+.ab-pick span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--sub);
+  font-weight: 700;
+}
+.ab-pick input:checked + span {
+  border-color: transparent;
+  color: #fff;
+}
+.ab-pick input:focus-visible + span {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.runs-table .actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+.compare-table th svg {
+  vertical-align: -3px;
+}
+
+/* 狭い幅：比較の担当ごとの欄を縦に並べ、記録の表は横にスクロール */
+@media (max-width: 700px) {
+  .compare-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .compare-header {
+    display: none;
+  }
+  .compare-col::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--sub);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .compare-row > .compare-col:nth-of-type(2)::before {
+    content: 'A';
+  }
+  .compare-row > .compare-col:nth-of-type(3)::before {
+    content: 'B';
+  }
+  .runs-table {
+    min-width: 560px;
+  }
+}

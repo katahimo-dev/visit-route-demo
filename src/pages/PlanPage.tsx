@@ -1,9 +1,31 @@
+import {
+  Car,
+  CircleOff,
+  Clock,
+  Gauge,
+  GitCompareArrows,
+  Hourglass,
+  House,
+  Map as MapIcon,
+  Pin,
+  PinOff,
+  RefreshCw,
+  Scale,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  TriangleAlert,
+  Undo2,
+  Users,
+} from 'lucide-react';
 import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientName } from '../components/parts';
 import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
+import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { AiPlan, DemoData } from '../contracts/data';
 import type { PlanScore, Problem, SolveResult } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
@@ -17,6 +39,7 @@ import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import { applyPreset, PRESETS, type Preset, presetOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
+import './plan.css';
 import { explainMap, ReasonBox, WeightPanel } from './planParts';
 
 /**
@@ -432,8 +455,20 @@ export default function PlanPage() {
       <div key={id}>
         {t && (
           <div className="leg-line">
-            {own(routes, ownerId ?? '')?.[0] === id ? '自宅から ' : '↓ 移動 '}
-            {r0(t.travelIn)}分{t.wait > 0 && `（待ち ${r0(t.wait)}分）`}
+            {own(routes, ownerId ?? '')?.[0] === id ? (
+              <WithIcon icon={House} size={13}>
+                自宅から {r0(t.travelIn)}分
+              </WithIcon>
+            ) : (
+              <WithIcon icon={Car} size={13}>
+                {r0(t.travelIn)}分
+              </WithIcon>
+            )}
+            {t.wait > 0 && (
+              <WithIcon icon={Hourglass} size={13}>
+                待ち {r0(t.wait)}分
+              </WithIcon>
+            )}
           </div>
         )}
         <div
@@ -456,28 +491,35 @@ export default function PlanPage() {
             }}
             title="押すと理由を見られます。ドラッグで別の担当へ移せます"
           >
-            <span className="sub nowrap">
+            <span className="visit-time">
+              <Clock size={13} strokeWidth={2.2} aria-hidden="true" />
               {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : (visitById.get(id)?.earliestStart ?? '')}
             </span>
             <ClientName client={clientOf(id)} />
           </div>
           {(pin || hard) && (
-            <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
+            <div className="row visit-tags">
               {pin && (
                 <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
-                  📌 固定
+                  <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
+                  固定
                 </span>
-              )}
-              {pin && (
-                <button type="button" className="btn btn-small" onClick={() => unpin(id)} disabled={!!running}>
-                  固定を外す
-                </button>
               )}
               {hard?.map((h) => (
                 <span key={h} className="chip chip-red" title="必須の条件の違反">
-                  ✕ {h}
+                  <ShieldAlert size={12} aria-hidden="true" />
+                  {h}
                 </span>
               ))}
+              {pin && (
+                <IconButton
+                  icon={PinOff}
+                  label="固定を外す"
+                  className="icon-btn-sm"
+                  onClick={() => unpin(id)}
+                  disabled={!!running}
+                />
+              )}
             </div>
           )}
         </div>
@@ -512,16 +554,20 @@ export default function PlanPage() {
   return (
     <div className="plan-layout">
       <div className="stack" style={{ minWidth: 0 }}>
-        <div className="spread" style={{ flexWrap: 'wrap' }}>
-          <h2>AI案</h2>
-          <NavLink to="/compare" className="sub">
-            条件を変えた案どうしの比較（この日の記録 {runCount}件）→
-          </NavLink>
-        </div>
+        <PageHeader
+          icon={Sparkles}
+          title="AI案"
+          lead={`AIが${terms.staff}ごとの回る順番を組みます。手直しして予定に採用できます`}
+          actions={
+            <NavLink to="/compare" className="plan-compare-link">
+              <WithIcon icon={GitCompareArrows}>比較（記録 {runCount}件）</WithIcon>
+            </NavLink>
+          }
+        />
         <div className="card stack">
-          <div className="row" style={{ flexWrap: 'wrap' }}>
+          <div className="row plan-toolbar">
             <button type="button" className="btn btn-primary" disabled={!!running || !problem} onClick={() => create()}>
-              {running === 'create' ? '作っています…' : 'AI案を作る'}
+              <WithIcon icon={Sparkles}>{running === 'create' ? '作っています…' : 'AI案を作る'}</WithIcon>
             </button>
             {aiPlan && (
               <button
@@ -531,28 +577,33 @@ export default function PlanPage() {
                 onClick={resolve}
                 title="固定した訪問の担当は変えずに、残りを AI が組み直します"
               >
-                {running === 'resolve'
-                  ? '組み直しています…'
-                  : `固定を残して組み直す${pinCount > 0 ? `（固定 ${pinCount}件）` : ''}`}
+                <WithIcon icon={RefreshCw}>
+                  {running === 'resolve'
+                    ? '組み直しています…'
+                    : `固定を残して組み直す${pinCount > 0 ? `（固定 ${pinCount}件）` : ''}`}
+                </WithIcon>
               </button>
             )}
             {aiPlan && (
               <button type="button" className="btn" disabled={!!running || !edited} onClick={revert}>
-                AI案に戻す
+                <WithIcon icon={Undo2}>AI案に戻す</WithIcon>
               </button>
             )}
             {running && (
               <button type="button" className="btn" onClick={stop}>
-                止める
+                <WithIcon icon={Square}>止める</WithIcon>
               </button>
             )}
+            <Hint label="使い方">
+              訪問を別の{terms.staff}の列へドラッグ（または押して担当を選ぶ）と、その{terms.staff}
+              の回る順番の中で最も費用の少ない位置に入り、固定になります。「固定を残して組み直す」は、固定した訪問の担当を変えずに残りを組み直します。
+            </Hint>
           </div>
           {aiPlan && !running && (
-            <span className="sub">
-              {new Date(aiPlan.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} に作成（乱数の種{' '}
-              {aiPlan.seed}・{aiPlan.iterations.toLocaleString()}回{aiPlan.stopped && '・途中で止めた案'}）。訪問を別の
-              {terms.staff}の列へドラッグ（または押して担当を選ぶ）と、その{terms.staff}
-              の回る順番の中で最も費用の少ない位置に入り、固定になります。
+            <span className="plan-meta">
+              <Clock size={12} aria-hidden="true" />
+              {new Date(aiPlan.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} に作成・乱数の種{' '}
+              {aiPlan.seed}・{aiPlan.iterations.toLocaleString()}回{aiPlan.stopped && '・途中で止めた案'}
             </span>
           )}
           {running && (
@@ -569,55 +620,77 @@ export default function PlanPage() {
           {error && <p className="error">{error}</p>}
           {stale && autoMade && (
             <p className="sub">
-              この案は、開いたときに{PRESETS[0]?.name}
-              の条件で自動で作った案です（いまの条件とは違います）。点数はいまの条件で付け直しています。いまの条件で作るには「AI案を作る」を押してください。
+              <WithIcon icon={TriangleAlert} size={14}>
+                開いたときに{PRESETS[0]?.name}の条件で自動で作った案です
+              </WithIcon>
+              <Hint>
+                いまの条件とは違います。点数はいまの条件で付け直しています。いまの条件で作るには「AI案を作る」を押してください。
+              </Hint>
             </p>
           )}
           {stale && !autoMade && (
             <p className="warn-text">
-              このAI案を作ったあとに条件が変わりました。点数はいまの条件で付け直しています。「AI案を作る」か「固定を残して組み直す」で作り直せます。
+              <WithIcon icon={TriangleAlert} size={14}>
+                作ったあとに条件が変わりました
+              </WithIcon>
+              <Hint>点数はいまの条件で付け直しています。「AI案を作る」か「固定を残して組み直す」で作り直せます。</Hint>
             </p>
           )}
         </div>
 
         {!aiPlan ? (
           <div className="card">
-            <p className="sub">
+            <Empty icon={Sparkles}>
               {runningFor?.date === date
                 ? `この日のAI案を${runningFor.label}条件で作っています…`
                 : running
                   ? '別の日のAI案を作っています…'
                   : 'この日のAI案はまだありません。「AI案を作る」を押してください。'}
-            </p>
+            </Empty>
           </div>
         ) : (
           <>
             <div className="card stack">
-              <div className="spread" style={{ flexWrap: 'wrap' }}>
-                <h3>今の案{edited ? '（手直し後）' : ''}</h3>
-                <button type="button" className="btn btn-primary" disabled={!!running} onClick={adopt}>
-                  予定に採用
-                </button>
-              </div>
+              <SectionTitle
+                icon={Gauge}
+                aside={
+                  <button type="button" className="btn btn-primary btn-small" disabled={!!running} onClick={adopt}>
+                    予定に採用
+                  </button>
+                }
+              >
+                今の案{edited ? '（手直し後）' : ''}
+              </SectionTitle>
               <PlanSummary current={cs} generated={gs} changed={genDiff?.value?.changedVisits.length ?? 0} />
-              {problem && cs && <BalanceChips problem={problem} routes={routes} staffName={staffName} />}
+              {problem && cs && (
+                <BalanceChips problem={problem} routes={routes} staffName={staffName} colorOfStaff={colorOfStaff} />
+              )}
               {(curScore?.error || genScore?.error) && (
                 <p className="error">採点できません（{curScore?.error ?? genScore?.error}）</p>
               )}
             </div>
 
             <div className="card stack">
-              <h3>{terms.staff}ごとの順番</h3>
-              <p className="sub">
-                訪問をドラッグして別の{terms.staff}へ移せます。押すと理由（点の内訳）と担当の選択が出ます。📌
-                は固定（組み直しても担当を変えない）。
-              </p>
+              <SectionTitle
+                icon={Users}
+                aside={
+                  <Hint>
+                    訪問をドラッグして別の{terms.staff}
+                    へ移せます。押すと理由（点の内訳）と担当の選択が出ます。ピンは固定（組み直しても担当を変えない）。
+                  </Hint>
+                }
+              >
+                {terms.staff}ごとの順番
+              </SectionTitle>
               <div className="route-grid">
                 {unassigned.length > 0 && (
                   <div className="route-col route-col-none">
                     <div className="spread">
-                      <strong>入らなかった訪問</strong>
-                      <span className="sub nowrap">{unassigned.length}件</span>
+                      <strong className="col-head">
+                        <CircleOff size={16} aria-hidden="true" />
+                        入らなかった訪問
+                      </strong>
+                      <span className="chip chip-warn">{unassigned.length}件</span>
                     </div>
                     {unassigned.map((id) => {
                       // どの担当も可にならない訪問は infeasible、候補がいるのに入らない訪問は explain が理由を持つ
@@ -649,10 +722,15 @@ export default function PlanPage() {
                       {...dropProps(sid)}
                     >
                       <div className="spread">
-                        <strong className="ellipsis" style={{ color: colorOfStaff.get(sid) }}>
+                        <strong className="col-head ellipsis">
+                          <span
+                            className="staff-dot"
+                            style={{ background: colorOfStaff.get(sid) }}
+                            aria-hidden="true"
+                          />
                           {staffName(sid)}
                         </strong>
-                        <span className="sub nowrap">{ids.length}件</span>
+                        <span className="chip">{ids.length}件</span>
                       </div>
                       {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
                       {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
@@ -664,16 +742,18 @@ export default function PlanPage() {
             </div>
 
             <div className="card stack">
-              <h3>地図：今の案（実線、{terms.staff}ごとの色。「家」は自宅）</h3>
+              <SectionTitle icon={MapIcon}>地図</SectionTitle>
               <RouteMap points={points} lines={lines} height={420} />
               <div className="row sub" style={{ flexWrap: 'wrap' }}>
                 {columns
                   .filter((sid) => (own(routes, sid)?.length ?? 0) > 0)
                   .map((sid) => (
-                    <span key={sid} className="nowrap">
-                      <span style={{ color: colorOfStaff.get(sid) }}>━</span> {staffName(sid)}
+                    <span key={sid} className="nowrap legend-item">
+                      <span className="legend-line" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
+                      {staffName(sid)}
                     </span>
                   ))}
+                <span className="nowrap legend-item">「家」＝自宅</span>
               </div>
             </div>
           </>
@@ -681,7 +761,7 @@ export default function PlanPage() {
 
         {problem && problem.infeasible.length > 0 && !aiPlan && (
           <div className="card stack">
-            <h3>どの{terms.staff}も担当できない訪問</h3>
+            <SectionTitle icon={CircleOff}>どの{terms.staff}も担当できない訪問</SectionTitle>
             {problem.infeasible.map((f) => {
               const v = problem.visits[f.visit];
               if (!v) return null;
@@ -701,10 +781,16 @@ export default function PlanPage() {
 
         {notInProblem.length > 0 && (
           <div className="card stack">
-            <h3>計算に入れなかった訪問</h3>
-            <p className="sub">
-              {terms.client}が休止中・位置が未登録などの訪問です（{terms.client}の画面で直せます）。
-            </p>
+            <SectionTitle
+              icon={TriangleAlert}
+              aside={
+                <Hint>
+                  {terms.client}が休止中・位置が未登録などの訪問です（{terms.client}の画面で直せます）。
+                </Hint>
+              }
+            >
+              計算に入れなかった訪問
+            </SectionTitle>
             {notInProblem.map((v) => (
               <span key={v.id}>{visitLabel(v.id)}</span>
             ))}
@@ -734,78 +820,123 @@ function PlanSummary({
   changed: number;
 }) {
   if (!current) return null;
+  /** AIが出したままとの差（無ければ null） */
   const delta = (a: number, b: number | undefined, unit: string) => {
     if (b === undefined) return null;
     const d = a - b;
     if (Math.round(d * 10) === 0) return null;
-    return <span className={`sub ${d < 0 ? 'ok-text' : 'warn-text'}`}>（{deltaText(d, unit)}）</span>;
+    return <span className={d < 0 ? 'ok-text' : 'warn-text'}>{deltaText(d, unit)}</span>;
   };
+  const note = (a: number, b: number | undefined, unit: string) => {
+    const d = delta(a, b, unit);
+    return d ? <>AI案から {d}</> : undefined;
+  };
+  const hard = current.hardViolations.length;
   return (
-    <div className="stack" style={{ gap: 6 }}>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
-        <span className="chip" data-testid="plan-total">
-          合計 {r0(current.total)}点{delta(current.total, generated?.total, '点')}
-        </span>
-        <span className="chip">
-          移動 {r0(current.travelMinutes)}分{delta(current.travelMinutes, generated?.travelMinutes, '分')}
-        </span>
-        <span className="chip">
-          待ち {r0(current.waitMinutes)}分{delta(current.waitMinutes, generated?.waitMinutes, '分')}
-        </span>
-        <span className="chip">負担の均等 {pointsText(current.balancePoints)}点</span>
-        <span className={`chip ${current.hardViolations.length > 0 ? 'chip-red' : 'chip-ok'}`}>
-          必須の違反 {current.hardViolations.length}件
-        </span>
-        {current.dropped > 0 && <span className="chip chip-warn">入らなかった訪問 {current.dropped}件</span>}
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="stat-row" data-testid="plan-summary">
+        <Stat
+          icon={Gauge}
+          label="合計"
+          tone="primary"
+          value={<span data-testid="plan-total">{r0(current.total)}</span>}
+          unit="点"
+          note={note(current.total, generated?.total, '点')}
+        />
+        <Stat
+          icon={Car}
+          label="移動"
+          value={r0(current.travelMinutes)}
+          unit="分"
+          note={note(current.travelMinutes, generated?.travelMinutes, '分')}
+        />
+        <Stat
+          icon={Hourglass}
+          label="待ち"
+          value={r0(current.waitMinutes)}
+          unit="分"
+          note={note(current.waitMinutes, generated?.waitMinutes, '分')}
+        />
+        <Stat icon={Scale} label="負担の均等" value={pointsText(current.balancePoints)} unit="点" />
+        <Stat
+          icon={hard > 0 ? ShieldAlert : ShieldCheck}
+          label="必須の違反"
+          tone={hard > 0 ? 'danger' : 'ok'}
+          value={hard}
+          unit="件"
+        />
+        {current.dropped > 0 && (
+          <Stat icon={CircleOff} label="入らない訪問" tone="warn" value={current.dropped} unit="件" />
+        )}
       </div>
       {generated && (
-        <span className="sub">
-          AIが出したまま：合計 {r0(generated.total)}点・移動 {r0(generated.travelMinutes)}分・待ち{' '}
-          {r0(generated.waitMinutes)}分{changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
-        </span>
+        <Hint label="AIが出したまま">
+          合計 {r0(generated.total)}点・移動 {r0(generated.travelMinutes)}分・待ち {r0(generated.waitMinutes)}分
+          {changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
+        </Hint>
       )}
     </div>
   );
 }
 
-/** スタッフごとの件数と目安の帯（帯の外は色、必須の上限を超えたら赤） */
+/** ヘルパーごとの件数と目安の帯（帯の外は色、必須の上限を超えたら赤）。名前は色の丸 */
 function BalanceChips({
   problem,
   routes,
   staffName,
+  colorOfStaff,
 }: {
   problem: Problem;
   routes: Record<string, string[]>;
   staffName: (id: string) => string;
+  colorOfStaff: Map<string, string>;
 }) {
   const b = problem.balance;
   const rows = problem.staff
     .map((s, i) => ({ id: s.id, i, n: own(routes, s.id)?.length ?? 0, working: s.slots.length > 0 }))
     .filter((x) => x.working || x.n > 0);
+  // 横棒の目盛りの最大（件数・目安の上・必須の上限のうち最大＋余白）
+  const max = Math.max(1, ...rows.map(({ i, n }) => Math.max(n, b?.hi[i] ?? 0, b?.cap?.[i] ?? 0)));
+  const pct = (v: number) => `${(Math.min(v, max) / max) * 100}%`;
   return (
-    <div className="stack" style={{ gap: 4 }}>
-      <span className="sub">
-        件数の偏り（{b ? '目安の帯は稼働時間に比例' : '負担の均等の条件が無効'}
-        {b?.cap ? '・必須：目安の上＋1件まで' : ''}）
-      </span>
-      <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
-        {rows.map(({ id, i, n }) => {
-          const lo = b?.lo[i] ?? 0;
-          const hi = b?.hi[i] ?? 0;
-          const over = b?.cap ? n > b.cap[i]! : false;
-          const out = b ? n < lo || n > hi : false;
-          const band = lo === hi ? `${lo}` : `${lo}〜${hi}`;
-          return (
-            <span
-              key={id}
-              className={`chip ${over ? 'chip-red' : out ? 'chip-warn' : 'chip-ok'}`}
-              title={b ? `目安 ${band}件` : ''}
-            >
-              {staffName(id)} {n}件{b && <span className="sub">（目安 {band}）</span>}
-            </span>
-          );
-        })}
+    <div className="stack balance" style={{ gap: 6 }}>
+      <div className="spread">
+        <strong className="balance-title">
+          <Scale size={15} aria-hidden="true" />
+          件数の偏り
+        </strong>
+        <Hint>
+          {b ? '色のついた帯が目安（稼働時間に比例）です。' : '負担の均等の条件が無効です。'}
+          {b?.cap ? '必須：目安の上＋1件までです。' : ''}
+        </Hint>
       </div>
+      {rows.map(({ id, i, n }) => {
+        const lo = b?.lo[i] ?? 0;
+        const hi = b?.hi[i] ?? 0;
+        const over = b?.cap ? n > (b.cap[i] ?? Number.POSITIVE_INFINITY) : false;
+        const out = b ? n < lo || n > hi : false;
+        const tone = over ? 'red' : out ? 'warn' : 'ok';
+        const band = lo === hi ? `${lo}` : `${lo}〜${hi}`;
+        return (
+          <div key={id} className="balance-row" title={b ? `目安 ${band}件` : ''}>
+            <span className="balance-name ellipsis">
+              <span className="staff-dot" style={{ background: colorOfStaff.get(id) }} aria-hidden="true" />
+              {staffName(id)}
+            </span>
+            <div
+              className="balance-bar"
+              role="img"
+              aria-label={`${staffName(id)} ${n}件${b ? `（目安 ${band}件）` : ''}`}
+            >
+              {b && <span className="balance-band" style={{ left: pct(lo), width: `calc(${pct(hi)} - ${pct(lo)})` }} />}
+              <span className={`balance-fill tone-${tone}`} style={{ width: pct(n) }} />
+            </div>
+            <span className={`balance-num tone-${tone}`}>
+              {n}件{b && <small>目安 {band}</small>}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
