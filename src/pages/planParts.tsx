@@ -19,16 +19,7 @@ import { NavLink } from 'react-router-dom';
 import { WeightSlider } from '../components/parts';
 import { Hint, SectionTitle, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
-import {
-  type HundredPart,
-  type PlanScore,
-  type Problem,
-  type RuleAchievement,
-  SCORE_MAX,
-  SCORE_MULTIPLIER,
-  type ScoreScale,
-  type VisitExplain,
-} from '../contracts/problem';
+import type { HundredPart, PlanScore, Problem, RuleAchievement, ScoreScale, VisitExplain } from '../contracts/problem';
 import { HARDABLE, MAX_PRESETS, type Preset, type Rule } from '../contracts/rules';
 import { minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
@@ -53,8 +44,8 @@ export function breakdownText(parts: HundredPart[], n = 2): string {
     .join('・');
 }
 
-/** 点数の説明の文（ADR-0007 追記） */
-export const SCORE_TEXT = `理想と素朴な案のあいだを${SCORE_MULTIPLIER}倍した点。100点を超えることもある`;
+/** 点数の説明の文（ADR-0007 案A） */
+export const SCORE_TEXT = '理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点';
 
 /** 必須を守っていない案（手作業案・手直しで必須の条件に合わない担当にした案）の点の印の説明（ADR-0007） */
 export const HARD_NOTE = '必須を守っていない案の点は比べられません（参考の点です）';
@@ -78,8 +69,7 @@ export function HundredHint({ cost, parts, scale }: { cost: number; parts: Hundr
   const shown = parts.filter((x) => x.points >= 0.05);
   return (
     <Hint label="点数の決め方">
-      {SCORE_TEXT}（高いほど良い）。近い順に機械的に割り当てた素朴な案を0点、理想（届かない下限）を{SCORE_MAX}
-      点として、理想にどれだけ近いかを表します。
+      {SCORE_TEXT}（高いほど良い。1件あたり10分余計なら90点）。
       理想は、どの訪問もいちばん条件の合う担当にし、移動はどの訪問にもいちばん近い場所から来る（出る）とし、待ちを0にした値です。
       {shown.length > 0 && (
         <>
@@ -90,8 +80,7 @@ export function HundredHint({ cost, parts, scale }: { cost: number; parts: Hundr
       )}
       <br />
       <span className="sub">
-        費用 {r0(cost)}（内部の値。移動1分＝1、低いほど良い）・0点の案 {r0(scale.naive)}・{SCORE_MAX}点{' '}
-        {r0(scale.lowerBound)}
+        費用 {r0(cost)}（内部の値。移動1分＝1、低いほど良い）・理想 {r0(scale.lowerBound)}・訪問 {scale.visits}件
       </span>
     </Hint>
   );

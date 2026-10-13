@@ -66,7 +66,7 @@ import {
  * 上部にプリセットごとの案のカード（いまの条件の同じ物差しで採点）を並べ、「この案にする」で今の案にする
  */
 
-/** hundred：いまの最良を点数（1.6倍）にした値（物差しを作れなければ null） */
+/** hundred：いまの最良を点数（100点満点）にした値（物差しを作れなければ null） */
 type Progress = { iteration: number; total: number; bestScore: number; hundred: number | null };
 
 /** 日付の短い表示（2026-10-13 → 10/13） */
@@ -420,7 +420,7 @@ export default function PlanPage() {
     [data.presets, runs, problem, scale],
   );
   const bestCard = presetCards.reduce<number>(
-    // 0点（素朴な案と同じ）のカードには王冠を付けない
+    // 0点のカードには王冠を付けない
     (best, c, i) =>
       c.hundred !== null && c.hundred > 0 && (best < 0 || c.hundred > presetCards[best]!.hundred!) ? i : best,
     -1,
@@ -1196,7 +1196,7 @@ export default function PlanPage() {
   );
 }
 
-/** 今の案の合計点（1.6倍した点）・移動・待ち・必須の違反と、AIが出したままとの差 */
+/** 今の案の合計点（100点満点）・移動・待ち・必須の違反と、AIが出したままとの差 */
 function PlanSummary({
   current,
   generated,

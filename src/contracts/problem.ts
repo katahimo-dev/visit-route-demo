@@ -134,25 +134,22 @@ export type VisitExplain = {
 
 export type PlanDiff = { changedVisits: string[]; travelDelta: number; scoreDelta: number };
 
-/** 点数の倍率（ADR-0007 追記。下限＝100・素朴な案＝0 の点に掛ける。2026-10-13） */
-export const SCORE_MULTIPLIER = 1.6;
-/** 点数の上限（下限の案の点＝100 × SCORE_MULTIPLIER） */
-export const SCORE_MAX = 160;
+/** 点数の上限（理想＝下限の案の点。ADR-0007 案A への変更。2026-10-13） */
+export const SCORE_MAX = 100;
 
 /**
  * 点数の物差し（evaluate.normalize。ADR-0007）。表示だけに使い、solver が最小にする費用は変えない。
- * 点数＝round(160 × (naive − 費用) / (naive − lowerBound))、0 で止め上は 160 まで（100 を超えてよい）。naive ≤ lowerBound なら 160
+ * 点数＝round(100 − (費用 − lowerBound) / visits)、0〜100 に収める。visits が0なら100。
+ * 「1件あたり、理想より余計にかかった費用（分に換算）だけ減点」（1件あたり10分余計なら90点）
  */
 export type ScoreScale = {
   /**
-   * 160点：理論上の下限（どの案の費用もこれ以上）。各訪問を割当費用が最小の担当に＋移動の下限（各訪問に来る・出る移動の最小の和）。
+   * 100点：理論上の下限（どの案の費用もこれ以上）。各訪問を割当費用が最小の担当に＋移動の下限（各訪問に来る・出る移動の最小の和）。
    * 待ち・均等は0。担当の候補がいない訪問は落とした訪問の点
    */
   lowerBound: number;
-  /** 0点：素朴な案（matching の naiveSeqs：担当できる人の少ない順・開始の早い順に、増える移動が最も少ない担当の最も安い位置に挟む）の費用 */
-  naive: number;
-  /** 素朴な案（staffId → 訪問ID。回る順） */
-  naiveRoutes: Record<string, string[]>;
+  /** 訪問の件数（その日の Problem の訪問＝計算に入れた訪問）。超過をこれで割って1件あたりにする */
+  visits: number;
   /** 下限のうち割当費用の合計 */
   lowerAssign: number;
   /** 下限のうち移動（分＝点） */
@@ -161,7 +158,7 @@ export type ScoreScale = {
   lowerDropped: number;
 };
 
-/** 点数の減点の内訳（費用の成分ごと。points は減点の大きさ＝正、合計はおおむね 160−点数） */
+/** 点数の減点の内訳（費用の成分ごと。points は減点の大きさ＝成分の超過 ÷ 訪問の件数、合計はおおむね 100−点数） */
 export type HundredPart = {
   key: 'travel' | 'wait' | 'assign' | 'balance' | 'dropped';
   label: string;

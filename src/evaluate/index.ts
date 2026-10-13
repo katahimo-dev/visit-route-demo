@@ -8,7 +8,6 @@ import {
   type RouteTiming,
   type RuleAchievement,
   SCORE_MAX,
-  SCORE_MULTIPLIER,
   type ScoreScale,
   type StopTiming,
   type VisitExplain,
@@ -235,10 +234,10 @@ export function diff(problem: Problem, from: Record<string, string[]>, to: Recor
   return { changedVisits, travelDelta: sb.travelMinutes - sa.travelMinutes, scoreDelta: sb.total - sa.total };
 }
 
-// ---- 点数（ADR-0007。表示だけ。solver の費用は変えない。下限＝160点・素朴な案＝0点）----
+// ---- 点数（ADR-0007 案A。表示だけ。solver の費用は変えない。100 −（費用 − 下限）÷ 訪問の件数）----
 
 /**
- * 素朴な案（staffId → 訪問ID。回る順）。中身は matching の naiveSeqs：担当できる人の少ない順（同じなら開始の早い順）に、増える移動が最も少ない担当の、
+ * 素朴な案（staffId → 訪問ID。回る順）。solver の初期解の候補（AI案が素朴な案より悪くならない）。点数の基準には使わない。中身は matching の naiveSeqs：担当できる人の少ない順（同じなら開始の早い順）に、増える移動が最も少ない担当の、
  * その順番の中で最も安い位置（strict で入る位置）に挟む。入らない訪問だけ落とす。決定的
  */
 export function naivePlan(problem: Problem): Record<string, string[]> {
@@ -275,13 +274,13 @@ function canPrecede(problem: Problem, u: number, v: number): boolean {
 }
 
 /**
- * 100点満点の物差し。lowerBound（100点）＝どの案の費用もこれ以上になる下限：
+ * 100点満点の物差し。lowerBound（100点＝理想）＝どの案の費用もこれ以上になる下限：
  * - 割当：各訪問を、可否を満たす担当のうち割当費用が最小の人に
  * - 移動：ルートの移動＝各訪問に来る移動の和＋帰り＝各訪問から出る移動の和＋行き。よって
  *   max(Σ 来る移動の最小, Σ 出る移動の最小) 以上。来る元＝担当できる人の自宅か前に置けうる訪問、出る先＝担当できる人の自宅か後に置けうる訪問
  * - 1件ごとに（割当＋移動）の下限が落とした訪問の点を超えるなら、落とした訪問の点にする（落とす案もあるので）
  * - 待ち・負担の均等は0。担当の候補がいない訪問は落とした訪問の点
- * naive（0点）＝素朴な案（naivePlan）を score で採点した費用
+ * visits＝訪問の件数（点数は 1件あたりの超過で減点する）
  */
 export function normalize(problem: Problem): ScoreScale {
   const nV = problem.visits.length;
@@ -317,7 +316,6 @@ export function normalize(problem: Problem): ScoreScale {
     sumOut += Math.min(DROP_POINTS, min + outMin) - min;
   }
   const lowerTravel = Math.max(sumIn, sumOut);
-  const naiveRoutes = naivePlan(problem);
   return {
     lowerBound: totalPoints(problem, {
       travel: lowerTravel,
@@ -326,36 +324,30 @@ export function normalize(problem: Problem): ScoreScale {
       balance: 0,
       dropped: lowerDropped,
     }),
-    naive: score(problem, naiveRoutes).total,
-    naiveRoutes,
+    visits: nV,
     lowerAssign,
     lowerTravel,
     lowerDropped,
   };
 }
 
-/** 下限＝SCORE_MAX（160）点の物差しの1点あたり（100点 × 倍率） */
-const FULL = 100 * SCORE_MULTIPLIER;
-
 /**
- * 費用 → 点数（高いほど良い。費用について単調に減る。0〜SCORE_MAX の整数）。
- * 下限＝100・素朴な案＝0 の点に SCORE_MULTIPLIER（1.6）を掛けた値（ADR-0007 追記）。100 を超えてよく、0 で止める
+ * 費用 → 点数（高いほど良い。費用について単調に減る。0〜SCORE_MAX（100）の整数）。
+ * 100 −（費用 − 下限）÷ 訪問の件数（1件あたり、理想より余計にかかった分だけ減点。ADR-0007 案A）。訪問が0件なら100
  */
 export function toHundred(cost: number, scale: ScoreScale): number {
-  const span = scale.naive - scale.lowerBound;
-  if (!(span > 0)) return SCORE_MAX;
-  const p = Math.round((FULL * (scale.naive - cost)) / span);
+  if (!(scale.visits > 0)) return SCORE_MAX;
+  const p = Math.round(SCORE_MAX - (cost - scale.lowerBound) / scale.visits);
   return p < 0 ? 0 : p > SCORE_MAX ? SCORE_MAX : p;
 }
 
 /**
- * 減点の内訳：費用の成分ごとの下限からの超過 × 160/(naive − lowerBound)（点数と同じ倍率）。大きい順。
- * 合計は 160−点数（丸めと 0 で止めた分を除く。画面では 0 未満の成分を出さないので、表示の合計とは合わないことがある）。naive ≤ lowerBound なら空
+ * 減点の内訳：費用の成分ごとの下限からの超過 ÷ 訪問の件数（点数と同じ物差し）。大きい順。
+ * 合計は 100−点数（丸めと 0〜100 に収めた分を除く。画面では 0 未満の成分を出さないので、表示の合計とは合わないことがある）。訪問が0件なら空
  */
 export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Problem): HundredPart[] {
-  const span = scale.naive - scale.lowerBound;
-  if (!(span > 0)) return [];
-  const k = FULL / span;
+  if (!(scale.visits > 0)) return [];
+  const k = 1 / scale.visits;
   const parts: HundredPart[] = [
     { key: 'travel', label: '移動', points: (sc.travelMinutes - scale.lowerTravel) * k },
     { key: 'wait', label: '待ち', points: sc.waitMinutes * problem.waitPerMinute * k },

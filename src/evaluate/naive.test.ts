@@ -1,4 +1,4 @@
-// 素朴な案（0点の案）と、AI案がそれより悪くならないこと（ADR-0007。レビュー H1・H2）
+// 素朴な案（solver の初期解の候補）と、AI案がそれより悪くならないこと（ADR-0007。レビュー H1・H2）
 import { describe, expect, it } from 'vitest';
 import { compile } from '../matching';
 import { client, DATE, makeData, randomData, rule, staff, visit } from '../matching/fixtures';
@@ -60,7 +60,7 @@ describe('素朴な案', () => {
     expect(routes.s2).toContain('v3');
   });
 
-  it('手作業案（必須の違反あり）の点も 0〜160 に収まり、違反は hardViolations に出る（画面は「参考」）', () => {
+  it('手作業案（必須の違反あり）の点も 0〜100 に収まり、違反は hardViolations に出る（画面は「参考」）', () => {
     const d = randomData(4, 20, 3, [rule('req', 'clientRequirement', 0, true)]);
     const p = compile(d, DATE);
     const s = normalize(p);
@@ -73,7 +73,7 @@ describe('素朴な案', () => {
     expect(sc.hardViolations.length).toBeGreaterThan(0);
     const h = toHundred(sc.total, s);
     expect(h).toBeGreaterThanOrEqual(0);
-    expect(h).toBeLessThanOrEqual(160);
+    expect(h).toBeLessThanOrEqual(100);
   });
 });
 
@@ -81,31 +81,37 @@ describe('AI案は素朴な案より悪くならない（初期解の候補に�
   it('ランダムな問題で、反復が少なくても AI案の費用 ≤ 素朴な案', () => {
     for (const seed of [1, 2, 3, 4, 5, 6]) {
       const q = compile(randomData(5, 25, seed), DATE);
-      const s = normalize(q);
+      const naive = score(q, naivePlan(q)).total;
       for (const iterations of [0, 50, 2000]) {
-        expect(solve(q, { seed, iterations }).score).toBeLessThanOrEqual(s.naive + 1e-6);
+        expect(solve(q, { seed, iterations }).score).toBeLessThanOrEqual(naive + 1e-6);
       }
     }
   });
 
-  it('seed の14日すべて・各プリセットで、AI案の点 ≥ 0（費用 ≤ 素朴な案）。平日は点 > 0', () => {
+  it('seed の14日すべて・各プリセットで、AI案の費用 ≤ 素朴な案、AI案の点 > 0。平日・土日の点の範囲を出す', () => {
     const demo = createDemoData('2026-10-12');
     const dates = [...new Set(demo.visits.map((v) => v.date))].sort();
     expect(dates).toHaveLength(14);
+    /** プリセット名 → 平日・土日の点 */
+    const ranges = new Map<string, { weekday: number[]; weekend: number[] }>();
     for (const date of dates) {
       const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
       for (const preset of INITIAL_PRESETS) {
         const q = compile({ ...demo, rules: applyPreset(demo.rules, preset) }, date);
         const s = normalize(q);
-        // 反復は既定の 1/4（テストの時間のため。素朴な案から始めるので点が 0 未満にならないことは反復によらない）
-        const r = solve(q, { seed: demo.seed, iterations: Math.ceil(defaultIterations(q) / 4) });
-        expect(r.score).toBeLessThanOrEqual(s.naive + 1e-6);
-        expect(score(q, s.naiveRoutes).dropped).toBe(0);
+        const naiveRoutes = naivePlan(q);
+        const r = solve(q, { seed: demo.seed, iterations: defaultIterations(q) });
+        expect(r.score).toBeLessThanOrEqual(score(q, naiveRoutes).total + 1e-6);
+        expect(score(q, naiveRoutes).dropped).toBe(0);
         const h = toHundred(r.score, s);
-        expect(h).toBeGreaterThanOrEqual(0);
-        // 土日（2〜3人・8件・すべて時刻ちょうど）は、素朴な案が最良のことがある（ADR-0007 の追記）
-        if (weekday >= 1 && weekday <= 5) expect(h, `${date} ${preset.name}`).toBeGreaterThan(0);
+        expect(h, `${date} ${preset.name}`).toBeGreaterThan(0);
+        expect(h).toBeLessThanOrEqual(100);
+        const e = ranges.get(preset.name) ?? { weekday: [], weekend: [] };
+        (weekday >= 1 && weekday <= 5 ? e.weekday : e.weekend).push(h);
+        ranges.set(preset.name, e);
       }
     }
-  }, 120000);
+    const span = (xs: number[]) => `${Math.min(...xs)}〜${Math.max(...xs)}点（${xs.length}日）`;
+    for (const [name, e] of ranges) console.info(`[点数] ${name}：平日 ${span(e.weekday)}・土日 ${span(e.weekend)}`);
+  }, 300000);
 });
