@@ -1,0 +1,144 @@
+/* 予定・訪問の入力・スタッフ本人の画面・稼働時間 */
+
+/* 訪問一覧：時間列 */
+.visit-table .time-cell {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 2px;
+  color: var(--sub);
+}
+.visit-table .time-main {
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.visit-table .time-tag {
+  grid-column: 2;
+  font-size: 0.75rem;
+  color: var(--sub);
+}
+.visit-table .row-unassigned {
+  background: #fefaf1;
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.visit-table .actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* 担当ごとの列 */
+.route-col .col-name,
+.item-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.count-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--sub);
+  white-space: nowrap;
+}
+.count-badge.is-warn {
+  background: var(--warn);
+  color: #fff;
+}
+.route-col-none {
+  border-style: dashed;
+  border-top-style: solid;
+  background: #fdf7ea;
+}
+.col-hours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.chip-off {
+  background: #ece5df;
+  color: var(--sub);
+  font-weight: 700;
+}
+
+/* 保存バー */
+.savebar-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-weight: 700;
+  color: var(--ok);
+}
+.savebar-state.is-dirty {
+  color: #a46d0a;
+}
+.savebar-note {
+  font-weight: 400;
+}
+.savebar:has(.is-dirty) {
+  border-top: 3px solid var(--warn);
+}
+
+/* スタッフ本人の画面 */
+.sv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sv-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.stop .sv-name {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.leg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 稼働時間 */
+.avail-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.avail-legend .swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--line);
+  vertical-align: -2px;
+  margin-right: 4px;
+  background: #faf6f2;
+}
+.avail-legend .swatch.is-override {
+  border-color: var(--primary);
+  background: #fde3dd;
+}
+.avail-legend .swatch.is-off {
+  background: #ece5df;
+}
+.avail-btn .avail-off {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+@media (max-width: 600px) {
+  .savebar-note {
+    display: none;
+  }
+}

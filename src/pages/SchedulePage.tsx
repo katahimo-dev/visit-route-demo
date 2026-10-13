@@ -1,8 +1,26 @@
+import {
+  Ban,
+  CalendarDays,
+  Car,
+  Clock,
+  Copy,
+  Gauge,
+  Map as MapIcon,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Save,
+  ShieldAlert,
+  ShieldCheck,
+  TriangleAlert,
+  UserX,
+} from 'lucide-react';
 import { type DragEvent, useEffect, useMemo, useState } from 'react';
 import { useDay } from '../app/day';
 import { ClientName } from '../components/parts';
 import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
+import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { Visit } from '../contracts/documents';
 import type { PlanScore } from '../contracts/problem';
 import { slotsText } from '../domain/availability';
@@ -27,6 +45,7 @@ import { score } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
 import { attempt, hasLocation, newId, r0, staffColor } from '../lib/common';
 import { routesOf, useDayModel } from '../lib/useDayModel';
+import './schedule.css';
 import { VisitForm } from './VisitForm';
 
 /**
@@ -233,28 +252,39 @@ export default function SchedulePage() {
 
   return (
     <div className="stack">
-      <div className="spread" style={{ flexWrap: 'wrap' }}>
-        <h2>予定</h2>
-        <ScoreSummary score={planScore} error={m.problemError ?? scored?.error ?? null} />
-      </div>
-      <div className="card stack">
-        <div className="row" style={{ flexWrap: 'wrap' }}>
-          <button type="button" className="btn" onClick={() => setEditing('new')} disabled={clients.length === 0}>
-            訪問を追加
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={copyFromLastWeek}
-            disabled={visits.length > 0}
-            title={visits.length > 0 ? 'この日に訪問があるときはコピーできません' : ''}
-          >
-            前の同じ曜日からコピー
-          </button>
+      <PageHeader
+        icon={CalendarDays}
+        title="予定"
+        lead="その日の訪問と、担当の割り当て"
+        actions={
+          <>
+            <button type="button" className="btn" onClick={() => setEditing('new')} disabled={clients.length === 0}>
+              <WithIcon icon={Plus}>訪問を追加</WithIcon>
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={copyFromLastWeek}
+              disabled={visits.length > 0}
+              title={visits.length > 0 ? 'この日に訪問があるときはコピーできません' : ''}
+            >
+              <WithIcon icon={Copy}>前の同じ曜日からコピー</WithIcon>
+            </button>
+          </>
+        }
+      />
+      <ScoreSummary
+        score={planScore}
+        error={m.problemError ?? scored?.error ?? null}
+        unassigned={view.unassigned.length}
+        hasVisits={visits.length > 0}
+      />
+      {(clients.length === 0 || error) && (
+        <div className="card stack">
+          {clients.length === 0 && <p className="sub">先に{terms.client}を登録してください。</p>}
+          {error && <p className="error">{error}</p>}
         </div>
-        {clients.length === 0 && <p className="sub">先に{terms.client}を登録してください。</p>}
-        {error && <p className="error">{error}</p>}
-      </div>
+      )}
 
       {editing && (
         <VisitForm
@@ -269,26 +299,37 @@ export default function SchedulePage() {
 
       {visits.length === 0 ? (
         <div className="card">
-          <p className="sub">この日の訪問はまだありません。</p>
+          <Empty icon={CalendarDays}>この日の訪問はまだありません</Empty>
         </div>
       ) : (
         <>
           <div className="card stack">
-            <div className="spread">
-              <h3>
-                訪問の一覧（{visits.length}件
-                {view.unassigned.length > 0 && <span className="warn-text">・未割当 {view.unassigned.length}件</span>}）
-              </h3>
-              {dirty && <span className="chip chip-warn">未保存の変更があります</span>}
-            </div>
-            <p className="sub">
+            <SectionTitle
+              icon={CalendarDays}
+              aside={
+                dirty && (
+                  <span className="chip chip-warn">
+                    <WithIcon icon={TriangleAlert} size={14}>
+                      未保存
+                    </WithIcon>
+                  </span>
+                )
+              }
+            >
+              訪問の一覧（{visits.length}件）
+            </SectionTitle>
+            <Hint>
               訪問ごとに担当の{terms.staff}を選ぶと、下の「{terms.staff}ごとの予定」に入ります。
-            </p>
+            </Hint>
             <div className="table-scroll">
               <table className="visit-table">
                 <thead>
                   <tr>
-                    <th>時間</th>
+                    <th>
+                      <WithIcon icon={Clock} size={14}>
+                        時間
+                      </WithIcon>
+                    </th>
                     <th>{terms.client}</th>
                     <th className="num">所要</th>
                     <th>担当</th>
@@ -305,8 +346,11 @@ export default function SchedulePage() {
                     return (
                       <tr key={id} className={owner ? '' : 'row-unassigned'}>
                         <td className="nowrap">
-                          {windowText(v)}
-                          {v.windowKind === 'window' && <div className="sub">に開始</div>}
+                          <div className="time-cell">
+                            <Clock size={14} aria-hidden="true" />
+                            <span className="time-main">{windowText(v)}</span>
+                            {v.windowKind === 'window' && <span className="time-tag">この間に開始</span>}
+                          </div>
                         </td>
                         <td>
                           {clientCell(v)}
@@ -337,12 +381,10 @@ export default function SchedulePage() {
                           <WarningChips warnings={warnings} hard={hardOf.get(id)} />
                         </td>
                         <td className="nowrap">
-                          <button type="button" className="btn btn-small" onClick={() => setEditing(id)}>
-                            編集
-                          </button>{' '}
-                          <button type="button" className="btn btn-small" onClick={() => cancelVisit(v)}>
-                            取り消す
-                          </button>
+                          <div className="actions">
+                            <IconButton icon={Pencil} label="編集" onClick={() => setEditing(id)} />
+                            <IconButton icon={Ban} label="取り消す" tone="danger" onClick={() => cancelVisit(v)} />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -353,16 +395,21 @@ export default function SchedulePage() {
           </div>
 
           <div className="card stack">
-            <h3>{terms.staff}ごとの予定</h3>
-            <p className="sub">
+            <SectionTitle icon={Car}>{terms.staff}ごとの予定</SectionTitle>
+            <Hint>
               訪問をドラッグして別の{terms.staff}へ移せます。順番は開始時刻の順です（時刻は移動時間を入れない目安）。
               時間が重なる・稼働時間外・必須の条件に合わないと赤い枠で知らせます。
-            </p>
+            </Hint>
             <div className="route-grid">
               <div className={`route-col route-col-none ${dropTo === NONE ? 'is-drop' : ''}`} {...dropProps(NONE)}>
                 <div className="spread">
-                  <strong>未割当</strong>
-                  <span className="sub nowrap">{view.unassigned.length}件</span>
+                  <strong className="col-name">
+                    <UserX size={16} aria-hidden="true" />
+                    未割当
+                  </strong>
+                  <span className={`count-badge ${view.unassigned.length > 0 ? 'is-warn' : ''}`}>
+                    {view.unassigned.length}件
+                  </span>
                 </div>
                 {view.unassigned.length === 0 && <span className="sub">ここへドラッグすると未割当に戻せます</span>}
                 {view.unassigned.map((id) => {
@@ -370,7 +417,8 @@ export default function SchedulePage() {
                   if (!v) return null;
                   return (
                     <div key={id} className={`route-item ${dragging === id ? 'is-dragging' : ''}`} {...dragProps(id)}>
-                      <div className="sub nowrap">
+                      <div className="sub nowrap item-time">
+                        <Clock size={13} aria-hidden="true" />
                         {windowText(v)}（{v.durationMinutes}分）
                       </div>
                       {clientCell(v)}
@@ -397,12 +445,19 @@ export default function SchedulePage() {
                   >
                     <div className="spread">
                       <strong className="ellipsis">{s.name}</strong>
-                      <span className="sub nowrap">{ids.length}件</span>
+                      <span className="count-badge">{ids.length}件</span>
                     </div>
-                    <span className={`sub ${worksToday(s.id) ? '' : 'warn-text'}`}>
-                      {s.active ? slotsText(avail?.slots ?? []) : '休止中'}
-                      {avail?.overridden && '（この日だけ変更）'}
-                    </span>
+                    <div className="col-hours">
+                      {worksToday(s.id) ? (
+                        <span className="sub item-time">
+                          <Clock size={13} aria-hidden="true" />
+                          {slotsText(avail?.slots ?? [])}
+                        </span>
+                      ) : (
+                        <span className="chip chip-off">{s.active ? '休み' : '休止中'}</span>
+                      )}
+                      {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
+                    </div>
                     {(preview.length > 0 || notAllowed) && (
                       <div className="drop-warning">
                         ここに移すと：
@@ -421,7 +476,8 @@ export default function SchedulePage() {
                           className={`route-item ${red ? 'is-red' : ''} ${dragging === id ? 'is-dragging' : ''}`}
                           {...dragProps(id)}
                         >
-                          <div className={`sub nowrap ${isRed(warnings) ? 'red-text' : ''}`}>
+                          <div className={`sub nowrap item-time ${isRed(warnings) ? 'red-text' : ''}`}>
+                            <Clock size={13} aria-hidden="true" />
                             {t ? `${hhmm(t.start)}〜${hhmm(t.end)}` : v.earliestStart}
                           </div>
                           {clientCell(v)}
@@ -437,7 +493,8 @@ export default function SchedulePage() {
 
           {lines.length > 0 && (
             <div className="card stack">
-              <h3>手作業案の地図（点線：{terms.staff}ごとのルート、「家」は自宅）</h3>
+              <SectionTitle icon={MapIcon}>手作業案の地図</SectionTitle>
+              <Hint>点線は{terms.staff}ごとのルート、「家」は自宅です。</Hint>
               <RouteMap points={points} lines={lines} height={460} />
               <div className="row sub" style={{ flexWrap: 'wrap' }}>
                 {columns
@@ -452,14 +509,21 @@ export default function SchedulePage() {
           )}
 
           <div className="savebar">
-            <span className="grow sub">保存すると、各訪問の担当もこのとおりに変わります。</span>
+            <span className={`grow savebar-state ${dirty ? 'is-dirty' : ''}`}>
+              {dirty ? (
+                <WithIcon icon={TriangleAlert}>未保存の変更があります</WithIcon>
+              ) : (
+                <WithIcon icon={ShieldCheck}>保存済み</WithIcon>
+              )}
+              <span className="sub savebar-note">保存すると、各訪問の担当もこのとおりに変わります</span>
+            </span>
             {dirty && (
               <button type="button" className="btn" onClick={() => setDraft(null)}>
-                変更を戻す
+                <WithIcon icon={RotateCcw}>変更を戻す</WithIcon>
               </button>
             )}
             <button type="button" className="btn btn-primary" disabled={!dirty} onClick={savePlan}>
-              手作業案を保存
+              <WithIcon icon={Save}>手作業案を保存</WithIcon>
             </button>
           </div>
         </>
@@ -468,16 +532,34 @@ export default function SchedulePage() {
   );
 }
 
-/** ヘッダの採点（合計点・移動・必須の違反の数） */
-function ScoreSummary({ score: s, error }: { score: PlanScore | null; error: string | null }) {
-  if (!s) return <span className="sub">{error ? `採点できません（${error}）` : ''}</span>;
+/** 採点（合計点・移動・必須の違反・未割当）をタイルで並べる */
+function ScoreSummary({
+  score: s,
+  error,
+  unassigned,
+  hasVisits,
+}: {
+  score: PlanScore | null;
+  error: string | null;
+  unassigned: number;
+  hasVisits: boolean;
+}) {
+  if (!s) return error ? <p className="sub">採点できません（{error}）</p> : null;
+  const hard = s.hardViolations.length;
   return (
-    <div className="row" style={{ flexWrap: 'wrap' }}>
-      <span className="chip">手作業案の合計 {r0(s.total)}点</span>
-      <span className="chip">移動 {r0(s.travelMinutes)}分</span>
-      <span className={`chip ${s.hardViolations.length > 0 ? 'chip-red' : 'chip-ok'}`}>
-        必須の違反 {s.hardViolations.length}件
-      </span>
+    <div className="stat-row">
+      <Stat icon={Gauge} label="手作業案の合計" value={r0(s.total)} unit="点" tone="primary" />
+      <Stat icon={Car} label="移動" value={r0(s.travelMinutes)} unit="分" />
+      <Stat
+        icon={hard > 0 ? ShieldAlert : ShieldCheck}
+        label="必須の違反"
+        value={hard}
+        unit="件"
+        tone={hard > 0 ? 'danger' : 'ok'}
+      />
+      {hasVisits && (
+        <Stat icon={UserX} label="未割当" value={unassigned} unit="件" tone={unassigned > 0 ? 'warn' : 'ok'} />
+      )}
     </div>
   );
 }
@@ -492,7 +574,8 @@ function WarningChips({ warnings, hard }: { warnings: Warning[]; hard?: string[]
       ))}
       {hard?.map((h) => (
         <span key={h} className="chip chip-red" title="必須の条件の違反">
-          ✕ {h}
+          <TriangleAlert size={12} aria-hidden="true" />
+          {h}
         </span>
       ))}
     </div>

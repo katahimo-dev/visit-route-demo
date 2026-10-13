@@ -1,13 +1,16 @@
+import { ArrowLeft, Car, Clock, Info, MapPin, Smartphone, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { type MapPoint, RouteMap } from '../components/RouteMap';
+import { Empty, WithIcon } from '../components/ui';
 import { timesOf } from '../domain/scheduleModel';
 import { minutesToHhmm } from '../domain/time';
 import { colorOf, initialOf } from '../lib/colors';
 import { AI_LINE, attempt, dateText, hasLocation, own, r0, TRAVEL_MODE_LABELS } from '../lib/common';
 import { useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
+import './schedule.css';
 
 /**
  * スタッフのスマホ画面風の「今日の順番」（D16。表示だけで記録はしない）。
@@ -54,9 +57,14 @@ export default function StaffViewPage() {
     <div className="phone-wrap">
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
         <Link to="/staff" className="btn btn-small">
-          ← 管理者の画面に戻る
+          <WithIcon icon={ArrowLeft} size={14}>
+            管理者の画面に戻る
+          </WithIcon>
         </Link>
-        <span className="sub">{data.org.terms.staff}のスマホ画面（見本）</span>
+        <span className="sub with-icon">
+          <Smartphone size={14} aria-hidden="true" />
+          {data.org.terms.staff}のスマホ画面（見本）
+        </span>
       </div>
       <div className="phone staff-shell stack">
         {!me ? (
@@ -66,31 +74,44 @@ export default function StaffViewPage() {
             <div className="spread">
               <h2>今日の訪問順</h2>
               <span className="chip">
+                <Car size={14} aria-hidden="true" />
                 {TRAVEL_MODE_LABELS[me.travelMode]}
                 {timing.size > 0 && [...timing.values()].some((t) => t.travel !== null) && ` 移動 約${r0(total)}分`}
               </span>
             </div>
-            <span className="sub">
-              {me.name}さん・{dateText(date)}
-              {source === 'ai' && '（AI案。まだ決まっていません）'}
-            </span>
+            <div className="sv-meta sub">
+              <span>
+                {me.name}さん・{dateText(date)}
+              </span>
+              {source === 'ai' && (
+                <span className="chip chip-warn">
+                  <Sparkles size={13} aria-hidden="true" />
+                  AI案（まだ決まっていません）
+                </span>
+              )}
+            </div>
             {points.length > 0 && <RouteMap points={points} lines={[line]} height={240} />}
             <div className="card">
-              {ids.length === 0 && <p>今日の訪問はありません</p>}
+              {ids.length === 0 && <Empty icon={MapPin}>今日の訪問はありません</Empty>}
               {ids.map((id) => {
                 const v = visitById.get(id);
                 const c = v ? clientById.get(v.clientId) : undefined;
                 const t = timing.get(id);
                 return (
                   <div key={id}>
-                    {t?.travel != null && <div className="leg">約{r0(t.travel)}分</div>}
+                    {t?.travel != null && (
+                      <div className="leg">
+                        <Car size={14} aria-hidden="true" />約{r0(t.travel)}分
+                      </div>
+                    )}
                     <div className="stop">
                       <span className="dot" style={{ background: colorOf(c?.color ?? 0) }}>
                         {initialOf(c?.displayName ?? '?')}
                       </span>
                       <div className="grow">
-                        <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{c?.displayName ?? '（不明）'}さん</div>
-                        <div className="sub">
+                        <div className="sv-name">{c?.displayName ?? '（不明）'}さん</div>
+                        <div className="sub sv-time">
+                          <Clock size={14} aria-hidden="true" />
                           {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : v?.earliestStart}
                         </div>
                         {v?.note && <div className="sub">{v.note}</div>}
@@ -100,7 +121,10 @@ export default function StaffViewPage() {
                 );
               })}
             </div>
-            <p className="sub">移動時間は直線距離からの目安です。記録（はじめる・おわる）はデモにはありません。</p>
+            <p className="sub with-icon">
+              <Info size={14} aria-hidden="true" />
+              移動時間は直線距離からの目安です。記録はデモにはありません。
+            </p>
           </>
         )}
       </div>

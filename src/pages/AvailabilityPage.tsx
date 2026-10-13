@@ -1,17 +1,20 @@
+import { Clock, Coffee, Pencil, RotateCcw, Save, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useDay } from '../app/day';
 import { SlotEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
+import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { Availability } from '../contracts/documents';
 import { availabilityOf, type Slot, slotsError, slotsText, toHalfHours } from '../domain/availability';
 import { weekday } from '../domain/time';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
 import { useDemoData } from '../store';
+import './schedule.css';
 
 /** セルの短い表示：「9-18」「9:30-12」。休みは「休」 */
 const short = (slots: Slot[]) =>
   slots.length === 0
-    ? ['休']
+    ? ['']
     : slots.map(
         (s) => `${s.start.replace(/^0/, '').replace(/:00$/, '')}-${s.end.replace(/^0/, '').replace(/:00$/, '')}`,
       );
@@ -63,12 +66,27 @@ export default function AvailabilityPage() {
 
   return (
     <div className="stack">
-      <h2>稼働時間</h2>
+      <PageHeader icon={Clock} title="稼働時間" lead={`${terms.staff}ごとの働ける時間`} />
       <div className="card stack">
-        <p className="sub">
+        <div className="avail-legend">
+          <span>
+            <span className="swatch" aria-hidden="true" />
+            基本の時間
+          </span>
+          <span>
+            <span className="swatch is-override" aria-hidden="true" />
+            その日だけ変更
+          </span>
+          <span>
+            <span className="swatch is-off" aria-hidden="true" />
+            休み
+          </span>
+          <span>セルを押すと下で変えられます</span>
+        </div>
+        <Hint>
           薄い字は基本の曜日と時間（{terms.staff}
           の設定）。色の付いた日は、その日だけ変えた時間です。セルを押すと下で変更できます。
-        </p>
+        </Hint>
         <div className="table-scroll">
           <table className="avail-table">
             <thead>
@@ -104,9 +122,14 @@ export default function AvailabilityPage() {
                           title={`${s.name} ${d}：${slotsText(slots)}`}
                           onClick={() => pick(s.id, d)}
                         >
-                          {short(slots).map((t) => (
-                            <span key={t}>{t}</span>
-                          ))}
+                          {slots.length === 0 ? (
+                            <span className="avail-off">
+                              <Coffee size={13} aria-hidden="true" />休
+                            </span>
+                          ) : (
+                            short(slots).map((t) => <span key={t}>{t}</span>)
+                          )}
+                          {o && <Pencil className="avail-mark" size={9} aria-hidden="true" />}
                         </button>
                       </td>
                     );
@@ -122,11 +145,13 @@ export default function AvailabilityPage() {
       {picked && pickedStaff && (
         <div className="card stack" style={{ maxWidth: 560 }}>
           <div className="spread">
-            <h3>
+            <SectionTitle icon={Clock}>
               {pickedStaff.name}・{picked.date.slice(5).replace('-', '/')}（{WEEKDAY_LABELS[weekday(picked.date)]}）
-            </h3>
+            </SectionTitle>
             <button type="button" className="btn btn-small" onClick={() => setPicked(null)}>
-              閉じる
+              <WithIcon icon={X} size={14}>
+                閉じる
+              </WithIcon>
             </button>
           </div>
           <p className="sub">
@@ -141,14 +166,14 @@ export default function AvailabilityPage() {
               disabled={!!slotsError(draft)}
               onClick={() => save(draft)}
             >
-              この時間で保存
+              <WithIcon icon={Save}>この時間で保存</WithIcon>
             </button>
             <button type="button" className="btn" onClick={() => save([])}>
-              休みにする
+              <WithIcon icon={Coffee}>休みにする</WithIcon>
             </button>
             {pickedOverride && (
               <button type="button" className="btn" onClick={reset}>
-                基本の時間に戻す
+                <WithIcon icon={RotateCcw}>基本の時間に戻す</WithIcon>
               </button>
             )}
           </div>
