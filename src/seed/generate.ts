@@ -40,7 +40,7 @@ function satisfies(c: Condition, traits: Traits): boolean {
 
 /**
  * その日の訪問（同じ日なら毎回同じ）。平日は訪問先から日ごとに3か所前後が休み、土日は印のある訪問先。
- * 時間に幅のある訪問は日ごとに 0〜60分ずらす
+ * 時間に幅のある訪問は日ごとに 0〜60分ずらす（いまのデモデータは全員が時刻ちょうどなので、ずらさない）
  */
 function visitsOf(date: string, n: number, clientIds: Set<string>): Visit[] {
   return CLIENT_SEEDS.map((c, i) => ({ c, i }))
