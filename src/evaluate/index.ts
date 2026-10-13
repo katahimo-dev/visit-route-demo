@@ -1,5 +1,16 @@
 // 入口（evaluate：手作業案・AI案を同じ Problem で採点・説明・差分）
-import type { PlanDiff, PlanScore, Problem, Reason, RouteTiming, StopTiming, VisitExplain } from '../contracts/problem';
+import type {
+  HundredPart,
+  PlanDiff,
+  PlanScore,
+  Problem,
+  Reason,
+  RouteTiming,
+  ScoreScale,
+  StopTiming,
+  VisitExplain,
+} from '../contracts/problem';
+import { DROP_POINTS } from '../contracts/rules';
 import { balanceOff, balancePoints, scheduleRoute, totalPoints } from '../matching';
 
 const INF = Number.POSITIVE_INFINITY;
@@ -219,4 +230,150 @@ export function diff(problem: Problem, from: Record<string, string[]>, to: Recor
   const sa = scorePlaced(problem, a);
   const sb = scorePlaced(problem, b);
   return { changedVisits, travelDelta: sb.travelMinutes - sa.travelMinutes, scoreDelta: sb.total - sa.total };
+}
+
+// ---- 100点満点（ADR-0007。表示だけ。solver の費用は変えない）----
+
+/**
+ * 素朴な案：訪問を開始（earliest）の早い順に、可否・件数の上限・時間の約束・稼働時間帯を満たす担当のうち
+ * 直前の場所（最後の訪問先、まだ無ければ自宅）からの移動が最短の人の最後に足す。同じなら staff の順で先の人。
+ * 入れられない訪問は入らない。乱数・時刻は使わない（決定的）
+ */
+export function naivePlan(problem: Problem): Record<string, string[]> {
+  const order = problem.visits.map((_, i) => i);
+  order.sort((a, b) => problem.visits[a]!.earliest - problem.visits[b]!.earliest || a - b);
+  const seqs: number[][] = problem.staff.map(() => []);
+  const cap = problem.balance?.cap ?? null;
+  for (const v of order) {
+    const to = problem.visits[v]!.point;
+    let best = -1;
+    let bestTravel = INF;
+    for (let s = 0; s < problem.staff.length; s++) {
+      if (!problem.allowed[v]![s]) continue;
+      const seq = seqs[s]!;
+      if (cap && seq.length + 1 > cap[s]!) continue;
+      const last = seq.length > 0 ? problem.visits[seq[seq.length - 1]!]!.point : problem.staff[s]!.point;
+      const t = problem.travel[last]![to]!;
+      if (t >= bestTravel) continue;
+      if (scheduleRoute(problem, s, [...seq, v], 'strict') === null) continue;
+      best = s;
+      bestTravel = t;
+    }
+    if (best >= 0) seqs[best]!.push(v);
+  }
+  const routes: Record<string, string[]> = {};
+  problem.staff.forEach((st, s) => {
+    routes[st.id] = seqs[s]!.map((v) => problem.visits[v]!.id);
+  });
+  return routes;
+}
+
+/** 浮動小数の誤差の許し（matching/timing と同じ） */
+const EPS = 1e-9;
+
+/** u と v の両方を担当できる人がいるか */
+function shareStaff(problem: Problem, u: number, v: number): boolean {
+  const au = problem.allowed[u]!;
+  const av = problem.allowed[v]!;
+  for (let s = 0; s < problem.staff.length; s++) if (au[s] && av[s]) return true;
+  return false;
+}
+
+/**
+ * 同じ人のルートで u のすぐあとに v を置けうるか（緩めた判定：u を最も早く始めて終え、移動して v の latest に間に合う。
+ * 稼働時間帯は見ない）。下限に使うので、本当に置ける組を落とさないことだけが要る
+ */
+function canPrecede(problem: Problem, u: number, v: number): boolean {
+  if (u === v) return false;
+  const pu = problem.visits[u]!;
+  const pv = problem.visits[v]!;
+  return (
+    pu.earliest + pu.duration + problem.travel[pu.point]![pv.point]! <= pv.latest + EPS && shareStaff(problem, u, v)
+  );
+}
+
+/**
+ * 100点満点の物差し。lowerBound（100点）＝どの案の費用もこれ以上になる下限：
+ * - 割当：各訪問を、可否を満たす担当のうち割当費用が最小の人に
+ * - 移動：ルートの移動＝各訪問に来る移動の和＋帰り＝各訪問から出る移動の和＋行き。よって
+ *   max(Σ 来る移動の最小, Σ 出る移動の最小) 以上。来る元＝担当できる人の自宅か前に置けうる訪問、出る先＝担当できる人の自宅か後に置けうる訪問
+ * - 1件ごとに（割当＋移動）の下限が落とした訪問の点を超えるなら、落とした訪問の点にする（落とす案もあるので）
+ * - 待ち・負担の均等は0。担当の候補がいない訪問は落とした訪問の点
+ * naive（0点）＝素朴な案（naivePlan）を score で採点した費用
+ */
+export function normalize(problem: Problem): ScoreScale {
+  const nV = problem.visits.length;
+  let lowerAssign = 0;
+  let lowerDropped = 0;
+  let sumIn = 0;
+  let sumOut = 0;
+  for (let v = 0; v < nV; v++) {
+    const pv = problem.visits[v]!;
+    let min = INF;
+    let inMin = INF;
+    let outMin = INF;
+    for (let s = 0; s < problem.staff.length; s++) {
+      if (!problem.allowed[v]![s]) continue;
+      if (problem.assignCost[v]![s]! < min) min = problem.assignCost[v]![s]!;
+      const home = problem.staff[s]!.point;
+      inMin = Math.min(inMin, problem.travel[home]![pv.point]!);
+      outMin = Math.min(outMin, problem.travel[pv.point]![home]!);
+    }
+    if (min === INF) {
+      lowerDropped++;
+      continue;
+    }
+    for (let u = 0; u < nV; u++) {
+      const pu = problem.visits[u]!;
+      if (problem.travel[pu.point]![pv.point]! < inMin && canPrecede(problem, u, v))
+        inMin = problem.travel[pu.point]![pv.point]!;
+      if (problem.travel[pv.point]![pu.point]! < outMin && canPrecede(problem, v, u))
+        outMin = problem.travel[pv.point]![pu.point]!;
+    }
+    lowerAssign += min;
+    sumIn += Math.min(DROP_POINTS, min + inMin) - min;
+    sumOut += Math.min(DROP_POINTS, min + outMin) - min;
+  }
+  const lowerTravel = Math.max(sumIn, sumOut);
+  const naiveRoutes = naivePlan(problem);
+  return {
+    lowerBound: totalPoints(problem, {
+      travel: lowerTravel,
+      wait: 0,
+      assign: lowerAssign,
+      balance: 0,
+      dropped: lowerDropped,
+    }),
+    naive: score(problem, naiveRoutes).total,
+    naiveRoutes,
+    lowerAssign,
+    lowerTravel,
+    lowerDropped,
+  };
+}
+
+/** 費用 → 100点満点（高いほど良い。費用について単調に減る。0〜100 の整数） */
+export function toHundred(cost: number, scale: ScoreScale): number {
+  const span = scale.naive - scale.lowerBound;
+  if (!(span > 0)) return 100;
+  const p = Math.round((100 * (scale.naive - cost)) / span);
+  return p < 0 ? 0 : p > 100 ? 100 : p;
+}
+
+/**
+ * 減点の内訳：費用の成分ごとの下限からの超過 × 100/(naive − lowerBound)。大きい順。
+ * 合計は 100−点数（丸めと 0〜100 に収める分を除く）。naive ≤ lowerBound なら空
+ */
+export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Problem): HundredPart[] {
+  const span = scale.naive - scale.lowerBound;
+  if (!(span > 0)) return [];
+  const k = 100 / span;
+  const parts: HundredPart[] = [
+    { key: 'travel', label: '移動', points: (sc.travelMinutes - scale.lowerTravel) * k },
+    { key: 'wait', label: '待ち', points: sc.waitMinutes * problem.waitPerMinute * k },
+    { key: 'assign', label: '担当の条件', points: (sc.assignPoints - scale.lowerAssign) * k },
+    { key: 'balance', label: '負担の均等', points: sc.balancePoints * k },
+    { key: 'dropped', label: '入らない訪問', points: (sc.dropped - scale.lowerDropped) * DROP_POINTS * k },
+  ];
+  return parts.sort((a, b) => b.points - a.points);
 }

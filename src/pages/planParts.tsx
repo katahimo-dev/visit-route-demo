@@ -15,10 +15,10 @@ import {
 } from 'lucide-react';
 import { WeightSlider } from '../components/parts';
 import { Hint, SectionTitle, WithIcon } from '../components/ui';
-import type { PlanScore, Problem, VisitExplain } from '../contracts/problem';
+import type { HundredPart, PlanScore, Problem, ScoreScale, VisitExplain } from '../contracts/problem';
 import { HARDABLE } from '../contracts/rules';
 import { minutesToHhmm } from '../domain/time';
-import { BALANCE_RULE_KEY, explain } from '../evaluate';
+import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, weightLocked } from '../lib/common';
 import { PRESETS, type Preset, presetOf } from '../seed';
 import { useDemoData } from '../store';
@@ -28,6 +28,37 @@ export function explainMap(problem: Problem | null, routes: Record<string, strin
   if (!problem) return new Map();
   const r = attempt(() => explain(problem, routes));
   return new Map((r.value ?? []).map((e) => [e.visitId, e]));
+}
+
+/** 減点の内訳の短い文（大きい順に n 個。0.5点未満は省く）。例「移動 −32・担当の条件 −15」 */
+export function breakdownText(parts: HundredPart[], n = 2): string {
+  return parts
+    .filter((x) => x.points >= 0.5)
+    .slice(0, n)
+    .map((x) => `${x.label} −${r0(x.points)}`)
+    .join('・');
+}
+
+/** 100点満点の決め方と、減点の内訳・内部の費用（説明の中） */
+export function HundredHint({ cost, parts, scale }: { cost: number; parts: HundredPart[]; scale: ScoreScale }) {
+  const shown = parts.filter((x) => Math.abs(x.points) >= 0.05);
+  return (
+    <Hint label="100点満点の決め方">
+      理想（届かない下限）を100点、近い順に機械的に割り当てた案を0点として、理想にどれだけ近いかを表します（高いほど良い）。
+      理想は、どの訪問もいちばん条件の合う担当にし、移動はどの訪問にもいちばん近い場所から来る（出る）とし、待ちを0にした値です。
+      {shown.length > 0 && (
+        <>
+          <br />
+          減点の内訳：
+          {shown.map((x) => `${x.label} ${x.points >= 0 ? '−' : '+'}${r1(Math.abs(x.points))}点`).join('・')}
+        </>
+      )}
+      <br />
+      <span className="sub">
+        費用 {r0(cost)}（内部の値。移動1分＝1、低いほど良い）・0点の案 {r0(scale.naive)}・100点 {r0(scale.lowerBound)}
+      </span>
+    </Hint>
+  );
 }
 
 /** 訪問カードを押したときの理由（例「相性◎ −30」「移動12分 +12」） */
@@ -58,13 +89,14 @@ export function ReasonBox({ explain: e }: { explain: VisitExplain | undefined })
   );
 }
 
-/** 合計点・移動・待ち・距離・条件ごとの達成/違反の比較表 */
+/** 合計点（100点満点）・移動・待ち・距離・条件ごとの達成/違反の比較表 */
 export function CompareTable({
   a: manual,
   b: ai,
   labels,
   rules,
   error,
+  scale,
 }: {
   a: PlanScore | null;
   b: PlanScore | null;
@@ -72,11 +104,22 @@ export function CompareTable({
   labels: [string, string];
   rules: { id: string; label: string }[];
   error?: string | null;
+  /** 100点満点の物差し（無ければ合計点の行を出さない） */
+  scale: ScoreScale | null;
 }) {
   if (!manual || !ai) return <p className="sub">採点できません{error ? `（${error}）` : ''}</p>;
-  const row = (icon: LucideIcon, label: string, a: number, b: number, unit: string, digits = 0) => {
+  /** higherIsBetter：差の色を逆にする（100点満点の合計） */
+  const row = (
+    icon: LucideIcon,
+    label: string,
+    a: number,
+    b: number,
+    unit: string,
+    digits = 0,
+    higherIsBetter = false,
+  ) => {
     const f = (n: number) => (digits ? r1(n) : r0(n));
-    const d = b - a;
+    const d = higherIsBetter ? a - b : b - a;
     return (
       <tr key={label}>
         <th>
@@ -94,7 +137,7 @@ export function CompareTable({
             {unit}
           </strong>
         </td>
-        <td className={`num ${d < 0 ? 'ok-text' : d > 0 ? 'warn-text' : 'sub'}`}>{deltaText(d, unit)}</td>
+        <td className={`num ${d < 0 ? 'ok-text' : d > 0 ? 'warn-text' : 'sub'}`}>{deltaText(b - a, unit)}</td>
       </tr>
     );
   };
@@ -125,7 +168,16 @@ export function CompareTable({
           </tr>
         </thead>
         <tbody>
-          {row(Gauge, '合計点（低いほど良い）', manual.total, ai.total, '点')}
+          {scale &&
+            row(
+              Gauge,
+              '合計点（100点満点）',
+              toHundred(manual.total, scale),
+              toHundred(ai.total, scale),
+              '点',
+              0,
+              true,
+            )}
           {row(Car, '移動時間', manual.travelMinutes, ai.travelMinutes, '分')}
           {row(Hourglass, '待ち時間', manual.waitMinutes, ai.waitMinutes, '分')}
           {row(MapPin, '移動距離', manual.meters / 1000, ai.meters / 1000, 'km', 1)}

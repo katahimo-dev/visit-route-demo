@@ -22,7 +22,7 @@ import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { Visit } from '../contracts/documents';
-import type { PlanScore } from '../contracts/problem';
+import type { PlanScore, Problem, ScoreScale } from '../contracts/problem';
 import { slotsText } from '../domain/availability';
 import {
   assign,
@@ -41,10 +41,11 @@ import {
   windowText,
 } from '../domain/scheduleModel';
 import { addDays } from '../domain/time';
-import { score } from '../evaluate';
+import { hundredBreakdown, score, toHundred } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
 import { attempt, hasLocation, newId, r0, staffColor } from '../lib/common';
 import { routesOf, useDayModel } from '../lib/useDayModel';
+import { breakdownText, HundredHint } from './planParts';
 import './schedule.css';
 import { VisitForm } from './VisitForm';
 
@@ -278,6 +279,8 @@ export default function SchedulePage() {
         error={m.problemError ?? scored?.error ?? null}
         unassigned={view.unassigned.length}
         hasVisits={visits.length > 0}
+        problem={m.problem}
+        scale={m.scale}
       />
       {(clients.length === 0 || error) && (
         <div className="card stack">
@@ -547,11 +550,15 @@ function ScoreSummary({
   error,
   unassigned,
   hasVisits,
+  problem,
+  scale,
 }: {
   score: PlanScore | null;
   error: string | null;
   unassigned: number;
   hasVisits: boolean;
+  problem: Problem | null;
+  scale: ScoreScale | null;
 }) {
   if (!s)
     return (
@@ -565,20 +572,31 @@ function ScoreSummary({
       </div>
     );
   const hard = s.hardViolations.length;
+  const parts = scale && problem ? hundredBreakdown(s, scale, problem) : [];
   return (
-    <div className="stat-row">
-      <Stat icon={Gauge} label="手作業案の合計" value={r0(s.total)} unit="点" tone="primary" />
-      <Stat icon={Car} label="移動" value={r0(s.travelMinutes)} unit="分" />
-      <Stat
-        icon={hard > 0 ? ShieldAlert : ShieldCheck}
-        label="必須の違反"
-        value={hard}
-        unit="件"
-        tone={hard > 0 ? 'danger' : 'ok'}
-      />
-      {hasVisits && (
-        <Stat icon={UserX} label="未割当" value={unassigned} unit="件" tone={unassigned > 0 ? 'warn' : 'ok'} />
-      )}
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="stat-row">
+        <Stat
+          icon={Gauge}
+          label="手作業案の合計"
+          value={scale ? toHundred(s.total, scale) : '—'}
+          unit="/100点"
+          tone="primary"
+          note={breakdownText(parts) || undefined}
+        />
+        <Stat icon={Car} label="移動" value={r0(s.travelMinutes)} unit="分" />
+        <Stat
+          icon={hard > 0 ? ShieldAlert : ShieldCheck}
+          label="必須の違反"
+          value={hard}
+          unit="件"
+          tone={hard > 0 ? 'danger' : 'ok'}
+        />
+        {hasVisits && (
+          <Stat icon={UserX} label="未割当" value={unassigned} unit="件" tone={unassigned > 0 ? 'warn' : 'ok'} />
+        )}
+      </div>
+      {scale && <HundredHint cost={s.total} parts={parts} scale={scale} />}
     </div>
   );
 }

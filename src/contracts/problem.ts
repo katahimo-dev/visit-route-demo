@@ -131,3 +131,32 @@ export type VisitExplain = {
 };
 
 export type PlanDiff = { changedVisits: string[]; travelDelta: number; scoreDelta: number };
+
+/**
+ * 100点満点の物差し（evaluate.normalize。ADR-0007）。表示だけに使い、solver が最小にする費用は変えない。
+ * 点数＝round(100 × (naive − 費用) / (naive − lowerBound))、0〜100 に収める。naive ≤ lowerBound なら 100
+ */
+export type ScoreScale = {
+  /**
+   * 100点：理論上の下限（どの案の費用もこれ以上）。各訪問を割当費用が最小の担当に＋移動の下限（各訪問に来る・出る移動の最小の和）。
+   * 待ち・均等は0。担当の候補がいない訪問は落とした訪問の点
+   */
+  lowerBound: number;
+  /** 0点：素朴な案（開始の早い順に、入れられる担当のうち直前の場所からの移動が最短の人の最後に足す）の費用 */
+  naive: number;
+  /** 素朴な案（staffId → 訪問ID。回る順） */
+  naiveRoutes: Record<string, string[]>;
+  /** 下限のうち割当費用の合計 */
+  lowerAssign: number;
+  /** 下限のうち移動（分＝点） */
+  lowerTravel: number;
+  /** 下限のうち落とした訪問の件数（どの担当も可にならない訪問） */
+  lowerDropped: number;
+};
+
+/** 100点満点の減点の内訳（費用の成分ごと。points は減点の大きさ＝正、合計はおおむね 100−点数） */
+export type HundredPart = {
+  key: 'travel' | 'wait' | 'assign' | 'balance' | 'dropped';
+  label: string;
+  points: number;
+};

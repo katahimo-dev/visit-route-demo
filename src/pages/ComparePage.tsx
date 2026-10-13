@@ -28,7 +28,7 @@ import type { AiPlan, AiRun } from '../contracts/data';
 import type { Reason, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
 import { minutesToHhmm } from '../domain/time';
-import { diff, score } from '../evaluate';
+import { diff, score, toHundred } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
 import { AI_LINE, attempt, deltaText, hasLocation, MANUAL_LINE, own, pointsText, r0 } from '../lib/common';
 import { planOfRun } from '../lib/runs';
@@ -58,7 +58,7 @@ function weightText(r: Rule | undefined): string {
 export default function ComparePage() {
   const { date } = useDay();
   const m = useDayModel(date);
-  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem } = m;
+  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem, scale } = m;
   const terms = data.org.terms;
   const toast = useToast();
   const navigate = useNavigate();
@@ -339,6 +339,15 @@ export default function ComparePage() {
 
   const as = aScore?.value ?? null;
   const bs = bScore?.value ?? null;
+  /** 100点満点の A・B と差（B−A。高いほど良い） */
+  const hundredDelta =
+    as && bs && scale
+      ? (() => {
+          const a = toHundred(as.total, scale);
+          const b = toHundred(bs.total, scale);
+          return { a, b, d: b - a };
+        })()
+      : null;
 
   return (
     <div className="stack" style={{ minWidth: 0 }}>
@@ -359,7 +368,7 @@ export default function ComparePage() {
           icon={History}
           aside={
             <Hint>
-              AI案の画面で作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した点です（低いほど良い）。
+              AI案の画面で作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した100点満点の点です（高いほど良い）。理想（届かない下限）を100点、近い順に機械的に割り当てた案を0点として、理想にどれだけ近いかを表します。
             </Hint>
           }
         >
@@ -379,7 +388,7 @@ export default function ComparePage() {
                   <th className="ab-col">B</th>
                   <th>案</th>
                   <th>作った時刻</th>
-                  <th className="num">合計点</th>
+                  <th className="num">合計点（100点満点）</th>
                   <th className="num">移動</th>
                   <th className="num">入らない</th>
                   <th />
@@ -431,7 +440,9 @@ export default function ComparePage() {
                             })
                           : '手直しを含む'}
                       </td>
-                      <td className="num">{sc ? `${r0(sc.total)}点` : '—'}</td>
+                      <td className="num" title={sc ? `費用 ${r0(sc.total)}（内部の値）` : undefined}>
+                        {sc && scale ? `${toHundred(sc.total, scale)}点` : '—'}
+                      </td>
                       <td className="num">{sc ? `${r0(sc.travelMinutes)}分` : '—'}</td>
                       <td className="num">{sc ? `${sc.dropped}件` : '—'}</td>
                       <td className="nowrap">
@@ -513,14 +524,16 @@ export default function ComparePage() {
             <SectionTitle icon={Gauge}>合計と条件ごと（A→B）</SectionTitle>
             {abDiff?.value && (
               <div className="stat-row">
-                <Stat
-                  icon={Gauge}
-                  label="合計点の差"
-                  tone={abDiff.value.scoreDelta < 0 ? 'ok' : abDiff.value.scoreDelta > 0 ? 'warn' : 'plain'}
-                  value={deltaText(abDiff.value.scoreDelta, '')}
-                  unit={Math.round(abDiff.value.scoreDelta * 10) === 0 ? undefined : '点'}
-                  note={as && bs ? `${r0(as.total)} → ${r0(bs.total)}` : undefined}
-                />
+                {hundredDelta && (
+                  <Stat
+                    icon={Gauge}
+                    label="合計点の差（B−A）"
+                    tone={hundredDelta.d > 0 ? 'ok' : hundredDelta.d < 0 ? 'warn' : 'plain'}
+                    value={hundredDelta.d === 0 ? '差なし' : `B が ${deltaText(hundredDelta.d, '')}`}
+                    unit={hundredDelta.d === 0 ? undefined : '点'}
+                    note={`${hundredDelta.a}点 → ${hundredDelta.b}点（100点満点）`}
+                  />
+                )}
                 <Stat
                   icon={Car}
                   label="移動の差"
@@ -547,6 +560,7 @@ export default function ComparePage() {
               labels={[`A：${A.title}`, `B：${B.title}`]}
               rules={data.rules}
               error={aScore?.error ?? bScore?.error}
+              scale={scale}
             />
           </div>
 

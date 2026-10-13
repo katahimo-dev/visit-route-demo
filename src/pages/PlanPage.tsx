@@ -27,11 +27,11 @@ import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { AiPlan, DemoData } from '../contracts/data';
-import type { PlanScore, Problem, SolveResult } from '../contracts/problem';
+import type { PlanScore, Problem, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
 import { NONE } from '../domain/scheduleModel';
 import { minutesToHhmm } from '../domain/time';
-import { diff, score } from '../evaluate';
+import { diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
 import { attempt, deltaText, formError, hasLocation, own, pointsText, r0, staffColor } from '../lib/common';
 import { addRun } from '../lib/runs';
@@ -40,7 +40,7 @@ import { bestInsertion, compile } from '../matching';
 import { applyPreset, PRESETS, type Preset, presetOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
-import { explainMap, ReasonBox, WeightPanel } from './planParts';
+import { breakdownText, explainMap, HundredHint, ReasonBox, WeightPanel } from './planParts';
 
 /**
  * AI案（D18・ADR-0004）：AI案を作る → 担当ごとの列で手直し（ドラッグ・担当を選ぶ）→ 動かした訪問は固定 →
@@ -50,7 +50,8 @@ import { explainMap, ReasonBox, WeightPanel } from './planParts';
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）
  */
 
-type Progress = { iteration: number; total: number; bestScore: number };
+/** hundred：いまの最良を100点満点にした値（物差しを作れなければ null） */
+type Progress = { iteration: number; total: number; bestScore: number; hundred: number | null };
 
 /** その日のAI案を書き換える（無ければそのまま） */
 function patchPlan(d: DemoData, date: string, fn: (p: AiPlan) => AiPlan): DemoData {
@@ -73,7 +74,7 @@ function withRoutes(problem: Problem, plan: AiPlan, routes: Record<string, strin
 export default function PlanPage() {
   const { date } = useDay();
   const m = useDayModel(date);
-  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem } = m;
+  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem, scale } = m;
   const terms = data.org.terms;
   const toast = useToast();
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -156,12 +157,19 @@ export default function PlanPage() {
     if (target.value.staff.length === 0) return fail(`この日に働ける${terms.staff}がいません`);
     return target.value;
   };
-  const run = (kind: 'create' | 'resolve', target: Problem, label: string, onDone: (r: SolveResult) => void) => {
+  /** targetScale：途中の最良を100点満点にする物差し（target の費用と同じ物差しのもの） */
+  const run = (
+    kind: 'create' | 'resolve',
+    target: Problem,
+    targetScale: ScoreScale | null,
+    label: string,
+    onDone: (r: SolveResult) => void,
+  ) => {
     const gen = generation.current;
     const live = () => gen === generation.current;
     const started = attempt(() =>
       runSolve(target, { seed: data.seed, iterations: defaultIterations(target) }, (p) => {
-        if (live()) setProgress(p);
+        if (live()) setProgress({ ...p, hundred: targetScale ? toHundred(p.bestScore, targetScale) : null });
       }),
     );
     if (!started.value) {
@@ -200,7 +208,8 @@ export default function PlanPage() {
     if (mode === 'manual' && edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？')) return;
     const forDate = date;
     const rulesSnapshot = rules;
-    run('create', p, `${presetOf(rules)?.name ?? 'いま'}の`, (result) => {
+    // 条件を変えて作るときは、その条件の物差しで途中の点を出す
+    run('create', p, attempt(() => normalize(p)).value, `${presetOf(rules)?.name ?? 'いま'}の`, (result) => {
       const plan: AiPlan = {
         date: forDate,
         createdAt: Date.now(),
@@ -263,7 +272,8 @@ export default function PlanPage() {
     }
     const rulesSnapshot = data.rules;
     const pinsSnapshot = aiPlan.pins;
-    run('resolve', pinned.value, `${presetOf(data.rules)?.name ?? 'いま'}の`, (result) => {
+    // 固定は可否だけを変え、費用は同じなので、いまの条件の物差しを使う
+    run('resolve', pinned.value, scale, `${presetOf(data.rules)?.name ?? 'いま'}の`, (result) => {
       update((d) =>
         addRun(
           patchPlan(d, forDate, (plan) => ({
@@ -611,7 +621,7 @@ export default function PlanPage() {
               <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} style={{ width: '100%' }} />
               <span className="sub">
                 {progress
-                  ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回・いまの最良 ${r0(progress.bestScore)}点`
+                  ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点（100点満点）`}`
                   : '準備中…'}
               </span>
             </div>
@@ -661,7 +671,13 @@ export default function PlanPage() {
               >
                 今の案{edited ? '（手直し後）' : ''}
               </SectionTitle>
-              <PlanSummary current={cs} generated={gs} changed={genDiff?.value?.changedVisits.length ?? 0} />
+              <PlanSummary
+                current={cs}
+                generated={gs}
+                changed={genDiff?.value?.changedVisits.length ?? 0}
+                problem={problem}
+                scale={scale}
+              />
               {problem && cs && (
                 <BalanceChips problem={problem} routes={routes} staffName={staffName} colorOfStaff={colorOfStaff} />
               )}
@@ -809,18 +825,22 @@ export default function PlanPage() {
   );
 }
 
-/** 今の案の合計点・移動・待ち・必須の違反と、AIが出したままとの差 */
+/** 今の案の合計点（100点満点）・移動・待ち・必須の違反と、AIが出したままとの差 */
 function PlanSummary({
   current,
   generated,
   changed,
+  problem,
+  scale,
 }: {
   current: PlanScore | null;
   generated: PlanScore | null;
   changed: number;
+  problem: Problem | null;
+  scale: ScoreScale | null;
 }) {
   if (!current) return null;
-  /** AIが出したままとの差（無ければ null） */
+  /** AIが出したままとの差（費用の側。低いほど良い。無ければ null） */
   const delta = (a: number, b: number | undefined, unit: string) => {
     if (b === undefined) return null;
     const d = a - b;
@@ -832,6 +852,22 @@ function PlanSummary({
     return d ? <>AI案から {d}</> : undefined;
   };
   const hard = current.hardViolations.length;
+  const hundred = scale ? toHundred(current.total, scale) : null;
+  const genHundred = scale && generated ? toHundred(generated.total, scale) : null;
+  const parts = scale && problem ? hundredBreakdown(current, scale, problem) : [];
+  /** 合計の note：AIが出したままと点が違えば「AI案から −3点」（高いほど良い）、同じなら減点の上位 */
+  const totalNote = () => {
+    if (hundred === null) return undefined;
+    const d = genHundred === null ? 0 : hundred - genHundred;
+    if (d !== 0) {
+      return (
+        <>
+          AI案から <span className={d > 0 ? 'ok-text' : 'warn-text'}>{deltaText(d, '点')}</span>
+        </>
+      );
+    }
+    return breakdownText(parts) || undefined;
+  };
   return (
     <div className="stack" style={{ gap: 8 }}>
       <div className="stat-row" data-testid="plan-summary">
@@ -839,9 +875,9 @@ function PlanSummary({
           icon={Gauge}
           label="合計"
           tone="primary"
-          value={<span data-testid="plan-total">{r0(current.total)}</span>}
-          unit="点"
-          note={note(current.total, generated?.total, '点')}
+          value={<span data-testid="plan-total">{hundred ?? '—'}</span>}
+          unit="/100点"
+          note={totalNote()}
         />
         <Stat
           icon={Car}
@@ -869,12 +905,15 @@ function PlanSummary({
           <Stat icon={CircleOff} label="入らない訪問" tone="warn" value={current.dropped} unit="件" />
         )}
       </div>
-      {generated && (
-        <Hint label="AIが出したまま">
-          合計 {r0(generated.total)}点・移動 {r0(generated.travelMinutes)}分・待ち {r0(generated.waitMinutes)}分
-          {changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
-        </Hint>
-      )}
+      <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+        {scale && <HundredHint cost={current.total} parts={parts} scale={scale} />}
+        {generated && (
+          <Hint label="AIが出したまま">
+            合計 {genHundred ?? '—'}点・移動 {r0(generated.travelMinutes)}分・待ち {r0(generated.waitMinutes)}分
+            {changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
+          </Hint>
+        )}
+      </div>
     </div>
   );
 }
