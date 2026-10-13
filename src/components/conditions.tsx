@@ -16,6 +16,7 @@ import { useState } from 'react';
 import type { Condition, Item, ItemTarget, Op, Traits, TraitValue } from '../contracts/rules';
 import { attempt, ITEM_KIND_LABELS } from '../lib/common';
 import { conditionText } from '../matching';
+import { useDemoData } from '../store/react';
 import { Check } from './parts';
 import { IconButton, WithIcon } from './ui';
 
@@ -241,6 +242,9 @@ export function ConditionsEditor({
 }) {
   const usable = items.filter((i) => i.target === target);
   const [full, setFull] = useState(false);
+  const terms = useDemoData().data.org.terms;
+  /** 相手の呼び方（例：スタッフ・利用者さん） */
+  const who = target === 'staff' ? terms.staff : terms.client;
   // その項目の条件を置き換える（ほかの項目の条件と並び順はそのまま。上限を超えるときは受け付けない）
   const replace = (itemId: string, next: Condition[]) => {
     const before = value.filter((c) => c.itemId === itemId).length;
@@ -290,7 +294,10 @@ export function ConditionsEditor({
         })}
       </div>
       {full && <p className="error">条件は{MAX_CONDS}件までです。ほかの条件を外してから入れてください。</p>}
-      <span className="sub">何も選ばない項目は問いません。相手の特性が未確認なら、条件を満たさない扱いです。</span>
+      <span className="sub">
+        「問わない」の項目は、どの{who}でもかまいません。{who}
+        のその項目が「未確認」（まだ聞き取っていない）なら、条件に合わない扱いにします（念のため避ける）。
+      </span>
       {others.length > 0 && (
         <div className="stack" style={{ gap: 4 }}>
           <span className="sub">そのほかの条件（前の形式で入れたもの。消して上の表で入れ直せます）</span>
