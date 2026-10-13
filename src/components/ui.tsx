@@ -165,9 +165,12 @@ export function SidePanel({
   onClose,
   children,
   footer,
+  narrow = false,
 }: {
   icon: LucideIcon;
   title: ReactNode;
+  /** 中身が少ない欄（稼働時間など）は幅を狭くする */
+  narrow?: boolean;
   onClose: () => void;
   children: ReactNode;
   /** 下に固定して出す操作（保存・閉じる） */
@@ -197,7 +200,7 @@ export function SidePanel({
       <button type="button" className="drawer-backdrop" aria-label="閉じる" tabIndex={-1} onClick={onClose} />
       <section
         ref={ref}
-        className="drawer"
+        className={`drawer ${narrow ? 'is-narrow' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}

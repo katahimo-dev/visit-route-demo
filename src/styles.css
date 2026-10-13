@@ -1459,6 +1459,9 @@ a.icon-btn:hover {
   flex-direction: column;
   animation: drawer-in 0.2s ease-out;
 }
+.drawer.is-narrow {
+  width: min(440px, 100vw);
+}
 .drawer-head {
   display: flex;
   align-items: center;
