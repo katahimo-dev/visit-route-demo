@@ -1,5 +1,5 @@
-import { Database, Download, RotateCcw, TriangleAlert, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Database, Download, RotateCcw, Tags, TriangleAlert, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { attempt, formError } from '../lib/common';
@@ -8,7 +8,19 @@ import './settings.css';
 
 /** データ：書き出し・読み込み・初期状態に戻す（D2・D3） */
 export default function DataPage() {
-  const { data, replace, reset, saveError } = useDemoData();
+  const { data, update, replace, reset, saveError } = useDemoData();
+  const [terms, setTerms] = useState(data.org.terms);
+  // 読み込み・初期化で呼び方が変わったら入力欄も合わせる
+  useEffect(() => {
+    setTerms(data.org.terms);
+  }, [data.org.terms]);
+  const termsOk = terms.client.trim() !== '' && terms.staff.trim() !== '';
+  const termsChanged = terms.client.trim() !== data.org.terms.client || terms.staff.trim() !== data.org.terms.staff;
+  const saveTerms = () => {
+    const next = { client: terms.client.trim(), staff: terms.staff.trim() };
+    update((d) => ({ ...d, org: { ...d.org, terms: next } }));
+    toast('呼び方を変えました');
+  };
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +83,28 @@ export default function DataPage() {
           <p className="error">保存できませんでした：{saveError}。書き出して保管してください。</p>
         </div>
       )}
+
+      <div className="card stack">
+        <SectionTitle icon={Tags}>呼び方</SectionTitle>
+        <Hint>画面に出る呼び方です（各10文字まで）。呼び方もデータに保存され、書き出しに入ります。</Hint>
+        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <label>
+            訪問する人
+            <input value={terms.staff} maxLength={10} onChange={(e) => setTerms({ ...terms, staff: e.target.value })} />
+          </label>
+          <label>
+            訪問先
+            <input
+              value={terms.client}
+              maxLength={10}
+              onChange={(e) => setTerms({ ...terms, client: e.target.value })}
+            />
+          </label>
+          <button type="button" className="btn" disabled={!termsOk || !termsChanged} onClick={saveTerms}>
+            変える
+          </button>
+        </div>
+      </div>
 
       <div className="card stack">
         <SectionTitle icon={Download}>書き出す</SectionTitle>

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ConditionsEditor, condText, TraitChips, TraitsEditor } from '../components/conditions';
+import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
@@ -95,7 +95,7 @@ export default function StaffPage() {
               <th>名前</th>
               <th>勤務</th>
               <th>特性</th>
-              <th>条件</th>
+              <th>{terms.client}に求めること</th>
               <th>自宅の位置</th>
               <th>状態</th>
               <th aria-label="操作" />
@@ -117,9 +117,8 @@ export default function StaffPage() {
                 <td>
                   <TraitChips traits={s.traits} items={staffItems} />
                 </td>
-                <td className="sub cond-cell">
-                  {[...s.requirements, ...s.preferences].map((c) => condText(c, itemById.get(c.itemId))).join('、') ||
-                    'なし'}
+                <td className="cond-cell">
+                  <CondChips requirements={s.requirements} preferences={s.preferences} itemById={itemById} />
                 </td>
                 <td>
                   {hasLocation(s.home) ? (
@@ -227,10 +226,11 @@ export default function StaffPage() {
           <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={staffItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
 
-          <SectionTitle icon={SlidersHorizontal}>この{terms.staff}の必要条件</SectionTitle>
+          <SectionTitle icon={SlidersHorizontal}>{terms.client}に求めること：必要条件</SectionTitle>
           <Hint>
-            {terms.client}の特性に対する条件です（例：ペットがいない）。満たさない{terms.client}は「{terms.staff}
-            の必要条件」の条件で点が付くか、必須なら担当にしません。
+            {terms.client}の特性に対する条件です（例：ペットのいる家を避けるなら「ペットあり」を「なし」に）。満たさない
+            {terms.client}は「条件」の画面の「
+            {terms.staff}の必要条件」で、点が付くか、必須なら担当にしません。
           </Hint>
           <ConditionsEditor
             items={data.items}
@@ -238,7 +238,7 @@ export default function StaffPage() {
             value={form.requirements}
             onChange={(requirements) => setForm({ ...form, requirements })}
           />
-          <SectionTitle icon={Sparkles}>この{terms.staff}の希望</SectionTitle>
+          <SectionTitle icon={Sparkles}>{terms.client}に求めること：希望</SectionTitle>
           <ConditionsEditor
             items={data.items}
             target="client"

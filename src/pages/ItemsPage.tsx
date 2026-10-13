@@ -176,17 +176,27 @@ function ItemTable({
     });
   const removeOption = (item: Item, opt: string) => {
     const n = optionCount(data, item, opt);
-    if (n > 0 && !confirm(`「${opt}」は ${n}件に入っています。消すと、その値も消えます。よろしいですか？`)) return;
+    if (
+      n > 0 &&
+      !confirm(`「${opt}」は ${n}件に入っています。消すと、その値と、それを使う条件からも外れます。よろしいですか？`)
+    )
+      return;
     update((d) => {
       let next = mapTraits(d, target, (t) => {
         if (!(item.id in t)) return t;
         const v = replaceValue(t[item.id], opt, null);
-        return { ...t, [item.id]: Array.isArray(v) && v.length === 0 ? null : v };
+        return { ...t, [item.id]: v };
       });
+      // 条件からも外す。値が空になった・消した選択肢そのものだった条件は消す（残すと誰も満たさない条件になる）
       next = mapConds(next, target, (cs) =>
-        cs.map((c) =>
-          c.itemId === item.id && Array.isArray(c.value) ? { ...c, value: c.value.filter((x) => x !== opt) } : c,
-        ),
+        cs.flatMap((c) => {
+          if (c.itemId !== item.id) return [c];
+          if (Array.isArray(c.value)) {
+            const value = c.value.filter((x) => x !== opt);
+            return value.length === 0 ? [] : [{ ...c, value }];
+          }
+          return c.value === opt ? [] : [c];
+        }),
       );
       return {
         ...next,

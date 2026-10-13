@@ -113,6 +113,7 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
   padding: 2px 10px;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -587,6 +588,10 @@ tbody tr:hover td {
 }
 .segmented {
   display: inline-flex;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
   border: 2px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
@@ -867,6 +872,10 @@ tbody tr:hover td {
     white-space: nowrap;
     padding: 8px;
   }
+  /* 横に続きがあるのがわかるよう、右端をぼかす */
+  .side-nav {
+    mask-image: linear-gradient(to right, #000 85%, transparent);
+  }
   .app-main {
     padding: 16px 14px 40px;
   }
@@ -1143,14 +1152,48 @@ label.check input {
 .field-label {
   color: var(--sub);
 }
-.cond-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 160px) minmax(140px, 190px) minmax(140px, 1fr) minmax(120px, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+/* 条件のチェック表（相手の項目ごとに1行） */
+.cond-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
 }
-.cond-text {
-  font-size: 0.8rem;
+.cond-line {
+  display: grid;
+  grid-template-columns: minmax(110px, 170px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+}
+.cond-line + .cond-line {
+  border-top: 1px solid var(--line);
+}
+.cond-line.is-set {
+  background: #fff8f4;
+}
+.cond-name {
+  font-size: 0.9rem;
+  color: var(--sub);
+}
+.cond-line.is-set .cond-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+.num-range input {
+  width: 90px;
+  padding: 6px 8px;
+}
+.segmented.seg-sm button {
+  padding: 5px 12px;
+  font-size: 0.85rem;
+}
+@media (max-width: 600px) {
+  .cond-line {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
 }
 /* 重みのスライダー（ClassClassify の Setup にならう。0 で半透明） */
 .weight {
@@ -1337,6 +1380,7 @@ label.check input {
   min-width: 160px;
 }
 .trait-chips .chip {
+  white-space: normal;
   padding: 2px 8px;
 }
 a.icon-btn {

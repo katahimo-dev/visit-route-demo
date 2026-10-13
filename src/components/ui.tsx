@@ -53,10 +53,19 @@ export function SectionTitle({
 }
 
 /** 説明文は畳んでおき、ⓘ を押すと開く（情報量を減らす） */
-export function Hint({ children, label = '説明' }: { children: ReactNode; label?: string }) {
+export function Hint({
+  children,
+  label = '説明',
+  ariaLabel,
+}: {
+  children: ReactNode;
+  label?: string;
+  /** 同じ画面に「説明」が並ぶときの読み上げ名（例：「相性の説明」） */
+  ariaLabel?: string;
+}) {
   return (
     <details className="hint">
-      <summary>
+      <summary aria-label={ariaLabel}>
         <Info size={14} aria-hidden="true" />
         {label}
       </summary>

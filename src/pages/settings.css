@@ -240,9 +240,6 @@
 
 /* 狭い幅 */
 @media (max-width: 600px) {
-  .cond-row {
-    grid-template-columns: 1fr auto;
-  }
   .opt-edit,
   .opt-add {
     flex-wrap: nowrap;

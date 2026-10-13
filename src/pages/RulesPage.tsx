@@ -112,7 +112,7 @@ export default function RulesPage() {
                           {ruleTypeLabel(r.type, terms)}
                         </WithIcon>
                       </span>
-                      <Hint label="説明">{ruleTypeHelp(r.type, terms)}</Hint>
+                      <Hint ariaLabel={`${r.label}の説明`}>{ruleTypeHelp(r.type, terms)}</Hint>
                     </td>
                     <td>
                       <WeightSlider
