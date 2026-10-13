@@ -31,7 +31,7 @@ export function useDayModel(date: string) {
     );
   }, [staff, data.availability, date]);
   const compiled = useMemo(() => attempt(() => compile(data, date)), [data, date]);
-  /** 100点満点の物差し（下限＝100点・素朴な案＝0点。ADR-0007） */
+  /** 100点満点の物差し（下限＝100点、1件あたりの超過で減点。ADR-0007 案A） */
   const scale = useMemo(() => {
     const p = compiled.value;
     return p ? attempt(() => normalize(p)).value : null;

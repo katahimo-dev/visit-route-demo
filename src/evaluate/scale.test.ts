@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Problem, SCORE_MAX, SCORE_MULTIPLIER } from '../contracts/problem';
+import { type Problem, SCORE_MAX } from '../contracts/problem';
 import { compile } from '../matching';
 import { DATE, randomData } from '../matching/fixtures';
 import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
@@ -8,65 +8,62 @@ import { hundredBreakdown, naivePlan, normalize, score, toHundred } from './inde
 
 const DEMO_DATE = '2026-10-13';
 
-describe('点数（ADR-0007。下限＝160点・素朴な案＝0点の1.6倍）', () => {
+describe('点数（ADR-0007 案A。100 −（費用 − 下限）÷ 訪問の件数）', () => {
   const demo = createDemoData('2026-10-12');
   const p = compile(demo, DEMO_DATE);
   const scale = normalize(p);
+  const naiveCost = score(p, naivePlan(p)).total;
 
-  it('下限 < 素朴な案。素朴な案自身は0点、下限は160点', () => {
-    expect(scale.lowerBound).toBeLessThan(scale.naive);
-    expect(toHundred(scale.naive, scale)).toBe(0);
-    expect(toHundred(scale.lowerBound, scale)).toBe(SCORE_MAX);
-    expect(SCORE_MAX).toBe(160);
-    expect(score(p, scale.naiveRoutes).hardViolations).toEqual([]);
+  it('下限は100点。訪問の件数は Problem の訪問の数', () => {
+    expect(SCORE_MAX).toBe(100);
+    expect(scale.visits).toBe(p.visits.length);
+    expect(scale.visits).toBeGreaterThan(0);
+    expect(toHundred(scale.lowerBound, scale)).toBe(100);
+    expect(scale.lowerBound).toBeLessThan(naiveCost);
   });
 
-  it('費用が低いほど点が高く（単調）、0 で止まり 160 まで。100 を超える点もある', () => {
+  it('1件あたり10分ぶん余計なら90点', () => {
+    expect(toHundred(scale.lowerBound + 10 * scale.visits, scale)).toBe(90);
+    expect(toHundred(scale.lowerBound + 35 * scale.visits, scale)).toBe(65);
+  });
+
+  it('費用が低いほど点が高く（単調）、0〜100 に収まる', () => {
     let prev = Number.POSITIVE_INFINITY;
-    let over100 = false;
-    for (let c = scale.lowerBound - 500; c <= scale.naive + 500; c += 7) {
+    for (let c = scale.lowerBound - 500; c <= scale.lowerBound + 120 * scale.visits; c += 7) {
       const h = toHundred(c, scale);
+      expect(Number.isInteger(h)).toBe(true);
       expect(h).toBeGreaterThanOrEqual(0);
-      expect(h).toBeLessThanOrEqual(SCORE_MAX);
+      expect(h).toBeLessThanOrEqual(100);
       expect(h).toBeLessThanOrEqual(prev);
-      if (h > 100) over100 = true;
       prev = h;
     }
-    expect(over100).toBe(true);
-    expect(toHundred(scale.naive + 1e6, scale)).toBe(0);
-    expect(toHundred(scale.lowerBound - 1e6, scale)).toBe(SCORE_MAX);
+    expect(toHundred(scale.lowerBound + 1e9, scale)).toBe(0);
+    expect(toHundred(scale.lowerBound - 1e6, scale)).toBe(100);
   });
 
-  it('倍率は1.6：下限と素朴な案のちょうど中間の費用は80点', () => {
-    const mid = (scale.naive + scale.lowerBound) / 2;
-    expect(toHundred(mid, scale)).toBe(80);
-    expect(SCORE_MULTIPLIER).toBe(1.6);
+  it('訪問が0件なら常に100点・内訳は空', () => {
+    const empty = { ...scale, visits: 0 };
+    expect(toHundred(scale.lowerBound + 999, empty)).toBe(100);
+    expect(hundredBreakdown(score(p, naivePlan(p)), empty, p)).toEqual([]);
   });
 
-  it('素朴な案 ≤ 下限なら常に160点', () => {
-    const flat = { ...scale, naive: scale.lowerBound };
-    expect(toHundred(scale.lowerBound + 999, flat)).toBe(SCORE_MAX);
-    expect(hundredBreakdown(score(p, scale.naiveRoutes), flat, p)).toEqual([]);
-  });
-
-  it('決定的：同じ入力で同じ素朴な案・物差し', () => {
+  it('決定的：同じ入力で同じ物差し', () => {
     const again = normalize(compile(createDemoData('2026-10-12'), DEMO_DATE));
     expect(again).toEqual(scale);
-    expect(naivePlan(p)).toEqual(scale.naiveRoutes);
   });
 
-  it(`デモデータ ${DEMO_DATE}：AI案は素朴な案より点が高く、内訳の合計はおおむね 160−点数`, () => {
+  it(`デモデータ ${DEMO_DATE}：AI案は素朴な案より点が高く、内訳の合計はおおむね 100−点数`, () => {
     const r = solve(p, { seed: demo.seed, iterations: defaultIterations(p) });
     const sc = score(p, r.routes);
     expect(scale.lowerBound).toBeLessThanOrEqual(sc.total + 1e-6);
     const h = toHundred(sc.total, scale);
     expect(h).toBeGreaterThan(0);
-    expect(h).toBeGreaterThan(toHundred(scale.naive, scale));
+    expect(h).toBeGreaterThanOrEqual(toHundred(naiveCost, scale));
     const parts = hundredBreakdown(sc, scale, p);
     const sum = parts.reduce((a, x) => a + x.points, 0);
-    expect(Math.abs(sum - (SCORE_MAX - h))).toBeLessThan(1);
+    expect(Math.abs(sum - (100 - h))).toBeLessThanOrEqual(0.5 + 1e-9);
     console.info(
-      `[点数] ${DEMO_DATE} AI案 費用${Math.round(sc.total)}→${h}点 / 素朴な案 費用${Math.round(scale.naive)} / 下限 ${Math.round(scale.lowerBound)}（割当${Math.round(scale.lowerAssign)}・移動${Math.round(scale.lowerTravel)}）`,
+      `[点数] ${DEMO_DATE} AI案 費用${Math.round(sc.total)}→${h}点 / 素朴な案 費用${Math.round(naiveCost)}→${toHundred(naiveCost, scale)}点 / 下限 ${Math.round(scale.lowerBound)}（割当${Math.round(scale.lowerAssign)}・移動${Math.round(scale.lowerTravel)}）・${scale.visits}件`,
       parts.map((x) => `${x.label} −${x.points.toFixed(1)}`).join('・'),
     );
   }, 30000);
@@ -75,22 +72,23 @@ describe('点数（ADR-0007。下限＝160点・素朴な案＝0点の1.6倍）'
     for (const preset of PRESETS) {
       const q = compile({ ...demo, rules: applyPreset(demo.rules, preset) }, DEMO_DATE);
       const s = normalize(q);
+      const naive = score(q, naivePlan(q)).total;
       const r = solve(q, { seed: demo.seed, iterations: defaultIterations(q) });
       expect(s.lowerBound).toBeLessThanOrEqual(r.score + 1e-6);
-      expect(s.lowerBound).toBeLessThanOrEqual(s.naive + 1e-6);
+      expect(s.lowerBound).toBeLessThanOrEqual(naive + 1e-6);
       console.info(
-        `[点数] ${preset.name}：AI案 費用${Math.round(r.score)}→${toHundred(r.score, s)}点 / 素朴な案 ${Math.round(s.naive)} / 下限 ${Math.round(s.lowerBound)}`,
+        `[点数] ${preset.name}：AI案 費用${Math.round(r.score)}→${toHundred(r.score, s)}点 / 素朴な案 ${Math.round(naive)} / 下限 ${Math.round(s.lowerBound)}`,
       );
     }
   }, 60000);
 
-  it('ランダムな問題でも素朴な案は必須を守り0点、下限は素朴な案・AI案・適当な案の費用以下', () => {
+  it('ランダムな問題でも、下限は素朴な案・AI案・適当な案の費用以下', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
       const q: Problem = compile(randomData(5, 25, seed), DATE);
       const s = normalize(q);
-      expect(score(q, s.naiveRoutes).hardViolations).toEqual([]);
-      if (s.naive > s.lowerBound) expect(toHundred(s.naive, s)).toBe(0);
-      expect(s.lowerBound).toBeLessThanOrEqual(s.naive + 1e-6);
+      const naiveRoutes = naivePlan(q);
+      expect(score(q, naiveRoutes).hardViolations).toEqual([]);
+      expect(s.lowerBound).toBeLessThanOrEqual(score(q, naiveRoutes).total + 1e-6);
       for (const iterations of [200, 2000, 20000]) {
         const r = solve(q, { seed, iterations });
         expect(s.lowerBound).toBeLessThanOrEqual(r.score + 1e-6);

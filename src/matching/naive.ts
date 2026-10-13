@@ -1,4 +1,4 @@
-// 素朴な案（点数の0点。ADR-0007）：evaluate の物差しと、solver の初期解の候補に使う。乱数・時刻は使わない（決定的）
+// 素朴な案（solver の初期解の候補。ADR-0007。点数の基準には使わない）：AI案が素朴な案より悪くならないようにする。乱数・時刻は使わない（決定的）
 import type { Problem } from '../contracts/problem';
 import { routeCost } from './timing';
 

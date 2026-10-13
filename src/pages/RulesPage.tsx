@@ -86,7 +86,7 @@ export default function RulesPage() {
           <strong>重み1＝1件あたり移動10分ぶん</strong>
           （重み5＝50分ぶん）。重み0の条件は使いません。必須にした条件は、点ではなく「守らなければ担当にしない」になります。
           時間の約束と稼働時間帯はいつも必須です。 画面の合計点は、この合計を高いほど良い点数（{SCORE_TEXT}
-          。機械的に割り当てた案＝0点）に直して出します。
+          ）に直して出します。
         </Hint>
         <div className="table-scroll">
           <table className="rules-table">

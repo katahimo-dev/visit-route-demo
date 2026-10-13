@@ -333,7 +333,7 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     current = recomputeTotal();
   };
 
-  // 素朴な案（点数の0点の案）の方が良ければ、そこから始める（AI案の費用 ≤ 素朴な案。決定的）
+  // 素朴な案の方が良ければ、そこから始める（AI案の費用 ≤ 素朴な案。決定的）
   if (V > 0 && S > 0) {
     const greedy = routes.map((r) => r.slice());
     const greedyTotal = current;
