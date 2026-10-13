@@ -8,6 +8,7 @@ import type { Compat } from '../contracts/rules';
 import { DEFAULT_TERMS } from '../domain/terms';
 import { datesFrom, generateDay, UNASSIGNED_KEY } from './generate';
 import { CLIENT_SEEDS, INITIAL_COMPAT, INITIAL_ITEMS, INITIAL_RULES, STAFF_SEEDS } from './people';
+import { initialPresets } from './presets';
 
 /** 初期の日数（今日から） */
 export const DEMO_DAYS = 14;
@@ -67,6 +68,7 @@ export function createDemoData(today: string): DemoData {
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},
+    presets: initialPresets(),
   };
   const { data: withDays, owners } = generateDays(base, today, DEMO_DAYS);
   // いつもの担当：内部で作った手作業らしい割当で最も多く担当した人（同数なら ID の小さい順）
@@ -116,4 +118,4 @@ function generateDays(data: DemoData, from: string, n: number): { data: DemoData
 }
 
 export { UNASSIGNED_KEY };
-export { applyPreset, PRESETS, type Preset, presetOf } from './presets';
+export { applyPreset, INITIAL_PRESETS, initialPresets, matchesPreset, type Preset, presetOf } from './presets';

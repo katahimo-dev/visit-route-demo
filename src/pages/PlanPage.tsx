@@ -2,11 +2,15 @@ import {
   Car,
   CircleOff,
   Clock,
+  Crown,
   Gauge,
   GitCompareArrows,
   Hourglass,
   House,
+  LayoutGrid,
+  ListChecks,
   Map as MapIcon,
+  MapPin,
   Pin,
   PinOff,
   RefreshCw,
@@ -22,35 +26,54 @@ import {
 import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { MapDock } from '../components/MapDock';
 import { ClientName } from '../components/parts';
 import { type MapLine, type MapPoint, RouteMap } from '../components/RouteMap';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
-import type { AiPlan, DemoData } from '../contracts/data';
-import type { PlanScore, Problem, SolveResult } from '../contracts/problem';
-import type { Rule } from '../contracts/rules';
+import type { AiPlan, AiRun, DemoData } from '../contracts/data';
+import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
+import type { Preset, Rule } from '../contracts/rules';
 import { NONE } from '../domain/scheduleModel';
 import { minutesToHhmm } from '../domain/time';
-import { diff, score } from '../evaluate';
+import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import { colorOf, initialOf } from '../lib/colors';
 import { attempt, deltaText, formError, hasLocation, own, pointsText, r0, staffColor } from '../lib/common';
-import { addRun } from '../lib/runs';
+import { addRun, findRun, planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
-import { applyPreset, PRESETS, type Preset, presetOf } from '../seed';
+import { applyPreset, matchesPreset, presetOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
-import { explainMap, ReasonBox, WeightPanel } from './planParts';
+import {
+  AchievementList,
+  achievementSummary,
+  breakdownText,
+  explainMap,
+  HundredHint,
+  ReasonBox,
+  RefMark,
+  SCORE_TEXT,
+  WeightPanel,
+} from './planParts';
 
 /**
  * AI案（D18・ADR-0004）：AI案を作る → 担当ごとの列で手直し（ドラッグ・担当を選ぶ）→ 動かした訪問は固定 →
  * 「固定を残して組み直す」で残りを AI が組み直す →「予定に採用」。
  * AI案の routes は手直し後の今の案、generated は AI が出したまま、pins は固定（訪問ID → 担当ID）。
- * AI案が無い日は、開いたときにプリセット1（標準）の重みで自動で作る。作る・組み直すたびに、条件と結果を
- * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）
+ * AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（ADR-0008）。作る・組み直すたびに、条件と結果を
+ * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
+ * 上部にプリセットごとの案のカード（いまの条件の同じ物差しで採点）を並べ、「この案にする」で今の案にする
  */
 
-type Progress = { iteration: number; total: number; bestScore: number };
+/** hundred：いまの最良を点数（1.6倍）にした値（物差しを作れなければ null） */
+type Progress = { iteration: number; total: number; bestScore: number; hundred: number | null };
+
+/** 日付の短い表示（2026-10-13 → 10/13） */
+function shortDate(date: string): string {
+  const [, m, d] = date.split('-');
+  return `${Number(m)}/${Number(d)}`;
+}
 
 /** その日のAI案を書き換える（無ければそのまま） */
 function patchPlan(d: DemoData, date: string, fn: (p: AiPlan) => AiPlan): DemoData {
@@ -73,7 +96,7 @@ function withRoutes(problem: Problem, plan: AiPlan, routes: Record<string, strin
 export default function PlanPage() {
   const { date } = useDay();
   const m = useDayModel(date);
-  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem } = m;
+  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem, scale } = m;
   const terms = data.org.terms;
   const toast = useToast();
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -82,6 +105,22 @@ export default function PlanPage() {
   const [runningFor, setRunningFor] = useState<{ date: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  /** 地図で見るスタッフ（列の見出しを押す・訪問を選ぶと、その人のルートだけを地図に出す）。null は全員 */
+  const [focusStaff, setFocusStaff] = useState<string | null>(null);
+  /** 地図で強調する区間（この訪問へ来る移動）。null は無し */
+  const [focusLeg, setFocusLeg] = useState<string | null>(null);
+  /**
+   * 地図で見るスタッフを変える（null は全員）。選んでいた区間・訪問がその人のものでなければ外す
+   * （全員に戻したときも区間の強調は外す）
+   */
+  const focusOn = (sid: string | null) => {
+    setFocusStaff(sid);
+    const ownerOf = (id: string) => owner.get(id) ?? null;
+    if (focusLeg && (sid === null || ownerOf(focusLeg) !== sid)) setFocusLeg(null);
+    if (picked && sid !== null && ownerOf(picked) !== sid) setPicked(null);
+  };
+  /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
+  const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTo, setDropTo] = useState<string | null>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
@@ -89,12 +128,26 @@ export default function PlanPage() {
   const generation = useRef(0);
   /** 自動作成を試した日（同じ日に2回は試さない） */
   const autoTried = useRef(new Set<string>());
+  /** プリセットを順に作っている途中（何番目か・名前）。null は順に作っていない */
+  const [batch, setBatch] = useState<{
+    date: string;
+    index: number;
+    total: number;
+    name: string;
+    presetId: string;
+  } | null>(null);
+  /** 順に作るのを「止める」で止めた */
+  const batchStopped = useRef(false);
+  /** いちばん新しいデータ（順に作るときの2つ目以降・終わりに、最新の条件・データで問題を作る） */
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   // 画面を離れたら Worker を止める（止めた結果は保存しない）
   useEffect(() => {
     setRunning(null);
     setRunningFor(null);
     setProgress(null);
+    setBatch(null);
     return () => {
       generation.current++;
       runRef.current?.stop();
@@ -105,6 +158,8 @@ export default function PlanPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ訪問を外す
   useEffect(() => {
     setPicked(null);
+    setFocusStaff(null);
+    setFocusLeg(null);
   }, [date]);
 
   const aiPlan: AiPlan | undefined = own(data.aiPlans, date);
@@ -128,11 +183,16 @@ export default function PlanPage() {
     [problem, aiPlan, routes],
   );
   const explained = useMemo(() => explainMap(aiPlan ? problem : null, routes), [problem, aiPlan, routes]);
+  /** 今の案の条件ごとの達成の件数（D25） */
+  const curAch = useMemo(
+    () => (problem && aiPlan ? (attempt(() => achievements(problem, routes)).value ?? []) : []),
+    [problem, aiPlan, routes],
+  );
   /** AI案を作った条件（重み・必須）と、いまの条件が違うか */
   const stale = !!aiPlan && JSON.stringify(aiPlan.rules) !== JSON.stringify(data.rules);
-  /** 自動作成（ADR-0005）：いまの条件を書き換えずに標準のプリセットで作った案（作ったあとに変えたのではない） */
-  const autoMade =
-    stale && !!aiPlan && presetOf(aiPlan.rules)?.id === PRESETS[0]?.id && Object.keys(aiPlan.pins).length === 0;
+  /** いまの条件を書き換えずにプリセットで作った案（自動作成・カードから選んだ。作ったあとに変えたのではない） */
+  const madeBy = stale && !!aiPlan && pinCount === 0 ? presetOf(aiPlan.rules, data.presets) : null;
+  const autoMade = !!madeBy;
 
   const staffName = (id: string) => staffById.get(id)?.name ?? '（不明）';
   const clientOf = (visitId: string) => {
@@ -150,23 +210,33 @@ export default function PlanPage() {
       if (!quiet) setError(msg);
       return null;
     };
-    const target = rules ? attempt(() => compile({ ...data, rules }, date)) : { value: problem, error: m.problemError };
+    const target = rules
+      ? attempt(() => compile({ ...dataRef.current, rules }, date))
+      : { value: problem, error: m.problemError };
     if (!target.value) return fail(target.error ?? '問題を作れませんでした');
     if (target.value.visits.length === 0) return fail('この日に計算できる訪問がありません');
     if (target.value.staff.length === 0) return fail(`この日に働ける${terms.staff}がいません`);
     return target.value;
   };
-  const run = (kind: 'create' | 'resolve', target: Problem, label: string, onDone: (r: SolveResult) => void) => {
+  /** targetScale：途中の最良を点数にする物差し（target の費用と同じ物差しのもの） */
+  const run = (
+    kind: 'create' | 'resolve',
+    target: Problem,
+    targetScale: ScoreScale | null,
+    label: string,
+    onDone: (r: SolveResult) => void,
+    after?: () => void,
+  ): boolean => {
     const gen = generation.current;
     const live = () => gen === generation.current;
     const started = attempt(() =>
-      runSolve(target, { seed: data.seed, iterations: defaultIterations(target) }, (p) => {
-        if (live()) setProgress(p);
+      runSolve(target, { seed: dataRef.current.seed, iterations: defaultIterations(target) }, (p) => {
+        if (live()) setProgress({ ...p, hundred: targetScale ? toHundred(p.bestScore, targetScale) : null });
       }),
     );
     if (!started.value) {
       setError(started.error);
-      return;
+      return false;
     }
     runRef.current = started.value;
     setRunning(kind);
@@ -185,51 +255,136 @@ export default function PlanPage() {
         setRunning(null);
         setRunningFor(null);
         setProgress(null);
+        after?.();
       });
+    return true;
   };
-  const stop = () => runRef.current?.stop();
+  const stop = () => {
+    batchStopped.current = true;
+    runRef.current?.stop();
+  };
 
   /**
    * AI案を作る（固定なし。作ると generated と routes を同じにし、固定を空に）。作った案は記録に残す。
-   * rules を渡すとその条件で作る。mode：'preset' は確認ずみ、'auto' は自動作成（確認・失敗の表示を出さない）
+   * rules を渡すとその条件で作る。mode：'preset' は確認ずみ、'auto' は自動作成（確認・失敗・終わりの表示を出さない）。
+   * 'auto' は今の案がまだ無いときだけ今の案にし、あれば記録に足すだけ。onMade は作れたとき（作った案）、
+   * after は計算が終わったあと（成功・失敗とも。順に作る次へ）。計算を始めたら true
    */
-  const create = (rules: Rule[] = data.rules, mode: 'manual' | 'preset' | 'auto' = 'manual') => {
+  const create = (
+    rules: Rule[] = data.rules,
+    mode: 'manual' | 'preset' | 'auto' = 'manual',
+    opts: { after?: () => void; onMade?: (plan: AiPlan) => void } = {},
+  ): boolean => {
     const auto = mode === 'auto';
     const p = check(rules, auto);
-    if (!p) return;
-    if (mode === 'manual' && edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？')) return;
+    if (!p) return false;
+    if (mode === 'manual' && edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？'))
+      return false;
     const forDate = date;
     const rulesSnapshot = rules;
-    run('create', p, `${presetOf(rules)?.name ?? 'いま'}の`, (result) => {
-      const plan: AiPlan = {
-        date: forDate,
-        createdAt: Date.now(),
-        seed: result.seed,
-        iterations: result.iterations,
-        routes: result.routes,
-        unassigned: result.unassigned,
-        score: result.score,
-        stopped: result.stopped,
-        rules: rulesSnapshot,
-        generated: { routes: result.routes, unassigned: result.unassigned, score: result.score },
-        pins: {},
-      };
-      update((d) =>
-        addRun({ ...d, aiPlans: { ...d.aiPlans, [forDate]: plan } }, forDate, {
+    // 条件を変えて作るときは、その条件の物差しで途中の点を出す
+    const label = `${presetOf(rules, dataRef.current.presets)?.name ?? 'いま'}の`;
+    return run(
+      'create',
+      p,
+      attempt(() => normalize(p)).value,
+      label,
+      (result) => {
+        const plan: AiPlan = {
+          date: forDate,
+          createdAt: Date.now(),
+          seed: result.seed,
+          iterations: result.iterations,
+          routes: result.routes,
+          unassigned: result.unassigned,
+          score: result.score,
+          stopped: result.stopped,
           rules: rulesSnapshot,
+          generated: { routes: result.routes, unassigned: result.unassigned, score: result.score },
           pins: {},
-          result,
-          createdAt: plan.createdAt,
-        }),
-      );
-      toast(
-        result.stopped
-          ? '途中までの最良の案を保存しました'
-          : auto
-            ? `${PRESETS[0]?.name ?? ''}の条件でAI案を作りました`
-            : 'AI案を作りました',
-      );
-    });
+        };
+        const x = { rules: rulesSnapshot, pins: {}, result, createdAt: plan.createdAt };
+        update((d) => {
+          const added = addRun(d, forDate, x);
+          if (auto && own(d.aiPlans, forDate)) return added;
+          // 今の案の元になった記録を覚える（カードの「今の案」の判定）
+          const linked: AiPlan = { ...plan, runId: findRun(added, forDate, x)?.id };
+          return { ...added, aiPlans: { ...added.aiPlans, [forDate]: linked } };
+        });
+        opts.onMade?.(plan);
+        if (!auto) toast(result.stopped ? '途中までの最良の案を保存しました' : 'AI案を作りました');
+      },
+      opts.after,
+    );
+  };
+
+  /**
+   * プリセットを順に1つずつ作る（ADR-0008）。どれも記録に残す。2つ目以降も最新のデータ・条件で問題を作る。
+   * 今の案が無い日に始めたときは、途中は最初に作れた案を見せ、終わったら一番点の高い（いまの条件の物差し。
+   * 同点なら先のプリセット）案を今の案にする（その間に手直し・別の案にしていなければ）。
+   * 「止める」で今の1つを途中の最良で残し、残りはやめる。その日の条件は書き換えない
+   */
+  const runBatch = (list: readonly Preset[]) => {
+    const forDate = date;
+    const ids = list.map((pr) => pr.id);
+    const choose = !own(dataRef.current.aiPlans, forDate);
+    batchStopped.current = false;
+    const made: { order: number; plan: AiPlan }[] = [];
+    const finish = () => {
+      setBatch(null);
+      if (made.length > 0)
+        toast(
+          batchStopped.current
+            ? `途中で止めました（${made.length}つ作りました）`
+            : `プリセット${made.length}つの案を作りました`,
+        );
+      if (!choose || made.length === 0) return;
+      // 一番点の高い案を今の案にする（いまの条件の同じ物差し。カードの王冠と同じ）
+      const prob = attempt(() => compile(dataRef.current, forDate)).value;
+      const sc = prob ? attempt(() => normalize(prob)).value : null;
+      if (!prob || !sc) return;
+      let best = made[0]!;
+      let bestPoint = -1;
+      for (const x of made) {
+        const pt = toHundred(score(prob, x.plan.routes).total, sc);
+        if (pt > bestPoint) {
+          bestPoint = pt;
+          best = x;
+        }
+      }
+      const first = made[0]!.plan;
+      update((d) => {
+        const cur = own(d.aiPlans, forDate);
+        // 途中で見せていた案のまま（手直し・別の案にしていない）ときだけ入れ替える
+        if (!cur || cur.createdAt !== first.createdAt || Object.keys(cur.pins).length > 0) return d;
+        if (JSON.stringify(cur.routes) !== JSON.stringify(cur.generated.routes)) return d;
+        const run = findRun(d, forDate, {
+          rules: best.plan.rules,
+          pins: {},
+          result: { ...best.plan, routes: best.plan.generated.routes },
+        });
+        return { ...d, aiPlans: { ...d.aiPlans, [forDate]: { ...best.plan, runId: run?.id } } };
+      });
+    };
+    const step = (i: number) => {
+      if (i >= ids.length || batchStopped.current) {
+        finish();
+        return;
+      }
+      // 最新のプリセット・条件で（途中で編集・消したプリセットは、その時点の中身・飛ばす）
+      const pr = dataRef.current.presets.find((x) => x.id === ids[i]);
+      if (!pr) {
+        step(i + 1);
+        return;
+      }
+      setBatch({ date: forDate, index: i, total: ids.length, name: pr.name, presetId: pr.id });
+      const started = create(applyPreset(dataRef.current.rules, pr), 'auto', {
+        onMade: (plan) => made.push({ order: i, plan }),
+        after: () => step(i + 1),
+      });
+      if (!started) step(i + 1);
+    };
+    step(0);
   };
 
   /** プリセットの重みをその日の条件に当てて、すぐ作る */
@@ -242,14 +397,41 @@ export default function PlanPage() {
     create(rules, 'preset');
   };
 
-  // AI案が無い日は、開いたときにプリセット1（標準）で自動で作る（同じ日に2回は試さない）
+  // AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（同じ日に2回は試さない。ADR-0008）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案の有無・問題が変わったときだけ
   useEffect(() => {
-    if (aiPlan || running || !problem || autoTried.current.has(date)) return;
+    if (aiPlan || running || batch || !problem || autoTried.current.has(date)) return;
     autoTried.current.add(date);
-    const preset = PRESETS[0];
-    if (preset) create(applyPreset(data.rules, preset), 'auto');
+    runBatch(data.presets);
   }, [date, aiPlan, problem, running]);
+
+  // ---- プリセットごとの案のカード（ADR-0008）。点数はどれもいまの条件の同じ物差し ----
+  const runs: AiRun[] = useMemo(() => own(data.aiRuns, date) ?? [], [data.aiRuns, date]);
+  const presetCards = useMemo(
+    () =>
+      data.presets.map((pr) => {
+        // 固定なしで、重み・必須がこのプリセットと一致する最新の記録
+        const run = [...runs].reverse().find((r) => Object.keys(r.pins).length === 0 && matchesPreset(r.rules, pr));
+        const sc = run && problem ? (attempt(() => score(problem, run.routes)).value ?? null) : null;
+        const ach: RuleAchievement[] =
+          run && problem ? (attempt(() => achievements(problem, run.routes)).value ?? []) : [];
+        return { preset: pr, run, score: sc, hundred: sc && scale ? toHundred(sc.total, scale) : null, ach };
+      }),
+    [data.presets, runs, problem, scale],
+  );
+  const bestCard = presetCards.reduce<number>(
+    // 0点（素朴な案と同じ）のカードには王冠を付けない
+    (best, c, i) =>
+      c.hundred !== null && c.hundred > 0 && (best < 0 || c.hundred > presetCards[best]!.hundred!) ? i : best,
+    -1,
+  );
+  const missing = presetCards.filter((c) => !c.run).map((c) => c.preset);
+  /** 記録を今の案にする（比較の画面の「AI案の画面で開く」と同じ） */
+  const openRun = (r: AiRun, name: string) => {
+    if (edited && !confirm('手直しと固定を捨てて、この案を今の案にします。よろしいですか？')) return;
+    update((d) => ({ ...d, aiPlans: { ...d.aiPlans, [date]: planOfRun(r) } }));
+    toast(`${name}の案を今の案にしました`);
+  };
 
   /** 固定を残して組み直す（generated は変えない。固定は残す） */
   const resolve = () => {
@@ -263,18 +445,22 @@ export default function PlanPage() {
     }
     const rulesSnapshot = data.rules;
     const pinsSnapshot = aiPlan.pins;
-    run('resolve', pinned.value, `${presetOf(data.rules)?.name ?? 'いま'}の`, (result) => {
-      update((d) =>
-        addRun(
+    // 固定は可否だけを変え、費用は同じなので、いまの条件の物差しを使う
+    run('resolve', pinned.value, scale, `${presetOf(data.rules, data.presets)?.name ?? 'いま'}の`, (result) => {
+      const x = { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now() };
+      update((d) => {
+        const added = addRun(
           patchPlan(d, forDate, (plan) => ({
             ...withRoutes(p, plan, result.routes),
             stopped: result.stopped,
             rules: rulesSnapshot,
           })),
           forDate,
-          { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now() },
-        ),
-      );
+          x,
+        );
+        const runId = findRun(added, forDate, x)?.id;
+        return patchPlan(added, forDate, (plan) => ({ ...plan, runId }));
+      });
       toast(result.stopped ? '途中までの最良の案で組み直しました' : '固定を残して組み直しました');
     });
   };
@@ -417,6 +603,7 @@ export default function PlanPage() {
     const lns: MapLine[] = [];
     if (!aiPlan) return { points: pts, lines: lns };
     for (const sid of columns) {
+      if (focusStaff && sid !== focusStaff) continue;
       const ids = own(routes, sid) ?? [];
       if (ids.length === 0) continue;
       const s = staffById.get(sid);
@@ -430,14 +617,23 @@ export default function PlanPage() {
       for (const id of ids) {
         const c = clientById.get(visitById.get(id)?.clientId ?? '');
         if (!c || !hasLocation(c.place)) continue;
+        const prev = path[path.length - 1];
+        if (id === focusLeg && prev)
+          lns.push({ points: [prev, { lat: c.place.lat, lng: c.place.lng }], color, highlight: true });
         path.push({ lat: c.place.lat, lng: c.place.lng });
-        pts.push({ lat: c.place.lat, lng: c.place.lng, label: initialOf(c.displayName), color: colorOf(c.color) });
+        pts.push({
+          lat: c.place.lat,
+          lng: c.place.lng,
+          label: initialOf(c.displayName),
+          color: colorOf(c.color),
+          highlight: id === picked || id === focusLeg,
+        });
       }
       if (home && path.length > 1) path.push(home);
       lns.push({ points: path, color });
     }
     return { points: pts, lines: lns };
-  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById]);
+  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById, focusStaff, picked, focusLeg]);
 
   const notInProblem = problem ? visits.filter((v) => !problem.visits.some((p) => p.id === v.id)) : [];
   const cs = curScore?.value ?? null;
@@ -455,15 +651,27 @@ export default function PlanPage() {
       <div key={id}>
         {t && (
           <div className="leg-line">
-            {own(routes, ownerId ?? '')?.[0] === id ? (
-              <WithIcon icon={House} size={13}>
-                自宅から {r0(t.travelIn)}分
-              </WithIcon>
-            ) : (
-              <WithIcon icon={Car} size={13}>
-                {r0(t.travelIn)}分
-              </WithIcon>
-            )}
+            <button
+              type="button"
+              className={`leg-btn ${focusLeg === id ? 'is-on' : ''}`}
+              aria-pressed={focusLeg === id}
+              title={focusLeg === id ? '地図の区間の強調をやめる' : '地図でこの区間を強調する'}
+              onClick={() => {
+                const on = focusLeg !== id;
+                setFocusLeg(on ? id : null);
+                if (on && ownerId) setFocusStaff(ownerId);
+              }}
+            >
+              {own(routes, ownerId ?? '')?.[0] === id ? (
+                <WithIcon icon={House} size={13}>
+                  自宅から {r0(t.travelIn)}分
+                </WithIcon>
+              ) : (
+                <WithIcon icon={Car} size={13}>
+                  {r0(t.travelIn)}分
+                </WithIcon>
+              )}
+            </button>
             {t.wait > 0 && (
               <WithIcon icon={Hourglass} size={13}>
                 待ち {r0(t.wait)}分
@@ -482,11 +690,15 @@ export default function PlanPage() {
             role="button"
             tabIndex={0}
             className="route-btn plain-btn"
-            onClick={() => setPicked(isPicked ? null : id)}
+            onClick={() => {
+              setPicked(isPicked ? null : id);
+              if (!isPicked && ownerId) setFocusStaff(ownerId);
+            }}
             onKeyDown={(ev) => {
               if (ev.key === 'Enter' || ev.key === ' ') {
                 ev.preventDefault();
                 setPicked(isPicked ? null : id);
+                if (!isPicked && ownerId) setFocusStaff(ownerId);
               }
             }}
             title="押すと理由を見られます。ドラッグで別の担当へ移せます"
@@ -610,10 +822,20 @@ export default function PlanPage() {
             <div className="stack" style={{ gap: 4 }}>
               <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} style={{ width: '100%' }} />
               <span className="sub">
+                {runningFor ? `${shortDate(runningFor.date)} の案・` : ''}
                 {progress
-                  ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回・いまの最良 ${r0(progress.bestScore)}点`
+                  ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点`}`
                   : '準備中…'}
               </span>
+              {batch && (
+                <span className="sub" data-testid="batch-progress">
+                  <WithIcon icon={LayoutGrid} size={13}>
+                    {shortDate(batch.date)} の案：プリセット {batch.index + 1}/{batch.total}「{batch.name}
+                    」を作っています
+                    {batch.date !== date ? '（別の日）' : ''}（止めると残りは作りません）
+                  </WithIcon>
+                </span>
+              )}
             </div>
           )}
           {m.problemError && <p className="error">問題を作れませんでした：{m.problemError}</p>}
@@ -621,7 +843,7 @@ export default function PlanPage() {
           {stale && autoMade && (
             <div className="sub row">
               <WithIcon icon={TriangleAlert} size={14}>
-                開いたときに{PRESETS[0]?.name}の条件で自動で作った案です
+                プリセット「{madeBy?.name}」の条件で作った案です
               </WithIcon>
               <Hint>
                 いまの条件とは違います。点数はいまの条件で付け直しています。いまの条件で作るには「AI案を作る」を押してください。
@@ -638,13 +860,113 @@ export default function PlanPage() {
           )}
         </div>
 
+        {(runs.length > 0 || batch) && (
+          <div className="card stack">
+            <SectionTitle
+              icon={LayoutGrid}
+              aside={
+                <span className="row" style={{ gap: 6 }}>
+                  {missing.length > 0 && !batch && (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      disabled={!!running || !problem}
+                      onClick={() => runBatch(missing)}
+                    >
+                      <WithIcon icon={Sparkles} size={14}>
+                        足りない案を作る（{missing.length}つ）
+                      </WithIcon>
+                    </button>
+                  )}
+                  <Hint>
+                    プリセットごとに、この日の記録のうち重みが一致する最新の案です。点数はどれも、いまの条件の同じ物差しで付けています（比較の画面と同じ）。
+                    {SCORE_TEXT}。王冠は一番点の高い案です。
+                  </Hint>
+                </span>
+              }
+            >
+              プリセットごとの案
+            </SectionTitle>
+            <div className="preset-cards" data-testid="preset-cards">
+              {presetCards.map((c, i) => {
+                // 今の案の元になった記録の id で（無い古いデータは経路の一致で）。手直し中は今の案としない
+                const isCurrent =
+                  !!c.run &&
+                  !!aiPlan &&
+                  !edited &&
+                  (aiPlan.runId
+                    ? aiPlan.runId === c.run.id
+                    : JSON.stringify(aiPlan.routes) === JSON.stringify(c.run.routes));
+                const making = batch?.date === date && batch.presetId === c.preset.id;
+                const sc = c.score;
+                return (
+                  <div
+                    key={c.preset.id}
+                    className={`preset-card ${i === bestCard ? 'is-best' : ''} ${isCurrent ? 'is-current' : ''}`}
+                    data-testid="preset-card"
+                  >
+                    <div className="spread">
+                      <strong className="preset-card-name ellipsis" title={c.preset.note}>
+                        {c.preset.name}
+                      </strong>
+                      {i === bestCard && (
+                        <span className="preset-crown" title="一番点の高い案">
+                          <Crown size={16} aria-label="一番点の高い案" />
+                        </span>
+                      )}
+                    </div>
+                    {c.run && sc ? (
+                      <>
+                        <div className="preset-card-score">
+                          <span data-testid="preset-card-score">{c.hundred ?? '—'}</span>
+                          <small>点</small>
+                        </div>
+                        <div className="preset-card-stats sub">
+                          <span>
+                            <Car size={12} aria-hidden="true" /> 移動 {r0(sc.travelMinutes)}分
+                          </span>
+                          <span className={sc.dropped > 0 ? 'warn-text' : ''}>
+                            <CircleOff size={12} aria-hidden="true" /> 入らない {sc.dropped}件
+                          </span>
+                          <span className={sc.hardViolations.length > 0 ? 'error' : ''}>
+                            <ShieldAlert size={12} aria-hidden="true" /> 必須の違反 {sc.hardViolations.length}件
+                          </span>
+                        </div>
+                        {achievementSummary(c.ach, data.rules) && (
+                          <span className="sub preset-card-ach">
+                            <ListChecks size={12} aria-hidden="true" /> {achievementSummary(c.ach, data.rules)}
+                          </span>
+                        )}
+                        {isCurrent ? (
+                          <span className="chip chip-primary preset-card-now">今の案</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-small"
+                            disabled={!!running}
+                            onClick={() => c.run && openRun(c.run, c.preset.name)}
+                          >
+                            この案にする
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <span className="sub preset-card-empty">{making ? '作っています…' : 'まだ作っていません'}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {!aiPlan ? (
           <div className="card">
             <Empty icon={Sparkles}>
               {runningFor?.date === date
-                ? `この日のAI案を${runningFor.label}条件で作っています…`
-                : running
-                  ? '別の日のAI案を作っています…'
+                ? `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
+                : running && runningFor
+                  ? `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
                   : 'この日のAI案はまだありません。「AI案を作る」を押してください。'}
             </Empty>
           </div>
@@ -661,7 +983,26 @@ export default function PlanPage() {
               >
                 今の案{edited ? '（手直し後）' : ''}
               </SectionTitle>
-              <PlanSummary current={cs} generated={gs} changed={genDiff?.value?.changedVisits.length ?? 0} />
+              <PlanSummary
+                current={cs}
+                generated={gs}
+                changed={genDiff?.value?.changedVisits.length ?? 0}
+                problem={problem}
+                scale={scale}
+                balanceOut={(() => {
+                  const b = curAch.find((x) => x.ruleId === BALANCE_RULE_KEY);
+                  return b ? b.total - b.met : null;
+                })()}
+              />
+              {problem && cs && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <strong className="balance-title">
+                    <ListChecks size={15} aria-hidden="true" />
+                    条件ごとの達成
+                  </strong>
+                  <AchievementList list={curAch} rules={data.rules} terms={terms} />
+                </div>
+              )}
               {problem && cs && (
                 <BalanceChips problem={problem} routes={routes} staffName={staffName} colorOfStaff={colorOfStaff} />
               )}
@@ -716,20 +1057,35 @@ export default function PlanPage() {
                   return (
                     <div
                       key={sid}
-                      className={['route-col', dropTo === sid ? 'is-drop' : '', notAllowed ? 'is-red' : ''].join(' ')}
+                      className={[
+                        'route-col',
+                        dropTo === sid ? 'is-drop' : '',
+                        notAllowed ? 'is-red' : '',
+                        focusStaff === sid ? 'is-focus' : '',
+                        focusStaff && focusStaff !== sid ? 'is-dim-col' : '',
+                      ].join(' ')}
                       style={{ borderTopColor: colorOfStaff.get(sid) }}
                       data-staff={sid}
                       {...dropProps(sid)}
                     >
                       <div className="spread">
-                        <strong className="col-head ellipsis">
+                        <button
+                          type="button"
+                          className="col-head col-focus ellipsis"
+                          aria-pressed={focusStaff === sid}
+                          title={focusStaff === sid ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
+                          onClick={() => {
+                            focusOn(focusStaff === sid ? null : sid);
+                          }}
+                        >
                           <span
                             className="staff-dot"
                             style={{ background: colorOfStaff.get(sid) }}
                             aria-hidden="true"
                           />
                           {staffName(sid)}
-                        </strong>
+                          <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
+                        </button>
                         <span className="chip">{ids.length}件</span>
                       </div>
                       {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
@@ -741,21 +1097,52 @@ export default function PlanPage() {
               </div>
             </div>
 
-            <div className="card stack">
-              <SectionTitle icon={MapIcon}>地図</SectionTitle>
+            <div className="card stack" ref={mapCardRef}>
+              <SectionTitle
+                icon={MapIcon}
+                aside={
+                  focusStaff && (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => {
+                        setFocusStaff(null);
+                        setFocusLeg(null);
+                      }}
+                    >
+                      全員のルートを見る
+                    </button>
+                  )
+                }
+              >
+                地図{focusStaff ? `：${staffName(focusStaff)}` : ''}
+              </SectionTitle>
               <RouteMap points={points} lines={lines} height={420} />
               <div className="row sub" style={{ flexWrap: 'wrap' }}>
                 {columns
                   .filter((sid) => (own(routes, sid)?.length ?? 0) > 0)
                   .map((sid) => (
-                    <span key={sid} className="nowrap legend-item">
+                    <button
+                      key={sid}
+                      type="button"
+                      className={`nowrap legend-item legend-btn ${focusStaff === sid ? 'is-on' : ''}`}
+                      aria-pressed={focusStaff === sid}
+                      onClick={() => focusOn(focusStaff === sid ? null : sid)}
+                    >
                       <span className="legend-line" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
                       {staffName(sid)}
-                    </span>
+                    </button>
                   ))}
                 <span className="nowrap legend-item">「家」＝自宅</span>
               </div>
             </div>
+            <MapDock
+              target={mapCardRef}
+              points={points}
+              lines={lines}
+              title={`地図${focusStaff ? `：${staffName(focusStaff)}` : ''}`}
+              focusKey={[focusStaff, focusLeg, picked].filter(Boolean).join('|')}
+            />
           </>
         )}
 
@@ -809,18 +1196,25 @@ export default function PlanPage() {
   );
 }
 
-/** 今の案の合計点・移動・待ち・必須の違反と、AIが出したままとの差 */
+/** 今の案の合計点（1.6倍した点）・移動・待ち・必須の違反と、AIが出したままとの差 */
 function PlanSummary({
   current,
   generated,
   changed,
+  problem,
+  scale,
+  balanceOut,
 }: {
   current: PlanScore | null;
   generated: PlanScore | null;
   changed: number;
+  problem: Problem | null;
+  scale: ScoreScale | null;
+  /** 件数の目安から外れた人の数（負担の均等が無効なら null） */
+  balanceOut: number | null;
 }) {
   if (!current) return null;
-  /** AIが出したままとの差（無ければ null） */
+  /** AIが出したままとの差（費用の側。低いほど良い。無ければ null） */
   const delta = (a: number, b: number | undefined, unit: string) => {
     if (b === undefined) return null;
     const d = a - b;
@@ -832,16 +1226,32 @@ function PlanSummary({
     return d ? <>AI案から {d}</> : undefined;
   };
   const hard = current.hardViolations.length;
+  const hundred = scale ? toHundred(current.total, scale) : null;
+  const genHundred = scale && generated ? toHundred(generated.total, scale) : null;
+  const parts = scale && problem ? hundredBreakdown(current, scale, problem) : [];
+  /** 合計の note：AIが出したままと点が違えば「AI案から −3点」（高いほど良い）、同じなら減点の上位 */
+  const totalNote = () => {
+    if (hundred === null) return undefined;
+    const d = genHundred === null ? 0 : hundred - genHundred;
+    if (d !== 0) {
+      return (
+        <>
+          AI案から <span className={d > 0 ? 'ok-text' : 'warn-text'}>{deltaText(d, '点')}</span>
+        </>
+      );
+    }
+    return breakdownText(parts) || undefined;
+  };
   return (
     <div className="stack" style={{ gap: 8 }}>
       <div className="stat-row" data-testid="plan-summary">
         <Stat
           icon={Gauge}
-          label="合計"
+          label={hard > 0 ? '合計（参考）' : '合計'}
           tone="primary"
-          value={<span data-testid="plan-total">{r0(current.total)}</span>}
+          value={<span data-testid="plan-total">{hundred ?? '—'}</span>}
           unit="点"
-          note={note(current.total, generated?.total, '点')}
+          note={totalNote()}
         />
         <Stat
           icon={Car}
@@ -857,7 +1267,16 @@ function PlanSummary({
           unit="分"
           note={note(current.waitMinutes, generated?.waitMinutes, '分')}
         />
-        <Stat icon={Scale} label="負担の均等" value={pointsText(current.balancePoints)} unit="点" />
+        {balanceOut !== null && (
+          <Stat
+            icon={Scale}
+            label="目安から外れた人"
+            tone={balanceOut > 0 ? 'warn' : 'ok'}
+            value={balanceOut}
+            unit="人"
+            note={balanceOut > 0 ? `負担の均等 ${pointsText(current.balancePoints)}点` : undefined}
+          />
+        )}
         <Stat
           icon={hard > 0 ? ShieldAlert : ShieldCheck}
           label="必須の違反"
@@ -869,12 +1288,16 @@ function PlanSummary({
           <Stat icon={CircleOff} label="入らない訪問" tone="warn" value={current.dropped} unit="件" />
         )}
       </div>
-      {generated && (
-        <Hint label="AIが出したまま">
-          合計 {r0(generated.total)}点・移動 {r0(generated.travelMinutes)}分・待ち {r0(generated.waitMinutes)}分
-          {changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
-        </Hint>
-      )}
+      <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+        {scale && <HundredHint cost={current.total} parts={parts} scale={scale} />}
+        {scale && <RefMark hard={hard} />}
+        {generated && (
+          <Hint label="AIが出したまま">
+            合計 {genHundred ?? '—'}点・移動 {r0(generated.travelMinutes)}分・待ち {r0(generated.waitMinutes)}分
+            {changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
+          </Hint>
+        )}
+      </div>
     </div>
   );
 }

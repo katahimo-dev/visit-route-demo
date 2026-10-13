@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import type { Client, Staff, Visit } from '../contracts/documents';
-import type { Problem } from '../contracts/problem';
+import type { Problem, ScoreScale } from '../contracts/problem';
 import { availabilityOf, type Slot } from '../domain/availability';
 import { NONE, reconcile, type View } from '../domain/scheduleModel';
+import { normalize } from '../evaluate';
 import { compile } from '../matching';
 import { useDemoData } from '../store';
 import { attempt, byDisplayName, byName, staffColor } from './common';
@@ -30,6 +31,11 @@ export function useDayModel(date: string) {
     );
   }, [staff, data.availability, date]);
   const compiled = useMemo(() => attempt(() => compile(data, date)), [data, date]);
+  /** 100点満点の物差し（下限＝100点・素朴な案＝0点。ADR-0007） */
+  const scale = useMemo(() => {
+    const p = compiled.value;
+    return p ? attempt(() => normalize(p)).value : null;
+  }, [compiled]);
   /** 保存してある手作業案（訪問の staffId で補う） */
   const savedView: View = useMemo(
     () =>
@@ -53,6 +59,7 @@ export function useDayModel(date: string) {
     slotsOf,
     problem: compiled.value as Problem | null,
     problemError: compiled.error,
+    scale: scale as ScoreScale | null,
     savedView,
   };
 }

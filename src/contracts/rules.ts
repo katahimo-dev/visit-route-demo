@@ -101,3 +101,32 @@ export const compatSchema = z.record(
 );
 /** clientId → staffId → 相性 */
 export type Compat = z.infer<typeof compatSchema>;
+
+/** プリセットの数の上限（初期の3つ＋利用者が足す3つ。ADR-0008） */
+export const MAX_PRESETS = 6;
+
+/** プリセットの型ごとの重み・必須。重みの範囲（0〜5・0.5刻み）は zod では止めず store の repair で直す */
+const presetWeightSchema = z.object({ weight: z.number(), hard: z.boolean() });
+
+/**
+ * 条件のプリセット（ADR-0005・ADR-0008）。条件の型ごとに重み・必須を決め、その日の条件（rules）の同じ型に上書きする。
+ * データ（DemoData.presets）に入り、利用者が編集・追加・削除できる。初期値は seed の INITIAL_PRESETS。
+ * weights に無い型は 重み0・必須でない で補う
+ */
+export const presetSchema = z.object({
+  id: z.string().min(1).max(50),
+  name: z.string().min(1).max(20),
+  /** 画面に出す一言 */
+  note: z.string().max(60),
+  weights: z.preprocess(
+    (raw) => {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+      const o = raw as Record<string, unknown>;
+      return Object.fromEntries(RULE_TYPES.map((t) => [t, Object.hasOwn(o, t) ? o[t] : { weight: 0, hard: false }]));
+    },
+    z.object(
+      Object.fromEntries(RULE_TYPES.map((t) => [t, presetWeightSchema])) as Record<RuleType, typeof presetWeightSchema>,
+    ),
+  ),
+});
+export type Preset = z.infer<typeof presetSchema>;

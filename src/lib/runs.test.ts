@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_RUNS_PER_DAY } from '../contracts/data';
 import type { SolveResult } from '../contracts/problem';
-import { applyPreset, createDemoData, PRESETS } from '../seed';
-import { addRun, planOfRun, runLabel } from './runs';
+import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
+import { addRun, findRun, planOfRun, runLabel } from './runs';
 
 const DAY = '2026-10-12';
 const result = (routes: Record<string, string[]>): SolveResult => ({
@@ -59,9 +59,17 @@ describe('AI案の記録（ADR-0005）', () => {
       runLabel(
         rules.map((r) => ({ ...r, weight: r.type === 'wait' ? 0.5 : r.weight })),
         0,
+        PRESETS,
       ),
     ).toBe('条件を変えた案');
-    expect(runLabel(rules, 2)).toBe('標準・固定2件で組み直し');
+    expect(runLabel(rules, 2, PRESETS)).toBe('標準・固定2件で組み直し');
+  });
+
+  it('名前はデータのプリセットから引く（名前を変えたら新しい名前、足したプリセットにも一致する）', () => {
+    const d0 = createDemoData(DAY);
+    const renamed = { ...d0, presets: d0.presets.map((p, i) => (i === 0 ? { ...p, name: 'いつもの' } : p)) };
+    const d1 = addRun(renamed, DAY, { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 });
+    expect(d1.aiRuns[DAY]![0]!.label).toBe('いつもの');
   });
 
   it('記録を今の案にすると、AIが出したまま＝記録の結果', () => {
@@ -71,5 +79,14 @@ describe('AI案の記録（ADR-0005）', () => {
     expect(p.routes).toEqual({ s1: ['a'] });
     expect(p.generated.routes).toEqual(p.routes);
     expect(p.pins).toEqual({});
+  });
+
+  it('今の案は元の記録の id を持つ（同じ結果の記録は findRun で引ける）', () => {
+    const d0 = createDemoData(DAY);
+    const x = { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 };
+    const d1 = addRun(d0, DAY, x);
+    const run = findRun(d1, DAY, x)!;
+    expect(planOfRun(run).runId).toBe(run.id);
+    expect(findRun(addRun(d1, DAY, { ...x, createdAt: 2 }), DAY, x)?.id).toBe(run.id);
   });
 });

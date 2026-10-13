@@ -3,7 +3,18 @@
 import ExcelJS from 'exceljs';
 import type { DemoData, ImportError } from '../contracts/data';
 import type { Availability, Client, Org, Staff, Visit } from '../contracts/documents';
-import type { Compat, Condition, Item, ItemTarget, Rule, Traits } from '../contracts/rules';
+import {
+  type Compat,
+  type Condition,
+  HARDABLE,
+  type Item,
+  type ItemTarget,
+  MAX_PRESETS,
+  type Preset,
+  RULE_TYPES,
+  type Rule,
+  type Traits,
+} from '../contracts/rules';
 import { slotsError } from '../domain/availability';
 import { MAX_OPTIONS, nameKey, newId, optionNameError } from '../lib/common';
 import { isImportError, migrate } from '../store';
@@ -14,7 +25,9 @@ import {
   ORG_HEADERS,
   ORG_KEYS,
   PREF_PREFIX,
+  PRESET_COLS,
   prefHeader,
+  presetWeightHeader,
   REQ_PREFIX,
   RULE_COLS,
   reqHeader,
@@ -542,6 +555,57 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   }
   if (errors.any) return errors.toError();
 
+  // プリセット（ADR-0008）。シートが無い古いブックは、いまのプリセットのまま
+  let presets: Preset[] = base.presets;
+  const presetWs = wb.getWorksheet(FIXED_SHEETS.presets);
+  if (presetWs) {
+    const sheet = new Sheet(FIXED_SHEETS.presets, presetWs, errors);
+    const labels = ruleTypeLabels(terms);
+    const weightCols = RULE_TYPES.map((t) => ({ t, h: presetWeightHeader(labels[t]) }));
+    if (
+      !sheet.require([
+        PRESET_COLS.id,
+        PRESET_COLS.name,
+        PRESET_COLS.note,
+        ...weightCols.map((c) => c.h),
+        PRESET_COLS.hard,
+      ])
+    )
+      return errors.toError();
+    const ids = new Map<string, number>();
+    const presetIds = new Set(base.presets.map((p) => p.id));
+    const read: Preset[] = [];
+    const rows = sheet.rows();
+    if (rows.length === 0) errors.add(sheetMsg(FIXED_SHEETS.presets, 'プリセットを1行以上書いてください'));
+    if (rows.length > MAX_PRESETS)
+      errors.add(sheetMsg(FIXED_SHEETS.presets, `プリセットは${MAX_PRESETS}つまでです（いま${rows.length}行）`));
+    for (const r of rows) {
+      const id = idOf(r, PRESET_COLS.id, ids, 'p', presetIds, 50);
+      const name = r.required(PRESET_COLS.name, 20);
+      const note = r.optional(PRESET_COLS.note, 60);
+      const hardTypes = new Set<string>();
+      for (const part of splitList(r.text(PRESET_COLS.hard))) {
+        const t = lookup(labels, part);
+        if (t === null) r.err(PRESET_COLS.hard, `「${part}」は条件の種類の名前ではありません`);
+        else if (!HARDABLE.has(t)) r.err(PRESET_COLS.hard, `「${part}」は必須にできません`);
+        else hardTypes.add(t);
+      }
+      const weights: Partial<Preset['weights']> = {};
+      let ok = true;
+      for (const { t, h } of weightCols) {
+        const w = r.num(h, { min: 0, max: 5 });
+        if (w === undefined) ok = false;
+        else if (w !== null && !Number.isInteger(w * 2)) {
+          r.err(h, '重みは0.5刻みで書いてください');
+          ok = false;
+        } else weights[t] = { weight: w ?? 0, hard: hardTypes.has(t) };
+      }
+      if (name !== null && ok) read.push({ id, name, note, weights: weights as Preset['weights'] });
+    }
+    if (errors.any) return errors.toError();
+    presets = read;
+  }
+
   // スタッフ
   const staff: Staff[] = [];
   const staffByName = new Map<string, string>();
@@ -787,6 +851,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},
+    presets,
   };
   const r = migrate(next);
   return isImportError(r) ? { ...r, message: `読み込んだ内容に問題があります：${r.message}` } : r;

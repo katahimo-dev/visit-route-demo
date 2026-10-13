@@ -29,6 +29,8 @@ export type Reason = {
   label: string;
   /** 点（正＝悪い、負＝良い）。可否で外れた原因は Infinity */
   points: number;
+  /** 相性の理由にだけ付ける（2=◎ 1=○ -1=△ -2=×）。達成の件数（evaluate.achievements）に使う */
+  level?: 2 | 1 | -1 | -2;
 };
 
 export type Problem = {
@@ -131,3 +133,51 @@ export type VisitExplain = {
 };
 
 export type PlanDiff = { changedVisits: string[]; travelDelta: number; scoreDelta: number };
+
+/** 点数の倍率（ADR-0007 追記。下限＝100・素朴な案＝0 の点に掛ける。2026-10-13） */
+export const SCORE_MULTIPLIER = 1.6;
+/** 点数の上限（下限の案の点＝100 × SCORE_MULTIPLIER） */
+export const SCORE_MAX = 160;
+
+/**
+ * 点数の物差し（evaluate.normalize。ADR-0007）。表示だけに使い、solver が最小にする費用は変えない。
+ * 点数＝round(160 × (naive − 費用) / (naive − lowerBound))、0 で止め上は 160 まで（100 を超えてよい）。naive ≤ lowerBound なら 160
+ */
+export type ScoreScale = {
+  /**
+   * 160点：理論上の下限（どの案の費用もこれ以上）。各訪問を割当費用が最小の担当に＋移動の下限（各訪問に来る・出る移動の最小の和）。
+   * 待ち・均等は0。担当の候補がいない訪問は落とした訪問の点
+   */
+  lowerBound: number;
+  /** 0点：素朴な案（matching の naiveSeqs：担当できる人の少ない順・開始の早い順に、増える移動が最も少ない担当の最も安い位置に挟む）の費用 */
+  naive: number;
+  /** 素朴な案（staffId → 訪問ID。回る順） */
+  naiveRoutes: Record<string, string[]>;
+  /** 下限のうち割当費用の合計 */
+  lowerAssign: number;
+  /** 下限のうち移動（分＝点） */
+  lowerTravel: number;
+  /** 下限のうち落とした訪問の件数（どの担当も可にならない訪問） */
+  lowerDropped: number;
+};
+
+/** 点数の減点の内訳（費用の成分ごと。points は減点の大きさ＝正、合計はおおむね 160−点数） */
+export type HundredPart = {
+  key: 'travel' | 'wait' | 'assign' | 'balance' | 'dropped';
+  label: string;
+  points: number;
+};
+
+/**
+ * 条件ごとの達成の件数（evaluate.achievements。ADR-0008）。
+ * total＝その条件の判定がある割当済みの訪問（負担の均等は稼働のある人と訪問のある人の数）、
+ * met＝その条件の判定をすべて満たした（点が0以下の）訪問（負担の均等は目安の帯に収まった人）。
+ * compat は相性の条件だけ：◎・○・△・× の件数
+ */
+export type RuleAchievement = {
+  ruleId: string;
+  unit: 'visit' | 'staff';
+  total: number;
+  met: number;
+  compat: { great: number; good: number; poor: number; ng: number } | null;
+};

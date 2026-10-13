@@ -3,21 +3,27 @@ import {
   Heart,
   HeartHandshake,
   Hourglass,
+  LayoutGrid,
   type LucideIcon,
   Plus,
   Repeat,
+  RotateCcw,
   Scale,
   ShieldCheck,
   SlidersHorizontal,
   ThumbsUp,
   Trash2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { WeightSlider } from '../components/parts';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
-import { HARDABLE, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
+import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
+import { PRESET_NAME_MAX, PRESET_NOTE_MAX, patchPreset, removePreset, resetPresets } from '../lib/presets';
+import { presetOf } from '../seed';
 import { useDemoData } from '../store';
+import { SavePresetForm, SCORE_TEXT } from './planParts';
 import './settings.css';
 
 /** 条件の種類ごとのアイコン（必要条件=盾、希望=ハート／いいね など） */
@@ -79,7 +85,8 @@ export default function RulesPage() {
           AI案は「移動時間＋条件の点」の合計がいちばん低くなる割当を探します。点は移動1分＝1点、
           <strong>重み1＝1件あたり移動10分ぶん</strong>
           （重み5＝50分ぶん）。重み0の条件は使いません。必須にした条件は、点ではなく「守らなければ担当にしない」になります。
-          時間の約束と稼働時間帯はいつも必須です。
+          時間の約束と稼働時間帯はいつも必須です。 画面の合計点は、この合計を高いほど良い点数（{SCORE_TEXT}
+          。機械的に割り当てた案＝0点）に直して出します。
         </Hint>
         <div className="table-scroll">
           <table className="rules-table">
@@ -172,6 +179,8 @@ export default function RulesPage() {
         <Hint label="この種類の説明">{ruleTypeHelp(addType, terms)}</Hint>
       </div>
 
+      <PresetSection />
+
       <div className="card seed-card">
         <SectionTitle icon={Dices}>乱数の種</SectionTitle>
         <Hint label="説明">
@@ -219,6 +228,189 @@ function LabelInput({ value, onChange, fallback }: { value: string; onChange: (v
         if (draft !== null && !draft.trim()) onChange(fallback);
         setDraft(null);
       }}
+    />
+  );
+}
+
+/**
+ * 条件のプリセット（D20・D24。ADR-0008）。名前・一言・型ごとの重み・必須を変えるとすぐ保存。
+ * 消す（最後の1つは消せない）・いまの重みを保存（6つまで）・初期値に戻す
+ */
+function PresetSection() {
+  const { data, update } = useDemoData();
+  const terms = data.org.terms;
+  const location = useLocation();
+  const ref = useRef<HTMLDivElement>(null);
+  const current = presetOf(data.rules, data.presets);
+  // AI案の画面の「プリセットを編集する」（#/rules#presets）から来たら、この節を見せる
+  useEffect(() => {
+    if (location.hash === '#presets') ref.current?.scrollIntoView({ block: 'start' });
+  }, [location.hash]);
+  const set = (id: string, patch: Partial<Omit<Preset, 'id'>>) => update((d) => patchPreset(d, id, patch));
+  const setWeight = (p: Preset, t: RuleType, w: Partial<{ weight: number; hard: boolean }>) =>
+    set(p.id, { weights: { ...p.weights, [t]: { ...p.weights[t], ...w } } });
+  const remove = (p: Preset) => {
+    if (data.presets.length <= 1) return;
+    if (!confirm(`プリセット「${p.name}」を消しますか？（作った案の記録は残ります）`)) return;
+    update((d) => removePreset(d, p.id));
+  };
+  const reset = () => {
+    if (
+      !confirm(
+        'プリセットを初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消えます。よろしいですか？',
+      )
+    )
+      return;
+    update(resetPresets);
+  };
+  return (
+    <div className="card stack" ref={ref} data-testid="preset-section">
+      <SectionTitle
+        icon={LayoutGrid}
+        aside={
+          <Hint>
+            AI案の画面のプリセットのボタンと、開いた日に自動で作る案に使います。条件の種類ごとに重み・必須を決め、押すとその日の条件の同じ種類に当てます。
+            {MAX_PRESETS}つまで。変えるとすぐ保存します。
+          </Hint>
+        }
+      >
+        プリセット（{data.presets.length}/{MAX_PRESETS}）
+      </SectionTitle>
+      <div className="stack" style={{ gap: 8 }}>
+        {data.presets.map((p, i) => (
+          <details key={p.id} className="preset-edit" data-testid="preset-edit">
+            <summary>
+              <span className="preset-no">{i + 1}</span>
+              <strong>{p.name}</strong>
+              {current?.id === p.id && <span className="chip chip-primary">いまの重み</span>}
+              <span className="sub ellipsis">{p.note}</span>
+            </summary>
+            <div className="stack" style={{ gap: 8, paddingTop: 8 }}>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <div className="stack" style={{ maxWidth: 220, gap: 2 }}>
+                  <span>名前</span>
+                  <PresetText
+                    value={p.name}
+                    max={PRESET_NAME_MAX}
+                    required
+                    ariaLabel="プリセットの名前"
+                    onChange={(name) => set(p.id, { name })}
+                  />
+                </div>
+                <div className="stack" style={{ flex: 1, minWidth: 200, gap: 2 }}>
+                  <span>一言</span>
+                  <PresetText
+                    value={p.note}
+                    max={PRESET_NOTE_MAX}
+                    ariaLabel="プリセットの一言"
+                    onChange={(note) => set(p.id, { note })}
+                  />
+                </div>
+              </div>
+              <div className="table-scroll">
+                <table className="rules-table">
+                  <thead>
+                    <tr>
+                      <th>条件の種類</th>
+                      <th style={{ width: 220 }}>重み</th>
+                      <th>必須</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {RULE_TYPES.map((t) => {
+                      const w = p.weights[t];
+                      const hardable = HARDABLE.has(t);
+                      const locked = hardable && w.hard && t !== 'balance';
+                      return (
+                        <tr key={t} className={w.weight === 0 && !w.hard ? 'is-dim' : ''}>
+                          <td>
+                            <WithIcon icon={RULE_ICONS[t]} size={14}>
+                              {ruleTypeLabel(t, terms)}
+                            </WithIcon>
+                          </td>
+                          <td>
+                            <WeightSlider
+                              label={`${p.name}の${ruleTypeLabel(t, terms)}`}
+                              value={w.weight}
+                              disabled={locked}
+                              onChange={(weight) => setWeight(p, t, { weight })}
+                            />
+                          </td>
+                          <td className="nowrap">
+                            {hardable ? (
+                              <label className={`hard-toggle${w.hard ? ' is-on' : ''}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={w.hard}
+                                  onChange={(e) => setWeight(p, t, { hard: e.target.checked })}
+                                />
+                                <WithIcon icon={ShieldCheck} size={14}>
+                                  必須
+                                </WithIcon>
+                              </label>
+                            ) : (
+                              <span className="sub">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  disabled={data.presets.length <= 1}
+                  title={data.presets.length <= 1 ? '最後の1つは消せません' : undefined}
+                  onClick={() => remove(p)}
+                >
+                  <WithIcon icon={Trash2} size={14}>
+                    このプリセットを消す
+                  </WithIcon>
+                </button>
+              </div>
+            </div>
+          </details>
+        ))}
+      </div>
+      <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <SavePresetForm />
+        <button type="button" className="btn" onClick={reset}>
+          <WithIcon icon={RotateCcw}>初期値に戻す</WithIcon>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** プリセットの名前・一言の入力（名前は空のまま保存しない。空のまま離れたら元に戻す） */
+function PresetText({
+  value,
+  max,
+  required = false,
+  ariaLabel,
+  onChange,
+}: {
+  value: string;
+  max: number;
+  required?: boolean;
+  ariaLabel: string;
+  onChange: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      value={draft ?? value}
+      maxLength={max}
+      aria-label={ariaLabel}
+      onChange={(e) => {
+        const t = e.target.value;
+        setDraft(t);
+        if (!required || t.trim()) onChange(t.slice(0, max));
+      }}
+      onBlur={() => setDraft(null)}
     />
   );
 }

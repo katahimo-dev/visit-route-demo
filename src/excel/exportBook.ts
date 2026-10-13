@@ -5,6 +5,7 @@ import {
   COMPAT_LABELS,
   type CompatLevel,
   type Condition,
+  HARDABLE,
   ITEM_KINDS,
   type Item,
   RULE_TYPES,
@@ -17,7 +18,9 @@ import {
   ITEM_COLS,
   ORG_HEADERS,
   ORG_KEYS,
+  PRESET_COLS,
   prefHeader,
+  presetWeightHeader,
   RULE_COLS,
   reqHeader,
   STAFF_COLS,
@@ -178,6 +181,7 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     `・${FIXED_SHEETS.org}：事業所名・業種・呼び方など。「項目」と「値」の2列です。`,
     `・${FIXED_SHEETS.items}：${t.staff}・${t.client}の特性の項目。種類は「${ITEM_KINDS.map((k) => itemKindLabels[k]).join('」「')}」。選択肢は「、」か改行で区切ります（選択肢の名前に「、」と改行、「${EMPTY_MULTI}」は使えません）。`,
     `・${FIXED_SHEETS.rules}：AI案を作るときの条件（重み 0〜5、0.5刻み。必須は ○）。`,
+    `・${FIXED_SHEETS.presets}：条件のプリセット（1〜6行）。「重み：〈条件の種類〉」の列に重み（0〜5、0.5刻み。空は0）、「必須」の列に必須にする条件の種類を「、」区切りで書きます。このシートが無いブックを読み込むと、いまのプリセットのままです。`,
     `・${names.staff}：${t.staff}の一覧。勤務する曜日は「月火水木金」のように書きます。`,
     `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。いつもの担当は${t.staff}の名前で書きます。`,
     `・${FIXED_SHEETS.compat}：行が${t.client}、列が${t.staff}です。◎・○・△・× か空で書きます（× は担当にしません）。`,
@@ -315,6 +319,30 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       { col: 4, values: Array.from({ length: 11 }, (_, i) => String(i / 2)) },
       { col: 5, values: [YES] },
     ],
+    freezeCols: 2,
+  });
+
+  // プリセット（ADR-0008）
+  addTable(wb, {
+    name: FIXED_SHEETS.presets,
+    headers: [
+      PRESET_COLS.id,
+      PRESET_COLS.name,
+      PRESET_COLS.note,
+      ...RULE_TYPES.map((k) => presetWeightHeader(ruleLabels[k])),
+      PRESET_COLS.hard,
+    ],
+    rows: data.presets.map((p) => [
+      p.id,
+      p.name,
+      p.note,
+      ...RULE_TYPES.map((k) => p.weights[k].weight),
+      RULE_TYPES.filter((k) => HARDABLE.has(k) && p.weights[k].hard)
+        .map((k) => ruleLabels[k])
+        .join('、'),
+    ]),
+    textCols: [1],
+    lists: RULE_TYPES.map((_, i) => ({ col: 4 + i, values: Array.from({ length: 11 }, (_, j) => String(j / 2)) })),
     freezeCols: 2,
   });
 

@@ -301,3 +301,188 @@
     min-width: 560px;
   }
 }
+
+/* プリセットごとの案のカード（ADR-0008） */
+.preset-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+  min-width: 0;
+}
+.preset-card.is-best {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 2px #f5dfb5 inset;
+}
+.preset-card.is-current {
+  background: var(--primary-soft);
+}
+.preset-card-name {
+  font-size: 0.95rem;
+}
+.preset-crown {
+  color: var(--warn);
+  display: inline-flex;
+}
+.preset-card-score {
+  font-size: 1.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.preset-card-score small {
+  font-size: 0.8rem;
+  margin-left: 2px;
+  color: var(--sub);
+}
+.preset-card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.preset-card-stats svg,
+.preset-card-ach svg {
+  vertical-align: -1px;
+}
+.preset-card-now {
+  align-self: flex-start;
+}
+.preset-card-empty {
+  padding: 12px 0;
+}
+.preset-card .btn {
+  margin-top: auto;
+}
+@media (max-width: 640px) {
+  .preset-cards {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 4px;
+  }
+  .preset-card {
+    flex: 0 0 72%;
+    scroll-snap-align: start;
+  }
+}
+
+/* 条件ごとの達成の件数（D25） */
+.achievements {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
+}
+.achievement {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--soft);
+  border-left: 4px solid var(--ok);
+  font-size: 0.9rem;
+}
+.achievement.tone-warn {
+  border-left-color: var(--warn);
+}
+.achievement-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preset-save input {
+  width: 100%;
+}
+
+/* 地図で見るスタッフ（列の見出し・凡例を押す）と、選んだ訪問先の強調 */
+.col-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+}
+.col-focus:hover,
+.col-focus[aria-pressed="true"] {
+  background: var(--primary-soft);
+}
+.col-focus-icon {
+  color: var(--sub);
+  opacity: 0;
+}
+.col-focus:hover .col-focus-icon,
+.col-focus[aria-pressed="true"] .col-focus-icon {
+  opacity: 1;
+  color: var(--primary);
+}
+.route-col.is-focus {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.route-col.is-dim-col {
+  opacity: 0.55;
+}
+.legend-btn {
+  border: 1px solid transparent;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.legend-btn:hover,
+.legend-btn.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.map-pin-hl {
+  width: 40px;
+  height: 40px;
+  font-size: 1rem;
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  animation: pin-pulse 1.4s ease-out infinite;
+}
+@keyframes pin-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(232, 115, 95, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgba(232, 115, 95, 0);
+  }
+}
+
+/* 区間（移動）を押すと地図でその線を強調 */
+.leg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.leg-btn:hover,
+.leg-btn.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}

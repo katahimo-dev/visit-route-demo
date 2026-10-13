@@ -1,20 +1,15 @@
-// 条件のプリセット（ADR-0005）。条件の型ごとに重み・必須を決め、その日の条件（rules）の同じ型に上書きする
-import type { Rule, RuleType } from '../contracts/rules';
+// 条件のプリセットの初期値（ADR-0005・ADR-0008）。条件の型ごとに重み・必須を決め、その日の条件（rules）の同じ型に上書きする。
+// プリセットはデータ（DemoData.presets）に入り、利用者が編集できる。型 Preset は contracts/rules.ts
+import type { Preset, Rule } from '../contracts/rules';
 import { HARDABLE } from '../contracts/rules';
 
-export type Preset = {
-  id: string;
-  name: string;
-  /** 画面に出す一言 */
-  note: string;
-  weights: Record<RuleType, { weight: number; hard: boolean }>;
-};
+export type { Preset };
 
 /** 必要条件は3つとも必須（重みは使わない） */
 const REQUIRED = { weight: 0, hard: true };
 
-/** 1つ目が既定（初期の条件と同じ。AI案の自動作成に使う） */
-export const PRESETS: readonly Preset[] = [
+/** 初期のプリセット3種（1つ目は初期の条件と同じ。id は変えない）。データへは initialPresets() で写して入れる */
+export const INITIAL_PRESETS: readonly Preset[] = [
   {
     id: 'standard',
     name: '標準',
@@ -70,8 +65,22 @@ export function applyPreset(rules: Rule[], preset: Preset): Rule[] {
   });
 }
 
-/** 条件の重み・必須がそのまま当てはまるプリセット（無ければ null） */
-export function presetOf(rules: Rule[]): Preset | null {
-  const key = (rs: Rule[]) => JSON.stringify(rs.map((r) => [r.id, r.weight, HARDABLE.has(r.type) && r.hard]));
-  return PRESETS.find((p) => key(applyPreset(rules, p)) === key(rules)) ?? null;
+/** 初期のプリセットの写し（データに入れる。定数を書き換えられないように深く写す） */
+export function initialPresets(): Preset[] {
+  return INITIAL_PRESETS.map((p) => ({
+    ...p,
+    weights: Object.fromEntries(Object.entries(p.weights).map(([k, w]) => [k, { ...w }])) as Preset['weights'],
+  }));
+}
+
+const rulesKey = (rs: Rule[]) => JSON.stringify(rs.map((r) => [r.id, r.weight, HARDABLE.has(r.type) && r.hard]));
+
+/** 条件の重み・必須がそのプリセットとそのまま一致するか */
+export function matchesPreset(rules: Rule[], preset: Preset): boolean {
+  return rulesKey(applyPreset(rules, preset)) === rulesKey(rules);
+}
+
+/** 条件の重み・必須がそのまま当てはまるプリセット（同じ重みが2つあれば先の方。無ければ null） */
+export function presetOf(rules: Rule[], presets: readonly Preset[]): Preset | null {
+  return presets.find((p) => matchesPreset(rules, p)) ?? null;
 }

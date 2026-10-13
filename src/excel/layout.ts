@@ -14,6 +14,10 @@ export const ORG_HEADERS = ['項目', '値'] as const;
 
 export const ITEM_COLS = { id: 'ID', target: '対象', name: '名前', kind: '種類', options: '選択肢' } as const;
 export const RULE_COLS = { id: 'ID', label: '名前', type: '種類', weight: '重み', hard: '必須' } as const;
+/** プリセット（ADR-0008）：ID・名前・一言・重み：〈条件の型の名前〉…・必須（必須にする型の名前を「、」区切り） */
+export const PRESET_COLS = { id: 'ID', name: '名前', note: '一言', hard: '必須' } as const;
+export const WEIGHT_PREFIX = '重み：';
+export const presetWeightHeader = (typeLabel: string) => `${WEIGHT_PREFIX}${typeLabel}`;
 export const STAFF_COLS = {
   id: 'ID',
   name: '名前',

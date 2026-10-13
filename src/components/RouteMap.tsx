@@ -6,8 +6,10 @@ import { useEffect, useRef } from 'react';
  * 地図（国土地理院の淡色地図。APIキー不要）。
  * 線は順番どおりに結ぶ。dashed は手作業案（点線）、実線は AI案。
  */
-export type MapPoint = { lat: number; lng: number; label: string; color: string };
-export type MapLine = { points: { lat: number; lng: number }[]; color: string; dashed?: boolean };
+/** highlight は選んだ訪問先（大きく・輪で囲み・前に出す） */
+export type MapPoint = { lat: number; lng: number; label: string; color: string; highlight?: boolean };
+/** highlight は選んだ区間（太く・前に出す）。区間があるときは、ほかの線を薄くする */
+export type MapLine = { points: { lat: number; lng: number }[]; color: string; dashed?: boolean; highlight?: boolean };
 
 export function RouteMap({
   points,
@@ -51,20 +53,32 @@ export function RouteMap({
     const g = layer.current;
     if (!m || !g) return;
     g.clearLayers();
-    for (const line of lines) {
+    const hasHighlight = lines.some((l) => l.highlight);
+    // 強調する区間は最後に描いて前に出す（下に白い縁を敷いて目立たせる）
+    for (const line of [...lines].sort((a, b) => Number(!!a.highlight) - Number(!!b.highlight))) {
       if (line.points.length < 2) continue;
-      L.polyline(
-        line.points.map((p) => [p.lat, p.lng] as [number, number]),
-        { color: line.color, weight: 4, dashArray: line.dashed ? '8 8' : undefined, opacity: 0.9 },
-      ).addTo(g);
+      const latlngs = line.points.map((p) => [p.lat, p.lng] as [number, number]);
+      if (line.highlight) {
+        L.polyline(latlngs, { color: '#fff', weight: 12, opacity: 0.95 }).addTo(g);
+        L.polyline(latlngs, { color: line.color, weight: 7, opacity: 1 }).addTo(g);
+        continue;
+      }
+      L.polyline(latlngs, {
+        color: line.color,
+        weight: 4,
+        dashArray: line.dashed ? '8 8' : undefined,
+        opacity: hasHighlight ? 0.3 : 0.9,
+      }).addTo(g);
     }
     for (const p of points) {
+      const size = p.highlight ? 40 : 28;
       L.marker([p.lat, p.lng], {
+        zIndexOffset: p.highlight ? 1000 : 0,
         icon: L.divIcon({
           className: '',
-          html: `<div class="dot dot-sm" style="background:${p.color};border:2px solid #fff;box-shadow:0 1px 3px #0003">${escapeHtml(p.label)}</div>`,
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
+          html: `<div class="dot ${p.highlight ? 'map-pin-hl' : 'dot-sm'}" style="background:${p.color};border:2px solid #fff;box-shadow:0 1px 3px #0003">${escapeHtml(p.label)}</div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
         }),
       }).addTo(g);
     }

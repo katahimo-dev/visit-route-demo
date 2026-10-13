@@ -229,7 +229,10 @@ export type ClientSeed = {
   address: string;
   lat: number;
   lng: number;
-  /** 平日の約束：[時間の約束, 開始(最早), 開始(最遅), 分] */
+  /**
+   * 平日の約束：[時間の約束, 開始(最早), 開始(最遅), 分]。
+   * デモでは全員が希望の時刻ちょうど（PoC本体の seed の「幅」の訪問は、幅の始まりの時刻ちょうどに変えた。2026-10-13 利用者の決定）
+   */
   slot: ['fixed' | 'window', string, string, number];
   note?: string;
   /** 土日も訪問する */
@@ -267,7 +270,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市太白区八木山本町（八木山動物公園）',
     lat: 38.2489,
     lng: 140.8467,
-    slot: ['window', '10:30', '11:30', 60],
+    slot: ['fixed', '10:30', '10:30', 60],
     note: '坂の上です。冬は路面に注意',
     target: '高齢',
     pet: true,
@@ -288,7 +291,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市若林区南小泉（若林図書館）',
     lat: 38.2404,
     lng: 140.9024,
-    slot: ['window', '09:30', '10:30', 60],
+    slot: ['fixed', '10:30', '10:30', 60],
     note: 'かぎはポストへ',
     weekend: true,
     target: '子ども',
@@ -300,7 +303,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市青葉区川内（仙台市博物館）',
     lat: 38.2558,
     lng: 140.8611,
-    slot: ['window', '11:00', '12:00', 60],
+    slot: ['fixed', '11:00', '11:00', 60],
     note: 'うす味が好き',
     target: '高齢',
     smoking: true,
@@ -334,7 +337,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市青葉区北根（仙台文学館）',
     lat: 38.2935,
     lng: 140.8691,
-    slot: ['window', '13:30', '14:30', 60],
+    slot: ['fixed', '13:30', '13:30', 60],
     target: '子ども',
     requirements: [needChildcare],
   },
@@ -355,7 +358,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市青葉区桜ケ岡公園（仙台市民会館）',
     lat: 38.2648,
     lng: 140.8627,
-    slot: ['window', '15:00', '16:00', 45],
+    slot: ['fixed', '15:00', '15:00', 45],
     note: '音に敏感。チャイムは1回',
     target: '障害',
     preferences: [exp(3)],
@@ -378,7 +381,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市若林区荒浜（震災遺構 荒浜小学校）',
     lat: 38.223,
     lng: 140.98,
-    slot: ['window', '10:00', '11:00', 60],
+    slot: ['fixed', '10:00', '10:00', 60],
     weekend: true,
     target: '高齢',
   },
@@ -399,7 +402,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市青葉区川内（仙台城跡）',
     lat: 38.2526,
     lng: 140.856,
-    slot: ['window', '09:00', '10:00', 45],
+    slot: ['fixed', '09:00', '09:00', 45],
     note: '階段が多い家',
     target: '高齢',
     preferences: [exp(3)],
@@ -421,7 +424,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市宮城野区宮城野（仙台市陸上競技場）',
     lat: 38.2596,
     lng: 140.9045,
-    slot: ['window', '13:00', '14:00', 30],
+    slot: ['fixed', '13:00', '13:00', 30],
     target: '子ども',
     preferences: [{ itemId: 'specialty', op: 'hasAny', value: ['子ども'] }],
   },
@@ -441,7 +444,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市青葉区五橋（仙台市福祉プラザ）',
     lat: 38.254,
     lng: 140.8772,
-    slot: ['window', '16:00', '16:30', 60],
+    slot: ['fixed', '16:00', '16:00', 60],
     weekend: true,
     target: '高齢',
     requirements: [female],
@@ -463,7 +466,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
     address: '仙台市太白区中田（中田市民センター）',
     lat: 38.1985,
     lng: 140.8815,
-    slot: ['window', '13:00', '15:00', 60],
+    slot: ['fixed', '13:00', '13:00', 60],
     weekend: true,
     target: '高齢',
     pet: true,

@@ -256,3 +256,37 @@
 .people-table td.cond-cell {
   min-width: 140px;
 }
+
+/* プリセットの編集（ADR-0008） */
+.preset-edit {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 8px 12px;
+  background: var(--soft);
+}
+.preset-edit summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+.preset-edit .preset-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f3ebe4;
+  color: var(--sub);
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.preset-edit .rules-table td:first-child {
+  white-space: nowrap;
+}
+.preset-edit .rules-table td:nth-child(2) {
+  min-width: 150px;
+}
