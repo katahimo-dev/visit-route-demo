@@ -18,7 +18,7 @@ const routesSchema = z.record(z.string(), z.array(z.string()));
 
 /**
  * 保存したAI案（作ったときの条件の重みも残し、前回との差・再現に使う）。ADR-0004：
- * routes・unassigned・score は手直し後の今の案（score は保存した時点の点。画面ではいまの条件で付け直す）。
+ * routes・unassigned・score は手直し後の今の案（score は保存した時点の費用。画面では点数の基準の物差しで付け直す。ADR-0010）。
  * generated は AI が出したまま（「AI案に戻す」で routes に戻す）。pins は訪問ID → 担当ID（手直しで固定した訪問）。
  * 古い保存データ（generated・pins が無い）は、generated＝routes・unassigned・score の写し、pins＝{} で補う
  */
@@ -73,6 +73,12 @@ export const aiRunSchema = z.object({
   unassigned: z.array(z.string()),
   score: z.number(),
   stopped: z.boolean(),
+  /**
+   * 計算に使った問題（Problem）の中身から作ったキー（lib/runs の problemKey。ADR-0010）。
+   * 訪問・スタッフ（稼働時間帯）・移動・割当費用・可否・均等など、費用と可否に効くものがすべて同じならキーも同じ。
+   * プリセットのカードで再計算を省くのは、これがいまの問題のキーと一致する記録だけ。無い古い記録は使わない（計算する）
+   */
+  inputKey: z.string().max(100).optional(),
 });
 export type AiRun = z.infer<typeof aiRunSchema>;
 
@@ -102,6 +108,12 @@ export const demoDataSchema = z.object({
    * 数・重みの範囲・ID の重複は store の repair で直す（ここでは止めない）
    */
   presets: z.array(presetSchema).max(100),
+  /**
+   * 点数の基準のプリセット（Preset.id。ADR-0010）。点数（100点満点）はいつも、このプリセットの重み・必須を
+   * その日の条件に当てた条件の物差しで付ける（プリセットのカードで条件を変えても点は変わらない）。
+   * 無い古いデータ・存在しない id は store の repair が先頭のプリセットにする（版は1のまま）
+   */
+  scorePresetId: z.string().max(100).optional(),
 });
 export type DemoData = z.infer<typeof demoDataSchema>;
 

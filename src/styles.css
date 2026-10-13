@@ -1319,16 +1319,7 @@ label.check input {
   min-height: 640px;
 }
 
-/* プリセット・比較の記録の一覧（ADR-0005） */
-.preset-btn {
-  justify-content: flex-start;
-  text-align: left;
-}
-.preset-btn.is-on {
-  background: #fde3dd;
-  color: var(--primary-dark);
-  font-weight: 700;
-}
+/* 比較の記録の一覧（ADR-0005） */
 .runs-table td,
 .runs-table th {
   vertical-align: middle;

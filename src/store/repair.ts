@@ -63,6 +63,7 @@ function repairPresets(presets: Preset[]): Preset[] {
  * - 位置の緯度・経度が片方だけ・範囲外なら未登録にする
  * - プリセット（ADR-0008）：ID の重複は最初の1件、MAX_PRESETS を超える分は後ろを捨て、0件なら初期の3種。
  *   重みは 0〜5 に収めて 0.5 刻みに丸め（数でなければ 0）、必須にできない型の必須は外す
+ * - 点数の基準（scorePresetId。ADR-0010）：無い・どのプリセットでもない id なら先頭のプリセット
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -148,6 +149,10 @@ export function repair(d: DemoData): DemoData {
     ]),
   );
 
+  const presets = repairPresets(d.presets);
+  // 点数の基準（ADR-0010）：無い・存在しない id なら先頭のプリセット
+  const scorePresetId = presets.some((p) => p.id === d.scorePresetId) ? d.scorePresetId : presets[0]?.id;
+
   return {
     ...d,
     items: uniqueById(d.items),
@@ -160,6 +165,7 @@ export function repair(d: DemoData): DemoData {
     manualPlans,
     aiPlans: repairPlans(d.aiPlans),
     aiRuns,
-    presets: repairPresets(d.presets),
+    presets,
+    scorePresetId,
   };
 }

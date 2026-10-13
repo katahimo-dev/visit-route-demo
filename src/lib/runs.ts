@@ -14,15 +14,25 @@ export function runLabel(rules: Rule[], pinCount: number, presets: readonly Pres
 
 /**
  * その日の記録に1件足す。同じ条件・種・固定・結果の記録がすでにあれば足さない（同じ入力からは同じ案になる）。
+ * そのとき inputKey（計算に使った問題のキー。problemKey）が違えば、その記録の inputKey を今回のものにする
+ * （データを変えても同じ案になった。いまのデータで再計算を省けるように）。
  * 1日 MAX_RUNS_PER_DAY 件まで（古いものから消す）
  */
 export function addRun(
   d: DemoData,
   date: string,
-  x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult; createdAt: number },
+  x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult; createdAt: number; inputKey?: string },
 ): DemoData {
   const runs = own(d.aiRuns, date) ?? [];
-  if (findRun(d, date, x)) return d;
+  const found = findRun(d, date, x);
+  if (found) {
+    if (x.inputKey === undefined || found.inputKey === x.inputKey) return d;
+    const inputKey = x.inputKey;
+    return {
+      ...d,
+      aiRuns: { ...d.aiRuns, [date]: runs.map((r) => (r === found ? { ...r, inputKey } : r)) },
+    };
+  }
   const no = runs.reduce((m, r) => Math.max(m, r.no), 0) + 1;
   // 最新の記録を消すと番号は使い回すので、ID には作った時刻も入れて別の記録と取り違えない
   const run: AiRun = {
@@ -40,6 +50,7 @@ export function addRun(
     unassigned: x.result.unassigned,
     score: x.result.score,
     stopped: x.result.stopped,
+    ...(x.inputKey !== undefined ? { inputKey: x.inputKey } : {}),
   };
   return { ...d, aiRuns: { ...d.aiRuns, [date]: [...runs, run].slice(-MAX_RUNS_PER_DAY) } };
 }
@@ -57,6 +68,62 @@ export function findRun(
       JSON.stringify(r.pins) === JSON.stringify(x.pins) &&
       JSON.stringify(r.routes) === JSON.stringify(x.result.routes),
   );
+}
+
+/** FNV-1a（32bit）。basis を変えて2回かけ、キーの取り違えを減らす */
+function fnv1a(text: string, basis: number): string {
+  let h = basis >>> 0;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/**
+ * 問題（Problem）の中身のキー（AiRun.inputKey。ADR-0010）。費用と可否に効くものをすべて入れる：
+ * 日付・スタッフ（自宅の地点・稼働時間帯）・訪問（地点・時間の約束・作業時間）・移動と距離の行列・可否・割当費用・待ちの点・均等。
+ * 理由（reasons・infeasible）は可否と費用から決まる説明なので入れない。同じ中身なら同じキー（決定的）
+ */
+export function problemKey(p: Problem): string {
+  const text = JSON.stringify([
+    p.date,
+    p.staff.map((s) => [s.id, s.point, s.slots.map((t) => [t.start, t.end])]),
+    p.visits.map((v) => [v.id, v.clientId, v.point, v.earliest, v.latest, v.duration]),
+    p.travel,
+    p.meters,
+    p.allowed,
+    p.assignCost,
+    p.waitPerMinute,
+    p.balance ? [p.balance.perVisit, p.balance.lo, p.balance.hi, p.balance.cap] : null,
+  ]);
+  return `${text.length.toString(36)}-${fnv1a(text, 0x811c9dc5)}-${fnv1a(text, 0x01234567)}`;
+}
+
+/**
+ * 計算し直さずに使える記録（プリセットのカードを押したときの再計算を省く。ADR-0010）。その日の記録のうち、次をすべて満たす最新のもの：
+ * - 固定なし・途中で止めていない
+ * - 作ったときの条件（rules）が同じ（名前・ID・重み・必須まで）・乱数の種が同じ
+ * - 計算に使った問題のキー（inputKey）が、いまの条件で作った問題 target のキーと同じ（訪問・スタッフ・稼働時間・移動・相性などがすべて同じ）。
+ *   inputKey が無い古い記録は使わない
+ * 同じ入力からは同じ案になる（solver は決定的。反復の回数も問題から決まる）ので、作り直しても同じ案になる。無ければ undefined。
+ * key は problemKey(target)（すでに作ってあれば渡して計算を省く）
+ */
+export function reusableRun(
+  runs: readonly AiRun[],
+  target: Problem,
+  rules: Rule[],
+  seed: number,
+  key: string = problemKey(target),
+): AiRun | undefined {
+  const rulesKey = JSON.stringify(rules);
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const r = runs[i]!;
+    if (Object.keys(r.pins).length > 0 || r.stopped || r.seed !== seed) continue;
+    if (r.inputKey === undefined || r.inputKey !== key || JSON.stringify(r.rules) !== rulesKey) continue;
+    return r;
+  }
+  return undefined;
 }
 
 /** 記録を今の案（予定の画面）にする。AIが出したまま＝記録の結果、固定は記録の固定 */

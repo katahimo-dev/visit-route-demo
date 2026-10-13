@@ -6,7 +6,8 @@ import { score } from '../evaluate';
 import { compile } from '../matching';
 import { client, DATE as FDATE, makeData, staff, visit } from '../matching/fixtures';
 import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
-import { addRun, alignPlan, findRun, planOfRun, runLabel } from './runs';
+import { solve } from '../solver';
+import { addRun, alignPlan, findRun, planOfRun, problemKey, reusableRun, runLabel } from './runs';
 
 const DAY = '2026-10-12';
 const result = (routes: Record<string, string[]>): SolveResult => ({
@@ -147,5 +148,107 @@ describe('今の案を訪問の変更に合わせる（alignPlan）', () => {
     expect(a.unassigned).toEqual(['v3']);
     expect(a.generated.unassigned).toEqual(['v3']);
     expect(a.score).toBe(score(p, plan.routes).total);
+  });
+});
+
+describe('計算し直さずに使える記録（reusableRun。ADR-0010）', () => {
+  const setup = () => {
+    const d = createDemoData(DAY);
+    const date = d.visits[0]!.date;
+    const rules = applyPreset(d.rules, PRESETS[1]!);
+    const p = compile({ ...d, rules }, date);
+    const r = solve(p, { seed: d.seed, iterations: 2000 });
+    const added = addRun(d, date, { rules, pins: {}, result: r, createdAt: 5, inputKey: problemKey(p) });
+    return { d: added, date, rules, p, runs: added.aiRuns[date]! };
+  };
+  /** setup のデータを fn で変えて、同じ条件で問題を作り直す */
+  const recompile = (fn: (d: ReturnType<typeof setup>['d']) => ReturnType<typeof setup>['d']) => {
+    const { d, date, rules } = setup();
+    return compile({ ...fn(d), rules }, date);
+  };
+
+  it('同じ条件・同じ種・同じデータの記録を返す', () => {
+    const { d, rules, p, runs } = setup();
+    expect(reusableRun(runs, p, rules, d.seed)?.id).toBe(runs[0]!.id);
+  });
+
+  it('条件・種・固定・途中で止めた案が違えば使わない', () => {
+    const { d, rules, p, runs } = setup();
+    expect(reusableRun(runs, p, applyPreset(d.rules, PRESETS[2]!), d.seed)).toBeUndefined();
+    expect(reusableRun(runs, p, rules, d.seed + 1)).toBeUndefined();
+    const pinned = runs.map((r) => ({ ...r, pins: { [p.visits[0]!.id]: p.staff[0]!.id } }));
+    expect(reusableRun(pinned, p, rules, d.seed)).toBeUndefined();
+    expect(
+      reusableRun(
+        runs.map((r) => ({ ...r, stopped: true })),
+        p,
+        rules,
+        d.seed,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('記録のあとに訪問・データが変わったら使わない（訪問の集まり・費用が変わる）', () => {
+    const { d, date, rules, runs } = setup();
+    // 訪問を1件取り消す
+    const cancelled = d.visits.find((v) => v.date === date)!.id;
+    const fewer = compile(
+      { ...d, rules, visits: d.visits.map((v) => (v.id === cancelled ? { ...v, cancelled: true } : v)) },
+      date,
+    );
+    expect(reusableRun(runs, fewer, rules, d.seed)).toBeUndefined();
+    // 訪問の所要を変える（集まりは同じでも費用・時刻が変わる）
+    const longer = compile(
+      {
+        ...d,
+        rules,
+        visits: d.visits.map((v) => (v.date === date ? { ...v, durationMinutes: v.durationMinutes + 30 } : v)),
+      },
+      date,
+    );
+    expect(reusableRun(runs, longer, rules, d.seed)).toBeUndefined();
+  });
+
+  it('担当を1人足す・相性を変える・稼働時間を変えると使わない（集まりと費用が同じでも）', () => {
+    const { d, rules, runs } = setup();
+    const s0 = d.staff.find((s) => s.active)!;
+    // 担当を1人足す（休みの人を戻すのと同じ：その人に割り当てない今の案は、いまの費用でも同じ点になる）
+    const more = recompile((x) => ({ ...x, staff: [...x.staff, { ...s0, id: 'added-staff', name: '足した人' }] }));
+    expect(reusableRun(runs, more, rules, d.seed)).toBeUndefined();
+    // 相性を変える
+    const c0 = d.clients[0]!;
+    const compat = recompile((x) => ({
+      ...x,
+      compat: {
+        ...x.compat,
+        [c0.id]: { ...(x.compat[c0.id] ?? {}), [s0.id]: (x.compat[c0.id]?.[s0.id] ?? 0) === 2 ? -1 : 2 },
+      },
+    }));
+    expect(reusableRun(runs, compat, rules, d.seed)).toBeUndefined();
+    // 稼働時間を変える
+    const shift = recompile((x) => ({
+      ...x,
+      staff: x.staff.map((s) => (s.id === s0.id ? { ...s, shiftEnd: s.shiftEnd === '17:00' ? '16:00' : '17:00' } : s)),
+    }));
+    expect(reusableRun(runs, shift, rules, d.seed)).toBeUndefined();
+  });
+
+  it('データが同じなら（作り直した問題でも）使う。inputKey が無い古い記録は使わない', () => {
+    const { d, rules, p, runs } = setup();
+    const same = recompile((x) => ({ ...x, aiPlans: {}, manualPlans: {} }));
+    expect(problemKey(same)).toBe(problemKey(p));
+    expect(reusableRun(runs, same, rules, d.seed)?.id).toBe(runs[0]!.id);
+    const old = runs.map(({ inputKey: _, ...r }) => r);
+    expect(reusableRun(old, p, rules, d.seed)).toBeUndefined();
+  });
+
+  it('同じ結果の記録がすでにあれば足さずに inputKey だけ今回のものにする', () => {
+    const { d, date, rules, runs } = setup();
+    const r = runs[0]!;
+    const result: SolveResult = { ...r, routes: r.routes, unassigned: r.unassigned };
+    const next = addRun(d, date, { rules, pins: {}, result, createdAt: 9, inputKey: 'other' });
+    expect(next.aiRuns[date]).toHaveLength(1);
+    expect(next.aiRuns[date]![0]!.inputKey).toBe('other');
+    expect(addRun(next, date, { rules, pins: {}, result, createdAt: 10, inputKey: 'other' })).toBe(next);
   });
 });

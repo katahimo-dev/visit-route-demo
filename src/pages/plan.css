@@ -169,11 +169,6 @@
 .side-panel .section-title h2 {
   font-size: 0.95rem;
 }
-.preset-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .preset-no {
   display: inline-flex;
   align-items: center;
@@ -186,10 +181,6 @@
   font-size: 0.75rem;
   font-weight: 700;
   flex-shrink: 0;
-}
-.preset-btn.is-on .preset-no {
-  background: var(--primary);
-  color: #fff;
 }
 
 /* 地図の凡例 */
@@ -314,12 +305,53 @@
 .preset-card {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 6px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--soft);
   min-width: 0;
+  /* カード全体がボタン（ADR-0010） */
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+.preset-card > span {
+  display: block;
+}
+.preset-card > .spread {
+  display: flex;
+}
+.preset-card:hover:not(:disabled):not([aria-disabled='true']) {
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(232, 115, 95, 0.18);
+}
+.preset-card:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+.preset-card:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+.preset-card[aria-disabled='true'] {
+  cursor: default;
+}
+.preset-card-note {
+  font-size: 0.75rem;
+}
+.preset-card-action {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--primary-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
 }
 .preset-card.is-best {
   border-color: var(--warn);
@@ -327,6 +359,8 @@
 }
 .preset-card.is-current {
   background: var(--primary-soft);
+  border: 2px solid var(--primary);
+  padding: 11px;
 }
 .preset-card-name {
   font-size: 0.95rem;
@@ -345,23 +379,26 @@
   margin-left: 2px;
   color: var(--sub);
 }
-.preset-card-stats {
+.preset-card > .preset-card-stats {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
+.preset-card-remake {
+  font-size: 0.75rem;
+}
 .preset-card-stats svg,
-.preset-card-ach svg {
+.preset-card-ach svg,
+.preset-card-remake svg {
   vertical-align: -1px;
 }
-.preset-card-now {
+.preset-card .preset-card-now {
+  display: inline-flex;
   align-self: flex-start;
+  margin-top: auto;
 }
 .preset-card-empty {
   padding: 12px 0;
-}
-.preset-card .btn {
-  margin-top: auto;
 }
 @media (max-width: 640px) {
   .preset-cards {

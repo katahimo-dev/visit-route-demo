@@ -298,3 +298,29 @@
   font-size: 0.8em;
   color: var(--sub);
 }
+
+/* 点数の基準のプリセット（ADR-0010） */
+.score-ruler {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin: 0;
+}
+.score-ruler legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  font-weight: 600;
+}
+.score-ruler-option {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.score-ruler-option input {
+  width: auto;
+  margin: 0;
+}

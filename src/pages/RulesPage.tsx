@@ -20,8 +20,15 @@ import { WeightSlider } from '../components/parts';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
-import { PRESET_NAME_MAX, PRESET_NOTE_MAX, patchPreset, removePreset, resetPresets } from '../lib/presets';
-import { presetOf } from '../seed';
+import {
+  PRESET_NAME_MAX,
+  PRESET_NOTE_MAX,
+  patchPreset,
+  removePreset,
+  resetPresets,
+  setScorePreset,
+} from '../lib/presets';
+import { presetOf, scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 import { SavePresetForm, SCORE_TEXT } from './planParts';
 import './settings.css';
@@ -86,7 +93,7 @@ export default function RulesPage() {
           <strong>重み1＝1件あたり移動10分ぶん</strong>
           （重み5＝50分ぶん）。重み0の条件は使いません。必須にした条件は、点ではなく「守らなければ担当にしない」になります。
           時間の約束と稼働時間帯はいつも必須です。 画面の合計点は、この合計を高いほど良い点数（{SCORE_TEXT}
-          ）に直して出します。
+          ）に直して出します。点数はいつも、下のプリセットで選んだ「点数の基準」の重みで付けます（ここで重みを変えても点数の物差しは変わりません）。
         </Hint>
         <div className="table-scroll">
           <table className="rules-table">
@@ -242,6 +249,8 @@ function PresetSection() {
   const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
   const current = presetOf(data.rules, data.presets);
+  /** 点数の基準のプリセット（ADR-0010） */
+  const ruler = scorePresetOf(data.presets, data.scorePresetId);
   // 予定の画面の「プリセットを編集する」（#/rules#presets）から来たら、この節を見せる
   useEffect(() => {
     if (location.hash === '#presets') ref.current?.scrollIntoView({ block: 'start' });
@@ -251,13 +260,15 @@ function PresetSection() {
     set(p.id, { weights: { ...p.weights, [t]: { ...p.weights[t], ...w } } });
   const remove = (p: Preset) => {
     if (data.presets.length <= 1) return;
-    if (!confirm(`プリセット「${p.name}」を消しますか？（作った案の記録は残ります）`)) return;
+    const next = data.presets.find((x) => x.id !== p.id);
+    const moved = ruler?.id === p.id && next ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。` : '';
+    if (!confirm(`プリセット「${p.name}」を消しますか？（作った案の記録は残ります）${moved}`)) return;
     update((d) => removePreset(d, p.id));
   };
   const reset = () => {
     if (
       !confirm(
-        'プリセットを初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消えます。よろしいですか？',
+        'プリセットを初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。よろしいですか？',
       )
     )
       return;
@@ -269,13 +280,35 @@ function PresetSection() {
         icon={LayoutGrid}
         aside={
           <Hint>
-            予定の画面のプリセットのボタンと、開いた日に自動で作る案に使います。条件の種類ごとに重み・必須を決め、押すとその日の条件の同じ種類に当てます。
+            予定の画面のプリセットごとの案のカードと、開いた日に自動で作る案に使います。条件の種類ごとに重み・必須を決め、カードを押すとその日の条件の同じ種類に当てます。
             {MAX_PRESETS}つまで。変えるとすぐ保存します。
           </Hint>
         }
       >
         プリセット（{data.presets.length}/{MAX_PRESETS}）
       </SectionTitle>
+      <fieldset className="score-ruler" data-testid="score-ruler-choice">
+        <legend>
+          点数の基準
+          <Hint ariaLabel="点数の基準の説明">
+            画面の点数（100点満点）は、いつもここで選んだプリセットの重み・必須で付けます。予定の画面でプリセットを押して条件を変えても、点数の物差しは変わりません（プリセットは「どう組むか」だけを変えます）。基準のプリセットの重みを変えると点数も変わります。基準のプリセットを消すと、先頭のプリセットが基準になります。
+          </Hint>
+        </legend>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+          {data.presets.map((p) => (
+            <label key={p.id} className="score-ruler-option">
+              <input
+                type="radio"
+                name="score-preset"
+                value={p.id}
+                checked={ruler?.id === p.id}
+                onChange={() => update((d) => setScorePreset(d, p.id))}
+              />
+              {p.name}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div className="stack" style={{ gap: 8 }}>
         {data.presets.map((p, i) => (
           <details key={p.id} className="preset-edit" data-testid="preset-edit">
@@ -283,6 +316,7 @@ function PresetSection() {
               <span className="preset-no">{i + 1}</span>
               <strong>{p.name}</strong>
               {current?.id === p.id && <span className="chip chip-primary">いまの重み</span>}
+              {ruler?.id === p.id && <span className="chip">点数の基準</span>}
               <span className="sub ellipsis">{p.note}</span>
             </summary>
             <div className="stack" style={{ gap: 8, paddingTop: 8 }}>
