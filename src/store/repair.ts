@@ -1,7 +1,8 @@
 // 読み込んだデータの中身の食い違いを直す（store がデータの持ち主。design.md §4）
 import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
 import type { Availability, Place } from '../contracts/documents';
-import type { Compat } from '../contracts/rules';
+import { type Compat, HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES } from '../contracts/rules';
+import { initialPresets } from '../seed/presets';
 
 /** 手作業案の「未割当」の列（domain/scheduleModel の NONE と同じ） */
 const NONE = '__none';
@@ -39,8 +40,31 @@ function repairPlace(p: Place): Place {
  * - AI案（aiPlans）・AI案の記録（aiRuns）：いないスタッフの列の訪問は未割当へ。その日にない訪問・重複を除き、固定はいる訪問・スタッフだけ。
  *   記録の ID の重複は最初の1件、1日 MAX_RUNS_PER_DAY 件を超える分は古いものから捨てる
  * - 位置の緯度・経度が片方だけ・範囲外なら未登録にする
+ * - プリセット（ADR-0008）：ID の重複は最初の1件、MAX_PRESETS を超える分は後ろを捨て、0件なら初期の3種。
+ *   重みは 0〜5 に収めて 0.5 刻みに丸め（数でなければ 0）、必須にできない型の必須は外す
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
+/** 重みを 0〜5・0.5刻みにする（数でなければ 0） */
+export function clampWeight(w: number): number {
+  if (!Number.isFinite(w)) return 0;
+  return Math.min(5, Math.max(0, Math.round(w * 2) / 2));
+}
+
+function repairPresets(presets: Preset[]): Preset[] {
+  const out = uniqueById(presets)
+    .slice(0, MAX_PRESETS)
+    .map((p) => {
+      const weights = Object.fromEntries(
+        RULE_TYPES.map((t) => {
+          const w = p.weights[t];
+          return [t, { weight: clampWeight(w.weight), hard: HARDABLE.has(t) && w.hard }];
+        }),
+      ) as Preset['weights'];
+      return JSON.stringify(weights) === JSON.stringify(p.weights) ? p : { ...p, weights };
+    });
+  return out.length > 0 ? out : initialPresets();
+}
+
 export function repair(d: DemoData): DemoData {
   const staff = uniqueById(d.staff).map((s) => {
     const home = repairPlace(s.home);
@@ -136,5 +160,6 @@ export function repair(d: DemoData): DemoData {
     manualPlans,
     aiPlans: repairPlans(d.aiPlans),
     aiRuns,
+    presets: repairPresets(d.presets),
   };
 }

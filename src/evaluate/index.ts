@@ -1,14 +1,17 @@
 // 入口（evaluate：手作業案・AI案を同じ Problem で採点・説明・差分）
-import type {
-  HundredPart,
-  PlanDiff,
-  PlanScore,
-  Problem,
-  Reason,
-  RouteTiming,
-  ScoreScale,
-  StopTiming,
-  VisitExplain,
+import {
+  type HundredPart,
+  type PlanDiff,
+  type PlanScore,
+  type Problem,
+  type Reason,
+  type RouteTiming,
+  type RuleAchievement,
+  SCORE_MAX,
+  SCORE_MULTIPLIER,
+  type ScoreScale,
+  type StopTiming,
+  type VisitExplain,
 } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
 import { balanceOff, balancePoints, scheduleRoute, totalPoints } from '../matching';
@@ -232,7 +235,7 @@ export function diff(problem: Problem, from: Record<string, string[]>, to: Recor
   return { changedVisits, travelDelta: sb.travelMinutes - sa.travelMinutes, scoreDelta: sb.total - sa.total };
 }
 
-// ---- 100点満点（ADR-0007。表示だけ。solver の費用は変えない）----
+// ---- 点数（ADR-0007。表示だけ。solver の費用は変えない。下限＝160点・素朴な案＝0点）----
 
 /**
  * 素朴な案：訪問を開始（earliest）の早い順に、可否・件数の上限・時間の約束・稼働時間帯を満たす担当のうち
@@ -352,22 +355,28 @@ export function normalize(problem: Problem): ScoreScale {
   };
 }
 
-/** 費用 → 100点満点（高いほど良い。費用について単調に減る。0〜100 の整数） */
+/** 下限＝SCORE_MAX（160）点の物差しの1点あたり（100点 × 倍率） */
+const FULL = 100 * SCORE_MULTIPLIER;
+
+/**
+ * 費用 → 点数（高いほど良い。費用について単調に減る。0〜SCORE_MAX の整数）。
+ * 下限＝100・素朴な案＝0 の点に SCORE_MULTIPLIER（1.6）を掛けた値（ADR-0007 追記）。100 を超えてよく、0 で止める
+ */
 export function toHundred(cost: number, scale: ScoreScale): number {
   const span = scale.naive - scale.lowerBound;
-  if (!(span > 0)) return 100;
-  const p = Math.round((100 * (scale.naive - cost)) / span);
-  return p < 0 ? 0 : p > 100 ? 100 : p;
+  if (!(span > 0)) return SCORE_MAX;
+  const p = Math.round((FULL * (scale.naive - cost)) / span);
+  return p < 0 ? 0 : p > SCORE_MAX ? SCORE_MAX : p;
 }
 
 /**
- * 減点の内訳：費用の成分ごとの下限からの超過 × 100/(naive − lowerBound)。大きい順。
- * 合計は 100−点数（丸めと 0〜100 に収める分を除く）。naive ≤ lowerBound なら空
+ * 減点の内訳：費用の成分ごとの下限からの超過 × 160/(naive − lowerBound)（点数と同じ倍率）。大きい順。
+ * 合計は 160−点数（丸めと 0 で止めた分を除く）。naive ≤ lowerBound なら空
  */
 export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Problem): HundredPart[] {
   const span = scale.naive - scale.lowerBound;
   if (!(span > 0)) return [];
-  const k = 100 / span;
+  const k = FULL / span;
   const parts: HundredPart[] = [
     { key: 'travel', label: '移動', points: (sc.travelMinutes - scale.lowerTravel) * k },
     { key: 'wait', label: '待ち', points: sc.waitMinutes * problem.waitPerMinute * k },
@@ -376,4 +385,62 @@ export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Prob
     { key: 'dropped', label: '入らない訪問', points: (sc.dropped - scale.lowerDropped) * DROP_POINTS * k },
   ];
   return parts.sort((a, b) => b.points - a.points);
+}
+
+// ---- 条件ごとの達成の件数（ADR-0008）----
+
+/**
+ * 条件（Rule.id）ごとの達成の件数。割当済みの訪問のうち、その条件の判定（理由）がある訪問を total、
+ * その条件の理由がすべて点0以下（満たした・加点）の訪問を met にする。相性は ◎・○・△・× の件数も数える。
+ * 負担の均等（BALANCE_RULE_KEY）は、稼働のある人か訪問のある人のうち、目安の帯に収まった人数（unit 'staff'）。
+ * 並びは理由に初めて出た順（problem の訪問・担当の順。決定的）、負担の均等は最後
+ */
+export function achievements(problem: Problem, routes: Record<string, string[]>): RuleAchievement[] {
+  const p = place(problem, routes);
+  const by = new Map<string, RuleAchievement>();
+  for (let v = 0; v < problem.visits.length; v++) {
+    const s = p.staffOf[v]!;
+    if (s < 0) continue;
+    const ok = new Map<string, boolean>();
+    for (const r of problem.reasons[v]![s]!) {
+      // 可否・固定などの内部の原因は数えない（条件の ID だけ）
+      if (r.ruleId === 'noPlace' || r.ruleId === 'slot' || r.ruleId === 'time' || r.ruleId === 'pin') continue;
+      ok.set(r.ruleId, (ok.get(r.ruleId) ?? true) && r.points <= 0);
+      if (r.level !== undefined) {
+        const e = entry(by, r.ruleId);
+        e.compat ??= { great: 0, good: 0, poor: 0, ng: 0 };
+        if (r.level === 2) e.compat.great++;
+        else if (r.level === 1) e.compat.good++;
+        else if (r.level === -1) e.compat.poor++;
+        else e.compat.ng++;
+      }
+    }
+    for (const [ruleId, met] of ok) {
+      const e = entry(by, ruleId);
+      e.total++;
+      if (met) e.met++;
+    }
+  }
+  const out = [...by.values()];
+  const b = problem.balance;
+  if (b) {
+    const e: RuleAchievement = { ruleId: BALANCE_RULE_KEY, unit: 'staff', total: 0, met: 0, compat: null };
+    for (let s = 0; s < problem.staff.length; s++) {
+      const n = p.seqs[s]!.length;
+      if (problem.staff[s]!.slots.length === 0 && n === 0) continue;
+      e.total++;
+      if (balanceOff(b, s, n) === 0) e.met++;
+    }
+    out.push(e);
+  }
+  return out;
+}
+
+function entry(by: Map<string, RuleAchievement>, ruleId: string): RuleAchievement {
+  let e = by.get(ruleId);
+  if (!e) {
+    e = { ruleId, unit: 'visit', total: 0, met: 0, compat: null };
+    by.set(ruleId, e);
+  }
+  return e;
 }

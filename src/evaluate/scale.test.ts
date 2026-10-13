@@ -1,41 +1,51 @@
 import { describe, expect, it } from 'vitest';
-import type { Problem } from '../contracts/problem';
+import { type Problem, SCORE_MAX, SCORE_MULTIPLIER } from '../contracts/problem';
 import { compile } from '../matching';
 import { DATE, randomData } from '../matching/fixtures';
-import { applyPreset, createDemoData, PRESETS } from '../seed';
+import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
 import { defaultIterations, solve } from '../solver';
 import { hundredBreakdown, naivePlan, normalize, score, toHundred } from './index';
 
 const DEMO_DATE = '2026-10-13';
 
-describe('100点満点（ADR-0007）', () => {
+describe('点数（ADR-0007。下限＝160点・素朴な案＝0点の1.6倍）', () => {
   const demo = createDemoData('2026-10-12');
   const p = compile(demo, DEMO_DATE);
   const scale = normalize(p);
 
-  it('下限 < 素朴な案。素朴な案自身は0点、下限は100点', () => {
+  it('下限 < 素朴な案。素朴な案自身は0点、下限は160点', () => {
     expect(scale.lowerBound).toBeLessThan(scale.naive);
     expect(toHundred(scale.naive, scale)).toBe(0);
-    expect(toHundred(scale.lowerBound, scale)).toBe(100);
+    expect(toHundred(scale.lowerBound, scale)).toBe(SCORE_MAX);
+    expect(SCORE_MAX).toBe(160);
     expect(score(p, scale.naiveRoutes).hardViolations).toEqual([]);
   });
 
-  it('費用が低いほど点が高く（単調）、0〜100 に収まる', () => {
+  it('費用が低いほど点が高く（単調）、0 で止まり 160 まで。100 を超える点もある', () => {
     let prev = Number.POSITIVE_INFINITY;
+    let over100 = false;
     for (let c = scale.lowerBound - 500; c <= scale.naive + 500; c += 7) {
       const h = toHundred(c, scale);
       expect(h).toBeGreaterThanOrEqual(0);
-      expect(h).toBeLessThanOrEqual(100);
+      expect(h).toBeLessThanOrEqual(SCORE_MAX);
       expect(h).toBeLessThanOrEqual(prev);
+      if (h > 100) over100 = true;
       prev = h;
     }
+    expect(over100).toBe(true);
     expect(toHundred(scale.naive + 1e6, scale)).toBe(0);
-    expect(toHundred(scale.lowerBound - 1e6, scale)).toBe(100);
+    expect(toHundred(scale.lowerBound - 1e6, scale)).toBe(SCORE_MAX);
   });
 
-  it('素朴な案 ≤ 下限なら常に100点', () => {
+  it('倍率は1.6：下限と素朴な案のちょうど中間の費用は80点', () => {
+    const mid = (scale.naive + scale.lowerBound) / 2;
+    expect(toHundred(mid, scale)).toBe(80);
+    expect(SCORE_MULTIPLIER).toBe(1.6);
+  });
+
+  it('素朴な案 ≤ 下限なら常に160点', () => {
     const flat = { ...scale, naive: scale.lowerBound };
-    expect(toHundred(scale.lowerBound + 999, flat)).toBe(100);
+    expect(toHundred(scale.lowerBound + 999, flat)).toBe(SCORE_MAX);
     expect(hundredBreakdown(score(p, scale.naiveRoutes), flat, p)).toEqual([]);
   });
 
@@ -45,7 +55,7 @@ describe('100点満点（ADR-0007）', () => {
     expect(naivePlan(p)).toEqual(scale.naiveRoutes);
   });
 
-  it(`デモデータ ${DEMO_DATE}：AI案は素朴な案より点が高く、内訳の合計はおおむね 100−点数`, () => {
+  it(`デモデータ ${DEMO_DATE}：AI案は素朴な案より点が高く、内訳の合計はおおむね 160−点数`, () => {
     const r = solve(p, { seed: demo.seed, iterations: defaultIterations(p) });
     const sc = score(p, r.routes);
     expect(scale.lowerBound).toBeLessThanOrEqual(sc.total + 1e-6);
@@ -54,9 +64,9 @@ describe('100点満点（ADR-0007）', () => {
     expect(h).toBeGreaterThan(toHundred(scale.naive, scale));
     const parts = hundredBreakdown(sc, scale, p);
     const sum = parts.reduce((a, x) => a + x.points, 0);
-    expect(Math.abs(sum - (100 - h))).toBeLessThan(1);
+    expect(Math.abs(sum - (SCORE_MAX - h))).toBeLessThan(1);
     console.info(
-      `[100点] ${DEMO_DATE} AI案 費用${Math.round(sc.total)}→${h}点 / 素朴な案 費用${Math.round(scale.naive)} / 下限 ${Math.round(scale.lowerBound)}（割当${Math.round(scale.lowerAssign)}・移動${Math.round(scale.lowerTravel)}）`,
+      `[点数] ${DEMO_DATE} AI案 費用${Math.round(sc.total)}→${h}点 / 素朴な案 費用${Math.round(scale.naive)} / 下限 ${Math.round(scale.lowerBound)}（割当${Math.round(scale.lowerAssign)}・移動${Math.round(scale.lowerTravel)}）`,
       parts.map((x) => `${x.label} −${x.points.toFixed(1)}`).join('・'),
     );
   }, 30000);
@@ -69,7 +79,7 @@ describe('100点満点（ADR-0007）', () => {
       expect(s.lowerBound).toBeLessThanOrEqual(r.score + 1e-6);
       expect(s.lowerBound).toBeLessThanOrEqual(s.naive + 1e-6);
       console.info(
-        `[100点] ${preset.name}：AI案 費用${Math.round(r.score)}→${toHundred(r.score, s)}点 / 素朴な案 ${Math.round(s.naive)} / 下限 ${Math.round(s.lowerBound)}`,
+        `[点数] ${preset.name}：AI案 費用${Math.round(r.score)}→${toHundred(r.score, s)}点 / 素朴な案 ${Math.round(s.naive)} / 下限 ${Math.round(s.lowerBound)}`,
       );
     }
   }, 60000);

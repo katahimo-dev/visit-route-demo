@@ -35,7 +35,7 @@ import { planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
 import './plan.css';
-import { CompareTable, explainMap, ReasonBox } from './planParts';
+import { CompareTable, explainMap, ReasonBox, SCORE_TEXT } from './planParts';
 
 /**
  * 比較（D19・D22・ADR-0005）：その日のAI案の記録（作るたびに条件と結果を残したもの）と「今の案」から、
@@ -339,7 +339,7 @@ export default function ComparePage() {
 
   const as = aScore?.value ?? null;
   const bs = bScore?.value ?? null;
-  /** 100点満点の A・B と差（B−A。高いほど良い） */
+  /** 点数の A・B と差（B−A。高いほど良い） */
   const hundredDelta =
     as && bs && scale
       ? (() => {
@@ -368,7 +368,8 @@ export default function ComparePage() {
           icon={History}
           aside={
             <Hint>
-              AI案の画面で作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した100点満点の点です（高いほど良い）。理想（届かない下限）を100点、近い順に機械的に割り当てた案を0点として、理想にどれだけ近いかを表します。
+              AI案の画面で作る・組み直すたびに、条件と結果が残ります。合計点は、いまの条件の同じ物差しで付け直した点です（高いほど良い。
+              {SCORE_TEXT}）。近い順に機械的に割り当てた案を0点として、理想（届かない下限）にどれだけ近いかを表します。
             </Hint>
           }
         >
@@ -388,7 +389,7 @@ export default function ComparePage() {
                   <th className="ab-col">B</th>
                   <th>案</th>
                   <th>作った時刻</th>
-                  <th className="num">合計点（100点満点）</th>
+                  <th className="num">合計点</th>
                   <th className="num">移動</th>
                   <th className="num">入らない</th>
                   <th />
@@ -531,7 +532,7 @@ export default function ComparePage() {
                     tone={hundredDelta.d > 0 ? 'ok' : hundredDelta.d < 0 ? 'warn' : 'plain'}
                     value={hundredDelta.d === 0 ? '差なし' : `B が ${deltaText(hundredDelta.d, '')}`}
                     unit={hundredDelta.d === 0 ? undefined : '点'}
-                    note={`${hundredDelta.a}点 → ${hundredDelta.b}点（100点満点）`}
+                    note={`${hundredDelta.a}点 → ${hundredDelta.b}点`}
                   />
                 )}
                 <Stat

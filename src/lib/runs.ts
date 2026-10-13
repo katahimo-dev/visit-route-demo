@@ -1,13 +1,13 @@
 // AI案の記録（ADR-0005）：作るたびに条件と結果を残し、比較の画面で任意の2つを比べる
 import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
 import type { SolveResult } from '../contracts/problem';
-import type { Rule } from '../contracts/rules';
+import type { Preset, Rule } from '../contracts/rules';
 import { presetOf } from '../seed';
 import { own } from './common';
 
 /** 記録の名前：プリセットと一致すればプリセット名、違えば「条件を変えた案」。固定を残した組み直しは件数を足す */
-export function runLabel(rules: Rule[], pinCount: number): string {
-  const base = presetOf(rules)?.name ?? '条件を変えた案';
+export function runLabel(rules: Rule[], pinCount: number, presets: readonly Preset[]): string {
+  const base = presetOf(rules, presets)?.name ?? '条件を変えた案';
   return pinCount > 0 ? `${base}・固定${pinCount}件で組み直し` : base;
 }
 
@@ -34,8 +34,8 @@ export function addRun(
     no,
     date,
     createdAt: x.createdAt,
-    label: runLabel(x.rules, Object.keys(x.pins).length),
-    presetId: presetOf(x.rules)?.id ?? null,
+    label: runLabel(x.rules, Object.keys(x.pins).length, d.presets),
+    presetId: presetOf(x.rules, d.presets)?.id ?? null,
     seed: x.result.seed,
     iterations: x.result.iterations,
     rules: x.rules,

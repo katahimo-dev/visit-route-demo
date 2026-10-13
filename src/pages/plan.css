@@ -301,3 +301,103 @@
     min-width: 560px;
   }
 }
+
+/* プリセットごとの案のカード（ADR-0008） */
+.preset-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+  min-width: 0;
+}
+.preset-card.is-best {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 2px #f5dfb5 inset;
+}
+.preset-card.is-current {
+  background: var(--primary-soft);
+}
+.preset-card-name {
+  font-size: 0.95rem;
+}
+.preset-crown {
+  color: var(--warn);
+  display: inline-flex;
+}
+.preset-card-score {
+  font-size: 1.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.preset-card-score small {
+  font-size: 0.8rem;
+  margin-left: 2px;
+  color: var(--sub);
+}
+.preset-card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.preset-card-stats svg,
+.preset-card-ach svg {
+  vertical-align: -1px;
+}
+.preset-card-now {
+  align-self: flex-start;
+}
+.preset-card-empty {
+  padding: 12px 0;
+}
+.preset-card .btn {
+  margin-top: auto;
+}
+@media (max-width: 640px) {
+  .preset-cards {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 4px;
+  }
+  .preset-card {
+    flex: 0 0 72%;
+    scroll-snap-align: start;
+  }
+}
+
+/* 条件ごとの達成の件数（D25） */
+.achievements {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px;
+}
+.achievement {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--soft);
+  border-left: 4px solid var(--ok);
+  font-size: 0.9rem;
+}
+.achievement.tone-warn {
+  border-left-color: var(--warn);
+}
+.achievement-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preset-save input {
+  width: 100%;
+}

@@ -580,7 +580,7 @@ function ScoreSummary({
           icon={Gauge}
           label="手作業案の合計"
           value={scale ? toHundred(s.total, scale) : '—'}
-          unit="/100点"
+          unit="点"
           tone="primary"
           note={breakdownText(parts) || undefined}
         />

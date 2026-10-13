@@ -160,7 +160,7 @@ export function compile(data: DemoData, date: string, pins?: Record<string, stri
       }
       const level = data.compat[client.id]?.[s.id] ?? 0;
       // 相性×は重み・hard にかかわらず外す
-      if (level === -2) out.push({ ruleId: firstCompat, label: '相性×', points: INF });
+      if (level === -2) out.push({ ruleId: firstCompat, label: '相性×', points: INF, level: -2 });
       const pin = pins?.[pv.id];
       if (pin !== undefined && pin !== s.id && staffIds.has(pin)) {
         out.push({ ruleId: PIN_RULE_ID, label: PIN_LABEL, points: INF });
@@ -217,9 +217,9 @@ export function compile(data: DemoData, date: string, pins?: Record<string, stri
             );
             break;
           case 'compatibility':
-            if (level === 2) out.push({ ruleId: r.id, label: '相性◎', points: 0 - w });
-            else if (level === 1) out.push({ ruleId: r.id, label: '相性○', points: 0 - w / 2 });
-            else if (level === -1) out.push({ ruleId: r.id, label: '相性△', points: r.hard ? INF : w });
+            if (level === 2) out.push({ ruleId: r.id, label: '相性◎', points: 0 - w, level: 2 });
+            else if (level === 1) out.push({ ruleId: r.id, label: '相性○', points: 0 - w / 2, level: 1 });
+            else if (level === -1) out.push({ ruleId: r.id, label: '相性△', points: r.hard ? INF : w, level: -1 });
             break;
           case 'continuity': {
             const usual = client.usualStaffId;

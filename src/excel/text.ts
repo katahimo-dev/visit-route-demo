@@ -47,6 +47,7 @@ export const FIXED_SHEETS = {
   org: '事業所',
   items: '項目',
   rules: '条件',
+  presets: 'プリセット',
   compat: '相性',
   availability: '稼働時間',
   visits: '訪問',

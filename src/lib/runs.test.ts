@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_RUNS_PER_DAY } from '../contracts/data';
 import type { SolveResult } from '../contracts/problem';
-import { applyPreset, createDemoData, PRESETS } from '../seed';
+import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
 import { addRun, planOfRun, runLabel } from './runs';
 
 const DAY = '2026-10-12';
@@ -59,9 +59,17 @@ describe('AI案の記録（ADR-0005）', () => {
       runLabel(
         rules.map((r) => ({ ...r, weight: r.type === 'wait' ? 0.5 : r.weight })),
         0,
+        PRESETS,
       ),
     ).toBe('条件を変えた案');
-    expect(runLabel(rules, 2)).toBe('標準・固定2件で組み直し');
+    expect(runLabel(rules, 2, PRESETS)).toBe('標準・固定2件で組み直し');
+  });
+
+  it('名前はデータのプリセットから引く（名前を変えたら新しい名前、足したプリセットにも一致する）', () => {
+    const d0 = createDemoData(DAY);
+    const renamed = { ...d0, presets: d0.presets.map((p, i) => (i === 0 ? { ...p, name: 'いつもの' } : p)) };
+    const d1 = addRun(renamed, DAY, { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 });
+    expect(d1.aiRuns[DAY]![0]!.label).toBe('いつもの');
   });
 
   it('記録を今の案にすると、AIが出したまま＝記録の結果', () => {

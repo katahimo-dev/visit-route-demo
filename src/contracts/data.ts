@@ -8,7 +8,7 @@ import {
   staffSchema,
   visitSchema,
 } from './documents';
-import { compatSchema, itemSchema, ruleSchema } from './rules';
+import { compatSchema, itemSchema, presetSchema, ruleSchema } from './rules';
 
 /** localStorage のキー（1つの JSON） */
 export const STORAGE_KEY = 'vrdemo:data:v1';
@@ -95,6 +95,11 @@ export const demoDataSchema = z.object({
   aiPlans: z.record(z.string(), aiPlanSchema),
   /** date → AI案の記録（古い順。ADR-0005）。古い保存データ（無い）は {}。前の版の prevAiPlans は読み込みで捨てる */
   aiRuns: z.record(z.string(), z.array(aiRunSchema)).default({}),
+  /**
+   * 条件のプリセット（ADR-0008。1〜MAX_PRESETS つ）。無い古いデータは store の migrate が初期の3種で補う。
+   * 数・重みの範囲・ID の重複は store の repair で直す（ここでは止めない）
+   */
+  presets: z.array(presetSchema).max(100),
 });
 export type DemoData = z.infer<typeof demoDataSchema>;
 

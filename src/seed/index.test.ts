@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { demoDataSchema } from '../contracts/data';
 import { addDays } from '../domain/time';
-import { applyPreset, createDemoData, daysFrom, PRESETS, presetOf } from './index';
+import { applyPreset, createDemoData, daysFrom, INITIAL_PRESETS as PRESETS, presetOf } from './index';
 
 const TODAY = '2026-10-12';
 
@@ -58,13 +58,16 @@ describe('プリセット', () => {
   it('3種あり、標準は初期の条件と同じ', () => {
     const d = createDemoData(TODAY);
     expect(PRESETS).toHaveLength(3);
+    expect(d.presets.map((p) => p.id)).toEqual(['standard', 'travel', 'people']);
+    expect(d.presets).toEqual(PRESETS);
+    expect(d.presets[0]).not.toBe(PRESETS[0]);
     expect(applyPreset(d.rules, PRESETS[0]!)).toEqual(d.rules);
-    expect(presetOf(d.rules)?.id).toBe('standard');
+    expect(presetOf(d.rules, d.presets)?.id).toBe('standard');
   });
   it('当てた条件はそのプリセットと分かる。重みを変えると null', () => {
     const d = createDemoData(TODAY);
-    for (const p of PRESETS) expect(presetOf(applyPreset(d.rules, p))?.id).toBe(p.id);
+    for (const p of PRESETS) expect(presetOf(applyPreset(d.rules, p), d.presets)?.id).toBe(p.id);
     const changed = d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 0.5 } : r));
-    expect(presetOf(changed)).toBeNull();
+    expect(presetOf(changed, d.presets)).toBeNull();
   });
 });

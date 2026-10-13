@@ -1,0 +1,62 @@
+// 条件のプリセットの編集（ADR-0008）。データを書き換えるのは store の update(fn) を通した画面だけ。ここは新しい DemoData を返す純粋関数
+import type { DemoData } from '../contracts/data';
+import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule } from '../contracts/rules';
+import { initialPresets } from '../seed';
+import { newId } from './common';
+
+/** プリセットの名前の上限（contracts の presetSchema と同じ） */
+export const PRESET_NAME_MAX = 20;
+export const PRESET_NOTE_MAX = 60;
+
+/**
+ * いまの条件の重み・必須からプリセットの重みを作る。型ごとに最初の条件の重み・必須を写す
+ * （同じ型の条件が2つ以上あっても、プリセットは型ごとの重みなので最初の1つだけ）。その型の条件が無ければ 重み0
+ */
+export function weightsFromRules(rules: Rule[]): Preset['weights'] {
+  return Object.fromEntries(
+    RULE_TYPES.map((t) => {
+      const r = rules.find((x) => x.type === t);
+      return [t, r ? { weight: r.weight, hard: HARDABLE.has(t) && r.hard } : { weight: 0, hard: false }];
+    }),
+  ) as Preset['weights'];
+}
+
+/** 足せない理由（足せるなら null） */
+export function addPresetError(d: DemoData, name: string): string | null {
+  const n = name.trim();
+  if (n === '') return '名前を入れてください';
+  if (n.length > PRESET_NAME_MAX) return `名前は${PRESET_NAME_MAX}文字までです`;
+  if (d.presets.length >= MAX_PRESETS) return `プリセットは${MAX_PRESETS}つまでです。使わないものを消してください`;
+  return null;
+}
+
+/** いまの条件の重みを、新しいプリセットとして最後に足す（足せなければそのまま返す） */
+export function addPresetFromRules(d: DemoData, name: string, note = ''): DemoData {
+  if (addPresetError(d, name)) return d;
+  const used = new Set(d.presets.map((p) => p.id));
+  let id = newId('p');
+  while (used.has(id)) id = newId('p');
+  const preset: Preset = {
+    id,
+    name: name.trim(),
+    note: note.trim().slice(0, PRESET_NOTE_MAX),
+    weights: weightsFromRules(d.rules),
+  };
+  return { ...d, presets: [...d.presets, preset] };
+}
+
+/** プリセットを消す（最後の1つは消さない） */
+export function removePreset(d: DemoData, id: string): DemoData {
+  if (d.presets.length <= 1) return d;
+  return { ...d, presets: d.presets.filter((p) => p.id !== id) };
+}
+
+/** プリセットの名前・一言・重みを変える */
+export function patchPreset(d: DemoData, id: string, patch: Partial<Omit<Preset, 'id'>>): DemoData {
+  return { ...d, presets: d.presets.map((p) => (p.id === id ? { ...p, ...patch } : p)) };
+}
+
+/** 初期の3種に戻す */
+export function resetPresets(d: DemoData): DemoData {
+  return { ...d, presets: initialPresets() };
+}
