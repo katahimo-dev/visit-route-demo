@@ -879,7 +879,7 @@ function PlanSummary({
   );
 }
 
-/** ヘルパーごとの件数と目安の帯（帯の外は色、必須の上限を超えたら赤）。名前は色の丸 */
+/** スタッフごとの件数と目安の帯（帯の外は色、必須の上限を超えたら赤）。名前は色の丸 */
 function BalanceChips({
   problem,
   routes,

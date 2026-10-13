@@ -1,6 +1,6 @@
 import { BadgeCheck, House, MapPin, Pencil, Plus, Repeat, Save, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { ConditionsEditor, condText, TraitChips, TraitsEditor } from '../components/conditions';
+import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
@@ -84,7 +84,7 @@ export default function ClientsPage() {
               <th>名前</th>
               <th>位置</th>
               <th>特性</th>
-              <th>必要条件・希望</th>
+              <th>{terms.staff}に求めること</th>
               <th>いつもの担当</th>
               <th>状態</th>
               <th aria-label="操作" />
@@ -117,11 +117,8 @@ export default function ClientsPage() {
                 <td>
                   <TraitChips traits={c.traits} items={clientItems} />
                 </td>
-                <td className="sub cond-cell">
-                  {c.requirements.map((x) => condText(x, itemById.get(x.itemId))).join('、')}
-                  {c.requirements.length > 0 && c.preferences.length > 0 && ' ／ 希望：'}
-                  {c.preferences.map((x) => condText(x, itemById.get(x.itemId))).join('、')}
-                  {c.requirements.length + c.preferences.length === 0 && 'なし'}
+                <td className="cond-cell">
+                  <CondChips requirements={c.requirements} preferences={c.preferences} itemById={itemById} />
                 </td>
                 <td className="nowrap">
                   {c.usualStaffId && (
@@ -210,7 +207,7 @@ export default function ClientsPage() {
           <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={clientItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
 
-          <SectionTitle icon={SlidersHorizontal}>必要条件（{terms.staff}に求めること）</SectionTitle>
+          <SectionTitle icon={SlidersHorizontal}>{terms.staff}に求めること：必要条件</SectionTitle>
           <Hint>
             例：性別が女性、資格に看護師を含む。「条件」の画面の「{terms.client}の必要条件」で、必須か重みかを決めます。
           </Hint>
@@ -220,7 +217,7 @@ export default function ClientsPage() {
             value={form.requirements}
             onChange={(requirements) => setForm({ ...form, requirements })}
           />
-          <SectionTitle icon={Sparkles}>希望</SectionTitle>
+          <SectionTitle icon={Sparkles}>{terms.staff}に求めること：希望</SectionTitle>
           <Hint>例：経験年数3以上。満たさないと点が付きます。</Hint>
           <ConditionsEditor
             items={data.items}

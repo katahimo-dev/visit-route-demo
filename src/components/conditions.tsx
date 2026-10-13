@@ -1,6 +1,19 @@
-import { Award, BadgeCheck, Cigarette, type LucideIcon, PawPrint, Plus, Star, Tag, Trash2, User } from 'lucide-react';
+import {
+  Award,
+  BadgeCheck,
+  Cigarette,
+  CircleHelp,
+  Heart,
+  type LucideIcon,
+  PawPrint,
+  ShieldCheck,
+  Star,
+  Tag,
+  Trash2,
+  User,
+} from 'lucide-react';
 import type { Condition, Item, ItemTarget, Op, Traits, TraitValue } from '../contracts/rules';
-import { attempt, ITEM_KIND_LABELS, OP_LABELS, OPS_BY_KIND } from '../lib/common';
+import { attempt, ITEM_KIND_LABELS } from '../lib/common';
 import { conditionText } from '../matching';
 import { Check } from './parts';
 import { IconButton, WithIcon } from './ui';
@@ -16,7 +29,7 @@ export function itemIcon(name: string): LucideIcon {
   return Tag;
 }
 
-/** 特性（traits）の入力と、条件（項目→演算子→値）の入力 */
+/** 特性（traits）の入力と、条件（相手の項目ごとのチェック表）の入力 */
 
 /** 1つの項目の値の入力（項目の種類に合わせる） */
 export function TraitInput({
@@ -31,15 +44,16 @@ export function TraitInput({
   switch (item.kind) {
     case 'flag':
       return (
-        <select
+        <Segmented
+          label={item.name}
           value={value === true ? 'yes' : value === false ? 'no' : ''}
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value === 'yes')}
-          aria-label={item.name}
-        >
-          <option value="">未入力</option>
-          <option value="yes">あり</option>
-          <option value="no">なし</option>
-        </select>
+          options={[
+            ['', '未確認'],
+            ['yes', 'あり'],
+            ['no', 'なし'],
+          ]}
+          onChange={(k) => onChange(k === '' ? null : k === 'yes')}
+        />
       );
     case 'choice':
       return (
@@ -48,7 +62,7 @@ export function TraitInput({
           onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
           aria-label={item.name}
         >
-          <option value="">未入力</option>
+          <option value="">未確認</option>
           {item.options.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -133,39 +147,76 @@ export function TraitsEditor({
   );
 }
 
-/** 演算子に合った値の初期値 */
-function defaultValue(item: Item | undefined, op: Op): TraitValue {
-  if (!item) return null;
-  if (op === 'in' || op === 'hasAny' || op === 'hasAll') return item.options[0] ? [item.options[0]] : [];
-  switch (item.kind) {
-    case 'flag':
-      return true;
-    case 'choice':
-    case 'multi':
-      return item.options[0] ?? '';
-    case 'number':
-      return 0;
-  }
+/** 小さな切り替えボタン（選ばれているものをオレンジの淡い色に） */
+function Segmented({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: [string, string][];
+  onChange: (k: string) => void;
+}) {
+  return (
+    <div className="segmented seg-sm" role="radiogroup" aria-label={label}>
+      {options.map(([k, text]) => (
+        // biome-ignore lint/a11y/useSemanticElements: ボタンの見た目で選ばせる
+        <button
+          key={k}
+          type="button"
+          role="radio"
+          aria-checked={value === k}
+          className={value === k ? 'is-on' : ''}
+          onClick={() => onChange(k)}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  );
 }
 
-/** 条件の表示文（matching.conditionText。まだ使えないときは簡単な文） */
+/** 条件の表示文（matching.conditionText。あり/なしは「項目：あり」の形に） */
 export function condText(cond: Condition, item: Item | undefined): string {
+  if (item?.kind === 'flag' && typeof cond.value === 'boolean' && (cond.op === 'is' || cond.op === 'not')) {
+    const yes = cond.op === 'is' ? cond.value : !cond.value;
+    return `${item.name}：${yes ? 'あり' : 'なし'}${cond.op === 'not' ? '（未確認も可）' : ''}`;
+  }
   const r = attempt(() => conditionText(cond, item));
   if (r.value !== null) return r.value;
   if (!item) return '（項目がありません：無効）';
-  const v = Array.isArray(cond.value)
-    ? cond.value.join('・')
-    : cond.value === true
-      ? 'あり'
-      : cond.value === false
-        ? 'なし'
-        : String(cond.value ?? '');
-  return `${item.name}${OP_LABELS[cond.op]} ${v}`;
+  return item.name;
+}
+
+/** 文字列の配列として読む（is の1つの値も配列に） */
+const listOf = (v: TraitValue): string[] => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []);
+
+/**
+ * 1つの項目にかかる条件を、チェック表で扱える形に読む。読めなければ null（「そのほかの条件」で表示だけ）
+ * flag：is 1つ／choice：is・in 1つ／multi：hasAny・hasAll 1つ／number：gte・lte 1つずつ
+ */
+function readable(item: Item, conds: Condition[]): boolean {
+  if (conds.length === 0) return true;
+  switch (item.kind) {
+    case 'flag':
+      return conds.length === 1 && conds[0]?.op === 'is' && typeof conds[0].value === 'boolean';
+    case 'choice':
+      return conds.length === 1 && (conds[0]?.op === 'is' || conds[0]?.op === 'in');
+    case 'multi':
+      return conds.length === 1 && (conds[0]?.op === 'hasAny' || conds[0]?.op === 'hasAll');
+    case 'number':
+      return (
+        conds.every((c) => (c.op === 'gte' || c.op === 'lte') && typeof c.value === 'number') &&
+        new Set(conds.map((c) => c.op)).size === conds.length
+      );
+  }
 }
 
 /**
- * 条件の一覧の編集。items は相手の項目（訪問先の条件ならスタッフの項目）。
- * 1行＝項目→演算子→値。文は matching の conditionText
+ * 条件の入力。特性と同じく、相手の項目ごとに1行のチェック表にする（何も選ばない＝問わない）。
+ * items は全項目、target は相手（条件が見る特性を持つ側）。保存する形は Condition[] のまま（契約どおり）
  */
 export function ConditionsEditor({
   items,
@@ -180,101 +231,208 @@ export function ConditionsEditor({
   onChange: (c: Condition[]) => void;
 }) {
   const usable = items.filter((i) => i.target === target);
-  const set = (i: number, c: Condition) => onChange(value.map((x, j) => (j === i ? c : x)));
-  const add = () => {
-    const it = usable[0];
-    if (!it) return;
-    const op = OPS_BY_KIND[it.kind][0] as Op;
-    onChange([...value, { itemId: it.id, op, value: defaultValue(it, op) }]);
-  };
+  // その項目の条件を置き換える（ほかの項目の条件はそのまま）
+  const replace = (itemId: string, next: Condition[]) =>
+    onChange([...value.filter((c) => c.itemId !== itemId), ...next].slice(0, 20));
+  const others = value.filter((c) => {
+    const it = usable.find((x) => x.id === c.itemId);
+    return (
+      !it ||
+      !readable(
+        it,
+        value.filter((x) => x.itemId === it.id),
+      )
+    );
+  });
+  if (usable.length === 0) return <span className="sub">使える項目がありません（「項目」の画面で足します）。</span>;
   return (
-    <div className="stack" style={{ gap: 8 }}>
-      {value.length === 0 && <span className="sub">なし</span>}
-      {value.map((c, i) => {
-        const item = usable.find((x) => x.id === c.itemId);
-        const ops = item ? OPS_BY_KIND[item.kind] : [c.op];
-        const multiValue = c.op === 'in' || c.op === 'hasAny' || c.op === 'hasAll';
-        return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: 条件に ID は無く、行の位置で扱う
-          <div key={i} className="cond-row">
-            <select
-              value={c.itemId}
-              aria-label="項目"
-              onChange={(e) => {
-                const it = usable.find((x) => x.id === e.target.value);
-                if (!it) return;
-                const op = OPS_BY_KIND[it.kind][0] as Op;
-                set(i, { itemId: it.id, op, value: defaultValue(it, op) });
-              }}
-            >
-              {!item && <option value={c.itemId}>（消えた項目）</option>}
-              {usable.map((it) => (
-                <option key={it.id} value={it.id}>
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="cond-table">
+        {usable.map((it) => {
+          const conds = value.filter((c) => c.itemId === it.id);
+          const ok = readable(it, conds);
+          return (
+            <div key={it.id} className={`cond-line${conds.length > 0 ? ' is-set' : ''}`}>
+              <span className="cond-name">
+                <WithIcon icon={itemIcon(it.name)} size={14}>
                   {it.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={c.op}
-              aria-label="比べ方"
-              onChange={(e) => {
-                const op = e.target.value as Op;
-                set(i, { ...c, op, value: defaultValue(item, op) });
-              }}
-            >
-              {ops.map((o) => (
-                <option key={o} value={o}>
-                  {OP_LABELS[o]}
-                </option>
-              ))}
-            </select>
-            <div className="cond-value">
-              {!item ? null : multiValue ? (
-                <OptionChecks
-                  options={item.options}
-                  value={Array.isArray(c.value) ? c.value : []}
-                  onChange={(v) => set(i, { ...c, value: v })}
-                />
-              ) : (
-                <TraitInput item={item} value={c.value} onChange={(v) => set(i, { ...c, value: v })} />
-              )}
+                </WithIcon>
+              </span>
+              <div className="cond-input">
+                {!ok ? (
+                  <span className="sub">下の「そのほかの条件」で設定中</span>
+                ) : (
+                  <ItemCondition item={it} conds={conds} onChange={(next) => replace(it.id, next)} />
+                )}
+              </div>
             </div>
-            <span className="sub cond-text">{condText(c, item)}</span>
-            <IconButton
-              icon={Trash2}
-              label="この条件を消す"
-              tone="danger"
-              onClick={() => onChange(value.filter((_, j) => j !== i))}
-            />
-          </div>
-        );
-      })}
-      {value.length < 20 && (
-        <button
-          type="button"
-          className="btn btn-small"
-          style={{ alignSelf: 'flex-start' }}
-          disabled={usable.length === 0}
-          onClick={add}
-        >
-          <WithIcon icon={Plus}>条件を足す</WithIcon>
-        </button>
+          );
+        })}
+      </div>
+      <span className="sub">何も選ばない項目は問いません。相手の特性が未確認なら、条件を満たさない扱いです。</span>
+      {others.length > 0 && (
+        <div className="stack" style={{ gap: 4 }}>
+          <span className="sub">そのほかの条件（前の形式で入れたもの。消して上の表で入れ直せます）</span>
+          {others.map((c, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: 条件に ID は無く、並びの位置で扱う
+            <div key={i} className="row">
+              <span className="chip">
+                {condText(
+                  c,
+                  usable.find((x) => x.id === c.itemId),
+                )}
+              </span>
+              <IconButton
+                icon={Trash2}
+                label="この条件を消す"
+                tone="danger"
+                onClick={() => onChange(value.filter((x) => x !== c))}
+              />
+            </div>
+          ))}
+        </div>
       )}
-      {usable.length === 0 && <span className="sub">使える項目がありません（「項目」の画面で足します）。</span>}
+    </div>
+  );
+}
+
+/** 1つの項目の条件の入力（項目の種類に合わせる） */
+function ItemCondition({
+  item,
+  conds,
+  onChange,
+}: {
+  item: Item;
+  conds: Condition[];
+  onChange: (next: Condition[]) => void;
+}) {
+  const first = conds[0];
+  switch (item.kind) {
+    case 'flag':
+      return (
+        <Segmented
+          label={item.name}
+          value={first ? (first.value === true ? 'yes' : 'no') : ''}
+          options={[
+            ['', '問わない'],
+            ['yes', 'あり'],
+            ['no', 'なし'],
+          ]}
+          onChange={(k) => onChange(k === '' ? [] : [{ itemId: item.id, op: 'is', value: k === 'yes' }])}
+        />
+      );
+    case 'choice': {
+      const picked = first ? listOf(first.value) : [];
+      return (
+        <OptionChecks
+          options={item.options}
+          value={picked}
+          onChange={(v) => onChange(v.length === 0 ? [] : [{ itemId: item.id, op: 'in', value: v }])}
+        />
+      );
+    }
+    case 'multi': {
+      const picked = first ? listOf(first.value) : [];
+      const op: Op = first?.op === 'hasAll' ? 'hasAll' : 'hasAny';
+      return (
+        <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <OptionChecks
+            options={item.options}
+            value={picked}
+            onChange={(v) => onChange(v.length === 0 ? [] : [{ itemId: item.id, op, value: v }])}
+          />
+          {picked.length >= 2 && (
+            <Segmented
+              label={`${item.name}の含み方`}
+              value={op}
+              options={[
+                ['hasAny', 'どれか'],
+                ['hasAll', 'すべて'],
+              ]}
+              onChange={(k) => onChange([{ itemId: item.id, op: k as Op, value: picked }])}
+            />
+          )}
+        </div>
+      );
+    }
+    case 'number': {
+      const bound = (op: 'gte' | 'lte') => {
+        const c = conds.find((x) => x.op === op);
+        return typeof c?.value === 'number' ? c.value : '';
+      };
+      const set = (op: 'gte' | 'lte', text: string) => {
+        const rest = conds.filter((x) => x.op !== op);
+        onChange(text === '' ? rest : [...rest, { itemId: item.id, op, value: Number(text) }]);
+      };
+      return (
+        <div className="row num-range">
+          <input
+            type="number"
+            value={bound('gte')}
+            placeholder="下限"
+            aria-label={`${item.name}の下限`}
+            onChange={(e) => set('gte', e.target.value)}
+          />
+          <span className="sub">以上</span>
+          <input
+            type="number"
+            value={bound('lte')}
+            placeholder="上限"
+            aria-label={`${item.name}の上限`}
+            onChange={(e) => set('lte', e.target.value)}
+          />
+          <span className="sub">以下</span>
+        </div>
+      );
+    }
+  }
+}
+
+/** 求めること（必要条件・希望）の短い表示。必要条件は盾、希望はハート */
+export function CondChips({
+  requirements,
+  preferences,
+  itemById,
+}: {
+  requirements: Condition[];
+  preferences: Condition[];
+  itemById: Map<string, Item>;
+}) {
+  const chips = [
+    ...requirements.map((c) => ({ text: condText(c, itemById.get(c.itemId)), icon: ShieldCheck, kind: '必要条件' })),
+    ...preferences.map((c) => ({ text: condText(c, itemById.get(c.itemId)), icon: Heart, kind: '希望' })),
+  ];
+  if (chips.length === 0) return <span className="sub">問わない</span>;
+  return (
+    <div className="trait-chips">
+      {chips.map((c, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: 同じ文の条件が並ぶこともある
+        <span key={i} className={`chip ${c.kind === '必要条件' ? 'chip-primary' : ''}`} title={c.kind}>
+          <WithIcon icon={c.icon} size={13}>
+            {c.text}
+          </WithIcon>
+        </span>
+      ))}
     </div>
   );
 }
 
 /** 特性の短い表示 */
 export function TraitChips({ traits, items }: { traits: Traits; items: { id: string; name: string }[] }) {
+  // 未確認の項目（まだ聞き取っていない）。相手の条件を満たさない扱いなので、埋め漏れに気づけるよう印を出す
+  const unknown = items.filter((it) => traits[it.id] === undefined || traits[it.id] === null);
   const chips = items.flatMap((it) => {
     const v = traits[it.id];
     if (v === undefined || v === null || (Array.isArray(v) && v.length === 0)) return [];
     const text =
-      v === true ? it.name : v === false ? `${it.name}なし` : `${it.name}：${Array.isArray(v) ? v.join('・') : v}`;
+      v === true
+        ? `${it.name}：あり`
+        : v === false
+          ? `${it.name}：なし`
+          : `${it.name}：${Array.isArray(v) ? v.join('・') : v}`;
     return [{ text, icon: itemIcon(it.name) }];
   });
-  if (chips.length === 0) return <span className="sub">—</span>;
+  if (chips.length === 0 && unknown.length === 0) return <span className="sub">—</span>;
   return (
     <div className="trait-chips">
       {chips.map((c) => (
@@ -284,6 +442,13 @@ export function TraitChips({ traits, items }: { traits: Traits; items: { id: str
           </WithIcon>
         </span>
       ))}
+      {unknown.length > 0 && (
+        <span className="chip chip-warn" title={`未確認：${unknown.map((it) => it.name).join('・')}`}>
+          <WithIcon icon={CircleHelp} size={13}>
+            未確認 {unknown.length}
+          </WithIcon>
+        </span>
+      )}
     </div>
   );
 }

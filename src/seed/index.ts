@@ -51,7 +51,12 @@ export function createDemoData(today: string): DemoData {
     version: DATA_VERSION,
     baseDate: today,
     seed: 1,
-    org: { name: 'デモ訪問サービス（架空）', industry: 'care', terms: { ...DEFAULT_TERMS.care }, fareYenPerKm: 10 },
+    org: {
+      name: 'デモ訪問サービス（架空）',
+      industry: 'care',
+      terms: { client: DEFAULT_TERMS.care.client, staff: 'スタッフ' },
+      fareYenPerKm: 10,
+    },
     items: INITIAL_ITEMS.map((i) => ({ ...i, options: [...i.options] })),
     rules: INITIAL_RULES.map((r) => ({ ...r })),
     staff,

@@ -553,7 +553,17 @@ function ScoreSummary({
   unassigned: number;
   hasVisits: boolean;
 }) {
-  if (!s) return error ? <p className="sub">採点できません（{error}）</p> : null;
+  if (!s)
+    return (
+      <div className="stack" style={{ gap: 8 }}>
+        {error && <p className="sub">採点できません（{error}）</p>}
+        {hasVisits && (
+          <div className="stat-row">
+            <Stat icon={UserX} label="未割当" value={unassigned} unit="件" tone={unassigned > 0 ? 'warn' : 'ok'} />
+          </div>
+        )}
+      </div>
+    );
   const hard = s.hardViolations.length;
   return (
     <div className="stat-row">
