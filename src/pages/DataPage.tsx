@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { jstDate } from '../domain/time';
-import { attempt, formError } from '../lib/common';
+import { attempt, formError, isStaleBuild } from '../lib/common';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
 import './settings.css';
 
@@ -23,6 +23,10 @@ function saveBlob(blob: Blob, name: string) {
 }
 
 /** データ：書き出し・読み込み（控えの JSON・Excel）・初期状態に戻す（D2・D3・D23） */
+/** 画面を開いたあとに新しい版が公開されて、Excel の部品を読めなかったとき */
+const STALE_TEXT =
+  '新しい版が公開されたため、Excel の部品を読み込めませんでした。「画面を読み直す」を押してから、もう一度お試しください（データはそのままです）';
+
 export default function DataPage() {
   const { data, update, replace, reset, saveError } = useDemoData();
   const [terms, setTerms] = useState(data.org.terms);
@@ -66,7 +70,7 @@ export default function DataPage() {
       saveBlob(await exportWorkbook(data), `visit-route-demo-${today()}.xlsx`);
       toast('Excel に書き出しました');
     } catch (e) {
-      setExcelError(`書き出せませんでした（${formError(e)}）`);
+      setExcelError(isStaleBuild(e) ? STALE_TEXT : `書き出せませんでした（${formError(e)}）`);
     } finally {
       setExcelBusy(false);
     }
@@ -94,7 +98,9 @@ export default function DataPage() {
       replace(r);
       toast('Excel を読み込みました');
     } catch (e) {
-      setExcelError(`読み込めませんでした：${formError(e)}（いまのデータはそのままです）`);
+      setExcelError(
+        isStaleBuild(e) ? STALE_TEXT : `読み込めませんでした：${formError(e)}（いまのデータはそのままです）`,
+      );
     } finally {
       setExcelBusy(false);
       if (excelRef.current) excelRef.current.value = '';
@@ -218,6 +224,17 @@ export default function DataPage() {
           <p className="error" style={{ whiteSpace: 'pre-line' }}>
             {excelError}
           </p>
+        )}
+        {excelError === STALE_TEXT && (
+          <button
+            type="button"
+            className="btn"
+            style={{ alignSelf: 'flex-start' }}
+            // 保存は間引いているので、書き終わるのを少し待ってから読み直す
+            onClick={() => setTimeout(() => location.reload(), 500)}
+          >
+            <WithIcon icon={RotateCcw}>画面を読み直す</WithIcon>
+          </button>
         )}
       </div>
 

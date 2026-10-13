@@ -107,6 +107,15 @@ export function ruleTypeHelp(type: RuleType, t: Terms): string {
 }
 
 /** 入力検査（zod）などの失敗を画面に出す文にする */
+/**
+ * 画面を開いたあとに新しい版が公開され、あとから読む部品（Excel など）のファイルが無くなったときのエラーか。
+ * ブラウザごとに文言が違う（Chrome・Firefox・Safari）
+ */
+export function isStaleBuild(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e);
+  return /dynamically imported module|Importing a module script failed|Unable to preload/i.test(m);
+}
+
 export function formError(e: unknown): string {
   if (e && typeof e === 'object' && 'issues' in e) {
     const issues = (e as { issues: { path: PropertyKey[]; message: string }[] }).issues;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nameTaken, optionNameError, own } from './common';
+import { isStaleBuild, nameTaken, optionNameError, own } from './common';
 
 describe('own（自分のキーだけを引く）', () => {
   it('constructor・toString などの組み込みの名前は、記録に無ければ undefined（#/staff-view/constructor で落ちない）', () => {
@@ -40,5 +40,16 @@ describe('nameTaken の比べ方', () => {
     expect(nameTaken(xs, (x) => x.name, '山田　太郎')).toBe(true);
     expect(nameTaken(xs, (x) => x.name, '山田太郎')).toBe(true);
     expect(nameTaken(xs, (x) => x.name, '山田 次郎')).toBe(false);
+  });
+});
+
+describe('isStaleBuild', () => {
+  it('新しい版の公開で部品のファイルが無くなったときのエラーを見分ける（ブラウザごとの文言）', () => {
+    expect(
+      isStaleBuild(new TypeError('Failed to fetch dynamically imported module: https://x/assets/index-a.js')),
+    ).toBe(true);
+    expect(isStaleBuild(new TypeError('error loading dynamically imported module'))).toBe(true);
+    expect(isStaleBuild(new TypeError('Importing a module script failed.'))).toBe(true);
+    expect(isStaleBuild(new Error('ほかのエラー'))).toBe(false);
   });
 });
