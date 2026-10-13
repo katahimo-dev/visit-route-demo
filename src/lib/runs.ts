@@ -1,7 +1,8 @@
 // AI案の記録（ADR-0005）：作るたびに条件と結果を残し、比較の画面で任意の2つを比べる
 import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
-import type { SolveResult } from '../contracts/problem';
+import type { Problem, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
+import { score } from '../evaluate';
 import { presetOf } from '../seed';
 import { own } from './common';
 
@@ -73,5 +74,49 @@ export function planOfRun(run: AiRun): AiPlan {
     generated: { routes: run.routes, unassigned: run.unassigned, score: run.score },
     pins: run.pins,
     runId: run.id,
+  };
+}
+
+/** routes から problem に無い訪問IDを除く（担当のキーと並びはそのまま） */
+export function alignRoutes(problem: Problem, routes: Record<string, string[]>): Record<string, string[]> {
+  const ids = new Set(problem.visits.map((v) => v.id));
+  const out: Record<string, string[]> = {};
+  for (const [s, list] of Object.entries(routes)) out[s] = list.filter((id) => ids.has(id));
+  return out;
+}
+
+/**
+ * 今の案を、いまの問題（その日の計算に入れる訪問）に合わせる。訪問を取り消す・足す・編集する・コピーすると
+ * 案の作成後に訪問が変わるので、描画のたびにこれを通す。
+ * problem に無い訪問IDは routes・generated.routes・pins から除き、problem にあってどの列にも無い訪問は unassigned に入れ、
+ * score は付け直す。合わせるものが無ければ plan をそのまま返す（同じオブジェクト）
+ */
+export function alignPlan(problem: Problem, plan: AiPlan): AiPlan {
+  const ids = new Set(problem.visits.map((v) => v.id));
+  const routes = alignRoutes(problem, plan.routes);
+  const genRoutes = alignRoutes(problem, plan.generated.routes);
+  const pins = Object.fromEntries(Object.entries(plan.pins).filter(([id]) => ids.has(id)));
+  const unassignedOf = (r: Record<string, string[]>) => {
+    const placed = new Set(Object.values(r).flat());
+    return problem.visits.map((v) => v.id).filter((id) => !placed.has(id));
+  };
+  const unassigned = unassignedOf(routes);
+  const genUnassigned = unassignedOf(genRoutes);
+  const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
+  const count = (r: Record<string, string[]>) => Object.values(r).flat().length;
+  const unchanged =
+    count(routes) === count(plan.routes) &&
+    count(genRoutes) === count(plan.generated.routes) &&
+    Object.keys(pins).length === Object.keys(plan.pins).length &&
+    sameSet(unassigned, plan.unassigned) &&
+    sameSet(genUnassigned, plan.generated.unassigned);
+  if (unchanged) return plan;
+  return {
+    ...plan,
+    routes,
+    unassigned,
+    score: score(problem, routes).total,
+    generated: { routes: genRoutes, unassigned: genUnassigned, score: score(problem, genRoutes).total },
+    pins,
   };
 }

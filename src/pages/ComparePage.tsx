@@ -28,7 +28,7 @@ import { HARDABLE, type Rule } from '../contracts/rules';
 import { diff, score, toHundred } from '../evaluate';
 import { attempt, deltaText, own, pointsText, r0 } from '../lib/common';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
-import { planOfRun } from '../lib/runs';
+import { alignPlan, planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
 import './plan.css';
@@ -70,7 +70,11 @@ export default function ComparePage() {
   const mapCardRef = useRef<HTMLDivElement>(null);
 
   const runs: AiRun[] = useMemo(() => own(data.aiRuns, date) ?? [], [data.aiRuns, date]);
-  const aiPlan: AiPlan | undefined = own(data.aiPlans, date);
+  /** 今の案（予定の画面と同じく、取り消した・足した訪問に合わせて整える） */
+  const aiPlan: AiPlan | undefined = useMemo(() => {
+    const p = own(data.aiPlans, date);
+    return p && problem ? alignPlan(problem, p) : p;
+  }, [data.aiPlans, date, problem]);
   const choices: Choice[] = useMemo(() => {
     const out: Choice[] = runs.map((r) => ({
       id: r.id,
@@ -101,8 +105,11 @@ export default function ComparePage() {
   const pick = (side: Side, id: string) => {
     const other = side === 'a' ? B : A;
     const mine = side === 'a' ? A : B;
+    if (mine?.id === id) return;
     if (other?.id === id) setSel(side === 'a' ? { a: id, b: mine?.id ?? null } : { a: mine?.id ?? null, b: id });
     else setSel((s) => ({ ...s, [side]: id }));
+    // 比べる案が変わると選んだ訪問・区間の持ち主も変わるので外す
+    rs.reset();
   };
   const aRoutes = useMemo(() => A?.routes ?? {}, [A]);
   const bRoutes = useMemo(() => B?.routes ?? {}, [B]);
@@ -161,8 +168,9 @@ export default function ComparePage() {
       ...d,
       aiRuns: { ...d.aiRuns, [date]: (own(d.aiRuns, date) ?? []).filter((x) => x.id !== r.id) },
     }));
-    // 消した記録を選んでいたら既定に戻す
+    // 消した記録を選んでいたら既定に戻す（既定の A・B も変わりうるので、選んだ訪問・区間も外す）
     setSel((s) => ({ a: s.a === r.id ? null : s.a, b: s.b === r.id ? null : s.b }));
+    rs.reset();
   };
 
   // ---- 条件の差 ----

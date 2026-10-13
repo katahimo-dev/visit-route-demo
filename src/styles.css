@@ -1449,6 +1449,9 @@ a.icon-btn:hover {
   cursor: default;
   animation: drawer-fade 0.15s ease-out;
 }
+.drawer:focus {
+  outline: none;
+}
 .drawer {
   position: relative;
   width: min(640px, 100vw);

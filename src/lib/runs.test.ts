@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { AiPlan } from '../contracts/data';
 import { MAX_RUNS_PER_DAY } from '../contracts/data';
 import type { SolveResult } from '../contracts/problem';
+import { score } from '../evaluate';
+import { compile } from '../matching';
+import { client, DATE as FDATE, makeData, staff, visit } from '../matching/fixtures';
 import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
-import { addRun, findRun, planOfRun, runLabel } from './runs';
+import { addRun, alignPlan, findRun, planOfRun, runLabel } from './runs';
 
 const DAY = '2026-10-12';
 const result = (routes: Record<string, string[]>): SolveResult => ({
@@ -88,5 +92,60 @@ describe('AI案の記録（ADR-0005）', () => {
     const run = findRun(d1, DAY, x)!;
     expect(planOfRun(run).runId).toBe(run.id);
     expect(findRun(addRun(d1, DAY, { ...x, createdAt: 2 }), DAY, x)?.id).toBe(run.id);
+  });
+});
+
+describe('今の案を訪問の変更に合わせる（alignPlan）', () => {
+  const base = makeData({
+    staff: [staff('s1', 38.26, 140.87), staff('s2', 38.27, 140.88)],
+    clients: [client('c1', 38.261, 140.871), client('c2', 38.262, 140.872), client('c3', 38.263, 140.873)],
+    visits: [visit('v1', 'c1', '09:00', '09:00'), visit('v2', 'c2', '11:00', '11:00')],
+  });
+  const plan: AiPlan = {
+    date: FDATE,
+    createdAt: 1,
+    seed: 1,
+    iterations: 10,
+    routes: { s1: ['v1'], s2: ['v2'] },
+    unassigned: [],
+    score: 0,
+    stopped: false,
+    rules: [],
+    generated: { routes: { s1: ['v1', 'v2'] }, unassigned: [], score: 0 },
+    pins: { v2: 's2' },
+  };
+
+  it('訪問が変わっていなければ同じオブジェクトを返す', () => {
+    const p = compile(base, FDATE);
+    expect(alignPlan(p, plan)).toBe(plan);
+  });
+
+  it('取り消した訪問は routes・generated・pins から除き、点を付け直す', () => {
+    const d = { ...base, visits: base.visits.map((v) => (v.id === 'v2' ? { ...v, cancelled: true } : v)) };
+    const p = compile(d, FDATE);
+    const a = alignPlan(p, plan);
+    expect(a.routes).toEqual({ s1: ['v1'], s2: [] });
+    expect(a.generated.routes).toEqual({ s1: ['v1'] });
+    expect(a.pins).toEqual({});
+    expect(a.unassigned).toEqual([]);
+    expect(a.score).toBe(score(p, a.routes).total);
+    expect(a.generated.score).toBe(score(p, a.generated.routes).total);
+  });
+
+  it('すべて取り消すと列は空になり、入らない訪問も無い', () => {
+    const d = { ...base, visits: base.visits.map((v) => ({ ...v, cancelled: true })) };
+    const a = alignPlan(compile(d, FDATE), plan);
+    expect(Object.values(a.routes).flat()).toEqual([]);
+    expect(a.unassigned).toEqual([]);
+  });
+
+  it('足した訪問は「入らなかった訪問」（unassigned）に入る', () => {
+    const d = { ...base, visits: [...base.visits, visit('v3', 'c3', '14:00', '14:00')] };
+    const p = compile(d, FDATE);
+    const a = alignPlan(p, plan);
+    expect(a.routes).toEqual(plan.routes);
+    expect(a.unassigned).toEqual(['v3']);
+    expect(a.generated.unassigned).toEqual(['v3']);
+    expect(a.score).toBe(score(p, plan.routes).total);
   });
 });

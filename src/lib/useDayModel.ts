@@ -64,13 +64,6 @@ export function useDayModel(date: string) {
   };
 }
 
-/** 列（staffId → 訪問ID）から、採点に渡す routes（未割当は入れない） */
-export function routesOf(cols: Record<string, string[]>): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const [k, ids] of Object.entries(cols)) if (k !== NONE && ids.length > 0) out[k] = ids;
-  return out;
-}
-
 /** 訪問ID → 担当 */
 export function ownerMap(routes: Record<string, string[]>): Map<string, string> {
   const out = new Map<string, string>();

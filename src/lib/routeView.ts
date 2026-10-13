@@ -136,23 +136,47 @@ export function useRouteSelection(date: string, ownerOf: (set: string, visitId: 
     if (picked && sid !== null && ownerOfSel(picked) !== sid) setPicked(null);
   };
   const same = (a: RouteSel | null, b: RouteSel) => !!a && a.id === b.id && a.set === b.set;
-  /** 訪問を押した：選ぶ（その人に地図を合わせる）か、もう一度押して外す */
+  /** 訪問を押した：選ぶ（その人に地図を合わせ、その人のものでない区間の強調は外す）か、もう一度押して外す */
   const togglePick = (x: RouteSel) => {
     const on = !same(picked, x);
     setPicked(on ? x : null);
     const o = ownerOfSel(x);
-    if (on && o) setFocusStaff(o);
+    if (!on || !o) return;
+    setFocusStaff(o);
+    if (focusLeg && ownerOfSel(focusLeg) !== o) setFocusLeg(null);
   };
-  /** 区間を押した：強調する（その人に地図を合わせる）か、もう一度押して外す */
+  /** 区間を押した：強調する（その人に地図を合わせ、その人のものでない選んだ訪問は外す）か、もう一度押して外す */
   const toggleLeg = (x: RouteSel) => {
     const on = !same(focusLeg, x);
     setFocusLeg(on ? x : null);
     const o = ownerOfSel(x);
-    if (on && o) setFocusStaff(o);
+    if (!on || !o) return;
+    setFocusStaff(o);
+    if (picked && ownerOfSel(picked) !== o) setPicked(null);
   };
-  const clear = () => {
+  /** 「全員のルートを見る」：担当の絞り込みを外す（focusOn(null) と同じ。選んだ訪問は残し、区間の強調は外す） */
+  const clear = () => focusOn(null);
+  /** 選んだものをすべて外す（案が入れ替わったとき・比べる案を変えたとき） */
+  const reset = () => {
     setFocusStaff(null);
     setFocusLeg(null);
+    setPicked(null);
+  };
+  /**
+   * 訪問の担当が変わった（to：新しい担当、null は未割当）。その訪問を選んでいた・その訪問へ来る区間を強調していたら、
+   * 絞り込みを新しい担当に合わせ、その人のものでない選択を外す。未割当にしたときは、その訪問の選択を外す
+   */
+  const follow = (visitId: string, to: string | null) => {
+    const hit = (x: RouteSel | null) => !!x && x.id === visitId;
+    if (!hit(picked) && !hit(focusLeg)) return;
+    if (to === null) {
+      if (hit(picked)) setPicked(null);
+      if (hit(focusLeg)) setFocusLeg(null);
+      return;
+    }
+    if (focusStaff !== null) setFocusStaff(to);
+    if (focusLeg && !hit(focusLeg)) setFocusLeg(null);
+    if (picked && !hit(picked)) setPicked(null);
   };
   return {
     focusStaff,
@@ -162,6 +186,8 @@ export function useRouteSelection(date: string, ownerOf: (set: string, visitId: 
     togglePick,
     toggleLeg,
     clear,
+    reset,
+    follow,
     isPicked: (x: RouteSel) => same(picked, x),
     isLeg: (x: RouteSel) => same(focusLeg, x),
     /** MapDock の focusKey（選んだものが変わったら開く） */

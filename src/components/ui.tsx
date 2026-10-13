@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import { Info, X } from 'lucide-react';
-import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef } from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
@@ -155,9 +155,14 @@ export function Empty({ icon: Icon, children }: { icon: LucideIcon; children: Re
   );
 }
 
+/** 欄の中で Tab で移れるもの */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+
 /**
- * 右から出る編集の欄（一覧が長くても、押した所から探さずに済む）。後ろは暗くし、Esc・外側・× で閉じる。
- * 開いたら最初の入力欄に移り、閉じたら押したボタンに戻る
+ * 右から出る編集の欄（一覧が長くても、押した所から探さずに済む）。後ろは暗くし、Esc・×・閉じるボタンで閉じる
+ * （未保存の入力を失わないよう、後ろを押しても閉じない）。
+ * 開いたら最初の入力欄（無ければ欄そのもの）に移り、Tab は欄の中で回し、閉じたら押したボタンに戻る
  */
 export function SidePanel({
   icon: Icon,
@@ -177,13 +182,39 @@ export function SidePanel({
   footer?: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const titleId = useId();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>('input, select, textarea')?.focus();
+    const first = ref.current?.querySelector<HTMLElement>('input, select, textarea');
+    if (first) first.focus();
+    else ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeRef.current();
+      // 日本語の変換中の Esc は変換の取り消しなので閉じない
+      if (e.key === 'Escape' && !e.isComposing) {
+        closeRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !ref.current) return;
+      const list = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+      const head = list[0];
+      const tail = list.at(-1);
+      if (!head || !tail) {
+        e.preventDefault();
+        return;
+      }
+      const at = document.activeElement;
+      const inside = at instanceof Node && ref.current.contains(at);
+      if (e.shiftKey && (!inside || at === head || at === ref.current)) {
+        e.preventDefault();
+        tail.focus();
+      } else if (!e.shiftKey && (!inside || at === tail)) {
+        e.preventDefault();
+        head.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     const overflow = document.body.style.overflow;
@@ -197,16 +228,17 @@ export function SidePanel({
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
   return createPortal(
     <div className="drawer-wrap">
-      <button type="button" className="drawer-backdrop" aria-label="閉じる" tabIndex={-1} onClick={onClose} />
+      <div className="drawer-backdrop" aria-hidden="true" />
       <section
         ref={ref}
         className={`drawer ${narrow ? 'is-narrow' : ''}`}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === 'string' ? title : undefined}
+        aria-labelledby={titleId}
+        tabIndex={-1}
       >
         <header className="drawer-head">
-          <h2>
+          <h2 id={titleId}>
             <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
             {title}
           </h2>

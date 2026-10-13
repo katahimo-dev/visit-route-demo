@@ -42,12 +42,13 @@ import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Client, Visit } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
+import { slotsText } from '../domain/availability';
 import { type Cols, NONE, timeOrder, windowText } from '../domain/scheduleModel';
 import { addDays } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
-import { addRun, findRun, planOfRun } from '../lib/runs';
+import { addRun, alignPlan, findRun, planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import { applyPreset, matchesPreset, presetOf } from '../seed';
@@ -89,10 +90,13 @@ function shortDate(date: string): string {
   return `${Number(m)}/${Number(d)}`;
 }
 
-/** その日のAI案を書き換える（無ければそのまま） */
-function patchPlan(d: DemoData, date: string, fn: (p: AiPlan) => AiPlan): DemoData {
+/**
+ * その日のAI案を書き換える（無ければそのまま）。problem を渡すと、書き換える前に今の訪問に合わせる（alignPlan）
+ */
+function patchPlan(d: DemoData, date: string, problem: Problem | null, fn: (p: AiPlan) => AiPlan): DemoData {
   const p = d.aiPlans[date];
-  return p ? { ...d, aiPlans: { ...d.aiPlans, [date]: fn(p) } } : d;
+  if (!p) return d;
+  return { ...d, aiPlans: { ...d.aiPlans, [date]: fn(problem ? alignPlan(problem, p) : p) } };
 }
 
 /** 今の案を routes にした AiPlan（unassigned・score は problem で付け直す） */
@@ -110,7 +114,7 @@ function withRoutes(problem: Problem, plan: AiPlan, routes: Record<string, strin
 export default function PlanPage() {
   const { date } = useDay();
   const m = useDayModel(date);
-  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem, scale } = m;
+  const { data, update, staff, staffById, clientById, colorOfStaff, visits, visitById, problem, scale, slotsOf } = m;
   const terms = data.org.terms;
   const toast = useToast();
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -159,12 +163,23 @@ export default function PlanPage() {
       autoTried.current.clear();
     };
   }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた入力欄を閉じる
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた入力欄を閉じ、前の日のエラーを消す
   useEffect(() => {
     setEditing(null);
+    setError(null);
   }, [date]);
+  /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
+  const dateRef = useRef(date);
+  dateRef.current = date;
 
-  const aiPlan: AiPlan | undefined = own(data.aiPlans, date);
+  /** 計算に入れる訪問があるか（無い日は今の案の欄・列を出さない） */
+  const hasVisits = visits.length > 0 && (!problem || problem.visits.length > 0);
+  /** 今の案。保存してある案を、いまの訪問（取消・追加・編集・コピーのあと）に合わせて見せる */
+  const aiPlan: AiPlan | undefined = useMemo(() => {
+    const stored = own(data.aiPlans, date);
+    if (!stored || !hasVisits) return undefined;
+    return problem ? (attempt(() => alignPlan(problem, stored)).value ?? stored) : stored;
+  }, [data.aiPlans, date, problem, hasVisits]);
   const runCount = own(data.aiRuns, date)?.length ?? 0;
   const routes = useMemo(() => aiPlan?.routes ?? {}, [aiPlan]);
   const pins = useMemo(() => aiPlan?.pins ?? {}, [aiPlan]);
@@ -314,6 +329,7 @@ export default function PlanPage() {
           return { ...added, aiPlans: { ...added.aiPlans, [forDate]: linked } };
         });
         opts.onMade?.(plan);
+        if (!auto && dateRef.current === forDate) sel.reset();
         if (!auto) toast(result.stopped ? '途中までの最良の案を保存しました' : 'AI案を作りました');
       },
       opts.after,
@@ -367,6 +383,7 @@ export default function PlanPage() {
         });
         return { ...d, aiPlans: { ...d.aiPlans, [forDate]: { ...best.plan, runId: run?.id } } };
       });
+      if (dateRef.current === forDate) sel.reset();
     };
     const step = (i: number) => {
       if (i >= ids.length || batchStopped.current) {
@@ -402,7 +419,8 @@ export default function PlanPage() {
   // AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（同じ日に2回は試さない。ADR-0008）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案の有無・問題が変わったときだけ
   useEffect(() => {
-    if (aiPlan || running || batch || !problem || autoTried.current.has(date)) return;
+    // 訪問が無い日は試したことにしない（あとで訪問を足す・コピーしたら作る）
+    if (aiPlan || running || batch || !problem || problem.visits.length === 0 || autoTried.current.has(date)) return;
     autoTried.current.add(date);
     runBatch(data.presets);
   }, [date, aiPlan, problem, running]);
@@ -432,6 +450,7 @@ export default function PlanPage() {
   const openRun = (r: AiRun, name: string) => {
     if (edited && !confirm('手直しと固定を捨てて、この案を今の案にします。よろしいですか？')) return;
     update((d) => ({ ...d, aiPlans: { ...d.aiPlans, [date]: planOfRun(r) } }));
+    sel.reset();
     toast(`${name}の案を今の案にしました`);
   };
 
@@ -452,7 +471,7 @@ export default function PlanPage() {
       const x = { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now() };
       update((d) => {
         const added = addRun(
-          patchPlan(d, forDate, (plan) => ({
+          patchPlan(d, forDate, p, (plan) => ({
             ...withRoutes(p, plan, result.routes),
             stopped: result.stopped,
             rules: rulesSnapshot,
@@ -461,8 +480,9 @@ export default function PlanPage() {
           x,
         );
         const runId = findRun(added, forDate, x)?.id;
-        return patchPlan(added, forDate, (plan) => ({ ...plan, runId }));
+        return patchPlan(added, forDate, null, (plan) => ({ ...plan, runId }));
       });
+      if (dateRef.current === forDate) sel.reset();
       toast(result.stopped ? '途中までの最良の案で組み直しました' : '固定を残して組み直しました');
     });
   };
@@ -481,7 +501,7 @@ export default function PlanPage() {
     if (owner.get(visitId) === staffId && own(pins, visitId) === staffId) return;
     const p = problem;
     update((d) =>
-      patchPlan(d, date, (plan) => ({
+      patchPlan(d, date, p, (plan) => ({
         ...withRoutes(
           p,
           plan,
@@ -490,13 +510,30 @@ export default function PlanPage() {
         pins: { ...plan.pins, [visitId]: staffId },
       })),
     );
+    // 移した訪問を選んでいたら、地図の絞り込みを新しい担当に合わせる
+    sel.follow(visitId, staffId);
     if (!allowedFor(visitId, staffId)) {
       toast(`${staffName(staffId)}さんは必須の条件に合いません（組み直すとこの訪問は入りません）`);
     }
   };
+  /** 未割当へ移す（列から外して「入らなかった訪問」へ。固定は担当の固定なので外す） */
+  const unassign = (visitId: string) => {
+    if (!problem || !aiPlan || running || !owner.has(visitId)) return;
+    const p = problem;
+    update((d) =>
+      patchPlan(d, date, p, (plan) => {
+        const routes = Object.fromEntries(
+          Object.entries(plan.routes).map(([s, ids]) => [s, ids.filter((x) => x !== visitId)]),
+        );
+        const { [visitId]: _, ...pins } = plan.pins;
+        return { ...withRoutes(p, plan, routes), pins };
+      }),
+    );
+    sel.follow(visitId, null);
+  };
   const unpin = (visitId: string) => {
     update((d) =>
-      patchPlan(d, date, (plan) => {
+      patchPlan(d, date, problem, (plan) => {
         const { [visitId]: _, ...rest } = plan.pins;
         return { ...plan, pins: rest };
       }),
@@ -508,7 +545,7 @@ export default function PlanPage() {
     if (!aiPlan) return;
     if (!confirm('手直しと固定を捨てて、AIが出したままの案に戻します。よろしいですか？')) return;
     update((d) =>
-      patchPlan(d, date, (plan) => ({
+      patchPlan(d, date, problem, (plan) => ({
         ...plan,
         routes: plan.generated.routes,
         unassigned: plan.generated.unassigned,
@@ -516,6 +553,7 @@ export default function PlanPage() {
         pins: {},
       })),
     );
+    sel.reset();
     toast('AI案に戻しました');
   };
 
@@ -624,7 +662,9 @@ export default function PlanPage() {
       const id = e.dataTransfer.getData('text/plain') || dragging;
       setDragging(null);
       setDropTo(null);
-      if (id && owner.get(id) !== to) moveTo(id, to);
+      if (!id) return;
+      if (to === NONE) unassign(id);
+      else if (owner.get(id) !== to) moveTo(id, to);
     },
   });
   const dragProps = (id: string) => ({
@@ -730,7 +770,7 @@ export default function PlanPage() {
         <PageHeader
           icon={CalendarDays}
           title="予定"
-          lead={`その日の訪問と担当の割り当て。AIが組んだ案を手直しして確定します`}
+          lead="その日の訪問と担当の割り当て。AIが組んだ案を手直しして確定します"
           actions={
             <>
               <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
@@ -875,7 +915,7 @@ export default function PlanPage() {
           )}
         </div>
 
-        {(runs.length > 0 || batch) && (
+        {hasVisits && (runs.length > 0 || batch) && (
           <div className="card stack">
             <SectionTitle
               icon={LayoutGrid}
@@ -975,7 +1015,7 @@ export default function PlanPage() {
           </div>
         )}
 
-        {!aiPlan ? (
+        {!hasVisits ? null : !aiPlan ? (
           <div className="card">
             <Empty icon={Sparkles}>
               {runningFor?.date === date
@@ -1050,22 +1090,27 @@ export default function PlanPage() {
                 aside={
                   <Hint>
                     訪問をドラッグして別の{terms.staff}
-                    へ移せます。押すと理由（点の内訳）が出ます。ピンは固定（組み直しても担当を変えない）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。
+                    へ移せます（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定（組み直しても担当を変えない）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。
                   </Hint>
                 }
               >
                 {terms.staff}ごとの順番
               </SectionTitle>
               <div className="route-grid">
-                {unassigned.length > 0 && (
-                  <div className="route-col route-col-none">
+                {(unassigned.length > 0 || (dragging !== null && owner.has(dragging))) && (
+                  <div
+                    className={`route-col route-col-none ${dropTo === NONE ? 'is-drop' : ''}`}
+                    data-staff={NONE}
+                    {...dropProps(NONE)}
+                  >
                     <div className="spread">
                       <strong className="col-head">
                         <CircleOff size={16} aria-hidden="true" />
-                        入らなかった訪問
+                        入らなかった訪問（未割当）
                       </strong>
                       <span className="chip chip-warn">{unassigned.length}件</span>
                     </div>
+                    {unassigned.length === 0 && <span className="sub">ここへドラッグすると未割当に戻せます</span>}
                     {unassigned.map((id) => {
                       // どの担当も可にならない訪問は infeasible、候補がいるのに入らない訪問は explain が理由を持つ
                       const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
@@ -1087,6 +1132,8 @@ export default function PlanPage() {
                 {columns.map((sid) => {
                   const ids = own(routes, sid) ?? [];
                   const notAllowed = dropTo === sid && dragging !== null && !allowedFor(dragging, sid);
+                  const avail = slotsOf.get(sid);
+                  const s = staffById.get(sid);
                   return (
                     <div
                       key={sid}
@@ -1120,6 +1167,17 @@ export default function PlanPage() {
                           <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
                         </button>
                         <span className="chip">{ids.length}件</span>
+                      </div>
+                      <div className="col-hours">
+                        {(avail?.slots.length ?? 0) > 0 ? (
+                          <span className="sub item-time">
+                            <Clock size={13} aria-hidden="true" />
+                            {slotsText(avail?.slots ?? [])}
+                          </span>
+                        ) : (
+                          <span className="chip chip-off">{s && !s.active ? '休止中' : '休み'}</span>
+                        )}
+                        {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
                       </div>
                       {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
                       {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
