@@ -27,6 +27,8 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
     const solver = createSolver(msg.problem, msg.options);
     const total = msg.options.iterations;
     let lastProgress = -Infinity;
+    /** 前に進捗で送った最良の費用（同じなら最良の案は変わっていないので bestRoutes を送らない） */
+    let lastBest: number | null = null;
     const run = () => {
       if (job !== me) return; // 新しい依頼に置き換わった
       try {
@@ -41,13 +43,16 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
         const now = performance.now();
         if (now - lastProgress >= PROGRESS_MS) {
           lastProgress = now;
+          const bestScore = solver.bestScore();
+          const changed = bestScore !== lastBest;
+          lastBest = bestScore;
           post({
             type: 'progress',
             requestId: me.requestId,
             iteration: solver.iteration(),
             total,
-            bestScore: solver.bestScore(),
-            bestRoutes: solver.best().routes,
+            bestScore,
+            ...(changed ? { bestRoutes: solver.best().routes } : {}),
           });
         }
         setTimeout(run, 0);

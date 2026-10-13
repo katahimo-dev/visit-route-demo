@@ -29,7 +29,7 @@ import {
   Undo2,
   Users,
 } from 'lucide-react';
-import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type DragEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
@@ -48,7 +48,7 @@ import { addDays } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
-import { addRun, alignPlan, findRun, planOfRun, reusableRun } from '../lib/runs';
+import { addRun, alignPlan, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
@@ -84,8 +84,11 @@ import { VisitForm } from './VisitForm';
 /** 予定の画面の地図・選択で使うルートの集まりのキー（今の案は1つだけ） */
 const PLAN_SET = 'plan';
 
-/** hundred：いまの最良を点数の基準の物差しで点数（100点満点）にした値（物差しを作れなければ null） */
-type Progress = { iteration: number; total: number; bestScore: number; hundred: number | null };
+/**
+ * hundred：いまの最良を点数の基準の物差しで点数（100点満点）にした値（物差しを作れなければ null）。
+ * 最良が変わらず Worker が bestRoutes を送らなかった進捗では、前の値のまま
+ */
+type Progress = { iteration: number; total: number; hundred: number | null };
 
 /** 日付の短い表示（2026-10-13 → 10/13） */
 function shortDate(date: string): string {
@@ -126,6 +129,7 @@ export default function PlanPage() {
     colorOfStaff,
     visits,
     visitById,
+    compileInput,
     problem,
     scoreProblem,
     scoreScale,
@@ -135,6 +139,8 @@ export default function PlanPage() {
   const terms = data.org.terms;
   const toast = useToast();
   const [progress, setProgress] = useState<Progress | null>(null);
+  /** プリセットのカードの詳細の id の頭（aria-describedby） */
+  const cardIdBase = useId();
   const [running, setRunning] = useState<'create' | 'resolve' | null>(null);
   /** 計算している日と条件の名前（AI案が無い日の「作っています」の表示） */
   const [runningFor, setRunningFor] = useState<{ date: string; label: string } | null>(null);
@@ -208,6 +214,15 @@ export default function PlanPage() {
   const pinCount = Object.keys(pins).length;
   const edited =
     !!aiPlan && (pinCount > 0 || JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes));
+  /**
+   * 記録が今の案の元か（カードの「今の案」・カードを押したときの判定に共通）。今の案の元になった記録の id で
+   * （無い古いデータは経路の一致で）。手直し中は今の案としない
+   */
+  const isCurrentRun = (run: AiRun | undefined): boolean =>
+    !!run &&
+    !!aiPlan &&
+    !edited &&
+    (aiPlan.runId ? aiPlan.runId === run.id : JSON.stringify(aiPlan.routes) === JSON.stringify(run.routes));
 
   // 採点はどれも点数の基準の物差し（ADR-0010）
   const curScore = useMemo(
@@ -272,8 +287,14 @@ export default function PlanPage() {
       runSolve(target, { seed: dataRef.current.seed, iterations: defaultIterations(target) }, (p) => {
         if (!live()) return;
         const { problem: sp, scale: ss } = scoreRef.current;
-        const hundred = sp && ss ? (attempt(() => toHundred(score(sp, p.bestRoutes).total, ss)).value ?? null) : null;
-        setProgress({ iteration: p.iteration, total: p.total, bestScore: p.bestScore, hundred });
+        const best = p.bestRoutes;
+        if (!best) {
+          // 最良は前の進捗から変わっていない：点数は前のまま
+          setProgress((prev) => ({ iteration: p.iteration, total: p.total, hundred: prev?.hundred ?? null }));
+          return;
+        }
+        const hundred = sp && ss ? (attempt(() => toHundred(score(sp, best).total, ss)).value ?? null) : null;
+        setProgress({ iteration: p.iteration, total: p.total, hundred });
       }),
     );
     if (!started.value) {
@@ -324,6 +345,8 @@ export default function PlanPage() {
       return false;
     const forDate = date;
     const rulesSnapshot = rules;
+    // 計算に使う問題のキー（記録に残し、同じ問題なら再計算を省く。ADR-0010）
+    const inputKey = problemKey(p);
     const label = `${presetOf(rules, dataRef.current.presets)?.name ?? 'いま'}の`;
     return run(
       'create',
@@ -343,7 +366,7 @@ export default function PlanPage() {
           generated: { routes: result.routes, unassigned: result.unassigned, score: result.score },
           pins: {},
         };
-        const x = { rules: rulesSnapshot, pins: {}, result, createdAt: plan.createdAt };
+        const x = { rules: rulesSnapshot, pins: {}, result, createdAt: plan.createdAt, inputKey };
         update((d) => {
           const added = addRun(d, forDate, x);
           if (auto && own(d.aiPlans, forDate)) return added;
@@ -442,11 +465,7 @@ export default function PlanPage() {
     if (!target) return;
     const saved = attempt(() => reusableRun(runs, target, rules, data.seed)).value;
     if (saved) {
-      const already =
-        !!aiPlan &&
-        !edited &&
-        (aiPlan.runId ? aiPlan.runId === saved.id : JSON.stringify(aiPlan.routes) === JSON.stringify(saved.routes));
-      if (already) {
+      if (isCurrentRun(saved)) {
         // すでにその案が今の案：条件だけ合わせる
         update((d) => ({ ...d, rules: applyPreset(d.rules, preset) }));
         return;
@@ -476,17 +495,47 @@ export default function PlanPage() {
   }, [date, aiPlan, problem, running]);
 
   // ---- プリセットごとの案のカード（ADR-0008）。点数はどれも点数の基準の物差し（ADR-0010） ----
-  const presetCards = useMemo(
+  /**
+   * プリセットごとの、いまのデータで作る問題のキー（カードを押したときに再計算せずに使える記録を探す。ADR-0010）。
+   * compile が読むデータ（compileInput）とプリセットだけに依存し、案のドラッグ・固定では作り直さない
+   */
+  const presetKeys = useMemo(
     () =>
       data.presets.map((pr) => {
-        // 固定なしで、重み・必須がこのプリセットと一致する最新の記録
-        const run = [...runs].reverse().find((r) => Object.keys(r.pins).length === 0 && matchesPreset(r.rules, pr));
+        const rules = applyPreset(compileInput.rules, pr);
+        const p =
+          problem && JSON.stringify(rules) === JSON.stringify(compileInput.rules)
+            ? problem
+            : attempt(() => compile({ ...compileInput, rules }, date)).value;
+        return { rules, problem: p ?? null, key: p ? problemKey(p) : null };
+      }),
+    [data.presets, compileInput, problem, date],
+  );
+  const presetCards = useMemo(
+    () =>
+      data.presets.map((pr, i) => {
+        const k = presetKeys[i];
+        // いまのデータでそのまま使える記録（押しても再計算しない）を優先する
+        const kp = k?.problem;
+        const kk = k?.key;
+        const reusable = k && kp && kk ? attempt(() => reusableRun(runs, kp, k.rules, data.seed, kk)).value : undefined;
+        // 無ければ、固定なしで重み・必須がこのプリセットと一致する最新の記録（押すと作り直す＝点が変わりうる）
+        const run =
+          reusable ?? [...runs].reverse().find((r) => Object.keys(r.pins).length === 0 && matchesPreset(r.rules, pr));
         const sc = run && scoreProblem ? (attempt(() => score(scoreProblem, run.routes)).value ?? null) : null;
         const ach: RuleAchievement[] =
           run && scoreProblem ? (attempt(() => achievements(scoreProblem, run.routes)).value ?? []) : [];
-        return { preset: pr, run, score: sc, hundred: sc && scoreScale ? toHundred(sc.total, scoreScale) : null, ach };
+        return {
+          preset: pr,
+          run,
+          /** 記録はあるが、いまのデータでは使えない（押すと作り直す） */
+          remake: !!run && !reusable,
+          score: sc,
+          hundred: sc && scoreScale ? toHundred(sc.total, scoreScale) : null,
+          ach,
+        };
       }),
-    [data.presets, runs, scoreProblem, scoreScale],
+    [data.presets, data.seed, presetKeys, runs, scoreProblem, scoreScale],
   );
   const bestCard = presetCards.reduce<number>(
     // 0点のカードには王冠を付けない
@@ -507,8 +556,9 @@ export default function PlanPage() {
     }
     const rulesSnapshot = data.rules;
     const pinsSnapshot = aiPlan.pins;
+    const inputKey = problemKey(pinned.value);
     run('resolve', pinned.value, `${presetOf(data.rules, data.presets)?.name ?? 'いま'}の`, (result) => {
-      const x = { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now() };
+      const x = { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now(), inputKey };
       update((d) => {
         const added = addRun(
           patchPlan(d, forDate, p, (plan) => ({
@@ -977,11 +1027,11 @@ export default function PlanPage() {
                       </WithIcon>
                     </button>
                   )}
-                  <span className="sub" data-testid="score-ruler">
+                  <span className="sub" data-testid="preset-score-ruler">
                     物差し：{scoreRulerName}
                   </span>
                   <Hint>
-                    プリセットごとに、この日の記録のうち重みが一致する最新の案です。カードを押すと、その日の条件をそのプリセットの重みにして、その案を今の案にします（同じ条件・同じデータで作った案があれば計算せずに切り替え、無ければ計算して作ります。作り直すには「AI案を作る」）。
+                    プリセットごとに、この日の記録のうち、同じ条件・いまのデータで作った案（無ければ重みが一致する最新の案）です。カードを押すと、その日の条件をそのプリセットの重みにして、その案を今の案にします（同じ条件・いまのデータで作った案なら計算せずに切り替えます。記録のあとにデータが変わった案は「データが変わったので押すと作り直します」と出し、押すと計算して作ります。作り直すには「AI案を作る」）。
                     {rulerText(scoreRulerName)}（比較の画面と同じ）。
                     {SCORE_TEXT}。王冠は一番点の高い案です。
                   </Hint>
@@ -992,17 +1042,30 @@ export default function PlanPage() {
             </SectionTitle>
             <div className="preset-cards" data-testid="preset-cards">
               {presetCards.map((c, i) => {
-                // 今の案の元になった記録の id で（無い古いデータは経路の一致で）。手直し中は今の案としない
-                const isCurrent =
-                  !!c.run &&
-                  !!aiPlan &&
-                  !edited &&
-                  (aiPlan.runId
-                    ? aiPlan.runId === c.run.id
-                    : JSON.stringify(aiPlan.routes) === JSON.stringify(c.run.routes));
+                const isCurrent = isCurrentRun(c.run);
                 const making = batch?.date === date && batch.presetId === c.preset.id;
                 const sc = c.score;
                 const summary = achievementSummary(c.ach, data.rules);
+                const remake = c.remake && !isCurrent;
+                const pt = c.hundred !== null ? `${c.hundred}点` : '';
+                // 読み上げの名前は短く（詳細は aria-describedby の中身）
+                const ariaLabel = isCurrent
+                  ? `${c.preset.name}の案（今の案${pt ? `・${pt}` : ''}）`
+                  : !c.run
+                    ? `${c.preset.name}の案を作る`
+                    : remake
+                      ? `${c.preset.name}の案を作り直して今の案にする${pt ? `（記録は${pt}）` : ''}`
+                      : `${c.preset.name}の案を今の案にする${pt ? `（${pt}）` : ''}`;
+                // 詳細（説明・移動などの内訳・達成・作り直しの注記）は aria-describedby で読む
+                const idOf = (part: string) => `${cardIdBase}-${i}-${part}`;
+                const describedBy = [
+                  c.preset.note && idOf('note'),
+                  c.run && sc && idOf('stats'),
+                  c.run && sc && summary && idOf('ach'),
+                  c.run && sc && remake && idOf('remake'),
+                ]
+                  .filter(Boolean)
+                  .join(' ');
                 // カード全体が1つのボタン（中にボタンを入れ子にしない。中身は phrasing の span だけ）
                 return (
                   <button
@@ -1012,13 +1075,17 @@ export default function PlanPage() {
                     data-testid="preset-card"
                     aria-pressed={isCurrent}
                     aria-disabled={isCurrent || undefined}
+                    aria-label={ariaLabel}
+                    aria-describedby={describedBy || undefined}
                     disabled={!!running || !problem}
                     title={
                       isCurrent
                         ? '今の案です'
-                        : c.run
-                          ? `押すと「${c.preset.name}」の案を今の案にします（同じ条件・同じデータの記録があれば計算しません）`
-                          : `押すと「${c.preset.name}」の重みで案を作ります`
+                        : !c.run
+                          ? `押すと「${c.preset.name}」の重みで案を作ります`
+                          : remake
+                            ? `記録のあとにデータが変わったので、押すと「${c.preset.name}」の重みで作り直します`
+                            : `押すと「${c.preset.name}」の案を今の案にします（計算しません）`
                     }
                     onClick={() => {
                       if (!isCurrent) runPreset(c.preset);
@@ -1032,14 +1099,18 @@ export default function PlanPage() {
                         </span>
                       )}
                     </span>
-                    {c.preset.note && <span className="sub preset-card-note ellipsis">{c.preset.note}</span>}
+                    {c.preset.note && (
+                      <span id={idOf('note')} className="sub preset-card-note ellipsis">
+                        {c.preset.note}
+                      </span>
+                    )}
                     {c.run && sc ? (
                       <>
                         <span className="preset-card-score">
                           <span data-testid="preset-card-score">{c.hundred ?? '—'}</span>
                           <small>点</small>
                         </span>
-                        <span className="preset-card-stats sub">
+                        <span id={idOf('stats')} className="preset-card-stats sub">
                           <span>
                             <Car size={12} aria-hidden="true" /> 移動 {r0(sc.travelMinutes)}分
                           </span>
@@ -1051,14 +1122,23 @@ export default function PlanPage() {
                           </span>
                         </span>
                         {summary && (
-                          <span className="sub preset-card-ach">
+                          <span id={idOf('ach')} className="sub preset-card-ach">
                             <ListChecks size={12} aria-hidden="true" /> {summary}
+                          </span>
+                        )}
+                        {remake && (
+                          <span
+                            id={idOf('remake')}
+                            className="sub warn-text preset-card-remake"
+                            data-testid="preset-card-remake"
+                          >
+                            <RefreshCw size={12} aria-hidden="true" /> データが変わったので、押すと作り直します
                           </span>
                         )}
                         {isCurrent ? (
                           <span className="chip chip-primary preset-card-now">今の案</span>
                         ) : (
-                          <span className="preset-card-action">この案にする</span>
+                          <span className="preset-card-action">{remake ? '作り直す' : 'この案にする'}</span>
                         )}
                       </>
                     ) : (

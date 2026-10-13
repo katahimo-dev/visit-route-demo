@@ -18,7 +18,8 @@ export function runSolve(
     iteration: number;
     total: number;
     bestScore: number;
-    bestRoutes: Record<string, string[]>;
+    /** 最良が前の進捗から変わっていなければ無い（契約の WorkerResponse） */
+    bestRoutes?: Record<string, string[]>;
   }) => void,
 ): { promise: Promise<SolveResult>; stop(): void } {
   counter += 1;
@@ -51,7 +52,12 @@ export function runSolve(
       const m = e.data;
       if (settled || m.requestId !== requestId) return;
       if (m.type === 'progress') {
-        onProgress?.({ iteration: m.iteration, total: m.total, bestScore: m.bestScore, bestRoutes: m.bestRoutes });
+        onProgress?.({
+          iteration: m.iteration,
+          total: m.total,
+          bestScore: m.bestScore,
+          ...(m.bestRoutes ? { bestRoutes: m.bestRoutes } : {}),
+        });
       } else if (m.type === 'done') {
         cleanup();
         resolve(m.result);

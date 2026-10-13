@@ -19,7 +19,7 @@ function latLngOf(p: Place): LatLng | null {
 }
 
 /** その日の稼働時間帯（分、開始の順） */
-function slotsOf(data: DemoData, s: Staff, date: string): { start: number; end: number }[] {
+function slotsOf(data: CompileInput, s: Staff, date: string): { start: number; end: number }[] {
   const override = data.availability.find((a) => a.staffId === s.id && a.date === date);
   return availabilityOf(s, date, override)
     .slots.map((x) => ({ start: hhmmToMinutes(x.start), end: hhmmToMinutes(x.end) }))
@@ -70,6 +70,15 @@ function condReasons(
   }
 }
 
+/**
+ * compile が読むデータ（これ以外のフィールド：案・記録・プリセット・種などは問題に効かない）。
+ * 画面はこれだけを依存にして、案のドラッグ・固定（aiPlans の更新）で compile し直さない
+ */
+export type CompileInput = Pick<
+  DemoData,
+  'org' | 'items' | 'rules' | 'staff' | 'clients' | 'compat' | 'visits' | 'availability'
+>;
+
 /** 手直しで固定した訪問の、固定した担当以外の可否の原因 */
 export const PIN_RULE_ID = 'pin';
 export const PIN_LABEL = '固定（手直し）';
@@ -79,7 +88,7 @@ export const PIN_LABEL = '固定（手直し）';
  * pins（訪問ID → 担当ID）の訪問は、固定した担当だけを可にする（他の担当は「固定（手直し）」で外す）。
  * 固定した担当がこの日の問題にいないときは固定を無視する
  */
-export function compile(data: DemoData, date: string, pins?: Record<string, string>): Problem {
+export function compile(data: CompileInput, date: string, pins?: Record<string, string>): Problem {
   const terms = data.org.terms;
   const staffDocs = data.staff.filter((s) => s.active);
   const clients = new Map<string, Client>(data.clients.filter((c) => c.active).map((c) => [c.id, c]));

@@ -40,9 +40,23 @@ describe('worker', () => {
     expect(done?.type === 'done' && done.result.stopped).toBe(true);
     const progress = posted.find((m) => m.type === 'progress');
     expect(progress).toMatchObject({ requestId: 'b', total: 1e9 });
-    // いまの最良の案も送る（画面が点数の基準の物差しで付け直す。ADR-0010）
-    expect(progress?.type === 'progress' && Object.keys(progress.bestRoutes).sort()).toEqual(
+    // いまの最良の案も送る（画面が点数の基準の物差しで付け直す。ADR-0010）。最初の進捗には必ず付く
+    expect(progress?.type === 'progress' && Object.keys(progress.bestRoutes ?? {}).sort()).toEqual(
       problem.staff.map((s) => s.id).sort(),
     );
+  });
+
+  it('最良の費用が前の進捗と同じなら bestRoutes を送らない', async () => {
+    posted.length = 0;
+    send({ type: 'solve', requestId: 'c', problem, options: { seed: 1, iterations: 1e9 } });
+    await until(() => posted.filter((m) => m.type === 'progress').length >= 4);
+    send({ type: 'stop', requestId: 'c' });
+    await until(() => posted.some((m) => m.type === 'done'));
+    const list = posted.flatMap((m) => (m.type === 'progress' ? [m] : []));
+    expect(list.length).toBeGreaterThanOrEqual(4);
+    list.forEach((m, i) => {
+      const changed = i === 0 || m.bestScore !== list[i - 1]!.bestScore;
+      expect(m.bestRoutes !== undefined).toBe(changed);
+    });
   });
 });

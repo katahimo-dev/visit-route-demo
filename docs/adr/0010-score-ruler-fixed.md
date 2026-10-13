@@ -73,5 +73,13 @@
 
 ## 影響
 - 要件：PRD の D11・D18・D20・D21・D25 の点数・物差し・プリセットの操作の記述
-- 設計：契約 `DemoData.scorePresetId`・`WorkerResponse` の `progress.bestRoutes`。seed に `scorePresetOf`・`scoreRulesOf`。store の `repair`。lib/presets の `removePreset`（基準を消すと先頭へ）・`setScorePreset`・`resetPresets`。lib/runs の `reusableRun`。`useDayModel` の `scoreProblem`・`scoreScale`・`scoreRulerName`。Excel の「プリセット」シートの「点数の基準」の列。pages：予定の画面のカード（全体がボタン）・右の欄、比較の画面、条件の画面の「点数の基準」
+- 設計：契約 `DemoData.scorePresetId`・`WorkerResponse` の `progress.bestRoutes`（optional）・`AiRun.inputKey`（optional。追記）。seed に `scorePresetOf`・`scoreRulesOf`。store の `repair`。lib/presets の `removePreset`（基準を消すと先頭へ）・`setScorePreset`・`resetPresets`。lib/runs の `reusableRun`。`useDayModel` の `scoreProblem`・`scoreScale`・`scoreRulerName`。Excel の「プリセット」シートの「点数の基準」の列。pages：予定の画面のカード（全体がボタン）・右の欄、比較の画面、条件の画面の「点数の基準」
 - 見直す条件：基準と違う必須のプリセットを使う事業所から、違反の数え方がわかりにくいと言われたとき。案ごとに「作った条件での点」も見たいと言われたとき（カードに小さく併記する）
+
+## 追記（2026-10-13・レビューの指摘）
+- **問題**：`reusableRun` は「訪問の集まりが同じ・担当がいまの問題の人だけ・付け直した費用が同じ」だけを見ていたので、スタッフを足した・休みを外した・相性や稼働時間を変えたあとも古い記録を使った（費用は記録の routes だけで付け直すので、使っていない担当・相性が変わっても同じ費用になる）。作り直すと別の案になりうるのに、再計算を省いていた
+- **決定**：記録（契約 `AiRun`）に optional の `inputKey` を足す。計算に使った `Problem` の中身（日付・スタッフと稼働時間帯・訪問・移動と距離・可否・割当費用・待ちの点・均等。費用と可否に効くものすべて）を決定的に JSON にし、FNV-1a で短くしたキー（`lib/runs` の `problemKey`。依存を増やさない）。AI案を作る・組み直すときに記録へ入れる。`reusableRun` は、固定なし・止めていない・条件と種が同じで、`inputKey` がいまの条件で compile した問題のキーと一致する記録だけ使う。費用の一致・訪問の集まりの判定はキーで代わるのでやめた（3-B を置き換える）
+- **古い記録**（`inputKey` が無い）は使わない（押すと計算する）。版は1のまま（optional なので読み込める）
+- **カード**：カードに出す記録は、`reusableRun` で見つかる記録を優先し、無ければ従来どおり重みが一致する最新の記録にして「データが変わったので、押すと作り直します」と小さく出す（カードの点と押したあとの点がずれうることを先に知らせる）
+- **Worker**：進み具合の `bestRoutes` は契約で optional にし、`bestScore` が前に送ったときと同じ（最良が変わっていない）ときは送らない。画面は `bestRoutes` が無ければ前の「いまの最良 N点」のまま（メッセージを小さくする）
+- 失うもの：キーは「同じ中身なら同じ」だけを保証する（32bit を2回なので取り違えはまず起きないが、理屈ではありうる）。キーを作るのに移動の行列などを JSON にする手間が増える（カードの表示のためにプリセットごとに compile する。データを変えたときだけ）

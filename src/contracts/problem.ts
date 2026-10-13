@@ -111,8 +111,11 @@ export type WorkerResponse =
       total: number;
       /** いまの最良の費用（解いている problem の物差し） */
       bestScore: number;
-      /** いまの最良の案（staffId → 訪問ID）。画面が点数の基準の物差しで付け直すのに使う（ADR-0010） */
-      bestRoutes: Record<string, string[]>;
+      /**
+       * いまの最良の案（staffId → 訪問ID）。画面が点数の基準の物差しで付け直すのに使う（ADR-0010）。
+       * bestScore が前に送ったときと同じ（最良が変わっていない）ときは送らない。無ければ画面は前の点数を使う
+       */
+      bestRoutes?: Record<string, string[]>;
     }
   | { type: 'done'; requestId: string; result: SolveResult }
   | { type: 'error'; requestId: string; message: string };

@@ -384,8 +384,12 @@
   flex-direction: column;
   gap: 2px;
 }
+.preset-card-remake {
+  font-size: 0.75rem;
+}
 .preset-card-stats svg,
-.preset-card-ach svg {
+.preset-card-ach svg,
+.preset-card-remake svg {
   vertical-align: -1px;
 }
 .preset-card .preset-card-now {

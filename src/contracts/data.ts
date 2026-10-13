@@ -73,6 +73,12 @@ export const aiRunSchema = z.object({
   unassigned: z.array(z.string()),
   score: z.number(),
   stopped: z.boolean(),
+  /**
+   * 計算に使った問題（Problem）の中身から作ったキー（lib/runs の problemKey。ADR-0010）。
+   * 訪問・スタッフ（稼働時間帯）・移動・割当費用・可否・均等など、費用と可否に効くものがすべて同じならキーも同じ。
+   * プリセットのカードで再計算を省くのは、これがいまの問題のキーと一致する記録だけ。無い古い記録は使わない（計算する）
+   */
+  inputKey: z.string().max(100).optional(),
 });
 export type AiRun = z.infer<typeof aiRunSchema>;
 
