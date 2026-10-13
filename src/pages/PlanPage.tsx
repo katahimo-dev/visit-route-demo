@@ -99,6 +99,8 @@ export default function PlanPage() {
   const [picked, setPicked] = useState<string | null>(null);
   /** 地図で見るスタッフ（列の見出しを押す・訪問を選ぶと、その人のルートだけを地図に出す）。null は全員 */
   const [focusStaff, setFocusStaff] = useState<string | null>(null);
+  /** 地図で強調する区間（この訪問へ来る移動）。null は無し */
+  const [focusLeg, setFocusLeg] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTo, setDropTo] = useState<string | null>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
@@ -128,6 +130,7 @@ export default function PlanPage() {
   useEffect(() => {
     setPicked(null);
     setFocusStaff(null);
+    setFocusLeg(null);
   }, [date]);
 
   const aiPlan: AiPlan | undefined = own(data.aiPlans, date);
@@ -537,20 +540,23 @@ export default function PlanPage() {
       for (const id of ids) {
         const c = clientById.get(visitById.get(id)?.clientId ?? '');
         if (!c || !hasLocation(c.place)) continue;
+        const prev = path[path.length - 1];
+        if (id === focusLeg && prev)
+          lns.push({ points: [prev, { lat: c.place.lat, lng: c.place.lng }], color, highlight: true });
         path.push({ lat: c.place.lat, lng: c.place.lng });
         pts.push({
           lat: c.place.lat,
           lng: c.place.lng,
           label: initialOf(c.displayName),
           color: colorOf(c.color),
-          highlight: id === picked,
+          highlight: id === picked || id === focusLeg,
         });
       }
       if (home && path.length > 1) path.push(home);
       lns.push({ points: path, color });
     }
     return { points: pts, lines: lns };
-  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById, focusStaff, picked]);
+  }, [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById, focusStaff, picked, focusLeg]);
 
   const notInProblem = problem ? visits.filter((v) => !problem.visits.some((p) => p.id === v.id)) : [];
   const cs = curScore?.value ?? null;
@@ -568,15 +574,27 @@ export default function PlanPage() {
       <div key={id}>
         {t && (
           <div className="leg-line">
-            {own(routes, ownerId ?? '')?.[0] === id ? (
-              <WithIcon icon={House} size={13}>
-                自宅から {r0(t.travelIn)}分
-              </WithIcon>
-            ) : (
-              <WithIcon icon={Car} size={13}>
-                {r0(t.travelIn)}分
-              </WithIcon>
-            )}
+            <button
+              type="button"
+              className={`leg-btn ${focusLeg === id ? 'is-on' : ''}`}
+              aria-pressed={focusLeg === id}
+              title={focusLeg === id ? '地図の区間の強調をやめる' : '地図でこの区間を強調する'}
+              onClick={() => {
+                const on = focusLeg !== id;
+                setFocusLeg(on ? id : null);
+                if (on && ownerId) setFocusStaff(ownerId);
+              }}
+            >
+              {own(routes, ownerId ?? '')?.[0] === id ? (
+                <WithIcon icon={House} size={13}>
+                  自宅から {r0(t.travelIn)}分
+                </WithIcon>
+              ) : (
+                <WithIcon icon={Car} size={13}>
+                  {r0(t.travelIn)}分
+                </WithIcon>
+              )}
+            </button>
             {t.wait > 0 && (
               <WithIcon icon={Hourglass} size={13}>
                 待ち {r0(t.wait)}分
@@ -998,7 +1016,14 @@ export default function PlanPage() {
                 icon={MapIcon}
                 aside={
                   focusStaff && (
-                    <button type="button" className="btn btn-small" onClick={() => setFocusStaff(null)}>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => {
+                        setFocusStaff(null);
+                        setFocusLeg(null);
+                      }}
+                    >
                       全員のルートを見る
                     </button>
                   )

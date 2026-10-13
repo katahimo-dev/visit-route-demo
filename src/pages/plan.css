@@ -466,3 +466,23 @@
     box-shadow: 0 0 0 14px rgba(232, 115, 95, 0);
   }
 }
+
+/* 区間（移動）を押すと地図でその線を強調 */
+.leg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.leg-btn:hover,
+.leg-btn.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
