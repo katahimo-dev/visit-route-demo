@@ -12,6 +12,7 @@ import {
   Trash2,
   User,
 } from 'lucide-react';
+import { useState } from 'react';
 import type { Condition, Item, ItemTarget, Op, Traits, TraitValue } from '../contracts/rules';
 import { attempt, ITEM_KIND_LABELS } from '../lib/common';
 import { conditionText } from '../matching';
@@ -72,20 +73,17 @@ export function TraitInput({
       );
     case 'multi': {
       const arr = Array.isArray(value) ? value : [];
-      return (
-        <OptionChecks
-          options={item.options}
-          value={arr}
-          onChange={(next) => onChange(next.length === 0 ? null : next)}
-        />
-      );
+      return <OptionChecks options={item.options} value={arr} onChange={onChange} />;
     }
     case 'number':
       return (
         <input
           type="number"
           value={typeof value === 'number' ? value : ''}
-          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            onChange(e.target.value === '' || !Number.isFinite(n) ? null : n);
+          }}
           aria-label={item.name}
         />
       );
@@ -160,21 +158,19 @@ function Segmented({
   onChange: (k: string) => void;
 }) {
   return (
-    <div className="segmented seg-sm" role="radiogroup" aria-label={label}>
+    <fieldset className="segmented seg-sm" aria-label={label}>
       {options.map(([k, text]) => (
-        // biome-ignore lint/a11y/useSemanticElements: ボタンの見た目で選ばせる
         <button
           key={k}
           type="button"
-          role="radio"
-          aria-checked={value === k}
+          aria-pressed={value === k}
           className={value === k ? 'is-on' : ''}
           onClick={() => onChange(k)}
         >
           {text}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
@@ -199,20 +195,33 @@ const listOf = (v: TraitValue): string[] => (Array.isArray(v) ? v : typeof v ===
  */
 function readable(item: Item, conds: Condition[]): boolean {
   if (conds.length === 0) return true;
+  const c = conds[0];
+  if (!c) return true;
+  // 選択肢の値が空でなく、すべていまの選択肢にあること（空・消えた選択肢は表に出すと「問わない」に見えてしまう）
+  const knownList = (v: TraitValue) =>
+    (Array.isArray(v) || typeof v === 'string') &&
+    listOf(v).length > 0 &&
+    listOf(v).every((o) => item.options.includes(o));
   switch (item.kind) {
     case 'flag':
-      return conds.length === 1 && conds[0]?.op === 'is' && typeof conds[0].value === 'boolean';
+      return conds.length === 1 && c.op === 'is' && typeof c.value === 'boolean';
     case 'choice':
-      return conds.length === 1 && (conds[0]?.op === 'is' || conds[0]?.op === 'in');
+      return conds.length === 1 && (c.op === 'is' || c.op === 'in') && knownList(c.value);
     case 'multi':
-      return conds.length === 1 && (conds[0]?.op === 'hasAny' || conds[0]?.op === 'hasAll');
+      return (
+        conds.length === 1 && (c.op === 'hasAny' || c.op === 'hasAll') && Array.isArray(c.value) && knownList(c.value)
+      );
     case 'number':
       return (
-        conds.every((c) => (c.op === 'gte' || c.op === 'lte') && typeof c.value === 'number') &&
-        new Set(conds.map((c) => c.op)).size === conds.length
+        conds.every(
+          (x) => (x.op === 'gte' || x.op === 'lte') && typeof x.value === 'number' && Number.isFinite(x.value),
+        ) && new Set(conds.map((x) => x.op)).size === conds.length
       );
   }
 }
+
+/** 条件の上限（contracts/documents.ts の requirements・preferences の max） */
+const MAX_CONDS = 20;
 
 /**
  * 条件の入力。特性と同じく、相手の項目ごとに1行のチェック表にする（何も選ばない＝問わない）。
@@ -231,9 +240,20 @@ export function ConditionsEditor({
   onChange: (c: Condition[]) => void;
 }) {
   const usable = items.filter((i) => i.target === target);
-  // その項目の条件を置き換える（ほかの項目の条件はそのまま）
-  const replace = (itemId: string, next: Condition[]) =>
-    onChange([...value.filter((c) => c.itemId !== itemId), ...next].slice(0, 20));
+  const [full, setFull] = useState(false);
+  // その項目の条件を置き換える（ほかの項目の条件と並び順はそのまま。上限を超えるときは受け付けない）
+  const replace = (itemId: string, next: Condition[]) => {
+    const before = value.filter((c) => c.itemId === itemId).length;
+    if (value.length - before + next.length > MAX_CONDS) {
+      setFull(true);
+      return;
+    }
+    setFull(false);
+    const at = value.findIndex((c) => c.itemId === itemId);
+    const rest = value.filter((c) => c.itemId !== itemId);
+    const pos = at < 0 ? rest.length : value.slice(0, at).filter((c) => c.itemId !== itemId).length;
+    onChange([...rest.slice(0, pos), ...next, ...rest.slice(pos)]);
+  };
   const others = value.filter((c) => {
     const it = usable.find((x) => x.id === c.itemId);
     return (
@@ -269,6 +289,7 @@ export function ConditionsEditor({
           );
         })}
       </div>
+      {full && <p className="error">条件は{MAX_CONDS}件までです。ほかの条件を外してから入れてください。</p>}
       <span className="sub">何も選ばない項目は問いません。相手の特性が未確認なら、条件を満たさない扱いです。</span>
       {others.length > 0 && (
         <div className="stack" style={{ gap: 4 }}>
@@ -360,10 +381,17 @@ function ItemCondition({
         const c = conds.find((x) => x.op === op);
         return typeof c?.value === 'number' ? c.value : '';
       };
+      // 下限（gte）→上限（lte）の順に並べる。数として読めない値は入れない
       const set = (op: 'gte' | 'lte', text: string) => {
-        const rest = conds.filter((x) => x.op !== op);
-        onChange(text === '' ? rest : [...rest, { itemId: item.id, op, value: Number(text) }]);
+        const n = Number(text);
+        const next = (['gte', 'lte'] as const).flatMap((o): Condition[] => {
+          if (o !== op) return conds.filter((x) => x.op === o);
+          return text === '' || !Number.isFinite(n) ? [] : [{ itemId: item.id, op: o, value: n }];
+        });
+        onChange(next);
       };
+      const lo = bound('gte');
+      const hi = bound('lte');
       return (
         <div className="row num-range">
           <input
@@ -382,6 +410,9 @@ function ItemCondition({
             onChange={(e) => set('lte', e.target.value)}
           />
           <span className="sub">以下</span>
+          {lo !== '' && hi !== '' && lo > hi && (
+            <span className="error">下限が上限より大きいので、誰も満たしません</span>
+          )}
         </div>
       );
     }

@@ -228,7 +228,8 @@ export default function StaffPage() {
 
           <SectionTitle icon={SlidersHorizontal}>{terms.client}に求めること：必要条件</SectionTitle>
           <Hint>
-            {terms.client}の特性に対する条件です（例：ペットあり：なし）。満たさない{terms.client}は「条件」の画面の「
+            {terms.client}の特性に対する条件です（例：ペットのいる家を避けるなら「ペットあり」を「なし」に）。満たさない
+            {terms.client}は「条件」の画面の「
             {terms.staff}の必要条件」で、点が付くか、必須なら担当にしません。
           </Hint>
           <ConditionsEditor

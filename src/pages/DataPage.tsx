@@ -15,7 +15,7 @@ export default function DataPage() {
     setTerms(data.org.terms);
   }, [data.org.terms]);
   const termsOk = terms.client.trim() !== '' && terms.staff.trim() !== '';
-  const termsChanged = terms.client !== data.org.terms.client || terms.staff !== data.org.terms.staff;
+  const termsChanged = terms.client.trim() !== data.org.terms.client || terms.staff.trim() !== data.org.terms.staff;
   const saveTerms = () => {
     const next = { client: terms.client.trim(), staff: terms.staff.trim() };
     update((d) => ({ ...d, org: { ...d.org, terms: next } }));
@@ -86,7 +86,7 @@ export default function DataPage() {
 
       <div className="card stack">
         <SectionTitle icon={Tags}>呼び方</SectionTitle>
-        <Hint>画面に出る呼び方です（各10文字まで）。データの中身は変わりません。</Hint>
+        <Hint>画面に出る呼び方です（各10文字まで）。呼び方もデータに保存され、書き出しに入ります。</Hint>
         <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label>
             訪問する人

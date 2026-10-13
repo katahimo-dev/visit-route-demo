@@ -589,6 +589,9 @@ tbody tr:hover td {
 .segmented {
   display: inline-flex;
   align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
   border: 2px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
