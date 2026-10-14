@@ -45,6 +45,15 @@ export const CLIENT_COLS = {
   note: 'メモ',
 } as const;
 export const availabilityCols = (t: Terms) => ({ staff: t.staff, date: '日付', slots: '時間帯' });
+/** 欠勤（ADR-0011）：開始の空＝始業から、終了の空＝終業まで、両方空＝終日 */
+export const absenceCols = (t: Terms) => ({
+  id: 'ID',
+  staff: t.staff,
+  date: '日付',
+  from: '開始',
+  to: '終了',
+  note: 'メモ',
+});
 export const visitCols = (t: Terms) => ({
   id: 'ID',
   date: '日付',

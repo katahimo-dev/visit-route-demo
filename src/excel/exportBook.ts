@@ -14,6 +14,7 @@ import {
 import { nameKey, optionNameError } from '../lib/common';
 import { scorePresetOf } from '../seed/presets';
 import {
+  absenceCols,
   availabilityCols,
   CLIENT_COLS,
   ITEM_COLS,
@@ -187,6 +188,7 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。いつもの担当は${t.staff}の名前で書きます。`,
     `・${FIXED_SHEETS.compat}：行が${t.client}、列が${t.staff}です。◎・○・△・× か空で書きます（× は担当にしません）。`,
     `・${FIXED_SHEETS.availability}：その日だけの稼働時間。時間帯は「9:00-12:00、13:00-18:00」のように30分単位で書き、休みは「${DAY_OFF}」と書きます。`,
+    `・${FIXED_SHEETS.absences}：当日の急な欠勤（1人1日1行）。開始・終了は30分単位で書き、開始が空なら始業から、終了が空なら終業まで、両方空なら終日です。このシートが無いブックを読み込むと、欠勤なしになります。`,
     `・${FIXED_SHEETS.visits}：訪問の予定。時間の決め方は「ちょうど」（開始（早）に始める）か「幅」（開始（早）〜開始（遅）のあいだに始める）。担当は${t.staff}の名前で、空なら未割当です。`,
     '',
     '特性の書き方（「特性：項目名」の列。空は未確認）',
@@ -468,6 +470,24 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
     textCols: [2, 3],
     lists: [{ col: 1, ref: staffNameRef, strict: false }],
     freezeCols: 1,
+  });
+
+  // 欠勤（ADR-0011）
+  const abc = absenceCols(t);
+  addTable(wb, {
+    name: FIXED_SHEETS.absences,
+    headers: Object.values(abc),
+    rows: data.absences.map((a) => [
+      a.id,
+      staffName.get(a.staffId) ?? '',
+      a.date,
+      a.from === null ? '' : hhmmToCell(a.from),
+      a.to === null ? '' : hhmmToCell(a.to),
+      a.note,
+    ]),
+    textCols: [1, 3, 4, 5],
+    lists: [{ col: 2, ref: staffNameRef, strict: false }],
+    freezeCols: 2,
   });
 
   // 訪問

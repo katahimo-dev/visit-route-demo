@@ -1,6 +1,6 @@
 // 読み込んだデータの中身の食い違いを直す（store がデータの持ち主。design.md §4）
-import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
-import type { Availability, Place } from '../contracts/documents';
+import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY, type ReassignInfo } from '../contracts/data';
+import type { Absence, Availability, Place } from '../contracts/documents';
 import { type Compat, HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES } from '../contracts/rules';
 import { initialPresets } from '../seed/presets';
 
@@ -64,6 +64,8 @@ function repairPresets(presets: Preset[]): Preset[] {
  * - プリセット（ADR-0008）：ID の重複は最初の1件、MAX_PRESETS を超える分は後ろを捨て、0件なら初期の3種。
  *   重みは 0〜5 に収めて 0.5 刻みに丸め（数でなければ 0）、必須にできない型の必須は外す
  * - 点数の基準（scorePresetId。ADR-0010）：無い・どのプリセットでもない id なら先頭のプリセット
+ * - 欠勤（ADR-0011）：いない人の欠勤は消す。ID の重複は最初の1件、同じ人・同じ日は最後の1件（上書きと同じ）。
+ *   今の案・記録の reassign の baseRoutes・basePins・baseGenerated は routes・pins・generated と同じ規則で直す（absenceIds はそのまま）
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -94,6 +96,12 @@ export function repair(d: DemoData): DemoData {
   for (const a of d.availability) if (staffIds.has(a.staffId)) avail.set(`${a.staffId}\u0000${a.date}`, a);
   const availability = d.availability.filter((a) => avail.get(`${a.staffId}\u0000${a.date}`) === a);
 
+  // 欠勤（ADR-0011）：いない人の分は消し、ID の重複は最初の1件、同じ人・同じ日は最後の1件
+  const absMap = new Map<string, Absence>();
+  const absUnique = uniqueById(d.absences).filter((a) => staffIds.has(a.staffId));
+  for (const a of absUnique) absMap.set(`${a.staffId}\u0000${a.date}`, a);
+  const absences = absUnique.filter((a) => absMap.get(`${a.staffId}\u0000${a.date}`) === a);
+
   /** その日の訪問だけ・どの列にも1回だけ */
   const onDate = (date: string, seen: Set<string>) => (id: string) => {
     if (dateOf.get(id) !== date || seen.has(id)) return false;
@@ -123,22 +131,33 @@ export function repair(d: DemoData): DemoData {
     }
     return { routes: out, unassigned: [...unassigned, ...lost].filter(keep) };
   };
+  const repairPins = (date: string, pins: Record<string, string>) =>
+    Object.fromEntries(Object.entries(pins).filter(([vid, sid]) => dateOf.get(vid) === date && staffIds.has(sid)));
+  /** 振り直しの元の案（ADR-0011）：routes・pins と同じ規則。元の案に未割当の列は無いので、いない人の列は消す */
+  const repairReassign = (date: string, r: ReassignInfo | undefined): { reassign?: ReassignInfo } => {
+    if (!r) return {};
+    const gen = r.baseGenerated;
+    return {
+      reassign: {
+        ...r,
+        baseRoutes: repairRoutes(date, r.baseRoutes, []).routes,
+        basePins: repairPins(date, r.basePins),
+        ...(gen ? { baseGenerated: { ...gen, ...repairRoutes(date, gen.routes, gen.unassigned) } } : {}),
+      },
+    };
+  };
   const repairPlan = (date: string, p: AiPlan): AiPlan => {
     const cur = repairRoutes(date, p.routes, p.unassigned);
     const gen = repairRoutes(date, p.generated.routes, p.generated.unassigned);
-    const pins = Object.fromEntries(
-      Object.entries(p.pins).filter(([vid, sid]) => dateOf.get(vid) === date && staffIds.has(sid)),
-    );
-    return { ...p, date, ...cur, generated: { ...p.generated, ...gen }, pins };
+    const pins = repairPins(date, p.pins);
+    return { ...p, date, ...cur, generated: { ...p.generated, ...gen }, pins, ...repairReassign(date, p.reassign) };
   };
   const repairPlans = (plans: DemoData['aiPlans']) =>
     Object.fromEntries(Object.entries(plans).map(([date, p]) => [date, repairPlan(date, p)]));
   const repairRun = (date: string, r: AiRun): AiRun => {
     const cur = repairRoutes(date, r.routes, r.unassigned);
-    const pins = Object.fromEntries(
-      Object.entries(r.pins).filter(([vid, sid]) => dateOf.get(vid) === date && staffIds.has(sid)),
-    );
-    return { ...r, date, ...cur, pins };
+    const pins = repairPins(date, r.pins);
+    return { ...r, date, ...cur, pins, ...repairReassign(date, r.reassign) };
   };
   const aiRuns: DemoData['aiRuns'] = Object.fromEntries(
     Object.entries(d.aiRuns).map(([date, runs]) => [
@@ -162,6 +181,7 @@ export function repair(d: DemoData): DemoData {
     compat,
     visits,
     availability,
+    absences,
     manualPlans,
     aiPlans: repairPlans(d.aiPlans),
     aiRuns,

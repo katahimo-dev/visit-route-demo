@@ -33,6 +33,8 @@ describe('createDemoData', () => {
   it('手作業の割当は入れない（ADR-0005）', () => {
     const d = createDemoData(TODAY);
     expect(d.manualPlans).toEqual({});
+    // 初期データに欠勤は入らない（ADR-0011）
+    expect(d.absences).toEqual([]);
     expect(d.visits.every((v) => v.staffId === null)).toBe(true);
     expect(d.aiRuns).toEqual({});
   });

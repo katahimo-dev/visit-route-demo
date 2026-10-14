@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import type { Client, Staff, Visit } from '../contracts/documents';
+import type { Absence, Client, Staff, Visit } from '../contracts/documents';
 import type { Problem, ScoreScale } from '../contracts/problem';
-import { availabilityOf, type Slot } from '../domain/availability';
+import { availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { NONE, reconcile, type View } from '../domain/scheduleModel';
 import { normalize } from '../evaluate';
 import { type CompileInput, compile } from '../matching';
@@ -26,13 +26,29 @@ export function useDayModel(date: string) {
   const allVisits = useMemo(() => data.visits.filter((v) => v.date === date), [data.visits, date]);
   const visits = useMemo(() => allVisits.filter((v) => !v.cancelled), [allVisits]);
   const visitById = useMemo(() => new Map<string, Visit>(visits.map((v) => [v.id, v])), [visits]);
-  /** その日の稼働時間帯（基本の曜日と時間＋日ごとの上書き） */
+  /**
+   * その日の稼働時間帯（基本の曜日と時間＋日ごとの上書き）。slots は欠勤を差し引いたもの（ADR-0011）、
+   * baseSlots は差し引く前、absence はその日の欠勤（無ければ null）
+   */
   const slotsOf = useMemo(() => {
     const overrides = new Map(data.availability.filter((a) => a.date === date).map((a) => [a.staffId, a]));
-    return new Map<string, { slots: Slot[]; overridden: boolean }>(
-      staff.map((s) => [s.id, availabilityOf(s, date, overrides.get(s.id))]),
+    const absences = new Map(data.absences.filter((a) => a.date === date).map((a) => [a.staffId, a]));
+    return new Map<string, { slots: Slot[]; baseSlots: Slot[]; overridden: boolean; absence: Absence | null }>(
+      staff.map((s) => {
+        const a = availabilityOf(s, date, overrides.get(s.id));
+        const absence = absences.get(s.id) ?? null;
+        return [
+          s.id,
+          {
+            slots: absence ? withoutAbsences(a.slots, [absence]) : a.slots,
+            baseSlots: a.slots,
+            overridden: a.overridden,
+            absence,
+          },
+        ];
+      }),
     );
-  }, [staff, data.availability, date]);
+  }, [staff, data.availability, data.absences, date]);
   /** compile が読むデータだけ（案・記録・プリセットの更新では変わらない） */
   const compileInput: CompileInput = useMemo(
     () => ({
@@ -44,8 +60,19 @@ export function useDayModel(date: string) {
       compat: data.compat,
       visits: data.visits,
       availability: data.availability,
+      absences: data.absences,
     }),
-    [data.org, data.items, data.rules, data.staff, data.clients, data.compat, data.visits, data.availability],
+    [
+      data.org,
+      data.items,
+      data.rules,
+      data.staff,
+      data.clients,
+      data.compat,
+      data.visits,
+      data.availability,
+      data.absences,
+    ],
   );
   const compiled = useMemo(() => attempt(() => compile(compileInput, date)), [compileInput, date]);
   /** 点数の基準のプリセット（ADR-0010。プリセットが0件なら null＝いまの条件そのもの） */

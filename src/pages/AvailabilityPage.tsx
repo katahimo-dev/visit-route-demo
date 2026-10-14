@@ -5,19 +5,18 @@ import { SlotEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import type { Availability } from '../contracts/documents';
-import { availabilityOf, type Slot, slotsError, slotsText, toHalfHours } from '../domain/availability';
+import { availabilityOf, type Slot, slotsError, slotsText, timeText, toHalfHours } from '../domain/availability';
 import { weekday } from '../domain/time';
+import { absenceText } from '../lib/absences';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
 import { useDemoData } from '../store';
 import './schedule.css';
 
+/** 「09:00」→「9」、「09:30」→「9:30」 */
+const hourText = (hhmm: string) => timeText(hhmm).replace(/:00$/, '');
 /** セルの短い表示：「9-18」「9:30-12」。休みは「休」 */
 const short = (slots: Slot[]) =>
-  slots.length === 0
-    ? ['休']
-    : slots.map(
-        (s) => `${s.start.replace(/^0/, '').replace(/:00$/, '')}-${s.end.replace(/^0/, '').replace(/:00$/, '')}`,
-      );
+  slots.length === 0 ? ['休'] : slots.map((s) => `${hourText(s.start)}-${hourText(s.end)}`);
 
 /**
  * 稼働時間帯のカレンダー（スタッフ×日。PoC本体 AvailabilityPage.tsx の簡易版：管理者のみ・データの中の日付だけ）。
@@ -33,10 +32,13 @@ export default function AvailabilityPage() {
     () => new Map(data.availability.map((a) => [`${a.staffId}_${a.date}`, a])),
     [data.availability],
   );
+  /** 欠勤（ADR-0011）：セルに「欠勤」の印。登録・取り消しは予定の画面で */
+  const absences = useMemo(() => new Map(data.absences.map((a) => [`${a.staffId}_${a.date}`, a])), [data.absences]);
   const [picked, setPicked] = useState<{ staffId: string; date: string } | null>(null);
   const [draft, setDraft] = useState<Slot[]>([]);
   const pickedStaff = picked ? staff.find((s) => s.id === picked.staffId) : undefined;
   const pickedOverride = picked ? overrides.get(`${picked.staffId}_${picked.date}`) : undefined;
+  const pickedAbsence = picked ? absences.get(`${picked.staffId}_${picked.date}`) : undefined;
 
   const pick = (staffId: string, date: string) => {
     const s = staff.find((x) => x.id === staffId);
@@ -81,6 +83,10 @@ export default function AvailabilityPage() {
             <span className="swatch is-off" aria-hidden="true" />
             休み
           </span>
+          <span>
+            <span className="avail-absence">欠勤</span>
+            急な欠勤（予定の画面で登録）
+          </span>
           <span>セルを押すと下で変えられます</span>
         </div>
         <Hint>
@@ -107,6 +113,7 @@ export default function AvailabilityPage() {
                   <th className="avail-name">{s.name}</th>
                   {dates.map((d) => {
                     const o = overrides.get(`${s.id}_${d}`);
+                    const ab = absences.get(`${s.id}_${d}`);
                     const { slots } = availabilityOf(s, d, o);
                     const isPicked = picked?.staffId === s.id && picked.date === d;
                     return (
@@ -119,7 +126,7 @@ export default function AvailabilityPage() {
                             slots.length === 0 ? 'is-off' : '',
                             isPicked ? 'is-picked' : '',
                           ].join(' ')}
-                          title={`${s.name} ${d}：${slotsText(slots)}`}
+                          title={`${s.name} ${d}：${slotsText(slots)}${ab ? `／${absenceText(ab, slots)}${ab.note ? `（${ab.note}）` : ''}` : ''}`}
                           onClick={() => pick(s.id, d)}
                         >
                           {slots.length === 0 ? (
@@ -130,6 +137,13 @@ export default function AvailabilityPage() {
                             short(slots).map((t) => <span key={t}>{t}</span>)
                           )}
                           {o && <Pencil className="avail-mark" size={9} aria-hidden="true" />}
+                          {ab && (
+                            <span className="avail-absence" data-testid="avail-absence">
+                              {ab.from === null && ab.to === null
+                                ? '欠勤'
+                                : `欠 ${short([{ start: ab.from ?? slots[0]?.start ?? '00:00', end: ab.to ?? slots.at(-1)?.end ?? '24:00' }])[0]}`}
+                            </span>
+                          )}
                         </button>
                       </td>
                     );
@@ -173,6 +187,15 @@ export default function AvailabilityPage() {
             基本：{slotsText(availabilityOf(pickedStaff, picked.date, null).slots)}
             {pickedOverride && '／この日は変更あり'}
           </p>
+          {pickedAbsence && (
+            <p className="warn-text" title={pickedAbsence.note || undefined}>
+              {absenceText(
+                pickedAbsence,
+                availabilityOf(pickedStaff, picked.date, overrides.get(`${picked.staffId}_${picked.date}`)).slots,
+              )}
+              {pickedAbsence.note && `（${pickedAbsence.note}）`}。欠勤の登録・取り消しは予定の画面で
+            </p>
+          )}
           <SlotEditor value={draft} onChange={setDraft} />
         </SidePanel>
       )}

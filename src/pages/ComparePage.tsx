@@ -15,7 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
 import { RouteMap } from '../components/RouteMap';
@@ -45,6 +45,8 @@ type Side = 'a' | 'b';
 /** 比べる候補：記録1件か、今の案（予定の画面の手直し後） */
 type Choice = { id: string; title: string; rules: Rule[]; routes: Record<string, string[]>; unassigned: string[] };
 const CURRENT = 'current';
+/** 欠勤前（振り直しの元の案。ADR-0011）の候補の id の頭。`before:<記録の id>`・`before:current`（今の案の元の案） */
+const BEFORE = 'before:';
 
 /** 条件の重みの短い表示（例「重み3」「必須」「無効」） */
 function weightText(r: Rule | undefined): string {
@@ -73,6 +75,8 @@ export default function ComparePage() {
   const terms = data.org.terms;
   const toast = useToast();
   const navigate = useNavigate();
+  /** 予定の画面の「比較の画面で見る」（A＝欠勤前、B＝今の案。ADR-0011） */
+  const asked = (useLocation().state ?? null) as { a?: string; b?: string } | null;
   const [sel, setSel] = useState<{ a: string | null; b: string | null }>({ a: null, b: null });
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ案を外す（選んだ訪問・区間は useRouteSelection が外す）
   useEffect(() => {
@@ -90,13 +94,22 @@ export default function ComparePage() {
     return p && problem ? alignPlan(problem, p) : p;
   }, [data.aiPlans, date, problem]);
   const choices: Choice[] = useMemo(() => {
-    const out: Choice[] = runs.map((r) => ({
-      id: r.id,
-      title: `#${r.no} ${r.label}`,
-      rules: r.rules,
-      routes: r.routes,
-      unassigned: r.unassigned,
-    }));
+    const ids = new Set(problem?.visits.map((v) => v.id) ?? []);
+    /** 欠勤前の案（元の案）。いまの問題で採点するので、欠勤の人の訪問は必須の違反として出る */
+    const before = (id: string, title: string, rules: Rule[], routes: Record<string, string[]>): Choice => {
+      const placed = new Set(Object.values(routes).flat());
+      return { id, title, rules, routes, unassigned: [...ids].filter((v) => !placed.has(v)) };
+    };
+    const out: Choice[] = [];
+    for (const r of runs) {
+      if (r.reassign)
+        out.push(before(`${BEFORE}${r.id}`, `欠勤前（#${r.no}の元の案）`, r.rules, r.reassign.baseRoutes));
+      out.push({ id: r.id, title: `#${r.no} ${r.label}`, rules: r.rules, routes: r.routes, unassigned: r.unassigned });
+    }
+    // 今の案が振り直しで、その記録が無い（消した）ときも欠勤前を出す
+    if (aiPlan?.reassign && !runs.some((r) => r.id === aiPlan.runId && r.reassign)) {
+      out.push(before(`${BEFORE}${CURRENT}`, '欠勤前（今の案の元の案）', aiPlan.rules, aiPlan.reassign.baseRoutes));
+    }
     // 今の案は、どの記録とも違う（手直しした）ときだけ候補に出す
     const key = (r: Record<string, string[]>) => JSON.stringify(r);
     if (aiPlan && !runs.some((r) => key(r.routes) === key(aiPlan.routes))) {
@@ -109,8 +122,20 @@ export default function ComparePage() {
       });
     }
     return out;
-  }, [runs, aiPlan]);
+  }, [runs, aiPlan, problem]);
   const byId = (id: string | null) => choices.find((c) => c.id === id);
+  // 予定の画面から「比較の画面で見る」で来たら、A＝今の案の欠勤前、B＝今の案（記録と同じなら記録）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 来たときに1回だけ合わせる
+  useEffect(() => {
+    if (asked?.a !== 'before' || !aiPlan?.reassign) return;
+    const runBefore = runs.some((r) => r.id === aiPlan.runId && r.reassign) ? `${BEFORE}${aiPlan.runId}` : null;
+    const a = runBefore ?? `${BEFORE}${CURRENT}`;
+    const key = JSON.stringify(aiPlan.routes);
+    const b = choices.some((c) => c.id === CURRENT)
+      ? CURRENT
+      : (choices.find((c) => !c.id.startsWith(BEFORE) && JSON.stringify(c.routes) === key)?.id ?? null);
+    setSel({ a, b });
+  }, [asked]);
   // 既定：A＝最初の記録、B＝A 以外の最後の記録（無ければ今の案）
   const A = byId(sel.a) ?? choices[0];
   const others = choices.filter((c) => c.id !== A?.id);
@@ -437,6 +462,16 @@ export default function ComparePage() {
                       </td>
                       <td>
                         {c.title}
+                        {run?.reassign && (
+                          <span className="chip chip-move" style={{ marginLeft: 6 }}>
+                            欠勤の振り直し
+                          </span>
+                        )}
+                        {c.id.startsWith(BEFORE) && (
+                          <span className="chip" style={{ marginLeft: 6 }}>
+                            欠勤前
+                          </span>
+                        )}
                         {run?.stopped && <span className="sub">（途中で止めた案）</span>}
                         {run && <div className="weights-text">乱数の種 {run.seed}</div>}
                       </td>
@@ -449,7 +484,9 @@ export default function ComparePage() {
                               hour: '2-digit',
                               minute: '2-digit',
                             })
-                          : '手直しを含む'}
+                          : c.id.startsWith(BEFORE)
+                            ? '振り直す前'
+                            : '手直しを含む'}
                       </td>
                       <td className="num" title={sc ? `費用 ${r0(sc.total)}（内部の値）` : undefined}>
                         {sc && scale ? `${toHundred(sc.total, scale)}点` : '—'}

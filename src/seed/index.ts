@@ -65,6 +65,7 @@ export function createDemoData(today: string): DemoData {
     compat,
     visits: [],
     availability: [],
+    absences: [],
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},

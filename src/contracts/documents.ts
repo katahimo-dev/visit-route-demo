@@ -102,6 +102,32 @@ export const availabilitySchema = z
   });
 export type Availability = z.infer<typeof availabilitySchema>;
 
+/** 30分単位の時刻（欠勤の始まり・終わり。ADR-0011） */
+export const hhmm30Schema = hhmmSchema.regex(/:[03]0$/, '時間は30分単位で選んでください');
+
+/**
+ * 当日の急な欠勤（ADR-0011）。稼働時間の上書き（availability）とは別の記録で、その日の稼働時間帯から差し引く。
+ * from が null＝始業から、to が null＝終業まで、両方 null＝終日。同じ人・同じ日は1件（store の repair は最後の1件）
+ */
+export const absenceSchema = z
+  .object({
+    id: idSchema,
+    staffId: idSchema,
+    date: dateSchema,
+    /** 欠勤の始まり（30分単位）。null＝始業から */
+    from: hhmm30Schema.nullable(),
+    /** 欠勤の終わり（30分単位）。null＝終業まで */
+    to: hhmm30Schema.nullable(),
+    /** メモ（例：病院の付き添い） */
+    note: z.string().max(100),
+  })
+  .superRefine((a, ctx) => {
+    if (a.from !== null && a.to !== null && a.from >= a.to) {
+      ctx.addIssue({ code: 'custom', path: ['to'], message: '終了は開始より後にしてください' });
+    }
+  });
+export type Absence = z.infer<typeof absenceSchema>;
+
 /** 手作業案。staffId（または未割当 '__none'）→ 訪問IDの列（開始時刻の順） */
 export const manualRoutesSchema = z.record(z.string(), z.array(idSchema));
 export type ManualRoutes = z.infer<typeof manualRoutesSchema>;

@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import {
+  absenceSchema,
   availabilitySchema,
   clientSchema,
   dateSchema,
+  hhmmSchema,
+  idSchema,
   manualRoutesSchema,
   orgSchema,
   staffSchema,
@@ -15,6 +18,32 @@ export const STORAGE_KEY = 'vrdemo:data:v1';
 export const DATA_VERSION = 1;
 
 const routesSchema = z.record(z.string(), z.array(z.string()));
+
+/**
+ * 欠勤の振り直しの情報（ADR-0011）。AiPlan・AiRun に optional で付く（無い＝ふつうの AI案）。
+ * baseRoutes は振り直す前の元の案（差の基準・「元の案に戻す」・比較の「欠勤前」）
+ */
+export const reassignInfoSchema = z.object({
+  /** 1回目は案A「空き時間に入れるだけ」だけ。2回目に 'anneal'（案B）を足す */
+  method: z.literal('insert'),
+  /** 元の案：確定した割当（manualPlans[date]）か今の案（aiPlans[date].routes） */
+  from: z.enum(['confirmed', 'plan']),
+  /** 元の案（staffId → 訪問IDの列） */
+  baseRoutes: routesSchema,
+  /** 元の案の固定（元が確定した割当なら {}） */
+  basePins: z.record(z.string(), z.string()),
+  /**
+   * 振り直す前の今の案の generated（AI が出したまま）と runId（元の記録）。「元の案に戻す」で戻す。
+   * 振り直す前に今の案が無かった・古いデータには無い（戻すときは元の案を generated にし、runId は外す）
+   */
+  baseGenerated: z.object({ routes: routesSchema, unassigned: z.array(z.string()), score: z.number() }).optional(),
+  baseRunId: z.string().max(100).optional(),
+  /** 振り直しに使った欠勤（取り消されても残す。続けて振り直したときは最初からの累積） */
+  absenceIds: z.array(idSchema),
+  /** いまの時刻（考えないなら null） */
+  now: hhmmSchema.nullable(),
+});
+export type ReassignInfo = z.infer<typeof reassignInfoSchema>;
 
 /**
  * 保存したAI案（作ったときの条件の重みも残し、前回との差・再現に使う）。ADR-0004：
@@ -36,6 +65,8 @@ const aiPlanObject = z.object({
   pins: z.record(z.string(), z.string()),
   /** 今の案の元になった記録（AiRun.id。ADR-0008）。古いデータ・記録に無い案は無し */
   runId: z.string().max(100).optional(),
+  /** 今の案が欠勤の振り直しの結果なら付く（差の欄を出す。ADR-0011） */
+  reassign: reassignInfoSchema.optional(),
 });
 export const aiPlanSchema = z.preprocess((raw) => {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
@@ -79,6 +110,8 @@ export const aiRunSchema = z.object({
    * プリセットのカードで再計算を省くのは、これがいまの問題のキーと一致する記録だけ。無い古い記録は使わない（計算する）
    */
   inputKey: z.string().max(100).optional(),
+  /** 記録が欠勤の振り直しなら付く（比較の「欠勤前」。reusableRun の対象外。ADR-0011） */
+  reassign: reassignInfoSchema.optional(),
 });
 export type AiRun = z.infer<typeof aiRunSchema>;
 
@@ -97,6 +130,8 @@ export const demoDataSchema = z.object({
   compat: compatSchema,
   visits: z.array(visitSchema),
   availability: z.array(availabilitySchema),
+  /** 当日の急な欠勤（ADR-0011）。無い古いデータは []（版は1のまま） */
+  absences: z.array(absenceSchema).max(2000).default([]),
   /** date → 手作業案 */
   manualPlans: z.record(z.string(), manualRoutesSchema),
   /** date → 最新のAI案 */

@@ -60,9 +60,14 @@ export function migrate(raw: unknown): DemoData | ImportError {
     return fail(`データの版（${String(version ?? '不明')}）に対応していません。このデモの版は ${DATA_VERSION} です`);
   }
   // プリセット（ADR-0008）が無い（null も）古いデータは、初期の3種で補う（版は1のまま）
+  // 欠勤（ADR-0011）が無い（null も）古いデータは [] で補う
   const o = raw as Record<string, unknown>;
-  const withPresets = o.presets === undefined || o.presets === null ? { ...o, presets: initialPresets() } : raw;
-  const r = demoDataSchema.safeParse(withPresets, { error: z.locales.ja().localeError });
+  const filled = {
+    ...o,
+    ...(o.presets === undefined || o.presets === null ? { presets: initialPresets() } : {}),
+    ...(o.absences === undefined || o.absences === null ? { absences: [] } : {}),
+  };
+  const r = demoDataSchema.safeParse(filled, { error: z.locales.ja().localeError });
   if (!r.success) {
     const first = r.error.issues[0];
     return fail(first ? describeIssue(first) : 'データの形が正しくありません');

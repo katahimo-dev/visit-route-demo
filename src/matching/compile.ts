@@ -4,7 +4,7 @@ import type { DemoData } from '../contracts/data';
 import type { Client, LatLng, Place, Staff } from '../contracts/documents';
 import type { Problem, ProblemStaff, ProblemVisit, Reason } from '../contracts/problem';
 import { type Condition, type Item, POINTS_PER_WEIGHT, type Rule, type Traits } from '../contracts/rules';
-import { availabilityOf } from '../domain/availability';
+import { availabilityOf, withoutAbsences } from '../domain/availability';
 import { estimateLeg } from '../domain/geo';
 import { hhmmToMinutes } from '../domain/time';
 import { conditionText, matches } from './conditions';
@@ -18,13 +18,28 @@ function latLngOf(p: Place): LatLng | null {
   return p.lat === null || p.lng === null ? null : { lat: p.lat, lng: p.lng };
 }
 
-/** その日の稼働時間帯（分、開始の順） */
-function slotsOf(data: CompileInput, s: Staff, date: string): { start: number; end: number }[] {
+type MinuteSlot = { start: number; end: number };
+
+/**
+ * その日の稼働時間帯（分、開始の順）。base は欠勤を差し引く前、slots は差し引いた後（ADR-0011）。
+ * absence はその日のその人の欠勤（無ければ null）
+ */
+function slotsOf(
+  data: CompileInput,
+  s: Staff,
+  date: string,
+): { base: MinuteSlot[]; slots: MinuteSlot[]; absence: { from: string | null; to: string | null } | null } {
   const override = data.availability.find((a) => a.staffId === s.id && a.date === date);
-  return availabilityOf(s, date, override)
-    .slots.map((x) => ({ start: hhmmToMinutes(x.start), end: hhmmToMinutes(x.end) }))
-    .filter((x) => x.start < x.end)
-    .sort((a, b) => a.start - b.start);
+  const raw = availabilityOf(s, date, override).slots;
+  const toMinutes = (xs: { start: string; end: string }[]) =>
+    xs
+      .map((x) => ({ start: hhmmToMinutes(x.start), end: hhmmToMinutes(x.end) }))
+      .filter((x) => x.start < x.end)
+      .sort((a, b) => a.start - b.start);
+  const absences = data.absences.filter((a) => a.staffId === s.id && a.date === date);
+  const base = toMinutes(raw);
+  if (absences.length === 0) return { base, slots: base, absence: null };
+  return { base, slots: toMinutes(withoutAbsences(raw, absences)), absence: absences[absences.length - 1] ?? null };
 }
 
 /** 事業所の多数決の移動手段（同数なら TRAVEL_MODES の順） */
@@ -76,8 +91,14 @@ function condReasons(
  */
 export type CompileInput = Pick<
   DemoData,
-  'org' | 'items' | 'rules' | 'staff' | 'clients' | 'compat' | 'visits' | 'availability'
+  'org' | 'items' | 'rules' | 'staff' | 'clients' | 'compat' | 'visits' | 'availability' | 'absences'
 >;
+
+/** 欠勤で可にならない組の理由の文（ADR-0011。ruleId は 'slot'） */
+export const ABSENT_ALL_DAY = '欠勤（終日）';
+/** 途中の欠勤で、その日の稼働時間帯が全部なくなったとき */
+export const ABSENT_NO_HOURS = '欠勤で稼働時間がない';
+export const ABSENCE_OVERLAP = '欠勤の時間と重なる';
 
 /** 手直しで固定した訪問の、固定した担当以外の可否の原因 */
 export const PIN_RULE_ID = 'pin';
@@ -97,11 +118,12 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   const rules = data.rules.filter(isActive);
 
   const S = staffDocs.length;
+  const daySlots = staffDocs.map((s) => slotsOf(data, s, date));
   const staff: ProblemStaff[] = staffDocs.map((s, i) => ({
     id: s.id,
     name: s.name,
     point: i,
-    slots: slotsOf(data, s, date),
+    slots: daySlots[i]!.slots,
   }));
   const visits: ProblemVisit[] = visitDocs.map((v, j) => {
     const earliest = hhmmToMinutes(v.earliestStart);
@@ -162,10 +184,21 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
       if (!places[S + j]) out.push({ ruleId: 'noPlace', label: `${terms.client}の位置が未登録`, points: INF });
       if (!places[i]) out.push({ ruleId: 'noPlace', label: `${terms.staff}の自宅の位置が未登録`, points: INF });
       if (pv.earliest > pv.latest) out.push({ ruleId: 'time', label: '時間の約束の幅が正しくない', points: INF });
+      const day = daySlots[i]!;
+      const fits = (xs: MinuteSlot[]) => xs.length > 0 && fitStart(xs, pv.earliest, pv.duration) <= pv.latest;
       if (ps.slots.length === 0) {
-        out.push({ ruleId: 'slot', label: '休み', points: INF });
-      } else if (pv.earliest <= pv.latest && !(fitStart(ps.slots, pv.earliest, pv.duration) <= pv.latest)) {
-        out.push({ ruleId: 'slot', label: '稼働時間帯に作業が収まらない', points: INF });
+        // 欠勤（ADR-0011）：もともと働く日なら「欠勤（終日）」（途中の欠勤で全部なくなったら「欠勤で稼働時間がない」）、
+        // もともと休みなら「休み」
+        const absent = day.absence && day.base.length > 0;
+        const allDay = day.absence?.from === null && day.absence?.to === null;
+        out.push({
+          ruleId: 'slot',
+          label: absent ? (allDay ? ABSENT_ALL_DAY : ABSENT_NO_HOURS) : '休み',
+          points: INF,
+        });
+      } else if (pv.earliest <= pv.latest && !fits(ps.slots)) {
+        const label = day.absence && fits(day.base) ? ABSENCE_OVERLAP : '稼働時間帯に作業が収まらない';
+        out.push({ ruleId: 'slot', label, points: INF });
       }
       const level = data.compat[client.id]?.[s.id] ?? 0;
       // 相性×は重み・hard にかかわらず外す

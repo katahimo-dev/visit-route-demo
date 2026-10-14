@@ -1,5 +1,5 @@
 // AI案の記録（ADR-0005）：作るたびに条件と結果を残し、比較の画面で任意の2つを比べる
-import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
+import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY, type ReassignInfo } from '../contracts/data';
 import type { Problem, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
 import { score } from '../evaluate';
@@ -16,12 +16,21 @@ export function runLabel(rules: Rule[], pinCount: number, presets: readonly Pres
  * その日の記録に1件足す。同じ条件・種・固定・結果の記録がすでにあれば足さない（同じ入力からは同じ案になる）。
  * そのとき inputKey（計算に使った問題のキー。problemKey）が違えば、その記録の inputKey を今回のものにする
  * （データを変えても同じ案になった。いまのデータで再計算を省けるように）。
- * 1日 MAX_RUNS_PER_DAY 件まで（古いものから消す）
+ * 1日 MAX_RUNS_PER_DAY 件まで（古いものから消す）。
+ * 欠勤の振り直し（ADR-0011）は reassign（元の案）と label（「欠勤の振り直し（〈名前〉さん）」）を付けて足す
  */
 export function addRun(
   d: DemoData,
   date: string,
-  x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult; createdAt: number; inputKey?: string },
+  x: {
+    rules: Rule[];
+    pins: Record<string, string>;
+    result: SolveResult;
+    createdAt: number;
+    inputKey?: string;
+    label?: string;
+    reassign?: ReassignInfo;
+  },
 ): DemoData {
   const runs = own(d.aiRuns, date) ?? [];
   const found = findRun(d, date, x);
@@ -40,7 +49,7 @@ export function addRun(
     no,
     date,
     createdAt: x.createdAt,
-    label: runLabel(x.rules, Object.keys(x.pins).length, d.presets),
+    label: x.label ?? runLabel(x.rules, Object.keys(x.pins).length, d.presets),
     presetId: presetOf(x.rules, d.presets)?.id ?? null,
     seed: x.result.seed,
     iterations: x.result.iterations,
@@ -51,18 +60,23 @@ export function addRun(
     score: x.result.score,
     stopped: x.result.stopped,
     ...(x.inputKey !== undefined ? { inputKey: x.inputKey } : {}),
+    ...(x.reassign ? { reassign: x.reassign } : {}),
   };
   return { ...d, aiRuns: { ...d.aiRuns, [date]: [...runs, run].slice(-MAX_RUNS_PER_DAY) } };
 }
 
-/** 同じ条件・種・固定・結果の記録（無ければ undefined。addRun のあとに引くと、足した記録かもとからある記録） */
+/**
+ * 同じ条件・種・固定・結果の記録（無ければ undefined。addRun のあとに引くと、足した記録かもとからある記録）。
+ * 欠勤の振り直しの記録（reassign 付き）とふつうの記録は、結果が同じでも別の記録（ADR-0011）
+ */
 export function findRun(
   d: DemoData,
   date: string,
-  x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult },
+  x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult; reassign?: ReassignInfo },
 ): AiRun | undefined {
   return (own(d.aiRuns, date) ?? []).find(
     (r) =>
+      !!r.reassign === !!x.reassign &&
       r.seed === x.result.seed &&
       JSON.stringify(r.rules) === JSON.stringify(x.rules) &&
       JSON.stringify(r.pins) === JSON.stringify(x.pins) &&
@@ -119,14 +133,15 @@ export function reusableRun(
   const rulesKey = JSON.stringify(rules);
   for (let i = runs.length - 1; i >= 0; i--) {
     const r = runs[i]!;
-    if (Object.keys(r.pins).length > 0 || r.stopped || r.seed !== seed) continue;
+    // 欠勤の振り直しの記録は、AI が組んだ案ではないので使わない（ADR-0011）
+    if (r.reassign || Object.keys(r.pins).length > 0 || r.stopped || r.seed !== seed) continue;
     if (r.inputKey === undefined || r.inputKey !== key || JSON.stringify(r.rules) !== rulesKey) continue;
     return r;
   }
   return undefined;
 }
 
-/** 記録を今の案（予定の画面）にする。AIが出したまま＝記録の結果、固定は記録の固定 */
+/** 記録を今の案（予定の画面）にする。AIが出したまま＝記録の結果、固定は記録の固定。振り直しの記録なら元の案も写す */
 export function planOfRun(run: AiRun): AiPlan {
   return {
     date: run.date,
@@ -141,6 +156,7 @@ export function planOfRun(run: AiRun): AiPlan {
     generated: { routes: run.routes, unassigned: run.unassigned, score: run.score },
     pins: run.pins,
     runId: run.id,
+    ...(run.reassign ? { reassign: run.reassign } : {}),
   };
 }
 

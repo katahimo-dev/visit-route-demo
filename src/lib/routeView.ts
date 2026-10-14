@@ -21,7 +21,7 @@ type LatLng = { lat: number; lng: number };
 /**
  * 地図の点・線を作る。担当（staffOrder の順）ごと・集まりごとに、自宅 → 訪問先 → 自宅を結ぶ（線の色は担当の色）。
  * focusStaff があればその人だけ。picked の訪問先と、focusLeg の区間（と行き先の訪問先）を強調する。
- * 同じ訪問先の点は1つにまとめる
+ * 同じ訪問先の点は1つにまとめる。emphasize の訪問へ来る区間は太く描く（欠勤の振り直しの代行。ADR-0011）
  */
 export function buildRouteMap(args: {
   sets: RouteSet[];
@@ -33,8 +33,10 @@ export function buildRouteMap(args: {
   focusStaff: string | null;
   picked: RouteSel | null;
   focusLeg: RouteSel | null;
+  emphasize?: ReadonlySet<string>;
 }): { points: MapPoint[]; lines: MapLine[] } {
   const { sets, staffOrder, staffById, visitById, clientById, colorOfStaff, focusStaff, picked, focusLeg } = args;
+  const emphasize = args.emphasize ?? new Set<string>();
   const homes: MapPoint[] = [];
   /** 訪問ID → 点（同じ訪問は1つ） */
   const visitPts = new Map<string, MapPoint>();
@@ -75,6 +77,7 @@ export function buildRouteMap(args: {
         if (!at) continue;
         const prev = path[path.length - 1];
         if (id === legOn && prev) lines.push({ points: [prev, at], color, dashed: set.dashed, highlight: true });
+        else if (emphasize.has(id) && prev) lines.push({ points: [prev, at], color, dashed: set.dashed, bold: true });
         path.push(at);
         const p = visitPoint(id, at);
         if ((picked?.id === id && picked.set === set.key) || id === legOn) p.highlight = true;
