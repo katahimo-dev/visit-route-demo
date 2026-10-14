@@ -2,8 +2,16 @@
 // どれも純粋関数で決定的（乱数・Date.now を使わない。いまの時刻は引数）。DemoData は読まない・書かない
 import type { Problem, Reason } from '../contracts/problem';
 import type {
+  AnnealCost,
+  AnnealPrep,
+  AnnealSettled,
   CandidatesFor,
+  ContactList,
+  ContactsOf,
+  ContactVisit,
+  FinishAnneal,
   PlaceVisit,
+  PrepareAnneal,
   Reassign,
   ReassignCandidate,
   ReassignDiff,
@@ -12,9 +20,17 @@ import type {
   ReassignResult,
   ReassignTarget,
   Routes,
+  SettleAnneal,
+  StaffContact,
   TargetsOf,
 } from '../contracts/reassign';
-import { balanceOff, bestInsertion, routeCost, scheduleRoute } from '../matching';
+import {
+  STAY_MINUTE_POINTS_PER_WEIGHT,
+  STAY_MOVE_POINTS_PER_WEIGHT,
+  STAY_WEIGHT_MAX,
+  STAY_WEIGHT_MIN,
+} from '../contracts/reassign';
+import { balanceOff, balancePoints, bestInsertion, dropPointsOf, routeCost, scheduleRoute } from '../matching';
 
 const INF = Number.POSITIVE_INFINITY;
 const EPS = 1e-6;
@@ -25,6 +41,11 @@ const SHIFT_MAX = 120;
 const TIME_RULES = new Set(['slot', 'time']);
 
 export type {
+  AnnealOptions,
+  AnnealPrep,
+  AnnealSettled,
+  ContactList,
+  ContactVisit,
   ReassignCandidate,
   ReassignDiff,
   ReassignOptions,
@@ -32,6 +53,13 @@ export type {
   ReassignResult,
   ReassignTarget,
   Routes,
+  StaffContact,
+} from '../contracts/reassign';
+export {
+  STAY_WEIGHT_DEFAULT,
+  STAY_WEIGHT_MAX,
+  STAY_WEIGHT_MIN,
+  STAY_WEIGHT_STEP,
 } from '../contracts/reassign';
 
 /** 自分のキーだけを読む（スタッフID が constructor などでも組み込みを拾わない） */
@@ -505,4 +533,230 @@ export const reassignDiff: ReassignDiffFn = (before, after) => {
   const order = [...after.problem.staff, ...before.problem.staff].map((s) => s.id);
   const changedStaff = [...new Set(order)].filter((id) => changed.has(id));
   return { moved, shifted: shiftedList, unplaced, changedStaff, travelDelta: b.travel - a.travel };
+};
+
+// ---- 2回目：案B「少し動かしてよい」（PRD D34。ADR-0011 追記） ----
+
+/** 「変更を減らす」の重み → 担当が変わった訪問1件の点・開始のずれ1分の点（重みは 0〜5 に収める） */
+export function stayPointsOf(weight: number): { movePoints: number; minutePoints: number } {
+  const w = Number.isFinite(weight) ? Math.min(STAY_WEIGHT_MAX, Math.max(STAY_WEIGHT_MIN, weight)) : 0;
+  return { movePoints: w * STAY_MOVE_POINTS_PER_WEIGHT, minutePoints: w * STAY_MINUTE_POINTS_PER_WEIGHT };
+}
+
+/**
+ * 案B の準備：stay（元の案の担当・開始と減点）と、始まった訪問の固定を入れた問題・初期解（案A）を作る。
+ * - stay.staff：元の案の担当。振り直す訪問・元の案で入っていない訪問は null（担当は問わない）
+ * - stay.start：元の案の開始（base.problem での lenient）。元の案に無い訪問は null
+ * - 始まった訪問（earliest ＜ いまの時刻）：案A の担当だけを可にし、時間の約束を案A の開始ちょうどにする。
+ *   案A の列で可でない・strict で回れない訪問は問題から外し（どの担当も可にしない）、解いたあとに戻す（held）
+ * - 元の案で入っていない訪問（振り直す訪問でもない）は、案A と同じく入れない（どの担当も可にしない）
+ * - 始まっていない訪問は earliest ≥ いまの時刻なので、いまの時刻より前には始まらない
+ */
+export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, options) => {
+  const { vIndex, sIndex } = indexOf(problem);
+  const V = problem.visits.length;
+  const targetIds = new Set(targets.map((t) => t.visitId));
+  // 元の案の担当・開始
+  const baseAt = timesOf(base.problem, base.routes).at;
+  const inBase = new Set<string>();
+  for (const [k, ids] of Object.entries(base.routes)) if (sIndex.has(k)) for (const id of ids) inBase.add(id);
+  const stayStaff: (number | null)[] = new Array(V).fill(null);
+  const stayStart: (number | null)[] = new Array(V).fill(null);
+  problem.visits.forEach((pv, v) => {
+    const at = baseAt.get(pv.id);
+    if (!at) return;
+    stayStart[v] = at.start;
+    if (!targetIds.has(pv.id)) stayStaff[v] = sIndex.get(at.staffId) ?? null;
+  });
+  const visits = problem.visits.map((x) => ({ ...x }));
+  const allowed = problem.allowed.map((row) => row.slice());
+  const none = () => new Array<boolean>(problem.staff.length).fill(false);
+  // 元の案で入っていない訪問は入れない（振り直す訪問は元の案にあるので外れない）
+  problem.visits.forEach((pv, v) => {
+    if (!inBase.has(pv.id) && !targetIds.has(pv.id)) allowed[v] = none();
+  });
+  const held: AnnealPrep['held'] = [];
+  const heldIds = new Set<string>();
+  const initial: Routes = {};
+  problem.staff.forEach((st, s) => {
+    const known = knownOf(colOf(planA, st.id), vIndex);
+    const t = scheduleRoute(problem, s, known, 'lenient');
+    const bad = new Set(t?.violations.map((x) => x.visitId) ?? []);
+    known.forEach((v, k) => {
+      if (!started(problem, v, options.now)) return;
+      const id = problem.visits[v]!.id;
+      if (!problem.allowed[v]![s] || bad.has(id) || !t) {
+        held.push({ visitId: id, staffId: st.id });
+        heldIds.add(id);
+        allowed[v] = none();
+        return;
+      }
+      const start = t.stops[k]!.start;
+      const row = none();
+      row[s] = true;
+      allowed[v] = row;
+      visits[v] = { ...visits[v]!, earliest: start, latest: start };
+    });
+    initial[st.id] = known.map((v) => problem.visits[v]!.id).filter((id) => !heldIds.has(id));
+  });
+  // 落とさない訪問：案A（初期解）に入っていて、振り直す訪問でない訪問（始まって固定した訪問も含む。外した訪問は含まない）
+  const keep: boolean[] = new Array(V).fill(false);
+  for (const ids of Object.values(initial))
+    for (const id of ids) {
+      const v = vIndex.get(id);
+      if (v !== undefined && !targetIds.has(id)) keep[v] = true;
+    }
+  const prepared: Problem = {
+    ...problem,
+    visits,
+    allowed,
+    stay: { staff: stayStaff, start: stayStart, keep, ...stayPointsOf(options.weight) },
+  };
+  return { problem: prepared, initial, source: problem, planA, held, targets: [...targetIds] };
+};
+
+/**
+ * 案B の結果をまとめる：solver の列に、外した訪問（held）を同じ担当の列へ開始（earliest）の順に戻し、
+ * 問題にいない人の列・問題に無い訪問は案A のまま残す。pins は担当のいるすべての訪問（案A と同じ）
+ */
+export const finishAnneal: FinishAnneal = (prep, solved) => {
+  const problem = prep.source;
+  const { vIndex, sIndex } = indexOf(problem);
+  const routes: Routes = {};
+  for (const [k, ids] of Object.entries(prep.planA)) {
+    if (!sIndex.has(k)) routes[k] = [...ids];
+    // 問題に無い訪問は列の最後にそのまま残す
+    else routes[k] = [...colOf(solved, k).filter((id) => vIndex.has(id)), ...ids.filter((id) => !vIndex.has(id))];
+  }
+  for (const st of problem.staff) {
+    if (!Object.hasOwn(routes, st.id)) routes[st.id] = colOf(solved, st.id).filter((id) => vIndex.has(id));
+  }
+  const earliest = (id: string) => problem.visits[vIndex.get(id)!]!.earliest;
+  for (const h of prep.held) {
+    const col = routes[h.staffId] ?? [];
+    const e = earliest(h.visitId);
+    const at = col.findIndex((id) => vIndex.has(id) && earliest(id) > e);
+    routes[h.staffId] = at < 0 ? [...col, h.visitId] : [...col.slice(0, at), h.visitId, ...col.slice(at)];
+  }
+  const owner = new Map<string, string>();
+  for (const [k, ids] of Object.entries(routes)) for (const id of ids) owner.set(id, k);
+  const placed: ReassignResult['placed'] = [];
+  const unplaced: string[] = [];
+  for (const id of prep.targets) {
+    const s = owner.get(id);
+    if (s) placed.push({ visitId: id, staffId: s, addedCost: 0, addedTravel: 0 });
+    else unplaced.push(id);
+  }
+  const unassigned = problem.visits.map((v) => v.id).filter((id) => !owner.has(id));
+  const pins: Record<string, string> = {};
+  for (const [id, s] of owner) if (vIndex.has(id)) pins[id] = s;
+  return { routes, placed, unplaced, unassigned, pins };
+};
+
+/**
+ * 焼きなましが最小にする値：列ごとの routeCost（stay の減点を含む）＋負担の均等＋入らない訪問の点
+ * （1件 DROP_POINTS。stay.keep の訪問は KEEP_DROP_POINTS。matching.dropPointsOf）
+ */
+export const annealCost: AnnealCost = (problem, routes) => {
+  const { vIndex } = indexOf(problem);
+  const counts = new Array<number>(problem.staff.length).fill(0);
+  const placed = new Set<number>();
+  let total = 0;
+  problem.staff.forEach((st, s) => {
+    const known = knownOf(colOf(routes, st.id), vIndex);
+    counts[s] = known.length;
+    for (const v of known) placed.add(v);
+    if (known.length > 0) total += routeCost(problem, s, known);
+  });
+  let dropped = 0;
+  for (let v = 0; v < problem.visits.length; v++) if (!placed.has(v)) dropped += dropPointsOf(problem, v);
+  return total + balancePoints(problem, counts) + dropped;
+};
+
+/**
+ * 案B の結果を確かめて、出す案を決める（保険。ADR-0011 追記）。次のどちらかなら案B として出さず、案A
+ * （finishAnneal(prep, prep.initial)）を返して理由を付ける：
+ * - keepDropped：案A に入っていた訪問（stay.keep）が1件でも案B に入っていない
+ * - notBetter：案A の費用（annealCost(prep.problem, prep.initial)）が有限でない（計算中にデータが変わり案A が strict で
+ *   回れない等で、solver が初期解の候補を捨てた）か、案B の費用が案A より高い
+ */
+export const settleAnneal: SettleAnneal = (prep, solved) => {
+  const p = prep.problem;
+  const keep = p.stay?.keep ?? [];
+  const inSolved = new Set<string>();
+  for (const st of p.staff) for (const id of colOf(solved, st.id)) inSolved.add(id);
+  const dropped = p.visits.filter((v, i) => keep[i] && !inSolved.has(v.id)).map((v) => v.id);
+  const fallback = (reason: 'keepDropped' | 'notBetter', visitIds: string[]): AnnealSettled => ({
+    ok: false,
+    reason,
+    visitIds,
+    result: finishAnneal(prep, prep.initial),
+  });
+  if (dropped.length > 0) return fallback('keepDropped', dropped);
+  const costA = annealCost(p, prep.initial);
+  // 足し算の順の違いの誤差だけは許す
+  if (!Number.isFinite(costA) || !(annealCost(p, solved) <= costA + EPS * Math.max(1, Math.abs(costA))))
+    return fallback('notBetter', []);
+  return { ok: true, reason: null, visitIds: [], result: finishAnneal(prep, solved) };
+};
+
+// ---- 2回目：連絡の一覧（PRD D35。ADR-0011 追記） ----
+
+/**
+ * 元の案と今の案の差から、連絡の一覧を作る（時刻は lenient。開始の変化は四捨五入で1分以上。reassignDiff と同じ）。
+ * 訪問の順は今の案の開始（無ければ元の案の開始）の順
+ */
+export const contactsOf: ContactsOf = (before, after) => {
+  const a = timesOf(before.problem, before.routes).at;
+  const b = timesOf(after.problem, after.routes).at;
+  const clientOf = new Map<string, string>();
+  for (const v of [...before.problem.visits, ...after.problem.visits]) clientOf.set(v.id, v.clientId);
+  const ids = [...clientOf.keys()];
+  const staffChanged: ContactVisit[] = [];
+  const timeChanged: ContactVisit[] = [];
+  const order = [...new Set([...after.problem.staff, ...before.problem.staff].map((s) => s.id))];
+  const byStaff = new Map<string, StaffContact>();
+  const of = (staffId: string) => {
+    let c = byStaff.get(staffId);
+    if (!c) {
+      c = { staffId, added: [], removed: [], shifted: [] };
+      byStaff.set(staffId, c);
+    }
+    return c;
+  };
+  for (const id of ids) {
+    const x = a.get(id);
+    const y = b.get(id);
+    if (!x && !y) continue;
+    const item: ContactVisit = {
+      visitId: id,
+      clientId: clientOf.get(id)!,
+      fromStaffId: x?.staffId ?? null,
+      toStaffId: y?.staffId ?? null,
+      fromStart: x?.start ?? null,
+      toStart: y?.start ?? null,
+    };
+    if (item.fromStaffId !== item.toStaffId) {
+      staffChanged.push(item);
+      if (item.fromStaffId) of(item.fromStaffId).removed.push(item);
+      if (item.toStaffId) of(item.toStaffId).added.push(item);
+      continue;
+    }
+    if (x && y && Math.round(y.start - x.start) !== 0) {
+      timeChanged.push(item);
+      of(y.staffId).shifted.push(item);
+    }
+  }
+  const when = (c: ContactVisit) => c.toStart ?? c.fromStart ?? 0;
+  const sort = (xs: ContactVisit[]) => xs.sort((p, q) => when(p) - when(q) || p.visitId.localeCompare(q.visitId));
+  const byStart = (xs: ContactVisit[]) =>
+    xs.sort((p, q) => (p.fromStart ?? 0) - (q.fromStart ?? 0) || p.visitId.localeCompare(q.visitId));
+  const staff = order
+    .filter((id) => byStaff.has(id))
+    .map((id) => {
+      const c = byStaff.get(id)!;
+      return { staffId: id, added: sort(c.added), removed: byStart(c.removed), shifted: sort(c.shifted) };
+    });
+  const list: ContactList = { staffChanged: sort(staffChanged), timeChanged: sort(timeChanged), staff };
+  return list;
 };

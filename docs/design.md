@@ -2,7 +2,7 @@
 
 - PRD：[docs/prd.md](prd.md)
 - 作成者：松浦（草案：Claude）
-- 更新日：2026-10-14（欠勤の振り直しのレビューの反映（ADR-0011。利用者が決定）：欠勤の時間と重なる訪問は時間に幅があってもすべて振り直す（`targetsOf` は欠勤を除いた問題の元の案の時刻で判定）、候補から入れてあとの訪問が遅れる・いまの時刻より前に入るときは確認を出し、いまの時刻より前の位置には入れない、列に元から違反がある人は候補に理由を出す、「元の案に戻す」で generated・runId も戻す、続けて振り直すと元の案は最初のものを引き継ぎ欠勤は累積）。2026-10-13（当日の急な欠勤の振り直し（ADR-0011。PRD D26〜D35）：欠勤を別の記録 `DemoData.absences` に持ち、domain の `withoutAbsences` で稼働時間帯から差し引く（compile・画面）。新しいコンポーネント reassign（`src/reassign/`）で、他の人の担当・順番・開始時刻を変えずに空き時間へ入れる案A・入らない訪問の候補・差を出す。結果は今の案（`AiPlan.reassign`）にして全部固定し、記録（`AiRun.reassign`）に残す。Excel に「欠勤」シート。1回目は案A、2回目は案B（変更の減点つき焼きなまし）・連絡の一覧）。2026-10-13（レビューの指摘：記録に計算に使った問題のキー `AiRun.inputKey` を残し、`reusableRun` はキーが一致する記録だけ使う（スタッフ・稼働時間・相性を変えたら計算する）。カードは使える記録を優先し、無ければ重みが一致する最新の記録に「データが変わったので押すと作り直します」。Worker の `bestRoutes` は最良が変わったときだけ。`useDayModel` の compile は compile が読むフィールドだけに依存。ADR-0010 追記）。2026-10-13（点数の物差しを点数の基準のプリセット（`DemoData.scorePresetId`。初期は標準）で固定。`useDayModel` に `scoreProblem`・`scoreScale`、Worker の進み具合に `bestRoutes`、Excel の「プリセット」シートに「点数の基準」の列。プリセットは予定の画面のカード全体を押して切り替え、同じ条件・同じデータの記録があれば計算しない（`reusableRun`）。右の欄のプリセットのボタンをやめる。ADR-0010）。2026-10-13（予定と AI案を1画面「予定」（`#/plan`）に統合し、手作業専用の列（開始時刻順・下書き・保存）をやめ「この割当で確定」に。担当ごとの順番・地図の部品を予定と比較で共通化し、列の最後に「自宅まで N分」。ADR-0009）。2026-10-13（点数を「100 −（費用 − 下限）÷ 訪問の件数」に（案A。1.6倍・上限160をやめ100点満点に戻す。素朴な案は点数の基準に使わない。ADR-0007 追記）。2026-10-13（レビューの指摘：素朴な案を「最も安い位置に挟む」に、solver の初期解に素朴な案、必須の違反がある案の点は「参考」、自動作成のあとは一番点の高い案を今の案に）。2026-10-13（点数を1.6倍に（100点を超えてよい。ADR-0007 追記）。プリセットをデータ `presets` に持たせ利用者が編集・追加・削除（最大6つ）、開いた日に全プリセットで自動作成、プリセットごとの案のカード、条件ごとの達成の件数、Excel の「プリセット」シート。ADR-0008）。2026-10-13（合計点を100点満点・高いほど良いで見せる。表示だけで探し方は変えない。ADR-0007）。2026-10-13（Excel の書き出し・読み込み、コンポーネント excel。ADR-0006）。2026-10-12（比較を「AI案の条件を変えた記録どうし」に変更、条件のプリセット3種、手作業の割当は seed に入れない。ADR-0005）。2026-10-11：負担の均等を2乗に・必須で上限、AI案の手直しと固定、比較は別画面（ADR-0004）
+- 更新日：2026-10-14（欠勤の振り直しの2回目のレビューの反映（利用者が決定。ADR-0011 追記）：案B は案A に入っていた訪問を落として振り直す訪問を入れる「入れ替え」をしない（`ProblemStay.keep`・`KEEP_DROP_POINTS`＝落とした点の10倍。solver の差分と全体・`annealCost` に入れる）。保険の `settleAnneal`（案A に入っていた訪問を落とした・案A が回れず候補にできなかった・案A より高い → 案A のまま、理由を出す）。「入らない訪問は増えない」を訪問ID の集合（案B ⊆ 案A）で言い直す。案B は作り終えたら記録に足し（同じ結果なら足さない）、差の表は記録から出す（再読込でも残り、選び直せる）。案B の「止める」は順に作るのを止めた印を立てない。日付を変えたら「案B も作る」の予約を消す。連絡の一覧のボタンの件数は連絡が要る訪問の数）。2026-10-14（欠勤の振り直しの2回目（PRD D34・D35。ADR-0011 追記。推奨どおりに決定）：案B「少し動かしてよい」＝`Problem.stay`（元の案の担当・開始と減点）を solver の費用（`routeCost`）にだけ足し、`SolveOptions.initial` に案A を渡して案A より悪くならない。reassign に `prepareAnneal`・`finishAnneal`・`annealCost`・`contactsOf`・`stayPointsOf`、`ReassignInfo` に `method: 'anneal'`・`stayWeight`・`insertRoutes`。差の欄に案A と案B の比較と選択、連絡の一覧（コピー・印刷。`lib/contacts`）。evaluate の採点・点数の物差しは変えない）。2026-10-14（欠勤の振り直しのレビューの反映（ADR-0011。利用者が決定）：欠勤の時間と重なる訪問は時間に幅があってもすべて振り直す（`targetsOf` は欠勤を除いた問題の元の案の時刻で判定）、候補から入れてあとの訪問が遅れる・いまの時刻より前に入るときは確認を出し、いまの時刻より前の位置には入れない、列に元から違反がある人は候補に理由を出す、「元の案に戻す」で generated・runId も戻す、続けて振り直すと元の案は最初のものを引き継ぎ欠勤は累積）。2026-10-13（当日の急な欠勤の振り直し（ADR-0011。PRD D26〜D35）：欠勤を別の記録 `DemoData.absences` に持ち、domain の `withoutAbsences` で稼働時間帯から差し引く（compile・画面）。新しいコンポーネント reassign（`src/reassign/`）で、他の人の担当・順番・開始時刻を変えずに空き時間へ入れる案A・入らない訪問の候補・差を出す。結果は今の案（`AiPlan.reassign`）にして全部固定し、記録（`AiRun.reassign`）に残す。Excel に「欠勤」シート。1回目は案A、2回目は案B（変更の減点つき焼きなまし）・連絡の一覧）。2026-10-13（レビューの指摘：記録に計算に使った問題のキー `AiRun.inputKey` を残し、`reusableRun` はキーが一致する記録だけ使う（スタッフ・稼働時間・相性を変えたら計算する）。カードは使える記録を優先し、無ければ重みが一致する最新の記録に「データが変わったので押すと作り直します」。Worker の `bestRoutes` は最良が変わったときだけ。`useDayModel` の compile は compile が読むフィールドだけに依存。ADR-0010 追記）。2026-10-13（点数の物差しを点数の基準のプリセット（`DemoData.scorePresetId`。初期は標準）で固定。`useDayModel` に `scoreProblem`・`scoreScale`、Worker の進み具合に `bestRoutes`、Excel の「プリセット」シートに「点数の基準」の列。プリセットは予定の画面のカード全体を押して切り替え、同じ条件・同じデータの記録があれば計算しない（`reusableRun`）。右の欄のプリセットのボタンをやめる。ADR-0010）。2026-10-13（予定と AI案を1画面「予定」（`#/plan`）に統合し、手作業専用の列（開始時刻順・下書き・保存）をやめ「この割当で確定」に。担当ごとの順番・地図の部品を予定と比較で共通化し、列の最後に「自宅まで N分」。ADR-0009）。2026-10-13（点数を「100 −（費用 − 下限）÷ 訪問の件数」に（案A。1.6倍・上限160をやめ100点満点に戻す。素朴な案は点数の基準に使わない。ADR-0007 追記）。2026-10-13（レビューの指摘：素朴な案を「最も安い位置に挟む」に、solver の初期解に素朴な案、必須の違反がある案の点は「参考」、自動作成のあとは一番点の高い案を今の案に）。2026-10-13（点数を1.6倍に（100点を超えてよい。ADR-0007 追記）。プリセットをデータ `presets` に持たせ利用者が編集・追加・削除（最大6つ）、開いた日に全プリセットで自動作成、プリセットごとの案のカード、条件ごとの達成の件数、Excel の「プリセット」シート。ADR-0008）。2026-10-13（合計点を100点満点・高いほど良いで見せる。表示だけで探し方は変えない。ADR-0007）。2026-10-13（Excel の書き出し・読み込み、コンポーネント excel。ADR-0006）。2026-10-12（比較を「AI案の条件を変えた記録どうし」に変更、条件のプリセット3種、手作業の割当は seed に入れない。ADR-0005）。2026-10-11：負担の均等を2乗に・必須で上限、AI案の手直しと固定、比較は別画面（ADR-0004）
 - 状態：合意済み（2026-10-11）
 
 ## 1. 背景と目的
@@ -87,7 +87,7 @@ flowchart LR
   seed -->|時刻・稼働時間帯| domain
   pages -->|書き出す・読み込む| excel
   excel -->|読み込んだデータを検査させる| store
-  pages -->|振り直す訪問・案A・候補・差を求めさせる| reassign
+  pages -->|振り直す訪問・案A・候補・差・案B の準備・連絡の一覧を求めさせる| reassign
   reassign -->|時刻と費用の計算だけを使う| matching
   matching -->|稼働時間帯から欠勤を差し引く| domain
 ```
@@ -138,6 +138,7 @@ flowchart LR
 - 持つデータ（持ち主）：なし
 - 提供するAPI：`compile(data: DemoData, date: string, pins?: 訪問ID→担当ID): Problem`（pins の訪問はその担当だけを可にする）、`matches`、`conditionText`、`scheduleRoute`、`bestInsertion(problem, routes, visitId, staffId)`（手直しで移した訪問を入れる位置：strict で最も費用が少ない位置、入らなければ開始時刻の順に lenient で入れ、違反として見せる）
 - 欠勤（ADR-0011）：`CompileInput` に `absences` を足し、`compile` はその日のその人の欠勤を `withoutAbsences` で稼働時間帯から差し引く（`Problem` の形は変えない。`problemKey` は稼働時間帯を含むので欠勤で変わる）。欠勤で可にならない組の理由は `ruleId: 'slot'`、文は終日なら「欠勤（終日）」、途中の欠勤で稼働時間帯が全部なくなったら「欠勤で稼働時間がない」、欠勤が無ければ収まるなら「欠勤の時間と重なる」
+- 案B の変更の減点（ADR-0011 追記。2回目）：`routeCost` は `problem.stay` があれば、元の担当（`stay.staff[v]`）と違う担当の訪問1件に `movePoints`、元の開始（`stay.start[v]`）からのずれ1分に `minutePoints` を足す。`scheduleRoute`（evaluate の採点）には足さない。`stay` は reassign の `prepareAnneal` だけが作り、compile は作らない。`stay.keep[v]`（案A に入っている、振り直す訪問でない訪問）は `dropPointsOf(problem, v)` で落とした点を `KEEP_DROP_POINTS`（`DROP_POINTS`×10）にする（solver・`annealCost` が使う。採点の `totalPoints` は常に `DROP_POINTS`）
 - 依存するもの：domain
 - 配置：`src/matching/`
 - 完了の条件：
@@ -150,6 +151,7 @@ flowchart LR
 - 責務：`Problem` を受け取り、時間の約束・稼働時間帯・可否を破らずに、`移動分 + 待ち分×係数 + 割当費用 + 均等の費用 + 落とした訪問×10000` を最小にする割当と順番を返す。焼きなまし（ADR-0003）。決定的な乱数（seed）と**反復回数**で止める（時刻で止めない。D10）。
 - 持つデータ（持ち主）：なし
 - 提供するAPI：Worker メッセージ（§5）。純粋関数 `solve(problem, {seed, iterations}, onProgress?)` も公開し、テストは Worker なしで呼ぶ。初期解は、貪欲な初期解と素朴な案（matching の `naiveSeqs`）の費用の低い方（AI案の費用 ≤ 素朴な案。ADR-0007）
+- 案B（ADR-0011 追記。2回目）：`SolveOptions.initial`（staffId → 訪問ID）があれば初期解の候補にする。どの列も可・strict・件数の上限を守るときだけ使い、貪欲な初期解・素朴な案より費用（`stay` の減点を含む内部の費用）が高くなければそこから始める（同じならこちら）。最良は初期解より悪くならないので、結果の内部の費用 ≤ 候補の費用。落とした訪問の点は訪問ごと（`dropPointsOf`。`stay.keep` の訪問は `KEEP_DROP_POINTS`）で、未割当を入れる・外す・入れ替える（eject）の差分と全体の費用の両方に入れる（探索の途中で一時的に落とすのは許す）。`SolveResult.score` は今までどおり evaluate.score と同じ式（`stay` を含まない）。Worker のメッセージの形は変えない（`options` に乗るだけ）。進み具合の `bestScore` は内部の費用（`stay` を含む）
 - 依存するもの：matching の `Problem` 型のみ
 - 配置：`src/solver/`
 - 完了の条件：
@@ -157,11 +159,13 @@ flowchart LR
   - [ ] 出た案は可否・時間の約束・稼働時間帯を必ず守る（evaluate で違反0。性質テスト）
   - [ ] 8人・20件で 3秒以内、30人・150件で 30秒以内（中位のノートPC）。計算中に「止める」を押すとそれまでの最良案を返す
   - [ ] 全条件の重み0・移動だけのとき、PoC本体の手作業案（seed）より総移動が短い
+  - [ ] （ADR-0011 追記）`initial` を渡すと結果の費用 ≤ 候補の費用。可でない組を含む候補は使わない（落ちない）。同じ入力で同じ結果（テスト）
 
 ### evaluate（採点と説明）
 - 責務：AI案（記録・今の案・手作業案のどれも）を同じ `Problem` で採点する。合計点、移動・待ち・距離、条件ごとの達成/違反の数、訪問ごとの理由（`相性◎` `希望○ 女性` `資格✓` `継続` `移動+12分`）、守れなかった必須の条件（手作業案は保存を止めず警告だけ）、記録どうしの差（担当が変わった訪問数・移動の増減。比較画面では A・B ともいまの条件で採点し直す）。
 - 持つデータ（持ち主）：なし
 - 提供するAPI：`score(problem, routes): PlanScore`、`explain(problem, routes): VisitExplain[]`、`diff(a, b): PlanDiff`、点数の物差し `normalize(problem): ScoreScale`・`toHundred(cost, scale)`（100 −（費用 − 下限）÷ 訪問の件数）・`hundredBreakdown(score, scale, problem): HundredPart[]`・`naivePlan(problem)`（solver の初期解の候補。§5「点数」。ADR-0007）、条件ごとの達成の件数 `achievements(problem, routes): RuleAchievement[]`（§5。ADR-0008）
+- 案B（ADR-0011 追記）：変更の減点（`Problem.stay`）は採点に入れない。`score` は `scheduleRoute` と割当費用・均等・落とした訪問だけ（点数の物差し ADR-0007・ADR-0010 は変えない）。案B の結果も点数の基準の物差しで採点し、変更の数は reassign の差（`reassignDiff`）で別に見せる
 - 依存するもの：matching、domain
 - 配置：`src/evaluate/`
 - 完了の条件：
@@ -195,7 +199,16 @@ flowchart LR
   - 欠勤の印で開始・終了が空のときは、その日の始業・終業の時刻で出す（「欠勤 8:30〜12:00」）。稼働時間の画面のセルは短く「欠勤」「欠 8:30-12」
 - 依存するもの：contracts、matching（`scheduleRoute`・`routeCost`・`balancePoints` など時刻と費用の計算だけ）。solver・evaluate・store・画面には依存しない
 - 配置：`src/reassign/`
-- 2回目（案B・連絡の一覧）は §5「欠勤の振り直し：2回目の範囲」。1回目の作業指示書には入れない
+- 2回目（案B「少し動かしてよい」・連絡の一覧。PRD D34・D35。ADR-0011 追記）の規則（受け入れ基準として守る。契約は §5「欠勤の振り直し：2回目（案B・連絡の一覧）」）：
+  - 案B の準備（`prepareAnneal`）：いまの問題に `stay` を足す。`stay.staff`＝元の案の担当（振り直す訪問・元の案に無い訪問は null＝問わない）、`stay.start`＝元の案の開始（`base.problem` での lenient。元の案に無い訪問は null）、減点は `stayPointsOf(重み)`（重み w で担当が変わる1件 w×10・ずれ1分 w×0.2）
+  - 始まった訪問（earliest ＜ いまの時刻）：案A の担当だけを可にし、時間の約束を案A の開始ちょうど（earliest＝latest＝その開始）にする（担当も時刻も動かない）。案A の列で可でない・lenient で違反のある始まった訪問は、問題から外し（どの担当も可にしない）、解いたあとに同じ担当の列へ開始（earliest）の順で戻す（`held`）
+  - 始まっていない訪問は earliest ≥ いまの時刻なので、いまの時刻より前には始まらない。欠勤の人の欠勤の時間帯は稼働時間帯から差し引いてあるので入らない
+  - 元の案で入っていない訪問（振り直す訪問でもない）は、案A と同じく入れない（どの担当も可にしない）
+  - 落とさない訪問（`stay.keep`）：初期解（案A の列から `held` を除く）に入っていて、振り直す訪問でない訪問（始まって固定した訪問も含む）。落とした点が `KEEP_DROP_POINTS`（10倍）なので、案A に入っていた訪問を落として振り直す訪問を入れる「入れ替え」をしない
+  - 保険（`settleAnneal(prep, solved)`）：案B の列に `stay.keep` の訪問が1件でも無い（`keepDropped`）、または案A の `annealCost` が有限でない（計算中にデータが変わり案A が strict で回れない等で solver が候補を捨てた）か案B の `annealCost` が案A より高い（`notBetter`）なら、案B として出さず案A（`finishAnneal(prep, prep.initial)`）を返して理由を付ける。画面は「案A を超えられませんでした」などを出す
+  - 初期解：案A の列（`held` を除く）を `SolveOptions.initial` に渡す。案B の結果の `annealCost`（費用＋変更の減点）≤ 案A の `annealCost`（案A の列が strict・可・件数の上限を守るとき）
+  - 結果（`finishAnneal`）：solver の列に `held` を戻し、問題にいない人の列・問題に無い訪問は案A のまま。pins は担当のいるすべての訪問、`placed` は担当のいる振り直す訪問（`addedCost`・`addedTravel` は 0）、`unplaced` は担当のいない振り直す訪問
+  - 連絡の一覧（`contactsOf`）：元の案（`base.problem` で lenient）と今の案（いまの問題で lenient）の差。担当が変わる訪問（入らない訪問も。`staffChanged`）、担当が同じで開始が四捨五入で1分以上変わる訪問（`timeChanged`）、スタッフごとの増える・外れる・開始が変わる訪問（`staff`。問題の staff の順、訪問は開始の順）。`reassignDiff` と同じ規則
 - 完了の条件：
   - [ ] 欠勤の時間と重なる訪問（時間に幅があり後ろへずらせば入る訪問も）がすべて `absence` で、欠勤明けの最初の訪問に自宅から間に合わない訪問が `unreachable` で振り直す訪問になる。始まった訪問（earliest ＜ いまの時刻）・欠勤と重ならず間に合う訪問はならない。欠勤と関係のない元からの違反は `notAllowed`（テスト）
   - [ ] 他の人の訪問の担当・順番・開始時刻は変わらない：結果の各列から振り直した訪問を除くと元の案の列（欠勤の人は振り直す訪問を除いた列）と同じで、その訪問の開始時刻も同じ（性質テスト：seed の14日・各スタッフの終日・午前・午後の欠勤）
@@ -205,6 +218,12 @@ flowchart LR
   - [ ] 候補：可で strict に入る人が先で増える費用の小さい順、入らない人は「ずらせば入る」最小の分（5分刻み・前後120分まで）、必須で外れる理由・重みの違反の理由を返す。`placeVisit` は候補の「入る」と同じ位置に入れ、入らない人には、いまの時刻より前の位置を除いて strict の最良、無ければ開始の順の位置に入れる。そのとき遅れる既存の訪問の件数・最大の分、いまの時刻より前に入るか、列に元から違反があるかを候補に返す（テスト）
   - [ ] 差：担当が変わった訪問・開始が変わった訪問（分）・入らない訪問・変わる人・移動の増減が出る（テスト）
   - [ ] 8人・20件で100ms以内、30人・150件で1秒以内（中位のノートPC）
+  - [ ] （2回目）案B は案A より悪くならない（`annealCost`）。入らない訪問は増えない＝案B の `reassignDiff().unplaced`（訪問ID の集合）⊆ 案A の `unplaced`（テスト：seed の14日×全スタッフの終日の欠勤、重み0と既定）。結果はいまの問題で可・strict（テスト：seed の案A に入らない訪問が出る日・人）
+  - [ ] （2回目）`settleAnneal`：案A に入っていた訪問を落とした案・案A より高い案・案A が回れず候補にできなかった案は案A を返す（テスト）
+  - [ ] （2回目）いまの時刻より前に始まる訪問は担当・開始とも案A のまま。ほかの訪問はいまの時刻より前に始まらない（テスト）
+  - [ ] （2回目）重みを大きくすると元の案から変わる訪問（担当＋開始）が減る（重み0と5で比べる）。同じ入力・種で同じ結果。`SolveResult.score` は stay の無い問題の `score` と一致する（テスト）
+  - [ ] （2回目）`routeCost` に stay の減点が入る（担当が違う1件・ずれ1分）。stay の無い問題は今までと同じ（テスト）
+  - [ ] （2回目）連絡の一覧：担当が変わる訪問・入らない訪問・開始が変わる訪問・スタッフごとの増える/外れる/開始が変わる訪問。変わらなければ空（テスト）
 
 ### excel（Excel との変換。ADR-0006）
 - 責務：`DemoData` ⇔ Excel のブック（シートごとの一覧。プリセットも入る）の変換。書き出しは見出し・列幅・プルダウン付きのテンプレートにする。読み込みは名前の参照を ID に直し、読めない値・同じ名前・いない人の参照を「シート名・行・列」付きの日本語のエラーで返す。データは書き換えない（変換した `DemoData` を返すだけ。画面が store の `migrate`→`replace` で入れる）。
@@ -238,6 +257,15 @@ flowchart LR
   - 稼働時間の画面：欠勤のある日のセルに「欠勤」の印（「欠勤（終日）」「欠勤 9:00〜12:00」。メモは title）。稼働時間の欄に同じ文と「欠勤の登録・取り消しは予定の画面で」を出す（セルの時間帯の文は上書き・基本のまま）
   - `useDayModel`：`compileInput` に `absences`、`slotsOf` は欠勤を差し引いた時間帯と、その日の欠勤（`absence`。無ければ null）を返す（スタッフの画面の時刻も欠勤を差し引く）
   - `lib/runs`：`addRun` に optional の `label`・`reassign` を足す（`reassign` 付きの記録は名前を `label` にする）。`findRun` は `reassign` の有無も比べる。`reusableRun` は `reassign` 付きの記録を使わない。`planOfRun` は記録の `reassign` を今の案に写す
+  - 2回目（PRD D34・D35。ADR-0011 追記）：
+    - 欠勤の欄の見込み：`targetsOf` に続けて案A（`reassign`）も出し、入らない見込みがあれば「空き時間に入れるだけ（案A）では N件 が入らない見込みです…」と通常のボタン「登録して、少し動かしてよい（案B）も作る」（押すと「登録して振り直す」と同じに案A を今の案にし、続けて案B を作り始める）
+    - 差の欄の中の「少し動かしてよい（案B）」の欄（`pages/reassignParts.tsx` の `AnnealBox`）：今の案が案A で、入らない訪問があれば「おすすめ」。「変更を減らす」のスライダー（0〜5・0.5刻み・既定3。今の案が案B ならその重み）と「担当が変わる1件＝移動N分ぶん・時刻のずれ10分＝移動M分ぶん」。「案B を作る」で Worker（`runSolve`。問題は `prepareAnneal` の問題、`initial` は案A、種はデータの種、反復は `defaultIterations`）で計算し、進み具合（回数）と「止める」（それまでの最良）を出す。終わったら元の案との差の表を案A と並べる：点数（点数の基準の物差し）・入らない・担当が変わる訪問（うち欠勤の人以外）・時刻がずれる訪問・変わる人・移動。列ごとに「〈案〉を今の案にする」（今の案の列は「今の案です」）。欠勤が取り消されている・案A が無い・ほかの計算中は押せない（理由を出す）。スライダーの近くに「重みが大きいと案A のままになることがあります（変更の減点が、得より大きいとき）」。進み具合の progress 要素は `aria-label="案B の進み具合"`。「止める」は案B の計算だけを止める（プリセットを順に作るのを止めた印は立てない）。日付を変えたら「案B も作る」の予約を消す。終わったら `settleAnneal` で確かめ、案A のままにしたときは理由を欄に出す（記録に足さない）。案B として出せるときは作り終えた時点で記録に1件足す（`lib/absences` の `addAnnealRun`。今の案は変えない。同じ結果・同じ重みなら足さない。作り始めたときと振り直しが違えば足さない）。差の表の案B は、今の振り直し（元の案・欠勤・いまの時刻・案A が同じ）のいちばん新しい案B の記録（`annealRunOf`）から出すので、選ばなくても再読込で消えず、比較の画面で見られ、今の案が案B のとき「案A を今の案にする」を押しても案B を選び直せる
+    - 選ぶ（`lib/absences` の `chooseReassign`）：今の案を選んだ案にし全部固定、`reassign` は元の案の情報を引き継ぎ `method`（案B なら `stayWeight`）だけ変える。記録に1件（名前「欠勤の振り直し・案B（〈名前〉さん）」。同じ結果・同じ方法の記録があればそれを指す）。今の案に案A・案B のどちらとも違う手直しがあれば確認を出す
+    - 差の欄の見出しに「（案A：空き時間に入れた案）／（案B：少し動かした案）」、案B なら注記を「ほかの人の訪問も少し動かしています」に
+    - 連絡の一覧（`ContactPanel`。差の欄の「連絡の一覧（訪問N件）」で右から出る欄。N は連絡が要る訪問の数＝担当が変わる訪問＋時刻だけ変わる訪問、同じ訪問は1件（`lib/contacts` の `contactCount`））：`contactsOf`（before＝元の案、after＝今の案。確定前でも見られる）から (1) 担当が変わる〈利用者さん〉（時刻・前の担当 → 新しい担当、入らないは「入らない（調整中）」）(2) 時刻だけ変わる〈利用者さん〉（件数。この訪問は〈利用者さん〉あての連絡文にも「開始が〜に変わります（担当は〜さんのままです）」として入る）(3) 仕事が増える・減る〈スタッフ〉（増える・外れる・時刻が変わるの件数と、時刻・行き先（住所））、連絡文（〈スタッフ〉あて・N人／〈利用者さん〉あて・N件。1件ずつ「コピー」、主ボタン「すべての連絡文をコピー」、「印刷」）。呼び方は `org.terms`（連絡文の敬称「様」「さん」は固定、呼び方が出る箇所は `org.terms`）。コピーは `lib/clipboard` の `copyText`：`navigator.clipboard`（使えなければ textarea を選んで `execCommand('copy')`）、結果をトースト。印刷（`@media print`）はこの欄だけを出す
+    - `lib/contacts.ts`（純粋関数。テストあり）：`dayWordOf(date, today)`（当日は「本日」、ほかは「10月15日（木）」）、`staffMessage`（「〈名前〉さん／本日の予定の変更です。／・本日 14:00 天文台ほしみ様（住所）の訪問を追加でお願いします。／・本日 10:00 青葉様の訪問は、ほかの〈スタッフ〉が伺います（伺わなくて大丈夫です）。／・本日 11:00 青葉様の訪問の開始が 11:20 に変わります。」。行は元の時刻の順）、`clientMessages`（訪問先ごと：「〈表示名〉様／・本日 14:00 の訪問は、担当が 山田さんから 佐藤さんに代わります（、開始が 14:20 になります）。」「・本日 15:00 の訪問の開始が 15:20 に変わります（担当は 佐藤さんのままです）。」「・本日 16:00 の訪問は、担当の調整がつかず、あらためてご連絡します。」）、`allContactsText`
+    - 比較の画面：同じ元の案の「欠勤前」は1つだけ出す（案A・案B の記録が同じ元の案を持つ）。記録の印は「欠勤の振り直し（案A）／（案B）」。よって 欠勤前／案A／案B を選んで比べられる
+    - `lib/runs` の `findRun` は `reassign.method`・`stayWeight` も比べる（案A と案B は結果が同じでも別の記録）
   - `lib/absences.ts`（画面の純粋関数。テストあり）：`absencesOn(data, date)`・`saveAbsence(d, absence)`（同じ人・同じ日の欠勤はその1件を置き換える）・`removeAbsence(d, id)`（今の案は変えない）・`baseOf(data, date, problem)`（元の案と、その種類。無ければ null）・`applyReassign(d, date, x)`・`revertReassign(d, date, problem)`
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign、Leaflet（PoC本体 `RouteMap.tsx` を写す）
 - 配置：`src/pages/`、`src/components/`
@@ -262,6 +290,12 @@ flowchart LR
   - [ ] 「いまの時刻」より前に始まる訪問（始まっている訪問・終わった訪問）は動かない。当日以外の日は「いまの時刻」が空
   - [ ] 稼働時間の画面の欠勤のある日のセルに「欠勤」の印が出る
   - [ ] `lib/absences`・`lib/runs` の追加分のテストが通る（同じ人・同じ日の置き換え、元の案の並べ方、戻す）
+  - [ ] （2回目）終日の欠勤で案A に入らない訪問が出る日に、欠勤の欄に案B の勧めが出る。「登録して、少し動かしてよい（案B）も作る」→ 差の欄に進み具合 → 案A と案B の差の表 →「案B を今の案にする」で今の案が案B（全部固定・記録に1件）。「案A を今の案にする」で戻せる
+  - [ ] （2回目）「変更を減らす」を強めて作り直すと、担当が変わる訪問が減る（または同じ）
+  - [ ] （2回目）差の欄の「連絡の一覧」で (1)〜(3) と連絡文が出て、コピー（1件・すべて）でクリップボードに入る。印刷の見た目は一覧だけ
+  - [ ] （2回目）比較の画面で 欠勤前／案A／案B を選んで比べられる（欠勤前は1つ）
+  - [ ] （2回目）案B を作ると記録に1件足り、再読込しても差の表に案B が出る。表で 案A／案B を行き来できる（記録は増えない）
+  - [ ] （2回目）`lib/contacts`・`lib/clipboard`（失敗の経路）・`chooseReassign`・`addAnnealRun`・`annealRunOf` のテストが通る
 
 ### deploy（公開）
 - 責務：main への push で `npm ci → npm test → npm run build → GitHub Pages へ公開`。
@@ -282,10 +316,11 @@ flowchart LR
 | store | 関数 | `load / save / reset / exportJson / importJson` | データ一式の保存・入出力 |
 | domain | 関数 | `withoutAbsences(slots, absences) → Slot[]` | 稼働時間帯から欠勤を差し引く（デモ独自。ADR-0011） |
 | matching | 関数 | `compile(data, date) → Problem` | 項目・条件 → 可否・費用表（`data.absences` の欠勤を稼働時間帯から差し引く。ADR-0011） |
-| solver | Worker | `{type:'solve', problem, seed, iterations}` → `{type:'progress', iteration, total, bestScore, bestRoutes?}` … `{type:'done', result}`（`bestRoutes` は画面が点数の基準の物差しで「いまの最良 N点」を付け直すため。`bestScore` が前の進捗と同じなら送らず、画面は前の点のまま。ADR-0010） | AI案を作る。`{type:'stop'}` で最良案を返して終わる |
+| solver | Worker | `{type:'solve', problem, options: {seed, iterations, initial?}}`（`initial`：初期解の候補。案B。ADR-0011 追記） → `{type:'progress', iteration, total, bestScore, bestRoutes?}` … `{type:'done', result}`（`bestRoutes` は画面が点数の基準の物差しで「いまの最良 N点」を付け直すため。`bestScore` が前の進捗と同じなら送らず、画面は前の点のまま。ADR-0010） | AI案を作る。`{type:'stop'}` で最良案を返して終わる |
 | evaluate | 関数 | `score / explain / diff / normalize / toHundred / hundredBreakdown / achievements` | 採点・理由・記録どうしの差・点数（100点満点）・条件ごとの達成の件数 |
 | excel | 関数 | `exportWorkbook / importWorkbook` | Excel のブックとの変換（ADR-0006。「欠勤」シート：ADR-0011） |
 | reassign | 関数 | `targetsOf / reassign / candidatesFor / placeVisit / reassignDiff` | 欠勤の振り直し：振り直す訪問・案A・入らない訪問の候補・元の案との差（ADR-0011） |
+| reassign | 関数 | `prepareAnneal / finishAnneal / settleAnneal / annealCost / stayPointsOf / contactsOf` | 2回目：案B の問題と初期解・結果のまとめ・保険（案A のままにするか）・案B の目的の値・減点・連絡の一覧（ADR-0011 追記） |
 
 ### 項目と条件のデータ（`src/contracts/rules.ts`）
 
@@ -386,7 +421,9 @@ type Absence = z.infer<typeof absenceSchema>
 
 // data.ts：振り直しの情報（AiPlan・AiRun に optional で足す。無い＝ふつうの AI案）
 const reassignInfoSchema = z.object({
-  method: z.literal('insert'),          // 1回目は案A「空き時間に入れるだけ」だけ。2回目に 'anneal'（案B）を足す
+  method: z.enum(['insert', 'anneal']), // 案A「空き時間に入れるだけ」／案B「少し動かしてよい」（2回目）
+  stayWeight: z.number().min(0).max(5).optional(),  // 案B の「変更を減らす」の重み（案A には無い）
+  insertRoutes: routesSchema.optional(),  // 案A の結果（振り直した直後）。案B の初期解・比較の「案A」・「案A を今の案にする」（無い古いデータは、案A なら今の案）
   from: z.enum(['confirmed', 'plan']),  // 元の案：確定した割当（manualPlans[date]）か今の案（aiPlans[date].routes）
   baseRoutes: routesSchema,             // 元の案（staffId → 訪問IDの列）。差の基準・「元の案に戻す」・比較の「欠勤前」
   basePins: z.record(z.string(), z.string()), // 元の案の固定（元が確定した割当なら {}）
@@ -448,9 +485,54 @@ function reassignDiff(before: ReassignPlan, after: ReassignPlan): ReassignDiff
 - `placeVisit`：候補の「入る」と同じ位置（他の訪問の開始を変えない strict の最良）に入れる。無ければ、いまの時刻より前の位置（始まった訪問より前・入れた訪問の開始がいまの時刻より前）を除いて strict の最良、無ければ開始の順の位置（lenient）。いまの時刻以降に入る位置が無いときだけ、始まった訪問より後ろの位置から選ぶ。どれでも訪問を元の列から抜き、訪問の時刻は変えない。問題に無い訪問・担当なら `bestInsertion` と同じ
 - `reassignDiff` の時刻は lenient の `scheduleRoute`（before と after で問題が違ってよい）
 
-### 欠勤の振り直し：2回目の範囲（作業指示書に入れない）
-- 案B「少し動かしてよい」（PRD D34）：`Problem` に optional の `stay`（訪問ごとの元の担当の添字と、担当を変えた訪問1件の減点。減点は小 10分・中 30分・大 60分ぶんから選ぶ）を足し、solver と evaluate の費用に同じ式で足す（合計点の一致を保つ）。初期解は案A の結果、固定は始まった訪問だけ。点数・必須の違反は今までどおり点数の基準の物差し（`stay` を入れない問題）で付ける。結果は `reassign.method: 'anneal'` で今の案・記録に残す
-- 連絡の一覧（PRD D35）：`reassignDiff` と訪問先・スタッフから、担当が変わる利用者さん・時刻が変わる訪問・仕事が増えるスタッフの一覧と連絡文を作り、文をコピーする（送信しない）。契約は2回目の設計で決める
+### 欠勤の振り直し：2回目（案B・連絡の一覧。`src/contracts/problem.ts`・`src/contracts/reassign.ts`。PRD D34・D35。ADR-0011 追記）
+
+```ts
+// problem.ts：変更の減点（案B だけ。無ければ今までと同じ）
+type ProblemStay = {
+  staff: (number | null)[]   // [visit] 元の案の担当（staff の添字）。null＝問わない（振り直す訪問・元の案に無い訪問）
+  start: (number | null)[]   // [visit] 元の案の開始（分）。null＝問わない
+  keep: boolean[]            // [visit] 落とさない訪問（案A に入っていて振り直す訪問でない）。落とした点は KEEP_DROP_POINTS
+  movePoints: number         // 担当が変わった訪問1件の点
+  minutePoints: number       // 開始のずれ1分の点（ずれの絶対値）
+}
+// Problem.stay?: ProblemStay … matching.routeCost（solver の費用）にだけ足す。evaluate の score・点数には入れない
+// SolveOptions.initial?: Record<staffId, visitId[]> … 初期解の候補（案A）。可・strict・件数の上限を守るときだけ使う
+// rules.ts：KEEP_DROP_POINTS = DROP_POINTS * 10 … stay.keep の訪問を落とした1件の点（solver・annealCost だけ）
+
+// reassign.ts
+const STAY_WEIGHT_MIN = 0, STAY_WEIGHT_MAX = 5, STAY_WEIGHT_STEP = 0.5, STAY_WEIGHT_DEFAULT = 3
+const STAY_MOVE_POINTS_PER_WEIGHT = 10      // 重み1あたり：担当が変わる1件＝移動10分ぶん
+const STAY_MINUTE_POINTS_PER_WEIGHT = 0.2   // 重み1あたり：ずれ1分＝移動0.2分ぶん（ずれ10分＝2分ぶん）
+type AnnealOptions = { now: number | null; weight: number }
+type AnnealPrep = {
+  problem: Problem       // stay・始まった訪問の固定を入れた問題（Worker に渡す。採点には使わない）
+  initial: Routes        // 初期解の候補（案A の列から held を除く）
+  source: Problem        // いまの問題（欠勤を差し引いた、いまの条件）
+  planA: Routes          // 案A の列
+  held: { visitId: string; staffId: string }[] // 問題から外し、解いたあとに戻す始まった訪問（案A の列で違反があるもの）
+  targets: string[]      // 振り直す訪問
+}
+type ContactVisit = { visitId: string; clientId: string; fromStaffId: string | null; toStaffId: string | null; fromStart: number | null; toStart: number | null }
+type StaffContact = { staffId: string; added: ContactVisit[]; removed: ContactVisit[]; shifted: ContactVisit[] }
+type ContactList = { staffChanged: ContactVisit[]; timeChanged: ContactVisit[]; staff: StaffContact[] }
+
+function stayPointsOf(weight: number): { movePoints: number; minutePoints: number } // 重みは 0〜5 に収める
+function prepareAnneal(problem: Problem, base: ReassignPlan, planA: Routes, targets: ReassignTarget[], options: AnnealOptions): AnnealPrep
+function finishAnneal(prep: AnnealPrep, solved: Routes): ReassignResult   // placed の addedCost・addedTravel は 0
+function annealCost(problem: Problem, routes: Routes): number              // Σ routeCost（stay 込み）＋均等＋入らない訪問の点（1件 10000、stay.keep は 100000）。strict で回れない列があれば Infinity
+type AnnealSettled =
+  | { ok: true; reason: null; visitIds: string[]; result: ReassignResult }                          // result＝finishAnneal(prep, solved)
+  | { ok: false; reason: 'keepDropped' | 'notBetter'; visitIds: string[]; result: ReassignResult } // result＝案A（finishAnneal(prep, prep.initial)）
+function settleAnneal(prep: AnnealPrep, solved: Routes): AnnealSettled     // 保険：keep を落とした・案A が有限でない・案A より高い → 案A
+function contactsOf(before: ReassignPlan, after: ReassignPlan): ContactList
+// 実装（src/reassign/）は、型 PrepareAnneal・FinishAnneal・AnnealCost・ContactsOf で注釈する
+```
+
+- 画面の流れ：`prepareAnneal(problem, {problem: 欠勤を除いた問題, routes: reassign.baseRoutes}, 案A, targetsOf(...), {now, weight})` → `runSolve(prep.problem, {seed: data.seed, iterations: defaultIterations(prep.problem), initial: prep.initial})` → `settleAnneal(prep, result.routes)`（ok でなければ案A のまま、理由を出す）→ 記録に足す（`addAnnealRun`）→ 差の表（案B は `annealRunOf` の記録から）（`reassignDiff`・点数の基準の物差しの `score`）→ 選ぶと `chooseReassign`
+- 例外を投げない：問題に無い人・訪問は無視して残す（1回目と同じ）。案B を作れない（欠勤が取り消された・案A が無い・ほかの計算中）ときは画面がボタンを押せなくして理由を出す。Worker のエラーは今までどおり「AI案を作れませんでした」
+- 決定的：同じ問題・案A・振り直す訪問・いまの時刻・重み・種・反復回数から同じ案B（`Math.random`・時刻を使わない）
+- 連絡文は `lib/contacts.ts`（画面の純粋関数。§4 pages）。送信はしない（PRD §4）
 
 ### Excel のブックの形（`src/excel/`。ADR-0006）
 1行目が見出し、2行目からデータ。参照は名前で書く（〈スタッフ〉の名前・〈利用者さん〉の表示名は各シートで一意。項目の名前は対象ごとに一意で、対象が違えば同じ名前でよい。条件の名前はどこからも参照しないので重なってよい）。○＝はい、空＝いいえ。複数の値は「、」か改行で区切る（「・」「,」「，」は区切らない＝選択肢の名前に使える）。見出しは全角半角・コロンの揺れを許して比べる。呼び方（スタッフ・利用者さん）はシート名・見出しにも `org.terms` を使う。
@@ -490,6 +572,7 @@ function reassignDiff(before: ReassignPlan, after: ReassignPlan): ReassignDiff
 | 時間の約束・稼働時間帯 | 必須（固定） | 破らない |
 | 落とした訪問 | 固定 | 1件＝10000点 |
 | 手直しの固定 | 必須（固定） | 固定した訪問は固定した担当だけを可にする（`compile` の `pins`） |
+| 変更の減点（案B だけ。ADR-0011 追記） | 重み3（「変更を減らす」0〜5） | 元の案と担当が違う訪問1件＝重み×10点、元の開始からのずれ1分＝重み×0.2点。solver の費用にだけ入れ、採点・点数には入れない |
 
 （重み1＝移動10分ぶん。2026-10-11 決定）
 
@@ -554,6 +637,8 @@ Worker 内の例外は `{type:'error', message}` で返し、内部の文言を�
 | 振り直し方（1回目） | 案A：空き時間に入れるだけ（決定的な挿入。ADR-0011） | 変更の減点つき焼きなまし（2回目の案B）、全部組み直し（いまの「AI案を作る」） | 他の人の予定が変わらないことを保証でき、理由が説明しやすく一瞬で出る。入らない訪問が残りやすい → 候補を出して手で入れる |
 | 振り直しの置き場所 | 新しいコンポーネント reassign（`src/reassign/`） | matching に足す、solver に足す | matching は「条件 → 問題」、solver は焼きなましで、欠勤の運用の規則は別の理由で変わる。時刻・費用の計算は matching のものを呼ぶだけ |
 | 振り直した案の扱い | 今の案（AiPlan）にして全部固定、記録に `reassign` を付ける | 別の「欠勤の案」を持つ | 手直し・組み直し・確定・比較をそのまま使える |
+| 振り直し方（2回目） | 案B：変更の減点（`Problem.stay`）を solver の費用に足し、案A を初期解に焼きなまし。採点には減点を入れない（ADR-0011 追記） | 減点を evaluate の採点（点数）にも入れる、reassign に専用の局所探索を書く、全部組み直しに固定だけ足す | solver をそのまま使え（Worker・進み具合・止める）、ほかの用途の費用は変わらない。点数の物差し（ADR-0007・ADR-0010）を保ち、変更の数は差の表で別に見せる。代わりに、内部の費用（進み具合の bestScore）と `SolveResult.score` が案B では食い違うこと、重みが大きいと探索が局所解に留まりやすいことは受け入れる |
+| 連絡の一覧 | 差（`contactsOf`）から作り、連絡文はコピーだけ（`lib/contacts`）。印刷はその欄だけ | メール・LINE への送信、記録に連絡済みを残す | 外部送信をしない（PRD §4・ADR-0001）。確定前でも見られ、ひな形は画面の純粋関数なので直しやすい |
 | 時間の約束 | 必須のまま（2026-10-11） | 重み付きの条件にして緩める | PoC本体と同じ前提で比べるため |
 
 ## 8. 未決事項
@@ -562,7 +647,7 @@ Worker 内の例外は `{type:'error', message}` で返し、内部の文言を�
 | 時間の約束を緩める条件を足すか | 初回デモで「少し遅れてもよい」訪問の話が出たら |
 | 項目の初期セット | 初回デモ前に、alca様・フォール様のヒアリング内容から |
 | 写した純粋関数を PoC本体と揃え直す時期 | PoC本体の α版リリース後（11月） |
-| 案B の減点の重み・連絡文のひな形 | 2回目の設計のとき、1回目のデモの反応から |
+| 連絡文のひな形（敬語・住所を入れるか・入らない訪問の伝え方）・「変更を減らす」の既定値 | 2回目のデモの反応から（2026-10-14 に推奨の既定で決めた。下の「決めたこと」） |
 
 決めたこと（欠勤の細部。2026-10-13 利用者が推奨どおりに選んだ。ADR-0011）：
 - 欠勤は1人1日1件（複数の時間帯は許さない。午前の付き添い＋早退のような日は時間帯を広げて1件で表す）
@@ -573,4 +658,13 @@ Worker 内の例外は `{type:'error', message}` で返し、内部の文言を�
 - 欠勤の時間と重なる訪問は、時間に幅があって後ろへずらせば入る訪問もすべて振り直す（2026-10-14 利用者が決定）
 - 続けて振り直すとき（確定した割当なし）、元の案は最初のものを引き継ぎ、欠勤は累積する。「元の案に戻す」は最初の元の案へ（generated・runId も戻す。2026-10-14 利用者が決定）
 - 振り直しで件数の上限（必須の負担の均等）は超えない（入らなければ候補から手で入れる）
+
+決めたこと（2回目。2026-10-14 推奨どおりに決めた。ADR-0011 追記）：
+- 案B の減点は「変更を減らす」の重み w（0〜5・0.5刻み・既定3）で、担当が変わった訪問1件＝w×10点（移動 w×10分ぶん）、開始のずれ1分＝w×0.2点（ずれ10分＝移動 w×2分ぶん）。振り直す訪問の担当の変化は減点しない（変えるしかないため）。時刻のずれは振り直す訪問も減点する
+- 変更の減点は solver の費用にだけ入れ、evaluate の採点・点数（100点満点）には入れない。変更の数は差の表（担当が変わる訪問・時刻がずれる訪問）で別に見せる
+- いまの時刻より前に始まる訪問は、担当も時刻も案A のまま（固定）。元の案で入らなかった訪問は、案A と同じく案B でも入れない
+- 案A の結果を初期解の候補に入れ、案B は案A より悪くならない（費用＋変更の減点で）
+- 案B は案A に入っていた訪問を落とさない（落とした点を10倍。入らない訪問は訪問ID の集合で案B ⊆ 案A）。最後に確かめ、落としていた・案A より良くならない・案A が回れず候補にできなかったときは案A のままにして理由を出す（2026-10-14 レビューを受けて利用者が決定）
+- 案B は欠勤の欄の見込み（案A で入らない見込みがあるとき）と差の欄に出す。作った案B は作り終えた時点で記録に残し（同じ結果なら足さない）、案A と並べて比べ、選んだ方を今の案にする（2026-10-14：作り終えた時点で記録に残すよう利用者が決定）
+- 連絡の一覧は確定前でも見られ、連絡文はスタッフあて・利用者さんあてを1件ずつとまとめてコピーできる。送信はしない
 - 確定した割当を元の案にするとき、今の案に未確定の変更があれば、捨てる確認を出してから振り直す

@@ -56,6 +56,34 @@ export type Problem = {
   balance: { perVisit: number; lo: number[]; hi: number[]; cap: number[] | null } | null;
   /** どの担当も可にならない訪問と、その原因 */
   infeasible: { visit: number; reasons: Reason[] }[];
+  /**
+   * 元の案から変えた訪問への減点（欠勤の振り直しの案B「少し動かしてよい」だけ。ADR-0011 追記）。
+   * 無ければ今までと同じ。solver の費用（matching.routeCost）にだけ足し、evaluate の採点（score・点数）には入れない
+   */
+  stay?: ProblemStay;
+};
+
+/**
+ * 案B の変更の減点（reassign.prepareAnneal が作る）。添字は visits の順。
+ * 担当が staff[v] と違う訪問1件に movePoints、開始が start[v] からずれた1分に minutePoints（ずれの絶対値）。
+ * null の訪問は問わない（振り直す訪問の担当・元の案で時刻の無い訪問）。
+ * 費用（routeCost）に足すのは staff・start の減点だけで、keep は落とした訪問の点（solver・reassign.annealCost）に効く
+ */
+export type ProblemStay = {
+  /** [visit] 元の案の担当（staff の添字）。null＝問わない */
+  staff: (number | null)[];
+  /** [visit] 元の案の開始（0時からの分）。null＝問わない */
+  start: (number | null)[];
+  /**
+   * [visit] 落とさない訪問（案A に入っていて、振り直す訪問でない訪問。始まって固定した訪問も含む）。
+   * solver はこの訪問を落とした1件に DROP_POINTS でなく KEEP_DROP_POINTS（10倍）を数える（matching.dropPointsOf）。
+   * 案A に入っている訪問を落として振り直す訪問を入れる「入れ替え」をしないため（探索の途中で一時的に落とすのは許す）
+   */
+  keep: boolean[];
+  /** 担当が変わった訪問1件の点 */
+  movePoints: number;
+  /** 開始のずれ1分の点 */
+  minutePoints: number;
 };
 
 /**
@@ -95,7 +123,16 @@ export type SolveResult = {
   stopped: boolean;
 };
 
-export type SolveOptions = { seed: number; iterations: number };
+export type SolveOptions = {
+  seed: number;
+  iterations: number;
+  /**
+   * 初期解の候補（staffId → 訪問IDの列。欠勤の振り直しの案B で案A の結果を渡す。ADR-0011 追記）。
+   * どの列も可・strict で回れて件数の上限を超えないときだけ候補にし、貪欲な初期解・素朴な案より費用が高くなければ
+   * これから始める（よって結果の費用 ≤ この案の費用）。問題に無い人・訪問は無視する
+   */
+  initial?: Record<string, string[]>;
+};
 
 /** 焼きなましを少しずつ進める（Worker が stop を受け取れるように）。step は終わったら true */
 export type Solver = { step(n: number): boolean; iteration(): number; bestScore(): number; best(): SolveResult };

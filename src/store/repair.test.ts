@@ -199,7 +199,7 @@ describe('欠勤と振り直し（ADR-0011）', () => {
     });
     expect(r.absences).toEqual([ab('a3', s, DAY, '12:00', null)]);
   });
-  it('今の案・記録の reassign の baseRoutes・basePins は routes・pins と同じ規則で直す（absenceIds はそのまま）', () => {
+  it('今の案・記録の reassign の baseRoutes・basePins・insertRoutes は routes・pins と同じ規則で直す（absenceIds はそのまま）', () => {
     const d = base();
     const [a = '', b = ''] = visitsOn(d, DAY);
     const info = {
@@ -207,12 +207,24 @@ describe('欠勤と振り直し（ADR-0011）', () => {
       from: 'plan' as const,
       baseRoutes: { s1: [a, 'v-none', a], ghost: [b] },
       basePins: { [a]: 's1', [b]: 'ghost' },
+      insertRoutes: { s1: [a, 'v-none'], ghost: [b] },
       absenceIds: ['消えた欠勤'],
       now: '10:30',
     };
     const p = { ...plan({ s1: [a] }, []), reassign: info };
     const r = repair({ ...d, aiPlans: { [DAY]: p } });
-    expect(r.aiPlans[DAY]!.reassign).toEqual({ ...info, baseRoutes: { s1: [a] }, basePins: { [a]: 's1' } });
+    expect(r.aiPlans[DAY]!.reassign).toEqual({
+      ...info,
+      baseRoutes: { s1: [a] },
+      basePins: { [a]: 's1' },
+      insertRoutes: { s1: [a] },
+    });
+    // 案B（method: 'anneal'・stayWeight）も読める
+    const pb = { ...plan({ s1: [a] }, []), reassign: { ...info, method: 'anneal' as const, stayWeight: 3 } };
+    expect(repair({ ...d, aiPlans: { [DAY]: pb } }).aiPlans[DAY]!.reassign).toMatchObject({
+      method: 'anneal',
+      stayWeight: 3,
+    });
   });
   it('欠勤・AiPlan.reassign・AiRun.reassign を含むデータが 書き出し → 読み込み で同じに戻る', () => {
     const d = base();

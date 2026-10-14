@@ -71,7 +71,9 @@ export function scheduleRoute(
 
 /**
  * strict の scheduleRoute と同じ規則で、ルートの費用（移動分＋待ち分×waitPerMinute＋割当費用）だけを
- * 配列を作らずに求める（solver の差分評価用）。違反があれば Infinity
+ * 配列を作らずに求める（solver の差分評価用）。違反があれば Infinity。
+ * problem.stay（案B の変更の減点。ADR-0011 追記）があれば、元の担当と違う訪問・元の開始からのずれの点も足す
+ * （evaluate の採点には入れない）
  */
 export function routeCost(problem: Problem, staff: number, visits: ArrayLike<number>, length = visits.length): number {
   const st = problem.staff[staff]!;
@@ -83,6 +85,8 @@ export function routeCost(problem: Problem, staff: number, visits: ArrayLike<num
   let travelMinutes = 0;
   let waitMinutes = 0;
   let assign = 0;
+  const stay = problem.stay;
+  let stayPoints = 0;
   let prevPoint = home;
   let prevEnd = 0;
   for (let k = 0; k < length; k++) {
@@ -96,9 +100,15 @@ export function routeCost(problem: Problem, staff: number, visits: ArrayLike<num
     if (start > v.latest + EPS) return Number.POSITIVE_INFINITY;
     if (k > 0) waitMinutes += start - (prevEnd + travelIn);
     assign += ac[vi]![staff]!;
+    if (stay) {
+      const was = stay.staff[vi];
+      if (was !== null && was !== undefined && was !== staff) stayPoints += stay.movePoints;
+      const at = stay.start[vi];
+      if (at !== null && at !== undefined) stayPoints += Math.abs(start - at) * stay.minutePoints;
+    }
     prevEnd = start + v.duration;
     prevPoint = v.point;
   }
   if (length > 0) travelMinutes += travel[prevPoint]![home]!;
-  return travelMinutes + waitMinutes * problem.waitPerMinute + assign;
+  return travelMinutes + waitMinutes * problem.waitPerMinute + assign + stayPoints;
 }

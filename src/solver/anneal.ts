@@ -2,7 +2,7 @@
 // 初期温度を改悪幅の中央値から・指数冷却・最後に貪欲な仕上げ。止めるのは反復回数（時刻は使わない）
 import type { Problem, SolveOptions, SolveResult, Solver } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
-import { balanceOff, balancePoints, totalPoints } from '../matching/cost';
+import { balanceOff, balancePoints, dropPointsOf, totalPoints } from '../matching/cost';
 import { naiveSeqs } from '../matching/naive';
 import { routeCost, scheduleRoute } from '../matching/timing';
 
@@ -34,6 +34,8 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     return out;
   });
   const ok = (v: number, s: number) => problem.allowed[v]![s] === true;
+  /** 訪問ごとの落とした点（案B の keep の訪問は KEEP_DROP_POINTS。ほかは DROP_POINTS） */
+  const dropCost = Float64Array.from({ length: V }, (_, v) => dropPointsOf(problem, v));
 
   // --- 状態 ---
   const routes: number[][] = problem.staff.map(() => []);
@@ -206,7 +208,7 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     if (c !== INF) {
       const pos = lastPos;
       return {
-        d: c - cost[b]! - DROP_POINTS + balDelta(b, 1, -1, 0),
+        d: c - cost[b]! - dropCost[v]! + balDelta(b, 1, -1, 0),
         apply: () => {
           removeUnassigned(v);
           putAt(b, rb, len, v, pos, c);
@@ -222,8 +224,8 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     if (best === INF) return null;
     const w = rb[bestK]!;
     return {
-      // 入れ替えは件数が変わらない（均等の点は同じ）。未割当の数も同じ
-      d: best - cost[b]!,
+      // 入れ替えは件数が変わらない（均等の点は同じ）。未割当の数も同じだが、落とした点は v と w で違いうる（keep）
+      d: best - cost[b]! - dropCost[v]! + dropCost[w]!,
       apply: () => {
         const lenA = without(rb, len, bestK, bufA);
         removeUnassigned(v);
@@ -241,7 +243,7 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     const cA = lenA === 0 ? 0 : routeCost(problem, a, bufA, lenA);
     if (cA === INF) return null;
     return {
-      d: cA - cost[a]! + DROP_POINTS + balDelta(a, -1, -1, 0),
+      d: cA - cost[a]! + dropCost[v]! + balDelta(a, -1, -1, 0),
       apply: () => {
         setRoute(a, bufA, lenA, cA);
         addUnassigned(v);
@@ -295,7 +297,9 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
   const recomputeTotal = (): number => {
     let t = 0;
     for (let s = 0; s < S; s++) t += cost[s]!;
-    return t + balancePoints(problem, counts) + unassigned.length * DROP_POINTS;
+    let dropped = 0;
+    for (const v of unassigned) dropped += dropCost[v]!;
+    return t + balancePoints(problem, counts) + dropped;
   };
 
   // --- 初期解：候補の少ない訪問から、開始が早い順に、最良の担当・位置へ ---
@@ -339,6 +343,14 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     const greedyTotal = current;
     loadRoutes(naiveSeqs(problem));
     if (!(current < greedyTotal - EPS)) loadRoutes(greedy);
+    // 初期解の候補（案B の案A。ADR-0011 追記）：今の初期解より費用が高くなければ、そこから始める（結果の費用 ≤ 候補）
+    const given = options.initial ? initialSeqs(problem, options.initial) : null;
+    if (given) {
+      const chosen = routes.map((r) => r.slice());
+      const chosenTotal = current;
+      loadRoutes(given);
+      if (current > chosenTotal + EPS) loadRoutes(chosen);
+    }
   }
 
   // --- 初期温度：ランダムな近傍の改悪幅の中央値 ---
@@ -467,6 +479,33 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
   };
 
   return { step, iteration: () => iter, bestScore: () => bestTotal, best };
+}
+
+/**
+ * 初期解の候補（staffId → 訪問ID）を staff 添字ごとの列にする。問題に無い人・訪問・2回目に出た訪問は除く。
+ * 可でない組・strict で回れない列・件数の上限を超える列があれば null（候補にしない）
+ */
+function initialSeqs(problem: Problem, given: Record<string, string[]>): number[][] | null {
+  const vIndex = new Map(problem.visits.map((v, i) => [v.id, i]));
+  const seen = new Set<number>();
+  const cap = problem.balance?.cap ?? null;
+  const out: number[][] = [];
+  for (let s = 0; s < problem.staff.length; s++) {
+    const id = problem.staff[s]!.id;
+    const list = Object.hasOwn(given, id) ? (given[id] ?? []) : [];
+    const seq: number[] = [];
+    for (const vid of list) {
+      const v = vIndex.get(vid);
+      if (v === undefined || seen.has(v)) continue;
+      if (!problem.allowed[v]![s]) return null;
+      seen.add(v);
+      seq.push(v);
+    }
+    if (cap && seq.length > cap[s]!) return null;
+    if (seq.length > 0 && routeCost(problem, s, seq) === INF) return null;
+    out.push(seq);
+  }
+  return out;
 }
 
 /** Worker なしで最後まで解く */

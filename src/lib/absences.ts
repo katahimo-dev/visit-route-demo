@@ -1,9 +1,9 @@
 // 予定の画面の急な欠勤（ADR-0011）：欠勤の保存・取り消し、振り直しの元の案、振り直した結果の書き込み・元に戻す。
 // どれも純粋関数（データを書き換えず新しい DemoData を返す。画面は update(fn) の中で呼ぶ）
-import type { AiPlan, DemoData, ReassignInfo } from '../contracts/data';
+import type { AiPlan, AiRun, DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult } from '../contracts/problem';
-import type { ReassignResult, Routes } from '../contracts/reassign';
+import { type ReassignResult, type Routes, STAY_WEIGHT_DEFAULT } from '../contracts/reassign';
 import { END_AFTER_START_ERROR, HALF_HOUR_ERROR, isHalfHour, timeText } from '../domain/availability';
 import { NONE } from '../domain/scheduleModel';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
@@ -116,6 +116,12 @@ export function baseOf(data: DemoData, date: string, problem: Problem): Reassign
   return { routes, from: 'plan', pins };
 }
 
+/** 振り直しの情報から案B の重みを外す（案A にするとき） */
+function withoutAnneal(info: ReassignInfo): ReassignInfo {
+  const { stayWeight: _w, ...rest } = info;
+  return rest;
+}
+
 /**
  * 振り直した結果を今の案にし、記録に「欠勤の振り直し」として1件足す（D30）。
  * routes・generated＝結果、pins＝結果の pins（担当のいるすべての訪問）、reassign＝元の案の情報
@@ -140,9 +146,16 @@ export function applyReassign(
   const prev = own(d.aiPlans, date);
   const chained = x.base.from === 'plan' ? prev?.reassign : undefined;
   const info: ReassignInfo = chained
-    ? { ...chained, absenceIds: [...new Set([...chained.absenceIds, ...x.absenceIds])], now: x.now }
+    ? {
+        ...withoutAnneal(chained),
+        method: 'insert',
+        insertRoutes: x.result.routes,
+        absenceIds: [...new Set([...chained.absenceIds, ...x.absenceIds])],
+        now: x.now,
+      }
     : {
         method: 'insert',
+        insertRoutes: x.result.routes,
         from: x.base.from,
         baseRoutes: x.base.routes,
         basePins: x.base.pins,
@@ -151,40 +164,171 @@ export function applyReassign(
         absenceIds: x.absenceIds,
         now: x.now,
       };
-  const total = score(x.problem, x.result.routes).total;
-  const solved: SolveResult = {
+  return writeReassign(d, date, {
+    problem: x.problem,
     routes: x.result.routes,
     unassigned: x.result.unassigned,
-    score: total,
+    pins: x.result.pins,
+    info,
     seed: d.seed,
     iterations: 0,
     stopped: false,
+    label: x.label,
+    createdAt: x.createdAt,
+  });
+}
+
+type ReassignWrite = {
+  problem: Problem;
+  routes: Routes;
+  unassigned: string[];
+  pins: Record<string, string>;
+  info: ReassignInfo;
+  seed: number;
+  iterations: number;
+  stopped: boolean;
+  label: string;
+  createdAt: number;
+};
+
+/** 振り直しの結果の記録（addRun に渡す形）と、いまの問題での費用 */
+function reassignRun(d: DemoData, x: ReassignWrite) {
+  const total = score(x.problem, x.routes).total;
+  const solved: SolveResult = {
+    routes: x.routes,
+    unassigned: x.unassigned,
+    score: total,
+    seed: x.seed,
+    iterations: x.iterations,
+    stopped: x.stopped,
   };
   const run = {
     rules: d.rules,
-    pins: x.result.pins,
+    pins: x.pins,
     result: solved,
     createdAt: x.createdAt,
     label: x.label,
-    reassign: info,
+    reassign: x.info,
   };
+  return { run, total };
+}
+
+/** 振り直しの結果を今の案にし、記録に1件足す（applyReassign・chooseReassign で共通） */
+function writeReassign(d: DemoData, date: string, x: ReassignWrite): DemoData {
+  const { run, total } = reassignRun(d, x);
   const added = addRun(d, date, run);
   const plan: AiPlan = {
     date,
     createdAt: x.createdAt,
-    seed: d.seed,
-    iterations: 0,
-    routes: x.result.routes,
-    unassigned: x.result.unassigned,
+    seed: x.seed,
+    iterations: x.iterations,
+    routes: x.routes,
+    unassigned: x.unassigned,
     score: total,
-    stopped: false,
+    stopped: x.stopped,
     rules: d.rules,
-    generated: { routes: x.result.routes, unassigned: x.result.unassigned, score: total },
-    pins: x.result.pins,
+    generated: { routes: x.routes, unassigned: x.unassigned, score: total },
+    pins: x.pins,
     runId: findRun(added, date, run)?.id,
-    reassign: info,
+    reassign: x.info,
   };
   return { ...added, aiPlans: { ...added.aiPlans, [date]: plan } };
+}
+
+/**
+ * 案A・案B のどちらかを今の案にする（PRD D34。ADR-0011 追記）。今の案が振り直しの結果のときだけ（無ければそのまま）。
+ * 元の案の情報（baseRoutes・basePins・baseGenerated・baseRunId・absenceIds・now・insertRoutes）は引き継ぎ、
+ * method（案B なら stayWeight も）を変える。記録に1件足す（同じ結果の記録があれば足さずにそれを指す）。
+ * 全訪問を固定（result.pins）。problem はいまの条件の問題（費用の score を付ける。stay を入れない問題）
+ */
+export function chooseReassign(
+  d: DemoData,
+  date: string,
+  x: {
+    problem: Problem;
+    result: ReassignResult;
+    method: ReassignInfo['method'];
+    stayWeight?: number;
+    seed: number;
+    iterations: number;
+    stopped: boolean;
+    label: string;
+    createdAt: number;
+  },
+): DemoData {
+  const prev = own(d.aiPlans, date)?.reassign;
+  if (!prev) return d;
+  const info: ReassignInfo =
+    x.method === 'anneal'
+      ? { ...prev, method: 'anneal', stayWeight: x.stayWeight ?? STAY_WEIGHT_DEFAULT }
+      : { ...withoutAnneal(prev), method: 'insert' };
+  return writeReassign(d, date, {
+    problem: x.problem,
+    routes: x.result.routes,
+    unassigned: x.result.unassigned,
+    pins: x.result.pins,
+    info,
+    seed: x.seed,
+    iterations: x.iterations,
+    stopped: x.stopped,
+    label: x.label,
+    createdAt: x.createdAt,
+  });
+}
+
+/** 記録の振り直しの情報が、同じ振り直し（元の案・欠勤・いまの時刻・案A が同じ）のものか */
+function sameReassign(a: ReassignInfo, b: ReassignInfo): boolean {
+  const key = (x: ReassignInfo) => JSON.stringify([x.baseRoutes, x.absenceIds, x.now, x.insertRoutes ?? null]);
+  return key(a) === key(b);
+}
+
+/**
+ * 作り終えた案B を記録に1件足す（今の案は変えない。PRD D34。ADR-0011 追記）。選ばなくても再読込で消えず、
+ * 比較の画面で見られ、差の表（annealRunOf）で選び直せる。今の案が振り直しの結果のときだけ（無ければそのまま）。
+ * 記録の reassign は今の案の振り直しの情報に method: 'anneal'・stayWeight を付けたもの。同じ結果・同じ重みの記録があれば足さない。
+ * basis（案B を作り始めたときの振り直しの情報）と今の案の振り直し（元の案・欠勤・いまの時刻・案A）が違えば足さない（計算中に振り直し直した）
+ */
+export function addAnnealRun(
+  d: DemoData,
+  date: string,
+  x: {
+    basis: ReassignInfo;
+    problem: Problem;
+    result: ReassignResult;
+    stayWeight: number;
+    seed: number;
+    iterations: number;
+    stopped: boolean;
+    label: string;
+    createdAt: number;
+  },
+): DemoData {
+  const prev = own(d.aiPlans, date)?.reassign;
+  if (!prev || !sameReassign(prev, x.basis)) return d;
+  const info: ReassignInfo = { ...prev, method: 'anneal', stayWeight: x.stayWeight };
+  const { run } = reassignRun(d, {
+    problem: x.problem,
+    routes: x.result.routes,
+    unassigned: x.result.unassigned,
+    pins: x.result.pins,
+    info,
+    seed: x.seed,
+    iterations: x.iterations,
+    stopped: x.stopped,
+    label: x.label,
+    createdAt: x.createdAt,
+  });
+  return addRun(d, date, run);
+}
+
+/** 今の振り直し（info）の、いちばん新しい案B の記録（無ければ undefined） */
+export function annealRunOf(d: Pick<DemoData, 'aiRuns'>, date: string, info: ReassignInfo): AiRun | undefined {
+  const runs = own(d.aiRuns, date) ?? [];
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const r = runs[i]!;
+    if (r.reassign?.method === 'anneal' && sameReassign(r.reassign, info)) return r;
+  }
+  return undefined;
 }
 
 /**

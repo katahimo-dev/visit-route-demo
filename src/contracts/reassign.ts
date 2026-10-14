@@ -102,3 +102,97 @@ export type PlaceVisit = (
   options: ReassignOptions,
 ) => Routes;
 export type ReassignDiffFn = (before: ReassignPlan, after: ReassignPlan) => ReassignDiff;
+
+// ---- 2回目：案B「少し動かしてよい」（PRD D34。ADR-0011 追記） ----
+
+/** 「変更を減らす」の重み（0〜5、0.5刻み）。0＝変更を気にしない（始まった訪問は動かさない）。既定 3 */
+export const STAY_WEIGHT_MIN = 0;
+export const STAY_WEIGHT_MAX = 5;
+export const STAY_WEIGHT_STEP = 0.5;
+export const STAY_WEIGHT_DEFAULT = 3;
+/** 重み1あたりの、担当が変わった訪問1件の点（移動10分ぶん。条件の重みと同じ物差し） */
+export const STAY_MOVE_POINTS_PER_WEIGHT = 10;
+/** 重み1あたりの、開始のずれ1分の点（ずれ10分＝移動2分ぶん） */
+export const STAY_MINUTE_POINTS_PER_WEIGHT = 0.2;
+
+/** 案B のいまの時刻と「変更を減らす」の重み */
+export type AnnealOptions = { now: number | null; weight: number };
+
+/**
+ * 案B の準備（prepareAnneal）：solver に渡す問題と初期解、解いたあとに戻す訪問。
+ * problem は stay（変更の減点）と、始まった訪問の固定（その担当だけを可・時間の約束を案A の開始ちょうど）を入れたもの
+ */
+export type AnnealPrep = {
+  /** solver に渡す問題（Worker に送る。evaluate の採点には使わない） */
+  problem: Problem;
+  /** 初期解の候補（案A の列から、外した訪問を除いたもの。SolveOptions.initial） */
+  initial: Routes;
+  /** 元の問題（欠勤を差し引いた、いまの条件の問題） */
+  source: Problem;
+  /** 案A の列（問題にいない人の列・問題に無い訪問は、解いたあとにそのまま戻す） */
+  planA: Routes;
+  /** 問題から外し、解いたあとに同じ担当の列へ開始の順で戻す訪問（始まっていて、案A の列で strict に回れない訪問） */
+  held: { visitId: string; staffId: string }[];
+  /** 振り直す訪問（ReassignResult の placed・unplaced に使う） */
+  targets: string[];
+};
+
+export type PrepareAnneal = (
+  problem: Problem,
+  base: ReassignPlan,
+  planA: Routes,
+  targets: ReassignTarget[],
+  options: AnnealOptions,
+) => AnnealPrep;
+/** solver の結果（SolveResult.routes）を、外した訪問を戻した ReassignResult にする（placed の addedCost・addedTravel は 0） */
+export type FinishAnneal = (prep: AnnealPrep, solved: Routes) => ReassignResult;
+/**
+ * 焼きなましが最小にする値（費用＋変更の減点＋入らない訪問の点。stay を入れた問題で。stay.keep の訪問を落とした点は
+ * KEEP_DROP_POINTS）。strict で回れない列があれば Infinity
+ */
+export type AnnealCost = (problem: Problem, routes: Routes) => number;
+
+/**
+ * 案B の結果の確かめ（settleAnneal。保険）。ok＝案B として出せる（result は finishAnneal(prep, solved)）。
+ * ok でなければ result は案A（finishAnneal(prep, prep.initial)）で、reason が理由：
+ * keepDropped＝案A に入っていた訪問を落とした（visitIds がその訪問）、notBetter＝案A より良くならない
+ * （案A が strict で回れず候補にできなかった・費用が案A より高い）
+ */
+export type AnnealSettled =
+  | { ok: true; reason: null; visitIds: string[]; result: ReassignResult }
+  | { ok: false; reason: 'keepDropped' | 'notBetter'; visitIds: string[]; result: ReassignResult };
+export type SettleAnneal = (prep: AnnealPrep, solved: Routes) => AnnealSettled;
+
+// ---- 2回目：連絡の一覧（PRD D35。ADR-0011 追記） ----
+
+/** 連絡に載せる訪問1件（時刻は0時からの分。lenient） */
+export type ContactVisit = {
+  visitId: string;
+  clientId: string;
+  /** 元の案の担当（null＝元は入っていない） */
+  fromStaffId: string | null;
+  /** 今の案の担当（null＝入らない） */
+  toStaffId: string | null;
+  fromStart: number | null;
+  toStart: number | null;
+};
+
+/** スタッフごとの連絡：増える訪問・外れる訪問・開始が変わる訪問（どれも開始の順） */
+export type StaffContact = {
+  staffId: string;
+  added: ContactVisit[];
+  removed: ContactVisit[];
+  shifted: ContactVisit[];
+};
+
+/**
+ * 連絡の一覧（contactsOf。reassignDiff と同じ規則：開始の変化は四捨五入で1分以上）。
+ * staffChanged：担当が変わる訪問（入らない訪問も。toStaffId＝null）。timeChanged：担当が同じで開始が変わる訪問。
+ * staff：訪問の出入りか開始の変化があるスタッフ（問題の staff の順）
+ */
+export type ContactList = {
+  staffChanged: ContactVisit[];
+  timeChanged: ContactVisit[];
+  staff: StaffContact[];
+};
+export type ContactsOf = (before: ReassignPlan, after: ReassignPlan) => ContactList;
