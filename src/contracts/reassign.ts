@@ -23,9 +23,6 @@ export type ReassignTarget = {
   reason: 'absence' | 'unreachable' | 'notAllowed';
 };
 
-/** いまの時刻（0時からの分）。null は考えない */
-export type ReassignOptions = { now: number | null };
-
 export type ReassignResult = {
   /** 振り直したあとの案 */
   routes: Routes;
@@ -59,8 +56,6 @@ export type ReassignCandidate = {
   delayedCount: number;
   /** そのときの最大の遅れ（分。四捨五入。遅れなければ 0） */
   maxDelayMinutes: number;
-  /** 「この人に入れる」で、入れた訪問の開始がいまの時刻より前になる（いまの時刻以降に入る位置が無いとき） */
-  startsBeforeNow: boolean;
 };
 
 export type ReassignDiff = {
@@ -76,36 +71,31 @@ export type ReassignDiff = {
   travelDelta: number;
 };
 
-export type TargetsOf = (
-  problem: Problem,
-  base: ReassignPlan,
-  absentStaffIds: string[],
-  now: number | null,
-) => ReassignTarget[];
-export type Reassign = (
-  problem: Problem,
-  baseRoutes: Routes,
-  targets: ReassignTarget[],
-  options: ReassignOptions,
-) => ReassignResult;
-export type CandidatesFor = (
-  problem: Problem,
-  routes: Routes,
-  visitId: string,
-  options: ReassignOptions,
-) => ReassignCandidate[];
-export type PlaceVisit = (
-  problem: Problem,
-  routes: Routes,
-  visitId: string,
-  staffId: string,
-  options: ReassignOptions,
-) => Routes;
+export type TargetsOf = (problem: Problem, base: ReassignPlan, absentStaffIds: string[]) => ReassignTarget[];
+export type Reassign = (problem: Problem, baseRoutes: Routes, targets: ReassignTarget[]) => ReassignResult;
+export type CandidatesFor = (problem: Problem, routes: Routes, visitId: string) => ReassignCandidate[];
+export type PlaceVisit = (problem: Problem, routes: Routes, visitId: string, staffId: string) => Routes;
 export type ReassignDiffFn = (before: ReassignPlan, after: ReassignPlan) => ReassignDiff;
+
+/**
+ * 欠勤の人に残る、振り直すべき訪問（leftOf）。振り直した直後は無い。手直しで欠勤の人へ戻した・
+ * 振り直したあとに欠勤や条件を変えた、などで残る。理由は ReassignTarget の absence・unreachable
+ */
+export type ReassignLeft = {
+  visitId: string;
+  /** 残っている列の人（欠勤の人） */
+  staffId: string;
+  reason: Exclude<ReassignTarget['reason'], 'notAllowed'>;
+};
+/**
+ * plan は「欠勤を差し引く前の問題」と「今の案の列」。今の案に targetsOf を当てたもののうち、欠勤のせいの訪問
+ * （absence・unreachable）だけ（targetsOf の順）。欠勤と関係ない元からの違反（notAllowed）は含めない
+ */
+export type LeftOf = (problem: Problem, plan: ReassignPlan, absentStaffIds: string[]) => ReassignLeft[];
 
 // ---- 2回目：案B「少し動かしてよい」（PRD D34。ADR-0011 追記） ----
 
-/** 「変更を減らす」の重み（0〜5、0.5刻み）。0＝変更を気にしない（始まった訪問は動かさない）。既定 3 */
+/** 「変更を減らす」の重み（0〜5、0.5刻み）。0＝変更を気にしない。既定 3 */
 export const STAY_WEIGHT_MIN = 0;
 export const STAY_WEIGHT_MAX = 5;
 export const STAY_WEIGHT_STEP = 0.5;
@@ -115,24 +105,27 @@ export const STAY_MOVE_POINTS_PER_WEIGHT = 10;
 /** 重み1あたりの、開始のずれ1分の点（ずれ10分＝移動2分ぶん） */
 export const STAY_MINUTE_POINTS_PER_WEIGHT = 0.2;
 
-/** 案B のいまの時刻と「変更を減らす」の重み */
-export type AnnealOptions = { now: number | null; weight: number };
+/** 案B の「変更を減らす」の重み */
+export type AnnealOptions = { weight: number };
 
 /**
- * 案B の準備（prepareAnneal）：solver に渡す問題と初期解、解いたあとに戻す訪問。
- * problem は stay（変更の減点）と、始まった訪問の固定（その担当だけを可・時間の約束を案A の開始ちょうど）を入れたもの
+ * 案B の準備（prepareAnneal）：solver に渡す問題と初期解。
+ * problem は stay（変更の減点）と、元の案で入っていない訪問を入れない可否を入れたもの
  */
 export type AnnealPrep = {
   /** solver に渡す問題（Worker に送る。evaluate の採点には使わない） */
   problem: Problem;
-  /** 初期解の候補（案A の列から、外した訪問を除いたもの。SolveOptions.initial） */
+  /** 初期解の候補（案A の列のうち問題にいる人・問題にある訪問。SolveOptions.initial） */
   initial: Routes;
   /** 元の問題（欠勤を差し引いた、いまの条件の問題） */
   source: Problem;
   /** 案A の列（問題にいない人の列・問題に無い訪問は、解いたあとにそのまま戻す） */
   planA: Routes;
-  /** 問題から外し、解いたあとに同じ担当の列へ開始の順で戻す訪問（始まっていて、案A の列で strict に回れない訪問） */
-  held: { visitId: string; staffId: string }[];
+  /**
+   * 案A の列が使えない人（可でない組がある・strict で回れない・件数の上限を超える）。列ごと案A のまま動かさない
+   * （problem ではその列の訪問もその人も可にしない。initial は空の列。finishAnneal が案A の列を戻す）
+   */
+  held: string[];
   /** 振り直す訪問（ReassignResult の placed・unplaced に使う） */
   targets: string[];
 };
@@ -144,7 +137,7 @@ export type PrepareAnneal = (
   targets: ReassignTarget[],
   options: AnnealOptions,
 ) => AnnealPrep;
-/** solver の結果（SolveResult.routes）を、外した訪問を戻した ReassignResult にする（placed の addedCost・addedTravel は 0） */
+/** solver の結果（SolveResult.routes）を ReassignResult にする（問題にいない人の列・問題に無い訪問は案A のまま）（placed の addedCost・addedTravel は 0） */
 export type FinishAnneal = (prep: AnnealPrep, solved: Routes) => ReassignResult;
 /**
  * 焼きなましが最小にする値（費用＋変更の減点＋入らない訪問の点。stay を入れた問題で。stay.keep の訪問を落とした点は

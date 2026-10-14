@@ -199,7 +199,7 @@ describe('欠勤と振り直し（ADR-0011）', () => {
     });
     expect(r.absences).toEqual([ab('a3', s, DAY, '12:00', null)]);
   });
-  it('今の案・記録の reassign の baseRoutes・basePins・insertRoutes は routes・pins と同じ規則で直す（absenceIds はそのまま）', () => {
+  it('今の案・記録の reassign の baseRoutes・basePins・insertRoutes は routes・pins と同じ規則で直す（absenceIds はそのまま。古いデータの now は捨てる）', () => {
     const d = base();
     const [a = '', b = ''] = visitsOn(d, DAY);
     const info = {
@@ -209,9 +209,9 @@ describe('欠勤と振り直し（ADR-0011）', () => {
       basePins: { [a]: 's1', [b]: 'ghost' },
       insertRoutes: { s1: [a, 'v-none'], ghost: [b] },
       absenceIds: ['消えた欠勤'],
-      now: '10:30',
     };
-    const p = { ...plan({ s1: [a] }, []), reassign: info };
+    // 古いデータ（いまの時刻 now が残っている）も読め、now は捨てる
+    const p = { ...plan({ s1: [a] }, []), reassign: { ...info, now: '10:30' } };
     const r = repair({ ...d, aiPlans: { [DAY]: p } });
     expect(r.aiPlans[DAY]!.reassign).toEqual({
       ...info,
@@ -238,7 +238,6 @@ describe('欠勤と振り直し（ADR-0011）', () => {
       baseGenerated: { routes: { [s]: [a] }, unassigned: [], score: 3 },
       baseRunId: `${DAY}#1@1`,
       absenceIds: ['a1'],
-      now: null,
     };
     const routes = { [s]: [a] };
     const run = {

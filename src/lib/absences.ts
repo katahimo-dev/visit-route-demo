@@ -58,13 +58,6 @@ export function roundToHalfHour(hhmm: string): string {
   return minutesToHhmm(Math.min(23 * 60 + 30, Math.round(m / 30) * 30));
 }
 
-/** いまの時刻の初期値：当日は現在時刻を5分単位に切り捨て、それ以外の日は空（null＝考えない） */
-export function defaultNow(date: string, todayDate: string, nowHhmm: string): string | null {
-  if (date !== todayDate) return null;
-  const m = hhmmToMinutes(nowHhmm);
-  return minutesToHhmm(Math.floor(m / 5) * 5);
-}
-
 /**
  * その日の欠勤を除いたデータ（振り直す訪問を決めるときの、元の案の時刻を出す問題を compile する用。
  * targetsOf の base.problem）
@@ -138,7 +131,6 @@ export function applyReassign(
     result: ReassignResult;
     base: ReassignBase;
     absenceIds: string[];
-    now: string | null;
     label: string;
     createdAt: number;
   },
@@ -151,7 +143,6 @@ export function applyReassign(
         method: 'insert',
         insertRoutes: x.result.routes,
         absenceIds: [...new Set([...chained.absenceIds, ...x.absenceIds])],
-        now: x.now,
       }
     : {
         method: 'insert',
@@ -162,7 +153,6 @@ export function applyReassign(
         ...(prev ? { baseGenerated: prev.generated } : {}),
         ...(prev?.runId ? { baseRunId: prev.runId } : {}),
         absenceIds: x.absenceIds,
-        now: x.now,
       };
   return writeReassign(d, date, {
     problem: x.problem,
@@ -237,7 +227,7 @@ function writeReassign(d: DemoData, date: string, x: ReassignWrite): DemoData {
 
 /**
  * 案A・案B のどちらかを今の案にする（PRD D34。ADR-0011 追記）。今の案が振り直しの結果のときだけ（無ければそのまま）。
- * 元の案の情報（baseRoutes・basePins・baseGenerated・baseRunId・absenceIds・now・insertRoutes）は引き継ぎ、
+ * 元の案の情報（baseRoutes・basePins・baseGenerated・baseRunId・absenceIds・insertRoutes）は引き継ぎ、
  * method（案B なら stayWeight も）を変える。記録に1件足す（同じ結果の記録があれば足さずにそれを指す）。
  * 全訪問を固定（result.pins）。problem はいまの条件の問題（費用の score を付ける。stay を入れない問題）
  */
@@ -276,9 +266,9 @@ export function chooseReassign(
   });
 }
 
-/** 記録の振り直しの情報が、同じ振り直し（元の案・欠勤・いまの時刻・案A が同じ）のものか */
+/** 記録の振り直しの情報が、同じ振り直し（元の案・欠勤・案A が同じ）のものか */
 function sameReassign(a: ReassignInfo, b: ReassignInfo): boolean {
-  const key = (x: ReassignInfo) => JSON.stringify([x.baseRoutes, x.absenceIds, x.now, x.insertRoutes ?? null]);
+  const key = (x: ReassignInfo) => JSON.stringify([x.baseRoutes, x.absenceIds, x.insertRoutes ?? null]);
   return key(a) === key(b);
 }
 
@@ -286,7 +276,7 @@ function sameReassign(a: ReassignInfo, b: ReassignInfo): boolean {
  * 作り終えた案B を記録に1件足す（今の案は変えない。PRD D34。ADR-0011 追記）。選ばなくても再読込で消えず、
  * 比較の画面で見られ、差の表（annealRunOf）で選び直せる。今の案が振り直しの結果のときだけ（無ければそのまま）。
  * 記録の reassign は今の案の振り直しの情報に method: 'anneal'・stayWeight を付けたもの。同じ結果・同じ重みの記録があれば足さない。
- * basis（案B を作り始めたときの振り直しの情報）と今の案の振り直し（元の案・欠勤・いまの時刻・案A）が違えば足さない（計算中に振り直し直した）
+ * basis（案B を作り始めたときの振り直しの情報）と今の案の振り直し（元の案・欠勤・案A）が違えば足さない（計算中に振り直し直した）
  */
 export function addAnnealRun(
   d: DemoData,

@@ -4,7 +4,6 @@ import {
   availabilitySchema,
   clientSchema,
   dateSchema,
-  hhmmSchema,
   idSchema,
   manualRoutesSchema,
   orgSchema,
@@ -47,8 +46,7 @@ export const reassignInfoSchema = z.object({
   baseRunId: z.string().max(100).optional(),
   /** 振り直しに使った欠勤（取り消されても残す。続けて振り直したときは最初からの累積） */
   absenceIds: z.array(idSchema),
-  /** いまの時刻（考えないなら null） */
-  now: hhmmSchema.nullable(),
+  // いまの時刻（now）は持たない（2026-10-14 利用者が決定。過去の欠勤は登録しない前提）。古いデータの now は読み込みで捨てる（z.object が知らないキーを落とす）
 });
 export type ReassignInfo = z.infer<typeof reassignInfoSchema>;
 

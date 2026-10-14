@@ -1,5 +1,16 @@
 // 欠勤の振り直しの2回目（PRD D34・D35。ADR-0011 追記）：案B「少し動かしてよい」の欄と、連絡の一覧
-import { ClipboardCopy, MessageSquareText, Play, Printer, Square, X } from 'lucide-react';
+import {
+  ArrowUpToLine,
+  ClipboardCopy,
+  MessageSquareText,
+  Play,
+  Printer,
+  Square,
+  UserRoundCheck,
+  X,
+} from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FLOATING_EVENT, useFloatingEdge } from '../components/floating';
 import { WeightSlider } from '../components/parts';
 import { Hint, SidePanel, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
@@ -83,7 +94,7 @@ export function AnnealBox({
         {recommended && <span className="chip chip-primary">おすすめ：案A で入らない訪問があります</span>}
         <Hint>
           ほかの人の訪問も少し動かして（担当・順番・時刻）、入らない訪問を入れたり移動を減らしたりする案を AI
-          が作ります。元の案から変えた訪問ごとに減点し、変更が少ない案を選びます。いまの時刻より前に始まる訪問は動かしません。案A
+          が作ります。元の案から変えた訪問ごとに減点し、変更が少ない案を選びます。案A
           より悪い案にはなりません（費用と変更の減点の合計で）。点数は今までどおり点数の基準の物差しで、変更の数は下の表で別に見ます
         </Hint>
       </div>
@@ -189,18 +200,24 @@ function timeChange(x: ContactVisit): string {
   return `${clock(x.fromStart)} → ${clock(x.toStart)}`;
 }
 
+/** 連絡の一覧に出す、欠勤の人に残る訪問（時刻は「9:00」。対応が必要） */
+export type LeftContact = { visitId: string; clientId: string; staffId: string; at: string; reason: string };
+
 /**
  * 連絡の一覧（右から出る欄。確定前でも見られる）：担当が変わる訪問先・時刻が変わる訪問・仕事が増える/減るスタッフと、
  * スタッフごと・訪問先ごとの連絡文（コピー）。印刷するとこの欄だけが出る。送信はしない
  */
 export function ContactPanel({
   list,
+  left = [],
   words,
   terms,
   onCopied,
   onClose,
 }: {
   list: ContactList;
+  /** 欠勤の人に残る、振り直すべき訪問（連絡文には入れず、一覧のいちばん上に出す） */
+  left?: LeftContact[];
   words: ContactWords;
   terms: Terms;
   /** コピーしたあと（ok：できたか） */
@@ -209,6 +226,7 @@ export function ContactPanel({
 }) {
   const clients = clientMessages(list, words);
   const empty = list.staff.length === 0 && list.staffChanged.length === 0;
+  const nothing = empty && left.length === 0;
   const copy = (text: string, what: string) => {
     void copyText(text).then((ok) => onCopied(ok, what));
   };
@@ -240,9 +258,38 @@ export function ContactPanel({
         <p className="sub">
           元の案と今の案の差から作っています（確定の前でも見られます）。連絡文はコピーするだけで、送信はしません。
         </p>
-        {empty ? (
+        {left.length > 0 && (
+          <section className="stack contact-section left-box" style={{ gap: 4 }} data-testid="contact-left">
+            <h3 className="error">欠勤の人に残っている訪問（{left.length}件）：対応が必要</h3>
+            <p className="sub">
+              欠勤の時間と重なるのに振り直していない訪問です（連絡文には入りません）。別の{terms.staff}
+              への振り替えと{terms.client}への連絡を決めてください
+            </p>
+            <table className="contact-table">
+              <thead>
+                <tr>
+                  <th scope="col">時刻</th>
+                  <th scope="col">{terms.client}</th>
+                  <th scope="col">担当（欠勤）</th>
+                  <th scope="col">理由</th>
+                </tr>
+              </thead>
+              <tbody>
+                {left.map((x) => (
+                  <tr key={x.visitId}>
+                    <td className="nowrap">{x.at}</td>
+                    <td>{words.clientName(x.clientId)}様</td>
+                    <td>{words.staffName(x.staffId)}</td>
+                    <td>{x.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+        {nothing ? (
           <p>連絡が要る変更はありません。</p>
-        ) : (
+        ) : empty ? null : (
           <>
             <section className="stack contact-section" style={{ gap: 4 }}>
               <h3>
@@ -392,5 +439,132 @@ export function ContactButton({ count, onOpen }: { count: number; onOpen: () => 
         連絡の一覧{count > 0 ? `（訪問${count}件）` : ''}
       </WithIcon>
     </button>
+  );
+}
+
+/**
+ * 差の欄が画面の外にあるとき、画面の左下に出す小さな帯（地図の MapDock は右下）：振り直しの状態と、
+ * 差の欄へ・案B を作る・連絡の一覧への近道。差の欄が見えているあいだは出さない
+ */
+export function ReassignDock({
+  targetId,
+  unplaced,
+  left,
+  method,
+  annealRecommended,
+  annealRunning,
+  contactCount,
+  onGo,
+  onAnneal,
+  onContacts,
+}: {
+  /** 差の欄の要素の id */
+  targetId: string;
+  unplaced: number;
+  /** 欠勤の人に残る訪問の件数 */
+  left: number;
+  method: 'insert' | 'anneal';
+  /** 案B を勧める（押せる） */
+  annealRecommended: boolean;
+  annealRunning: boolean;
+  contactCount: number;
+  onGo: () => void;
+  onAnneal: () => void;
+  onContacts: () => void;
+}) {
+  const [inView, setInView] = useState(true);
+  // 差の欄が見えているか。初めは実際の位置で決め（一瞬遅れて出ない）、あとは IntersectionObserver で
+  useLayoutEffect(() => {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setInView(r.bottom > 0 && r.top < window.innerHeight);
+    const io = new IntersectionObserver(([e]) => setInView(e?.isIntersecting ?? true), { threshold: 0 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [targetId]);
+  // 知らせ（トースト）が避けられるよう、位置を CSS の変数（--reassign-dock-top）に出す
+  const edgeRef = useFloatingEdge('reassign-dock');
+  const boxRef = useRef<HTMLElement | null>(null);
+  // 1行に収まらなければ、ボタンの文言を隠してアイコンだけにする（中身・画面の幅・地図の位置が変わったら測り直す）
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    // 自分の位置の知らせでは測り直さない（測り直しで繰り返さない）
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== 'reassign-dock') setTick((t) => t + 1);
+    };
+    window.addEventListener('resize', on);
+    window.addEventListener(FLOATING_EVENT, on);
+    return () => {
+      window.removeEventListener('resize', on);
+      window.removeEventListener(FLOATING_EVENT, on);
+    };
+  }, []);
+  const sig = JSON.stringify([unplaced, left, method, annealRecommended, annealRunning, contactCount, inView, tick]);
+  const [compactFor, setCompactFor] = useState<string | null>(null);
+  const compact = compactFor === sig;
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el || compact) return;
+    if (el.scrollWidth > el.clientWidth + 1) setCompactFor(sig);
+  }, [sig, compact]);
+  if (inView) return null;
+  const ref = (el: HTMLElement | null) => {
+    boxRef.current = el;
+    edgeRef(el);
+  };
+  const plan = method === 'anneal' ? '案B' : '案A';
+  /** 文言（compact のときは隠し、aria-label と title で読める） */
+  const label = (text: string) => (compact ? null : <span>{text}</span>);
+  return (
+    <section
+      ref={ref}
+      className={`reassign-dock no-print ${compact ? 'is-compact' : ''}`}
+      aria-label="欠勤の振り直し（近道）"
+      data-testid="reassign-dock"
+    >
+      <strong className="row reassign-dock-title" style={{ gap: 4 }} title={`欠勤の振り直し（${plan}）`}>
+        <UserRoundCheck size={15} aria-hidden="true" />
+        <span className="ellipsis">{compact ? `振り直し（${plan}）` : `欠勤の振り直し（${plan}）`}</span>
+      </strong>
+      <span className={unplaced > 0 ? 'chip chip-warn' : 'chip chip-ok'}>入らない {unplaced}件</span>
+      {left > 0 && (
+        <span className="chip chip-red" title={`欠勤の人のまま ${left}件`}>
+          {compact ? '欠勤のまま' : '欠勤の人のまま'} {left}件
+        </span>
+      )}
+      {annealRunning ? (
+        <span className="sub">{compact ? '案B…' : '案B を作っています…'}</span>
+      ) : (
+        annealRecommended && (
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={onAnneal}
+            aria-label="少し動かしてよい案（案B）を作る"
+            title="少し動かしてよい案（案B）を作る"
+          >
+            <Play size={14} aria-hidden="true" />
+            {compact ? <span>案B</span> : <span>案B を作る</span>}
+          </button>
+        )
+      )}
+      <button
+        type="button"
+        className="btn btn-small"
+        onClick={onContacts}
+        aria-label={`連絡の一覧${contactCount > 0 ? `（${contactCount}件）` : ''}`}
+        title="連絡の一覧"
+      >
+        <MessageSquareText size={14} aria-hidden="true" />
+        {compact
+          ? contactCount > 0 && <span>{contactCount}</span>
+          : label(`連絡${contactCount > 0 ? `（${contactCount}件）` : ''}`)}
+      </button>
+      <button type="button" className="btn btn-small" onClick={onGo} aria-label="差の欄へ" title="差の欄へ">
+        <ArrowUpToLine size={14} aria-hidden="true" />
+        {label('差の欄へ')}
+      </button>
+    </section>
   );
 }

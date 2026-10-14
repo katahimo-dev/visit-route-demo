@@ -173,7 +173,9 @@ label {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 96px;
+  /* 左下の欠勤の振り直しの帯・右下の地図（--*-top は画面の下端から上端まで）より上に出す */
+  bottom: max(96px, calc(var(--reassign-dock-top, 0px) + 12px), calc(var(--map-dock-top, 0px) + 12px));
+  max-width: calc(100vw - 24px);
   transform: translateX(-50%);
   background: var(--ink);
   color: #fff;
