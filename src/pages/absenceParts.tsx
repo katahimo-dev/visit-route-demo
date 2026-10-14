@@ -11,7 +11,7 @@ import {
   UserRoundX,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Hint, SidePanel, WithIcon } from '../components/ui';
 import type { DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence, Staff, Visit } from '../contracts/documents';
@@ -30,7 +30,7 @@ import {
 } from '../lib/absences';
 import { attempt, deltaText, newId, r0 } from '../lib/common';
 import { compile } from '../matching';
-import { candidatesFor, targetsOf } from '../reassign';
+import { candidatesFor, reassign, targetsOf } from '../reassign';
 
 /** 欠勤の欄の入力 */
 type Draft = { allDay: boolean; from: string; to: string; note: string; now: string };
@@ -42,6 +42,8 @@ export type AbsencePreview = {
   started: number;
   /** 振り直しの元の案（無ければ null＝振り直せない） */
   baseFrom: ReassignInfo['from'] | null;
+  /** 案A（空き時間に入れるだけ）で入らない見込みの件数（案B を勧める。2回目） */
+  unplacedA: number;
 };
 
 /** 欠勤の入力から、その欠勤を入れたデータで振り直す訪問を出す（画面に規則を書かず reassign を呼ぶだけ） */
@@ -50,7 +52,7 @@ export function previewOf(data: DemoData, date: string, absence: Absence, now: n
     const d = saveAbsence(data, absence);
     const p = compile(d, date);
     const base = baseOf(d, date, p);
-    if (!base) return { targets: [], started: 0, baseFrom: null };
+    if (!base) return { targets: [], started: 0, baseFrom: null, unplacedA: 0 };
     const absent = [...new Set(absencesOn(d, date).map((a) => a.staffId))];
     const before = compile(withoutAbsencesOn(d, date), date);
     const targets = targetsOf(p, { problem: before, routes: base.routes }, absent, now);
@@ -62,7 +64,9 @@ export function previewOf(data: DemoData, date: string, absence: Absence, now: n
         if (v !== undefined && p.visits[v]!.earliest < now) started++;
       }
     }
-    return { targets, started, baseFrom: base.from };
+    // 案A の見込み（決定的で速い）。入らない訪問があれば案B を勧める
+    const unplacedA = reassign(p, base.routes, targets, { now }).unplaced.length;
+    return { targets, started, baseFrom: base.from, unplacedA };
   }).value;
 }
 
@@ -96,7 +100,8 @@ export function AbsencePanel({
   visitLabel: (id: string) => string;
   /** 振り直しを押せるか（計算中は押せない）。押せないときの理由 */
   canReassign: { ok: boolean; why?: string };
-  onReassign: (absence: Absence, now: string | null) => void;
+  /** anneal：登録して案A にしたあと、続けて案B（少し動かしてよい）を作る */
+  onReassign: (absence: Absence, now: string | null, anneal?: boolean) => void;
   onSaveOnly: (absence: Absence) => void;
   onRemove: (absence: Absence) => void;
   onClose: () => void;
@@ -270,6 +275,24 @@ export function AbsencePanel({
               </span>
             ))}
             {preview.started > 0 && <span className="sub">始まっていて動かさない訪問 {preview.started}件</span>}
+            {preview.baseFrom !== null && preview.unplacedA > 0 && (
+              <div className="stack anneal-suggest" style={{ gap: 4 }} data-testid="anneal-suggest">
+                <span className="warn-text">
+                  空き時間に入れるだけ（案A）では {preview.unplacedA}件
+                  が入らない見込みです。ほかの人の訪問も少し動かしてよい（案B）なら入るかもしれません
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  style={{ alignSelf: 'flex-start' }}
+                  disabled={!!error || !canReassign.ok}
+                  title={!canReassign.ok ? canReassign.why : undefined}
+                  onClick={save((a) => onReassign(a, d.now === '' ? null : d.now, true))}
+                >
+                  登録して、少し動かしてよい（案B）も作る
+                </button>
+              </div>
+            )}
             {preview.baseFrom === null ? (
               <span className="warn-text">先にAI案を作ってください（欠勤だけは登録できます）</span>
             ) : (
@@ -294,6 +317,8 @@ export function ReassignBar({
   running,
   onRevert,
   onCompare,
+  extraActions,
+  children,
 }: {
   info: ReassignInfo;
   diff: ReassignDiff | null;
@@ -302,6 +327,10 @@ export function ReassignBar({
   running: boolean;
   onRevert: () => void;
   onCompare: () => void;
+  /** 見出しの横に足す操作（連絡の一覧。2回目） */
+  extraActions?: ReactNode;
+  /** 下に足す欄（案B。2回目） */
+  children?: ReactNode;
 }) {
   const reassigned = diff?.moved.filter((m) => m.to !== null && m.from !== null).length ?? 0;
   return (
@@ -309,9 +338,10 @@ export function ReassignBar({
       <div className="spread" style={{ flexWrap: 'wrap', gap: 8 }}>
         <strong className="row" style={{ gap: 6 }}>
           <UserRoundCheck size={18} aria-hidden="true" />
-          欠勤の振り直し
+          欠勤の振り直し{info.method === 'anneal' ? '（案B：少し動かした案）' : '（案A：空き時間に入れた案）'}
         </strong>
-        <span className="row" style={{ gap: 6 }}>
+        <span className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+          {extraActions}
           <button type="button" className="btn btn-small" disabled={running} onClick={onRevert}>
             <WithIcon icon={Undo2} size={14}>
               元の案に戻す
@@ -337,7 +367,9 @@ export function ReassignBar({
       <span className="sub">
         元の案：{info.from === 'confirmed' ? '確定した割当' : '今の案'}
         {info.now ? `・いまの時刻 ${t(info.now)}` : ''}
-        。振り直しでは、ほかの人の担当・順番・時刻は変えていません（「受けられる人」から入れた分・手直しは除く。薄い列は変わらない人）
+        {info.method === 'anneal'
+          ? `。案B（変更を減らす ${info.stayWeight ?? ''}）では、ほかの人の訪問も少し動かしています（薄い列は変わらない人）`
+          : '。振り直しでは、ほかの人の担当・順番・時刻は変えていません（「受けられる人」から入れた分・手直しは除く。薄い列は変わらない人）'}
         <Hint>
           振り直した訪問に「代行」、開始が変わった訪問に「+N分」が付きます。振り直したあとの案は全訪問が固定です。入らない訪問は「受けられる人」から入れられます。
         </Hint>
@@ -348,6 +380,7 @@ export function ReassignBar({
           欠勤は取り消されています。元の案に戻せます
         </span>
       )}
+      {children}
     </div>
   );
 }

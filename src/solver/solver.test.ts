@@ -125,3 +125,24 @@ describe('solver', () => {
     }
   }, 120000);
 });
+
+describe('初期解の候補（SolveOptions.initial。欠勤の振り直しの案B。ADR-0011 追記）', () => {
+  it('候補より悪くならない。可でない・回れない候補は使わない（落ちない）。決定的', () => {
+    const p = withConditions(11, 6, 30);
+    const good = solve(p, { seed: 1, iterations: 200_000 });
+    const r = solve(p, { seed: 2, iterations: 0, initial: good.routes });
+    expect(r.score).toBeLessThanOrEqual(good.score + 1e-6);
+    expect(solve(p, { seed: 2, iterations: 5000, initial: good.routes })).toEqual(
+      solve(p, { seed: 2, iterations: 5000, initial: good.routes }),
+    );
+    // 可でない組を入れた候補は使わない
+    const v = p.visits.findIndex((_, i) => p.allowed[i]!.some((x) => !x));
+    const s = p.allowed[v]!.findIndex((x) => !x);
+    const bad = { ...good.routes, [p.staff[s]!.id]: [p.visits[v]!.id] };
+    const r2 = solve(p, { seed: 2, iterations: 2000, initial: bad });
+    for (const [sid, ids] of Object.entries(r2.routes)) {
+      const si = p.staff.findIndex((x) => x.id === sid);
+      for (const id of ids) expect(p.allowed[p.visits.findIndex((x) => x.id === id)]![si]).toBe(true);
+    }
+  });
+});

@@ -592,3 +592,85 @@
   border-radius: 10px;
   background: var(--card);
 }
+/* 案B「少し動かしてよい」（ADR-0011 追記） */
+.anneal-box {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+.anneal-weight .weight {
+  min-width: 160px;
+}
+.anneal-table th,
+.anneal-table td {
+  font-size: 0.85rem;
+  padding: 4px 8px;
+}
+.anneal-current {
+  margin-left: 6px;
+}
+/* 連絡の一覧（PRD D35） */
+.contact-section h3 {
+  margin: 4px 0;
+  font-size: 1rem;
+}
+.contact-table td,
+.contact-table th {
+  font-size: 0.85rem;
+  padding: 4px 8px;
+}
+.contact-staff {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.contact-staff > li {
+  margin-bottom: 6px;
+}
+.contact-staff .chip {
+  margin-left: 6px;
+}
+.contact-msg {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--soft);
+}
+.contact-msg pre {
+  flex: 1;
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+/* 連絡の一覧を開いて印刷すると、一覧だけを出す */
+@media print {
+  body:has(.contact-sheet) > :not(.drawer-wrap) {
+    display: none !important;
+  }
+  body:has(.contact-sheet) .drawer-wrap {
+    position: static;
+    display: block;
+  }
+  body:has(.contact-sheet) .drawer-backdrop,
+  body:has(.contact-sheet) .drawer-foot,
+  body:has(.contact-sheet) .drawer-head button,
+  body:has(.contact-sheet) .no-print {
+    display: none !important;
+  }
+  body:has(.contact-sheet) .drawer {
+    width: auto;
+    height: auto;
+    box-shadow: none;
+    animation: none;
+  }
+  body:has(.contact-sheet) .drawer-body {
+    overflow: visible;
+  }
+  .contact-msg {
+    break-inside: avoid;
+    background: none;
+  }
+}

@@ -67,7 +67,7 @@ export function addRun(
 
 /**
  * 同じ条件・種・固定・結果の記録（無ければ undefined。addRun のあとに引くと、足した記録かもとからある記録）。
- * 欠勤の振り直しの記録（reassign 付き）とふつうの記録は、結果が同じでも別の記録（ADR-0011）
+ * 欠勤の振り直しの記録（reassign 付き）とふつうの記録、案A と案B（重みの違う案B）の記録は、結果が同じでも別の記録（ADR-0011）
  */
 export function findRun(
   d: DemoData,
@@ -77,6 +77,8 @@ export function findRun(
   return (own(d.aiRuns, date) ?? []).find(
     (r) =>
       !!r.reassign === !!x.reassign &&
+      r.reassign?.method === x.reassign?.method &&
+      r.reassign?.stayWeight === x.reassign?.stayWeight &&
       r.seed === x.result.seed &&
       JSON.stringify(r.rules) === JSON.stringify(x.rules) &&
       JSON.stringify(r.pins) === JSON.stringify(x.pins) &&

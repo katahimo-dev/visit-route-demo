@@ -339,6 +339,14 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
     const greedyTotal = current;
     loadRoutes(naiveSeqs(problem));
     if (!(current < greedyTotal - EPS)) loadRoutes(greedy);
+    // 初期解の候補（案B の案A。ADR-0011 追記）：今の初期解より費用が高くなければ、そこから始める（結果の費用 ≤ 候補）
+    const given = options.initial ? initialSeqs(problem, options.initial) : null;
+    if (given) {
+      const chosen = routes.map((r) => r.slice());
+      const chosenTotal = current;
+      loadRoutes(given);
+      if (current > chosenTotal + EPS) loadRoutes(chosen);
+    }
   }
 
   // --- 初期温度：ランダムな近傍の改悪幅の中央値 ---
@@ -467,6 +475,33 @@ export function createSolver(problem: Problem, options: SolveOptions): Solver {
   };
 
   return { step, iteration: () => iter, bestScore: () => bestTotal, best };
+}
+
+/**
+ * 初期解の候補（staffId → 訪問ID）を staff 添字ごとの列にする。問題に無い人・訪問・2回目に出た訪問は除く。
+ * 可でない組・strict で回れない列・件数の上限を超える列があれば null（候補にしない）
+ */
+function initialSeqs(problem: Problem, given: Record<string, string[]>): number[][] | null {
+  const vIndex = new Map(problem.visits.map((v, i) => [v.id, i]));
+  const seen = new Set<number>();
+  const cap = problem.balance?.cap ?? null;
+  const out: number[][] = [];
+  for (let s = 0; s < problem.staff.length; s++) {
+    const id = problem.staff[s]!.id;
+    const list = Object.hasOwn(given, id) ? (given[id] ?? []) : [];
+    const seq: number[] = [];
+    for (const vid of list) {
+      const v = vIndex.get(vid);
+      if (v === undefined || seen.has(v)) continue;
+      if (!problem.allowed[v]![s]) return null;
+      seen.add(v);
+      seq.push(v);
+    }
+    if (cap && seq.length > cap[s]!) return null;
+    if (seq.length > 0 && routeCost(problem, s, seq) === INF) return null;
+    out.push(seq);
+  }
+  return out;
 }
 
 /** Worker なしで最後まで解く */

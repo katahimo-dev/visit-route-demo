@@ -3,7 +3,7 @@
 import type { AiPlan, DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult } from '../contracts/problem';
-import type { ReassignResult, Routes } from '../contracts/reassign';
+import { type ReassignResult, type Routes, STAY_WEIGHT_DEFAULT } from '../contracts/reassign';
 import { END_AFTER_START_ERROR, HALF_HOUR_ERROR, isHalfHour, timeText } from '../domain/availability';
 import { NONE } from '../domain/scheduleModel';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
@@ -116,6 +116,12 @@ export function baseOf(data: DemoData, date: string, problem: Problem): Reassign
   return { routes, from: 'plan', pins };
 }
 
+/** 振り直しの情報から案B の重みを外す（案A にするとき） */
+function withoutAnneal(info: ReassignInfo): ReassignInfo {
+  const { stayWeight: _w, ...rest } = info;
+  return rest;
+}
+
 /**
  * 振り直した結果を今の案にし、記録に「欠勤の振り直し」として1件足す（D30）。
  * routes・generated＝結果、pins＝結果の pins（担当のいるすべての訪問）、reassign＝元の案の情報
@@ -140,9 +146,16 @@ export function applyReassign(
   const prev = own(d.aiPlans, date);
   const chained = x.base.from === 'plan' ? prev?.reassign : undefined;
   const info: ReassignInfo = chained
-    ? { ...chained, absenceIds: [...new Set([...chained.absenceIds, ...x.absenceIds])], now: x.now }
+    ? {
+        ...withoutAnneal(chained),
+        method: 'insert',
+        insertRoutes: x.result.routes,
+        absenceIds: [...new Set([...chained.absenceIds, ...x.absenceIds])],
+        now: x.now,
+      }
     : {
         method: 'insert',
+        insertRoutes: x.result.routes,
         from: x.base.from,
         baseRoutes: x.base.routes,
         basePins: x.base.pins,
@@ -151,40 +164,112 @@ export function applyReassign(
         absenceIds: x.absenceIds,
         now: x.now,
       };
-  const total = score(x.problem, x.result.routes).total;
-  const solved: SolveResult = {
+  return writeReassign(d, date, {
+    problem: x.problem,
     routes: x.result.routes,
     unassigned: x.result.unassigned,
-    score: total,
+    pins: x.result.pins,
+    info,
     seed: d.seed,
     iterations: 0,
     stopped: false,
+    label: x.label,
+    createdAt: x.createdAt,
+  });
+}
+
+/** 振り直しの結果を今の案にし、記録に1件足す（applyReassign・chooseReassign で共通） */
+function writeReassign(
+  d: DemoData,
+  date: string,
+  x: {
+    problem: Problem;
+    routes: Routes;
+    unassigned: string[];
+    pins: Record<string, string>;
+    info: ReassignInfo;
+    seed: number;
+    iterations: number;
+    stopped: boolean;
+    label: string;
+    createdAt: number;
+  },
+): DemoData {
+  const total = score(x.problem, x.routes).total;
+  const solved: SolveResult = {
+    routes: x.routes,
+    unassigned: x.unassigned,
+    score: total,
+    seed: x.seed,
+    iterations: x.iterations,
+    stopped: x.stopped,
   };
   const run = {
     rules: d.rules,
-    pins: x.result.pins,
+    pins: x.pins,
     result: solved,
     createdAt: x.createdAt,
     label: x.label,
-    reassign: info,
+    reassign: x.info,
   };
   const added = addRun(d, date, run);
   const plan: AiPlan = {
     date,
     createdAt: x.createdAt,
-    seed: d.seed,
-    iterations: 0,
-    routes: x.result.routes,
-    unassigned: x.result.unassigned,
+    seed: x.seed,
+    iterations: x.iterations,
+    routes: x.routes,
+    unassigned: x.unassigned,
     score: total,
-    stopped: false,
+    stopped: x.stopped,
     rules: d.rules,
-    generated: { routes: x.result.routes, unassigned: x.result.unassigned, score: total },
-    pins: x.result.pins,
+    generated: { routes: x.routes, unassigned: x.unassigned, score: total },
+    pins: x.pins,
     runId: findRun(added, date, run)?.id,
-    reassign: info,
+    reassign: x.info,
   };
   return { ...added, aiPlans: { ...added.aiPlans, [date]: plan } };
+}
+
+/**
+ * 案A・案B のどちらかを今の案にする（PRD D34。ADR-0011 追記）。今の案が振り直しの結果のときだけ（無ければそのまま）。
+ * 元の案の情報（baseRoutes・basePins・baseGenerated・baseRunId・absenceIds・now・insertRoutes）は引き継ぎ、
+ * method（案B なら stayWeight も）を変える。記録に1件足す（同じ結果の記録があれば足さずにそれを指す）。
+ * 全訪問を固定（result.pins）。problem はいまの条件の問題（費用の score を付ける。stay を入れない問題）
+ */
+export function chooseReassign(
+  d: DemoData,
+  date: string,
+  x: {
+    problem: Problem;
+    result: ReassignResult;
+    method: ReassignInfo['method'];
+    stayWeight?: number;
+    seed: number;
+    iterations: number;
+    stopped: boolean;
+    label: string;
+    createdAt: number;
+  },
+): DemoData {
+  const prev = own(d.aiPlans, date)?.reassign;
+  if (!prev) return d;
+  const info: ReassignInfo =
+    x.method === 'anneal'
+      ? { ...prev, method: 'anneal', stayWeight: x.stayWeight ?? STAY_WEIGHT_DEFAULT }
+      : { ...withoutAnneal(prev), method: 'insert' };
+  return writeReassign(d, date, {
+    problem: x.problem,
+    routes: x.result.routes,
+    unassigned: x.result.unassigned,
+    pins: x.result.pins,
+    info,
+    seed: x.seed,
+    iterations: x.iterations,
+    stopped: x.stopped,
+    label: x.label,
+    createdAt: x.createdAt,
+  });
 }
 
 /**

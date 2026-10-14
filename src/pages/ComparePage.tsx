@@ -101,13 +101,22 @@ export default function ComparePage() {
       return { id, title, rules, routes, unassigned: [...ids].filter((v) => !placed.has(v)) };
     };
     const out: Choice[] = [];
+    /** 同じ元の案の欠勤前は1つだけ出す（案A・案B の記録は同じ元の案を持つ。ADR-0011 追記） */
+    const shownBefore = new Set<string>();
     for (const r of runs) {
-      if (r.reassign)
+      const baseKey = r.reassign ? JSON.stringify(r.reassign.baseRoutes) : null;
+      if (r.reassign && baseKey && !shownBefore.has(baseKey)) {
+        shownBefore.add(baseKey);
         out.push(before(`${BEFORE}${r.id}`, `欠勤前（#${r.no}の元の案）`, r.rules, r.reassign.baseRoutes));
+      }
       out.push({ id: r.id, title: `#${r.no} ${r.label}`, rules: r.rules, routes: r.routes, unassigned: r.unassigned });
     }
     // 今の案が振り直しで、その記録が無い（消した）ときも欠勤前を出す
-    if (aiPlan?.reassign && !runs.some((r) => r.id === aiPlan.runId && r.reassign)) {
+    if (
+      aiPlan?.reassign &&
+      !runs.some((r) => r.id === aiPlan.runId && r.reassign) &&
+      !shownBefore.has(JSON.stringify(aiPlan.reassign.baseRoutes))
+    ) {
       out.push(before(`${BEFORE}${CURRENT}`, '欠勤前（今の案の元の案）', aiPlan.rules, aiPlan.reassign.baseRoutes));
     }
     // 今の案は、どの記録とも違う（手直しした）ときだけ候補に出す
@@ -128,8 +137,10 @@ export default function ComparePage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: 来たときに1回だけ合わせる
   useEffect(() => {
     if (asked?.a !== 'before' || !aiPlan?.reassign) return;
-    const runBefore = runs.some((r) => r.id === aiPlan.runId && r.reassign) ? `${BEFORE}${aiPlan.runId}` : null;
-    const a = runBefore ?? `${BEFORE}${CURRENT}`;
+    // 今の案の元の案と同じ欠勤前（同じ元の案の欠勤前は1つだけ出す）
+    const baseKey = JSON.stringify(aiPlan.reassign.baseRoutes);
+    const a =
+      choices.find((c) => c.id.startsWith(BEFORE) && JSON.stringify(c.routes) === baseKey)?.id ?? `${BEFORE}${CURRENT}`;
     const key = JSON.stringify(aiPlan.routes);
     const b = choices.some((c) => c.id === CURRENT)
       ? CURRENT
@@ -464,7 +475,7 @@ export default function ComparePage() {
                         {c.title}
                         {run?.reassign && (
                           <span className="chip chip-move" style={{ marginLeft: 6 }}>
-                            欠勤の振り直し
+                            {run.reassign.method === 'anneal' ? '欠勤の振り直し（案B）' : '欠勤の振り直し（案A）'}
                           </span>
                         )}
                         {c.id.startsWith(BEFORE) && (

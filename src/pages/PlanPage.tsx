@@ -52,6 +52,7 @@ import {
   absenceText,
   applyReassign,
   baseOf,
+  chooseReassign,
   defaultNow,
   removeAbsence,
   revertReassign,
@@ -59,11 +60,23 @@ import {
   withoutAbsencesOn,
 } from '../lib/absences';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
+import { dayWordOf } from '../lib/contacts';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
-import { addRun, alignPlan, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
+import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
-import { placeVisit, type ReassignCandidate, reassign, reassignDiff, targetsOf } from '../reassign';
+import {
+  contactsOf,
+  finishAnneal,
+  placeVisit,
+  prepareAnneal,
+  type ReassignCandidate,
+  type ReassignResult,
+  reassign,
+  reassignDiff,
+  STAY_WEIGHT_DEFAULT,
+  targetsOf,
+} from '../reassign';
 import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
@@ -81,6 +94,7 @@ import {
   SCORE_TEXT,
   WeightPanel,
 } from './planParts';
+import { AnnealBox, ContactButton, ContactPanel, type ReassignOption } from './reassignParts';
 import { VisitForm } from './VisitForm';
 
 /**
@@ -155,7 +169,7 @@ export default function PlanPage() {
   const [progress, setProgress] = useState<Progress | null>(null);
   /** プリセットのカードの詳細の id の頭（aria-describedby） */
   const cardIdBase = useId();
-  const [running, setRunning] = useState<'create' | 'resolve' | null>(null);
+  const [running, setRunning] = useState<'create' | 'resolve' | 'anneal' | null>(null);
   /** 計算している日と条件の名前（AI案が無い日の「作っています」の表示） */
   const [runningFor, setRunningFor] = useState<{ date: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -210,6 +224,7 @@ export default function PlanPage() {
   useEffect(() => {
     setEditing(null);
     setAbsenceFor(null);
+    setContactsOpen(false);
     setError(null);
   }, [date]);
   /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
@@ -293,27 +308,32 @@ export default function PlanPage() {
   };
   /** 途中の最良は、解いている条件にかかわらず点数の基準の物差しで点数にする（ADR-0010） */
   const run = (
-    kind: 'create' | 'resolve',
+    kind: 'create' | 'resolve' | 'anneal',
     target: Problem,
     label: string,
     onDone: (r: SolveResult) => void,
     after?: () => void,
+    initial?: Record<string, string[]>,
   ): boolean => {
     const gen = generation.current;
     const live = () => gen === generation.current;
     const started = attempt(() =>
-      runSolve(target, { seed: dataRef.current.seed, iterations: defaultIterations(target) }, (p) => {
-        if (!live()) return;
-        const { problem: sp, scale: ss } = scoreRef.current;
-        const best = p.bestRoutes;
-        if (!best) {
-          // 最良は前の進捗から変わっていない：点数は前のまま
-          setProgress((prev) => ({ iteration: p.iteration, total: p.total, hundred: prev?.hundred ?? null }));
-          return;
-        }
-        const hundred = sp && ss ? (attempt(() => toHundred(score(sp, best).total, ss)).value ?? null) : null;
-        setProgress({ iteration: p.iteration, total: p.total, hundred });
-      }),
+      runSolve(
+        target,
+        { seed: dataRef.current.seed, iterations: defaultIterations(target), ...(initial ? { initial } : {}) },
+        (p) => {
+          if (!live()) return;
+          const { problem: sp, scale: ss } = scoreRef.current;
+          const best = p.bestRoutes;
+          if (!best) {
+            // 最良は前の進捗から変わっていない：点数は前のまま
+            setProgress((prev) => ({ iteration: p.iteration, total: p.total, hundred: prev?.hundred ?? null }));
+            return;
+          }
+          const hundred = sp && ss ? (attempt(() => toHundred(score(sp, best).total, ss)).value ?? null) : null;
+          setProgress({ iteration: p.iteration, total: p.total, hundred });
+        },
+      ),
     );
     if (!started.value) {
       setError(started.error);
@@ -717,19 +737,26 @@ export default function PlanPage() {
    * 元の案との差：before＝元の案を、振り直しに使った欠勤を除いたデータで compile した問題で、after＝今の案をいまの問題で。
    * 今の案を手直し・組み直ししても出し直す
    */
-  const rDiff = useMemo(() => {
-    if (!reassignInfo || !problem) return null;
+  /** 元の案の時刻を出す問題（振り直しに使った欠勤を除いたデータで compile。差・案B・連絡の一覧の before） */
+  const reassignBefore = useMemo(() => {
+    if (!reassignInfo) return null;
     const used = new Set(reassignInfo.absenceIds);
-    const before = attempt(() =>
-      compile({ ...compileInput, absences: compileInput.absences.filter((a) => !used.has(a.id)) }, date),
-    ).value;
-    if (!before) return null;
+    return (
+      attempt(() => compile({ ...compileInput, absences: compileInput.absences.filter((a) => !used.has(a.id)) }, date))
+        .value ?? null
+    );
+  }, [reassignInfo, compileInput, date]);
+  const rDiff = useMemo(() => {
+    if (!reassignInfo || !problem || !reassignBefore) return null;
     return (
       attempt(() =>
-        reassignDiff({ problem: before, routes: reassignInfo.baseRoutes }, { problem, routes: aiPlan?.routes ?? {} }),
+        reassignDiff(
+          { problem: reassignBefore, routes: reassignInfo.baseRoutes },
+          { problem, routes: aiPlan?.routes ?? {} },
+        ),
       ).value ?? null
     );
-  }, [reassignInfo, problem, compileInput, date, aiPlan]);
+  }, [reassignInfo, reassignBefore, problem, aiPlan]);
   /** 代行（訪問ID → 元の担当）・開始の変化（訪問ID → 分）・変わる人・地図で太くする訪問 */
   const reassignMarks = useMemo(() => {
     const substitute = new Map<string, string>();
@@ -751,7 +778,7 @@ export default function PlanPage() {
   const shortName = (id: string) => staffName(id).slice(0, 40);
 
   /** 「登録して振り直す」：欠勤を足したデータで compile し、元の案から振り直して今の案にする（1回の update で書く） */
-  const registerAndReassign = (absence: Absence, now: string | null) => {
+  const registerAndReassign = (absence: Absence, now: string | null, anneal = false) => {
     if (running) return;
     setError(null);
     const d1 = saveAbsence(data, absence);
@@ -800,6 +827,208 @@ export default function PlanPage() {
     setAbsenceFor(null);
     sel.reset();
     toast(`振り直しました（振り直し ${r.placed.length}件・入らない ${r.unplaced.length}件）`);
+    // 案B も作る：書き込んだ今の案（reassign）と新しい問題が画面に出てから始める（下の effect）
+    if (anneal) pendingAnneal.current = date;
+  };
+
+  // ---- 2回目：案B「少し動かしてよい」・連絡の一覧（PRD D34・D35。ADR-0011 追記）----
+  /** 「変更を減らす」の重み（今の案が案B ならその重み） */
+  const [stayWeight, setStayWeight] = useState<number>(STAY_WEIGHT_DEFAULT);
+  // 今の案が案B なら、その重みに合わせる
+  useEffect(() => {
+    if (reassignInfo?.stayWeight !== undefined) setStayWeight(reassignInfo.stayWeight);
+  }, [reassignInfo?.stayWeight]);
+  /** 作った案B（画面の一時状態。key が今の振り直しと違えば見せない） */
+  const [annealView, setAnnealView] = useState<{
+    key: string;
+    weight: number;
+    result: ReassignResult;
+    seed: number;
+    iterations: number;
+    stopped: boolean;
+  } | null>(null);
+  /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日 */
+  const pendingAnneal = useRef<string | null>(null);
+  const [contactsOpen, setContactsOpen] = useState(false);
+  /** 案A の列（振り直した直後。無い古いデータで今の案が案A なら今の案） */
+  const planA = useMemo(() => {
+    if (!reassignInfo || !problem) return null;
+    const r = reassignInfo.insertRoutes ?? (reassignInfo.method === 'insert' ? aiPlan?.routes : undefined);
+    return r ? alignRoutes(problem, r) : null;
+  }, [reassignInfo, problem, aiPlan]);
+  /** 今の振り直し（元の案・欠勤・案A）のキー。案B の結果がこの振り直しのものか */
+  const annealKey = reassignInfo
+    ? JSON.stringify([date, reassignInfo.baseRoutes, reassignInfo.absenceIds, reassignInfo.now, planA])
+    : null;
+  const anneal = annealView && annealView.key === annealKey ? annealView : null;
+  /** 振り直しに使った欠勤の人（まだある欠勤） */
+  const absentStaff = useMemo(() => {
+    const ids = new Set(reassignInfo?.absenceIds ?? []);
+    return new Set(data.absences.filter((a) => ids.has(a.id) && a.date === date).map((a) => a.staffId));
+  }, [reassignInfo, data.absences, date]);
+  const annealDisabled = !reassignInfo
+    ? '振り直しの案がありません'
+    : absenceCancelled
+      ? '欠勤が取り消されているので作れません'
+      : !planA
+        ? '案A がありません'
+        : running && running !== 'anneal'
+          ? '計算中は押せません'
+          : null;
+  /** 案B を Worker で作る（進み具合・止める）。初期解は案A、始まった訪問は動かさない */
+  const startAnneal = () => {
+    if (!problem || !reassignInfo || !reassignBefore || !planA || running || annealDisabled) return;
+    setError(null);
+    const nowMin = reassignInfo.now ? hhmmToMinutes(reassignInfo.now) : null;
+    const before = { problem: reassignBefore, routes: reassignInfo.baseRoutes };
+    const weight = stayWeight;
+    const key = annealKey ?? '';
+    const prep = attempt(() =>
+      prepareAnneal(problem, before, planA, targetsOf(problem, before, [...absentStaff], nowMin), {
+        now: nowMin,
+        weight,
+      }),
+    );
+    if (!prep.value) {
+      setError(`案B を作れませんでした（${prep.error}）`);
+      return;
+    }
+    const x = prep.value;
+    run(
+      'anneal',
+      x.problem,
+      '少し動かす',
+      (res) => {
+        const done = attempt(() => finishAnneal(x, res.routes));
+        if (!done.value) {
+          setError(`案B を作れませんでした（${done.error}）`);
+          return;
+        }
+        setAnnealView({
+          key,
+          weight,
+          result: done.value,
+          seed: res.seed,
+          iterations: res.iterations,
+          stopped: res.stopped,
+        });
+        toast(
+          res.stopped
+            ? '途中までの案B を出しました。案A と比べて選んでください'
+            : '案B を作りました。案A と比べて選んでください',
+        );
+      },
+      undefined,
+      x.initial,
+    );
+  };
+  // 「登録して、少し動かしてよい（案B）も作る」：振り直しが今の案に出たら案B を始める
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 振り直しの案と問題が出そろったときに1回だけ
+  useEffect(() => {
+    if (pendingAnneal.current !== date || !reassignInfo || !problem || !planA || running) return;
+    pendingAnneal.current = null;
+    startAnneal();
+  }, [reassignInfo, problem, planA, running, date]);
+  /** 案B の記録の名前（記録の名前は60字まで） */
+  const reassignLabel = (method: 'insert' | 'anneal') => {
+    const names = [...absentStaff].map(shortName).join('・').slice(0, 36);
+    return method === 'anneal' ? `欠勤の振り直し・案B（${names}さん）` : `欠勤の振り直し（${names}さん）`;
+  };
+  /** 案A・案B のどちらかを今の案にする（記録にも残す） */
+  const chooseOption = (key: 'insert' | 'anneal') => {
+    if (!problem || !reassignInfo || running) return;
+    // 今の案が案A・案B のどちらとも違う（手直しした）ときだけ確認する
+    if (!annealOptions.some((o) => o.current) && !confirm('今の案の手直しを捨てて切り替えます。よろしいですか？'))
+      return;
+    const p = problem;
+    const createdAt = Date.now();
+    if (key === 'anneal') {
+      if (!anneal) return;
+      const b = anneal;
+      update((d) =>
+        chooseReassign(d, date, {
+          problem: p,
+          result: b.result,
+          method: 'anneal',
+          stayWeight: b.weight,
+          seed: b.seed,
+          iterations: b.iterations,
+          stopped: b.stopped,
+          label: reassignLabel('anneal'),
+          createdAt,
+        }),
+      );
+      toast('案B（少し動かした案）を今の案にしました');
+    } else {
+      if (!planA) return;
+      const routesA = planA;
+      const placed = new Set(Object.values(routesA).flat());
+      const pinsA: Record<string, string> = {};
+      for (const [sid, ids] of Object.entries(routesA)) for (const id of ids) pinsA[id] = sid;
+      const resultA: ReassignResult = {
+        routes: routesA,
+        placed: [],
+        unplaced: [],
+        unassigned: p.visits.map((v) => v.id).filter((id) => !placed.has(id)),
+        pins: pinsA,
+      };
+      update((d) =>
+        chooseReassign(d, date, {
+          problem: p,
+          result: resultA,
+          method: 'insert',
+          seed: d.seed,
+          iterations: 0,
+          stopped: false,
+          label: reassignLabel('insert'),
+          createdAt,
+        }),
+      );
+      toast('案A（空き時間に入れた案）を今の案にしました');
+    }
+    sel.reset();
+  };
+  /** 案A・案B の比べる数（元の案との差・点数の基準の物差しの点数） */
+  const annealOptions: ReassignOption[] = useMemo(() => {
+    if (!problem || !reassignInfo || !reassignBefore) return [];
+    const before = { problem: reassignBefore, routes: reassignInfo.baseRoutes };
+    const cur = JSON.stringify(alignRoutes(problem, aiPlan?.routes ?? {}));
+    const option = (key: ReassignOption['key'], title: string, routes: Record<string, string[]>): ReassignOption => ({
+      key,
+      title,
+      diff: attempt(() => reassignDiff(before, { problem, routes })).value,
+      hundred:
+        scoreProblem && scoreScale
+          ? (attempt(() => toHundred(score(scoreProblem, routes).total, scoreScale)).value ?? null)
+          : null,
+      current: JSON.stringify(alignRoutes(problem, routes)) === cur,
+    });
+    const out: ReassignOption[] = [];
+    if (planA) out.push(option('insert', '案A（空き時間に入れる）', planA));
+    if (anneal) out.push(option('anneal', `案B（変更を減らす ${anneal.weight}）`, anneal.result.routes));
+    // 作った案B が無い（再読込・画面を移った）が今の案が案B なら、今の案を案B として並べる（案A に戻せる）
+    else if (reassignInfo.method === 'anneal' && aiPlan)
+      out.push(option('anneal', `案B（変更を減らす ${reassignInfo.stayWeight ?? ''}）`, aiPlan.routes));
+    return out;
+  }, [problem, reassignInfo, reassignBefore, aiPlan, planA, anneal, scoreProblem, scoreScale]);
+  /** 連絡の一覧（元の案と今の案の差。確定前でも見られる） */
+  const contacts = useMemo(() => {
+    if (!reassignInfo || !problem || !reassignBefore) return null;
+    return (
+      attempt(() =>
+        contactsOf(
+          { problem: reassignBefore, routes: reassignInfo.baseRoutes },
+          { problem, routes: aiPlan?.routes ?? {} },
+        ),
+      ).value ?? null
+    );
+  }, [reassignInfo, reassignBefore, problem, aiPlan]);
+  const contactWords = {
+    day: dayWordOf(date, jstDate(Date.now())),
+    staffWord: terms.staff,
+    staffName,
+    clientName: (id: string) => clientById.get(id)?.displayName ?? '（不明）',
+    clientAddress: (id: string) => clientById.get(id)?.place.address ?? '',
   };
   const saveAbsenceOnly = (absence: Absence) => {
     update((d) => saveAbsence(d, absence));
@@ -1362,7 +1591,28 @@ export default function PlanPage() {
                 running={!!running}
                 onRevert={revertToBase}
                 onCompare={() => navigate('/compare', { state: { a: 'before', b: 'current' } })}
-              />
+                extraActions={
+                  <ContactButton
+                    count={(contacts?.staff.length ?? 0) + (contacts?.staffChanged.length ?? 0)}
+                    onOpen={() => setContactsOpen(true)}
+                  />
+                }
+              >
+                <AnnealBox
+                  weight={stayWeight}
+                  onWeight={setStayWeight}
+                  recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
+                  disabledWhy={annealDisabled}
+                  running={running === 'anneal'}
+                  progress={running === 'anneal' ? progress : null}
+                  onStart={startAnneal}
+                  onStop={stop}
+                  options={annealOptions}
+                  absentStaff={absentStaff}
+                  onChoose={chooseOption}
+                  stopped={!!anneal?.stopped}
+                />
+              </ReassignBar>
             )}
             <div className="card stack">
               <SectionTitle
@@ -1637,6 +1887,17 @@ export default function PlanPage() {
         )}
       </div>
 
+      {contactsOpen && contacts && (
+        <ContactPanel
+          list={contacts}
+          words={contactWords}
+          terms={terms}
+          onCopied={(ok, what) =>
+            toast(ok ? `${what}をコピーしました` : 'コピーできませんでした。文を選んでコピーしてください')
+          }
+          onClose={() => setContactsOpen(false)}
+        />
+      )}
       {absenceFor &&
         (() => {
           const st = staffById.get(absenceFor);

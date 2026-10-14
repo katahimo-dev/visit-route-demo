@@ -24,8 +24,15 @@ const routesSchema = z.record(z.string(), z.array(z.string()));
  * baseRoutes は振り直す前の元の案（差の基準・「元の案に戻す」・比較の「欠勤前」）
  */
 export const reassignInfoSchema = z.object({
-  /** 1回目は案A「空き時間に入れるだけ」だけ。2回目に 'anneal'（案B）を足す */
-  method: z.literal('insert'),
+  /** 今の案（記録）の振り直し方：'insert'＝案A「空き時間に入れるだけ」、'anneal'＝案B「少し動かしてよい」（2回目。PRD D34） */
+  method: z.enum(['insert', 'anneal']),
+  /** 案B の「変更を減らす」の重み（0〜5、0.5刻み）。案A には無い */
+  stayWeight: z.number().min(0).max(5).optional(),
+  /**
+   * 案A の結果（振り直した直後の列）。案B の初期解・差の欄の「案A」・「案A を今の案にする」に使う。
+   * 2回目より前の古いデータには無い（案A のときは今の案を案A とみなす）
+   */
+  insertRoutes: routesSchema.optional(),
   /** 元の案：確定した割当（manualPlans[date]）か今の案（aiPlans[date].routes） */
   from: z.enum(['confirmed', 'plan']),
   /** 元の案（staffId → 訪問IDの列） */

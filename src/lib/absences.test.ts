@@ -10,6 +10,7 @@ import {
   absenceText,
   applyReassign,
   baseOf,
+  chooseReassign,
   defaultNow,
   removeAbsence,
   revertReassign,
@@ -235,5 +236,63 @@ describe('振り直した結果を書く・元の案に戻す', () => {
     });
     expect(d6.aiPlans[DATE]!.reassign).toMatchObject({ from: 'confirmed', absenceIds: ['a1', 'a2'] });
     expect(d6.aiPlans[DATE]!.reassign!.baseRoutes).toEqual({ s1: ['v3'], s2: ['v1', 'v2'] });
+  });
+  it('案A の結果を insertRoutes に残す（続けて振り直すと新しい案A に置き換え、案B の重みは外す）', () => {
+    const { d2, result } = setup();
+    expect(d2.aiPlans[DATE]!.reassign!.insertRoutes).toEqual(result.routes);
+  });
+  it('chooseReassign：案B を今の案にすると method・stayWeight が変わり、元の案の情報は引き継ぐ。案A に戻せる。記録は別', () => {
+    const { d2, p, result } = setup();
+    const infoA = d2.aiPlans[DATE]!.reassign!;
+    const routesB = { s1: [], s2: ['v1', 'v2', 'v3'] };
+    const pinsB = { v1: 's2', v2: 's2', v3: 's2' };
+    const b = { routes: routesB, placed: [], unplaced: [], unassigned: [], pins: pinsB };
+    const d3 = chooseReassign(d2, DATE, {
+      problem: p,
+      result: b,
+      method: 'anneal',
+      stayWeight: 4,
+      seed: 3,
+      iterations: 100,
+      stopped: false,
+      label: '欠勤の振り直し・案B（s1さん）',
+      createdAt: 8,
+    });
+    const x = d3.aiPlans[DATE]!;
+    expect(x.routes).toEqual(routesB);
+    expect(x.pins).toEqual(pinsB);
+    expect(x.reassign).toEqual({ ...infoA, method: 'anneal', stayWeight: 4 });
+    const runs = d3.aiRuns[DATE]!;
+    expect(runs).toHaveLength(2);
+    expect(runs[1]).toMatchObject({ label: '欠勤の振り直し・案B（s1さん）', seed: 3, iterations: 100 });
+    expect(x.runId).toBe(runs[1]!.id);
+    // 案A に戻す：同じ結果の記録（案A）を指し、記録は増えない
+    const d4 = chooseReassign(d3, DATE, {
+      problem: p,
+      result,
+      method: 'insert',
+      seed: d2.seed,
+      iterations: 0,
+      stopped: false,
+      label: '欠勤の振り直し（s1さん）',
+      createdAt: 9,
+    });
+    expect(d4.aiPlans[DATE]!.reassign).toEqual(infoA);
+    expect(d4.aiRuns[DATE]).toHaveLength(2);
+    expect(d4.aiPlans[DATE]!.runId).toBe(runs[0]!.id);
+    // 振り直しでない今の案ならそのまま
+    const plain = { ...d2, aiPlans: { [DATE]: { ...d2.aiPlans[DATE]!, reassign: undefined } } };
+    expect(
+      chooseReassign(plain, DATE, {
+        problem: p,
+        result: b,
+        method: 'anneal',
+        seed: 1,
+        iterations: 1,
+        stopped: false,
+        label: 'x',
+        createdAt: 1,
+      }),
+    ).toBe(plain);
   });
 });
