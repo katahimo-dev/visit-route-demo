@@ -106,3 +106,16 @@
   align-items: center;
   gap: 2px;
 }
+
+/* 稼働時間の画面：急な欠勤の印（ADR-0011） */
+.avail-absence {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: #fbe0dc;
+  color: #b3261e;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}

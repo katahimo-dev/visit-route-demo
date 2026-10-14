@@ -148,6 +148,7 @@ describe('書き出し → 読み込み', () => {
       names.client,
       '相性',
       '稼働時間',
+      '欠勤',
       '訪問',
     ]);
     expect(col(sheet(wb, '訪問'), d.org.terms.client)).toBe(3);
@@ -609,5 +610,47 @@ describe('レビューの指摘（ブック）', () => {
       }),
     );
     expect(msg).toContain('2行目と重なっています');
+  });
+});
+
+describe('欠勤のシート（ADR-0011）', () => {
+  const withAbsences = (d: DemoData): DemoData => ({
+    ...d,
+    absences: [
+      { id: 'a1', staffId: d.staff[0]!.id, date: '2026-10-14', from: '09:00', to: '12:00', note: '病院の付き添い' },
+      { id: 'a2', staffId: d.staff[1]!.id, date: '2026-10-14', from: null, to: null, note: '' },
+      { id: 'a3', staffId: d.staff[2]!.id, date: '2026-10-15', from: '15:00', to: null, note: '早退' },
+    ],
+  });
+  it('欠勤が 書き出し → 読み込み で同じに戻る', async () => {
+    const d = withAbsences(base());
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.absences).toEqual(d.absences);
+    expect(r).toEqual(withoutPlans(d));
+  });
+  it('「欠勤」シートが無いブックは欠勤なし', async () => {
+    const d = withAbsences(base());
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        wb.removeWorksheet(sheet(wb, '欠勤').id);
+      }),
+    );
+    expect(r.absences).toEqual([]);
+  });
+  it('同じ人・同じ日の2行、30分単位でない時刻、終了 ≤ 開始、いない人の名前はシート名と行番号付きで止める', async () => {
+    const d = withAbsences(base());
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, '欠勤');
+        ws.addRow(['', d.staff[0]!.name, '2026-10-14', '13:00', '', '']);
+        ws.addRow(['', d.staff[3]!.name, '2026-10-14', '10:15', '', '']);
+        ws.addRow(['', d.staff[4]!.name, '2026-10-14', '12:00', '10:00', '']);
+        ws.addRow(['', 'いない人', '2026-10-14', '', '', '']);
+      }),
+    );
+    expect(msg).toContain('シート『欠勤』の 5行目・『日付』：同じスタッフ・同じ日の行が 2行目にもあります');
+    expect(msg).toContain('シート『欠勤』の 6行目・『開始』：時間は30分単位で書いてください');
+    expect(msg).toContain('シート『欠勤』の 7行目・『終了』：終了は開始より後にしてください');
+    expect(msg).toContain('シート『欠勤』の 8行目・『スタッフ』：「いない人」というスタッフは');
   });
 });

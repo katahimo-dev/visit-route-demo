@@ -243,3 +243,33 @@ describe('scheduleRoute', () => {
     expect(feasible).toBeGreaterThan(10);
   });
 });
+
+describe('compile：欠勤（ADR-0011）', () => {
+  const ab = (from: string | null, to: string | null, staffId = 's1') => ({
+    id: `a-${staffId}`,
+    staffId,
+    date: DATE,
+    from,
+    to,
+    note: '',
+  });
+  it('欠勤のある人の slots は欠勤を差し引いたもの。重なる訪問は可にならず理由が「欠勤の時間と重なる」', () => {
+    const p = compile(twoStaff({ absences: [ab('08:00', '12:00')] }), DATE);
+    expect(p.staff[0]!.slots).toEqual([{ start: 12 * 60, end: 18 * 60 }]);
+    expect(p.staff[1]!.slots).toEqual([{ start: 8 * 60, end: 18 * 60 }]);
+    expect(p.allowed[0]).toEqual([false, true]);
+    expect(p.reasons[0]![0]![0]).toEqual({ ruleId: 'slot', label: '欠勤の時間と重なる', points: Infinity });
+  });
+  it('終日は「欠勤（終日）」', () => {
+    const p = compile(twoStaff({ absences: [ab(null, null)] }), DATE);
+    expect(p.staff[0]!.slots).toEqual([]);
+    expect(p.reasons[0]![0]![0]).toEqual({ ruleId: 'slot', label: '欠勤（終日）', points: Infinity });
+  });
+  it('欠勤と重ならない訪問は今までどおり。別の日・別の人の欠勤では問題が変わらない', () => {
+    const p = compile(twoStaff({ absences: [ab('14:00', null)] }), DATE);
+    expect(p.allowed[0]).toEqual([true, true]);
+    const plain = compile(twoStaff(), DATE);
+    const other = compile(twoStaff({ absences: [{ ...ab(null, null), date: '2026-10-13' }] }), DATE);
+    expect(other).toEqual(plain);
+  });
+});

@@ -27,10 +27,11 @@ import {
   Square,
   TriangleAlert,
   Undo2,
+  UserRoundX,
   Users,
 } from 'lucide-react';
 import { type DragEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
 import { ClientName } from '../components/parts';
@@ -39,22 +40,34 @@ import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
-import type { Client, Visit } from '../contracts/documents';
+import type { Absence, Client, Visit } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
 import { slotsText } from '../domain/availability';
 import { type Cols, NONE, timeOrder, windowText } from '../domain/scheduleModel';
-import { addDays } from '../domain/time';
+import { addDays, hhmmToMinutes, jstDate, jstHhmm } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
+import {
+  absencesOn,
+  absenceText,
+  applyReassign,
+  baseOf,
+  defaultNow,
+  removeAbsence,
+  revertReassign,
+  saveAbsence,
+} from '../lib/absences';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
+import { placeVisit, reassign, reassignDiff, targetsOf } from '../reassign';
 import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
+import { AbsencePanel, CandidateBox, ReassignBar } from './absenceParts';
 import {
   AchievementList,
   achievementSummary,
@@ -150,6 +163,9 @@ export default function PlanPage() {
   const { focusStaff, focusOn } = sel;
   /** 開いている訪問の入力欄（null：閉じている、'new'：足す、それ以外：直す訪問の ID） */
   const [editing, setEditing] = useState<string | null>(null);
+  /** 急な欠勤の欄を開いている人（ADR-0011。null：閉じている） */
+  const [absenceFor, setAbsenceFor] = useState<string | null>(null);
+  const navigate = useNavigate();
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
   const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -192,6 +208,7 @@ export default function PlanPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた入力欄を閉じ、前の日のエラーを消す
   useEffect(() => {
     setEditing(null);
+    setAbsenceFor(null);
     setError(null);
   }, [date]);
   /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
@@ -692,6 +709,124 @@ export default function PlanPage() {
       : 'diff';
   }, [aiPlan, problem, data.manualPlans, date]);
 
+  // ---- 急な欠勤と振り直し（ADR-0011。PRD D26〜D32）----
+  /** 今の案が振り直しの結果なら、その元の案の情報 */
+  const reassignInfo = aiPlan?.reassign ?? null;
+  /**
+   * 元の案との差：before＝元の案を、振り直しに使った欠勤を除いたデータで compile した問題で、after＝今の案をいまの問題で。
+   * 今の案を手直し・組み直ししても出し直す
+   */
+  const rDiff = useMemo(() => {
+    if (!reassignInfo || !problem) return null;
+    const used = new Set(reassignInfo.absenceIds);
+    const before = attempt(() =>
+      compile({ ...compileInput, absences: compileInput.absences.filter((a) => !used.has(a.id)) }, date),
+    ).value;
+    if (!before) return null;
+    return (
+      attempt(() =>
+        reassignDiff({ problem: before, routes: reassignInfo.baseRoutes }, { problem, routes: aiPlan?.routes ?? {} }),
+      ).value ?? null
+    );
+  }, [reassignInfo, problem, compileInput, date, aiPlan]);
+  /** 代行（訪問ID → 元の担当）・開始の変化（訪問ID → 分）・変わる人・地図で太くする訪問 */
+  const reassignMarks = useMemo(() => {
+    const substitute = new Map<string, string>();
+    for (const x of rDiff?.moved ?? []) if (x.from !== null && x.to !== null) substitute.set(x.visitId, x.from);
+    return {
+      substitute,
+      shifted: new Map((rDiff?.shifted ?? []).map((x) => [x.visitId, x.minutes])),
+      changed: new Set(rDiff?.changedStaff ?? []),
+      emphasize: new Set(substitute.keys()),
+      unplaced: new Set(rDiff?.unplaced ?? []),
+    };
+  }, [rDiff]);
+  /** 振り直しに使った欠勤が取り消されている */
+  const absenceCancelled = !!reassignInfo?.absenceIds.some((id) => !data.absences.some((a) => a.id === id));
+  /** 名前を記録の名前に入れる長さ（記録の名前は60字まで） */
+  const shortName = (id: string) => staffName(id).slice(0, 40);
+
+  /** 「登録して振り直す」：欠勤を足したデータで compile し、元の案から振り直して今の案にする（1回の update で書く） */
+  const registerAndReassign = (absence: Absence, now: string | null) => {
+    if (running) return;
+    setError(null);
+    const d1 = saveAbsence(data, absence);
+    const built = attempt(() => compile(d1, date));
+    const p = built.value;
+    if (!p) {
+      setError(`振り直せませんでした（${built.error}）`);
+      return;
+    }
+    const base = baseOf(d1, date, p);
+    if (!base) {
+      setError('先にAI案を作ってください（欠勤だけは登録できます）');
+      return;
+    }
+    if (
+      base.from === 'confirmed' &&
+      confirmState === 'diff' &&
+      !confirm('今の案の未確定の変更を捨てて、確定した割当を元に振り直します。よろしいですか？')
+    )
+      return;
+    const used = absencesOn(d1, date);
+    const absent = [...new Set(used.map((a) => a.staffId))];
+    const nowMin = now === null ? null : hhmmToMinutes(now);
+    const result = attempt(() => reassign(p, base.routes, targetsOf(p, base.routes, absent, nowMin), { now: nowMin }));
+    if (!result.value) {
+      setError(`振り直せませんでした（${result.error}）`);
+      return;
+    }
+    const r = result.value;
+    const createdAt = Date.now();
+    update((d) =>
+      applyReassign(saveAbsence(d, absence), date, {
+        problem: p,
+        result: r,
+        base,
+        absenceIds: used.map((a) => a.id),
+        now,
+        label: `欠勤の振り直し（${shortName(absence.staffId)}さん）`,
+        createdAt,
+      }),
+    );
+    setAbsenceFor(null);
+    sel.reset();
+    toast(`振り直しました（振り直し ${r.placed.length}件・入らない ${r.unplaced.length}件）`);
+  };
+  const saveAbsenceOnly = (absence: Absence) => {
+    update((d) => saveAbsence(d, absence));
+    setAbsenceFor(null);
+    toast('欠勤を登録しました（今の案はそのままです）');
+  };
+  const cancelAbsence = (absence: Absence) => {
+    if (!confirm(`${staffName(absence.staffId)}さんの欠勤を取り消しますか？（今の案はそのままです）`)) return;
+    update((d) => removeAbsence(d, absence.id));
+    setAbsenceFor(null);
+    toast(reassignInfo ? '欠勤を取り消しました。案を戻すには「元の案に戻す」を押してください' : '欠勤を取り消しました');
+  };
+  const revertToBase = () => {
+    if (!problem || !reassignInfo) return;
+    if (!confirm('振り直す前の案（担当・固定）に戻します。よろしいですか？')) return;
+    const p = problem;
+    update((d) => revertReassign(d, date, p));
+    sel.reset();
+    toast('元の案に戻しました');
+  };
+  /** 入らない訪問を候補の人に入れる（固定。時刻は変えない。間に合わなければ必須の違反の赤い枠） */
+  const placeCandidate = (visitId: string, staffId: string) => {
+    if (!problem || !aiPlan || running) return;
+    const p = problem;
+    const nowMin = reassignInfo?.now ? hhmmToMinutes(reassignInfo.now) : null;
+    update((d) =>
+      patchPlan(d, date, p, (plan) => ({
+        ...withRoutes(p, plan, placeVisit(p, plan.routes, visitId, staffId, { now: nowMin })),
+        pins: { ...plan.pins, [visitId]: staffId },
+      })),
+    );
+    sel.follow(visitId, staffId);
+    toast(`${staffName(staffId)}さんに入れました（固定）`);
+  };
+
   // ---- 訪問の取消・前の同じ曜日からコピー ----
   const cancelVisit = (v: Visit) => {
     if (!confirm('この訪問を取り消しますか？')) return;
@@ -721,7 +856,14 @@ export default function PlanPage() {
 
   // ---- 列：その日に働く人（と、今の案で訪問がある人）----
   const columns = useMemo(() => {
-    const working = new Set(problem?.staff.filter((s) => s.slots.length > 0).map((s) => s.id) ?? []);
+    // 欠勤で稼働時間帯が無くなった人（もともと働く日）も列を出す（欠勤の印・「欠勤を直す」。ADR-0011）
+    const absentToday = (id: string) => {
+      const a = slotsOf.get(id);
+      return !!a?.absence && a.baseSlots.length > 0;
+    };
+    const working = new Set(
+      problem?.staff.filter((s) => s.slots.length > 0 || absentToday(s.id)).map((s) => s.id) ?? [],
+    );
     const withVisits = new Set(
       Object.entries(routes)
         .filter(([, ids]) => ids.length > 0)
@@ -729,7 +871,7 @@ export default function PlanPage() {
     );
     const order = staff.map((s) => s.id).filter((id) => working.has(id) || withVisits.has(id));
     return [...order, ...[...withVisits].filter((id) => !order.includes(id) && id !== NONE)];
-  }, [problem, routes, staff]);
+  }, [problem, routes, staff, slotsOf]);
   const unassigned = aiPlan?.unassigned ?? [];
   const hardOf = useMemo(() => {
     const h = new Map<string, string[]>();
@@ -784,9 +926,22 @@ export default function PlanPage() {
             focusStaff,
             picked: sel.picked,
             focusLeg: sel.focusLeg,
+            emphasize: reassignMarks.emphasize,
           })
         : { points: [], lines: [] },
-    [aiPlan, columns, routes, staffById, colorOfStaff, visitById, clientById, focusStaff, sel.picked, sel.focusLeg],
+    [
+      aiPlan,
+      columns,
+      routes,
+      staffById,
+      colorOfStaff,
+      visitById,
+      clientById,
+      focusStaff,
+      sel.picked,
+      sel.focusLeg,
+      reassignMarks,
+    ],
   );
 
   /** 列の最後の「自宅まで N分」（押すと地図でその区間を強調。もう一度押すと外す。自宅の位置が無い人は出さない） */
@@ -808,6 +963,8 @@ export default function PlanPage() {
     const hard = hardOf.get(id);
     const ownerId = owner.get(id) ?? null;
     const x = { id, set: PLAN_SET };
+    const subFrom = reassignMarks.substitute.get(id);
+    const shift = reassignMarks.shifted.get(id);
     return (
       <VisitCard
         key={id}
@@ -825,8 +982,19 @@ export default function PlanPage() {
         dragging={dragging === id}
         detail={<ReasonBox explain={explained.get(id)} />}
       >
-        {(pin || hard) && (
+        {(pin || hard || subFrom || shift) && (
           <div className="row visit-tags">
+            {subFrom && (
+              <span className="chip chip-move" title={`元の担当：${staffName(subFrom)}`} data-testid="substitute">
+                代行
+                <span className="sr-only">（元の担当：{staffName(subFrom)}さん）</span>
+              </span>
+            )}
+            {shift !== undefined && (
+              <span className="chip chip-warn" title="振り直す前の開始時刻からの変化" data-testid="shifted">
+                {shift > 0 ? `+${shift}分` : `−${-shift}分`}
+              </span>
+            )}
             {pin && (
               <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
                 <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
@@ -1166,6 +1334,16 @@ export default function PlanPage() {
           </div>
         ) : (
           <>
+            {reassignInfo && (
+              <ReassignBar
+                info={reassignInfo}
+                diff={rDiff}
+                cancelled={absenceCancelled}
+                running={!!running}
+                onRevert={revertToBase}
+                onCompare={() => navigate('/compare', { state: { a: 'before', b: 'current' } })}
+              />
+            )}
             <div className="card stack">
               <SectionTitle
                 icon={Gauge}
@@ -1269,6 +1447,18 @@ export default function PlanPage() {
                               {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
                             </span>
                           ))}
+                          {problem && reassignMarks.unplaced.has(id) && (
+                            <CandidateBox
+                              problem={problem}
+                              routes={routes}
+                              visitId={id}
+                              now={reassignInfo?.now ?? null}
+                              staffName={staffName}
+                              visit={visitById.get(id)}
+                              running={!!running}
+                              onPlace={(sid) => placeCandidate(id, sid)}
+                            />
+                          )}
                         </div>
                       );
                     })}
@@ -1286,6 +1476,7 @@ export default function PlanPage() {
                         'route-col',
                         dropTo === sid ? 'is-drop' : '',
                         notAllowed ? 'is-red' : '',
+                        rDiff && !reassignMarks.changed.has(sid) ? 'is-unchanged' : '',
                         focusStaff === sid ? 'is-focus' : '',
                         focusStaff && focusStaff !== sid ? 'is-dim-col' : '',
                       ].join(' ')}
@@ -1319,10 +1510,30 @@ export default function PlanPage() {
                             <Clock size={13} aria-hidden="true" />
                             {slotsText(avail?.slots ?? [])}
                           </span>
-                        ) : (
+                        ) : avail?.absence ? null : (
                           <span className="chip chip-off">{s && !s.active ? '休止中' : '休み'}</span>
                         )}
+                        {avail?.absence && (
+                          <span
+                            className="chip chip-red"
+                            title={avail.absence.note || undefined}
+                            data-testid="absence-mark"
+                          >
+                            <UserRoundX size={12} aria-hidden="true" />
+                            {absenceText(avail.absence, avail.baseSlots)}
+                          </span>
+                        )}
                         {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
+                        {(avail?.baseSlots.length ?? 0) > 0 && (
+                          <button
+                            type="button"
+                            className="link-btn absence-btn"
+                            onClick={() => setAbsenceFor(sid)}
+                            aria-label={`${staffName(sid)}さんの${avail?.absence ? '欠勤を直す' : '急な欠勤'}`}
+                          >
+                            {avail?.absence ? '欠勤を直す' : '急な欠勤'}
+                          </button>
+                        )}
                       </div>
                       {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
                       {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
@@ -1406,6 +1617,29 @@ export default function PlanPage() {
         )}
       </div>
 
+      {absenceFor &&
+        (() => {
+          const st = staffById.get(absenceFor);
+          const av = slotsOf.get(absenceFor);
+          if (!st || !av) return null;
+          return (
+            <AbsencePanel
+              key={`${absenceFor}-${date}`}
+              staff={st}
+              date={date}
+              baseSlots={av.baseSlots}
+              existing={av.absence}
+              initialNow={defaultNow(date, jstDate(Date.now()), jstHhmm(Date.now()))}
+              data={data}
+              visitLabel={visitLabel}
+              canReassign={running ? { ok: false, why: '計算中は押せません' } : { ok: true }}
+              onReassign={registerAndReassign}
+              onSaveOnly={saveAbsenceOnly}
+              onRemove={cancelAbsence}
+              onClose={() => setAbsenceFor(null)}
+            />
+          );
+        })()}
       <WeightPanel
         running={!!running}
         onRecalc={() => create()}

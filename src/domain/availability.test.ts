@@ -9,6 +9,7 @@ import {
   slotsText,
   toHalfHours,
   withinSlots,
+  withoutAbsences,
 } from './availability';
 
 const base = { workDays: [1, 2, 3, 4, 5], shiftStart: '08:00', shiftEnd: '18:00' };
@@ -100,5 +101,38 @@ describe('withinSlots・shiftOf・slotsText', () => {
   it('表示', () => {
     expect(slotsText(slots)).toBe('9:00〜12:00・14:00〜18:00');
     expect(slotsText([])).toBe('休み');
+  });
+});
+
+describe('withoutAbsences（欠勤を差し引く。デモ独自。ADR-0011）', () => {
+  const day = [{ start: '09:00', end: '18:00' }];
+  const ab = (from: string | null, to: string | null) => ({ from, to });
+  it('終日（開始・終了とも無し）で空', () => {
+    expect(withoutAbsences(day, [ab(null, null)])).toEqual([]);
+  });
+  it('午前だけ・早退・遅刻・昼の1時間', () => {
+    expect(withoutAbsences(day, [ab('09:00', '12:00')])).toEqual([{ start: '12:00', end: '18:00' }]);
+    expect(withoutAbsences(day, [ab('15:00', null)])).toEqual([{ start: '09:00', end: '15:00' }]);
+    expect(withoutAbsences(day, [ab(null, '11:00')])).toEqual([{ start: '11:00', end: '18:00' }]);
+    expect(withoutAbsences(day, [ab('12:00', '13:00')])).toEqual([
+      { start: '09:00', end: '12:00' },
+      { start: '13:00', end: '18:00' },
+    ]);
+  });
+  it('時間帯の外の欠勤では変わらない', () => {
+    expect(withoutAbsences(day, [ab('18:00', '20:00')])).toEqual(day);
+    expect(withoutAbsences(day, [ab('06:00', '09:00')])).toEqual(day);
+    expect(withoutAbsences(day, [])).toEqual(day);
+  });
+  it('複数の時間帯・複数の欠勤でも開始の順・重なりなし', () => {
+    const slots = [
+      { start: '13:00', end: '18:00' },
+      { start: '08:00', end: '12:00' },
+    ];
+    expect(withoutAbsences(slots, [ab('11:00', '14:00'), ab('16:00', '16:30')])).toEqual([
+      { start: '08:00', end: '11:00' },
+      { start: '14:00', end: '16:00' },
+      { start: '16:30', end: '18:00' },
+    ]);
   });
 });

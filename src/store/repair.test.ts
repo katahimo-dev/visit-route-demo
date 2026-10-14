@@ -165,3 +165,95 @@ describe('repair（契約は通るが中身が食い違うデータ）', () => {
     expect((r2 as DemoData).manualPlans[DAY]).toEqual({});
   });
 });
+
+describe('欠勤と振り直し（ADR-0011）', () => {
+  const ab = (id: string, staffId: string, date: string, from: string | null = null, to: string | null = null) => ({
+    id,
+    staffId,
+    date,
+    from,
+    to,
+    note: '',
+  });
+  it('absences の無い古いデータは [] で読める', () => {
+    const d = base();
+    const { absences: _a, ...old } = JSON.parse(JSON.stringify(d));
+    const r = migrate(old);
+    expect(isImportError(r)).toBe(false);
+    expect((r as DemoData).absences).toEqual([]);
+  });
+  it('いない人の欠勤は消え、ID の重複は最初の1件、同じ人・同じ日は最後の1件', () => {
+    const d = base();
+    const s = d.staff[0]!.id;
+    const r = repair({
+      ...d,
+      absences: [
+        ab('a1', s, DAY),
+        ab('a2', 'ghost', DAY),
+        ab('a1', s, '2026-10-13', '09:00', '12:00'),
+        ab('a3', s, DAY, '12:00', null),
+      ],
+    });
+    expect(r.absences).toEqual([ab('a3', s, DAY, '12:00', null)]);
+  });
+  it('今の案・記録の reassign の baseRoutes・basePins は routes・pins と同じ規則で直す（absenceIds はそのまま）', () => {
+    const d = base();
+    const [a = '', b = ''] = visitsOn(d, DAY);
+    const info = {
+      method: 'insert' as const,
+      from: 'plan' as const,
+      baseRoutes: { s1: [a, 'v-none', a], ghost: [b] },
+      basePins: { [a]: 's1', [b]: 'ghost' },
+      absenceIds: ['消えた欠勤'],
+      now: '10:30',
+    };
+    const p = { ...plan({ s1: [a] }, []), reassign: info };
+    const r = repair({ ...d, aiPlans: { [DAY]: p } });
+    expect(r.aiPlans[DAY]!.reassign).toEqual({ ...info, baseRoutes: { s1: [a] }, basePins: { [a]: 's1' } });
+  });
+  it('欠勤・AiPlan.reassign・AiRun.reassign を含むデータが 書き出し → 読み込み で同じに戻る', () => {
+    const d = base();
+    const [a = ''] = visitsOn(d, DAY);
+    const s = d.staff[0]!.id;
+    const info = {
+      method: 'insert' as const,
+      from: 'confirmed' as const,
+      baseRoutes: { [s]: [a] },
+      basePins: {},
+      absenceIds: ['a1'],
+      now: null,
+    };
+    const routes = { [s]: [a] };
+    const run = {
+      id: `${DAY}#1@1`,
+      no: 1,
+      date: DAY,
+      createdAt: 1,
+      label: '欠勤の振り直し',
+      presetId: null,
+      seed: 1,
+      iterations: 0,
+      rules: [],
+      pins: { [a]: s },
+      routes,
+      unassigned: [],
+      score: 0,
+      stopped: false,
+      reassign: info,
+    };
+    const x: DemoData = {
+      ...d,
+      absences: [ab('a1', s, DAY, '09:00', '12:00')],
+      aiPlans: { [DAY]: { ...plan(routes, [], { [a]: s }), reassign: info } },
+      aiRuns: { [DAY]: [run] },
+    };
+    expect(importJson(JSON.stringify(x))).toEqual(repair(x));
+    expect(importJson(JSON.stringify(x))).toEqual(x);
+  });
+  it('終了 ≤ 開始・30分単位でない欠勤は契約で止める', () => {
+    const d = base();
+    const s = d.staff[0]!.id;
+    expect(isImportError(migrate({ ...d, absences: [ab('a', s, DAY, '12:00', '09:00')] }))).toBe(true);
+    expect(isImportError(migrate({ ...d, absences: [ab('a', s, DAY, '10:15', null)] }))).toBe(true);
+  });
+});

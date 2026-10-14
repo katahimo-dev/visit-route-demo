@@ -8,8 +8,17 @@ import { useEffect, useRef } from 'react';
  */
 /** highlight は選んだ訪問先（大きく・輪で囲み・前に出す） */
 export type MapPoint = { lat: number; lng: number; label: string; color: string; highlight?: boolean };
-/** highlight は選んだ区間（太く・前に出す。dashed なら点線のまま）。区間があるときは、ほかの線を薄くする */
-export type MapLine = { points: { lat: number; lng: number }[]; color: string; dashed?: boolean; highlight?: boolean };
+/**
+ * highlight は選んだ区間（太く・前に出す。dashed なら点線のまま）。区間があるときは、ほかの線を薄くする。
+ * bold は目立たせたい区間（欠勤の振り直しで代行に入れた訪問へ来る区間など。ADR-0011）：太く描くだけで、ほかの線は薄くしない
+ */
+export type MapLine = {
+  points: { lat: number; lng: number }[];
+  color: string;
+  dashed?: boolean;
+  highlight?: boolean;
+  bold?: boolean;
+};
 
 export function RouteMap({
   points,
@@ -55,7 +64,8 @@ export function RouteMap({
     g.clearLayers();
     const hasHighlight = lines.some((l) => l.highlight);
     // 強調する区間は最後に描いて前に出す（下に白い縁を敷いて目立たせる）
-    for (const line of [...lines].sort((a, b) => Number(!!a.highlight) - Number(!!b.highlight))) {
+    const rank = (l: MapLine) => (l.highlight ? 2 : l.bold ? 1 : 0);
+    for (const line of [...lines].sort((a, b) => rank(a) - rank(b))) {
       if (line.points.length < 2) continue;
       const latlngs = line.points.map((p) => [p.lat, p.lng] as [number, number]);
       if (line.highlight) {
@@ -69,11 +79,12 @@ export function RouteMap({
         }).addTo(g);
         continue;
       }
+      if (line.bold) L.polyline(latlngs, { color: '#fff', weight: 10, opacity: hasHighlight ? 0.3 : 0.9 }).addTo(g);
       L.polyline(latlngs, {
         color: line.color,
-        weight: 4,
+        weight: line.bold ? 7 : 4,
         dashArray: line.dashed ? '8 8' : undefined,
-        opacity: hasHighlight ? 0.3 : 0.9,
+        opacity: hasHighlight ? 0.3 : line.bold ? 1 : 0.9,
       }).addTo(g);
     }
     for (const p of points) {

@@ -99,5 +99,30 @@ export function slotsText(slots: Slot[]): string {
   return slots.map((s) => `${t(s.start)}〜${t(s.end)}`).join('・');
 }
 
+/**
+ * 稼働時間帯から欠勤を差し引く（デモ独自。PoC本体には無い。ADR-0011）。
+ * from が null＝始業から、to が null＝終業まで（両方 null＝終日で空になる）。
+ * 結果は開始の順・重なりなし・長さ0の時間帯なし。保存しない値なので MAX_SLOTS の検査はしない
+ */
+export function withoutAbsences(slots: Slot[], absences: { from: string | null; to: string | null }[]): Slot[] {
+  let cur = normalizeSlots(slots).map((x) => ({ start: hhmmToMinutes(x.start), end: hhmmToMinutes(x.end) }));
+  for (const a of absences) {
+    const from = a.from === null ? Number.NEGATIVE_INFINITY : hhmmToMinutes(a.from);
+    const to = a.to === null ? Number.POSITIVE_INFINITY : hhmmToMinutes(a.to);
+    if (!(from < to)) continue;
+    const next: { start: number; end: number }[] = [];
+    for (const x of cur) {
+      if (to <= x.start || x.end <= from) {
+        next.push(x);
+        continue;
+      }
+      if (x.start < from) next.push({ start: x.start, end: from });
+      if (to < x.end) next.push({ start: to, end: x.end });
+    }
+    cur = next;
+  }
+  return cur.filter((x) => x.start < x.end).map((x) => ({ start: minutesToHhmm(x.start), end: minutesToHhmm(x.end) }));
+}
+
 /** 30分刻みの時刻の選択肢（00:00〜23:30） */
 export const HALF_HOURS: string[] = Array.from({ length: 48 }, (_, i) => minutesToHhmm(i * SLOT_STEP_MINUTES));

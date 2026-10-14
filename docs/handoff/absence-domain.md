@@ -10,7 +10,7 @@
 - 作業の順（契約だけでやりとりする）：① store（契約 `src/contracts/` を確定）→ ② domain → ③ matching → ④ reassign → ⑤ excel・pages（④と⑤は並行してよい。pages は reassign の型だけを先に使い、実装ができてから結合）。
 - 2回目の範囲（案B「少し動かしてよい」・連絡の一覧。PRD D34・D35）は作らない
 - 参照：`docs/adr/0011-same-day-absence-reassign.md`、`docs/prd.md` D26〜D35、`docs/design.md` §4・§5・§8
-- design.md §8 の確認待ちの細部（1人1日1件・30分単位・午前/午後の境 12:00・始まっている訪問・候補で時刻を変えない・件数の上限を守る）は**設計書のとおり**に作る。それ以外で迷ったら推測せず `QUESTIONS:` で報告する
+- 欠勤の細部（1人1日1件・30分単位（半端は丸める）・午前/午後の境 12:00・始まっている訪問も動かさない・候補で時刻を変えない・件数の上限を守る・未確定の変更は確認してから捨てる）は 2026-10-13 に利用者が決定済み（design.md §8 の「決めたこと」）。**設計書のとおり**に作る。それ以外で迷ったら推測せず `QUESTIONS:` で報告する
 
 ## 1. 担当範囲
 - 責務：時刻（`hhmmToMinutes` など）、距離と移動の概算（`distanceMeters`・`estimateLeg`）、稼働時間帯（`availabilityOf`・`shiftOf`・`withinSlots`）、ルート評価（`evaluateRoute`）、手作業の割当の補助（PoC本体 `web/src/features/admin/schedule/model.ts` の `reconcile`・`assign`・`timesOf`・`warningsOf`）。

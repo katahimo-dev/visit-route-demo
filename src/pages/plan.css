@@ -544,3 +544,48 @@
   color: var(--sub);
   font-weight: 700;
 }
+
+/* 急な欠勤（ADR-0011）：列の見出しの下の小さなボタン・差の欄・変わらない人の列・受けられる人 */
+.absence-btn {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--sub);
+  cursor: pointer;
+}
+.absence-btn:hover,
+.absence-btn:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+.route-col.is-unchanged {
+  opacity: 0.55;
+}
+.route-col.is-unchanged:hover,
+.route-col.is-unchanged:focus-within {
+  opacity: 1;
+}
+.reassign-bar {
+  border-left: 4px solid var(--primary);
+}
+.candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.candidate-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}

@@ -86,6 +86,7 @@ export function makeData(over: Partial<DemoData> = {}): DemoData {
     compat: {},
     visits: [],
     availability: [],
+    absences: [],
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},

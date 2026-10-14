@@ -1,0 +1,196 @@
+// 予定の画面の急な欠勤（ADR-0011）：欠勤の保存・取り消し、振り直しの元の案、振り直した結果の書き込み・元に戻す。
+// どれも純粋関数（データを書き換えず新しい DemoData を返す。画面は update(fn) の中で呼ぶ）
+import type { AiPlan, DemoData, ReassignInfo } from '../contracts/data';
+import type { Absence } from '../contracts/documents';
+import type { Problem, SolveResult } from '../contracts/problem';
+import type { ReassignResult, Routes } from '../contracts/reassign';
+import { NONE } from '../domain/scheduleModel';
+import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
+import { score } from '../evaluate';
+import { own } from './common';
+import { addRun, findRun } from './runs';
+
+/** その日の欠勤（データの順） */
+export function absencesOn(data: Pick<DemoData, 'absences'>, date: string): Absence[] {
+  return data.absences.filter((a) => a.date === date);
+}
+
+/** 欠勤を保存する。同じ人・同じ日の欠勤（と同じ ID）はその1件を置き換える（1人1日1件） */
+export function saveAbsence(d: DemoData, absence: Absence): DemoData {
+  const at = d.absences.findIndex(
+    (a) => a.id === absence.id || (a.staffId === absence.staffId && a.date === absence.date),
+  );
+  if (at < 0) return { ...d, absences: [...d.absences, absence] };
+  const rest = d.absences.filter(
+    (a, i) => i === at || !(a.id === absence.id || (a.staffId === absence.staffId && a.date === absence.date)),
+  );
+  return { ...d, absences: rest.map((a) => (a === d.absences[at] ? absence : a)) };
+}
+
+/** 欠勤を取り消す。今の案は変えない（差の欄の「元の案に戻す」で戻す。D31） */
+export function removeAbsence(d: DemoData, id: string): DemoData {
+  return { ...d, absences: d.absences.filter((a) => a.id !== id) };
+}
+
+/**
+ * 欠勤の表示：「欠勤（終日）」「欠勤 9:00〜12:00」。開始・終了が空（始業から・終業まで）のときは、
+ * slots（その日の稼働時間帯）があれば始業・終業の時刻で、無ければ「欠勤 15:00〜」「欠勤 〜11:00」
+ */
+export function absenceText(a: Pick<Absence, 'from' | 'to'>, slots: { start: string; end: string }[] = []): string {
+  const t = (hhmm: string) => hhmm.replace(/^0(\d)/, '$1');
+  if (a.from === null && a.to === null) return '欠勤（終日）';
+  const from = a.from ?? slots[0]?.start ?? null;
+  const to = a.to ?? slots.at(-1)?.end ?? null;
+  return `欠勤 ${from === null ? '' : t(from)}〜${to === null ? '' : t(to)}`;
+}
+
+/** 欠勤の時間帯が正しくなければ理由（終了 ≤ 開始・30分単位でない） */
+export function absenceError(a: Pick<Absence, 'from' | 'to'>): string | null {
+  const half = (x: string | null) => x === null || /:[03]0$/.test(x);
+  if (!half(a.from) || !half(a.to)) return '時間は30分単位で選んでください';
+  if (a.from !== null && a.to !== null && a.from >= a.to) return '終了は開始より後にしてください';
+  return null;
+}
+
+/** 30分単位に丸める（半端な時刻は近いほうへ。2026-10-13 利用者が決定） */
+export function roundToHalfHour(hhmm: string): string {
+  const m = hhmmToMinutes(hhmm);
+  return minutesToHhmm(Math.min(23 * 60 + 30, Math.round(m / 30) * 30));
+}
+
+/** いまの時刻の初期値：当日は現在時刻を5分単位に切り捨て、それ以外の日は空（null＝考えない） */
+export function defaultNow(date: string, todayDate: string, nowHhmm: string): string | null {
+  if (date !== todayDate) return null;
+  const m = hhmmToMinutes(nowHhmm);
+  return minutesToHhmm(Math.floor(m / 5) * 5);
+}
+
+/** 振り直しの元の案 */
+export type ReassignBase = { routes: Routes; from: ReassignInfo['from']; pins: Record<string, string> };
+
+/**
+ * 振り直しの元の案（D28）：その日の確定した割当（manualPlans[date]。担当のいる訪問が1件以上）があればそれ、無ければ今の案。
+ * 確定した割当は、各担当の訪問を今の案の列の順に並べ、今の案のその人の列に無い訪問は開始（earliest）の順に、開始がより遅い訪問の前へ挟む。
+ * どちらも問題に無い訪問は除く。どちらも無ければ null
+ */
+export function baseOf(data: DemoData, date: string, problem: Problem): ReassignBase | null {
+  const inProblem = new Map(problem.visits.map((v, i) => [v.id, i]));
+  const saved = own(data.manualPlans, date);
+  const plan = own(data.aiPlans, date);
+  const hasSaved =
+    !!saved && Object.entries(saved).some(([k, ids]) => k !== NONE && ids.some((id) => inProblem.has(id)));
+  if (saved && hasSaved) {
+    const earliest = (id: string) => problem.visits[inProblem.get(id)!]!.earliest;
+    const routes: Routes = {};
+    for (const [k, ids] of Object.entries(saved)) {
+      if (k === NONE) continue;
+      const mine = new Set(ids.filter((id) => inProblem.has(id)));
+      // 今の案のその人の列にある訪問は今の案の順に
+      const list = (plan ? (own(plan.routes, k) ?? []) : []).filter((id) => mine.has(id));
+      const inList = new Set(list);
+      // 残りは開始（earliest）の順に、開始がより遅い訪問の前へ挟む
+      const rest = [...mine]
+        .filter((id) => !inList.has(id))
+        .sort((a, b) => earliest(a) - earliest(b) || inProblem.get(a)! - inProblem.get(b)!);
+      for (const id of rest) {
+        const at = list.findIndex((x) => earliest(x) > earliest(id));
+        if (at < 0) list.push(id);
+        else list.splice(at, 0, id);
+      }
+      routes[k] = list;
+    }
+    return { routes, from: 'confirmed', pins: {} };
+  }
+  if (!plan) return null;
+  const routes: Routes = {};
+  for (const [k, ids] of Object.entries(plan.routes)) routes[k] = ids.filter((id) => inProblem.has(id));
+  const pins = Object.fromEntries(Object.entries(plan.pins).filter(([id]) => inProblem.has(id)));
+  return { routes, from: 'plan', pins };
+}
+
+/**
+ * 振り直した結果を今の案にし、記録に「欠勤の振り直し」として1件足す（D30）。
+ * routes・generated＝結果、pins＝結果の pins（担当のいるすべての訪問）、reassign＝元の案の情報。
+ * problem は振り直しに使った問題（いまの条件。費用の score を付ける）。createdAt は呼ぶ側が渡す（純粋関数のまま）
+ */
+export function applyReassign(
+  d: DemoData,
+  date: string,
+  x: {
+    problem: Problem;
+    result: ReassignResult;
+    base: ReassignBase;
+    absenceIds: string[];
+    now: string | null;
+    label: string;
+    createdAt: number;
+  },
+): DemoData {
+  const info: ReassignInfo = {
+    method: 'insert',
+    from: x.base.from,
+    baseRoutes: x.base.routes,
+    basePins: x.base.pins,
+    absenceIds: x.absenceIds,
+    now: x.now,
+  };
+  const total = score(x.problem, x.result.routes).total;
+  const solved: SolveResult = {
+    routes: x.result.routes,
+    unassigned: x.result.unassigned,
+    score: total,
+    seed: d.seed,
+    iterations: 0,
+    stopped: false,
+  };
+  const run = {
+    rules: d.rules,
+    pins: x.result.pins,
+    result: solved,
+    createdAt: x.createdAt,
+    label: x.label,
+    reassign: info,
+  };
+  const added = addRun(d, date, run);
+  const plan: AiPlan = {
+    date,
+    createdAt: x.createdAt,
+    seed: d.seed,
+    iterations: 0,
+    routes: x.result.routes,
+    unassigned: x.result.unassigned,
+    score: total,
+    stopped: false,
+    rules: d.rules,
+    generated: { routes: x.result.routes, unassigned: x.result.unassigned, score: total },
+    pins: x.result.pins,
+    runId: findRun(added, date, run)?.id,
+    reassign: info,
+  };
+  return { ...added, aiPlans: { ...added.aiPlans, [date]: plan } };
+}
+
+/**
+ * 元の案に戻す（D31）：routes・generated・pins を元の案（baseRoutes・basePins）にし、reassign・runId を外す。
+ * 今の案が振り直しでなければそのまま
+ */
+export function revertReassign(d: DemoData, date: string, problem: Problem): DemoData {
+  const plan = own(d.aiPlans, date);
+  if (!plan?.reassign) return d;
+  const ids = new Set(problem.visits.map((v) => v.id));
+  const routes: Routes = {};
+  for (const [k, list] of Object.entries(plan.reassign.baseRoutes)) routes[k] = list.filter((id) => ids.has(id));
+  const placed = new Set(Object.values(routes).flat());
+  const unassigned = problem.visits.map((v) => v.id).filter((id) => !placed.has(id));
+  const total = score(problem, routes).total;
+  const { reassign: _r, runId: _id, ...rest } = plan;
+  const next: AiPlan = {
+    ...rest,
+    routes,
+    unassigned,
+    score: total,
+    generated: { routes, unassigned, score: total },
+    pins: plan.reassign.basePins,
+  };
+  return { ...d, aiPlans: { ...d.aiPlans, [date]: next } };
+}

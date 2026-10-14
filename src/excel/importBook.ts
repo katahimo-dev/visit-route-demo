@@ -2,7 +2,7 @@
 // 最後は store の migrate（形の検査と repair）を通した結果を返す。画面が store の replace で入れる
 import ExcelJS from 'exceljs';
 import type { DemoData, ImportError } from '../contracts/data';
-import type { Availability, Client, Org, Staff, Visit } from '../contracts/documents';
+import type { Absence, Availability, Client, Org, Staff, Visit } from '../contracts/documents';
 import {
   type Compat,
   type Condition,
@@ -19,6 +19,7 @@ import { slotsError } from '../domain/availability';
 import { MAX_OPTIONS, nameKey, newId, optionNameError } from '../lib/common';
 import { isImportError, migrate } from '../store';
 import {
+  absenceCols,
   availabilityCols,
   CLIENT_COLS,
   ITEM_COLS,
@@ -503,6 +504,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     ...base.staff.map((x) => x.id),
     ...base.clients.map((x) => x.id),
     ...base.visits.map((x) => x.id),
+    ...base.absences.map((x) => x.id),
   ]);
 
   // 項目
@@ -797,6 +799,49 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     }
   }
 
+  // 欠勤（ADR-0011）。シートが無い古いブックは欠勤なし
+  const absences: Absence[] = [];
+  const absWs = wb.getWorksheet(FIXED_SHEETS.absences);
+  if (absWs) {
+    const sheet = new Sheet(FIXED_SHEETS.absences, absWs, errors);
+    const bc = absenceCols(terms);
+    if (sheet.require(Object.values(bc))) {
+      const ids = new Map<string, number>();
+      const seen = new Map<string, number>();
+      const half = (r: Row, h: string): string | null | undefined => {
+        if (r.text(h) === '') return null;
+        const t = r.time(h, false);
+        if (t === null) return undefined;
+        if (!/:[03]0$/.test(t)) {
+          r.err(h, '時間は30分単位で書いてください');
+          return undefined;
+        }
+        return t;
+      };
+      for (const r of sheet.rows()) {
+        const id = idOf(r, bc.id, ids, 'a', used, 100);
+        const sid = staffId(r, bc.staff, true);
+        const date = r.date(bc.date);
+        const from = half(r, bc.from);
+        const to = half(r, bc.to);
+        const note = r.optional(bc.note, 100);
+        if (typeof from === 'string' && typeof to === 'string' && from >= to) {
+          r.err(bc.to, '終了は開始より後にしてください');
+          continue;
+        }
+        if (!sid || !date || from === undefined || to === undefined) continue;
+        const key = `${sid}\u0000${date}`;
+        const before = seen.get(key);
+        if (before !== undefined) {
+          r.err(bc.date, `同じ${terms.staff}・同じ日の行が ${before}行目にもあります（欠勤は1人1日1行にしてください）`);
+          continue;
+        }
+        seen.set(key, r.n);
+        absences.push({ id, staffId: sid, date, from, to, note });
+      }
+    }
+  }
+
   // 訪問
   const visits: Visit[] = [];
   {
@@ -857,6 +902,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     compat: Object.fromEntries(compat),
     visits,
     availability,
+    absences,
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},

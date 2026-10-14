@@ -50,6 +50,7 @@ export const FIXED_SHEETS = {
   presets: 'プリセット',
   compat: '相性',
   availability: '稼働時間',
+  absences: '欠勤',
   visits: '訪問',
 } as const;
 
