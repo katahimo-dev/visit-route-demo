@@ -4,6 +4,7 @@ import type { Problem, Reason } from '../contracts/problem';
 import type {
   AnnealCost,
   AnnealPrep,
+  AnnealSettled,
   CandidatesFor,
   ContactList,
   ContactsOf,
@@ -19,6 +20,7 @@ import type {
   ReassignResult,
   ReassignTarget,
   Routes,
+  SettleAnneal,
   StaffContact,
   TargetsOf,
 } from '../contracts/reassign';
@@ -28,8 +30,7 @@ import {
   STAY_WEIGHT_MAX,
   STAY_WEIGHT_MIN,
 } from '../contracts/reassign';
-import { DROP_POINTS } from '../contracts/rules';
-import { balanceOff, balancePoints, bestInsertion, routeCost, scheduleRoute } from '../matching';
+import { balanceOff, balancePoints, bestInsertion, dropPointsOf, routeCost, scheduleRoute } from '../matching';
 
 const INF = Number.POSITIVE_INFINITY;
 const EPS = 1e-6;
@@ -42,6 +43,7 @@ const TIME_RULES = new Set(['slot', 'time']);
 export type {
   AnnealOptions,
   AnnealPrep,
+  AnnealSettled,
   ContactList,
   ContactVisit,
   ReassignCandidate,
@@ -597,11 +599,18 @@ export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, opti
     });
     initial[st.id] = known.map((v) => problem.visits[v]!.id).filter((id) => !heldIds.has(id));
   });
+  // 落とさない訪問：案A（初期解）に入っていて、振り直す訪問でない訪問（始まって固定した訪問も含む。外した訪問は含まない）
+  const keep: boolean[] = new Array(V).fill(false);
+  for (const ids of Object.values(initial))
+    for (const id of ids) {
+      const v = vIndex.get(id);
+      if (v !== undefined && !targetIds.has(id)) keep[v] = true;
+    }
   const prepared: Problem = {
     ...problem,
     visits,
     allowed,
-    stay: { staff: stayStaff, start: stayStart, ...stayPointsOf(options.weight) },
+    stay: { staff: stayStaff, start: stayStart, keep, ...stayPointsOf(options.weight) },
   };
   return { problem: prepared, initial, source: problem, planA, held, targets: [...targetIds] };
 };
@@ -644,7 +653,10 @@ export const finishAnneal: FinishAnneal = (prep, solved) => {
   return { routes, placed, unplaced, unassigned, pins };
 };
 
-/** 焼きなましが最小にする値：列ごとの routeCost（stay の減点を含む）＋負担の均等＋入らない訪問×10000 */
+/**
+ * 焼きなましが最小にする値：列ごとの routeCost（stay の減点を含む）＋負担の均等＋入らない訪問の点
+ * （1件 DROP_POINTS。stay.keep の訪問は KEEP_DROP_POINTS。matching.dropPointsOf）
+ */
 export const annealCost: AnnealCost = (problem, routes) => {
   const { vIndex } = indexOf(problem);
   const counts = new Array<number>(problem.staff.length).fill(0);
@@ -656,7 +668,36 @@ export const annealCost: AnnealCost = (problem, routes) => {
     for (const v of known) placed.add(v);
     if (known.length > 0) total += routeCost(problem, s, known);
   });
-  return total + balancePoints(problem, counts) + (problem.visits.length - placed.size) * DROP_POINTS;
+  let dropped = 0;
+  for (let v = 0; v < problem.visits.length; v++) if (!placed.has(v)) dropped += dropPointsOf(problem, v);
+  return total + balancePoints(problem, counts) + dropped;
+};
+
+/**
+ * 案B の結果を確かめて、出す案を決める（保険。ADR-0011 追記）。次のどちらかなら案B として出さず、案A
+ * （finishAnneal(prep, prep.initial)）を返して理由を付ける：
+ * - keepDropped：案A に入っていた訪問（stay.keep）が1件でも案B に入っていない
+ * - notBetter：案A の費用（annealCost(prep.problem, prep.initial)）が有限でない（計算中にデータが変わり案A が strict で
+ *   回れない等で、solver が初期解の候補を捨てた）か、案B の費用が案A より高い
+ */
+export const settleAnneal: SettleAnneal = (prep, solved) => {
+  const p = prep.problem;
+  const keep = p.stay?.keep ?? [];
+  const inSolved = new Set<string>();
+  for (const st of p.staff) for (const id of colOf(solved, st.id)) inSolved.add(id);
+  const dropped = p.visits.filter((v, i) => keep[i] && !inSolved.has(v.id)).map((v) => v.id);
+  const fallback = (reason: 'keepDropped' | 'notBetter', visitIds: string[]): AnnealSettled => ({
+    ok: false,
+    reason,
+    visitIds,
+    result: finishAnneal(prep, prep.initial),
+  });
+  if (dropped.length > 0) return fallback('keepDropped', dropped);
+  const costA = annealCost(p, prep.initial);
+  // 足し算の順の違いの誤差だけは許す
+  if (!Number.isFinite(costA) || !(annealCost(p, solved) <= costA + EPS * Math.max(1, Math.abs(costA))))
+    return fallback('notBetter', []);
+  return { ok: true, reason: null, visitIds: [], result: finishAnneal(prep, solved) };
 };
 
 // ---- 2回目：連絡の一覧（PRD D35。ADR-0011 追記） ----

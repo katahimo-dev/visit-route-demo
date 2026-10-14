@@ -3,7 +3,10 @@
 import type { ContactList, ContactVisit, StaffContact } from '../contracts/reassign';
 import { minutesToHhmm, weekday } from '../domain/time';
 
-/** 連絡文に使う名前・呼び方 */
+/**
+ * 連絡文に使う名前・呼び方。敬称（訪問先の「様」・スタッフの「さん」）は固定で、呼び方（「スタッフ」など）が出る箇所は
+ * org.terms から渡す（呼び方を変えても文が崩れないよう、訪問先の呼び方は文に出さない）
+ */
 export type ContactWords = {
   /** 「本日」か「10月15日（木）」（dayWordOf） */
   day: string;
@@ -87,6 +90,12 @@ export function clientMessages(list: ContactList, w: ContactWords): { clientId: 
     clientId,
     text: [`${w.clientName(clientId)}様`, ...xs.map((x) => clientLine(x, w))].join('\n'),
   }));
+}
+
+/** 連絡が要る訪問の数（担当が変わる訪問＋時刻だけ変わる訪問。同じ訪問は1件）。一覧が無ければ 0 */
+export function contactCount(list: ContactList | null): number {
+  if (!list) return 0;
+  return new Set([...list.staffChanged, ...list.timeChanged].map((x) => x.visitId)).size;
 }
 
 /** 一覧すべての連絡文（スタッフ → 訪問先。間に空行） */

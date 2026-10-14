@@ -4,6 +4,7 @@ import { WeightSlider } from '../components/parts';
 import { Hint, SidePanel, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
 import type { ContactList, ContactVisit, ReassignDiff } from '../contracts/reassign';
+import { copyText } from '../lib/clipboard';
 import { deltaText, r0 } from '../lib/common';
 import { allContactsText, type ContactWords, clientMessages, clock, staffMessage } from '../lib/contacts';
 import { STAY_WEIGHT_DEFAULT } from '../reassign';
@@ -41,6 +42,7 @@ export function AnnealBox({
   absentStaff,
   onChoose,
   stopped,
+  note = null,
 }: {
   weight: number;
   onWeight: (w: number) => void;
@@ -58,6 +60,8 @@ export function AnnealBox({
   onChoose: (key: ReassignOption['key']) => void;
   /** 案B を途中で止めた */
   stopped: boolean;
+  /** 案B を案A のままにした理由（案A に入っていた訪問を外した・案A を超えられなかった）。無ければ null */
+  note?: string | null;
 }) {
   const rows: { label: string; value: (o: ReassignOption) => string }[] = [
     { label: '点数', value: (o) => (o.hundred === null ? '—' : `${o.hundred}点`) },
@@ -90,6 +94,7 @@ export function AnnealBox({
           担当が変わる1件＝移動{r0(weight * 10)}分ぶん・時刻のずれ10分＝移動{r0(weight * 2 * 10) / 10}分ぶん
           {weight === STAY_WEIGHT_DEFAULT ? '（既定）' : ''}
         </span>
+        <span className="sub">重みが大きいと案A のままになることがあります（変更の減点が、得より大きいとき）</span>
       </div>
       <div className="row" style={{ gap: 6 }}>
         {running ? (
@@ -115,12 +120,22 @@ export function AnnealBox({
       </div>
       {running && (
         <div className="stack" style={{ gap: 2 }} aria-live="polite">
-          <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} style={{ width: '100%' }} />
+          <progress
+            value={progress?.iteration ?? 0}
+            max={progress?.total ?? 1}
+            style={{ width: '100%' }}
+            aria-label="案B の進み具合"
+          />
           <span className="sub" data-testid="anneal-progress">
             案B を作っています：
             {progress ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回` : '準備中…'}
           </span>
         </div>
+      )}
+      {note && !running && (
+        <p className="sub" data-testid="anneal-note">
+          {note}
+        </p>
       )}
       {showTable && (
         <table className="anneal-table" data-testid="anneal-table">
@@ -165,30 +180,6 @@ export function AnnealBox({
       )}
     </div>
   );
-}
-
-/** クリップボードへコピーする（使えなければ textarea を選んでコピー）。できたら true */
-export async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.appendChild(area);
-    area.select();
-    let ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch {
-      ok = false;
-    }
-    area.remove();
-    return ok;
-  }
 }
 
 /** 連絡の一覧の1行の時刻（元 → 今） */
@@ -284,7 +275,9 @@ export function ContactPanel({
               )}
             </section>
             <section className="stack contact-section" style={{ gap: 4 }}>
-              <h3>時刻が変わる訪問（{list.timeChanged.length}件）</h3>
+              <h3>
+                時刻だけ変わる{terms.client}（{list.timeChanged.length}件）
+              </h3>
               {list.timeChanged.length === 0 ? (
                 <p className="sub">ありません</p>
               ) : (
@@ -342,7 +335,9 @@ export function ContactPanel({
               </ul>
             </section>
             <section className="stack contact-section" style={{ gap: 6 }}>
-              <h3>連絡文（{terms.staff}あて）</h3>
+              <h3>
+                連絡文（{terms.staff}あて・{list.staff.length}人）
+              </h3>
               {list.staff.map((c) => {
                 const text = staffMessage(c, words);
                 return (
@@ -356,7 +351,9 @@ export function ContactPanel({
               })}
             </section>
             <section className="stack contact-section" style={{ gap: 6 }}>
-              <h3>連絡文（{terms.client}あて）</h3>
+              <h3>
+                連絡文（{terms.client}あて・{clients.length}件）
+              </h3>
               {clients.length === 0 && <p className="sub">ありません</p>}
               {clients.map((c) => (
                 <ContactMessage
@@ -387,12 +384,12 @@ function ContactMessage({ text, label, onCopy }: { text: string; label: string; 
   );
 }
 
-/** 差の欄の「連絡の一覧」ボタン */
+/** 差の欄の「連絡の一覧」ボタン（件数は連絡が要る訪問の数） */
 export function ContactButton({ count, onOpen }: { count: number; onOpen: () => void }) {
   return (
     <button type="button" className="btn btn-small" onClick={onOpen}>
       <WithIcon icon={MessageSquareText} size={14}>
-        連絡の一覧{count > 0 ? `（${count}件）` : ''}
+        連絡の一覧{count > 0 ? `（訪問${count}件）` : ''}
       </WithIcon>
     </button>
   );

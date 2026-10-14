@@ -1,6 +1,6 @@
 // 予定の画面の急な欠勤（ADR-0011）：欠勤の保存・取り消し、振り直しの元の案、振り直した結果の書き込み・元に戻す。
 // どれも純粋関数（データを書き換えず新しい DemoData を返す。画面は update(fn) の中で呼ぶ）
-import type { AiPlan, DemoData, ReassignInfo } from '../contracts/data';
+import type { AiPlan, AiRun, DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult } from '../contracts/problem';
 import { type ReassignResult, type Routes, STAY_WEIGHT_DEFAULT } from '../contracts/reassign';
@@ -178,23 +178,21 @@ export function applyReassign(
   });
 }
 
-/** 振り直しの結果を今の案にし、記録に1件足す（applyReassign・chooseReassign で共通） */
-function writeReassign(
-  d: DemoData,
-  date: string,
-  x: {
-    problem: Problem;
-    routes: Routes;
-    unassigned: string[];
-    pins: Record<string, string>;
-    info: ReassignInfo;
-    seed: number;
-    iterations: number;
-    stopped: boolean;
-    label: string;
-    createdAt: number;
-  },
-): DemoData {
+type ReassignWrite = {
+  problem: Problem;
+  routes: Routes;
+  unassigned: string[];
+  pins: Record<string, string>;
+  info: ReassignInfo;
+  seed: number;
+  iterations: number;
+  stopped: boolean;
+  label: string;
+  createdAt: number;
+};
+
+/** 振り直しの結果の記録（addRun に渡す形）と、いまの問題での費用 */
+function reassignRun(d: DemoData, x: ReassignWrite) {
   const total = score(x.problem, x.routes).total;
   const solved: SolveResult = {
     routes: x.routes,
@@ -212,6 +210,12 @@ function writeReassign(
     label: x.label,
     reassign: x.info,
   };
+  return { run, total };
+}
+
+/** 振り直しの結果を今の案にし、記録に1件足す（applyReassign・chooseReassign で共通） */
+function writeReassign(d: DemoData, date: string, x: ReassignWrite): DemoData {
+  const { run, total } = reassignRun(d, x);
   const added = addRun(d, date, run);
   const plan: AiPlan = {
     date,
@@ -270,6 +274,61 @@ export function chooseReassign(
     label: x.label,
     createdAt: x.createdAt,
   });
+}
+
+/** 記録の振り直しの情報が、同じ振り直し（元の案・欠勤・いまの時刻・案A が同じ）のものか */
+function sameReassign(a: ReassignInfo, b: ReassignInfo): boolean {
+  const key = (x: ReassignInfo) => JSON.stringify([x.baseRoutes, x.absenceIds, x.now, x.insertRoutes ?? null]);
+  return key(a) === key(b);
+}
+
+/**
+ * 作り終えた案B を記録に1件足す（今の案は変えない。PRD D34。ADR-0011 追記）。選ばなくても再読込で消えず、
+ * 比較の画面で見られ、差の表（annealRunOf）で選び直せる。今の案が振り直しの結果のときだけ（無ければそのまま）。
+ * 記録の reassign は今の案の振り直しの情報に method: 'anneal'・stayWeight を付けたもの。同じ結果・同じ重みの記録があれば足さない。
+ * basis（案B を作り始めたときの振り直しの情報）と今の案の振り直し（元の案・欠勤・いまの時刻・案A）が違えば足さない（計算中に振り直し直した）
+ */
+export function addAnnealRun(
+  d: DemoData,
+  date: string,
+  x: {
+    basis: ReassignInfo;
+    problem: Problem;
+    result: ReassignResult;
+    stayWeight: number;
+    seed: number;
+    iterations: number;
+    stopped: boolean;
+    label: string;
+    createdAt: number;
+  },
+): DemoData {
+  const prev = own(d.aiPlans, date)?.reassign;
+  if (!prev || !sameReassign(prev, x.basis)) return d;
+  const info: ReassignInfo = { ...prev, method: 'anneal', stayWeight: x.stayWeight };
+  const { run } = reassignRun(d, {
+    problem: x.problem,
+    routes: x.result.routes,
+    unassigned: x.result.unassigned,
+    pins: x.result.pins,
+    info,
+    seed: x.seed,
+    iterations: x.iterations,
+    stopped: x.stopped,
+    label: x.label,
+    createdAt: x.createdAt,
+  });
+  return addRun(d, date, run);
+}
+
+/** 今の振り直し（info）の、いちばん新しい案B の記録（無ければ undefined） */
+export function annealRunOf(d: Pick<DemoData, 'aiRuns'>, date: string, info: ReassignInfo): AiRun | undefined {
+  const runs = own(d.aiRuns, date) ?? [];
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const r = runs[i]!;
+    if (r.reassign?.method === 'anneal' && sameReassign(r.reassign, info)) return r;
+  }
+  return undefined;
 }
 
 /**

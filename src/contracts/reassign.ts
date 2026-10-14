@@ -146,8 +146,22 @@ export type PrepareAnneal = (
 ) => AnnealPrep;
 /** solver の結果（SolveResult.routes）を、外した訪問を戻した ReassignResult にする（placed の addedCost・addedTravel は 0） */
 export type FinishAnneal = (prep: AnnealPrep, solved: Routes) => ReassignResult;
-/** 焼きなましが最小にする値（費用＋変更の減点。stay を入れた問題で）。strict で回れない列があれば Infinity */
+/**
+ * 焼きなましが最小にする値（費用＋変更の減点＋入らない訪問の点。stay を入れた問題で。stay.keep の訪問を落とした点は
+ * KEEP_DROP_POINTS）。strict で回れない列があれば Infinity
+ */
 export type AnnealCost = (problem: Problem, routes: Routes) => number;
+
+/**
+ * 案B の結果の確かめ（settleAnneal。保険）。ok＝案B として出せる（result は finishAnneal(prep, solved)）。
+ * ok でなければ result は案A（finishAnneal(prep, prep.initial)）で、reason が理由：
+ * keepDropped＝案A に入っていた訪問を落とした（visitIds がその訪問）、notBetter＝案A より良くならない
+ * （案A が strict で回れず候補にできなかった・費用が案A より高い）
+ */
+export type AnnealSettled =
+  | { ok: true; reason: null; visitIds: string[]; result: ReassignResult }
+  | { ok: false; reason: 'keepDropped' | 'notBetter'; visitIds: string[]; result: ReassignResult };
+export type SettleAnneal = (prep: AnnealPrep, solved: Routes) => AnnealSettled;
 
 // ---- 2回目：連絡の一覧（PRD D35。ADR-0011 追記） ----
 

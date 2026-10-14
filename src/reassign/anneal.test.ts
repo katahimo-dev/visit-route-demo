@@ -17,6 +17,7 @@ import {
   reassign,
   reassignDiff,
   STAY_WEIGHT_DEFAULT,
+  settleAnneal,
   stayPointsOf,
   targetsOf,
 } from './index';
@@ -93,13 +94,15 @@ describe('案B（prepareAnneal・finishAnneal・annealCost）', () => {
     expect(list.length).toBeGreaterThan(0);
   });
 
-  it('案B は案A より悪くならない（費用＋変更の減点）。入らない訪問は増えない', () => {
+  it('案B は案A より悪くならない（費用＋変更の減点）。入らない訪問は増えない（訪問ID の集合で ⊆）', () => {
     for (const c of list) {
       const { prep, solved, result } = runB(c, STAY_WEIGHT_DEFAULT);
       const costA = annealCost(prep.problem, prep.initial);
       expect(Number.isFinite(costA)).toBe(true);
       expect(annealCost(prep.problem, solved.routes)).toBeLessThanOrEqual(costA + 1e-6);
       expect(result.unplaced.length).toBeLessThanOrEqual(c.a.unplaced.length);
+      const unA = new Set(c.a.unplaced);
+      expect(result.unplaced.filter((id) => !unA.has(id))).toEqual([]);
       // 結果はいまの問題（stay なし）で可・strict
       const vIndex = new Map(c.p.visits.map((v, i) => [v.id, i]));
       c.p.staff.forEach((st, s) => {
@@ -162,6 +165,115 @@ describe('案B（prepareAnneal・finishAnneal・annealCost）', () => {
   });
 });
 
+describe('案B は案A に入っていた訪問を落とさない（keep。ADR-0011 追記）', () => {
+  it('seed の14日×全スタッフの終日の欠勤で、案B の入らない訪問（訪問ID）⊆ 案A の入らない訪問。保険（settleAnneal）で案A のままにすることもない（修正前の入れ替えは重み0の 10/17 s3 で出る）', () => {
+    const today = '2026-10-12';
+    const data = createDemoData(today);
+    let n = 0;
+    let improved = 0;
+    for (let k = 0; k < 14; k++) {
+      const date = addDays(today, k);
+      const plain = compile(data, date);
+      const base = solve(plain, { seed: data.seed, iterations: 60_000 }).routes;
+      const before = { problem: plain, routes: base };
+      for (const st of plain.staff) {
+        if ((base[st.id] ?? []).length === 0) continue;
+        n++;
+        const p = compile({ ...data, absences: [absence(st.id, date)] }, date);
+        const targets = targetsOf(p, before, [st.id], null);
+        const a = reassign(p, base, targets, { now: null });
+        const ua = new Set(reassignDiff(before, { problem: p, routes: a.routes }).unplaced);
+        // 重み0（変更を気にしない）で入れ替えが起きやすい。既定の重みでも見る
+        for (const weight of [0, STAY_WEIGHT_DEFAULT]) {
+          const prep = prepareAnneal(p, before, a.routes, targets, { now: null, weight });
+          const solved = solve(prep.problem, { seed: 7, iterations: 20_000, initial: prep.initial });
+          const settled = settleAnneal(prep, solved.routes);
+          expect(settled.ok, `${date} ${st.id} 重み${weight}`).toBe(true);
+          const ub = reassignDiff(before, { problem: p, routes: settled.result.routes }).unplaced;
+          expect(
+            ub.filter((id) => !ua.has(id)),
+            `${date} ${st.id} 重み${weight}`,
+          ).toEqual([]);
+          if (weight > 0 && ub.length < ua.size) improved++;
+        }
+      }
+    }
+    expect(n).toBeGreaterThan(50);
+    expect(improved).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('keep は案A（初期解）に入っていて振り直す訪問でない訪問。落とした点は DROP_POINTS の10倍（annealCost）', () => {
+    const c = cases(1)[0]!;
+    const { prep } = runB(c, STAY_WEIGHT_DEFAULT);
+    const keep = prep.problem.stay!.keep;
+    const inA = new Set(Object.values(prep.initial).flat());
+    const targets = new Set(prep.targets);
+    prep.problem.visits.forEach((v, i) => {
+      expect(keep[i], v.id).toBe(inA.has(v.id) && !targets.has(v.id));
+    });
+    const kept = prep.problem.visits.find((_, i) => keep[i])!.id;
+    const without = Object.fromEntries(
+      Object.entries(prep.initial).map(([k, ids]) => [k, ids.filter((x) => x !== kept)]),
+    );
+    const costA = annealCost(prep.problem, prep.initial);
+    // 1件落とすと、列の費用は減るが、落とした点 100000 が足される
+    expect(annealCost(prep.problem, without) - costA).toBeGreaterThan(90_000);
+  });
+});
+
+describe('settleAnneal（保険：案A のままにする）', () => {
+  const list = cases(2);
+  it('案B が案A に入っていた訪問を落としていれば keepDropped で案A を返す', () => {
+    const c = list[0]!;
+    const { prep } = runB(c, STAY_WEIGHT_DEFAULT);
+    const keepId = prep.problem.visits.find((_, i) => prep.problem.stay!.keep[i])!.id;
+    const dropped = Object.fromEntries(
+      Object.entries(prep.initial).map(([k, ids]) => [k, ids.filter((x) => x !== keepId)]),
+    );
+    const s = settleAnneal(prep, dropped);
+    expect(s.ok).toBe(false);
+    expect(s.reason).toBe('keepDropped');
+    expect(s.visitIds).toEqual([keepId]);
+    expect(s.result).toEqual(finishAnneal(prep, prep.initial));
+  });
+  it('案B の費用が案A より高ければ notBetter で案A を返す', () => {
+    // 案A で入った振り直す訪問を外す（keep ではないが、入らない点だけ高くなる）
+    const c = list.find((x) => x.a.placed.length > 0)!;
+    const { prep } = runB(c, STAY_WEIGHT_DEFAULT);
+    const placed = c.a.placed[0]!.visitId;
+    const worse = Object.fromEntries(
+      Object.entries(prep.initial).map(([k, ids]) => [k, ids.filter((x) => x !== placed)]),
+    );
+    const s = settleAnneal(prep, worse);
+    expect(s).toMatchObject({ ok: false, reason: 'notBetter' });
+    expect(s.result).toEqual(finishAnneal(prep, prep.initial));
+  });
+  it('初期解（案A）が strict で回れず solver が捨てたときは notBetter（案A を超えたと言わない）', () => {
+    const c = list[0]!;
+    const { prep } = runB(c, STAY_WEIGHT_DEFAULT);
+    // 計算中にデータが変わった代わりに、案A の列の訪問の時間の約束を回れない時刻にする
+    const sid = Object.keys(prep.initial).find((k) => (prep.initial[k] ?? []).length >= 2)!;
+    const [first, second] = prep.initial[sid]!;
+    const vi = prep.problem.visits.findIndex((v) => v.id === second);
+    const fi = prep.problem.visits.findIndex((v) => v.id === first);
+    const at = prep.problem.visits[fi]!.earliest - 60;
+    const visits = prep.problem.visits.map((v, i) => (i === vi ? { ...v, earliest: at, latest: at } : v));
+    const broken = { ...prep, problem: { ...prep.problem, visits } };
+    expect(annealCost(broken.problem, broken.initial)).toBe(Number.POSITIVE_INFINITY);
+    const solved = solve(broken.problem, { seed: 7, iterations: 5_000, initial: broken.initial });
+    const s = settleAnneal(broken, solved.routes);
+    expect(s.ok).toBe(false);
+    expect(s.result).toEqual(finishAnneal(broken, broken.initial));
+  });
+  it('良い案B はそのまま（ok。result は finishAnneal と同じ）', () => {
+    const c = list[0]!;
+    const { prep, solved, result } = runB(c, STAY_WEIGHT_DEFAULT);
+    const s = settleAnneal(prep, solved.routes);
+    expect(s).toMatchObject({ ok: true, reason: null });
+    expect(s.result).toEqual(result);
+  });
+});
+
 describe('stay（変更の減点）と routeCost', () => {
   const d = makeData({
     staff: [staff('s1', 38.26, 140.87), staff('s2', 38.262, 140.872)],
@@ -173,7 +285,7 @@ describe('stay（変更の減点）と routeCost', () => {
     const plain0 = routeCost(p, 0, [0]);
     const plain1 = routeCost(p, 1, [0]);
     const start = scheduleRoute(p, 0, [0], 'strict')!.stops[0]!.start;
-    const stay = { staff: [0], start: [start - 30], ...stayPointsOf(3) };
+    const stay = { staff: [0], start: [start - 30], keep: [false], ...stayPointsOf(3) };
     expect(stayPointsOf(3)).toEqual({ movePoints: 30, minutePoints: 0.6000000000000001 });
     const q: Problem = { ...p, stay };
     expect(routeCost(q, 0, [0])).toBeCloseTo(plain0 + 30 * stay.minutePoints, 6);

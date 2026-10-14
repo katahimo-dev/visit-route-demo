@@ -8,6 +8,11 @@ import { z } from 'zod';
 export const POINTS_PER_WEIGHT = 10;
 /** 落とした訪問1件の点 */
 export const DROP_POINTS = 10000;
+/**
+ * 案B（欠勤の振り直し。ADR-0011 追記）で、案A に入っている訪問（Problem.stay.keep）を落とした1件の点（DROP_POINTS の10倍）。
+ * 振り直す訪問を入れるために、案A に入っている訪問を落とす「入れ替え」をしないため。探索の途中で一時的に落とすのは許す
+ */
+export const KEEP_DROP_POINTS = DROP_POINTS * 10;
 
 /** あり/なし・選択肢から1つ・選択肢から複数・数値 */
 export const ITEM_KINDS = ['flag', 'choice', 'multi', 'number'] as const;

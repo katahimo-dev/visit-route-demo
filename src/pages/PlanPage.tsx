@@ -50,6 +50,8 @@ import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, scor
 import {
   absencesOn,
   absenceText,
+  addAnnealRun,
+  annealRunOf,
   applyReassign,
   baseOf,
   chooseReassign,
@@ -60,14 +62,13 @@ import {
   withoutAbsencesOn,
 } from '../lib/absences';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
-import { dayWordOf } from '../lib/contacts';
+import { contactCount, dayWordOf } from '../lib/contacts';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import {
   contactsOf,
-  finishAnneal,
   placeVisit,
   prepareAnneal,
   type ReassignCandidate,
@@ -75,6 +76,7 @@ import {
   reassign,
   reassignDiff,
   STAY_WEIGHT_DEFAULT,
+  settleAnneal,
   targetsOf,
 } from '../reassign';
 import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
@@ -186,6 +188,8 @@ export default function PlanPage() {
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropTo, setDropTo] = useState<string | null>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
+  /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
+  const pendingAnneal = useRef<string | null>(null);
   /** 計算の世代。画面を離れると進め、前の世代の計算の結果は捨てる（開発時の StrictMode の付け外しでも） */
   const generation = useRef(0);
   /** 自動作成を試した日（同じ日に2回は試さない） */
@@ -226,6 +230,8 @@ export default function PlanPage() {
     setAbsenceFor(null);
     setContactsOpen(false);
     setError(null);
+    // 前の日に「案B も作る」を押して、まだ始まっていなければやめる（別の日で始めない）
+    pendingAnneal.current = null;
   }, [date]);
   /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
   const dateRef = useRef(date);
@@ -362,6 +368,10 @@ export default function PlanPage() {
   };
   const stop = () => {
     batchStopped.current = true;
+    runRef.current?.stop();
+  };
+  /** 案B の計算だけを止める（順に作るのを止めた印 batchStopped は立てない） */
+  const stopAnneal = () => {
     runRef.current?.stop();
   };
 
@@ -838,17 +848,8 @@ export default function PlanPage() {
   useEffect(() => {
     if (reassignInfo?.stayWeight !== undefined) setStayWeight(reassignInfo.stayWeight);
   }, [reassignInfo?.stayWeight]);
-  /** 作った案B（画面の一時状態。key が今の振り直しと違えば見せない） */
-  const [annealView, setAnnealView] = useState<{
-    key: string;
-    weight: number;
-    result: ReassignResult;
-    seed: number;
-    iterations: number;
-    stopped: boolean;
-  } | null>(null);
-  /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日 */
-  const pendingAnneal = useRef<string | null>(null);
+  /** 案B を案A のままにした理由（settleAnneal。key が今の振り直しと違えば見せない） */
+  const [annealNote, setAnnealNote] = useState<{ key: string; text: string } | null>(null);
   const [contactsOpen, setContactsOpen] = useState(false);
   /** 案A の列（振り直した直後。無い古いデータで今の案が案A なら今の案） */
   const planA = useMemo(() => {
@@ -860,7 +861,29 @@ export default function PlanPage() {
   const annealKey = reassignInfo
     ? JSON.stringify([date, reassignInfo.baseRoutes, reassignInfo.absenceIds, reassignInfo.now, planA])
     : null;
-  const anneal = annealView && annealView.key === annealKey ? annealView : null;
+  /** 作った案B（記録にある、今の振り直しのいちばん新しい案B。作り終えたときに記録へ足す） */
+  const anneal = useMemo(() => {
+    if (!reassignInfo || !problem) return null;
+    const run = annealRunOf(data, date, reassignInfo);
+    if (!run) return null;
+    const routes = alignRoutes(problem, run.routes);
+    const ids = new Set(problem.visits.map((v) => v.id));
+    const result: ReassignResult = {
+      routes,
+      placed: [],
+      unplaced: [],
+      unassigned: run.unassigned.filter((id) => ids.has(id)),
+      pins: Object.fromEntries(Object.entries(run.pins).filter(([id]) => ids.has(id))),
+    };
+    return {
+      weight: run.reassign?.stayWeight ?? STAY_WEIGHT_DEFAULT,
+      result,
+      seed: run.seed,
+      iterations: run.iterations,
+      stopped: run.stopped,
+    };
+  }, [data, date, reassignInfo, problem]);
+  const note = annealNote && annealNote.key === annealKey ? annealNote.text : null;
   /** 振り直しに使った欠勤の人（まだある欠勤） */
   const absentStaff = useMemo(() => {
     const ids = new Set(reassignInfo?.absenceIds ?? []);
@@ -894,28 +917,53 @@ export default function PlanPage() {
       return;
     }
     const x = prep.value;
+    const forDate = date;
+    const p = problem;
+    const basis = reassignInfo;
+    setAnnealNote(null);
     run(
       'anneal',
       x.problem,
       '少し動かす',
       (res) => {
-        const done = attempt(() => finishAnneal(x, res.routes));
-        if (!done.value) {
-          setError(`案B を作れませんでした（${done.error}）`);
+        // 保険：案A に入っていた訪問を落とした・案A より良くならないときは案B として出さない（案A のまま）
+        const settled = attempt(() => settleAnneal(x, res.routes));
+        if (!settled.value) {
+          setError(`案B を作れませんでした（${settled.error}）`);
           return;
         }
-        setAnnealView({
-          key,
-          weight,
-          result: done.value,
-          seed: res.seed,
-          iterations: res.iterations,
-          stopped: res.stopped,
-        });
+        const got = settled.value;
+        if (!got.ok) {
+          const text =
+            got.reason === 'keepDropped'
+              ? `案B が、案A に入っていた訪問（${got.visitIds.length}件）を外してしまったため、案A のままにしました`
+              : '案A を超えられませんでした（案A のままにしました）';
+          setAnnealNote({ key, text });
+          toast(text);
+          return;
+        }
+        // 作り終えたら記録に足す（選ばなくても再読込で消えない。同じ結果なら足さない）
+        const createdAt = Date.now();
+        update((d) =>
+          addAnnealRun(d, forDate, {
+            basis,
+            problem: p,
+            result: got.result,
+            stayWeight: weight,
+            seed: res.seed,
+            iterations: res.iterations,
+            stopped: res.stopped,
+            label: reassignLabel('anneal'),
+            createdAt,
+          }),
+        );
+        const sameAsA = JSON.stringify(alignRoutes(p, got.result.routes)) === JSON.stringify(alignRoutes(p, planA));
         toast(
-          res.stopped
-            ? '途中までの案B を出しました。案A と比べて選んでください'
-            : '案B を作りました。案A と比べて選んでください',
+          sameAsA
+            ? '案B は案A と同じになりました（動かしても良くならないか、変更の減点の方が大きいとき）'
+            : res.stopped
+              ? '途中までの案B を出しました。案A と比べて選んでください'
+              : '案B を作りました。案A と比べて選んでください',
         );
       },
       undefined,
@@ -1591,12 +1639,7 @@ export default function PlanPage() {
                 running={!!running}
                 onRevert={revertToBase}
                 onCompare={() => navigate('/compare', { state: { a: 'before', b: 'current' } })}
-                extraActions={
-                  <ContactButton
-                    count={(contacts?.staff.length ?? 0) + (contacts?.staffChanged.length ?? 0)}
-                    onOpen={() => setContactsOpen(true)}
-                  />
-                }
+                extraActions={<ContactButton count={contactCount(contacts)} onOpen={() => setContactsOpen(true)} />}
               >
                 <AnnealBox
                   weight={stayWeight}
@@ -1606,11 +1649,12 @@ export default function PlanPage() {
                   running={running === 'anneal'}
                   progress={running === 'anneal' ? progress : null}
                   onStart={startAnneal}
-                  onStop={stop}
+                  onStop={stopAnneal}
                   options={annealOptions}
                   absentStaff={absentStaff}
                   onChoose={chooseOption}
                   stopped={!!anneal?.stopped}
+                  note={note}
                 />
               </ReassignBar>
             )}

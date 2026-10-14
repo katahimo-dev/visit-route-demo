@@ -1,7 +1,7 @@
 // 連絡の一覧の連絡文（PRD D35。ADR-0011 追記）
 import { describe, expect, it } from 'vitest';
 import type { ContactList } from '../contracts/reassign';
-import { allContactsText, type ContactWords, clientMessages, dayWordOf, staffMessage } from './contacts';
+import { allContactsText, type ContactWords, clientMessages, contactCount, dayWordOf, staffMessage } from './contacts';
 
 const names: Record<string, string> = { s1: '山田', s2: '佐藤', c1: '天文台ほしみ', c2: '青葉', c3: '若林' };
 const w: ContactWords = {
@@ -77,5 +77,17 @@ describe('連絡文', () => {
     expect(allContactsText(list, w).split('\n\n')).toHaveLength(5);
     expect(dayWordOf('2026-10-14', '2026-10-14')).toBe('本日');
     expect(dayWordOf('2026-10-15', '2026-10-14')).toBe('10月15日（木）');
+  });
+  it('呼び方（terms.staff）を変えると連絡文の呼び方も変わる。敬称（様・さん）は固定', () => {
+    const text = staffMessage(list.staff[0]!, { ...w, staffWord: 'ヘルパー' });
+    expect(text).toContain('ほかのヘルパーが伺います');
+    expect(text).not.toContain('スタッフ');
+    expect(text.split('\n')[0]).toBe('山田さん');
+  });
+  it('連絡が要る訪問の数＝担当が変わる訪問＋時刻だけ変わる訪問（同じ訪問は1件）', () => {
+    expect(contactCount(list)).toBe(3);
+    expect(contactCount({ ...list, timeChanged: [...list.timeChanged, list.staffChanged[0]!] })).toBe(3);
+    expect(contactCount(null)).toBe(0);
+    expect(contactCount({ staffChanged: [], timeChanged: [], staff: [] })).toBe(0);
   });
 });
