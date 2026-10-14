@@ -11,35 +11,25 @@ import {
   UserRoundX,
   X,
 } from 'lucide-react';
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useId, useMemo, useState } from 'react';
 import { Hint, SidePanel, WithIcon } from '../components/ui';
 import type { DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence, Staff, Visit } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
-import type { ReassignCandidate, ReassignDiff, ReassignTarget } from '../contracts/reassign';
+import type { ReassignCandidate, ReassignDiff, ReassignLeft, ReassignTarget } from '../contracts/reassign';
 import { HALF_HOURS, type Slot, slotsText, timeText as t } from '../domain/availability';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
-import {
-  absenceError,
-  absencesOn,
-  absenceText,
-  baseOf,
-  roundToHalfHour,
-  saveAbsence,
-  withoutAbsencesOn,
-} from '../lib/absences';
+import { absenceError, absencesOn, absenceText, baseOf, saveAbsence, withoutAbsencesOn } from '../lib/absences';
 import { attempt, deltaText, newId, r0 } from '../lib/common';
 import { compile } from '../matching';
 import { candidatesFor, reassign, targetsOf } from '../reassign';
 
 /** 欠勤の欄の入力 */
-type Draft = { allDay: boolean; from: string; to: string; note: string; now: string };
+type Draft = { allDay: boolean; from: string; to: string; note: string };
 
 /** 見込み（振り直す訪問）：入力のたびに targetsOf を呼ぶ */
 export type AbsencePreview = {
   targets: ReassignTarget[];
-  /** 欠勤の人の、始まっていて動かさない訪問の件数 */
-  started: number;
   /** 振り直しの元の案（無ければ null＝振り直せない） */
   baseFrom: ReassignInfo['from'] | null;
   /** 案A（空き時間に入れるだけ）で入らない見込みの件数（案B を勧める。2回目） */
@@ -47,31 +37,23 @@ export type AbsencePreview = {
 };
 
 /** 欠勤の入力から、その欠勤を入れたデータで振り直す訪問を出す（画面に規則を書かず reassign を呼ぶだけ） */
-export function previewOf(data: DemoData, date: string, absence: Absence, now: number | null): AbsencePreview | null {
+export function previewOf(data: DemoData, date: string, absence: Absence): AbsencePreview | null {
   return attempt(() => {
     const d = saveAbsence(data, absence);
     const p = compile(d, date);
     const base = baseOf(d, date, p);
-    if (!base) return { targets: [], started: 0, baseFrom: null, unplacedA: 0 };
+    if (!base) return { targets: [], baseFrom: null, unplacedA: 0 };
     const absent = [...new Set(absencesOn(d, date).map((a) => a.staffId))];
-    const before = compile(withoutAbsencesOn(d, date), date);
-    const targets = targetsOf(p, { problem: before, routes: base.routes }, absent, now);
-    const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
-    let started = 0;
-    if (now !== null) {
-      for (const id of base.routes[absence.staffId] ?? []) {
-        const v = vIndex.get(id);
-        if (v !== undefined && p.visits[v]!.earliest < now) started++;
-      }
-    }
+    const plan = { problem: compile(withoutAbsencesOn(d, date), date), routes: base.routes };
+    const targets = targetsOf(p, plan, absent);
     // 案A の見込み（決定的で速い）。入らない訪問があれば案B を勧める
-    const unplacedA = reassign(p, base.routes, targets, { now }).unplaced.length;
-    return { targets, started, baseFrom: base.from, unplacedA };
+    const unplacedA = reassign(p, base.routes, targets).unplaced.length;
+    return { targets, baseFrom: base.from, unplacedA };
   }).value;
 }
 
 /**
- * 欠勤の欄（右から出る）。終日／時間帯・開始と終了（30分刻み。空＝始業から・終業まで）・早道・メモ・いまの時刻・見込み。
+ * 欠勤の欄（右から出る）。終日／時間帯・開始と終了（30分刻み。空＝始業から・終業まで）・早道・メモ・見込み（いまの時刻は扱わない。過去の欠勤は登録しない前提）。
  * 主ボタン「登録して振り直す」・「欠勤だけ登録」・既存なら「欠勤を取り消す」・閉じる
  */
 export function AbsencePanel({
@@ -79,7 +61,6 @@ export function AbsencePanel({
   date,
   baseSlots,
   existing,
-  initialNow,
   data,
   visitLabel,
   canReassign,
@@ -94,14 +75,12 @@ export function AbsencePanel({
   /** 欠勤を差し引く前のその日の稼働時間帯 */
   baseSlots: Slot[];
   existing: Absence | null;
-  /** いまの時刻の初期値（当日以外は null） */
-  initialNow: string | null;
   data: DemoData;
   visitLabel: (id: string) => string;
   /** 振り直しを押せるか（計算中は押せない）。押せないときの理由 */
   canReassign: { ok: boolean; why?: string };
   /** anneal：登録して案A にしたあと、続けて案B（少し動かしてよい）を作る */
-  onReassign: (absence: Absence, now: string | null, anneal?: boolean) => void;
+  onReassign: (absence: Absence, anneal?: boolean) => void;
   onSaveOnly: (absence: Absence) => void;
   onRemove: (absence: Absence) => void;
   onClose: () => void;
@@ -113,7 +92,6 @@ export function AbsencePanel({
     from: existing?.from ?? '',
     to: existing?.to ?? '',
     note: existing?.note ?? '',
-    now: initialNow ?? '',
   }));
   const absence: Absence = {
     id: existing?.id ?? `${staff.id}-${date}`,
@@ -126,11 +104,10 @@ export function AbsencePanel({
   const timeError = d.allDay ? null : absenceError(absence);
   const rangeError = !d.allDay && absence.from === null && absence.to === null ? '開始か終了を選んでください' : null;
   const error = timeError ?? rangeError;
-  const nowMinutes = d.now === '' ? null : hhmmToMinutes(d.now);
   // メモは見込みに効かないので key に入れない（メモの入力で計算し直さない）
-  const key = JSON.stringify([absence.staffId, absence.from, absence.to, nowMinutes]);
+  const key = JSON.stringify([absence.staffId, absence.from, absence.to]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 入力（key）とデータが変わったときだけ見込みを作り直す
-  const preview = useMemo(() => (error ? null : previewOf(data, date, absence, nowMinutes)), [key, data, date, error]);
+  const preview = useMemo(() => (error ? null : previewOf(data, date, absence)), [key, data, date, error]);
   const reasonCount = (r: ReassignTarget['reason']) => preview?.targets.filter((x) => x.reason === r).length ?? 0;
   const shift = baseSlots[0];
   const end = baseSlots.at(-1);
@@ -160,7 +137,7 @@ export function AbsencePanel({
                   ? '先にAI案を作ってください（欠勤だけは登録できます）'
                   : undefined
             }
-            onClick={save((a) => onReassign(a, d.now === '' ? null : d.now))}
+            onClick={save((a) => onReassign(a))}
           >
             <WithIcon icon={Send}>登録して振り直す</WithIcon>
           </button>
@@ -209,18 +186,10 @@ export function AbsencePanel({
             <button type="button" className="btn btn-small" onClick={() => set({ from: '12:00', to: '' })}>
               午後だけ
             </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => set({ from: d.from || (d.now ? roundToHalfHour(d.now) : '15:00'), to: '' })}
-            >
+            <button type="button" className="btn btn-small" onClick={() => set({ from: d.from || '15:00', to: '' })}>
               〇時から（早退）
             </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => set({ from: '', to: d.to || (d.now ? roundToHalfHour(d.now) : '11:00') })}
-            >
+            <button type="button" className="btn btn-small" onClick={() => set({ from: '', to: d.to || '11:00' })}>
               〇時まで（遅刻）
             </button>
           </div>
@@ -255,10 +224,6 @@ export function AbsencePanel({
         <span className="field-label">メモ（例：病院の付き添い）</span>
         <input value={d.note} maxLength={100} onChange={(e) => set({ note: e.target.value })} />
       </label>
-      <label className="field">
-        <span className="field-label">いまの時刻（これより前に始まる訪問は動かしません。空＝考えない）</span>
-        <input type="time" step={300} value={d.now} onChange={(e) => set({ now: e.target.value })} />
-      </label>
       {error && <p className="error">{error}</p>}
       <div aria-live="polite">
         {!error && preview && (
@@ -274,7 +239,6 @@ export function AbsencePanel({
                 {x.reason === 'unreachable' ? '（間に合わない）' : x.reason === 'notAllowed' ? '（必須の条件）' : ''}
               </span>
             ))}
-            {preview.started > 0 && <span className="sub">始まっていて動かさない訪問 {preview.started}件</span>}
             {preview.baseFrom !== null && preview.unplacedA > 0 && (
               <div className="stack anneal-suggest" style={{ gap: 4 }} data-testid="anneal-suggest">
                 <span className="warn-text">
@@ -287,7 +251,7 @@ export function AbsencePanel({
                   style={{ alignSelf: 'flex-start' }}
                   disabled={!!error || !canReassign.ok}
                   title={!canReassign.ok ? canReassign.why : undefined}
-                  onClick={save((a) => onReassign(a, d.now === '' ? null : d.now, true))}
+                  onClick={save((a) => onReassign(a, true))}
                 >
                   登録して、少し動かしてよい（案B）も作る
                 </button>
@@ -309,34 +273,54 @@ export function AbsencePanel({
   );
 }
 
-/** 振り直しの差の欄（今の案に reassign があるとき）：まとめ・元の案・いまの時刻・元の案に戻す・比較の画面で見る */
+/** 振り直しの差の欄（今の案に reassign があるとき）：まとめ・元の案・入らない訪問と欠勤の人に残る訪問の理由・元の案に戻す・比較の画面で見る */
 export function ReassignBar({
+  id,
   info,
   diff,
+  left,
+  visitLabel,
+  staffName,
   cancelled,
   running,
   onRevert,
   onCompare,
+  onReassignAgain,
   extraActions,
   children,
 }: {
+  /** 欄の要素の id（差の欄へ移る近道・下の帯が使う） */
+  id: string;
   info: ReassignInfo;
   diff: ReassignDiff | null;
+  /** 欠勤の人に残る、欠勤と重なる訪問（leftOf。今の案で） */
+  left: ReassignLeft[];
+  visitLabel: (id: string) => string;
+  staffName: (id: string) => string;
   /** 振り直しに使った欠勤が取り消されている */
   cancelled: boolean;
   running: boolean;
   onRevert: () => void;
   onCompare: () => void;
+  /** もう一度振り直す（欠勤の人に残る訪問があるとき） */
+  onReassignAgain: () => void;
   /** 見出しの横に足す操作（連絡の一覧。2回目） */
   extraActions?: ReactNode;
   /** 下に足す欄（案B。2回目） */
   children?: ReactNode;
 }) {
   const reassigned = diff?.moved.filter((m) => m.to !== null && m.from !== null).length ?? 0;
+  const titleId = useId();
   return (
-    <div className="card stack reassign-bar" data-testid="reassign-bar">
+    <section
+      id={id}
+      className="card stack reassign-bar"
+      data-testid="reassign-bar"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+    >
       <div className="spread" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <strong className="row" style={{ gap: 6 }}>
+        <strong className="row" style={{ gap: 6 }} id={titleId}>
           <UserRoundCheck size={18} aria-hidden="true" />
           欠勤の振り直し{info.method === 'anneal' ? '（案B：少し動かした案）' : '（案A：空き時間に入れた案）'}
         </strong>
@@ -361,12 +345,53 @@ export function ReassignBar({
           <span className={`chip ${diff.unplaced.length > 0 ? 'chip-warn' : 'chip-ok'}`}>
             入らない {diff.unplaced.length}件
           </span>
+          {left.length > 0 && <span className="chip chip-red">欠勤の人のまま {left.length}件</span>}
           <span className="chip">移動 {deltaText(r0(diff.travelDelta), '分') || '±0分'}</span>
+        </div>
+      )}
+      {diff && diff.unplaced.length > 0 && (
+        <div className="stack left-box left-box-warn" style={{ gap: 4 }} data-testid="unplaced-why">
+          <strong className="row warn-text" style={{ gap: 4 }}>
+            <CircleOff size={15} aria-hidden="true" />
+            入らない訪問（{diff.unplaced.length}件）：ほかの人の空き時間に入らない
+          </strong>
+          <span className="sub">
+            ほかの人の担当・順番・時刻を変えずに入れられる人がいません（時間の約束・稼働時間帯・必須の条件・件数の上限）。下の「少し動かしてよい（案B）」を作るか、「入らなかった訪問」の列の「受けられる人」から入れてください
+          </span>
+          {diff.unplaced.map((id) => (
+            <span key={id} className="sub">
+              ・{visitLabel(id)}
+            </span>
+          ))}
+        </div>
+      )}
+      {left.length > 0 && (
+        <div className="stack left-box" style={{ gap: 4 }} data-testid="left-box">
+          <strong className="error row" style={{ gap: 4 }}>
+            <TriangleAlert size={15} aria-hidden="true" />
+            欠勤の人に残っている訪問（{left.length}件）：対応が必要
+          </strong>
+          <span className="sub">
+            欠勤の時間と重なるのに、欠勤の人の列に残っています（手直しで戻した・振り直したあとに欠勤や条件を変えた、など）。担当の列では赤い印になっています。もう一度振り直すか、ドラッグで別の人へ移してください
+          </span>
+          {left.map((x) => (
+            <span key={x.visitId} className="sub">
+              ・{visitLabel(x.visitId)}（{staffName(x.staffId)}さん・{leftReasonText(x)}）
+            </span>
+          ))}
+          <button
+            type="button"
+            className="btn btn-small"
+            style={{ alignSelf: 'flex-start' }}
+            disabled={running || cancelled}
+            onClick={onReassignAgain}
+          >
+            もう一度振り直す
+          </button>
         </div>
       )}
       <span className="sub">
         元の案：{info.from === 'confirmed' ? '確定した割当' : '今の案'}
-        {info.now ? `・いまの時刻 ${t(info.now)}` : ''}
         {info.method === 'anneal'
           ? `。案B（変更を減らす ${info.stayWeight ?? ''}）では、ほかの人の訪問も少し動かしています（薄い列は変わらない人）`
           : '。振り直しでは、ほかの人の担当・順番・時刻は変えていません（「受けられる人」から入れた分・手直しは除く。薄い列は変わらない人）'}
@@ -381,8 +406,15 @@ export function ReassignBar({
         </span>
       )}
       {children}
-    </div>
+    </section>
   );
+}
+
+/** 欠勤の人に残る訪問の理由の短い文（列のカード・差の欄） */
+export function leftReasonText(x: ReassignLeft): string {
+  if (x.reason === 'unreachable') return '欠勤明けに間に合わない：振り直していない';
+  if (x.reason === 'notAllowed') return '必須の条件に合わない：振り直していない';
+  return '欠勤と重なる：振り直していない';
 }
 
 /** 「〇分ずらせば入る」の文 */
@@ -395,7 +427,6 @@ export function CandidateBox({
   problem,
   routes,
   visitId,
-  now,
   staffName,
   visit,
   running,
@@ -404,22 +435,17 @@ export function CandidateBox({
   problem: Problem;
   routes: Record<string, string[]>;
   visitId: string;
-  now: string | null;
   staffName: (id: string) => string;
   visit: Visit | undefined;
   running: boolean;
-  /** 押した候補（遅れ・いまの時刻より前の確認は呼ぶ側で出す） */
+  /** 押した候補（遅れの確認は呼ぶ側で出す） */
   onPlace: (candidate: ReassignCandidate) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   const list: ReassignCandidate[] = useMemo(
-    () =>
-      open
-        ? (attempt(() => candidatesFor(problem, routes, visitId, { now: now === null ? null : hhmmToMinutes(now) }))
-            .value ?? [])
-        : [],
-    [open, problem, routes, visitId, now],
+    () => (open ? (attempt(() => candidatesFor(problem, routes, visitId)).value ?? []) : []),
+    [open, problem, routes, visitId],
   );
   const shown = all ? list : list.slice(0, 5);
   return (
@@ -478,7 +504,6 @@ export function CandidateBox({
                     入れると後ろの {c.delayedCount}件が最大 +{c.maxDelayMinutes}分 遅れる
                   </span>
                 )}
-                {c.startsBeforeNow && <span className="chip chip-warn">いまの時刻より前に入る</span>}
                 {c.overCap && <span className="chip chip-red">件数の上限を超える</span>}
                 {c.violations.slice(0, 3).map((r) => (
                   <span
@@ -500,7 +525,7 @@ export function CandidateBox({
             </li>
           )}
           <li className="sub">
-            入れる訪問の時間の約束は変えません。空き時間に入らない人に入れると、その人の後ろの訪問の開始が遅れることがあり（押すと確認します）、間に合わないときは必須の違反として赤い枠になります（時刻は訪問の編集で直せます）。いまの時刻より前の位置には入れません（ほかに入る位置が無ければ確認します）
+            入れる訪問の時間の約束は変えません。空き時間に入らない人に入れると、その人の後ろの訪問の開始が遅れることがあり（押すと確認します）、間に合わないときは必須の違反として赤い枠になります（時刻は訪問の編集で直せます）
           </li>
         </ul>
       )}

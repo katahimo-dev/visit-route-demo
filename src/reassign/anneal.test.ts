@@ -32,18 +32,6 @@ const absence = (staffId: string, date: string, from: string | null = null, to: 
   note: '',
 });
 
-/** 列ごとの lenient の開始（訪問ID → { 担当, 開始 }） */
-function startsOf(p: Problem, routes: Routes) {
-  const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
-  const out = new Map<string, { staffId: string; start: number }>();
-  p.staff.forEach((st, s) => {
-    const seq = (routes[st.id] ?? []).map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
-    for (const stop of scheduleRoute(p, s, seq, 'lenient')!.stops)
-      out.set(stop.visitId, { staffId: st.id, start: stop.start });
-  });
-  return out;
-}
-
 type Case = {
   date: string;
   staffId: string;
@@ -52,11 +40,10 @@ type Case = {
   base: Routes;
   a: ReturnType<typeof reassign>;
   targets: ReturnType<typeof targetsOf>;
-  now: number | null;
 };
 
 /** seed の日・スタッフの終日の欠勤で、案A に入らない訪問が出る組を順に（決定的）max 件 */
-function cases(max: number, now: number | null = null): Case[] {
+function cases(max: number): Case[] {
   const today = '2026-10-12';
   const data = createDemoData(today);
   const out: Case[] = [];
@@ -68,16 +55,16 @@ function cases(max: number, now: number | null = null): Case[] {
       if (out.length >= max) break;
       if ((base[st.id] ?? []).length === 0) continue;
       const p = compile({ ...data, absences: [absence(st.id, date)] }, date);
-      const targets = targetsOf(p, { problem: plain, routes: base }, [st.id], now);
-      const a = reassign(p, base, targets, { now });
-      if (a.unplaced.length > 0) out.push({ date, staffId: st.id, plain, p, base, a, targets, now });
+      const targets = targetsOf(p, { problem: plain, routes: base }, [st.id]);
+      const a = reassign(p, base, targets);
+      if (a.unplaced.length > 0) out.push({ date, staffId: st.id, plain, p, base, a, targets });
     }
   }
   return out;
 }
 
 function runB(c: Case, weight: number, seed = 7) {
-  const prep = prepareAnneal(c.p, { problem: c.plain, routes: c.base }, c.a.routes, c.targets, { now: c.now, weight });
+  const prep = prepareAnneal(c.p, { problem: c.plain, routes: c.base }, c.a.routes, c.targets, { weight });
   const solved = solve(prep.problem, { seed, iterations: ITER, initial: prep.initial });
   return { prep, solved, result: finishAnneal(prep, solved.routes) };
 }
@@ -140,29 +127,6 @@ describe('案B（prepareAnneal・finishAnneal・annealCost）', () => {
     }
     expect(strict).toBeLessThan(loose);
   });
-
-  it('いまの時刻より前に始まる訪問は動かさない（担当・開始とも）。ほかの訪問はいまの時刻より前に始めない', () => {
-    const now = 11 * 60;
-    const withNow = cases(3, now);
-    expect(withNow.length).toBeGreaterThan(0);
-    let frozen = 0;
-    for (const c of withNow) {
-      const { result } = runB(c, 1);
-      const a = startsOf(c.p, c.a.routes);
-      const b = startsOf(c.p, result.routes);
-      for (const [id, x] of a) {
-        const v = c.p.visits.find((pv) => pv.id === id)!;
-        if (v.earliest < now) {
-          frozen++;
-          expect(b.get(id)?.staffId).toBe(x.staffId);
-          expect(b.get(id)!.start).toBeCloseTo(x.start, 6);
-        } else if (b.get(id)) {
-          expect(b.get(id)!.start).toBeGreaterThanOrEqual(now - 1e-6);
-        }
-      }
-    }
-    expect(frozen).toBeGreaterThan(0);
-  });
 });
 
 describe('案B は案A に入っていた訪問を落とさない（keep。ADR-0011 追記）', () => {
@@ -180,12 +144,12 @@ describe('案B は案A に入っていた訪問を落とさない（keep。ADR-0
         if ((base[st.id] ?? []).length === 0) continue;
         n++;
         const p = compile({ ...data, absences: [absence(st.id, date)] }, date);
-        const targets = targetsOf(p, before, [st.id], null);
-        const a = reassign(p, base, targets, { now: null });
+        const targets = targetsOf(p, before, [st.id]);
+        const a = reassign(p, base, targets);
         const ua = new Set(reassignDiff(before, { problem: p, routes: a.routes }).unplaced);
         // 重み0（変更を気にしない）で入れ替えが起きやすい。既定の重みでも見る
         for (const weight of [0, STAY_WEIGHT_DEFAULT]) {
-          const prep = prepareAnneal(p, before, a.routes, targets, { now: null, weight });
+          const prep = prepareAnneal(p, before, a.routes, targets, { weight });
           const solved = solve(prep.problem, { seed: 7, iterations: 20_000, initial: prep.initial });
           const settled = settleAnneal(prep, solved.routes);
           expect(settled.ok, `${date} ${st.id} 重み${weight}`).toBe(true);

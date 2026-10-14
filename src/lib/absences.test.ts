@@ -13,7 +13,6 @@ import {
   applyReassign,
   baseOf,
   chooseReassign,
-  defaultNow,
   removeAbsence,
   revertReassign,
   roundToHalfHour,
@@ -72,7 +71,7 @@ describe('欠勤の保存・取り消し', () => {
     const d = { ...data({ absences: [ab('a1', 's1', null, null)] }), aiPlans: { [DATE]: plan({ s2: ['v1'] }) } };
     expect(removeAbsence(d, 'a1').aiPlans).toBe(d.aiPlans);
   });
-  it('表示・検査・丸め・いまの時刻', () => {
+  it('表示・検査・丸め', () => {
     expect(absenceText(ab('a', 's', null, null))).toBe('欠勤（終日）');
     expect(absenceText(ab('a', 's', '09:00', '12:00'))).toBe('欠勤 9:00〜12:00');
     expect(absenceText(ab('a', 's', '15:00', null))).toBe('欠勤 15:00〜');
@@ -82,8 +81,6 @@ describe('欠勤の保存・取り消し', () => {
     expect(absenceError(ab('a', 's', null, '11:00'))).toBeNull();
     expect(roundToHalfHour('10:15')).toBe('10:30');
     expect(roundToHalfHour('10:14')).toBe('10:00');
-    expect(defaultNow(DATE, DATE, '10:38')).toBe('10:35');
-    expect(defaultNow(DATE, '2026-10-13', '10:38')).toBeNull();
   });
 });
 
@@ -118,13 +115,12 @@ describe('振り直した結果を書く・元の案に戻す', () => {
     const p = compile(d1, DATE);
     const base = baseOf(d1, DATE, p)!;
     const before = { problem: compile(withoutAbsencesOn(d1, DATE), DATE), routes: base.routes };
-    const result = reassign(p, base.routes, targetsOf(p, before, ['s1'], null), { now: null });
+    const result = reassign(p, base.routes, targetsOf(p, before, ['s1']));
     const d2 = applyReassign(d1, DATE, {
       problem: p,
       result,
       base,
       absenceIds: ['a1'],
-      now: null,
       label: '欠勤の振り直し（s1さん）',
       createdAt: 5,
     });
@@ -144,7 +140,6 @@ describe('振り直した結果を書く・元の案に戻す', () => {
       baseGenerated: { routes: { s1: ['v1', 'v2', 'v3'], s2: [] }, unassigned: [], score: 7 },
       baseRunId: 'run-0',
       absenceIds: ['a1'],
-      now: null,
     });
     const runs = d2.aiRuns[DATE]!;
     expect(runs).toHaveLength(1);
@@ -160,7 +155,6 @@ describe('振り直した結果を書く・元の案に戻す', () => {
       result,
       base: baseOf(d1, DATE, p)!,
       absenceIds: ['a1'],
-      now: null,
       label: '欠勤の振り直し（s1さん）',
       createdAt: 6,
     });
@@ -201,13 +195,12 @@ describe('振り直した結果を書く・元の案に戻す', () => {
     const base3 = baseOf(d3, DATE, p3)!;
     expect(base3.from).toBe('plan');
     const before3 = { problem: compile(withoutAbsencesOn(d3, DATE), DATE), routes: base3.routes };
-    const r3 = reassign(p3, base3.routes, targetsOf(p3, before3, ['s1', 's2'], null), { now: null });
+    const r3 = reassign(p3, base3.routes, targetsOf(p3, before3, ['s1', 's2']));
     const d4 = applyReassign(d3, DATE, {
       problem: p3,
       result: r3,
       base: base3,
       absenceIds: ['a1', 'a2'],
-      now: '08:00',
       label: '欠勤の振り直し（s2さん）',
       createdAt: 9,
     });
@@ -218,7 +211,6 @@ describe('振り直した結果を書く・元の案に戻す', () => {
       basePins: { v3: 's1' },
       baseRunId: 'run-0',
       absenceIds: ['a1', 'a2'],
-      now: '08:00',
     });
     expect(d4.aiRuns[DATE]).toHaveLength(2);
     const back = revertReassign(d4, DATE, p3).aiPlans[DATE]!;
@@ -229,10 +221,9 @@ describe('振り直した結果を書く・元の案に戻す', () => {
     const base5 = baseOf(d5, DATE, p3)!;
     const d6 = applyReassign(d5, DATE, {
       problem: p3,
-      result: reassign(p3, base5.routes, [], { now: null }),
+      result: reassign(p3, base5.routes, []),
       base: base5,
       absenceIds: ['a1', 'a2'],
-      now: null,
       label: '欠勤の振り直し（s2さん）',
       createdAt: 10,
     });

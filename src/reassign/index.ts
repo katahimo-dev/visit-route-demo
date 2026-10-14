@@ -1,15 +1,16 @@
 // 欠勤の振り直し（ADR-0011。1回目＝案A「空き時間に入れるだけ」）。design.md §4 reassign・§5「欠勤と振り直し」。
-// どれも純粋関数で決定的（乱数・Date.now を使わない。いまの時刻は引数）。DemoData は読まない・書かない
+// どれも純粋関数で決定的（乱数・Date.now を使わない。いまの時刻は扱わない＝過去の欠勤は登録しない前提。2026-10-14 利用者が決定）。
+// DemoData は読まない・書かない
 import type { Problem, Reason } from '../contracts/problem';
 import type {
   AnnealCost,
-  AnnealPrep,
   AnnealSettled,
   CandidatesFor,
   ContactList,
   ContactsOf,
   ContactVisit,
   FinishAnneal,
+  LeftOf,
   PlaceVisit,
   PrepareAnneal,
   Reassign,
@@ -48,7 +49,7 @@ export type {
   ContactVisit,
   ReassignCandidate,
   ReassignDiff,
-  ReassignOptions,
+  ReassignLeft,
   ReassignPlan,
   ReassignResult,
   ReassignTarget,
@@ -98,14 +99,6 @@ function comparePick(problem: Problem, a: Pick, b: Pick): number {
   return a.v - b.v;
 }
 
-/**
- * 始まった訪問（動かさない訪問）：時間の約束のいちばん早い開始がいまの時刻より前（2026-10-13 利用者が決定。
- * 始まっている訪問・終わった訪問）。いまの時刻が無ければ無い
- */
-function started(problem: Problem, v: number, now: number | null): boolean {
-  return now !== null && problem.visits[v]!.earliest < now - EPS;
-}
-
 /** 件数 count → count+1 にしたときの負担の均等の点の増分 */
 function balanceDelta(problem: Problem, s: number, count: number): number {
   const b = problem.balance;
@@ -126,9 +119,9 @@ type Fit = { pos: number; addedCost: number; addedTravel: number };
 /**
  * 担当 s の列 known に訪問 v を、すでにある訪問の開始時刻を変えずに strict で入れられる位置のうち、
  * 増える費用（移動＋待ち×係数＋割当費用＋負担の均等）が最も少ない位置（同じなら前の位置）。
- * 入れた訪問の開始はいまの時刻以降。無ければ null。可否・件数の上限は見ない（呼ぶ側で見る）
+ * 無ければ null。可否・件数の上限は見ない（呼ぶ側で見る）
  */
-function bestFit(problem: Problem, s: number, known: number[], v: number, now: number | null): Fit | null {
+function bestFit(problem: Problem, s: number, known: number[], v: number): Fit | null {
   const old = scheduleRoute(problem, s, known, 'strict');
   if (!old) return null;
   const oldCost = known.length === 0 ? 0 : routeCost(problem, s, known);
@@ -145,7 +138,6 @@ function bestFit(problem: Problem, s: number, known: number[], v: number, now: n
       if (Math.abs(before - after) > EPS) same = false;
     }
     if (!same) continue;
-    if (now !== null && t.stops[p]!.start < now - EPS) continue;
     const added = routeCost(problem, s, seq) - oldCost + bal;
     if (!Number.isFinite(added)) continue;
     if (best === null || added < best.addedCost - EPS) {
@@ -190,14 +182,14 @@ function baseStarts(base: ReassignPlan, staffId: string): Map<string, number> {
 }
 
 /**
- * 振り直す訪問（design.md §4 reassign）：欠勤のある人の元の案の、始まっていない訪問のうち、
+ * 振り直す訪問（design.md §4 reassign）：欠勤のある人の元の案の訪問のうち、
  * (a) 欠勤の時間と重なる訪問（元の案の時刻（base.problem での lenient）が欠勤を差し引く前の稼働時間帯に収まり、
  *     差し引いたあとには収まらない）と、欠勤のせいでその人に可にならない訪問（absence）、
  *     欠勤と関係なくその人に可にならない訪問（notAllowed。base.problem でも可にならない）、
- * (b) 残りを列の順に足していき、足すと strict で回れなくなる訪問（unreachable。この判定の列に始まった訪問は入れない）。
+ * (b) 残りを列の順に足していき、足すと strict で回れなくなる訪問（unreachable）。
  * 時間に幅のある訪問も、元の案の時刻が欠勤と重なれば振り直す（欠勤の人のまま後ろへずらさない）
  */
-export const targetsOf: TargetsOf = (problem, base, absentStaffIds, now) => {
+export const targetsOf: TargetsOf = (problem, base, absentStaffIds) => {
   const { vIndex, sIndex } = indexOf(problem);
   const before = indexOf(base.problem);
   const out: ReassignTarget[] = [];
@@ -212,7 +204,6 @@ export const targetsOf: TargetsOf = (problem, base, absentStaffIds, now) => {
     const starts = baseStarts(base, staffId);
     const chain: number[] = [];
     for (const v of knownOf(colOf(base.routes, staffId), vIndex)) {
-      if (started(problem, v, now)) continue;
       const pv = problem.visits[v]!;
       const visitId = pv.id;
       const bv = before.vIndex.get(visitId);
@@ -241,11 +232,22 @@ export const targetsOf: TargetsOf = (problem, base, absentStaffIds, now) => {
 };
 
 /**
+ * 欠勤の人に残る、振り直すべき訪問（今の案に targetsOf を当てたもの）。振り直したあとは、ふつうは無い。
+ * 手直しで欠勤の人へ戻した・振り直したあとに欠勤や条件を変えた、などで残る（理由は targetsOf と同じ）
+ */
+export const leftOf: LeftOf = (problem, plan, absentStaffIds) =>
+  targetsOf(problem, plan, absentStaffIds).map((t) => ({
+    visitId: t.visitId,
+    staffId: t.fromStaffId,
+    reason: t.reason,
+  }));
+
+/**
  * 案A「空き時間に入れるだけ」：他の人の担当・順番・開始時刻を変えずに、振り直す訪問を1件ずつ入れる。
  * 入れる順は、入れられる人の少ない訪問から（同じなら regret の大きい訪問、それも同じなら earliest の早い順・問題の順）。
  * 位置は増える費用が最も少ない位置（同じなら staff の順で先の人・前の位置）
  */
-export const reassign: Reassign = (problem, baseRoutes, targets, options) => {
+export const reassign: Reassign = (problem, baseRoutes, targets) => {
   const { vIndex, sIndex } = indexOf(problem);
   const routes: Routes = {};
   for (const [k, ids] of Object.entries(baseRoutes)) routes[k] = [...ids];
@@ -275,7 +277,7 @@ export const reassign: Reassign = (problem, baseRoutes, targets, options) => {
         if (!problem.allowed[v]![s]) continue;
         const known = knowns[s]!;
         if (overCapOf(problem, s, known.length)) continue;
-        const fit = bestFit(problem, s, known, v, options.now);
+        const fit = bestFit(problem, s, known, v);
         if (!fit) continue;
         count++;
         if (first === null || fit.addedCost < first.fit.addedCost - EPS) {
@@ -334,46 +336,37 @@ type Placement = {
   routes: Routes;
   delayedCount: number;
   maxDelayMinutes: number;
-  startsBeforeNow: boolean;
 };
 
 /**
  * 候補の人に入れる（placeVisit と候補の影響の見込み）。
  * 1. 他の訪問の開始を変えない strict の最良の位置（候補の「入る」と同じ。bestFit）
- * 2. 無ければ、いまの時刻より前の位置を除いて（始まった訪問より前には入れない・入れた訪問の開始がいまの時刻以降）、
- *    strict で回れる位置のうち費用（routeCost）の最も少ない位置、それも無ければ開始（earliest）の順の位置（lenient）。
- *    いまの時刻以降に入る位置が無ければ、始まった訪問より後ろの位置から選ぶ（startsBeforeNow）
+ * 2. 無ければ、strict で回れる位置のうち費用（routeCost）の最も少ない位置、それも無ければ開始（earliest）の順の位置（lenient）
  * 訪問の時刻（時間の約束）は変えない。影響は lenient の時刻で、既存の訪問の開始の遅れを数える
  */
-function placement(problem: Problem, routes: Routes, visitId: string, staffId: string, now: number | null): Placement {
+function placement(problem: Problem, routes: Routes, visitId: string, staffId: string): Placement {
   const { vIndex, sIndex } = indexOf(problem);
   const v = vIndex.get(visitId);
   const s = sIndex.get(staffId);
   const rest = without(routes, visitId);
-  const none = { delayedCount: 0, maxDelayMinutes: 0, startsBeforeNow: false };
+  const none = { delayedCount: 0, maxDelayMinutes: 0 };
   if (v === undefined || s === undefined) return { routes: bestInsertion(problem, rest, visitId, staffId), ...none };
   const col = colOf(rest, staffId);
   const known = knownOf(col, vIndex);
-  const fit = bestFit(problem, s, known, v, now);
+  const fit = bestFit(problem, s, known, v);
   if (fit) {
     rest[staffId] = insertAt(col, vIndex, fit.pos, visitId);
     return { routes: rest, ...none };
   }
   const old = scheduleRoute(problem, s, known, 'lenient');
-  // 始まった訪問より前には入れない
-  let pMin = 0;
-  known.forEach((x, k) => {
-    if (started(problem, x, now)) pMin = k + 1;
-  });
   const tried: { p: number; t: NonNullable<ReturnType<typeof scheduleRoute>>; cost: number }[] = [];
-  for (let p = pMin; p <= known.length; p++) {
+  for (let p = 0; p <= known.length; p++) {
     const seq = [...known.slice(0, p), v, ...known.slice(p)];
     const t = scheduleRoute(problem, s, seq, 'lenient');
     if (!t) continue;
     tried.push({ p, t, cost: routeCost(problem, s, seq) });
   }
-  const afterNow = tried.filter((x) => now === null || x.t.stops[x.p]!.start >= now - EPS);
-  const pool = afterNow.length > 0 ? afterNow : tried;
+  const pool = tried;
   let best: (typeof pool)[number] | undefined = pool[0];
   for (const x of pool) if (x.cost < (best?.cost ?? INF) - EPS) best = x;
   if (best && best.cost === INF) {
@@ -398,16 +391,15 @@ function placement(problem: Problem, routes: Routes, visitId: string, staffId: s
       maxDelay = Math.max(maxDelay, d);
     }
   });
-  const startsBeforeNow = now !== null && chosen.t.stops[chosen.p]!.start < now - EPS;
-  return { routes: rest, delayedCount, maxDelayMinutes: maxDelay, startsBeforeNow };
+  return { routes: rest, delayedCount, maxDelayMinutes: maxDelay };
 }
 
 /**
  * 入らない訪問を受けられる人の候補（問題のすべての人）。並び：入る人が先で増える費用の小さい順、
  * 次に「ずらせば入る」分の絶対値の小さい順（同じなら遅らせる方）、最後に入らない人。同じなら staff の順。
- * 「この人に入れる」の影響（遅れる既存の訪問・いまの時刻より前に入る）と、列に元から必須の違反があるかも返す
+ * 「この人に入れる」の影響（遅れる既存の訪問）と、列に元から必須の違反があるかも返す
  */
-export const candidatesFor: CandidatesFor = (problem, routes, visitId, options) => {
+export const candidatesFor: CandidatesFor = (problem, routes, visitId) => {
   const { vIndex } = indexOf(problem);
   const v = vIndex.get(visitId);
   if (v === undefined) return [];
@@ -419,23 +411,21 @@ export const candidatesFor: CandidatesFor = (problem, routes, visitId, options) 
     const overCap = overCapOf(problem, s, known.length);
     const allowed = problem.allowed[v]![s]!;
     const routeBroken = known.length > 0 && scheduleRoute(problem, s, known, 'strict') === null;
-    const fit = allowed && !overCap && !routeBroken ? bestFit(problem, s, known, v, options.now) : null;
+    const fit = allowed && !overCap && !routeBroken ? bestFit(problem, s, known, v) : null;
     let shiftMinutes: number | null = null;
     // ずらせば入るか：時刻に関わらない必須の原因が無く、件数の上限を超えず、列に元から違反の無い人だけ
     const timeOnly = reasons.every((r) => r.points !== INF || TIME_RULES.has(r.ruleId));
     if (!fit && !overCap && !routeBroken && timeOnly) {
       for (let a = SHIFT_STEP; a <= SHIFT_MAX && shiftMinutes === null; a += SHIFT_STEP) {
         for (const d of [a, -a]) {
-          if (bestFit(shifted(problem, v, d), s, known, v, options.now)) {
+          if (bestFit(shifted(problem, v, d), s, known, v)) {
             shiftMinutes = d;
             break;
           }
         }
       }
     }
-    const effect = fit
-      ? { delayedCount: 0, maxDelayMinutes: 0, startsBeforeNow: false }
-      : placement(problem, rest, visitId, st.id, options.now);
+    const effect = fit ? { delayedCount: 0, maxDelayMinutes: 0 } : placement(problem, rest, visitId, st.id);
     const c: ReassignCandidate & { order: number } = {
       staffId: st.id,
       fits: fit !== null,
@@ -447,7 +437,6 @@ export const candidatesFor: CandidatesFor = (problem, routes, visitId, options) 
       routeBroken,
       delayedCount: effect.delayedCount,
       maxDelayMinutes: effect.maxDelayMinutes,
-      startsBeforeNow: effect.startsBeforeNow,
       order: s,
     };
     return c;
@@ -474,11 +463,11 @@ export const candidatesFor: CandidatesFor = (problem, routes, visitId, options) 
 
 /**
  * 候補の人に入れる：候補の「入る」と同じ位置（他の訪問の開始を変えない strict の最良）。
- * 無ければ、いまの時刻より前の位置を除いて strict の最良、無ければ開始の順に lenient（placement）。
+ * 無ければ strict の最良、無ければ開始の順に lenient（placement）。
  * 訪問の時刻は変えない。あとの訪問の開始が遅れることがある（画面は候補の delayedCount で確認を出す）
  */
-export const placeVisit: PlaceVisit = (problem, routes, visitId, staffId, options) =>
-  placement(problem, routes, visitId, staffId, options.now).routes;
+export const placeVisit: PlaceVisit = (problem, routes, visitId, staffId) =>
+  placement(problem, routes, visitId, staffId).routes;
 
 /** 列ごとの lenient の時刻（訪問ID → { 担当, 開始 }）と移動の合計 */
 function timesOf(problem: Problem, routes: Routes) {
@@ -544,13 +533,10 @@ export function stayPointsOf(weight: number): { movePoints: number; minutePoints
 }
 
 /**
- * 案B の準備：stay（元の案の担当・開始と減点）と、始まった訪問の固定を入れた問題・初期解（案A）を作る。
+ * 案B の準備：stay（元の案の担当・開始と減点）を入れた問題・初期解（案A）を作る。
  * - stay.staff：元の案の担当。振り直す訪問・元の案で入っていない訪問は null（担当は問わない）
  * - stay.start：元の案の開始（base.problem での lenient）。元の案に無い訪問は null
- * - 始まった訪問（earliest ＜ いまの時刻）：案A の担当だけを可にし、時間の約束を案A の開始ちょうどにする。
- *   案A の列で可でない・strict で回れない訪問は問題から外し（どの担当も可にしない）、解いたあとに戻す（held）
  * - 元の案で入っていない訪問（振り直す訪問でもない）は、案A と同じく入れない（どの担当も可にしない）
- * - 始まっていない訪問は earliest ≥ いまの時刻なので、いまの時刻より前には始まらない
  */
 export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, options) => {
   const { vIndex, sIndex } = indexOf(problem);
@@ -568,38 +554,17 @@ export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, opti
     stayStart[v] = at.start;
     if (!targetIds.has(pv.id)) stayStaff[v] = sIndex.get(at.staffId) ?? null;
   });
-  const visits = problem.visits.map((x) => ({ ...x }));
   const allowed = problem.allowed.map((row) => row.slice());
   const none = () => new Array<boolean>(problem.staff.length).fill(false);
   // 元の案で入っていない訪問は入れない（振り直す訪問は元の案にあるので外れない）
   problem.visits.forEach((pv, v) => {
     if (!inBase.has(pv.id) && !targetIds.has(pv.id)) allowed[v] = none();
   });
-  const held: AnnealPrep['held'] = [];
-  const heldIds = new Set<string>();
   const initial: Routes = {};
-  problem.staff.forEach((st, s) => {
-    const known = knownOf(colOf(planA, st.id), vIndex);
-    const t = scheduleRoute(problem, s, known, 'lenient');
-    const bad = new Set(t?.violations.map((x) => x.visitId) ?? []);
-    known.forEach((v, k) => {
-      if (!started(problem, v, options.now)) return;
-      const id = problem.visits[v]!.id;
-      if (!problem.allowed[v]![s] || bad.has(id) || !t) {
-        held.push({ visitId: id, staffId: st.id });
-        heldIds.add(id);
-        allowed[v] = none();
-        return;
-      }
-      const start = t.stops[k]!.start;
-      const row = none();
-      row[s] = true;
-      allowed[v] = row;
-      visits[v] = { ...visits[v]!, earliest: start, latest: start };
-    });
-    initial[st.id] = known.map((v) => problem.visits[v]!.id).filter((id) => !heldIds.has(id));
-  });
-  // 落とさない訪問：案A（初期解）に入っていて、振り直す訪問でない訪問（始まって固定した訪問も含む。外した訪問は含まない）
+  for (const st of problem.staff) {
+    initial[st.id] = knownOf(colOf(planA, st.id), vIndex).map((v) => problem.visits[v]!.id);
+  }
+  // 落とさない訪問：案A（初期解）に入っていて、振り直す訪問でない訪問
   const keep: boolean[] = new Array(V).fill(false);
   for (const ids of Object.values(initial))
     for (const id of ids) {
@@ -608,16 +573,14 @@ export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, opti
     }
   const prepared: Problem = {
     ...problem,
-    visits,
     allowed,
     stay: { staff: stayStaff, start: stayStart, keep, ...stayPointsOf(options.weight) },
   };
-  return { problem: prepared, initial, source: problem, planA, held, targets: [...targetIds] };
+  return { problem: prepared, initial, source: problem, planA, targets: [...targetIds] };
 };
 
 /**
- * 案B の結果をまとめる：solver の列に、外した訪問（held）を同じ担当の列へ開始（earliest）の順に戻し、
- * 問題にいない人の列・問題に無い訪問は案A のまま残す。pins は担当のいるすべての訪問（案A と同じ）
+ * 案B の結果をまとめる：solver の列に、問題にいない人の列・問題に無い訪問は案A のまま残す。pins は担当のいるすべての訪問（案A と同じ）
  */
 export const finishAnneal: FinishAnneal = (prep, solved) => {
   const problem = prep.source;
@@ -630,13 +593,6 @@ export const finishAnneal: FinishAnneal = (prep, solved) => {
   }
   for (const st of problem.staff) {
     if (!Object.hasOwn(routes, st.id)) routes[st.id] = colOf(solved, st.id).filter((id) => vIndex.has(id));
-  }
-  const earliest = (id: string) => problem.visits[vIndex.get(id)!]!.earliest;
-  for (const h of prep.held) {
-    const col = routes[h.staffId] ?? [];
-    const e = earliest(h.visitId);
-    const at = col.findIndex((id) => vIndex.has(id) && earliest(id) > e);
-    routes[h.staffId] = at < 0 ? [...col, h.visitId] : [...col.slice(0, at), h.visitId, ...col.slice(at)];
   }
   const owner = new Map<string, string>();
   for (const [k, ids] of Object.entries(routes)) for (const id of ids) owner.set(id, k);

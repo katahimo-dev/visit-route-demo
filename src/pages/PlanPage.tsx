@@ -45,7 +45,7 @@ import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } fro
 import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
 import { type Cols, NONE, timeOrder, windowText } from '../domain/scheduleModel';
-import { addDays, hhmmToMinutes, jstDate, jstHhmm } from '../domain/time';
+import { addDays, jstDate } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import {
   absencesOn,
@@ -55,7 +55,6 @@ import {
   applyReassign,
   baseOf,
   chooseReassign,
-  defaultNow,
   removeAbsence,
   revertReassign,
   saveAbsence,
@@ -69,6 +68,7 @@ import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import {
   contactsOf,
+  leftOf,
   placeVisit,
   prepareAnneal,
   type ReassignCandidate,
@@ -83,7 +83,7 @@ import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
-import { AbsencePanel, CandidateBox, ReassignBar } from './absenceParts';
+import { AbsencePanel, CandidateBox, leftReasonText, ReassignBar } from './absenceParts';
 import {
   AchievementList,
   achievementSummary,
@@ -96,7 +96,14 @@ import {
   SCORE_TEXT,
   WeightPanel,
 } from './planParts';
-import { AnnealBox, ContactButton, ContactPanel, type ReassignOption } from './reassignParts';
+import {
+  AnnealBox,
+  ContactButton,
+  ContactPanel,
+  type LeftContact,
+  ReassignDock,
+  type ReassignOption,
+} from './reassignParts';
 import { VisitForm } from './VisitForm';
 
 /**
@@ -190,6 +197,8 @@ export default function PlanPage() {
   const runRef = useRef<{ stop(): void } | null>(null);
   /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
   const pendingAnneal = useRef<string | null>(null);
+  /** 欠勤を登録して振り直したあと、差の欄へ移る（欄が閉じて今の案が出てから） */
+  const pendingBarFocus = useRef(false);
   /** 計算の世代。画面を離れると進め、前の世代の計算の結果は捨てる（開発時の StrictMode の付け外しでも） */
   const generation = useRef(0);
   /** 自動作成を試した日（同じ日に2回は試さない） */
@@ -788,7 +797,7 @@ export default function PlanPage() {
   const shortName = (id: string) => staffName(id).slice(0, 40);
 
   /** 「登録して振り直す」：欠勤を足したデータで compile し、元の案から振り直して今の案にする（1回の update で書く） */
-  const registerAndReassign = (absence: Absence, now: string | null, anneal = false) => {
+  const registerAndReassign = (absence: Absence, anneal = false) => {
     if (running) return;
     setError(null);
     const d1 = saveAbsence(data, absence);
@@ -811,11 +820,10 @@ export default function PlanPage() {
       return;
     const used = absencesOn(d1, date);
     const absent = [...new Set(used.map((a) => a.staffId))];
-    const nowMin = now === null ? null : hhmmToMinutes(now);
     const result = attempt(() => {
       // 元の案の時刻（欠勤と重なるか）は、その日の欠勤を除いた問題で出す
       const before = { problem: compile(withoutAbsencesOn(d1, date), date), routes: base.routes };
-      return reassign(p, base.routes, targetsOf(p, before, absent, nowMin), { now: nowMin });
+      return reassign(p, base.routes, targetsOf(p, before, absent));
     });
     if (!result.value) {
       setError(`振り直せませんでした（${result.error}）`);
@@ -829,7 +837,6 @@ export default function PlanPage() {
         result: r,
         base,
         absenceIds: used.map((a) => a.id),
-        now,
         label: `欠勤の振り直し（${shortName(absence.staffId)}さん）`,
         createdAt,
       }),
@@ -839,6 +846,7 @@ export default function PlanPage() {
     toast(`振り直しました（振り直し ${r.placed.length}件・入らない ${r.unplaced.length}件）`);
     // 案B も作る：書き込んだ今の案（reassign）と新しい問題が画面に出てから始める（下の effect）
     if (anneal) pendingAnneal.current = date;
+    pendingBarFocus.current = true;
   };
 
   // ---- 2回目：案B「少し動かしてよい」・連絡の一覧（PRD D34・D35。ADR-0011 追記）----
@@ -859,7 +867,7 @@ export default function PlanPage() {
   }, [reassignInfo, problem, aiPlan]);
   /** 今の振り直し（元の案・欠勤・案A）のキー。案B の結果がこの振り直しのものか */
   const annealKey = reassignInfo
-    ? JSON.stringify([date, reassignInfo.baseRoutes, reassignInfo.absenceIds, reassignInfo.now, planA])
+    ? JSON.stringify([date, reassignInfo.baseRoutes, reassignInfo.absenceIds, planA])
     : null;
   /** 作った案B（記録にある、今の振り直しのいちばん新しい案B。作り終えたときに記録へ足す） */
   const anneal = useMemo(() => {
@@ -889,6 +897,36 @@ export default function PlanPage() {
     const ids = new Set(reassignInfo?.absenceIds ?? []);
     return new Set(data.absences.filter((a) => ids.has(a.id) && a.date === date).map((a) => a.staffId));
   }, [reassignInfo, data.absences, date]);
+  /** 欠勤の人に残る、欠勤と重なる訪問（手直しで戻した等。今の案で。leftOf） */
+  const left = useMemo(() => {
+    if (!reassignInfo || !problem || !reassignBefore || absentStaff.size === 0) return [];
+    return (
+      attempt(() => leftOf(problem, { problem: reassignBefore, routes: aiPlan?.routes ?? {} }, [...absentStaff]))
+        .value ?? []
+    );
+  }, [reassignInfo, problem, reassignBefore, absentStaff, aiPlan]);
+  const leftById = useMemo(() => new Map(left.map((x) => [x.visitId, x])), [left]);
+  const barId = useId();
+  /** 差の欄へ移り、見出しにフォーカスする（欠勤の登録のあと・列の見出しの近道・下の帯） */
+  const goToBar = () => {
+    const el = document.getElementById(barId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.focus({ preventScroll: true });
+  };
+  // 欠勤を登録して振り直したら、差の欄（案A の結果・案B・連絡の一覧）へ移る
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 振り直しの案が画面に出たときに1回だけ
+  useEffect(() => {
+    if (!pendingBarFocus.current || !reassignInfo) return;
+    pendingBarFocus.current = false;
+    requestAnimationFrame(goToBar);
+  }, [reassignInfo]);
+  /** もう一度振り直す（欠勤の人に残る訪問を、今の案から振り直す。続けて振り直すのと同じ） */
+  const reassignAgain = () => {
+    const a = data.absences.find((x) => x.date === date && absentStaff.has(x.staffId));
+    if (!a) return;
+    registerAndReassign(a);
+  };
   const annealDisabled = !reassignInfo
     ? '振り直しの案がありません'
     : absenceCancelled
@@ -898,19 +936,15 @@ export default function PlanPage() {
         : running && running !== 'anneal'
           ? '計算中は押せません'
           : null;
-  /** 案B を Worker で作る（進み具合・止める）。初期解は案A、始まった訪問は動かさない */
+  /** 案B を Worker で作る（進み具合・止める）。初期解は案A */
   const startAnneal = () => {
     if (!problem || !reassignInfo || !reassignBefore || !planA || running || annealDisabled) return;
     setError(null);
-    const nowMin = reassignInfo.now ? hhmmToMinutes(reassignInfo.now) : null;
     const before = { problem: reassignBefore, routes: reassignInfo.baseRoutes };
     const weight = stayWeight;
     const key = annealKey ?? '';
     const prep = attempt(() =>
-      prepareAnneal(problem, before, planA, targetsOf(problem, before, [...absentStaff], nowMin), {
-        now: nowMin,
-        weight,
-      }),
+      prepareAnneal(problem, before, planA, targetsOf(problem, before, [...absentStaff]), { weight }),
     );
     if (!prep.value) {
       setError(`案B を作れませんでした（${prep.error}）`);
@@ -1071,6 +1105,21 @@ export default function PlanPage() {
       ).value ?? null
     );
   }, [reassignInfo, reassignBefore, problem, aiPlan]);
+  /** 連絡の一覧のいちばん上に出す、欠勤の人に残る訪問 */
+  const leftContacts: LeftContact[] = left.map((x) => {
+    const v = visitById.get(x.visitId);
+    return {
+      visitId: x.visitId,
+      clientId: v?.clientId ?? '',
+      staffId: x.staffId,
+      at: v ? timeText(v.earliestStart) : '',
+      reason: leftReasonText(x),
+    };
+  });
+  /** 案B を勧める（案A で入らない訪問があり、今の案が案A で、まだ案B を作っていない） */
+  const annealRecommended =
+    !!reassignInfo && (rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert' && !anneal;
+  const contactsTotal = contactCount(contacts) + left.length;
   const contactWords = {
     day: dayWordOf(date, jstDate(Date.now())),
     staffWord: terms.staff,
@@ -1099,7 +1148,7 @@ export default function PlanPage() {
   };
   /**
    * 入らない訪問を候補の人に入れる（固定。時刻は変えない。間に合わなければ必須の違反の赤い枠）。
-   * その人の既存の訪問の開始が遅れる・いまの時刻より前に入るときは確認を出す
+   * その人の既存の訪問の開始が遅れるときは確認を出す
    */
   const placeCandidate = (visitId: string, c: ReassignCandidate) => {
     if (!problem || !aiPlan || running) return;
@@ -1108,15 +1157,11 @@ export default function PlanPage() {
     if (c.delayedCount > 0) {
       notes.push(`${staffName(staffId)}さんの訪問 ${c.delayedCount}件の開始が最大 +${c.maxDelayMinutes}分 遅れます。`);
     }
-    if (c.startsBeforeNow && reassignInfo?.now) {
-      notes.push(`入れる訪問の開始がいまの時刻（${timeText(reassignInfo.now)}）より前になります。`);
-    }
     if (notes.length > 0 && !confirm(`${notes.join('')}入れますか？`)) return;
     const p = problem;
-    const nowMin = reassignInfo?.now ? hhmmToMinutes(reassignInfo.now) : null;
     update((d) =>
       patchPlan(d, date, p, (plan) => ({
-        ...withRoutes(p, plan, placeVisit(p, plan.routes, visitId, staffId, { now: nowMin })),
+        ...withRoutes(p, plan, placeVisit(p, plan.routes, visitId, staffId)),
         pins: { ...plan.pins, [visitId]: staffId },
       })),
     );
@@ -1262,6 +1307,7 @@ export default function PlanPage() {
     const x = { id, set: PLAN_SET };
     const subFrom = reassignMarks.substitute.get(id);
     const shift = reassignMarks.shifted.get(id);
+    const stay = leftById.get(id);
     return (
       <VisitCard
         key={id}
@@ -1279,8 +1325,18 @@ export default function PlanPage() {
         dragging={dragging === id}
         detail={<ReasonBox explain={explained.get(id)} />}
       >
-        {(pin || hard || subFrom || shift) && (
+        {(pin || hard || subFrom || shift || stay) && (
           <div className="row visit-tags">
+            {stay && (
+              <span
+                className="chip chip-red"
+                data-testid="left-mark"
+                title="欠勤の時間と重なるのに振り直していない訪問です。差の欄の「もう一度振り直す」か、ドラッグで別の人へ移してください"
+              >
+                <TriangleAlert size={12} aria-hidden="true" />
+                {leftReasonText(stay)}（対応が必要）
+              </span>
+            )}
             {subFrom && (
               <span className="chip chip-move" title={`元の担当：${staffName(subFrom)}`} data-testid="substitute">
                 代行
@@ -1631,33 +1687,6 @@ export default function PlanPage() {
           </div>
         ) : (
           <>
-            {reassignInfo && (
-              <ReassignBar
-                info={reassignInfo}
-                diff={rDiff}
-                cancelled={absenceCancelled}
-                running={!!running}
-                onRevert={revertToBase}
-                onCompare={() => navigate('/compare', { state: { a: 'before', b: 'current' } })}
-                extraActions={<ContactButton count={contactCount(contacts)} onOpen={() => setContactsOpen(true)} />}
-              >
-                <AnnealBox
-                  weight={stayWeight}
-                  onWeight={setStayWeight}
-                  recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
-                  disabledWhy={annealDisabled}
-                  running={running === 'anneal'}
-                  progress={running === 'anneal' ? progress : null}
-                  onStart={startAnneal}
-                  onStop={stopAnneal}
-                  options={annealOptions}
-                  absentStaff={absentStaff}
-                  onChoose={chooseOption}
-                  stopped={!!anneal?.stopped}
-                  note={note}
-                />
-              </ReassignBar>
-            )}
             <div className="card stack">
               <SectionTitle
                 icon={Gauge}
@@ -1721,6 +1750,38 @@ export default function PlanPage() {
               )}
             </div>
 
+            {reassignInfo && (
+              <ReassignBar
+                id={barId}
+                info={reassignInfo}
+                diff={rDiff}
+                left={left}
+                visitLabel={visitLabel}
+                staffName={staffName}
+                onReassignAgain={reassignAgain}
+                cancelled={absenceCancelled}
+                running={!!running}
+                onRevert={revertToBase}
+                onCompare={() => navigate('/compare', { state: { a: 'before', b: 'current' } })}
+                extraActions={<ContactButton count={contactsTotal} onOpen={() => setContactsOpen(true)} />}
+              >
+                <AnnealBox
+                  weight={stayWeight}
+                  onWeight={setStayWeight}
+                  recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
+                  disabledWhy={annealDisabled}
+                  running={running === 'anneal'}
+                  progress={running === 'anneal' ? progress : null}
+                  onStart={startAnneal}
+                  onStop={stopAnneal}
+                  options={annealOptions}
+                  absentStaff={absentStaff}
+                  onChoose={chooseOption}
+                  stopped={!!anneal?.stopped}
+                  note={note}
+                />
+              </ReassignBar>
+            )}
             <div className="card stack">
               <SectionTitle
                 icon={Users}
@@ -1766,7 +1827,6 @@ export default function PlanPage() {
                               problem={problem}
                               routes={routes}
                               visitId={id}
-                              now={reassignInfo?.now ?? null}
                               staffName={staffName}
                               visit={visitById.get(id)}
                               running={!!running}
@@ -1849,6 +1909,30 @@ export default function PlanPage() {
                           </button>
                         )}
                       </div>
+                      {reassignInfo && absentStaff.has(sid) && (
+                        <div className="row col-reassign" data-testid="col-reassign">
+                          <button type="button" className="link-btn" onClick={goToBar}>
+                            振り直し済み・入らない {rDiff?.unplaced.length ?? 0}件
+                          </button>
+                          {left.some((x) => x.staffId === sid) && (
+                            <button type="button" className="chip chip-red chip-btn" onClick={goToBar}>
+                              欠勤の人のまま {left.filter((x) => x.staffId === sid).length}件
+                            </button>
+                          )}
+                          {annealRecommended && !annealDisabled && (
+                            <button
+                              type="button"
+                              className="btn btn-small"
+                              onClick={() => {
+                                startAnneal();
+                                goToBar();
+                              }}
+                            >
+                              案B を作る
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
                       {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
                       {ids.map((id) => card(id))}
@@ -1889,6 +1973,23 @@ export default function PlanPage() {
               title={`地図${focusStaff ? `：${staffName(focusStaff)}` : ''}`}
               focusKey={sel.focusKey}
             />
+            {reassignInfo && (
+              <ReassignDock
+                targetId={barId}
+                unplaced={rDiff?.unplaced.length ?? 0}
+                left={left.length}
+                method={reassignInfo.method}
+                annealRecommended={annealRecommended && !annealDisabled}
+                annealRunning={running === 'anneal'}
+                contactCount={contactsTotal}
+                onGo={goToBar}
+                onAnneal={() => {
+                  startAnneal();
+                  goToBar();
+                }}
+                onContacts={() => setContactsOpen(true)}
+              />
+            )}
           </>
         )}
 
@@ -1934,6 +2035,7 @@ export default function PlanPage() {
       {contactsOpen && contacts && (
         <ContactPanel
           list={contacts}
+          left={leftContacts}
           words={contactWords}
           terms={terms}
           onCopied={(ok, what) =>
@@ -1954,7 +2056,6 @@ export default function PlanPage() {
               date={date}
               baseSlots={av.baseSlots}
               existing={av.absence}
-              initialNow={defaultNow(date, jstDate(Date.now()), jstHhmm(Date.now()))}
               data={data}
               visitLabel={visitLabel}
               canReassign={running ? { ok: false, why: '計算中は押せません' } : { ok: true }}

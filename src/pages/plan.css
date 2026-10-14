@@ -574,6 +574,65 @@
 }
 .reassign-bar {
   border-left: 4px solid var(--primary);
+  scroll-margin-top: 72px;
+}
+.reassign-bar:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+/* 欠勤の人に残る訪問・入らない訪問の理由 */
+.left-box {
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.left-box-warn {
+  border-color: var(--line);
+  background: var(--soft);
+}
+/* 欠勤の人の列の見出しの近道 */
+.col-reassign {
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.chip-btn {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+/* 差の欄が画面の外のときの帯（左下。左のメニュー 232px の右から。地図の MapDock は右下（幅380px）なので、右に 420px あける） */
+.reassign-dock {
+  position: fixed;
+  left: 252px;
+  bottom: 20px;
+  z-index: 900;
+  max-width: calc(100vw - 672px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--primary);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(40, 25, 15, 0.2);
+}
+/* 狭い画面では地図と重ならないよう上（日付の帯の下）に出す */
+@media (max-width: 1100px) {
+  .reassign-dock {
+    top: 68px;
+    bottom: auto;
+    max-width: calc(100vw - 272px);
+  }
+}
+/* 左のメニューが上に回る幅 */
+@media (max-width: 860px) {
+  .reassign-dock {
+    left: 8px;
+    max-width: calc(100vw - 16px);
+  }
 }
 .candidate-list {
   display: flex;
