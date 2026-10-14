@@ -361,4 +361,11 @@ describe('leftOf（欠勤の人に残る、振り直すべき訪問）', () => {
     // 欠勤のない人は見ない
     expect(leftOf(p, on(small(), BASE), [])).toEqual([]);
   });
+  it('欠勤と関係ない元からの違反（notAllowed）は返さない（targetsOf には出る）', () => {
+    const d = small({ visits: [fixed('v1', 'c1', '09:00'), fixed('late', 'c2', '19:00')] });
+    const p = compile({ ...d, absences: [absence('s1', null, '12:00')] }, DATE);
+    const base: Routes = { s1: ['v1', 'late'], s2: [], s3: [] };
+    expect(targetsOf(p, on(d, base), ['s1']).map((t) => t.reason)).toEqual(['absence', 'notAllowed']);
+    expect(leftOf(p, on(d, base), ['s1'])).toEqual([{ visitId: 'v1', staffId: 's1', reason: 'absence' }]);
+  });
 });

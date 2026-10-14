@@ -596,42 +596,69 @@
   gap: 4px;
   font-size: 0.85rem;
 }
+.col-reassign .link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--primary-dark);
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .chip-btn {
   border: 0;
   cursor: pointer;
   font: inherit;
 }
-/* 差の欄が画面の外のときの帯（左下。左のメニュー 232px の右から。地図の MapDock は右下（幅380px）なので、右に 420px あける） */
+/* 差の欄が画面の外のときの帯（左下。左のメニュー 232px の右から。右下の地図（MapDock）の位置は --map-dock-* で避ける） */
 .reassign-dock {
   position: fixed;
   left: 252px;
   bottom: 20px;
   z-index: 900;
-  max-width: calc(100vw - 672px);
+  /* 右下の地図（MapDock。--map-dock-left は画面の右端から地図の左端まで）と重ならない幅。1行に収める */
+  max-width: calc(100vw - 264px - var(--map-dock-left, 0px));
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
+  overflow: hidden;
+  white-space: nowrap;
   background: var(--card);
   border: 1px solid var(--line);
   border-left: 4px solid var(--primary);
   border-radius: 14px;
   box-shadow: 0 10px 30px rgba(40, 25, 15, 0.2);
 }
-/* 狭い画面では地図と重ならないよう上（日付の帯の下）に出す */
+.reassign-dock > * {
+  flex-shrink: 0;
+}
+.reassign-dock .reassign-dock-title {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.reassign-dock .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 狭い画面では、右下の地図（開いた地図・地図のボタン）の上に重ねずに積む（列の見出しを覆わないよう下に出す） */
 @media (max-width: 1100px) {
   .reassign-dock {
-    top: 68px;
-    bottom: auto;
-    max-width: calc(100vw - 272px);
+    right: 20px;
+    bottom: max(20px, calc(var(--map-dock-top, 0px) + 8px));
+    max-width: none;
   }
 }
 /* 左のメニューが上に回る幅 */
 @media (max-width: 860px) {
   .reassign-dock {
     left: 8px;
-    max-width: calc(100vw - 16px);
+    right: 8px;
+    bottom: max(12px, calc(var(--map-dock-top, 0px) + 8px));
+    padding: 6px 8px;
   }
 }
 .candidate-list {

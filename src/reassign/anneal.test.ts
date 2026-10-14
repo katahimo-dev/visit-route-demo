@@ -185,6 +185,44 @@ describe('案B は案A に入っていた訪問を落とさない（keep。ADR-0
   });
 });
 
+describe('案A の列が使えない人（held）', () => {
+  it('strict で回れない列が1つあっても、その人の列だけ案A のまま外し、残りの人で案B を作る', () => {
+    const c = cases(1)[0]!;
+    // 案A の列の2件目を、1件目より前の時刻に固定して、その列を strict で回れなくする
+    const sid = Object.keys(c.a.routes).find((k) => (c.a.routes[k] ?? []).length >= 2)!;
+    const [first, second] = c.a.routes[sid]!;
+    const fi = c.p.visits.findIndex((v) => v.id === first);
+    const vi = c.p.visits.findIndex((v) => v.id === second);
+    const at = c.p.visits[fi]!.earliest - 60;
+    const p = { ...c.p, visits: c.p.visits.map((v, i) => (i === vi ? { ...v, earliest: at, latest: at } : v)) };
+    const prep = prepareAnneal(p, { problem: c.plain, routes: c.base }, c.a.routes, c.targets, {
+      weight: STAY_WEIGHT_DEFAULT,
+    });
+    expect(prep.held).toEqual([sid]);
+    expect(prep.initial[sid]).toEqual([]);
+    const si = p.staff.findIndex((st) => st.id === sid);
+    // その人にはどの訪問も可にしない・その列の訪問はどの人にも可にしない
+    expect(prep.problem.allowed.every((row) => !row[si])).toBe(true);
+    for (const id of c.a.routes[sid]!) {
+      const v = p.visits.findIndex((x) => x.id === id);
+      expect(prep.problem.allowed[v]!.some(Boolean)).toBe(false);
+    }
+    // 案A（残りの人の列）は有限で、solver の初期解の候補になる
+    expect(Number.isFinite(annealCost(prep.problem, prep.initial))).toBe(true);
+    const solved = solve(prep.problem, { seed: 7, iterations: 20_000, initial: prep.initial });
+    const s = settleAnneal(prep, solved.routes);
+    expect(s.reason).not.toBe('keepDropped');
+    expect(s.ok).toBe(true);
+    // 外した人の列は案A のまま戻る
+    expect(s.result.routes[sid]).toEqual(c.a.routes[sid]);
+    for (const id of c.a.routes[sid]!) expect(s.result.pins[id]).toBe(sid);
+  });
+  it('使えない列が無ければ held は空', () => {
+    const c = cases(1)[0]!;
+    expect(runB(c, STAY_WEIGHT_DEFAULT).prep.held).toEqual([]);
+  });
+});
+
 describe('settleAnneal（保険：案A のままにする）', () => {
   const list = cases(2);
   it('案B が案A に入っていた訪問を落としていれば keepDropped で案A を返す', () => {

@@ -9,7 +9,8 @@ import {
   UserRoundCheck,
   X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FLOATING_EVENT, useFloatingEdge } from '../components/floating';
 import { WeightSlider } from '../components/parts';
 import { Hint, SidePanel, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
@@ -472,42 +473,97 @@ export function ReassignDock({
   onContacts: () => void;
 }) {
   const [inView, setInView] = useState(true);
-  useEffect(() => {
+  // 差の欄が見えているか。初めは実際の位置で決め（一瞬遅れて出ない）、あとは IntersectionObserver で
+  useLayoutEffect(() => {
     const el = document.getElementById(targetId);
     if (!el) return;
+    const r = el.getBoundingClientRect();
+    setInView(r.bottom > 0 && r.top < window.innerHeight);
     const io = new IntersectionObserver(([e]) => setInView(e?.isIntersecting ?? true), { threshold: 0 });
     io.observe(el);
     return () => io.disconnect();
   }, [targetId]);
+  // 知らせ（トースト）が避けられるよう、位置を CSS の変数（--reassign-dock-top）に出す
+  const edgeRef = useFloatingEdge('reassign-dock');
+  const boxRef = useRef<HTMLElement | null>(null);
+  // 1行に収まらなければ、ボタンの文言を隠してアイコンだけにする（中身・画面の幅・地図の位置が変わったら測り直す）
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    // 自分の位置の知らせでは測り直さない（測り直しで繰り返さない）
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== 'reassign-dock') setTick((t) => t + 1);
+    };
+    window.addEventListener('resize', on);
+    window.addEventListener(FLOATING_EVENT, on);
+    return () => {
+      window.removeEventListener('resize', on);
+      window.removeEventListener(FLOATING_EVENT, on);
+    };
+  }, []);
+  const sig = JSON.stringify([unplaced, left, method, annealRecommended, annealRunning, contactCount, inView, tick]);
+  const [compactFor, setCompactFor] = useState<string | null>(null);
+  const compact = compactFor === sig;
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el || compact) return;
+    if (el.scrollWidth > el.clientWidth + 1) setCompactFor(sig);
+  }, [sig, compact]);
   if (inView) return null;
+  const ref = (el: HTMLElement | null) => {
+    boxRef.current = el;
+    edgeRef(el);
+  };
+  const plan = method === 'anneal' ? '案B' : '案A';
+  /** 文言（compact のときは隠し、aria-label と title で読める） */
+  const label = (text: string) => (compact ? null : <span>{text}</span>);
   return (
-    <section className="reassign-dock no-print" aria-label="欠勤の振り直し（近道）" data-testid="reassign-dock">
-      <strong className="row" style={{ gap: 4 }}>
+    <section
+      ref={ref}
+      className={`reassign-dock no-print ${compact ? 'is-compact' : ''}`}
+      aria-label="欠勤の振り直し（近道）"
+      data-testid="reassign-dock"
+    >
+      <strong className="row reassign-dock-title" style={{ gap: 4 }} title={`欠勤の振り直し（${plan}）`}>
         <UserRoundCheck size={15} aria-hidden="true" />
-        欠勤の振り直し（{method === 'anneal' ? '案B' : '案A'}）
+        <span className="ellipsis">{compact ? `振り直し（${plan}）` : `欠勤の振り直し（${plan}）`}</span>
       </strong>
       <span className={unplaced > 0 ? 'chip chip-warn' : 'chip chip-ok'}>入らない {unplaced}件</span>
-      {left > 0 && <span className="chip chip-red">欠勤の人のまま {left}件</span>}
+      {left > 0 && (
+        <span className="chip chip-red" title={`欠勤の人のまま ${left}件`}>
+          {compact ? '欠勤のまま' : '欠勤の人のまま'} {left}件
+        </span>
+      )}
       {annealRunning ? (
-        <span className="sub">案B を作っています…</span>
+        <span className="sub">{compact ? '案B…' : '案B を作っています…'}</span>
       ) : (
         annealRecommended && (
-          <button type="button" className="btn btn-small" onClick={onAnneal}>
-            <WithIcon icon={Play} size={14}>
-              少し動かしてよい案（案B）を作る
-            </WithIcon>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={onAnneal}
+            aria-label="少し動かしてよい案（案B）を作る"
+            title="少し動かしてよい案（案B）を作る"
+          >
+            <Play size={14} aria-hidden="true" />
+            {compact ? <span>案B</span> : <span>案B を作る</span>}
           </button>
         )
       )}
-      <button type="button" className="btn btn-small" onClick={onContacts}>
-        <WithIcon icon={MessageSquareText} size={14}>
-          連絡の一覧{contactCount > 0 ? `（${contactCount}件）` : ''}
-        </WithIcon>
+      <button
+        type="button"
+        className="btn btn-small"
+        onClick={onContacts}
+        aria-label={`連絡の一覧${contactCount > 0 ? `（${contactCount}件）` : ''}`}
+        title="連絡の一覧"
+      >
+        <MessageSquareText size={14} aria-hidden="true" />
+        {compact
+          ? contactCount > 0 && <span>{contactCount}</span>
+          : label(`連絡${contactCount > 0 ? `（${contactCount}件）` : ''}`)}
       </button>
-      <button type="button" className="btn btn-small" onClick={onGo}>
-        <WithIcon icon={ArrowUpToLine} size={14}>
-          差の欄へ
-        </WithIcon>
+      <button type="button" className="btn btn-small" onClick={onGo} aria-label="差の欄へ" title="差の欄へ">
+        <ArrowUpToLine size={14} aria-hidden="true" />
+        {label('差の欄へ')}
       </button>
     </section>
   );

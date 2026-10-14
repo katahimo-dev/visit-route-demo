@@ -172,9 +172,15 @@ export function SidePanel({
   footer,
   narrow = false,
   fallbackFocus,
+  returnFocus,
 }: {
   icon: LucideIcon;
   title: ReactNode;
+  /**
+   * 閉じたときの戻り先を差し替える（要素を返せば、開く前のボタンではなくそこへ。スクロールはしない＝呼ぶ側が動かす）。
+   * null なら今までどおり
+   */
+  returnFocus?: () => HTMLElement | null | undefined;
   /** 閉じたとき、開く前にフォーカスのあった要素が画面から消えていたら、代わりにフォーカスする要素 */
   fallbackFocus?: () => HTMLElement | null | undefined;
   /** 中身が少ない欄（稼働時間など）は幅を狭くする */
@@ -190,6 +196,8 @@ export function SidePanel({
   closeRef.current = onClose;
   const fallbackRef = useRef(fallbackFocus);
   fallbackRef.current = fallbackFocus;
+  const returnRef = useRef(returnFocus);
+  returnRef.current = returnFocus;
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>('input, select, textarea');
@@ -227,7 +235,9 @@ export function SidePanel({
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = overflow;
-      if (back?.isConnected) back.focus?.();
+      const to = returnRef.current?.();
+      if (to) to.focus({ preventScroll: true });
+      else if (back?.isConnected) back.focus?.();
       else fallbackRef.current?.()?.focus();
     };
   }, []);

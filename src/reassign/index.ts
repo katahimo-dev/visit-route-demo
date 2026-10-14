@@ -233,14 +233,13 @@ export const targetsOf: TargetsOf = (problem, base, absentStaffIds) => {
 
 /**
  * 欠勤の人に残る、振り直すべき訪問（今の案に targetsOf を当てたもの）。振り直したあとは、ふつうは無い。
- * 手直しで欠勤の人へ戻した・振り直したあとに欠勤や条件を変えた、などで残る（理由は targetsOf と同じ）
+ * 手直しで欠勤の人へ戻した・振り直したあとに欠勤や条件を変えた、などで残る（理由は targetsOf の absence・unreachable）。
+ * 欠勤と関係ない元からの違反（notAllowed）は欠勤のせいではないので含めない（必須の違反の赤い枠で出る）
  */
 export const leftOf: LeftOf = (problem, plan, absentStaffIds) =>
-  targetsOf(problem, plan, absentStaffIds).map((t) => ({
-    visitId: t.visitId,
-    staffId: t.fromStaffId,
-    reason: t.reason,
-  }));
+  targetsOf(problem, plan, absentStaffIds).flatMap((t) =>
+    t.reason === 'notAllowed' ? [] : [{ visitId: t.visitId, staffId: t.fromStaffId, reason: t.reason }],
+  );
 
 /**
  * 案A「空き時間に入れるだけ」：他の人の担当・順番・開始時刻を変えずに、振り直す訪問を1件ずつ入れる。
@@ -537,6 +536,9 @@ export function stayPointsOf(weight: number): { movePoints: number; minutePoints
  * - stay.staff：元の案の担当。振り直す訪問・元の案で入っていない訪問は null（担当は問わない）
  * - stay.start：元の案の開始（base.problem での lenient）。元の案に無い訪問は null
  * - 元の案で入っていない訪問（振り直す訪問でもない）は、案A と同じく入れない（どの担当も可にしない）
+ * - 案A の列が使えない人（可でない組がある・strict で回れない・件数の上限を超える。held）は、列ごと案A のまま動かさない：
+ *   その列の訪問はどの担当も可にせず、その人にはどの訪問も可にしない（初期解は空の列）。解いたあとに finishAnneal が戻す。
+ *   ほかの人の列だけで案B を作る（1列のせいで案B が作れなくならない）
  */
 export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, options) => {
   const { vIndex, sIndex } = indexOf(problem);
@@ -561,9 +563,23 @@ export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, opti
     if (!inBase.has(pv.id) && !targetIds.has(pv.id)) allowed[v] = none();
   });
   const initial: Routes = {};
-  for (const st of problem.staff) {
-    initial[st.id] = knownOf(colOf(planA, st.id), vIndex).map((v) => problem.visits[v]!.id);
-  }
+  const held: string[] = [];
+  const cap = problem.balance?.cap ?? null;
+  problem.staff.forEach((st, s) => {
+    const known = knownOf(colOf(planA, st.id), vIndex);
+    const broken =
+      known.some((v) => !problem.allowed[v]![s]) ||
+      (cap !== null && known.length > cap[s]!) ||
+      (known.length > 0 && routeCost(problem, s, known) === INF);
+    if (!broken) {
+      initial[st.id] = known.map((v) => problem.visits[v]!.id);
+      return;
+    }
+    held.push(st.id);
+    initial[st.id] = [];
+    for (const v of known) allowed[v] = none();
+    for (const row of allowed) row[s] = false;
+  });
   // 落とさない訪問：案A（初期解）に入っていて、振り直す訪問でない訪問
   const keep: boolean[] = new Array(V).fill(false);
   for (const ids of Object.values(initial))
@@ -576,18 +592,20 @@ export const prepareAnneal: PrepareAnneal = (problem, base, planA, targets, opti
     allowed,
     stay: { staff: stayStaff, start: stayStart, keep, ...stayPointsOf(options.weight) },
   };
-  return { problem: prepared, initial, source: problem, planA, targets: [...targetIds] };
+  return { problem: prepared, initial, source: problem, planA, held, targets: [...targetIds] };
 };
 
 /**
- * 案B の結果をまとめる：solver の列に、問題にいない人の列・問題に無い訪問は案A のまま残す。pins は担当のいるすべての訪問（案A と同じ）
+ * 案B の結果をまとめる：solver の列に、問題にいない人の列・問題に無い訪問・案A の列が使えない人（held）の列は案A のまま残す。
+ * pins は担当のいるすべての訪問（案A と同じ）
  */
 export const finishAnneal: FinishAnneal = (prep, solved) => {
   const problem = prep.source;
   const { vIndex, sIndex } = indexOf(problem);
+  const held = new Set(prep.held);
   const routes: Routes = {};
   for (const [k, ids] of Object.entries(prep.planA)) {
-    if (!sIndex.has(k)) routes[k] = [...ids];
+    if (!sIndex.has(k) || held.has(k)) routes[k] = [...ids];
     // 問題に無い訪問は列の最後にそのまま残す
     else routes[k] = [...colOf(solved, k).filter((id) => vIndex.has(id)), ...ids.filter((id) => !vIndex.has(id))];
   }

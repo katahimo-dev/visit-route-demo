@@ -79,15 +79,18 @@ export type ReassignDiffFn = (before: ReassignPlan, after: ReassignPlan) => Reas
 
 /**
  * 欠勤の人に残る、振り直すべき訪問（leftOf）。振り直した直後は無い。手直しで欠勤の人へ戻した・
- * 振り直したあとに欠勤や条件を変えた、などで残る。理由は ReassignTarget と同じ
+ * 振り直したあとに欠勤や条件を変えた、などで残る。理由は ReassignTarget の absence・unreachable
  */
 export type ReassignLeft = {
   visitId: string;
   /** 残っている列の人（欠勤の人） */
   staffId: string;
-  reason: ReassignTarget['reason'];
+  reason: Exclude<ReassignTarget['reason'], 'notAllowed'>;
 };
-/** plan は「欠勤を差し引く前の問題」と「今の案の列」。今の案に targetsOf を当てたもの（targetsOf の順） */
+/**
+ * plan は「欠勤を差し引く前の問題」と「今の案の列」。今の案に targetsOf を当てたもののうち、欠勤のせいの訪問
+ * （absence・unreachable）だけ（targetsOf の順）。欠勤と関係ない元からの違反（notAllowed）は含めない
+ */
 export type LeftOf = (problem: Problem, plan: ReassignPlan, absentStaffIds: string[]) => ReassignLeft[];
 
 // ---- 2回目：案B「少し動かしてよい」（PRD D34。ADR-0011 追記） ----
@@ -118,6 +121,11 @@ export type AnnealPrep = {
   source: Problem;
   /** 案A の列（問題にいない人の列・問題に無い訪問は、解いたあとにそのまま戻す） */
   planA: Routes;
+  /**
+   * 案A の列が使えない人（可でない組がある・strict で回れない・件数の上限を超える）。列ごと案A のまま動かさない
+   * （problem ではその列の訪問もその人も可にしない。initial は空の列。finishAnneal が案A の列を戻す）
+   */
+  held: string[];
   /** 振り直す訪問（ReassignResult の placed・unplaced に使う） */
   targets: string[];
 };

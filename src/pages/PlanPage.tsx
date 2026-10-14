@@ -67,6 +67,7 @@ import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusabl
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import {
+  type ContactList,
   contactsOf,
   leftOf,
   placeVisit,
@@ -105,6 +106,9 @@ import {
   type ReassignOption,
 } from './reassignParts';
 import { VisitForm } from './VisitForm';
+
+/** 連絡の一覧が出せない（差を出せない）ときでも、欠勤の人に残る訪問だけで開くための空の一覧 */
+const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: [] };
 
 /**
  * 予定（D4・D13・D18・ADR-0004・ADR-0009）：その日の訪問の一覧（追加・編集・取消・前の同じ曜日からコピー）と、
@@ -197,8 +201,11 @@ export default function PlanPage() {
   const runRef = useRef<{ stop(): void } | null>(null);
   /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
   const pendingAnneal = useRef<string | null>(null);
-  /** 欠勤を登録して振り直したあと、差の欄へ移る（欄が閉じて今の案が出てから） */
-  const pendingBarFocus = useRef(false);
+  /**
+   * 欠勤を登録して振り直したあと、差の欄へ移る（欄が閉じて今の案が出てから）。立てた日付。
+   * 日付を変えたら・少し経っても今の案が出なければ下ろす（あとの手直しで急に移らない）
+   */
+  const pendingBarFocus = useRef<string | null>(null);
   /** 計算の世代。画面を離れると進め、前の世代の計算の結果は捨てる（開発時の StrictMode の付け外しでも） */
   const generation = useRef(0);
   /** 自動作成を試した日（同じ日に2回は試さない） */
@@ -846,7 +853,11 @@ export default function PlanPage() {
     toast(`振り直しました（振り直し ${r.placed.length}件・入らない ${r.unplaced.length}件）`);
     // 案B も作る：書き込んだ今の案（reassign）と新しい問題が画面に出てから始める（下の effect）
     if (anneal) pendingAnneal.current = date;
-    pendingBarFocus.current = true;
+    pendingBarFocus.current = date;
+    const token = date;
+    window.setTimeout(() => {
+      if (pendingBarFocus.current === token) pendingBarFocus.current = null;
+    }, 1500);
   };
 
   // ---- 2回目：案B「少し動かしてよい」・連絡の一覧（PRD D34・D35。ADR-0011 追記）----
@@ -917,10 +928,15 @@ export default function PlanPage() {
   // 欠勤を登録して振り直したら、差の欄（案A の結果・案B・連絡の一覧）へ移る
   // biome-ignore lint/correctness/useExhaustiveDependencies: 振り直しの案が画面に出たときに1回だけ
   useEffect(() => {
-    if (!pendingBarFocus.current || !reassignInfo) return;
-    pendingBarFocus.current = false;
-    requestAnimationFrame(goToBar);
-  }, [reassignInfo]);
+    if (pendingBarFocus.current !== date || !reassignInfo) return;
+    pendingBarFocus.current = null;
+    const raf = requestAnimationFrame(goToBar);
+    return () => cancelAnimationFrame(raf);
+  }, [reassignInfo, date]);
+  // 日付を変えたら、差の欄へ移る予約を消す
+  useEffect(() => {
+    if (pendingBarFocus.current !== date) pendingBarFocus.current = null;
+  }, [date]);
   /** もう一度振り直す（欠勤の人に残る訪問を、今の案から振り直す。続けて振り直すのと同じ） */
   const reassignAgain = () => {
     const a = data.absences.find((x) => x.date === date && absentStaff.has(x.staffId));
@@ -954,7 +970,12 @@ export default function PlanPage() {
     const forDate = date;
     const p = problem;
     const basis = reassignInfo;
-    setAnnealNote(null);
+    // 案A の列が使えない人（必須の違反・回れない列）は、その列だけ案A のまま動かさずに作る
+    const heldText =
+      x.held.length > 0
+        ? `${x.held.map(staffName).join('・')}さんの列は案A に必須の違反があるため、案A のまま動かしていません（その列は手で直してください）`
+        : null;
+    setAnnealNote(heldText ? { key, text: heldText } : null);
     run(
       'anneal',
       x.problem,
@@ -972,7 +993,7 @@ export default function PlanPage() {
             got.reason === 'keepDropped'
               ? `案B が、案A に入っていた訪問（${got.visitIds.length}件）を外してしまったため、案A のままにしました`
               : '案A を超えられませんでした（案A のままにしました）';
-          setAnnealNote({ key, text });
+          setAnnealNote({ key, text: heldText ? `${text}。${heldText}` : text });
           toast(text);
           return;
         }
@@ -1912,7 +1933,7 @@ export default function PlanPage() {
                       {reassignInfo && absentStaff.has(sid) && (
                         <div className="row col-reassign" data-testid="col-reassign">
                           <button type="button" className="link-btn" onClick={goToBar}>
-                            振り直し済み・入らない {rDiff?.unplaced.length ?? 0}件
+                            振り直し済み・入らない（全体） {rDiff?.unplaced.length ?? 0}件
                           </button>
                           {left.some((x) => x.staffId === sid) && (
                             <button type="button" className="chip chip-red chip-btn" onClick={goToBar}>
@@ -2032,9 +2053,9 @@ export default function PlanPage() {
         )}
       </div>
 
-      {contactsOpen && contacts && (
+      {contactsOpen && (contacts || leftContacts.length > 0) && (
         <ContactPanel
-          list={contacts}
+          list={contacts ?? EMPTY_CONTACTS}
           left={leftContacts}
           words={contactWords}
           terms={terms}
@@ -2064,6 +2085,7 @@ export default function PlanPage() {
               onRemove={cancelAbsence}
               onClose={() => setAbsenceFor(null)}
               fallbackFocus={() => colHeadOf(st.id)}
+              returnFocus={() => (pendingBarFocus.current === date ? document.getElementById(barId) : null)}
             />
           );
         })()}

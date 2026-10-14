@@ -1,5 +1,6 @@
 import { ArrowDownToLine, Map as MapIcon, Maximize2, X } from 'lucide-react';
 import { type RefObject, useEffect, useState } from 'react';
+import { useFloatingEdge } from './floating';
 import { type MapLine, type MapPoint, RouteMap } from './RouteMap';
 import { IconButton } from './ui';
 
@@ -24,6 +25,8 @@ export function MapDock({
 }) {
   const [inView, setInView] = useState(true);
   const [open, setOpen] = useState(false);
+  // 左下の帯・知らせ（トースト）が避けられるよう、位置を CSS の変数（--map-dock-top・--map-dock-left）に出す
+  const edgeRef = useFloatingEdge('map-dock');
 
   useEffect(() => {
     const el = target.current;
@@ -43,13 +46,19 @@ export function MapDock({
   if (inView || lines.length === 0) return null;
   if (!open)
     return (
-      <button type="button" className="map-dock-fab" onClick={() => setOpen(true)} aria-label="地図を開く">
+      <button
+        type="button"
+        ref={edgeRef}
+        className="map-dock-fab"
+        onClick={() => setOpen(true)}
+        aria-label="地図を開く"
+      >
         <MapIcon size={18} aria-hidden="true" />
         地図
       </button>
     );
   return (
-    <section className="map-dock" aria-label="地図（浮かせた表示）">
+    <section ref={edgeRef} className="map-dock" aria-label="地図（浮かせた表示）">
       <div className="map-dock-head">
         <MapIcon size={15} aria-hidden="true" />
         <strong className="ellipsis">{title}</strong>

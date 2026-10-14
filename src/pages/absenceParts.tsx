@@ -69,6 +69,7 @@ export function AbsencePanel({
   onRemove,
   onClose,
   fallbackFocus,
+  returnFocus,
 }: {
   staff: Staff;
   date: string;
@@ -86,6 +87,8 @@ export function AbsencePanel({
   onClose: () => void;
   /** 閉じたとき、フォーカスの戻り先が消えていたら移す先（列の見出し） */
   fallbackFocus?: () => HTMLElement | null;
+  /** 閉じたときの戻り先の差し替え（登録して振り直したら差の欄へ。SidePanel.returnFocus） */
+  returnFocus?: () => HTMLElement | null;
 }) {
   const [d, setD] = useState<Draft>(() => ({
     allDay: existing ? existing.from === null && existing.to === null : true,
@@ -124,6 +127,7 @@ export function AbsencePanel({
       title={`${staff.name}さんの急な欠勤`}
       onClose={onClose}
       fallbackFocus={fallbackFocus}
+      returnFocus={returnFocus}
       footer={
         <>
           <button
@@ -413,7 +417,6 @@ export function ReassignBar({
 /** 欠勤の人に残る訪問の理由の短い文（列のカード・差の欄） */
 export function leftReasonText(x: ReassignLeft): string {
   if (x.reason === 'unreachable') return '欠勤明けに間に合わない：振り直していない';
-  if (x.reason === 'notAllowed') return '必須の条件に合わない：振り直していない';
   return '欠勤と重なる：振り直していない';
 }
 
