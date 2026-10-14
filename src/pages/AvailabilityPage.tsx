@@ -5,20 +5,18 @@ import { SlotEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import type { Availability } from '../contracts/documents';
-import { availabilityOf, type Slot, slotsError, slotsText, toHalfHours } from '../domain/availability';
+import { availabilityOf, type Slot, slotsError, slotsText, timeText, toHalfHours } from '../domain/availability';
 import { weekday } from '../domain/time';
 import { absenceText } from '../lib/absences';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
 import { useDemoData } from '../store';
 import './schedule.css';
 
+/** 「09:00」→「9」、「09:30」→「9:30」 */
+const hourText = (hhmm: string) => timeText(hhmm).replace(/:00$/, '');
 /** セルの短い表示：「9-18」「9:30-12」。休みは「休」 */
 const short = (slots: Slot[]) =>
-  slots.length === 0
-    ? ['休']
-    : slots.map(
-        (s) => `${s.start.replace(/^0/, '').replace(/:00$/, '')}-${s.end.replace(/^0/, '').replace(/:00$/, '')}`,
-      );
+  slots.length === 0 ? ['休'] : slots.map((s) => `${hourText(s.start)}-${hourText(s.end)}`);
 
 /**
  * 稼働時間帯のカレンダー（スタッフ×日。PoC本体 AvailabilityPage.tsx の簡易版：管理者のみ・データの中の日付だけ）。

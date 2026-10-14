@@ -43,7 +43,7 @@ import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Absence, Client, Visit } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
-import { slotsText } from '../domain/availability';
+import { slotsText, timeText } from '../domain/availability';
 import { type Cols, NONE, timeOrder, windowText } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, jstDate, jstHhmm } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
@@ -56,13 +56,14 @@ import {
   removeAbsence,
   revertReassign,
   saveAbsence,
+  withoutAbsencesOn,
 } from '../lib/absences';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
-import { placeVisit, reassign, reassignDiff, targetsOf } from '../reassign';
+import { placeVisit, type ReassignCandidate, reassign, reassignDiff, targetsOf } from '../reassign';
 import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
@@ -743,6 +744,9 @@ export default function PlanPage() {
   }, [rDiff]);
   /** 振り直しに使った欠勤が取り消されている */
   const absenceCancelled = !!reassignInfo?.absenceIds.some((id) => !data.absences.some((a) => a.id === id));
+  /** 列の見出し（欠勤の欄を閉じたとき、フォーカスの戻り先が消えていたらここへ） */
+  const colHeadOf = (sid: string) =>
+    document.querySelector<HTMLElement>(`.route-col[data-staff="${CSS.escape(sid)}"] .col-focus`);
   /** 名前を記録の名前に入れる長さ（記録の名前は60字まで） */
   const shortName = (id: string) => staffName(id).slice(0, 40);
 
@@ -771,7 +775,11 @@ export default function PlanPage() {
     const used = absencesOn(d1, date);
     const absent = [...new Set(used.map((a) => a.staffId))];
     const nowMin = now === null ? null : hhmmToMinutes(now);
-    const result = attempt(() => reassign(p, base.routes, targetsOf(p, base.routes, absent, nowMin), { now: nowMin }));
+    const result = attempt(() => {
+      // 元の案の時刻（欠勤と重なるか）は、その日の欠勤を除いた問題で出す
+      const before = { problem: compile(withoutAbsencesOn(d1, date), date), routes: base.routes };
+      return reassign(p, base.routes, targetsOf(p, before, absent, nowMin), { now: nowMin });
+    });
     if (!result.value) {
       setError(`振り直せませんでした（${result.error}）`);
       return;
@@ -812,9 +820,21 @@ export default function PlanPage() {
     sel.reset();
     toast('元の案に戻しました');
   };
-  /** 入らない訪問を候補の人に入れる（固定。時刻は変えない。間に合わなければ必須の違反の赤い枠） */
-  const placeCandidate = (visitId: string, staffId: string) => {
+  /**
+   * 入らない訪問を候補の人に入れる（固定。時刻は変えない。間に合わなければ必須の違反の赤い枠）。
+   * その人の既存の訪問の開始が遅れる・いまの時刻より前に入るときは確認を出す
+   */
+  const placeCandidate = (visitId: string, c: ReassignCandidate) => {
     if (!problem || !aiPlan || running) return;
+    const staffId = c.staffId;
+    const notes: string[] = [];
+    if (c.delayedCount > 0) {
+      notes.push(`${staffName(staffId)}さんの訪問 ${c.delayedCount}件の開始が最大 +${c.maxDelayMinutes}分 遅れます。`);
+    }
+    if (c.startsBeforeNow && reassignInfo?.now) {
+      notes.push(`入れる訪問の開始がいまの時刻（${timeText(reassignInfo.now)}）より前になります。`);
+    }
+    if (notes.length > 0 && !confirm(`${notes.join('')}入れますか？`)) return;
     const p = problem;
     const nowMin = reassignInfo?.now ? hhmmToMinutes(reassignInfo.now) : null;
     update((d) =>
@@ -1456,7 +1476,7 @@ export default function PlanPage() {
                               staffName={staffName}
                               visit={visitById.get(id)}
                               running={!!running}
-                              onPlace={(sid) => placeCandidate(id, sid)}
+                              onPlace={(c) => placeCandidate(id, c)}
                             />
                           )}
                         </div>
@@ -1637,6 +1657,7 @@ export default function PlanPage() {
               onSaveOnly={saveAbsenceOnly}
               onRemove={cancelAbsence}
               onClose={() => setAbsenceFor(null)}
+              fallbackFocus={() => colHeadOf(st.id)}
             />
           );
         })()}

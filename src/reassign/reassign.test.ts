@@ -50,12 +50,14 @@ function small(over: Partial<DemoData> = {}) {
   });
 }
 const BASE: Routes = { s1: ['v1', 'v2', 'v3', 'v4'], s2: ['v5'], s3: [] };
+/** 元の案（欠勤を除いたデータで compile した問題と列。targetsOf の base） */
+const on = (d: DemoData, routes: Routes, date = DATE) => ({ problem: compile({ ...d, absences: [] }, date), routes });
 
 describe('targetsOf（振り直す訪問）', () => {
   it('欠勤と重なる訪問は absence、欠勤明けに間に合わない訪問は unreachable、重ならず間に合う訪問はならない', () => {
     // 〜13:00 の欠勤：v1・v2 は重なる。v3（13:00）は欠勤明けちょうどで、自宅から移動すると間に合わない
     const p = compile(small({ absences: [absence('s1', null, '13:00')] }), DATE);
-    const t = targetsOf(p, BASE, ['s1'], null);
+    const t = targetsOf(p, on(small(), BASE), ['s1'], null);
     expect(t).toEqual([
       { visitId: 'v1', fromStaffId: 's1', reason: 'absence' },
       { visitId: 'v2', fromStaffId: 's1', reason: 'absence' },
@@ -65,22 +67,49 @@ describe('targetsOf（振り直す訪問）', () => {
   it('始まった訪問（earliest ＜ いまの時刻）は振り直さない。終日の欠勤では残りすべて', () => {
     const p = compile(small({ absences: [absence('s1', null, null)] }), DATE);
     // 10:30 ちょうどの v2 はまだ始まっていない
-    expect(targetsOf(p, BASE, ['s1'], 10 * 60 + 30).map((x) => x.visitId)).toEqual(['v2', 'v3', 'v4']);
-    expect(targetsOf(p, BASE, ['s1'], 10 * 60 + 45).map((x) => x.visitId)).toEqual(['v3', 'v4']);
-    expect(targetsOf(p, BASE, ['s1'], null).map((x) => x.visitId)).toEqual(['v1', 'v2', 'v3', 'v4']);
+    expect(targetsOf(p, on(small(), BASE), ['s1'], 10 * 60 + 30).map((x) => x.visitId)).toEqual(['v2', 'v3', 'v4']);
+    expect(targetsOf(p, on(small(), BASE), ['s1'], 10 * 60 + 45).map((x) => x.visitId)).toEqual(['v3', 'v4']);
+    expect(targetsOf(p, on(small(), BASE), ['s1'], null).map((x) => x.visitId)).toEqual(['v1', 'v2', 'v3', 'v4']);
   });
   it('ほかの必須の条件で外れる訪問は notAllowed。問題に無い人・訪問は無視', () => {
     const d = small({ compat: { c4: { s1: -2 } } });
     const p = compile(d, DATE);
-    const t = targetsOf(p, { ...BASE, s1: [...BASE.s1!, 'ghost'] }, ['s1', 'nobody'], null);
+    const t = targetsOf(p, on(d, { ...BASE, s1: [...BASE.s1!, 'ghost'] }), ['s1', 'nobody'], null);
     expect(t).toEqual([{ visitId: 'v4', fromStaffId: 's1', reason: 'notAllowed' }]);
+  });
+});
+
+describe('targetsOf：時間に幅のある訪問・元からの違反', () => {
+  it('時間に幅があっても、元の案の時刻が欠勤と重なる訪問は振り直す（欠勤の人のまま後ろへずらさない）', () => {
+    // w1 は 9:00〜13:00 に始められる（60分）。元の案では 9:00 ごろ。〜12:00 の欠勤では 12:00 に始めれば入るが、振り直す
+    // w2 は 13:00〜16:00 に始められる。元の案では 13:00 ごろで欠勤と重ならず、残す
+    const d = small({
+      visits: [visit('w1', 'c1', '09:00', '13:00'), visit('w2', 'c2', '13:00', '16:00')],
+    });
+    const p = compile({ ...d, absences: [absence('s1', null, '12:00')] }, DATE);
+    expect(p.allowed[0]![0]).toBe(true);
+    const base: Routes = { s1: ['w1', 'w2'], s2: [], s3: [] };
+    expect(targetsOf(p, on(d, base), ['s1'], null)).toEqual([{ visitId: 'w1', fromStaffId: 's1', reason: 'absence' }]);
+    const r = reassign(p, base, targetsOf(p, on(d, base), ['s1'], null), { now: null });
+    expect(r.routes.s1).toEqual(['w2']);
+    // いまの時刻より前に始まる訪問は動かさない（9:30 には w1 は始まっている）
+    expect(targetsOf(p, on(d, base), ['s1'], 9 * 60 + 30)).toEqual([]);
+  });
+  it('欠勤と関係のない元からの違反（稼働時間帯の外の訪問）は absence にしない', () => {
+    const d = small({ visits: [fixed('v1', 'c1', '09:00'), fixed('late', 'c2', '19:00')] });
+    const p = compile({ ...d, absences: [absence('s1', null, '12:00')] }, DATE);
+    const base: Routes = { s1: ['v1', 'late'], s2: [], s3: [] };
+    expect(targetsOf(p, on(d, base), ['s1'], null)).toEqual([
+      { visitId: 'v1', fromStaffId: 's1', reason: 'absence' },
+      { visitId: 'late', fromStaffId: 's1', reason: 'notAllowed' },
+    ]);
   });
 });
 
 describe('reassign（案A：空き時間に入れるだけ）', () => {
   it('他の人の担当・順番・開始時刻を変えずに入れ、全訪問を固定する', () => {
     const p = compile(small({ absences: [absence('s1', null, '12:00')] }), DATE);
-    const targets = targetsOf(p, BASE, ['s1'], null);
+    const targets = targetsOf(p, on(small(), BASE), ['s1'], null);
     const r = reassign(p, BASE, targets, { now: null });
     const s2Before = startsOf(p, BASE, 's2')!;
     const s2After = startsOf(p, r.routes, 's2')!;
@@ -103,7 +132,7 @@ describe('reassign（案A：空き時間に入れるだけ）', () => {
   it('入れた訪問はいまの時刻より前に始めない。入らない訪問は unplaced に残す', () => {
     const p = compile(small({ absences: [absence('s1', null, null)] }), DATE);
     const now = 9 * 60 + 30;
-    const targets = targetsOf(p, BASE, ['s1'], now);
+    const targets = targetsOf(p, on(small(), BASE), ['s1'], now);
     expect(targets.map((t) => t.visitId)).toEqual(['v2', 'v3', 'v4']);
     const r = reassign(p, BASE, targets, { now });
     for (const st of p.staff) {
@@ -135,7 +164,7 @@ describe('reassign（案A：空き時間に入れるだけ）', () => {
     });
     const p = compile(d, DATE);
     const base: Routes = { s1: ['v1', 'v2', 'v3', 'v4'], s2: [], s3: [] };
-    const targets = targetsOf(p, base, ['s1'], null);
+    const targets = targetsOf(p, on(d, base), ['s1'], null);
     const r = reassign(p, base, targets, { now: null });
     expect(r.placed[0]!.visitId).toBe('v2');
     expect(r.placed[0]!.staffId).toBe('s2');
@@ -151,14 +180,14 @@ describe('reassign（案A：空き時間に入れるだけ）', () => {
     });
     const p = compile(d, DATE);
     const base: Routes = { s1: ['y', 'x'], s2: [], s3: [] };
-    const r = reassign(p, base, targetsOf(p, base, ['s1'], null), { now: null });
+    const r = reassign(p, base, targetsOf(p, on(d, base), ['s1'], null), { now: null });
     expect(r.placed.map((x) => x.visitId)).toEqual(['x', 'y']);
     expect(r.placed[0]!.staffId).toBe('s2');
   });
   it('件数の上限（必須の負担の均等）を超えない', () => {
     const d = small({ absences: [absence('s1', null, null)], rules: [rule('bal', 'balance', 3, true)] });
     const p = compile(d, DATE);
-    const r = reassign(p, BASE, targetsOf(p, BASE, ['s1'], null), { now: null });
+    const r = reassign(p, BASE, targetsOf(p, on(d, BASE), ['s1'], null), { now: null });
     p.staff.forEach((st, s) => {
       const n = (r.routes[st.id] ?? []).length;
       expect(n).toBeLessThanOrEqual(p.balance!.cap![s]!);
@@ -179,7 +208,7 @@ describe('reassign（案A：空き時間に入れるだけ）', () => {
           ['12:00', null],
         ] as const) {
           const p = compile({ ...data, absences: [absence(st.id, from, to, date)] }, date);
-          const targets = targetsOf(p, base, [st.id], null);
+          const targets = targetsOf(p, { problem: plain, routes: base }, [st.id], null);
           const r = reassign(p, base, targets, { now: null });
           const tIds = new Set(targets.map((t) => t.visitId));
           const placed = new Map(r.placed.map((x) => [x.visitId, x.staffId]));
@@ -243,6 +272,47 @@ describe('candidatesFor・placeVisit', () => {
   });
 });
 
+describe('placeVisit・candidatesFor：あとの訪問の遅れ・いまの時刻・元からの違反', () => {
+  it('空き時間に入らない人に入れると、あとの訪問の遅れを候補に出す（入れると開始が遅れる件数と最大の分）', () => {
+    // s2 は w1（10:00〜12:00 に始められる）を 10:00 から。v2（10:30 ちょうど）は w1 を後ろへずらせば strict で入る
+    const d = small({ visits: [fixed('v2', 'c2', '10:30'), visit('w1', 'c1', '10:00', '12:00')] });
+    const p = compile(d, DATE);
+    const routes: Routes = { s1: [], s2: ['w1'], s3: [] };
+    expect(placeVisit(p, routes, 'v2', 's2', { now: null }).s2).toEqual(['v2', 'w1']);
+    const c = candidatesFor(p, routes, 'v2', { now: null }).find((x) => x.staffId === 's2')!;
+    expect(c.fits).toBe(false);
+    expect(c.delayedCount).toBe(1);
+    expect(c.maxDelayMinutes).toBeGreaterThanOrEqual(90);
+    expect(c.startsBeforeNow).toBe(false);
+    // 空き時間に入る人は遅れなし
+    const s1 = candidatesFor(p, routes, 'v2', { now: null }).find((x) => x.staffId === 's1')!;
+    expect(s1).toMatchObject({ fits: true, delayedCount: 0, maxDelayMinutes: 0, routeBroken: false });
+  });
+  it('いまの時刻より前の位置（始まった訪問の前）には入れない。いまの時刻以降に入る位置が無ければ startsBeforeNow', () => {
+    // s3 の w（9:00〜12:00 に始められる）は 9:30 には始まっている
+    const d = small({
+      visits: [visit('w', 'c1', '09:00', '12:00'), fixed('v5', 'c5', '10:00'), fixed('v1', 'c2', '09:00')],
+    });
+    const p = compile(d, DATE);
+    const routes: Routes = { s1: [], s2: [], s3: ['w'] };
+    expect(placeVisit(p, routes, 'v5', 's3', { now: null }).s3).toEqual(['v5', 'w']);
+    expect(placeVisit(p, routes, 'v5', 's3', { now: 9 * 60 + 30 }).s3).toEqual(['w', 'v5']);
+    // 9:00 ちょうどの v1 は 9:30 には、どこに入れてもいまの時刻より前
+    const c = candidatesFor(p, routes, 'v1', { now: 9 * 60 + 30 });
+    expect(c.every((x) => !x.fits)).toBe(true);
+    expect(c.find((x) => x.staffId === 's1')!.startsBeforeNow).toBe(true);
+  });
+  it('列に元から必須の違反がある人は routeBroken（fits にならず、ずらしても探さない）', () => {
+    const p = compile(small(), DATE);
+    // v5（10:00〜11:00）のあとの v2（10:30）は間に合わない
+    const routes: Routes = { s1: [], s2: ['v5', 'v2'], s3: [] };
+    const c = candidatesFor(p, routes, 'v4', { now: null }).find((x) => x.staffId === 's2')!;
+    expect(c).toMatchObject({ fits: false, routeBroken: true, shiftMinutes: null });
+    const ok = candidatesFor(p, routes, 'v4', { now: null }).find((x) => x.staffId === 's3')!;
+    expect(ok).toMatchObject({ fits: true, routeBroken: false });
+  });
+});
+
 describe('reassignDiff', () => {
   it('担当が変わった訪問・開始が変わった訪問・入らない訪問・変わる人・移動の増減', () => {
     const p = compile(small(), DATE);
@@ -279,7 +349,7 @@ describe('速さ', () => {
     const sid = plain.staff.find((s) => (base[s.id] ?? []).length > 3)!.id;
     const p = compile({ ...d, absences: [absence(sid, null, null)] }, DATE);
     const t0 = performance.now();
-    const targets = targetsOf(p, base, [sid], null);
+    const targets = targetsOf(p, { problem: plain, routes: base }, [sid], null);
     const r = reassign(p, base, targets, { now: null });
     for (const id of r.unplaced) candidatesFor(p, r.routes, id, { now: null });
     expect(performance.now() - t0).toBeLessThan(1000);

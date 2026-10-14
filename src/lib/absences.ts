@@ -4,6 +4,7 @@ import type { AiPlan, DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult } from '../contracts/problem';
 import type { ReassignResult, Routes } from '../contracts/reassign';
+import { END_AFTER_START_ERROR, HALF_HOUR_ERROR, isHalfHour, timeText } from '../domain/availability';
 import { NONE } from '../domain/scheduleModel';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { score } from '../evaluate';
@@ -37,18 +38,17 @@ export function removeAbsence(d: DemoData, id: string): DemoData {
  * slots（その日の稼働時間帯）があれば始業・終業の時刻で、無ければ「欠勤 15:00〜」「欠勤 〜11:00」
  */
 export function absenceText(a: Pick<Absence, 'from' | 'to'>, slots: { start: string; end: string }[] = []): string {
-  const t = (hhmm: string) => hhmm.replace(/^0(\d)/, '$1');
   if (a.from === null && a.to === null) return '欠勤（終日）';
   const from = a.from ?? slots[0]?.start ?? null;
   const to = a.to ?? slots.at(-1)?.end ?? null;
-  return `欠勤 ${from === null ? '' : t(from)}〜${to === null ? '' : t(to)}`;
+  return `欠勤 ${from === null ? '' : timeText(from)}〜${to === null ? '' : timeText(to)}`;
 }
 
 /** 欠勤の時間帯が正しくなければ理由（終了 ≤ 開始・30分単位でない） */
 export function absenceError(a: Pick<Absence, 'from' | 'to'>): string | null {
-  const half = (x: string | null) => x === null || /:[03]0$/.test(x);
-  if (!half(a.from) || !half(a.to)) return '時間は30分単位で選んでください';
-  if (a.from !== null && a.to !== null && a.from >= a.to) return '終了は開始より後にしてください';
+  const half = (x: string | null) => x === null || isHalfHour(x);
+  if (!half(a.from) || !half(a.to)) return HALF_HOUR_ERROR;
+  if (a.from !== null && a.to !== null && a.from >= a.to) return END_AFTER_START_ERROR;
   return null;
 }
 
@@ -63,6 +63,14 @@ export function defaultNow(date: string, todayDate: string, nowHhmm: string): st
   if (date !== todayDate) return null;
   const m = hhmmToMinutes(nowHhmm);
   return minutesToHhmm(Math.floor(m / 5) * 5);
+}
+
+/**
+ * その日の欠勤を除いたデータ（振り直す訪問を決めるときの、元の案の時刻を出す問題を compile する用。
+ * targetsOf の base.problem）
+ */
+export function withoutAbsencesOn<T extends Pick<DemoData, 'absences'>>(data: T, date: string): T {
+  return { ...data, absences: data.absences.filter((a) => a.date !== date) };
 }
 
 /** 振り直しの元の案 */
@@ -110,7 +118,10 @@ export function baseOf(data: DemoData, date: string, problem: Problem): Reassign
 
 /**
  * 振り直した結果を今の案にし、記録に「欠勤の振り直し」として1件足す（D30）。
- * routes・generated＝結果、pins＝結果の pins（担当のいるすべての訪問）、reassign＝元の案の情報。
+ * routes・generated＝結果、pins＝結果の pins（担当のいるすべての訪問）、reassign＝元の案の情報
+ * （元の案・その固定・振り直す前の今の案の generated と runId）。
+ * 元の案が今の案で、今の案がすでに振り直しの案なら（続けて振り直す）、元の案の情報は最初のものを引き継ぎ、
+ * absenceIds は累積する（差・「元の案に戻す」は最初の元の案に対して）。元の案が確定した割当なら新しく作る。
  * problem は振り直しに使った問題（いまの条件。費用の score を付ける）。createdAt は呼ぶ側が渡す（純粋関数のまま）
  */
 export function applyReassign(
@@ -126,14 +137,20 @@ export function applyReassign(
     createdAt: number;
   },
 ): DemoData {
-  const info: ReassignInfo = {
-    method: 'insert',
-    from: x.base.from,
-    baseRoutes: x.base.routes,
-    basePins: x.base.pins,
-    absenceIds: x.absenceIds,
-    now: x.now,
-  };
+  const prev = own(d.aiPlans, date);
+  const chained = x.base.from === 'plan' ? prev?.reassign : undefined;
+  const info: ReassignInfo = chained
+    ? { ...chained, absenceIds: [...new Set([...chained.absenceIds, ...x.absenceIds])], now: x.now }
+    : {
+        method: 'insert',
+        from: x.base.from,
+        baseRoutes: x.base.routes,
+        basePins: x.base.pins,
+        ...(prev ? { baseGenerated: prev.generated } : {}),
+        ...(prev?.runId ? { baseRunId: prev.runId } : {}),
+        absenceIds: x.absenceIds,
+        now: x.now,
+      };
   const total = score(x.problem, x.result.routes).total;
   const solved: SolveResult = {
     routes: x.result.routes,
@@ -171,8 +188,9 @@ export function applyReassign(
 }
 
 /**
- * 元の案に戻す（D31）：routes・generated・pins を元の案（baseRoutes・basePins）にし、reassign・runId を外す。
- * 今の案が振り直しでなければそのまま
+ * 元の案に戻す（D31）：routes・pins を元の案（baseRoutes・basePins）に、generated・runId を振り直す前のもの
+ * （baseGenerated・baseRunId。無ければ generated＝元の案、runId は外す）にし、reassign を外す。
+ * 続けて振り直したときも最初の元の案へ戻す。今の案が振り直しでなければそのまま
  */
 export function revertReassign(d: DemoData, date: string, problem: Problem): DemoData {
   const plan = own(d.aiPlans, date);
@@ -183,14 +201,16 @@ export function revertReassign(d: DemoData, date: string, problem: Problem): Dem
   const placed = new Set(Object.values(routes).flat());
   const unassigned = problem.visits.map((v) => v.id).filter((id) => !placed.has(id));
   const total = score(problem, routes).total;
+  const info = plan.reassign;
   const { reassign: _r, runId: _id, ...rest } = plan;
   const next: AiPlan = {
     ...rest,
     routes,
     unassigned,
     score: total,
-    generated: { routes, unassigned, score: total },
-    pins: plan.reassign.basePins,
+    generated: info.baseGenerated ?? { routes, unassigned, score: total },
+    pins: info.basePins,
+    ...(info.baseRunId ? { runId: info.baseRunId } : {}),
   };
   return { ...d, aiPlans: { ...d.aiPlans, [date]: next } };
 }

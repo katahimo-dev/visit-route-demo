@@ -96,6 +96,8 @@ export type CompileInput = Pick<
 
 /** 欠勤で可にならない組の理由の文（ADR-0011。ruleId は 'slot'） */
 export const ABSENT_ALL_DAY = '欠勤（終日）';
+/** 途中の欠勤で、その日の稼働時間帯が全部なくなったとき */
+export const ABSENT_NO_HOURS = '欠勤で稼働時間がない';
 export const ABSENCE_OVERLAP = '欠勤の時間と重なる';
 
 /** 手直しで固定した訪問の、固定した担当以外の可否の原因 */
@@ -185,8 +187,15 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
       const day = daySlots[i]!;
       const fits = (xs: MinuteSlot[]) => xs.length > 0 && fitStart(xs, pv.earliest, pv.duration) <= pv.latest;
       if (ps.slots.length === 0) {
-        // 欠勤（ADR-0011）：もともと働く日なら「欠勤（終日）」、もともと休みなら「休み」
-        out.push({ ruleId: 'slot', label: day.absence && day.base.length > 0 ? ABSENT_ALL_DAY : '休み', points: INF });
+        // 欠勤（ADR-0011）：もともと働く日なら「欠勤（終日）」（途中の欠勤で全部なくなったら「欠勤で稼働時間がない」）、
+        // もともと休みなら「休み」
+        const absent = day.absence && day.base.length > 0;
+        const allDay = day.absence?.from === null && day.absence?.to === null;
+        out.push({
+          ruleId: 'slot',
+          label: absent ? (allDay ? ABSENT_ALL_DAY : ABSENT_NO_HOURS) : '休み',
+          points: INF,
+        });
       } else if (pv.earliest <= pv.latest && !fits(ps.slots)) {
         const label = day.absence && fits(day.base) ? ABSENCE_OVERLAP : '稼働時間帯に作業が収まらない';
         out.push({ ruleId: 'slot', label, points: INF });

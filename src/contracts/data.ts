@@ -32,7 +32,13 @@ export const reassignInfoSchema = z.object({
   baseRoutes: routesSchema,
   /** 元の案の固定（元が確定した割当なら {}） */
   basePins: z.record(z.string(), z.string()),
-  /** 振り直しに使った欠勤（取り消されても残す） */
+  /**
+   * 振り直す前の今の案の generated（AI が出したまま）と runId（元の記録）。「元の案に戻す」で戻す。
+   * 振り直す前に今の案が無かった・古いデータには無い（戻すときは元の案を generated にし、runId は外す）
+   */
+  baseGenerated: z.object({ routes: routesSchema, unassigned: z.array(z.string()), score: z.number() }).optional(),
+  baseRunId: z.string().max(100).optional(),
+  /** 振り直しに使った欠勤（取り消されても残す。続けて振り直したときは最初からの累積） */
   absenceIds: z.array(idSchema),
   /** いまの時刻（考えないなら null） */
   now: hhmmSchema.nullable(),

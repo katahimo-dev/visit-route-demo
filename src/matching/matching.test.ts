@@ -265,6 +265,11 @@ describe('compile：欠勤（ADR-0011）', () => {
     expect(p.staff[0]!.slots).toEqual([]);
     expect(p.reasons[0]![0]![0]).toEqual({ ruleId: 'slot', label: '欠勤（終日）', points: Infinity });
   });
+  it('途中の欠勤で稼働時間帯が全部なくなったら「欠勤で稼働時間がない」', () => {
+    const p = compile(twoStaff({ absences: [ab('08:00', '18:00')] }), DATE);
+    expect(p.staff[0]!.slots).toEqual([]);
+    expect(p.reasons[0]![0]![0]).toEqual({ ruleId: 'slot', label: '欠勤で稼働時間がない', points: Infinity });
+  });
   it('欠勤と重ならない訪問は今までどおり。別の日・別の人の欠勤では問題が変わらない', () => {
     const p = compile(twoStaff({ absences: [ab('14:00', null)] }), DATE);
     expect(p.allowed[0]).toEqual([true, true]);

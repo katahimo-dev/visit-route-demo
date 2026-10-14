@@ -171,9 +171,12 @@ export function SidePanel({
   children,
   footer,
   narrow = false,
+  fallbackFocus,
 }: {
   icon: LucideIcon;
   title: ReactNode;
+  /** 閉じたとき、開く前にフォーカスのあった要素が画面から消えていたら、代わりにフォーカスする要素 */
+  fallbackFocus?: () => HTMLElement | null | undefined;
   /** 中身が少ない欄（稼働時間など）は幅を狭くする */
   narrow?: boolean;
   onClose: () => void;
@@ -185,6 +188,8 @@ export function SidePanel({
   const titleId = useId();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const fallbackRef = useRef(fallbackFocus);
+  fallbackRef.current = fallbackFocus;
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>('input, select, textarea');
@@ -222,7 +227,8 @@ export function SidePanel({
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = overflow;
-      back?.focus?.();
+      if (back?.isConnected) back.focus?.();
+      else fallbackRef.current?.()?.focus();
     };
   }, []);
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す

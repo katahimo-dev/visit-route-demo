@@ -17,15 +17,20 @@ import type { DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence, Staff, Visit } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import type { ReassignCandidate, ReassignDiff, ReassignTarget } from '../contracts/reassign';
-import { HALF_HOURS, type Slot, slotsText } from '../domain/availability';
+import { HALF_HOURS, type Slot, slotsText, timeText as t } from '../domain/availability';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
-import { absenceError, absencesOn, absenceText, baseOf, roundToHalfHour, saveAbsence } from '../lib/absences';
+import {
+  absenceError,
+  absencesOn,
+  absenceText,
+  baseOf,
+  roundToHalfHour,
+  saveAbsence,
+  withoutAbsencesOn,
+} from '../lib/absences';
 import { attempt, deltaText, newId, r0 } from '../lib/common';
 import { compile } from '../matching';
 import { candidatesFor, targetsOf } from '../reassign';
-
-/** 時刻の表示（09:00 → 9:00） */
-const t = (hhmm: string) => hhmm.replace(/^0(\d)/, '$1');
 
 /** 欠勤の欄の入力 */
 type Draft = { allDay: boolean; from: string; to: string; note: string; now: string };
@@ -47,7 +52,8 @@ export function previewOf(data: DemoData, date: string, absence: Absence, now: n
     const base = baseOf(d, date, p);
     if (!base) return { targets: [], started: 0, baseFrom: null };
     const absent = [...new Set(absencesOn(d, date).map((a) => a.staffId))];
-    const targets = targetsOf(p, base.routes, absent, now);
+    const before = compile(withoutAbsencesOn(d, date), date);
+    const targets = targetsOf(p, { problem: before, routes: base.routes }, absent, now);
     const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
     let started = 0;
     if (now !== null) {
@@ -77,6 +83,7 @@ export function AbsencePanel({
   onSaveOnly,
   onRemove,
   onClose,
+  fallbackFocus,
 }: {
   staff: Staff;
   date: string;
@@ -93,6 +100,8 @@ export function AbsencePanel({
   onSaveOnly: (absence: Absence) => void;
   onRemove: (absence: Absence) => void;
   onClose: () => void;
+  /** 閉じたとき、フォーカスの戻り先が消えていたら移す先（列の見出し） */
+  fallbackFocus?: () => HTMLElement | null;
 }) {
   const [d, setD] = useState<Draft>(() => ({
     allDay: existing ? existing.from === null && existing.to === null : true,
@@ -113,7 +122,8 @@ export function AbsencePanel({
   const rangeError = !d.allDay && absence.from === null && absence.to === null ? '開始か終了を選んでください' : null;
   const error = timeError ?? rangeError;
   const nowMinutes = d.now === '' ? null : hhmmToMinutes(d.now);
-  const key = JSON.stringify([absence, nowMinutes]);
+  // メモは見込みに効かないので key に入れない（メモの入力で計算し直さない）
+  const key = JSON.stringify([absence.staffId, absence.from, absence.to, nowMinutes]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 入力（key）とデータが変わったときだけ見込みを作り直す
   const preview = useMemo(() => (error ? null : previewOf(data, date, absence, nowMinutes)), [key, data, date, error]);
   const reasonCount = (r: ReassignTarget['reason']) => preview?.targets.filter((x) => x.reason === r).length ?? 0;
@@ -131,6 +141,7 @@ export function AbsencePanel({
       icon={UserRoundX}
       title={`${staff.name}さんの急な欠勤`}
       onClose={onClose}
+      fallbackFocus={fallbackFocus}
       footer={
         <>
           <button
@@ -244,30 +255,33 @@ export function AbsencePanel({
         <input type="time" step={300} value={d.now} onChange={(e) => set({ now: e.target.value })} />
       </label>
       {error && <p className="error">{error}</p>}
-      {!error && preview && (
-        <div className="stack absence-preview" style={{ gap: 4 }} data-testid="absence-preview">
-          <strong>
-            振り直す訪問 {preview.targets.length}件（欠勤と重なる {reasonCount('absence')}件・間に合わない{' '}
-            {reasonCount('unreachable')}件
-            {reasonCount('notAllowed') > 0 ? `・ほかの必須の条件 ${reasonCount('notAllowed')}件` : ''}）
-          </strong>
-          {preview.targets.map((x) => (
-            <span key={x.visitId} className="sub">
-              ・{visitLabel(x.visitId)}
-              {x.reason === 'unreachable' ? '（間に合わない）' : x.reason === 'notAllowed' ? '（必須の条件）' : ''}
-            </span>
-          ))}
-          {preview.started > 0 && <span className="sub">始まっていて動かさない訪問 {preview.started}件</span>}
-          {preview.baseFrom === null ? (
-            <span className="warn-text">先にAI案を作ってください（欠勤だけは登録できます）</span>
-          ) : (
-            <span className="sub">
-              元の案：{preview.baseFrom === 'confirmed' ? '確定した割当' : '今の案'}
-              。ほかの人の担当・順番・時刻は変えず、空き時間に入れます
-            </span>
-          )}
-        </div>
-      )}
+      <div aria-live="polite">
+        {!error && preview && (
+          <div className="stack absence-preview" style={{ gap: 4 }} data-testid="absence-preview">
+            <strong>
+              振り直す訪問 {preview.targets.length}件（欠勤と重なる {reasonCount('absence')}件・間に合わない{' '}
+              {reasonCount('unreachable')}件
+              {reasonCount('notAllowed') > 0 ? `・ほかの必須の条件 ${reasonCount('notAllowed')}件` : ''}）
+            </strong>
+            {preview.targets.map((x) => (
+              <span key={x.visitId} className="sub">
+                ・{visitLabel(x.visitId)}
+                {x.reason === 'unreachable' ? '（間に合わない）' : x.reason === 'notAllowed' ? '（必須の条件）' : ''}
+              </span>
+            ))}
+            {preview.started > 0 && <span className="sub">始まっていて動かさない訪問 {preview.started}件</span>}
+            {preview.baseFrom === null ? (
+              <span className="warn-text">先にAI案を作ってください（欠勤だけは登録できます）</span>
+            ) : (
+              <span className="sub">
+                元の案：{preview.baseFrom === 'confirmed' ? '確定した割当' : '今の案'}
+                。ほかの人の担当・順番・時刻は変えず、空き時間に入れます（{staff.name}
+                さんの残りの訪問は、欠勤明けの移動で開始が遅れることがあります）
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </SidePanel>
   );
 }
@@ -323,7 +337,7 @@ export function ReassignBar({
       <span className="sub">
         元の案：{info.from === 'confirmed' ? '確定した割当' : '今の案'}
         {info.now ? `・いまの時刻 ${t(info.now)}` : ''}
-        。ほかの人の担当・順番・時刻は変えていません（薄い列は変わらない人）
+        。振り直しでは、ほかの人の担当・順番・時刻は変えていません（「受けられる人」から入れた分・手直しは除く。薄い列は変わらない人）
         <Hint>
           振り直した訪問に「代行」、開始が変わった訪問に「+N分」が付きます。振り直したあとの案は全訪問が固定です。入らない訪問は「受けられる人」から入れられます。
         </Hint>
@@ -361,7 +375,8 @@ export function CandidateBox({
   staffName: (id: string) => string;
   visit: Visit | undefined;
   running: boolean;
-  onPlace: (staffId: string) => void;
+  /** 押した候補（遅れ・いまの時刻より前の確認は呼ぶ側で出す） */
+  onPlace: (candidate: ReassignCandidate) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
@@ -397,7 +412,7 @@ export function CandidateBox({
                   type="button"
                   className="btn btn-small"
                   disabled={running}
-                  onClick={() => onPlace(c.staffId)}
+                  onClick={() => onPlace(c)}
                   aria-label={`${staffName(c.staffId)}さんに入れる`}
                 >
                   この人に入れる
@@ -419,9 +434,18 @@ export function CandidateBox({
                 ) : (
                   <span className="chip chip-off">
                     <CircleOff size={12} aria-hidden="true" />
-                    入らない
+                    空き時間に入らない
                   </span>
                 )}
+                {c.routeBroken && (
+                  <span className="chip chip-red">いまの予定に必須の違反があるため、空き時間に入れられません</span>
+                )}
+                {c.delayedCount > 0 && (
+                  <span className="chip chip-warn">
+                    入れると後ろの {c.delayedCount}件が最大 +{c.maxDelayMinutes}分 遅れる
+                  </span>
+                )}
+                {c.startsBeforeNow && <span className="chip chip-warn">いまの時刻より前に入る</span>}
                 {c.overCap && <span className="chip chip-red">件数の上限を超える</span>}
                 {c.violations.slice(0, 3).map((r) => (
                   <span
@@ -443,7 +467,7 @@ export function CandidateBox({
             </li>
           )}
           <li className="sub">
-            時刻は変えずに入れます。間に合わないときは必須の違反として赤い枠になります（時刻は訪問の編集で直せます）
+            入れる訪問の時間の約束は変えません。空き時間に入らない人に入れると、その人の後ろの訪問の開始が遅れることがあり（押すと確認します）、間に合わないときは必須の違反として赤い枠になります（時刻は訪問の編集で直せます）。いまの時刻より前の位置には入れません（ほかに入る位置が無ければ確認します）
           </li>
         </ul>
       )}

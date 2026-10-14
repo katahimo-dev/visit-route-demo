@@ -65,7 +65,7 @@ function repairPresets(presets: Preset[]): Preset[] {
  *   重みは 0〜5 に収めて 0.5 刻みに丸め（数でなければ 0）、必須にできない型の必須は外す
  * - 点数の基準（scorePresetId。ADR-0010）：無い・どのプリセットでもない id なら先頭のプリセット
  * - 欠勤（ADR-0011）：いない人の欠勤は消す。ID の重複は最初の1件、同じ人・同じ日は最後の1件（上書きと同じ）。
- *   今の案・記録の reassign の baseRoutes・basePins は routes・pins と同じ規則で直す（absenceIds はそのまま）
+ *   今の案・記録の reassign の baseRoutes・basePins・baseGenerated は routes・pins・generated と同じ規則で直す（absenceIds はそのまま）
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -136,11 +136,13 @@ export function repair(d: DemoData): DemoData {
   /** 振り直しの元の案（ADR-0011）：routes・pins と同じ規則。元の案に未割当の列は無いので、いない人の列は消す */
   const repairReassign = (date: string, r: ReassignInfo | undefined): { reassign?: ReassignInfo } => {
     if (!r) return {};
+    const gen = r.baseGenerated;
     return {
       reassign: {
         ...r,
         baseRoutes: repairRoutes(date, r.baseRoutes, []).routes,
         basePins: repairPins(date, r.basePins),
+        ...(gen ? { baseGenerated: { ...gen, ...repairRoutes(date, gen.routes, gen.unassigned) } } : {}),
       },
     };
   };

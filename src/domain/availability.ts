@@ -31,6 +31,20 @@ export function availabilityOf(
   return override ? { slots: override.slots, overridden: true } : { slots: weeklySlots(base, date), overridden: false };
 }
 
+/** 時間帯・欠勤の入力の理由の文（画面で同じ文を使う。デモで1か所にまとめた） */
+export const HALF_HOUR_ERROR = '時間は30分単位で選んでください';
+export const END_AFTER_START_ERROR = '終了は開始より後にしてください';
+
+/** 30分単位の時刻か（HH:mm） */
+export function isHalfHour(hhmm: string): boolean {
+  return hhmmToMinutes(hhmm) % SLOT_STEP_MINUTES === 0;
+}
+
+/** 時刻の表示（先頭の0を落とす：09:00 → 9:00）。デモで1か所にまとめた */
+export function timeText(hhmm: string): string {
+  return hhmm.replace(/^0(\d)/, '$1');
+}
+
 /** 時間帯が正しいか（30分単位・開始の順・重なりなし・開始＜終了・上限以内）。正しくなければ理由 */
 export function slotsError(slots: Slot[]): string | null {
   if (slots.length > MAX_SLOTS) return `時間帯は${MAX_SLOTS}つまでです`;
@@ -38,8 +52,8 @@ export function slotsError(slots: Slot[]): string | null {
   for (const s of slots) {
     const a = hhmmToMinutes(s.start);
     const b = hhmmToMinutes(s.end);
-    if (a % SLOT_STEP_MINUTES !== 0 || b % SLOT_STEP_MINUTES !== 0) return '時間は30分単位で選んでください';
-    if (a >= b) return '終了は開始より後にしてください';
+    if (!isHalfHour(s.start) || !isHalfHour(s.end)) return HALF_HOUR_ERROR;
+    if (a >= b) return END_AFTER_START_ERROR;
     if (a < prevEnd) return '時間帯が重なっています';
     prevEnd = b;
   }
@@ -95,8 +109,7 @@ export function shiftOf(slots: Slot[]): { shiftStart: string; shiftEnd: string; 
 /** 表示用：「9:00〜18:00」「9:00〜12:00・14:00〜18:00」「休み」 */
 export function slotsText(slots: Slot[]): string {
   if (slots.length === 0) return '休み';
-  const t = (hhmm: string) => hhmm.replace(/^0(\d)/, '$1');
-  return slots.map((s) => `${t(s.start)}〜${t(s.end)}`).join('・');
+  return slots.map((s) => `${timeText(s.start)}〜${timeText(s.end)}`).join('・');
 }
 
 /**

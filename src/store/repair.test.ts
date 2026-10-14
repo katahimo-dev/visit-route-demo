@@ -181,6 +181,9 @@ describe('欠勤と振り直し（ADR-0011）', () => {
     const r = migrate(old);
     expect(isImportError(r)).toBe(false);
     expect((r as DemoData).absences).toEqual([]);
+    const nulled = migrate({ ...old, absences: null });
+    expect(isImportError(nulled)).toBe(false);
+    expect((nulled as DemoData).absences).toEqual([]);
   });
   it('いない人の欠勤は消え、ID の重複は最初の1件、同じ人・同じ日は最後の1件', () => {
     const d = base();
@@ -220,6 +223,8 @@ describe('欠勤と振り直し（ADR-0011）', () => {
       from: 'confirmed' as const,
       baseRoutes: { [s]: [a] },
       basePins: {},
+      baseGenerated: { routes: { [s]: [a] }, unassigned: [], score: 3 },
+      baseRunId: `${DAY}#1@1`,
       absenceIds: ['a1'],
       now: null,
     };
