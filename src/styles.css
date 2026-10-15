@@ -532,6 +532,10 @@ tbody tr:hover td {
   border-top-color: var(--warn);
   background: #fdf7ea;
 }
+/* 未割当が0件のとき、ドラッグの間だけ出す受け口（最後に置いて、ほかの列の位置を変えない） */
+.route-col-none.is-drag-only {
+  order: 1;
+}
 .route-col.is-drop {
   outline: 3px dashed var(--primary);
   outline-offset: 2px;

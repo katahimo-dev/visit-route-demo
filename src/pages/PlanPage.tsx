@@ -62,6 +62,7 @@ import {
 } from '../lib/absences';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { contactCount, dayWordOf } from '../lib/contacts';
+import { deferredDragStart } from '../lib/dragStart';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
@@ -197,6 +198,8 @@ export default function PlanPage() {
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
   const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  /** ドラッグの始まりの更新を dragstart の外へ出す（未割当の列が足されて Chrome がドラッグをやめるため） */
+  const dragStart = useRef(deferredDragStart()).current;
   const [dropTo, setDropTo] = useState<string | null>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
   /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
@@ -1255,6 +1258,7 @@ export default function PlanPage() {
     onDrop: (e: DragEvent) => {
       e.preventDefault();
       const id = e.dataTransfer.getData('text/plain') || dragging;
+      dragStart.end();
       setDragging(null);
       setDropTo(null);
       if (!id) return;
@@ -1267,9 +1271,11 @@ export default function PlanPage() {
     onDragStart: (e: DragEvent) => {
       e.dataTransfer.setData('text/plain', id);
       e.dataTransfer.effectAllowed = 'move';
-      setDragging(id);
+      // ここで setDragging すると、未割当の列が先頭に足されて列がずれ、Chrome がドラッグをすぐ終わらせる
+      dragStart.start(() => setDragging(id));
     },
     onDragEnd: () => {
+      dragStart.end();
       setDragging(null);
       setDropTo(null);
     },
@@ -1818,7 +1824,12 @@ export default function PlanPage() {
               <div className="route-grid">
                 {(unassigned.length > 0 || (dragging !== null && owner.has(dragging))) && (
                   <div
-                    className={`route-col route-col-none ${dropTo === NONE ? 'is-drop' : ''}`}
+                    className={[
+                      'route-col route-col-none',
+                      // ドラッグの間だけ出す空の列は最後に置き、ほかの列をずらさない（掴んだカードが指の下から逃げない）
+                      unassigned.length === 0 ? 'is-drag-only' : '',
+                      dropTo === NONE ? 'is-drop' : '',
+                    ].join(' ')}
                     data-staff={NONE}
                     {...dropProps(NONE)}
                   >
