@@ -19,7 +19,8 @@ import {
   traitToCell,
 } from './text';
 
-const base = () => createDemoData('2026-10-13');
+/** seed のデータ（種類・定期パターン入り。ADR-0012） */
+const base = (): DemoData => createDemoData('2026-10-13');
 const withoutPlans = (d: DemoData): DemoData => ({ ...d, manualPlans: {}, aiPlans: {}, aiRuns: {} });
 
 async function toBuffer(d: DemoData): Promise<ArrayBuffer> {
@@ -149,6 +150,8 @@ describe('書き出し → 読み込み', () => {
       '相性',
       '稼働時間',
       '欠勤',
+      '種類',
+      '定期パターン',
       '訪問',
     ]);
     expect(col(sheet(wb, '訪問'), d.org.terms.client)).toBe(3);
@@ -652,5 +655,268 @@ describe('欠勤のシート（ADR-0011）', () => {
     expect(msg).toContain('シート『欠勤』の 6行目・『開始』：時間は30分単位で書いてください');
     expect(msg).toContain('シート『欠勤』の 7行目・『終了』：終了は開始より後にしてください');
     expect(msg).toContain('シート『欠勤』の 8行目・『スタッフ』：「いない人」というスタッフは');
+  });
+});
+
+describe('種類・定期パターンのシート（ADR-0012）', () => {
+  /** seed に、いろいろな形の種類・パターン・訪問を足したデータ */
+  const varied = (): DemoData => {
+    const d = base();
+    const c0 = d.clients[0]!;
+    const s0 = d.staff[0]!;
+    return {
+      ...d,
+      visitTypes: [
+        ...d.visitTypes,
+        {
+          id: 't-extra',
+          name: '見守り',
+          color: 7,
+          durationMinutes: 30,
+          requirements: [
+            { itemId: 'gender', op: 'is', value: '女性' },
+            { itemId: 'experience', op: 'gte', value: 2 },
+          ],
+          note: '夜間のみ\n2行目',
+        },
+      ],
+      patterns: [
+        ...d.patterns,
+        {
+          id: 'pt-extra',
+          clientId: c0.id,
+          typeId: null,
+          weekdays: [2, 6],
+          everyWeeks: 3,
+          windowKind: 'window',
+          earliestStart: '13:00',
+          latestStart: '14:30',
+          durationMinutes: 45,
+          from: '2026-10-01',
+          to: '2026-12-31',
+          usualStaffId: s0.id,
+          note: 'メモ',
+        },
+      ],
+      visits: d.visits.map((v, i) =>
+        i === 0
+          ? { ...v, pattern: v.pattern ? { ...v.pattern, edited: true } : v.pattern, earliestStart: '08:00' }
+          : i === 1
+            ? {
+                ...v,
+                id: '2026-10-13_pt-extra',
+                typeId: 't-extra',
+                pattern: { id: 'pt-extra', date: '2026-10-13', edited: false },
+              }
+            : v,
+      ),
+    };
+  };
+
+  it('種類・パターン・訪問の種類・定期パターン・元の日・この回だけ変更が 書き出し → 読み込み で同じに戻る', async () => {
+    const d = varied();
+    expect(d.visitTypes.length).toBeGreaterThan(0);
+    expect(d.visits.some((v) => v.pattern?.edited)).toBe(true);
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.visitTypes).toEqual(d.visitTypes);
+    expect(r.patterns).toEqual(d.patterns);
+    expect(r.visits).toEqual(d.visits);
+    expect(r).toEqual(withoutPlans(d));
+  });
+
+  it('「種類」「定期パターン」シートが無いブックは種類・パターンなし（訪問の種類・パターンは空）', async () => {
+    const d = varied();
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        wb.removeWorksheet(sheet(wb, '種類').id);
+        wb.removeWorksheet(sheet(wb, '定期パターン').id);
+        // 古いブックの「訪問」シートには種類・パターンの列が無い
+        const vws = sheet(wb, '訪問');
+        for (const h of ['この回だけ変更', '元の日', '定期パターン', '種類']) vws.spliceColumns(col(vws, h), 1);
+      }),
+    );
+    expect(r.visitTypes).toEqual([]);
+    expect(r.patterns).toEqual([]);
+    expect(r.visits).toHaveLength(d.visits.length);
+    expect(r.visits.every((v) => v.typeId === null && v.pattern === null)).toBe(true);
+  });
+
+  it('シートが無ければ、訪問に種類・パターンの列が残っていても空にする', async () => {
+    const d = varied();
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        wb.removeWorksheet(sheet(wb, '種類').id);
+        wb.removeWorksheet(sheet(wb, '定期パターン').id);
+      }),
+    );
+    expect(r.visitTypes).toEqual([]);
+    expect(r.patterns).toEqual([]);
+    expect(r.visits.every((v) => v.typeId === null && v.pattern === null)).toBe(true);
+  });
+
+  it('ID が空の種類・パターンは新しく足される', async () => {
+    const d = varied();
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const tws = sheet(wb, '種類');
+        const t = tws.addRow([]);
+        t.getCell(col(tws, '名前')).value = '家事';
+        t.getCell(col(tws, '色（1〜8）')).value = 2;
+        t.getCell(col(tws, '標準の所要（分）')).value = 90;
+        const pws = sheet(wb, '定期パターン');
+        const p = pws.addRow([]);
+        p.getCell(col(pws, d.org.terms.client)).value = d.clients[1]!.displayName;
+        p.getCell(col(pws, '種類')).value = '家事';
+        p.getCell(col(pws, '曜日')).value = '金月';
+        p.getCell(col(pws, '間隔')).value = '隔週';
+        p.getCell(col(pws, '時間の決め方')).value = 'ちょうど';
+        p.getCell(col(pws, '開始（早）')).value = '10:00';
+        p.getCell(col(pws, '所要（分）')).value = 90;
+        p.getCell(col(pws, '開始日')).value = '2026/11/2';
+      }),
+    );
+    const nt = r.visitTypes.at(-1);
+    expect(nt).toMatchObject({ name: '家事', color: 1, durationMinutes: 90, requirements: [], note: '' });
+    expect(nt?.id).toMatch(/^t-/);
+    const np = r.patterns.at(-1);
+    expect(np).toMatchObject({
+      clientId: d.clients[1]!.id,
+      typeId: nt?.id,
+      weekdays: [1, 5],
+      everyWeeks: 2,
+      windowKind: 'fixed',
+      earliestStart: '10:00',
+      latestStart: '10:00',
+      durationMinutes: 90,
+      from: '2026-11-02',
+      to: null,
+      usualStaffId: null,
+      note: '',
+    });
+    expect(np?.id).toMatch(/^pt-/);
+  });
+
+  it('パターンを指す訪問の ID が「元の日_パターンID」でなければ（空の ID も）シート名・行番号付きで止める', async () => {
+    const d = varied();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const vws = sheet(wb, '訪問');
+        // 2行目はパターンの訪問（seed）、3行目は pt-extra を指す訪問
+        expect(vws.getRow(2).getCell(col(vws, '定期パターン')).value).toBeTruthy();
+        vws.getRow(2).getCell(col(vws, 'ID')).value = 'v-wrong';
+        vws.getRow(3).getCell(col(vws, 'ID')).value = null;
+      }),
+    );
+    const v0 = d.visits[0]!;
+    expect(msg).toContain(
+      `シート『訪問』の 2行目・『ID』：定期パターンの訪問の ID は「${v0.pattern!.date}_${v0.pattern!.id}」（元の日_パターンID）にしてください`,
+    );
+    expect(msg).toContain(
+      'シート『訪問』の 3行目・『ID』：定期パターンの訪問の ID は「2026-10-13_pt-extra」（元の日_パターンID）にしてください',
+    );
+  });
+
+  it('同じ名前の種類、いない種類・利用者さん・スタッフ・パターンの参照はシート名と行番号付きで止める', async () => {
+    const d = varied();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const tws = sheet(wb, '種類');
+        tws.getRow(3).getCell(col(tws, '名前')).value = tws.getRow(2).getCell(col(tws, '名前')).value;
+        const pws = sheet(wb, '定期パターン');
+        pws.getRow(2).getCell(col(pws, '種類')).value = 'ない種類';
+        pws.getRow(3).getCell(col(pws, d.org.terms.client)).value = 'いない人';
+        pws.getRow(4).getCell(col(pws, 'いつもの担当')).value = 'いない担当';
+        const vws = sheet(wb, '訪問');
+        vws.getRow(2).getCell(col(vws, '定期パターン')).value = 'no-such';
+      }),
+    );
+    expect(msg).toContain('シート『種類』の 3行目・『名前』：「');
+    expect(msg).toContain('2行目と重なっています');
+    expect(msg).toContain(
+      'シート『定期パターン』の 2行目・『種類』：「ない種類」という種類は、シート『種類』にありません',
+    );
+    expect(msg).toContain(`シート『定期パターン』の 3行目・『${d.org.terms.client}』：「いない人」という`);
+    expect(msg).toContain('シート『定期パターン』の 4行目・『いつもの担当』：「いない担当」という');
+    // パターンのシートで止まるので、訪問のシートは次の読み込みで出る
+    const msg2 = fail(
+      await editAndImport(d, (wb) => {
+        const vws = sheet(wb, '訪問');
+        vws.getRow(2).getCell(col(vws, '定期パターン')).value = 'no-such';
+        vws.getRow(3).getCell(col(vws, '種類')).value = 'ない種類';
+        vws.getRow(4).getCell(col(vws, '定期パターン')).value = null;
+      }),
+    );
+    expect(msg2).toContain(
+      'シート『訪問』の 2行目・『定期パターン』：ID「no-such」の定期パターンは、シート『定期パターン』にありません',
+    );
+    expect(msg2).toContain('シート『訪問』の 3行目・『種類』：「ない種類」という種類は、シート『種類』にありません');
+    expect(msg2).toContain('シート『訪問』の 4行目・『定期パターン』：単発の訪問');
+  });
+
+  it('読めない曜日・間隔、終了日が開始日より前、開始（早）が開始（遅）より後はシート名と行番号付きで止める', async () => {
+    const d = varied();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const pws = sheet(wb, '定期パターン');
+        pws.getRow(2).getCell(col(pws, '曜日')).value = '月曜と木';
+        pws.getRow(3).getCell(col(pws, '曜日')).value = null;
+        pws.getRow(4).getCell(col(pws, '間隔')).value = '毎月';
+        pws.getRow(5).getCell(col(pws, '開始日')).value = '2026-11-01';
+        pws.getRow(5).getCell(col(pws, '終了日')).value = '2026-10-31';
+        pws.getRow(6).getCell(col(pws, '時間の決め方')).value = '幅';
+        pws.getRow(6).getCell(col(pws, '開始（早）')).value = '11:00';
+        pws.getRow(6).getCell(col(pws, '開始（遅）')).value = '10:00';
+      }),
+    );
+    expect(msg).toContain('シート『定期パターン』の 2行目・『曜日』：曜日は「月木」のように1つ以上書いてください');
+    expect(msg).toContain('シート『定期パターン』の 3行目・『曜日』：');
+    expect(msg).toContain(
+      'シート『定期パターン』の 4行目・『間隔』：「毎週」「隔週」「3週ごと」「4週ごと」のどれかで書いてください',
+    );
+    expect(msg).toContain('シート『定期パターン』の 5行目・『終了日』：終了日は開始日以降にしてください');
+    expect(msg).toContain('シート『定期パターン』の 6行目・『開始（遅）』：開始（遅）は開始（早）以降にしてください');
+  });
+
+  it('シートがあるのに必須の列が無ければ止める（訪問の種類・パターンの列も）', async () => {
+    const d = varied();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const pws = sheet(wb, '定期パターン');
+        pws.spliceColumns(col(pws, '間隔'), 1);
+        const vws = sheet(wb, '訪問');
+        vws.spliceColumns(col(vws, '元の日'), 1);
+      }),
+    );
+    expect(msg).toContain('シート『定期パターン』：『間隔』の列がありません');
+    expect(msg).toContain('シート『訪問』：『元の日』の列がありません');
+  });
+});
+
+describe('〈利用者さん〉の仮押さえの列（ADR-0012 追記。段階3）', () => {
+  const withTentative = (d: DemoData): DemoData => ({
+    ...d,
+    clients: d.clients.map((c, i) => (i % 3 === 0 ? { ...c, tentative: true } : c)),
+  });
+  it('仮押さえが 書き出し → 読み込み で同じに戻る（列は「利用中」の次）', async () => {
+    const d = withTentative(base());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const ws = sheet(wb, personSheetNames(d.org.terms).client);
+    expect(col(ws, '仮押さえ')).toBe(col(ws, '利用中') + 1);
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.clients.map((c) => c.tentative)).toEqual(d.clients.map((c) => c.tentative));
+    expect(r.clients.some((c) => c.tentative)).toBe(true);
+    expect(r).toEqual(withoutPlans(d));
+  });
+  it('「仮押さえ」の列が無いブックは false', async () => {
+    const d = withTentative(base());
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.spliceColumns(col(ws, '仮押さえ'), 1);
+      }),
+    );
+    expect(r.clients).toHaveLength(d.clients.length);
+    expect(r.clients.every((c) => c.tentative === false)).toBe(true);
   });
 });

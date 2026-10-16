@@ -1,0 +1,23 @@
+/* 仮押さえの印（D47。ADR-0012 追記） */
+.tentative-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1.5px dashed #a46d0a;
+  background: #fbefd6;
+  color: #7a4f05;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+/* 〈利用者さん〉の欄の仮押さえの枠 */
+.tentative-box {
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1.5px dashed #a46d0a;
+  background: #fffaf0;
+}

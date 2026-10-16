@@ -79,6 +79,7 @@ export function VisitCard({
   drag,
   dragging = false,
   detail,
+  mark,
   children,
 }: {
   visitId: string;
@@ -96,6 +97,8 @@ export function VisitCard({
   drag?: DragProps;
   dragging?: boolean;
   detail: ReactNode;
+  /** 名前の横に出す小さな印（訪問の種類。ADR-0012） */
+  mark?: ReactNode;
   children?: ReactNode;
 }) {
   const t = timing;
@@ -136,6 +139,7 @@ export function VisitCard({
             {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : fallbackTime}
           </span>
           <ClientName client={client} />
+          {mark}
         </div>
         {children}
       </div>

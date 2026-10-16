@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type DemoData, STORAGE_KEY } from '../contracts/data';
+import type { Pattern } from '../contracts/documents';
 import { createDemoData } from '../seed';
 import {
   BROKEN_KEY,
@@ -163,5 +164,43 @@ describe('extendDays', () => {
     expect(e.visits.filter((v) => v.date < '2026-11-20')).toEqual(d.visits);
     expect(e.visits.some((v) => v.date === '2026-11-20')).toBe(true);
     expect(e.manualPlans['2026-10-12']).toEqual(d.manualPlans['2026-10-12']);
+  });
+  it('パターンのあるデータで今日以降の訪問が無いとき、起動するとパターンから訪問が足される', () => {
+    const d = createDemoData('2026-10-12');
+    const client = d.clients.find((c) => c.active)!;
+    const pattern: Pattern = {
+      id: 'p1',
+      clientId: client.id,
+      typeId: null,
+      weekdays: [1, 4], // 月・木
+      everyWeeks: 1,
+      windowKind: 'fixed',
+      earliestStart: '10:00',
+      latestStart: '10:00',
+      durationMinutes: 60,
+      from: '2026-10-01',
+      to: null,
+      usualStaffId: null,
+      note: '',
+    };
+    // seed のパターン（ADR-0012）を p1 だけにする（seed の訪問はパターンから外す）
+    const withPattern: DemoData = { ...d, patterns: [pattern], visits: d.visits.map((v) => ({ ...v, pattern: null })) };
+    mem.set(STORAGE_KEY, JSON.stringify(withPattern));
+    // 今日＝2026-11-20（金）。今日〜12/3 の月・木
+    vi.useFakeTimers({ now: Date.parse('2026-11-20T09:00:00+09:00'), toFake: ['Date'] });
+    let loaded: DemoData;
+    try {
+      loaded = load();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(loaded.visits.filter((v) => v.date < '2026-11-20')).toEqual(withPattern.visits);
+    const added = loaded.visits.filter((v) => v.date >= '2026-11-20');
+    expect(added.map((v) => v.id)).toEqual(['2026-11-23_p1', '2026-11-26_p1', '2026-11-30_p1', '2026-12-03_p1']);
+    expect(added.every((v) => v.pattern?.id === 'p1' && v.clientId === client.id)).toBe(true);
+    // 保存もされる
+    expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).visits).toEqual(loaded.visits);
+    // パターンがあれば seed の daysFrom は使わない
+    expect(extendDays(withPattern, '2026-11-20').visits).toEqual(loaded.visits);
   });
 });

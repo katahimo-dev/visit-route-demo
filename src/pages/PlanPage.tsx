@@ -31,7 +31,7 @@ import {
   Users,
 } from 'lucide-react';
 import { type DragEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
 import { ClientName } from '../components/parts';
@@ -39,12 +39,13 @@ import { RouteMap } from '../components/RouteMap';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
+import { TypeMark } from '../components/visitType';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
-import type { Absence, Client, Visit } from '../contracts/documents';
+import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
-import { type Cols, NONE, timeOrder, windowText } from '../domain/scheduleModel';
+import { NONE, timeOrder, windowText } from '../domain/scheduleModel';
 import { addDays, jstDate } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import {
@@ -62,7 +63,10 @@ import {
 } from '../lib/absences';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { contactCount, dayWordOf } from '../lib/contacts';
+import { copyDayVisits } from '../lib/copyDay';
 import { deferredDragStart } from '../lib/dragStart';
+import { planRunOf, planStale } from '../lib/month';
+import { typeOf } from '../lib/patternText';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
@@ -81,7 +85,7 @@ import {
   settleAnneal,
   targetsOf,
 } from '../reassign';
-import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
+import { applyPreset, matchesPreset, presetOf, scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
@@ -116,7 +120,7 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
  * 担当の割り当てを1画面で扱う。AI案を作る → 担当ごとの列で手直し（ドラッグ）→ 動かした訪問は固定 →
  * 「固定を残して組み直す」で残りを AI が組み直す →「この割当で確定」（manualPlans と各訪問の担当に写す）。
  * AI案の routes は手直し後の今の案、generated は AI が出したまま、pins は固定（訪問ID → 担当ID）。
- * AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（ADR-0008）。作る・組み直すたびに、条件と結果を
+ * AI案が無い日は、開いたときに点数の基準のプリセットの案だけを自動で作る（D52。残りは「他の条件でも作る」）。作る・組み直すたびに、条件と結果を
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
  * プリセットごとの案のカードを並べ、「この案にする」で今の案にする。
  * 点数（100点満点）・必須の違反・条件ごとの達成は、いつも点数の基準のプリセットの物差し（ADR-0010。useDayModel の scoreProblem）。
@@ -195,6 +199,7 @@ export default function PlanPage() {
   /** 急な欠勤の欄を開いている人（ADR-0011。null：閉じている） */
   const [absenceFor, setAbsenceFor] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
   const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -552,13 +557,15 @@ export default function PlanPage() {
     create(rules, 'preset');
   };
 
-  // AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（同じ日に2回は試さない。ADR-0008）
+  // AI案が無い日は、開いたときに点数の基準のプリセット（scorePresetId）の案だけを自動で作る（同じ日に2回は試さない。
+  // D52。ADR-0012 追記）。他のプリセットはカードか「他の条件でも作る」で作る
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案の有無・問題が変わったときだけ
   useEffect(() => {
     // 訪問が無い日は試したことにしない（あとで訪問を足す・コピーしたら作る）
     if (aiPlan || running || batch || !problem || problem.visits.length === 0 || autoTried.current.has(date)) return;
     autoTried.current.add(date);
-    runBatch(data.presets);
+    const base = scorePresetOf(data.presets, data.scorePresetId);
+    runBatch(base ? [base] : []);
   }, [date, aiPlan, problem, running]);
 
   // ---- プリセットごとの案のカード（ADR-0008）。点数はどれも点数の基準の物差し（ADR-0010） ----
@@ -611,6 +618,27 @@ export default function PlanPage() {
     -1,
   );
   const missing = presetCards.filter((c) => !c.run).map((c) => c.preset);
+  /**
+   * （D43）今の案の元の記録を作ったあとに、訪問・〈スタッフ〉・稼働時間・条件が変わったか：記録の inputKey と、
+   * いまのデータに記録の条件（と固定）を当てた問題のキーが違う。作った問題はプリセットのカードのものを使い回す
+   */
+  const planIsStale = useMemo(() => {
+    if (!aiPlan) return false;
+    return planStale(compileInput, data, date, (rules, pins) => {
+      if (Object.keys(pins).length > 0) return undefined;
+      const key = JSON.stringify(rules);
+      if (problem && key === JSON.stringify(compileInput.rules)) return problem;
+      return presetKeys.find((k) => JSON.stringify(k.rules) === key)?.problem ?? undefined;
+    });
+  }, [aiPlan, compileInput, data, date, problem, presetKeys]);
+  /** （D43）作り直す：プリセットのカードを押したのと同じ（手直し・固定があれば確認）。プリセットに無い条件ならその条件で作る */
+  const remakeStale = () => {
+    const run = planRunOf(data, date);
+    if (!run) return;
+    const preset = presetOf(run.rules, data.presets);
+    if (preset) runPreset(preset);
+    else create(run.rules);
+  };
   /** 固定を残して組み直す（generated は変えない。固定は残す） */
   const resolve = () => {
     const p = check();
@@ -653,6 +681,18 @@ export default function PlanPage() {
     return si >= 0 && problem.allowed[vi]?.[si] === true;
   };
   const owner = useMemo(() => ownerMap(routes), [routes]);
+  /** 週間の帯から開いたときに選ぶ訪問（ADR-0012 追記の段階2。今の案が出たら1回だけ選んで見える所へ） */
+  const wantVisit = useRef<string | null>((location.state as { visitId?: string } | null)?.visitId ?? null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 今の案が出たときに1回だけ
+  useEffect(() => {
+    const id = wantVisit.current;
+    if (!id || !aiPlan) return;
+    wantVisit.current = null;
+    if (owner.has(id)) sel.togglePick({ id, set: PLAN_SET });
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-visit="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' }),
+    );
+  }, [aiPlan, owner]);
   const moveTo = (visitId: string, staffId: string) => {
     if (!problem || !aiPlan || running) return;
     if (owner.get(visitId) === staffId && own(pins, visitId) === staffId) return;
@@ -1196,7 +1236,13 @@ export default function PlanPage() {
   // ---- 訪問の取消・前の同じ曜日からコピー ----
   const cancelVisit = (v: Visit) => {
     if (!confirm('この訪問を取り消しますか？')) return;
-    update((d) => ({ ...d, visits: d.visits.map((x) => (x.id === v.id ? { ...x, cancelled: true } : x)) }));
+    // 定期パターンの訪問を取り消したら「この回だけの変更」（ADR-0012）
+    update((d) => ({
+      ...d,
+      visits: d.visits.map((x) =>
+        x.id === v.id ? { ...x, cancelled: true, pattern: x.pattern ? { ...x.pattern, edited: true } : null } : x,
+      ),
+    }));
     toast('取り消しました');
   };
   /** 1週前の訪問（と確定した割当）をこの日に写す。訪問が無い日だけ */
@@ -1209,15 +1255,14 @@ export default function PlanPage() {
       return;
     }
     if (!confirm(`${from} の訪問（と確定した割当）を ${date} にコピーします。よろしいですか？`)) return;
-    const idMap = new Map(src.map((v) => [v.id, newId('v')]));
-    const copied = src.map((v) => ({ ...v, id: idMap.get(v.id) as string, date }));
-    const cols: Cols = {};
-    for (const [s, ids] of Object.entries(own(data.manualPlans, from) ?? {})) {
-      const mapped = ids.map((id) => idMap.get(id)).filter((x): x is string => !!x);
-      if (mapped.length > 0) cols[s] = mapped;
-    }
-    update((d) => ({ ...d, visits: [...d.visits, ...copied], manualPlans: { ...d.manualPlans, [date]: cols } }));
-    toast(`${src.length}件コピーしました`);
+    // コピー先がパターンの回なら、その回の ID で写す（あとの展開で二重にしない。ADR-0012）。それ以外は単発
+    const copy = copyDayVisits(data, from, date, () => newId('v'));
+    update((d) => ({
+      ...d,
+      visits: [...d.visits, ...copy.visits],
+      manualPlans: { ...d.manualPlans, [date]: copy.cols },
+    }));
+    toast(`${copy.visits.length}件コピーしました`);
   };
 
   // ---- 列：その日に働く人（と、今の案で訪問がある人）----
@@ -1351,6 +1396,7 @@ export default function PlanPage() {
         drag={dragProps(id)}
         dragging={dragging === id}
         detail={<ReasonBox explain={explained.get(id)} />}
+        mark={<TypeMark type={typeOf(data.visitTypes, visitById.get(id)?.typeId)} compact />}
       >
         {(pin || hard || subFrom || shift || stay) && (
           <div className="row visit-tags">
@@ -1465,6 +1511,7 @@ export default function PlanPage() {
               hard: hardOf.get(id),
             })}
             clientLabel={terms.client}
+            typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
             onEdit={setEditing}
             onCancel={cancelVisit}
           />
@@ -1571,7 +1618,7 @@ export default function PlanPage() {
                       onClick={() => runBatch(missing)}
                     >
                       <WithIcon icon={Sparkles} size={14}>
-                        足りない案を作る（{missing.length}つ）
+                        他の条件でも作る（{missing.length}つ）
                       </WithIcon>
                     </button>
                   )}
@@ -1714,6 +1761,18 @@ export default function PlanPage() {
           </div>
         ) : (
           <>
+            {planIsStale && !running && (
+              <div className="card stale-note row" data-testid="plan-stale">
+                <WithIcon icon={TriangleAlert} size={16}>
+                  この案を作ったあとに、訪問・{terms.staff}・稼働時間・条件が変わりました
+                </WithIcon>
+                <button type="button" className="btn btn-small" disabled={!!running || !problem} onClick={remakeStale}>
+                  <WithIcon icon={RefreshCw} size={14}>
+                    作り直す
+                  </WithIcon>
+                </button>
+              </div>
+            )}
             <div className="card stack">
               <SectionTitle
                 icon={Gauge}
@@ -2311,6 +2370,7 @@ function VisitList({
   ownerName,
   notes,
   clientLabel,
+  typeOfVisit,
   onEdit,
   onCancel,
 }: {
@@ -2322,6 +2382,8 @@ function VisitList({
   ownerName: (id: string) => { name: string; color: string | undefined } | null;
   notes: (id: string) => VisitNotes;
   clientLabel: string;
+  /** 訪問の種類（ADR-0012。種類なしは null） */
+  typeOfVisit: (v: Visit) => VisitType | null;
   onEdit: (id: string) => void;
   onCancel: (v: Visit) => void;
 }) {
@@ -2367,6 +2429,16 @@ function VisitList({
                   </td>
                   <td>
                     <ClientName client={clientById.get(v.clientId)} />
+                    {(typeOfVisit(v) || v.pattern?.edited) && (
+                      <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+                        <TypeMark type={typeOfVisit(v)} compact />
+                        {v.pattern?.edited && (
+                          <span className="chip chip-warn" title="定期パターンのこの回だけ変えた訪問">
+                            この回だけの変更
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {v.note && <div className="sub">{v.note}</div>}
                   </td>
                   <td className="num nowrap">{v.durationMinutes}分</td>

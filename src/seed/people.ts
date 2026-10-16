@@ -23,7 +23,8 @@ export const INITIAL_ITEMS: Item[] = [
     name: '資格',
     target: 'staff',
     kind: 'multi',
-    options: ['介護福祉士', '看護師', '保育士', '初任者研修'],
+    // 理学療法士・作業療法士・言語聴覚士は訪問の種類「リハビリ」の担当に必要（ADR-0012）
+    options: ['介護福祉士', '看護師', '保育士', '初任者研修', '理学療法士', '作業療法士', '言語聴覚士'],
   },
   { id: ITEM_ID.experience, name: '経験年数', target: 'staff', kind: 'number', options: [] },
   {
@@ -136,7 +137,8 @@ export const STAFF_SEEDS: StaffSeed[] = [
     shift: std,
     traits: {
       gender: '男性',
-      qualification: ['介護福祉士'],
+      // 理学療法士はリハビリの担当（ADR-0012）
+      qualification: ['介護福祉士', '理学療法士'],
       experience: 8,
       specialty: ['高齢', '障害'],
       smoker: false,
@@ -193,7 +195,8 @@ export const STAFF_SEEDS: StaffSeed[] = [
     shift: ['08:30', '16:30'],
     traits: {
       gender: '女性',
-      qualification: ['介護福祉士', '初任者研修'],
+      // 理学療法士はリハビリの担当（ADR-0012）
+      qualification: ['介護福祉士', '初任者研修', '理学療法士'],
       experience: 15,
       specialty: ['高齢', '話し相手', '家事', '料理'],
       smoker: false,

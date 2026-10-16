@@ -44,6 +44,17 @@ export const CLIENT_COLS = {
   usualStaff: 'いつもの担当',
   note: 'メモ',
 } as const;
+/**
+ * 〈利用者さん〉の「仮押さえ」（○。ADR-0012 追記。段階3）。書き出しは「利用中」の次に置く。
+ * 古いブックには無いので必須の列にしない（無ければ false）
+ */
+export const CLIENT_TENTATIVE_COL = '仮押さえ';
+/** 書き出す〈利用者さん〉の固定の列（「利用中」の次に「仮押さえ」） */
+export const clientExportCols = (): string[] => {
+  const base: string[] = Object.values(CLIENT_COLS);
+  const at = base.indexOf(CLIENT_COLS.active) + 1;
+  return [...base.slice(0, at), CLIENT_TENTATIVE_COL, ...base.slice(at)];
+};
 export const availabilityCols = (t: Terms) => ({ staff: t.staff, date: '日付', slots: '時間帯' });
 /** 欠勤（ADR-0011）：開始の空＝始業から、終了の空＝終業まで、両方空＝終日 */
 export const absenceCols = (t: Terms) => ({
@@ -54,18 +65,55 @@ export const absenceCols = (t: Terms) => ({
   to: '終了',
   note: 'メモ',
 });
+/** 訪問の種類（ADR-0012）：ID・名前・色（1〜8）・標準の所要（分）・〈必要条件：項目名〉…・メモ */
+export const TYPE_COLS = {
+  id: 'ID',
+  name: '名前',
+  color: '色（1〜8）',
+  duration: '標準の所要（分）',
+  note: 'メモ',
+} as const;
+/** 定期パターン（ADR-0012） */
+export const patternCols = (t: Terms) => ({
+  id: 'ID',
+  client: t.client,
+  type: '種類',
+  weekdays: '曜日',
+  every: '間隔',
+  windowKind: '時間の決め方',
+  earliest: '開始（早）',
+  latest: '開始（遅）',
+  duration: '所要（分）',
+  from: '開始日',
+  to: '終了日',
+  usualStaff: 'いつもの担当',
+  note: 'メモ',
+});
+/** 訪問の列のうち、種類（ADR-0012）。「種類」シートがあるブックだけで読む */
+export const VISIT_TYPE_COL = '種類';
+/** 訪問の列のうち、定期パターン（ADR-0012）。「定期パターン」シートがあるブックだけで読む */
+export const VISIT_PATTERN_COLS = { pattern: '定期パターン', date: '元の日', edited: 'この回だけ変更' } as const;
 export const visitCols = (t: Terms) => ({
   id: 'ID',
   date: '日付',
   client: t.client,
+  type: VISIT_TYPE_COL,
   windowKind: '時間の決め方',
   earliest: '開始（早）',
   latest: '開始（遅）',
   duration: '所要（分）',
   staff: '担当',
   cancelled: '取り消し',
+  pattern: VISIT_PATTERN_COLS.pattern,
+  patternDate: VISIT_PATTERN_COLS.date,
+  edited: VISIT_PATTERN_COLS.edited,
   note: 'メモ',
 });
+/** 訪問の列のうち、古いブック（ADR-0012 より前）にも必ずある列 */
+export const visitBaseCols = (t: Terms) => {
+  const { type: _t, pattern: _p, patternDate: _d, edited: _e, ...rest } = visitCols(t);
+  return rest;
+};
 
 export const TRAIT_PREFIX = '特性：';
 export const REQ_PREFIX = '必要条件：';

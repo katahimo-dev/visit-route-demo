@@ -5,6 +5,7 @@ import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { colorOf, initialOf } from '../lib/colors';
 import { hasLocation } from '../lib/common';
 import { RouteMap } from './RouteMap';
+import './marks.css';
 
 /** 訪問先の色の丸と名前（予定・比較の画面で同じ見た目にする） */
 export function ClientName({ client }: { client: Client | undefined }) {
@@ -14,7 +15,17 @@ export function ClientName({ client }: { client: Client | undefined }) {
         {initialOf(client?.displayName ?? '?')}
       </span>
       <span className="ellipsis">{client?.displayName ?? '（不明）'}</span>
+      {client?.tentative && <TentativeMark />}
     </div>
+  );
+}
+
+/** 仮押さえの〈利用者さん〉の印（D47。色だけに頼らず「仮」の字で出す） */
+export function TentativeMark() {
+  return (
+    <span className="tentative-mark" title="仮押さえ（本登録の前）" data-testid="tentative-mark">
+      仮
+    </span>
   );
 }
 

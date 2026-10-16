@@ -1,7 +1,8 @@
 // 入口（実装は store 担当）。画面はここだけを import する
 import { z } from 'zod';
 import { DATA_VERSION, type DemoData, demoDataSchema, type ImportError, STORAGE_KEY } from '../contracts/data';
-import { jstDate } from '../domain/time';
+import { addDays, jstDate } from '../domain/time';
+import { applyPatterns } from '../patterns';
 import { createDemoData, DEMO_DAYS, daysFrom, initialPresets } from '../seed';
 import { repair } from './repair';
 
@@ -21,9 +22,16 @@ function storage(): Storage | null {
   }
 }
 
-/** 今日以降の訪問が1件もなければ、今日から14日分を足す（既存の日は変えない） */
+/**
+ * 今日以降の訪問が1件もなければ、今日から14日分を足す（既存の日は変えない）。
+ * パターンがあれば patterns の applyPatterns で今日〜今日+13 を展開し、無い古いデータは今までどおり seed の daysFrom（ADR-0012）
+ */
 export function extendDays(data: DemoData, todayDate: string): DemoData {
   if (data.visits.some((v) => v.date >= todayDate)) return data;
+  if (data.patterns.length > 0) {
+    const c = applyPatterns(data, { from: todayDate, to: addDays(todayDate, DEMO_DAYS - 1) }, todayDate);
+    return c.added.length > 0 ? { ...data, visits: c.visits } : data;
+  }
   return daysFrom(data, todayDate, DEMO_DAYS);
 }
 
@@ -61,11 +69,14 @@ export function migrate(raw: unknown): DemoData | ImportError {
   }
   // プリセット（ADR-0008）が無い（null も）古いデータは、初期の3種で補う（版は1のまま）
   // 欠勤（ADR-0011）が無い（null も）古いデータは [] で補う
+  // 訪問の種類・定期パターン（ADR-0012）が null の古いデータも [] で補う（無いときは zod の既定値）
   const o = raw as Record<string, unknown>;
   const filled = {
     ...o,
     ...(o.presets === undefined || o.presets === null ? { presets: initialPresets() } : {}),
     ...(o.absences === undefined || o.absences === null ? { absences: [] } : {}),
+    ...(o.visitTypes === undefined || o.visitTypes === null ? { visitTypes: [] } : {}),
+    ...(o.patterns === undefined || o.patterns === null ? { patterns: [] } : {}),
   };
   const r = demoDataSchema.safeParse(filled, { error: z.locales.ja().localeError });
   if (!r.success) {

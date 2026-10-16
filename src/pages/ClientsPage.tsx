@@ -1,13 +1,29 @@
-import { BadgeCheck, House, MapPin, Pencil, Plus, Repeat, Save, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import {
+  BadgeCheck,
+  BookmarkCheck,
+  BookmarkX,
+  House,
+  MapPin,
+  Pencil,
+  Plus,
+  Repeat,
+  Save,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
-import { Check, PlaceEditor } from '../components/parts';
+import { Check, PlaceEditor, TentativeMark } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { type Client, clientSchema } from '../contracts/documents';
+import { jstDate } from '../domain/time';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
+import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useDemoData } from '../store';
+import { PatternsSection } from './PatternsSection';
 import './settings.css';
 
 /** 訪問先の一覧と編集（PoC本体 ClientsPage.tsx を写し、性別希望・NG を特性・条件・相性に置き換えた） */
@@ -23,6 +39,7 @@ const blank = (nextColor: number): Client => ({
   requirements: [],
   preferences: [],
   usualStaffId: null,
+  tentative: false,
 });
 
 export default function ClientsPage() {
@@ -60,6 +77,32 @@ export default function ClientsPage() {
       setError(formError(e));
     }
   };
+
+  /** 仮押さえを本登録にする（tentative: false。ほかの入力中の項目はそのまま） */
+  const confirmTentative = (c: Client) => {
+    update((d) => ({ ...d, clients: d.clients.map((x) => (x.id === c.id ? { ...x, tentative: false } : x)) }));
+    setForm((f) => (f && f.id === c.id ? { ...f, tentative: false } : f));
+    toast(`${c.displayName}を本登録にしました`);
+  };
+
+  /**
+   * 仮押さえを取り消す（D47）：確認のうえ、lib/tentative の cancelTentative でその人の定期パターン・訪問・〈利用者さん〉を消し、
+   * 消した訪問を今の案・記録・確定した割当から、〈利用者さん〉を相性から除く。確定した日を含むなら確認の文にその日数を出す
+   */
+  const cancelTentative = (c: Client) => {
+    const today = jstDate(Date.now());
+    const n = data.visits.filter((v) => v.clientId === c.id).length;
+    const fixed = confirmedDatesOf(data, c.id).length;
+    const msg = `仮押さえの${c.displayName}を取り消します。定期パターンと訪問 ${n}件を消し、${terms.client}も消します。${
+      fixed > 0 ? `確定した日（${fixed}日）の割当からも外します。` : ''
+    }よろしいですか？`;
+    if (!confirm(msg)) return;
+    update((d) => cancelTentativeData(d, c.id, today));
+    setForm(null);
+    toast(`仮押さえを取り消しました（訪問 ${n}件）`);
+  };
+
+  const saved = form ? data.clients.find((x) => x.id === form.id) : undefined;
 
   return (
     <div className="stack">
@@ -104,7 +147,10 @@ export default function ClientsPage() {
                       {initialOf(c.displayName)}
                     </span>
                     <span className="person-main">
-                      {c.displayName}
+                      <span className="row" style={{ gap: 6 }}>
+                        {c.displayName}
+                        {c.tentative && <TentativeMark />}
+                      </span>
                       {c.place.address && <small className="person-sub">{c.place.address}</small>}
                     </span>
                   </span>
@@ -132,7 +178,10 @@ export default function ClientsPage() {
                     </WithIcon>
                   )}
                 </td>
-                <td>{c.active ? '' : <span className="chip">休止中</span>}</td>
+                <td>
+                  {c.tentative && <span className="chip chip-warn">仮押さえ</span>}
+                  {!c.active && <span className="chip">休止中</span>}
+                </td>
                 <td>
                   <IconButton
                     icon={Pencil}
@@ -169,6 +218,29 @@ export default function ClientsPage() {
             </>
           }
         >
+          {saved?.tentative && !isNew && (
+            <div className="tentative-box stack" data-testid="tentative-box">
+              <span className="row" style={{ gap: 6 }}>
+                <TentativeMark />
+                <strong>仮押さえの{terms.client}です</strong>
+              </span>
+              <span className="sub">
+                問い合わせの試算から仮に押さえています。決まったら本登録に、断られたら取り消してください。
+              </span>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-small" onClick={() => confirmTentative(saved)}>
+                  <WithIcon icon={BookmarkCheck} size={14}>
+                    本登録にする
+                  </WithIcon>
+                </button>
+                <button type="button" className="btn btn-small" onClick={() => cancelTentative(saved)}>
+                  <WithIcon icon={BookmarkX} size={14}>
+                    仮押さえを取り消す
+                  </WithIcon>
+                </button>
+              </div>
+            </div>
+          )}
           <div className="form-grid">
             <label>
               表示名
@@ -222,6 +294,12 @@ export default function ClientsPage() {
               利用中（外すと休止）
             </Check>
           </div>
+
+          {isNew || !data.clients.some((x) => x.id === form.id) ? (
+            <Hint label="定期パターン">定期パターン（決まった曜日・時刻の訪問）は、保存してから足せます。</Hint>
+          ) : (
+            <PatternsSection client={form} />
+          )}
 
           <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={clientItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />

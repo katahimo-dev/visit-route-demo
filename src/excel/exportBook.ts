@@ -16,16 +16,18 @@ import { scorePresetOf } from '../seed/presets';
 import {
   absenceCols,
   availabilityCols,
-  CLIENT_COLS,
+  clientExportCols,
   ITEM_COLS,
   ORG_HEADERS,
   ORG_KEYS,
   PRESET_COLS,
+  patternCols,
   prefHeader,
   presetWeightHeader,
   RULE_COLS,
   reqHeader,
   STAFF_COLS,
+  TYPE_COLS,
   traitHeader,
   visitCols,
 } from './layout';
@@ -34,6 +36,7 @@ import {
   condsToCell,
   DAY_OFF,
   EMPTY_MULTI,
+  EVERY_WEEKS_LABELS,
   FIXED_SHEETS,
   FLAG_COND_TEXTS,
   hhmmToCell,
@@ -189,7 +192,9 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     `・${FIXED_SHEETS.compat}：行が${t.client}、列が${t.staff}です。◎・○・△・× か空で書きます（× は担当にしません）。`,
     `・${FIXED_SHEETS.availability}：その日だけの稼働時間。時間帯は「9:00-12:00、13:00-18:00」のように30分単位で書き、休みは「${DAY_OFF}」と書きます。`,
     `・${FIXED_SHEETS.absences}：当日の急な欠勤（1人1日1行）。開始・終了は30分単位で書き、開始が空なら始業から、終了が空なら終業まで、両方空なら終日です。このシートが無いブックを読み込むと、欠勤なしになります。`,
-    `・${FIXED_SHEETS.visits}：訪問の予定。時間の決め方は「ちょうど」（開始（早）に始める）か「幅」（開始（早）〜開始（遅）のあいだに始める）。担当は${t.staff}の名前で、空なら未割当です。`,
+    `・${FIXED_SHEETS.visitTypes}：訪問の種類（20行まで）。名前は重ならないようにします。色は 1〜8 の番号、標準の所要は分です。「必要条件：項目名」の列は担当に必要な${t.staff}の特性で、常に必須です（書き方は${t.client}の必要条件と同じ）。このシートが無いブックを読み込むと、種類なしになります。`,
+    `・${FIXED_SHEETS.patterns}：${t.client}ごとの定期パターン。種類は種類の名前（空なら種類を問わない）、曜日は「月木」のように、間隔は「${Object.values(EVERY_WEEKS_LABELS).join('」「')}」で書きます。終了日が空なら続きます。いつもの担当は${t.staff}の名前（空なら${t.client}のいつもの担当）です。このシートが無いブックを読み込むと、パターンなしになります。`,
+    `・${FIXED_SHEETS.visits}：訪問の予定。時間の決め方は「ちょうど」（開始（早）に始める）か「幅」（開始（早）〜開始（遅）のあいだに始める）。担当は${t.staff}の名前で、空なら未割当です。種類は種類の名前（空なら種類なし）。定期パターンはパターンの ID（空なら単発）で、そのときは元の日も書きます。この回だけ変更は、パターンから作った訪問をその回だけ直したときに ○ を付けます。`,
     '',
     '特性の書き方（「特性：項目名」の列。空は未確認）',
     '・あり/なし：「あり」「なし」',
@@ -228,6 +233,7 @@ export function exportProblem(data: DemoData): string | null {
     [t.client, data.clients.map((c) => c.displayName)],
     [`${t.staff}の項目`, data.items.filter((i) => i.target === 'staff').map((i) => i.name)],
     [`${t.client}の項目`, data.items.filter((i) => i.target === 'client').map((i) => i.name)],
+    ['種類', data.visitTypes.map((v) => v.name)],
   ];
   for (const [what, names] of groups) {
     const seen = new Map<string, string>();
@@ -422,7 +428,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
   const clientName = new Map(data.clients.map((c) => [c.id, c.displayName]));
 
   // 利用者さん
-  const clientBase = Object.values(CLIENT_COLS);
+  const clientBase = clientExportCols();
   const cp = personCols(clientBase.length, clientItems, staffItems);
   addTable(wb, {
     name: names.client,
@@ -432,6 +438,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       c.displayName,
       c.color + 1,
       yes(c.active),
+      yes(c.tentative),
       c.place.address,
       nullable(c.place.lat),
       nullable(c.place.lng),
@@ -443,7 +450,8 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
     lists: [
       { col: 3, values: ['1', '2', '3', '4', '5', '6', '7', '8'] },
       { col: 4, values: [YES] },
-      { col: 8, ref: staffNameRef, strict: false },
+      { col: 5, values: [YES] },
+      { col: 9, ref: staffNameRef, strict: false },
       ...cp.lists,
     ],
     freezeCols: 2,
@@ -490,6 +498,76 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
     freezeCols: 2,
   });
 
+  // 種類（ADR-0012）。必要条件は〈スタッフ〉の項目ごとの列（〈利用者さん〉の必要条件と同じ書き方）
+  const typeName = new Map(data.visitTypes.map((v) => [v.id, v.name]));
+  addTable(wb, {
+    name: FIXED_SHEETS.visitTypes,
+    headers: [
+      TYPE_COLS.id,
+      TYPE_COLS.name,
+      TYPE_COLS.color,
+      TYPE_COLS.duration,
+      ...staffItems.map(reqHeader),
+      TYPE_COLS.note,
+    ],
+    rows: data.visitTypes.map((v) => [
+      v.id,
+      v.name,
+      v.color + 1,
+      v.durationMinutes,
+      ...staffItems.map((it) =>
+        condsToCell(
+          it,
+          v.requirements.filter((c) => c.itemId === it.id),
+        ),
+      ),
+      v.note,
+    ]),
+    textCols: [1],
+    lists: [
+      { col: 3, values: ['1', '2', '3', '4', '5', '6', '7', '8'] },
+      ...staffItems.flatMap((it, i) => {
+        const l = condList(it, 5 + i);
+        return l ? [l] : [];
+      }),
+    ],
+    freezeCols: 2,
+  });
+  const typeNameRef = sheetRef(FIXED_SHEETS.visitTypes, 'B', MIN_ROWS);
+
+  // 定期パターン（ADR-0012）
+  const pc = patternCols(t);
+  addTable(wb, {
+    name: FIXED_SHEETS.patterns,
+    headers: Object.values(pc),
+    rows: data.patterns.map((p) => [
+      p.id,
+      clientName.get(p.clientId) ?? '',
+      p.typeId === null ? '' : (typeName.get(p.typeId) ?? ''),
+      workDaysText(p.weekdays),
+      EVERY_WEEKS_LABELS[p.everyWeeks as 1 | 2 | 3 | 4],
+      WINDOW_LABELS[p.windowKind],
+      hhmmToCell(p.earliestStart),
+      hhmmToCell(p.latestStart),
+      p.durationMinutes,
+      p.from,
+      p.to ?? '',
+      p.usualStaffId === null ? '' : (staffName.get(p.usualStaffId) ?? ''),
+      p.note,
+    ]),
+    textCols: [1, 4, 7, 8, 10, 11],
+    lists: [
+      { col: 2, ref: clientNameRef, strict: false },
+      { col: 3, ref: typeNameRef, strict: false },
+      { col: 5, values: Object.values(EVERY_WEEKS_LABELS) },
+      { col: 6, values: Object.values(WINDOW_LABELS) },
+      { col: 12, ref: staffNameRef, strict: false },
+    ],
+    freezeCols: 2,
+  });
+  const patternRows = Math.max(MIN_ROWS, data.patterns.length + 200);
+  const patternIdRef = sheetRef(FIXED_SHEETS.patterns, 'A', patternRows);
+
   // 訪問
   const vc = visitCols(t);
   addTable(wb, {
@@ -499,20 +577,27 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       v.id,
       v.date,
       clientName.get(v.clientId) ?? '',
+      v.typeId === null ? '' : (typeName.get(v.typeId) ?? ''),
       WINDOW_LABELS[v.windowKind],
       hhmmToCell(v.earliestStart),
       hhmmToCell(v.latestStart),
       v.durationMinutes,
       v.staffId === null ? '' : (staffName.get(v.staffId) ?? ''),
       yes(v.cancelled),
+      v.pattern?.id ?? '',
+      v.pattern?.date ?? '',
+      yes(v.pattern?.edited ?? false),
       v.note,
     ]),
-    textCols: [1, 2, 5, 6],
+    textCols: [1, 2, 6, 7, 11, 12],
     lists: [
       { col: 3, ref: clientNameRef, strict: false },
-      { col: 4, values: Object.values(WINDOW_LABELS) },
-      { col: 8, ref: staffNameRef, strict: false },
-      { col: 9, values: [YES] },
+      { col: 4, ref: typeNameRef, strict: false },
+      { col: 5, values: Object.values(WINDOW_LABELS) },
+      { col: 9, ref: staffNameRef, strict: false },
+      { col: 10, values: [YES] },
+      { col: 11, ref: patternIdRef, strict: false },
+      { col: 13, values: [YES] },
     ],
     freezeCols: 3,
   });

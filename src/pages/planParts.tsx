@@ -25,6 +25,7 @@ import { minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel, weightLocked } from '../lib/common';
 import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
+import { VISIT_TYPE_RULE_ID } from '../matching';
 import { presetOf } from '../seed';
 import { useDemoData } from '../store';
 
@@ -403,7 +404,9 @@ export function achievementLabel(ruleId: string, rules: Rule[], terms: Terms): s
 }
 
 /** 条件ごとの達成の件数（D25。ADR-0008）。重み0の条件は判定しないので出ない */
-export function AchievementList({ list, rules, terms }: { list: RuleAchievement[]; rules: Rule[]; terms: Terms }) {
+export function AchievementList({ list: all, rules, terms }: { list: RuleAchievement[]; rules: Rule[]; terms: Terms }) {
+  // 訪問の種類の判定（ruleId 'visitType'）は条件ではないので数えない（design.md §5。ADR-0012）
+  const list = all.filter((a) => a.ruleId !== VISIT_TYPE_RULE_ID);
   if (list.length === 0) return <span className="sub">数える条件がありません</span>;
   return (
     <div className="achievements" data-testid="achievements">

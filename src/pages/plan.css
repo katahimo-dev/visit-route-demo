@@ -760,3 +760,14 @@
     background: none;
   }
 }
+
+/* （D43）今の案を作ったあとに条件が変わった（ADR-0012） */
+.stale-note {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: #fbefd6;
+  border: 1.5px solid #ecc97e;
+  color: #7a5208;
+  padding: 10px 14px;
+}

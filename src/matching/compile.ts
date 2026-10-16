@@ -1,7 +1,7 @@
 // DemoData（その日の訪問・スタッフ・項目・条件・相性）→ Problem（可否・費用表・移動の行列）
 import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
 import type { DemoData } from '../contracts/data';
-import type { Client, LatLng, Place, Staff } from '../contracts/documents';
+import type { Client, LatLng, Pattern, Place, Staff, VisitType } from '../contracts/documents';
 import type { Problem, ProblemStaff, ProblemVisit, Reason } from '../contracts/problem';
 import { type Condition, type Item, POINTS_PER_WEIGHT, type Rule, type Traits } from '../contracts/rules';
 import { availabilityOf, withoutAbsences } from '../domain/availability';
@@ -61,9 +61,10 @@ function isActive(r: Rule): boolean {
   return r.weight > 0 || r.hard;
 }
 
-/** 条件1つの判定から理由を作る（満たせば points 0、満たさなければ 重み×10 か hard なら Infinity） */
+/** 条件1つの判定から理由を作る（満たせば points 0、満たさなければ ngPoints＝重み×10 か hard なら Infinity） */
 function condReasons(
-  rule: Rule,
+  ruleId: string,
+  ngPoints: number,
   conds: Condition[],
   items: Map<string, Item>,
   target: 'staff' | 'client',
@@ -78,9 +79,9 @@ function condReasons(
     if (!item || item.target !== target) continue;
     const text = conditionText(c, item);
     if (matches(c, item, traits[c.itemId])) {
-      out.push({ ruleId: rule.id, label: okLabel(text), points: 0 });
+      out.push({ ruleId, label: okLabel(text), points: 0 });
     } else {
-      out.push({ ruleId: rule.id, label: ngLabel(text), points: rule.hard ? INF : rule.weight * POINTS_PER_WEIGHT });
+      out.push({ ruleId, label: ngLabel(text), points: ngPoints });
     }
   }
 }
@@ -91,8 +92,21 @@ function condReasons(
  */
 export type CompileInput = Pick<
   DemoData,
-  'org' | 'items' | 'rules' | 'staff' | 'clients' | 'compat' | 'visits' | 'availability' | 'absences'
+  | 'org'
+  | 'items'
+  | 'rules'
+  | 'staff'
+  | 'clients'
+  | 'compat'
+  | 'visits'
+  | 'availability'
+  | 'absences'
+  | 'visitTypes'
+  | 'patterns'
 >;
+
+/** 訪問の種類の必要条件の理由の ruleId（条件 rules の ID ではない。ADR-0012） */
+export const VISIT_TYPE_RULE_ID = 'visitType';
 
 /** 欠勤で可にならない組の理由の文（ADR-0011。ruleId は 'slot'） */
 export const ABSENT_ALL_DAY = '欠勤（終日）';
@@ -116,6 +130,8 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   const visitDocs = data.visits.filter((v) => v.date === date && !v.cancelled && clients.has(v.clientId));
   const items = new Map(data.items.map((it) => [it.id, it]));
   const rules = data.rules.filter(isActive);
+  const visitTypes = new Map<string, VisitType>(data.visitTypes.map((t) => [t.id, t]));
+  const patterns = new Map<string, Pattern>(data.patterns.map((p) => [p.id, p]));
 
   const S = staffDocs.length;
   const daySlots = staffDocs.map((s) => slotsOf(data, s, date));
@@ -174,6 +190,12 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   for (let j = 0; j < visits.length; j++) {
     const pv = visits[j]!;
     const client = clients.get(pv.clientId)!;
+    const doc = visitDocs[j]!;
+    // 訪問の種類（いない種類の typeId は無視する。ADR-0012）
+    const vType = doc.typeId === null ? undefined : visitTypes.get(doc.typeId);
+    // いつもの担当：元のパターンにあればその人、無ければ利用者さんのいつもの担当（ADR-0012）
+    const pattern = doc.pattern === null ? undefined : patterns.get(doc.pattern.id);
+    const usualStaffId = pattern?.usualStaffId ?? client.usualStaffId;
     const rowAllowed: boolean[] = [];
     const rowCost: number[] = [];
     const rowReasons: Reason[][] = [];
@@ -207,12 +229,28 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
       if (pin !== undefined && pin !== s.id && staffIds.has(pin)) {
         out.push({ ruleId: PIN_RULE_ID, label: PIN_LABEL, points: INF });
       }
+      if (vType) {
+        // 種類の必要条件は常に必須（条件の重み・必須・プリセットに関係しない。ADR-0012）
+        condReasons(
+          VISIT_TYPE_RULE_ID,
+          INF,
+          vType.requirements,
+          items,
+          'staff',
+          s.traits,
+          (t) => `種類（${vType.name}）：${t} ✓`,
+          (t) => `種類（${vType.name}）：${t} ✗`,
+          out,
+        );
+      }
       for (const r of rules) {
         const w = r.weight * POINTS_PER_WEIGHT;
+        const ng = r.hard ? INF : w;
         switch (r.type) {
           case 'clientRequirement':
             condReasons(
-              r,
+              r.id,
+              ng,
               client.requirements,
               items,
               'staff',
@@ -224,7 +262,8 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
             break;
           case 'clientPreference':
             condReasons(
-              r,
+              r.id,
+              ng,
               client.preferences,
               items,
               'staff',
@@ -236,7 +275,8 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
             break;
           case 'staffRequirement':
             condReasons(
-              r,
+              r.id,
+              ng,
               s.requirements,
               items,
               'client',
@@ -248,7 +288,8 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
             break;
           case 'staffPreference':
             condReasons(
-              r,
+              r.id,
+              ng,
               s.preferences,
               items,
               'client',
@@ -264,7 +305,7 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
             else if (level === -1) out.push({ ruleId: r.id, label: '相性△', points: r.hard ? INF : w, level: -1 });
             break;
           case 'continuity': {
-            const usual = client.usualStaffId;
+            const usual = usualStaffId;
             // いつもの担当がその日に働かないなら、この条件は無視する
             if (!usual || !working.has(usual)) break;
             if (usual === s.id) out.push({ ruleId: r.id, label: 'いつもの担当', points: 0 });

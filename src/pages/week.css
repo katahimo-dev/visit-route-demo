@@ -1,0 +1,201 @@
+/* 週間（#/week。ADR-0012 追記の段階2） */
+.week-nav,
+.week-tools {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.week-title {
+  margin: 0 4px;
+  font-size: 1.1rem;
+  min-width: 12em;
+  text-align: center;
+}
+.week-tabs {
+  margin-left: auto;
+}
+.week-tools {
+  align-items: center;
+}
+label.week-who {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.week-who select {
+  width: auto;
+}
+.week-legend {
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.week-legend-item {
+  gap: 4px;
+}
+.week-legend-dash {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  border: 2px dashed var(--sub);
+  border-radius: 4px;
+}
+.week-notice {
+  border: 2px solid var(--warn);
+}
+.week-card {
+  padding: 10px;
+  overflow-x: auto;
+}
+.week-grid {
+  display: grid;
+  grid-template-columns: 48px repeat(7, minmax(124px, 1fr));
+  column-gap: 4px;
+  row-gap: 6px;
+  min-width: 860px;
+}
+.week-day-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+.week-day-head:hover {
+  border-color: var(--primary);
+}
+.week-day-head.is-today {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.week-day-head.is-sun strong {
+  color: #c0504d;
+}
+.week-day-head.is-sat strong {
+  color: #4a78b5;
+}
+.week-gutter {
+  position: relative;
+}
+.week-hour {
+  position: absolute;
+  right: 4px;
+  transform: translateY(-50%);
+  font-size: 0.72rem;
+  color: var(--sub);
+}
+.week-col {
+  position: relative;
+  border-radius: 8px;
+  background-color: #fff;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--line) 0,
+    var(--line) 1px,
+    transparent 1px,
+    transparent 48px
+  );
+  border: 1px solid var(--line);
+}
+.week-band {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow: hidden;
+  padding: 2px 4px;
+  border: 1px solid rgba(59, 47, 42, 0.25);
+  border-radius: 6px;
+  background: #e2d8cf;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  text-align: left;
+  cursor: grab;
+  z-index: 1;
+}
+.week-band:hover,
+.week-band:focus-visible {
+  outline: 2px solid var(--primary);
+  z-index: 2;
+}
+.week-band.is-unassigned {
+  border: 2px dashed var(--danger);
+  background-color: #fff !important;
+  background-image: none;
+}
+.week-band-time {
+  font-weight: 700;
+}
+.week-band-client,
+.week-band-staff {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.week-drop {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border: 2px dashed var(--primary);
+  border-radius: 6px;
+  background: var(--primary-soft);
+  font-size: 0.7rem;
+  color: var(--primary-dark);
+  pointer-events: none;
+  z-index: 3;
+}
+.week-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.week-table th,
+.week-table td {
+  border: 1px solid var(--line);
+  padding: 6px;
+  vertical-align: top;
+  text-align: left;
+}
+.week-table td {
+  min-width: 84px;
+}
+.week-table td > strong,
+.week-table td > .sub {
+  display: block;
+}
+.week-table td.is-off {
+  background: #ece7e2;
+}
+.week-table td.is-noplan {
+  background: var(--soft);
+}
+.week-types {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.week-type {
+  gap: 2px;
+}
+.week-diff {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.week-diff.is-strong {
+  color: var(--danger);
+  background: #fdecea;
+}
+.week-table tfoot th,
+.week-table tfoot td {
+  background: var(--soft);
+}

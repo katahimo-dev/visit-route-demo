@@ -1,0 +1,457 @@
+// 空き状況と問い合わせの試算（ADR-0012 追記。段階3）。design.md §4 vacancy の完了の条件
+import { describe, expect, it } from 'vitest';
+import type { DemoData } from '../contracts/data';
+import type { Client, Visit, VisitType } from '../contracts/documents';
+import type { Problem } from '../contracts/problem';
+import type { Routes } from '../contracts/reassign';
+import type { VacancyQuery } from '../contracts/vacancy';
+import { addDays, hhmmToMinutes, minutesToHhmm, weekday } from '../domain/time';
+import { baseOf } from '../lib/absences';
+import { compile, naiveSeqs, scheduleRoute } from '../matching';
+import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
+import { applyPatterns } from '../patterns';
+import { placeVisit } from '../reassign';
+import { createDemoData } from '../seed';
+import {
+  dayFreeness,
+  INQUIRY_CLIENT_ID,
+  INQUIRY_VISIT_ID,
+  inquirySummary,
+  type VacancyCell,
+  type VacancyResult,
+  vacancyOf,
+  verdictOf,
+} from './index';
+
+const TERMS = { client: '利用者さん', staff: 'ヘルパー' };
+const PLACE = { address: '近く', lat: 38.2605, lng: 140.8705 };
+const MON1 = DATE; // 2026-10-12（月）
+const MON2 = addDays(DATE, 7);
+const WED1 = addDays(DATE, 2);
+const m = hhmmToMinutes;
+
+const query = (over: Partial<VacancyQuery> = {}): VacancyQuery => ({
+  typeId: null,
+  durationMinutes: 60,
+  requirements: [],
+  place: PLACE,
+  marginMinutes: 15,
+  dayStart: '07:00',
+  dayEnd: '20:00',
+  stepMinutes: 30,
+  ...over,
+});
+const fixedOn = (id: string, c: string, date: string, at: string, minutes = 60): Visit =>
+  visit(id, c, at, at, { date, windowKind: 'fixed', durationMinutes: minutes });
+const cellOf = (r: VacancyResult, wd: number, at: string): VacancyCell =>
+  r.cells.find((c) => c.weekday === wd && c.start === m(at))!;
+const staffOn = (c: VacancyCell, date: string) => c.byDate.find((x) => x.date === date)?.staffIds;
+
+/**
+ * s1（女性・看護師。8:00〜18:00、月〜金）。月曜 2回：どちらも 9:00〜12:00 は訪問で詰まり、2回目の月曜だけ 14:00〜17:00 も詰まる。
+ * 確定した割当（manualPlans）を元の案にする
+ */
+function small(over: Partial<DemoData> = {}): DemoData {
+  const visits = [
+    fixedOn('a1', 'c1', MON1, '09:00', 180),
+    fixedOn('b1', 'c1', MON2, '09:00', 180),
+    fixedOn('b2', 'c2', MON2, '14:00', 180),
+  ];
+  return makeData({
+    staff: [staff('s1', 38.26, 140.87, { traits: { gender: '女性', license: ['看護師'] } })],
+    clients: [client('c1', 38.261, 140.871), client('c2', 38.262, 140.871)],
+    visits,
+    manualPlans: { [MON1]: { s1: ['a1'] }, [MON2]: { s1: ['b1', 'b2'] } },
+    ...over,
+  });
+}
+
+describe('vacancyOf：判定（小さな問題）', () => {
+  it('空いている人がいる時刻は ○、詰まっている時刻・稼働時間外は ×、ある週だけ詰まっていれば △ と入らない日付', () => {
+    for (const place of [PLACE, null]) {
+      const r = vacancyOf(small(), query({ place }), { from: MON1, weeks: 2 });
+      expect(r.exact).toBe(place !== null);
+      expect(r.dates).toHaveLength(14);
+      expect(r.noPlanDates).toEqual([]);
+      // 12:30：どちらの月曜も空いている（2回目の月曜は 14:00 の訪問に移動して間に合う）
+      const c13 = cellOf(r, 1, '12:30');
+      expect(verdictOf(c13)).toBe('ok');
+      expect(c13).toMatchObject({ min: 1, weeksOk: 2, weeksTotal: 2 });
+      expect(c13.byDate.map((x) => x.date)).toEqual([MON1, MON2]);
+      // 10:00：どちらも訪問で詰まる
+      expect(verdictOf(cellOf(r, 1, '10:00'))).toBe('ng');
+      // 7:00・17:30：稼働時間外（8:00〜18:00）
+      expect(verdictOf(cellOf(r, 1, '07:00'))).toBe('ng');
+      expect(verdictOf(cellOf(r, 1, '17:30'))).toBe('ng');
+      // 15:00：2回目の月曜だけ詰まる → △、入らない日付は2回目の月曜
+      const c15 = cellOf(r, 1, '15:00');
+      expect(verdictOf(c15)).toBe('partial');
+      expect(c15).toMatchObject({ min: 0, weeksOk: 1, weeksTotal: 2 });
+      expect(staffOn(c15, MON1)).toEqual(['s1']);
+      expect(staffOn(c15, MON2)).toEqual([]);
+      // 土曜は休み（訪問の無い日は空の案として数える）
+      expect(cellOf(r, 6, '13:00')).toMatchObject({ weeksOk: 0, weeksTotal: 2 });
+      expect(verdictOf(cellOf(r, 6, '13:00'))).toBe('ng');
+    }
+  });
+
+  it('正確は移動を含む：近い場所なら訪問のすぐあとに入り、遠い場所では入らない。目安は前後の余白で見る', () => {
+    const range = { from: MON1, weeks: 1 };
+    const near = vacancyOf(small(), query(), range);
+    const rough = vacancyOf(small(), query({ place: null }), range);
+    // 12:00（訪問の終わりちょうど）：正確は移動の分だけ間に合わず、目安も余白15分で ×
+    expect(staffOn(cellOf(near, 1, '12:00'), MON1)).toEqual([]);
+    expect(staffOn(cellOf(rough, 1, '12:00'), MON1)).toEqual([]);
+    expect(staffOn(cellOf(near, 1, '12:30'), MON1)).toEqual(['s1']);
+    expect(staffOn(cellOf(rough, 1, '12:30'), MON1)).toEqual(['s1']);
+    // 遠い場所（車で40分ほど）：訪問のすぐあと・始業直後には着けない
+    const far = vacancyOf(small(), query({ place: { address: '遠く', lat: 38.4, lng: 140.95 } }), range);
+    expect(staffOn(cellOf(far, 1, '12:30'), MON1)).toEqual([]);
+    expect(staffOn(cellOf(far, 1, '08:00'), MON1)).toEqual([]);
+    expect(staffOn(cellOf(far, 1, '15:00'), MON1)).toEqual(['s1']);
+  });
+
+  it('開始時刻：dayStart〜dayEnd を step 刻み。終わりが dayEnd を超える時刻は出さない。範囲が空なら times も cells も空', () => {
+    const r = vacancyOf(small(), query({ durationMinutes: 90 }), { from: MON1, weeks: 1 });
+    expect(r.times[0]).toBe(m('07:00'));
+    expect(r.times.at(-1)).toBe(m('18:30'));
+    expect(r.cells).toHaveLength(7 * r.times.length);
+    expect(r.cells.map((c) => c.weekday)).toEqual([0, 1, 2, 3, 4, 5, 6].flatMap((wd) => r.times.map(() => wd)));
+    const empty = vacancyOf(small(), query({ dayStart: '19:30', dayEnd: '20:00' }), { from: MON1, weeks: 1 });
+    expect(empty.times).toEqual([]);
+    expect(empty.cells).toEqual([]);
+    expect(empty.dates).toHaveLength(7);
+  });
+});
+
+describe('vacancyOf：担当できる人', () => {
+  /** s2（男性・資格なし）を足す。s2 は終日空いている */
+  const withS2 = (over: Partial<DemoData> = {}) => {
+    const d = small(over);
+    return {
+      ...d,
+      staff: [...d.staff, staff('s2', 38.2602, 140.8702, { traits: { gender: '男性', license: ['なし'] } })],
+      ...over,
+    };
+  };
+  const REHAB: VisitType = {
+    id: 'rehab',
+    name: 'リハビリ',
+    color: 0,
+    durationMinutes: 60,
+    requirements: [{ itemId: 'license', op: 'hasAny', value: ['看護師'] }],
+    note: '',
+  };
+
+  it('query.requirements・種類の必要条件を満たさない人は数えない', () => {
+    for (const place of [PLACE, null]) {
+      const range = { from: MON1, weeks: 1 };
+      const all = vacancyOf(withS2(), query({ place }), range);
+      expect(staffOn(cellOf(all, 1, '13:00'), MON1)?.sort()).toEqual(['s1', 's2']);
+      const women = vacancyOf(
+        withS2(),
+        query({ place, requirements: [{ itemId: 'gender', op: 'is', value: '女性' }] }),
+        range,
+      );
+      expect(staffOn(cellOf(women, 1, '13:00'), MON1)).toEqual(['s1']);
+      // 10:00 は s1 が詰まっている：女性の条件では ×
+      expect(verdictOf(cellOf(women, 1, '10:00'))).toBe('ng');
+      const rehab = vacancyOf(withS2({ visitTypes: [REHAB] }), query({ place, typeId: 'rehab' }), range);
+      expect(staffOn(cellOf(rehab, 1, '13:00'), MON1)).toEqual(['s1']);
+      // いない種類は種類なし
+      const ghost = vacancyOf(withS2(), query({ place, typeId: 'ghost' }), range);
+      expect(staffOn(cellOf(ghost, 1, '13:00'), MON1)?.sort()).toEqual(['s1', 's2']);
+    }
+  });
+
+  it('欠勤の時間は空きにならない', () => {
+    for (const place of [PLACE, null]) {
+      const d = small({ absences: [{ id: 'x', staffId: 's1', date: MON1, from: '13:00', to: '15:00', note: '' }] });
+      const r = vacancyOf(d, query({ place }), { from: MON1, weeks: 1 });
+      expect(staffOn(cellOf(r, 1, '13:00'), MON1)).toEqual([]);
+      expect(staffOn(cellOf(r, 1, '14:00'), MON1)).toEqual([]);
+      expect(staffOn(cellOf(r, 1, '15:30'), MON1)).toEqual(['s1']);
+    }
+  });
+
+  it('休み・稼働時間の上書きで休みの人は数えない', () => {
+    const d = small({ availability: [{ staffId: 's1', date: MON1, slots: [] }] });
+    const r = vacancyOf(d, query(), { from: MON1, weeks: 1 });
+    expect(staffOn(cellOf(r, 1, '13:00'), MON1)).toEqual([]);
+  });
+});
+
+describe('vacancyOf：元の案', () => {
+  it('訪問があって案も確定も無い日は数えず noPlanDates に出る。訪問の無い日は空の案として数える', () => {
+    const d = small();
+    const x: DemoData = { ...d, visits: [...d.visits, fixedOn('w1', 'c1', WED1, '10:00')] };
+    for (const place of [PLACE, null]) {
+      const r = vacancyOf(x, query({ place }), { from: MON1, weeks: 1 });
+      expect(r.noPlanDates).toEqual([WED1]);
+      const c = cellOf(r, 3, '13:00');
+      expect(c.weeksTotal).toBe(0);
+      expect(c.byDate).toEqual([]);
+      expect(verdictOf(c)).toBe('unknown');
+      // 木曜は訪問が無い：空の案
+      expect(cellOf(r, 4, '13:00')).toMatchObject({ weeksTotal: 1, weeksOk: 1 });
+    }
+  });
+
+  it('確定した割当が無ければ今の案（aiPlans）を元の案にする', () => {
+    const d = small({ manualPlans: {} });
+    const plan = (date: string, routes: Routes) => ({
+      date,
+      createdAt: 0,
+      seed: 1,
+      iterations: 1,
+      routes,
+      unassigned: [],
+      score: 0,
+      stopped: false,
+      rules: [],
+      generated: { routes, unassigned: [], score: 0 },
+      pins: {},
+    });
+    const x: DemoData = { ...d, aiPlans: { [MON1]: plan(MON1, { s1: ['a1'] }) } };
+    const r = vacancyOf(x, query(), { from: MON1, weeks: 2 });
+    expect(r.noPlanDates).toEqual([MON2]);
+    expect(verdictOf(cellOf(r, 1, '10:00'))).toBe('ng');
+    expect(verdictOf(cellOf(r, 1, '15:00'))).toBe('ok');
+  });
+});
+
+describe('verdictOf', () => {
+  const cell = (weeksOk: number, weeksTotal: number): VacancyCell => ({
+    weekday: 1,
+    start: 600,
+    byDate: [],
+    min: 0,
+    weeksOk,
+    weeksTotal,
+  });
+  it('数えた日が0なら unknown、全部なら ok、一部なら partial、無ければ ng', () => {
+    expect(verdictOf(cell(0, 0))).toBe('unknown');
+    expect(verdictOf(cell(4, 4))).toBe('ok');
+    expect(verdictOf(cell(1, 4))).toBe('partial');
+    expect(verdictOf(cell(0, 4))).toBe('ng');
+  });
+});
+
+describe('inquirySummary', () => {
+  /** times は 9:00〜12:00 の30分刻み。ok・partial は「曜日 → 開始時刻」の一覧 */
+  const result = (ok: Record<number, string[]>, partial: Record<number, { at: string; missing: string[] }[]> = {}) => {
+    const times = Array.from({ length: 7 }, (_, i) => m('09:00') + i * 30);
+    const dates = Array.from({ length: 14 }, (_, i) => addDays('2026-10-18', i)); // 日曜から2週
+    const cells: VacancyCell[] = [];
+    for (let wd = 0; wd < 7; wd++) {
+      const days = dates.filter((d) => weekday(d) === wd);
+      for (const t of times) {
+        const at = minutesToHhmm(t);
+        const p = partial[wd]?.find((x) => x.at === at);
+        const isOk = ok[wd]?.includes(at) ?? false;
+        const byDate = days.map((date) => ({
+          date,
+          staffIds: isOk || (p && !p.missing.includes(date)) ? ['s1'] : [],
+        }));
+        const n = byDate.filter((x) => x.staffIds.length > 0).length;
+        cells.push({
+          weekday: wd,
+          start: t,
+          byDate,
+          min: n === days.length ? 1 : 0,
+          weeksOk: n,
+          weeksTotal: days.length,
+        });
+      }
+    }
+    return { exact: true, dates, noPlanDates: [], times, cells };
+  };
+  const wish = (over = {}) => ({
+    weekdays: [2, 4],
+    from: '09:00',
+    to: '12:00',
+    perWeek: 2,
+    startDate: '2026-10-20',
+    ...over,
+  });
+
+  it('○ の連続した範囲をまとめ、週の回数が足りれば「対応できます」', () => {
+    const r = result({ 2: ['10:00', '10:30', '11:00', '11:30'], 4: ['10:00', '10:30', '11:00', '11:30'] });
+    expect(inquirySummary(r, wish(), TERMS)).toBe('火・木の 10:00〜11:30 なら、10月20日（火）から週2回で対応できます');
+  });
+
+  it('曜日ごとに範囲が違えば曜日ごとに並べ、途切れた範囲は分ける。希望の時間帯の外は見ない', () => {
+    const r = result({ 2: ['09:00', '09:30', '11:00'], 4: ['10:00', '12:00'] });
+    expect(inquirySummary(r, wish({ to: '11:30' }), TERMS)).toBe(
+      '火 9:00〜9:30、11:00、木 10:00 なら、10月20日（火）から週2回で対応できます',
+    );
+  });
+
+  it('週の回数が足りなければ ○ の曜日と △ の曜日（入らない日付）を並べる。呼び方は terms', () => {
+    const r = result({ 2: ['10:00', '10:30'] }, { 4: [{ at: '10:00', missing: ['2026-10-29'] }] });
+    expect(inquirySummary(r, wish(), TERMS)).toBe(
+      '週2回のうち、どの週も対応できるのは 火の 10:00〜10:30 だけです\n木 10:00 は 10/29 に空いているヘルパーがいません',
+    );
+    expect(inquirySummary(r, wish(), { client: 'お客様', staff: 'シッター' })).toContain(
+      '空いているシッターがいません',
+    );
+    // ○ が無く △ だけ
+    const onlyPartial = result({}, { 4: [{ at: '10:00', missing: ['2026-10-22'] }] });
+    expect(inquirySummary(onlyPartial, wish(), TERMS)).toBe(
+      'ご希望の曜日・時間帯では、どの週も対応できる時間はありません\n木 10:00 は 10/22 に空いているヘルパーがいません',
+    );
+  });
+
+  it('○ も △ も無ければ空きが無い。曜日の指定が無ければ全曜日を見る', () => {
+    const r = result({ 5: ['10:00'] });
+    expect(inquirySummary(r, wish(), TERMS)).toBe('ご希望の曜日・時間帯では、いまは空きがありません');
+    expect(inquirySummary(r, wish({ weekdays: [], perWeek: 1 }), TERMS)).toBe(
+      '金の 10:00 なら、10月20日（火）から週1回で対応できます',
+    );
+  });
+});
+
+describe('dayFreeness', () => {
+  it('稼働時間帯のうち訪問の [開始 − 移動, 終了) に使っていない分の割合を午前・午後で', () => {
+    // MON1：s1（8:00〜18:00）は 9:00〜12:00 が訪問。自宅から c1 への移動の分も使う
+    const d = small();
+    const f = dayFreeness(d, MON1);
+    const p = compile(d, MON1);
+    const travel = p.travel[p.staff[0]!.point]![p.visits[0]!.point]!;
+    expect(f.am).toBeCloseTo((240 - 180 - travel) / 240, 6);
+    expect(f.pm).toBe(1);
+    // 訪問の無い日は空の案（全部空き）、休みの日は稼働時間帯が無いので null
+    expect(dayFreeness(d, WED1)).toEqual({ am: 1, pm: 1 });
+    expect(dayFreeness(d, addDays(MON1, 5))).toEqual({ am: null, pm: null });
+  });
+
+  it('案が無い日は null', () => {
+    const d = small({ manualPlans: {} });
+    expect(dayFreeness(d, MON1)).toEqual({ am: null, pm: null });
+  });
+
+  it('欠勤の時間は稼働時間帯に入らない', () => {
+    const d = small({ absences: [{ id: 'x', staffId: 's1', date: WED1, from: null, to: '12:00', note: '' }] });
+    expect(dayFreeness(d, WED1)).toEqual({ am: null, pm: 1 });
+  });
+});
+
+/** seed を4週に広げ、各日に素朴な案を確定した割当として入れたデータ */
+function seededMonth(): { data: DemoData; from: string } {
+  const today = '2026-10-13';
+  const d0 = createDemoData(today);
+  const end = addDays(today, 27);
+  const ch = applyPatterns(d0, { from: today, to: end }, today);
+  let data: DemoData = { ...d0, patterns: ch.patterns, visits: ch.visits };
+  const manualPlans: DemoData['manualPlans'] = {};
+  for (let i = 0; i < 28; i++) {
+    const date = addDays(today, i);
+    const p = compile(data, date);
+    if (p.visits.length === 0) continue;
+    const seqs = naiveSeqs(p);
+    manualPlans[date] = Object.fromEntries(p.staff.map((s, k) => [s.id, seqs[k]!.map((v) => p.visits[v]!.id)]));
+  }
+  data = { ...data, manualPlans };
+  return { data, from: today };
+}
+
+/** vacancyOf の正確の判定と同じ問題（仮の〈利用者さん〉・訪問を足して compile し、仮の訪問の時刻を start に） */
+function inquiryProblem(data: DemoData, q: VacancyQuery, date: string, start: number, last: number): Problem {
+  const c: Client = {
+    ...client(INQUIRY_CLIENT_ID, q.place!.lat!, q.place!.lng!),
+    requirements: q.requirements,
+  };
+  const v = visit(INQUIRY_VISIT_ID, INQUIRY_CLIENT_ID, minutesToHhmm(m(q.dayStart)), minutesToHhmm(last), {
+    date,
+    durationMinutes: q.durationMinutes,
+    typeId: q.typeId,
+  });
+  const p = compile({ ...data, clients: [...data.clients, c], visits: [...data.visits, v] }, date);
+  return {
+    ...p,
+    visits: p.visits.map((x) => (x.id === INQUIRY_VISIT_ID ? { ...x, earliest: start, latest: start } : x)),
+  };
+}
+
+describe('性質：seed の日', () => {
+  const { data, from } = seededMonth();
+  const q = query({ place: { address: '', lat: 38.262, lng: 140.88 } });
+
+  it('正確の判定で入るとされた人に placeVisit で入れると、他の人の担当・順番・開始時刻が変わらず strict で回れる', () => {
+    const r = vacancyOf(data, q, { from, weeks: 1 });
+    expect(r.noPlanDates).toEqual([]);
+    let checked = 0;
+    for (const cell of r.cells) {
+      for (const { date, staffIds } of cell.byDate) {
+        if (staffIds.length === 0) continue;
+        const p = inquiryProblem(data, q, date, cell.start, r.times.at(-1)!);
+        const base = baseOf(data, date, p)!.routes;
+        const before = timing(p, base);
+        for (const sid of staffIds) {
+          const after = placeVisit(p, base, INQUIRY_VISIT_ID, sid);
+          for (const st of p.staff) {
+            const col = (after[st.id] ?? []).filter((id) => id !== INQUIRY_VISIT_ID);
+            expect(col).toEqual(base[st.id] ?? []);
+          }
+          const t = timing(p, after);
+          expect(t.get(sid)).not.toBeNull();
+          for (const st of p.staff) {
+            const b = before.get(st.id);
+            const a = t.get(st.id);
+            if (b === null) continue;
+            const starts = (a ?? []).filter((x) => x.visitId !== INQUIRY_VISIT_ID);
+            expect(starts.map((x) => x.visitId)).toEqual(b!.map((x) => x.visitId));
+            starts.forEach((x, k) => {
+              expect(x.start).toBeCloseTo(b![k]!.start, 6);
+            });
+          }
+          const mine = t.get(sid)!.find((x) => x.visitId === INQUIRY_VISIT_ID)!;
+          expect(mine.start).toBeCloseTo(cell.start, 6);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(50);
+  });
+
+  it('同じ入力で同じ結果。データ・今の案を書き換えない', () => {
+    const before = JSON.stringify(data);
+    const a = vacancyOf(data, q, { from, weeks: 2 });
+    const b = vacancyOf(data, q, { from, weeks: 2 });
+    expect(a).toEqual(b);
+    expect(vacancyOf(data, query({ place: null }), { from, weeks: 2 })).toEqual(
+      vacancyOf(data, query({ place: null }), { from, weeks: 2 }),
+    );
+    expect(dayFreeness(data, from)).toEqual(dayFreeness(data, from));
+    expect(JSON.stringify(data)).toBe(before);
+  });
+
+  it('速さ：8人・約17件／日・4週・07:00〜20:00 で、正確の試算が 2秒以内、目安の表が 500ms 以内', () => {
+    const range = { from, weeks: 4 };
+    let t0 = performance.now();
+    const exact = vacancyOf(data, q, range);
+    const exactMs = performance.now() - t0;
+    t0 = performance.now();
+    const rough = vacancyOf(data, query({ place: null }), range);
+    const roughMs = performance.now() - t0;
+    console.log(`vacancyOf 4週：正確 ${exactMs.toFixed(0)}ms、目安 ${roughMs.toFixed(0)}ms`);
+    expect(exact.dates).toHaveLength(28);
+    expect(exact.noPlanDates).toEqual([]);
+    expect(rough.cells.some((c) => verdictOf(c) === 'ok')).toBe(true);
+    expect(exact.cells.some((c) => verdictOf(c) === 'ok')).toBe(true);
+    expect(exactMs).toBeLessThan(2000);
+    expect(roughMs).toBeLessThan(500);
+  });
+});
+
+/** 列ごとの strict の時刻（回れなければ null） */
+function timing(p: Problem, routes: Routes) {
+  const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
+  const out = new Map<string, { visitId: string; start: number }[] | null>();
+  p.staff.forEach((st, s) => {
+    const seq = (routes[st.id] ?? []).map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
+    const t = scheduleRoute(p, s, seq, 'strict');
+    out.set(st.id, t ? t.stops.map((x) => ({ visitId: x.visitId, start: x.start })) : null);
+  });
+  return out;
+}

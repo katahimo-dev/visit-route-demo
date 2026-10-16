@@ -51,8 +51,20 @@ export const FIXED_SHEETS = {
   compat: '相性',
   availability: '稼働時間',
   absences: '欠勤',
+  visitTypes: '種類',
+  patterns: '定期パターン',
   visits: '訪問',
 } as const;
+
+/** 定期パターンの間隔（ADR-0012。1＝毎週…4＝4週ごと） */
+export const EVERY_WEEKS_LABELS: Record<1 | 2 | 3 | 4, string> = { 1: '毎週', 2: '隔週', 3: '3週ごと', 4: '4週ごと' };
+
+/** 「毎週」「隔週」「3週ごと」「4週ごと」（全角の数字も）→ 1〜4。読めなければ null */
+export function parseEveryWeeks(s: string): 1 | 2 | 3 | 4 | null {
+  const t = nfkc(s).replace(/\s/g, '');
+  for (const [k, v] of Object.entries(EVERY_WEEKS_LABELS)) if (nfkc(v) === t) return Number(k) as 1 | 2 | 3 | 4;
+  return null;
+}
 
 /** 〈スタッフ〉〈利用者さん〉のシート名（決まったシート名・互いと重なるときは後ろに役割を足す） */
 export function personSheetNames(t: Terms): { staff: string; client: string } {

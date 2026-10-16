@@ -10,6 +10,8 @@ import type {
   ContactsOf,
   ContactVisit,
   FinishAnneal,
+  FitOf,
+  FitsOf,
   LeftOf,
   PlaceVisit,
   PrepareAnneal,
@@ -47,6 +49,7 @@ export type {
   AnnealSettled,
   ContactList,
   ContactVisit,
+  FitOf,
   ReassignCandidate,
   ReassignDiff,
   ReassignLeft,
@@ -458,6 +461,33 @@ export const candidatesFor: CandidatesFor = (problem, routes, visitId) => {
     return a.order - b.order;
   });
   return list.map(({ order: _order, ...c }) => c);
+};
+
+/**
+ * 他の人の担当・順番・開始時刻を変えずに入れられる人（空き状況。ADR-0012 追記）：candidatesFor の fits が true の人
+ * （可・件数の上限を超えない・いまの列が strict で回れる・他の訪問の開始を変えずに strict で入る）だけを、
+ * 同じ並び（増える費用の小さい順、同じなら staff の順）で返す。「ずらせば入る」の探索・影響の見込みはしない
+ */
+export const fitsOf: FitsOf = (problem, routes, visitId) => {
+  const { vIndex } = indexOf(problem);
+  const v = vIndex.get(visitId);
+  if (v === undefined) return [];
+  const rest = without(routes, visitId);
+  const list: (FitOf & { order: number })[] = [];
+  problem.staff.forEach((st, s) => {
+    if (!problem.allowed[v]![s]) return;
+    const known = knownOf(colOf(rest, st.id), vIndex);
+    if (overCapOf(problem, s, known.length)) return;
+    // いまの列が strict で回れない人は bestFit が null（candidatesFor の routeBroken と同じ）
+    const fit = bestFit(problem, s, known, v);
+    if (fit) list.push({ staffId: st.id, addedCost: fit.addedCost, addedTravel: fit.addedTravel, order: s });
+  });
+  list.sort((a, b) => {
+    const d = a.addedCost - b.addedCost;
+    if (Math.abs(d) > EPS) return d;
+    return a.order - b.order;
+  });
+  return list.map(({ order: _order, ...f }) => f);
 };
 
 /**

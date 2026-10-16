@@ -1,6 +1,6 @@
 // 読み込んだデータの中身の食い違いを直す（store がデータの持ち主。design.md §4）
 import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY, type ReassignInfo } from '../contracts/data';
-import type { Absence, Availability, Place } from '../contracts/documents';
+import { type Absence, type Availability, MAX_VISIT_TYPES, type Pattern, type Place } from '../contracts/documents';
 import { type Compat, HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES } from '../contracts/rules';
 import { initialPresets } from '../seed/presets';
 
@@ -66,6 +66,10 @@ function repairPresets(presets: Preset[]): Preset[] {
  * - 点数の基準（scorePresetId。ADR-0010）：無い・どのプリセットでもない id なら先頭のプリセット
  * - 欠勤（ADR-0011）：いない人の欠勤は消す。ID の重複は最初の1件、同じ人・同じ日は最後の1件（上書きと同じ）。
  *   今の案・記録の reassign の baseRoutes・basePins・baseGenerated・insertRoutes（案A の結果）は routes・pins・generated と同じ規則で直す（absenceIds はそのまま。古いデータのいまの時刻 now は捨てる）
+ * - 訪問の種類・定期パターン（ADR-0012）：種類の ID の重複は最初の1件、MAX_VISIT_TYPES を超える分は後ろを捨てる。
+ *   パターンの ID の重複は最初の1件、いない利用者さんのパターンは消す。パターン・訪問のいない種類（typeId）は null、
+ *   パターンのいない人のいつもの担当（usualStaffId）は null、パターンの曜日は重なりを除いて小さい順。
+ *   訪問の pattern.id がどのパターンでもなければ pattern を null（訪問は残す）
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -80,9 +84,34 @@ export function repair(d: DemoData): DemoData {
     return place === c.place && usualStaffId === c.usualStaffId ? c : { ...c, place, usualStaffId };
   });
   const clientIds = new Set(clients.map((c) => c.id));
-  const visits = uniqueById(d.visits).map((v) =>
-    v.staffId !== null && !staffIds.has(v.staffId) ? { ...v, staffId: null } : v,
-  );
+
+  // 訪問の種類・定期パターン（ADR-0012）
+  const visitTypes = uniqueById(d.visitTypes).slice(0, MAX_VISIT_TYPES);
+  const typeIds = new Set(visitTypes.map((t) => t.id));
+  const knownType = (id: string | null) => (id !== null && typeIds.has(id) ? id : null);
+  const patterns = uniqueById(d.patterns)
+    .filter((p) => clientIds.has(p.clientId))
+    .map((p): Pattern => {
+      const typeId = knownType(p.typeId);
+      const usualStaffId = p.usualStaffId !== null && staffIds.has(p.usualStaffId) ? p.usualStaffId : null;
+      const weekdays = [...new Set(p.weekdays)].sort((a, b) => a - b);
+      const same =
+        typeId === p.typeId &&
+        usualStaffId === p.usualStaffId &&
+        weekdays.length === p.weekdays.length &&
+        weekdays.every((w, i) => w === p.weekdays[i]);
+      return same ? p : { ...p, typeId, usualStaffId, weekdays };
+    });
+  const patternIds = new Set(patterns.map((p) => p.id));
+
+  const visits = uniqueById(d.visits).map((v) => {
+    const staffId = v.staffId !== null && !staffIds.has(v.staffId) ? null : v.staffId;
+    const typeId = knownType(v.typeId);
+    const pattern = v.pattern !== null && !patternIds.has(v.pattern.id) ? null : v.pattern;
+    return staffId === v.staffId && typeId === v.typeId && pattern === v.pattern
+      ? v
+      : { ...v, staffId, typeId, pattern };
+  });
   const dateOf = new Map(visits.map((v) => [v.id, v.date]));
 
   const compat: Compat = {};
@@ -182,6 +211,8 @@ export function repair(d: DemoData): DemoData {
     staff,
     clients,
     compat,
+    visitTypes,
+    patterns,
     visits,
     availability,
     absences,

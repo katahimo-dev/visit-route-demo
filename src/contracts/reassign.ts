@@ -77,6 +77,14 @@ export type CandidatesFor = (problem: Problem, routes: Routes, visitId: string) 
 export type PlaceVisit = (problem: Problem, routes: Routes, visitId: string, staffId: string) => Routes;
 export type ReassignDiffFn = (before: ReassignPlan, after: ReassignPlan) => ReassignDiff;
 
+/** 他の人の担当・順番・開始時刻を変えずに入れられる人（fitsOf。空き状況。ADR-0012 追記） */
+export type FitOf = { staffId: string; addedCost: number; addedTravel: number };
+/**
+ * candidatesFor の fits が true になる人だけを、同じ並び（増える費用の小さい順、同じなら staff の順）で返す。
+ * 「ずらせば入る」の探索はしない。問題に無い訪問なら []
+ */
+export type FitsOf = (problem: Problem, routes: Routes, visitId: string) => FitOf[];
+
 /**
  * 欠勤の人に残る、振り直すべき訪問（leftOf）。振り直した直後は無い。手直しで欠勤の人へ戻した・
  * 振り直したあとに欠勤や条件を変えた、などで残る。理由は ReassignTarget の absence・unreachable

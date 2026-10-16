@@ -1,5 +1,8 @@
 import {
+  CalendarClock,
   CalendarDays,
+  CalendarRange,
+  CalendarSearch,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -8,6 +11,7 @@ import {
   GitCompareArrows,
   HeartHandshake,
   House,
+  Layers,
   type LucideIcon,
   Route as RouteIcon,
   SlidersHorizontal,
@@ -15,7 +19,7 @@ import {
   TriangleAlert,
   UserRound,
 } from 'lucide-react';
-import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { addDays, jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
@@ -25,10 +29,14 @@ import ComparePage from '../pages/ComparePage';
 import CompatPage from '../pages/CompatPage';
 import DataPage from '../pages/DataPage';
 import ItemsPage from '../pages/ItemsPage';
+import MonthPage from '../pages/MonthPage';
 import PlanPage from '../pages/PlanPage';
 import RulesPage from '../pages/RulesPage';
 import StaffPage from '../pages/StaffPage';
 import StaffViewPage from '../pages/StaffViewPage';
+import TypesPage from '../pages/TypesPage';
+import VacancyPage from '../pages/VacancyPage';
+import WeekPage from '../pages/WeekPage';
 import { useDemoData } from '../store';
 import { DayProvider, useDay } from './day';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -39,15 +47,19 @@ const DAYS = 14;
 /** 画面全体：日付の文脈と、ルート（design.md §4 pages） */
 export default function App() {
   const { data } = useDemoData();
-  // データの中の日付（基準日から14日＋訪問のある日）
+  // 最初は今日（データに今日が無ければ基準日）。日がたってから開いても今日から始める。
+  // 画面から選んだ日（月間カレンダーの訪問の無い日など）は、データに無い日でも選べる（explicit）
+  const [pick, setPick] = useState(() => ({ date: jstDate(Date.now()), explicit: false }));
+  const picked = pick.date;
+  const setPicked = useCallback((d: string) => setPick({ date: d, explicit: true }), []);
+  // データの中の日付（基準日から14日＋訪問のある日。定期パターンから展開した月の訪問も含む）＋画面から選んだ日
   const dates = useMemo(() => {
     const set = new Set<string>();
     for (let i = 0; i < DAYS; i++) set.add(addDays(data.baseDate, i));
     for (const v of data.visits) set.add(v.date);
+    if (pick.explicit && /^\d{4}-\d{2}-\d{2}$/.test(pick.date)) set.add(pick.date);
     return [...set].sort();
-  }, [data.baseDate, data.visits]);
-  // 最初は今日（データに今日が無ければ基準日）。日がたってから開いても今日から始める
-  const [picked, setPicked] = useState(() => jstDate(Date.now()));
+  }, [data.baseDate, data.visits, pick]);
   const date = dates.includes(picked)
     ? picked
     : dates.includes(data.baseDate)
@@ -62,9 +74,13 @@ export default function App() {
           {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
           <Route path="/schedule" element={<Navigate to="/plan" replace />} />
           <Route path="/plan" element={<PlanPage />} />
+          <Route path="/month" element={<MonthPage />} />
+          <Route path="/week" element={<WeekPage />} />
+          <Route path="/vacancy" element={<VacancyPage />} />
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/rules" element={<RulesPage />} />
           <Route path="/items" element={<ItemsPage />} />
+          <Route path="/types" element={<TypesPage />} />
           <Route path="/compat" element={<CompatPage />} />
           <Route path="/staff" element={<StaffPage />} />
           <Route path="/clients" element={<ClientsPage />} />
@@ -106,6 +122,9 @@ function AdminShell() {
       title: '毎日の作業',
       items: [
         { to: '/plan', label: '予定', icon: CalendarDays },
+        { to: '/month', label: '月間', icon: CalendarRange },
+        { to: '/week', label: '週間', icon: CalendarClock },
+        { to: '/vacancy', label: '空き状況', icon: CalendarSearch },
         { to: '/compare', label: '比較', icon: GitCompareArrows },
       ],
     },
@@ -122,6 +141,7 @@ function AdminShell() {
       items: [
         { to: '/rules', label: '条件', icon: SlidersHorizontal },
         { to: '/items', label: '項目', icon: Tags },
+        { to: '/types', label: '種類', icon: Layers },
         { to: '/compat', label: '相性', icon: HeartHandshake },
       ],
     },
