@@ -200,13 +200,51 @@ describe('splitPattern', () => {
     expect(r.visits.find((v) => v.id === '2026-10-26_p1')).toEqual(expanded.find((v) => v.id === '2026-10-26_p1'));
     const removedDates = ['2026-10-19', '2026-10-28', '2026-11-02', '2026-11-04'];
     expect(r.removed).toEqual(removedDates.map((d) => ({ visitId: `${d}_p1`, date: d })));
-    // 新しいパターンから展開（10/21・10/26 も新しい ID で入る。最後の日 11/4 まで）
-    const addedDates = ['2026-10-19', '2026-10-21', '2026-10-26', '2026-10-28', '2026-11-02', '2026-11-04'];
+    // 新しいパターンから展開（最後の日 11/4 まで）。残した edited・取り消しの回の元の日（10/21・10/26）は作らない
+    const addedDates = ['2026-10-19', '2026-10-28', '2026-11-02', '2026-11-04'];
     expect(r.added).toEqual(addedDates.map((d) => ({ visitId: `${d}_p9`, date: d })));
     for (const v of r.visits.filter((x) => x.pattern?.id === 'p9')) {
       expect(v.earliestStart).toBe('13:00');
     }
-    expect(r.visits).toHaveLength(before - 4 + 6);
+    expect(r.visits).toHaveLength(before);
+  });
+
+  it('since が from より後：取り消し・この回だけの変更の回は復活も二重にもならない（毎週水曜）', () => {
+    const wed = pat({ weekdays: [3] });
+    const vs = applyPatterns(input([wed]), range, TODAY).visits.map((v) => {
+      if (v.id === '2026-10-28_p1') return { ...v, cancelled: true, pattern: { ...v.pattern!, edited: true } };
+      if (v.id === '2026-10-21_p1')
+        return { ...v, earliestStart: '15:00', latestStart: '15:00', pattern: { ...v.pattern!, edited: true } };
+      return v;
+    });
+    const r = splitPattern(input([wed], vs), 'p1', next({ weekdays: [3] }), '2026-10-19', TODAY, 'p9');
+    // 10/21・10/28 は元の訪問だけ（新しい ID では作らない）
+    for (const d of ['2026-10-21', '2026-10-28']) {
+      expect(r.visits.filter((v) => v.date === d).map((v) => v.id)).toEqual([`${d}_p1`]);
+    }
+    expect(r.visits.find((v) => v.id === '2026-10-28_p1')!.cancelled).toBe(true);
+    expect(r.visits.find((v) => v.id === '2026-10-21_p1')!.earliestStart).toBe('15:00');
+    expect(r.added).toEqual([{ visitId: '2026-11-04_p9', date: '2026-11-04' }]);
+    expect(r.removed).toEqual([{ visitId: '2026-11-04_p1', date: '2026-11-04' }]);
+  });
+
+  it('日付をずらした edited の回も、元の日（pattern.date）で作らない', () => {
+    const vs = expanded.map((v) =>
+      v.id === '2026-10-28_p1' ? { ...v, date: '2026-10-29', pattern: { ...v.pattern!, edited: true } } : v,
+    );
+    const r = splitPattern(input([p], vs), 'p1', next(), '2026-10-19', TODAY, 'p9');
+    expect(r.visits.some((v) => v.id === '2026-10-28_p9')).toBe(false);
+    expect(r.visits.find((v) => v.id === '2026-10-28_p1')!.date).toBe('2026-10-29');
+  });
+
+  it('終わったパターンを後の日で直しても期間は延びない（to は min(元の to, since の前日)）', () => {
+    const ended = pat({ weekdays: [1, 3], to: '2026-10-21' });
+    const vs = applyPatterns(input([ended]), range, TODAY).visits;
+    const r = splitPattern(input([ended], vs), 'p1', next(), '2026-11-02', TODAY, 'p9');
+    expect(r.patterns[0]).toEqual(ended);
+    // to が since の後なら since の前日
+    const r2 = splitPattern(input([ended], vs), 'p1', next(), '2026-10-19', TODAY, 'p9');
+    expect(r2.patterns[0]!.to).toBe('2026-10-18');
   });
 
   it('since が from 以前：同じ ID のまま置き換え、edited でない訪問を作り直す', () => {

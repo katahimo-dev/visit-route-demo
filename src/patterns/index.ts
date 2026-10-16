@@ -89,7 +89,7 @@ const activeClientIds = (data: PatternInput) => new Set(data.clients.filter((c) 
 
 /**
  * patterns を range ∩ [today, ∞) に展開し、existing に無い ID だけを日付・開始（早）の順で返す。
- * 利用中でない・いない利用者さんのパターンは展開しない
+ * 利用中でない・いない利用者さんのパターンは展開しない。skipDates の日には作らない
  */
 function expandNew(
   patterns: Pattern[],
@@ -97,6 +97,7 @@ function expandNew(
   range: DateRange,
   today: string,
   existing: Set<string>,
+  skipDates: ReadonlySet<string> = new Set(),
 ): Visit[] {
   const active = activeClientIds(data);
   const r: DateRange = { from: maxDate(range.from, today), to: range.to };
@@ -106,7 +107,7 @@ function expandNew(
   for (const p of patterns) {
     if (!active.has(p.clientId)) continue;
     for (const v of expandPattern(p, r)) {
-      if (seen.has(v.id)) continue;
+      if (seen.has(v.id) || skipDates.has(v.date)) continue;
       seen.add(v.id);
       out.push(v);
     }
@@ -137,8 +138,9 @@ const unchanged = (data: PatternInput): PatternChange => ({
 /**
  * パターンを「いつから」（since）で分けて直す（「以降すべて」）。
  * since が元の from 以前なら同じ ID のまま中身を置き換え（from は元のまま）、
- * そうでなければ元の to を since の前日にし、newId で from = since のパターンを足す。
- * max(since, 今日) から元のパターンの訪問の最後の日までの、edited でない（取り消しでもない）訪問を除いて展開し直す
+ * そうでなければ元の to を min(元の to, since の前日)（元の to が null なら since の前日）にし、newId で from = since のパターンを足す。
+ * max(since, 今日) から元のパターンの訪問の最後の日までの、edited でない（取り消しでもない）訪問を除いて展開し直す。
+ * 残した edited の回の元の日（pattern.date。作り直す範囲内）には作らない（取り消しの復活・二重を防ぐ）
  */
 export const splitPattern: SplitPattern = (data, patternId, next, since, today, newId) => {
   const original = data.patterns.find((p) => p.id === patternId);
@@ -151,7 +153,9 @@ export const splitPattern: SplitPattern = (data, patternId, next, since, today, 
     patterns = data.patterns.map((p) => (p.id === patternId ? rebuilt : p));
   } else {
     rebuilt = { ...next, id: newId, from: since };
-    const cut: Pattern = { ...original, to: addDays(since, -1) };
+    // 終わったパターンを後の日で直しても期間を延ばさない
+    const dayBefore = addDays(since, -1);
+    const cut: Pattern = { ...original, to: original.to !== null && original.to < dayBefore ? original.to : dayBefore };
     patterns = [];
     for (const p of data.patterns) {
       if (p.id === patternId) patterns.push(cut, rebuilt);
@@ -168,7 +172,11 @@ export const splitPattern: SplitPattern = (data, patternId, next, since, today, 
   const removedVisits = own.filter((v) => v.date >= start && v.date <= end && !isEdited(v));
   const removedIds = new Set(removedVisits.map((v) => v.id));
   const kept = data.visits.filter((v) => !removedIds.has(v.id));
-  const added = expandNew([rebuilt], data, { from: start, to: end }, today, new Set(kept.map((v) => v.id)));
+  // 残した edited の回の元の日（日付をずらした回も元の日で数える）
+  const skip = new Set(
+    own.filter((v) => isEdited(v) && v.pattern!.date >= start && v.pattern!.date <= end).map((v) => v.pattern!.date),
+  );
+  const added = expandNew([rebuilt], data, { from: start, to: end }, today, new Set(kept.map((v) => v.id)), skip);
   return {
     patterns,
     visits: [...kept, ...added],
