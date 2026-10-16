@@ -316,6 +316,15 @@ describe('訪問の種類・定期パターン（ADR-0012）', () => {
     expect(x).toEqual(d);
   });
 
+  it('visitTypes・patterns が null の古いデータも [] で読める', () => {
+    const d = base();
+    const r = migrate({ ...JSON.parse(JSON.stringify(d)), visitTypes: null, patterns: null });
+    expect(isImportError(r)).toBe(false);
+    expect((r as DemoData).visitTypes).toEqual([]);
+    expect((r as DemoData).patterns).toEqual([]);
+    expect(r).toEqual(d);
+  });
+
   it('種類：ID の重複は最初の1件、20を超える分は後ろを捨てる', () => {
     const d = base();
     const types = [vt('t0', '最初'), vt('t0', '重複'), ...Array.from({ length: 25 }, (_, i) => vt(`t${i + 1}`))];
