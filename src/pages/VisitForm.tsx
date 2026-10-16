@@ -5,6 +5,7 @@ import { TypeDot } from '../components/visitType';
 import { type Client, type Visit, visitSchema } from '../contracts/documents';
 import { formError, newId } from '../lib/common';
 import { mdText, patternWhenText, typeOf } from '../lib/patternText';
+import { savedVisit } from '../lib/visitEdit';
 import { useDemoData } from '../store';
 import './schedule.css';
 
@@ -73,34 +74,23 @@ export function VisitForm({
     setError(null);
     try {
       const typeId = form.typeId && data.visitTypes.some((t) => t.id === form.typeId) ? form.typeId : null;
-      const base = {
-        id: visit?.id ?? newId('v'),
-        date: form.date,
-        clientId: form.clientId,
-        windowKind: form.windowKind,
-        earliestStart: form.earliestStart,
-        latestStart: form.windowKind === 'fixed' ? form.earliestStart : form.latestStart,
-        durationMinutes: Number(form.durationMinutes),
-        staffId: visit?.staffId ?? null,
-        cancelled: false,
-        note: form.note,
-        typeId,
-      };
-      // パターンの訪問で、日付・時刻・所要・種類・取り消しを変えたら「この回だけの変更」（ADR-0012。メモ・〈利用者さん〉は数えない）
-      const ref = visit?.pattern ?? null;
-      const changed =
-        !!visit &&
-        (base.date !== visit.date ||
-          base.windowKind !== visit.windowKind ||
-          base.earliestStart !== visit.earliestStart ||
-          base.latestStart !== visit.latestStart ||
-          base.durationMinutes !== visit.durationMinutes ||
-          base.typeId !== (visit.typeId ?? null) ||
-          base.cancelled !== visit.cancelled);
-      const v = visitSchema.parse({
-        ...base,
-        pattern: ref ? { ...ref, edited: ref.edited || changed } : null,
-      });
+      // 日付を変えたら担当を外す・この回だけの変更の判定は lib/visitEdit（ADR-0012）
+      const v = visitSchema.parse(
+        savedVisit(
+          visit,
+          {
+            date: form.date,
+            clientId: form.clientId,
+            windowKind: form.windowKind,
+            earliestStart: form.earliestStart,
+            latestStart: form.windowKind === 'fixed' ? form.earliestStart : form.latestStart,
+            durationMinutes: Number(form.durationMinutes),
+            note: form.note,
+            typeId,
+          },
+          newId('v'),
+        ),
+      );
       if (v.latestStart < v.earliestStart) {
         setError('「最も遅い開始時刻」は「最も早い開始時刻」より後にしてください');
         return;
