@@ -455,4 +455,18 @@ describe('要対応（attentionList）', () => {
       { date: '2026-10-21', kind: 'stale', count: 1, names: [] },
     ]);
   });
+
+  it('同じ人のその日の欠勤が2件（時間帯が2つ）でも、欠勤の人数は1人・名前は1回', () => {
+    const d = selData();
+    const data = {
+      ...d,
+      absences: [
+        { id: 'ab1', staffId: 's2', date: '2026-10-20', from: '09:00', to: '10:00', note: '' },
+        { id: 'ab2', staffId: 's2', date: '2026-10-20', from: '15:00', to: null, note: '' },
+      ],
+    };
+    expect(attentionList(data, [st('2026-10-20', { absence: true })], '2026-10-12')).toEqual([
+      { date: '2026-10-20', kind: 'absence', count: 1, names: ['泉 二郎'] },
+    ]);
+  });
 });

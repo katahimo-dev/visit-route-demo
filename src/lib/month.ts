@@ -602,7 +602,9 @@ export function attentionList(
     if (s.unassigned > 0) out.push({ date: s.date, kind: 'unassigned', count: s.unassigned, names: [] });
     if (s.stale) out.push({ date: s.date, kind: 'stale', count: 1, names: [] });
     if (s.absence) {
-      const names = data.absences.filter((a) => a.date === s.date).map((a) => nameOf.get(a.staffId) ?? '');
+      // 同じ人の欠勤が2件（時間帯が2つ・続けて振り直した）でも1人と数える
+      const ids = [...new Set(data.absences.filter((a) => a.date === s.date).map((a) => a.staffId))];
+      const names = ids.map((id) => nameOf.get(id) ?? '');
       out.push({ date: s.date, kind: 'absence', count: names.length, names: names.filter(Boolean) });
     }
   }
