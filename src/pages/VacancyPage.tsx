@@ -39,7 +39,8 @@ import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { ymOf } from '../lib/month';
-import { typeOf } from '../lib/patternText';
+import { mdText, typeOf } from '../lib/patternText';
+import { insertAllIntoPlans } from '../lib/week';
 import { applyPatterns } from '../patterns';
 import { useDemoData } from '../store';
 import { inquirySummary, vacancyOf, verdictOf } from '../vacancy';
@@ -227,19 +228,28 @@ export default function VacancyPage() {
       }
       patterns.push(r.data);
     }
-    let added = 0;
-    update((d) => {
+    // 足した訪問は、今の案がある日なら空き時間に入れて固定する（lib/week の insertIntoPlan。入らない日は知らせる）
+    const createdAt = Date.now();
+    const build = (d: typeof data) => {
       const clients = [...d.clients, client];
       const c = applyPatterns(
         { patterns, visits: d.visits, clients },
         { from: today, to: lastVisitDate(d.visits, today) },
         today,
       );
-      added = c.added.length;
-      return { ...d, clients, patterns: [...d.patterns, ...patterns], visits: c.visits };
-    });
+      const next = { ...d, clients, patterns: [...d.patterns, ...patterns], visits: c.visits };
+      return { added: c.added.length, ...insertAllIntoPlans(next, c.added, createdAt) };
+    };
+    // 知らせの件数はいまのデータで数える（update の中の関数はあとで呼ばれることがある）
+    const r = build(data);
+    update((d) => build(d).data);
     setHold(null);
-    toast(`仮押さえしました（${name}・訪問 ${added}件）`);
+    const into = r.inserted > 0 ? `・今の案に ${r.inserted}件入れました` : '';
+    const miss =
+      r.failedDates.length > 0
+        ? `。${r.failedDates.length}日（${r.failedDates.map(mdText).join('・')}）は空き時間に入りません`
+        : '';
+    toast(`仮押さえしました（${name}・訪問 ${r.added}件${into}）${miss}`);
   };
 
   const noPlan = result?.noPlanDates ?? [];
@@ -586,7 +596,7 @@ export default function VacancyPage() {
           </ul>
           <Hint>
             「仮」の印の{terms.client}
-            として登録し、いまある訪問の最後の日までの訪問を作ります。今の案・確定した割当は変えません（予定の画面で案に入れてください）。
+            として登録し、いまある訪問の最後の日までの訪問を作ります。今の案がある日は、他の人の予定を変えずに空き時間へ入れて固定します（入らない日は知らせます。予定の画面で入れてください）。確定した割当は変えません。
             {terms.client}の画面で「本登録にする」か「仮押さえを取り消す」を選べます。
             {exactPlace ? '' : ' 場所が空なので、住所・位置はあとで入れてください。'}
           </Hint>

@@ -1,4 +1,5 @@
 import {
+  CalendarClock,
   CalendarDays,
   CalendarRange,
   CalendarSearch,
@@ -35,6 +36,7 @@ import StaffPage from '../pages/StaffPage';
 import StaffViewPage from '../pages/StaffViewPage';
 import TypesPage from '../pages/TypesPage';
 import VacancyPage from '../pages/VacancyPage';
+import WeekPage from '../pages/WeekPage';
 import { useDemoData } from '../store';
 import { DayProvider, useDay } from './day';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -73,6 +75,7 @@ export default function App() {
           <Route path="/schedule" element={<Navigate to="/plan" replace />} />
           <Route path="/plan" element={<PlanPage />} />
           <Route path="/month" element={<MonthPage />} />
+          <Route path="/week" element={<WeekPage />} />
           <Route path="/vacancy" element={<VacancyPage />} />
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/rules" element={<RulesPage />} />
@@ -120,6 +123,7 @@ function AdminShell() {
       items: [
         { to: '/plan', label: '予定', icon: CalendarDays },
         { to: '/month', label: '月間', icon: CalendarRange },
+        { to: '/week', label: '週間', icon: CalendarClock },
         { to: '/vacancy', label: '空き状況', icon: CalendarSearch },
         { to: '/compare', label: '比較', icon: GitCompareArrows },
       ],

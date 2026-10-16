@@ -31,7 +31,7 @@ import {
   Users,
 } from 'lucide-react';
 import { type DragEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
 import { ClientName } from '../components/parts';
@@ -84,7 +84,7 @@ import {
   settleAnneal,
   targetsOf,
 } from '../reassign';
-import { applyPreset, matchesPreset, presetOf, scoreRulesOf } from '../seed';
+import { applyPreset, matchesPreset, presetOf, scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
@@ -119,7 +119,7 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
  * 担当の割り当てを1画面で扱う。AI案を作る → 担当ごとの列で手直し（ドラッグ）→ 動かした訪問は固定 →
  * 「固定を残して組み直す」で残りを AI が組み直す →「この割当で確定」（manualPlans と各訪問の担当に写す）。
  * AI案の routes は手直し後の今の案、generated は AI が出したまま、pins は固定（訪問ID → 担当ID）。
- * AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（ADR-0008）。作る・組み直すたびに、条件と結果を
+ * AI案が無い日は、開いたときに点数の基準のプリセットの案だけを自動で作る（D52。残りは「他の条件でも作る」）。作る・組み直すたびに、条件と結果を
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
  * プリセットごとの案のカードを並べ、「この案にする」で今の案にする。
  * 点数（100点満点）・必須の違反・条件ごとの達成は、いつも点数の基準のプリセットの物差し（ADR-0010。useDayModel の scoreProblem）。
@@ -198,6 +198,7 @@ export default function PlanPage() {
   /** 急な欠勤の欄を開いている人（ADR-0011。null：閉じている） */
   const [absenceFor, setAbsenceFor] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
   const mapCardRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -555,13 +556,15 @@ export default function PlanPage() {
     create(rules, 'preset');
   };
 
-  // AI案が無い日は、開いたときにすべてのプリセットで順に自動で作る（同じ日に2回は試さない。ADR-0008）
+  // AI案が無い日は、開いたときに点数の基準のプリセット（scorePresetId）の案だけを自動で作る（同じ日に2回は試さない。
+  // D52。ADR-0012 追記）。他のプリセットはカードか「他の条件でも作る」で作る
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案の有無・問題が変わったときだけ
   useEffect(() => {
     // 訪問が無い日は試したことにしない（あとで訪問を足す・コピーしたら作る）
     if (aiPlan || running || batch || !problem || problem.visits.length === 0 || autoTried.current.has(date)) return;
     autoTried.current.add(date);
-    runBatch(data.presets);
+    const base = scorePresetOf(data.presets, data.scorePresetId);
+    runBatch(base ? [base] : []);
   }, [date, aiPlan, problem, running]);
 
   // ---- プリセットごとの案のカード（ADR-0008）。点数はどれも点数の基準の物差し（ADR-0010） ----
@@ -677,6 +680,18 @@ export default function PlanPage() {
     return si >= 0 && problem.allowed[vi]?.[si] === true;
   };
   const owner = useMemo(() => ownerMap(routes), [routes]);
+  /** 週間の帯から開いたときに選ぶ訪問（ADR-0012 追記の段階2。今の案が出たら1回だけ選んで見える所へ） */
+  const wantVisit = useRef<string | null>((location.state as { visitId?: string } | null)?.visitId ?? null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 今の案が出たときに1回だけ
+  useEffect(() => {
+    const id = wantVisit.current;
+    if (!id || !aiPlan) return;
+    wantVisit.current = null;
+    if (owner.has(id)) sel.togglePick({ id, set: PLAN_SET });
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-visit="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' }),
+    );
+  }, [aiPlan, owner]);
   const moveTo = (visitId: string, staffId: string) => {
     if (!problem || !aiPlan || running) return;
     if (owner.get(visitId) === staffId && own(pins, visitId) === staffId) return;
@@ -1604,7 +1619,7 @@ export default function PlanPage() {
                       onClick={() => runBatch(missing)}
                     >
                       <WithIcon icon={Sparkles} size={14}>
-                        足りない案を作る（{missing.length}つ）
+                        他の条件でも作る（{missing.length}つ）
                       </WithIcon>
                     </button>
                   )}
