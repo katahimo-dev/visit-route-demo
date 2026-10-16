@@ -24,6 +24,7 @@ const blank = (nextColor: number): Client => ({
   requirements: [],
   preferences: [],
   usualStaffId: null,
+  tentative: false,
 });
 
 export default function ClientsPage() {

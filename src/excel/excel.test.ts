@@ -866,3 +866,32 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
     expect(msg).toContain('シート『訪問』：『元の日』の列がありません');
   });
 });
+
+describe('〈利用者さん〉の仮押さえの列（ADR-0012 追記。段階3）', () => {
+  const withTentative = (d: DemoData): DemoData => ({
+    ...d,
+    clients: d.clients.map((c, i) => (i % 3 === 0 ? { ...c, tentative: true } : c)),
+  });
+  it('仮押さえが 書き出し → 読み込み で同じに戻る（列は「利用中」の次）', async () => {
+    const d = withTentative(base());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const ws = sheet(wb, personSheetNames(d.org.terms).client);
+    expect(col(ws, '仮押さえ')).toBe(col(ws, '利用中') + 1);
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.clients.map((c) => c.tentative)).toEqual(d.clients.map((c) => c.tentative));
+    expect(r.clients.some((c) => c.tentative)).toBe(true);
+    expect(r).toEqual(withoutPlans(d));
+  });
+  it('「仮押さえ」の列が無いブックは false', async () => {
+    const d = withTentative(base());
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.spliceColumns(col(ws, '仮押さえ'), 1);
+      }),
+    );
+    expect(r.clients).toHaveLength(d.clients.length);
+    expect(r.clients.every((c) => c.tentative === false)).toBe(true);
+  });
+});

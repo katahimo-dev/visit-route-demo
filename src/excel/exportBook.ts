@@ -16,7 +16,7 @@ import { scorePresetOf } from '../seed/presets';
 import {
   absenceCols,
   availabilityCols,
-  CLIENT_COLS,
+  clientExportCols,
   ITEM_COLS,
   ORG_HEADERS,
   ORG_KEYS,
@@ -428,7 +428,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
   const clientName = new Map(data.clients.map((c) => [c.id, c.displayName]));
 
   // 利用者さん
-  const clientBase = Object.values(CLIENT_COLS);
+  const clientBase = clientExportCols();
   const cp = personCols(clientBase.length, clientItems, staffItems);
   addTable(wb, {
     name: names.client,
@@ -438,6 +438,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       c.displayName,
       c.color + 1,
       yes(c.active),
+      yes(c.tentative),
       c.place.address,
       nullable(c.place.lat),
       nullable(c.place.lng),
@@ -449,7 +450,8 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
     lists: [
       { col: 3, values: ['1', '2', '3', '4', '5', '6', '7', '8'] },
       { col: 4, values: [YES] },
-      { col: 8, ref: staffNameRef, strict: false },
+      { col: 5, values: [YES] },
+      { col: 9, ref: staffNameRef, strict: false },
       ...cp.lists,
     ],
     freezeCols: 2,

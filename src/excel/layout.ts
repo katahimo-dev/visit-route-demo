@@ -44,6 +44,17 @@ export const CLIENT_COLS = {
   usualStaff: 'いつもの担当',
   note: 'メモ',
 } as const;
+/**
+ * 〈利用者さん〉の「仮押さえ」（○。ADR-0012 追記。段階3）。書き出しは「利用中」の次に置く。
+ * 古いブックには無いので必須の列にしない（無ければ false）
+ */
+export const CLIENT_TENTATIVE_COL = '仮押さえ';
+/** 書き出す〈利用者さん〉の固定の列（「利用中」の次に「仮押さえ」） */
+export const clientExportCols = (): string[] => {
+  const base: string[] = Object.values(CLIENT_COLS);
+  const at = base.indexOf(CLIENT_COLS.active) + 1;
+  return [...base.slice(0, at), CLIENT_TENTATIVE_COL, ...base.slice(at)];
+};
 export const availabilityCols = (t: Terms) => ({ staff: t.staff, date: '日付', slots: '時間帯' });
 /** 欠勤（ADR-0011）：開始の空＝始業から、終了の空＝終業まで、両方空＝終日 */
 export const absenceCols = (t: Terms) => ({

@@ -32,6 +32,7 @@ import {
   absenceCols,
   availabilityCols,
   CLIENT_COLS,
+  CLIENT_TENTATIVE_COL,
   ITEM_COLS,
   ORG_HEADERS,
   ORG_KEYS,
@@ -710,7 +711,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   const clients: Client[] = [];
   const clientByName = new Map<string, string>();
   {
-    const cols = personCols(clientSheet, items, 'client', Object.values(CLIENT_COLS));
+    const cols = personCols(clientSheet, items, 'client', [...Object.values(CLIENT_COLS), CLIENT_TENTATIVE_COL]);
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
     const C = CLIENT_COLS;
@@ -723,6 +724,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       }
       const color = r.num(C.color, { int: true, min: 1, max: 8, required: true });
       const active = r.yes(C.active);
+      // 仮押さえ（ADR-0012 追記）：列が無い古いブックは false
+      const tentative = r.yes(CLIENT_TENTATIVE_COL);
       const address = r.optional(C.address, 200);
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });
@@ -745,6 +748,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           active,
           ...p,
           usualStaffId,
+          tentative,
         });
       }
     }

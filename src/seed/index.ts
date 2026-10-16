@@ -44,6 +44,7 @@ function initialClients(): Client[] {
     requirements: c.requirements ?? [],
     preferences: c.preferences ?? [],
     usualStaffId: null,
+    tentative: false,
   }));
 }
 

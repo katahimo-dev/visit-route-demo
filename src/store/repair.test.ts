@@ -432,3 +432,34 @@ describe('訪問の種類・定期パターン（ADR-0012）', () => {
     expect(importJson(JSON.stringify(x))).toEqual(x);
   });
 });
+
+describe('〈利用者さん〉の仮押さえ（ADR-0012 追記。段階3）', () => {
+  it('tentative の無い古いデータは false で読める（版は1のまま）', () => {
+    const d = base();
+    const old = JSON.parse(JSON.stringify(d));
+    old.clients = old.clients.map(({ tentative: _t, ...c }: Record<string, unknown>) => c);
+    const r = migrate(old);
+    expect(isImportError(r)).toBe(false);
+    const x = r as DemoData;
+    expect(x.version).toBe(1);
+    expect(x.clients.every((c) => c.tentative === false)).toBe(true);
+    expect(x).toEqual(d);
+  });
+
+  it('repair は仮押さえを変えず、書き出し → 読み込み で同じに戻る', () => {
+    const d = base();
+    const x: DemoData = { ...d, clients: d.clients.map((c, i) => (i === 0 ? { ...c, tentative: true } : c)) };
+    expect(repair(x)).toEqual(x);
+    const back = importJson(JSON.stringify(x));
+    expect(isImportError(back)).toBe(false);
+    expect((back as DemoData).clients[0]!.tentative).toBe(true);
+    expect(back).toEqual(x);
+  });
+
+  it('真偽でない tentative は契約で止める', () => {
+    const d = base();
+    const bad = JSON.parse(JSON.stringify(d));
+    bad.clients[0].tentative = 'はい';
+    expect(isImportError(importJson(JSON.stringify(bad)))).toBe(true);
+  });
+});

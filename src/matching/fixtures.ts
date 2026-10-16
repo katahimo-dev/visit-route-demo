@@ -47,6 +47,7 @@ export function client(id: string, lat: number, lng: number, over: Partial<Clien
     requirements: [],
     preferences: [],
     usualStaffId: null,
+    tentative: false,
     ...over,
   };
 }

@@ -7,7 +7,7 @@ import { addDays } from '../domain/time';
 import { compile, naiveSeqs, scheduleRoute } from '../matching';
 import { client, DATE, makeData, randomData, rule, staff, visit } from '../matching/fixtures';
 import { createDemoData } from '../seed';
-import { candidatesFor, leftOf, placeVisit, type Routes, reassign, reassignDiff, targetsOf } from './index';
+import { candidatesFor, fitsOf, leftOf, placeVisit, type Routes, reassign, reassignDiff, targetsOf } from './index';
 
 const fixed = (id: string, c: string, at: string, minutes = 60) =>
   visit(id, c, at, at, { windowKind: 'fixed', durationMinutes: minutes });
@@ -368,5 +368,52 @@ describe('leftOf（欠勤の人に残る、振り直すべき訪問）', () => {
     const base: Routes = { s1: ['v1', 'late'], s2: [], s3: [] };
     expect(targetsOf(p, on(d, base), ['s1']).map((t) => t.reason)).toEqual(['absence', 'notAllowed']);
     expect(leftOf(p, on(d, base), ['s1'])).toEqual([{ visitId: 'v1', staffId: 's1', reason: 'absence' }]);
+  });
+});
+
+describe('fitsOf（他の人を変えずに入る人。ADR-0012 追記）', () => {
+  /** candidatesFor の fits の人を同じ並びで */
+  const expected = (p: Problem, routes: Routes, visitId: string) =>
+    candidatesFor(p, routes, visitId)
+      .filter((c) => c.fits)
+      .map((c) => ({ staffId: c.staffId, addedCost: c.addedCost, addedTravel: c.addedTravel }));
+
+  it('小さな問題：candidatesFor の fits の人・並び・増える費用と一致し、ずらせば入る人・欠勤の人は含まない', () => {
+    const d = small({ absences: [absence('s1', null, null)] });
+    const p = compile(d, DATE);
+    const routes: Routes = { s1: [], s2: ['v5'], s3: [] };
+    const f = fitsOf(p, routes, 'v2');
+    expect(f.map((x) => x.staffId)).toEqual(['s3']);
+    expect(f).toEqual(expected(p, routes, 'v2'));
+    expect(fitsOf(p, routes, 'ghost')).toEqual([]);
+  });
+
+  it('ランダムな問題の全訪問で candidatesFor の fits と一致（訪問が列にあっても抜いて数える）', () => {
+    let found = 0;
+    for (const seed of [1, 2, 3]) {
+      const d = randomData(6, 20, seed);
+      const p = compile(d, DATE);
+      const routes = routesOf(p, naiveSeqs(p));
+      for (const v of p.visits) {
+        const f = fitsOf(p, routes, v.id);
+        expect(f).toEqual(expected(p, routes, v.id));
+        found += f.length;
+      }
+    }
+    expect(found).toBeGreaterThan(0);
+  });
+
+  it('seed の日：candidatesFor の fits と一致', () => {
+    const d = createDemoData('2026-10-13');
+    const p = compile(d, '2026-10-14');
+    const routes = routesOf(p, naiveSeqs(p));
+    // 1件ずつ抜いて、その訪問を入れられる人
+    let found = 0;
+    for (const v of p.visits) {
+      const f = fitsOf(p, routes, v.id);
+      expect(f).toEqual(expected(p, routes, v.id));
+      found += f.length;
+    }
+    expect(found).toBeGreaterThan(0);
   });
 });

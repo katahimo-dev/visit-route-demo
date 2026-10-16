@@ -69,6 +69,8 @@ export const clientSchema = z.object({
   preferences: z.array(conditionSchema).max(20),
   /** いつもの担当。rule 'continuity' */
   usualStaffId: idSchema.nullable(),
+  /** 仮押さえ（D47。問い合わせの試算から仮に押さえた〈利用者さん〉。ADR-0012 追記）。無い古いデータは false */
+  tentative: z.boolean().default(false),
 });
 export type Client = z.infer<typeof clientSchema>;
 
