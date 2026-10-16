@@ -21,7 +21,7 @@ import { type Client, clientSchema } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
-import { removePattern } from '../patterns';
+import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useDemoData } from '../store';
 import { PatternsSection } from './PatternsSection';
 import './settings.css';
@@ -86,26 +86,18 @@ export default function ClientsPage() {
   };
 
   /**
-   * 仮押さえを取り消す（D47）：確認のうえ、その人の定期パターンを removePattern で消し、〈利用者さん〉を消す。
-   * 〈利用者さん〉がいなくなるので、パターンで消えずに残る訪問（今日より前・この回だけ変えた回・単発）も消す
+   * 仮押さえを取り消す（D47）：確認のうえ、lib/tentative の cancelTentative でその人の定期パターン・訪問・〈利用者さん〉を消し、
+   * 消した訪問を今の案・記録・確定した割当から、〈利用者さん〉を相性から除く。確定した日を含むなら確認の文にその日数を出す
    */
   const cancelTentative = (c: Client) => {
     const today = jstDate(Date.now());
-    const withoutClient = (d: typeof data) => {
-      let x = { patterns: d.patterns, visits: d.visits, clients: d.clients };
-      for (const p of d.patterns.filter((p) => p.clientId === c.id)) {
-        const r = removePattern(x, p.id, today);
-        x = { ...x, patterns: r.patterns, visits: r.visits };
-      }
-      return { patterns: x.patterns, visits: x.visits.filter((v) => v.clientId !== c.id) };
-    };
     const n = data.visits.filter((v) => v.clientId === c.id).length;
-    const msg = `仮押さえの${c.displayName}を取り消します。定期パターンと訪問 ${n}件を消し、${terms.client}も消します。よろしいですか？`;
+    const fixed = confirmedDatesOf(data, c.id).length;
+    const msg = `仮押さえの${c.displayName}を取り消します。定期パターンと訪問 ${n}件を消し、${terms.client}も消します。${
+      fixed > 0 ? `確定した日（${fixed}日）の割当からも外します。` : ''
+    }よろしいですか？`;
     if (!confirm(msg)) return;
-    update((d) => {
-      const x = withoutClient(d);
-      return { ...d, patterns: x.patterns, visits: x.visits, clients: d.clients.filter((y) => y.id !== c.id) };
-    });
+    update((d) => cancelTentativeData(d, c.id, today));
     setForm(null);
     toast(`仮押さえを取り消しました（訪問 ${n}件）`);
   };
