@@ -45,6 +45,7 @@ import { useDayModel } from '../lib/useDayModel';
 import { type CompileInput, compile } from '../matching';
 import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
+import { type DayFreeness, dayFreeness } from '../vacancy';
 import './month.css';
 
 /**
@@ -201,6 +202,46 @@ export default function MonthPage() {
     }
     return out;
   }, [weeks, compileInput, data, scoreRules]);
+
+  // ---- 日の午前・午後の空き（D48。案のある日だけ。日付・compile が読むデータ・案で覚える）----
+  const freeMemo = useRef(new Map<string, { key: readonly unknown[]; value: DayFreeness }>());
+  const freeness = useMemo(() => {
+    const out = new Map<string, DayFreeness>();
+    const visitsByDate = new Map<string, Visit[]>();
+    for (const v of data.visits) {
+      const list = visitsByDate.get(v.date);
+      if (list) list.push(v);
+      else visitsByDate.set(v.date, [v]);
+    }
+    const base = [
+      data.org,
+      data.items,
+      data.staff,
+      data.clients,
+      data.compat,
+      data.availability,
+      data.absences,
+      data.visitTypes,
+      data.rules,
+    ];
+    for (const d of weeks.flat()) {
+      if (ymOf(d) !== ym) continue;
+      const s = statuses.get(d);
+      if (!s || s.count === 0 || s.state === 'none') continue;
+      const visits = visitsByDate.get(d) ?? [];
+      const key = [...base, own(data.aiPlans, d), own(data.manualPlans, d), ...visits];
+      const hit = freeMemo.current.get(d);
+      if (hit && hit.key.length === key.length && hit.key.every((x, i) => x === key[i])) {
+        out.set(d, hit.value);
+        continue;
+      }
+      // その日の訪問だけを渡す（compile はその日の訪問しか読まない）
+      const value = attempt(() => dayFreeness({ ...data, visits }, d)).value ?? { am: null, pm: null };
+      freeMemo.current.set(d, { key, value });
+      out.set(d, value);
+    }
+    return out;
+  }, [weeks, ym, data, statuses]);
 
   const days = useMemo(() => monthDates(ym), [ym]);
   const summary = useMemo(() => {
@@ -525,6 +566,8 @@ export default function MonthPage() {
                   }
                   const past = d < today;
                   const making = current === d;
+                  const free = freeness.get(d);
+                  const freeParts = free ? freeTexts(free) : [];
                   const parts = [
                     longDate(d),
                     s.count > 0 ? `訪問 ${s.count}件` : '訪問なし',
@@ -536,6 +579,7 @@ export default function MonthPage() {
                     s.stale ? '条件が変わった' : '',
                     s.needsCare ? '要確認' : '',
                     making ? '作っています' : '',
+                    ...freeParts,
                   ].filter(Boolean);
                   return (
                     <td
@@ -594,6 +638,7 @@ export default function MonthPage() {
                           </span>
                         )}
                         {s.needsCare && !past && <span className="month-care">要確認</span>}
+                        {free && freeParts.length > 0 && <FreeBars free={free} />}
                       </button>
                     </td>
                   );
@@ -670,5 +715,35 @@ export default function MonthPage() {
         </SidePanel>
       )}
     </div>
+  );
+}
+
+/** 空きの割合の文（「午前の空き 40%」。稼働時間帯の無い側は出さない） */
+function freeTexts(f: DayFreeness): string[] {
+  const out: string[] = [];
+  if (f.am !== null) out.push(`午前の空き ${Math.round(f.am * 100)}%`);
+  if (f.pm !== null) out.push(`午後の空き ${Math.round(f.pm * 100)}%`);
+  return out;
+}
+
+/** 日のマスの午前・午後の空きの2本の細い帯（D48。読み上げはマスのボタンの aria-label に入れる） */
+function FreeBars({ free }: { free: DayFreeness }) {
+  const bars = [
+    { key: 'am', label: '午前', value: free.am },
+    { key: 'pm', label: '午後', value: free.pm },
+  ] as const;
+  return (
+    <span className="month-free" data-testid="month-free" title={freeTexts(free).join('・')} aria-hidden="true">
+      {bars.map((b) => (
+        <span key={b.key} className="month-free-row">
+          <span className="month-free-label">{b.label}</span>
+          <span className={`month-free-bar${b.value === null ? ' is-none' : ''}`}>
+            {b.value !== null && (
+              <span className="month-free-fill" style={{ width: `${Math.round(b.value * 100)}%` }} />
+            )}
+          </span>
+        </span>
+      ))}
+    </span>
   );
 }

@@ -1,0 +1,135 @@
+/* 空き状況と問い合わせの試算（#/vacancy。ADR-0012 追記。段階3） */
+.vacancy-more summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.vacancy-place-title {
+  font-weight: 700;
+}
+.vacancy-legend {
+  margin: 0;
+}
+.vacancy-noplan {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #fbefd6;
+  color: #8a5a06;
+}
+.vacancy-scroll {
+  overflow-x: auto;
+}
+.vacancy-grid {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 0.78rem;
+}
+.vacancy-grid th {
+  font-weight: 700;
+  color: var(--sub);
+  white-space: nowrap;
+  padding: 2px 4px;
+}
+.vacancy-grid thead th {
+  font-size: 0.7rem;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  height: 3.6em;
+  vertical-align: bottom;
+}
+.vacancy-grid thead th.is-hour {
+  color: var(--ink);
+}
+.vacancy-grid thead th.vacancy-corner {
+  writing-mode: horizontal-tb;
+  font-size: 0.7rem;
+}
+.vacancy-grid th.is-sun {
+  color: #c0504d;
+}
+.vacancy-grid th.is-sat {
+  color: #4a78b5;
+}
+.vacancy-grid td {
+  padding: 0;
+}
+.vacancy-cell {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.1;
+  cursor: pointer;
+  padding: 0;
+}
+.vacancy-cell:hover {
+  border-color: var(--primary);
+}
+.vacancy-cell:focus-visible {
+  outline: 2px solid var(--primary-dark);
+  outline-offset: 1px;
+}
+.vacancy-cell.is-picked {
+  border: 2.5px solid var(--primary);
+}
+.vacancy-mark {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.vacancy-count {
+  font-size: 0.68rem;
+}
+/* 色は補助（印 ○△×？ と人数で読める） */
+.vacancy-cell.is-ok {
+  background: #e1f1e7;
+  color: #2f6e48;
+}
+.vacancy-cell.is-partial {
+  background: #fbefd6;
+  color: #7a4f05;
+}
+.vacancy-cell.is-ng {
+  background: #f6f0eb;
+  color: var(--sub);
+}
+.vacancy-cell.is-unknown {
+  background: repeating-linear-gradient(45deg, #fff, #fff 4px, #f3ebe4 4px, #f3ebe4 8px);
+  color: var(--sub);
+}
+.vacancy-dates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vacancy-dates li {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.vacancy-dates li.is-ng {
+  color: var(--danger);
+}
+.inquiry-summary {
+  display: block;
+  white-space: pre-wrap;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--soft);
+  font-weight: 700;
+}
