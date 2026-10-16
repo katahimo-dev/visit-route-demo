@@ -8,8 +8,18 @@ import { CLIENT_SEEDS } from './people';
 
 const isWeekend = (date: string) => weekday(date) === 0 || weekday(date) === 6;
 const shiftBy = (hhmm: string, min: number) => minutesToHhmm(hhmmToMinutes(hhmm) + min);
+/** 日ごとの変化の番号の 0 日目 */
+const DAY_ZERO = '2026-01-01';
 /** 日ごとの変化の番号。日付だけで決まる */
-const dayNumber = (date: string) => Math.round((Date.parse(date) - Date.parse('2026-01-01')) / 86400000);
+const dayNumber = (date: string) => Math.round((Date.parse(date) - Date.parse(DAY_ZERO)) / 86400000);
+
+/**
+ * CLIENT_SEEDS の i 番目の利用者さんが平日に休む曜日（0=日〜6=土）。
+ * visitsOf の「(i + 日の番号) % 7 が 0 の日は休み」を曜日に直したもの（土日になる人は平日に休みが無い）
+ */
+export function restWeekdayOf(i: number): number {
+  return weekday(addDays(DAY_ZERO, (7 - (i % 7)) % 7));
+}
 
 /** 手作業の割り当てで見込む移動時間（分）。実際より短く見積もりがち */
 const MANUAL_TRAVEL_MIN = 30;
@@ -40,9 +50,12 @@ function satisfies(c: Condition, traits: Traits): boolean {
 
 /**
  * その日の訪問（同じ日なら毎回同じ）。平日は訪問先から日ごとに3か所前後が休み、土日は印のある訪問先。
- * 時間に幅のある訪問は日ごとに 0〜60分ずらす（いまのデモデータは全員が時刻ちょうどなので、ずらさない）
+ * 時間に幅のある訪問は日ごとに 0〜60分ずらす（いまのデモデータは全員が時刻ちょうどなので、ずらさない）。
+ * 初期の訪問は定期パターンから展開する（ADR-0012。seed/patterns.ts）。これはパターンにする前の規則で、
+ * 展開した訪問と同じになることをテストで確かめるために残す
  */
-function visitsOf(date: string, n: number, clientIds: Set<string>): Visit[] {
+export function visitsOf(date: string, clientIds: Set<string>): Visit[] {
+  const n = dayNumber(date);
   return CLIENT_SEEDS.map((c, i) => ({ c, i }))
     .filter(({ c }) => clientIds.has(c.id))
     .filter(({ c, i }) => (isWeekend(date) ? c.weekend : (i + n) % 7 !== 0))
@@ -127,8 +140,11 @@ function manualRoutesOf(
 
 export type DayData = { visits: Visit[]; availability: Availability[]; manualRoutes: Record<string, string[]> };
 
-/** 1日分（訪問・稼働時間帯の上書き・手作業案）。訪問の staffId は手作業案の担当に合わせる */
-export function generateDay(date: string, staff: Staff[], clients: Client[], compat: Compat): DayData {
+/**
+ * 1日分（稼働時間帯の上書き・手作業案）。visits はその日の訪問（パターンから展開したもの）。
+ * 返す訪問の staffId は手作業案の担当に合わせる
+ */
+export function generateDay(date: string, visits: Visit[], staff: Staff[], clients: Client[], compat: Compat): DayData {
   const n = dayNumber(date);
   const active = staff.filter((s) => s.active);
   const clientMap = new Map(clients.filter((c) => c.active).map((c) => [c.id, c]));
@@ -139,7 +155,6 @@ export function generateDay(date: string, staff: Staff[], clients: Client[], com
       availabilityOf(s, date, overrides[s.id] ? { slots: overrides[s.id] as Slot[] } : null).slots,
     ]),
   );
-  const visits = visitsOf(date, n, new Set(clientMap.keys()));
   const manualRoutes = manualRoutesOf(n, visits, active, clientMap, compat, slotsOf);
   const owner = new Map(
     Object.entries(manualRoutes).flatMap(([sid, ids]) =>

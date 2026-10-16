@@ -276,6 +276,16 @@ describe('欠勤と振り直し（ADR-0011）', () => {
 });
 
 describe('訪問の種類・定期パターン（ADR-0012）', () => {
+  // seed は種類・パターンを持つ（ADR-0012）。ここでは種類・パターンの無いデータ（seed の利用者さんのパターンの訪問だけ）から始める
+  const base = (): DemoData => {
+    const d = createDemoData(DAY);
+    return {
+      ...d,
+      visitTypes: [],
+      patterns: [],
+      visits: d.visits.filter((v) => v.pattern?.id === v.clientId).map((v) => ({ ...v, typeId: null, pattern: null })),
+    };
+  };
   const vt = (id: string, name = id): VisitType => ({
     id,
     name,

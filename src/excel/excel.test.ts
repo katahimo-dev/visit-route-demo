@@ -19,7 +19,19 @@ import {
   traitToCell,
 } from './text';
 
-const base = () => createDemoData('2026-10-13');
+/**
+ * seed から種類・定期パターン（ADR-0012）を除いたデータ（excel の「種類」「定期パターン」シートは段階1 ④ で足す。
+ * それまでは種類・パターンの無いデータで往復を確かめる）
+ */
+const base = (): DemoData => {
+  const d = createDemoData('2026-10-13');
+  return {
+    ...d,
+    visitTypes: [],
+    patterns: [],
+    visits: d.visits.filter((v) => v.pattern?.id === v.clientId).map((v) => ({ ...v, typeId: null, pattern: null })),
+  };
+};
 const withoutPlans = (d: DemoData): DemoData => ({ ...d, manualPlans: {}, aiPlans: {}, aiRuns: {} });
 
 async function toBuffer(d: DemoData): Promise<ArrayBuffer> {

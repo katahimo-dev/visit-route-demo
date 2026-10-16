@@ -335,7 +335,8 @@ describe('2026-10-14 の報告の再現：終日の欠勤で担当が変わら�
     expect(t.map((x) => x.visitId).sort()).toEqual([...(base[sid] ?? [])].sort());
     const r = reassign(p, base, t);
     expect(r.routes[sid] ?? []).toEqual([]);
-    expect(r.unplaced).toEqual([]);
+    // 入らないのはリハビリ（ADR-0012 の seed）だけ：理学療法士は s4・s7 で、s7 は 13:00〜14:30 に泉図書館がある
+    expect(r.unplaced).toEqual([`${today}_c7-rehab`]);
     expect(leftOf(p, { problem: plain, routes: r.routes }, [sid])).toEqual([]);
   });
   it('午前だけの欠勤：s4 の午前の訪問は振り直され、午後の訪問は s4 のまま', () => {

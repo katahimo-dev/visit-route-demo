@@ -6,7 +6,10 @@ import { DATA_VERSION } from '../contracts/data';
 import type { Client, Staff } from '../contracts/documents';
 import type { Compat } from '../contracts/rules';
 import { DEFAULT_TERMS } from '../domain/terms';
+import { addDays } from '../domain/time';
+import { applyPatterns } from '../patterns';
 import { datesFrom, generateDay, UNASSIGNED_KEY } from './generate';
+import { INITIAL_VISIT_TYPES, seedPatterns, VISIT_TYPE_ID } from './patterns';
 import { CLIENT_SEEDS, INITIAL_COMPAT, INITIAL_ITEMS, INITIAL_RULES, STAFF_SEEDS } from './people';
 import { INITIAL_PRESETS, initialPresets } from './presets';
 
@@ -66,8 +69,8 @@ export function createDemoData(today: string): DemoData {
     visits: [],
     availability: [],
     absences: [],
-    visitTypes: [],
-    patterns: [],
+    visitTypes: INITIAL_VISIT_TYPES.map((t) => ({ ...t, requirements: t.requirements.map((c) => ({ ...c })) })),
+    patterns: seedPatterns(today),
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},
@@ -95,8 +98,11 @@ function usualStaffOf(data: DemoData, owners: Map<string, string>, clientId: str
 }
 
 /**
- * from から n 日分の訪問・稼働時間帯の上書きを足す。手作業の割当は入れない（訪問の担当は未割当。ADR-0005）。
- * すでに訪問か手作業案がある日は変えない（既存データを壊さない）。元のデータは書き換えない
+ * from から n 日分の訪問・稼働時間帯の上書きを足す。訪問は初期の定期パターン（seedPatterns(from)）から展開する（ADR-0012）。
+ * 手作業の割当は入れない（訪問の担当は未割当。ADR-0005）。
+ * すでに訪問か手作業案がある日は変えない（既存データを壊さない）。元のデータは書き換えない。
+ * データに無い種類のパターン（パターンの無い古いデータのリハビリ）は展開しない。展開した訪問の typeId・pattern は、
+ * データにその種類・パターンが無ければ null（古いデータは今までどおりの訪問になる）
  */
 export function daysFrom(data: DemoData, from: string, n: number): DemoData {
   return generateDays(data, from, n).data;
@@ -105,16 +111,37 @@ export function daysFrom(data: DemoData, from: string, n: number): DemoData {
 /** daysFrom の本体。owners は内部で作った手作業らしい割当（訪問ID → 担当。いつもの担当を決めるのに使う） */
 function generateDays(data: DemoData, from: string, n: number): { data: DemoData; owners: Map<string, string> } {
   const have = new Set([...data.visits.map((v) => v.date), ...Object.keys(data.manualPlans)]);
+  const typeIds = new Set(data.visitTypes.map((t) => t.id));
+  const patternIds = new Set(data.patterns.map((p) => p.id));
+  const patterns = seedPatterns(from).filter((p) => p.typeId !== VISIT_TYPE_ID.rehab || typeIds.has(p.typeId));
+  const expanded = applyPatterns(
+    { patterns, visits: data.visits, clients: data.clients },
+    { from, to: addDays(from, n - 1) },
+    from,
+  ).visits.slice(data.visits.length);
   const visits = [...data.visits];
   const availability = [...data.availability];
   const owners = new Map<string, string>();
   for (const date of datesFrom(from, n)) {
     if (have.has(date)) continue;
-    const day = generateDay(date, data.staff, data.clients, data.compat);
-    for (const v of day.visits) {
-      if (v.staffId) owners.set(v.id, v.staffId);
-      visits.push({ ...v, staffId: null });
-    }
+    const dayVisits = expanded.filter((v) => v.date === date);
+    // 内部の割当は今までどおり、利用者さんのパターン（ID＝利用者さんID）の訪問だけで作る（リハビリは入れない）
+    const day = generateDay(
+      date,
+      dayVisits.filter((v) => v.pattern?.id === v.clientId),
+      data.staff,
+      data.clients,
+      data.compat,
+    );
+    for (const v of day.visits) if (v.staffId) owners.set(v.id, v.staffId);
+    // データに無い種類・パターンは参照しない（パターンの無い古いデータは今までどおりの訪問）
+    visits.push(
+      ...dayVisits.map((v) => ({
+        ...v,
+        typeId: v.typeId !== null && typeIds.has(v.typeId) ? v.typeId : null,
+        pattern: v.pattern !== null && patternIds.has(v.pattern.id) ? v.pattern : null,
+      })),
+    );
     availability.push(
       ...day.availability.filter((a) => !data.availability.some((x) => x.staffId === a.staffId && x.date === date)),
     );
@@ -123,6 +150,7 @@ function generateDays(data: DemoData, from: string, n: number): { data: DemoData
 }
 
 export { UNASSIGNED_KEY };
+export { INITIAL_VISIT_TYPES, REHAB_SEEDS, rehabPatternId, seedPatterns, VISIT_TYPE_ID } from './patterns';
 export {
   applyPreset,
   INITIAL_PRESETS,

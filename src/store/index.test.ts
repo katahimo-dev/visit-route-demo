@@ -183,7 +183,8 @@ describe('extendDays', () => {
       usualStaffId: null,
       note: '',
     };
-    const withPattern: DemoData = { ...d, patterns: [pattern] };
+    // seed のパターン（ADR-0012）を p1 だけにする（seed の訪問はパターンから外す）
+    const withPattern: DemoData = { ...d, patterns: [pattern], visits: d.visits.map((v) => ({ ...v, pattern: null })) };
     mem.set(STORAGE_KEY, JSON.stringify(withPattern));
     // 今日＝2026-11-20（金）。今日〜12/3 の月・木
     vi.useFakeTimers({ now: Date.parse('2026-11-20T09:00:00+09:00'), toFake: ['Date'] });
@@ -193,7 +194,7 @@ describe('extendDays', () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(loaded.visits.filter((v) => v.date < '2026-11-20')).toEqual(d.visits);
+    expect(loaded.visits.filter((v) => v.date < '2026-11-20')).toEqual(withPattern.visits);
     const added = loaded.visits.filter((v) => v.date >= '2026-11-20');
     expect(added.map((v) => v.id)).toEqual(['2026-11-23_p1', '2026-11-26_p1', '2026-11-30_p1', '2026-12-03_p1']);
     expect(added.every((v) => v.pattern?.id === 'p1' && v.clientId === client.id)).toBe(true);
