@@ -39,8 +39,9 @@ import { RouteMap } from '../components/RouteMap';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
+import { TypeMark } from '../components/visitType';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
-import type { Absence, Client, Visit } from '../contracts/documents';
+import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
@@ -63,6 +64,8 @@ import {
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { contactCount, dayWordOf } from '../lib/contacts';
 import { deferredDragStart } from '../lib/dragStart';
+import { planRunOf, planStale } from '../lib/month';
+import { typeOf } from '../lib/patternText';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
@@ -611,6 +614,27 @@ export default function PlanPage() {
     -1,
   );
   const missing = presetCards.filter((c) => !c.run).map((c) => c.preset);
+  /**
+   * （D43）今の案の元の記録を作ったあとに、訪問・〈スタッフ〉・稼働時間・条件が変わったか：記録の inputKey と、
+   * いまのデータに記録の条件（と固定）を当てた問題のキーが違う。作った問題はプリセットのカードのものを使い回す
+   */
+  const planIsStale = useMemo(() => {
+    if (!aiPlan) return false;
+    return planStale(compileInput, data, date, (rules, pins) => {
+      if (Object.keys(pins).length > 0) return undefined;
+      const key = JSON.stringify(rules);
+      if (problem && key === JSON.stringify(compileInput.rules)) return problem;
+      return presetKeys.find((k) => JSON.stringify(k.rules) === key)?.problem ?? undefined;
+    });
+  }, [aiPlan, compileInput, data, date, problem, presetKeys]);
+  /** （D43）作り直す：プリセットのカードを押したのと同じ（手直し・固定があれば確認）。プリセットに無い条件ならその条件で作る */
+  const remakeStale = () => {
+    const run = planRunOf(data, date);
+    if (!run) return;
+    const preset = presetOf(run.rules, data.presets);
+    if (preset) runPreset(preset);
+    else create(run.rules);
+  };
   /** 固定を残して組み直す（generated は変えない。固定は残す） */
   const resolve = () => {
     const p = check();
@@ -1196,7 +1220,13 @@ export default function PlanPage() {
   // ---- 訪問の取消・前の同じ曜日からコピー ----
   const cancelVisit = (v: Visit) => {
     if (!confirm('この訪問を取り消しますか？')) return;
-    update((d) => ({ ...d, visits: d.visits.map((x) => (x.id === v.id ? { ...x, cancelled: true } : x)) }));
+    // 定期パターンの訪問を取り消したら「この回だけの変更」（ADR-0012）
+    update((d) => ({
+      ...d,
+      visits: d.visits.map((x) =>
+        x.id === v.id ? { ...x, cancelled: true, pattern: x.pattern ? { ...x.pattern, edited: true } : null } : x,
+      ),
+    }));
     toast('取り消しました');
   };
   /** 1週前の訪問（と確定した割当）をこの日に写す。訪問が無い日だけ */
@@ -1210,7 +1240,8 @@ export default function PlanPage() {
     }
     if (!confirm(`${from} の訪問（と確定した割当）を ${date} にコピーします。よろしいですか？`)) return;
     const idMap = new Map(src.map((v) => [v.id, newId('v')]));
-    const copied = src.map((v) => ({ ...v, id: idMap.get(v.id) as string, date }));
+    // 写した訪問は単発の訪問にする（元の定期パターンの回ではないため。ADR-0012）
+    const copied = src.map((v) => ({ ...v, id: idMap.get(v.id) as string, date, pattern: null }));
     const cols: Cols = {};
     for (const [s, ids] of Object.entries(own(data.manualPlans, from) ?? {})) {
       const mapped = ids.map((id) => idMap.get(id)).filter((x): x is string => !!x);
@@ -1351,6 +1382,7 @@ export default function PlanPage() {
         drag={dragProps(id)}
         dragging={dragging === id}
         detail={<ReasonBox explain={explained.get(id)} />}
+        mark={<TypeMark type={typeOf(data.visitTypes, visitById.get(id)?.typeId)} compact />}
       >
         {(pin || hard || subFrom || shift || stay) && (
           <div className="row visit-tags">
@@ -1465,6 +1497,7 @@ export default function PlanPage() {
               hard: hardOf.get(id),
             })}
             clientLabel={terms.client}
+            typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
             onEdit={setEditing}
             onCancel={cancelVisit}
           />
@@ -1714,6 +1747,18 @@ export default function PlanPage() {
           </div>
         ) : (
           <>
+            {planIsStale && !running && (
+              <div className="card stale-note row" data-testid="plan-stale">
+                <WithIcon icon={TriangleAlert} size={16}>
+                  この案を作ったあとに、訪問・{terms.staff}・稼働時間・条件が変わりました
+                </WithIcon>
+                <button type="button" className="btn btn-small" disabled={!!running || !problem} onClick={remakeStale}>
+                  <WithIcon icon={RefreshCw} size={14}>
+                    作り直す
+                  </WithIcon>
+                </button>
+              </div>
+            )}
             <div className="card stack">
               <SectionTitle
                 icon={Gauge}
@@ -2311,6 +2356,7 @@ function VisitList({
   ownerName,
   notes,
   clientLabel,
+  typeOfVisit,
   onEdit,
   onCancel,
 }: {
@@ -2322,6 +2368,8 @@ function VisitList({
   ownerName: (id: string) => { name: string; color: string | undefined } | null;
   notes: (id: string) => VisitNotes;
   clientLabel: string;
+  /** 訪問の種類（ADR-0012。種類なしは null） */
+  typeOfVisit: (v: Visit) => VisitType | null;
   onEdit: (id: string) => void;
   onCancel: (v: Visit) => void;
 }) {
@@ -2367,6 +2415,16 @@ function VisitList({
                   </td>
                   <td>
                     <ClientName client={clientById.get(v.clientId)} />
+                    {(typeOfVisit(v) || v.pattern?.edited) && (
+                      <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+                        <TypeMark type={typeOfVisit(v)} compact />
+                        {v.pattern?.edited && (
+                          <span className="chip chip-warn" title="定期パターンのこの回だけ変えた訪問">
+                            この回だけの変更
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {v.note && <div className="sub">{v.note}</div>}
                   </td>
                   <td className="num nowrap">{v.durationMinutes}分</td>

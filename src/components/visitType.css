@@ -1,0 +1,25 @@
+/* 訪問の種類の印（ADR-0012） */
+.type-dot {
+  display: inline-block;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(59, 47, 42, 0.25);
+}
+.type-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 0.78rem;
+  color: var(--ink);
+  white-space: nowrap;
+  width: fit-content;
+  align-self: flex-start;
+}
+.type-mark.is-compact {
+  padding: 0 6px;
+  font-size: 0.72rem;
+}

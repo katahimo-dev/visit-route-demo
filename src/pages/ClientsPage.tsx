@@ -8,6 +8,7 @@ import { type Client, clientSchema } from '../contracts/documents';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
 import { useDemoData } from '../store';
+import { PatternsSection } from './PatternsSection';
 import './settings.css';
 
 /** 訪問先の一覧と編集（PoC本体 ClientsPage.tsx を写し、性別希望・NG を特性・条件・相性に置き換えた） */
@@ -222,6 +223,12 @@ export default function ClientsPage() {
               利用中（外すと休止）
             </Check>
           </div>
+
+          {isNew || !data.clients.some((x) => x.id === form.id) ? (
+            <Hint label="定期パターン">定期パターン（決まった曜日・時刻の訪問）は、保存してから足せます。</Hint>
+          ) : (
+            <PatternsSection client={form} />
+          )}
 
           <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={clientItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
