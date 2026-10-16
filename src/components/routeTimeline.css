@@ -1,0 +1,297 @@
+/* 予定の画面の時間軸（PRD D58） */
+.tl-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.tl-grid {
+  display: grid;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 0;
+  min-width: min-content;
+}
+.tl-corner {
+  grid-row: 1;
+  grid-column: 1;
+}
+.tl-gutter {
+  grid-row: 2;
+  grid-column: 1;
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: var(--card);
+}
+.tl-hour {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  font-size: 0.72rem;
+  color: var(--sub);
+}
+/* 列：見出しの行と時間の行を subgrid で全部の列にそろえる */
+.route-col.tl-col {
+  grid-row: 1 / span 2;
+  display: grid;
+  grid-template-rows: subgrid;
+  gap: 0;
+  padding: 0;
+  overflow: visible;
+}
+.tl-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 8px;
+  min-width: 0;
+}
+.tl-body {
+  position: relative;
+  margin: 0 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background-color: #fff;
+  /* 1時間ごとの線（位置は style の backgroundSize・backgroundPositionY で合わせる） */
+  background-image: linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px);
+  background-repeat: repeat-y;
+}
+.tl-bg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.tl-bg.is-off {
+  background: rgba(138, 122, 112, 0.16);
+}
+.tl-bg.is-absent {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(201, 74, 58, 0.18) 0,
+    rgba(201, 74, 58, 0.18) 6px,
+    rgba(255, 255, 255, 0.5) 6px,
+    rgba(255, 255, 255, 0.5) 12px
+  );
+  border-top: 1px dashed var(--danger);
+  border-bottom: 1px dashed var(--danger);
+}
+.tl-absent-label {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--danger);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.tl-empty {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  font-size: 0.78rem;
+}
+/* 訪問の帯 */
+.tl-band {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  display: flex;
+  overflow: hidden;
+  border: 1.5px solid rgba(59, 47, 42, 0.3);
+  border-radius: 6px;
+  background: #e2d8cf;
+  color: var(--ink);
+  cursor: grab;
+  z-index: 2;
+}
+.tl-band.is-red {
+  border: 2.5px solid var(--danger);
+}
+.tl-band.is-pinned {
+  border-color: var(--primary-dark);
+  border-style: solid;
+}
+.tl-band.is-picked {
+  outline: 3px solid var(--primary);
+  outline-offset: 1px;
+  z-index: 3;
+}
+.tl-band.is-dragging {
+  opacity: 0.4;
+}
+.tl-band-btn {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  padding: 1px 5px;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-align: left;
+  cursor: inherit;
+}
+.tl-band-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.tl-band-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tl-band-time {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tl-band-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.tl-band-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 帯の中の小さな印 */
+.tl-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.tl-mark.is-red {
+  color: #fff;
+  background: var(--danger);
+}
+.tl-mark.is-warn {
+  color: #7a4f05;
+  background: #fbefd6;
+}
+.tl-mark.is-pin {
+  color: var(--primary-dark);
+}
+.tl-mark.is-move {
+  color: #fff;
+  background: #4a78b5;
+}
+.tl-mark.is-tentative {
+  border: 1px dashed #a46d0a;
+  color: #7a4f05;
+  background: #fbefd6;
+}
+/* 押した帯の下に出す説明（印・理由） */
+.tl-detail {
+  position: absolute;
+  left: 0;
+  width: max(100%, 260px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1.5px solid var(--primary);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 6px 18px rgba(59, 47, 42, 0.18);
+}
+.tl-detail.is-right {
+  left: auto;
+  right: 0;
+}
+/* 移動：前の帯の終わりから細い線と「移動 N分」 */
+.tl-leg {
+  position: absolute;
+  left: 16px;
+  right: 4px;
+  border-left: 2px solid var(--sub);
+  display: flex;
+  align-items: center;
+  z-index: 2;
+  pointer-events: none;
+}
+.tl-leg.is-drive {
+  z-index: 3;
+}
+/* 自宅からは最初の帯の上、自宅までは最後の帯の下に文を寄せる（帯に重ねない） */
+.tl-leg.is-fromHome {
+  align-items: flex-end;
+}
+.tl-leg.is-toHome {
+  align-items: flex-start;
+}
+.tl-leg.is-on {
+  border-left-color: var(--primary);
+  border-left-width: 3px;
+}
+.tl-leg-btn.leg-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--card);
+}
+/* 待ち：点線の枠 */
+.tl-wait {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  border: 1.5px dotted var(--sub);
+  border-radius: 6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.tl-wait-label {
+  padding: 0 4px;
+  font-size: 0.64rem;
+  color: var(--sub);
+}
+/* ドラッグ中の影（入る＝緑、入らない＝赤）。色だけに頼らず文も出す */
+.tl-shadow {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 2px;
+  border: 2.5px dashed;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+.tl-shadow.is-ok {
+  border-color: var(--ok);
+  background: rgba(90, 165, 122, 0.16);
+  color: #2f6e4a;
+}
+.tl-shadow.is-ng {
+  border-color: var(--danger);
+  background: rgba(201, 74, 58, 0.12);
+  color: var(--danger);
+}

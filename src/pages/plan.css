@@ -771,3 +771,15 @@
   color: #7a5208;
   padding: 10px 14px;
 }
+
+/* 担当ごとの表示の切り替え（時間軸／順番。PRD D58）。狭い幅・印刷では順番だけなので出さない */
+@media (max-width: 900px) {
+  .plan-view-toggle {
+    display: none;
+  }
+}
+@media print {
+  .plan-view-toggle {
+    display: none;
+  }
+}
