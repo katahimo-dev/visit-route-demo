@@ -1,0 +1,86 @@
+/* 人を複数選ぶチップ（PickChips。週間の時間軸・〈利用者さん〉×曜日の表） */
+fieldset.pick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.pick-chips-legend {
+  float: left;
+  margin-right: 4px;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.pick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--sub);
+  font: inherit;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pick-chip:hover,
+.pick-chip:focus-visible {
+  border-color: var(--primary);
+}
+.pick-chip.is-on {
+  background: var(--soft);
+  border-color: #cdbcb0;
+  color: var(--ink);
+}
+.pick-chip-check {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  font-weight: 700;
+}
+.pick-chip-color {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+/* ドラッグ中に担当できる人：太い枠と「担当できる」の文字 */
+.pick-chip.is-strong {
+  border: 2px solid var(--ok);
+  background: #e1f1e7;
+  color: var(--ink);
+  font-weight: 700;
+}
+.pick-chip.is-dim {
+  opacity: 0.55;
+}
+.pick-chip-strong {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ok);
+  color: #fff;
+  font-size: 0.7rem;
+}
+.pick-badges {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+abbr.pick-badge {
+  padding: 0 4px;
+  border: 1px solid #b9a79a;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 400;
+  text-decoration: none;
+  cursor: help;
+}

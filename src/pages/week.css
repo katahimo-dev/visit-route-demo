@@ -111,7 +111,8 @@ label.week-who {
   align-items: flex-start;
   overflow: hidden;
   padding: 2px 4px;
-  border: 1px solid rgba(59, 47, 42, 0.25);
+  /* 縁の色は担当（〈利用者さん〉で見るときは〈利用者さん〉）の色。style の borderColor で上書き */
+  border: 2px solid rgba(59, 47, 42, 0.25);
   border-radius: 6px;
   background: #e2d8cf;
   color: var(--ink);
@@ -198,4 +199,119 @@ label.week-who {
 .week-table tfoot th,
 .week-table tfoot td {
   background: var(--soft);
+}
+
+/* ---- 月間・週間の改定（D56・D57） ---- */
+.week-by {
+  flex: none;
+}
+/* 担当が種類の必要条件を満たさない帯：赤い枠と「資格✗」 */
+.week-band.is-unfit,
+.week-citem.is-unfit {
+  border: 3px solid var(--danger);
+}
+.week-band-unfit,
+.week-legend-unfit {
+  display: inline-block;
+  margin-right: 3px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.week-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 1px 3px;
+}
+.week-drop-fit {
+  align-self: flex-start;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.week-allowed {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ok);
+}
+.week-quals .week-qual {
+  gap: 6px;
+  padding: 3px 10px;
+}
+.week-quals .week-qual:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+/* 〈利用者さん〉×曜日の表 */
+.week-client-name {
+  gap: 6px;
+  white-space: nowrap;
+}
+.week-client-color {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.week-clients td.week-ccell {
+  min-width: 100px;
+  height: 48px;
+}
+.week-clients td.is-past {
+  background: #f1ece7;
+}
+.week-clients td.is-drop {
+  outline: 2px dashed var(--primary);
+  outline-offset: -3px;
+  background: var(--primary-soft);
+}
+.week-citem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-left: 5px solid #cdbcb0;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  text-align: left;
+  cursor: grab;
+}
+.week-citem:hover,
+.week-citem:focus-visible {
+  outline: 2px solid var(--primary);
+}
+.week-citem.is-unassigned {
+  border: 2px dashed var(--danger);
+}
+.week-citem-type {
+  gap: 3px;
+}
+.week-citem-staff {
+  color: var(--sub);
+}
+.week-cdrop {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.week-clients {
+  table-layout: fixed;
+}
+.week-clients th:first-child {
+  width: 150px;
 }
