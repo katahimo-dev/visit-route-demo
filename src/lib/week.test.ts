@@ -4,6 +4,7 @@ import type { Pattern } from '../contracts/documents';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import { applyPatterns } from '../patterns';
 import {
+  canMoveVisit,
   changedDates,
   INSERT_RUN_LABEL,
   insertAllIntoPlans,
@@ -121,7 +122,7 @@ describe('moveOnce（この回だけ）', () => {
       ...base,
       visits: base.visits.map((v) => (v.id === '2026-10-19_p1' ? { ...v, staffId: 's1' } : v)),
     };
-    const next = moveOnce(d, '2026-10-19_p1', '2026-10-21', 10 * 60 + 15);
+    const next = moveOnce(d, '2026-10-19_p1', '2026-10-21', 10 * 60 + 15, DATE);
     const v = next.visits.find((x) => x.id === '2026-10-19_p1')!;
     expect(v.date).toBe('2026-10-21');
     expect(v.earliestStart).toBe('10:15');
@@ -133,12 +134,26 @@ describe('moveOnce（この回だけ）', () => {
     expect(next.patterns).toEqual(d.patterns);
   });
 
+  it('今日より前の訪問・今日より前の日へは動かさない（そのまま）', () => {
+    const d = withPatterns([pattern('p1', [1])]);
+    const today = '2026-10-14';
+    expect(moveOnce(d, '2026-10-12_p1', '2026-10-20', 600, today)).toBe(d);
+    expect(moveOnce(d, '2026-10-19_p1', '2026-10-13', 600, today)).toBe(d);
+    expect(moveOnce(d, '2026-10-19_p1', today, 600, today)).not.toBe(d);
+  });
+
+  it('canMoveVisit：今日以降の訪問だけ・今日以降の日へだけ動かせる', () => {
+    expect(canMoveVisit('2026-10-13', '2026-10-14')).toBe(false);
+    expect(canMoveVisit('2026-10-14', '2026-10-14')).toBe(true);
+    expect(canMoveVisit('2026-10-20', '2026-10-14')).toBe(true);
+  });
+
   it('単発の訪問は pattern が null のまま。無い訪問はそのまま', () => {
     const d = makeData({ visits: [visit('v1', 'c1', '09:00', '09:00')] });
-    const next = moveOnce(d, 'v1', DATE, 11 * 60);
+    const next = moveOnce(d, 'v1', DATE, 11 * 60, DATE);
     expect(next.visits[0]!.pattern).toBeNull();
     expect(next.visits[0]!.earliestStart).toBe('11:00');
-    expect(moveOnce(d, 'nope', DATE, 600)).toBe(d);
+    expect(moveOnce(d, 'nope', DATE, 600, DATE)).toBe(d);
   });
 });
 
@@ -154,7 +169,8 @@ describe('moveFollowing（以降すべて）', () => {
     expect(p1.to).toBe('2026-10-18');
     const np1 = r.data.patterns.find((p) => p.id === 'np1')!;
     expect(np1.weekdays).toEqual([2]);
-    expect(np1.from).toBe('2026-10-19');
+    // 新しいパターンの from はドラッグした日（複数の曜日の分岐とそろえる）
+    expect(np1.from).toBe('2026-10-20');
     expect(changedDates(r.change)).toEqual(['2026-10-19', '2026-10-20', '2026-10-26', '2026-10-27']);
   });
 
@@ -180,6 +196,67 @@ describe('moveFollowing（以降すべて）', () => {
   it('単発の訪問は null', () => {
     const d = makeData({ visits: [visit('v1', 'c1', '09:00', '09:00')] });
     expect(moveFollowing(d, 'v1', DATE, 600, DATE, ['a', 'b'])).toBeNull();
+  });
+
+  it('取り消し・この回だけの変更の回は、時刻だけ動かしても復活・二重にならない（毎週水曜）', () => {
+    const base = withPatterns([pattern('p1', [3])]);
+    const d = {
+      ...base,
+      visits: base.visits.map((v) =>
+        v.id === '2026-10-28_p1' ? { ...v, cancelled: true, pattern: { ...v.pattern!, edited: true } } : v,
+      ),
+    };
+    const r = moveFollowing(d, '2026-10-21_p1', '2026-10-21', 15 * 60, DATE, ['np1', 'np2'])!;
+    expect(r.data.visits.filter((v) => v.date === '2026-10-28').map((v) => v.id)).toEqual(['2026-10-28_p1']);
+    expect(r.data.visits.find((v) => v.id === '2026-10-28_p1')!.cancelled).toBe(true);
+    expect(r.data.visits.filter((v) => v.date === '2026-10-21').map((v) => v.id)).toEqual(['2026-10-21_np1']);
+    expect(r.movedVisitId).toBe('2026-10-21_np1');
+  });
+
+  it('ほかの曜日もあるパターンでも、取り消した回は二重にならない', () => {
+    const base = withPatterns([pattern('p1', [1, 3])]);
+    const d = {
+      ...base,
+      visits: base.visits.map((v) =>
+        v.id === '2026-10-28_p1' ? { ...v, cancelled: true, pattern: { ...v.pattern!, edited: true } } : v,
+      ),
+    };
+    const r = moveFollowing(d, '2026-10-21_p1', '2026-10-21', 15 * 60, DATE, ['np1', 'np2'])!;
+    expect(r.data.visits.filter((v) => v.date === '2026-10-28').map((v) => v.id)).toEqual(['2026-10-28_p1']);
+    expect(r.movedVisitId).toBe('2026-10-21_np2');
+  });
+
+  it('この回だけ変えてあった回を「以降すべて」で同じ日に動かすと、その回は新しいパターンの回になる', () => {
+    const base = withPatterns([pattern('p1', [3])]);
+    const d = {
+      ...base,
+      visits: base.visits.map((v) =>
+        v.id === '2026-10-21_p1'
+          ? { ...v, earliestStart: '16:00', latestStart: '16:00', pattern: { ...v.pattern!, edited: true } }
+          : v,
+      ),
+    };
+    const r = moveFollowing(d, '2026-10-21_p1', '2026-10-21', 15 * 60, DATE, ['np1', 'np2'])!;
+    const on21 = r.data.visits.filter((v) => v.date === '2026-10-21');
+    expect(on21.map((v) => [v.id, v.earliestStart])).toEqual([['2026-10-21_np1', '15:00']]);
+    expect(r.change.removed).toContainEqual({ visitId: '2026-10-21_p1', date: '2026-10-21' });
+  });
+
+  it('隔週を翌週の別の曜日へ動かすと、ドラッグした日に回ができる（新しいパターンの from はドラッグした日）', () => {
+    const d = withPatterns([pattern('p1', [1], { everyWeeks: 2 })]);
+    expect(d.visits.map((v) => v.id)).toEqual(['2026-10-12_p1', '2026-10-26_p1']);
+    const r = moveFollowing(d, '2026-10-26_p1', '2026-11-03', 10 * 60, DATE, ['np1', 'np2'])!;
+    expect(r.movedVisitId).toBe('2026-11-03_np1');
+    expect(r.data.patterns.find((p) => p.id === 'np1')!.from).toBe('2026-11-03');
+    expect(r.data.patterns.find((p) => p.id === 'p1')!.to).toBe('2026-10-25');
+    expect(r.data.visits.map((v) => v.id).sort()).toEqual(['2026-10-12_p1', '2026-11-03_np1']);
+  });
+
+  it('今日より前の訪問・今日より前の日へは動かさない（null）。今日より前の訪問は残る', () => {
+    const d = withPatterns([pattern('p1', [1])]);
+    const today = '2026-10-14';
+    expect(moveFollowing(d, '2026-10-12_p1', '2026-10-20', 600, today, ['np1', 'np2'])).toBeNull();
+    expect(moveFollowing(d, '2026-10-19_p1', '2026-10-13', 600, today, ['np1', 'np2'])).toBeNull();
   });
 });
 

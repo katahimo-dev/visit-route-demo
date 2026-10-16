@@ -25,6 +25,7 @@ import { typeOf } from '../lib/patternText';
 import { useDayModel } from '../lib/useDayModel';
 import {
   type Band,
+  canMoveVisit,
   changedDates,
   DAY_END,
   DAY_START,
@@ -112,7 +113,13 @@ export default function WeekPage() {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const v = visitById.get(b.visitId);
-    if (v) openMove(b.visitId, v.date, hhmmToMinutes(v.earliestStart));
+    if (!v) return;
+    // 今日より前の訪問は動かさない
+    if (!canMoveVisit(v.date, today)) {
+      toast('今日より前の訪問は動かせません');
+      return;
+    }
+    openMove(b.visitId, v.date, hhmmToMinutes(v.earliestStart));
   };
   const onDragStart = (e: DragEvent<HTMLElement>, visitId: string) => {
     e.dataTransfer.setData('text/plain', visitId);
@@ -126,7 +133,8 @@ export default function WeekPage() {
     return snapMinutes(DAY_START + (e.clientY - top - g.offset) / PX_PER_MIN);
   };
   const onDragOver = (e: DragEvent<HTMLElement>, d: string) => {
-    if (!grab.current) return;
+    // 今日より前の日には落とせない（preventDefault しない）
+    if (!grab.current || !canMoveVisit(d, today)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     const s = dropStart(e);
@@ -140,7 +148,11 @@ export default function WeekPage() {
     setHover(null);
     if (!g || s === null) return;
     const v = visitById.get(g.visitId);
-    if (!v) return;
+    if (!v || !canMoveVisit(v.date, today)) return;
+    if (!canMoveVisit(d, today)) {
+      toast('今日より前の日へは動かせません');
+      return;
+    }
     // 範囲外は戻す（何もしない）
     if (!inDayRange(s, v.durationMinutes)) {
       toast(`${hm(DAY_START)}〜${hm(DAY_END)} の中に置いてください`);
@@ -167,6 +179,10 @@ export default function WeekPage() {
   const submitMove = () => {
     if (!draft || !moving) return;
     if (!DATE_RE.test(draft.date)) return;
+    if (!canMoveVisit(moving.date, today) || !canMoveVisit(draft.date, today)) {
+      toast('今日より前の日へは動かせません');
+      return;
+    }
     const label = `${clientName(moving)} ${md(draft.date)} ${hm(draft.start)}`;
     let movedId: string | null = draft.visitId;
     if (draft.mode === 'following' && movingPattern) {
@@ -184,7 +200,7 @@ export default function WeekPage() {
       update((d) => moveFollowing(d, draft.visitId, draft.date, draft.start, today, ids)?.data ?? d);
       movedId = preview.movedVisitId;
     } else {
-      update((d) => moveOnce(d, draft.visitId, draft.date, draft.start));
+      update((d) => moveOnce(d, draft.visitId, draft.date, draft.start, today));
     }
     setDraft(null);
     if (movedId && own(data.aiPlans, draft.date)) {
@@ -353,6 +369,7 @@ export default function WeekPage() {
               <DayColumn
                 key={day.date}
                 day={day}
+                today={today}
                 who={who}
                 hover={hover?.date === day.date ? hover.start : null}
                 hoverMinutes={grab.current ? (visitById.get(grab.current.visitId)?.durationMinutes ?? 60) : 60}
@@ -479,7 +496,13 @@ export default function WeekPage() {
           onClose={() => setDraft(null)}
           footer={
             <>
-              <button type="button" className="btn btn-primary" onClick={submitMove} data-testid="move-submit">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={submitMove}
+                disabled={!DATE_RE.test(draft.date) || !canMoveVisit(draft.date, today)}
+                data-testid="move-submit"
+              >
                 <WithIcon icon={Move}>動かす</WithIcon>
               </button>
               <button type="button" className="btn" onClick={() => setDraft(null)}>
@@ -500,6 +523,7 @@ export default function WeekPage() {
               <input
                 type="date"
                 value={draft.date}
+                min={today}
                 onChange={(e) => setDraft({ ...draft, date: e.target.value })}
                 data-testid="move-date"
               />
@@ -519,6 +543,11 @@ export default function WeekPage() {
               </select>
             </label>
           </div>
+          {DATE_RE.test(draft.date) && !canMoveVisit(draft.date, today) && (
+            <p className="warn-text" data-testid="move-past">
+              今日より前の日へは動かせません
+            </p>
+          )}
           {movingPattern ? (
             <fieldset className="stack" style={{ gap: 6 }}>
               <legend>定期パターンの訪問です</legend>
@@ -564,6 +593,7 @@ export default function WeekPage() {
 /** 時間軸の1日の列（帯・ドラッグの受け口） */
 function DayColumn({
   day,
+  today,
   who,
   hover,
   hoverMinutes,
@@ -578,6 +608,8 @@ function DayColumn({
   onDrop,
 }: {
   day: WeekDay;
+  /** 今日（今日より前の帯はドラッグできない） */
+  today: string;
   who: string;
   hover: number | null;
   hoverMinutes: number;
@@ -622,11 +654,13 @@ function DayColumn({
         const { client, staff } = bandLabel(b);
         const color = typeColor(v);
         const h = Math.max(18, (Math.min(b.end, DAY_END) - Math.max(b.start, DAY_START)) * PX_PER_MIN);
+        // 今日より前の訪問は動かさない（ドラッグ・Enter を止める）
+        const movable = canMoveVisit(b.date, today);
         return (
           <button
             key={b.visitId}
             type="button"
-            draggable
+            draggable={movable}
             className={`week-band${b.staffId === null ? ' is-unassigned' : ''}`}
             style={{
               top: top(b.start),
@@ -636,10 +670,10 @@ function DayColumn({
               background: color ?? undefined,
             }}
             title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}`}
-            aria-label={`${hm(b.start)} ${client}・${staff}（押すと予定の画面、Enter で日時を動かす）`}
+            aria-label={`${hm(b.start)} ${client}・${staff}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
             onClick={() => onOpen(b)}
             onKeyDown={(e) => onKey(e, b)}
-            onDragStart={(e) => onDragStart(e, b.visitId)}
+            onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}
             onDragEnd={onDragEnd}
             data-testid="week-band"
             data-visit={b.visitId}

@@ -180,13 +180,17 @@ function shiftedTimes(v: Pick<Visit, 'earliestStart' | 'latestStart'>, start: nu
   return { earliestStart: minutesToHhmm(start), latestStart: minutesToHhmm(start + width) };
 }
 
+/** 今日より前の日の訪問・今日より前の日へは動かさない（帯のドラッグ・drop・日付の選択・moveOnce・moveFollowing で共通） */
+export const canMoveVisit = (date: string, today: string): boolean => date >= today;
+
 /**
  * 「この回だけ」：訪問の日付と開始（早・遅。幅は保つ）を変え、パターンの訪問なら pattern.edited を true にする。
- * 日付が変わるときは手作業の担当（staffId）を外す（前の日の確定した割当の担当なので）。訪問が無ければそのまま
+ * 日付が変わるときは手作業の担当（staffId）を外す（前の日の確定した割当の担当なので）。
+ * 訪問が無い・訪問の日か新しい日が今日より前ならそのまま
  */
-export function moveOnce(d: DemoData, visitId: string, date: string, start: number): DemoData {
+export function moveOnce(d: DemoData, visitId: string, date: string, start: number, today: string): DemoData {
   const v = d.visits.find((x) => x.id === visitId);
-  if (!v) return d;
+  if (!v || !canMoveVisit(v.date, today) || !canMoveVisit(date, today)) return d;
   const next: Visit = {
     ...v,
     date,
@@ -205,12 +209,32 @@ export type MoveFollowing = {
 };
 
 /**
+ * pattern を range に展開し（applyPatterns）、skipDates の日の回は足さない。足した訪問は visits の後ろに付ける
+ */
+function expandSkipping(
+  pattern: Pattern,
+  visits: Visit[],
+  clients: DemoData['clients'],
+  range: { from: string; to: string },
+  today: string,
+  skipDates: ReadonlySet<string>,
+): Pick<PatternChange, 'visits' | 'added'> {
+  const r = applyPatterns({ patterns: [pattern], visits, clients }, range, today);
+  const added = r.added.filter((a) => !skipDates.has(a.date));
+  const keep = new Set(added.map((a) => a.visitId));
+  return { visits: [...visits, ...r.visits.slice(visits.length).filter((v) => keep.has(v.id))], added };
+}
+
+/**
  * 「以降すべて」：元の日（since）以降の〈曜日〉の回を〈新しい曜日・時刻〉にする（patterns の splitPattern を使う）。
  * 元の日・元の曜日はパターンの元の日（visit.pattern.date）。新しい日が元の日より前なら since は新しい日。
- * パターンの曜日が1つだけなら、曜日を入れ替え時刻を変えたパターンに分ける（splitPattern 1回）。
+ * 新しい曜日・時刻のパターンの from はドラッグした日（新しい日。隔週などの週の数え始め）。
+ * パターンの曜日が1つだけなら、曜日を入れ替え時刻を変えたパターンに分ける（splitPattern 1回。分けたパターンの from を新しい日にして展開し直す）。
  * ほかの曜日もあるなら、ほかの曜日は時刻を変えずに残し（splitPattern で元の曜日を抜く）、新しい曜日・時刻のパターンを
  * newIds[1] で足して展開する（ほかの曜日の時刻を変えない）。
- * パターンの訪問でない・パターンが無ければ null
+ * 動かす回はいったん除いてから分ける（この回だけ変えてあっても、新しいパターンの回が代わりに入る）。
+ * 残した edited・取り消しの回の元の日（max(since, 今日) 以降）には新しいパターンの回を作らない（splitPattern と同じ規則）。
+ * パターンの訪問でない・パターンが無い・訪問の日か新しい日が今日より前なら null
  */
 export function moveFollowing(
   d: DemoData,
@@ -223,51 +247,51 @@ export function moveFollowing(
   const v = d.visits.find((x) => x.id === visitId);
   const p = v?.pattern ? d.patterns.find((x) => x.id === v.pattern!.id) : undefined;
   if (!v?.pattern || !p) return null;
+  // 今日より前の訪問は動かさず、残す（今日より前の日へも動かさない）
+  if (!canMoveVisit(v.date, today) || !canMoveVisit(date, today)) return null;
   const origDate = v.pattern.date;
   const since = date < origDate ? date : origDate;
   const fromWd = weekday(origDate);
   const toWd = weekday(date);
   const times = shiftedTimes(p, start);
   const { id: _id, from: _from, ...rest } = p;
-  const input = { patterns: d.patterns, visits: d.visits, clients: d.clients };
+  // 動かす回は除いてから分ける
+  const visits = d.visits.filter((x) => x.id !== visitId);
+  const input = { patterns: d.patterns, visits, clients: d.clients };
   const others = p.weekdays.filter((w) => w !== fromWd);
-  let change: PatternChange;
   // 展開し直す範囲の終わり：元のパターンの最後の回を新しい曜日へずらした日（splitPattern は元の最後の回の日までしか作らない）
   const lastOwn = d.visits.filter((x) => x.pattern?.id === p.id).reduce((m, x) => (x.date > m ? x.date : m), date);
   const end = addDays(lastOwn, (toWd - fromWd + 7) % 7);
+  // 残した edited・取り消しの回の元の日には作らない
+  const first = since > today ? since : today;
+  const skip = new Set(
+    visits
+      .filter((x) => x.pattern?.id === p.id && (x.cancelled || x.pattern.edited) && x.pattern.date >= first)
+      .map((x) => x.pattern!.date),
+  );
+  let change: PatternChange;
   if (others.length === 0) {
     const split = splitPattern(input, p.id, { ...rest, ...times, weekdays: [toWd] }, since, today, newIds[0]);
-    const rebuilt = split.patterns.find((x) => x.id === newIds[0]) ?? split.patterns.find((x) => x.id === p.id);
-    const more = rebuilt
-      ? applyPatterns(
-          { patterns: [rebuilt], visits: split.visits, clients: d.clients },
-          { from: since, to: end },
-          today,
-        )
-      : null;
-    change = more ? { ...split, visits: more.visits, added: [...split.added, ...more.added] } : split;
+    const rid = split.patterns.some((x) => x.id === newIds[0]) ? newIds[0] : p.id;
+    const rebuilt: Pattern = { ...split.patterns.find((x) => x.id === rid)!, from: date };
+    const patterns = split.patterns.map((x) => (x.id === rid ? rebuilt : x));
+    // splitPattern が from = since で足した回を除き、from = 新しい日で展開し直す
+    const addedIds = new Set(split.added.map((a) => a.visitId));
+    const base = split.visits.filter((x) => !addedIds.has(x.id));
+    const more = expandSkipping(rebuilt, base, d.clients, { from: since, to: end }, today, skip);
+    change = { patterns, visits: more.visits, added: more.added, removed: split.removed };
   } else {
-    const first = splitPattern(input, p.id, { ...rest, weekdays: others }, since, today, newIds[0]);
+    const split = splitPattern(input, p.id, { ...rest, weekdays: others }, since, today, newIds[0]);
     const moved: Pattern = { ...rest, ...times, id: newIds[1], weekdays: [toWd], from: date };
-    const patterns = [...first.patterns];
+    const patterns = [...split.patterns];
     // 分けたパターン（無ければ元のパターン）のすぐあとに置く
     const anchor = patterns.findIndex((x) => x.id === newIds[0]);
     patterns.splice((anchor >= 0 ? anchor : patterns.findIndex((x) => x.id === p.id)) + 1, 0, moved);
-    const second = applyPatterns(
-      { patterns: [moved], visits: first.visits, clients: d.clients },
-      { from: date, to: end },
-      today,
-    );
-    change = { patterns, visits: second.visits, added: [...first.added, ...second.added], removed: first.removed };
+    const more = expandSkipping(moved, split.visits, d.clients, { from: date, to: end }, today, skip);
+    change = { patterns, visits: more.visits, added: [...split.added, ...more.added], removed: split.removed };
   }
-  // この回だけ変えてあった訪問は splitPattern が残すので、動かした回として除く（新しいパターンの回が代わりに入る）
-  if (change.visits.some((x) => x.id === visitId)) {
-    change = {
-      ...change,
-      visits: change.visits.filter((x) => x.id !== visitId),
-      removed: [...change.removed, { visitId, date: v.date }],
-    };
-  }
+  // 動かした回は除いた（新しいパターンの回が代わりに入る）
+  change = { ...change, removed: [...change.removed, { visitId, date: v.date }] };
   const data = { ...d, patterns: change.patterns, visits: change.visits };
   const movedId = [newIds[1], newIds[0], p.id]
     .map((pid) => `${date}_${pid}`)
