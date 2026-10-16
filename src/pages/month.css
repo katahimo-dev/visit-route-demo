@@ -54,7 +54,7 @@
 .month-cell-btn {
   width: 100%;
   height: 100%;
-  min-height: 112px;
+  min-height: 118px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -80,12 +80,6 @@
   background: var(--soft);
   color: var(--sub);
 }
-.month-cell.is-care .month-cell-btn {
-  border: 2.5px solid var(--warn);
-}
-.month-cell.is-past.is-care .month-cell-btn {
-  border: 1.5px solid var(--line);
-}
 .month-cell.is-picked .month-cell-btn {
   box-shadow: 0 0 0 2px var(--primary-soft);
 }
@@ -106,29 +100,6 @@
   border-radius: 999px;
   padding: 0 6px;
 }
-.month-state {
-  border-radius: 999px;
-  padding: 0 6px;
-  font-weight: 700;
-  background: #f3ebe4;
-  color: var(--sub);
-}
-.month-state.is-plan {
-  background: #e7eefb;
-  color: #3d62a0;
-}
-.month-state.is-confirmed {
-  background: #e1f1e7;
-  color: #2f7a50;
-}
-.month-state.is-diff {
-  background: #fbefd6;
-  color: #8a5a06;
-}
-.month-score {
-  font-weight: 700;
-  font-size: 0.9rem;
-}
 .month-flag {
   display: inline-flex;
   align-items: center;
@@ -140,11 +111,6 @@
 }
 .month-flag.is-red {
   color: var(--danger);
-}
-.month-care {
-  margin-top: auto;
-  font-weight: 700;
-  color: #8a5a06;
 }
 .batch-mode {
   border: 1.5px solid var(--line);
@@ -159,41 +125,330 @@
 .batch-mode label.check {
   font-size: 0.95rem;
 }
-/* 日の午前・午後の空き（D48。段階3） */
-.month-free {
-  margin-top: auto;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* ---- 月間の改定（D53〜D55）---- */
+.month-pickers {
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
-.month-free-row {
+.month-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.month-picker select {
+  width: auto;
+  min-width: 12em;
+}
+/* 凡例（見出しに1回） */
+.month-legend {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+.month-legend-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.month-legend-item {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
 }
-.month-free-label {
-  flex: none;
-  font-size: 0.62rem;
-  color: var(--sub);
-  line-height: 1;
+.month-legend-load {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
 }
-.month-free-bar {
+.month-legend-ruler {
+  display: inline-flex;
+  flex-direction: column;
+  width: 120px;
+  gap: 4px;
+}
+.month-legend-bar {
+  display: block;
+  height: 8px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #ddd5ce, #ddd5ce 8px, #fff 8px, #fff 9px);
+}
+.month-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  color: #fff;
+}
+/* 状態：案なし＝白・点線、案あり＝淡い緑、確定済み＝濃い緑＋鍵、未確定の変更あり＝淡い黄、手当てが必要＝赤い枠＋赤い点 */
+.month-swatch.is-state-none,
+.month-cell.is-state-none .month-cell-btn {
+  background: #fff;
+  border-style: dashed;
+  border-color: #cdbfb4;
+}
+.month-swatch.is-state-plan,
+.month-cell.is-state-plan .month-cell-btn {
+  background: #eef7f0;
+  border-color: #cfe6d6;
+}
+.month-swatch.is-state-confirmed {
+  background: #4f9a6c;
+  border-color: #3f8a5c;
+}
+.month-cell.is-state-confirmed .month-cell-btn {
+  background: #dcefe2;
+  border-color: #4f9a6c;
+}
+.month-swatch.is-state-diff,
+.month-cell.is-state-diff .month-cell-btn {
+  background: #fdf4d8;
+  border-color: #ecd48f;
+}
+.month-swatch.is-care,
+.month-cell.is-care .month-cell-btn {
+  border: 2.5px solid var(--danger);
+}
+.month-cell.is-past .month-cell-btn {
+  opacity: 0.6;
+}
+.month-cell.is-rest .month-cell-btn {
+  background: #efeae6;
+}
+.month-cell-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.month-count {
+  margin-left: auto;
+  font-weight: 700;
+}
+.month-lock {
+  color: #2f7a50;
+}
+.month-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.month-marks,
+.month-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  line-height: 1.35;
+}
+.month-mark {
+  color: var(--sub);
+  white-space: nowrap;
+}
+.month-mark.is-absent {
+  color: var(--danger);
+  font-weight: 700;
+}
+.month-load {
+  margin-top: auto;
+  width: 100%;
+  padding-top: 2px;
+}
+/* 選んだ〈スタッフ〉 */
+.month-shift {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 700;
+}
+.month-shift.is-off {
+  color: var(--sub);
+}
+.month-shift.is-absent {
+  color: var(--danger);
+}
+.month-staff-load {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.month-staff-count {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.month-meter {
+  position: relative;
   flex: 1;
-  height: 5px;
+  height: 7px;
   border-radius: 999px;
   background: #efe6de;
+}
+.month-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: #5aa57a;
+}
+.month-meter-fill.is-over {
+  background: #eaa142;
+}
+.month-meter-target {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  border-left: 2px solid var(--ink);
+}
+/* 選んだ〈利用者さん〉 */
+.month-cvisits {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+}
+.month-cvisit {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
   overflow: hidden;
 }
-.month-free-bar.is-none {
-  background: repeating-linear-gradient(90deg, #efe6de, #efe6de 3px, transparent 3px, transparent 6px);
+.month-cvisit.is-cancelled {
+  color: var(--sub);
+  text-decoration: line-through;
 }
-.month-free-fill {
-  display: block;
-  height: 100%;
-  background: var(--ok);
-  border-radius: 999px;
+.month-cvisit-time {
+  font-variant-numeric: tabular-nums;
 }
-.month-care + .month-free {
-  margin-top: 2px;
+.month-cvisit-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.month-type-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.month-badge {
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 0 3px;
+  border: 1px solid var(--sub);
+  color: var(--ink);
+  background: #fff;
+}
+.month-badge.is-sub {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+/* カレンダーと右の欄 */
+.month-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .month-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.month-aside {
+  gap: 10px;
+}
+.month-aside-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 1.05rem;
+}
+.month-aside-sub {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+}
+.month-attention,
+.month-bystaff,
+.month-types {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.month-attention-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.month-attention-btn:hover {
+  border-color: var(--primary);
+}
+.month-attention-btn.is-unassigned {
+  border-left: 4px solid var(--danger);
+}
+.month-attention-btn.is-stale {
+  border-left: 4px solid var(--warn);
+}
+.month-attention-btn.is-absence {
+  border-left: 4px solid var(--sub);
+}
+.month-attention-date {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.month-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.month-facts dt {
+  color: var(--sub);
+}
+.month-facts dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+.month-bystaff li,
+.month-types li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.month-bystaff li > :last-child,
+.month-types li > :last-child {
+  margin-left: auto;
+  font-weight: 700;
+}
+.month-quals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }

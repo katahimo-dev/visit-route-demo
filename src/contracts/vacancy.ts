@@ -1,6 +1,6 @@
 /**
  * 空き状況と問い合わせの試算（vacancy）の入出力（design.md §5「空き状況と問い合わせの試算」。ADR-0012 追記。段階3）。
- * 関数（vacancyOf・verdictOf・inquirySummary・dayFreeness）の実装は src/vacancy/（下の関数の型で注釈する）。
+ * 関数（vacancyOf・verdictOf・inquirySummary・dayLoad）の実装は src/vacancy/（下の関数の型で注釈する）。
  * 時刻は0時からの分。例外を投げない：いない種類は種類なし、時刻の範囲が空なら times が空。
  * データ・今の案は書き換えない
  */
@@ -78,10 +78,13 @@ export type Verdict = 'ok' | 'partial' | 'ng' | 'unknown';
 /** from〜to は開始時刻の範囲（HH:mm） */
 export type InquiryWish = { weekdays: number[]; from: string; to: string; perWeek: number; startDate: string };
 
-/** 0〜1 */
-export type DayFreeness = { am: number | null; pm: number | null };
+/** 日の混み具合（D54）の30分1つ。working＝その30分に稼働時間帯がある人、free＝そのうち元の案の訪問と重ならない人 */
+export type DayLoadSlot = { start: number; working: number; free: number };
+/** 日の混み具合で数える人。typeId があれば、その種類の必要条件を満たす人だけ（いない種類は種類なし） */
+export type DayLoadFilter = { typeId: string | null };
 
 export type VacancyOf = (data: DemoData, query: VacancyQuery, range: VacancyRange) => VacancyResult;
 export type VerdictOf = (cell: VacancyCell) => Verdict;
 export type InquirySummary = (result: VacancyResult, wish: InquiryWish, terms: Terms) => string;
-export type DayFreenessFn = (data: DemoData, date: string) => DayFreeness;
+/** 07:00〜20:00 の30分ごと（開始の順）。案の無い日は null（D54。dayFreeness を置き換え） */
+export type DayLoadFn = (data: DemoData, date: string, filter: DayLoadFilter) => DayLoadSlot[] | null;

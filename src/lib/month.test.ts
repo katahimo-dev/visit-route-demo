@@ -1,19 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
+import type { Pattern, VisitType } from '../contracts/documents';
 import type { SolveResult } from '../contracts/problem';
+import { addDays, hhmmToMinutes } from '../domain/time';
 import { compile } from '../matching';
+import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import { applyPatterns } from '../patterns';
 import { createDemoData, scoreRulesOf } from '../seed';
 import {
   addMonths,
   applyDayRun,
+  attentionList,
   batchTargets,
   calendarWeeks,
+  clientDay,
+  clientMonth,
+  type DayStatus,
+  dayMarks,
+  dayPlanOf,
   dayStatus,
   expandMonth,
   isYm,
   monthDates,
   planStale,
+  staffDay,
+  staffMonth,
   ymOf,
 } from './month';
 import { problemKey } from './runs';
@@ -207,5 +218,211 @@ describe('月の訪問の展開（expandMonth）', () => {
     const again = expandMonth(d1, '2026-12', '2026-12-10');
     expect(again.added).toBe(0);
     expect(again.data).toBe(d1);
+  });
+});
+
+// ---- 月間の改定（D53〜D55） ----
+
+const CARE: VisitType = { id: 'care', name: '介護', color: 0, durationMinutes: 60, requirements: [], note: '' };
+const REHAB: VisitType = { ...CARE, id: 'rehab', name: 'リハビリ', color: 3 };
+const TUE = addDays(DATE, 1);
+const PATTERN: Pattern = {
+  id: 'p1',
+  clientId: 'c1',
+  typeId: 'care',
+  weekdays: [1],
+  everyWeeks: 1,
+  windowKind: 'fixed',
+  earliestStart: '10:00',
+  latestStart: '10:00',
+  durationMinutes: 60,
+  from: DATE,
+  to: TUE,
+  usualStaffId: null,
+  note: '',
+};
+
+/**
+ * 月曜（DATE）：s1・s2（8:00〜18:00）、s3（月曜は休み）。c1 の a（10:00 介護。パターンの回・この回だけ変えた）・
+ * b（14:00 リハビリ）・x（取り消し）、c2 の c（9:00 介護）。今の案は s1＝[c, a]、s2＝[b]。c1 のいつもの担当は s1
+ */
+function selData() {
+  const at = (id: string, c: string, hhmm: string, over = {}) =>
+    visit(id, c, hhmm, hhmm, { windowKind: 'fixed', durationMinutes: 60, ...over });
+  const visits = [
+    at('a', 'c1', '10:00', { typeId: 'care', pattern: { id: 'p1', date: DATE, edited: true } }),
+    at('b', 'c1', '14:00', { typeId: 'rehab' }),
+    at('x', 'c1', '16:00', { cancelled: true, typeId: 'care' }),
+    at('c', 'c2', '09:00', { typeId: 'care' }),
+    at('t1', 'c1', '10:00', { date: TUE, typeId: 'care' }),
+  ];
+  const d = makeData({
+    staff: [
+      staff('s1', 38.26, 140.87, { name: '青葉 一郎', traits: { license: ['看護師', '介護福祉士'] } }),
+      staff('s2', 38.27, 140.88, { name: '泉 二郎' }),
+      staff('s3', 38.27, 140.88, { name: '若林 三郎', workDays: [2, 3] }),
+    ],
+    clients: [
+      client('c1', 38.261, 140.871, { displayName: '天文台', usualStaffId: 's1' }),
+      client('c2', 38.262, 140.872, { displayName: '城跡' }),
+    ],
+    visits,
+    visitTypes: [CARE, REHAB],
+    patterns: [PATTERN],
+  });
+  const plan = withPlan(d, DATE);
+  const routes = { s1: ['c', 'a'], s2: ['b'] };
+  return {
+    ...plan,
+    aiPlans: { [DATE]: { ...plan.aiPlans[DATE]!, routes } },
+  };
+}
+
+describe('数える案（dayPlanOf）', () => {
+  it('今の案があればその列、無ければ確定した割当（開始の順）、どちらも無ければ案なし', () => {
+    const d = selData();
+    const p = dayPlanOf(d, DATE);
+    expect(p.source).toBe('plan');
+    expect(p.routes).toEqual({ s1: ['c', 'a'], s2: ['b'] });
+    const confirmed = { ...d, aiPlans: {}, manualPlans: { [DATE]: { s1: ['a', 'c'], __none: ['b'] } } };
+    const q = dayPlanOf(confirmed, DATE);
+    expect(q.source).toBe('confirmed');
+    expect(q.routes).toEqual({ s1: ['c', 'a'] });
+    expect(dayPlanOf({ ...d, aiPlans: {} }, DATE).source).toBeNull();
+  });
+});
+
+describe('日のマスの印（dayMarks）', () => {
+  it('種類ごとの件数（取り消しを除く・種類の順）、休み・欠勤の人、始まる・終わるパターンの利用者さん', () => {
+    const d = { ...selData(), absences: [{ id: 'ab', staffId: 's2', date: DATE, from: '13:00', to: null, note: '' }] };
+    const m = dayMarks(d, DATE);
+    expect(m.types).toEqual([
+      { typeId: 'care', count: 2 },
+      { typeId: 'rehab', count: 1 },
+    ]);
+    expect(m.off).toEqual(['若林 三郎']);
+    expect(m.absent).toEqual(['泉 二郎']);
+    expect(m.starts).toEqual(['天文台']);
+    expect(m.ends).toEqual([]);
+    expect(dayMarks(d, TUE).ends).toEqual(['天文台']);
+    expect(dayMarks(d, TUE).off).toEqual([]);
+  });
+});
+
+describe('選んだスタッフ（staffDay・staffMonth）', () => {
+  it('勤務時間帯・担当の件数・目安・移動・種類ごとの件数', () => {
+    const d = selData();
+    const day = dayPlanOf(d, DATE);
+    const s1 = staffDay(d, day, 's1');
+    expect(s1.slots).toEqual([{ start: '08:00', end: '18:00' }]);
+    expect(s1.off).toBe(false);
+    expect(s1.absence).toBeNull();
+    expect(s1.noPlan).toBe(false);
+    expect(s1.count).toBe(2);
+    expect(s1.travel).toBeGreaterThan(0);
+    expect(s1.minutes).toBe(600);
+    expect(s1.types).toEqual([{ typeId: 'care', count: 2 }]);
+    // 目安：担当できる訪問 3件を s1・s2 の稼働時間（同じ長さ）で按分。s3 は休み
+    expect(s1.target).toBeCloseTo(1.5, 6);
+    const s3 = staffDay(d, day, 's3');
+    expect(s3).toMatchObject({ off: true, count: 0, target: null, travel: 0, minutes: 0 });
+  });
+
+  it('欠勤：稼働時間帯から差し引き、終日なら目安は null。案の無い日は noPlan', () => {
+    const d = { ...selData(), absences: [{ id: 'ab', staffId: 's1', date: DATE, from: null, to: null, note: '' }] };
+    const s1 = staffDay(d, dayPlanOf(d, DATE), 's1');
+    expect(s1).toMatchObject({ off: false, slots: [], minutes: 0, target: null });
+    expect(s1.absence?.id).toBe('ab');
+    const half = { ...d, absences: [{ id: 'ab', staffId: 's1', date: DATE, from: '13:00', to: null, note: '' }] };
+    expect(staffDay(half, dayPlanOf(half, DATE), 's1').slots).toEqual([{ start: '08:00', end: '13:00' }]);
+    const none = { ...selData(), aiPlans: {} };
+    expect(staffDay(none, dayPlanOf(none, DATE), 's1')).toMatchObject({ noPlan: true, count: 0 });
+  });
+
+  it('月の集計：件数・稼働時間・移動・種類・資格', () => {
+    const d = selData();
+    const days = [dayPlanOf(d, DATE), dayPlanOf(d, TUE)];
+    const m = staffMonth(d, days, 's1');
+    const first = staffDay(d, days[0]!, 's1');
+    expect(m.count).toBe(2);
+    expect(m.minutes).toBe(1200);
+    expect(m.travel).toBe(first.travel);
+    expect(m.workDays).toBe(2);
+    expect(m.absenceDays).toBe(0);
+    expect(m.types).toEqual([{ typeId: 'care', count: 2 }]);
+    expect(m.qualifications).toEqual(['看護師', '介護福祉士']);
+    expect(staffMonth(d, days, 's2').qualifications).toEqual([]);
+  });
+});
+
+describe('選んだ利用者さん（clientDay・clientMonth）', () => {
+  it('訪問の時刻・種類・担当、いつもの担当でない日は「代」、この回だけ変えた・取り消しの印', () => {
+    const d = selData();
+    const c = clientDay(d, dayPlanOf(d, DATE), 'c1');
+    expect(c.noPlan).toBe(false);
+    expect(c.visits.map((v) => v.visitId)).toEqual(['a', 'b', 'x']);
+    // a は c（9:00〜10:00）のあとの移動の分だけ遅れる（lenient の時刻）
+    expect(c.visits[0]).toMatchObject({ typeId: 'care', staffId: 's1' });
+    expect(c.visits[0]!.start).toBeGreaterThan(hhmmToMinutes('10:00'));
+    expect(c.visits[0]!.start).toBeLessThan(hhmmToMinutes('10:10'));
+    expect(c.visits[0]).toMatchObject({ substitute: false, edited: true, cancelled: false, unassigned: false });
+    expect(c.visits[1]).toMatchObject({ start: hhmmToMinutes('14:00'), staffId: 's2', substitute: true });
+    expect(c.visits[2]).toMatchObject({ cancelled: true, staffId: null, unassigned: false });
+    // 案はあるが列に無い訪問は入らない。案の無い日は noPlan
+    const drop = { ...d, aiPlans: { [DATE]: { ...d.aiPlans[DATE]!, routes: { s1: ['c', 'a'] } } } };
+    expect(clientDay(drop, dayPlanOf(drop, DATE), 'c1').visits[1]).toMatchObject({ staffId: null, unassigned: true });
+    const t = clientDay(d, dayPlanOf(d, TUE), 'c1');
+    expect(t.noPlan).toBe(true);
+    expect(t.visits[0]).toMatchObject({ staffId: null, unassigned: false });
+  });
+
+  it('月の集計：予定の回数・変更・取り消し・代わり・担当した人の内訳', () => {
+    const d = selData();
+    const m = clientMonth(d, [dayPlanOf(d, DATE), dayPlanOf(d, TUE)], 'c1');
+    expect(m).toEqual({
+      planned: 3,
+      edited: 1,
+      cancelled: 1,
+      substitute: 1,
+      byStaff: [
+        { staffId: 's1', count: 1 },
+        { staffId: 's2', count: 1 },
+        { staffId: null, count: 1 },
+      ],
+    });
+  });
+});
+
+describe('要対応（attentionList）', () => {
+  const st = (date: string, over: Partial<DayStatus>): DayStatus => ({
+    date,
+    count: 3,
+    state: 'plan',
+    unassigned: 0,
+    absence: false,
+    hundred: null,
+    hard: 0,
+    stale: false,
+    needsCare: false,
+    ...over,
+  });
+  it('今日以降の、入らない・条件が変わった・欠勤のある日（日付の順）', () => {
+    const d = selData();
+    const data = { ...d, absences: [{ id: 'ab', staffId: 's2', date: '2026-10-20', from: null, to: null, note: '' }] };
+    const list = attentionList(
+      data,
+      [
+        st('2026-10-21', { unassigned: 2, stale: true }),
+        st('2026-10-20', { absence: true }),
+        st('2026-10-10', { unassigned: 1 }),
+        st('2026-10-22', {}),
+      ],
+      '2026-10-12',
+    );
+    expect(list).toEqual([
+      { date: '2026-10-20', kind: 'absence', count: 1, names: ['泉 二郎'] },
+      { date: '2026-10-21', kind: 'unassigned', count: 2, names: [] },
+      { date: '2026-10-21', kind: 'stale', count: 1, names: [] },
+    ]);
   });
 });

@@ -1,0 +1,88 @@
+/* 日の混み具合バー（D54）と種類の積み上げバー（D53） */
+.load-bar {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #efe6de;
+}
+.load-bar.is-empty {
+  background: repeating-linear-gradient(90deg, #efe6de, #efe6de 3px, transparent 3px, transparent 6px);
+}
+.load-slot,
+.load-swatch {
+  flex: 1;
+  min-width: 0;
+}
+.load-slot + .load-slot {
+  border-left: 1px solid rgba(255, 255, 255, 0.55);
+}
+.is-off.load-slot,
+.is-off.load-swatch {
+  background: #ddd5ce;
+}
+.is-none.load-slot,
+.is-none.load-swatch {
+  background: repeating-linear-gradient(135deg, #c94a3a, #c94a3a 2px, #f0b3a9 2px, #f0b3a9 4px);
+}
+.is-one.load-slot,
+.is-one.load-swatch {
+  background: #eaa142;
+}
+.is-many.load-slot,
+.is-many.load-swatch {
+  background: #5aa57a;
+}
+.load-scale {
+  position: relative;
+  display: block;
+  height: 1em;
+  font-size: 0.68rem;
+  color: var(--sub);
+}
+.load-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  line-height: 1;
+}
+.load-tick::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 1.05em;
+  height: 4px;
+  border-left: 1px solid var(--sub);
+}
+.load-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+.load-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.load-swatch {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+}
+.type-stack {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  gap: 1px;
+  background: #fff;
+}
+.type-stack-part {
+  flex-basis: 0;
+  min-width: 3px;
+}
