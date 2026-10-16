@@ -13,7 +13,15 @@ import {
   type VisitExplain,
 } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
-import { balanceOff, balancePoints, naiveSeqs, scheduleRoute, totalPoints } from '../matching';
+import {
+  balanceOff,
+  balancePoints,
+  naiveSeqs,
+  PIN_RULE_ID,
+  scheduleRoute,
+  totalPoints,
+  VISIT_TYPE_RULE_ID,
+} from '../matching';
 
 const INF = Number.POSITIVE_INFINITY;
 /** 説明に出す理由の数 */
@@ -366,6 +374,9 @@ export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Prob
  * 負担の均等（BALANCE_RULE_KEY）は、稼働のある人か訪問のある人のうち、目安の帯に収まった人数（unit 'staff'）。
  * 並びは理由に初めて出た順（problem の訪問・担当の順。決定的）、負担の均等は最後
  */
+/** 条件ごとの達成に数えない理由の ruleId（可否・固定・訪問の種類。条件 rules の ID ではない） */
+const INTERNAL_RULE_IDS = new Set(['noPlace', 'slot', 'time', PIN_RULE_ID, VISIT_TYPE_RULE_ID]);
+
 export function achievements(problem: Problem, routes: Record<string, string[]>): RuleAchievement[] {
   const p = place(problem, routes);
   const by = new Map<string, RuleAchievement>();
@@ -374,8 +385,9 @@ export function achievements(problem: Problem, routes: Record<string, string[]>)
     if (s < 0) continue;
     const ok = new Map<string, boolean>();
     for (const r of problem.reasons[v]![s]!) {
-      // 可否・固定などの内部の原因は数えない（条件の ID だけ）
-      if (r.ruleId === 'noPlace' || r.ruleId === 'slot' || r.ruleId === 'time' || r.ruleId === 'pin') continue;
+      // 可否・固定などの内部の原因は数えない（条件の ID だけ）。訪問の種類の判定（'visitType'）も条件ではないので
+      // 数えない（design.md §5。ADR-0012）
+      if (INTERNAL_RULE_IDS.has(r.ruleId)) continue;
       ok.set(r.ruleId, (ok.get(r.ruleId) ?? true) && r.points <= 0);
       if (r.level !== undefined) {
         const e = entry(by, r.ruleId);

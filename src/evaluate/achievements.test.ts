@@ -1,6 +1,7 @@
 // 条件ごとの達成の件数（evaluate.achievements。ADR-0008）
 import { describe, expect, it } from 'vitest';
-import { compile } from '../matching';
+import type { VisitType } from '../contracts/documents';
+import { compile, VISIT_TYPE_RULE_ID } from '../matching';
 import { client, DATE, makeData, rule, staff, visit } from '../matching/fixtures';
 import { achievements } from './index';
 
@@ -55,6 +56,34 @@ describe('achievements', () => {
     expect(by.get('pref')).toMatchObject({ total: 1, met: 1 });
     expect(by.get('req')).toBeUndefined();
     expect(by.get('cp')).toBeUndefined();
+  });
+
+  it('訪問の種類の判定（ruleId visitType）は条件ではないので数えない（ADR-0012）', () => {
+    const types: VisitType[] = [
+      {
+        id: 'rehab',
+        name: 'リハビリ',
+        color: 0,
+        durationMinutes: 60,
+        requirements: [{ itemId: 'license', op: 'hasAny', value: ['看護師'] }],
+        note: '',
+      },
+    ];
+    const p = compile(
+      makeData({
+        staff: [staff('s1', 38.26, 140.87, { traits: { license: ['看護師'], years: 5 } })],
+        clients: [client('c1', 38.262, 140.872, { preferences: [{ itemId: 'years', op: 'gte', value: 3 }] })],
+        visits: [visit('v1', 'c1', '09:00', '09:30', { typeId: 'rehab' })],
+        visitTypes: types,
+        rules: [rule('pref', 'clientPreference', 3)],
+      }),
+      DATE,
+    );
+    // 理由には種類の判定が入っている
+    expect(p.reasons[0]![0]!.some((r) => r.ruleId === VISIT_TYPE_RULE_ID)).toBe(true);
+    const a = achievements(p, { s1: ['v1'] });
+    expect(a.map((x) => x.ruleId)).toEqual(['pref']);
+    expect(a.some((x) => x.ruleId === VISIT_TYPE_RULE_ID)).toBe(false);
   });
 
   it('決定的：同じ入力で同じ結果', () => {
