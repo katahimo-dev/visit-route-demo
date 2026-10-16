@@ -1058,6 +1058,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       // 種類・定期パターン（ADR-0012）。シートが無い古いブックは空
       const tid = hasTypes ? typeId(r, vc.type) : null;
       const pattern = hasPatterns ? visitPattern(r, vc) : null;
+      // パターンの訪問の ID は「元の日_パターンID」（ADR-0012。違うと展開で同じ回が二重になる。空の ID も止める）
+      if (pattern && r.text(vc.id) !== `${pattern.date}_${pattern.id}`)
+        r.err(vc.id, `定期パターンの訪問の ID は「${pattern.date}_${pattern.id}」（元の日_パターンID）にしてください`);
       if (
         date &&
         cid &&

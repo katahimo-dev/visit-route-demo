@@ -702,7 +702,12 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
         i === 0
           ? { ...v, pattern: v.pattern ? { ...v.pattern, edited: true } : v.pattern, earliestStart: '08:00' }
           : i === 1
-            ? { ...v, typeId: 't-extra', pattern: { id: 'pt-extra', date: '2026-10-13', edited: false } }
+            ? {
+                ...v,
+                id: '2026-10-13_pt-extra',
+                typeId: 't-extra',
+                pattern: { id: 'pt-extra', date: '2026-10-13', edited: false },
+              }
             : v,
       ),
     };
@@ -789,6 +794,26 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
       note: '',
     });
     expect(np?.id).toMatch(/^pt-/);
+  });
+
+  it('パターンを指す訪問の ID が「元の日_パターンID」でなければ（空の ID も）シート名・行番号付きで止める', async () => {
+    const d = varied();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const vws = sheet(wb, '訪問');
+        // 2行目はパターンの訪問（seed）、3行目は pt-extra を指す訪問
+        expect(vws.getRow(2).getCell(col(vws, '定期パターン')).value).toBeTruthy();
+        vws.getRow(2).getCell(col(vws, 'ID')).value = 'v-wrong';
+        vws.getRow(3).getCell(col(vws, 'ID')).value = null;
+      }),
+    );
+    const v0 = d.visits[0]!;
+    expect(msg).toContain(
+      `シート『訪問』の 2行目・『ID』：定期パターンの訪問の ID は「${v0.pattern!.date}_${v0.pattern!.id}」（元の日_パターンID）にしてください`,
+    );
+    expect(msg).toContain(
+      'シート『訪問』の 3行目・『ID』：定期パターンの訪問の ID は「2026-10-13_pt-extra」（元の日_パターンID）にしてください',
+    );
   });
 
   it('同じ名前の種類、いない種類・利用者さん・スタッフ・パターンの参照はシート名と行番号付きで止める', async () => {
