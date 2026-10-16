@@ -54,18 +54,55 @@ export const absenceCols = (t: Terms) => ({
   to: '終了',
   note: 'メモ',
 });
+/** 訪問の種類（ADR-0012）：ID・名前・色（1〜8）・標準の所要（分）・〈必要条件：項目名〉…・メモ */
+export const TYPE_COLS = {
+  id: 'ID',
+  name: '名前',
+  color: '色（1〜8）',
+  duration: '標準の所要（分）',
+  note: 'メモ',
+} as const;
+/** 定期パターン（ADR-0012） */
+export const patternCols = (t: Terms) => ({
+  id: 'ID',
+  client: t.client,
+  type: '種類',
+  weekdays: '曜日',
+  every: '間隔',
+  windowKind: '時間の決め方',
+  earliest: '開始（早）',
+  latest: '開始（遅）',
+  duration: '所要（分）',
+  from: '開始日',
+  to: '終了日',
+  usualStaff: 'いつもの担当',
+  note: 'メモ',
+});
+/** 訪問の列のうち、種類（ADR-0012）。「種類」シートがあるブックだけで読む */
+export const VISIT_TYPE_COL = '種類';
+/** 訪問の列のうち、定期パターン（ADR-0012）。「定期パターン」シートがあるブックだけで読む */
+export const VISIT_PATTERN_COLS = { pattern: '定期パターン', date: '元の日', edited: 'この回だけ変更' } as const;
 export const visitCols = (t: Terms) => ({
   id: 'ID',
   date: '日付',
   client: t.client,
+  type: VISIT_TYPE_COL,
   windowKind: '時間の決め方',
   earliest: '開始（早）',
   latest: '開始（遅）',
   duration: '所要（分）',
   staff: '担当',
   cancelled: '取り消し',
+  pattern: VISIT_PATTERN_COLS.pattern,
+  patternDate: VISIT_PATTERN_COLS.date,
+  edited: VISIT_PATTERN_COLS.edited,
   note: 'メモ',
 });
+/** 訪問の列のうち、古いブック（ADR-0012 より前）にも必ずある列 */
+export const visitBaseCols = (t: Terms) => {
+  const { type: _t, pattern: _p, patternDate: _d, edited: _e, ...rest } = visitCols(t);
+  return rest;
+};
 
 export const TRAIT_PREFIX = '特性：';
 export const REQ_PREFIX = '必要条件：';

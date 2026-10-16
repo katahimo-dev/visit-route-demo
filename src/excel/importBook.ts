@@ -2,7 +2,17 @@
 // 最後は store の migrate（形の検査と repair）を通した結果を返す。画面が store の replace で入れる
 import ExcelJS from 'exceljs';
 import type { DemoData, ImportError } from '../contracts/data';
-import type { Absence, Availability, Client, Org, Staff, Visit } from '../contracts/documents';
+import {
+  type Absence,
+  type Availability,
+  type Client,
+  MAX_VISIT_TYPES,
+  type Org,
+  type Pattern,
+  type Staff,
+  type Visit,
+  type VisitType,
+} from '../contracts/documents';
 import {
   type Compat,
   type Condition,
@@ -27,6 +37,7 @@ import {
   ORG_KEYS,
   PREF_PREFIX,
   PRESET_COLS,
+  patternCols,
   prefHeader,
   presetWeightHeader,
   REQ_PREFIX,
@@ -34,12 +45,17 @@ import {
   reqHeader,
   STAFF_COLS,
   TRAIT_PREFIX,
+  TYPE_COLS,
   traitHeader,
+  VISIT_PATTERN_COLS,
+  VISIT_TYPE_COL,
+  visitBaseCols,
   visitCols,
 } from './layout';
 import {
   dateToTime,
   dateToYmd,
+  EVERY_WEEKS_LABELS,
   FIXED_SHEETS,
   INDUSTRY_LABELS,
   isTimeOnlyDate,
@@ -48,6 +64,7 @@ import {
   nfkc,
   parseConds,
   parseDateText,
+  parseEveryWeeks,
   parseNumberText,
   parseSlots,
   parseTimeText,
@@ -73,6 +90,8 @@ export const MAX_ROWS = 10_000;
 const RESERVED_IDS = new Set(['__proto__', 'constructor', 'prototype']);
 /** 1人の必要条件・希望の上限（contracts/documents.ts の max） */
 const MAX_CONDS = 20;
+/** 定期パターンの上限（contracts/data.ts の max） */
+const MAX_PATTERNS = 2000;
 
 type Prim = string | number | boolean | Date | null;
 /** 読めないセル（数式のエラー・結果の無い数式） */
@@ -330,15 +349,26 @@ interface PersonCols {
   reqs: { h: string; item: Item }[];
   prefs: { h: string; item: Item }[];
 }
-function personCols(sheet: Sheet, items: Item[], own: ItemTarget, fixed: readonly string[]): PersonCols {
+/**
+ * kinds：読む列の種類（種類のシートは必要条件だけ。ADR-0012）。読まない種類の見出しは知らない列として読まない
+ */
+function personCols(
+  sheet: Sheet,
+  items: Item[],
+  own: ItemTarget,
+  fixed: readonly string[],
+  kinds: readonly (keyof PersonCols)[] = ['traits', 'reqs', 'prefs'],
+): PersonCols {
   const out: PersonCols = { traits: [], reqs: [], prefs: [] };
   const other: ItemTarget = own === 'staff' ? 'client' : 'staff';
   const fixedKeys = new Set(fixed.map(headerKey));
-  const prefixes = [
-    ['traits', headerKey(TRAIT_PREFIX), own],
-    ['reqs', headerKey(REQ_PREFIX), other],
-    ['prefs', headerKey(PREF_PREFIX), other],
-  ] as const;
+  const prefixes = (
+    [
+      ['traits', headerKey(TRAIT_PREFIX), own],
+      ['reqs', headerKey(REQ_PREFIX), other],
+      ['prefs', headerKey(PREF_PREFIX), other],
+    ] as const
+  ).filter(([kind]) => kinds.includes(kind));
   for (const { name, key } of sheet.headers) {
     if (fixedKeys.has(key)) continue;
     const hit = prefixes.find(([, p]) => key.startsWith(p));
@@ -482,7 +512,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     staffSheet?.require(Object.values(STAFF_COLS)),
     clientSheet?.require(Object.values(CLIENT_COLS)),
     availSheet?.require(Object.values(ac)),
-    visitSheet?.require(Object.values(vc)),
+    visitSheet?.require(Object.values(visitBaseCols(terms))),
   ].every((x) => x !== false);
   if (
     !itemSheet ||
@@ -505,6 +535,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     ...base.clients.map((x) => x.id),
     ...base.visits.map((x) => x.id),
     ...base.absences.map((x) => x.id),
+    ...base.visitTypes.map((x) => x.id),
+    ...base.patterns.map((x) => x.id),
   ]);
 
   // 項目
@@ -842,6 +874,163 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     }
   }
 
+  // 種類（ADR-0012）。シートが無い古いブックは種類なし（訪問の種類も空）
+  const visitTypes: VisitType[] = [];
+  const typeByName = new Map<string, string>();
+  const typeWs = wb.getWorksheet(FIXED_SHEETS.visitTypes);
+  if (typeWs) {
+    const sheet = new Sheet(FIXED_SHEETS.visitTypes, typeWs, errors);
+    const C = TYPE_COLS;
+    if (sheet.require(Object.values(C))) {
+      const cols = personCols(sheet, items, 'client', Object.values(C), ['reqs']);
+      const rows = sheet.rows();
+      if (rows.length > MAX_VISIT_TYPES)
+        errors.add(sheetMsg(FIXED_SHEETS.visitTypes, `種類は${MAX_VISIT_TYPES}行までです（いま${rows.length}行）`));
+      const ids = new Map<string, number>();
+      const seen = new Map<string, number>();
+      for (const r of rows) {
+        const id = idOf(r, C.id, ids, 't', used, 100);
+        const name = r.required(C.name, 20);
+        if (name !== null) {
+          uniqueName(r, C.name, name, seen);
+          typeByName.set(name, id);
+        }
+        const color = r.num(C.color, { int: true, min: 1, max: 8, required: true });
+        const duration = r.num(C.duration, { int: true, min: 5, max: 720, required: true });
+        const note = r.optional(C.note, 200);
+        const { requirements } = readPerson(r, cols);
+        if (name !== null && typeof color === 'number' && typeof duration === 'number')
+          visitTypes.push({ id, name, color: color - 1, durationMinutes: duration, requirements, note });
+      }
+    }
+  }
+  const hasTypes = typeWs !== undefined;
+  /** 種類の名前 → ID（空＝null。いない名前はエラーにして undefined） */
+  const typeId = (r: Row, h: string): string | null | undefined => {
+    const t = r.text(h);
+    if (t === '') return null;
+    const id = typeByName.get(t);
+    if (id === undefined) {
+      r.err(
+        h,
+        hasTypes
+          ? `「${t}」という種類は、シート『${FIXED_SHEETS.visitTypes}』にありません`
+          : `「${t}」という種類はありません（シート『${FIXED_SHEETS.visitTypes}』がありません）`,
+      );
+      return undefined;
+    }
+    return id;
+  };
+
+  // 定期パターン（ADR-0012）。シートが無い古いブックはパターンなし（訪問のパターンも空）
+  const patterns: Pattern[] = [];
+  const patternWs = wb.getWorksheet(FIXED_SHEETS.patterns);
+  /** 読めたパターンの ID（訪問の参照を確かめる） */
+  const patternIds = new Set<string>();
+  if (patternWs) {
+    const sheet = new Sheet(FIXED_SHEETS.patterns, patternWs, errors);
+    const pc = patternCols(terms);
+    if (sheet.require(Object.values(pc))) {
+      const rows = sheet.rows();
+      if (rows.length > MAX_PATTERNS)
+        errors.add(sheetMsg(FIXED_SHEETS.patterns, `定期パターンは${MAX_PATTERNS}行までです（いま${rows.length}行）`));
+      const ids = new Map<string, number>();
+      for (const r of rows) {
+        const id = idOf(r, pc.id, ids, 'pt', used, 100);
+        patternIds.add(id);
+        const cid = clientId(r, pc.client);
+        const tid = typeId(r, pc.type);
+        const wText = r.text(pc.weekdays);
+        const parsedDays = parseWorkDays(wText);
+        const weekdays = parsedDays === null ? null : [...parsedDays].sort((a, b) => a - b);
+        if (wText === '' || weekdays === null || weekdays.length === 0) {
+          r.err(pc.weekdays, '曜日は「月木」のように1つ以上書いてください');
+        }
+        const eText = r.required(pc.every);
+        const everyWeeks = eText === null ? null : parseEveryWeeks(eText);
+        if (eText !== null && everyWeeks === null)
+          r.err(pc.every, `「${Object.values(EVERY_WEEKS_LABELS).join('」「')}」のどれかで書いてください`);
+        const kText = r.required(pc.windowKind);
+        const windowKind = kText === null ? null : lookup(WINDOW_LABELS, kText);
+        if (kText !== null && windowKind === null) r.err(pc.windowKind, '「ちょうど」か「幅」で書いてください');
+        const earliestStart = r.time(pc.earliest);
+        const latestRaw = r.time(pc.latest, windowKind !== 'fixed');
+        const latestStart = latestRaw ?? (windowKind === 'fixed' ? earliestStart : null);
+        let timesOk = true;
+        if (earliestStart && latestStart && latestStart < earliestStart) {
+          r.err(pc.latest, '開始（遅）は開始（早）以降にしてください');
+          timesOk = false;
+        }
+        const duration = r.num(pc.duration, { int: true, min: 5, max: 720, required: true });
+        const from = r.date(pc.from);
+        const to = r.text(pc.to) === '' ? null : r.date(pc.to);
+        let datesOk = true;
+        if (from && to && to < from) {
+          r.err(pc.to, '終了日は開始日以降にしてください');
+          datesOk = false;
+        }
+        const sid = staffId(r, pc.usualStaff, false);
+        const note = r.optional(pc.note, 200);
+        if (
+          cid &&
+          tid !== undefined &&
+          weekdays &&
+          weekdays.length > 0 &&
+          everyWeeks &&
+          windowKind &&
+          earliestStart &&
+          latestStart &&
+          timesOk &&
+          typeof duration === 'number' &&
+          from &&
+          (r.text(pc.to) === '' || to) &&
+          datesOk &&
+          sid !== undefined
+        ) {
+          patterns.push({
+            id,
+            clientId: cid,
+            typeId: tid,
+            weekdays,
+            everyWeeks,
+            windowKind,
+            earliestStart,
+            latestStart,
+            durationMinutes: duration,
+            from,
+            to,
+            usualStaffId: sid,
+            note,
+          });
+        }
+      }
+    }
+  }
+  const hasPatterns = patternWs !== undefined;
+  // 種類・定期パターンのシートがあるブックは、訪問の対応する列も要る（列を消すと種類・パターンが黙って消えるため）
+  if (hasTypes) visitSheet.require([VISIT_TYPE_COL]);
+  if (hasPatterns) visitSheet.require(Object.values(VISIT_PATTERN_COLS));
+  if (errors.any) return errors.toError();
+
+  /** 訪問の定期パターン・元の日・この回だけ変更（パターンが空なら単発。読めなければエラーにして undefined） */
+  function visitPattern(r: Row, c: ReturnType<typeof visitCols>): Visit['pattern'] | undefined {
+    const pid = r.text(c.pattern);
+    if (pid === '') {
+      if (r.text(c.patternDate) !== '' || r.yes(c.edited)) {
+        r.err(c.pattern, `単発の訪問（${c.pattern}が空）では、${c.patternDate}・${c.edited}は空にしてください`);
+        return undefined;
+      }
+      return null;
+    }
+    const date = r.date(c.patternDate);
+    const edited = r.yes(c.edited);
+    if (!patternIds.has(pid)) {
+      r.err(c.pattern, `ID「${pid}」の定期パターンは、シート『${FIXED_SHEETS.patterns}』にありません`);
+      return undefined;
+    }
+    return date ? { id: pid, date, edited } : undefined;
+  }
+
   // 訪問
   const visits: Visit[] = [];
   {
@@ -862,6 +1051,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const sid = staffId(r, vc.staff, false);
       const cancelled = r.yes(vc.cancelled);
       const note = r.optional(vc.note, 200);
+      // 種類・定期パターン（ADR-0012）。シートが無い古いブックは空
+      const tid = hasTypes ? typeId(r, vc.type) : null;
+      const pattern = hasPatterns ? visitPattern(r, vc) : null;
       if (
         date &&
         cid &&
@@ -869,7 +1061,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         earliestStart &&
         latestStart &&
         typeof duration === 'number' &&
-        sid !== undefined
+        sid !== undefined &&
+        tid !== undefined &&
+        pattern !== undefined
       ) {
         visits.push({
           id,
@@ -882,8 +1076,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           staffId: sid,
           cancelled,
           note,
-          typeId: null,
-          pattern: null,
+          typeId: tid,
+          pattern,
         });
       }
     }
@@ -905,8 +1099,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     visits,
     availability,
     absences,
-    visitTypes: [],
-    patterns: [],
+    visitTypes,
+    patterns,
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},
