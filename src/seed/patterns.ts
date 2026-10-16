@@ -31,11 +31,11 @@ export const INITIAL_VISIT_TYPES: VisitType[] = [
  * 高齢の利用者さん2人の週1回・40分のリハビリ（いつもの訪問と時間が重ならない曜日・時刻。
  * 理学療法士の s4・s7 がどちらも働く曜日・時間帯）
  */
-export const REHAB_SEEDS: { clientId: string; weekday: number; start: string }[] = [
-  // 天文台 ほしみ：いつもは 10:00〜10:45。水曜の午後
-  { clientId: 'c7', weekday: 3, start: '14:00' },
-  // 城跡 ほまれ（階段が多い家）：いつもは 9:00〜9:45。金曜の午後
-  { clientId: 'c14', weekday: 5, start: '15:00' },
+export const REHAB_SEEDS: { clientId: string; weekday: number; start: string; usualStaffId: string }[] = [
+  // 天文台 ほしみ：いつもは 10:00〜10:45。水曜の午後。いつもの担当は理学療法士の s4
+  { clientId: 'c7', weekday: 3, start: '14:00', usualStaffId: 's4' },
+  // 城跡 ほまれ（階段が多い家）：いつもは 9:00〜9:45。金曜の午後。いつもの担当は理学療法士の s7
+  { clientId: 'c14', weekday: 5, start: '15:00', usualStaffId: 's7' },
 ];
 const REHAB_MINUTES = 40;
 
@@ -45,7 +45,7 @@ export const rehabPatternId = (clientId: string) => `${clientId}-rehab`;
 const WEEKDAYS = [1, 2, 3, 4, 5];
 
 /**
- * 初期の定期パターン（from から、終了日なし、いつもの担当なし）。
+ * 初期の定期パターン（from から、終了日なし。いつもの担当はリハビリのパターンだけ）。
  * 利用者さんのパターン（CLIENT_SEEDS の順）のあとにリハビリのパターン
  */
 export function seedPatterns(from: string): Pattern[] {
@@ -82,6 +82,8 @@ export function seedPatterns(from: string): Pattern[] {
     earliestStart: r.start,
     latestStart: r.start,
     durationMinutes: REHAB_MINUTES,
+    // パターンのいつもの担当（利用者さんのいつもの担当は理学療法士でないため）
+    usualStaffId: r.usualStaffId,
   }));
   return [...clients, ...rehab];
 }
