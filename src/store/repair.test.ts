@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type AiPlan, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
+import { MAX_VISIT_TYPES, type Pattern, type VisitType } from '../contracts/documents';
 import { compile } from '../matching';
 import { createDemoData } from '../seed';
 import { importJson, isImportError, migrate } from './index';
@@ -271,5 +272,144 @@ describe('欠勤と振り直し（ADR-0011）', () => {
     const s = d.staff[0]!.id;
     expect(isImportError(migrate({ ...d, absences: [ab('a', s, DAY, '12:00', '09:00')] }))).toBe(true);
     expect(isImportError(migrate({ ...d, absences: [ab('a', s, DAY, '10:15', null)] }))).toBe(true);
+  });
+});
+
+describe('訪問の種類・定期パターン（ADR-0012）', () => {
+  const vt = (id: string, name = id): VisitType => ({
+    id,
+    name,
+    color: 0,
+    durationMinutes: 60,
+    requirements: [],
+    note: '',
+  });
+  const pt = (id: string, clientId: string, over: Partial<Pattern> = {}): Pattern => ({
+    id,
+    clientId,
+    typeId: null,
+    weekdays: [1],
+    everyWeeks: 1,
+    windowKind: 'fixed',
+    earliestStart: '09:00',
+    latestStart: '09:00',
+    durationMinutes: 60,
+    from: DAY,
+    to: null,
+    usualStaffId: null,
+    note: '',
+    ...over,
+  });
+
+  it('visitTypes・patterns・訪問の typeId・pattern の無い古いデータは [] と null で読める（版は1のまま）', () => {
+    const d = base();
+    const { visitTypes: _t, patterns: _p, ...old } = JSON.parse(JSON.stringify(d));
+    old.visits = old.visits.map(({ typeId: _ti, pattern: _pa, ...v }: Record<string, unknown>) => v);
+    const r = migrate(old);
+    expect(isImportError(r)).toBe(false);
+    const x = r as DemoData;
+    expect(x.version).toBe(1);
+    expect(x.visitTypes).toEqual([]);
+    expect(x.patterns).toEqual([]);
+    expect(x.visits.length).toBe(d.visits.length);
+    expect(x.visits.every((v) => v.typeId === null && v.pattern === null)).toBe(true);
+    expect(x).toEqual(d);
+  });
+
+  it('種類：ID の重複は最初の1件、20を超える分は後ろを捨てる', () => {
+    const d = base();
+    const types = [vt('t0', '最初'), vt('t0', '重複'), ...Array.from({ length: 25 }, (_, i) => vt(`t${i + 1}`))];
+    const r = repair({ ...d, visitTypes: types });
+    expect(r.visitTypes).toHaveLength(MAX_VISIT_TYPES);
+    expect(r.visitTypes[0]).toEqual(vt('t0', '最初'));
+    expect(r.visitTypes.at(-1)!.id).toBe('t19');
+  });
+
+  it('パターン：いない利用者さんの分は消し、いない種類・いない人は null、曜日は重なりを除いて小さい順、ID の重複は最初の1件', () => {
+    const d = base();
+    const c = d.clients[0]!.id;
+    const s = d.staff[0]!.id;
+    const r = repair({
+      ...d,
+      visitTypes: [vt('t1')],
+      patterns: [
+        pt('p1', c, { typeId: 'ghost-type', usualStaffId: 'ghost-staff', weekdays: [5, 1, 5, 3] }),
+        pt('p2', 'ghost-client'),
+        pt('p3', c, { typeId: 't1', usualStaffId: s, weekdays: [0, 6] }),
+        pt('p1', c, { note: '重複' }),
+      ],
+    });
+    expect(r.patterns).toEqual([
+      pt('p1', c, { typeId: null, usualStaffId: null, weekdays: [1, 3, 5] }),
+      pt('p3', c, { typeId: 't1', usualStaffId: s, weekdays: [0, 6] }),
+    ]);
+  });
+
+  it('訪問：いない種類の typeId は null、どのパターンでもない pattern は null（訪問は残す）', () => {
+    const d = base();
+    const c = d.clients[0]!.id;
+    const [a = '', b = '', e = ''] = visitsOn(d, DAY);
+    const r = repair({
+      ...d,
+      visitTypes: [vt('t1')],
+      patterns: [pt('p1', c), pt('p2', 'ghost-client')],
+      visits: d.visits.map((v) => {
+        if (v.id === a) return { ...v, typeId: 't1', pattern: { id: 'p1', date: DAY, edited: true } };
+        if (v.id === b) return { ...v, typeId: 'ghost', pattern: { id: 'p2', date: DAY, edited: false } };
+        if (v.id === e) return { ...v, pattern: { id: 'ghost', date: DAY, edited: false } };
+        return v;
+      }),
+    });
+    const byId = new Map(r.visits.map((v) => [v.id, v]));
+    expect(r.visits).toHaveLength(d.visits.length);
+    expect(byId.get(a)).toMatchObject({ typeId: 't1', pattern: { id: 'p1', date: DAY, edited: true } });
+    expect(byId.get(b)).toMatchObject({ typeId: null, pattern: null });
+    expect(byId.get(e)).toMatchObject({ typeId: null, pattern: null });
+  });
+
+  it('終了日が開始日より前・開始（早）が開始（遅）より後・曜日が0個のパターンは契約で止める', () => {
+    const d = base();
+    const c = d.clients[0]!.id;
+    const bad = (p: Pattern) => migrate(JSON.parse(JSON.stringify({ ...d, patterns: [p] })));
+    const e1 = bad(pt('p', c, { from: DAY, to: '2026-10-11' }));
+    expect(isImportError(e1)).toBe(true);
+    expect((e1 as { message: string }).message).toContain('終了日は開始日以降にしてください');
+    expect(isImportError(bad(pt('p', c, { earliestStart: '10:00', latestStart: '09:00' })))).toBe(true);
+    expect(isImportError(bad(pt('p', c, { weekdays: [] })))).toBe(true);
+    expect(isImportError(bad(pt('p', c, { from: DAY, to: DAY })))).toBe(false);
+  });
+
+  it('種類・パターン・展開した訪問を含むデータが 書き出し → 読み込み で同じに戻る', () => {
+    const d = base();
+    const c = d.clients[0]!.id;
+    const s = d.staff[0]!.id;
+    const p = pt('p1', c, { typeId: 't1', usualStaffId: s, weekdays: [1, 4], everyWeeks: 2, to: '2026-12-31' });
+    const x: DemoData = {
+      ...d,
+      visitTypes: [
+        { ...vt('t1', '介護'), requirements: [{ itemId: 'gender', op: 'is', value: '女性' }], note: 'メモ' },
+      ],
+      patterns: [p],
+      visits: [
+        ...d.visits,
+        {
+          ...d.visits[0]!,
+          id: `${DAY}_p1`,
+          clientId: c,
+          typeId: 't1',
+          pattern: { id: 'p1', date: DAY, edited: false },
+        },
+        {
+          ...d.visits[0]!,
+          id: `2026-10-15_p1`,
+          date: '2026-10-16',
+          clientId: c,
+          typeId: 't1',
+          pattern: { id: 'p1', date: '2026-10-15', edited: true },
+        },
+      ],
+    };
+    expect(repair(x)).toEqual(x);
+    expect(importJson(JSON.stringify(x))).toEqual(x);
   });
 });

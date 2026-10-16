@@ -15,6 +15,8 @@ const visit = (id: string, earliestStart: string, extra: Partial<Visit> = {}): V
   staffId: null,
   cancelled: false,
   note: '',
+  typeId: null,
+  pattern: null,
   ...extra,
 });
 const mapOf = (vs: (Visit & { id: string })[]) => new Map(vs.map((v) => [v.id, v]));

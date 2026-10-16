@@ -60,6 +60,8 @@ function visitsOf(date: string, n: number, clientIds: Set<string>): Visit[] {
         staffId: null,
         cancelled: false,
         note: '',
+        typeId: null,
+        pattern: null,
       };
     })
     .sort((a, b) => a.earliestStart.localeCompare(b.earliestStart));

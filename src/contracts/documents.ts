@@ -72,6 +72,61 @@ export const clientSchema = z.object({
 });
 export type Client = z.infer<typeof clientSchema>;
 
+/**
+ * 訪問の種類（ADR-0012。利用者が足す。最大20）。担当に必要な条件（requirements。スタッフの特性に対して）は常に必須
+ */
+export const visitTypeSchema = z.object({
+  id: idSchema,
+  name: z.string().min(1).max(20),
+  /** 色の丸の番号（〈利用者さん〉と同じ8色） */
+  color: z.number().int().min(0).max(7),
+  /** 標準の所要（新しい訪問・パターンの初期値だけ） */
+  durationMinutes: z.number().int().min(5).max(720),
+  /** 担当に必要な条件（スタッフの特性に対して）。常に必須 */
+  requirements: z.array(conditionSchema).max(20),
+  note: z.string().max(200),
+});
+export type VisitType = z.infer<typeof visitTypeSchema>;
+
+/** 種類の上限（ADR-0012） */
+export const MAX_VISIT_TYPES = 20;
+
+/** 定期パターン（ADR-0012。利用者さんごと。複数持てる） */
+export const patternSchema = z
+  .object({
+    id: idSchema,
+    clientId: idSchema,
+    /** null＝種類を問わない */
+    typeId: idSchema.nullable(),
+    /** 0=日〜6=土 */
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+    /** 1＝毎週、2＝隔週…。from を含む週（日曜はじまり）を1週目 */
+    everyWeeks: z.number().int().min(1).max(4),
+    windowKind: z.enum(WINDOW_KINDS),
+    earliestStart: hhmmSchema,
+    latestStart: hhmmSchema,
+    durationMinutes: z.number().int().min(5).max(720),
+    from: dateSchema,
+    /** null＝続く */
+    to: dateSchema.nullable(),
+    /** いつもの担当。null＝利用者さんのいつもの担当 */
+    usualStaffId: idSchema.nullable(),
+    note: z.string().max(200),
+  })
+  .superRefine((p, ctx) => {
+    if (p.to !== null && p.from > p.to) {
+      ctx.addIssue({ code: 'custom', path: ['to'], message: '終了日は開始日以降にしてください' });
+    }
+    if (p.earliestStart > p.latestStart) {
+      ctx.addIssue({ code: 'custom', path: ['latestStart'], message: '開始（遅）は開始（早）以降にしてください' });
+    }
+  });
+export type Pattern = z.infer<typeof patternSchema>;
+
+/** 訪問の元の定期パターン（ADR-0012）。date は元の日、edited は「この回だけ変えた」 */
+export const visitPatternRefSchema = z.object({ id: idSchema, date: dateSchema, edited: z.boolean() });
+export type VisitPatternRef = z.infer<typeof visitPatternRefSchema>;
+
 /** 1日の訪問。staffId は手作業の担当 */
 export const visitSchema = z.object({
   id: idSchema,
@@ -84,6 +139,10 @@ export const visitSchema = z.object({
   staffId: idSchema.nullable(),
   cancelled: z.boolean(),
   note: z.string().max(200),
+  /** 訪問の種類（VisitType.id。ADR-0012）。null＝種類なし。無い古いデータは null */
+  typeId: idSchema.nullable().default(null),
+  /** 元の定期パターン（ADR-0012）。null＝単発。無い古いデータは null */
+  pattern: visitPatternRefSchema.nullable().default(null),
 });
 export type Visit = z.infer<typeof visitSchema>;
 

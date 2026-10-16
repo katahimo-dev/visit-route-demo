@@ -882,6 +882,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           staffId: sid,
           cancelled,
           note,
+          typeId: null,
+          pattern: null,
         });
       }
     }
@@ -903,6 +905,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     visits,
     availability,
     absences,
+    visitTypes: [],
+    patterns: [],
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},

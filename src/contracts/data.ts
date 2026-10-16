@@ -5,10 +5,13 @@ import {
   clientSchema,
   dateSchema,
   idSchema,
+  MAX_VISIT_TYPES,
   manualRoutesSchema,
   orgSchema,
+  patternSchema,
   staffSchema,
   visitSchema,
+  visitTypeSchema,
 } from './documents';
 import { compatSchema, itemSchema, presetSchema, ruleSchema } from './rules';
 
@@ -137,6 +140,10 @@ export const demoDataSchema = z.object({
   availability: z.array(availabilitySchema),
   /** 当日の急な欠勤（ADR-0011）。無い古いデータは []（版は1のまま） */
   absences: z.array(absenceSchema).max(2000).default([]),
+  /** 訪問の種類（ADR-0012。最大20）。無い古いデータは []（版は1のまま） */
+  visitTypes: z.array(visitTypeSchema).max(MAX_VISIT_TYPES).default([]),
+  /** 定期パターン（ADR-0012）。無い古いデータは []（版は1のまま） */
+  patterns: z.array(patternSchema).max(2000).default([]),
   /** date → 手作業案 */
   manualPlans: z.record(z.string(), manualRoutesSchema),
   /** date → 最新のAI案 */
