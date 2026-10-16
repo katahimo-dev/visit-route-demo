@@ -61,6 +61,8 @@ export function useDayModel(date: string) {
       visits: data.visits,
       availability: data.availability,
       absences: data.absences,
+      visitTypes: data.visitTypes,
+      patterns: data.patterns,
     }),
     [
       data.org,
@@ -72,6 +74,8 @@ export function useDayModel(date: string) {
       data.visits,
       data.availability,
       data.absences,
+      data.visitTypes,
+      data.patterns,
     ],
   );
   const compiled = useMemo(() => attempt(() => compile(compileInput, date)), [compileInput, date]);
