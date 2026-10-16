@@ -99,6 +99,7 @@
   color: #fff;
   border-radius: 999px;
   padding: 0 6px;
+  white-space: nowrap;
 }
 .month-flag {
   display: inline-flex;
@@ -208,6 +209,9 @@
   background: #dcefe2;
   border-color: #4f9a6c;
 }
+.month-swatch.is-state-diff {
+  color: #8a6a12;
+}
 .month-swatch.is-state-diff,
 .month-cell.is-state-diff .month-cell-btn {
   background: #fdf4d8;
@@ -227,14 +231,19 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   width: 100%;
 }
 .month-count {
   margin-left: auto;
   font-weight: 700;
+  white-space: nowrap;
 }
 .month-lock {
   color: #2f7a50;
+}
+.month-diff-icon {
+  color: #8a6a12;
 }
 .month-dot {
   display: inline-block;

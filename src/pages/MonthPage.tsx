@@ -6,6 +6,7 @@ import {
   Layers,
   ListChecks,
   Lock,
+  PencilLine,
   RefreshCw,
   Repeat,
   Sparkles,
@@ -946,6 +947,7 @@ function MonthLegend({ showLoad }: { showLoad: boolean }) {
           <span key={st} className="month-legend-item">
             <span className={`month-swatch is-state-${st}`} aria-hidden="true">
               {st === 'confirmed' && <Lock size={9} />}
+              {st === 'diff' && <PencilLine size={9} />}
             </span>
             {STATE_TEXT[st]}
           </span>
@@ -1251,6 +1253,10 @@ const DayCell = memo(function DayCell(props: CellProps) {
             {d === today && <span className="month-today">今日</span>}
           </span>
           {s.count > 0 && s.state === 'confirmed' && <Lock size={12} className="month-lock" aria-hidden="true" />}
+          {/* 未確定の変更あり（淡い黄）は案あり（淡い緑）と色だけで分けない */}
+          {s.count > 0 && s.state === 'diff' && (
+            <PencilLine size={12} className="month-diff-icon" aria-hidden="true" data-testid="month-diff-mark" />
+          )}
           {care && <span className="month-dot" aria-hidden="true" />}
           {s.count > 0 && focus === 'all' && <span className="month-count">{s.count}件</span>}
         </span>
