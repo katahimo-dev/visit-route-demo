@@ -45,7 +45,7 @@ import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
-import { type Cols, NONE, timeOrder, windowText } from '../domain/scheduleModel';
+import { NONE, timeOrder, windowText } from '../domain/scheduleModel';
 import { addDays, jstDate } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import {
@@ -63,6 +63,7 @@ import {
 } from '../lib/absences';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { contactCount, dayWordOf } from '../lib/contacts';
+import { copyDayVisits } from '../lib/copyDay';
 import { deferredDragStart } from '../lib/dragStart';
 import { planRunOf, planStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
@@ -1254,16 +1255,14 @@ export default function PlanPage() {
       return;
     }
     if (!confirm(`${from} の訪問（と確定した割当）を ${date} にコピーします。よろしいですか？`)) return;
-    const idMap = new Map(src.map((v) => [v.id, newId('v')]));
-    // 写した訪問は単発の訪問にする（元の定期パターンの回ではないため。ADR-0012）
-    const copied = src.map((v) => ({ ...v, id: idMap.get(v.id) as string, date, pattern: null }));
-    const cols: Cols = {};
-    for (const [s, ids] of Object.entries(own(data.manualPlans, from) ?? {})) {
-      const mapped = ids.map((id) => idMap.get(id)).filter((x): x is string => !!x);
-      if (mapped.length > 0) cols[s] = mapped;
-    }
-    update((d) => ({ ...d, visits: [...d.visits, ...copied], manualPlans: { ...d.manualPlans, [date]: cols } }));
-    toast(`${src.length}件コピーしました`);
+    // コピー先がパターンの回なら、その回の ID で写す（あとの展開で二重にしない。ADR-0012）。それ以外は単発
+    const copy = copyDayVisits(data, from, date, () => newId('v'));
+    update((d) => ({
+      ...d,
+      visits: [...d.visits, ...copy.visits],
+      manualPlans: { ...d.manualPlans, [date]: copy.cols },
+    }));
+    toast(`${copy.visits.length}件コピーしました`);
   };
 
   // ---- 列：その日に働く人（と、今の案で訪問がある人）----
