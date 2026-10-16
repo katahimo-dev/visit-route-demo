@@ -294,7 +294,12 @@ describe('数える案（dayPlanOf）', () => {
 
 describe('日のマスの印（dayMarks）', () => {
   it('種類ごとの件数（取り消しを除く・種類の順）、休み・欠勤の人、始まる・終わるパターンの利用者さん', () => {
-    const d = { ...selData(), absences: [{ id: 'ab', staffId: 's2', date: DATE, from: '13:00', to: null, note: '' }] };
+    const d = {
+      ...selData(),
+      // 基準日（データの最初の日）より後に始まるパターンだけを「始まる」に数えるので、基準日を前にずらす
+      baseDate: addDays(DATE, -7),
+      absences: [{ id: 'ab', staffId: 's2', date: DATE, from: '13:00', to: null, note: '' }],
+    };
     const m = dayMarks(d, DATE);
     expect(m.types).toEqual([
       { typeId: 'care', count: 2 },
@@ -306,6 +311,31 @@ describe('日のマスの印（dayMarks）', () => {
     expect(m.ends).toEqual([]);
     expect(dayMarks(d, TUE).ends).toEqual(['天文台']);
     expect(dayMarks(d, TUE).off).toEqual([]);
+  });
+
+  it('基準日（データの最初の日）以前に始まるパターンは「始まる」に数えない（初期データで全員が▶にならない）', () => {
+    const d = selData();
+    expect(d.baseDate).toBe(DATE);
+    expect(dayMarks(d, DATE).starts).toEqual([]);
+    const seed = createDemoData('2026-10-17');
+    expect(dayMarks(seed, '2026-10-17').starts).toEqual([]);
+  });
+
+  it('「以降すべて」で分けたパターン（前が前日に終わり、同じ利用者さんの次が翌日から）は始まる・終わるに数えない', () => {
+    const base = { ...selData(), baseDate: addDays(DATE, -30) };
+    const WED = addDays(DATE, 2);
+    const cut: Pattern = { ...PATTERN, to: TUE };
+    const next: Pattern = { ...PATTERN, id: 'p1b', from: WED, to: null, weekdays: [3] };
+    const d = { ...base, patterns: [cut, next] };
+    expect(dayMarks(d, TUE).ends).toEqual([]);
+    expect(dayMarks(d, WED).starts).toEqual([]);
+    // 間が空けば、終わる・始まるに数える
+    const later = { ...d, patterns: [cut, { ...next, from: addDays(DATE, 9) }] };
+    expect(dayMarks(later, TUE).ends).toEqual(['天文台']);
+    expect(dayMarks(later, addDays(DATE, 9)).starts).toEqual(['天文台']);
+    // 別のパターンが続いていれば終わらない
+    const other: Pattern = { ...PATTERN, id: 'p2', from: addDays(DATE, -20), to: null };
+    expect(dayMarks({ ...d, patterns: [cut, other] }, TUE).ends).toEqual([]);
   });
 });
 

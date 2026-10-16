@@ -312,15 +312,21 @@ export type DayMarks = {
   off: string[];
   /** 欠勤のある〈スタッフ〉の名前 */
   absent: string[];
-  /** その日に始まる定期パターンのある〈利用者さん〉の表示名 */
+  /**
+   * その日に始まる定期パターンのある〈利用者さん〉の表示名。基準日（データの最初の日）以前に始まるもの・
+   * 前日も同じ〈利用者さん〉のパターンの期間のもの（「以降すべて」で分けたパターンなど）は除く
+   */
   starts: string[];
-  /** その日に終わる定期パターンのある〈利用者さん〉の表示名 */
+  /** その日に終わる定期パターンのある〈利用者さん〉の表示名。翌日も同じ〈利用者さん〉のパターンの期間なら除く */
   ends: string[];
 };
 
 /** 日のマスの印（取り消しの訪問は数えない。休止中の〈スタッフ〉・〈利用者さん〉は出さない） */
 export function dayMarks(
-  data: Pick<DemoData, 'visits' | 'staff' | 'clients' | 'availability' | 'absences' | 'patterns' | 'visitTypes'>,
+  data: Pick<
+    DemoData,
+    'baseDate' | 'visits' | 'staff' | 'clients' | 'availability' | 'absences' | 'patterns' | 'visitTypes'
+  >,
   date: string,
 ): DayMarks {
   const counts = new Map<string | null, number>();
@@ -339,12 +345,20 @@ export function dayMarks(
   const namesOf = (pick: (p: DemoData['patterns'][number]) => boolean) => [
     ...new Set(data.patterns.filter(pick).flatMap((p) => clientName.get(p.clientId) ?? [])),
   ];
+  /** その〈利用者さん〉のどれかのパターンの期間に day が入るか */
+  const covered = (clientId: string, day: string) =>
+    data.patterns.some((p) => p.clientId === clientId && p.from <= day && (p.to === null || day <= p.to));
+  const before = addDays(date, -1);
+  const after = addDays(date, 1);
   return {
     types: sortTypes(counts, data.visitTypes),
     off,
     absent,
-    starts: namesOf((p) => p.from === date),
-    ends: namesOf((p) => p.to === date),
+    // 基準日（データの最初の日）以前に始まるパターンは数えない（初期データの全パターンが基準日に始まるため）。
+    // 前日も同じ〈利用者さん〉のパターンがある（「以降すべて」で分けた・種類を足した）ときも数えない
+    starts: namesOf((p) => p.from === date && date > data.baseDate && !covered(p.clientId, before)),
+    // 翌日も同じ〈利用者さん〉のパターンがある（「以降すべて」で分けた）ときは数えない
+    ends: namesOf((p) => p.to === date && !covered(p.clientId, after)),
   };
 }
 
