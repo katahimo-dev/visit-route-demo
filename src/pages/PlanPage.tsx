@@ -30,12 +30,14 @@ import {
   UserRoundX,
   Users,
 } from 'lucide-react';
-import { type DragEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
+import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
@@ -46,7 +48,7 @@ import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } fro
 import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
 import { NONE, timeOrder, windowText } from '../domain/scheduleModel';
-import { addDays, jstDate } from '../domain/time';
+import { addDays, hhmmToMinutes, jstDate } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
 import {
   absencesOn,
@@ -61,6 +63,7 @@ import {
   saveAbsence,
   withoutAbsencesOn,
 } from '../lib/absences';
+import { colorOf } from '../lib/colors';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { contactCount, dayWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
@@ -69,6 +72,7 @@ import { planRunOf, planStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
+import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { bestInsertion, compile } from '../matching';
 import {
@@ -206,6 +210,11 @@ export default function PlanPage() {
   /** ドラッグの始まりの更新を dragstart の外へ出す（未割当の列が足されて Chrome がドラッグをやめるため） */
   const dragStart = useRef(deferredDragStart()).current;
   const [dropTo, setDropTo] = useState<string | null>(null);
+  /** 担当ごとの表示（PRD D58）：時間軸／順番。localStorage でなく画面の状態（初期値：時間軸） */
+  const [colView, setColView] = useState<'timeline' | 'order'>('timeline');
+  /** 狭い幅（900px 以下）・印刷では順番にする */
+  const narrowOrPrint = useNarrowOrPrint();
+  const shownView = narrowOrPrint ? 'order' : colView;
   const runRef = useRef<{ stop(): void } | null>(null);
   /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
   const pendingAnneal = useRef<string | null>(null);
@@ -1371,15 +1380,68 @@ export default function PlanPage() {
   const cs = curScore?.value ?? null;
   const gs = genScore?.value ?? null;
 
+  /** 訪問の印（欠勤の人のまま・代行・+N分・固定・必須の違反）と「固定を外す」。順番のカードの中・時間軸の帯の説明で共通 */
+  const tagsOf = (id: string) => {
+    const pin = own(pins, id);
+    const hard = hardOf.get(id);
+    const subFrom = reassignMarks.substitute.get(id);
+    const shift = reassignMarks.shifted.get(id);
+    const stay = leftById.get(id);
+    if (!(pin || hard || subFrom || shift !== undefined || stay)) return null;
+    return (
+      <div className="row visit-tags">
+        {stay && (
+          <span
+            className="chip chip-red"
+            data-testid="left-mark"
+            title="欠勤の時間と重なるのに振り直していない訪問です。差の欄の「もう一度振り直す」か、ドラッグで別の人へ移してください"
+          >
+            <TriangleAlert size={12} aria-hidden="true" />
+            {leftReasonText(stay)}（対応が必要）
+          </span>
+        )}
+        {subFrom && (
+          <span className="chip chip-move" title={`元の担当：${staffName(subFrom)}`} data-testid="substitute">
+            代行
+            <span className="sr-only">（元の担当：{staffName(subFrom)}さん）</span>
+          </span>
+        )}
+        {shift !== undefined && (
+          <span className="chip chip-warn" title="振り直す前の開始時刻からの変化" data-testid="shifted">
+            {shift > 0 ? `+${shift}分` : `−${-shift}分`}
+          </span>
+        )}
+        {pin && (
+          <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
+            <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
+            固定
+          </span>
+        )}
+        {hard?.map((h) => (
+          <span key={h} className="chip chip-red" title="必須の条件の違反">
+            <ShieldAlert size={12} aria-hidden="true" />
+            {h}
+          </span>
+        ))}
+        {pin && (
+          <IconButton
+            icon={PinOff}
+            label="固定を外す"
+            className="icon-btn-sm"
+            onClick={() => unpin(id)}
+            disabled={!!running}
+          />
+        )}
+      </div>
+    );
+  };
+
   /** 訪問カード（ドラッグで担当を移す。押すと理由） */
   const card = (id: string) => {
     const pin = own(pins, id);
     const hard = hardOf.get(id);
     const ownerId = owner.get(id) ?? null;
     const x = { id, set: PLAN_SET };
-    const subFrom = reassignMarks.substitute.get(id);
-    const shift = reassignMarks.shifted.get(id);
-    const stay = leftById.get(id);
     return (
       <VisitCard
         key={id}
@@ -1398,55 +1460,258 @@ export default function PlanPage() {
         detail={<ReasonBox explain={explained.get(id)} />}
         mark={<TypeMark type={typeOf(data.visitTypes, visitById.get(id)?.typeId)} compact />}
       >
-        {(pin || hard || subFrom || shift || stay) && (
-          <div className="row visit-tags">
-            {stay && (
-              <span
-                className="chip chip-red"
-                data-testid="left-mark"
-                title="欠勤の時間と重なるのに振り直していない訪問です。差の欄の「もう一度振り直す」か、ドラッグで別の人へ移してください"
-              >
-                <TriangleAlert size={12} aria-hidden="true" />
-                {leftReasonText(stay)}（対応が必要）
-              </span>
-            )}
-            {subFrom && (
-              <span className="chip chip-move" title={`元の担当：${staffName(subFrom)}`} data-testid="substitute">
-                代行
-                <span className="sr-only">（元の担当：{staffName(subFrom)}さん）</span>
-              </span>
-            )}
-            {shift !== undefined && (
-              <span className="chip chip-warn" title="振り直す前の開始時刻からの変化" data-testid="shifted">
-                {shift > 0 ? `+${shift}分` : `−${-shift}分`}
-              </span>
-            )}
-            {pin && (
-              <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
-                <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-                固定
-              </span>
-            )}
-            {hard?.map((h) => (
-              <span key={h} className="chip chip-red" title="必須の条件の違反">
-                <ShieldAlert size={12} aria-hidden="true" />
-                {h}
-              </span>
-            ))}
-            {pin && (
-              <IconButton
-                icon={PinOff}
-                label="固定を外す"
-                className="icon-btn-sm"
-                onClick={() => unpin(id)}
-                disabled={!!running}
-              />
-            )}
-          </div>
-        )}
+        {tagsOf(id)}
       </VisitCard>
     );
   };
+
+  /**
+   * 時間軸の帯（PRD D58）：時刻は今の案の lenient（explain の timing。無ければ訪問の開始（早）と所要）、色は種類。
+   * 印は小さなアイコンと title、押すと帯の下に印の説明と理由
+   */
+  const bandOf = (id: string, sid: string): TimelineBand => {
+    const v = visitById.get(id);
+    const t = explained.get(id)?.timing ?? null;
+    const start = t?.start ?? hhmmToMinutes(v?.earliestStart ?? '00:00');
+    const end = t?.end ?? start + (v?.durationMinutes ?? 0);
+    const type = typeOf(data.visitTypes, v?.typeId);
+    const client = clientOf(id);
+    const pin = own(pins, id);
+    const hard = hardOf.get(id);
+    const subFrom = reassignMarks.substitute.get(id);
+    const shift = reassignMarks.shifted.get(id);
+    const stay = leftById.get(id);
+    const unfit = typeUnfitOf(problem, id, sid);
+    const notes: string[] = [];
+    const icons: ReactNode[] = [];
+    const mark = (key: string, cls: string, title: string, body: ReactNode, testId?: string) => {
+      notes.push(title);
+      icons.push(
+        <span key={key} className={`tl-mark ${cls}`} title={title} data-testid={testId}>
+          {body}
+        </span>,
+      );
+    };
+    if (type) notes.push(`種類：${type.name}`);
+    if (stay)
+      mark(
+        'left',
+        'is-red',
+        `${leftReasonText(stay)}（対応が必要）`,
+        <TriangleAlert size={11} aria-hidden="true" />,
+        'left-mark',
+      );
+    if (unfit) mark('unfit', 'is-red', '資格✗（種類の担当に必要な条件に合わない）', '資格✗');
+    if (hard && !unfit)
+      mark('hard', 'is-red', `必須の条件の違反：${hard.join('・')}`, <ShieldAlert size={11} aria-hidden="true" />);
+    if (subFrom) mark('sub', 'is-move', `代行（元の担当：${staffName(subFrom)}さん）`, '代', 'substitute');
+    if (shift !== undefined) {
+      const txt = shift > 0 ? `+${shift}分` : `−${-shift}分`;
+      mark('shift', 'is-warn', `振り直す前の開始時刻からの変化 ${txt}`, txt, 'shifted');
+    }
+    if (pin)
+      mark(
+        'pin',
+        'is-pin',
+        '固定（組み直しても担当を変えない）',
+        <Pin size={11} strokeWidth={2.4} aria-hidden="true" />,
+      );
+    if (client?.tentative) mark('tentative', 'is-tentative', '仮押さえ（本登録の前）', '仮');
+    const x = { id, set: PLAN_SET };
+    return {
+      visitId: id,
+      start,
+      end,
+      name: client?.displayName ?? '（不明）',
+      color: type ? colorOf(type.color) : null,
+      tone: hard ? 'red' : pin ? 'pinned' : null,
+      picked: sel.isPicked(x),
+      dragging: dragging === id,
+      onPick: () => sel.togglePick(x),
+      drag: dragProps(id),
+      marks: icons.length > 0 ? icons : undefined,
+      note: notes.join('・') || undefined,
+      detail: (
+        <>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+            <strong>{client?.displayName ?? '（不明）'}</strong>
+            <TypeMark type={type} compact />
+          </div>
+          {tagsOf(id)}
+          <ReasonBox explain={explained.get(id)} />
+        </>
+      ),
+    };
+  };
+
+  /** 列の要素の class（落とす先・必須に合わない予告・薄い列・地図の絞り込み）。順番・時間軸で共通 */
+  const colClass = (sid: string) =>
+    [
+      dropTo === sid ? 'is-drop' : '',
+      dropTo === sid && dragging !== null && !allowedFor(dragging, sid) ? 'is-red' : '',
+      rDiff && !reassignMarks.changed.has(sid) ? 'is-unchanged' : '',
+      focusStaff === sid ? 'is-focus' : '',
+      focusStaff && focusStaff !== sid ? 'is-dim-col' : '',
+    ].join(' ');
+  /** 列の見出し（名前・件数・稼働時間帯・欠勤・欠勤の人の近道・必須に合わない予告）。順番・時間軸で共通 */
+  const colHeader = (sid: string) => {
+    const ids = own(routes, sid) ?? [];
+    const notAllowed = dropTo === sid && dragging !== null && !allowedFor(dragging, sid);
+    const avail = slotsOf.get(sid);
+    const s = staffById.get(sid);
+    return (
+      <>
+        <div className="spread">
+          <button
+            type="button"
+            className="col-head col-focus ellipsis"
+            aria-pressed={focusStaff === sid}
+            title={focusStaff === sid ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
+            onClick={() => {
+              focusOn(focusStaff === sid ? null : sid);
+            }}
+          >
+            <span className="staff-dot" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
+            {staffName(sid)}
+            <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
+          </button>
+          <span className="chip">{ids.length}件</span>
+        </div>
+        <div className="col-hours">
+          {(avail?.slots.length ?? 0) > 0 ? (
+            <span className="sub item-time">
+              <Clock size={13} aria-hidden="true" />
+              {slotsText(avail?.slots ?? [])}
+            </span>
+          ) : avail?.absence ? null : (
+            <span className="chip chip-off">{s && !s.active ? '休止中' : '休み'}</span>
+          )}
+          {avail?.absence && (
+            <span className="chip chip-red" title={avail.absence.note || undefined} data-testid="absence-mark">
+              <UserRoundX size={12} aria-hidden="true" />
+              {absenceText(avail.absence, avail.baseSlots)}
+            </span>
+          )}
+          {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
+          {(avail?.baseSlots.length ?? 0) > 0 && (
+            <button
+              type="button"
+              className="link-btn absence-btn"
+              onClick={() => setAbsenceFor(sid)}
+              aria-label={`${staffName(sid)}さんの${avail?.absence ? '欠勤を直す' : '急な欠勤'}`}
+            >
+              {avail?.absence ? '欠勤を直す' : '急な欠勤'}
+            </button>
+          )}
+        </div>
+        {reassignInfo && absentStaff.has(sid) && (
+          <div className="row col-reassign" data-testid="col-reassign">
+            <button type="button" className="link-btn" onClick={goToBar}>
+              振り直し済み・入らない（全体） {rDiff?.unplaced.length ?? 0}件
+            </button>
+            {left.some((x) => x.staffId === sid) && (
+              <button type="button" className="chip chip-red chip-btn" onClick={goToBar}>
+                欠勤の人のまま {left.filter((x) => x.staffId === sid).length}件
+              </button>
+            )}
+            {annealRecommended && !annealDisabled && (
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  startAnneal();
+                  goToBar();
+                }}
+              >
+                案B を作る
+              </button>
+            )}
+          </div>
+        )}
+        {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
+      </>
+    );
+  };
+  /** 「入らなかった訪問（未割当）」の列（ドラッグの受け口にもなる） */
+  const noneCol = (
+    <div
+      className={[
+        'route-col route-col-none',
+        // ドラッグの間だけ出す空の列は最後に置き、ほかの列をずらさない（掴んだカードが指の下から逃げない）
+        unassigned.length === 0 ? 'is-drag-only' : '',
+        dropTo === NONE ? 'is-drop' : '',
+      ].join(' ')}
+      data-staff={NONE}
+      {...dropProps(NONE)}
+    >
+      <div className="spread">
+        <strong className="col-head">
+          <CircleOff size={16} aria-hidden="true" />
+          入らなかった訪問（未割当）
+        </strong>
+        <span className="chip chip-warn">{unassigned.length}件</span>
+      </div>
+      {unassigned.length === 0 && <span className="sub">ここへドラッグすると未割当に戻せます</span>}
+      {unassigned.map((id) => {
+        // どの担当も可にならない訪問は infeasible、候補がいるのに入らない訪問は explain が理由を持つ
+        const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
+        const reasons = inf?.reasons ?? explained.get(id)?.reasons ?? [];
+        return (
+          <div key={id} className="stack" style={{ gap: 2 }}>
+            {card(id)}
+            {reasons.map((r) => (
+              <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
+                {r.label}
+                {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
+              </span>
+            ))}
+            {problem && reassignMarks.unplaced.has(id) && (
+              <CandidateBox
+                problem={problem}
+                routes={routes}
+                visitId={id}
+                staffName={staffName}
+                visit={visitById.get(id)}
+                running={!!running}
+                onPlace={(c) => placeCandidate(id, c)}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+  /** 時間軸の列（PRD D58） */
+  const timelineCol = (sid: string): TimelineColumn => {
+    const ids = own(routes, sid) ?? [];
+    const avail = slotsOf.get(sid);
+    const stops = ids.flatMap((id) => {
+      const t = explained.get(id)?.timing;
+      return t ? [t] : [];
+    });
+    const shadow =
+      dropTo === sid && dragging !== null && problem && owner.get(dragging) !== sid
+        ? shadowOf(problem, routes, dragging, sid)
+        : null;
+    return {
+      staffId: sid,
+      className: colClass(sid),
+      style: { borderTopColor: colorOfStaff.get(sid) },
+      drop: dropProps(sid),
+      header: colHeader(sid),
+      baseSlots: spansOf(avail?.baseSlots ?? []),
+      slots: spansOf(avail?.slots ?? []),
+      bands: ids.map((id) => bandOf(id, sid)),
+      legs: stops.length === ids.length ? legsOf(stops, homeTravel(problem, staffById.get(sid), routes)) : [],
+      shadow,
+      emptyText: 'ここへドラッグすると移せます',
+    };
+  };
+  /** 時間軸の区間 → 地図で強調する区間（自宅までは `home:<担当>`、来る区間は行き先の訪問） */
+  const legSel = (leg: LegSpan) => ({
+    id: leg.kind === 'toHome' ? homeLegKey(owner.get(leg.visitId) ?? '') : leg.visitId,
+    set: PLAN_SET,
+  });
 
   return (
     <div className="plan-layout">
@@ -1874,164 +2139,63 @@ export default function PlanPage() {
                 aside={
                   <Hint>
                     訪問をドラッグして別の{terms.staff}
-                    へ移せます（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定（組み直しても担当を変えない）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。
+                    へ移せます（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定（組み直しても担当を変えない）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
                   </Hint>
                 }
               >
                 {terms.staff}ごとの順番
               </SectionTitle>
-              <div className="route-grid">
-                {(unassigned.length > 0 || (dragging !== null && owner.has(dragging))) && (
-                  <div
-                    className={[
-                      'route-col route-col-none',
-                      // ドラッグの間だけ出す空の列は最後に置き、ほかの列をずらさない（掴んだカードが指の下から逃げない）
-                      unassigned.length === 0 ? 'is-drag-only' : '',
-                      dropTo === NONE ? 'is-drop' : '',
-                    ].join(' ')}
-                    data-staff={NONE}
-                    {...dropProps(NONE)}
+              <fieldset className="segmented seg-sm plan-view-toggle" aria-label="担当ごとの表示">
+                {(
+                  [
+                    ['timeline', '時間軸'],
+                    ['order', '順番'],
+                  ] as const
+                ).map(([k, text]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    aria-pressed={colView === k}
+                    className={colView === k ? 'is-on' : ''}
+                    onClick={() => setColView(k)}
                   >
-                    <div className="spread">
-                      <strong className="col-head">
-                        <CircleOff size={16} aria-hidden="true" />
-                        入らなかった訪問（未割当）
-                      </strong>
-                      <span className="chip chip-warn">{unassigned.length}件</span>
-                    </div>
-                    {unassigned.length === 0 && <span className="sub">ここへドラッグすると未割当に戻せます</span>}
-                    {unassigned.map((id) => {
-                      // どの担当も可にならない訪問は infeasible、候補がいるのに入らない訪問は explain が理由を持つ
-                      const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
-                      const reasons = inf?.reasons ?? explained.get(id)?.reasons ?? [];
-                      return (
-                        <div key={id} className="stack" style={{ gap: 2 }}>
-                          {card(id)}
-                          {reasons.map((r) => (
-                            <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
-                              {r.label}
-                              {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
-                            </span>
-                          ))}
-                          {problem && reassignMarks.unplaced.has(id) && (
-                            <CandidateBox
-                              problem={problem}
-                              routes={routes}
-                              visitId={id}
-                              staffName={staffName}
-                              visit={visitById.get(id)}
-                              running={!!running}
-                              onPlace={(c) => placeCandidate(id, c)}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {columns.map((sid) => {
-                  const ids = own(routes, sid) ?? [];
-                  const notAllowed = dropTo === sid && dragging !== null && !allowedFor(dragging, sid);
-                  const avail = slotsOf.get(sid);
-                  const s = staffById.get(sid);
-                  return (
-                    <div
-                      key={sid}
-                      className={[
-                        'route-col',
-                        dropTo === sid ? 'is-drop' : '',
-                        notAllowed ? 'is-red' : '',
-                        rDiff && !reassignMarks.changed.has(sid) ? 'is-unchanged' : '',
-                        focusStaff === sid ? 'is-focus' : '',
-                        focusStaff && focusStaff !== sid ? 'is-dim-col' : '',
-                      ].join(' ')}
-                      style={{ borderTopColor: colorOfStaff.get(sid) }}
-                      data-staff={sid}
-                      {...dropProps(sid)}
-                    >
-                      <div className="spread">
-                        <button
-                          type="button"
-                          className="col-head col-focus ellipsis"
-                          aria-pressed={focusStaff === sid}
-                          title={focusStaff === sid ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
-                          onClick={() => {
-                            focusOn(focusStaff === sid ? null : sid);
-                          }}
-                        >
-                          <span
-                            className="staff-dot"
-                            style={{ background: colorOfStaff.get(sid) }}
-                            aria-hidden="true"
-                          />
-                          {staffName(sid)}
-                          <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
-                        </button>
-                        <span className="chip">{ids.length}件</span>
+                    {text}
+                  </button>
+                ))}
+              </fieldset>
+              {shownView === 'timeline' ? (
+                <>
+                  {unassigned.length > 0 && noneCol}
+                  <RouteTimeline
+                    columns={columns.map(timelineCol)}
+                    legOn={(leg) => sel.isLeg(legSel(leg))}
+                    onLeg={(leg) => sel.toggleLeg(legSel(leg))}
+                  />
+                  {/* 未割当が0件のときのドラッグの受け口は時間軸の下に出す（時間軸の位置を変えない） */}
+                  {unassigned.length === 0 && dragging !== null && owner.has(dragging) && noneCol}
+                </>
+              ) : (
+                <div className="route-grid">
+                  {(unassigned.length > 0 || (dragging !== null && owner.has(dragging))) && noneCol}
+                  {columns.map((sid) => {
+                    const ids = own(routes, sid) ?? [];
+                    return (
+                      <div
+                        key={sid}
+                        className={`route-col ${colClass(sid)}`}
+                        style={{ borderTopColor: colorOfStaff.get(sid) }}
+                        data-staff={sid}
+                        {...dropProps(sid)}
+                      >
+                        {colHeader(sid)}
+                        {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
+                        {ids.map((id) => card(id))}
+                        {homeLeg(sid)}
                       </div>
-                      <div className="col-hours">
-                        {(avail?.slots.length ?? 0) > 0 ? (
-                          <span className="sub item-time">
-                            <Clock size={13} aria-hidden="true" />
-                            {slotsText(avail?.slots ?? [])}
-                          </span>
-                        ) : avail?.absence ? null : (
-                          <span className="chip chip-off">{s && !s.active ? '休止中' : '休み'}</span>
-                        )}
-                        {avail?.absence && (
-                          <span
-                            className="chip chip-red"
-                            title={avail.absence.note || undefined}
-                            data-testid="absence-mark"
-                          >
-                            <UserRoundX size={12} aria-hidden="true" />
-                            {absenceText(avail.absence, avail.baseSlots)}
-                          </span>
-                        )}
-                        {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
-                        {(avail?.baseSlots.length ?? 0) > 0 && (
-                          <button
-                            type="button"
-                            className="link-btn absence-btn"
-                            onClick={() => setAbsenceFor(sid)}
-                            aria-label={`${staffName(sid)}さんの${avail?.absence ? '欠勤を直す' : '急な欠勤'}`}
-                          >
-                            {avail?.absence ? '欠勤を直す' : '急な欠勤'}
-                          </button>
-                        )}
-                      </div>
-                      {reassignInfo && absentStaff.has(sid) && (
-                        <div className="row col-reassign" data-testid="col-reassign">
-                          <button type="button" className="link-btn" onClick={goToBar}>
-                            振り直し済み・入らない（全体） {rDiff?.unplaced.length ?? 0}件
-                          </button>
-                          {left.some((x) => x.staffId === sid) && (
-                            <button type="button" className="chip chip-red chip-btn" onClick={goToBar}>
-                              欠勤の人のまま {left.filter((x) => x.staffId === sid).length}件
-                            </button>
-                          )}
-                          {annealRecommended && !annealDisabled && (
-                            <button
-                              type="button"
-                              className="btn btn-small"
-                              onClick={() => {
-                                startAnneal();
-                                goToBar();
-                              }}
-                            >
-                              案B を作る
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
-                      {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
-                      {ids.map((id) => card(id))}
-                      {homeLeg(sid)}
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="card stack" ref={mapCardRef}>
@@ -2168,6 +2332,30 @@ export default function PlanPage() {
       />
     </div>
   );
+}
+
+/** 時間軸をやめて順番にする幅（PRD D58） */
+const NARROW_QUERY = '(max-width: 900px)';
+
+/** 狭い幅（900px 以下）か印刷中か。印刷は beforeprint の中ですぐ描き直す（印刷の画像に間に合わせる） */
+function useNarrowOrPrint(): boolean {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(mq.matches);
+    const before = () => flushSync(() => setPrinting(true));
+    const after = () => setPrinting(false);
+    mq.addEventListener('change', onChange);
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => {
+      mq.removeEventListener('change', onChange);
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint', after);
+    };
+  }, []);
+  return narrow || printing;
 }
 
 /** 今の案の合計点（100点満点）・移動・待ち・必須の違反と、AIが出したままとの差 */

@@ -4,39 +4,60 @@ import {
   ChevronRight,
   CircleAlert,
   Layers,
+  ListChecks,
+  Lock,
+  PencilLine,
   RefreshCw,
   Repeat,
   Sparkles,
   Square,
+  UserRound,
   UserX,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { LoadBar, LoadLegend, LoadScale, loadSummary, TypeStack } from '../components/loadBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
-import type { Visit } from '../contracts/documents';
+import type { Staff, Visit, VisitType } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
-import { jstDate, weekday } from '../domain/time';
-import { normalize, score, toHundred } from '../evaluate';
-import { attempt, own, WEEKDAY_LABELS } from '../lib/common';
+import { VACANCY_DAY_END_DEFAULT, VACANCY_DAY_START_DEFAULT } from '../contracts/vacancy';
+import { slotsText, timeText } from '../domain/availability';
+import { hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
+import { score } from '../evaluate';
+import { colorOf } from '../lib/colors';
+import { attempt, byDisplayName, byName, own, WEEKDAY_LABELS } from '../lib/common';
 import {
   addMonths,
   applyDayRun,
+  attentionList,
   type BatchMode,
   batchTargets,
+  type ClientDay,
   calendarWeeks,
+  clientDay,
+  clientMonth,
+  type DayMarks,
+  type DayPlan,
   type DayStatus,
   type DayView,
+  dayMarks,
+  dayPlanOf,
   dayStatus,
   expandMonth,
   isYm,
   monthDates,
   planEdited,
   planStale,
+  type StaffDay,
+  shortName,
+  staffDay,
+  staffMonth,
+  type TypeCount,
   ymOf,
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
@@ -45,12 +66,14 @@ import { useDayModel } from '../lib/useDayModel';
 import { type CompileInput, compile } from '../matching';
 import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
-import { type DayFreeness, dayFreeness } from '../vacancy';
+import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
 
 /**
- * 月間カレンダーと月まとめ作成（ADR-0012 段階1。PRD D39〜D43。design.md §4 pages「月単位の予定」）。
- * 日のマスは日付・訪問の件数・状態・入らない・点数（点数の基準の物差し）・欠勤・条件が変わった。押すとその日の予定の画面へ。
+ * 月間カレンダーと月まとめ作成（ADR-0012。PRD D39〜D43・D53〜D55。design.md §4 pages「月単位の予定」「月間・週間の改定」）。
+ * 日のマスは点数を出さず、状態を背景・枠と印で（凡例あり。読み上げには状態の文字）、種類の積み上げバー・休み欠勤の印・
+ * 始まる▶終わる■の印・混み具合バー（vacancy の dayLoad）。「表示」で〈スタッフ〉か〈利用者さん〉を1人選ぶと、日のマスと
+ * 右の欄がその人のものになる（?staff= ?client=）。選ばないときの右の欄は要対応。押すとその日の予定の画面へ。
  * 月まとめ作成は、基準のプリセットの重みで1日ずつ Worker で解き、その日の今の案と記録を1回の update で書く
  */
 
@@ -80,6 +103,8 @@ function etaText(days: number): string {
 const longDate = (d: string) =>
   `${Number(d.slice(5, 7))}月${Number(d.slice(8, 10))}日（${WEEKDAY_LABELS[weekday(d)]}）`;
 const ymText = (ym: string) => `${ym.slice(0, 4)}年${Number(ym.slice(5, 7))}月`;
+const hm = (t: number) => timeText(minutesToHhmm(t));
+const hoursText = (minutes: number) => `${Math.round((minutes / 60) * 10) / 10}時間`;
 
 const STATE_TEXT: Record<DayStatus['state'], string> = {
   none: '案なし',
@@ -87,16 +112,28 @@ const STATE_TEXT: Record<DayStatus['state'], string> = {
   confirmed: '確定済み',
   diff: '未確定の変更あり',
 };
+const STATE_ORDER: DayStatus['state'][] = ['none', 'plan', 'confirmed', 'diff'];
+
+const LOAD_FROM = hhmmToMinutes(VACANCY_DAY_START_DEFAULT);
+const LOAD_TO = hhmmToMinutes(VACANCY_DAY_END_DEFAULT);
 
 /** 日の表示の計算の覚え（日付ごと。同じ入力なら compile・採点し直さない） */
 type Memo = {
   base: unknown[];
   visits: Visit[];
-  plan: AiPlan;
+  plan: AiPlan | undefined;
+  saved: unknown;
   runs: AiRun[] | undefined;
   rules: Rule[];
+  problem: Problem | null;
   view: DayView;
 };
+
+/** 表示の選択：全体／〈スタッフ〉1人／〈利用者さん〉1人 */
+type Focus = { kind: 'all' } | { kind: 'staff'; id: string } | { kind: 'client'; id: string };
+
+const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
 
 export default function MonthPage() {
   const { date, setDate } = useDay();
@@ -114,6 +151,8 @@ export default function MonthPage() {
   const [mode, setMode] = useState<'empty' | 'all'>('empty');
   const [batch, setBatch] = useState<Batch | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 混み具合で数える人（null＝すべての人。種類の ID） */
+  const [loadType, setLoadType] = useState<string | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
   const runRef = useRef<{ stop(): void } | null>(null);
@@ -136,83 +175,132 @@ export default function MonthPage() {
     };
   }, []);
 
+  const activeStaff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
+  const activeClients = useMemo(() => data.clients.filter((c) => c.active).sort(byDisplayName), [data.clients]);
+  const typeById = useMemo(() => new Map(data.visitTypes.map((t) => [t.id, t])), [data.visitTypes]);
+  const staffById = useMemo(() => new Map(data.staff.map((s) => [s.id, s])), [data.staff]);
+
+  // ---- 表示の選択（?staff= ?client=。いない人は全体）----
+  const focus: Focus = useMemo(() => {
+    const sid = params.get('staff');
+    if (sid && activeStaff.some((s) => s.id === sid)) return { kind: 'staff', id: sid };
+    const cid = params.get('client');
+    if (cid && activeClients.some((c) => c.id === cid)) return { kind: 'client', id: cid };
+    return { kind: 'all' };
+  }, [params, activeStaff, activeClients]);
+  const focusValue = focus.kind === 'all' ? 'all' : `${focus.kind}:${focus.id}`;
+  /** URL の一部だけ変える（ほかの値は残す） */
+  const patchParams = (patch: Record<string, string | null>) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [k, v] of Object.entries(patch)) {
+          if (v === null) next.delete(k);
+          else next.set(k, v);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  const pickFocus = (value: string) => {
+    const [kind, ...rest] = value.split(':');
+    const id = rest.join(':');
+    patchParams({ staff: kind === 'staff' ? id : null, client: kind === 'client' ? id : null });
+  };
+
   /** 点数の基準のプリセット（月まとめ作成に使う。ADR-0012） */
   const basePreset = useMemo(() => scorePresetOf(data.presets, data.scorePresetId), [data.presets, data.scorePresetId]);
-  /** 点数の物差しの条件（いまの条件に基準のプリセットを当てたもの） */
+  /** 点数の物差しの条件（いまの条件に基準のプリセットを当てたもの。必須の違反と「条件が変わった」の判定に使う） */
   const scoreRules = useMemo(
     () => scoreRulesOf({ rules: data.rules, presets: data.presets, scorePresetId: data.scorePresetId }),
     [data.rules, data.presets, data.scorePresetId],
   );
 
-  // ---- 日のマスの表示（日付・compile が読むデータ・案で覚える。8人・約17件／日の一月で 500ms 以内）----
-  const memo = useRef(new Map<string, Memo>());
   const weeks = useMemo(() => calendarWeeks(ym), [ym]);
-  const statuses = useMemo(() => {
-    const out = new Map<string, DayStatus>();
-    const visitsByDate = new Map<string, Visit[]>();
-    for (const v of compileInput.visits) {
-      const list = visitsByDate.get(v.date);
+  const days = useMemo(() => monthDates(ym), [ym]);
+  /** 日ごとの訪問（compile にはその日の訪問だけを渡す。compile はその日の訪問しか読まない） */
+  const visitsByDate = useMemo(() => {
+    const out = new Map<string, Visit[]>();
+    for (const v of data.visits) {
+      const list = out.get(v.date);
       if (list) list.push(v);
-      else visitsByDate.set(v.date, [v]);
+      else out.set(v.date, [v]);
     }
+    return out;
+  }, [data.visits]);
+
+  // ---- 日の問題と状態（日付・compile が読むデータ・案で覚える。8人・約17件／日の一月で 500ms 以内）----
+  const memoRef = useRef(new Map<string, Memo>());
+  const perDay = useMemo(() => {
+    const out = new Map<string, { status: DayStatus; problem: Problem | null }>();
     const c = compileInput;
     const base = [c.org, c.items, c.staff, c.clients, c.compat, c.availability, c.absences, c.visitTypes, c.patterns];
-    const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
-      a.length === b.length && a.every((x, i) => x === b[i]);
-    for (const d of weeks.flat()) {
+    for (const d of days) {
       const plan = own(data.aiPlans, d);
-      if (!plan) {
-        out.set(d, dayStatus(data, d));
+      const saved = own(data.manualPlans, d);
+      const visits = visitsByDate.get(d) ?? [];
+      if ((!plan && !saved) || !visits.some((v) => !v.cancelled)) {
+        out.set(d, { status: dayStatus(data, d), problem: null });
         continue;
       }
-      const visits = visitsByDate.get(d) ?? [];
       const runs = own(data.aiRuns, d);
-      const hit = memo.current.get(d);
+      const hit = memoRef.current.get(d);
       if (
         hit &&
         hit.plan === plan &&
+        hit.saved === saved &&
         hit.runs === runs &&
         hit.rules === scoreRules &&
         sameList(hit.base, base) &&
         sameList(hit.visits, visits)
       ) {
-        out.set(d, dayStatus(data, d, hit.view));
+        out.set(d, { status: dayStatus(data, d, hit.view), problem: hit.problem });
         continue;
       }
-      // その日の訪問だけを渡して compile する（compile はその日の訪問しか読まない）
       const input: CompileInput = { ...c, visits };
       const sp = attempt(() => compile({ ...input, rules: scoreRules }, d)).value;
       let view: DayView = {};
-      if (sp) {
-        const scale = attempt(() => normalize(sp)).value;
+      if (sp && plan) {
         const aligned = attempt(() => alignPlan(sp, plan)).value ?? plan;
         const sc = attempt(() => score(sp, aligned.routes)).value;
         const scoreKey = JSON.stringify(scoreRules);
         view = {
           visitIds: sp.visits.map((v) => v.id),
-          hundred: sc && scale ? toHundred(sc.total, scale) : null,
           hard: sc?.hardViolations.length ?? 0,
           stale: planStale(input, data, d, (rules, pins) =>
             Object.keys(pins).length === 0 && JSON.stringify(rules) === scoreKey ? sp : undefined,
           ),
         };
+      } else if (sp) {
+        view = { visitIds: sp.visits.map((v) => v.id) };
       }
-      memo.current.set(d, { base, visits, plan, runs, rules: scoreRules, view });
-      out.set(d, dayStatus(data, d, view));
+      memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });
+      out.set(d, { status: dayStatus(data, d, view), problem: sp });
     }
     return out;
-  }, [weeks, compileInput, data, scoreRules]);
+  }, [days, compileInput, data, scoreRules, visitsByDate]);
+  const statuses = useMemo(() => new Map([...perDay].map(([d, x]) => [d, x.status])), [perDay]);
 
-  // ---- 日の午前・午後の空き（D48。案のある日だけ。日付・compile が読むデータ・案で覚える）----
-  const freeMemo = useRef(new Map<string, { key: readonly unknown[]; value: DayFreeness }>());
-  const freeness = useMemo(() => {
-    const out = new Map<string, DayFreeness>();
-    const visitsByDate = new Map<string, Visit[]>();
-    for (const v of data.visits) {
-      const list = visitsByDate.get(v.date);
-      if (list) list.push(v);
-      else visitsByDate.set(v.date, [v]);
-    }
+  /** その日の数える案（今の案、無ければ確定した割当）。問題は上で作ったものを使う */
+  const dayPlans = useMemo(() => {
+    const out = new Map<string, DayPlan>();
+    for (const d of days) out.set(d, dayPlanOf(data, d, perDay.get(d)?.problem ?? null));
+    return out;
+  }, [days, data, perDay]);
+
+  // ---- 日のマスの印（D53）----
+  const marks = useMemo(() => {
+    const out = new Map<string, DayMarks>();
+    for (const d of days) out.set(d, dayMarks(data, d));
+    return out;
+  }, [days, data]);
+
+  // ---- 混み具合（D54。日付・数える人・compile が読むデータ・案で覚える）----
+  const loadMemo = useRef(new Map<string, { key: readonly unknown[]; value: DayLoadSlot[] | null }>());
+  const loads = useMemo(() => {
+    const out = new Map<string, DayLoadSlot[] | null>();
+    if (focus.kind !== 'all') return out;
     const base = [
       data.org,
       data.items,
@@ -223,27 +311,50 @@ export default function MonthPage() {
       data.absences,
       data.visitTypes,
       data.rules,
+      loadType,
     ];
-    for (const d of weeks.flat()) {
-      if (ymOf(d) !== ym) continue;
-      const s = statuses.get(d);
-      if (!s || s.count === 0 || s.state === 'none') continue;
+    for (const d of days) {
       const visits = visitsByDate.get(d) ?? [];
       const key = [...base, own(data.aiPlans, d), own(data.manualPlans, d), ...visits];
-      const hit = freeMemo.current.get(d);
-      if (hit && hit.key.length === key.length && hit.key.every((x, i) => x === key[i])) {
+      const hit = loadMemo.current.get(d);
+      if (hit && sameList(hit.key, key)) {
         out.set(d, hit.value);
         continue;
       }
-      // その日の訪問だけを渡す（compile はその日の訪問しか読まない）
-      const value = attempt(() => dayFreeness({ ...data, visits }, d)).value ?? { am: null, pm: null };
-      freeMemo.current.set(d, { key, value });
+      const value = attempt(() => dayLoad({ ...data, visits }, d, { typeId: loadType })).value ?? null;
+      loadMemo.current.set(d, { key, value });
       out.set(d, value);
     }
     return out;
-  }, [weeks, ym, data, statuses]);
+  }, [focus.kind, days, data, visitsByDate, loadType]);
 
-  const days = useMemo(() => monthDates(ym), [ym]);
+  // ---- 選んだ人の日と月の集計（D55）----
+  const staffDays = useMemo(() => {
+    const out = new Map<string, StaffDay>();
+    if (focus.kind !== 'staff') return out;
+    for (const d of days) out.set(d, staffDay(compileInput, dayPlans.get(d)!, focus.id));
+    return out;
+  }, [focus, days, compileInput, dayPlans]);
+  const clientDays = useMemo(() => {
+    const out = new Map<string, ClientDay>();
+    if (focus.kind !== 'client') return out;
+    for (const d of days) out.set(d, clientDay(compileInput, dayPlans.get(d)!, focus.id));
+    return out;
+  }, [focus, days, compileInput, dayPlans]);
+  const monthPlans = useMemo(() => days.map((d) => dayPlans.get(d)!), [days, dayPlans]);
+  const staffSum = useMemo(
+    () => (focus.kind === 'staff' ? staffMonth(compileInput, monthPlans, focus.id) : null),
+    [focus, compileInput, monthPlans],
+  );
+  const clientSum = useMemo(
+    () => (focus.kind === 'client' ? clientMonth(compileInput, monthPlans, focus.id) : null),
+    [focus, compileInput, monthPlans],
+  );
+  const attention = useMemo(
+    () => attentionList(data, days.map((d) => statuses.get(d)!).filter(Boolean), today),
+    [data, days, statuses, today],
+  );
+
   const summary = useMemo(() => {
     let visits = 0;
     let withVisits = 0;
@@ -413,15 +524,24 @@ export default function MonthPage() {
   };
 
   const goMonth = (next: string) => {
-    setParams({ ym: next });
+    patchParams({ ym: next });
   };
-  const openDay = (d: string) => {
-    setDate(d);
-    navigate('/plan');
-  };
+  const openDay = useCallback(
+    (d: string) => {
+      setDate(d);
+      navigate('/plan');
+    },
+    [setDate, navigate],
+  );
 
   const current = batch ? batch.targets[batch.index] : undefined;
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
+  const focusName =
+    focus.kind === 'staff'
+      ? (staffById.get(focus.id)?.name ?? '')
+      : focus.kind === 'client'
+        ? (activeClients.find((c) => c.id === focus.id)?.displayName ?? '')
+        : '';
 
   return (
     <div className="stack">
@@ -482,6 +602,45 @@ export default function MonthPage() {
             件
           </span>
         </div>
+        <div className="row month-pickers">
+          <label className="month-picker">
+            <span>表示</span>
+            <select value={focusValue} onChange={(e) => pickFocus(e.target.value)} data-testid="month-focus">
+              <option value="all">全体</option>
+              <optgroup label={terms.staff}>
+                {activeStaff.map((s) => (
+                  <option key={s.id} value={`staff:${s.id}`}>
+                    {s.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={terms.client}>
+                {activeClients.map((c) => (
+                  <option key={c.id} value={`client:${c.id}`}>
+                    {c.displayName}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+          {focus.kind === 'all' && (
+            <label className="month-picker">
+              <span>混み具合で数える人</span>
+              <select
+                value={loadType ?? ''}
+                onChange={(e) => setLoadType(e.target.value === '' ? null : e.target.value)}
+                data-testid="month-load-type"
+              >
+                <option value="">すべて</option>
+                {data.visitTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}（担当できる人）
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
         <div className="row month-tools">
           <button
             type="button"
@@ -506,12 +665,14 @@ export default function MonthPage() {
             </WithIcon>
           </button>
           <Hint>
-            日のマスを押すと、その日の予定の画面を開きます。点数は点数の基準のプリセット「{scoreRulerName}
-            」の物差しです。枠の濃い日（「要確認」）は、訪問があるのに案が無い・入らない訪問がある・必須の違反がある日です。
-            「条件が変わった」は、案を作ったあとに訪問・{terms.staff}・稼働時間・条件が変わった日です。
+            日のマスを押すと、その日の予定の画面を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要確認」）は、訪問があるのに案が無い・入らない訪問がある・必須の違反がある日です（必須の違反は点数の基準のプリセット「
+            {scoreRulerName}」の条件で見ます）。「条件が変わった」は、案を作ったあとに訪問・{terms.staff}
+            ・稼働時間・条件が変わった日です。混み具合のバーは 7:00〜20:00 を30分ずつに分け、その30分に空いている
+            {terms.staff}の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。
           </Hint>
           {noVisitsWhy && <span className="sub">{noVisitsWhy}</span>}
         </div>
+        <MonthLegend showLoad={focus.kind === 'all'} />
         {batch && (
           <div className="stack month-progress" style={{ gap: 4 }} data-testid="month-progress">
             <progress
@@ -540,113 +701,172 @@ export default function MonthPage() {
         )}
       </div>
 
-      <div className="card month-card">
-        <table className="month-grid" data-testid="month-grid">
-          <thead>
-            <tr>
-              {WEEKDAY_LABELS.map((w, i) => (
-                <th key={w} scope="col" className={i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}>
-                  {w}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {weeks.map((week) => (
-              <tr key={week[0]}>
-                {week.map((d) => {
-                  const s = statuses.get(d);
-                  const inMonth = ymOf(d) === ym;
-                  if (!inMonth || !s) {
+      <div className="month-body">
+        <div className="card month-card">
+          <table className="month-grid" data-testid="month-grid">
+            <thead>
+              <tr>
+                {WEEKDAY_LABELS.map((w, i) => (
+                  <th key={w} scope="col" className={i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}>
+                    {w}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((week) => (
+                <tr key={week[0]}>
+                  {week.map((d) => {
+                    const s = statuses.get(d);
+                    if (ymOf(d) !== ym || !s) {
+                      return (
+                        <td key={d} className="month-cell is-out">
+                          <span className="month-day">{mdText(d)}</span>
+                        </td>
+                      );
+                    }
                     return (
-                      <td key={d} className="month-cell is-out">
-                        <span className="month-day">{mdText(d)}</span>
-                      </td>
+                      <DayCell
+                        key={d}
+                        date={d}
+                        status={s}
+                        today={today}
+                        picked={d === date}
+                        making={current === d}
+                        focus={focus.kind}
+                        marks={marks.get(d)!}
+                        load={focus.kind === 'all' ? (loads.get(d) ?? null) : undefined}
+                        staffDay={staffDays.get(d)}
+                        clientDay={clientDays.get(d)}
+                        typeById={typeById}
+                        staffById={staffById}
+                        onOpen={openDay}
+                      />
                     );
-                  }
-                  const past = d < today;
-                  const making = current === d;
-                  const free = freeness.get(d);
-                  const freeParts = free ? freeTexts(free) : [];
-                  const parts = [
-                    longDate(d),
-                    s.count > 0 ? `訪問 ${s.count}件` : '訪問なし',
-                    s.count > 0 ? STATE_TEXT[s.state] : '',
-                    s.unassigned > 0 ? `入らない ${s.unassigned}件` : '',
-                    s.hard > 0 ? `必須の違反 ${s.hard}件` : '',
-                    s.hundred !== null ? `${s.hundred}点` : '',
-                    s.absence ? '欠勤あり' : '',
-                    s.stale ? '条件が変わった' : '',
-                    s.needsCare ? '要確認' : '',
-                    making ? '作っています' : '',
-                    ...freeParts,
-                  ].filter(Boolean);
-                  return (
-                    <td
-                      key={d}
-                      className={[
-                        'month-cell',
-                        past ? 'is-past' : '',
-                        s.needsCare ? 'is-care' : '',
-                        d === today ? 'is-today' : '',
-                        d === date ? 'is-picked' : '',
-                        making ? 'is-making' : '',
-                      ].join(' ')}
-                    >
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <aside className="card stack month-aside" data-testid="month-aside" aria-label="右の欄">
+          {focus.kind === 'all' && (
+            <>
+              <h2 className="month-aside-title">
+                <ListChecks size={18} aria-hidden="true" />
+                要対応
+              </h2>
+              {attention.length === 0 ? (
+                <p className="sub">今日以降で、入らない訪問・条件が変わった日・欠勤のある日はありません。</p>
+              ) : (
+                <ul className="month-attention" data-testid="month-attention">
+                  {attention.map((a) => (
+                    <li key={`${a.date}-${a.kind}`}>
                       <button
                         type="button"
-                        className="month-cell-btn"
-                        data-testid="month-day"
-                        data-date={d}
-                        aria-label={parts.join('・')}
-                        title={`${parts.join('・')}（押すとこの日の予定の画面を開きます）`}
-                        onClick={() => openDay(d)}
+                        className={`month-attention-btn is-${a.kind}`}
+                        onClick={() => openDay(a.date)}
+                        title="押すとその日の予定の画面を開きます"
                       >
-                        <span className="month-day">
-                          {Number(d.slice(8, 10))}
-                          {d === today && <span className="month-today">今日</span>}
+                        <span className="month-attention-date">
+                          {mdText(a.date)}（{WEEKDAY_LABELS[weekday(a.date)]}）
                         </span>
-                        {s.count > 0 && <span className="month-count">訪問 {s.count}件</span>}
-                        {s.count > 0 && (
-                          <span className={`month-state is-${s.state}`} data-testid="month-state">
-                            {making ? '作っています…' : STATE_TEXT[s.state]}
-                          </span>
-                        )}
-                        {s.hundred !== null && <span className="month-score">{s.hundred}点</span>}
-                        {s.unassigned > 0 && (
-                          <span className="month-flag is-warn">
-                            <CircleAlert size={12} aria-hidden="true" />
-                            入らない {s.unassigned}件
-                          </span>
-                        )}
-                        {s.hard > 0 && (
-                          <span className="month-flag is-red">
-                            <CircleAlert size={12} aria-hidden="true" />
-                            必須の違反 {s.hard}件
-                          </span>
-                        )}
-                        {s.absence && (
-                          <span className="month-flag">
-                            <UserX size={12} aria-hidden="true" />
-                            欠勤
-                          </span>
-                        )}
-                        {s.stale && (
-                          <span className="month-flag is-warn" data-testid="month-stale">
-                            <RefreshCw size={12} aria-hidden="true" />
-                            条件が変わった
-                          </span>
-                        )}
-                        {s.needsCare && !past && <span className="month-care">要確認</span>}
-                        {free && freeParts.length > 0 && <FreeBars free={free} />}
+                        <span>
+                          {a.kind === 'unassigned' && (
+                            <WithIcon icon={CircleAlert} size={14}>
+                              入らない訪問 {a.count}件
+                            </WithIcon>
+                          )}
+                          {a.kind === 'stale' && (
+                            <WithIcon icon={RefreshCw} size={14}>
+                              条件が変わった
+                            </WithIcon>
+                          )}
+                          {a.kind === 'absence' && (
+                            <WithIcon icon={UserX} size={14}>
+                              欠勤 {a.names.map(shortName).join('・') || `${a.count}人`}
+                            </WithIcon>
+                          )}
+                        </span>
                       </button>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+          {focus.kind === 'staff' && staffSum && (
+            <>
+              <h2 className="month-aside-title">
+                <UserRound size={18} aria-hidden="true" />
+                {focusName}さん・{monthNo}月
+              </h2>
+              {staffSum.qualifications.length > 0 && (
+                <div className="month-quals">
+                  <span className="sub">資格</span>
+                  {staffSum.qualifications.map((q) => (
+                    <span key={q} className="chip">
+                      {q}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <dl className="month-facts" data-testid="month-staff-sum">
+                <dt>担当</dt>
+                <dd>{staffSum.count}件</dd>
+                <dt>稼働時間</dt>
+                <dd>
+                  {hoursText(staffSum.minutes)}（{staffSum.workDays}日）
+                </dd>
+                <dt>移動</dt>
+                <dd>{staffSum.travel}分</dd>
+                {staffSum.absenceDays > 0 && (
+                  <>
+                    <dt>欠勤</dt>
+                    <dd>{staffSum.absenceDays}日</dd>
+                  </>
+                )}
+              </dl>
+              <TypeList types={staffSum.types} typeById={typeById} />
+              <p className="sub">数えるのはその日の今の案（無ければ確定した割当）です。</p>
+            </>
+          )}
+          {focus.kind === 'client' && clientSum && (
+            <>
+              <h2 className="month-aside-title">
+                <UserRound size={18} aria-hidden="true" />
+                {focusName}・{monthNo}月
+              </h2>
+              <dl className="month-facts" data-testid="month-client-sum">
+                <dt>予定の回数</dt>
+                <dd>{clientSum.planned}回</dd>
+                <dt>この回だけ変更</dt>
+                <dd>{clientSum.edited}回</dd>
+                <dt>取り消し</dt>
+                <dd>{clientSum.cancelled}回</dd>
+                <dt>いつもの担当でない</dt>
+                <dd>{clientSum.substitute}回</dd>
+              </dl>
+              <h3 className="month-aside-sub">担当した人</h3>
+              {clientSum.byStaff.length === 0 ? (
+                <p className="sub">この月の訪問はありません。</p>
+              ) : (
+                <ul className="month-bystaff">
+                  {clientSum.byStaff.map((x) => (
+                    <li key={x.staffId ?? '__none'}>
+                      <span>{x.staffId === null ? '案なし・入らない' : (staffById.get(x.staffId)?.name ?? '')}</span>
+                      <span>{x.count}回</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="sub">
+                「代」はいつもの担当でない日、「変」はこの回だけ変えた回です。数えるのはその日の今の案（無ければ確定した割当）です。
+              </p>
+            </>
+          )}
+        </aside>
       </div>
 
       {panel && (
@@ -718,32 +938,330 @@ export default function MonthPage() {
   );
 }
 
-/** 空きの割合の文（「午前の空き 40%」。稼働時間帯の無い側は出さない） */
-function freeTexts(f: DayFreeness): string[] {
-  const out: string[] = [];
-  if (f.am !== null) out.push(`午前の空き ${Math.round(f.am * 100)}%`);
-  if (f.pm !== null) out.push(`午後の空き ${Math.round(f.pm * 100)}%`);
-  return out;
+/** 月の見出しの凡例：日の状態（背景・枠と印）と、混み具合の色と目盛り（見出しに1回） */
+function MonthLegend({ showLoad }: { showLoad: boolean }) {
+  return (
+    <div className="month-legend" data-testid="month-legend">
+      <span className="month-legend-group">
+        {STATE_ORDER.map((st) => (
+          <span key={st} className="month-legend-item">
+            <span className={`month-swatch is-state-${st}`} aria-hidden="true">
+              {st === 'confirmed' && <Lock size={9} />}
+              {st === 'diff' && <PencilLine size={9} />}
+            </span>
+            {STATE_TEXT[st]}
+          </span>
+        ))}
+        <span className="month-legend-item">
+          <span className="month-swatch is-care" aria-hidden="true">
+            <span className="month-dot" />
+          </span>
+          手当てが必要
+        </span>
+        <span className="month-legend-item">▶ 始まる・■ 終わる</span>
+      </span>
+      {showLoad && (
+        <span className="month-legend-group">
+          <span className="month-legend-load">
+            <span className="sub">混み具合</span>
+            <span className="month-legend-ruler" aria-hidden="true">
+              <LoadScale from={LOAD_FROM} to={LOAD_TO} />
+              <span className="month-legend-bar" />
+            </span>
+          </span>
+          <LoadLegend />
+        </span>
+      )}
+    </div>
+  );
 }
 
-/** 日のマスの午前・午後の空きの2本の細い帯（D48。読み上げはマスのボタンの aria-label に入れる） */
-function FreeBars({ free }: { free: DayFreeness }) {
-  const bars = [
-    { key: 'am', label: '午前', value: free.am },
-    { key: 'pm', label: '午後', value: free.pm },
-  ] as const;
+/** 種類ごとの件数（色の丸と名前と件数） */
+function TypeList({ types, typeById }: { types: readonly TypeCount[]; typeById: ReadonlyMap<string, VisitType> }) {
+  if (types.length === 0) return null;
   return (
-    <span className="month-free" data-testid="month-free" title={freeTexts(free).join('・')} aria-hidden="true">
-      {bars.map((b) => (
-        <span key={b.key} className="month-free-row">
-          <span className="month-free-label">{b.label}</span>
-          <span className={`month-free-bar${b.value === null ? ' is-none' : ''}`}>
-            {b.value !== null && (
-              <span className="month-free-fill" style={{ width: `${Math.round(b.value * 100)}%` }} />
-            )}
-          </span>
-        </span>
-      ))}
+    <ul className="month-types" aria-label="種類ごとの件数">
+      {types.map((x) => {
+        const t = x.typeId === null ? undefined : typeById.get(x.typeId);
+        return (
+          <li key={x.typeId ?? '__none'}>
+            <span
+              className="month-type-dot"
+              style={{ background: t ? colorOf(t.color) : '#cfc4bb' }}
+              aria-hidden="true"
+            />
+            <span>{t?.name ?? '種類なし'}</span>
+            <span>{x.count}件</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** 名前の並びを短く（「消防」「消防 ほか1人」） */
+function namesShort(names: readonly string[]): string {
+  if (names.length === 0) return '';
+  const first = shortName(names[0]!);
+  return names.length === 1 ? first : `${first} ほか${names.length - 1}人`;
+}
+
+/** 選んだ〈スタッフ〉の担当の件数と目安に対する負荷のバー（目安の位置に線。目安を超えると橙） */
+function LoadMeter({ count, target }: { count: number; target: number | null }) {
+  if (target === null) return null;
+  const max = Math.max(target * 1.5, count, 1);
+  const over = count > Math.ceil(target);
+  return (
+    <span className="month-meter" aria-hidden="true">
+      <span className={`month-meter-fill${over ? ' is-over' : ''}`} style={{ width: `${(count / max) * 100}%` }} />
+      <span className="month-meter-target" style={{ left: `${(target / max) * 100}%` }} />
     </span>
   );
 }
+
+type CellProps = {
+  date: string;
+  status: DayStatus;
+  today: string;
+  picked: boolean;
+  making: boolean;
+  focus: Focus['kind'];
+  marks: DayMarks;
+  /** 全体のときだけ（null＝案なし） */
+  load: DayLoadSlot[] | null | undefined;
+  staffDay: StaffDay | undefined;
+  clientDay: ClientDay | undefined;
+  typeById: ReadonlyMap<string, VisitType>;
+  staffById: ReadonlyMap<string, Staff>;
+  onOpen: (date: string) => void;
+};
+
+/** 日のマス（memo。月まとめ作成の進み具合などで、変わらないマスは描き直さない） */
+const DayCell = memo(function DayCell(props: CellProps) {
+  const { date: d, status: s, today, picked, making, focus, marks: mk, load, typeById, staffById } = props;
+  const past = d < today;
+  const care = s.needsCare && !past;
+  const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));
+  const parts: string[] = [longDate(d)];
+  const body: ReactNode[] = [];
+
+  if (s.count > 0) parts.push(`訪問 ${s.count}件`, STATE_TEXT[s.state]);
+  else parts.push('訪問なし');
+  if (care) parts.push('要確認');
+  if (s.unassigned > 0) parts.push(`入らない ${s.unassigned}件`);
+  if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
+  if (s.stale) parts.push('条件が変わった');
+  if (making) parts.push('作っています');
+
+  const flags = (
+    <>
+      {s.unassigned > 0 && (
+        <span className="month-flag is-red">
+          <CircleAlert size={12} aria-hidden="true" />
+          入らない {s.unassigned}
+        </span>
+      )}
+      {s.hard > 0 && (
+        <span className="month-flag is-red">
+          <CircleAlert size={12} aria-hidden="true" />
+          違反 {s.hard}
+        </span>
+      )}
+      {s.stale && (
+        <span className="month-flag is-warn" data-testid="month-stale">
+          <RefreshCw size={12} aria-hidden="true" />
+          条件が変わった
+        </span>
+      )}
+      {making && <span className="month-flag is-warn">作っています…</span>}
+    </>
+  );
+
+  if (focus === 'all') {
+    if (mk.types.length > 0)
+      parts.push(`種類：${mk.types.map((x) => `${typeName(x.typeId)} ${x.count}件`).join('・')}`);
+    if (mk.off.length > 0) parts.push(`休み ${mk.off.join('・')}`);
+    if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}`);
+    if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
+    if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
+    if (load) parts.push(loadSummary(load));
+    else if (load === null) parts.push('混み具合は案が無いので数えていません');
+    body.push(
+      <TypeStack key="types" types={mk.types} typeById={typeById} />,
+      <span key="marks" className="month-marks">
+        {mk.off.length > 0 && (
+          <span className="month-mark" title={`休み：${mk.off.join('・')}`}>
+            休 {mk.off.length}
+          </span>
+        )}
+        {mk.absent.length > 0 && (
+          <span className="month-mark is-absent" title={`欠勤：${mk.absent.join('・')}`}>
+            欠 {namesShort(mk.absent)}
+          </span>
+        )}
+        {mk.starts.length > 0 && (
+          <span className="month-mark" title={`始まる：${mk.starts.join('・')}`}>
+            ▶{mk.starts.length === 1 ? ` ${shortName(mk.starts[0]!)}` : ` ${mk.starts.length}人`}
+          </span>
+        )}
+        {mk.ends.length > 0 && (
+          <span className="month-mark" title={`終わる：${mk.ends.join('・')}`}>
+            ■{mk.ends.length === 1 ? ` ${shortName(mk.ends[0]!)}` : ` ${mk.ends.length}人`}
+          </span>
+        )}
+      </span>,
+      <span key="flags" className="month-flags">
+        {flags}
+      </span>,
+      <span key="load" className="month-load">
+        <LoadBar load={load ?? null} />
+      </span>,
+    );
+  } else if (focus === 'staff' && props.staffDay) {
+    const x = props.staffDay;
+    const shift = x.absence
+      ? x.slots.length === 0
+        ? '欠勤'
+        : `欠勤あり ${slotsText(x.slots)}`
+      : x.off
+        ? '休'
+        : slotsText(x.slots);
+    parts.push(shift);
+    if (x.noPlan) parts.push('案なし');
+    if (x.count > 0 || x.target !== null) {
+      parts.push(`担当 ${x.count}件`);
+      if (x.target !== null) parts.push(`目安 ${Math.round(x.target * 10) / 10}件`);
+    }
+    if (x.travel > 0) parts.push(`移動 ${x.travel}分`);
+    body.push(
+      <span key="shift" className={`month-shift${x.absence ? ' is-absent' : x.off ? ' is-off' : ''}`}>
+        {x.absence && <UserX size={12} aria-hidden="true" />}
+        {shift}
+      </span>,
+      x.noPlan ? (
+        <span key="noplan" className="sub">
+          案なし
+        </span>
+      ) : null,
+      x.count > 0 || x.target !== null ? (
+        <span
+          key="load"
+          className="month-staff-load"
+          title={x.target !== null ? `目安 ${Math.round(x.target * 10) / 10}件` : ''}
+        >
+          <span className="month-staff-count">{x.count}件</span>
+          <LoadMeter count={x.count} target={x.target} />
+        </span>
+      ) : null,
+      x.travel > 0 ? (
+        <span key="travel" className="sub">
+          移動 {x.travel}分
+        </span>
+      ) : null,
+    );
+  } else if (focus === 'client' && props.clientDay) {
+    const x = props.clientDay;
+    if (x.noPlan) parts.push('案なし');
+    const MAX = 4;
+    for (const v of x.visits) {
+      const who = v.cancelled
+        ? '取り消し'
+        : v.staffId
+          ? `${staffById.get(v.staffId)?.name ?? ''}さん${v.substitute ? '（いつもの担当でない）' : ''}`
+          : v.unassigned
+            ? '入らない'
+            : '担当未定';
+      parts.push(`${hm(v.start)} ${typeName(v.typeId)} ${who}${v.edited ? '（この回だけ変更）' : ''}`);
+    }
+    body.push(
+      <span key="visits" className="month-cvisits">
+        {x.visits.slice(0, MAX).map((v) => {
+          const t = v.typeId === null ? undefined : typeById.get(v.typeId);
+          return (
+            <span key={v.visitId} className={`month-cvisit${v.cancelled ? ' is-cancelled' : ''}`}>
+              <span
+                className="month-type-dot"
+                style={{ background: t ? colorOf(t.color) : '#cfc4bb' }}
+                aria-hidden="true"
+              />
+              <span className="month-cvisit-time">{hm(v.start)}</span>
+              <span className="month-cvisit-who">
+                {v.cancelled
+                  ? '取消'
+                  : v.staffId
+                    ? shortName(staffById.get(v.staffId)?.name ?? '')
+                    : v.unassigned
+                      ? '入らない'
+                      : '未定'}
+              </span>
+              {v.substitute && (
+                <span className="month-badge is-sub" title="いつもの担当でない">
+                  代
+                </span>
+              )}
+              {v.edited && !v.cancelled && (
+                <span className="month-badge" title="この回だけ変更">
+                  変
+                </span>
+              )}
+            </span>
+          );
+        })}
+        {x.visits.length > MAX && <span className="sub">ほか{x.visits.length - MAX}件</span>}
+      </span>,
+      x.noPlan ? (
+        <span key="noplan" className="sub">
+          案なし
+        </span>
+      ) : null,
+    );
+  }
+  if (focus !== 'all')
+    body.push(
+      <span key="flags" className="month-flags">
+        {flags}
+      </span>,
+    );
+
+  const label = parts.join('・');
+  return (
+    <td
+      className={[
+        'month-cell',
+        s.count > 0 ? `is-state-${s.state}` : 'is-novisit',
+        past ? 'is-past' : '',
+        care ? 'is-care' : '',
+        d === today ? 'is-today' : '',
+        picked ? 'is-picked' : '',
+        making ? 'is-making' : '',
+        focus === 'staff' && props.staffDay && props.staffDay.slots.length === 0 ? 'is-rest' : '',
+      ].join(' ')}
+    >
+      <button
+        type="button"
+        className="month-cell-btn"
+        data-testid="month-day"
+        data-date={d}
+        data-state={s.count > 0 ? s.state : 'empty'}
+        aria-label={label}
+        title={`${label}（押すとこの日の予定の画面を開きます）`}
+        onClick={() => props.onOpen(d)}
+      >
+        <span className="month-cell-head">
+          <span className="month-day">
+            {Number(d.slice(8, 10))}
+            {d === today && <span className="month-today">今日</span>}
+          </span>
+          {s.count > 0 && s.state === 'confirmed' && <Lock size={12} className="month-lock" aria-hidden="true" />}
+          {/* 未確定の変更あり（淡い黄）は案あり（淡い緑）と色だけで分けない */}
+          {s.count > 0 && s.state === 'diff' && (
+            <PencilLine size={12} className="month-diff-icon" aria-hidden="true" data-testid="month-diff-mark" />
+          )}
+          {care && <span className="month-dot" aria-hidden="true" />}
+          {s.count > 0 && focus === 'all' && <span className="month-count">{s.count}件</span>}
+        </span>
+        {body}
+      </button>
+    </td>
+  );
+});

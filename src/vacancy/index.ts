@@ -6,11 +6,14 @@ import type { Problem } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Condition, Item, Traits } from '../contracts/rules';
 import {
-  type DayFreeness,
-  type DayFreenessFn,
+  type DayLoadFn,
+  type DayLoadSlot,
   INQUIRY_CLIENT_ID,
   INQUIRY_VISIT_ID,
   type InquirySummary,
+  VACANCY_DAY_END_DEFAULT,
+  VACANCY_DAY_START_DEFAULT,
+  VACANCY_STEP_DEFAULT,
   VACANCY_WEEKS_MAX,
   type VacancyCell,
   type VacancyOf,
@@ -24,7 +27,8 @@ import { compile, matches, scheduleRoute } from '../matching';
 import { fitsOf } from '../reassign';
 
 export type {
-  DayFreeness,
+  DayLoadFilter,
+  DayLoadSlot,
   InquiryWish,
   VacancyCell,
   VacancyQuery,
@@ -35,8 +39,6 @@ export type {
 export { INQUIRY_CLIENT_ID, INQUIRY_VISIT_ID } from '../contracts/vacancy';
 
 const EPS = 1e-6;
-/** 午前の終わり（12:00。dayFreeness） */
-const NOON = 12 * 60;
 
 /** 自分のキーだけを読む */
 function colOf(routes: Routes, staffId: string): string[] {
@@ -324,48 +326,41 @@ export const inquirySummary: InquirySummary = (result, wish, terms) => {
 };
 
 /**
- * 日の空きの割合（design.md §4 vacancy）：その日の元の案で、稼働中の人ごとの稼働時間帯のうち、訪問の
- * [開始 − 移動, 終了) に使っていない分の合計 ÷ 稼働時間帯の合計 を午前（12:00 まで）・午後で。
- * 稼働時間帯が無ければ null。案が無い日は両方 null
+ * 日の混み具合（D54。design.md §4 vacancy）：07:00〜20:00 の30分ごとに、working＝その30分に稼働時間帯（欠勤を除く）が
+ * 重なる人、free＝そのうち元の案（確定した割当、無ければ今の案）の訪問の [開始 − 来る移動, 終了) と重ならない人。
+ * filter.typeId があれば、その種類の必要条件を満たす人だけを数える（いない種類は種類なし）。
+ * 訪問がある日に案が無ければ null（訪問の無い日は空の案として数える）
  */
-export const dayFreeness: DayFreenessFn = (data, date) => {
-  const none: DayFreeness = { am: null, pm: null };
-  const problem = compile(data, date);
+export const dayLoad: DayLoadFn = (data, date, filter) => {
+  // compile はその日の訪問しか読まないので、その日の訪問だけを渡す
+  const problem = compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date);
   const routes = planOf(data, date, problem, problem.visits.length);
-  if (routes === null) return none;
-  const total = { am: 0, pm: 0 };
-  const free = { am: 0, pm: 0 };
-  problem.staff.forEach((st, s) => {
-    if (st.slots.length === 0) return;
+  if (routes === null) return null;
+  const items = new Map(data.items.map((it) => [it.id, it]));
+  const vType = filter.typeId === null ? undefined : data.visitTypes.find((t) => t.id === filter.typeId);
+  const conds = vType?.requirements ?? [];
+  const traitsOf = new Map(data.staff.map((s) => [s.id, s.traits]));
+  const people = problem.staff.flatMap((st, s) => {
+    if (st.slots.length === 0) return [];
+    if (!meetsAll(conds, items, traitsOf.get(st.id) ?? {})) return [];
     const t = scheduleRoute(problem, s, knownOf(problem, colOf(routes, st.id)), 'lenient');
-    const busy = mergeIntervals((t?.stops ?? []).map((x) => ({ start: x.start - x.travelIn, end: x.end })));
-    for (const slot of st.slots) {
-      for (const [key, lo, hi] of [
-        ['am', Number.NEGATIVE_INFINITY, NOON],
-        ['pm', NOON, Number.POSITIVE_INFINITY],
-      ] as const) {
-        const a = Math.max(slot.start, lo);
-        const b = Math.min(slot.end, hi);
-        if (b <= a) continue;
-        let used = 0;
-        for (const x of busy) used += Math.max(0, Math.min(b, x.end) - Math.max(a, x.start));
-        total[key] += b - a;
-        free[key] += b - a - used;
-      }
-    }
+    const busy = (t?.stops ?? []).map((x) => ({ start: x.start - x.travelIn, end: x.end }));
+    return [{ slots: st.slots, busy }];
   });
-  const ratio = (f: number, t: number) => (t > 0 ? Math.min(1, Math.max(0, f / t)) : null);
-  return { am: ratio(free.am, total.am), pm: ratio(free.pm, total.pm) };
-};
-
-/** 区間を開始の順に並べ、重なり・接する区間をまとめる */
-function mergeIntervals(xs: { start: number; end: number }[]): { start: number; end: number }[] {
-  const sorted = xs.filter((x) => x.end > x.start).sort((a, b) => a.start - b.start);
-  const out: { start: number; end: number }[] = [];
-  for (const x of sorted) {
-    const last = out.at(-1);
-    if (last && x.start <= last.end) last.end = Math.max(last.end, x.end);
-    else out.push({ ...x });
+  const step = VACANCY_STEP_DEFAULT;
+  const end = hhmmToMinutes(VACANCY_DAY_END_DEFAULT);
+  const out: DayLoadSlot[] = [];
+  for (let a = hhmmToMinutes(VACANCY_DAY_START_DEFAULT); a + step <= end; a += step) {
+    const b = a + step;
+    const overlaps = (x: { start: number; end: number }) => a < x.end - EPS && x.start < b - EPS;
+    let working = 0;
+    let free = 0;
+    for (const p of people) {
+      if (!p.slots.some(overlaps)) continue;
+      working++;
+      if (!p.busy.some(overlaps)) free++;
+    }
+    out.push({ start: a, working, free });
   }
   return out;
-}
+};

@@ -1,13 +1,16 @@
 // 月間カレンダー・月まとめ作成（ADR-0012 段階1。design.md §4 pages「月単位の予定」）の画面の純粋関数。
 // データは書き換えず、新しい DemoData を返す（書くのは画面の update(fn)）
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
+import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult } from '../contracts/problem';
+import type { Routes } from '../contracts/reassign';
 import type { Rule } from '../contracts/rules';
+import { availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { NONE } from '../domain/scheduleModel';
-import { addDays, weekday } from '../domain/time';
-import { type CompileInput, compile } from '../matching';
+import { addDays, hhmmToMinutes, weekday } from '../domain/time';
+import { type CompileInput, compile, scheduleRoute } from '../matching';
 import { applyPatterns } from '../patterns';
-import { own } from './common';
+import { attempt, own } from './common';
 import { addRun, findRun, problemKey } from './runs';
 
 /** 月まとめ作成の対象：まだ案の無い日だけ／確定していない日をすべて／条件が変わった日 */
@@ -231,4 +234,379 @@ export function applyDayRun(
     runId: findRun(added, date, x)?.id,
   };
   return { ...added, aiPlans: { ...added.aiPlans, [date]: plan } };
+}
+
+// ---- 月間の改定（PRD D53〜D55。design.md §4 pages「月間・週間の改定（2026-10-17）」）----
+
+type MonthInput = CompileInput & Pick<DemoData, 'aiPlans' | 'manualPlans'>;
+
+/** その日の数える案（今の案、無ければ確定した割当）。D55 */
+export type DayPlan = {
+  date: string;
+  /** いまのデータの問題（作れなければ null） */
+  problem: Problem | null;
+  /** 数える案の元。どちらも無ければ null（案なし） */
+  source: 'plan' | 'confirmed' | null;
+  /** 担当 → 訪問ID の列（問題にある訪問だけ。未割当の列は除く） */
+  routes: Routes;
+};
+
+/**
+ * その日の数える案：今の案があればその列（問題に無い訪問を除いた順のまま）、無ければ確定した割当
+ * （担当ごとに訪問の開始（早）の順）。problem を渡すとそれを使う（無ければその日の訪問だけで compile）
+ */
+export function dayPlanOf(data: MonthInput, date: string, problem?: Problem | null): DayPlan {
+  const p =
+    problem !== undefined
+      ? problem
+      : attempt(() => compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date)).value;
+  const ids = new Map(p?.visits.map((v, i) => [v.id, i]) ?? []);
+  const keep = (r: Record<string, string[]>) => {
+    const out: Routes = {};
+    for (const [k, list] of Object.entries(r)) {
+      if (k === NONE) continue;
+      const xs = list.filter((id) => ids.has(id));
+      if (xs.length > 0) out[k] = xs;
+    }
+    return out;
+  };
+  const plan = own(data.aiPlans, date);
+  if (plan) return { date, problem: p, source: 'plan', routes: keep(plan.routes) };
+  const saved = own(data.manualPlans, date);
+  if (saved && p) {
+    const routes = keep(saved);
+    const order = (id: string) => [p.visits[ids.get(id)!]!.earliest, ids.get(id)!] as const;
+    for (const k of Object.keys(routes)) {
+      routes[k] = [...routes[k]!].sort((a, b) => {
+        const x = order(a);
+        const y = order(b);
+        return x[0] - y[0] || x[1] - y[1];
+      });
+    }
+    if (Object.keys(routes).length > 0) return { date, problem: p, source: 'confirmed', routes };
+  }
+  return { date, problem: p, source: null, routes: {} };
+}
+
+/** 種類ごとの件数（typeId が null＝種類なし） */
+export type TypeCount = { typeId: string | null; count: number };
+
+/** 種類の並び（data.visitTypes の順、種類なし・いない種類は最後） */
+function sortTypes(counts: Map<string | null, number>, visitTypes: readonly { id: string }[]): TypeCount[] {
+  const order = new Map(visitTypes.map((t, i) => [t.id, i]));
+  const rank = (id: string | null) => (id === null ? 1e9 : (order.get(id) ?? 1e8));
+  return [...counts].map(([typeId, count]) => ({ typeId, count })).sort((a, b) => rank(a.typeId) - rank(b.typeId));
+}
+
+const slotMinutes = (slots: readonly { start: number; end: number }[]) =>
+  slots.reduce((m, x) => m + Math.max(0, x.end - x.start), 0);
+const toMin = (slots: readonly Slot[]) =>
+  slots.map((x) => ({ start: hhmmToMinutes(x.start), end: hhmmToMinutes(x.end) }));
+/** 名前の最初の語（「消防 まもる」→「消防」） */
+export const shortName = (name: string): string => name.trim().split(/\s+/)[0] || name;
+
+/** 日のマスの印（D53）：種類ごとの件数・休みの人・欠勤の人・その日に始まる／終わる定期パターンのある利用者さん */
+export type DayMarks = {
+  types: TypeCount[];
+  /** 休み（稼働時間帯が無い）の稼働中の〈スタッフ〉の名前 */
+  off: string[];
+  /** 欠勤のある〈スタッフ〉の名前 */
+  absent: string[];
+  /**
+   * その日に始まる定期パターンのある〈利用者さん〉の表示名。基準日（データの最初の日）以前に始まるもの・
+   * 前日も同じ〈利用者さん〉のパターンの期間のもの（「以降すべて」で分けたパターンなど）は除く
+   */
+  starts: string[];
+  /** その日に終わる定期パターンのある〈利用者さん〉の表示名。翌日も同じ〈利用者さん〉のパターンの期間なら除く */
+  ends: string[];
+};
+
+/** 日のマスの印（取り消しの訪問は数えない。休止中の〈スタッフ〉・〈利用者さん〉は出さない） */
+export function dayMarks(
+  data: Pick<
+    DemoData,
+    'baseDate' | 'visits' | 'staff' | 'clients' | 'availability' | 'absences' | 'patterns' | 'visitTypes'
+  >,
+  date: string,
+): DayMarks {
+  const counts = new Map<string | null, number>();
+  for (const v of activeVisitsOn(data, date)) counts.set(v.typeId, (counts.get(v.typeId) ?? 0) + 1);
+  const absentIds = new Set(data.absences.filter((a) => a.date === date).map((a) => a.staffId));
+  const off: string[] = [];
+  const absent: string[] = [];
+  for (const s of data.staff) {
+    if (!s.active) continue;
+    const override = data.availability.find((a) => a.staffId === s.id && a.date === date);
+    const slots = availabilityOf(s, date, override).slots;
+    if (absentIds.has(s.id) && slots.length > 0) absent.push(s.name);
+    else if (slots.length === 0) off.push(s.name);
+  }
+  const clientName = new Map(data.clients.filter((c) => c.active).map((c) => [c.id, c.displayName]));
+  const namesOf = (pick: (p: DemoData['patterns'][number]) => boolean) => [
+    ...new Set(data.patterns.filter(pick).flatMap((p) => clientName.get(p.clientId) ?? [])),
+  ];
+  /** その〈利用者さん〉のどれかのパターンの期間に day が入るか */
+  const covered = (clientId: string, day: string) =>
+    data.patterns.some((p) => p.clientId === clientId && p.from <= day && (p.to === null || day <= p.to));
+  const before = addDays(date, -1);
+  const after = addDays(date, 1);
+  return {
+    types: sortTypes(counts, data.visitTypes),
+    off,
+    absent,
+    // 基準日（データの最初の日）以前に始まるパターンは数えない（初期データの全パターンが基準日に始まるため）。
+    // 前日も同じ〈利用者さん〉のパターンがある（「以降すべて」で分けた・種類を足した）ときも数えない
+    starts: namesOf((p) => p.from === date && date > data.baseDate && !covered(p.clientId, before)),
+    // 翌日も同じ〈利用者さん〉のパターンがある（「以降すべて」で分けた）ときは数えない
+    ends: namesOf((p) => p.to === date && !covered(p.clientId, after)),
+  };
+}
+
+/** 選んだ〈スタッフ〉の日（D55） */
+export type StaffDay = {
+  date: string;
+  /** 欠勤を差し引いた稼働時間帯 */
+  slots: Slot[];
+  /** 休み（欠勤の前から稼働時間帯が無い） */
+  off: boolean;
+  /** その日の欠勤（無ければ null） */
+  absence: Absence | null;
+  /** 数える案が無い（訪問がある日だけ true） */
+  noPlan: boolean;
+  /** 担当の件数 */
+  count: number;
+  /**
+   * 件数の目安：その日の担当できる訪問の件数を、稼働時間（欠勤を除く）の長さで按分した数（compile の負担の均等と同じ考え方）。
+   * 稼働時間が無い・問題が無ければ null
+   */
+  target: number | null;
+  /** 移動の合計（分。自宅へ帰る移動を含む） */
+  travel: number;
+  /** 稼働時間（分） */
+  minutes: number;
+  types: TypeCount[];
+};
+
+/** 選んだ〈スタッフ〉のその日（数えるのは今の案、無ければ確定した割当） */
+export function staffDay(data: CompileInput, day: DayPlan, staffId: string): StaffDay {
+  const { date, problem: p } = day;
+  const s = data.staff.find((x) => x.id === staffId);
+  const override = data.availability.find((a) => a.staffId === staffId && a.date === date);
+  const base = s ? availabilityOf(s, date, override).slots : [];
+  const absences = data.absences.filter((a) => a.staffId === staffId && a.date === date);
+  const slots = absences.length > 0 ? withoutAbsences(base, absences) : base;
+  const list = own(day.routes, staffId) ?? [];
+  const counts = new Map<string | null, number>();
+  const visitById = new Map(data.visits.filter((v) => v.date === date).map((v) => [v.id, v]));
+  for (const id of list) {
+    const t = visitById.get(id)?.typeId ?? null;
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  let travel = 0;
+  let target: number | null = null;
+  const minutes = slotMinutes(toMin(slots));
+  if (p) {
+    const si = p.staff.findIndex((x) => x.id === staffId);
+    if (si >= 0 && list.length > 0) {
+      const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
+      const idx = list.map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
+      travel = scheduleRoute(p, si, idx, 'lenient')?.travelMinutes ?? 0;
+    }
+    const total = p.staff.reduce((m, x) => m + slotMinutes(x.slots), 0);
+    const mine = si >= 0 ? slotMinutes(p.staff[si]!.slots) : 0;
+    if (mine > 0 && total > 0) target = ((p.visits.length - p.infeasible.length) * mine) / total;
+  }
+  const hasVisits = (p?.visits.length ?? 0) > 0;
+  return {
+    date,
+    slots,
+    off: base.length === 0,
+    absence: absences.at(-1) ?? null,
+    noPlan: hasVisits && day.source === null,
+    count: list.length,
+    target,
+    travel: Math.round(travel),
+    minutes,
+    types: sortTypes(counts, data.visitTypes),
+  };
+}
+
+/** 選んだ〈スタッフ〉の月の集計（D55） */
+export type StaffMonth = {
+  count: number;
+  /** 稼働時間（分。欠勤を除く） */
+  minutes: number;
+  /** 移動（分） */
+  travel: number;
+  /** 稼働時間帯のある日の数 */
+  workDays: number;
+  /** 欠勤のある日の数 */
+  absenceDays: number;
+  types: TypeCount[];
+  /** 資格（〈スタッフ〉の項目「資格」の値） */
+  qualifications: string[];
+};
+
+/** 選んだ〈スタッフ〉の月の集計（days はその月の日） */
+export function staffMonth(data: CompileInput, days: readonly DayPlan[], staffId: string): StaffMonth {
+  const counts = new Map<string | null, number>();
+  let count = 0;
+  let minutes = 0;
+  let travel = 0;
+  let workDays = 0;
+  let absenceDays = 0;
+  for (const day of days) {
+    const x = staffDay(data, day, staffId);
+    count += x.count;
+    minutes += x.minutes;
+    travel += x.travel;
+    if (x.slots.length > 0) workDays++;
+    if (x.absence) absenceDays++;
+    for (const t of x.types) counts.set(t.typeId, (counts.get(t.typeId) ?? 0) + t.count);
+  }
+  const s = data.staff.find((x) => x.id === staffId);
+  const item = data.items.find((it) => it.target === 'staff' && it.name === '資格');
+  const raw = item && s ? s.traits[item.id] : null;
+  const qualifications = Array.isArray(raw) ? raw : typeof raw === 'string' && raw !== '' ? [raw] : [];
+  return { count, minutes, travel, workDays, absenceDays, types: sortTypes(counts, data.visitTypes), qualifications };
+}
+
+/** 選んだ〈利用者さん〉の訪問1件（D55） */
+export type ClientVisitMark = {
+  visitId: string;
+  /** 開始（0時からの分）。案の時刻（lenient）、案に無ければ訪問の開始（早） */
+  start: number;
+  typeId: string | null;
+  /** 担当（null＝案なし・入らない・取り消し） */
+  staffId: string | null;
+  /** いつもの担当（パターンのいつもの担当、無ければ〈利用者さん〉のいつもの担当）でない担当（「代」） */
+  substitute: boolean;
+  /** この回だけ変えた（パターンの訪問） */
+  edited: boolean;
+  cancelled: boolean;
+  /** 案があるのに担当がいない（入らない） */
+  unassigned: boolean;
+};
+
+export type ClientDay = { date: string; noPlan: boolean; visits: ClientVisitMark[] };
+
+/** 選んだ〈利用者さん〉のその日の訪問（取り消しも含む。開始の順） */
+export function clientDay(data: CompileInput, day: DayPlan, clientId: string): ClientDay {
+  const { date, problem: p } = day;
+  const mine = data.visits.filter((v) => v.date === date && v.clientId === clientId);
+  const client = data.clients.find((c) => c.id === clientId);
+  const patternById = new Map(data.patterns.map((x) => [x.id, x]));
+  const placed = new Map<string, { staffId: string; start: number }>();
+  if (p && mine.length > 0) {
+    const ids = new Set(mine.map((v) => v.id));
+    const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
+    p.staff.forEach((st, s) => {
+      const list = own(day.routes, st.id) ?? [];
+      if (!list.some((id) => ids.has(id))) return;
+      const idx = list.map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
+      const t = scheduleRoute(p, s, idx, 'lenient');
+      for (const stop of t?.stops ?? [])
+        if (ids.has(stop.visitId)) placed.set(stop.visitId, { staffId: st.id, start: stop.start });
+    });
+  }
+  const visits = mine
+    .map((v): ClientVisitMark => {
+      const at = v.cancelled ? undefined : placed.get(v.id);
+      const pattern = v.pattern ? patternById.get(v.pattern.id) : undefined;
+      const usual = pattern?.usualStaffId ?? client?.usualStaffId ?? null;
+      const staffId = at?.staffId ?? null;
+      return {
+        visitId: v.id,
+        start: at?.start ?? hhmmToMinutes(v.earliestStart),
+        typeId: v.typeId,
+        staffId,
+        substitute: staffId !== null && usual !== null && staffId !== usual,
+        edited: v.pattern?.edited ?? false,
+        cancelled: v.cancelled,
+        unassigned: !v.cancelled && staffId === null && day.source !== null,
+      };
+    })
+    .sort((a, b) => a.start - b.start || a.visitId.localeCompare(b.visitId));
+  const active = visits.some((v) => !v.cancelled);
+  return { date, noPlan: active && day.source === null, visits };
+}
+
+/** 選んだ〈利用者さん〉の月の集計（D55） */
+export type ClientMonth = {
+  /** 予定の回数（取り消しを除く） */
+  planned: number;
+  /** この回だけ変えた回（取り消しを除く） */
+  edited: number;
+  /** 取り消した回 */
+  cancelled: number;
+  /** いつもの担当でない回 */
+  substitute: number;
+  /** 担当した人の内訳（多い順。staffId が null＝案なし・入らない） */
+  byStaff: { staffId: string | null; count: number }[];
+};
+
+/** 選んだ〈利用者さん〉の月の集計（days はその月の日） */
+export function clientMonth(data: CompileInput, days: readonly DayPlan[], clientId: string): ClientMonth {
+  const out: ClientMonth = { planned: 0, edited: 0, cancelled: 0, substitute: 0, byStaff: [] };
+  const by = new Map<string | null, number>();
+  for (const day of days) {
+    for (const v of clientDay(data, day, clientId).visits) {
+      if (v.cancelled) {
+        out.cancelled++;
+        continue;
+      }
+      out.planned++;
+      if (v.edited) out.edited++;
+      if (v.substitute) out.substitute++;
+      by.set(v.staffId, (by.get(v.staffId) ?? 0) + 1);
+    }
+  }
+  const nameOf = new Map(data.staff.map((s) => [s.id, s.name]));
+  out.byStaff = [...by]
+    .map(([staffId, count]) => ({ staffId, count }))
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        (a.staffId === null ? 1 : 0) - (b.staffId === null ? 1 : 0) ||
+        (nameOf.get(a.staffId ?? '') ?? '').localeCompare(nameOf.get(b.staffId ?? '') ?? '', 'ja'),
+    );
+  return out;
+}
+
+/** 要対応の種類：入らない訪問がある・条件が変わった・欠勤がある */
+export type AttentionKind = 'unassigned' | 'stale' | 'absence';
+export type Attention = {
+  date: string;
+  kind: AttentionKind;
+  /** 入らない訪問の件数／欠勤の人数（条件が変わったは 1） */
+  count: number;
+  /** 欠勤の人の名前（kind が absence のとき） */
+  names: string[];
+};
+
+const KIND_ORDER: Record<AttentionKind, number> = { unassigned: 0, stale: 1, absence: 2 };
+
+/**
+ * 選ばないときの右の欄の「要対応」（D55）：今日以降の日の、入らない訪問がある・条件が変わった・欠勤のある日（日付の順、
+ * 同じ日は 入らない → 条件が変わった → 欠勤）
+ */
+export function attentionList(
+  data: Pick<DemoData, 'absences' | 'staff'>,
+  statuses: readonly DayStatus[],
+  today: string,
+): Attention[] {
+  const nameOf = new Map(data.staff.map((s) => [s.id, s.name]));
+  const out: Attention[] = [];
+  for (const s of statuses) {
+    if (s.date < today) continue;
+    if (s.unassigned > 0) out.push({ date: s.date, kind: 'unassigned', count: s.unassigned, names: [] });
+    if (s.stale) out.push({ date: s.date, kind: 'stale', count: 1, names: [] });
+    if (s.absence) {
+      // 同じ人の欠勤が2件（時間帯が2つ・続けて振り直した）でも1人と数える
+      const ids = [...new Set(data.absences.filter((a) => a.date === s.date).map((a) => a.staffId))];
+      const names = ids.map((id) => nameOf.get(id) ?? '');
+      out.push({ date: s.date, kind: 'absence', count: names.length, names: names.filter(Boolean) });
+    }
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
 }

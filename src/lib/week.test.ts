@@ -1,19 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import type { AiPlan, DemoData } from '../contracts/data';
 import type { Pattern } from '../contracts/documents';
-import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
+import { client, DATE, ITEMS, makeData, staff, visit } from '../matching/fixtures';
 import { applyPatterns } from '../patterns';
 import {
+  allowedStaffOf,
   canMoveVisit,
   changedDates,
+  clientWeekTable,
+  fitCountAt,
   INSERT_RUN_LABEL,
   insertAllIntoPlans,
   insertIntoPlan,
   laneLayout,
   moveFollowing,
   moveOnce,
+  qualificationBadges,
   snapMinutes,
   staffWeekTable,
+  staffWithQualification,
+  typeUnfit,
   weekDates,
   weekDay,
   weekStart,
@@ -396,5 +402,115 @@ describe('staffWeekTable', () => {
     expect(r1!.strong && r2!.strong).toBe(true);
     expect(t.days[0]).toMatchObject({ count: 2, noPlan: false });
     expect(t.days[1]!.noPlan).toBe(true);
+  });
+});
+
+describe('qualificationBadges・staffWithQualification（資格）', () => {
+  const nurse = staff('s1', 38.26, 140.87, { traits: { license: ['看護師', '介護福祉士'] } });
+  const care = staff('s2', 38.26, 140.87, { traits: { license: ['介護福祉士'] } });
+  const resting = staff('s3', 38.26, 140.87, { active: false, traits: { license: ['看護師'] } });
+
+  it('選択肢の順に頭文字2字までのバッジと正式名', () => {
+    expect(qualificationBadges(ITEMS, nurse)).toEqual([
+      { short: '介護', name: '介護福祉士' },
+      { short: '看護', name: '看護師' },
+    ]);
+    expect(qualificationBadges(ITEMS, staff('s4', 38, 140))).toEqual([]);
+  });
+
+  it('項目「資格」が無ければバッジもチップの選択も無い', () => {
+    const items = ITEMS.filter((i) => i.name !== '資格');
+    expect(qualificationBadges(items, nurse)).toEqual([]);
+    expect(staffWithQualification(items, [nurse], '看護師')).toEqual([]);
+  });
+
+  it('その資格を持つ稼働中の人だけ', () => {
+    expect(staffWithQualification(ITEMS, [nurse, care, resting], '看護師')).toEqual(['s1']);
+    expect(staffWithQualification(ITEMS, [nurse, care, resting], '介護福祉士')).toEqual(['s1', 's2']);
+  });
+});
+
+describe('allowedStaffOf・typeUnfit・fitCountAt（ドラッグ中の予告）', () => {
+  const rehab = {
+    id: 't1',
+    name: 'リハビリ',
+    color: 1,
+    durationMinutes: 60,
+    requirements: [{ itemId: 'license', op: 'hasAny' as const, value: ['看護師'] }],
+    note: '',
+  };
+  const base = () =>
+    makeData({
+      staff: [
+        staff('s1', 38.26, 140.87, { traits: { license: ['看護師'] } }),
+        staff('s2', 38.26, 140.871, { traits: { license: ['介護福祉士'] } }),
+      ],
+      clients: [client('c1', 38.27, 140.88), client('c2', 38.27, 140.881)],
+      visitTypes: [rehab],
+      visits: [visit('v1', 'c1', '09:00', '09:00', { typeId: 't1' }), visit('v2', 'c2', '09:00', '09:00')],
+      aiPlans: { [DATE]: planOf(DATE, { s1: ['v2'], s2: ['v1'] }) },
+    });
+
+  it('担当できる人と、種類の必要条件で可でない担当（資格✗）', () => {
+    const w = weekDay(base(), DATE);
+    expect(allowedStaffOf(w.problem, 'v1')).toEqual(['s1']);
+    expect(allowedStaffOf(w.problem, 'v2')).toEqual(['s1', 's2']);
+    expect(typeUnfit(w.problem, 'v1', 's2')).toBe(true);
+    expect(typeUnfit(w.problem, 'v1', 's1')).toBe(false);
+    expect(typeUnfit(w.problem, 'v1', null)).toBe(false);
+    expect(allowedStaffOf(null, 'v1')).toEqual([]);
+  });
+
+  it('落とす日・時刻で空き時間に入れられる人の数（データは変えない）', () => {
+    const d = base();
+    // 9:00 は s1 が v2 で埋まっている（s2 は資格が無い）
+    expect(fitCountAt(d, 'v1', DATE, 9 * 60)).toBe(0);
+    // 13:00 なら s1 に入る
+    expect(fitCountAt(d, 'v1', DATE, 13 * 60)).toBe(1);
+    // 種類なしの v2 を 13:00 に：s1・s2 とも入る
+    expect(fitCountAt(d, 'v2', DATE, 13 * 60)).toBe(2);
+    // 案の無い火曜は空の列で数える
+    const tue = '2026-10-13';
+    expect(fitCountAt(d, 'v2', tue, 10 * 60)).toBe(2);
+    // 土曜は誰も働かない
+    expect(fitCountAt(d, 'v2', '2026-10-17', 10 * 60)).toBe(0);
+    expect(d.visits.find((v) => v.id === 'v1')!.earliestStart).toBe('09:00');
+    expect(fitCountAt(d, 'nope', DATE, 600)).toBeNull();
+  });
+});
+
+describe('clientWeekTable（利用者さん×曜日）', () => {
+  const d = makeData({
+    staff: [staff('s1', 38.26, 140.87)],
+    clients: [
+      client('c2', 38.27, 140.88, { displayName: 'いとう' }),
+      client('c1', 38.27, 140.881, { displayName: 'あべ' }),
+      client('c3', 38.27, 140.882, { displayName: 'うえだ', active: false }),
+    ],
+    visits: [
+      visit('v1', 'c1', '13:00', '13:00', { typeId: 't1' }),
+      visit('v2', 'c1', '09:00', '09:00'),
+      visit('v3', 'c2', '10:00', '10:00', { date: '2026-10-14' }),
+      visit('v4', 'c1', '11:00', '11:00', { cancelled: true }),
+    ],
+    aiPlans: { [DATE]: planOf(DATE, { s1: ['v2', 'v1'] }) },
+  });
+  const days = weekDates(DATE).map((date) => weekDay(d, date));
+
+  it('選ばなければ全員（表示名の順。休止中で訪問の無い人は除く）、マスは開始の順・取り消しは出さない', () => {
+    const rows = clientWeekTable(d, days, null);
+    expect(rows.map((r) => r.clientId)).toEqual(['c1', 'c2']);
+    const mon = rows[0]!.cells[0]!;
+    expect(mon.items.map((x) => [x.visitId, x.start, x.staffId, x.typeId])).toEqual([
+      ['v2', 540, 's1', null],
+      ['v1', 780, 's1', 't1'],
+    ]);
+    expect(rows[1]!.cells[2]!.items.map((x) => [x.visitId, x.staffId])).toEqual([['v3', null]]);
+    expect(rows[1]!.cells[0]!.items).toEqual([]);
+  });
+
+  it('選んだ人だけ（休止中でも選べば出す）', () => {
+    expect(clientWeekTable(d, days, ['c3', 'c2']).map((r) => r.clientId)).toEqual(['c2', 'c3']);
+    expect(clientWeekTable(d, days, []).map((r) => r.clientId)).toEqual(['c1', 'c2']);
   });
 });

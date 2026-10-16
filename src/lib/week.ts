@@ -1,18 +1,19 @@
 // 週間（ADR-0012 追記の段階2。PRD D49〜D51。design.md §4 pages「週間（段階2）」）の画面の純粋関数。
 // データは書き換えず、新しい DemoData を返す（書くのは画面の update(fn)）。今日・新しい ID・時刻は引数で受け取る
 import type { AiPlan, DemoData } from '../contracts/data';
-import type { Pattern, Visit } from '../contracts/documents';
+import type { Client, Pattern, Staff, Visit } from '../contracts/documents';
 import type { PatternChange } from '../contracts/patterns';
 import type { Problem } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
+import type { Item } from '../contracts/rules';
 import { availabilityOf, withoutAbsences } from '../domain/availability';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
-import { type CompileInput, compile, scheduleRoute } from '../matching';
+import { type CompileInput, compile, scheduleRoute, VISIT_TYPE_RULE_ID } from '../matching';
 import { applyPatterns, splitPattern } from '../patterns';
 import { fitsOf, placeVisit } from '../reassign';
-import { attempt, byName, own } from './common';
+import { attempt, byDisplayName, byName, own } from './common';
 import { addRun, findRun, problemKey } from './runs';
 
 /** 時間軸の縦の範囲（0時からの分）：07:00〜20:00 */
@@ -490,4 +491,147 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
     travel: rows.reduce((m, r) => m + r.cells[i]!.travel, 0),
   }));
   return { rows, days: dayTotals, average: round1(average) };
+}
+
+// ---- 資格（D57。design.md §4 pages「月間・週間の改定（2026-10-17）」） ----
+
+/** 資格の項目の名前（項目「資格」。〈スタッフ〉の項目で、選択肢から1つ・複数のもの） */
+export const QUALIFICATION_ITEM_NAME = '資格';
+
+/** 項目「資格」（〈スタッフ〉の choice・multi で名前が「資格」の最初の項目。無ければ undefined） */
+export function qualificationItem(items: readonly Item[]): Item | undefined {
+  return items.find(
+    (it) =>
+      it.name === QUALIFICATION_ITEM_NAME && it.target === 'staff' && (it.kind === 'multi' || it.kind === 'choice'),
+  );
+}
+
+/** 資格の短いバッジ。short は選択肢の頭文字2字まで、name は正式名（title に出す） */
+export type QualificationBadge = { short: string; name: string };
+
+/** その人が持つ資格の選択肢か（multi は含む、choice は等しい） */
+function hasOption(item: Item, s: Pick<Staff, 'traits'>, option: string): boolean {
+  const v = own(s.traits, item.id);
+  return Array.isArray(v) ? v.includes(option) : v === option;
+}
+
+/**
+ * 〈スタッフ〉の資格のバッジ（項目「資格」の選択肢の順）。項目が無い・値が無ければ []。
+ * 選択肢に無い値（古いデータ）は出さない
+ */
+export function qualificationBadges(items: readonly Item[], s: Pick<Staff, 'traits'>): QualificationBadge[] {
+  const item = qualificationItem(items);
+  if (!item) return [];
+  return item.options
+    .filter((o) => hasOption(item, s, o))
+    .map((o) => ({ short: [...o].slice(0, 2).join(''), name: o }));
+}
+
+/** その資格（項目「資格」の選択肢）を持つ稼働中の〈スタッフ〉の ID（staff の順）。項目が無ければ [] */
+export function staffWithQualification(items: readonly Item[], staff: readonly Staff[], option: string): string[] {
+  const item = qualificationItem(items);
+  if (!item) return [];
+  return staff.filter((s) => s.active && hasOption(item, s, option)).map((s) => s.id);
+}
+
+/** その日の問題で、その訪問を担当できる人（可否。compile の allowed）の ID。問題に無い訪問なら [] */
+export function allowedStaffOf(problem: Problem | null, visitId: string): string[] {
+  const v = problem?.visits.findIndex((x) => x.id === visitId) ?? -1;
+  if (!problem || v < 0) return [];
+  return problem.staff.filter((_, s) => problem.allowed[v]![s]).map((st) => st.id);
+}
+
+/** 担当が訪問の種類の必要条件（理由 visitType）で可でないか（D57 の「資格✗」）。問題に無い・担当がいないなら false */
+export function typeUnfit(problem: Problem | null, visitId: string, staffId: string | null): boolean {
+  if (!problem || !staffId) return false;
+  const v = problem.visits.findIndex((x) => x.id === visitId);
+  const s = problem.staff.findIndex((x) => x.id === staffId);
+  if (v < 0 || s < 0) return false;
+  // 満たした条件も理由（✓・0点）に入るので、可否で外れた（Infinity）ものだけ
+  return problem.reasons[v]![s]!.some((r) => r.ruleId === VISIT_TYPE_RULE_ID && r.points === Number.POSITIVE_INFINITY);
+}
+
+/**
+ * 訪問をその日・時刻へ動かしたときに「入れる人」の数（D57。ドラッグ中の落とす先に出す）：
+ * 訪問の日付と開始（早・遅。幅は保つ）を変えたデータで、その日の問題を作り（今の案があれば今の案の条件と、その訪問を除いた固定。
+ * insertIntoPlan と同じ）、その日の今の案（無ければ確定した割当、どちらも無ければ空の列）に reassign の fitsOf で入れられる人の数。
+ * データは書き換えない。問題が作れない・訪問が問題に無い（取り消し・休止中の〈利用者さん〉）なら null
+ */
+export function fitCountAt(data: DayInput, visitId: string, date: string, start: number): number | null {
+  const v = data.visits.find((x) => x.id === visitId);
+  if (!v) return null;
+  const moved: Visit = { ...v, date, ...shiftedTimes(v, start) };
+  const plan = own(data.aiPlans, date);
+  const pins = plan ? Object.fromEntries(Object.entries(plan.pins).filter(([id]) => id !== visitId)) : {};
+  const input: DayInput = {
+    ...data,
+    rules: plan ? plan.rules : data.rules,
+    visits: data.visits.map((x) => (x.id === visitId ? moved : x)),
+  };
+  const problem = attempt(() => compile(input, date, Object.keys(pins).length > 0 ? pins : undefined)).value;
+  if (!problem || !problem.visits.some((x) => x.id === visitId)) return null;
+  const { routes } = routesOf(input, date, problem);
+  return fitsOf(problem, routes, visitId).length;
+}
+
+// ---- 〈利用者さん〉×曜日の表（D56） ----
+
+/** 表のマスの訪問1件（時刻は帯と同じ。lenient の開始〜終了、案に無ければ開始（早）〜＋所要） */
+export type ClientWeekItem = {
+  visitId: string;
+  date: string;
+  start: number;
+  end: number;
+  typeId: string | null;
+  /** 担当（null＝未割当・入らない） */
+  staffId: string | null;
+};
+
+export type ClientWeekRow = {
+  clientId: string;
+  /** days の順。items は開始の順 */
+  cells: { date: string; items: ClientWeekItem[] }[];
+};
+
+/**
+ * 〈利用者さん〉×曜日の表（D56）。行＝clientIds の〈利用者さん〉（表示名の順。いない ID は除く）。
+ * clientIds が null・空なら全員（利用中の〈利用者さん〉と、休止中でもその週に訪問がある〈利用者さん〉）。
+ * マスは days の帯（weekDay。取り消しでない訪問）をその〈利用者さん〉の分だけ開始の順に
+ */
+export function clientWeekTable(
+  data: { clients: readonly Client[]; visits: readonly Visit[] },
+  days: readonly WeekDay[],
+  clientIds: readonly string[] | null,
+): ClientWeekRow[] {
+  const visitById = new Map(data.visits.map((v) => [v.id, v]));
+  const byClient = new Map<string, Map<string, ClientWeekItem[]>>();
+  for (const day of days) {
+    for (const b of day.bands) {
+      const v = visitById.get(b.visitId);
+      if (!v) continue;
+      const perDay = byClient.get(v.clientId) ?? new Map<string, ClientWeekItem[]>();
+      byClient.set(v.clientId, perDay);
+      const list = perDay.get(day.date) ?? [];
+      perDay.set(day.date, list);
+      list.push({
+        visitId: b.visitId,
+        date: day.date,
+        start: b.start,
+        end: b.end,
+        typeId: v.typeId,
+        staffId: b.staffId,
+      });
+    }
+  }
+  const picked = clientIds && clientIds.length > 0 ? new Set(clientIds) : null;
+  const clients = [...data.clients]
+    .filter((c) => (picked ? picked.has(c.id) : c.active || byClient.has(c.id)))
+    .sort(byDisplayName);
+  return clients.map((c) => ({
+    clientId: c.id,
+    cells: days.map((day) => ({
+      date: day.date,
+      items: [...(byClient.get(c.id)?.get(day.date) ?? [])].sort((a, b) => a.start - b.start || a.end - b.end),
+    })),
+  }));
 }

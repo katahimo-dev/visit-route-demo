@@ -13,7 +13,7 @@ import { applyPatterns } from '../patterns';
 import { placeVisit } from '../reassign';
 import { createDemoData } from '../seed';
 import {
-  dayFreeness,
+  dayLoad,
   INQUIRY_CLIENT_ID,
   INQUIRY_VISIT_ID,
   inquirySummary,
@@ -311,28 +311,78 @@ describe('inquirySummary', () => {
   });
 });
 
-describe('dayFreeness', () => {
-  it('稼働時間帯のうち訪問の [開始 − 移動, 終了) に使っていない分の割合を午前・午後で', () => {
+describe('dayLoad', () => {
+  const at = (load: ReturnType<typeof dayLoad>, hhmm: string) => load?.find((x) => x.start === m(hhmm));
+
+  it('07:00〜20:00 の30分ごとに、働く人と、そのうち訪問の [開始 − 来る移動, 終了) と重ならない人（空き）', () => {
     // MON1：s1（8:00〜18:00）は 9:00〜12:00 が訪問。自宅から c1 への移動の分も使う
     const d = small();
-    const f = dayFreeness(d, MON1);
+    const load = dayLoad(d, MON1, { typeId: null })!;
+    expect(load).toHaveLength(26);
+    expect(load[0]!.start).toBe(m('07:00'));
+    expect(load.at(-1)!.start).toBe(m('19:30'));
     const p = compile(d, MON1);
     const travel = p.travel[p.staff[0]!.point]![p.visits[0]!.point]!;
-    expect(f.am).toBeCloseTo((240 - 180 - travel) / 240, 6);
-    expect(f.pm).toBe(1);
-    // 訪問の無い日は空の案（全部空き）、休みの日は稼働時間帯が無いので null
-    expect(dayFreeness(d, WED1)).toEqual({ am: 1, pm: 1 });
-    expect(dayFreeness(d, addDays(MON1, 5))).toEqual({ am: null, pm: null });
+    expect(travel).toBeGreaterThan(0);
+    expect(travel).toBeLessThan(30);
+    // 稼働時間外は働く人 0
+    expect(at(load, '07:30')).toEqual({ start: m('07:30'), working: 0, free: 0 });
+    expect(at(load, '18:00')).toEqual({ start: m('18:00'), working: 0, free: 0 });
+    // 8:30〜9:00 は来る移動に使う（空き 0）、8:00〜8:30 は空き
+    expect(at(load, '08:00')).toEqual({ start: m('08:00'), working: 1, free: 1 });
+    expect(at(load, '08:30')).toEqual({ start: m('08:30'), working: 1, free: 0 });
+    expect(at(load, '11:30')).toEqual({ start: m('11:30'), working: 1, free: 0 });
+    expect(at(load, '12:00')).toEqual({ start: m('12:00'), working: 1, free: 1 });
+    // 訪問の無い日は空の案（全部空き）、休みの日は働く人 0
+    expect(
+      dayLoad(d, WED1, { typeId: null })!
+        .filter((x) => x.working > 0)
+        .every((x) => x.free === 1),
+    ).toBe(true);
+    expect(dayLoad(d, addDays(MON1, 5), { typeId: null })!.every((x) => x.working === 0 && x.free === 0)).toBe(true);
   });
 
-  it('案が無い日は null', () => {
+  it('種類で絞る：種類の必要条件を満たさない人は数えない。いない種類は種類なし', () => {
+    const rehab: VisitType = {
+      id: 'rehab',
+      name: 'リハビリ',
+      color: 3,
+      durationMinutes: 40,
+      requirements: [{ itemId: 'license', op: 'hasAny', value: ['理学療法士'] }],
+      note: '',
+    };
+    const nurse: VisitType = {
+      ...rehab,
+      id: 'nurse',
+      requirements: [{ itemId: 'license', op: 'hasAny', value: ['看護師'] }],
+    };
+    const d = small({ visitTypes: [rehab, nurse] });
+    expect(dayLoad(d, MON1, { typeId: 'rehab' })!.every((x) => x.working === 0 && x.free === 0)).toBe(true);
+    expect(dayLoad(d, MON1, { typeId: 'nurse' })).toEqual(dayLoad(d, MON1, { typeId: null }));
+    expect(dayLoad(d, MON1, { typeId: 'none' })).toEqual(dayLoad(d, MON1, { typeId: null }));
+    // 理学療法士の s2（10:00〜16:00）を足す：すべての人なら 10:00〜12:00 は働く 2人・空き 1人、リハビリなら s2 だけ
+    const s2 = staff('s2', 38.26, 140.87, {
+      shiftStart: '10:00',
+      shiftEnd: '16:00',
+      traits: { license: ['理学療法士'] },
+    });
+    const d2 = small({ visitTypes: [rehab, nurse], staff: [...d.staff, s2] });
+    expect(at(dayLoad(d2, MON1, { typeId: null }), '10:30')).toEqual({ start: m('10:30'), working: 2, free: 1 });
+    expect(at(dayLoad(d2, MON1, { typeId: null }), '13:00')).toEqual({ start: m('13:00'), working: 2, free: 2 });
+    expect(at(dayLoad(d2, MON1, { typeId: 'rehab' }), '10:30')).toEqual({ start: m('10:30'), working: 1, free: 1 });
+    expect(at(dayLoad(d2, MON1, { typeId: 'rehab' }), '08:00')).toEqual({ start: m('08:00'), working: 0, free: 0 });
+  });
+
+  it('訪問があって案の無い日は null', () => {
     const d = small({ manualPlans: {} });
-    expect(dayFreeness(d, MON1)).toEqual({ am: null, pm: null });
+    expect(dayLoad(d, MON1, { typeId: null })).toBeNull();
   });
 
-  it('欠勤の時間は稼働時間帯に入らない', () => {
+  it('欠勤の時間は働く人に入らない', () => {
     const d = small({ absences: [{ id: 'x', staffId: 's1', date: WED1, from: null, to: '12:00', note: '' }] });
-    expect(dayFreeness(d, WED1)).toEqual({ am: null, pm: 1 });
+    const load = dayLoad(d, WED1, { typeId: null })!;
+    expect(at(load, '11:30')).toEqual({ start: m('11:30'), working: 0, free: 0 });
+    expect(at(load, '12:00')).toEqual({ start: m('12:00'), working: 1, free: 1 });
   });
 });
 
@@ -422,7 +472,7 @@ describe('性質：seed の日', () => {
     expect(vacancyOf(data, query({ place: null }), { from, weeks: 2 })).toEqual(
       vacancyOf(data, query({ place: null }), { from, weeks: 2 }),
     );
-    expect(dayFreeness(data, from)).toEqual(dayFreeness(data, from));
+    expect(dayLoad(data, from, { typeId: null })).toEqual(dayLoad(data, from, { typeId: null }));
     expect(JSON.stringify(data)).toBe(before);
   });
 
