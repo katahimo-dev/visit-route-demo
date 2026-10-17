@@ -3,14 +3,22 @@
 
 import type { DemoData } from '../contracts/data';
 import { DATA_VERSION } from '../contracts/data';
-import type { Client, Staff } from '../contracts/documents';
+import { type Client, EMPTY_REFERRER, SPAN_LIMIT_DEFAULT_HOURS, type Staff } from '../contracts/documents';
 import type { Compat } from '../contracts/rules';
 import { DEFAULT_TERMS } from '../domain/terms';
 import { addDays } from '../domain/time';
 import { applyPatterns } from '../patterns';
 import { datesFrom, generateDay, UNASSIGNED_KEY } from './generate';
 import { INITIAL_VISIT_TYPES, seedPatterns, VISIT_TYPE_ID } from './patterns';
-import { CLIENT_SEEDS, INITIAL_COMPAT, INITIAL_ITEMS, INITIAL_RULES, STAFF_SEEDS, VISIT_RULE_SEEDS } from './people';
+import {
+  CLIENT_SEEDS,
+  INITIAL_COMPAT,
+  INITIAL_ITEMS,
+  INITIAL_RULES,
+  REFERRER_SEEDS,
+  STAFF_SEEDS,
+  VISIT_RULE_SEEDS,
+} from './people';
 import { INITIAL_PRESETS, initialPresets } from './presets';
 
 /** 初期の日数（今日から） */
@@ -29,6 +37,7 @@ function initialStaff(): Staff[] {
     traits: s.traits,
     requirements: s.requirements,
     preferences: s.preferences,
+    lastDay: null,
   }));
 }
 
@@ -51,6 +60,8 @@ function initialClients(): Client[] {
     parkingNote: VISIT_RULE_SEEDS[c.id]?.parkingNote ?? '',
     cautionNote: VISIT_RULE_SEEDS[c.id]?.cautionNote ?? '',
     allowedStaffIds: [],
+    stage: 'active' as const,
+    referrer: REFERRER_SEEDS[c.id] ?? { ...EMPTY_REFERRER },
   }));
 }
 
@@ -67,6 +78,7 @@ export function createDemoData(today: string): DemoData {
       industry: 'care',
       terms: { client: DEFAULT_TERMS.care.client, staff: 'スタッフ' },
       fareYenPerKm: 10,
+      spanLimitHours: SPAN_LIMIT_DEFAULT_HOURS,
     },
     items: INITIAL_ITEMS.map((i) => ({ ...i, options: [...i.options] })),
     rules: INITIAL_RULES.map((r) => ({ ...r })),

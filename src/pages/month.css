@@ -577,3 +577,14 @@
 .month-cell.is-off-absent .month-cell-btn:hover {
   border-color: var(--line);
 }
+/* 最終勤務日（PRD D71。ADR-0015）：その日に「最終」の印、選んだ〈スタッフ〉の後の日は灰の斜線と文字 */
+.month-mark.is-lastday {
+  color: #5b4a8a;
+  font-weight: 700;
+}
+.month-shift.is-retired {
+  color: var(--sub);
+  background: repeating-linear-gradient(135deg, #f1ece8 0 4px, transparent 4px 8px);
+  padding: 0 4px;
+  border-radius: 4px;
+}

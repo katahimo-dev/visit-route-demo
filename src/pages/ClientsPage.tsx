@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   Repeat,
+  Route,
   Save,
   ShieldCheck,
   SlidersHorizontal,
@@ -22,9 +23,10 @@ import { Check, PlaceEditor, TentativeMark } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { VISIT_RULE_FIELDS } from '../components/VisitRules';
-import { type Client, clientSchema } from '../contracts/documents';
+import { CLIENT_STAGES, type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
 import { jstDate } from '../domain/time';
+import { isBeforeActive, STAGE_LABELS, stageCounts, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
 import { matchClient, staffClientMap } from '../lib/search';
@@ -54,6 +56,8 @@ const blank = (nextColor: number): Client => ({
   parkingNote: '',
   cautionNote: '',
   allowedStaffIds: [],
+  stage: 'active',
+  referrer: { ...EMPTY_REFERRER },
 });
 
 export default function ClientsPage() {
@@ -70,10 +74,14 @@ export default function ClientsPage() {
   // 一覧の絞り込み（PRD D61）：選んだ人がいればその人たち、いなければ検索欄の文字（表示名・よみ）で
   const [picked, setPicked] = useState<string[]>([]);
   const [query, setQuery] = useState('');
+  /** 段階で絞る（PRD D73。'all'＝すべて） */
+  const [stageFilter, setStageFilter] = useState<ClientStage | 'all'>('all');
+  const counts = useMemo(() => stageCounts(clients), [clients]);
   const shown = useMemo(() => {
-    if (picked.length > 0) return clients.filter((c) => picked.includes(c.id));
-    return clients.filter((c) => matchClient(c, query));
-  }, [clients, picked, query]);
+    const byStage = (c: Client) => stageFilter === 'all' || c.stage === stageFilter;
+    if (picked.length > 0) return clients.filter((c) => picked.includes(c.id) && byStage(c));
+    return clients.filter((c) => matchClient(c, query) && byStage(c));
+  }, [clients, picked, query, stageFilter]);
   /** 近道「〈スタッフ〉が担当する人」：いつもの担当がその人の〈利用者さん〉 */
   const usualOf = useMemo(() => staffClientMap([], data.clients), [data.clients]);
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
@@ -104,7 +112,8 @@ export default function ClientsPage() {
       return;
     }
     try {
-      const c = clientSchema.parse({ ...form, allowedStaffIds: allowed });
+      // 段階に合わせて予定の対象（active）・仮押さえを決める（ADR-0015）
+      const c = clientSchema.parse(withStage({ ...form, allowedStaffIds: allowed }, form.stage, form.tentative));
       update((d) => ({
         ...d,
         clients: d.clients.some((x) => x.id === c.id)
@@ -118,11 +127,11 @@ export default function ClientsPage() {
     }
   };
 
-  /** 仮押さえを本登録にする（tentative: false。ほかの入力中の項目はそのまま） */
+  /** 仮押さえを本登録にする（段階を「利用中」に。仮押さえは外れる。ADR-0015。ほかの入力中の項目はそのまま） */
   const confirmTentative = (c: Client) => {
-    update((d) => ({ ...d, clients: d.clients.map((x) => (x.id === c.id ? { ...x, tentative: false } : x)) }));
-    setForm((f) => (f && f.id === c.id ? { ...f, tentative: false } : f));
-    toast(`${c.displayName}を本登録にしました`);
+    update((d) => ({ ...d, clients: d.clients.map((x) => (x.id === c.id ? withStage(x, 'active') : x)) }));
+    setForm((f) => (f && f.id === c.id ? withStage(f, 'active') : f));
+    toast(`${c.displayName}を本登録（利用中）にしました`);
   };
 
   /**
@@ -179,6 +188,38 @@ export default function ClientsPage() {
         <span className="sub" data-testid="clients-count">
           {shown.length === clients.length ? `${clients.length}人` : `${shown.length}人／${clients.length}人`}
         </span>
+        <fieldset className="stage-filter" data-testid="clients-stage-filter">
+          <legend className="sr-only">段階で絞り込む</legend>
+          <button
+            type="button"
+            className={`stage-filter-btn${stageFilter === 'all' ? ' is-on' : ''}`}
+            aria-pressed={stageFilter === 'all'}
+            onClick={() => setStageFilter('all')}
+          >
+            すべて <span className="stage-count">{clients.length}</span>
+          </button>
+          {CLIENT_STAGES.map((st, i) => (
+            <button
+              key={st}
+              type="button"
+              className={`stage-filter-btn is-${st}${stageFilter === st ? ' is-on' : ''}`}
+              aria-pressed={stageFilter === st}
+              onClick={() => setStageFilter(st)}
+              data-stage={st}
+            >
+              {i > 0 && i < 4 && (
+                <span className="stage-arrow" aria-hidden="true">
+                  →
+                </span>
+              )}
+              {STAGE_LABELS[st]} <span className="stage-count">{counts[st]}</span>
+            </button>
+          ))}
+        </fieldset>
+        <span className="sub">
+          新しい相談は「空き状況」の画面で受けられる曜日・時間を試算し、仮押さえすると「{STAGE_LABELS.inquiry}
+          」で入ります
+        </span>
       </div>
 
       <div className="card table-scroll">
@@ -216,6 +257,7 @@ export default function ClientsPage() {
                       </span>
                       {c.kana && <small className="person-sub">{c.kana}</small>}
                       {c.place.address && <small className="person-sub">{c.place.address}</small>}
+                      {c.referrer.name && <small className="person-sub">紹介元：{c.referrer.name}</small>}
                     </span>
                   </span>
                 </td>
@@ -253,13 +295,15 @@ export default function ClientsPage() {
                   )}
                 </td>
                 <td>
+                  <span className={`chip stage-chip is-${c.stage}`} data-testid="client-stage">
+                    {STAGE_LABELS[c.stage]}
+                  </span>
                   {c.tentative && <span className="chip chip-warn">仮押さえ</span>}
                   {leaveOn(data.clientLeaves, c.id, today) && (
                     <span className="chip chip-warn" title={leaveOn(data.clientLeaves, c.id, today)?.note || undefined}>
                       休み中
                     </span>
                   )}
-                  {!c.active && <span className="chip">休止中</span>}
                 </td>
                 <td>
                   <IconButton
@@ -300,7 +344,8 @@ export default function ClientsPage() {
                 <strong>仮押さえの{terms.client}です</strong>
               </span>
               <span className="sub">
-                問い合わせの試算から仮に押さえています。決まったら本登録に、断られたら取り消してください。
+                問い合わせの試算から仮に押さえています（段階「{STAGE_LABELS[saved.stage]}」。予定・AI案に入ります）。
+                決まったら本登録（利用中）に、断られたら取り消してください。
               </span>
               <div className="row" style={{ flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-small" onClick={() => confirmTentative(saved)}>
@@ -374,10 +419,62 @@ export default function ClientsPage() {
                 {form.color === i ? '✓' : ''}
               </button>
             ))}
-            <span style={{ marginLeft: 16 }} />
-            <Check checked={form.active} onChange={(c) => setForm({ ...form, active: c })}>
-              利用中（外すと休止）
-            </Check>
+          </div>
+
+          <SectionTitle icon={Route}>段階と紹介元</SectionTitle>
+          <Hint>
+            段階は 相談受付 → 顔合わせ → 契約 → 利用中 → 終了
+            です。予定・AI案に入るのは「利用中」と、利用中の前で枠を仮押さえしている
+            {terms.client}だけです（「終了」にすると予定に入りません）。
+          </Hint>
+          <div className="form-grid" data-testid="client-stage-form">
+            <label>
+              段階
+              <select
+                value={form.stage}
+                onChange={(e) => setForm(withStage(form, e.target.value as ClientStage))}
+                data-testid="client-stage-select"
+              >
+                {CLIENT_STAGES.map((st) => (
+                  <option key={st} value={st}>
+                    {STAGE_LABELS[st]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isBeforeActive(form.stage) && (
+              <Check checked={form.tentative} onChange={(on) => setForm(withStage(form, form.stage, on))}>
+                枠を仮押さえする（予定・AI案に入れる）
+              </Check>
+            )}
+            <label>
+              紹介元
+              <input
+                value={form.referrer.name}
+                maxLength={50}
+                placeholder="例：〇〇相談室"
+                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, name: e.target.value } })}
+                data-testid="client-referrer-name"
+              />
+            </label>
+            <label>
+              紹介元の連絡先
+              <input
+                value={form.referrer.contact}
+                maxLength={100}
+                placeholder="電話・メールなど"
+                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, contact: e.target.value } })}
+              />
+            </label>
+            <label>
+              紹介元のメモ
+              <input
+                value={form.referrer.note}
+                maxLength={200}
+                placeholder="例：返事待ち・顔合わせの日程"
+                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, note: e.target.value } })}
+              />
+            </label>
           </div>
 
           <SectionTitle icon={ShieldCheck}>担当できる人（社内の決まり）</SectionTitle>

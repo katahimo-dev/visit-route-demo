@@ -545,3 +545,12 @@ export const VISIT_RULE_SEEDS: Record<
     cautionNote: '玄関の段差が高い。手すりを使ってもらう',
   },
 };
+
+/**
+ * 紹介元（PRD D73。ADR-0015）の例。数人だけに入れる。どれも架空の事業所・番号（実在しない）
+ */
+export const REFERRER_SEEDS: Record<string, { name: string; contact: string; note: string }> = {
+  c1: { name: 'あおば相談室（架空）', contact: '022-000-0001', note: '担当の方は午前に連絡がつきやすい' },
+  c5: { name: 'ひかり支援センター（架空）', contact: '022-000-0002', note: '' },
+  c11: { name: 'あおば相談室（架空）', contact: '022-000-0001', note: '月末に実績の確認あり' },
+};

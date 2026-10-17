@@ -139,6 +139,8 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
           parkingNote: '',
           cautionNote: '',
           allowedStaffIds: [],
+          stage: 'active',
+          referrer: { name: '', contact: '', note: '' },
         };
   const clients = inquiryClient ? [...data.clients, inquiryClient] : data.clients;
 
@@ -162,6 +164,7 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
         note: '',
         typeId: vType?.id ?? null,
         pattern: null,
+        cancelKind: null,
       };
       dayData = { ...dayData, visits: [...dayVisits, inquiry] };
     }

@@ -15,6 +15,7 @@ import {
   Repeat,
   Sparkles,
   Square,
+  Timer,
   UserRound,
   UserX,
   X,
@@ -81,6 +82,7 @@ import {
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
+import { workRoutesOf, workStats } from '../lib/workload';
 import { type CompileInput, compile } from '../matching';
 import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
@@ -331,8 +333,11 @@ export default function MonthPage() {
       const sp = attempt(() => compile({ ...input, rules: scoreRules }, d)).value;
       // 欠勤（希望休も。ADR-0014）の人に残っている訪問（数える案＝今の案、無ければ確定した割当）。
       // 同じ訪問を「違反」でも数えないよう、必須の違反からは除く（「休みの人に N」に一本化）
+      // 最終勤務日の後（ADR-0015）の人に残る訪問も同じく数える
       const left = new Set(
-        sp && c.absences.some((a) => a.date === d) ? absentLeftIds(sp, dayPlanOf(data, d, sp).routes) : [],
+        sp && (c.absences.some((a) => a.date === d) || c.staff.some((s) => s.lastDay !== null && s.lastDay < d))
+          ? absentLeftIds(sp, dayPlanOf(data, d, sp).routes)
+          : [],
       );
       let view: DayView = {};
       if (sp && plan) {
@@ -350,6 +355,16 @@ export default function MonthPage() {
         view = { visitIds: sp.visits.map((v) => v.id) };
       }
       if (left.size > 0) view = { ...view, absentLeft: left.size };
+      // 拘束が上限を超える人（稼働の見込み。確定した割当、無ければ今の案。ADR-0015）。org（上限）は base に入っている
+      if (sp) {
+        const work = workRoutesOf(data, d, sp);
+        const over = work
+          ? workStats(sp, work.routes, c.org, work.source === 'confirmed')
+              .filter((x) => x.over)
+              .map((x) => x.staffId)
+          : [];
+        if (over.length > 0) view = { ...view, overSpan: over };
+      }
       memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });
       out.set(d, { status: dayStatus(data, d, view), problem: sp });
     }
@@ -520,8 +535,12 @@ export default function MonthPage() {
       unassigned += s.unassigned;
       if (s.stale) stale++;
     }
-    return { visits, withVisits, withPlan, unassigned, stale };
-  }, [days, statuses]);
+    // 当日キャンセル（ADR-0015）の回数
+    let sameDay = 0;
+    for (const d of days)
+      for (const v of visitsByDate.get(d) ?? []) if (v.cancelled && v.cancelKind === 'sameDay') sameDay++;
+    return { visits, withVisits, withPlan, unassigned, stale, sameDay };
+  }, [days, statuses, visitsByDate]);
 
   /** 先に定期パターンから展開したときのデータ（対象の日数の見込み） */
   const preview = useMemo(() => expandMonth(data, ym, today), [data, ym, today]);
@@ -788,9 +807,20 @@ export default function MonthPage() {
               印刷
             </WithIcon>
           </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => navigate(`/workload?ym=${ym}`)}
+            title="予定から、この月の拘束・移動・待ちの時間と交通費を見込みます"
+            data-testid="month-workload"
+          >
+            <WithIcon icon={Timer} size={14}>
+              稼働の見込み
+            </WithIcon>
+          </button>
           <span className="month-summary sub" data-testid="month-summary">
             訪問 {summary.visits}件・案のある日 {summary.withPlan}/{summary.withVisits}日・入らない {summary.unassigned}
-            件
+            件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>
         </div>
         <div className="row month-pickers">
@@ -1031,7 +1061,7 @@ export default function MonthPage() {
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
-                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・欠勤のある日はありません。
+                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・拘束が上限を超える日・欠勤のある日はありません。
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
@@ -1060,6 +1090,11 @@ export default function MonthPage() {
                           {a.kind === 'stale' && (
                             <WithIcon icon={RefreshCw} size={14}>
                               条件が変わった
+                            </WithIcon>
+                          )}
+                          {a.kind === 'overSpan' && (
+                            <WithIcon icon={Timer} size={14}>
+                              拘束が{data.org.spanLimitHours}時間を超える {a.names.map(shortName).join('・')}
                             </WithIcon>
                           )}
                           {a.kind === 'absence' && (
@@ -1092,6 +1127,14 @@ export default function MonthPage() {
                 </div>
               )}
               <dl className="month-facts" data-testid="month-staff-sum">
+                {staffById.get(focus.id)?.lastDay && (
+                  <>
+                    <dt>最終勤務日</dt>
+                    <dd data-testid="month-staff-lastday">
+                      {mdText(staffById.get(focus.id)?.lastDay ?? '')}（翌日から勤務なし）
+                    </dd>
+                  </>
+                )}
                 <dt>担当</dt>
                 <dd>{staffSum.count}件</dd>
                 <dt>稼働時間</dt>
@@ -1130,6 +1173,8 @@ export default function MonthPage() {
                 <dd>{clientSum.edited}回</dd>
                 <dt>取り消し</dt>
                 <dd>{clientSum.cancelled}回</dd>
+                <dt>うち当日キャンセル</dt>
+                <dd data-testid="month-client-sameday">{clientSum.sameDay}回</dd>
                 <dt>休みのため無し</dt>
                 <dd>{clientSum.leave}回</dd>
                 <dt>いつもの担当でない</dt>
@@ -1368,6 +1413,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
   if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
   if (s.absentLeft > 0) parts.push(`休みの人に訪問 ${s.absentLeft}件`);
   if (s.stale) parts.push('条件が変わった');
+  if (s.overSpan.length > 0) parts.push(`拘束が上限を超える ${s.overSpan.length}人`);
   if (making) parts.push('作っています');
 
   const flags = (
@@ -1400,6 +1446,18 @@ const DayCell = memo(function DayCell(props: CellProps) {
           条件が変わった
         </span>
       )}
+      {s.overSpan.length > 0 && (
+        <span
+          className="month-flag is-warn"
+          title={`拘束（最初の訪問の開始〜最後の訪問の終わり）が上限を超える${staffTerm}：${s.overSpan
+            .map((id) => staffById.get(id)?.name ?? '')
+            .join('・')}`}
+          data-testid="month-over-span"
+        >
+          <Timer size={12} aria-hidden="true" />
+          拘束超 {s.overSpan.length}
+        </span>
+      )}
       {making && <span className="month-flag is-warn">作っています…</span>}
     </>
   );
@@ -1420,6 +1478,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
     if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
     if (mk.leaves.length > 0) parts.push(`${clientTerm}の休み ${mk.leaves.join('・')}`);
+    if (mk.lastDays.length > 0) parts.push(`最終勤務日 ${mk.lastDays.join('・')}`);
     if (load) parts.push(loadSummary(load));
     else if (load === null) parts.push('混み具合は案が無いので数えていません');
     body.push(
@@ -1461,6 +1520,15 @@ const DayCell = memo(function DayCell(props: CellProps) {
             {mk.leaves.length === 1 ? shortName(mk.leaves[0]!) : `${mk.leaves.length}人`}
           </span>
         )}
+        {mk.lastDays.length > 0 && (
+          <span
+            className="month-mark is-lastday"
+            title={`最終勤務日（翌日から勤務なし）：${mk.lastDays.join('・')}`}
+            data-testid="month-lastday"
+          >
+            最終 {namesShort(mk.lastDays)}
+          </span>
+        )}
       </span>,
       <span key="flags" className="month-flags">
         {flags}
@@ -1471,15 +1539,17 @@ const DayCell = memo(function DayCell(props: CellProps) {
     );
   } else if (focus === 'staff' && props.staffDay) {
     const x = props.staffDay;
-    const shift = x.absence
-      ? x.requested
-        ? REQUESTED_OFF_NOTE
-        : x.slots.length === 0
-          ? '欠勤'
-          : `欠勤あり ${slotsText(x.slots)}`
-      : x.off
-        ? '休'
-        : slotsText(x.slots);
+    const shift = x.retired
+      ? '最終勤務日の後'
+      : x.absence
+        ? x.requested
+          ? REQUESTED_OFF_NOTE
+          : x.slots.length === 0
+            ? '欠勤'
+            : `欠勤あり ${slotsText(x.slots)}`
+        : x.off
+          ? '休'
+          : slotsText(x.slots);
     parts.push(shift);
     if (x.noPlan) parts.push('案なし');
     if (x.count > 0 || x.target !== null) {
@@ -1490,7 +1560,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     body.push(
       <span
         key="shift"
-        className={`month-shift${x.absence ? (x.requested ? ' is-requested' : ' is-absent') : x.off ? ' is-off' : ''}`}
+        className={`month-shift${x.retired ? ' is-retired' : x.absence ? (x.requested ? ' is-requested' : ' is-absent') : x.off ? ' is-off' : ''}`}
         data-testid="month-shift"
       >
         {x.absence &&
@@ -1524,7 +1594,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
     const MAX = 4;
     for (const v of x.visits) {
       const who = v.cancelled
-        ? '取り消し'
+        ? v.sameDay
+          ? '当日キャンセル'
+          : '取り消し'
         : v.leave
           ? '休みのため無し'
           : v.staffId
@@ -1551,7 +1623,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
               <span className="month-cvisit-time">{hm(v.start)}</span>
               <span className="month-cvisit-who">
                 {v.cancelled
-                  ? '取消'
+                  ? v.sameDay
+                    ? '当日取消'
+                    : '取消'
                   : v.leave
                     ? '休み'
                     : v.staffId

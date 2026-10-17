@@ -9,6 +9,8 @@ export const ORG_KEYS = {
   clientTerm: '呼び方（訪問先）',
   fare: '1kmあたりの運賃（円）',
   seed: '乱数の種',
+  /** 拘束の上限（ADR-0015）。古いブックには無いので必須の行にしない（無ければ 10） */
+  spanLimit: '拘束の上限（時間）',
 } as const;
 export const ORG_HEADERS = ['項目', '値'] as const;
 
@@ -33,6 +35,8 @@ export const STAFF_COLS = {
   lat: '緯度',
   lng: '経度',
 } as const;
+/** 〈スタッフ〉の「最終勤務日」（PRD D71。ADR-0015）。書き出しは固定の列の最後。古いブックには無いので必須にしない（無ければなし） */
+export const STAFF_LAST_DAY_COL = '最終勤務日';
 export const CLIENT_COLS = {
   id: 'ID',
   name: '表示名',
@@ -65,8 +69,18 @@ export const CLIENT_RULE_COLS = { entry: '入り方', key: '鍵', parking: '駐�
  */
 export const CLIENT_ALLOWED_COL = '担当できる人';
 /**
+ * 〈利用者さん〉の段階と紹介元（PRD D73。ADR-0015）。書き出しは固定の列の最後。古いブックには無いので必須の列にしない
+ * （段階が無い・空なら「利用中」「仮押さえ」の列から読み替える。紹介元は空）
+ */
+export const CLIENT_STAGE_COLS = {
+  stage: '段階',
+  referrer: '紹介元',
+  referrerContact: '紹介元の連絡先',
+  referrerNote: '紹介元のメモ',
+} as const;
+/**
  * 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「いつもの担当」の次に
- * 「担当できる人」、「メモ」の次に決まりごと）
+ * 「担当できる人」、「メモ」の次に決まりごと、最後に段階と紹介元）
  */
 export const clientExportCols = (): string[] => {
   const base: string[] = Object.values(CLIENT_COLS);
@@ -77,7 +91,12 @@ export const clientExportCols = (): string[] => {
   const u = withKana.indexOf(CLIENT_COLS.usualStaff) + 1;
   const withAllowed = [...withKana.slice(0, u), CLIENT_ALLOWED_COL, ...withKana.slice(u)];
   const n = withAllowed.indexOf(CLIENT_COLS.note) + 1;
-  return [...withAllowed.slice(0, n), ...Object.values(CLIENT_RULE_COLS), ...withAllowed.slice(n)];
+  return [
+    ...withAllowed.slice(0, n),
+    ...Object.values(CLIENT_RULE_COLS),
+    ...withAllowed.slice(n),
+    ...Object.values(CLIENT_STAGE_COLS),
+  ];
 };
 export const availabilityCols = (t: Terms) => ({ staff: t.staff, date: '日付', slots: '時間帯' });
 /** 欠勤（ADR-0011）：開始の空＝始業から、終了の空＝終業まで、両方空＝終日 */
@@ -143,6 +162,26 @@ export const visitCols = (t: Terms) => ({
   edited: VISIT_PATTERN_COLS.edited,
   note: 'メモ',
 });
+/** 訪問の「当日キャンセル」（○。PRD D74。ADR-0015）。書き出しは最後の列。古いブックには無いので必須にしない（無ければふつうの取り消し） */
+export const VISIT_SAME_DAY_COL = '当日キャンセル';
+/** 稼働の見込み（PRD D72。ADR-0015）のシート。書き出すだけで、読み込みでは見ない（予定から計算し直せるため） */
+export const WORKLOAD_SHEET = '稼働の見込み';
+export const WORKLOAD_COLS = [
+  '日付',
+  '名前',
+  '案の元',
+  '訪問の件数',
+  '最初の訪問の開始',
+  '最後の訪問の終わり',
+  '拘束（分）',
+  '訪問（分）',
+  '移動（分）',
+  '待ち（分）',
+  '自宅との行き帰り（分）',
+  '距離（km）',
+  '交通費（円）',
+  '拘束の上限を超える',
+] as const;
 /** 訪問の列のうち、古いブック（ADR-0012 より前）にも必ずある列 */
 export const visitBaseCols = (t: Terms) => {
   const { type: _t, pattern: _p, patternDate: _d, edited: _e, ...rest } = visitCols(t);

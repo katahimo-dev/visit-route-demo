@@ -75,6 +75,7 @@ export function visitsOf(date: string, clientIds: Set<string>): Visit[] {
         note: '',
         typeId: null,
         pattern: null,
+        cancelKind: null,
       };
     })
     .sort((a, b) => a.earliestStart.localeCompare(b.earliestStart));

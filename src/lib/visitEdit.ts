@@ -18,6 +18,7 @@ export function savedVisit(visit: Visit | null, f: VisitFields, newVisitId: stri
     id: visit?.id ?? newVisitId,
     staffId: visit && visit.date === f.date ? visit.staffId : null,
     cancelled: false,
+    cancelKind: null,
   };
   const ref = visit?.pattern ?? null;
   const changed =

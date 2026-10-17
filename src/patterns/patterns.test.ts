@@ -91,6 +91,7 @@ describe('occursOn・expandPattern（展開される日）', () => {
         note: '',
         typeId: 't1',
         pattern: { id: 'p1', date: '2026-10-12', edited: false },
+        cancelKind: null,
       },
     ]);
   });

@@ -4,7 +4,7 @@ import type { DemoData } from '../contracts/data';
 import type { Client, LatLng, Pattern, Place, Staff, VisitType } from '../contracts/documents';
 import type { Problem, ProblemStaff, ProblemVisit, Reason } from '../contracts/problem';
 import { type Condition, type Item, POINTS_PER_WEIGHT, type Rule, type Traits } from '../contracts/rules';
-import { availabilityOf, withoutAbsences } from '../domain/availability';
+import { afterLastDay, availabilityOf, withoutAbsences } from '../domain/availability';
 import { estimateLeg } from '../domain/geo';
 import { leaveOn } from '../domain/leaves';
 import { hhmmToMinutes } from '../domain/time';
@@ -121,6 +121,8 @@ export const ABSENT_ALL_DAY = '欠勤（終日）';
 /** 途中の欠勤で、その日の稼働時間帯が全部なくなったとき */
 export const ABSENT_NO_HOURS = '欠勤で稼働時間がない';
 export const ABSENCE_OVERLAP = '欠勤の時間と重なる';
+/** 最終勤務日の後（PRD D71。ADR-0015。ruleId は 'slot'） */
+export const AFTER_LAST_DAY = '最終勤務日の後';
 
 /** 手直しで固定した訪問の、固定した担当以外の可否の原因 */
 export const PIN_RULE_ID = 'pin';
@@ -230,11 +232,12 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
       if (ps.slots.length === 0) {
         // 欠勤（ADR-0011）：もともと働く日なら「欠勤（終日）」（途中の欠勤で全部なくなったら「欠勤で稼働時間がない」）、
         // もともと休みなら「休み」
+        // 最終勤務日の後（ADR-0015）は「最終勤務日の後」
         const absent = day.absence && day.base.length > 0;
         const allDay = day.absence?.from === null && day.absence?.to === null;
         out.push({
           ruleId: 'slot',
-          label: absent ? (allDay ? ABSENT_ALL_DAY : ABSENT_NO_HOURS) : '休み',
+          label: afterLastDay(s, date) ? AFTER_LAST_DAY : absent ? (allDay ? ABSENT_ALL_DAY : ABSENT_NO_HOURS) : '休み',
           points: INF,
         });
       } else if (pv.earliest <= pv.latest && !fits(ps.slots)) {

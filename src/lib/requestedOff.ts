@@ -6,7 +6,7 @@ import type { Absence } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import { availabilityOf } from '../domain/availability';
 import { NONE } from '../domain/scheduleModel';
-import { ABSENCE_OVERLAP, ABSENT_ALL_DAY, ABSENT_NO_HOURS } from '../matching';
+import { ABSENCE_OVERLAP, ABSENT_ALL_DAY, ABSENT_NO_HOURS, AFTER_LAST_DAY } from '../matching';
 import { saveAbsence } from './absences';
 
 /** 希望休の欠勤のメモ（終日の欠勤で、メモがこの文のものを希望休とみなす） */
@@ -75,11 +75,14 @@ export function requestedOffDates(data: Pick<DemoData, 'absences'>, staffId: str
   ].sort();
 }
 
-/** 欠勤で外れたことを示す理由の文（compile の 'slot' の理由） */
-const ABSENCE_LABELS = new Set([ABSENT_ALL_DAY, ABSENT_NO_HOURS, ABSENCE_OVERLAP]);
+/**
+ * 欠勤で外れたことを示す理由の文（compile の 'slot' の理由）。最終勤務日の後（ADR-0015）も、休みの人に残る訪問として数える
+ */
+const ABSENCE_LABELS = new Set([ABSENT_ALL_DAY, ABSENT_NO_HOURS, ABSENCE_OVERLAP, AFTER_LAST_DAY]);
 
 /**
- * 案（今の案か確定した割当。担当 → 訪問ID の列）で、欠勤（希望休も）の時間と重なるのにその人に残っている訪問の ID（列の順）。
+ * 案（今の案か確定した割当。担当 → 訪問ID の列）で、欠勤（希望休も）の時間と重なる・最終勤務日の後（ADR-0015）なのに
+ * その人に残っている訪問の ID（列の順）。
  * problem は欠勤を入れたいまのデータの問題。staffId を渡すとその人の列だけ。問題に無い人・訪問は数えない
  */
 export function absentLeftIds(problem: Problem, routes: Record<string, string[]>, staffId?: string): string[] {

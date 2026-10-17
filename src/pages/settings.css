@@ -464,3 +464,111 @@ fieldset.weekday-toggles {
   color: #3e5a8a;
   margin-left: 4px;
 }
+
+/* 〈利用者さん〉の段階（PRD D73。ADR-0015）：段階で絞り込むボタン（選んだものは太字・下線・枠。色だけに頼らない） */
+.stage-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.stage-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.stage-filter-btn.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.stage-arrow {
+  color: var(--sub);
+  margin-right: 2px;
+}
+.stage-count {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #f3ebe4;
+  font-size: 0.78rem;
+  text-align: center;
+  font-weight: 700;
+}
+.stage-chip.is-active {
+  background: #e1f1e7;
+  color: var(--ok);
+}
+.stage-chip.is-ended {
+  background: #eee;
+  color: #777;
+}
+.stage-chip.is-inquiry,
+.stage-chip.is-meeting,
+.stage-chip.is-contract {
+  background: #e6eef9;
+  color: #2f5f9e;
+}
+
+/* 退職・担当替えの一括振り直し（PRD D71。ADR-0015） */
+.offboard-days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.offboard-day-btn {
+  display: inline-flex;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.offboard-day-btn:hover {
+  border-color: #d9c8bb;
+}
+.offboard-table select {
+  max-width: 100%;
+}
+.leaving-card {
+  border-left: 6px solid #5b4a8a;
+}
+.leaving-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.leaving-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.chip-lastday {
+  background: #ece7f6;
+  color: #5b4a8a;
+}
+fieldset.stage-filter {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}

@@ -5,7 +5,7 @@ import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Rule } from '../contracts/rules';
-import { availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
+import { afterLastDay, availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
@@ -151,8 +151,10 @@ export type DayView = {
   stale?: boolean;
   /** 計算に入れる訪問の ID（問題の訪問）。無ければ取り消しでない訪問 */
   visitIds?: readonly string[];
-  /** 欠勤（希望休も）の時間と重なるのに、その人に残っている訪問の数（数える案で。ADR-0014） */
+  /** 欠勤（希望休も）の時間と重なる・最終勤務日の後（ADR-0015）なのに、その人に残っている訪問の数（数える案で。ADR-0014） */
   absentLeft?: number;
+  /** 拘束が上限を超える〈スタッフ〉の ID（稼働の見込み。確定した割当、無ければ今の案。ADR-0015） */
+  overSpan?: readonly string[];
 };
 
 export type DayStatus = {
@@ -166,6 +168,8 @@ export type DayStatus = {
   absence: boolean;
   /** 欠勤（希望休も）の人に残っている訪問の数（ADR-0014。画面が数えて渡す） */
   absentLeft: number;
+  /** 拘束が上限を超える〈スタッフ〉の ID（ADR-0015。注意だけで、手当てが必要には数えない） */
+  overSpan: readonly string[];
   hundred: number | null;
   hard: number;
   stale: boolean;
@@ -213,6 +217,7 @@ export function dayStatus(
     unassigned,
     absence: data.absences.some((a) => a.date === date),
     absentLeft,
+    overSpan: view.overSpan ?? [],
     hundred: plan ? (view.hundred ?? null) : null,
     hard,
     stale: !!plan && !!view.stale,
@@ -338,6 +343,8 @@ export type DayMarks = {
   ends: string[];
   /** その日に休み（ADR-0013）で訪問が無しになる〈利用者さん〉の表示名（取り消しでない訪問がある人だけ） */
   leaves: string[];
+  /** その日が最終勤務日（ADR-0015）の〈スタッフ〉の名前。最終勤務日の後の人は off にも数えない */
+  lastDays: string[];
 };
 
 /** 日のマスの印（取り消しの訪問は数えない。休止中の〈スタッフ〉・〈利用者さん〉は出さない） */
@@ -367,8 +374,12 @@ export function dayMarks(
   const off: string[] = [];
   const absent: string[] = [];
   const requested: string[] = [];
+  const lastDays: string[] = [];
   for (const s of data.staff) {
     if (!s.active) continue;
+    if (s.lastDay === date) lastDays.push(s.name);
+    // 最終勤務日の後（ADR-0015）はもういない人なので、休みに数えない
+    if (afterLastDay(s, date)) continue;
     const override = data.availability.find((a) => a.staffId === s.id && a.date === date);
     const slots = availabilityOf(s, date, override).slots;
     if (absentIds.has(s.id) && slots.length > 0) (requestedIds.has(s.id) ? requested : absent).push(s.name);
@@ -400,6 +411,7 @@ export function dayMarks(
           .flatMap((v) => clientName.get(v.clientId) ?? []),
       ),
     ],
+    lastDays,
   };
 }
 
@@ -414,6 +426,8 @@ export type StaffDay = {
   absence: Absence | null;
   /** その日の欠勤が希望休（ADR-0014） */
   requested: boolean;
+  /** 最終勤務日の後（ADR-0015） */
+  retired: boolean;
   /** 数える案が無い（訪問がある日だけ true） */
   noPlan: boolean;
   /** 担当の件数 */
@@ -466,6 +480,7 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     off: base.length === 0,
     absence: absences.at(-1) ?? null,
     requested: absences.length > 0 && absences.every(isRequestedOff),
+    retired: !!s && afterLastDay(s, date),
     noPlan: hasVisits && day.source === null,
     count: list.length,
     target,
@@ -541,6 +556,8 @@ export type ClientVisitMark = {
   /** この回だけ変えた（パターンの訪問） */
   edited: boolean;
   cancelled: boolean;
+  /** 当日キャンセル（取り消しの種類。ADR-0015） */
+  sameDay: boolean;
   /** 〈利用者さん〉の休み（ADR-0013）のため無し（取り消しでない訪問だけ。計算に入らない） */
   leave: boolean;
   /** 案があるのに担当がいない（入らない） */
@@ -583,6 +600,7 @@ export function clientDay(data: CompileInput, day: DayPlan, clientId: string): C
         substitute: staffId !== null && usual !== null && staffId !== usual,
         edited: v.pattern?.edited ?? false,
         cancelled: v.cancelled,
+        sameDay: v.cancelled && v.cancelKind === 'sameDay',
         leave,
         unassigned: !v.cancelled && !leave && staffId === null && day.source !== null,
       };
@@ -600,6 +618,8 @@ export type ClientMonth = {
   edited: number;
   /** 取り消した回 */
   cancelled: number;
+  /** 取り消した回のうち、当日キャンセル（ADR-0015） */
+  sameDay: number;
   /** 休み（ADR-0013）のため無しの回 */
   leave: number;
   /** いつもの担当でない回 */
@@ -610,12 +630,13 @@ export type ClientMonth = {
 
 /** 選んだ〈利用者さん〉の月の集計（days はその月の日） */
 export function clientMonth(data: CompileInput, days: readonly DayPlan[], clientId: string): ClientMonth {
-  const out: ClientMonth = { planned: 0, edited: 0, cancelled: 0, leave: 0, substitute: 0, byStaff: [] };
+  const out: ClientMonth = { planned: 0, edited: 0, cancelled: 0, sameDay: 0, leave: 0, substitute: 0, byStaff: [] };
   const by = new Map<string | null, number>();
   for (const day of days) {
     for (const v of clientDay(data, day, clientId).visits) {
       if (v.cancelled) {
         out.cancelled++;
+        if (v.sameDay) out.sameDay++;
         continue;
       }
       if (v.leave) {
@@ -640,22 +661,22 @@ export function clientMonth(data: CompileInput, days: readonly DayPlan[], client
   return out;
 }
 
-/** 要対応の種類：入らない訪問がある・欠勤の人に訪問が残る（ADR-0014）・条件が変わった・欠勤がある（希望休だけの日は除く） */
-export type AttentionKind = 'unassigned' | 'absentLeft' | 'stale' | 'absence';
+/** 要対応の種類：入らない訪問がある・欠勤の人に訪問が残る（ADR-0014）・条件が変わった・拘束が上限を超える（ADR-0015）・欠勤がある（希望休だけの日は除く） */
+export type AttentionKind = 'unassigned' | 'absentLeft' | 'stale' | 'overSpan' | 'absence';
 export type Attention = {
   date: string;
   kind: AttentionKind;
   /** 入らない訪問の件数／欠勤の人に残る訪問の件数／欠勤の人数（条件が変わったは 1） */
   count: number;
-  /** 欠勤の人の名前（kind が absence のとき） */
+  /** 欠勤の人の名前（kind が absence のとき）・拘束が上限を超える人の名前（overSpan のとき） */
   names: string[];
 };
 
-const KIND_ORDER: Record<AttentionKind, number> = { unassigned: 0, absentLeft: 1, stale: 2, absence: 3 };
+const KIND_ORDER: Record<AttentionKind, number> = { unassigned: 0, absentLeft: 1, stale: 2, overSpan: 3, absence: 4 };
 
 /**
  * 選ばないときの右の欄の「要対応」（D55）：今日以降の日の、入らない訪問がある・欠勤の人に訪問が残る・条件が変わった・
- * 欠勤のある日（日付の順、同じ日は 入らない → 欠勤の人に残る → 条件が変わった → 欠勤）。
+ * 拘束が上限を超える（ADR-0015）・欠勤のある日（日付の順、同じ日は 入らない → 欠勤の人に残る → 条件が変わった → 拘束 → 欠勤）。
  * 希望休（ADR-0014）は前もって入れる休みなので、それだけでは要対応にしない（訪問が残っていれば「欠勤の人に残る」で出る）
  */
 export function attentionList(
@@ -670,6 +691,14 @@ export function attentionList(
     if (s.unassigned > 0) out.push({ date: s.date, kind: 'unassigned', count: s.unassigned, names: [] });
     if (s.absentLeft > 0) out.push({ date: s.date, kind: 'absentLeft', count: s.absentLeft, names: [] });
     if (s.stale) out.push({ date: s.date, kind: 'stale', count: 1, names: [] });
+    // 拘束が上限を超える（ADR-0015）
+    if (s.overSpan.length > 0)
+      out.push({
+        date: s.date,
+        kind: 'overSpan',
+        count: s.overSpan.length,
+        names: s.overSpan.map((id) => nameOf.get(id) ?? '').filter(Boolean),
+      });
     if (s.absence) {
       // 同じ人の欠勤が2件（時間帯が2つ・続けて振り直した）でも1人と数える。希望休は数えない
       const ids = [

@@ -154,6 +154,7 @@ describe('書き出し → 読み込み', () => {
       '定期パターン',
       '訪問',
       '訪問先の休み',
+      '稼働の見込み',
     ]);
     expect(col(sheet(wb, '訪問'), d.org.terms.client)).toBe(3);
     // 見出しは固定・太字
@@ -899,7 +900,8 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
 describe('〈利用者さん〉の仮押さえの列（ADR-0012 追記。段階3）', () => {
   const withTentative = (d: DemoData): DemoData => ({
     ...d,
-    clients: d.clients.map((c, i) => (i % 3 === 0 ? { ...c, tentative: true } : c)),
+    // 仮押さえは利用中の前の段階だけ（ADR-0015）
+    clients: d.clients.map((c, i) => (i % 3 === 0 ? { ...c, tentative: true, stage: 'inquiry' as const } : c)),
   });
   it('仮押さえが 書き出し → 読み込み で同じに戻る（列は「利用中」の次）', async () => {
     const d = withTentative(base());
@@ -1092,5 +1094,96 @@ describe('〈利用者さん〉の担当できる人の列（ADR-0014）', () =>
       }),
     );
     expect(r.clients[0]!.allowedStaffIds).toEqual([d.staff[0]!.id]);
+  });
+});
+
+describe('最終勤務日・段階・紹介元・当日キャンセル・拘束の上限・稼働の見込み（ADR-0015）', () => {
+  const withNew = (d: DemoData): DemoData => ({
+    ...d,
+    org: { ...d.org, spanLimitHours: 8.5 },
+    staff: d.staff.map((s, i) => (i === 0 ? { ...s, lastDay: '2026-10-31' } : s)),
+    clients: d.clients.map((c, i) =>
+      i === 0
+        ? { ...c, stage: 'meeting' as const, active: true, tentative: true }
+        : i === 1
+          ? {
+              ...c,
+              stage: 'ended' as const,
+              active: false,
+              referrer: { name: '相談室（架空）', contact: '000', note: '返事待ち' },
+            }
+          : c,
+    ),
+    visits: d.visits.map((v, i) =>
+      i === 0 ? { ...v, cancelled: true, cancelKind: 'sameDay' as const } : i === 1 ? { ...v, cancelled: true } : v,
+    ),
+  });
+
+  it('書き出し → 読み込み で同じに戻る', async () => {
+    const d = withNew(base());
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r).toEqual(withoutPlans(d));
+    expect(r.visits[0]!.cancelKind).toBe('sameDay');
+    expect(r.visits[1]!.cancelKind).toBeNull();
+  });
+
+  it('列・行の無い古いブックは、最終勤務日なし・利用中と仮押さえから段階・ふつうの取り消し・上限10時間', async () => {
+    const d = withNew(base());
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const names = personSheetNames(d.org.terms);
+        const sws = sheet(wb, names.staff);
+        sws.spliceColumns(col(sws, '最終勤務日'), 1);
+        const cws = sheet(wb, names.client);
+        for (const h of ['段階', '紹介元', '紹介元の連絡先', '紹介元のメモ']) cws.spliceColumns(col(cws, h), 1);
+        const vws = sheet(wb, '訪問');
+        vws.spliceColumns(col(vws, '当日キャンセル'), 1);
+        const ows = sheet(wb, '事業所');
+        for (let n = ows.rowCount; n >= 2; n--)
+          if (ows.getRow(n).getCell(1).value === '拘束の上限（時間）') ows.spliceRows(n, 1);
+      }),
+    );
+    expect(r.staff.every((s) => s.lastDay === null)).toBe(true);
+    // 仮押さえ（利用中の前）は相談受付、利用中でない人は終了
+    expect([r.clients[0]!.stage, r.clients[0]!.tentative, r.clients[0]!.active]).toEqual(['inquiry', true, true]);
+    expect(r.clients[1]!.stage).toBe('ended');
+    expect(r.clients[1]!.referrer.name).toBe('');
+    expect(r.visits[0]!.cancelKind).toBeNull();
+    expect(r.org.spanLimitHours).toBe(10);
+  });
+
+  it('知らない段階・取り消していない訪問の当日キャンセルは場所付きで止める', async () => {
+    const d = base();
+    const stage = fail(
+      await editAndImport(d, (wb) => {
+        const cws = sheet(wb, personSheetNames(d.org.terms).client);
+        cws.getRow(2).getCell(col(cws, '段階')).value = '休止';
+      }),
+    );
+    expect(stage).toContain('2行目・『段階』');
+    const sameDay = fail(
+      await editAndImport(d, (wb) => {
+        const vws = sheet(wb, '訪問');
+        vws.getRow(2).getCell(col(vws, '当日キャンセル')).value = '○';
+      }),
+    );
+    expect(sameDay).toContain('2行目・『当日キャンセル』');
+  });
+
+  it('「稼働の見込み」のシートは案のある日の〈スタッフ〉ごとの行（読み込みでは見ない）', async () => {
+    const d = base();
+    const day = d.baseDate;
+    const ids = d.visits.filter((v) => v.date === day && !v.cancelled).map((v) => v.id);
+    const withPlan: DemoData = { ...d, manualPlans: { [day]: { s1: ids.slice(0, 3), __none: ids.slice(3) } } };
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(withPlan));
+    const ws = sheet(wb, '稼働の見込み');
+    expect(ws.getRow(1).getCell(1).value).toBe('日付');
+    expect(ws.getRow(2).getCell(1).value).toBe(day);
+    expect(ws.getRow(2).getCell(3).value).toBe('確定した割当');
+    expect(ws.getRow(2).getCell(4).value).toBe(3);
+    expect(ws.getRow(3).getCell(1).value).toBeNull();
+    const r = ok(await importWorkbook(await toBuffer(withPlan), d));
+    expect(r).toEqual(withoutPlans(d));
   });
 });

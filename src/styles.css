@@ -114,6 +114,15 @@ h3 {
   border-color: var(--primary);
   box-shadow: 0 4px 0 var(--primary-dark);
 }
+/* 取り消しなど、戻せない操作のボタン（オレンジの主ボタンとは別。赤い枠と文字） */
+.btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: #fbeceb;
+}
 .btn-big {
   width: 100%;
   padding: 20px;

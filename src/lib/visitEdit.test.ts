@@ -15,6 +15,7 @@ const v: Visit = {
   note: '',
   typeId: null,
   pattern: { id: 'p1', date: '2026-10-19', edited: false },
+  cancelKind: null,
 };
 const fields = (over: Partial<VisitFields> = {}): VisitFields => ({
   date: v.date,
