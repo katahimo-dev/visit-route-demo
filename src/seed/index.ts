@@ -46,7 +46,7 @@ function initialClients(): Client[] {
     id: c.id,
     displayName: c.name,
     kana: c.kana,
-    place: { address: c.address, lat: c.lat, lng: c.lng },
+    place: { address: c.address, lat: c.lat, lng: c.lng, postalCode: '' },
     note: c.note ?? '',
     color: i % 8,
     active: true,

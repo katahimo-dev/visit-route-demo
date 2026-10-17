@@ -69,6 +69,11 @@ export const CLIENT_RULE_COLS = { entry: '入り方', key: '鍵', parking: '駐�
  */
 export const CLIENT_ALLOWED_COL = '担当できる人';
 /**
+ * 〈利用者さん〉の「郵便番号」（PRD D86。ADR-0016）：7桁の数字（ハイフンなし。読むときはハイフン・全角も受ける）。
+ * 書き出しは「住所」の前に置き、先頭の0が消えないよう文字列の列にする。古いブックには無いので必須の列にしない（無ければ空）
+ */
+export const CLIENT_POSTAL_COL = '郵便番号';
+/**
  * 〈利用者さん〉の段階と紹介元（PRD D73。ADR-0015）。書き出しは固定の列の最後。古いブックには無いので必須の列にしない
  * （段階が無い・空なら「利用中」「仮押さえ」の列から読み替える。紹介元は空）
  */
@@ -79,7 +84,7 @@ export const CLIENT_STAGE_COLS = {
   referrerNote: '紹介元のメモ',
 } as const;
 /**
- * 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「いつもの担当」の次に
+ * 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「住所」の前に「郵便番号」、「いつもの担当」の次に
  * 「担当できる人」、「メモ」の次に決まりごと、最後に段階と紹介元）
  */
 export const clientExportCols = (): string[] => {
@@ -87,7 +92,9 @@ export const clientExportCols = (): string[] => {
   const at = base.indexOf(CLIENT_COLS.active) + 1;
   const withTentative = [...base.slice(0, at), CLIENT_TENTATIVE_COL, ...base.slice(at)];
   const k = withTentative.indexOf(CLIENT_COLS.name) + 1;
-  const withKana = [...withTentative.slice(0, k), CLIENT_KANA_COL, ...withTentative.slice(k)];
+  const withKanaOnly = [...withTentative.slice(0, k), CLIENT_KANA_COL, ...withTentative.slice(k)];
+  const a = withKanaOnly.indexOf(CLIENT_COLS.address);
+  const withKana = [...withKanaOnly.slice(0, a), CLIENT_POSTAL_COL, ...withKanaOnly.slice(a)];
   const u = withKana.indexOf(CLIENT_COLS.usualStaff) + 1;
   const withAllowed = [...withKana.slice(0, u), CLIENT_ALLOWED_COL, ...withKana.slice(u)];
   const n = withAllowed.indexOf(CLIENT_COLS.note) + 1;

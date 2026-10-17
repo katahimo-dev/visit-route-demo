@@ -118,7 +118,7 @@ describe('compile：可否と割当費用', () => {
   });
   it('位置がない訪問先は noPlace。キャンセル・休止中は入れない', () => {
     const d = twoStaff();
-    d.clients.push(client('c2', 0, 0, { place: { address: '', lat: null, lng: null } }));
+    d.clients.push(client('c2', 0, 0, { place: { address: '', lat: null, lng: null, postalCode: '' } }));
     d.clients.push(client('c3', 38.2, 140.8, { active: false }));
     d.visits.push(visit('v2', 'c2', '10:00', '11:00'), visit('v3', 'c3', '10:00', '11:00'));
     d.visits.push(visit('v4', 'c1', '10:00', '11:00', { cancelled: true }));

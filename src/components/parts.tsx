@@ -30,7 +30,7 @@ export function TentativeMark() {
 }
 
 /**
- * 住所＋位置の入力。デモ版は住所から位置を出す機能が無いので、地図をクリックして位置を直す
+ * 住所＋位置の入力。住所の文字から位置を出すのは〈利用者さん〉の欄だけ（ClientPlaceEditor。ADR-0016）で、ここでは地図をクリックして位置を直す
  */
 export function PlaceEditor({ value, onChange }: { value: Place; onChange: (p: Place) => void }) {
   return (
@@ -43,8 +43,20 @@ export function PlaceEditor({ value, onChange }: { value: Place; onChange: (p: P
           onChange={(e) => onChange({ ...value, address: e.target.value })}
         />
       </label>
+      <PlacePin value={value} onChange={onChange} />
+    </div>
+  );
+}
+
+/**
+ * 位置の表示・「位置を消す」・地図（ピン）。位置が無いときは地図をクリックした所にピンを置く。
+ * 場所の型（〈利用者さん〉の郵便番号つきなど）はそのまま返す
+ */
+export function PlacePin<T extends Place>({ value, onChange }: { value: T; onChange: (p: T) => void }) {
+  return (
+    <div className="stack" data-testid="place-pin">
       <div className="row" style={{ flexWrap: 'wrap' }}>
-        <span className="sub">
+        <span className="sub" data-testid="place-pin-text">
           {hasLocation(value) ? `位置：${value.lat.toFixed(5)}, ${value.lng.toFixed(5)}` : '位置は未登録です'}
         </span>
         {hasLocation(value) && (

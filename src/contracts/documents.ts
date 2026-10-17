@@ -23,6 +23,18 @@ export const placeSchema = z.object({
 });
 export type Place = z.infer<typeof placeSchema>;
 
+/**
+ * 〈利用者さん〉の場所（PRD D86。ADR-0016）：場所に郵便番号を足したもの。郵便番号は空か7桁の数字（ハイフンなし）。
+ * 入力のハイフン・全角数字は画面・Excel が lib/geocode の normalizePostalCode で直してから入れる。無い古いデータは ''
+ */
+export const clientPlaceSchema = placeSchema.extend({
+  postalCode: z
+    .string()
+    .regex(/^(\d{7})?$/, '郵便番号は7桁の数字で入れてください')
+    .default(''),
+});
+export type ClientPlace = z.infer<typeof clientPlaceSchema>;
+
 export const termsSchema = z.object({ client: z.string().max(10), staff: z.string().max(10) });
 export type Terms = z.infer<typeof termsSchema>;
 
@@ -98,7 +110,8 @@ const clientObject = z.object({
   displayName: z.string().min(1).max(50),
   /** よみ（ひらがな・任意。PRD D61）。検索に使う。無い古いデータは '' */
   kana: z.string().max(50).default(''),
-  place: placeSchema,
+  /** 場所（住所・位置・郵便番号。ADR-0016） */
+  place: clientPlaceSchema,
   note: z.string().max(500),
   /** 色の丸の番号（0〜7） */
   color: z.number().int().min(0).max(7),
