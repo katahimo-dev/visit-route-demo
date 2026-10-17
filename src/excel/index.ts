@@ -3,4 +3,4 @@
 export { exportRosterWorkbook, exportWorkbook, XLSX_MIME } from './exportBook';
 export { importWorkbook } from './importBook';
 // 名簿（〈利用者さん〉・〈スタッフ〉のシート1枚）の書き出し・読み込み（PRD D103〜D107。ADR-0020）
-export { importRoster, rosterSummary } from './importRoster';
+export { importRoster, rosterRetiresMost, rosterSummary, rosterWarning } from './importRoster';

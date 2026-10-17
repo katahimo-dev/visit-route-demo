@@ -5,7 +5,14 @@ import type { Condition, Item } from '../contracts/rules';
 import { createDemoData } from '../seed';
 import { isImportError, migrate } from '../store';
 import { MAX_FILE_BYTES, MAX_ROWS, prim } from './importBook';
-import { exportRosterWorkbook, exportWorkbook, importRoster, importWorkbook, rosterSummary } from './index';
+import {
+  exportRosterWorkbook,
+  exportWorkbook,
+  importRoster,
+  importWorkbook,
+  rosterSummary,
+  rosterWarning,
+} from './index';
 import {
   condsToCell,
   parseConds,
@@ -1398,7 +1405,7 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
       expect(r.retired).toEqual([]);
       expect(r.unchanged).toBe(kind === 'client' ? d.clients.length : d.staff.length);
       expect(r.data).toEqual(d);
-      expect(rosterSummary(r, kind)).toContain('変更なし');
+      expect(rosterSummary(r, kind, d.org.terms)).toContain('変更なし');
     }
   });
 
@@ -1449,7 +1456,8 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
       }),
     );
     expect(r.updated).toEqual(['改名 ふみ']);
-    expect(r.added).toEqual(['ID つき 新人']);
+    // 利用中でない人は段階を添える
+    expect(r.added).toEqual(['ID つき 新人（相談受付）']);
     const c = r.data.clients.find((x) => x.id === target.id);
     expect(c?.displayName).toBe('改名 ふみ');
     expect(c?.note).toBe('名前を変えた');
@@ -1592,7 +1600,9 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     expect(rc.data.clients).toHaveLength(d.clients.length);
     expect(rc.data.clients.find((c) => c.id === c1.id)).toMatchObject({ stage: 'ended', active: false });
     expect(rc.data.clients.find((c) => c.id === c3.id)).toEqual(d.clients.find((c) => c.id === c3.id));
-    expect(rosterSummary(rc, 'client')).toContain(`終了にする 2人（${c1.displayName}・${c2.displayName}）`);
+    expect(rosterSummary(rc, 'client', d.org.terms)).toContain(
+      `終了にする 2人（${c1.displayName}・${c2.displayName}）`,
+    );
     // 案・記録・確定した割当・訪問・パターン・相性は残る（その人を指すものも）
     expect(rc.data.manualPlans).toEqual(d.manualPlans);
     expect(rc.data.aiPlans).toEqual(d.aiPlans);
@@ -1616,7 +1626,7 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     expect(rs.data.manualPlans).toEqual(d.manualPlans);
     expect(rs.data.aiPlans).toEqual(d.aiPlans);
     expect(rs.data.visits).toEqual(d.visits);
-    expect(rosterSummary(rs, 'staff')).toContain('休止にする 2人');
+    expect(rosterSummary(rs, 'staff', d.org.terms)).toContain('休止にする 2人');
 
     // 追加・更新（既定）では、ブックに無い人はそのまま
     const rm = rok(
@@ -1626,6 +1636,145 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     );
     expect(rm.retired).toEqual([]);
     expect(rm.data).toEqual(d);
+  });
+
+  it('休止にする〈スタッフ〉は担当できる人から外れ、全員いなくなれば限らないに戻る。確認の文に名前を出す', async () => {
+    const d0 = base();
+    const [s1, s2] = d0.staff;
+    const [c1, c2] = d0.clients;
+    if (!s1 || !s2 || !c1 || !c2) throw new Error('人がいない');
+    const d = ok(
+      migrate({
+        ...d0,
+        clients: d0.clients.map((c) =>
+          c.id === c1.id
+            ? { ...c, allowedStaffIds: [s1.id, s2.id] }
+            : c.id === c2.id
+              ? { ...c, allowedStaffIds: [s1.id] }
+              : c,
+        ),
+      }),
+    );
+    const check = (r: RosterImportResult) => {
+      expect(r.allowedRemoved).toEqual([c1.displayName, c2.displayName]);
+      expect(r.allowedEmptied).toEqual([c2.displayName]);
+      expect(r.data.clients.find((c) => c.id === c1.id)?.allowedStaffIds).toEqual([s2.id]);
+      expect(r.data.clients.find((c) => c.id === c2.id)?.allowedStaffIds).toEqual([]);
+      const text = rosterSummary(r, 'staff', d.org.terms);
+      expect(text).toContain(`${c1.displayName}・${c2.displayName}の「担当できる人」から外します`);
+      expect(text).toContain(`${c2.displayName}は担当できる人がいなくなり、だれでも担当できるようになります`);
+      expect(text).toContain('あとで利用中に戻しても、担当できる人には戻りません');
+    };
+    // 総入れ替えでブックに無い人を休止にしたとき
+    check(
+      rok(
+        await editRoster(
+          d,
+          'staff',
+          (ws) => {
+            ws.spliceRows(rowOf(ws, '名前', s1.name), 1);
+          },
+          'replace',
+        ),
+      ),
+    );
+    // 追加・更新で「利用中」を空にしたとき
+    check(
+      rok(
+        await editRoster(d, 'staff', (ws) => {
+          ws.getRow(rowOf(ws, '名前', s1.name)).getCell(col(ws, '利用中')).value = null;
+        }),
+      ),
+    );
+  });
+
+  it('担当できる人に休止中の〈スタッフ〉を書いても、データが変わらなければ「変更なし」', async () => {
+    const d0 = base();
+    const s3 = d0.staff[2];
+    const c1 = d0.clients[0];
+    if (!s3 || !c1) throw new Error('人がいない');
+    const d = ok(migrate({ ...d0, staff: d0.staff.map((s) => (s.id === s3.id ? { ...s, active: false } : s)) }));
+    const r = rok(
+      await editRoster(d, 'client', (ws) => {
+        ws.getRow(rowOf(ws, '表示名', c1.displayName)).getCell(col(ws, '担当できる人')).value = s3.name;
+      }),
+    );
+    expect(r.updated).toEqual([]);
+    expect(r.unchanged).toBe(d.clients.length);
+    expect(r.data).toEqual(d);
+  });
+
+  it('新しい人で段階・利用中・仮押さえが空なら利用中（〈スタッフ〉は利用中が空なら利用中）。利用中でない人は段階を添える', async () => {
+    const d = base();
+    const rc = rok(
+      await editRoster(d, 'client', (ws) => {
+        const a = ws.getRow(d.clients.length + 2);
+        a.getCell(col(ws, '表示名')).value = '空欄 一郎';
+        a.getCell(col(ws, '色（1〜8）')).value = 1;
+        const b = ws.getRow(d.clients.length + 3);
+        b.getCell(col(ws, '表示名')).value = '終了 二郎';
+        b.getCell(col(ws, '色（1〜8）')).value = 2;
+        b.getCell(col(ws, '段階')).value = '終了';
+      }),
+    );
+    expect(rc.added).toEqual(['空欄 一郎', '終了 二郎（終了）']);
+    expect(rc.data.clients.find((c) => c.displayName === '空欄 一郎')).toMatchObject({ stage: 'active', active: true });
+    const rs = rok(
+      await editRoster(d, 'staff', (ws) => {
+        const row = ws.getRow(d.staff.length + 2);
+        row.getCell(col(ws, '名前')).value = '新人 三郎';
+        row.getCell(col(ws, '移動手段')).value = ws.getRow(2).getCell(col(ws, '移動手段')).value;
+        row.getCell(col(ws, '勤務する曜日')).value = '月水金';
+        row.getCell(col(ws, '勤務開始')).value = '9:00';
+        row.getCell(col(ws, '勤務終了')).value = '17:00';
+      }),
+    );
+    expect(rs.added).toEqual(['新人 三郎']);
+    expect(rs.data.staff.at(-1)?.active).toBe(true);
+  });
+
+  it('総入れ替えで今の人の半分を超える人を外すときは、強い注意を出す', async () => {
+    const d = base();
+    const keep = d.staff.slice(0, 2).map((s) => s.name);
+    const many = rok(
+      await editRoster(
+        d,
+        'staff',
+        (ws) => {
+          for (const s of d.staff.slice(2)) ws.spliceRows(rowOf(ws, '名前', s.name), 1);
+        },
+        'replace',
+      ),
+    );
+    expect(many.retired).toHaveLength(d.staff.length - keep.length);
+    expect(rosterWarning(many, 'staff', d.org.terms)).toBe(
+      `注意：スタッフの半分を超える ${d.staff.length - 2}人を休止にします。ファイルを取り違えていないか確かめてください。`,
+    );
+    const few = rok(
+      await editRoster(
+        d,
+        'staff',
+        (ws) => {
+          ws.spliceRows(2, 1);
+        },
+        'replace',
+      ),
+    );
+    expect(few.retired).toHaveLength(1);
+    expect(rosterWarning(few, 'staff', d.org.terms)).toBeNull();
+  });
+
+  it('最終勤務日の入った〈スタッフ〉を結果に出す', async () => {
+    const d = base();
+    const s1 = d.staff[0];
+    if (!s1) throw new Error('スタッフがいない');
+    const r = rok(
+      await editRoster(d, 'staff', (ws) => {
+        ws.getRow(rowOf(ws, '名前', s1.name)).getCell(col(ws, '最終勤務日')).value = '2026-10-31';
+      }),
+    );
+    expect(r.lastDaySet).toEqual([s1.name]);
+    expect(r.updated).toEqual([s1.name]);
   });
 
   it('シートが無いブックは、呼び方のシート名を示して止める', async () => {

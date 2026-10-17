@@ -206,10 +206,7 @@ function textOf(v: Prim): string {
 
 export class Errors {
   list: string[] = [];
-  /** これまでに足したエラーの数（上限で捨てたものも数える） */
-  count = 0;
   add(msg: string) {
-    this.count++;
     if (this.list.length < MAX_ERRORS) this.list.push(msg);
     else this.more = true;
   }

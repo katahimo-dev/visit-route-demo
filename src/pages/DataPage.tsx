@@ -2,7 +2,7 @@ import { Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAle
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
-import type { RosterKind, RosterMode } from '../contracts/data';
+import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
 import { jstDate } from '../domain/time';
 import { attempt, formError, isStaleBuild } from '../lib/common';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
@@ -57,6 +57,21 @@ export default function DataPage() {
   /** 読み込みの確認のあいだに、データが別のところ（別のタブなど）で変わっていないかを見る */
   const latest = useRef(data);
   latest.current = data;
+  /** 名簿を update で入れたところ（入ったかは次の描画で data を見て決める。入らなければ成功と言わない） */
+  const pendingRoster = useRef<{ base: DemoData; next: DemoData; done: string } | null>(null);
+  useEffect(() => {
+    const p = pendingRoster.current;
+    if (!p) return;
+    if (data === p.next) {
+      pendingRoster.current = null;
+      toast(p.done);
+    } else if (data !== p.base) {
+      pendingRoster.current = null;
+      setExcelError(
+        '読み込みのあいだにデータが変わったので入れませんでした（いまのデータはそのままです）。もう一度読み込んでください',
+      );
+    }
+  }, [data, toast]);
   const t = data.org.terms;
   const rosterTerm = excelKind === 'staff' ? t.staff : t.client;
 
@@ -136,7 +151,7 @@ export default function DataPage() {
    */
   const loadRoster = async (file: File, kind: RosterKind) => {
     const base = data;
-    const { importRoster, rosterSummary } = await import('../excel');
+    const { importRoster, rosterSummary, rosterWarning } = await import('../excel');
     const r = await importRoster(await file.arrayBuffer(), base, kind, rosterMode);
     if ('code' in r) {
       setExcelError(`読み込めませんでした（いまのデータはそのままです）\n${r.message}`);
@@ -147,19 +162,31 @@ export default function DataPage() {
       toast(`${term}の名簿に変更はありませんでした（変更なし ${r.unchanged}人）`);
       return;
     }
+    const changed = () => {
+      setExcelError('読み込みのあいだにデータが変わりました。もう一度読み込んでください（いまのデータはそのままです）');
+    };
+    // 読んでいるあいだに別のところ（別のタブなど）でデータが変わっていたら、確認を出さずに止める
+    if (latest.current !== base) return changed();
+    const terms = base.org.terms;
     const how = rosterMode === 'replace' ? '総入れ替え' : '追加・更新';
-    if (
-      !confirm(
-        `「${file.name}」の${term}の名簿を読み込みます（${how}）。\n${rosterSummary(r, kind)}\nAI案・記録・確定した割当・訪問はそのままです。よろしいですか？`,
-      )
-    )
-      return;
-    if (latest.current !== base) {
-      setExcelError('確認のあいだにデータが変わりました。もう一度読み込んでください（いまのデータはそのままです）');
-      return;
-    }
+    const warning = rosterWarning(r, kind, terms);
+    const message = [
+      ...(warning ? [warning, ''] : []),
+      `「${file.name}」の${term}の名簿を読み込みます（${how}）。`,
+      rosterSummary(r, kind, terms),
+      'AI案・記録・確定した割当・訪問はそのままです。よろしいですか？',
+    ].join('\n');
+    if (!confirm(message)) return;
+    if (latest.current !== base) return changed();
+    pendingRoster.current = {
+      base,
+      next: r.data,
+      done:
+        r.lastDaySet.length > 0
+          ? `${term}の名簿を読み込みました。最終勤務日の入った${terms.staff}がいます。${terms.staff}の画面で担当の振り直しを確かめてください`
+          : `${term}の名簿を読み込みました`,
+    };
     update((d) => (d === base ? r.data : d));
-    toast(`${term}の名簿を読み込みました`);
   };
 
   const load = async (file: File) => {

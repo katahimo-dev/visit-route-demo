@@ -2,7 +2,7 @@
 // データは書き換えない（ADR-0006）：名簿を当てた新しい DemoData と件数を返し、画面が確かめてから store の update で入れる。
 // AI案・記録・確定した割当・訪問・パターン・相性などは base のまま（その人を指すものも残す）。最後は store の migrate（repair）を通す
 import type { DemoData, ImportError, RosterImportResult, RosterKind, RosterMode } from '../contracts/data';
-import { type Client, type ClientStage, type Staff, stageOfLegacy } from '../contracts/documents';
+import { type Client, type ClientStage, type Staff, stageOfLegacy, type Terms } from '../contracts/documents';
 import type { Condition, Traits } from '../contracts/rules';
 import { STAGE_LABELS, stageFlags, withStage } from '../lib/clientStage';
 import { nameKey, newId } from '../lib/common';
@@ -240,7 +240,12 @@ export async function importRoster(
       );
       const shiftStart = pick(C.shiftStart, () => r.time(C.shiftStart) ?? '09:00', cur?.shiftStart ?? '09:00');
       const shiftEnd = pick(C.shiftEnd, () => r.time(C.shiftEnd) ?? '18:00', cur?.shiftEnd ?? '18:00');
-      const active = pick(C.active, () => r.yes(C.active), cur?.active ?? true);
+      // 新しい人の「利用中」が空なら利用中にする（名簿だけ。全体の読み込みは空＝休止のまま）
+      const active = pick(
+        C.active,
+        () => (!cur && r.text(C.active) === '' ? true : r.yes(C.active)),
+        cur?.active ?? true,
+      );
       const home = {
         address: pick(C.address, () => r.optional(C.address, 200), cur?.home.address ?? ''),
         lat: pick(C.lat, () => r.num(C.lat, { min: -90, max: 90 }) ?? null, cur?.home.lat ?? null),
@@ -300,6 +305,9 @@ export async function importRoster(
         if (v === null)
           r.err(CLIENT_STAGE_COLS.stage, `「${Object.values(STAGE_LABELS).join('」「')}」のどれかで書いてください`);
         stage = v ?? cur?.stage ?? 'active';
+      } else if (!cur && r.text(C.active) === '' && r.text(CLIENT_TENTATIVE_COL) === '') {
+        // 新しい人で段階・利用中・仮押さえがすべて空なら利用中（名簿だけ。全体の読み込みは空＝終了のまま）
+        stage = 'active';
       } else if (has(C.active) || has(CLIENT_TENTATIVE_COL)) stage = stageOfLegacy({ active, tentative });
       else stage = cur?.stage ?? 'active';
       const place = {
@@ -411,37 +419,104 @@ export async function importRoster(
   }
   if (errors.any) return errors.toError();
 
+  const next: DemoData =
+    kind === 'staff' ? { ...base, staff: list as Staff[] } : { ...base, clients: list as Client[] };
+  const r = migrate(next);
+  if (isImportError(r)) return { ...r, message: `読み込んだ内容に問題があります：${r.message}` };
+
+  // 件数は migrate（repair）のあとの結果を ID で引いて、今の人と比べる（repair で元に戻る違いは変更にしない）
+  const after = new Map<string, Staff | Client>(
+    (kind === 'staff' ? r.staff : r.clients).map((p): [string, Staff | Client] => [p.id, p]),
+  );
   const added: string[] = [];
   const updated: string[] = [];
   let unchanged = 0;
   for (const x of reads as Read<Staff | Client>[]) {
-    if (!x.cur) added.push(nameOf(x.person));
-    else if (same(x.person, x.cur)) unchanged++;
-    else updated.push(nameOf(x.person));
+    const got = after.get(x.person.id) ?? x.person;
+    if (!x.cur) {
+      // 利用中でない人だけ、段階（〈スタッフ〉は休止）を添える
+      const note =
+        'stage' in got
+          ? got.stage === 'active'
+            ? ''
+            : `（${STAGE_LABELS[got.stage]}）`
+          : got.active
+            ? ''
+            : '（休止）';
+      added.push(`${nameOf(got)}${note}`);
+    } else if (same(got, x.cur)) unchanged++;
+    else updated.push(nameOf(got));
   }
-  // 変更の無い行は今のデータの値をそのまま使う（同じ中身でも別のオブジェクトにしない）
-  const settled = list.map((p) => {
-    const x = byRow.get(p.id);
-    return x?.cur && same(x.person, x.cur) ? x.cur : p;
-  });
-  const next: DemoData =
-    kind === 'staff' ? { ...base, staff: settled as Staff[] } : { ...base, clients: settled as Client[] };
-  const r = migrate(next);
-  if (isImportError(r)) return { ...r, message: `読み込んだ内容に問題があります：${r.message}` };
-  return { data: r, added, updated, unchanged, retired };
+
+  // 休止になった〈スタッフ〉を「担当できる人」から外す（repair）。外れる人・限らないに戻る人を確認に出す（StaffPage と同じ）
+  const allowedRemoved: string[] = [];
+  const allowedEmptied: string[] = [];
+  const clientAfter = new Map(r.clients.map((c) => [c.id, c]));
+  for (const c of base.clients) {
+    const got = clientAfter.get(c.id);
+    // 〈利用者さん〉の名簿では、ブックで書いた担当できる人の違いは「更新」に数える（ここは〈スタッフ〉の休止で外れるものだけ）
+    if (kind !== 'staff' || !got || c.allowedStaffIds.length === 0) continue;
+    if (c.allowedStaffIds.some((id) => !got.allowedStaffIds.includes(id))) {
+      allowedRemoved.push(c.displayName);
+      if (got.allowedStaffIds.length === 0) allowedEmptied.push(c.displayName);
+    }
+  }
+  // 最終勤務日が入った・変わった〈スタッフ〉（ADR-0015。担当の振り直しは〈スタッフ〉の画面から）
+  const lastDaySet =
+    kind === 'staff'
+      ? r.staff
+          .filter((s) => s.lastDay !== null && base.staff.find((b) => b.id === s.id)?.lastDay !== s.lastDay)
+          .map((s) => s.name)
+      : [];
+  const activeBefore =
+    kind === 'staff'
+      ? base.staff.filter((s) => s.active).length
+      : base.clients.filter((c) => c.stage !== 'ended').length;
+  return { data: r, added, updated, unchanged, retired, allowedRemoved, allowedEmptied, lastDaySet, activeBefore };
 }
 
-/** 確認の文（PRD D106）：「追加 2人（A・B）・更新 1人（C）・変更なし 5人・終了にする 1人（D）」 */
-export function rosterSummary(r: RosterImportResult, kind: RosterKind): string {
-  const shown = (xs: string[]) =>
-    xs.length === 0
-      ? ''
-      : `（${xs.slice(0, ROSTER_NAMES_SHOWN).join('・')}${xs.length > ROSTER_NAMES_SHOWN ? ' ほか' : ''}）`;
+/** 名前を3人まで「・」でつなぐ（多ければ「ほか」） */
+const namesText = (xs: string[]) =>
+  `${xs.slice(0, ROSTER_NAMES_SHOWN).join('・')}${xs.length > ROSTER_NAMES_SHOWN ? ' ほか' : ''}`;
+
+/** 総入れ替えで、今の人（〈スタッフ〉は利用中、〈利用者さん〉は終了でない人）の半分を超える人を外すか（ファイルの取り違えの注意） */
+export const rosterRetiresMost = (r: RosterImportResult): boolean =>
+  r.retired.length > 0 && r.retired.length * 2 > r.activeBefore;
+
+/**
+ * 総入れ替えで今の人の半分を超える人を外すときの強い注意（確認の文の先頭に出す。PRD D106）。当たらなければ null
+ */
+export function rosterWarning(r: RosterImportResult, kind: RosterKind, terms: Terms): string | null {
+  if (!rosterRetiresMost(r)) return null;
+  return kind === 'staff'
+    ? `注意：${terms.staff}の半分を超える ${r.retired.length}人を休止にします。ファイルを取り違えていないか確かめてください。`
+    : `注意：${terms.client}（終了でない人）の半分を超える ${r.retired.length}人を終了にします。ファイルを取り違えていないか確かめてください。`;
+}
+
+/**
+ * 確認の文（PRD D106・D107）：件数の行（「追加 2人（A・B）・更新 1人（C）・変更なし 5人・終了にする 1人（D）」）、
+ * 〈スタッフ〉を休止にして「担当できる人」から外れる〈利用者さん〉があればその文（StaffPage の休止と同じ言い方。名前は全員）
+ */
+export function rosterSummary(r: RosterImportResult, kind: RosterKind, terms: Terms): string {
+  const shown = (xs: string[]) => (xs.length === 0 ? '' : `（${namesText(xs)}）`);
   const retire = kind === 'staff' ? '休止にする' : '終了にする';
-  return [
-    `追加 ${r.added.length}人${shown(r.added)}`,
-    `更新 ${r.updated.length}人${shown(r.updated)}`,
-    `変更なし ${r.unchanged}人`,
-    `${retire} ${r.retired.length}人${shown(r.retired)}`,
-  ].join('・');
+  const lines: string[] = [];
+  lines.push(
+    [
+      `追加 ${r.added.length}人${shown(r.added)}`,
+      `更新 ${r.updated.length}人${shown(r.updated)}`,
+      `変更なし ${r.unchanged}人`,
+      `${retire} ${r.retired.length}人${shown(r.retired)}`,
+    ].join('・'),
+  );
+  if (r.allowedRemoved.length > 0) {
+    lines.push(
+      `休止にする${terms.staff}を、${r.allowedRemoved.join('・')}の「担当できる人」から外します。${
+        r.allowedEmptied.length > 0
+          ? `${r.allowedEmptied.join('・')}は担当できる人がいなくなり、だれでも担当できるようになります（必要なら${terms.client}の画面で選び直してください）。`
+          : ''
+      }あとで利用中に戻しても、担当できる人には戻りません。`,
+    );
+  }
+  return lines.join('\n');
 }

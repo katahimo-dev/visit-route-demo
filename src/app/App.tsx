@@ -20,7 +20,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { addDays, jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import AvailabilityPage from '../pages/AvailabilityPage';
@@ -183,19 +183,21 @@ function AdminShell() {
           {groups.map((g) => (
             <div key={g.items[0]!.to} className="nav-group">
               {g.title && <span className="nav-group-title">{g.title}</span>}
-              {g.items.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  // 比較（メニューに無い）は日の画面の続きなので、日を選んだ状態で見せる
-                  className={({ isActive }) =>
-                    isActive || (to === '/plan' && pathname === '/compare') ? 'nav-link active' : 'nav-link'
-                  }
-                >
-                  <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
-                  <span>{label}</span>
-                </NavLink>
-              ))}
+              {g.items.map(({ to, label, icon: Icon }) =>
+                // 比較（メニューに無い）は日の画面の続きなので、日を選んだ状態で見せる（読み上げにも今の画面と伝える）。
+                // NavLink は自分の URL のときしか aria-current を付けないので、このときだけ Link にする
+                to === '/plan' && pathname === '/compare' ? (
+                  <Link key={to} to={to} className="nav-link active" aria-current="page">
+                    <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+                    <span>{label}</span>
+                  </Link>
+                ) : (
+                  <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+                    <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+                    <span>{label}</span>
+                  </NavLink>
+                ),
+              )}
             </div>
           ))}
         </nav>
