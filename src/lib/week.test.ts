@@ -458,10 +458,11 @@ describe('staffWeekTable', () => {
     // 欠勤を差し引いた稼働時間
     expect(r2!.cells[0]!.hours).toBe(6);
     // 火曜は案なし、土日は休み
-    expect(r1!.cells[1]!.noPlan).toBe(true);
-    // 案なしの日は勤務内を「案なし」にし空きにしない（訪問の有無を問わない）。休みの日は全部休み。月曜は訪問・空き（PRD D76）
-    expect(r1!.cells[1]!.bar.some((x) => x.state === 'noplan')).toBe(true);
-    expect(r1!.cells[1]!.bar.some((x) => x.state === 'free' || x.state === 'visit')).toBe(false);
+    // 火曜は訪問が無いので空の案（案なしにしない。dayLoad と同じ）
+    expect(r1!.cells[1]!.noPlan).toBe(false);
+    // 訪問の無い日は空き。休みの日は全部休み。月曜は訪問・空き（PRD D76）
+    expect(r1!.cells[1]!.bar.some((x) => x.state === 'noplan')).toBe(false);
+    expect(r1!.cells[1]!.bar.some((x) => x.state === 'free')).toBe(true);
     expect(r1!.cells[5]!.bar.every((x) => x.state === 'rest')).toBe(true);
     expect(mon.bar.some((x) => x.state === 'visit')).toBe(true);
     expect(mon.bar.some((x) => x.state === 'free')).toBe(true);
@@ -477,7 +478,24 @@ describe('staffWeekTable', () => {
     expect(r2!.diff).toBe(-1);
     expect(r1!.strong && r2!.strong).toBe(true);
     expect(t.days[0]).toMatchObject({ count: 2, noPlan: false });
-    expect(t.days[1]!.noPlan).toBe(true);
+    expect(t.days[1]!.noPlan).toBe(false);
+    // 訪問があるのに案の無い日は noPlan で、勤務内は「案なし」（空きにしない）。終日休みの人に残る件数は count
+    const none = { ...d, aiPlans: {} };
+    const t2 = staffWeekTable(
+      none,
+      weekDates(DATE).map((date) => weekDay(none, date)),
+    );
+    const c = t2.rows[0]!.cells[0]!;
+    expect(c.noPlan).toBe(true);
+    expect(c.bar.some((x) => x.state === 'noplan')).toBe(true);
+    expect(c.bar.some((x) => x.state === 'free')).toBe(false);
+    expect(t2.days[0]).toMatchObject({ noPlan: true, visits: 2 });
+    const off = { ...d, absences: [{ id: 'a2', staffId: 's1', date: DATE, from: null, to: null, note: '' }] };
+    const t3 = staffWeekTable(
+      off,
+      weekDates(DATE).map((date) => weekDay(off, date)),
+    );
+    expect(t3.rows[0]!.cells[0]).toMatchObject({ off: true, count: 2 });
   });
 });
 

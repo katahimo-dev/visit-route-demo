@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DemoData } from '../contracts/data';
+import type { AiPlan, DemoData } from '../contracts/data';
 import { addDays, hhmmToMinutes } from '../domain/time';
 import { compile } from '../matching';
 import { applyPatterns } from '../patterns';
@@ -172,6 +172,58 @@ describe('ほかの数え方と食い違わない', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(5);
+  });
+
+  it('今の案と確定が違う日は合わない：混み具合は確定を先に、〈スタッフ〉の表示は今の案を先に数える（そろえない）', () => {
+    const { data: d0, from } = seeded();
+    const date = addDays(from, 1);
+    const p = compile({ ...d0, visits: d0.visits.filter((v) => v.date === date) }, date);
+    // 今の案：全部の訪問を最初の働く人に寄せる（確定した割当は順に回したもの）
+    const first = p.staff.find((s) => s.slots.length > 0)!.id;
+    const routes = { [first]: p.visits.map((v) => v.id) };
+    const plan: AiPlan = {
+      date,
+      createdAt: 1,
+      seed: 1,
+      iterations: 1,
+      routes,
+      unassigned: [],
+      score: 0,
+      stopped: false,
+      rules: [],
+      generated: { routes, unassigned: [], score: 0 },
+      pins: {},
+    };
+    const data: DemoData = { ...d0, aiPlans: { [date]: plan } };
+    const load = dayLoad(data, date, { typeId: null })!;
+    const freeOf = (dd: DemoData) => {
+      const day = dayPlanOf(dd, date, p);
+      const bars = p.staff.filter((s) => s.slots.length > 0).map((s) => staffDay(dd, day, s.id).bar);
+      return load.map((_, k) => bars.filter((b) => b[k]!.state === 'free').length);
+    };
+    // 〈スタッフ〉の表示（今の案）は混み具合（確定）と食い違う
+    expect(freeOf(data)).not.toEqual(load.map((x) => x.free));
+    // 確定だけのデータ（今の案を外す）で数えれば混み具合と一致する
+    expect(freeOf({ ...data, aiPlans: {} })).toEqual(load.map((x) => x.free));
+  });
+
+  it('訪問の無い勤務日は空の案として「空き」（案なしにしない。dayLoad と同じ）', () => {
+    const { data, from } = seeded();
+    const date = addDays(from, 1);
+    const empty: DemoData = {
+      ...data,
+      visits: data.visits.filter((v) => v.date !== date),
+      manualPlans: {},
+      aiPlans: {},
+    };
+    const p = compile({ ...empty, visits: [] }, date);
+    const sid = p.staff.find((s) => s.slots.length > 0)!.id;
+    const x = staffDay(empty, dayPlanOf(empty, date), sid);
+    expect(x.noPlan).toBe(false);
+    expect(x.bar.some((y) => y.state === 'free')).toBe(true);
+    expect(x.bar.some((y) => y.state === 'noplan')).toBe(false);
+    const load = dayLoad(empty, date, { typeId: null })!;
+    expect(load.some((y) => y.free > 0)).toBe(true);
   });
 
   it('週の表のマスのバーは月の staffDay と同じ（数える案は今の案、無ければ確定した割当）', () => {

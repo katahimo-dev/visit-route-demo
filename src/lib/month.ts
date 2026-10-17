@@ -429,7 +429,7 @@ export type StaffDay = {
   requested: boolean;
   /** 最終勤務日の後（ADR-0015） */
   retired: boolean;
-  /** 数える案が無い（訪問がある日だけ true） */
+  /** 数える案が無い（訪問がある日だけ true。訪問の無い日は空の案として数える＝vacancy の dayLoad と同じ） */
   noPlan: boolean;
   /** 担当の件数 */
   count: number;
@@ -443,10 +443,8 @@ export type StaffDay = {
   /** 稼働時間（分） */
   minutes: number;
   types: TypeCount[];
-  /** その日に数える案が無い（今の案も確定した割当も無い。訪問の有無を問わない） */
-  planless: boolean;
   /**
-   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。07:00〜20:00）。数える案が無い日は勤務内を「案なし」にする
+   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。07:00〜20:00）。数える案が無い日（noPlan）は勤務内を「案なし」にする
    */
   bar: StaffSlot[];
 };
@@ -498,12 +496,11 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     travel: Math.round(travel),
     minutes,
     types: sortTypes(counts, data.visitTypes),
-    planless: day.source === null,
     bar: staffSlots({
       shift: spansOf(slots),
       base: spansOf(base),
       busy: busyParts(stops),
-      planned: day.source !== null,
+      planned: !noPlan,
     }),
   };
 }

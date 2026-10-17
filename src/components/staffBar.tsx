@@ -10,13 +10,13 @@ import {
 } from '../lib/staffBar';
 import { SlotBar } from './loadBar';
 
-/** 〈スタッフ〉の3段バー。slots が null なら案なし（訪問はあるが数える案が無い） */
-export function StaffBar({ slots, testId = 'staff-bar' }: { slots: readonly StaffSlot[] | null; testId?: string }) {
+/** 〈スタッフ〉の3段バー（案の無い日は勤務内が「案なし」の状態で来る） */
+export function StaffBar({ slots, testId = 'staff-bar' }: { slots: readonly StaffSlot[]; testId?: string }) {
   return (
     <SlotBar
-      slots={slots ? slots.map((x) => ({ start: x.start, level: `st-${x.state}`, title: staffSlotText(x) })) : null}
-      label={slots ? `時間帯：${staffSlotSummary(slots)}` : ''}
-      emptyText={slots ? '' : '案が無いので時間帯の状態を出していません'}
+      slots={slots.map((x) => ({ start: x.start, level: `st-${x.state}`, title: staffSlotText(x) }))}
+      label={`時間帯：${staffSlotSummary(slots)}`}
+      emptyText=""
       testId={testId}
     />
   );

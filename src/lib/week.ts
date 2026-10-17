@@ -441,7 +441,7 @@ export type WeekCell = {
   date: string;
   /** 休み（その日の稼働時間帯が無い） */
   off: boolean;
-  /** その日に数える案が無い */
+  /** その日に数える案が無い（訪問がある日だけ true。訪問の無い日は空の案として数える＝vacancy の dayLoad と同じ） */
   noPlan: boolean;
   count: number;
   /** 稼働時間（時間。その日の稼働時間帯の長さ。欠勤を差し引く） */
@@ -472,6 +472,15 @@ export type StaffWeekTable = {
   average: number;
 };
 
+/**
+ * その日に数える案が無いか：訪問があるのに今の案も確定も無い日（訪問の無い日は空の案として数える＝vacancy の dayLoad・
+ * 月の staffDay と同じ。問題が作れなければ帯の数で見る）
+ */
+function noPlanOf(day: WeekDay): boolean {
+  if (day.source !== null) return false;
+  return (day.problem ? day.problem.visits.length : day.bands.filter((b) => !b.leave).length) > 0;
+}
+
 /** 差を強調する割合（平均の30%） */
 export const STRONG_DIFF_RATIO = 0.3;
 
@@ -479,7 +488,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
  * 〈スタッフ〉×曜日の表（D51）。行＝稼働中の〈スタッフ〉（名前の順）、列＝days（月〜日）。
- * 数えるのは、その日の今の案（無ければ確定した割当）。案の無い日は noPlan で、件数・移動は 0
+ * 数えるのは、その日の今の案（無ければ確定した割当）。訪問があるのに案の無い日は noPlan で、件数・移動は 0
  */
 export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): StaffWeekTable {
   const staff = data.staff.filter((s) => s.active).sort(byName);
@@ -517,7 +526,7 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
       return {
         date: day.date,
         off: slots.length === 0,
-        noPlan: day.source === null,
+        noPlan: noPlanOf(day),
         count: list.length,
         hours: round1(hours),
         travel: Math.round(travel),
@@ -526,7 +535,7 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
           shift: spansOf(slots),
           base: spansOf(base),
           busy: busyParts(stops),
-          planned: day.source !== null,
+          planned: !noPlanOf(day),
         }),
       };
     });
@@ -544,7 +553,7 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
   }
   const dayTotals = days.map((day, i) => ({
     date: day.date,
-    noPlan: day.source === null,
+    noPlan: noPlanOf(day),
     count: rows.reduce((m, r) => m + r.cells[i]!.count, 0),
     hours: round1(rows.reduce((m, r) => m + r.cells[i]!.hours, 0)),
     travel: rows.reduce((m, r) => m + r.cells[i]!.travel, 0),

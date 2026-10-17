@@ -1,8 +1,10 @@
 // 〈スタッフ〉1人の時間帯ごとの状態（PRD D75〜D77。design.md §4 pages「数字より視覚で分かる表示」）。
 // 月の混み具合バー（vacancy の dayLoad。D54・D60）と同じ 07:00〜20:00 の30分ごと・3段（components/loadBar の loadRows）で、
 // その人の 訪問・移動・空き（勤務内で空いている）・休み（欠勤・希望休・勤務の無い日・最終勤務日の後）・勤務外 を出す。
-// 重なりの数え方は dayLoad と同じ（30分に少しでも重なれば数える。移動は訪問の直前に置く）。そのため、混み具合の
-// 「空き N人」は、その30分が「空き」の人の数と一致する。純粋関数（データは書き換えない）
+// 重なりの数え方は dayLoad と同じ（30分に少しでも重なれば数える。移動は訪問の直前に置く。訪問の無い日は空の案）。
+// そのため、今の案と確定した割当が同じ日（未確定の変更が無い日）は、混み具合の「空き N人」と、その30分が「空き」の人の数が
+// 一致する。今の案と確定が違う日は合わない：混み具合は問い合わせへの答えなので確定を先に数え（baseOf）、
+// 〈スタッフ〉の表示は手直し中の今の案を先に数える（dayPlanOf。月のほかの印と同じ）。純粋関数（データは書き換えない）
 import type { StopTiming } from '../contracts/problem';
 import { VACANCY_DAY_END_DEFAULT, VACANCY_DAY_START_DEFAULT, VACANCY_STEP_DEFAULT } from '../contracts/vacancy';
 import { timeText } from '../domain/availability';
@@ -76,7 +78,8 @@ export function spanParts(stops: readonly Pick<StopTiming, 'start' | 'end' | 'tr
  * 決め方（上が先）：訪問が重なる→訪問、移動が重なる→移動、稼働時間帯が重なる→空き、
  * その日の稼働時間帯が無い（勤務の無い日・終日の欠勤・希望休・最終勤務日の後）か欠勤の時間が重なる→休み、ほか→勤務外。
  * 休みの人に残った訪問も「訪問」で出す（休みの日に訪問があると分かる）。
- * planned が false（その日に数える案が無い。今の案も確定も無い）なら、空きの代わりに「案なし」（空いていると誤読させない）
+ * planned が false（訪問があるのに数える案が無い。今の案も確定も無い）なら、空きの代わりに「案なし」（空いていると誤読させない）。
+ * 訪問の無い日は空の案として planned にする（dayLoad と同じ）
  */
 export function staffSlots(input: {
   shift: readonly Span[];

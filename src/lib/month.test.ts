@@ -374,10 +374,10 @@ describe('選んだスタッフ（staffDay・staffMonth）', () => {
     expect(staffDay(none, dayPlanOf(none, DATE), 's1')).toMatchObject({ noPlan: true, count: 0 });
     // 案の無い日は勤務内を「案なし」にし、空きにしない（PRD D75）。終日の欠勤は休み（残っている訪問は訪問・移動で出す）
     const np = staffDay(none, dayPlanOf(none, DATE), 's1');
-    expect(np.planless).toBe(true);
+    expect(np.noPlan).toBe(true);
     expect(np.bar.some((x) => x.state === 'noplan')).toBe(true);
     expect(np.bar.some((x) => x.state === 'free')).toBe(false);
-    expect(s1.planless).toBe(false);
+    expect(s1.noPlan).toBe(false);
     expect(s1.bar.every((x) => x.state === 'rest' || x.state === 'visit' || x.state === 'travel')).toBe(true);
     expect(s1.bar.some((x) => x.state === 'visit')).toBe(true);
     expect(s1.bar[0]?.state).toBe('rest');

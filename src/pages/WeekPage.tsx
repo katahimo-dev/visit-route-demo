@@ -738,12 +738,13 @@ export default function WeekPage() {
                           .map((t) => `${typeOf(data.visitTypes, t.typeId)?.name ?? '種類なし'} ${t.count}件`)
                           .join('・');
                         const dayVisits = table.days.find((x) => x.date === c.date)?.visits ?? 0;
-                        // 案の無い日（今の案も確定も無い）は数字を出さず「案なし」（訪問があれば件数を title・読み上げに）
-                        const noPlanText = dayVisits > 0 ? `案なし（その日の訪問 ${dayVisits}件）` : '案なし';
+                        // 終日休みの人に訪問が残った日は件数も出す（休みの人に N の気づき）
+                        const offText = c.count > 0 ? `休み（訪問 ${c.count}件）` : '休み';
+                        // 訪問があるのに案の無い日は数字を出さず「案なし」（その日の訪問の件数は title・読み上げに）
                         const detail = c.off
-                          ? '休み'
+                          ? offText
                           : c.noPlan
-                            ? noPlanText
+                            ? `案なし（その日の訪問 ${dayVisits}件）`
                             : [
                                 `訪問 ${c.count}件`,
                                 `稼働 ${c.hours}時間`,
@@ -763,7 +764,7 @@ export default function WeekPage() {
                             <StaffBar slots={c.bar} testId="week-bar" />
                             <span className="week-cell-foot">
                               {c.off ? (
-                                <span className="sub">休み</span>
+                                <span className={c.count > 0 ? 'week-cell-count' : 'sub'}>{offText}</span>
                               ) : c.noPlan ? (
                                 <span className="sub">案なし</span>
                               ) : (
@@ -809,7 +810,7 @@ export default function WeekPage() {
               </table>
             </div>
             <p className="sub">
-              マスのバーは、その人の時間帯ごとの状態（訪問・移動・空き・休み・勤務外。30分ごと）です。案の無い日は勤務内を「案なし」（空きかは分かりません）で出します。マスに指を置くと稼働時間・移動・種類の内訳が出ます。
+              マスのバーは、その人の時間帯ごとの状態（訪問・移動・空き・休み・勤務外。30分ごと）です。訪問があるのに案の無い日は勤務内を「案なし」（空きかは分かりません）で出します。稼働時間・移動・種類の内訳は、パソコンではマスにマウスを乗せると出て、読み上げではマスごとに読みます（スマホでは週の合計の列を見てください）。
               数えるのは、その日の今の案（無ければ確定した割当）です。稼働時間は稼働時間帯の長さ（欠勤を差し引く）、移動は自宅へ帰る移動も含みます。
               平均との差が平均の30%を超える人を強調します。
             </p>

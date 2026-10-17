@@ -1308,6 +1308,11 @@ function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
             <span className="sub">上から 7〜12時・12〜15時・15〜20時</span>
           </span>
           {bar === 'load' ? <LoadLegend /> : <StaffLegend />}
+          {bar === 'staff' && (
+            <span className="sub" data-testid="month-staff-bar-note">
+              時間帯は今の案（無ければ確定）で出します。混み具合は確定を先に数えるので、未確定の変更がある日は空きの人数が合わないことがあります
+            </span>
+          )}
         </span>
       )}
     </div>
@@ -1552,15 +1557,15 @@ const DayCell = memo(function DayCell(props: CellProps) {
           ? `${shiftShort} ${slotsText(x.slots)}`
           : shiftShort;
     parts.push(shift);
-    // 案の無い日（今の案も確定も無い）：訪問があれば件数も（空いていると誤読させない。PRD D75 の追記）
-    const noPlanText = x.planless ? (s.count > 0 ? `案なし（訪問 ${s.count}件）` : '案なし') : null;
+    // 訪問があるのに案の無い日（今の案も確定も無い）：件数も出す（空いていると誤読させない。PRD D75 の追記）
+    const noPlanText = x.noPlan ? `案なし（訪問 ${s.count}件）` : null;
     if (noPlanText) parts.push(noPlanText);
     if (x.count > 0 || x.target !== null) {
       parts.push(`担当 ${x.count}件`);
       if (x.target !== null) parts.push(`目安 ${Math.round(x.target * 10) / 10}件`);
     }
     if (x.travel > 0) parts.push(`移動 ${x.travel}分`);
-    if (x.bar) parts.push(staffSlotSummary(x.bar));
+    parts.push(`時間帯：${staffSlotSummary(x.bar)}`);
     body.push(
       shiftShort !== null ? (
         <span
