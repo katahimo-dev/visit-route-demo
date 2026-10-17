@@ -193,6 +193,7 @@ export default function VacancyPage() {
     const client: Client = {
       id: newId('c'),
       displayName: name,
+      kana: '',
       place: { ...place },
       note: '問い合わせの試算から仮押さえ',
       color: data.clients.length % CLIENT_COLORS.length,

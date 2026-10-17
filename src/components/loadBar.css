@@ -1,14 +1,44 @@
 /* 日の混み具合バー（D54）と種類の積み上げバー（D53） */
+/* 3段（PRD D60）：午前 7〜12時・昼 12〜15時・夕方 15〜20時。段ごとに左右の端に時刻 */
 .load-bar {
   display: flex;
+  flex-direction: column;
+  gap: 1px;
   width: 100%;
-  height: 8px;
-  border-radius: 3px;
+}
+.load-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.load-row-edge {
+  flex: none;
+  width: 1.3em;
+  font-size: 0.56rem;
+  line-height: 1;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+.load-row-edge:first-child {
+  text-align: right;
+}
+.load-row-slots {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 2px;
   overflow: hidden;
   background: #efe6de;
 }
-.load-bar.is-empty {
+.load-bar.is-empty .load-row-slots {
   background: repeating-linear-gradient(90deg, #efe6de, #efe6de 3px, transparent 3px, transparent 6px);
+}
+.load-bar.is-sample {
+  width: 120px;
+}
+.is-sample.load-slot {
+  background: #ddd5ce;
 }
 .load-slot,
 .load-swatch {
@@ -33,26 +63,6 @@
 .is-many.load-slot,
 .is-many.load-swatch {
   background: #5aa57a;
-}
-.load-scale {
-  position: relative;
-  display: block;
-  height: 1em;
-  font-size: 0.68rem;
-  color: var(--sub);
-}
-.load-tick {
-  position: absolute;
-  transform: translateX(-50%);
-  line-height: 1;
-}
-.load-tick::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 1.05em;
-  height: 4px;
-  border-left: 1px solid var(--sub);
 }
 .load-legend {
   display: inline-flex;

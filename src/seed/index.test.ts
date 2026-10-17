@@ -25,6 +25,12 @@ describe('createDemoData', () => {
     expect(() => demoDataSchema.parse(createDemoData('2027-03-01'))).not.toThrow();
   });
 
+  it('20人全員によみ（ひらがな）が入っている（PRD D61）', () => {
+    const d = createDemoData(TODAY);
+    expect(d.clients).toHaveLength(20);
+    for (const c of d.clients) expect(c.kana).toMatch(/^[\u3041-\u309f ー]+$/);
+  });
+
   it('c6 に性別の必要条件、c2 と s2 は相性×', () => {
     const d = createDemoData(TODAY);
     const c6 = d.clients.find((c) => c.id === 'c6');

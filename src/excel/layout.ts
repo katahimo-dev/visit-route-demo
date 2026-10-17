@@ -49,11 +49,18 @@ export const CLIENT_COLS = {
  * 古いブックには無いので必須の列にしない（無ければ false）
  */
 export const CLIENT_TENTATIVE_COL = '仮押さえ';
-/** 書き出す〈利用者さん〉の固定の列（「利用中」の次に「仮押さえ」） */
+/**
+ * 〈利用者さん〉の「よみ」（ひらがな。PRD D61）。書き出しは「表示名」の次に置く。
+ * 古いブックには無いので必須の列にしない（無ければ空）
+ */
+export const CLIENT_KANA_COL = 'よみ';
+/** 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」） */
 export const clientExportCols = (): string[] => {
   const base: string[] = Object.values(CLIENT_COLS);
   const at = base.indexOf(CLIENT_COLS.active) + 1;
-  return [...base.slice(0, at), CLIENT_TENTATIVE_COL, ...base.slice(at)];
+  const withTentative = [...base.slice(0, at), CLIENT_TENTATIVE_COL, ...base.slice(at)];
+  const k = withTentative.indexOf(CLIENT_COLS.name) + 1;
+  return [...withTentative.slice(0, k), CLIENT_KANA_COL, ...withTentative.slice(k)];
 };
 export const availabilityCols = (t: Terms) => ({ staff: t.staff, date: '日付', slots: '時間帯' });
 /** 欠勤（ADR-0011）：開始の空＝始業から、終了の空＝終業まで、両方空＝終日 */

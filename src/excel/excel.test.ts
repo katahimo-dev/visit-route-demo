@@ -920,3 +920,31 @@ describe('〈利用者さん〉の仮押さえの列（ADR-0012 追記。段階3
     expect(r.clients.every((c) => c.tentative === false)).toBe(true);
   });
 });
+
+describe('〈利用者さん〉のよみの列（PRD D61）', () => {
+  const withKana = (d: DemoData): DemoData => ({
+    ...d,
+    clients: d.clients.map((c, i) => (i % 2 === 0 ? { ...c, kana: `ﾖﾐ よみ${i}` } : { ...c, kana: '' })),
+  });
+  it('よみが 書き出し → 読み込み で同じに戻る（列は「表示名」の次）', async () => {
+    const d = withKana(base());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const ws = sheet(wb, personSheetNames(d.org.terms).client);
+    expect(col(ws, 'よみ')).toBe(col(ws, '表示名') + 1);
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.clients.map((c) => c.kana)).toEqual(d.clients.map((c) => c.kana));
+    expect(r).toEqual(withoutPlans(d));
+  });
+  it('「よみ」の列が無いブックは空', async () => {
+    const d = withKana(base());
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.spliceColumns(col(ws, 'よみ'), 1);
+      }),
+    );
+    expect(r.clients).toHaveLength(d.clients.length);
+    expect(r.clients.every((c) => c.kana === '')).toBe(true);
+  });
+});

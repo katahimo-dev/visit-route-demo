@@ -56,6 +56,8 @@ export type Staff = z.infer<typeof staffSchema>;
 export const clientSchema = z.object({
   id: idSchema,
   displayName: z.string().min(1).max(50),
+  /** よみ（ひらがな・任意。PRD D61）。検索に使う。無い古いデータは '' */
+  kana: z.string().max(50).default(''),
   place: placeSchema,
   note: z.string().max(500),
   /** 色の丸の番号（0〜7） */

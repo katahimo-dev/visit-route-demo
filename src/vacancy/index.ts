@@ -121,6 +121,7 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
       : {
           id: INQUIRY_CLIENT_ID,
           displayName: '問い合わせ',
+          kana: '',
           place: query.place,
           note: '',
           color: 0,

@@ -163,20 +163,8 @@
 }
 .month-legend-load {
   display: inline-flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 6px;
-}
-.month-legend-ruler {
-  display: inline-flex;
-  flex-direction: column;
-  width: 120px;
-  gap: 4px;
-}
-.month-legend-bar {
-  display: block;
-  height: 8px;
-  border-radius: 3px;
-  background: repeating-linear-gradient(90deg, #ddd5ce, #ddd5ce 8px, #fff 8px, #fff 9px);
 }
 .month-swatch {
   display: inline-flex;

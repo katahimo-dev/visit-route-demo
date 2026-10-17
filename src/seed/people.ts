@@ -229,6 +229,8 @@ export const STAFF_SEEDS: StaffSeed[] = [
 export type ClientSeed = {
   id: string;
   name: string;
+  /** よみ（ひらがな。PRD D61） */
+  kana: string;
   address: string;
   lat: number;
   lng: number;
@@ -258,6 +260,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c1',
     name: '図書館 ふみ',
+    kana: 'としょかん ふみ',
     address: '仙台市青葉区春日町（せんだいメディアテーク）',
     lat: 38.2654,
     lng: 140.8656,
@@ -270,6 +273,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c2',
     name: '動物公園 やぎお',
+    kana: 'どうぶつこうえん やぎお',
     address: '仙台市太白区八木山本町（八木山動物公園）',
     lat: 38.2489,
     lng: 140.8467,
@@ -281,6 +285,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c3',
     name: '泉図書館 いずみ',
+    kana: 'いずみとしょかん いずみ',
     address: '仙台市泉区泉中央（泉図書館）',
     lat: 38.3245,
     lng: 140.8805,
@@ -291,6 +296,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c4',
     name: '若林図書館 わかば',
+    kana: 'わかばやしとしょかん わかば',
     address: '仙台市若林区南小泉（若林図書館）',
     lat: 38.2404,
     lng: 140.9024,
@@ -303,6 +309,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c5',
     name: '博物館 れきこ',
+    kana: 'はくぶつかん れきこ',
     address: '仙台市青葉区川内（仙台市博物館）',
     lat: 38.2558,
     lng: 140.8611,
@@ -315,6 +322,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c6',
     name: '科学館 ひかる',
+    kana: 'かがくかん ひかる',
     address: '仙台市青葉区台原森林公園（仙台市科学館）',
     lat: 38.2925,
     lng: 140.8781,
@@ -327,6 +335,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c7',
     name: '天文台 ほしみ',
+    kana: 'てんもんだい ほしみ',
     address: '仙台市青葉区錦ケ丘（仙台市天文台）',
     lat: 38.2557,
     lng: 140.7716,
@@ -337,6 +346,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c8',
     name: '文学館 しおり',
+    kana: 'ぶんがくかん しおり',
     address: '仙台市青葉区北根（仙台文学館）',
     lat: 38.2935,
     lng: 140.8691,
@@ -347,6 +357,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c9',
     name: '地底の森 もりお',
+    kana: 'ちていのもり もりお',
     address: '仙台市太白区長町南（地底の森ミュージアム）',
     lat: 38.2195,
     lng: 140.8783,
@@ -358,6 +369,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c10',
     name: '市民会館 ひびき',
+    kana: 'しみんかいかん ひびき',
     address: '仙台市青葉区桜ケ岡公園（仙台市民会館）',
     lat: 38.2648,
     lng: 140.8627,
@@ -369,6 +381,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c11',
     name: '市場 うおすけ',
+    kana: 'いちば うおすけ',
     address: '仙台市若林区卸町（中央卸売市場）',
     lat: 38.2556,
     lng: 140.929,
@@ -381,6 +394,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c12',
     name: '荒浜 なぎさ',
+    kana: 'あらはま なぎさ',
     address: '仙台市若林区荒浜（震災遺構 荒浜小学校）',
     lat: 38.223,
     lng: 140.98,
@@ -391,6 +405,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c13',
     name: 'メモリアル あかり',
+    kana: 'めもりある あかり',
     address: '仙台市若林区荒井（せんだい3.11メモリアル交流館）',
     lat: 38.239,
     lng: 140.942,
@@ -402,6 +417,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c14',
     name: '城跡 ほまれ',
+    kana: 'しろあと ほまれ',
     address: '仙台市青葉区川内（仙台城跡）',
     lat: 38.2526,
     lng: 140.856,
@@ -413,6 +429,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c15',
     name: '七北田公園 ななこ',
+    kana: 'ななきたこうえん ななこ',
     address: '仙台市泉区七北田（七北田公園）',
     lat: 38.3215,
     lng: 140.8885,
@@ -424,6 +441,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c16',
     name: '陸上競技場 かける',
+    kana: 'りくじょうきょうぎじょう かける',
     address: '仙台市宮城野区宮城野（仙台市陸上競技場）',
     lat: 38.2596,
     lng: 140.9045,
@@ -434,6 +452,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c17',
     name: '交通局 のりこ',
+    kana: 'こうつうきょく のりこ',
     address: '仙台市青葉区木町通（仙台市交通局）',
     lat: 38.2706,
     lng: 140.8668,
@@ -444,6 +463,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c18',
     name: '福祉プラザ やすら',
+    kana: 'ふくしぷらざ やすら',
     address: '仙台市青葉区五橋（仙台市福祉プラザ）',
     lat: 38.254,
     lng: 140.8772,
@@ -455,6 +475,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c19',
     name: '文化センター うたお',
+    kana: 'ぶんかせんたー うたお',
     address: '仙台市宮城野区五輪（宮城野区文化センター）',
     lat: 38.258,
     lng: 140.911,
@@ -466,6 +487,7 @@ export const CLIENT_SEEDS: ClientSeed[] = [
   {
     id: 'c20',
     name: '中田 みのり',
+    kana: 'なかだ みのり',
     address: '仙台市太白区中田（中田市民センター）',
     lat: 38.1985,
     lng: 140.8815,

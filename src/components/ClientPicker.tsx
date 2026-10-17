@@ -1,0 +1,381 @@
+// 〈利用者さん〉を選ぶ検索欄（PRD D61・D62。design.md §4 pages「混み具合バーの3段・〈利用者さん〉の検索・週間の上限」）。
+// 表示名・よみで絞り込む combobox。候補は listbox で最大10件、上下キーと Enter で選ぶ。選んだ人は上にチップで並べる。
+// 近道（検索欄の上。候補の欄で隠れないように）：この期間に訪問がある人／〈スタッフ〉が担当する人／最近選んだ人（画面の状態に最大10人）／仮押さえの人。
+// 1人（月間の表示）と複数（週間・〈利用者さん〉の画面の一覧）の両方で使う
+import { Search, X } from 'lucide-react';
+import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { Client } from '../contracts/documents';
+import { colorOf, initialOf } from '../lib/colors';
+import { searchClients } from '../lib/search';
+import { TentativeMark } from './parts';
+import './clientPicker.css';
+
+/** 候補の上限（PRD D61） */
+export const PICKER_LIMIT = 10;
+/** 「最近選んだ人」の上限（画面の状態） */
+export const RECENT_LIMIT = 10;
+
+type Shortcut = 'period' | 'staff' | 'recent' | 'tentative';
+
+export type ClientPickerProps = {
+  /** 候補にする〈利用者さん〉。この順で候補を並べる（呼ぶ側で利用中に絞って並べておく） */
+  clients: readonly Client[];
+  /** 選んでいる〈利用者さん〉の ID（この順でチップを並べる）。clients にいない ID は出さない */
+  selected: readonly string[];
+  /**
+   * 選び直したとき。新しい選択の ID の配列（選んだ順）。
+   * 1人のとき（multiple が false）は 0件（チップの × で外した）か 1件
+   */
+  onChange: (ids: string[]) => void;
+  /** 複数選ぶ（週間・〈利用者さん〉の画面）。既定 false＝1人（選ぶと入れ替わり、候補を閉じる） */
+  multiple?: boolean;
+  /**
+   * 選べる人数の上限（multiple のときだけ）。上限を超える選択（1人・近道のまとめて選ぶ）はせず、maxMessage を出す
+   * 例：週間の時間軸は 8（PRD D62）
+   */
+  max?: number;
+  /** 上限を超えたときの文。既定「{max}人まで選べます」 */
+  maxMessage?: string;
+  /** 検索欄のラベル（画面に出す。例「〈利用者さん〉」） */
+  label: string;
+  /** 検索欄の薄い文字。既定「名前・よみで探す」 */
+  placeholder?: string;
+  /**
+   * 近道「この〈期間〉に訪問がある人」。label は「この週」「この月」、clientIds はその期間に（取り消しでない）訪問がある人。
+   * 渡さなければ出さない
+   */
+  period?: { label: string; clientIds: ReadonlySet<string> };
+  /**
+   * 近道「〈スタッフ〉が担当する人」。staffLabel は呼び方（org.terms.staff）、staff は選べる〈スタッフ〉、
+   * clientIdsOf はその人が担当する〈利用者さん〉の ID（呼ぶ側で決める。例：期間の案の担当・いつもの担当）。渡さなければ出さない
+   */
+  byStaff?: {
+    staffLabel: string;
+    staff: readonly { id: string; name: string }[];
+    clientIdsOf: (staffId: string) => ReadonlySet<string>;
+  };
+  /** 検索欄の文字が変わったとき（〈利用者さん〉の画面で、選ぶ前の一覧の絞り込みに使う） */
+  onQueryChange?: (query: string) => void;
+  /** 部品の外枠の data-testid（候補は `${testId}-option`、チップは `${testId}-chip`） */
+  testId?: string;
+};
+
+/**
+ * 〈利用者さん〉の検索欄（combobox）。近道は候補を絞る切り替え（押すと候補が開く。もう一度押すと外れる）で、
+ * 複数のときは近道で絞った人を「この N人を選ぶ」でまとめて選べる。
+ * キーボード：↓↑で候補を移る、Enter で選ぶ（複数のときは選んでいる人を外す）、Esc で閉じる（閉じていれば文字を消す）、
+ * 文字が空で Backspace は最後のチップを外す（複数のとき）
+ */
+export function ClientPicker({
+  clients,
+  selected,
+  onChange,
+  multiple = false,
+  max,
+  maxMessage,
+  label,
+  placeholder = '名前・よみで探す',
+  period,
+  byStaff,
+  onQueryChange,
+  testId = 'client-picker',
+}: ClientPickerProps) {
+  const uid = useId();
+  const inputId = `${uid}-input`;
+  const listId = `${uid}-list`;
+  const optId = (id: string) => `${uid}-opt-${id}`;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [shortcut, setShortcut] = useState<Shortcut | null>(null);
+  const [staffId, setStaffId] = useState<string>(byStaff?.staff[0]?.id ?? '');
+  const [recent, setRecent] = useState<string[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const byId = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const chosen = useMemo(() => selected.flatMap((id) => byId.get(id) ?? []), [selected, byId]);
+  const isSelected = (id: string) => selected.includes(id);
+  const tentativeCount = useMemo(() => clients.filter((c) => c.tentative).length, [clients]);
+  const staffSet = useMemo(() => (byStaff && staffId ? byStaff.clientIdsOf(staffId) : null), [byStaff, staffId]);
+
+  /** 近道で絞った人（近道なしなら全員） */
+  const base = useMemo(() => {
+    switch (shortcut) {
+      case 'period':
+        return period ? clients.filter((c) => period.clientIds.has(c.id)) : clients;
+      case 'staff':
+        return staffSet ? clients.filter((c) => staffSet.has(c.id)) : [];
+      case 'recent':
+        return recent.flatMap((id) => byId.get(id) ?? []);
+      case 'tentative':
+        return clients.filter((c) => c.tentative);
+      default:
+        return clients;
+    }
+  }, [shortcut, clients, period, staffSet, recent, byId]);
+  const found = useMemo(() => searchClients(base, query, PICKER_LIMIT), [base, query]);
+  const options = found.list;
+
+  // 候補が変わったら先頭を指す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 候補の並びが変わったときだけ
+  useEffect(() => {
+    setActive(0);
+  }, [options.map((c) => c.id).join(',')]);
+
+  const setQ = (q: string) => {
+    setQuery(q);
+    onQueryChange?.(q);
+  };
+  const remember = (id: string) => setRecent((r) => [id, ...r.filter((x) => x !== id)].slice(0, RECENT_LIMIT));
+  const overText = maxMessage ?? `${max}人まで選べます`;
+
+  const choose = (c: Client) => {
+    setMessage(null);
+    if (!multiple) {
+      onChange([c.id]);
+      remember(c.id);
+      setQ('');
+      setOpen(false);
+      return;
+    }
+    if (isSelected(c.id)) {
+      onChange(selected.filter((x) => x !== c.id));
+      return;
+    }
+    if (max !== undefined && selected.length >= max) {
+      setMessage(overText);
+      return;
+    }
+    onChange([...selected, c.id]);
+    remember(c.id);
+  };
+  const unselect = (id: string) => {
+    setMessage(null);
+    onChange(selected.filter((x) => x !== id));
+  };
+  /** 近道で絞った人をまとめて選ぶ（複数のとき。上限を超えるなら選ばない） */
+  const chooseAll = () => {
+    const add = base.map((c) => c.id).filter((id) => !isSelected(id));
+    if (max !== undefined && selected.length + add.length > max) {
+      setMessage(overText);
+      return;
+    }
+    setMessage(null);
+    onChange([...selected, ...add]);
+    setRecent((r) => [...add, ...r.filter((x) => !add.includes(x))].slice(0, RECENT_LIMIT));
+  };
+  const toggleShortcut = (s: Shortcut) => {
+    setShortcut((cur) => (cur === s ? null : s));
+    setOpen(true);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        return;
+      }
+      if (options.length === 0) return;
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((i) => (i + step + options.length) % options.length);
+    } else if (e.key === 'Enter') {
+      if (!open) return;
+      const c = options[active];
+      if (c) {
+        e.preventDefault();
+        choose(c);
+      }
+    } else if (e.key === 'Escape') {
+      if (open) {
+        e.preventDefault();
+        setOpen(false);
+      } else if (query !== '') {
+        e.preventDefault();
+        setQ('');
+      }
+    } else if (e.key === 'Backspace' && query === '' && multiple && selected.length > 0) {
+      unselect(selected[selected.length - 1]!);
+    }
+  };
+
+  // 候補の中の指している人を見えるところへ
+  useEffect(() => {
+    if (!open) return;
+    const c = options[active];
+    if (c) document.getElementById(optId(c.id))?.scrollIntoView({ block: 'nearest' });
+  });
+
+  const activeOpt = open ? options[active] : undefined;
+  const shortcutBtn = (s: Shortcut, text: string, count: number | null) => (
+    <button
+      type="button"
+      className={`client-picker-shortcut${shortcut === s ? ' is-on' : ''}`}
+      aria-pressed={shortcut === s}
+      onClick={() => toggleShortcut(s)}
+      data-testid={`${testId}-shortcut-${s}`}
+    >
+      {text}
+      {count !== null && <span className="client-picker-count">{count}</span>}
+    </button>
+  );
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: 部品の外へフォーカスが出たら候補を閉じるだけ（操作は中の要素で）
+    <div
+      ref={rootRef}
+      className="client-picker"
+      data-testid={testId}
+      onBlur={(e) => {
+        if (!rootRef.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      <label className="client-picker-label" htmlFor={inputId}>
+        {label}
+      </label>
+      {chosen.length > 0 && (
+        <ul className="client-picker-chips" aria-label={`選んでいる${label}`}>
+          {chosen.map((c) => (
+            <li key={c.id} className="client-picker-chip" data-testid={`${testId}-chip`} data-id={c.id}>
+              <span className="dot dot-xs" style={{ background: colorOf(c.color) }} aria-hidden="true">
+                {initialOf(c.displayName)}
+              </span>
+              <span>{c.displayName}</span>
+              {c.tentative && <TentativeMark />}
+              <button
+                type="button"
+                className="client-picker-remove"
+                aria-label={`${c.displayName}を外す`}
+                onClick={() => unselect(c.id)}
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+          {multiple && chosen.length >= 2 && (
+            <li>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  setMessage(null);
+                  onChange([]);
+                }}
+                data-testid={`${testId}-clear`}
+              >
+                全部外す
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+      <fieldset className="client-picker-shortcuts">
+        <legend className="sr-only">近道</legend>
+        {period && shortcutBtn('period', `${period.label}に訪問がある人`, period.clientIds.size)}
+        {byStaff && byStaff.staff.length > 0 && (
+          <span className="client-picker-staff">
+            {shortcutBtn('staff', `${byStaff.staffLabel}が担当する人`, null)}
+            {shortcut === 'staff' && (
+              <select
+                aria-label={`担当する${byStaff.staffLabel}`}
+                value={staffId}
+                onChange={(e) => {
+                  setStaffId(e.target.value);
+                  setOpen(true);
+                }}
+                data-testid={`${testId}-staff`}
+              >
+                {byStaff.staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </span>
+        )}
+        {shortcutBtn('recent', '最近選んだ人', recent.length)}
+        {tentativeCount > 0 && shortcutBtn('tentative', '仮押さえの人', tentativeCount)}
+        {multiple && shortcut !== null && base.length > 0 && (
+          <button type="button" className="btn btn-small" onClick={chooseAll} data-testid={`${testId}-choose-all`}>
+            この{base.length}人を選ぶ
+          </button>
+        )}
+      </fieldset>
+      <div className="client-picker-box">
+        <Search size={14} className="client-picker-icon" aria-hidden="true" />
+        <input
+          ref={inputRef}
+          id={inputId}
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={activeOpt ? optId(activeOpt.id) : undefined}
+          autoComplete="off"
+          value={query}
+          placeholder={placeholder}
+          maxLength={50}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          data-testid={`${testId}-input`}
+        />
+        <div className="client-picker-pop" hidden={!open}>
+          <div
+            id={listId}
+            role="listbox"
+            aria-label={`${label}の候補`}
+            aria-multiselectable={multiple || undefined}
+            className="client-picker-list"
+          >
+            {options.map((c, i) => (
+              // biome-ignore lint/a11y/useKeyWithClickEvents: キーボードは検索欄の↑↓・Enter で選ぶ（combobox。フォーカスは検索欄のまま）
+              <div
+                key={c.id}
+                id={optId(c.id)}
+                role="option"
+                tabIndex={-1}
+                aria-selected={isSelected(c.id)}
+                className={`client-picker-option${i === active ? ' is-active' : ''}`}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(c)}
+                data-testid={`${testId}-option`}
+                data-id={c.id}
+              >
+                <span className="client-picker-check" aria-hidden="true">
+                  {isSelected(c.id) ? '✓' : ''}
+                </span>
+                <span className="dot dot-xs" style={{ background: colorOf(c.color) }} aria-hidden="true">
+                  {initialOf(c.displayName)}
+                </span>
+                <span className="client-picker-name">{c.displayName}</span>
+                {c.kana && <small className="client-picker-kana">{c.kana}</small>}
+                {c.tentative && <TentativeMark />}
+              </div>
+            ))}
+          </div>
+          {options.length === 0 && (
+            <p className="client-picker-note" data-testid={`${testId}-empty`}>
+              {shortcut === 'recent' && recent.length === 0 ? 'まだ選んだ人がいません' : '見つかりません'}
+            </p>
+          )}
+          {found.rest > 0 && (
+            <p className="client-picker-note">ほか {found.rest}人。名前・よみを入れて絞り込んでください</p>
+          )}
+        </div>
+      </div>
+      <output className="client-picker-message" data-testid={`${testId}-message`}>
+        {message}
+      </output>
+    </div>
+  );
+}
