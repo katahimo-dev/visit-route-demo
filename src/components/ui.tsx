@@ -12,14 +12,18 @@ export function PageHeader({
   title,
   lead,
   actions,
+  nav,
 }: {
   icon: LucideIcon;
   title: ReactNode;
   lead?: ReactNode;
   actions?: ReactNode;
+  /** 見出しの左に置く切り替え（予定の［月｜週｜日］。PRD D59） */
+  nav?: ReactNode;
 }) {
   return (
     <header className="page-head">
+      {nav}
       <span className="page-icon" aria-hidden="true">
         <Icon size={22} strokeWidth={2.2} />
       </span>

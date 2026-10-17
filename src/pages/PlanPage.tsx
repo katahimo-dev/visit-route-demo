@@ -41,6 +41,7 @@ import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../compon
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
+import { ViewSwitch } from '../components/ViewSwitch';
 import { TypeMark } from '../components/visitType';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
@@ -1717,9 +1718,10 @@ export default function PlanPage() {
     <div className="plan-layout">
       <div className="stack" style={{ minWidth: 0 }}>
         <PageHeader
+          nav={<ViewSwitch current="day" />}
           icon={CalendarDays}
           title="予定"
-          lead="その日の訪問と担当の割り当て。AIが組んだ案を手直しして確定します"
+          lead="その日の欠勤・手直しをして、割当を確定します"
           actions={
             <>
               <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
@@ -1735,7 +1737,7 @@ export default function PlanPage() {
                 <WithIcon icon={Copy}>前の同じ曜日からコピー</WithIcon>
               </button>
               <NavLink to="/compare" className="plan-compare-link">
-                <WithIcon icon={GitCompareArrows}>比較（記録 {runCount}件）</WithIcon>
+                <WithIcon icon={GitCompareArrows}>案を比べる（{runCount}件）</WithIcon>
               </NavLink>
             </>
           }

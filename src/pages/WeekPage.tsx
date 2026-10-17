@@ -1,27 +1,17 @@
-import {
-  CalendarClock,
-  CalendarRange,
-  ChevronLeft,
-  ChevronRight,
-  Move,
-  RefreshCw,
-  Sparkles,
-  TriangleAlert,
-  X,
-} from 'lucide-react';
-import { type DragEvent, type KeyboardEvent, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { CalendarClock, ChevronLeft, ChevronRight, Move, RefreshCw, Sparkles, TriangleAlert, X } from 'lucide-react';
+import { type DragEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
+import { ViewSwitch } from '../components/ViewSwitch';
 import { TypeDot } from '../components/visitType';
 import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
-import { ymOf } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import { useDayModel } from '../lib/useDayModel';
 import {
@@ -106,6 +96,21 @@ export default function WeekPage() {
   /** つかんだ帯と、帯の上端からつかんだ位置までの高さ（px）。表のマスからつかんだときは offset を使わない */
   const grab = useRef<{ visitId: string; offset: number } | null>(null);
 
+  // ---- 選んでいる日付との同期（PRD D59）----
+  // URL の ?d= で開いた日が選んでいる日付と違えば、選んでいる日付をその日にする
+  // biome-ignore lint/correctness/useExhaustiveDependencies: URL の日が変わったときだけ
+  useEffect(() => {
+    if (DATE_RE.test(rawD) && rawD !== date) setDate(rawD);
+  }, [rawD]);
+  // 上の日付の切り替えで選んでいる日付が変わったら、表示する週もその日を含む週にする
+  const lastDate = useRef(date);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 選んでいる日付が変わったときだけ
+  useEffect(() => {
+    if (lastDate.current === date) return;
+    lastDate.current = date;
+    if (DATE_RE.test(rawD) && rawD !== date) go({ d: date });
+  }, [date]);
+
   const activeStaff = useMemo(() => staff.filter((s) => s.active), [staff]);
   const visitById = useMemo(() => new Map(data.visits.map((v) => [v.id, v])), [data.visits]);
   const dayInput = useMemo(
@@ -154,8 +159,16 @@ export default function WeekPage() {
     }
     setParams(p);
   };
+  /** 週を送る：選んでいる日付もその日にする（PRD D59。曜日はそのまま） */
+  const goWeek = (d: string) => {
+    lastDate.current = d;
+    go({ d });
+    setDate(d);
+  };
   const setSel = (key: 'staff' | 'client', ids: string[] | null) => go({ [key]: ids === null ? null : ids.join(',') });
   const openDay = (d: string, visitId?: string) => {
+    // 予定の画面へ移るので、表示する週は合わせない（合わせると ?d= を書く遷移が予定の画面への遷移を打ち消す）
+    lastDate.current = d;
     setDate(d);
     navigate('/plan', visitId ? { state: { visitId } } : undefined);
   };
@@ -343,35 +356,31 @@ export default function WeekPage() {
   return (
     <div className="stack week-page">
       <PageHeader
+        nav={<ViewSwitch current="week" />}
         icon={CalendarClock}
         title="週間"
-        lead={`1週間の訪問を時刻の帯で見て、ドラッグで日時を動かします。${terms.staff}ごとの偏りは表で見ます`}
+        lead={`日時をドラッグでずらし、${terms.staff}の偏りを見ます`}
       />
 
       <div className="card stack week-head">
         <div className="row week-nav">
-          <button type="button" className="icon-btn" aria-label="前の週" onClick={() => go({ d: addDays(start, -7) })}>
+          <button type="button" className="icon-btn" aria-label="前の週" onClick={() => goWeek(addDays(anchor, -7))}>
             <ChevronLeft size={18} aria-hidden="true" />
           </button>
           <h2 className="week-title" data-testid="week-title">
             {dateText(start)}〜{dateText(dates[6]!)}
           </h2>
-          <button type="button" className="icon-btn" aria-label="次の週" onClick={() => go({ d: addDays(start, 7) })}>
+          <button type="button" className="icon-btn" aria-label="次の週" onClick={() => goWeek(addDays(anchor, 7))}>
             <ChevronRight size={18} aria-hidden="true" />
           </button>
           <button
             type="button"
             className="btn btn-small"
             disabled={dates.includes(today)}
-            onClick={() => go({ d: today })}
+            onClick={() => goWeek(today)}
           >
             今週
           </button>
-          <Link className="btn btn-small" to={`/month?ym=${ymOf(start)}`}>
-            <WithIcon icon={CalendarRange} size={14}>
-              月間へ
-            </WithIcon>
-          </Link>
           <fieldset className="segmented week-tabs" aria-label="表示">
             <button
               type="button"

@@ -41,6 +41,9 @@ export function addMonths(ym: string, n: number): string {
   return `${String(yy).padStart(4, '0')}-${String(mm).padStart(2, '0')}`;
 }
 
+/** 月を送ったときに選ぶ日付：その月の1日、ただし今月なら今日（PRD D59） */
+export const firstDayOf = (ym: string, today: string): string => (ymOf(today) === ym ? today : `${ym}-01`);
+
 /** その月の日付（1日から末日まで） */
 export function monthDates(ym: string): string[] {
   const out: string[] = [];
@@ -609,4 +612,50 @@ export function attentionList(
     }
   }
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
+}
+
+// ---- 今月の準備（PRD D59。design.md §4 pages「動線の整理」）----
+
+/** 月の「今月の準備」の進み具合（その月の今日以降の日について） */
+export type MonthProgress = {
+  /** ① 訪問の件数（取り消しを除く） */
+  visits: number;
+  /** 訪問のある日の数（②③の分母） */
+  days: number;
+  /** ② 案のある日の数（今の案か確定した割当がある日） */
+  planned: number;
+  /** ③ 確定した日の数（「確定済み」の日。「未確定の変更あり」は数えない） */
+  confirmed: number;
+  /** 確定していない日（訪問があって「確定済み」でない日。日付の順） */
+  unconfirmed: string[];
+  /** 要対応の件数（attentionList の件数） */
+  attention: number;
+};
+
+/**
+ * 今月の準備：その月の今日以降について、①訪問の件数 ②案のある日/訪問のある日 ③確定した日/訪問のある日・要対応の件数。
+ * staleOf を渡すと条件が変わったかをそれで決める（無ければ「条件が変わった」は数えない）。
+ * statusOf を渡すと日の状態をそれから引く（画面が compile・採点して作ったもの。無ければ dayStatus で作る）
+ */
+export function monthProgress(
+  data: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'absences' | 'staff'>,
+  ym: string,
+  today: string,
+  staleOf?: (date: string) => boolean,
+  statusOf?: (date: string) => DayStatus | undefined,
+): MonthProgress {
+  const statuses: DayStatus[] = [];
+  for (const date of monthDates(ym)) {
+    if (date < today) continue;
+    statuses.push(statusOf?.(date) ?? dayStatus(data, date, { stale: staleOf?.(date) ?? false }));
+  }
+  const withVisits = statuses.filter((s) => s.count > 0);
+  return {
+    visits: withVisits.reduce((m, s) => m + s.count, 0),
+    days: withVisits.length,
+    planned: withVisits.filter((s) => s.state !== 'none').length,
+    confirmed: withVisits.filter((s) => s.state === 'confirmed').length,
+    unconfirmed: withVisits.filter((s) => s.state !== 'confirmed').map((s) => s.date),
+    attention: attentionList(data, statuses, today).length,
+  };
 }

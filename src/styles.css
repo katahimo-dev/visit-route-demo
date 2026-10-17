@@ -906,6 +906,37 @@ tbody tr:hover td {
   color: var(--sub);
   font-size: 0.88rem;
 }
+/* 予定の切り替え［月｜週｜日］（components/ViewSwitch.tsx。PRD D59）。今の画面は太字・下線と aria-current */
+.view-switch {
+  display: inline-flex;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.view-switch-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  background: var(--card);
+  color: var(--sub);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+.view-switch-item + .view-switch-item {
+  border-left: 2px solid var(--line);
+}
+.view-switch-item:hover {
+  color: var(--ink);
+}
+.view-switch-item.is-on {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 .page-actions {
   display: flex;
   gap: 8px;

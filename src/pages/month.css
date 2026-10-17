@@ -461,3 +461,67 @@
   align-items: center;
   gap: 4px;
 }
+
+/* 今月の準備（PRD D59）：①②③と要対応を横に。済んだものは✓と緑の縁（色だけに頼らない） */
+.month-prep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+}
+.month-prep-title {
+  margin: 0;
+  font-size: 1rem;
+}
+.month-prep-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+}
+.month-prep-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.month-prep-step.is-done {
+  border-color: var(--ok);
+  background: #eef7f1;
+}
+.month-prep-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.month-prep-no {
+  font-weight: 700;
+  color: var(--sub);
+}
+.month-prep-mark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ok);
+}
+.month-prep-value {
+  font-variant-numeric: tabular-nums;
+}
+.month-aside:focus {
+  outline: none;
+}
+.month-aside:focus-visible {
+  outline: 3px solid var(--primary);
+}
+@media (max-width: 600px) {
+  .month-prep-title {
+    width: 100%;
+  }
+}
