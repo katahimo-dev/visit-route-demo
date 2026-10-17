@@ -24,10 +24,10 @@ export const placeSchema = z.object({
 export type Place = z.infer<typeof placeSchema>;
 
 /**
- * メールアドレス（PRD D91。ADR-0017）：空か、緩い形（空白・@ を含まない文字 ＠ 空白・@ を含まない文字）。
+ * メールアドレス（PRD D91。ADR-0017）：空か、緩い形（文字 ＠ 文字。空白・@・区切りの「,;<>"」と、mailto の URL を壊す「?&=%#/」は含まない）。
  * 細かい形は見ない（メールアプリが確かめる）。入力の全角・前後の空白は画面・Excel が lib/mailto の normalizeEmail で直してから入れる
  */
-export const EMAIL_PATTERN = /^[^\s@,;<>"]+@[^\s@,;<>"]+$/;
+export const EMAIL_PATTERN = /^[^\s@,;<>"?&=%#/]+@[^\s@,;<>"?&=%#/]+$/;
 export const emailSchema = z
   .string()
   .max(254)

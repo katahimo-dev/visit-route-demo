@@ -4,7 +4,7 @@ import type { DemoData, ImportError } from '../contracts/data';
 import type { Condition, Item } from '../contracts/rules';
 import { createDemoData } from '../seed';
 import { isImportError } from '../store';
-import { MAX_FILE_BYTES, MAX_ROWS } from './importBook';
+import { MAX_FILE_BYTES, MAX_ROWS, prim } from './importBook';
 import { exportWorkbook, importWorkbook } from './index';
 import {
   condsToCell,
@@ -1288,5 +1288,34 @@ describe('メールアドレスの列（PRD D91。ADR-0017）', () => {
       }),
     );
     expect(msg).toContain('3行目・『紹介元のメールアドレス』');
+  });
+});
+
+describe('リンクのセルの読み方（prim。ADR-0017）', () => {
+  it('表示が文字ならそれ、リッチテキストなら連結、無ければ mailto: 以降', () => {
+    expect(prim({ text: 'a@example.com', hyperlink: 'mailto:a@example.com' })).toBe('a@example.com');
+    expect(
+      prim({
+        text: { richText: [{ text: 'hana' }, { text: '@example.com' }] },
+        hyperlink: 'mailto:hana@example.com',
+      } as unknown as ExcelJS.CellValue),
+    ).toBe('hana@example.com');
+    expect(prim({ text: '', hyperlink: 'mailto:taro%2Bx@example.com?subject=x' })).toBe('taro+x@example.com');
+    expect(prim({ text: '', hyperlink: 'https://example.com/' })).toBeNull();
+  });
+
+  it('表示がリッチテキストのリンクのセルも、ブックから読める', async () => {
+    const d = base();
+    const names = personSheetNames(d.org.terms);
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const sws = sheet(wb, names.staff);
+        sws.getCell(2, col(sws, 'メールアドレス')).value = {
+          text: { richText: [{ text: 'rich' }, { text: '@example.com' }] },
+          hyperlink: 'mailto:rich@example.com',
+        } as unknown as ExcelJS.CellValue;
+      }),
+    );
+    expect(r.staff[0]!.email).toBe('rich@example.com');
   });
 });

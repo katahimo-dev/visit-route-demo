@@ -67,8 +67,9 @@ function ruleLines(c: Client | undefined, includeKeys: boolean): string[] {
 const nameOf = (c: Client | undefined) => (c ? `${c.displayName}様` : '（不明）');
 
 /**
- * 日の予定（担当ごと。PRD D92）の件名・本文。full は 順番・時刻・〈利用者さん〉・住所・入り方・駐車場・注意（鍵は includeKeys のときだけ）、
- * short は要点（順番・時刻・〈利用者さん〉・住所。鍵は includeKeys のときだけ残す）
+ * 日の予定（担当ごと。PRD D92）の件名・本文。full は 順番・時刻・〈利用者さん〉・住所・入り方・駐車場・注意（鍵は includeKeys のときだけ）。
+ * 要点は2段（長い順に試す）：short＝順番・時刻・〈利用者さん〉・住所（鍵は includeKeys のときだけ残す）、
+ * shorter＝順番・時刻・〈利用者さん〉だけ。「鍵の情報は…入れていません」は鍵のメモがある訪問があって鍵を入れないときだけ書く
  */
 export function dayMailText(
   org: Org,
@@ -77,22 +78,28 @@ export function dayMailText(
   source: PrintDay['source'],
   visits: readonly MailVisit[],
   includeKeys: boolean,
-): { subject: string; full: string; short: string } {
+): { subject: string; full: string; short: string[] } {
   const subject = `${mdw(date)}の訪問予定`;
   const head = [`${staff.name}さん`, ''];
   const foot = ['', org.name];
   if (visits.length === 0) {
     const body = [...head, `${mdw(date)}の訪問はありません。`, ...foot].join('\n');
-    return { subject, full: body, short: body };
+    return { subject, full: body, short: [] };
   }
   const lead = `${mdw(date)}の訪問予定です（${sourceWord(source)}。${visits.length}件）。`;
   const line = (v: MailVisit, i: number) => `${i + 1}. ${clockText(v.start)}〜${clockText(v.end)} ${nameOf(v.client)}`;
+  const hasKeys = visits.some((v) => (v.client?.keyNote ?? '').trim() !== '');
+  /** 鍵を入れないときの一言（鍵のメモがある訪問があるときだけ） */
+  const keyNote = (keysIn: boolean) =>
+    hasKeys && !keysIn
+      ? [includeKeys ? '※長いため、鍵の情報は省きました。' : '※鍵の情報はメールに入れていません。']
+      : [];
   const full = [
     ...head,
     lead,
     '',
     ...visits.flatMap((v, i) => [line(v, i), ...ruleLines(v.client, includeKeys)]),
-    ...(includeKeys ? [] : ['', '※鍵の情報はメールに入れていません。']),
+    ...(keyNote(includeKeys).length > 0 ? ['', ...keyNote(includeKeys)] : []),
     ...foot,
   ].join('\n');
   const short = [
@@ -106,9 +113,20 @@ export function dayMailText(
     ]),
     '',
     '※入り方・駐車場・注意は省きました。',
+    ...keyNote(includeKeys),
     ...foot,
   ].join('\n');
-  return { subject, full, short };
+  const shorter = [
+    ...head,
+    lead,
+    '',
+    ...visits.map(line),
+    '',
+    '※住所・入り方・駐車場・注意は省きました。',
+    ...keyNote(false),
+    ...foot,
+  ].join('\n');
+  return { subject, full, short: [short, shorter] };
 }
 
 /** 週の1日（1人あて） */
@@ -202,7 +220,7 @@ export const referrerRecipients = (clients: readonly Client[]) =>
 /** 1人あてのメール（宛先が無ければ null）。長さの判定は buildMail */
 export function mailTo(
   email: string,
-  text: { subject: string; full: string; short?: string },
+  text: { subject: string; full: string; short?: string | readonly string[] },
   limit: number = MAILTO_LIMIT,
 ): BuiltMail | null {
   if (!email) return null;

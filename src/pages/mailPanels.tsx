@@ -3,7 +3,7 @@
 // （既定はオフ。画面の中だけの状態で保存しない）。データは書き換えない
 import { Mail, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { MailNotice, type MailRow, MailRows } from '../components/mailParts';
+import { MailNotice, type MailRow, MailRows, useMailLimit } from '../components/mailParts';
 import { SidePanel, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import { byName } from '../lib/common';
@@ -16,15 +16,21 @@ export function DayMailPanel({ data, date, onClose }: { data: DemoData; date: st
   const [includeKeys, setIncludeKeys] = useState(false);
   const { day, byStaff } = useMemo(() => dayByStaff(data, date), [data, date]);
   const staff = useMemo(() => [...data.staff].filter((s) => s.active).sort(byName), [data.staff]);
-  const withVisits = staff.filter((s) => (byStaff.get(s.id)?.length ?? 0) > 0);
-  const rows: MailRow[] = withVisits.map((s) => {
+  const limit = useMailLimit();
+  /** 欠勤・希望休の人（PRD D92。行に出す。訪問が残っていなくても出す） */
+  const offOf = new Map(
+    day.off.filter((o) => o.kind !== 'noShift').map((o) => [o.staffId, o.kind === 'requested' ? '希望休' : '欠勤']),
+  );
+  const listed = staff.filter((s) => (byStaff.get(s.id)?.length ?? 0) > 0 || offOf.has(s.id));
+  const rows: MailRow[] = listed.map((s) => {
     const visits = byStaff.get(s.id) ?? [];
+    const off = offOf.get(s.id);
     return {
       key: s.id,
       name: s.name,
       email: s.email,
-      summary: `訪問 ${visits.length}件`,
-      mail: mailTo(s.email, dayMailText(data.org, s, date, day.source, visits, includeKeys)),
+      summary: [off, `訪問 ${visits.length}件`].filter(Boolean).join('・'),
+      mail: mailTo(s.email, dayMailText(data.org, s, date, day.source, visits, includeKeys), limit),
     };
   });
   const noEmail = rows.filter((r) => !r.email).length;
@@ -86,7 +92,14 @@ export function WeekMailPanel({
 }) {
   const terms = data.org.terms;
   const byStaff = useMemo(() => weekByStaff(data, dates), [data, dates]);
-  const staff = useMemo(() => [...data.staff].filter((s) => s.active).sort(byName), [data.staff]);
+  const limit = useMailLimit();
+  const first = dates[0] ?? '';
+  const last = dates[dates.length - 1] ?? '';
+  // 最終勤務日（ADR-0015）が週の初めより前の人は出さない
+  const staff = useMemo(
+    () => [...data.staff].filter((s) => s.active && (s.lastDay === null || s.lastDay >= first)).sort(byName),
+    [data.staff, first],
+  );
   const rows: MailRow[] = staff.map((s) => {
     const days = byStaff.get(s.id) ?? [];
     const count = days.reduce((n, d) => n + d.visits.length, 0);
@@ -95,12 +108,10 @@ export function WeekMailPanel({
       name: s.name,
       email: s.email,
       summary: `訪問 ${count}件`,
-      mail: mailTo(s.email, weekMailText(data.org, s, days)),
+      mail: mailTo(s.email, weekMailText(data.org, s, days), limit),
     };
   });
   const noEmail = rows.filter((r) => !r.email).length;
-  const first = dates[0] ?? '';
-  const last = dates[dates.length - 1] ?? '';
   return (
     <SidePanel
       icon={Mail}

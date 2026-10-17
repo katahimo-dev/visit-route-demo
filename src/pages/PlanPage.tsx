@@ -42,6 +42,7 @@ import { useDay } from '../app/day';
 import { DayLines } from '../components/dayLines';
 import { MapDock } from '../components/MapDock';
 import { MenuButton, type MenuItem } from '../components/MenuButton';
+import { useMailLimit } from '../components/mailParts';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
@@ -1267,6 +1268,8 @@ export default function PlanPage() {
   const annealRecommended =
     !!reassignInfo && (rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert' && !anneal;
   const contactsTotal = contactCount(contacts) + left.length;
+  /** この端末の mailto の長さの目安（ADR-0017） */
+  const mailLimit = useMailLimit();
   const contactWords = {
     day: dayWordOf(date, jstDate(Date.now())),
     staffWord: terms.staff,
@@ -2730,7 +2733,7 @@ export default function PlanPage() {
           words={contactWords}
           terms={terms}
           staffMail={(staffId, text) =>
-            mailTo(staffById.get(staffId)?.email ?? '', contactMailText(data.org, date, text))
+            mailTo(staffById.get(staffId)?.email ?? '', contactMailText(data.org, date, text), mailLimit)
           }
           onCopied={(ok, what) =>
             toast(ok ? `${what}をコピーしました` : 'コピーできませんでした。文を選んでコピーしてください')

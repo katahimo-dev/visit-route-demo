@@ -120,8 +120,8 @@ type Prim = string | number | boolean | Date | null;
 type Bad = { bad: string };
 const isBad = (v: Prim | Bad): v is Bad => typeof v === 'object' && v !== null && !(v instanceof Date);
 
-/** ExcelJS のセルの値を、ふつうの値にする（リッチテキスト・数式の結果・リンクも読む） */
-function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
+/** ExcelJS のセルの値を、ふつうの値にする（リッチテキスト・数式の結果・リンクも読む）。テストのために出す */
+export function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
   if (v === null || v === undefined) return null;
   if (v instanceof Date) return v;
   if (typeof v === 'string') return v.trim() === '' ? null : v;
@@ -135,7 +135,28 @@ function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
       return prim(result);
     }
     if ('richText' in v && Array.isArray(v.richText)) return prim(v.richText.map((r) => r.text).join(''));
-    if ('text' in v && typeof v.text === 'string') return prim(v.text);
+    // リンクのセル（{ text, hyperlink }）：表示（text）が文字ならそれ、リッチテキストなら連結して読む。
+    // 表示が無い・空なら、リンク先の「mailto:」以降を読む（メールアドレスの列。ADR-0017）
+    if ('hyperlink' in v || 'text' in v) {
+      const t = (v as { text?: unknown }).text;
+      const shown =
+        typeof t === 'string'
+          ? t
+          : typeof t === 'object' && t !== null && 'richText' in t && Array.isArray(t.richText)
+            ? (t.richText as { text?: unknown }[]).map((r) => (typeof r.text === 'string' ? r.text : '')).join('')
+            : '';
+      if (shown.trim() !== '') return prim(shown);
+      const link = (v as { hyperlink?: unknown }).hyperlink;
+      if (typeof link === 'string' && /^mailto:/i.test(link)) {
+        const addr = link.replace(/^mailto:/i, '').split('?')[0] ?? '';
+        try {
+          return prim(decodeURIComponent(addr));
+        } catch {
+          return prim(addr);
+        }
+      }
+      return null;
+    }
   }
   return null;
 }

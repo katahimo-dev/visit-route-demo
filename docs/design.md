@@ -346,10 +346,10 @@ flowchart LR
 
 ### pages（画面）
 - 第8弾（PRD D91〜D96。ADR-0017）：メール連携（`mailto:` で端末のメールアプリを開く。送信は人が押す）：
-  - `lib/mailto.ts`（純粋関数）：`normalizeEmail`（全角・空白・「mailto:」を直す。形が合わなければ null）、`mailtoHref`（宛先・件名・BCC・本文を `encodeURIComponent`。改行は %0D%0A）、`buildMail`（URL の長さが `MAILTO_LIMIT`（1800）を超えれば要点、それでも超えれば本文なし）、`uniqueRecipients`（大文字・小文字を同じとみなして重複なく）
+  - `lib/mailto.ts`（純粋関数）：`normalizeEmail`（全角・空白・「mailto:」を直す。形が合わなければ null）、`mailtoHref`（宛先・件名・BCC・本文を `encodeURIComponent`。改行は %0D%0A）、`buildMail`（URL の長さが目安を超えれば要点（配列なら順に）、それでも超えれば本文なし、本文なしでも超えれば `tooLong`）、`buildBccMails`（BCC の宛先を目安に収まるよう分ける）、`mailLimitFor`（端末ごとの目安。画面の `useMailLimit` が navigator から呼ぶ）、`uniqueRecipients`（大文字・小文字を同じとみなして重複なく）
   - `lib/mail.ts`（純粋関数）：件名・本文。担当は `lib/monthPrint` の `printDay`（確定した割当、無ければ今の案。`PrintEntry.staffId`・`PrintOff.staffId` を足した）。`dayByStaff`・`dayMailText`（鍵は `includeKeys` のときだけ）・`weekByStaff`・`weekMailText`・`contactMailText`・`vacancySubject`・`referrerRecipients`・`mailTo`・`NO_EMAIL`
   - `components/mailParts.tsx`：`MailButton`（a 要素（class btn btn-small、href＝mailto の URL）。宛先が無ければ aria-disabled のボタン＋理由）、`MailLengthNote`（要点・本文なしの知らせと「本文をコピー」）、`MailRows`（担当ごとの一覧）、`MailNotice`（注記）
-  - `pages/mailPanels.tsx`：`DayMailPanel`（日の画面のツールバーの「メールで送る」→ 右の欄。「鍵の情報も入れる」は React の状態だけ）・`WeekMailPanel`（週の〈スタッフ〉×曜日の表の「週の予定をメールで送る」→ 右の欄）
+  - `pages/mailPanels.tsx`：`DayMailPanel`（日の画面のツールバーの「メールで送る」→ 右の欄。訪問のある人と欠勤・希望休の人（`PrintDay.off`）を並べ、行に「欠勤」「希望休」。「鍵の情報も入れる」は React の状態だけ）・`WeekMailPanel`（週の〈スタッフ〉×曜日の表の「週の予定をメールで送る」→ 右の欄。最終勤務日が週の初めより前の人は出さない）
   - 連絡の一覧（`reassignParts` の `ContactPanel`）：`staffMail(staffId, text)` を受け、〈スタッフ〉あての連絡文の「コピー」の横に `MailButton`。空き状況の画面：案内文の下に紹介元のチェック（外した宛先だけを画面の状態に）と「紹介元へメール（BCC N件）」
   - 〈スタッフ〉・〈利用者さん〉の編集の欄：「メールアドレス（任意）」「紹介元のメールアドレス（任意）」。保存のときに `normalizeEmail` で直し、直せなければ保存しない。書くのは `update(fn)` だけ。メールのボタンはどれも主ボタンにしない
 - 第7弾（PRD D86〜D90。ADR-0016）：〈利用者さん〉の郵便番号→住所と住所→地図のピン：
@@ -1056,20 +1056,22 @@ keepStorePlace<T extends Place>(form: T, opened: T, stored: T | undefined): T;  
 ### メール連携（`src/lib/mailto.ts`・`src/lib/mail.ts`・`src/contracts/documents.ts`。ADR-0017）
 ```ts
 // contracts/documents.ts
-EMAIL_PATTERN = /^[^\s@,;<>"]+@[^\s@,;<>"]+$/;
+EMAIL_PATTERN = /^[^\s@,;<>"?&=%#/]+@[^\s@,;<>"?&=%#/]+$/;
 emailSchema = z.string().max(254).refine((s) => s === '' || EMAIL_PATTERN.test(s));
 staffSchema … email: emailSchema.default('');                  // Staff.email
 referrerSchema … email: emailSchema.default('');               // Client.referrer.email
 // lib/mailto.ts
-MAILTO_LIMIT = 1800;                                           // URL（エンコード後）の長さの目安
+MAILTO_LIMIT = 2000; MAILTO_LIMIT_SAFE = 2000; MAILTO_LIMIT_LONG = 8000; // URL（エンコード後）の長さの目安
+mailLimitFor(platform: string | undefined, userAgent: string): number; // Windows・分からない 2000、iOS・Android・macOS 8000
 normalizeEmail(raw: string): string | null;                    // '' → ''、形が合わなければ null
 mailtoHref(m: { to: string[]; bcc?: string[]; subject: string; body: string }): string;
-type BuiltMail = { href: string; mode: 'full' | 'short' | 'none'; body: string; fullBody: string; length: number };
-buildMail(m: { to; bcc?; subject; full: string; short?: string }, limit = MAILTO_LIMIT): BuiltMail;
+type BuiltMail = { href: string; mode: 'full' | 'short' | 'none'; body: string; fullBody: string; length: number; tooLong: boolean };
+buildMail(m: { to; bcc?; subject; full: string; short?: string | string[] }, limit = MAILTO_LIMIT): BuiltMail;
+buildBccMails(m: { bcc: string[]; subject; full; short? }, limit = MAILTO_LIMIT): { bcc: string[]; mail: BuiltMail }[];
 uniqueRecipients(list: { email: string; name: string }[]): { email: string; names: string[] }[];
 // lib/mail.ts（担当の決め方は printDay と同じ）
 dayByStaff(data, date): { day: PrintDay; byStaff: Map<staffId, MailVisit[]> };
-dayMailText(org, staff, date, source, visits, includeKeys): { subject; full; short };
+dayMailText(org, staff, date, source, visits, includeKeys): { subject; full; short: [要点1, 要点2] };
 weekByStaff(data, dates): Map<staffId, WeekMailDay[]>;
 weekMailText(org, staff, days): { subject; full; short };
 contactMailText(org, date, message): { subject; full };
@@ -1079,10 +1081,11 @@ mailTo(email, text, limit?): BuiltMail | null;                 // 宛先が '' �
 - URL：`mailto:宛先?bcc=…&subject=…&body=…`。宛先・BCC・件名・本文は `encodeURIComponent`（宛先の @ はそのまま）。本文の改行は CRLF にそろえて %0D%0A。件名・本文が空なら付けない
 - 件名：日「10/18（日）の訪問予定」、週「10/19〜10/25 の予定」、連絡「10/18（日）の予定の変更」、案内「空き枠のご案内（事業所名）」
 - 本文（文字だけ）：宛名「（〈スタッフ〉の名前）さん」→ 中身 → 事業所名（`org.name`）。〈利用者さん〉は「（表示名）様」（呼び方は文に出さない。`lib/contacts` と同じ）
-  - 日：「10/18（日）の訪問予定です（確定した割当｜今の案（まだ確定していません）。N件）。」、各訪問「1. 9:00〜10:00 （表示名）様」＋ 住所・入り方・駐車場・注意（空は出さない）＋ 鍵（includeKeys のときだけ。入れないときは「鍵の情報はメールに入れていません」）。要点は「1. 9:00〜10:00 （表示名）様（住所）」（鍵を選んだときは鍵の行も）と「※入り方・駐車場・注意は省きました。」
+  - 日：「10/18（日）の訪問予定です（確定した割当｜今の案（まだ確定していません）。N件）。」、各訪問「1. 9:00〜10:00 （表示名）様」＋ 住所・入り方・駐車場・注意（空は出さない）＋ 鍵（includeKeys のときだけ。入れないときは「鍵の情報はメールに入れていません」）。要点1は「1. 9:00〜10:00 （表示名）様（住所）」（鍵を選んだときは鍵の行も）と「※入り方・駐車場・注意は省きました。」、要点2は「1. 9:00〜10:00 （表示名）様」だけと「※住所・入り方・駐車場・注意は省きました。」。「鍵の情報はメールに入れていません」は鍵のメモがある訪問があるときだけ、全文・要点の両方に書く
   - 週：「■10/19（月）」の下に「  9:00〜10:00 （表示名）様」。今の案の日は「（案。まだ確定していません）」。訪問の無い日は「■10/24（土） 希望休｜欠勤｜休み｜予定はまだ決まっていません｜訪問なし」。要点は「10/19（月） 9:00・13:00（2件）」と「※〈利用者さん〉の名前は省きました。」
   - 連絡：`lib/contacts` の `staffMessage` ＋ 事業所名。案内：`vacancyNotice` の文のまま
-- 長さ：`buildMail` は full の URL が `limit` 以内なら full、超えれば short（あれば）、それでも超えれば本文なし（none）。画面は short・none のときに「長いため、…」と「本文をコピー」（fullBody）を出す
+- 長さ：`limit` は画面が端末から決める（`useMailLimit` → `mailLimitFor`。Windows・分からない端末 2000、iOS・Android・macOS 8000）。`buildMail` は full の URL が `limit` 以内なら full、超えれば short（配列なら順に）、それでも超えれば本文なし（none）、本文なしでも超えれば `tooLong: true`。画面は short・none のときに「長いため、…」と「本文をコピー」（fullBody）を出し、tooLong のときはボタンを aria-disabled＋理由にする。空き枠の案内は `buildBccMails` で宛先を分けて複数のボタンにし、「宛先をコピー」を並べる
+- Excel のリンクのセル：`importBook` の `prim` は、表示が文字ならそれ、リッチテキストなら連結、無ければリンク先の「mailto:」以降を読む
 - 宛先：日・週・連絡は To に1人（その〈スタッフ〉の `email`）。案内は To 空・BCC に紹介元（`referrerRecipients`。外した宛先を除く）。宛先が無ければボタンは aria-disabled＋理由（`NO_EMAIL`「メールアドレスが未登録です」）
 - 送らない：どの関数も通信しない。画面は a 要素（href＝mailto の URL）を置くだけで、押すとブラウザが OS のメールアプリを開く
 
@@ -1234,7 +1237,7 @@ Worker 内の例外は `{type:'error', message}` で返し、内部の文言を�
 | 古い月の案・記録の片づけ（localStorage の容量） | 一月分を作って容量の警告が出たら |
 | 希望休をメモで見分けるか・欠勤に種類を足すか、限った人が全員いなくなったときに止めるか、印刷の1マスの件数・文字の大きさ（ADR-0014） | 訪問看護事業所でのデモの反応から |
 | 段階の名前（紹介元の返事待ちを1段に分けるか）・拘束の上限の既定（10時間）・実働（訪問＋移動）の上限も見るか・候補の見本の期間（28日）（ADR-0015） | 訪問介護の事業所でのデモの反応から |
-| mailto の長さの目安（1800字）・要点に残す項目・件名の書き方（ADR-0017） | 実際のメールアプリ（Outlook・Gmail・iPhone のメール）で開いた反応から |
+| mailto の長さの目安（2000字・8000字。実機で未測定）・要点に残す項目・件名の書き方（ADR-0017） | 実際のメールアプリ（Outlook・Gmail・iPhone のメール）で開いた反応から |
 | 連絡文のひな形（敬語・住所を入れるか・入らない訪問の伝え方）・「変更を減らす」の既定値 | 2回目のデモの反応から（2026-10-14 に推奨の既定で決めた。下の「決めたこと」） |
 
 決めたこと（月単位の予定。2026-10-16 利用者が推奨どおりに決定。ADR-0012）：

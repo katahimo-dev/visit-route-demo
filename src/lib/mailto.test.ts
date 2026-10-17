@@ -1,6 +1,15 @@
 // mailto の組み立て（PRD D91〜D95。ADR-0017）
 import { describe, expect, it } from 'vitest';
-import { buildMail, encodeBody, MAILTO_LIMIT, mailtoHref, normalizeEmail, uniqueRecipients } from './mailto';
+import {
+  buildBccMails,
+  buildMail,
+  encodeBody,
+  MAILTO_LIMIT,
+  mailLimitFor,
+  mailtoHref,
+  normalizeEmail,
+  uniqueRecipients,
+} from './mailto';
 
 describe('normalizeEmail', () => {
   it('空は空。全角・前後の空白・mailto: を直す', () => {
@@ -15,6 +24,19 @@ describe('normalizeEmail', () => {
     expect(normalizeEmail('a@b@example.com')).toBeNull();
     expect(normalizeEmail('a@example.com,b@example.com')).toBeNull();
     expect(normalizeEmail(`${'a'.repeat(250)}@x.jp`)).toBeNull();
+  });
+  it('mailto の URL を壊す「?&=%#/」を含むものは通さない', () => {
+    for (const bad of [
+      'a?b@example.com',
+      'a&b@example.com',
+      'a=b@example.com',
+      'a%b@example.com',
+      'a#b@example.com',
+      'a/b@example.com',
+      'a@example.com?cc=x',
+    ])
+      expect(normalizeEmail(bad)).toBeNull();
+    expect(normalizeEmail('a+b.c_d-e@example.co.jp')).toBe('a+b.c_d-e@example.co.jp');
   });
   it('細かい形は見ない（ドメインに点が無くても通す）', () => {
     expect(normalizeEmail('staff@localhost')).toBe('staff@localhost');
@@ -88,5 +110,40 @@ describe('uniqueRecipients', () => {
       { email: 'Aoba@example.com', names: ['あおば相談室', 'あおば（別名）'] },
       { email: 'hikari@example.com', names: [] },
     ]);
+  });
+});
+
+describe('mailLimitFor（端末ごとの目安。ADR-0017）', () => {
+  it('Windows と判定できない端末は 2000、iOS・Android・macOS は 8000', () => {
+    expect(mailLimitFor('Windows', '')).toBe(2000);
+    expect(mailLimitFor(undefined, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe(2000);
+    expect(mailLimitFor(undefined, 'Mozilla/5.0 (X11; Linux x86_64)')).toBe(2000);
+    expect(mailLimitFor('', '')).toBe(2000);
+    expect(mailLimitFor('macOS', '')).toBe(8000);
+    expect(mailLimitFor(undefined, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')).toBe(8000);
+    expect(mailLimitFor(undefined, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)')).toBe(8000);
+    expect(mailLimitFor('Android', 'Mozilla/5.0 (Linux; Android 14)')).toBe(8000);
+  });
+});
+
+describe('BCC の宛先が多いとき（tooLong・分ける）', () => {
+  const many = Array.from({ length: 120 }, (_, i) => `referrer${i}@example.com`);
+  it('本文なしでも長すぎれば tooLong', () => {
+    const m = buildMail({ to: [], bcc: many, subject: '件名', full: '本文' }, 2000);
+    expect(m.mode).toBe('none');
+    expect(m.tooLong).toBe(true);
+    expect(buildMail({ to: [], bcc: many.slice(0, 2), subject: '件名', full: '本文' }, 2000).tooLong).toBe(false);
+  });
+  it('目安の長さに収まるよう宛先を前から分け、どの組も tooLong でない。宛先は漏れも重なりもない', () => {
+    const groups = buildBccMails({ bcc: many, subject: '空き枠のご案内', full: 'あ'.repeat(100) }, 2000);
+    expect(groups.length).toBeGreaterThan(1);
+    expect(groups.every((g) => !g.mail.tooLong && g.mail.length <= 2000)).toBe(true);
+    expect(groups.flatMap((g) => g.bcc)).toEqual(many);
+    expect(new URL(groups[0]!.mail.href).searchParams.get('bcc')).toBe(groups[0]!.bcc.join(','));
+  });
+  it('宛先が少なければ1通', () => {
+    const groups = buildBccMails({ bcc: many.slice(0, 3), subject: '件名', full: '本文' }, 2000);
+    expect(groups.length).toBe(1);
+    expect(groups[0]!.mail.mode).toBe('full');
   });
 });

@@ -96,10 +96,16 @@ describe('日の予定（PRD D92）', () => {
     const k = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, true);
     expect(k.full).toContain('鍵：キーボックス 1234');
     // 要点は入り方・駐車場・注意を省く。鍵は選んだときだけ残す
-    expect(k.short).toContain('   鍵：キーボックス 1234');
-    expect(t.short).not.toContain('1234');
-    expect(k.short).not.toContain('入り方：');
-    expect(k.short).toContain('2. 13:00〜14:00 青葉様（仙台市青葉区1-1）');
+    expect(k.short[0]).toContain('   鍵：キーボックス 1234');
+    expect(t.short[0]).not.toContain('1234');
+    expect(k.short[0]).not.toContain('入り方：');
+    expect(k.short[0]).toContain('2. 13:00〜14:00 青葉様（仙台市青葉区1-1）');
+    // 要点2は 順番・時刻・〈利用者さん〉だけ
+    expect(k.short[1]).toContain('2. 13:00〜14:00 青葉様\n');
+    expect(k.short[1]).not.toContain('仙台市');
+    expect(k.short[1]).toContain('※長いため、鍵の情報は省きました。');
+    expect(t.short[0]).toContain('※鍵の情報はメールに入れていません。');
+    expect(t.short[1]).toContain('※鍵の情報はメールに入れていません。');
   });
 
   it('訪問の無い人は「訪問はありません」', () => {
@@ -117,12 +123,55 @@ describe('日の予定（PRD D92）', () => {
     expect(m.length).toBeLessThanOrEqual(MAILTO_LIMIT);
     expect(m.mode).toBe('full');
     // 要点の URL の長さちょうどを目安にすると要点、それより短いと本文なし
-    const shortLen = mailtoHref({ to: ['hana@example.com'], subject: t.subject, body: t.short }).length;
+    const shortLen = mailtoHref({ to: ['hana@example.com'], subject: t.subject, body: t.short[0]! }).length;
     expect(shortLen).toBeLessThan(m.length);
     const tiny = mailTo('hana@example.com', t, shortLen)!;
     expect(tiny.mode).toBe('short');
     expect(new URL(tiny.href).searchParams.get('body')).toContain('入り方・駐車場・注意は省きました');
-    expect(mailTo('hana@example.com', t, shortLen - 1)!.mode).toBe('none');
+    const shorterLen = mailtoHref({ to: ['hana@example.com'], subject: t.subject, body: t.short[1]! }).length;
+    const tiny2 = mailTo('hana@example.com', t, shortLen - 1)!;
+    expect(tiny2.mode).toBe('short');
+    expect(tiny2.body).toBe(t.short[1]);
+    expect(mailTo('hana@example.com', t, shorterLen - 1)!.mode).toBe('none');
+  });
+
+  it('鍵のメモのある訪問が無ければ「鍵の情報は…」を書かない', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v3'] }) } });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).not.toContain('鍵');
+    expect(t.short.join('')).not.toContain('鍵');
+  });
+
+  it.each([4, 5, 6])('訪問 %i件の日も、目安 2000字の中に本文（要点1か要点2）が入る', (n) => {
+    const names = ['青葉', '泉', '宮城野', '若林', '太白', '秋保'];
+    const clients = names.slice(0, n).map((name, i) =>
+      client(`k${i}`, 38.26 + i / 1000, 140.87, {
+        displayName: `${name} 花子`,
+        place: {
+          address: `仙台市${name}区中央${i + 1}丁目1-1 架空マンション101`,
+          lat: 38.26,
+          lng: 140.87,
+          postalCode: '',
+        },
+        entryNote: 'インターホンを押してから玄関で一声かけてください',
+        parkingNote: '建物の裏の来客用の2番に停めてください',
+        cautionNote: '段差が多いので足元に気を付けてください',
+      }),
+    );
+    const visits = clients.map((c, i) =>
+      visit(`x${i}`, c.id, `${String(8 + i * 2).padStart(2, '0')}:00`, `${String(8 + i * 2).padStart(2, '0')}:00`, {
+        windowKind: 'fixed',
+      }),
+    );
+    const d = data({ clients, visits, aiPlans: { [DATE]: plan(DATE, { s1: visits.map((v) => v.id) }) } });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    expect(byStaff.get('s1')?.length).toBe(n);
+    const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    const m = mailTo('hana@example.com', t, 2000)!;
+    expect(m.mode).toBe('short');
+    expect(m.length).toBeLessThanOrEqual(2000);
+    expect(m.body).toContain(`${n}. `);
   });
 });
 

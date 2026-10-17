@@ -4,13 +4,26 @@ import { ClipboardCopy, Mail } from 'lucide-react';
 import { type ReactNode, useId } from 'react';
 import { copyText } from '../lib/clipboard';
 import { NO_EMAIL } from '../lib/mail';
-import type { BuiltMail } from '../lib/mailto';
+import { type BuiltMail, mailLimitFor } from '../lib/mailto';
 import { useToast } from './Toast';
 import { WithIcon } from './ui';
 import './mailParts.css';
 
+/** 宛先・件名だけで目安の長さを超えるときの理由（PRD D96） */
+export const TOO_LONG = '宛先が多く、メールアプリに渡せる長さを超えます。「宛先をコピー」で貼り付けてください';
+
 /**
- * メールアプリを開くリンク（ボタンの見た目。主ボタンにはしない）。mail が無ければ aria-disabled のボタンにし、理由（why）を
+ * この端末の mailto の長さの目安（ADR-0017）：navigator.userAgentData?.platform（あれば）と userAgent から
+ * lib/mailto の mailLimitFor で決める（lib は純粋関数のまま、画面で判定する）
+ */
+export function useMailLimit(): number {
+  if (typeof navigator === 'undefined') return mailLimitFor(undefined, '');
+  const data = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  return mailLimitFor(data?.platform, navigator.userAgent);
+}
+
+/**
+ * メールアプリを開くリンク（ボタンの見た目。主ボタンにはしない）。mail が無い・長すぎる（tooLong）なら aria-disabled のボタンにし、理由（why）を
  * title・読み上げ・小さな文で出す
  */
 export function MailButton({
@@ -22,7 +35,7 @@ export function MailButton({
 }: {
   mail: BuiltMail | null;
   label: ReactNode;
-  /** 押せない理由（mail が null のとき） */
+  /** 押せない理由（mail が null のとき。長すぎるときは TOO_LONG） */
   why: string;
   testId?: string;
   /** 読み上げの名前（だれあてか） */
@@ -30,7 +43,8 @@ export function MailButton({
 }) {
   const toast = useToast();
   const whyId = useId();
-  if (!mail)
+  if (!mail || mail.tooLong) {
+    const reason = mail ? TOO_LONG : why;
     return (
       <span className="mail-btn-wrap">
         <button
@@ -39,8 +53,8 @@ export function MailButton({
           aria-disabled="true"
           aria-describedby={whyId}
           aria-label={srLabel}
-          title={why}
-          onClick={() => toast(why)}
+          title={reason}
+          onClick={() => toast(reason)}
           data-testid={testId}
         >
           <WithIcon icon={Mail} size={14}>
@@ -48,10 +62,11 @@ export function MailButton({
           </WithIcon>
         </button>
         <span id={whyId} className="sub mail-why">
-          {why}
+          {reason}
         </span>
       </span>
     );
+  }
   return (
     <a
       className="btn btn-small"
@@ -71,7 +86,7 @@ export function MailButton({
 /** 本文を要点に絞った・入れなかったときの知らせと「本文をコピー」（すべての本文） */
 export function MailLengthNote({ mail, testId }: { mail: BuiltMail | null; testId?: string }) {
   const toast = useToast();
-  if (!mail || mail.mode === 'full') return null;
+  if (!mail || mail.mode === 'full' || mail.tooLong) return null;
   const copy = async () =>
     toast(
       (await copyText(mail.fullBody))
@@ -112,7 +127,8 @@ export function MailRows({ rows, testId }: { rows: readonly MailRow[]; testId?: 
         <li key={r.key} className="mail-row" data-testid="mail-row">
           <span className="mail-row-who">
             <strong>{r.name}</strong>
-            <span className="sub">{r.email || '（メールアドレスなし）'}</span>
+            {/* アドレスの無い人は、ボタンの横の理由だけを出す（二重に出さない） */}
+            {r.email && <span className="sub">{r.email}</span>}
           </span>
           <span className="sub mail-row-summary">{r.summary}</span>
           <span className="mail-row-act">
