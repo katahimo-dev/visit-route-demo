@@ -25,6 +25,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
+import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
@@ -81,6 +82,7 @@ import {
 } from '../lib/requestedOff';
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
+import { staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { workStats } from '../lib/workload';
 import { type CompileInput, compile } from '../matching';
@@ -932,7 +934,7 @@ export default function MonthPage() {
             </p>
           </div>
         )}
-        <MonthLegend showLoad={focus.kind === 'all'} />
+        <MonthLegend bar={focus.kind === 'all' ? 'load' : focus.kind === 'staff' ? 'staff' : null} />
         {batch && (
           <div className="stack month-progress" style={{ gap: 4 }} data-testid="month-progress">
             <progress
@@ -1273,8 +1275,11 @@ export default function MonthPage() {
   );
 }
 
-/** 月の見出しの凡例：日の状態（背景・枠と印）と、混み具合の色と目盛り（見出しに1回） */
-function MonthLegend({ showLoad }: { showLoad: boolean }) {
+/**
+ * 月の見出しの凡例：日の状態（背景・枠と印）と、3段バーの色と目盛り（見出しに1回）。
+ * bar：全体は混み具合（load）、〈スタッフ〉を選んだときはその人の時間帯の状態（staff。PRD D75）
+ */
+function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
   return (
     <div className="month-legend" data-testid="month-legend">
       <span className="month-legend-group">
@@ -1295,14 +1300,14 @@ function MonthLegend({ showLoad }: { showLoad: boolean }) {
         </span>
         <span className="month-legend-item">▶ 始まる・■ 終わる</span>
       </span>
-      {showLoad && (
+      {bar !== null && (
         <span className="month-legend-group">
           <span className="month-legend-load">
-            <span className="sub">混み具合</span>
+            <span className="sub">{bar === 'load' ? '混み具合' : '時間帯'}</span>
             <LoadRowsSample />
             <span className="sub">上から 7〜12時・12〜15時・15〜20時</span>
           </span>
-          <LoadLegend />
+          {bar === 'load' ? <LoadLegend /> : <StaffLegend />}
         </span>
       )}
     </div>
@@ -1337,19 +1342,6 @@ function namesShort(names: readonly string[]): string {
   if (names.length === 0) return '';
   const first = shortName(names[0]!);
   return names.length === 1 ? first : `${first} ほか${names.length - 1}人`;
-}
-
-/** 選んだ〈スタッフ〉の担当の件数と目安に対する負荷のバー（目安の位置に線。目安を超えると橙） */
-function LoadMeter({ count, target }: { count: number; target: number | null }) {
-  if (target === null) return null;
-  const max = Math.max(target * 1.5, count, 1);
-  const over = count > Math.ceil(target);
-  return (
-    <span className="month-meter" aria-hidden="true">
-      <span className={`month-meter-fill${over ? ' is-over' : ''}`} style={{ width: `${(count / max) * 100}%` }} />
-      <span className="month-meter-target" style={{ left: `${(target / max) * 100}%` }} />
-    </span>
-  );
 }
 
 type CellProps = {
@@ -1541,17 +1533,24 @@ const DayCell = memo(function DayCell(props: CellProps) {
     );
   } else if (focus === 'staff' && props.staffDay) {
     const x = props.staffDay;
-    const shift = x.retired
+    // 勤務がふつうの日は時刻を出さず（3段バーで見せる。PRD D75）、休み・欠勤・最終勤務日の後だけ短い文字を出す
+    const shiftShort = x.retired
       ? '最終勤務日の後'
       : x.absence
         ? x.requested
           ? REQUESTED_OFF_NOTE
           : x.slots.length === 0
             ? '欠勤'
-            : `欠勤あり ${slotsText(x.slots)}`
+            : '欠勤あり'
         : x.off
           ? '休'
-          : slotsText(x.slots);
+          : null;
+    const shift =
+      shiftShort === null
+        ? slotsText(x.slots)
+        : x.absence && x.slots.length > 0 && !x.requested
+          ? `${shiftShort} ${slotsText(x.slots)}`
+          : shiftShort;
     parts.push(shift);
     if (x.noPlan) parts.push('案なし');
     if (x.count > 0 || x.target !== null) {
@@ -1559,36 +1558,27 @@ const DayCell = memo(function DayCell(props: CellProps) {
       if (x.target !== null) parts.push(`目安 ${Math.round(x.target * 10) / 10}件`);
     }
     if (x.travel > 0) parts.push(`移動 ${x.travel}分`);
+    if (x.bar) parts.push(staffSlotSummary(x.bar));
     body.push(
-      <span
-        key="shift"
-        className={`month-shift${x.retired ? ' is-retired' : x.absence ? (x.requested ? ' is-requested' : ' is-absent') : x.off ? ' is-off' : ''}`}
-        data-testid="month-shift"
-      >
-        {x.absence &&
-          (x.requested ? <CalendarOff size={12} aria-hidden="true" /> : <UserX size={12} aria-hidden="true" />)}
-        {shift}
-      </span>,
+      shiftShort !== null ? (
+        <span
+          key="shift"
+          className={`month-shift${x.retired ? ' is-retired' : x.absence ? (x.requested ? ' is-requested' : ' is-absent') : ' is-off'}`}
+          data-testid="month-shift"
+        >
+          {x.absence &&
+            (x.requested ? <CalendarOff size={12} aria-hidden="true" /> : <UserX size={12} aria-hidden="true" />)}
+          {shiftShort}
+        </span>
+      ) : null,
       x.noPlan ? (
         <span key="noplan" className="sub">
           案なし
         </span>
       ) : null,
-      x.count > 0 || x.target !== null ? (
-        <span
-          key="load"
-          className="month-staff-load"
-          title={x.target !== null ? `目安 ${Math.round(x.target * 10) / 10}件` : ''}
-        >
-          <span className="month-staff-count">{x.count}件</span>
-          <LoadMeter count={x.count} target={x.target} />
-        </span>
-      ) : null,
-      x.travel > 0 ? (
-        <span key="travel" className="sub">
-          移動 {x.travel}分
-        </span>
-      ) : null,
+      <span key="bar" className="month-load is-staff">
+        <StaffBar slots={x.bar} />
+      </span>,
     );
   } else if (focus === 'client' && props.clientDay) {
     const x = props.clientDay;

@@ -1,6 +1,16 @@
 // 稼働の見込み（PRD D72。ADR-0015）の横棒。拘束の長さ・時間帯を見せる。
-// 次の弾で「訪問・移動・待ち」の3段のバーに差し替える予定なので、見込み（WorkStat）を受け取る部品として分けておく
+// 日ごとの行の横棒は、拘束の中の訪問・移動・待ちを、〈スタッフ〉の3段バー（components/staffBar）と同じ色・模様で塗り分ける
+// （PRD D77。訪問＝斜線、移動＝点々、待ち＝空きと同じ緑。1日の時間軸の上の位置が大事なので3段にはしない）
+import './loadBar.css';
+import { timeText } from '../domain/availability';
+import { minutesToHhmm } from '../domain/time';
+import type { RoutePart } from '../lib/staffBar';
 import type { WorkStat } from '../lib/workload';
+
+/** 内訳の種類 → 3段バーの状態の模様（待ちは勤務内の空き） */
+const PART_LEVEL: Record<RoutePart['kind'], string> = { visit: 'st-visit', travel: 'st-travel', wait: 'st-free' };
+const PART_LABEL: Record<RoutePart['kind'], string> = { visit: '訪問', travel: '移動', wait: '待ち' };
+const clock = (m: number) => timeText(minutesToHhmm(Math.round(m)));
 
 /** 横棒の目盛りの最大（時間）。これを超える拘束は端で止める */
 export const SPAN_SCALE_HOURS = 12;
@@ -17,15 +27,31 @@ export function SpanMini({ stat, limitHours }: { stat: WorkStat; limitHours: num
   );
 }
 
-/** 時間軸の上の拘束の横棒（日ごとの行用）：最初の訪問の開始〜最後の訪問の終わり。range は軸の範囲（分） */
+/**
+ * 時間軸の上の拘束の横棒（日ごとの行用）：最初の訪問の開始〜最後の訪問の終わりを、訪問・移動・待ちに塗り分ける。
+ * range は軸の範囲（分）。上限を超える日は外枠（色に加えて行の「!」と文字。色だけに頼らない）
+ */
 export function SpanBar({ stat, range }: { stat: WorkStat; range: { start: number; end: number } }) {
   const len = Math.max(1, range.end - range.start);
-  const left = Math.max(0, (stat.start - range.start) / len);
-  const right = Math.min(1, (stat.end - range.start) / len);
+  const pos = (m: number) => Math.min(1, Math.max(0, (m - range.start) / len));
+  const left = pos(stat.start);
+  const right = pos(stat.end);
   return (
     <span className={`work-bar${stat.over ? ' is-over' : ''}`} aria-hidden="true">
+      {stat.parts.map((x) => {
+        const a = pos(x.start);
+        const b = pos(x.end);
+        return (
+          <span
+            key={`${x.kind}-${x.start}`}
+            className={`work-part is-${PART_LEVEL[x.kind]}`}
+            style={{ left: `${a * 100}%`, width: `${Math.max(0, b - a) * 100}%` }}
+            title={`${clock(x.start)}〜${clock(x.end)} ${PART_LABEL[x.kind]}`}
+          />
+        );
+      })}
       <span
-        className="work-bar-fill"
+        className="work-bar-frame"
         style={{ left: `${left * 100}%`, width: `${Math.max(0, right - left) * 100}%` }}
       />
     </span>

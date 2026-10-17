@@ -3,7 +3,7 @@
 import type { AiPlan, DemoData } from '../contracts/data';
 import type { Client, Pattern, Staff, Visit } from '../contracts/documents';
 import type { PatternChange } from '../contracts/patterns';
-import type { Problem } from '../contracts/problem';
+import type { Problem, StopTiming } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Item } from '../contracts/rules';
 import { availabilityOf, withoutAbsences } from '../domain/availability';
@@ -16,6 +16,7 @@ import { applyPatterns, nthOfMonth, splitPattern, timesOn } from '../patterns';
 import { fitsOf, placeVisit } from '../reassign';
 import { attempt, byDisplayName, byName, own } from './common';
 import { addRun, findRun, problemKey } from './runs';
+import { busyParts, type StaffSlot, spansOf, staffSlots } from './staffBar';
 
 /** 時間軸の縦の範囲（0時からの分）：07:00〜20:00 */
 export const DAY_START = 7 * 60;
@@ -449,6 +450,8 @@ export type WeekCell = {
   travel: number;
   /** 種類ごとの件数（種類なしは数えない。種類の並びの順） */
   types: { typeId: string; count: number }[];
+  /** 30分ごとの状態（PRD D76。lib/staffBar の staffSlots。07:00〜20:00）。訪問があるのに数える案が無い日は null */
+  bar: StaffSlot[] | null;
 };
 
 export type WeekRow = {
@@ -486,16 +489,22 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
     const cells = days.map((day): WeekCell => {
       const override = data.availability.find((a) => a.staffId === s.id && a.date === day.date);
       const absences = data.absences.filter((a) => a.staffId === s.id && a.date === day.date);
-      const slots = withoutAbsences(availabilityOf(s, day.date, override).slots, absences);
+      const base = availabilityOf(s, day.date, override).slots;
+      const slots = withoutAbsences(base, absences);
       const hours = slots.reduce((m, x) => m + hhmmToMinutes(x.end) - hhmmToMinutes(x.start), 0) / 60;
       const list = own(day.routes, s.id) ?? [];
       let travel = 0;
+      let stops: StopTiming[] = [];
       const p = day.problem;
       if (p && list.length > 0) {
         const si = p.staff.findIndex((x) => x.id === s.id);
         const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
         const idx = list.map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
-        if (si >= 0) travel = scheduleRoute(p, si, idx, 'lenient')?.travelMinutes ?? 0;
+        if (si >= 0) {
+          const t = scheduleRoute(p, si, idx, 'lenient');
+          travel = t?.travelMinutes ?? 0;
+          stops = t?.stops ?? [];
+        }
       }
       const typeCount = new Map<string, number>();
       for (const id of list) {
@@ -513,6 +522,11 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
         hours: round1(hours),
         travel: Math.round(travel),
         types,
+        // 案の無い日でも、訪問が1件も無い日は全部空き（または休み）として出す（月の staffDay と同じ）
+        bar:
+          day.source === null && day.bands.some((b) => !b.leave)
+            ? null
+            : staffSlots({ shift: spansOf(slots), base: spansOf(base), busy: busyParts(stops) }),
       };
     });
     const total = {

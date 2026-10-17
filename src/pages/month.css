@@ -260,6 +260,13 @@
   width: 100%;
   padding-top: 2px;
 }
+/* 選んだ〈スタッフ〉の3段バー（PRD D75）：数字を出さない分、段を太く */
+.month-load.is-staff .load-row-slots {
+  height: 9px;
+}
+.month-load.is-staff .load-bar {
+  gap: 2px;
+}
 /* 選んだ〈スタッフ〉 */
 .month-shift {
   display: inline-flex;
@@ -272,38 +279,6 @@
 }
 .month-shift.is-absent {
   color: var(--danger);
-}
-.month-staff-load {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-}
-.month-staff-count {
-  font-weight: 700;
-  white-space: nowrap;
-}
-.month-meter {
-  position: relative;
-  flex: 1;
-  height: 7px;
-  border-radius: 999px;
-  background: #efe6de;
-}
-.month-meter-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 999px;
-  background: #5aa57a;
-}
-.month-meter-fill.is-over {
-  background: #eaa142;
-}
-.month-meter-target {
-  position: absolute;
-  top: -2px;
-  bottom: -2px;
-  border-left: 2px solid var(--ink);
 }
 /* 選んだ〈利用者さん〉 */
 .month-cvisits {

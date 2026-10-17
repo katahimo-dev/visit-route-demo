@@ -3,7 +3,9 @@ import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useMemo, us
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
+import { LoadRowsSample } from '../components/loadBar';
 import { PickChips, QualificationBadges } from '../components/PickChips';
+import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
@@ -702,6 +704,13 @@ export default function WeekPage() {
       ) : tab === 'table' ? (
         table && (
           <div className="card week-card">
+            <div className="week-table-legend" data-testid="week-legend">
+              <span className="row week-table-legend-rows">
+                <LoadRowsSample />
+                <span className="sub">上から 7〜12時・12〜15時・15〜20時</span>
+              </span>
+              <StaffLegend />
+            </div>
             <div className="table-scroll">
               <table className="week-table" data-testid="week-table">
                 <thead>
@@ -723,39 +732,45 @@ export default function WeekPage() {
                         {staffName(r.staffId)}
                         <QualificationBadges badges={badgesOf.get(r.staffId) ?? []} />
                       </th>
-                      {r.cells.map((c) => (
-                        <td
-                          key={c.date}
-                          className={c.off ? 'is-off' : c.noPlan ? 'is-noplan' : ''}
-                          data-testid="week-cell"
-                        >
-                          {c.off ? (
-                            <span className="sub">休み</span>
-                          ) : c.noPlan ? (
-                            <span className="sub">案なし</span>
-                          ) : (
-                            <>
-                              <strong>{c.count}件</strong>
-                              <span className="sub">稼働 {c.hours}時間</span>
-                              <span className="sub">移動 {c.travel}分</span>
-                              {c.types.length > 0 && (
-                                <span className="row week-types">
-                                  {c.types.map((t) => {
-                                    const type = typeOf(data.visitTypes, t.typeId);
-                                    return (
-                                      <span key={t.typeId} className="row week-type">
-                                        {type && <TypeDot type={type} size={8} />}
-                                        <span className="sr-only">{type?.name}</span>
-                                        {t.count}
-                                      </span>
-                                    );
-                                  })}
-                                </span>
+                      {r.cells.map((c) => {
+                        // 数字は見比べに要る件数だけを小さく残し、稼働・移動・種類の内訳は title と読み上げへ（PRD D76）
+                        const typesText = c.types
+                          .map((t) => `${typeOf(data.visitTypes, t.typeId)?.name ?? '種類なし'} ${t.count}件`)
+                          .join('・');
+                        const detail = c.off
+                          ? '休み'
+                          : [
+                              `訪問 ${c.count}件`,
+                              `稼働 ${c.hours}時間`,
+                              `移動 ${c.travel}分`,
+                              ...(typesText ? [typesText] : []),
+                            ].join('・');
+                        return (
+                          <td
+                            key={c.date}
+                            className={c.off ? 'is-off' : c.bar === null ? 'is-noplan' : ''}
+                            data-testid="week-cell"
+                            title={`${staffName(r.staffId)}さん ${dateText(c.date)}：${c.bar === null ? '案なし' : detail}`}
+                          >
+                            <StaffBar slots={c.bar} testId="week-bar" />
+                            <span className="week-cell-foot">
+                              {c.off ? (
+                                <span className="sub">休み</span>
+                              ) : c.bar === null ? (
+                                <span className="sub">案なし</span>
+                              ) : c.noPlan ? (
+                                // 案は無いが訪問も無い日（バーは空き・勤務外だけ）
+                                <span className="sub">訪問なし</span>
+                              ) : (
+                                <>
+                                  <span className="week-cell-count">{c.count}件</span>
+                                  <span className="sr-only">（{detail}）</span>
+                                </>
                               )}
-                            </>
-                          )}
-                        </td>
-                      ))}
+                            </span>
+                          </td>
+                        );
+                      })}
                       <td className="week-total">
                         <strong>{r.total.count}件</strong>
                         <span className="sub">稼働 {r.total.hours}時間</span>
@@ -791,6 +806,7 @@ export default function WeekPage() {
               </table>
             </div>
             <p className="sub">
+              マスのバーは、その人の時間帯ごとの状態（訪問・移動・空き・休み・勤務外。30分ごと）です。マスに指を置くと稼働時間・移動・種類の内訳が出ます。
               数えるのは、その日の今の案（無ければ確定した割当）です。稼働時間は稼働時間帯の長さ（欠勤を差し引く）、移動は自宅へ帰る移動も含みます。
               平均との差が平均の30%を超える人を強調します。
             </p>
