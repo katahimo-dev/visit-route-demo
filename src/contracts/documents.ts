@@ -24,6 +24,16 @@ export const placeSchema = z.object({
 export type Place = z.infer<typeof placeSchema>;
 
 /**
+ * メールアドレス（PRD D91。ADR-0017）：空か、緩い形（文字 ＠ 文字。空白・@・区切りの「,;<>"」と、mailto の URL を壊す「?&=%#/」は含まない）。
+ * 細かい形は見ない（メールアプリが確かめる）。入力の全角・前後の空白は画面・Excel が lib/mailto の normalizeEmail で直してから入れる
+ */
+export const EMAIL_PATTERN = /^[^\s@,;<>"?&=%#/]+@[^\s@,;<>"?&=%#/]+$/;
+export const emailSchema = z
+  .string()
+  .max(254)
+  .refine((s) => s === '' || EMAIL_PATTERN.test(s), 'メールアドレスの形ではありません（例 name@example.com）');
+
+/**
  * 〈利用者さん〉の場所（PRD D86。ADR-0016）：場所に郵便番号を足したもの。郵便番号は空か7桁の数字（ハイフンなし）。
  * 入力のハイフン・全角数字は画面・Excel が lib/geocode の normalizePostalCode で直してから入れる。無い古いデータは ''
  */
@@ -76,6 +86,8 @@ export const staffSchema = z.object({
    * 稼働時間帯を空にする。日ごとの上書きも見ない）。退職・担当替えで入れ、担当の振り直しは〈スタッフ〉の画面から。無い古いデータは null
    */
   lastDay: dateSchema.nullable().default(null),
+  /** メールアドレス（任意。PRD D91。ADR-0017）。予定をメールアプリで開くときの宛先。無い古いデータは '' */
+  email: emailSchema.default(''),
 });
 export type Staff = z.infer<typeof staffSchema>;
 
@@ -91,9 +103,11 @@ export const referrerSchema = z.object({
   name: z.string().max(50),
   contact: z.string().max(100),
   note: z.string().max(200),
+  /** メールアドレス（任意。PRD D91。ADR-0017）。空き枠の案内文を BCC で送る宛先。無い古いデータは '' */
+  email: emailSchema.default(''),
 });
 export type Referrer = z.infer<typeof referrerSchema>;
-export const EMPTY_REFERRER: Referrer = { name: '', contact: '', note: '' };
+export const EMPTY_REFERRER: Referrer = { name: '', contact: '', note: '', email: '' };
 
 /**
  * 段階の無い古いデータの読み替え（ADR-0015）：active が false なら「終了」、仮押さえ（tentative）なら「相談受付」

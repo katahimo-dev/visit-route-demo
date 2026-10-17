@@ -18,6 +18,8 @@ export type PrintEntry = {
   /** 開始（分）。案の時刻（lenient）、案に無ければ訪問の開始（早） */
   start: number;
   clientName: string;
+  /** 担当（未定・入らないなら null。メールの宛先分け（ADR-0017）に使う） */
+  staffId: string | null;
   /** 担当の名前（未定・入らないなら null） */
   staffName: string | null;
   /** 印刷に出す担当の名前（名字。名字が重なる人はフルネーム。staffLabels） */
@@ -27,7 +29,7 @@ export type PrintEntry = {
 };
 
 /** その日に休む〈スタッフ〉：希望休・欠勤（終日でも時間帯でも）・勤務なし */
-export type PrintOff = { name: string; label: string; kind: 'requested' | 'absent' | 'noShift' };
+export type PrintOff = { staffId: string; name: string; label: string; kind: 'requested' | 'absent' | 'noShift' };
 
 export type PrintDay = {
   date: string;
@@ -135,6 +137,7 @@ export function printDay(data: PrintInput, date: string, staffId: string | null,
       visitId: v.id,
       start: startOf.get(v.id) ?? hhmmToMinutes(v.earliestStart),
       clientName: c.displayName,
+      staffId: owner,
       staffName: owner === null ? null : (staffName.get(owner) ?? null),
       staffLabel: owner === null ? null : (labelOf.get(owner) ?? null),
       typeColor: v.typeId === null ? null : (typeColor.get(v.typeId) ?? null),
@@ -151,8 +154,13 @@ export function printDay(data: PrintInput, date: string, staffId: string | null,
     const override = data.availability.find((a) => a.staffId === s.id && a.date === date);
     const working = availabilityOf(s, date, override).slots.length > 0;
     if (mine.length > 0 && working)
-      off.push({ name: s.name, label: labelOf.get(s.id)!, kind: mine.every(isRequestedOff) ? 'requested' : 'absent' });
-    else if (!working) off.push({ name: s.name, label: labelOf.get(s.id)!, kind: 'noShift' });
+      off.push({
+        staffId: s.id,
+        name: s.name,
+        label: labelOf.get(s.id)!,
+        kind: mine.every(isRequestedOff) ? 'requested' : 'absent',
+      });
+    else if (!working) off.push({ staffId: s.id, name: s.name, label: labelOf.get(s.id)!, kind: 'noShift' });
   }
   return { date, inMonth, source, entries, pending, leaves, off };
 }

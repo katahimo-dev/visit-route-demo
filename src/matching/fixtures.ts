@@ -32,6 +32,7 @@ export function staff(id: string, lat: number, lng: number, over: Partial<Staff>
     requirements: [],
     preferences: [],
     lastDay: null,
+    email: '',
     ...over,
   };
 }
@@ -56,7 +57,7 @@ export function client(id: string, lat: number, lng: number, over: Partial<Clien
     cautionNote: '',
     allowedStaffIds: [],
     stage: 'active',
-    referrer: { name: '', contact: '', note: '' },
+    referrer: { name: '', contact: '', note: '', email: '' },
     ...over,
   };
 }

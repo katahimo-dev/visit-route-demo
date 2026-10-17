@@ -30,6 +30,7 @@ import { jstDate } from '../domain/time';
 import { isBeforeActive, STAGE_LABELS, stageCounts, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
+import { normalizeEmail } from '../lib/mailto';
 import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { matchClient, staffClientMap } from '../lib/search';
@@ -119,6 +120,12 @@ export default function ClientsPage() {
       setError('郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません。空でも構いません）');
       return;
     }
+    // 紹介元のメールアドレス（任意。ADR-0017）：全角・前後の空白を直し、形が合わなければ保存しない
+    const referrerEmail = normalizeEmail(form.referrer.email);
+    if (referrerEmail === null) {
+      setError('紹介元のメールアドレスの形ではありません（例 name@example.com）。空でも構いません');
+      return;
+    }
     // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
     if (nameTaken(data.clients, (x) => x.displayName, form.displayName, form.id)) {
       setError(`「${form.displayName.trim()}」と同じ名前の${terms.client}がいます。名前を変えてください`);
@@ -131,6 +138,7 @@ export default function ClientsPage() {
           {
             ...form,
             allowedStaffIds: allowed,
+            referrer: { ...form.referrer, email: referrerEmail },
             // 欄を開いた後に「まとめて地図に置く」が書いた位置・住所は、欄で触っていなければ残す（ADR-0016）
             place: {
               ...keepStorePlace(
@@ -502,6 +510,18 @@ export default function ClientsPage() {
                 maxLength={100}
                 placeholder="電話・メールなど"
                 onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, contact: e.target.value } })}
+              />
+            </label>
+            <label>
+              紹介元のメールアドレス（任意）
+              <input
+                type="email"
+                value={form.referrer.email}
+                maxLength={254}
+                autoComplete="off"
+                placeholder="name@example.com"
+                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, email: e.target.value } })}
+                data-testid="client-referrer-email"
               />
             </label>
             <label>

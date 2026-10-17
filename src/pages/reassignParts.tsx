@@ -9,8 +9,9 @@ import {
   UserRoundCheck,
   X,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FLOATING_EVENT, useFloatingEdge } from '../components/floating';
+import { MailButton, MailLengthNote } from '../components/mailParts';
 import { WeightSlider } from '../components/parts';
 import { Hint, SidePanel, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
@@ -18,6 +19,8 @@ import type { ContactList, ContactVisit, ReassignDiff } from '../contracts/reass
 import { copyText } from '../lib/clipboard';
 import { deltaText, r0 } from '../lib/common';
 import { allContactsText, type ContactWords, clientMessages, clock, staffMessage } from '../lib/contacts';
+import { NO_EMAIL } from '../lib/mail';
+import type { BuiltMail } from '../lib/mailto';
 import { STAY_WEIGHT_DEFAULT } from '../reassign';
 
 /** 案A・案B の比べる数（元の案との差と点数） */
@@ -212,6 +215,7 @@ export function ContactPanel({
   left = [],
   words,
   terms,
+  staffMail,
   onCopied,
   onClose,
 }: {
@@ -220,6 +224,11 @@ export function ContactPanel({
   left?: LeftContact[];
   words: ContactWords;
   terms: Terms;
+  /**
+   * 担当が変わった〈スタッフ〉あてのメール（PRD D94。ADR-0017）：スタッフの ID と連絡文から、メールアプリを開く URL を作る。
+   * メールアドレスが無ければ null（ボタンは押せず理由を出す）。渡さなければメールのボタンを出さない
+   */
+  staffMail?: (staffId: string, text: string) => BuiltMail | null;
   /** コピーしたあと（ok：できたか） */
   onCopied: (ok: boolean, what: string) => void;
   onClose: () => void;
@@ -387,12 +396,27 @@ export function ContactPanel({
               </h3>
               {list.staff.map((c) => {
                 const text = staffMessage(c, words);
+                const mail = staffMail?.(c.staffId, text) ?? null;
                 return (
                   <ContactMessage
                     key={c.staffId}
                     text={text}
                     label={`${words.staffName(c.staffId)}さんへの連絡文`}
                     onCopy={() => copy(text, `${words.staffName(c.staffId)}さんへの連絡文`)}
+                    extra={
+                      staffMail && (
+                        <>
+                          <MailButton
+                            mail={mail}
+                            label="メール"
+                            why={NO_EMAIL}
+                            srLabel={`${words.staffName(c.staffId)}さんへのメールを作る`}
+                            testId="contact-mail"
+                          />
+                          <MailLengthNote mail={mail} />
+                        </>
+                      )
+                    }
                   />
                 );
               })}
@@ -418,15 +442,29 @@ export function ContactPanel({
   );
 }
 
-function ContactMessage({ text, label, onCopy }: { text: string; label: string; onCopy: () => void }) {
+function ContactMessage({
+  text,
+  label,
+  onCopy,
+  extra,
+}: {
+  text: string;
+  label: string;
+  onCopy: () => void;
+  /** コピーの横に並べるもの（メールのボタン。PRD D94） */
+  extra?: ReactNode;
+}) {
   return (
     <div className="contact-msg">
       <pre title={label}>{text}</pre>
-      <button type="button" className="btn btn-small no-print" onClick={onCopy} aria-label={`${label}をコピー`}>
-        <WithIcon icon={ClipboardCopy} size={14}>
-          コピー
-        </WithIcon>
-      </button>
+      <div className="contact-msg-acts no-print">
+        <button type="button" className="btn btn-small" onClick={onCopy} aria-label={`${label}をコピー`}>
+          <WithIcon icon={ClipboardCopy} size={14}>
+            コピー
+          </WithIcon>
+        </button>
+        {extra}
+      </div>
     </div>
   );
 }

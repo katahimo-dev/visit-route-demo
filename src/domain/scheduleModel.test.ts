@@ -96,6 +96,7 @@ describe('warningsOf', () => {
     requirements: [],
     preferences: [],
     lastDay: null,
+    email: '',
   };
   const slots = [
     { start: '09:00', end: '12:00' },

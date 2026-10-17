@@ -14,6 +14,7 @@ import {
   Hourglass,
   LayoutGrid,
   ListChecks,
+  Mail,
   Map as MapIcon,
   MapPin,
   PanelRightClose,
@@ -41,6 +42,7 @@ import { useDay } from '../app/day';
 import { DayLines } from '../components/dayLines';
 import { MapDock } from '../components/MapDock';
 import { MenuButton, type MenuItem } from '../components/MenuButton';
+import { useMailLimit } from '../components/mailParts';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
@@ -79,6 +81,7 @@ import { copyDayVisits } from '../lib/copyDay';
 import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
 import { keepLeaveVisits } from '../lib/leaves';
+import { contactMailText, mailTo } from '../lib/mail';
 import { planRunOf, planStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
@@ -106,6 +109,7 @@ import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
 import { AbsencePanel, CandidateBox, leftReasonText, ReassignBar } from './absenceParts';
+import { DayMailPanel } from './mailPanels';
 import {
   AchievementList,
   achievementSummary,
@@ -251,7 +255,7 @@ export default function PlanPage() {
   const narrowOrPrint = useNarrowOrPrint();
   const shownView = narrowOrPrint && colView === 'timeline' ? 'order' : colView;
   /** 右の欄（PRD D63）：'detail'＝詳しく、'tune'＝条件を調整する */
-  const [panel, setPanel] = useState<'detail' | 'tune' | null>(null);
+  const [panel, setPanel] = useState<'detail' | 'tune' | 'mail' | null>(null);
   /** 地図を時間軸の横に出すか（1280px 以上。畳める）。狭い画面は下に置き、画面の外なら MapDock */
   const wideMap = useMedia(WIDE_MAP_QUERY);
   const [mapOpen, setMapOpen] = useState(true);
@@ -1264,6 +1268,8 @@ export default function PlanPage() {
   const annealRecommended =
     !!reassignInfo && (rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert' && !anneal;
   const contactsTotal = contactCount(contacts) + left.length;
+  /** この端末の mailto の長さの目安（ADR-0017） */
+  const mailLimit = useMailLimit();
   const contactWords = {
     day: dayWordOf(date, jstDate(Date.now())),
     staffWord: terms.staff,
@@ -2293,6 +2299,10 @@ export default function PlanPage() {
           <WithIcon icon={Plus}>訪問を追加</WithIcon>
         </button>
         <MenuButton label="案を変える" icon={Sparkles} items={menuItems} testId="plan-menu" />
+        {/* 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017。主ボタンにはしない） */}
+        <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
+          <WithIcon icon={Mail}>メールで送る</WithIcon>
+        </button>
         {(visits.length > 0 || m.leaveVisits.length > 0) && (
           <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
             {(
@@ -2669,6 +2679,8 @@ export default function PlanPage() {
           )}
         </SidePanel>
       )}
+      {panel === 'mail' && <DayMailPanel data={data} date={date} onClose={() => setPanel(null)} />}
+
       {panel === 'tune' && (
         <SidePanel icon={SlidersHorizontal} title="条件を調整する" onClose={() => setPanel(null)} focusPanel>
           <div className="stack" data-testid="plan-tune-panel">
@@ -2720,6 +2732,9 @@ export default function PlanPage() {
           left={leftContacts}
           words={contactWords}
           terms={terms}
+          staffMail={(staffId, text) =>
+            mailTo(staffById.get(staffId)?.email ?? '', contactMailText(data.org, date, text), mailLimit)
+          }
           onCopied={(ok, what) =>
             toast(ok ? `${what}をコピーしました` : 'コピーできませんでした。文を選んでコピーしてください')
           }

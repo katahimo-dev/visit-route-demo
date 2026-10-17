@@ -9,6 +9,9 @@
 //   CHROMIUM   … Chromium の実行ファイル（既定：Playwright の既定の場所）
 //   BASE       … 開くサイト（既定：http://localhost:4183/）
 //   OUT_DIR    … スクリーンショットの置き場所（既定：OS の一時フォルダの e2e-drag）
+//   FAKE_NOW   … ページの時計をこの時刻に止める（ISO 8601。例 2026-10-21T12:00:00+09:00）。既定は、実行した日から見て
+//                次の水曜（今日が水曜なら今日）の日本時間 12:00。アプリは「今日」を日本時間で決め、今日より前の訪問は動かせないので、
+//                週の途中に止めて今週に今日より後の日を残す（日曜に実行すると今週に動かし先が無くなるため）
 // 終了コード：全部動けば 0、動かないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const fs = require('node:fs');
 const os = require('node:os');
@@ -29,7 +32,22 @@ function loadPlaywright() {
 const { chromium } = loadPlaywright();
 const BASE = process.env.BASE || 'http://localhost:4183/';
 const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-drag');
-const TODAY = new Date().toISOString().slice(0, 10);
+const JST = 9 * 3600 * 1000;
+/** 次の水曜（今日が水曜なら今日）の日本時間 12:00 */
+function nextWednesdayNoonJst(now) {
+  const j = new Date(now.getTime() + JST);
+  const add = (3 - j.getUTCDay() + 7) % 7;
+  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
+}
+const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
+if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
+/** テストの「今日」（アプリと同じく日本時間で決める） */
+const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
+/** 動かし先が見つからないときは、null のまま進まず分かる言葉で止める */
+function need(x, what) {
+  if (!x) throw new Error(`${what}が見つかりません（今日＝${TODAY}。FAKE_NOW で週の途中の日にしてください）`);
+  return x;
+}
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const withTimeout = (p, ms, what) =>
@@ -95,6 +113,7 @@ async function weekTimeline(page, by) {
     }
     return null;
   });
+  need(vid, 'つかめる週の帯');
   const band = page.locator(`[data-testid="week-band"][data-visit="${vid}"]`);
   const from = await band.evaluate((el) => el.closest('[data-testid="week-col"]').dataset.date);
   const cols = page.getByTestId('week-col');
@@ -106,6 +125,7 @@ async function weekTimeline(page, by) {
       break;
     }
   }
+  need(col, `動かし先の日（${from} 以外で ${TODAY} 以降の列）`);
   const open = await page
     .getByTestId('week-client-picker-input')
     .getAttribute('aria-expanded')
@@ -155,6 +175,7 @@ async function weekClients(page) {
       }
     }
   }
+  need(cell, `動かし先のマス（同じ〈利用者さん〉の、元の日以外で ${TODAY} 以降の日）`);
   const r = await realDrag(
     page,
     item,
@@ -217,6 +238,9 @@ async function planMove(page, view, name) {
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
+  // ページの時計を週の途中の日本時間の日中に止める（FAKE_NOW。アプリの「今日」とテストの TODAY をそろえる）
+  await page.clock.setFixedTime(NOW);
+  console.log(`ページの時刻：${NOW.toISOString()}（今日＝${TODAY}）`);
   const errors = [];
   page.on('pageerror', (e) => {
     errors.push(String(e));
@@ -254,7 +278,7 @@ async function planMove(page, view, name) {
         break;
       }
     }
-    await d.click();
+    await need(d, `${TODAY} より後の月のマス`).click();
     await page.waitForURL(/#\/plan/);
     await planMove(page, 'timeline', 'month-day');
   });

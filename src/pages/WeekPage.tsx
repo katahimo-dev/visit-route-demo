@@ -1,4 +1,14 @@
-import { CalendarClock, ChevronLeft, ChevronRight, Move, RefreshCw, Sparkles, TriangleAlert, X } from 'lucide-react';
+import {
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  Mail,
+  Move,
+  RefreshCw,
+  Sparkles,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
@@ -51,6 +61,7 @@ import {
   weekDates,
   weekDay,
 } from '../lib/week';
+import { WeekMailPanel } from './mailPanels';
 import './week.css';
 
 /**
@@ -114,6 +125,8 @@ export default function WeekPage() {
   const clientSel = useMemo(() => selectionOf(clientParam), [clientParam]);
   const [draft, setDraft] = useState<MoveDraft | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
+  const [mailOpen, setMailOpen] = useState(false);
   const [hover, setHover] = useState<{ date: string; start: number } | null>(null);
   /** つかんでいる訪問（チップの強調・「入れる人」に使う） */
   const [dragId, setDragId] = useState<string | null>(null);
@@ -717,6 +730,14 @@ export default function WeekPage() {
       ) : tab === 'table' ? (
         table && (
           <div className="card week-card">
+            <div className="row week-mail-row">
+              {/* 担当ごとの週の予定をメールアプリで開く（PRD D93。主ボタンにはしない） */}
+              <button type="button" className="btn btn-small" onClick={() => setMailOpen(true)} data-testid="week-mail">
+                <WithIcon icon={Mail} size={14}>
+                  週の予定をメールで送る
+                </WithIcon>
+              </button>
+            </div>
             <div className="week-table-legend" data-testid="week-legend">
               <span className="row week-table-legend-rows">
                 <LoadRowsSample />
@@ -1066,6 +1087,7 @@ export default function WeekPage() {
           </p>
         </SidePanel>
       )}
+      {mailOpen && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
     </div>
   );
 }

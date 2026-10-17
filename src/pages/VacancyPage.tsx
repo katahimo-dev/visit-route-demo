@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ConditionsEditor } from '../components/conditions';
 import { LevelLegend } from '../components/glance';
+import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
 import { PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
@@ -41,6 +42,8 @@ import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { type InquiryDayMark, type InquiryRow, inquiryDayLevel, inquiryRows, vacancyLevel } from '../lib/glance';
+import { referrerRecipients, vacancySubject } from '../lib/mail';
+import { buildBccMails } from '../lib/mailto';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
 import { insertAllIntoPlans, weekStart } from '../lib/week';
@@ -275,6 +278,26 @@ export default function VacancyPage() {
   const noticeDuration = noticeType ? noticeType.durationMinutes : durationOk ? durationNum : null;
   const noticeSpan = useMemo(() => noticeRange(noticePeriod, today), [noticePeriod, today]);
   const [notice, setNotice] = useState<{ text: string; noPlan: string[] } | null>(null);
+  // 紹介元へ BCC で一斉に（PRD D95。ADR-0017）：宛先は紹介元のメールを重複なく。外した宛先（小文字）だけを画面の中で持つ
+  const referrers = useMemo(() => referrerRecipients(data.clients), [data.clients]);
+  const [mailOff, setMailOff] = useState<ReadonlySet<string>>(new Set());
+  const mailBcc = referrers.filter((r) => !mailOff.has(r.email.toLowerCase())).map((r) => r.email);
+  const mailLimit = useMailLimit();
+  // 宛先が多いと mailto が長すぎるので、目安の長さに収まるよう宛先を分けて複数のボタンにする（PRD D95・D96）
+  const noticeMails =
+    notice && mailBcc.length > 0
+      ? buildBccMails({ bcc: mailBcc, subject: vacancySubject(data.org), full: notice.text }, mailLimit)
+      : [];
+  const copyRecipients = async () =>
+    toast(
+      (await copyText(mailBcc.join(', ')))
+        ? `宛先（${mailBcc.length}件）をコピーしました。メールの BCC に貼り付けてください`
+        : 'コピーできませんでした。文を選んでコピーしてください',
+    );
+  const noticeMailWhy =
+    referrers.length === 0
+      ? `紹介元のメールアドレスが未登録です（${terms.client}の画面の「紹介元のメールアドレス」で入れられます）`
+      : '宛先を1つ以上選んでください';
   useEffect(() => {
     if (noticeDuration === null) {
       setNotice(null);
@@ -720,6 +743,71 @@ export default function VacancyPage() {
               <button type="button" className="btn" onClick={copyNotice} data-testid="copy-notice">
                 <WithIcon icon={Copy}>案内文をコピー</WithIcon>
               </button>
+            </div>
+            <div className="stack notice-mail" style={{ gap: 6 }} data-testid="notice-mail">
+              {referrers.length > 0 && (
+                <fieldset className="notice-mail-to">
+                  <legend>紹介元へメール（BCC で一斉。宛先どうしにアドレスは見えません）</legend>
+                  {referrers.map((r) => {
+                    const key = r.email.toLowerCase();
+                    return (
+                      <label key={key} className="check">
+                        <input
+                          type="checkbox"
+                          checked={!mailOff.has(key)}
+                          onChange={(e) =>
+                            setMailOff((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.delete(key);
+                              else next.add(key);
+                              return next;
+                            })
+                          }
+                          style={{ width: 'auto' }}
+                          data-testid="notice-mail-pick"
+                        />
+                        {r.names.join('・') || '（名前なし）'} <span className="sub">{r.email}</span>
+                      </label>
+                    );
+                  })}
+                </fieldset>
+              )}
+              <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                {noticeMails.length === 0 ? (
+                  <MailButton mail={null} label="紹介元へメール（BCC）" why={noticeMailWhy} testId="notice-mail-open" />
+                ) : (
+                  noticeMails.map((g, i) => (
+                    <span key={g.bcc[0]} className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                      <MailButton
+                        mail={g.mail}
+                        label={`紹介元へメール（${noticeMails.length > 1 ? `${i + 1}/${noticeMails.length}・` : ''}BCC ${g.bcc.length}件）`}
+                        why={noticeMailWhy}
+                        testId="notice-mail-open"
+                      />
+                      <MailLengthNote mail={g.mail} />
+                    </span>
+                  ))
+                )}
+                {mailBcc.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() => void copyRecipients()}
+                    data-testid="notice-mail-copy-to"
+                  >
+                    <WithIcon icon={Copy} size={14}>
+                      宛先をコピー
+                    </WithIcon>
+                  </button>
+                )}
+              </div>
+              {noticeMails.length > 1 && (
+                <p className="sub" data-testid="notice-mail-split">
+                  宛先が多いので、メールアプリに渡せる長さに収まるよう {noticeMails.length}{' '}
+                  通に分けました。順に押してください。
+                </p>
+              )}
+              <MailNotice />
             </div>
           </>
         )}

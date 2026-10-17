@@ -4,7 +4,7 @@ import type { DemoData, ImportError } from '../contracts/data';
 import type { Condition, Item } from '../contracts/rules';
 import { createDemoData } from '../seed';
 import { isImportError } from '../store';
-import { MAX_FILE_BYTES, MAX_ROWS } from './importBook';
+import { MAX_FILE_BYTES, MAX_ROWS, prim } from './importBook';
 import { exportWorkbook, importWorkbook } from './index';
 import {
   condsToCell,
@@ -1167,7 +1167,7 @@ describe('最終勤務日・段階・紹介元・当日キャンセル・拘束�
               ...c,
               stage: 'ended' as const,
               active: false,
-              referrer: { name: '相談室（架空）', contact: '000', note: '返事待ち' },
+              referrer: { name: '相談室（架空）', contact: '000', note: '返事待ち', email: '' },
             }
           : c,
     ),
@@ -1242,5 +1242,80 @@ describe('最終勤務日・段階・紹介元・当日キャンセル・拘束�
     expect(ws.getRow(3).getCell(1).value).toBeNull();
     const r = ok(await importWorkbook(await toBuffer(withPlan), d));
     expect(r).toEqual(withoutPlans(d));
+  });
+});
+
+describe('メールアドレスの列（PRD D91。ADR-0017）', () => {
+  it('〈スタッフ〉と紹介元のメールアドレスが 書き出し → 読み込み で同じに戻る', async () => {
+    const d = base();
+    expect(d.staff.some((s) => s.email !== '')).toBe(true);
+    expect(d.clients.some((c) => c.referrer.email !== '')).toBe(true);
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.staff.map((s) => s.email)).toEqual(d.staff.map((s) => s.email));
+    expect(r.clients.map((c) => c.referrer.email)).toEqual(d.clients.map((c) => c.referrer.email));
+  });
+
+  it('列の無い古いブックは空。全角・前後の空白は直し、形の合わない値は行付きで止める', async () => {
+    const d = base();
+    const names = personSheetNames(d.org.terms);
+    const old = ok(
+      await editAndImport(d, (wb) => {
+        const sws = sheet(wb, names.staff);
+        sws.spliceColumns(col(sws, 'メールアドレス'), 1);
+        const cws = sheet(wb, names.client);
+        cws.spliceColumns(col(cws, '紹介元のメールアドレス'), 1);
+      }),
+    );
+    expect(old.staff.every((s) => s.email === '')).toBe(true);
+    expect(old.clients.every((c) => c.referrer.email === '')).toBe(true);
+    const fixed = ok(
+      await editAndImport(d, (wb) => {
+        const sws = sheet(wb, names.staff);
+        sws.getCell(2, col(sws, 'メールアドレス')).value = ' ｔａｒｏ＠ｅｘａｍｐｌｅ．ｃｏｍ ';
+        // Excel が自動で付けるリンク（mailto:）も読む
+        sws.getCell(3, col(sws, 'メールアドレス')).value = {
+          text: 'hana@example.com',
+          hyperlink: 'mailto:hana@example.com',
+        };
+      }),
+    );
+    expect(fixed.staff[0]!.email).toBe('taro@example.com');
+    expect(fixed.staff[1]!.email).toBe('hana@example.com');
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const cws = sheet(wb, names.client);
+        cws.getCell(3, col(cws, '紹介元のメールアドレス')).value = 'あおば相談室';
+      }),
+    );
+    expect(msg).toContain('3行目・『紹介元のメールアドレス』');
+  });
+});
+
+describe('リンクのセルの読み方（prim。ADR-0017）', () => {
+  it('表示が文字ならそれ、リッチテキストなら連結、無ければ mailto: 以降', () => {
+    expect(prim({ text: 'a@example.com', hyperlink: 'mailto:a@example.com' })).toBe('a@example.com');
+    expect(
+      prim({
+        text: { richText: [{ text: 'hana' }, { text: '@example.com' }] },
+        hyperlink: 'mailto:hana@example.com',
+      } as unknown as ExcelJS.CellValue),
+    ).toBe('hana@example.com');
+    expect(prim({ text: '', hyperlink: 'mailto:taro%2Bx@example.com?subject=x' })).toBe('taro+x@example.com');
+    expect(prim({ text: '', hyperlink: 'https://example.com/' })).toBeNull();
+  });
+
+  it('表示がリッチテキストのリンクのセルも、ブックから読める', async () => {
+    const d = base();
+    const names = personSheetNames(d.org.terms);
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const sws = sheet(wb, names.staff);
+        sws.getCell(2, col(sws, 'メールアドレス')).value = {
+          text: { richText: [{ text: 'rich' }, { text: '@example.com' }] },
+          hyperlink: 'mailto:rich@example.com',
+        } as unknown as ExcelJS.CellValue;
+      }),
+    );
+    expect(r.staff[0]!.email).toBe('rich@example.com');
   });
 });

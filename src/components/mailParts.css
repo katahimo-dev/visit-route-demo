@@ -1,0 +1,52 @@
+/* メール連携の部品（PRD D91〜D95。ADR-0017） */
+.mail-btn-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.mail-why {
+  font-size: 0.8rem;
+}
+.mail-note {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.mail-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mail-row {
+  display: grid;
+  grid-template-columns: minmax(8em, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.mail-row-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mail-row-summary {
+  text-align: right;
+}
+.mail-row-act {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.mail-notice {
+  margin: 0;
+}
