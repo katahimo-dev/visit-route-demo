@@ -5,6 +5,7 @@ import type { DemoData } from '../contracts/data';
 import type { Client, Org, Staff, Visit } from '../contracts/documents';
 import { weekday } from '../domain/time';
 import { type BuiltMail, buildMail, MAILTO_LIMIT, uniqueRecipients } from './mailto';
+import { dayStops, HOME_LABEL, legLinks, type RouteStop, tripLinks } from './mapsLink';
 import { type PrintDay, printDay } from './monthPrint';
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
@@ -66,14 +67,35 @@ function ruleLines(c: Client | undefined, includeKeys: boolean): string[] {
 
 const nameOf = (c: Client | undefined) => (c ? `${c.displayName}様` : '（不明）');
 
+/** 経路のリンクを作れない場所（〈利用者さん〉が見つからない） */
+const NO_PLACE = { address: '', lat: null, lng: null };
+
+/** 1日の経路のリンク（PRD D97。ADR-0018）：全行程（分けたときは「全行程 1/2」）と、区間ごと（前の場所→この訪問、最後は自宅まで） */
+export function dayRouteLinks(
+  staff: Pick<Staff, 'home' | 'travelMode'>,
+  visits: readonly MailVisit[],
+): { trip: string[]; legs: (string | null)[]; back: string | null } {
+  const stops: RouteStop[] = dayStops(
+    staff.home,
+    visits.map((v) => ({ label: nameOf(v.client), place: v.client?.place ?? NO_PLACE })),
+  );
+  const trip = tripLinks(stops, staff.travelMode).map((t) => `${t.label}（${t.from}→${t.to}）：${t.href}`);
+  const legs = legLinks(stops, staff.travelMode).map((l) =>
+    l.href ? `${l.to === HOME_LABEL ? '帰りの道順' : '道順'}（${l.from}から）：${l.href}` : null,
+  );
+  return { trip, legs: legs.slice(0, visits.length), back: legs[visits.length] ?? null };
+}
+
 /**
- * 日の予定（担当ごと。PRD D92）の件名・本文。full は 順番・時刻・〈利用者さん〉・住所・入り方・駐車場・注意（鍵は includeKeys のときだけ）。
- * 要点は2段（長い順に試す）：short＝順番・時刻・〈利用者さん〉・住所（鍵は includeKeys のときだけ残す）、
- * shorter＝順番・時刻・〈利用者さん〉だけ。「鍵の情報は…入れていません」は鍵のメモがある訪問があって鍵を入れないときだけ書く
+ * 日の予定（担当ごと。PRD D92）の件名・本文。full は 順番・時刻・〈利用者さん〉・住所・入り方・駐車場・注意（鍵は includeKeys のときだけ）と、
+ * 〈スタッフ〉の自宅・移動手段があれば Google マップの経路のリンク（全行程と区間ごと。PRD D97。ADR-0018）。
+ * short は長い順に試す段階：リンクがあるときは［全行程のリンクだけの全文、要点1＋全行程、要点2＋全行程、要点2（リンクなし）］、
+ * 無いときは［要点1、要点2］。要点1＝順番・時刻・〈利用者さん〉・住所（鍵は includeKeys のときだけ残す）、要点2＝順番・時刻・〈利用者さん〉だけ。
+ * 「鍵の情報は…入れていません」は鍵のメモがある訪問があって鍵を入れないときだけ書く。「本文をコピー」は full（区間ごとのリンクも入る）
  */
 export function dayMailText(
   org: Org,
-  staff: Pick<Staff, 'name'>,
+  staff: Pick<Staff, 'name'> & Partial<Pick<Staff, 'home' | 'travelMode'>>,
   date: string,
   source: PrintDay['source'],
   visits: readonly MailVisit[],
@@ -94,39 +116,64 @@ export function dayMailText(
     hasKeys && !keysIn
       ? [includeKeys ? '※長いため、鍵の情報は省きました。' : '※鍵の情報はメールに入れていません。']
       : [];
-  const full = [
-    ...head,
-    lead,
-    '',
-    ...visits.flatMap((v, i) => [line(v, i), ...ruleLines(v.client, includeKeys)]),
-    ...(keyNote(includeKeys).length > 0 ? ['', ...keyNote(includeKeys)] : []),
-    ...foot,
-  ].join('\n');
-  const short = [
-    ...head,
-    lead,
-    '',
-    // 鍵は「鍵の情報も入れる」を選んだときだけ、要点にも残す（選んだ人が要ると決めたもの）
-    ...visits.flatMap((v, i) => [
-      `${line(v, i)}${v.client?.place.address ? `（${v.client.place.address}）` : ''}`,
-      ...(includeKeys && v.client?.keyNote.trim() ? [`   鍵：${v.client.keyNote.replace(/\s*\n\s*/g, ' ')}`] : []),
-    ]),
-    '',
-    '※入り方・駐車場・注意は省きました。',
-    ...keyNote(includeKeys),
-    ...foot,
-  ].join('\n');
-  const shorter = [
-    ...head,
-    lead,
-    '',
-    ...visits.map(line),
-    '',
-    '※住所・入り方・駐車場・注意は省きました。',
-    ...keyNote(false),
-    ...foot,
-  ].join('\n');
-  return { subject, full, short: [short, shorter] };
+  const route =
+    staff.home && staff.travelMode
+      ? dayRouteLinks({ home: staff.home, travelMode: staff.travelMode }, visits)
+      : { trip: [], legs: [], back: null };
+  const hasRoute = route.trip.length > 0;
+  /** 全行程のリンク（本文の上。移動の分数・キロ数はアプリの目安で、Google マップで確かめる） */
+  const tripBlock = hasRoute ? ['■Google マップの道順', ...route.trip, ''] : [];
+  /** 区間ごとのリンクがあるか（全文に入れる） */
+  const hasLegs = route.legs.some((l) => l !== null) || route.back !== null;
+  const fullOf = (withLegs: boolean) =>
+    [
+      ...head,
+      lead,
+      '',
+      ...tripBlock,
+      ...visits.flatMap((v, i) => [
+        line(v, i),
+        ...ruleLines(v.client, includeKeys),
+        ...(withLegs && route.legs[i] ? [`   ${route.legs[i]}`] : []),
+      ]),
+      ...(withLegs && route.back ? ['', route.back] : []),
+      ...(!withLegs && hasLegs ? ['', '※長いため、区間ごとの道順は省きました。'] : []),
+      ...(keyNote(includeKeys).length > 0 ? ['', ...keyNote(includeKeys)] : []),
+      ...foot,
+    ].join('\n');
+  const shortOf = (withTrip: boolean) =>
+    [
+      ...head,
+      lead,
+      '',
+      ...(withTrip ? tripBlock : []),
+      // 鍵は「鍵の情報も入れる」を選んだときだけ、要点にも残す（選んだ人が要ると決めたもの）
+      ...visits.flatMap((v, i) => [
+        `${line(v, i)}${v.client?.place.address ? `（${v.client.place.address}）` : ''}`,
+        ...(includeKeys && v.client?.keyNote.trim() ? [`   鍵：${v.client.keyNote.replace(/\s*\n\s*/g, ' ')}`] : []),
+      ]),
+      '',
+      '※入り方・駐車場・注意は省きました。',
+      ...keyNote(includeKeys),
+      ...foot,
+    ].join('\n');
+  const shorterOf = (withTrip: boolean) =>
+    [
+      ...head,
+      lead,
+      '',
+      ...(withTrip ? tripBlock : []),
+      ...visits.map(line),
+      '',
+      `※住所・入り方・駐車場・注意${hasRoute && !withTrip ? '・道順' : ''}は省きました。`,
+      ...keyNote(false),
+      ...foot,
+    ].join('\n');
+  const full = fullOf(true);
+  if (!hasRoute) return { subject, full, short: [shortOf(false), shorterOf(false)] };
+  // 長いときは全行程のリンクを優先し、区間ごとを先に外す（PRD D97）
+  const stages = [...(hasLegs ? [fullOf(false)] : []), shortOf(true), shorterOf(true), shorterOf(false)];
+  return { subject, full, short: stages };
 }
 
 /** 週の1日（1人あて） */

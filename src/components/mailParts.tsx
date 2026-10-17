@@ -97,7 +97,7 @@ export function MailLengthNote({ mail, testId }: { mail: BuiltMail | null; testI
     <span className="mail-note" data-testid={testId}>
       <span className="sub">
         {mail.mode === 'short'
-          ? '長いため、メールには要点だけを入れます。すべての本文は「本文をコピー」で貼り付けてください'
+          ? '長いため、メールには一部（要点など。省いたものは本文の終わりに書きます）だけを入れます。すべての本文は「本文をコピー」で貼り付けてください'
           : '長いため、本文はメールに入れません。「本文をコピー」でメールに貼り付けてください'}
       </span>
       <button type="button" className="btn btn-small" onClick={() => void copy()}>

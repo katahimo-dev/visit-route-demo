@@ -52,7 +52,8 @@ export function DayMailPanel({ data, date, onClose }: { data: DemoData; date: st
           <>
             <p data-testid="day-mail-source">
               <strong>{sourceWord(day.source)}</strong>
-              の担当で、{terms.staff}ごとに 順番・時刻・{terms.client}・住所・入り方・駐車場・注意 を本文に入れます。
+              の担当で、{terms.staff}ごとに 順番・時刻・{terms.client}・住所・入り方・駐車場・注意 と、Google
+              マップの道順のリンク（1日の全行程と区間ごと。{terms.staff}の自宅と移動手段から）を本文に入れます。
             </p>
             <label className="check">
               <input

@@ -2,6 +2,7 @@ import { ArrowLeft, Car, Clock, Info, MapPin, Smartphone, Sparkles } from 'lucid
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { MapsLink, VisitRouteLinks } from '../components/mapsLinks';
 import { type MapPoint, RouteMap } from '../components/RouteMap';
 import { Empty, WithIcon } from '../components/ui';
 import { VisitRules } from '../components/VisitRules';
@@ -9,6 +10,7 @@ import { timesOf } from '../domain/scheduleModel';
 import { minutesToHhmm } from '../domain/time';
 import { colorOf, initialOf } from '../lib/colors';
 import { AI_LINE, attempt, dateText, hasLocation, own, r0, TRAVEL_MODE_LABELS } from '../lib/common';
+import { dayStops, HOME_LABEL, tripLinks } from '../lib/mapsLink';
 import { useDayModel } from '../lib/useDayModel';
 import { scheduleRoute } from '../matching';
 import './schedule.css';
@@ -58,6 +60,17 @@ export default function StaffViewPage() {
     if (c && hasLocation(c.place))
       points.push({ lat: c.place.lat, lng: c.place.lng, label: initialOf(c.displayName), color: colorOf(c.color) });
   }
+  // Google マップの全行程（自宅→訪問…→自宅。経由地が多ければ分ける。PRD D99。ADR-0018）
+  const stops = me
+    ? dayStops(
+        me.home,
+        ids.map((id) => {
+          const c = clientById.get(visitById.get(id)?.clientId ?? '');
+          return { label: c?.displayName ?? '（不明）', place: c?.place ?? { address: '', lat: null, lng: null } };
+        }),
+      )
+    : [];
+  const trips = me ? tripLinks(stops, me.travelMode) : [];
   const line = { points: points.map(({ lat, lng }) => ({ lat, lng })), color: AI_LINE };
   const total = [...timing.values()].reduce((s, t) => s + (t.travel ?? 0), 0);
 
@@ -99,10 +112,25 @@ export default function StaffViewPage() {
               )}
             </div>
             {points.length > 0 && <RouteMap points={points} lines={[line]} height={240} />}
+            {trips.length > 0 && (
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }} data-testid="sv-trip">
+                {trips.map((t) => (
+                  <MapsLink
+                    key={t.href}
+                    href={t.href}
+                    label={`Google マップで${t.label}（${t.from}から${t.to}まで）を開く`}
+                    testId="maps-trip"
+                  >
+                    {trips.length > 1 ? `${t.label}を開く` : '1日の全行程を開く'}
+                  </MapsLink>
+                ))}
+              </div>
+            )}
             <div className="card">
               {ids.length === 0 && <Empty icon={MapPin}>今日の訪問はありません</Empty>}
-              {ids.map((id) => {
+              {ids.map((id, i) => {
                 const v = visitById.get(id);
+                const prev = stops[i];
                 const c = v ? clientById.get(v.clientId) : undefined;
                 const t = timing.get(id);
                 return (
@@ -124,6 +152,13 @@ export default function StaffViewPage() {
                         </div>
                         {v?.note && <div className="sub">{v.note}</div>}
                         <VisitRules client={c} />
+                        <VisitRouteLinks
+                          to={c?.place}
+                          toName={`${c?.displayName ?? '（不明）'}さん`}
+                          from={prev?.place}
+                          fromName={prev && i > 0 ? `${prev.label}さん` : HOME_LABEL}
+                          mode={me.travelMode}
+                        />
                       </div>
                     </div>
                   </div>
@@ -132,7 +167,8 @@ export default function StaffViewPage() {
             </div>
             <p className="sub with-icon">
               <Info size={14} aria-hidden="true" />
-              移動時間は直線距離からの目安です。記録はデモにはありません。
+              移動時間は直線距離からの目安です。道順のリンクは Google マップを開くだけで、時間・距離は Google
+              マップで確かめてください。記録はデモにはありません。
             </p>
           </>
         )}

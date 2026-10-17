@@ -43,6 +43,7 @@ import { DayLines } from '../components/dayLines';
 import { MapDock } from '../components/MapDock';
 import { MenuButton, type MenuItem } from '../components/MenuButton';
 import { useMailLimit } from '../components/mailParts';
+import { VisitRouteLinks } from '../components/mapsLinks';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
@@ -82,6 +83,7 @@ import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
 import { keepLeaveVisits } from '../lib/leaves';
 import { contactMailText, mailTo } from '../lib/mail';
+import { HOME_LABEL } from '../lib/mapsLink';
 import { planRunOf, planStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
@@ -394,6 +396,27 @@ export default function PlanPage() {
   const clientOf = (visitId: string) => {
     const v = visitById.get(visitId);
     return v ? clientById.get(v.clientId) : undefined;
+  };
+  /**
+   * 訪問の詳細の経路のリンク（PRD D100。ADR-0018）：担当の今の案の順番で、前の場所（前の訪問先、1件目は担当の自宅）から・今いる場所から。
+   * 担当の決まっていない訪問は出さない
+   */
+  const routeLinksOf = (id: string, sid: string | null) => {
+    const s = sid ? staffById.get(sid) : undefined;
+    if (!s || !sid) return null;
+    const order = own(routes, sid) ?? [];
+    const i = order.indexOf(id);
+    if (i < 0) return null;
+    const prevClient = i > 0 ? clientOf(order[i - 1] ?? '') : undefined;
+    return (
+      <VisitRouteLinks
+        to={clientOf(id)?.place}
+        toName={clientOf(id)?.displayName ?? '（不明）'}
+        from={i > 0 ? prevClient?.place : s.home}
+        fromName={i > 0 ? (prevClient?.displayName ?? '（不明）') : HOME_LABEL}
+        mode={s.travelMode}
+      />
+    );
   };
   const visitLabel = (id: string) =>
     `${visitById.get(id)?.earliestStart ?? ''} ${clientOf(id)?.displayName ?? '（不明）'}`;
@@ -1563,6 +1586,7 @@ export default function PlanPage() {
         detail={
           <>
             <VisitRules client={clientOf(id)} />
+            {routeLinksOf(id, ownerId)}
             <ReasonBox explain={explained.get(id)} />
           </>
         }
@@ -1647,6 +1671,7 @@ export default function PlanPage() {
           </div>
           {tagsOf(id)}
           <VisitRules client={client} />
+          {routeLinksOf(id, sid)}
           <ReasonBox explain={explained.get(id)} />
         </>
       ),
