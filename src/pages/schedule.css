@@ -1,27 +1,10 @@
 /* 予定の訪問の一覧・訪問の入力・スタッフ本人の画面・稼働時間 */
 
-/* 訪問の一覧（畳める。初期は畳む） */
+/* 訪問の一覧（予定の画面の表示の「一覧」。PRD D63） */
 .visit-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.visit-list-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  cursor: pointer;
-  list-style: none;
-}
-.visit-list-summary::-webkit-details-marker {
-  display: none;
-}
-.visit-list-chevron {
-  transition: transform 0.15s;
-}
-.visit-list[open] .visit-list-chevron {
-  transform: rotate(90deg);
 }
 
 /* 訪問の一覧：時間列 */

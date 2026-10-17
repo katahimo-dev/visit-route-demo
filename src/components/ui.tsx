@@ -177,6 +177,7 @@ export function SidePanel({
   narrow = false,
   fallbackFocus,
   returnFocus,
+  focusPanel = false,
 }: {
   icon: LucideIcon;
   title: ReactNode;
@@ -187,6 +188,8 @@ export function SidePanel({
   returnFocus?: () => HTMLElement | null | undefined;
   /** 閉じたとき、開く前にフォーカスのあった要素が画面から消えていたら、代わりにフォーカスする要素 */
   fallbackFocus?: () => HTMLElement | null | undefined;
+  /** 開いたとき、最初の入力欄でなく欄そのものにフォーカスする（上に読む物があり、入力欄が下の方にある欄） */
+  focusPanel?: boolean;
   /** 中身が少ない欄（稼働時間など）は幅を狭くする */
   narrow?: boolean;
   onClose: () => void;
@@ -202,9 +205,11 @@ export function SidePanel({
   fallbackRef.current = fallbackFocus;
   const returnRef = useRef(returnFocus);
   returnRef.current = returnFocus;
+  /** 開いたときの値だけを使う */
+  const focusPanelRef = useRef(focusPanel);
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
-    const first = ref.current?.querySelector<HTMLElement>('input, select, textarea');
+    const first = focusPanelRef.current ? null : ref.current?.querySelector<HTMLElement>('input, select, textarea');
     if (first) first.focus();
     else ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {

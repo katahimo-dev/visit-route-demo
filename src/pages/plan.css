@@ -18,13 +18,96 @@
   color: var(--primary-dark);
 }
 
-/* 上部のボタン列と、作成時刻などの小さな1行 */
+/*
+ * 日の画面の並び（PRD D63）：見出し → 1行のまとめ → あるときだけの帯 → 操作の行 → 本体と地図。
+ * ドラッグ中は本体より上の高さを変えない（帯・まとめはドラッグで増減しない。メニューは浮かせて出す）
+ */
+.plan-page {
+  gap: 12px;
+}
+.plan-oneline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding: 8px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+.plan-oneline strong {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.plan-oneline-title {
+  color: var(--sub);
+  font-weight: 700;
+}
+.plan-oneline-score strong {
+  font-size: 1.25rem;
+  color: var(--primary-dark);
+}
+.plan-oneline-score .chip {
+  margin-left: 4px;
+}
+.plan-oneline-more {
+  margin-left: auto;
+}
+.plan-oneline .link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--primary-dark);
+  cursor: pointer;
+}
+.plan-oneline .link-btn:hover {
+  text-decoration: underline;
+}
+/* あるときだけの帯 */
+.plan-band {
+  margin: 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  border: 1.5px solid #f2c4b9;
+}
+.plan-band.is-warn {
+  background: #fbefd6;
+  border-color: #ecc97e;
+  color: #7a5208;
+}
+p.plan-band.error {
+  background: #fbe1dd;
+  border-color: #efb3a8;
+}
+/* 操作の行 */
 .plan-toolbar {
   flex-wrap: wrap;
   gap: 8px;
 }
-.plan-toolbar .hint {
+.plan-toolbar .segmented {
+  align-self: center;
+}
+.plan-toolbar > .hint {
   margin-left: auto;
+}
+.plan-progress {
+  /* 操作の行では次の行に1本で出す（使い方の位置を動かさない） */
+  flex-basis: 100%;
+  order: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.plan-progress progress {
+  width: 160px;
 }
 .plan-meta {
   display: inline-flex;
@@ -32,6 +115,42 @@
   gap: 4px;
   color: var(--sub);
   font-size: 0.75rem;
+}
+/* 本体（時間軸・順番・一覧）と地図。1280px 以上は横に並べ（地図は上に貼りつく）、畳める */
+.plan-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.plan-body {
+  min-width: 0;
+}
+@media (min-width: 1280px) {
+  .plan-main:not(.is-no-map) {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 32%);
+  }
+  .plan-main.is-map-closed {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .plan-map {
+    position: sticky;
+    top: 16px;
+  }
+}
+.plan-map.is-closed {
+  display: flex;
+}
+.plan-map-open {
+  writing-mode: vertical-rl;
+  padding: 12px 8px;
+  gap: 6px;
+}
+.plan-map-open svg {
+  transform: rotate(90deg);
+}
+.plan-form {
+  scroll-margin-top: 16px;
 }
 
 /* 色の丸・列の見出し */
@@ -772,14 +891,18 @@
   padding: 10px 14px;
 }
 
-/* 担当ごとの表示の切り替え（時間軸／順番。PRD D58）。狭い幅・印刷では順番だけなので出さない */
+/* 表示の切り替え（時間軸／順番／一覧。PRD D58・D63）。狭い幅・印刷では時間軸の代わりに順番なので、時間軸のボタンを出さない */
 @media (max-width: 900px) {
-  .plan-view-toggle {
+  .plan-view-toggle .plan-view-timeline {
     display: none;
+  }
+  .plan-view-toggle .plan-view-timeline + button {
+    border-left: 0;
   }
 }
 @media print {
-  .plan-view-toggle {
+  .plan-view-toggle,
+  .plan-toolbar .menu-wrap {
     display: none;
   }
 }
