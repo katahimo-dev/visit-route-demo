@@ -172,6 +172,10 @@ export function ClientPicker({
     setMessage(null);
     onChange(selected.filter((x) => x !== id));
   };
+  /** まとめて選ぶと足される人（選んでいない人） */
+  const toAdd = base.filter((c) => !isSelected(c.id)).length;
+  /** 「この N人を選ぶ」を出すか：足す人がいて、上限（max）を超えないとき（超えるなら押せないので出さない） */
+  const canChooseAll = toAdd > 0 && (max === undefined || selected.length + toAdd <= max);
   /** 近道で絞った人をまとめて選ぶ（複数のとき。上限を超えるなら選ばない） */
   const chooseAll = () => {
     const add = base.map((c) => c.id).filter((id) => !isSelected(id));
@@ -328,7 +332,7 @@ export function ClientPicker({
         )}
         {shortcutBtn('recent', '最近選んだ人', recent.length)}
         {tentativeCount > 0 && shortcutBtn('tentative', '仮押さえの人', tentativeCount)}
-        {multiple && shortcut !== null && base.some((c) => !isSelected(c.id)) && (
+        {multiple && shortcut !== null && canChooseAll && (
           <button type="button" className="btn btn-small" onClick={chooseAll} data-testid={`${testId}-choose-all`}>
             この{base.length}人を選ぶ
           </button>
