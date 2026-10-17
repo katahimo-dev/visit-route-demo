@@ -1,22 +1,28 @@
 /* 時間軸の上の区間の横棒（稼働の見込み PRD D72・D77、日の画面の担当ごとの1日 PRD D84）。
-   塗りの模様は components/loadBar.css の is-st-*（訪問＝斜線・移動＝点々・待ち＝空きの緑） */
+   塗りは components/barMarks.css の .bar-seg（PRD D85。訪問＝濃い青・移動＝橙で高さ半分・待ちと空き＝淡い緑に細い枠・休み＝淡い灰） */
 .work-bar {
   position: relative;
   display: block;
   height: 12px;
-  border-radius: 6px;
-  /* 1時間ごとの目盛りの線（--hours＝軸の時間の数） */
+  border-radius: 3px;
+  background: var(--bar-track);
+}
+/* 1時間ごとの区切り（--hours＝軸の時間の数）：3段バーと同じ細い隙間を塗りの上に重ねる（PRD D85） */
+.work-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
   background: repeating-linear-gradient(
     90deg,
-    #f6f0eb 0 calc(100% / var(--hours, 13) - 1px),
-    #eadfd6 calc(100% / var(--hours, 13) - 1px) calc(100% / var(--hours, 13))
+    transparent 0 calc(100% / var(--hours, 13) - 2px),
+    var(--bar-gap) calc(100% / var(--hours, 13) - 2px) calc(100% / var(--hours, 13))
   );
 }
-/* 拘束の内訳（PRD D77）：訪問・移動・待ちを3段バーと同じ模様で（色は components/loadBar.css の is-st-*） */
+/* 拘束の内訳（PRD D77）：訪問・移動・待ちを3段バーと同じ塗りで（位置と高さは .bar-seg） */
 .work-part {
   position: absolute;
-  top: 0;
-  bottom: 0;
 }
 /* 拘束の外枠。上限を超える日は太い橙の枠 */
 .work-bar-frame {
@@ -26,13 +32,10 @@
   border: 1px solid rgba(0, 0, 0, 0.25);
   border-radius: 3px;
   pointer-events: none;
+  z-index: 3;
 }
 .work-bar.is-over .work-bar-frame {
   top: -3px;
   bottom: -3px;
   border: 2.5px solid var(--warn);
-}
-/* 勤務の時間帯の下地（PRD D84）：空きと同じ緑（区間の無い勤務の時間＝空いている。待ちと同じ「使える時間」）。勤務外は棒の地の灰 */
-.work-part.is-shift {
-  background: #5aa57a;
 }

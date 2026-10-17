@@ -1,5 +1,5 @@
 // 日の画面の1行のまとめの下の「担当ごとの1日」（PRD D84）。1人1行の細い横棒で、勤務の中の 訪問・移動・待ちと空き を
-// 稼働の見込み（PRD D77）と同じ色・模様で塗り（components/workBars の PartsBar）、誰が詰まっていて誰が空いているかを見せる。
+// 稼働の見込み（PRD D77）と同じ色・形で塗り（PRD D85）（components/workBars の PartsBar）、誰が詰まっていて誰が空いているかを見せる。
 // 行を押すとその人の列へ移る（onPick）。数字は title と読み上げ（lib/dayLine の dayLineText）。狭い幅では畳む
 import './dayLines.css';
 import { useState } from 'react';

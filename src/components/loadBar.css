@@ -1,6 +1,8 @@
 /* 日の混み具合バー（D54）と種類の積み上げバー（D53） */
-/* 3段（PRD D60・D82）：8〜12時・12〜16時・16〜20時（区切りは lib/barRows）。段ごとに左右の端に時刻、8時より前・20時以降があれば ◀・▶ */
+/* 3段（PRD D60・D82）：8〜12時・12〜16時・16〜20時（区切りは lib/barRows）。段ごとに左右の端に時刻、8時より前・20時以降があれば ◀・▶。
+   見た目（PRD D85）：1段＝1時間ずつ4ブロック、中身は連続の塗り。色・形の言葉は components/barMarks.css */
 .load-bar {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -28,48 +30,53 @@
   font-weight: 700;
   cursor: help;
 }
+/* 段の地（勤務外・働く人なし＝ほぼ背景のまま）。中身は components/barMarks.css の .bar-seg（連続の塗り）と .bar-hours（1時間の区切り） */
 .load-row-slots {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
-  height: 6px;
+  height: 8px;
   border-radius: 2px;
   overflow: hidden;
-  background: #efe6de;
+  background: var(--bar-track);
 }
+/* 案が無くて数えていない日：案なしと同じ破線の枠 */
 .load-bar.is-empty .load-row-slots {
-  background: repeating-linear-gradient(90deg, #efe6de, #efe6de 3px, transparent 3px, transparent 6px);
+  box-sizing: border-box;
+  border: 1px dashed var(--bar-noplan-line);
+  background: var(--bar-noplan);
 }
 .load-bar.is-sample {
   width: 120px;
 }
-.is-sample.load-slot {
-  background: #ddd5ce;
-}
-.load-slot,
-.load-swatch {
+/* 30分のマス：塗りは下の .bar-seg が持ち、マスは title（マウスを乗せたときの文）だけの透明な当たり */
+.load-slot {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-width: 0;
 }
-.load-slot + .load-slot {
-  border-left: 1px solid rgba(255, 255, 255, 0.55);
-}
-.is-off.load-slot,
-.is-off.load-swatch {
-  background: #ddd5ce;
-}
-.is-none.load-slot,
-.is-none.load-swatch {
-  background: repeating-linear-gradient(135deg, #c94a3a, #c94a3a 2px, #f0b3a9 2px, #f0b3a9 4px);
-}
-.is-one.load-slot,
-.is-one.load-swatch {
-  /* 空き 1人は点々（0人の斜線とは別の模様。色だけで区別しない） */
-  background: radial-gradient(circle, #fff 0.9px, transparent 1.2px) 0 0 / 3px 3px, #eaa142;
-}
-.is-many.load-slot,
-.is-many.load-swatch {
-  background: #5aa57a;
+/* 3段とも休みの日：3段の上に1枚の淡い灰と「休み」の文字を重ねる（PRD D85。6段に見えないように） */
+.load-bar-cover {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  /* 端の時刻の幅（.load-row-edge の 1.3em × 0.56rem）と隙間 2px を空ける */
+  left: calc(0.73rem + 2px);
+  right: calc(0.73rem + 2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  background: var(--bar-rest);
+  color: var(--bar-rest-ink);
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  pointer-events: none;
 }
 .load-legend {
   display: inline-flex;
@@ -83,12 +90,16 @@
   align-items: center;
   gap: 4px;
 }
+/* 凡例の見本（中に段と同じ .bar-seg を置く。地は段の地） */
 .load-swatch {
+  position: relative;
   display: inline-block;
   flex: none;
-  width: 14px;
+  width: 16px;
   height: 10px;
   border-radius: 2px;
+  overflow: hidden;
+  background: var(--bar-track);
 }
 .type-stack {
   display: flex;
@@ -102,37 +113,4 @@
 .type-stack-part {
   flex-basis: 0;
   min-width: 3px;
-}
-/* 〈スタッフ〉1人の時間帯ごとの状態（PRD D75〜D77）。空きは混み具合の「空き 2人以上」と同じ緑、勤務外は「働く人なし」と同じ灰。
-   色だけに頼らない：訪問は斜線・移動は点々・案なしは薄い縦の線・休みは横の線。空き・勤務外は無地（明るさで分ける。title・読み上げにも出す） */
-.is-st-visit.load-slot,
-.is-st-visit.load-swatch,
-.is-st-visit.work-part {
-  background: repeating-linear-gradient(135deg, #3d6fa8, #3d6fa8 2px, #8fb3d9 2px, #8fb3d9 4px);
-}
-.is-st-travel.load-slot,
-.is-st-travel.load-swatch,
-.is-st-travel.work-part {
-  background: radial-gradient(circle, #fff 0.9px, transparent 1.2px) 0 0 / 3px 3px, #eaa142;
-}
-.is-st-free.load-slot,
-.is-st-free.load-swatch,
-.is-st-free.work-part {
-  background: #5aa57a;
-}
-.is-st-noplan.load-slot,
-.is-st-noplan.load-swatch,
-.is-st-noplan.work-part {
-  /* 案なし（PRD D75 の追記）：空きの緑と分ける中立の薄い縦線 */
-  background: repeating-linear-gradient(90deg, #d6ccc3 0 1px, #f7f2ed 1px 3px);
-}
-.is-st-rest.load-slot,
-.is-st-rest.load-swatch,
-.is-st-rest.work-part {
-  background: linear-gradient(180deg, transparent 0 40%, #fff 40% 60%, transparent 60%), #a99d93;
-}
-.is-st-outside.load-slot,
-.is-st-outside.load-swatch,
-.is-st-outside.work-part {
-  background: #ddd5ce;
 }

@@ -16,6 +16,7 @@ import {
   inBar,
   loadEdgeTexts,
   placeOnRows,
+  rowRuns,
   withEdges,
 } from './barRows';
 
@@ -129,5 +130,32 @@ describe('loadEdgeTexts（混み具合の端の印）', () => {
       early: null,
       late: '20時以降：20:30〜21:00 空き 0人／働く 1人',
     });
+  });
+});
+
+describe('rowRuns（同じ状態が続く30分を1本にまとめる。PRD D85）', () => {
+  const at = (hhmm: string, level: string) => ({ start: m(hhmm), level });
+  it('続く同じ状態は1本、状態が変われば切る。left・width は段（4時間）に対する割合', () => {
+    const runs = rowRuns(
+      [at('08:00', 'free'), at('08:30', 'free'), at('09:00', 'visit'), at('09:30', 'visit'), at('10:00', 'travel')],
+      8,
+      12,
+    );
+    expect(runs).toEqual([
+      { left: 0, width: 60 / 240, level: 'free' },
+      { left: 60 / 240, width: 60 / 240, level: 'visit' },
+      { left: 120 / 240, width: 30 / 240, level: 'travel' },
+    ]);
+  });
+  it('段の外のマスは捨て、30分が抜けたところでは同じ状態でも切る（並びは時刻の順に直す）', () => {
+    const runs = rowRuns([at('11:30', 'rest'), at('07:30', 'rest'), at('10:30', 'rest'), at('12:00', 'rest')], 8, 12);
+    expect(runs).toEqual([
+      { left: 150 / 240, width: 30 / 240, level: 'rest' },
+      { left: 210 / 240, width: 30 / 240, level: 'rest' },
+    ]);
+  });
+  it('段いっぱいの同じ状態は幅1の1本（休みの日が細切れにならない）', () => {
+    const slots = Array.from({ length: 8 }, (_, i) => ({ start: 16 * 60 + i * BAR_STEP, level: 'rest' }));
+    expect(rowRuns(slots, 16, 20)).toEqual([{ left: 0, width: 1, level: 'rest' }]);
   });
 });

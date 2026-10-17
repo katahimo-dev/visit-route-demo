@@ -1,5 +1,7 @@
-// 日の混み具合バー（PRD D54。3段は D60・区切りは D82＝lib/barRows）と種類ごとの件数の積み上げバー（D53）。月間カレンダーの日のマスで使う。
-// 色だけに頼らない：空き 0人は斜線・1人は点々、マスごとの title と、まとめた読み上げの文（loadSummary）を出す
+// 日の混み具合バー（PRD D54。3段は D60・区切りは D82＝lib/barRows・見た目は D85）と種類ごとの件数の積み上げバー（D53）。
+// 月間カレンダーの日のマスで使う。色だけに頼らない：空き 0人は段いっぱい・1人は2/3・2人以上は1/3の高さ（下にそろえる）、
+// 30分ごとの title と、まとめた読み上げの文（loadSummary）を出す
+import './barMarks.css';
 import './loadBar.css';
 import type { VisitType } from '../contracts/documents';
 import type { DayLoadSlot } from '../contracts/vacancy';
@@ -13,6 +15,7 @@ import {
   barRowsOf,
   inBar,
   loadEdgeTexts,
+  rowRuns,
   withEdges,
 } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
@@ -27,7 +30,7 @@ export function loadLevel(x: Pick<DayLoadSlot, 'working' | 'free'>): LoadLevel {
   return 'many';
 }
 
-const STEP = 30;
+const STEP = BAR_STEP;
 const hm = (t: number) => timeText(minutesToHhmm(t));
 
 /** 「14:00〜14:30 空き 3人／働く 7人」 */
@@ -96,10 +99,33 @@ function Edge({ hour, side, title }: { hour: number; side: BarSide; title: strin
 export type BarSlot = { start: number; level: string; title: string };
 
 /**
- * 3段バー（PRD D60・D82。D75〜D77 で〈スタッフ〉の状態にも使う共通の部品）。段ごとに30分のマスを横いっぱいに並べ、
- * 左右の端に段の開始・終了の時刻を小さく出す。slots が null なら空の枠と emptyText（title・読み上げ）。
- * 読み上げは label（まとめの文）に端の印の文を足したもの。マスの大きさは親の幅に合わせて縮む（月のマス・週の表のマス）。
- * edges：8時より前・20時以降の印の title（無ければ時刻を出す）
+ * 段1つの中身（PRD D85）：同じ状態が続く30分を1本の連続した塗り（.bar-seg。時刻に比例した位置と幅）にまとめて描き、
+ * その上に透明な30分のマス（.load-slot。title だけ）を並べる。1時間ごとの区切りは .bar-hours の細い隙間
+ */
+function RowTrack({ slots, from, to }: { slots: readonly BarSlot[]; from: number; to: number }) {
+  return (
+    <span className="load-row-slots bar-hours">
+      {rowRuns(slots, from, to).map((r) => (
+        <span
+          key={r.left}
+          className={`bar-seg is-${r.level}`}
+          style={{ left: `${r.left * 100}%`, width: `${r.width * 100}%` }}
+          aria-hidden="true"
+        />
+      ))}
+      {slots.map((x) => (
+        <span key={x.start} className={`load-slot is-${x.level}`} title={x.title} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * 3段バー（PRD D60・D82・D85。D75〜D77 で〈スタッフ〉の状態にも使う共通の部品）。段ごとに 4時間を1時間ずつ4ブロックにし、
+ * 中身は時刻に比例した連続の塗り（30分のマスは title だけ）。左右の端に段の開始・終了の時刻を小さく出す。
+ * slots が null なら空の枠と emptyText（title・読み上げ）。読み上げは label（まとめの文）に端の印の文を足したもの。
+ * マスの大きさは親の幅に合わせて縮む（月のマス・週の表のマス）。edges：8時より前・20時以降の印の title（無ければ時刻を出す）。
+ * cover：3段の上に1枚で重ねる文字（〈スタッフ〉の3段とも休みの日の「休み」。3段が細切れに見えないように）
  */
 export function SlotBar({
   slots,
@@ -107,12 +133,14 @@ export function SlotBar({
   emptyText,
   testId,
   edges,
+  cover,
 }: {
   slots: readonly BarSlot[] | null;
   label: string;
   emptyText: string;
   testId: string;
   edges?: BarEdgeTexts;
+  cover?: string;
 }) {
   if (slots === null) {
     return (
@@ -120,7 +148,7 @@ export function SlotBar({
         {BAR_ROWS.map(([a, b]) => (
           <span key={a} className="load-row">
             <RowEdge hour={a} />
-            <span className="load-row-slots" />
+            <span className="load-row-slots bar-hours" />
             <RowEdge hour={b} />
           </span>
         ))}
@@ -133,14 +161,15 @@ export function SlotBar({
       {barRowsOf(slots).map((row, i, rows) => (
         <span key={row.from} className="load-row" data-testid="load-row">
           <Edge hour={row.from} side="early" title={i === 0 ? (edges?.early ?? null) : null} />
-          <span className="load-row-slots">
-            {row.slots.map((x) => (
-              <span key={x.start} className={`load-slot is-${x.level}`} title={x.title} />
-            ))}
-          </span>
+          <RowTrack slots={row.slots} from={row.from} to={row.to} />
           <Edge hour={row.to} side="late" title={i === rows.length - 1 ? (edges?.late ?? null) : null} />
         </span>
       ))}
+      {cover && (
+        <span className="load-bar-cover" aria-hidden="true" data-testid="bar-cover">
+          {cover}
+        </span>
+      )}
     </span>
   );
 }
@@ -161,19 +190,14 @@ export function LoadBar({ load }: { load: readonly DayLoadSlot[] | null }) {
   );
 }
 
-/** 凡例の段の見本（3段と両端の時刻。色は付けない） */
+/** 凡例の段の見本（3段と両端の時刻、1時間ずつの4ブロック。色は付けない） */
 export function LoadRowsSample() {
   return (
     <span className="load-bar is-sample" aria-hidden="true">
       {BAR_ROWS.map(([a, b]) => (
         <span key={a} className="load-row">
           <RowEdge hour={a} />
-          <span className="load-row-slots">
-            {Array.from({ length: ((b - a) * 60) / BAR_STEP }, (_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: 見本のマスは並びが変わらない
-              <span key={i} className="load-slot is-sample" />
-            ))}
-          </span>
+          <span className="load-row-slots bar-hours" />
           <RowEdge hour={b} />
         </span>
       ))}
@@ -181,7 +205,16 @@ export function LoadRowsSample() {
   );
 }
 
-/** 凡例（色と模様の意味：0人は斜線・1人は点々） */
+/** 凡例の見本1つ（段と同じ .bar-seg を小さな地に置く。高さ・枠の形も段と同じに見える） */
+export function BarSwatch({ level }: { level: string }) {
+  return (
+    <span className="load-swatch" aria-hidden="true">
+      <span className={`bar-seg is-${level}`} style={{ left: 0, right: 0 }} />
+    </span>
+  );
+}
+
+/** 凡例（色と高さの意味：0人は段いっぱい・1人は2/3・2人以上は1/3） */
 export function LoadLegend() {
   const items: [LoadLevel, string][] = [
     ['none', '空き 0人'],
@@ -193,7 +226,7 @@ export function LoadLegend() {
     <span className="load-legend">
       {items.map(([level, label]) => (
         <span key={level} className="load-legend-item">
-          <span className={`load-swatch is-${level}`} aria-hidden="true" />
+          <BarSwatch level={level} />
           {label}
         </span>
       ))}

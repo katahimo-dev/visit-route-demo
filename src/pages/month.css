@@ -264,7 +264,7 @@
 }
 /* 選んだ〈スタッフ〉の3段バー（PRD D75）：数字を出さない分、段を太く */
 .month-load.is-staff .load-row-slots {
-  height: 9px;
+  height: 10px;
 }
 .month-load.is-staff .load-bar {
   gap: 2px;

@@ -180,7 +180,7 @@ label.week-who {
   min-width: 96px;
 }
 .week-table td[data-testid='week-cell'] .load-row-slots {
-  height: 9px;
+  height: 10px;
 }
 .week-table td[data-testid='week-cell'] .load-bar {
   gap: 2px;
@@ -211,7 +211,7 @@ label.week-who {
   gap: 6px;
 }
 .week-table td.is-off {
-  background: #ece7e2;
+  background: #f3efeb;
 }
 .week-table td.is-noplan {
   background: var(--soft);
