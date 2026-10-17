@@ -12,6 +12,7 @@ import { timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { deferredDragStart } from '../lib/dragStart';
 import { typeOf } from '../lib/patternText';
 import { useDayModel } from '../lib/useDayModel';
 import {
@@ -95,6 +96,12 @@ export default function WeekPage() {
   const [dragId, setDragId] = useState<string | null>(null);
   /** つかんだ帯と、帯の上端からつかんだ位置までの高さ（px）。表のマスからつかんだときは offset を使わない */
   const grab = useRef<{ visitId: string; offset: number } | null>(null);
+  /**
+   * dragId の更新は dragstart の後へ遅らせる（予定の画面と同じ。src/lib/dragStart.ts）。
+   * dragstart の中で再描画すると「担当できる」の印・行が足されて帯が指の下からずれ、
+   * Chrome がドラッグをすぐ終わらせる（本物のマウス操作で、週の帯が動かせなくなっていた）
+   */
+  const dragStart = useRef(deferredDragStart()).current;
 
   // ---- 選んでいる日付との同期（PRD D59）----
   // URL の ?d= で開いた日が選んでいる日付と違えば、選んでいる日付をその日にする
@@ -198,7 +205,7 @@ export default function WeekPage() {
     e.dataTransfer.setData('text/plain', visitId);
     e.dataTransfer.effectAllowed = 'move';
     grab.current = { visitId, offset: e.clientY - e.currentTarget.getBoundingClientRect().top };
-    setDragId(visitId);
+    dragStart.start(() => setDragId(visitId));
   };
   const dropStart = (e: DragEvent<HTMLElement>): number | null => {
     const g = grab.current;
@@ -219,6 +226,7 @@ export default function WeekPage() {
     const s = dropStart(e);
     const g = grab.current;
     grab.current = null;
+    dragStart.end();
     setHover(null);
     setDragId(null);
     if (!g || s === null) return;
@@ -238,6 +246,7 @@ export default function WeekPage() {
   };
   const onDragEnd = () => {
     grab.current = null;
+    dragStart.end();
     setHover(null);
     setDragId(null);
   };
@@ -261,6 +270,7 @@ export default function WeekPage() {
     const ok = canDropCell(clientId, d);
     const g = grab.current;
     grab.current = null;
+    dragStart.end();
     setHover(null);
     setDragId(null);
     if (!g) return;
@@ -507,15 +517,19 @@ export default function WeekPage() {
             testId="client-chips"
           />
         )}
-        {tab === 'timeline' && by === 'client' && allowedNow && (
-          <p className="week-allowed" data-testid="week-allowed">
-            担当できる{terms.staff}：
-            {allowedNow.size === 0
-              ? 'いません'
-              : activeStaff
-                  .filter((s) => allowedNow.has(s.id))
-                  .map((s) => s.name)
-                  .join('・')}
+        {/* 行はいつも出しておく（ドラッグの始まりに行を足すと時間軸が下へずれ、つかんだ帯が指の下から動く） */}
+        {tab === 'timeline' && by === 'client' && (
+          <p className={`week-allowed${allowedNow ? '' : ' is-idle'}`} data-testid="week-allowed">
+            {allowedNow
+              ? `担当できる${terms.staff}：${
+                  allowedNow.size === 0
+                    ? 'いません'
+                    : activeStaff
+                        .filter((s) => allowedNow.has(s.id))
+                        .map((s) => s.name)
+                        .join('・')
+                }`
+              : `ドラッグ中は、ここに担当できる${terms.staff}を出します`}
           </p>
         )}
       </div>

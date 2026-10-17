@@ -240,6 +240,14 @@ label.week-who {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--ok);
+  /* 1行に収める（ドラッグの始まりで行の数が変わると時間軸がずれる） */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.week-allowed.is-idle {
+  font-weight: 400;
+  color: var(--sub);
 }
 .week-quals .week-qual {
   gap: 6px;

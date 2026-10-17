@@ -51,22 +51,30 @@ fieldset.pick-chips {
   height: 10px;
   border-radius: 3px;
 }
-/* ドラッグ中に担当できる人：太い枠と「担当できる」の文字 */
+/* ドラッグ中に担当できる人：緑の枠と「担当できる」の札。
+   チップの幅・行の数を変えない（変えるとチップの下の時間軸がずれ、つかんだ帯が指の下から動く）。
+   枠の太さ・文字の太さは変えず、札はチップの右上に重ねる */
 .pick-chip.is-strong {
-  border: 2px solid var(--ok);
+  position: relative;
+  border-color: var(--ok);
+  box-shadow: 0 0 0 1px var(--ok);
   background: #e1f1e7;
   color: var(--ink);
-  font-weight: 700;
 }
 .pick-chip.is-dim {
   opacity: 0.55;
 }
 .pick-chip-strong {
-  padding: 0 6px;
+  position: absolute;
+  top: -9px;
+  right: -4px;
+  padding: 0 5px;
   border-radius: 999px;
   background: var(--ok);
   color: #fff;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  pointer-events: none;
 }
 .pick-badges {
   display: inline-flex;
