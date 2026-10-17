@@ -18,6 +18,8 @@ export const VACANCY_MARGIN_DEFAULT = 15;
 export const VACANCY_DAY_START_DEFAULT = '07:00';
 export const VACANCY_DAY_END_DEFAULT = '20:00';
 export const VACANCY_STEP_DEFAULT = 30;
+/** 日の混み具合（dayLoad）で数える長さ：0:00〜24:00（分。PRD D82） */
+export const DAY_LOAD_MINUTES = 24 * 60;
 export const VACANCY_WEEKS_DEFAULT = 4;
 export const VACANCY_WEEKS_MIN = 1;
 export const VACANCY_WEEKS_MAX = 8;
@@ -86,7 +88,7 @@ export type DayLoadFilter = { typeId: string | null };
 export type VacancyOf = (data: DemoData, query: VacancyQuery, range: VacancyRange) => VacancyResult;
 export type VerdictOf = (cell: VacancyCell) => Verdict;
 export type InquirySummary = (result: VacancyResult, wish: InquiryWish, terms: Terms) => string;
-/** 07:00〜20:00 の30分ごと（開始の順）。案の無い日は null（D54。dayFreeness を置き換え） */
+/** 0:00〜24:00 の30分ごと（開始の順。PRD D82 で 07:00〜20:00 から広げた）。案の無い日は null（D54。dayFreeness を置き換え） */
 export type DayLoadFn = (data: DemoData, date: string, filter: DayLoadFilter) => DayLoadSlot[] | null;
 
 /** 空き枠の案内文の形（ADR-0013）：'dates'＝日付ごと（1人以上の時刻）、'weekly'＝曜日ごと（どの週も受けられる時刻） */

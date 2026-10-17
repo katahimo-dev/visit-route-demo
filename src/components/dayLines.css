@@ -1,0 +1,90 @@
+/* 日の画面の担当ごとの1日（PRD D84）。1行のまとめの下に、1人1行の細い横棒 */
+.daylines {
+  padding: 6px 14px 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+.daylines.is-collapsed > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--sub);
+}
+.daylines-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.daylines-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.daylines-row {
+  display: grid;
+  grid-template-columns: minmax(4.5em, 9em) minmax(0, 1fr) 2.8em;
+  align-items: center;
+  gap: 8px;
+}
+.daylines-btn {
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.daylines-btn:hover,
+.daylines-btn:focus-visible {
+  background: var(--primary-soft);
+  outline: none;
+}
+.daylines-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.daylines-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.daylines-bar.work-bar {
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.daylines-count {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-weight: 700;
+}
+.daylines-head {
+  padding: 0 4px;
+}
+.daylines-axis {
+  position: relative;
+  display: block;
+  height: 1.1em;
+}
+.daylines-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.68rem;
+  color: var(--sub);
+}
+.daylines-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+}

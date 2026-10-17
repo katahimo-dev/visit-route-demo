@@ -6,13 +6,12 @@ import type { Problem } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Condition, Item, Traits } from '../contracts/rules';
 import {
+  DAY_LOAD_MINUTES,
   type DayLoadFn,
   type DayLoadSlot,
   INQUIRY_CLIENT_ID,
   INQUIRY_VISIT_ID,
   type InquirySummary,
-  VACANCY_DAY_END_DEFAULT,
-  VACANCY_DAY_START_DEFAULT,
   VACANCY_STEP_DEFAULT,
   VACANCY_WEEKS_MAX,
   type VacancyCell,
@@ -338,7 +337,7 @@ export const inquirySummary: InquirySummary = (result, wish, terms) => {
 };
 
 /**
- * 日の混み具合（D54。design.md §4 vacancy）：07:00〜20:00 の30分ごとに、working＝その30分に稼働時間帯（欠勤を除く）が
+ * 日の混み具合（D54。design.md §4 vacancy）：0:00〜24:00 の30分ごと（PRD D82。3段に出すのは 8〜20時で、外は端の印）に、working＝その30分に稼働時間帯（欠勤を除く）が
  * 重なる人、free＝そのうち元の案（確定した割当、無ければ今の案）の訪問の [開始 − 来る移動, 終了) と重ならない人。
  * filter.typeId があれば、その種類の必要条件を満たす人だけを数える（いない種類は種類なし）。
  * 訪問がある日に案が無ければ null（訪問の無い日は空の案として数える）
@@ -360,9 +359,8 @@ export const dayLoad: DayLoadFn = (data, date, filter) => {
     return [{ slots: st.slots, busy }];
   });
   const step = VACANCY_STEP_DEFAULT;
-  const end = hhmmToMinutes(VACANCY_DAY_END_DEFAULT);
   const out: DayLoadSlot[] = [];
-  for (let a = hhmmToMinutes(VACANCY_DAY_START_DEFAULT); a + step <= end; a += step) {
+  for (let a = 0; a + step <= DAY_LOAD_MINUTES; a += step) {
     const b = a + step;
     const overlaps = (x: { start: number; end: number }) => a < x.end - EPS && x.start < b - EPS;
     let working = 0;

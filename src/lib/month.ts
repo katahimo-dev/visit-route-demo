@@ -444,7 +444,7 @@ export type StaffDay = {
   minutes: number;
   types: TypeCount[];
   /**
-   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。07:00〜20:00）。数える案が無い日（noPlan）は勤務内を「案なし」にする
+   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。0:00〜24:00 の48マス。3段に出すのは 8〜20時で外は端の印。PRD D82）。数える案が無い日（noPlan）は勤務内を「案なし」にする
    */
   bar: StaffSlot[];
 };

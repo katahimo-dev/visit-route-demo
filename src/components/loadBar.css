@@ -1,5 +1,5 @@
 /* 日の混み具合バー（D54）と種類の積み上げバー（D53） */
-/* 3段（PRD D60）：午前 7〜12時・昼 12〜15時・夕方 15〜20時。段ごとに左右の端に時刻 */
+/* 3段（PRD D60・D82）：8〜12時・12〜16時・16〜20時（区切りは lib/barRows）。段ごとに左右の端に時刻、8時より前・20時以降があれば ◀・▶ */
 .load-bar {
   display: flex;
   flex-direction: column;
@@ -21,6 +21,12 @@
 }
 .load-row-edge:first-child {
   text-align: right;
+}
+/* 8時より前・20時以降がある印（PRD D82）：文字の印（色だけに頼らない）。濃く太く */
+.load-row-edge.is-mark {
+  color: var(--primary-dark);
+  font-weight: 700;
+  cursor: help;
 }
 .load-row-slots {
   display: flex;

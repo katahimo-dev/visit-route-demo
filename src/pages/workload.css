@@ -156,7 +156,7 @@ label.work-setting {
   color: #a46d0a;
   margin-left: 1px;
 }
-/* 日ごとの時間軸の横棒（次の弾で3段のバーに差し替える予定） */
+/* 日ごとの時間軸の横棒（1日の位置と拘束の長さを見るので3段にしない。PRD D77） */
 .work-axis-head {
   min-width: 260px;
 }
@@ -175,33 +175,7 @@ label.work-setting {
 .work-axis-cell {
   min-width: 260px;
 }
-.work-bar {
-  position: relative;
-  display: block;
-  height: 12px;
-  border-radius: 6px;
-  background: repeating-linear-gradient(90deg, #f6f0eb 0 calc(100% / 13 - 1px), #eadfd6 calc(100% / 13 - 1px) calc(100% / 13));
-}
-/* 拘束の内訳（PRD D77）：訪問・移動・待ちを3段バーと同じ模様で（色は components/loadBar.css の is-st-*） */
-.work-part {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-}
-/* 拘束の外枠。上限を超える日は太い橙の枠 */
-.work-bar-frame {
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  border-radius: 3px;
-  pointer-events: none;
-}
-.work-bar.is-over .work-bar-frame {
-  top: -3px;
-  bottom: -3px;
-  border: 2.5px solid var(--warn);
-}
+/* 横棒（.work-bar・.work-part・枠）は components/workBars.css（日の画面の担当ごとの1日と共通。PRD D84） */
 .work-days tr.is-over th {
   color: #a46d0a;
 }

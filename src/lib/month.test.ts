@@ -382,9 +382,14 @@ describe('選んだスタッフ（staffDay・staffMonth）', () => {
     expect(np.bar.some((x) => x.state === 'noplan')).toBe(true);
     expect(np.bar.some((x) => x.state === 'free')).toBe(false);
     expect(s1.noPlan).toBe(false);
-    expect(s1.bar.every((x) => x.state === 'rest' || x.state === 'visit' || x.state === 'travel')).toBe(true);
+    // 8〜20時は休み（残った訪問・移動を除く）。外は勤務外（PRD D82）
+    expect(
+      s1.bar
+        .filter((x) => x.start >= 480 && x.start < 1200)
+        .every((x) => x.state === 'rest' || x.state === 'visit' || x.state === 'travel'),
+    ).toBe(true);
     expect(s1.bar.some((x) => x.state === 'visit')).toBe(true);
-    expect(s1.bar[0]?.state).toBe('rest');
+    expect(s1.bar.find((x) => x.start === 480)?.state).toBe('rest');
   });
 
   it('月の集計：件数・稼働時間・移動・種類・資格', () => {

@@ -316,13 +316,13 @@ describe('inquirySummary', () => {
 describe('dayLoad', () => {
   const at = (load: ReturnType<typeof dayLoad>, hhmm: string) => load?.find((x) => x.start === m(hhmm));
 
-  it('07:00〜20:00 の30分ごとに、働く人と、そのうち訪問の [開始 − 来る移動, 終了) と重ならない人（空き）', () => {
+  it('0:00〜24:00 の30分ごと（PRD D82）に、働く人と、そのうち訪問の [開始 − 来る移動, 終了) と重ならない人（空き）', () => {
     // MON1：s1（8:00〜18:00）は 9:00〜12:00 が訪問。自宅から c1 への移動の分も使う
     const d = small();
     const load = dayLoad(d, MON1, { typeId: null })!;
-    expect(load).toHaveLength(26);
-    expect(load[0]!.start).toBe(m('07:00'));
-    expect(load.at(-1)!.start).toBe(m('19:30'));
+    expect(load).toHaveLength(48);
+    expect(load[0]!.start).toBe(0);
+    expect(load.at(-1)!.start).toBe(m('23:30'));
     const p = compile(d, MON1);
     const travel = p.travel[p.staff[0]!.point]![p.visits[0]!.point]!;
     expect(travel).toBeGreaterThan(0);
@@ -342,6 +342,20 @@ describe('dayLoad', () => {
         .every((x) => x.free === 1),
     ).toBe(true);
     expect(dayLoad(d, addDays(MON1, 5), { typeId: null })!.every((x) => x.working === 0 && x.free === 0)).toBe(true);
+  });
+
+  it('8時より前・20時以降の勤務も数える（PRD D82。3段バーでは端の印）', () => {
+    const d = small();
+    const s1 = d.staff[0]!.id;
+    const early = {
+      ...d,
+      staff: d.staff.map((s) => (s.id === s1 ? { ...s, shiftStart: '06:00', shiftEnd: '21:00' } : s)),
+    };
+    const load = dayLoad(early, WED1, { typeId: null })!;
+    expect(at(load, '06:00')).toEqual({ start: m('06:00'), working: 1, free: 1 });
+    expect(at(load, '20:30')).toEqual({ start: m('20:30'), working: 1, free: 1 });
+    expect(at(load, '05:30')).toEqual({ start: m('05:30'), working: 0, free: 0 });
+    expect(at(load, '21:00')).toEqual({ start: m('21:00'), working: 0, free: 0 });
   });
 
   it('種類で絞る：種類の必要条件を満たさない人は数えない。いない種類は種類なし', () => {
