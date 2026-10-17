@@ -549,8 +549,30 @@ export const VISIT_RULE_SEEDS: Record<
 /**
  * 紹介元（PRD D73。ADR-0015）の例。数人だけに入れる。どれも架空の事業所・番号（実在しない）
  */
-export const REFERRER_SEEDS: Record<string, { name: string; contact: string; note: string }> = {
-  c1: { name: 'あおば相談室（架空）', contact: '022-000-0001', note: '担当の方は午前に連絡がつきやすい' },
-  c5: { name: 'ひかり支援センター（架空）', contact: '022-000-0002', note: '' },
-  c11: { name: 'あおば相談室（架空）', contact: '022-000-0001', note: '月末に実績の確認あり' },
+export const REFERRER_SEEDS: Record<string, { name: string; contact: string; note: string; email: string }> = {
+  c1: {
+    name: 'あおば相談室（架空）',
+    contact: '022-000-0001',
+    note: '担当の方は午前に連絡がつきやすい',
+    email: 'aoba-soudan@example.com',
+  },
+  c5: { name: 'ひかり支援センター（架空）', contact: '022-000-0002', note: '', email: 'hikari-center@example.com' },
+  c11: {
+    name: 'あおば相談室（架空）',
+    contact: '022-000-0001',
+    note: '月末に実績の確認あり',
+    email: 'aoba-soudan@example.com',
+  },
+};
+
+/**
+ * 〈スタッフ〉のメールアドレス（PRD D91。ADR-0017）：架空（example.com）。メールの無い人の「未登録」の見え方も試せるよう、
+ * 何人かだけに入れる
+ */
+export const STAFF_EMAIL_SEEDS: Record<string, string> = {
+  s1: 'machiko@example.com',
+  s2: 'kotaro@example.com',
+  s3: 'sakura@example.com',
+  s4: 'mamoru@example.com',
+  s6: 'kanade@example.com',
 };

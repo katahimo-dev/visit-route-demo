@@ -139,7 +139,7 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
           cautionNote: '',
           allowedStaffIds: [],
           stage: 'active',
-          referrer: { name: '', contact: '', note: '' },
+          referrer: { name: '', contact: '', note: '', email: '' },
         };
   const clients = inquiryClient ? [...data.clients, inquiryClient] : data.clients;
 

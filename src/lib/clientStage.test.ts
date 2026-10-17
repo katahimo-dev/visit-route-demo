@@ -39,7 +39,7 @@ describe('古いデータの読み替え（版は1のまま）', () => {
     const { stage: _s, referrer: _r, ...old } = client('c1', 0, 0, { active: true, tentative: true });
     const c = clientSchema.parse(old);
     expect([c.stage, c.active, c.tentative]).toEqual(['inquiry', true, true]);
-    expect(c.referrer).toEqual({ name: '', contact: '', note: '' });
+    expect(c.referrer).toEqual({ name: '', contact: '', note: '', email: '' });
   });
 
   it('最終勤務日・段階・紹介元・取り消しの種類・拘束の上限の無い古いデータを既定値で読む', () => {
@@ -78,7 +78,9 @@ describe('古いデータの読み替え（版は1のまま）', () => {
       ...d,
       staff: d.staff.map((s, i) => (i === 0 ? { ...s, lastDay: '2026-10-31' } : s)),
       clients: d.clients.map((c, i) =>
-        i === 0 ? withStage({ ...c, referrer: { name: '相談室', contact: '000', note: 'メモ' } }, 'meeting', true) : c,
+        i === 0
+          ? withStage({ ...c, referrer: { name: '相談室', contact: '000', note: 'メモ', email: '' } }, 'meeting', true)
+          : c,
       ),
       visits: d.visits.map((v, i) => (i === 0 ? { ...v, cancelled: true, cancelKind: 'sameDay' as const } : v)),
       org: { ...d.org, spanLimitHours: 8.5 },

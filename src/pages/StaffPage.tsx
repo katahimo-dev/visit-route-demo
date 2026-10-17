@@ -24,6 +24,7 @@ import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
 import { type Staff, staffSchema } from '../contracts/documents';
 import { addDays, jstDate } from '../domain/time';
 import { byName, formError, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
+import { normalizeEmail } from '../lib/mailto';
 import { offboardScope } from '../lib/offboard';
 import { mdText } from '../lib/patternText';
 import { useDemoData } from '../store';
@@ -45,6 +46,7 @@ const blank = (): Staff => ({
   requirements: [],
   preferences: [],
   lastDay: null,
+  email: '',
 });
 
 export default function StaffPage() {
@@ -78,8 +80,14 @@ export default function StaffPage() {
       setError(`「${form.name.trim()}」と同じ名前の${terms.staff}がいます。名前を変えてください`);
       return;
     }
+    // メールアドレス（任意。ADR-0017）：全角・前後の空白を直し、形が合わなければ保存しない
+    const email = normalizeEmail(form.email);
+    if (email === null) {
+      setError('メールアドレスの形ではありません（例 name@example.com）。空でも構いません');
+      return;
+    }
     try {
-      const s = staffSchema.parse(form);
+      const s = staffSchema.parse({ ...form, email });
       // 休止にするとき、〈利用者さん〉の「担当できる人」から外す（ADR-0014。repair と同じ扱いを保存の時点で）
       const limited = s.active ? [] : data.clients.filter((c) => c.allowedStaffIds.includes(s.id));
       if (limited.length > 0) {
@@ -288,6 +296,19 @@ export default function StaffPage() {
             <label>
               名前
               <input value={form.name} maxLength={50} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </label>
+            <label>
+              メールアドレス（任意）
+              <input
+                type="email"
+                value={form.email}
+                maxLength={254}
+                autoComplete="off"
+                placeholder="name@example.com"
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                data-testid="staff-email"
+              />
+              <span className="sub">予定をメールアプリで開くときの宛先（送信は人が押します）</span>
             </label>
             <label>
               移動手段

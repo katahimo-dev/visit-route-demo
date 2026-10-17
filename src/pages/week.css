@@ -359,3 +359,9 @@ label.week-who {
   color: #3f4f63;
   cursor: pointer;
 }
+
+/* 週の予定をメールで送る（PRD D93） */
+.week-mail-row {
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}

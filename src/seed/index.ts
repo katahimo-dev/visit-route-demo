@@ -16,6 +16,7 @@ import {
   INITIAL_ITEMS,
   INITIAL_RULES,
   REFERRER_SEEDS,
+  STAFF_EMAIL_SEEDS,
   STAFF_SEEDS,
   VISIT_RULE_SEEDS,
 } from './people';
@@ -38,6 +39,7 @@ function initialStaff(): Staff[] {
     requirements: s.requirements,
     preferences: s.preferences,
     lastDay: null,
+    email: STAFF_EMAIL_SEEDS[s.id] ?? '',
   }));
 }
 

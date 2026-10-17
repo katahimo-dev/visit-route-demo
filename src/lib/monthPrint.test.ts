@@ -76,8 +76,8 @@ describe('月の予定の印刷（printDay・monthPrint）', () => {
     expect(p.entries.map((e) => e.clientName)).toEqual(['泉', '青葉']);
     expect(p.off).toEqual([]);
     const all = printDay(d, DATE, null);
-    expect(all.off).toEqual([{ name: '佐藤 一', label: '佐藤', kind: 'requested' }]);
-    expect(printDay(d, DATE, 's2').off).toEqual([{ name: '佐藤 一', label: '佐藤', kind: 'requested' }]);
+    expect(all.off).toEqual([{ staffId: 's2', name: '佐藤 一', label: '佐藤', kind: 'requested' }]);
+    expect(printDay(d, DATE, 's2').off).toEqual([{ staffId: 's2', name: '佐藤 一', label: '佐藤', kind: 'requested' }]);
   });
 
   it('〈利用者さん〉の休みの訪問は一覧に出さず「休み」に名前。勤務の無い〈スタッフ〉も休みに出す', () => {
@@ -89,7 +89,7 @@ describe('月の予定の印刷（printDay・monthPrint）', () => {
     const p = printDay(d, DATE, null);
     expect(p.entries.map((e) => e.clientName)).not.toContain('青葉');
     expect(p.leaves).toEqual(['青葉']);
-    expect(p.off).toEqual([{ name: '佐藤 一', label: '佐藤', kind: 'noShift' }]);
+    expect(p.off).toEqual([{ staffId: 's2', name: '佐藤 一', label: '佐藤', kind: 'noShift' }]);
     // 絞ると、その人の担当だった〈利用者さん〉の休みだけ
     expect(printDay(d, DATE, 's1').leaves).toEqual(['青葉']);
     expect(printDay(d, DATE, 's2').leaves).toEqual([]);

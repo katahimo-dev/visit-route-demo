@@ -850,6 +850,12 @@ p.plan-band.error {
   padding: 8px 10px;
   background: var(--soft);
 }
+.contact-msg-acts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
 .contact-msg pre {
   flex: 1;
   margin: 0;

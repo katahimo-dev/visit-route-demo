@@ -37,6 +37,8 @@ export const STAFF_COLS = {
 } as const;
 /** 〈スタッフ〉の「最終勤務日」（PRD D71。ADR-0015）。書き出しは固定の列の最後。古いブックには無いので必須にしない（無ければなし） */
 export const STAFF_LAST_DAY_COL = '最終勤務日';
+/** 〈スタッフ〉の「メールアドレス」（PRD D91。ADR-0017）。書き出しは「最終勤務日」の次。古いブックには無いので必須にしない（無ければ空） */
+export const STAFF_EMAIL_COL = 'メールアドレス';
 export const CLIENT_COLS = {
   id: 'ID',
   name: '表示名',
@@ -82,6 +84,8 @@ export const CLIENT_STAGE_COLS = {
   referrer: '紹介元',
   referrerContact: '紹介元の連絡先',
   referrerNote: '紹介元のメモ',
+  /** 紹介元のメールアドレス（PRD D91。ADR-0017）。古いブックには無い（無ければ空） */
+  referrerEmail: '紹介元のメールアドレス',
 } as const;
 /**
  * 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「住所」の前に「郵便番号」、「いつもの担当」の次に

@@ -31,6 +31,7 @@ import {
 import { slotsError } from '../domain/availability';
 import { STAGE_LABELS } from '../lib/clientStage';
 import { MAX_OPTIONS, nameKey, newId, optionNameError } from '../lib/common';
+import { normalizeEmail } from '../lib/mailto';
 import { normalizePostalCode } from '../lib/postalCode';
 import { isImportError, migrate } from '../store';
 import {
@@ -57,6 +58,7 @@ import {
   RULE_COLS,
   reqHeader,
   STAFF_COLS,
+  STAFF_EMAIL_COL,
   STAFF_LAST_DAY_COL,
   TRAIT_PREFIX,
   TYPE_COLS,
@@ -136,6 +138,16 @@ function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
     if ('text' in v && typeof v.text === 'string') return prim(v.text);
   }
   return null;
+}
+
+/**
+ * メールアドレスの列（ADR-0017）：空・列が無いなら ''。全角・前後の空白・「mailto:」は直し、形が合わなければ行付きで止めて null
+ */
+function readEmail(r: Row, h: string): string | null {
+  const t = r.text(h);
+  const e = normalizeEmail(t);
+  if (e === null) r.err(h, `メールアドレスの形ではありません（例 name@example.com。いま「${t.slice(0, 40)}」）`);
+  return e;
 }
 
 /** 見出しの比べ方（全角半角・コロンの揺れ・空白を許す） */
@@ -681,7 +693,11 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   const staff: Staff[] = [];
   const staffByName = new Map<string, string>();
   {
-    const cols = personCols(staffSheet, items, 'staff', [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL]);
+    const cols = personCols(staffSheet, items, 'staff', [
+      ...Object.values(STAFF_COLS),
+      STAFF_LAST_DAY_COL,
+      STAFF_EMAIL_COL,
+    ]);
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
     const C = STAFF_COLS;
@@ -706,8 +722,11 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const lng = r.num(C.lng, { min: -180, max: 180 });
       // 最終勤務日（ADR-0015）：列が無い古いブック・空はなし
       const lastDay = r.text(STAFF_LAST_DAY_COL) === '' ? null : r.date(STAFF_LAST_DAY_COL);
+      // メールアドレス（ADR-0017）：列が無い古いブック・空は ''。全角は直し、形の合わない値は止める
+      const email = readEmail(r, STAFF_EMAIL_COL);
       const p = readPerson(r, cols);
       if (
+        email !== null &&
         name !== null &&
         travelMode &&
         workDays &&
@@ -728,6 +747,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           active,
           ...p,
           lastDay,
+          email,
         });
       }
     }
@@ -815,8 +835,11 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         contact: r.optional(CLIENT_STAGE_COLS.referrerContact, 100),
         note: r.optional(CLIENT_STAGE_COLS.referrerNote, 200),
       };
+      // 紹介元のメールアドレス（ADR-0017）：列が無い古いブック・空は ''
+      const referrerEmail = readEmail(r, CLIENT_STAGE_COLS.referrerEmail);
       const p = readPerson(r, cols);
       if (
+        referrerEmail !== null &&
         stage !== null &&
         postalCode !== null &&
         displayName !== null &&
@@ -843,7 +866,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           cautionNote,
           allowedStaffIds,
           stage,
-          referrer,
+          referrer: { ...referrer, email: referrerEmail ?? '' },
         });
       }
     }
