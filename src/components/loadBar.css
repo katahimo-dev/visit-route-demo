@@ -58,7 +58,8 @@
 }
 .is-one.load-slot,
 .is-one.load-swatch {
-  background: #eaa142;
+  /* 空き 1人は点々（0人の斜線とは別の模様。色だけで区別しない） */
+  background: radial-gradient(circle, #fff 0.9px, transparent 1.2px) 0 0 / 3px 3px, #eaa142;
 }
 .is-many.load-slot,
 .is-many.load-swatch {

@@ -14,6 +14,7 @@ import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../doma
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { deferredDragStart } from '../lib/dragStart';
+import { isDate } from '../lib/isDate';
 import { typeOf } from '../lib/patternText';
 import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
@@ -57,7 +58,9 @@ import './week.css';
 
 /** 時間軸の「〈利用者さん〉で見る」で出せる人数（PRD D62。表は上限なし） */
 const TIMELINE_CLIENT_MAX = 8;
-const TIMELINE_CLIENT_MAX_TEXT = `時間軸は${TIMELINE_CLIENT_MAX}人まで。表（〈利用者さん〉×曜日）なら何人でも見られます`;
+/** 時間軸の上限の文（呼び方は org.terms から作る） */
+const timelineClientMaxText = (client: string) =>
+  `時間軸は${TIMELINE_CLIENT_MAX}人まで。表（${client}×曜日）なら何人でも見られます`;
 
 /** 1分あたりの高さ（px） */
 const PX_PER_MIN = 0.8;
@@ -89,7 +92,7 @@ export default function WeekPage() {
   const [params, setParams] = useSearchParams();
   const today = jstDate(Date.now());
   const rawD = params.get('d') ?? '';
-  const anchor = DATE_RE.test(rawD) ? rawD : date;
+  const anchor = isDate(rawD) ? rawD : date;
   const dates = useMemo(() => weekDates(anchor), [anchor]);
   const start = dates[0]!;
   const rawView = params.get('view');
@@ -118,7 +121,7 @@ export default function WeekPage() {
   // URL の ?d= で開いた日が選んでいる日付と違えば、選んでいる日付をその日にする
   // biome-ignore lint/correctness/useExhaustiveDependencies: URL の日が変わったときだけ
   useEffect(() => {
-    if (DATE_RE.test(rawD) && rawD !== date) setDate(rawD);
+    if (isDate(rawD) && rawD !== date) setDate(rawD);
   }, [rawD]);
   // 上の日付の切り替えで選んでいる日付が変わったら、表示する週もその日を含む週にする
   const lastDate = useRef(date);
@@ -126,7 +129,7 @@ export default function WeekPage() {
   useEffect(() => {
     if (lastDate.current === date) return;
     lastDate.current = date;
-    if (DATE_RE.test(rawD) && rawD !== date) go({ d: date });
+    if (isDate(rawD) && rawD !== date) go({ d: date });
   }, [date]);
 
   const activeStaff = useMemo(() => staff.filter((s) => s.active), [staff]);
@@ -568,7 +571,7 @@ export default function WeekPage() {
             onChange={(ids) => setSel('client', ids)}
             multiple
             max={tab === 'timeline' ? TIMELINE_CLIENT_MAX : undefined}
-            maxMessage={TIMELINE_CLIENT_MAX_TEXT}
+            maxMessage={timelineClientMaxText(terms.client)}
             label={
               tab === 'timeline' ? `表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）` : `表示する${terms.client}`
             }
@@ -579,7 +582,8 @@ export default function WeekPage() {
         )}
         {tab === 'timeline' && by === 'client' && pickedClients.length > TIMELINE_CLIENT_MAX && (
           <p className="sub" data-testid="week-client-over">
-            {TIMELINE_CLIENT_MAX_TEXT}。選んだ{pickedClients.length}人のうち先頭の{TIMELINE_CLIENT_MAX}人を出しています
+            {timelineClientMaxText(terms.client)}。選んだ{pickedClients.length}人のうち先頭の{TIMELINE_CLIENT_MAX}
+            人を出しています
           </p>
         )}
         {/* 行はいつも出しておく（ドラッグの始まりに行を足すと時間軸が下へずれ、つかんだ帯が指の下から動く） */}
@@ -896,7 +900,7 @@ export default function WeekPage() {
             {clientRows.length === 0 && (
               <p className="sub" data-testid="week-none">
                 {pickedClients.length === 0
-                  ? `${terms.client}を選んでいません。上の検索欄か近道（この週に訪問がある人→「このN人を選ぶ」など）で選んでください。`
+                  ? `${terms.client}を選んでいません。上の検索欄か近道（この週に訪問がある人→「あとN人を選ぶ」など）で選んでください。`
                   : `${terms.client}がいません。`}
               </p>
             )}

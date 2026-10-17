@@ -13,6 +13,8 @@
   --radius: 18px;
   --soft: #faf5f0;
   --primary-soft: #fde7e1;
+  /* 上の帯（.app-header。sticky）の高さ。この下に貼り付く・スクロールで止める要素が使う */
+  --header-h: 72px;
   font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -788,6 +790,8 @@ tbody tr:hover td {
   position: sticky;
   top: 0;
   z-index: 20;
+  min-height: var(--header-h);
+  box-sizing: border-box;
   display: flex;
   justify-content: flex-end;
   align-items: center;

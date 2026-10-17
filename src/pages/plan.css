@@ -135,7 +135,8 @@ p.plan-band.error {
   }
   .plan-map {
     position: sticky;
-    top: 16px;
+    /* 上の帯（sticky）の下に貼り付く */
+    top: calc(var(--header-h) + 16px);
   }
 }
 .plan-map.is-closed {
@@ -150,7 +151,7 @@ p.plan-band.error {
   transform: rotate(90deg);
 }
 .plan-form {
-  scroll-margin-top: 16px;
+  scroll-margin-top: calc(var(--header-h) + 8px);
 }
 
 /* 色の丸・列の見出し */
@@ -688,12 +689,16 @@ p.plan-band.error {
   /* 列の色（style の borderTopColor）より優先して薄くする */
   border-top-color: var(--line) !important;
 }
+.route-col-none {
+  /* 「入らなかった訪問」へ移る近道で、上の帯に隠れない */
+  scroll-margin-top: calc(var(--header-h) + 8px);
+}
 .route-col.is-unchanged .staff-dot {
   opacity: 0.4;
 }
 .reassign-bar {
   border-left: 4px solid var(--primary);
-  scroll-margin-top: 72px;
+  scroll-margin-top: calc(var(--header-h) + 8px);
 }
 .reassign-bar:focus-visible {
   outline: 3px solid var(--primary);

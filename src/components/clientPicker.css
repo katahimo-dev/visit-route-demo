@@ -183,3 +183,12 @@
   font-size: 0.8rem;
   color: var(--danger);
 }
+[aria-disabled='true'].btn {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.client-picker-over {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  color: var(--danger);
+}

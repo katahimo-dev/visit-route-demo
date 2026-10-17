@@ -22,7 +22,7 @@ export type MenuItem = {
 /**
  * 押すと項目の一覧が開くボタン（WAI-ARIA の menu button。予定の画面の「案を変える ▾」。PRD D63）。
  * キーボード：ボタンで Enter・Space・↓ は先頭、↑ は最後の項目へ。一覧の中は ↑↓・Home・End で移り、Enter・Space で選ぶ、
- * Esc で閉じてボタンへ戻る、Tab で閉じる。押せない項目もフォーカスは移る（理由は title）。
+ * Esc で閉じてボタンへ戻る、Tab で閉じる。押せない項目もフォーカスは移る（理由は title と、読み上げ用の aria-describedby）。
  * 一覧は浮かせて出す（開いても下の画面の高さは変わらない＝ドラッグの位置をずらさない）
  */
 export function MenuButton({
@@ -155,6 +155,7 @@ export function MenuButton({
         >
           {items.map((item, i) => {
             const why = typeof item.disabled === 'string' ? item.disabled : undefined;
+            const whyId = `${menuId}-why-${item.key}`;
             const ItemIcon = item.icon;
             return (
               <div key={item.key} role="none" className={item.separatorBefore && i > 0 ? 'menu-sep' : undefined}>
@@ -169,6 +170,7 @@ export function MenuButton({
                   aria-disabled={item.disabled ? true : undefined}
                   aria-current={item.current ? 'true' : undefined}
                   title={why}
+                  aria-describedby={why ? whyId : undefined}
                   data-testid={item.testId}
                   onClick={() => choose(item)}
                 >
@@ -177,6 +179,11 @@ export function MenuButton({
                   </span>
                   <span className="menu-item-label">{item.label}</span>
                   {item.note !== undefined && <span className="menu-item-note">{item.note}</span>}
+                  {why && (
+                    <span id={whyId} className="sr-only">
+                      {why}
+                    </span>
+                  )}
                 </button>
               </div>
             );

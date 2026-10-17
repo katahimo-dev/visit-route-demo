@@ -1,5 +1,5 @@
 // 日の混み具合バー（PRD D54。3段は D60）と種類ごとの件数の積み上げバー（D53）。月間カレンダーの日のマスで使う。
-// 色だけに頼らない：空き 0人は斜線、マスごとの title と、まとめた読み上げの文（loadSummary）を出す
+// 色だけに頼らない：空き 0人は斜線・1人は点々、マスごとの title と、まとめた読み上げの文（loadSummary）を出す
 import './loadBar.css';
 import type { VisitType } from '../contracts/documents';
 import type { DayLoadSlot } from '../contracts/vacancy';
@@ -135,7 +135,7 @@ export function LoadRowsSample() {
   );
 }
 
-/** 凡例（色と斜線の意味） */
+/** 凡例（色と模様の意味：0人は斜線・1人は点々） */
 export function LoadLegend() {
   const items: [LoadLevel, string][] = [
     ['none', '空き 0人'],
