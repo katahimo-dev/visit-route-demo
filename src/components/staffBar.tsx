@@ -1,6 +1,6 @@
 // 〈スタッフ〉1人の時間帯ごとの状態の3段バーと凡例（PRD D75・D76・D85）。月の混み具合バーと同じ3段・同じ部品（SlotBar）。
 // 埋まっている訪問・移動だけ濃い無地、ほかは淡く（色の言葉は components/barMarks.css）。色だけに頼らない：移動は高さ半分、
-// 空きは細い枠・案なしは破線の枠、3段とも休みの日は「休み」の文字を重ねる。30分ごとの title と、まとめた読み上げの文（staffSlotSummary）
+// 空きは枠の無い淡い緑（不透明な灰の地と分ける）・案なしは破線の枠、3段とも休みの日は「休み」の文字を重ねる。30分ごとの title と、まとめた読み上げの文（staffSlotSummary）
 import './barMarks.css';
 import './loadBar.css';
 import { inBar } from '../lib/barRows';

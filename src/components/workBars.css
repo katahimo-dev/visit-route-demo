@@ -1,5 +1,5 @@
 /* 時間軸の上の区間の横棒（稼働の見込み PRD D72・D77、日の画面の担当ごとの1日 PRD D84）。
-   塗りは components/barMarks.css の .bar-seg（PRD D85。訪問＝濃い青・移動＝橙で高さ半分・待ちと空き＝淡い緑に細い枠・休み＝淡い灰） */
+   塗りは components/barMarks.css の .bar-seg（PRD D85。訪問＝濃い青・移動＝橙で高さ半分・待ちと空き＝淡い緑（枠なし）・休み＝淡い灰） */
 .work-bar {
   position: relative;
   display: block;
