@@ -1,5 +1,6 @@
 import {
   CalendarRange,
+  Check,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -21,6 +22,7 @@ import { useDay } from '../app/day';
 import { LoadBar, LoadLegend, LoadScale, loadSummary, TypeStack } from '../components/loadBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
+import { ViewSwitch } from '../components/ViewSwitch';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
@@ -49,8 +51,11 @@ import {
   dayPlanOf,
   dayStatus,
   expandMonth,
+  firstDayOf,
   isYm,
+  type MonthProgress,
   monthDates,
+  monthProgress,
   planEdited,
   planStale,
   type StaffDay,
@@ -148,6 +153,9 @@ export default function MonthPage() {
   const monthNo = Number(ym.slice(5, 7));
 
   const [panel, setPanel] = useState(false);
+  /** 選ばないときの右の欄：要対応／確定していない日（「今月の準備」の③から） */
+  const [asideView, setAsideView] = useState<'attention' | 'unconfirmed'>('attention');
+  const asideRef = useRef<HTMLElement>(null);
   const [mode, setMode] = useState<'empty' | 'all'>('empty');
   const [batch, setBatch] = useState<Batch | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -174,6 +182,21 @@ export default function MonthPage() {
       runningRef.current = false;
     };
   }, []);
+
+  // ---- 選んでいる日付との同期（PRD D59）----
+  // URL の ?ym= で開いた月が選んでいる日付の月と違えば、選んでいる日付をその月に合わせる（その月の1日、今月なら今日）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: URL の月が変わったときだけ
+  useEffect(() => {
+    if (isYm(raw) && ymOf(date) !== raw) setDate(firstDayOf(raw, today));
+  }, [raw]);
+  // 上の日付の切り替えで選んでいる日付が別の月になったら、表示する月も合わせる
+  const lastDate = useRef(date);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 選んでいる日付が変わったときだけ
+  useEffect(() => {
+    if (lastDate.current === date) return;
+    lastDate.current = date;
+    if (isYm(raw) && ymOf(date) !== raw) patchParams({ ym: ymOf(date) });
+  }, [date]);
 
   const activeStaff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
   const activeClients = useMemo(() => data.clients.filter((c) => c.active).sort(byDisplayName), [data.clients]);
@@ -355,6 +378,21 @@ export default function MonthPage() {
     [data, days, statuses, today],
   );
 
+  /** 今月の準備（PRD D59）。日の状態は上で compile・採点したものを使う（要対応の欄と同じ数え方） */
+  const progress = useMemo(
+    () => monthProgress(data, ym, today, undefined, (d) => statuses.get(d)),
+    [data, ym, today, statuses],
+  );
+  /** 右の欄へ移る（要対応・確定していない日） */
+  const showAside = (view: 'attention' | 'unconfirmed') => {
+    pickFocus('all');
+    setAsideView(view);
+    requestAnimationFrame(() => {
+      asideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      asideRef.current?.focus({ preventScroll: true });
+    });
+  };
+
   const summary = useMemo(() => {
     let visits = 0;
     let withVisits = 0;
@@ -523,11 +561,17 @@ export default function MonthPage() {
     runRef.current?.stop();
   };
 
+  /** 月を送る：選んでいる日付もその月の1日（今月なら今日）にする（PRD D59） */
   const goMonth = (next: string) => {
+    const d = firstDayOf(next, today);
+    lastDate.current = d;
     patchParams({ ym: next });
+    setDate(d);
   };
   const openDay = useCallback(
     (d: string) => {
+      // 予定の画面へ移るので、表示する月は合わせない（合わせると ?ym= を書く遷移が予定の画面への遷移を打ち消す）
+      lastDate.current = d;
       setDate(d);
       navigate('/plan');
     },
@@ -546,9 +590,10 @@ export default function MonthPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<ViewSwitch current="month" />}
         icon={CalendarRange}
         title="月間"
-        lead="ひと月の訪問と案の状態。定期パターンから訪問を作り、案をまとめて作ります"
+        lead="定期パターンから訪問を作り、一月分の案をまとめて作ります"
         actions={
           <button
             type="button"
@@ -564,6 +609,23 @@ export default function MonthPage() {
             <WithIcon icon={Sparkles}>{monthNo}月の案をまとめて作る</WithIcon>
           </button>
         }
+      />
+
+      <MonthPrep
+        title={ym === ymOf(today) ? '今月の準備' : `${monthNo}月の準備`}
+        progress={progress}
+        canExpand={preview.added}
+        running={running}
+        noVisitsWhy={noVisitsWhy}
+        noPatterns={data.patterns.length === 0}
+        onExpand={expandOnly}
+        onBatch={() => {
+          setError(null);
+          setMode('empty');
+          setPanel(true);
+        }}
+        onUnconfirmed={() => showAside('unconfirmed')}
+        onAttention={() => showAside('attention')}
       />
 
       <div className="card stack month-head">
@@ -642,17 +704,6 @@ export default function MonthPage() {
           )}
         </div>
         <div className="row month-tools">
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={running || data.patterns.length === 0}
-            onClick={expandOnly}
-            title={data.patterns.length === 0 ? '定期パターンがありません' : ''}
-          >
-            <WithIcon icon={Repeat} size={14}>
-              定期パターンから訪問だけ作る{preview.added > 0 ? `（${preview.added}件）` : ''}
-            </WithIcon>
-          </button>
           <button
             type="button"
             className="btn btn-small"
@@ -750,8 +801,48 @@ export default function MonthPage() {
           </table>
         </div>
 
-        <aside className="card stack month-aside" data-testid="month-aside" aria-label="右の欄">
-          {focus.kind === 'all' && (
+        <aside
+          ref={asideRef}
+          tabIndex={-1}
+          className="card stack month-aside"
+          data-testid="month-aside"
+          aria-label="右の欄"
+        >
+          {focus.kind === 'all' && asideView === 'unconfirmed' && (
+            <>
+              <h2 className="month-aside-title">
+                <Lock size={18} aria-hidden="true" />
+                確定していない日
+              </h2>
+              {progress.unconfirmed.length === 0 ? (
+                <p className="sub">今日以降で、確定していない日はありません。</p>
+              ) : (
+                <ul className="month-attention" data-testid="month-unconfirmed">
+                  {progress.unconfirmed.map((d) => (
+                    <li key={d}>
+                      <button
+                        type="button"
+                        className="month-attention-btn"
+                        onClick={() => openDay(d)}
+                        title="押すとその日の予定の画面を開きます"
+                      >
+                        <span className="month-attention-date">
+                          {mdText(d)}（{WEEKDAY_LABELS[weekday(d)]}）
+                        </span>
+                        <span>{STATE_TEXT[statuses.get(d)?.state ?? 'none']}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button type="button" className="btn btn-small" onClick={() => setAsideView('attention')}>
+                <WithIcon icon={ListChecks} size={14}>
+                  要対応を見る
+                </WithIcon>
+              </button>
+            </>
+          )}
+          {focus.kind === 'all' && asideView === 'attention' && (
             <>
               <h2 className="month-aside-title">
                 <ListChecks size={18} aria-hidden="true" />
@@ -1265,3 +1356,126 @@ const DayCell = memo(function DayCell(props: CellProps) {
     </td>
   );
 });
+
+/**
+ * 今月の準備（PRD D59）：①訪問を作る ②案を作る ③確定 と要対応を横に並べる。済んだものに✓と「済」（色だけに頼らない）。
+ * ①は作れる訪問があれば「定期パターンから訪問だけ作る」、②は足りなければまとめて作る欄、③は確定していない日の一覧、
+ * 要対応は右の欄へ
+ */
+function MonthPrep({
+  title,
+  progress: p,
+  canExpand,
+  running,
+  noVisitsWhy,
+  noPatterns,
+  onExpand,
+  onBatch,
+  onUnconfirmed,
+  onAttention,
+}: {
+  title: string;
+  progress: MonthProgress;
+  /** 定期パターンから作れる訪問の件数 */
+  canExpand: number;
+  running: boolean;
+  noVisitsWhy: string | null;
+  noPatterns: boolean;
+  onExpand: () => void;
+  onBatch: () => void;
+  onUnconfirmed: () => void;
+  onAttention: () => void;
+}) {
+  const visitsDone = p.visits > 0 && canExpand === 0;
+  const planDone = p.days > 0 && p.planned === p.days;
+  const confirmDone = p.days > 0 && p.confirmed === p.days;
+  const attentionDone = p.attention === 0;
+  return (
+    <section className="card month-prep" aria-label={title} data-testid="month-prep">
+      <h2 className="month-prep-title">{title}</h2>
+      <ol className="month-prep-steps">
+        <PrepStep no="①" label="訪問を作る" value={`${p.visits}件`} done={visitsDone} testId="prep-visits">
+          {!visitsDone && (
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={running || noPatterns || canExpand === 0}
+              title={noPatterns ? '定期パターンがありません' : ''}
+              onClick={onExpand}
+            >
+              <WithIcon icon={Repeat} size={14}>
+                定期パターンから訪問だけ作る{canExpand > 0 ? `（${canExpand}件）` : ''}
+              </WithIcon>
+            </button>
+          )}
+        </PrepStep>
+        <PrepStep no="②" label="案を作る" value={`${p.planned}/${p.days}日`} done={planDone} testId="prep-plans">
+          {!planDone && (
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={running || !!noVisitsWhy}
+              title={noVisitsWhy ?? ''}
+              onClick={onBatch}
+            >
+              <WithIcon icon={Sparkles} size={14}>
+                まとめて作る
+              </WithIcon>
+            </button>
+          )}
+        </PrepStep>
+        <PrepStep no="③" label="確定" value={`${p.confirmed}/${p.days}日`} done={confirmDone} testId="prep-confirm">
+          {!confirmDone && p.unconfirmed.length > 0 && (
+            <button type="button" className="btn btn-small" onClick={onUnconfirmed}>
+              <WithIcon icon={Lock} size={14}>
+                確定していない日（{p.unconfirmed.length}日）
+              </WithIcon>
+            </button>
+          )}
+        </PrepStep>
+        <PrepStep label="要対応" value={`${p.attention}件`} done={attentionDone} testId="prep-attention">
+          {!attentionDone && (
+            <button type="button" className="btn btn-small" onClick={onAttention}>
+              <WithIcon icon={ListChecks} size={14}>
+                要対応を見る
+              </WithIcon>
+            </button>
+          )}
+        </PrepStep>
+      </ol>
+    </section>
+  );
+}
+
+function PrepStep({
+  no,
+  label,
+  value,
+  done,
+  testId,
+  children,
+}: {
+  no?: string;
+  label: string;
+  value: string;
+  done: boolean;
+  testId: string;
+  children?: ReactNode;
+}) {
+  return (
+    <li className={`month-prep-step${done ? ' is-done' : ''}`} data-testid={testId} data-done={done}>
+      <span className="month-prep-head">
+        {done && (
+          <span className="month-prep-mark">
+            <Check size={16} strokeWidth={3} aria-hidden="true" />
+            <span className="sr-only">済</span>
+          </span>
+        )}
+        {no && <span className="month-prep-no">{no}</span>}
+        <strong>{label}</strong>
+        <span className="month-prep-value">{value}</span>
+      </span>
+      {children}
+    </li>
+  );
+}

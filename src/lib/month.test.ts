@@ -20,8 +20,10 @@ import {
   dayPlanOf,
   dayStatus,
   expandMonth,
+  firstDayOf,
   isYm,
   monthDates,
+  monthProgress,
   planStale,
   staffDay,
   staffMonth,
@@ -468,5 +470,60 @@ describe('要対応（attentionList）', () => {
     expect(attentionList(data, [st('2026-10-20', { absence: true })], '2026-10-12')).toEqual([
       { date: '2026-10-20', kind: 'absence', count: 1, names: ['泉 二郎'] },
     ]);
+  });
+});
+
+describe('月を送ったときの日付（firstDayOf）', () => {
+  it('その月の1日、今月なら今日', () => {
+    expect(firstDayOf('2026-12', TODAY)).toBe('2026-12-01');
+    expect(firstDayOf('2026-11', TODAY)).toBe(TODAY);
+  });
+});
+
+describe('今月の準備（monthProgress）', () => {
+  it('今日以降の訪問の件数・案のある日・確定した日・確定していない日・要対応', () => {
+    const d0 = novData();
+    const future = (d: DemoData) =>
+      d.visits.filter((v) => v.date >= TODAY && v.date.startsWith('2026-11') && !v.cancelled);
+    const days = [...new Set(future(d0).map((v) => v.date))].sort();
+    const p0 = monthProgress(d0, '2026-11', TODAY);
+    expect(p0.visits).toBe(future(d0).length);
+    expect(p0.days).toBe(days.length);
+    expect(p0.planned).toBe(0);
+    expect(p0.confirmed).toBe(0);
+    expect(p0.unconfirmed).toEqual(days);
+    expect(p0.attention).toBe(0);
+
+    // 2日に案（1件だけ入る案）、うち1日を確定。今日より前の日の案は数えない
+    const [a, b] = days;
+    const before = d0.visits.find((v) => v.date < TODAY && v.date.startsWith('2026-11') && !v.cancelled)!.date;
+    let d = withPlan(withPlan(withPlan(d0, a!), b!), before);
+    d = { ...d, manualPlans: { ...d.manualPlans, [a!]: d.aiPlans[a!]!.routes } };
+    const p1 = monthProgress(d, '2026-11', TODAY);
+    expect(p1.planned).toBe(2);
+    expect(p1.confirmed).toBe(1);
+    expect(p1.unconfirmed).toEqual(days.filter((x) => x !== a));
+    // 入らない訪問がある日が2日（a・b）
+    expect(p1.attention).toBe(2);
+    // 条件が変わった日は staleOf で数える
+    expect(monthProgress(d, '2026-11', TODAY, (x) => x === b).attention).toBe(3);
+  });
+
+  it('statusOf を渡すと日の状態をそれから引く・訪問の無い月は0', () => {
+    const d0 = novData();
+    const p = monthProgress(d0, '2026-11', TODAY, undefined, (date) => ({
+      ...dayStatus(d0, date),
+      state: 'confirmed',
+    }));
+    expect(p.confirmed).toBe(p.days);
+    expect(p.unconfirmed).toEqual([]);
+    expect(monthProgress(d0, '2027-03', TODAY)).toEqual({
+      visits: 0,
+      days: 0,
+      planned: 0,
+      confirmed: 0,
+      unconfirmed: [],
+      attention: 0,
+    });
   });
 });

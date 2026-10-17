@@ -104,7 +104,7 @@ function Guarded({ element }: { element: ReactElement }) {
   );
 }
 
-/** 左のメニュー：毎日の作業と、ふだんは触らない設定を分ける */
+/** 左のメニュー：予定（月・週・日）・問い合わせ・登録・決まり・その他（PRD D59） */
 type NavItem = { to: string; label: string; icon: LucideIcon };
 
 function AdminShell() {
@@ -117,27 +117,30 @@ function AdminShell() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+  // 動線の整理（PRD D59）：予定（月・週・日）／問い合わせ／登録／決まり／その他。ルートの URL は変えない
   const groups: { title: string; items: NavItem[] }[] = [
     {
-      title: '毎日の作業',
+      title: '予定',
       items: [
-        { to: '/plan', label: '予定', icon: CalendarDays },
-        { to: '/month', label: '月間', icon: CalendarRange },
-        { to: '/week', label: '週間', icon: CalendarClock },
-        { to: '/vacancy', label: '空き状況', icon: CalendarSearch },
-        { to: '/compare', label: '比較', icon: GitCompareArrows },
+        { to: '/month', label: '月', icon: CalendarRange },
+        { to: '/week', label: '週', icon: CalendarClock },
+        { to: '/plan', label: '日', icon: CalendarDays },
       ],
     },
     {
-      title: '人と予定',
+      title: '問い合わせ',
+      items: [{ to: '/vacancy', label: '空き状況', icon: CalendarSearch }],
+    },
+    {
+      title: '登録',
       items: [
-        { to: '/staff', label: terms.staff, icon: UserRound },
         { to: '/clients', label: terms.client, icon: House },
+        { to: '/staff', label: terms.staff, icon: UserRound },
         { to: '/availability', label: '稼働時間', icon: Clock },
       ],
     },
     {
-      title: '割当の決まり',
+      title: '決まり',
       items: [
         { to: '/rules', label: '条件', icon: SlidersHorizontal },
         { to: '/items', label: '項目', icon: Tags },
@@ -147,7 +150,10 @@ function AdminShell() {
     },
     {
       title: 'その他',
-      items: [{ to: '/data', label: 'データ', icon: Database }],
+      items: [
+        { to: '/compare', label: '比較', icon: GitCompareArrows },
+        { to: '/data', label: 'データ', icon: Database },
+      ],
     },
   ];
   return (
