@@ -193,7 +193,7 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     `・${FIXED_SHEETS.rules}：AI案を作るときの条件（重み 0〜5、0.5刻み。必須は ○）。`,
     `・${FIXED_SHEETS.presets}：条件のプリセット（1〜6行）。「重み：〈条件の種類〉」の列に重み（0〜5、0.5刻み。空は0）、「必須」の列に必須にする条件の種類を「、」区切りで書きます。「点数の基準」の列は、画面の点数（100点満点）を付けるプリセットに ○ を1つだけ付けます（無印なら先頭のプリセット）。このシートが無いブックを読み込むと、いまのプリセットのままです。`,
     `・${names.staff}：${t.staff}の一覧。勤務する曜日は「月火水木金」のように書きます。`,
-    `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。いつもの担当は${t.staff}の名前で書きます。入り方・鍵・駐車場・注意は訪問先の決まりごと（各200文字まで）で、${t.staff}の画面に出ます。`,
+    `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。いつもの担当は${t.staff}の名前で書きます。担当できる人は、担当を限るときだけ${t.staff}の名前を「、」で区切って書きます（空なら限りません。社内の決まりで、限った人以外は担当になりません）。入り方・鍵・駐車場・注意は訪問先の決まりごと（各200文字まで）で、${t.staff}の画面に出ます。`,
     `・${FIXED_SHEETS.compat}：行が${t.client}、列が${t.staff}です。◎・○・△・× か空で書きます（× は担当にしません）。`,
     `・${FIXED_SHEETS.availability}：その日だけの稼働時間。時間帯は「9:00-12:00、13:00-18:00」のように30分単位で書き、休みは「${DAY_OFF}」と書きます。`,
     `・${FIXED_SHEETS.absences}：当日の急な欠勤（1人1日1行）。開始・終了は30分単位で書き、開始が空なら始業から、終了が空なら終業まで、両方空なら終日です。このシートが無いブックを読み込むと、欠勤なしになります。`,
@@ -450,6 +450,10 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       nullable(c.place.lat),
       nullable(c.place.lng),
       c.usualStaffId === null ? '' : (staffName.get(c.usualStaffId) ?? ''),
+      // 担当できる人（ADR-0014）：名前を「、」で区切る
+      c.allowedStaffIds
+        .flatMap((id) => staffName.get(id) ?? [])
+        .join('、'),
       c.note,
       c.entryNote,
       c.keyNote,

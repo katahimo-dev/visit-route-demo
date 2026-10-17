@@ -32,6 +32,7 @@ import { isImportError, migrate } from '../store';
 import {
   absenceCols,
   availabilityCols,
+  CLIENT_ALLOWED_COL,
   CLIENT_COLS,
   CLIENT_KANA_COL,
   CLIENT_RULE_COLS,
@@ -726,6 +727,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       ...Object.values(CLIENT_COLS),
       CLIENT_TENTATIVE_COL,
       CLIENT_KANA_COL,
+      CLIENT_ALLOWED_COL,
       ...Object.values(CLIENT_RULE_COLS),
     ]);
     const ids = new Map<string, number>();
@@ -748,6 +750,16 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });
       const usualStaffId = staffId(r, C.usualStaff, false);
+      // 担当できる人（ADR-0014）：列が無い古いブック・空は限らない。いない名前は止める
+      const allowedStaffIds: string[] = [];
+      let allowedOk = true;
+      for (const name of splitList(r.text(CLIENT_ALLOWED_COL))) {
+        const sid = staffByName.get(name);
+        if (sid === undefined) {
+          r.err(CLIENT_ALLOWED_COL, `「${name}」という${terms.staff}は、シート『${names.staff}』にいません`);
+          allowedOk = false;
+        } else if (!allowedStaffIds.includes(sid)) allowedStaffIds.push(sid);
+      }
       const note = r.optional(C.note, 500);
       // 訪問先の決まりごと（ADR-0013）：列が無い古いブックは空
       const entryNote = r.optional(CLIENT_RULE_COLS.entry, 200);
@@ -760,7 +772,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         typeof color === 'number' &&
         lat !== undefined &&
         lng !== undefined &&
-        usualStaffId !== undefined
+        usualStaffId !== undefined &&
+        allowedOk
       ) {
         clients.push({
           id,
@@ -777,6 +790,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           keyNote,
           parkingNote,
           cautionNote,
+          allowedStaffIds,
         });
       }
     }

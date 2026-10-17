@@ -73,6 +73,7 @@ function repairPresets(presets: Preset[]): Preset[] {
  * - 第N曜日・曜日ごとの時刻（ADR-0013）：パターンの monthWeeks は重なりを除いて小さい順（毎週系なら []）、
  *   dayTimes はパターンの曜日にあるものだけ・同じ曜日は最初の1件・曜日の順
  * - 〈利用者さん〉の休み（ADR-0013）：いない〈利用者さん〉の休みは消し、ID の重複は最初の1件
+ * - 担当できる人（ADR-0014）：いない・休止中（active=false）の〈スタッフ〉の ID と重なりを除く（全員いなくなれば [] ＝限らない）
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -81,10 +82,19 @@ export function repair(d: DemoData): DemoData {
     return home === s.home ? s : { ...s, home };
   });
   const staffIds = new Set(staff.map((s) => s.id));
+  // 担当できる人（ADR-0014）に残すのは、いる・利用中の人だけ（重なりは最初の1つ）
+  const activeIds = new Set(staff.filter((s) => s.active).map((s) => s.id));
   const clients = uniqueById(d.clients).map((c) => {
     const place = repairPlace(c.place);
     const usualStaffId = c.usualStaffId !== null && staffIds.has(c.usualStaffId) ? c.usualStaffId : null;
-    return place === c.place && usualStaffId === c.usualStaffId ? c : { ...c, place, usualStaffId };
+    const allowed = [...new Set(c.allowedStaffIds)].filter((id) => activeIds.has(id));
+    const allowedStaffIds =
+      allowed.length === c.allowedStaffIds.length && allowed.every((x, i) => x === c.allowedStaffIds[i])
+        ? c.allowedStaffIds
+        : allowed;
+    return place === c.place && usualStaffId === c.usualStaffId && allowedStaffIds === c.allowedStaffIds
+      ? c
+      : { ...c, place, usualStaffId, allowedStaffIds };
   });
   const clientIds = new Set(clients.map((c) => c.id));
 

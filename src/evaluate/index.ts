@@ -14,6 +14,7 @@ import {
 } from '../contracts/problem';
 import { DROP_POINTS } from '../contracts/rules';
 import {
+  ALLOWED_STAFF_RULE_ID,
   balanceOff,
   balancePoints,
   naiveSeqs,
@@ -374,8 +375,8 @@ export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Prob
  * 負担の均等（BALANCE_RULE_KEY）は、稼働のある人か訪問のある人のうち、目安の帯に収まった人数（unit 'staff'）。
  * 並びは理由に初めて出た順（problem の訪問・担当の順。決定的）、負担の均等は最後
  */
-/** 条件ごとの達成に数えない理由の ruleId（可否・固定・訪問の種類。条件 rules の ID ではない） */
-const INTERNAL_RULE_IDS = new Set(['noPlace', 'slot', 'time', PIN_RULE_ID, VISIT_TYPE_RULE_ID]);
+/** 条件ごとの達成に数えない理由の ruleId（可否・固定・訪問の種類・担当を限る（ADR-0014）。条件 rules の ID ではない） */
+const INTERNAL_RULE_IDS = new Set(['noPlace', 'slot', 'time', PIN_RULE_ID, VISIT_TYPE_RULE_ID, ALLOWED_STAFF_RULE_ID]);
 
 export function achievements(problem: Problem, routes: Record<string, string[]>): RuleAchievement[] {
   const p = place(problem, routes);

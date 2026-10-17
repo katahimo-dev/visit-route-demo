@@ -526,3 +526,54 @@
   background: repeating-linear-gradient(135deg, transparent 0 4px, #eef2f7 4px 8px);
   border-radius: 4px;
 }
+
+/* 希望休のまとめ入力（PRD D69。ADR-0014） */
+.month-mark.is-requested {
+  color: #6b5aa6;
+  font-weight: 700;
+}
+.month-shift.is-requested {
+  color: #6b5aa6;
+}
+.month-off-toggle.is-on {
+  border-color: #6b5aa6;
+  background: #efebf8;
+  color: #4d3f86;
+}
+.month-off-bar {
+  border: 1.5px solid #c9bfe6;
+  background: #f6f3fc;
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: grid;
+  gap: 4px;
+}
+.month-off-bar p {
+  margin: 0;
+}
+.month-off-bar .warn-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* 押せるマス（勤務日）は点線の紫の枠、希望休の日は紫の斜線 */
+.month-cell.is-off-open .month-cell-btn {
+  border: 2px dashed #a99bd6;
+}
+.month-cell.is-off-requested .month-cell-btn {
+  border: 2.5px solid #6b5aa6;
+  background: repeating-linear-gradient(135deg, #efebf8 0 6px, #e3dcf3 6px 12px);
+}
+.month-cell.is-off-noShift .month-cell-btn,
+.month-cell.is-off-past .month-cell-btn,
+.month-cell.is-off-absent .month-cell-btn {
+  cursor: not-allowed;
+  border-style: solid;
+  border-color: var(--line);
+}
+.month-cell.is-off-noShift .month-cell-btn:hover,
+.month-cell.is-off-past .month-cell-btn:hover,
+.month-cell.is-off-absent .month-cell-btn:hover {
+  border-color: var(--line);
+}

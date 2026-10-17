@@ -11,7 +11,7 @@ import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
-import { type CompileInput, compile, scheduleRoute, VISIT_TYPE_RULE_ID } from '../matching';
+import { ALLOWED_STAFF_RULE_ID, type CompileInput, compile, scheduleRoute, VISIT_TYPE_RULE_ID } from '../matching';
 import { applyPatterns, nthOfMonth, splitPattern, timesOn } from '../patterns';
 import { fitsOf, placeVisit } from '../reassign';
 import { attempt, byDisplayName, byName, own } from './common';
@@ -593,6 +593,26 @@ export function typeUnfit(problem: Problem | null, visitId: string, staffId: str
   if (v < 0 || s < 0) return false;
   // 満たした条件も理由（✓・0点）に入るので、可否で外れた（Infinity）ものだけ
   return problem.reasons[v]![s]!.some((r) => r.ruleId === VISIT_TYPE_RULE_ID && r.points === Number.POSITIVE_INFINITY);
+}
+
+/** 担当が担当を限る決まり（理由 allowedStaff。ADR-0014）で可でないか（「限✗」の印）。問題に無い・担当がいないなら false */
+export function limitUnfit(problem: Problem | null, visitId: string, staffId: string | null): boolean {
+  if (!problem || !staffId) return false;
+  const v = problem.visits.findIndex((x) => x.id === visitId);
+  const s = problem.staff.findIndex((x) => x.id === staffId);
+  if (v < 0 || s < 0) return false;
+  return problem.reasons[v]![s]!.some(
+    (r) => r.ruleId === ALLOWED_STAFF_RULE_ID && r.points === Number.POSITIVE_INFINITY,
+  );
+}
+
+/** 帯の印（資格✗・限✗）と、その説明（title）。どちらも無ければ空 */
+export type UnfitMark = { short: string; why: string };
+export function unfitMarks(problem: Problem | null, visitId: string, staffId: string | null): UnfitMark[] {
+  const out: UnfitMark[] = [];
+  if (typeUnfit(problem, visitId, staffId)) out.push({ short: '資格✗', why: '担当が種類の必要条件を満たさない' });
+  if (limitUnfit(problem, visitId, staffId)) out.push({ short: '限✗', why: '担当が担当できる人に入っていない' });
+  return out;
 }
 
 /**

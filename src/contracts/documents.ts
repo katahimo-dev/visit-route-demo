@@ -81,6 +81,12 @@ export const clientSchema = z.object({
   parkingNote: z.string().max(200).default(''),
   /** 訪問先の決まりごと：注意 */
   cautionNote: z.string().max(200).default(''),
+  /**
+   * 担当できる人（PRD D68。ADR-0014）：〈スタッフ〉の ID の並び。空＝限らない（だれでも）。社内の決まり（「この方は2人だけ」）を表し、
+   * 限った人以外との組は matching が可否で外す（理由 ruleId 'allowedStaff'。常に必須）。休止中・いない人は数えず
+   * （store の repair が除く）、限った人が全員いなくなったら限らない。無い古いデータは []
+   */
+  allowedStaffIds: z.array(idSchema).max(50).default([]),
 });
 export type Client = z.infer<typeof clientSchema>;
 

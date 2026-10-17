@@ -59,15 +59,25 @@ export const CLIENT_KANA_COL = 'よみ';
  * 古いブックには無いので必須の列にしない（無ければ空）
  */
 export const CLIENT_RULE_COLS = { entry: '入り方', key: '鍵', parking: '駐車場', caution: '注意' } as const;
-/** 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「メモ」の次に決まりごと） */
+/**
+ * 〈利用者さん〉の「担当できる人」（PRD D68。ADR-0014）：〈スタッフ〉の名前を「、」か改行で区切る。空＝限らない。
+ * 書き出しは「いつもの担当」の次に置く。古いブックには無いので必須の列にしない（無ければ限らない）
+ */
+export const CLIENT_ALLOWED_COL = '担当できる人';
+/**
+ * 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「いつもの担当」の次に
+ * 「担当できる人」、「メモ」の次に決まりごと）
+ */
 export const clientExportCols = (): string[] => {
   const base: string[] = Object.values(CLIENT_COLS);
   const at = base.indexOf(CLIENT_COLS.active) + 1;
   const withTentative = [...base.slice(0, at), CLIENT_TENTATIVE_COL, ...base.slice(at)];
   const k = withTentative.indexOf(CLIENT_COLS.name) + 1;
   const withKana = [...withTentative.slice(0, k), CLIENT_KANA_COL, ...withTentative.slice(k)];
-  const n = withKana.indexOf(CLIENT_COLS.note) + 1;
-  return [...withKana.slice(0, n), ...Object.values(CLIENT_RULE_COLS), ...withKana.slice(n)];
+  const u = withKana.indexOf(CLIENT_COLS.usualStaff) + 1;
+  const withAllowed = [...withKana.slice(0, u), CLIENT_ALLOWED_COL, ...withKana.slice(u)];
+  const n = withAllowed.indexOf(CLIENT_COLS.note) + 1;
+  return [...withAllowed.slice(0, n), ...Object.values(CLIENT_RULE_COLS), ...withAllowed.slice(n)];
 };
 export const availabilityCols = (t: Terms) => ({ staff: t.staff, date: '日付', slots: '時間帯' });
 /** 欠勤（ADR-0011）：開始の空＝始業から、終了の空＝終業まで、両方空＝終日 */

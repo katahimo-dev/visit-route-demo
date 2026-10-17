@@ -1,0 +1,188 @@
+/* 月の予定の印刷（PRD D70。ADR-0014）。A4横。名前つきのページ（@page monthprint）にして、ほかの画面の印刷（連絡の一覧）に効かせない */
+@page monthprint {
+  size: A4 landscape;
+  margin: 7mm;
+}
+.mprint {
+  page: monthprint;
+  padding: 16px;
+  background: #fff;
+  color: #222;
+  min-height: 100vh;
+}
+.mprint-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--soft);
+}
+.mprint-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mprint-pick select {
+  width: auto;
+}
+.mprint-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-bottom: 4px;
+}
+.mprint-head h1 {
+  font-size: 16pt;
+  margin: 0;
+}
+.mprint-org {
+  font-weight: 700;
+}
+.mprint-legend {
+  font-size: 8pt;
+  color: #555;
+}
+.mprint-grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 7.5pt;
+  line-height: 1.25;
+}
+.mprint-grid th {
+  border: 1px solid #888;
+  background: #eee;
+  padding: 1px;
+  font-size: 8pt;
+}
+.mprint-grid th.mprint-sun,
+.mprint-cell.mprint-sun .mprint-date {
+  color: #b3261e;
+}
+.mprint-grid th.mprint-sat,
+.mprint-cell.mprint-sat .mprint-date {
+  color: #1f5fa8;
+}
+.mprint-grid tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.mprint-cell {
+  border: 1px solid #888;
+  vertical-align: top;
+  padding: 2px 3px;
+  height: 22mm;
+  overflow: hidden;
+}
+.mprint-cell.is-out {
+  background: #f3f3f3;
+}
+.mprint-day {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  border-bottom: 1px dotted #bbb;
+  margin-bottom: 1px;
+}
+.mprint-date {
+  font-size: 10pt;
+  font-weight: 700;
+}
+.mprint-src {
+  font-size: 7pt;
+  border: 1px solid #777;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.mprint-count {
+  margin-left: auto;
+  color: #555;
+}
+.mprint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mprint-list li {
+  display: flex;
+  gap: 3px;
+  align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mprint-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  align-self: center;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.mprint-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.mprint-client {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.mprint-staff {
+  margin-left: auto;
+  flex: none;
+  font-weight: 700;
+}
+.mprint-off,
+.mprint-leave {
+  margin-top: 1px;
+  border-top: 1px dotted #bbb;
+  color: #444;
+  white-space: normal;
+}
+.mprint-off .is-requested,
+.mprint-off .is-absent {
+  font-weight: 700;
+}
+.mprint-leave {
+  color: #6b4b00;
+}
+
+/* 印刷の画面は白地（アプリの地の色を印刷しない） */
+html:has(.mprint),
+body:has(.mprint) {
+  background: #fff;
+}
+/* 印刷の画面のときだけ（ほかの画面の印刷に効かせない） */
+@media print {
+  .mprint .no-print,
+  body:has(.mprint) .toast {
+    display: none !important;
+  }
+  .mprint {
+    padding: 0;
+    min-height: 0;
+  }
+}
+.mprint-src.is-none {
+  border-style: dashed;
+  color: #666;
+}
+/* 表の行のホバーの色を付けない（印刷に残さない） */
+.mprint-grid tbody tr:hover td {
+  background: #fff;
+}
+.mprint-grid tbody tr:hover td.is-out {
+  background: #f3f3f3;
+}
+
+.mprint-pending {
+  margin-top: 1px;
+  color: #8a4b00;
+  font-weight: 700;
+}

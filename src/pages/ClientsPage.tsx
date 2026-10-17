@@ -9,6 +9,7 @@ import {
   Plus,
   Repeat,
   Save,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -16,6 +17,7 @@ import {
 import { useMemo, useState } from 'react';
 import { ClientPicker } from '../components/ClientPicker';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
+import { PickChips } from '../components/PickChips';
 import { Check, PlaceEditor, TentativeMark } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
@@ -51,6 +53,7 @@ const blank = (nextColor: number): Client => ({
   keyNote: '',
   parkingNote: '',
   cautionNote: '',
+  allowedStaffIds: [],
 });
 
 export default function ClientsPage() {
@@ -60,6 +63,8 @@ export default function ClientsPage() {
   const [form, setForm] = useState<Client | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 担当できる人を限る（PRD D68。入れたら1人以上選ぶ） */
+  const [limit, setLimit] = useState(false);
   const clients = useMemo(() => [...data.clients].sort(byDisplayName), [data.clients]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
   // 一覧の絞り込み（PRD D61）：選んだ人がいればその人たち、いなければ検索欄の文字（表示名・よみ）で
@@ -76,16 +81,30 @@ export default function ClientsPage() {
   const today = jstDate(Date.now());
   const itemById = new Map(data.items.map((i) => [i.id, i]));
 
+  /** 欄を開く（担当を限るかは、利用中の人が1人以上選ばれているかで決める） */
+  const openForm = (c: Client, fresh: boolean) => {
+    setError(null);
+    setIsNew(fresh);
+    setLimit(c.allowedStaffIds.some((id) => staff.some((s) => s.id === id && s.active)));
+    setForm(c);
+  };
+
   const save = () => {
     if (!form) return;
     setError(null);
+    // 担当を限るなら利用中の人を1人以上（休止中の人は数えない。保存時に外す。ADR-0014）
+    const allowed = limit ? form.allowedStaffIds.filter((id) => staff.some((s) => s.id === id && s.active)) : [];
+    if (limit && allowed.length === 0) {
+      setError(`担当できる${terms.staff}を1人以上選ぶか、「担当できる人を限る」を外してください`);
+      return;
+    }
     // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
     if (nameTaken(data.clients, (x) => x.displayName, form.displayName, form.id)) {
       setError(`「${form.displayName.trim()}」と同じ名前の${terms.client}がいます。名前を変えてください`);
       return;
     }
     try {
-      const c = clientSchema.parse(form);
+      const c = clientSchema.parse({ ...form, allowedStaffIds: allowed });
       update((d) => ({
         ...d,
         clients: d.clients.some((x) => x.id === c.id)
@@ -132,15 +151,7 @@ export default function ClientsPage() {
         title={terms.client}
         lead={`${terms.client}の住所・特性・条件を決めます`}
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              setError(null);
-              setIsNew(true);
-              setForm(blank(clients.length));
-            }}
-          >
+          <button type="button" className="btn btn-primary" onClick={() => openForm(blank(clients.length), true)}>
             <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
           </button>
         }
@@ -230,6 +241,16 @@ export default function ClientsPage() {
                       {staffName(c.usualStaffId)}
                     </WithIcon>
                   )}
+                  {c.allowedStaffIds.length > 0 && (
+                    <span
+                      className="chip chip-limit"
+                      title={`担当できる人を限っています：${c.allowedStaffIds.map(staffName).join('、')}`}
+                      data-testid="client-limit"
+                    >
+                      <ShieldCheck size={13} aria-hidden="true" />限{' '}
+                      {c.allowedStaffIds.map((id) => staffName(id).split(/\s+/)[0]).join('、')}
+                    </span>
+                  )}
                 </td>
                 <td>
                   {c.tentative && <span className="chip chip-warn">仮押さえ</span>}
@@ -244,11 +265,7 @@ export default function ClientsPage() {
                   <IconButton
                     icon={Pencil}
                     label={`${c.displayName}を編集`}
-                    onClick={() => {
-                      setError(null);
-                      setIsNew(false);
-                      setForm(structuredClone(c));
-                    }}
+                    onClick={() => openForm(structuredClone(c), false)}
                   />
                 </td>
               </tr>
@@ -362,6 +379,38 @@ export default function ClientsPage() {
               利用中（外すと休止）
             </Check>
           </div>
+
+          <SectionTitle icon={ShieldCheck}>担当できる人（社内の決まり）</SectionTitle>
+          <Hint>
+            「この方は2人だけで担当する」のような決まりがあれば、担当できる{terms.staff}
+            を選びます。選んだ人以外は、条件の重みにかかわらず担当になりません（AI案・振り直し・週のドラッグ・空き状況のどれでも）。休止中の
+            {terms.staff}
+            は選べず、休止にすると外れます。選んだ人が全員いなくなると、限らない（だれでも担当できる）に戻ります。
+          </Hint>
+          <Check
+            checked={limit}
+            onChange={(on) => {
+              setLimit(on);
+              // 入れたときに誰も選んでいなければ、いつもの担当を最初に選んでおく
+              if (on && form.allowedStaffIds.length === 0 && staff.some((s) => s.id === form.usualStaffId && s.active))
+                setForm({ ...form, allowedStaffIds: form.usualStaffId ? [form.usualStaffId] : [] });
+            }}
+          >
+            担当できる人を限る
+          </Check>
+          {limit && (
+            <PickChips
+              label={`担当できる${terms.staff}（押して選ぶ・外す）`}
+              people={staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }))}
+              selected={form.allowedStaffIds}
+              // 全員を選ぶと PickChips は null を返す（全員の ID にする）
+              onChange={(next) =>
+                setForm({ ...form, allowedStaffIds: next ?? staff.filter((s) => s.active).map((s) => s.id) })
+              }
+              bulk={false}
+              testId="client-allowed"
+            />
+          )}
 
           {isNew || !data.clients.some((x) => x.id === form.id) ? (
             <Hint label="定期パターン">

@@ -110,6 +110,12 @@ export type CompileInput = Pick<
 /** 訪問の種類の必要条件の理由の ruleId（条件 rules の ID ではない。ADR-0012） */
 export const VISIT_TYPE_RULE_ID = 'visitType';
 
+/**
+ * 担当できる人（〈利用者さん〉の allowedStaffIds。PRD D68。ADR-0014）で外れる組の理由の ruleId（条件 rules の ID ではない）。
+ * 種類（visitType）と同じく常に必須で、条件の重み・必須・プリセットに関係しない
+ */
+export const ALLOWED_STAFF_RULE_ID = 'allowedStaff';
+
 /** 欠勤で可にならない組の理由の文（ADR-0011。ruleId は 'slot'） */
 export const ABSENT_ALL_DAY = '欠勤（終日）';
 /** 途中の欠勤で、その日の稼働時間帯が全部なくなったとき */
@@ -138,6 +144,13 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   const rules = data.rules.filter(isActive);
   const visitTypes = new Map<string, VisitType>(data.visitTypes.map((t) => [t.id, t]));
   const patterns = new Map<string, Pattern>(data.patterns.map((p) => [p.id, p]));
+  // 担当できる人（ADR-0014）：その日の問題にいる（利用中の）人だけを数える。だれもいなければ限らない（repair と同じ扱い）
+  const activeName = new Map(staffDocs.map((s) => [s.id, s.name]));
+  const limitOf = new Map<string, { ids: Set<string>; names: string }>();
+  for (const c of clients.values()) {
+    const ids = [...new Set(c.allowedStaffIds)].filter((id) => activeName.has(id));
+    if (ids.length > 0) limitOf.set(c.id, { ids: new Set(ids), names: ids.map((id) => activeName.get(id)).join('、') });
+  }
 
   const S = staffDocs.length;
   const daySlots = staffDocs.map((s) => slotsOf(data, s, date));
@@ -247,6 +260,15 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
           (t) => `種類（${vType.name}）：${t} ✓`,
           (t) => `種類（${vType.name}）：${t} ✗`,
           out,
+        );
+      }
+      const limit = limitOf.get(client.id);
+      if (limit) {
+        // 担当できる人を限っている（社内の決まり。常に必須。ADR-0014）
+        out.push(
+          limit.ids.has(s.id)
+            ? { ruleId: ALLOWED_STAFF_RULE_ID, label: `担当を限る：${limit.names} ✓`, points: 0 }
+            : { ruleId: ALLOWED_STAFF_RULE_ID, label: `担当を限る：${limit.names} ✗`, points: INF },
         );
       }
       for (const r of rules) {

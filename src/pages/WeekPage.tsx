@@ -38,7 +38,8 @@ import {
   snapMinutes,
   staffWeekTable,
   staffWithQualification,
-  typeUnfit,
+  type UnfitMark,
+  unfitMarks,
   type WeekDay,
   weekDates,
   weekDay,
@@ -500,6 +501,12 @@ export default function WeekPage() {
                 </span>
                 担当が種類の必要条件を満たさない
               </span>
+              <span className="row week-legend-item">
+                <span className="week-legend-unfit" aria-hidden="true">
+                  限✗
+                </span>
+                担当が担当できる人に入っていない
+              </span>
             </span>
             <Hint>
               帯の中の色は種類、縁の色は{by === 'staff' ? `担当の${terms.staff}` : terms.client}
@@ -677,7 +684,7 @@ export default function WeekPage() {
                   }
                   return b.staffId ? (colorOfStaff.get(b.staffId) ?? null) : null;
                 }}
-                unfit={(b) => typeUnfit(day.problem, b.visitId, b.staffId)}
+                unfit={(b) => unfitMarks(day.problem, b.visitId, b.staffId)}
                 onOpen={(b) => openDay(b.date, b.visitId)}
                 onKey={onBandKey}
                 onDragStart={onDragStart}
@@ -835,7 +842,8 @@ export default function WeekPage() {
                                 const type = typeOf(data.visitTypes, it.typeId);
                                 // 〈利用者さん〉の休み（ADR-0013）の訪問は動かさない
                                 const movable = canMoveVisit(it.date, today) && !it.leave;
-                                const bad = typeUnfit(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
+                                const marks = unfitMarks(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
+                                const bad = marks.length > 0;
                                 return (
                                   <button
                                     key={it.visitId}
@@ -847,7 +855,8 @@ export default function WeekPage() {
                                     onKeyDown={(e) => (it.leave ? undefined : onItemKey(e, it))}
                                     onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
                                     onDragEnd={onDragEnd}
-                                    aria-label={`${hm(it.start)} ${type ? `${type.name}・` : ''}${it.leave ? '休みのため無し' : staffName(it.staffId)}${bad ? '・資格✗' : ''}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
+                                    aria-label={`${hm(it.start)} ${type ? `${type.name}・` : ''}${it.leave ? '休みのため無し' : staffName(it.staffId)}${marks.map((m) => `・${m.short}`).join('')}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
+                                    title={marks.map((m) => `${m.short}：${m.why}`).join('／') || undefined}
                                     data-testid="week-citem"
                                     data-visit={it.visitId}
                                   >
@@ -859,7 +868,11 @@ export default function WeekPage() {
                                       </span>
                                     )}
                                     <span className="week-citem-staff">
-                                      {bad && <span className="week-band-unfit">資格✗</span>}
+                                      {marks.map((m) => (
+                                        <span key={m.short} className="week-band-unfit">
+                                          {m.short}
+                                        </span>
+                                      ))}
                                       {it.leave ? '休み' : staffName(it.staffId)}
                                     </span>
                                   </button>
@@ -1032,8 +1045,8 @@ function DayColumn({
   typeColor: (v: Visit | undefined) => string | null;
   /** 帯の縁の色（担当・〈利用者さん〉の色） */
   edgeColor: (b: Band) => string | null;
-  /** 担当が種類の必要条件で可でない（資格✗） */
-  unfit: (b: Band) => boolean;
+  /** 担当が種類の必要条件（資格✗）・担当を限る決まり（限✗。ADR-0014）で可でない */
+  unfit: (b: Band) => UnfitMark[];
   onOpen: (b: Band) => void;
   onKey: (e: KeyboardEvent, b: Band) => void;
   onDragStart: (e: DragEvent<HTMLElement>, visitId: string) => void;
@@ -1070,7 +1083,8 @@ function DayColumn({
         const v = visitById.get(b.visitId);
         const l = lanes.get(b.visitId) ?? { lane: 0, lanes: 1 };
         const edge = edgeColor(b);
-        const bad = unfit(b);
+        const marks = unfit(b);
+        const bad = marks.length > 0;
         const { client } = bandLabel(b);
         // 〈利用者さん〉の休み（ADR-0013）の訪問は薄く「休み」と出し、動かさない
         const staff = b.leave ? '休みのため無し' : bandLabel(b).staff;
@@ -1092,8 +1106,8 @@ function DayColumn({
               background: color ?? undefined,
               borderColor: !bad && b.staffId !== null && edge ? edge : undefined,
             }}
-            title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${bad ? '（資格✗：担当が種類の必要条件を満たさない）' : ''}`}
-            aria-label={`${hm(b.start)} ${client}・${staff}${bad ? '・資格✗' : ''}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
+            title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${marks.map((m) => `（${m.short}：${m.why}）`).join('')}`}
+            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
             onClick={() => onOpen(b)}
             onKeyDown={(e) => (b.leave ? undefined : onKey(e, b))}
             onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}
@@ -1104,7 +1118,11 @@ function DayColumn({
             <span className="week-band-time">{hm(b.start)}</span>
             <span className="week-band-client">{client}</span>
             <span className="week-band-staff">
-              {bad && <span className="week-band-unfit">資格✗</span>}
+              {marks.map((m) => (
+                <span key={m.short} className="week-band-unfit">
+                  {m.short}
+                </span>
+              ))}
               {staff}
             </span>
           </button>

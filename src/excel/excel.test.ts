@@ -1042,3 +1042,55 @@ describe('第N曜日・曜日ごとの時刻・決まりごと・〈利用者さ
     expect(msg2).toContain('シート『訪問先の休み』の 3行目・');
   });
 });
+
+describe('〈利用者さん〉の担当できる人の列（ADR-0014）', () => {
+  const withLimit = (d: DemoData): DemoData => ({
+    ...d,
+    clients: d.clients.map((c, i) =>
+      i === 0
+        ? { ...c, allowedStaffIds: [d.staff[1]!.id, d.staff[0]!.id] }
+        : i === 3
+          ? { ...c, allowedStaffIds: [d.staff[2]!.id] }
+          : c,
+    ),
+  });
+  it('担当できる人が 書き出し → 読み込み で同じに戻る（列は「いつもの担当」の次、名前を「、」で区切る）', async () => {
+    const d = withLimit(base());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const ws = sheet(wb, personSheetNames(d.org.terms).client);
+    expect(col(ws, '担当できる人')).toBe(col(ws, 'いつもの担当') + 1);
+    expect(ws.getRow(2).getCell(col(ws, '担当できる人')).value).toBe(`${d.staff[1]!.name}、${d.staff[0]!.name}`);
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.clients.map((c) => c.allowedStaffIds)).toEqual(d.clients.map((c) => c.allowedStaffIds));
+    expect(r).toEqual(withoutPlans(d));
+  });
+  it('「担当できる人」の列が無い古いブックは限らない', async () => {
+    const d = withLimit(base());
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.spliceColumns(col(ws, '担当できる人'), 1);
+      }),
+    );
+    expect(r.clients.every((c) => c.allowedStaffIds.length === 0)).toBe(true);
+  });
+  it('いない〈スタッフ〉の名前はシート名と行番号付きで止める。同じ名前の重なりは1人', async () => {
+    const d = base();
+    const names = personSheetNames(d.org.terms);
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, names.client);
+        ws.getRow(2).getCell(col(ws, '担当できる人')).value = `${d.staff[0]!.name}、だれか`;
+      }),
+    );
+    expect(msg).toContain(`シート『${names.client}』の 2行目・『担当できる人』：「だれか」という`);
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, names.client);
+        ws.getRow(2).getCell(col(ws, '担当できる人')).value = `${d.staff[0]!.name}\n${d.staff[0]!.name}`;
+      }),
+    );
+    expect(r.clients[0]!.allowedStaffIds).toEqual([d.staff[0]!.id]);
+  });
+});
