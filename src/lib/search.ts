@@ -12,7 +12,19 @@ function kataToHira(text: string): string {
  * 例：「ﾄｼｮｶﾝ　フミ」→「としょかんふみ」
  */
 export function normalizeKana(text: string): string {
-  return kataToHira(text.normalize('NFKC').toLowerCase().replace(/\s+/g, ''));
+  // ハイフン・各種マイナス・ダッシュ（NFKC で残るもの）は長音「ー」にそろえる
+  return kataToHira(
+    text
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/[-‐‑‒–—―−－ｰ]/g, 'ー'),
+  );
+}
+
+/** 近道のまとめて選ぶボタンの文。N は足す人数（すでに選んでいる人は数えない） */
+export function chooseAllLabel(toAdd: number): string {
+  return `あと${toAdd}人を選ぶ`;
 }
 
 /** 表示名かよみに query が含まれるか（query が空なら true） */

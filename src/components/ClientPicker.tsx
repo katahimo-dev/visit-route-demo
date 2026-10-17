@@ -6,7 +6,7 @@ import { Search, X } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Client } from '../contracts/documents';
 import { colorOf, initialOf } from '../lib/colors';
-import { countAmong, defaultStaffOf, searchClients } from '../lib/search';
+import { chooseAllLabel, countAmong, defaultStaffOf, searchClients } from '../lib/search';
 import { TentativeMark } from './parts';
 import './clientPicker.css';
 
@@ -62,7 +62,8 @@ export type ClientPickerProps = {
 
 /**
  * 〈利用者さん〉の検索欄（combobox）。近道は候補を絞る切り替え（押すと候補が開く。もう一度押すと外れる）で、
- * 複数のときは近道で絞った人を「この N人を選ぶ」でまとめて選べる。
+ * 複数のときは近道で絞った人を「あと N人を選ぶ」（N＝足す人数）でまとめて選べる。
+ * 上限を超えるときはボタンを残したまま押せなくし、理由の文を添える。
  * キーボード：↓↑で候補を移る、Enter で選ぶ（複数のときは選んでいる人を外す）、Esc で閉じる（閉じていれば文字を消す）、
  * 文字が空で Backspace は最後のチップを外す（複数のとき）
  */
@@ -174,15 +175,13 @@ export function ClientPicker({
   };
   /** まとめて選ぶと足される人（選んでいない人） */
   const toAdd = base.filter((c) => !isSelected(c.id)).length;
-  /** 「この N人を選ぶ」を出すか：足す人がいて、上限（max）を超えないとき（超えるなら押せないので出さない） */
-  const canChooseAll = toAdd > 0 && (max === undefined || selected.length + toAdd <= max);
+  /** まとめて選ぶと上限（max）を超えるか（超えるときはボタンを残したまま押せなくして理由を添える） */
+  const overAll = max !== undefined && selected.length + toAdd > max;
+  const chooseAllNoteId = `${uid}-choose-all-note`;
   /** 近道で絞った人をまとめて選ぶ（複数のとき。上限を超えるなら選ばない） */
   const chooseAll = () => {
     const add = base.map((c) => c.id).filter((id) => !isSelected(id));
-    if (max !== undefined && selected.length + add.length > max) {
-      setMessage(overText);
-      return;
-    }
+    if (overAll) return;
     setMessage(null);
     onChange([...selected, ...add]);
     // まとめて選んだら候補の欄は閉じる（開いたままだと下の表・時間軸を隠す）
@@ -195,6 +194,8 @@ export function ClientPicker({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // 日本語入力の変換中は、Enter・↑↓を変換の操作に譲る（候補を選ばない）
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!open) {
@@ -332,10 +333,22 @@ export function ClientPicker({
         )}
         {shortcutBtn('recent', '最近選んだ人', recent.length)}
         {tentativeCount > 0 && shortcutBtn('tentative', '仮押さえの人', tentativeCount)}
-        {multiple && shortcut !== null && canChooseAll && (
-          <button type="button" className="btn btn-small" onClick={chooseAll} data-testid={`${testId}-choose-all`}>
-            この{base.length}人を選ぶ
+        {multiple && shortcut !== null && toAdd > 0 && (
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-disabled={overAll || undefined}
+            aria-describedby={overAll ? chooseAllNoteId : undefined}
+            onClick={chooseAll}
+            data-testid={`${testId}-choose-all`}
+          >
+            {chooseAllLabel(toAdd)}
           </button>
+        )}
+        {multiple && shortcut !== null && toAdd > 0 && overAll && (max === undefined || selected.length <= max) && (
+          <small id={chooseAllNoteId} className="client-picker-over" data-testid={`${testId}-choose-all-note`}>
+            {overText}
+          </small>
         )}
       </fieldset>
       <div className="client-picker-box">

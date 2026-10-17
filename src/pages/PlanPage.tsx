@@ -248,6 +248,21 @@ export default function PlanPage() {
   /** 地図を時間軸の横に出すか（1280px 以上。畳める）。狭い画面は下に置き、画面の外なら MapDock */
   const wideMap = useMedia(WIDE_MAP_QUERY);
   const [mapOpen, setMapOpen] = useState(true);
+  const mapBodyId = useId();
+  const mapCollapseId = useId();
+  const mapExpandId = useId();
+  /** 畳む・開くを切り替えたあと、反対のボタンへフォーカスを渡す（押したボタンは消えるので、フォーカスが落ちない） */
+  const mapFocusNext = useRef<string | null>(null);
+  const toggleMap = (open: boolean) => {
+    mapFocusNext.current = open ? mapCollapseId : mapExpandId;
+    setMapOpen(open);
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 畳む・開くを切り替えたときだけ
+  useEffect(() => {
+    const id = mapFocusNext.current;
+    mapFocusNext.current = null;
+    if (id) document.getElementById(id)?.focus();
+  }, [mapOpen]);
   /** 「入らなかった訪問」の列（帯の近道の行き先） */
   const noneColId = useId();
   /** 訪問の入力欄（開いたら見える所へ） */
@@ -1803,6 +1818,25 @@ export default function PlanPage() {
       document.getElementById(noneColId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
     );
   };
+  /** この日にAI案が無いときの案内と「AI案を作る」（担当ごと・一覧のどちらの表示でも出す） */
+  const noPlanCard = (
+    <div className="card">
+      <Empty icon={Sparkles}>
+        {runningFor?.date === date
+          ? `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
+          : running && runningFor
+            ? `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
+            : 'この日のAI案はまだありません。'}
+      </Empty>
+      {!running && (
+        <div className="row" style={{ justifyContent: 'center' }}>
+          <button type="button" className="btn btn-primary" disabled={!problem} onClick={() => create()}>
+            <WithIcon icon={Sparkles}>AI案を作る</WithIcon>
+          </button>
+        </div>
+      )}
+    </div>
+  );
   const busyWhy = running ? '計算中は選べません' : !problem ? 'この日に計算できる訪問がありません' : false;
   /** 「案を変える ▾」の項目（PRD D63）。プリセットごとの案は押すと今の runPreset（カードを押したのと同じ） */
   const menuItems: MenuItem[] = [
@@ -2264,24 +2298,17 @@ export default function PlanPage() {
               </ReassignBar>
             )}
             {shownView === 'list' ? (
-              visitList
+              // 一覧でも、案が無い日は「まだありません」と作るボタンを出す（主ボタンは1画面に1〜2個）
+              hasVisits && !aiPlan ? (
+                <>
+                  {noPlanCard}
+                  {visitList}
+                </>
+              ) : (
+                visitList
+              )
             ) : !hasVisits ? null : !aiPlan ? (
-              <div className="card">
-                <Empty icon={Sparkles}>
-                  {runningFor?.date === date
-                    ? `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
-                    : running && runningFor
-                      ? `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
-                      : 'この日のAI案はまだありません。'}
-                </Empty>
-                {!running && (
-                  <div className="row" style={{ justifyContent: 'center' }}>
-                    <button type="button" className="btn btn-primary" disabled={!problem} onClick={() => create()}>
-                      <WithIcon icon={Sparkles}>AI案を作る</WithIcon>
-                    </button>
-                  </div>
-                )}
-              </div>
+              noPlanCard
             ) : (
               <div className="card stack plan-view" data-testid="plan-view">
                 {shownView === 'timeline' ? (
@@ -2325,6 +2352,7 @@ export default function PlanPage() {
             <aside
               ref={mapCardRef}
               className={mapShown ? 'card stack plan-map' : 'plan-map is-closed'}
+              id={mapBodyId}
               aria-label="地図"
               data-testid="plan-map"
             >
@@ -2343,7 +2371,10 @@ export default function PlanPage() {
                           <IconButton
                             icon={PanelRightClose}
                             label="地図を畳む"
-                            onClick={() => setMapOpen(false)}
+                            onClick={() => toggleMap(false)}
+                            id={mapCollapseId}
+                            aria-expanded={true}
+                            aria-controls={mapBodyId}
                             data-testid="map-collapse"
                           />
                         )}
@@ -2366,7 +2397,10 @@ export default function PlanPage() {
                 <button
                   type="button"
                   className="btn plan-map-open"
-                  onClick={() => setMapOpen(true)}
+                  id={mapExpandId}
+                  onClick={() => toggleMap(true)}
+                  aria-expanded={false}
+                  aria-controls={mapBodyId}
                   data-testid="map-expand"
                   title="地図を開く"
                 >

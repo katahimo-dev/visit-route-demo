@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { countAmong, defaultStaffOf, matchClient, normalizeKana, searchClients, staffClientMap } from './search';
+import {
+  chooseAllLabel,
+  countAmong,
+  defaultStaffOf,
+  matchClient,
+  normalizeKana,
+  searchClients,
+  staffClientMap,
+} from './search';
 
 describe('normalizeKana', () => {
   it('カタカナをひらがなに、全角半角・大文字小文字・空白をそろえる', () => {
@@ -13,6 +21,20 @@ describe('normalizeKana', () => {
   });
   it('濁点つきの半角カナも1字にそろう', () => {
     expect(normalizeKana('ｶﾞｸ')).toBe('がく');
+  });
+});
+
+describe('ハイフン類と長音', () => {
+  it('ハイフン・全角マイナス・ダッシュは長音にそろう', () => {
+    for (const ch of ['-', '－', '‐', '−', '–', '—']) expect(normalizeKana(`さとう${ch}`)).toBe('さとうー');
+    expect(matchClient({ displayName: 'ケーキ店', kana: 'けーきてん' }, 'け-き')).toBe(true);
+  });
+});
+
+describe('chooseAllLabel', () => {
+  it('足す人数で「あと N人を選ぶ」', () => {
+    expect(chooseAllLabel(3)).toBe('あと3人を選ぶ');
+    expect(chooseAllLabel(1)).toBe('あと1人を選ぶ');
   });
 });
 
