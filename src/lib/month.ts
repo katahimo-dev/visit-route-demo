@@ -153,7 +153,7 @@ export type DayView = {
   visitIds?: readonly string[];
   /** 欠勤（希望休も）の時間と重なる・最終勤務日の後（ADR-0015）なのに、その人に残っている訪問の数（数える案で。ADR-0014） */
   absentLeft?: number;
-  /** 拘束が上限を超える〈スタッフ〉の ID（稼働の見込み。確定した割当、無ければ今の案。ADR-0015） */
+  /** 拘束が上限を超える〈スタッフ〉の ID（ADR-0015。月のマスの数える案＝今の案、無ければ確定した割当で） */
   overSpan?: readonly string[];
 };
 

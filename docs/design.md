@@ -945,17 +945,21 @@ function workStats(problem, routes, { fareYenPerKm, spanLimitHours }, sortByStar
 function workMonth(data, ym, problemOf?): WorkDay[];  function workTotals(days): Map<staffId, WorkTotal>;  function workloadTsv(days, staff, opts): string
 
 // lib/offboard
-function offboardScope(data, staffId, today): OffboardScope | null
+function offboardScope(data, staffId, today, withCandidates = true): OffboardScope | null   // false なら候補を数えない（件数だけ）
 //   { staffId, lastDay, from（翌日。今日より前なら今日）, visits: { date, visitId, clientId, confirmed, plan }[],
 //     clients: { clientId, roles: ('usual'|'pattern'|'allowed')[], patternIds, sample, candidates: { staffId, fits, load }[] }[] }
-function applyOffboard(data, staffId, choices: Record<clientId, staffId | null>, from): DemoData
+function applyOffboardWith(data, staffId, choices: Record<clientId, staffId | null>, from, today, newId: () => string): { data: DemoData; renamed: number }
+function applyOffboard(data, staffId, choices, from, today, newId): DemoData   // applyOffboardWith の data
+function unlimitedBy(data, staffId, choices): clientId[]   // 「だれにもしない」で担当を限らなくなる〈利用者さん〉（確認に出す）
 ```
 
 - 最終勤務日の後の人は compile の問題に残る（稼働時間帯が空。理由「最終勤務日の後」）。案のその人の列の訪問は必須の違反になり、月間は「休みの人に N」、記録のある案は `problemKey` が変わるので「条件が変わった」。担当できる人（ADR-0014）の数え方は変えない（利用中の人を数える）ので、その人だけに限った〈利用者さん〉は最終勤務日の後に入らなくなる（黙って「限らない」にしない）
 - 候補（`offboardScope`）：見本の期間（`from` から28日。`applyPatterns` で未展開の回も入れる。データは書き換えない）のその〈利用者さん〉の訪問ごとに、担当できる人の決まりを外した問題と、その日の案（`workRoutesOf`。その人の列は除く）に reassign の `fitsOf` で入れられる人を数える。並びは 入れる回の多い順 → 受け持ち（見本の期間にいつもの担当になっている訪問の数）の少ない順 → 名前。候補はその人を除き、`from` に勤めている利用中の人
 - 適用（`applyOffboard(data, staffId, choices, from, today, newId)`）：`from` から受け持ちを移す。実際のいつもの担当（パターンに無ければ〈利用者さん〉の）がその人のパターンは、`from` より前に始まって続くなら `splitPattern` で分け（前はその人と書く・後ろは代わりの人。パターンに無かったなら無いまま）、`from` 以降に始まるならその場で、`from` より前に終わるならその人と書く。〈利用者さん〉のいつもの担当は代わりの人。担当できる人は代わりの人を足す（その人は残す。null ならその人を外す）。`from` より前の日の「いつもの担当」は変わらない。案・確定した割当は変えない（分けたパターンの `from` からの訪問は作り直す）
+- 分けたパターンの回（元の日 `pattern.date` が `from` 以降。この回だけの変更・取り消しの回も）は作り直さず、中身（担当・時刻・メモ）のまま、パターンを新しいパターンに・ID を「元の日_新しいパターンID」に付け替え、確定した割当・今の案（routes・unassigned・generated・pins・reassign の元の案）・記録の古い ID も同じに置き換える（PR #22 のレビュー。ほかの人に確定していた日が repair で崩れない。ID の付け替えは Excel の「パターンの訪問の ID は元の日_パターンID」の決まりを保つため）。付け替えられない回は出ない（数は `renamed` で確認に出す）
+- 候補の「その日の案」は lib/absences の `baseOf`（確定した割当は今の案の順・開始の順に並べる）。並べないと strict で回れず数えられない
 - 範囲の担当できる人：その人のほかに `from` に勤める人がいる〈利用者さん〉は数えない（適用で代わりの人を足したあとも）
-- 稼働の見込み：月間・稼働の見込みの画面・Excel は確定した割当を先に、日の画面は今の案を先に数える（手直し中の案に注意を出す）。確定した割当は開始（早）の順に並べ直す。時刻は `scheduleRoute` の lenient
+- 稼働の見込み：稼働の見込みの画面・Excel は確定した割当を先に（印刷と同じ）、月間の日のマスと日の画面は今の案を先に数える（月のマスはほかの印と同じ `dayPlanOf`。日の画面は手直し中の案に注意を出す。PR #22 のレビュー）。拘束は分に丸めてから上限と比べる（表示と判定をそろえる）。確定した割当は開始（早）の順に並べ直す。時刻は `scheduleRoute` の lenient
 - 段階：段階が正。`repair`・`withStage` が active・tentative を合わせる。予定・AI案の対象は今までどおり active だけを見る（matching・patterns・画面は変えない）
 
 ### Excel のブックの形（`src/excel/`。ADR-0006）

@@ -6,7 +6,15 @@ import { useToast } from '../components/Toast';
 import { Hint, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { addDays, jstDate, weekday } from '../domain/time';
 import { byName, newId, WEEKDAY_LABELS } from '../lib/common';
-import { applyOffboard, defaultChoice, OFFBOARD_SAMPLE_DAYS, type OffboardRole, offboardScope } from '../lib/offboard';
+import {
+  applyOffboard,
+  applyOffboardWith,
+  defaultChoice,
+  OFFBOARD_SAMPLE_DAYS,
+  type OffboardRole,
+  offboardScope,
+  unlimitedBy,
+} from '../lib/offboard';
 import { mdText } from '../lib/patternText';
 import { useDemoData } from '../store';
 
@@ -71,14 +79,32 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
     const picked: Record<string, string | null> = {};
     for (const c of scope.clients) picked[c.clientId] = choices[c.clientId] || null;
     const nobody = scope.clients.filter((c) => !picked[c.clientId]).map((c) => clientById.get(c.clientId)?.displayName);
-    const msg = `${scope.clients.length}人の${terms.client}の担当を、${mdText(scope.from)}から選んだ${terms.staff}に移します（それより前の日はそのまま）。${
-      nobody.length > 0
-        ? `${nobody.join('・')}は「だれにもしない」なので、いつもの担当が無くなります（担当できる人を限っていれば外します）。`
-        : ''
-    }定期パターンは${mdText(scope.from)}で分け、その日からの訪問を作り直します。訪問の案（担当）は作り直しません。よろしいですか？`;
-    if (!confirm(msg)) return;
+    // 担当できる人がその人だけの〈利用者さん〉を「だれにもしない」にすると、担当を限らなくなる
+    const unlimited = unlimitedBy(data, staffId, picked).map((id) => clientById.get(id)?.displayName);
+    // 確認の前に同じ規則で一度当てて、付け替える訪問の数を出す（データは変えない）
     const from = scope.from;
-    update((d) => applyOffboard(d, staffId, picked, from, today, () => newId('pt')));
+    const pids: string[] = [];
+    const nextPid = () => {
+      const id = newId('pt');
+      pids.push(id);
+      return id;
+    };
+    const preview = applyOffboardWith(data, staffId, picked, from, today, nextPid);
+    const msg = `${scope.clients.length}人の${terms.client}の担当を、${mdText(from)}から選んだ${terms.staff}に移します（それより前の日はそのまま）。${
+      nobody.length > 0 ? `${nobody.join('・')}は「だれにもしない」なので、いつもの担当が無くなります。` : ''
+    }${
+      unlimited.length > 0
+        ? `${unlimited.join('・')}は担当できる人がいなくなり、担当を限らなくなります（だれでも担当できます）。`
+        : ''
+    }${
+      preview.renamed > 0
+        ? `定期パターンは${mdText(from)}で分け、その日からの訪問 ${preview.renamed}件を新しいパターンの回に付け替えます（担当・時刻・メモと、確定した割当・今の案はそのまま）。`
+        : ''
+    }訪問の案（担当）は作り直しません。よろしいですか？`;
+    if (!confirm(msg)) return;
+    // 確認と同じパターン ID で当てる
+    let k = 0;
+    update((d) => applyOffboard(d, staffId, picked, from, today, () => pids[k++] ?? newId('pt')));
     toast(
       `${scope.clients.length}人の担当を置き換えました。訪問の案は月間の「条件が変わった日を作り直す」か、日の画面で直してください`,
     );

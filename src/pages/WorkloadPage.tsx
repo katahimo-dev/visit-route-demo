@@ -163,8 +163,11 @@ export default function WorkloadPage() {
           <button
             type="button"
             className="btn btn-small"
-            disabled={ym === ymOf(today)}
-            onClick={() => patch({ ym: ymOf(today) })}
+            aria-disabled={ym === ymOf(today) || undefined}
+            title={ym === ymOf(today) ? 'いま今月を見ています' : '今月を見る'}
+            onClick={() => {
+              if (ym !== ymOf(today)) patch({ ym: ymOf(today) });
+            }}
           >
             今月
           </button>

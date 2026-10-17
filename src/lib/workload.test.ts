@@ -86,6 +86,10 @@ describe('稼働の見込み（workStats）', () => {
     expect(workStats(p, { s1: ['v1', 'v2', 'v3'] }, { ...d.org, spanLimitHours: 0 })[0]!.over).toBe(false);
     expect(isOverSpan(600, 10)).toBe(false);
     expect(isOverSpan(601, 10)).toBe(true);
+    // 表示（分に丸めた h:mm）と判定をそろえる：600.4分は 10:00 と出るので超えない、600.6分は 10:01 で超える
+    expect(isOverSpan(600.4, 10)).toBe(false);
+    expect(hmText(600.4)).toBe('10:00');
+    expect(isOverSpan(600.6, 10)).toBe(true);
     expect(isOverSpan(9999, 0)).toBe(false);
   });
 

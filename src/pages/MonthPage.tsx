@@ -82,7 +82,7 @@ import {
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
-import { workRoutesOf, workStats } from '../lib/workload';
+import { workStats } from '../lib/workload';
 import { type CompileInput, compile } from '../matching';
 import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
@@ -355,14 +355,16 @@ export default function MonthPage() {
         view = { visitIds: sp.visits.map((v) => v.id) };
       }
       if (left.size > 0) view = { ...view, absentLeft: left.size };
-      // 拘束が上限を超える人（稼働の見込み。確定した割当、無ければ今の案。ADR-0015）。org（上限）は base に入っている
+      // 拘束が上限を超える人（ADR-0015）。月のマスの中は他の印と同じ数える案（dayPlanOf：今の案、無ければ確定した割当。
+      // 確定した割当は開始の順に並べ済み）で数える。org（上限）は base に入っている
       if (sp) {
-        const work = workRoutesOf(data, d, sp);
-        const over = work
-          ? workStats(sp, work.routes, c.org, work.source === 'confirmed')
-              .filter((x) => x.over)
-              .map((x) => x.staffId)
-          : [];
+        const dp = dayPlanOf(data, d, sp);
+        const over =
+          dp.source !== null
+            ? workStats(sp, dp.routes, c.org)
+                .filter((x) => x.over)
+                .map((x) => x.staffId)
+            : [];
         if (over.length > 0) view = { ...view, overSpan: over };
       }
       memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });

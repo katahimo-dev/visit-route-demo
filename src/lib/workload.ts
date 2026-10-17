@@ -43,10 +43,10 @@ export type WorkOptions = { fareYenPerKm: number; spanLimitHours: number };
 /** 拘束の上限（分）。0 なら上限なし（null） */
 export const spanLimitMinutes = (hours: number): number | null => (hours > 0 ? hours * 60 : null);
 
-/** 拘束が上限を超えるか（上限なしなら false） */
+/** 拘束が上限を超えるか（上限なしなら false）。拘束は表示と同じく分に丸めてから比べる */
 export const isOverSpan = (span: number, limitHours: number): boolean => {
   const limit = spanLimitMinutes(limitHours);
-  return limit !== null && span > limit + 1e-9;
+  return limit !== null && Math.round(span) > limit;
 };
 
 /** 交通費（円）：距離（m）×単価（円/km）を四捨五入 */

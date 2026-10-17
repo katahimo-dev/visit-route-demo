@@ -5,7 +5,8 @@ import type { Pattern } from '../contracts/documents';
 import { afterLastDay, availabilityOf } from '../domain/availability';
 import { AFTER_LAST_DAY, compile } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import { applyOffboard, defaultChoice, offboardScope } from './offboard';
+import { repair } from '../store/repair';
+import { applyOffboard, applyOffboardWith, defaultChoice, offboardScope, unlimitedBy } from './offboard';
 import { absentLeftIds } from './requestedOff';
 
 /** DATE（月曜）の翌日 */
@@ -175,7 +176,8 @@ describe('まとめて適用（applyOffboard）', () => {
     // 分けたパターンの数え始める日からの訪問は作り直す（ID が新しいパターンの回）
     expect(x.visits.some((v) => v.id === `${TUE}_p1`)).toBe(false);
     expect(x.visits.some((v) => v.id === `${TUE}_new1` && v.clientId === 'c1')).toBe(true);
-    expect(x.aiPlans).toBe(d.aiPlans);
+    // 案の担当は変えない（分けたパターンの回の ID だけ付け替える）
+    expect(x.aiPlans[TUE]!.routes).toEqual({ s1: [`${TUE}_new1`] });
     // 振り直しが済むと範囲に〈利用者さん〉は残らない
     expect(offboardScope(x, 's1', DATE)!.clients).toEqual([]);
   });
@@ -208,5 +210,104 @@ describe('まとめて適用（applyOffboard）', () => {
     expect(c.get('c1')!.usualStaffId).toBeNull();
     expect(c.get('c2')!.allowedStaffIds).toEqual([]);
     expect(offboardScope(x, 's1', DATE)!.clients).toEqual([]);
+  });
+});
+
+describe('レビューの反映（PR #22）', () => {
+  const ids = () => {
+    let n = 0;
+    return () => `new${++n}`;
+  };
+
+  it('候補：確定した割当の列は開始の順に並べて数える（visits の順のままだと回れず 0 になっていた）', () => {
+    // s2 に確定した 15:00 → 8:30（visits の順）。c1 の 10:00〜11:00 は 8:30〜9:30 のあと・15:00 の前に入る
+    const extra = [
+      visit(`${TUE}_x15`, 'c3', '15:00', '15:00', { windowKind: 'fixed', date: TUE }),
+      visit(`${TUE}_x09`, 'c3', '08:30', '08:30', { windowKind: 'fixed', date: TUE }),
+    ];
+    const d = data({
+      staff: [
+        staff('s1', 38.26, 140.87, { name: '山田 花', lastDay: DATE }),
+        staff('s2', 38.27, 140.88, { name: '佐藤 一' }),
+      ],
+      visits: [...data().visits, ...extra],
+      manualPlans: { [TUE]: { s2: [`${TUE}_x15`, `${TUE}_x09`] } },
+    });
+    const c1 = offboardScope(d, 's1', DATE)!.clients.find((c) => c.clientId === 'c1')!;
+    expect(c1.candidates.find((x) => x.staffId === 's2')!.fits).toBe(c1.sample);
+  });
+
+  it('分けたパターンの回は ID を付け替え、ほかの人の確定した割当・今の案・記録・担当・固定も同じに置き換える（repair で消えない）', () => {
+    const vid = `${TUE}_p1`;
+    const base = data();
+    const d: DemoData = {
+      ...base,
+      visits: base.visits.map((v) => (v.id === vid ? { ...v, staffId: 's2', note: 'メモ' } : v)),
+      manualPlans: { [TUE]: { s2: [vid], __none: [] } },
+      aiPlans: { [TUE]: { ...plan({ s2: [vid] }, TUE), pins: { [vid]: 's2' } } },
+      aiRuns: {
+        [TUE]: [
+          {
+            id: 'r1',
+            no: 1,
+            date: TUE,
+            createdAt: 1,
+            label: '標準',
+            presetId: null,
+            seed: 1,
+            iterations: 1,
+            rules: [],
+            pins: {},
+            routes: { s2: [vid] },
+            unassigned: [],
+            score: 0,
+            stopped: false,
+          },
+        ],
+      },
+    };
+    const r = applyOffboardWith(d, 's1', { c1: 's3' }, TUE, DATE, ids());
+    const nid = `${TUE}_new1`;
+    expect(r.renamed).toBeGreaterThan(0);
+    const x = repair(r.data);
+    const v = x.visits.find((y) => y.id === nid)!;
+    expect([v.staffId, v.note, v.pattern?.id]).toEqual(['s2', 'メモ', 'new1']);
+    expect(x.visits.some((y) => y.id === vid)).toBe(false);
+    expect(x.manualPlans[TUE]!.s2).toEqual([nid]);
+    expect(x.aiPlans[TUE]!.routes.s2).toEqual([nid]);
+    expect(x.aiPlans[TUE]!.generated.routes.s2).toEqual([nid]);
+    expect(x.aiPlans[TUE]!.pins).toEqual({ [nid]: 's2' });
+    expect(x.aiRuns[TUE]![0]!.routes.s2).toEqual([nid]);
+    // 前の日の訪問は付け替えない
+    expect(x.patterns.find((p) => p.id === 'p1')!.to).toBe(DATE);
+  });
+
+  it('数え始める日からの この回だけの変更・取り消しの回も新しいパターンの回にする（前の日の回は元のまま）', () => {
+    const base = data();
+    const d: DemoData = {
+      ...base,
+      visits: [
+        ...base.visits.map((v) =>
+          v.id === `${TUE}_p1` ? { ...v, cancelled: true, pattern: { ...v.pattern!, edited: true } } : v,
+        ),
+        visit(`${DATE}_p1`, 'c1', '10:00', '10:00', {
+          windowKind: 'fixed',
+          pattern: { id: 'p1', date: DATE, edited: true },
+        }),
+      ],
+    };
+    const x = applyOffboard(d, 's1', { c1: 's2' }, TUE, DATE, ids());
+    const cancelled = x.visits.find((v) => v.date === TUE && v.clientId === 'c1')!;
+    expect([cancelled.id, cancelled.pattern?.id, cancelled.cancelled]).toEqual([`${TUE}_new1`, 'new1', true]);
+    expect(x.visits.find((v) => v.date === DATE && v.clientId === 'c1')!.pattern?.id).toBe('p1');
+    // 新しいパターンのいつもの担当は無い（＝〈利用者さん〉のいつもの担当＝代わりの人）
+    const p = x.patterns.find((y) => y.id === 'new1')!;
+    expect(p.usualStaffId ?? x.clients.find((c) => c.id === 'c1')!.usualStaffId).toBe('s2');
+  });
+
+  it('担当できる人がその人だけの〈利用者さん〉を「だれにもしない」にすると、担当を限らなくなる（確認に出す）', () => {
+    const d = data();
+    expect(unlimitedBy(d, 's1', { c2: null, c1: null })).toEqual(['c2']);
+    expect(unlimitedBy(d, 's1', { c2: 's2' })).toEqual([]);
   });
 });

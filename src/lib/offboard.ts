@@ -2,7 +2,7 @@
 // 担当する訪問（確定した割当・今の案）と、その人をいつもの担当・パターンの担当・担当できる人にしている〈利用者さん〉を
 // 一覧にし、〈利用者さん〉ごとに代わりの候補を出す。選んだ人で「まとめて適用」する（訪問の案は作り直さない）。
 // 純粋関数（データは書き換えず、新しい DemoData を返す）
-import type { DemoData } from '../contracts/data';
+import type { DemoData, ReassignInfo } from '../contracts/data';
 import type { Client } from '../contracts/documents';
 import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
@@ -10,8 +10,8 @@ import { addDays } from '../domain/time';
 import { compile } from '../matching';
 import { applyPatterns, splitPattern } from '../patterns';
 import { fitsOf } from '../reassign';
+import { baseOf } from './absences';
 import { attempt, own } from './common';
-import { workRoutesOf } from './workload';
 
 /** 候補を数える見本の期間（日。最終勤務日の翌日（今日より前なら今日）から） */
 export const OFFBOARD_SAMPLE_DAYS = 28;
@@ -165,7 +165,8 @@ export function offboardScope(
     const dayVisits = inRange.filter((v) => v.date === date);
     const p = attempt(() => compile({ ...hypo, visits: dayVisits }, date)).value;
     if (!p) continue;
-    const base = workRoutesOf(data, date, p);
+    // その日の案：確定した割当は開始の順に並べる（strict で回れる順。振り直しの元の案と同じ lib/absences の baseOf）
+    const base = baseOf(data, date, p);
     const routes: Record<string, string[]> = {};
     for (const [k, ids] of Object.entries(base?.routes ?? {})) if (k !== staffId && k !== NONE) routes[k] = [...ids];
     for (const v of dayVisits) {
@@ -224,31 +225,95 @@ export function defaultChoice(c: OffboardClient): string | null {
   return c.candidates.find((x) => x.fits > 0)?.staffId ?? null;
 }
 
+/** まとめて適用の結果。renamed は分けたパターンの回で ID を付け替えた訪問の数 */
+export type OffboardApplied = { data: DemoData; renamed: number };
+
+/** 訪問 ID を付け替える（列・未割当・固定・振り直しの元の案など、訪問 ID を持つ所すべて） */
+function renameVisitIds(d: DemoData, map: ReadonlyMap<string, string>): DemoData {
+  if (map.size === 0) return d;
+  const id = (x: string) => map.get(x) ?? x;
+  const list = (xs: readonly string[]) => xs.map(id);
+  const routes = (r: Record<string, string[]>) =>
+    Object.fromEntries(Object.entries(r).map(([k, xs]) => [k, list(xs)])) as Record<string, string[]>;
+  const pins = (r: Record<string, string>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [id(k), v]));
+  const reassign = <T extends { reassign?: ReassignInfo }>(x: T): T => {
+    const r = x.reassign;
+    if (!r) return x;
+    return {
+      ...x,
+      reassign: {
+        ...r,
+        baseRoutes: routes(r.baseRoutes),
+        basePins: pins(r.basePins),
+        ...(r.baseGenerated
+          ? {
+              baseGenerated: {
+                ...r.baseGenerated,
+                routes: routes(r.baseGenerated.routes),
+                unassigned: list(r.baseGenerated.unassigned),
+              },
+            }
+          : {}),
+        ...(r.insertRoutes ? { insertRoutes: routes(r.insertRoutes) } : {}),
+      },
+    };
+  };
+  return {
+    ...d,
+    manualPlans: Object.fromEntries(Object.entries(d.manualPlans).map(([k, r]) => [k, routes(r)])),
+    aiPlans: Object.fromEntries(
+      Object.entries(d.aiPlans).map(([k, p]) => [
+        k,
+        reassign({
+          ...p,
+          routes: routes(p.routes),
+          unassigned: list(p.unassigned),
+          generated: { ...p.generated, routes: routes(p.generated.routes), unassigned: list(p.generated.unassigned) },
+          pins: pins(p.pins),
+        }),
+      ]),
+    ),
+    aiRuns: Object.fromEntries(
+      Object.entries(d.aiRuns).map(([k, runs]) => [
+        k,
+        runs.map((r) =>
+          reassign({ ...r, routes: routes(r.routes), unassigned: list(r.unassigned), pins: pins(r.pins) }),
+        ),
+      ]),
+    ),
+  };
+}
+
 /**
  * まとめて適用：choices（〈利用者さん〉ID → 代わりの人。null＝だれにもしない）のとおりに、その人の受け持ちを
  * 数え始める日 from から代わりの人に移す。from より前の日の「いつもの担当」は変えない（その人が勤める日の案を
  * 「条件が変わった」にしない）：
  * - 〈利用者さん〉のいつもの担当がその人なら、代わりの人にする
  * - 定期パターンのいつもの担当（無ければ〈利用者さん〉のいつもの担当）がその人のものは、from より前に始まって from 以降も
- *   続くなら patterns の splitPattern で from から分け（前は その人、後ろは 代わりの人（パターンに無かったなら無いまま＝
- *   〈利用者さん〉のいつもの担当））、from 以降に始まるならその場で代わりの人に、from より前に終わるならその人と書く。
- *   分けたパターンの from 以降の訪問は作り直す（この回だけの変更・取り消しの回は残す。splitPattern と同じ）
+ *   続くなら patterns の splitPattern で from から分け（前は その人と書く＝〈利用者さん〉のいつもの担当を変えても前の日は
+ *   変わらない。後ろは 代わりの人（パターンに無かったなら無いまま＝〈利用者さん〉のいつもの担当））、from 以降に始まるなら
+ *   その場で代わりの人に、from より前に終わるならその人と書く
+ * - 分けたパターンの回（元の日 pattern.date が from 以降。この回だけの変更・取り消しの回も）は、中身（担当・メモ・時刻）を
+ *   そのままに、パターンを新しいパターンに・ID を「元の日_新しいパターンID」に付け替え、確定した割当・今の案・記録の列・未割当・
+ *   固定・振り直しの元の案の古い ID も同じに置き換える（訪問を作り直さないので、ほかの人に確定していた日も崩れない）
  * - 担当できる人は代わりの人を足す（その人は最終勤務日まで勤めるので残す。後の日は勤務なしで入らない）。
  *   だれにもしないなら その人を外す（ほかにいなければ限らない）
- * 訪問の案（今の案・確定した割当）は変えない（最終勤務日の後はその人が勤務なしになり、「条件が変わった」で知らせる）
+ * 訪問の担当（案・確定した割当）は変えない（最終勤務日の後はその人が勤務なしになり、「条件が変わった」で知らせる）
  */
-export function applyOffboard(
+export function applyOffboardWith(
   d: DemoData,
   staffId: string,
   choices: Readonly<Record<string, string | null>>,
   from: string,
   today: string,
   newId: () => string,
-): DemoData {
+): OffboardApplied {
   const picked = (clientId: string): string | null | undefined =>
     Object.hasOwn(choices, clientId) ? choices[clientId] : undefined;
   const before = new Map(d.clients.map((c) => [c.id, c]));
-  let x = { patterns: d.patterns, visits: d.visits, clients: d.clients };
+  let patterns = d.patterns;
+  let visits = d.visits;
+  const rename = new Map<string, string>();
   for (const p of d.patterns) {
     const to = picked(p.clientId);
     const c = before.get(p.clientId);
@@ -256,25 +321,35 @@ export function applyOffboard(
     // いまの実際の「いつもの担当」（パターンに無ければ〈利用者さん〉の）
     if ((p.usualStaffId ?? c.usualStaffId) !== staffId) continue;
     const after = p.usualStaffId === staffId ? to : null;
-    const cur = x.patterns.find((y) => y.id === p.id);
+    const cur = patterns.find((y) => y.id === p.id);
     if (!cur) continue;
     if (cur.to !== null && cur.to < from) {
       // from より前に終わる：その人と書いておく（〈利用者さん〉のいつもの担当を変えても前の日は変わらない）
-      x = { ...x, patterns: x.patterns.map((y) => (y.id === p.id ? { ...y, usualStaffId: staffId } : y)) };
+      patterns = patterns.map((y) => (y.id === p.id ? { ...y, usualStaffId: staffId } : y));
     } else if (cur.from >= from) {
-      x = { ...x, patterns: x.patterns.map((y) => (y.id === p.id ? { ...y, usualStaffId: after } : y)) };
+      patterns = patterns.map((y) => (y.id === p.id ? { ...y, usualStaffId: after } : y));
     } else {
       const { id: _id, from: _from, ...rest } = cur;
-      const r = splitPattern(x, p.id, { ...rest, usualStaffId: after }, from, today, newId());
-      // 前の部分（元の ID）はその人と書く
-      x = {
-        ...x,
-        visits: r.visits,
-        patterns: r.patterns.map((y) => (y.id === p.id ? { ...y, usualStaffId: staffId } : y)),
-      };
+      const pid = newId();
+      // パターンだけ分ける（訪問は作り直さず、下で付け替える）
+      const r = splitPattern(
+        { patterns, visits: [], clients: d.clients },
+        p.id,
+        { ...rest, usualStaffId: after },
+        from,
+        today,
+        pid,
+      );
+      patterns = r.patterns.map((y) => (y.id === p.id ? { ...y, usualStaffId: staffId } : y));
+      visits = visits.map((v) => {
+        if (v.pattern?.id !== p.id || v.pattern.date < from) return v;
+        const nid = `${v.pattern.date}_${pid}`;
+        rename.set(v.id, nid);
+        return { ...v, id: nid, pattern: { ...v.pattern, id: pid } };
+      });
     }
   }
-  const clients = x.clients.map((c) => {
+  const clients = d.clients.map((c) => {
     const to = picked(c.id);
     if (to === undefined) return c;
     const usualStaffId = c.usualStaffId === staffId ? to : c.usualStaffId;
@@ -287,5 +362,34 @@ export function applyOffboard(
       ? c
       : { ...c, usualStaffId, allowedStaffIds };
   });
-  return { ...d, clients, patterns: x.patterns, visits: x.visits };
+  return { data: renameVisitIds({ ...d, clients, patterns, visits }, rename), renamed: rename.size };
+}
+
+/** applyOffboardWith のデータだけ */
+export function applyOffboard(
+  d: DemoData,
+  staffId: string,
+  choices: Readonly<Record<string, string | null>>,
+  from: string,
+  today: string,
+  newId: () => string,
+): DemoData {
+  return applyOffboardWith(d, staffId, choices, from, today, newId).data;
+}
+
+/** 「だれにもしない」で担当できる人が空になる（担当を限らなくなる）〈利用者さん〉 */
+export function unlimitedBy(
+  d: Pick<DemoData, 'clients'>,
+  staffId: string,
+  choices: Readonly<Record<string, string | null>>,
+): string[] {
+  return d.clients
+    .filter(
+      (c) =>
+        Object.hasOwn(choices, c.id) &&
+        choices[c.id] === null &&
+        c.allowedStaffIds.length > 0 &&
+        c.allowedStaffIds.every((id) => id === staffId),
+    )
+    .map((c) => c.id);
 }
