@@ -1,0 +1,185 @@
+/* 〈利用者さん〉の検索欄（ClientPicker。PRD D61） */
+.client-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.client-picker-label {
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.client-picker .dot-xs {
+  width: 18px;
+  height: 18px;
+  font-size: 0.65rem;
+}
+.client-picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.client-picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 3px;
+  border: 1px solid #cdbcb0;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.client-picker-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+}
+.client-picker-remove:hover,
+.client-picker-remove:focus-visible {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+.client-picker-box {
+  position: relative;
+}
+.client-picker-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--sub);
+  pointer-events: none;
+}
+.client-picker-box input {
+  padding: 6px 10px 6px 30px;
+  min-width: 14em;
+}
+.client-picker-pop {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  top: calc(100% + 2px);
+  min-width: 100%;
+  max-width: 24em;
+  max-height: 22em;
+  overflow-y: auto;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(59, 47, 42, 0.16);
+}
+.client-picker-pop[hidden] {
+  display: none;
+}
+.client-picker-list {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+.client-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+.client-picker-option.is-active {
+  background: var(--primary-soft);
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.client-picker-option[aria-selected='true'] {
+  font-weight: 700;
+}
+.client-picker-check {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  font-weight: 700;
+}
+.client-picker-name {
+  white-space: nowrap;
+}
+.client-picker-kana {
+  color: var(--sub);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.client-picker-note {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  color: var(--sub);
+}
+.client-picker-shortcuts {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.client-picker-staff {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.client-picker-staff select {
+  width: auto;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+}
+.client-picker-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--sub);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.client-picker-shortcut.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-weight: 700;
+}
+.client-picker-shortcut.is-on::before {
+  content: '✓';
+}
+.client-picker-count {
+  min-width: 1.4em;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 0.7rem;
+  text-align: center;
+}
+.client-picker-message {
+  display: block;
+  margin: 0;
+  min-height: 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+}

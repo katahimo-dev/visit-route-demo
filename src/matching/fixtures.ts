@@ -39,6 +39,7 @@ export function client(id: string, lat: number, lng: number, over: Partial<Clien
   return {
     id,
     displayName: id,
+    kana: '',
     place: { address: '', lat, lng },
     note: '',
     color: 0,

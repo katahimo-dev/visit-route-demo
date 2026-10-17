@@ -1,7 +1,8 @@
 import { CalendarClock, ChevronLeft, ChevronRight, Move, RefreshCw, Sparkles, TriangleAlert, X } from 'lucide-react';
-import { type DragEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { ClientPicker } from '../components/ClientPicker';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -12,7 +13,9 @@ import { timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { deferredDragStart } from '../lib/dragStart';
 import { typeOf } from '../lib/patternText';
+import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
 import {
   allowedStaffOf,
@@ -45,9 +48,15 @@ import './week.css';
 /**
  * 週間（ADR-0012 追記の段階2。PRD D49〜D51・D56・D57。design.md §4 pages「週間（段階2）」「月間・週間の改定（2026-10-17）」）。
  * 時間軸（月〜日 × 07:00〜20:00。訪問の帯を種類の色で。ドラッグ・キーボードで日時を動かす）と〈スタッフ〉×曜日・〈利用者さん〉×曜日の表。
- * 時間軸は〈スタッフ〉か〈利用者さん〉で見て、チップで複数選ぶ（?by=client・?staff=s1,s2・?client=。無ければ全員）。
+ * 時間軸は〈スタッフ〉か〈利用者さん〉で見る。〈スタッフ〉はチップで複数選ぶ（?staff=s1,s2。無ければ全員）。
+ * 〈利用者さん〉は検索欄 ClientPicker で選ぶ（PRD D61・D62。?by=client・?client=c1,c2。時間軸は8人まで・表は上限なし。
+ * 選んでいなければ時間軸も表も空で「選んでいません」）。
  * データを書くのは「動かす」「空き時間に入れる」だけ（update の中で lib/week の純粋関数を呼ぶ）
  */
+
+/** 時間軸の「〈利用者さん〉で見る」で出せる人数（PRD D62。表は上限なし） */
+const TIMELINE_CLIENT_MAX = 8;
+const TIMELINE_CLIENT_MAX_TEXT = `時間軸は${TIMELINE_CLIENT_MAX}人まで。表（〈利用者さん〉×曜日）なら何人でも見られます`;
 
 /** 1分あたりの高さ（px） */
 const PX_PER_MIN = 0.8;
@@ -95,6 +104,12 @@ export default function WeekPage() {
   const [dragId, setDragId] = useState<string | null>(null);
   /** つかんだ帯と、帯の上端からつかんだ位置までの高さ（px）。表のマスからつかんだときは offset を使わない */
   const grab = useRef<{ visitId: string; offset: number } | null>(null);
+  /**
+   * dragId の更新は dragstart の後へ遅らせる（予定の画面と同じ。src/lib/dragStart.ts）。
+   * dragstart の中で再描画すると「担当できる」の印・行が足されて帯が指の下からずれ、
+   * Chrome がドラッグをすぐ終わらせる（本物のマウス操作で、週の帯が動かせなくなっていた）
+   */
+  const dragStart = useRef(deferredDragStart()).current;
 
   // ---- 選んでいる日付との同期（PRD D59）----
   // URL の ?d= で開いた日が選んでいる日付と違えば、選んでいる日付をその日にする
@@ -125,14 +140,43 @@ export default function WeekPage() {
     () => new Map(activeStaff.map((s) => [s.id, qualificationBadges(data.items, s)])),
     [activeStaff, data.items],
   );
-  /** チップに出す〈利用者さん〉：利用中の人と、休止中でもこの週に訪問がある人 */
-  const weekClients = useMemo(() => {
-    const inWeek = new Set(days.flatMap((d) => d.bands.map((b) => visitById.get(b.visitId)?.clientId)));
-    return clients.filter((c) => c.active || inWeek.has(c.id));
-  }, [clients, days, visitById]);
+  /** この週に（取り消しでない）訪問がある〈利用者さん〉（検索欄の近道「この週に訪問がある人」） */
+  const weekClientIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const d of days)
+      for (const b of d.bands) {
+        const cid = visitById.get(b.visitId)?.clientId;
+        if (cid) out.add(cid);
+      }
+    return out;
+  }, [days, visitById]);
+  /** 検索欄の候補の〈利用者さん〉：利用中の人と、休止中でもこの週に訪問がある人 */
+  const weekClients = useMemo(
+    () => clients.filter((c) => c.active || weekClientIds.has(c.id)),
+    [clients, weekClientIds],
+  );
+  /** 〈スタッフ〉が担当する〈利用者さん〉（近道）：この週の帯の担当と、いつもの担当 */
+  const staffClients = useMemo(
+    () =>
+      staffClientMap(
+        days.flatMap((d) =>
+          d.bands.flatMap((b) => (b.staffId ? [[b.staffId, visitById.get(b.visitId)?.clientId] as const] : [])),
+        ),
+        clients,
+      ),
+    [days, visitById, clients],
+  );
+  const clientsOfStaff = useCallback((sid: string) => staffClients.get(sid) ?? new Set<string>(), [staffClients]);
+  /** 選んでいる〈利用者さん〉（候補にいる人だけ。URL に無い・空なら選んでいない） */
+  const pickedClients = useMemo(() => {
+    const known = new Set(weekClients.map((c) => c.id));
+    return (clientSel ?? []).filter((id) => known.has(id));
+  }, [clientSel, weekClients]);
+  /** 時間軸に出す〈利用者さん〉：選んだ順に8人まで（表で9人以上選んでから時間軸へ来たとき） */
+  const timelineClients = useMemo(() => pickedClients.slice(0, TIMELINE_CLIENT_MAX), [pickedClients]);
   const clientRows = useMemo(
-    () => (tab === 'clients' ? clientWeekTable(data, days, clientSel) : null),
-    [tab, data, days, clientSel],
+    () => (tab === 'clients' ? (pickedClients.length === 0 ? [] : clientWeekTable(data, days, pickedClients)) : null),
+    [tab, data, days, pickedClients],
   );
 
   // ---- ドラッグ中の予告（D57） ----
@@ -198,7 +242,7 @@ export default function WeekPage() {
     e.dataTransfer.setData('text/plain', visitId);
     e.dataTransfer.effectAllowed = 'move';
     grab.current = { visitId, offset: e.clientY - e.currentTarget.getBoundingClientRect().top };
-    setDragId(visitId);
+    dragStart.start(() => setDragId(visitId));
   };
   const dropStart = (e: DragEvent<HTMLElement>): number | null => {
     const g = grab.current;
@@ -219,6 +263,7 @@ export default function WeekPage() {
     const s = dropStart(e);
     const g = grab.current;
     grab.current = null;
+    dragStart.end();
     setHover(null);
     setDragId(null);
     if (!g || s === null) return;
@@ -238,6 +283,7 @@ export default function WeekPage() {
   };
   const onDragEnd = () => {
     grab.current = null;
+    dragStart.end();
     setHover(null);
     setDragId(null);
   };
@@ -261,6 +307,7 @@ export default function WeekPage() {
     const ok = canDropCell(clientId, d);
     const g = grab.current;
     grab.current = null;
+    dragStart.end();
     setHover(null);
     setDragId(null);
     if (!g) return;
@@ -346,12 +393,12 @@ export default function WeekPage() {
 
   /** 時間軸に出す帯：選んだ〈スタッフ〉（全員なら未割当も）・選んだ〈利用者さん〉の帯だけ */
   const staffSet = staffSel ? new Set(staffSel) : null;
-  const clientSet = clientSel ? new Set(clientSel) : null;
+  const clientSet = new Set(timelineClients);
   const showBand = (b: Band): boolean => {
-    if (by === 'client') return !clientSet || clientSet.has(visitById.get(b.visitId)?.clientId ?? '');
+    if (by === 'client') return clientSet.has(visitById.get(b.visitId)?.clientId ?? '');
     return !staffSet || (b.staffId !== null && staffSet.has(b.staffId));
   };
-  const nothingPicked = by === 'client' ? clientSel?.length === 0 : staffSel?.length === 0;
+  const nothingPicked = by === 'client' ? timelineClients.length === 0 : staffSel?.length === 0;
 
   return (
     <div className="stack week-page">
@@ -498,24 +545,44 @@ export default function WeekPage() {
             )}
           </>
         )}
+        {/*
+          〈利用者さん〉の検索欄（PRD D61・D62）。ドラッグ中に高さを変えない：候補の欄は浮かせて出し（帯を押すと検索欄から
+          フォーカスが外れて閉じる）、チップ・近道・上限の文はドラッグで変わらない（変えるのは選んだときだけ）
+        */}
         {((tab === 'timeline' && by === 'client') || tab === 'clients') && (
-          <PickChips
-            label={terms.client}
-            people={weekClients.map((c) => ({ id: c.id, name: c.displayName, color: colorOf(c.color) }))}
-            selected={clientSel}
+          <ClientPicker
+            clients={weekClients}
+            selected={pickedClients}
             onChange={(ids) => setSel('client', ids)}
-            testId="client-chips"
+            multiple
+            max={tab === 'timeline' ? TIMELINE_CLIENT_MAX : undefined}
+            maxMessage={TIMELINE_CLIENT_MAX_TEXT}
+            label={
+              tab === 'timeline' ? `表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）` : `表示する${terms.client}`
+            }
+            period={{ label: 'この週', clientIds: weekClientIds }}
+            byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
+            testId="week-client-picker"
           />
         )}
-        {tab === 'timeline' && by === 'client' && allowedNow && (
-          <p className="week-allowed" data-testid="week-allowed">
-            担当できる{terms.staff}：
-            {allowedNow.size === 0
-              ? 'いません'
-              : activeStaff
-                  .filter((s) => allowedNow.has(s.id))
-                  .map((s) => s.name)
-                  .join('・')}
+        {tab === 'timeline' && by === 'client' && pickedClients.length > TIMELINE_CLIENT_MAX && (
+          <p className="sub" data-testid="week-client-over">
+            {TIMELINE_CLIENT_MAX_TEXT}。選んだ{pickedClients.length}人のうち先頭の{TIMELINE_CLIENT_MAX}人を出しています
+          </p>
+        )}
+        {/* 行はいつも出しておく（ドラッグの始まりに行を足すと時間軸が下へずれ、つかんだ帯が指の下から動く） */}
+        {tab === 'timeline' && by === 'client' && (
+          <p className={`week-allowed${allowedNow ? '' : ' is-idle'}`} data-testid="week-allowed">
+            {allowedNow
+              ? `担当できる${terms.staff}：${
+                  allowedNow.size === 0
+                    ? 'いません'
+                    : activeStaff
+                        .filter((s) => allowedNow.has(s.id))
+                        .map((s) => s.name)
+                        .join('・')
+                }`
+              : `ドラッグ中は、ここに担当できる${terms.staff}を出します`}
           </p>
         )}
       </div>
@@ -548,8 +615,9 @@ export default function WeekPage() {
         <div className="card week-card">
           {nothingPicked && (
             <p className="sub" data-testid="week-none">
-              {by === 'client' ? terms.client : terms.staff}
-              をだれも選んでいません。上のチップで選ぶか「全員」を押してください。
+              {by === 'client'
+                ? `${terms.client}を選んでいません。上の検索欄か近道（この週に訪問がある人など）で選んでください（${TIMELINE_CLIENT_MAX}人まで）。`
+                : `${terms.staff}をだれも選んでいません。上のチップで選ぶか「全員」を押してください。`}
             </p>
           )}
           <div className="week-grid" data-testid="week-grid">
@@ -806,10 +874,16 @@ export default function WeekPage() {
                 </tbody>
               </table>
             </div>
-            {clientRows.length === 0 && <p className="sub">{terms.client}がいません。</p>}
+            {clientRows.length === 0 && (
+              <p className="sub" data-testid="week-none">
+                {pickedClients.length === 0
+                  ? `${terms.client}を選んでいません。上の検索欄か近道（この週に訪問がある人→「このN人を選ぶ」など）で選んでください。`
+                  : `${terms.client}がいません。`}
+              </p>
+            )}
             <p className="sub">
               選んだ{terms.client}
-              （選んでいなければ全員）の訪問です。訪問を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません）。
+              の訪問です（人数の上限はありません）。訪問を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません）。
               キーボードでは訪問で Enter を押すと、日付と時刻を選んで動かせます。
             </p>
           </div>

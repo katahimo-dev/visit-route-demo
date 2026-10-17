@@ -36,6 +36,7 @@ docs/ … prd.md / design.md / adr/ / handoff/
 - フォーマット・リント：`npm run lint`（biome）
 - 型チェック：`npm run typecheck`
 - ビルド：`npm run build`（`dist/`、`base: './'`）
+- ドラッグの確認（本物のマウス操作。6種類）：`npm run build && npx vite preview --port 4183` のあとで `node scripts/e2e-drag.cjs`（Playwright・Chromium は手元のものを使う。場所は環境変数 `PLAYWRIGHT`・`CHROMIUM`、サイトは `BASE`、スクリーンショットの置き場所は `OUT_DIR`）
 
 ## 規約
 - 言語：TypeScript（strict）、React 19、Vite。コメント・ドキュメント・コミットメッセージは日本語

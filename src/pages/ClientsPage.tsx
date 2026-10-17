@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ClientPicker } from '../components/ClientPicker';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor, TentativeMark } from '../components/parts';
 import { useToast } from '../components/Toast';
@@ -21,6 +22,7 @@ import { type Client, clientSchema } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
+import { matchClient, staffClientMap } from '../lib/search';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useDemoData } from '../store';
 import { PatternsSection } from './PatternsSection';
@@ -31,6 +33,7 @@ import './settings.css';
 const blank = (nextColor: number): Client => ({
   id: newId('c'),
   displayName: '',
+  kana: '',
   place: { address: '', lat: null, lng: null },
   note: '',
   color: nextColor % CLIENT_COLORS.length,
@@ -51,6 +54,15 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null);
   const clients = useMemo(() => [...data.clients].sort(byDisplayName), [data.clients]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
+  // 一覧の絞り込み（PRD D61）：選んだ人がいればその人たち、いなければ検索欄の文字（表示名・よみ）で
+  const [picked, setPicked] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
+  const shown = useMemo(() => {
+    if (picked.length > 0) return clients.filter((c) => picked.includes(c.id));
+    return clients.filter((c) => matchClient(c, query));
+  }, [clients, picked, query]);
+  /** 近道「〈スタッフ〉が担当する人」：いつもの担当がその人の〈利用者さん〉 */
+  const usualOf = useMemo(() => staffClientMap([], data.clients), [data.clients]);
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
   const clientItems = data.items.filter((i) => i.target === 'client');
   const itemById = new Map(data.items.map((i) => [i.id, i]));
@@ -125,6 +137,30 @@ export default function ClientsPage() {
         }
       />
 
+      <div
+        className="card row"
+        style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}
+        data-testid="clients-filter"
+      >
+        <ClientPicker
+          clients={clients}
+          selected={picked}
+          onChange={setPicked}
+          multiple
+          label={`${terms.client}を絞り込む`}
+          byStaff={{
+            staffLabel: terms.staff,
+            staff: staff.filter((s) => s.active),
+            clientIdsOf: (id) => usualOf.get(id) ?? new Set(),
+          }}
+          onQueryChange={setQuery}
+          testId="clients-picker"
+        />
+        <span className="sub" data-testid="clients-count">
+          {shown.length === clients.length ? `${clients.length}人` : `${shown.length}人／${clients.length}人`}
+        </span>
+      </div>
+
       <div className="card table-scroll">
         <table className="people-table">
           <thead>
@@ -139,8 +175,15 @@ export default function ClientsPage() {
             </tr>
           </thead>
           <tbody>
-            {clients.map((c) => (
-              <tr key={c.id}>
+            {shown.length === 0 && (
+              <tr>
+                <td colSpan={7} className="sub">
+                  当てはまる{terms.client}がいません
+                </td>
+              </tr>
+            )}
+            {shown.map((c) => (
+              <tr key={c.id} data-testid="client-row">
                 <td>
                   <span className="row person-name">
                     <span className="dot dot-sm" style={{ background: colorOf(c.color) }}>
@@ -151,6 +194,7 @@ export default function ClientsPage() {
                         {c.displayName}
                         {c.tentative && <TentativeMark />}
                       </span>
+                      {c.kana && <small className="person-sub">{c.kana}</small>}
                       {c.place.address && <small className="person-sub">{c.place.address}</small>}
                     </span>
                   </span>
@@ -248,6 +292,16 @@ export default function ClientsPage() {
                 value={form.displayName}
                 maxLength={50}
                 onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+              />
+            </label>
+            <label>
+              よみ（ひらがな・任意。検索に使います）
+              <input
+                value={form.kana}
+                maxLength={50}
+                placeholder="例：としょかん ふみ"
+                onChange={(e) => setForm({ ...form, kana: e.target.value })}
+                data-testid="client-kana"
               />
             </label>
             <label>

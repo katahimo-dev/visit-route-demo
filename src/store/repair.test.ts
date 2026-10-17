@@ -463,3 +463,32 @@ describe('〈利用者さん〉の仮押さえ（ADR-0012 追記。段階3）', 
     expect(isImportError(importJson(JSON.stringify(bad)))).toBe(true);
   });
 });
+
+describe('〈利用者さん〉のよみ（PRD D61）', () => {
+  it('kana の無い古いデータは空で読める（版は1のまま）', () => {
+    const d = base();
+    const old = JSON.parse(JSON.stringify(d));
+    old.clients = old.clients.map(({ kana: _k, ...c }: Record<string, unknown>) => c);
+    const r = migrate(old);
+    expect(isImportError(r)).toBe(false);
+    const x = r as DemoData;
+    expect(x.version).toBe(1);
+    expect(x.clients.every((c) => c.kana === '')).toBe(true);
+  });
+
+  it('よみが 書き出し → 読み込み で同じに戻る', () => {
+    const d = base();
+    const x: DemoData = { ...d, clients: d.clients.map((c, i) => ({ ...c, kana: `よみ${i}` })) };
+    expect(repair(x)).toEqual(x);
+    const back = importJson(JSON.stringify(x));
+    expect(isImportError(back)).toBe(false);
+    expect(back).toEqual(x);
+  });
+
+  it('51文字のよみは契約で止める', () => {
+    const d = base();
+    const bad = JSON.parse(JSON.stringify(d));
+    bad.clients[0].kana = 'あ'.repeat(51);
+    expect(isImportError(importJson(JSON.stringify(bad)))).toBe(true);
+  });
+});

@@ -36,6 +36,7 @@ function initialClients(): Client[] {
   return CLIENT_SEEDS.map((c, i) => ({
     id: c.id,
     displayName: c.name,
+    kana: c.kana,
     place: { address: c.address, lat: c.lat, lng: c.lng },
     note: c.note ?? '',
     color: i % 8,

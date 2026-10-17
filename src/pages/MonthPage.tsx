@@ -19,7 +19,8 @@ import {
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
-import { LoadBar, LoadLegend, LoadScale, loadSummary, TypeStack } from '../components/loadBar';
+import { ClientPicker } from '../components/ClientPicker';
+import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
@@ -27,9 +28,8 @@ import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
-import { VACANCY_DAY_END_DEFAULT, VACANCY_DAY_START_DEFAULT } from '../contracts/vacancy';
 import { slotsText, timeText } from '../domain/availability';
-import { hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
+import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, own, WEEKDAY_LABELS } from '../lib/common';
@@ -67,6 +67,7 @@ import {
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
+import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
 import { type CompileInput, compile } from '../matching';
 import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
@@ -118,9 +119,6 @@ const STATE_TEXT: Record<DayStatus['state'], string> = {
   diff: '未確定の変更あり',
 };
 const STATE_ORDER: DayStatus['state'][] = ['none', 'plan', 'confirmed', 'diff'];
-
-const LOAD_FROM = hhmmToMinutes(VACANCY_DAY_START_DEFAULT);
-const LOAD_TO = hhmmToMinutes(VACANCY_DAY_END_DEFAULT);
 
 /** 日の表示の計算の覚え（日付ごと。同じ入力なら compile・採点し直さない） */
 type Memo = {
@@ -211,7 +209,17 @@ export default function MonthPage() {
     if (cid && activeClients.some((c) => c.id === cid)) return { kind: 'client', id: cid };
     return { kind: 'all' };
   }, [params, activeStaff, activeClients]);
-  const focusValue = focus.kind === 'all' ? 'all' : `${focus.kind}:${focus.id}`;
+  /**
+   * 表示の選択で「〈利用者さん〉」を選んでいる（PRD D61。〈利用者さん〉は検索欄 ClientPicker で1人選ぶ。
+   * まだ選んでいない間も検索欄を出しておくための画面の状態）
+   */
+  const [clientMode, setClientMode] = useState(focus.kind === 'client');
+  useEffect(() => {
+    if (focus.kind === 'client') setClientMode(true);
+    else if (focus.kind === 'staff') setClientMode(false);
+  }, [focus.kind]);
+  const focusValue =
+    clientMode || focus.kind === 'client' ? 'client' : focus.kind === 'all' ? 'all' : `${focus.kind}:${focus.id}`;
   /** URL の一部だけ変える（ほかの値は残す） */
   const patchParams = (patch: Record<string, string | null>) => {
     setParams(
@@ -227,6 +235,12 @@ export default function MonthPage() {
     );
   };
   const pickFocus = (value: string) => {
+    setClientMode(value === 'client');
+    if (value === 'client') {
+      // 〈利用者さん〉は検索欄で選ぶ。〈スタッフ〉の選択は外し、全体の表示のまま待つ
+      if (focus.kind !== 'client') patchParams({ staff: null, client: null });
+      return;
+    }
     const [kind, ...rest] = value.split(':');
     const id = rest.join(':');
     patchParams({ staff: kind === 'staff' ? id : null, client: kind === 'client' ? id : null });
@@ -311,6 +325,24 @@ export default function MonthPage() {
     for (const d of days) out.set(d, dayPlanOf(data, d, perDay.get(d)?.problem ?? null));
     return out;
   }, [days, data, perDay]);
+
+  // ---- 〈利用者さん〉の検索欄の近道（PRD D61）----
+  /** この月に（取り消しでない）訪問がある〈利用者さん〉 */
+  const monthClientIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const d of days) for (const v of visitsByDate.get(d) ?? []) if (!v.cancelled) out.add(v.clientId);
+    return out;
+  }, [days, visitsByDate]);
+  /** 〈スタッフ〉が担当する〈利用者さん〉：この月の数える案（今の案、無ければ確定した割当）の担当と、いつもの担当 */
+  const staffClients = useMemo(() => {
+    const clientOf = new Map(data.visits.map((v) => [v.id, v.clientId]));
+    const pairs: [string, string | undefined][] = [];
+    for (const d of days)
+      for (const [sid, ids] of Object.entries(dayPlans.get(d)?.routes ?? {}))
+        for (const id of ids) pairs.push([sid, clientOf.get(id)]);
+    return staffClientMap(pairs, data.clients);
+  }, [days, dayPlans, data.visits, data.clients]);
+  const clientsOfStaff = useCallback((sid: string) => staffClients.get(sid) ?? new Set<string>(), [staffClients]);
 
   // ---- 日のマスの印（D53）----
   const marks = useMemo(() => {
@@ -676,15 +708,20 @@ export default function MonthPage() {
                   </option>
                 ))}
               </optgroup>
-              <optgroup label={terms.client}>
-                {activeClients.map((c) => (
-                  <option key={c.id} value={`client:${c.id}`}>
-                    {c.displayName}
-                  </option>
-                ))}
-              </optgroup>
+              <option value="client">{terms.client}（名前・よみで探す）</option>
             </select>
           </label>
+          {focusValue === 'client' && (
+            <ClientPicker
+              clients={activeClients}
+              selected={focus.kind === 'client' ? [focus.id] : []}
+              onChange={(ids) => patchParams({ staff: null, client: ids[0] ?? null })}
+              label={`表示する${terms.client}`}
+              period={{ label: 'この月', clientIds: monthClientIds }}
+              byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
+              testId="month-client-picker"
+            />
+          )}
           {focus.kind === 'all' && (
             <label className="month-picker">
               <span>混み具合で数える人</span>
@@ -718,7 +755,8 @@ export default function MonthPage() {
           <Hint>
             日のマスを押すと、その日の予定の画面を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要確認」）は、訪問があるのに案が無い・入らない訪問がある・必須の違反がある日です（必須の違反は点数の基準のプリセット「
             {scoreRulerName}」の条件で見ます）。「条件が変わった」は、案を作ったあとに訪問・{terms.staff}
-            ・稼働時間・条件が変わった日です。混み具合のバーは 7:00〜20:00 を30分ずつに分け、その30分に空いている
+            ・稼働時間・条件が変わった日です。混み具合のバーは 7:00〜20:00
+            を3段（7〜12時・12〜15時・15〜20時）・30分ずつに分け、その30分に空いている
             {terms.staff}の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。
           </Hint>
           {noVisitsWhy && <span className="sub">{noVisitsWhy}</span>}
@@ -1055,10 +1093,8 @@ function MonthLegend({ showLoad }: { showLoad: boolean }) {
         <span className="month-legend-group">
           <span className="month-legend-load">
             <span className="sub">混み具合</span>
-            <span className="month-legend-ruler" aria-hidden="true">
-              <LoadScale from={LOAD_FROM} to={LOAD_TO} />
-              <span className="month-legend-bar" />
-            </span>
+            <LoadRowsSample />
+            <span className="sub">上から 7〜12時・12〜15時・15〜20時</span>
           </span>
           <LoadLegend />
         </span>
