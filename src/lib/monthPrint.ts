@@ -3,7 +3,7 @@
 // 画面の純粋関数（データは書き換えない）
 import type { DemoData } from '../contracts/data';
 import type { Problem } from '../contracts/problem';
-import { availabilityOf } from '../domain/availability';
+import { afterLastDay, availabilityOf } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { hhmmToMinutes } from '../domain/time';
@@ -145,6 +145,8 @@ export function printDay(data: PrintInput, date: string, staffId: string | null,
   const off: PrintOff[] = [];
   for (const s of data.staff) {
     if (!s.active || (staffId !== null && s.id !== staffId)) continue;
+    // 最終勤務日の後（ADR-0015）はもういない人なので、休みに出さない
+    if (afterLastDay(s, date)) continue;
     const mine = data.absences.filter((a) => a.staffId === s.id && a.date === date);
     const override = data.availability.find((a) => a.staffId === s.id && a.date === date);
     const working = availabilityOf(s, date, override).slots.length > 0;

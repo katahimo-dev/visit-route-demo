@@ -26,11 +26,20 @@ export type Place = z.infer<typeof placeSchema>;
 export const termsSchema = z.object({ client: z.string().max(10), staff: z.string().max(10) });
 export type Terms = z.infer<typeof termsSchema>;
 
+/** 拘束の上限の既定（時間。ADR-0015） */
+export const SPAN_LIMIT_DEFAULT_HOURS = 10;
+
 export const orgSchema = z.object({
   name: z.string().min(1).max(100),
   industry: z.enum(INDUSTRIES),
   terms: termsSchema,
+  /** 交通費の単価（円/km）。稼働の見込み（PRD D72）の交通費に使う。0 なら交通費を出さない */
   fareYenPerKm: z.number().min(0).max(1000),
+  /**
+   * 拘束の上限（時間。0.5刻み。PRD D72。ADR-0015）。稼働の見込みで、拘束（最初の訪問の開始〜最後の訪問の終わり）が
+   * これを超える日に注意を出す（AI案の条件には入れない。注意だけ）。0 なら注意しない。無い古いデータは 10
+   */
+  spanLimitHours: z.number().min(0).max(24).multipleOf(0.5).default(SPAN_LIMIT_DEFAULT_HOURS),
 });
 export type Org = z.infer<typeof orgSchema>;
 
@@ -50,10 +59,41 @@ export const staffSchema = z.object({
   requirements: z.array(conditionSchema).max(20),
   /** スタッフ側の希望（訪問先の特性に対して）。rule 'staffPreference' */
   preferences: z.array(conditionSchema).max(20),
+  /**
+   * 最終勤務日（PRD D71。ADR-0015）。null＝なし。この日の翌日からは勤務なし（domain/availability の availabilityOf が
+   * 稼働時間帯を空にする。日ごとの上書きも見ない）。退職・担当替えで入れ、担当の振り直しは〈スタッフ〉の画面から。無い古いデータは null
+   */
+  lastDay: dateSchema.nullable().default(null),
 });
 export type Staff = z.infer<typeof staffSchema>;
 
-export const clientSchema = z.object({
+/**
+ * 〈利用者さん〉の段階（PRD D73。ADR-0015）：相談受付 → 顔合わせ → 契約 → 利用中 → 終了。
+ * 予定・AI案の対象（active）は「利用中」と、利用中の前で枠を仮押さえ（tentative）している人だけ（lib/clientStage の stageFlags）
+ */
+export const CLIENT_STAGES = ['inquiry', 'meeting', 'contract', 'active', 'ended'] as const;
+export type ClientStage = (typeof CLIENT_STAGES)[number];
+
+/** 紹介元（PRD D73）：名前・連絡先・メモ。呼び方は中立の「紹介元」（役割の名前を直書きしない） */
+export const referrerSchema = z.object({
+  name: z.string().max(50),
+  contact: z.string().max(100),
+  note: z.string().max(200),
+});
+export type Referrer = z.infer<typeof referrerSchema>;
+export const EMPTY_REFERRER: Referrer = { name: '', contact: '', note: '' };
+
+/**
+ * 段階の無い古いデータの読み替え（ADR-0015）：active が false なら「終了」、仮押さえ（tentative）なら「相談受付」
+ * （仮押さえのまま。予定に入るのは今までどおり）、それ以外は「利用中」
+ */
+export function stageOfLegacy(o: { active?: unknown; tentative?: unknown }): ClientStage {
+  if (o.active === false) return 'ended';
+  if (o.tentative === true) return 'inquiry';
+  return 'active';
+}
+
+const clientObject = z.object({
   id: idSchema,
   displayName: z.string().min(1).max(50),
   /** よみ（ひらがな・任意。PRD D61）。検索に使う。無い古いデータは '' */
@@ -87,7 +127,16 @@ export const clientSchema = z.object({
    * （store の repair が除く）、限った人が全員いなくなったら限らない。無い古いデータは []
    */
   allowedStaffIds: z.array(idSchema).max(50).default([]),
+  /** 段階（PRD D73。ADR-0015）。無い古いデータは stageOfLegacy で読み替える。active・tentative との食い違いは store の repair が段階に合わせる */
+  stage: z.enum(CLIENT_STAGES),
+  /** 紹介元（PRD D73）。無い古いデータは空 */
+  referrer: referrerSchema.default(EMPTY_REFERRER),
 });
+export const clientSchema = z.preprocess((raw) => {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const o = raw as Record<string, unknown>;
+  return o.stage === undefined ? { ...o, stage: stageOfLegacy(o) } : raw;
+}, clientObject);
 export type Client = z.infer<typeof clientSchema>;
 
 /**
@@ -181,6 +230,10 @@ export type Pattern = z.infer<typeof patternSchema>;
 export const visitPatternRefSchema = z.object({ id: idSchema, date: dateSchema, edited: z.boolean() });
 export type VisitPatternRef = z.infer<typeof visitPatternRefSchema>;
 
+/** 取り消しの種類（PRD D74） */
+export const CANCEL_KINDS = ['sameDay'] as const;
+export type CancelKind = (typeof CANCEL_KINDS)[number];
+
 /** 1日の訪問。staffId は手作業の担当 */
 export const visitSchema = z.object({
   id: idSchema,
@@ -197,6 +250,11 @@ export const visitSchema = z.object({
   typeId: idSchema.nullable().default(null),
   /** 元の定期パターン（ADR-0012）。null＝単発。無い古いデータは null */
   pattern: visitPatternRefSchema.nullable().default(null),
+  /**
+   * 取り消しの種類（PRD D74。ADR-0015）：'sameDay'＝当日キャンセル、null＝ふつうの取り消し（取り消していない訪問も null）。
+   * 回数を数えるだけで、請求はしない。無い古いデータは null
+   */
+  cancelKind: z.enum(CANCEL_KINDS).nullable().default(null),
 });
 export type Visit = z.infer<typeof visitSchema>;
 

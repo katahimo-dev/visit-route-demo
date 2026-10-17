@@ -147,3 +147,16 @@ describe('レビューの指摘（PR #20）', () => {
     expect(printDay(d, DATE, null).entries.map((e) => e.staffLabel)).toEqual(['山田 花', null, '山田 一']);
   });
 });
+
+describe('最終勤務日（ADR-0015）', () => {
+  it('最終勤務日の後の人は休みに出さない（当日までは今までどおり）', () => {
+    const d = data({
+      staff: [
+        staff('s1', 38.26, 140.87, { name: '山田 花', lastDay: '2026-10-11' }),
+        staff('s2', 38.27, 140.88, { name: '佐藤 一', workDays: [2] }),
+      ],
+    });
+    expect(printDay(d, DATE, null).off.map((o) => o.name)).toEqual(['佐藤 一']);
+    expect(printDay(d, '2026-10-11', null).off.map((o) => o.name)).toEqual(['山田 花', '佐藤 一']);
+  });
+});

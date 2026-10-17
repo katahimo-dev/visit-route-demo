@@ -12,7 +12,15 @@ export const SLOT_STEP_MINUTES = 30;
 /** 1日の時間帯の上限 */
 export const MAX_SLOTS = 4;
 
-type WeeklyBase = { workDays: number[]; shiftStart: string; shiftEnd: string };
+/**
+ * 基本の曜日と時間。lastDay（最終勤務日。デモで足した。PRD D71・ADR-0015）があれば、その翌日からは勤務なし
+ */
+type WeeklyBase = { workDays: number[]; shiftStart: string; shiftEnd: string; lastDay?: string | null };
+
+/** 最終勤務日の後の日か（デモで足した。ADR-0015） */
+export function afterLastDay(base: { lastDay?: string | null }, date: string): boolean {
+  return base.lastDay !== undefined && base.lastDay !== null && date > base.lastDay;
+}
 
 /** 基本の曜日と時間から、その日の時間帯（勤務日でなければ空） */
 export function weeklySlots(base: WeeklyBase, date: string): Slot[] {
@@ -21,13 +29,14 @@ export function weeklySlots(base: WeeklyBase, date: string): Slot[] {
 
 /**
  * その日の時間帯。上書き（availability 文書）があればそれ、無ければ基本。
- * override の slots が空なら「その日は休み」
+ * override の slots が空なら「その日は休み」。最終勤務日の後（デモで足した。ADR-0015）は上書きがあっても空
  */
 export function availabilityOf(
   base: WeeklyBase,
   date: string,
   override: { slots: Slot[] } | null | undefined,
 ): { slots: Slot[]; overridden: boolean } {
+  if (afterLastDay(base, date)) return { slots: [], overridden: false };
   return override ? { slots: override.slots, overridden: true } : { slots: weeklySlots(base, date), overridden: false };
 }
 

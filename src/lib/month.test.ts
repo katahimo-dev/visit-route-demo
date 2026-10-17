@@ -418,6 +418,7 @@ describe('選んだ利用者さん（clientDay・clientMonth）', () => {
       planned: 3,
       edited: 1,
       cancelled: 1,
+      sameDay: 0,
       leave: 0,
       substitute: 1,
       byStaff: [
@@ -437,6 +438,7 @@ describe('要対応（attentionList）', () => {
     unassigned: 0,
     absence: false,
     absentLeft: 0,
+    overSpan: [],
     hundred: null,
     hard: 0,
     stale: false,
@@ -530,5 +532,40 @@ describe('今月の準備（monthProgress）', () => {
       unconfirmed: [],
       attention: 0,
     });
+  });
+});
+
+describe('最終勤務日・拘束の上限・当日キャンセル（ADR-0015）', () => {
+  it('最終勤務日の日は「最終」、後の日は休みに数えない。選んだ〈スタッフ〉の後の日は retired', () => {
+    const d = { ...selData(), staff: selData().staff.map((s) => (s.id === 's3' ? { ...s, lastDay: DATE } : s)) };
+    // s3 は月曜は勤務なし（休み）で、その日が最終勤務日
+    expect(dayMarks(d, DATE).lastDays).toEqual(['若林 三郎']);
+    expect(dayMarks(d, DATE).off).toEqual(['若林 三郎']);
+    // 翌日（もともと勤務日）は最終勤務日の後：休みにも数えない
+    expect(dayMarks(d, TUE).off).toEqual([]);
+    expect(dayMarks(d, TUE).lastDays).toEqual([]);
+    expect(staffDay(d, dayPlanOf(d, TUE), 's3').retired).toBe(true);
+    expect(staffDay(d, dayPlanOf(d, DATE), 's3').retired).toBe(false);
+  });
+
+  it('拘束が上限を超える人は要対応に名前つきで出る（手当てが必要には数えない）', () => {
+    const d = selData();
+    const s = dayStatus(d, DATE, { overSpan: ['s1'] });
+    expect(s.overSpan).toEqual(['s1']);
+    expect(s.needsCare).toBe(false);
+    expect(attentionList(d, [s], DATE)).toEqual([{ date: DATE, kind: 'overSpan', count: 1, names: ['青葉 一郎'] }]);
+  });
+
+  it('〈利用者さん〉の月の集計に当日キャンセルの回数', () => {
+    const d = selData();
+    const x = {
+      ...d,
+      visits: d.visits.map((v) => (v.id === 'x' ? { ...v, cancelKind: 'sameDay' as const } : v)),
+    };
+    const sum = clientMonth(x, [dayPlanOf(x, DATE)], 'c1');
+    expect(sum.cancelled).toBe(1);
+    expect(sum.sameDay).toBe(1);
+    expect(clientDay(x, dayPlanOf(x, DATE), 'c1').visits.find((v) => v.visitId === 'x')?.sameDay).toBe(true);
+    expect(clientMonth(d, [dayPlanOf(d, DATE)], 'c1').sameDay).toBe(0);
   });
 });

@@ -2,6 +2,7 @@
 import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY, type ReassignInfo } from '../contracts/data';
 import { type Absence, type Availability, MAX_VISIT_TYPES, type Pattern, type Place } from '../contracts/documents';
 import { type Compat, HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES } from '../contracts/rules';
+import { stageFlags } from '../lib/clientStage';
 import { initialPresets } from '../seed/presets';
 
 /** 手作業案の「未割当」の列（domain/scheduleModel の NONE と同じ） */
@@ -74,6 +75,8 @@ function repairPresets(presets: Preset[]): Preset[] {
  *   dayTimes はパターンの曜日にあるものだけ・同じ曜日は最初の1件・曜日の順
  * - 〈利用者さん〉の休み（ADR-0013）：いない〈利用者さん〉の休みは消し、ID の重複は最初の1件
  * - 担当できる人（ADR-0014）：いない・休止中（active=false）の〈スタッフ〉の ID と重なりを除く（全員いなくなれば [] ＝限らない）
+ * - 〈利用者さん〉の段階（ADR-0015）：active・tentative を段階に合わせる（lib/clientStage の stageFlags。段階が正）
+ * - 取り消しの種類（ADR-0015）：取り消していない訪問の cancelKind は null
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -92,9 +95,15 @@ export function repair(d: DemoData): DemoData {
       allowed.length === c.allowedStaffIds.length && allowed.every((x, i) => x === c.allowedStaffIds[i])
         ? c.allowedStaffIds
         : allowed;
-    return place === c.place && usualStaffId === c.usualStaffId && allowedStaffIds === c.allowedStaffIds
+    // 段階が正（ADR-0015）：active・tentative を段階に合わせる
+    const flags = stageFlags(c.stage, c.tentative);
+    return place === c.place &&
+      usualStaffId === c.usualStaffId &&
+      allowedStaffIds === c.allowedStaffIds &&
+      flags.active === c.active &&
+      flags.tentative === c.tentative
       ? c
-      : { ...c, place, usualStaffId, allowedStaffIds };
+      : { ...c, place, usualStaffId, allowedStaffIds, ...flags };
   });
   const clientIds = new Set(clients.map((c) => c.id));
 
@@ -132,9 +141,11 @@ export function repair(d: DemoData): DemoData {
     const staffId = v.staffId !== null && !staffIds.has(v.staffId) ? null : v.staffId;
     const typeId = knownType(v.typeId);
     const pattern = v.pattern !== null && !patternIds.has(v.pattern.id) ? null : v.pattern;
-    return staffId === v.staffId && typeId === v.typeId && pattern === v.pattern
+    // 取り消していない訪問に取り消しの種類は付けない（ADR-0015）
+    const cancelKind = v.cancelled ? v.cancelKind : null;
+    return staffId === v.staffId && typeId === v.typeId && pattern === v.pattern && cancelKind === v.cancelKind
       ? v
-      : { ...v, staffId, typeId, pattern };
+      : { ...v, staffId, typeId, pattern, cancelKind };
   });
   const dateOf = new Map(visits.map((v) => [v.id, v.date]));
 

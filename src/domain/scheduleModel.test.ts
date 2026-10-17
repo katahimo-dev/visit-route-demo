@@ -17,6 +17,7 @@ const visit = (id: string, earliestStart: string, extra: Partial<Visit> = {}): V
   note: '',
   typeId: null,
   pattern: null,
+  cancelKind: null,
   ...extra,
 });
 const mapOf = (vs: (Visit & { id: string })[]) => new Map(vs.map((v) => [v.id, v]));
@@ -94,6 +95,7 @@ describe('warningsOf', () => {
     traits: {},
     requirements: [],
     preferences: [],
+    lastDay: null,
   };
   const slots = [
     { start: '09:00', end: '12:00' },

@@ -16,7 +16,7 @@ import { PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import type { Client, Pattern, Place } from '../contracts/documents';
-import { patternSchema } from '../contracts/documents';
+import { EMPTY_REFERRER, patternSchema } from '../contracts/documents';
 import type { Condition } from '../contracts/rules';
 import {
   VACANCY_DAY_END_DEFAULT,
@@ -275,6 +275,9 @@ export default function VacancyPage() {
       parkingNote: '',
       cautionNote: '',
       allowedStaffIds: [],
+      // 問い合わせからの仮押さえは「相談受付」の段階（ADR-0015）。仮押さえなので予定・AI案に入る
+      stage: 'inquiry',
+      referrer: { ...EMPTY_REFERRER },
     };
     const parsed = slots.map((s) =>
       patternSchema.safeParse({

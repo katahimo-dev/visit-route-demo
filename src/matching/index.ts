@@ -3,6 +3,7 @@ export {
   ABSENCE_OVERLAP,
   ABSENT_ALL_DAY,
   ABSENT_NO_HOURS,
+  AFTER_LAST_DAY,
   ALLOWED_STAFF_RULE_ID,
   type CompileInput,
   compile,

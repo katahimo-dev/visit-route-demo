@@ -451,7 +451,11 @@ describe('〈利用者さん〉の仮押さえ（ADR-0012 追記。段階3）', 
 
   it('repair は仮押さえを変えず、書き出し → 読み込み で同じに戻る', () => {
     const d = base();
-    const x: DemoData = { ...d, clients: d.clients.map((c, i) => (i === 0 ? { ...c, tentative: true } : c)) };
+    // 仮押さえは利用中の前の段階だけ（ADR-0015）
+    const x: DemoData = {
+      ...d,
+      clients: d.clients.map((c, i) => (i === 0 ? { ...c, tentative: true, stage: 'inquiry' as const } : c)),
+    };
     expect(repair(x)).toEqual(x);
     const back = importJson(JSON.stringify(x));
     expect(isImportError(back)).toBe(false);

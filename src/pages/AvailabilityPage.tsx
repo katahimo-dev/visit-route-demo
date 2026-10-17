@@ -5,7 +5,15 @@ import { SlotEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import type { Availability } from '../contracts/documents';
-import { availabilityOf, type Slot, slotsError, slotsText, timeText, toHalfHours } from '../domain/availability';
+import {
+  afterLastDay,
+  availabilityOf,
+  type Slot,
+  slotsError,
+  slotsText,
+  timeText,
+  toHalfHours,
+} from '../domain/availability';
 import { weekday } from '../domain/time';
 import { absenceText } from '../lib/absences';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
@@ -40,6 +48,11 @@ export default function AvailabilityPage() {
   const pickedOverride = picked ? overrides.get(`${picked.staffId}_${picked.date}`) : undefined;
   const pickedAbsence = picked ? absences.get(`${picked.staffId}_${picked.date}`) : undefined;
 
+  /** 最終勤務日の後（ADR-0015）：勤務なしなので上書きを入れても効かない。理由を出して保存させない */
+  const retiredWhy =
+    picked && pickedStaff && afterLastDay(pickedStaff, picked.date)
+      ? `最終勤務日（${pickedStaff.lastDay?.slice(5).replace('-', '/')}）の後は勤務なしです。時間帯を入れても予定に入りません（${terms.staff}の画面で最終勤務日を変えてください）`
+      : null;
   const pick = (staffId: string, date: string) => {
     const s = staff.find((x) => x.id === staffId);
     if (!s) return;
@@ -47,7 +60,7 @@ export default function AvailabilityPage() {
     setDraft(toHalfHours(availabilityOf(s, date, overrides.get(`${staffId}_${date}`)).slots));
   };
   const save = (slots: Slot[]) => {
-    if (!picked || slotsError(slots)) return;
+    if (!picked || slotsError(slots) || retiredWhy) return;
     const a: Availability = { staffId: picked.staffId, date: picked.date, slots };
     update((d) => ({
       ...d,
@@ -167,12 +180,20 @@ export default function AvailabilityPage() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!!slotsError(draft)}
+                aria-disabled={!!(retiredWhy ?? slotsError(draft)) || undefined}
+                title={retiredWhy ?? slotsError(draft) ?? undefined}
                 onClick={() => save(draft)}
+                data-testid="availability-save"
               >
                 <WithIcon icon={Save}>この時間で保存</WithIcon>
               </button>
-              <button type="button" className="btn" onClick={() => save([])}>
+              <button
+                type="button"
+                className="btn"
+                aria-disabled={!!retiredWhy || undefined}
+                title={retiredWhy ?? undefined}
+                onClick={() => save([])}
+              >
                 <WithIcon icon={Coffee}>休みにする</WithIcon>
               </button>
               {pickedOverride && (
@@ -194,6 +215,11 @@ export default function AvailabilityPage() {
                 availabilityOf(pickedStaff, picked.date, overrides.get(`${picked.staffId}_${picked.date}`)).slots,
               )}
               {pickedAbsence.note && `（${pickedAbsence.note}）`}。欠勤の登録・取り消しは予定の画面で
+            </p>
+          )}
+          {retiredWhy && (
+            <p className="warn-text" data-testid="availability-retired">
+              {retiredWhy}
             </p>
           )}
           <SlotEditor value={draft} onChange={setDraft} />

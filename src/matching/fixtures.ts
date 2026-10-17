@@ -31,6 +31,7 @@ export function staff(id: string, lat: number, lng: number, over: Partial<Staff>
     traits: {},
     requirements: [],
     preferences: [],
+    lastDay: null,
     ...over,
   };
 }
@@ -54,6 +55,8 @@ export function client(id: string, lat: number, lng: number, over: Partial<Clien
     parkingNote: '',
     cautionNote: '',
     allowedStaffIds: [],
+    stage: 'active',
+    referrer: { name: '', contact: '', note: '' },
     ...over,
   };
 }
@@ -78,6 +81,7 @@ export function visit(
     note: '',
     typeId: null,
     pattern: null,
+    cancelKind: null,
     ...over,
   };
 }
@@ -87,7 +91,13 @@ export function makeData(over: Partial<DemoData> = {}): DemoData {
     version: 1,
     baseDate: DATE,
     seed: 1,
-    org: { name: 'テスト', industry: 'care', terms: { client: '利用者さん', staff: 'ヘルパー' }, fareYenPerKm: 0 },
+    org: {
+      name: 'テスト',
+      industry: 'care',
+      terms: { client: '利用者さん', staff: 'ヘルパー' },
+      fareYenPerKm: 0,
+      spanLimitHours: 10,
+    },
     items: ITEMS,
     rules: [],
     staff: [],

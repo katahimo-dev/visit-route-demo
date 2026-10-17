@@ -1,0 +1,548 @@
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCopy, Timer, TriangleAlert } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useDay } from '../app/day';
+import { useToast } from '../components/Toast';
+import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
+import { SpanBar, SpanMini } from '../components/workBars';
+import { timeText } from '../domain/availability';
+import { jstDate, minutesToHhmm, weekday } from '../domain/time';
+import { copyText } from '../lib/clipboard';
+import { byName, WEEKDAY_LABELS } from '../lib/common';
+import { addMonths, isYm, ymOf } from '../lib/month';
+import { mdText } from '../lib/patternText';
+import { hmText, kmOf, type WorkDay, type WorkStat, workloadTsv, workMonth, workTotals } from '../lib/workload';
+import { useDemoData } from '../store';
+import './workload.css';
+
+/**
+ * 稼働の見込み（PRD D72。ADR-0015。#/workload?ym=2026-11）：予定（確定した割当、無ければ今の案）から、
+ * 〈スタッフ〉×日ごとの拘束・訪問・移動・待ちの時間と、移動の距離・交通費を見込む。実績ではない（記録・勤怠はやらない）。
+ * 月の合計の表、〈スタッフ〉×日の表（拘束の長さの横棒）、選んだ人の日ごとの時間軸の横棒。交通費の単価と拘束の上限は事業所の設定
+ */
+export default function WorkloadPage() {
+  const { data, update } = useDemoData();
+  const { date } = useDay();
+  const toast = useToast();
+  const terms = data.org.terms;
+  const [params, setParams] = useSearchParams();
+  const raw = params.get('ym') ?? '';
+  const ym = isYm(raw) ? raw : ymOf(date);
+  const today = jstDate(Date.now());
+  const org = data.org;
+  const fareOn = org.fareYenPerKm > 0;
+
+  const days: WorkDay[] = useMemo(() => workMonth(data, ym), [data, ym]);
+  const totals = useMemo(() => workTotals(days), [days]);
+  /** 表に出す人：利用中の人と、この月に見込みのある人（名前の順） */
+  const staff = useMemo(
+    () => [...data.staff].filter((s) => s.active || totals.has(s.id)).sort(byName),
+    [data.staff, totals],
+  );
+  const rows = staff.filter((s) => totals.has(s.id));
+  const sumOf = (pick: (t: NonNullable<ReturnType<typeof totals.get>>) => number) =>
+    rows.reduce((m, s) => m + pick(totals.get(s.id)!), 0);
+  const overDays = sumOf((t) => t.overDays);
+  const planDays = days.filter((d) => d.source !== null).length;
+
+  // ---- 選んだ人の日ごと ----
+  const sid = params.get('staff');
+  const picked = rows.find((s) => s.id === sid) ?? rows[0];
+  const pickedDays = useMemo(
+    () =>
+      picked
+        ? days.flatMap((d) => {
+            const x = d.stats.find((y) => y.staffId === picked.id);
+            return x ? [{ day: d, stat: x }] : [];
+          })
+        : [],
+    [days, picked],
+  );
+  /** 時間軸の範囲（7:00〜20:00。はみ出す日があれば広げる） */
+  const axis = useMemo(() => {
+    let start = 7 * 60;
+    let end = 20 * 60;
+    for (const { stat } of pickedDays) {
+      start = Math.min(start, Math.floor(stat.start / 60) * 60);
+      end = Math.max(end, Math.ceil(stat.end / 60) * 60);
+    }
+    return { start, end };
+  }, [pickedDays]);
+
+  const patch = (next: Record<string, string | null>) =>
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        for (const [k, v] of Object.entries(next)) {
+          if (v === null) p.delete(k);
+          else p.set(k, v);
+        }
+        return p;
+      },
+      { replace: true },
+    );
+
+  // ---- 設定（事業所の交通費の単価・拘束の上限） ----
+  const [fare, setFare] = useState(String(org.fareYenPerKm));
+  const [limit, setLimit] = useState(String(org.spanLimitHours));
+  useEffect(() => {
+    setFare(String(org.fareYenPerKm));
+  }, [org.fareYenPerKm]);
+  useEffect(() => {
+    setLimit(String(org.spanLimitHours));
+  }, [org.spanLimitHours]);
+  const fareNum = Number(fare);
+  const limitNum = Number(limit);
+  const fareError =
+    fare.trim() === '' || !Number.isFinite(fareNum) || fareNum < 0 || fareNum > 1000
+      ? '0〜1000 の数にしてください'
+      : null;
+  const limitError =
+    limit.trim() === '' ||
+    !Number.isFinite(limitNum) ||
+    limitNum < 0 ||
+    limitNum > 24 ||
+    !Number.isInteger(limitNum * 2)
+      ? '0〜24 の 0.5刻みにしてください'
+      : null;
+  const saveFare = () => {
+    if (fareError || fareNum === org.fareYenPerKm) return;
+    update((d) => ({ ...d, org: { ...d.org, fareYenPerKm: fareNum } }));
+    toast(fareNum > 0 ? `交通費の単価を ${fareNum}円/km にしました` : '交通費を出さないようにしました');
+  };
+  const saveLimit = () => {
+    if (limitError || limitNum === org.spanLimitHours) return;
+    update((d) => ({ ...d, org: { ...d.org, spanLimitHours: limitNum } }));
+    toast(limitNum > 0 ? `拘束の上限を ${limitNum}時間 にしました` : '拘束の注意を出さないようにしました');
+  };
+
+  const copy = async () => {
+    const ok = await copyText(workloadTsv(days, rows, org));
+    toast(ok ? '表をコピーしました（表計算に貼り付けられます）' : 'コピーできませんでした');
+  };
+
+  const statTitle = (name: string, d: string, x: WorkStat) =>
+    `${name}さん ${mdText(d)}：${clock(x.start)}〜${clock(x.end)}・拘束 ${hmText(x.span)}（訪問 ${hmText(x.visit)}・移動 ${hmText(
+      x.travel,
+    )}・待ち ${hmText(x.wait)}）・訪問 ${x.count}件${x.over ? '・拘束が上限を超える' : ''}`;
+
+  return (
+    <div className="stack">
+      <PageHeader
+        icon={Timer}
+        title="稼働の見込み"
+        lead={`予定から見込んだ、${terms.staff}ごとの拘束・移動・待ちの時間と交通費です。実績ではありません`}
+      />
+
+      <div className="card stack work-head">
+        <div className="row work-nav">
+          <Link className="btn btn-small" to={`/month?ym=${ym}`}>
+            <WithIcon icon={ArrowLeft} size={14}>
+              月間に戻る
+            </WithIcon>
+          </Link>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="前の月"
+            onClick={() => patch({ ym: addMonths(ym, -1) })}
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+          </button>
+          <h2 className="work-title" data-testid="work-title">
+            {ym.slice(0, 4)}年{Number(ym.slice(5, 7))}月
+          </h2>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="次の月"
+            onClick={() => patch({ ym: addMonths(ym, 1) })}
+          >
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-disabled={ym === ymOf(today) || undefined}
+            title={ym === ymOf(today) ? 'いま今月を見ています' : '今月を見る'}
+            onClick={() => {
+              if (ym !== ymOf(today)) patch({ ym: ymOf(today) });
+            }}
+          >
+            今月
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-disabled={rows.length === 0 || undefined}
+            title={rows.length === 0 ? 'この月には見込める予定がありません' : '表計算に貼り付けられる形でコピーします'}
+            onClick={() => {
+              if (rows.length > 0) void copy();
+            }}
+            data-testid="work-copy"
+          >
+            <WithIcon icon={ClipboardCopy} size={14}>
+              表をコピー
+            </WithIcon>
+          </button>
+          <span className="sub" data-testid="work-summary">
+            案のある日 {planDays}日・{terms.staff} {rows.length}人
+            {overDays > 0 ? `・拘束が上限を超える ${overDays}日（のべ）` : ''}
+          </span>
+        </div>
+        <div className="row work-settings">
+          <label className="work-setting">
+            <span>交通費の単価</span>
+            <input
+              type="number"
+              min={0}
+              max={1000}
+              step={1}
+              value={fare}
+              onChange={(e) => setFare(e.target.value)}
+              onBlur={saveFare}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveFare();
+              }}
+              aria-invalid={!!fareError || undefined}
+              data-testid="work-fare"
+            />
+            <span>円/km（0 なら交通費を出しません）</span>
+            {fareError && <span className="error">{fareError}</span>}
+          </label>
+          <label className="work-setting">
+            <span>拘束の上限</span>
+            <input
+              type="number"
+              min={0}
+              max={24}
+              step={0.5}
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              onBlur={saveLimit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveLimit();
+              }}
+              aria-invalid={!!limitError || undefined}
+              data-testid="work-limit"
+            />
+            <span>時間（超える日に注意。0 なら出しません）</span>
+            {limitError && <span className="error">{limitError}</span>}
+          </label>
+        </div>
+        <Hint label="見込みの数え方">
+          数えるのはその日の確定した割当（無ければ今の案）です。拘束は最初の訪問の開始から最後の訪問の終わりまでで、直行直帰として自宅との行き帰りは入れません（距離と交通費には入れます）。待ちは訪問のあいだの空き（休憩に使える時間）です。移動の時間と距離は直線距離からの概算です。拘束の上限は注意を出すだけで、AI案の条件には入りません。予定からの見込みで、実績（打刻）ではありません。
+        </Hint>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="card">
+          <p className="sub" data-testid="work-empty">
+            この月には、確定した割当か今の案のある日がありません。月間で案を作ると見込みが出ます。
+          </p>
+        </div>
+      ) : (
+        <>
+          <section className="card stack">
+            <SectionTitle icon={Timer} aside={<span className="sub">予定からの見込み（実績ではありません）</span>}>
+              月の合計
+            </SectionTitle>
+            <div className="table-scroll">
+              <table className="work-table" data-testid="work-totals">
+                <thead>
+                  <tr>
+                    <th scope="col">名前</th>
+                    <th scope="col" className="num">
+                      日数
+                    </th>
+                    <th scope="col" className="num">
+                      訪問
+                    </th>
+                    <th scope="col" className="num">
+                      拘束
+                    </th>
+                    <th scope="col">一番長い日</th>
+                    <th scope="col" className="num">
+                      訪問の時間
+                    </th>
+                    <th scope="col" className="num">
+                      移動
+                    </th>
+                    <th scope="col" className="num">
+                      待ち
+                    </th>
+                    <th scope="col" className="num">
+                      自宅との行き帰り
+                    </th>
+                    <th scope="col" className="num">
+                      距離
+                    </th>
+                    {fareOn && (
+                      <th scope="col" className="num">
+                        交通費
+                      </th>
+                    )}
+                    <th scope="col" className="num">
+                      上限超え
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((s) => {
+                    const t = totals.get(s.id)!;
+                    return (
+                      <tr key={s.id}>
+                        <th scope="row" className="work-name">
+                          <button
+                            type="button"
+                            className="link-btn"
+                            aria-pressed={picked?.id === s.id}
+                            onClick={() => patch({ staff: s.id })}
+                            title="押すと下の日ごとの表に出します"
+                          >
+                            {s.name}
+                          </button>
+                        </th>
+                        <td className="num">{t.days}日</td>
+                        <td className="num">{t.count}件</td>
+                        <td className="num">{hmText(t.span)}</td>
+                        <td>
+                          <span className="work-max">
+                            <SpanMini
+                              stat={{ ...emptyStat(s.id), span: t.maxSpan, over: t.overDays > 0 }}
+                              limitHours={org.spanLimitHours}
+                            />
+                            <span>{hmText(t.maxSpan)}</span>
+                          </span>
+                        </td>
+                        <td className="num">{hmText(t.visit)}</td>
+                        <td className="num">{hmText(t.travel)}</td>
+                        <td className="num">{hmText(t.wait)}</td>
+                        <td className="num">{hmText(t.home)}</td>
+                        <td className="num">{kmOf(t.meters)}km</td>
+                        {fareOn && <td className="num">{t.fareYen.toLocaleString()}円</td>}
+                        <td className={`num${t.overDays > 0 ? ' warn-text' : ''}`}>
+                          {t.overDays > 0 ? (
+                            <WithIcon icon={TriangleAlert} size={13}>
+                              {t.overDays}日
+                            </WithIcon>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row">合計</th>
+                    <td className="num">{sumOf((t) => t.days)}日</td>
+                    <td className="num">{sumOf((t) => t.count)}件</td>
+                    <td className="num">{hmText(sumOf((t) => t.span))}</td>
+                    <td />
+                    <td className="num">{hmText(sumOf((t) => t.visit))}</td>
+                    <td className="num">{hmText(sumOf((t) => t.travel))}</td>
+                    <td className="num">{hmText(sumOf((t) => t.wait))}</td>
+                    <td className="num">{hmText(sumOf((t) => t.home))}</td>
+                    <td className="num">{kmOf(sumOf((t) => t.meters))}km</td>
+                    {fareOn && <td className="num">{sumOf((t) => t.fareYen).toLocaleString()}円</td>}
+                    <td className="num">{overDays > 0 ? `${overDays}日` : '—'}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </section>
+
+          <section className="card stack">
+            <SectionTitle
+              icon={Timer}
+              aside={
+                <span className="sub">
+                  横棒は拘束の長さ（{12}時間で端まで。縦の線は上限）。上限を超える日は斜線と「!」
+                </span>
+              }
+            >
+              {terms.staff}×日の拘束
+            </SectionTitle>
+            <div className="table-scroll">
+              <table className="work-grid" data-testid="work-grid">
+                <thead>
+                  <tr>
+                    <th scope="col" className="work-grid-name">
+                      名前
+                    </th>
+                    {days.map((d) => (
+                      <th
+                        key={d.date}
+                        scope="col"
+                        className={`work-grid-day${weekday(d.date) === 0 ? ' is-sun' : weekday(d.date) === 6 ? ' is-sat' : ''}`}
+                      >
+                        {Number(d.date.slice(8, 10))}
+                        <small>{WEEKDAY_LABELS[weekday(d.date)]}</small>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((s) => (
+                    <tr key={s.id}>
+                      <th scope="row" className="work-grid-name">
+                        {s.name}
+                      </th>
+                      {days.map((d) => {
+                        const x = d.stats.find((y) => y.staffId === s.id);
+                        return (
+                          <td key={d.date} className={`work-cell${x?.over ? ' is-over' : ''}`}>
+                            {x ? (
+                              <span className="work-cell-in" title={statTitle(s.name, d.date, x)}>
+                                <span className="work-cell-num">
+                                  {(Math.round((x.span / 60) * 10) / 10).toFixed(1)}
+                                  {x.over && (
+                                    <strong>
+                                      !<span className="sr-only">（上限を超える）</span>
+                                    </strong>
+                                  )}
+                                </span>
+                                <SpanMini stat={x} limitHours={org.spanLimitHours} />
+                              </span>
+                            ) : (
+                              <span className="sub">
+                                <span aria-hidden="true">・</span>
+                                <span className="sr-only">訪問なし</span>
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="sub">数字は拘束の時間（時間）です。マスに指を置くと内訳が出ます。</p>
+          </section>
+
+          {picked && (
+            <section className="card stack" data-testid="work-detail">
+              <SectionTitle icon={Timer}>
+                <span className="work-detail-title">
+                  日ごと：
+                  <select
+                    value={picked.id}
+                    onChange={(e) => patch({ staff: e.target.value })}
+                    aria-label={`日ごとに見る${terms.staff}`}
+                    data-testid="work-staff"
+                  >
+                    {rows.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </SectionTitle>
+              <div className="table-scroll">
+                <table className="work-table work-days">
+                  <thead>
+                    <tr>
+                      <th scope="col">日付</th>
+                      <th scope="col" className="work-axis-head">
+                        <span className="work-axis" aria-hidden="true">
+                          {axisMarks(axis).map((m) => (
+                            <span key={m} style={{ left: `${((m - axis.start) / (axis.end - axis.start)) * 100}%` }}>
+                              {m / 60}
+                            </span>
+                          ))}
+                        </span>
+                        <span className="sr-only">時間帯</span>
+                      </th>
+                      <th scope="col">始め〜終わり</th>
+                      <th scope="col" className="num">
+                        拘束
+                      </th>
+                      <th scope="col" className="num">
+                        訪問
+                      </th>
+                      <th scope="col" className="num">
+                        移動
+                      </th>
+                      <th scope="col" className="num">
+                        待ち
+                      </th>
+                      <th scope="col" className="num">
+                        距離
+                      </th>
+                      {fareOn && (
+                        <th scope="col" className="num">
+                          交通費
+                        </th>
+                      )}
+                      <th scope="col">案の元</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickedDays.map(({ day, stat }) => (
+                      <tr key={day.date} className={stat.over ? 'is-over' : ''}>
+                        <th scope="row" className="nowrap">
+                          {mdText(day.date)}（{WEEKDAY_LABELS[weekday(day.date)]}）
+                        </th>
+                        <td className="work-axis-cell">
+                          <SpanBar stat={stat} range={axis} />
+                        </td>
+                        <td className="nowrap">
+                          {clock(stat.start)}〜{clock(stat.end)}
+                        </td>
+                        <td className={`num${stat.over ? ' warn-text' : ''}`}>
+                          {stat.over ? (
+                            <WithIcon icon={TriangleAlert} size={13}>
+                              {hmText(stat.span)}
+                            </WithIcon>
+                          ) : (
+                            hmText(stat.span)
+                          )}
+                        </td>
+                        <td className="num">
+                          {hmText(stat.visit)}（{stat.count}件）
+                        </td>
+                        <td className="num">{hmText(stat.travel)}</td>
+                        <td className="num">{hmText(stat.wait)}</td>
+                        <td className="num">{kmOf(stat.meters)}km</td>
+                        {fareOn && <td className="num">{stat.fareYen.toLocaleString()}円</td>}
+                        <td className="sub">{day.source === 'confirmed' ? '確定' : '今の案'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const clock = (m: number) => timeText(minutesToHhmm(Math.round(m)));
+
+/** 時間軸の目盛り（2時間ごと） */
+function axisMarks(axis: { start: number; end: number }): number[] {
+  const out: number[] = [];
+  for (let m = Math.ceil(axis.start / 120) * 120; m <= axis.end; m += 120) out.push(m);
+  return out;
+}
+
+const emptyStat = (staffId: string): WorkStat => ({
+  staffId,
+  count: 0,
+  start: 0,
+  end: 0,
+  span: 0,
+  visit: 0,
+  travel: 0,
+  wait: 0,
+  home: 0,
+  meters: 0,
+  fareYen: 0,
+  over: false,
+});

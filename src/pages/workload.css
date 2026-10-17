@@ -1,0 +1,197 @@
+/* 稼働の見込み（PRD D72。ADR-0015） */
+.work-nav,
+.work-settings {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.work-title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+label.work-setting {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+.work-setting > span:first-child {
+  color: var(--ink);
+  font-weight: 700;
+}
+.work-setting input {
+  width: 6em;
+  padding: 6px 8px;
+}
+.work-detail-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.work-detail-title select {
+  width: auto;
+}
+.work-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.work-table th,
+.work-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.work-table .num {
+  text-align: right;
+}
+.work-table tfoot th,
+.work-table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--line);
+}
+.work-name .link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+.work-name .link-btn[aria-pressed='true'] {
+  text-decoration-color: var(--primary);
+  text-decoration-thickness: 2px;
+}
+.work-max {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 140px;
+}
+.work-max .work-mini {
+  width: 80px;
+}
+/* 拘束の長さの横棒（表のマス）。上限を超えると斜線（色だけに頼らない） */
+.work-mini {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: #f1e9e2;
+  overflow: hidden;
+}
+.work-mini-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #8fb3d9;
+  border-radius: 999px;
+}
+.work-mini.is-over .work-mini-fill {
+  background: repeating-linear-gradient(135deg, var(--warn) 0 3px, #f3c56d 3px 6px);
+}
+.work-mini-limit {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--ink);
+  opacity: 0.55;
+}
+/* 〈スタッフ〉×日の表 */
+.work-grid {
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.work-grid th,
+.work-grid td {
+  border: 1px solid var(--line);
+  padding: 3px 4px;
+  text-align: center;
+}
+.work-grid-name {
+  position: sticky;
+  left: 0;
+  background: var(--card);
+  text-align: left !important;
+  white-space: nowrap;
+  z-index: 1;
+}
+.work-grid-day small {
+  display: block;
+  color: var(--sub);
+  font-weight: 400;
+}
+.work-grid-day.is-sun {
+  color: var(--danger);
+}
+.work-grid-day.is-sat {
+  color: #2f5f9e;
+}
+.work-cell {
+  min-width: 34px;
+}
+.work-cell.is-over {
+  background: #fdf1dc;
+  outline: 2px solid var(--warn);
+  outline-offset: -2px;
+}
+.work-cell-in {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.work-cell-num {
+  font-variant-numeric: tabular-nums;
+}
+.work-cell-num strong {
+  color: #a46d0a;
+  margin-left: 1px;
+}
+/* 日ごとの時間軸の横棒（次の弾で3段のバーに差し替える予定） */
+.work-axis-head {
+  min-width: 260px;
+}
+.work-axis {
+  position: relative;
+  display: block;
+  height: 1.2em;
+}
+.work-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  color: var(--sub);
+  font-weight: 400;
+}
+.work-axis-cell {
+  min-width: 260px;
+}
+.work-bar {
+  position: relative;
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(90deg, #f6f0eb 0 calc(100% / 13 - 1px), #eadfd6 calc(100% / 13 - 1px) calc(100% / 13));
+}
+.work-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 6px;
+  background: #8fb3d9;
+}
+.work-bar.is-over .work-bar-fill {
+  background: repeating-linear-gradient(135deg, var(--warn) 0 4px, #f3c56d 4px 8px);
+}
+.work-days tr.is-over th {
+  color: #a46d0a;
+}

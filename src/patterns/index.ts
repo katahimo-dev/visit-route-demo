@@ -86,6 +86,7 @@ function visitOf(pattern: Pattern, date: string): Visit {
     note: '',
     typeId: pattern.typeId,
     pattern: { id: pattern.id, date, edited: false },
+    cancelKind: null,
   };
 }
 

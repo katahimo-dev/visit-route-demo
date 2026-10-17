@@ -29,6 +29,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
+  Timer,
   TriangleAlert,
   Undo2,
   UserRoundX,
@@ -82,6 +83,7 @@ import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
+import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile } from '../matching';
 import {
   type ContactList,
@@ -228,6 +230,9 @@ export default function PlanPage() {
   const [editing, setEditing] = useState<string | null>(null);
   /** 急な欠勤の欄を開いている人（ADR-0011。null：閉じている） */
   const [absenceFor, setAbsenceFor] = useState<string | null>(null);
+  /** 取り消しの欄を開いている訪問（PRD D74。null：閉じている）と、当日キャンセルか */
+  const [cancelFor, setCancelFor] = useState<Visit | null>(null);
+  const [cancelSameDay, setCancelSameDay] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
@@ -313,6 +318,7 @@ export default function PlanPage() {
   useEffect(() => {
     setEditing(null);
     setAbsenceFor(null);
+    setCancelFor(null);
     setContactsOpen(false);
     setPanel(null);
     setError(null);
@@ -1306,17 +1312,43 @@ export default function PlanPage() {
   };
 
   // ---- 訪問の取消・前の同じ曜日からコピー ----
+  /** 取り消しの欄を開く（取り消しの種類を選ぶ。PRD D74） */
   const cancelVisit = (v: Visit) => {
-    if (!confirm('この訪問を取り消しますか？')) return;
+    setCancelFor(v);
+    setCancelSameDay(false);
+  };
+  /** 取り消す。当日キャンセルなら取り消しの種類 'sameDay'（回数を数えるだけ。請求はしない。ADR-0015） */
+  const doCancel = () => {
+    const v = cancelFor;
+    if (!v) return;
+    const kind = cancelSameDay ? ('sameDay' as const) : null;
     // 定期パターンの訪問を取り消したら「この回だけの変更」（ADR-0012）
     update((d) => ({
       ...d,
       visits: d.visits.map((x) =>
-        x.id === v.id ? { ...x, cancelled: true, pattern: x.pattern ? { ...x.pattern, edited: true } : null } : x,
+        x.id === v.id
+          ? { ...x, cancelled: true, cancelKind: kind, pattern: x.pattern ? { ...x.pattern, edited: true } : null }
+          : x,
       ),
     }));
-    toast('取り消しました');
+    setCancelFor(null);
+    toast(kind ? '当日キャンセルとして取り消しました' : '取り消しました');
   };
+  /**
+   * 拘束が上限を超える人（稼働の見込み。PRD D72。ADR-0015）。日の画面は今の案（無ければ確定した割当）で見る
+   * （手直し中の案で注意を出す。月間・稼働の見込みの画面は確定した割当を先に数える）
+   */
+  const overSpan = useMemo(() => {
+    if (!problem) return [];
+    const src = aiPlan
+      ? { routes: aiPlan.routes, sort: false }
+      : (() => {
+          const w = workRoutesOf({ manualPlans: data.manualPlans, aiPlans: {} }, date, problem);
+          return w ? { routes: w.routes, sort: true } : null;
+        })();
+    if (!src) return [];
+    return workStats(problem, src.routes, data.org, src.sort).filter((x) => x.over);
+  }, [problem, aiPlan, data.manualPlans, data.org, date]);
   /** 1週前の訪問（と確定した割当）をこの日に写す。訪問が無い日だけ */
   const copyFromLastWeek = () => {
     setError(null);
@@ -2193,6 +2225,24 @@ export default function PlanPage() {
           </button>
         </div>
       )}
+      {overSpan.length > 0 && (
+        <div className="plan-band is-warn row" data-testid="band-over-span">
+          <WithIcon icon={Timer} size={16}>
+            拘束（最初の訪問の開始〜最後の訪問の終わり）が上限の{data.org.spanLimitHours}時間を超える{terms.staff}：
+            {overSpan.map((x) => `${staffName(x.staffId)} ${hmText(x.span)}`).join('・')}（
+            {aiPlan ? '今の案' : '確定した割当'}からの見込み）
+          </WithIcon>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() =>
+              navigate(`/workload?ym=${date.slice(0, 7)}&staff=${encodeURIComponent(overSpan[0]!.staffId)}`)
+            }
+          >
+            稼働の見込み
+          </button>
+        </div>
+      )}
       {aiPlan && stale && !autoMade && !planIsStale && (
         <div className="plan-band is-warn row">
           <WithIcon icon={TriangleAlert} size={16}>
@@ -2475,6 +2525,60 @@ export default function PlanPage() {
             <span key={v.id}>{visitLabel(v.id)}</span>
           ))}
         </div>
+      )}
+
+      {cancelFor && (
+        <SidePanel
+          icon={Ban}
+          narrow
+          title="訪問を取り消す"
+          onClose={() => setCancelFor(null)}
+          footer={
+            <>
+              <button type="button" className="btn btn-danger" onClick={doCancel} data-testid="cancel-visit-ok">
+                <WithIcon icon={Ban}>取り消す</WithIcon>
+              </button>
+              <button type="button" className="btn" onClick={() => setCancelFor(null)}>
+                やめる
+              </button>
+            </>
+          }
+        >
+          <p>
+            <strong>
+              {clientById.get(cancelFor.clientId)?.displayName ?? ''} {windowText(cancelFor)}
+            </strong>{' '}
+            の訪問を取り消します。
+          </p>
+          <fieldset className="stack cancel-kind" style={{ gap: 6 }} data-testid="cancel-kind">
+            <legend>取り消しの種類</legend>
+            <label className="check">
+              <input
+                type="radio"
+                name="cancel-kind"
+                checked={!cancelSameDay}
+                onChange={() => setCancelSameDay(false)}
+                style={{ width: 'auto' }}
+              />
+              ふつうの取り消し（前もって決まった休み・予定の変更など）
+            </label>
+            <label className="check">
+              <input
+                type="radio"
+                name="cancel-kind"
+                checked={cancelSameDay}
+                onChange={() => setCancelSameDay(true)}
+                style={{ width: 'auto' }}
+                data-testid="cancel-same-day"
+              />
+              当日キャンセル（その日になって{terms.client}の都合で取りやめ）
+            </label>
+          </fieldset>
+          <p className="sub">
+            当日キャンセルは、月間の画面と{terms.client}
+            ごとの月の集計に回数が出ます（請求はしません）。今の案はそのままで、この訪問は計算から外れます。
+          </p>
+        </SidePanel>
       )}
 
       {panel === 'detail' && (

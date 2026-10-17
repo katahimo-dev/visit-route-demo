@@ -16,6 +16,7 @@ import {
   Route as RouteIcon,
   SlidersHorizontal,
   Tags,
+  Timer,
   TriangleAlert,
   UserRound,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ import StaffViewPage from '../pages/StaffViewPage';
 import TypesPage from '../pages/TypesPage';
 import VacancyPage from '../pages/VacancyPage';
 import WeekPage from '../pages/WeekPage';
+import WorkloadPage from '../pages/WorkloadPage';
 import { useDemoData } from '../store';
 import { DayProvider, useDay } from './day';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -79,6 +81,7 @@ export default function App() {
           <Route path="/plan" element={<PlanPage />} />
           <Route path="/month" element={<MonthPage />} />
           <Route path="/week" element={<WeekPage />} />
+          <Route path="/workload" element={<WorkloadPage />} />
           <Route path="/vacancy" element={<VacancyPage />} />
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/rules" element={<RulesPage />} />
@@ -128,6 +131,7 @@ function AdminShell() {
         { to: '/month', label: '月', icon: CalendarRange },
         { to: '/week', label: '週', icon: CalendarClock },
         { to: '/plan', label: '日', icon: CalendarDays },
+        { to: '/workload', label: '稼働の見込み', icon: Timer },
       ],
     },
     {

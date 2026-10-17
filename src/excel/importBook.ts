@@ -10,7 +10,9 @@ import {
   MAX_VISIT_TYPES,
   type Org,
   type Pattern,
+  SPAN_LIMIT_DEFAULT_HOURS,
   type Staff,
+  stageOfLegacy,
   type Visit,
   type VisitType,
 } from '../contracts/documents';
@@ -27,6 +29,7 @@ import {
   type Traits,
 } from '../contracts/rules';
 import { slotsError } from '../domain/availability';
+import { STAGE_LABELS } from '../lib/clientStage';
 import { MAX_OPTIONS, nameKey, newId, optionNameError } from '../lib/common';
 import { isImportError, migrate } from '../store';
 import {
@@ -36,6 +39,7 @@ import {
   CLIENT_COLS,
   CLIENT_KANA_COL,
   CLIENT_RULE_COLS,
+  CLIENT_STAGE_COLS,
   CLIENT_TENTATIVE_COL,
   clientLeaveCols,
   ITEM_COLS,
@@ -51,10 +55,12 @@ import {
   RULE_COLS,
   reqHeader,
   STAFF_COLS,
+  STAFF_LAST_DAY_COL,
   TRAIT_PREFIX,
   TYPE_COLS,
   traitHeader,
   VISIT_PATTERN_COLS,
+  VISIT_SAME_DAY_COL,
   VISIT_TYPE_COL,
   visitBaseCols,
   visitCols,
@@ -506,6 +512,13 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     industryRow?.err(V, `「${Object.values(INDUSTRY_LABELS).join('」「')}」のどれかで書いてください`);
   const fare = fareRow?.num(V, { min: 0, max: 1000, required: true });
   const seed = seedRow?.num(V, { int: true, required: true });
+  // 拘束の上限（ADR-0015）：行が無い古いブックは既定（10時間）。0.5刻み
+  const spanRow = orgRows.get(ORG_KEYS.spanLimit);
+  let spanLimit = spanRow ? spanRow.num(V, { min: 0, max: 24 }) : null;
+  if (typeof spanLimit === 'number' && !Number.isInteger(spanLimit * 2)) {
+    spanRow?.err(V, '0.5刻みで書いてください');
+    spanLimit = undefined;
+  }
 
   const names = personSheetNames(terms);
   const itemSheet = sheetOf(FIXED_SHEETS.items);
@@ -666,7 +679,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   const staff: Staff[] = [];
   const staffByName = new Map<string, string>();
   {
-    const cols = personCols(staffSheet, items, 'staff', Object.values(STAFF_COLS));
+    const cols = personCols(staffSheet, items, 'staff', [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL]);
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
     const C = STAFF_COLS;
@@ -689,8 +702,19 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const address = r.optional(C.address, 200);
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });
+      // 最終勤務日（ADR-0015）：列が無い古いブック・空はなし
+      const lastDay = r.text(STAFF_LAST_DAY_COL) === '' ? null : r.date(STAFF_LAST_DAY_COL);
       const p = readPerson(r, cols);
-      if (name !== null && travelMode && workDays && shiftStart && shiftEnd && lat !== undefined && lng !== undefined) {
+      if (
+        name !== null &&
+        travelMode &&
+        workDays &&
+        shiftStart &&
+        shiftEnd &&
+        lat !== undefined &&
+        lng !== undefined &&
+        (lastDay !== null || r.text(STAFF_LAST_DAY_COL) === '')
+      ) {
         staff.push({
           id,
           name,
@@ -701,6 +725,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           shiftEnd,
           active,
           ...p,
+          lastDay,
         });
       }
     }
@@ -729,6 +754,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       CLIENT_KANA_COL,
       CLIENT_ALLOWED_COL,
       ...Object.values(CLIENT_RULE_COLS),
+      ...Object.values(CLIENT_STAGE_COLS),
     ]);
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
@@ -766,8 +792,19 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const keyNote = r.optional(CLIENT_RULE_COLS.key, 200);
       const parkingNote = r.optional(CLIENT_RULE_COLS.parking, 200);
       const cautionNote = r.optional(CLIENT_RULE_COLS.caution, 200);
+      // 段階（ADR-0015）：列が無い古いブック・空は「利用中」「仮押さえ」から読み替える。active・tentative は repair が段階に合わせる
+      const stageText = r.text(CLIENT_STAGE_COLS.stage);
+      const stage = stageText === '' ? stageOfLegacy({ active, tentative }) : lookup(STAGE_LABELS, stageText);
+      if (stage === null)
+        r.err(CLIENT_STAGE_COLS.stage, `「${Object.values(STAGE_LABELS).join('」「')}」のどれかで書いてください`);
+      const referrer = {
+        name: r.optional(CLIENT_STAGE_COLS.referrer, 50),
+        contact: r.optional(CLIENT_STAGE_COLS.referrerContact, 100),
+        note: r.optional(CLIENT_STAGE_COLS.referrerNote, 200),
+      };
       const p = readPerson(r, cols);
       if (
+        stage !== null &&
         displayName !== null &&
         typeof color === 'number' &&
         lat !== undefined &&
@@ -791,6 +828,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           parkingNote,
           cautionNote,
           allowedStaffIds,
+          stage,
+          referrer,
         });
       }
     }
@@ -1124,6 +1163,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const duration = r.num(vc.duration, { int: true, min: 5, max: 720, required: true });
       const sid = staffId(r, vc.staff, false);
       const cancelled = r.yes(vc.cancelled);
+      // 当日キャンセル（ADR-0015）：列が無い古いブックはふつうの取り消し。取り消していない訪問に ○ は止める
+      const sameDay = r.yes(VISIT_SAME_DAY_COL);
+      if (sameDay && !cancelled) r.err(VISIT_SAME_DAY_COL, `「${vc.cancelled}」に ○ の無い訪問には付けられません`);
       const note = r.optional(vc.note, 200);
       // 種類・定期パターン（ADR-0012）。シートが無い古いブックは空
       const tid = hasTypes ? typeId(r, vc.type) : null;
@@ -1155,6 +1197,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           note,
           typeId: tid,
           pattern,
+          cancelKind: cancelled && sameDay ? 'sameDay' : null,
         });
       }
     }
@@ -1186,9 +1229,22 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     }
   }
 
-  if (errors.any || industry === null || typeof fare !== 'number' || typeof seed !== 'number') return errors.toError();
+  if (
+    errors.any ||
+    industry === null ||
+    typeof fare !== 'number' ||
+    typeof seed !== 'number' ||
+    spanLimit === undefined
+  )
+    return errors.toError();
 
-  const org: Org = { name: orgName, industry, terms, fareYenPerKm: fare };
+  const org: Org = {
+    name: orgName,
+    industry,
+    terms,
+    fareYenPerKm: fare,
+    spanLimitHours: spanLimit ?? SPAN_LIMIT_DEFAULT_HOURS,
+  };
   const next: DemoData = {
     version: base.version,
     baseDate: base.baseDate,

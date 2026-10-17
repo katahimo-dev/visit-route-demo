@@ -1,5 +1,6 @@
 import {
   BadgeCheck,
+  CalendarX,
   Clock,
   Home,
   MapPin,
@@ -10,6 +11,7 @@ import {
   Smartphone,
   Sparkles,
   UserRound,
+  UserRoundCog,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -20,8 +22,12 @@ import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
 import { type Staff, staffSchema } from '../contracts/documents';
+import { addDays, jstDate } from '../domain/time';
 import { byName, formError, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
+import { offboardScope } from '../lib/offboard';
+import { mdText } from '../lib/patternText';
 import { useDemoData } from '../store';
+import { leavingStaff, OffboardPanel } from './OffboardPanel';
 import './settings.css';
 
 /** スタッフの一覧と編集（PoC本体 StaffPage.tsx を写し、招待・メールを外して特性と条件を足した） */
@@ -38,6 +44,7 @@ const blank = (): Staff => ({
   traits: {},
   requirements: [],
   preferences: [],
+  lastDay: null,
 });
 
 export default function StaffPage() {
@@ -47,7 +54,19 @@ export default function StaffPage() {
   const [form, setForm] = useState<Staff | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 担当の振り直しの欄を開いている〈スタッフ〉（PRD D71。null：閉じている） */
+  const [offboardFor, setOffboardFor] = useState<string | null>(null);
+  const today = jstDate(Date.now());
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
+  /** 最終勤務日のある人と、振り直しが残っているもの（〈利用者さん〉の人数・訪問の件数） */
+  const leaving = useMemo(
+    () =>
+      leavingStaff(data.staff).map((s) => {
+        const sc = offboardScope(data, s.id, today, false);
+        return { staff: s, clients: sc?.clients.length ?? 0, visits: sc?.visits.length ?? 0 };
+      }),
+    [data, today],
+  );
   const staffItems = data.items.filter((i) => i.target === 'staff');
   const itemById = new Map(data.items.map((i) => [i.id, i]));
 
@@ -74,6 +93,16 @@ export default function StaffPage() {
         }あとで利用中に戻しても、担当できる人には戻りません。よろしいですか？`;
         if (!confirm(msg)) return;
       }
+      // 最終勤務日を入れた・変えたら、保存のあとに担当の振り直しの欄を開く（振り直すものがあるときだけ。ADR-0015）
+      const before = data.staff.find((x) => x.id === s.id);
+      const lastDayChanged = s.active && s.lastDay !== null && before?.lastDay !== s.lastDay;
+      const nextData = {
+        ...data,
+        staff: data.staff.some((x) => x.id === s.id)
+          ? data.staff.map((x) => (x.id === s.id ? s : x))
+          : [...data.staff, s],
+      };
+      const sc = lastDayChanged ? offboardScope(nextData, s.id, today, false) : null;
       update((d) => ({
         ...d,
         staff: d.staff.some((x) => x.id === s.id) ? d.staff.map((x) => (x.id === s.id ? s : x)) : [...d.staff, s],
@@ -86,7 +115,11 @@ export default function StaffPage() {
             ),
       }));
       setIsNew(false);
-      toast('保存しました');
+      if (sc && (sc.clients.length > 0 || sc.visits.length > 0)) {
+        setForm(null);
+        setOffboardFor(s.id);
+        toast(`保存しました。${mdText(addDays(s.lastDay ?? '', 1))}からの担当を振り直してください`);
+      } else toast('保存しました');
     } catch (e) {
       setError(formError(e));
     }
@@ -105,6 +138,7 @@ export default function StaffPage() {
             onClick={() => {
               setError(null);
               setIsNew(true);
+              setOffboardFor(null);
               setForm(blank());
             }}
           >
@@ -112,6 +146,43 @@ export default function StaffPage() {
           </button>
         }
       />
+
+      {leaving.length > 0 && (
+        <div className="card stack leaving-card" data-testid="leaving-card">
+          <strong>
+            <WithIcon icon={CalendarX} size={16}>
+              最終勤務日のある{terms.staff}
+            </WithIcon>
+          </strong>
+          <ul className="leaving-list">
+            {leaving.map((x) => (
+              <li key={x.staff.id}>
+                <span>
+                  {x.staff.name}さん：最終勤務日 {mdText(x.staff.lastDay ?? '')}
+                </span>
+                <span className="sub">
+                  {x.clients > 0 || x.visits > 0
+                    ? `振り直しが残っています（${terms.client} ${x.clients}人・担当の訪問 ${x.visits}件）`
+                    : '振り直しは済んでいます'}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => {
+                    setForm(null);
+                    setOffboardFor(x.staff.id);
+                  }}
+                  data-testid="leaving-open"
+                >
+                  <WithIcon icon={UserRoundCog} size={14}>
+                    担当の振り直しを開く
+                  </WithIcon>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="card table-scroll">
         <table className="people-table">
@@ -156,7 +227,18 @@ export default function StaffPage() {
                     <span className="chip chip-warn">未登録</span>
                   )}
                 </td>
-                <td>{!s.active && <span className="chip">休止中</span>}</td>
+                <td>
+                  {!s.active && <span className="chip">休止中</span>}
+                  {s.lastDay && (
+                    <span
+                      className="chip chip-lastday"
+                      title={`最終勤務日 ${s.lastDay}（翌日から勤務なし）`}
+                      data-testid="staff-lastday"
+                    >
+                      最終 {mdText(s.lastDay)}
+                    </span>
+                  )}
+                </td>
                 <td className="nowrap">
                   <div className="actions">
                     <IconButton
@@ -165,6 +247,7 @@ export default function StaffPage() {
                       onClick={() => {
                         setError(null);
                         setIsNew(false);
+                        setOffboardFor(null);
                         setForm(structuredClone(s));
                       }}
                     />
@@ -260,6 +343,30 @@ export default function StaffPage() {
             </Check>
           </div>
 
+          <SectionTitle icon={CalendarX}>最終勤務日（退職・担当替え）</SectionTitle>
+          <Hint>
+            退職や担当替えで、この日を最後に勤務しなくなるときに入れます。翌日からは勤務なしになり、予定・AI案に入りません。保存すると、その人が担当している
+            {terms.client}の代わりの{terms.staff}をまとめて選ぶ欄が開きます（訪問の案は自動では作り直しません）。
+          </Hint>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <label className="row" style={{ gap: 6 }}>
+              最終勤務日
+              <input
+                type="date"
+                value={form.lastDay ?? ''}
+                onChange={(e) => setForm({ ...form, lastDay: e.target.value || null })}
+                data-testid="staff-lastday-input"
+                style={{ width: 'auto' }}
+              />
+            </label>
+            {form.lastDay && (
+              <button type="button" className="btn btn-small" onClick={() => setForm({ ...form, lastDay: null })}>
+                最終勤務日を消す
+              </button>
+            )}
+            {form.lastDay && <span className="sub">{mdText(addDays(form.lastDay, 1))}から勤務なし</span>}
+          </div>
+
           <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={staffItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
 
@@ -287,6 +394,7 @@ export default function StaffPage() {
           <PlaceEditor value={form.home} onChange={(home) => setForm({ ...form, home })} />
         </SidePanel>
       )}
+      {offboardFor && !form && <OffboardPanel staffId={offboardFor} onClose={() => setOffboardFor(null)} />}
     </div>
   );
 }

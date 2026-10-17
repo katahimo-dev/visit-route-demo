@@ -11,11 +11,14 @@ import {
   RULE_TYPES,
   type Traits,
 } from '../contracts/rules';
+import { STAGE_LABELS } from '../lib/clientStage';
 import { nameKey, optionNameError } from '../lib/common';
+import { hmText, kmOf, workDayOf } from '../lib/workload';
 import { scorePresetOf } from '../seed/presets';
 import {
   absenceCols,
   availabilityCols,
+  CLIENT_STAGE_COLS,
   clientExportCols,
   clientLeaveCols,
   ITEM_COLS,
@@ -29,9 +32,13 @@ import {
   RULE_COLS,
   reqHeader,
   STAFF_COLS,
+  STAFF_LAST_DAY_COL,
   TYPE_COLS,
   traitHeader,
+  VISIT_SAME_DAY_COL,
   visitCols,
+  WORKLOAD_COLS,
+  WORKLOAD_SHEET,
 } from './layout';
 import {
   ALL_PREFIX,
@@ -188,19 +195,20 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     '・プルダウンがある欄は、一覧から選んでください。',
     '',
     'シート',
-    `・${FIXED_SHEETS.org}：事業所名・業種・呼び方など。「項目」と「値」の2列です。`,
+    `・${FIXED_SHEETS.org}：事業所名・業種・呼び方など。「項目」と「値」の2列です。「${ORG_KEYS.fare}」は稼働の見込みの交通費の単価（0 なら交通費を出しません）、「${ORG_KEYS.spanLimit}」は拘束（最初の訪問の開始〜最後の訪問の終わり）がこれを超える日に注意を出す時間（0.5刻み。0 なら出しません）です。`,
     `・${FIXED_SHEETS.items}：${t.staff}・${t.client}の特性の項目。種類は「${ITEM_KINDS.map((k) => itemKindLabels[k]).join('」「')}」。選択肢は「、」か改行で区切ります（選択肢の名前に「、」と改行、「${EMPTY_MULTI}」は使えません）。`,
     `・${FIXED_SHEETS.rules}：AI案を作るときの条件（重み 0〜5、0.5刻み。必須は ○）。`,
     `・${FIXED_SHEETS.presets}：条件のプリセット（1〜6行）。「重み：〈条件の種類〉」の列に重み（0〜5、0.5刻み。空は0）、「必須」の列に必須にする条件の種類を「、」区切りで書きます。「点数の基準」の列は、画面の点数（100点満点）を付けるプリセットに ○ を1つだけ付けます（無印なら先頭のプリセット）。このシートが無いブックを読み込むと、いまのプリセットのままです。`,
-    `・${names.staff}：${t.staff}の一覧。勤務する曜日は「月火水木金」のように書きます。`,
-    `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。いつもの担当は${t.staff}の名前で書きます。担当できる人は、担当を限るときだけ${t.staff}の名前を「、」で区切って書きます（空なら限りません。社内の決まりで、限った人以外は担当になりません）。入り方・鍵・駐車場・注意は訪問先の決まりごと（各200文字まで）で、${t.staff}の画面に出ます。`,
+    `・${names.staff}：${t.staff}の一覧。勤務する曜日は「月火水木金」のように書きます。「${STAFF_LAST_DAY_COL}」は退職・担当替えの最後の勤務日（空ならなし。翌日からは勤務なし）です。`,
+    `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。いつもの担当は${t.staff}の名前で書きます。担当できる人は、担当を限るときだけ${t.staff}の名前を「、」で区切って書きます（空なら限りません。社内の決まりで、限った人以外は担当になりません）。入り方・鍵・駐車場・注意は訪問先の決まりごと（各200文字まで）で、${t.staff}の画面に出ます。「${CLIENT_STAGE_COLS.stage}」は「${Object.values(STAGE_LABELS).join('」「')}」のどれかで、予定・AI案に入るのは「利用中」と、利用中の前で「仮押さえ」に ○ がある人だけです（「${CLIENT_STAGE_COLS.stage}」が空なら「利用中」「仮押さえ」の列から決めます。「${CLIENT_STAGE_COLS.stage}」を書いたときは段階を優先し、「利用中」「仮押さえ」の列が食い違っていても段階に合わせて読みます）。「${CLIENT_STAGE_COLS.referrer}」「${CLIENT_STAGE_COLS.referrerContact}」「${CLIENT_STAGE_COLS.referrerNote}」は紹介してくれた所です。`,
     `・${FIXED_SHEETS.compat}：行が${t.client}、列が${t.staff}です。◎・○・△・× か空で書きます（× は担当にしません）。`,
     `・${FIXED_SHEETS.availability}：その日だけの稼働時間。時間帯は「9:00-12:00、13:00-18:00」のように30分単位で書き、休みは「${DAY_OFF}」と書きます。`,
     `・${FIXED_SHEETS.absences}：当日の急な欠勤（1人1日1行）。開始・終了は30分単位で書き、開始が空なら始業から、終了が空なら終業まで、両方空なら終日です。このシートが無いブックを読み込むと、欠勤なしになります。`,
     `・${FIXED_SHEETS.visitTypes}：訪問の種類（20行まで）。名前は重ならないようにします。色は 1〜8 の番号、標準の所要は分です。「必要条件：項目名」の列は担当に必要な${t.staff}の特性で、常に必須です（書き方は${t.client}の必要条件と同じ）。このシートが無いブックを読み込むと、種類なしになります。`,
     `・${FIXED_SHEETS.patterns}：${t.client}ごとの定期パターン。種類は種類の名前（空なら種類を問わない）、曜日は「月木」のように、間隔は「${Object.values(EVERY_WEEKS_LABELS).join('」「')}」「${MONTHLY_LABEL}」で書きます。「${MONTHLY_LABEL}」のときは「第N週」の列に「3、4」のように第何週か（1〜5）を書きます（第3・第4の曜日。第5の無い月は作りません）。「曜日ごとの時刻」の列に「月 9:30、木 15:00〜15:30」のように書くと、その曜日だけ開始の時刻を変えます（空ならどの曜日も「開始（早）」「開始（遅）」）。終了日が空なら続きます。いつもの担当は${t.staff}の名前（空なら${t.client}のいつもの担当）です。このシートが無いブックを読み込むと、パターンなしになります。`,
     `・${FIXED_SHEETS.clientLeaves}：${t.client}の休み（入院・ショートステイなど）。開始日〜終了日の訪問は消さずに「休みのため無し」として計算から外します。このシートが無いブックを読み込むと、休みなしになります。`,
-    `・${FIXED_SHEETS.visits}：訪問の予定。時間の決め方は「ちょうど」（開始（早）に始める）か「幅」（開始（早）〜開始（遅）のあいだに始める）。担当は${t.staff}の名前で、空なら未割当です。種類は種類の名前（空なら種類なし）。定期パターンはパターンの ID（空なら単発）で、そのときは元の日も書きます。この回だけ変更は、パターンから作った訪問をその回だけ直したときに ○ を付けます。`,
+    `・${FIXED_SHEETS.visits}：訪問の予定。時間の決め方は「ちょうど」（開始（早）に始める）か「幅」（開始（早）〜開始（遅）のあいだに始める）。担当は${t.staff}の名前で、空なら未割当です。種類は種類の名前（空なら種類なし）。定期パターンはパターンの ID（空なら単発）で、そのときは元の日も書きます。この回だけ変更は、パターンから作った訪問をその回だけ直したときに ○ を付けます。「${VISIT_SAME_DAY_COL}」は取り消した訪問が当日キャンセルなら ○ です（回数を数えるだけで、請求はしません）。`,
+    `・${WORKLOAD_SHEET}：予定（確定した割当、無ければ今の案）から見込んだ、${t.staff}×日ごとの拘束・訪問・移動・待ちの分と距離・交通費です。実績ではありません。書き出すだけで、読み込みでは見ません。`,
     '',
     '特性の書き方（「特性：項目名」の列。空は未確認）',
     '・あり/なし：「あり」「なし」',
@@ -259,6 +267,43 @@ export function exportProblem(data: DemoData): string | null {
   return null;
 }
 
+/**
+ * 「稼働の見込み」のシートの行（PRD D72。ADR-0015）：確定した割当か今の案のある日ごとに、訪問のある〈スタッフ〉1行。
+ * 日付・名前の順。交通費は単価が 0 なら空
+ */
+export function workloadRows(data: DemoData): CellIn[][] {
+  const dates = [...new Set([...Object.keys(data.manualPlans), ...Object.keys(data.aiPlans)])].sort();
+  const nameOf = new Map(data.staff.map((s) => [s.id, s.name]));
+  const rows: CellIn[][] = [];
+  for (const date of dates) {
+    const visits = data.visits.filter((v) => v.date === date);
+    if (!visits.some((v) => !v.cancelled)) continue;
+    const day = workDayOf({ ...data, visits }, date);
+    const stats = [...day.stats].sort((a, b) =>
+      (nameOf.get(a.staffId) ?? '').localeCompare(nameOf.get(b.staffId) ?? '', 'ja'),
+    );
+    for (const x of stats) {
+      rows.push([
+        date,
+        nameOf.get(x.staffId) ?? '',
+        day.source === 'confirmed' ? '確定した割当' : '今の案',
+        x.count,
+        hmText(x.start),
+        hmText(x.end),
+        Math.round(x.span),
+        Math.round(x.visit),
+        Math.round(x.travel),
+        Math.round(x.wait),
+        Math.round(x.home),
+        kmOf(x.meters),
+        data.org.fareYenPerKm > 0 ? x.fareYen : null,
+        x.over ? YES : '',
+      ]);
+    }
+  }
+  return rows;
+}
+
 export async function exportWorkbook(data: DemoData): Promise<Blob> {
   const problem = exportProblem(data);
   if (problem) throw new Error(problem);
@@ -288,6 +333,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       [ORG_KEYS.clientTerm, t.client],
       [ORG_KEYS.fare, data.org.fareYenPerKm],
       [ORG_KEYS.seed, data.seed],
+      [ORG_KEYS.spanLimit, data.org.spanLimitHours],
     ],
     freezeCols: 1,
   });
@@ -403,7 +449,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
   };
 
   // スタッフ
-  const staffBase = Object.values(STAFF_COLS);
+  const staffBase = [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL];
   const sp = personCols(staffBase.length, staffItems, clientItems);
   addTable(wb, {
     name: names.staff,
@@ -419,9 +465,10 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       s.home.address,
       nullable(s.home.lat),
       nullable(s.home.lng),
+      s.lastDay ?? '',
       ...sp.cells(s),
     ]),
-    textCols: [1, 4, 5, 6],
+    textCols: [1, 4, 5, 6, 11],
     lists: [{ col: 3, values: Object.values(travelModeLabels) }, { col: 7, values: [YES] }, ...sp.lists],
     freezeCols: 2,
   });
@@ -459,6 +506,11 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       c.keyNote,
       c.parkingNote,
       c.cautionNote,
+      // 段階と紹介元（ADR-0015）
+      STAGE_LABELS[c.stage],
+      c.referrer.name,
+      c.referrer.contact,
+      c.referrer.note,
       ...cp.cells(c),
     ]),
     textCols: [1, 3],
@@ -467,6 +519,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       { col: 5, values: [YES] },
       { col: 6, values: [YES] },
       { col: 10, ref: staffNameRef, strict: false },
+      { col: clientBase.indexOf(CLIENT_STAGE_COLS.stage) + 1, values: Object.values(STAGE_LABELS) },
       ...cp.lists,
     ],
     freezeCols: 2,
@@ -589,7 +642,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
   const vc = visitCols(t);
   addTable(wb, {
     name: FIXED_SHEETS.visits,
-    headers: Object.values(vc),
+    headers: [...Object.values(vc), VISIT_SAME_DAY_COL],
     rows: data.visits.map((v) => [
       v.id,
       v.date,
@@ -605,6 +658,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       v.pattern?.date ?? '',
       yes(v.pattern?.edited ?? false),
       v.note,
+      yes(v.cancelled && v.cancelKind === 'sameDay'),
     ]),
     textCols: [1, 2, 6, 7, 11, 12],
     lists: [
@@ -615,6 +669,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       { col: 10, values: [YES] },
       { col: 11, ref: patternIdRef, strict: false },
       { col: 13, values: [YES] },
+      { col: 15, values: [YES] },
     ],
     freezeCols: 3,
   });
@@ -627,6 +682,15 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
     rows: data.clientLeaves.map((l) => [l.id, clientName.get(l.clientId) ?? '', l.from, l.to, l.note]),
     textCols: [1, 3, 4],
     lists: [{ col: 2, ref: clientNameRef, strict: false }],
+    freezeCols: 2,
+  });
+
+  // 稼働の見込み（ADR-0015）：書き出すだけ（読み込みでは見ない）
+  addTable(wb, {
+    name: WORKLOAD_SHEET,
+    headers: [...WORKLOAD_COLS],
+    rows: workloadRows(data),
+    textCols: [1],
     freezeCols: 2,
   });
 
