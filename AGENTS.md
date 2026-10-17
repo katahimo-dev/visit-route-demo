@@ -44,6 +44,7 @@ docs/ … prd.md / design.md / adr/ / handoff/
 - 再現性：solver・matching・evaluate・seed に `Math.random`・`Date.now` を入れない。乱数は seed 付き、止めるのは反復回数
 - 費用は「分」に換算する（design.md §5 の表）。solver と evaluate は同じ `Problem` を使い、合計点を一致させる
 - 外部送信は地図タイルの取得と、利用者がボタンを押したときの郵便番号・住所の検索（`src/lib/geocode.ts` の1か所。ADR-0016）だけ。解析・ログ送信を入れない
+- リンク（Google マップの Maps URLs）・mailto は、押すのが人でアプリは送らないので外部送信に当たらない（ADR-0017・0018）
 - 同梱するデータは架空のものだけ。公開リポジトリに実在の人・住所・パスワード・キーを置かない
 - 画面：主ボタンは1画面1つ（多くて2つ）、オレンジ1色。呼び方は `org.terms` から引き、「お客様」「シッター」を直書きしない。表記は常用漢字
 

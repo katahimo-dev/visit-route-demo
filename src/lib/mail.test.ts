@@ -15,7 +15,7 @@ import {
   weekByStaff,
   weekMailText,
 } from './mail';
-import { MAILTO_LIMIT, mailtoHref } from './mailto';
+import { mailtoHref } from './mailto';
 import { REQUESTED_OFF_NOTE } from './requestedOff';
 
 const plan = (date: string, routes: Record<string, string[]>): AiPlan => ({
@@ -96,16 +96,16 @@ describe('日の予定（PRD D92）', () => {
     const k = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, true);
     expect(k.full).toContain('鍵：キーボックス 1234');
     // 要点は入り方・駐車場・注意を省く。鍵は選んだときだけ残す
-    expect(k.short[0]).toContain('   鍵：キーボックス 1234');
-    expect(t.short[0]).not.toContain('1234');
-    expect(k.short[0]).not.toContain('入り方：');
-    expect(k.short[0]).toContain('2. 13:00〜14:00 青葉様（仙台市青葉区1-1）');
+    expect(k.short[1]).toContain('   鍵：キーボックス 1234');
+    expect(t.short[1]).not.toContain('1234');
+    expect(k.short[1]).not.toContain('入り方：');
+    expect(k.short[1]).toContain('2. 13:00〜14:00 青葉様（仙台市青葉区1-1）');
     // 要点2は 順番・時刻・〈利用者さん〉だけ
-    expect(k.short[1]).toContain('2. 13:00〜14:00 青葉様\n');
-    expect(k.short[1]).not.toContain('仙台市');
-    expect(k.short[1]).toContain('※長いため、鍵の情報は省きました。');
-    expect(t.short[0]).toContain('※鍵の情報はメールに入れていません。');
+    expect(k.short[2]).toContain('2. 13:00〜14:00 青葉様\n');
+    expect(k.short[2]).not.toContain('仙台市');
+    expect(k.short[2]).toContain('※長いため、鍵の情報は省きました。');
     expect(t.short[1]).toContain('※鍵の情報はメールに入れていません。');
+    expect(t.short[2]).toContain('※鍵の情報はメールに入れていません。');
   });
 
   it('訪問の無い人は「訪問はありません」', () => {
@@ -113,26 +113,26 @@ describe('日の予定（PRD D92）', () => {
     expect(t.full).toContain('10/12（月）の訪問はありません。');
   });
 
-  it('メールアドレスの無い人は null。長い本文は要点に（URL は目安以内）', () => {
+  it('メールアドレスの無い人は null。長い本文は段階を追って短く（URL は目安以内）', () => {
     const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
     const { day, byStaff } = dayByStaff(d, DATE);
     const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
     expect(mailTo('', t)).toBeNull();
-    const m = mailTo('hana@example.com', t)!;
+    const m = mailTo('hana@example.com', t, 8000)!;
     expect(m.href.startsWith('mailto:hana@example.com?subject=')).toBe(true);
-    expect(m.length).toBeLessThanOrEqual(MAILTO_LIMIT);
     expect(m.mode).toBe('full');
-    // 要点の URL の長さちょうどを目安にすると要点、それより短いと本文なし
-    const shortLen = mailtoHref({ to: ['hana@example.com'], subject: t.subject, body: t.short[0]! }).length;
-    expect(shortLen).toBeLessThan(m.length);
-    const tiny = mailTo('hana@example.com', t, shortLen)!;
-    expect(tiny.mode).toBe('short');
+    // 各段階の URL の長さちょうどを目安にするとその段階、どれより短いと本文なし
+    const lens = t.short.map((b) => mailtoHref({ to: ['hana@example.com'], subject: t.subject, body: b }).length);
+    expect(lens.every((n, i) => i === 0 || n < lens[i - 1]!)).toBe(true);
+    expect(lens[0]!).toBeLessThan(m.length);
+    t.short.forEach((b, i) => {
+      const x = mailTo('hana@example.com', t, lens[i]!)!;
+      expect(x.mode).toBe('short');
+      expect(x.body).toBe(b);
+    });
+    const tiny = mailTo('hana@example.com', t, lens[1]!)!;
     expect(new URL(tiny.href).searchParams.get('body')).toContain('入り方・駐車場・注意は省きました');
-    const shorterLen = mailtoHref({ to: ['hana@example.com'], subject: t.subject, body: t.short[1]! }).length;
-    const tiny2 = mailTo('hana@example.com', t, shortLen - 1)!;
-    expect(tiny2.mode).toBe('short');
-    expect(tiny2.body).toBe(t.short[1]);
-    expect(mailTo('hana@example.com', t, shorterLen - 1)!.mode).toBe('none');
+    expect(mailTo('hana@example.com', t, lens[lens.length - 1]! - 1)!.mode).toBe('none');
   });
 
   it('鍵のメモのある訪問が無ければ「鍵の情報は…」を書かない', () => {
@@ -172,6 +172,131 @@ describe('日の予定（PRD D92）', () => {
     expect(m.mode).toBe('short');
     expect(m.length).toBeLessThanOrEqual(2000);
     expect(m.body).toContain(`${n}. `);
+  });
+});
+
+describe('日の予定の経路のリンク（PRD D97。ADR-0018）', () => {
+  const urls = (text: string) => [...text.matchAll(/https:\S+/g)].map((m) => new URL(m[0]));
+  it('全行程（自宅→訪問…→自宅、経由地付き）と区間ごと。移動手段は travelmode に。鍵・名前は URL に入れない', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
+    const s1 = { ...d.staff[0]!, travelMode: 'BICYCLE' as const };
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, s1, DATE, day.source, byStaff.get('s1')!, true);
+    expect(t.full).toContain(
+      '■Google マップの道順\n全行程（自宅→自宅）：https://www.google.com/maps/dir/?api=1&origin=',
+    );
+    const [trip, ...legs] = urls(t.full);
+    expect(trip!.searchParams.get('origin')).toBe('38.26,140.87');
+    expect(trip!.searchParams.get('destination')).toBe('38.26,140.87');
+    expect(trip!.searchParams.get('waypoints')).toBe('38.266,140.876|38.265,140.875');
+    expect(trip!.searchParams.get('travelmode')).toBe('bicycling');
+    expect(t.full).toContain('   道順（自宅から）：');
+    expect(t.full).toContain('   道順（泉様から）：');
+    expect(t.full).toContain('帰りの道順（青葉様から）：');
+    expect(legs.map((u) => u.searchParams.get('destination'))).toEqual([
+      '38.266,140.876',
+      '38.265,140.875',
+      '38.26,140.87',
+    ]);
+    for (const u of urls(t.full)) {
+      expect(u.href).not.toContain('1234');
+      expect(decodeURIComponent(u.href)).not.toContain('青葉');
+    }
+  });
+  it('長いときは区間ごとを先に外し、全行程を残す。本文をコピー（fullBody）には区間ごとも入る', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.short[0]).toContain('全行程（自宅→自宅）');
+    expect(t.short[0]).not.toContain('道順（自宅から）');
+    expect(t.short[0]).toContain('※長いため、区間ごとの道順は省きました。');
+    expect(t.short[1]).toContain('全行程');
+    expect(t.short[2]).toContain('全行程');
+    expect(t.short[3]).not.toContain('https:');
+    expect(t.short[3]).toContain('※住所・入り方・駐車場・注意・道順は省きました。');
+    const m = mailTo('hana@example.com', t, 2000)!;
+    expect(m.mode).toBe('short');
+    expect(m.body).toContain('maps/dir');
+    expect(m.fullBody).toContain('道順（自宅から）');
+  });
+  it('自宅の場所が無ければ訪問だけをつなぎ、1件目の区間のリンクは出さない。住所だけの訪問先は住所の文字で', () => {
+    const d = data({
+      staff: [staff('s1', 0, 0, { name: '山田 花', home: { address: '', lat: null, lng: null } })],
+      clients: [
+        client('c1', 0, 0, {
+          displayName: '青葉',
+          place: { address: '仙台市青葉区1-1', lat: null, lng: null, postalCode: '' },
+        }),
+        client('c2', 38.266, 140.876, { displayName: '泉' }),
+      ],
+      aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) },
+      visits: [
+        visit('v1', 'c1', '13:00', '13:00', { windowKind: 'fixed' }),
+        visit('v2', 'c2', '09:00', '09:00', { windowKind: 'fixed' }),
+      ],
+    });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).toContain('全行程（泉様→青葉様）');
+    expect(t.full).not.toContain('道順（自宅から）');
+    expect(t.full).not.toContain('帰りの道順');
+    const [trip, leg] = urls(t.full);
+    expect(trip!.searchParams.get('destination')).toBe('仙台市青葉区1-1');
+    expect(leg!.searchParams.get('origin')).toBe('38.266,140.876');
+  });
+  it('訪問4件は全行程を2本に分ける（経由地はスマホのブラウザに合わせて3件まで）', () => {
+    const d = data({
+      clients: [...data().clients, client('c4', 38.268, 140.878, { displayName: '若林' })],
+      visits: [...data().visits, visit('v4', 'c4', '15:00', '15:00', { windowKind: 'fixed' })],
+      aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v3', 'v1', 'v4'] }) },
+    });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).toContain('全行程 1/2（自宅→若林様）：');
+    expect(t.full).toContain('全行程 2/2（若林様→自宅）：');
+    const trips = urls(t.full).slice(0, 2);
+    expect(trips.map((u) => u.searchParams.get('waypoints')?.split('|').length)).toEqual([3, undefined]);
+  });
+  it('場所が未登録の〈利用者さん〉は全行程に入っていないと書く（呼び方は org.terms）', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v3', 'v1'] }) } });
+    const clients = d.clients.map((c) =>
+      c.id === 'c3' ? { ...c, place: { address: '', lat: null, lng: null, postalCode: '' } } : c,
+    );
+    const dd = { ...d, clients };
+    const { day, byStaff } = dayByStaff(dd, DATE);
+    const t = dayMailText(dd.org, dd.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).toContain(`（場所が未登録の${dd.org.terms.client}（宮城野様）は全行程に入っていません）`);
+    expect(t.short[0]).toContain('は全行程に入っていません');
+    expect(t.full).not.toContain('道順（泉様から）');
+  });
+  it('公共交通は全行程を出さず区間ごとだけ。段階は 区間ごと → 要点1 → 要点2', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
+    const s1 = { ...d.staff[0]!, travelMode: 'TRANSIT' as const };
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, s1, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).not.toContain('全行程');
+    expect(t.full).toContain('（公共交通のため、道順は区間ごと（各訪問の下）です）');
+    expect(t.full).toContain('   道順（自宅から）：');
+    expect(urls(t.full).every((u) => u.searchParams.get('travelmode') === 'transit')).toBe(true);
+    expect(t.short.length).toBe(2);
+    expect(t.short[0]).not.toContain('https:');
+    expect(t.short[0]).toContain('※入り方・駐車場・注意・道順は省きました。');
+    expect(t.short[1]).toContain('※住所・入り方・駐車場・注意・道順は省きました。');
+  });
+  it('自転車は「経路が出ないときは徒歩に」と添える', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
+    const s1 = { ...d.staff[0]!, travelMode: 'BICYCLE' as const };
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, s1, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).toContain('（自転車の経路が出ないときは、Google マップで徒歩に切り替えてください。）');
+    expect(t.short[1]).toContain('徒歩に切り替えて');
+  });
+  it('自宅・移動手段を渡さなければリンクなし（要点は2段のまま）', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, { name: '山田 花' }, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).not.toContain('https:');
+    expect(t.short.length).toBe(2);
   });
 });
 
