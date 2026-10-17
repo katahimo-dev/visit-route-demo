@@ -1,5 +1,6 @@
 /* 週間の〈利用者さん〉×曜日のマスの3段の帯（PRD D83）。段・端の時刻は混み具合バーと同じ（loadBar.css の load-row）。
-   見た目の言葉（PRD D85）は components/barMarks.css：1段＝1時間ずつ4ブロック（.bar-hours）、柄を減らし、休み＝淡い灰の無地・案なし＝破線の枠 */
+   見た目の言葉（PRD D85）は components/barMarks.css：1段＝1時間ずつ4ブロック（隙間は帯の下の地にだけ）、柄を減らし、休み＝淡い灰の無地・
+   案なし＝種類の色を淡くした地に種類の色の破線の枠 */
 .cbar {
   display: flex;
   flex-direction: column;
@@ -15,7 +16,11 @@
   min-width: 0;
   height: 12px;
   border-radius: 2px;
-  background: var(--bar-track);
+  /* 1時間の隙間は帯の下（地）にだけ描く（短い訪問の帯を割らない。.bar-hours の重ねは使わない） */
+  background: var(--bar-hour-gaps), var(--bar-track);
+}
+.cbar-track.bar-hours::after {
+  display: none;
 }
 /* 訪問の帯（ボタン）。色は種類の色（--tc）、模様と下の文字で印を分ける（色だけにしない） */
 .cbar-item {
@@ -36,6 +41,7 @@
 /* 重なる帯の上下（PRD D83 のレビュー）：top・height はレーンから（components/clientBar） */
 .cbar-track .cbar-item {
   bottom: auto;
+  z-index: var(--cz, 1);
 }
 .cbar-item.is-cont {
   min-width: 0;
@@ -45,7 +51,8 @@ button.cbar-item:hover,
 button.cbar-item:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
-  z-index: 1;
+  /* 重なる帯・1時間の隙間に枠を削られないよう一番上に */
+  z-index: 3;
 }
 /* 休み：淡い灰の無地（〈スタッフ〉の休みと同じ。下に「休」の文字） */
 .cbar-item.is-leave {
@@ -67,10 +74,10 @@ button.cbar-item:focus-visible {
   background: #fff;
   box-shadow: inset 0 0 0 2px var(--danger);
 }
-/* 案なし：淡い無地に破線の枠（〈スタッフ〉の案なしと同じ。空きと誤読させない） */
+/* 案なし：種類の色を淡くした地に、種類の色の破線の枠（訪問があることと種類は見え、担当が決まっていないことは破線で。下に「案なし」） */
 .cbar-item.is-noplan {
-  background: var(--bar-noplan);
-  border: 1px dashed var(--bar-noplan-line);
+  background: color-mix(in srgb, var(--tc) 55%, #fff);
+  border: 1.5px dashed color-mix(in srgb, var(--tc) 60%, #000);
 }
 /* 担当が種類の必要条件・担当を限る決まりに合わない：赤い枠 */
 .cbar-item.is-unfit {

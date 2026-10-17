@@ -5,6 +5,7 @@ import './barMarks.css';
 import './loadBar.css';
 import { inBar } from '../lib/barRows';
 import {
+  isAllRest,
   STAFF_SLOT_LABEL,
   type StaffSlot,
   type StaffSlotState,
@@ -20,7 +21,6 @@ import { BarSwatch, SlotBar } from './loadBar';
  */
 export function StaffBar({ slots, testId = 'staff-bar' }: { slots: readonly StaffSlot[]; testId?: string }) {
   const shown = inBar(slots);
-  const allRest = shown.length > 0 && shown.every((x) => x.state === 'rest');
   return (
     <SlotBar
       slots={slots.map((x) => ({ start: x.start, level: `st-${x.state}`, title: staffSlotText(x) }))}
@@ -28,7 +28,7 @@ export function StaffBar({ slots, testId = 'staff-bar' }: { slots: readonly Staf
       emptyText=""
       testId={testId}
       edges={staffEdgeTexts(slots)}
-      cover={allRest ? STAFF_SLOT_LABEL.rest : undefined}
+      cover={isAllRest(slots) ? STAFF_SLOT_LABEL.rest : undefined}
     />
   );
 }

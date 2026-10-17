@@ -94,7 +94,7 @@ import {
 } from '../lib/requestedOff';
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
-import { staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
+import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { workStats } from '../lib/workload';
 import { type CompileInput, compile } from '../matching';
@@ -1593,11 +1593,14 @@ const DayCell = memo(function DayCell(props: CellProps) {
     }
     if (x.travel > 0) parts.push(`移動 ${x.travel}分`);
     parts.push(withEdges(`時間帯：${staffSlotSummary(inBar(x.bar))}`, staffEdgeTexts(x.bar)));
+    // 勤務の無い日の「休」は、バーに重ねた「休み」（PRD D85）と二重にしないよう読み上げだけ（週の表と同じ。
+    // 欠勤・希望休・最終勤務日の後は理由の文字なので残す）
+    const restCovered = shiftShort === '休' && isAllRest(x.bar);
     body.push(
       shiftShort !== null ? (
         <span
           key="shift"
-          className={`month-shift${x.retired ? ' is-retired' : x.absence ? (x.requested ? ' is-requested' : ' is-absent') : ' is-off'}`}
+          className={`month-shift${x.retired ? ' is-retired' : x.absence ? (x.requested ? ' is-requested' : ' is-absent') : ' is-off'}${restCovered ? ' sr-only' : ''}`}
           data-testid="month-shift"
         >
           {x.absence &&

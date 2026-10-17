@@ -3,7 +3,6 @@
 // （PRD D77・D85。訪問＝濃い青、移動＝橙で高さ半分、待ち＝空きと同じ淡い緑に細い枠。1日の時間軸の上の位置が大事なので3段にはしない）
 import './barMarks.css';
 import './workBars.css';
-import type { CSSProperties } from 'react';
 import { timeText } from '../domain/availability';
 import { minutesToHhmm } from '../domain/time';
 import type { RoutePart, Span } from '../lib/staffBar';
@@ -13,6 +12,13 @@ import type { WorkStat } from '../lib/workload';
 const PART_LEVEL: Record<RoutePart['kind'], string> = { visit: 'st-visit', travel: 'st-travel', wait: 'st-free' };
 const PART_LABEL: Record<RoutePart['kind'], string> = { visit: '訪問', travel: '移動', wait: '待ち' };
 const clock = (m: number) => timeText(minutesToHhmm(Math.round(m)));
+
+/** 軸の中の正時（0時からの分）。両端は含まない（1時間の隙間の位置） */
+function hoursInside(range: { start: number; end: number }): number[] {
+  const out: number[] = [];
+  for (let t = Math.floor(range.start / 60) * 60 + 60; t < range.end; t += 60) if (t > range.start) out.push(t);
+  return out;
+}
 
 /** 横棒の目盛りの最大（時間）。これを超える拘束は端で止める */
 export const SPAN_SCALE_HOURS = 12;
@@ -74,11 +80,7 @@ export function PartsBar({
     return { left: `${a * 100}%`, width: `${Math.max(0, b - a) * 100}%` };
   };
   return (
-    <span
-      className={`work-bar ${className}`}
-      style={{ '--hours': Math.max(1, Math.round(len / 60)) } as CSSProperties}
-      aria-hidden="true"
-    >
+    <span className={`work-bar ${className}`} aria-hidden="true">
       {shift?.map((x) => (
         <span key={`shift-${x.start}`} className="work-part bar-seg is-st-free" style={at(x)} />
       ))}
@@ -97,6 +99,10 @@ export function PartsBar({
           style={at(x)}
           title={`${clock(x.start)}〜${clock(x.end)} ${PART_LABEL[x.kind]}`}
         />
+      ))}
+      {/* 1時間ごとの区切り：境界の前後 1px の隙間（3段バーの .bar-hours と同じ。両端には描かない。PRD D85） */}
+      {hoursInside(range).map((t) => (
+        <span key={`hour-${t}`} className="work-hour" style={{ left: `calc(${pos(t) * 100}% - 1px)` }} />
       ))}
       {frame && <span className="work-bar-frame" style={at(frame)} />}
     </span>

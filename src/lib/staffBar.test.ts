@@ -8,6 +8,7 @@ import { dayLoad } from '../vacancy';
 import { dayPlanOf, staffDay } from './month';
 import {
   busyParts,
+  isAllRest,
   type StaffSlot,
   spanParts,
   spansOf,
@@ -334,5 +335,23 @@ describe('ほかの数え方と食い違わない', () => {
       expect(s.parts[0]!.start).toBe(s.start);
       expect(s.parts.at(-1)!.end).toBe(s.end);
     }
+  });
+});
+
+describe('isAllRest（3段とも休みか。PRD D85）', () => {
+  const day = (state: (t: number) => StaffSlot['state']): StaffSlot[] =>
+    Array.from({ length: 48 }, (_, i) => ({ start: i * 30, state: state(i * 30) }));
+  it('8〜20時が全部休みなら true（8時より前・20時以降は見ない）', () => {
+    expect(isAllRest(day((t) => (t < 8 * 60 || t >= 20 * 60 ? 'outside' : 'rest')))).toBe(true);
+    expect(isAllRest(day(() => 'rest'))).toBe(true);
+  });
+  it('休みの日に訪問が1件残っていれば false（重ねて隠さない）', () => {
+    expect(isAllRest(day((t) => (t === 10 * 60 ? 'visit' : 'rest')))).toBe(false);
+    expect(isAllRest(day((t) => (t === 9 * 60 + 30 ? 'travel' : 'rest')))).toBe(false);
+  });
+  it('時間の欠勤（一部だけ休み）・8〜20時のマスが無い並びは false', () => {
+    expect(isAllRest(day((t) => (t >= 13 * 60 && t < 20 * 60 ? 'rest' : 'free')))).toBe(false);
+    expect(isAllRest([{ start: 7 * 60, state: 'rest' }])).toBe(false);
+    expect(isAllRest([])).toBe(false);
   });
 });

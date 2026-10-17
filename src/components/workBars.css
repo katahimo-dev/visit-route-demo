@@ -7,18 +7,15 @@
   border-radius: 3px;
   background: var(--bar-track);
 }
-/* 1時間ごとの区切り（--hours＝軸の時間の数）：3段バーと同じ細い隙間を塗りの上に重ねる（PRD D85） */
-.work-bar::after {
-  content: '';
+/* 1時間ごとの区切り（PRD D85）：境界の前後 1px の隙間を塗りの上に重ねる（3段バーの .bar-hours と同じ。両端には描かない） */
+.work-hour {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
   z-index: 2;
+  width: 2px;
+  background: var(--bar-gap);
   pointer-events: none;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0 calc(100% / var(--hours, 13) - 2px),
-    var(--bar-gap) calc(100% / var(--hours, 13) - 2px) calc(100% / var(--hours, 13))
-  );
 }
 /* 拘束の内訳（PRD D77）：訪問・移動・待ちを3段バーと同じ塗りで（位置と高さは .bar-seg） */
 .work-part {
