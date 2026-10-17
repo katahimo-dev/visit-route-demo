@@ -1,0 +1,138 @@
+// 週間の〈利用者さん〉×曜日のマスの3段の帯（PRD D83。区切りは lib/barRows＝混み具合バー・〈スタッフ〉の3段バーと同じ）。
+// 訪問をその時刻の位置に種類の色で置き、下に担当の短い名前などを時刻の順に小さく出す。
+// 印は形と文字で分ける（色だけにしない）：休み＝灰に白の横線＋「休」、取り消し＝白抜きの枠＋「取消」「当日取消」、
+// 案なし＝薄い縦線＋「案なし」、入らない＝白地に斜線＋「入らない」、いつもの担当でない＝「代」。
+// 訪問の帯（段の最初の切れ端）と、段に掛からない訪問の端の「◀」「▶」は、画面が渡すボタン（押す・Enter・ドラッグ）
+import './loadBar.css';
+import './clientBar.css';
+import { type CSSProperties, Fragment, type ReactNode } from 'react';
+import { BAR_ROWS, type BarSide, edgeLabel, placeOnRows } from '../lib/barRows';
+import type { ClientItemKind, ClientWeekItem } from '../lib/week';
+import { EdgeMark, RowEdge } from './loadBar';
+
+/** 訪問1件の見た目（kind の模様と、帯の色＝種類の色） */
+export type ClientBarMark = { kind: ClientItemKind; short: string; text: string; color: string };
+
+/** 画面が描くボタンへ渡す置き場所：style（位置と色）・className（模様）。edge は端の「◀」「▶」のとき */
+export type ClientBarPlace = { style: CSSProperties; className: string; edge: BarSide | null };
+
+export function ClientDayBar({
+  items,
+  noPlan,
+  markOf,
+  timeText,
+  renderItem,
+}: {
+  items: readonly ClientWeekItem[];
+  noPlan: boolean;
+  markOf: (it: ClientWeekItem) => ClientBarMark;
+  /** 「9:00〜10:00」 */
+  timeText: (it: ClientWeekItem) => string;
+  renderItem: (it: ClientWeekItem, place: ClientBarPlace) => ReactNode;
+}) {
+  const { pieces, early, late, outside } = placeOnRows(items);
+  const marks = new Map(items.map((it) => [it.visitId, markOf(it)]));
+  const classOf = (it: ClientWeekItem) => `cbar-item is-${marks.get(it.visitId)!.kind}`;
+  const colorVar = (it: ClientWeekItem) => ({ '--tc': marks.get(it.visitId)!.color }) as CSSProperties;
+  const edgeTitle = (side: BarSide, xs: readonly ClientWeekItem[]) =>
+    `${edgeLabel(side)}：${xs.map((it) => `${timeText(it)} ${marks.get(it.visitId)!.text}`).join('、')}`;
+  /** 段の端：段に掛からない訪問はボタン、はみ出すだけなら印、無ければ時刻 */
+  const edge = (side: BarSide, hour: number) => {
+    const out = outside.filter((it) => (side === 'early' ? early : late).includes(it));
+    if (out.length > 0)
+      return (
+        <span className={`cbar-edge is-${side}`}>
+          {out.map((it) => (
+            <Fragment key={it.visitId}>
+              {renderItem(it, { style: colorVar(it), className: `${classOf(it)} is-edge`, edge: side })}
+            </Fragment>
+          ))}
+        </span>
+      );
+    const xs = side === 'early' ? early : late;
+    if (xs.length > 0) return <EdgeMark side={side} title={edgeTitle(side, xs)} />;
+    return <RowEdge hour={hour} />;
+  };
+  // 帯の下の短い文字：時刻の順。案なしのマスは「案なし」を1回だけ
+  const names = items.flatMap((it) => {
+    const mk = marks.get(it.visitId)!;
+    if (mk.kind === 'noplan' && noPlan) return [];
+    return [{ id: it.visitId, kind: mk.kind, short: mk.short, sub: !!it.substitute }];
+  });
+  return (
+    <span className="cbar">
+      <span className="load-bar cbar-bar">
+        {BAR_ROWS.map(([a, b], row) => (
+          <span key={a} className="load-row">
+            {row === 0 ? edge('early', a) : <RowEdge hour={a} />}
+            <span className="cbar-track">
+              {pieces
+                .filter((p) => p.row === row)
+                .map((p) => {
+                  const style: CSSProperties = {
+                    ...colorVar(p.item),
+                    left: `${p.left * 100}%`,
+                    width: `${p.width * 100}%`,
+                  };
+                  return p.first ? (
+                    <Fragment key={p.item.visitId}>
+                      {renderItem(p.item, { style, className: classOf(p.item), edge: null })}
+                    </Fragment>
+                  ) : (
+                    // 段をまたぐ訪問の続き（押せない。読み上げは最初の帯で）
+                    <span
+                      key={`${p.item.visitId}-${row}`}
+                      className={`${classOf(p.item)} is-cont`}
+                      style={style}
+                      aria-hidden="true"
+                    />
+                  );
+                })}
+            </span>
+            {row === BAR_ROWS.length - 1 ? edge('late', b) : <RowEdge hour={b} />}
+          </span>
+        ))}
+      </span>
+      {(names.length > 0 || noPlan) && (
+        <span className="cbar-names" aria-hidden="true">
+          {noPlan && <span className="cbar-name is-noplan">案なし</span>}
+          {names.map((n) => (
+            <span key={n.id} className={`cbar-name is-${n.kind}`}>
+              {n.short}
+              {n.sub && <span className="cbar-sub">代</span>}
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** 凡例（帯の模様と下の文字の意味）。見本の帯の色は灰（種類の色は種類ごと）。clientTerm は org.terms.client */
+export function ClientBarLegend({ clientTerm }: { clientTerm: string }) {
+  const items: [ClientItemKind, string][] = [
+    ['visit', '訪問（種類の色。下に担当）'],
+    ['unassigned', '入らない'],
+    ['noplan', '案なし'],
+    ['leave', `休（${clientTerm}の休み）`],
+    ['cancelled', '取消'],
+    ['sameDay', '当日取消'],
+  ];
+  return (
+    <span className="load-legend" data-testid="client-bar-legend">
+      {items.map(([kind, label]) => (
+        <span key={kind} className="load-legend-item">
+          <span
+            className={`cbar-swatch cbar-item is-${kind}`}
+            style={{ '--tc': '#8c7f74' } as CSSProperties}
+            aria-hidden="true"
+          />
+          {label}
+        </span>
+      ))}
+      <span className="load-legend-item">
+        <span className="cbar-sub">代</span>いつもの担当でない
+      </span>
+    </span>
+  );
+}

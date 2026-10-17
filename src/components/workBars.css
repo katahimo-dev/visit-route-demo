@@ -1,0 +1,38 @@
+/* 時間軸の上の区間の横棒（稼働の見込み PRD D72・D77、日の画面の担当ごとの1日 PRD D84）。
+   塗りの模様は components/loadBar.css の is-st-*（訪問＝斜線・移動＝点々・待ち＝空きの緑） */
+.work-bar {
+  position: relative;
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  /* 1時間ごとの目盛りの線（--hours＝軸の時間の数） */
+  background: repeating-linear-gradient(
+    90deg,
+    #f6f0eb 0 calc(100% / var(--hours, 13) - 1px),
+    #eadfd6 calc(100% / var(--hours, 13) - 1px) calc(100% / var(--hours, 13))
+  );
+}
+/* 拘束の内訳（PRD D77）：訪問・移動・待ちを3段バーと同じ模様で（色は components/loadBar.css の is-st-*） */
+.work-part {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+/* 拘束の外枠。上限を超える日は太い橙の枠 */
+.work-bar-frame {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  pointer-events: none;
+}
+.work-bar.is-over .work-bar-frame {
+  top: -3px;
+  bottom: -3px;
+  border: 2.5px solid var(--warn);
+}
+/* 勤務の時間帯の下地（PRD D84）：空きと同じ緑（区間の無い勤務の時間＝空いている。待ちと同じ「使える時間」）。勤務外は棒の地の灰 */
+.work-part.is-shift {
+  background: #5aa57a;
+}

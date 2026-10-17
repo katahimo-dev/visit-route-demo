@@ -3,6 +3,7 @@ import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useMemo, us
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
+import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
 import { LoadRowsSample } from '../components/loadBar';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { StaffBar, StaffLegend } from '../components/staffBar';
@@ -13,10 +14,12 @@ import { TypeDot } from '../components/visitType';
 import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
+import { barRowsText, edgeLabel } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
+import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
 import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
@@ -26,6 +29,7 @@ import {
   type ClientWeekItem,
   canMoveVisit,
   changedDates,
+  clientItemMark,
   clientWeekTable,
   DAY_END,
   DAY_START,
@@ -84,6 +88,9 @@ const selectionOf = (raw: string | null): string[] | null => (raw === null ? nul
 type MoveDraft = { visitId: string; date: string; start: number; mode: 'once' | 'following' };
 /** 動かしたあとの知らせ（新しい日に今の案があるとき） */
 type Notice = { date: string; visitId: string; label: string; error: string | null };
+
+/** 種類なしの帯の色（月の種類の積み上げと同じ） */
+const NO_TYPE_COLOR = '#cfc4bb';
 
 export default function WeekPage() {
   const { date, setDate } = useDay();
@@ -225,6 +232,12 @@ export default function WeekPage() {
     navigate('/plan', visitId ? { state: { visitId } } : undefined);
   };
   const staffName = (id: string | null) => (id ? (staffById.get(id)?.name ?? '（不明）') : '未割当');
+  /** 〈利用者さん〉の帯の下の担当の呼び方（名字。重なればフルネーム。印刷と同じ）と、読み上げのフルネーム（PRD D83） */
+  const labels = useMemo(() => staffLabels(staff), [staff]);
+  const markNames = {
+    short: (id: string) => labels.get(id) ?? staffName(id),
+    full: (id: string) => staffName(id),
+  };
   const clientName = (v: Visit | undefined) => clientById.get(v?.clientId ?? '')?.displayName ?? '（不明）';
 
   // ---- 動かす ----
@@ -707,7 +720,7 @@ export default function WeekPage() {
             <div className="week-table-legend" data-testid="week-legend">
               <span className="row week-table-legend-rows">
                 <LoadRowsSample />
-                <span className="sub">上から 7〜12時・12〜15時・15〜20時</span>
+                <span className="sub">{barRowsText()}（8時より前・20時以降は端に ◀・▶）</span>
               </span>
               <StaffLegend />
             </div>
@@ -819,6 +832,13 @@ export default function WeekPage() {
       ) : (
         clientRows && (
           <div className="card week-card">
+            <div className="week-table-legend" data-testid="week-client-legend">
+              <span className="row week-table-legend-rows">
+                <LoadRowsSample />
+                <span className="sub">{barRowsText()}（8時より前・20時以降は端に ◀・▶）</span>
+              </span>
+              <ClientBarLegend clientTerm={terms.client} />
+            </div>
             <div className="table-scroll">
               <table className="week-table week-clients" data-testid="week-client-table">
                 <thead>
@@ -862,46 +882,52 @@ export default function WeekPage() {
                               data-client={r.clientId}
                               data-testid="week-ccell"
                             >
-                              {cell.items.map((it) => {
-                                const type = typeOf(data.visitTypes, it.typeId);
-                                // 〈利用者さん〉の休み（ADR-0013）の訪問は動かさない
-                                const movable = canMoveVisit(it.date, today) && !it.leave;
-                                const marks = unfitMarks(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
-                                const bad = marks.length > 0;
-                                return (
-                                  <button
-                                    key={it.visitId}
-                                    type="button"
-                                    draggable={movable}
-                                    className={`week-citem${it.leave ? ' is-leave' : it.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
-                                    style={{ borderLeftColor: type ? colorOf(type.color) : undefined }}
-                                    onClick={() => openDay(it.date, it.visitId)}
-                                    onKeyDown={(e) => (it.leave ? undefined : onItemKey(e, it))}
-                                    onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
-                                    onDragEnd={onDragEnd}
-                                    aria-label={`${hm(it.start)} ${type ? `${type.name}・` : ''}${it.leave ? '休みのため無し' : staffName(it.staffId)}${marks.map((m) => `・${m.short}`).join('')}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
-                                    title={marks.map((m) => `${m.short}：${m.why}`).join('／') || undefined}
-                                    data-testid="week-citem"
-                                    data-visit={it.visitId}
-                                  >
-                                    <strong>{hm(it.start)}</strong>
-                                    {type && (
-                                      <span className="row week-citem-type">
-                                        <TypeDot type={type} size={8} />
-                                        {type.name}
-                                      </span>
-                                    )}
-                                    <span className="week-citem-staff">
-                                      {marks.map((m) => (
-                                        <span key={m.short} className="week-band-unfit">
-                                          {m.short}
-                                        </span>
-                                      ))}
-                                      {it.leave ? '休み' : staffName(it.staffId)}
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                              <ClientDayBar
+                                items={cell.items}
+                                noPlan={cell.noPlan}
+                                timeText={(it) => `${hm(it.start)}〜${hm(it.end)}`}
+                                markOf={(it) => {
+                                  const type = typeOf(data.visitTypes, it.typeId);
+                                  const mk = clientItemMark(it, cell.noPlan, markNames);
+                                  // 担当が条件に合わない印（資格✗・限✗）も帯の下の文字に出す（赤い枠の色だけにしない）
+                                  const unfit = it.cancelled
+                                    ? []
+                                    : unfitMarks(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
+                                  return {
+                                    ...mk,
+                                    short: [mk.short, ...unfit.map((m) => m.short)].join(' '),
+                                    color: type ? colorOf(type.color) : NO_TYPE_COLOR,
+                                  };
+                                }}
+                                renderItem={(it, place) => {
+                                  const type = typeOf(data.visitTypes, it.typeId);
+                                  const mk = clientItemMark(it, cell.noPlan, markNames);
+                                  // 〈利用者さん〉の休み（ADR-0013）・取り消しの訪問は動かさない
+                                  const movable = canMoveVisit(it.date, today) && !it.leave && !it.cancelled;
+                                  const marks = it.cancelled
+                                    ? []
+                                    : unfitMarks(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
+                                  const text = `${hm(it.start)}〜${hm(it.end)} ${type ? `${type.name}・` : ''}${mk.text}${marks.map((m) => `・${m.short}`).join('')}`;
+                                  return (
+                                    <button
+                                      type="button"
+                                      draggable={movable}
+                                      className={`${place.className}${marks.length > 0 ? ' is-unfit' : ''}`}
+                                      style={place.style}
+                                      onClick={() => openDay(it.date, it.visitId)}
+                                      onKeyDown={(e) => (movable ? onItemKey(e, it) : undefined)}
+                                      onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
+                                      onDragEnd={onDragEnd}
+                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
+                                      title={[text, ...marks.map((m) => `${m.short}：${m.why}`)].join('／')}
+                                      data-testid="week-citem"
+                                      data-visit={it.visitId}
+                                    >
+                                      {place.edge === 'early' ? '◀' : place.edge === 'late' ? '▶' : null}
+                                    </button>
+                                  );
+                                }}
+                              />
                               {hovered && dragId && (
                                 <span className="week-cdrop" data-testid="week-cdrop">
                                   ここへ（{hm(hover!.start)}）・
@@ -926,7 +952,8 @@ export default function WeekPage() {
             )}
             <p className="sub">
               選んだ{terms.client}
-              の訪問です（人数の上限はありません）。訪問を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません）。
+              の訪問です（人数の上限はありません）。マスの帯は訪問の時刻の位置（3段。帯の長さが訪問の時間）で、下に担当の名字などを時刻の順に出します。時刻・種類・担当は、パソコンでは帯にマウスを乗せると出て、読み上げでは帯ごとに読みます。
+              帯を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません。取り消し・休みの訪問は動かせません）。
               キーボードでは訪問で Enter を押すと、日付と時刻を選んで動かせます。
             </p>
           </div>

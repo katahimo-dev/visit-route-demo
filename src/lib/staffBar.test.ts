@@ -6,7 +6,16 @@ import { applyPatterns } from '../patterns';
 import { createDemoData } from '../seed';
 import { dayLoad } from '../vacancy';
 import { dayPlanOf, staffDay } from './month';
-import { busyParts, type StaffSlot, spanParts, spansOf, staffSlotSummary, staffSlots, staffSlotText } from './staffBar';
+import {
+  busyParts,
+  type StaffSlot,
+  spanParts,
+  spansOf,
+  staffEdgeTexts,
+  staffSlotSummary,
+  staffSlots,
+  staffSlotText,
+} from './staffBar';
 import { staffWeekTable, weekDates, weekDay } from './week';
 import { workStats } from './workload';
 
@@ -49,15 +58,15 @@ describe('busyParts・spanParts', () => {
 });
 
 describe('staffSlots', () => {
-  it('07:00〜20:00 の30分ごと（26マス）。訪問＞移動＞空き＞休み（欠勤の時間）＞勤務外', () => {
+  it('0:00〜24:00 の30分ごと（48マス。PRD D82）。訪問＞移動＞空き＞休み（欠勤の時間）＞勤務外', () => {
     const slots = staffSlots({
       shift: [span('08:00', '12:00')],
       base: [span('08:00', '17:00')],
       busy: busyParts([{ start: m('09:00'), end: m('10:00'), travelIn: 20 }]),
     });
-    expect(slots).toHaveLength(26);
-    expect(slots[0]!.start).toBe(m('07:00'));
-    expect(slots.at(-1)!.start).toBe(m('19:30'));
+    expect(slots).toHaveLength(48);
+    expect(slots[0]!.start).toBe(0);
+    expect(slots.at(-1)!.start).toBe(m('23:30'));
     expect(at(slots, '07:30')).toBe('outside');
     expect(at(slots, '08:00')).toBe('free');
     // 8:40〜9:00 の移動
@@ -83,16 +92,25 @@ describe('staffSlots', () => {
     expect(at(slots, '11:00')).toBe('free');
   });
 
-  it('稼働時間帯が無い日（勤務なし・終日の欠勤・希望休・最終勤務日の後）は全部休み。残った訪問は訪問で出す', () => {
+  it('稼働時間帯が無い日（勤務なし・終日の欠勤・希望休・最終勤務日の後）は 8〜20時が全部休み（外は勤務外）。残った訪問は訪問で出す', () => {
     const off = staffSlots({ shift: [], base: [], busy: [] });
-    expect(off.every((x) => x.state === 'rest')).toBe(true);
+    expect(off.filter((x) => x.start >= m('08:00') && x.start < m('20:00')).every((x) => x.state === 'rest')).toBe(
+      true,
+    );
+    expect(off.filter((x) => x.start < m('08:00') || x.start >= m('20:00')).every((x) => x.state === 'outside')).toBe(
+      true,
+    );
+    expect(staffSlotSummary(off)).toBe('休み 8:00〜20:00');
+    expect(staffEdgeTexts(off)).toEqual({ early: null, late: null });
     const left = staffSlots({
       shift: [],
       base: [span('09:00', '17:00')],
       busy: busyParts([{ start: m('14:00'), end: m('15:00'), travelIn: 0 }]),
     });
     expect(at(left, '14:00')).toBe('visit');
-    expect(at(left, '07:00')).toBe('rest');
+    expect(at(left, '08:00')).toBe('rest');
+    // 8時より前は、欠勤の前の稼働時間帯（9:00〜）にも掛からないので勤務外
+    expect(at(left, '07:00')).toBe('outside');
     expect(left.filter((x) => x.state === 'visit')).toHaveLength(2);
   });
 
@@ -116,6 +134,39 @@ describe('staffSlots', () => {
   });
 });
 
+describe('端の印（PRD D82）', () => {
+  it('8時より前・20時以降の 訪問・移動・空き・案なし を「8時より前：…」「20時以降：…」に。休み・勤務外だけなら出さない', () => {
+    const slots = staffSlots({
+      shift: [span('06:30', '21:00')],
+      base: [span('06:30', '21:00')],
+      busy: busyParts([
+        { start: m('07:00'), end: m('07:30'), travelIn: 20 },
+        { start: m('20:00'), end: m('20:30'), travelIn: 0 },
+      ]),
+    });
+    expect(staffEdgeTexts(slots)).toEqual({
+      early: '8時より前：訪問 7:00〜7:30・移動 6:30〜7:00・空き 7:30〜8:00',
+      late: '20時以降：訪問 20:00〜20:30・空き 20:30〜21:00',
+    });
+    // 8〜20時の中だけなら印なし
+    const inside = staffSlots({ shift: [span('08:00', '20:00')], base: [span('08:00', '20:00')], busy: [] });
+    expect(staffEdgeTexts(inside)).toEqual({ early: null, late: null });
+    // 欠勤の時間（休み）だけなら印なし
+    const rest = staffSlots({ shift: [span('08:00', '18:00')], base: [span('07:00', '18:00')], busy: [] });
+    expect(at(rest, '07:00')).toBe('rest');
+    expect(staffEdgeTexts(rest)).toEqual({ early: null, late: null });
+  });
+
+  it('間の勤務外を抜いたマスでも、時刻が続かなければ区切る', () => {
+    const slots = staffSlots({
+      shift: [span('05:00', '05:30'), span('06:30', '07:00')],
+      base: [span('05:00', '05:30'), span('06:30', '07:00')],
+      busy: [],
+    });
+    expect(staffEdgeTexts(slots).early).toBe('8時より前：空き 5:00〜5:30、6:30〜7:00');
+  });
+});
+
 describe('文', () => {
   it('staffSlotText・staffSlotSummary（続く時間帯をまとめる。勤務外は書かない）', () => {
     const slots = staffSlots({
@@ -123,13 +174,15 @@ describe('文', () => {
       base: [span('09:00', '13:00')],
       busy: busyParts([{ start: m('10:00'), end: m('11:00'), travelIn: 30 }]),
     });
-    expect(staffSlotText(slots[4]!)).toBe('9:00〜9:30 空き');
+    expect(staffSlotText(slots.find((x) => x.start === m('09:00'))!)).toBe('9:00〜9:30 空き');
     expect(staffSlotSummary(slots)).toBe(
       '訪問 10:00〜11:00・移動 9:30〜10:00・空き 9:00〜9:30、11:00〜12:00・休み 12:00〜13:00',
     );
+    // 20時以降の勤務も数える（PRD D82）
     expect(staffSlotSummary(staffSlots({ shift: [span('21:00', '22:00')], base: [], busy: [] }))).toBe(
-      'どの時間も勤務外',
+      '空き 21:00〜22:00',
     );
+    expect(staffSlotSummary([{ start: m('09:00'), state: 'outside' }])).toBe('どの時間も勤務外');
   });
 });
 
@@ -172,6 +225,38 @@ describe('ほかの数え方と食い違わない', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(5);
+  });
+
+  it('8時より前・20時以降に勤務・訪問がある人がいても、1日全体（0〜24時）で空きの人数が一致する（PRD D82）', () => {
+    const { data: d0, from } = seeded();
+    // 1人目を 6:30〜21:00 の勤務に、その人の訪問を 7:00 と 20:00 から入れられるようにする
+    const sid = d0.staff[0]!.id;
+    const data: DemoData = {
+      ...d0,
+      staff: d0.staff.map((s) => (s.id === sid ? { ...s, shiftStart: '06:30', shiftEnd: '21:00' } : s)),
+    };
+    let early = 0;
+    let late = 0;
+    for (let i = 0; i < 14; i++) {
+      const date = addDays(from, i);
+      const load = dayLoad(data, date, { typeId: null });
+      if (!load) continue;
+      expect(load).toHaveLength(48);
+      const p = compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date);
+      const day = dayPlanOf(data, date, p);
+      const bars = p.staff.filter((s) => s.slots.length > 0).map((s) => staffDay(data, day, s.id).bar);
+      load.forEach((x, k) => {
+        expect(bars.filter((b) => b[k]!.state === 'free').length).toBe(x.free);
+      });
+      if (load.some((x) => x.start < m('08:00') && x.working > 0)) early++;
+      if (load.some((x) => x.start >= m('20:00') && x.working > 0)) late++;
+      const mine = staffDay(data, day, sid).bar;
+      if (mine.some((x) => x.start < m('08:00') && x.state !== 'outside')) {
+        expect(staffEdgeTexts(mine).early).toMatch(/^8時より前：/);
+      }
+    }
+    expect(early).toBeGreaterThan(0);
+    expect(late).toBeGreaterThan(0);
   });
 
   it('今の案と確定が違う日は合わない：混み具合は確定を先に、〈スタッフ〉の表示は今の案を先に数える（そろえない）', () => {

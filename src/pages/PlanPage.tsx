@@ -38,6 +38,7 @@ import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { flushSync } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { DayLines } from '../components/dayLines';
 import { MapDock } from '../components/MapDock';
 import { MenuButton, type MenuItem } from '../components/MenuButton';
 import { ClientName } from '../components/parts';
@@ -75,6 +76,7 @@ import { colorOf } from '../lib/colors';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { contactCount, dayWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
+import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
 import { keepLeaveVisits } from '../lib/leaves';
 import { planRunOf, planStale } from '../lib/month';
@@ -1843,6 +1845,21 @@ export default function PlanPage() {
       onCancel={cancelVisit}
     />
   );
+  /** 担当ごとの1日（PRD D84）：今の案の列から。列と同じ人・同じ順 */
+  const staffLines = useMemo(
+    () => (problem && aiPlan ? dayLines(problem, aiPlan.routes, columns) : []),
+    [problem, aiPlan, columns],
+  );
+  const lineRange = useMemo(() => dayLineRange(staffLines), [staffLines]);
+  /** その人の列へ移って列の見出しにフォーカス（一覧のときは担当ごとの表示に切り替えてから。PRD D84） */
+  const goToStaff = (sid: string) => {
+    if (shownView === 'list') setColView('timeline');
+    requestAnimationFrame(() => {
+      const col = document.querySelector<HTMLElement>(`.route-col[data-staff="${CSS.escape(sid)}"]`);
+      col?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+      colHeadOf(sid)?.focus({ preventScroll: true });
+    });
+  };
   /** 入らなかった訪問の列へ移る（帯の近道。一覧のときは担当ごとの表示に切り替えてから） */
   const goToNone = () => {
     if (shownView === 'list') setColView('timeline');
@@ -2172,6 +2189,19 @@ export default function PlanPage() {
             </WithIcon>
           </button>
         </div>
+      )}
+
+      {/* 担当ごとの1日（PRD D84）。今の案のある日だけ。狭い幅では畳む */}
+      {aiPlan && cs && (
+        <DayLines
+          lines={staffLines}
+          range={lineRange}
+          nameOf={staffName}
+          colorOf={(sid) => colorOfStaff.get(sid)}
+          onPick={goToStaff}
+          staffTerm={terms.staff}
+          collapsed={narrowOrPrint}
+        />
       )}
 
       {/* あるときだけの帯（PRD D63）。ドラッグ中には増減しない（移したあとに変わる） */}

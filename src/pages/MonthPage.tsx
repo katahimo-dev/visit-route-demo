@@ -38,6 +38,7 @@ import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
+import { BAR_ROWS, barRowsText } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { clientDot } from '../lib/glance';
@@ -905,9 +906,10 @@ export default function MonthPage() {
           <Hint>
             日のマスを押すと、その日の予定の画面を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要確認」）は、訪問があるのに案が無い・入らない訪問がある・必須の違反がある日です（必須の違反は点数の基準のプリセット「
             {scoreRulerName}」の条件で見ます）。「条件が変わった」は、案を作ったあとに訪問・{terms.staff}
-            ・稼働時間・条件が変わった日です。混み具合のバーは 7:00〜20:00
-            を3段（7〜12時・12〜15時・15〜20時）・30分ずつに分け、その30分に空いている
-            {terms.staff}の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。
+            ・稼働時間・条件が変わった日です。混み具合のバーは 8:00〜20:00 を3段（
+            {BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}）・30分ずつに分け、その30分に空いている
+            {terms.staff}
+            の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。8時より前・20時以降に働く人がいる日は、段の端に「◀」「▶」の印を出します（マウスを乗せると時刻）。
           </Hint>
           {noVisitsWhy && <span className="sub">{noVisitsWhy}</span>}
         </div>
@@ -1316,7 +1318,7 @@ function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
           <span className="month-legend-load">
             <span className="sub">{bar === 'load' ? '混み具合' : '時間帯'}</span>
             <LoadRowsSample />
-            <span className="sub">上から 7〜12時・12〜15時・15〜20時</span>
+            <span className="sub">{barRowsText()}（8時より前・20時以降は端に ◀・▶）</span>
           </span>
           {bar === 'load' ? <LoadLegend /> : <StaffLegend />}
           {bar === 'staff' && (

@@ -5,12 +5,13 @@ import {
   STAFF_SLOT_LABEL,
   type StaffSlot,
   type StaffSlotState,
+  staffEdgeTexts,
   staffSlotSummary,
   staffSlotText,
 } from '../lib/staffBar';
 import { SlotBar } from './loadBar';
 
-/** 〈スタッフ〉の3段バー（案の無い日は勤務内が「案なし」の状態で来る） */
+/** 〈スタッフ〉の3段バー（案の無い日は勤務内が「案なし」の状態で来る。8時より前・20時以降は端の印。PRD D82） */
 export function StaffBar({ slots, testId = 'staff-bar' }: { slots: readonly StaffSlot[]; testId?: string }) {
   return (
     <SlotBar
@@ -18,6 +19,7 @@ export function StaffBar({ slots, testId = 'staff-bar' }: { slots: readonly Staf
       label={`時間帯：${staffSlotSummary(slots)}`}
       emptyText=""
       testId={testId}
+      edges={staffEdgeTexts(slots)}
     />
   );
 }

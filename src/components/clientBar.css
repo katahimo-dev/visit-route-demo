@@ -1,0 +1,127 @@
+/* 週間の〈利用者さん〉×曜日のマスの3段の帯（PRD D83）。段・端の時刻は混み具合バーと同じ（loadBar.css の load-row） */
+.cbar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
+.cbar-bar {
+  gap: 2px;
+}
+.cbar-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 12px;
+  border-radius: 2px;
+  background: #f1e9e2;
+}
+/* 訪問の帯（ボタン）。色は種類の色（--tc）、模様と下の文字で印を分ける（色だけにしない） */
+.cbar-item {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  min-width: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--tc);
+  color: var(--ink);
+  font: inherit;
+  cursor: grab;
+}
+.cbar-item.is-cont {
+  min-width: 0;
+  cursor: default;
+}
+button.cbar-item:hover,
+button.cbar-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  z-index: 1;
+}
+/* 休み：灰に白の横線（〈スタッフ〉の休みと同じ模様） */
+.cbar-item.is-leave {
+  background: linear-gradient(180deg, transparent 0 40%, #fff 40% 60%, transparent 60%), #a99d93;
+  cursor: pointer;
+}
+/* 取り消し：白抜きの枠。当日キャンセルは破線の枠 */
+.cbar-item.is-cancelled,
+.cbar-item.is-sameDay {
+  background: #fff;
+  border: 1.5px solid var(--tc);
+  cursor: pointer;
+}
+.cbar-item.is-sameDay {
+  border-style: dashed;
+}
+/* 入らない：白地に種類の色の斜線 */
+.cbar-item.is-unassigned {
+  background: repeating-linear-gradient(135deg, var(--tc) 0 2px, #fff 2px 4px);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+/* 案なし：種類の色の薄い縦線（空きと誤読させない中立の模様） */
+.cbar-item.is-noplan {
+  background: repeating-linear-gradient(90deg, var(--tc) 0 1px, #f7f2ed 1px 3px);
+}
+/* 担当が種類の必要条件・担当を限る決まりに合わない：赤い枠 */
+.cbar-item.is-unfit {
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+/* 段に掛からない訪問（8時より前・20時以降）：端の「◀」「▶」のボタン */
+.cbar-edge {
+  display: inline-flex;
+  flex: none;
+  justify-content: flex-end;
+  width: 1.3em;
+}
+.cbar-edge.is-late {
+  justify-content: flex-start;
+}
+.cbar-item.is-edge {
+  position: static;
+  min-width: 0;
+  padding: 0 1px;
+  background: none;
+  border: 0;
+  color: var(--primary-dark);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+}
+/* 帯の下の短い文字（担当の名字・休・取消・当日取消・入らない・案なし・代） */
+.cbar-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 5px;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: var(--ink);
+}
+.cbar-name.is-leave,
+.cbar-name.is-cancelled,
+.cbar-name.is-sameDay,
+.cbar-name.is-noplan {
+  color: var(--sub);
+}
+.cbar-name.is-unassigned {
+  color: var(--danger);
+  font-weight: 700;
+}
+.cbar-sub {
+  margin-left: 2px;
+  padding: 0 2px;
+  border-radius: 3px;
+  background: #f6dcb0;
+  font-weight: 700;
+}
+/* 凡例の見本 */
+.cbar-swatch.cbar-item {
+  position: static;
+  display: inline-block;
+  width: 16px;
+  height: 10px;
+  cursor: default;
+}

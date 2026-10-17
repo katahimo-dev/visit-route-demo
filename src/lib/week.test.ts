@@ -8,6 +8,7 @@ import {
   allowedStaffOf,
   canMoveVisit,
   changedDates,
+  clientItemMark,
   clientWeekTable,
   fitCountAt,
   INSERT_RUN_LABEL,
@@ -463,7 +464,9 @@ describe('staffWeekTable', () => {
     // 訪問の無い日は空き。休みの日は全部休み。月曜は訪問・空き（PRD D76）
     expect(r1!.cells[1]!.bar.some((x) => x.state === 'noplan')).toBe(false);
     expect(r1!.cells[1]!.bar.some((x) => x.state === 'free')).toBe(true);
-    expect(r1!.cells[5]!.bar.every((x) => x.state === 'rest')).toBe(true);
+    expect(r1!.cells[5]!.bar.filter((x) => x.start >= 480 && x.start < 1200).every((x) => x.state === 'rest')).toBe(
+      true,
+    );
     expect(mon.bar.some((x) => x.state === 'visit')).toBe(true);
     expect(mon.bar.some((x) => x.state === 'free')).toBe(true);
     expect(mon.bar.some((x) => x.state === 'noplan')).toBe(false);
@@ -591,14 +594,19 @@ describe('clientWeekTable（利用者さん×曜日）', () => {
   });
   const days = weekDates(DATE).map((date) => weekDay(d, date));
 
-  it('選ばなければ全員（表示名の順。休止中で訪問の無い人は除く）、マスは開始の順・取り消しは出さない', () => {
+  it('選ばなければ全員（表示名の順。休止中で訪問の無い人は除く）、マスは開始の順・取り消しも印として入る（PRD D83）', () => {
     const rows = clientWeekTable(d, days, null);
     expect(rows.map((r) => r.clientId)).toEqual(['c1', 'c2']);
     const mon = rows[0]!.cells[0]!;
-    expect(mon.items.map((x) => [x.visitId, x.start, x.staffId, x.typeId])).toEqual([
-      ['v2', 540, 's1', null],
-      ['v1', 780, 's1', 't1'],
+    expect(mon.items.map((x) => [x.visitId, x.start, x.staffId, x.typeId, !!x.cancelled])).toEqual([
+      ['v2', 540, 's1', null, false],
+      ['v4', 660, null, null, true],
+      ['v1', 780, 's1', 't1', false],
     ]);
+    expect(mon.noPlan).toBe(false);
+    // 案の無い日（水曜）は noPlan、入らない印は付けない
+    expect(rows[1]!.cells[2]!.noPlan).toBe(true);
+    expect(rows[1]!.cells[2]!.items[0]!.unassigned).toBeUndefined();
     expect(rows[1]!.cells[2]!.items.map((x) => [x.visitId, x.staffId])).toEqual([['v3', null]]);
     expect(rows[1]!.cells[0]!.items).toEqual([]);
   });
@@ -606,6 +614,54 @@ describe('clientWeekTable（利用者さん×曜日）', () => {
   it('選んだ人だけ（休止中でも選べば出す）', () => {
     expect(clientWeekTable(d, days, ['c3', 'c2']).map((r) => r.clientId)).toEqual(['c2', 'c3']);
     expect(clientWeekTable(d, days, []).map((r) => r.clientId)).toEqual(['c1', 'c2']);
+  });
+
+  it('印（PRD D83）：当日キャンセル・いつもの担当でない（パターンの担当が先、無ければ〈利用者さん〉の）・入らない・休み', () => {
+    const p = pattern('p1', [1], { clientId: 'c1', usualStaffId: 's2' });
+    const d2 = makeData({
+      staff: [staff('s1', 38.26, 140.87), staff('s2', 38.26, 140.871)],
+      clients: [client('c1', 38.27, 140.881, { usualStaffId: 's1' }), client('c2', 38.27, 140.88)],
+      patterns: [p],
+      visits: [
+        visit('a', 'c1', '09:00', '09:00', { pattern: { id: 'p1', date: DATE, edited: false } }),
+        visit('b', 'c1', '13:00', '13:00'),
+        visit('c', 'c1', '15:00', '15:00'),
+        visit('x', 'c2', '10:00', '10:00', { cancelled: true, cancelKind: 'sameDay' }),
+        visit('l', 'c2', '16:00', '16:00'),
+      ],
+      clientLeaves: [{ id: 'L1', clientId: 'c2', from: DATE, to: DATE, note: '入院' }],
+      aiPlans: { [DATE]: planOf(DATE, { s1: ['a', 'b'] }, ['c']) },
+    });
+    const ds = weekDates(DATE).map((date) => weekDay(d2, date));
+    const rows = clientWeekTable(d2, ds, null);
+    const byId = new Map(rows.flatMap((r) => r.cells[0]!.items).map((x) => [x.visitId, x]));
+    // a：パターンのいつもの担当は s2 なので s1 は代
+    expect(byId.get('a')!.substitute).toBe(true);
+    // b：パターンが無いので〈利用者さん〉のいつもの担当（s1）と同じ
+    expect(byId.get('b')!.substitute).toBeUndefined();
+    expect(byId.get('c')!.unassigned).toBe(true);
+    expect(byId.get('x')).toMatchObject({ cancelled: true, sameDay: true, staffId: null });
+    expect(byId.get('l')!.leave).toBe(true);
+    // 休み・取り消しだけのマスは案なしにしない
+    expect(rows[1]!.cells[0]!.noPlan).toBe(false);
+  });
+
+  it('clientItemMark：形と短い文字（色だけにしない）', () => {
+    const names = { short: (id: string) => `短${id}`, full: (id: string) => `名${id}` };
+    const base = { visitId: 'v', date: DATE, start: 540, end: 600, typeId: null, staffId: null };
+    expect(clientItemMark({ ...base, staffId: 's1', substitute: true }, false, names)).toEqual({
+      kind: 'visit',
+      short: '短s1',
+      text: '名s1さん（いつもの担当でない）',
+    });
+    expect(clientItemMark({ ...base, cancelled: true }, false, names).short).toBe('取消');
+    expect(clientItemMark({ ...base, cancelled: true, sameDay: true }, false, names).short).toBe('当日取消');
+    expect(clientItemMark({ ...base, leave: true }, true, names)).toMatchObject({ kind: 'leave', short: '休' });
+    expect(clientItemMark(base, true, names)).toMatchObject({ kind: 'noplan', short: '案なし' });
+    expect(clientItemMark({ ...base, unassigned: true }, false, names)).toMatchObject({
+      kind: 'unassigned',
+      short: '入らない',
+    });
   });
 });
 
