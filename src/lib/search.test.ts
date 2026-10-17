@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchClient, normalizeKana, searchClients } from './search';
+import { countAmong, defaultStaffOf, matchClient, normalizeKana, searchClients, staffClientMap } from './search';
 
 describe('normalizeKana', () => {
   it('カタカナをひらがなに、全角半角・大文字小文字・空白をそろえる', () => {
@@ -50,5 +50,43 @@ describe('searchClients', () => {
   });
   it('空の検索は渡した順のまま', () => {
     expect(searchClients(xs, '', 10).list).toEqual(xs);
+  });
+});
+
+describe('staffClientMap', () => {
+  it('案の担当といつもの担当を合わせる（未知の訪問は飛ばす）', () => {
+    const m = staffClientMap(
+      [
+        ['s1', 'c1'],
+        ['s1', 'c2'],
+        ['s2', undefined],
+        ['s1', 'c1'],
+      ],
+      [
+        { id: 'c3', usualStaffId: 's2' },
+        { id: 'c4', usualStaffId: null },
+      ],
+    );
+    expect([...(m.get('s1') ?? [])]).toEqual(['c1', 'c2']);
+    expect([...(m.get('s2') ?? [])]).toEqual(['c3']);
+    expect(m.has('s3')).toBe(false);
+  });
+});
+
+describe('defaultStaffOf（月間の「〈スタッフ〉が担当する人」で先頭の人が0人になる件）', () => {
+  const staff = [{ id: 's8' }, { id: 's1' }, { id: 's2' }];
+  it('先頭の人に担当する人がいなければ、担当する人がいる最初の人を選ぶ', () => {
+    const n: Record<string, number> = { s8: 0, s1: 6, s2: 4 };
+    expect(defaultStaffOf(staff, (id) => n[id] ?? 0)).toBe('s1');
+  });
+  it('だれも担当する人がいなければ先頭。〈スタッフ〉がいなければ空', () => {
+    expect(defaultStaffOf(staff, () => 0)).toBe('s8');
+    expect(defaultStaffOf([], () => 1)).toBe('');
+  });
+});
+
+describe('countAmong', () => {
+  it('候補にいる人だけ数える（休止中で候補にいない人は数えない）', () => {
+    expect(countAmong(new Set(['c1', 'c2', 'c9']), [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }])).toBe(2);
   });
 });

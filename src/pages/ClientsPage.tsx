@@ -22,7 +22,7 @@ import { type Client, clientSchema } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
-import { matchClient } from '../lib/search';
+import { matchClient, staffClientMap } from '../lib/search';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useDemoData } from '../store';
 import { PatternsSection } from './PatternsSection';
@@ -62,16 +62,7 @@ export default function ClientsPage() {
     return clients.filter((c) => matchClient(c, query));
   }, [clients, picked, query]);
   /** 近道「〈スタッフ〉が担当する人」：いつもの担当がその人の〈利用者さん〉 */
-  const usualOf = useMemo(() => {
-    const m = new Map<string, Set<string>>();
-    for (const c of data.clients) {
-      if (!c.usualStaffId) continue;
-      const set = m.get(c.usualStaffId) ?? new Set<string>();
-      set.add(c.id);
-      m.set(c.usualStaffId, set);
-    }
-    return m;
-  }, [data.clients]);
+  const usualOf = useMemo(() => staffClientMap([], data.clients), [data.clients]);
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
   const clientItems = data.items.filter((i) => i.target === 'client');
   const itemById = new Map(data.items.map((i) => [i.id, i]));

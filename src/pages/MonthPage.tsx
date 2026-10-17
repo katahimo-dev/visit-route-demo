@@ -67,6 +67,7 @@ import {
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
+import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
 import { type CompileInput, compile } from '../matching';
 import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
@@ -335,18 +336,11 @@ export default function MonthPage() {
   /** 〈スタッフ〉が担当する〈利用者さん〉：この月の数える案（今の案、無ければ確定した割当）の担当と、いつもの担当 */
   const staffClients = useMemo(() => {
     const clientOf = new Map(data.visits.map((v) => [v.id, v.clientId]));
-    const out = new Map<string, Set<string>>();
-    const add = (sid: string, cid: string | undefined) => {
-      if (cid === undefined) return;
-      const set = out.get(sid) ?? new Set<string>();
-      set.add(cid);
-      out.set(sid, set);
-    };
+    const pairs: [string, string | undefined][] = [];
     for (const d of days)
       for (const [sid, ids] of Object.entries(dayPlans.get(d)?.routes ?? {}))
-        for (const id of ids) add(sid, clientOf.get(id));
-    for (const c of data.clients) if (c.usualStaffId) add(c.usualStaffId, c.id);
-    return out;
+        for (const id of ids) pairs.push([sid, clientOf.get(id)]);
+    return staffClientMap(pairs, data.clients);
   }, [days, dayPlans, data.visits, data.clients]);
   const clientsOfStaff = useCallback((sid: string) => staffClients.get(sid) ?? new Set<string>(), [staffClients]);
 

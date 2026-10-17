@@ -44,3 +44,38 @@ export function searchClients<T extends Pick<Client, 'displayName' | 'kana'>>(
   const all = [...head, ...tail];
   return { list: all.slice(0, limit), rest: Math.max(0, all.length - limit) };
 }
+
+/**
+ * 近道「〈スタッフ〉が担当する人」の表（〈スタッフ〉の ID → 〈利用者さん〉の ID）。
+ * pairs は案の担当（〈スタッフ〉の ID と、その人が担当する訪問の〈利用者さん〉の ID。未知の訪問は undefined で飛ばす）、
+ * それに各〈利用者さん〉のいつもの担当を足す
+ */
+export function staffClientMap(
+  pairs: Iterable<readonly [string, string | undefined]>,
+  clients: readonly Pick<Client, 'id' | 'usualStaffId'>[],
+): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const add = (sid: string, cid: string | undefined) => {
+    if (cid === undefined) return;
+    const set = out.get(sid) ?? new Set<string>();
+    set.add(cid);
+    out.set(sid, set);
+  };
+  for (const [sid, cid] of pairs) add(sid, cid);
+  for (const c of clients) if (c.usualStaffId) add(c.usualStaffId, c.id);
+  return out;
+}
+
+/**
+ * 近道「〈スタッフ〉が担当する人」で最初に選んでおく〈スタッフ〉：担当する人（候補の中で数えた人数）が1人以上いる最初の人。
+ * だれもいなければ先頭（〈スタッフ〉がいなければ ''）。
+ * 名前の順の先頭の人が、案もいつもの担当も無い人だと、近道を開いたとたんに候補が0人になるため
+ */
+export function defaultStaffOf(staff: readonly { id: string }[], countOf: (staffId: string) => number): string {
+  return (staff.find((s) => countOf(s.id) > 0) ?? staff[0])?.id ?? '';
+}
+
+/** ids のうち、候補（clients）にいる人の数 */
+export function countAmong(ids: ReadonlySet<string>, clients: readonly { id: string }[]): number {
+  return clients.reduce((n, c) => n + (ids.has(c.id) ? 1 : 0), 0);
+}

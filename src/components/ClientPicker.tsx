@@ -6,7 +6,7 @@ import { Search, X } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Client } from '../contracts/documents';
 import { colorOf, initialOf } from '../lib/colors';
-import { searchClients } from '../lib/search';
+import { countAmong, defaultStaffOf, searchClients } from '../lib/search';
 import { TentativeMark } from './parts';
 import './clientPicker.css';
 
@@ -90,7 +90,8 @@ export function ClientPicker({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [shortcut, setShortcut] = useState<Shortcut | null>(null);
-  const [staffId, setStaffId] = useState<string>(byStaff?.staff[0]?.id ?? '');
+  /** 近道で選んだ〈スタッフ〉（null＝まだ選んでいない。担当する人がいる最初の人を使う） */
+  const [pickedStaff, setPickedStaff] = useState<string | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -98,7 +99,17 @@ export function ClientPicker({
   const chosen = useMemo(() => selected.flatMap((id) => byId.get(id) ?? []), [selected, byId]);
   const isSelected = (id: string) => selected.includes(id);
   const tentativeCount = useMemo(() => clients.filter((c) => c.tentative).length, [clients]);
+  /** 〈スタッフ〉ごとの、候補の中で担当する人の数（select に出す） */
+  const staffCount = useMemo(
+    () => new Map(byStaff ? byStaff.staff.map((s) => [s.id, countAmong(byStaff.clientIdsOf(s.id), clients)]) : []),
+    [byStaff, clients],
+  );
+  const staffId =
+    pickedStaff !== null && byStaff?.staff.some((s) => s.id === pickedStaff)
+      ? pickedStaff
+      : defaultStaffOf(byStaff?.staff ?? [], (id) => staffCount.get(id) ?? 0);
   const staffSet = useMemo(() => (byStaff && staffId ? byStaff.clientIdsOf(staffId) : null), [byStaff, staffId]);
+  const periodCount = useMemo(() => (period ? countAmong(period.clientIds, clients) : 0), [period, clients]);
 
   /** 近道で絞った人（近道なしなら全員） */
   const base = useMemo(() => {
@@ -123,6 +134,12 @@ export function ClientPicker({
   useEffect(() => {
     setActive(0);
   }, [options.map((c) => c.id).join(',')]);
+
+  // 上限が変わったら（週間の時間軸 ⇄ 表）上限の文を消す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 上限が変わったときだけ
+  useEffect(() => {
+    setMessage(null);
+  }, [max]);
 
   const setQ = (q: string) => {
     setQuery(q);
@@ -164,6 +181,8 @@ export function ClientPicker({
     }
     setMessage(null);
     onChange([...selected, ...add]);
+    // まとめて選んだら候補の欄は閉じる（開いたままだと下の表・時間軸を隠す）
+    setOpen(false);
     setRecent((r) => [...add, ...r.filter((x) => !add.includes(x))].slice(0, RECENT_LIMIT));
   };
   const toggleShortcut = (s: Shortcut) => {
@@ -201,14 +220,25 @@ export function ClientPicker({
     }
   };
 
-  // 候補の中の指している人を見えるところへ
+  // 候補の中の指している人を見えるところへ（開いた・指す人が変わったときだけ。
+  // 毎回の再描画で行うと、開いたままページを動かしたときに画面が引き戻される）
+  const activeId = open ? options[active]?.id : undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 指している人が変わったときだけ
   useEffect(() => {
-    if (!open) return;
-    const c = options[active];
-    if (c) document.getElementById(optId(c.id))?.scrollIntoView({ block: 'nearest' });
-  });
+    if (activeId) document.getElementById(optId(activeId))?.scrollIntoView({ block: 'nearest' });
+  }, [activeId]);
 
   const activeOpt = open ? options[active] : undefined;
+  /** 候補が0人のときの文（近道で絞って0人なら、その理由） */
+  const emptyText = () => {
+    if (query === '' && shortcut === 'recent') return 'まだ選んだ人がいません';
+    if (query === '' && shortcut === 'staff' && byStaff) {
+      const name = byStaff.staff.find((s) => s.id === staffId)?.name ?? '';
+      return `${name}さんが担当する人はいません`;
+    }
+    if (query === '' && shortcut === 'period' && period) return `${period.label}に訪問がある人はいません`;
+    return '見つかりません';
+  };
   const shortcutBtn = (s: Shortcut, text: string, count: number | null) => (
     <button
       type="button"
@@ -273,7 +303,7 @@ export function ClientPicker({
       )}
       <fieldset className="client-picker-shortcuts">
         <legend className="sr-only">近道</legend>
-        {period && shortcutBtn('period', `${period.label}に訪問がある人`, period.clientIds.size)}
+        {period && shortcutBtn('period', `${period.label}に訪問がある人`, periodCount)}
         {byStaff && byStaff.staff.length > 0 && (
           <span className="client-picker-staff">
             {shortcutBtn('staff', `${byStaff.staffLabel}が担当する人`, null)}
@@ -282,14 +312,14 @@ export function ClientPicker({
                 aria-label={`担当する${byStaff.staffLabel}`}
                 value={staffId}
                 onChange={(e) => {
-                  setStaffId(e.target.value);
+                  setPickedStaff(e.target.value);
                   setOpen(true);
                 }}
                 data-testid={`${testId}-staff`}
               >
                 {byStaff.staff.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name}
+                    {s.name}（{staffCount.get(s.id) ?? 0}人）
                   </option>
                 ))}
               </select>
@@ -298,7 +328,7 @@ export function ClientPicker({
         )}
         {shortcutBtn('recent', '最近選んだ人', recent.length)}
         {tentativeCount > 0 && shortcutBtn('tentative', '仮押さえの人', tentativeCount)}
-        {multiple && shortcut !== null && base.length > 0 && (
+        {multiple && shortcut !== null && base.some((c) => !isSelected(c.id)) && (
           <button type="button" className="btn btn-small" onClick={chooseAll} data-testid={`${testId}-choose-all`}>
             この{base.length}人を選ぶ
           </button>
@@ -365,7 +395,7 @@ export function ClientPicker({
           </div>
           {options.length === 0 && (
             <p className="client-picker-note" data-testid={`${testId}-empty`}>
-              {shortcut === 'recent' && recent.length === 0 ? 'まだ選んだ人がいません' : '見つかりません'}
+              {emptyText()}
             </p>
           )}
           {found.rest > 0 && (
