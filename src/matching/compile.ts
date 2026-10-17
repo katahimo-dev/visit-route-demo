@@ -149,7 +149,7 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   const limitOf = new Map<string, { ids: Set<string>; names: string }>();
   for (const c of clients.values()) {
     const ids = [...new Set(c.allowedStaffIds)].filter((id) => activeName.has(id));
-    if (ids.length > 0) limitOf.set(c.id, { ids: new Set(ids), names: ids.map((id) => activeName.get(id)).join('・') });
+    if (ids.length > 0) limitOf.set(c.id, { ids: new Set(ids), names: ids.map((id) => activeName.get(id)).join('、') });
   }
 
   const S = staffDocs.length;

@@ -71,7 +71,7 @@ import {
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
 import {
-  absentLeftOf,
+  absentLeftIds,
   type OffDayState,
   offDayState,
   REQUESTED_OFF_NOTE,
@@ -329,6 +329,11 @@ export default function MonthPage() {
       }
       const input: CompileInput = { ...c, visits };
       const sp = attempt(() => compile({ ...input, rules: scoreRules }, d)).value;
+      // 欠勤（希望休も。ADR-0014）の人に残っている訪問（数える案＝今の案、無ければ確定した割当）。
+      // 同じ訪問を「違反」でも数えないよう、必須の違反からは除く（「休みの人に N」に一本化）
+      const left = new Set(
+        sp && c.absences.some((a) => a.date === d) ? absentLeftIds(sp, dayPlanOf(data, d, sp).routes) : [],
+      );
       let view: DayView = {};
       if (sp && plan) {
         const aligned = attempt(() => alignPlan(sp, plan)).value ?? plan;
@@ -336,7 +341,7 @@ export default function MonthPage() {
         const scoreKey = JSON.stringify(scoreRules);
         view = {
           visitIds: sp.visits.map((v) => v.id),
-          hard: sc?.hardViolations.length ?? 0,
+          hard: sc?.hardViolations.filter((h) => !left.has(h.visitId)).length ?? 0,
           stale: planStale(input, data, d, (rules, pins) =>
             Object.keys(pins).length === 0 && JSON.stringify(rules) === scoreKey ? sp : undefined,
           ),
@@ -344,10 +349,7 @@ export default function MonthPage() {
       } else if (sp) {
         view = { visitIds: sp.visits.map((v) => v.id) };
       }
-      // 欠勤（希望休も。ADR-0014）の人に残っている訪問（数える案＝今の案、無ければ確定した割当）
-      if (sp && c.absences.some((a) => a.date === d)) {
-        view = { ...view, absentLeft: absentLeftOf(sp, dayPlanOf(data, d, sp).routes) };
-      }
+      if (left.size > 0) view = { ...view, absentLeft: left.size };
       memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });
       out.set(d, { status: dayStatus(data, d, view), problem: sp });
     }
@@ -445,14 +447,16 @@ export default function MonthPage() {
   const toggleOff = useCallback(
     (d: string) => {
       if (!offStaffId) return;
-      const before = dataRef.current;
-      const state = offDayState(before, offStaffId, d, today);
-      if (state !== 'open' && state !== 'requested') return;
+      // 結果は直前のデータ（描画を待たずに続けて押しても、前の押した分を入れたデータ）から出す。
+      // 同じ規則で update でも付け外しするので、文と実際の結果が食い違わない
       const id = newId('a');
+      const res = toggleRequestedOff(dataRef.current, offStaffId, d, today, id);
+      if (res.result === 'unchanged') return;
+      dataRef.current = res.data;
       update((x) => toggleRequestedOff(x, offStaffId, d, today, id).data);
       const name = staffById.get(offStaffId)?.name ?? '';
       const n = staffDaysRef.current.get(d)?.count ?? 0;
-      if (state === 'open') {
+      if (res.result === 'added') {
         setOffNote({
           date: d,
           warn: n > 0,
@@ -1404,7 +1408,14 @@ const DayCell = memo(function DayCell(props: CellProps) {
     if (mk.types.length > 0)
       parts.push(`種類：${mk.types.map((x) => `${typeName(x.typeId)} ${x.count}件`).join('・')}`);
     const resting = mk.off.length + mk.requested.length;
-    if (resting > 0) parts.push(`休む${staffTerm} ${resting}人`);
+    // 読み上げにも内訳（希望休か勤務なしか・名前）を入れる
+    const restDetail = [
+      mk.requested.length > 0 ? `${REQUESTED_OFF_NOTE}：${mk.requested.join('・')}` : '',
+      mk.off.length > 0 ? `勤務なし：${mk.off.join('・')}` : '',
+    ]
+      .filter(Boolean)
+      .join('／');
+    if (resting > 0) parts.push(`休む${staffTerm} ${resting}人（${restDetail}）`);
     if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}`);
     if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
     if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
@@ -1417,16 +1428,12 @@ const DayCell = memo(function DayCell(props: CellProps) {
         {resting > 0 && (
           <span
             className={`month-mark${mk.requested.length > 0 ? ' is-requested' : ''}`}
-            title={[
-              `休む${staffTerm} ${resting}人`,
-              mk.requested.length > 0 ? `${REQUESTED_OFF_NOTE}：${mk.requested.join('・')}` : '',
-              mk.off.length > 0 ? `勤務なし：${mk.off.join('・')}` : '',
-            ]
-              .filter(Boolean)
-              .join('／')}
+            title={`休む${staffTerm} ${resting}人（${restDetail}）`}
             data-testid="month-resting"
           >
             休 {resting}
+            {/* 希望休は色だけでなく文字でも分ける */}
+            {mk.requested.length > 0 && `（希${mk.requested.length}）`}
           </span>
         )}
         {mk.absent.length > 0 && (
@@ -1608,9 +1615,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
         data-off={offState}
         aria-label={label}
         aria-pressed={offState ? offState === 'requested' : undefined}
-        disabled={offState !== undefined && !offPress}
+        // 押せない日も Tab で届き、理由（aria-label）が読み上がるよう disabled にしない。押しても何もしない
+        aria-disabled={offState !== undefined && !offPress ? true : undefined}
         title={offState ? label : `${label}（押すとこの日の予定の画面を開きます）`}
-        onClick={() => (offState ? props.onToggleOff(d) : props.onOpen(d))}
+        onClick={() => {
+          if (!offState) props.onOpen(d);
+          else if (offPress) props.onToggleOff(d);
+        }}
       >
         <span className="month-cell-head">
           <span className="month-day">

@@ -12,7 +12,7 @@ import { addDays, hhmmToMinutes, weekday } from '../domain/time';
 import { type CompileInput, compile, scheduleRoute } from '../matching';
 import { applyPatterns } from '../patterns';
 import { attempt, own } from './common';
-import { absentLeftOf, isRequestedOff } from './requestedOff';
+import { isRequestedOff } from './requestedOff';
 import { addRun, findRun, problemKey } from './runs';
 
 /** 月まとめ作成の対象：まだ案の無い日だけ／確定していない日をすべて／条件が変わった日 */
@@ -414,8 +414,6 @@ export type StaffDay = {
   absence: Absence | null;
   /** その日の欠勤が希望休（ADR-0014） */
   requested: boolean;
-  /** 欠勤（希望休も）の時間と重なるのに、この人に残っている訪問の数（ADR-0014） */
-  absentLeft: number;
   /** 数える案が無い（訪問がある日だけ true） */
   noPlan: boolean;
   /** 担当の件数 */
@@ -468,7 +466,6 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     off: base.length === 0,
     absence: absences.at(-1) ?? null,
     requested: absences.length > 0 && absences.every(isRequestedOff),
-    absentLeft: p && absences.length > 0 ? absentLeftOf(p, day.routes, staffId) : 0,
     noPlan: hasVisits && day.source === null,
     count: list.length,
     target,

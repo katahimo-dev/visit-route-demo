@@ -166,7 +166,7 @@ flowchart LR
 - 欠勤（ADR-0011）：`CompileInput` に `absences` を足し、`compile` はその日のその人の欠勤を `withoutAbsences` で稼働時間帯から差し引く（`Problem` の形は変えない。`problemKey` は稼働時間帯を含むので欠勤で変わる）。欠勤で可にならない組の理由は `ruleId: 'slot'`、文は終日なら「欠勤（終日）」、途中の欠勤で稼働時間帯が全部なくなったら「欠勤で稼働時間がない」、欠勤が無ければ収まるなら「欠勤の時間と重なる」
 - 案B の変更の減点（ADR-0011 追記。2回目）：`routeCost` は `problem.stay` があれば、元の担当（`stay.staff[v]`）と違う担当の訪問1件に `movePoints`、元の開始（`stay.start[v]`）からのずれ1分に `minutePoints` を足す。`scheduleRoute`（evaluate の採点）には足さない。`stay` は reassign の `prepareAnneal` だけが作り、compile は作らない。`stay.keep[v]`（案A に入っている、振り直す訪問でない訪問）は `dropPointsOf(problem, v)` で落とした点を `KEEP_DROP_POINTS`（`DROP_POINTS`×10）にする（solver・`annealCost` が使う。採点の `totalPoints` は常に `DROP_POINTS`）
 - 訪問の種類（ADR-0012）：`CompileInput` に `visitTypes`・`patterns` を足す。訪問に `typeId` があり、その種類があれば、種類の必要条件（`requirements`）をスタッフの特性で判定し、満たさない条件ごとに `{ ruleId: 'visitType', label: '種類（〈名前〉）：〈条件の文〉 ✗', points: Infinity }`（可否で外す）、満たす条件は `✓`・0点を理由に足す（利用者さんの必要条件と同じ書き方。`conditionText`）。条件の重み・必須（`rules`）・プリセットには関係しない（常に必須）。いない種類の `typeId` は無視する。いつもの担当（`continuity`）は、訪問の `pattern` のパターンに `usualStaffId` があればその人、無ければ利用者さんの `usualStaffId`
-- 担当できる人（ADR-0014）：〈利用者さん〉の `allowedStaffIds` のうち、その日の問題にいる（利用中の）人が1人以上いれば、その人たちだけを可にする。外れる組は `{ ruleId: 'allowedStaff', label: '担当を限る：山田・佐藤 ✗', points: Infinity }`、限った人は `✓`・0点（`ALLOWED_STAFF_RULE_ID`。種類の必要条件と同じく常に必須で、条件の重み・必須・プリセットに関係しない。evaluate の条件ごとの達成には数えない）。限っていない〈利用者さん〉の問題は今までと同じ。振り直し・`fitsOf`・空き状況・週のドロップは compile の可否を使うので、そのまま効く
+- 担当できる人（ADR-0014）：〈利用者さん〉の `allowedStaffIds` のうち、その日の問題にいる（利用中の）人が1人以上いれば、その人たちだけを可にする。外れる組は `{ ruleId: 'allowedStaff', label: '担当を限る：山田、佐藤 ✗', points: Infinity }`、限った人は `✓`・0点（`ALLOWED_STAFF_RULE_ID`。種類の必要条件と同じく常に必須で、条件の重み・必須・プリセットに関係しない。evaluate の条件ごとの達成には数えない）。限っていない〈利用者さん〉の問題は今までと同じ。振り直し・`fitsOf`・空き状況・週のドロップは compile の可否を使うので、そのまま効く
 - 〈利用者さん〉の休み（ADR-0013）：`CompileInput` に `clientLeaves` を足し、`compile` はその日に休み（`leaveOn`）の〈利用者さん〉の訪問を問題に入れない（取り消しと同じ扱い）。AI案・月まとめ作成・空き状況・混み具合・欠勤の振り直しは compile を通るので、どれからも外れる。休みの無い日の問題は今までと同じ
 - 依存するもの：domain
 - 配置：`src/matching/`
@@ -413,13 +413,13 @@ flowchart LR
   - スタッフ画面（D66）：その日の訪問の下に決まりごと。休みの訪問は今の案・確定した割当にあっても出さない
   - `lib/leaves.ts`（画面の純粋関数。テストあり）：`leavesOf(data, clientId)`（開始の順）・`saveLeave(d, leave)`（同じ ID は置き換え）・`removeLeave(d, id)`・`leaveVisitsOn(data, date)`（その日の休みの訪問と休み）・`leaveConfirmedDates(data, leave)`（休みの期間で、確定した割当にその〈利用者さん〉の訪問がある日）・`leaveVisits(data, leave)`（休みの期間のその〈利用者さん〉の取り消しでない訪問）・`keepLeaveVisits(cols, leaveVisitIds, before)`（確定するとき、休みの訪問を前の確定した担当のまま残す）
 - ヒアリングを受けた第2弾（ADR-0014。PRD D68〜D70。2026-10-17）：
-  - 担当できる人（D68）：〈利用者さん〉の欄に「担当できる人（社内の決まり）」の節。「担当できる人を限る」のチェックと、利用中の〈スタッフ〉のチップ（`components/PickChips`。`bulk={false}` で「全員・全解除」を出さない）。入れたときに誰も選んでいなければいつもの担当を選んでおく。限るのに1人も選ばなければ保存しない（理由を出す）。保存のとき休止中の人は外す。一覧の「いつもの担当」の列に「限 山田・佐藤」の印（title に全員の名前）。〈スタッフ〉の画面で休止にして保存するとき、その人を限った〈利用者さん〉があれば確認（名前と、全員いなくなる人は「だれでも担当できるようになります」）を出し、同じ `update` で外す
+  - 担当できる人（D68）：〈利用者さん〉の欄に「担当できる人（社内の決まり）」の節。「担当できる人を限る」のチェックと、利用中の〈スタッフ〉のチップ（`components/PickChips`。`bulk={false}` で「全員・全解除」を出さない）。入れたときに誰も選んでいなければいつもの担当を選んでおく。限るのに1人も選ばなければ保存しない（理由を出す）。保存のとき休止中の人は外す。一覧の「いつもの担当」の列に「限 山田、佐藤」の印（title に全員の名前）。〈スタッフ〉の画面で休止にして保存するとき、その人を限った〈利用者さん〉があれば確認（名前と、全員いなくなる人は「だれでも担当できるようになります」）を出し、同じ `update` で外す
   - 希望休（D69）：月間で〈スタッフ〉を選ぶと、見出しの選択の横に通常のボタン「休みを入れる」（`aria-pressed`。押すと「休みの入力を終わる」）。入れているあいだ、上に説明の帯（「〈名前〉さんの休みを入れる：勤務日のマスを押すと…」・この月の希望休 N日・最後の操作の結果（`aria-live`。訪問のある日に入れたら注意と「〈日〉の予定を開く」））。日のマスは押すと日の画面へ移らず `lib/requestedOff` の `toggleRequestedOff`（1回の `update`）。マスの扱いは `offDayState`：入れられる日は紫の点線の枠、希望休の日は紫の斜線（`aria-pressed`）、今日より前・勤務なし・ほかの欠勤は `disabled`（灰の枠。title と読み上げに理由）。〈スタッフ〉の選びを外すと終わる。計算中（月まとめ作成）は押せない
   - 月の印（D69）：全体の表示の「休 N」は勤務の無い人＋希望休の人（`dayMarks.requested`。希望休がいれば紫。title に内訳）、「欠 名前」は希望休でない欠勤だけ。どの表示でも、数える案（今の案、無ければ確定した割当）で欠勤（希望休も）の人に残る訪問があれば「休みの人に N」（赤）と手当てが必要の枠（`DayView.absentLeft`。画面が `absentLeftOf` で数えて渡す。memo は今までどおり CompileInput のキーから比べる）。要対応に「休みの人に訪問 N件」（`attentionList` の `absentLeft`）、「欠勤」は希望休でない欠勤だけ。〈スタッフ〉を選んだときのマスは「希望休」（紫）、右の欄に「希望休 N日」「欠勤 N日」
   - 印刷（D70）：月間の見出しの月の送りの横に通常のボタン「印刷」（選んでいる〈スタッフ〉があれば `&staff=`）。画面 `#/month/print?ym=&staff=`（`pages/MonthPrintPage.tsx`。`AdminShell` の外。ルートの例外は `Guarded`）：上の操作の帯（月間に戻る・前後の月・〈スタッフ〉の選択（全員／1人）・主ボタン「印刷する」＝`window.print()`。`.no-print` で印刷しない）、見出し（「2026年11月の予定（〈名前〉さん）」・事業所名・凡例・印刷日）、日曜はじまりの週の表（その月の日が無い週は出さない）。マスは 日付・「確」／「案」・件数、行ごとに 種類の色の点・時刻・〈利用者さん〉・担当の名字（絞ったときは出さない。担当なしは「未定」）、下に「休：山田(希)・佐藤(欠)・鈴木」と「〈利用者さん〉休：…」。CSS（`pages/monthPrint.css`）は `@page monthprint { size: A4 landscape; margin: 7mm }`・`.mprint { page: monthprint }`、週の行は `break-inside: avoid`、文字は 7.5pt
-  - `lib/requestedOff.ts`（純粋関数。テストあり）：`REQUESTED_OFF_NOTE`・`isRequestedOff`・`offDayState(data, staffId, date, today)`・`toggleRequestedOff(d, staffId, date, today, newId)`・`requestedOffDates(data, staffId, ym)`・`absentLeftOf(problem, routes, staffId?)`
-  - `lib/monthPrint.ts`（純粋関数。テストあり）：`printDay(data, date, staffId, inMonth?)`・`monthPrint(data, ym, staffId)`
-  - `lib/month.ts` の追加：`DayView.absentLeft`・`DayStatus.absentLeft`（手当てが必要に入る）・`DayMarks.requested`・`StaffDay.requested`・`StaffDay.absentLeft`・`StaffMonth.requestedDays`（`absenceDays` は希望休を除く）・`AttentionKind` に `'absentLeft'`
+  - `lib/requestedOff.ts`（純粋関数。テストあり）：`REQUESTED_OFF_NOTE`・`isRequestedOff`・`offDayState(data, staffId, date, today)`・`toggleRequestedOff(d, staffId, date, today, newId)`・`requestedOffDates(data, staffId, ym)`・`absentLeftIds(problem, routes, staffId?)`・`absentLeftOf`（件数）
+  - `lib/monthPrint.ts`（純粋関数。テストあり）：`printDay(data, date, staffId, inMonth?)`（`PrintDay.pending`＝担当の決まっていない訪問の件数、`PrintEntry.staffLabel`・`PrintOff.label`）・`monthPrint(data, ym, staffId)`・`staffLabels(staff)`（名字。重なる人はフルネーム）
+  - `lib/month.ts` の追加：`DayView.absentLeft`・`DayStatus.absentLeft`（手当てが必要に入る）・`DayMarks.requested`・`StaffDay.requested`・`StaffMonth.requestedDays`（`absenceDays` は希望休を除く）・`AttentionKind` に `'absentLeft'`
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign・patterns・vacancy、Leaflet（PoC本体 `RouteMap.tsx` を写す）
 - 配置：`src/pages/`、`src/components/`
 - 完了の条件：
@@ -894,14 +894,14 @@ function vacancyNotice(result: VacancyResult, input: VacancyNoticeInput): string
 
 // matching：限った人以外との組の理由（常に必須。条件 rules の ID ではない）
 const ALLOWED_STAFF_RULE_ID = 'allowedStaff'
-// { ruleId: 'allowedStaff', label: '担当を限る：山田・佐藤 ✗', points: Infinity } ／ 限った人は '… ✓'・0点
+// { ruleId: 'allowedStaff', label: '担当を限る：山田、佐藤 ✗', points: Infinity } ／ 限った人は '… ✓'・0点
 
 // 希望休：absenceSchema は変えない。終日（from・to とも null）かつ note が '希望休' の欠勤を希望休とみなす（lib/requestedOff の isRequestedOff）
 ```
 
 - 限るのは、その日の問題にいる（利用中の）人だけで数える。1人もいなければ限らない（store の repair が休止中・いない人を除くのと同じ扱い）
-- 希望休を入れても今の案・確定した割当は変えない（ADR-0011 の「振り直しは利用者が押す」のまま）。欠勤の人に残る訪問は `absentLeftOf`（compile の 'slot' の欠勤の理由（`ABSENT_ALL_DAY`・`ABSENT_NO_HOURS`・`ABSENCE_OVERLAP`）で可でない組）で数える
-- 印刷の担当は、確定した割当（担当のいる訪問が1件以上）があればそれ、無ければ今の案（`PrintDay.source`）
+- 希望休を入れても今の案・確定した割当は変えない（ADR-0011 の「振り直しは利用者が押す」のまま）。欠勤の人に残る訪問は `absentLeftIds`・`absentLeftOf`（compile の 'slot' の欠勤の理由（`ABSENT_ALL_DAY`・`ABSENT_NO_HOURS`・`ABSENCE_OVERLAP`）で可でない組）で数える
+- 印刷の担当は、確定した割当（今ある訪問＝取り消し・休み・休止の〈利用者さん〉の訪問を除いた訪問に、担当が1件以上）があればそれ、無ければ今の案（`PrintDay.source`。`lib/absences` の `baseOf` と同じ判定）
 
 ### Excel のブックの形（`src/excel/`。ADR-0006）
 1行目が見出し、2行目からデータ。参照は名前で書く（〈スタッフ〉の名前・〈利用者さん〉の表示名は各シートで一意。項目の名前は対象ごとに一意で、対象が違えば同じ名前でよい。条件の名前はどこからも参照しないので重なってよい）。○＝はい、空＝いいえ。複数の値は「、」か改行で区切る（「・」「,」「，」は区切らない＝選択肢の名前に使える）。見出しは全角半角・コロンの揺れを許して比べる。呼び方（スタッフ・利用者さん）はシート名・見出しにも `org.terms` を使う。
@@ -1137,9 +1137,19 @@ Worker 内の例外は `{type:'error', message}` で返し、内部の文言を�
 - 確定した割当を元の案にするとき、今の案に未確定の変更があれば、捨てる確認を出してから振り直す
 
 補足（ヒアリングを受けた第2弾（PRD D68〜D70。ADR-0014）の実装で決めたこと。依頼に無く実装の担当が推測した箇所。2026-10-17）：
-- 担当を限る：理由の文は「担当を限る：〈名前〉・〈名前〉 ✓／✗」（名前は限った人のうち、その日の問題にいる人を並べた順）。休止中の人は〈利用者さん〉の欄のチップに出さず、保存のとき外す。一覧の印は「限 名字・名字」
+- 担当を限る：理由の文は「担当を限る：〈名前〉、〈名前〉 ✓／✗」（名前は限った人のうち、その日の問題にいる人を並べた順）。休止中の人は〈利用者さん〉の欄のチップに出さず、保存のとき外す。一覧の印は「限 名字、名字」
 - 限った人が全員いなくなったら限らない（ADR-0014 の 2-A）。〈スタッフ〉の画面には人を消す操作が無いので、確認は休止にして保存するときだけ
 - 希望休：ID の頭は欠勤と同じ `a`。押せない日は「今日より前」「勤務なし（基本の曜日・稼働時間の上書きで休み）」「希望休でない欠勤がある」。希望休の日を押すとその日のその人の欠勤（希望休）をすべて外す
 - 訪問のある日に希望休を入れたときの注意は、数える案（今の案、無ければ確定した割当）でその人に訪問があるとき。注意は次の操作まで説明の帯に残す（トーストは2.5秒で消えるため）
 - 月の「休 N」は勤務なし＋希望休の合計で、希望休がいれば文字を紫にする（印の数を増やさない）。「欠」は希望休でない欠勤だけ
 - 印刷：その月の日が1日も無い週（6週目が空の月など）は出さない。開始の時刻は案の lenient の時刻（分は切り上げず四捨五入）。〈スタッフ〉で絞ったときは担当の名前を出さない。勤務なしの人は全体の印刷でも「休：」に名字で出す（印なし）。「印刷する」は印刷の画面の主ボタン（その画面に主ボタンは1つ）
+
+補足（PR #20 のレビューの反映。ADR-0014 追記。2026-10-17）：
+- 印刷：`PrintDay.pending`（担当の決まっていない訪問の件数。案も確定も無ければ今ある訪問の全件）を持ち、〈スタッフ〉で絞った印刷でも「案なし（訪問 N件）」「未定 N件（全体）」を出す。確定とみなすのは、今ある訪問（取り消し・休み・休止の〈利用者さん〉の訪問を除く）に担当がある確定した割当だけ。名前は名字で、利用中の人で名字が重なればフルネーム（`staffLabels`）。印刷の CSS（`.no-print`・知らせを隠す）は `.mprint` の中・`body:has(.mprint)` だけに効かせる
+- 週間：担当を限る決まりで可でない担当の帯・〈利用者さん〉×曜日の表のマスに「限✗」（`lib/week` の `limitUnfit`・`unfitMarks`。資格✗と並べる。凡例にも）
+- 月の「休 N」：希望休がいれば「休 N（希M）」と文字でも出し、読み上げ（`aria-label`）・title に内訳（希望休：名前／勤務なし：名前）
+- 月の「違反」は、「休みの人に N」で数えた訪問（`absentLeftIds`）の必須の違反を除いて数える（同じ訪問を2つの印で数えない）。「条件が変わった」は、案を作ったあとに欠勤が入ったことを表すので残す
+- 「休みを入れる」の押せない日は `disabled` にせず `aria-disabled`（Tab で届き、理由が読み上がる。押しても何もしない）。結果の文は、直前のデータ（続けて押した分を入れたもの）から `toggleRequestedOff` の結果で出す（連打しても実際と食い違わない）
+- Excel の「担当できる人」の区切りは「、」と改行だけ（「・」は名前に使えるので区切らない）。画面の印・理由の文も「、」で並べる
+- 〈スタッフ〉を休止にする確認に「あとで利用中に戻しても、担当できる人には戻りません」を書く
+- `StaffDay.absentLeft` は使っていなかったので消した（日の印は `DayStatus.absentLeft` だけ）

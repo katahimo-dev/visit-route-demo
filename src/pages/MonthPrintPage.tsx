@@ -6,7 +6,7 @@ import { WithIcon } from '../components/ui';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { colorOf } from '../lib/colors';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
-import { addMonths, isYm, shortName, ymOf } from '../lib/month';
+import { addMonths, isYm, ymOf } from '../lib/month';
 import { monthPrint, type PrintDay } from '../lib/monthPrint';
 import { REQUESTED_OFF_NOTE } from '../lib/requestedOff';
 import { useDemoData } from '../store';
@@ -126,7 +126,7 @@ function PrintCell({ day: d, clientTerm, showStaff }: { day: PrintDay; clientTer
       <div className="mprint-day">
         <span className="mprint-date">{Number(d.date.slice(8, 10))}</span>
         {d.source && <span className="mprint-src">{d.source === 'confirmed' ? '確' : '案'}</span>}
-        {!d.source && d.entries.length > 0 && <span className="mprint-src is-none">案なし</span>}
+        {!d.source && d.pending > 0 && <span className="mprint-src is-none">案なし</span>}
         {d.entries.length > 0 && <span className="mprint-count">{d.entries.length}件</span>}
       </div>
       <ul className="mprint-list">
@@ -140,19 +140,23 @@ function PrintCell({ day: d, clientTerm, showStaff }: { day: PrintDay; clientTer
             <span className="mprint-time">{minutesToHhmm(Math.round(e.start))}</span>
             <span className="mprint-client">{e.clientName}</span>
             {/* 案の無い日は担当を書かない（「案なし」の印だけ）。案のある日に担当が無ければ「未定」 */}
-            {showStaff && d.source && (
-              <span className="mprint-staff">{e.staffName ? shortName(e.staffName) : '未定'}</span>
-            )}
+            {showStaff && d.source && <span className="mprint-staff">{e.staffLabel ?? '未定'}</span>}
           </li>
         ))}
       </ul>
+      {/* 〈スタッフ〉で絞ったときも、担当の決まっていない訪問があると分かるように */}
+      {!showStaff && d.pending > 0 && (
+        <div className="mprint-pending" data-testid="mprint-pending">
+          {d.source ? `未定 ${d.pending}件（全体）` : `案なし（訪問 ${d.pending}件）`}
+        </div>
+      )}
       {d.off.length > 0 && (
         <div className="mprint-off">
           休：
           {d.off.map((o, i) => (
             <span key={o.name} className={`is-${o.kind}`}>
               {i > 0 ? '・' : ''}
-              {shortName(o.name)}
+              {o.label}
               {OFF_MARK[o.kind] ? `(${OFF_MARK[o.kind]})` : ''}
             </span>
           ))}

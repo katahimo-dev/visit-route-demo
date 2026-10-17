@@ -19,17 +19,17 @@ function threeStaff(allowed: string[], over: Parameters<typeof makeData>[0] = {}
 }
 
 describe('担当できる人を限る（compile）', () => {
-  it('限った人だけ可。外れる人の理由は「担当を限る：s1・s3 ✗」（Infinity）、限った人は ✓・0点', () => {
+  it('限った人だけ可。外れる人の理由は「担当を限る：s1、s3 ✗」（Infinity）、限った人は ✓・0点', () => {
     const p = compile(threeStaff(['s1', 's3']), DATE);
     expect(p.allowed[0]).toEqual([true, false, true]);
     expect(p.reasons[0]![1]).toContainEqual({
       ruleId: ALLOWED_STAFF_RULE_ID,
-      label: '担当を限る：s1・s3 ✗',
+      label: '担当を限る：s1、s3 ✗',
       points: INF,
     });
     expect(p.reasons[0]![0]).toContainEqual({
       ruleId: ALLOWED_STAFF_RULE_ID,
-      label: '担当を限る：s1・s3 ✓',
+      label: '担当を限る：s1、s3 ✓',
       points: 0,
     });
     // 限らない〈利用者さん〉の訪問は今までどおり

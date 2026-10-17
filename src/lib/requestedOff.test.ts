@@ -112,14 +112,13 @@ describe('休みの人に残る訪問（absentLeftOf）と月の印', () => {
     expect(left.map((a) => [a.kind, a.count])).toEqual([['absentLeft', 2]]);
   });
 
-  it('staffDay・staffMonth：希望休は requested、残る訪問の数、月の希望休の日数（欠勤と分ける）', () => {
+  it('staffDay・staffMonth：希望休は requested、月の希望休の日数（欠勤と分ける）', () => {
     const d = data({
       absences: [off('a1', 's1', DATE), off('a2', 's1', TUE, { note: '通院', from: '15:00' })],
       manualPlans: { [DATE]: { s1: ['v1'] } },
     });
     const day = staffDay(d, dayPlanOf(d, DATE), 's1');
     expect(day.requested).toBe(true);
-    expect(day.absentLeft).toBe(1);
     const tue = staffDay(d, dayPlanOf(d, TUE), 's1');
     expect(tue.requested).toBe(false);
     const m = staffMonth(d, [dayPlanOf(d, DATE), dayPlanOf(d, TUE)], 's1');

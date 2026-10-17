@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AiPlan, DemoData } from '../contracts/data';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import { monthPrint, printDay } from './monthPrint';
+import { monthPrint, printDay, staffLabels } from './monthPrint';
 import { REQUESTED_OFF_NOTE } from './requestedOff';
 
 const plan = (routes: Record<string, string[]>): AiPlan => ({
@@ -76,8 +76,8 @@ describe('月の予定の印刷（printDay・monthPrint）', () => {
     expect(p.entries.map((e) => e.clientName)).toEqual(['泉', '青葉']);
     expect(p.off).toEqual([]);
     const all = printDay(d, DATE, null);
-    expect(all.off).toEqual([{ name: '佐藤 一', kind: 'requested' }]);
-    expect(printDay(d, DATE, 's2').off).toEqual([{ name: '佐藤 一', kind: 'requested' }]);
+    expect(all.off).toEqual([{ name: '佐藤 一', label: '佐藤', kind: 'requested' }]);
+    expect(printDay(d, DATE, 's2').off).toEqual([{ name: '佐藤 一', label: '佐藤', kind: 'requested' }]);
   });
 
   it('〈利用者さん〉の休みの訪問は一覧に出さず「休み」に名前。勤務の無い〈スタッフ〉も休みに出す', () => {
@@ -89,7 +89,7 @@ describe('月の予定の印刷（printDay・monthPrint）', () => {
     const p = printDay(d, DATE, null);
     expect(p.entries.map((e) => e.clientName)).not.toContain('青葉');
     expect(p.leaves).toEqual(['青葉']);
-    expect(p.off).toEqual([{ name: '佐藤 一', kind: 'noShift' }]);
+    expect(p.off).toEqual([{ name: '佐藤 一', label: '佐藤', kind: 'noShift' }]);
     // 絞ると、その人の担当だった〈利用者さん〉の休みだけ
     expect(printDay(d, DATE, 's1').leaves).toEqual(['青葉']);
     expect(printDay(d, DATE, 's2').leaves).toEqual([]);
@@ -103,5 +103,47 @@ describe('月の予定の印刷（printDay・monthPrint）', () => {
     expect(weeks[0]![0]!.inMonth).toBe(false);
     const mon = weeks.flat().find((x) => x.date === DATE)!;
     expect(mon.entries).toHaveLength(3);
+  });
+});
+
+describe('レビューの指摘（PR #20）', () => {
+  it('案も確定も無い日は、〈スタッフ〉で絞っても担当の決まっていない件数（pending）が分かる', () => {
+    const d = data();
+    expect(printDay(d, DATE, 's1')).toMatchObject({ source: null, entries: [], pending: 3 });
+    const p = printDay({ ...d, aiPlans: { [DATE]: plan({ s1: ['v2'] }) } }, DATE, 's1');
+    expect(p.source).toBe('plan');
+    expect(p.pending).toBe(2);
+  });
+
+  it('確定した割当が取り消し・休み・休止の〈利用者さん〉の訪問だけなら、確定とみなさない（今の案を使う）', () => {
+    const base = data({
+      visits: [...data().visits.slice(0, 2), visit('v3', 'c3', '11:00', '11:00', { cancelled: true })],
+      aiPlans: { [DATE]: plan({ s1: ['v2', 'v1'] }) },
+    });
+    // 取り消しの訪問だけ
+    expect(printDay({ ...base, manualPlans: { [DATE]: { s2: ['v3'] } } }, DATE, null).source).toBe('plan');
+    // 休みの訪問だけ
+    const leave = { ...base, clientLeaves: [{ id: 'l', clientId: 'c1', from: DATE, to: DATE, note: '' }] };
+    expect(printDay({ ...leave, manualPlans: { [DATE]: { s2: ['v1'] } } }, DATE, null).source).toBe('plan');
+    // 休止の〈利用者さん〉の訪問だけ
+    const inactive = { ...base, clients: base.clients.map((c) => (c.id === 'c2' ? { ...c, active: false } : c)) };
+    expect(printDay({ ...inactive, manualPlans: { [DATE]: { s2: ['v2'] } } }, DATE, null).source).toBe('plan');
+    // 今ある訪問があれば確定
+    expect(printDay({ ...base, manualPlans: { [DATE]: { s2: ['v2'] } } }, DATE, null).source).toBe('confirmed');
+  });
+
+  it('名字が重なる人はフルネーム、重ならない人は名字', () => {
+    const labels = staffLabels([
+      { id: 'a', name: '山田 花', active: true },
+      { id: 'b', name: '山田 一', active: true },
+      { id: 'c', name: '佐藤 次郎', active: true },
+      { id: 'd', name: '佐藤 休', active: false },
+    ]);
+    expect([...labels.values()]).toEqual(['山田 花', '山田 一', '佐藤', '佐藤']);
+    const d = data({
+      staff: [staff('s1', 38.26, 140.87, { name: '山田 花' }), staff('s2', 38.27, 140.88, { name: '山田 一' })],
+      aiPlans: { [DATE]: plan({ s1: ['v2'], s2: ['v1'] }) },
+    });
+    expect(printDay(d, DATE, null).entries.map((e) => e.staffLabel)).toEqual(['山田 花', null, '山田 一']);
   });
 });

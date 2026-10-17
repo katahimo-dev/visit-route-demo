@@ -244,11 +244,11 @@ export default function ClientsPage() {
                   {c.allowedStaffIds.length > 0 && (
                     <span
                       className="chip chip-limit"
-                      title={`担当できる人を限っています：${c.allowedStaffIds.map(staffName).join('・')}`}
+                      title={`担当できる人を限っています：${c.allowedStaffIds.map(staffName).join('、')}`}
                       data-testid="client-limit"
                     >
                       <ShieldCheck size={13} aria-hidden="true" />限{' '}
-                      {c.allowedStaffIds.map((id) => staffName(id).split(/\s+/)[0]).join('・')}
+                      {c.allowedStaffIds.map((id) => staffName(id).split(/\s+/)[0]).join('、')}
                     </span>
                   )}
                 </td>

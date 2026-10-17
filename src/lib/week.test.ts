@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AiPlan, DemoData } from '../contracts/data';
 import type { Pattern } from '../contracts/documents';
+import { compile } from '../matching';
 import { client, DATE, ITEMS, makeData, staff, visit } from '../matching/fixtures';
 import { applyPatterns } from '../patterns';
 import {
@@ -13,6 +14,7 @@ import {
   insertAllIntoPlans,
   insertIntoPlan,
   laneLayout,
+  limitUnfit,
   moveFollowing,
   moveOnce,
   qualificationBadges,
@@ -20,6 +22,7 @@ import {
   staffWeekTable,
   staffWithQualification,
   typeUnfit,
+  unfitMarks,
   weekDates,
   weekDay,
   weekStart,
@@ -575,5 +578,20 @@ describe('clientWeekTable（利用者さん×曜日）', () => {
   it('選んだ人だけ（休止中でも選べば出す）', () => {
     expect(clientWeekTable(d, days, ['c3', 'c2']).map((r) => r.clientId)).toEqual(['c2', 'c3']);
     expect(clientWeekTable(d, days, []).map((r) => r.clientId)).toEqual(['c1', 'c2']);
+  });
+});
+
+describe('帯の印（unfitMarks。ADR-0014 の限✗）', () => {
+  it('担当を限る決まりで可でない担当に「限✗」、限った人・担当なしには付かない', () => {
+    const d = makeData({
+      staff: [staff('s1', 38.26, 140.87), staff('s2', 38.27, 140.88)],
+      clients: [client('c1', 38.265, 140.875, { allowedStaffIds: ['s1'] })],
+      visits: [visit('v1', 'c1', '10:00', '11:00')],
+    });
+    const p = compile(d, DATE);
+    expect(limitUnfit(p, 'v1', 's2')).toBe(true);
+    expect(unfitMarks(p, 'v1', 's2').map((m) => m.short)).toEqual(['限✗']);
+    expect(unfitMarks(p, 'v1', 's1')).toEqual([]);
+    expect(unfitMarks(p, 'v1', null)).toEqual([]);
   });
 });

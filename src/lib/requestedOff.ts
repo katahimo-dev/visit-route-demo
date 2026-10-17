@@ -79,13 +79,13 @@ export function requestedOffDates(data: Pick<DemoData, 'absences'>, staffId: str
 const ABSENCE_LABELS = new Set([ABSENT_ALL_DAY, ABSENT_NO_HOURS, ABSENCE_OVERLAP]);
 
 /**
- * 案（今の案か確定した割当。担当 → 訪問ID の列）で、欠勤（希望休も）の時間と重なるのにその人に残っている訪問の数。
- * problem は欠勤を入れたいまのデータの問題。staffId を渡すとその人の列だけ数える。問題に無い人・訪問は数えない
+ * 案（今の案か確定した割当。担当 → 訪問ID の列）で、欠勤（希望休も）の時間と重なるのにその人に残っている訪問の ID（列の順）。
+ * problem は欠勤を入れたいまのデータの問題。staffId を渡すとその人の列だけ。問題に無い人・訪問は数えない
  */
-export function absentLeftOf(problem: Problem, routes: Record<string, string[]>, staffId?: string): number {
+export function absentLeftIds(problem: Problem, routes: Record<string, string[]>, staffId?: string): string[] {
   const vIndex = new Map(problem.visits.map((v, i) => [v.id, i]));
   const sIndex = new Map(problem.staff.map((s, i) => [s.id, i]));
-  let n = 0;
+  const out: string[] = [];
   for (const [sid, ids] of Object.entries(routes)) {
     if (sid === NONE || (staffId !== undefined && sid !== staffId)) continue;
     const s = sIndex.get(sid);
@@ -93,8 +93,13 @@ export function absentLeftOf(problem: Problem, routes: Record<string, string[]>,
     for (const id of ids) {
       const v = vIndex.get(id);
       if (v === undefined || problem.allowed[v]![s]) continue;
-      if (problem.reasons[v]![s]!.some((r) => r.ruleId === 'slot' && ABSENCE_LABELS.has(r.label))) n++;
+      if (problem.reasons[v]![s]!.some((r) => r.ruleId === 'slot' && ABSENCE_LABELS.has(r.label))) out.push(id);
     }
   }
-  return n;
+  return out;
+}
+
+/** absentLeftIds の件数 */
+export function absentLeftOf(problem: Problem, routes: Record<string, string[]>, staffId?: string): number {
+  return absentLeftIds(problem, routes, staffId).length;
 }

@@ -71,7 +71,7 @@ export default function StaffPage() {
           emptied.length > 0
             ? `${emptied.map((c) => c.displayName).join('・')}は担当できる人がいなくなり、だれでも担当できるようになります（必要なら${terms.client}の画面で選び直してください）。`
             : ''
-        }よろしいですか？`;
+        }あとで利用中に戻しても、担当できる人には戻りません。よろしいですか？`;
         if (!confirm(msg)) return;
       }
       update((d) => ({
