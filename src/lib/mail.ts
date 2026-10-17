@@ -5,7 +5,7 @@ import type { DemoData } from '../contracts/data';
 import type { Client, Org, Staff, Visit } from '../contracts/documents';
 import { weekday } from '../domain/time';
 import { type BuiltMail, buildMail, MAILTO_LIMIT, uniqueRecipients } from './mailto';
-import { dayStops, HOME_LABEL, legLinks, type RouteStop, tripLinks } from './mapsLink';
+import { BICYCLE_NOTE, dayStops, HOME_LABEL, legLinks, type RouteStop, tripLinks } from './mapsLink';
 import { type PrintDay, printDay } from './monthPrint';
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
@@ -70,20 +70,35 @@ const nameOf = (c: Client | undefined) => (c ? `${c.displayName}様` : '（不�
 /** 経路のリンクを作れない場所（〈利用者さん〉が見つからない） */
 const NO_PLACE = { address: '', lat: null, lng: null };
 
-/** 1日の経路のリンク（PRD D97。ADR-0018）：全行程（分けたときは「全行程 1/2」）と、区間ごと（前の場所→この訪問、最後は自宅まで） */
+/**
+ * 1日の経路のリンク（PRD D97・D99・D101。ADR-0018）：全行程（分けたときは「全行程 1/2」。経由地はスマホのブラウザに合わせて3件まで）と、
+ * 区間ごと（前の場所→この訪問、最後は自宅まで）。notes は全行程の下に書く一言（場所が未登録で入っていない〈利用者さん〉・自宅、公共交通、自転車）。
+ * 公共交通は全行程を作らず区間ごとだけ
+ */
 export function dayRouteLinks(
   staff: Pick<Staff, 'home' | 'travelMode'>,
   visits: readonly MailVisit[],
-): { trip: string[]; legs: (string | null)[]; back: string | null } {
+  terms: Org['terms'],
+): { trip: string[]; notes: string[]; legs: (string | null)[]; back: string | null } {
   const stops: RouteStop[] = dayStops(
     staff.home,
     visits.map((v) => ({ label: nameOf(v.client), place: v.client?.place ?? NO_PLACE })),
   );
-  const trip = tripLinks(stops, staff.travelMode).map((t) => `${t.label}（${t.from}→${t.to}）：${t.href}`);
+  const t = tripLinks(stops, staff.travelMode);
+  const trip = t.links.map((x) => `${x.label}（${x.from}→${x.to}）：${x.href}`);
   const legs = legLinks(stops, staff.travelMode).map((l) =>
     l.href ? `${l.to === HOME_LABEL ? '帰りの道順' : '道順'}（${l.from}から）：${l.href}` : null,
   );
-  return { trip, legs: legs.slice(0, visits.length), back: legs[visits.length] ?? null };
+  const anyLink = trip.length > 0 || legs.some((l) => l !== null);
+  const notes = [
+    ...(trip.length > 0 && t.skipped.length > 0
+      ? [`（場所が未登録の${terms.client}（${t.skipped.join('・')}）は全行程に入っていません）`]
+      : []),
+    ...(trip.length > 0 && t.homeSkipped ? ['（自宅の場所が未登録のため、全行程は自宅を通りません）'] : []),
+    ...(staff.travelMode === 'TRANSIT' && anyLink ? ['（公共交通のため、道順は区間ごと（各訪問の下）です）'] : []),
+    ...(staff.travelMode === 'BICYCLE' && anyLink ? [`（${BICYCLE_NOTE}）`] : []),
+  ];
+  return { trip, notes, legs: legs.slice(0, visits.length), back: legs[visits.length] ?? null };
 }
 
 /**
@@ -118,19 +133,21 @@ export function dayMailText(
       : [];
   const route =
     staff.home && staff.travelMode
-      ? dayRouteLinks({ home: staff.home, travelMode: staff.travelMode }, visits)
-      : { trip: [], legs: [], back: null };
-  const hasRoute = route.trip.length > 0;
-  /** 全行程のリンク（本文の上。移動の分数・キロ数はアプリの目安で、Google マップで確かめる） */
-  const tripBlock = hasRoute ? ['■Google マップの道順', ...route.trip, ''] : [];
+      ? dayRouteLinks({ home: staff.home, travelMode: staff.travelMode }, visits, org.terms)
+      : { trip: [], notes: [], legs: [], back: null };
+  const hasTrip = route.trip.length > 0;
   /** 区間ごとのリンクがあるか（全文に入れる） */
   const hasLegs = route.legs.some((l) => l !== null) || route.back !== null;
+  /** 道順の見出しと全行程・一言（本文の上。移動の分数・キロ数はアプリの目安で、Google マップで確かめる）。公共交通は一言だけ */
+  const routeBlock = hasTrip || hasLegs ? ['■Google マップの道順', ...route.trip, ...route.notes, ''] : [];
+  /** 全行程だけの段階（要点）に入れる見出し（全行程が無ければ入れない） */
+  const tripBlock = hasTrip ? routeBlock : [];
   const fullOf = (withLegs: boolean) =>
     [
       ...head,
       lead,
       '',
-      ...tripBlock,
+      ...(withLegs ? routeBlock : tripBlock),
       ...visits.flatMap((v, i) => [
         line(v, i),
         ...ruleLines(v.client, includeKeys),
@@ -141,6 +158,8 @@ export function dayMailText(
       ...(keyNote(includeKeys).length > 0 ? ['', ...keyNote(includeKeys)] : []),
       ...foot,
     ].join('\n');
+  /** 道順を省いたと書くか（リンクがあるのに入れない段階） */
+  const routeDropped = (withTrip: boolean) => (hasTrip && !withTrip) || (!hasTrip && hasLegs);
   const shortOf = (withTrip: boolean) =>
     [
       ...head,
@@ -153,7 +172,7 @@ export function dayMailText(
         ...(includeKeys && v.client?.keyNote.trim() ? [`   鍵：${v.client.keyNote.replace(/\s*\n\s*/g, ' ')}`] : []),
       ]),
       '',
-      '※入り方・駐車場・注意は省きました。',
+      `※入り方・駐車場・注意${routeDropped(withTrip) ? '・道順' : ''}は省きました。`,
       ...keyNote(includeKeys),
       ...foot,
     ].join('\n');
@@ -165,12 +184,13 @@ export function dayMailText(
       ...(withTrip ? tripBlock : []),
       ...visits.map(line),
       '',
-      `※住所・入り方・駐車場・注意${hasRoute && !withTrip ? '・道順' : ''}は省きました。`,
+      `※住所・入り方・駐車場・注意${routeDropped(withTrip) ? '・道順' : ''}は省きました。`,
       ...keyNote(false),
       ...foot,
     ].join('\n');
   const full = fullOf(true);
-  if (!hasRoute) return { subject, full, short: [shortOf(false), shorterOf(false)] };
+  // 全行程が無い（公共交通・リンクなし）：区間ごと（全文）→ 要点1 → 要点2
+  if (!hasTrip) return { subject, full, short: [shortOf(false), shorterOf(false)] };
   // 長いときは全行程のリンクを優先し、区間ごとを先に外す（PRD D97）
   const stages = [...(hasLegs ? [fullOf(false)] : []), shortOf(true), shorterOf(true), shorterOf(false)];
   return { subject, full, short: stages };

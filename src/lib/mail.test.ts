@@ -244,6 +244,53 @@ describe('日の予定の経路のリンク（PRD D97。ADR-0018）', () => {
     expect(trip!.searchParams.get('destination')).toBe('仙台市青葉区1-1');
     expect(leg!.searchParams.get('origin')).toBe('38.266,140.876');
   });
+  it('訪問4件は全行程を2本に分ける（経由地はスマホのブラウザに合わせて3件まで）', () => {
+    const d = data({
+      clients: [...data().clients, client('c4', 38.268, 140.878, { displayName: '若林' })],
+      visits: [...data().visits, visit('v4', 'c4', '15:00', '15:00', { windowKind: 'fixed' })],
+      aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v3', 'v1', 'v4'] }) },
+    });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).toContain('全行程 1/2（自宅→若林様）：');
+    expect(t.full).toContain('全行程 2/2（若林様→自宅）：');
+    const trips = urls(t.full).slice(0, 2);
+    expect(trips.map((u) => u.searchParams.get('waypoints')?.split('|').length)).toEqual([3, undefined]);
+  });
+  it('場所が未登録の〈利用者さん〉は全行程に入っていないと書く（呼び方は org.terms）', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v3', 'v1'] }) } });
+    const clients = d.clients.map((c) =>
+      c.id === 'c3' ? { ...c, place: { address: '', lat: null, lng: null, postalCode: '' } } : c,
+    );
+    const dd = { ...d, clients };
+    const { day, byStaff } = dayByStaff(dd, DATE);
+    const t = dayMailText(dd.org, dd.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).toContain(`（場所が未登録の${dd.org.terms.client}（宮城野様）は全行程に入っていません）`);
+    expect(t.short[0]).toContain('は全行程に入っていません');
+    expect(t.full).not.toContain('道順（泉様から）');
+  });
+  it('公共交通は全行程を出さず区間ごとだけ。段階は 区間ごと → 要点1 → 要点2', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
+    const s1 = { ...d.staff[0]!, travelMode: 'TRANSIT' as const };
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, s1, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).not.toContain('全行程');
+    expect(t.full).toContain('（公共交通のため、道順は区間ごと（各訪問の下）です）');
+    expect(t.full).toContain('   道順（自宅から）：');
+    expect(urls(t.full).every((u) => u.searchParams.get('travelmode') === 'transit')).toBe(true);
+    expect(t.short.length).toBe(2);
+    expect(t.short[0]).not.toContain('https:');
+    expect(t.short[0]).toContain('※入り方・駐車場・注意・道順は省きました。');
+    expect(t.short[1]).toContain('※住所・入り方・駐車場・注意・道順は省きました。');
+  });
+  it('自転車は「経路が出ないときは徒歩に」と添える', () => {
+    const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
+    const s1 = { ...d.staff[0]!, travelMode: 'BICYCLE' as const };
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(d.org, s1, DATE, day.source, byStaff.get('s1')!, false);
+    expect(t.full).toContain('（自転車の経路が出ないときは、Google マップで徒歩に切り替えてください。）');
+    expect(t.short[1]).toContain('徒歩に切り替えて');
+  });
   it('自宅・移動手段を渡さなければリンクなし（要点は2段のまま）', () => {
     const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
     const { day, byStaff } = dayByStaff(d, DATE);

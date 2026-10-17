@@ -15,9 +15,16 @@ describe('placeParam', () => {
     expect(placeParam(addr(' 仙台市青葉区1-1 '))).toBe(encodeURIComponent('仙台市青葉区1-1'));
     expect(placeParam(none)).toBeNull();
   });
-  it('住所の記号（& # ? / |）はエンコードされ、URL を壊さない', () => {
+  it('住所の記号（& # ? /）はエンコードされ、「|」は経由地の区切りとぶつからないよう全角にする', () => {
     const href = directionsHref({ origin: null, destination: addr('A&B#1?x=2/3|4'), mode: 'DRIVE' })!;
-    expect(q(href).get('destination')).toBe('A&B#1?x=2/3|4');
+    expect(q(href).get('destination')).toBe('A&B#1?x=2/3｜4');
+    const w = directionsHref({
+      origin: null,
+      destination: at(1, 2),
+      waypoints: [addr('a|b'), addr('c')],
+      mode: 'DRIVE',
+    })!;
+    expect(q(w).get('waypoints')!.split('|')).toEqual(['a｜b', 'c']);
     expect(q(href).get('travelmode')).toBe('driving');
   });
 });
@@ -74,41 +81,54 @@ describe('dayStops・legLinks（自宅の扱い）', () => {
 describe('tripLinks（全行程・経由地の分割）', () => {
   it('自宅→訪問3件→自宅は1本（経由地3件）', () => {
     const t = tripLinks(dayStops(at(1, 1), visits(3)), 'DRIVE');
-    expect(t.length).toBe(1);
-    expect(t[0]!.label).toBe('全行程');
-    const p = q(t[0]!.href);
+    expect(t.links.length).toBe(1);
+    expect(t.links[0]!.label).toBe('全行程');
+    expect(t.links[0]!.waypoints).toBe(3);
+    const p = q(t.links[0]!.href);
     expect(p.get('origin')).toBe('1,1');
     expect(p.get('destination')).toBe('1,1');
     expect(p.get('waypoints')).toBe('38,140|38.01,140|38.02,140');
+    expect(t.skipped).toEqual([]);
+    expect(t.homeSkipped).toBe(false);
   });
-  it('経由地が9件ちょうどは1本、10件以上は分け、前の行き先が次の出発地', () => {
-    expect(tripLinks(dayStops(at(1, 1), visits(9)), 'DRIVE').length).toBe(1);
-    const t = tripLinks(dayStops(at(1, 1), visits(10)), 'WALK');
+  it('既定はスマホのブラウザに合わせて経由地3件まで。訪問6件は2本に分け、前の行き先が次の出発地', () => {
+    const t = tripLinks(dayStops(at(1, 1), visits(6)), 'WALK').links;
     expect(t.map((x) => x.label)).toEqual(['全行程 1/2', '全行程 2/2']);
-    expect(q(t[0]!.href).get('waypoints')!.split('|').length).toBe(9);
+    expect(t.map((x) => x.waypoints)).toEqual([3, 2]);
+    expect(q(t[0]!.href).get('waypoints')!.split('|').length).toBe(3);
     expect(q(t[0]!.href).get('destination')).toBe(q(t[1]!.href).get('origin'));
     expect(t[0]!.from).toBe('自宅');
+    expect(t[0]!.to).toBe('v4');
     expect(t[1]!.to).toBe('自宅');
     expect(q(t[1]!.href).get('travelmode')).toBe('walking');
+    expect(t.every((x) => x.waypoints <= 3)).toBe(true);
   });
-  it('公共交通は経由地を使わず、区間ごとに分ける', () => {
+  it('上限を引数で変えられる（9件なら訪問9件まで1本、10件で2本）', () => {
+    expect(tripLinks(dayStops(at(1, 1), visits(9)), 'DRIVE', 9).links.length).toBe(1);
+    expect(tripLinks(dayStops(at(1, 1), visits(10)), 'DRIVE', 9).links.length).toBe(2);
+    expect(tripLinks(dayStops(at(1, 1), visits(3)), 'DRIVE', 3).links.length).toBe(1);
+    expect(tripLinks(dayStops(at(1, 1), visits(4)), 'DRIVE', 3).links.length).toBe(2);
+  });
+  it('公共交通は全行程を出さない（区間ごとだけ）', () => {
     const t = tripLinks(dayStops(at(1, 1), visits(2)), 'TRANSIT');
-    expect(t.length).toBe(3);
-    expect(t.every((x) => q(x.href).get('waypoints') === null)).toBe(true);
+    expect(t.links).toEqual([]);
+    expect(legLinks(dayStops(at(1, 1), visits(2)), 'TRANSIT').every((l) => l.href !== null)).toBe(true);
   });
-  it('自宅の場所が無ければ訪問だけをつなぐ。地点が2つ未満なら []', () => {
-    const t = tripLinks(dayStops(none, visits(3)), 'DRIVE');
-    expect(t.length).toBe(1);
-    expect(t[0]!.from).toBe('v1');
-    expect(q(t[0]!.href).get('waypoints')).toBe('38.01,140');
-    expect(tripLinks(dayStops(none, visits(1)), 'DRIVE')).toEqual([]);
+  it('場所の無い訪問・自宅は飛ばし、飛ばした訪問の名前と自宅を返す。地点が2つ未満なら links は []', () => {
+    const t = tripLinks(dayStops(none, [...visits(2), { label: '泉', place: none }, ...visits(1)]), 'DRIVE');
+    expect(t.links.length).toBe(1);
+    expect(t.links[0]!.from).toBe('v1');
+    expect(q(t.links[0]!.href).get('waypoints')).toBe('38.01,140');
+    expect(t.skipped).toEqual(['泉']);
+    expect(t.homeSkipped).toBe(true);
+    expect(tripLinks(dayStops(none, visits(1)), 'DRIVE').links).toEqual([]);
   });
   it('住所の文字の経由地で長すぎる URL は、2,048字に収まるよう分ける', () => {
     const long = Array.from({ length: 9 }, (_, i) => ({
       label: `a${i}`,
       place: addr(`宮城県仙台市青葉区とても長い架空の町名${i}丁目1番1号 架空マンション101号室`),
     }));
-    const t = tripLinks(dayStops(at(1, 1), long), 'DRIVE');
+    const t = tripLinks(dayStops(at(1, 1), long), 'DRIVE', 9).links;
     expect(t.length).toBeGreaterThan(1);
     expect(t.every((x) => x.href.length <= MAPS_URL_LIMIT)).toBe(true);
   });

@@ -399,7 +399,7 @@ export default function PlanPage() {
   };
   /**
    * 訪問の詳細の経路のリンク（PRD D100。ADR-0018）：担当の今の案の順番で、前の場所（前の訪問先、1件目は担当の自宅）から・今いる場所から。
-   * 担当の決まっていない訪問は出さない
+   * 担当の決まっていない訪問は出さない。今の案が確定した割当と違う（confirmState='diff'）ときは「今の案（未確定）の順番」と添える
    */
   const routeLinksOf = (id: string, sid: string | null) => {
     const s = sid ? staffById.get(sid) : undefined;
@@ -415,6 +415,7 @@ export default function PlanPage() {
         from={i > 0 ? prevClient?.place : s.home}
         fromName={i > 0 ? (prevClient?.displayName ?? '（不明）') : HOME_LABEL}
         mode={s.travelMode}
+        note={confirmState === 'diff' ? '今の案（未確定）の順番' : undefined}
       />
     );
   };
