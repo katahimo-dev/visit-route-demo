@@ -24,6 +24,7 @@ import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
+import { ClientDots, PrepBar } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
@@ -39,6 +40,7 @@ import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { clientDot } from '../lib/glance';
 import {
   addMonths,
   applyDayRun,
@@ -1184,6 +1186,15 @@ export default function MonthPage() {
                 <dt>いつもの担当でない</dt>
                 <dd>{clientSum.substitute}回</dd>
               </dl>
+              <h3 className="month-aside-sub">日ごと</h3>
+              <ClientDots
+                weeks={weeks}
+                ym={ym}
+                dotOf={(d) => {
+                  const day = clientDays.get(d);
+                  return day ? clientDot(day) : 'none';
+                }}
+              />
               <h3 className="month-aside-sub">担当した人</h3>
               {clientSum.byStaff.length === 0 ? (
                 <p className="sub">この月の訪問はありません。</p>
@@ -1802,6 +1813,7 @@ function MonthPrep({
           )}
         </PrepStep>
       </ol>
+      <PrepBar progress={p} />
     </section>
   );
 }

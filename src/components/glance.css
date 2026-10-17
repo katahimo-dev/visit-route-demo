@@ -1,0 +1,136 @@
+/* 一目で分かる表示（PRD D78〜D81）。模様の言葉は混み具合バー（loadBar.css）にそろえる：
+   0人＝斜線、1人＝点々、2人以上＝緑（多いほど濃い）、案なし＝薄い縦線。文字（○△×・数字）を上に載せるので淡い色にする */
+.lv-none {
+  background: repeating-linear-gradient(135deg, #f0b3a9 0 3px, #fbe4e0 3px 6px);
+  color: #8a2f22;
+}
+.lv-partial {
+  background: repeating-linear-gradient(135deg, #f1cf9c 0 3px, #fdf3e3 3px 6px);
+  color: #7a4f05;
+}
+.lv-one {
+  background: radial-gradient(circle, #dc9334 1px, transparent 1.4px) 0 0 / 5px 5px, #fdeed8;
+  color: #7a4f05;
+}
+.lv-two {
+  background: #d9eee1;
+  color: #1f5a38;
+}
+.lv-three {
+  background: #b9dfc7;
+  color: #1f5a38;
+}
+.lv-many {
+  background: #93cca9;
+  color: #143f27;
+}
+.lv-unknown {
+  background: repeating-linear-gradient(90deg, #e3dad2 0 1px, #fbf8f5 1px 4px);
+  color: var(--sub);
+}
+.glance-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+.glance-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.glance-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 今月の準備の積み上げ（D80）：確定済み＝濃い緑（無地）、案あり＝淡い緑の斜線、案なし＝薄い縦線 */
+.prep-bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f1e9e2;
+  gap: 1px;
+}
+.prep-part {
+  flex-basis: 0;
+  min-width: 0;
+}
+.prep-part.is-confirmed,
+.glance-swatch.is-confirmed {
+  background: #4f9a6c;
+}
+.prep-part.is-planned,
+.glance-swatch.is-planned {
+  background: repeating-linear-gradient(135deg, #9fcfb0 0 2px, #dcefe3 2px 5px);
+}
+.prep-part.is-none,
+.glance-swatch.is-none {
+  background: repeating-linear-gradient(90deg, #cfc4bb 0 1px, #fbf8f5 1px 4px);
+}
+
+/* 〈利用者さん〉の月の日ごとの点（D81）：形でも分ける。訪問あり＝緑の丸、当日キャンセル＝橙の三角、
+   取り消し＝白抜きの丸、休み＝灰の四角に白の横線、訪問なし＝小さな点 */
+.client-dots {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  font-size: 0.66rem;
+  color: var(--sub);
+  text-align: center;
+}
+.client-dots-head {
+  font-weight: 700;
+}
+.client-dot-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+}
+.client-dot {
+  display: inline-block;
+  flex: none;
+}
+.client-dot.is-visit {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #4f9a6c;
+}
+.client-dot.is-sameDay {
+  width: 12px;
+  height: 11px;
+  background: #d9822b;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.client-dot.is-cancelled {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #9a8d82;
+  background: #fff;
+}
+.client-dot.is-leave {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, transparent 0 40%, #fff 40% 60%, transparent 60%), #a99d93;
+}
+.client-dot.is-none {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #cfc4bb;
+}
+.prep-bar-wrap {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
