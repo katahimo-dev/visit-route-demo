@@ -32,6 +32,10 @@
   font: inherit;
   cursor: grab;
 }
+/* 重なる帯の上下（PRD D83 のレビュー）：top・height はレーンから（components/clientBar） */
+.cbar-track .cbar-item {
+  bottom: auto;
+}
 .cbar-item.is-cont {
   min-width: 0;
   cursor: default;
@@ -72,6 +76,7 @@ button.cbar-item:focus-visible {
 }
 /* 段に掛からない訪問（8時より前・20時以降）：端の「◀」「▶」のボタン */
 .cbar-edge {
+  position: relative;
   display: inline-flex;
   flex: none;
   justify-content: flex-end;

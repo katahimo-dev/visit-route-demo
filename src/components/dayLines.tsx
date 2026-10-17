@@ -67,7 +67,7 @@ export function DayLines({
                   <span className="staff-dot" style={{ background: colorOf(x.staffId) }} aria-hidden="true" />
                   {nameOf(x.staffId)}
                 </span>
-                <PartsBar parts={x.parts} shift={x.shift} range={range} className="daylines-bar" />
+                <PartsBar parts={x.parts} shift={x.shift} rest={x.rest} range={range} className="daylines-bar" />
                 <span className="daylines-count">{x.shift.length === 0 && x.count === 0 ? '休' : `${x.count}件`}</span>
               </button>
             </li>
@@ -75,7 +75,10 @@ export function DayLines({
         })}
       </ul>
       <p className="daylines-legend sub">
-        <StaffLegend states={['visit', 'travel', 'free']} labels={{ free: '待ち・空き（勤務内）' }} />
+        <StaffLegend
+          states={['visit', 'travel', 'free', 'rest']}
+          labels={{ free: '待ち・空き（勤務内）', rest: '休み（欠勤）' }}
+        />
         <span>薄い灰は勤務外。押すとその{staffTerm}の列へ</span>
       </p>
     </div>

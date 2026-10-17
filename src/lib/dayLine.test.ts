@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compile } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import { dayLineRange, dayLines, dayLineText } from './dayLine';
+import { dayLineRange, dayLines, dayLineText, subtractSpans } from './dayLine';
 import { workStats } from './workload';
 
 function data(over: Parameters<typeof makeData>[0] = {}) {
@@ -39,6 +39,46 @@ describe('dayLines（担当ごとの1日。PRD D84）', () => {
     // 訪問の無い人は区間なし・勤務の全部が空き。勤務の無い人は勤務なし
     expect(b).toMatchObject({ staffId: 's2', count: 0, parts: [], free: 10 * 60 });
     expect(c).toMatchObject({ staffId: 's3', count: 0, shift: [], free: 0 });
+  });
+
+  it('欠勤の時間は rest（休みの模様）。欠勤の時間に残った訪問は区間（訪問）のまま', () => {
+    const d = data({ absences: [{ id: 'a1', staffId: 's1', date: DATE, from: '10:30', to: '12:00', note: '' }] });
+    const p = compile(d, DATE);
+    const base = () => [{ start: 8 * 60, end: 18 * 60 }];
+    const [a] = dayLines(p, { s1: ['v1', 'v2'] }, ['s1'], base);
+    expect(a!.shift).toEqual([
+      { start: 8 * 60, end: 10.5 * 60 },
+      { start: 12 * 60, end: 18 * 60 },
+    ]);
+    expect(a!.rest).toEqual([{ start: 10.5 * 60, end: 12 * 60 }]);
+    // 時間の欠勤：v2 は欠勤の後（lenient で 12:00）に出る
+    expect(a!.parts.some((x) => x.kind === 'visit' && x.start === 12 * 60)).toBe(true);
+    // baseOf が無ければ rest は空
+    expect(dayLines(p, {}, ['s1'])[0]!.rest).toEqual([]);
+    // 終日の欠勤：勤務なし・全部休み
+    const off = data({ absences: [{ id: 'a2', staffId: 's1', date: DATE, from: null, to: null, note: '' }] });
+    const [o] = dayLines(compile(off, DATE), { s1: ['v1'] }, ['s1'], base);
+    expect(o!.shift).toEqual([]);
+    expect(o!.rest).toEqual(base());
+    // 欠勤の人に残った訪問は訪問として描く（休みの模様の上）
+    expect(o!.count).toBe(1);
+    expect(o!.parts.some((x) => x.kind === 'visit' && x.start === 9 * 60)).toBe(true);
+  });
+
+  it('subtractSpans：区間の差', () => {
+    expect(
+      subtractSpans(
+        [{ start: 0, end: 100 }],
+        [
+          { start: 20, end: 30 },
+          { start: 90, end: 120 },
+        ],
+      ),
+    ).toEqual([
+      { start: 0, end: 20 },
+      { start: 30, end: 90 },
+    ]);
+    expect(subtractSpans([{ start: 0, end: 10 }], [{ start: 0, end: 10 }])).toEqual([]);
   });
 
   it('dayLineRange：8〜20時。勤務・区間がはみ出せば1時間単位で広げる', () => {

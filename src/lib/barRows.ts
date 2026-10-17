@@ -20,6 +20,27 @@ export const BAR_STEP = 30;
 /** 1日（分）。混み具合（vacancy の dayLoad）・〈スタッフ〉の状態は 0:00〜24:00 を数える（同じ値を契約から） */
 export const DAY_MINUTES = DAY_LOAD_MINUTES;
 
+/** 3段の範囲の文「8:00〜20:00」 */
+export function barRangeText(): string {
+  return `${timeText(minutesToHhmm(BAR_START))}〜${timeText(minutesToHhmm(BAR_END))}`;
+}
+
+/** 端の印の説明「（8時より前・20時以降は端に ◀・▶）」 */
+export function barEdgeNote(): string {
+  return `（${edgeLabel('early')}・${edgeLabel('late')}は端に ◀・▶）`;
+}
+
+/** 3段の中（8〜20時）のマスだけ（まとめの読み上げに渡す。外は端の文で読むので二重にしない） */
+export function inBar<T extends { start: number }>(slots: readonly T[]): T[] {
+  return slots.filter((x) => x.start >= BAR_START && x.start < BAR_END);
+}
+
+/** 読み上げのまとめに端の印の文を足す（「…。8時より前：…」） */
+export function withEdges(label: string, edges: BarEdgeTexts | undefined): string {
+  const extra = [edges?.early, edges?.late].filter((x): x is string => !!x);
+  return extra.length > 0 ? `${label}。${extra.join('。')}` : label;
+}
+
 /** 目盛りの文「上から 8〜12時・12〜16時・16〜20時」 */
 export function barRowsText(): string {
   return `上から ${BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}`;

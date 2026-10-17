@@ -46,19 +46,23 @@ export function SpanBar({ stat, range }: { stat: WorkStat; range: { start: numbe
 
 /**
  * 時間軸の上の区間の横棒（稼働の見込みの SpanBar と、日の画面の担当ごとの1日（PRD D84）で共通）。
- * parts を訪問・移動・待ちの模様で塗る。shift（勤務の時間帯）があれば、その下地を空きの緑で塗る（勤務外は棒の地の薄い灰）。
+ * parts を訪問・移動・待ちの模様で塗る。shift（勤務の時間帯）があれば、その下地を空きの緑で塗り、rest（欠勤の時間）は休みの模様
+ * （勤務外は棒の地の薄い灰）。区間は下地の上に描く（欠勤の時間に残った訪問も訪問で見える）。
  * frame があれば拘束の枠。読み上げは使う側の文で出すので、棒は隠す
  */
 export function PartsBar({
   parts,
   range,
   shift,
+  rest,
   frame,
   className = '',
 }: {
   parts: readonly RoutePart[];
   range: { start: number; end: number };
   shift?: readonly Span[];
+  /** 欠勤の時間（休みの模様。PRD D84 のレビュー） */
+  rest?: readonly Span[];
   frame?: Span;
   className?: string;
 }) {
@@ -77,6 +81,14 @@ export function PartsBar({
     >
       {shift?.map((x) => (
         <span key={`shift-${x.start}`} className="work-part is-shift" style={at(x)} />
+      ))}
+      {rest?.map((x) => (
+        <span
+          key={`rest-${x.start}`}
+          className="work-part is-st-rest"
+          style={at(x)}
+          title={`${clock(x.start)}〜${clock(x.end)} 休み（欠勤）`}
+        />
       ))}
       {parts.map((x) => (
         <span

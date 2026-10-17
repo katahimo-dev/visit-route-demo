@@ -1,6 +1,7 @@
 // 〈スタッフ〉1人の時間帯ごとの状態の3段バーと凡例（PRD D75・D76）。月の混み具合バーと同じ3段・同じ部品（SlotBar）。
 // 色だけに頼らない：訪問は斜線・移動は点々・案なしは縦の線・休みは横の線（模様）、マスごとの title と、まとめた読み上げの文（staffSlotSummary）
 import './loadBar.css';
+import { inBar } from '../lib/barRows';
 import {
   STAFF_SLOT_LABEL,
   type StaffSlot,
@@ -16,7 +17,7 @@ export function StaffBar({ slots, testId = 'staff-bar' }: { slots: readonly Staf
   return (
     <SlotBar
       slots={slots.map((x) => ({ start: x.start, level: `st-${x.state}`, title: staffSlotText(x) }))}
-      label={`時間帯：${staffSlotSummary(slots)}`}
+      label={`時間帯：${staffSlotSummary(inBar(slots))}`}
       emptyText=""
       testId={testId}
       edges={staffEdgeTexts(slots)}

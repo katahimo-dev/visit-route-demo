@@ -38,7 +38,16 @@ import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
-import { BAR_ROWS, barRowsText } from '../lib/barRows';
+import {
+  BAR_ROWS,
+  barEdgeNote,
+  barRangeText,
+  barRowsText,
+  edgeLabel,
+  inBar,
+  loadEdgeTexts,
+  withEdges,
+} from '../lib/barRows';
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { clientDot } from '../lib/glance';
@@ -85,7 +94,7 @@ import {
 } from '../lib/requestedOff';
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
-import { staffSlotSummary } from '../lib/staffBar';
+import { staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { workStats } from '../lib/workload';
 import { type CompileInput, compile } from '../matching';
@@ -906,10 +915,11 @@ export default function MonthPage() {
           <Hint>
             日のマスを押すと、その日の予定の画面を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要確認」）は、訪問があるのに案が無い・入らない訪問がある・必須の違反がある日です（必須の違反は点数の基準のプリセット「
             {scoreRulerName}」の条件で見ます）。「条件が変わった」は、案を作ったあとに訪問・{terms.staff}
-            ・稼働時間・条件が変わった日です。混み具合のバーは 8:00〜20:00 を3段（
+            ・稼働時間・条件が変わった日です。混み具合のバーは {barRangeText()} を3段（
             {BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}）・30分ずつに分け、その30分に空いている
             {terms.staff}
-            の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。8時より前・20時以降に働く人がいる日は、段の端に「◀」「▶」の印を出します（マウスを乗せると時刻）。
+            の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。{edgeLabel('early')}・{edgeLabel('late')}
+            に働く人がいる日は、段の端に「◀」「▶」の印を出します（マウスを乗せると時刻）。
           </Hint>
           {noVisitsWhy && <span className="sub">{noVisitsWhy}</span>}
         </div>
@@ -1318,7 +1328,10 @@ function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
           <span className="month-legend-load">
             <span className="sub">{bar === 'load' ? '混み具合' : '時間帯'}</span>
             <LoadRowsSample />
-            <span className="sub">{barRowsText()}（8時より前・20時以降は端に ◀・▶）</span>
+            <span className="sub">
+              {barRowsText()}
+              {barEdgeNote()}
+            </span>
           </span>
           {bar === 'load' ? <LoadLegend /> : <StaffLegend />}
           {bar === 'staff' && (
@@ -1491,7 +1504,8 @@ const DayCell = memo(function DayCell(props: CellProps) {
     if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
     if (mk.leaves.length > 0) parts.push(`${clientTerm}の休み ${mk.leaves.join('・')}`);
     if (mk.lastDays.length > 0) parts.push(`最終勤務日 ${mk.lastDays.join('・')}`);
-    if (load) parts.push(loadSummary(load));
+    // 読み上げ：8〜20時のまとめ＋8時より前・20時以降の端の文（PRD D82。二重に読まない）
+    if (load) parts.push(withEdges(loadSummary(inBar(load)), loadEdgeTexts(load)));
     else if (load === null) parts.push('混み具合は案が無いので数えていません');
     body.push(
       <TypeStack key="types" types={mk.types} typeById={typeById} />,
@@ -1578,7 +1592,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
       if (x.target !== null) parts.push(`目安 ${Math.round(x.target * 10) / 10}件`);
     }
     if (x.travel > 0) parts.push(`移動 ${x.travel}分`);
-    parts.push(`時間帯：${staffSlotSummary(x.bar)}`);
+    parts.push(withEdges(`時間帯：${staffSlotSummary(inBar(x.bar))}`, staffEdgeTexts(x.bar)));
     body.push(
       shiftShort !== null ? (
         <span

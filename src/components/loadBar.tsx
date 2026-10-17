@@ -5,7 +5,16 @@ import type { VisitType } from '../contracts/documents';
 import type { DayLoadSlot } from '../contracts/vacancy';
 import { timeText } from '../domain/availability';
 import { minutesToHhmm } from '../domain/time';
-import { BAR_ROWS, BAR_STEP, type BarEdgeTexts, type BarSide, barRowsOf, loadEdgeTexts } from '../lib/barRows';
+import {
+  BAR_ROWS,
+  BAR_STEP,
+  type BarEdgeTexts,
+  type BarSide,
+  barRowsOf,
+  inBar,
+  loadEdgeTexts,
+  withEdges,
+} from '../lib/barRows';
 import { colorOf } from '../lib/colors';
 
 /** 30分の色の段階：働く人がいない／空き 0人／1人／2人以上 */
@@ -83,12 +92,6 @@ function Edge({ hour, side, title }: { hour: number; side: BarSide; title: strin
   return title ? <EdgeMark side={side} title={title} /> : <RowEdge hour={hour} />;
 }
 
-/** 読み上げのまとめに端の印の文を足す */
-export function withEdges(label: string, edges: BarEdgeTexts | undefined): string {
-  const extra = [edges?.early, edges?.late].filter((x): x is string => !!x);
-  return extra.length > 0 ? `${label}。${extra.join('。')}` : label;
-}
-
 /** 3段バーの30分のマス1つ（level は CSS の is-〈level〉。title はマウスを乗せたときの文） */
 export type BarSlot = { start: number; level: string; title: string };
 
@@ -150,7 +153,7 @@ export function LoadBar({ load }: { load: readonly DayLoadSlot[] | null }) {
   return (
     <SlotBar
       slots={load ? load.map((x) => ({ start: x.start, level: loadLevel(x), title: loadSlotText(x) })) : null}
-      label={load ? loadSummary(load) : ''}
+      label={load ? loadSummary(inBar(load)) : ''}
       emptyText={load ? '' : '案が無いので混み具合を数えていません'}
       testId="load-bar"
       edges={load ? loadEdgeTexts(load) : undefined}

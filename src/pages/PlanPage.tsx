@@ -1847,8 +1847,11 @@ export default function PlanPage() {
   );
   /** 担当ごとの1日（PRD D84）：今の案の列から。列と同じ人・同じ順 */
   const staffLines = useMemo(
-    () => (problem && aiPlan ? dayLines(problem, aiPlan.routes, columns) : []),
-    [problem, aiPlan, columns],
+    () =>
+      problem && aiPlan
+        ? dayLines(problem, aiPlan.routes, columns, (sid) => spansOf(slotsOf.get(sid)?.baseSlots ?? []))
+        : [],
+    [problem, aiPlan, columns, slotsOf],
   );
   const lineRange = useMemo(() => dayLineRange(staffLines), [staffLines]);
   /** その人の列へ移って列の見出しにフォーカス（一覧のときは担当ごとの表示に切り替えてから。PRD D84） */

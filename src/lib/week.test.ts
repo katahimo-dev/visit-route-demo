@@ -9,6 +9,7 @@ import {
   canMoveVisit,
   changedDates,
   clientItemMark,
+  clientLanes,
   clientWeekTable,
   fitCountAt,
   INSERT_RUN_LABEL,
@@ -644,6 +645,33 @@ describe('clientWeekTable（利用者さん×曜日）', () => {
     expect(byId.get('l')!.leave).toBe(true);
     // 休み・取り消しだけのマスは案なしにしない
     expect(rows[1]!.cells[0]!.noPlan).toBe(false);
+  });
+
+  it('clientLanes：重なる帯は上下に分け、取り消し・休みは下のレーン。重ならなければ1レーン', () => {
+    const it = (visitId: string, start: number, end: number, x: { cancelled?: boolean; leave?: boolean } = {}) => ({
+      visitId,
+      start,
+      end,
+      ...x,
+    });
+    const lanes = clientLanes([
+      it('x', 540, 600, { cancelled: true }),
+      it('a', 540, 600),
+      it('b', 570, 630),
+      it('l', 560, 580, { leave: true }),
+      it('z', 900, 960),
+    ]);
+    // ふつうの訪問 a・b が上の2レーン、取り消し x・休み l はその下
+    expect(lanes.get('a')).toEqual({ lane: 0, lanes: 4 });
+    expect(lanes.get('b')).toEqual({ lane: 1, lanes: 4 });
+    expect(lanes.get('x')!.lane).toBeGreaterThanOrEqual(2);
+    expect(lanes.get('l')!.lane).toBeGreaterThanOrEqual(2);
+    expect(lanes.get('x')!.lane).not.toBe(lanes.get('l')!.lane);
+    expect(lanes.get('z')).toEqual({ lane: 0, lanes: 1 });
+    // 取り消しと同じ時刻の訪問が1件ずつなら 上＝訪問・下＝取り消し
+    const two = clientLanes([it('c', 540, 600, { cancelled: true }), it('v', 540, 600)]);
+    expect(two.get('v')).toEqual({ lane: 0, lanes: 2 });
+    expect(two.get('c')).toEqual({ lane: 1, lanes: 2 });
   });
 
   it('clientItemMark：形と短い文字（色だけにしない）', () => {

@@ -16,6 +16,8 @@ export type DayLine = {
   count: number;
   /** 勤務の時間帯（欠勤を差し引いた稼働時間帯。0時からの分） */
   shift: Span[];
+  /** 欠勤の時間（欠勤を差し引く前の稼働時間帯のうち、勤務の時間帯に無い分。休みの模様で塗る） */
+  rest: Span[];
   /** 時間軸の上の区間（自宅からの移動・訪問・移動・待ち。時刻の順） */
   parts: RoutePart[];
   /** 分：訪問・移動（自宅からを含む）・待ち */
@@ -27,6 +29,21 @@ export type DayLine = {
 };
 
 const sum = (xs: readonly Span[]) => xs.reduce((m, x) => m + Math.max(0, x.end - x.start), 0);
+
+/** base から cut を差し引いた区間（時刻の順） */
+export function subtractSpans(base: readonly Span[], cut: readonly Span[]): Span[] {
+  let out: Span[] = base.map((x) => ({ start: x.start, end: x.end }));
+  for (const c of cut) {
+    out = out.flatMap((x) => {
+      if (c.end <= x.start || c.start >= x.end) return [x];
+      return [
+        ...(c.start > x.start ? [{ start: x.start, end: c.start }] : []),
+        ...(c.end < x.end ? [{ start: c.end, end: x.end }] : []),
+      ];
+    });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
 
 /** 勤務の時間帯から区間を差し引いた残り（空き）の長さ（分） */
 function freeMinutes(shift: readonly Span[], parts: readonly Span[]): number {
@@ -53,12 +70,14 @@ function freeMinutes(shift: readonly Span[], parts: readonly Span[]): number {
 
 /**
  * 担当ごとの1日（staffIds の順。問題にいない人は勤務なし・件数0）。routes は今の案の列（担当 → 訪問ID）。
+ * baseOf はその人の欠勤を差し引く前の稼働時間帯（分。無ければ欠勤の時間を出さない）。欠勤の時間に残った訪問は訪問で出す。
  * 時刻は lenient の scheduleRoute（日の画面の時間軸と同じ）
  */
 export function dayLines(
   problem: Problem,
   routes: Readonly<Record<string, readonly string[]>>,
   staffIds: readonly string[],
+  baseOf?: (staffId: string) => readonly Span[],
 ): DayLine[] {
   const vIndex = new Map(problem.visits.map((v, i) => [v.id, i]));
   return staffIds.map((sid) => {
@@ -80,6 +99,7 @@ export function dayLines(
       staffId: sid,
       count: stops.length,
       shift,
+      rest: baseOf ? subtractSpans(baseOf(sid), shift) : [],
       parts,
       visit: of('visit'),
       travel: of('travel'),
@@ -94,7 +114,7 @@ export function dayLineRange(lines: readonly DayLine[]): { start: number; end: n
   let start = BAR_START;
   let end = BAR_END;
   for (const x of lines) {
-    for (const s of [...x.shift, ...x.parts]) {
+    for (const s of [...x.shift, ...x.rest, ...x.parts]) {
       start = Math.min(start, Math.floor(s.start / 60) * 60);
       end = Math.max(end, Math.ceil(s.end / 60) * 60);
     }

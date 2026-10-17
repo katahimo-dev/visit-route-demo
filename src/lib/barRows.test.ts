@@ -6,13 +6,17 @@ import {
   BAR_ROWS,
   BAR_START,
   BAR_STEP,
+  barEdgeNote,
   barEdges,
+  barRangeText,
   barRowsOf,
   barRowsText,
   DAY_MINUTES,
   edgeLabel,
+  inBar,
   loadEdgeTexts,
   placeOnRows,
+  withEdges,
 } from './barRows';
 
 const m = hhmmToMinutes;
@@ -30,6 +34,19 @@ describe('3段の区切り（PRD D82）', () => {
     expect(barRowsText()).toBe('上から 8〜12時・12〜16時・16〜20時');
     expect(edgeLabel('early')).toBe('8時より前');
     expect(edgeLabel('late')).toBe('20時以降');
+    expect(barRangeText()).toBe('8:00〜20:00');
+    expect(barEdgeNote()).toBe('（8時より前・20時以降は端に ◀・▶）');
+  });
+
+  it('inBar・withEdges：まとめは 8〜20時のマスだけ、端の文は後ろに足す（二重に読まない）', () => {
+    expect(inBar([m('07:30'), m('08:00'), m('19:30'), m('20:00')].map((start) => ({ start })))).toEqual([
+      { start: m('08:00') },
+      { start: m('19:30') },
+    ]);
+    expect(withEdges('時間帯：訪問 9:00〜10:00', { early: '8時より前：訪問 7:00〜7:30', late: null })).toBe(
+      '時間帯：訪問 9:00〜10:00。8時より前：訪問 7:00〜7:30',
+    );
+    expect(withEdges('混み具合：…', undefined)).toBe('混み具合：…');
   });
 
   it('barRowsOf：0〜24時の30分のマスを段に分け、段の外は捨てる', () => {

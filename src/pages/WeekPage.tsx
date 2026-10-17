@@ -14,7 +14,7 @@ import { TypeDot } from '../components/visitType';
 import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
-import { barRowsText, edgeLabel } from '../lib/barRows';
+import { barEdgeNote, barRowsText, edgeLabel } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { deferredDragStart } from '../lib/dragStart';
@@ -720,7 +720,10 @@ export default function WeekPage() {
             <div className="week-table-legend" data-testid="week-legend">
               <span className="row week-table-legend-rows">
                 <LoadRowsSample />
-                <span className="sub">{barRowsText()}（8時より前・20時以降は端に ◀・▶）</span>
+                <span className="sub">
+                  {barRowsText()}
+                  {barEdgeNote()}
+                </span>
               </span>
               <StaffLegend />
             </div>
@@ -835,7 +838,10 @@ export default function WeekPage() {
             <div className="week-table-legend" data-testid="week-client-legend">
               <span className="row week-table-legend-rows">
                 <LoadRowsSample />
-                <span className="sub">{barRowsText()}（8時より前・20時以降は端に ◀・▶）</span>
+                <span className="sub">
+                  {barRowsText()}
+                  {barEdgeNote()}
+                </span>
               </span>
               <ClientBarLegend clientTerm={terms.client} />
             </div>
@@ -915,7 +921,8 @@ export default function WeekPage() {
                                       className={`${place.className}${marks.length > 0 ? ' is-unfit' : ''}`}
                                       style={place.style}
                                       onClick={() => openDay(it.date, it.visitId)}
-                                      onKeyDown={(e) => (movable ? onItemKey(e, it) : undefined)}
+                                      // 今日より前の訪問は onItemKey が「動かせません」を出す（時間軸の帯とそろえる）。休み・取り消しは何もしない
+                                      onKeyDown={(e) => (it.leave || it.cancelled ? undefined : onItemKey(e, it))}
                                       onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
                                       onDragEnd={onDragEnd}
                                       aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}

@@ -7,7 +7,7 @@ import './loadBar.css';
 import './clientBar.css';
 import { type CSSProperties, Fragment, type ReactNode } from 'react';
 import { BAR_ROWS, type BarSide, edgeLabel, placeOnRows } from '../lib/barRows';
-import type { ClientItemKind, ClientWeekItem } from '../lib/week';
+import { type ClientItemKind, type ClientWeekItem, clientLanes } from '../lib/week';
 import { EdgeMark, RowEdge } from './loadBar';
 
 /** 訪問1件の見た目（kind の模様と、帯の色＝種類の色） */
@@ -31,6 +31,10 @@ export function ClientDayBar({
   renderItem: (it: ClientWeekItem, place: ClientBarPlace) => ReactNode;
 }) {
   const { pieces, early, late, outside } = placeOnRows(items);
+  // 時刻が重なる帯は段の中で上下に分ける。取り消し・休みは下のレーンで、先に描く（本物の訪問を上に）
+  const lanes = clientLanes(items);
+  const passive = (it: ClientWeekItem) => !!it.cancelled || !!it.leave;
+  const ordered = [...pieces].sort((a, b) => Number(passive(b.item)) - Number(passive(a.item)));
   const marks = new Map(items.map((it) => [it.visitId, markOf(it)]));
   const classOf = (it: ClientWeekItem) => `cbar-item is-${marks.get(it.visitId)!.kind}`;
   const colorVar = (it: ClientWeekItem) => ({ '--tc': marks.get(it.visitId)!.color }) as CSSProperties;
@@ -39,17 +43,21 @@ export function ClientDayBar({
   /** 段の端：段に掛からない訪問はボタン、はみ出すだけなら印、無ければ時刻 */
   const edge = (side: BarSide, hour: number) => {
     const out = outside.filter((it) => (side === 'early' ? early : late).includes(it));
-    if (out.length > 0)
+    const xs = side === 'early' ? early : late;
+    if (out.length > 0) {
+      // 段にはみ出すだけの訪問（ボタンは段の中）も、端の title と読み上げに時刻を出す
+      const partial = xs.filter((it) => !out.includes(it));
       return (
-        <span className={`cbar-edge is-${side}`}>
+        <span className={`cbar-edge is-${side}`} title={edgeTitle(side, xs)}>
           {out.map((it) => (
             <Fragment key={it.visitId}>
               {renderItem(it, { style: colorVar(it), className: `${classOf(it)} is-edge`, edge: side })}
             </Fragment>
           ))}
+          {partial.length > 0 && <span className="sr-only">{edgeTitle(side, partial)}</span>}
         </span>
       );
-    const xs = side === 'early' ? early : late;
+    }
     if (xs.length > 0) return <EdgeMark side={side} title={edgeTitle(side, xs)} />;
     return <RowEdge hour={hour} />;
   };
@@ -66,13 +74,17 @@ export function ClientDayBar({
           <span key={a} className="load-row">
             {row === 0 ? edge('early', a) : <RowEdge hour={a} />}
             <span className="cbar-track">
-              {pieces
+              {ordered
                 .filter((p) => p.row === row)
                 .map((p) => {
+                  const lane = lanes.get(p.item.visitId) ?? { lane: 0, lanes: 1 };
                   const style: CSSProperties = {
                     ...colorVar(p.item),
                     left: `${p.left * 100}%`,
                     width: `${p.width * 100}%`,
+                    top: `${(lane.lane / lane.lanes) * 100}%`,
+                    height: `${100 / lane.lanes}%`,
+                    zIndex: passive(p.item) ? 0 : 1,
                   };
                   return p.first ? (
                     <Fragment key={p.item.visitId}>
