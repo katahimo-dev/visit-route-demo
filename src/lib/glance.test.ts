@@ -19,46 +19,69 @@ describe('vacancyLevel（空き状況のマスの段階。D78）', () => {
 describe('inquiryRows（問い合わせの試算の週ごとのマス。D79）', () => {
   // 2026-10-19（月）・26（月）・20（火）・27（火）
   const dates = ['2026-10-19', '2026-10-20', '2026-10-26', '2026-10-27'];
-  const c = (wd: number, start: number, byDate: Record<string, number>): VacancyCell => ({
-    weekday: wd,
-    start,
-    byDate: Object.entries(byDate).map(([date, n]) => ({
+  /** vacancyOf と同じ数え方のマス（数えた日＝byDate） */
+  const c = (wd: number, start: number, byDate: Record<string, number>): VacancyCell => {
+    const xs = Object.entries(byDate).map(([date, n]) => ({
       date,
       staffIds: Array.from({ length: n }, (_, i) => `s${i}`),
-    })),
-    min: 0,
-    weeksOk: 0,
-    weeksTotal: 0,
-  });
-  const result = {
-    dates,
-    noPlanDates: ['2026-10-27'],
-    cells: [
-      c(1, 540, { '2026-10-19': 1, '2026-10-26': 0 }),
-      c(1, 600, { '2026-10-19': 3, '2026-10-26': 0 }),
-      // 希望の時間帯の外（17:30）は見ない
-      c(1, 1050, { '2026-10-26': 5 }),
-      c(2, 540, { '2026-10-20': 0 }),
-    ],
+    }));
+    return {
+      weekday: wd,
+      start,
+      byDate: xs,
+      min: xs.length > 0 ? Math.min(...xs.map((x) => x.staffIds.length)) : 0,
+      weeksOk: xs.filter((x) => x.staffIds.length > 0).length,
+      weeksTotal: xs.length,
+    };
   };
 
-  it('希望の時間帯の中で一番多い人数。案の無い日は？。曜日の判定は ○ の日の数で', () => {
+  it('行は希望の時間帯の中で一番良い開始時刻（要約と同じ verdictOf）で決め、マスはその時刻の人数', () => {
+    const result = {
+      dates,
+      noPlanDates: ['2026-10-27'],
+      cells: [
+        c(1, 540, { '2026-10-19': 1, '2026-10-26': 0 }),
+        c(1, 600, { '2026-10-19': 3, '2026-10-26': 2 }),
+        // 希望の時間帯の外（17:30）は見ない
+        c(1, 1050, { '2026-10-19': 5, '2026-10-26': 5 }),
+        c(2, 540, { '2026-10-20': 0 }),
+      ],
+    };
     const rows = inquiryRows(result, { weekdays: [2, 1], from: '09:00', to: '17:00' });
     expect(rows.map((r) => r.weekday)).toEqual([1, 2]); // 月〜日の順
     const [mon, tue] = rows;
+    expect(mon!.start).toBe(600);
+    expect(mon!.verdict).toBe('ok');
     expect(mon!.days).toEqual([
       { date: '2026-10-19', mark: 'ok', best: 3 },
-      { date: '2026-10-26', mark: 'ng', best: 0 },
+      { date: '2026-10-26', mark: 'ok', best: 2 },
     ]);
-    expect(mon!.verdict).toBe('partial');
+    // 案の無い日（10/27）は？。数えた日がどれも0人なら ng
     expect(tue!.days.map((x) => x.mark)).toEqual(['ng', 'unknown']);
     expect(tue!.verdict).toBe('ng');
   });
 
-  it('希望の曜日が空なら全曜日。数えた週が無い曜日は unknown', () => {
-    const rows = inquiryRows({ ...result, noPlanDates: dates }, { weekdays: [], from: '09:00', to: '17:00' });
+  it('別々の時刻にしか空きが無い週は ○ にしない（10:00 は 10/19 だけ、14:00 は 10/26 だけ → 要約と同じく △）', () => {
+    const result = {
+      dates,
+      noPlanDates: [],
+      cells: [c(1, 600, { '2026-10-19': 1, '2026-10-26': 0 }), c(1, 840, { '2026-10-19': 0, '2026-10-26': 1 })],
+    };
+    const [mon] = inquiryRows(result, { weekdays: [1], from: '09:00', to: '17:00' });
+    expect(mon!.verdict).toBe('partial');
+    // 同じ判定なら早い時刻。マスはその時刻（10:00）の日ごと
+    expect(mon!.start).toBe(600);
+    expect(mon!.days.map((x) => x.mark)).toEqual(['ok', 'ng']);
+  });
+
+  it('希望の曜日が空なら全曜日。時間帯の中に開始時刻が無い・数えた週が無い曜日は unknown', () => {
+    const rows = inquiryRows(
+      { dates, noPlanDates: dates, cells: [c(1, 600, {})] },
+      { weekdays: [], from: '09:00', to: '17:00' },
+    );
     expect(rows).toHaveLength(7);
     expect(rows[0]!.verdict).toBe('unknown');
+    expect(rows[1]!.start).toBeNull();
     expect(rows[6]!.days).toEqual([]);
   });
 

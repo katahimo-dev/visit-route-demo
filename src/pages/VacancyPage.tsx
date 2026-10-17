@@ -105,10 +105,11 @@ function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {
               <tr key={r.weekday}>
                 <th scope="row">
                   {WEEKDAY_LABELS[r.weekday]} {MARK[r.verdict]}
+                  {r.start !== null && <small> {hm(r.start)}〜</small>}
                   <span className="sr-only">（{VERDICT_TEXT[r.verdict]}）</span>
                 </th>
                 {r.days.map((x) => {
-                  const label = `${dateText(x.date)}：${DAY_MARK[x.mark]} ${DAY_TEXT[x.mark]}${
+                  const label = `${dateText(x.date)}${r.start !== null ? ` ${hm(r.start)}から` : ''}：${DAY_MARK[x.mark]} ${DAY_TEXT[x.mark]}${
                     x.mark === 'ok' ? `（${exact ? '' : '約'}${x.best}人）` : ''
                   }`;
                   return (
@@ -121,7 +122,13 @@ function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {
                       >
                         <span className="inquiry-day-mark" aria-hidden="true">
                           {DAY_MARK[x.mark]}
-                          {x.mark === 'ok' ? <small> {x.best}</small> : null}
+                          {x.mark === 'ok' ? (
+                            <small>
+                              {' '}
+                              {exact ? '' : '約'}
+                              {x.best}
+                            </small>
+                          ) : null}
                         </span>
                         <span className="inquiry-day-date" aria-hidden="true">
                           {mdText(x.date)}
@@ -137,8 +144,9 @@ function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {
         </table>
       </div>
       <span className="sub">
-        マスは希望の時間帯のうち一番多く受けられる人数（○
-        のあとの数字）。×＝その日は受けられない、？＝案が無く数えていない。
+        行の頭は、希望の時間帯の中でその曜日に一番良い開始時刻（上の要約と同じ決め方：同じ開始時刻がどの週も受けられれば
+        ○）。 マスはその開始時刻にその日受けられる人数（○ のあとの数字{exact ? '' : '。目安なので「約」'}
+        ）。×＝その日は受けられない、？＝案が無く数えていない。
       </span>
     </div>
   );

@@ -32,7 +32,12 @@ export function PrepBar({ progress }: { progress: Pick<MonthProgress, 'days' | '
   const text = parts.map((x) => `${PREP_LABEL[x.kind]} ${x.days}日`).join('・');
   return (
     <div className="prep-bar-wrap" data-testid="prep-bar">
-      <span className="prep-bar" role="img" aria-label={`訪問のある日 ${progress.days}日：${text}`} title={text}>
+      <span
+        className="prep-bar"
+        role="img"
+        aria-label={`今日以降の訪問のある日 ${progress.days}日：${text}（案あり（未確定）には未確定の変更ありの日も含む）`}
+        title={text}
+      >
         {parts
           .filter((x) => x.days > 0)
           .map((x) => (
@@ -46,6 +51,7 @@ export function PrepBar({ progress }: { progress: Pick<MonthProgress, 'days' | '
             {PREP_LABEL[x.kind]} {x.days}日
           </span>
         ))}
+        <span>（今日以降の訪問のある日。案あり（未確定）には未確定の変更ありの日も含む）</span>
       </span>
     </div>
   );

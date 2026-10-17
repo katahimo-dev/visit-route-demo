@@ -481,7 +481,8 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     const mine = si >= 0 ? slotMinutes(p.staff[si]!.slots) : 0;
     if (mine > 0 && total > 0) target = ((p.visits.length - p.infeasible.length) * mine) / total;
   }
-  const hasVisits = (p?.visits.length ?? 0) > 0;
+  // 問題が作れなかった日（p＝null）は、取り消し・休みでない訪問の件数で見る（週の noPlanOf と同じ）
+  const hasVisits = p ? p.visits.length > 0 : activeVisitsOn(data, date).length > 0;
   const noPlan = hasVisits && day.source === null;
   return {
     date,

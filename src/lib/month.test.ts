@@ -375,6 +375,10 @@ describe('選んだスタッフ（staffDay・staffMonth）', () => {
     // 案の無い日は勤務内を「案なし」にし、空きにしない（PRD D75）。終日の欠勤は休み（残っている訪問は訪問・移動で出す）
     const np = staffDay(none, dayPlanOf(none, DATE), 's1');
     expect(np.noPlan).toBe(true);
+    // 問題が作れなかった日（problem＝null）も、訪問があれば案なし（週の表と同じ）
+    const broken = staffDay(none, { date: DATE, problem: null, source: null, routes: {} }, 's1');
+    expect(broken.noPlan).toBe(true);
+    expect(broken.bar.some((x) => x.state === 'free')).toBe(false);
     expect(np.bar.some((x) => x.state === 'noplan')).toBe(true);
     expect(np.bar.some((x) => x.state === 'free')).toBe(false);
     expect(s1.noPlan).toBe(false);

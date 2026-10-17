@@ -9,7 +9,8 @@
   color: #7a4f05;
 }
 .lv-one {
-  background: radial-gradient(circle, #dc9334 1px, transparent 1.4px) 0 0 / 5px 5px, #fdeed8;
+  /* 点は淡く・間隔を広く（上の ○ と人数の文字を読みやすく） */
+  background: radial-gradient(circle, rgba(220, 147, 52, 0.5) 1px, transparent 1.3px) 0 0 / 8px 8px, #fdeed8;
   color: #7a4f05;
 }
 .lv-two {
