@@ -31,6 +31,7 @@ import {
 import { slotsError } from '../domain/availability';
 import { STAGE_LABELS } from '../lib/clientStage';
 import { MAX_OPTIONS, nameKey, newId, optionNameError } from '../lib/common';
+import { normalizePostalCode } from '../lib/postalCode';
 import { isImportError, migrate } from '../store';
 import {
   absenceCols,
@@ -38,6 +39,7 @@ import {
   CLIENT_ALLOWED_COL,
   CLIENT_COLS,
   CLIENT_KANA_COL,
+  CLIENT_POSTAL_COL,
   CLIENT_RULE_COLS,
   CLIENT_STAGE_COLS,
   CLIENT_TENTATIVE_COL,
@@ -752,6 +754,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       ...Object.values(CLIENT_COLS),
       CLIENT_TENTATIVE_COL,
       CLIENT_KANA_COL,
+      CLIENT_POSTAL_COL,
       CLIENT_ALLOWED_COL,
       ...Object.values(CLIENT_RULE_COLS),
       ...Object.values(CLIENT_STAGE_COLS),
@@ -772,6 +775,16 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const active = r.yes(C.active);
       // 仮押さえ（ADR-0012 追記）：列が無い古いブックは false
       const tentative = r.yes(CLIENT_TENTATIVE_COL);
+      // 郵便番号（ADR-0016）：列が無い古いブック・空は ''。ハイフン・全角は7桁に直し、直せなければ止める
+      // 数値のセル（文字列の書式でない列に 0380000 と書くと 38000 になる）は、0〜9999999 の整数なら先頭を0で埋めて7桁にする
+      const postalRaw = r.raw(CLIENT_POSTAL_COL);
+      const postalCode = normalizePostalCode(
+        typeof postalRaw === 'number' && Number.isInteger(postalRaw) && postalRaw >= 0 && postalRaw <= 9_999_999
+          ? String(postalRaw).padStart(7, '0')
+          : r.text(CLIENT_POSTAL_COL),
+      );
+      if (postalCode === null)
+        r.err(CLIENT_POSTAL_COL, '7桁の数字で書いてください（ハイフンは有っても無くても構いません）');
       const address = r.optional(C.address, 200);
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });
@@ -805,6 +818,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const p = readPerson(r, cols);
       if (
         stage !== null &&
+        postalCode !== null &&
         displayName !== null &&
         typeof color === 'number' &&
         lat !== undefined &&
@@ -816,7 +830,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           id,
           displayName,
           kana,
-          place: { address, lat, lng },
+          place: { address, lat, lng, postalCode },
           note,
           color: color - 1,
           active,

@@ -19,7 +19,8 @@ import { useMemo, useState } from 'react';
 import { ClientPicker } from '../components/ClientPicker';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { PickChips } from '../components/PickChips';
-import { Check, PlaceEditor, TentativeMark } from '../components/parts';
+import { Check, TentativeMark } from '../components/parts';
+import { ClientPlaceEditor } from '../components/placeLookup';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { VISIT_RULE_FIELDS } from '../components/VisitRules';
@@ -29,11 +30,14 @@ import { jstDate } from '../domain/time';
 import { isBeforeActive, STAGE_LABELS, stageCounts, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
+import { keepStorePlace } from '../lib/placeAll';
+import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { matchClient, staffClientMap } from '../lib/search';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useDemoData } from '../store';
 import { ClientLeavesSection } from './ClientLeavesSection';
 import { PatternsSection } from './PatternsSection';
+import { PlaceAllPanel } from './PlaceAllPanel';
 import './settings.css';
 
 /** 訪問先の一覧と編集（PoC本体 ClientsPage.tsx を写し、性別希望・NG を特性・条件・相性に置き換えた） */
@@ -42,7 +46,7 @@ const blank = (nextColor: number): Client => ({
   id: newId('c'),
   displayName: '',
   kana: '',
-  place: { address: '', lat: null, lng: null },
+  place: { address: '', lat: null, lng: null, postalCode: '' },
   note: '',
   color: nextColor % CLIENT_COLORS.length,
   active: true,
@@ -65,6 +69,8 @@ export default function ClientsPage() {
   const terms = data.org.terms;
   const toast = useToast();
   const [form, setForm] = useState<Client | null>(null);
+  /** 欄を開いたときの場所（保存のとき、まとめて置いた位置を欄の古い値で消さないため。ADR-0016） */
+  const [openedPlace, setOpenedPlace] = useState<Client['place'] | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** 担当できる人を限る（PRD D68。入れたら1人以上選ぶ） */
@@ -95,6 +101,7 @@ export default function ClientsPage() {
     setIsNew(fresh);
     setLimit(c.allowedStaffIds.some((id) => staff.some((s) => s.id === id && s.active)));
     setForm(c);
+    setOpenedPlace(c.place);
   };
 
   const save = () => {
@@ -106,6 +113,12 @@ export default function ClientsPage() {
       setError(`担当できる${terms.staff}を1人以上選ぶか、「担当できる人を限る」を外してください`);
       return;
     }
+    // 郵便番号はハイフン・全角を受けて7桁に直す（ADR-0016）。直せなければ保存しない
+    const postalCode = normalizePostalCode(form.place.postalCode);
+    if (postalCode === null) {
+      setError('郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません。空でも構いません）');
+      return;
+    }
     // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
     if (nameTaken(data.clients, (x) => x.displayName, form.displayName, form.id)) {
       setError(`「${form.displayName.trim()}」と同じ名前の${terms.client}がいます。名前を変えてください`);
@@ -113,7 +126,25 @@ export default function ClientsPage() {
     }
     try {
       // 段階に合わせて予定の対象（active）・仮押さえを決める（ADR-0015）
-      const c = clientSchema.parse(withStage({ ...form, allowedStaffIds: allowed }, form.stage, form.tentative));
+      const c = clientSchema.parse(
+        withStage(
+          {
+            ...form,
+            allowedStaffIds: allowed,
+            // 欄を開いた後に「まとめて地図に置く」が書いた位置・住所は、欄で触っていなければ残す（ADR-0016）
+            place: {
+              ...keepStorePlace(
+                form.place,
+                openedPlace ?? form.place,
+                data.clients.find((x) => x.id === form.id)?.place,
+              ),
+              postalCode,
+            },
+          },
+          form.stage,
+          form.tentative,
+        ),
+      );
       update((d) => ({
         ...d,
         clients: d.clients.some((x) => x.id === c.id)
@@ -222,6 +253,8 @@ export default function ClientsPage() {
         </span>
       </div>
 
+      <PlaceAllPanel onEdit={(c) => openForm(structuredClone(c), false)} />
+
       <div className="card table-scroll">
         <table className="people-table">
           <thead>
@@ -256,7 +289,12 @@ export default function ClientsPage() {
                         {c.tentative && <TentativeMark />}
                       </span>
                       {c.kana && <small className="person-sub">{c.kana}</small>}
-                      {c.place.address && <small className="person-sub">{c.place.address}</small>}
+                      {(c.place.address || c.place.postalCode) && (
+                        <small className="person-sub">
+                          {c.place.postalCode && `〒${formatPostalCode(c.place.postalCode)} `}
+                          {c.place.address}
+                        </small>
+                      )}
                       {c.referrer.name && <small className="person-sub">紹介元：{c.referrer.name}</small>}
                     </span>
                   </span>
@@ -566,7 +604,7 @@ export default function ClientsPage() {
           <Hint label="相性について">相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。</Hint>
 
           <SectionTitle icon={House}>住所</SectionTitle>
-          <PlaceEditor value={form.place} onChange={(place) => setForm({ ...form, place })} />
+          <ClientPlaceEditor value={form.place} onChange={(place) => setForm((f) => (f ? { ...f, place } : f))} />
         </SidePanel>
       )}
     </div>

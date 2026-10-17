@@ -1,0 +1,41 @@
+/* 〈利用者さん〉の郵便番号・住所の検索（PRD D86〜D90。ADR-0016） */
+.place-lookup-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.place-postal input {
+  width: 9em;
+}
+.place-notice {
+  font-size: 0.82rem;
+}
+.place-status {
+  display: block;
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.9rem;
+}
+.place-status.is-error {
+  color: var(--danger, #c0392b);
+  font-weight: 600;
+}
+.place-status.is-ok {
+  color: #2f6f4c;
+}
+.place-candidate.is-on {
+  border-color: var(--ink);
+  font-weight: 600;
+}
+.place-all-progress {
+  accent-color: var(--primary-dark);
+  width: min(320px, 100%);
+}
+.place-all-fails {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.place-all-fails li {
+  margin: 2px 0;
+}

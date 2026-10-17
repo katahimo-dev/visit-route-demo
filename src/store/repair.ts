@@ -19,7 +19,7 @@ function uniqueById<T extends { id: string }>(xs: T[]): T[] {
 }
 
 /** 位置は「緯度・経度とも範囲内の数」か「両方 null」。どちらかが欠けた・範囲外なら未登録（両方 null）にする */
-function repairPlace(p: Place): Place {
+function repairPlace<T extends Place>(p: T): T {
   if (p.lat === null && p.lng === null) return p;
   const ok =
     p.lat !== null &&

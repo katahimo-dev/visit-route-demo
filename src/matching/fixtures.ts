@@ -41,7 +41,7 @@ export function client(id: string, lat: number, lng: number, over: Partial<Clien
     id,
     displayName: id,
     kana: '',
-    place: { address: '', lat, lng },
+    place: { address: '', lat, lng, postalCode: '' },
     note: '',
     color: 0,
     active: true,

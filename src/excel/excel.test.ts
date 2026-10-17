@@ -955,6 +955,63 @@ describe('〈利用者さん〉のよみの列（PRD D61）', () => {
   });
 });
 
+describe('〈利用者さん〉の郵便番号の列（PRD D86。ADR-0016）', () => {
+  const withPostal = (d: DemoData): DemoData => ({
+    ...d,
+    clients: d.clients.map((c, i) => ({
+      ...c,
+      place: { ...c.place, postalCode: i % 2 === 0 ? `098000${i % 10}` : '' },
+    })),
+  });
+  it('郵便番号が 書き出し → 読み込み で同じに戻る（列は「住所」の前。先頭の0を保つ）', async () => {
+    const d = withPostal(base());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const ws = sheet(wb, personSheetNames(d.org.terms).client);
+    expect(col(ws, '郵便番号')).toBe(col(ws, '住所') - 1);
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.clients.map((c) => c.place.postalCode)).toEqual(d.clients.map((c) => c.place.postalCode));
+    expect(r.clients[0]!.place.postalCode).toBe('0980000');
+    expect(r).toEqual(withoutPlans(d));
+  });
+  it('「郵便番号」の列が無いブックは空。ハイフン・全角は7桁に直し、直せない値は行付きで止める', async () => {
+    const d = withPostal(base());
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.spliceColumns(col(ws, '郵便番号'), 1);
+      }),
+    );
+    expect(r.clients.every((c) => c.place.postalCode === '')).toBe(true);
+    const fixed = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.getCell(2, col(ws, '郵便番号')).value = '〒９８０－０８１１';
+      }),
+    );
+    expect(fixed.clients[0]!.place.postalCode).toBe('9800811');
+    // 数値のセル（先頭の0が落ちた 380000（＝038-0000）・38000 と、7桁の 9800811）は7桁に埋める
+    const nums = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.getCell(2, col(ws, '郵便番号')).value = 38000;
+        ws.getCell(3, col(ws, '郵便番号')).value = 9800811;
+        ws.getCell(4, col(ws, '郵便番号')).value = 380000;
+      }),
+    );
+    expect(nums.clients[0]!.place.postalCode).toBe('0038000');
+    expect(nums.clients[1]!.place.postalCode).toBe('9800811');
+    expect(nums.clients[2]!.place.postalCode).toBe('0380000');
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.getCell(3, col(ws, '郵便番号')).value = '980-081';
+      }),
+    );
+    expect(msg).toContain('3行目・『郵便番号』');
+  });
+});
+
 describe('第N曜日・曜日ごとの時刻・決まりごと・〈利用者さん〉の休み（ADR-0013）', () => {
   const rich = (): DemoData => {
     const d = base();

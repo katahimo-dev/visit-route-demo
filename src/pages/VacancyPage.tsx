@@ -344,7 +344,7 @@ export default function VacancyPage() {
       id: newId('c'),
       displayName: name,
       kana: '',
-      place: { ...place },
+      place: { ...place, postalCode: '' },
       note: '問い合わせの試算から仮押さえ',
       color: data.clients.length % CLIENT_COLORS.length,
       active: true,
