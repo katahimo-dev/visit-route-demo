@@ -61,9 +61,29 @@ export default function StaffPage() {
     }
     try {
       const s = staffSchema.parse(form);
+      // 休止にするとき、〈利用者さん〉の「担当できる人」から外す（ADR-0014。repair と同じ扱いを保存の時点で）
+      const limited = s.active ? [] : data.clients.filter((c) => c.allowedStaffIds.includes(s.id));
+      if (limited.length > 0) {
+        // ほかに利用中の人が残らない〈利用者さん〉（休止中の人は数えない）
+        const activeOther = new Set(data.staff.filter((x) => x.active && x.id !== s.id).map((x) => x.id));
+        const emptied = limited.filter((c) => !c.allowedStaffIds.some((id) => activeOther.has(id)));
+        const msg = `${s.name}さんを休止にすると、${limited.map((c) => c.displayName).join('・')}の「担当できる人」から外します。${
+          emptied.length > 0
+            ? `${emptied.map((c) => c.displayName).join('・')}は担当できる人がいなくなり、だれでも担当できるようになります（必要なら${terms.client}の画面で選び直してください）。`
+            : ''
+        }よろしいですか？`;
+        if (!confirm(msg)) return;
+      }
       update((d) => ({
         ...d,
         staff: d.staff.some((x) => x.id === s.id) ? d.staff.map((x) => (x.id === s.id ? s : x)) : [...d.staff, s],
+        clients: s.active
+          ? d.clients
+          : d.clients.map((c) =>
+              c.allowedStaffIds.includes(s.id)
+                ? { ...c, allowedStaffIds: c.allowedStaffIds.filter((id) => id !== s.id) }
+                : c,
+            ),
       }));
       setIsNew(false);
       toast('保存しました');

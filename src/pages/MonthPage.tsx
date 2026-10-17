@@ -1,5 +1,6 @@
 import {
   BedSingle,
+  CalendarOff,
   CalendarRange,
   Check,
   ChevronLeft,
@@ -9,6 +10,7 @@ import {
   ListChecks,
   Lock,
   PencilLine,
+  Printer,
   RefreshCw,
   Repeat,
   Sparkles,
@@ -34,7 +36,7 @@ import { isOnLeave } from '../domain/leaves';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
 import { colorOf } from '../lib/colors';
-import { attempt, byDisplayName, byName, own, WEEKDAY_LABELS } from '../lib/common';
+import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import {
   addMonths,
   applyDayRun,
@@ -68,6 +70,14 @@ import {
   ymOf,
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
+import {
+  absentLeftOf,
+  type OffDayState,
+  offDayState,
+  REQUESTED_OFF_NOTE,
+  requestedOffDates,
+  toggleRequestedOff,
+} from '../lib/requestedOff';
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
@@ -163,6 +173,10 @@ export default function MonthPage() {
   const [error, setError] = useState<string | null>(null);
   /** 混み具合で数える人（null＝すべての人。種類の ID） */
   const [loadType, setLoadType] = useState<string | null>(null);
+  /** 「休みを入れる」（希望休のまとめ入力。PRD D69）：〈スタッフ〉を選んでいるときだけ。日のマスを押すと希望休を付け外し */
+  const [offMode, setOffMode] = useState(false);
+  /** 最後に付け外しした結果（読み上げ） */
+  const [offNote, setOffNote] = useState<{ date: string; text: string; warn: boolean } | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
   const runRef = useRef<{ stop(): void } | null>(null);
@@ -222,6 +236,16 @@ export default function MonthPage() {
     if (focus.kind === 'client') setClientMode(true);
     else if (focus.kind === 'staff') setClientMode(false);
   }, [focus.kind]);
+  // 「休みを入れる」は〈スタッフ〉を選んでいるときだけ（選びを外したら終わる）
+  useEffect(() => {
+    if (focus.kind !== 'staff') setOffMode(false);
+  }, [focus.kind]);
+  // 選ぶ人を変えたら、前の人の操作の結果は消す
+  const focusId = focus.kind === 'all' ? '' : focus.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 選ぶ人が変わったときだけ
+  useEffect(() => {
+    setOffNote(null);
+  }, [focusId]);
   const focusValue =
     clientMode || focus.kind === 'client' ? 'client' : focus.kind === 'all' ? 'all' : `${focus.kind}:${focus.id}`;
   /** URL の一部だけ変える（ほかの値は残す） */
@@ -320,6 +344,10 @@ export default function MonthPage() {
       } else if (sp) {
         view = { visitIds: sp.visits.map((v) => v.id) };
       }
+      // 欠勤（希望休も。ADR-0014）の人に残っている訪問（数える案＝今の案、無ければ確定した割当）
+      if (sp && c.absences.some((a) => a.date === d)) {
+        view = { ...view, absentLeft: absentLeftOf(sp, dayPlanOf(data, d, sp).routes) };
+      }
       memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });
       out.set(d, { status: dayStatus(data, d, view), problem: sp });
     }
@@ -406,6 +434,44 @@ export default function MonthPage() {
     for (const d of days) out.set(d, clientDay(compileInput, dayPlans.get(d)!, focus.id));
     return out;
   }, [focus, days, compileInput, dayPlans]);
+  const staffDaysRef = useRef(staffDays);
+  staffDaysRef.current = staffDays;
+  /** 「休みを入れる」で選んでいる〈スタッフ〉（休みを入れるモードでなければ null） */
+  const offStaffId = offMode && focus.kind === 'staff' ? focus.id : null;
+  /**
+   * 希望休を付け外しする（PRD D69）。案・確定した割当は変えない（振り直しは日の画面で利用者が押す。ADR-0011）。
+   * その日のその人に訪問があれば、欄に注意を残す
+   */
+  const toggleOff = useCallback(
+    (d: string) => {
+      if (!offStaffId) return;
+      const before = dataRef.current;
+      const state = offDayState(before, offStaffId, d, today);
+      if (state !== 'open' && state !== 'requested') return;
+      const id = newId('a');
+      update((x) => toggleRequestedOff(x, offStaffId, d, today, id).data);
+      const name = staffById.get(offStaffId)?.name ?? '';
+      const n = staffDaysRef.current.get(d)?.count ?? 0;
+      if (state === 'open') {
+        setOffNote({
+          date: d,
+          warn: n > 0,
+          text:
+            n > 0
+              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。日の画面の「急な欠勤」から振り直してください（自動では振り直しません）`
+              : `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました`,
+        });
+      } else {
+        setOffNote({ date: d, warn: false, text: `${mdText(d)} の${REQUESTED_OFF_NOTE}を外しました` });
+      }
+    },
+    [offStaffId, today, update, staffById],
+  );
+  /** 選んでいる〈スタッフ〉のこの月の希望休の日 */
+  const offDates = useMemo(
+    () => (focus.kind === 'staff' ? requestedOffDates(data, focus.id, ym) : []),
+    [focus, data, ym],
+  );
   const monthPlans = useMemo(() => days.map((d) => dayPlans.get(d)!), [days, dayPlans]);
   const staffSum = useMemo(
     () => (focus.kind === 'staff' ? staffMonth(compileInput, monthPlans, focus.id) : null),
@@ -499,6 +565,8 @@ export default function MonthPage() {
     }
     if (expand) update((d) => expandMonth(d, ym, today).data);
     setPanel(false);
+    // 作っている間は希望休を入れない（Worker の計算とデータの書き込みを混ぜない）
+    setOffMode(false);
     const gen = generation.current;
     const live = () => gen === generation.current;
     stopped.current = false;
@@ -703,6 +771,19 @@ export default function MonthPage() {
           >
             今月
           </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() =>
+              navigate(`/month/print?ym=${ym}${focus.kind === 'staff' ? `&staff=${encodeURIComponent(focus.id)}` : ''}`)
+            }
+            title="紙のカレンダーの代わりに、この月の予定をA4横で印刷します"
+            data-testid="month-print"
+          >
+            <WithIcon icon={Printer} size={14}>
+              印刷
+            </WithIcon>
+          </button>
           <span className="month-summary sub" data-testid="month-summary">
             訪問 {summary.visits}件・案のある日 {summary.withPlan}/{summary.withVisits}日・入らない {summary.unassigned}
             件
@@ -733,6 +814,23 @@ export default function MonthPage() {
               byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
               testId="month-client-picker"
             />
+          )}
+          {focus.kind === 'staff' && (
+            <button
+              type="button"
+              className={`btn btn-small month-off-toggle${offMode ? ' is-on' : ''}`}
+              aria-pressed={offMode}
+              disabled={running}
+              onClick={() => {
+                setOffNote(null);
+                setOffMode((x) => !x);
+              }}
+              data-testid="month-off-toggle"
+            >
+              <WithIcon icon={CalendarOff} size={14}>
+                {offMode ? '休みの入力を終わる' : '休みを入れる'}
+              </WithIcon>
+            </button>
           )}
           {focus.kind === 'all' && (
             <label className="month-picker">
@@ -773,6 +871,31 @@ export default function MonthPage() {
           </Hint>
           {noVisitsWhy && <span className="sub">{noVisitsWhy}</span>}
         </div>
+        {offMode && focus.kind === 'staff' && (
+          <div className="month-off-bar" data-testid="month-off-bar">
+            <p>
+              <strong>
+                <WithIcon icon={CalendarOff} size={14}>
+                  {focusName}さんの休みを入れる
+                </WithIcon>
+              </strong>
+              ：勤務日のマスを押すと、その日を終日の{REQUESTED_OFF_NOTE}
+              にします。もう一度押すと外します。続けて何日でも押せます。
+              <span className="sub">
+                （この月の{REQUESTED_OFF_NOTE} {offDates.length}
+                日。勤務の無い日・今日より前の日・ほかの欠勤のある日は押せません。案は自動では振り直しません）
+              </span>
+            </p>
+            <p className={offNote?.warn ? 'warn-text' : 'sub'} aria-live="polite" data-testid="month-off-note">
+              {offNote?.text ?? ''}
+              {offNote?.warn && (
+                <button type="button" className="btn btn-small" onClick={() => openDay(offNote.date)}>
+                  {mdText(offNote.date)} の予定を開く
+                </button>
+              )}
+            </p>
+          </div>
+        )}
         <MonthLegend showLoad={focus.kind === 'all'} />
         {batch && (
           <div className="stack month-progress" style={{ gap: 4 }} data-testid="month-progress">
@@ -842,7 +965,10 @@ export default function MonthPage() {
                         typeById={typeById}
                         staffById={staffById}
                         clientTerm={terms.client}
+                        staffTerm={terms.staff}
+                        offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
                         onOpen={openDay}
+                        onToggleOff={toggleOff}
                       />
                     );
                   })}
@@ -900,7 +1026,9 @@ export default function MonthPage() {
                 要対応
               </h2>
               {attention.length === 0 ? (
-                <p className="sub">今日以降で、入らない訪問・条件が変わった日・欠勤のある日はありません。</p>
+                <p className="sub">
+                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・欠勤のある日はありません。
+                </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
                   {attention.map((a) => (
@@ -918,6 +1046,11 @@ export default function MonthPage() {
                           {a.kind === 'unassigned' && (
                             <WithIcon icon={CircleAlert} size={14}>
                               入らない訪問 {a.count}件
+                            </WithIcon>
+                          )}
+                          {a.kind === 'absentLeft' && (
+                            <WithIcon icon={UserX} size={14}>
+                              休みの人に訪問 {a.count}件
                             </WithIcon>
                           )}
                           {a.kind === 'stale' && (
@@ -963,6 +1096,12 @@ export default function MonthPage() {
                 </dd>
                 <dt>移動</dt>
                 <dd>{staffSum.travel}分</dd>
+                {staffSum.requestedDays > 0 && (
+                  <>
+                    <dt>{REQUESTED_OFF_NOTE}</dt>
+                    <dd>{staffSum.requestedDays}日</dd>
+                  </>
+                )}
                 {staffSum.absenceDays > 0 && (
                   <>
                     <dt>欠勤</dt>
@@ -1178,12 +1317,40 @@ type CellProps = {
   staffById: ReadonlyMap<string, Staff>;
   /** 〈利用者さん〉の呼び方（org.terms.client。休みの印の title） */
   clientTerm: string;
+  /** 〈スタッフ〉の呼び方（org.terms.staff。休む人の印の title） */
+  staffTerm: string;
+  /** 「休みを入れる」のときのその日の扱い（PRD D69。それ以外は undefined＝押すと日の画面へ） */
+  offState: OffDayState | undefined;
   onOpen: (date: string) => void;
+  onToggleOff: (date: string) => void;
+};
+
+/** 「休みを入れる」のときのマスの説明（読み上げ・title） */
+const OFF_STATE_TEXT: Record<OffDayState, string> = {
+  open: `押すと${REQUESTED_OFF_NOTE}にします`,
+  requested: `${REQUESTED_OFF_NOTE}です。押すと外します`,
+  noShift: '勤務の無い日です（押せません）',
+  past: '今日より前の日です（押せません）',
+  absent: 'ほかの欠勤が入っています。日の画面で直してください（押せません）',
 };
 
 /** 日のマス（memo。月まとめ作成の進み具合などで、変わらないマスは描き直さない） */
 const DayCell = memo(function DayCell(props: CellProps) {
-  const { date: d, status: s, today, picked, making, focus, marks: mk, load, typeById, staffById, clientTerm } = props;
+  const {
+    date: d,
+    status: s,
+    today,
+    picked,
+    making,
+    focus,
+    marks: mk,
+    load,
+    typeById,
+    staffById,
+    clientTerm,
+    staffTerm,
+    offState,
+  } = props;
   const past = d < today;
   const care = s.needsCare && !past;
   const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));
@@ -1195,6 +1362,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
   if (care) parts.push('要確認');
   if (s.unassigned > 0) parts.push(`入らない ${s.unassigned}件`);
   if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
+  if (s.absentLeft > 0) parts.push(`休みの人に訪問 ${s.absentLeft}件`);
   if (s.stale) parts.push('条件が変わった');
   if (making) parts.push('作っています');
 
@@ -1212,6 +1380,16 @@ const DayCell = memo(function DayCell(props: CellProps) {
           違反 {s.hard}
         </span>
       )}
+      {s.absentLeft > 0 && (
+        <span
+          className="month-flag is-red"
+          title="休み（欠勤・希望休）の人に訪問が残っています。日の画面で振り直してください"
+          data-testid="month-absent-left"
+        >
+          <UserX size={12} aria-hidden="true" />
+          休みの人に {s.absentLeft}
+        </span>
+      )}
       {s.stale && (
         <span className="month-flag is-warn" data-testid="month-stale">
           <RefreshCw size={12} aria-hidden="true" />
@@ -1225,7 +1403,8 @@ const DayCell = memo(function DayCell(props: CellProps) {
   if (focus === 'all') {
     if (mk.types.length > 0)
       parts.push(`種類：${mk.types.map((x) => `${typeName(x.typeId)} ${x.count}件`).join('・')}`);
-    if (mk.off.length > 0) parts.push(`休み ${mk.off.join('・')}`);
+    const resting = mk.off.length + mk.requested.length;
+    if (resting > 0) parts.push(`休む${staffTerm} ${resting}人`);
     if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}`);
     if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
     if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
@@ -1235,9 +1414,19 @@ const DayCell = memo(function DayCell(props: CellProps) {
     body.push(
       <TypeStack key="types" types={mk.types} typeById={typeById} />,
       <span key="marks" className="month-marks">
-        {mk.off.length > 0 && (
-          <span className="month-mark" title={`休み：${mk.off.join('・')}`}>
-            休 {mk.off.length}
+        {resting > 0 && (
+          <span
+            className={`month-mark${mk.requested.length > 0 ? ' is-requested' : ''}`}
+            title={[
+              `休む${staffTerm} ${resting}人`,
+              mk.requested.length > 0 ? `${REQUESTED_OFF_NOTE}：${mk.requested.join('・')}` : '',
+              mk.off.length > 0 ? `勤務なし：${mk.off.join('・')}` : '',
+            ]
+              .filter(Boolean)
+              .join('／')}
+            data-testid="month-resting"
+          >
+            休 {resting}
           </span>
         )}
         {mk.absent.length > 0 && (
@@ -1276,9 +1465,11 @@ const DayCell = memo(function DayCell(props: CellProps) {
   } else if (focus === 'staff' && props.staffDay) {
     const x = props.staffDay;
     const shift = x.absence
-      ? x.slots.length === 0
-        ? '欠勤'
-        : `欠勤あり ${slotsText(x.slots)}`
+      ? x.requested
+        ? REQUESTED_OFF_NOTE
+        : x.slots.length === 0
+          ? '欠勤'
+          : `欠勤あり ${slotsText(x.slots)}`
       : x.off
         ? '休'
         : slotsText(x.slots);
@@ -1290,8 +1481,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
     }
     if (x.travel > 0) parts.push(`移動 ${x.travel}分`);
     body.push(
-      <span key="shift" className={`month-shift${x.absence ? ' is-absent' : x.off ? ' is-off' : ''}`}>
-        {x.absence && <UserX size={12} aria-hidden="true" />}
+      <span
+        key="shift"
+        className={`month-shift${x.absence ? (x.requested ? ' is-requested' : ' is-absent') : x.off ? ' is-off' : ''}`}
+        data-testid="month-shift"
+      >
+        {x.absence &&
+          (x.requested ? <CalendarOff size={12} aria-hidden="true" /> : <UserX size={12} aria-hidden="true" />)}
         {shift}
       </span>,
       x.noPlan ? (
@@ -1386,7 +1582,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
       </span>,
     );
 
+  if (offState) parts.push(OFF_STATE_TEXT[offState]);
   const label = parts.join('・');
+  const offPress = offState === 'open' || offState === 'requested';
   return (
     <td
       className={[
@@ -1398,6 +1596,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
         picked ? 'is-picked' : '',
         making ? 'is-making' : '',
         focus === 'staff' && props.staffDay && props.staffDay.slots.length === 0 ? 'is-rest' : '',
+        offState ? `is-off-${offState}` : '',
       ].join(' ')}
     >
       <button
@@ -1406,9 +1605,12 @@ const DayCell = memo(function DayCell(props: CellProps) {
         data-testid="month-day"
         data-date={d}
         data-state={s.count > 0 ? s.state : 'empty'}
+        data-off={offState}
         aria-label={label}
-        title={`${label}（押すとこの日の予定の画面を開きます）`}
-        onClick={() => props.onOpen(d)}
+        aria-pressed={offState ? offState === 'requested' : undefined}
+        disabled={offState !== undefined && !offPress}
+        title={offState ? label : `${label}（押すとこの日の予定の画面を開きます）`}
+        onClick={() => (offState ? props.onToggleOff(d) : props.onOpen(d))}
       >
         <span className="month-cell-head">
           <span className="month-day">

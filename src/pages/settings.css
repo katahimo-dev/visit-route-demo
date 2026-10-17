@@ -457,3 +457,10 @@ fieldset.weekday-toggles {
   font: inherit;
   cursor: pointer;
 }
+
+/* 担当できる人を限る（PRD D68。ADR-0014） */
+.chip-limit {
+  background: #e8eef8;
+  color: #3e5a8a;
+  margin-left: 4px;
+}

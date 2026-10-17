@@ -50,6 +50,7 @@ function initialClients(): Client[] {
     keyNote: VISIT_RULE_SEEDS[c.id]?.keyNote ?? '',
     parkingNote: VISIT_RULE_SEEDS[c.id]?.parkingNote ?? '',
     cautionNote: VISIT_RULE_SEEDS[c.id]?.cautionNote ?? '',
+    allowedStaffIds: [],
   }));
 }
 

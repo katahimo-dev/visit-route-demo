@@ -274,6 +274,7 @@ export default function VacancyPage() {
       keyNote: '',
       parkingNote: '',
       cautionNote: '',
+      allowedStaffIds: [],
     };
     const parsed = slots.map((s) =>
       patternSchema.safeParse({

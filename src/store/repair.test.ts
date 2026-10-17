@@ -591,3 +591,42 @@ describe('第N曜日・曜日ごとの時刻・〈利用者さん〉の休み・
     expect(back).toEqual(x);
   });
 });
+
+describe('担当できる人を限る（ADR-0014）', () => {
+  it('allowedStaffIds の無い古いデータは [] で読める（版は1のまま）', () => {
+    const d = base();
+    const old = JSON.parse(JSON.stringify(d));
+    old.clients = old.clients.map(({ allowedStaffIds: _a, ...c }: Record<string, unknown>) => c);
+    const r = migrate(old);
+    expect(isImportError(r)).toBe(false);
+    expect((r as DemoData).clients.every((c) => c.allowedStaffIds.length === 0)).toBe(true);
+    expect(r).toEqual(d);
+  });
+
+  it('repair：いない人・休止中の人と重なりを除く。全員いなくなれば []（限らない）。食い違いが無ければ同じ物', () => {
+    const d = base();
+    const [s1, s2, s3] = d.staff.map((s) => s.id);
+    const clients = d.clients.map((c, i) =>
+      i === 0
+        ? { ...c, allowedStaffIds: [s1!, 'ghost', s2!, s1!, s3!] }
+        : i === 1
+          ? { ...c, allowedStaffIds: [s3!] }
+          : i === 2
+            ? { ...c, allowedStaffIds: [s1!, s2!] }
+            : c,
+    );
+    const staff = d.staff.map((s) => (s.id === s3 ? { ...s, active: false } : s));
+    const r = repair({ ...d, staff, clients });
+    expect(r.clients[0]!.allowedStaffIds).toEqual([s1, s2]);
+    expect(r.clients[1]!.allowedStaffIds).toEqual([]);
+    // 直す所が無い〈利用者さん〉は同じ物
+    expect(r.clients[2]).toBe(clients[2]);
+  });
+
+  it('51人を超える担当できる人は契約で止める', () => {
+    const d = base();
+    const bad = JSON.parse(JSON.stringify(d));
+    bad.clients[0].allowedStaffIds = Array.from({ length: 51 }, (_, i) => `s${i}`);
+    expect(isImportError(importJson(JSON.stringify(bad)))).toBe(true);
+  });
+});

@@ -21,6 +21,7 @@ export function PickChips({
   onChange,
   highlight,
   highlightLabel = '担当できる',
+  bulk = true,
   testId,
 }: {
   label: string;
@@ -30,6 +31,8 @@ export function PickChips({
   /** 強調する人（ドラッグ中の担当できる人）。null なら強調しない */
   highlight?: ReadonlySet<string> | null;
   highlightLabel?: string;
+  /** 「全員」「全解除」のボタンを出すか（担当できる人の選択（ADR-0014）では出さない） */
+  bulk?: boolean;
   testId?: string;
 }) {
   const on = selected === null ? null : new Set(selected);
@@ -41,24 +44,28 @@ export function PickChips({
   return (
     <fieldset className="pick-chips" data-testid={testId}>
       <legend className="pick-chips-legend">{label}</legend>
-      <button
-        type="button"
-        className="btn btn-small"
-        onClick={() => onChange(null)}
-        disabled={selected === null}
-        data-testid={testId ? `${testId}-all` : undefined}
-      >
-        全員
-      </button>
-      <button
-        type="button"
-        className="btn btn-small"
-        onClick={() => onChange([])}
-        disabled={selected !== null && selected.length === 0}
-        data-testid={testId ? `${testId}-none` : undefined}
-      >
-        全解除
-      </button>
+      {bulk && (
+        <>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => onChange(null)}
+            disabled={selected === null}
+            data-testid={testId ? `${testId}-all` : undefined}
+          >
+            全員
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => onChange([])}
+            disabled={selected !== null && selected.length === 0}
+            data-testid={testId ? `${testId}-none` : undefined}
+          >
+            全解除
+          </button>
+        </>
+      )}
       {people.map((p) => {
         const pressed = isOn(p.id);
         const strong = highlight?.has(p.id) ?? false;

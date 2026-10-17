@@ -436,6 +436,7 @@ describe('要対応（attentionList）', () => {
     state: 'plan',
     unassigned: 0,
     absence: false,
+    absentLeft: 0,
     hundred: null,
     hard: 0,
     stale: false,

@@ -138,6 +138,7 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
           keyNote: '',
           parkingNote: '',
           cautionNote: '',
+          allowedStaffIds: [],
         };
   const clients = inquiryClient ? [...data.clients, inquiryClient] : data.clients;
 

@@ -30,6 +30,7 @@ import CompatPage from '../pages/CompatPage';
 import DataPage from '../pages/DataPage';
 import ItemsPage from '../pages/ItemsPage';
 import MonthPage from '../pages/MonthPage';
+import MonthPrintPage from '../pages/MonthPrintPage';
 import PlanPage from '../pages/PlanPage';
 import RulesPage from '../pages/RulesPage';
 import StaffPage from '../pages/StaffPage';
@@ -70,6 +71,8 @@ export default function App() {
     <DayProvider value={{ date, setDate: setPicked, dates }}>
       <Routes>
         <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
+        {/* 月の予定の印刷（PRD D70）：左のメニューの外（印刷にナビを出さない） */}
+        <Route path="/month/print" element={<Guarded element={<MonthPrintPage />} />} />
         <Route element={<AdminShell />}>
           {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
           <Route path="/schedule" element={<Navigate to="/plan" replace />} />
