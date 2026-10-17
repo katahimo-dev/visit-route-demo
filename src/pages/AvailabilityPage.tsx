@@ -180,9 +180,8 @@ export default function AvailabilityPage() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!!slotsError(draft)}
-                aria-disabled={!!retiredWhy || undefined}
-                title={retiredWhy ?? undefined}
+                aria-disabled={!!(retiredWhy ?? slotsError(draft)) || undefined}
+                title={retiredWhy ?? slotsError(draft) ?? undefined}
                 onClick={() => save(draft)}
                 data-testid="availability-save"
               >

@@ -341,9 +341,16 @@ export function applyOffboardWith(
         pid,
       );
       patterns = r.patterns.map((y) => (y.id === p.id ? { ...y, usualStaffId: staffId } : y));
+      // 付け替えるのは元の日（pattern.date）が from 以降の回。元の日が from 以降で from より前の日へずらした回も付け替える
+      // （元のパターンに残すと、新しいパターンがその元の日に回を作り直して二重になる。ADR-0015 追記）。
+      // 元の日が from より前で from 以降へずらした回は元のパターンに残す（元の日は元のパターンの期間内）。
+      // 同じ ID が2つになる（同じ元の日の回が2つある・新しい ID の訪問がすでにある）ときは付け替えずに残す
+      const used = new Set(visits.map((v) => v.id));
       visits = visits.map((v) => {
         if (v.pattern?.id !== p.id || v.pattern.date < from) return v;
         const nid = `${v.pattern.date}_${pid}`;
+        if (used.has(nid)) return v;
+        used.add(nid);
         rename.set(v.id, nid);
         return { ...v, id: nid, pattern: { ...v.pattern, id: pid } };
       });

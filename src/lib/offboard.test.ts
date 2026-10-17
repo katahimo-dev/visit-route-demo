@@ -5,6 +5,7 @@ import type { Pattern } from '../contracts/documents';
 import { afterLastDay, availabilityOf } from '../domain/availability';
 import { AFTER_LAST_DAY, compile } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
+import { applyPatterns } from '../patterns';
 import { repair } from '../store/repair';
 import { applyOffboard, applyOffboardWith, defaultChoice, offboardScope, unlimitedBy } from './offboard';
 import { absentLeftIds } from './requestedOff';
@@ -309,5 +310,58 @@ describe('レビューの反映（PR #22）', () => {
     const d = data();
     expect(unlimitedBy(d, 's1', { c2: null, c1: null })).toEqual(['c2']);
     expect(unlimitedBy(d, 's1', { c2: 's2' })).toEqual([]);
+  });
+});
+
+describe('再レビューの反映（PR #22）', () => {
+  const ids = () => {
+    let n = 0;
+    return () => `new${++n}`;
+  };
+  const WED = '2026-10-14';
+
+  it('元の日が数え始める日より前で後へずらした回は元のパターンに残す。後の元の日を前へずらした回は付け替え、二重にしない', () => {
+    const base = data();
+    const d: DemoData = {
+      ...base,
+      visits: [
+        ...base.visits.filter((v) => v.clientId !== 'c1'),
+        // 元の日 月（DATE）→ 水へずらした回
+        visit(`${DATE}_p1`, 'c1', '10:00', '10:00', {
+          windowKind: 'fixed',
+          date: WED,
+          pattern: { id: 'p1', date: DATE, edited: true },
+        }),
+        // 元の日 火（TUE）→ 月（DATE）へずらした回
+        visit(`${TUE}_p1`, 'c1', '10:00', '10:00', {
+          windowKind: 'fixed',
+          date: DATE,
+          pattern: { id: 'p1', date: TUE, edited: true },
+        }),
+      ],
+    };
+    const x = applyOffboard(d, 's1', { c1: 's2' }, TUE, DATE, ids());
+    const moved = x.visits.find((v) => v.date === WED && v.clientId === 'c1')!;
+    expect([moved.id, moved.pattern?.id]).toEqual([`${DATE}_p1`, 'p1']);
+    const early = x.visits.find((v) => v.date === DATE && v.clientId === 'c1')!;
+    expect([early.id, early.pattern?.id]).toEqual([`${TUE}_new1`, 'new1']);
+    // 新しいパターンを展開しても、火（元の日）の回は二重にならない
+    const after = applyPatterns(x, { from: TUE, to: TUE }, DATE).visits;
+    expect(after.filter((v) => v.clientId === 'c1' && v.pattern?.date === TUE)).toHaveLength(1);
+  });
+
+  it('同じ元の日の回が2つあるなど、付け替えで ID が重なるときは2つ目を付け替えずに残す', () => {
+    const base = data();
+    const dup = visit('dup', 'c1', '15:00', '15:00', {
+      windowKind: 'fixed',
+      date: TUE,
+      pattern: { id: 'p1', date: TUE, edited: true },
+    });
+    const d: DemoData = { ...base, visits: [...base.visits, dup] };
+    const x = applyOffboard(d, 's1', { c1: 's2' }, TUE, DATE, ids());
+    const idsOut = x.visits.map((v) => v.id);
+    expect(new Set(idsOut).size).toBe(idsOut.length);
+    expect(idsOut).toContain(`${TUE}_new1`);
+    expect(x.visits.find((v) => v.id === 'dup')!.pattern?.id).toBe('p1');
   });
 });
