@@ -243,9 +243,10 @@ export function CompareTable({
 }
 
 /**
- * 横の小さな重みの欄（D14）。変えたらすぐ「再計算」できる。
+ * 条件の重みの欄（D14）。変えたらすぐ作り直せる。予定の画面の右の欄「条件を調整する」の中に置く（PRD D63。
+ * 以前の右側の常設の欄はやめた）。
  * showPresets：いまの重みの名前・「いまの重みをプリセットとして保存」・プリセットの編集へのリンクを出す
- * （プリセットで作る・切り替えるのは、予定の画面の正面のプリセットごとの案のカード。ADR-0010）
+ * （プリセットで作る・切り替えるのは、同じ欄の上のプリセットごとの案のカード。ADR-0010）
  */
 export function WeightPanel({
   running,
@@ -263,14 +264,14 @@ export function WeightPanel({
   const { data, update } = useDemoData();
   const current = presetOf(data.rules, data.presets);
   return (
-    <aside className="card stack side-panel">
+    <div className="stack side-panel">
       {showPresets && (
         <>
           <SectionTitle
             icon={ListChecks}
             aside={
               <Hint>
-                プリセットで作る・切り替えるには、正面の「プリセットごとの案」のカードを押します。ここではいまの重みをプリセットとして保存できます。
+                プリセットで作る・切り替えるには、上の「プリセットごとの案」のカードを押します。ここではいまの重みをプリセットとして保存できます。
               </Hint>
             }
           >
@@ -314,7 +315,7 @@ export function WeightPanel({
           {recalcLabel}
         </WithIcon>
       </button>
-    </aside>
+    </div>
   );
 }
 

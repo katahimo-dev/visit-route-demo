@@ -1,0 +1,86 @@
+/* 押すと項目の一覧が開くボタン（MenuButton。予定の「案を変える ▾」。PRD D63） */
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.menu-btn[aria-expanded='true'] {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+.menu-chevron {
+  margin-left: 2px;
+}
+/* 浮かせて出す（開いても画面の高さを変えない）。地図（Leaflet）・時間軸の見出しより前、右から出る欄より後ろ */
+.menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1050;
+  min-width: 300px;
+  max-width: calc(100vw - 24px);
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(40, 25, 15, 0.22);
+}
+.menu-sep {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--primary-soft);
+  outline: none;
+}
+.menu-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+.menu-item[aria-disabled='true'] {
+  color: var(--sub);
+  cursor: not-allowed;
+}
+.menu-item[aria-disabled='true']:hover {
+  background: none;
+}
+.menu-item.is-current .menu-item-label {
+  font-weight: 700;
+}
+.menu-item-icon {
+  display: inline-flex;
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--sub);
+}
+.menu-item-label {
+  flex: 1;
+  min-width: 0;
+}
+.menu-item-note {
+  flex-shrink: 0;
+  color: var(--sub);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.menu-item.is-current .menu-item-note {
+  color: var(--primary-dark);
+  font-weight: 700;
+}

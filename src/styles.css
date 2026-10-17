@@ -1236,20 +1236,7 @@ label.check input {
   vertical-align: top;
 }
 /* AI案：横の重みの欄・理由 */
-.plan-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  gap: 16px;
-  align-items: start;
-}
-@media (max-width: 1000px) {
-  .plan-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 .side-panel {
-  position: sticky;
-  top: 72px;
   gap: 10px;
 }
 .side-rule-label {

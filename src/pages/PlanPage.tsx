@@ -15,6 +15,8 @@ import {
   ListChecks,
   Map as MapIcon,
   MapPin,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
   Pin,
   PinOff,
@@ -23,24 +25,25 @@ import {
   Scale,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Square,
   TriangleAlert,
   Undo2,
   UserRoundX,
-  Users,
 } from 'lucide-react';
 import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MapDock } from '../components/MapDock';
+import { MenuButton, type MenuItem } from '../components/MenuButton';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
-import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
+import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
 import { TypeMark } from '../components/visitType';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
@@ -100,6 +103,7 @@ import {
   achievementSummary,
   breakdownText,
   explainMap,
+  HARD_NOTE,
   HundredHint,
   ReasonBox,
   RefMark,
@@ -211,11 +215,22 @@ export default function PlanPage() {
   /** ドラッグの始まりの更新を dragstart の外へ出す（未割当の列が足されて Chrome がドラッグをやめるため） */
   const dragStart = useRef(deferredDragStart()).current;
   const [dropTo, setDropTo] = useState<string | null>(null);
-  /** 担当ごとの表示（PRD D58）：時間軸／順番。localStorage でなく画面の状態（初期値：時間軸） */
-  const [colView, setColView] = useState<'timeline' | 'order'>('timeline');
-  /** 狭い幅（900px 以下）・印刷では順番にする */
+  /**
+   * 表示（PRD D58・D63）：時間軸／順番／一覧（訪問の一覧の表）。localStorage でなく画面の状態（初期値：時間軸）
+   */
+  const [colView, setColView] = useState<'timeline' | 'order' | 'list'>('timeline');
+  /** 狭い幅（900px 以下）・印刷では時間軸の代わりに順番にする（一覧はそのまま） */
   const narrowOrPrint = useNarrowOrPrint();
-  const shownView = narrowOrPrint ? 'order' : colView;
+  const shownView = narrowOrPrint && colView === 'timeline' ? 'order' : colView;
+  /** 右の欄（PRD D63）：'detail'＝詳しく、'tune'＝条件を調整する */
+  const [panel, setPanel] = useState<'detail' | 'tune' | null>(null);
+  /** 地図を時間軸の横に出すか（1280px 以上。畳める）。狭い画面は下に置き、画面の外なら MapDock */
+  const wideMap = useMedia(WIDE_MAP_QUERY);
+  const [mapOpen, setMapOpen] = useState(true);
+  /** 「入らなかった訪問」の列（帯の近道の行き先） */
+  const noneColId = useId();
+  /** 訪問の入力欄（開いたら見える所へ） */
+  const formRef = useRef<HTMLDivElement>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
   /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
   const pendingAnneal = useRef<string | null>(null);
@@ -263,10 +278,15 @@ export default function PlanPage() {
     setEditing(null);
     setAbsenceFor(null);
     setContactsOpen(false);
+    setPanel(null);
     setError(null);
     // 前の日に「案B も作る」を押して、まだ始まっていなければやめる（別の日で始めない）
     pendingAnneal.current = null;
   }, [date]);
+  // 訪問の入力欄を開いたら見える所へ（一覧の行の「編集」から開いたとき、欄は操作の行のすぐ下に出る）
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [editing]);
   /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
   const dateRef = useRef(date);
   dateRef.current = date;
@@ -1642,6 +1662,7 @@ export default function PlanPage() {
         unassigned.length === 0 ? 'is-drag-only' : '',
         dropTo === NONE ? 'is-drop' : '',
       ].join(' ')}
+      id={noneColId}
       data-staff={NONE}
       {...dropProps(NONE)}
     >
@@ -1714,40 +1735,408 @@ export default function PlanPage() {
     set: PLAN_SET,
   });
 
+  // ---- 日の画面の整理（PRD D63）：1行のまとめ・案を変えるメニュー・右の欄・表示の切り替え・地図の横置き ----
+  const hardCount = cs?.hardViolations.length ?? 0;
+  const hundredNow = cs && scoreScale ? toHundred(cs.total, scoreScale) : null;
+  /** 入らなかった訪問の列へ移る（帯の近道。一覧のときは担当ごとの表示に切り替えてから） */
+  const goToNone = () => {
+    if (shownView === 'list') setColView('timeline');
+    requestAnimationFrame(() =>
+      document.getElementById(noneColId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  };
+  const busyWhy = running ? '計算中は選べません' : !problem ? 'この日に計算できる訪問がありません' : false;
+  /** 「案を変える ▾」の項目（PRD D63）。プリセットごとの案は押すと今の runPreset（カードを押したのと同じ） */
+  const menuItems: MenuItem[] = [
+    ...presetCards.map((c, i): MenuItem => {
+      const isCurrent = isCurrentRun(c.run);
+      const making = batch?.date === date && batch.presetId === c.preset.id;
+      const pt = c.hundred !== null ? `${c.hundred}点` : '—点';
+      return {
+        key: `preset-${c.preset.id}`,
+        testId: 'plan-menu-preset',
+        label: c.preset.name,
+        icon: i === bestCard ? Crown : undefined,
+        note: making
+          ? '作っています…'
+          : !c.run
+            ? '作る'
+            : isCurrent
+              ? `${pt}・今の案`
+              : c.remake
+                ? `${pt}・作り直す`
+                : pt,
+        current: isCurrent,
+        disabled: busyWhy || (isCurrent ? '今の案です' : false),
+        onSelect: () => runPreset(c.preset),
+      };
+    }),
+    {
+      key: 'batch',
+      label: `他の条件でも作る${missing.length > 0 ? `（${missing.length}つ）` : ''}`,
+      icon: LayoutGrid,
+      separatorBefore: true,
+      disabled: batch ? '作っています' : missing.length === 0 ? 'どのプリセットの案もあります' : busyWhy,
+      onSelect: () => runBatch(missing),
+    },
+    {
+      key: 'create',
+      label: aiPlan ? 'AI案を作り直す' : 'AI案を作る',
+      icon: Sparkles,
+      disabled: busyWhy,
+      onSelect: () => create(),
+    },
+    {
+      key: 'resolve',
+      label: `固定を残して組み直す${pinCount > 0 ? `（固定 ${pinCount}件）` : ''}`,
+      icon: RefreshCw,
+      disabled: !aiPlan ? 'AI案がありません' : busyWhy,
+      onSelect: resolve,
+    },
+    {
+      key: 'revert',
+      label: 'AI案に戻す',
+      icon: Undo2,
+      disabled: !aiPlan
+        ? 'AI案がありません'
+        : running
+          ? '計算中は選べません'
+          : !edited
+            ? '手直し・固定はありません'
+            : false,
+      onSelect: revert,
+    },
+    {
+      key: 'copy',
+      label: '前の同じ曜日からコピー',
+      icon: Copy,
+      separatorBefore: true,
+      disabled: visits.length > 0 ? 'この日に訪問があるときはコピーできません' : running ? '計算中は選べません' : false,
+      onSelect: copyFromLastWeek,
+    },
+    {
+      key: 'compare',
+      label: `案を比べる（${runCount}件）`,
+      icon: GitCompareArrows,
+      onSelect: () => navigate('/compare'),
+    },
+    {
+      key: 'tune',
+      label: '条件を調整する…',
+      icon: SlidersHorizontal,
+      separatorBefore: true,
+      testId: 'plan-menu-tune',
+      onSelect: () => setPanel('tune'),
+    },
+  ];
+
+  /** プリセットごとの案のカード（ADR-0008・ADR-0010。右の欄「条件を調整する」の中） */
+  const presetCardsView = (
+    <div className="preset-cards" data-testid="preset-cards">
+      {presetCards.map((c, i) => {
+        const isCurrent = isCurrentRun(c.run);
+        const making = batch?.date === date && batch.presetId === c.preset.id;
+        const sc = c.score;
+        const summary = achievementSummary(c.ach, data.rules);
+        const remake = c.remake && !isCurrent;
+        const pt = c.hundred !== null ? `${c.hundred}点` : '';
+        // 読み上げの名前は短く（詳細は aria-describedby の中身）
+        const ariaLabel = isCurrent
+          ? `${c.preset.name}の案（今の案${pt ? `・${pt}` : ''}）`
+          : !c.run
+            ? `${c.preset.name}の案を作る`
+            : remake
+              ? `${c.preset.name}の案を作り直して今の案にする${pt ? `（記録は${pt}）` : ''}`
+              : `${c.preset.name}の案を今の案にする${pt ? `（${pt}）` : ''}`;
+        // 詳細（説明・移動などの内訳・達成・作り直しの注記）は aria-describedby で読む
+        const idOf = (part: string) => `${cardIdBase}-${i}-${part}`;
+        const describedBy = [
+          c.preset.note && idOf('note'),
+          c.run && sc && idOf('stats'),
+          c.run && sc && summary && idOf('ach'),
+          c.run && sc && remake && idOf('remake'),
+        ]
+          .filter(Boolean)
+          .join(' ');
+        // カード全体が1つのボタン（中にボタンを入れ子にしない。中身は phrasing の span だけ）
+        return (
+          <button
+            key={c.preset.id}
+            type="button"
+            className={`preset-card ${i === bestCard ? 'is-best' : ''} ${isCurrent ? 'is-current' : ''}`}
+            data-testid="preset-card"
+            aria-pressed={isCurrent}
+            aria-disabled={isCurrent || undefined}
+            aria-label={ariaLabel}
+            aria-describedby={describedBy || undefined}
+            disabled={!!running || !problem}
+            title={
+              isCurrent
+                ? '今の案です'
+                : !c.run
+                  ? `押すと「${c.preset.name}」の重みで案を作ります`
+                  : remake
+                    ? `記録のあとにデータが変わったので、押すと「${c.preset.name}」の重みで作り直します`
+                    : `押すと「${c.preset.name}」の案を今の案にします（計算しません）`
+            }
+            onClick={() => {
+              if (!isCurrent) runPreset(c.preset);
+            }}
+          >
+            <span className="spread">
+              <strong className="preset-card-name ellipsis">{c.preset.name}</strong>
+              {i === bestCard && (
+                <span className="preset-crown" title="一番点の高い案">
+                  <Crown size={16} aria-label="一番点の高い案" />
+                </span>
+              )}
+            </span>
+            {c.preset.note && (
+              <span id={idOf('note')} className="sub preset-card-note ellipsis">
+                {c.preset.note}
+              </span>
+            )}
+            {c.run && sc ? (
+              <>
+                <span className="preset-card-score">
+                  <span data-testid="preset-card-score">{c.hundred ?? '—'}</span>
+                  <small>点</small>
+                </span>
+                <span id={idOf('stats')} className="preset-card-stats sub">
+                  <span>
+                    <Car size={12} aria-hidden="true" /> 移動 {r0(sc.travelMinutes)}分
+                  </span>
+                  <span className={sc.dropped > 0 ? 'warn-text' : ''}>
+                    <CircleOff size={12} aria-hidden="true" /> 入らない {sc.dropped}件
+                  </span>
+                  <span className={sc.hardViolations.length > 0 ? 'error' : ''}>
+                    <ShieldAlert size={12} aria-hidden="true" /> 必須の違反 {sc.hardViolations.length}件
+                  </span>
+                </span>
+                {summary && (
+                  <span id={idOf('ach')} className="sub preset-card-ach">
+                    <ListChecks size={12} aria-hidden="true" /> {summary}
+                  </span>
+                )}
+                {remake && (
+                  <span
+                    id={idOf('remake')}
+                    className="sub warn-text preset-card-remake"
+                    data-testid="preset-card-remake"
+                  >
+                    <RefreshCw size={12} aria-hidden="true" /> データが変わったので、押すと作り直します
+                  </span>
+                )}
+                {isCurrent ? (
+                  <span className="chip chip-primary preset-card-now">今の案</span>
+                ) : (
+                  <span className="preset-card-action">{remake ? '作り直す' : 'この案にする'}</span>
+                )}
+              </>
+            ) : (
+              <span className="sub preset-card-empty">
+                {making ? '作っています…' : 'まだ作っていません'}
+                {!making && <span className="preset-card-action">押して作る</span>}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  /** 計算中の進み具合（操作の行・右の欄で共通） */
+  const progressView = running && (
+    <div className="plan-progress" data-testid="plan-progress">
+      <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} />
+      <span className="sub">
+        {runningFor ? `${shortDate(runningFor.date)} の案・` : ''}
+        {progress
+          ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点`}`
+          : '準備中…'}
+      </span>
+      {batch && (
+        <span className="sub" data-testid="batch-progress">
+          <WithIcon icon={LayoutGrid} size={13}>
+            {shortDate(batch.date)} の案：プリセット {batch.index + 1}/{batch.total}「{batch.name}」を作っています
+            {batch.date !== date ? '（別の日）' : ''}（止めると残りは作りません）
+          </WithIcon>
+        </span>
+      )}
+      <button type="button" className="btn btn-small" onClick={stop}>
+        <WithIcon icon={Square} size={14}>
+          止める
+        </WithIcon>
+      </button>
+    </div>
+  );
+
+  /** 地図を出すか（1280px 以上で畳んだときだけ出さない。狭い画面は今どおり下に置き、画面の外なら MapDock） */
+  const mapShown = !wideMap || mapOpen;
+
   return (
-    <div className="plan-layout">
-      <div className="stack" style={{ minWidth: 0 }}>
-        <PageHeader
-          nav={<ViewSwitch current="day" />}
-          icon={CalendarDays}
-          title="予定"
-          lead="その日の欠勤・手直しをして、割当を確定します"
-          actions={
+    <div className="plan-page stack">
+      <PageHeader
+        nav={<ViewSwitch current="day" />}
+        icon={CalendarDays}
+        title="予定"
+        lead="その日の欠勤・手直しをして、割当を確定します"
+        actions={
+          aiPlan && (
             <>
-              <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
-                <WithIcon icon={Plus}>訪問を追加</WithIcon>
-              </button>
+              {confirmState === 'same' ? (
+                <span className="chip chip-ok" data-testid="confirm-state">
+                  <CircleCheck size={12} aria-hidden="true" />
+                  確定済み
+                </span>
+              ) : (
+                <span className="chip chip-warn" data-testid="confirm-state">
+                  <TriangleAlert size={12} aria-hidden="true" />
+                  {confirmState === 'diff' ? '未確定の変更あり' : '未確定'}
+                </span>
+              )}
               <button
                 type="button"
-                className="btn"
-                onClick={copyFromLastWeek}
-                disabled={visits.length > 0 || !!running}
-                title={visits.length > 0 ? 'この日に訪問があるときはコピーできません' : ''}
+                className="btn btn-primary"
+                disabled={!!running || confirmState === 'same'}
+                onClick={adopt}
+                data-testid="adopt"
               >
-                <WithIcon icon={Copy}>前の同じ曜日からコピー</WithIcon>
+                <WithIcon icon={CircleCheck}>この割当で確定</WithIcon>
               </button>
-              <NavLink to="/compare" className="plan-compare-link">
-                <WithIcon icon={GitCompareArrows}>案を比べる（{runCount}件）</WithIcon>
-              </NavLink>
             </>
-          }
-        />
-        {m.clients.length === 0 && (
-          <div className="card">
-            <p className="sub">先に{terms.client}を登録してください。</p>
-          </div>
+          )
+        }
+      />
+      {m.clients.length === 0 && (
+        <div className="card">
+          <p className="sub">先に{terms.client}を登録してください。</p>
+        </div>
+      )}
+
+      {aiPlan && cs && (
+        <div className="plan-oneline" data-testid="plan-summary">
+          <span className="plan-oneline-title">今の案{edited ? '（手直し後）' : ''}</span>
+          <span>
+            訪問 <strong>{visits.length}</strong>件
+          </span>
+          <span className={cs.dropped > 0 ? 'warn-text' : ''}>
+            入らない <strong>{cs.dropped}</strong>
+          </span>
+          <span className={hardCount > 0 ? 'error' : ''}>
+            必須の違反 <strong>{hardCount}</strong>
+          </span>
+          <span>
+            移動 <strong>{r0(cs.travelMinutes)}</strong>分
+          </span>
+          <span className="plan-oneline-score" title={`点数の物差し：${scoreRulerName}`}>
+            <strong data-testid="plan-total">{hundredNow ?? '—'}</strong>点
+            {hardCount > 0 && (
+              <span className="chip chip-warn" title={HARD_NOTE}>
+                参考
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            className="link-btn plan-oneline-more"
+            onClick={() => setPanel('detail')}
+            data-testid="plan-detail"
+          >
+            <WithIcon icon={ChevronRight} size={14}>
+              詳しく
+            </WithIcon>
+          </button>
+        </div>
+      )}
+
+      {/* あるときだけの帯（PRD D63）。ドラッグ中には増減しない（移したあとに変わる） */}
+      {m.problemError && <p className="error plan-band">問題を作れませんでした：{m.problemError}</p>}
+      {error && <p className="error plan-band">{error}</p>}
+      {aiPlan && (curScore?.error || genScore?.error) && (
+        <p className="error plan-band">採点できません（{curScore?.error ?? genScore?.error}）</p>
+      )}
+      {aiPlan && unassigned.length > 0 && (
+        <div className="plan-band is-warn row" data-testid="band-unassigned">
+          <WithIcon icon={CircleOff} size={16}>
+            入らない訪問が {unassigned.length}件 あります
+          </WithIcon>
+          <button type="button" className="btn btn-small" onClick={goToNone}>
+            見る
+          </button>
+        </div>
+      )}
+      {aiPlan && reassignInfo && (
+        <div className="plan-band row" data-testid="band-reassign">
+          <WithIcon icon={UserRoundX} size={16}>
+            欠勤の振り直し：入らない {rDiff?.unplaced.length ?? 0}件
+            {left.length > 0 ? `・欠勤の人のまま ${left.length}件` : ''}
+          </WithIcon>
+          <button type="button" className="btn btn-small" onClick={goToBar}>
+            差の欄へ
+          </button>
+        </div>
+      )}
+      {aiPlan && planIsStale && !running && (
+        <div className="plan-band stale-note row" data-testid="plan-stale">
+          <WithIcon icon={TriangleAlert} size={16}>
+            この案を作ったあとに、訪問・{terms.staff}・稼働時間・条件が変わりました
+          </WithIcon>
+          <button type="button" className="btn btn-small" disabled={!!running || !problem} onClick={remakeStale}>
+            <WithIcon icon={RefreshCw} size={14}>
+              作り直す
+            </WithIcon>
+          </button>
+        </div>
+      )}
+      {aiPlan && stale && !autoMade && !planIsStale && (
+        <div className="plan-band is-warn row">
+          <WithIcon icon={TriangleAlert} size={16}>
+            作ったあとに条件が変わりました
+          </WithIcon>
+          <Hint>
+            点数はいつも点数の基準のプリセット「{scoreRulerName}
+            」の物差しで付けます（条件を変えても点の物差しは変わりません）。「案を変える」の「AI案を作り直す」か「固定を残して組み直す」で作り直せます。
+          </Hint>
+        </div>
+      )}
+
+      <div className="plan-toolbar row" data-testid="plan-toolbar">
+        <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
+          <WithIcon icon={Plus}>訪問を追加</WithIcon>
+        </button>
+        <MenuButton label="案を変える" icon={Sparkles} items={menuItems} testId="plan-menu" />
+        {visits.length > 0 && (
+          <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
+            {(
+              [
+                ['timeline', '時間軸'],
+                ['order', '順番'],
+                ['list', '一覧'],
+              ] as const
+            ).map(([k, text]) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={shownView === k}
+                className={`${shownView === k ? 'is-on' : ''} plan-view-${k}`}
+                onClick={() => setColView(k)}
+              >
+                {text}
+              </button>
+            ))}
+          </fieldset>
         )}
-        {editing && (
+        {progressView}
+        <Hint label="使い方">
+          訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
+          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。「案を変える」の「固定を残して組み直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
+          名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
+        </Hint>
+      </div>
+
+      {editing && (
+        <div ref={formRef} className="plan-form">
           <VisitForm
             key={editing}
             date={date}
@@ -1756,354 +2145,19 @@ export default function PlanPage() {
             onClose={() => setEditing(null)}
             onSaved={toast}
           />
-        )}
-        {visits.length === 0 ? (
-          <div className="card">
-            <Empty icon={CalendarDays}>この日の訪問はまだありません</Empty>
-          </div>
-        ) : (
-          <VisitList
-            visits={sortedVisits}
-            visitById={visitById}
-            clientById={clientById}
-            ownerName={(id) => {
-              if (!aiPlan) return null;
-              const o = owner.get(id);
-              return o ? { name: staffName(o), color: colorOfStaff.get(o) } : null;
-            }}
-            notes={(id) => ({
-              outside: !!problem && !problem.visits.some((v) => v.id === id),
-              dropped: !!aiPlan && unassigned.includes(id),
-              pinned: !!own(pins, id),
-              hard: hardOf.get(id),
-            })}
-            clientLabel={terms.client}
-            typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
-            onEdit={setEditing}
-            onCancel={cancelVisit}
-          />
-        )}
-        <div className="card stack">
-          <div className="row plan-toolbar">
-            <button type="button" className="btn btn-primary" disabled={!!running || !problem} onClick={() => create()}>
-              <WithIcon icon={Sparkles}>{running === 'create' ? '作っています…' : 'AI案を作る'}</WithIcon>
-            </button>
-            {aiPlan && (
-              <button
-                type="button"
-                className="btn"
-                disabled={!!running || !problem}
-                onClick={resolve}
-                title="固定した訪問の担当は変えずに、残りを AI が組み直します"
-              >
-                <WithIcon icon={RefreshCw}>
-                  {running === 'resolve'
-                    ? '組み直しています…'
-                    : `固定を残して組み直す${pinCount > 0 ? `（固定 ${pinCount}件）` : ''}`}
-                </WithIcon>
-              </button>
-            )}
-            {aiPlan && (
-              <button type="button" className="btn" disabled={!!running || !edited} onClick={revert}>
-                <WithIcon icon={Undo2}>AI案に戻す</WithIcon>
-              </button>
-            )}
-            {running && (
-              <button type="button" className="btn" onClick={stop}>
-                <WithIcon icon={Square}>止める</WithIcon>
-              </button>
-            )}
-            <Hint label="使い方">
-              訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
-              の回る順番の中で最も費用の少ない位置に入り、固定になります。「固定を残して組み直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
-            </Hint>
-          </div>
-          {aiPlan && !running && (
-            <span className="plan-meta">
-              <Clock size={12} aria-hidden="true" />
-              {new Date(aiPlan.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} に作成・乱数の種{' '}
-              {aiPlan.seed}・{aiPlan.iterations.toLocaleString()}回{aiPlan.stopped && '・途中で止めた案'}
-            </span>
-          )}
-          {running && (
-            <div className="stack" style={{ gap: 4 }}>
-              <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} style={{ width: '100%' }} />
-              <span className="sub">
-                {runningFor ? `${shortDate(runningFor.date)} の案・` : ''}
-                {progress
-                  ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点`}`
-                  : '準備中…'}
-              </span>
-              {batch && (
-                <span className="sub" data-testid="batch-progress">
-                  <WithIcon icon={LayoutGrid} size={13}>
-                    {shortDate(batch.date)} の案：プリセット {batch.index + 1}/{batch.total}「{batch.name}
-                    」を作っています
-                    {batch.date !== date ? '（別の日）' : ''}（止めると残りは作りません）
-                  </WithIcon>
-                </span>
-              )}
-            </div>
-          )}
-          {m.problemError && <p className="error">問題を作れませんでした：{m.problemError}</p>}
-          {error && <p className="error">{error}</p>}
-          {stale && autoMade && (
-            <div className="sub row">
-              <WithIcon icon={TriangleAlert} size={14}>
-                プリセット「{madeBy?.name}」の条件で作った案です
-              </WithIcon>
-              <Hint>
-                いまの条件とは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
-                」の物差しで付けます。いまの条件で作るには「AI案を作る」を押してください。
-              </Hint>
-            </div>
-          )}
-          {stale && !autoMade && (
-            <div className="warn-text row">
-              <WithIcon icon={TriangleAlert} size={14}>
-                作ったあとに条件が変わりました
-              </WithIcon>
-              <Hint>
-                点数はいつも点数の基準のプリセット「{scoreRulerName}
-                」の物差しで付けます（条件を変えても点の物差しは変わりません）。「AI案を作る」か「固定を残して組み直す」で作り直せます。
-              </Hint>
-            </div>
-          )}
         </div>
+      )}
 
-        {hasVisits && (runs.length > 0 || batch) && (
-          <div className="card stack">
-            <SectionTitle
-              icon={LayoutGrid}
-              aside={
-                <span className="row" style={{ gap: 6 }}>
-                  {missing.length > 0 && !batch && (
-                    <button
-                      type="button"
-                      className="btn btn-small"
-                      disabled={!!running || !problem}
-                      onClick={() => runBatch(missing)}
-                    >
-                      <WithIcon icon={Sparkles} size={14}>
-                        他の条件でも作る（{missing.length}つ）
-                      </WithIcon>
-                    </button>
-                  )}
-                  <span className="sub" data-testid="preset-score-ruler">
-                    物差し：{scoreRulerName}
-                  </span>
-                  <Hint>
-                    プリセットごとに、この日の記録のうち、同じ条件・いまのデータで作った案（無ければ重みが一致する最新の案）です。カードを押すと、その日の条件をそのプリセットの重みにして、その案を今の案にします（同じ条件・いまのデータで作った案なら計算せずに切り替えます。記録のあとにデータが変わった案は「データが変わったので押すと作り直します」と出し、押すと計算して作ります。作り直すには「AI案を作る」）。
-                    {rulerText(scoreRulerName)}（比較の画面と同じ）。
-                    {SCORE_TEXT}。王冠は一番点の高い案です。
-                  </Hint>
-                </span>
-              }
-            >
-              プリセットごとの案
-            </SectionTitle>
-            <div className="preset-cards" data-testid="preset-cards">
-              {presetCards.map((c, i) => {
-                const isCurrent = isCurrentRun(c.run);
-                const making = batch?.date === date && batch.presetId === c.preset.id;
-                const sc = c.score;
-                const summary = achievementSummary(c.ach, data.rules);
-                const remake = c.remake && !isCurrent;
-                const pt = c.hundred !== null ? `${c.hundred}点` : '';
-                // 読み上げの名前は短く（詳細は aria-describedby の中身）
-                const ariaLabel = isCurrent
-                  ? `${c.preset.name}の案（今の案${pt ? `・${pt}` : ''}）`
-                  : !c.run
-                    ? `${c.preset.name}の案を作る`
-                    : remake
-                      ? `${c.preset.name}の案を作り直して今の案にする${pt ? `（記録は${pt}）` : ''}`
-                      : `${c.preset.name}の案を今の案にする${pt ? `（${pt}）` : ''}`;
-                // 詳細（説明・移動などの内訳・達成・作り直しの注記）は aria-describedby で読む
-                const idOf = (part: string) => `${cardIdBase}-${i}-${part}`;
-                const describedBy = [
-                  c.preset.note && idOf('note'),
-                  c.run && sc && idOf('stats'),
-                  c.run && sc && summary && idOf('ach'),
-                  c.run && sc && remake && idOf('remake'),
-                ]
-                  .filter(Boolean)
-                  .join(' ');
-                // カード全体が1つのボタン（中にボタンを入れ子にしない。中身は phrasing の span だけ）
-                return (
-                  <button
-                    key={c.preset.id}
-                    type="button"
-                    className={`preset-card ${i === bestCard ? 'is-best' : ''} ${isCurrent ? 'is-current' : ''}`}
-                    data-testid="preset-card"
-                    aria-pressed={isCurrent}
-                    aria-disabled={isCurrent || undefined}
-                    aria-label={ariaLabel}
-                    aria-describedby={describedBy || undefined}
-                    disabled={!!running || !problem}
-                    title={
-                      isCurrent
-                        ? '今の案です'
-                        : !c.run
-                          ? `押すと「${c.preset.name}」の重みで案を作ります`
-                          : remake
-                            ? `記録のあとにデータが変わったので、押すと「${c.preset.name}」の重みで作り直します`
-                            : `押すと「${c.preset.name}」の案を今の案にします（計算しません）`
-                    }
-                    onClick={() => {
-                      if (!isCurrent) runPreset(c.preset);
-                    }}
-                  >
-                    <span className="spread">
-                      <strong className="preset-card-name ellipsis">{c.preset.name}</strong>
-                      {i === bestCard && (
-                        <span className="preset-crown" title="一番点の高い案">
-                          <Crown size={16} aria-label="一番点の高い案" />
-                        </span>
-                      )}
-                    </span>
-                    {c.preset.note && (
-                      <span id={idOf('note')} className="sub preset-card-note ellipsis">
-                        {c.preset.note}
-                      </span>
-                    )}
-                    {c.run && sc ? (
-                      <>
-                        <span className="preset-card-score">
-                          <span data-testid="preset-card-score">{c.hundred ?? '—'}</span>
-                          <small>点</small>
-                        </span>
-                        <span id={idOf('stats')} className="preset-card-stats sub">
-                          <span>
-                            <Car size={12} aria-hidden="true" /> 移動 {r0(sc.travelMinutes)}分
-                          </span>
-                          <span className={sc.dropped > 0 ? 'warn-text' : ''}>
-                            <CircleOff size={12} aria-hidden="true" /> 入らない {sc.dropped}件
-                          </span>
-                          <span className={sc.hardViolations.length > 0 ? 'error' : ''}>
-                            <ShieldAlert size={12} aria-hidden="true" /> 必須の違反 {sc.hardViolations.length}件
-                          </span>
-                        </span>
-                        {summary && (
-                          <span id={idOf('ach')} className="sub preset-card-ach">
-                            <ListChecks size={12} aria-hidden="true" /> {summary}
-                          </span>
-                        )}
-                        {remake && (
-                          <span
-                            id={idOf('remake')}
-                            className="sub warn-text preset-card-remake"
-                            data-testid="preset-card-remake"
-                          >
-                            <RefreshCw size={12} aria-hidden="true" /> データが変わったので、押すと作り直します
-                          </span>
-                        )}
-                        {isCurrent ? (
-                          <span className="chip chip-primary preset-card-now">今の案</span>
-                        ) : (
-                          <span className="preset-card-action">{remake ? '作り直す' : 'この案にする'}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="sub preset-card-empty">
-                        {making ? '作っています…' : 'まだ作っていません'}
-                        {!making && <span className="preset-card-action">押して作る</span>}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {!hasVisits ? null : !aiPlan ? (
-          <div className="card">
-            <Empty icon={Sparkles}>
-              {runningFor?.date === date
-                ? `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
-                : running && runningFor
-                  ? `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
-                  : 'この日のAI案はまだありません。「AI案を作る」を押してください。'}
-            </Empty>
-          </div>
-        ) : (
-          <>
-            {planIsStale && !running && (
-              <div className="card stale-note row" data-testid="plan-stale">
-                <WithIcon icon={TriangleAlert} size={16}>
-                  この案を作ったあとに、訪問・{terms.staff}・稼働時間・条件が変わりました
-                </WithIcon>
-                <button type="button" className="btn btn-small" disabled={!!running || !problem} onClick={remakeStale}>
-                  <WithIcon icon={RefreshCw} size={14}>
-                    作り直す
-                  </WithIcon>
-                </button>
-              </div>
-            )}
-            <div className="card stack">
-              <SectionTitle
-                icon={Gauge}
-                aside={
-                  <span className="row" style={{ gap: 6 }}>
-                    {confirmState === 'same' ? (
-                      <span className="chip chip-ok" data-testid="confirm-state">
-                        <CircleCheck size={12} aria-hidden="true" />
-                        確定済み
-                      </span>
-                    ) : (
-                      <span className="chip chip-warn" data-testid="confirm-state">
-                        <TriangleAlert size={12} aria-hidden="true" />
-                        {confirmState === 'diff' ? '未確定の変更あり' : '未確定'}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-small"
-                      disabled={!!running || confirmState === 'same'}
-                      onClick={adopt}
-                    >
-                      この割当で確定
-                    </button>
-                  </span>
-                }
-              >
-                今の案{edited ? '（手直し後）' : ''}
-              </SectionTitle>
-              <PlanSummary
-                current={cs}
-                generated={gs}
-                changed={genDiff?.value?.changedVisits.length ?? 0}
-                problem={scoreProblem}
-                scale={scoreScale}
-                rulerName={scoreRulerName}
-                balanceOut={(() => {
-                  const b = curAch.find((x) => x.ruleId === BALANCE_RULE_KEY);
-                  return b ? b.total - b.met : null;
-                })()}
-              />
-              {scoreProblem && cs && (
-                <div className="stack" style={{ gap: 6 }}>
-                  <strong className="balance-title">
-                    <ListChecks size={15} aria-hidden="true" />
-                    条件ごとの達成
-                  </strong>
-                  <AchievementList list={curAch} rules={data.rules} terms={terms} />
-                </div>
-              )}
-              {scoreProblem && cs && (
-                <BalanceChips
-                  problem={scoreProblem}
-                  routes={routes}
-                  staffName={staffName}
-                  colorOfStaff={colorOfStaff}
-                />
-              )}
-              {(curScore?.error || genScore?.error) && (
-                <p className="error">採点できません（{curScore?.error ?? genScore?.error}）</p>
-              )}
-            </div>
-
-            {reassignInfo && (
+      {visits.length === 0 ? (
+        <div className="card">
+          <Empty icon={CalendarDays}>
+            この日の訪問はまだありません（「訪問を追加」か、「案を変える」の「前の同じ曜日からコピー」）
+          </Empty>
+        </div>
+      ) : (
+        <div className={`plan-main ${aiPlan && !mapShown ? 'is-map-closed' : ''} ${aiPlan ? '' : 'is-no-map'}`}>
+          <div className="plan-body stack">
+            {aiPlan && reassignInfo && (
               <ReassignBar
                 id={barId}
                 info={reassignInfo}
@@ -2135,160 +2189,305 @@ export default function PlanPage() {
                 />
               </ReassignBar>
             )}
-            <div className="card stack">
-              <SectionTitle
-                icon={Users}
-                aside={
-                  <Hint>
-                    訪問をドラッグして別の{terms.staff}
-                    へ移せます（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定（組み直しても担当を変えない）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
-                  </Hint>
-                }
-              >
-                {terms.staff}ごとの順番
-              </SectionTitle>
-              <fieldset className="segmented seg-sm plan-view-toggle" aria-label="担当ごとの表示">
-                {(
-                  [
-                    ['timeline', '時間軸'],
-                    ['order', '順番'],
-                  ] as const
-                ).map(([k, text]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    aria-pressed={colView === k}
-                    className={colView === k ? 'is-on' : ''}
-                    onClick={() => setColView(k)}
-                  >
-                    {text}
-                  </button>
-                ))}
-              </fieldset>
-              {shownView === 'timeline' ? (
+            {shownView === 'list' ? (
+              <VisitList
+                visits={sortedVisits}
+                visitById={visitById}
+                clientById={clientById}
+                ownerName={(id) => {
+                  if (!aiPlan) return null;
+                  const o = owner.get(id);
+                  return o ? { name: staffName(o), color: colorOfStaff.get(o) } : null;
+                }}
+                notes={(id) => ({
+                  outside: !!problem && !problem.visits.some((v) => v.id === id),
+                  dropped: !!aiPlan && unassigned.includes(id),
+                  pinned: !!own(pins, id),
+                  hard: hardOf.get(id),
+                })}
+                clientLabel={terms.client}
+                typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
+                onEdit={setEditing}
+                onCancel={cancelVisit}
+              />
+            ) : !hasVisits ? null : !aiPlan ? (
+              <div className="card">
+                <Empty icon={Sparkles}>
+                  {runningFor?.date === date
+                    ? `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
+                    : running && runningFor
+                      ? `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
+                      : 'この日のAI案はまだありません。'}
+                </Empty>
+                {!running && (
+                  <div className="row" style={{ justifyContent: 'center' }}>
+                    <button type="button" className="btn btn-primary" disabled={!problem} onClick={() => create()}>
+                      <WithIcon icon={Sparkles}>AI案を作る</WithIcon>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="card stack plan-view" data-testid="plan-view">
+                {shownView === 'timeline' ? (
+                  <>
+                    {unassigned.length > 0 && noneCol}
+                    <RouteTimeline
+                      columns={columns.map(timelineCol)}
+                      legOn={(leg) => sel.isLeg(legSel(leg))}
+                      onLeg={(leg) => sel.toggleLeg(legSel(leg))}
+                    />
+                    {/* 未割当が0件のときのドラッグの受け口は時間軸の下に出す（時間軸の位置を変えない） */}
+                    {unassigned.length === 0 && dragging !== null && owner.has(dragging) && noneCol}
+                  </>
+                ) : (
+                  <div className="route-grid">
+                    {(unassigned.length > 0 || (dragging !== null && owner.has(dragging))) && noneCol}
+                    {columns.map((sid) => {
+                      const ids = own(routes, sid) ?? [];
+                      return (
+                        <div
+                          key={sid}
+                          className={`route-col ${colClass(sid)}`}
+                          style={{ borderTopColor: colorOfStaff.get(sid) }}
+                          data-staff={sid}
+                          {...dropProps(sid)}
+                        >
+                          {colHeader(sid)}
+                          {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
+                          {ids.map((id) => card(id))}
+                          {homeLeg(sid)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {aiPlan && (
+            <aside
+              ref={mapCardRef}
+              className={mapShown ? 'card stack plan-map' : 'plan-map is-closed'}
+              aria-label="地図"
+              data-testid="plan-map"
+            >
+              {mapShown ? (
                 <>
-                  {unassigned.length > 0 && noneCol}
-                  <RouteTimeline
-                    columns={columns.map(timelineCol)}
-                    legOn={(leg) => sel.isLeg(legSel(leg))}
-                    onLeg={(leg) => sel.toggleLeg(legSel(leg))}
+                  <SectionTitle
+                    icon={MapIcon}
+                    aside={
+                      <span className="row" style={{ gap: 4 }}>
+                        {focusStaff && (
+                          <button type="button" className="btn btn-small" onClick={sel.clear}>
+                            全員のルートを見る
+                          </button>
+                        )}
+                        {wideMap && (
+                          <IconButton
+                            icon={PanelRightClose}
+                            label="地図を畳む"
+                            onClick={() => setMapOpen(false)}
+                            data-testid="map-collapse"
+                          />
+                        )}
+                      </span>
+                    }
+                  >
+                    地図{focusStaff ? `：${staffName(focusStaff)}` : ''}
+                  </SectionTitle>
+                  <RouteMap points={points} lines={lines} height={wideMap ? 520 : 420} />
+                  <StaffLegend
+                    staffIds={columns.filter((sid) => (own(routes, sid)?.length ?? 0) > 0)}
+                    staffName={staffName}
+                    colorOfStaff={colorOfStaff}
+                    focusStaff={focusStaff}
+                    onFocus={focusOn}
+                    extra={<span className="nowrap legend-item">「家」＝自宅</span>}
                   />
-                  {/* 未割当が0件のときのドラッグの受け口は時間軸の下に出す（時間軸の位置を変えない） */}
-                  {unassigned.length === 0 && dragging !== null && owner.has(dragging) && noneCol}
                 </>
               ) : (
-                <div className="route-grid">
-                  {(unassigned.length > 0 || (dragging !== null && owner.has(dragging))) && noneCol}
-                  {columns.map((sid) => {
-                    const ids = own(routes, sid) ?? [];
-                    return (
-                      <div
-                        key={sid}
-                        className={`route-col ${colClass(sid)}`}
-                        style={{ borderTopColor: colorOfStaff.get(sid) }}
-                        data-staff={sid}
-                        {...dropProps(sid)}
-                      >
-                        {colHeader(sid)}
-                        {ids.length === 0 && <span className="sub">ここへドラッグすると移せます</span>}
-                        {ids.map((id) => card(id))}
-                        {homeLeg(sid)}
-                      </div>
-                    );
-                  })}
+                <button
+                  type="button"
+                  className="btn plan-map-open"
+                  onClick={() => setMapOpen(true)}
+                  data-testid="map-expand"
+                  title="地図を開く"
+                >
+                  <PanelRightOpen size={16} aria-hidden="true" />
+                  <span className="plan-map-open-text">地図</span>
+                </button>
+              )}
+            </aside>
+          )}
+        </div>
+      )}
+      {aiPlan && (
+        <MapDock
+          target={mapCardRef}
+          points={points}
+          lines={lines}
+          title={`地図${focusStaff ? `：${staffName(focusStaff)}` : ''}`}
+          focusKey={sel.focusKey}
+        />
+      )}
+      {aiPlan && reassignInfo && (
+        <ReassignDock
+          targetId={barId}
+          unplaced={rDiff?.unplaced.length ?? 0}
+          left={left.length}
+          method={reassignInfo.method}
+          annealRecommended={annealRecommended && !annealDisabled}
+          annealRunning={running === 'anneal'}
+          contactCount={contactsTotal}
+          onGo={goToBar}
+          onAnneal={() => {
+            startAnneal();
+            goToBar();
+          }}
+          onContacts={() => setContactsOpen(true)}
+        />
+      )}
+
+      {problem && problem.infeasible.length > 0 && !aiPlan && (
+        <div className="card stack">
+          <SectionTitle icon={CircleOff}>どの{terms.staff}も担当できない訪問</SectionTitle>
+          {problem.infeasible.map((f) => {
+            const v = problem.visits[f.visit];
+            if (!v) return null;
+            return (
+              <div key={v.id} className="row" style={{ flexWrap: 'wrap' }}>
+                <span>{visitLabel(v.id)}</span>
+                {f.reasons.map((r) => (
+                  <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
+                    {r.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {notInProblem.length > 0 && (
+        <div className="card stack">
+          <SectionTitle
+            icon={TriangleAlert}
+            aside={
+              <Hint>
+                {terms.client}が休止中・位置が未登録などの訪問です（{terms.client}の画面で直せます）。
+              </Hint>
+            }
+          >
+            計算に入れなかった訪問
+          </SectionTitle>
+          {notInProblem.map((v) => (
+            <span key={v.id}>{visitLabel(v.id)}</span>
+          ))}
+        </div>
+      )}
+
+      {panel === 'detail' && (
+        <SidePanel icon={Gauge} title={`今の案の詳しく${edited ? '（手直し後）' : ''}`} onClose={() => setPanel(null)}>
+          {aiPlan && cs ? (
+            <div className="stack" data-testid="plan-detail-panel">
+              <PlanSummary
+                current={cs}
+                generated={gs}
+                changed={genDiff?.value?.changedVisits.length ?? 0}
+                problem={scoreProblem}
+                scale={scoreScale}
+                rulerName={scoreRulerName}
+                balanceOut={(() => {
+                  const b = curAch.find((x) => x.ruleId === BALANCE_RULE_KEY);
+                  return b ? b.total - b.met : null;
+                })()}
+              />
+              <span className="plan-meta">
+                <Clock size={12} aria-hidden="true" />
+                {new Date(aiPlan.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} に作成・乱数の種{' '}
+                {aiPlan.seed}・{aiPlan.iterations.toLocaleString()}回{aiPlan.stopped && '・途中で止めた案'}
+              </span>
+              {stale && autoMade && (
+                <div className="sub row">
+                  <WithIcon icon={TriangleAlert} size={14}>
+                    プリセット「{madeBy?.name}」の条件で作った案です
+                  </WithIcon>
+                  <Hint>
+                    いまの条件とは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
+                    」の物差しで付けます。いまの条件で作るには「案を変える」の「AI案を作り直す」を押してください。
+                  </Hint>
                 </div>
               )}
-            </div>
-
-            <div className="card stack" ref={mapCardRef}>
-              <SectionTitle
-                icon={MapIcon}
-                aside={
-                  focusStaff && (
-                    <button type="button" className="btn btn-small" onClick={sel.clear}>
-                      全員のルートを見る
-                    </button>
-                  )
-                }
-              >
-                地図{focusStaff ? `：${staffName(focusStaff)}` : ''}
-              </SectionTitle>
-              <RouteMap points={points} lines={lines} height={420} />
-              <StaffLegend
-                staffIds={columns.filter((sid) => (own(routes, sid)?.length ?? 0) > 0)}
-                staffName={staffName}
-                colorOfStaff={colorOfStaff}
-                focusStaff={focusStaff}
-                onFocus={focusOn}
-                extra={<span className="nowrap legend-item">「家」＝自宅</span>}
-              />
-            </div>
-            <MapDock
-              target={mapCardRef}
-              points={points}
-              lines={lines}
-              title={`地図${focusStaff ? `：${staffName(focusStaff)}` : ''}`}
-              focusKey={sel.focusKey}
-            />
-            {reassignInfo && (
-              <ReassignDock
-                targetId={barId}
-                unplaced={rDiff?.unplaced.length ?? 0}
-                left={left.length}
-                method={reassignInfo.method}
-                annealRecommended={annealRecommended && !annealDisabled}
-                annealRunning={running === 'anneal'}
-                contactCount={contactsTotal}
-                onGo={goToBar}
-                onAnneal={() => {
-                  startAnneal();
-                  goToBar();
-                }}
-                onContacts={() => setContactsOpen(true)}
-              />
-            )}
-          </>
-        )}
-
-        {problem && problem.infeasible.length > 0 && !aiPlan && (
-          <div className="card stack">
-            <SectionTitle icon={CircleOff}>どの{terms.staff}も担当できない訪問</SectionTitle>
-            {problem.infeasible.map((f) => {
-              const v = problem.visits[f.visit];
-              if (!v) return null;
-              return (
-                <div key={v.id} className="row" style={{ flexWrap: 'wrap' }}>
-                  <span>{visitLabel(v.id)}</span>
-                  {f.reasons.map((r) => (
-                    <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
-                      {r.label}
-                    </span>
-                  ))}
+              {scoreProblem && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <strong className="balance-title">
+                    <ListChecks size={15} aria-hidden="true" />
+                    条件ごとの達成
+                  </strong>
+                  <AchievementList list={curAch} rules={data.rules} terms={terms} />
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {notInProblem.length > 0 && (
-          <div className="card stack">
+              )}
+              {scoreProblem && (
+                <BalanceChips
+                  problem={scoreProblem}
+                  routes={routes}
+                  staffName={staffName}
+                  colorOfStaff={colorOfStaff}
+                />
+              )}
+            </div>
+          ) : (
+            <Empty icon={Gauge}>今の案はまだありません</Empty>
+          )}
+        </SidePanel>
+      )}
+      {panel === 'tune' && (
+        <SidePanel icon={SlidersHorizontal} title="条件を調整する" onClose={() => setPanel(null)} focusPanel>
+          <div className="stack" data-testid="plan-tune-panel">
             <SectionTitle
-              icon={TriangleAlert}
+              icon={LayoutGrid}
               aside={
-                <Hint>
-                  {terms.client}が休止中・位置が未登録などの訪問です（{terms.client}の画面で直せます）。
-                </Hint>
+                <span className="row" style={{ gap: 6 }}>
+                  <span className="sub" data-testid="preset-score-ruler">
+                    物差し：{scoreRulerName}
+                  </span>
+                  <Hint>
+                    プリセットごとに、この日の記録のうち、同じ条件・いまのデータで作った案（無ければ重みが一致する最新の案）です。カードを押すと、その日の条件をそのプリセットの重みにして、その案を今の案にします（同じ条件・いまのデータで作った案なら計算せずに切り替えます。記録のあとにデータが変わった案は「データが変わったので押すと作り直します」と出し、押すと計算して作ります）。
+                    {rulerText(scoreRulerName)}（比較の画面と同じ）。
+                    {SCORE_TEXT}。王冠は一番点の高い案です。
+                  </Hint>
+                </span>
               }
             >
-              計算に入れなかった訪問
+              プリセットごとの案
             </SectionTitle>
-            {notInProblem.map((v) => (
-              <span key={v.id}>{visitLabel(v.id)}</span>
-            ))}
+            {progressView}
+            {hasVisits ? presetCardsView : <span className="sub">この日に計算できる訪問がありません</span>}
+            {missing.length > 0 && !batch && hasVisits && (
+              <button
+                type="button"
+                className="btn btn-small"
+                style={{ alignSelf: 'flex-start' }}
+                disabled={!!running || !problem}
+                onClick={() => runBatch(missing)}
+              >
+                <WithIcon icon={Sparkles} size={14}>
+                  他の条件でも作る（{missing.length}つ）
+                </WithIcon>
+              </button>
+            )}
+            <WeightPanel
+              running={!!running}
+              onRecalc={() => create()}
+              showPresets
+              canRun={!!problem}
+              recalcLabel="この重みで作り直す"
+            />
           </div>
-        )}
-      </div>
-
+        </SidePanel>
+      )}
       {contactsOpen && (contacts || leftContacts.length > 0) && (
         <ContactPanel
           list={contacts ?? EMPTY_CONTACTS}
@@ -2325,19 +2524,28 @@ export default function PlanPage() {
             />
           );
         })()}
-      <WeightPanel
-        running={!!running}
-        onRecalc={() => create()}
-        showPresets
-        canRun={!!problem}
-        recalcLabel="AI案を作り直す"
-      />
     </div>
   );
 }
 
 /** 時間軸をやめて順番にする幅（PRD D58） */
 const NARROW_QUERY = '(max-width: 900px)';
+
+/** 地図を時間軸の横に並べる幅（PRD D63） */
+const WIDE_MAP_QUERY = '(min-width: 1280px)';
+
+/** メディアクエリが合っているか（幅を変えたら追う） */
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setOn(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return on;
+}
 
 /** 狭い幅（900px 以下）か印刷中か。印刷は beforeprint の中ですぐ描き直す（印刷の画像に間に合わせる） */
 function useNarrowOrPrint(): boolean {
@@ -2412,12 +2620,12 @@ function PlanSummary({
   };
   return (
     <div className="stack" style={{ gap: 8 }}>
-      <div className="stat-row" data-testid="plan-summary">
+      <div className="stat-row">
         <Stat
           icon={Gauge}
           label={hard > 0 ? '合計（参考）' : '合計'}
           tone="primary"
-          value={<span data-testid="plan-total">{hundred ?? '—'}</span>}
+          value={hundred ?? '—'}
           unit="点"
           note={totalNote()}
         />
@@ -2550,8 +2758,8 @@ type VisitNotes = {
 };
 
 /**
- * その日の訪問の一覧（時間・訪問先・所要・担当・注意・編集/取消）。件数が多いので初期は畳む。
- * 担当は今の案での担当を出すだけ（割り当ては下の列でドラッグする）
+ * その日の訪問の一覧（時間・訪問先・所要・担当・注意・編集/取消）。表示の切り替えの「一覧」で出す（PRD D63。
+ * 以前の畳んだ表をやめた）。担当は今の案での担当を出すだけ（割り当ては時間軸・順番でドラッグする）
  */
 function VisitList({
   visits,
@@ -2578,13 +2786,10 @@ function VisitList({
   onCancel: (v: Visit) => void;
 }) {
   return (
-    <details className="card visit-list" data-testid="visit-list">
-      <summary className="visit-list-summary">
-        <ChevronRight size={18} className="visit-list-chevron" aria-hidden="true" />
-        <CalendarDays size={18} aria-hidden="true" />
-        <strong>訪問の一覧（{visits.length}件）</strong>
-        <span className="sub">押すと開きます。担当は今の案のものです</span>
-      </summary>
+    <section className="card stack visit-list" data-testid="visit-list">
+      <SectionTitle icon={CalendarDays} aside={<span className="sub">担当は今の案のものです</span>}>
+        訪問の一覧（{visits.length}件）
+      </SectionTitle>
       <div className="table-scroll">
         <table className="visit-table">
           <thead>
@@ -2672,6 +2877,6 @@ function VisitList({
           </tbody>
         </table>
       </div>
-    </details>
+    </section>
   );
 }
