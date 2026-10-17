@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   absenceSchema,
   availabilitySchema,
+  clientLeaveSchema,
   clientSchema,
   dateSchema,
   idSchema,
@@ -144,6 +145,8 @@ export const demoDataSchema = z.object({
   visitTypes: z.array(visitTypeSchema).max(MAX_VISIT_TYPES).default([]),
   /** 定期パターン（ADR-0012）。無い古いデータは []（版は1のまま） */
   patterns: z.array(patternSchema).max(2000).default([]),
+  /** 〈利用者さん〉の休み（ADR-0013）。無い古いデータは []（版は1のまま） */
+  clientLeaves: z.array(clientLeaveSchema).max(2000).default([]),
   /** date → 手作業案 */
   manualPlans: z.record(z.string(), manualRoutesSchema),
   /** date → 最新のAI案 */

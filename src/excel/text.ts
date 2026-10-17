@@ -54,10 +54,69 @@ export const FIXED_SHEETS = {
   visitTypes: '種類',
   patterns: '定期パターン',
   visits: '訪問',
+  clientLeaves: '訪問先の休み',
 } as const;
 
 /** 定期パターンの間隔（ADR-0012。1＝毎週…4＝4週ごと） */
 export const EVERY_WEEKS_LABELS: Record<1 | 2 | 3 | 4, string> = { 1: '毎週', 2: '隔週', 3: '3週ごと', 4: '4週ごと' };
+
+/** 定期パターンの間隔の「毎月」（ADR-0013。毎月の第N週。第N週は別の列） */
+export const MONTHLY_LABEL = '毎月';
+
+/** 毎月の第N週の文（[3, 4] → 「3、4」） */
+export const monthWeeksText = (weeks: readonly number[]): string => weeks.join('、');
+
+/** 「3、4」「第3・第4」「3,4」（全角も）→ [3, 4]（小さい順・重なりなし）。空・1〜5 以外があれば null */
+export function parseMonthWeeks(s: string): number[] | null {
+  const parts = nfkc(s)
+    .split(/[、,，・\s]+/)
+    .map((x) => x.replace(/^第/, '').replace(/週$/, ''))
+    .filter((x) => x !== '');
+  if (parts.length === 0) return null;
+  const out = new Set<number>();
+  for (const x of parts) {
+    if (!/^[1-5]$/.test(x)) return null;
+    out.add(Number(x));
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/** 曜日ごとの時刻の文（「月 9:30、木 15:00〜15:30」。ちょうどは開始（早）だけ） */
+export function dayTimesText(
+  dayTimes: readonly { weekday: number; earliestStart: string; latestStart: string }[],
+  windowKind: 'fixed' | 'window',
+): string {
+  const t = (h: string) => h.replace(/^0(\d)/, '$1');
+  return dayTimes
+    .map((x) =>
+      windowKind === 'fixed' || x.earliestStart === x.latestStart
+        ? `${WEEKDAY_LABELS[x.weekday]} ${t(x.earliestStart)}`
+        : `${WEEKDAY_LABELS[x.weekday]} ${t(x.earliestStart)}〜${t(x.latestStart)}`,
+    )
+    .join('、');
+}
+
+/**
+ * 「月 9:30、木 15:00〜15:30」→ 曜日ごとの時刻（曜日の順）。区切りは「、」か改行。読めなければ理由の文。
+ * 開始（遅）を省いたら開始（早）と同じ
+ */
+export function parseDayTimes(s: string): { weekday: number; earliestStart: string; latestStart: string }[] | string {
+  const out: { weekday: number; earliestStart: string; latestStart: string }[] = [];
+  for (const raw of s.split(/[、\r\n]/)) {
+    const x = nfkc(raw);
+    if (x === '') continue;
+    const m = /^(.)曜?\s*(\d{1,2}[:：]\d{2})\s*(?:[〜~\-－ー]\s*(\d{1,2}[:：]\d{2}))?$/.exec(x);
+    const wd = m ? (WEEKDAY_LABELS as readonly string[]).indexOf(m[1]!) : -1;
+    if (!m || wd < 0) return `「${x}」は「月 9:30」「木 15:00〜15:30」の形で書いてください`;
+    const a = parseTimeText(m[2]!);
+    const b = m[3] ? parseTimeText(m[3]) : a;
+    if (!a || !b) return `「${x}」の時刻が読めません`;
+    if (a > b) return `「${x}」の開始（遅）が開始（早）より前です`;
+    if (out.some((y) => y.weekday === wd)) return `「${WEEKDAY_LABELS[wd]}」の時刻が2つあります`;
+    out.push({ weekday: wd, earliestStart: a, latestStart: b });
+  }
+  return out.sort((p, q) => p.weekday - q.weekday);
+}
 
 /** 「毎週」「隔週」「3週ごと」「4週ごと」（全角の数字も）→ 1〜4。読めなければ null */
 export function parseEveryWeeks(s: string): 1 | 2 | 3 | 4 | null {

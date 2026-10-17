@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { type MapPoint, RouteMap } from '../components/RouteMap';
 import { Empty, WithIcon } from '../components/ui';
+import { VisitRules } from '../components/VisitRules';
 import { timesOf } from '../domain/scheduleModel';
 import { minutesToHhmm } from '../domain/time';
 import { colorOf, initialOf } from '../lib/colors';
@@ -27,7 +28,14 @@ export default function StaffViewPage() {
   const hasManual = Object.values(m.savedView.cols).some((ids) => ids.length > 0);
   const ai = data.aiPlans[date];
   const source: 'manual' | 'ai' | null = hasManual ? 'manual' : ai ? 'ai' : null;
-  const ids = source === 'manual' ? manualIds : source === 'ai' ? ((ai && own(ai.routes, staffId)) ?? []) : [];
+  // 取り消し・〈利用者さん〉の休み（ADR-0013）の訪問は出さない（visitById はその日の計算に入れる候補の訪問だけ）
+  const ids = useMemo(
+    () =>
+      (source === 'manual' ? manualIds : source === 'ai' ? ((ai && own(ai.routes, staffId)) ?? []) : []).filter((id) =>
+        visitById.has(id),
+      ),
+    [source, manualIds, ai, staffId, visitById],
+  );
 
   // 時刻：問題があれば移動を入れた時刻（scheduleRoute）、無ければ移動を入れない目安
   const timing = useMemo(() => {
@@ -115,6 +123,7 @@ export default function StaffViewPage() {
                           {t ? `${minutesToHhmm(t.start)}〜${minutesToHhmm(t.end)}` : v?.earliestStart}
                         </div>
                         {v?.note && <div className="sub">{v.note}</div>}
+                        <VisitRules client={c} />
                       </div>
                     </div>
                   </div>

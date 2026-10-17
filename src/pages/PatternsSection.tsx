@@ -6,7 +6,7 @@ import { TypeDot } from '../components/visitType';
 import type { DemoData } from '../contracts/data';
 import { type Client, type Pattern, patternSchema } from '../contracts/documents';
 import type { PatternChange } from '../contracts/patterns';
-import { jstDate } from '../domain/time';
+import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
 import { byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { EVERY_WEEKS_LABELS, mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
 import { applyPatterns, removePattern, splitPattern } from '../patterns';
@@ -24,6 +24,14 @@ type Form = {
   typeId: string;
   weekdays: number[];
   everyWeeks: number;
+  /** 繰り返し方（ADR-0013） */
+  repeat: Pattern['repeat'];
+  /** 毎月の第N（1〜5） */
+  monthWeeks: number[];
+  /** 曜日ごとに時刻を変える */
+  perDay: boolean;
+  /** 曜日 → 開始（早・遅）。perDay のとき、選んだ曜日のうち入れたものだけを使う */
+  dayTimes: Record<number, { earliestStart: string; latestStart: string }>;
   windowKind: Pattern['windowKind'];
   earliestStart: string;
   latestStart: string;
@@ -44,6 +52,12 @@ const formOf = (p: Pattern | null, today: string, defaultDuration: number): Form
         typeId: p.typeId ?? '',
         weekdays: [...p.weekdays],
         everyWeeks: p.everyWeeks,
+        repeat: p.repeat,
+        monthWeeks: [...p.monthWeeks],
+        perDay: p.dayTimes.length > 0,
+        dayTimes: Object.fromEntries(
+          p.dayTimes.map((t) => [t.weekday, { earliestStart: t.earliestStart, latestStart: t.latestStart }]),
+        ),
         windowKind: p.windowKind,
         earliestStart: p.earliestStart,
         latestStart: p.latestStart,
@@ -59,6 +73,10 @@ const formOf = (p: Pattern | null, today: string, defaultDuration: number): Form
         typeId: '',
         weekdays: [],
         everyWeeks: 1,
+        repeat: 'weekly',
+        monthWeeks: [],
+        perDay: false,
+        dayTimes: {},
         windowKind: 'fixed',
         earliestStart: '10:00',
         latestStart: '10:00',
@@ -96,8 +114,27 @@ export function PatternsSection({ client }: { client: Client }) {
   /** 入力を確かめてパターンの中身にする（だめなら理由の文） */
   const parse = (f: Form, from: string): Pattern | string => {
     if (f.weekdays.length === 0) return '曜日を1つ以上選んでください';
+    if (f.repeat === 'monthly' && f.monthWeeks.length === 0) return '第何週かを1つ以上選んでください';
     const latest = f.windowKind === 'fixed' ? f.earliestStart : f.latestStart;
     if (f.earliestStart > latest) return '開始（遅）は開始（早）以降にしてください';
+    // 曜日ごとの時刻（ADR-0013）：選んだ曜日のうち時刻を入れたものだけ。ちょうどなら開始（遅）＝開始（早）
+    const dayTimes = f.perDay
+      ? [...f.weekdays]
+          .sort((a, b) => a - b)
+          .flatMap((w) => {
+            const t = f.dayTimes[w];
+            if (!t?.earliestStart) return [];
+            // 幅のパターンで開始（遅）が空なら、共通の時刻の幅（開始（遅）− 開始（早））を保った時刻にする
+            const width = Math.max(0, hhmmToMinutes(f.latestStart) - hhmmToMinutes(f.earliestStart));
+            const l =
+              f.windowKind === 'fixed'
+                ? t.earliestStart
+                : t.latestStart || minutesToHhmm(Math.min(hhmmToMinutes(t.earliestStart) + width, 23 * 60 + 59));
+            return [{ weekday: w, earliestStart: t.earliestStart, latestStart: l }];
+          })
+      : [];
+    const badDay = dayTimes.find((t) => t.earliestStart > t.latestStart);
+    if (badDay) return `${WEEKDAY_LABELS[badDay.weekday]}曜の開始（遅）は開始（早）以降にしてください`;
     if (f.to && f.to < from)
       return f.id ? '終了日は「いつから」以降にしてください' : '終了日は開始日以降にしてください';
     const r = patternSchema.safeParse({
@@ -105,7 +142,10 @@ export function PatternsSection({ client }: { client: Client }) {
       clientId: client.id,
       typeId: f.typeId && data.visitTypes.some((t) => t.id === f.typeId) ? f.typeId : null,
       weekdays: [...f.weekdays].sort((a, b) => a - b),
-      everyWeeks: f.everyWeeks,
+      everyWeeks: f.repeat === 'monthly' ? 1 : f.everyWeeks,
+      repeat: f.repeat,
+      monthWeeks: f.repeat === 'monthly' ? [...f.monthWeeks].sort((a, b) => a - b) : [],
+      dayTimes,
       windowKind: f.windowKind,
       earliestStart: f.earliestStart,
       latestStart: latest,
@@ -119,7 +159,8 @@ export function PatternsSection({ client }: { client: Client }) {
       const where = r.error.issues[0]?.path[0];
       if (where === 'durationMinutes') return '所要は5〜720分で入れてください';
       if (where === 'from' || where === 'to') return '日付を正しく入れてください';
-      if (where === 'earliestStart' || where === 'latestStart') return '時刻を正しく入れてください';
+      if (where === 'earliestStart' || where === 'latestStart' || where === 'dayTimes')
+        return '時刻を正しく入れてください';
       return r.error.issues[0]?.message ?? '入力を確かめてください';
     }
     return r.data;
@@ -299,16 +340,24 @@ export function PatternsSection({ client }: { client: Client }) {
               </select>
             </label>
             <label>
-              間隔
+              繰り返し
               <select
-                value={form.everyWeeks}
-                onChange={(e) => setForm({ ...form, everyWeeks: Number(e.target.value) })}
+                value={form.repeat === 'monthly' ? 'monthly' : String(form.everyWeeks)}
+                onChange={(e) =>
+                  setForm(
+                    e.target.value === 'monthly'
+                      ? { ...form, repeat: 'monthly' }
+                      : { ...form, repeat: 'weekly', everyWeeks: Number(e.target.value) },
+                  )
+                }
+                data-testid="pattern-repeat"
               >
                 {[1, 2, 3, 4].map((n) => (
                   <option key={n} value={n}>
                     {EVERY_WEEKS_LABELS[n]}
                   </option>
                 ))}
+                <option value="monthly">毎月（第N週）</option>
               </select>
             </label>
           </div>
@@ -328,6 +377,33 @@ export function PatternsSection({ client }: { client: Client }) {
               ))}
             </fieldset>
           </div>
+          {form.repeat === 'monthly' && (
+            <div className="stack" style={{ gap: 4 }}>
+              <span className="sub">第何週（1つ以上。例：第3・第4の木曜）</span>
+              <fieldset className="weekday-toggles" aria-label="第何週" data-testid="pattern-month-weeks">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`weekday-toggle month-week-toggle${form.monthWeeks.includes(n) ? ' is-on' : ''}`}
+                    aria-pressed={form.monthWeeks.includes(n)}
+                    title={n === 5 ? '第5の曜日がある月だけ' : undefined}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        monthWeeks: form.monthWeeks.includes(n)
+                          ? form.monthWeeks.filter((x) => x !== n)
+                          : [...form.monthWeeks, n],
+                      })
+                    }
+                  >
+                    第{n}
+                  </button>
+                ))}
+              </fieldset>
+              <span className="sub">第5は、その曜日が5回ある月だけ訪問を作ります。</span>
+            </div>
+          )}
           <div className="form-grid">
             <label>
               時間の決め方
@@ -408,6 +484,65 @@ export function PatternsSection({ client }: { client: Client }) {
               メモ
               <input value={form.note} maxLength={200} onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </label>
+          </div>
+          <div className="stack" style={{ gap: 4 }}>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.perDay}
+                onChange={(e) => setForm({ ...form, perDay: e.target.checked })}
+                data-testid="pattern-per-day"
+              />
+              曜日ごとに時刻を変える（例：月曜は 9:30、木曜は 15:00）
+            </label>
+            {form.perDay &&
+              (form.weekdays.length === 0 ? (
+                <span className="sub">先に曜日を選んでください</span>
+              ) : (
+                <div className="pattern-daytimes" data-testid="pattern-daytimes">
+                  <div className="row pattern-daytime sub" aria-hidden="true">
+                    <span className="pattern-daytime-day">曜日</span>
+                    <span className="pattern-daytime-col">{form.windowKind === 'fixed' ? '開始' : '開始（早）'}</span>
+                    {form.windowKind === 'window' && <span className="pattern-daytime-col">開始（遅）</span>}
+                  </div>
+                  {[...form.weekdays]
+                    .sort((a, b) => a - b)
+                    .map((w) => {
+                      const t = form.dayTimes[w] ?? { earliestStart: '', latestStart: '' };
+                      const set = (patch: Partial<typeof t>) =>
+                        setForm({ ...form, dayTimes: { ...form.dayTimes, [w]: { ...t, ...patch } } });
+                      return (
+                        <div key={w} className="row pattern-daytime">
+                          <strong className="pattern-daytime-day">{WEEKDAY_LABELS[w]}</strong>
+                          <label className="pattern-daytime-col">
+                            <span className="sr-only">
+                              {WEEKDAY_LABELS[w]}曜の{form.windowKind === 'fixed' ? '開始' : '開始（早）'}
+                            </span>
+                            <input
+                              type="time"
+                              value={t.earliestStart}
+                              onChange={(e) => set({ earliestStart: e.target.value })}
+                            />
+                          </label>
+                          {form.windowKind === 'window' && (
+                            <label className="pattern-daytime-col">
+                              <span className="sr-only">{WEEKDAY_LABELS[w]}曜の開始（遅）</span>
+                              <input
+                                type="time"
+                                value={t.latestStart}
+                                onChange={(e) => set({ latestStart: e.target.value })}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
+                  <span className="sub">
+                    空の曜日は、上の共通の時刻です。
+                    {form.windowKind === 'window' && '開始（遅）が空なら、共通の時刻と同じ幅にします。'}
+                  </span>
+                </div>
+              ))}
           </div>
           {form.id && (
             <span className="sub">

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { Absence, Client, Staff, Visit } from '../contracts/documents';
 import type { Problem, ScoreScale } from '../contracts/problem';
 import { availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
+import { isOnLeave } from '../domain/leaves';
 import { NONE, reconcile, type View } from '../domain/scheduleModel';
 import { normalize } from '../evaluate';
 import { type CompileInput, compile } from '../matching';
@@ -24,7 +25,16 @@ export function useDayModel(date: string) {
   const clientById = useMemo(() => new Map<string, Client>(clients.map((c) => [c.id, c])), [clients]);
   const colorOfStaff = useMemo(() => new Map(staff.map((s, i) => [s.id, staffColor(i)])), [staff]);
   const allVisits = useMemo(() => data.visits.filter((v) => v.date === date), [data.visits, date]);
-  const visits = useMemo(() => allVisits.filter((v) => !v.cancelled), [allVisits]);
+  /** 計算に入れる候補の訪問（取り消し・〈利用者さん〉の休み（ADR-0013）の訪問を除く） */
+  const visits = useMemo(
+    () => allVisits.filter((v) => !v.cancelled && !isOnLeave(data.clientLeaves, v)),
+    [allVisits, data.clientLeaves],
+  );
+  /** 〈利用者さん〉の休みのため無しの訪問（取り消しを除く。ADR-0013。画面で薄く出すだけ） */
+  const leaveVisits = useMemo(
+    () => allVisits.filter((v) => !v.cancelled && isOnLeave(data.clientLeaves, v)),
+    [allVisits, data.clientLeaves],
+  );
   const visitById = useMemo(() => new Map<string, Visit>(visits.map((v) => [v.id, v])), [visits]);
   /**
    * その日の稼働時間帯（基本の曜日と時間＋日ごとの上書き）。slots は欠勤を差し引いたもの（ADR-0011）、
@@ -63,6 +73,7 @@ export function useDayModel(date: string) {
       absences: data.absences,
       visitTypes: data.visitTypes,
       patterns: data.patterns,
+      clientLeaves: data.clientLeaves,
     }),
     [
       data.org,
@@ -76,6 +87,7 @@ export function useDayModel(date: string) {
       data.absences,
       data.visitTypes,
       data.patterns,
+      data.clientLeaves,
     ],
   );
   const compiled = useMemo(() => attempt(() => compile(compileInput, date)), [compileInput, date]);
@@ -117,6 +129,7 @@ export function useDayModel(date: string) {
     colorOfStaff,
     allVisits,
     visits,
+    leaveVisits,
     visitById,
     slotsOf,
     /** compile に渡すデータ（compile が読むフィールドだけ。条件を変えて compile し直すときの元。ADR-0010） */

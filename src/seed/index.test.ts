@@ -180,3 +180,18 @@ describe('プリセット', () => {
     expect(presetOf(changed, d.presets)).toBeNull();
   });
 });
+
+describe('ADR-0013 の初期データ', () => {
+  it('数人（c2・c4・c9・c13）に訪問先の決まりごとの例が入り、ほかは空。休みは無く、パターンは毎週', () => {
+    const d = createDemoData('2026-10-12');
+    const withRules = d.clients
+      .filter((c) => c.entryNote || c.keyNote || c.parkingNote || c.cautionNote)
+      .map((c) => c.id)
+      .sort();
+    expect(withRules).toEqual(['c13', 'c2', 'c4', 'c9']);
+    expect(d.clientLeaves).toEqual([]);
+    expect(d.patterns.every((p) => p.repeat === 'weekly' && p.monthWeeks.length === 0 && p.dayTimes.length === 0)).toBe(
+      true,
+    );
+  });
+});

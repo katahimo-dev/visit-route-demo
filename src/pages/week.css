@@ -323,3 +323,11 @@ label.week-who {
 .week-clients th:first-child {
   width: 150px;
 }
+/* 〈利用者さん〉の休み（ADR-0013）のため無しの訪問：薄い破線の帯（動かさない） */
+.week-band.is-leave,
+.week-citem.is-leave {
+  border: 1.5px dashed #9aa8b8;
+  background: repeating-linear-gradient(135deg, #f6f8fb 0 6px, #e9eef4 6px 12px) !important;
+  color: #3f4f63;
+  cursor: pointer;
+}

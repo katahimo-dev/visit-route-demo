@@ -519,3 +519,29 @@ export const INITIAL_COMPAT: Record<string, Record<string, 2 | 1 | -1 | -2>> = {
   c19: { s8: 2 },
   c20: { s2: -1 },
 };
+
+/**
+ * 訪問先の決まりごと（PRD D66。ADR-0013）の例。数人だけに入れる。どれも架空（実在の住所・鍵の番号ではない）
+ */
+export const VISIT_RULE_SEEDS: Record<
+  string,
+  { entryNote?: string; keyNote?: string; parkingNote?: string; cautionNote?: string }
+> = {
+  c2: {
+    entryNote: 'インターホンを押してから玄関へ（犬がいます）',
+    parkingNote: '坂の下の空き地に1台（家の前には停めない）',
+    cautionNote: '冬は坂が凍るので歩いて上がる',
+  },
+  c4: {
+    entryNote: 'チャイムは鳴らさずノック（お昼寝中のことがある）',
+    keyNote: 'ポストの中のキーボックス（番号は事務所で確認）',
+  },
+  c9: {
+    entryNote: 'オートロック。部屋番号のあと「呼出」',
+    parkingNote: '近くのコインパーキング（領収書をもらう）',
+  },
+  c13: {
+    keyNote: 'ご家族が開けます（9時より前は不在）',
+    cautionNote: '玄関の段差が高い。手すりを使ってもらう',
+  },
+};

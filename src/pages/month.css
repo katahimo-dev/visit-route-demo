@@ -513,3 +513,16 @@
     width: 100%;
   }
 }
+/* 〈利用者さん〉の休み（ADR-0013） */
+.month-mark.is-leave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #3f4f63;
+}
+.month-cvisit.is-leave {
+  color: var(--sub);
+  opacity: 1;
+  background: repeating-linear-gradient(135deg, transparent 0 4px, #eef2f7 4px 8px);
+  border-radius: 4px;
+}

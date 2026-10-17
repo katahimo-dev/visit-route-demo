@@ -234,6 +234,9 @@ const PATTERN: Pattern = {
   typeId: 'care',
   weekdays: [1],
   everyWeeks: 1,
+  repeat: 'weekly',
+  monthWeeks: [],
+  dayTimes: [],
   windowKind: 'fixed',
   earliestStart: '10:00',
   latestStart: '10:00',
@@ -415,6 +418,7 @@ describe('選んだ利用者さん（clientDay・clientMonth）', () => {
       planned: 3,
       edited: 1,
       cancelled: 1,
+      leave: 0,
       substitute: 1,
       byStaff: [
         { staffId: 's1', count: 1 },

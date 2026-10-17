@@ -174,6 +174,9 @@ describe('extendDays', () => {
       typeId: null,
       weekdays: [1, 4], // 月・木
       everyWeeks: 1,
+      repeat: 'weekly',
+      monthWeeks: [],
+      dayTimes: [],
       windowKind: 'fixed',
       earliestStart: '10:00',
       latestStart: '10:00',

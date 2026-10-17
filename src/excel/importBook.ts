@@ -6,6 +6,7 @@ import {
   type Absence,
   type Availability,
   type Client,
+  type ClientLeave,
   MAX_VISIT_TYPES,
   type Org,
   type Pattern,
@@ -33,10 +34,13 @@ import {
   availabilityCols,
   CLIENT_COLS,
   CLIENT_KANA_COL,
+  CLIENT_RULE_COLS,
   CLIENT_TENTATIVE_COL,
+  clientLeaveCols,
   ITEM_COLS,
   ORG_HEADERS,
   ORG_KEYS,
+  PATTERN_EXTRA_COLS,
   PREF_PREFIX,
   PRESET_COLS,
   patternCols,
@@ -63,10 +67,13 @@ import {
   isTimeOnlyDate,
   itemKindLabels,
   lookup,
+  MONTHLY_LABEL,
   nfkc,
   parseConds,
   parseDateText,
+  parseDayTimes,
   parseEveryWeeks,
+  parseMonthWeeks,
   parseNumberText,
   parseSlots,
   parseTimeText,
@@ -94,6 +101,8 @@ const RESERVED_IDS = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_CONDS = 20;
 /** 定期パターンの上限（contracts/data.ts の max） */
 const MAX_PATTERNS = 2000;
+/** 〈利用者さん〉の休みの上限（contracts/data.ts の max） */
+const MAX_LEAVES = 2000;
 
 type Prim = string | number | boolean | Date | null;
 /** 読めないセル（数式のエラー・結果の無い数式） */
@@ -539,6 +548,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     ...base.absences.map((x) => x.id),
     ...base.visitTypes.map((x) => x.id),
     ...base.patterns.map((x) => x.id),
+    ...base.clientLeaves.map((x) => x.id),
   ]);
 
   // 項目
@@ -716,6 +726,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       ...Object.values(CLIENT_COLS),
       CLIENT_TENTATIVE_COL,
       CLIENT_KANA_COL,
+      ...Object.values(CLIENT_RULE_COLS),
     ]);
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
@@ -738,6 +749,11 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const lng = r.num(C.lng, { min: -180, max: 180 });
       const usualStaffId = staffId(r, C.usualStaff, false);
       const note = r.optional(C.note, 500);
+      // 訪問先の決まりごと（ADR-0013）：列が無い古いブックは空
+      const entryNote = r.optional(CLIENT_RULE_COLS.entry, 200);
+      const keyNote = r.optional(CLIENT_RULE_COLS.key, 200);
+      const parkingNote = r.optional(CLIENT_RULE_COLS.parking, 200);
+      const cautionNote = r.optional(CLIENT_RULE_COLS.caution, 200);
       const p = readPerson(r, cols);
       if (
         displayName !== null &&
@@ -757,6 +773,10 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           ...p,
           usualStaffId,
           tentative,
+          entryNote,
+          keyNote,
+          parkingNote,
+          cautionNote,
         });
       }
     }
@@ -959,9 +979,24 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           r.err(pc.weekdays, '曜日は「月木」のように1つ以上書いてください');
         }
         const eText = r.required(pc.every);
-        const everyWeeks = eText === null ? null : parseEveryWeeks(eText);
+        // 間隔「毎月」（ADR-0013）は第N週の列で第何週かを読む（列が無い古いブックは毎週系だけ）
+        const monthly = eText !== null && nfkc(eText).replace(/\s/g, '') === MONTHLY_LABEL;
+        const everyWeeks = eText === null ? null : monthly ? 1 : parseEveryWeeks(eText);
         if (eText !== null && everyWeeks === null)
-          r.err(pc.every, `「${Object.values(EVERY_WEEKS_LABELS).join('」「')}」のどれかで書いてください`);
+          r.err(
+            pc.every,
+            `「${[...Object.values(EVERY_WEEKS_LABELS), MONTHLY_LABEL].join('」「')}」のどれかで書いてください`,
+          );
+        const mText = r.text(PATTERN_EXTRA_COLS.monthWeeks);
+        let monthWeeks: number[] | null = [];
+        if (monthly) {
+          monthWeeks = mText === '' ? null : parseMonthWeeks(mText);
+          if (monthWeeks === null)
+            r.err(
+              PATTERN_EXTRA_COLS.monthWeeks,
+              '間隔が「毎月」のときは、第何週かを「3、4」のように 1〜5 で書いてください',
+            );
+        }
         const kText = r.required(pc.windowKind);
         const windowKind = kText === null ? null : lookup(WINDOW_LABELS, kText);
         if (kText !== null && windowKind === null) r.err(pc.windowKind, '「ちょうど」か「幅」で書いてください');
@@ -983,6 +1018,14 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         }
         const sid = staffId(r, pc.usualStaff, false);
         const note = r.optional(pc.note, 200);
+        // 曜日ごとの時刻（ADR-0013）：列が無い・空なら上書きなし。ちょうどの時刻は開始（遅）＝開始（早）
+        const dtText = r.text(PATTERN_EXTRA_COLS.dayTimes);
+        const dtParsed = dtText === '' ? [] : parseDayTimes(dtText);
+        let dayTimes: Pattern['dayTimes'] | null = null;
+        if (typeof dtParsed === 'string') r.err(PATTERN_EXTRA_COLS.dayTimes, dtParsed);
+        else if (weekdays && dtParsed.some((t) => !weekdays.includes(t.weekday)))
+          r.err(PATTERN_EXTRA_COLS.dayTimes, '「曜日」の列に無い曜日の時刻があります');
+        else dayTimes = dtParsed.map((t) => (windowKind === 'fixed' ? { ...t, latestStart: t.earliestStart } : t));
         if (
           cid &&
           tid !== undefined &&
@@ -997,7 +1040,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           from &&
           (r.text(pc.to) === '' || to) &&
           datesOk &&
-          sid !== undefined
+          sid !== undefined &&
+          monthWeeks !== null &&
+          dayTimes !== null
         ) {
           patterns.push({
             id,
@@ -1005,6 +1050,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
             typeId: tid,
             weekdays,
             everyWeeks,
+            repeat: monthly ? 'monthly' : 'weekly',
+            monthWeeks,
+            dayTimes,
             windowKind,
             earliestStart,
             latestStart,
@@ -1098,6 +1146,32 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     }
   }
 
+  // 〈利用者さん〉の休み（ADR-0013）。シートが無い古いブックは休みなし
+  const clientLeaves: ClientLeave[] = [];
+  const leaveWs = wb.getWorksheet(FIXED_SHEETS.clientLeaves);
+  if (leaveWs) {
+    const sheet = new Sheet(FIXED_SHEETS.clientLeaves, leaveWs, errors);
+    const lc = clientLeaveCols(terms);
+    if (sheet.require(Object.values(lc))) {
+      const rows = sheet.rows();
+      if (rows.length > MAX_LEAVES)
+        errors.add(sheetMsg(FIXED_SHEETS.clientLeaves, `休みは${MAX_LEAVES}行までです（いま${rows.length}行）`));
+      const ids = new Map<string, number>();
+      for (const r of rows) {
+        const id = idOf(r, lc.id, ids, 'l', used, 100);
+        const cid = clientId(r, lc.client);
+        const from = r.date(lc.from);
+        const to = r.date(lc.to);
+        const note = r.optional(lc.note, 100);
+        if (from && to && to < from) {
+          r.err(lc.to, '終了日は開始日以降にしてください');
+          continue;
+        }
+        if (cid && from && to) clientLeaves.push({ id, clientId: cid, from, to, note });
+      }
+    }
+  }
+
   if (errors.any || industry === null || typeof fare !== 'number' || typeof seed !== 'number') return errors.toError();
 
   const org: Org = { name: orgName, industry, terms, fareYenPerKm: fare };
@@ -1116,6 +1190,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     absences,
     visitTypes,
     patterns,
+    clientLeaves,
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},

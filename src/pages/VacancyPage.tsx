@@ -1,6 +1,7 @@
 import {
   BookmarkPlus,
   CalendarSearch,
+  ClipboardList,
   Copy,
   MapPin,
   MessageSquareText,
@@ -34,16 +35,16 @@ import {
   type Verdict,
 } from '../contracts/vacancy';
 import { HALF_HOURS, timeText } from '../domain/availability';
-import { hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
+import { addDays, hhmmToMinutes, jstDate, jstHhmm, minutesToHhmm, weekday } from '../domain/time';
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
-import { insertAllIntoPlans } from '../lib/week';
+import { insertAllIntoPlans, weekStart } from '../lib/week';
 import { applyPatterns } from '../patterns';
 import { useDemoData } from '../store';
-import { inquirySummary, vacancyOf, verdictOf } from '../vacancy';
+import { inquirySummary, vacancyNotice, vacancyOf, verdictOf } from '../vacancy';
 import './settings.css';
 import './vacancy.css';
 
@@ -71,6 +72,20 @@ const hm = (t: number) => timeText(minutesToHhmm(t));
 /** 展開済みの範囲の最後の日（いまある訪問の最後の日。無ければ今日）。PatternsSection と同じ決め方 */
 function lastVisitDate(visits: { date: string }[], today: string): string {
   return visits.reduce((m, v) => (v.date > m ? v.date : m), today);
+}
+
+/** 案内文の期間（ADR-0013）：今週＝今日〜その週の日曜（月曜はじまり）、来週＝次の月曜〜日曜、先4週＝今日から4週 */
+type NoticePeriod = 'thisWeek' | 'nextWeek' | 'fourWeeks';
+const NOTICE_PERIODS: { id: NoticePeriod; label: string }[] = [
+  { id: 'thisWeek', label: '今週' },
+  { id: 'nextWeek', label: '来週' },
+  { id: 'fourWeeks', label: '先4週' },
+];
+function noticeRange(period: NoticePeriod, today: string): { from: string; to: string; weeks: number } {
+  const monday = weekStart(today);
+  if (period === 'thisWeek') return { from: today, to: addDays(monday, 6), weeks: 1 };
+  if (period === 'nextWeek') return { from: addDays(monday, 7), to: addDays(monday, 13), weeks: 1 };
+  return { from: today, to: addDays(today, 27), weeks: 4 };
 }
 
 /** 仮押さえで作る定期パターンの曜日と開始時刻（選んだ曜日（無ければ全曜日）のうち ○ のある曜日の最初の ○。月〜日の順に週の回数まで） */
@@ -169,6 +184,58 @@ export default function VacancyPage() {
   const slots = result && wishOk ? holdSlots(result, wishDays, wishFrom, wishTo, perWeek) : [];
   const vType = typeOf(data.visitTypes, typeId);
 
+  // 空き枠の案内文（PRD D67。ADR-0013）：期間・種類を選ぶ。所要は種類の標準（種類なしは上の条件の所要）、
+  // 〈スタッフ〉の条件・場所は上の条件のまま。条件を変えると 300ms 間引いて計算し直す
+  const [noticePeriod, setNoticePeriod] = useState<NoticePeriod>('nextWeek');
+  const [noticeTypeId, setNoticeTypeId] = useState('');
+  const noticeType = typeOf(data.visitTypes, noticeTypeId);
+  const noticeDuration = noticeType ? noticeType.durationMinutes : durationOk ? durationNum : null;
+  const noticeSpan = useMemo(() => noticeRange(noticePeriod, today), [noticePeriod, today]);
+  const [notice, setNotice] = useState<{ text: string; noPlan: string[] } | null>(null);
+  useEffect(() => {
+    if (noticeDuration === null) {
+      setNotice(null);
+      return;
+    }
+    const id = window.setTimeout(() => {
+      const q: VacancyQuery = {
+        typeId: noticeType?.id ?? null,
+        durationMinutes: noticeDuration,
+        requirements,
+        place: exactPlace,
+        marginMinutes: VACANCY_MARGIN_DEFAULT,
+        dayStart: VACANCY_DAY_START_DEFAULT,
+        dayEnd: VACANCY_DAY_END_DEFAULT,
+        stepMinutes: VACANCY_STEP_DEFAULT,
+      };
+      const r = attempt(() => vacancyOf(data, q, { from: noticeSpan.from, weeks: noticeSpan.weeks })).value;
+      if (!r) {
+        setNotice(null);
+        return;
+      }
+      const text = vacancyNotice(r, {
+        orgName: data.org.name,
+        terms,
+        typeName: noticeType?.name ?? null,
+        durationMinutes: noticeDuration,
+        period: { from: noticeSpan.from, to: noticeSpan.to },
+        mode: noticePeriod === 'fourWeeks' ? 'weekly' : 'dates',
+        exact: r.exact,
+        // 今日はもう過ぎた時刻を載せない（今の時刻は画面で決める）
+        notBefore: { date: jstDate(Date.now()), minutes: hhmmToMinutes(jstHhmm(Date.now())) },
+      });
+      const noPlan = r.noPlanDates.filter((d) => d >= noticeSpan.from && d <= noticeSpan.to);
+      setNotice({ text, noPlan });
+    }, DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms]);
+  const copyNotice = async () => {
+    if (!notice) return;
+    toast(
+      (await copyText(notice.text)) ? '案内文をコピーしました' : 'コピーできませんでした。文を選んでコピーしてください',
+    );
+  };
+
   const toggleDay = (w: number) =>
     setWishDays(wishDays.includes(w) ? wishDays.filter((x) => x !== w) : [...wishDays, w]);
 
@@ -203,6 +270,10 @@ export default function VacancyPage() {
       preferences: [],
       usualStaffId: null,
       tentative: true,
+      entryNote: '',
+      keyNote: '',
+      parkingNote: '',
+      cautionNote: '',
     };
     const parsed = slots.map((s) =>
       patternSchema.safeParse({
@@ -497,6 +568,69 @@ export default function VacancyPage() {
                   <WithIcon icon={BookmarkPlus}>仮の{terms.client}として押さえる</WithIcon>
                 </button>
               )}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="card stack" data-testid="notice-card">
+        <SectionTitle icon={ClipboardList}>空き枠の案内文</SectionTitle>
+        <p className="sub">
+          紹介元などへ空いている枠を知らせる文を作ります。{terms.staff}の条件・場所は上の「条件」のままです。
+        </p>
+        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
+          <fieldset className="segmented seg-sm" aria-label="案内する期間" data-testid="notice-period">
+            {NOTICE_PERIODS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                aria-pressed={noticePeriod === p.id}
+                className={noticePeriod === p.id ? 'is-on' : ''}
+                onClick={() => setNoticePeriod(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </fieldset>
+          <label style={{ minWidth: 220 }}>
+            種類
+            <select value={noticeTypeId} onChange={(e) => setNoticeTypeId(e.target.value)} data-testid="notice-type">
+              <option value="">種類なし（所要 {durationOk ? `${durationNum}分` : '—'}）</option>
+              {data.visitTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}（{t.durationMinutes}分）
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="sub">
+          {mdText(noticeSpan.from)}〜{mdText(noticeSpan.to)}
+          {noticePeriod === 'fourWeeks'
+            ? '：毎週続けて受けられる曜日・開始の時間を載せます'
+            : '：日ごとに、受けられる開始の時間を載せます'}
+          {exactPlace ? '（場所への移動を含む）' : `（目安。移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む）`}
+        </p>
+        {noticeDuration === null && (
+          <p className="error" role="alert">
+            種類を選ぶか、上の条件の所要を正しく入れてください
+          </p>
+        )}
+        {notice && (
+          <>
+            <output className="inquiry-summary notice-text" data-testid="notice-text">
+              {notice.text}
+            </output>
+            {notice.noPlan.length > 0 && (
+              <p className="vacancy-noplan" data-testid="notice-noplan">
+                案の無い日（{notice.noPlan.length}日：{notice.noPlan.map(mdText).join('・')}）は載せていません。
+                <Link to={`/month?ym=${ymOf(notice.noPlan[0]!)}`}>月間カレンダーで案を作ってください</Link>
+              </p>
+            )}
+            <div className="row">
+              <button type="button" className="btn" onClick={copyNotice} data-testid="copy-notice">
+                <WithIcon icon={Copy}>案内文をコピー</WithIcon>
+              </button>
             </div>
           </>
         )}

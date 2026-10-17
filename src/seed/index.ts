@@ -10,7 +10,7 @@ import { addDays } from '../domain/time';
 import { applyPatterns } from '../patterns';
 import { datesFrom, generateDay, UNASSIGNED_KEY } from './generate';
 import { INITIAL_VISIT_TYPES, seedPatterns, VISIT_TYPE_ID } from './patterns';
-import { CLIENT_SEEDS, INITIAL_COMPAT, INITIAL_ITEMS, INITIAL_RULES, STAFF_SEEDS } from './people';
+import { CLIENT_SEEDS, INITIAL_COMPAT, INITIAL_ITEMS, INITIAL_RULES, STAFF_SEEDS, VISIT_RULE_SEEDS } from './people';
 import { INITIAL_PRESETS, initialPresets } from './presets';
 
 /** 初期の日数（今日から） */
@@ -46,6 +46,10 @@ function initialClients(): Client[] {
     preferences: c.preferences ?? [],
     usualStaffId: null,
     tentative: false,
+    entryNote: VISIT_RULE_SEEDS[c.id]?.entryNote ?? '',
+    keyNote: VISIT_RULE_SEEDS[c.id]?.keyNote ?? '',
+    parkingNote: VISIT_RULE_SEEDS[c.id]?.parkingNote ?? '',
+    cautionNote: VISIT_RULE_SEEDS[c.id]?.cautionNote ?? '',
   }));
 }
 
@@ -71,6 +75,7 @@ export function createDemoData(today: string): DemoData {
     visits: [],
     availability: [],
     absences: [],
+    clientLeaves: [],
     visitTypes: INITIAL_VISIT_TYPES.map((t) => ({ ...t, requirements: t.requirements.map((c) => ({ ...c })) })),
     patterns: seedPatterns(today),
     manualPlans: {},

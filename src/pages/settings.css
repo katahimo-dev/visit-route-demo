@@ -389,3 +389,71 @@ fieldset.weekday-toggles {
   padding: 0;
   margin: 0;
 }
+
+/* 定期パターンの第N週・曜日ごとの時刻（ADR-0013） */
+.month-week-toggle {
+  min-width: 52px;
+}
+.pattern-daytimes {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+.pattern-daytime {
+  gap: 10px;
+  align-items: center;
+}
+.pattern-daytime-day {
+  width: 2.5em;
+}
+.pattern-daytime-col {
+  width: 9.5em;
+}
+.pattern-daytime-col input {
+  width: 100%;
+}
+
+/* 〈利用者さん〉の休み・訪問先の決まりごと（ADR-0013） */
+.leave-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.leave-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.leave-form {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.leave-warn {
+  border-left: 4px solid #d98a00;
+  background: #fff7e6;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.leave-warn ul {
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+}
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--primary-dark);
+  text-decoration: underline;
+  font: inherit;
+  cursor: pointer;
+}

@@ -16,6 +16,7 @@ import {
   VACANCY_STEP_DEFAULT,
   VACANCY_WEEKS_MAX,
   type VacancyCell,
+  type VacancyNoticeFn,
   type VacancyOf,
   type VerdictOf,
 } from '../contracts/vacancy';
@@ -31,6 +32,8 @@ export type {
   DayLoadSlot,
   InquiryWish,
   VacancyCell,
+  VacancyNoticeInput,
+  VacancyNoticeMode,
   VacancyQuery,
   VacancyRange,
   VacancyResult,
@@ -131,6 +134,10 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
           preferences: [],
           usualStaffId: null,
           tentative: false,
+          entryNote: '',
+          keyNote: '',
+          parkingNote: '',
+          cautionNote: '',
         };
   const clients = inquiryClient ? [...data.clients, inquiryClient] : data.clients;
 
@@ -364,4 +371,78 @@ export const dayLoad: DayLoadFn = (data, date, filter) => {
     out.push({ start: a, working, free });
   }
   return out;
+};
+
+/** 開始時刻の連続した範囲の文（times の並びで隣どうしなら続ける。「14:00〜15:00」、1つだけなら「14:00」） */
+function rangesText(starts: readonly number[], times: readonly number[]): string {
+  const index = new Map(times.map((t, i) => [t, i]));
+  const out: string[] = [];
+  let first: number | null = null;
+  let last: number | null = null;
+  const flush = () => {
+    if (first === null || last === null) return;
+    out.push(first === last ? hm(first) : `${hm(first)}〜${hm(last)}`);
+  };
+  for (const t of [...starts].sort((a, b) => a - b)) {
+    if (last !== null && index.get(t) === (index.get(last) ?? -2) + 1) {
+      last = t;
+      continue;
+    }
+    flush();
+    first = t;
+    last = t;
+  }
+  flush();
+  return out.join('、');
+}
+
+/** 表示の曜日の順（月〜日） */
+const NOTICE_WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
+
+/**
+ * 空き枠の案内文（PRD D67。ADR-0013。design.md §4 vacancy）。
+ * 'dates'：期間の中の数えた日（案の無い日を除く）ごとに、1人以上が受けられる開始時刻の連続した範囲（「・10/20（火） 14:00〜15:00」）。
+ * 'weekly'：月〜日の順に、どの週も受けられる（○）開始時刻の範囲（「・火 14:00〜15:00」）。
+ * 1行目に事業所名と何の案内か、最後に目安である旨。範囲が1つも無ければ空きが無い文
+ */
+export const vacancyNotice: VacancyNoticeFn = (result, input) => {
+  const what = `${input.typeName ? `${input.typeName}（${input.durationMinutes}分）` : `${input.durationMinutes}分`}の訪問`;
+  const period = `${monthDay(input.period.from)}〜${monthDay(input.period.to)}`;
+  const lines: string[] = [];
+  if (input.mode === 'dates') {
+    const noPlan = new Set(result.noPlanDates);
+    const dates = result.dates.filter((d) => d >= input.period.from && d <= input.period.to && !noPlan.has(d));
+    for (const date of dates) {
+      const wd = weekday(date);
+      const cutoff = input.notBefore?.date === date ? input.notBefore.minutes : null;
+      const starts = result.cells
+        .filter((c) => c.weekday === wd && c.byDate.some((x) => x.date === date && x.staffIds.length > 0))
+        .map((c) => c.start)
+        .filter((t) => cutoff === null || t >= cutoff);
+      if (starts.length > 0)
+        lines.push(`・${monthDay(date)}（${WEEKDAY_LABELS[wd]}） ${rangesText(starts, result.times)}`);
+    }
+  } else {
+    for (const wd of NOTICE_WEEKDAYS) {
+      const cells = result.cells.filter((c) => c.weekday === wd && verdictOf(c) === 'ok');
+      const starts = cells.map((c) => c.start);
+      if (starts.length === 0) continue;
+      // 案のある週がその曜日の週の数より少なければ「毎週」と言い切らず「〇週中〇週」と書く
+      const weeks = result.dates.filter((d) => weekday(d) === wd).length;
+      const counted = cells[0]!.weeksTotal;
+      const note = counted < weeks ? `（${weeks}週中${counted}週の予定で確認）` : '';
+      lines.push(`・${WEEKDAY_LABELS[wd]} ${rangesText(starts, result.times)}${note}`);
+    }
+  }
+  const head =
+    input.mode === 'dates'
+      ? `${input.orgName}です。${period}に、${what}をお受けできる開始の時間をご案内します。`
+      : `${input.orgName}です。${period}の毎週、続けて${what}をお受けできる開始の時間をご案内します。`;
+  if (lines.length === 0) {
+    return `${head}\nいまはご案内できる空きがありません。ご希望の曜日・時間があれば、お問い合わせください。`;
+  }
+  const note = input.exact
+    ? '開始の時間の目安です。'
+    : '開始の時間の目安です（移動の時間などで変わることがあります）。';
+  return [head, ...lines, `${note}新しい${input.terms.client}のご相談は、お気軽にお問い合わせください。`].join('\n');
 };

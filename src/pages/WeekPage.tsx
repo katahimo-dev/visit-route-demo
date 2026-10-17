@@ -64,6 +64,8 @@ const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 }, (_, i) => D
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const hm = (m: number) => timeText(minutesToHhmm(m));
+/** 日の見出しの件数：休み（ADR-0013）のため無しの訪問を除く */
+const liveCount = (day: WeekDay) => day.bands.filter((b) => !b.leave).length;
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 
 /** URL の ?staff= ?client= の値（無ければ null） */
@@ -352,7 +354,10 @@ export default function WeekPage() {
     if (draft.mode === 'following' && movingPattern) {
       const ids: [string, string] = [newId('pt'), newId('pt')];
       const preview = moveFollowing(data, draft.visitId, draft.date, draft.start, today, ids);
-      if (!preview) return;
+      if (!preview) {
+        toast('この日へは「以降すべて」で動かせません（毎月の第N週が合いません）。「この回だけ」で動かしてください');
+        return;
+      }
       const fixed = changedDates(preview.change).filter((d) => !!own(data.manualPlans, d));
       if (
         fixed.length > 0 &&
@@ -635,7 +640,7 @@ export default function WeekPage() {
                 >
                   <strong>{dateText(day.date)}</strong>
                   <span className="sub">
-                    {day.bands.length}件{day.source === null && day.bands.length > 0 ? '・案なし' : ''}
+                    {liveCount(day)}件{day.source === null && liveCount(day) > 0 ? '・案なし' : ''}
                   </span>
                 </button>
               );
@@ -828,20 +833,21 @@ export default function WeekPage() {
                             >
                               {cell.items.map((it) => {
                                 const type = typeOf(data.visitTypes, it.typeId);
-                                const movable = canMoveVisit(it.date, today);
+                                // 〈利用者さん〉の休み（ADR-0013）の訪問は動かさない
+                                const movable = canMoveVisit(it.date, today) && !it.leave;
                                 const bad = typeUnfit(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
                                 return (
                                   <button
                                     key={it.visitId}
                                     type="button"
                                     draggable={movable}
-                                    className={`week-citem${it.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
+                                    className={`week-citem${it.leave ? ' is-leave' : it.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
                                     style={{ borderLeftColor: type ? colorOf(type.color) : undefined }}
                                     onClick={() => openDay(it.date, it.visitId)}
-                                    onKeyDown={(e) => onItemKey(e, it)}
+                                    onKeyDown={(e) => (it.leave ? undefined : onItemKey(e, it))}
                                     onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
                                     onDragEnd={onDragEnd}
-                                    aria-label={`${hm(it.start)} ${type ? `${type.name}・` : ''}${staffName(it.staffId)}${bad ? '・資格✗' : ''}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
+                                    aria-label={`${hm(it.start)} ${type ? `${type.name}・` : ''}${it.leave ? '休みのため無し' : staffName(it.staffId)}${bad ? '・資格✗' : ''}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
                                     data-testid="week-citem"
                                     data-visit={it.visitId}
                                   >
@@ -854,7 +860,7 @@ export default function WeekPage() {
                                     )}
                                     <span className="week-citem-staff">
                                       {bad && <span className="week-band-unfit">資格✗</span>}
-                                      {staffName(it.staffId)}
+                                      {it.leave ? '休み' : staffName(it.staffId)}
                                     </span>
                                   </button>
                                 );
@@ -1065,17 +1071,19 @@ function DayColumn({
         const l = lanes.get(b.visitId) ?? { lane: 0, lanes: 1 };
         const edge = edgeColor(b);
         const bad = unfit(b);
-        const { client, staff } = bandLabel(b);
-        const color = typeColor(v);
+        const { client } = bandLabel(b);
+        // 〈利用者さん〉の休み（ADR-0013）の訪問は薄く「休み」と出し、動かさない
+        const staff = b.leave ? '休みのため無し' : bandLabel(b).staff;
+        const color = b.leave ? null : typeColor(v);
         const h = Math.max(18, (Math.min(b.end, DAY_END) - Math.max(b.start, DAY_START)) * PX_PER_MIN);
         // 今日より前の訪問は動かさない（ドラッグ・Enter を止める）
-        const movable = canMoveVisit(b.date, today);
+        const movable = canMoveVisit(b.date, today) && !b.leave;
         return (
           <button
             key={b.visitId}
             type="button"
             draggable={movable}
-            className={`week-band${b.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
+            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
             style={{
               top: top(b.start),
               height: h,
@@ -1087,7 +1095,7 @@ function DayColumn({
             title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${bad ? '（資格✗：担当が種類の必要条件を満たさない）' : ''}`}
             aria-label={`${hm(b.start)} ${client}・${staff}${bad ? '・資格✗' : ''}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
             onClick={() => onOpen(b)}
-            onKeyDown={(e) => onKey(e, b)}
+            onKeyDown={(e) => (b.leave ? undefined : onKey(e, b))}
             onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}
             onDragEnd={onDragEnd}
             data-testid="week-band"

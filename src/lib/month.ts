@@ -6,6 +6,7 @@ import type { Problem, SolveResult } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Rule } from '../contracts/rules';
 import { availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
+import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
 import { type CompileInput, compile, scheduleRoute } from '../matching';
@@ -73,9 +74,9 @@ export function expandMonth(d: DemoData, ym: string, today: string): { data: Dem
   return { data: { ...d, visits: c.visits }, added: c.added.length };
 }
 
-/** その日の取り消しでない訪問 */
-export function activeVisitsOn(data: Pick<DemoData, 'visits'>, date: string) {
-  return data.visits.filter((v) => v.date === date && !v.cancelled);
+/** その日の取り消しでなく、〈利用者さん〉の休み（ADR-0013）でもない訪問 */
+export function activeVisitsOn(data: Pick<DemoData, 'visits' | 'clientLeaves'>, date: string) {
+  return data.visits.filter((v) => v.date === date && !v.cancelled && !isOnLeave(data.clientLeaves, v));
 }
 
 /** 今の案に手直し・固定があるか */
@@ -126,7 +127,11 @@ export function batchTargets(
   mode: BatchMode,
   staleOf: (date: string) => boolean = (date) => planStale(data, data, date),
 ): string[] {
-  const withVisits = new Set(data.visits.filter((v) => !v.cancelled && ymOf(v.date) === ym).map((v) => v.date));
+  const withVisits = new Set(
+    data.visits
+      .filter((v) => !v.cancelled && ymOf(v.date) === ym && !isOnLeave(data.clientLeaves, v))
+      .map((v) => v.date),
+  );
   return monthDates(ym).filter((date) => {
     if (date < today || !withVisits.has(date) || own(data.manualPlans, date)) return false;
     if (mode === 'empty') return !own(data.aiPlans, date);
@@ -168,7 +173,7 @@ export type DayStatus = {
  * 確定した割当だけあって今の案が無い日は「確定済み」
  */
 export function dayStatus(
-  data: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'absences'>,
+  data: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'absences' | 'clientLeaves'>,
   date: string,
   view: DayView = {},
 ): DayStatus {
@@ -322,13 +327,23 @@ export type DayMarks = {
   starts: string[];
   /** その日に終わる定期パターンのある〈利用者さん〉の表示名。翌日も同じ〈利用者さん〉のパターンの期間なら除く */
   ends: string[];
+  /** その日に休み（ADR-0013）で訪問が無しになる〈利用者さん〉の表示名（取り消しでない訪問がある人だけ） */
+  leaves: string[];
 };
 
 /** 日のマスの印（取り消しの訪問は数えない。休止中の〈スタッフ〉・〈利用者さん〉は出さない） */
 export function dayMarks(
   data: Pick<
     DemoData,
-    'baseDate' | 'visits' | 'staff' | 'clients' | 'availability' | 'absences' | 'patterns' | 'visitTypes'
+    | 'baseDate'
+    | 'visits'
+    | 'staff'
+    | 'clients'
+    | 'availability'
+    | 'absences'
+    | 'patterns'
+    | 'visitTypes'
+    | 'clientLeaves'
   >,
   date: string,
 ): DayMarks {
@@ -362,6 +377,13 @@ export function dayMarks(
     starts: namesOf((p) => p.from === date && date > data.baseDate && !covered(p.clientId, before)),
     // 翌日も同じ〈利用者さん〉のパターンがある（「以降すべて」で分けた）ときは数えない
     ends: namesOf((p) => p.to === date && !covered(p.clientId, after)),
+    leaves: [
+      ...new Set(
+        data.visits
+          .filter((v) => v.date === date && !v.cancelled && isOnLeave(data.clientLeaves, v))
+          .flatMap((v) => clientName.get(v.clientId) ?? []),
+      ),
+    ],
   };
 }
 
@@ -487,6 +509,8 @@ export type ClientVisitMark = {
   /** この回だけ変えた（パターンの訪問） */
   edited: boolean;
   cancelled: boolean;
+  /** 〈利用者さん〉の休み（ADR-0013）のため無し（取り消しでない訪問だけ。計算に入らない） */
+  leave: boolean;
   /** 案があるのに担当がいない（入らない） */
   unassigned: boolean;
 };
@@ -514,7 +538,8 @@ export function clientDay(data: CompileInput, day: DayPlan, clientId: string): C
   }
   const visits = mine
     .map((v): ClientVisitMark => {
-      const at = v.cancelled ? undefined : placed.get(v.id);
+      const leave = !v.cancelled && isOnLeave(data.clientLeaves, v);
+      const at = v.cancelled || leave ? undefined : placed.get(v.id);
       const pattern = v.pattern ? patternById.get(v.pattern.id) : undefined;
       const usual = pattern?.usualStaffId ?? client?.usualStaffId ?? null;
       const staffId = at?.staffId ?? null;
@@ -526,11 +551,12 @@ export function clientDay(data: CompileInput, day: DayPlan, clientId: string): C
         substitute: staffId !== null && usual !== null && staffId !== usual,
         edited: v.pattern?.edited ?? false,
         cancelled: v.cancelled,
-        unassigned: !v.cancelled && staffId === null && day.source !== null,
+        leave,
+        unassigned: !v.cancelled && !leave && staffId === null && day.source !== null,
       };
     })
     .sort((a, b) => a.start - b.start || a.visitId.localeCompare(b.visitId));
-  const active = visits.some((v) => !v.cancelled);
+  const active = visits.some((v) => !v.cancelled && !v.leave);
   return { date, noPlan: active && day.source === null, visits };
 }
 
@@ -542,6 +568,8 @@ export type ClientMonth = {
   edited: number;
   /** 取り消した回 */
   cancelled: number;
+  /** 休み（ADR-0013）のため無しの回 */
+  leave: number;
   /** いつもの担当でない回 */
   substitute: number;
   /** 担当した人の内訳（多い順。staffId が null＝案なし・入らない） */
@@ -550,12 +578,16 @@ export type ClientMonth = {
 
 /** 選んだ〈利用者さん〉の月の集計（days はその月の日） */
 export function clientMonth(data: CompileInput, days: readonly DayPlan[], clientId: string): ClientMonth {
-  const out: ClientMonth = { planned: 0, edited: 0, cancelled: 0, substitute: 0, byStaff: [] };
+  const out: ClientMonth = { planned: 0, edited: 0, cancelled: 0, leave: 0, substitute: 0, byStaff: [] };
   const by = new Map<string | null, number>();
   for (const day of days) {
     for (const v of clientDay(data, day, clientId).visits) {
       if (v.cancelled) {
         out.cancelled++;
+        continue;
+      }
+      if (v.leave) {
+        out.leave++;
         continue;
       }
       out.planned++;
@@ -638,7 +670,7 @@ export type MonthProgress = {
  * statusOf を渡すと日の状態をそれから引く（画面が compile・採点して作ったもの。無ければ dayStatus で作る）
  */
 export function monthProgress(
-  data: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'absences' | 'staff'>,
+  data: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'absences' | 'staff' | 'clientLeaves'>,
   ym: string,
   today: string,
   staleOf?: (date: string) => boolean,
