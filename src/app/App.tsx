@@ -8,7 +8,6 @@ import {
   Clock,
   Database,
   FlaskConical,
-  GitCompareArrows,
   HeartHandshake,
   House,
   Layers,
@@ -21,7 +20,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { addDays, jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import AvailabilityPage from '../pages/AvailabilityPage';
@@ -110,7 +109,7 @@ function Guarded({ element }: { element: ReactElement }) {
   );
 }
 
-/** 左のメニュー：予定（月・週・日）・問い合わせ・登録・決まり・その他（PRD D59） */
+/** 左のメニュー：予定（月・週・日）・問い合わせ・〈利用者さん〉・〈スタッフ〉・割当の設定・データ（PRD D59・D102） */
 type NavItem = { to: string; label: string; icon: LucideIcon };
 
 function AdminShell() {
@@ -123,15 +122,15 @@ function AdminShell() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
-  // 動線の整理（PRD D59）：予定（月・週・日）／問い合わせ／登録／決まり／その他。ルートの URL は変えない
-  const groups: { title: string; items: NavItem[] }[] = [
+  // 動線の整理（PRD D59・D102）：予定（月・週・日）／問い合わせ／〈利用者さん〉／〈スタッフ〉／割当の設定／データ。
+  // 比較は日の画面の「案を比べる」から開く（メニューには出さない）。ルートの URL は変えない
+  const groups: { title?: string; items: NavItem[] }[] = [
     {
       title: '予定',
       items: [
         { to: '/month', label: '月', icon: CalendarRange },
         { to: '/week', label: '週', icon: CalendarClock },
         { to: '/plan', label: '日', icon: CalendarDays },
-        { to: '/workload', label: '稼働の見込み', icon: Timer },
       ],
     },
     {
@@ -139,28 +138,30 @@ function AdminShell() {
       items: [{ to: '/vacancy', label: '空き状況', icon: CalendarSearch }],
     },
     {
-      title: '登録',
+      title: terms.client,
       items: [
-        { to: '/clients', label: terms.client, icon: House },
-        { to: '/staff', label: terms.staff, icon: UserRound },
-        { to: '/availability', label: '稼働時間', icon: Clock },
-      ],
-    },
-    {
-      title: '決まり',
-      items: [
-        { to: '/rules', label: '条件', icon: SlidersHorizontal },
-        { to: '/items', label: '項目', icon: Tags },
-        { to: '/types', label: '種類', icon: Layers },
+        { to: '/clients', label: '一覧・編集', icon: House },
         { to: '/compat', label: '相性', icon: HeartHandshake },
       ],
     },
     {
-      title: 'その他',
+      title: terms.staff,
       items: [
-        { to: '/compare', label: '比較', icon: GitCompareArrows },
-        { to: '/data', label: 'データ', icon: Database },
+        { to: '/staff', label: '一覧・編集', icon: UserRound },
+        { to: '/availability', label: '稼働時間', icon: Clock },
+        { to: '/workload', label: '稼働の見込み', icon: Timer },
       ],
+    },
+    {
+      title: '割当の設定',
+      items: [
+        { to: '/rules', label: '条件の重み', icon: SlidersHorizontal },
+        { to: '/types', label: '訪問の種類', icon: Layers },
+        { to: '/items', label: '特性の項目', icon: Tags },
+      ],
+    },
+    {
+      items: [{ to: '/data', label: 'データ', icon: Database }],
     },
   ];
   return (
@@ -180,14 +181,23 @@ function AdminShell() {
         </div>
         <nav className="nav-groups">
           {groups.map((g) => (
-            <div key={g.title} className="nav-group">
-              <span className="nav-group-title">{g.title}</span>
-              {g.items.map(({ to, label, icon: Icon }) => (
-                <NavLink key={to} to={to} className="nav-link">
-                  <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
-                  <span>{label}</span>
-                </NavLink>
-              ))}
+            <div key={g.items[0]!.to} className="nav-group">
+              {g.title && <span className="nav-group-title">{g.title}</span>}
+              {g.items.map(({ to, label, icon: Icon }) =>
+                // 比較（メニューに無い）は日の画面の続きなので、日を選んだ状態で見せる（読み上げにも今の画面と伝える）。
+                // NavLink は自分の URL のときしか aria-current を付けないので、このときだけ Link にする
+                to === '/plan' && pathname === '/compare' ? (
+                  <Link key={to} to={to} className="nav-link active" aria-current="page">
+                    <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+                    <span>{label}</span>
+                  </Link>
+                ) : (
+                  <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+                    <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+                    <span>{label}</span>
+                  </NavLink>
+                ),
+              )}
             </div>
           ))}
         </nav>

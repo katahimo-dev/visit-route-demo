@@ -1,6 +1,6 @@
 // DemoData → Excel のブック（テンプレート）。データは書き換えない（ADR-0006）
 import ExcelJS from 'exceljs';
-import type { DemoData } from '../contracts/data';
+import type { DemoData, RosterKind } from '../contracts/data';
 import {
   COMPAT_LABELS,
   type CompatLevel,
@@ -196,6 +196,7 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     `・人や項目は名前で書きます（${t.staff}の名前・${t.client}の表示名、同じ対象の項目の名前は、それぞれ重ならないようにしてください）。`,
     '・○ は「はい」、空は「いいえ」です。日付は 2026-10-13、時刻は 9:00 の形で書きます。',
     '・プルダウンがある欄は、一覧から選んでください。',
+    `・${names.client}・${names.staff}のシートだけを直したときは、データの画面で「${t.client}の名簿」「${t.staff}の名簿」を選んで読み込むと、AI案・記録・確定した割当を消さずに足す・直すことができます（このブックのままでも読めます）。`,
     '',
     'シート',
     `・${FIXED_SHEETS.org}：事業所名・業種・呼び方など。「項目」と「値」の2列です。「${ORG_KEYS.fare}」は稼働の見込みの交通費の単価（0 なら交通費を出しません）、「${ORG_KEYS.spanLimit}」は拘束（最初の訪問の開始〜最後の訪問の終わり）がこれを超える日に注意を出す時間（0.5刻み。0 なら出しません）です。`,
@@ -305,6 +306,142 @@ export function workloadRows(data: DemoData): CellIn[][] {
     }
   }
   return rows;
+}
+
+/** 特性・必要条件・希望の列（見出し・値・プルダウン）。base は前に並ぶ固定の列の数 */
+function personItemCols(base: number, own: Item[], other: Item[]) {
+  const headers = [...own.map(traitHeader), ...other.map(reqHeader), ...other.map(prefHeader)];
+  const lists: ListRule[] = [];
+  own.forEach((it, i) => {
+    const l = traitList(it, base + i + 1);
+    if (l) lists.push(l);
+  });
+  other.forEach((it, i) => {
+    for (const col of [base + own.length + i + 1, base + own.length + other.length + i + 1]) {
+      const l = condList(it, col);
+      if (l) lists.push(l);
+    }
+  });
+  const cells = (p: { traits: Traits; requirements: Condition[]; preferences: Condition[] }): CellIn[] => [
+    ...own.map((it) => traitToCell(it, Object.hasOwn(p.traits, it.id) ? p.traits[it.id] : undefined)),
+    ...other.map((it) =>
+      condsToCell(
+        it,
+        p.requirements.filter((c) => c.itemId === it.id),
+      ),
+    ),
+    ...other.map((it) =>
+      condsToCell(
+        it,
+        p.preferences.filter((c) => c.itemId === it.id),
+      ),
+    ),
+  ];
+  return { headers, lists, cells };
+}
+
+/** 〈スタッフ〉のシート（全体のブックと名簿のブックで同じ列・同じ書式。PRD D103） */
+function staffTable(data: DemoData, name: string): TableSpec {
+  const staffItems = data.items.filter((i) => i.target === 'staff');
+  const clientItems = data.items.filter((i) => i.target === 'client');
+  const staffBase = [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL, STAFF_EMAIL_COL];
+  const sp = personItemCols(staffBase.length, staffItems, clientItems);
+  return {
+    name,
+    headers: [...staffBase, ...sp.headers],
+    rows: data.staff.map((s) => [
+      s.id,
+      s.name,
+      travelModeLabels[s.travelMode],
+      workDaysText(s.workDays),
+      hhmmToCell(s.shiftStart),
+      hhmmToCell(s.shiftEnd),
+      yes(s.active),
+      s.home.address,
+      nullable(s.home.lat),
+      nullable(s.home.lng),
+      s.lastDay ?? '',
+      // メールアドレス（ADR-0017）
+      s.email,
+      ...sp.cells(s),
+    ]),
+    textCols: [1, 4, 5, 6, 11],
+    lists: [{ col: 3, values: Object.values(travelModeLabels) }, { col: 7, values: [YES] }, ...sp.lists],
+    freezeCols: 2,
+  };
+}
+
+/**
+ * 〈利用者さん〉のシート（全体のブックと名簿のブックで同じ列・同じ書式。PRD D103）。
+ * staffNames：「いつもの担当」のプルダウンの元（全体のブックは〈スタッフ〉シートの名前の列、名簿のブックは名前の一覧）
+ */
+function clientTable(data: DemoData, name: string, staffNames: { ref: string } | { values: string[] }): TableSpec {
+  const staffItems = data.items.filter((i) => i.target === 'staff');
+  const clientItems = data.items.filter((i) => i.target === 'client');
+  const staffName = new Map(data.staff.map((s) => [s.id, s.name]));
+  const clientBase = clientExportCols();
+  const cp = personItemCols(clientBase.length, clientItems, staffItems);
+  return {
+    name,
+    headers: [...clientBase, ...cp.headers],
+    rows: data.clients.map((c) => [
+      c.id,
+      c.displayName,
+      c.kana,
+      c.color + 1,
+      yes(c.active),
+      yes(c.tentative),
+      // 郵便番号（ADR-0016）：文字列の列（先頭の0を保つ）
+      c.place.postalCode,
+      c.place.address,
+      nullable(c.place.lat),
+      nullable(c.place.lng),
+      c.usualStaffId === null ? '' : (staffName.get(c.usualStaffId) ?? ''),
+      // 担当できる人（ADR-0014）：名前を「、」で区切る
+      c.allowedStaffIds
+        .flatMap((id) => staffName.get(id) ?? [])
+        .join('、'),
+      c.note,
+      c.entryNote,
+      c.keyNote,
+      c.parkingNote,
+      c.cautionNote,
+      // 段階と紹介元（ADR-0015）
+      STAGE_LABELS[c.stage],
+      c.referrer.name,
+      c.referrer.contact,
+      c.referrer.note,
+      c.referrer.email,
+      ...cp.cells(c),
+    ]),
+    textCols: [1, 3, clientBase.indexOf(CLIENT_POSTAL_COL) + 1],
+    lists: [
+      { col: 4, values: ['1', '2', '3', '4', '5', '6', '7', '8'] },
+      { col: 5, values: [YES] },
+      { col: 6, values: [YES] },
+      { col: clientBase.indexOf(CLIENT_COLS.usualStaff) + 1, ...staffNames, strict: false },
+      { col: clientBase.indexOf(CLIENT_STAGE_COLS.stage) + 1, values: Object.values(STAGE_LABELS) },
+      ...cp.lists,
+    ],
+    freezeCols: 2,
+  };
+}
+
+/**
+ * 名簿のブック（PRD D103。ADR-0020）：〈利用者さん〉か〈スタッフ〉のシート1枚だけ（全体のブックの同じシートと同じ列・書式）。
+ * シート名は呼び方（personSheetNames）。書き出せないデータ（exportProblem）は全体と同じく止める
+ */
+export async function exportRosterWorkbook(data: DemoData, kind: RosterKind): Promise<Blob> {
+  const problem = exportProblem(data);
+  if (problem) throw new Error(problem);
+  const names = personSheetNames(data.org.terms);
+  const wb = new ExcelJS.Workbook();
+  wb.creator = '訪問ルートAI デモ版';
+  if (kind === 'staff') addTable(wb, staffTable(data, names.staff));
+  // 〈スタッフ〉のシートが無いので、「いつもの担当」のプルダウンは名前の一覧（長すぎれば付けない）
+  else addTable(wb, clientTable(data, names.client, { values: data.staff.map((s) => s.name) }));
+  const buf = await wb.xlsx.writeBuffer();
+  return new Blob([buf as ArrayBuffer], { type: XLSX_MIME });
 }
 
 export async function exportWorkbook(data: DemoData): Promise<Blob> {
@@ -417,66 +554,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
   });
 
   const staffItems = data.items.filter((i) => i.target === 'staff');
-  const clientItems = data.items.filter((i) => i.target === 'client');
-
-  /** 特性・必要条件・希望の列（見出し・値・プルダウン） */
-  const personCols = (base: number, own: Item[], other: Item[]) => {
-    const headers = [...own.map(traitHeader), ...other.map(reqHeader), ...other.map(prefHeader)];
-    const lists: ListRule[] = [];
-    own.forEach((it, i) => {
-      const l = traitList(it, base + i + 1);
-      if (l) lists.push(l);
-    });
-    other.forEach((it, i) => {
-      for (const col of [base + own.length + i + 1, base + own.length + other.length + i + 1]) {
-        const l = condList(it, col);
-        if (l) lists.push(l);
-      }
-    });
-    const cells = (p: { traits: Traits; requirements: Condition[]; preferences: Condition[] }): CellIn[] => [
-      ...own.map((it) => traitToCell(it, Object.hasOwn(p.traits, it.id) ? p.traits[it.id] : undefined)),
-      ...other.map((it) =>
-        condsToCell(
-          it,
-          p.requirements.filter((c) => c.itemId === it.id),
-        ),
-      ),
-      ...other.map((it) =>
-        condsToCell(
-          it,
-          p.preferences.filter((c) => c.itemId === it.id),
-        ),
-      ),
-    ];
-    return { headers, lists, cells };
-  };
-
-  // スタッフ
-  const staffBase = [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL, STAFF_EMAIL_COL];
-  const sp = personCols(staffBase.length, staffItems, clientItems);
-  addTable(wb, {
-    name: names.staff,
-    headers: [...staffBase, ...sp.headers],
-    rows: data.staff.map((s) => [
-      s.id,
-      s.name,
-      travelModeLabels[s.travelMode],
-      workDaysText(s.workDays),
-      hhmmToCell(s.shiftStart),
-      hhmmToCell(s.shiftEnd),
-      yes(s.active),
-      s.home.address,
-      nullable(s.home.lat),
-      nullable(s.home.lng),
-      s.lastDay ?? '',
-      // メールアドレス（ADR-0017）
-      s.email,
-      ...sp.cells(s),
-    ]),
-    textCols: [1, 4, 5, 6, 11],
-    lists: [{ col: 3, values: Object.values(travelModeLabels) }, { col: 7, values: [YES] }, ...sp.lists],
-    freezeCols: 2,
-  });
+  addTable(wb, staffTable(data, names.staff));
 
   const staffRows = Math.max(MIN_ROWS, data.staff.length + 200);
   const staffNameRef = sheetRef(names.staff, 'B', staffRows);
@@ -486,52 +564,7 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
   const clientName = new Map(data.clients.map((c) => [c.id, c.displayName]));
 
   // 利用者さん
-  const clientBase = clientExportCols();
-  const cp = personCols(clientBase.length, clientItems, staffItems);
-  addTable(wb, {
-    name: names.client,
-    headers: [...clientBase, ...cp.headers],
-    rows: data.clients.map((c) => [
-      c.id,
-      c.displayName,
-      c.kana,
-      c.color + 1,
-      yes(c.active),
-      yes(c.tentative),
-      // 郵便番号（ADR-0016）：文字列の列（先頭の0を保つ）
-      c.place.postalCode,
-      c.place.address,
-      nullable(c.place.lat),
-      nullable(c.place.lng),
-      c.usualStaffId === null ? '' : (staffName.get(c.usualStaffId) ?? ''),
-      // 担当できる人（ADR-0014）：名前を「、」で区切る
-      c.allowedStaffIds
-        .flatMap((id) => staffName.get(id) ?? [])
-        .join('、'),
-      c.note,
-      c.entryNote,
-      c.keyNote,
-      c.parkingNote,
-      c.cautionNote,
-      // 段階と紹介元（ADR-0015）
-      STAGE_LABELS[c.stage],
-      c.referrer.name,
-      c.referrer.contact,
-      c.referrer.note,
-      c.referrer.email,
-      ...cp.cells(c),
-    ]),
-    textCols: [1, 3, clientBase.indexOf(CLIENT_POSTAL_COL) + 1],
-    lists: [
-      { col: 4, values: ['1', '2', '3', '4', '5', '6', '7', '8'] },
-      { col: 5, values: [YES] },
-      { col: 6, values: [YES] },
-      { col: clientBase.indexOf(CLIENT_COLS.usualStaff) + 1, ref: staffNameRef, strict: false },
-      { col: clientBase.indexOf(CLIENT_STAGE_COLS.stage) + 1, values: Object.values(STAGE_LABELS) },
-      ...cp.lists,
-    ],
-    freezeCols: 2,
-  });
+  addTable(wb, clientTable(data, names.client, { ref: staffNameRef }));
 
   // 相性
   addTable(wb, {

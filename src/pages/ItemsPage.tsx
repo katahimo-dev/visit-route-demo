@@ -77,7 +77,7 @@ export default function ItemsPage() {
     <div className="stack">
       <PageHeader
         icon={Tags}
-        title="項目"
+        title="特性の項目"
         lead={`${terms.staff}や${terms.client}の特性（資格・ペットなど）を決めます`}
       />
       <Hint label="使い方">

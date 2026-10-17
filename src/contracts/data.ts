@@ -168,3 +168,34 @@ export const demoDataSchema = z.object({
 export type DemoData = z.infer<typeof demoDataSchema>;
 
 export type ImportError = { code: 'INVALID_ARGUMENT'; message: string };
+
+/** Excel の名簿（PRD D103〜D107。ADR-0020）：〈利用者さん〉の名簿か〈スタッフ〉の名簿か */
+export type RosterKind = 'client' | 'staff';
+/**
+ * 名簿の読み込み方（PRD D104）：'merge'＝追加・更新（ブックに無い人はそのまま。既定）、
+ * 'replace'＝総入れ替え（ブックに無い人を、〈利用者さん〉は段階「終了」、〈スタッフ〉は休止にする。消さない）
+ */
+export type RosterMode = 'merge' | 'replace';
+/**
+ * 名簿の読み込みの結果（PRD D106）。data は名簿を当てた新しいデータ（store の migrate を通したもの。画面が store の update で入れる）。
+ * 件数は migrate のあとの結果を ID で引き、今の人と比べて数える（repair で元に戻る違いは変更とみなさない）
+ */
+export type RosterImportResult = {
+  data: DemoData;
+  /** 足した人の名前（ブックの行の順。利用中でない人は「名前（終了）」「名前（休止）」のように添える） */
+  added: string[];
+  /** 直した人の名前（ブックの行の順） */
+  updated: string[];
+  /** 変更の無い行の数 */
+  unchanged: number;
+  /** 総入れ替えで終了・休止にした人の名前（今のデータの順） */
+  retired: string[];
+  /** 休止になった〈スタッフ〉が「担当できる人」から外れる〈利用者さん〉の名前（repair が外す。戻しても戻らない） */
+  allowedRemoved: string[];
+  /** そのうち担当できる人がいなくなり「限らない」に戻る〈利用者さん〉の名前 */
+  allowedEmptied: string[];
+  /** 最終勤務日が入った・変わった〈スタッフ〉の名前（担当の振り直しを確かめてもらう） */
+  lastDaySet: string[];
+  /** 読み込む前の、終了・休止にできる人の数（〈スタッフ〉は利用中、〈利用者さん〉は終了でない人）。取り違えの注意に使う */
+  activeBefore: number;
+};

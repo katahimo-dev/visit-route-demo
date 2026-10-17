@@ -100,7 +100,7 @@ function OptionChecks({
   value: string[];
   onChange: (v: string[]) => void;
 }) {
-  if (options.length === 0) return <span className="sub">選択肢がありません（「項目」で足します）</span>;
+  if (options.length === 0) return <span className="sub">選択肢がありません（「特性の項目」で足します）</span>;
   return (
     <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
       {options.map((o) => (
@@ -128,7 +128,7 @@ export function TraitsEditor({
   value: Traits;
   onChange: (t: Traits) => void;
 }) {
-  if (items.length === 0) return <p className="sub">項目がありません（「項目」の画面で足します）。</p>;
+  if (items.length === 0) return <p className="sub">項目がありません（「特性の項目」の画面で足します）。</p>;
   return (
     <div className="form-grid">
       {items.map((it) => (
@@ -268,7 +268,8 @@ export function ConditionsEditor({
       )
     );
   });
-  if (usable.length === 0) return <span className="sub">使える項目がありません（「項目」の画面で足します）。</span>;
+  if (usable.length === 0)
+    return <span className="sub">使える項目がありません（「特性の項目」の画面で足します）。</span>;
   return (
     <div className="stack" style={{ gap: 6 }}>
       <div className="cond-table">

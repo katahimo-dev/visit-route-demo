@@ -26,7 +26,7 @@ import type { AiPlan, AiRun } from '../contracts/data';
 import type { Reason, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
 import { diff, score, toHundred } from '../evaluate';
-import { attempt, deltaText, own, pointsText, r0 } from '../lib/common';
+import { attempt, dateText, deltaText, own, pointsText, r0 } from '../lib/common';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { alignPlan, planOfRun } from '../lib/runs';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
@@ -394,10 +394,10 @@ export default function ComparePage() {
       <PageHeader
         icon={GitCompareArrows}
         title="比較"
-        lead="条件を変えたAI案を2つ選んで比べます"
+        lead="その日の、条件を変えたAI案を2つ選んで比べます（日の画面の「案を比べる」から開きます）"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
-            <WithIcon icon={CalendarDays}>予定へ</WithIcon>
+            <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>
           </NavLink>
         }
       />
