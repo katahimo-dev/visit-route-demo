@@ -1,7 +1,7 @@
 // 一目で分かる表示の段階（PRD D78〜D81。design.md §4 pages「数字より視覚で分かる表示（小さい4件）」）。
 // 空き状況の表・問い合わせの試算の週ごとのマス・今月の準備の積み上げ・〈利用者さん〉の月の日ごとの点の、
-// 色と模様の段階を決める純粋関数（データは書き換えない）。模様の言葉は混み具合バー（components/loadBar）にそろえる：
-// 0人＝斜線、1人＝点々、2人以上＝緑（多いほど濃い）、案なし＝薄い縦線
+// 色の段階を決める純粋関数（データは書き換えない）。色の言葉は混み具合バー（components/barMarks.css。PRD D85）にそろえる：
+// 0人＝赤の濃い枠、1人＝橙、2人以上＝緑（多いほど濃い）、案なし＝淡い無地（柄は使わない。印 ○△×？ と数字を載せる）
 
 import type { VacancyCell, VacancyResult } from '../contracts/vacancy';
 import { hhmmToMinutes, weekday } from '../domain/time';
@@ -85,7 +85,7 @@ export function inquiryRows(
   });
 }
 
-/** 日のマスの模様の段階（D78 と同じ言葉）：案なし／0人／1人／2人以上 */
+/** 日のマスの色の段階（D78 と同じ言葉）：案なし／0人／1人／2人以上 */
 export function inquiryDayLevel(x: InquiryDay): 'unknown' | 'none' | 'one' | 'two' {
   if (x.mark === 'unknown') return 'unknown';
   if (x.best <= 0) return 'none';

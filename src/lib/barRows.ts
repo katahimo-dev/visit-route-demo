@@ -145,3 +145,33 @@ export function placeOnRows<T extends { start: number; end: number }>(
   }
   return { pieces, early, late, outside };
 }
+
+/** 段の上の連続した塗り：left・width は段の幅に対する割合（0〜1）。level はその区間の状態（PRD D85） */
+export type RowRun<L extends string> = { left: number; width: number; level: L };
+
+/**
+ * 段の中の30分のマス（開始が段の中のもの）を、同じ状態が続く区間ごとに1本へまとめる（PRD D85。描画だけのまとめ。
+ * 30分ごとの計算・title・読み上げはマスのまま）。間が空いた（30分が抜けた）ところでは切る。from・to は段の時（例 8・12）
+ */
+export function rowRuns<L extends string>(
+  slots: readonly { start: number; level: L }[],
+  from: number,
+  to: number,
+): RowRun<L>[] {
+  const a = from * 60;
+  const len = (to - from) * 60;
+  const out: RowRun<L>[] = [];
+  let end = Number.NaN;
+  for (const x of [...slots].sort((p, q) => p.start - q.start)) {
+    if (x.start < a || x.start >= a + len) continue;
+    const last = out.at(-1);
+    const s = Math.min(BAR_STEP, a + len - x.start);
+    if (last && last.level === x.level && x.start === end) {
+      last.width += s / len;
+    } else {
+      out.push({ left: (x.start - a) / len, width: s / len, level: x.level });
+    }
+    end = x.start + BAR_STEP;
+  }
+  return out;
+}

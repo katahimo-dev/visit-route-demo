@@ -126,6 +126,15 @@ export function staffSlotText(x: StaffSlot): string {
 }
 
 /**
+ * 3段（8〜20時）のマスが全部「休み」か（PRD D85。3段の上に1枚の「休み」を重ねるか・月のマスの「休」を読み上げだけにするか）。
+ * 8〜20時に訪問・移動が1つでも残っていれば false（休みの人に残った訪問を隠さない）。8〜20時のマスが無ければ false
+ */
+export function isAllRest(slots: readonly StaffSlot[]): boolean {
+  const shown = slots.filter((x) => x.start >= BAR_START && x.start < BAR_END);
+  return shown.length > 0 && shown.every((x) => x.state === 'rest');
+}
+
+/**
  * 読み上げのまとめ（状態ごとに続く時間帯をまとめる。勤務外は書かない。
  * 例「訪問 9:00〜11:00、14:00〜15:00・移動 8:30〜9:00・空き 11:00〜14:00」）
  */

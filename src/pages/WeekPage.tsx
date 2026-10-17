@@ -780,7 +780,8 @@ export default function WeekPage() {
                             <StaffBar slots={c.bar} testId="week-bar" />
                             <span className="week-cell-foot">
                               {c.off ? (
-                                <span className={c.count > 0 ? 'week-cell-count' : 'sub'}>{offText}</span>
+                                // 訪問の無い休みは、バーに重ねた「休み」（PRD D85）と二重にしないよう文字は読み上げだけ
+                                <span className={c.count > 0 ? 'week-cell-count' : 'sr-only'}>{offText}</span>
                               ) : c.noPlan ? (
                                 <span className="sub">案なし</span>
                               ) : (

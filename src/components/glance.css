@@ -1,32 +1,33 @@
-/* 一目で分かる表示（PRD D78〜D81）。模様の言葉は混み具合バー（loadBar.css）にそろえる：
-   0人＝斜線、1人＝点々、2人以上＝緑（多いほど濃い）、案なし＝薄い縦線。文字（○△×・数字）を上に載せるので淡い色にする */
+/* 一目で分かる表示（PRD D78〜D81）。見た目の言葉は3段バーと同じ components/barMarks.css（PRD D85）：
+   柄は使わず、注意を引きたい「0人」だけ濃い赤の枠、1人は中間の橙、2人以上は緑（多いほど濃い）、案なし＝淡い無地（？の文字）。
+   文字（○△×？・数字）を上に載せるので塗りは淡い色にする */
 .lv-none {
-  background: repeating-linear-gradient(135deg, #f0b3a9 0 3px, #fbe4e0 3px 6px);
+  background: #fbdcd6;
+  box-shadow: inset 0 0 0 2px var(--load-none);
   color: #8a2f22;
 }
 .lv-partial {
-  background: repeating-linear-gradient(135deg, #f1cf9c 0 3px, #fdf3e3 3px 6px);
+  background: #fbe3c4;
   color: #7a4f05;
 }
 .lv-one {
-  /* 点は淡く・間隔を広く（上の ○ と人数の文字を読みやすく） */
-  background: radial-gradient(circle, rgba(220, 147, 52, 0.5) 1px, transparent 1.3px) 0 0 / 8px 8px, #fdeed8;
+  background: #fdf0dc;
   color: #7a4f05;
 }
 .lv-two {
-  background: #d9eee1;
+  background: #e3f2e8;
   color: #1f5a38;
 }
 .lv-three {
-  background: #b9dfc7;
+  background: #c4e3cf;
   color: #1f5a38;
 }
 .lv-many {
-  background: #93cca9;
+  background: #9fd0b1;
   color: #143f27;
 }
 .lv-unknown {
-  background: repeating-linear-gradient(90deg, #e3dad2 0 1px, #fbf8f5 1px 4px);
+  background: var(--bar-noplan);
   color: var(--sub);
 }
 .glance-legend {
@@ -49,7 +50,7 @@
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-/* 今月の準備の積み上げ（D80）：確定済み＝濃い緑（無地）、案あり＝淡い緑の斜線、案なし＝薄い縦線 */
+/* 今月の準備の積み上げ（D80。見た目は D85）：確定済み＝濃い緑（無地）、案あり＝淡い緑（無地）、案なし＝淡い無地に破線の枠 */
 .prep-bar {
   display: flex;
   width: 100%;
@@ -69,15 +70,17 @@
 }
 .prep-part.is-planned,
 .glance-swatch.is-planned {
-  background: repeating-linear-gradient(135deg, #9fcfb0 0 2px, #dcefe3 2px 5px);
+  background: #b9dcc5;
 }
 .prep-part.is-none,
 .glance-swatch.is-none {
-  background: repeating-linear-gradient(90deg, #cfc4bb 0 1px, #fbf8f5 1px 4px);
+  box-sizing: border-box;
+  border: 1px dashed var(--bar-noplan-line);
+  background: var(--bar-noplan);
 }
 
-/* 〈利用者さん〉の月の日ごとの点（D81）：形でも分ける。訪問あり＝緑の丸、当日キャンセル＝橙の三角、
-   取り消し＝白抜きの丸、休み＝灰の四角に白の横線、訪問なし＝小さな点 */
+/* 〈利用者さん〉の月の日ごとの点（D81。色は D85 の言葉）：形でも分ける。訪問あり＝濃い青の丸、当日キャンセル＝橙の三角、
+   取り消し＝白抜きの丸、休み＝淡い灰の四角、訪問なし＝小さな点 */
 .client-dots {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -103,7 +106,7 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #4f9a6c;
+  background: var(--bar-visit);
 }
 .client-dot.is-sameDay {
   width: 12px;
@@ -122,7 +125,9 @@
   width: 11px;
   height: 11px;
   border-radius: 2px;
-  background: linear-gradient(180deg, transparent 0 40%, #fff 40% 60%, transparent 60%), #a99d93;
+  box-sizing: border-box;
+  border: 1px solid #b3a99f;
+  background: var(--bar-rest);
 }
 .client-dot.is-none {
   width: 4px;

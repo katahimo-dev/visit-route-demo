@@ -90,7 +90,7 @@ const DAY_TEXT: Record<InquiryDayMark, string> = {
 };
 
 /**
- * 問い合わせの試算の週ごとのマス（PRD D79）：希望の曜日×週。マスは ○×？ とその日の一番多い人数、模様は空き状況の表と同じ。
+ * 問い合わせの試算の週ごとのマス（PRD D79）：希望の曜日×週。マスは ○×？ とその日の一番多い人数、色は空き状況の表と同じ。
  * 行の頭にその曜日の判定（○△×？）
  */
 function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {

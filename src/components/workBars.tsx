@@ -1,18 +1,24 @@
 // 稼働の見込み（PRD D72。ADR-0015）の横棒。拘束の長さ・時間帯を見せる。
-// 日ごとの行の横棒は、拘束の中の訪問・移動・待ちを、〈スタッフ〉の3段バー（components/staffBar）と同じ色・模様で塗り分ける
-// （PRD D77。訪問＝斜線、移動＝点々、待ち＝空きと同じ緑。1日の時間軸の上の位置が大事なので3段にはしない）
-import './loadBar.css';
+// 日ごとの行の横棒は、拘束の中の訪問・移動・待ちを、〈スタッフ〉の3段バー（components/staffBar）と同じ色・形で塗り分ける
+// （PRD D77・D85。訪問＝濃い青、移動＝橙で高さ半分、待ち＝空きと同じ淡い緑（枠なし）。1日の時間軸の上の位置が大事なので3段にはしない）
+import './barMarks.css';
 import './workBars.css';
-import type { CSSProperties } from 'react';
 import { timeText } from '../domain/availability';
 import { minutesToHhmm } from '../domain/time';
 import type { RoutePart, Span } from '../lib/staffBar';
 import type { WorkStat } from '../lib/workload';
 
-/** 内訳の種類 → 3段バーの状態の模様（待ちは勤務内の空き） */
+/** 内訳の種類 → 3段バーの状態の塗り（待ちは勤務内の空き） */
 const PART_LEVEL: Record<RoutePart['kind'], string> = { visit: 'st-visit', travel: 'st-travel', wait: 'st-free' };
 const PART_LABEL: Record<RoutePart['kind'], string> = { visit: '訪問', travel: '移動', wait: '待ち' };
 const clock = (m: number) => timeText(minutesToHhmm(Math.round(m)));
+
+/** 軸の中の正時（0時からの分）。両端は含まない（1時間の隙間の位置） */
+function hoursInside(range: { start: number; end: number }): number[] {
+  const out: number[] = [];
+  for (let t = Math.floor(range.start / 60) * 60 + 60; t < range.end; t += 60) if (t > range.start) out.push(t);
+  return out;
+}
 
 /** 横棒の目盛りの最大（時間）。これを超える拘束は端で止める */
 export const SPAN_SCALE_HOURS = 12;
@@ -46,8 +52,8 @@ export function SpanBar({ stat, range }: { stat: WorkStat; range: { start: numbe
 
 /**
  * 時間軸の上の区間の横棒（稼働の見込みの SpanBar と、日の画面の担当ごとの1日（PRD D84）で共通）。
- * parts を訪問・移動・待ちの模様で塗る。shift（勤務の時間帯）があれば、その下地を空きの緑で塗り、rest（欠勤の時間）は休みの模様
- * （勤務外は棒の地の薄い灰）。区間は下地の上に描く（欠勤の時間に残った訪問も訪問で見える）。
+ * parts を訪問・移動・待ちの塗り（components/barMarks.css の .bar-seg）で描く。shift（勤務の時間帯）があれば、その下地を空きで塗り、
+ * rest（欠勤の時間）は休み（勤務外は棒の地の薄い灰）。区間は下地の上に描く（欠勤の時間に残った訪問も訪問で見える）。
  * frame があれば拘束の枠。読み上げは使う側の文で出すので、棒は隠す
  */
 export function PartsBar({
@@ -61,7 +67,7 @@ export function PartsBar({
   parts: readonly RoutePart[];
   range: { start: number; end: number };
   shift?: readonly Span[];
-  /** 欠勤の時間（休みの模様。PRD D84 のレビュー） */
+  /** 欠勤の時間（休みの淡い灰。PRD D84 のレビュー・D85） */
   rest?: readonly Span[];
   frame?: Span;
   className?: string;
@@ -74,18 +80,14 @@ export function PartsBar({
     return { left: `${a * 100}%`, width: `${Math.max(0, b - a) * 100}%` };
   };
   return (
-    <span
-      className={`work-bar ${className}`}
-      style={{ '--hours': Math.max(1, Math.round(len / 60)) } as CSSProperties}
-      aria-hidden="true"
-    >
+    <span className={`work-bar ${className}`} aria-hidden="true">
       {shift?.map((x) => (
-        <span key={`shift-${x.start}`} className="work-part is-shift" style={at(x)} />
+        <span key={`shift-${x.start}`} className="work-part bar-seg is-st-free" style={at(x)} />
       ))}
       {rest?.map((x) => (
         <span
           key={`rest-${x.start}`}
-          className="work-part is-st-rest"
+          className="work-part bar-seg is-st-rest"
           style={at(x)}
           title={`${clock(x.start)}〜${clock(x.end)} 休み（欠勤）`}
         />
@@ -93,10 +95,14 @@ export function PartsBar({
       {parts.map((x) => (
         <span
           key={`${x.kind}-${x.start}`}
-          className={`work-part is-${PART_LEVEL[x.kind]}`}
+          className={`work-part bar-seg is-${PART_LEVEL[x.kind]}`}
           style={at(x)}
           title={`${clock(x.start)}〜${clock(x.end)} ${PART_LABEL[x.kind]}`}
         />
+      ))}
+      {/* 1時間ごとの区切り：境界の前後 1px の隙間（3段バーの .bar-hours と同じ。両端には描かない。PRD D85） */}
+      {hoursInside(range).map((t) => (
+        <span key={`hour-${t}`} className="work-hour" style={{ left: `calc(${pos(t) * 100}% - 1px)` }} />
       ))}
       {frame && <span className="work-bar-frame" style={at(frame)} />}
     </span>

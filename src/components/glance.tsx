@@ -1,5 +1,7 @@
 // 一目で分かる表示の部品（PRD D78〜D81）：段階の凡例、今月の準備の積み上げ、〈利用者さん〉の月の日ごとの点。
-// 色だけに頼らない：模様（斜線・点々・縦線）・形（丸・三角・白抜き・四角）と、title・読み上げの文
+// 色だけに頼らない：文字（○△×？・数字）・枠（0人の濃い枠・案なしの破線）・形（丸・三角・白抜き・四角）と、title・読み上げの文。
+// 色の言葉は3段バーと同じ components/barMarks.css（PRD D85。柄は使わない）
+import './barMarks.css';
 import './glance.css';
 import { WEEKDAY_LABELS } from '../lib/common';
 import { type ClientDot, type PrepPart, prepParts } from '../lib/glance';
