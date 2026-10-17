@@ -107,9 +107,9 @@ export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 /** 1つのシートの行数の上限（見出しを除く、空でない行） */
 export const MAX_ROWS = 10_000;
 /** ID に使えない名前（JavaScript のオブジェクトの組み込みの名前。キーにすると壊れる） */
-const RESERVED_IDS = new Set(['__proto__', 'constructor', 'prototype']);
+export const RESERVED_IDS = new Set(['__proto__', 'constructor', 'prototype']);
 /** 1人の必要条件・希望の上限（contracts/documents.ts の max） */
-const MAX_CONDS = 20;
+export const MAX_CONDS = 20;
 /** 定期パターンの上限（contracts/data.ts の max） */
 const MAX_PATTERNS = 2000;
 /** 〈利用者さん〉の休みの上限（contracts/data.ts の max） */
@@ -164,11 +164,27 @@ export function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
 /**
  * メールアドレスの列（ADR-0017）：空・列が無いなら ''。全角・前後の空白・「mailto:」は直し、形が合わなければ行付きで止めて null
  */
-function readEmail(r: Row, h: string): string | null {
+export function readEmail(r: Row, h: string): string | null {
   const t = r.text(h);
   const e = normalizeEmail(t);
   if (e === null) r.err(h, `メールアドレスの形ではありません（例 name@example.com。いま「${t.slice(0, 40)}」）`);
   return e;
+}
+
+/**
+ * 郵便番号の列（ADR-0016）：列が無い古いブック・空は ''。ハイフン・全角は7桁に直し、直せなければ行付きで止めて null。
+ * 数値のセル（文字列の書式でない列に 0380000 と書くと 38000 になる）は、0〜9999999 の整数なら先頭を0で埋めて7桁にする
+ */
+export function readPostal(r: Row): string | null {
+  const postalRaw = r.raw(CLIENT_POSTAL_COL);
+  const postalCode = normalizePostalCode(
+    typeof postalRaw === 'number' && Number.isInteger(postalRaw) && postalRaw >= 0 && postalRaw <= 9_999_999
+      ? String(postalRaw).padStart(7, '0')
+      : r.text(CLIENT_POSTAL_COL),
+  );
+  if (postalCode === null)
+    r.err(CLIENT_POSTAL_COL, '7桁の数字で書いてください（ハイフンは有っても無くても構いません）');
+  return postalCode;
 }
 
 /** 見出しの比べ方（全角半角・コロンの揺れ・空白を許す） */
@@ -188,9 +204,12 @@ function textOf(v: Prim): string {
   return String(v).trim();
 }
 
-class Errors {
+export class Errors {
   list: string[] = [];
+  /** これまでに足したエラーの数（上限で捨てたものも数える） */
+  count = 0;
   add(msg: string) {
+    this.count++;
     if (this.list.length < MAX_ERRORS) this.list.push(msg);
     else this.more = true;
   }
@@ -204,10 +223,10 @@ class Errors {
   }
 }
 
-const sheetMsg = (sheet: string, msg: string) => `シート『${sheet}』：${msg}`;
+export const sheetMsg = (sheet: string, msg: string) => `シート『${sheet}』：${msg}`;
 
 /** 1行（見出しの名前で列を引き、読めない値は場所付きのエラーにする） */
-class Row {
+export class Row {
   constructor(
     readonly sheet: Sheet,
     readonly n: number,
@@ -289,7 +308,7 @@ class Row {
   }
 }
 
-class Sheet {
+export class Sheet {
   /** 見出しの比べ方（headerKey）→ 列番号 */
   readonly cols = new Map<string, number>();
   /** 見出しの並び（列番号の順。name は書いてあるまま） */
@@ -384,7 +403,7 @@ function idOf(row: Row, h: string, seen: Map<string, number>, prefix: string, us
 }
 
 /** 名前の重なりを調べる（同じ名前があればエラー） */
-function uniqueName(row: Row, h: string, name: string, seen: Map<string, number>) {
+export function uniqueName(row: Row, h: string, name: string, seen: Map<string, number>) {
   // 全角半角・空白だけが違う名前も同じとみなす（見出しで区別できないため）
   const key = nameKey(name);
   const before = seen.get(key);
@@ -397,20 +416,22 @@ function uniqueName(row: Row, h: string, name: string, seen: Map<string, number>
 }
 
 /** 特性・必要条件・希望の列を項目に結びつける */
-interface PersonCols {
+export interface PersonCols {
   traits: { h: string; item: Item }[];
   reqs: { h: string; item: Item }[];
   prefs: { h: string; item: Item }[];
 }
 /**
- * kinds：読む列の種類（種類のシートは必要条件だけ。ADR-0012）。読まない種類の見出しは知らない列として読まない
+ * kinds：読む列の種類（種類のシートは必要条件だけ。ADR-0012）。読まない種類の見出しは知らない列として読まない。
+ * requireAll：項目の列が無ければ止める（全体のブック）。名簿のブック（PRD D105）は false で、無い列はその値を今のままにする
  */
-function personCols(
+export function personCols(
   sheet: Sheet,
   items: Item[],
   own: ItemTarget,
   fixed: readonly string[],
   kinds: readonly (keyof PersonCols)[] = ['traits', 'reqs', 'prefs'],
+  requireAll = true,
 ): PersonCols {
   const out: PersonCols = { traits: [], reqs: [], prefs: [] };
   const other: ItemTarget = own === 'staff' ? 'client' : 'staff';
@@ -436,7 +457,7 @@ function personCols(
     out[kind].push({ h: name, item });
   }
   // 項目のシートにある項目の列が無ければ止める（列を消すと特性・条件が黙って消えるため）
-  for (const [kind, , target] of prefixes) {
+  for (const [kind, , target] of requireAll ? prefixes : []) {
     const header = kind === 'traits' ? traitHeader : kind === 'reqs' ? reqHeader : prefHeader;
     for (const it of items.filter((i) => i.target === target)) {
       if (!out[kind].some((c) => c.item === it))
@@ -446,7 +467,7 @@ function personCols(
   return out;
 }
 
-function readPerson(
+export function readPerson(
   row: Row,
   cols: PersonCols,
 ): { traits: Traits; requirements: Condition[]; preferences: Condition[] } {
@@ -488,8 +509,8 @@ const COMPAT_SYMBOLS: Record<string, 2 | 1 | -1 | -2> = {
   X: -2,
 };
 
-/** Excel のブック → DemoData。読めなければ、場所付きの日本語の ImportError */
-export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<DemoData | ImportError> {
+/** ファイルの大きさを確かめて、Excel のブックとして開く（全体・名簿で共通） */
+export async function loadWorkbook(buf: ArrayBuffer): Promise<ExcelJS.Workbook | ImportError> {
   if (buf.byteLength > MAX_FILE_BYTES) {
     return { code: 'INVALID_ARGUMENT', message: `ファイルが大きすぎます（${MAX_FILE_BYTES / 1024 / 1024}MB まで）` };
   }
@@ -499,6 +520,13 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   } catch {
     return { code: 'INVALID_ARGUMENT', message: 'Excel のファイル（.xlsx）として読めませんでした' };
   }
+  return wb;
+}
+
+/** Excel のブック → DemoData。読めなければ、場所付きの日本語の ImportError */
+export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<DemoData | ImportError> {
+  const wb = await loadWorkbook(buf);
+  if ('code' in wb) return wb;
   const errors = new Errors();
   const sheetOf = (name: string): Sheet | null => {
     const ws = wb.getWorksheet(name);
@@ -816,16 +844,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const active = r.yes(C.active);
       // 仮押さえ（ADR-0012 追記）：列が無い古いブックは false
       const tentative = r.yes(CLIENT_TENTATIVE_COL);
-      // 郵便番号（ADR-0016）：列が無い古いブック・空は ''。ハイフン・全角は7桁に直し、直せなければ止める
-      // 数値のセル（文字列の書式でない列に 0380000 と書くと 38000 になる）は、0〜9999999 の整数なら先頭を0で埋めて7桁にする
-      const postalRaw = r.raw(CLIENT_POSTAL_COL);
-      const postalCode = normalizePostalCode(
-        typeof postalRaw === 'number' && Number.isInteger(postalRaw) && postalRaw >= 0 && postalRaw <= 9_999_999
-          ? String(postalRaw).padStart(7, '0')
-          : r.text(CLIENT_POSTAL_COL),
-      );
-      if (postalCode === null)
-        r.err(CLIENT_POSTAL_COL, '7桁の数字で書いてください（ハイフンは有っても無くても構いません）');
+      // 郵便番号（ADR-0016。readPostal）
+      const postalCode = readPostal(r);
       const address = r.optional(C.address, 200);
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });

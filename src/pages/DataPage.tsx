@@ -2,6 +2,7 @@ import { Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAle
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
+import type { RosterKind, RosterMode } from '../contracts/data';
 import { jstDate } from '../domain/time';
 import { attempt, formError, isStaleBuild } from '../lib/common';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
@@ -49,6 +50,15 @@ export default function DataPage() {
   const [error, setError] = useState<string | null>(null);
   const [excelError, setExcelError] = useState<string | null>(null);
   const [excelBusy, setExcelBusy] = useState(false);
+  /** Excel の対象（PRD D103）：全体（すべてのシート。今まで）か、〈利用者さん〉・〈スタッフ〉の名簿 */
+  const [excelKind, setExcelKind] = useState<'all' | RosterKind>('all');
+  /** 名簿の読み込み方（PRD D104）：追加・更新（既定）か総入れ替え */
+  const [rosterMode, setRosterMode] = useState<RosterMode>('merge');
+  /** 読み込みの確認のあいだに、データが別のところ（別のタブなど）で変わっていないかを見る */
+  const latest = useRef(data);
+  latest.current = data;
+  const t = data.org.terms;
+  const rosterTerm = excelKind === 'staff' ? t.staff : t.client;
 
   const download = () => {
     setError(null);
@@ -66,9 +76,18 @@ export default function DataPage() {
     setExcelError(null);
     setExcelBusy(true);
     try {
-      const { exportWorkbook } = await import('../excel');
-      saveBlob(await exportWorkbook(data), `visit-route-demo-${today()}.xlsx`);
-      toast('Excel に書き出しました');
+      const { exportRosterWorkbook, exportWorkbook } = await import('../excel');
+      if (excelKind === 'all') {
+        saveBlob(await exportWorkbook(data), `visit-route-demo-${today()}.xlsx`);
+        toast('Excel に書き出しました');
+      } else {
+        // ファイル名は英字（呼び方の文字を入れると、Chromium で保存名が「download」になったため）
+        saveBlob(
+          await exportRosterWorkbook(data, excelKind),
+          `visit-route-demo-${excelKind === 'staff' ? 'staff' : 'clients'}-${today()}.xlsx`,
+        );
+        toast(`${rosterTerm}の名簿を Excel に書き出しました`);
+      }
     } catch (e) {
       setExcelError(isStaleBuild(e) ? STALE_TEXT : `書き出せませんでした（${formError(e)}）`);
     } finally {
@@ -81,14 +100,18 @@ export default function DataPage() {
     try {
       setExcelBusy(true);
       // 先に読んで検査し、通ったら件数を見せて確かめる（取り消しならデータは変えない）
+      if (excelKind !== 'all') {
+        await loadRoster(file, excelKind);
+        return;
+      }
       const { importWorkbook } = await import('../excel');
       const r = await importWorkbook(await file.arrayBuffer(), data);
       if (isImportError(r)) {
         setExcelError(`読み込めませんでした（いまのデータはそのままです）\n${r.message}`);
         return;
       }
-      const t = r.org.terms;
-      const counts = `${t.staff} ${r.staff.length}人・${t.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
+      const rt = r.org.terms;
+      const counts = `${rt.staff} ${r.staff.length}人・${rt.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
       if (
         !confirm(
           `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。よろしいですか？`,
@@ -105,6 +128,38 @@ export default function DataPage() {
       setExcelBusy(false);
       if (excelRef.current) excelRef.current.value = '';
     }
+  };
+
+  /**
+   * 名簿の読み込み（PRD D103〜D107。ADR-0020）：読んで検査し、件数（追加・更新・変更なし・終了／休止）を見せて確かめてから、
+   * store の update で入れる。AI案・記録・確定した割当・訪問はそのまま
+   */
+  const loadRoster = async (file: File, kind: RosterKind) => {
+    const base = data;
+    const { importRoster, rosterSummary } = await import('../excel');
+    const r = await importRoster(await file.arrayBuffer(), base, kind, rosterMode);
+    if ('code' in r) {
+      setExcelError(`読み込めませんでした（いまのデータはそのままです）\n${r.message}`);
+      return;
+    }
+    const term = kind === 'staff' ? base.org.terms.staff : base.org.terms.client;
+    if (r.added.length === 0 && r.updated.length === 0 && r.retired.length === 0) {
+      toast(`${term}の名簿に変更はありませんでした（変更なし ${r.unchanged}人）`);
+      return;
+    }
+    const how = rosterMode === 'replace' ? '総入れ替え' : '追加・更新';
+    if (
+      !confirm(
+        `「${file.name}」の${term}の名簿を読み込みます（${how}）。\n${rosterSummary(r, kind)}\nAI案・記録・確定した割当・訪問はそのままです。よろしいですか？`,
+      )
+    )
+      return;
+    if (latest.current !== base) {
+      setExcelError('確認のあいだにデータが変わりました。もう一度読み込んでください（いまのデータはそのままです）');
+      return;
+    }
+    update((d) => (d === base ? r.data : d));
+    toast(`${term}の名簿を読み込みました`);
   };
 
   const load = async (file: File) => {
@@ -196,11 +251,66 @@ export default function DataPage() {
       <div className="card stack">
         <SectionTitle icon={FileSpreadsheet}>Excel</SectionTitle>
         <Hint>
-          {data.org.terms.staff}・{data.org.terms.client}
-          ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。 Excel
-          で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当は消えます）。
-          書き方はブックの「使い方」のシートにあります。
+          {excelKind === 'all' ? (
+            <>
+              {t.staff}・{t.client}
+              ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。Excel
+              で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当は消えます）。
+              書き方はブックの「使い方」のシートにあります。
+            </>
+          ) : (
+            <>
+              {`${rosterTerm}の一覧（シート1枚）だけを書き出し・読み込みます。列は全体のブックの「${rosterTerm}」シートと同じで、全体のブックも名簿として読めます。`}
+              {
+                '読み込むと ID か名前で同じ人を探して直し、いない人は足します。AI案・記録・確定した割当・訪問は消えません。'
+              }
+            </>
+          )}
         </Hint>
+        <fieldset className="segmented" aria-label="Excel の対象" data-testid="excel-kind">
+          {(
+            [
+              ['all', '全体'],
+              ['client', `${t.client}の名簿`],
+              ['staff', `${t.staff}の名簿`],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              className={excelKind === k ? 'is-on' : undefined}
+              aria-pressed={excelKind === k}
+              onClick={() => setExcelKind(k)}
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
+        {excelKind !== 'all' && (
+          <fieldset className="stack" style={{ gap: 6 }} data-testid="roster-mode">
+            <legend>名簿の読み込み方</legend>
+            <label className="check">
+              <input
+                type="radio"
+                name="roster-mode"
+                checked={rosterMode === 'merge'}
+                onChange={() => setRosterMode('merge')}
+                style={{ width: 'auto' }}
+              />
+              追加・更新（ブックに無い人はそのまま）
+            </label>
+            <label className="check">
+              <input
+                type="radio"
+                name="roster-mode"
+                checked={rosterMode === 'replace'}
+                onChange={() => setRosterMode('replace')}
+                style={{ width: 'auto' }}
+              />
+              総入れ替え（ブックに無い人を{excelKind === 'staff' ? '休止' : '段階「終了」'}にします。消しはしません）
+            </label>
+          </fieldset>
+        )}
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button type="button" className="btn" disabled={excelBusy} onClick={() => void downloadExcel()}>
             <WithIcon icon={FileSpreadsheet}>Excel に書き出す</WithIcon>

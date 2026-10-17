@@ -1,11 +1,11 @@
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
-import type { DemoData, ImportError } from '../contracts/data';
+import type { DemoData, ImportError, RosterImportResult, RosterKind, RosterMode } from '../contracts/data';
 import type { Condition, Item } from '../contracts/rules';
 import { createDemoData } from '../seed';
-import { isImportError } from '../store';
+import { isImportError, migrate } from '../store';
 import { MAX_FILE_BYTES, MAX_ROWS, prim } from './importBook';
-import { exportWorkbook, importWorkbook } from './index';
+import { exportRosterWorkbook, exportWorkbook, importRoster, importWorkbook, rosterSummary } from './index';
 import {
   condsToCell,
   parseConds,
@@ -1317,5 +1317,320 @@ describe('リンクのセルの読み方（prim。ADR-0017）', () => {
       }),
     );
     expect(r.staff[0]!.email).toBe('rich@example.com');
+  });
+});
+
+describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
+  /** 名簿のブックを書き出し、ExcelJS で直してから名簿として読み込む */
+  async function editRoster(
+    d: DemoData,
+    kind: RosterKind,
+    fn: (ws: ExcelJS.Worksheet) => void,
+    mode: RosterMode = 'merge',
+  ): Promise<RosterImportResult | ImportError> {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await (await exportRosterWorkbook(d, kind)).arrayBuffer());
+    fn(sheet(wb, personSheetNames(d.org.terms)[kind]));
+    return importRoster((await wb.xlsx.writeBuffer()) as ArrayBuffer, d, kind, mode);
+  }
+  const rok = (r: RosterImportResult | ImportError): RosterImportResult => {
+    if ('code' in r) throw new Error(`読み込めなかった：${r.message}`);
+    return r;
+  };
+  const rfail = (r: RosterImportResult | ImportError): string => {
+    if (!('code' in r)) throw new Error('エラーになるはずが読み込めた');
+    return r.message;
+  };
+  /** 表示名の行の番号 */
+  const rowOf = (ws: ExcelJS.Worksheet, header: string, name: string): number => {
+    const c = col(ws, header);
+    for (let n = 2; n <= ws.rowCount; n++) if (ws.getRow(n).getCell(c).value === name) return n;
+    throw new Error(`${name} の行がない`);
+  };
+  /** 案・記録・確定した割当の入ったデータ */
+  const withPlans = (): DemoData => {
+    const d = base();
+    const v = d.visits.find((x) => x.date === d.baseDate && !x.cancelled);
+    if (!v) throw new Error('訪問がない');
+    const routes = { s1: [v.id] };
+    return ok(
+      migrate({
+        ...d,
+        manualPlans: { [d.baseDate]: routes },
+        aiPlans: {
+          [d.baseDate]: {
+            date: d.baseDate,
+            createdAt: 0,
+            seed: 1,
+            iterations: 10,
+            routes,
+            unassigned: [],
+            score: 0,
+            stopped: false,
+            rules: d.rules,
+            generated: { routes, unassigned: [], score: 0 },
+            pins: {},
+          },
+        },
+      }),
+    );
+  };
+
+  it('名簿のブックはその人のシート1枚だけで、全体のブックの同じシートと同じ列', async () => {
+    const d = base();
+    const names = personSheetNames(d.org.terms);
+    for (const kind of ['client', 'staff'] as const) {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await (await exportRosterWorkbook(d, kind)).arrayBuffer());
+      expect(wb.worksheets.map((w) => w.name)).toEqual([names[kind]]);
+      const full = new ExcelJS.Workbook();
+      await full.xlsx.load(await toBuffer(d));
+      expect(sheet(wb, names[kind]).getRow(1).values).toEqual(sheet(full, names[kind]).getRow(1).values);
+    }
+  });
+
+  it('書き出し → 読み込みで変わらない（すべて変更なし。データも同じ）', async () => {
+    const d = withPlans();
+    for (const kind of ['client', 'staff'] as const) {
+      const r = rok(await importRoster(await (await exportRosterWorkbook(d, kind)).arrayBuffer(), d, kind, 'merge'));
+      expect(r.added).toEqual([]);
+      expect(r.updated).toEqual([]);
+      expect(r.retired).toEqual([]);
+      expect(r.unchanged).toBe(kind === 'client' ? d.clients.length : d.staff.length);
+      expect(r.data).toEqual(d);
+      expect(rosterSummary(r, kind)).toContain('変更なし');
+    }
+  });
+
+  it('全体のブックの〈利用者さん〉シートも名簿として読める', async () => {
+    const d = base();
+    const r = rok(await importRoster(await toBuffer(d), d, 'client', 'merge'));
+    expect(r.unchanged).toBe(d.clients.length);
+    expect(r.data).toEqual(d);
+  });
+
+  it('ID が空で知らない名前の行は新しい人として足す（列の無い値は既定値）', async () => {
+    const d = base();
+    const r = rok(
+      await editRoster(d, 'client', (ws) => {
+        const row = ws.getRow(d.clients.length + 2);
+        row.getCell(col(ws, '表示名')).value = '新しい 花子';
+        row.getCell(col(ws, '色（1〜8）')).value = 3;
+        row.getCell(col(ws, '段階')).value = '利用中';
+        row.getCell(col(ws, 'いつもの担当')).value = d.staff[1]?.name ?? '';
+      }),
+    );
+    expect(r.added).toEqual(['新しい 花子']);
+    expect(r.updated).toEqual([]);
+    const c = r.data.clients.at(-1);
+    expect(c?.displayName).toBe('新しい 花子');
+    expect(c?.color).toBe(2);
+    expect(c?.stage).toBe('active');
+    expect(c?.active).toBe(true);
+    expect(c?.usualStaffId).toBe(d.staff[1]?.id);
+    expect(d.clients.some((x) => x.id === c?.id)).toBe(false);
+    expect(r.data.clients.slice(0, -1)).toEqual(d.clients);
+  });
+
+  it('ID が入っていれば ID で突き合わせて更新する（名前も変えられる。無い ID はその ID で足す）', async () => {
+    const d = base();
+    const target = d.clients[0];
+    if (!target) throw new Error('利用者さんがいない');
+    const r = rok(
+      await editRoster(d, 'client', (ws) => {
+        const n = rowOf(ws, '表示名', target.displayName);
+        ws.getRow(n).getCell(col(ws, '表示名')).value = '改名 ふみ';
+        ws.getRow(n).getCell(col(ws, 'メモ')).value = '名前を変えた';
+        const row = ws.getRow(d.clients.length + 2);
+        row.getCell(col(ws, 'ID')).value = 'c-new';
+        row.getCell(col(ws, '表示名')).value = 'ID つき 新人';
+        row.getCell(col(ws, '色（1〜8）')).value = 1;
+        row.getCell(col(ws, '段階')).value = '相談受付';
+      }),
+    );
+    expect(r.updated).toEqual(['改名 ふみ']);
+    expect(r.added).toEqual(['ID つき 新人']);
+    const c = r.data.clients.find((x) => x.id === target.id);
+    expect(c?.displayName).toBe('改名 ふみ');
+    expect(c?.note).toBe('名前を変えた');
+    expect(r.data.clients.find((x) => x.id === 'c-new')?.stage).toBe('inquiry');
+    // 予約語・ほかのデータの ID は止める
+    const msg = rfail(
+      await editRoster(d, 'client', (ws) => {
+        ws.getRow(2).getCell(col(ws, 'ID')).value = '__proto__';
+        ws.getRow(3).getCell(col(ws, 'ID')).value = d.staff[0]?.id ?? '';
+      }),
+    );
+    expect(msg).toContain('「__proto__」は ID に使えません');
+    expect(msg).toContain('ほかのデータで使われています');
+  });
+
+  it('ID が空なら名前（全角半角・空白の違いは同じ）で突き合わせて更新する', async () => {
+    const d = base();
+    const s = d.staff[1];
+    if (!s) throw new Error('スタッフがいない');
+    const r = rok(
+      await editRoster(d, 'staff', (ws) => {
+        const n = rowOf(ws, '名前', s.name);
+        ws.getRow(n).getCell(col(ws, 'ID')).value = null;
+        ws.getRow(n).getCell(col(ws, '名前')).value = `　${s.name.replace(' ', '　')}`;
+        ws.getRow(n).getCell(col(ws, '勤務開始')).value = '10:00';
+      }),
+    );
+    expect(r.updated).toHaveLength(1);
+    expect(r.added).toEqual([]);
+    const got = r.data.staff.find((x) => x.id === s.id);
+    expect(got?.shiftStart).toBe('10:00');
+    expect(r.data.staff).toHaveLength(d.staff.length);
+  });
+
+  it('ブックに無い列は今の値のまま', async () => {
+    const d = base();
+    const c0 = d.clients[0];
+    if (!c0) throw new Error('利用者さんがいない');
+    const trait = d.items.find((i) => i.target === 'client');
+    const data: DemoData = {
+      ...d,
+      clients: d.clients.map((c, i) => (i === 0 ? { ...c, keyNote: '鍵は玄関の箱' } : c)),
+    };
+    const r = rok(
+      await editRoster(data, 'client', (ws) => {
+        ws.spliceColumns(col(ws, '鍵'), 1);
+        ws.spliceColumns(col(ws, `特性：${trait?.name}`), 1);
+        ws.getRow(rowOf(ws, '表示名', c0.displayName)).getCell(col(ws, 'メモ')).value = '直した';
+      }),
+    );
+    const c = r.data.clients[0];
+    expect(c?.keyNote).toBe('鍵は玄関の箱');
+    expect(c?.traits).toEqual(c0.traits);
+    expect(c?.note).toBe('直した');
+    expect(r.updated).toEqual([c0.displayName]);
+  });
+
+  it('いない〈スタッフ〉の名前・知らない特性の列は、シート・行・列付きのエラー', async () => {
+    const d = base();
+    const msg = rfail(
+      await editRoster(d, 'client', (ws) => {
+        ws.getRow(2).getCell(col(ws, 'いつもの担当')).value = '存在しない人';
+        ws.getRow(3).getCell(col(ws, '担当できる人')).value = `${d.staff[0]?.name}、だれか`;
+      }),
+    );
+    expect(msg).toContain(
+      'シート『利用者さん』の 2行目・『いつもの担当』：「存在しない人」というスタッフは、いまのデータにいません',
+    );
+    expect(msg).toContain('シート『利用者さん』の 3行目・『担当できる人』：「だれか」');
+    const msg2 = rfail(
+      await editRoster(d, 'staff', (ws) => {
+        ws.getRow(1).getCell(ws.columnCount + 1).value = '特性：知らない項目';
+      }),
+    );
+    expect(msg2).toContain('見出し『特性：知らない項目』の項目が');
+  });
+
+  it('ブックの中の同じ名前・同じ ID、当てたあとに他の人と重なる名前は止める', async () => {
+    const d = base();
+    const [a, b] = d.staff;
+    if (!a || !b) throw new Error('スタッフがいない');
+    const dupName = rfail(
+      await editRoster(d, 'staff', (ws) => {
+        ws.getRow(rowOf(ws, '名前', b.name)).getCell(col(ws, '名前')).value = a.name;
+      }),
+    );
+    expect(dupName).toContain('重なっています');
+    const dupId = rfail(
+      await editRoster(d, 'staff', (ws) => {
+        ws.getRow(rowOf(ws, '名前', b.name)).getCell(col(ws, 'ID')).value = a.id;
+      }),
+    );
+    expect(dupId).toContain(`ID「${a.id}」が`);
+    // ブックに無い人の名前に変えると重なる
+    const clash = rfail(
+      await editRoster(d, 'staff', (ws) => {
+        ws.spliceRows(rowOf(ws, '名前', a.name), 1);
+        ws.getRow(rowOf(ws, '名前', b.name)).getCell(col(ws, '名前')).value = a.name;
+      }),
+    );
+    expect(clash).toContain(`いまのスタッフの「${a.name}」と名前が重なります`);
+    // 人の行が無いブックは止める（総入れ替えで全員を休止にしない）
+    const empty = rfail(
+      await editRoster(
+        d,
+        'staff',
+        (ws) => {
+          for (let n = 2; n <= ws.rowCount; n++) ws.getRow(n).values = [];
+        },
+        'replace',
+      ),
+    );
+    expect(empty).toContain('スタッフの行がありません');
+  });
+
+  it('総入れ替え：ブックに無い〈利用者さん〉は終了、〈スタッフ〉は休止（消さない。既に終了・休止の人はそのまま）', async () => {
+    const d0 = withPlans();
+    const [c1, c2, c3] = d0.clients;
+    const [s1, s2, s3] = d0.staff;
+    if (!c1 || !c2 || !c3 || !s1 || !s2 || !s3) throw new Error('人がいない');
+    const d = ok(
+      migrate({
+        ...d0,
+        clients: d0.clients.map((c) => (c.id === c3.id ? { ...c, stage: 'ended' } : c)),
+        staff: d0.staff.map((s) => (s.id === s3.id ? { ...s, active: false } : s)),
+        compat: { ...d0.compat, [c1.id]: { [s2.id]: 2 } },
+      }),
+    );
+    const rc = rok(
+      await editRoster(
+        d,
+        'client',
+        (ws) => {
+          for (const c of [c1, c2, c3]) ws.spliceRows(rowOf(ws, '表示名', c.displayName), 1);
+        },
+        'replace',
+      ),
+    );
+    expect(rc.retired).toEqual([c1.displayName, c2.displayName]);
+    expect(rc.data.clients).toHaveLength(d.clients.length);
+    expect(rc.data.clients.find((c) => c.id === c1.id)).toMatchObject({ stage: 'ended', active: false });
+    expect(rc.data.clients.find((c) => c.id === c3.id)).toEqual(d.clients.find((c) => c.id === c3.id));
+    expect(rosterSummary(rc, 'client')).toContain(`終了にする 2人（${c1.displayName}・${c2.displayName}）`);
+    // 案・記録・確定した割当・訪問・パターン・相性は残る（その人を指すものも）
+    expect(rc.data.manualPlans).toEqual(d.manualPlans);
+    expect(rc.data.aiPlans).toEqual(d.aiPlans);
+    expect(rc.data.visits).toEqual(d.visits);
+    expect(rc.data.patterns).toEqual(d.patterns);
+    expect(rc.data.compat).toEqual(d.compat);
+
+    const rs = rok(
+      await editRoster(
+        d,
+        'staff',
+        (ws) => {
+          for (const s of [s1, s2, s3]) ws.spliceRows(rowOf(ws, '名前', s.name), 1);
+        },
+        'replace',
+      ),
+    );
+    expect(rs.retired).toEqual([s1.name, s2.name]);
+    expect(rs.data.staff.find((s) => s.id === s1.id)?.active).toBe(false);
+    expect(rs.data.staff).toHaveLength(d.staff.length);
+    expect(rs.data.manualPlans).toEqual(d.manualPlans);
+    expect(rs.data.aiPlans).toEqual(d.aiPlans);
+    expect(rs.data.visits).toEqual(d.visits);
+    expect(rosterSummary(rs, 'staff')).toContain('休止にする 2人');
+
+    // 追加・更新（既定）では、ブックに無い人はそのまま
+    const rm = rok(
+      await editRoster(d, 'staff', (ws) => {
+        ws.spliceRows(rowOf(ws, '名前', s1.name), 1);
+      }),
+    );
+    expect(rm.retired).toEqual([]);
+    expect(rm.data).toEqual(d);
+  });
+
+  it('シートが無いブックは、呼び方のシート名を示して止める', async () => {
+    const d = base();
+    const buf = await (await exportRosterWorkbook(d, 'staff')).arrayBuffer();
+    expect(rfail(await importRoster(buf, d, 'client', 'merge'))).toContain('シート『利用者さん』がありません');
   });
 });

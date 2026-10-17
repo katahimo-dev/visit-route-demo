@@ -168,3 +168,22 @@ export const demoDataSchema = z.object({
 export type DemoData = z.infer<typeof demoDataSchema>;
 
 export type ImportError = { code: 'INVALID_ARGUMENT'; message: string };
+
+/** Excel の名簿（PRD D103〜D107。ADR-0020）：〈利用者さん〉の名簿か〈スタッフ〉の名簿か */
+export type RosterKind = 'client' | 'staff';
+/**
+ * 名簿の読み込み方（PRD D104）：'merge'＝追加・更新（ブックに無い人はそのまま。既定）、
+ * 'replace'＝総入れ替え（ブックに無い人を、〈利用者さん〉は段階「終了」、〈スタッフ〉は休止にする。消さない）
+ */
+export type RosterMode = 'merge' | 'replace';
+/**
+ * 名簿の読み込みの結果（PRD D106）。data は名簿を当てた新しいデータ（store の migrate を通したもの。画面が store の update で入れる）。
+ * added・updated・retired は名前（ブックの行の順・今のデータの順）、unchanged は変更の無い行の数
+ */
+export type RosterImportResult = {
+  data: DemoData;
+  added: string[];
+  updated: string[];
+  unchanged: number;
+  retired: string[];
+};
