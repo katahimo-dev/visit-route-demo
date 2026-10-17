@@ -182,16 +182,32 @@ label.work-setting {
   border-radius: 6px;
   background: repeating-linear-gradient(90deg, #f6f0eb 0 calc(100% / 13 - 1px), #eadfd6 calc(100% / 13 - 1px) calc(100% / 13));
 }
-.work-bar-fill {
+/* 拘束の内訳（PRD D77）：訪問・移動・待ちを3段バーと同じ模様で（色は components/loadBar.css の is-st-*） */
+.work-part {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 6px;
-  background: #8fb3d9;
 }
-.work-bar.is-over .work-bar-fill {
-  background: repeating-linear-gradient(135deg, var(--warn) 0 4px, #f3c56d 4px 8px);
+/* 拘束の外枠。上限を超える日は太い橙の枠 */
+.work-bar-frame {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  pointer-events: none;
+}
+.work-bar.is-over .work-bar-frame {
+  top: -3px;
+  bottom: -3px;
+  border: 2.5px solid var(--warn);
 }
 .work-days tr.is-over th {
   color: #a46d0a;
+}
+/* 日ごとの横棒の凡例（PRD D77） */
+.work-legend {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
 }

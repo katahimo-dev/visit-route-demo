@@ -79,14 +79,28 @@ function RowEdge({ hour }: { hour: number }) {
   );
 }
 
+/** 3段バーの30分のマス1つ（level は CSS の is-〈level〉。title はマウスを乗せたときの文） */
+export type BarSlot = { start: number; level: string; title: string };
+
 /**
- * 混み具合バー（3段。PRD D60）。段ごとに30分のマスを横いっぱいに並べ、左右の端に段の開始・終了の時刻を小さく出す。
- * マウスを乗せると「14:00〜14:30 空き 3人／働く 7人」、読み上げはまとめの文（loadSummary）
+ * 3段バー（PRD D60。D75〜D77 で〈スタッフ〉の状態にも使う共通の部品）。段ごとに30分のマスを横いっぱいに並べ、
+ * 左右の端に段の開始・終了の時刻を小さく出す。slots が null なら空の枠と emptyText（title・読み上げ）。
+ * 読み上げは label（まとめの文）。マスの大きさは親の幅に合わせて縮む（月のマス・週の表のマス）
  */
-export function LoadBar({ load }: { load: readonly DayLoadSlot[] | null }) {
-  if (load === null) {
+export function SlotBar({
+  slots,
+  label,
+  emptyText,
+  testId,
+}: {
+  slots: readonly BarSlot[] | null;
+  label: string;
+  emptyText: string;
+  testId: string;
+}) {
+  if (slots === null) {
     return (
-      <span className="load-bar is-empty" title="案が無いので混み具合を数えていません" data-testid="load-bar">
+      <span className="load-bar is-empty" title={emptyText} data-testid={testId}>
         {LOAD_ROWS.map(([a, b]) => (
           <span key={a} className="load-row">
             <RowEdge hour={a} />
@@ -94,24 +108,38 @@ export function LoadBar({ load }: { load: readonly DayLoadSlot[] | null }) {
             <RowEdge hour={b} />
           </span>
         ))}
-        <span className="sr-only">混み具合：案が無いので数えていません</span>
+        <span className="sr-only">{emptyText}</span>
       </span>
     );
   }
   return (
-    <span className="load-bar" data-testid="load-bar" role="img" aria-label={loadSummary(load)}>
-      {loadRows(load).map((row) => (
+    <span className="load-bar" data-testid={testId} role="img" aria-label={label}>
+      {loadRows(slots).map((row) => (
         <span key={row.from} className="load-row" data-testid="load-row">
           <RowEdge hour={row.from} />
           <span className="load-row-slots">
             {row.slots.map((x) => (
-              <span key={x.start} className={`load-slot is-${loadLevel(x)}`} title={loadSlotText(x)} />
+              <span key={x.start} className={`load-slot is-${x.level}`} title={x.title} />
             ))}
           </span>
           <RowEdge hour={row.to} />
         </span>
       ))}
     </span>
+  );
+}
+
+/**
+ * 混み具合バー（3段。PRD D60）。マウスを乗せると「14:00〜14:30 空き 3人／働く 7人」、読み上げはまとめの文（loadSummary）
+ */
+export function LoadBar({ load }: { load: readonly DayLoadSlot[] | null }) {
+  return (
+    <SlotBar
+      slots={load ? load.map((x) => ({ start: x.start, level: loadLevel(x), title: loadSlotText(x) })) : null}
+      label={load ? loadSummary(load) : ''}
+      emptyText={load ? '' : '案が無いので混み具合を数えていません'}
+      testId="load-bar"
+    />
   );
 }
 

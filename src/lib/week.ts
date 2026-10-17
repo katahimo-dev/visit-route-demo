@@ -3,7 +3,7 @@
 import type { AiPlan, DemoData } from '../contracts/data';
 import type { Client, Pattern, Staff, Visit } from '../contracts/documents';
 import type { PatternChange } from '../contracts/patterns';
-import type { Problem } from '../contracts/problem';
+import type { Problem, StopTiming } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Item } from '../contracts/rules';
 import { availabilityOf, withoutAbsences } from '../domain/availability';
@@ -16,6 +16,7 @@ import { applyPatterns, nthOfMonth, splitPattern, timesOn } from '../patterns';
 import { fitsOf, placeVisit } from '../reassign';
 import { attempt, byDisplayName, byName, own } from './common';
 import { addRun, findRun, problemKey } from './runs';
+import { busyParts, type StaffSlot, spansOf, staffSlots } from './staffBar';
 
 /** 時間軸の縦の範囲（0時からの分）：07:00〜20:00 */
 export const DAY_START = 7 * 60;
@@ -440,7 +441,7 @@ export type WeekCell = {
   date: string;
   /** 休み（その日の稼働時間帯が無い） */
   off: boolean;
-  /** その日に数える案が無い */
+  /** その日に数える案が無い（訪問がある日だけ true。訪問の無い日は空の案として数える＝vacancy の dayLoad と同じ） */
   noPlan: boolean;
   count: number;
   /** 稼働時間（時間。その日の稼働時間帯の長さ。欠勤を差し引く） */
@@ -449,6 +450,8 @@ export type WeekCell = {
   travel: number;
   /** 種類ごとの件数（種類なしは数えない。種類の並びの順） */
   types: { typeId: string; count: number }[];
+  /** 30分ごとの状態（PRD D76。lib/staffBar の staffSlots。07:00〜20:00）。数える案が無い日は勤務内を「案なし」にする */
+  bar: StaffSlot[];
 };
 
 export type WeekRow = {
@@ -464,10 +467,19 @@ export type WeekRow = {
 export type StaffWeekTable = {
   rows: WeekRow[];
   /** 日ごとの合計（noPlan はその日に数える案が無い） */
-  days: { date: string; noPlan: boolean; count: number; hours: number; travel: number }[];
+  days: { date: string; noPlan: boolean; count: number; hours: number; travel: number; visits: number }[];
   /** 件数の全員の平均 */
   average: number;
 };
+
+/**
+ * その日に数える案が無いか：訪問があるのに今の案も確定も無い日（訪問の無い日は空の案として数える＝vacancy の dayLoad・
+ * 月の staffDay と同じ。問題が作れなければ帯の数で見る）
+ */
+function noPlanOf(day: WeekDay): boolean {
+  if (day.source !== null) return false;
+  return (day.problem ? day.problem.visits.length : day.bands.filter((b) => !b.leave).length) > 0;
+}
 
 /** 差を強調する割合（平均の30%） */
 export const STRONG_DIFF_RATIO = 0.3;
@@ -476,7 +488,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
  * 〈スタッフ〉×曜日の表（D51）。行＝稼働中の〈スタッフ〉（名前の順）、列＝days（月〜日）。
- * 数えるのは、その日の今の案（無ければ確定した割当）。案の無い日は noPlan で、件数・移動は 0
+ * 数えるのは、その日の今の案（無ければ確定した割当）。訪問があるのに案の無い日は noPlan で、件数・移動は 0
  */
 export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): StaffWeekTable {
   const staff = data.staff.filter((s) => s.active).sort(byName);
@@ -486,16 +498,22 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
     const cells = days.map((day): WeekCell => {
       const override = data.availability.find((a) => a.staffId === s.id && a.date === day.date);
       const absences = data.absences.filter((a) => a.staffId === s.id && a.date === day.date);
-      const slots = withoutAbsences(availabilityOf(s, day.date, override).slots, absences);
+      const base = availabilityOf(s, day.date, override).slots;
+      const slots = withoutAbsences(base, absences);
       const hours = slots.reduce((m, x) => m + hhmmToMinutes(x.end) - hhmmToMinutes(x.start), 0) / 60;
       const list = own(day.routes, s.id) ?? [];
       let travel = 0;
+      let stops: StopTiming[] = [];
       const p = day.problem;
       if (p && list.length > 0) {
         const si = p.staff.findIndex((x) => x.id === s.id);
         const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
         const idx = list.map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
-        if (si >= 0) travel = scheduleRoute(p, si, idx, 'lenient')?.travelMinutes ?? 0;
+        if (si >= 0) {
+          const t = scheduleRoute(p, si, idx, 'lenient');
+          travel = t?.travelMinutes ?? 0;
+          stops = t?.stops ?? [];
+        }
       }
       const typeCount = new Map<string, number>();
       for (const id of list) {
@@ -508,11 +526,17 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
       return {
         date: day.date,
         off: slots.length === 0,
-        noPlan: day.source === null,
+        noPlan: noPlanOf(day),
         count: list.length,
         hours: round1(hours),
         travel: Math.round(travel),
         types,
+        bar: staffSlots({
+          shift: spansOf(slots),
+          base: spansOf(base),
+          busy: busyParts(stops),
+          planned: !noPlanOf(day),
+        }),
       };
     });
     const total = {
@@ -529,10 +553,12 @@ export function staffWeekTable(data: CompileInput, days: readonly WeekDay[]): St
   }
   const dayTotals = days.map((day, i) => ({
     date: day.date,
-    noPlan: day.source === null,
+    noPlan: noPlanOf(day),
     count: rows.reduce((m, r) => m + r.cells[i]!.count, 0),
     hours: round1(rows.reduce((m, r) => m + r.cells[i]!.hours, 0)),
     travel: rows.reduce((m, r) => m + r.cells[i]!.travel, 0),
+    // その日の訪問の件数（取り消し・〈利用者さん〉の休みを除く。案なしの日の「案なし（訪問 N件）」）
+    visits: day.bands.filter((b) => !b.leave).length,
   }));
   return { rows, days: dayTotals, average: round1(average) };
 }

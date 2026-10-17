@@ -8,6 +8,7 @@ import { NONE } from '../domain/scheduleModel';
 import { type CompileInput, compile, scheduleRoute } from '../matching';
 import { attempt, own } from './common';
 import { monthDates } from './month';
+import { type RoutePart, spanParts } from './staffBar';
 
 /** 数える案の元：確定した割当／今の案 */
 export type WorkSource = 'confirmed' | 'plan';
@@ -36,6 +37,8 @@ export type WorkStat = {
   fareYen: number;
   /** 拘束が上限を超える */
   over: boolean;
+  /** 拘束の内訳（時間軸の上の訪問・移動・待ち。lib/staffBar の spanParts。PRD D77） */
+  parts: RoutePart[];
 };
 
 export type WorkOptions = { fareYenPerKm: number; spanLimitHours: number };
@@ -98,6 +101,7 @@ export function workStats(
       meters: t.meters,
       fareYen: fareOf(t.meters, opts.fareYenPerKm),
       over: isOverSpan(span, opts.spanLimitHours),
+      parts: spanParts(t.stops),
     });
   });
   return out;

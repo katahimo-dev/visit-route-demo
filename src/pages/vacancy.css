@@ -64,8 +64,7 @@
   gap: 0;
   border-radius: 8px;
   border: 1.5px solid var(--line);
-  background: #fff;
-  color: var(--ink);
+  /* 背景と文字の色はマスの段階（lv-*）で付ける */
   font: inherit;
   line-height: 1.1;
   cursor: pointer;
@@ -88,23 +87,7 @@
 .vacancy-count {
   font-size: 0.68rem;
 }
-/* 色は補助（印 ○△×？ と人数で読める） */
-.vacancy-cell.is-ok {
-  background: #e1f1e7;
-  color: #2f6e48;
-}
-.vacancy-cell.is-partial {
-  background: #fbefd6;
-  color: #7a4f05;
-}
-.vacancy-cell.is-ng {
-  background: #f6f0eb;
-  color: var(--sub);
-}
-.vacancy-cell.is-unknown {
-  background: repeating-linear-gradient(45deg, #fff, #fff 4px, #f3ebe4 4px, #f3ebe4 8px);
-  color: var(--sub);
-}
+/* 色と模様は components/glance.css の lv-*（受けられる人数の段階。PRD D78）。印 ○△×？ と人数も出す */
 .vacancy-dates {
   list-style: none;
   margin: 0;
@@ -132,4 +115,40 @@
   border: 1.5px solid var(--line);
   background: var(--soft);
   font-weight: 700;
+}
+
+/* 問い合わせの試算の週ごとのマス（PRD D79） */
+.inquiry-weeks {
+  width: auto;
+  border-collapse: separate;
+  border-spacing: 3px;
+  font-size: 0.8rem;
+}
+.inquiry-weeks th {
+  font-weight: 700;
+  color: var(--sub);
+  white-space: nowrap;
+  padding: 2px 4px;
+  text-align: left;
+}
+.inquiry-weeks td {
+  padding: 0;
+  width: 46px;
+}
+.inquiry-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  line-height: 1.1;
+}
+.inquiry-day-mark {
+  font-weight: 700;
+}
+.inquiry-day-date {
+  font-size: 0.66rem;
 }

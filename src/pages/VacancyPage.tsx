@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ConditionsEditor } from '../components/conditions';
+import { LevelLegend } from '../components/glance';
 import { PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
@@ -39,6 +40,7 @@ import { addDays, hhmmToMinutes, jstDate, jstHhmm, minutesToHhmm, weekday } from
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
+import { type InquiryDayMark, type InquiryRow, inquiryDayLevel, inquiryRows, vacancyLevel } from '../lib/glance';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
 import { insertAllIntoPlans, weekStart } from '../lib/week';
@@ -68,6 +70,87 @@ const VERDICT_TEXT: Record<Verdict, string> = {
 };
 
 const hm = (t: number) => timeText(minutesToHhmm(t));
+
+/** 空き状況の表の凡例（PRD D78。どの週でも受けられる人数の段階） */
+const VACANCY_LEGEND: [string, string][] = [
+  ['none', '0人（どの週も）'],
+  ['partial', '0人の週がある'],
+  ['one', '1人'],
+  ['two', '2人'],
+  ['three', '3人'],
+  ['many', '4人以上'],
+  ['unknown', '案なし'],
+];
+
+const DAY_MARK: Record<InquiryDayMark, string> = { ok: '○', ng: '×', unknown: '？' };
+const DAY_TEXT: Record<InquiryDayMark, string> = {
+  ok: '受けられる',
+  ng: '受けられない',
+  unknown: '案が無く数えていない',
+};
+
+/**
+ * 問い合わせの試算の週ごとのマス（PRD D79）：希望の曜日×週。マスは ○×？ とその日の一番多い人数、模様は空き状況の表と同じ。
+ * 行の頭にその曜日の判定（○△×？）
+ */
+function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {
+  if (rows.every((r) => r.days.length === 0)) return null;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <div className="vacancy-scroll">
+        <table className="inquiry-weeks" data-testid="inquiry-weeks">
+          <caption className="sr-only">希望の曜日と週ごとの、希望の時間帯に受けられるか</caption>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.weekday}>
+                <th scope="row">
+                  {WEEKDAY_LABELS[r.weekday]} {MARK[r.verdict]}
+                  {r.start !== null && <small> {hm(r.start)}〜</small>}
+                  <span className="sr-only">（{VERDICT_TEXT[r.verdict]}）</span>
+                </th>
+                {r.days.map((x) => {
+                  const label = `${dateText(x.date)}${r.start !== null ? ` ${hm(r.start)}から` : ''}：${DAY_MARK[x.mark]} ${DAY_TEXT[x.mark]}${
+                    x.mark === 'ok' ? `（${exact ? '' : '約'}${x.best}人）` : ''
+                  }`;
+                  return (
+                    <td key={x.date}>
+                      <span
+                        className={`inquiry-day lv-${inquiryDayLevel(x)}`}
+                        title={label}
+                        data-testid="inquiry-day"
+                        data-mark={x.mark}
+                      >
+                        <span className="inquiry-day-mark" aria-hidden="true">
+                          {DAY_MARK[x.mark]}
+                          {x.mark === 'ok' ? (
+                            <small>
+                              {' '}
+                              {exact ? '' : '約'}
+                              {x.best}
+                            </small>
+                          ) : null}
+                        </span>
+                        <span className="inquiry-day-date" aria-hidden="true">
+                          {mdText(x.date)}
+                        </span>
+                        <span className="sr-only">{label}</span>
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <span className="sub">
+        行の頭は、希望の時間帯の中でその曜日に一番良い開始時刻（上の要約と同じ決め方：同じ開始時刻がどの週も受けられれば
+        ○）。 マスはその開始時刻にその日受けられる人数（○ のあとの数字{exact ? '' : '。目安なので「約」'}
+        ）。×＝その日は受けられない、？＝案が無く数えていない。
+      </span>
+    </div>
+  );
+}
 
 /** 展開済みの範囲の最後の日（いまある訪問の最後の日。無ければ今日）。PatternsSection と同じ決め方 */
 function lastVisitDate(visits: { date: string }[], today: string): string {
@@ -431,6 +514,7 @@ export default function VacancyPage() {
           。○＝どの週も受けられる・△＝受けられない週がある・×＝受けられない・？＝案が無く数えていない。マスを押すと日付ごとの人を見られます。
           {vType && ` 種類「${vType.name}」の担当に必要な条件を満たす人だけを数えます。`}
         </p>
+        <LevelLegend items={VACANCY_LEGEND} />
         {noPlan.length > 0 && (
           <p className="vacancy-noplan" data-testid="vacancy-noplan">
             案の無い日（{noPlan.length}日）は数えていません。
@@ -471,7 +555,7 @@ export default function VacancyPage() {
                         <td key={t}>
                           <button
                             type="button"
-                            className={`vacancy-cell is-${v}${picked === c ? ' is-picked' : ''}`}
+                            className={`vacancy-cell is-${v} lv-${vacancyLevel(c)}${picked === c ? ' is-picked' : ''}`}
                             data-testid="vacancy-cell"
                             data-weekday={wd}
                             data-start={minutesToHhmm(t)}
@@ -558,6 +642,7 @@ export default function VacancyPage() {
             <output className="inquiry-summary" data-testid="inquiry-summary">
               {summary}
             </output>
+            {result && <InquiryWeeks rows={inquiryRows(result, wish)} exact={result.exact} />}
             <div className="row" style={{ flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-primary" onClick={copy} data-testid="copy-summary">
                 <WithIcon icon={Copy}>要約をコピー</WithIcon>

@@ -372,6 +372,19 @@ describe('選んだスタッフ（staffDay・staffMonth）', () => {
     expect(staffDay(half, dayPlanOf(half, DATE), 's1').slots).toEqual([{ start: '08:00', end: '13:00' }]);
     const none = { ...selData(), aiPlans: {} };
     expect(staffDay(none, dayPlanOf(none, DATE), 's1')).toMatchObject({ noPlan: true, count: 0 });
+    // 案の無い日は勤務内を「案なし」にし、空きにしない（PRD D75）。終日の欠勤は休み（残っている訪問は訪問・移動で出す）
+    const np = staffDay(none, dayPlanOf(none, DATE), 's1');
+    expect(np.noPlan).toBe(true);
+    // 問題が作れなかった日（problem＝null）も、訪問があれば案なし（週の表と同じ）
+    const broken = staffDay(none, { date: DATE, problem: null, source: null, routes: {} }, 's1');
+    expect(broken.noPlan).toBe(true);
+    expect(broken.bar.some((x) => x.state === 'free')).toBe(false);
+    expect(np.bar.some((x) => x.state === 'noplan')).toBe(true);
+    expect(np.bar.some((x) => x.state === 'free')).toBe(false);
+    expect(s1.noPlan).toBe(false);
+    expect(s1.bar.every((x) => x.state === 'rest' || x.state === 'visit' || x.state === 'travel')).toBe(true);
+    expect(s1.bar.some((x) => x.state === 'visit')).toBe(true);
+    expect(s1.bar[0]?.state).toBe('rest');
   });
 
   it('月の集計：件数・稼働時間・移動・種類・資格', () => {

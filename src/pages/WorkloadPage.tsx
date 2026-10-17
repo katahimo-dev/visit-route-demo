@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCopy, Timer, TriangleAle
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { SpanBar, SpanMini } from '../components/workBars';
@@ -442,6 +443,11 @@ export default function WorkloadPage() {
                   </select>
                 </span>
               </SectionTitle>
+              <p className="row work-legend sub">
+                <span>横棒は最初の訪問の開始〜最後の訪問の終わり（拘束）。</span>
+                <StaffLegend states={['visit', 'travel', 'free']} labels={{ free: '待ち（休憩に使える時間）' }} />
+                <span>上限を超える日は太い枠と注意の印</span>
+              </p>
               <div className="table-scroll">
                 <table className="work-table work-days">
                   <thead>
@@ -545,4 +551,5 @@ const emptyStat = (staffId: string): WorkStat => ({
   meters: 0,
   fareYen: 0,
   over: false,
+  parts: [],
 });

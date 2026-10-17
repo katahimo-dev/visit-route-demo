@@ -24,7 +24,9 @@ import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
+import { ClientDots, PrepBar } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
+import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
@@ -38,6 +40,7 @@ import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { clientDot } from '../lib/glance';
 import {
   addMonths,
   applyDayRun,
@@ -81,6 +84,7 @@ import {
 } from '../lib/requestedOff';
 import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
+import { staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { workStats } from '../lib/workload';
 import { type CompileInput, compile } from '../matching';
@@ -932,7 +936,7 @@ export default function MonthPage() {
             </p>
           </div>
         )}
-        <MonthLegend showLoad={focus.kind === 'all'} />
+        <MonthLegend bar={focus.kind === 'all' ? 'load' : focus.kind === 'staff' ? 'staff' : null} />
         {batch && (
           <div className="stack month-progress" style={{ gap: 4 }} data-testid="month-progress">
             <progress
@@ -1182,6 +1186,15 @@ export default function MonthPage() {
                 <dt>いつもの担当でない</dt>
                 <dd>{clientSum.substitute}回</dd>
               </dl>
+              <h3 className="month-aside-sub">日ごと</h3>
+              <ClientDots
+                weeks={weeks}
+                ym={ym}
+                dotOf={(d) => {
+                  const day = clientDays.get(d);
+                  return day ? clientDot(day) : 'none';
+                }}
+              />
               <h3 className="month-aside-sub">担当した人</h3>
               {clientSum.byStaff.length === 0 ? (
                 <p className="sub">この月の訪問はありません。</p>
@@ -1273,8 +1286,11 @@ export default function MonthPage() {
   );
 }
 
-/** 月の見出しの凡例：日の状態（背景・枠と印）と、混み具合の色と目盛り（見出しに1回） */
-function MonthLegend({ showLoad }: { showLoad: boolean }) {
+/**
+ * 月の見出しの凡例：日の状態（背景・枠と印）と、3段バーの色と目盛り（見出しに1回）。
+ * bar：全体は混み具合（load）、〈スタッフ〉を選んだときはその人の時間帯の状態（staff。PRD D75）
+ */
+function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
   return (
     <div className="month-legend" data-testid="month-legend">
       <span className="month-legend-group">
@@ -1295,14 +1311,19 @@ function MonthLegend({ showLoad }: { showLoad: boolean }) {
         </span>
         <span className="month-legend-item">▶ 始まる・■ 終わる</span>
       </span>
-      {showLoad && (
+      {bar !== null && (
         <span className="month-legend-group">
           <span className="month-legend-load">
-            <span className="sub">混み具合</span>
+            <span className="sub">{bar === 'load' ? '混み具合' : '時間帯'}</span>
             <LoadRowsSample />
             <span className="sub">上から 7〜12時・12〜15時・15〜20時</span>
           </span>
-          <LoadLegend />
+          {bar === 'load' ? <LoadLegend /> : <StaffLegend />}
+          {bar === 'staff' && (
+            <span className="sub" data-testid="month-staff-bar-note">
+              時間帯は今の案（無ければ確定）で出します。混み具合は確定を先に数えるので、未確定の変更がある日は空きの人数が合わないことがあります
+            </span>
+          )}
         </span>
       )}
     </div>
@@ -1337,19 +1358,6 @@ function namesShort(names: readonly string[]): string {
   if (names.length === 0) return '';
   const first = shortName(names[0]!);
   return names.length === 1 ? first : `${first} ほか${names.length - 1}人`;
-}
-
-/** 選んだ〈スタッフ〉の担当の件数と目安に対する負荷のバー（目安の位置に線。目安を超えると橙） */
-function LoadMeter({ count, target }: { count: number; target: number | null }) {
-  if (target === null) return null;
-  const max = Math.max(target * 1.5, count, 1);
-  const over = count > Math.ceil(target);
-  return (
-    <span className="month-meter" aria-hidden="true">
-      <span className={`month-meter-fill${over ? ' is-over' : ''}`} style={{ width: `${(count / max) * 100}%` }} />
-      <span className="month-meter-target" style={{ left: `${(target / max) * 100}%` }} />
-    </span>
-  );
 }
 
 type CellProps = {
@@ -1541,54 +1549,55 @@ const DayCell = memo(function DayCell(props: CellProps) {
     );
   } else if (focus === 'staff' && props.staffDay) {
     const x = props.staffDay;
-    const shift = x.retired
+    // 勤務がふつうの日は時刻を出さず（3段バーで見せる。PRD D75）、休み・欠勤・最終勤務日の後だけ短い文字を出す
+    const shiftShort = x.retired
       ? '最終勤務日の後'
       : x.absence
         ? x.requested
           ? REQUESTED_OFF_NOTE
           : x.slots.length === 0
             ? '欠勤'
-            : `欠勤あり ${slotsText(x.slots)}`
+            : '欠勤あり'
         : x.off
           ? '休'
-          : slotsText(x.slots);
+          : null;
+    const shift =
+      shiftShort === null
+        ? slotsText(x.slots)
+        : x.absence && x.slots.length > 0 && !x.requested
+          ? `${shiftShort} ${slotsText(x.slots)}`
+          : shiftShort;
     parts.push(shift);
-    if (x.noPlan) parts.push('案なし');
+    // 訪問があるのに案の無い日（今の案も確定も無い）：件数も出す（空いていると誤読させない。PRD D75 の追記）
+    const noPlanText = x.noPlan ? `案なし（訪問 ${s.count}件）` : null;
+    if (noPlanText) parts.push(noPlanText);
     if (x.count > 0 || x.target !== null) {
       parts.push(`担当 ${x.count}件`);
       if (x.target !== null) parts.push(`目安 ${Math.round(x.target * 10) / 10}件`);
     }
     if (x.travel > 0) parts.push(`移動 ${x.travel}分`);
+    parts.push(`時間帯：${staffSlotSummary(x.bar)}`);
     body.push(
-      <span
-        key="shift"
-        className={`month-shift${x.retired ? ' is-retired' : x.absence ? (x.requested ? ' is-requested' : ' is-absent') : x.off ? ' is-off' : ''}`}
-        data-testid="month-shift"
-      >
-        {x.absence &&
-          (x.requested ? <CalendarOff size={12} aria-hidden="true" /> : <UserX size={12} aria-hidden="true" />)}
-        {shift}
-      </span>,
-      x.noPlan ? (
-        <span key="noplan" className="sub">
-          案なし
-        </span>
-      ) : null,
-      x.count > 0 || x.target !== null ? (
+      shiftShort !== null ? (
         <span
-          key="load"
-          className="month-staff-load"
-          title={x.target !== null ? `目安 ${Math.round(x.target * 10) / 10}件` : ''}
+          key="shift"
+          className={`month-shift${x.retired ? ' is-retired' : x.absence ? (x.requested ? ' is-requested' : ' is-absent') : ' is-off'}`}
+          data-testid="month-shift"
         >
-          <span className="month-staff-count">{x.count}件</span>
-          <LoadMeter count={x.count} target={x.target} />
+          {x.absence &&
+            (x.requested ? <CalendarOff size={12} aria-hidden="true" /> : <UserX size={12} aria-hidden="true" />)}
+          {shiftShort}
         </span>
       ) : null,
-      x.travel > 0 ? (
-        <span key="travel" className="sub">
-          移動 {x.travel}分
+      // 勤務の無い日（バーは全部休み）は「休」などの文字だけにする（案なしは読み上げ・title に残す）
+      noPlanText && x.slots.length > 0 ? (
+        <span key="noplan" className="sub" data-testid="month-staff-noplan">
+          {noPlanText}
         </span>
       ) : null,
+      <span key="bar" className="month-load is-staff">
+        <StaffBar slots={x.bar} />
+      </span>,
     );
   } else if (focus === 'client' && props.clientDay) {
     const x = props.clientDay;
@@ -1804,6 +1813,7 @@ function MonthPrep({
           )}
         </PrepStep>
       </ol>
+      <PrepBar progress={p} />
     </section>
   );
 }

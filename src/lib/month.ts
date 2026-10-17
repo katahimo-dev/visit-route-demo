@@ -2,7 +2,7 @@
 // データは書き換えず、新しい DemoData を返す（書くのは画面の update(fn)）
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
-import type { Problem, SolveResult } from '../contracts/problem';
+import type { Problem, SolveResult, StopTiming } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Rule } from '../contracts/rules';
 import { afterLastDay, availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
@@ -14,6 +14,7 @@ import { applyPatterns } from '../patterns';
 import { attempt, own } from './common';
 import { isRequestedOff } from './requestedOff';
 import { addRun, findRun, problemKey } from './runs';
+import { busyParts, type StaffSlot, spansOf, staffSlots } from './staffBar';
 
 /** 月まとめ作成の対象：まだ案の無い日だけ／確定していない日をすべて／条件が変わった日 */
 export type BatchMode = 'empty' | 'all' | 'stale';
@@ -428,7 +429,7 @@ export type StaffDay = {
   requested: boolean;
   /** 最終勤務日の後（ADR-0015） */
   retired: boolean;
-  /** 数える案が無い（訪問がある日だけ true） */
+  /** 数える案が無い（訪問がある日だけ true。訪問の無い日は空の案として数える＝vacancy の dayLoad と同じ） */
   noPlan: boolean;
   /** 担当の件数 */
   count: number;
@@ -442,6 +443,10 @@ export type StaffDay = {
   /** 稼働時間（分） */
   minutes: number;
   types: TypeCount[];
+  /**
+   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。07:00〜20:00）。数える案が無い日（noPlan）は勤務内を「案なし」にする
+   */
+  bar: StaffSlot[];
 };
 
 /** 選んだ〈スタッフ〉のその日（数えるのは今の案、無ければ確定した割当） */
@@ -461,19 +466,24 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
   }
   let travel = 0;
   let target: number | null = null;
+  let stops: StopTiming[] = [];
   const minutes = slotMinutes(toMin(slots));
   if (p) {
     const si = p.staff.findIndex((x) => x.id === staffId);
     if (si >= 0 && list.length > 0) {
       const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
       const idx = list.map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
-      travel = scheduleRoute(p, si, idx, 'lenient')?.travelMinutes ?? 0;
+      const t = scheduleRoute(p, si, idx, 'lenient');
+      travel = t?.travelMinutes ?? 0;
+      stops = t?.stops ?? [];
     }
     const total = p.staff.reduce((m, x) => m + slotMinutes(x.slots), 0);
     const mine = si >= 0 ? slotMinutes(p.staff[si]!.slots) : 0;
     if (mine > 0 && total > 0) target = ((p.visits.length - p.infeasible.length) * mine) / total;
   }
-  const hasVisits = (p?.visits.length ?? 0) > 0;
+  // 問題が作れなかった日（p＝null）は、取り消し・休みでない訪問の件数で見る（週の noPlanOf と同じ）
+  const hasVisits = p ? p.visits.length > 0 : activeVisitsOn(data, date).length > 0;
+  const noPlan = hasVisits && day.source === null;
   return {
     date,
     slots,
@@ -481,12 +491,18 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     absence: absences.at(-1) ?? null,
     requested: absences.length > 0 && absences.every(isRequestedOff),
     retired: !!s && afterLastDay(s, date),
-    noPlan: hasVisits && day.source === null,
+    noPlan,
     count: list.length,
     target,
     travel: Math.round(travel),
     minutes,
     types: sortTypes(counts, data.visitTypes),
+    bar: staffSlots({
+      shift: spansOf(slots),
+      base: spansOf(base),
+      busy: busyParts(stops),
+      planned: !noPlan,
+    }),
   };
 }
 

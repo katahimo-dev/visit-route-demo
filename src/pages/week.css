@@ -175,18 +175,46 @@ label.week-who {
 .week-table td > .sub {
   display: block;
 }
+/* 〈スタッフ〉×曜日のマスの3段バー（PRD D76）と件数 */
+.week-table td[data-testid='week-cell'] {
+  min-width: 96px;
+}
+.week-table td[data-testid='week-cell'] .load-row-slots {
+  height: 9px;
+}
+.week-table td[data-testid='week-cell'] .load-bar {
+  gap: 2px;
+}
+/* 今日より前の日は薄く（月のマスの is-past と同じ） */
+.week-table td.is-past {
+  opacity: 0.6;
+}
+.week-cell-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 3px;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+.week-cell-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.week-table-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: 8px;
+}
+.week-table-legend-rows {
+  gap: 6px;
+}
 .week-table td.is-off {
   background: #ece7e2;
 }
 .week-table td.is-noplan {
   background: var(--soft);
-}
-.week-types {
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.week-type {
-  gap: 2px;
 }
 .week-diff {
   font-weight: 700;
