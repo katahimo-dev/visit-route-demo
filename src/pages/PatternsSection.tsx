@@ -6,7 +6,7 @@ import { TypeDot } from '../components/visitType';
 import type { DemoData } from '../contracts/data';
 import { type Client, type Pattern, patternSchema } from '../contracts/documents';
 import type { PatternChange } from '../contracts/patterns';
-import { jstDate } from '../domain/time';
+import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
 import { byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { EVERY_WEEKS_LABELS, mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
 import { applyPatterns, removePattern, splitPattern } from '../patterns';
@@ -124,7 +124,12 @@ export function PatternsSection({ client }: { client: Client }) {
           .flatMap((w) => {
             const t = f.dayTimes[w];
             if (!t?.earliestStart) return [];
-            const l = f.windowKind === 'fixed' ? t.earliestStart : t.latestStart || t.earliestStart;
+            // 幅のパターンで開始（遅）が空なら、共通の時刻の幅（開始（遅）− 開始（早））を保った時刻にする
+            const width = Math.max(0, hhmmToMinutes(f.latestStart) - hhmmToMinutes(f.earliestStart));
+            const l =
+              f.windowKind === 'fixed'
+                ? t.earliestStart
+                : t.latestStart || minutesToHhmm(Math.min(hhmmToMinutes(t.earliestStart) + width, 23 * 60 + 59));
             return [{ weekday: w, earliestStart: t.earliestStart, latestStart: l }];
           })
       : [];
@@ -532,7 +537,10 @@ export function PatternsSection({ client }: { client: Client }) {
                         </div>
                       );
                     })}
-                  <span className="sub">空の曜日は、上の共通の時刻です。</span>
+                  <span className="sub">
+                    空の曜日は、上の共通の時刻です。
+                    {form.windowKind === 'window' && '開始（遅）が空なら、共通の時刻と同じ幅にします。'}
+                  </span>
                 </div>
               ))}
           </div>

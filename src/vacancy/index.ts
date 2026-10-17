@@ -414,16 +414,24 @@ export const vacancyNotice: VacancyNoticeFn = (result, input) => {
     const dates = result.dates.filter((d) => d >= input.period.from && d <= input.period.to && !noPlan.has(d));
     for (const date of dates) {
       const wd = weekday(date);
+      const cutoff = input.notBefore?.date === date ? input.notBefore.minutes : null;
       const starts = result.cells
         .filter((c) => c.weekday === wd && c.byDate.some((x) => x.date === date && x.staffIds.length > 0))
-        .map((c) => c.start);
+        .map((c) => c.start)
+        .filter((t) => cutoff === null || t >= cutoff);
       if (starts.length > 0)
         lines.push(`・${monthDay(date)}（${WEEKDAY_LABELS[wd]}） ${rangesText(starts, result.times)}`);
     }
   } else {
     for (const wd of NOTICE_WEEKDAYS) {
-      const starts = result.cells.filter((c) => c.weekday === wd && verdictOf(c) === 'ok').map((c) => c.start);
-      if (starts.length > 0) lines.push(`・${WEEKDAY_LABELS[wd]} ${rangesText(starts, result.times)}`);
+      const cells = result.cells.filter((c) => c.weekday === wd && verdictOf(c) === 'ok');
+      const starts = cells.map((c) => c.start);
+      if (starts.length === 0) continue;
+      // 案のある週がその曜日の週の数より少なければ「毎週」と言い切らず「〇週中〇週」と書く
+      const weeks = result.dates.filter((d) => weekday(d) === wd).length;
+      const counted = cells[0]!.weeksTotal;
+      const note = counted < weeks ? `（${weeks}週中${counted}週の予定で確認）` : '';
+      lines.push(`・${WEEKDAY_LABELS[wd]} ${rangesText(starts, result.times)}${note}`);
     }
   }
   const head =

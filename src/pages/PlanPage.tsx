@@ -75,6 +75,7 @@ import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../li
 import { contactCount, dayWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
 import { deferredDragStart } from '../lib/dragStart';
+import { keepLeaveVisits } from '../lib/leaves';
 import { planRunOf, planStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
@@ -818,11 +819,17 @@ export default function PlanPage() {
     const before = ownerMap(m.savedView.cols);
     const ownerOf = (id: string): string | null =>
       inProblem.has(id) ? (aiOwner.get(id) ?? null) : (before.get(id) ?? null);
-    const cols: Record<string, string[]> = {};
+    const fresh: Record<string, string[]> = {};
     for (const v of visits) {
       const o = ownerOf(v.id) ?? NONE;
-      cols[o] = [...(own(cols, o) ?? []), v.id];
+      fresh[o] = [...(own(fresh, o) ?? []), v.id];
     }
+    // 〈利用者さん〉の休み（ADR-0013）の訪問は、確定済みの担当のまま残す（休みを消せば元の確定に戻る）
+    const cols = keepLeaveVisits(
+      fresh,
+      m.leaveVisits.map((v) => v.id),
+      own(data.manualPlans, date),
+    );
     update((d) => ({
       ...d,
       manualPlans: { ...d.manualPlans, [date]: cols },
@@ -844,12 +851,10 @@ export default function PlanPage() {
     if (!saved) return 'none';
     const savedOwner = ownerMap(saved);
     const aiOwner = ownerMap(aiPlan.routes);
-    // 確定した割当に〈利用者さん〉の休み（ADR-0013）の訪問が残っていれば、確定し直せるよう「変更あり」にする
-    if (leaveInConfirmed) return 'diff';
     return problem.visits.every((v) => (aiOwner.get(v.id) ?? null) === (savedOwner.get(v.id) ?? null))
       ? 'same'
       : 'diff';
-  }, [aiPlan, problem, data.manualPlans, date, leaveInConfirmed]);
+  }, [aiPlan, problem, data.manualPlans, date]);
 
   // ---- 急な欠勤と振り直し（ADR-0011。PRD D26〜D32）----
   /** 今の案が振り直しの結果なら、その元の案の情報 */
@@ -2134,7 +2139,8 @@ export default function PlanPage() {
         <div className="plan-band row" data-testid="band-leave">
           <WithIcon icon={BedSingle} size={16}>
             {terms.client}の休みのため無し {m.leaveVisits.length}件：{leaveNames}
-            {leaveInConfirmed && '（確定した割当に入っています。案を作り直して確定し直してください）'}
+            {leaveInConfirmed &&
+              '（確定した日です。必要なら案を作り直して確定し直してください。休みの訪問の担当は、休みを消したときのために残します）'}
           </WithIcon>
           <button type="button" className="btn btn-small" onClick={() => setColView('list')}>
             一覧で見る

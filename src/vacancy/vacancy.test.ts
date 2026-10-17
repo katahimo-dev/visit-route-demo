@@ -584,6 +584,26 @@ describe('vacancyNotice（空き枠の案内文。ADR-0013）', () => {
     expect(lines.at(-1)).toBe('開始の時間の目安です。新しい利用者さんのご相談は、お気軽にお問い合わせください。');
   });
 
+  it('今日のもう過ぎた時刻は載せない（notBefore。今の時刻は画面が渡す）', () => {
+    const r = vacancyOf(small(), query({ place: null }), { from: MON1, weeks: 1 });
+    const text = vacancyNotice(r, input({ notBefore: { date: MON1, minutes: m('14:10') } }));
+    expect(text).toContain('・10/12（月） 14:30〜16:30');
+    // ほかの日は変わらない
+    expect(text).toContain('・10/13（火） 8:30〜16:30');
+  });
+
+  it('曜日ごと：案のある週がその曜日の週の数より少なければ「〇週中〇週」と書き添える', () => {
+    // 2回目の火曜に案の無い訪問を足す → 火曜は2週中1週だけ数える
+    const noPlan = fixedOn('t2', 'c1', addDays(MON2, 1), '10:00', 60);
+    const r = vacancyOf(small({ visits: [...small().visits, noPlan] }), query({ place: null }), {
+      from: MON1,
+      weeks: 2,
+    });
+    const text = vacancyNotice(r, input({ mode: 'weekly', period: { from: MON1, to: addDays(MON1, 13) } }));
+    expect(text).toContain('・火 8:30〜16:30（2週中1週の予定で確認）');
+    expect(text).toContain('・水 8:30〜16:30\n');
+  });
+
   it('空きが無ければその旨の文', () => {
     const r = vacancyOf(small(), query({ place: null, dayStart: '07:00', dayEnd: '08:30' }), { from: MON1, weeks: 1 });
     const text = vacancyNotice(r, input());

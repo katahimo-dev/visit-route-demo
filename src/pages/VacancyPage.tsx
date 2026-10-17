@@ -35,7 +35,7 @@ import {
   type Verdict,
 } from '../contracts/vacancy';
 import { HALF_HOURS, timeText } from '../domain/availability';
-import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
+import { addDays, hhmmToMinutes, jstDate, jstHhmm, minutesToHhmm, weekday } from '../domain/time';
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
@@ -221,6 +221,8 @@ export default function VacancyPage() {
         period: { from: noticeSpan.from, to: noticeSpan.to },
         mode: noticePeriod === 'fourWeeks' ? 'weekly' : 'dates',
         exact: r.exact,
+        // 今日はもう過ぎた時刻を載せない（今の時刻は画面で決める）
+        notBefore: { date: jstDate(Date.now()), minutes: hhmmToMinutes(jstHhmm(Date.now())) },
       });
       const noPlan = r.noPlanDates.filter((d) => d >= noticeSpan.from && d <= noticeSpan.to);
       setNotice({ text, noPlan });
@@ -574,7 +576,7 @@ export default function VacancyPage() {
       <div className="card stack" data-testid="notice-card">
         <SectionTitle icon={ClipboardList}>空き枠の案内文</SectionTitle>
         <p className="sub">
-          ケアマネジャーなどへ空いている枠を知らせる文を作ります。{terms.staff}の条件・場所は上の「条件」のままです。
+          紹介元などへ空いている枠を知らせる文を作ります。{terms.staff}の条件・場所は上の「条件」のままです。
         </p>
         <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
           <fieldset className="segmented seg-sm" aria-label="案内する期間" data-testid="notice-period">

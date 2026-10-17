@@ -354,7 +354,10 @@ export default function WeekPage() {
     if (draft.mode === 'following' && movingPattern) {
       const ids: [string, string] = [newId('pt'), newId('pt')];
       const preview = moveFollowing(data, draft.visitId, draft.date, draft.start, today, ids);
-      if (!preview) return;
+      if (!preview) {
+        toast('この日へは「以降すべて」で動かせません（毎月の第N週が合いません）。「この回だけ」で動かしてください');
+        return;
+      }
       const fixed = changedDates(preview.change).filter((d) => !!own(data.manualPlans, d));
       if (
         fixed.length > 0 &&

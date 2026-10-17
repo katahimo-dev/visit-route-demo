@@ -105,6 +105,11 @@ export type VacancyNoticeInput = {
   mode: VacancyNoticeMode;
   /** 移動を含む（場所あり）か目安か */
   exact: boolean;
+  /**
+   * この日（今日）は、この時刻（0時からの分）より前の開始を載せない（もう過ぎた時刻。'dates' のときだけ）。
+   * 今の時刻は画面が渡す（vacancy の中で Date.now を使わない）。無ければ見ない
+   */
+  notBefore?: { date: string; minutes: number };
 };
 
 /** 空き枠の案内文（純粋関数。例外を投げない） */

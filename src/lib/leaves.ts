@@ -75,3 +75,26 @@ export function leaveConfirmedDates(
   }
   return out.sort();
 }
+
+/**
+ * 確定するときの確定した割当の列に、その日の休みの訪問を確定済みの持ち主（前の確定した割当の担当）のまま残す（ADR-0013）。
+ * 休みを消したときに元の確定に戻るようにする（休みの訪問の手作業の担当 staffId も変えない）。
+ * 前の確定した割当に無い休みの訪問は足さない（未割当にもしない）。列の順は今の列の後ろ
+ */
+export function keepLeaveVisits(
+  cols: Record<string, string[]>,
+  leaveVisitIds: readonly string[],
+  before: Record<string, string[]> | undefined,
+): Record<string, string[]> {
+  if (!before || leaveVisitIds.length === 0) return cols;
+  const owner = new Map<string, string>();
+  for (const [k, list] of Object.entries(before)) for (const id of list) owner.set(id, k);
+  const out: Record<string, string[]> = { ...cols };
+  for (const id of leaveVisitIds) {
+    const k = owner.get(id);
+    if (k === undefined || k === NONE) continue;
+    const list = own(out, k) ?? [];
+    if (!list.includes(id)) out[k] = [...list, id];
+  }
+  return out;
+}

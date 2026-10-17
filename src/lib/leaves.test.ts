@@ -2,11 +2,20 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { ClientLeave, Visit } from '../contracts/documents';
+import { reconcile } from '../domain/scheduleModel';
 import { addDays } from '../domain/time';
 import { compile } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import { copyDayVisits } from './copyDay';
-import { leaveConfirmedDates, leavesOf, leaveVisits, leaveVisitsOn, removeLeave, saveLeave } from './leaves';
+import {
+  keepLeaveVisits,
+  leaveConfirmedDates,
+  leavesOf,
+  leaveVisits,
+  leaveVisitsOn,
+  removeLeave,
+  saveLeave,
+} from './leaves';
 import { activeVisitsOn, batchTargets, clientDay, clientMonth, dayMarks, dayPlanOf, dayStatus } from './month';
 import { problemKey } from './runs';
 import { weekDay } from './week';
@@ -101,5 +110,26 @@ describe('休みの訪問は派生で外す（ADR-0013）', () => {
     let n = 0;
     const c = copyDayVisits(d, DATE, addDays(DATE, 7), () => `new${++n}`);
     expect(c.visits.map((v) => v.clientId)).toEqual(['c2']);
+  });
+});
+
+describe('確定し直すときの休みの訪問（ADR-0013）', () => {
+  it('keepLeaveVisits：休みの訪問は前の確定した割当の担当のまま残し、休みを消すと元の確定に戻る（重ならない）', () => {
+    // 前の確定：s1 に a1（のちに休み）・a2。休みのあとの今の案では a2 だけを s2 に確定し直す
+    const before = { s1: ['a1', 'a2'] };
+    const cols = keepLeaveVisits({ s2: ['a2'] }, ['a1'], before);
+    expect(cols).toEqual({ s2: ['a2'], s1: ['a1'] });
+    // 前の確定に無い休みの訪問・未割当だった休みの訪問は足さない
+    expect(keepLeaveVisits({ s2: ['a2'] }, ['zz'], before)).toEqual({ s2: ['a2'] });
+    expect(keepLeaveVisits({ s2: ['a2'] }, ['a1'], { __none: ['a1'] })).toEqual({ s2: ['a2'] });
+    expect(keepLeaveVisits({ s2: ['a2'] }, ['a1'], undefined)).toEqual({ s2: ['a2'] });
+    // 休みを消したあと：a1 は s1、a2 は s2（staffId が残っていても重ならない）
+    const d = data();
+    const visits = d.visits
+      .filter((v) => v.date === DATE)
+      .map((v) => (v.id === 'a1' ? { ...v, staffId: 's1' } : { ...v, staffId: 's2' }));
+    const view = reconcile(cols, visits, ['s1', 's2']);
+    expect(view.cols.s1).toEqual(['a1']);
+    expect(view.cols.s2).toEqual(['a2']);
   });
 });

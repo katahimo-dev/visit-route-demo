@@ -30,6 +30,7 @@ import type { Staff, Visit, VisitType } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
+import { isOnLeave } from '../domain/leaves';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
 import { colorOf } from '../lib/colors';
@@ -275,7 +276,11 @@ export default function MonthPage() {
   const perDay = useMemo(() => {
     const out = new Map<string, { status: DayStatus; problem: Problem | null }>();
     const c = compileInput;
-    const base = [c.org, c.items, c.staff, c.clients, c.compat, c.availability, c.absences, c.visitTypes, c.patterns];
+    // compile が読むデータのうち訪問以外のすべて（CompileInput のキーから作り、足したフィールドを漏らさない。休み clientLeaves など）
+    const base = (Object.keys(c) as (keyof CompileInput)[])
+      .filter((k) => k !== 'visits')
+      .sort()
+      .map((k) => c[k]);
     for (const d of days) {
       const plan = own(data.aiPlans, d);
       const saved = own(data.manualPlans, d);
@@ -330,12 +335,14 @@ export default function MonthPage() {
   }, [days, data, perDay]);
 
   // ---- 〈利用者さん〉の検索欄の近道（PRD D61）----
-  /** この月に（取り消しでない）訪問がある〈利用者さん〉 */
+  /** この月に（取り消しでも〈利用者さん〉の休み（ADR-0013）でもない）訪問がある〈利用者さん〉 */
   const monthClientIds = useMemo(() => {
     const out = new Set<string>();
-    for (const d of days) for (const v of visitsByDate.get(d) ?? []) if (!v.cancelled) out.add(v.clientId);
+    for (const d of days)
+      for (const v of visitsByDate.get(d) ?? [])
+        if (!v.cancelled && !isOnLeave(data.clientLeaves, v)) out.add(v.clientId);
     return out;
-  }, [days, visitsByDate]);
+  }, [days, visitsByDate, data.clientLeaves]);
   /** 〈スタッフ〉が担当する〈利用者さん〉：この月の数える案（今の案、無ければ確定した割当）の担当と、いつもの担当 */
   const staffClients = useMemo(() => {
     const clientOf = new Map(data.visits.map((v) => [v.id, v.clientId]));
