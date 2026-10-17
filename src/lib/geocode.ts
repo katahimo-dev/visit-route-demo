@@ -26,7 +26,13 @@ export type PostalHit = { address: string };
 export type GeoHit = { title: string; lat: number; lng: number };
 
 /** JSONP が足す script 要素のうち使う所だけ（テストで偽物を渡せるように） */
-export type JsonpScript = { src: string; onerror: ((ev: unknown) => void) | null; remove(): void };
+export type JsonpScript = {
+  src: string;
+  onerror: ((ev: unknown) => void) | null;
+  /** 読み込んで実行し終えたとき（応答の関数呼び出しはその前に済む） */
+  onload?: ((ev: unknown) => void) | null;
+  remove(): void;
+};
 export type JsonpDoc = {
   createElement(tag: 'script'): JsonpScript;
   head: { appendChild(el: JsonpScript): unknown };
@@ -125,6 +131,7 @@ export const jsonp: JsonpFn = (url, { timeoutMs, signal, doc, win }) => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       script.onerror = null;
+      script.onload = null;
       script.remove();
       if (ok) delete w[name];
       else {
@@ -141,6 +148,8 @@ export const jsonp: JsonpFn = (url, { timeoutMs, signal, doc, win }) => {
     const timer = setTimeout(() => finish(false, () => reject(new LookupError('timeout'))), timeoutMs);
     w[name] = (payload: unknown) => finish(true, () => resolve(payload));
     script.onerror = () => finish(false, () => reject(new LookupError('network')));
+    // 読み込んで実行し終えたのに応答の関数が呼ばれていない（JSONP でない応答）なら、時間切れを待たずに形の違いで返す
+    script.onload = () => finish(false, () => reject(new LookupError('badResponse')));
     signal?.addEventListener('abort', onAbort);
     script.src = `${url}${url.includes('?') ? '&' : '?'}callback=${name}`;
     d.head.appendChild(script);
@@ -186,20 +195,25 @@ export function parseGsiAddress(raw: unknown): LookupResult<GeoHit> {
 
 /**
  * 郵便番号から住所を探す（zipcloud）。fetch を先に試し、fetch が投げたとき（CORS で読めない・通信できない）だけ
- * JSONP で呼び直す。時間切れ・HTTP のエラー・形の違いでは切り替えない
+ * JSONP で呼び直す。時間切れ・HTTP のエラー・形の違いでは切り替えない。
+ * 締め切りは全体で timeoutMs（既定8秒）：JSONP は残りの時間で呼び、残りが無ければ時間切れ
  */
 export async function lookupPostalCode(code: string, opts: LookupOptions = {}): Promise<LookupResult<PostalHit>> {
   const c = normalizePostalCode(code);
   if (!c) return fail('invalid');
   const url = `${ZIPCLOUD_URL}?zipcode=${c}`;
+  const total = opts.timeoutMs ?? GEOCODE_TIMEOUT_MS;
+  const started = Date.now();
   try {
-    return parseZipcloud(await getJson(url, opts));
+    return parseZipcloud(await getJson(url, { ...opts, timeoutMs: total }));
   } catch (e) {
     if (!(e instanceof LookupError && e.fetchThrew)) return fail(reasonOf(e));
   }
+  const left = total - (Date.now() - started);
+  if (left <= 0) return fail('timeout');
   try {
     const call = opts.jsonp ?? jsonp;
-    return parseZipcloud(await call(url, { timeoutMs: opts.timeoutMs ?? GEOCODE_TIMEOUT_MS, signal: opts.signal }));
+    return parseZipcloud(await call(url, { timeoutMs: left, signal: opts.signal }));
   } catch (e) {
     return fail(reasonOf(e));
   }

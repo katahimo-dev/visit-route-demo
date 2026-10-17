@@ -26,7 +26,10 @@ export function ClientPlaceEditor({ value, onChange }: { value: ClientPlace; onC
   const [status, setStatus] = useState<Status>(null);
   const [postalHits, setPostalHits] = useState<PostalHit[]>([]);
   const [geoHits, setGeoHits] = useState<GeoHit[]>([]);
-  /** 住所を探して置き換える前の住所（「元に戻す」） */
+  /**
+   * 住所を探して最初に置き換える前の住所（「元に戻す」の先）。候補を選び直しても上書きせず、新しく「住所を探す」を押したときだけ消す。
+   * '' は空から入れた（戻す先が空なので「元に戻す」は出さない）
+   */
   const [undoAddress, setUndoAddress] = useState<string | null>(null);
   // 待っている間に入力が変わっても最新の値に書く
   const latest = useRef(value);
@@ -61,7 +64,8 @@ export function ClientPlaceEditor({ value, onChange }: { value: ClientPlace; onC
       setStatus({ kind: 'ok', text: `住所は「${found}」で始まっているので、そのままにしました` });
       return;
     }
-    setUndoAddress(cur === '' ? null : latest.current.address);
+    const before = latest.current.address;
+    setUndoAddress((prev) => (prev !== null ? prev : before));
     onChange({ ...latest.current, address: found });
     setStatus({ kind: 'ok', text: `住所に「${found}」を入れました。番地を続けて書いてください` });
   };
@@ -78,6 +82,7 @@ export function ClientPlaceEditor({ value, onChange }: { value: ClientPlace; onC
     if (postalWhy || !postal) return;
     const signal = begin('postal');
     setPostalHits([]);
+    setUndoAddress(null);
     const r = await lookupPostalCode(postal, { signal });
     if (signal.aborted) return;
     setBusy(null);
@@ -171,7 +176,7 @@ export function ClientPlaceEditor({ value, onChange }: { value: ClientPlace; onC
             {hasLocation(value) ? '住所から置き直す' : '地図に置く'}
           </WithIcon>
         </button>
-        {undoAddress !== null && (
+        {undoAddress !== null && undoAddress.trim() !== '' && (
           <button
             type="button"
             className="btn btn-small"

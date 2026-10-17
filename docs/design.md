@@ -333,7 +333,7 @@ flowchart LR
   - [ ] ID 列が空の行は新しい人・訪問・項目・条件として足される。行を消すとその人・訪問は消える
   - [ ] 同じ名前・いない人の参照・読めない値・必須の列の欠けは、シート名と行番号付きのエラーで止め、いまのデータはそのまま
   - [ ] 外部への送信はしない
-  - [ ] （ADR-0016）〈利用者さん〉の「郵便番号」（「住所」の前の列。文字列の列で先頭の0を保つ）が書き出し → 読み込みで同じに戻る。列が無い古いブックは空。ハイフン・全角の数字は7桁に直して読み、直せない値はシート名と行番号付きで止める（テスト）
+  - [ ] （ADR-0016）〈利用者さん〉の「郵便番号」（「住所」の前の列。文字列の列で先頭の0を保つ）が書き出し → 読み込みで同じに戻る。列が無い古いブックは空。数値のセル（0〜9999999 の整数）は先頭を0で埋めて7桁に、ハイフン・全角の数字は7桁に直して読み、直せない値はシート名と行番号付きで止める（テスト）
   - [ ] （ADR-0012）種類・定期パターン・訪問の種類・定期パターン・元の日・この回だけ変更 が書き出し → 読み込みで同じに戻る。「種類」「定期パターン」シートが無いブックは種類・パターンなし（訪問の種類・パターンは空）。同じ名前の種類、いない種類・利用者さん・〈スタッフ〉・パターンの参照、読めない曜日・間隔、終了日が開始日より前、開始（早）が開始（遅）より後は、シート名と行番号付きで止める（テスト）
   - [ ] （ADR-0013）パターンの毎月の第N週・曜日ごとの時刻、〈利用者さん〉の決まりごと、〈利用者さん〉の休みが書き出し → 読み込みで同じに戻る。列・シートが無い古いブックは毎週系・上書きなし・空・休みなし。間隔「毎月」で第N週が空・読めない第N週（1〜5 以外）・読めない曜日ごとの時刻・パターンの曜日に無い曜日の時刻・休みの終了日が開始日より前・いない〈利用者さん〉の休みは、シート名と行番号付きで止める（テスト）
   - [ ] （ADR-0014）〈利用者さん〉の「担当できる人」（「いつもの担当」の次の列。名前を「、」で区切る）が書き出し → 読み込みで同じに戻る。列が無い古いブックは限らない。いない名前はシート名と行番号付きで止め、同じ名前の重なりは1人（テスト）
@@ -341,7 +341,8 @@ flowchart LR
 
 ### pages（画面）
 - 第7弾（PRD D86〜D90。ADR-0016）：〈利用者さん〉の郵便番号→住所と住所→地図のピン：
-  - `lib/geocode.ts`（外部を呼ぶ**ただ1か所**。画面から呼ぶ）：`normalizePostalCode`・`lookupPostalCode`・`searchAddress`・`jsonp`・`lookupMessage`（§5「郵便番号と住所の検索」）。fetch・JSONP・待ち時間は引数で差し替えられ、テストは偽物で行う
+  - `lib/postalCode.ts`（純粋関数。画面と Excel で使う）：`normalizePostalCode`・`formatPostalCode`
+  - `lib/geocode.ts`（外部を呼ぶ**ただ1か所**。画面から呼ぶ）：`lookupPostalCode`・`searchAddress`・`jsonp`・`lookupMessage`（§5「郵便番号と住所の検索」）。fetch・JSONP・待ち時間は引数で差し替えられ、テストは偽物で行う
   - `lib/placeAll.ts`：`placeAllTargets(clients)`（対象・住所も郵便番号もない人）、`placeAll(targets, opts)`（1人ずつ順に・呼ぶたびに間隔をあける・止める・1人ごとに結果を返す）、`withFoundPlace(data, id, place)`（位置の無いときだけ書く update 用の純粋関数）
   - `components/placeLookup.tsx`：`ClientPlaceEditor`（郵便番号・住所・「住所を探す」「地図に置く」・注記・状態・候補・`PlacePin`（地図とピン。`PlaceEditor` から分けた））。主ボタンではない（欄の主ボタンは「保存」）。押せないときは aria-disabled＋理由（title と文字）
   - 〈利用者さん〉の画面：一覧の上に「位置の無い〈利用者さん〉」のカード（ふつうのボタン「まとめて地図に置く」・注記・進み具合・「止める」・結果）。書くのは `update(fn)` だけ。画面を離れたら止める
@@ -1008,29 +1009,37 @@ function unlimitedBy(data, staffId, choices): clientId[]   // 「だれにもし
 ```ts
 // contracts/documents.ts
 clientPlaceSchema = placeSchema.extend({ postalCode: z.string().regex(/^(\d{7})?$/).default('') }); // Client.place の型
+// lib/postalCode.ts（純粋関数。画面と Excel で使う）
+normalizePostalCode(text: string): string | null;          // '' → ''、7桁にできなければ null
+formatPostalCode(code: string): string;                    // 1234567 → 123-4567
 // lib/geocode.ts
 type LookupFail = 'invalid' | 'notFound' | 'timeout' | 'network' | 'badResponse' | 'aborted';
 type LookupResult<T> = { ok: true; hits: T[] } | { ok: false; reason: LookupFail };
 type PostalHit = { address: string };                      // 都道府県＋市区町村＋町名
 type GeoHit = { title: string; lat: number; lng: number };
-normalizePostalCode(text: string): string | null;          // '' → ''、7桁にできなければ null
 lookupPostalCode(code: string, opts?: LookupOptions): Promise<LookupResult<PostalHit>>;
 searchAddress(address: string, opts?: LookupOptions): Promise<LookupResult<GeoHit>>;
 jsonp(url: string, opts: { timeoutMs: number; signal?: AbortSignal; doc?; win? }): Promise<unknown>;
 lookupMessage(reason: LookupFail, what: 'postal' | 'address'): string;
-type LookupOptions = { fetch?: typeof fetch; jsonp?: typeof jsonp; timeoutMs?: number /* 既定 8000 */; signal?: AbortSignal };
+type FetchFn = (url: string, init: { signal: AbortSignal }) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
+type LookupOptions = { fetch?: FetchFn; jsonp?: JsonpFn; timeoutMs?: number /* 既定 8000。郵便番号は fetch と JSONP を合わせた全体の締め切り */; signal?: AbortSignal };
 // lib/placeAll.ts
 placeAllTargets(clients: Client[]): { targets: Client[]; skipped: Client[] };
-placeAll(targets: Client[], opts: { search; lookup; wait: (ms) => Promise<void>; intervalMs?: number /* 既定 400 */; signal?: AbortSignal; onResult: (r: PlaceAllResult) => void }): Promise<{ stopped: boolean }>;
-type PlaceAllResult = { clientId: string; ok: true; lat: number; lng: number; address: string; title: string } | { clientId: string; ok: false; reason: LookupFail };
-withFoundPlace(data: DemoData, clientId: string, found: { lat: number; lng: number; address: string }): DemoData;
+placeAll(targets: Client[], opts: { search; lookup; wait: (ms, signal?) => Promise<void>; intervalMs?: number /* 既定 400 */; signal?: AbortSignal; onResult: (r: PlaceAllResult) => void }): Promise<{ stopped: boolean }>;
+type PlaceAllFrom = { address: string; postalCode: string };     // 探したときの住所・郵便番号
+type PlaceAllResult =
+  | { clientId: string; ok: true; lat: number; lng: number; address: string; title: string; from: PlaceAllFrom }
+  | { clientId: string; ok: false; reason: LookupFail; step: 'postal' | 'address'; foundAddress: string | null; from: PlaceAllFrom };
+//   foundAddress：郵便番号で住所は見つかったが位置が見つからないときの住所（住所だけ書く）
+withFoundPlace(data: DemoData, clientId: string, from: PlaceAllFrom, found: { lat: number | null; lng: number | null; address: string }): DemoData;
+keepStorePlace<T extends Place>(form: T, opened: T, stored: T | undefined): T;   // 欄の保存で、まとめて置いた位置・住所を消さない
 ```
 - 送る先：郵便番号は `https://zipcloud.ibsnet.co.jp/api/search?zipcode=1234567`（fetch。fetch が TypeError（CORS で読めない・通信できない）のときだけ同じ URL に `&callback=名前` を付けて JSONP）、住所は `https://msearch.gsi.go.jp/address-search/AddressSearch?q=住所`（fetch だけ）。送るのは郵便番号（7桁）か住所の文字だけ
 - 応答：郵便番号は `{ status: 200, results: [{ address1, address2, address3 }] | null }`。`results` が null・空 → notFound、`status` が 200 でない → `status` が 400 なら invalid、ほかは badResponse。形が違う → badResponse。住所は Feature の配列（`geometry.coordinates`＝[経度, 緯度]、`properties.title`）。緯度 -90〜90・経度 -180〜180 の数のものだけを先頭から5件。空 → notFound、配列でない → badResponse。HTTP のエラー（ok でない）は network
-- 時間切れ：1回の呼び出しごとに 8秒（`AbortController`・JSONP は setTimeout）→ timeout。時間切れでは JSONP に切り替えない。`signal` で止めたら aborted
-- JSONP：コールバック名は呼ぶたびに一意（`__vrdJsonp_連番_時刻`）。終わったら script 要素を消し、`window` の関数を消す。時間切れ・止めた後に届いた応答は、何もしない関数で受けて捨てる。script の onerror は network
-- まとめて置く：対象は 位置が無く、段階が「終了」でなく、住所か郵便番号のある〈利用者さん〉（表示名の順）。住所が空なら先に郵便番号から住所（先頭の候補）を探す。呼ぶたびに `intervalMs` あける（最初の呼び出しの前はあけない）。`signal` で止めたら次の呼び出しから止める。置けた人は画面が1人ごとに `update((d) => withFoundPlace(d, id, found))` で書く（まだ位置が無い人だけ。住所が空だった人は見つけた住所も書く）
-- 画面の文言：失敗の文は `lookupMessage`（例「見つかりませんでした。郵便番号を確かめてください」「時間内に応答がありませんでした（8秒）。少し待ってもう一度押してください」「つながりませんでした。通信の状態を確かめるか、地図をクリックして置いてください」「応答の形が想定と違います。地図をクリックして置いてください」）
+- 時間切れ：住所の検索は 8秒（`AbortController`）。郵便番号の検索は fetch と JSONP を合わせた全体で 8秒（JSONP は残りの時間で呼び、残りが無ければ呼ばない）→ timeout。時間切れでは JSONP に切り替えない。`signal` で止めたら aborted
+- JSONP：コールバック名は呼ぶたびに一意（`__vrdJsonp_連番_時刻`）。終わったら script 要素を消し、`window` の関数を消す。時間切れ・止めた後に届いた応答は、何もしない関数で受けて捨てる。script の onerror は network。script の onload の時点で応答の関数が呼ばれていなければ（JSONP でない応答）、時間切れを待たずに badResponse
+- まとめて置く：対象は 位置が無く、段階が「終了」でなく、住所か郵便番号のある〈利用者さん〉（表示名の順）。住所が空なら先に郵便番号から住所（先頭の候補）を探す。呼ぶたびに `intervalMs` あける（最初の呼び出しの前はあけない）。`signal` で止めたら次の呼び出しから止める。置けた人は画面が1人ごとに `update((d) => withFoundPlace(d, id, from, found))` で書く（まだ位置が無く、住所・郵便番号が探したとき（from）のままの人だけ。住所が空だった人は見つけた住所も書く）。郵便番号で住所は見つかったが位置が見つからない人は住所だけ書き、一覧に「住所だけ入れました」と出す。編集の欄の保存は `keepStorePlace` で、欄で触っていない位置・住所に store の値を残す。一覧の上のカードの人数は段階が「終了」の人を数えない（カードに書く）
+- 画面の文言：失敗の文は `lookupMessage`（例「見つかりませんでした。郵便番号を確かめてください」「時間内に応答がありませんでした（8秒）。少し待ってもう一度押すか、地図をクリックして置いてください」「つながりませんでした。通信の状態を確かめるか、地図をクリックして置いてください」「応答の形が想定と違います。地図をクリックして置いてください」）
 
 ### Excel のブックの形（`src/excel/`。ADR-0006）
 1行目が見出し、2行目からデータ。参照は名前で書く（〈スタッフ〉の名前・〈利用者さん〉の表示名は各シートで一意。項目の名前は対象ごとに一意で、対象が違えば同じ名前でよい。条件の名前はどこからも参照しないので重なってよい）。○＝はい、空＝いいえ。複数の値は「、」か改行で区切る（「・」「,」「，」は区切らない＝選択肢の名前に使える）。見出しは全角半角・コロンの揺れを許して比べる。呼び方（スタッフ・利用者さん）はシート名・見出しにも `org.terms` を使う。
@@ -1117,7 +1126,7 @@ Worker 内の例外は `{type:'error', message}` で返し、内部の文言を�
 - 同じ `Problem`・`seed`・`iterations` からは同じ結果（反復回数で止め、時刻・`Math.random` を使わない）
 - 反復回数の既定は問題の大きさから決める（目安 3秒）。上限 30秒で `stop` を送り、最良案を採る
 - 保存は上書きのみ（1キー）。読み込みは「置き換える前に確認」を出す
-- 郵便番号・住所の検索（ADR-0016）は1回ごとに8秒で打ち切る。再試行は利用者が押す（自動で繰り返さない）。まとめて置くのはもう一度押すと、まだ位置の無い人だけを置く（置けた人は二度呼ばない）
+- 郵便番号・住所の検索（ADR-0016）は1回の押下ごとに8秒で打ち切る（郵便番号は fetch と JSONP を合わせて）。再試行は利用者が押す（自動で繰り返さない）。まとめて置くのはもう一度押すと、まだ位置の無い人だけを置く（置けた人は二度呼ばない）
 - 展開（patterns）は同じパターン・訪問・今日から同じ結果。2回続けても訪問は増えない（ID が決定的で、既存の ID は作らない。ADR-0012）
 - 月まとめ作成は1日ずつ書くので、途中で止めても作れた日は壊れない。「まだ案の無い日だけ」でもう一度押すと、作れなかった日だけを作る（ADR-0012）
 - 振り直し（reassign）は同じ問題・元の案・振り直す訪問から同じ結果。「登録して振り直す」を2回押す（確定した割当が無い）と、2回目は1回目の結果（今の案）から振り直す（振り直す訪問が無ければ案は変わらない。記録は同じ結果なら足さない）。`reassign` の元の案の情報は最初のものを引き継ぎ、`absenceIds` は累積する（§4 reassign の補足）

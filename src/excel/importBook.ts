@@ -776,7 +776,13 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       // 仮押さえ（ADR-0012 追記）：列が無い古いブックは false
       const tentative = r.yes(CLIENT_TENTATIVE_COL);
       // 郵便番号（ADR-0016）：列が無い古いブック・空は ''。ハイフン・全角は7桁に直し、直せなければ止める
-      const postalCode = normalizePostalCode(r.text(CLIENT_POSTAL_COL));
+      // 数値のセル（文字列の書式でない列に 0380000 と書くと 38000 になる）は、0〜9999999 の整数なら先頭を0で埋めて7桁にする
+      const postalRaw = r.raw(CLIENT_POSTAL_COL);
+      const postalCode = normalizePostalCode(
+        typeof postalRaw === 'number' && Number.isInteger(postalRaw) && postalRaw >= 0 && postalRaw <= 9_999_999
+          ? String(postalRaw).padStart(7, '0')
+          : r.text(CLIENT_POSTAL_COL),
+      );
       if (postalCode === null)
         r.err(CLIENT_POSTAL_COL, '7桁の数字で書いてください（ハイフンは有っても無くても構いません）');
       const address = r.optional(C.address, 200);

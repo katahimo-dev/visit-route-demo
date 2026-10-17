@@ -26,7 +26,15 @@ export function PlaceAllPanel({ onEdit }: { onEdit: (c: Client) => void }) {
   const [results, setResults] = useState<PlaceAllResult[]>([]);
   const [stopped, setStopped] = useState(false);
   const ctrl = useRef<AbortController | null>(null);
-  useEffect(() => () => ctrl.current?.abort(), []);
+  /** 画面を離れたら止め、知らせも出さない */
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      ctrl.current?.abort();
+    };
+  }, []);
   const clientById = useMemo(() => new Map(data.clients.map((c) => [c.id, c])), [data.clients]);
 
   const run = async () => {
@@ -48,11 +56,15 @@ export function PlaceAllPanel({ onEdit }: { onEdit: (c: Client) => void }) {
         setResults((prev) => [...prev, x]);
         if (x.ok) {
           placed += 1;
-          update((d) => withFoundPlace(d, x.clientId, x));
+          update((d) => withFoundPlace(d, x.clientId, x.from, x));
+        } else if (x.foundAddress !== null) {
+          // 郵便番号で住所は見つかったが位置が見つからない人は、住所だけ書く
+          const address = x.foundAddress;
+          update((d) => withFoundPlace(d, x.clientId, x.from, { lat: null, lng: null, address }));
         }
       },
     });
-    if (ctrl.current !== c) return;
+    if (!alive.current || ctrl.current !== c) return;
     setRunning(false);
     setStopped(r.stopped);
     toast(r.stopped ? `止めました（${placed}人を地図に置きました）` : `${placed}人を地図に置きました`);
@@ -85,6 +97,7 @@ export function PlaceAllPanel({ onEdit }: { onEdit: (c: Client) => void }) {
         </strong>
         <span className="sub" data-testid="place-all-count">
           住所か郵便番号あり {targets.length}人{skipped.length > 0 ? `・どちらも無い ${skipped.length}人` : ''}
+          （段階が「終了」の人は数えません）
         </span>
         <button
           type="button"
@@ -133,7 +146,11 @@ export function PlaceAllPanel({ onEdit }: { onEdit: (c: Client) => void }) {
               const cl = clientById.get(f.clientId);
               return (
                 <li key={f.clientId} data-testid="place-all-fail">
-                  <strong>{name(f.clientId)}</strong>：{lookupMessage(f.reason, f.step)}{' '}
+                  <strong>{name(f.clientId)}</strong>：
+                  {f.foundAddress !== null && (
+                    <span data-testid="place-all-address-only">住所だけ入れました（{f.foundAddress}）。位置は </span>
+                  )}
+                  {lookupMessage(f.reason, f.step)}{' '}
                   {cl && (
                     <button type="button" className="btn btn-small" onClick={() => onEdit(cl)}>
                       <WithIcon icon={Pencil} size={13}>

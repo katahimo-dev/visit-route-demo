@@ -1,5 +1,5 @@
 import type { DemoData } from '../contracts/data';
-import type { Client } from '../contracts/documents';
+import type { Client, Place } from '../contracts/documents';
 import { byDisplayName, hasLocation } from './common';
 import type { GeoHit, LookupFail, LookupOptions, LookupResult, PostalHit } from './geocode';
 
@@ -21,6 +21,9 @@ export function placeAllTargets(clients: Client[]): { targets: Client[]; skipped
   return { targets: pool.filter(can), skipped: pool.filter((c) => !can(c)) };
 }
 
+/** 探したときの住所・郵便番号（書くときに、いまの値と違えば書かない） */
+export type PlaceAllFrom = { address: string; postalCode: string };
+
 export type PlaceAllResult =
   | {
       clientId: string;
@@ -31,9 +34,18 @@ export type PlaceAllResult =
       address: string;
       /** 国土地理院が返した住所の名前 */
       title: string;
+      from: PlaceAllFrom;
     }
-  /** step：どこで失敗したか（郵便番号から住所・住所から位置） */
-  | { clientId: string; ok: false; reason: LookupFail; step: 'postal' | 'address' };
+  | {
+      clientId: string;
+      ok: false;
+      reason: LookupFail;
+      /** どこで失敗したか（郵便番号から住所・住所から位置） */
+      step: 'postal' | 'address';
+      /** 郵便番号から住所は見つかったが位置が見つからなかったとき、その住所（住所だけ書く）。それ以外は null */
+      foundAddress: string | null;
+      from: PlaceAllFrom;
+    };
 
 export type PlaceAllOptions = {
   search: (address: string, opts: LookupOptions) => Promise<LookupResult<GeoHit>>;
@@ -79,44 +91,67 @@ export async function placeAll(targets: Client[], opts: PlaceAllOptions): Promis
   };
   for (const c of targets) {
     if (signal?.aborted) return { stopped: true };
+    const from: PlaceAllFrom = { address: c.place.address, postalCode: c.place.postalCode };
     let address = c.place.address.trim();
+    let foundAddress: string | null = null;
     if (address === '') {
       const r = await call(() => opts.lookup(c.place.postalCode, { signal }));
       if (r === null) return { stopped: true };
       if (!r.ok) {
-        opts.onResult({ clientId: c.id, ok: false, reason: r.reason, step: 'postal' });
+        opts.onResult({ clientId: c.id, ok: false, reason: r.reason, step: 'postal', foundAddress: null, from });
         continue;
       }
       address = r.hits[0].address;
+      foundAddress = address;
     }
     const g = await call(() => opts.search(address, { signal }));
     if (g === null) return { stopped: true };
     if (!g.ok) {
-      opts.onResult({ clientId: c.id, ok: false, reason: g.reason, step: 'address' });
+      opts.onResult({ clientId: c.id, ok: false, reason: g.reason, step: 'address', foundAddress, from });
       continue;
     }
     const hit = g.hits[0];
-    opts.onResult({ clientId: c.id, ok: true, lat: hit.lat, lng: hit.lng, address, title: hit.title });
+    opts.onResult({ clientId: c.id, ok: true, lat: hit.lat, lng: hit.lng, address, title: hit.title, from });
   }
   return { stopped: false };
 }
 
 /**
- * 見つけた位置を〈利用者さん〉に書く（store の update(fn) に渡す純粋関数）。まだ位置の無い人だけ（その間に利用者が
- * 位置を入れた人は上書きしない）。住所が空だった人は見つけた住所も書く。変えなければ同じ data を返す
+ * 見つけた位置・住所を〈利用者さん〉に書く（store の update(fn) に渡す純粋関数）。書くのは、まだ位置が無く、
+ * 住所・郵便番号が探したとき（from）のままの人だけ（その間に利用者が直した人は上書きしない）。
+ * 住所が空だった人は見つけた住所も書く。lat・lng が null なら住所だけ書く（郵便番号で住所は見つかったが位置が見つからない人）。
+ * 変えなければ同じ data を返す
  */
 export function withFoundPlace(
   data: DemoData,
   clientId: string,
-  found: { lat: number; lng: number; address: string },
+  from: PlaceAllFrom,
+  found: { lat: number | null; lng: number | null; address: string },
 ): DemoData {
   const c = data.clients.find((x) => x.id === clientId);
   if (!c || hasLocation(c.place)) return data;
-  const address = c.place.address.trim() === '' ? found.address.slice(0, 200) : c.place.address;
-  return {
-    ...data,
-    clients: data.clients.map((x) =>
-      x.id === clientId ? { ...x, place: { ...x.place, address, lat: found.lat, lng: found.lng } } : x,
-    ),
+  if (c.place.address !== from.address || c.place.postalCode !== from.postalCode) return data;
+  const fillAddress = c.place.address.trim() === '' && found.address.trim() !== '';
+  const fillPin = found.lat !== null && found.lng !== null;
+  if (!fillAddress && !fillPin) return data;
+  const place = {
+    ...c.place,
+    address: fillAddress ? found.address.slice(0, 200) : c.place.address,
+    ...(fillPin ? { lat: found.lat, lng: found.lng } : {}),
   };
+  return { ...data, clients: data.clients.map((x) => (x.id === clientId ? { ...x, place } : x)) };
+}
+
+/**
+ * 編集の欄を保存するときの場所（ADR-0016）：欄を開いた後に「まとめて地図に置く」が store に位置・住所を書いていて、
+ * 欄ではその項目を触っていない（開いたときのまま）なら、store の値を残す（欄の古い値で消さない）
+ */
+export function keepStorePlace<T extends Place>(form: T, opened: T, stored: T | undefined): T {
+  if (!stored) return form;
+  let out = form;
+  const pinUntouched = form.lat === opened.lat && form.lng === opened.lng;
+  if (pinUntouched && !hasLocation(opened) && hasLocation(stored)) out = { ...out, lat: stored.lat, lng: stored.lng };
+  if (form.address === opened.address && stored.address !== opened.address && opened.address.trim() === '')
+    out = { ...out, address: stored.address };
+  return out;
 }

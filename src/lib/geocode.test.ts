@@ -174,6 +174,36 @@ describe('lookupPostalCode（郵便番号 → 住所）', () => {
     });
     expect(r).toEqual({ ok: false, reason: 'timeout' });
   });
+  it('締め切りは fetch と JSONP を合わせて timeoutMs（JSONP には残りの時間を渡す）', async () => {
+    let given = -1;
+    const slowCors: FetchFn = async () => {
+      await new Promise((r) => setTimeout(r, 60));
+      throw new TypeError('Failed to fetch');
+    };
+    const r = await lookupPostalCode('9800811', {
+      fetch: slowCors,
+      timeoutMs: 200,
+      jsonp: async (_url, o) => {
+        given = o.timeoutMs;
+        return ZIP_OK;
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(given).toBeGreaterThan(0);
+    expect(given).toBeLessThanOrEqual(150);
+    // 残りが無ければ JSONP を呼ばずに時間切れ
+    let called = false;
+    const r2 = await lookupPostalCode('9800811', {
+      fetch: slowCors,
+      timeoutMs: 50,
+      jsonp: async () => {
+        called = true;
+        return ZIP_OK;
+      },
+    });
+    expect(r2).toEqual({ ok: false, reason: 'timeout' });
+    expect(called).toBe(false);
+  });
   it('JSON でない応答は badResponse', async () => {
     const f: FetchFn = async () => ({
       ok: true,
@@ -223,6 +253,7 @@ function fakeDoc() {
       const s = {
         src: '',
         onerror: null as JsonpScript['onerror'],
+        onload: null as JsonpScript['onload'],
         removed: false,
         remove() {
           s.removed = true;
@@ -276,6 +307,23 @@ describe('jsonp（script 要素で呼ぶ）', () => {
     // 遅れて届いても落ちず、そのとき関数を消す
     expect(() => (win[name] as (x: unknown) => void)(ZIP_OK)).not.toThrow();
     expect(name in win).toBe(false);
+  });
+  it('読み込み終えても応答の関数が呼ばれない（JSONP でない応答）なら、時間切れを待たずに badResponse', async () => {
+    const { doc, added } = fakeDoc();
+    const win: Record<string, unknown> = {};
+    const p = jsonp('https://example.invalid/x', { timeoutMs: 60_000, doc, win });
+    added[0].onload?.({});
+    await expect(p).rejects.toMatchObject({ reason: 'badResponse' });
+    expect(added[0].removed).toBe(true);
+  });
+  it('応答の関数が呼ばれた後の onload は何もしない', async () => {
+    const { doc, added } = fakeDoc();
+    const win: Record<string, unknown> = {};
+    const p = jsonp('https://example.invalid/x', { timeoutMs: 1000, doc, win });
+    const onload = added[0].onload;
+    (win[callbackOf(added[0].src)] as (x: unknown) => void)(ZIP_OK);
+    onload?.({});
+    expect(await p).toEqual(ZIP_OK);
   });
   it('読み込めない（onerror）なら network、止めたら aborted。どちらも script を消す', async () => {
     const { doc, added } = fakeDoc();

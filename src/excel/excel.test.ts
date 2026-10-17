@@ -990,6 +990,18 @@ describe('〈利用者さん〉の郵便番号の列（PRD D86。ADR-0016）', (
       }),
     );
     expect(fixed.clients[0]!.place.postalCode).toBe('9800811');
+    // 数値のセル（先頭の0が落ちた 380000（＝038-0000）・38000 と、7桁の 9800811）は7桁に埋める
+    const nums = ok(
+      await editAndImport(d, (wb) => {
+        const ws = sheet(wb, personSheetNames(d.org.terms).client);
+        ws.getCell(2, col(ws, '郵便番号')).value = 38000;
+        ws.getCell(3, col(ws, '郵便番号')).value = 9800811;
+        ws.getCell(4, col(ws, '郵便番号')).value = 380000;
+      }),
+    );
+    expect(nums.clients[0]!.place.postalCode).toBe('0038000');
+    expect(nums.clients[1]!.place.postalCode).toBe('9800811');
+    expect(nums.clients[2]!.place.postalCode).toBe('0380000');
     const msg = fail(
       await editAndImport(d, (wb) => {
         const ws = sheet(wb, personSheetNames(d.org.terms).client);

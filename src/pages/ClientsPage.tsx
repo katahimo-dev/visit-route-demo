@@ -30,6 +30,7 @@ import { jstDate } from '../domain/time';
 import { isBeforeActive, STAGE_LABELS, stageCounts, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
+import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { matchClient, staffClientMap } from '../lib/search';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
@@ -68,6 +69,8 @@ export default function ClientsPage() {
   const terms = data.org.terms;
   const toast = useToast();
   const [form, setForm] = useState<Client | null>(null);
+  /** 欄を開いたときの場所（保存のとき、まとめて置いた位置を欄の古い値で消さないため。ADR-0016） */
+  const [openedPlace, setOpenedPlace] = useState<Client['place'] | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** 担当できる人を限る（PRD D68。入れたら1人以上選ぶ） */
@@ -98,6 +101,7 @@ export default function ClientsPage() {
     setIsNew(fresh);
     setLimit(c.allowedStaffIds.some((id) => staff.some((s) => s.id === id && s.active)));
     setForm(c);
+    setOpenedPlace(c.place);
   };
 
   const save = () => {
@@ -124,7 +128,19 @@ export default function ClientsPage() {
       // 段階に合わせて予定の対象（active）・仮押さえを決める（ADR-0015）
       const c = clientSchema.parse(
         withStage(
-          { ...form, allowedStaffIds: allowed, place: { ...form.place, postalCode } },
+          {
+            ...form,
+            allowedStaffIds: allowed,
+            // 欄を開いた後に「まとめて地図に置く」が書いた位置・住所は、欄で触っていなければ残す（ADR-0016）
+            place: {
+              ...keepStorePlace(
+                form.place,
+                openedPlace ?? form.place,
+                data.clients.find((x) => x.id === form.id)?.place,
+              ),
+              postalCode,
+            },
+          },
           form.stage,
           form.tentative,
         ),
