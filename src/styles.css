@@ -385,6 +385,8 @@ tbody tr:hover td {
 }
 .table-scroll {
   overflow-x: auto;
+  /* 中の読み上げ用の文字（.sr-only は position: absolute）を箱の中に収める。無いと箱の外のページ全体が横にはみ出す */
+  position: relative;
 }
 .visit-table td {
   vertical-align: middle;

@@ -1552,7 +1552,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
           ? `${shiftShort} ${slotsText(x.slots)}`
           : shiftShort;
     parts.push(shift);
-    if (x.noPlan) parts.push('案なし');
+    // 案の無い日（今の案も確定も無い）：訪問があれば件数も（空いていると誤読させない。PRD D75 の追記）
+    const noPlanText = x.planless ? (s.count > 0 ? `案なし（訪問 ${s.count}件）` : '案なし') : null;
+    if (noPlanText) parts.push(noPlanText);
     if (x.count > 0 || x.target !== null) {
       parts.push(`担当 ${x.count}件`);
       if (x.target !== null) parts.push(`目安 ${Math.round(x.target * 10) / 10}件`);
@@ -1571,9 +1573,10 @@ const DayCell = memo(function DayCell(props: CellProps) {
           {shiftShort}
         </span>
       ) : null,
-      x.noPlan ? (
-        <span key="noplan" className="sub">
-          案なし
+      // 勤務の無い日（バーは全部休み）は「休」などの文字だけにする（案なしは読み上げ・title に残す）
+      noPlanText && x.slots.length > 0 ? (
+        <span key="noplan" className="sub" data-testid="month-staff-noplan">
+          {noPlanText}
         </span>
       ) : null,
       <span key="bar" className="month-load is-staff">

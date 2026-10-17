@@ -19,10 +19,12 @@
 .month-card {
   padding: 10px;
   overflow-x: auto;
+  /* 中の読み上げ用の文字（.sr-only は position: absolute）を箱の中に収める（390px でページが横にはみ出さない） */
+  position: relative;
 }
 .month-grid {
   width: 100%;
-  min-width: 700px;
+  min-width: 640px;
   border-collapse: separate;
   border-spacing: 4px;
   table-layout: fixed;
@@ -327,16 +329,21 @@
   color: var(--danger);
 }
 /* カレンダーと右の欄 */
+/* カレンダーと右の欄。カレンダーが最小幅（グリッド 640px＋余白）を取れないときだけ右の欄を下へ回す
+   （幅で決め打ちせず折り返す。1280px で土曜の列が横スクロールに隠れていたのを直す） */
 .month-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
-  align-items: start;
+  align-items: flex-start;
 }
-@media (max-width: 1100px) {
-  .month-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.month-body > .month-card {
+  flex: 999 1 662px;
+  min-width: 0;
+}
+.month-body > .month-aside {
+  flex: 1 1 280px;
+  min-width: 0;
 }
 .month-aside {
   gap: 10px;

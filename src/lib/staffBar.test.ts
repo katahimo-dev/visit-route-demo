@@ -6,15 +6,7 @@ import { applyPatterns } from '../patterns';
 import { createDemoData } from '../seed';
 import { dayLoad } from '../vacancy';
 import { dayPlanOf, staffDay } from './month';
-import {
-  busyParts,
-  type StaffSlot,
-  spanParts,
-  spansOf,
-  staffSlotSummary,
-  staffSlots,
-  staffSlotText,
-} from './staffBar';
+import { busyParts, type StaffSlot, spanParts, spansOf, staffSlotSummary, staffSlots, staffSlotText } from './staffBar';
 import { staffWeekTable, weekDates, weekDay } from './week';
 import { workStats } from './workload';
 
@@ -104,6 +96,21 @@ describe('staffSlots', () => {
     expect(left.filter((x) => x.state === 'visit')).toHaveLength(2);
   });
 
+  it('案の無い日（planned: false）は勤務内を「案なし」にし、空きにしない。休み・勤務外はそのまま', () => {
+    const slots = staffSlots({
+      shift: [span('09:00', '12:00')],
+      base: [span('09:00', '13:00')],
+      busy: [],
+      planned: false,
+    });
+    expect(at(slots, '09:00')).toBe('noplan');
+    expect(at(slots, '11:30')).toBe('noplan');
+    expect(at(slots, '12:00')).toBe('rest');
+    expect(at(slots, '13:00')).toBe('outside');
+    expect(slots.some((x) => x.state === 'free')).toBe(false);
+    expect(staffSlotSummary(slots)).toBe('案なし 9:00〜12:00・休み 12:00〜13:00');
+  });
+
   it('spansOf：HH:mm の時間帯を分に', () => {
     expect(spansOf([{ start: '08:00', end: '12:30' }])).toEqual([{ start: 480, end: 750 }]);
   });
@@ -158,7 +165,7 @@ describe('ほかの数え方と食い違わない', () => {
       if (!load) continue;
       const p = compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date);
       const day = dayPlanOf(data, date, p);
-      const bars = p.staff.filter((s) => s.slots.length > 0).map((s) => staffDay(data, day, s.id).bar!);
+      const bars = p.staff.filter((s) => s.slots.length > 0).map((s) => staffDay(data, day, s.id).bar);
       load.forEach((x, k) => {
         expect(bars.filter((b) => b[k]!.state === 'free').length).toBe(x.free);
       });

@@ -443,10 +443,12 @@ export type StaffDay = {
   /** 稼働時間（分） */
   minutes: number;
   types: TypeCount[];
+  /** その日に数える案が無い（今の案も確定した割当も無い。訪問の有無を問わない） */
+  planless: boolean;
   /**
-   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。07:00〜20:00）。数える案が無い（noPlan）ときは null
+   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。07:00〜20:00）。数える案が無い日は勤務内を「案なし」にする
    */
-  bar: StaffSlot[] | null;
+  bar: StaffSlot[];
 };
 
 /** 選んだ〈スタッフ〉のその日（数えるのは今の案、無ければ確定した割当） */
@@ -496,7 +498,13 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     travel: Math.round(travel),
     minutes,
     types: sortTypes(counts, data.visitTypes),
-    bar: noPlan ? null : staffSlots({ shift: spansOf(slots), base: spansOf(base), busy: busyParts(stops) }),
+    planless: day.source === null,
+    bar: staffSlots({
+      shift: spansOf(slots),
+      base: spansOf(base),
+      busy: busyParts(stops),
+      planned: day.source !== null,
+    }),
   };
 }
 

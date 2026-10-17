@@ -8,8 +8,11 @@ import { VACANCY_DAY_END_DEFAULT, VACANCY_DAY_START_DEFAULT, VACANCY_STEP_DEFAUL
 import { timeText } from '../domain/availability';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 
-/** 30分の状態：訪問／移動／空き（勤務内）／休み（欠勤・希望休・勤務の無い日・最終勤務日の後）／勤務外 */
-export type StaffSlotState = 'visit' | 'travel' | 'free' | 'rest' | 'outside';
+/**
+ * 30分の状態：訪問／移動／空き（勤務内）／案なし（勤務内だが、その日に数える案が無いので空きか分からない）／
+ * 休み（欠勤・希望休・勤務の無い日・最終勤務日の後）／勤務外
+ */
+export type StaffSlotState = 'visit' | 'travel' | 'free' | 'noplan' | 'rest' | 'outside';
 
 /** 30分1つ（start は0時からの分） */
 export type StaffSlot = { start: number; state: StaffSlotState };
@@ -25,12 +28,13 @@ export const STAFF_SLOT_LABEL: Record<StaffSlotState, string> = {
   visit: '訪問',
   travel: '移動',
   free: '空き',
+  noplan: '案なし',
   rest: '休み',
   outside: '勤務外',
 };
 
 /** 状態の並び（凡例・読み上げの順） */
-export const STAFF_SLOT_ORDER: readonly StaffSlotState[] = ['visit', 'travel', 'free', 'rest', 'outside'];
+export const STAFF_SLOT_ORDER: readonly StaffSlotState[] = ['visit', 'travel', 'free', 'noplan', 'rest', 'outside'];
 
 const EPS = 1e-6;
 const STEP = VACANCY_STEP_DEFAULT;
@@ -71,13 +75,16 @@ export function spanParts(stops: readonly Pick<StopTiming, 'start' | 'end' | 'tr
  * shift＝欠勤を差し引いた稼働時間帯、base＝欠勤を差し引く前の稼働時間帯、busy＝busyParts。
  * 決め方（上が先）：訪問が重なる→訪問、移動が重なる→移動、稼働時間帯が重なる→空き、
  * その日の稼働時間帯が無い（勤務の無い日・終日の欠勤・希望休・最終勤務日の後）か欠勤の時間が重なる→休み、ほか→勤務外。
- * 休みの人に残った訪問も「訪問」で出す（休みの日に訪問があると分かる）
+ * 休みの人に残った訪問も「訪問」で出す（休みの日に訪問があると分かる）。
+ * planned が false（その日に数える案が無い。今の案も確定も無い）なら、空きの代わりに「案なし」（空いていると誤読させない）
  */
 export function staffSlots(input: {
   shift: readonly Span[];
   base: readonly Span[];
   busy: readonly RoutePart[];
+  planned?: boolean;
 }): StaffSlot[] {
+  const planned = input.planned ?? true;
   const dayRest = input.shift.length === 0;
   const end = hhmmToMinutes(VACANCY_DAY_END_DEFAULT);
   const out: StaffSlot[] = [];
@@ -87,7 +94,7 @@ export function staffSlots(input: {
     let state: StaffSlotState;
     if (input.busy.some((x) => x.kind === 'visit' && overlaps(x))) state = 'visit';
     else if (input.busy.some((x) => x.kind === 'travel' && overlaps(x))) state = 'travel';
-    else if (input.shift.some(overlaps)) state = 'free';
+    else if (input.shift.some(overlaps)) state = planned ? 'free' : 'noplan';
     else if (dayRest || input.base.some(overlaps)) state = 'rest';
     else state = 'outside';
     out.push({ start: a, state });

@@ -459,11 +459,16 @@ describe('staffWeekTable', () => {
     expect(r2!.cells[0]!.hours).toBe(6);
     // 火曜は案なし、土日は休み
     expect(r1!.cells[1]!.noPlan).toBe(true);
-    // 案なしでも訪問の無い日はバーを出す（全部空き・勤務外）。月曜のバーは訪問・空きを持つ（PRD D76）
-    expect(r1!.cells[1]!.bar?.some((x) => x.state === 'visit' || x.state === 'travel')).toBe(false);
-    expect(r1!.cells[5]!.bar?.every((x) => x.state === 'rest')).toBe(true);
-    expect(mon.bar?.some((x) => x.state === 'visit')).toBe(true);
-    expect(mon.bar?.some((x) => x.state === 'free')).toBe(true);
+    // 案なしの日は勤務内を「案なし」にし空きにしない（訪問の有無を問わない）。休みの日は全部休み。月曜は訪問・空き（PRD D76）
+    expect(r1!.cells[1]!.bar.some((x) => x.state === 'noplan')).toBe(true);
+    expect(r1!.cells[1]!.bar.some((x) => x.state === 'free' || x.state === 'visit')).toBe(false);
+    expect(r1!.cells[5]!.bar.every((x) => x.state === 'rest')).toBe(true);
+    expect(mon.bar.some((x) => x.state === 'visit')).toBe(true);
+    expect(mon.bar.some((x) => x.state === 'free')).toBe(true);
+    expect(mon.bar.some((x) => x.state === 'noplan')).toBe(false);
+    // 日ごとの合計に訪問の件数（案なしの日の「案なし（訪問 N件）」）
+    expect(t.days[0]!.visits).toBe(2);
+    expect(t.days[1]!.visits).toBe(0);
     expect(r1!.cells[5]!.off).toBe(true);
     expect(r1!.cells[6]!.off).toBe(true);
     expect(r1!.total).toMatchObject({ count: 2, hours: 50 });

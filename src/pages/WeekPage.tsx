@@ -737,36 +737,39 @@ export default function WeekPage() {
                         const typesText = c.types
                           .map((t) => `${typeOf(data.visitTypes, t.typeId)?.name ?? '種類なし'} ${t.count}件`)
                           .join('・');
+                        const dayVisits = table.days.find((x) => x.date === c.date)?.visits ?? 0;
+                        // 案の無い日（今の案も確定も無い）は数字を出さず「案なし」（訪問があれば件数を title・読み上げに）
+                        const noPlanText = dayVisits > 0 ? `案なし（その日の訪問 ${dayVisits}件）` : '案なし';
                         const detail = c.off
                           ? '休み'
-                          : [
-                              `訪問 ${c.count}件`,
-                              `稼働 ${c.hours}時間`,
-                              `移動 ${c.travel}分`,
-                              ...(typesText ? [typesText] : []),
-                            ].join('・');
+                          : c.noPlan
+                            ? noPlanText
+                            : [
+                                `訪問 ${c.count}件`,
+                                `稼働 ${c.hours}時間`,
+                                `移動 ${c.travel}分`,
+                                ...(typesText ? [typesText] : []),
+                              ].join('・');
                         return (
                           <td
                             key={c.date}
-                            className={c.off ? 'is-off' : c.bar === null ? 'is-noplan' : ''}
+                            className={[
+                              c.off ? 'is-off' : c.noPlan ? 'is-noplan' : '',
+                              c.date < today ? 'is-past' : '',
+                            ].join(' ')}
                             data-testid="week-cell"
-                            title={`${staffName(r.staffId)}さん ${dateText(c.date)}：${c.bar === null ? '案なし' : detail}`}
+                            title={`${staffName(r.staffId)}さん ${dateText(c.date)}：${detail}`}
                           >
                             <StaffBar slots={c.bar} testId="week-bar" />
                             <span className="week-cell-foot">
                               {c.off ? (
                                 <span className="sub">休み</span>
-                              ) : c.bar === null ? (
-                                <span className="sub">案なし</span>
                               ) : c.noPlan ? (
-                                // 案は無いが訪問も無い日（バーは空き・勤務外だけ）
-                                <span className="sub">訪問なし</span>
+                                <span className="sub">案なし</span>
                               ) : (
-                                <>
-                                  <span className="week-cell-count">{c.count}件</span>
-                                  <span className="sr-only">（{detail}）</span>
-                                </>
+                                <span className="week-cell-count">{c.count}件</span>
                               )}
+                              <span className="sr-only">（{detail}）</span>
                             </span>
                           </td>
                         );
@@ -788,7 +791,7 @@ export default function WeekPage() {
                     {table.days.map((d) => (
                       <td key={d.date}>
                         {d.noPlan ? (
-                          <span className="sub">案なし</span>
+                          <span className="sub">{d.visits > 0 ? `案なし（訪問 ${d.visits}件）` : '案なし'}</span>
                         ) : (
                           <>
                             <strong>{d.count}件</strong>
@@ -806,7 +809,7 @@ export default function WeekPage() {
               </table>
             </div>
             <p className="sub">
-              マスのバーは、その人の時間帯ごとの状態（訪問・移動・空き・休み・勤務外。30分ごと）です。マスに指を置くと稼働時間・移動・種類の内訳が出ます。
+              マスのバーは、その人の時間帯ごとの状態（訪問・移動・空き・休み・勤務外。30分ごと）です。案の無い日は勤務内を「案なし」（空きかは分かりません）で出します。マスに指を置くと稼働時間・移動・種類の内訳が出ます。
               数えるのは、その日の今の案（無ければ確定した割当）です。稼働時間は稼働時間帯の長さ（欠勤を差し引く）、移動は自宅へ帰る移動も含みます。
               平均との差が平均の30%を超える人を強調します。
             </p>

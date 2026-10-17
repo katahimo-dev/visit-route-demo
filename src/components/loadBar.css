@@ -98,7 +98,7 @@
   min-width: 3px;
 }
 /* 〈スタッフ〉1人の時間帯ごとの状態（PRD D75〜D77）。空きは混み具合の「空き 2人以上」と同じ緑、勤務外は「働く人なし」と同じ灰。
-   色だけに頼らない：訪問は斜線・移動は点々・休みは横の線。空き・勤務外は無地（明るさで分ける。title・読み上げにも出す） */
+   色だけに頼らない：訪問は斜線・移動は点々・案なしは薄い縦の線・休みは横の線。空き・勤務外は無地（明るさで分ける。title・読み上げにも出す） */
 .is-st-visit.load-slot,
 .is-st-visit.load-swatch,
 .is-st-visit.work-part {
@@ -113,6 +113,12 @@
 .is-st-free.load-swatch,
 .is-st-free.work-part {
   background: #5aa57a;
+}
+.is-st-noplan.load-slot,
+.is-st-noplan.load-swatch,
+.is-st-noplan.work-part {
+  /* 案なし（PRD D75 の追記）：空きの緑と分ける中立の薄い縦線 */
+  background: repeating-linear-gradient(90deg, #d6ccc3 0 1px, #f7f2ed 1px 3px);
 }
 .is-st-rest.load-slot,
 .is-st-rest.load-swatch,
