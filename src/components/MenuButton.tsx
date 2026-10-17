@@ -180,7 +180,7 @@ export function MenuButton({
                   <span className="menu-item-label">{item.label}</span>
                   {item.note !== undefined && <span className="menu-item-note">{item.note}</span>}
                   {why && (
-                    <span id={whyId} className="sr-only">
+                    <span id={whyId} hidden>
                       {why}
                     </span>
                   )}

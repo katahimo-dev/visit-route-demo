@@ -90,6 +90,20 @@ h3 {
   opacity: 0.5;
   cursor: default;
 }
+.btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* 押せない（aria-disabled）ボタンは hover で色を変えない */
+.btn[aria-disabled='true']:hover {
+  border-color: var(--line);
+  background: var(--card);
+  transform: none;
+}
+.btn-primary[aria-disabled='true']:hover {
+  border-color: var(--primary);
+  background: var(--primary);
+}
 .btn-primary:hover:not(:disabled) {
   border-color: var(--primary-dark);
   background: #ec7f6b;

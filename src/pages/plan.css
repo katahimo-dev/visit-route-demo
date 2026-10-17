@@ -137,6 +137,9 @@ p.plan-band.error {
     position: sticky;
     /* 上の帯（sticky）の下に貼り付く */
     top: calc(var(--header-h) + 16px);
+    /* 低い画面でも凡例まで見えるよう、はみ出す分は欄の中でスクロール */
+    max-height: calc(100vh - var(--header-h) - 32px);
+    overflow: auto;
   }
 }
 .plan-map.is-closed {

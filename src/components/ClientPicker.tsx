@@ -345,7 +345,7 @@ export function ClientPicker({
             {chooseAllLabel(toAdd)}
           </button>
         )}
-        {multiple && shortcut !== null && toAdd > 0 && overAll && (
+        {multiple && shortcut !== null && toAdd > 0 && overAll && (max === undefined || selected.length <= max) && (
           <small id={chooseAllNoteId} className="client-picker-over" data-testid={`${testId}-choose-all-note`}>
             {overText}
           </small>
