@@ -1,4 +1,5 @@
 import {
+  BedSingle,
   CalendarRange,
   Check,
   ChevronLeft,
@@ -74,6 +75,8 @@ import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
+import './settings.css';
+import { ClientLeavesSection } from './ClientLeavesSection';
 
 /**
  * 月間カレンダーと月まとめ作成（ADR-0012。PRD D39〜D43・D53〜D55。design.md §4 pages「月単位の予定」「月間・週間の改定」）。
@@ -612,6 +615,8 @@ export default function MonthPage() {
 
   const current = batch ? batch.targets[batch.index] : undefined;
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
+  /** 選んだ〈利用者さん〉（休みの欄。ADR-0013） */
+  const focusClient = focus.kind === 'client' ? data.clients.find((c) => c.id === focus.id) : undefined;
   const focusName =
     focus.kind === 'staff'
       ? (staffById.get(focus.id)?.name ?? '')
@@ -829,6 +834,7 @@ export default function MonthPage() {
                         clientDay={clientDays.get(d)}
                         typeById={typeById}
                         staffById={staffById}
+                        clientTerm={terms.client}
                         onOpen={openDay}
                       />
                     );
@@ -974,6 +980,8 @@ export default function MonthPage() {
                 <dd>{clientSum.edited}回</dd>
                 <dt>取り消し</dt>
                 <dd>{clientSum.cancelled}回</dd>
+                <dt>休みのため無し</dt>
+                <dd>{clientSum.leave}回</dd>
                 <dt>いつもの担当でない</dt>
                 <dd>{clientSum.substitute}回</dd>
               </dl>
@@ -991,8 +999,9 @@ export default function MonthPage() {
                 </ul>
               )}
               <p className="sub">
-                「代」はいつもの担当でない日、「変」はこの回だけ変えた回です。数えるのはその日の今の案（無ければ確定した割当）です。
+                「代」はいつもの担当でない日、「変」はこの回だけ変えた回、「休み」は休みのため無しの回です。数えるのはその日の今の案（無ければ確定した割当）です。
               </p>
+              {focusClient && <ClientLeavesSection client={focusClient} onOpenDay={openDay} compact />}
             </>
           )}
         </aside>
@@ -1160,12 +1169,14 @@ type CellProps = {
   clientDay: ClientDay | undefined;
   typeById: ReadonlyMap<string, VisitType>;
   staffById: ReadonlyMap<string, Staff>;
+  /** 〈利用者さん〉の呼び方（org.terms.client。休みの印の title） */
+  clientTerm: string;
   onOpen: (date: string) => void;
 };
 
 /** 日のマス（memo。月まとめ作成の進み具合などで、変わらないマスは描き直さない） */
 const DayCell = memo(function DayCell(props: CellProps) {
-  const { date: d, status: s, today, picked, making, focus, marks: mk, load, typeById, staffById } = props;
+  const { date: d, status: s, today, picked, making, focus, marks: mk, load, typeById, staffById, clientTerm } = props;
   const past = d < today;
   const care = s.needsCare && !past;
   const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));
@@ -1211,6 +1222,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}`);
     if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
     if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
+    if (mk.leaves.length > 0) parts.push(`${clientTerm}の休み ${mk.leaves.join('・')}`);
     if (load) parts.push(loadSummary(load));
     else if (load === null) parts.push('混み具合は案が無いので数えていません');
     body.push(
@@ -1234,6 +1246,16 @@ const DayCell = memo(function DayCell(props: CellProps) {
         {mk.ends.length > 0 && (
           <span className="month-mark" title={`終わる：${mk.ends.join('・')}`}>
             ■{mk.ends.length === 1 ? ` ${shortName(mk.ends[0]!)}` : ` ${mk.ends.length}人`}
+          </span>
+        )}
+        {mk.leaves.length > 0 && (
+          <span
+            className="month-mark is-leave"
+            title={`${clientTerm}の休み（訪問は無し）：${mk.leaves.join('・')}`}
+            data-testid="month-leave"
+          >
+            <BedSingle size={11} aria-hidden="true" />
+            {mk.leaves.length === 1 ? shortName(mk.leaves[0]!) : `${mk.leaves.length}人`}
           </span>
         )}
       </span>,
@@ -1293,11 +1315,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
     for (const v of x.visits) {
       const who = v.cancelled
         ? '取り消し'
-        : v.staffId
-          ? `${staffById.get(v.staffId)?.name ?? ''}さん${v.substitute ? '（いつもの担当でない）' : ''}`
-          : v.unassigned
-            ? '入らない'
-            : '担当未定';
+        : v.leave
+          ? '休みのため無し'
+          : v.staffId
+            ? `${staffById.get(v.staffId)?.name ?? ''}さん${v.substitute ? '（いつもの担当でない）' : ''}`
+            : v.unassigned
+              ? '入らない'
+              : '担当未定';
       parts.push(`${hm(v.start)} ${typeName(v.typeId)} ${who}${v.edited ? '（この回だけ変更）' : ''}`);
     }
     body.push(
@@ -1305,7 +1329,10 @@ const DayCell = memo(function DayCell(props: CellProps) {
         {x.visits.slice(0, MAX).map((v) => {
           const t = v.typeId === null ? undefined : typeById.get(v.typeId);
           return (
-            <span key={v.visitId} className={`month-cvisit${v.cancelled ? ' is-cancelled' : ''}`}>
+            <span
+              key={v.visitId}
+              className={`month-cvisit${v.cancelled ? ' is-cancelled' : ''}${v.leave ? ' is-leave' : ''}`}
+            >
               <span
                 className="month-type-dot"
                 style={{ background: t ? colorOf(t.color) : '#cfc4bb' }}
@@ -1315,11 +1342,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
               <span className="month-cvisit-who">
                 {v.cancelled
                   ? '取消'
-                  : v.staffId
-                    ? shortName(staffById.get(v.staffId)?.name ?? '')
-                    : v.unassigned
-                      ? '入らない'
-                      : '未定'}
+                  : v.leave
+                    ? '休み'
+                    : v.staffId
+                      ? shortName(staffById.get(v.staffId)?.name ?? '')
+                      : v.unassigned
+                        ? '入らない'
+                        : '未定'}
               </span>
               {v.substitute && (
                 <span className="month-badge is-sub" title="いつもの担当でない">

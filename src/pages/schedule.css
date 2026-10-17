@@ -102,3 +102,8 @@
   font-weight: 700;
   white-space: nowrap;
 }
+/* 〈利用者さん〉の休みのため無しの訪問（ADR-0013）：薄い行（文字のコントラストは保つ） */
+.visit-table .row-leave td {
+  background: repeating-linear-gradient(135deg, #faf7f4 0 8px, #f3eee9 8px 16px);
+  color: var(--sub);
+}

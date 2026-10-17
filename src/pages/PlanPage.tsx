@@ -1,5 +1,6 @@
 import {
   Ban,
+  BedSingle,
   CalendarDays,
   Car,
   ChevronRight,
@@ -45,12 +46,14 @@ import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
+import { VisitRules } from '../components/VisitRules';
 import { TypeMark } from '../components/visitType';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
+import { isOnLeave, leaveOn } from '../domain/leaves';
 import { NONE, timeOrder, windowText } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, jstDate } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
@@ -192,6 +195,23 @@ export default function PlanPage() {
     slotsOf,
   } = m;
   const terms = data.org.terms;
+  /** 〈利用者さん〉の休み（ADR-0013）のため無しの訪問の〈利用者さん〉（「名前（理由）」） */
+  const leaveNames = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const v of m.leaveVisits) {
+      if (seen.has(v.clientId)) continue;
+      const note = leaveOn(data.clientLeaves, v.clientId, date)?.note;
+      seen.set(v.clientId, `${clientById.get(v.clientId)?.displayName ?? '（不明）'}${note ? `（${note}）` : ''}`);
+    }
+    return [...seen.values()].join('・');
+  }, [m.leaveVisits, data.clientLeaves, date, clientById]);
+  /** 休みの訪問が確定した割当に入っている（作り直しを促す） */
+  const leaveInConfirmed = useMemo(() => {
+    const saved = own(data.manualPlans, date);
+    if (!saved || m.leaveVisits.length === 0) return false;
+    const ids = new Set(m.leaveVisits.map((v) => v.id));
+    return Object.entries(saved).some(([k, list]) => k !== NONE && list.some((id) => ids.has(id)));
+  }, [data.manualPlans, date, m.leaveVisits]);
   const toast = useToast();
   const [progress, setProgress] = useState<Progress | null>(null);
   /** プリセットのカードの詳細の id の頭（aria-describedby） */
@@ -824,10 +844,12 @@ export default function PlanPage() {
     if (!saved) return 'none';
     const savedOwner = ownerMap(saved);
     const aiOwner = ownerMap(aiPlan.routes);
+    // 確定した割当に〈利用者さん〉の休み（ADR-0013）の訪問が残っていれば、確定し直せるよう「変更あり」にする
+    if (leaveInConfirmed) return 'diff';
     return problem.visits.every((v) => (aiOwner.get(v.id) ?? null) === (savedOwner.get(v.id) ?? null))
       ? 'same'
       : 'diff';
-  }, [aiPlan, problem, data.manualPlans, date]);
+  }, [aiPlan, problem, data.manualPlans, date, leaveInConfirmed]);
 
   // ---- 急な欠勤と振り直し（ADR-0011。PRD D26〜D32）----
   /** 今の案が振り直しの結果なら、その元の案の情報 */
@@ -1279,7 +1301,7 @@ export default function PlanPage() {
   const copyFromLastWeek = () => {
     setError(null);
     const from = addDays(date, -7);
-    const src = data.visits.filter((v) => v.date === from && !v.cancelled);
+    const src = data.visits.filter((v) => v.date === from && !v.cancelled && !isOnLeave(data.clientLeaves, v));
     if (src.length === 0) {
       setError(`${from} にコピーできる訪問がありません`);
       return;
@@ -1478,7 +1500,12 @@ export default function PlanPage() {
         tone={hard ? 'red' : pin ? 'pinned' : null}
         drag={dragProps(id)}
         dragging={dragging === id}
-        detail={<ReasonBox explain={explained.get(id)} />}
+        detail={
+          <>
+            <VisitRules client={clientOf(id)} />
+            <ReasonBox explain={explained.get(id)} />
+          </>
+        }
         mark={<TypeMark type={typeOf(data.visitTypes, visitById.get(id)?.typeId)} compact />}
       >
         {tagsOf(id)}
@@ -1559,6 +1586,7 @@ export default function PlanPage() {
             <TypeMark type={type} compact />
           </div>
           {tagsOf(id)}
+          <VisitRules client={client} />
           <ReasonBox explain={explained.get(id)} />
         </>
       ),
@@ -1738,6 +1766,31 @@ export default function PlanPage() {
   // ---- 日の画面の整理（PRD D63）：1行のまとめ・案を変えるメニュー・右の欄・表示の切り替え・地図の横置き ----
   const hardCount = cs?.hardViolations.length ?? 0;
   const hundredNow = cs && scoreScale ? toHundred(cs.total, scoreScale) : null;
+  /** 訪問の一覧（表示の「一覧」。休みのため無しの訪問も薄く出す。ADR-0013） */
+  const visitList = (
+    <VisitList
+      visits={sortedVisits}
+      visitById={visitById}
+      clientById={clientById}
+      ownerName={(id) => {
+        if (!aiPlan) return null;
+        const o = owner.get(id);
+        return o ? { name: staffName(o), color: colorOfStaff.get(o) } : null;
+      }}
+      notes={(id) => ({
+        outside: !!problem && !problem.visits.some((v) => v.id === id),
+        dropped: !!aiPlan && unassigned.includes(id),
+        pinned: !!own(pins, id),
+        hard: hardOf.get(id),
+      })}
+      clientLabel={terms.client}
+      typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
+      leaveVisits={[...m.leaveVisits].sort((a, b) => a.earliestStart.localeCompare(b.earliestStart))}
+      leaveNoteOf={(v) => leaveOn(data.clientLeaves, v.clientId, v.date)?.note ?? ''}
+      onEdit={setEditing}
+      onCancel={cancelVisit}
+    />
+  );
   /** 入らなかった訪問の列へ移る（帯の近道。一覧のときは担当ごとの表示に切り替えてから） */
   const goToNone = () => {
     if (shownView === 'list') setColView('timeline');
@@ -2077,6 +2130,17 @@ export default function PlanPage() {
           </button>
         </div>
       )}
+      {m.leaveVisits.length > 0 && (
+        <div className="plan-band row" data-testid="band-leave">
+          <WithIcon icon={BedSingle} size={16}>
+            {terms.client}の休みのため無し {m.leaveVisits.length}件：{leaveNames}
+            {leaveInConfirmed && '（確定した割当に入っています。案を作り直して確定し直してください）'}
+          </WithIcon>
+          <button type="button" className="btn btn-small" onClick={() => setColView('list')}>
+            一覧で見る
+          </button>
+        </div>
+      )}
       {aiPlan && planIsStale && !running && (
         <div className="plan-band stale-note row" data-testid="plan-stale">
           <WithIcon icon={TriangleAlert} size={16}>
@@ -2106,7 +2170,7 @@ export default function PlanPage() {
           <WithIcon icon={Plus}>訪問を追加</WithIcon>
         </button>
         <MenuButton label="案を変える" icon={Sparkles} items={menuItems} testId="plan-menu" />
-        {visits.length > 0 && (
+        {(visits.length > 0 || m.leaveVisits.length > 0) && (
           <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
             {(
               [
@@ -2140,7 +2204,9 @@ export default function PlanPage() {
           <VisitForm
             key={editing}
             date={date}
-            visit={editing !== 'new' ? (visitById.get(editing) ?? null) : null}
+            visit={
+              editing !== 'new' ? (visitById.get(editing) ?? m.leaveVisits.find((v) => v.id === editing) ?? null) : null
+            }
             clients={m.clients}
             onClose={() => setEditing(null)}
             onSaved={toast}
@@ -2148,7 +2214,9 @@ export default function PlanPage() {
         </div>
       )}
 
-      {visits.length === 0 ? (
+      {visits.length === 0 && m.leaveVisits.length > 0 ? (
+        visitList
+      ) : visits.length === 0 ? (
         <div className="card">
           <Empty icon={CalendarDays}>
             この日の訪問はまだありません（「訪問を追加」か、「案を変える」の「前の同じ曜日からコピー」）
@@ -2190,26 +2258,7 @@ export default function PlanPage() {
               </ReassignBar>
             )}
             {shownView === 'list' ? (
-              <VisitList
-                visits={sortedVisits}
-                visitById={visitById}
-                clientById={clientById}
-                ownerName={(id) => {
-                  if (!aiPlan) return null;
-                  const o = owner.get(id);
-                  return o ? { name: staffName(o), color: colorOfStaff.get(o) } : null;
-                }}
-                notes={(id) => ({
-                  outside: !!problem && !problem.visits.some((v) => v.id === id),
-                  dropped: !!aiPlan && unassigned.includes(id),
-                  pinned: !!own(pins, id),
-                  hard: hardOf.get(id),
-                })}
-                clientLabel={terms.client}
-                typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
-                onEdit={setEditing}
-                onCancel={cancelVisit}
-              />
+              visitList
             ) : !hasVisits ? null : !aiPlan ? (
               <div className="card">
                 <Empty icon={Sparkles}>
@@ -2769,6 +2818,8 @@ function VisitList({
   notes,
   clientLabel,
   typeOfVisit,
+  leaveVisits,
+  leaveNoteOf,
   onEdit,
   onCancel,
 }: {
@@ -2782,13 +2833,17 @@ function VisitList({
   clientLabel: string;
   /** 訪問の種類（ADR-0012。種類なしは null） */
   typeOfVisit: (v: Visit) => VisitType | null;
+  /** 〈利用者さん〉の休み（ADR-0013）のため無しの訪問（開始の順）。薄い行で後ろに出す（計算に入らない） */
+  leaveVisits: Visit[];
+  /** 休みの理由 */
+  leaveNoteOf: (v: Visit) => string;
   onEdit: (id: string) => void;
   onCancel: (v: Visit) => void;
 }) {
   return (
     <section className="card stack visit-list" data-testid="visit-list">
       <SectionTitle icon={CalendarDays} aside={<span className="sub">担当は今の案のものです</span>}>
-        訪問の一覧（{visits.length}件）
+        訪問の一覧（{visits.length}件{leaveVisits.length > 0 ? `・休みのため無し ${leaveVisits.length}件` : ''}）
       </SectionTitle>
       <div className="table-scroll">
         <table className="visit-table">
@@ -2869,6 +2924,39 @@ function VisitList({
                     <div className="actions">
                       <IconButton icon={Pencil} label={`${label}を編集`} onClick={() => onEdit(id)} />
                       <IconButton icon={Ban} label={`${label}を取り消す`} tone="danger" onClick={() => onCancel(v)} />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {leaveVisits.map((v) => {
+              const note = leaveNoteOf(v);
+              const label = `${clientById.get(v.clientId)?.displayName ?? ''} ${windowText(v)}`;
+              return (
+                <tr key={v.id} className="row-leave" data-testid="visit-leave-row">
+                  <td className="nowrap">
+                    <div className="time-cell">
+                      <Clock size={14} aria-hidden="true" />
+                      <span className="time-main">{windowText(v)}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <ClientName client={clientById.get(v.clientId)} />
+                    <TypeMark type={typeOfVisit(v)} compact />
+                  </td>
+                  <td className="num nowrap">{v.durationMinutes}分</td>
+                  <td className="nowrap">
+                    <span className="sub">—</span>
+                  </td>
+                  <td>
+                    <span className="chip chip-leave" title={note || undefined}>
+                      <BedSingle size={12} aria-hidden="true" />
+                      休みのため無し{note ? `（${note}）` : ''}
+                    </span>
+                  </td>
+                  <td className="nowrap">
+                    <div className="actions">
+                      <IconButton icon={Pencil} label={`${label}を編集`} onClick={() => onEdit(v.id)} />
                     </div>
                   </td>
                 </tr>

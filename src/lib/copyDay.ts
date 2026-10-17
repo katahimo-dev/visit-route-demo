@@ -2,8 +2,10 @@
 // 新しい ID は引数（makeId）で受け取る
 import type { DemoData } from '../contracts/data';
 import type { Pattern, Visit } from '../contracts/documents';
+import { isOnLeave } from '../domain/leaves';
 import type { Cols } from '../domain/scheduleModel';
-import { occursOn } from '../patterns';
+import { weekday } from '../domain/time';
+import { occursOn, timesOn } from '../patterns';
 import { own } from './common';
 
 export type CopyDay = {
@@ -13,28 +15,32 @@ export type CopyDay = {
   cols: Cols;
 };
 
-/** パターンの展開と、時刻（時間の決め方・開始（早・遅））・所要・種類が違うか */
-const differsFromPattern = (v: Visit, p: Pattern) =>
-  v.windowKind !== p.windowKind ||
-  v.earliestStart !== p.earliestStart ||
-  v.latestStart !== p.latestStart ||
-  v.durationMinutes !== p.durationMinutes ||
-  v.typeId !== p.typeId;
+/** パターンの展開（to の日の曜日の時刻。曜日ごとの時刻があればそれ）と、時刻（時間の決め方・開始（早・遅））・所要・種類が違うか */
+const differsFromPattern = (v: Visit, p: Pattern, to: string) => {
+  const t = timesOn(p, weekday(to));
+  return (
+    v.windowKind !== p.windowKind ||
+    v.earliestStart !== t.earliestStart ||
+    v.latestStart !== t.latestStart ||
+    v.durationMinutes !== p.durationMinutes ||
+    v.typeId !== p.typeId
+  );
+};
 
 /**
- * from の日の取り消しでない訪問を to の日へ写す。
+ * from の日の取り消しでない訪問（〈利用者さん〉の休み（ADR-0013）の訪問は除く）を to の日へ写す。
  * コピー元がパターンの訪問で、そのパターンが to の日に回を持つ（occursOn）なら、ID を `${to}_${パターンID}`、
  * pattern を { id, date: to, edited: 時刻・所要・種類が展開と違えば true } にして写す（あとの applyPatterns で二重にしない）。
  * その ID の訪問がすでにあれば写さない（あるものを使う。to の日にあって取り消しでなければ確定した割当の列にも入れる）。
  * それ以外は makeId の新しい ID で、pattern を null（単発）にして写す
  */
 export function copyDayVisits(
-  d: Pick<DemoData, 'visits' | 'patterns' | 'manualPlans'>,
+  d: Pick<DemoData, 'visits' | 'patterns' | 'manualPlans' | 'clientLeaves'>,
   from: string,
   to: string,
   makeId: () => string,
 ): CopyDay {
-  const src = d.visits.filter((v) => v.date === from && !v.cancelled);
+  const src = d.visits.filter((v) => v.date === from && !v.cancelled && !isOnLeave(d.clientLeaves, v));
   const byId = new Map(d.visits.map((v) => [v.id, v]));
   const idMap = new Map<string, string>();
   const visits: Visit[] = [];
@@ -47,7 +53,12 @@ export function copyDayVisits(
         if (existing.date === to && !existing.cancelled) idMap.set(v.id, id);
         continue;
       }
-      const copied: Visit = { ...v, id, date: to, pattern: { id: p.id, date: to, edited: differsFromPattern(v, p) } };
+      const copied: Visit = {
+        ...v,
+        id,
+        date: to,
+        pattern: { id: p.id, date: to, edited: differsFromPattern(v, p, to) },
+      };
       byId.set(id, copied);
       idMap.set(v.id, id);
       visits.push(copied);

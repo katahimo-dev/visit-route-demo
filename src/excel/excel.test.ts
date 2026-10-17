@@ -153,6 +153,7 @@ describe('書き出し → 読み込み', () => {
       '種類',
       '定期パターン',
       '訪問',
+      '訪問先の休み',
     ]);
     expect(col(sheet(wb, '訪問'), d.org.terms.client)).toBe(3);
     // 見出しは固定・太字
@@ -688,6 +689,9 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
           typeId: null,
           weekdays: [2, 6],
           everyWeeks: 3,
+          repeat: 'weekly',
+          monthWeeks: [],
+          dayTimes: [],
           windowKind: 'window',
           earliestStart: '13:00',
           latestStart: '14:30',
@@ -860,7 +864,7 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
         const pws = sheet(wb, '定期パターン');
         pws.getRow(2).getCell(col(pws, '曜日')).value = '月曜と木';
         pws.getRow(3).getCell(col(pws, '曜日')).value = null;
-        pws.getRow(4).getCell(col(pws, '間隔')).value = '毎月';
+        pws.getRow(4).getCell(col(pws, '間隔')).value = '毎年';
         pws.getRow(5).getCell(col(pws, '開始日')).value = '2026-11-01';
         pws.getRow(5).getCell(col(pws, '終了日')).value = '2026-10-31';
         pws.getRow(6).getCell(col(pws, '時間の決め方')).value = '幅';
@@ -871,7 +875,7 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
     expect(msg).toContain('シート『定期パターン』の 2行目・『曜日』：曜日は「月木」のように1つ以上書いてください');
     expect(msg).toContain('シート『定期パターン』の 3行目・『曜日』：');
     expect(msg).toContain(
-      'シート『定期パターン』の 4行目・『間隔』：「毎週」「隔週」「3週ごと」「4週ごと」のどれかで書いてください',
+      'シート『定期パターン』の 4行目・『間隔』：「毎週」「隔週」「3週ごと」「4週ごと」「毎月」のどれかで書いてください',
     );
     expect(msg).toContain('シート『定期パターン』の 5行目・『終了日』：終了日は開始日以降にしてください');
     expect(msg).toContain('シート『定期パターン』の 6行目・『開始（遅）』：開始（遅）は開始（早）以降にしてください');
@@ -946,5 +950,95 @@ describe('〈利用者さん〉のよみの列（PRD D61）', () => {
     );
     expect(r.clients).toHaveLength(d.clients.length);
     expect(r.clients.every((c) => c.kana === '')).toBe(true);
+  });
+});
+
+describe('第N曜日・曜日ごとの時刻・決まりごと・〈利用者さん〉の休み（ADR-0013）', () => {
+  const rich = (): DemoData => {
+    const d = base();
+    const c0 = d.clients[0]!;
+    return {
+      ...d,
+      patterns: [
+        {
+          ...d.patterns[0]!,
+          weekdays: [1, 4],
+          repeat: 'monthly',
+          monthWeeks: [3, 4],
+          windowKind: 'window',
+          earliestStart: '15:00',
+          latestStart: '15:30',
+          dayTimes: [{ weekday: 1, earliestStart: '09:30', latestStart: '10:00' }],
+        },
+        {
+          ...d.patterns[1]!,
+          dayTimes: [{ weekday: d.patterns[1]!.weekdays[0]!, earliestStart: '08:30', latestStart: '08:30' }],
+        },
+        ...d.patterns.slice(2),
+      ],
+      clients: d.clients.map((c, i) => (i === 0 ? { ...c, entryNote: '裏口から、ノック2回', cautionNote: '段差' } : c)),
+      clientLeaves: [
+        { id: 'l1', clientId: c0.id, from: '2026-10-20', to: '2026-10-22', note: '入院' },
+        { id: 'l2', clientId: d.clients[1]!.id, from: '2026-10-25', to: '2026-10-25', note: '' },
+      ],
+    };
+  };
+
+  it('書き出し → 読み込みで同じに戻る（毎月の第N週・曜日ごとの時刻・決まりごと・休み）', async () => {
+    const d = rich();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const pws = sheet(wb, '定期パターン');
+    expect(pws.getRow(2).getCell(col(pws, '間隔')).value).toBe('毎月');
+    expect(pws.getRow(2).getCell(col(pws, '第N週')).value).toBe('3、4');
+    expect(pws.getRow(2).getCell(col(pws, '曜日ごとの時刻')).value).toBe('月 9:30〜10:00');
+    expect(sheet(wb, '訪問先の休み').getRow(2).values).toContain('入院');
+    expect(ok(await importWorkbook(await toBuffer(d), d))).toEqual(withoutPlans(d));
+  });
+
+  it('列・シートが無い古いブックは毎週系・上書きなし・決まりごとは空・休みなし', async () => {
+    const d = base();
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        wb.removeWorksheet(sheet(wb, '訪問先の休み').id);
+        const pws = sheet(wb, '定期パターン');
+        for (const h of ['曜日ごとの時刻', '第N週']) pws.spliceColumns(col(pws, h), 1);
+        const cws = sheet(wb, d.org.terms.client);
+        for (const h of ['注意', '駐車場', '鍵', '入り方']) cws.spliceColumns(col(cws, h), 1);
+      }),
+    );
+    expect(r.clientLeaves).toEqual([]);
+    expect(r.patterns).toEqual(d.patterns);
+    expect(
+      r.clients.every((c) => c.entryNote === '' && c.keyNote === '' && c.parkingNote === '' && c.cautionNote === ''),
+    ).toBe(true);
+  });
+
+  it('「毎月」で第N週が空・読めない第N週・読めない曜日ごとの時刻・曜日に無い曜日の時刻・休みの終了日が開始日より前・いない〈利用者さん〉の休みは止める', async () => {
+    const d = rich();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const pws = sheet(wb, '定期パターン');
+        pws.getRow(2).getCell(col(pws, '第N週')).value = null;
+        pws.getRow(3).getCell(col(pws, '間隔')).value = '毎月';
+        pws.getRow(3).getCell(col(pws, '第N週')).value = '第6';
+        pws.getRow(4).getCell(col(pws, '曜日ごとの時刻')).value = '月曜の朝';
+        pws.getRow(5).getCell(col(pws, '曜日')).value = '月';
+        pws.getRow(5).getCell(col(pws, '曜日ごとの時刻')).value = '木 9:00';
+      }),
+    );
+    expect(msg).toContain('シート『定期パターン』の 2行目・『第N週』：間隔が「毎月」のときは');
+    expect(msg).toContain('シート『定期パターン』の 3行目・『第N週』：');
+    expect(msg).toContain('シート『定期パターン』の 4行目・『曜日ごとの時刻』：「月曜の朝」は');
+    expect(msg).toContain('シート『定期パターン』の 5行目・『曜日ごとの時刻』：「曜日」の列に無い曜日の時刻があります');
+    const msg2 = fail(
+      await editAndImport(d, (wb) => {
+        const lws = sheet(wb, '訪問先の休み');
+        lws.getRow(2).getCell(col(lws, '終了日')).value = '2026-10-01';
+        lws.getRow(3).getCell(col(lws, d.org.terms.client)).value = 'いない人';
+      }),
+    );
+    expect(msg2).toContain('シート『訪問先の休み』の 2行目・『終了日』：終了日は開始日以降にしてください');
+    expect(msg2).toContain('シート『訪問先の休み』の 3行目・');
   });
 });

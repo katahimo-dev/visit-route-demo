@@ -300,6 +300,9 @@ describe('訪問の種類・定期パターン（ADR-0012）', () => {
     typeId: null,
     weekdays: [1],
     everyWeeks: 1,
+    repeat: 'weekly',
+    monthWeeks: [],
+    dayTimes: [],
     windowKind: 'fixed',
     earliestStart: '09:00',
     latestStart: '09:00',
@@ -490,5 +493,101 @@ describe('〈利用者さん〉のよみ（PRD D61）', () => {
     const bad = JSON.parse(JSON.stringify(d));
     bad.clients[0].kana = 'あ'.repeat(51);
     expect(isImportError(importJson(JSON.stringify(bad)))).toBe(true);
+  });
+});
+
+describe('第N曜日・曜日ごとの時刻・〈利用者さん〉の休み・決まりごと（ADR-0013）', () => {
+  const pattern = (d: DemoData, over: Partial<Pattern> = {}): Pattern => ({ ...d.patterns[0]!, ...over });
+
+  it('clientLeaves・パターンの repeat・monthWeeks・dayTimes・決まりごとの無い古いデータが読める（版は1のまま）', () => {
+    const d = base();
+    const { clientLeaves: _l, ...old } = JSON.parse(JSON.stringify(d));
+    old.patterns = old.patterns.map(({ repeat: _r, monthWeeks: _m, dayTimes: _t, ...p }: Record<string, unknown>) => p);
+    old.clients = old.clients.map(
+      ({ entryNote: _a, keyNote: _b, parkingNote: _c, cautionNote: _e, ...c }: Record<string, unknown>) => c,
+    );
+    const r = migrate(old);
+    expect(isImportError(r)).toBe(false);
+    const x = r as DemoData;
+    expect(x.version).toBe(1);
+    expect(x.clientLeaves).toEqual([]);
+    expect(x.patterns.every((p) => p.repeat === 'weekly' && p.monthWeeks.length === 0 && p.dayTimes.length === 0)).toBe(
+      true,
+    );
+    expect(x.clients.every((c) => c.entryNote === '' && c.cautionNote === '')).toBe(true);
+    // 初期データの決まりごとの例は古いデータには無いので、その分だけ違う
+    const strip = (y: DemoData) => ({
+      ...y,
+      clients: y.clients.map((c) => ({ ...c, entryNote: '', keyNote: '', parkingNote: '', cautionNote: '' })),
+    });
+    expect(x).toEqual(strip(d));
+    // null の clientLeaves も [] で読む
+    const n = migrate({ ...JSON.parse(JSON.stringify(d)), clientLeaves: null });
+    expect((n as DemoData).clientLeaves).toEqual([]);
+  });
+
+  it('repair：いない〈利用者さん〉の休みと ID の重複を除く。monthWeeks は小さい順（毎週系なら []）、dayTimes は曜日にあるものだけ・曜日の順', () => {
+    const d = base();
+    const c = d.clients[0]!.id;
+    const leaves = [
+      { id: 'l1', clientId: c, from: DAY, to: DAY, note: '' },
+      { id: 'l1', clientId: c, from: '2026-10-20', to: '2026-10-21', note: '重複' },
+      { id: 'l2', clientId: 'nobody', from: DAY, to: DAY, note: '' },
+    ];
+    const p = pattern(d, {
+      weekdays: [1, 4],
+      repeat: 'monthly',
+      monthWeeks: [4, 3, 4],
+      dayTimes: [
+        { weekday: 4, earliestStart: '15:00', latestStart: '15:00' },
+        { weekday: 2, earliestStart: '11:00', latestStart: '11:00' },
+        { weekday: 1, earliestStart: '09:30', latestStart: '09:30' },
+      ],
+    });
+    const weekly = pattern(d, { id: 'pw', repeat: 'weekly', monthWeeks: [2] });
+    const r = repair({ ...d, clientLeaves: leaves, patterns: [p, weekly, ...d.patterns.slice(1)] });
+    expect(r.clientLeaves.map((l) => l.id)).toEqual(['l1']);
+    const rp = r.patterns.find((x) => x.id === p.id)!;
+    expect(rp.monthWeeks).toEqual([3, 4]);
+    expect(rp.dayTimes.map((t) => t.weekday)).toEqual([1, 4]);
+    expect(r.patterns.find((x) => x.id === 'pw')!.monthWeeks).toEqual([]);
+  });
+
+  it('毎月で第N週が空・同じ曜日の時刻が2つ・終了日が開始日より前の休みは契約で止める', () => {
+    const d = base();
+    const bad = (x: Partial<DemoData>) => isImportError(migrate(JSON.parse(JSON.stringify({ ...d, ...x }))));
+    expect(bad({ patterns: [pattern(d, { repeat: 'monthly', monthWeeks: [] })] })).toBe(true);
+    expect(bad({ patterns: [pattern(d, { repeat: 'monthly', monthWeeks: [6] })] })).toBe(true);
+    const t = { weekday: 1, earliestStart: '09:00', latestStart: '09:00' };
+    expect(bad({ patterns: [pattern(d, { dayTimes: [t, t] })] })).toBe(true);
+    expect(bad({ patterns: [pattern(d, { dayTimes: [{ ...t, latestStart: '08:00' }] })] })).toBe(true);
+    const c = d.clients[0]!.id;
+    expect(bad({ clientLeaves: [{ id: 'l', clientId: c, from: '2026-10-20', to: '2026-10-19', note: '' }] })).toBe(
+      true,
+    );
+    expect(bad({ clients: d.clients.map((x, i) => (i === 0 ? { ...x, keyNote: 'あ'.repeat(201) } : x)) })).toBe(true);
+  });
+
+  it('休み・第N曜日・曜日ごとの時刻・決まりごとを含むデータが 書き出し → 読み込み で同じに戻る', () => {
+    const d = base();
+    const c = d.clients[0]!.id;
+    const x: DemoData = {
+      ...d,
+      clientLeaves: [{ id: 'l1', clientId: c, from: DAY, to: '2026-10-14', note: '入院' }],
+      patterns: [
+        pattern(d, {
+          weekdays: [1, 4],
+          repeat: 'monthly',
+          monthWeeks: [3, 4],
+          dayTimes: [{ weekday: 1, earliestStart: '09:30', latestStart: '09:30' }],
+        }),
+        ...d.patterns.slice(1),
+      ],
+      clients: d.clients.map((cl, i) => (i === 0 ? { ...cl, entryNote: '裏口から', parkingNote: '月極の3番' } : cl)),
+    };
+    expect(repair(x)).toEqual(x);
+    const back = importJson(JSON.stringify(x));
+    expect(isImportError(back)).toBe(false);
+    expect(back).toEqual(x);
   });
 });

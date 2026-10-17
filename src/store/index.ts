@@ -70,6 +70,7 @@ export function migrate(raw: unknown): DemoData | ImportError {
   // プリセット（ADR-0008）が無い（null も）古いデータは、初期の3種で補う（版は1のまま）
   // 欠勤（ADR-0011）が無い（null も）古いデータは [] で補う
   // 訪問の種類・定期パターン（ADR-0012）が null の古いデータも [] で補う（無いときは zod の既定値）
+  // 〈利用者さん〉の休み（ADR-0013）が null の古いデータも [] で補う（無いときは zod の既定値）
   const o = raw as Record<string, unknown>;
   const filled = {
     ...o,
@@ -77,6 +78,7 @@ export function migrate(raw: unknown): DemoData | ImportError {
     ...(o.absences === undefined || o.absences === null ? { absences: [] } : {}),
     ...(o.visitTypes === undefined || o.visitTypes === null ? { visitTypes: [] } : {}),
     ...(o.patterns === undefined || o.patterns === null ? { patterns: [] } : {}),
+    ...(o.clientLeaves === null ? { clientLeaves: [] } : {}),
   };
   const r = demoDataSchema.safeParse(filled, { error: z.locales.ja().localeError });
   if (!r.success) {

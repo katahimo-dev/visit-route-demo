@@ -6,6 +6,7 @@ import type { Problem, ProblemStaff, ProblemVisit, Reason } from '../contracts/p
 import { type Condition, type Item, POINTS_PER_WEIGHT, type Rule, type Traits } from '../contracts/rules';
 import { availabilityOf, withoutAbsences } from '../domain/availability';
 import { estimateLeg } from '../domain/geo';
+import { leaveOn } from '../domain/leaves';
 import { hhmmToMinutes } from '../domain/time';
 import { conditionText, matches } from './conditions';
 import { fitStart } from './timing';
@@ -103,6 +104,7 @@ export type CompileInput = Pick<
   | 'absences'
   | 'visitTypes'
   | 'patterns'
+  | 'clientLeaves'
 >;
 
 /** 訪問の種類の必要条件の理由の ruleId（条件 rules の ID ではない。ADR-0012） */
@@ -119,7 +121,7 @@ export const PIN_RULE_ID = 'pin';
 export const PIN_LABEL = '固定（手直し）';
 
 /**
- * その日の問題を作る（キャンセルした訪問・休止中のスタッフ/訪問先は入れない）。
+ * その日の問題を作る（キャンセルした訪問・休止中のスタッフ/訪問先・休み（ADR-0013）の〈利用者さん〉の訪問は入れない）。
  * pins（訪問ID → 担当ID）の訪問は、固定した担当だけを可にする（他の担当は「固定（手直し）」で外す）。
  * 固定した担当がこの日の問題にいないときは固定を無視する
  */
@@ -127,7 +129,11 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   const terms = data.org.terms;
   const staffDocs = data.staff.filter((s) => s.active);
   const clients = new Map<string, Client>(data.clients.filter((c) => c.active).map((c) => [c.id, c]));
-  const visitDocs = data.visits.filter((v) => v.date === date && !v.cancelled && clients.has(v.clientId));
+  // 〈利用者さん〉の休み（ADR-0013）の訪問は、取り消しと同じく問題に入れない（訪問のデータは消さない）
+  const leaves = data.clientLeaves.filter((l) => l.from <= date && date <= l.to);
+  const visitDocs = data.visits.filter(
+    (v) => v.date === date && !v.cancelled && clients.has(v.clientId) && leaveOn(leaves, v.clientId, date) === null,
+  );
   const items = new Map(data.items.map((it) => [it.id, it]));
   const rules = data.rules.filter(isActive);
   const visitTypes = new Map<string, VisitType>(data.visitTypes.map((t) => [t.id, t]));

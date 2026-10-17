@@ -88,3 +88,24 @@ export type VerdictOf = (cell: VacancyCell) => Verdict;
 export type InquirySummary = (result: VacancyResult, wish: InquiryWish, terms: Terms) => string;
 /** 07:00〜20:00 の30分ごと（開始の順）。案の無い日は null（D54。dayFreeness を置き換え） */
 export type DayLoadFn = (data: DemoData, date: string, filter: DayLoadFilter) => DayLoadSlot[] | null;
+
+/** 空き枠の案内文の形（ADR-0013）：'dates'＝日付ごと（1人以上の時刻）、'weekly'＝曜日ごと（どの週も受けられる時刻） */
+export type VacancyNoticeMode = 'dates' | 'weekly';
+
+/** 空き枠の案内文の入力（PRD D67。ADR-0013） */
+export type VacancyNoticeInput = {
+  /** 事業所名（org.name） */
+  orgName: string;
+  terms: Terms;
+  /** 種類の名前（null＝種類を問わない） */
+  typeName: string | null;
+  durationMinutes: number;
+  /** 文に載せる日（両端を含む。YYYY-MM-DD） */
+  period: { from: string; to: string };
+  mode: VacancyNoticeMode;
+  /** 移動を含む（場所あり）か目安か */
+  exact: boolean;
+};
+
+/** 空き枠の案内文（純粋関数。例外を投げない） */
+export type VacancyNoticeFn = (result: VacancyResult, input: VacancyNoticeInput) => string;

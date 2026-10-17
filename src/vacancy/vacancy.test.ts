@@ -18,7 +18,9 @@ import {
   INQUIRY_VISIT_ID,
   inquirySummary,
   type VacancyCell,
+  type VacancyNoticeInput,
   type VacancyResult,
+  vacancyNotice,
   vacancyOf,
   verdictOf,
 } from './index';
@@ -505,3 +507,88 @@ function timing(p: Problem, routes: Routes) {
   });
   return out;
 }
+
+describe('〈利用者さん〉の休み（ADR-0013）', () => {
+  it('休みの〈利用者さん〉の訪問は数えない（その時間が空く）。休みを消すと元に戻る', () => {
+    const leave = { id: 'l1', clientId: 'c2', from: MON2, to: MON2, note: '入院' };
+    for (const place of [PLACE, null]) {
+      const without = vacancyOf(small(), query({ place }), { from: MON1, weeks: 2 });
+      expect(verdictOf(cellOf(without, 1, '15:00'))).toBe('partial');
+      const r = vacancyOf(small({ clientLeaves: [leave] }), query({ place }), { from: MON1, weeks: 2 });
+      expect(verdictOf(cellOf(r, 1, '15:00'))).toBe('ok');
+      expect(staffOn(cellOf(r, 1, '15:00'), MON2)).toEqual(['s1']);
+    }
+  });
+
+  it('dayLoad も休みの訪問を数えない', () => {
+    const leave = { id: 'l1', clientId: 'c2', from: MON2, to: MON2, note: '' };
+    const at = (d: DemoData) => dayLoad(d, MON2, { typeId: null })!.find((x) => x.start === m('15:00'))!;
+    expect(at(small()).free).toBe(0);
+    expect(at(small({ clientLeaves: [leave] })).free).toBe(1);
+  });
+});
+
+describe('vacancyNotice（空き枠の案内文。ADR-0013）', () => {
+  const input = (over: Partial<VacancyNoticeInput> = {}): VacancyNoticeInput => ({
+    orgName: 'テスト訪問看護',
+    terms: TERMS,
+    typeName: 'リハビリ',
+    durationMinutes: 60,
+    period: { from: MON1, to: addDays(MON1, 6) },
+    mode: 'dates',
+    exact: false,
+    ...over,
+  });
+
+  it('日付ごと：1人以上が受けられる開始時刻を連続した範囲にまとめる。事業所名・種類・所要が入る', () => {
+    const r = vacancyOf(small(), query({ place: null }), { from: MON1, weeks: 1 });
+    const text = vacancyNotice(r, input());
+    const lines = text.split('\n');
+    expect(lines[0]).toBe(
+      'テスト訪問看護です。10/12〜10/18に、リハビリ（60分）の訪問をお受けできる開始の時間をご案内します。',
+    );
+    // 月曜は 9:00〜12:00 が訪問で詰まる（目安は前後15分）。火〜金は 8:30〜16:30。土日は休み
+    expect(lines[1]).toBe('・10/12（月） 12:30〜16:30');
+    expect(lines[2]).toBe('・10/13（火） 8:30〜16:30');
+    expect(lines).toHaveLength(7);
+    expect(lines.at(-1)).toContain('移動の時間などで変わることがあります');
+    expect(lines.at(-1)).toContain('新しい利用者さんのご相談');
+  });
+
+  it('日付ごと：期間の外の日・案の無い日は入れない。途切れた範囲は「、」で分ける', () => {
+    const extra = fixedOn('a2', 'c2', MON1, '14:00', 60);
+    const noPlan = fixedOn('w1', 'c1', WED1, '10:00', 60);
+    const d = small({ visits: [...small().visits, extra, noPlan], manualPlans: { [MON1]: { s1: ['a1', 'a2'] } } });
+    const r = vacancyOf(d, query({ place: null }), { from: MON1, weeks: 1 });
+    expect(r.noPlanDates).toEqual([WED1]);
+    const text = vacancyNotice(r, input({ period: { from: MON1, to: addDays(MON1, 2) } }));
+    expect(text).toContain('・10/12（月） 12:30、15:30〜16:30');
+    expect(text).toContain('・10/13（火）');
+    expect(text).not.toContain('・10/14');
+    expect(text).not.toContain('・10/15');
+  });
+
+  it('曜日ごと：どの週も受けられる（○）時刻だけ。月〜日の順。種類なし・移動を含むとき', () => {
+    const r = vacancyOf(small(), query({ place: null }), { from: MON1, weeks: 2 });
+    const text = vacancyNotice(
+      r,
+      input({ mode: 'weekly', typeName: null, exact: true, period: { from: MON1, to: addDays(MON1, 13) } }),
+    );
+    const lines = text.split('\n');
+    expect(lines[0]).toBe(
+      'テスト訪問看護です。10/12〜10/25の毎週、続けて60分の訪問をお受けできる開始の時間をご案内します。',
+    );
+    // 月曜：2回目の月曜は 14:00〜17:00 も詰まる → 両方の週で受けられるのは 12:30 だけ
+    expect(lines[1]).toBe('・月 12:30');
+    expect(lines[2]).toBe('・火 8:30〜16:30');
+    expect(lines.at(-1)).toBe('開始の時間の目安です。新しい利用者さんのご相談は、お気軽にお問い合わせください。');
+  });
+
+  it('空きが無ければその旨の文', () => {
+    const r = vacancyOf(small(), query({ place: null, dayStart: '07:00', dayEnd: '08:30' }), { from: MON1, weeks: 1 });
+    const text = vacancyNotice(r, input());
+    expect(text.split('\n')[1]).toBe(
+      'いまはご案内できる空きがありません。ご希望の曜日・時間があれば、お問い合わせください。',
+    );
+  });
+});

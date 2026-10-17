@@ -41,28 +41,45 @@ const byDateStart = (a: Visit, b: Visit) =>
           ? 1
           : 0;
 
+/** その日が月の中のその曜日の何回目か（1〜5。ADR-0013） */
+export const nthOfMonth = (date: string): number => Math.floor((Number(date.slice(8, 10)) - 1) / 7) + 1;
+
 /**
- * その日にパターンの訪問があるか。曜日が weekdays にあり、from ≤ 日 ≤ to（null は無限）、
- * from を含む週（日曜はじまり）を1週目として (週の番号 − 1) が everyWeeks で割り切れる
+ * その日にパターンの訪問があるか。曜日が weekdays にあり、from ≤ 日 ≤ to（null は無限）、かつ
+ * 毎週系（repeat が 'weekly'）なら from を含む週（日曜はじまり）を1週目として (週の番号 − 1) が everyWeeks で割り切れる。
+ * 毎月（'monthly'）なら、その日がその曜日の第N回目で N が monthWeeks にある（第5の無い月は作らない。ADR-0013）
  */
 export const occursOn: OccursOn = (pattern, date) => {
   if (date < pattern.from) return false;
   if (pattern.to !== null && date > pattern.to) return false;
   if (!pattern.weekdays.includes(weekday(date))) return false;
+  if (pattern.repeat === 'monthly') return pattern.monthWeeks.includes(nthOfMonth(date));
   const firstWeekStart = addDays(pattern.from, -weekday(pattern.from));
   const weekIndex = Math.floor(daysBetween(firstWeekStart, date) / 7);
   return weekIndex % pattern.everyWeeks === 0;
 };
 
+/** その曜日の開始（早）・開始（遅）：曜日ごとの時刻（dayTimes）があればそれ、無ければ共通の時刻（ADR-0013） */
+export function timesOn(
+  pattern: Pick<Pattern, 'earliestStart' | 'latestStart' | 'dayTimes'>,
+  wd: number,
+): { earliestStart: string; latestStart: string } {
+  const t = pattern.dayTimes.find((x) => x.weekday === wd);
+  return t
+    ? { earliestStart: t.earliestStart, latestStart: t.latestStart }
+    : { earliestStart: pattern.earliestStart, latestStart: pattern.latestStart };
+}
+
 /** パターンの1回分の訪問 */
 function visitOf(pattern: Pattern, date: string): Visit {
+  const t = timesOn(pattern, weekday(date));
   return {
     id: patternVisitId(date, pattern.id),
     date,
     clientId: pattern.clientId,
     windowKind: pattern.windowKind,
-    earliestStart: pattern.earliestStart,
-    latestStart: pattern.latestStart,
+    earliestStart: t.earliestStart,
+    latestStart: t.latestStart,
     durationMinutes: pattern.durationMinutes,
     staffId: null,
     cancelled: false,

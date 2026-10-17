@@ -51,6 +51,9 @@ const WEEKDAYS = [1, 2, 3, 4, 5];
 export function seedPatterns(from: string): Pattern[] {
   const base = {
     everyWeeks: 1,
+    repeat: 'weekly' as const,
+    monthWeeks: [] as number[],
+    dayTimes: [] as Pattern['dayTimes'],
     from,
     to: null,
     usualStaffId: null,

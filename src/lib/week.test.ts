@@ -34,6 +34,9 @@ function pattern(id: string, weekdays: number[], over: Partial<Pattern> = {}): P
     typeId: null,
     weekdays,
     everyWeeks: 1,
+    repeat: 'weekly',
+    monthWeeks: [],
+    dayTimes: [],
     windowKind: 'fixed',
     earliestStart: '09:00',
     latestStart: '09:00',
@@ -246,6 +249,27 @@ describe('moveFollowing（以降すべて）', () => {
     const on21 = r.data.visits.filter((v) => v.date === '2026-10-21');
     expect(on21.map((v) => [v.id, v.earliestStart])).toEqual([['2026-10-21_np1', '15:00']]);
     expect(r.change.removed).toContainEqual({ visitId: '2026-10-21_p1', date: '2026-10-21' });
+  });
+
+  it('曜日ごとの時刻（ADR-0013）：動かした曜日の上書きは外し、ほかの曜日の時刻はそのまま', () => {
+    // 月 9:00（共通）・水 14:00〜14:30（上書き）。水曜の回を木曜 15:00 へ「以降すべて」
+    const d = withPatterns([
+      pattern('p1', [1, 3], {
+        windowKind: 'window',
+        latestStart: '09:30',
+        dayTimes: [{ weekday: 3, earliestStart: '14:00', latestStart: '14:30' }],
+      }),
+    ]);
+    expect(d.visits.find((v) => v.id === '2026-10-21_p1')!.earliestStart).toBe('14:00');
+    const r = moveFollowing(d, '2026-10-21_p1', '2026-10-22', 15 * 60, DATE, ['np1', 'np2'])!;
+    const np1 = r.data.patterns.find((p) => p.id === 'np1')!;
+    expect(np1.weekdays).toEqual([1]);
+    expect(np1.dayTimes).toEqual([]);
+    const np2 = r.data.patterns.find((p) => p.id === 'np2')!;
+    // 動かした回の幅（30分）を保って共通の時刻にする
+    expect([np2.weekdays, np2.earliestStart, np2.latestStart, np2.dayTimes]).toEqual([[4], '15:00', '15:30', []]);
+    expect(r.data.visits.find((v) => v.id === '2026-10-22_np2')!.earliestStart).toBe('15:00');
+    expect(r.data.visits.find((v) => v.id === '2026-10-26_np1')!.earliestStart).toBe('09:00');
   });
 
   it('隔週を翌週の別の曜日へ動かすと、ドラッグした日に回ができる（新しいパターンの from はドラッグした日）', () => {

@@ -73,6 +73,14 @@ export const clientSchema = z.object({
   usualStaffId: idSchema.nullable(),
   /** 仮押さえ（D47。問い合わせの試算から仮に押さえた〈利用者さん〉。ADR-0012 追記）。無い古いデータは false */
   tentative: z.boolean().default(false),
+  /** 訪問先の決まりごと（PRD D66。ADR-0013）：入り方（インターホン等）。無い古いデータは '' */
+  entryNote: z.string().max(200).default(''),
+  /** 訪問先の決まりごと：鍵 */
+  keyNote: z.string().max(200).default(''),
+  /** 訪問先の決まりごと：駐車場 */
+  parkingNote: z.string().max(200).default(''),
+  /** 訪問先の決まりごと：注意 */
+  cautionNote: z.string().max(200).default(''),
 });
 export type Client = z.infer<typeof clientSchema>;
 
@@ -95,6 +103,19 @@ export type VisitType = z.infer<typeof visitTypeSchema>;
 /** 種類の上限（ADR-0012） */
 export const MAX_VISIT_TYPES = 20;
 
+/** 繰り返し方（ADR-0013）：'weekly'＝everyWeeks 週ごと、'monthly'＝毎月の第N週（monthWeeks） */
+export const PATTERN_REPEATS = ['weekly', 'monthly'] as const;
+export type PatternRepeat = (typeof PATTERN_REPEATS)[number];
+
+/** 曜日ごとの開始（早）〜（遅）の上書き（ADR-0013） */
+export const patternDayTimeSchema = z.object({
+  /** 0=日〜6=土 */
+  weekday: z.number().int().min(0).max(6),
+  earliestStart: hhmmSchema,
+  latestStart: hhmmSchema,
+});
+export type PatternDayTime = z.infer<typeof patternDayTimeSchema>;
+
 /** 定期パターン（ADR-0012。利用者さんごと。複数持てる） */
 export const patternSchema = z
   .object({
@@ -104,8 +125,14 @@ export const patternSchema = z
     typeId: idSchema.nullable(),
     /** 0=日〜6=土 */
     weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
-    /** 1＝毎週、2＝隔週…。from を含む週（日曜はじまり）を1週目 */
+    /** 1＝毎週、2＝隔週…。from を含む週（日曜はじまり）を1週目。repeat が 'monthly' のときは使わない */
     everyWeeks: z.number().int().min(1).max(4),
+    /** 繰り返し方（ADR-0013）。無い古いデータは 'weekly' */
+    repeat: z.enum(PATTERN_REPEATS).default('weekly'),
+    /** 毎月の第N（1〜5。ADR-0013）。repeat が 'monthly' のとき1つ以上。第5の無い月は作らない。無い古いデータは [] */
+    monthWeeks: z.array(z.number().int().min(1).max(5)).max(5).default([]),
+    /** 曜日ごとの時刻の上書き（ADR-0013）。無い曜日は共通の時刻。無い古いデータは [] */
+    dayTimes: z.array(patternDayTimeSchema).max(7).default([]),
     windowKind: z.enum(WINDOW_KINDS),
     earliestStart: hhmmSchema,
     latestStart: hhmmSchema,
@@ -123,6 +150,23 @@ export const patternSchema = z
     }
     if (p.earliestStart > p.latestStart) {
       ctx.addIssue({ code: 'custom', path: ['latestStart'], message: '開始（遅）は開始（早）以降にしてください' });
+    }
+    if (p.repeat === 'monthly' && p.monthWeeks.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['monthWeeks'], message: '毎月のときは第何週かを1つ以上選んでください' });
+    }
+    const seen = new Set<number>();
+    for (const [i, t] of p.dayTimes.entries()) {
+      if (seen.has(t.weekday)) {
+        ctx.addIssue({ code: 'custom', path: ['dayTimes', i], message: '同じ曜日の時刻が2つあります' });
+      }
+      seen.add(t.weekday);
+      if (t.earliestStart > t.latestStart) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['dayTimes', i, 'latestStart'],
+          message: '開始（遅）は開始（早）以降にしてください',
+        });
+      }
     }
   });
 export type Pattern = z.infer<typeof patternSchema>;
@@ -190,6 +234,24 @@ export const absenceSchema = z
     }
   });
 export type Absence = z.infer<typeof absenceSchema>;
+
+/**
+ * 〈利用者さん〉の休み（入院・ショートステイなど。PRD D65。ADR-0013）。from〜to（両端を含む）の訪問は消さずに
+ * 「休みのため無し」と派生で扱う（domain/leaves の leaveOn。compile が問題に入れない）
+ */
+export const clientLeaveSchema = z
+  .object({
+    id: idSchema,
+    clientId: idSchema,
+    from: dateSchema,
+    to: dateSchema,
+    /** 理由のメモ（例：入院） */
+    note: z.string().max(100),
+  })
+  .superRefine((l, ctx) => {
+    if (l.from > l.to) ctx.addIssue({ code: 'custom', path: ['to'], message: '終了日は開始日以降にしてください' });
+  });
+export type ClientLeave = z.infer<typeof clientLeaveSchema>;
 
 /** 手作業案。staffId（または未割当 '__none'）→ 訪問IDの列（開始時刻の順） */
 export const manualRoutesSchema = z.record(z.string(), z.array(idSchema));

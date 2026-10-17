@@ -1519,3 +1519,37 @@ a.icon-btn:hover {
     opacity: 0;
   }
 }
+
+/* 訪問先の決まりごと（PRD D66。ADR-0013。components/VisitRules.tsx） */
+.visit-rules {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+}
+.visit-rule {
+  display: grid;
+  grid-template-columns: 5.2em 1fr;
+  gap: 6px;
+  align-items: baseline;
+}
+.visit-rule dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sub);
+  font-weight: 700;
+}
+.visit-rule dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.visit-rule.is-caution dd {
+  color: #9a3412;
+  font-weight: 700;
+}
+.chip-leave {
+  background: #eef2f7;
+  color: #3f4f63;
+  border-color: #c9d3df;
+}

@@ -70,6 +70,9 @@ function repairPresets(presets: Preset[]): Preset[] {
  *   パターンの ID の重複は最初の1件、いない利用者さんのパターンは消す。パターン・訪問のいない種類（typeId）は null、
  *   パターンのいない人のいつもの担当（usualStaffId）は null、パターンの曜日は重なりを除いて小さい順。
  *   訪問の pattern.id がどのパターンでもなければ pattern を null（訪問は残す）
+ * - 第N曜日・曜日ごとの時刻（ADR-0013）：パターンの monthWeeks は重なりを除いて小さい順（毎週系なら []）、
+ *   dayTimes はパターンの曜日にあるものだけ・同じ曜日は最初の1件・曜日の順
+ * - 〈利用者さん〉の休み（ADR-0013）：いない〈利用者さん〉の休みは消し、ID の重複は最初の1件
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -95,12 +98,23 @@ export function repair(d: DemoData): DemoData {
       const typeId = knownType(p.typeId);
       const usualStaffId = p.usualStaffId !== null && staffIds.has(p.usualStaffId) ? p.usualStaffId : null;
       const weekdays = [...new Set(p.weekdays)].sort((a, b) => a - b);
+      const monthWeeks = p.repeat === 'monthly' ? [...new Set(p.monthWeeks)].sort((a, b) => a - b) : [];
+      const seenDays = new Set<number>();
+      const dayTimes = p.dayTimes
+        .filter((t) => {
+          if (!weekdays.includes(t.weekday) || seenDays.has(t.weekday)) return false;
+          seenDays.add(t.weekday);
+          return true;
+        })
+        .sort((a, b) => a.weekday - b.weekday);
+      const sameList = <T>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
       const same =
         typeId === p.typeId &&
         usualStaffId === p.usualStaffId &&
-        weekdays.length === p.weekdays.length &&
-        weekdays.every((w, i) => w === p.weekdays[i]);
-      return same ? p : { ...p, typeId, usualStaffId, weekdays };
+        sameList(weekdays, p.weekdays) &&
+        sameList(monthWeeks, p.monthWeeks) &&
+        sameList(dayTimes, p.dayTimes);
+      return same ? p : { ...p, typeId, usualStaffId, weekdays, monthWeeks, dayTimes };
     });
   const patternIds = new Set(patterns.map((p) => p.id));
 
@@ -130,6 +144,9 @@ export function repair(d: DemoData): DemoData {
   const absUnique = uniqueById(d.absences).filter((a) => staffIds.has(a.staffId));
   for (const a of absUnique) absMap.set(`${a.staffId}\u0000${a.date}`, a);
   const absences = absUnique.filter((a) => absMap.get(`${a.staffId}\u0000${a.date}`) === a);
+
+  // 〈利用者さん〉の休み（ADR-0013）：いない〈利用者さん〉の分は消し、ID の重複は最初の1件
+  const clientLeaves = uniqueById(d.clientLeaves).filter((l) => clientIds.has(l.clientId));
 
   /** その日の訪問だけ・どの列にも1回だけ */
   const onDate = (date: string, seen: Set<string>) => (id: string) => {
@@ -216,6 +233,7 @@ export function repair(d: DemoData): DemoData {
     visits,
     availability,
     absences,
+    clientLeaves,
     manualPlans,
     aiPlans: repairPlans(d.aiPlans),
     aiRuns,

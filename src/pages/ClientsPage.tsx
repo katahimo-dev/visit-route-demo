@@ -2,6 +2,7 @@ import {
   BadgeCheck,
   BookmarkCheck,
   BookmarkX,
+  DoorOpen,
   House,
   MapPin,
   Pencil,
@@ -18,13 +19,16 @@ import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../compon
 import { Check, PlaceEditor, TentativeMark } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
+import { VISIT_RULE_FIELDS } from '../components/VisitRules';
 import { type Client, clientSchema } from '../contracts/documents';
+import { leaveOn } from '../domain/leaves';
 import { jstDate } from '../domain/time';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
 import { matchClient, staffClientMap } from '../lib/search';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useDemoData } from '../store';
+import { ClientLeavesSection } from './ClientLeavesSection';
 import { PatternsSection } from './PatternsSection';
 import './settings.css';
 
@@ -43,6 +47,10 @@ const blank = (nextColor: number): Client => ({
   preferences: [],
   usualStaffId: null,
   tentative: false,
+  entryNote: '',
+  keyNote: '',
+  parkingNote: '',
+  cautionNote: '',
 });
 
 export default function ClientsPage() {
@@ -65,6 +73,7 @@ export default function ClientsPage() {
   const usualOf = useMemo(() => staffClientMap([], data.clients), [data.clients]);
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
   const clientItems = data.items.filter((i) => i.target === 'client');
+  const today = jstDate(Date.now());
   const itemById = new Map(data.items.map((i) => [i.id, i]));
 
   const save = () => {
@@ -224,6 +233,11 @@ export default function ClientsPage() {
                 </td>
                 <td>
                   {c.tentative && <span className="chip chip-warn">仮押さえ</span>}
+                  {leaveOn(data.clientLeaves, c.id, today) && (
+                    <span className="chip chip-warn" title={leaveOn(data.clientLeaves, c.id, today)?.note || undefined}>
+                      休み中
+                    </span>
+                  )}
                   {!c.active && <span className="chip">休止中</span>}
                 </td>
                 <td>
@@ -350,10 +364,37 @@ export default function ClientsPage() {
           </div>
 
           {isNew || !data.clients.some((x) => x.id === form.id) ? (
-            <Hint label="定期パターン">定期パターン（決まった曜日・時刻の訪問）は、保存してから足せます。</Hint>
+            <Hint label="定期パターン">
+              定期パターン（決まった曜日・時刻の訪問）と休み（入院・ショートステイなど）は、保存してから入れられます。
+            </Hint>
           ) : (
-            <PatternsSection client={form} />
+            <>
+              <PatternsSection client={form} />
+              <ClientLeavesSection client={form} />
+            </>
           )}
+
+          <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
+          <Hint>
+            入り方・鍵・駐車場・注意を書くと、{terms.staff}の画面と予定の画面の訪問に出ます（各200文字まで）。
+            実在の人の名前・住所などの個人情報は入れないでください。
+          </Hint>
+          <div className="form-grid" data-testid="visit-rules-form">
+            {VISIT_RULE_FIELDS.map((f) => (
+              <label key={f.key}>
+                <WithIcon icon={f.icon} size={14}>
+                  {f.label}
+                </WithIcon>
+                <input
+                  value={form[f.key]}
+                  maxLength={200}
+                  placeholder={f.placeholder}
+                  data-testid={`client-${f.key}`}
+                  onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                />
+              </label>
+            ))}
+          </div>
 
           <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
           <TraitsEditor items={clientItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />

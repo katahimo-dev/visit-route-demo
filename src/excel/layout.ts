@@ -54,13 +54,20 @@ export const CLIENT_TENTATIVE_COL = '仮押さえ';
  * 古いブックには無いので必須の列にしない（無ければ空）
  */
 export const CLIENT_KANA_COL = 'よみ';
-/** 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」） */
+/**
+ * 〈利用者さん〉の訪問先の決まりごと（PRD D66。ADR-0013）。書き出しは「メモ」の次に置く。
+ * 古いブックには無いので必須の列にしない（無ければ空）
+ */
+export const CLIENT_RULE_COLS = { entry: '入り方', key: '鍵', parking: '駐車場', caution: '注意' } as const;
+/** 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「メモ」の次に決まりごと） */
 export const clientExportCols = (): string[] => {
   const base: string[] = Object.values(CLIENT_COLS);
   const at = base.indexOf(CLIENT_COLS.active) + 1;
   const withTentative = [...base.slice(0, at), CLIENT_TENTATIVE_COL, ...base.slice(at)];
   const k = withTentative.indexOf(CLIENT_COLS.name) + 1;
-  return [...withTentative.slice(0, k), CLIENT_KANA_COL, ...withTentative.slice(k)];
+  const withKana = [...withTentative.slice(0, k), CLIENT_KANA_COL, ...withTentative.slice(k)];
+  const n = withKana.indexOf(CLIENT_COLS.note) + 1;
+  return [...withKana.slice(0, n), ...Object.values(CLIENT_RULE_COLS), ...withKana.slice(n)];
 };
 export const availabilityCols = (t: Terms) => ({ staff: t.staff, date: '日付', slots: '時間帯' });
 /** 欠勤（ADR-0011）：開始の空＝始業から、終了の空＝終業まで、両方空＝終日 */
@@ -95,6 +102,16 @@ export const patternCols = (t: Terms) => ({
   to: '終了日',
   usualStaff: 'いつもの担当',
   note: 'メモ',
+});
+/** 定期パターンの列のうち、ADR-0013 で足した任意の列（無い古いブックは毎週系・曜日ごとの時刻なし） */
+export const PATTERN_EXTRA_COLS = { monthWeeks: '第N週', dayTimes: '曜日ごとの時刻' } as const;
+/** 〈利用者さん〉の休み（ADR-0013）：開始日〜終了日（両端を含む）・理由 */
+export const clientLeaveCols = (t: Terms) => ({
+  id: 'ID',
+  client: t.client,
+  from: '開始日',
+  to: '終了日',
+  note: '理由',
 });
 /** 訪問の列のうち、種類（ADR-0012）。「種類」シートがあるブックだけで読む */
 export const VISIT_TYPE_COL = '種類';

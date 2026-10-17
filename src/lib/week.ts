@@ -7,11 +7,12 @@ import type { Problem } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import type { Item } from '../contracts/rules';
 import { availabilityOf, withoutAbsences } from '../domain/availability';
+import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
 import { type CompileInput, compile, scheduleRoute, VISIT_TYPE_RULE_ID } from '../matching';
-import { applyPatterns, splitPattern } from '../patterns';
+import { applyPatterns, splitPattern, timesOn } from '../patterns';
 import { fitsOf, placeVisit } from '../reassign';
 import { attempt, byDisplayName, byName, own } from './common';
 import { addRun, findRun, problemKey } from './runs';
@@ -56,6 +57,8 @@ export type Band = {
   start: number;
   end: number;
   source: BandSource;
+  /** 〈利用者さん〉の休み（ADR-0013）のため無し（計算に入らない。薄く出し、動かさない） */
+  leave?: boolean;
 };
 
 /** その日の今の案（無ければ確定した割当）と帯 */
@@ -67,7 +70,7 @@ export type WeekDay = {
   source: 'plan' | 'confirmed' | null;
   /** 担当 → 訪問ID の列（問題にある訪問だけ。未割当の列は除く） */
   routes: Routes;
-  /** 取り消しでない訪問の帯（開始の順） */
+  /** 取り消しでない訪問の帯（開始の順）。休みの訪問は leave 付きで、訪問の開始（早）に置く */
   bands: Band[];
 };
 
@@ -131,6 +134,18 @@ export function weekDay(data: DayInput, date: string, problem?: Problem | null):
   const bands: Band[] = data.visits
     .filter((v) => v.date === date && !v.cancelled)
     .map((v): Band => {
+      if (isOnLeave(data.clientLeaves, v)) {
+        const start = hhmmToMinutes(v.earliestStart);
+        return {
+          visitId: v.id,
+          date,
+          staffId: null,
+          start,
+          end: start + v.durationMinutes,
+          source: 'visit',
+          leave: true,
+        };
+      }
       const at = placed.get(v.id);
       if (at && source) return { visitId: v.id, date, staffId: at.staffId, start: at.start, end: at.end, source };
       const start = hhmmToMinutes(v.earliestStart);
@@ -254,7 +269,8 @@ export function moveFollowing(
   const since = date < origDate ? date : origDate;
   const fromWd = weekday(origDate);
   const toWd = weekday(date);
-  const times = shiftedTimes(p, start);
+  // 動かす曜日の時刻（曜日ごとの時刻があればそれ。ADR-0013）の幅を保つ。新しいパターンの共通の時刻になる
+  const times = shiftedTimes(timesOn(p, fromWd), start);
   const { id: _id, from: _from, ...rest } = p;
   // 動かす回は除いてから分ける
   const visits = d.visits.filter((x) => x.id !== visitId);
@@ -272,7 +288,14 @@ export function moveFollowing(
   );
   let change: PatternChange;
   if (others.length === 0) {
-    const split = splitPattern(input, p.id, { ...rest, ...times, weekdays: [toWd] }, since, today, newIds[0]);
+    const split = splitPattern(
+      input,
+      p.id,
+      { ...rest, ...times, weekdays: [toWd], dayTimes: [] },
+      since,
+      today,
+      newIds[0],
+    );
     const rid = split.patterns.some((x) => x.id === newIds[0]) ? newIds[0] : p.id;
     const rebuilt: Pattern = { ...split.patterns.find((x) => x.id === rid)!, from: date };
     const patterns = split.patterns.map((x) => (x.id === rid ? rebuilt : x));
@@ -282,8 +305,16 @@ export function moveFollowing(
     const more = expandSkipping(rebuilt, base, d.clients, { from: since, to: end }, today, skip);
     change = { patterns, visits: more.visits, added: more.added, removed: split.removed };
   } else {
-    const split = splitPattern(input, p.id, { ...rest, weekdays: others }, since, today, newIds[0]);
-    const moved: Pattern = { ...rest, ...times, id: newIds[1], weekdays: [toWd], from: date };
+    // ほかの曜日は時刻（曜日ごとの時刻も）を変えずに残し、動かした曜日の時刻の上書きは除く
+    const split = splitPattern(
+      input,
+      p.id,
+      { ...rest, weekdays: others, dayTimes: rest.dayTimes.filter((t) => t.weekday !== fromWd) },
+      since,
+      today,
+      newIds[0],
+    );
+    const moved: Pattern = { ...rest, ...times, id: newIds[1], weekdays: [toWd], dayTimes: [], from: date };
     const patterns = [...split.patterns];
     // 分けたパターン（無ければ元のパターン）のすぐあとに置く
     const anchor = patterns.findIndex((x) => x.id === newIds[0]);
@@ -585,6 +616,8 @@ export type ClientWeekItem = {
   typeId: string | null;
   /** 担当（null＝未割当・入らない） */
   staffId: string | null;
+  /** 〈利用者さん〉の休み（ADR-0013）のため無し */
+  leave?: boolean;
 };
 
 export type ClientWeekRow = {
@@ -620,6 +653,7 @@ export function clientWeekTable(
         end: b.end,
         typeId: v.typeId,
         staffId: b.staffId,
+        ...(b.leave ? { leave: true } : {}),
       });
     }
   }

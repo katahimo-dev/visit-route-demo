@@ -1,5 +1,6 @@
 // 定期パターン・訪問の種類の表示の文（ADR-0012。画面の純粋関数）
 import type { Pattern, VisitType } from '../contracts/documents';
+import { timesOn } from '../patterns';
 import { WEEKDAY_LABELS } from './common';
 
 /** 間隔の呼び方（1〜4週ごと） */
@@ -18,12 +19,37 @@ export function startText(x: Pick<Pattern, 'windowKind' | 'earliestStart' | 'lat
   return x.windowKind === 'fixed' ? x.earliestStart : `${x.earliestStart}〜${x.latestStart}の間`;
 }
 
-/** パターンの短い文（例：「月・木 10:00」、隔週なら「隔週 月 10:00」） */
+/** 毎月の第N週の文（[3, 4] → 「第3・第4」。ADR-0013） */
+export function monthWeeksLabel(weeks: readonly number[]): string {
+  return [...new Set(weeks)]
+    .sort((a, b) => a - b)
+    .map((n) => `第${n}`)
+    .join('・');
+}
+
+/** 繰り返し方の文（毎週は空、「隔週」「毎月 第3・第4」） */
+export function repeatText(p: Pick<Pattern, 'everyWeeks' | 'repeat' | 'monthWeeks'>): string {
+  if (p.repeat === 'monthly') return `毎月 ${monthWeeksLabel(p.monthWeeks)}`;
+  return p.everyWeeks === 1 ? '' : (EVERY_WEEKS_LABELS[p.everyWeeks] ?? `${p.everyWeeks}週ごと`);
+}
+
+/**
+ * パターンの短い文（例：「月・木 10:00」、隔週なら「隔週 月 10:00」、毎月なら「毎月 第3・第4 木 10:00」）。
+ * 曜日ごとの時刻があれば曜日ごとに時刻を並べる（「月 9:30・木 15:00」。ADR-0013）
+ */
 export function patternWhenText(
-  p: Pick<Pattern, 'weekdays' | 'everyWeeks' | 'windowKind' | 'earliestStart' | 'latestStart'>,
+  p: Pick<
+    Pattern,
+    'weekdays' | 'everyWeeks' | 'repeat' | 'monthWeeks' | 'dayTimes' | 'windowKind' | 'earliestStart' | 'latestStart'
+  >,
 ): string {
-  const every = p.everyWeeks === 1 ? '' : `${EVERY_WEEKS_LABELS[p.everyWeeks] ?? `${p.everyWeeks}週ごと`} `;
-  return `${every}${weekdaysText(p.weekdays)} ${startText(p)}`;
+  const head = repeatText(p);
+  const pre = head ? `${head} ` : '';
+  if (p.dayTimes.length === 0) return `${pre}${weekdaysText(p.weekdays)} ${startText(p)}`;
+  const days = [...new Set(p.weekdays)].sort((a, b) => a - b);
+  return `${pre}${days
+    .map((w) => `${WEEKDAY_LABELS[w] ?? '?'} ${startText({ windowKind: p.windowKind, ...timesOn(p, w) })}`)
+    .join('・')}`;
 }
 
 /** 日付の短い文（「11/14」） */

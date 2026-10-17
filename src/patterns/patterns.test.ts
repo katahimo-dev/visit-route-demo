@@ -17,6 +17,9 @@ const pat = (over: Partial<Pattern> = {}): Pattern => ({
   typeId: null,
   weekdays: [1],
   everyWeeks: 1,
+  repeat: 'weekly',
+  monthWeeks: [],
+  dayTimes: [],
   windowKind: 'fixed',
   earliestStart: '10:00',
   latestStart: '10:00',
@@ -294,5 +297,81 @@ describe('removePattern', () => {
     expect(own.map((v) => v.id)).toEqual(['2026-10-12_p1', '2026-10-21_p1']);
     expect(own.every((v) => v.pattern === null)).toBe(true);
     expect(r.visits.filter((v) => v.id.endsWith('_p2'))).toEqual(vs.filter((v) => v.id.endsWith('_p2')));
+  });
+});
+
+describe('毎月の第N曜日・曜日ごとの時刻（ADR-0013）', () => {
+  // 2026年10月の木曜は 1・8・15・22・29（第5あり）、11月は 5・12・19・26（第5なし）、12月は 3・10・17・24・31
+  it('毎月の第3・第4木曜だけ。第5の木曜は作らない', () => {
+    const p = pat({ weekdays: [4], repeat: 'monthly', monthWeeks: [3, 4], from: '2026-10-01' });
+    expect(dates(p, '2026-10-01', '2026-11-30')).toEqual(['2026-10-15', '2026-10-22', '2026-11-19', '2026-11-26']);
+    expect(occursOn(p, '2026-10-29')).toBe(false);
+    expect(occursOn(p, '2026-10-08')).toBe(false);
+  });
+
+  it('第5を選ぶと、第5のある月だけ作る（everyWeeks は見ない）', () => {
+    const p = pat({ weekdays: [4], repeat: 'monthly', monthWeeks: [5], everyWeeks: 3, from: '2026-10-01' });
+    expect(dates(p, '2026-10-01', '2026-12-31')).toEqual(['2026-10-29', '2026-12-31']);
+  });
+
+  it('毎月で複数の曜日（第1の月・水）。from・to の端を守る', () => {
+    const p = pat({ weekdays: [1, 3], repeat: 'monthly', monthWeeks: [1], from: '2026-10-05', to: '2026-11-04' });
+    // 10月の第1月曜 10/5・第1水曜 10/7、11月の第1月曜 11/2・第1水曜 11/4
+    expect(dates(p, '2026-10-01', '2026-12-31')).toEqual(['2026-10-05', '2026-10-07', '2026-11-02', '2026-11-04']);
+  });
+
+  it('毎週系（repeat が weekly）は今までと同じ。monthWeeks があっても見ない', () => {
+    const p = pat({ weekdays: [4], monthWeeks: [3], from: '2026-10-01' });
+    expect(dates(p, '2026-10-01', '2026-10-31')).toEqual([
+      '2026-10-01',
+      '2026-10-08',
+      '2026-10-15',
+      '2026-10-22',
+      '2026-10-29',
+    ]);
+  });
+
+  it('曜日ごとの時刻：月曜は 9:30、木曜は共通の 15:00（ID は日付_パターンID のまま）', () => {
+    const p = pat({
+      weekdays: [1, 4],
+      windowKind: 'window',
+      earliestStart: '15:00',
+      latestStart: '15:30',
+      dayTimes: [{ weekday: 1, earliestStart: '09:30', latestStart: '10:00' }],
+    });
+    const vs = expandPattern(p, { from: '2026-10-12', to: '2026-10-15' });
+    expect(vs.map((v) => [v.id, v.earliestStart, v.latestStart])).toEqual([
+      ['2026-10-12_p1', '09:30', '10:00'],
+      ['2026-10-15_p1', '15:00', '15:30'],
+    ]);
+  });
+
+  it('splitPattern で毎週を毎月の第4木曜に直すと、以降の回だけ新しい規則で作り直す', () => {
+    const p = pat({ weekdays: [4], from: '2026-10-01' });
+    const base = applyPatterns(input([p]), { from: '2026-10-12', to: '2026-11-30' }, TODAY);
+    const { id: _id, from: _from, ...rest } = p;
+    const c = splitPattern(
+      input([p], base.visits),
+      'p1',
+      { ...rest, repeat: 'monthly', monthWeeks: [4] },
+      '2026-10-20',
+      TODAY,
+      'p2',
+    );
+    const own = (id: string) =>
+      c.visits
+        .filter((v) => v.pattern?.id === id)
+        .map((v) => v.date)
+        .sort();
+    expect(own('p1')).toEqual(['2026-10-15']);
+    expect(own('p2')).toEqual(['2026-10-22', '2026-11-26']);
+    expect(c.removed.map((x) => x.date)).toEqual([
+      '2026-10-22',
+      '2026-10-29',
+      '2026-11-05',
+      '2026-11-12',
+      '2026-11-19',
+      '2026-11-26',
+    ]);
   });
 });

@@ -49,6 +49,10 @@ export function client(id: string, lat: number, lng: number, over: Partial<Clien
     preferences: [],
     usualStaffId: null,
     tentative: false,
+    entryNote: '',
+    keyNote: '',
+    parkingNote: '',
+    cautionNote: '',
     ...over,
   };
 }
@@ -91,6 +95,7 @@ export function makeData(over: Partial<DemoData> = {}): DemoData {
     visits: [],
     availability: [],
     absences: [],
+    clientLeaves: [],
     visitTypes: [],
     patterns: [],
     manualPlans: {},
