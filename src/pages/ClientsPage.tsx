@@ -605,7 +605,8 @@ export default function ClientsPage() {
 
           <SectionTitle icon={SlidersHorizontal}>{terms.staff}に求めること：必要条件</SectionTitle>
           <Hint>
-            例：性別が女性、資格に看護師を含む。「条件」の画面の「{terms.client}の必要条件」で、必須か重みかを決めます。
+            例：性別が女性、資格に看護師を含む。「条件の重み」の画面の「{terms.client}
+            の必要条件」で、必須か重みかを決めます。
           </Hint>
           <ConditionsEditor
             items={data.items}

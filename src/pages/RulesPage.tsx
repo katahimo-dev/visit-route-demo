@@ -84,7 +84,7 @@ export default function RulesPage() {
     <div className="stack">
       <PageHeader
         icon={SlidersHorizontal}
-        title="条件"
+        title="条件の重み"
         lead="重み1＝1件あたり移動10分ぶん。必須は守れなければ担当にしません"
       />
       <div className="card stack">

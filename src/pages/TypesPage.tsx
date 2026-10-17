@@ -122,7 +122,7 @@ export default function TypesPage() {
     <div className="stack">
       <PageHeader
         icon={Layers}
-        title="種類"
+        title="訪問の種類"
         lead={`訪問の種類（介護・リハビリなど）と、担当する${terms.staff}に必要な条件を決めます`}
         actions={
           <button
