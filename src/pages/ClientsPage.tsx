@@ -632,7 +632,11 @@ export default function ClientsPage() {
           <Hint label="相性について">相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。</Hint>
 
           <SectionTitle icon={House}>住所</SectionTitle>
-          <ClientPlaceEditor value={form.place} onChange={(place) => setForm((f) => (f ? { ...f, place } : f))} />
+          <ClientPlaceEditor
+            key={form.id}
+            value={form.place}
+            onChange={(place) => setForm((f) => (f ? { ...f, place } : f))}
+          />
         </SidePanel>
       )}
     </div>
