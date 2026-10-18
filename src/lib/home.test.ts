@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Absence, Staff } from '../contracts/documents';
 import { HOME_NEXT_MONTH_DAYS, homeDays, homeMonths, homeTasks, monthLabel } from './home';
-import type { DayStatus } from './month';
+import { type DayStatus, monthProgress } from './month';
 
 /** 日の状態（既定は訪問3件・確定済み・問題なし） */
 function st(date: string, x: Partial<DayStatus> = {}): DayStatus {
@@ -115,10 +115,38 @@ describe('homeTasks', () => {
     expect(today).toMatchObject({ tone: 'warn' });
     expect(today!.title).toContain('（未確定）');
     expect(today!.detail).toBe('訪問 3件・担当 3人・入らない 1件');
-    // 確定していない日は今日と15日の2日（月の画面の右の欄へ）
-    expect(conf).toMatchObject({ title: '10月の確定していない日 2日を確認', to: '/month?ym=2026-10&do=unconfirmed' });
-    expect(conf!.detail).toContain('未確定の変更あり 1日');
+    // 確定していない日は今日から17日までの4日（案の無い日も含む＝月の③と同じ。月の画面の右の欄へ）
+    expect(conf).toMatchObject({ title: '10月の確定していない日 4日を確認', to: '/month?ym=2026-10&do=unconfirmed' });
+    expect(conf!.detail).toBe('未確定 1日・未確定の変更あり 1日・案の無い日 2日。見直して「この割当で確定」');
     expect(create).toMatchObject({ detail: '案の無い日 2日', to: '/month?ym=2026-10&do=batch' });
+  });
+
+  it('確定していない日の日数・並びは月の「今月の準備」の③（monthProgress の unconfirmed）と同じ', () => {
+    const list = [
+      st(TODAY, { state: 'none' }),
+      st('2026-10-15', { state: 'confirmed' }),
+      st('2026-10-16', { state: 'plan' }),
+      st('2026-10-18', { state: 'diff' }),
+      st('2026-10-20', { state: 'none', count: 0 }),
+    ];
+    const byDate = new Map(list.map((x) => [x.date, x]));
+    const progress = monthProgress(
+      { ...data, visits: [], aiPlans: {}, manualPlans: {}, clientLeaves: [] },
+      '2026-10',
+      TODAY,
+      undefined,
+      (d) => byDate.get(d) ?? st(d, { count: 0, state: 'none' }),
+    );
+    const r = homeTasks({
+      today: TODAY,
+      statuses: list,
+      months: [{ ym: '2026-10', canExpand: 0 }],
+      todayStaff: 0,
+      data,
+    });
+    const conf = r.tasks.find((t) => t.kind === 'confirm')!;
+    expect(progress.unconfirmed).toEqual([TODAY, '2026-10-16', '2026-10-18']);
+    expect(conf.title).toBe(`10月の確定していない日 ${progress.unconfirmed.length}日を確認`);
   });
 
   it('要対応が2日以上なら月の画面の要対応へ。欠勤（希望休は除く）も数える', () => {

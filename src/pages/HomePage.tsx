@@ -20,8 +20,9 @@ import { jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import { type HomeTask, type HomeTaskKind, homeDays, homeMonths, homeTasks } from '../lib/home';
 import { dayPlanOf, expandMonth } from '../lib/month';
-import { useDayModel } from '../lib/useDayModel';
+import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
+import { useDemoData } from '../store';
 import './home.css';
 
 const KIND_ICON: Record<HomeTaskKind, LucideIcon> = {
@@ -39,7 +40,9 @@ const KIND_ICON: Record<HomeTaskKind, LucideIcon> = {
 export default function HomePage() {
   const today = jstDate(Date.now());
   const { setDate } = useDay();
-  const { data, compileInput } = useDayModel(today);
+  const { data } = useDemoData();
+  // compile が読むデータだけ（今日の問題は useDayStatuses が案のある日だけ作るので、ここでは compile しない）
+  const compileInput = useCompileInput(data);
   const terms = data.org.terms;
   const days = useMemo(() => homeDays(today), [today]);
   const perDay = useDayStatuses(data, compileInput, days);
@@ -92,7 +95,7 @@ export default function HomePage() {
         <h2 id={anytimeId} className="home-section-title">
           いつでも
         </h2>
-        <ul className="home-tasks home-anytime" data-testid={anytimeId}>
+        <ul className="home-tasks home-anytime" data-testid="home-anytime">
           <li>
             <EntryCard
               to="/plan"

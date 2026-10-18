@@ -79,7 +79,7 @@ function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfi
  * 次の一手のカード（PRD D141〜D143）。並びは 要対応（月ごと）→ 今日の予定 → 確定していない日（月ごと）→ 案を作る（月ごと）。
  * - 要対応：lib/month の attentionList（月の画面の要対応と同じ件数）
  * - 今日の予定：訪問の件数・担当の人数・入らない訪問の件数。案が無い・入らない・欠勤の人に残る・必須の違反があれば warn
- * - 確定していない日：訪問があって案はあるが「確定済み」でない日（未確定の変更ありを含む）
+ * - 確定していない日：訪問があって「確定済み」でない日（案の無い日・未確定の変更ありを含む。lib/month の monthProgress の unconfirmed と同じ）
  * - 案を作る：定期パターンから作れる訪問がある、または訪問があって案の無い日がある月（月の「まとめて作る」へ）
  * ready は手当て・やることが1つも無いとき（今日の予定の知らせだけ）
  */
@@ -112,16 +112,21 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
         ),
       });
     }
-    // 確定していない日（案はある）
+    // 確定していない日（訪問があって「確定済み」でない日。案の無い日も含む＝月の「今月の準備」の③・右の欄と同じ日・同じ並び）
     const withVisits = days.filter((s) => s.count > 0);
-    const unconfirmed = withVisits.filter((s) => s.state === 'plan' || s.state === 'diff');
+    const unconfirmed = withVisits.filter((s) => s.state !== 'confirmed');
     if (unconfirmed.length > 0) {
-      const diff = unconfirmed.filter((s) => s.state === 'diff').length;
+      const n = (state: DayStatus['state']) => unconfirmed.filter((s) => s.state === state).length;
+      const parts = [
+        n('plan') > 0 ? `未確定 ${n('plan')}日` : '',
+        n('diff') > 0 ? `未確定の変更あり ${n('diff')}日` : '',
+        n('none') > 0 ? `案の無い日 ${n('none')}日` : '',
+      ].filter(Boolean);
       confirm.push({
         kind: 'confirm',
         tone: 'todo',
         title: `${m}の確定していない日 ${unconfirmed.length}日を確認`,
-        detail: `案はできています。見直して「この割当で確定」${diff > 0 ? `（未確定の変更あり ${diff}日）` : ''}`,
+        detail: `${parts.join('・')}。見直して「この割当で確定」`,
         ...target(
           unconfirmed.map((s) => s.date),
           ym,

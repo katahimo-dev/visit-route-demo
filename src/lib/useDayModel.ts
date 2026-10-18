@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { DemoData } from '../contracts/data';
 import type { Absence, Client, Staff, Visit } from '../contracts/documents';
 import type { Problem, ScoreScale } from '../contracts/problem';
 import { availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
@@ -60,36 +61,7 @@ export function useDayModel(date: string) {
     );
   }, [staff, data.availability, data.absences, date]);
   /** compile が読むデータだけ（案・記録・プリセットの更新では変わらない） */
-  const compileInput: CompileInput = useMemo(
-    () => ({
-      org: data.org,
-      items: data.items,
-      rules: data.rules,
-      staff: data.staff,
-      clients: data.clients,
-      compat: data.compat,
-      visits: data.visits,
-      availability: data.availability,
-      absences: data.absences,
-      visitTypes: data.visitTypes,
-      patterns: data.patterns,
-      clientLeaves: data.clientLeaves,
-    }),
-    [
-      data.org,
-      data.items,
-      data.rules,
-      data.staff,
-      data.clients,
-      data.compat,
-      data.visits,
-      data.availability,
-      data.absences,
-      data.visitTypes,
-      data.patterns,
-      data.clientLeaves,
-    ],
-  );
+  const compileInput = useCompileInput(data);
   const compiled = useMemo(() => attempt(() => compile(compileInput, date)), [compileInput, date]);
   /** 点数の基準のプリセット（ADR-0010。プリセットが0件なら null＝いまの条件そのもの） */
   const scorePreset = useMemo(
@@ -143,6 +115,43 @@ export function useDayModel(date: string) {
     scoreRulerName: scorePreset?.name ?? 'いまの条件',
     savedView,
   };
+}
+
+/**
+ * compile が読むデータだけを取り出す（案・記録・プリセットの更新では変わらない）。
+ * その日の問題を compile しないので、日を選ばない画面（ホーム。PRD D141）はこれだけを使う
+ */
+export function useCompileInput(data: DemoData): CompileInput {
+  return useMemo(
+    () => ({
+      org: data.org,
+      items: data.items,
+      rules: data.rules,
+      staff: data.staff,
+      clients: data.clients,
+      compat: data.compat,
+      visits: data.visits,
+      availability: data.availability,
+      absences: data.absences,
+      visitTypes: data.visitTypes,
+      patterns: data.patterns,
+      clientLeaves: data.clientLeaves,
+    }),
+    [
+      data.org,
+      data.items,
+      data.rules,
+      data.staff,
+      data.clients,
+      data.compat,
+      data.visits,
+      data.availability,
+      data.absences,
+      data.visitTypes,
+      data.patterns,
+      data.clientLeaves,
+    ],
+  );
 }
 
 /** 訪問ID → 担当 */

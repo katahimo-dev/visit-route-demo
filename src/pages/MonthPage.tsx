@@ -481,7 +481,7 @@ export default function MonthPage() {
   const noVisitsWhy = futureVisits === 0 ? '定期パターンが無いか、この月の訪問がありません' : null;
 
   // ---- ホームから来たときの操作（PRD D143。?do=）----
-  // batch：まとめて作るの欄を開く（見出しのボタンと同じ）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
+  // batch：まとめて作るの欄を「まだ案の無い日だけ」で開く（見出しのボタンと同じ欄。対象の日が無ければ開かない）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
   // 1回だけ行い、URL から ?do= を消す（戻る・再読込で繰り返さない）
   const doParam = params.get('do');
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
@@ -492,7 +492,8 @@ export default function MonthPage() {
       return;
     }
     patchParams({ do: null });
-    if (doParam === 'batch' && !noVisitsWhy && !runningRef.current) {
+    // 開かないとき：この月に訪問が無い・作っている間・「まだ案の無い日だけ」の対象の日が無い（D143）
+    if (doParam === 'batch' && !noVisitsWhy && !runningRef.current && targetsOf('empty').length > 0) {
       setError(null);
       setMode('empty');
       setPanel(true);

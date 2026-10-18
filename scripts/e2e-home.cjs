@@ -137,25 +137,44 @@ async function firstState(page) {
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
   const picked = await page.locator('.date-switch select').inputValue();
   check(picked === TODAY, '今日のカード：日の画面で今日を選んでいる', picked);
-  // 案ができたらホームの今日のカードは「未確定」、確定していない日のカード（1日なので日の画面へ）
+  // 案ができたらホームの今日のカードは「未確定」。確定していない日は案の無い日も含めて数える（月の③と同じ。PR #36 のレビュー）
   await open(page, '/home');
   const list2 = await tasks(page);
   const today2 = list2.find((t) => t.kind === 'today');
   check(!!today2 && /（未確定）/.test(today2.title), '案ができたら今日のカードは「未確定」', today2);
-  const conf = list2.find((t) => t.kind === 'confirm');
-  check(!!conf && /確定していない日 1日/.test(conf.title), '確定していない日 1日のカード', conf);
   const todayText = await page.locator('[data-kind="today"] .sub').innerText();
   check(/^訪問 \d+件・担当 \d+人・入らない \d+件/.test(todayText), '今日の要約：訪問・担当・入らない', todayText);
+  const confDays = async () => {
+    const t = (await tasks(page)).find((x) => x.kind === 'confirm');
+    const m = t && /確定していない日 (\d+)日/.exec(t.title);
+    return m ? Number(m[1]) : 0;
+  };
+  const n2 = await confDays();
+  check(n2 >= 2, '確定していない日のカード（案の無い日も含む）', n2);
+  // カード → 月の画面の右の欄。同じ日数が並び、③のボタンも同じ日数
   await page.locator('[data-kind="confirm"]').click();
-  await page.waitForURL(/#\/plan/);
-  check(true, '確定していない日（1日）→ 日の画面');
-  // 確定すると今日のカードは「確定済み」
+  await page.waitForURL(/#\/month/);
+  await page.getByTestId('month-unconfirmed').waitFor({ timeout: 10000 });
+  await page.waitForTimeout(300);
+  const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
+  const prep = await page.getByTestId('prep-confirm').innerText();
+  check(listed === n2 && prep.includes(`確定していない日（${n2}日）`), 'ホームの日数＝月の右の欄の日数＝③の日数', {
+    home: n2,
+    listed,
+    prep,
+  });
+  // 確定すると今日のカードは「確定済み」、確定していない日は1日減る
+  await page.goto(`${BASE}#/plan`);
   await page.getByTestId('adopt').click();
   await page.waitForTimeout(400);
   await open(page, '/home');
   const today3 = (await tasks(page)).find((t) => t.kind === 'today');
   check(!!today3 && /（確定済み）/.test(today3.title), '確定したら今日のカードは「確定済み」', today3);
-  check(!(await tasks(page)).some((t) => t.kind === 'confirm'), '確定したら確定していない日のカードは消える');
+  check((await confDays()) === n2 - 1, '確定したら確定していない日は1日減る', await confDays());
+  check(
+    (await page.getByTestId('home-anytime').locator('a').count()) === 4,
+    'いつでもの入口が4つ（固定の data-testid）',
+  );
   await page.screenshot({ path: path.join(OUT_DIR, 'home-after.png'), fullPage: true });
 }
 
