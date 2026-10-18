@@ -1,0 +1,271 @@
+// コマンドパレット（Ctrl+K。PRD D181〜D183。ADR-0027）の中身と絞り込みを決める純粋関数。
+// 行き先は今ある URL だけ（画面・`?do=` の入口・`?id=` の閲覧の欄）。データは書き換えない
+import type { Client, Staff, Terms } from '../contracts/documents';
+import { STAGE_LABELS } from './clientStage';
+import { addMonths, ymOf } from './month';
+import { absenceHref, isNavAction, type MenuItem, type NavSection } from './nav';
+import { normalizeKana } from './search';
+
+/** 候補の種類（出す順）：操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉 */
+export type PaletteKind = 'action' | 'screen' | 'client' | 'staff';
+export const PALETTE_KINDS: readonly PaletteKind[] = ['action', 'screen', 'client', 'staff'];
+
+/** 候補の1件 */
+export type PaletteItem = {
+  /** 一覧の中で一意（option の id に使う） */
+  id: string;
+  kind: PaletteKind;
+  /** 出す名前 */
+  label: string;
+  /** 名前の右の小さな補足（グループ・よみ・段階） */
+  hint: string;
+  /** 移る先（HashRouter の中の URL） */
+  to: string;
+  /** 移る前に選ぶ日付（日の画面へ移るもの） */
+  date?: string;
+  /** 比べる形（normalizeKana）にそろえた語：名前・よみ・別名。先頭が名前 */
+  keys: readonly string[];
+};
+
+/** 人の候補を種類ごとにいくつまで出すか（残りは「ほか N人」） */
+export const PALETTE_PEOPLE_LIMIT = 8;
+
+/** 候補を作る（語を比べる形にそろえておく。打つたびにそろえ直さない） */
+export function paletteItem(raw: Omit<PaletteItem, 'keys'> & { words?: readonly string[] }): PaletteItem {
+  const { words = [], ...rest } = raw;
+  const keys = [...new Set([raw.label, ...words].map(normalizeKana).filter((k) => k !== ''))];
+  return { ...rest, keys };
+}
+
+/** 種類ごとの見出し（呼び方は terms） */
+export function paletteKindLabel(kind: PaletteKind, terms: Pick<Terms, 'client' | 'staff'>): string {
+  if (kind === 'action') return '操作';
+  if (kind === 'screen') return '画面';
+  return kind === 'client' ? terms.client : terms.staff;
+}
+
+/** 画面の名前の読み・別名（ひらがなで打っても引けるように） */
+const SCREEN_WORDS: Record<string, readonly string[]> = {
+  '/home': ['ほーむ', 'きょうやること', '今日やること'],
+  '/month': ['つき', 'げつ', 'かれんだー', '月の予定'],
+  '/week': ['しゅう', '週の予定', 'じかんじく'],
+  '/plan': ['ひ', 'にち', '日の予定', 'わりあて'],
+  '/compare': ['あんをくらべる', 'ひかく', '比較'],
+  '/vacancy': ['あきじょうきょう', 'といあわせ', '問い合わせ'],
+  '/clients': ['いちらん'],
+  '/compat': ['あいしょう'],
+  '/staff': ['いちらん'],
+  '/availability': ['かどうじかん'],
+  '/workload': ['かどうのみこみ'],
+  '/rules': ['じょうけんのおもみ', 'ぷりせっと'],
+  '/types': ['ほうもんのしゅるい'],
+  '/items': ['とくせいのこうもく'],
+  '/data': ['でーた', 'かきだし', 'よみこみ', 'ばっくあっぷ', 'えくせる', 'Excel'],
+};
+
+/** 画面の候補：メニューの項目のうち操作でないもの（メニューと同じ名前・同じ並び。補足はグループの見出し） */
+export function paletteScreens(sections: readonly NavSection<MenuItem>[]): PaletteItem[] {
+  return sections.flatMap((g) =>
+    g.items
+      .filter((i) => !isNavAction(i.to))
+      .map((i) =>
+        paletteItem({
+          id: `screen:${i.to}`,
+          kind: 'screen',
+          label: i.label,
+          hint: g.title ?? '',
+          to: i.to,
+          words: [...(g.title ? [g.title] : []), ...(SCREEN_WORDS[i.to] ?? [])],
+        }),
+      ),
+  );
+}
+
+/**
+ * 操作の候補（区切り1〜5 で足した入口。PRD D182）：欠勤・キャンセルを登録・今日の予定・今月（と来月）の案をまとめて作る・
+ * 要対応・確定していない日・条件が変わった日を作り直す・問い合わせに答える。today は日本時間の今日
+ */
+export function paletteActions(today: string): PaletteItem[] {
+  const ym = ymOf(today);
+  const next = addMonths(ym, 1);
+  const monthNo = (m: string) => Number(m.slice(5, 7));
+  const month = (op: string, m = ym) => `/month?ym=${m}&do=${op}`;
+  return [
+    paletteItem({
+      id: 'action:absence',
+      kind: 'action',
+      label: '欠勤・キャンセルを登録',
+      hint: '今日の日の画面',
+      to: absenceHref(today),
+      date: today,
+      words: ['けっきん', 'きゃんせる', 'やすみ', 'きゅうなけっきん', 'とうじつのたいおう', '当日の対応'],
+    }),
+    paletteItem({
+      id: 'action:today',
+      kind: 'action',
+      label: '今日の予定を見る',
+      hint: '日の画面',
+      to: '/plan',
+      date: today,
+      words: ['きょうのよてい', 'ひのよてい'],
+    }),
+    paletteItem({
+      id: 'action:batch',
+      kind: 'action',
+      label: `${monthNo(ym)}月の案をまとめて作る`,
+      hint: '月の画面',
+      to: month('batch'),
+      words: ['こんげつ', '今月', 'まとめてつくる', 'あんをつくる', 'つきをくむ'],
+    }),
+    paletteItem({
+      id: 'action:batch-next',
+      kind: 'action',
+      label: `${monthNo(next)}月の案をまとめて作る`,
+      hint: '月の画面',
+      to: month('batch', next),
+      words: ['らいげつ', '来月', 'まとめてつくる', 'あんをつくる', 'つきをくむ'],
+    }),
+    paletteItem({
+      id: 'action:attention',
+      kind: 'action',
+      label: '要対応を見る',
+      hint: '月の画面',
+      to: month('attention'),
+      words: ['ようたいおう'],
+    }),
+    paletteItem({
+      id: 'action:unconfirmed',
+      kind: 'action',
+      label: '確定していない日を見る',
+      hint: '月の画面',
+      to: month('unconfirmed'),
+      words: ['かくてい', 'みかくてい', '未確定'],
+    }),
+    paletteItem({
+      id: 'action:stale',
+      kind: 'action',
+      label: '条件が変わった日を作り直す',
+      hint: '月の画面',
+      to: month('stale'),
+      words: ['つくりなおす', 'じょうけんがかわった'],
+    }),
+    paletteItem({
+      id: 'action:vacancy',
+      kind: 'action',
+      label: '問い合わせに答える',
+      hint: '空き状況',
+      to: '/vacancy',
+      words: ['といあわせ', 'あきじょうきょう', '空き状況'],
+    }),
+  ];
+}
+
+/**
+ * 人の候補：〈利用者さん〉（名前・よみ。利用中でなければ段階を添える）と〈スタッフ〉（名前。よみは持たない）。
+ * 選ぶと一覧の画面の閲覧の欄（`?id=`。PRD D127）
+ */
+export function palettePeople(
+  clients: readonly Pick<Client, 'id' | 'displayName' | 'kana' | 'stage'>[],
+  staff: readonly Pick<Staff, 'id' | 'name' | 'active'>[],
+  terms: Pick<Terms, 'client' | 'staff'>,
+): PaletteItem[] {
+  return [
+    ...clients.map((c) =>
+      paletteItem({
+        id: `client:${c.id}`,
+        kind: 'client',
+        label: c.displayName,
+        hint: [c.kana, c.stage === 'active' ? '' : STAGE_LABELS[c.stage]].filter(Boolean).join('・'),
+        to: `/clients?id=${encodeURIComponent(c.id)}`,
+        words: [c.kana],
+      }),
+    ),
+    ...staff.map((s) =>
+      paletteItem({
+        id: `staff:${s.id}`,
+        kind: 'staff',
+        label: s.name,
+        hint: s.active ? terms.staff : `${terms.staff}・休止中`,
+        to: `/staff?id=${encodeURIComponent(s.id)}`,
+      }),
+    ),
+  ];
+}
+
+/** 絞り込んだ結果：種類ごとのまとまり（空のまとまりは出さない）と、上から順の並び（矢印で動く順） */
+export type PaletteResult = {
+  groups: { kind: PaletteKind; items: PaletteItem[]; rest: number }[];
+  flat: PaletteItem[];
+};
+
+/** 打った文字を語に分ける（空白で区切り、比べる形にそろえる） */
+export function paletteTerms(query: string): string[] {
+  return query
+    .split(/[\s　]+/)
+    .map(normalizeKana)
+    .filter((t) => t !== '');
+}
+
+/**
+ * 絞り込む（PRD D182）：語がすべて、どれかの語（名前・よみ・別名）に含まれるもの。
+ * 種類の順（操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉）に、種類の中は先頭が一致するもの → それ以外（同じ組は渡した順）。
+ * 打っていないときは操作と画面だけ（人は出さない）。人は種類ごと limit 人まで（残りは rest に数だけ）
+ */
+export function filterPalette(
+  items: readonly PaletteItem[],
+  query: string,
+  limit: number = PALETTE_PEOPLE_LIMIT,
+): PaletteResult {
+  const terms = paletteTerms(query);
+  const whole = terms.join('');
+  const groups: PaletteResult['groups'] = [];
+  for (const kind of PALETTE_KINDS) {
+    const people = kind === 'client' || kind === 'staff';
+    if (people && terms.length === 0) continue;
+    const head: PaletteItem[] = [];
+    const tail: PaletteItem[] = [];
+    for (const it of items) {
+      if (it.kind !== kind) continue;
+      if (!terms.every((t) => it.keys.some((k) => k.includes(t)))) continue;
+      if (whole !== '' && it.keys.some((k) => k.startsWith(whole))) head.push(it);
+      else tail.push(it);
+    }
+    const all = head.concat(tail);
+    if (all.length === 0) continue;
+    const shown = people ? all.slice(0, limit) : all;
+    groups.push({ kind, items: shown, rest: all.length - shown.length });
+  }
+  return { groups, flat: groups.flatMap((g) => g.items) };
+}
+
+/** 矢印で選ぶ位置を動かす（端で反対の端へ回る。候補が無ければ -1） */
+export function moveActive(index: number, count: number, delta: 1 | -1): number {
+  if (count <= 0) return -1;
+  if (index < 0) return delta === 1 ? 0 : count - 1;
+  return (index + delta + count) % count;
+}
+
+/** キーの押し方（KeyboardEvent の必要なところだけ） */
+export type ShortcutKey = {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  isComposing?: boolean;
+};
+
+/**
+ * パレットを開く・閉じるキーか（PRD D181）：mac は ⌘K、ほかは Ctrl+K（Shift・Alt が付いていたら違う）。
+ * mac の Ctrl+K（入力欄で行末まで消す）は横取りしない。日本語の変換中は違う
+ */
+export function isPaletteShortcut(e: ShortcutKey, isMac: boolean): boolean {
+  if (e.isComposing || e.altKey || e.shiftKey) return false;
+  if (e.key !== 'k' && e.key !== 'K') return false;
+  return isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+}
+
+/** mac か（キーの印「⌘K」と、⌘ と Ctrl のどちらで開くか） */
+export function isMacPlatform(platform: string): boolean {
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}

@@ -242,7 +242,7 @@ export default function StaffPage() {
     <div className="stack">
       <PageHeader
         icon={UserRound}
-        title={terms.staff}
+        title={`${terms.staff}一覧`}
         lead={`${terms.staff}の勤務・特性・条件を決めます`}
         actions={
           <button

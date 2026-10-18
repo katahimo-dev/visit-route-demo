@@ -583,8 +583,8 @@ export default function ComparePage() {
     <div className="stack" style={{ minWidth: 0 }}>
       <PageHeader
         icon={GitCompareArrows}
-        title="比較"
-        lead="その日の、条件を変えたAI案を2つ選んで比べます（日の画面の「案を変える」の「2つの案を比べる」から開きます。案が1つならここでもう1案作れます）"
+        title="案を比べる"
+        lead="選んでいる日の、条件を変えたAI案を2つ選んで比べます（メニューの「案を比べる」か、日の画面の「案を変える」の「2つの案を比べる」から開きます。案が1つならここでもう1案作れます）"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
             <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>

@@ -911,6 +911,25 @@ tbody tr:hover td {
     white-space: nowrap;
     font-size: 1rem;
   }
+  /* 見出し・項目名（PRD D179）：それぞれひとまとまりで、入りきらなければ項目名を次の行へ（2行まで） */
+  .m-screen-name:has(.m-screen-item) {
+    white-space: normal;
+    line-height: 1.2;
+  }
+  .m-screen-group,
+  .m-screen-item {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .m-screen-group {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--sub);
+  }
   .m-menu-btn {
     display: inline-flex;
     align-items: center;
