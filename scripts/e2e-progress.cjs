@@ -106,6 +106,21 @@ async function bandNumbers(page) {
     };
   });
 }
+/**
+ * 帯からまとめて作るの欄を開いたときの確かめ：作っていない訪問・案の無い日・確定していない日のどれかがあれば欄が開き、
+ * どれも無ければ開かずに知らせ（月末で今日しか残っていないときなど。PRD D153）
+ */
+async function expectBatch(page, n, name) {
+  const opens = n.unconfirmed > 0 || n.planned < n.days || /あと/.test(n.visits);
+  if (opens) {
+    await batchPanel(page, YM).waitFor({ timeout: 10000 });
+    check(true, `${name}：まとめて作るの欄が開く`);
+    return true;
+  }
+  await page.locator('.toast').first().waitFor({ timeout: 5000 });
+  check((await batchPanel(page, YM).count()) === 0, `${name}：作る日が無いので欄を開かず知らせ`);
+  return false;
+}
 /** まとめて作るの欄（SidePanel） */
 const batchPanel = (page, ym) => page.getByRole('dialog', { name: `${monthNo(ym)}月の案をまとめて作る` });
 
@@ -146,6 +161,32 @@ async function monthEntry(page) {
   await page.waitForTimeout(300);
   const att = await page.getByTestId('month-attention').locator('li').count();
   check(att === nums.attention, '月：帯の要対応＝右の欄の要対応', { band: nums.attention, listed: att });
+  // 見出しの下の要約は月全体で、帯と同じ言葉（訪問・案のある日）を並べない（PR #38 のレビュー）
+  const sum = await page.getByTestId('month-summary').innerText();
+  check(
+    !/訪問|案のある日/.test(sum) && /月全体：入らない/.test(sum),
+    '月：要約は帯に無いもの（月全体の入らない など）だけ',
+    sum,
+  );
+  // 数字のリンクは押すと何が起きるかを読み上げる
+  const label = await page.getByTestId('band-plans').getAttribute('aria-label');
+  check(/^案を作った日 \d+\/\d+日.*。まとめて作るを開く$/.test(label ?? ''), '月：数字のリンクの aria-label', label);
+  check(
+    (await page.getByTestId('band-live').count()) === 1 && (await page.getByTestId('band-live').innerText()) === '',
+    '月：読み上げの領域は最初から空で置く',
+  );
+  // Ctrl+クリックはブラウザに任せる（新しいタブで月の画面。この画面の欄は開かない）
+  const [popup] = await Promise.all([
+    page.context().waitForEvent('page', { timeout: 5000 }),
+    page.getByTestId('band-confirm').click({ modifiers: ['ControlOrMeta'] }),
+  ]);
+  await popup.waitForURL(/#\/month/, { timeout: 10000 }).catch(() => {});
+  check(
+    /#\/month\?ym=/.test(decodeURIComponent(popup.url())) && hashOf(page) === `#/month?ym=${YM}`,
+    '月：Ctrl+クリックは新しいタブで開く（この画面はそのまま）',
+    popup.url(),
+  );
+  await popup.close();
 }
 
 // ---- 来月：作っていない訪問があれば「あと N件」、欄の「訪問だけ作る」 ----
@@ -225,16 +266,17 @@ async function dayConfirm(page) {
     '月・週・日の帯は同じ月の同じ数',
     { day: pick(n1), week: pick(w), month: pick(m) },
   );
+  // まだ案の無い日があれば「まとめて作る」（月末で今日しか残っていなければ、案はもう全部ある）
+  const kind = await page.getByTestId('band-next').getAttribute('data-kind');
   check(
-    (await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch',
-    'まだ案の無い日があれば、どの画面でも次の一手は「まとめて作る」',
+    n1.planned < n1.days ? kind === 'batch' : kind !== 'batch',
+    'まだ案の無い日があれば、どの画面でも次の一手は「まとめて作る」（無ければ出さない）',
+    { kind, planned: n1.planned, days: n1.days },
   );
   await open(page, '/home', '[data-testid="home-tasks"]');
-  const title = await page
-    .locator('[data-kind="confirm"] strong')
-    .filter({ hasText: `${monthNo(YM)}月の確定していない日` })
-    .innerText();
-  const homeN = Number(/(\d+)日を確認/.exec(title)?.[1] ?? -1);
+  const card = page.locator('[data-kind="confirm"] strong').filter({ hasText: `${monthNo(YM)}月の確定していない日` });
+  const title = (await card.count()) > 0 ? await card.innerText() : '';
+  const homeN = Number(/(\d+)日を確認/.exec(title)?.[1] ?? 0);
   check(homeN === n1.unconfirmed, 'ホームの確定していない日＝帯の確定していない日', {
     home: homeN,
     band: n1.unconfirmed,
@@ -244,6 +286,7 @@ async function dayConfirm(page) {
 // ---- 週・日の帯から月の画面の欄へ（?do=） ----
 async function links(page) {
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
+  const nw = await bandNumbers(page);
   check(
     !/btn-primary/.test((await page.getByTestId('band-next').getAttribute('class')) ?? ''),
     '週：帯のボタンは主ボタンにしない（画面の主ボタンと重ねない）',
@@ -251,8 +294,8 @@ async function links(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'week-band.png') });
   await page.getByTestId('band-plans').click();
   await page.waitForURL(/#\/month/);
-  await batchPanel(page, YM).waitFor({ timeout: 10000 });
-  check(hashOf(page) === `#/month?ym=${YM}`, '週の帯の「案」→ 月の画面のまとめて作るの欄、?do= は消える', hashOf(page));
+  await expectBatch(page, nw, '週の帯の「案」→ 月の画面');
+  check(hashOf(page) === `#/month?ym=${YM}`, '週の帯の「案」→ 月の画面、?do= は消える', hashOf(page));
   await page.keyboard.press('Escape');
 
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
@@ -270,7 +313,7 @@ async function links(page) {
   const n = await bandNumbers(page);
   await page.getByTestId('band-confirm').click();
   await page.waitForURL(/#\/month/);
-  await page.getByTestId('month-unconfirmed').waitFor({ timeout: 10000 });
+  await page.locator('.month-aside-title').filter({ hasText: '確定していない日' }).waitFor({ timeout: 10000 });
   const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
   check(
     hashOf(page) === `#/month?ym=${YM}` && listed === n.unconfirmed,
@@ -278,11 +321,13 @@ async function links(page) {
     { hash: hashOf(page), listed, band: n.unconfirmed },
   );
   await open(page, '/plan', '[data-testid="band-day"]');
-  await page.getByTestId('band-next').click();
-  await page.waitForURL(/#\/month/);
-  await batchPanel(page, YM).waitFor({ timeout: 10000 });
-  check(true, '日の帯の次の一手「まとめて作る」→ 月の画面の欄');
-  await page.keyboard.press('Escape');
+  if ((await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch') {
+    await page.getByTestId('band-next').click();
+    await page.waitForURL(/#\/month/);
+    await batchPanel(page, YM).waitFor({ timeout: 10000 });
+    check(true, '日の帯の次の一手「まとめて作る」→ 月の画面の欄');
+    await page.keyboard.press('Escape');
+  }
 }
 
 // ---- 週は選んでいる日付の月（月をまたぐ週） ----
@@ -358,6 +403,26 @@ async function perf(page) {
   }
   const n = await bandNumbers(page);
   check(n.planned === n.days && n.next !== 'batch', '案が全部あれば次の一手は「まとめて作る」でない', n);
+  // 済んだ「案 ✓」から開いても、既定は「まだ案の無い日だけ」（作り直しは利用者が選んだときだけ。PR #38 のレビュー）
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
+  check(/済/.test(await page.getByTestId('band-plans').innerText()), '案が全部ある：案のチップに読み上げの「済」');
+  const nm = await bandNumbers(page);
+  await page.getByTestId('band-plans').click();
+  const panel = batchPanel(page, YM);
+  if (!(await expectBatch(page, nm, '済んだ案から'))) return;
+  const checked = await panel
+    .locator('input[name="batch-mode"]:checked')
+    .evaluate((el) => el.parentElement.textContent);
+  const count = await page.getByTestId('batch-count').innerText();
+  check(
+    /まだ案の無い日だけ/.test(checked) && /0日/.test(count),
+    '済んだ案から開くと既定は「まだ案の無い日だけ（0日）」',
+    {
+      checked,
+      count,
+    },
+  );
+  await page.keyboard.press('Escape');
 }
 
 // ---- 訪問の無いデータ：ボタンなし ----

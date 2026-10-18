@@ -145,26 +145,40 @@ async function firstState(page) {
   check(!!today2 && /（未確定）/.test(today2.title), '案ができたら今日のカードは「未確定」', today2);
   const todayText = await page.locator('[data-kind="today"] .sub').innerText();
   check(/^訪問 \d+件・担当 \d+人・入らない \d+件/.test(todayText), '今日の要約：訪問・担当・入らない', todayText);
+  // 今月のカードだけ見る（月末7日以内は来月のカードも並ぶ。PR #38 のレビュー）
+  const MONTH = Number(YM.slice(5, 7));
+  const confTitle = `${MONTH}月の確定していない日`;
   const confDays = async () => {
-    const t = (await tasks(page)).find((x) => x.kind === 'confirm');
+    const t = (await tasks(page)).find((x) => x.kind === 'confirm' && x.title.startsWith(confTitle));
     const m = t && /確定していない日 (\d+)日/.exec(t.title);
     return m ? Number(m[1]) : 0;
   };
   const n2 = await confDays();
-  check(n2 >= 2, '確定していない日のカード（案の無い日も含む）', n2);
-  // カード → 月の画面の右の欄。同じ日数が並び、③のボタンも同じ日数
-  await page.locator('[data-kind="confirm"]').click();
-  await page.waitForURL(/#\/month/);
-  await page.getByTestId('month-unconfirmed').waitFor({ timeout: 10000 });
-  await page.waitForTimeout(300);
-  const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
-  // 今月の準備の③は進み具合の帯にまとめた（PRD D154）。帯の確定していない日数も同じ
-  const band = Number(await page.getByTestId('band-confirm').getAttribute('data-unconfirmed'));
-  check(listed === n2 && band === n2, 'ホームの日数＝月の右の欄の日数＝帯の確定していない日数', {
-    home: n2,
-    listed,
-    band,
-  });
+  check(n2 >= 1, '確定していない日のカード（案の無い日も含む）', n2);
+  const confCard = page.locator('[data-kind="confirm"]').filter({ hasText: confTitle });
+  if (n2 >= 2) {
+    // カード → 月の画面の右の欄。同じ日数が並び、帯の確定していない日数も同じ
+    await confCard.click();
+    await page.waitForURL(/#\/month/);
+    await page.getByTestId('month-unconfirmed').waitFor({ timeout: 10000 });
+    await page.waitForTimeout(300);
+    const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
+    // 今月の準備の③は進み具合の帯にまとめた（PRD D154）。帯の確定していない日数も同じ
+    const band = Number(await page.getByTestId('band-confirm').getAttribute('data-unconfirmed'));
+    check(listed === n2 && band === n2, 'ホームの日数＝月の右の欄の日数＝帯の確定していない日数', {
+      home: n2,
+      listed,
+      band,
+    });
+  } else {
+    // 今月の残りが今日だけ（月末）：1日だけなので日の画面のその日へ（D143）。帯の確定していない日数も1日
+    await confCard.click();
+    await page.waitForURL(/#\/plan/);
+    await page.locator('[data-testid="progress-band"][data-ym]').waitFor({ timeout: 30000 });
+    const picked = await page.locator('.date-switch select').inputValue();
+    const band = Number(await page.getByTestId('band-confirm').getAttribute('data-unconfirmed'));
+    check(picked === TODAY && band === 1, '確定していない日が1日だけ：日の画面のその日へ（帯も1日）', { picked, band });
+  }
   // 確定すると今日のカードは「確定済み」、確定していない日は1日減る
   await page.goto(`${BASE}#/plan`);
   await page.getByTestId('adopt').click();

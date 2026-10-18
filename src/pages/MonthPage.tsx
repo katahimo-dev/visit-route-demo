@@ -446,26 +446,18 @@ export default function MonthPage() {
     });
   };
 
+  /**
+   * 見出しの下の要約（月全体。今日より前の日も数える）：帯に無いものだけ（入らない訪問・当日キャンセル）。
+   * 訪問・案のある日は帯（今日以降）に出すので、同じ言葉で違う範囲の数を並べない（PR #38 のレビュー。PRD D154）
+   */
   const summary = useMemo(() => {
-    let visits = 0;
-    let withVisits = 0;
-    let withPlan = 0;
     let unassigned = 0;
-    let stale = 0;
-    for (const d of days) {
-      const s = statuses.get(d);
-      if (!s) continue;
-      visits += s.count;
-      if (s.count > 0) withVisits++;
-      if (s.count > 0 && s.state !== 'none') withPlan++;
-      unassigned += s.unassigned;
-      if (s.stale) stale++;
-    }
+    for (const d of days) unassigned += statuses.get(d)?.unassigned ?? 0;
     // 当日キャンセル（ADR-0015）の回数
     let sameDay = 0;
     for (const d of days)
       for (const v of visitsByDate.get(d) ?? []) if (v.cancelled && v.cancelKind === 'sameDay') sameDay++;
-    return { visits, withVisits, withPlan, unassigned, stale, sameDay };
+    return { unassigned, sameDay };
   }, [days, statuses, visitsByDate]);
 
   /** 先に定期パターンから展開したときのデータ（対象の日数の見込み） */
@@ -483,9 +475,9 @@ export default function MonthPage() {
   const noVisitsWhy = futureVisits === 0 ? '定期パターンが無いか、この月の訪問がありません' : null;
 
   /**
-   * まとめて作るの欄を開く（入口は進み具合の帯の1か所と ?do=batch。PRD D154）。対象は「まだ案の無い日だけ」。
-   * まだ案の無い日が無く、作っていない訪問も無ければ「確定していない日をすべて作り直す」で開く。
-   * 開かないとき：この月に訪問が無い・作っている間・どちらの対象の日も無い（知らせを出す）
+   * まとめて作るの欄を開く（入口は進み具合の帯の1か所と ?do=batch。PRD D153・D154）。既定の対象はいつも「まだ案の無い日だけ」
+   * （0日でも。済んだ数字から開いても、作り直す＝手直しを捨てうる操作を既定にしない。作り直しは欄で利用者が選ぶ）。
+   * 開かないとき：作っている間・この月に訪問が無い・作っていない訪問も、まだ案の無い日も、確定していない日も無い（知らせを出す）
    */
   const openBatch = () => {
     if (runningRef.current) return;
@@ -493,14 +485,12 @@ export default function MonthPage() {
       toast(noVisitsWhy);
       return;
     }
-    const m: 'empty' | 'all' | null =
-      preview.added > 0 || targetsOf('empty').length > 0 ? 'empty' : targetsOf('all').length > 0 ? 'all' : null;
-    if (!m) {
+    if (preview.added === 0 && targetsOf('empty').length === 0 && targetsOf('all').length === 0) {
       toast('作る日がありません（今日より前の日・確定した日は作りません）');
       return;
     }
     setError(null);
-    setMode(m);
+    setMode('empty');
     setPanel(true);
   };
 
@@ -781,8 +771,7 @@ export default function MonthPage() {
             </WithIcon>
           </button>
           <span className="month-summary sub" data-testid="month-summary">
-            訪問 {summary.visits}件・案のある日 {summary.withPlan}/{summary.withVisits}日・入らない {summary.unassigned}
-            件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
+            月全体：入らない {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>
         </div>
         <div className="row month-pickers">
