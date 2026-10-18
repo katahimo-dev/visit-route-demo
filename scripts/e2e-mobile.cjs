@@ -2,7 +2,7 @@
 // 上の帯（ロゴと今の画面の名前・「メニュー」・日付の切り替え。〈利用者さん〉と〈スタッフ〉の「一覧・編集」を見分ける）、
 // 引き出し（role="dialog"・aria-modal・名前、ボタンの aria-expanded・aria-controls、グループの見出し付きの縦並び、
 // 画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」へ、Tab・Shift+Tab が中で回る、開いているあいだ裏を巻かない）、
-// 下のタブ（月・週・日・空き状況、active と aria-current、比較では「日」、本文の最後がタブに隠れない）、
+// 下のタブ（ホーム・月・週・日・空き状況（PRD D144）、active と aria-current、比較では「日」、本文の最後がタブに隠れない）、
 // 浮いている部品（地図の MapDock・欠勤の振り直しの ReassignDock・トースト）がタブに重ならない、印刷で上の帯・下のタブ・引き出しを出さない、
 // 広い画面（1400px）では今の左のメニューのままで、上の帯の部品・下のタブを出さない。
 //
@@ -205,8 +205,8 @@ async function bottom(page) {
   const t = tabs(page);
   const labels = await t.getByTestId('bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(labels) === JSON.stringify(['月', '週', '日', '空き状況']),
-    '下のタブ：月・週・日・空き状況',
+    JSON.stringify(labels) === JSON.stringify(['ホーム', '月', '週', '日', '空き状況']),
+    '下のタブ：ホーム・月・週・日・空き状況（PRD D144）',
     labels,
   );
   const tb = await t.boundingBox();
@@ -229,7 +229,7 @@ async function bottom(page) {
   await open(page, '/compare', '[data-testid="bottom-tabs"]');
   check(JSON.stringify(await active()) === '["日"]', '下のタブ：比較では「日」');
   await open(page, '/clients', '[data-testid="bottom-tabs"]');
-  check((await active()).length === 0, '下のタブ：4つ以外の画面ではどれも active にしない');
+  check((await active()).length === 0, '下のタブ：5つ以外の画面ではどれも active にしない');
   // 本文の最後がタブに隠れない（いちばん下まで巻いて、本文の下の端がタブより上）
   await open(page, '/data', '[data-testid="bottom-tabs"]');
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));

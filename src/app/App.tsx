@@ -11,6 +11,7 @@ import {
   HeartHandshake,
   House,
   Layers,
+  ListTodo,
   type LucideIcon,
   Menu,
   Route as RouteIcon,
@@ -41,6 +42,7 @@ import ClientsPage from '../pages/ClientsPage';
 import ComparePage from '../pages/ComparePage';
 import CompatPage from '../pages/CompatPage';
 import DataPage from '../pages/DataPage';
+import HomePage from '../pages/HomePage';
 import ItemsPage from '../pages/ItemsPage';
 import MonthPage from '../pages/MonthPage';
 import MonthPrintPage from '../pages/MonthPrintPage';
@@ -93,6 +95,8 @@ export default function App() {
           <Route element={<AdminShell />}>
             {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
             <Route path="/schedule" element={<Navigate to="/plan" replace />} />
+            {/* ホーム「今日やること」（PRD D141。ADR-0025）：起動したとき（#/・知らない URL）の画面 */}
+            <Route path="/home" element={<HomePage />} />
             <Route path="/plan" element={<PlanPage />} />
             <Route path="/month" element={<MonthPage />} />
             <Route path="/week" element={<WeekPage />} />
@@ -107,7 +111,7 @@ export default function App() {
             <Route path="/clients" element={<ClientsPage />} />
             <Route path="/availability" element={<AvailabilityPage />} />
             <Route path="/data" element={<DataPage />} />
-            <Route path="*" element={<Navigate to="/plan" replace />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
           </Route>
         </Routes>
       </PersonPopoverProvider>
@@ -126,7 +130,7 @@ function Guarded({ element }: { element: ReactElement }) {
   );
 }
 
-/** 左のメニュー：予定（月・週・日）・問い合わせ・〈利用者さん〉・〈スタッフ〉・割当の設定・データ（PRD D59・D102） */
+/** 左のメニュー：ホーム・予定（月・週・日）・問い合わせ・〈利用者さん〉・〈スタッフ〉・割当の設定・データ（PRD D59・D102・D144） */
 type NavItem = { to: string; label: string; icon: LucideIcon };
 
 /** スマホのメニューに切り替わる幅（styles.css の @media (max-width: 860px) と同じ。PRD D132） */
@@ -181,7 +185,11 @@ function AdminShell() {
   }, []);
   // 動線の整理（PRD D59・D102）：予定（月・週・日）／問い合わせ／〈利用者さん〉／〈スタッフ〉／割当の設定／データ。
   // 比較は日の画面の「案を比べる」から開く（メニューには出さない）。ルートの URL は変えない
+  // 先頭にホーム（PRD D144。見出しなし）
   const groups: NavSection<NavItem>[] = [
+    {
+      items: [{ to: '/home', label: 'ホーム', icon: ListTodo }],
+    },
     {
       title: '予定',
       items: [
@@ -278,7 +286,7 @@ function AdminShell() {
         <main className="app-main">
           <Guarded element={<Outlet />} />
         </main>
-        {/* スマホだけ：よく使う4つのタブ（PRD D134。印刷では出さない） */}
+        {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・日・空き状況。PRD D134・D144。印刷では出さない） */}
         <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
           {bottomTabs(groups).map(({ to, label, icon: Icon }) => {
             const on = isActiveNav(to, pathname);

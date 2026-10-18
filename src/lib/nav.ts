@@ -6,8 +6,8 @@ export type NavEntry = { to: string; label: string };
 /** メニューのグループ（見出しの無いグループはデータだけ） */
 export type NavSection<T extends NavEntry = NavEntry> = { title?: string; items: readonly T[] };
 
-/** 下のタブに常に並べる、よく使う画面（月・週・日・空き状況。PRD D134） */
-export const BOTTOM_TABS: readonly string[] = ['/month', '/week', '/plan', '/vacancy'];
+/** 下のタブに常に並べる、よく使う画面（ホーム・月・週・日・空き状況。PRD D134・D144） */
+export const BOTTOM_TABS: readonly string[] = ['/home', '/month', '/week', '/plan', '/vacancy'];
 
 /**
  * 今の画面に当たるメニューの URL。比較（#/compare）はメニューに無く、日の画面の続きなので「日」（PRD D102）。

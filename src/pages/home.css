@@ -1,0 +1,102 @@
+/* ホーム「今日やること」（PRD D141〜D145。ADR-0025） */
+.home-section-title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--sub);
+}
+.home-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 12px;
+}
+.home-tasks > li {
+  display: flex;
+}
+/* カード全体が1つのリンク */
+.home-task {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--ink);
+  text-decoration: none;
+  border-left: 6px solid var(--line);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.home-task:hover {
+  box-shadow: 0 2px 4px rgba(80, 50, 30, 0.08), 0 10px 24px rgba(80, 50, 30, 0.08);
+}
+.home-task:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+.home-task-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--sub);
+}
+.home-task-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.45;
+}
+.home-task-text .sub {
+  font-size: 0.86rem;
+}
+.home-task-go {
+  flex: none;
+  color: var(--sub);
+}
+/* 手当てが要る */
+.home-task.is-warn {
+  border-left-color: var(--danger);
+}
+.home-task.is-warn .home-task-icon {
+  background: #fbe4e0;
+  color: var(--danger);
+}
+/* やること */
+.home-task.is-todo {
+  border-left-color: var(--primary);
+}
+.home-task.is-todo .home-task-icon {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+/* 知らせだけ */
+.home-task.is-info {
+  border-left-color: var(--ok);
+}
+.home-task.is-info .home-task-icon {
+  background: #e3f2e8;
+  color: var(--ok);
+}
+.home-ready {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ok);
+  border-left: 6px solid var(--ok);
+}
+.home-ready strong {
+  color: var(--ink);
+}
+/* 印刷では出さない（ホームは画面で使うだけ。PRD D145） */
+@media print {
+  .home-page {
+    display: none;
+  }
+}
