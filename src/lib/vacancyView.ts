@@ -93,17 +93,24 @@ export function noticeLine(periodLabel: string, typeName: string | null, duratio
   return `${periodLabel}・${typeName ?? '種類なし'}（${d}）`;
 }
 
-/** いつ・何をの段階の要約（結果の見出しの下に出す1行。PRD D184）：「種類なし・60分・月水・9:00〜17:00に始める・週1回・10/20から4週」 */
+/**
+ * いつ・何をの段階の要約（結果の見出しの下に出す1行。PRD D184）：「種類なし・60分・月水・9:00〜17:00に始める・週1回・10/20から4週」。
+ * 所要が正しくないときは所要を、希望の開始の「から」が「まで」より後のときは時間帯を「—」にする（PR #44 のレビュー）
+ */
 export function whenWhatLine(q: {
   typeName: string | null;
   duration: string;
+  durationOk: boolean;
   weekdayLabels: string[];
   from: string;
   to: string;
+  wishOk: boolean;
   perWeek: number;
   startMd: string;
   weeks: number;
 }): string {
   const days = q.weekdayLabels.length === 0 ? 'どの曜日でも' : q.weekdayLabels.join('');
-  return `${q.typeName ?? '種類なし'}・${q.duration}分・${days}・${q.from}〜${q.to}に始める・週${q.perWeek}回・${q.startMd}から${q.weeks}週`;
+  const dur = q.durationOk ? `${q.duration}分` : '—';
+  const time = q.wishOk ? `${q.from}〜${q.to}に始める` : '—';
+  return `${q.typeName ?? '種類なし'}・${dur}・${days}・${time}・週${q.perWeek}回・${q.startMd}から${q.weeks}週`;
 }

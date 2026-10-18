@@ -153,7 +153,57 @@ async function steps(page) {
     '案内文のコピー・紹介元へメールは開いた中（主ボタンにしない）',
   );
   check((await primaries(page.locator('.vacancy-page'))) === 1, '案内文を開いても主ボタンは1つ');
+  // 古い案内文を出さない（PR #44 のレビュー）：開く → 畳む → 条件を変える → 開き直すと、前の文は出さず計算し直してから押せる
+  const oldText = await page.getByTestId('notice-text').textContent();
   await page.getByTestId('notice-toggle').click();
+  await page.waitForTimeout(100);
+  check((await page.getByTestId('notice-text').count()) === 0, '畳んだら古い案内文を捨てる');
+  await page.getByTestId('vacancy-duration').fill('120');
+  await page.waitForTimeout(500);
+  await page.getByTestId('notice-toggle').click();
+  const early = await page.evaluate(() => ({
+    text: document.querySelector('[data-testid="notice-text"]')?.textContent ?? null,
+    copy: document.querySelector('[data-testid="copy-notice"]')?.disabled ?? null,
+  }));
+  check(
+    early.text === null || (early.text !== oldText && early.copy === false),
+    '開き直した直後に前の文を出さない',
+    early,
+  );
+  await page.getByTestId('notice-text').waitFor({ timeout: 10000 });
+  const newText = await page.getByTestId('notice-text').textContent();
+  check(
+    newText !== oldText && /120分/.test(await page.getByTestId('notice-line').textContent()),
+    '開き直すと今の条件で作り直す',
+  );
+  check(!(await page.getByTestId('copy-notice').isDisabled()), '作り直したらコピーを押せる');
+  // 開いたまま期間を変えると、計算し直すまでコピーとメールを押せない
+  await page.getByTestId('notice-period').getByRole('button', { name: '今週' }).click();
+  const busy = await page.evaluate(() => ({
+    copy: document.querySelector('[data-testid="copy-notice"]')?.disabled,
+    mail: [...document.querySelectorAll('[data-testid="notice-mail-open"]')].map(
+      (e) => e.tagName === 'A' && e.getAttribute('aria-disabled') !== 'true',
+    ),
+  }));
+  check(busy.copy === true && busy.mail.every((x) => !x), '計算し直すまでコピー・メールを押せない', busy);
+  await page.waitForFunction(() => !document.querySelector('[data-testid="copy-notice"]')?.disabled, null, {
+    timeout: 10000,
+  });
+  check(true, '計算し直したらコピーを押せる');
+  await page.getByTestId('vacancy-duration').fill('60');
+  await page.getByTestId('notice-toggle').click();
+  // 見出しの並び（PR #44 のレビュー）：段階は h2 で4つ、「開く ▾」は読み上げに入れない
+  const hs = await page.evaluate(() => ({
+    h2: [...document.querySelectorAll('.vacancy-page .vacancy-stage h2')].map((e) => e.textContent.trim().slice(0, 4)),
+    h3: !!document.querySelector('[data-testid="notice-toggle"] h3'),
+    hidden: [...document.querySelectorAll('.vacancy-fold-mark')].every((e) => e.getAttribute('aria-hidden') === 'true'),
+    after: getComputedStyle(document.querySelector('[data-testid="vacancy-place-toggle"]'), '::after').content,
+  }));
+  check(
+    hs.h2.length === 4 && /^2/.test(hs.h2[1]) && hs.h3 && hs.hidden && (hs.after === 'none' || hs.after === 'normal'),
+    '場所の見出しも h2・案内文は h3・「開く ▾」は aria-hidden',
+    hs,
+  );
   // 案の無い日の注意は1か所（PRD D176）
   check((await page.locator('.vacancy-noplan').count()) <= 1, '案の無い日の注意は1か所');
 

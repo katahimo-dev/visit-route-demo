@@ -83,7 +83,7 @@ import {
   weekDates,
   weekDay,
 } from '../lib/week';
-import { WEEK_VIEWS, type WeekView, weekViewLabel, weekViewOf, weekViewParams } from '../lib/weekView';
+import { isTimeline, WEEK_VIEWS, type WeekView, weekViewLabel, weekViewOf, weekViewParams } from '../lib/weekView';
 import { WeekMailPanel } from './mailPanels';
 import './week.css';
 
@@ -327,14 +327,16 @@ export default function WeekPage() {
   const setTableFilter = (f: ClientFilterState) =>
     go({ cf: sameFilter(f, WEEK_TABLE_FILTER) ? null : encodeFilter(f) }, true);
   /**
-   * 表示を切り替える（PRD D188）。表から時間軸の〈利用者さん〉へ移るとき、?client= が無く表で絞り込んでいれば、表で絞り込んだ人の
+   * 表示を切り替える（PRD D188）。表から時間軸へ移るとき、?client= が無く表で絞り込んでいれば、表で絞り込んだ人の
    * うち時間軸に出せる人（検索欄の候補 weekClients にいる人）の先頭8人を引き継ぐ。絞り込んでいなければ書かない＝この週の先頭8人
    * （PRD D139。lib/timelineClients）
    */
   const goView = (v: WeekView) => {
     if (v === view) return;
     const next: Record<string, string | null> = { ...weekViewParams(v) };
-    if (tab === 'clients' && v === 'timeline-client') {
+    // 表から時間軸（〈スタッフ〉・〈利用者さん〉どちらでも）へ移るときに書く（main と同じ。〈スタッフ〉の時間軸から
+    // 〈利用者さん〉に切り替えたときも引き継がれる。PR #44 のレビュー）
+    if (tab === 'clients' && isTimeline(v)) {
       const known = new Set(weekClients.map((c) => c.id));
       const handoff = handoffFromTable({
         hasParam: clientParam !== null,

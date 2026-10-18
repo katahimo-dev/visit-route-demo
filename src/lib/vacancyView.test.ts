@@ -69,6 +69,8 @@ describe('noticeLine・whenWhatLine', () => {
       whenWhatLine({
         typeName: null,
         duration: '60',
+        durationOk: true,
+        wishOk: true,
         weekdayLabels: [],
         from: '9:00',
         to: '17:00',
@@ -81,6 +83,8 @@ describe('noticeLine・whenWhatLine', () => {
       whenWhatLine({
         typeName: '家事',
         duration: '90',
+        durationOk: true,
+        wishOk: true,
         weekdayLabels: ['月', '水'],
         from: '10:00',
         to: '12:00',
@@ -89,6 +93,25 @@ describe('noticeLine・whenWhatLine', () => {
         weeks: 2,
       }),
     ).toBe('家事・90分・月水・10:00〜12:00に始める・週2回・11/1から2週');
+  });
+  it('所要が正しくない・「から」が「まで」より後なら、その部分は「—」', () => {
+    const base = {
+      typeName: null,
+      duration: '3',
+      durationOk: false,
+      weekdayLabels: ['火'],
+      from: '17:00',
+      to: '9:00',
+      wishOk: false,
+      perWeek: 1,
+      startMd: '10/20',
+      weeks: 4,
+    };
+    expect(whenWhatLine(base)).toBe('種類なし・—・火・—・週1回・10/20から4週');
+    expect(whenWhatLine({ ...base, durationOk: true, duration: '60' })).toBe(
+      '種類なし・60分・火・—・週1回・10/20から4週',
+    );
+    expect(whenWhatLine({ ...base, wishOk: true })).toBe('種類なし・—・火・17:00〜9:00に始める・週1回・10/20から4週');
   });
 });
 

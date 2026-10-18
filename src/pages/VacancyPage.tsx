@@ -69,6 +69,16 @@ const DEBOUNCE_MS = 300;
 const MARK = VACANCY_MARK;
 const VERDICT_TEXT = VACANCY_MARK_TEXT;
 
+/** 畳む欄の「開く ▾」「畳む ▴」（見た目だけ。読み上げの名前に入れない。開いているかは details が伝える） */
+function FoldMark() {
+  return (
+    <span className="vacancy-fold-mark" aria-hidden="true">
+      <span className="when-closed">開く ▾</span>
+      <span className="when-open">畳む ▴</span>
+    </span>
+  );
+}
+
 /** 段階の番号の丸（PRD D184。読み上げは見出しの文に「1.」を入れる） */
 function StepNo({ n }: { n: number }) {
   return (
@@ -302,9 +312,19 @@ export default function VacancyPage() {
   const noticeType = typeOf(data.visitTypes, noticeTypeId);
   const noticeDuration = noticeType ? noticeType.durationMinutes : durationOk ? durationNum : null;
   const noticeSpan = useMemo(() => noticeRange(noticePeriod, today), [noticePeriod, today]);
-  const [notice, setNotice] = useState<{ text: string; noPlan: string[] } | null>(null);
+  /**
+   * 案内文を作る元の条件（変わるたびに新しい物）。作った文にはこれを付けておき、今の条件と違えば古い文として
+   * コピー・メールを押せなくする（描いた時点で決まるので、計算し直すまでの間にも古い文で動かない。PR #44 のレビュー）
+   */
+  const noticeInputs = useMemo(
+    () => ({ data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms }),
+    [data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms],
+  );
+  const [notice, setNotice] = useState<{ text: string; noPlan: string[]; inputs: typeof noticeInputs } | null>(null);
   /** 案内文の欄を開いているか（畳んでいる間は計算しない。問い合わせの即答の速さを落とさない。PRD D185） */
   const [noticeOpen, setNoticeOpen] = useState(false);
+  /** 条件を変えてから案内文を計算し直すまで（古い文でコピー・メールさせない。PR #44 のレビュー） */
+  const noticeStale = notice === null || notice.inputs !== noticeInputs;
   // 紹介元へ BCC で一斉に（PRD D95。ADR-0017）：宛先は紹介元のメールを重複なく。外した宛先（小文字）だけを画面の中で持つ
   const referrers = useMemo(() => referrerRecipients(data.clients), [data.clients]);
   const [mailOff, setMailOff] = useState<ReadonlySet<string>>(new Set());
@@ -312,7 +332,7 @@ export default function VacancyPage() {
   const mailLimit = useMailLimit();
   // 宛先が多いと mailto が長すぎるので、目安の長さに収まるよう宛先を分けて複数のボタンにする（PRD D95・D96）
   const noticeMails =
-    notice && mailBcc.length > 0
+    notice && !noticeStale && mailBcc.length > 0
       ? buildBccMails({ bcc: mailBcc, subject: vacancySubject(data.org), full: notice.text }, mailLimit)
       : [];
   const copyRecipients = async () =>
@@ -321,12 +341,19 @@ export default function VacancyPage() {
         ? `宛先（${mailBcc.length}件）をコピーしました。メールの BCC に貼り付けてください`
         : 'コピーできませんでした。文を選んでコピーしてください',
     );
-  const noticeMailWhy =
-    referrers.length === 0
+  const noticeMailWhy = noticeStale
+    ? '案内文を計算し直しています'
+    : referrers.length === 0
       ? `紹介元のメールアドレスが未登録です（${terms.client}の画面の「紹介元のメールアドレス」で入れられます）`
       : '宛先を1つ以上選んでください';
   useEffect(() => {
-    if (!noticeOpen) return;
+    const { data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms } =
+      noticeInputs;
+    // 畳んだら古い文を捨てる（開き直したときに前の文を出さない）
+    if (!noticeOpen) {
+      setNotice(null);
+      return;
+    }
     if (noticeDuration === null) {
       setNotice(null);
       return;
@@ -359,12 +386,12 @@ export default function VacancyPage() {
         notBefore: { date: jstDate(Date.now()), minutes: hhmmToMinutes(jstHhmm(Date.now())) },
       });
       const noPlan = r.noPlanDates.filter((d) => d >= noticeSpan.from && d <= noticeSpan.to);
-      setNotice({ text, noPlan });
+      setNotice({ text, noPlan, inputs: noticeInputs });
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(id);
-  }, [noticeOpen, data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms]);
+  }, [noticeOpen, noticeInputs]);
   const copyNotice = async () => {
-    if (!notice) return;
+    if (!notice || noticeStale) return;
     toast(
       (await copyText(notice.text)) ? '案内文をコピーしました' : 'コピーできませんでした。文を選んでコピーしてください',
     );
@@ -470,6 +497,8 @@ export default function VacancyPage() {
     VACANCY_MARGIN_DEFAULT,
   );
   const whenLine = whenWhatLine({
+    durationOk,
+    wishOk,
     typeName: vType?.name ?? null,
     duration,
     weekdayLabels: ROW_WEEKDAYS.filter((w) => wishDays.includes(w)).map((w) => WEEKDAY_LABELS[w]!),
@@ -623,15 +652,16 @@ export default function VacancyPage() {
       */}
       <details className="card vacancy-stage vacancy-place-stage" data-testid="vacancy-step-place">
         <summary data-testid="vacancy-place-toggle">
-          <span className="vacancy-stage-head">
+          <h2 className="vacancy-stage-head">
             <StepNo n={2} />
             <WithIcon icon={MapPin} size={16}>
               場所（任意）
             </WithIcon>
-          </span>
+          </h2>
           <span className={`vacancy-stage-line${placeSummary.set ? ' is-set' : ''}`} data-testid="vacancy-place-line">
             {placeSummary.text}
           </span>
+          <FoldMark />
         </summary>
         <div className="stack vacancy-place">
           <span className="sub">
@@ -835,11 +865,11 @@ export default function VacancyPage() {
           onToggle={(e) => setNoticeOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary data-testid="notice-toggle">
-            <span className="vacancy-sub-title">
+            <h3 className="vacancy-sub-title">
               <WithIcon icon={ClipboardList} size={16}>
                 空き枠の案内文・紹介元へメール
               </WithIcon>
-            </span>
+            </h3>
             <span className="vacancy-stage-line" data-testid="notice-line">
               {noticeLine(
                 NOTICE_PERIODS.find((p) => p.id === noticePeriod)?.label ?? '',
@@ -847,6 +877,7 @@ export default function VacancyPage() {
                 noticeDuration,
               )}
             </span>
+            <FoldMark />
           </summary>
           <div className="stack">
             <p className="sub">
@@ -906,7 +937,13 @@ export default function VacancyPage() {
                   </p>
                 )}
                 <div className="row">
-                  <button type="button" className="btn" onClick={copyNotice} data-testid="copy-notice">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={copyNotice}
+                    disabled={noticeStale}
+                    data-testid="copy-notice"
+                  >
                     <WithIcon icon={Copy}>案内文をコピー</WithIcon>
                   </button>
                 </div>

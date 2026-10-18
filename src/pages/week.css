@@ -28,10 +28,11 @@
   .segmented.week-views button + button {
     border-left: 0;
   }
-  .week-views button:nth-child(even) {
+  /* .segmented.week-views button + button（border-left: 0）より強くして、2列目の縦の線を出す */
+  .segmented.week-views button:nth-child(even) {
     border-left: 2px solid var(--line);
   }
-  .week-views button:nth-child(n + 3) {
+  .segmented.week-views button:nth-child(n + 3) {
     border-top: 2px solid var(--line);
   }
 }

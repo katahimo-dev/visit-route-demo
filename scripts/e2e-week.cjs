@@ -231,6 +231,31 @@ async function handoff(page) {
   );
 }
 
+/** 表から「時間軸：スタッフ」へ移っても ?client= を書き、そのあと「時間軸：利用者さん」で引き継がれる（D139。PR #44 のレビュー） */
+async function handoffViaStaff(page) {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await open(page, '/week?view=clients');
+  await page.getByTestId('week-client-filter-input').fill('館');
+  await page.waitForTimeout(800);
+  await page.getByTestId('by-staff').click();
+  await page.waitForTimeout(300);
+  const m = urlOf(page).match(/client=([^&]*)/);
+  const written = m ? m[1].split(',') : [];
+  check(
+    written.length > 0 && written.length <= 8 && !/by=/.test(urlOf(page)),
+    '表→時間軸：スタッフ でも ?client= を書く',
+    urlOf(page),
+  );
+  await page.getByTestId('by-client').click();
+  await page.waitForTimeout(300);
+  const pressed = await pressedIds(page);
+  check(
+    JSON.stringify([...pressed].sort()) === JSON.stringify([...written].sort()),
+    'そのあと 時間軸：利用者さん で表の人が引き継がれる',
+    { written, pressed },
+  );
+}
+
 /** 「ほかの人を探す」：この週に訪問の無い人を選ぶと、チップの後ろに✓付きで出る */
 async function search(page) {
   await page.goto(`${BASE}#/week`);
@@ -385,6 +410,7 @@ async function nextWeek(page) {
   for (const [name, fn] of [
     ['views', views],
     ['handoff', handoff],
+    ['handoff-staff', handoffViaStaff],
     ['back', back],
     ['fold-1400', (p) => fold(p, 1400, 1000)],
     ['fold-390', (p) => fold(p, 390, 844)],
