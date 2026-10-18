@@ -19,7 +19,19 @@ import {
   UserX,
   X,
 } from 'lucide-react';
-import { memo, type ReactNode, type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
@@ -81,7 +93,7 @@ import {
   type TypeCount,
   ymOf,
 } from '../lib/month';
-import { cellGuide } from '../lib/monthGuide';
+import { cellGuide, createTipStore, type TipStore } from '../lib/monthGuide';
 import { mdText } from '../lib/patternText';
 import { type BandOp, urgentCount } from '../lib/progressBand';
 import { rebuildWith } from '../lib/rebuildBand';
@@ -175,6 +187,10 @@ export default function MonthPage() {
   const asideRef = useRef<HTMLElement>(null);
   /** 日のマスの表（読み方の吹き出し MonthCellTip が見る。PRD D177） */
   const gridRef = useRef<HTMLTableElement>(null);
+  /** 「混み具合：空きを数える人」の選ぶ欄の名前（aria-labelledby） */
+  const loadTypeId = useId();
+  /** マスの読み方の文の置き場（日付 → 文。PRD D177） */
+  const tipStore = useMemo(() => createTipStore(), []);
   const [mode, setMode] = useState<BatchMode>('empty');
   const [batch, setBatch] = useState<Batch | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -790,7 +806,7 @@ export default function MonthPage() {
             type="button"
             className="btn btn-small"
             onClick={() => navigate(`/workload?ym=${ym}`)}
-            title="予定から、この月の拘束・移動・待ちの時間と交通費を見込みます"
+            title="予定から、この月の出勤〜退勤（拘束）・移動・空き時間（待ち）の時間と交通費を見込みます"
             data-testid="month-workload"
           >
             <WithIcon icon={Timer} size={14}>
@@ -846,12 +862,15 @@ export default function MonthPage() {
             </button>
           )}
           {focus.kind === 'all' && (
-            <label className="month-picker">
+            // 用語の説明（ボタン）は label の中に置かない（入力欄の名前が用語のボタンへ移るため。PR #42 のレビュー）。
+            // 選ぶ欄の名前は aria-labelledby で「混み具合：」と用語をつなぐ
+            <div className="month-picker">
               <span>
-                混み具合：
-                <Term k="loadCount" testId="term-load-count" />
+                <span id={`${loadTypeId}-label`}>混み具合：</span>
+                <Term k="loadCount" testId="term-load-count" id={`${loadTypeId}-term`} />
               </span>
               <select
+                aria-labelledby={`${loadTypeId}-label ${loadTypeId}-term`}
                 value={loadType ?? ''}
                 onChange={(e) => setLoadType(e.target.value === '' ? null : e.target.value)}
                 data-testid="month-load-type"
@@ -863,7 +882,7 @@ export default function MonthPage() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
           )}
         </div>
         <div className="row month-tools">
@@ -971,6 +990,7 @@ export default function MonthPage() {
                       <DayCell
                         key={d}
                         date={d}
+                        tipStore={tipStore}
                         status={s}
                         today={today}
                         picked={d === date}
@@ -994,7 +1014,7 @@ export default function MonthPage() {
               ))}
             </tbody>
           </table>
-          <MonthCellTip gridRef={gridRef} />
+          <MonthCellTip gridRef={gridRef} tipStore={tipStore} />
         </div>
 
         <aside
@@ -1046,7 +1066,7 @@ export default function MonthPage() {
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
-                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・拘束が上限を超える日・欠勤のある日はありません。
+                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日はありません。
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
@@ -1079,7 +1099,8 @@ export default function MonthPage() {
                           )}
                           {a.kind === 'overSpan' && (
                             <WithIcon icon={Timer} size={14}>
-                              拘束が{data.org.spanLimitHours}時間を超える {a.names.map(shortName).join('・')}
+                              出勤〜退勤（拘束）が{data.org.spanLimitHours}時間を超える{' '}
+                              {a.names.map(shortName).join('・')}
                             </WithIcon>
                           )}
                           {a.kind === 'absence' && (
@@ -1322,7 +1343,7 @@ const TIP_HIDE_MS = 120;
  * そのマスの日付・状態の文と、出ている印の読み方（lib/monthGuide。マスの data-guide）を、マスの下（入らなければ上）に出す。
  * Esc・離れる・フォーカスが外れると消す。吹き出しはマウスを受けない（下のマスを隠して押せなくしない）。タッチでは出さない（押すと日の画面）
  */
-function MonthCellTip({ gridRef }: { gridRef: RefObject<HTMLElement | null> }) {
+function MonthCellTip({ gridRef, tipStore }: { gridRef: RefObject<HTMLElement | null>; tipStore: TipStore }) {
   const tipId = `month-cell-tip-${useId().replace(/:/g, '')}`;
   const [at, setAt] = useState<HTMLElement | null>(null);
   const timer = useRef<number | null>(null);
@@ -1335,7 +1356,7 @@ function MonthCellTip({ gridRef }: { gridRef: RefObject<HTMLElement | null> }) {
     const root = gridRef.current;
     if (!root) return;
     const cellOf = (t: EventTarget | null): HTMLElement | null =>
-      t instanceof Element ? (t.closest('[data-guide]') as HTMLElement | null) : null;
+      t instanceof Element ? (t.closest('[data-tip]') as HTMLElement | null) : null;
     const over = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse') return;
       const c = cellOf(e.target);
@@ -1390,7 +1411,9 @@ function MonthCellTip({ gridRef }: { gridRef: RefObject<HTMLElement | null> }) {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [at]);
-  const lines = at?.dataset.guide ? at.dataset.guide.split('\n') : [];
+  // 文は日付で引く（描画中に DOM の data-* を読まない。休みを切り替えたら新しい文。PR #42 のレビュー）
+  const date = at?.dataset.date ?? null;
+  const tip = useSyncExternalStore(tipStore.subscribe, () => (date ? tipStore.get(date) : null));
   return (
     <TipBubble
       id={tipId}
@@ -1399,13 +1422,13 @@ function MonthCellTip({ gridRef }: { gridRef: RefObject<HTMLElement | null> }) {
       className="is-passive month-cell-tip"
       testId="month-cell-tip"
     >
-      {at && (
+      {tip && (
         <>
-          <strong>{at.dataset.tipHead}</strong>
-          <span>{at.dataset.tipText}</span>
+          <strong>{tip.head}</strong>
+          <span>{tip.text}</span>
           <strong className="month-cell-tip-sub">このマスの読み方</strong>
           <ul>
-            {lines.map((l) => (
+            {tip.lines.map((l) => (
               <li key={l}>{l}</li>
             ))}
           </ul>
@@ -1515,6 +1538,8 @@ function namesShort(names: readonly string[]): string {
 
 type CellProps = {
   date: string;
+  /** マスの読み方の文の置き場（日付で引く。MonthCellTip） */
+  tipStore: TipStore;
   status: DayStatus;
   today: string;
   picked: boolean;
@@ -1861,6 +1886,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
     clientTerm,
   });
   const offPress = offState === 'open' || offState === 'requested';
+  const tipText = `${parts.slice(1).join('・')}${offState ? '' : '（押すとこの日の予定の画面を開きます）'}`;
+  const guideKey = guide.join('\n');
+  // 描いたあとに、日付をキーに読み方の文を置く（吹き出しは日付で引く。描画中に DOM を読まない。PR #42 のレビュー）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 文（guideKey）が変わったときだけ置き直す
+  useLayoutEffect(() => {
+    props.tipStore.set(d, { head: longDate(d), text: tipText, lines: guide });
+  }, [props.tipStore, d, tipText, guideKey]);
   return (
     <td
       className={[
@@ -1887,9 +1919,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
         // 押せない日も Tab で届き、理由（aria-label）が読み上がるよう disabled にしない。押しても何もしない
         aria-disabled={offState !== undefined && !offPress ? true : undefined}
         // 見た目の説明は title ではなく読み方の吹き出し（MonthCellTip。title と二重に出さない）
-        data-tip-head={longDate(d)}
-        data-tip-text={`${parts.slice(1).join('・')}${offState ? '' : '（押すとこの日の予定の画面を開きます）'}`}
-        data-guide={guide.join('\n')}
+        data-tip="cell"
         onClick={() => {
           if (!offState) props.onOpen(d);
           else if (offPress) props.onToggleOff(d);

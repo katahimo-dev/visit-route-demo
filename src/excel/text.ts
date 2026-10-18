@@ -256,8 +256,15 @@ export function lookup<T extends string>(labels: Record<T, string>, text: string
   return null;
 }
 
+/**
+ * Excel の条件の種類の名前（プリセットのシートの「重み：〈名前〉」「必須」の見出し・値）。画面の名前（ruleTypeLabel）は
+ * PRD D174 で「空き時間（待ち）」に言い換えたが、書き出し・読み込みのブックの形は変えないので「待ち時間」のまま
+ */
 export const ruleTypeLabels = (t: Terms) =>
-  Object.fromEntries(RULE_TYPES.map((r) => [r, ruleTypeLabel(r, t)])) as Record<RuleType, string>;
+  Object.fromEntries(RULE_TYPES.map((r) => [r, r === 'wait' ? '待ち時間' : ruleTypeLabel(r, t)])) as Record<
+    RuleType,
+    string
+  >;
 export const itemKindLabels = ITEM_KIND_LABELS;
 export const travelModeLabels: Record<TravelMode, string> = TRAVEL_MODE_LABELS;
 

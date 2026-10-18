@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCopy, Timer, TriangleAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { EmptyNext } from '../components/EmptyNext';
@@ -28,6 +28,8 @@ export default function WorkloadPage() {
   const { data, update } = useDemoData();
   const { date, setDate } = useDay();
   const navigate = useNavigate();
+  /** 上限の入力欄の名前（aria-labelledby） */
+  const limitId = useId();
   const toast = useToast();
   const terms = data.org.terms;
   const [params, setParams] = useSearchParams();
@@ -230,12 +232,14 @@ export default function WorkloadPage() {
             <span>円/km（0 なら交通費を出しません）</span>
             {fareError && <span className="error">{fareError}</span>}
           </label>
-          <label className="work-setting">
+          {/* 用語の説明（ボタン）は label の中に置かない（PR #42 のレビュー）。入力欄の名前は aria-labelledby でつなぐ */}
+          <div className="work-setting">
             <span>
-              <Term k="span" testId="term-span" />
-              の上限
+              <Term k="span" testId="term-span" id={`${limitId}-term`} />
+              <span id={`${limitId}-label`}>の上限</span>
             </span>
             <input
+              aria-labelledby={`${limitId}-term ${limitId}-label`}
               type="number"
               min={0}
               max={24}
@@ -251,7 +255,7 @@ export default function WorkloadPage() {
             />
             <span>時間（超える日に注意。0 なら出しません）</span>
             {limitError && <span className="error">{limitError}</span>}
-          </label>
+          </div>
         </div>
         <Hint label="見込みの数え方">
           数えるのはその日の確定した割当（無ければ今の案）です。出勤〜退勤（拘束）は最初の訪問の開始から最後の訪問の終わりまでで、直行直帰として自宅との行き帰りは入れません（距離と交通費には入れます）。空き時間（待ち）は訪問のあいだの空き（休憩に使える時間）です。移動の時間と距離は直線距離からの概算です。出勤〜退勤（拘束）の上限は注意を出すだけで、AI案の条件には入りません。予定からの見込みで、実績（打刻）ではありません。

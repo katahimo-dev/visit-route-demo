@@ -192,6 +192,25 @@ async function termMouseKeyboard(page) {
   const { loc: hardTip } = await tipOf(page, hard);
   check(await hardTip.isVisible(), '次の用語の説明が出る（前の用語の説明は消える）');
   check((await page.locator('[role="tooltip"]:visible').count()) === 1, '出ている説明は1つ');
+  // 同時に1つだけ：キーボードで出したまま別の用語にマウスを重ねると、前の説明は消える
+  const travel = page.locator('[data-testid="plan-summary"] [data-term="travel"]');
+  const { loc: travelTip } = await tipOf(page, travel);
+  await travel.hover();
+  await settle(page, 200);
+  check(
+    (await travelTip.isVisible()) && !(await hardTip.isVisible()),
+    '別の用語にマウスを重ねると、そちらだけ出す（同時に1つ）',
+  );
+  // 押して開いたものは、マウスが上にあっても、もう一度押せば閉じる
+  await travel.click();
+  await settle(page, 150);
+  check(await travelTip.isVisible(), 'マウスで押すと開いたまま');
+  await travel.click();
+  await settle(page, 150);
+  check(!(await travelTip.isVisible()), 'マウスが上にあっても、もう一度押すと閉じる');
+  await page.mouse.move(5, 700);
+  await settle(page, 300);
+  await tabInto(page, hard);
   await page.keyboard.press('Shift+Tab');
   await settle(page, 150);
   check(await tip.isVisible(), 'Shift+Tab で戻ると前の用語の説明が出る（Esc で消したのは外れるまで）');
@@ -225,11 +244,29 @@ async function rename(page) {
   check(/出勤〜退勤（拘束）/.test(lead) && /空き時間（待ち）/.test(lead), '稼働の見込み：見出しの文の言い換え', lead);
   const span = page.getByTestId('term-span');
   check((await span.innerText()) === '出勤〜退勤（拘束）', '稼働の見込み：上限の設定の用語', await span.innerText());
-  // ラベルの中の用語を押しても入力欄へは移らず、説明の開け閉めだけ
+  // 入力欄の名前（PR #42 のレビュー：用語のボタンを label の中に置かない。aria-labelledby か labels で名前が付く）
+  for (const [tid, want] of [
+    ['work-limit', /出勤〜退勤（拘束）の上限/],
+    ['work-fare', /交通費の単価/],
+  ]) {
+    const nm = await page.getByTestId(tid).evaluate((el) => {
+      const by = el.getAttribute('aria-labelledby');
+      if (by)
+        return by
+          .split(' ')
+          .map((id) => document.getElementById(id)?.textContent ?? '')
+          .join('');
+      return [...(el.labels ?? [])].map((l) => l.textContent).join('');
+    });
+    check(want.test(nm), `入力欄の名前：${tid}`, nm);
+  }
+  const labelled = await page.evaluate(() => document.querySelectorAll('label .term').length);
+  check(labelled === 0, '用語のボタンを label の中に置かない', labelled);
+  // 用語を押しても入力欄へは移らず、説明の開け閉めだけ
   await span.click();
   await settle(page, 150);
   const { loc: spanTip } = await tipOf(page, span);
-  check(await spanTip.isVisible(), 'ラベルの中の用語を押すと説明が出る');
+  check(await spanTip.isVisible(), '上限の設定の用語を押すと説明が出る');
   const focused = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'));
   check(focused !== 'work-limit', '押しても上限の入力欄へは移らない', focused);
   await page.locator('h1').click();
@@ -262,8 +299,17 @@ async function empties(page) {
   await we.waitFor({ timeout: 10000 });
   const wt = await we.innerText();
   check(/この週(は案がありません|には訪問がありません)/.test(wt), '週：なぜ空か', wt);
-  const batch = we.getByTestId('empty-next-batch');
-  check((await batch.count()) === 1, '週：［この週の案を作る］（月のまとめて作る）');
+  const batch = we.getByTestId('empty-next-batch').first();
+  const nb = await we.getByTestId('empty-next-batch').count();
+  const bl = nb > 0 ? await batch.innerText() : '';
+  check(
+    nb >= 1 && /\d+月の(案をまとめて|訪問と案を)作る/.test(bl),
+    '週：［〈M月〉の案をまとめて作る］（月のまとめて作る。月をまたぐ週は月ごと）',
+    {
+      nb,
+      bl,
+    },
+  );
   check((await we.locator('.btn-primary').count()) === 0, '週：主ボタンにしない（進み具合の帯の主ボタンと重ねない）');
   const href = await batch.getAttribute('href');
   check(/#\/month\?ym=\d{4}-\d{2}&do=batch$/.test(href ?? ''), '週：行き先は月の画面の ?do=batch', href);
@@ -334,6 +380,17 @@ async function legend(page) {
   check(!(await page.getByTestId('month-legend').isVisible()), '月：凡例の中身は畳んだ中');
   const line = await page.locator('.month-legend-line').innerText();
   check(/色＝日の状態/.test(line), '月：1行の要約', line);
+  const ln = await page.getByTestId('month-load-type').evaluate((el) =>
+    (el.getAttribute('aria-labelledby') ?? '')
+      .split(' ')
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(''),
+  );
+  check(ln === '混み具合：空きを数える人', '入力欄の名前：混み具合：空きを数える人（aria-labelledby）', ln);
+  check(
+    (await page.evaluate(() => document.querySelectorAll('label .term').length)) === 0,
+    '月：用語を label の中に置かない',
+  );
   await page.getByTestId('month-legend-toggle').click();
   await settle(page, 150);
   check(await page.getByTestId('month-legend').isVisible(), '「凡例を見る」で開く');
@@ -382,6 +439,42 @@ async function legend(page) {
   await page.locator('h1').click();
   await settle(page, 150);
   check(!(await tip.isVisible()), 'フォーカスが外れると消える');
+  // 休みを切り替えたら、出ている読み方も新しい文になる（文は日付で引く。PR #42 のレビュー）
+  // 月末に実行すると今月に休みを入れられる日が無いことがあるので、無ければ来月で見る
+  const nextYm = (() => {
+    const [y, m] = YM.split('-').map(Number);
+    return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+  })();
+  for (const ym of [YM, nextYm]) {
+    await open(page, `/month?ym=${ym}&staff=s1`, '[data-testid="month-off-toggle"]');
+    await page.getByTestId('month-off-toggle').click();
+    await settle(page, 200);
+    if ((await page.locator('[data-testid="month-day"][data-off="open"]').count()) > 0) break;
+  }
+  const openDay = page.locator('[data-testid="month-day"][data-off="open"]').first();
+  if ((await openDay.count()) > 0) {
+    const od = await openDay.getAttribute('data-date');
+    const offCell = page.locator(`[data-testid="month-day"][data-date="${od}"]`);
+    await tabInto(page, offCell);
+    const before = await tip.innerText();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      (d) =>
+        document.querySelector(`[data-testid="month-day"][data-date="${d}"]`)?.getAttribute('data-off') === 'requested',
+      od,
+      { timeout: 5000 },
+    );
+    await settle(page, 200);
+    const after = (await tip.isVisible()) ? await tip.innerText() : '';
+    check(after !== before && /希望休/.test(after), '休みを切り替えると、出ている読み方も新しい文', {
+      before: before.slice(0, 60),
+      after: after.slice(0, 80),
+    });
+    await page.keyboard.press('Enter');
+    await settle(page, 200);
+  } else {
+    check(false, '休みを入れられる日がある（読み方の更新の確かめ）');
+  }
   // 相性のセルの記号の意味
   await open(page, '/compat', '[data-testid="compat-table"]');
   const x = page.locator('.compat-btn', { hasText: '×' }).first();
@@ -439,6 +532,15 @@ async function mobile(browser) {
   const eb = await page.getByTestId('week-empty').boundingBox();
   const sw2 = await page.evaluate(() => document.documentElement.scrollWidth);
   check(eb && eb.x >= 0 && eb.x + eb.width <= 390 && sw2 <= 390, '390px：週の空の画面が収まる', { eb, sw2 });
+  // 帯の中の文・ボタンがどれも画面（と帯）の中に入る
+  const inside = await page.getByTestId('week-empty').evaluate((band) => {
+    const b = band.getBoundingClientRect();
+    return [...band.querySelectorAll('strong, p, .btn')].every((el) => {
+      const r = el.getBoundingClientRect();
+      return r.left >= b.left - 1 && r.right <= b.right + 1 && r.right <= 390 && r.width > 0;
+    });
+  });
+  check(inside, '390px：週の空の帯の文とボタンが帯と画面に入る');
   await page.getByTestId('week-empty').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-week-empty.png') });
   await page.emulateMedia({ media: 'print' });

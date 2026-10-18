@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CellGuideInput, cellGuide } from './monthGuide';
+import { type CellGuideInput, cellGuide, createTipStore } from './monthGuide';
 
 const base: CellGuideInput = {
   focus: 'all',
@@ -71,5 +71,26 @@ describe('cellGuide', () => {
     expect(client).toContain('時刻と名前＝この利用者さんの訪問の時刻と担当');
     expect(client).toContain('「代」＝いつもの担当でない');
     expect(client.some((l) => l.startsWith('「変」'))).toBe(false);
+  });
+});
+
+describe('createTipStore', () => {
+  it('日付で引く。同じ中身なら同じものを返し知らせない。変われば新しい文と知らせ', () => {
+    const st = createTipStore();
+    let n = 0;
+    const off = st.subscribe(() => n++);
+    const a = { head: '10月21日', text: '訪問 3件', lines: ['休 N'] };
+    st.set('2026-10-21', a);
+    expect(st.get('2026-10-21')).toBe(a);
+    st.set('2026-10-21', { ...a, lines: ['休 N'] });
+    expect(st.get('2026-10-21')).toBe(a);
+    expect(n).toBe(1);
+    st.set('2026-10-21', { ...a, text: '訪問 3件・希望休' });
+    expect(st.get('2026-10-21')?.text).toBe('訪問 3件・希望休');
+    expect(n).toBe(2);
+    expect(st.get('2026-10-22')).toBeNull();
+    off();
+    st.set('2026-10-22', a);
+    expect(n).toBe(2);
   });
 });

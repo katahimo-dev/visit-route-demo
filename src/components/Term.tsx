@@ -12,6 +12,8 @@ import './term.css';
 
 /** マウスが用語から離れてから説明を消すまで（ms。説明の上へ移る間は消さない） */
 const LEAVE_MS = 150;
+/** 用語の説明を開いたときの知らせ（detail は説明の id。ほかの用語は閉じる） */
+const TERM_OPEN_EVENT = 'term-open';
 
 /**
  * 浮かせた説明（role="tooltip"）。anchor の下（入らなければ上）に、画面の端で切れない位置に置く。
@@ -87,7 +89,18 @@ export function TipBubble({
  * 用語（点線の下線のボタン）と、その説明。k は用語のキー（lib/glossary）。children を渡すとその文字を出す（既定は言い換えた名前）。
  * 開き方：マウスを重ねる・Tab でフォーカス・押す（タッチ。もう一度押す・外を押すと閉じる）。閉じ方：離れる・フォーカスが外れる・Esc
  */
-export function Term({ k, children, testId }: { k: GlossaryKey; children?: ReactNode; testId?: string }) {
+export function Term({
+  k,
+  children,
+  testId,
+  id,
+}: {
+  k: GlossaryKey;
+  children?: ReactNode;
+  testId?: string;
+  /** 用語のボタンの id（入力欄の aria-labelledby から引くとき。PR #42 のレビュー：label の中には置かない） */
+  id?: string;
+}) {
   const { data } = useDemoData();
   const text = glossaryText(k, data.org.terms);
   const uid = useId();
@@ -125,6 +138,23 @@ export function Term({ k, children, testId }: { k: GlossaryKey; children?: React
     [],
   );
 
+  // 同時に出す説明は1つだけ（PR #42 のレビュー）：開いたら知らせ、ほかの用語は閉じる
+  useEffect(() => {
+    if (open) window.dispatchEvent(new CustomEvent(TERM_OPEN_EVENT, { detail: tipId }));
+  }, [open, tipId]);
+  useEffect(() => {
+    const onOther = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === tipId) return;
+      if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+      leaveTimer.current = null;
+      setHover(false);
+      setFocus(false);
+      setPinned(false);
+    };
+    window.addEventListener(TERM_OPEN_EVENT, onOther);
+    return () => window.removeEventListener(TERM_OPEN_EVENT, onOther);
+  }, [tipId]);
+
   // 出ている間：Esc で閉じる（フォーカスが無く、マウスを重ねて出したときも）・押して開いたときは外を押すと閉じる
   useEffect(() => {
     if (!open) return;
@@ -153,6 +183,7 @@ export function Term({ k, children, testId }: { k: GlossaryKey; children?: React
     <>
       <button
         ref={btn}
+        id={id}
         type="button"
         className="term"
         aria-describedby={tipId}
@@ -171,14 +202,21 @@ export function Term({ k, children, testId }: { k: GlossaryKey; children?: React
         onBlur={() => {
           setFocus(false);
           setPinned(false);
-          setDismissed(false);
+          // 押して閉じたあとマウスが上に残っていれば、離れるまで出し直さない
+          if (!hover) setDismissed(false);
         }}
         onClick={(e) => {
           // 表の行・ラベルの中に置いても、押したときに行の操作・入力欄へのフォーカスを起こさない
           e.preventDefault();
           e.stopPropagation();
-          setDismissed(false);
-          setPinned((p) => !p);
+          // 押して開いたもの（pinned）は、マウスが上にあっても、もう一度押せば閉じる。そうでなければ押して開く（PR #42 のレビュー）
+          if (pinned) {
+            setPinned(false);
+            setDismissed(true);
+          } else {
+            setDismissed(false);
+            setPinned(true);
+          }
         }}
       >
         {children ?? GLOSSARY[k].label}

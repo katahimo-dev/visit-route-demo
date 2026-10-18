@@ -31,7 +31,7 @@ import type { AiPlan, AiRun } from '../contracts/data';
 import type { Reason, SolveResult, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
 import { jstDate } from '../domain/time';
-import { achievements, diff, hundredBreakdown, score, toHundred } from '../evaluate';
+import { achievements, diff, hundredBreakdown, ruleLowerBounds, score, toHundred } from '../evaluate';
 import { attempt, dateText, deltaText, formError, own, pointsText, r0 } from '../lib/common';
 import { compareEmptyGuide } from '../lib/emptyGuide';
 import { anotherPlanOptions } from '../lib/planMenu';
@@ -186,11 +186,15 @@ export default function ComparePage() {
   const reasons = useMemo(() => {
     const out = new Map<string, ScoreReason | null>();
     if (!scoreProblem || !scale) return out;
+    const ruleLower = attempt(() => ruleLowerBounds(scoreProblem)).value ?? {};
     for (const c of choices) {
       const sc = scores.get(c.id)?.value;
       if (!sc) continue;
       const ach = attempt(() => achievements(scoreProblem, c.routes)).value ?? [];
-      out.set(c.id, scoreReason(hundredBreakdown(sc, scale, scoreProblem), sc, ach, scoreRules));
+      out.set(
+        c.id,
+        scoreReason(hundredBreakdown(sc, scale, scoreProblem), sc, { achievements: ach, rules: scoreRules, ruleLower }),
+      );
     }
     return out;
   }, [choices, scores, scoreProblem, scale, scoreRules]);

@@ -65,7 +65,16 @@ import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave, leaveOn } from '../domain/leaves';
 import { NONE, timeOrder, windowText } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, jstDate } from '../domain/time';
-import { achievements, BALANCE_RULE_KEY, diff, hundredBreakdown, normalize, score, toHundred } from '../evaluate';
+import {
+  achievements,
+  BALANCE_RULE_KEY,
+  diff,
+  hundredBreakdown,
+  normalize,
+  ruleLowerBounds,
+  score,
+  toHundred,
+} from '../evaluate';
 import {
   absencesOn,
   absenceText,
@@ -2096,10 +2105,19 @@ export default function PlanPage() {
   // ---- 日の画面の整理（PRD D63）：1行のまとめ・案を変えるメニュー・右の欄・表示の切り替え・地図の横置き ----
   const hardCount = cs?.hardViolations.length ?? 0;
   const hundredNow = cs && scoreScale ? toHundred(cs.total, scoreScale) : null;
+  /** 物差しの下限の条件ごとの内訳（点数の理由で条件ごとの超過を比べる） */
+  const scoreLower = useMemo(
+    () => (scoreProblem ? (attempt(() => ruleLowerBounds(scoreProblem)).value ?? {}) : {}),
+    [scoreProblem],
+  );
   /** 点を下げているいちばん大きい理由（PRD D173。減点の内訳と条件ごとの達成から） */
   const reasonNow =
     cs && scoreScale && scoreProblem
-      ? scoreReason(hundredBreakdown(cs, scoreScale, scoreProblem), cs, curAch, scoreRules)
+      ? scoreReason(hundredBreakdown(cs, scoreScale, scoreProblem), cs, {
+          achievements: curAch,
+          rules: scoreRules,
+          ruleLower: scoreLower,
+        })
       : null;
   /** 訪問の一覧（表示の「一覧」。休みのため無しの訪問も薄く出す。ADR-0013） */
   const visitList = (
@@ -2651,8 +2669,8 @@ export default function PlanPage() {
       {overSpan.length > 0 && (
         <div className="plan-band is-warn row" data-testid="band-over-span">
           <WithIcon icon={Timer} size={16}>
-            拘束（最初の訪問の開始〜最後の訪問の終わり）が上限の{data.org.spanLimitHours}時間を超える{terms.staff}：
-            {overSpan.map((x) => `${staffName(x.staffId)} ${hmText(x.span)}`).join('・')}（
+            出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の{data.org.spanLimitHours}時間を超える
+            {terms.staff}：{overSpan.map((x) => `${staffName(x.staffId)} ${hmText(x.span)}`).join('・')}（
             {aiPlan ? '今の案' : '確定した割当'}からの見込み）
           </WithIcon>
           <button

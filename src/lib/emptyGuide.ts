@@ -40,8 +40,8 @@ export type PeriodInput = {
 
 /**
  * 週・月（稼働の見込み）の空の画面（PRD D176）。案のある日が1日でもあれば空ではない（null）。
- * - 訪問がある日があるのに案が無い：「〈期間〉は案がありません」。今日以降の訪問の日があれば［〈期間〉の案を作る］（その最初の日の月の
- *   まとめて作る）と［〈M/D〉の案を日の画面で作る］。過ぎた期間なら日の画面だけ（まとめて作るは今日より前の日を作らない）
+ * - 訪問がある日があるのに案が無い：「〈期間〉は案がありません」。今日以降の訪問の日があれば、その月ごとに［〈M月〉の案をまとめて作る］
+ *   （月の画面のまとめて作る。月をまたぐ週は2つ）と［〈M/D〉の案を日の画面で作る］。過ぎた期間なら日の画面だけ（まとめて作るは今日より前の日を作らない）
  * - 訪問が無い：「〈期間〉には訪問がありません」。［〈M月〉の訪問と案を作る］（定期パターンから作る。月の画面のまとめて作る）と
  *   ［日の画面で訪問を足す］
  */
@@ -78,11 +78,20 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
     };
   }
   const first = future[0]!;
+  // まとめて作るは月ごと（月の画面の欄）。月をまたぐ期間は、今日以降の訪問のある月ごとにボタンを出す（PR #42 のレビュー）
+  const months = [...new Set(future.map(ymOf))];
+  const across =
+    months.length > 1 ? `${months.map(monthText).join('と')}にまたがるので、月ごとにまとめて作ります。` : '';
   return {
     title: `${period}は案がありません`,
-    why: `訪問のある ${visitDays.length}日に、まだ案（割当）がありません。月の画面の「まとめて作る」で、${monthText(ymOf(first))}のまだ案の無い日をまとめて作れます。`,
+    why: `訪問のある ${visitDays.length}日に、まだ案（割当）がありません。月の画面の「まとめて作る」で、その月のまだ案の無い日をまとめて作れます。${across}`,
     actions: [
-      { kind: 'batch', ym: ymOf(first), label: `${period}の案を作る`, primary: true },
+      ...months.map((ym, i) => ({
+        kind: 'batch' as const,
+        ym,
+        label: `${monthText(ym)}の案をまとめて作る`,
+        primary: i === 0,
+      })),
       { kind: 'day', date: first, label: `${mdText(first)}の案を日の画面で作る`, primary: false },
     ],
   };

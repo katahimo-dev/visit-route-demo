@@ -13,8 +13,9 @@ describe('periodEmptyGuide', () => {
     const g = periodEmptyGuide({ ...base, visitDays: ['2026-10-19', '2026-10-22', '2026-10-23'] });
     expect(g?.title).toBe('この週は案がありません');
     expect(g?.why).toContain('訪問のある 3日');
+    expect(g?.why).not.toContain('またがる');
     expect(g?.actions).toEqual([
-      { kind: 'batch', ym: '2026-10', label: 'この週の案を作る', primary: true },
+      { kind: 'batch', ym: '2026-10', label: '10月の案をまとめて作る', primary: true },
       { kind: 'day', date: '2026-10-22', label: '10/22の案を日の画面で作る', primary: false },
     ]);
   });
@@ -26,6 +27,20 @@ describe('periodEmptyGuide', () => {
       visitDays: ['2026-10-27', '2026-11-01'],
     });
     expect(g?.actions[0]).toMatchObject({ kind: 'batch', ym: '2026-11' });
+    expect(g?.actions).toHaveLength(2);
+  });
+  it('月をまたぐ週で両方の月に今日以降の訪問：月ごとにボタン（先の月が主）と補足の文', () => {
+    const g = periodEmptyGuide({
+      ...base,
+      dates: ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01'],
+      today: '2026-10-28',
+      visitDays: ['2026-10-30', '2026-11-01'],
+    });
+    expect(g?.actions.filter((a) => a.kind === 'batch')).toEqual([
+      { kind: 'batch', ym: '2026-10', label: '10月の案をまとめて作る', primary: true },
+      { kind: 'batch', ym: '2026-11', label: '11月の案をまとめて作る', primary: false },
+    ]);
+    expect(g?.why).toContain('10月と11月にまたがるので、月ごとにまとめて作ります');
   });
   it('訪問の日がみな過ぎた：日の画面だけ（まとめて作るは出さない）', () => {
     const g = periodEmptyGuide({ ...base, today: '2026-10-30', visitDays: ['2026-10-20'] });

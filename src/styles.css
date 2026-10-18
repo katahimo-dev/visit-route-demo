@@ -1792,6 +1792,18 @@ a.icon-btn:hover {
     flex-direction: column;
     align-self: stretch;
   }
+  /* 狭い画面の横1行の帯：アイコンを隠し、文とボタンを縦に（flex-basis で横にはみ出さない。PR #42 のレビュー） */
+  .empty-next.is-compact {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .empty-next.is-compact > svg {
+    display: none;
+  }
+  .empty-next.is-compact .empty-next-text {
+    flex: none;
+    min-width: 0;
+  }
 }
 @media print {
   .empty-next-actions {
