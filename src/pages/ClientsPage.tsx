@@ -325,7 +325,7 @@ export default function ClientsPage() {
     <div className="stack">
       <PageHeader
         icon={House}
-        title={terms.client}
+        title={`${terms.client}一覧`}
         lead={`${terms.client}の住所・特性・条件を決めます`}
         actions={
           <button

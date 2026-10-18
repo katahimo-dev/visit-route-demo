@@ -8,6 +8,7 @@ import {
   Clock,
   Database,
   FlaskConical,
+  GitCompareArrows,
   HeartHandshake,
   House,
   Layers,
@@ -15,11 +16,13 @@ import {
   type LucideIcon,
   Menu,
   Route as RouteIcon,
+  Search,
   SlidersHorizontal,
   Tags,
   Timer,
   TriangleAlert,
   UserRound,
+  UserX,
 } from 'lucide-react';
 import {
   type MouseEvent,
@@ -33,11 +36,22 @@ import {
   useState,
 } from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { CommandPalette, IS_MAC } from '../components/CommandPalette';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { RebuildBand } from '../components/rebuildBand';
 import { addDays, jstDate } from '../domain/time';
+import { isPaletteShortcut } from '../lib/commandPalette';
 import { dateText } from '../lib/common';
-import { bottomTabs, isActiveNav, type NavSection, navTitle } from '../lib/nav';
+import {
+  bottomTabs,
+  isActiveNav,
+  isActiveTab,
+  type MenuItem,
+  menuSections,
+  type NavIcon,
+  type NavSection,
+  navTitleParts,
+} from '../lib/nav';
 import { showsRebuildBand } from '../lib/rebuildBand';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientsPage from '../pages/ClientsPage';
@@ -132,8 +146,28 @@ function Guarded({ element }: { element: ReactElement }) {
   );
 }
 
-/** 左のメニュー：ホーム・予定（月・週・日）・問い合わせ・〈利用者さん〉・〈スタッフ〉・割当の設定・データ（PRD D59・D102・D144） */
-type NavItem = { to: string; label: string; icon: LucideIcon };
+/** 左のメニュー（PRD D178・D179。並びは lib/nav の menuSections） */
+type NavItem = MenuItem;
+
+/** メニューの項目のアイコン */
+const NAV_ICONS: Record<NavIcon, LucideIcon> = {
+  home: ListTodo,
+  month: CalendarRange,
+  week: CalendarClock,
+  day: CalendarDays,
+  compare: GitCompareArrows,
+  absence: UserX,
+  vacancy: CalendarSearch,
+  clients: House,
+  compat: HeartHandshake,
+  staff: UserRound,
+  hours: Clock,
+  workload: Timer,
+  rules: SlidersHorizontal,
+  types: Layers,
+  items: Tags,
+  data: Database,
+};
 
 /** スマホのメニューに切り替わる幅（styles.css の @media (max-width: 860px) と同じ。PRD D132） */
 const NARROW_QUERY = '(max-width: 860px)';
@@ -148,12 +182,28 @@ function AdminShell() {
   const headerRef = useRef<HTMLElement>(null);
   const sideNavRef = useRef<HTMLElement>(null);
   const drawerId = useId();
+  /** コマンドパレットを開いているか（PRD D181） */
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Ctrl+K（mac は ⌘K）でコマンドパレットを開く（PRD D181）。入力欄・テキストエリアの中でも開く（入れた文字はそのまま、閉じるとそこへ戻る）。
+  // ほかの欄・確認・引き出し（aria-modal）が開いているあいだは開かない（そのときもブラウザの動きは止める）。開いたあとのキーはパレットが受ける
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isPaletteShortcut(e, IS_MAC)) return;
+      // 開かないときもブラウザの動き（検索欄・アドレスバーへ移る）は止める
+      e.preventDefault();
+      if (document.querySelector('[aria-modal="true"]')) return;
+      setPaletteOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   // 画面を移ったら上へ。引き出しも閉じる（画面を選ぶと閉じる。PRD D133）
   // 本体はブロックにする（式本体だと戻り値が後始末として呼ばれる。Brave の scrollTo は値を返し「is not a function」になった）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 画面を移ったときだけ
   useEffect(() => {
     window.scrollTo(0, 0);
     setMenuOpen(false);
+    setPaletteOpen(false);
   }, [pathname]);
   // 広い画面へ戻ったら引き出しを閉じる（左のメニューが出るので）
   useEffect(() => {
@@ -185,52 +235,10 @@ function AdminShell() {
       root.removeProperty('--header-h');
     };
   }, []);
-  // 動線の整理（PRD D59・D102）：予定（月・週・日）／問い合わせ／〈利用者さん〉／〈スタッフ〉／割当の設定／データ。
-  // 比較は日の画面の「案を比べる」から開く（メニューには出さない）。ルートの URL は変えない
-  // 先頭にホーム（PRD D144。見出しなし）
-  const groups: NavSection<NavItem>[] = [
-    {
-      items: [{ to: '/home', label: 'ホーム', icon: ListTodo }],
-    },
-    {
-      title: '予定',
-      items: [
-        { to: '/month', label: '月', icon: CalendarRange },
-        { to: '/week', label: '週', icon: CalendarClock },
-        { to: '/plan', label: '日', icon: CalendarDays },
-      ],
-    },
-    {
-      title: '問い合わせ',
-      items: [{ to: '/vacancy', label: '空き状況', icon: CalendarSearch }],
-    },
-    {
-      title: terms.client,
-      items: [
-        { to: '/clients', label: '一覧・編集', icon: House },
-        { to: '/compat', label: '相性', icon: HeartHandshake },
-      ],
-    },
-    {
-      title: terms.staff,
-      items: [
-        { to: '/staff', label: '一覧・編集', icon: UserRound },
-        { to: '/availability', label: '稼働時間', icon: Clock },
-        { to: '/workload', label: '稼働の見込み', icon: Timer },
-      ],
-    },
-    {
-      title: '割当の設定',
-      items: [
-        { to: '/rules', label: '条件の重み', icon: SlidersHorizontal },
-        { to: '/types', label: '訪問の種類', icon: Layers },
-        { to: '/items', label: '特性の項目', icon: Tags },
-      ],
-    },
-    {
-      items: [{ to: '/data', label: 'データ', icon: Database }],
-    },
-  ];
+  // メニューの並び（PRD D178〜D180。ADR-0027）：ホーム／予定を組む／当日の対応／問い合わせ／人の情報／AI の考え方／データ。
+  // ルートの URL は変えない。当日の対応の「欠勤・キャンセル」は今日の日の画面の欄を開く操作（今の画面の印は付けない）
+  const today = jstDate(Date.now());
+  const groups = useMemo(() => menuSections(terms, today), [terms, today]);
   const brand = (
     <div className="brand">
       <span className="brand-mark" aria-hidden="true">
@@ -245,8 +253,8 @@ function AdminShell() {
       </div>
     </div>
   );
-  /** 上の帯の今の画面の名前（スマホ。PRD D132） */
-  const screenName = navTitle(groups, pathname);
+  /** 上の帯の今の画面の名前（スマホ。PRD D132・D179。見出し・項目名） */
+  const screenName = navTitleParts(groups, pathname);
   return (
     <div className="app-shell">
       <aside ref={sideNavRef} className="side-nav">
@@ -261,9 +269,35 @@ function AdminShell() {
               <RouteIcon size={18} strokeWidth={2.4} />
             </span>
             <strong className="m-screen-name" data-testid="screen-name">
-              {screenName ?? data.org.name}
+              {/* 見出しと項目名はそれぞれひとまとまりで折り返す（入りきらなければ項目名を次の行へ。PRD D179） */}
+              {screenName ? (
+                <>
+                  {screenName.group && <span className="m-screen-group">{screenName.group}・</span>}
+                  <span className="m-screen-item">{screenName.item}</span>
+                </>
+              ) : (
+                data.org.name
+              )}
             </strong>
           </div>
+          {/* コマンドパレットを開く（PRD D181。広い画面は「探す・移動」とキーの印、狭い画面は「探す」） */}
+          <button
+            type="button"
+            className="btn btn-small cmdk-open"
+            aria-haspopup="dialog"
+            aria-expanded={paletteOpen}
+            aria-keyshortcuts={IS_MAC ? 'Meta+K' : 'Control+K'}
+            onClick={() => setPaletteOpen(true)}
+            data-testid="cmdk-open"
+          >
+            <Search size={16} aria-hidden="true" />
+            <span>
+              探す<span className="cmdk-open-more">・移動</span>
+            </span>
+            <span className="cmdk-open-kbd" aria-hidden="true">
+              <kbd>{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
+            </span>
+          </button>
           <button
             ref={menuBtnRef}
             type="button"
@@ -298,8 +332,10 @@ function AdminShell() {
         </main>
         {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・日・空き状況。PRD D134・D144。印刷では出さない） */}
         <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
-          {bottomTabs(groups).map(({ to, label, icon: Icon }) => {
-            const on = isActiveNav(to, pathname);
+          {bottomTabs(groups).map(({ to, label, icon }) => {
+            const Icon = NAV_ICONS[icon];
+            // 比較はタブに無いので「日」（PRD D134・D180）
+            const on = isActiveTab(to, pathname);
             return (
               <Link
                 key={to}
@@ -319,6 +355,7 @@ function AdminShell() {
           })}
         </nav>
       </div>
+      {paletteOpen && <CommandPalette sections={groups} terms={terms} onClose={() => setPaletteOpen(false)} />}
       {menuOpen && (
         <NavDrawer
           id={drawerId}
@@ -364,26 +401,24 @@ function NavGroups({
       {groups.map((g) => (
         <div key={g.items[0]!.to} className="nav-group">
           {g.title && <h2 className="nav-group-title">{g.title}</h2>}
-          {g.items.map(({ to, label, icon: Icon }) =>
-            // 比較（メニューに無い）は日の画面の続きなので、日を選んだ状態で見せる（読み上げにも今の画面と伝える）。
-            // NavLink は自分の URL のときしか aria-current を付けないので、このときだけ Link にする
-            to !== pathname && isActiveNav(to, pathname) ? (
-              <Link key={to} to={to} className="nav-link active" aria-current="page" onClick={(e) => onPick?.(e, to)}>
-                <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
-                <span>{label}</span>
-              </Link>
-            ) : (
-              <NavLink
+          {g.items.map(({ to, label, icon }) => {
+            const Icon = NAV_ICONS[icon];
+            // 今の画面の印（比較は「案を比べる」。操作の項目（欠勤・キャンセル）には付けない。PRD D180）
+            const on = isActiveNav(to, pathname);
+            return (
+              <Link
                 key={to}
                 to={to}
-                className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+                className={on ? 'nav-link active' : 'nav-link'}
+                aria-current={on ? 'page' : undefined}
                 onClick={(e) => onPick?.(e, to)}
+                data-testid="nav-link"
               >
                 <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
                 <span>{label}</span>
-              </NavLink>
-            ),
-          )}
+              </Link>
+            );
+          })}
         </div>
       ))}
     </nav>

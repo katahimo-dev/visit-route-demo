@@ -1,5 +1,5 @@
 // スマホ（幅860px以下）のメニュー（PRD D132〜D135。ADR-0024）を本物のブラウザ（390×844）で確かめる：
-// 上の帯（ロゴと今の画面の名前・「メニュー」・日付の切り替え。〈利用者さん〉と〈スタッフ〉の「一覧・編集」を見分ける）、
+// 上の帯（ロゴと今の画面の名前・「メニュー」・日付の切り替え。〈利用者さん〉一覧と〈スタッフ〉一覧を見分ける。PRD D179）、
 // 引き出し（role="dialog"・aria-modal・名前、ボタンの aria-expanded・aria-controls、グループの見出し付きの縦並び、
 // 画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」へ、Tab・Shift+Tab が中で回る、開いているあいだ裏を巻かない）、
 // 下のタブ（ホーム・月・週・日・空き状況（PRD D144）、active と aria-current、比較では「日」、本文の最後がタブに隠れない）、
@@ -67,12 +67,16 @@ async function header(page) {
   const name = await page.getByTestId('screen-name').innerText();
   await open(page, '/staff', '[data-testid="screen-name"]');
   const name2 = await page.getByTestId('screen-name').innerText();
-  check(/・一覧・編集$/.test(name) && /・一覧・編集$/.test(name2) && name !== name2, '上の帯：一覧・編集を見分ける', {
-    name,
-    name2,
-  });
+  check(
+    name === '人の情報・利用者さん一覧' && name2 === '人の情報・スタッフ一覧',
+    '上の帯：〈利用者さん〉一覧と〈スタッフ〉一覧を見分ける',
+    {
+      name,
+      name2,
+    },
+  );
   await open(page, '/plan', '[data-testid="screen-name"]');
-  check((await page.getByTestId('screen-name').innerText()) === '予定・日', '上の帯：予定・日');
+  check((await page.getByTestId('screen-name').innerText()) === '予定を組む・日', '上の帯：予定を組む・日');
   check(await visible(page.locator('.app-header .date-switch')), '上の帯：日付の切り替えがある');
   check(!(await visible(page.locator('.side-nav'))), '左のメニューは出さない');
   const hb = await page.locator('.app-header').boundingBox();
@@ -114,7 +118,7 @@ async function drawerOpenClose(page) {
   );
   const titles = await d.locator('.nav-group-title').allInnerTexts();
   check(
-    titles.length >= 5 && titles.includes('予定') && titles.includes('割当の設定'),
+    titles.length >= 5 && titles.includes('予定を組む') && titles.includes('AI の考え方'),
     '引き出し：グループの見出し付き',
     titles,
   );
@@ -122,7 +126,7 @@ async function drawerOpenClose(page) {
   const n = await links.count();
   const boxes = [];
   for (let i = 0; i < n; i++) boxes.push(await links.nth(i).boundingBox());
-  check(n >= 13 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y), '引き出し：全部のメニューを縦に並べる', {
+  check(n >= 16 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y), '引き出し：全部のメニューを縦に並べる', {
     n,
   });
   await page.waitForTimeout(400); // 出てくる動きが終わるまで
@@ -178,11 +182,11 @@ async function drawerOpenClose(page) {
   // 画面を選ぶ
   await btn.click();
   await d.waitFor();
-  await d.locator('.nav-group', { hasText: 'スタッフ' }).locator('.nav-link', { hasText: '一覧・編集' }).click();
+  await d.locator('.nav-link', { hasText: 'スタッフ一覧' }).click();
   await d.waitFor({ state: 'detached' });
   await page.waitForURL(/#\/staff/);
   check(
-    (await isFocused(btn)) && /スタッフ・一覧・編集$/.test(await page.getByTestId('screen-name').innerText()),
+    (await isFocused(btn)) && /・スタッフ一覧$/.test(await page.getByTestId('screen-name').innerText()),
     '画面を選ぶと移って閉じ、フォーカスが「メニュー」へ',
   );
   // 今の画面を選んでも閉じるだけ（URL のクエリ＝画面の状態を消さない）

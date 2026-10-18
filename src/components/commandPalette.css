@@ -1,0 +1,163 @@
+/* コマンドパレット（components/CommandPalette.tsx。PRD D181〜D183）。画面の上寄りの中央。
+   右の欄・メニューの引き出し（1100）より前、トースト（1200）・確認ダイアログ（1300）より後ろ */
+.cmdk-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(10vh, calc(12px + env(safe-area-inset-top, 0px))) max(12px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+.cmdk-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(40, 25, 15, 0.4);
+  animation: drawer-fade 0.15s ease-out;
+}
+.cmdk {
+  position: relative;
+  width: min(600px, 100%);
+  max-height: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 50px rgba(40, 25, 15, 0.3);
+  overflow: hidden;
+}
+.cmdk-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.cmdk-head-icon {
+  flex: none;
+  color: var(--primary);
+}
+.cmdk-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 6px 2px;
+  font-size: 1.05rem;
+  background: transparent;
+}
+.cmdk-input:focus {
+  outline: none;
+}
+.cmdk-close {
+  flex: none;
+}
+.cmdk-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+}
+.cmdk-list:empty {
+  display: none;
+}
+.cmdk-group + .cmdk-group {
+  margin-top: 6px;
+}
+.cmdk-group-title {
+  padding: 6px 10px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #b3a397;
+}
+.cmdk-option {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.cmdk-option.is-active {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+.cmdk-option-label {
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-option-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-option-enter {
+  flex: none;
+  align-self: center;
+  color: var(--primary);
+}
+.cmdk-rest {
+  padding: 4px 10px 2px;
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+.cmdk-empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: var(--sub);
+}
+.cmdk-foot {
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--sub);
+}
+.cmdk-foot kbd,
+.cmdk-open kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--soft);
+  font-family: inherit;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--sub);
+}
+/* 上の帯の「探す・移動」のボタン（App.tsx）。狭い画面では「探す」だけ・キーの印を出さない */
+.cmdk-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+@media (max-width: 860px) {
+  .cmdk-open-more,
+  .cmdk-open-kbd,
+  .cmdk-foot {
+    display: none;
+  }
+  .cmdk-wrap {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+}
+/* 印刷では出さない */
+@media print {
+  .cmdk-wrap,
+  .cmdk-open {
+    display: none !important;
+  }
+}
