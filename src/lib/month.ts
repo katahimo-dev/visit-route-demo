@@ -70,10 +70,23 @@ export function calendarWeeks(ym: string): string[][] {
  * 足す訪問が無ければ同じデータを返す。added は足した訪問の件数
  */
 export function expandMonth(d: DemoData, ym: string, today: string): { data: DemoData; added: number } {
+  const c = expandMonthVisits(d, ym, today);
+  if (c.added === 0) return { data: d, added: 0 };
+  return { data: { ...d, visits: c.visits }, added: c.added };
+}
+
+/**
+ * expandMonth の訪問だけ（読むのは定期パターン・訪問・〈利用者さん〉だけ。案・確定した割当が変わっても結果は同じなので、
+ * 画面はこの3つと月・今日で覚えておける。進み具合の帯。PR #38 のレビュー）。足す訪問が無ければ同じ訪問の配列を返す
+ */
+export function expandMonthVisits(
+  d: Pick<DemoData, 'patterns' | 'visits' | 'clients'>,
+  ym: string,
+  today: string,
+): { visits: DemoData['visits']; added: number } {
   const days = monthDates(ym);
   const c = applyPatterns(d, { from: days[0]!, to: days.at(-1)! }, today);
-  if (c.added.length === 0) return { data: d, added: 0 };
-  return { data: { ...d, visits: c.visits }, added: c.added.length };
+  return { visits: c.visits, added: c.added.length };
 }
 
 /** その日の取り消しでなく、〈利用者さん〉の休み（ADR-0013）でもない訪問 */
@@ -728,7 +741,7 @@ export function attentionList(
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
 }
 
-// ---- 今月の準備（PRD D59。design.md §4 pages「動線の整理」）----
+// ---- 今月の準備（PRD D59。D151 から進み具合の帯（月・週・日）に出す。design.md §4 pages「動線の整理」「進み具合の帯」）----
 
 /** 月の「今月の準備」の進み具合（その月の今日以降の日について） */
 export type MonthProgress = {

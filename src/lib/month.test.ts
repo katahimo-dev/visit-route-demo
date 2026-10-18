@@ -20,6 +20,7 @@ import {
   dayPlanOf,
   dayStatus,
   expandMonth,
+  expandMonthVisits,
   firstDayOf,
   isYm,
   monthDates,
@@ -220,6 +221,18 @@ describe('月の訪問の展開（expandMonth）', () => {
     const again = expandMonth(d1, '2026-12', '2026-12-10');
     expect(again.added).toBe(0);
     expect(again.data).toBe(d1);
+  });
+  it('expandMonthVisits は expandMonth と同じ訪問・件数（定期パターン・訪問・〈利用者さん〉だけを読む）', () => {
+    const d0 = createDemoData('2026-10-16');
+    const full = expandMonth(d0, '2026-12', '2026-12-10');
+    const only = expandMonthVisits(
+      { patterns: d0.patterns, visits: d0.visits, clients: d0.clients },
+      '2026-12',
+      '2026-12-10',
+    );
+    expect(only.added).toBe(full.added);
+    expect(only.visits).toEqual(full.data.visits);
+    expect(expandMonthVisits(full.data, '2026-12', '2026-12-10')).toEqual({ visits: full.data.visits, added: 0 });
   });
 });
 

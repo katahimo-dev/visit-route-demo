@@ -1,0 +1,151 @@
+/* 予定（月・週・日）に共通の進み具合の帯（PRD D151〜D155。ADR-0025 追記） */
+.progress-band {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 14px;
+  min-height: 46px;
+  box-sizing: border-box;
+  position: relative;
+}
+.pb-month {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pb-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.pb-item strong {
+  font-variant-numeric: tabular-nums;
+}
+.pb-item:hover {
+  border-color: var(--primary);
+}
+.pb-item:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 1px;
+}
+.pb-item.is-done {
+  border-color: var(--ok);
+  background: #eef7f1;
+}
+.pb-item.is-done > svg {
+  color: var(--ok);
+}
+.pb-item.is-warn {
+  border-color: var(--warn);
+  background: #fdf3e1;
+}
+.pb-day {
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.pb-day.is-open strong {
+  color: #9a6512;
+}
+.pb-next {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+.pb-next .btn {
+  white-space: nowrap;
+}
+.pb-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--sub);
+  white-space: nowrap;
+}
+.pb-status.is-done {
+  color: var(--ok);
+  font-weight: 700;
+}
+.pb-label-short {
+  display: none;
+}
+/* 下の縁に細い積み上げ（確定済み・案あり・案なしの日数。PRD D80 の色） */
+.pb-bar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 3px;
+  height: 3px;
+  width: auto;
+}
+.pb-bar .prep-part.is-none {
+  border: 0;
+}
+.progress-band.is-loading {
+  color: var(--sub);
+}
+
+/* 狭い画面（390px）：1行に収める。訪問・この日・「日」「件」を省き、ボタンは短い文 */
+@media (max-width: 600px) {
+  .progress-band {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 6px 10px;
+    min-height: 42px;
+  }
+  .pb-items {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .pb-visits,
+  .pb-day,
+  .pb-long {
+    display: none;
+  }
+  .pb-item {
+    padding: 2px 6px;
+    font-size: 0.8rem;
+    gap: 2px;
+  }
+  .pb-item > svg {
+    display: none;
+  }
+  .pb-label-long {
+    display: none;
+  }
+  .pb-label-short {
+    display: inline;
+  }
+  .pb-next .btn {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .pb-bar {
+    left: 10px;
+    right: 10px;
+    bottom: 2px;
+  }
+}
+
+@media print {
+  .progress-band {
+    display: none !important;
+  }
+}
