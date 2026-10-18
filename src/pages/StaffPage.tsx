@@ -17,7 +17,8 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
-import { Check, PlaceEditor } from '../components/parts';
+import { Check } from '../components/parts';
+import { AddressField } from '../components/placeLookup';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
@@ -437,7 +438,14 @@ export default function StaffPage() {
           />
 
           <SectionTitle icon={Home}>自宅</SectionTitle>
-          <PlaceEditor value={form.home} onChange={(home) => setForm({ ...form, home })} />
+          {/* 郵便番号は住所を探すためだけで保存しない（自宅は契約の Place のまま。PRD D121） */}
+          <AddressField
+            key={form.id}
+            value={form.home}
+            onChange={(home) => setForm((f) => (f ? { ...f, home } : f))}
+            testId="staff-home"
+            postalLabel="郵便番号（任意。住所を探すためだけで、保存しません）"
+          />
         </SidePanel>
       )}
       {offboardFor && !form && <OffboardPanel staffId={offboardFor} onClose={() => setOffboardFor(null)} />}

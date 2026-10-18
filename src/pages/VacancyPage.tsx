@@ -14,10 +14,10 @@ import { Link } from 'react-router-dom';
 import { ConditionsEditor } from '../components/conditions';
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
-import { PlaceEditor } from '../components/parts';
+import { AddressField } from '../components/placeLookup';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
-import type { Client, Pattern, Place } from '../contracts/documents';
+import type { Client, ClientPlace, Pattern } from '../contracts/documents';
 import { EMPTY_REFERRER, patternSchema } from '../contracts/documents';
 import type { Condition } from '../contracts/rules';
 import {
@@ -38,14 +38,16 @@ import {
 } from '../contracts/vacancy';
 import { HALF_HOURS, timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, jstHhmm, minutesToHhmm, weekday } from '../domain/time';
+import { toPlace } from '../lib/addressLookup';
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
-import { attempt, dateText, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
+import { attempt, dateText, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { type InquiryDayMark, type InquiryRow, inquiryDayLevel, inquiryRows, vacancyLevel } from '../lib/glance';
 import { referrerRecipients, vacancySubject } from '../lib/mail';
 import { buildBccMails } from '../lib/mailto';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
+import { normalizePostalCode } from '../lib/postalCode';
 import { insertAllIntoPlans, weekStart } from '../lib/week';
 import { applyPatterns } from '../patterns';
 import { useDemoData } from '../store';
@@ -205,7 +207,8 @@ export default function VacancyPage() {
   const [typeId, setTypeId] = useState('');
   const [duration, setDuration] = useState('60');
   const [requirements, setRequirements] = useState<Condition[]>([]);
-  const [place, setPlace] = useState<Place>({ address: '', lat: null, lng: null });
+  // 場所（データには保存しない一時の入力。郵便番号は住所を探すためと、仮押さえで〈利用者さん〉に写すため。PRD D118〜D121）
+  const [place, setPlace] = useState<ClientPlace>({ address: '', lat: null, lng: null, postalCode: '' });
   const [weeks, setWeeks] = useState(VACANCY_WEEKS_DEFAULT);
   const [from, setFrom] = useState(today);
   // 問い合わせの試算
@@ -221,7 +224,12 @@ export default function VacancyPage() {
   const durationOk =
     Number.isInteger(durationNum) && durationNum >= VACANCY_DURATION_MIN && durationNum <= VACANCY_DURATION_MAX;
   const fromOk = /^\d{4}-\d{2}-\d{2}$/.test(from);
-  const exactPlace = hasLocation(place) ? place : null;
+  // 試算に渡すのは住所・位置だけ（契約の Place）。郵便番号を打っても計算し直さない
+  const exactPlace = useMemo(
+    () =>
+      place.lat !== null && place.lng !== null ? { address: place.address, lat: place.lat, lng: place.lng } : null,
+    [place.address, place.lat, place.lng],
+  );
 
   const query = useMemo<VacancyQuery | null>(
     () =>
@@ -367,7 +375,8 @@ export default function VacancyPage() {
       id: newId('c'),
       displayName: name,
       kana: '',
-      place: { ...place, postalCode: '' },
+      // 郵便番号は7桁にできれば写す（できなければ空）
+      place: { ...toPlace(place), postalCode: normalizePostalCode(place.postalCode) ?? '' },
       note: '問い合わせの試算から仮押さえ',
       color: data.clients.length % CLIENT_COLORS.length,
       active: true,
@@ -519,10 +528,17 @@ export default function VacancyPage() {
             </WithIcon>
           </span>
           <span className="sub">
-            地図に点を置くと、その場所への移動を含めて正確に数えます。空のときは移動を前後{VACANCY_MARGIN_DEFAULT}
-            分で見込んだ目安です。
+            郵便番号・住所から探して置くか、地図に点を置くと、その場所への移動を含めて正確に数えます。空のときは移動を前後
+            {VACANCY_MARGIN_DEFAULT}分で見込んだ目安です。
           </span>
-          <PlaceEditor value={place} onChange={setPlace} />
+          <AddressField
+            value={place}
+            onChange={(p) => setPlace((cur) => ({ ...p, postalCode: cur.postalCode }))}
+            postalCode={place.postalCode}
+            onPostalCodeChange={(postalCode) => setPlace((cur) => ({ ...cur, postalCode }))}
+            testId="vacancy"
+            noticeNote="（押したときだけ。条件などほかの項目は送りません）"
+          />
         </div>
       </div>
 

@@ -30,25 +30,6 @@ export function TentativeMark() {
 }
 
 /**
- * 住所＋位置の入力。住所の文字から位置を出すのは〈利用者さん〉の欄だけ（ClientPlaceEditor。ADR-0016）で、ここでは地図をクリックして位置を直す
- */
-export function PlaceEditor({ value, onChange }: { value: Place; onChange: (p: Place) => void }) {
-  return (
-    <div className="stack">
-      <label>
-        住所（表示用）
-        <input
-          value={value.address}
-          maxLength={200}
-          onChange={(e) => onChange({ ...value, address: e.target.value })}
-        />
-      </label>
-      <PlacePin value={value} onChange={onChange} />
-    </div>
-  );
-}
-
-/**
  * 位置の表示・「位置を消す」・地図（ピン）。位置が無いときは地図をクリックした所にピンを置く。
  * 場所の型（〈利用者さん〉の郵便番号つきなど）はそのまま返す
  */
