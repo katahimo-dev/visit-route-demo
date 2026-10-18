@@ -116,6 +116,45 @@ p.plan-band.error {
   color: var(--sub);
   font-size: 0.75rem;
 }
+/* 比較の画面の「もう1案作って比べる」（PRD D159）。狭い画面では縦に並べ、ボタンは幅いっぱい */
+.compare-another {
+  align-items: center;
+  text-align: center;
+}
+.compare-another-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+}
+.compare-another-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.compare-another-pick select {
+  max-width: 100%;
+}
+.compare-another-status .plan-progress {
+  justify-content: center;
+}
+@media (max-width: 520px) {
+  .compare-another-row,
+  .compare-another-pick {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .compare-another-row .btn {
+    width: 100%;
+  }
+}
+@media print {
+  .compare-another {
+    display: none;
+  }
+}
 /* 本体（時間軸・順番・一覧）と地図。1280px 以上は横に並べ（地図は上に貼りつく）、畳める */
 .plan-main {
   display: grid;

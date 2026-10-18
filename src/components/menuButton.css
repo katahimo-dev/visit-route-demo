@@ -17,7 +17,9 @@
   left: 0;
   z-index: 1050;
   min-width: 300px;
-  max-width: calc(100vw - 24px);
+  /* 中身の幅に合わせる（ボタンの幅に縮めない）。説明の行（PRD D156）があっても広がりすぎない。狭い画面は画面の幅に収める */
+  width: max-content;
+  max-width: min(400px, calc(100vw - 24px));
   max-height: min(70vh, 560px);
   overflow-y: auto;
   padding: 6px;
@@ -70,9 +72,56 @@
   flex-shrink: 0;
   color: var(--sub);
 }
+.menu-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.menu-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
 .menu-item-label {
   flex: 1;
   min-width: 0;
+}
+/* 説明のある項目は、アイコンを名前の行にそろえる */
+.menu-item.has-desc {
+  align-items: flex-start;
+}
+.menu-item.has-desc .menu-item-icon {
+  padding-top: 2px;
+}
+/* 1行の説明（何が変わり、手直し・固定がどうなるか）。押せないときは押せない理由 */
+.menu-item-desc {
+  color: var(--sub);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.menu-item-desc.is-why {
+  color: var(--sub);
+  font-style: normal;
+}
+.menu-item-desc.is-why::before {
+  content: '押せません：';
+}
+/* まとまりの見出し（PRD D156。読み上げは role="group" の aria-label） */
+.menu-group + .menu-group,
+.menu-group + .menu-sep,
+div[role='none'] + .menu-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.menu-heading {
+  padding: 4px 10px 2px;
+  color: var(--sub);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 .menu-item-note {
   flex-shrink: 0;

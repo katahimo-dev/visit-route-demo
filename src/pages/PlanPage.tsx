@@ -89,6 +89,16 @@ import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { planRunOf, planStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
+import {
+  batchDescription,
+  compareText,
+  createText,
+  hasUnpinnedEdits,
+  type PlanMenuInput,
+  presetDescription,
+  resolveText,
+  revertText,
+} from '../lib/planMenu';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
@@ -144,9 +154,9 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
 /**
  * 予定（D4・D13・D18・ADR-0004・ADR-0009）：その日の訪問の一覧（追加・編集・取消・前の同じ曜日からコピー）と、
  * 担当の割り当てを1画面で扱う。AI案を作る → 担当ごとの列で手直し（ドラッグ）→ 動かした訪問は固定 →
- * 「固定を残して組み直す」で残りを AI が組み直す →「この割当で確定」（manualPlans と各訪問の担当に写す）。
+ * 「固定した訪問は残して、ほかを作り直す」（固定を残して組み直す）で残りを AI が組み直す →「この割当で確定」（manualPlans と各訪問の担当に写す）。
  * AI案の routes は手直し後の今の案、generated は AI が出したまま、pins は固定（訪問ID → 担当ID）。
- * AI案が無い日は、開いたときに点数の基準のプリセットの案だけを自動で作る（D52。残りは「他の条件でも作る」）。作る・組み直すたびに、条件と結果を
+ * AI案が無い日は、開いたときに点数の基準のプリセットの案だけを自動で作る（D52。残りは「まだ作っていない考え方をまとめて作る」）。作る・組み直すたびに、条件と結果を
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
  * プリセットごとの案のカードを並べ、「この案にする」で今の案にする。
  * 点数（100点満点）・必須の違反・条件ごとの達成は、いつも点数の基準のプリセットの物差し（ADR-0010。useDayModel の scoreProblem）。
@@ -361,6 +371,8 @@ export default function PlanPage() {
   const pinCount = Object.keys(pins).length;
   const edited =
     !!aiPlan && (pinCount > 0 || JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes));
+  /** 固定していない手直しがある（固定を残して組み直すと消える。PR #39 のレビュー） */
+  const unpinned = !!aiPlan && hasUnpinnedEdits(aiPlan.generated.routes, aiPlan.routes, aiPlan.pins);
   /**
    * 記録が今の案の元か（カードの「今の案」・カードを押したときの判定に共通）。今の案の元になった記録の id で
    * （無い古いデータは経路の一致で）。手直し中は今の案としない
@@ -689,7 +701,7 @@ export default function PlanPage() {
   };
 
   // AI案が無い日は、開いたときに点数の基準のプリセット（scorePresetId）の案だけを自動で作る（同じ日に2回は試さない。
-  // D52。ADR-0012 追記）。他のプリセットはカードか「他の条件でも作る」で作る
+  // D52。ADR-0012 追記）。他のプリセットはカードか「まだ作っていない考え方をまとめて作る」で作る
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案の有無・問題が変わったときだけ
   useEffect(() => {
     // 訪問が無い日は試したことにしない（あとで訪問を足す・コピーしたら作る）
@@ -770,8 +782,24 @@ export default function PlanPage() {
     if (preset) void runPreset(preset);
     else void recreate(run.rules);
   };
-  /** 固定を残して組み直す（generated は変えない。固定は残す） */
-  const resolve = () => {
+  /**
+   * 固定を残して組み直す（generated は変えない。固定は残す）。固定していない手直し（「入らなかった訪問」へ移した・
+   * 固定を外した）は消えるので、あれば確かめる（PR #39 のレビュー）
+   */
+  const resolve = async () => {
+    if (!check() || !aiPlan) return;
+    if (
+      unpinned &&
+      !(await confirmDialog({
+        title: '固定していない手直しを捨てて、作り直しますか？',
+        body: '固定した訪問の担当は残し、ほかを今の条件で組み直します。「入らなかった訪問」へ移した訪問や、固定を外した訪問の手直しは消えます（AI が出したままの案は戻す先として残ります）。',
+        confirmLabel: '捨てて作り直す',
+        tone: 'danger',
+      }))
+    )
+      return;
+    // 確認のあいだに計算が始まっていたら何もしない
+    if (runRef.current) return;
     const p = check();
     if (!p || !aiPlan) return;
     const forDate = date;
@@ -2034,16 +2062,55 @@ export default function PlanPage() {
     </div>
   );
   const busyWhy = running ? '計算中は選べません' : !problem ? 'この日に計算できる訪問がありません' : false;
-  /** 「案を変える ▾」の項目（PRD D63）。プリセットごとの案は押すと今の runPreset（カードを押したのと同じ） */
+  /** 「案を変える ▾」の項目の文（PRD D156〜D158。lib/planMenu） */
+  const menuInput: PlanMenuInput = {
+    hasPlan: !!aiPlan,
+    edited,
+    pinCount,
+    unpinned,
+    busy: busyWhy,
+    running: !!running,
+    ruleName: presetOf(data.rules, data.presets)?.name ?? '今の重み',
+    runCount,
+  };
+  const createT = createText(menuInput);
+  const resolveT = resolveText(menuInput);
+  const revertT = revertText(menuInput);
+  const compareT = compareText(menuInput);
+  /**
+   * 「案を変える ▾」の項目（PRD D63・D156）。利用者の目的の言葉で4つのまとまりに並べ、各項目に1行の説明（押せないときは理由）。
+   * プリセットごとの案は押すと今の runPreset（カードを押したのと同じ）。手直しを捨てる操作は確認ダイアログで確かめる（今どおり）
+   */
   const menuItems: MenuItem[] = [
+    {
+      key: 'create',
+      group: 'AI に作らせる',
+      testId: 'plan-menu-create',
+      label: createT.label,
+      description: createT.description,
+      icon: Sparkles,
+      disabled: createT.disabled,
+      onSelect: () => recreate(),
+    },
+    {
+      key: 'resolve',
+      testId: 'plan-menu-resolve',
+      label: resolveT.label,
+      description: resolveT.description,
+      icon: RefreshCw,
+      disabled: resolveT.disabled,
+      onSelect: resolve,
+    },
     ...presetCards.map((c, i): MenuItem => {
       const isCurrent = isCurrentRun(c.run);
       const making = batch?.date === date && batch.presetId === c.preset.id;
       const pt = c.hundred !== null ? `${c.hundred}点` : '—点';
       return {
         key: `preset-${c.preset.id}`,
+        group: i === 0 ? '別の考え方（プリセット）に切り替える' : undefined,
         testId: 'plan-menu-preset',
         label: c.preset.name,
+        description: presetDescription({ isCurrent, making, hasRun: !!c.run, remake: c.remake, edited }),
         icon: i === bestCard ? Crown : undefined,
         note: making
           ? '作っています…'
@@ -2055,64 +2122,54 @@ export default function PlanPage() {
                 ? `${pt}・作り直す`
                 : pt,
         current: isCurrent,
-        disabled: busyWhy || (isCurrent ? '今の案です' : false),
+        // 今の案の項目は押せない理由でなく、説明の「今の案です」のまま（押しても何もしない）
+        disabled: busyWhy || isCurrent,
         onSelect: () => runPreset(c.preset),
       };
     }),
     {
       key: 'batch',
-      label: `他の条件でも作る${missing.length > 0 ? `（${missing.length}つ）` : ''}`,
+      testId: 'plan-menu-batch',
+      label: `まだ作っていない考え方をまとめて作る${missing.length > 0 ? `（${missing.length}つ）` : ''}`,
+      description: batchDescription(!!aiPlan),
       icon: LayoutGrid,
-      separatorBefore: true,
-      disabled: batch ? '作っています' : missing.length === 0 ? 'どのプリセットの案もあります' : busyWhy,
+      disabled: batch ? '作っています' : missing.length === 0 ? 'どの考え方の案もあります' : busyWhy,
       onSelect: () => runBatch(missing),
     },
     {
-      key: 'create',
-      label: aiPlan ? 'AI案を作り直す' : 'AI案を作る',
-      icon: Sparkles,
-      disabled: busyWhy,
-      onSelect: () => recreate(),
-    },
-    {
-      key: 'resolve',
-      label: `固定を残して組み直す${pinCount > 0 ? `（固定 ${pinCount}件）` : ''}`,
-      icon: RefreshCw,
-      disabled: !aiPlan ? 'AI案がありません' : busyWhy,
-      onSelect: resolve,
-    },
-    {
-      key: 'revert',
-      label: 'AI案に戻す',
-      icon: Undo2,
-      disabled: !aiPlan
-        ? 'AI案がありません'
-        : running
-          ? '計算中は選べません'
-          : !edited
-            ? '手直し・固定はありません'
-            : false,
-      onSelect: revert,
-    },
-    {
-      key: 'copy',
-      label: '前の同じ曜日からコピー',
-      icon: Copy,
-      separatorBefore: true,
-      disabled: visits.length > 0 ? 'この日に訪問があるときはコピーできません' : running ? '計算中は選べません' : false,
-      onSelect: copyFromLastWeek,
-    },
-    {
       key: 'compare',
-      label: `案を比べる（${runCount}件）`,
+      group: '比べる・戻す',
+      testId: 'plan-menu-compare',
+      label: compareT.label,
+      description: compareT.description,
+      note: `${runCount}件`,
       icon: GitCompareArrows,
       onSelect: () => navigate('/compare'),
     },
     {
+      key: 'revert',
+      testId: 'plan-menu-revert',
+      label: revertT.label,
+      description: revertT.description,
+      icon: Undo2,
+      disabled: revertT.disabled,
+      onSelect: revert,
+    },
+    {
+      key: 'copy',
+      group: 'そのほか',
+      testId: 'plan-menu-copy',
+      label: '前の同じ曜日からコピー',
+      description: '1週前の同じ曜日の訪問（と確定した割当）をこの日に写します',
+      icon: Copy,
+      disabled: visits.length > 0 ? 'この日に訪問があるときはコピーできません' : running ? '計算中は選べません' : false,
+      onSelect: copyFromLastWeek,
+    },
+    {
       key: 'tune',
       label: '条件を調整する…',
+      description: '右の欄で、考え方ごとの案のカードと条件の重みを見比べて変えます',
       icon: SlidersHorizontal,
-      separatorBefore: true,
       testId: 'plan-menu-tune',
       onSelect: () => setPanel('tune'),
     },
@@ -2430,7 +2487,8 @@ export default function PlanPage() {
           </WithIcon>
           <Hint>
             点数はいつも点数の基準のプリセット「{scoreRulerName}
-            」の物差しで付けます（条件を変えても点の物差しは変わりません）。「案を変える」の「AI案を作り直す」か「固定を残して組み直す」で作り直せます。
+            」の物差しで付けます（条件を変えても点の物差しは変わりません）。「案を変える」の「AI
+            にもう一度作らせる」か「固定した訪問は残して、ほかを作り直す」で作り直せます。
           </Hint>
         </div>
       )}
@@ -2468,7 +2526,7 @@ export default function PlanPage() {
         {progressView}
         <Hint label="使い方">
           訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
-          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。「案を変える」の「固定を残して組み直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
+          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。「案を変える」の「固定した訪問は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
           名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
         </Hint>
       </div>
@@ -2793,7 +2851,8 @@ export default function PlanPage() {
                   </WithIcon>
                   <Hint>
                     いまの条件とは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
-                    」の物差しで付けます。いまの条件で作るには「案を変える」の「AI案を作り直す」を押してください。
+                    」の物差しで付けます。いまの条件で作るには「案を変える」の「AI
+                    にもう一度作らせる」を押してください。
                   </Hint>
                 </div>
               )}
@@ -2853,7 +2912,7 @@ export default function PlanPage() {
                 onClick={() => runBatch(missing)}
               >
                 <WithIcon icon={Sparkles} size={14}>
-                  他の条件でも作る（{missing.length}つ）
+                  まだ作っていない考え方をまとめて作る（{missing.length}つ）
                 </WithIcon>
               </button>
             )}
