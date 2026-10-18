@@ -14,8 +14,8 @@ import {
   UserRoundCog,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check, PlaceEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
@@ -71,6 +71,28 @@ export default function StaffPage() {
   );
   const staffItems = data.items.filter((i) => i.target === 'staff');
   const itemById = new Map(data.items.map((i) => [i.id, i]));
+  // ?id= で開いたら、その人の編集の欄を開く（相性の画面の吹き出しから。PRD D114）。開いたら URL から消す
+  const [params, setParams] = useSearchParams();
+  const openId = params.get('id');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: URL の id が変わったときだけ
+  useEffect(() => {
+    if (openId === null) return;
+    const s = data.staff.find((x) => x.id === openId);
+    if (s) {
+      setError(null);
+      setIsNew(false);
+      setOffboardFor(null);
+      setForm(structuredClone(s));
+    }
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.delete('id');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [openId]);
 
   const save = () => {
     if (!form) return;

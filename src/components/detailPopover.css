@@ -1,0 +1,63 @@
+/* 押すと出る吹き出し（DetailPopover。PRD D114・D115）。body の直下に浮かせる。位置は部品が style で決める */
+.detail-popover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1050;
+  width: min(340px, calc(100vw - 16px));
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(40, 25, 15, 0.22);
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+.detail-popover:focus {
+  outline: none;
+}
+.detail-popover:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--primary),
+    0 12px 32px rgba(40, 25, 15, 0.22);
+}
+.detail-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.detail-popover-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.95rem;
+}
+.detail-popover-close {
+  flex-shrink: 0;
+}
+.detail-popover dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin: 0;
+}
+.detail-popover dt {
+  color: var(--sub);
+  white-space: nowrap;
+}
+.detail-popover dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.detail-popover-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.detail-popover-link {
+  display: inline-block;
+  margin-top: 10px;
+}

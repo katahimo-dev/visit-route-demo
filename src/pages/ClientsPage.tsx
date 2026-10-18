@@ -15,7 +15,8 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
@@ -120,6 +121,24 @@ export default function ClientsPage() {
     setForm(c);
     setOpenedPlace(c.place);
   };
+
+  // ?id= で開いたら、その人の編集の欄を開く（相性の画面の吹き出しから。PRD D115）。開いたら URL から消す
+  const [params, setParams] = useSearchParams();
+  const openId = params.get('id');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: URL の id が変わったときだけ
+  useEffect(() => {
+    if (openId === null) return;
+    const c = data.clients.find((x) => x.id === openId);
+    if (c) openForm(structuredClone(c), false);
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.delete('id');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [openId]);
 
   const save = () => {
     if (!form) return;
