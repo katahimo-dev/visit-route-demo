@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useConfirm } from '../components/ConfirmDialog';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check } from '../components/parts';
 import { StaffView } from '../components/personView';
@@ -38,7 +39,7 @@ import { byName, formError, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, W
 import { normalizeEmail } from '../lib/mailto';
 import { offboardScope } from '../lib/offboard';
 import { mdText } from '../lib/patternText';
-import { type DiscardWhen, discardMessage, isDirty } from '../lib/viewMode';
+import { type DiscardWhen, discardDialog, isDirty } from '../lib/viewMode';
 import { useDemoData } from '../store';
 import { leavingStaff, OffboardPanel } from './OffboardPanel';
 import './settings.css';
@@ -65,6 +66,7 @@ export default function StaffPage() {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   /** 閲覧の欄で開いている人（PRD D127。編集中はその人の ID のまま。null：閲覧の欄なし） */
   const [viewId, setViewId] = useState<string | null>(null);
   /** 編集の欄の入力（null：編集していない） */
@@ -94,8 +96,8 @@ export default function StaffPage() {
     isNew ? (openedForm ?? undefined) : form ? data.staff.find((x) => x.id === form.id) : undefined,
   );
   /** 変更があれば捨ててよいか確かめる（無ければそのまま進む） */
-  const okToDiscard = (when: DiscardWhen, next = '') =>
-    !dirty || !form || confirm(discardMessage(when, terms.staff, form.name, next));
+  const okToDiscard = async (when: DiscardWhen, next = ''): Promise<boolean> =>
+    !dirty || !form || confirmDialog(discardDialog(when, terms.staff, form.name, next));
   /** 編集の欄を開く */
   const openForm = (s: Staff, fresh: boolean) => {
     setError(null);
@@ -105,9 +107,9 @@ export default function StaffPage() {
     setOpenedForm(fresh ? structuredClone(s) : null);
   };
   /** 閲覧の欄で開く（PRD D127。編集中で変更があれば確かめる） */
-  const openView = (s: Staff) => {
+  const openView = async (s: Staff) => {
     if (form && form.id === s.id && !isNew) return;
-    if (!okToDiscard('switch', s.name)) return;
+    if (!(await okToDiscard('switch', s.name))) return;
     setForm(null);
     setError(null);
     setOffboardFor(null);
@@ -119,15 +121,15 @@ export default function StaffPage() {
     openForm(structuredClone(s), false);
   };
   /** 編集を取り消して閲覧に戻る（新しい人なら欄を閉じる。PRD D129） */
-  const cancelEdit = () => {
-    if (!okToDiscard(isNew ? 'close' : 'view')) return;
+  const cancelEdit = async () => {
+    if (!(await okToDiscard(isNew ? 'close' : 'view'))) return;
     if (isNew) setViewId(null);
     setForm(null);
     setError(null);
   };
   /** 欄を閉じる（× ・Esc。編集中で変更があれば確かめる） */
-  const closePanel = () => {
-    if (!okToDiscard('close')) return;
+  const closePanel = async () => {
+    if (!(await okToDiscard('close'))) return;
     setForm(null);
     setViewId(null);
     setError(null);
@@ -151,7 +153,7 @@ export default function StaffPage() {
   useEffect(() => {
     if (openId === null) return;
     const s = data.staff.find((x) => x.id === openId);
-    if (s) openView(s);
+    if (s) void openView(s);
     setParams(
       (prev) => {
         const p = new URLSearchParams(prev);
@@ -165,7 +167,7 @@ export default function StaffPage() {
   /** 閲覧の欄の人（編集していないとき。データから消えたら欄を出さない） */
   const viewed = !form && viewId !== null ? data.staff.find((x) => x.id === viewId) : undefined;
 
-  const save = () => {
+  const save = async () => {
     if (!form) return;
     setError(null);
     // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
@@ -187,12 +189,16 @@ export default function StaffPage() {
         // ほかに利用中の人が残らない〈利用者さん〉（休止中の人は数えない）
         const activeOther = new Set(data.staff.filter((x) => x.active && x.id !== s.id).map((x) => x.id));
         const emptied = limited.filter((c) => !c.allowedStaffIds.some((id) => activeOther.has(id)));
-        const msg = `${s.name}さんを休止にすると、${limited.map((c) => c.displayName).join('・')}の「担当できる人」から外します。${
-          emptied.length > 0
-            ? `${emptied.map((c) => c.displayName).join('・')}は担当できる人がいなくなり、だれでも担当できるようになります（必要なら${terms.client}の画面で選び直してください）。`
-            : ''
-        }あとで利用中に戻しても、担当できる人には戻りません。よろしいですか？`;
-        if (!confirm(msg)) return;
+        const ok = await confirmDialog({
+          title: `${s.name}さんを休止にして保存しますか？`,
+          body: `${limited.map((c) => c.displayName).join('・')}の「担当できる人」から外します。${
+            emptied.length > 0
+              ? `${emptied.map((c) => c.displayName).join('・')}は担当できる人がいなくなり、だれでも担当できるようになります（必要なら${terms.client}の画面で選び直してください）。`
+              : ''
+          }\nあとで利用中に戻しても、担当できる人には戻りません。`,
+          confirmLabel: '休止にして保存する',
+        });
+        if (!ok) return;
       }
       // 最終勤務日を入れた・変えたら、保存のあとに担当の振り直しの欄を開く（振り直すものがあるときだけ。ADR-0015）
       const before = data.staff.find((x) => x.id === s.id);
@@ -242,8 +248,8 @@ export default function StaffPage() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => {
-              if (!okToDiscard('switch', `新しい${terms.staff}`)) return;
+            onClick={async () => {
+              if (!(await okToDiscard('switch', `新しい${terms.staff}`))) return;
               setViewId(null);
               openForm(blank(), true);
             }}
@@ -274,8 +280,8 @@ export default function StaffPage() {
                 <button
                   type="button"
                   className="btn btn-small"
-                  onClick={() => {
-                    if (!okToDiscard('close')) return;
+                  onClick={async () => {
+                    if (!(await okToDiscard('close'))) return;
                     setForm(null);
                     setViewId(null);
                     setOffboardFor(x.staff.id);

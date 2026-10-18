@@ -11,6 +11,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { answerConfirms } = require('./lib/confirmDialog.cjs');
 
 function loadPlaywright() {
   const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
@@ -54,16 +55,8 @@ const view = (page) => page.getByTestId('person-view');
 const inputs = (page) => panel(page).locator('input, select, textarea').count();
 const settle = (page, ms = 250) => page.waitForTimeout(ms);
 
-/** 確認（confirm）の受け方を決め、出た文を記録する */
-function dialogs(page) {
-  const st = { answer: true, messages: [] };
-  page.on('dialog', (d) => {
-    st.messages.push(d.message());
-    if (st.answer) d.accept();
-    else d.dismiss();
-  });
-  return st;
-}
+/** 確認（独自の確認ダイアログ。PRD D146）の受け方を決め、出た文（見出しと本文）を記録する */
+const dialogs = (page) => answerConfirms(page);
 
 async function open(page, hash, ready) {
   await page.goto(`${BASE}#${hash}`);
@@ -588,13 +581,14 @@ async function staffMore(page, dlg) {
     // ページの時計を止める（e2e-details と同じ）
     await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
-    const dlg = dialogs(page);
+    const dlg = await dialogs(page);
     try {
       await step(page, dlg);
     } catch (e) {
       check(false, `${step.name}：途中で止まった`, String(e).split('\n')[0]);
       await page.screenshot({ path: path.join(OUT_DIR, `${step.name}-error.png`) }).catch(() => {});
     }
+    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
     await ctx.close();
   }
   check(errors.length === 0, 'ページのエラーが無い', errors);

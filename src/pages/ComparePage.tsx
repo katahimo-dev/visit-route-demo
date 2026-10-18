@@ -17,6 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { useConfirm } from '../components/ConfirmDialog';
 import { MapDock } from '../components/MapDock';
 import { RouteMap } from '../components/RouteMap';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
@@ -74,6 +75,7 @@ export default function ComparePage() {
   } = m;
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   /** 予定の画面の「比較の画面で見る」（A＝欠勤前、B＝今の案。ADR-0011） */
   const asked = (useLocation().state ?? null) as { a?: string; b?: string } | null;
@@ -188,20 +190,30 @@ export default function ComparePage() {
     `${visitById.get(id)?.earliestStart ?? ''} ${clientOf(id)?.displayName ?? '（不明）'}`;
 
   // ---- 記録の操作 ----
-  const openRun = (r: AiRun) => {
+  const openRun = async (r: AiRun) => {
     if (
       aiPlan &&
       (Object.keys(aiPlan.pins).length > 0 ||
         JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes)) &&
-      !confirm('予定の画面の手直しを捨てて、この記録を今の案にします。よろしいですか？')
+      !(await confirmDialog({
+        title: `手直しを捨てて、#${r.no} を今の案にしますか？`,
+        body: '予定の画面の手直しと固定を捨てて、この記録を今の案にします。',
+        confirmLabel: '捨てて今の案にする',
+        tone: 'danger',
+      }))
     )
       return;
     update((d) => ({ ...d, aiPlans: { ...d.aiPlans, [date]: planOfRun(r) } }));
     toast(`#${r.no} を今の案にしました`);
     navigate('/plan');
   };
-  const applyRules = (r: AiRun) => {
-    if (!confirm(`条件の重み・必須を #${r.no} を作ったときと同じにします。よろしいですか？`)) return;
+  const applyRules = async (r: AiRun) => {
+    const ok = await confirmDialog({
+      title: `条件を #${r.no} と同じにしますか？`,
+      body: `条件の重み・必須を #${r.no} を作ったときと同じにします。`,
+      confirmLabel: '条件を同じにする',
+    });
+    if (!ok) return;
     const saved = new Map(r.rules.map((x) => [x.id, x]));
     update((d) => ({
       ...d,
@@ -212,8 +224,15 @@ export default function ComparePage() {
     }));
     toast(`条件を #${r.no} と同じにしました`);
   };
-  const removeRun = (r: AiRun) => {
-    if (!confirm(`記録 #${r.no}「${r.label}」を消しますか？`)) return;
+  const removeRun = async (r: AiRun) => {
+    if (
+      !(await confirmDialog({
+        title: `記録 #${r.no}「${r.label}」を消しますか？`,
+        confirmLabel: '消す',
+        tone: 'danger',
+      }))
+    )
+      return;
     update((d) => ({
       ...d,
       aiRuns: { ...d.aiRuns, [date]: (own(d.aiRuns, date) ?? []).filter((x) => x.id !== r.id) },

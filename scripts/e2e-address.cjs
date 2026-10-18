@@ -17,6 +17,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { answerConfirms } = require('./lib/confirmDialog.cjs');
 
 function loadPlaywright() {
   const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
@@ -450,7 +451,8 @@ async function staffHome(page) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push(String(e)));
-    page.on('dialog', (d) => d.accept());
+    // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
+    const dlg = await answerConfirms(page);
     const fake = await fakeServices(page);
     try {
       await step(page, fake);
@@ -458,6 +460,7 @@ async function staffHome(page) {
       check(false, `${step.name} が止まった`, String(e).split('\n')[0]);
       await page.screenshot({ path: path.join(OUT_DIR, `address-error-${step.name}.png`) }).catch(() => {});
     }
+    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
     // 送り先は2つのサービスだけ
     check(
       fake.calls.every(

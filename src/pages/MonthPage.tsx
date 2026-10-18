@@ -24,6 +24,7 @@ import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
+import { useConfirm } from '../components/ConfirmDialog';
 import { ClientDots, PrepBar } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
@@ -157,6 +158,7 @@ export default function MonthPage() {
   const { data, update, compileInput, scoreRulerName } = useDayModel(date);
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const today = jstDate(Date.now());
@@ -514,7 +516,7 @@ export default function MonthPage() {
 
   // ---- 月まとめ作成（③）----
   /** 対象の日を1日ずつ作る。expand は先に定期パターンから訪問を作るか（①） */
-  const start = (m: BatchMode, expand: boolean) => {
+  const start = async (m: BatchMode, expand: boolean) => {
     if (runningRef.current) return;
     setError(null);
     const first = expand ? expandMonth(dataRef.current, ym, today).data : dataRef.current;
@@ -528,7 +530,18 @@ export default function MonthPage() {
         const p = own(first.aiPlans, d);
         return !!p && planEdited(p);
       }).length;
-      if (edited > 0 && !confirm(`手直しのある ${edited}日の手直しを捨てます。よろしいですか？`)) return;
+      if (
+        edited > 0 &&
+        !(await confirmDialog({
+          title: `手直しのある ${edited}日の手直しを捨てますか？`,
+          body: 'その日の手直しと固定を捨てて、AI案を作り直します。',
+          confirmLabel: '捨てて作り直す',
+          tone: 'danger',
+        }))
+      )
+        return;
+      // 確認のあいだに別の作成が始まっていたら何もしない
+      if (runningRef.current) return;
     }
     if (expand) update((d) => expandMonth(d, ym, today).data);
     setPanel(false);

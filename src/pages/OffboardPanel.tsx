@@ -2,6 +2,7 @@ import { CalendarDays, Check, UserRoundCog, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { Hint, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { addDays, jstDate, weekday } from '../domain/time';
@@ -37,6 +38,7 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
   const { setDate } = useDay();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const terms = data.org.terms;
   const today = jstDate(Date.now());
   const scope = useMemo(() => offboardScope(data, staffId, today), [data, staffId, today]);
@@ -74,7 +76,7 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
   };
 
   const canApply = !!scope && scope.clients.length > 0;
-  const apply = () => {
+  const apply = async () => {
     if (!scope || !canApply) return;
     const picked: Record<string, string | null> = {};
     for (const c of scope.clients) picked[c.clientId] = choices[c.clientId] || null;
@@ -90,7 +92,7 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
       return id;
     };
     const preview = applyOffboardWith(data, staffId, picked, from, today, nextPid);
-    const msg = `${scope.clients.length}人の${terms.client}の担当を、${mdText(from)}から選んだ${terms.staff}に移します（それより前の日はそのまま）。${
+    const body = `${scope.clients.length}人の${terms.client}の担当を、${mdText(from)}から選んだ${terms.staff}に移します（それより前の日はそのまま）。${
       nobody.length > 0 ? `${nobody.join('・')}は「だれにもしない」なので、いつもの担当が無くなります。` : ''
     }${
       unlimited.length > 0
@@ -100,8 +102,9 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
       preview.renamed > 0
         ? `定期パターンは${mdText(from)}で分け、その日からの訪問 ${preview.renamed}件を新しいパターンの回に付け替えます（担当・時刻・メモと、確定した割当・今の案はそのまま）。`
         : ''
-    }訪問の案（担当）は作り直しません。よろしいですか？`;
-    if (!confirm(msg)) return;
+    }訪問の案（担当）は作り直しません。`;
+    const ok = await confirmDialog({ title: 'いつもの担当を置き換えますか？', body, confirmLabel: '担当を置き換える' });
+    if (!ok) return;
     // 確認と同じパターン ID で当てる
     let k = 0;
     update((d) => applyOffboard(d, staffId, picked, from, today, () => pids[k++] ?? newId('pt')));

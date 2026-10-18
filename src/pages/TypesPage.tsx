@@ -1,5 +1,6 @@
 import { Layers, Pencil, Plus, Save, ShieldCheck, Timer, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useConfirm } from '../components/ConfirmDialog';
 import { CondChips, ConditionsEditor } from '../components/conditions';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
@@ -31,6 +32,7 @@ export default function TypesPage() {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const [form, setForm] = useState<Form | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,14 +102,15 @@ export default function TypesPage() {
     toast('保存しました');
   };
 
-  const remove = (t: VisitType) => {
+  const remove = async (t: VisitType) => {
     const u = uses.get(t.id) ?? { visits: 0, patterns: 0 };
-    if (
-      !confirm(
-        `${t.name}を使っている訪問 ${u.visits}件・定期パターン ${u.patterns}件は種類なしになります。消しますか？`,
-      )
-    )
-      return;
+    const ok = await confirmDialog({
+      title: `種類「${t.name}」を消しますか？`,
+      body: `${t.name}を使っている訪問 ${u.visits}件・定期パターン ${u.patterns}件は種類なしになります。`,
+      confirmLabel: '消す',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update((d) => ({
       ...d,
       visitTypes: d.visitTypes.filter((x) => x.id !== t.id),

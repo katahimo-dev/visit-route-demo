@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useConfirm } from '../components/ConfirmDialog';
 import { WeightSlider } from '../components/parts';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
@@ -62,6 +63,7 @@ const DEFAULTS: Record<RuleType, { weight: number; hard: boolean }> = {
  */
 export default function RulesPage() {
   const { data, update } = useDemoData();
+  const confirmDialog = useConfirm();
   const terms = data.org.terms;
   const [addType, setAddType] = useState<RuleType>('clientPreference');
   const [seedText, setSeedText] = useState<string | null>(null);
@@ -73,8 +75,9 @@ export default function RulesPage() {
     if (!HARDABLE.has(addType)) rule.hard = false;
     update((d) => ({ ...d, rules: [...d.rules, rule] }));
   };
-  const remove = (r: Rule) => {
-    if (!confirm(`条件「${r.label}」を消しますか？`)) return;
+  const remove = async (r: Rule) => {
+    if (!(await confirmDialog({ title: `条件「${r.label}」を消しますか？`, confirmLabel: '消す', tone: 'danger' })))
+      return;
     update((d) => ({ ...d, rules: d.rules.filter((x) => x.id !== r.id) }));
   };
   const seedValue = seedText ?? String(data.seed);
@@ -245,6 +248,7 @@ function LabelInput({ value, onChange, fallback }: { value: string; onChange: (v
  */
 function PresetSection() {
   const { data, update } = useDemoData();
+  const confirmDialog = useConfirm();
   const terms = data.org.terms;
   const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
@@ -258,20 +262,27 @@ function PresetSection() {
   const set = (id: string, patch: Partial<Omit<Preset, 'id'>>) => update((d) => patchPreset(d, id, patch));
   const setWeight = (p: Preset, t: RuleType, w: Partial<{ weight: number; hard: boolean }>) =>
     set(p.id, { weights: { ...p.weights, [t]: { ...p.weights[t], ...w } } });
-  const remove = (p: Preset) => {
+  const remove = async (p: Preset) => {
     if (data.presets.length <= 1) return;
     const next = data.presets.find((x) => x.id !== p.id);
     const moved = ruler?.id === p.id && next ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。` : '';
-    if (!confirm(`プリセット「${p.name}」を消しますか？（作った案の記録は残ります）${moved}`)) return;
+    const ok = await confirmDialog({
+      title: `プリセット「${p.name}」を消しますか？`,
+      body: `作った案の記録は残ります。${moved}`,
+      confirmLabel: '消す',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update((d) => removePreset(d, p.id));
   };
-  const reset = () => {
-    if (
-      !confirm(
-        'プリセットを初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。よろしいですか？',
-      )
-    )
-      return;
+  const reset = async () => {
+    const ok = await confirmDialog({
+      title: 'プリセットを初期の3つに戻しますか？',
+      body: '初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。',
+      confirmLabel: '初期の3つに戻す',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update(resetPresets);
   };
   return (

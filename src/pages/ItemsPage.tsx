@@ -1,5 +1,6 @@
 import { Check, House, type LucideIcon, Pencil, Plus, Tags, Trash2, UserRound, X } from 'lucide-react';
 import { useState } from 'react';
+import { useConfirm } from '../components/ConfirmDialog';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import {
@@ -114,6 +115,7 @@ function ItemTable({
   note: string;
 }) {
   const { data, update } = useDemoData();
+  const confirmDialog = useConfirm();
   const items = data.items.filter((i) => i.target === target);
   const setItem = (id: string, patch: Partial<Item>) =>
     update((d) => ({ ...d, items: d.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
@@ -125,13 +127,18 @@ function ItemTable({
     const name = `新しい項目${no}`;
     update((d) => ({ ...d, items: [...d.items, { id: newId('i'), name, target, kind: 'flag', options: [] }] }));
   };
-  const remove = (item: Item) => {
+  const remove = async (item: Item) => {
     const refs = refsOf(data, item);
-    const msg =
-      refs.length > 0
-        ? `項目「${item.name}」は ${refs.length}件の条件で使っています（${refs.slice(0, 5).join('、')}${refs.length > 5 ? ' など' : ''}）。\n消すと、その条件は無効になります（条件そのものは残ります）。消しますか？`
-        : `項目「${item.name}」を消しますか？入っている値も消えます。`;
-    if (!confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: `項目「${item.name}」を消しますか？`,
+      body:
+        refs.length > 0
+          ? `${refs.length}件の条件で使っています（${refs.slice(0, 5).join('、')}${refs.length > 5 ? ' など' : ''}）。\n消すと、その条件は無効になります（条件そのものは残ります）。入っている値も消えます。`
+          : '入っている値も消えます。',
+      confirmLabel: '消す',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update((d) => {
       const next = mapTraits(d, target, (t) => {
         const { [item.id]: _drop, ...rest } = t;
@@ -140,14 +147,17 @@ function ItemTable({
       return { ...next, items: next.items.filter((i) => i.id !== item.id) };
     });
   };
-  const changeKind = (item: Item, kind: ItemKind) => {
+  const changeKind = async (item: Item, kind: ItemKind) => {
     const n = valueCount(data, item);
     const refs = refsOf(data, item);
     if (
       (n > 0 || refs.length > 0) &&
-      !confirm(
-        `種類を変えると、この項目の値（${n}件）と、この項目を使う条件（${refs.length}件）を消します。よろしいですか？`,
-      )
+      !(await confirmDialog({
+        title: `項目「${item.name}」の種類を変えますか？`,
+        body: `種類を変えると、この項目の値（${n}件）と、この項目を使う条件（${refs.length}件）を消します。`,
+        confirmLabel: '値を消して種類を変える',
+        tone: 'danger',
+      }))
     )
       return;
     update((d) => {
@@ -179,11 +189,16 @@ function ItemTable({
         ),
       };
     });
-  const removeOption = (item: Item, opt: string) => {
+  const removeOption = async (item: Item, opt: string) => {
     const n = optionCount(data, item, opt);
     if (
       n > 0 &&
-      !confirm(`「${opt}」は ${n}件に入っています。消すと、その値と、それを使う条件からも外れます。よろしいですか？`)
+      !(await confirmDialog({
+        title: `選択肢「${opt}」を消しますか？`,
+        body: `${n}件に入っています。消すと、その値と、それを使う条件からも外れます。`,
+        confirmLabel: '消す',
+        tone: 'danger',
+      }))
     )
       return;
     update((d) => {

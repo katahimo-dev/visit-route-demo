@@ -14,6 +14,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { ClientPicker } from '../components/ClientPicker';
+import { useConfirm } from '../components/ConfirmDialog';
 import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
 import { LoadRowsSample } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
@@ -127,6 +128,7 @@ export default function WeekPage() {
   const { data, update, compileInput, staff, staffById, clients, clientById, colorOfStaff } = useDayModel(date);
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const today = jstDate(Date.now());
@@ -487,7 +489,7 @@ export default function WeekPage() {
     return out;
   }, [moving]);
 
-  const submitMove = () => {
+  const submitMove = async () => {
     if (!draft || !moving) return;
     if (!DATE_RE.test(draft.date)) return;
     if (!canMoveVisit(moving.date, today) || !canMoveVisit(draft.date, today)) {
@@ -506,9 +508,11 @@ export default function WeekPage() {
       const fixed = changedDates(preview.change).filter((d) => !!own(data.manualPlans, d));
       if (
         fixed.length > 0 &&
-        !confirm(
-          `確定した日（${fixed.map(md).join('・')}）の訪問も変わります（確定した割当は変えません）。動かしますか？`,
-        )
+        !(await confirmDialog({
+          title: '確定した日の訪問も動かしますか？',
+          body: `確定した日（${fixed.map(md).join('・')}）の訪問も変わります（確定した割当は変えません）。`,
+          confirmLabel: '動かす',
+        }))
       )
         return;
       update((d) => moveFollowing(d, draft.visitId, draft.date, draft.start, today, ids)?.data ?? d);

@@ -1,5 +1,6 @@
 import { Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
@@ -45,6 +46,7 @@ export default function DataPage() {
     toast('呼び方を変えました');
   };
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const excelRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,12 +129,13 @@ export default function DataPage() {
       }
       const rt = r.org.terms;
       const counts = `${rt.staff} ${r.staff.length}人・${rt.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
-      if (
-        !confirm(
-          `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。よろしいですか？`,
-        )
-      )
-        return;
+      const ok = await confirmDialog({
+        title: `「${file.name}」でデータを置き換えますか？`,
+        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。`,
+        confirmLabel: 'すべて置き換える',
+        tone: 'danger',
+      });
+      if (!ok) return;
       replace(r);
       toast('Excel を読み込みました');
     } catch (e) {
@@ -170,13 +173,20 @@ export default function DataPage() {
     const terms = base.org.terms;
     const how = rosterMode === 'replace' ? '総入れ替え' : '追加・更新';
     const warning = rosterWarning(r, kind, terms);
-    const message = [
+    const body = [
       ...(warning ? [warning, ''] : []),
       `「${file.name}」の${term}の名簿を読み込みます（${how}）。`,
       rosterSummary(r, kind, terms),
-      'AI案・記録・確定した割当・訪問はそのままです。よろしいですか？',
+      'AI案・記録・確定した割当・訪問はそのままです。',
     ].join('\n');
-    if (!confirm(message)) return;
+    const ok = await confirmDialog({
+      title: `${term}の名簿を読み込みますか？（${how}）`,
+      body,
+      confirmLabel: '名簿を読み込む',
+      // 総入れ替え（名簿にいない人を終了・休止にする）は危険の色
+      tone: rosterMode === 'replace' ? 'danger' : 'primary',
+    });
+    if (!ok) return;
     if (latest.current !== base) return changed();
     pendingRoster.current = {
       base,
@@ -198,7 +208,13 @@ export default function DataPage() {
         setError(`読み込めませんでした：${r.message}（いまのデータはそのままです）`);
         return;
       }
-      if (!confirm(`「${file.name}」の内容で、いまのデータをすべて置き換えます。よろしいですか？`)) return;
+      const ok = await confirmDialog({
+        title: `「${file.name}」でデータを置き換えますか？`,
+        body: `「${file.name}」の内容で、いまのデータをすべて置き換えます。`,
+        confirmLabel: 'すべて置き換える',
+        tone: 'danger',
+      });
+      if (!ok) return;
       replace(r);
       toast('読み込みました');
     } catch (e) {
@@ -208,8 +224,14 @@ export default function DataPage() {
     }
   };
 
-  const doReset = () => {
-    if (!confirm('データをデモの初期状態に戻します。いまの変更はすべて消えます。よろしいですか？')) return;
+  const doReset = async () => {
+    const ok = await confirmDialog({
+      title: 'データを初期状態に戻しますか？',
+      body: 'データをデモの初期状態に戻します。いまの変更はすべて消えます。',
+      confirmLabel: '消して初期状態に戻す',
+      tone: 'danger',
+    });
+    if (!ok) return;
     reset();
     toast('初期状態に戻しました');
   };

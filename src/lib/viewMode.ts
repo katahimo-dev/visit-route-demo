@@ -2,6 +2,7 @@
 // データは書き換えない（保存は各画面の update(fn)）
 import type { ClientLeave } from '../contracts/documents';
 import type { Traits } from '../contracts/rules';
+import type { ConfirmOptions } from './confirmDialog';
 
 /**
  * 特性の未入力を取り除く（null・空の文字・空の配列のキーを消す）。特性の入力は選んでから「未確認」に戻すと null を残すので、
@@ -36,14 +37,18 @@ export function isDirty<T>(form: T | null, base: T | undefined, extra = false): 
 export type DiscardWhen = 'view' | 'close' | 'switch';
 
 /**
- * 変更を捨てる前の確認の文（confirm に出す）。term は呼び方（org.terms）、name は編集中の人の名前（空なら「（名前なし）」）、
- * next は別の人を開くときのその人の名前
+ * 変更を捨てる前の確認（独自の確認ダイアログに出す。PRD D130・D147）。term は呼び方（org.terms）、name は編集中の人の名前
+ * （空なら「（名前なし）」）、next は別の人を開くときのその人の名前。見出しは問い、本文はだれの変更か、
+ * 確定は「捨てて〜」（危険の色）、取り消しは「編集を続ける」
  */
-export function discardMessage(when: DiscardWhen, term: string, name: string, next = ''): string {
+export function discardDialog(when: DiscardWhen, term: string, name: string, next = ''): ConfirmOptions {
   const who = `${name.trim() || '（名前なし）'}（${term}）`;
-  if (when === 'view') return `${who}の変更を保存していません。変更を捨てて、閲覧に戻りますか？`;
-  if (when === 'close') return `${who}の変更を保存していません。変更を捨てて、欄を閉じますか？`;
-  return `${who}の変更を保存していません。変更を捨てて、${next.trim() || '（名前なし）'}を開きますか？`;
+  const body = `${who}の変更を保存していません。`;
+  const base = { body, cancelLabel: '編集を続ける', tone: 'danger' as const };
+  if (when === 'view') return { ...base, title: '変更を捨てて、閲覧に戻りますか？', confirmLabel: '捨てて閲覧に戻る' };
+  if (when === 'close') return { ...base, title: '変更を捨てて、欄を閉じますか？', confirmLabel: '捨てて閉じる' };
+  const to = next.trim() || '（名前なし）';
+  return { ...base, title: `変更を捨てて、${to}を開きますか？`, confirmLabel: `捨てて${to}を開く` };
 }
 
 /** 閲覧の欄の文字：空（前後の空白だけを含む）・null なら「—」 */
