@@ -1620,8 +1620,8 @@ Worker 内の例外は `{type:'error', message}` で返し、内部の文言を�
 - 閲覧の欄の相手の名前（ADR-0023 追記。PRD D198〜D200。2026-10-18）：
   - `lib/compatView.ts` の `staffClientGroups(compat, staffId, clients)`（純粋関数。テストあり）：渡した〈利用者さん〉をいつもの担当（`usual`）と相性の記号ごと（`great`・`good`・`poor`・`ng`）に分ける。並びは渡したまま
   - `components/personView.tsx`：〈スタッフ〉の「相性・担当」は `StaffClientRows`（利用中の〈利用者さん〉で、いつもの担当と記号ごとの4行。`StaffCompatRows` は吹き出しだけが使う）。名前は `PersonNames`（`PersonButton` を並べ、先頭に人数（`count`）、休止中は添える、居なければ「—」、`NAMES_SHOWN`＝12人を超えたら「あと N人」／「畳む」（`aria-expanded`）。data-testid は `view-usual-clients`・`view-compat-great|good|poor|ng`・`view-allowed-staff`・`view-usual-staff`、ボタンは `…-more`）。〈利用者さん〉は `ClientStaffRows` の `names` に `PersonNames` を渡す（吹き出しの `ClientDetail` は渡さず文字のまま）
-  - `components/detailPopover.css`：吹き出しの z-index を 1120（右の欄 `.drawer-wrap` 1100 の上、コマンドパレット 1150・確認 1300 の下）
-  - `components/ui.tsx` の `SidePanel`：Tab の閉じ込めは、フォーカスが `.detail-popover` の中にあるときは何もしない（吹き出しの Tab に任せる）。Esc は吹き出しの `onKeyDown` が止めるので欄は閉じない
+  - `components/DetailPopover.tsx`：portal 先は押した名前を含む `[aria-modal="true"]`（右の欄）、無ければ body。端の Tab で閉じるときは `stopPropagation` も。位置を合わせるたびに、名前が `.drawer-body` の見える範囲から出ていれば閉じる
+  - `components/ui.tsx` の `SidePanel`：Tab の閉じ込めは、フォーカスが `.detail-popover` の中にあるとき・`defaultPrevented` のときは何もしない（吹き出しの Tab に任せる）。Esc は吹き出しの `onKeyDown` が止めるので欄は閉じない
 - 〈利用者さん〉の画面で、終了にして保存し一覧から消えるときは「保存しました。終了の人は『終了の人も出す』で出ます」と知らせる
 - 使われなくなった `lib/clientStage` の `stageCounts` は消した
 - 時間軸への引き継ぎは「時間軸」のタブを押したときだけ（〈スタッフ〉×曜日を経由したときはしない）。「見る人」（`?by=`）は変えない

@@ -252,8 +252,8 @@ export function SidePanel({
         closeRef.current();
         return;
       }
-      if (e.key !== 'Tab' || !ref.current) return;
-      // 欄の中の名前から開いた詳細の吹き出し（body の直下）の中の Tab は、吹き出しに任せる（PRD D200）
+      if (e.key !== 'Tab' || !ref.current || e.defaultPrevented) return;
+      // 欄の中の名前から開いた詳細の吹き出しの中の Tab は、吹き出しに任せる（PRD D200）
       if (document.activeElement?.closest('.detail-popover')) return;
       const list = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
         (el) => el.offsetParent !== null || el === document.activeElement,

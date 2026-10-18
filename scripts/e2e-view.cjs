@@ -5,7 +5,7 @@
 // 「追加」はすぐ編集の欄／「まとめて地図に置く」の「編集」は編集の欄／定期パターン・休みは閲覧では読むだけ（これからの休みと終わった休みの件数）／
 // 最終勤務日の振り直しの欄は今どおり。
 // 相性・担当の名前（PRD D198〜D200）：〈スタッフ〉の閲覧の欄にいつもの担当・相性の記号ごとの〈利用者さん〉の名前（人数・利用中だけ・
-// 13人目から「あと N人」）、名前で詳細の吹き出し（Tab は吹き出しの中・Esc は吹き出しだけ閉じてフォーカスは名前）、リンクで相手の閲覧の欄、
+// 13人目から「あと N人」）、名前で詳細の吹き出し（欄の中に出す・Tab は吹き出しの中を進み端で閉じて名前へ・Esc は吹き出しだけ閉じる・欄を巻いて名前が隠れたら閉じる）、リンクで相手の閲覧の欄、
 // 〈利用者さん〉の担当できる人・いつもの担当も名前から。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-view.cjs
@@ -409,9 +409,35 @@ async function names(page) {
   await first.click();
   const pop = page.getByTestId('person-pop');
   await pop.waitFor({ timeout: 3000 });
+  check(
+    await page.evaluate(() => !!document.querySelector('[aria-modal="true"] [data-testid="person-pop"]')),
+    '欄の中の吹き出し：欄（aria-modal）の中に出す',
+  );
+  await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   const inPop = await page.evaluate(() => !!document.activeElement?.closest('[data-testid="person-pop"]'));
-  check(inPop, '欄の中の吹き出し：Tab でフォーカスが吹き出しの中に残る');
+  check(inPop, '欄の中の吹き出し：Tab でフォーカスが吹き出しの中を進む（欄の閉じ込めに取られない）');
+  // 吹き出しの端から Tab で出ると閉じて名前へ戻る（欄の先頭へ飛ばない）
+  await page.keyboard.press('Tab');
+  await settle(page);
+  check(
+    (await pop.count()) === 0 &&
+      (await page.evaluate(() => document.activeElement?.getAttribute('data-id'))) === firstId,
+    '欄の中の吹き出し：端から Tab で出ると閉じ、フォーカスは名前へ戻る',
+  );
+  // 欄を巻いて名前が見えなくなったら閉じる
+  await first.click();
+  await pop.waitFor({ timeout: 3000 });
+  await panel(page)
+    .locator('.drawer-body')
+    .evaluate((el) => {
+      el.scrollTop = 0;
+    });
+  await settle(page);
+  check((await pop.count()) === 0, '欄の中の吹き出し：欄を巻いて名前が見えなくなったら閉じる');
+  await first.scrollIntoViewIfNeeded();
+  await first.click();
+  await pop.waitFor({ timeout: 3000 });
   await page.keyboard.press('Escape');
   await settle(page);
   check(
