@@ -26,6 +26,7 @@ import {
   isYm,
   monthDates,
   monthProgress,
+  planRunOf,
   planStale,
   ruleSetKey,
   rulesStale,
@@ -154,7 +155,7 @@ describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
       weights: { ...d.presets.find((p) => p.id === presetId)!.weights, wait: { weight, hard: false } },
     });
 
-  it('基準のプリセットで作った案：いまの条件の重み・名前を変えても、プリセットがあるので変わったにしない', () => {
+  it('基準のプリセットで作った案：いまの条件の重み・名前を変えても、プリセットが同じなら変わったにしない', () => {
     const d0 = novData();
     const a = firstDay(d0);
     const d = build(d0, a);
@@ -164,18 +165,19 @@ describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
     const renamed = { ...d, rules: d.rules.map((r) => ({ ...r, label: `${r.label}（改）` })) };
     expect(rulesStale(renamed, a, keysOf(renamed))).toBe(false);
   });
-  it('作った重みがもうどこにも無い（いまの条件を変えたうえでプリセットの重みを変えた・条件を消した）：変わった', () => {
+  it('初期状態（いまの条件が標準と同じ重み）で標準の重みを変える：変わった。基準で作り直すと消える', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    let d = build(d0, a);
+    d = setWeight(d, 'standard', 1);
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    d = build(d, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
+  it('条件を消した：変わった', () => {
     const d0 = novData();
     const a = firstDay(d0);
     const d = build(d0, a);
-    // いまの条件が初期のプリセット（標準）と同じ重みのあいだは、標準を変えても「いまの条件」に残っている
-    const sameAsRules = setWeight(d, 'standard', 1);
-    expect(rulesStale(sameAsRules, a, keysOf(sameAsRules))).toBe(false);
-    const away = {
-      ...sameAsRules,
-      rules: sameAsRules.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r)),
-    };
-    expect(rulesStale(away, a, keysOf(away))).toBe(true);
     const removed = { ...d, rules: d.rules.slice(1) };
     expect(rulesStale(removed, a, keysOf(removed))).toBe(true);
   });
@@ -199,7 +201,11 @@ describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
       inputKey: problemKey(compile({ ...d1, rules: custom }, a)),
       onlyEmpty: false,
     });
+    expect(planRunOf(d, a)?.presetId).toBeNull();
     expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    // プリセットを変えても、いまの条件が変わらない限り変わったにしない
+    const edited = setWeight(d, 'standard', 1);
+    expect(rulesStale(edited, a, keysOf(edited))).toBe(false);
     d = { ...d, rules: d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 1 } : r)) };
     expect(rulesStale(d, a, keysOf(d))).toBe(true);
     d = build(d, a);
@@ -216,8 +222,9 @@ describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
     // 標準の重みを変えても、作った重みは「マイ」に残っている
     d = setWeight(d, 'standard', 1);
     expect(rulesStale(d, a, keysOf(d))).toBe(false);
-    // 基準の「マイ」を変えると、作った重みはもうどこにも無い（いまの条件も同じ重みなら、いまの条件も変える）
-    d = { ...d, rules: d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r)) };
+    d = build(d, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    // 基準の「マイ」を変えると変わった。作り直すと消える
     d = setWeight(d, my, 0.5);
     expect(rulesStale(d, a, keysOf(d))).toBe(true);
     d = build(d, a);

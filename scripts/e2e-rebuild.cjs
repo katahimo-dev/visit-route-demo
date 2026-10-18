@@ -123,7 +123,7 @@ async function prepare(page) {
   check(!!SECOND, '用意：今日の案（未確定）と次の日の案（確定）', { today: TODAY, second: SECOND });
 }
 
-// ---- 条件の重みの画面：変わった日が無ければ出さない → いまの条件と基準のプリセットの重みを変えると出る ----
+// ---- 条件の重みの画面：変わった日が無ければ出さない → 初期状態のまま基準のプリセット（標準）の重みを変えると出る ----
 async function rules(page) {
   await openSettings(page, '/rules');
   check(
@@ -132,23 +132,6 @@ async function rules(page) {
     await counts(page),
   );
   check((await live(page).innerText()) === '', '読み上げの領域は最初から空で置く');
-  // いまの条件の重みを変える：どのプリセットとも違うので案内が出る（プリセットで作った案は「変わった」にしない）
-  const main = page.locator('.rules-table input[type="range"]:not([disabled])').first();
-  await main.focus();
-  await page.keyboard.press('ArrowLeft');
-  await customRow(page).waitFor({ timeout: 5000 });
-  const ct = await customRow(page).innerText();
-  check(
-    /いまの条件は日の画面の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります/.test(
-      ct,
-    ) &&
-      (await page.getByTestId('rebuild-today').count()) === 1 &&
-      /プリセットとして保存/.test(ct),
-    'いまの条件がプリセットと違えば案内と［今日の案をいまの条件で作り直す］［プリセットとして保存］',
-    ct,
-  );
-  await page.waitForTimeout(SETTLE + 300);
-  check((await daysRow(page).count()) === 0, 'プリセットで作った案は、いまの条件の重みだけでは「変わった」にしない');
   // 点数の基準のプリセット（標準）の「待ち」の重みを動かす（スライダーの1段ずつ。入力の間は数えない）
   const preset = page.getByTestId('preset-edit').filter({ has: page.locator('.chip', { hasText: '点数の基準' }) });
   await preset.locator('summary').click();
@@ -161,13 +144,11 @@ async function rules(page) {
   const c = await counts(page);
   check(
     c.days === 2 && c.unconfirmed === 1 && c.confirmed === 1,
-    '作った重みがどこにも無くなると帯：影響する日 2日（未確定 1・確定済み 1）',
+    '初期状態のまま標準の重みを変えると帯：影響する日 2日（未確定 1・確定済み 1）',
     c,
   );
-  check(
-    (await band(page).count()) === 1 && (await band(page).locator('.rb-row').count()) === 2,
-    '影響する日といまの条件の案内は1つの帯の2行',
-  );
+  // いまの条件は古い標準の重みのままなので、どのプリセットとも違い、いまの条件の案内も同じ帯に出る
+  check((await customRow(page).count()) === 1, '標準を変えると、いまの条件（古い標準の重み）の案内も出る');
   const text = await daysRow(page).innerText();
   check(
     text.replace(/\s+/g, ' ').includes('条件が変わりました：影響する日 2日（未確定 1日・確定済み 1日）') &&
@@ -193,6 +174,29 @@ async function rules(page) {
   await slider.focus();
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft');
   await daysRow(page).waitFor({ timeout: 10000 });
+  // いまの条件の重みを変える：どのプリセットとも違うので案内が出る（プリセットで作った案の日数は変わらない）
+  const main = page.locator('.rules-table input[type="range"]:not([disabled])').first();
+  await main.focus();
+  await page.keyboard.press('ArrowLeft');
+  await customRow(page).waitFor({ timeout: 5000 });
+  const ct = await customRow(page).innerText();
+  check(
+    /いまの条件は日の画面の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります/.test(
+      ct,
+    ) &&
+      (await page.getByTestId('rebuild-today').count()) === 1 &&
+      /プリセットとして保存/.test(ct),
+    'いまの条件がプリセットと違えば案内と［今日の案をいまの条件で作り直す］［プリセットとして保存］',
+    ct,
+  );
+  await page.waitForTimeout(SETTLE + 300);
+  check(
+    (await counts(page)).days === 2 &&
+      (await band(page).count()) === 1 &&
+      (await band(page).locator('.rb-row').count()) === 2,
+    '影響する日といまの条件の案内は1つの帯の2行（プリセットで作った案の日数は変わらない）',
+    await counts(page),
+  );
   const go = page.getByTestId('rebuild-go');
   check(
     /作り直す/.test(await go.innerText()) && !!(await go.getAttribute('aria-describedby')),
@@ -227,7 +231,9 @@ async function rules(page) {
   await page.evaluate(() => {
     const target = document.querySelector('.rules-table input:not([type="range"])');
     const all = [
-      ...document.querySelectorAll('.app-main input, .app-main button, .app-main a[href], .app-main select, .app-main summary'),
+      ...document.querySelectorAll(
+        '.app-main input, .app-main button, .app-main a[href], .app-main select, .app-main summary',
+      ),
     ].filter((x) => !x.disabled && x.getClientRects().length > 0);
     const prev = all[all.indexOf(target) - 1];
     prev.focus({ preventScroll: true });

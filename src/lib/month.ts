@@ -138,29 +138,37 @@ export function ruleSetKey(rules: readonly Rule[]): string {
   return JSON.stringify(rules.map((r) => [r.id, r.type, r.weight, HARDABLE.has(r.type) && r.hard]));
 }
 
-/**
- * いまある条件の組のキー（PRD D161）：いまの条件（条件の重みの画面の重み）と、いまの条件に各プリセットを当てたもの。
- * 今の案を作った条件がこのどれでもなければ、作ったときの条件はもうどこにも無い（＝条件が変わった）
- */
-export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): ReadonlySet<string> {
-  return new Set([ruleSetKey(rules), ...presets.map((p) => ruleSetKey(applyPreset([...rules], p)))]);
+/** いまある条件の組のキー（PRD D161） */
+export type RuleKeys = {
+  /** いまの条件に各プリセットを当てたもの */
+  presets: ReadonlySet<string>;
+  /** いまの条件（条件の重みの画面の重み）そのもの */
+  current: string;
+};
+
+/** いまある条件の組のキー（PRD D161）：いまの条件に各プリセットを当てたものと、いまの条件そのもの */
+export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): RuleKeys {
+  return {
+    presets: new Set(presets.map((p) => ruleSetKey(applyPreset([...rules], p)))),
+    current: ruleSetKey(rules),
+  };
 }
 
 /**
- * （D43・D161）今の案の元の記録を作った条件（重み・必須）が、いまの条件にもどのプリセットにも当てはまらないか
- * （プリセットの重みを変えた・条件を足した・消した・いまの条件の重みを変えたなどで、作ったときの条件がもうどこにも無い）。
- * 作り直しは点数の基準のプリセットで作るので、作り直した案は必ず当てはまる（true が残り続けない）。
- * 点数の基準を切り替えただけでは変わらない（前の基準のプリセットもまだある）。名前は計算に効かないので見ない。
- * 記録が無い・欠勤の振り直しの記録は判定しない（false）
+ * （D43・D161）今の案の元の記録を作った条件（重み・必須）が、いまはもう無いか：
+ * - プリセットの重みで作った案（記録の presetId がある＝作ったときにどれかのプリセットと重みが一致した。自動作成・月のまとめて作る・
+ *   プリセットのカード）は、いまの条件に各プリセットを当てたもののどれとも違えば変わった。いまの条件が古い重みのままでも、
+ *   プリセットの重みを変えれば変わったになる（初期状態で標準の重みを変えたとき）
+ * - いまの条件で作った案（presetId が null＝どのプリセットとも一致しなかった）は、それに加えていまの条件とも違えば変わった
+ * 作り直しは点数の基準のプリセットで作るので、作り直した案は必ず当てはまる（true が残り続けない）。点数の基準を切り替えただけでは
+ * 変わらない（前の基準のプリセットもまだある）。名前は計算に効かないので見ない。記録が無い・欠勤の振り直しの記録は判定しない（false）
  */
-export function rulesStale(
-  data: Pick<DemoData, 'aiPlans' | 'aiRuns'>,
-  date: string,
-  keys: ReadonlySet<string>,
-): boolean {
+export function rulesStale(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string, keys: RuleKeys): boolean {
   const run = planRunOf(data, date);
   if (!run || run.reassign) return false;
-  return !keys.has(ruleSetKey(run.rules));
+  const key = ruleSetKey(run.rules);
+  if (keys.presets.has(key)) return false;
+  return run.presetId !== null || key !== keys.current;
 }
 
 /**
