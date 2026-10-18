@@ -265,10 +265,17 @@ async function keyboard(page) {
     '操作「欠勤・キャンセルを登録」で日の画面の欄が開く',
     hashOf(page),
   );
-  // 右の欄が開いているあいだは Ctrl+K で開かない
+  // 右の欄が開いているあいだは Ctrl+K で開かない（ブラウザの動き（アドレスバーへ移る）は止める）
+  await page.evaluate(() => {
+    window.__ctrlK = null;
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'k') window.__ctrlK = e.defaultPrevented;
+    });
+  });
   await page.keyboard.press('Control+k');
   await page.waitForTimeout(200);
   check((await palette(page).count()) === 0, '右の欄が開いているあいだは Ctrl+K で開かない');
+  check((await page.evaluate(() => window.__ctrlK)) === true, '開かないときも Ctrl+K の既定の動きは止める');
   await page.keyboard.press('Escape');
 
   // 操作：今月の案をまとめて作る（月の画面の ?do=batch）
@@ -287,6 +294,49 @@ async function keyboard(page) {
   await page.waitForURL(/#\/month/);
   await page.waitForTimeout(600);
   check(!hashOf(page).includes('do='), '月の画面へ移り ?do= は月の画面が消す', hashOf(page));
+  // 呼び方のよみで画面を引く
+  await open(page, '/home');
+  await page.keyboard.press('Control+k');
+  await palette(page).waitFor();
+  await type(page, 'りようしゃ');
+  list = await listed(page);
+  check(
+    list.some((o) => o.kind === 'screen' && o.label === '利用者さん一覧'),
+    '呼び方のよみ（りようしゃ）で〈利用者さん〉一覧',
+    list.map((o) => o.label),
+  );
+  await type(page, 'つくりなおす');
+  list = await listed(page);
+  check(
+    !list.some((o) => o.label === '今日の案をいまの条件で作り直す'),
+    'いまの条件がプリセットと同じなら「いまの条件で作り直す」を出さない',
+    list.map((o) => o.label),
+  );
+  await page.keyboard.press('Escape');
+  // いまの条件がどのプリセットとも違えば「今日の案をいまの条件で作り直す」（?do=recreate）
+  await page.evaluate((key) => {
+    const d = JSON.parse(localStorage.getItem(key));
+    const r = d.rules.find((x) => typeof x.weight === 'number');
+    r.weight = r.weight >= 4.5 ? r.weight - 1.5 : r.weight + 1.5;
+    localStorage.setItem(key, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await open(page, '/home');
+  await page.keyboard.press('Control+k');
+  await palette(page).waitFor();
+  await type(page, 'つくりなおす');
+  list = await listed(page);
+  const ri = list.findIndex((o) => o.label === '今日の案をいまの条件で作り直す');
+  check(
+    ri >= 0 && list[ri].kind === 'action',
+    'いまの条件がプリセットと違えば「今日の案をいまの条件で作り直す」',
+    list.map((o) => o.label),
+  );
+  for (let i = 0; i < ri; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.waitForURL(/#\/plan/);
+  await page.waitForTimeout(800);
+  check(!hashOf(page).includes('do='), '日の画面へ移り ?do=recreate は日の画面が消す', hashOf(page));
+  await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
 
 // ---- 人の名前で閲覧の欄 ----
@@ -391,6 +441,53 @@ async function focus(page) {
   await page.keyboard.press('Enter');
   await palette(page).waitFor({ state: 'detached' });
   check(hashOf(page) === '#/clients' && (await search.inputValue()) === 'ながまち', '今の画面を選ぶと閉じるだけ');
+
+  // 吹き出しの中から開いて閉じても、フォーカスを body に落とさない（戻す先が消えていたら「探す」へ）
+  await open(page, '/week', '[data-testid="week-col"]');
+  await page.getByTestId('staff-chips').getByTestId('person-info').first().click();
+  await page.getByTestId('person-pop').waitFor();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Control+k');
+  await palette(page).waitFor();
+  await page.keyboard.press('Escape');
+  await palette(page).waitFor({ state: 'detached' });
+  const fo = await page.evaluate(() => ({
+    body: document.activeElement === document.body || document.activeElement === null,
+    id: document.activeElement?.dataset?.testid ?? document.activeElement?.tagName,
+  }));
+  check(!fo.body, '吹き出しの中から開いて閉じても、フォーカスは body に落ちない', fo);
+
+  // ↓ で末尾から先頭へ回ると一番上まで巻く・種類の先頭の候補では見出しも見える
+  await page.keyboard.press('Control+k');
+  await palette(page).waitFor();
+  const lst = page.getByTestId('cmdk-list');
+  await page.keyboard.press('ArrowUp'); // 末尾へ
+  await page.waitForTimeout(100);
+  const bottom = await lst.evaluate((el) => el.scrollTop);
+  await page.keyboard.press('ArrowDown'); // 先頭へ回る
+  await page.waitForTimeout(100);
+  check(
+    bottom > 0 && (await lst.evaluate((el) => el.scrollTop)) === 0,
+    '↓ で末尾から先頭へ回ると一番上まで巻く',
+    bottom,
+  );
+  // 末尾から ↑ で画面の先頭の候補まで戻る
+  const all = await listed(page);
+  const firstScreen = all.findIndex((o) => o.kind === 'screen');
+  await page.keyboard.press('ArrowUp');
+  for (let i = all.length - 1; i > firstScreen; i--) await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(100);
+  const vis = await lst.evaluate((el) => {
+    const t = el.querySelector('[data-kind="screen"] .cmdk-group-title');
+    const sel = el.querySelector('[aria-selected="true"]');
+    return {
+      title: t.getBoundingClientRect().top - el.getBoundingClientRect().top,
+      sel: sel?.dataset.kind,
+      selFirst: sel?.previousElementSibling === t,
+    };
+  });
+  check(vis.sel === 'screen' && vis.selFirst && vis.title >= 0, '種類の先頭の候補を選ぶと見出しも見える', vis);
+  await page.keyboard.press('Escape');
 }
 
 // ---- 390px：上の帯のボタン・収まる・名前・引き出し・下のタブ ----

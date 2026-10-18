@@ -18,6 +18,7 @@ import {
 } from '../lib/commandPalette';
 import { trapTarget } from '../lib/confirmDialog';
 import type { MenuItem, NavSection } from '../lib/nav';
+import { presetOf } from '../seed';
 import { useDemoData } from '../store';
 import { FOCUSABLE } from './ui';
 import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
@@ -50,6 +51,7 @@ export function CommandPalette({
   const wrapRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const listId = useId();
@@ -60,8 +62,10 @@ export function CommandPalette({
   const [typed, setTyped] = useState(false);
 
   // 候補（人の名前は比べる形にそろえておき、打つたびにそろえ直さない。300人×60人でも打つたびは絞り込むだけ）
-  const actions = useMemo(() => paletteActions(today), [today]);
-  const screens = useMemo(() => paletteScreens(sections), [sections]);
+  // いまの条件がどのプリセットとも違えば「今日の案をいまの条件で作り直す」も出す（PRD D166・D182）
+  const customRules = useMemo(() => presetOf(data.rules, data.presets) === null, [data.rules, data.presets]);
+  const actions = useMemo(() => paletteActions(today, { customRules }), [today, customRules]);
+  const screens = useMemo(() => paletteScreens(sections, terms), [sections, terms]);
   const people = useMemo(() => palettePeople(data.clients, data.staff, terms), [data.clients, data.staff, terms]);
   const items = useMemo(() => [...actions, ...screens, ...people], [actions, screens, people]);
   const result = useMemo(() => filterPalette(items, query), [items, query]);
@@ -101,14 +105,27 @@ export function CommandPalette({
     return () => {
       window.removeEventListener('keydown', onKey, true);
       releaseInert();
-      if (back?.isConnected) back.focus({ preventScroll: true });
+      // 開く前の要素が消えていたら（吹き出しの中から開いて、吹き出しが閉じたなど）上の帯の「探す」へ
+      const to = back?.isConnected ? back : document.querySelector<HTMLElement>('[data-testid="cmdk-open"]');
+      to?.focus({ preventScroll: true });
     };
   }, []);
 
-  // 選んでいる候補を見える所へ
+  // 選んでいる候補を見える所へ。先頭なら一番上まで、種類の先頭の候補なら見出しごと見せる（↓ で末尾から回ったときに見出しを隠さない）
   useEffect(() => {
-    if (at < 0) return;
-    document.getElementById(optionId(at))?.scrollIntoView({ block: 'nearest' });
+    const list = listRef.current;
+    const el = at < 0 ? null : document.getElementById(optionId(at));
+    if (!list || !el) return;
+    if (at === 0) {
+      list.scrollTop = 0;
+      return;
+    }
+    el.scrollIntoView({ block: 'nearest' });
+    const title = el.previousElementSibling;
+    if (title instanceof HTMLElement && title.classList.contains('cmdk-group-title')) {
+      const top = title.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      if (top < 0) list.scrollTop += top;
+    }
   });
 
   const pick = (it: PaletteItem | undefined) => {
@@ -166,7 +183,7 @@ export function CommandPalette({
             <X size={18} aria-hidden="true" />
           </button>
         </div>
-        <div id={listId} className="cmdk-list" role="listbox" aria-label="候補" data-testid="cmdk-list">
+        <div ref={listRef} id={listId} className="cmdk-list" role="listbox" aria-label="候補" data-testid="cmdk-list">
           {result.groups.map((g) => {
             const headId = `${listId}-g-${g.kind}`;
             return (

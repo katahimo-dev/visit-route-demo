@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_TERMS } from '../domain/terms';
 import {
   filterPalette,
   isMacPlatform,
@@ -10,6 +11,8 @@ import {
   palettePeople,
   paletteScreens,
   paletteTerms,
+  TERM_READINGS,
+  termReading,
 } from './commandPalette';
 import { menuSections } from './nav';
 
@@ -26,7 +29,7 @@ const staff = [
 ];
 const items = [
   ...paletteActions(TODAY),
-  ...paletteScreens(menuSections(terms, TODAY)),
+  ...paletteScreens(menuSections(terms, TODAY), terms),
   ...palettePeople(clients, staff, terms),
 ];
 const labels = (q: string) => filterPalette(items, q).flat.map((i) => i.label);
@@ -48,12 +51,39 @@ describe('候補', () => {
     expect(by('action:stale').to).toBe('/month?ym=2026-10&do=stale');
     expect(by('action:vacancy').to).toBe('/vacancy');
   });
+  it('いまの条件がどのプリセットとも違うときだけ「今日の案をいまの条件で作り直す」（?do=recreate）', () => {
+    expect(paletteActions(TODAY).some((x) => x.id === 'action:recreate')).toBe(false);
+    const r = paletteActions(TODAY, { customRules: true }).find((x) => x.id === 'action:recreate')!;
+    expect(r).toMatchObject({
+      label: '今日の案をいまの条件で作り直す',
+      to: '/plan?date=2026-10-21&do=recreate',
+      date: TODAY,
+    });
+  });
+  it('画面の候補は呼び方のよみでも引ける（既定の呼び方）', () => {
+    const scr = paletteScreens(menuSections(terms, TODAY), terms);
+    const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
+    expect(hit('りようしゃ')).toEqual(['/clients']);
+    expect(hit('すたっふ')).toEqual(['/staff']);
+    const sitter = { client: 'お客様', staff: 'シッター' };
+    const scr2 = paletteScreens(menuSections(sitter, TODAY), sitter);
+    expect(filterPalette(scr2, 'おきゃく').flat.map((i) => i.to)).toEqual(['/clients']);
+    expect(filterPalette(scr2, 'しったー').flat.map((i) => i.to)).toEqual(['/staff']);
+  });
+  it('既定の呼び方の漢字はみなよみを持ち、変えた呼び方（表に無い）はよみを足さない', () => {
+    for (const t of Object.values(DEFAULT_TERMS)) {
+      for (const term of [t.client, t.staff]) {
+        if (/[\u4e00-\u9fff]/.test(term)) expect(TERM_READINGS[term]).toBeTruthy();
+      }
+    }
+    expect(termReading('ご利用者')).toEqual([]);
+  });
   it('12月の来月は翌年の1月', () => {
     const next = paletteActions('2026-12-30').find((x) => x.id === 'action:batch-next')!;
     expect(next).toMatchObject({ label: '1月の案をまとめて作る', to: '/month?ym=2027-01&do=batch' });
   });
   it('画面はメニューと同じ名前・同じ順で、操作の項目（欠勤・キャンセル）は入れない', () => {
-    const s = paletteScreens(menuSections(terms, TODAY));
+    const s = paletteScreens(menuSections(terms, TODAY), terms);
     expect(s.map((x) => x.label)).toEqual([
       'ホーム',
       '月',

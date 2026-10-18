@@ -4,6 +4,7 @@ import type { Client, Staff, Terms } from '../contracts/documents';
 import { STAGE_LABELS } from './clientStage';
 import { addMonths, ymOf } from './month';
 import { absenceHref, isNavAction, type MenuItem, type NavSection } from './nav';
+import { recreateTodayHref } from './rebuildBand';
 import { normalizeKana } from './search';
 
 /** 候補の種類（出す順）：操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉 */
@@ -63,8 +64,33 @@ const SCREEN_WORDS: Record<string, readonly string[]> = {
   '/data': ['でーた', 'かきだし', 'よみこみ', 'ばっくあっぷ', 'えくせる', 'Excel'],
 };
 
-/** 画面の候補：メニューの項目のうち操作でないもの（メニューと同じ名前・同じ並び。補足はグループの見出し） */
-export function paletteScreens(sections: readonly NavSection<MenuItem>[]): PaletteItem[] {
+/**
+ * 呼び方の既定（domain/terms の DEFAULT_TERMS）のうち漢字を含むもののよみ。カタカナの呼び方（スタッフ・ヘルパー・シッター）は
+ * そろえるとひらがなになるので要らない。事業所が呼び方を変えたときは、ここに無ければよみでは引けない（名前の漢字で引く。ADR-0027 追記）
+ */
+export const TERM_READINGS: Readonly<Record<string, string>> = {
+  利用者さん: 'りようしゃさん',
+  お客様: 'おきゃくさま',
+};
+
+/** 呼び方のよみ（既定に無い呼び方は空） */
+export const termReading = (term: string): string[] => {
+  const r = TERM_READINGS[term];
+  return r ? [r] : [];
+};
+
+/**
+ * 画面の候補：メニューの項目のうち操作でないもの（メニューと同じ名前・同じ並び。補足はグループの見出し）。
+ * 〈利用者さん〉一覧・〈スタッフ〉一覧には呼び方のよみも足す（例「りようしゃ」で〈利用者さん〉一覧）
+ */
+export function paletteScreens(
+  sections: readonly NavSection<MenuItem>[],
+  terms: Pick<Terms, 'client' | 'staff'>,
+): PaletteItem[] {
+  const termWords: Record<string, readonly string[]> = {
+    '/clients': termReading(terms.client),
+    '/staff': termReading(terms.staff),
+  };
   return sections.flatMap((g) =>
     g.items
       .filter((i) => !isNavAction(i.to))
@@ -75,7 +101,7 @@ export function paletteScreens(sections: readonly NavSection<MenuItem>[]): Palet
           label: i.label,
           hint: g.title ?? '',
           to: i.to,
-          words: [...(g.title ? [g.title] : []), ...(SCREEN_WORDS[i.to] ?? [])],
+          words: [...(g.title ? [g.title] : []), ...(SCREEN_WORDS[i.to] ?? []), ...(termWords[i.to] ?? [])],
         }),
       ),
   );
@@ -83,9 +109,10 @@ export function paletteScreens(sections: readonly NavSection<MenuItem>[]): Palet
 
 /**
  * 操作の候補（区切り1〜5 で足した入口。PRD D182）：欠勤・キャンセルを登録・今日の予定・今月（と来月）の案をまとめて作る・
- * 要対応・確定していない日・条件が変わった日を作り直す・問い合わせに答える。today は日本時間の今日
+ * 要対応・確定していない日・条件が変わった日を作り直す・問い合わせに答える。today は日本時間の今日。
+ * customRules（いまの条件がどのプリセットとも違う）なら「今日の案をいまの条件で作り直す」（`?do=recreate`。D166）も
  */
-export function paletteActions(today: string): PaletteItem[] {
+export function paletteActions(today: string, { customRules = false }: { customRules?: boolean } = {}): PaletteItem[] {
   const ym = ymOf(today);
   const next = addMonths(ym, 1);
   const monthNo = (m: string) => Number(m.slice(5, 7));
@@ -149,6 +176,19 @@ export function paletteActions(today: string): PaletteItem[] {
       to: month('stale'),
       words: ['つくりなおす', 'じょうけんがかわった'],
     }),
+    ...(customRules
+      ? [
+          paletteItem({
+            id: 'action:recreate',
+            kind: 'action',
+            label: '今日の案をいまの条件で作り直す',
+            hint: '日の画面',
+            to: recreateTodayHref(today),
+            date: today,
+            words: ['つくりなおす', 'いまのじょうけん', 'じょうけんのおもみ'],
+          }),
+        ]
+      : []),
     paletteItem({
       id: 'action:vacancy',
       kind: 'action',

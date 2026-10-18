@@ -185,12 +185,13 @@ function AdminShell() {
   /** コマンドパレットを開いているか（PRD D181） */
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Ctrl+K（mac は ⌘K）でコマンドパレットを開く（PRD D181）。入力欄・テキストエリアの中でも開く（入れた文字はそのまま、閉じるとそこへ戻る）。
-  // ほかの欄・確認・引き出し（aria-modal）が開いているあいだは開かない（ブラウザに任せる）。開いたあとのキーはパレットが受ける
+  // ほかの欄・確認・引き出し（aria-modal）が開いているあいだは開かない（そのときもブラウザの動きは止める）。開いたあとのキーはパレットが受ける
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isPaletteShortcut(e, IS_MAC)) return;
-      if (document.querySelector('[aria-modal="true"]')) return;
+      // 開かないときもブラウザの動き（検索欄・アドレスバーへ移る）は止める
       e.preventDefault();
+      if (document.querySelector('[aria-modal="true"]')) return;
       setPaletteOpen(true);
     };
     window.addEventListener('keydown', onKey);
