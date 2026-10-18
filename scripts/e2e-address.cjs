@@ -17,6 +17,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
 
 function loadPlaywright() {
@@ -457,6 +458,8 @@ async function staffHome(page) {
   const errors = [];
   for (const step of [basics, failures, races, vacancy, holdNote, staffHome]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    // 初回の案内ツアーを見た扱いにする（PRD D193）
+    await skipTour(ctx);
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）

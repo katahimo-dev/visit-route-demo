@@ -284,17 +284,26 @@
 - ファイル選択：`components/FilePick.tsx` の1つの部品（見出し・label を見た目のボタン「ファイルを選ぶ」・選んだファイルの文。input は見えない形で残す。文は `lib/filePick.ts`）。src 全体でファイル選択はデータの画面の2つ（控え・Excel）だけで、どちらもこの部品にした
 - ツアー：案A（中央のカード）。中身・行き先は `lib/tour.ts`（`tourSteps`・`tourMove`・`shouldAutoOpenTour`）、画面は `components/Tour.tsx`（確認ダイアログと同じ流儀：body の直下・`inertLock`・`useBodyScrollLock`・`trapTarget`・捕捉の段で Esc と Tab）。管理の画面（`AdminShell`）の `TourProvider` が持ち、データの画面の「案内をもう一度見る」は `useTour()` で開く
 - 保存：案A。`store/tour.ts` の `tourMemory`（キー `vrdemo:tour:seen`、値 `'1'`）。localStorage を触るのは store の中だけ（AGENTS のとおり）だが、DemoData ではないので `update(fn)` を通さない（データの版・書き出し・読み込み・Excel・repair に入らない）。「初期状態に戻す」・読み込みでは消さない。localStorage が使えないときは、開いている間だけ覚える
-- e2e：自動操作のブラウザ（`navigator.webdriver`）では自動で出さない（既存の16本はそのまま通る。「もう一度見る」では開く）。ツアー自体は `scripts/e2e-tour.cjs` で `navigator.webdriver` を false に見せて確かめる
+- e2e：既存の16本は文脈ごとに「見た」の印を先に入れる（`scripts/lib/tourSeen.cjs` の `skipTour`。アプリに自動操作のための分かれ道は置かない）。ツアー自体は `scripts/e2e-tour.cjs` で印を入れずに確かめる
 
 ### 理由とトレードオフ
 - 得るもの：390px で月の全部の日（土曜も）が縦に読め、押せばその日へ移る。地図ボタンがタブ・トーストと離れ、本文の最後も読める。ファイル選択が日本語で、控えと Excel が同じ見た目・同じ操作（キーボード・読み上げも）。初めての人が5枚で「どこに何があるか」を知り、いつでも見直せる。DemoData・契約・データの版は変わらない
-- 失うもの：一覧は混み具合の3段の棒・種類の帯・休みの印を出さない（必要ならカレンダーへ切り替える）。ツアーは画面の要素を指さないので、場所は文で読む（メニューの名前を変えたら `lib/tour.ts` の文も直す）。見たことはブラウザごとで、別の端末・別のブラウザではもう一度出る。初期状態に戻しても案内はもう出ない（見たい人はデータの画面から）。`navigator.webdriver` の自動操作のブラウザでは人が使っても自動で出ない
+- 失うもの：一覧は混み具合の3段の棒・種類の帯・休みの印を出さない（必要ならカレンダーへ切り替える）。ツアーは画面の要素を指さないので、場所は文で読む（メニューの名前を変えたら `lib/tour.ts` の文も直す）。見たことはブラウザごとで、別の端末・別のブラウザではもう一度出る。初期状態に戻しても案内はもう出ない（見たい人はデータの画面から）。localStorage に書けないブラウザ（保存を切った・容量がいっぱい）では、読み直すたびにツアーが出る（開いている間だけ覚える）
 - 月の案B はマスの読み方（区切り6）を壊し、案C は今の問題が残る。ツアーの案B は幅ごとに指す先と動きが変わり、引き出しの inert・下のタブ・右の欄と重なって、手間に対して得るものが小さい。保存の案B はデータを書き出して別の人へ渡すと「見た」が移り、初期状態に戻すたびに出るなど、人の状態とデータが混ざる
 
 ### 影響
 - 画面：`lib/monthList.ts`（新）・`pages/MonthPage.tsx`（`?layout=`・一覧・状態の言葉は `DAY_STATE_TEXT` を使う）・`month.css`、`styles.css`（`.map-dock-fab` の 860px 以下・本文の下）、`lib/filePick.ts`・`components/FilePick.tsx`・`filePick.css`（新）・`pages/DataPage.tsx`（控え・Excel・「使い方の案内」）・`excel/exportBook.ts`（使い方のシートの文「ファイルを選ぶ」）、`lib/tour.ts`・`components/Tour.tsx`・`tour.css`（新）・`app/App.tsx`（`TourProvider`）、`store/tour.ts`（新）。DemoData・契約（`src/contracts/`）・データの版は変えない
 - 確かめ：`src/lib/monthList.test.ts`・`filePick.test.ts`・`tour.test.ts`・`src/store/tour.test.ts`、`scripts/e2e-tour.cjs`（新：ツアー・ファイル選択・月の一覧）、`scripts/e2e-mobile.cjs`（本物の地図ボタンと本物のトースト・本文の下・safe-area）
 - 見直す条件：一覧でも混み具合を見たいという声があれば、行に小さい棒を足す。ツアーの場所が文では分かりにくいという声があれば、広い画面だけ左のメニューを指す形を足す。端末をまたいで「見た」を持ちたい声があっても、サーバーに保存しない（PRD §4）
+
+### レビュー（PR #45）で直したこと（追記）
+- `?id=`・`?do=` のリンクで開くと、ツアーの裏で右の欄が開きフォーカスがそちらへ移った。URL に `?id=` か `?do=` があるときは自動で開かない（`shouldAutoOpenTour(seen, search)`。見たことにはしないので、次にふつうに開いたときに出る）
+- `navigator.webdriver` の分かれ道をやめた。既存の e2e は `scripts/lib/tourSeen.cjs` の `skipTour(ctx)`（`addInitScript` で「見た」の印を先に入れる）で止まらない。e2e-tour は印を入れずに自動で出ることを確かめる
+- 最後の枚まで進んだら、閉じる前でも見たことにする
+- 390px の月の一覧で今日の行が下にあった。今月で行き先（`?do=`）が無いときは、今日（選んでいる日が今月ならその日）の行へ巻く（`monthListFocusDate`。上の帯・下のタブは `scroll-margin`）。今月の一覧の上に「今日へ」。切り替えを進み具合の帯のすぐ下（操作の欄より上）へ移した
+- `?layout=` は押したら必ず書く（幅の既定と同じでも）。押していないときは幅の既定（`monthLayoutParam` はやめた）
+- Excel の `FilePick` に `key={excelKind}`（種類を切り替えたら選んだファイルの文を消す）。input は見えないまま見た目のボタンと同じ大きさで重ねる（VoiceOver で触れる。押すのも input）
+- localStorage に書けないときは、読み直すたびにツアーが出る（上の「失うもの」に書いた）
 
 ## これからの区切り（予定。1区切り＝1PR。着手のときにこの ADR に追記する）
 1b. （利用者の追加要望（2026-10-18）で差し込み。済み）ブラウザ標準の確認（confirm）を、画面の中央に出す独自の確認ダイアログに置き換える。判断が独立しているので ADR-0026 に書いた（PRD D146〜D150）

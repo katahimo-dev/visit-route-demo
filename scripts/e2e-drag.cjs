@@ -19,6 +19,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
 
 function loadPlaywright() {
   const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
@@ -308,6 +309,8 @@ async function weekClientsIme(page) {
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
+  // 初回の案内ツアーを見た扱いにする（PRD D193）
+  await skipTour(page);
   // ページの時計を週の途中の日本時間の日中に止める（FAKE_NOW。アプリの「今日」とテストの TODAY をそろえる）
   await page.clock.setFixedTime(NOW);
   console.log(`ページの時刻：${NOW.toISOString()}（今日＝${TODAY}）`);

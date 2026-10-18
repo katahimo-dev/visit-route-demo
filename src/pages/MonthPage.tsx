@@ -103,7 +103,7 @@ import {
   type MonthLayout,
   type MonthListRow,
   monthLayoutOf,
-  monthLayoutParam,
+  monthListFocusDate,
   monthListRow,
 } from '../lib/monthList';
 import { mdText } from '../lib/patternText';
@@ -308,10 +308,10 @@ export default function MonthPage() {
     patchParams({ staff: kind === 'staff' ? id : null, client: kind === 'client' ? id : null });
   };
 
-  /** カレンダーと一覧を切り替える（その幅の既定なら URL から消す。PRD D189） */
+  /** カレンダーと一覧を切り替える（押したら幅の既定と同じでも URL に書く。PRD D189） */
   const pickLayout = (next: MonthLayout) => {
     if (next === layout) return;
-    patchParams({ [MONTH_LAYOUT_PARAM]: monthLayoutParam(next, narrowList) });
+    patchParams({ [MONTH_LAYOUT_PARAM]: next });
   };
 
   /** 点数の基準のプリセット（月まとめ作成に使う。ADR-0012） */
@@ -797,6 +797,27 @@ export default function MonthPage() {
     }
     return out;
   }, [layout, days, statuses, staffDays, clientDays, focus.kind, staffById, offStaffId, data, today]);
+  /** 日ごとの一覧（最初に見せる日へ巻く。PRD D189） */
+  const listRef = useRef<HTMLUListElement>(null);
+  /** その日の行を見える所へ（上の帯は scroll-margin で避ける）。focus なら行へフォーカス */
+  const showListDay = (d: string, focus: boolean) => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-date="${d}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start', behavior: focus ? 'smooth' : 'auto' });
+    if (focus) el.focus({ preventScroll: true });
+  };
+  /** 最初に巻いた月と見せ方（同じ月・見せ方では巻き直さない） */
+  const listShown = useRef('');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 月・見せ方が変わったとき（と行ができたとき）だけ
+  useEffect(() => {
+    if (layout !== 'list' || listRows.length === 0) return;
+    const key = `${ym}:${layout}`;
+    if (listShown.current === key) return;
+    listShown.current = key;
+    // 今月で行き先（?do=）が無いときだけ、今日（選んでいる日が今月ならその日）の行へ
+    const target = monthListFocusDate(ym, date, today, doParam !== null);
+    if (target) requestAnimationFrame(() => showListDay(target, false));
+  }, [layout, ym, listRows.length]);
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
   /** 選んだ〈利用者さん〉（休みの欄。ADR-0013） */
   const focusClient = focus.kind === 'client' ? data.clients.find((c) => c.id === focus.id) : undefined;
@@ -818,6 +839,28 @@ export default function MonthPage() {
 
       {/* 進み具合の帯（PRD D151〜D155）。「まとめて作る」の入口はここの1か所（D154。見出しのボタン・今月の準備の①〜③をまとめた） */}
       <ProgressBand ym={ym} model={band} primary onOp={onBandOp} />
+      {/* カレンダーと日ごとの一覧の切り替え（PRD D189。600px 以下ははじめ一覧。URL の ?layout=。操作の欄より上） */}
+      <fieldset className="segmented seg-sm month-layout" aria-label="月の見せ方" data-testid="month-layout">
+        {(
+          [
+            ['calendar', 'カレンダー', LayoutGrid],
+            ['list', '日ごとの一覧', List],
+          ] as const
+        ).map(([k, label, Icon]) => (
+          <button
+            key={k}
+            type="button"
+            className={layout === k ? 'is-on' : undefined}
+            aria-pressed={layout === k}
+            onClick={() => pickLayout(k)}
+            data-layout={k}
+          >
+            <WithIcon icon={Icon} size={14}>
+              {label}
+            </WithIcon>
+          </button>
+        ))}
+      </fieldset>
 
       <div className="card stack month-head">
         <div className="row month-nav">
@@ -1025,30 +1068,23 @@ export default function MonthPage() {
 
       <div className="month-body">
         <div className={`card month-card${layout === 'list' ? ' is-list' : ''}`}>
-          {/* カレンダーと日ごとの一覧の切り替え（PRD D189。600px 以下ははじめ一覧。URL の ?layout=） */}
-          <fieldset className="segmented seg-sm month-layout" aria-label="月の見せ方" data-testid="month-layout">
-            {(
-              [
-                ['calendar', 'カレンダー', LayoutGrid],
-                ['list', '日ごとの一覧', List],
-              ] as const
-            ).map(([k, label, Icon]) => (
-              <button
-                key={k}
-                type="button"
-                className={layout === k ? 'is-on' : undefined}
-                aria-pressed={layout === k}
-                onClick={() => pickLayout(k)}
-                data-layout={k}
-              >
-                <WithIcon icon={Icon} size={14}>
-                  {label}
-                </WithIcon>
-              </button>
-            ))}
-          </fieldset>
+          {layout === 'list' && ym === ymOf(today) && (
+            <button
+              type="button"
+              className="btn btn-small month-list-today"
+              onClick={() => showListDay(today, true)}
+              data-testid="month-list-today"
+            >
+              今日へ
+            </button>
+          )}
           {layout === 'list' ? (
-            <ul className="month-list" aria-label={`${ymText(ym)}の日ごとの一覧`} data-testid="month-list">
+            <ul
+              ref={listRef}
+              className="month-list"
+              aria-label={`${ymText(ym)}の日ごとの一覧`}
+              data-testid="month-list"
+            >
               {listRows.map(({ row: r, extra, off }) => {
                 const offPress = off === 'open' || off === 'requested';
                 return (

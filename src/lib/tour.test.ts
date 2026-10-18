@@ -48,10 +48,15 @@ describe('tourMove', () => {
 });
 
 describe('shouldAutoOpenTour', () => {
-  it('まだ見ていない・自動操作でないときだけ', () => {
-    expect(shouldAutoOpenTour(false, false)).toBe(true);
-    expect(shouldAutoOpenTour(true, false)).toBe(false);
-    expect(shouldAutoOpenTour(false, true)).toBe(false);
-    expect(shouldAutoOpenTour(true, true)).toBe(false);
+  it('まだ見ていないときだけ', () => {
+    expect(shouldAutoOpenTour(false, '')).toBe(true);
+    expect(shouldAutoOpenTour(true, '')).toBe(false);
+    expect(shouldAutoOpenTour(false, '?ym=2026-10&layout=list')).toBe(true);
+  });
+  it('?id=・?do= のリンクで開いたときは開かない', () => {
+    expect(shouldAutoOpenTour(false, '?id=c1')).toBe(false);
+    expect(shouldAutoOpenTour(false, '?date=2026-10-21&do=absence')).toBe(false);
+    expect(shouldAutoOpenTour(false, '?do=batch')).toBe(false);
+    expect(shouldAutoOpenTour(true, '?id=c1')).toBe(false);
   });
 });

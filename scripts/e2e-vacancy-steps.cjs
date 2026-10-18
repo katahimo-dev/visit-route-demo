@@ -11,6 +11,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
 
 function loadPlaywright() {
   const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
@@ -365,6 +366,8 @@ async function narrow(page) {
     ['narrow', narrow],
   ]) {
     const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+    // 初回の案内ツアーを見た扱いにする（PRD D193）
+    await skipTour(ctx);
     const page = await ctx.newPage();
     await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => {

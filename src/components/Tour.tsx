@@ -1,6 +1,7 @@
 import { Compass } from 'lucide-react';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router-dom';
 import type { Terms } from '../contracts/documents';
 import { trapTarget } from '../lib/confirmDialog';
 import { shouldAutoOpenTour, type TourMove, tourCountText, tourMove, tourNextLabel, tourSteps } from '../lib/tour';
@@ -10,19 +11,19 @@ import { FOCUSABLE } from './ui';
 import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
 import './tour.css';
 
-/** 自動操作のブラウザ（e2e）か。自動では開かない（PRD D193） */
-const isAutomated = () => typeof navigator !== 'undefined' && navigator.webdriver === true;
-
 /** 案内を開く関数（データの画面の「案内をもう一度見る」） */
 const Ctx = createContext<() => void>(() => {});
 export const useTour = () => useContext(Ctx);
 
 /**
  * 初回の案内ツアー（PRD D192・D193。ADR-0025 追記）。管理の画面（AdminShell）で1つ。
- * まだ見ていない（とばしていない）ときは起動したときに開く。閉じたら（とばす・Esc・はじめる）見たことを覚える（store/tour）
+ * まだ見ていない（とばしていない）ときは起動したときに開く（?id=・?do= のリンクで開いたときは開かない）。
+ * 閉じたら（とばす・Esc・はじめる）・最後の枚まで進んだら、見たことを覚える（store/tour）
  */
 export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' | 'staff'>; children: ReactNode }) {
-  const [open, setOpen] = useState(() => shouldAutoOpenTour(tourMemory.seen(), isAutomated()));
+  const { search } = useLocation();
+  // 起動したときの URL で決める（?id=・?do= のリンクで開いたときは出さない。PRD D192）
+  const [open, setOpen] = useState(() => shouldAutoOpenTour(tourMemory.seen(), search));
   const openTour = useCallback(() => setOpen(true), []);
   const close = useCallback(() => {
     tourMemory.markSeen();
@@ -90,6 +91,10 @@ function TourDialog({ terms, onClose }: { terms: Pick<Terms, 'client' | 'staff'>
     if (!(at instanceof Node) || !boxRef.current?.contains(at) || (at as HTMLButtonElement).disabled)
       nextRef.current?.focus();
   }, [index]);
+  // 最後の枚まで進んだら、閉じる前でも見たことにする（読み直しても最初から出さない）
+  useEffect(() => {
+    if (index === steps.length - 1) tourMemory.markSeen();
+  }, [index, steps.length]);
   const go = (move: TourMove) => {
     const to = tourMove(index, steps.length, move);
     if (to === null) onClose();

@@ -17,18 +17,30 @@
   gap: 8px 12px;
   min-width: 0;
 }
-/* input は見えない形で残す（Tab で届き、Space・Enter で開ける）。押すのは label（見た目のボタン） */
+/* input は見えない形で残す（Tab で届き、Space・Enter で開ける）。見た目のボタン（label）と同じ大きさで上に重ね、
+   押す・VoiceOver で触れるのは input（PR #45 のレビュー） */
+.file-pick-hit {
+  position: relative;
+  display: inline-flex;
+}
 .file-pick-input {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 1px;
-  height: 1px;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 0;
+  margin: 0;
   opacity: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+  cursor: pointer;
+  font-size: 0;
+}
+.file-pick-input:disabled {
+  cursor: not-allowed;
+}
+.file-pick-input:hover:not(:disabled) + .file-pick-btn {
+  border-color: #d9c8bb;
 }
 .file-pick-btn {
   /* label の共通の形（縦並び・小さい灰色の字）を使わず、ほかのボタンと同じ見た目にする */

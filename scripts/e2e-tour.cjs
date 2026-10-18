@@ -2,14 +2,14 @@
 // 初回の案内ツアー（初めて開くと中央のカード・role="dialog"・aria-modal・見出しと本文・1 / 5・最初のフォーカスは「次へ」・
 // 裏の inert とスクロールのロック・「戻る」は最初の枚で押せずフォーカスを「次へ」へ・Tab と Shift+Tab が中で回る・
 // 開いている間は Ctrl+K でパレットを開かない・最後は「はじめる」で閉じて見たことを localStorage（DemoData と別のキー）に覚える・
-// 読み直しても出ない・Esc と「とばす」でも覚える・データの画面の「案内をもう一度見る」で開き閉じるとフォーカスがボタンへ・
-// 初期状態に戻しても見たことは残る・自動操作のブラウザ（navigator.webdriver）では自動で出ない・月の印刷の画面では出ない・
+// 最後の枚まで進んだら覚える・読み直しても出ない・Esc と「とばす」でも覚える・?id=・?do= のリンクでは出さない（見たことにもしない）・データの画面の「案内をもう一度見る」で開き閉じるとフォーカスがボタンへ・
+// 初期状態に戻しても見たことは残る・「見た」の印（scripts/lib/tourSeen.cjs）があれば自動で出ない・月の印刷の画面では出ない・
 // 390px で収まる・印刷で出さない）、
 // データの画面のファイル選択（すべて同じ部品・日本語のボタン「ファイルを選ぶ」と未選択の文・ブラウザ標準の input は見えない・
-// 入力欄の名前（何を読み込むか＋ファイルを選ぶ）・Tab で届きフォーカスの枠・Space で選ぶ画面・控え（JSON）を選ぶと確認と
+// input はボタンと同じ大きさ・種類を切り替えると文を消す・入力欄の名前（何を読み込むか＋ファイルを選ぶ）・Tab で届きフォーカスの枠・Space で選ぶ画面・控え（JSON）を選ぶと確認と
 // ファイル名・取り消してもデータはそのまま・確定で読み込む・Excel の壊れたファイルは誤りの文・名簿の見出し）、
-// 月の画面の日ごとの一覧（390px ははじめ一覧で横にはみ出さず土曜も見える・行の読み上げ・押すとその日の日の画面・
-// カレンダーへ切り替えると URL の ?layout=calendar・読み直しても同じ・戻すと URL から消える・1400px ははじめカレンダー・
+// 月の画面の日ごとの一覧（390px ははじめ一覧で横にはみ出さず土曜も見える・今日の行が画面に入る・「今日へ」・切り替えは操作の欄より上・行の読み上げ・押すとその日の日の画面・
+// カレンダーへ切り替えると URL の ?layout=calendar・読み直しても同じ・戻すと ?layout=list（押したら必ず書く）・1400px ははじめカレンダー・
 // ?layout=list で一覧・「休みを入れる」の行は押すと希望休を付け外し・印刷の画面は今のまま）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-tour.cjs
@@ -18,6 +18,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
 
 function loadPlaywright() {
   const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
@@ -67,13 +68,10 @@ const focusInTour = (page) => page.evaluate(() => !!document.activeElement?.clos
 const activeTestId = (page) => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '');
 const seenValue = (page) => page.evaluate((k) => localStorage.getItem(k), TOUR_KEY);
 
-/** 新しいブラウザの文脈（localStorage は空）。human なら navigator.webdriver を false に見せる（人が初めて開いたとき） */
+/** 新しいブラウザの文脈（localStorage は空）。human なら「見た」の印を入れない（人が初めて開いたとき）。そうでなければ skipTour */
 async function newPage(b, { human, width = 1400, height = 1000 }) {
   const ctx = await b.newContext({ viewport: { width, height } });
-  if (human)
-    await ctx.addInitScript(() => {
-      Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true });
-    });
+  if (!human) await skipTour(ctx);
   const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
   page.on('pageerror', (e) => {
@@ -157,6 +155,7 @@ async function tourFirst(b) {
   const keys = [];
   for (let i = 0; i < 4; i++) {
     keys.push(await tour(page).getAttribute('data-step'));
+    if (i === 3) check((await seenValue(page)) === null, 'ツアー：途中（4枚目まで）は覚えない');
     await page.getByTestId('tour-next').click();
   }
   keys.push(await tour(page).getAttribute('data-step'));
@@ -170,7 +169,7 @@ async function tourFirst(b) {
     (await page.getByTestId('tour-next').innerText()).trim() === 'はじめる',
     'ツアー：最後の枚のボタンは「はじめる」',
   );
-  check((await seenValue(page)) === null, 'ツアー：閉じるまでは覚えない');
+  check((await seenValue(page)) === '1', 'ツアー：最後の枚まで進んだら閉じる前でも見たことを覚える');
   await page.screenshot({ path: path.join(OUT_DIR, 'tour-last.png') });
   await page.getByTestId('tour-next').click();
   await tour(page).waitFor({ state: 'detached' });
@@ -216,6 +215,28 @@ async function tourEscSkip(b) {
     check((await seenValue(page)) === '1', '「とばす」で閉じ、見たことを覚える');
     await ctx.close();
   }
+  // ?id=・?do= のリンクで開いたときは出ない（裏の右の欄にフォーカスが移るため）。次にふつうに開くと出る
+  {
+    const { ctx, page } = await newPage(b, { human: true });
+    await open(page, '/clients?id=c1', '.drawer');
+    await page.waitForTimeout(500);
+    const st = await page.evaluate(() => ({
+      focusInDrawer: !!document.activeElement?.closest('.drawer'),
+      inert: document.getElementById('root').inert,
+    }));
+    check(
+      (await tour(page).count()) === 0 && st.focusInDrawer,
+      '?id= のリンクで開くとツアーは出ず、右の欄にフォーカス',
+      st,
+    );
+    check((await seenValue(page)) === null, '?id= で出さなくても見たことにはしない');
+    await open(page, `/plan?date=${TODAY}&do=absence`, '.drawer');
+    await page.waitForTimeout(500);
+    check((await tour(page).count()) === 0, '?do= のリンクで開くとツアーは出ない');
+    await open(page, '/', '[data-testid="tour"]');
+    check(true, '次にふつうに開くとツアーが出る');
+    await ctx.close();
+  }
   // 月の印刷の画面（メニューの外）では出ない
   {
     const { ctx, page } = await newPage(b, { human: true });
@@ -228,13 +249,13 @@ async function tourEscSkip(b) {
 }
 
 async function tourAgain(b) {
-  // 自動操作のブラウザ（e2e）では自動で出ない。データの画面から開ける
+  // 「見た」の印があれば自動で出ない（ほかの e2e は skipTour で印を入れる）。データの画面から開ける
   const { ctx, page } = await newPage(b, { human: false });
   await open(page, '/', '[data-testid="home-tasks"]');
   await page.waitForTimeout(500);
   check(
     (await tour(page).count()) === 0,
-    '自動操作のブラウザ（navigator.webdriver）では自動で出ない（ほかの e2e を止めない）',
+    '「見た」の印があれば自動で出ない（ほかの e2e は scripts/lib/tourSeen.cjs で印を入れる）',
   );
   await open(page, '/data', '[data-testid="tour-again"]');
   const btn = page.getByTestId('tour-again');
@@ -314,7 +335,11 @@ async function filePick(b) {
       return {
         btn: el.querySelector('label.file-pick-btn')?.textContent.trim(),
         name: el.querySelector('.file-pick-name')?.textContent.trim(),
-        inputW: r.width,
+        input: { w: Math.round(r.width), h: Math.round(r.height) },
+        btnBox: (() => {
+          const b = el.querySelector('label.file-pick-btn').getBoundingClientRect();
+          return { w: Math.round(b.width), h: Math.round(b.height) };
+        })(),
         opacity: getComputedStyle(input).opacity,
         display: getComputedStyle(input).display,
         label: (input.getAttribute('aria-labelledby') ?? '')
@@ -331,8 +356,11 @@ async function filePick(b) {
     shape,
   );
   check(
-    shape.every((s) => s.inputW <= 1 && s.opacity === '0' && s.display !== 'none'),
-    'ブラウザ標準の input（Choose File）は見えない形で残す（display: none にしない）',
+    shape.every(
+      (s) => s.input.w === s.btnBox.w && s.input.h === s.btnBox.h && s.opacity === '0' && s.display !== 'none',
+    ),
+    'ブラウザ標準の input（Choose File）は見えないまま、見た目のボタンと同じ大きさで残す（VoiceOver で触れる）',
+    shape.map((x) => [x.input, x.btnBox]),
   );
   check(
     shape[0].label === '読み込む控え（JSON） ファイルを選ぶ' && shape[0].desc === 'ファイルを選んでいません',
@@ -403,6 +431,10 @@ async function filePick(b) {
       '読み込む利用者さんの名簿（Excel）',
     'Excel：名簿の見出し（呼び方）',
   );
+  check(
+    (await page.getByTestId('excel-file-name').innerText()) === 'ファイルを選んでいません',
+    'Excel：種類を切り替えると選んだファイルの文を消す',
+  );
   await page.screenshot({ path: path.join(OUT_DIR, 'data-file-pick.png'), fullPage: true });
   // 390px：横にはみ出さない
   await page.setViewportSize({ width: 390, height: 844 });
@@ -437,8 +469,35 @@ async function monthList(b) {
   check(sw <= 390 && widths === 0, '390px：一覧は横にはみ出さない', { sw, widths });
   const sat = await rows.filter({ hasText: '（土）' }).count();
   check(sat >= 4, '390px：土曜の行も見える', sat);
-  // 行の読み上げ：日付・件数・状態
+  // 今日の行が画面に入る（上の帯・下のタブに隠れない。今月で行き先が無いとき）
+  const inView = async (loc) => {
+    const r = await loc.boundingBox();
+    const head = await page.locator('.app-header').boundingBox();
+    const tb = await page.getByTestId('bottom-tabs').boundingBox();
+    return {
+      ok: r.y >= head.y + head.height - 1 && r.y + r.height <= tb.y + 1,
+      r: r.y,
+      head: head.y + head.height,
+      tabs: tb.y,
+    };
+  };
   const today = rows.filter({ has: page.locator('.month-today') });
+  await page.waitForTimeout(400);
+  const v1 = await inView(today);
+  check(v1.ok, '390px：開くと今日の行が画面に入る（上の帯・下のタブに隠れない）', v1);
+  // 「今日へ」：上へ巻いてから押すと、今日の行へ巻いてフォーカス
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+  await page.getByTestId('month-list-today').click();
+  await page.waitForTimeout(800);
+  const v2 = await inView(today);
+  const focused = await today.evaluate((el) => document.activeElement === el);
+  check(v2.ok && focused, '「今日へ」で今日の行へ巻いてフォーカス', { ...v2, focused });
+  // 切り替えは操作の欄（月の見出しのカード）より上
+  const lb = await page.getByTestId('month-layout').boundingBox();
+  const hb = await page.locator('.month-head').boundingBox();
+  check(lb.y < hb.y, '切り替えは操作の欄より上', { layout: lb.y, head: hb.y });
+  // 行の読み上げ：日付・件数・状態
   const label = await today.getAttribute('aria-label');
   check(
     /今日/.test(label) && /(訪問 \d+件|訪問なし)/.test(label) && /(案なし|案あり|確定済み|未確定|訪問なし)/.test(label),
@@ -455,7 +514,7 @@ async function monthList(b) {
   check((await page.getByTestId('month-list').count()) === 0, '読み直してもカレンダーのまま');
   await page.locator('[data-testid="month-layout"] button[data-layout="list"]').click();
   await page.getByTestId('month-list').waitFor();
-  check(!/layout=/.test(hashOf(page)), '一覧へ戻すと URL から ?layout= を消す（390px の既定）', hashOf(page));
+  check(/layout=list/.test(hashOf(page)), '一覧へ戻すと URL に ?layout=list（押したら幅の既定でも書く）', hashOf(page));
   // 行を押すとその日の日の画面
   const target = await rows.nth(Math.min(n - 1, 20)).getAttribute('data-date');
   await page.locator(`[data-testid="month-list-day"][data-date="${target}"]`).click();

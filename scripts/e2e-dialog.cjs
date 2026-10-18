@@ -12,6 +12,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
 
 function loadPlaywright() {
   const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
@@ -318,6 +319,8 @@ async function narrow(page) {
   const errors = [];
   for (const step of [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow]) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+    // 初回の案内ツアーを見た扱いにする（PRD D193）
+    await skipTour(ctx);
     // 地図のタイルは外へ取りに行かない
     await ctx.route(/cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org/, (r) =>
       r.fulfill({ status: 204, body: '' }),

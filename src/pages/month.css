@@ -496,7 +496,7 @@
   }
 }
 /* カレンダーと日ごとの一覧の切り替え・日ごとの一覧（PRD D189。600px 以下ははじめ一覧） */
-.month-layout {
+.month-list-today {
   margin-bottom: 8px;
 }
 .month-layout button {
@@ -514,7 +514,7 @@
 .month-list-btn {
   width: 100%;
   display: grid;
-  grid-template-columns: 6.2em minmax(0, 1fr) auto;
+  grid-template-columns: minmax(6.2em, max-content) minmax(0, 1fr) auto;
   align-items: center;
   gap: 2px 8px;
   padding: 8px 10px;
@@ -526,6 +526,11 @@
   font-size: 0.88rem;
   text-align: left;
   cursor: pointer;
+}
+.month-list-btn {
+  /* 最初に見せる日・「今日へ」で巻いたとき、上の帯（--header-h）と下のタブに隠れない */
+  scroll-margin-top: calc(var(--header-h, 72px) + 12px);
+  scroll-margin-bottom: calc(var(--bottom-tabs-h, 0px) + 12px);
 }
 .month-list-btn:hover {
   border-color: var(--primary);
@@ -756,7 +761,8 @@
 }
 @media print {
   .month-legend-open,
-  .month-layout {
+  .month-layout,
+  .month-list-today {
     display: none;
   }
 }

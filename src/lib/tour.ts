@@ -70,6 +70,11 @@ export const tourCountText = (index: number, count: number): string => `${index 
 
 /**
  * 起動したときに自動で開くか：まだ見ていない（とばしていない）ときだけ。
- * 自動操作のブラウザ（navigator.webdriver。e2e）では自動で開かない（ほかの確かめを止めない。「もう一度見る」では開く）
+ * URL に `?id=`（閲覧の欄）か `?do=`（操作の欄）があるリンクで開いたときは開かない（裏で右の欄が開きフォーカスが移るため。
+ * 見たことにはしないので、次にふつうに開いたときに出る）。search は HashRouter の location.search
  */
-export const shouldAutoOpenTour = (seen: boolean, automated: boolean): boolean => !seen && !automated;
+export function shouldAutoOpenTour(seen: boolean, search: string): boolean {
+  if (seen) return false;
+  const q = new URLSearchParams(search);
+  return !q.has('id') && !q.has('do');
+}

@@ -14,15 +14,19 @@ export const MONTH_LIST_QUERY = '(max-width: 600px)';
 /** URL の ?layout= の値 */
 export const MONTH_LAYOUT_PARAM = 'layout';
 
-/** 見せ方を決める：URL に書いてあればそれ、無ければ狭い画面は一覧・広い画面はカレンダー */
+/** 見せ方を決める：URL に書いてあればそれ（押したら必ず書く）、無ければ狭い画面は一覧・広い画面はカレンダー */
 export function monthLayoutOf(param: string | null, narrow: boolean): MonthLayout {
   if (param === 'list' || param === 'calendar') return param;
   return narrow ? 'list' : 'calendar';
 }
 
-/** 切り替えたときに URL に書く値（その幅の既定と同じなら書かない＝null） */
-export function monthLayoutParam(next: MonthLayout, narrow: boolean): MonthLayout | null {
-  return next === (narrow ? 'list' : 'calendar') ? null : next;
+/**
+ * 一覧を開いたときに最初に見せる日（PRD D189）：今月を見ているときだけ、選んでいる日がその月ならその日、無ければ今日。
+ * ほかの月・行き先（?do=）があるときは null（巻かない）
+ */
+export function monthListFocusDate(ym: string, date: string, today: string, hasTarget: boolean): string | null {
+  if (hasTarget || today.slice(0, 7) !== ym) return null;
+  return date.slice(0, 7) === ym ? date : today;
 }
 
 /** 日の状態の言葉（カレンダーのマスと同じ） */

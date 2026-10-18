@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DayStatus } from './month';
-import { DAY_STATE_TEXT, monthLayoutOf, monthLayoutParam, monthListRow } from './monthList';
+import { DAY_STATE_TEXT, monthLayoutOf, monthListFocusDate, monthListRow } from './monthList';
 
 const status = (o: Partial<DayStatus> & { date: string }): DayStatus => ({
   count: 0,
@@ -16,7 +16,7 @@ const status = (o: Partial<DayStatus> & { date: string }): DayStatus => ({
   ...o,
 });
 
-describe('monthLayoutOf・monthLayoutParam', () => {
+describe('monthLayoutOf・monthListFocusDate', () => {
   it('URL に無ければ狭い画面は一覧・広い画面はカレンダー', () => {
     expect(monthLayoutOf(null, true)).toBe('list');
     expect(monthLayoutOf(null, false)).toBe('calendar');
@@ -28,11 +28,12 @@ describe('monthLayoutOf・monthLayoutParam', () => {
     expect(monthLayoutOf('calendar', true)).toBe('calendar');
     expect(monthLayoutOf('list', false)).toBe('list');
   });
-  it('切り替えたときの URL：その幅の既定なら書かない', () => {
-    expect(monthLayoutParam('list', true)).toBeNull();
-    expect(monthLayoutParam('calendar', true)).toBe('calendar');
-    expect(monthLayoutParam('calendar', false)).toBeNull();
-    expect(monthLayoutParam('list', false)).toBe('list');
+  it('最初に見せる日：今月だけ。選んでいる日が今月ならその日、無ければ今日', () => {
+    expect(monthListFocusDate('2026-10', '2026-10-25', '2026-10-21', false)).toBe('2026-10-25');
+    expect(monthListFocusDate('2026-10', '2026-11-01', '2026-10-21', false)).toBe('2026-10-21');
+    // ほかの月・行き先があるときは巻かない
+    expect(monthListFocusDate('2026-11', '2026-11-01', '2026-10-21', false)).toBeNull();
+    expect(monthListFocusDate('2026-10', '2026-10-21', '2026-10-21', true)).toBeNull();
   });
 });
 

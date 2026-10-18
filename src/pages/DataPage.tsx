@@ -370,6 +370,8 @@ export default function DataPage() {
           </button>
         </div>
         <FilePick
+          // 種類を切り替えたら、選んだファイルの文を消す（前の種類で選んだ名前を残さない）
+          key={excelKind}
           caption={excelKind === 'all' ? '読み込む Excel（全体）' : `読み込む${rosterTerm}の名簿（Excel）`}
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           disabled={excelBusy}
