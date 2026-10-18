@@ -8,6 +8,7 @@ import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 
 import type { Client } from '../contracts/documents';
 import { colorOf, initialOf } from '../lib/colors';
 import { chooseAllLabel, countAmong, defaultStaffOf, searchClients } from '../lib/search';
+import { PersonButton } from './PersonPopover';
 import { TentativeMark } from './parts';
 import './clientPicker.css';
 
@@ -57,6 +58,8 @@ export type ClientPickerProps = {
   };
   /** 近道「仮押さえの人」を出す（月間。週間の時間軸では出さない。PRD D111・D112） */
   tentativeShortcut?: boolean;
+  /** 選んだ人のチップの名前を押すと詳細の吹き出しを出す（週間の時間軸。PRD D123） */
+  details?: boolean;
   /** 部品の外枠の data-testid（候補は `${testId}-option`、チップは `${testId}-chip`） */
   testId?: string;
 };
@@ -80,6 +83,7 @@ export function ClientPicker({
   period,
   byStaff,
   tentativeShortcut = false,
+  details = false,
   testId = 'client-picker',
 }: ClientPickerProps) {
   const uid = useId();
@@ -275,7 +279,7 @@ export function ClientPicker({
               <span className="dot dot-xs" style={{ background: colorOf(c.color) }} aria-hidden="true">
                 {initialOf(c.displayName)}
               </span>
-              <span>{c.displayName}</span>
+              {details ? <PersonButton kind="client" id={c.id} name={c.displayName} /> : <span>{c.displayName}</span>}
               {c.tentative && <TentativeMark />}
               <button
                 type="button"

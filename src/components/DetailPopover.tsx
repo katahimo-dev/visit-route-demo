@@ -1,4 +1,4 @@
-// 押すと出る吹き出し（ポップオーバー。PRD D114・D115。ADR-0022）。相性の画面の列の見出し・行の名前で使う。
+// 押すと出る吹き出し（ポップオーバー。PRD D114・D115・D122〜D126。ADR-0022）。相性の画面の列の見出し・行の名前と、予定（月・週・日）の名前（PersonPopover）で使う。
 // マウスを重ねて出すツールチップにはしない。body の直下に浮かせて出し（表の横スクロールで切れない）、画面の端で切れない位置に置く
 import { X } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react';

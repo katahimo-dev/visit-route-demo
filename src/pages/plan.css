@@ -920,3 +920,21 @@ p.plan-band.error {
     display: none;
   }
 }
+
+/* 列の見出しの名前と詳細の「i」（PRD D124）。見出しのボタン（地図の絞り込み）の外の右に i を置く */
+.col-head-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.col-head-wrap + .chip {
+  flex-shrink: 0;
+}
+/* 訪問の詳細の〈利用者さん〉・担当の名前（押すと詳細の吹き出し） */
+.visit-who {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0;
+  font-size: 0.85rem;
+}

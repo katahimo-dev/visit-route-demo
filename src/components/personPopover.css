@@ -1,0 +1,64 @@
+/* 予定の名前から開く詳細（PersonButton・PersonInfo。PRD D122〜D126） */
+.person-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-decoration-color: #b9a597;
+  text-underline-offset: 3px;
+}
+.person-btn:hover {
+  text-decoration-style: solid;
+  text-decoration-color: currentColor;
+}
+.person-btn[aria-expanded='true'] {
+  text-decoration-style: solid;
+  text-decoration-color: var(--primary);
+}
+.person-btn:focus-visible,
+.person-info:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.person-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--sub);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.person-info:hover,
+.person-info[aria-expanded='true'] {
+  color: var(--ink);
+  border-color: var(--line);
+  background: var(--soft);
+}
+/* 印刷（月の印刷・連絡の一覧の印刷・日の画面の印刷）では i と開いている吹き出しを出さず、名前のボタンはただの文字にする（PRD D126） */
+@media print {
+  .person-info,
+  .detail-popover {
+    display: none !important;
+  }
+  .person-btn {
+    text-decoration: none;
+    cursor: auto;
+  }
+}

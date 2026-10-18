@@ -92,3 +92,9 @@ abbr.pick-badge {
   text-decoration: none;
   cursor: help;
 }
+/* チップと詳細の「i」（PRD D123）。i はチップの外の右に置く（ボタンの入れ子にしない） */
+.pick-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}

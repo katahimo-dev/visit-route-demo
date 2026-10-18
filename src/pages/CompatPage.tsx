@@ -1,18 +1,16 @@
 import { HeartHandshake, RefreshCw, SearchX } from 'lucide-react';
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
-import { condText } from '../components/conditions';
 import { DetailPopover } from '../components/DetailPopover';
 import { TentativeMark } from '../components/parts';
+import { ClientDetail, StaffDetail } from '../components/personDetail';
 import { StaffFilter } from '../components/StaffFilter';
 import { Empty, Hint, PageHeader } from '../components/ui';
 import type { Client, Staff } from '../contracts/documents';
 import { COMPAT_LABELS, COMPAT_LEVELS, type Compat, type CompatLevel } from '../contracts/rules';
-import { timeText } from '../domain/availability';
 import { weekday } from '../domain/time';
-import { areaOf } from '../lib/area';
 import {
   type ClientFilterState,
   decodeFilter,
@@ -23,9 +21,8 @@ import {
   resolveStaffId,
   sameFilter,
 } from '../lib/clientFilter';
-import { STAGE_LABELS } from '../lib/clientStage';
 import { colorOf, initialOf } from '../lib/colors';
-import { byDisplayName, byName, dateText, staffColor, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
+import { byDisplayName, byName, staffColor, WEEKDAY_LABELS } from '../lib/common';
 import {
   COMPAT_CHIPS,
   clientFilterSummary,
@@ -40,10 +37,7 @@ import {
   type StaffFilterState,
   sameStaffFilter,
   staffChipDefs,
-  staffCompatCounts,
   staffFilterSummary,
-  traitText,
-  weeklyHours,
 } from '../lib/compatView';
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
@@ -148,9 +142,6 @@ export default function CompatPage() {
   const allStaff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
   // 色は休止中も含めた並びで決める（予定・AI案の画面と同じ色にする）
   const colorOfStaff = useMemo(() => new Map(allStaff.map((s, i) => [s.id, staffColor(i)])), [allStaff]);
-  const staffById = useMemo(() => new Map(data.staff.map((s) => [s.id, s])), [data.staff]);
-  const itemById = useMemo(() => new Map(data.items.map((i) => [i.id, i])), [data.items]);
-  const staffItems = useMemo(() => data.items.filter((i) => i.target === 'staff'), [data.items]);
 
   // ---- 列（〈スタッフ〉）の絞り込み（?sf=）----
   const defs = useMemo(() => staffChipDefs(data.items), [data.items]);
@@ -290,101 +281,6 @@ export default function CompatPage() {
   const close = useCallback(() => setOpened(null), []);
   const isOpen = (kind: OpenKind, id: string) => opened?.kind === kind && opened.id === id;
   const popId = (kind: OpenKind, id: string) => `${uid}-${kind}-${id}`;
-
-  const staffDetail = (s: Staff) => {
-    const cc = staffCompatCounts(data.compat, s.id, clientIds);
-    const usual = clients.filter((c) => c.usualStaffId === s.id).length;
-    return (
-      <>
-        <dl>
-          <dt>名前</dt>
-          <dd>{s.name}</dd>
-          <dt>移動手段</dt>
-          <dd>{TRAVEL_MODE_LABELS[s.travelMode]}</dd>
-          {staffItems.map((it) => (
-            <FragmentRow key={it.id} term={it.name} value={traitText(s.traits[it.id])} />
-          ))}
-          <dt>稼働時間</dt>
-          <dd>
-            <ul className="detail-popover-list">
-              {weeklyHours(s).map((w) => (
-                <li key={w.weekday}>
-                  {WEEKDAY_LABELS[w.weekday]}：{w.hours ? `${timeText(w.hours.start)}〜${timeText(w.hours.end)}` : '—'}
-                </li>
-              ))}
-            </ul>
-          </dd>
-          {s.lastDay && (
-            <>
-              <dt>最終勤務日</dt>
-              <dd>{dateText(s.lastDay)}</dd>
-            </>
-          )}
-          <dt>相性</dt>
-          <dd data-testid="compat-pop-counts">
-            ◎ {cc.great}・○ {cc.good}・△ {cc.poor}・× {cc.ng}
-          </dd>
-          <dt>いつもの担当の{terms.client}</dt>
-          <dd>{usual}人</dd>
-        </dl>
-        <Link
-          className="detail-popover-link"
-          to={`/staff?id=${encodeURIComponent(s.id)}`}
-          data-testid="compat-pop-link"
-        >
-          {terms.staff}の画面で開く
-        </Link>
-      </>
-    );
-  };
-
-  const clientDetail = (c: Client) => {
-    const area = areaOf(c.place.address);
-    const conds = (xs: Client['requirements']) =>
-      xs.length === 0 ? (
-        '—'
-      ) : (
-        <ul className="detail-popover-list">
-          {xs.map((x, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: 同じ文の条件が並ぶこともある
-            <li key={i}>{condText(x, itemById.get(x.itemId))}</li>
-          ))}
-        </ul>
-      );
-    const nameOf = (id: string) => {
-      const s = staffById.get(id);
-      return s ? `${s.name}${s.active ? '' : '（休止中）'}` : '（不明）';
-    };
-    const allowed = c.allowedStaffIds.filter((id) => staffById.get(id)?.active);
-    return (
-      <>
-        <dl>
-          <dt>段階</dt>
-          <dd>
-            {STAGE_LABELS[c.stage]}
-            {c.tentative && '（仮押さえ）'}
-          </dd>
-          <dt>地区</dt>
-          <dd>{area ? `${area.city}${area.town ? ` ${area.town}` : ''}` : '住所なし'}</dd>
-          <dt>必要条件</dt>
-          <dd>{conds(c.requirements)}</dd>
-          <dt>希望</dt>
-          <dd>{conds(c.preferences)}</dd>
-          <dt>担当できる人</dt>
-          <dd>{allowed.length === 0 ? '限らない' : allowed.map(nameOf).join('・')}</dd>
-          <dt>いつもの担当</dt>
-          <dd>{c.usualStaffId ? nameOf(c.usualStaffId) : '—'}</dd>
-        </dl>
-        <Link
-          className="detail-popover-link"
-          to={`/clients?id=${encodeURIComponent(c.id)}`}
-          data-testid="compat-pop-link"
-        >
-          {terms.client}の画面で開く
-        </Link>
-      </>
-    );
-  };
 
   // 絞り込みで見出しが消えたら吹き出しを閉じる
   const openStaff = opened?.kind === 'staff' ? shownStaff.find((s) => s.id === opened.id) : undefined;
@@ -577,7 +473,7 @@ export default function CompatPage() {
           onClose={close}
           testId="compat-pop"
         >
-          {staffDetail(openStaff)}
+          <StaffDetail staff={openStaff} data={data} linkTestId="compat-pop-link" countsTestId="compat-pop-counts" />
         </DetailPopover>
       )}
       {openClient && (
@@ -590,20 +486,10 @@ export default function CompatPage() {
           onClose={close}
           testId="compat-pop"
         >
-          {clientDetail(openClient)}
+          <ClientDetail client={openClient} data={data} linkTestId="compat-pop-link" />
         </DetailPopover>
       )}
     </div>
-  );
-}
-
-/** 説明の並び（dl）の1行 */
-function FragmentRow({ term, value }: { term: string; value: string }) {
-  return (
-    <>
-      <dt>{term}</dt>
-      <dd>{value}</dd>
-    </>
   );
 }
 
