@@ -263,6 +263,11 @@ export default function PlanPage() {
   const suddenToBar = useRef(false);
   /** 日の画面の「欠勤・キャンセル」のボタン（欄を閉じたときの戻り先が消えていたら） */
   const suddenBtnRef = useRef<HTMLButtonElement>(null);
+  /** 欄を開く（前に振り直して閉じたときの「差の欄へ移る」を戻す。開き直して欠勤だけ登録したときに差の欄へ飛ばない） */
+  const openSudden = (init: SuddenInit) => {
+    suddenToBar.current = false;
+    setSudden(init);
+  };
   /** 取り消しの欄を開いている訪問（PRD D74。null：閉じている）と、当日キャンセルか */
   const [cancelFor, setCancelFor] = useState<Visit | null>(null);
   const [cancelSameDay, setCancelSameDay] = useState(false);
@@ -740,7 +745,7 @@ export default function PlanPage() {
   useEffect(() => {
     if (pendingSudden.current === null || pendingSudden.current !== date) return;
     pendingSudden.current = null;
-    setSudden({});
+    openSudden({});
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
   useEffect(() => {
@@ -1963,7 +1968,7 @@ export default function PlanPage() {
             <button
               type="button"
               className="link-btn absence-btn"
-              onClick={() => setSudden({ kind: 'staff', staffId: sid })}
+              onClick={() => openSudden({ kind: 'staff', staffId: sid })}
               aria-label={`${staffName(sid)}さんの${avail?.absence ? '欠勤を直す' : '急な欠勤'}`}
             >
               {avail?.absence ? '欠勤を直す' : '急な欠勤'}
@@ -2669,7 +2674,7 @@ export default function PlanPage() {
           ref={suddenBtnRef}
           type="button"
           className="btn plan-sudden-btn"
-          onClick={() => setSudden({})}
+          onClick={() => openSudden({})}
           disabled={visits.length === 0 && suddenStaff.length === 0}
           data-testid="sudden-open"
         >

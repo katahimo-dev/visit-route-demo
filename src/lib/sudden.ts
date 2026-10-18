@@ -13,10 +13,18 @@ export type SuddenStep = 1 | 2 | 3 | 4;
 /** URL の `?do=` で欄を開く値（ホームの「急な欠勤・キャンセルを登録」。PRD D172） */
 export const SUDDEN_DO = 'absence';
 
-/** 段階の名前（欄の上の段階の表示。種類を選ぶ前は〈スタッフ〉の流れの名前で出す） */
+/** 段階の短い名前（欄の上の1行の段階の表示。種類を選ぶ前は〈スタッフ〉の流れの名前で出す） */
 export function suddenSteps(kind: SuddenKind | null): [string, string, string, string] {
-  if (kind === 'client') return ['何が起きたか', 'キャンセルの訪問', '影響の確認', '確定'];
-  return ['何が起きたか', '休む人と時間帯', '影響と振り直し', '選んで確定'];
+  if (kind === 'client') return ['起きたこと', '訪問', '影響', '確定'];
+  return ['起きたこと', '休む人', '影響', '確定'];
+}
+
+/** 段階の見出し（h3。段階の表示の短い名前と重ねず、その段階ですることを書く） */
+export function suddenHeading(kind: SuddenKind | null, step: SuddenStep, staffWord: string): string {
+  if (step === 1) return '何が起きましたか？';
+  if (kind === 'client')
+    return step === 2 ? 'キャンセルの訪問を選ぶ' : step === 3 ? '影響を確かめて取り消す' : '確定する';
+  return step === 2 ? `休む${staffWord}と時間帯を選ぶ` : step === 3 ? '影響を確かめて振り直す' : '案を選んで確定する';
 }
 
 /** 欠勤の欄の入力（終日／時間帯・開始・終了（空＝始業から・終業まで）・メモ） */
@@ -124,6 +132,21 @@ export function reassignBlocked(i: {
   if (!i.hasPreview) return '見込みを出せませんでした';
   if (!i.hasBase) return 'この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）';
   return null;
+}
+
+/**
+ * 案の無い日の3段目の文。計算中（自動作成で案を作っている）なら、終わると振り直せると書く
+ * （そのあいだは「欠勤だけ登録」も押せない。登録すると、作り終えた案で休む人に訪問が残るため）
+ */
+export function noPlanText(running: boolean): string {
+  return running
+    ? '案を作っています。終わると振り直せます'
+    : 'この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）';
+}
+
+/** 案B を勧めるか（案のある日で、案A では入らない見込みがある）。勧めるときは主ボタンを「登録して案B も作る（おすすめ）」にする */
+export function recommendAnneal(i: { hasBase: boolean; unplacedA: number }): boolean {
+  return i.hasBase && i.unplacedA > 0;
 }
 
 /** 当日キャンセルの影響の文（担当の名前が無ければ担当なし） */

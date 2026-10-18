@@ -992,9 +992,12 @@ p.plan-band.error {
 .drawer:has(.sudden-panel) .drawer-foot {
   flex-wrap: wrap;
 }
+/* 段階の表示は1行（番号の丸＋短い名前）。狭い画面では今の段階だけ名前を出し、ほかは番号だけ（名前は読み上げに残す） */
 .sudden-steps {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  position: relative;
   gap: 4px 12px;
   margin: 0;
   padding: 0;
@@ -1010,6 +1013,16 @@ p.plan-band.error {
 .sudden-steps li.is-current {
   color: var(--ink);
   font-weight: 700;
+}
+@media (max-width: 480px) {
+  .sudden-steps li:not(.is-current) .sudden-step-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 .sudden-step-no {
   display: inline-grid;

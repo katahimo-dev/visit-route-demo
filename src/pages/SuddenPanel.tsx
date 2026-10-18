@@ -30,10 +30,13 @@ import {
   draftError,
   draftOf,
   impactText,
+  noPlanText,
   reassignBlocked,
+  recommendAnneal,
   type StaffChoice,
   type SuddenKind,
   type SuddenStep,
+  suddenHeading,
   suddenSteps,
   type VisitChoice,
 } from '../lib/sudden';
@@ -138,6 +141,17 @@ export function SuddenPanel({
     setDraft(draftOf(slotsOf.get(id)?.absence ?? null));
   };
   const go = (s: SuddenStep) => setStep(s);
+  /** 1段目で何が起きたかを選ぶ。種類を変えたら、前に選んだ人・訪問・欠勤の入力を消す */
+  const chooseKind = (k: SuddenKind) => {
+    if (k !== kind) {
+      setStaffId('');
+      setVisitId('');
+      setDraft(draftOf(null));
+      setSameDay(true);
+    }
+    setKind(k);
+    go(2);
+  };
   const withId = (a: Absence): Absence => ({ ...a, id: existing?.id ?? newId('a') });
   const guarded = async (fn: () => Promise<void>) => {
     if (busy) return;
@@ -188,16 +202,13 @@ export function SuddenPanel({
     const absentNow = staffList.filter((s) => s.absent);
     body = (
       <>
-        {stepHeading('何が起きましたか？')}
+        {stepHeading(suddenHeading(kind, 1, terms.staff))}
         <div className="sudden-choices">
           <button
             type="button"
             className="card sudden-choice"
             data-testid="sudden-kind-staff"
-            onClick={() => {
-              setKind('staff');
-              go(2);
-            }}
+            onClick={() => chooseKind('staff')}
           >
             <UserRoundX size={22} aria-hidden="true" />
             <span className="sudden-choice-text">
@@ -210,10 +221,7 @@ export function SuddenPanel({
             type="button"
             className="card sudden-choice"
             data-testid="sudden-kind-client"
-            onClick={() => {
-              setKind('client');
-              go(2);
-            }}
+            onClick={() => chooseKind('client')}
           >
             <CalendarX2 size={22} aria-hidden="true" />
             <span className="sudden-choice-text">
@@ -233,9 +241,8 @@ export function SuddenPanel({
                 className="link-btn"
                 style={{ alignSelf: 'flex-start' }}
                 onClick={() => {
-                  setKind('staff');
+                  chooseKind('staff');
                   pickStaff(s.id);
-                  go(2);
                 }}
               >
                 {s.label}
@@ -249,7 +256,7 @@ export function SuddenPanel({
   } else if (step === 2 && kind === 'staff') {
     body = (
       <>
-        {stepHeading(`休む${terms.staff}と時間帯`)}
+        {stepHeading(suddenHeading('staff', 2, terms.staff))}
         {staffList.length === 0 ? (
           <p className="sub">この日に働く{terms.staff}がいません</p>
         ) : (
@@ -294,7 +301,7 @@ export function SuddenPanel({
   } else if (step === 2 && kind === 'client') {
     body = (
       <>
-        {stepHeading('キャンセルの訪問')}
+        {stepHeading(suddenHeading('client', 2, terms.staff))}
         {visitList.length === 0 ? (
           <p className="sub">この日に取り消せる訪問がありません</p>
         ) : (
@@ -353,9 +360,11 @@ export function SuddenPanel({
   } else if (step === 3 && kind === 'staff' && absence) {
     const impact = preview ? impactText(preview.targets) : null;
     const hasBase = !!preview && preview.baseFrom !== null;
+    /** 案B を勧めるときは、主ボタンを「登録して案B も作る（おすすめ）」にし、案A を2番目にする */
+    const recommended = !!preview && recommendAnneal({ hasBase, unplacedA: preview.unplacedA });
     body = (
       <>
-        {stepHeading('影響と振り直し')}
+        {stepHeading(suddenHeading('staff', 3, terms.staff))}
         <p>
           <strong>{absenceSummary(staffName(absence.staffId), absence, baseSlots)}</strong>
           {absence.note ? `（${absence.note}）` : ''}
@@ -374,7 +383,7 @@ export function SuddenPanel({
           )}
           {preview && !hasBase && (
             <p className="warn-text" data-testid="sudden-no-plan">
-              この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）
+              {noPlanText(running)}
             </p>
           )}
           {hasBase && preview && (
@@ -382,7 +391,8 @@ export function SuddenPanel({
               <div className="sudden-option">
                 <strong>空き時間に入れる（案A）</strong>
                 <span className="sub">
-                  ほかの人の担当・順番・時刻は変えず、空き時間に入れます。
+                  ほかの人の担当・順番・時刻は変えず、空き時間に入れます（{staffName(absence.staffId)}
+                  さんの残りの訪問は、欠勤明けの移動で開始が遅れることがあります）。
                   {preview.unplacedA > 0
                     ? `${preview.unplacedA}件が入らない見込みです`
                     : preview.targets.length > 0
@@ -400,17 +410,19 @@ export function SuddenPanel({
                   案A を作ったあと、ほかの人の訪問も少し動かして入れる案を AI が作ります（少し時間がかかります）。案A
                   と比べて選べます
                 </span>
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  style={{ alignSelf: 'flex-start' }}
-                  disabled={!!blocked || busy}
-                  title={blocked ?? undefined}
-                  onClick={() => void reassignNow(true)}
-                  data-testid="sudden-anneal"
-                >
-                  登録して、案B も作る
-                </button>
+                {!recommended && (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    style={{ alignSelf: 'flex-start' }}
+                    disabled={!!blocked || busy}
+                    title={blocked ?? undefined}
+                    onClick={() => void reassignNow(true)}
+                    data-testid="sudden-anneal"
+                  >
+                    登録して、案B も作る
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -418,22 +430,40 @@ export function SuddenPanel({
         </div>
       </>
     );
+    const annealPrimary = recommended && (
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={!!blocked || busy}
+        title={blocked ?? undefined}
+        onClick={() => void reassignNow(true)}
+        data-testid="sudden-anneal"
+      >
+        <WithIcon icon={Send}>登録して案B も作る（おすすめ）</WithIcon>
+      </button>
+    );
     footer = (
       <>
+        {annealPrimary}
         <button
           type="button"
-          className="btn btn-primary"
+          className={recommended ? 'btn' : 'btn btn-primary'}
           disabled={!!blocked || busy}
           title={blocked ?? undefined}
           onClick={() => void reassignNow(false)}
           data-testid="sudden-reassign"
         >
-          <WithIcon icon={Send}>登録して振り直す（案A）</WithIcon>
+          <WithIcon icon={recommended ? UserRoundCheck : Send}>登録して振り直す（案A）</WithIcon>
         </button>
         <button
           type="button"
           className="btn"
-          disabled={!!error || busy}
+          disabled={!!error || busy || running}
+          title={
+            running
+              ? '計算中は押せません（作り終えた案で休む人に訪問が残らないよう、終わってから登録します）'
+              : undefined
+          }
           onClick={() => onSaveOnly(withId(absence))}
           data-testid="sudden-save-only"
         >
@@ -461,7 +491,7 @@ export function SuddenPanel({
     const info = visitInfo(visitId);
     body = (
       <>
-        {stepHeading('影響の確認')}
+        {stepHeading(suddenHeading('client', 3, terms.staff))}
         <p>
           <strong>
             {info.client} {info.window}
@@ -489,7 +519,7 @@ export function SuddenPanel({
     const canAdopt = hasPlan && confirmState !== 'same';
     body = (
       <>
-        {stepHeading(done.kind === 'staff' ? '選んで確定' : '確定')}
+        {stepHeading(suddenHeading(done.kind, 4, terms.staff))}
         <p className="row" style={{ gap: 6 }} data-testid="sudden-done">
           <Check size={16} aria-hidden="true" />
           {done.kind === 'staff'
@@ -574,7 +604,7 @@ export function SuddenPanel({
                 <span className="sudden-step-no" aria-hidden="true">
                   {s < step ? <Check size={12} /> : s}
                 </span>
-                {n}
+                <span className="sudden-step-name">{n}</span>
               </li>
             );
           })}

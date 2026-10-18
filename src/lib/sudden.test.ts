@@ -8,8 +8,11 @@ import {
   draftError,
   draftOf,
   impactText,
+  noPlanText,
   reassignBlocked,
+  recommendAnneal,
   staffChoices,
+  suddenHeading,
   suddenSteps,
   visitChoices,
 } from './sudden';
@@ -24,11 +27,33 @@ const absence = (x: Partial<Absence> = {}): Absence => ({
   ...x,
 });
 
-describe('suddenSteps（段階の名前）', () => {
-  it('〈スタッフ〉の流れ（選ぶ前も同じ）と〈利用者さん〉の流れ', () => {
-    expect(suddenSteps(null)).toEqual(['何が起きたか', '休む人と時間帯', '影響と振り直し', '選んで確定']);
+describe('suddenSteps・suddenHeading（段階の名前と見出し）', () => {
+  it('〈スタッフ〉の流れ（選ぶ前も同じ）と〈利用者さん〉の流れ（短い名前）', () => {
+    expect(suddenSteps(null)).toEqual(['起きたこと', '休む人', '影響', '確定']);
     expect(suddenSteps('staff')).toEqual(suddenSteps(null));
-    expect(suddenSteps('client')).toEqual(['何が起きたか', 'キャンセルの訪問', '影響の確認', '確定']);
+    expect(suddenSteps('client')).toEqual(['起きたこと', '訪問', '影響', '確定']);
+  });
+  it('見出しは段階の名前と重ねない', () => {
+    expect(suddenHeading(null, 1, 'スタッフ')).toBe('何が起きましたか？');
+    expect(suddenHeading('staff', 2, 'スタッフ')).toBe('休むスタッフと時間帯を選ぶ');
+    expect(suddenHeading('staff', 3, 'スタッフ')).toBe('影響を確かめて振り直す');
+    expect(suddenHeading('staff', 4, 'スタッフ')).toBe('案を選んで確定する');
+    expect(suddenHeading('client', 2, 'スタッフ')).toBe('キャンセルの訪問を選ぶ');
+    expect(suddenHeading('client', 4, 'スタッフ')).toBe('確定する');
+    for (const k of ['staff', 'client'] as const)
+      for (const st of [1, 2, 3, 4] as const) expect(suddenSteps(k)).not.toContain(suddenHeading(k, st, 'スタッフ'));
+  });
+});
+
+describe('noPlanText・recommendAnneal', () => {
+  it('案の無い日：計算中は「案を作っています」', () => {
+    expect(noPlanText(true)).toBe('案を作っています。終わると振り直せます');
+    expect(noPlanText(false)).toContain('欠勤だけ登録できます');
+  });
+  it('案A で入らない見込みがある案のある日だけ案B を勧める', () => {
+    expect(recommendAnneal({ hasBase: true, unplacedA: 1 })).toBe(true);
+    expect(recommendAnneal({ hasBase: true, unplacedA: 0 })).toBe(false);
+    expect(recommendAnneal({ hasBase: false, unplacedA: 2 })).toBe(false);
   });
 });
 
