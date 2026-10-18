@@ -3,6 +3,7 @@ import { Info, X } from 'lucide-react';
 import { type ButtonHTMLAttributes, createContext, type ReactNode, useContext, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from './useBodyScrollLock';
+import { usePanelFoot, usePanelToastPlace, useVisualViewportFit } from './usePanelFoot';
 
 /**
  * 画面の見出し：アイコン＋題名＋ひとこと。右に主ボタンなどを置く
@@ -213,10 +214,22 @@ export function SidePanel({
   narrow?: boolean;
   onClose: () => void;
   children: ReactNode;
-  /** 下に固定して出す操作（保存・閉じる） */
+  /**
+   * 確定の操作（保存・閉じる）の帯。内容のすぐ下に置き、中身が長くて巻くときは欄の下に貼り付く（PRD D194〜D196）。
+   * 主ボタンを先頭に置く（狭い画面は2つまで横に並べ、3つ以上は主ボタンを1行目に全幅）
+   */
   footer?: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const footRef = useRef<HTMLElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const hasFoot = !!footer;
+  usePanelFoot(bodyRef, footRef, endRef, hasFoot);
+  useVisualViewportFit(wrapRef);
+  const headRef = useRef<HTMLElement>(null);
+  usePanelToastPlace(ref, headRef);
   const titleId = useId();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -281,7 +294,7 @@ export function SidePanel({
   }, [focusKey]);
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
   return createPortal(
-    <div className="drawer-wrap">
+    <div className="drawer-wrap" ref={wrapRef}>
       <div className="drawer-backdrop" aria-hidden="true" />
       <section
         ref={ref}
@@ -291,7 +304,7 @@ export function SidePanel({
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        <header className="drawer-head">
+        <header className="drawer-head" ref={headRef}>
           <h2 id={titleId}>
             <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
             {title}
@@ -299,8 +312,18 @@ export function SidePanel({
           {headActions && <div className="drawer-head-actions">{headActions}</div>}
           <IconButton icon={X} label="閉じる" onClick={onClose} />
         </header>
-        <div className="drawer-body stack">{children}</div>
-        {footer && <footer className="drawer-foot">{footer}</footer>}
+        {/* 巻く領域の中に、内容・帯・番兵（帯が貼り付いているかを見る。高さ0）の順に置く */}
+        <div className="drawer-body" ref={bodyRef}>
+          <div className="drawer-content stack">{children}</div>
+          {hasFoot && (
+            <>
+              <footer className="drawer-foot" ref={footRef}>
+                {footer}
+              </footer>
+              <div className="drawer-foot-end" ref={endRef} aria-hidden="true" />
+            </>
+          )}
+        </div>
       </section>
     </div>,
     document.body,

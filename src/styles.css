@@ -216,6 +216,8 @@ label {
   box-shadow: 0 10px 30px rgba(40, 25, 15, 0.25);
   z-index: 1200;
   animation: toast-in 0.2s ease-out;
+  /* 文だけの知らせなので、重なった下の入力欄・ボタンを押せるようにする（中にボタンは置かない） */
+  pointer-events: none;
 }
 @keyframes toast-in {
   from {
@@ -1698,18 +1700,97 @@ a.icon-btn:hover {
   border-color: var(--ink);
   background: var(--soft);
 }
+/*
+ * 巻く領域。中は 内容（.drawer-content）→ 確定のボタンの帯（.drawer-foot）→ 番兵（高さ0）の順（PRD D194〜D197。ADR-0025 追記）。
+ * 中身が短いと帯は内容のすぐ下に来て、下の余白は巻く領域の残り（欄の背景）になる。長いと帯は欄の下に貼り付く（sticky）。
+ * Tab で入った入力欄が帯の裏に隠れないよう、帯の高さ（--drawer-foot-h。usePanelFoot が入れる）を scroll-padding-bottom にする
+ */
 .drawer-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: calc(var(--drawer-foot-h, 0px) + 8px);
+}
+.drawer-content {
   padding: 16px 20px 24px;
 }
+.drawer-content:has(+ .drawer-foot) {
+  padding-bottom: 8px;
+}
+/* 帯：貼り付いていない間は欄と同じ背景で線・影を出さない。内容が帯の下に隠れている間（data-stuck="true"）だけ区切りを出す */
 .drawer-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  padding: 12px 20px;
-  border-top: 1px solid var(--line);
+  /* iPhone のホームバー・横向きの切り欠きは safe-area で避ける */
+  padding: 12px max(20px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px))
+    max(20px, env(safe-area-inset-left, 0px));
+  background: var(--card);
+  border-top: 1px solid transparent;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.drawer-foot[data-stuck="true"] {
   background: var(--soft);
+  border-top-color: var(--line);
+  box-shadow: 0 -6px 16px rgba(40, 25, 15, 0.08);
+}
+.drawer-foot-end {
+  height: 0;
+}
+/*
+ * 狭い画面（欄が画面いっぱい）：主ボタンを先頭に、2つまでは横に同じ幅で並べ、3つ以上は主ボタンを1行目に全幅・残りは2つずつ。
+ * ボタンでないもの（入力の誤り・注記）は1行を使う
+ */
+@media (max-width: 600px) {
+  /* 見出し・内容・帯の左右の端をそろえる（16px。横向きの切り欠きは safe-area で避ける） */
+  .drawer-head {
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  }
+  .drawer-content {
+    padding: 14px max(16px, env(safe-area-inset-right, 0px)) 20px max(16px, env(safe-area-inset-left, 0px));
+  }
+  .drawer-foot {
+    align-items: stretch;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .drawer-foot > .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .drawer-foot:has(> .btn ~ .btn ~ .btn) > .btn {
+    flex: 1 1 calc(50% - 4px);
+  }
+  .drawer-foot:has(> .btn ~ .btn ~ .btn) > .btn:first-child {
+    flex-basis: 100%;
+  }
+  .drawer-foot > :not(.btn) {
+    flex: 1 1 100%;
+  }
+}
+/*
+ * 右の欄が開いている間の知らせ（トースト。PRD D197。PR #46 のレビュー）：下の確定のボタンの帯に重ねない。
+ * 置き場所は usePanelToastPlace が html の data-drawer-toast に書く（lib/panelFit.ts の toastPlace）。
+ * top＝欄の外が狭い（600px 以下など）：見出しの実際の高さ（--drawer-head-h）のすぐ下。キーボードで欄を見えている所に
+ * 合わせているときはその上端（--drawer-top）から。side＝欄の外（幕の側）の真ん中に出し、欄をまたがない
+ */
+html[data-drawer-toast="top"] body:has(.drawer-wrap) .toast {
+  top: calc(var(--drawer-top, 0px) + var(--drawer-head-h, 61px) + 8px);
+  bottom: auto;
+}
+html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
+  left: calc((100vw - var(--drawer-w, 640px)) / 2);
+  max-width: calc(100vw - var(--drawer-w, 640px) - 24px);
 }
 @keyframes drawer-in {
   from {
