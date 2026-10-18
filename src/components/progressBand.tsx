@@ -270,9 +270,18 @@ function DoneMark() {
 
 /**
  * 帯の読み上げの領域（aria-live）。最初は空のまま置き、描いた後に数えた結果が変わったとき（確定した・案を作ったなど）だけ中身を入れる
- * （開いたとき・画面を移ったときには読み上げない）
+ * （開いたとき・画面を移ったときには読み上げない）。作り直しの帯（components/rebuildBand。PRD D164）も使う
  */
-function BandLive({ text }: { text: string }) {
+export function BandLive({
+  text,
+  testId = 'band-live',
+  data,
+}: {
+  text: string;
+  testId?: string;
+  /** e2e が読む data-* 属性（作り直しの帯の日数など） */
+  data?: Record<`data-${string}`, string | number>;
+}) {
   const [said, setSaid] = useState('');
   const first = useRef(text);
   useEffect(() => {
@@ -282,7 +291,7 @@ function BandLive({ text }: { text: string }) {
     }
   }, [text]);
   return (
-    <span className="sr-only" aria-live="polite" data-testid="band-live">
+    <span className="sr-only" aria-live="polite" data-testid={testId} {...data}>
       {said}
     </span>
   );

@@ -170,7 +170,7 @@ export default function MonthPage() {
   /** 選ばないときの右の欄：要対応／確定していない日（進み具合の帯の「確定」から。PRD D153） */
   const [asideView, setAsideView] = useState<'attention' | 'unconfirmed'>('attention');
   const asideRef = useRef<HTMLElement>(null);
-  const [mode, setMode] = useState<'empty' | 'all'>('empty');
+  const [mode, setMode] = useState<BatchMode>('empty');
   const [batch, setBatch] = useState<Batch | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** 混み具合で数える人（null＝すべての人。種類の ID） */
@@ -469,8 +469,11 @@ export default function MonthPage() {
   );
   const staleOf = (d: string) => statuses.get(d)?.stale ?? false;
   const targetsOf = (m: BatchMode) => batchTargets(preview.data, ym, today, m, staleOf);
-  const panelTargets = panel ? targetsOf(mode) : [];
   const staleTargets = batchTargets(data, ym, today, 'stale', staleOf);
+  /** 欄の対象の日（条件が変わった日は定期パターンから訪問を作らずに数える。「条件が変わった日を作り直す」と同じ） */
+  const panelTargets = panel ? (mode === 'stale' ? staleTargets : targetsOf(mode)) : [];
+  /** この月の今日以降で、条件が変わったが確定した割当がある日（作り直さない。作り直しの帯の「確定済み」。PRD D163） */
+  const staleConfirmed = days.filter((d) => d >= today && staleOf(d) && !!own(data.manualPlans, d)).length;
   const running = batch !== null;
   const noVisitsWhy = futureVisits === 0 ? '定期パターンが無いか、この月の訪問がありません' : null;
 
@@ -505,6 +508,23 @@ export default function MonthPage() {
     }),
     [ym, progress, preview, today, statuses, attention],
   );
+  /**
+   * 条件が変わった日を作り直す欄を開く（設定の画面の作り直しの帯の［作り直す］＝ ?do=stale。PRD D163）。
+   * 対象は「条件が変わった日を作り直す」と同じ（確定していない日だけ）。作り始めるのは欄の主ボタン（手直しのある日は今どおり確かめる）。
+   * 作っている間は何もしない。対象が0日なら欄を開かず、知らせて要対応を出す
+   */
+  const openStale = () => {
+    if (runningRef.current) return;
+    if (staleTargets.length === 0) {
+      toast('作り直す日がありません（確定した日・今日より前の日は作り直しません）');
+      showAside('attention');
+      return;
+    }
+    setError(null);
+    setMode('stale');
+    setPanel(true);
+  };
+
   /** 帯の数字・ボタン：この画面の中で欄を開く（URL の ?staff= などは showAside のとおり） */
   const onBandOp = (op: BandOp) => {
     if (op === 'batch') openBatch();
@@ -513,6 +533,7 @@ export default function MonthPage() {
 
   // ---- ホーム・週・日の帯から来たときの操作（PRD D143・D153。?do=）----
   // batch：まとめて作るの欄を開く（openBatch）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
+  // stale：条件が変わった日を作り直す欄を開く（openStale。設定の画面の作り直しの帯から。PRD D163）。
   // 1回だけ行い、URL から ?do= を消す（戻る・再読込で繰り返さない）
   const doParam = params.get('do');
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
@@ -524,6 +545,7 @@ export default function MonthPage() {
     }
     patchParams({ do: null });
     if (doParam === 'batch') openBatch();
+    else if (doParam === 'stale') openStale();
   }, [doParam]);
 
   // ---- 定期パターンから訪問だけ作る（案は作らない。まとめて作るの欄の「訪問だけ作る」。D154）----
@@ -1188,7 +1210,7 @@ export default function MonthPage() {
                 type="button"
                 className="btn btn-primary"
                 disabled={panelTargets.length === 0}
-                onClick={() => start(mode, true)}
+                onClick={() => start(mode, mode !== 'stale')}
               >
                 <WithIcon icon={Sparkles}>作り始める</WithIcon>
               </button>
@@ -1225,6 +1247,19 @@ export default function MonthPage() {
                 />
                 確定していない日をすべて作り直す
               </label>
+              {(mode === 'stale' || staleTargets.length > 0) && (
+                <label className="check">
+                  <input
+                    type="radio"
+                    name="batch-mode"
+                    checked={mode === 'stale'}
+                    onChange={() => setMode('stale')}
+                    style={{ width: 'auto' }}
+                    data-testid="batch-mode-stale"
+                  />
+                  条件が変わった日だけ作り直す（{staleTargets.length}日）
+                </label>
+              )}
             </fieldset>
             <p data-testid="batch-count">
               対象の日：<strong>{panelTargets.length}日</strong>
@@ -1235,7 +1270,18 @@ export default function MonthPage() {
                 {noVisitsWhy ?? '対象の日がありません（今日より前の日・確定した日は作りません）'}
               </p>
             )}
-            <p className="sub">先に定期パターンからこの月の訪問を作ります。今日より前の日・確定した日は作りません。</p>
+            {mode === 'stale' ? (
+              <p className="sub" data-testid="batch-stale-note">
+                案を作ったあとに条件が変わった日を、点数の基準のプリセットで作り直します。手直しのある日は、作り始める前に確かめます。今日より前の日・確定した日は作りません
+                {staleConfirmed > 0 &&
+                  `（条件が変わった確定済みの日 ${staleConfirmed}日は、日の画面で確かめてください）`}
+                。
+              </p>
+            ) : (
+              <p className="sub">
+                先に定期パターンからこの月の訪問を作ります。今日より前の日・確定した日は作りません。
+              </p>
+            )}
             {/* 案は作らずに訪問だけ作る（今月の準備の①から移した。PRD D154） */}
             {preview.added > 0 && (
               <p className="row" style={{ gap: 8, flexWrap: 'wrap' }}>

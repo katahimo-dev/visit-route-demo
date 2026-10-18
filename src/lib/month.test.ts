@@ -15,6 +15,7 @@ import {
   calendarWeeks,
   clientDay,
   clientMonth,
+  currentRuleKeys,
   type DayStatus,
   dayMarks,
   dayPlanOf,
@@ -26,6 +27,8 @@ import {
   monthDates,
   monthProgress,
   planStale,
+  ruleSetKey,
+  rulesStale,
   staffDay,
   staffMonth,
   ymOf,
@@ -137,6 +140,62 @@ describe('月まとめ作成の対象（batchTargets）', () => {
     };
     expect(planStale(d, d, a!)).toBe(true);
     expect(batchTargets(d, '2026-11', TODAY, 'stale')).toEqual([a]);
+  });
+});
+
+describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
+  const keysOf = (d: DemoData) => currentRuleKeys(d.rules, d.presets);
+  it('点数の基準のプリセットで作った案：条件の重みの画面の重みを変えても変わったにしない', () => {
+    const d0 = novData();
+    const [a] = batchTargets(d0, '2026-11', TODAY, 'empty');
+    const d = withPlan(d0, a!);
+    expect(rulesStale(d, a!, keysOf(d))).toBe(false);
+    const moved = { ...d, rules: d.rules.map((r, i) => (i === 1 ? { ...r, weight: r.weight + 1.5 } : r)) };
+    expect(rulesStale(moved, a!, keysOf(moved))).toBe(false);
+    // 名前だけ変えても変わったにしない
+    const renamed = { ...d, rules: d.rules.map((r) => ({ ...r, label: `${r.label}（改）` })) };
+    expect(rulesStale(renamed, a!, keysOf(renamed))).toBe(false);
+  });
+  it('作ったプリセットの重みを変えた・条件を消した：変わった', () => {
+    const d0 = novData();
+    const [a] = batchTargets(d0, '2026-11', TODAY, 'empty');
+    const d = withPlan(d0, a!);
+    const base = d.presets.find((p) => p.id === d.scorePresetId) ?? d.presets[0]!;
+    const presets = d.presets.map((p) =>
+      p.id === base.id
+        ? { ...p, weights: { ...p.weights, wait: { weight: p.weights.wait.weight + 1, hard: false } } }
+        : p,
+    );
+    const edited = { ...d, presets };
+    expect(rulesStale(edited, a!, keysOf(edited))).toBe(true);
+    const removed = { ...d, rules: d.rules.slice(1) };
+    expect(rulesStale(removed, a!, keysOf(removed))).toBe(true);
+  });
+  it('いまの条件（プリセットに無い重み）で作った案のあとに重みを変えた：変わった', () => {
+    const d0 = novData();
+    const [a] = batchTargets(d0, '2026-11', TODAY, 'empty');
+    const custom = d0.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r));
+    const d1 = { ...d0, rules: custom };
+    const d = applyDayRun(d1, a!, {
+      rules: custom,
+      result: resultOf(d1, a!),
+      createdAt: 1,
+      inputKey: problemKey(compile({ ...d1, rules: custom }, a!)),
+      onlyEmpty: false,
+    });
+    expect(rulesStale(d, a!, keysOf(d))).toBe(false);
+    const moved = { ...d, rules: d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 1 } : r)) };
+    expect(rulesStale(moved, a!, keysOf(moved))).toBe(true);
+  });
+  it('案が無い・記録が無い日は判定しない', () => {
+    const d = novData();
+    const [a] = batchTargets(d, '2026-11', TODAY, 'empty');
+    expect(rulesStale(d, a!, keysOf(d))).toBe(false);
+  });
+  it('ruleSetKey：必須にできない型の必須は数えない', () => {
+    const r = { id: 'x', type: 'wait' as const, label: '待ち', weight: 3, hard: false };
+    expect(ruleSetKey([r])).toBe(ruleSetKey([{ ...r, hard: true }]));
+    expect(ruleSetKey([r])).not.toBe(ruleSetKey([{ ...r, weight: 2 }]));
   });
 });
 

@@ -4,13 +4,14 @@ import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult, StopTiming } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
-import type { Rule } from '../contracts/rules';
+import { HARDABLE, type Preset, type Rule } from '../contracts/rules';
 import { afterLastDay, availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
 import { type CompileInput, compile, scheduleRoute } from '../matching';
 import { applyPatterns } from '../patterns';
+import { applyPreset } from '../seed/presets';
 import { attempt, own } from './common';
 import { isRequestedOff } from './requestedOff';
 import { addRun, findRun, problemKey } from './runs';
@@ -128,6 +129,44 @@ export function planStale(
   } catch {
     return false;
   }
+}
+
+/**
+ * 条件の組のキー（PRD D161）：条件の ID・型・重み・必須（必須にできない型は必須にしない）。名前は計算に効かないので入れない
+ */
+export function ruleSetKey(rules: readonly Rule[]): string {
+  return JSON.stringify(rules.map((r) => [r.id, r.type, r.weight, HARDABLE.has(r.type) && r.hard]));
+}
+
+/** いま作れる条件の組のキー（PRD D161） */
+export type RuleKeys = {
+  /** いまの条件（条件の重みの画面の重み）と、いまの条件に各プリセットを当てたもの */
+  all: ReadonlySet<string>;
+  /** プリセットの ID → いまの条件にそのプリセットを当てたもの */
+  byPreset: ReadonlyMap<string, string>;
+};
+
+/** いま作れる条件の組のキー（いまの条件と各プリセット。PRD D161） */
+export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): RuleKeys {
+  const byPreset = new Map(presets.map((p) => [p.id, ruleSetKey(applyPreset([...rules], p))] as const));
+  return { all: new Set([ruleSetKey(rules), ...byPreset.values()]), byPreset };
+}
+
+/**
+ * （D43・D161）今の案の元の記録を作った条件（重み・必須）が、いまは変わったか：
+ * - 記録がプリセットの重みで作った案（記録の presetId がいまもあるプリセット。月のまとめて作る・日の自動作成・プリセットのカード）なら、
+ *   いまの条件にそのプリセットを当てたものと違えば変わった（プリセットの重みを変えた・条件を足した・消した）。
+ *   条件の重みの画面の重みを変えただけでは変わらない（プリセットの重みで上書きするので、作り直しても同じ）
+ * - そのほか（いまの条件で作った・プリセットが消えた）なら、いまの条件にもどのプリセットにも当てはまらなければ変わった
+ * 名前は計算に効かないので見ない。記録が無い・欠勤の振り直しの記録は判定しない（false）
+ */
+export function rulesStale(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string, keys: RuleKeys): boolean {
+  const run = planRunOf(data, date);
+  if (!run || run.reassign) return false;
+  const key = ruleSetKey(run.rules);
+  const preset = run.presetId !== null ? keys.byPreset.get(run.presetId) : undefined;
+  if (preset !== undefined) return preset !== key;
+  return !keys.all.has(key);
 }
 
 /**

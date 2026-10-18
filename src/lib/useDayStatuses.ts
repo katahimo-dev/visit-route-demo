@@ -7,7 +7,7 @@ import { score } from '../evaluate';
 import { type CompileInput, compile } from '../matching';
 import { scoreRulesOf } from '../seed';
 import { attempt, own } from './common';
-import { type DayStatus, type DayView, dayPlanOf, dayStatus, planStale } from './month';
+import { currentRuleKeys, type DayStatus, type DayView, dayPlanOf, dayStatus, planStale, rulesStale } from './month';
 import { absentLeftIds } from './requestedOff';
 import { alignPlan } from './runs';
 import { workStats } from './workload';
@@ -26,6 +26,12 @@ type Memo = {
 
 const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * 作った条件（重み・必須）がいまの条件にもプリセットにも当てはまらなければ「条件が変わった」を足す（PRD D161）。
+ * 覚えの外で決める（プリセットの重みは compile が読まないので、覚えの鍵に入っていない）
+ */
+const withRules = (view: DayView, changed: boolean): DayView => (changed ? { ...view, stale: true } : view);
 
 /** 日ごとの状態と問題 */
 export type DayStatuses = Map<string, { status: DayStatus; problem: Problem | null }>;
@@ -51,6 +57,8 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
     }
     return out;
   }, [data.visits]);
+  /** いま作れる条件の組（いまの条件と各プリセット。今の案の条件がどれでもなければ「条件が変わった」。PRD D161） */
+  const ruleKeys = useMemo(() => currentRuleKeys(data.rules, data.presets), [data.rules, data.presets]);
   const memoRef = useRef(new Map<string, Memo>());
   return useMemo(() => {
     const out: DayStatuses = new Map();
@@ -79,7 +87,10 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
         sameList(hit.base, base) &&
         sameList(hit.visits, visits)
       ) {
-        out.set(d, { status: dayStatus(data, d, hit.view), problem: hit.problem });
+        out.set(d, {
+          status: dayStatus(data, d, withRules(hit.view, rulesStale(data, d, ruleKeys))),
+          problem: hit.problem,
+        });
         continue;
       }
       const input: CompileInput = { ...c, visits };
@@ -121,8 +132,8 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
         if (over.length > 0) view = { ...view, overSpan: over };
       }
       memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });
-      out.set(d, { status: dayStatus(data, d, view), problem: sp });
+      out.set(d, { status: dayStatus(data, d, withRules(view, rulesStale(data, d, ruleKeys))), problem: sp });
     }
     return out;
-  }, [days, compileInput, data, scoreRules, visitsByDate]);
+  }, [days, compileInput, data, scoreRules, visitsByDate, ruleKeys]);
 }

@@ -1,0 +1,67 @@
+/* 条件を変えたら出す作り直しの帯（PRD D161〜D165。ADR-0025 追記）。色は日の画面の注意の帯（.plan-band.is-warn）にそろえる */
+.rebuild-band {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 14px;
+  background: #fbefd6;
+  border: 1.5px solid #ecc97e;
+  color: #7a5208;
+}
+.rb-text {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.rb-icon {
+  flex: none;
+  margin-top: 3px;
+}
+.rb-text strong {
+  font-variant-numeric: tabular-nums;
+}
+.rb-parts {
+  white-space: nowrap;
+}
+.rb-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.rb-actions .btn {
+  white-space: nowrap;
+}
+
+/* 広い画面：下へ巻いて設定を変えていても見えるよう、上の帯の下に貼り付ける（［後で］で隠せる） */
+@media (min-width: 861px) {
+  .rebuild-band {
+    position: sticky;
+    top: calc(var(--header-h) + 8px);
+    z-index: 15;
+    box-shadow: 0 4px 14px rgba(122, 82, 8, 0.12);
+  }
+}
+
+/* 狭い画面（390px）：文の下にボタンを右寄せで並べる（横にはみ出さない） */
+@media (max-width: 600px) {
+  .rebuild-band {
+    padding: 8px 10px;
+  }
+  .rb-text {
+    flex-basis: 100%;
+    font-size: 0.9rem;
+  }
+  .rb-parts {
+    white-space: normal;
+  }
+}
+
+@media print {
+  .rebuild-band {
+    display: none !important;
+  }
+}
