@@ -259,7 +259,9 @@ tbody tr:hover td {
 .staff-shell {
   max-width: 520px;
   margin: 0 auto;
-  padding: 16px 16px 96px;
+  /* viewport-fit=cover なので、横向きの切り欠きを safe-area で避ける */
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 96px
+    max(16px, env(safe-area-inset-left, 0px));
 }
 .tabbar {
   position: fixed;
@@ -781,6 +783,8 @@ tbody tr:hover td {
   gap: 2px;
 }
 .nav-group-title {
+  /* 見出し（h2）だが見た目は小さな札のまま */
+  margin: 0;
   padding: 0 10px 4px;
   font-size: 0.7rem;
   font-weight: 700;
@@ -879,12 +883,14 @@ tbody tr:hover td {
     display: none;
   }
   /* 上の帯：左にロゴと今の画面の名前、右に「メニュー」と日付の切り替え。狭ければ日付の切り替えを2段目へ */
+  /* 横向きの iPhone の切り欠き・上の帯の下の余白は safe-area で避ける（index.html の viewport-fit=cover） */
   .app-header {
     min-height: 0;
     flex-wrap: wrap;
     justify-content: flex-start;
     gap: 8px;
-    padding: 8px 12px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px
+      max(12px, env(safe-area-inset-left, 0px));
   }
   .m-head-title {
     display: flex;
@@ -916,7 +922,8 @@ tbody tr:hover td {
   }
   /* 下のタブの分だけ本文の下を空ける */
   .app-main {
-    padding: 16px 14px calc(40px + var(--bottom-tabs-h));
+    padding: 16px max(14px, env(safe-area-inset-right, 0px)) calc(40px + var(--bottom-tabs-h))
+      max(14px, env(safe-area-inset-left, 0px));
   }
   /* 下のタブ：月・週・日・空き状況（iPhone のホームバーは safe-area で避ける） */
   .bottom-tabs {
@@ -928,7 +935,7 @@ tbody tr:hover td {
     height: var(--bottom-tabs-h);
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     background: var(--card);
     border-top: 1px solid var(--line);
     box-shadow: 0 -4px 16px rgba(40, 25, 15, 0.06);
@@ -973,7 +980,8 @@ tbody tr:hover td {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding: 16px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 14px calc(16px + env(safe-area-inset-bottom, 0px))
+    max(14px, env(safe-area-inset-left, 0px));
   background: var(--card);
   box-shadow: 12px 0 36px rgba(40, 25, 15, 0.22);
   animation: nav-drawer-in 0.2s ease-out;
@@ -1588,7 +1596,7 @@ a.icon-btn:hover {
 }
 @media (max-width: 600px) {
   .map-dock {
-    right: 12px;
+    right: max(12px, env(safe-area-inset-right, 0px));
     bottom: calc(12px + var(--bottom-tabs-h));
   }
   .map-dock .map {

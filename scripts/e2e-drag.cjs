@@ -108,6 +108,14 @@ async function weekClientDefault(page) {
     chips.evaluateAll((els) => els.filter((el) => el.getAttribute('aria-pressed') === 'true').length);
   if (n > 8) {
     await chips.nth(8).click();
+    // 上限の文は読み上げ直すため、いったん空にしてから少し後に入る
+    await page
+      .waitForFunction(
+        () => document.querySelector('[data-testid="week-client-chips-message"]')?.textContent !== '',
+        null,
+        { timeout: 2000 },
+      )
+      .catch(() => {});
     const msg = await page.getByTestId('week-client-chips-message').innerText();
     report('week-client-max', (await pressedCount()) === 8 && msg.includes('8人まで'), { msg });
   }

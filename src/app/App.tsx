@@ -20,7 +20,17 @@ import {
   TriangleAlert,
   UserRound,
 } from 'lucide-react';
-import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  type MouseEvent,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { addDays, jstDate } from '../domain/time';
@@ -130,6 +140,7 @@ function AdminShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLElement>(null);
+  const sideNavRef = useRef<HTMLElement>(null);
   const drawerId = useId();
   // 画面を移ったら上へ。引き出しも閉じる（画面を選ぶと閉じる。PRD D133）
   // 本体はブロックにする（式本体だと戻り値が後始末として呼ばれる。Brave の scrollTo は値を返し「is not a function」になった）
@@ -228,7 +239,7 @@ function AdminShell() {
   const screenName = navTitle(groups, pathname);
   return (
     <div className="app-shell">
-      <aside className="side-nav">
+      <aside ref={sideNavRef} className="side-nav">
         {brand}
         <NavGroups groups={groups} pathname={pathname} />
       </aside>
@@ -247,8 +258,9 @@ function AdminShell() {
             ref={menuBtnRef}
             type="button"
             className="btn btn-small m-menu-btn"
+            aria-haspopup="dialog"
             aria-expanded={menuOpen}
-            aria-controls={drawerId}
+            aria-controls={menuOpen ? drawerId : undefined}
             onClick={() => setMenuOpen(true)}
             data-testid="menu-btn"
           >
@@ -276,6 +288,10 @@ function AdminShell() {
                 to={to}
                 className={on ? 'bottom-tab active' : 'bottom-tab'}
                 aria-current={on ? 'page' : undefined}
+                onClick={(e) => {
+                  // 今の画面のタブは何もしない（押し直して URL のクエリ＝画面の状態を消さない）
+                  if (to === pathname) e.preventDefault();
+                }}
                 data-testid="bottom-tab"
               >
                 <Icon size={20} strokeWidth={2.1} aria-hidden="true" />
@@ -290,10 +306,24 @@ function AdminShell() {
           id={drawerId}
           label="メニュー"
           onClose={() => setMenuOpen(false)}
-          returnFocus={() => menuBtnRef.current}
+          // 広い画面へ戻して閉じたときは「メニュー」ボタンが隠れているので、左のメニューの今の項目へ
+          returnFocus={() =>
+            window.matchMedia(NARROW_QUERY).matches
+              ? menuBtnRef.current
+              : (sideNavRef.current?.querySelector<HTMLElement>('[aria-current="page"]') ??
+                sideNavRef.current?.querySelector<HTMLElement>('a[href]'))
+          }
           head={brand}
         >
-          <NavGroups groups={groups} pathname={pathname} onPick={() => setMenuOpen(false)} />
+          <NavGroups
+            groups={groups}
+            pathname={pathname}
+            onPick={(e, to) => {
+              // 今の画面の項目は閉じるだけ（移り直して URL のクエリ＝画面の状態を消さない）
+              if (to === pathname) e.preventDefault();
+              setMenuOpen(false);
+            }}
+          />
         </NavDrawer>
       )}
     </div>
@@ -308,19 +338,19 @@ function NavGroups({
 }: {
   groups: readonly NavSection<NavItem>[];
   pathname: string;
-  /** 項目を押したとき（引き出しを閉じる） */
-  onPick?: () => void;
+  /** 項目を押したとき（引き出しを閉じる。今の画面なら移らない） */
+  onPick?: (e: MouseEvent<HTMLAnchorElement>, to: string) => void;
 }) {
   return (
-    <nav className="nav-groups" aria-label="メニュー">
+    <nav className="nav-groups" aria-label="画面の一覧">
       {groups.map((g) => (
         <div key={g.items[0]!.to} className="nav-group">
-          {g.title && <span className="nav-group-title">{g.title}</span>}
+          {g.title && <h2 className="nav-group-title">{g.title}</h2>}
           {g.items.map(({ to, label, icon: Icon }) =>
             // 比較（メニューに無い）は日の画面の続きなので、日を選んだ状態で見せる（読み上げにも今の画面と伝える）。
             // NavLink は自分の URL のときしか aria-current を付けないので、このときだけ Link にする
             to !== pathname && isActiveNav(to, pathname) ? (
-              <Link key={to} to={to} className="nav-link active" aria-current="page" onClick={onPick}>
+              <Link key={to} to={to} className="nav-link active" aria-current="page" onClick={(e) => onPick?.(e, to)}>
                 <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
                 <span>{label}</span>
               </Link>
@@ -329,7 +359,7 @@ function NavGroups({
                 key={to}
                 to={to}
                 className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-                onClick={onPick}
+                onClick={(e) => onPick?.(e, to)}
               >
                 <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
                 <span>{label}</span>

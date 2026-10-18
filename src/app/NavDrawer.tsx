@@ -1,11 +1,15 @@
 import { X } from 'lucide-react';
 import { type ReactNode, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { FOCUSABLE } from '../components/ui';
+import { useBodyScrollLock } from '../components/useBodyScrollLock';
 
 /**
  * スマホ（幅860px以下）のメニューの引き出し（PRD D133。design.md §4 app「スマホのメニュー（2026-10-18）」）。
- * 左から出す。閉じ方：画面を選ぶ（呼ぶ側が閉じる）・外を押す・Esc・×。閉じたらフォーカスを returnFocus（「メニュー」ボタン）へ戻す。
- * 開いているあいだは裏の画面を巻かない（body の overflow）。フォーカスは引き出しの中で回す（Tab・Shift+Tab）
+ * 左から出す。body の直下に出し、開いているあいだ後ろの画面（#root）を inert にする。
+ * 閉じ方：画面を選ぶ（呼ぶ側が閉じる）・外を押す・Esc・×。閉じたらフォーカスを returnFocus（「メニュー」ボタン、
+ * 広い画面へ戻したときは左のメニューの今の項目）へ戻す。開いているあいだは裏の画面を巻かない（useBodyScrollLock）。
+ * フォーカスは引き出しの中で回す（Tab・Shift+Tab）
  */
 export function NavDrawer({
   id,
@@ -20,7 +24,7 @@ export function NavDrawer({
   /** 引き出しの名前（読み上げ） */
   label: string;
   onClose: () => void;
-  /** 閉じたときにフォーカスを戻す要素 */
+  /** 閉じたときにフォーカスを戻す要素（閉じたときに引く） */
   returnFocus: () => HTMLElement | null | undefined;
   /** 上の段（ロゴと事業所の名前） */
   head: ReactNode;
@@ -31,7 +35,12 @@ export function NavDrawer({
   closeRef.current = onClose;
   const returnRef = useRef(returnFocus);
   returnRef.current = returnFocus;
+  useBodyScrollLock();
   useEffect(() => {
+    // 後ろの画面を操作できなくする（読み上げ・Tab・クリック）
+    const root = document.getElementById('root');
+    const wasInert = root?.inert ?? false;
+    if (root) root.inert = true;
     // 開いたら今の画面の項目（無ければ最初の項目）へ
     const first =
       ref.current?.querySelector<HTMLElement>('[aria-current="page"]') ??
@@ -62,15 +71,13 @@ export function NavDrawer({
       }
     };
     document.addEventListener('keydown', onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = overflow;
+      if (root) root.inert = wasInert;
       returnRef.current()?.focus({ preventScroll: true });
     };
   }, []);
-  return (
+  return createPortal(
     <div className="nav-drawer-wrap" data-testid="nav-drawer-wrap">
       {/* 外を押すと閉じる（キーボードは Esc・×） */}
       <div className="nav-drawer-backdrop" aria-hidden="true" onClick={onClose} data-testid="nav-drawer-backdrop" />
@@ -92,6 +99,7 @@ export function NavDrawer({
         </div>
         {children}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

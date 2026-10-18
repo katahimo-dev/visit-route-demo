@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Info, X } from 'lucide-react';
 import { type ButtonHTMLAttributes, createContext, type ReactNode, useContext, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useBodyScrollLock } from './useBodyScrollLock';
 
 /**
  * 画面の見出し：アイコン＋題名＋ひとこと。右に主ボタンなどを置く
@@ -224,6 +225,8 @@ export function SidePanel({
   returnRef.current = returnFocus;
   /** 開いたときの値だけを使う */
   const focusPanelRef = useRef(focusPanel);
+  // 開いているあいだ裏の画面を巻かない（スマホのメニューの引き出しと重なっても数で数える）
+  useBodyScrollLock();
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
     const first = focusPanelRef.current ? null : ref.current?.querySelector<HTMLElement>('input, select, textarea');
@@ -256,11 +259,8 @@ export function SidePanel({
       }
     };
     document.addEventListener('keydown', onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = overflow;
       const to = returnRef.current?.();
       if (to) to.focus({ preventScroll: true });
       else if (back?.isConnected) back.focus?.();

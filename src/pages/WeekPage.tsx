@@ -231,19 +231,40 @@ export default function WeekPage() {
     [clientSel, weekChipIds, weekClients],
   );
   const pickedClients = selection.ids;
+  /** 時間軸に出す〈利用者さん〉：選んだ順に8人まで（URL で9人以上渡されたとき。チップの✓もこの8人） */
+  const timelineClients = useMemo(() => pickedClients.slice(0, TIMELINE_CLIENT_MAX), [pickedClients]);
   /** 時間軸のチップの人：この週に訪問がある人のあとに、「ほかの人を探す」で選んだ人 */
   const chipPeople = useMemo(
     () =>
-      timelineChipIds(weekChipIds, pickedClients).flatMap((id) => {
+      timelineChipIds(weekChipIds, timelineClients).flatMap((id) => {
         const c = clientById.get(id);
         return c ? [{ id: c.id, name: c.displayName, color: colorOf(c.color) }] : [];
       }),
-    [weekChipIds, pickedClients, clientById],
+    [weekChipIds, timelineClients, clientById],
   );
+  /** チップの欄を開いているか（「あと N人」。この画面の中だけで覚える。PRD D140） */
+  const [chipsOpen, setChipsOpen] = useState(false);
   /** チップで8人を超えて選ぼうとしたときの文（PRD D138） */
   const [chipMessage, setChipMessage] = useState<string | null>(null);
-  /** 時間軸に出す〈利用者さん〉：選んだ順に8人まで（URL で9人以上渡されたとき） */
-  const timelineClients = useMemo(() => pickedClients.slice(0, TIMELINE_CLIENT_MAX), [pickedClients]);
+  const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 上限の文を出す。同じ文でも読み上げ直すよう、いったん空にしてから入れ直す */
+  const announce = (text: string | null) => {
+    if (messageTimer.current) clearTimeout(messageTimer.current);
+    messageTimer.current = null;
+    setChipMessage(null);
+    if (text !== null) messageTimer.current = setTimeout(() => setChipMessage(text), 60);
+  };
+  // 選択・週・見る人が変わったら上限の文を消す（戻るボタンで URL が変わったときも）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: URL の値が変わったときだけ
+  useEffect(() => {
+    announce(null);
+  }, [clientParam, anchor, by]);
+  useEffect(
+    () => () => {
+      if (messageTimer.current) clearTimeout(messageTimer.current);
+    },
+    [],
+  );
   /** 表の行の〈利用者さん〉：絞り込みに当てはまる人（表示名の順。表のときだけ。時間軸へ移るときの引き継ぎにも使う） */
   const filteredClients = useMemo(() => {
     if (tab !== 'clients') return [];
@@ -311,14 +332,14 @@ export default function WeekPage() {
   };
   /** 時間軸の〈利用者さん〉を選び直す（初期値と同じ人なら ?client= を消す。PRD D137） */
   const setTimelineClients = (ids: string[]) => {
-    setChipMessage(null);
+    announce(null);
     go({ client: clientParamOf(ids, weekChipIds) });
   };
   /** チップを押したとき（PickChips は全員を選ぶと null を返す）。8人を超えるなら選ばずに上限の文を出す（PRD D138） */
   const onClientChips = (next: string[] | null) => {
     const ids = next ?? chipPeople.map((p) => p.id);
-    if (ids.length > pickedClients.length && ids.length > TIMELINE_CLIENT_MAX) {
-      setChipMessage(timelineClientMaxText(terms.client));
+    if (ids.length > timelineClients.length && ids.length > TIMELINE_CLIENT_MAX) {
+      announce(timelineClientMaxText(terms.client));
       return;
     }
     setTimelineClients(ids);
@@ -326,7 +347,6 @@ export default function WeekPage() {
   /** 週を送る：選んでいる日付もその日にする（PRD D59。曜日はそのまま） */
   const goWeek = (d: string) => {
     lastDate.current = d;
-    setChipMessage(null);
     go({ d });
     setDate(d);
   };
@@ -693,16 +713,21 @@ export default function WeekPage() {
             <PickChips
               label={`表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）`}
               people={chipPeople}
-              selected={pickedClients}
+              selected={timelineClients}
               onChange={onClientChips}
               bulk={false}
               detailKind="client"
+              fold={{ rows: 2, open: chipsOpen, onOpenChange: setChipsOpen }}
               actions={
                 <>
                   <button
                     type="button"
                     className="btn btn-small"
-                    onClick={() => setTimelineClients([])}
+                    onClick={() => {
+                      // この週に訪問が0人でも、外したことを ?client= の空で残す（週を送っても先頭8人に戻さない）
+                      announce(null);
+                      go({ client: '' });
+                    }}
                     disabled={pickedClients.length === 0}
                     data-testid="week-client-chips-none"
                   >
@@ -712,7 +737,7 @@ export default function WeekPage() {
                     type="button"
                     className="btn btn-small"
                     onClick={() => {
-                      setChipMessage(null);
+                      announce(null);
                       go({ client: null });
                     }}
                     disabled={selection.isDefault || clientParamOf(pickedClients, weekChipIds) === null}

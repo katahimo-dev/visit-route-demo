@@ -367,11 +367,10 @@ label.week-who {
 }
 
 /* 時間軸の〈利用者さん〉のチップの上限の文と、畳んだ「ほかの人を探す」（PRD D138） */
-.week-client-message:empty {
-  display: none;
-}
+/* 上限の文の枠はいつも描く（空なら高さ0。読み上げの live 領域を消さない） */
 .week-client-message {
   display: block;
+  min-height: 0;
   color: var(--danger);
   font-size: 0.8rem;
 }

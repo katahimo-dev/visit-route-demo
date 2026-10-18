@@ -86,15 +86,26 @@ async function header(page) {
 async function drawerOpenClose(page) {
   await open(page, '/week', '[data-testid="menu-btn"]');
   const btn = menuBtn(page);
-  check((await btn.getAttribute('aria-expanded')) === 'false', 'ボタン：閉じているとき aria-expanded=false');
+  check(
+    (await btn.getAttribute('aria-expanded')) === 'false' &&
+      (await btn.getAttribute('aria-controls')) === null &&
+      (await btn.getAttribute('aria-haspopup')) === 'dialog',
+    'ボタン：閉じているとき aria-expanded=false・aria-controls なし・aria-haspopup=dialog',
+  );
   await btn.click();
   await drawer(page).waitFor();
   const d = drawer(page);
   check(
     (await d.getAttribute('role')) === 'dialog' &&
       (await d.getAttribute('aria-modal')) === 'true' &&
-      !!(await d.getAttribute('aria-label')),
-    '引き出し：role=dialog・aria-modal・名前',
+      (await d.getAttribute('aria-label')) === 'メニュー' &&
+      (await d.locator('nav').getAttribute('aria-label')) === '画面の一覧',
+    '引き出し：role=dialog・aria-modal・名前「メニュー」・中の nav は「画面の一覧」',
+  );
+  check(
+    (await page.evaluate(() => document.getElementById('root').inert)) &&
+      (await d.locator('h2.nav-group-title').count()) >= 5,
+    '引き出し：後ろの画面は inert・グループの見出しは h2',
   );
   check(
     (await btn.getAttribute('aria-expanded')) === 'true' &&
@@ -174,12 +185,19 @@ async function drawerOpenClose(page) {
     (await isFocused(btn)) && /スタッフ・一覧・編集$/.test(await page.getByTestId('screen-name').innerText()),
     '画面を選ぶと移って閉じ、フォーカスが「メニュー」へ',
   );
-  // 今の画面を選んでも閉じる
+  // 今の画面を選んでも閉じるだけ（URL のクエリ＝画面の状態を消さない）
+  await open(page, '/week?view=table', '[data-testid="menu-btn"]');
   await btn.click();
   await d.waitFor();
   await d.locator('[aria-current="page"]').click();
   await d.waitFor({ state: 'detached' });
-  check(await isFocused(btn), '今の画面を選んでも閉じる');
+  check(
+    (await isFocused(btn)) &&
+      page.url().includes('view=table') &&
+      !(await page.evaluate(() => document.getElementById('root').inert)),
+    '今の画面を選ぶと閉じるだけで、URL のクエリは残る・inert を外す',
+    page.url(),
+  );
 }
 
 async function bottom(page) {
@@ -195,6 +213,15 @@ async function bottom(page) {
   check(Math.round(tb.y + tb.height) === 844 && tb.x === 0 && tb.width === 390, '下のタブ：画面の下に常に並ぶ', tb);
   const active = async () => t.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts();
   check(JSON.stringify(await active()) === '["週"]', '下のタブ：今の画面（週）が active・aria-current');
+  // 今の画面のタブは何もしない（URL のクエリを消さない）
+  await open(page, '/week?view=table', '[data-testid="bottom-tabs"]');
+  await t.getByTestId('bottom-tab').filter({ hasText: '週' }).click();
+  await page.waitForTimeout(300);
+  check(
+    page.url().includes('view=table') && JSON.stringify(await active()) === '["週"]',
+    '下のタブ：今の画面のタブは何もしない',
+    page.url(),
+  );
   await t.getByTestId('bottom-tab').filter({ hasText: '空き状況' }).click();
   await page.waitForURL(/#\/vacancy/);
   await page.waitForTimeout(300);
@@ -259,14 +286,62 @@ async function floating(page) {
   // 本物の地図のボタン：地図のカードが画面の外に出るまで巻いたとき（出れば重ならないかを見る）
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await page.waitForTimeout(800);
-  const real = page.locator('.map-dock-fab, .map-dock').first();
-  if (await visible(real)) {
-    const rb = await real.boundingBox();
-    check(!overlaps(rb, tb), '本物の地図（MapDock）が下のタブに重ならない', rb);
-    await page.screenshot({ path: path.join(OUT_DIR, 'mobile-mapdock.png') });
-  } else {
-    console.log('（本物の地図のボタンは出なかった。上の置いた箱で確かめた）');
-  }
+  const fabReal = page.locator('.map-dock-fab');
+  await fabReal.waitFor({ timeout: 20000 });
+  const fb = await fabReal.boundingBox();
+  check(!overlaps(fb, tb), '本物の地図のボタン（MapDock）が下のタブに重ならない', fb);
+  // 開いた地図も本物で
+  await fabReal.click();
+  const dockReal = page.locator('section.map-dock');
+  await dockReal.waitFor();
+  await page.waitForTimeout(400); // 出てくる動きが終わるまで
+  const rb = await dockReal.boundingBox();
+  check(!overlaps(rb, tb) && rb.y >= 0, '本物の開いた地図（MapDock）が下のタブに重ならない', rb);
+  await page.screenshot({ path: path.join(OUT_DIR, 'mobile-mapdock.png') });
+}
+
+/** 開いたまま広い画面へ戻す：閉じて、フォーカスは左のメニューの今の項目へ。裏のロック・inert も外す */
+async function wideWhileOpen(page) {
+  await open(page, '/week', '[data-testid="menu-btn"]');
+  await menuBtn(page).click();
+  await drawer(page).waitFor();
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await drawer(page).waitFor({ state: 'detached' });
+  const st = await page.evaluate(() => ({
+    focus: document.activeElement?.closest('.side-nav') ? document.activeElement.getAttribute('aria-current') : null,
+    html: document.documentElement.style.overflow,
+    body: document.body.style.overflow,
+    inert: document.getElementById('root').inert,
+  }));
+  check(
+    st.focus === 'page' && st.html === '' && st.body === '' && !st.inert,
+    '開いたまま広い画面へ戻すと閉じ、フォーカスは左のメニューの今の項目へ',
+    st,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+}
+
+/** 右の欄（SidePanel）と引き出しが重なっても、最後の1つが閉じるまで裏を巻かない（useBodyScrollLock） */
+async function lockWithPanel(page) {
+  await open(page, '/staff?id=s1', '.drawer');
+  const lock = () =>
+    page.evaluate(() => [document.documentElement.style.overflow, document.body.style.overflow].join(','));
+  const a = await lock();
+  // 欄の後ろの「メニュー」をスクリプトで押して、欄の上に引き出しを重ねる
+  await page.evaluate(() => document.querySelector('[data-testid="menu-btn"]').click());
+  await drawer(page).waitFor();
+  const b = await lock();
+  await page.getByTestId('nav-drawer-backdrop').click({ position: { x: 370, y: 400 } });
+  await drawer(page).waitFor({ state: 'detached' });
+  const c = await lock();
+  await page.locator('.drawer').getByRole('button', { name: '閉じる' }).click();
+  await page.locator('.drawer').waitFor({ state: 'detached' });
+  const d = await lock();
+  check(
+    a === 'hidden,hidden' && b === 'hidden,hidden' && c === 'hidden,hidden' && d === ',',
+    '右の欄と引き出しが重なっても、最後の1つが閉じるまで裏を巻かない',
+    { a, b, c, d },
+  );
 }
 
 async function print(page) {
@@ -328,6 +403,8 @@ async function wide(page) {
     ['drawer', drawerOpenClose],
     ['bottom', bottom],
     ['floating', floating],
+    ['wide-while-open', wideWhileOpen],
+    ['lock-with-panel', lockWithPanel],
     ['print', print],
     ['wide', wide],
   ]) {
