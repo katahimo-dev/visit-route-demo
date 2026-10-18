@@ -1,4 +1,4 @@
-// 右の欄（SidePanel）の確定のボタンの帯が中身に付いてくること（PRD D194〜D198。ADR-0025 追記）を本物のブラウザで確かめる：
+// 右の欄（SidePanel）の確定のボタンの帯が中身に付いてくること（PRD D194〜D197。ADR-0025 追記）を本物のブラウザで確かめる：
 // 中身が短い欄は帯が内容のすぐ下（欄の下端より上）・区切りの線と影を出さない、中身が長い欄は帯が欄の下に貼り付き
 // 巻いても見え、内容が帯の下に隠れている間だけ区切り（data-stuck="true"）・巻き終えると区切りを消す、
 // 帯の下に隠れた入力欄へ Tab で入ると帯の上まで巻く（scroll-padding-bottom）、Tab が中で回る・Esc で閉じて戻る、
@@ -356,6 +356,80 @@ async function suddenSteps(page, w) {
   );
 }
 
+/** 欄の位置と知らせ（トースト）の位置 */
+const toastBox = (page) =>
+  page.evaluate(() => {
+    const t = document.querySelector('.toast');
+    const h = document.querySelector('.drawer-head');
+    const d = document.querySelector('.drawer');
+    if (!t || !h || !d) return null;
+    const tb = t.getBoundingClientRect();
+    return {
+      top: Math.round(tb.top),
+      bottom: Math.round(tb.bottom),
+      left: Math.round(tb.left),
+      right: Math.round(tb.right),
+      headBottom: Math.round(h.getBoundingClientRect().bottom),
+      drawerLeft: Math.round(d.getBoundingClientRect().left),
+      drawerTop: Math.round(d.getBoundingClientRect().top),
+      pointer: getComputedStyle(t).pointerEvents,
+    };
+  });
+
+/**
+ * 欄を開いたまま知らせを出す（〈スタッフ〉の編集で保存 →「保存しました」→ すぐ「編集する」）：
+ * 390px は見出しに重ならず、重なった下の入力欄を押せる。1400px は欄をまたがない（PR #46 のレビュー）
+ */
+async function toastWhileOpen(page, w) {
+  await drawer(page).getByTestId('view-edit').click();
+  await settle(page, 200);
+  await page.locator('.drawer-foot .btn-primary').click();
+  await page.locator('.toast').waitFor({ timeout: 3000 });
+  await drawer(page).getByTestId('view-edit').click();
+  await settle(page, 250);
+  const t = await toastBox(page);
+  check(!!t, `${w}・欄を開いたまま知らせが出る`);
+  if (!t) return;
+  check(t.pointer === 'none', `${w}・知らせは押せない（下を押せる）`, t.pointer);
+  if (w === '390') {
+    check(t.top >= t.headBottom, `${w}・知らせが欄の見出しに重ならない`, t);
+    // 知らせの真ん中を押すと、下の入力欄（またはその label）に届く
+    await drawer(page)
+      .locator('.drawer-body')
+      .evaluate((el) => {
+        el.scrollTop = 0;
+      });
+    const x = (t.left + t.right) / 2;
+    const y = (t.top + t.bottom) / 2;
+    const under = await page.evaluate(
+      ({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        return { inDrawer: !!el?.closest('.drawer-content'), tag: el?.tagName ?? '' };
+      },
+      { x, y },
+    );
+    await page.mouse.click(x, y);
+    await settle(page, 150);
+    const focus = await page.evaluate(() => ({
+      tag: document.activeElement?.tagName ?? '',
+      inDrawer: !!document.activeElement?.closest('.drawer-content'),
+    }));
+    check(
+      under.inDrawer && focus.inDrawer && ['INPUT', 'SELECT', 'TEXTAREA'].includes(focus.tag),
+      `${w}・知らせが出ていても下の入力欄を押せる`,
+      { under, focus },
+    );
+    await shot(page, `${w}-toast`);
+  } else {
+    check(t.right <= t.drawerLeft, `${w}・知らせが欄をまたがない（欄の外に出る）`, t);
+    check(t.left >= 0, `${w}・知らせが画面の左に収まる`, t);
+    await shot(page, `${w}-toast`);
+  }
+  await page.locator('.toast').waitFor({ state: 'detached', timeout: 4000 });
+  await page.getByTestId('edit-cancel').click();
+  await settle(page, 200);
+}
+
 // ---- 〈スタッフ〉の閲覧（帯なし）と編集（長い） ----
 async function staffPanel(page, w) {
   await open(page, '/staff?id=s1', '.drawer');
@@ -437,6 +511,7 @@ async function staffPanel(page, w) {
   await page.getByTestId('edit-cancel').click();
   await settle(page, 300);
   check((await metrics(page))?.foot === null, `${w}・取り消しで閲覧に戻ると帯が消える`);
+  await toastWhileOpen(page, w);
   await page.keyboard.press('Escape');
   await drawer(page).waitFor({ state: 'detached' });
 }
@@ -506,6 +581,19 @@ async function keyboard(browser) {
     '390・見えている所がずれたら欄もそこへ合わせる',
     m?.drawer,
   );
+  // 知らせも見えている所に合わせる（保存 →「保存しました」。欄は閲覧に戻る）
+  await page.locator('.drawer-foot .btn-primary').click();
+  await page.locator('.toast').waitFor({ timeout: 3000 });
+  await settle(page, 250);
+  const t = await toastBox(page);
+  check(
+    !!t && Math.abs(t.drawerTop - 120) <= 1 && t.top >= t.headBottom && t.top >= 120,
+    '390・見えている所がずれたら知らせも欄の見出しの下に合わせる',
+    t,
+  );
+  await page.locator('.toast').waitFor({ state: 'detached', timeout: 4000 });
+  await drawer(page).getByTestId('view-edit').click();
+  await settle(page, 200);
   await page.evaluate(() => window.__setViewport(window.innerHeight, 0));
   await settle(page, 300);
   m = await metrics(page);

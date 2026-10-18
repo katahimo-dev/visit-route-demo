@@ -216,6 +216,8 @@ label {
   box-shadow: 0 10px 30px rgba(40, 25, 15, 0.25);
   z-index: 1200;
   animation: toast-in 0.2s ease-out;
+  /* 文だけの知らせなので、重なった下の入力欄・ボタンを押せるようにする（中にボタンは置かない） */
+  pointer-events: none;
 }
 @keyframes toast-in {
   from {
@@ -1748,8 +1750,12 @@ a.icon-btn:hover {
  * ボタンでないもの（入力の誤り・注記）は1行を使う
  */
 @media (max-width: 600px) {
+  /* 見出し・内容・帯の左右の端をそろえる（16px。横向きの切り欠きは safe-area で避ける） */
+  .drawer-head {
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  }
   .drawer-content {
-    padding: 14px 16px 20px;
+    padding: 14px max(16px, env(safe-area-inset-right, 0px)) 20px max(16px, env(safe-area-inset-left, 0px));
   }
   .drawer-foot {
     align-items: stretch;
@@ -1772,10 +1778,19 @@ a.icon-btn:hover {
     flex: 1 1 100%;
   }
 }
-/* 右の欄が開いている間は、知らせ（トースト）を上（欄の見出しと × の下）に出す（下の確定のボタンの帯に重ねない） */
-body:has(.drawer-wrap) .toast {
-  top: calc(68px + env(safe-area-inset-top, 0px));
+/*
+ * 右の欄が開いている間の知らせ（トースト。PRD D197。PR #46 のレビュー）：下の確定のボタンの帯に重ねない。
+ * 置き場所は usePanelToastPlace が html の data-drawer-toast に書く（lib/panelFit.ts の toastPlace）。
+ * top＝欄の外が狭い（600px 以下など）：見出しの実際の高さ（--drawer-head-h）のすぐ下。キーボードで欄を見えている所に
+ * 合わせているときはその上端（--drawer-top）から。side＝欄の外（幕の側）の真ん中に出し、欄をまたがない
+ */
+html[data-drawer-toast="top"] body:has(.drawer-wrap) .toast {
+  top: calc(var(--drawer-top, 0px) + var(--drawer-head-h, 61px) + 8px);
   bottom: auto;
+}
+html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
+  left: calc((100vw - var(--drawer-w, 640px)) / 2);
+  max-width: calc(100vw - var(--drawer-w, 640px) - 24px);
 }
 @keyframes drawer-in {
   from {

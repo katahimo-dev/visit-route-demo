@@ -3,7 +3,7 @@ import { Info, X } from 'lucide-react';
 import { type ButtonHTMLAttributes, createContext, type ReactNode, useContext, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useBodyScrollLock } from './useBodyScrollLock';
-import { usePanelFoot, useVisualViewportFit } from './usePanelFoot';
+import { usePanelFoot, usePanelToastPlace, useVisualViewportFit } from './usePanelFoot';
 
 /**
  * 画面の見出し：アイコン＋題名＋ひとこと。右に主ボタンなどを置く
@@ -228,6 +228,8 @@ export function SidePanel({
   const hasFoot = !!footer;
   usePanelFoot(bodyRef, footRef, endRef, hasFoot);
   useVisualViewportFit(wrapRef);
+  const headRef = useRef<HTMLElement>(null);
+  usePanelToastPlace(ref, headRef);
   const titleId = useId();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -302,7 +304,7 @@ export function SidePanel({
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        <header className="drawer-head">
+        <header className="drawer-head" ref={headRef}>
           <h2 id={titleId}>
             <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
             {title}

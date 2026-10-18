@@ -27,3 +27,15 @@ export function panelFit(v: ViewportLike): { top: number; height: number } | nul
   if (v.innerHeight - v.height < KEYBOARD_MIN_PX) return null;
   return { top: Math.max(0, Math.round(v.offsetTop)), height: Math.round(v.height) };
 }
+
+/** 欄の外（幕の側）にトーストを出すのに要る幅（px）。これより狭いと欄の上に重ねる */
+export const TOAST_SIDE_MIN_PX = 360;
+
+/**
+ * 右の欄が開いている間の知らせ（トースト）の置き場所（PRD D197。PR #46 のレビュー）。
+ * 欄の外（幕の側）の幅が足りれば 'side'（その真ん中に出し、欄をまたがない）、足りなければ 'top'（欄の見出しのすぐ下）。
+ * 600px 以下は欄が画面いっぱいなので必ず 'top'
+ */
+export function toastPlace(viewportWidth: number, drawerWidth: number): 'side' | 'top' {
+  return viewportWidth - drawerWidth >= TOAST_SIDE_MIN_PX ? 'side' : 'top';
+}

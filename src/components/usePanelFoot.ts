@@ -1,5 +1,5 @@
 import { type RefObject, useEffect } from 'react';
-import { panelFit } from '../lib/panelFit';
+import { panelFit, toastPlace } from '../lib/panelFit';
 
 /**
  * 右の欄の確定のボタンの帯（PRD D194〜D197。ADR-0025 追記）。帯は巻く領域（`.drawer-body`）の中で内容のすぐ後ろに置き、
@@ -64,6 +64,9 @@ export function useVisualViewportFit(wrap: RefObject<HTMLElement | null>): void 
         offsetTop: vv.offsetTop,
         scale: vv.scale,
       });
+      // 知らせ（トースト）も見えている所の上端に合わせる（--drawer-top。styles.css）
+      if (r) document.documentElement.style.setProperty('--drawer-top', `${r.top}px`);
+      else document.documentElement.style.removeProperty('--drawer-top');
       if (r) {
         w.style.top = `${r.top}px`;
         w.style.height = `${r.height}px`;
@@ -80,6 +83,38 @@ export function useVisualViewportFit(wrap: RefObject<HTMLElement | null>): void 
     return () => {
       vv.removeEventListener('resize', apply);
       vv.removeEventListener('scroll', apply);
+      document.documentElement.style.removeProperty('--drawer-top');
     };
   }, [wrap]);
+}
+
+/**
+ * 欄が開いている間の知らせ（トースト）の置き場所（PRD D197。PR #46 のレビュー）。欄の見出しの実際の高さ（2段になることがある）と
+ * 欄の幅を html の CSS 変数（--drawer-head-h・--drawer-w）に入れ、置き場所（`toastPlace`）を html の data-drawer-toast に書く。
+ * styles.css は 'top' なら見出しのすぐ下、'side' なら欄の外（幕の側）の真ん中に出す
+ */
+export function usePanelToastPlace(drawer: RefObject<HTMLElement | null>, head: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const d = drawer.current;
+    const h = head.current;
+    if (!d || !h) return;
+    const root = document.documentElement;
+    const apply = () => {
+      root.style.setProperty('--drawer-head-h', `${h.offsetHeight}px`);
+      root.style.setProperty('--drawer-w', `${d.offsetWidth}px`);
+      root.dataset.drawerToast = toastPlace(window.innerWidth, d.offsetWidth);
+    };
+    apply();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply);
+    ro?.observe(h);
+    ro?.observe(d);
+    window.addEventListener('resize', apply);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', apply);
+      root.style.removeProperty('--drawer-head-h');
+      root.style.removeProperty('--drawer-w');
+      delete root.dataset.drawerToast;
+    };
+  }, [drawer, head]);
 }
