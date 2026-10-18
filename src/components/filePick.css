@@ -1,0 +1,55 @@
+/* ファイルを選ぶ部品（components/FilePick.tsx。PRD D191） */
+.file-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.file-pick-caption {
+  font-size: 0.9rem;
+  color: var(--sub);
+}
+.file-pick-row {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+/* input は見えない形で残す（Tab で届き、Space・Enter で開ける）。押すのは label（見た目のボタン） */
+.file-pick-input {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.file-pick-btn {
+  /* label の共通の形（縦並び・小さい灰色の字）を使わず、ほかのボタンと同じ見た目にする */
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  font-size: 1rem;
+  color: var(--ink);
+  gap: 6px;
+  cursor: pointer;
+}
+.file-pick-input:focus-visible + .file-pick-btn {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+.file-pick-input:disabled + .file-pick-btn {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.file-pick-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}

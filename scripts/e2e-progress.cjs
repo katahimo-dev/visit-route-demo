@@ -454,7 +454,8 @@ async function empty(page) {
 async function mobile(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [hash, ready, name] of [
-    [`/month?ym=${YM}`, '[data-testid="month-grid"]', 'month'],
+    // 390px の月ははじめ日ごとの一覧（PRD D189）。カレンダーと一覧のどちらでもある切り替えを待つ
+    [`/month?ym=${YM}`, '[data-testid="month-layout"]', 'month'],
     [`/week?d=${TODAY}`, '[data-testid="week-title"]', 'week'],
     ['/plan', '[data-testid="confirm-state"]', 'day'],
   ]) {

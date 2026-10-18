@@ -495,6 +495,124 @@
     width: 100%;
   }
 }
+/* カレンダーと日ごとの一覧の切り替え・日ごとの一覧（PRD D189。600px 以下ははじめ一覧） */
+.month-layout {
+  margin-bottom: 8px;
+}
+.month-layout button {
+  display: inline-flex;
+  align-items: center;
+}
+.month-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.month-list-btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 6.2em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+.month-list-btn:hover {
+  border-color: var(--primary);
+}
+.month-list-btn:focus-visible {
+  outline: 2px solid var(--primary-dark);
+  outline-offset: 2px;
+}
+.month-list-date {
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.month-list-date.wd-0 {
+  color: #c0504d;
+}
+.month-list-date.wd-6 {
+  color: #4a78b5;
+}
+.month-list-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.month-list-count {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.month-list-flags,
+.month-list-extra {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  font-size: 0.8rem;
+}
+.month-list-flags:empty {
+  display: none;
+}
+/* 状態の色はマスと同じ */
+.month-list-btn.is-state-empty,
+.month-list-btn.is-state-none {
+  border-style: dashed;
+  border-color: #cdbfb4;
+}
+.month-list-btn.is-state-plan {
+  background: #eef7f0;
+  border-color: #cfe6d6;
+}
+.month-list-btn.is-state-confirmed {
+  background: #dcefe2;
+  border-color: #4f9a6c;
+}
+.month-list-btn.is-state-diff {
+  background: #fdf4d8;
+  border-color: #ecd48f;
+}
+.month-list-btn.is-care {
+  border: 2.5px solid var(--danger);
+}
+.month-list-btn.is-past {
+  opacity: 0.6;
+}
+.month-list-btn.is-picked {
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.month-list-btn.is-off-open {
+  border: 2px dashed #a99bd6;
+}
+.month-list-btn.is-off-requested {
+  border: 2.5px solid #6b5aa6;
+  background: repeating-linear-gradient(135deg, #efebf8 0 6px, #e3dcf3 6px 12px);
+}
+.month-list-btn.is-off-noShift,
+.month-list-btn.is-off-past,
+.month-list-btn.is-off-absent {
+  cursor: not-allowed;
+}
+/* 一覧のときは横に巻かない（表の最小幅を使わない） */
+.month-card.is-list {
+  overflow-x: visible;
+}
+
 /* 〈利用者さん〉の休み（ADR-0013） */
 .month-mark.is-leave {
   display: inline-flex;
@@ -637,7 +755,8 @@
   margin: 0;
 }
 @media print {
-  .month-legend-open {
+  .month-legend-open,
+  .month-layout {
     display: none;
   }
 }

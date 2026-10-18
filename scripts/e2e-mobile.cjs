@@ -3,7 +3,8 @@
 // 引き出し（role="dialog"・aria-modal・名前、ボタンの aria-expanded・aria-controls、グループの見出し付きの縦並び、
 // 画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」へ、Tab・Shift+Tab が中で回る、開いているあいだ裏を巻かない）、
 // 下のタブ（ホーム・月・週・日・空き状況（PRD D144）、active と aria-current、比較では「日」、本文の最後がタブに隠れない）、
-// 浮いている部品（地図の MapDock・欠勤の振り直しの ReassignDock・トースト）がタブに重ならない、印刷で上の帯・下のタブ・引き出しを出さない、
+// 浮いている部品（地図の MapDock・欠勤の振り直しの ReassignDock・トースト）がタブに重ならない、
+// 本物の地図のボタンと本物のトースト（PRD D190。ボタンはタブのすぐ上・トーストが出ても互いに隠れない・本文の下を空ける・safe-area）、印刷で上の帯・下のタブ・引き出しを出さない、
 // 広い画面（1400px）では今の左のメニューのままで、上の帯の部品・下のタブを出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-mobile.cjs
@@ -304,6 +305,75 @@ async function floating(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-mapdock.png') });
 }
 
+/**
+ * 本物の地図のボタンと本物のトースト（PRD D190）：日の画面を地図のカードが外に出るまで巻き、地図のボタンを出したまま
+ * 「この割当で確定」（独自の確認で確定）でトーストを出す。ボタンは下のタブのすぐ上（間 8px 以上）・画面の中、
+ * トーストはボタンにもタブにも重ならず画面の中。ボタンが出ている間は本文の下を空ける。右・下の safe-area を CSS で避ける
+ */
+async function fabWithToast(page) {
+  await open(page, '/plan', '[data-testid="bottom-tabs"]');
+  const tb = await tabs(page).boundingBox();
+  // 地図のカードが見えなくなる所（ページの途中）まで巻く
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+  const fab = page.locator('.map-dock-fab');
+  await fab.waitFor({ timeout: 20000 });
+  await page.waitForTimeout(300);
+  const fb = await fab.boundingBox();
+  check(
+    fb.y + fb.height <= tb.y - 8 && fb.x + fb.width <= 390 && fb.y >= 0,
+    '地図のボタン：下のタブのすぐ上（重ならず間 8px 以上）・画面の中',
+    { fb, tabsTop: tb.y },
+  );
+  const pad = await page.evaluate(() => {
+    const main = Number.parseFloat(getComputedStyle(document.querySelector('.app-main')).paddingBottom);
+    const tabsH = document.querySelector('.bottom-tabs').getBoundingClientRect().height;
+    return { main, tabsH };
+  });
+  check(pad.main >= pad.tabsH + 40 + 42, '地図のボタンが出ている間は、本文の下をボタンの分だけ空ける', pad);
+  // safe-area（切り欠き・ホームバー）：右と下は env() で避ける（下は --bottom-tabs-h に入っている）
+  const safe = await page.evaluate(() => {
+    const out = [];
+    for (const sh of document.styleSheets) {
+      let rules;
+      try {
+        rules = sh.cssRules;
+      } catch {
+        continue;
+      }
+      for (const r of rules) {
+        if (r.media && /max-width: 860px/.test(r.conditionText || r.media.mediaText))
+          for (const x of r.cssRules) if (x.selectorText === '.map-dock-fab') out.push(x.cssText);
+      }
+    }
+    return out.join(' ');
+  });
+  check(
+    /safe-area-inset-right/.test(safe) && /--bottom-tabs-h/.test(safe),
+    '地図のボタン：右の safe-area と下のタブ（ホームバーの safe-area 込み）を避ける',
+    safe,
+  );
+  // 本物のトースト：画面を巻かずに「この割当で確定」を押し（スクリプトで click）、独自の確認で確定する
+  await page.evaluate(() => document.querySelector('[data-testid="adopt"]').click());
+  await page.getByTestId('confirm-ok').click();
+  const toast = page.locator('.toast');
+  await toast.waitFor({ timeout: 10000 });
+  await page.waitForTimeout(400); // 出てくる動きが終わるまで
+  const tt = await toast.boundingBox();
+  const fb2 = await fab.boundingBox();
+  check(
+    fb2 !== null && !overlaps(tt, fb2) && !overlaps(tt, tb) && tt.y >= 0 && tt.x >= 0 && tt.x + tt.width <= 390,
+    'トーストが出ている間：地図のボタンは隠れず、トーストもボタン・タブに隠れない',
+    { tt, fb2 },
+  );
+  // 押せる（いちばん上にあるのがボタン）
+  const top = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x, y)?.closest('.map-dock-fab') !== null,
+    [fb2.x + fb2.width / 2, fb2.y + fb2.height / 2],
+  );
+  check(top, 'トーストが出ている間も地図のボタンの真ん中はボタン（上に何も重ならない）');
+  await page.screenshot({ path: path.join(OUT_DIR, 'mobile-fab-toast.png') });
+}
+
 /** 開いたまま広い画面へ戻す：閉じて、フォーカスは左のメニューの今の項目へ。裏のロック・inert も外す */
 async function wideWhileOpen(page) {
   await open(page, '/week', '[data-testid="menu-btn"]');
@@ -407,6 +477,7 @@ async function wide(page) {
     ['drawer', drawerOpenClose],
     ['bottom', bottom],
     ['floating', floating],
+    ['fab-with-toast', fabWithToast],
     ['wide-while-open', wideWhileOpen],
     ['lock-with-panel', lockWithPanel],
     ['print', print],
