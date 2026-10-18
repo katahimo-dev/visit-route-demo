@@ -4,6 +4,9 @@
 // 変更が無い・同じ人の `?id=`・特性を未確認に戻しただけ・担当できる人を限るを入れて外しただけなら確認しない／変更があるときだけ beforeunload／
 // 「追加」はすぐ編集の欄／「まとめて地図に置く」の「編集」は編集の欄／定期パターン・休みは閲覧では読むだけ（これからの休みと終わった休みの件数）／
 // 最終勤務日の振り直しの欄は今どおり。
+// 相性・担当の名前（PRD D198〜D200）：〈スタッフ〉の閲覧の欄にいつもの担当・相性の記号ごとの〈利用者さん〉の名前（人数・利用中だけ・
+// 13人目から「あと N人」）、名前で詳細の吹き出し（Tab は吹き出しの中・Esc は吹き出しだけ閉じてフォーカスは名前）、リンクで相手の閲覧の欄、
+// 〈利用者さん〉の担当できる人・いつもの担当も名前から。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-view.cjs
 // 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -349,6 +352,99 @@ async function links(page) {
   await isView(page, '相性の吹き出しのリンク（〈利用者さん〉）');
 }
 
+/** 相性・担当の名前から詳細の吹き出し・相手の閲覧の欄（PRD D198〜D200） */
+async function names(page) {
+  await open(page, '/staff', '.people-table tbody tr');
+  // s1 を全員と ◎ にし、1人を休止中・1人を s1 のいつもの担当にする（13人目からの「あと N人」と利用中だけを確かめる）
+  // 別のタブで書く（storage の知らせでこのタブのデータも入れ替わり、読み直すときに古いデータで上書きしない）
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.compat = d.compat ?? {};
+    for (const c of d.clients) d.compat[c.id] = { ...(d.compat[c.id] ?? {}), s1: 2 };
+    d.clients[0].active = false;
+    d.clients[0].stage = 'ended';
+    d.clients[1].usualStaffId = 's1';
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await other.close();
+  await settle(page, 300);
+  const data = await stored(page);
+  const active = data.clients.filter((c) => c.active);
+  const usual = active.filter((c) => c.usualStaffId === 's1');
+  await open(page, '/staff?id=s1', '[data-testid="person-view"]');
+  const great = panel(page).getByTestId('view-compat-great');
+  const btns = great.getByTestId('person-btn');
+  check(
+    (await great.textContent()).includes(`${active.length}人`) && (await btns.count()) === Math.min(12, active.length),
+    '〈スタッフ〉：◎ の〈利用者さん〉を人数と名前で並べ、13人目からは畳む（利用中だけ）',
+    { text: await great.textContent(), n: await btns.count(), active: active.length },
+  );
+  check(
+    !(await great.textContent()).includes(data.clients[0].displayName),
+    '〈スタッフ〉：休止中の〈利用者さん〉は並べない',
+  );
+  const more = panel(page).getByTestId('view-compat-great-more');
+  check(
+    (await more.textContent()) === `あと ${active.length - 12}人`,
+    '〈スタッフ〉：「あと N人」',
+    await more.textContent(),
+  );
+  await more.click();
+  check(
+    (await btns.count()) === active.length && (await more.getAttribute('aria-expanded')) === 'true',
+    '〈スタッフ〉：「あと N人」で全員・もう一度で畳む',
+  );
+  const usualNames = await panel(page).getByTestId('view-usual-clients').getByTestId('person-btn').allTextContents();
+  check(
+    usualNames.length === usual.length && usual.every((c) => usualNames.includes(c.displayName)),
+    '〈スタッフ〉：いつもの担当の〈利用者さん〉の名前',
+    usualNames,
+  );
+  check((await panel(page).getByTestId('view-compat-ng').textContent()) === '—', '〈スタッフ〉：居ない記号は「—」');
+  // 名前で詳細の吹き出し。Tab は吹き出しの中、Esc は吹き出しだけ閉じる
+  const first = btns.first();
+  const firstId = await first.getAttribute('data-id');
+  await first.click();
+  const pop = page.getByTestId('person-pop');
+  await pop.waitFor({ timeout: 3000 });
+  await page.keyboard.press('Tab');
+  const inPop = await page.evaluate(() => !!document.activeElement?.closest('[data-testid="person-pop"]'));
+  check(inPop, '欄の中の吹き出し：Tab でフォーカスが吹き出しの中に残る');
+  await page.keyboard.press('Escape');
+  await settle(page);
+  check(
+    (await pop.count()) === 0 &&
+      (await panel(page).count()) === 1 &&
+      (await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))) === 'person-btn',
+    '欄の中の吹き出し：Esc は吹き出しだけ閉じ、フォーカスは名前へ戻る',
+  );
+  await first.click();
+  await page.getByTestId('person-pop-link').click();
+  await settle(page, 500);
+  check(
+    urlOf(page).includes('#/clients') && (await view(page).getAttribute('data-id')) === firstId,
+    '吹き出しのリンクで〈利用者さん〉の閲覧の欄',
+    urlOf(page),
+  );
+  // 〈利用者さん〉の担当できる人・いつもの担当も名前から
+  const c = data.clients.find((x) => x.id === firstId);
+  const usualStaff = panel(page).getByTestId('view-usual-staff').getByTestId('person-btn');
+  if (c.usualStaffId) {
+    await usualStaff.click();
+    await page.getByTestId('person-pop-link').click();
+    await settle(page, 500);
+    check(
+      (await view(page).getAttribute('data-id')) === c.usualStaffId && urlOf(page).includes('#/staff'),
+      '〈利用者さん〉：いつもの担当の名前から〈スタッフ〉の閲覧の欄',
+    );
+  } else {
+    check((await usualStaff.count()) === 0, '〈利用者さん〉：いつもの担当が無ければ名前のボタンは無い');
+  }
+  await page.screenshot({ path: path.join(OUT_DIR, 'names.png') });
+}
+
 /** 編集の欄のメモの入力（〈利用者さん〉） */
 const memoInput = (page) => panel(page).locator('label', { hasText: 'メモ' }).first().locator('input');
 const headText = async (page) => (await panel(page).locator('h2').first().textContent()) ?? '';
@@ -574,7 +670,7 @@ async function staffMore(page, dlg) {
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const errors = [];
-  for (const step of [clients, clientsMore, seeded, staff, staffMore, links]) {
+  for (const step of [clients, clientsMore, seeded, staff, staffMore, links, names]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);

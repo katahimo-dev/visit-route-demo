@@ -28,6 +28,7 @@ import {
   staffChipCounts,
   staffChipDefs,
   staffChipKey,
+  staffClientGroups,
   staffCompatCounts,
   staffFilterSummary,
   toggleStaffChip,
@@ -185,6 +186,27 @@ describe('吹き出しの中身', () => {
   it('〈スタッフ〉1人の相性の件数（渡した〈利用者さん〉だけ）', () => {
     const compat = { a: { s1: 2 as const }, b: { s1: -2 as const }, c: { s1: -1 as const }, d: { s1: 2 as const } };
     expect(staffCompatCounts(compat, 's1', ['a', 'b', 'c', 'x'])).toEqual({ great: 1, good: 0, poor: 1, ng: 1 });
+  });
+  it('〈スタッフ〉1人の閲覧の欄の〈利用者さん〉：いつもの担当と記号ごと（渡した並びのまま。相性が無い人は記号に入れない）', () => {
+    const compat = {
+      a: { s1: 2 as const },
+      b: { s1: -2 as const, s2: 2 as const },
+      c: { s1: 1 as const },
+      d: { s1: 2 as const },
+    };
+    const clients = [
+      { id: 'd', usualStaffId: 's1' },
+      { id: 'a', usualStaffId: null },
+      { id: 'b', usualStaffId: 's2' },
+      { id: 'c', usualStaffId: 's1' },
+      { id: 'e', usualStaffId: null },
+    ];
+    const g = staffClientGroups(compat, 's1', clients);
+    expect(g.usual.map((c) => c.id)).toEqual(['d', 'c']);
+    expect(g.great.map((c) => c.id)).toEqual(['d', 'a']);
+    expect(g.good.map((c) => c.id)).toEqual(['c']);
+    expect(g.poor).toEqual([]);
+    expect(g.ng.map((c) => c.id)).toEqual(['b']);
   });
   it('特性の値の文字（空は「—」）', () => {
     expect(traitText(true)).toBe('あり');

@@ -202,18 +202,45 @@ export function ClientAreaRow({ client: c }: { client: Client }) {
   return <DlRow term="地区" value={text} />;
 }
 
-/** 〈利用者さん〉の担当できる人（限らなければ「限らない」）・いつもの担当（休止中なら添える） */
-export function ClientStaffRows({ client: c, data }: { client: Client; data: DemoData }) {
+/**
+ * 〈利用者さん〉の担当できる人（限らなければ「限らない」）・いつもの担当（休止中なら添える）。
+ * names を渡すと、名前を文字でつながずにその部品で並べる（閲覧の欄で名前から詳細を開く。PRD D199）
+ */
+export function ClientStaffRows({
+  client: c,
+  data,
+  names,
+}: {
+  client: Client;
+  data: DemoData;
+  names?: (staff: Staff[], testId: string) => ReactNode;
+}) {
   const staffOf = (id: string) => data.staff.find((s) => s.id === id);
   const nameOf = (id: string) => {
     const s = staffOf(id);
     return s ? `${s.name}${s.active ? '' : '（休止中）'}` : '（不明）';
   };
   const allowed = c.allowedStaffIds.filter((id) => staffOf(id)?.active);
+  const usual = c.usualStaffId ? staffOf(c.usualStaffId) : undefined;
   return (
     <>
-      <DlRow term="担当できる人" value={allowed.length === 0 ? '限らない' : allowed.map(nameOf).join('・')} />
-      <DlRow term="いつもの担当" value={c.usualStaffId ? nameOf(c.usualStaffId) : '—'} />
+      <DlRow
+        term="担当できる人"
+        value={
+          allowed.length === 0
+            ? '限らない'
+            : names
+              ? names(
+                  allowed.flatMap((id) => staffOf(id) ?? []),
+                  'view-allowed-staff',
+                )
+              : allowed.map(nameOf).join('・')
+        }
+      />
+      <DlRow
+        term="いつもの担当"
+        value={!c.usualStaffId ? '—' : names && usual ? names([usual], 'view-usual-staff') : nameOf(c.usualStaffId)}
+      />
     </>
   );
 }
