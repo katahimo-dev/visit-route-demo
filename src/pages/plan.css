@@ -974,3 +974,121 @@ p.plan-band.error {
   margin: 4px 0;
   font-size: 0.85rem;
 }
+
+/* 「欠勤・キャンセル」の入口と欄（PRD D167〜D170）。入口は主ボタンにしない（オレンジ1色の決まり）が、赤い縁で見つけやすく */
+.plan-sudden-btn {
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 700;
+}
+.plan-sudden-btn:hover:not(:disabled) {
+  background: #fbeceb;
+}
+@media print {
+  .plan-sudden-btn {
+    display: none;
+  }
+}
+.drawer:has(.sudden-panel) .drawer-foot {
+  flex-wrap: wrap;
+}
+.sudden-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--sub);
+}
+.sudden-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sudden-steps li.is-current {
+  color: var(--ink);
+  font-weight: 700;
+}
+.sudden-step-no {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 0.7rem;
+}
+.sudden-steps li.is-current .sudden-step-no {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.sudden-step-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.sudden-step-title:focus {
+  outline: none;
+}
+.sudden-step-title:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.sudden-choices {
+  display: grid;
+  gap: 10px;
+}
+.sudden-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.sudden-choice:hover {
+  border-color: var(--primary);
+}
+.sudden-choice > svg:first-child {
+  flex: none;
+  color: var(--danger);
+}
+.sudden-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.sudden-targets {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sudden-impact {
+  font-size: 1.05rem;
+}
+.sudden-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+}
+/* 4段目の案A・案B の表は欄の幅に収め、はみ出す分は表だけ横に巻く */
+.sudden-panel .anneal-box {
+  overflow-x: auto;
+}
+@media (max-width: 600px) {
+  .drawer:has(.sudden-panel) .drawer-foot .btn {
+    flex: 1 1 100%;
+  }
+}

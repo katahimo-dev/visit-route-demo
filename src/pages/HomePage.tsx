@@ -20,6 +20,7 @@ import { jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import { type HomeTask, type HomeTaskKind, homeDays, homeMonths, homeTasks } from '../lib/home';
 import { dayPlanOf, expandMonth } from '../lib/month';
+import { SUDDEN_DO } from '../lib/sudden';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { useDemoData } from '../store';
@@ -98,10 +99,10 @@ export default function HomePage() {
         <ul className="home-tasks home-anytime" data-testid="home-anytime">
           <li>
             <EntryCard
-              to="/plan"
+              to={`/plan?date=${today}&do=${SUDDEN_DO}`}
               icon={UserX}
               title="急な欠勤・キャンセルを登録"
-              detail="今日の日の画面へ。欠勤は休む人の列の「急な欠勤」、キャンセルは一覧の「取り消す」から"
+              detail="今日の日の画面で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定"
               onPick={() => setDate(today)}
               testId="home-absence"
             />
