@@ -3,6 +3,7 @@ import {
   BookmarkCheck,
   BookmarkX,
   DoorOpen,
+  Eye,
   House,
   MapPin,
   Pencil,
@@ -22,6 +23,7 @@ import { ClientFilter } from '../components/ClientFilter';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { PickChips } from '../components/PickChips';
 import { Check, TentativeMark } from '../components/parts';
+import { ClientView } from '../components/personView';
 import { ClientPlaceEditor } from '../components/placeLookup';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
@@ -37,6 +39,7 @@ import { normalizeEmail } from '../lib/mailto';
 import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
+import { type DiscardWhen, discardMessage, isDirty } from '../lib/viewMode';
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
 import { ClientLeavesSection } from './ClientLeavesSection';
@@ -72,6 +75,9 @@ export default function ClientsPage() {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
+  /** 閲覧の欄で開いている人（PRD D127。編集中はその人の ID のまま。null：閲覧の欄なし） */
+  const [viewId, setViewId] = useState<string | null>(null);
+  /** 編集の欄の入力（null：編集していない） */
   const [form, setForm] = useState<Client | null>(null);
   /** 欄を開いたときの場所（保存のとき、まとめて置いた位置を欄の古い値で消さないため。ADR-0016） */
   const [openedPlace, setOpenedPlace] = useState<Client['place'] | null>(null);
@@ -79,6 +85,9 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null);
   /** 担当できる人を限る（PRD D68。入れたら1人以上選ぶ） */
   const [limit, setLimit] = useState(false);
+  /** 欄を開いたときの「担当できる人を限る」と、新しい人の空の欄（変更があるかの判定に使う） */
+  const [openedLimit, setOpenedLimit] = useState(false);
+  const [openedForm, setOpenedForm] = useState<Client | null>(null);
   const clients = useMemo(() => [...data.clients].sort(byDisplayName), [data.clients]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
   /**
@@ -113,27 +122,64 @@ export default function ClientsPage() {
   const today = jstDate(Date.now());
   const itemById = new Map(data.items.map((i) => [i.id, i]));
 
-  /** 欄を開く（担当を限るかは、利用中の人が1人以上選ばれているかで決める） */
+  /** 編集の欄を開く（担当を限るかは、利用中の人が1人以上選ばれているかで決める） */
   const openForm = (c: Client, fresh: boolean) => {
     setError(null);
     setIsNew(fresh);
-    setLimit(c.allowedStaffIds.some((id) => staff.some((s) => s.id === id && s.active)));
+    const lim = c.allowedStaffIds.some((id) => staff.some((s) => s.id === id && s.active));
+    setLimit(lim);
+    setOpenedLimit(lim);
     setForm(c);
+    setOpenedForm(fresh ? structuredClone(c) : null);
     setOpenedPlace(c.place);
   };
 
-  // ?id= で開いたら、その人の編集の欄を開く（相性の画面の吹き出しから。PRD D115）。開いたら URL から消す
+  /** 編集の欄に変更があるか（PRD D130。既存の人は保存した中身、新しい人は開いたときの空の欄と比べる。「担当できる人を限る」も見る） */
+  const dirty = isDirty(
+    form,
+    isNew ? (openedForm ?? undefined) : form ? data.clients.find((x) => x.id === form.id) : undefined,
+    limit !== openedLimit,
+  );
+  /** 変更があれば捨ててよいか確かめる（無ければそのまま進む） */
+  const okToDiscard = (when: DiscardWhen, next = '') =>
+    !dirty || !form || confirm(discardMessage(when, terms.client, form.displayName, next));
+
+  /** 閲覧の欄で開く（PRD D127。編集中で変更があれば確かめる） */
+  const openView = (c: Client) => {
+    if (form && form.id === c.id && !isNew) return;
+    if (!okToDiscard('switch', c.displayName)) return;
+    setForm(null);
+    setError(null);
+    setViewId(c.id);
+  };
+  /** 閲覧から編集へ（PRD D128） */
+  const startEdit = (c: Client) => {
+    setViewId(c.id);
+    openForm(structuredClone(c), false);
+  };
+  /** 編集を取り消して閲覧に戻る（新しい人なら欄を閉じる。PRD D129） */
+  const cancelEdit = () => {
+    if (!okToDiscard(isNew ? 'close' : 'view')) return;
+    if (isNew) setViewId(null);
+    setForm(null);
+    setError(null);
+  };
+  /** 欄を閉じる（× ・Esc。編集中で変更があれば確かめる） */
+  const closePanel = () => {
+    if (!okToDiscard('close')) return;
+    setForm(null);
+    setViewId(null);
+    setError(null);
+  };
+
+  // ?id= で開いたら、その人の閲覧の欄を開く（相性・予定の吹き出しから。PRD D115・D127）。開いたら URL から消す
   const [params, setParams] = useSearchParams();
   const openId = params.get('id');
   // biome-ignore lint/correctness/useExhaustiveDependencies: URL の id が変わったときだけ
   useEffect(() => {
     if (openId === null) return;
     const c = data.clients.find((x) => x.id === openId);
-    // ほかの人を編集中で、変更があれば確かめる（開いている欄の中身を捨てる）
-    const before = form && data.clients.find((x) => x.id === form.id);
-    const dirty = form !== null && form.id !== openId && (isNew || JSON.stringify(form) !== JSON.stringify(before));
-    if (c && (!dirty || confirm(`編集中の${terms.client}の変更を捨てて、${c.displayName}を開きますか？`)))
-      openForm(structuredClone(c), false);
+    if (c) openView(c);
     setParams(
       (prev) => {
         const p = new URLSearchParams(prev);
@@ -198,7 +244,10 @@ export default function ClientsPage() {
           ? d.clients.map((x) => (x.id === c.id ? c : x))
           : [...d.clients, c],
       }));
+      // 保存したら閲覧の欄に戻る（PRD D129）
       setIsNew(false);
+      setForm(null);
+      setViewId(c.id);
       // 終了にした人は、一覧からは消える（「終了の人も出す」のときだけ出る。PRD D111）
       toast(
         c.stage === 'ended' && !filter.showEnded
@@ -231,10 +280,13 @@ export default function ClientsPage() {
     if (!confirm(msg)) return;
     update((d) => cancelTentativeData(d, c.id, today));
     setForm(null);
+    setViewId(null);
     toast(`仮押さえを取り消しました（訪問 ${n}件）`);
   };
 
   const saved = form ? data.clients.find((x) => x.id === form.id) : undefined;
+  /** 閲覧の欄の人（編集していないとき。データから消えたら欄を出さない） */
+  const viewed = !form && viewId !== null ? data.clients.find((x) => x.id === viewId) : undefined;
 
   return (
     <div className="stack">
@@ -243,7 +295,15 @@ export default function ClientsPage() {
         title={terms.client}
         lead={`${terms.client}の住所・特性・条件を決めます`}
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => openForm(blank(clients.length), true)}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              if (!okToDiscard('switch', `新しい${terms.client}`)) return;
+              setViewId(null);
+              openForm(blank(clients.length), true);
+            }}
+          >
             <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
           </button>
         }
@@ -268,7 +328,14 @@ export default function ClientsPage() {
         </span>
       </div>
 
-      <PlaceAllPanel onEdit={(c) => openForm(structuredClone(c), false)} />
+      {/* まとめて置けなかった人の「編集」は、住所を入れるために編集の欄で開く */}
+      <PlaceAllPanel
+        onEdit={(c) => {
+          if (form?.id === c.id) return;
+          if (!okToDiscard('switch', c.displayName)) return;
+          startEdit(c);
+        }}
+      />
 
       <div className="card table-scroll">
         <table className="people-table">
@@ -359,11 +426,7 @@ export default function ClientsPage() {
                   )}
                 </td>
                 <td>
-                  <IconButton
-                    icon={Pencil}
-                    label={`${c.displayName}を編集`}
-                    onClick={() => openForm(structuredClone(c), false)}
-                  />
+                  <IconButton icon={Eye} label={`${c.displayName}を開く`} onClick={() => openView(c)} />
                 </td>
               </tr>
             ))}
@@ -371,272 +434,307 @@ export default function ClientsPage() {
         </table>
       </div>
 
-      {form && (
+      {(form || viewed) && (
         <SidePanel
-          icon={isNew ? Plus : Pencil}
+          icon={form ? (isNew ? Plus : Pencil) : Eye}
           title={
-            isNew ? `${terms.client}を追加` : `${terms.client}を編集：${form.displayName.trim() || '（名前なし）'}`
+            form
+              ? isNew
+                ? `${terms.client}を追加`
+                : `${terms.client}を編集：${form.displayName.trim() || '（名前なし）'}`
+              : `${terms.client}：${viewed?.displayName.trim() || '（名前なし）'}`
           }
-          onClose={() => setForm(null)}
+          onClose={closePanel}
+          focusKey={form ? 'edit' : 'view'}
+          headActions={
+            !form &&
+            viewed && (
+              <button type="button" className="btn btn-edit" onClick={() => startEdit(viewed)} data-testid="view-edit">
+                <WithIcon icon={Pencil}>編集する</WithIcon>
+              </button>
+            )
+          }
           footer={
-            <>
-              <button type="button" className="btn btn-primary" onClick={save}>
-                <WithIcon icon={Save}>保存</WithIcon>
-              </button>
-              <button type="button" className="btn" onClick={() => setForm(null)}>
-                <WithIcon icon={X}>閉じる</WithIcon>
-              </button>
-              {error && <span className="error">{error}</span>}
-            </>
+            form && (
+              <>
+                <button type="button" className="btn btn-primary" onClick={save}>
+                  <WithIcon icon={Save}>保存</WithIcon>
+                </button>
+                <button type="button" className="btn" onClick={cancelEdit} data-testid="edit-cancel">
+                  <WithIcon icon={X}>取り消し</WithIcon>
+                </button>
+                {error && <span className="error">{error}</span>}
+              </>
+            )
           }
         >
-          {saved?.tentative && !isNew && (
-            <div className="tentative-box stack" data-testid="tentative-box">
-              <span className="row" style={{ gap: 6 }}>
-                <TentativeMark />
-                <strong>仮押さえの{terms.client}です</strong>
-              </span>
-              <span className="sub">
-                問い合わせの試算から仮に押さえています（段階「{STAGE_LABELS[saved.stage]}」。予定・AI案に入ります）。
-                決まったら本登録（利用中）に、断られたら取り消してください。
-              </span>
-              <div className="row" style={{ flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-small" onClick={() => confirmTentative(saved)}>
-                  <WithIcon icon={BookmarkCheck} size={14}>
-                    本登録にする
-                  </WithIcon>
-                </button>
-                <button type="button" className="btn btn-small" onClick={() => cancelTentative(saved)}>
-                  <WithIcon icon={BookmarkX} size={14}>
-                    仮押さえを取り消す
-                  </WithIcon>
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="form-grid">
-            <label>
-              表示名
-              <input
-                value={form.displayName}
-                maxLength={50}
-                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-              />
-            </label>
-            <label>
-              よみ（ひらがな・任意。検索に使います）
-              <input
-                value={form.kana}
-                maxLength={50}
-                placeholder="例：としょかん ふみ"
-                onChange={(e) => setForm({ ...form, kana: e.target.value })}
-                data-testid="client-kana"
-              />
-            </label>
-            <label>
-              いつもの担当
-              <select
-                value={form.usualStaffId ?? ''}
-                onChange={(e) => setForm({ ...form, usualStaffId: e.target.value || null })}
-              >
-                <option value="">なし</option>
-                {staff.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                    {s.active ? '' : '（休止中）'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              メモ
-              <input value={form.note} maxLength={500} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-            </label>
-          </div>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <span className="sub">色</span>
-            {CLIENT_COLORS.map((col, i) => (
-              <button
-                key={col}
-                type="button"
-                className="dot dot-sm"
-                aria-label={`色${i + 1}`}
-                aria-pressed={form.color === i}
-                onClick={() => setForm({ ...form, color: i })}
-                style={{
-                  background: col,
-                  border: form.color === i ? '3px solid var(--ink)' : '3px solid transparent',
-                  cursor: 'pointer',
-                }}
-              >
-                {form.color === i ? '✓' : ''}
-              </button>
-            ))}
-          </div>
-
-          <SectionTitle icon={Route}>段階と紹介元</SectionTitle>
-          <Hint>
-            段階は 相談受付 → 顔合わせ → 契約 → 利用中 → 終了
-            です。予定・AI案に入るのは「利用中」と、利用中の前で枠を仮押さえしている
-            {terms.client}だけです（「終了」にすると予定に入りません）。
-          </Hint>
-          <div className="form-grid" data-testid="client-stage-form">
-            <label>
-              段階
-              <select
-                value={form.stage}
-                onChange={(e) => setForm(withStage(form, e.target.value as ClientStage))}
-                data-testid="client-stage-select"
-              >
-                {CLIENT_STAGES.map((st) => (
-                  <option key={st} value={st}>
-                    {STAGE_LABELS[st]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {isBeforeActive(form.stage) && (
-              <Check checked={form.tentative} onChange={(on) => setForm(withStage(form, form.stage, on))}>
-                枠を仮押さえする（予定・AI案に入れる）
-              </Check>
-            )}
-            <label>
-              紹介元
-              <input
-                value={form.referrer.name}
-                maxLength={50}
-                placeholder="例：〇〇相談室"
-                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, name: e.target.value } })}
-                data-testid="client-referrer-name"
-              />
-            </label>
-            <label>
-              紹介元の連絡先
-              <input
-                value={form.referrer.contact}
-                maxLength={100}
-                placeholder="電話・メールなど"
-                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, contact: e.target.value } })}
-              />
-            </label>
-            <label>
-              紹介元のメールアドレス（任意）
-              <input
-                type="email"
-                value={form.referrer.email}
-                maxLength={254}
-                autoComplete="off"
-                placeholder="name@example.com"
-                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, email: e.target.value } })}
-                data-testid="client-referrer-email"
-              />
-            </label>
-            <label>
-              紹介元のメモ
-              <input
-                value={form.referrer.note}
-                maxLength={200}
-                placeholder="例：返事待ち・顔合わせの日程"
-                onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, note: e.target.value } })}
-              />
-            </label>
-          </div>
-
-          <SectionTitle icon={ShieldCheck}>担当できる人（社内の決まり）</SectionTitle>
-          <Hint>
-            「この方は2人だけで担当する」のような決まりがあれば、担当できる{terms.staff}
-            を選びます。選んだ人以外は、条件の重みにかかわらず担当になりません（AI案・振り直し・週のドラッグ・空き状況のどれでも）。休止中の
-            {terms.staff}
-            は選べず、休止にすると外れます。選んだ人が全員いなくなると、限らない（だれでも担当できる）に戻ります。
-          </Hint>
-          <Check
-            checked={limit}
-            onChange={(on) => {
-              setLimit(on);
-              // 入れたときに誰も選んでいなければ、いつもの担当を最初に選んでおく
-              if (on && form.allowedStaffIds.length === 0 && staff.some((s) => s.id === form.usualStaffId && s.active))
-                setForm({ ...form, allowedStaffIds: form.usualStaffId ? [form.usualStaffId] : [] });
-            }}
-          >
-            担当できる人を限る
-          </Check>
-          {limit && (
-            <PickChips
-              label={`担当できる${terms.staff}（押して選ぶ・外す）`}
-              people={staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }))}
-              selected={form.allowedStaffIds}
-              // 全員を選ぶと PickChips は null を返す（全員の ID にする）
-              onChange={(next) =>
-                setForm({ ...form, allowedStaffIds: next ?? staff.filter((s) => s.active).map((s) => s.id) })
-              }
-              bulk={false}
-              testId="client-allowed"
-            />
-          )}
-
-          {isNew || !data.clients.some((x) => x.id === form.id) ? (
-            <Hint label="定期パターン">
-              定期パターン（決まった曜日・時刻の訪問）と休み（入院・ショートステイなど）は、保存してから入れられます。
-            </Hint>
+          {!form ? (
+            viewed && <ClientView client={viewed} data={data} />
           ) : (
             <>
-              <PatternsSection client={form} />
-              <ClientLeavesSection client={form} />
+              {saved?.tentative && !isNew && (
+                <div className="tentative-box stack" data-testid="tentative-box">
+                  <span className="row" style={{ gap: 6 }}>
+                    <TentativeMark />
+                    <strong>仮押さえの{terms.client}です</strong>
+                  </span>
+                  <span className="sub">
+                    問い合わせの試算から仮に押さえています（段階「{STAGE_LABELS[saved.stage]}
+                    」。予定・AI案に入ります）。 決まったら本登録（利用中）に、断られたら取り消してください。
+                  </span>
+                  <div className="row" style={{ flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn-small" onClick={() => confirmTentative(saved)}>
+                      <WithIcon icon={BookmarkCheck} size={14}>
+                        本登録にする
+                      </WithIcon>
+                    </button>
+                    <button type="button" className="btn btn-small" onClick={() => cancelTentative(saved)}>
+                      <WithIcon icon={BookmarkX} size={14}>
+                        仮押さえを取り消す
+                      </WithIcon>
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="form-grid">
+                <label>
+                  表示名
+                  <input
+                    value={form.displayName}
+                    maxLength={50}
+                    onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                  />
+                </label>
+                <label>
+                  よみ（ひらがな・任意。検索に使います）
+                  <input
+                    value={form.kana}
+                    maxLength={50}
+                    placeholder="例：としょかん ふみ"
+                    onChange={(e) => setForm({ ...form, kana: e.target.value })}
+                    data-testid="client-kana"
+                  />
+                </label>
+                <label>
+                  いつもの担当
+                  <select
+                    value={form.usualStaffId ?? ''}
+                    onChange={(e) => setForm({ ...form, usualStaffId: e.target.value || null })}
+                  >
+                    <option value="">なし</option>
+                    {staff.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.active ? '' : '（休止中）'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  メモ
+                  <input
+                    value={form.note}
+                    maxLength={500}
+                    onChange={(e) => setForm({ ...form, note: e.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <span className="sub">色</span>
+                {CLIENT_COLORS.map((col, i) => (
+                  <button
+                    key={col}
+                    type="button"
+                    className="dot dot-sm"
+                    aria-label={`色${i + 1}`}
+                    aria-pressed={form.color === i}
+                    onClick={() => setForm({ ...form, color: i })}
+                    style={{
+                      background: col,
+                      border: form.color === i ? '3px solid var(--ink)' : '3px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {form.color === i ? '✓' : ''}
+                  </button>
+                ))}
+              </div>
+
+              <SectionTitle icon={Route}>段階と紹介元</SectionTitle>
+              <Hint>
+                段階は 相談受付 → 顔合わせ → 契約 → 利用中 → 終了
+                です。予定・AI案に入るのは「利用中」と、利用中の前で枠を仮押さえしている
+                {terms.client}だけです（「終了」にすると予定に入りません）。
+              </Hint>
+              <div className="form-grid" data-testid="client-stage-form">
+                <label>
+                  段階
+                  <select
+                    value={form.stage}
+                    onChange={(e) => setForm(withStage(form, e.target.value as ClientStage))}
+                    data-testid="client-stage-select"
+                  >
+                    {CLIENT_STAGES.map((st) => (
+                      <option key={st} value={st}>
+                        {STAGE_LABELS[st]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {isBeforeActive(form.stage) && (
+                  <Check checked={form.tentative} onChange={(on) => setForm(withStage(form, form.stage, on))}>
+                    枠を仮押さえする（予定・AI案に入れる）
+                  </Check>
+                )}
+                <label>
+                  紹介元
+                  <input
+                    value={form.referrer.name}
+                    maxLength={50}
+                    placeholder="例：〇〇相談室"
+                    onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, name: e.target.value } })}
+                    data-testid="client-referrer-name"
+                  />
+                </label>
+                <label>
+                  紹介元の連絡先
+                  <input
+                    value={form.referrer.contact}
+                    maxLength={100}
+                    placeholder="電話・メールなど"
+                    onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, contact: e.target.value } })}
+                  />
+                </label>
+                <label>
+                  紹介元のメールアドレス（任意）
+                  <input
+                    type="email"
+                    value={form.referrer.email}
+                    maxLength={254}
+                    autoComplete="off"
+                    placeholder="name@example.com"
+                    onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, email: e.target.value } })}
+                    data-testid="client-referrer-email"
+                  />
+                </label>
+                <label>
+                  紹介元のメモ
+                  <input
+                    value={form.referrer.note}
+                    maxLength={200}
+                    placeholder="例：返事待ち・顔合わせの日程"
+                    onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, note: e.target.value } })}
+                  />
+                </label>
+              </div>
+
+              <SectionTitle icon={ShieldCheck}>担当できる人（社内の決まり）</SectionTitle>
+              <Hint>
+                「この方は2人だけで担当する」のような決まりがあれば、担当できる{terms.staff}
+                を選びます。選んだ人以外は、条件の重みにかかわらず担当になりません（AI案・振り直し・週のドラッグ・空き状況のどれでも）。休止中の
+                {terms.staff}
+                は選べず、休止にすると外れます。選んだ人が全員いなくなると、限らない（だれでも担当できる）に戻ります。
+              </Hint>
+              <Check
+                checked={limit}
+                onChange={(on) => {
+                  setLimit(on);
+                  // 入れたときに誰も選んでいなければ、いつもの担当を最初に選んでおく
+                  if (
+                    on &&
+                    form.allowedStaffIds.length === 0 &&
+                    staff.some((s) => s.id === form.usualStaffId && s.active)
+                  )
+                    setForm({ ...form, allowedStaffIds: form.usualStaffId ? [form.usualStaffId] : [] });
+                }}
+              >
+                担当できる人を限る
+              </Check>
+              {limit && (
+                <PickChips
+                  label={`担当できる${terms.staff}（押して選ぶ・外す）`}
+                  people={staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }))}
+                  selected={form.allowedStaffIds}
+                  // 全員を選ぶと PickChips は null を返す（全員の ID にする）
+                  onChange={(next) =>
+                    setForm({ ...form, allowedStaffIds: next ?? staff.filter((s) => s.active).map((s) => s.id) })
+                  }
+                  bulk={false}
+                  testId="client-allowed"
+                />
+              )}
+
+              {isNew || !data.clients.some((x) => x.id === form.id) ? (
+                <Hint label="定期パターン">
+                  定期パターン（決まった曜日・時刻の訪問）と休み（入院・ショートステイなど）は、保存してから入れられます。
+                </Hint>
+              ) : (
+                <>
+                  <PatternsSection client={form} />
+                  <ClientLeavesSection client={form} />
+                </>
+              )}
+
+              <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
+              <Hint>
+                入り方・鍵・駐車場・注意を書くと、{terms.staff}の画面と予定の画面の訪問に出ます（各200文字まで）。
+                実在の人の名前・住所などの個人情報は入れないでください。
+              </Hint>
+              <div className="form-grid" data-testid="visit-rules-form">
+                {VISIT_RULE_FIELDS.map((f) => (
+                  <label key={f.key}>
+                    <WithIcon icon={f.icon} size={14}>
+                      {f.label}
+                    </WithIcon>
+                    <input
+                      value={form[f.key]}
+                      maxLength={200}
+                      placeholder={f.placeholder}
+                      data-testid={`client-${f.key}`}
+                      onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
+              <TraitsEditor
+                items={clientItems}
+                value={form.traits}
+                onChange={(traits) => setForm({ ...form, traits })}
+              />
+
+              <SectionTitle icon={SlidersHorizontal}>{terms.staff}に求めること：必要条件</SectionTitle>
+              <Hint>
+                例：性別が女性、資格に看護師を含む。「条件の重み」の画面の「{terms.client}
+                の必要条件」で、必須か重みかを決めます。
+              </Hint>
+              <ConditionsEditor
+                items={data.items}
+                target="staff"
+                value={form.requirements}
+                onChange={(requirements) => setForm({ ...form, requirements })}
+              />
+              <SectionTitle icon={Sparkles}>{terms.staff}に求めること：希望</SectionTitle>
+              <Hint>例：経験年数3以上。満たさないと点が付きます。</Hint>
+              <ConditionsEditor
+                items={data.items}
+                target="staff"
+                value={form.preferences}
+                onChange={(preferences) => setForm({ ...form, preferences })}
+              />
+              <Hint label="相性について">
+                相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。
+              </Hint>
+
+              <SectionTitle icon={House}>住所</SectionTitle>
+              <ClientPlaceEditor
+                key={form.id}
+                value={form.place}
+                onChange={(place) => setForm((f) => (f ? { ...f, place } : f))}
+              />
             </>
           )}
-
-          <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
-          <Hint>
-            入り方・鍵・駐車場・注意を書くと、{terms.staff}の画面と予定の画面の訪問に出ます（各200文字まで）。
-            実在の人の名前・住所などの個人情報は入れないでください。
-          </Hint>
-          <div className="form-grid" data-testid="visit-rules-form">
-            {VISIT_RULE_FIELDS.map((f) => (
-              <label key={f.key}>
-                <WithIcon icon={f.icon} size={14}>
-                  {f.label}
-                </WithIcon>
-                <input
-                  value={form[f.key]}
-                  maxLength={200}
-                  placeholder={f.placeholder}
-                  data-testid={`client-${f.key}`}
-                  onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                />
-              </label>
-            ))}
-          </div>
-
-          <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
-          <TraitsEditor items={clientItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
-
-          <SectionTitle icon={SlidersHorizontal}>{terms.staff}に求めること：必要条件</SectionTitle>
-          <Hint>
-            例：性別が女性、資格に看護師を含む。「条件の重み」の画面の「{terms.client}
-            の必要条件」で、必須か重みかを決めます。
-          </Hint>
-          <ConditionsEditor
-            items={data.items}
-            target="staff"
-            value={form.requirements}
-            onChange={(requirements) => setForm({ ...form, requirements })}
-          />
-          <SectionTitle icon={Sparkles}>{terms.staff}に求めること：希望</SectionTitle>
-          <Hint>例：経験年数3以上。満たさないと点が付きます。</Hint>
-          <ConditionsEditor
-            items={data.items}
-            target="staff"
-            value={form.preferences}
-            onChange={(preferences) => setForm({ ...form, preferences })}
-          />
-          <Hint label="相性について">相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。</Hint>
-
-          <SectionTitle icon={House}>住所</SectionTitle>
-          <ClientPlaceEditor
-            key={form.id}
-            value={form.place}
-            onChange={(place) => setForm((f) => (f ? { ...f, place } : f))}
-          />
         </SidePanel>
       )}
     </div>

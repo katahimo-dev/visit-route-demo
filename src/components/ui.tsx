@@ -178,9 +178,18 @@ export function SidePanel({
   fallbackFocus,
   returnFocus,
   focusPanel = false,
+  headActions,
+  focusKey,
 }: {
   icon: LucideIcon;
   title: ReactNode;
+  /** 見出しの右（× の前）に置く操作（閲覧の欄の「編集する」。PRD D128） */
+  headActions?: ReactNode;
+  /**
+   * 欄を開いたまま中身が入れ替わったとき（閲覧 ⇄ 編集。PRD D128）に変える値。変わったら、開いたときと同じく
+   * 最初の入力欄（無ければ欄そのもの）にフォーカスを移す
+   */
+  focusKey?: string;
   /**
    * 閉じたときの戻り先を差し替える（要素を返せば、開く前のボタンではなくそこへ。スクロールはしない＝呼ぶ側が動かす）。
    * null なら今までどおり
@@ -250,6 +259,15 @@ export function SidePanel({
       else fallbackRef.current?.()?.focus();
     };
   }, []);
+  // 中身が入れ替わったら（開いたときは上で移しているので2回目から）、最初の入力欄か欄そのものへ
+  const lastFocusKey = useRef(focusKey);
+  useEffect(() => {
+    if (lastFocusKey.current === focusKey) return;
+    lastFocusKey.current = focusKey;
+    const first = ref.current?.querySelector<HTMLElement>('input, select, textarea');
+    if (first) first.focus();
+    else ref.current?.focus();
+  }, [focusKey]);
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
   return createPortal(
     <div className="drawer-wrap">
@@ -267,6 +285,7 @@ export function SidePanel({
             <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
             {title}
           </h2>
+          {headActions && <div className="drawer-head-actions">{headActions}</div>}
           <IconButton icon={X} label="閉じる" onClick={onClose} />
         </header>
         <div className="drawer-body stack">{children}</div>

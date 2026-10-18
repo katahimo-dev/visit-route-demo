@@ -2,7 +2,7 @@
 // 月：右の欄の名前（〈スタッフ〉・〈利用者さん〉）／週：時間軸の〈スタッフ〉のチップの横の i・〈利用者さん〉のチップの名前・
 // 〈スタッフ〉×曜日と〈利用者さん〉×曜日の表の名前／日：列の見出しの i・訪問の詳細の名前・担当ごとの1日の i・一覧の名前。
 // 吹き出しの開閉（もう一度押す・Esc・外を押す・Tab）とフォーカスの戻り・同時に1つ・見出しが消えたら閉じる・
-// 「〈スタッフ〉の画面で開く」「〈利用者さん〉の画面で開く」で編集の欄が開く・i を押してもチップ・見出しの動き（選ぶ・地図の絞り込み）が起きない・
+// 「〈スタッフ〉の画面で開く」「〈利用者さん〉の画面で開く」で閲覧の欄が開く・i を押してもチップ・見出しの動き（選ぶ・地図の絞り込み）が起きない・
 // 訪問の選択とドラッグが今どおり動く・印刷では i を出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-details.cjs
@@ -101,17 +101,20 @@ async function rules(page, btn, where, words) {
   check((await pop(page).count()) === 0 && (await isFocused(btn)), `${where}：Tab で外へ出ると閉じてボタンへ戻る`);
 }
 
-/** リンクで各画面の編集の欄が開く（?id=） */
+/** リンクで各画面のその人の閲覧の欄が開く（?id=。PRD D127） */
 async function link(page, btn, where, to) {
   const name = await nameOf(btn);
   await btn.scrollIntoViewIfNeeded();
   await btn.click();
   await pop(page).getByTestId('person-pop-link').click();
   await page.waitForTimeout(500);
-  const opened = await page.locator('input').evaluateAll((xs, n) => xs.some((x) => x.value === n), name);
+  const head = (await page.locator('.drawer h2').first().textContent()) ?? '';
   check(
-    urlOf(page).includes(to) && opened && (await pop(page).count()) === 0,
-    `${where}：リンクで ${name} の編集の欄が開く`,
+    urlOf(page).includes(to) &&
+      head.includes(name) &&
+      (await page.getByTestId('person-view').count()) === 1 &&
+      (await pop(page).count()) === 0,
+    `${where}：リンクで ${name} の閲覧の欄が開く`,
   );
 }
 

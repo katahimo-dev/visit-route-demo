@@ -1524,6 +1524,22 @@ a.icon-btn:hover {
   gap: 8px;
   font-size: 1.1rem;
 }
+/* 欄の右上の操作（閲覧の欄の「編集する」。PRD D128）（主ボタンにしない。普通のボタンで、枠の色で目立たせる） */
+.drawer-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+.btn.btn-edit {
+  padding: 8px 14px;
+  font-size: 0.95rem;
+  border-color: var(--ink);
+}
+.btn.btn-edit:hover:not(:disabled) {
+  border-color: var(--ink);
+  background: var(--soft);
+}
 .drawer-body {
   flex: 1;
   overflow-y: auto;

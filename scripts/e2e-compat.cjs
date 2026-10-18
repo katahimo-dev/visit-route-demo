@@ -197,10 +197,12 @@ async function openById(page) {
     await b.click();
     await pop(page).getByTestId('compat-pop-link').click();
     await page.waitForTimeout(400);
-    const opened = await page.locator('input').evaluateAll((xs, n) => xs.some((x) => x.value === n), name);
+    // 開くのは閲覧の欄（PRD D127）。見出しに名前
+    const head = (await page.locator('.drawer h2').first().textContent()) ?? '';
+    const opened = head.includes(name) && (await page.getByTestId('person-view').count()) === 1;
     check(
       urlOf(page).includes(to) && !urlOf(page).includes('id=') && opened,
-      `${kind}：?id= で ${name} の編集の欄が開き、URL から id を消す`,
+      `${kind}：?id= で ${name} の閲覧の欄が開き、URL から id を消す`,
     );
   }
   // いない ID は何もしない
