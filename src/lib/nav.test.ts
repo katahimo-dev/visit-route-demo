@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { activeNavPath, bottomTabs, isActiveNav, type NavSection, navTitle } from './nav';
 
 const groups: NavSection[] = [
+  { items: [{ to: '/home', label: 'ホーム' }] },
   {
     title: '予定',
     items: [
@@ -38,6 +39,7 @@ describe('navTitle', () => {
   it('比較は「予定・日」、見出しの無いグループは項目名だけ', () => {
     expect(navTitle(groups, '/compare')).toBe('予定・日');
     expect(navTitle(groups, '/data')).toBe('データ');
+    expect(navTitle(groups, '/home')).toBe('ホーム');
   });
   it('メニューに無い画面は null', () => {
     expect(navTitle(groups, '/nowhere')).toBeNull();
@@ -45,8 +47,8 @@ describe('navTitle', () => {
 });
 
 describe('bottomTabs', () => {
-  it('月・週・日・空き状況の順に引く', () => {
-    expect(bottomTabs(groups).map((i) => i.label)).toEqual(['月', '週', '日', '空き状況']);
+  it('ホーム・月・週・日・空き状況の順に引く（PRD D144）', () => {
+    expect(bottomTabs(groups).map((i) => i.label)).toEqual(['ホーム', '月', '週', '日', '空き状況']);
   });
   it('メニューに無い URL は出さない', () => {
     expect(bottomTabs([{ items: [{ to: '/week', label: '週' }] }]).map((i) => i.to)).toEqual(['/week']);

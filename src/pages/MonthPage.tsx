@@ -31,14 +31,13 @@ import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
-import type { AiPlan, AiRun, DemoData } from '../contracts/data';
+import type { DemoData } from '../contracts/data';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
-import { score } from '../evaluate';
 import {
   BAR_ROWS,
   barEdgeNote,
@@ -65,10 +64,8 @@ import {
   type DayMarks,
   type DayPlan,
   type DayStatus,
-  type DayView,
   dayMarks,
   dayPlanOf,
-  dayStatus,
   expandMonth,
   firstDayOf,
   isYm,
@@ -76,7 +73,6 @@ import {
   monthDates,
   monthProgress,
   planEdited,
-  planStale,
   type StaffDay,
   shortName,
   staffDay,
@@ -86,20 +82,19 @@ import {
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
 import {
-  absentLeftIds,
   type OffDayState,
   offDayState,
   REQUESTED_OFF_NOTE,
   requestedOffDates,
   toggleRequestedOff,
 } from '../lib/requestedOff';
-import { alignPlan, planOfRun, problemKey, reusableRun } from '../lib/runs';
+import { planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
 import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
-import { workStats } from '../lib/workload';
-import { type CompileInput, compile } from '../matching';
-import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
+import { useDayStatuses } from '../lib/useDayStatuses';
+import { compile } from '../matching';
+import { applyPreset, scorePresetOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
@@ -150,18 +145,6 @@ const STATE_TEXT: Record<DayStatus['state'], string> = {
   diff: '未確定の変更あり',
 };
 const STATE_ORDER: DayStatus['state'][] = ['none', 'plan', 'confirmed', 'diff'];
-
-/** 日の表示の計算の覚え（日付ごと。同じ入力なら compile・採点し直さない） */
-type Memo = {
-  base: unknown[];
-  visits: Visit[];
-  plan: AiPlan | undefined;
-  saved: unknown;
-  runs: AiRun[] | undefined;
-  rules: Rule[];
-  problem: Problem | null;
-  view: DayView;
-};
 
 /** 表示の選択：全体／〈スタッフ〉1人／〈利用者さん〉1人 */
 type Focus = { kind: 'all' } | { kind: 'staff'; id: string } | { kind: 'client'; id: string };
@@ -293,11 +276,6 @@ export default function MonthPage() {
 
   /** 点数の基準のプリセット（月まとめ作成に使う。ADR-0012） */
   const basePreset = useMemo(() => scorePresetOf(data.presets, data.scorePresetId), [data.presets, data.scorePresetId]);
-  /** 点数の物差しの条件（いまの条件に基準のプリセットを当てたもの。必須の違反と「条件が変わった」の判定に使う） */
-  const scoreRules = useMemo(
-    () => scoreRulesOf({ rules: data.rules, presets: data.presets, scorePresetId: data.scorePresetId }),
-    [data.rules, data.presets, data.scorePresetId],
-  );
 
   const weeks = useMemo(() => calendarWeeks(ym), [ym]);
   const days = useMemo(() => monthDates(ym), [ym]);
@@ -312,81 +290,8 @@ export default function MonthPage() {
     return out;
   }, [data.visits]);
 
-  // ---- 日の問題と状態（日付・compile が読むデータ・案で覚える。8人・約17件／日の一月で 500ms 以内）----
-  const memoRef = useRef(new Map<string, Memo>());
-  const perDay = useMemo(() => {
-    const out = new Map<string, { status: DayStatus; problem: Problem | null }>();
-    const c = compileInput;
-    // compile が読むデータのうち訪問以外のすべて（CompileInput のキーから作り、足したフィールドを漏らさない。休み clientLeaves など）
-    const base = (Object.keys(c) as (keyof CompileInput)[])
-      .filter((k) => k !== 'visits')
-      .sort()
-      .map((k) => c[k]);
-    for (const d of days) {
-      const plan = own(data.aiPlans, d);
-      const saved = own(data.manualPlans, d);
-      const visits = visitsByDate.get(d) ?? [];
-      if ((!plan && !saved) || !visits.some((v) => !v.cancelled)) {
-        out.set(d, { status: dayStatus(data, d), problem: null });
-        continue;
-      }
-      const runs = own(data.aiRuns, d);
-      const hit = memoRef.current.get(d);
-      if (
-        hit &&
-        hit.plan === plan &&
-        hit.saved === saved &&
-        hit.runs === runs &&
-        hit.rules === scoreRules &&
-        sameList(hit.base, base) &&
-        sameList(hit.visits, visits)
-      ) {
-        out.set(d, { status: dayStatus(data, d, hit.view), problem: hit.problem });
-        continue;
-      }
-      const input: CompileInput = { ...c, visits };
-      const sp = attempt(() => compile({ ...input, rules: scoreRules }, d)).value;
-      // 欠勤（希望休も。ADR-0014）の人に残っている訪問（数える案＝今の案、無ければ確定した割当）。
-      // 同じ訪問を「違反」でも数えないよう、必須の違反からは除く（「休みの人に N」に一本化）
-      // 最終勤務日の後（ADR-0015）の人に残る訪問も同じく数える
-      const left = new Set(
-        sp && (c.absences.some((a) => a.date === d) || c.staff.some((s) => s.lastDay !== null && s.lastDay < d))
-          ? absentLeftIds(sp, dayPlanOf(data, d, sp).routes)
-          : [],
-      );
-      let view: DayView = {};
-      if (sp && plan) {
-        const aligned = attempt(() => alignPlan(sp, plan)).value ?? plan;
-        const sc = attempt(() => score(sp, aligned.routes)).value;
-        const scoreKey = JSON.stringify(scoreRules);
-        view = {
-          visitIds: sp.visits.map((v) => v.id),
-          hard: sc?.hardViolations.filter((h) => !left.has(h.visitId)).length ?? 0,
-          stale: planStale(input, data, d, (rules, pins) =>
-            Object.keys(pins).length === 0 && JSON.stringify(rules) === scoreKey ? sp : undefined,
-          ),
-        };
-      } else if (sp) {
-        view = { visitIds: sp.visits.map((v) => v.id) };
-      }
-      if (left.size > 0) view = { ...view, absentLeft: left.size };
-      // 拘束が上限を超える人（ADR-0015）。月のマスの中は他の印と同じ数える案（dayPlanOf：今の案、無ければ確定した割当。
-      // 確定した割当は開始の順に並べ済み）で数える。org（上限）は base に入っている
-      if (sp) {
-        const dp = dayPlanOf(data, d, sp);
-        const over =
-          dp.source !== null
-            ? workStats(sp, dp.routes, c.org)
-                .filter((x) => x.over)
-                .map((x) => x.staffId)
-            : [];
-        if (over.length > 0) view = { ...view, overSpan: over };
-      }
-      memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });
-      out.set(d, { status: dayStatus(data, d, view), problem: sp });
-    }
-    return out;
-  }, [days, compileInput, data, scoreRules, visitsByDate]);
+  // ---- 日の問題と状態（lib/useDayStatuses。月とホームで共通）----
+  const perDay = useDayStatuses(data, compileInput, days);
   const statuses = useMemo(() => new Map([...perDay].map(([d, x]) => [d, x.status])), [perDay]);
 
   /** その日の数える案（今の案、無ければ確定した割当）。問題は上で作ったものを使う */
@@ -528,8 +433,10 @@ export default function MonthPage() {
     [data, ym, today, statuses],
   );
   /** 右の欄へ移る（要対応・確定していない日） */
-  const showAside = (view: 'attention' | 'unconfirmed') => {
-    pickFocus('all');
+  const showAside = (view: 'attention' | 'unconfirmed', extra: Record<string, string | null> = {}) => {
+    // 全体の表示にする（pickFocus('all') と同じ。extra は一緒に URL から消すもの）
+    setClientMode(false);
+    patchParams({ staff: null, client: null, ...extra });
     setAsideView(view);
     requestAnimationFrame(() => {
       asideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -572,6 +479,26 @@ export default function MonthPage() {
   const staleTargets = batchTargets(data, ym, today, 'stale', staleOf);
   const running = batch !== null;
   const noVisitsWhy = futureVisits === 0 ? '定期パターンが無いか、この月の訪問がありません' : null;
+
+  // ---- ホームから来たときの操作（PRD D143。?do=）----
+  // batch：まとめて作るの欄を「まだ案の無い日だけ」で開く（見出しのボタンと同じ欄。対象の日が無ければ開かない）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
+  // 1回だけ行い、URL から ?do= を消す（戻る・再読込で繰り返さない）
+  const doParam = params.get('do');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
+  useEffect(() => {
+    if (doParam === null) return;
+    if (doParam === 'attention' || doParam === 'unconfirmed') {
+      showAside(doParam, { do: null });
+      return;
+    }
+    patchParams({ do: null });
+    // 開かないとき：この月に訪問が無い・作っている間・「まだ案の無い日だけ」の対象の日が無い（D143）
+    if (doParam === 'batch' && !noVisitsWhy && !runningRef.current && targetsOf('empty').length > 0) {
+      setError(null);
+      setMode('empty');
+      setPanel(true);
+    }
+  }, [doParam]);
 
   // ---- 定期パターンから訪問だけ作る（①だけ）----
   const expandOnly = () => {
