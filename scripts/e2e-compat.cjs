@@ -194,13 +194,20 @@ async function openById(page) {
     await openCompat(page);
     const b = page.getByTestId(sel).first();
     const name = await label(b);
+    const id = await b.getAttribute('data-id');
     await b.click();
     await pop(page).getByTestId('compat-pop-link').click();
     await page.waitForTimeout(400);
-    const opened = await page.locator('input').evaluateAll((xs, n) => xs.some((x) => x.value === n), name);
+    // 開くのは閲覧の欄（PRD D127）。見出し「〈呼び方〉：〈名前〉」の名前は完全一致、閲覧の欄の data-id は押した人
+    const head = (await page.locator('.drawer h2').first().textContent()) ?? '';
+    const view = page.getByTestId('person-view');
+    const opened =
+      head.slice(head.indexOf('：') + 1) === name &&
+      (await view.count()) === 1 &&
+      (await view.getAttribute('data-id')) === id;
     check(
       urlOf(page).includes(to) && !urlOf(page).includes('id=') && opened,
-      `${kind}：?id= で ${name} の編集の欄が開き、URL から id を消す`,
+      `${kind}：?id= で ${name} の閲覧の欄が開き、URL から id を消す`,
     );
   }
   // いない ID は何もしない

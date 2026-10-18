@@ -126,8 +126,10 @@ async function untilValue(loc, pred, timeout = 5000) {
   return loc.inputValue();
 }
 
+/** ?id= で閲覧の欄を開き、「編集する」で編集の欄にする（PRD D127・D128） */
 async function openClient(page, id = 'c1') {
   await page.goto(`${BASE}#/clients?id=${id}`);
+  await page.getByTestId('view-edit').click();
   await page.getByTestId('client-place').waitFor();
 }
 
@@ -408,6 +410,7 @@ async function holdNote(page) {
 /** 8：〈スタッフ〉の自宅 */
 async function staffHome(page) {
   await page.goto(`${BASE}#/staff?id=s1`);
+  await page.getByTestId('view-edit').click();
   await page.getByTestId('staff-home-place').waitFor();
   check(
     /保存しません/.test(await page.getByTestId('staff-home-place').textContent()),
@@ -424,12 +427,18 @@ async function staffHome(page) {
     '自宅：住所は保存し、郵便番号は保存しない',
     s1.home,
   );
+  // 保存すると閲覧の欄に戻る（PRD D129）。閲覧には郵便番号を出さず、編集し直すと郵便番号は空
   check(
-    (await page.getByTestId('staff-home-postal').inputValue()) === '9800811',
-    '自宅：欄を開いている間は郵便番号が残る',
+    (await page.getByTestId('person-view').count()) === 1 &&
+      !/980-?0811/.test(await page.getByTestId('person-view').textContent()),
+    '自宅：保存すると閲覧の欄に戻り、郵便番号は出ない',
   );
+  await page.getByTestId('view-edit').click();
+  await page.getByTestId('staff-home-place').waitFor();
+  check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：編集し直すと郵便番号は空');
   await page.getByRole('button', { name: '閉じる' }).last().click();
   await page.goto(`${BASE}#/staff?id=s1`);
+  await page.getByTestId('view-edit').click();
   await page.getByTestId('staff-home-place').waitFor();
   check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：開き直すと郵便番号は空');
 }

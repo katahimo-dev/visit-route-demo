@@ -2,6 +2,7 @@ import {
   BadgeCheck,
   CalendarX,
   Clock,
+  Eye,
   Home,
   MapPin,
   Pencil,
@@ -18,9 +19,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { Check } from '../components/parts';
+import { StaffView } from '../components/personView';
 import { AddressField } from '../components/placeLookup';
 import { useToast } from '../components/Toast';
-import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
+import {
+  Hint,
+  IconButton,
+  PageHeader,
+  SectionLevelProvider,
+  SectionTitle,
+  SidePanel,
+  WithIcon,
+} from '../components/ui';
 import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
 import { type Staff, staffSchema } from '../contracts/documents';
 import { addDays, jstDate } from '../domain/time';
@@ -28,6 +38,7 @@ import { byName, formError, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, W
 import { normalizeEmail } from '../lib/mailto';
 import { offboardScope } from '../lib/offboard';
 import { mdText } from '../lib/patternText';
+import { type DiscardWhen, discardMessage, isDirty } from '../lib/viewMode';
 import { useDemoData } from '../store';
 import { leavingStaff, OffboardPanel } from './OffboardPanel';
 import './settings.css';
@@ -54,8 +65,13 @@ export default function StaffPage() {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
+  /** 閲覧の欄で開いている人（PRD D127。編集中はその人の ID のまま。null：閲覧の欄なし） */
+  const [viewId, setViewId] = useState<string | null>(null);
+  /** 編集の欄の入力（null：編集していない） */
   const [form, setForm] = useState<Staff | null>(null);
   const [isNew, setIsNew] = useState(false);
+  /** 新しい人の、開いたときの空の欄（変更があるかの判定に使う） */
+  const [openedForm, setOpenedForm] = useState<Staff | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** 担当の振り直しの欄を開いている〈スタッフ〉（PRD D71。null：閉じている） */
   const [offboardFor, setOffboardFor] = useState<string | null>(null);
@@ -72,22 +88,70 @@ export default function StaffPage() {
   );
   const staffItems = data.items.filter((i) => i.target === 'staff');
   const itemById = new Map(data.items.map((i) => [i.id, i]));
-  // ?id= で開いたら、その人の編集の欄を開く（相性の画面の吹き出しから。PRD D114）。開いたら URL から消す
+  /** 編集の欄に変更があるか（PRD D130。既存の人は保存した中身、新しい人は開いたときの空の欄と比べる） */
+  const dirty = isDirty(
+    form,
+    isNew ? (openedForm ?? undefined) : form ? data.staff.find((x) => x.id === form.id) : undefined,
+  );
+  /** 変更があれば捨ててよいか確かめる（無ければそのまま進む） */
+  const okToDiscard = (when: DiscardWhen, next = '') =>
+    !dirty || !form || confirm(discardMessage(when, terms.staff, form.name, next));
+  /** 編集の欄を開く */
+  const openForm = (s: Staff, fresh: boolean) => {
+    setError(null);
+    setIsNew(fresh);
+    setOffboardFor(null);
+    setForm(s);
+    setOpenedForm(fresh ? structuredClone(s) : null);
+  };
+  /** 閲覧の欄で開く（PRD D127。編集中で変更があれば確かめる） */
+  const openView = (s: Staff) => {
+    if (form && form.id === s.id && !isNew) return;
+    if (!okToDiscard('switch', s.name)) return;
+    setForm(null);
+    setError(null);
+    setOffboardFor(null);
+    setViewId(s.id);
+  };
+  /** 閲覧から編集へ（PRD D128） */
+  const startEdit = (s: Staff) => {
+    setViewId(s.id);
+    openForm(structuredClone(s), false);
+  };
+  /** 編集を取り消して閲覧に戻る（新しい人なら欄を閉じる。PRD D129） */
+  const cancelEdit = () => {
+    if (!okToDiscard(isNew ? 'close' : 'view')) return;
+    if (isNew) setViewId(null);
+    setForm(null);
+    setError(null);
+  };
+  /** 欄を閉じる（× ・Esc。編集中で変更があれば確かめる） */
+  const closePanel = () => {
+    if (!okToDiscard('close')) return;
+    setForm(null);
+    setViewId(null);
+    setError(null);
+  };
+
+  // 変更があるまま再読込・タブを閉じるときはブラウザの確認を出す（PRD D130。戻る・画面の移動では出せない。ADR-0023）
+  useEffect(() => {
+    if (!dirty) return;
+    const onUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, [dirty]);
+
+  // ?id= で開いたら、その人の閲覧の欄を開く（相性・予定の吹き出しから。PRD D114・D127）。開いたら URL から消す
   const [params, setParams] = useSearchParams();
   const openId = params.get('id');
   // biome-ignore lint/correctness/useExhaustiveDependencies: URL の id が変わったときだけ
   useEffect(() => {
     if (openId === null) return;
     const s = data.staff.find((x) => x.id === openId);
-    // ほかの人を編集中で、変更があれば確かめる（開いている欄の中身を捨てる）
-    const before = form && data.staff.find((x) => x.id === form.id);
-    const dirty = form !== null && form.id !== openId && (isNew || JSON.stringify(form) !== JSON.stringify(before));
-    if (s && (!dirty || confirm(`編集中の${terms.staff}の変更を捨てて、${s.name}を開きますか？`))) {
-      setError(null);
-      setIsNew(false);
-      setOffboardFor(null);
-      setForm(structuredClone(s));
-    }
+    if (s) openView(s);
     setParams(
       (prev) => {
         const p = new URLSearchParams(prev);
@@ -97,6 +161,9 @@ export default function StaffPage() {
       { replace: true },
     );
   }, [openId]);
+
+  /** 閲覧の欄の人（編集していないとき。データから消えたら欄を出さない） */
+  const viewed = !form && viewId !== null ? data.staff.find((x) => x.id === viewId) : undefined;
 
   const save = () => {
     if (!form) return;
@@ -149,11 +216,17 @@ export default function StaffPage() {
             ),
       }));
       setIsNew(false);
+      setForm(null);
       if (sc && (sc.clients.length > 0 || sc.visits.length > 0)) {
-        setForm(null);
+        // 振り直すものがあれば、今までどおり欄を閉じて担当の振り直しの欄を開く（ADR-0015）
+        setViewId(null);
         setOffboardFor(s.id);
         toast(`保存しました。${mdText(addDays(s.lastDay ?? '', 1))}からの担当を振り直してください`);
-      } else toast('保存しました');
+      } else {
+        // 保存したら閲覧の欄に戻る（PRD D129）
+        setViewId(s.id);
+        toast('保存しました');
+      }
     } catch (e) {
       setError(formError(e));
     }
@@ -170,10 +243,9 @@ export default function StaffPage() {
             type="button"
             className="btn btn-primary"
             onClick={() => {
-              setError(null);
-              setIsNew(true);
-              setOffboardFor(null);
-              setForm(blank());
+              if (!okToDiscard('switch', `新しい${terms.staff}`)) return;
+              setViewId(null);
+              openForm(blank(), true);
             }}
           >
             <WithIcon icon={Plus}>{terms.staff}を追加</WithIcon>
@@ -203,7 +275,9 @@ export default function StaffPage() {
                   type="button"
                   className="btn btn-small"
                   onClick={() => {
+                    if (!okToDiscard('close')) return;
                     setForm(null);
+                    setViewId(null);
                     setOffboardFor(x.staff.id);
                   }}
                   data-testid="leaving-open"
@@ -275,16 +349,7 @@ export default function StaffPage() {
                 </td>
                 <td className="nowrap">
                   <div className="actions">
-                    <IconButton
-                      icon={Pencil}
-                      label={`${s.name}を編集`}
-                      onClick={() => {
-                        setError(null);
-                        setIsNew(false);
-                        setOffboardFor(null);
-                        setForm(structuredClone(s));
-                      }}
-                    />
+                    <IconButton icon={Eye} label={`${s.name}を開く`} onClick={() => openView(s)} />
                     <Link
                       className="icon-btn tone-plain"
                       to={`/staff-view/${s.id}`}
@@ -301,154 +366,194 @@ export default function StaffPage() {
         </table>
       </div>
 
-      {form && (
+      {(form || viewed) && (
         <SidePanel
-          icon={isNew ? Plus : Pencil}
-          title={isNew ? `${terms.staff}を追加` : `${terms.staff}を編集：${form.name.trim() || '（名前なし）'}`}
-          onClose={() => setForm(null)}
+          icon={form ? (isNew ? Plus : Pencil) : Eye}
+          title={
+            form
+              ? isNew
+                ? `${terms.staff}を追加`
+                : `${terms.staff}を編集：${form.name.trim() || '（名前なし）'}`
+              : `${terms.staff}：${viewed?.name.trim() || '（名前なし）'}`
+          }
+          onClose={closePanel}
+          focusKey={form ? 'edit' : 'view'}
+          headActions={
+            !form &&
+            viewed && (
+              <button
+                type="button"
+                className="btn btn-edit"
+                onClick={() => startEdit(viewed)}
+                data-testid="view-edit"
+                data-return-focus
+              >
+                <WithIcon icon={Pencil}>編集する</WithIcon>
+              </button>
+            )
+          }
           footer={
-            <>
-              <button type="button" className="btn btn-primary" onClick={save}>
-                <WithIcon icon={Save}>保存</WithIcon>
-              </button>
-              <button type="button" className="btn" onClick={() => setForm(null)}>
-                <WithIcon icon={X}>閉じる</WithIcon>
-              </button>
-              {error && <span className="error">{error}</span>}
-            </>
+            form && (
+              <>
+                <button type="button" className="btn btn-primary" onClick={save}>
+                  <WithIcon icon={Save}>保存</WithIcon>
+                </button>
+                <button type="button" className="btn" onClick={cancelEdit} data-testid="edit-cancel">
+                  <WithIcon icon={X}>取り消し</WithIcon>
+                </button>
+                {error && <span className="error">{error}</span>}
+              </>
+            )
           }
         >
-          <div className="form-grid">
-            <label>
-              名前
-              <input value={form.name} maxLength={50} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </label>
-            <label>
-              メールアドレス（任意）
-              <input
-                type="email"
-                value={form.email}
-                maxLength={254}
-                autoComplete="off"
-                placeholder="name@example.com"
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                data-testid="staff-email"
-              />
-              <span className="sub">予定をメールアプリで開くときの宛先（送信は人が押します）</span>
-            </label>
-            <label>
-              移動手段
-              <select
-                value={form.travelMode}
-                onChange={(e) => setForm({ ...form, travelMode: e.target.value as TravelMode })}
-              >
-                {TRAVEL_MODES.map((t) => (
-                  <option key={t} value={t}>
-                    {TRAVEL_MODE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              勤務開始
-              <input
-                type="time"
-                step={1800}
-                value={form.shiftStart}
-                onChange={(e) => setForm({ ...form, shiftStart: e.target.value })}
-              />
-            </label>
-            <label>
-              勤務終了
-              <input
-                type="time"
-                step={1800}
-                value={form.shiftEnd}
-                onChange={(e) => setForm({ ...form, shiftEnd: e.target.value })}
-              />
-            </label>
-          </div>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <span className="sub">勤務する曜日</span>
-            {WEEKDAY_LABELS.map((w, d) => (
-              <Check
-                key={w}
-                checked={form.workDays.includes(d)}
-                onChange={(c) =>
-                  setForm({
-                    ...form,
-                    workDays: c ? [...form.workDays, d].sort() : form.workDays.filter((x) => x !== d),
-                  })
-                }
-              >
-                {w}
-              </Check>
-            ))}
-            <span style={{ marginLeft: 16 }} />
-            <Check checked={form.active} onChange={(c) => setForm({ ...form, active: c })}>
-              利用中（外すと休止）
-            </Check>
-          </div>
+          <SectionLevelProvider value={3}>
+            {!form ? (
+              viewed && <StaffView staff={viewed} data={data} />
+            ) : (
+              <>
+                <div className="form-grid">
+                  <label>
+                    名前
+                    <input
+                      value={form.name}
+                      maxLength={50}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    メールアドレス（任意）
+                    <input
+                      type="email"
+                      value={form.email}
+                      maxLength={254}
+                      autoComplete="off"
+                      placeholder="name@example.com"
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      data-testid="staff-email"
+                    />
+                    <span className="sub">予定をメールアプリで開くときの宛先（送信は人が押します）</span>
+                  </label>
+                  <label>
+                    移動手段
+                    <select
+                      value={form.travelMode}
+                      onChange={(e) => setForm({ ...form, travelMode: e.target.value as TravelMode })}
+                    >
+                      {TRAVEL_MODES.map((t) => (
+                        <option key={t} value={t}>
+                          {TRAVEL_MODE_LABELS[t]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    勤務開始
+                    <input
+                      type="time"
+                      step={1800}
+                      value={form.shiftStart}
+                      onChange={(e) => setForm({ ...form, shiftStart: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    勤務終了
+                    <input
+                      type="time"
+                      step={1800}
+                      value={form.shiftEnd}
+                      onChange={(e) => setForm({ ...form, shiftEnd: e.target.value })}
+                    />
+                  </label>
+                </div>
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  <span className="sub">勤務する曜日</span>
+                  {WEEKDAY_LABELS.map((w, d) => (
+                    <Check
+                      key={w}
+                      checked={form.workDays.includes(d)}
+                      onChange={(c) =>
+                        setForm({
+                          ...form,
+                          workDays: c ? [...form.workDays, d].sort() : form.workDays.filter((x) => x !== d),
+                        })
+                      }
+                    >
+                      {w}
+                    </Check>
+                  ))}
+                  <span style={{ marginLeft: 16 }} />
+                  <Check checked={form.active} onChange={(c) => setForm({ ...form, active: c })}>
+                    利用中（外すと休止）
+                  </Check>
+                </div>
 
-          <SectionTitle icon={CalendarX}>最終勤務日（退職・担当替え）</SectionTitle>
-          <Hint>
-            退職や担当替えで、この日を最後に勤務しなくなるときに入れます。翌日からは勤務なしになり、予定・AI案に入りません。保存すると、その人が担当している
-            {terms.client}の代わりの{terms.staff}をまとめて選ぶ欄が開きます（訪問の案は自動では作り直しません）。
-          </Hint>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <label className="row" style={{ gap: 6 }}>
-              最終勤務日
-              <input
-                type="date"
-                value={form.lastDay ?? ''}
-                onChange={(e) => setForm({ ...form, lastDay: e.target.value || null })}
-                data-testid="staff-lastday-input"
-                style={{ width: 'auto' }}
-              />
-            </label>
-            {form.lastDay && (
-              <button type="button" className="btn btn-small" onClick={() => setForm({ ...form, lastDay: null })}>
-                最終勤務日を消す
-              </button>
+                <SectionTitle icon={CalendarX}>最終勤務日（退職・担当替え）</SectionTitle>
+                <Hint>
+                  退職や担当替えで、この日を最後に勤務しなくなるときに入れます。翌日からは勤務なしになり、予定・AI案に入りません。保存すると、その人が担当している
+                  {terms.client}の代わりの{terms.staff}をまとめて選ぶ欄が開きます（訪問の案は自動では作り直しません）。
+                </Hint>
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  <label className="row" style={{ gap: 6 }}>
+                    最終勤務日
+                    <input
+                      type="date"
+                      value={form.lastDay ?? ''}
+                      onChange={(e) => setForm({ ...form, lastDay: e.target.value || null })}
+                      data-testid="staff-lastday-input"
+                      style={{ width: 'auto' }}
+                    />
+                  </label>
+                  {form.lastDay && (
+                    <button type="button" className="btn btn-small" onClick={() => setForm({ ...form, lastDay: null })}>
+                      最終勤務日を消す
+                    </button>
+                  )}
+                  {form.lastDay && <span className="sub">{mdText(addDays(form.lastDay, 1))}から勤務なし</span>}
+                </div>
+
+                <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
+                <TraitsEditor
+                  items={staffItems}
+                  value={form.traits}
+                  onChange={(traits) => setForm({ ...form, traits })}
+                />
+
+                <SectionTitle icon={SlidersHorizontal}>{terms.client}に求めること：必要条件</SectionTitle>
+                <Hint>
+                  {terms.client}
+                  の特性に対する条件です（例：ペットのいる家を避けるなら「ペットあり」を「なし」に）。満たさない
+                  {terms.client}は「条件の重み」の画面の「
+                  {terms.staff}の必要条件」で、点が付くか、必須なら担当にしません。
+                </Hint>
+                <ConditionsEditor
+                  items={data.items}
+                  target="client"
+                  value={form.requirements}
+                  onChange={(requirements) => setForm({ ...form, requirements })}
+                />
+                <SectionTitle icon={Sparkles}>{terms.client}に求めること：希望</SectionTitle>
+                <ConditionsEditor
+                  items={data.items}
+                  target="client"
+                  value={form.preferences}
+                  onChange={(preferences) => setForm({ ...form, preferences })}
+                />
+
+                <SectionTitle icon={Home}>自宅</SectionTitle>
+                {/* 郵便番号は住所を探すためだけで保存しない（自宅は契約の Place のまま。PRD D121） */}
+                <AddressField
+                  key={form.id}
+                  value={form.home}
+                  onChange={(home) => setForm((f) => (f ? { ...f, home } : f))}
+                  testId="staff-home"
+                  postalLabel="郵便番号（任意。住所を探すためだけで、保存しません）"
+                />
+              </>
             )}
-            {form.lastDay && <span className="sub">{mdText(addDays(form.lastDay, 1))}から勤務なし</span>}
-          </div>
-
-          <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
-          <TraitsEditor items={staffItems} value={form.traits} onChange={(traits) => setForm({ ...form, traits })} />
-
-          <SectionTitle icon={SlidersHorizontal}>{terms.client}に求めること：必要条件</SectionTitle>
-          <Hint>
-            {terms.client}の特性に対する条件です（例：ペットのいる家を避けるなら「ペットあり」を「なし」に）。満たさない
-            {terms.client}は「条件の重み」の画面の「
-            {terms.staff}の必要条件」で、点が付くか、必須なら担当にしません。
-          </Hint>
-          <ConditionsEditor
-            items={data.items}
-            target="client"
-            value={form.requirements}
-            onChange={(requirements) => setForm({ ...form, requirements })}
-          />
-          <SectionTitle icon={Sparkles}>{terms.client}に求めること：希望</SectionTitle>
-          <ConditionsEditor
-            items={data.items}
-            target="client"
-            value={form.preferences}
-            onChange={(preferences) => setForm({ ...form, preferences })}
-          />
-
-          <SectionTitle icon={Home}>自宅</SectionTitle>
-          {/* 郵便番号は住所を探すためだけで保存しない（自宅は契約の Place のまま。PRD D121） */}
-          <AddressField
-            key={form.id}
-            value={form.home}
-            onChange={(home) => setForm((f) => (f ? { ...f, home } : f))}
-            testId="staff-home"
-            postalLabel="郵便番号（任意。住所を探すためだけで、保存しません）"
-          />
+          </SectionLevelProvider>
         </SidePanel>
       )}
-      {offboardFor && !form && <OffboardPanel staffId={offboardFor} onClose={() => setOffboardFor(null)} />}
+      {offboardFor && !form && !viewed && <OffboardPanel staffId={offboardFor} onClose={() => setOffboardFor(null)} />}
     </div>
   );
 }

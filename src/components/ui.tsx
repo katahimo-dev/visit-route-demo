@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import { Info, X } from 'lucide-react';
-import { type ButtonHTMLAttributes, type ReactNode, useEffect, useId, useRef } from 'react';
+import { type ButtonHTMLAttributes, createContext, type ReactNode, useContext, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
@@ -36,6 +36,13 @@ export function PageHeader({
   );
 }
 
+/**
+ * SectionTitle の見出しの段（既定 h2）。欄（SidePanel）の見出しが h2 の中に置くときは 3 にする
+ * （〈スタッフ〉・〈利用者さん〉の閲覧と編集の欄。PRD D128）
+ */
+const SectionLevel = createContext<2 | 3>(2);
+export const SectionLevelProvider = SectionLevel.Provider;
+
 /** カードの見出し：小さなアイコン＋題名。右に補足や操作 */
 export function SectionTitle({
   icon: Icon,
@@ -46,12 +53,13 @@ export function SectionTitle({
   children: ReactNode;
   aside?: ReactNode;
 }) {
+  const H = useContext(SectionLevel) === 3 ? 'h3' : 'h2';
   return (
     <div className="section-title">
-      <h2>
+      <H>
         {Icon && <Icon size={18} strokeWidth={2.2} aria-hidden="true" />}
         {children}
-      </h2>
+      </H>
       {aside && <div className="section-aside">{aside}</div>}
     </div>
   );
@@ -178,9 +186,18 @@ export function SidePanel({
   fallbackFocus,
   returnFocus,
   focusPanel = false,
+  headActions,
+  focusKey,
 }: {
   icon: LucideIcon;
   title: ReactNode;
+  /** 見出しの右（× の前）に置く操作（閲覧の欄の「編集する」。PRD D128） */
+  headActions?: ReactNode;
+  /**
+   * 欄を開いたまま中身が入れ替わったとき（閲覧 ⇄ 編集。PRD D128）に変える値。変わったら、`data-return-focus` の付いた
+   * 要素（閲覧の「編集する」）、無ければ最初の入力欄、それも無ければ欄そのものにフォーカスを移す
+   */
+  focusKey?: string;
   /**
    * 閉じたときの戻り先を差し替える（要素を返せば、開く前のボタンではなくそこへ。スクロールはしない＝呼ぶ側が動かす）。
    * null なら今までどおり
@@ -250,6 +267,17 @@ export function SidePanel({
       else fallbackRef.current?.()?.focus();
     };
   }, []);
+  // 中身が入れ替わったら（開いたときは上で移しているので2回目から）、戻り先の印・最初の入力欄・欄そのものの順で
+  const lastFocusKey = useRef(focusKey);
+  useEffect(() => {
+    if (lastFocusKey.current === focusKey) return;
+    lastFocusKey.current = focusKey;
+    const first =
+      ref.current?.querySelector<HTMLElement>('[data-return-focus]') ??
+      ref.current?.querySelector<HTMLElement>('input, select, textarea');
+    if (first) first.focus();
+    else ref.current?.focus();
+  }, [focusKey]);
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
   return createPortal(
     <div className="drawer-wrap">
@@ -267,6 +295,7 @@ export function SidePanel({
             <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
             {title}
           </h2>
+          {headActions && <div className="drawer-head-actions">{headActions}</div>}
           <IconButton icon={X} label="閉じる" onClick={onClose} />
         </header>
         <div className="drawer-body stack">{children}</div>
