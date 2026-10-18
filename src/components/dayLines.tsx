@@ -4,6 +4,7 @@
 import './dayLines.css';
 import { useState } from 'react';
 import { type DayLine, dayLineText } from '../lib/dayLine';
+import { PersonInfo } from './PersonPopover';
 import { StaffLegend } from './staffBar';
 import { PartsBar } from './workBars';
 
@@ -22,6 +23,7 @@ export function DayLines({
   onPick,
   staffTerm,
   collapsed,
+  detailName,
 }: {
   lines: readonly DayLine[];
   range: { start: number; end: number };
@@ -32,12 +34,17 @@ export function DayLines({
   staffTerm: string;
   /** 狭い幅：畳んで出す（押すと開く） */
   collapsed: boolean;
+  /**
+   * 渡すと行の右に名前の詳細の「i」を置く（行を押すと列へ移るので、名前はボタンにしない。PRD D124）。
+   * 返す名前が空（データにいない人）の行には置かない
+   */
+  detailName?: (staffId: string) => string;
 }) {
   const [open, setOpen] = useState(false);
   if (lines.length === 0) return null;
   const len = Math.max(1, range.end - range.start);
   const body = (
-    <div className="daylines-body">
+    <div className={`daylines-body${detailName ? ' has-info' : ''}`}>
       <div className="daylines-row daylines-head" aria-hidden="true">
         <span />
         <span className="daylines-axis">
@@ -53,7 +60,7 @@ export function DayLines({
         {lines.map((x) => {
           const text = `${nameOf(x.staffId)}さん：${dayLineText(x)}`;
           return (
-            <li key={x.staffId}>
+            <li key={x.staffId} className="daylines-item">
               <button
                 type="button"
                 className="daylines-row daylines-btn"
@@ -70,6 +77,7 @@ export function DayLines({
                 <PartsBar parts={x.parts} shift={x.shift} rest={x.rest} range={range} className="daylines-bar" />
                 <span className="daylines-count">{x.shift.length === 0 && x.count === 0 ? '休' : `${x.count}件`}</span>
               </button>
+              {detailName && <PersonInfo kind="staff" id={x.staffId} name={detailName(x.staffId)} />}
             </li>
           );
         })}

@@ -16,6 +16,7 @@ import { ClientFilter } from '../components/ClientFilter';
 import { ClientPicker } from '../components/ClientPicker';
 import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
 import { LoadRowsSample } from '../components/loadBar';
+import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
@@ -612,6 +613,7 @@ export default function WeekPage() {
               selected={staffSel}
               onChange={(ids) => setSel('staff', ids)}
               highlight={allowedNow}
+              detailKind="staff"
               testId="staff-chips"
             />
             {qualItem && qualItem.options.length > 0 && (
@@ -653,6 +655,7 @@ export default function WeekPage() {
             label={`表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）`}
             period={{ label: 'この週', clientIds: weekClientIds }}
             byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
+            details
             testId="week-client-picker"
           />
         )}
@@ -828,7 +831,10 @@ export default function WeekPage() {
                   {table.rows.map((r) => (
                     <tr key={r.staffId}>
                       <th scope="row">
-                        {staffName(r.staffId)}
+                        {/* 名前を押すと詳細の吹き出し（PRD D123） */}
+                        <PersonButton kind="staff" id={r.staffId} name={staffById.get(r.staffId)?.name ?? ''}>
+                          {staffName(r.staffId)}
+                        </PersonButton>
                         <QualificationBadges badges={badgesOf.get(r.staffId) ?? []} />
                       </th>
                       {r.cells.map((c) => {
@@ -955,7 +961,7 @@ export default function WeekPage() {
                                 aria-hidden="true"
                               />
                             )}
-                            {c?.displayName ?? '（不明）'}
+                            {c ? <PersonButton kind="client" id={c.id} name={c.displayName} /> : '（不明）'}
                           </span>
                         </th>
                         {r.cells.map((cell) => {

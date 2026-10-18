@@ -44,6 +44,7 @@ import { MapDock } from '../components/MapDock';
 import { MenuButton, type MenuItem } from '../components/MenuButton';
 import { useMailLimit } from '../components/mailParts';
 import { VisitRouteLinks } from '../components/mapsLinks';
+import { PersonButton, PersonInfo } from '../components/PersonPopover';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
@@ -1507,6 +1508,31 @@ export default function PlanPage() {
   const cs = curScore?.value ?? null;
   const gs = genScore?.value ?? null;
 
+  /**
+   * 訪問の詳細の〈利用者さん〉・担当の名前（押すと詳細の吹き出し。PRD D124）。順番のカードの詳細・時間軸の帯の詳細で共通。
+   * withClient が false のときは担当だけ（時間軸は見出しの行に〈利用者さん〉の名前がある）
+   */
+  const whoOf = (id: string, sid: string | null, withClient = true) => {
+    const client = clientOf(id);
+    const s = sid ? staffById.get(sid) : undefined;
+    if (!(withClient && client) && !s) return null;
+    return (
+      <div className="row visit-who" data-testid="visit-who">
+        {withClient && client && (
+          <span>
+            {terms.client}：<PersonButton kind="client" id={client.id} name={client.displayName} />
+          </span>
+        )}
+        {s && (
+          <span>
+            担当：
+            <PersonButton kind="staff" id={s.id} name={s.name} />
+          </span>
+        )}
+      </div>
+    );
+  };
+
   /** 訪問の印（欠勤の人のまま・代行・+N分・固定・必須の違反）と「固定を外す」。順番のカードの中・時間軸の帯の説明で共通 */
   const tagsOf = (id: string) => {
     const pin = own(pins, id);
@@ -1586,6 +1612,7 @@ export default function PlanPage() {
         dragging={dragging === id}
         detail={
           <>
+            {whoOf(id, ownerId)}
             <VisitRules client={clientOf(id)} />
             {routeLinksOf(id, ownerId)}
             <ReasonBox explain={explained.get(id)} />
@@ -1667,9 +1694,12 @@ export default function PlanPage() {
       detail: (
         <>
           <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-            <strong>{client?.displayName ?? '（不明）'}</strong>
+            <strong>
+              {client ? <PersonButton kind="client" id={client.id} name={client.displayName} /> : '（不明）'}
+            </strong>
             <TypeMark type={type} compact />
           </div>
+          {whoOf(id, sid, false)}
           {tagsOf(id)}
           <VisitRules client={client} />
           {routeLinksOf(id, sid)}
@@ -1738,6 +1768,10 @@ export default function PlanPage() {
               {avail?.absence ? '欠勤を直す' : '急な欠勤'}
             </button>
           )}
+          {/*
+            詳細の「i」（PRD D124）。見出しのボタン（地図の絞り込み）と入れ子にせず、名前の幅も食わないよう2行目の右端に置く
+          */}
+          {s && <PersonInfo kind="staff" id={sid} name={s.name} className="col-info" testId="col-info" />}
         </div>
         {reassignInfo && absentStaff.has(sid) && (
           <div className="row col-reassign" data-testid="col-reassign">
@@ -1861,7 +1895,7 @@ export default function PlanPage() {
       ownerName={(id) => {
         if (!aiPlan) return null;
         const o = owner.get(id);
-        return o ? { name: staffName(o), color: colorOfStaff.get(o) } : null;
+        return o ? { id: o, name: staffName(o), known: staffById.has(o), color: colorOfStaff.get(o) } : null;
       }}
       notes={(id) => ({
         outside: !!problem && !problem.visits.some((v) => v.id === id),
@@ -2236,6 +2270,7 @@ export default function PlanPage() {
           onPick={goToStaff}
           staffTerm={terms.staff}
           collapsed={narrowOrPrint}
+          detailName={(sid) => staffById.get(sid)?.name ?? ''}
         />
       )}
 
@@ -3046,7 +3081,8 @@ function VisitList({
   visitById: Map<string, Visit>;
   clientById: Map<string, Client>;
   /** 今の案での担当（AI案が無い・入らなかったときは null） */
-  ownerName: (id: string) => { name: string; color: string | undefined } | null;
+  /** known：〈スタッフ〉がデータにいる（いなければ名前をボタンにしない） */
+  ownerName: (id: string) => { id: string; name: string; known: boolean; color: string | undefined } | null;
   notes: (id: string) => VisitNotes;
   clientLabel: string;
   /** 訪問の種類（ADR-0012。種類なしは null） */
@@ -3096,7 +3132,7 @@ function VisitList({
                     </div>
                   </td>
                   <td>
-                    <ClientName client={clientById.get(v.clientId)} />
+                    <ClientName client={clientById.get(v.clientId)} detail />
                     {(typeOfVisit(v) || v.pattern?.edited) && (
                       <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
                         <TypeMark type={typeOfVisit(v)} compact />
@@ -3114,7 +3150,9 @@ function VisitList({
                     {o ? (
                       <span className="row" style={{ gap: 6 }}>
                         <span className="staff-dot" style={{ background: o.color }} aria-hidden="true" />
-                        {o.name}
+                        <PersonButton kind="staff" id={o.id} name={o.known ? o.name : ''}>
+                          {o.name}
+                        </PersonButton>
                       </span>
                     ) : (
                       <span className="sub">未割当</span>
@@ -3159,7 +3197,7 @@ function VisitList({
                     </div>
                   </td>
                   <td>
-                    <ClientName client={clientById.get(v.clientId)} />
+                    <ClientName client={clientById.get(v.clientId)} detail />
                     <TypeMark type={typeOfVisit(v)} compact />
                   </td>
                   <td className="num nowrap">{v.durationMinutes}分</td>

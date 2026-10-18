@@ -4,17 +4,27 @@ import { HALF_HOURS, MAX_SLOTS, type Slot, slotsError } from '../domain/availabi
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { colorOf, initialOf } from '../lib/colors';
 import { hasLocation } from '../lib/common';
+import { PersonButton } from './PersonPopover';
 import { RouteMap } from './RouteMap';
 import './marks.css';
 
-/** 訪問先の色の丸と名前（予定・比較の画面で同じ見た目にする） */
-export function ClientName({ client }: { client: Client | undefined }) {
+/**
+ * 訪問先の色の丸と名前（予定・比較の画面で同じ見た目にする）。
+ * detail のときは名前を押すと詳細の吹き出し（PRD D124。押して別の動きがある所（訪問のカードの中）では使わない）
+ */
+export function ClientName({ client, detail = false }: { client: Client | undefined; detail?: boolean }) {
   return (
     <div className="visit-name">
       <span className="dot dot-sm" style={{ background: colorOf(client?.color ?? 0) }}>
         {initialOf(client?.displayName ?? '?')}
       </span>
-      <span className="ellipsis">{client?.displayName ?? '（不明）'}</span>
+      {detail && client ? (
+        <PersonButton kind="client" id={client.id} name={client.displayName}>
+          <span className="ellipsis">{client.displayName}</span>
+        </PersonButton>
+      ) : (
+        <span className="ellipsis">{client?.displayName ?? '（不明）'}</span>
+      )}
       {client?.tentative && <TentativeMark />}
     </div>
   );

@@ -88,3 +88,30 @@
   margin: 2px 0 0;
   font-size: 0.75rem;
 }
+/* 行の右の詳細の「i」（PRD D124）。目盛りの行も同じ幅だけ右を空け、横棒の位置をそろえる */
+.daylines-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.daylines-item > .daylines-btn {
+  flex: 1;
+  min-width: 0;
+}
+.daylines-body.has-info > .daylines-head {
+  margin-right: 24px;
+}
+@media print {
+  .daylines-body.has-info > .daylines-head {
+    margin-right: 0;
+  }
+}
+/* データにいない人の行（i を出さない）も同じ幅だけ右を空ける */
+.daylines-body.has-info .daylines-item:not(:has(.person-info)) {
+  padding-right: 24px;
+}
+@media print {
+  .daylines-body.has-info .daylines-item:not(:has(.person-info)) {
+    padding-right: 0;
+  }
+}

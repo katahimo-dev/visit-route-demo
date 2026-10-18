@@ -26,6 +26,7 @@ import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
 import { ClientDots, PrepBar } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
+import { PersonButton } from '../components/PersonPopover';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -1133,7 +1134,11 @@ export default function MonthPage() {
             <>
               <h2 className="month-aside-title">
                 <UserRound size={18} aria-hidden="true" />
-                {focusName}さん・{monthNo}月
+                {/* 名前を押すと詳細の吹き出し（PRD D122・D123） */}
+                <span>
+                  <PersonButton kind="staff" id={focus.id} name={focusName} testId="month-aside-name" />
+                  さん・{monthNo}月
+                </span>
               </h2>
               {staffSum.qualifications.length > 0 && (
                 <div className="month-quals">
@@ -1183,7 +1188,9 @@ export default function MonthPage() {
             <>
               <h2 className="month-aside-title">
                 <UserRound size={18} aria-hidden="true" />
-                {focusName}・{monthNo}月
+                <span>
+                  <PersonButton kind="client" id={focus.id} name={focusName} testId="month-aside-name" />・{monthNo}月
+                </span>
               </h2>
               <dl className="month-facts" data-testid="month-client-sum">
                 <dt>予定の回数</dt>
@@ -1215,7 +1222,13 @@ export default function MonthPage() {
                 <ul className="month-bystaff">
                   {clientSum.byStaff.map((x) => (
                     <li key={x.staffId ?? '__none'}>
-                      <span>{x.staffId === null ? '案なし・入らない' : (staffById.get(x.staffId)?.name ?? '')}</span>
+                      <span>
+                        {x.staffId === null ? (
+                          '案なし・入らない'
+                        ) : (
+                          <PersonButton kind="staff" id={x.staffId} name={staffById.get(x.staffId)?.name ?? ''} />
+                        )}
+                      </span>
                       <span>{x.count}回</span>
                     </li>
                   ))}

@@ -1,5 +1,7 @@
 // 人を複数選ぶチップ（週間の時間軸・〈利用者さん〉×曜日の表。PRD D56・D57）。
 // 選んでいる人は aria-pressed と ✓ の印で示す（色だけに頼らない）。強調（ドラッグ中の担当できる人）は太い枠と「可」の文字
+import type { PersonKind } from '../lib/personPopover';
+import { PersonInfo } from './PersonPopover';
 import './pickChips.css';
 
 export type PickPerson = {
@@ -22,6 +24,7 @@ export function PickChips({
   highlight,
   highlightLabel = '担当できる',
   bulk = true,
+  detailKind,
   testId,
 }: {
   label: string;
@@ -33,6 +36,11 @@ export function PickChips({
   highlightLabel?: string;
   /** 「全員」「全解除」のボタンを出すか（担当できる人の選択（ADR-0014）では出さない） */
   bulk?: boolean;
+  /**
+   * チップの横に詳細の「i」を置く（PRD D123。チップを押すと選ぶので、名前はボタンにしない）。
+   * 渡さなければ置かない（担当できる人の選択など）
+   */
+  detailKind?: PersonKind;
   testId?: string;
 }) {
   const on = selected === null ? null : new Set(selected);
@@ -69,7 +77,7 @@ export function PickChips({
       {people.map((p) => {
         const pressed = isOn(p.id);
         const strong = highlight?.has(p.id) ?? false;
-        return (
+        const chip = (
           <button
             key={p.id}
             type="button"
@@ -91,6 +99,13 @@ export function PickChips({
             ))}
             {strong && <span className="pick-chip-strong">{highlightLabel}</span>}
           </button>
+        );
+        if (!detailKind) return chip;
+        return (
+          <span key={p.id} className="pick-chip-wrap">
+            {chip}
+            <PersonInfo kind={detailKind} id={p.id} name={p.name} />
+          </span>
         );
       })}
     </fieldset>

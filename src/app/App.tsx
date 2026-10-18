@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { PersonPopoverProvider } from '../components/PersonPopover';
 import { addDays, jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import AvailabilityPage from '../pages/AvailabilityPage';
@@ -70,30 +71,33 @@ export default function App() {
 
   return (
     <DayProvider value={{ date, setDate: setPicked, dates }}>
-      <Routes>
-        <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
-        {/* 月の予定の印刷（PRD D70）：左のメニューの外（印刷にナビを出さない） */}
-        <Route path="/month/print" element={<Guarded element={<MonthPrintPage />} />} />
-        <Route element={<AdminShell />}>
-          {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
-          <Route path="/schedule" element={<Navigate to="/plan" replace />} />
-          <Route path="/plan" element={<PlanPage />} />
-          <Route path="/month" element={<MonthPage />} />
-          <Route path="/week" element={<WeekPage />} />
-          <Route path="/workload" element={<WorkloadPage />} />
-          <Route path="/vacancy" element={<VacancyPage />} />
-          <Route path="/compare" element={<ComparePage />} />
-          <Route path="/rules" element={<RulesPage />} />
-          <Route path="/items" element={<ItemsPage />} />
-          <Route path="/types" element={<TypesPage />} />
-          <Route path="/compat" element={<CompatPage />} />
-          <Route path="/staff" element={<StaffPage />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/availability" element={<AvailabilityPage />} />
-          <Route path="/data" element={<DataPage />} />
-          <Route path="*" element={<Navigate to="/plan" replace />} />
-        </Route>
-      </Routes>
+      {/* 予定の名前から開く〈スタッフ〉・〈利用者さん〉の詳細（PRD D122〜D126）。吹き出しは画面全体で1つ */}
+      <PersonPopoverProvider>
+        <Routes>
+          <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
+          {/* 月の予定の印刷（PRD D70）：左のメニューの外（印刷にナビを出さない） */}
+          <Route path="/month/print" element={<Guarded element={<MonthPrintPage />} />} />
+          <Route element={<AdminShell />}>
+            {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
+            <Route path="/schedule" element={<Navigate to="/plan" replace />} />
+            <Route path="/plan" element={<PlanPage />} />
+            <Route path="/month" element={<MonthPage />} />
+            <Route path="/week" element={<WeekPage />} />
+            <Route path="/workload" element={<WorkloadPage />} />
+            <Route path="/vacancy" element={<VacancyPage />} />
+            <Route path="/compare" element={<ComparePage />} />
+            <Route path="/rules" element={<RulesPage />} />
+            <Route path="/items" element={<ItemsPage />} />
+            <Route path="/types" element={<TypesPage />} />
+            <Route path="/compat" element={<CompatPage />} />
+            <Route path="/staff" element={<StaffPage />} />
+            <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/availability" element={<AvailabilityPage />} />
+            <Route path="/data" element={<DataPage />} />
+            <Route path="*" element={<Navigate to="/plan" replace />} />
+          </Route>
+        </Routes>
+      </PersonPopoverProvider>
     </DayProvider>
   );
 }

@@ -920,3 +920,18 @@ p.plan-band.error {
     display: none;
   }
 }
+
+/* 列の見出しの詳細の「i」（PRD D124）。2行目（稼働時間・急な欠勤）の右端。急な欠勤のボタンが無い列でも右へ寄せる */
+.col-hours .col-info {
+  margin-left: auto;
+}
+.col-hours .absence-btn + .col-info {
+  margin-left: 0;
+}
+/* 訪問の詳細の〈利用者さん〉・担当の名前（押すと詳細の吹き出し） */
+.visit-who {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0;
+  font-size: 0.85rem;
+}
