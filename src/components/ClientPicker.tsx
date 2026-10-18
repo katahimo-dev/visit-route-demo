@@ -58,8 +58,12 @@ export type ClientPickerProps = {
   };
   /** 近道「仮押さえの人」を出す（月間。週間の時間軸では出さない。PRD D111・D112） */
   tentativeShortcut?: boolean;
-  /** 選んだ人のチップの名前を押すと詳細の吹き出しを出す（週間の時間軸。PRD D123） */
+  /** 選んだ人のチップの名前を押すと詳細の吹き出しを出す（PRD D123） */
   details?: boolean;
+  /**
+   * 選んだ人のチップを出すか（既定 true）。週間の時間軸は選んだ人を上のチップ（PickChips）で見せるので出さない（PRD D137）
+   */
+  showChips?: boolean;
   /** 部品の外枠の data-testid（候補は `${testId}-option`、チップは `${testId}-chip`） */
   testId?: string;
 };
@@ -84,6 +88,7 @@ export function ClientPicker({
   byStaff,
   tentativeShortcut = false,
   details = false,
+  showChips = true,
   testId = 'client-picker',
 }: ClientPickerProps) {
   const uid = useId();
@@ -272,7 +277,7 @@ export function ClientPicker({
       <label className="client-picker-label" htmlFor={inputId}>
         {label}
       </label>
-      {chosen.length > 0 && (
+      {showChips && chosen.length > 0 && (
         <ul className="client-picker-chips" aria-label={`選んでいる${label}`}>
           {chosen.map((c) => (
             <li key={c.id} className="client-picker-chip" data-testid={`${testId}-chip`} data-id={c.id}>

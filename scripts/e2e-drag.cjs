@@ -1,4 +1,5 @@
 // 本物のマウス操作（mouse.down → move → up）で、画面のドラッグが動くかを確かめる（6種類）。
+// 週の〈利用者さん〉で見るでは、初期値で先頭8人のチップが選ばれていることも確かめる（week-client-default。PRD D136・D137）。
 // 週・スタッフ／週・利用者さん／利用者さん×曜日の表／予定の時間軸／予定の順番／月 → 日（予定の時間軸）。
 // あわせて、週間の〈利用者さん〉×曜日の表の検索欄で日本語の変換（IME。CDP の Input.imeSetComposition）が壊れないかも確かめる
 // （week-clients-ime。変換中は URL の ?cf= を書かず、確定後に書く。URL が外から変わったら入力欄を合わせる。PRD D109）。
@@ -88,12 +89,37 @@ function report(name, ok, info) {
   console.log(`${ok ? 'OK  ' : 'NG  '} ${name}  ${JSON.stringify(info)}`);
 }
 
-/** 週間の〈利用者さん〉の検索欄で、この週に訪問がある人を n 人選ぶ（候補の欄を開いたままにしておく） */
-async function pickWeekClients(page, n) {
-  await page.getByTestId('week-client-picker-shortcut-period').click();
-  const opts = page.getByTestId('week-client-picker-option');
-  await opts.first().waitFor();
-  for (let i = 0; i < n; i++) await opts.nth(i).click();
+/**
+ * 週間の時間軸の「〈利用者さん〉で見る」の初期値（PRD D136・D137）：この週に訪問がある人のチップが並び、?client= が無くても
+ * 先頭8人（8人に満たなければ全員）が選ばれている。URL には書かない。確かめたら「ほかの人を探す」を開いて検索欄にフォーカスし、
+ * 候補の欄を開いたままにしておく（開いた欄があっても帯をつかめるか）
+ */
+async function weekClientDefault(page) {
+  const chips = page.getByTestId('week-client-chips').getByTestId('pick-chip');
+  await chips.first().waitFor();
+  const n = await chips.count();
+  const pressed = await chips.evaluateAll((els) => els.map((el) => el.getAttribute('aria-pressed') === 'true'));
+  const want = Math.min(8, n);
+  const ok =
+    pressed.slice(0, want).every(Boolean) && pressed.slice(want).every((p) => !p) && !page.url().includes('client=');
+  report('week-client-default', ok, { chips: n, pressed: pressed.filter(Boolean).length, url: page.url() });
+  // 9人目は選ばずに上限の文（PRD D138）。「全部外す」で0人（?client= が空）、「先頭8人に戻す」で URL から消える
+  const pressedCount = () =>
+    chips.evaluateAll((els) => els.filter((el) => el.getAttribute('aria-pressed') === 'true').length);
+  if (n > 8) {
+    await chips.nth(8).click();
+    const msg = await page.getByTestId('week-client-chips-message').innerText();
+    report('week-client-max', (await pressedCount()) === 8 && msg.includes('8人まで'), { msg });
+  }
+  await page.getByTestId('week-client-chips-none').click();
+  await page.waitForTimeout(200);
+  const none = (await pressedCount()) === 0 && /client=(&|$)/.test(page.url());
+  await page.getByTestId('week-client-chips-reset').click();
+  await page.waitForTimeout(200);
+  report('week-client-none-reset', none && (await pressedCount()) === want && !page.url().includes('client='), {
+    url: page.url(),
+  });
+  await page.getByTestId('week-client-search').locator('summary').click();
   await page.getByTestId('week-client-picker-input').focus();
 }
 
@@ -103,8 +129,8 @@ async function weekTimeline(page, by) {
   await page.reload();
   await page.getByTestId('week-col').first().waitFor();
   await page.waitForTimeout(800);
-  // 〈利用者さん〉で見るときは検索欄で選ぶ（選ばなければ帯が出ない）。候補の欄を開いたまま帯をつかむ
-  if (by === 'client') await pickWeekClients(page, 6);
+  // 〈利用者さん〉で見るときは初期値（この週の先頭8人）を確かめ、「ほかの人を探す」の候補の欄を開いたまま帯をつかむ
+  if (by === 'client') await weekClientDefault(page);
   // つかむ帯：つかむ位置に別の要素（開いたままの候補の欄など）が重なっていない最初の帯
   const vid = await page.evaluate(() => {
     for (const el of document.querySelectorAll('[data-testid="week-band"][draggable="true"]')) {

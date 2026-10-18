@@ -36,7 +36,7 @@ docs/ … prd.md / design.md / adr/ / handoff/
 - フォーマット・リント：`npm run lint`（biome）
 - 型チェック：`npm run typecheck`
 - ビルド：`npm run build`（`dist/`、`base: './'`）
-- ドラッグの確認（本物のマウス操作。6種類）：`npm run build && npx vite preview --port 4183` のあとで `node scripts/e2e-drag.cjs`（Playwright・Chromium は手元のものを使う。場所は環境変数 `PLAYWRIGHT`・`CHROMIUM`、サイトは `BASE`、スクリーンショットの置き場所は `OUT_DIR`。ページの時計は `FAKE_NOW`（既定は次の水曜の日本時間 12:00）に止め、テストの「今日」もアプリと同じく日本時間で決める。日曜に実行しても今週に動かし先の日が残る）
+- ドラッグの確認（本物のマウス操作。6種類。週の〈利用者さん〉で見るの初期値（先頭8人のチップ・URL に書かない・9人目の上限の文・「全部外す」「先頭8人に戻す」）も）：`npm run build && npx vite preview --port 4183` のあとで `node scripts/e2e-drag.cjs`（Playwright・Chromium は手元のものを使う。場所は環境変数 `PLAYWRIGHT`・`CHROMIUM`、サイトは `BASE`、スクリーンショットの置き場所は `OUT_DIR`。ページの時計は `FAKE_NOW`（既定は次の水曜の日本時間 12:00）に止め、テストの「今日」もアプリと同じく日本時間で決める。日曜に実行しても今週に動かし先の日が残る）
 - 住所の入力の確認（〈利用者さん〉・空き状況の場所・〈スタッフ〉の自宅。送るもの・郵便番号の正規化・候補と元に戻す・失敗と時間切れ・連打・閉じる・途中の書き換え・空き状況の計算と仮押さえ・自宅の郵便番号を保存しない）：同じく preview のあとで `node scripts/e2e-address.cjs`（環境変数は e2e-drag と同じ。外部の検索は page.route の偽の応答に差し替え、外へは出さない。時間切れを待つので1分ほどかかる）
 - 相性の画面の確認（名前・吹き出しの開閉とフォーカス・中を巻く・絞り込みと URL の復元・`?id=`・回帰・300人×60人の速さ）：同じく preview のあとで `node scripts/e2e-compat.cjs`（環境変数は e2e-drag と同じ。`PERF_MS` でセルを押して描き終わるまでの上限（既定 100ms））
 - 予定の名前から開く詳細の確認（月・週・日の名前とチップ・列の見出しの i：吹き出しの開閉とフォーカス・同時に1つ・同じ人が2か所に出るとき・見出しが消えたら閉じる・戻るで見出しの人が替わったら閉じる・開いている人がデータから消えたら閉じる・リンクで各画面の閲覧の欄・i を押してもチップや見出しの動きが起きない・帯とカードの選択とドラッグ・印刷で i を出さない・開くまでの速さ）：同じく preview のあとで `node scripts/e2e-details.cjs`（環境変数は e2e-drag と同じ。`FAKE_NOW` も）

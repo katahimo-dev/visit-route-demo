@@ -43,6 +43,13 @@ import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
+import {
+  clientParamOf,
+  handoffFromTable,
+  TIMELINE_CLIENT_MAX,
+  timelineChipIds,
+  timelineSelection,
+} from '../lib/timelineClients';
 import { useDayModel } from '../lib/useDayModel';
 import {
   allowedStaffOf,
@@ -79,15 +86,14 @@ import './week.css';
  * 週間（ADR-0012 追記の段階2。PRD D49〜D51・D56・D57。design.md §4 pages「週間（段階2）」「月間・週間の改定（2026-10-17）」）。
  * 時間軸（月〜日 × 07:00〜20:00。訪問の帯を種類の色で。ドラッグ・キーボードで日時を動かす）と〈スタッフ〉×曜日・〈利用者さん〉×曜日の表。
  * 時間軸は〈スタッフ〉か〈利用者さん〉で見る。〈スタッフ〉はチップで複数選ぶ（?staff=s1,s2。無ければ全員）。
- * 時間軸の〈利用者さん〉は検索欄 ClientPicker で選ぶ（PRD D61・D62・D108。?by=client・?client=c1,c2。8人まで。
- * 選んでいなければ空で「選んでいません」）。〈利用者さん〉×曜日の表は選択と分け、この週に訪問がある人を全員出して
- * 絞り込みの欄 ClientFilter で減らす（PRD D108〜D112。?cf=）。表から時間軸へ移ったとき、時間軸の選択が空なら
- * 表で絞り込んだ人の先頭8人を引き継ぐ。
+ * 時間軸の〈利用者さん〉は、この週に訪問がある人をチップ PickChips で並べて選ぶ（PRD D136〜D139。?by=client・?client=c1,c2。
+ * 8人まで。?client= が無ければ先頭8人＝初期値で、初期値のあいだは URL に書かない）。この週に訪問の無い人は「ほかの人を探す」の
+ * 検索欄 ClientPicker で選ぶ。〈利用者さん〉×曜日の表は選択と分け、この週に訪問がある人を全員出して
+ * 絞り込みの欄 ClientFilter で減らす（PRD D108〜D112。?cf=）。表から時間軸へ移ったとき、?client= が無く表で絞り込んでいれば
+ * その先頭8人を引き継ぐ（決まりは lib/timelineClients）。
  * データを書くのは「動かす」「空き時間に入れる」だけ（update の中で lib/week の純粋関数を呼ぶ）
  */
 
-/** 時間軸の「〈利用者さん〉で見る」で出せる人数（PRD D62・D108。表は絞り込みで全員） */
-const TIMELINE_CLIENT_MAX = 8;
 /** 時間軸の上限の文（呼び方は org.terms から作る） */
 const timelineClientMaxText = (client: string) =>
   `時間軸は${TIMELINE_CLIENT_MAX}人まで。表（${client}×曜日）なら絞り込んだ全員を見られます`;
@@ -211,14 +217,34 @@ export default function WeekPage() {
   );
   /** 〈スタッフ〉が担当する〈利用者さん〉（近道）：この週の帯の担当と、いつもの担当 */
   const clientsOfStaff = useCallback((sid: string) => facts.staffClientIds(sid), [facts]);
-  /** 選んでいる〈利用者さん〉（候補にいる人だけ。URL に無い・空なら選んでいない） */
-  const pickedClients = useMemo(() => {
-    const known = new Set(weekClients.map((c) => c.id));
-    return (clientSel ?? []).filter((id) => known.has(id));
-  }, [clientSel, weekClients]);
+  /** 時間軸のチップに並べる人の元：この週に訪問がある人（表の既定の絞り込みと同じ人・同じ順。PRD D136） */
+  const weekChipIds = useMemo(
+    () => filterClients(clients, WEEK_TABLE_FILTER, facts, '').map((c) => c.id),
+    [clients, facts],
+  );
+  /**
+   * 選んでいる〈利用者さん〉（候補にいる人だけ）。?client= が無ければこの週の先頭8人（初期値。PRD D137）、
+   * 空なら選んでいない
+   */
+  const selection = useMemo(
+    () => timelineSelection(clientSel, weekChipIds, new Set(weekClients.map((c) => c.id))),
+    [clientSel, weekChipIds, weekClients],
+  );
+  const pickedClients = selection.ids;
+  /** 時間軸のチップの人：この週に訪問がある人のあとに、「ほかの人を探す」で選んだ人 */
+  const chipPeople = useMemo(
+    () =>
+      timelineChipIds(weekChipIds, pickedClients).flatMap((id) => {
+        const c = clientById.get(id);
+        return c ? [{ id: c.id, name: c.displayName, color: colorOf(c.color) }] : [];
+      }),
+    [weekChipIds, pickedClients, clientById],
+  );
+  /** チップで8人を超えて選ぼうとしたときの文（PRD D138） */
+  const [chipMessage, setChipMessage] = useState<string | null>(null);
   /** 時間軸に出す〈利用者さん〉：選んだ順に8人まで（URL で9人以上渡されたとき） */
   const timelineClients = useMemo(() => pickedClients.slice(0, TIMELINE_CLIENT_MAX), [pickedClients]);
-  /** 表の行の〈利用者さん〉：絞り込みに当てはまる人（表示名の順。表のときだけ） */
+  /** 表の行の〈利用者さん〉：絞り込みに当てはまる人（表示名の順。表のときだけ。時間軸へ移るときの引き継ぎにも使う） */
   const filteredClients = useMemo(() => {
     if (tab !== 'clients') return [];
     const sid = resolveStaffId(tableFilter, activeStaff, facts, clients);
@@ -266,24 +292,41 @@ export default function WeekPage() {
   const setTableFilter = (f: ClientFilterState) =>
     go({ cf: sameFilter(f, WEEK_TABLE_FILTER) ? null : encodeFilter(f) }, true);
   /**
-   * 時間軸へ移る。表から移るとき、時間軸の選択が空なら、表で絞り込んだ人のうち時間軸に出せる人（検索欄の候補
-   * weekClients にいる人）の先頭8人を引き継ぐ（PRD D108）
+   * 時間軸へ移る。表から移るとき、?client= が無く表で絞り込んでいれば、表で絞り込んだ人のうち時間軸に出せる人（検索欄の候補
+   * weekClients にいる人）の先頭8人を引き継ぐ。絞り込んでいなければ書かない＝この週の先頭8人（PRD D139。lib/timelineClients）
    */
   const goTimeline = () => {
     const next: Record<string, string | null> = { view: 'timeline' };
-    if (tab === 'clients' && pickedClients.length === 0) {
+    if (tab === 'clients') {
       const known = new Set(weekClients.map((c) => c.id));
-      const ids = filteredClients
-        .filter((c) => known.has(c.id))
-        .slice(0, TIMELINE_CLIENT_MAX)
-        .map((c) => c.id);
-      if (ids.length > 0) next.client = ids.join(',');
+      const handoff = handoffFromTable({
+        hasParam: clientParam !== null,
+        filtered: !sameFilter(tableFilter, WEEK_TABLE_FILTER),
+        filteredIds: filteredClients.filter((c) => known.has(c.id)).map((c) => c.id),
+        weekIds: weekChipIds,
+      });
+      if (handoff !== null) next.client = handoff;
     }
     go(next);
+  };
+  /** 時間軸の〈利用者さん〉を選び直す（初期値と同じ人なら ?client= を消す。PRD D137） */
+  const setTimelineClients = (ids: string[]) => {
+    setChipMessage(null);
+    go({ client: clientParamOf(ids, weekChipIds) });
+  };
+  /** チップを押したとき（PickChips は全員を選ぶと null を返す）。8人を超えるなら選ばずに上限の文を出す（PRD D138） */
+  const onClientChips = (next: string[] | null) => {
+    const ids = next ?? chipPeople.map((p) => p.id);
+    if (ids.length > pickedClients.length && ids.length > TIMELINE_CLIENT_MAX) {
+      setChipMessage(timelineClientMaxText(terms.client));
+      return;
+    }
+    setTimelineClients(ids);
   };
   /** 週を送る：選んでいる日付もその日にする（PRD D59。曜日はそのまま） */
   const goWeek = (d: string) => {
     lastDate.current = d;
+    setChipMessage(null);
     go({ d });
     setDate(d);
   };
@@ -641,23 +684,65 @@ export default function WeekPage() {
           </>
         )}
         {/*
-          時間軸の〈利用者さん〉の検索欄（PRD D61・D62・D108）。ドラッグ中に高さを変えない：候補の欄は浮かせて出し（帯を押すと
-          検索欄からフォーカスが外れて閉じる）、チップ・近道・上限の文はドラッグで変わらない（変えるのは選んだときだけ）
+          時間軸の〈利用者さん〉（PRD D136〜D138）：この週に訪問がある人のチップ（〈スタッフ〉で見るときと同じ見た目・操作・i）。
+          ドラッグ中に高さを変えない：チップ・上限の文はドラッグで変わらない（変えるのは押したときだけ）。「ほかの人を探す」の
+          検索欄は畳んでおき、候補の欄は浮かせて出す（帯を押すと検索欄からフォーカスが外れて閉じる）
         */}
         {tab === 'timeline' && by === 'client' && (
-          <ClientPicker
-            clients={weekClients}
-            selected={pickedClients}
-            onChange={(ids) => setSel('client', ids)}
-            multiple
-            max={TIMELINE_CLIENT_MAX}
-            maxMessage={timelineClientMaxText(terms.client)}
-            label={`表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）`}
-            period={{ label: 'この週', clientIds: weekClientIds }}
-            byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
-            details
-            testId="week-client-picker"
-          />
+          <>
+            <PickChips
+              label={`表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）`}
+              people={chipPeople}
+              selected={pickedClients}
+              onChange={onClientChips}
+              bulk={false}
+              detailKind="client"
+              actions={
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() => setTimelineClients([])}
+                    disabled={pickedClients.length === 0}
+                    data-testid="week-client-chips-none"
+                  >
+                    全部外す
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() => {
+                      setChipMessage(null);
+                      go({ client: null });
+                    }}
+                    disabled={selection.isDefault || clientParamOf(pickedClients, weekChipIds) === null}
+                    data-testid="week-client-chips-reset"
+                  >
+                    先頭{TIMELINE_CLIENT_MAX}人に戻す
+                  </button>
+                </>
+              }
+              testId="week-client-chips"
+            />
+            <output className="week-client-message" data-testid="week-client-chips-message">
+              {chipMessage}
+            </output>
+            <details className="week-client-search" data-testid="week-client-search">
+              <summary>ほかの人を探す</summary>
+              <ClientPicker
+                clients={weekClients}
+                selected={pickedClients}
+                onChange={setTimelineClients}
+                multiple
+                max={TIMELINE_CLIENT_MAX}
+                maxMessage={timelineClientMaxText(terms.client)}
+                label={`${terms.client}を名前・よみで探す（この週に訪問の無い人も）`}
+                byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
+                showChips={false}
+                testId="week-client-picker"
+              />
+            </details>
+          </>
         )}
         {/* 〈利用者さん〉×曜日の表の絞り込み（PRD D108〜D112。変わるのは押したときだけで、ドラッグ中に高さを変えない） */}
         {tab === 'clients' && (
@@ -725,7 +810,9 @@ export default function WeekPage() {
           {nothingPicked && (
             <p className="sub" data-testid="week-none">
               {by === 'client'
-                ? `${terms.client}を選んでいません。上の検索欄か近道（この週に訪問がある人など）で選んでください（${TIMELINE_CLIENT_MAX}人まで）。`
+                ? weekChipIds.length === 0 && pickedClients.length === 0
+                  ? `この週に訪問がある${terms.client}はいません。「ほかの人を探す」で選んでください（${TIMELINE_CLIENT_MAX}人まで）。`
+                  : `${terms.client}を選んでいません。上のチップで選ぶか「先頭${TIMELINE_CLIENT_MAX}人に戻す」を押してください（${TIMELINE_CLIENT_MAX}人まで）。`
                 : `${terms.staff}をだれも選んでいません。上のチップで選ぶか「全員」を押してください。`}
             </p>
           )}

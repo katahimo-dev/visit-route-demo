@@ -1,5 +1,6 @@
-// 人を複数選ぶチップ（週間の時間軸・〈利用者さん〉×曜日の表。PRD D56・D57）。
+// 人を複数選ぶチップ（週間の時間軸の〈スタッフ〉・〈利用者さん〉。PRD D56・D57・D136）。
 // 選んでいる人は aria-pressed と ✓ の印で示す（色だけに頼らない）。強調（ドラッグ中の担当できる人）は太い枠と「可」の文字
+import type { ReactNode } from 'react';
 import type { PersonKind } from '../lib/personPopover';
 import { PersonInfo } from './PersonPopover';
 import './pickChips.css';
@@ -25,6 +26,7 @@ export function PickChips({
   highlightLabel = '担当できる',
   bulk = true,
   detailKind,
+  actions,
   testId,
 }: {
   label: string;
@@ -41,6 +43,8 @@ export function PickChips({
    * 渡さなければ置かない（担当できる人の選択など）
    */
   detailKind?: PersonKind;
+  /** 見出しの後ろ（「全員」「全解除」の位置）に置く小さなボタン（週間の時間軸の〈利用者さん〉の「全部外す」「先頭8人に戻す」。PRD D138） */
+  actions?: ReactNode;
   testId?: string;
 }) {
   const on = selected === null ? null : new Set(selected);
@@ -74,6 +78,7 @@ export function PickChips({
           </button>
         </>
       )}
+      {actions}
       {people.map((p) => {
         const pressed = isOn(p.id);
         const strong = highlight?.has(p.id) ?? false;
