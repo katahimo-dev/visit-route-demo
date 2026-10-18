@@ -189,6 +189,27 @@ describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
     const switched = setScorePreset(d, other.id);
     expect(rulesStale(switched, a, keysOf(switched))).toBe(false);
   });
+  it('自動作成（標準）→ 標準の重みを変える → いまの条件で作り直して同じ案になる：記録を使い回しても presetId が今のものになり消える（PR #40 の再レビュー）', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    let d = build(d0, a);
+    expect(planRunOf(d, a)?.presetId).toBe('standard');
+    d = setWeight(d, 'standard', 1);
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    // いまの条件（古い標準の重み）で解いて同じ結果：addRun は同じ記録を使い回す
+    const run = planRunOf(d, a)!;
+    const before = (d.aiRuns[a] ?? []).length;
+    d = applyDayRun(d, a, {
+      rules: d.rules,
+      result: resultOf(d, a),
+      createdAt: 2,
+      inputKey: run.inputKey!,
+      onlyEmpty: false,
+    });
+    expect((d.aiRuns[a] ?? []).length).toBe(before);
+    expect(planRunOf(d, a)?.presetId).toBeNull();
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
   it('いまの条件（プリセットに無い重み）で作った案のあとに重みを変えた：変わった。基準で作り直すと消える', () => {
     const d0 = novData();
     const a = firstDay(d0);

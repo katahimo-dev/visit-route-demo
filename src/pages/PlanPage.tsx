@@ -737,6 +737,8 @@ export default function PlanPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案の有無・問題が変わったときだけ
   useEffect(() => {
     // 訪問が無い日は試したことにしない（あとで訪問を足す・コピーしたら作る）
+    // ?do=recreate を受けている間は、どの日の自動作成も始めない（日付を切り替えてから作り直す。PR #40 の再レビュー）
+    if (pendingRecreate.current !== null) return;
     if (aiPlan || running || batch || !problem || problem.visits.length === 0 || autoTried.current.has(date)) return;
     autoTried.current.add(date);
     const base = scorePresetOf(data.presets, data.scorePresetId);
@@ -809,14 +811,14 @@ export default function PlanPage() {
     });
   }, [aiPlan, compileInput, data, date, problem, presetKeys]);
   /**
-   * （D43）作り直す：月の「条件が変わった日を作り直す」と同じく点数の基準のプリセットで作る（プリセットのカードを押したのと同じ。
-   * 手直し・固定があれば確認）。古い記録の条件では作らない（作った条件がもう無いときに「条件が変わった」が消えないため。PR #40 のレビュー）。
+   * （D43）作り直す：月の「条件が変わった日を作り直す」と同じく点数の基準のプリセットの重みで作る（手直し・固定があれば確認）。古い記録の条件では作らない（作った条件がもう無いときに「条件が変わった」が消えないため。PR #40 のレビュー）。
    * プリセットが無い（ありえない）ときはいまの条件で作る
    */
   const remakeStale = () => {
+    // 月の作り直しと同じく、いまの条件（data.rules）は書き換えず、基準のプリセットの重みで解くだけ（runPreset はいまの条件を
+    // プリセットの重みに書き換え、いまの条件で作ったほかの日が「条件が変わった」になるため使わない。PR #40 の再レビュー）
     const base = scorePresetOf(data.presets, data.scorePresetId);
-    if (base) void runPreset(base);
-    else void recreate();
+    void recreate(base ? applyPreset(data.rules, base) : data.rules);
   };
   /**
    * 固定を残して組み直す（generated は変えない。固定は残す）。固定していない手直し（「入らなかった訪問」へ移した・

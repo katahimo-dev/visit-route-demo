@@ -95,7 +95,7 @@ export const MAX_RUNS_PER_DAY = 20;
 /**
  * AI案の記録（ADR-0005）：AI案を作る・固定を残して組み直すたびに、作ったときの条件と結果を1件残す。
  * 比較の画面で任意の2つを選んで比べる。label はプリセットと一致すればプリセット名、違えば「条件を変えた案」。
- * presetId は一致したプリセット（無ければ null）。pins は組み直しで残した固定（作ったときは {}）
+ * presetId は最後に作ったとき（同じ記録を使い回したときも）に重みが一致した最初のプリセット（どれとも一致しなければ null。lib/runs の addRun。PR #40 の再レビュー）。pins は組み直しで残した固定（作ったときは {}）
  */
 export const aiRunSchema = z.object({
   id: z.string().min(1).max(100),

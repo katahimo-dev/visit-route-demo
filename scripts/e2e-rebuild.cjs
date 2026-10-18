@@ -379,6 +379,51 @@ async function today(page) {
   check(same, '今日の案をいまの条件で作り直した');
 }
 
+// ---- 日の画面の［作り直す］：基準のプリセットの重みで解くだけで、いまの条件は書き換えない（PR #40 の再レビュー）----
+async function dayRemake(page) {
+  // 今日の訪問の所要を変えて、今日の案（いまの条件で作った案）を「条件が変わった」にする
+  await page.goto(`${BASE}#/home`);
+  await page.locator('h1').waitFor();
+  const rulesBefore = await page.evaluate(
+    ({ key, d }) => {
+      const x = JSON.parse(localStorage.getItem(key));
+      const v = x.visits.find((y) => y.date === d && !y.cancelled);
+      v.durationMinutes += 15;
+      localStorage.setItem(key, JSON.stringify(x));
+      return JSON.stringify(x.rules);
+    },
+    { key: STORAGE_KEY, d: TODAY },
+  );
+  await page.goto(`${BASE}#/plan`);
+  await page.reload();
+  await page.getByTestId('plan-stale').waitFor({ timeout: 60000 });
+  check(
+    /点数の基準のプリセット「標準」で作り直します/.test(await page.getByTestId('plan-stale-with').innerText()),
+    '日の画面の作り直すの帯に「標準」で作り直すと書く',
+  );
+  const runIdOf = () =>
+    page.evaluate(({ key, d }) => JSON.parse(localStorage.getItem(key)).aiPlans[d]?.runId ?? null, {
+      key: STORAGE_KEY,
+      d: TODAY,
+    });
+  const id0 = await runIdOf();
+  await page.getByTestId('plan-stale').getByRole('button', { name: '作り直す' }).click();
+  // 作り終わる（今の案の元の記録が替わる）まで待つ
+  await page.waitForFunction(
+    ({ key, d, id }) => (JSON.parse(localStorage.getItem(key)).aiPlans[d]?.runId ?? null) !== id,
+    { key: STORAGE_KEY, d: TODAY, id: id0 },
+    { timeout: 60000 },
+  );
+  await page.waitForTimeout(500);
+  check((await page.getByTestId('plan-stale').count()) === 0, '作り直すと日の画面の作り直すの帯が消える');
+  const after = await page.evaluate((key) => JSON.stringify(JSON.parse(localStorage.getItem(key)).rules), STORAGE_KEY);
+  check(after === rulesBefore, '日の画面の［作り直す］はいまの条件を書き換えない');
+  await openSettings(page, '/rules');
+  await page.waitForTimeout(SETTLE + 300);
+  const c = await counts(page);
+  check(c.unconfirmed === 0, '作り直した日は「条件が変わった」から消え、ほかの日も増えない', c);
+}
+
 // ---- 390px・印刷 ----
 async function mobile(page) {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -419,6 +464,7 @@ async function mobile(page) {
     ['mobile', mobile],
     ['rebuild', rebuild],
     ['today', today],
+    ['day-remake', dayRemake],
   ]) {
     try {
       await fn(page);
