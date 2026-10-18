@@ -33,6 +33,11 @@ export type ClientFilterState = {
   staffId: string | null;
   /** 終了の人も出す（既定 false） */
   showEnded: boolean;
+  /**
+   * 画面ごとに足すチップのうち押しているもの（PRD D116。相性の画面だけ。キーは呼ぶ側が決め、判定は FilterFacts の
+   * extraTests）。無い・空なら足すチップで絞らない
+   */
+  extra?: readonly string[];
 };
 
 /** 何も絞らない状態（〈利用者さん〉の画面の既定） */
@@ -70,6 +75,8 @@ export type FilterFacts = {
    * （その訪問を表でドラッグできるように。PRD D111）。〈利用者さん〉の画面は空
    */
   endedShownIds: ReadonlySet<string>;
+  /** 画面ごとに足すチップの判定（PRD D116。キー → 当てはまるか）。判定の無いキーは絞らない */
+  extraTests?: Readonly<Record<string, (c: FilterClient) => boolean>>;
 };
 
 const EMPTY_SET: ReadonlySet<string> = new Set<string>();
@@ -118,7 +125,10 @@ export function filterFacts(input: {
   };
 }
 
-type FilterClient = Pick<Client, 'id' | 'displayName' | 'kana' | 'stage' | 'usualStaffId' | 'allowedStaffIds'> & {
+export type FilterClient = Pick<
+  Client,
+  'id' | 'displayName' | 'kana' | 'stage' | 'usualStaffId' | 'allowedStaffIds'
+> & {
   place: Pick<Client['place'], 'address'>;
 };
 
@@ -164,8 +174,12 @@ export const endedVisible = (
   facts: Pick<FilterFacts, 'endedShownIds'>,
 ): boolean => state.showEnded || c.stage !== 'ended' || facts.endedShownIds.has(c.id);
 
+/** 画面ごとに足すチップ（押しているものすべて）に当てはまるか */
+const extraMatch = (c: FilterClient, state: ClientFilterState, facts: FilterFacts) =>
+  (state.extra ?? []).every((k) => facts.extraTests?.[k]?.(c) ?? true);
+
 const baseMatch = (c: FilterClient, state: ClientFilterState, facts: FilterFacts) =>
-  endedVisible(c, state, facts) && matchClient(c, state.query);
+  endedVisible(c, state, facts) && matchClient(c, state.query) && extraMatch(c, state, facts);
 
 /**
  * 絞り込む（AND）：終了の人（showEnded でなければ除く。facts.endedShownIds の人は出す）・名前・よみ・地区・押しているチップすべて。渡した順のまま。
@@ -200,6 +214,29 @@ export function chipCounts(
     out[chip] = filterClients(clients, { ...state, chips }, facts, staffId).length;
   }
   return out;
+}
+
+/** 画面ごとに足すチップの人数（chipCounts と同じ数え方。keys の順に） */
+export function extraCounts(
+  clients: readonly FilterClient[],
+  state: ClientFilterState,
+  facts: FilterFacts,
+  staffId: string,
+  keys: readonly string[],
+): Map<string, number> {
+  return new Map(
+    keys.map((k) => {
+      const extra = state.extra ?? [];
+      const next = extra.includes(k) ? extra : [...extra, k];
+      return [k, filterClients(clients, { ...state, extra: next }, facts, staffId).length];
+    }),
+  );
+}
+
+/** 画面ごとに足すチップを付け外しする */
+export function toggleExtra(state: ClientFilterState, key: string): ClientFilterState {
+  const extra = state.extra ?? [];
+  return { ...state, extra: extra.includes(key) ? extra.filter((k) => k !== key) : [...extra, key] };
 }
 
 /** 地区のチップ1つ（key は市区か townKey、label は画面の文字、count は地区のほかの絞り込みをかけた人数） */
@@ -342,11 +379,20 @@ export function encodeFilter(state: ClientFilterState): string {
   // 〈スタッフ〉はチップ「〈スタッフ〉が担当する人」を押しているときだけ書く
   if (state.staffId && state.chips.includes('staff')) parts.push(`staff:${encodeURIComponent(state.staffId)}`);
   if (state.showEnded) parts.push('ended:1');
+  // 画面ごとに足すチップは押しているときだけ（並びはそろえる）
+  if (state.extra && state.extra.length > 0) parts.push(`x:${enc([...state.extra].sort())}`);
   return parts.join(';');
 }
 
-/** URL の値を状態にする。null（URL に無い）なら fallback。知らない項目・チップは捨てる */
-export function decodeFilter(raw: string | null, fallback: ClientFilterState): ClientFilterState {
+/**
+ * URL の値を状態にする。null（URL に無い）なら fallback。知らない項目・チップは捨てる。
+ * extraKeys は画面ごとに足すチップのキー（それ以外の `x:` の値は捨てる）
+ */
+export function decodeFilter(
+  raw: string | null,
+  fallback: ClientFilterState,
+  extraKeys: readonly string[] = [],
+): ClientFilterState {
   if (raw === null) return fallback;
   const out: ClientFilterState = { ...EMPTY_FILTER, chips: [...fallback.chips] };
   let chipSeen = false;
@@ -364,6 +410,11 @@ export function decodeFilter(raw: string | null, fallback: ClientFilterState): C
       out.chips = FILTER_CHIPS.filter((c) => xs.includes(c));
     } else if (key === 'staff') out.staffId = dec(value)[0] || null;
     else if (key === 'ended') out.showEnded = value === '1';
+    else if (key === 'x') {
+      const xs = dec(value);
+      const extra = extraKeys.filter((k) => xs.includes(k));
+      if (extra.length > 0) out.extra = extra;
+    }
   }
   if (!chipSeen) out.chips = [...fallback.chips];
   // 選んでいない市区の町名は捨てる

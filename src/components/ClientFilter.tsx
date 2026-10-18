@@ -1,6 +1,6 @@
 // 〈利用者さん〉の絞り込みの欄（PRD D108〜D112。ADR-0021）。週間の〈利用者さん〉×曜日の表と〈利用者さん〉の画面の一覧で使う。
 // 名前・よみの検索、地区（1段目＝市区、選んだ市区の2段目＝町名。どちらも複数・人数つき）、絞り込みのチップ（AND）、
-// 「終了の人も出す」。中身の判定は lib/clientFilter の純粋関数。状態は呼ぶ側が持つ（週間は URL の ?cf=）。
+// 「終了の人も出す」。相性の画面では、画面ごとのチップ（extraChips）を足し、「終了の人も出す」を出さない（PRD D116）。中身の判定は lib/clientFilter の純粋関数。状態は呼ぶ側が持つ（週間は URL の ?cf=）。
 // 検索の文字だけはこの部品の中にも持つ（日本語の変換を壊さないため。変換中は呼ぶ側へ渡さず、確定後に、
 // ふつうの入力は少し遅らせて渡す。呼ぶ側の値が外から変わったら（戻るボタンなど）入力欄を合わせる）
 import { Search } from 'lucide-react';
@@ -14,6 +14,7 @@ import {
   chipLabel,
   cityChips,
   endedVisible,
+  extraCounts,
   FILTER_CHIPS,
   type FilterChip,
   type FilterFacts,
@@ -24,6 +25,7 @@ import {
   staffCounts,
   toggleChip,
   toggleCity,
+  toggleExtra,
   toggleTown,
   townChips,
 } from '../lib/clientFilter';
@@ -44,6 +46,13 @@ export type ClientFilterProps = {
   periodLabel: string;
   /** 「絞り込みを戻す」で戻す状態（この画面の既定） */
   defaults: ClientFilterState;
+  /**
+   * 画面ごとに足すチップ（PRD D116。相性の画面だけ）。判定は facts.extraTests、押している状態は state.extra。
+   * 絞り込みのチップの後ろに並べる
+   */
+  extraChips?: readonly { key: string; label: string; help: string }[];
+  /** 「終了の人も出す」を出さない（終了の人を候補に入れない画面。相性の画面） */
+  hideEnded?: boolean;
   /** 外枠の data-testid（チップは `${testId}-chip`、地区は `${testId}-city`・`${testId}-town`） */
   testId?: string;
 };
@@ -65,6 +74,8 @@ export function ClientFilter({
   terms,
   periodLabel,
   defaults,
+  extraChips = [],
+  hideEnded = false,
   testId = 'client-filter',
 }: ClientFilterProps) {
   const uid = useId();
@@ -130,6 +141,11 @@ export function ClientFilter({
   );
   /** select の「（N人）」：その〈スタッフ〉で押したら何人になるか（チップの人数と同じ数え方） */
   const staffCount = useMemo(() => staffCounts(clients, state, facts, staff), [clients, state, facts, staff]);
+  const extraKeys = useMemo(() => extraChips.map((x) => x.key), [extraChips]);
+  const extraCount = useMemo(
+    () => extraCounts(clients, state, facts, staffId, extraKeys),
+    [clients, state, facts, staffId, extraKeys],
+  );
   const t = { periodLabel, staffTerm: terms.staff };
 
   const areaChip = (a: AreaChip, on: boolean, toggle: () => void, kind: 'city' | 'town') => {
@@ -188,6 +204,34 @@ export function ClientFilter({
     );
   };
 
+  const extraChip = (x: { key: string; label: string; help: string }) => {
+    const on = (state.extra ?? []).includes(x.key);
+    const n = extraCount.get(x.key) ?? 0;
+    const empty = !on && n === 0;
+    return (
+      <button
+        key={x.key}
+        type="button"
+        className={`pick-chip client-filter-chip${on ? ' is-on' : ''}${empty ? ' is-empty' : ''}`}
+        aria-pressed={on}
+        aria-disabled={empty || undefined}
+        title={`${x.help}${empty ? '（当てはまる人はいません。0人）' : ''}`}
+        onClick={() => !empty && change(toggleExtra(state, x.key))}
+        data-testid={`${testId}-chip`}
+        data-chip={x.key}
+      >
+        <span className="pick-chip-check" aria-hidden="true">
+          {on ? '✓' : ''}
+        </span>
+        {x.label}
+        <span className="client-filter-count">
+          {n}
+          <span className="sr-only">人</span>
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div className="client-filter stack" data-testid={testId}>
       <div className="row client-filter-top">
@@ -231,15 +275,17 @@ export function ClientFilter({
             />
           </span>
         </label>
-        <label className="check client-filter-ended">
-          <input
-            type="checkbox"
-            checked={state.showEnded}
-            onChange={(e) => change({ ...state, showEnded: e.target.checked })}
-            data-testid={`${testId}-ended`}
-          />
-          終了の人も出す
-        </label>
+        {!hideEnded && (
+          <label className="check client-filter-ended">
+            <input
+              type="checkbox"
+              checked={state.showEnded}
+              onChange={(e) => change({ ...state, showEnded: e.target.checked })}
+              data-testid={`${testId}-ended`}
+            />
+            終了の人も出す
+          </label>
+        )}
         <output className="sub client-filter-total" data-testid={`${testId}-count`} aria-live="polite">
           {shown.length === total ? `${total}人` : `${shown.length}人／${total}人`}
         </output>
@@ -292,6 +338,7 @@ export function ClientFilter({
               )
             : filterChip(chip),
         )}
+        {extraChips.map(extraChip)}
       </fieldset>
     </div>
   );

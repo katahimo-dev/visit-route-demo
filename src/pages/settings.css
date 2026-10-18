@@ -176,19 +176,9 @@
   vertical-align: bottom;
   padding-bottom: 6px;
 }
-.compat-head-in {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 44px;
-}
 .compat-head-name {
   font-size: 0.72rem;
   line-height: 1.2;
-  max-width: 5em;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---- スタッフ・訪問先の一覧 ---- */
@@ -526,4 +516,103 @@ fieldset.weekday-toggles {
 .chip-lastday {
   background: #ece7f6;
   color: #5b4a8a;
+}
+/* 列の見出し（PRD D113・D114）：押すと詳細の吹き出し。名前は名字と名の2行（空白が無ければ4文字ごと）で全部出す */
+.compat-head-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 44px;
+  margin: 0 auto;
+  padding: 2px 2px 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.compat-head-btn:hover,
+.compat-head-btn[aria-expanded='true'] {
+  border-color: var(--line);
+  background: var(--primary-soft);
+}
+.compat-head-btn:focus-visible,
+.compat-client-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.compat-head-line {
+  display: block;
+  white-space: nowrap;
+}
+/* 行の名前（PRD D115）：押すと詳細の吹き出し。見た目は ClientName と同じ */
+.compat-client-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 6px 2px 2px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.compat-client-btn:hover,
+.compat-client-btn[aria-expanded='true'] {
+  border-color: var(--line);
+  background: var(--primary-soft);
+}
+/* 絞り込みの欄（PRD D116）：2つを畳める欄にし、広い画面では横に並べる */
+.compat-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .compat-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.compat-filter {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.compat-filter[open] > summary {
+  margin-bottom: 10px;
+}
+.compat-filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  cursor: pointer;
+}
+.compat-filter-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.compat-resort {
+  margin-left: auto;
+}
+/* 表は枠の中で巻き、見出しの行と1列目を止める（PRD D116） */
+.compat-scroll {
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+.compat-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+}
+.compat-table thead th.avail-name {
+  left: 0;
+  z-index: 3;
 }
