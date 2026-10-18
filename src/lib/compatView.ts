@@ -218,6 +218,25 @@ export function staffCompatCounts(
   return out;
 }
 
+/** 〈スタッフ〉1人の閲覧の欄に名前を並べる〈利用者さん〉（PRD D198）：いつもの担当と、相性の記号ごと（◎・○・△・×）。並びは clients のまま */
+export function staffClientGroups<C extends Pick<Client, 'id' | 'usualStaffId'>>(
+  compat: Compat,
+  staffId: string,
+  clients: readonly C[],
+): { usual: C[]; great: C[]; good: C[]; poor: C[]; ng: C[] } {
+  const out = { usual: [] as C[], great: [] as C[], good: [] as C[], poor: [] as C[], ng: [] as C[] };
+  for (const c of clients) {
+    if (c.usualStaffId === staffId) out.usual.push(c);
+    const r = Object.hasOwn(compat, c.id) ? compat[c.id] : undefined;
+    const l = r && Object.hasOwn(r, staffId) ? r[staffId] : 0;
+    if (l === 2) out.great.push(c);
+    else if (l === 1) out.good.push(c);
+    else if (l === -1) out.poor.push(c);
+    else if (l === -2) out.ng.push(c);
+  }
+  return out;
+}
+
 /** 特性の値の文字（あり／なし・選択肢を「・」でつなぐ・数値。空なら「—」） */
 export function traitText(v: TraitValue | undefined): string {
   if (v === undefined || v === null || v === '') return '—';

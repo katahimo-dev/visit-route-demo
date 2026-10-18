@@ -32,3 +32,14 @@
   gap: 4px 10px;
   align-items: baseline;
 }
+/* 相手の名前の並び（PRD D198〜D200）：折り返して横に並べ、名前は詳細の吹き出しを開くボタン */
+.person-view .person-view-names {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  white-space: normal;
+}
+.person-view .person-view-name {
+  min-width: 0;
+}

@@ -1,5 +1,6 @@
 // 押すと出る吹き出し（ポップオーバー。PRD D114・D115・D122〜D126。ADR-0022）。相性の画面の列の見出し・行の名前と、予定（月・週・日）の名前（PersonPopover）で使う。
-// マウスを重ねて出すツールチップにはしない。body の直下に浮かせて出し（表の横スクロールで切れない）、画面の端で切れない位置に置く
+// マウスを重ねて出すツールチップにはしない。body の直下に浮かせて出し（表の横スクロールで切れない）、画面の端で切れない位置に置く。
+// 右の欄（aria-modal）の中の名前から開くときは欄の中に出す（モーダルの外に置くと読み上げで中身をたどれない。PRD D200）
 import { X } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -67,6 +68,15 @@ export function DetailPopover({
     const put = () => {
       const a = anchorEl();
       if (!a) return;
+      // 欄の中を巻いて名前が欄の見える範囲から出たら閉じる（見出しや「編集する」に重ねない。PRD D200）
+      const box = a.closest('.drawer-body')?.getBoundingClientRect();
+      if (box) {
+        const r = a.getBoundingClientRect();
+        if (r.bottom <= box.top || r.top >= box.bottom) {
+          latest.current();
+          return;
+        }
+      }
       // 中を巻いた位置を保つため maxHeight は外さない。中身の高さは scrollHeight（＋枠の太さ）で取る
       const frame = el.offsetHeight - el.clientHeight;
       const p = popoverPlace(
@@ -134,7 +144,9 @@ export function DetailPopover({
           const at = document.activeElement;
           const out = e.shiftKey ? at === e.currentTarget || at === list[0] : at === list.at(-1);
           if (out) {
+            // 欄（SidePanel）の Tab の閉じ込めに渡さない（閉じて名前へ戻したフォーカスを欄の先頭へ移されない）
             e.preventDefault();
+            e.stopPropagation();
             latest.current();
           }
           return;
@@ -169,6 +181,6 @@ export function DetailPopover({
       </div>
       {children}
     </div>,
-    document.body,
+    document.getElementById(anchorId)?.closest<HTMLElement>('[aria-modal="true"]') ?? document.body,
   );
 }

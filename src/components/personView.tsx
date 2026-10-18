@@ -1,5 +1,6 @@
 // 〈スタッフ〉・〈利用者さん〉の画面の閲覧の欄の中身（PRD D127〜D131。ADR-0023）。読むだけで、入力欄・即時に書き換えるボタンは置かない。
-// 行の部品は相性・予定の吹き出し（components/personDetail）と共通。閲覧の欄のほうが詳しい（編集の欄と同じ項目を並べる）
+// 行の部品は相性・予定の吹き出し（components/personDetail）と共通。閲覧の欄のほうが詳しい（編集の欄と同じ項目を並べる）。
+// 相手の名前（〈スタッフ〉の相性・担当の〈利用者さん〉、〈利用者さん〉の担当できる人・いつもの担当）は押すと詳細の吹き出し（PRD D198〜D200）
 import {
   BadgeCheck,
   BedSingle,
@@ -12,24 +13,24 @@ import {
   SlidersHorizontal,
   UserRound,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { DemoData } from '../contracts/data';
 import type { Client, Staff } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { STAGE_LABELS } from '../lib/clientStage';
 import { colorOf } from '../lib/colors';
 import { hasLocation } from '../lib/common';
-import { traitText } from '../lib/compatView';
+import { staffClientGroups, traitText } from '../lib/compatView';
 import { leavesOf } from '../lib/leaves';
 import { mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
 import { formatPostalCode } from '../lib/postalCode';
 import { orDash, splitLeaves } from '../lib/viewMode';
+import { PersonButton } from './PersonPopover';
 import {
   ClientAreaRow,
   ClientStaffRows,
   CondRows,
   DlRow,
-  StaffCompatRows,
   StaffHoursRow,
   StaffLastDayRow,
   StaffTraitRows,
@@ -72,9 +73,93 @@ export function StaffView({ staff: s, data }: { staff: Staff; data: DemoData }) 
       </dl>
       <SectionTitle icon={Repeat}>相性・担当</SectionTitle>
       <dl>
-        <StaffCompatRows staff={s} data={data} />
+        <StaffClientRows staff={s} data={data} />
       </dl>
     </div>
+  );
+}
+
+/** 相性の記号の行（並びと意味は相性の画面の凡例と同じ） */
+const COMPAT_ROWS = [
+  { key: 'great', term: '◎ 選ばれやすい' },
+  { key: 'good', term: '○ やや選ばれやすい' },
+  { key: 'poor', term: '△ 選ばれにくい' },
+  { key: 'ng', term: '× 担当にしない' },
+] as const;
+
+/**
+ * 〈スタッフ〉の相性・担当（PRD D198）：いつもの担当の〈利用者さん〉と、相性の記号ごとの〈利用者さん〉の名前（人数を添える）。
+ * 数えるのは利用中の〈利用者さん〉（相性の画面の行・吹き出しの件数と同じ）。名前は押すと詳細の吹き出し
+ */
+function StaffClientRows({ staff: s, data }: { staff: Staff; data: DemoData }) {
+  const g = staffClientGroups(
+    data.compat,
+    s.id,
+    data.clients.filter((c) => c.active),
+  );
+  return (
+    <>
+      <DlRow
+        term={`いつもの担当の${data.org.terms.client}`}
+        value={<PersonNames kind="client" people={g.usual} testId="view-usual-clients" count />}
+      />
+      {COMPAT_ROWS.map((r) => (
+        <DlRow
+          key={r.key}
+          term={r.term}
+          value={<PersonNames kind="client" people={g[r.key]} testId={`view-compat-${r.key}`} count />}
+        />
+      ))}
+    </>
+  );
+}
+
+/** 名前を並べる上限（超えたぶんは「あと N人」で開く。開いたかは欄の中だけで覚える） */
+export const NAMES_SHOWN = 12;
+
+/**
+ * 相手の名前を並べる（PRD D198〜D200）。名前は PersonButton（押すと詳細の吹き出し・そこから相手の画面の閲覧の欄）。
+ * 休止中の〈スタッフ〉は添える。居なければ「—」。count で先頭に人数
+ */
+function PersonNames({
+  kind,
+  people,
+  testId,
+  count = false,
+}: {
+  kind: 'staff' | 'client';
+  people: (Staff | Client)[];
+  testId: string;
+  count?: boolean;
+}) {
+  const [all, setAll] = useState(false);
+  if (people.length === 0) return <span data-testid={testId}>—</span>;
+  const shown = all ? people : people.slice(0, NAMES_SHOWN);
+  const rest = people.length - shown.length;
+  return (
+    <span className="person-view-names" data-testid={testId}>
+      {count && <span className="sub">{people.length}人</span>}
+      {shown.map((p) => {
+        const name = 'displayName' in p ? p.displayName : p.name;
+        return (
+          <span key={p.id} className="person-view-name">
+            <PersonButton kind={kind} id={p.id} name={name} />
+            {p.active ? '' : '（休止中）'}
+          </span>
+        );
+      })}
+      {people.length > NAMES_SHOWN && (
+        <button
+          type="button"
+          className="btn btn-small person-view-more"
+          aria-expanded={all}
+          onClick={() => setAll((v) => !v)}
+          data-testid={`${testId}-more`}
+        >
+          {all ? '畳む' : `あと ${rest}人`}
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -137,7 +222,11 @@ export function ClientView({ client: c, data }: { client: Client; data: DemoData
 
       <SectionTitle icon={ShieldCheck}>担当</SectionTitle>
       <dl>
-        <ClientStaffRows client={c} data={data} />
+        <ClientStaffRows
+          client={c}
+          data={data}
+          names={(staff, testId) => <PersonNames kind="staff" people={staff} testId={testId} />}
+        />
       </dl>
 
       <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
