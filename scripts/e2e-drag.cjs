@@ -150,11 +150,9 @@ async function weekClients(page) {
   const name = 'week-clients';
   await page.goto(`${BASE}#/week?view=clients`);
   await page.reload();
-  await page.getByTestId('week-client-picker').waitFor();
+  await page.getByTestId('week-client-filter').waitFor();
   await page.waitForTimeout(800);
-  // 表は上限なし：この週に訪問がある人をまとめて選ぶ
-  await page.getByTestId('week-client-picker-shortcut-period').click();
-  await page.getByTestId('week-client-picker-choose-all').click();
+  // 表は選ばずに、この週に訪問がある人を全員出す（PRD D108。絞り込みは既定のまま）
   await page.getByTestId('week-ccell').first().waitFor();
   const items = page.locator('[data-testid="week-citem"][draggable="true"]');
   let item = null;

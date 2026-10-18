@@ -1,7 +1,8 @@
-// 〈利用者さん〉を選ぶ検索欄（PRD D61・D62。design.md §4 pages「混み具合バーの3段・〈利用者さん〉の検索・週間の上限」）。
+// 〈利用者さん〉を選ぶ検索欄（PRD D61・D62・D108。design.md §4 pages「混み具合バーの3段・〈利用者さん〉の検索・週間の上限」）。
 // 表示名・よみで絞り込む combobox。候補は listbox で最大10件、上下キーと Enter で選ぶ。選んだ人は上にチップで並べる。
-// 近道（検索欄の上。候補の欄で隠れないように）：この期間に訪問がある人／〈スタッフ〉が担当する人／最近選んだ人（画面の状態に最大10人）／仮押さえの人。
-// 1人（月間の表示）と複数（週間・〈利用者さん〉の画面の一覧）の両方で使う
+// 近道（検索欄の上。候補の欄で隠れないように）：この期間に訪問がある人／〈スタッフ〉が担当する人／最近選んだ人（画面の状態に最大10人）／
+// 仮押さえの人（tentativeShortcut のときだけ。月間）。
+// 1人（月間の表示）と複数（週間の時間軸）の両方で使う。週間の表と〈利用者さん〉の画面の一覧は ClientFilter で絞り込む（PRD D108）
 import { Search, X } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Client } from '../contracts/documents';
@@ -54,8 +55,8 @@ export type ClientPickerProps = {
     staff: readonly { id: string; name: string }[];
     clientIdsOf: (staffId: string) => ReadonlySet<string>;
   };
-  /** 検索欄の文字が変わったとき（〈利用者さん〉の画面で、選ぶ前の一覧の絞り込みに使う） */
-  onQueryChange?: (query: string) => void;
+  /** 近道「仮押さえの人」を出す（月間。週間の時間軸では出さない。PRD D111・D112） */
+  tentativeShortcut?: boolean;
   /** 部品の外枠の data-testid（候補は `${testId}-option`、チップは `${testId}-chip`） */
   testId?: string;
 };
@@ -78,7 +79,7 @@ export function ClientPicker({
   placeholder = '名前・よみで探す',
   period,
   byStaff,
-  onQueryChange,
+  tentativeShortcut = false,
   testId = 'client-picker',
 }: ClientPickerProps) {
   const uid = useId();
@@ -142,10 +143,7 @@ export function ClientPicker({
     setMessage(null);
   }, [max]);
 
-  const setQ = (q: string) => {
-    setQuery(q);
-    onQueryChange?.(q);
-  };
+  const setQ = setQuery;
   const remember = (id: string) => setRecent((r) => [id, ...r.filter((x) => x !== id)].slice(0, RECENT_LIMIT));
   const overText = maxMessage ?? `${max}人まで選べます`;
 
@@ -332,7 +330,7 @@ export function ClientPicker({
           </span>
         )}
         {shortcutBtn('recent', '最近選んだ人', recent.length)}
-        {tentativeCount > 0 && shortcutBtn('tentative', '仮押さえの人', tentativeCount)}
+        {tentativeShortcut && tentativeCount > 0 && shortcutBtn('tentative', '仮押さえの人', tentativeCount)}
         {multiple && shortcut !== null && toAdd > 0 && (
           <button
             type="button"

@@ -12,6 +12,7 @@ import {
 import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { ClientFilter } from '../components/ClientFilter';
 import { ClientPicker } from '../components/ClientPicker';
 import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
 import { LoadRowsSample } from '../components/loadBar';
@@ -25,13 +26,22 @@ import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { barEdgeNote, barRowsText, edgeLabel } from '../lib/barRows';
+import {
+  type ClientFilterState,
+  decodeFilter,
+  encodeFilter,
+  filterClients,
+  filterFacts,
+  resolveStaffId,
+  sameFilter,
+  WEEK_TABLE_FILTER,
+} from '../lib/clientFilter';
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
-import { staffClientMap } from '../lib/search';
 import { useDayModel } from '../lib/useDayModel';
 import {
   allowedStaffOf,
@@ -68,16 +78,18 @@ import './week.css';
  * 週間（ADR-0012 追記の段階2。PRD D49〜D51・D56・D57。design.md §4 pages「週間（段階2）」「月間・週間の改定（2026-10-17）」）。
  * 時間軸（月〜日 × 07:00〜20:00。訪問の帯を種類の色で。ドラッグ・キーボードで日時を動かす）と〈スタッフ〉×曜日・〈利用者さん〉×曜日の表。
  * 時間軸は〈スタッフ〉か〈利用者さん〉で見る。〈スタッフ〉はチップで複数選ぶ（?staff=s1,s2。無ければ全員）。
- * 〈利用者さん〉は検索欄 ClientPicker で選ぶ（PRD D61・D62。?by=client・?client=c1,c2。時間軸は8人まで・表は上限なし。
- * 選んでいなければ時間軸も表も空で「選んでいません」）。
+ * 時間軸の〈利用者さん〉は検索欄 ClientPicker で選ぶ（PRD D61・D62・D108。?by=client・?client=c1,c2。8人まで。
+ * 選んでいなければ空で「選んでいません」）。〈利用者さん〉×曜日の表は選択と分け、この週に訪問がある人を全員出して
+ * 絞り込みの欄 ClientFilter で減らす（PRD D108〜D112。?cf=）。表から時間軸へ移ったとき、時間軸の選択が空なら
+ * 表で絞り込んだ人の先頭8人を引き継ぐ。
  * データを書くのは「動かす」「空き時間に入れる」だけ（update の中で lib/week の純粋関数を呼ぶ）
  */
 
-/** 時間軸の「〈利用者さん〉で見る」で出せる人数（PRD D62。表は上限なし） */
+/** 時間軸の「〈利用者さん〉で見る」で出せる人数（PRD D62・D108。表は絞り込みで全員） */
 const TIMELINE_CLIENT_MAX = 8;
 /** 時間軸の上限の文（呼び方は org.terms から作る） */
 const timelineClientMaxText = (client: string) =>
-  `時間軸は${TIMELINE_CLIENT_MAX}人まで。表（${client}×曜日）なら何人でも見られます`;
+  `時間軸は${TIMELINE_CLIENT_MAX}人まで。表（${client}×曜日）なら絞り込んだ全員を見られます`;
 
 /** 1分あたりの高さ（px） */
 const PX_PER_MIN = 0.8;
@@ -89,7 +101,7 @@ const hm = (m: number) => timeText(minutesToHhmm(m));
 const liveCount = (day: WeekDay) => day.bands.filter((b) => !b.leave).length;
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 
-/** URL の ?staff= ?client= の値（無ければ null） */
+/** URL の ?staff= ?client= ?cf= の値（無ければ null） */
 const paramOf = (params: URLSearchParams, key: string): string | null =>
   params.has(key) ? (params.get(key) ?? '') : null;
 /** 選んだ人（null＝全員、空なら []＝だれも選ばない） */
@@ -123,6 +135,9 @@ export default function WeekPage() {
   const clientParam = paramOf(params, 'client');
   const staffSel = useMemo(() => selectionOf(staffParam), [staffParam]);
   const clientSel = useMemo(() => selectionOf(clientParam), [clientParam]);
+  /** 〈利用者さん〉×曜日の表の絞り込み（PRD D108。?cf=。無ければこの週に訪問がある人） */
+  const cfParam = paramOf(params, 'cf');
+  const tableFilter = useMemo(() => decodeFilter(cfParam, WEEK_TABLE_FILTER), [cfParam]);
   const [draft, setDraft] = useState<MoveDraft | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
@@ -168,43 +183,56 @@ export default function WeekPage() {
     () => new Map(activeStaff.map((s) => [s.id, qualificationBadges(data.items, s)])),
     [activeStaff, data.items],
   );
+  /**
+   * 絞り込みの集まり（PRD D112）：この週に訪問がある人・担当が決まっていない訪問がある人・休み・定期パターン・
+   * 〈スタッフ〉が担当する人（この週の帯の担当といつもの担当）など。時間軸の検索欄の近道もここから引く
+   */
+  const facts = useMemo(
+    () =>
+      filterFacts({
+        days,
+        visits: data.visits,
+        clients,
+        patterns: data.patterns,
+        clientLeaves: data.clientLeaves,
+        staff,
+      }),
+    [days, data.visits, clients, data.patterns, data.clientLeaves, staff],
+  );
   /** この週に（取り消しでない）訪問がある〈利用者さん〉（検索欄の近道「この週に訪問がある人」） */
-  const weekClientIds = useMemo(() => {
-    const out = new Set<string>();
-    for (const d of days)
-      for (const b of d.bands) {
-        const cid = visitById.get(b.visitId)?.clientId;
-        if (cid) out.add(cid);
-      }
-    return out;
-  }, [days, visitById]);
+  const weekClientIds = facts.periodIds;
   /** 検索欄の候補の〈利用者さん〉：利用中の人と、休止中でもこの週に訪問がある人 */
   const weekClients = useMemo(
     () => clients.filter((c) => c.active || weekClientIds.has(c.id)),
     [clients, weekClientIds],
   );
   /** 〈スタッフ〉が担当する〈利用者さん〉（近道）：この週の帯の担当と、いつもの担当 */
-  const staffClients = useMemo(
-    () =>
-      staffClientMap(
-        days.flatMap((d) =>
-          d.bands.flatMap((b) => (b.staffId ? [[b.staffId, visitById.get(b.visitId)?.clientId] as const] : [])),
-        ),
-        clients,
-      ),
-    [days, visitById, clients],
-  );
-  const clientsOfStaff = useCallback((sid: string) => staffClients.get(sid) ?? new Set<string>(), [staffClients]);
+  const clientsOfStaff = useCallback((sid: string) => facts.staffClientIds(sid), [facts]);
   /** 選んでいる〈利用者さん〉（候補にいる人だけ。URL に無い・空なら選んでいない） */
   const pickedClients = useMemo(() => {
     const known = new Set(weekClients.map((c) => c.id));
     return (clientSel ?? []).filter((id) => known.has(id));
   }, [clientSel, weekClients]);
-  /** 時間軸に出す〈利用者さん〉：選んだ順に8人まで（表で9人以上選んでから時間軸へ来たとき） */
+  /** 時間軸に出す〈利用者さん〉：選んだ順に8人まで（URL で9人以上渡されたとき） */
   const timelineClients = useMemo(() => pickedClients.slice(0, TIMELINE_CLIENT_MAX), [pickedClients]);
+  /** 表の行の〈利用者さん〉：絞り込みに当てはまる人（表示名の順。表のときだけ） */
+  const filteredClients = useMemo(() => {
+    if (tab !== 'clients') return [];
+    const sid = resolveStaffId(tableFilter, activeStaff, facts, clients);
+    return filterClients(clients, tableFilter, facts, sid);
+  }, [tab, tableFilter, activeStaff, facts, clients]);
   const clientRows = useMemo(
-    () => (tab === 'clients' ? (pickedClients.length === 0 ? [] : clientWeekTable(data, days, pickedClients)) : null),
-    [tab, data, days, pickedClients],
+    () =>
+      tab === 'clients'
+        ? filteredClients.length === 0
+          ? []
+          : clientWeekTable(
+              data,
+              days,
+              filteredClients.map((c) => c.id),
+            )
+        : null,
+    [tab, data, days, filteredClients],
   );
 
   // ---- ドラッグ中の予告（D57） ----
@@ -223,13 +251,28 @@ export default function WeekPage() {
   };
   const hoverFit = dragId && hover ? fitCount(dragId, hover.date, hover.start) : null;
 
-  const go = (next: Record<string, string | null>) => {
+  const go = (next: Record<string, string | null>, replace = false) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(next)) {
       if (v === null) p.delete(k);
       else p.set(k, v);
     }
-    setParams(p);
+    setParams(p, { replace });
+  };
+  /** 表の絞り込みを URL に書く（既定なら消す。文字を打つたびに履歴を増やさない） */
+  const setTableFilter = (f: ClientFilterState) =>
+    go({ cf: sameFilter(f, WEEK_TABLE_FILTER) ? null : encodeFilter(f) }, true);
+  /**
+   * 時間軸へ移る。表から移るとき、時間軸の選択が空なら、表で絞り込んだ人の先頭8人を引き継ぐ（PRD D108）
+   */
+  const goTimeline = () => {
+    const next: Record<string, string | null> = { view: 'timeline' };
+    if (tab === 'clients' && pickedClients.length === 0 && filteredClients.length > 0)
+      next.client = filteredClients
+        .slice(0, TIMELINE_CLIENT_MAX)
+        .map((c) => c.id)
+        .join(',');
+    go(next);
   };
   /** 週を送る：選んでいる日付もその日にする（PRD D59。曜日はそのまま） */
   const goWeek = (d: string) => {
@@ -470,7 +513,8 @@ export default function WeekPage() {
               type="button"
               className={tab === 'timeline' ? 'is-on' : ''}
               aria-pressed={tab === 'timeline'}
-              onClick={() => go({ view: 'timeline' })}
+              onClick={goTimeline}
+              data-testid="tab-timeline"
             >
               時間軸
             </button>
@@ -589,23 +633,35 @@ export default function WeekPage() {
           </>
         )}
         {/*
-          〈利用者さん〉の検索欄（PRD D61・D62）。ドラッグ中に高さを変えない：候補の欄は浮かせて出し（帯を押すと検索欄から
-          フォーカスが外れて閉じる）、チップ・近道・上限の文はドラッグで変わらない（変えるのは選んだときだけ）
+          時間軸の〈利用者さん〉の検索欄（PRD D61・D62・D108）。ドラッグ中に高さを変えない：候補の欄は浮かせて出し（帯を押すと
+          検索欄からフォーカスが外れて閉じる）、チップ・近道・上限の文はドラッグで変わらない（変えるのは選んだときだけ）
         */}
-        {((tab === 'timeline' && by === 'client') || tab === 'clients') && (
+        {tab === 'timeline' && by === 'client' && (
           <ClientPicker
             clients={weekClients}
             selected={pickedClients}
             onChange={(ids) => setSel('client', ids)}
             multiple
-            max={tab === 'timeline' ? TIMELINE_CLIENT_MAX : undefined}
+            max={TIMELINE_CLIENT_MAX}
             maxMessage={timelineClientMaxText(terms.client)}
-            label={
-              tab === 'timeline' ? `表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）` : `表示する${terms.client}`
-            }
+            label={`表示する${terms.client}（${TIMELINE_CLIENT_MAX}人まで）`}
             period={{ label: 'この週', clientIds: weekClientIds }}
             byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
             testId="week-client-picker"
+          />
+        )}
+        {/* 〈利用者さん〉×曜日の表の絞り込み（PRD D108〜D112。変わるのは押したときだけで、ドラッグ中に高さを変えない） */}
+        {tab === 'clients' && (
+          <ClientFilter
+            clients={clients}
+            state={tableFilter}
+            onChange={setTableFilter}
+            facts={facts}
+            staff={activeStaff}
+            terms={{ client: terms.client, staff: terms.staff }}
+            periodLabel="この週"
+            defaults={WEEK_TABLE_FILTER}
+            testId="week-client-filter"
           />
         )}
         {tab === 'timeline' && by === 'client' && pickedClients.length > TIMELINE_CLIENT_MAX && (
@@ -974,14 +1030,12 @@ export default function WeekPage() {
             </div>
             {clientRows.length === 0 && (
               <p className="sub" data-testid="week-none">
-                {pickedClients.length === 0
-                  ? `${terms.client}を選んでいません。上の検索欄か近道（この週に訪問がある人→「あとN人を選ぶ」など）で選んでください。`
-                  : `${terms.client}がいません。`}
+                {`当てはまる${terms.client}がいません。上の絞り込みを外すか「絞り込みを戻す」を押してください。`}
               </p>
             )}
             <p className="sub">
-              選んだ{terms.client}
-              の訪問です（人数の上限はありません）。マスの帯は訪問の時刻の位置（3段。帯の長さが訪問の時間）で、下に担当の名字などを時刻の順に出します。時刻・種類・担当は、パソコンでは帯にマウスを乗せると出て、読み上げでは帯ごとに読みます。
+              絞り込んだ{terms.client}
+              の訪問です（人数の上限はありません。最初はこの週に訪問がある人を全員出します）。マスの帯は訪問の時刻の位置（3段。帯の長さが訪問の時間）で、下に担当の名字などを時刻の順に出します。時刻・種類・担当は、パソコンでは帯にマウスを乗せると出て、読み上げでは帯ごとに読みます。
               帯を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません。取り消し・休みの訪問は動かせません）。
               キーボードでは訪問で Enter を押すと、日付と時刻を選んで動かせます。
             </p>

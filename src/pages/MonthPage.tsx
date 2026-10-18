@@ -862,6 +862,7 @@ export default function MonthPage() {
               label={`表示する${terms.client}`}
               period={{ label: 'この月', clientIds: monthClientIds }}
               byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
+              tentativeShortcut
               testId="month-client-picker"
             />
           )}
