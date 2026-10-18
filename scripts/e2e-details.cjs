@@ -309,6 +309,75 @@ async function plan(page) {
   await page.emulateMedia({ media: 'screen' });
 }
 
+/** 戻るでボタンはそのままに人が替わったら閉じる（月の右の欄）・同じ人が2か所に出るとき（日の列の見出しと担当ごとの1日） */
+async function sameButtonAndTwice(page) {
+  await open(page, '/month?staff=s1', '[data-testid="month-aside-name"]');
+  await page.goto(`${BASE}#/month?staff=s2`);
+  const btn = page.getByTestId('month-aside-name');
+  await page.waitForFunction(() => document.querySelector('[data-testid="month-aside-name"]')?.dataset.id === 's2');
+  await btn.click();
+  await pop(page).waitFor();
+  const title2 = await pop(page).locator('h3').textContent();
+  await page.goBack();
+  await page.waitForFunction(() => document.querySelector('[data-testid="month-aside-name"]')?.dataset.id === 's1');
+  await page.waitForTimeout(200);
+  check(
+    (await pop(page).count()) === 0 && (await btn.getAttribute('aria-expanded')) === 'false',
+    '月：戻るで見出しの人が替わったら吹き出しを閉じる',
+    { before: title2, now: await nameOf(btn) },
+  );
+
+  await open(page, '/plan', '.tl-band[draggable="true"]');
+  const colInfo = page.getByTestId('col-info').first();
+  const sid = await colInfo.getAttribute('data-id');
+  const lineInfo = page.getByTestId('daylines').locator(`[data-testid="person-info"][data-id="${sid}"]`);
+  await colInfo.click();
+  await pop(page).waitFor();
+  await lineInfo.scrollIntoViewIfNeeded();
+  await lineInfo.click();
+  await page.waitForTimeout(200);
+  const expanded = await page.$$eval(`[data-id="${sid}"][aria-expanded="true"]`, (xs) =>
+    xs.map((x) => x.dataset.testid),
+  );
+  check(
+    (await pop(page).count()) === 1 && expanded.length === 1 && expanded[0] === 'person-info',
+    '日：同じ人の2か所目を押すと吹き出しは1つで、aria-expanded が true なのは押したほうだけ',
+    expanded,
+  );
+  await page.keyboard.press('Escape');
+  await pop(page).waitFor({ state: 'detached' });
+  check(await isFocused(lineInfo), '日：閉じたらフォーカスは2か所目（押したほう）へ戻る');
+}
+
+/** 開いている人がデータから消えたら閉じる（別のタブで消す。storage の知らせでデータが入れ替わる） */
+async function removed(page) {
+  await open(page, '/week?view=clients', '[data-testid="week-client-table"]');
+  const btn = page.getByTestId('week-client-table').locator('tbody th').first().getByTestId('person-btn');
+  const cid = await btn.getAttribute('data-id');
+  await btn.click();
+  await pop(page).waitFor();
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.evaluate((id) => {
+    const key = 'vrdemo:data:v1';
+    const d = JSON.parse(localStorage.getItem(key));
+    d.clients = d.clients.filter((c) => c.id !== id);
+    d.visits = d.visits.filter((v) => v.clientId !== id);
+    d.patterns = d.patterns.filter((x) => x.clientId !== id);
+    d.clientLeaves = d.clientLeaves.filter((x) => x.clientId !== id);
+    delete d.compat[id];
+    localStorage.setItem(key, JSON.stringify(d));
+  }, cid);
+  await other.close();
+  await page.waitForTimeout(500);
+  check(
+    (await pop(page).count()) === 0 &&
+      (await page.locator(`[data-testid="person-btn"][data-id="${cid}"]`).count()) === 0,
+    '開いている人がデータから消えたら閉じる',
+    cid,
+  );
+}
+
 async function speed(page) {
   // 週の時間軸：i を押してから吹き出しが出るまで（表全体を描き直さない）
   await open(page, '/week', '[data-testid="week-col"]');
@@ -331,7 +400,8 @@ async function speed(page) {
 
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
-  const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
+  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
+  const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
   const errors = [];
   page.on('pageerror', (e) => {
@@ -342,7 +412,10 @@ async function speed(page) {
     ['month', month],
     ['week', week],
     ['plan', plan],
+    ['same-button-and-twice', sameButtonAndTwice],
     ['speed', speed],
+    // データを書き換えるので最後に
+    ['removed', removed],
   ]) {
     try {
       await fn(page);

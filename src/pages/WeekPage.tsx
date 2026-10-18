@@ -832,7 +832,9 @@ export default function WeekPage() {
                     <tr key={r.staffId}>
                       <th scope="row">
                         {/* 名前を押すと詳細の吹き出し（PRD D123） */}
-                        <PersonButton kind="staff" id={r.staffId} name={staffName(r.staffId)} />
+                        <PersonButton kind="staff" id={r.staffId} name={staffById.get(r.staffId)?.name ?? ''}>
+                          {staffName(r.staffId)}
+                        </PersonButton>
                         <QualificationBadges badges={badgesOf.get(r.staffId) ?? []} />
                       </th>
                       {r.cells.map((c) => {

@@ -1727,23 +1727,19 @@ export default function PlanPage() {
     return (
       <>
         <div className="spread">
-          {/* 見出しを押すと地図の絞り込み。詳細は名前の横の「i」から（PRD D124。ボタンの入れ子にしない） */}
-          <span className="col-head-wrap">
-            <button
-              type="button"
-              className="col-head col-focus ellipsis"
-              aria-pressed={focusStaff === sid}
-              title={focusStaff === sid ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
-              onClick={() => {
-                focusOn(focusStaff === sid ? null : sid);
-              }}
-            >
-              <span className="staff-dot" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
-              {staffName(sid)}
-              <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
-            </button>
-            {s && <PersonInfo kind="staff" id={sid} name={s.name} testId="col-info" />}
-          </span>
+          <button
+            type="button"
+            className="col-head col-focus ellipsis"
+            aria-pressed={focusStaff === sid}
+            title={focusStaff === sid ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
+            onClick={() => {
+              focusOn(focusStaff === sid ? null : sid);
+            }}
+          >
+            <span className="staff-dot" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
+            {staffName(sid)}
+            <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
+          </button>
           <span className="chip">{ids.length}件</span>
         </div>
         <div className="col-hours">
@@ -1772,6 +1768,10 @@ export default function PlanPage() {
               {avail?.absence ? '欠勤を直す' : '急な欠勤'}
             </button>
           )}
+          {/*
+            詳細の「i」（PRD D124）。見出しのボタン（地図の絞り込み）と入れ子にせず、名前の幅も食わないよう2行目の右端に置く
+          */}
+          {s && <PersonInfo kind="staff" id={sid} name={s.name} className="col-info" testId="col-info" />}
         </div>
         {reassignInfo && absentStaff.has(sid) && (
           <div className="row col-reassign" data-testid="col-reassign">
@@ -1895,7 +1895,7 @@ export default function PlanPage() {
       ownerName={(id) => {
         if (!aiPlan) return null;
         const o = owner.get(id);
-        return o ? { id: o, name: staffName(o), color: colorOfStaff.get(o) } : null;
+        return o ? { id: o, name: staffName(o), known: staffById.has(o), color: colorOfStaff.get(o) } : null;
       }}
       notes={(id) => ({
         outside: !!problem && !problem.visits.some((v) => v.id === id),
@@ -2270,7 +2270,7 @@ export default function PlanPage() {
           onPick={goToStaff}
           staffTerm={terms.staff}
           collapsed={narrowOrPrint}
-          detail
+          detailName={(sid) => staffById.get(sid)?.name ?? ''}
         />
       )}
 
@@ -3081,7 +3081,8 @@ function VisitList({
   visitById: Map<string, Visit>;
   clientById: Map<string, Client>;
   /** 今の案での担当（AI案が無い・入らなかったときは null） */
-  ownerName: (id: string) => { id: string; name: string; color: string | undefined } | null;
+  /** known：〈スタッフ〉がデータにいる（いなければ名前をボタンにしない） */
+  ownerName: (id: string) => { id: string; name: string; known: boolean; color: string | undefined } | null;
   notes: (id: string) => VisitNotes;
   clientLabel: string;
   /** 訪問の種類（ADR-0012。種類なしは null） */
@@ -3149,7 +3150,9 @@ function VisitList({
                     {o ? (
                       <span className="row" style={{ gap: 6 }}>
                         <span className="staff-dot" style={{ background: o.color }} aria-hidden="true" />
-                        <PersonButton kind="staff" id={o.id} name={o.name} />
+                        <PersonButton kind="staff" id={o.id} name={o.known ? o.name : ''}>
+                          {o.name}
+                        </PersonButton>
                       </span>
                     ) : (
                       <span className="sub">未割当</span>

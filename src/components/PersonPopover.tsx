@@ -50,7 +50,11 @@ function PersonPopoverHost({ store }: { store: PersonPopoverStore }) {
   );
 }
 
-/** 名前のボタンに付ける共通の props（Provider の外では null：ただの文字にする） */
+/**
+ * 名前のボタンに付ける共通の props。ボタンにしないとき（Provider の外・名前が空）は null を返す。
+ * 開いているかは「自分の id（anchorId）で開いているか」だけを購読する。閉じるのは
+ * ボタンが消えたとき（後始末）と、ボタンが残ったまま渡される人（kind・id）が変わったとき（戻るで見出しの人が替わったなど）
+ */
 function usePersonTrigger(kind: PersonKind, id: string, name: string) {
   const store = useContext(StoreContext);
   const anchorId = `person-${useId()}`;
@@ -61,7 +65,12 @@ function usePersonTrigger(kind: PersonKind, id: string, name: string) {
   );
   // 見出しが消えたら閉じる（絞り込み・表示の切り替え・訪問の選び直しで名前のボタンが無くなったとき）
   useEffect(() => () => store?.closeIf(anchorId), [store, anchorId]);
-  if (!store) return null;
+  // 同じボタンのまま人が替わったら閉じる（前の人の吹き出しを残さない）
+  useEffect(() => {
+    const cur = store?.get();
+    if (cur && cur.anchorId === anchorId && (cur.kind !== kind || cur.id !== id)) store?.close();
+  }, [store, anchorId, kind, id]);
+  if (!store || name.trim() === '') return null;
   return {
     id: anchorId,
     type: 'button' as const,
@@ -78,7 +87,8 @@ const noSubscribe = () => () => {};
 
 /**
  * 名前そのものを押して詳細を開くボタン（名前の文字が今は操作になっていない所）。children は名前の見た目（無ければ name）。
- * Provider の外（印刷の画面など）ではボタンにせず、children をそのまま出す
+ * 読み上げの名前は aria-label「〈name〉の詳細」。name が空のとき・Provider の外ではボタンにせず、children（無ければ name）を
+ * 文字のまま出す。印刷ではボタンのまま下線だけ消す（personPopover.css）
  */
 export function PersonButton({
   kind,
@@ -105,8 +115,8 @@ export function PersonButton({
 }
 
 /**
- * 名前の横の小さな「i」（押すと別の動きがある所：ドラッグできるカード・選ぶチップ・列を絞るボタンの横）。
- * ボタンの中には置かない（ボタンの入れ子にしない）
+ * 名前の横の小さな「i」（押すと別の動きがある所の外側：選ぶチップ・地図を絞る列の見出し・列へ移る担当ごとの1日の行）。
+ * ボタンの中には置かない（ボタンの入れ子にしない）。name が空のとき・Provider の外では出さない。印刷では出さない
  */
 export function PersonInfo({
   kind,
