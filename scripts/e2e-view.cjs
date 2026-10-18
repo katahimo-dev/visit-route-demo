@@ -11,6 +11,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
 
 function loadPlaywright() {
@@ -575,6 +576,8 @@ async function staffMore(page, dlg) {
   const errors = [];
   for (const step of [clients, clientsMore, seeded, staff, staffMore, links]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    // 初回の案内ツアーを見た扱いにする（PRD D193）
+    await skipTour(ctx);
     // 地図のタイルは外へ取りに行かない
     await ctx.route(/cyberjapandata\.gsi\.go\.jp/, (r) => r.fulfill({ status: 204, body: '' }));
     const page = await ctx.newPage();

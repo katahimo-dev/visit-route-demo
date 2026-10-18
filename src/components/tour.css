@@ -1,0 +1,111 @@
+/* 初回の案内ツアー（components/Tour.tsx。PRD D192）。画面の中央のカード。
+   右の欄・メニューの引き出し（1100）・トースト（1200）より前、確認ダイアログ（1300）より後ろ */
+.tour-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+.tour-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(40, 25, 15, 0.4);
+  animation: drawer-fade 0.15s ease-out;
+}
+.tour-card {
+  position: relative;
+  width: min(480px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px 18px;
+  background: var(--card);
+  border-radius: var(--radius);
+  border-top: 6px solid var(--primary);
+  box-shadow: 0 18px 50px rgba(40, 25, 15, 0.3);
+  animation: tour-in 0.15s ease-out;
+}
+.tour-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tour-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+.tour-count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--sub);
+}
+.tour-main h2 {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+  line-height: 1.5;
+}
+.tour-body {
+  margin: 0;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.tour-where {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--soft);
+  font-size: 0.9rem;
+}
+.tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tour-dots li {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.tour-dots li.is-on {
+  width: 20px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.tour-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tour-spacer {
+  flex: 1;
+}
+@keyframes tour-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@media print {
+  .tour-wrap {
+    display: none !important;
+  }
+}

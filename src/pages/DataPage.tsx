@@ -1,8 +1,10 @@
-import { Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAlert, Upload } from 'lucide-react';
+import { CircleHelp, Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
+import { FilePick } from '../components/FilePick';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
+import { useTour } from '../components/Tour';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
 import { jstDate } from '../domain/time';
@@ -48,8 +50,7 @@ export default function DataPage() {
   };
   const toast = useToast();
   const confirmDialog = useConfirm();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const excelRef = useRef<HTMLInputElement>(null);
+  const openTour = useTour();
   const [error, setError] = useState<string | null>(null);
   const [excelError, setExcelError] = useState<string | null>(null);
   const [excelBusy, setExcelBusy] = useState(false);
@@ -145,7 +146,6 @@ export default function DataPage() {
       );
     } finally {
       setExcelBusy(false);
-      if (excelRef.current) excelRef.current.value = '';
     }
   };
 
@@ -220,8 +220,6 @@ export default function DataPage() {
       toast('読み込みました');
     } catch (e) {
       setError(`読み込めませんでした：${formError(e)}（いまのデータはそのままです）`);
-    } finally {
-      if (fileRef.current) fileRef.current.value = '';
     }
   };
 
@@ -242,7 +240,7 @@ export default function DataPage() {
       <PageHeader
         icon={Database}
         title="データ"
-        lead="書き出し・読み込み（控え（バックアップ）・Excel）・初期状態に戻す"
+        lead="書き出し・読み込み（控え（バックアップ）・Excel）・初期状態に戻す・使い方の案内"
       />
       <div className="warn-box">
         <TriangleAlert size={20} strokeWidth={2.2} aria-hidden="true" />
@@ -289,20 +287,16 @@ export default function DataPage() {
         </SectionTitle>
         <Hint>
           データ一式（AI案・記録・確定した割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
-          下の欄で書き出したファイルを選ぶと、いまのデータと置き換えます（置き換える前に確認します）。
+          「ファイルを選ぶ」で書き出したファイルを選ぶと、いまのデータと置き換えます（置き換える前に確認します）。
         </Hint>
         <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
           <WithIcon icon={Download}>ファイルに書き出す</WithIcon>
         </button>
-        <input
-          ref={fileRef}
-          type="file"
+        <FilePick
+          caption="読み込む控え（JSON）"
           accept="application/json,.json"
-          aria-label="読み込むファイル"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void load(f);
-          }}
+          onPick={(f) => void load(f)}
+          testId="backup-file"
         />
         {error && <p className="error">{error}</p>}
       </div>
@@ -374,20 +368,15 @@ export default function DataPage() {
           <button type="button" className="btn" disabled={excelBusy} onClick={() => void downloadExcel()}>
             <WithIcon icon={FileSpreadsheet}>Excel に書き出す</WithIcon>
           </button>
-          <button type="button" className="btn" disabled={excelBusy} onClick={() => excelRef.current?.click()}>
-            <WithIcon icon={Upload}>Excel を読み込む</WithIcon>
-          </button>
         </div>
-        <input
-          ref={excelRef}
-          type="file"
+        <FilePick
+          // 種類を切り替えたら、選んだファイルの文を消す（前の種類で選んだ名前を残さない）
+          key={excelKind}
+          caption={excelKind === 'all' ? '読み込む Excel（全体）' : `読み込む${rosterTerm}の名簿（Excel）`}
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          aria-label="読み込む Excel のファイル"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void loadExcel(f);
-          }}
+          disabled={excelBusy}
+          onPick={(f) => void loadExcel(f)}
+          testId="excel-file"
         />
         {excelError && (
           <p className="error" style={{ whiteSpace: 'pre-line' }}>
@@ -408,8 +397,26 @@ export default function DataPage() {
       </div>
 
       <div className="card stack">
+        <SectionTitle icon={CircleHelp}>使い方の案内</SectionTitle>
+        <Hint>
+          初めて開いたときに出る短い案内（5枚）を、もう一度見られます。案内を見たかどうかはこのブラウザに覚え、データには入れません（書き出し・初期状態に戻すでは変わりません）。
+        </Hint>
+        <button
+          type="button"
+          className="btn"
+          style={{ alignSelf: 'flex-start' }}
+          onClick={openTour}
+          data-testid="tour-again"
+        >
+          <WithIcon icon={CircleHelp}>案内をもう一度見る</WithIcon>
+        </button>
+      </div>
+
+      <div className="card stack">
         <SectionTitle icon={RotateCcw}>初期状態に戻す</SectionTitle>
-        <Hint>デモの架空の事業所のデータに戻します。いまの変更はすべて消えます。</Hint>
+        <Hint>
+          デモの架空の事業所のデータに戻します。いまの変更はすべて消えます（使い方の案内を見たかどうかはそのままです）。
+        </Hint>
         <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={doReset}>
           <WithIcon icon={RotateCcw}>デモの初期状態に戻す</WithIcon>
         </button>

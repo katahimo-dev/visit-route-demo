@@ -12,6 +12,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
 
 function loadPlaywright() {
@@ -454,7 +455,8 @@ async function empty(page) {
 async function mobile(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [hash, ready, name] of [
-    [`/month?ym=${YM}`, '[data-testid="month-grid"]', 'month'],
+    // 390px の月ははじめ日ごとの一覧（PRD D189）。カレンダーと一覧のどちらでもある切り替えを待つ
+    [`/month?ym=${YM}`, '[data-testid="month-layout"]', 'month'],
     [`/week?d=${TODAY}`, '[data-testid="week-title"]', 'week'],
     ['/plan', '[data-testid="confirm-state"]', 'day'],
   ]) {
@@ -491,6 +493,8 @@ async function mobile(page) {
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
+  // 初回の案内ツアーを見た扱いにする（PRD D193）
+  await skipTour(ctx);
   const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
   const errors = [];

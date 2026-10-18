@@ -6,6 +6,8 @@ import {
   ChevronRight,
   CircleAlert,
   Layers,
+  LayoutGrid,
+  List,
   ListChecks,
   Lock,
   PencilLine,
@@ -94,6 +96,16 @@ import {
   ymOf,
 } from '../lib/month';
 import { cellGuide, createTipStore, type TipStore } from '../lib/monthGuide';
+import {
+  DAY_STATE_TEXT,
+  MONTH_LAYOUT_PARAM,
+  MONTH_LIST_QUERY,
+  type MonthLayout,
+  type MonthListRow,
+  monthLayoutOf,
+  monthListFocusDate,
+  monthListRow,
+} from '../lib/monthList';
 import { mdText } from '../lib/patternText';
 import { type BandOp, urgentCount } from '../lib/progressBand';
 import { rebuildWith } from '../lib/rebuildBand';
@@ -154,12 +166,8 @@ const ymText = (ym: string) => `${ym.slice(0, 4)}年${Number(ym.slice(5, 7))}月
 const hm = (t: number) => timeText(minutesToHhmm(t));
 const hoursText = (minutes: number) => `${Math.round((minutes / 60) * 10) / 10}時間`;
 
-const STATE_TEXT: Record<DayStatus['state'], string> = {
-  none: '案なし',
-  plan: '案あり',
-  confirmed: '確定済み',
-  diff: '未確定の変更あり',
-};
+/** 日の状態の言葉（一覧と同じ。lib/monthList） */
+const STATE_TEXT = DAY_STATE_TEXT;
 const STATE_ORDER: DayStatus['state'][] = ['none', 'plan', 'confirmed', 'diff'];
 
 /** 表示の選択：全体／〈スタッフ〉1人／〈利用者さん〉1人 */
@@ -180,6 +188,9 @@ export default function MonthPage() {
   const raw = params.get('ym') ?? '';
   const ym = isYm(raw) ? raw : ymOf(date);
   const monthNo = Number(ym.slice(5, 7));
+  /** 月の見せ方（PRD D189）：URL の ?layout= か、無ければ幅（600px 以下は日ごとの一覧）。データには保存しない */
+  const narrowList = useMedia(MONTH_LIST_QUERY);
+  const layout = monthLayoutOf(params.get(MONTH_LAYOUT_PARAM), narrowList);
 
   const [panel, setPanel] = useState(false);
   /** 選ばないときの右の欄：要対応／確定していない日（進み具合の帯の「確定」から。PRD D153） */
@@ -295,6 +306,12 @@ export default function MonthPage() {
     const [kind, ...rest] = value.split(':');
     const id = rest.join(':');
     patchParams({ staff: kind === 'staff' ? id : null, client: kind === 'client' ? id : null });
+  };
+
+  /** カレンダーと一覧を切り替える（押したら幅の既定と同じでも URL に書く。PRD D189） */
+  const pickLayout = (next: MonthLayout) => {
+    if (next === layout) return;
+    patchParams({ [MONTH_LAYOUT_PARAM]: next });
   };
 
   /** 点数の基準のプリセット（月まとめ作成に使う。ADR-0012） */
@@ -736,6 +753,71 @@ export default function MonthPage() {
   );
 
   const current = batch ? batch.targets[batch.index] : undefined;
+  /**
+   * 日ごとの一覧の行（PRD D189。一覧のときだけ作る）。表示の選択（〈スタッフ〉・〈利用者さん〉）と「休みを入れる」の補足は行の下に出す
+   */
+  const listRows = useMemo((): { row: MonthListRow; extra: string[]; off: OffDayState | undefined }[] => {
+    if (layout !== 'list') return [];
+    const out: { row: MonthListRow; extra: string[]; off: OffDayState | undefined }[] = [];
+    for (const d of days) {
+      const s = statuses.get(d);
+      if (!s) continue;
+      const extra: string[] = [];
+      const x = staffDays.get(d);
+      if (focus.kind === 'staff' && x) {
+        if (x.retired) extra.push('最終勤務日の後');
+        else if (x.absence) extra.push(x.requested ? REQUESTED_OFF_NOTE : '欠勤');
+        else if (x.off) extra.push('休み');
+        if (x.count > 0) extra.push(`担当 ${x.count}件`);
+      }
+      const c = clientDays.get(d);
+      if (focus.kind === 'client' && c && c.visits.length > 0) {
+        extra.push(
+          c.visits
+            .map(
+              (v) =>
+                `${hm(v.start)} ${
+                  v.cancelled
+                    ? '取り消し'
+                    : v.leave
+                      ? '休み'
+                      : v.staffId
+                        ? shortName(staffById.get(v.staffId)?.name ?? '')
+                        : v.unassigned
+                          ? '入らない'
+                          : '担当未定'
+                }`,
+            )
+            .join('、'),
+        );
+      }
+      const off = offStaffId ? offDayState(data, offStaffId, d, today) : undefined;
+      if (off) extra.push(OFF_STATE_TEXT[off]);
+      out.push({ row: monthListRow(s, today, extra), extra, off });
+    }
+    return out;
+  }, [layout, days, statuses, staffDays, clientDays, focus.kind, staffById, offStaffId, data, today]);
+  /** 日ごとの一覧（最初に見せる日へ巻く。PRD D189） */
+  const listRef = useRef<HTMLUListElement>(null);
+  /** その日の行を見える所へ（上の帯は scroll-margin で避ける）。focus なら行へフォーカス */
+  const showListDay = (d: string, focus: boolean) => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-date="${d}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start', behavior: focus ? 'smooth' : 'auto' });
+    if (focus) el.focus({ preventScroll: true });
+  };
+  /** 最初に巻いた月と見せ方（同じ月・見せ方では巻き直さない） */
+  const listShown = useRef('');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 月・見せ方が変わったとき（と行ができたとき）だけ
+  useEffect(() => {
+    if (layout !== 'list' || listRows.length === 0) return;
+    const key = `${ym}:${layout}`;
+    if (listShown.current === key) return;
+    listShown.current = key;
+    // 今月で行き先（?do=）が無いときだけ、今日（選んでいる日が今月ならその日）の行へ
+    const target = monthListFocusDate(ym, date, today, doParam !== null);
+    if (target) requestAnimationFrame(() => showListDay(target, false));
+  }, [layout, ym, listRows.length]);
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
   /** 選んだ〈利用者さん〉（休みの欄。ADR-0013） */
   const focusClient = focus.kind === 'client' ? data.clients.find((c) => c.id === focus.id) : undefined;
@@ -757,6 +839,28 @@ export default function MonthPage() {
 
       {/* 進み具合の帯（PRD D151〜D155）。「まとめて作る」の入口はここの1か所（D154。見出しのボタン・今月の準備の①〜③をまとめた） */}
       <ProgressBand ym={ym} model={band} primary onOp={onBandOp} />
+      {/* カレンダーと日ごとの一覧の切り替え（PRD D189。600px 以下ははじめ一覧。URL の ?layout=。操作の欄より上） */}
+      <fieldset className="segmented seg-sm month-layout" aria-label="月の見せ方" data-testid="month-layout">
+        {(
+          [
+            ['calendar', 'カレンダー', LayoutGrid],
+            ['list', '日ごとの一覧', List],
+          ] as const
+        ).map(([k, label, Icon]) => (
+          <button
+            key={k}
+            type="button"
+            className={layout === k ? 'is-on' : undefined}
+            aria-pressed={layout === k}
+            onClick={() => pickLayout(k)}
+            data-layout={k}
+          >
+            <WithIcon icon={Icon} size={14}>
+              {label}
+            </WithIcon>
+          </button>
+        ))}
+      </fieldset>
 
       <div className="card stack month-head">
         <div className="row month-nav">
@@ -963,58 +1067,132 @@ export default function MonthPage() {
       </div>
 
       <div className="month-body">
-        <div className="card month-card">
-          <table ref={gridRef} className="month-grid" data-testid="month-grid">
-            <thead>
-              <tr>
-                {WEEKDAY_LABELS.map((w, i) => (
-                  <th key={w} scope="col" className={i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}>
-                    {w}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {weeks.map((week) => (
-                <tr key={week[0]}>
-                  {week.map((d) => {
-                    const s = statuses.get(d);
-                    if (ymOf(d) !== ym || !s) {
-                      return (
-                        <td key={d} className="month-cell is-out">
-                          <span className="month-day">{mdText(d)}</span>
-                        </td>
-                      );
-                    }
-                    return (
-                      <DayCell
-                        key={d}
-                        date={d}
-                        tipStore={tipStore}
-                        status={s}
-                        today={today}
-                        picked={d === date}
-                        making={current === d}
-                        focus={focus.kind}
-                        marks={marks.get(d)!}
-                        load={focus.kind === 'all' ? (loads.get(d) ?? null) : undefined}
-                        staffDay={staffDays.get(d)}
-                        clientDay={clientDays.get(d)}
-                        typeById={typeById}
-                        staffById={staffById}
-                        clientTerm={terms.client}
-                        staffTerm={terms.staff}
-                        offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
-                        onOpen={openDay}
-                        onToggleOff={toggleOff}
-                      />
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <MonthCellTip gridRef={gridRef} tipStore={tipStore} />
+        <div className={`card month-card${layout === 'list' ? ' is-list' : ''}`}>
+          {layout === 'list' && ym === ymOf(today) && (
+            <button
+              type="button"
+              className="btn btn-small month-list-today"
+              onClick={() => showListDay(today, true)}
+              data-testid="month-list-today"
+            >
+              今日へ
+            </button>
+          )}
+          {layout === 'list' ? (
+            <ul
+              ref={listRef}
+              className="month-list"
+              aria-label={`${ymText(ym)}の日ごとの一覧`}
+              data-testid="month-list"
+            >
+              {listRows.map(({ row: r, extra, off }) => {
+                const offPress = off === 'open' || off === 'requested';
+                return (
+                  <li key={r.date}>
+                    <button
+                      type="button"
+                      className={[
+                        'month-list-btn',
+                        `is-state-${r.state}`,
+                        r.isPast ? 'is-past' : '',
+                        r.care ? 'is-care' : '',
+                        r.isToday ? 'is-today' : '',
+                        r.date === date ? 'is-picked' : '',
+                        off ? `is-off-${off}` : '',
+                      ].join(' ')}
+                      aria-label={`${r.label}${current === r.date ? '・作っています' : ''}`}
+                      aria-pressed={off ? off === 'requested' : undefined}
+                      aria-disabled={off !== undefined && !offPress ? true : undefined}
+                      onClick={() => {
+                        // カレンダーのマスと同じ動き：ふだんはその日の予定の画面、「休みを入れる」のときは希望休の付け外し
+                        if (!off) openDay(r.date);
+                        else if (offPress) toggleOff(r.date);
+                      }}
+                      data-testid="month-list-day"
+                      data-date={r.date}
+                      data-state={r.state}
+                      data-off={off}
+                    >
+                      <span className={`month-list-date wd-${r.weekday}`}>
+                        {r.dayText}
+                        {r.isToday && <span className="month-today">今日</span>}
+                      </span>
+                      <span className="month-list-state">
+                        {r.state === 'confirmed' && <Lock size={12} aria-hidden="true" />}
+                        {r.state === 'diff' && <PencilLine size={12} aria-hidden="true" />}
+                        {r.stateText}
+                      </span>
+                      <span className="month-list-count">{r.count > 0 ? `${r.count}件` : ''}</span>
+                      <span className="month-list-flags">
+                        {r.care && <span className="month-dot" aria-hidden="true" />}
+                        {r.flags.map((f) => (
+                          <span key={f.text} className={`month-flag is-${f.tone}`}>
+                            {f.text}
+                          </span>
+                        ))}
+                        {current === r.date && <span className="month-flag is-warn">作っています…</span>}
+                      </span>
+                      {extra.length > 0 && <span className="month-list-extra sub">{extra.join('・')}</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <>
+              <table ref={gridRef} className="month-grid" data-testid="month-grid">
+                <thead>
+                  <tr>
+                    {WEEKDAY_LABELS.map((w, i) => (
+                      <th key={w} scope="col" className={i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}>
+                        {w}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeks.map((week) => (
+                    <tr key={week[0]}>
+                      {week.map((d) => {
+                        const s = statuses.get(d);
+                        if (ymOf(d) !== ym || !s) {
+                          return (
+                            <td key={d} className="month-cell is-out">
+                              <span className="month-day">{mdText(d)}</span>
+                            </td>
+                          );
+                        }
+                        return (
+                          <DayCell
+                            key={d}
+                            date={d}
+                            tipStore={tipStore}
+                            status={s}
+                            today={today}
+                            picked={d === date}
+                            making={current === d}
+                            focus={focus.kind}
+                            marks={marks.get(d)!}
+                            load={focus.kind === 'all' ? (loads.get(d) ?? null) : undefined}
+                            staffDay={staffDays.get(d)}
+                            clientDay={clientDays.get(d)}
+                            typeById={typeById}
+                            staffById={staffById}
+                            clientTerm={terms.client}
+                            staffTerm={terms.staff}
+                            offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
+                            onOpen={openDay}
+                            onToggleOff={toggleOff}
+                          />
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <MonthCellTip gridRef={gridRef} tipStore={tipStore} />
+            </>
+          )}
         </div>
 
         <aside
@@ -1943,3 +2121,16 @@ const DayCell = memo(function DayCell(props: CellProps) {
     </td>
   );
 });
+
+/** メディアクエリが合っているか（幅を変えたら追う。PRD D189 の一覧の既定） */
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setOn(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return on;
+}

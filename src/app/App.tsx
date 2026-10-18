@@ -39,6 +39,7 @@ import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'rea
 import { CommandPalette, IS_MAC } from '../components/CommandPalette';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { RebuildBand } from '../components/rebuildBand';
+import { TourProvider } from '../components/Tour';
 import { addDays, jstDate } from '../domain/time';
 import { isPaletteShortcut } from '../lib/commandPalette';
 import { dateText } from '../lib/common';
@@ -256,132 +257,135 @@ function AdminShell() {
   /** 上の帯の今の画面の名前（スマホ。PRD D132・D179。見出し・項目名） */
   const screenName = navTitleParts(groups, pathname);
   return (
-    <div className="app-shell">
-      <aside ref={sideNavRef} className="side-nav">
-        {brand}
-        <NavGroups groups={groups} pathname={pathname} />
-      </aside>
-      <div className="app-body">
-        <header ref={headerRef} className="app-header">
-          {/* スマホだけ：ロゴと今の画面の名前・「メニュー」ボタン（PRD D132。広い画面では出さない） */}
-          <div className="m-head-title">
-            <span className="brand-mark" aria-hidden="true">
-              <RouteIcon size={18} strokeWidth={2.4} />
-            </span>
-            <strong className="m-screen-name" data-testid="screen-name">
-              {/* 見出しと項目名はそれぞれひとまとまりで折り返す（入りきらなければ項目名を次の行へ。PRD D179） */}
-              {screenName ? (
+    // 初回の案内ツアー（PRD D192・D193）：まだ見ていなければ起動したときに中央のカードで出す。データの画面からもう一度開ける
+    <TourProvider terms={terms}>
+      <div className="app-shell">
+        <aside ref={sideNavRef} className="side-nav">
+          {brand}
+          <NavGroups groups={groups} pathname={pathname} />
+        </aside>
+        <div className="app-body">
+          <header ref={headerRef} className="app-header">
+            {/* スマホだけ：ロゴと今の画面の名前・「メニュー」ボタン（PRD D132。広い画面では出さない） */}
+            <div className="m-head-title">
+              <span className="brand-mark" aria-hidden="true">
+                <RouteIcon size={18} strokeWidth={2.4} />
+              </span>
+              <strong className="m-screen-name" data-testid="screen-name">
+                {/* 見出しと項目名はそれぞれひとまとまりで折り返す（入りきらなければ項目名を次の行へ。PRD D179） */}
+                {screenName ? (
+                  <>
+                    {screenName.group && <span className="m-screen-group">{screenName.group}・</span>}
+                    <span className="m-screen-item">{screenName.item}</span>
+                  </>
+                ) : (
+                  data.org.name
+                )}
+              </strong>
+            </div>
+            {/* コマンドパレットを開く（PRD D181。広い画面は「探す・移動」とキーの印、狭い画面は「探す」） */}
+            <button
+              type="button"
+              className="btn btn-small cmdk-open"
+              aria-haspopup="dialog"
+              aria-expanded={paletteOpen}
+              aria-keyshortcuts={IS_MAC ? 'Meta+K' : 'Control+K'}
+              onClick={() => setPaletteOpen(true)}
+              data-testid="cmdk-open"
+            >
+              <Search size={16} aria-hidden="true" />
+              <span>
+                探す<span className="cmdk-open-more">・移動</span>
+              </span>
+              <span className="cmdk-open-kbd" aria-hidden="true">
+                <kbd>{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
+              </span>
+            </button>
+            <button
+              ref={menuBtnRef}
+              type="button"
+              className="btn btn-small m-menu-btn"
+              aria-haspopup="dialog"
+              aria-expanded={menuOpen}
+              aria-controls={menuOpen ? drawerId : undefined}
+              onClick={() => setMenuOpen(true)}
+              data-testid="menu-btn"
+            >
+              <Menu size={18} aria-hidden="true" />
+              メニュー
+            </button>
+            <DateSwitcher />
+          </header>
+          {saveError && (
+            <div className="save-error">
+              <TriangleAlert size={16} aria-hidden="true" />
+              {saveError} <NavLink to="/data">データを書き出す</NavLink>
+            </div>
+          )}
+          <main className="app-main">
+            <Guarded
+              element={
                 <>
-                  {screenName.group && <span className="m-screen-group">{screenName.group}・</span>}
-                  <span className="m-screen-item">{screenName.item}</span>
+                  {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
+                  {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
+                  <Outlet />
                 </>
-              ) : (
-                data.org.name
-              )}
-            </strong>
-          </div>
-          {/* コマンドパレットを開く（PRD D181。広い画面は「探す・移動」とキーの印、狭い画面は「探す」） */}
-          <button
-            type="button"
-            className="btn btn-small cmdk-open"
-            aria-haspopup="dialog"
-            aria-expanded={paletteOpen}
-            aria-keyshortcuts={IS_MAC ? 'Meta+K' : 'Control+K'}
-            onClick={() => setPaletteOpen(true)}
-            data-testid="cmdk-open"
-          >
-            <Search size={16} aria-hidden="true" />
-            <span>
-              探す<span className="cmdk-open-more">・移動</span>
-            </span>
-            <span className="cmdk-open-kbd" aria-hidden="true">
-              <kbd>{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
-            </span>
-          </button>
-          <button
-            ref={menuBtnRef}
-            type="button"
-            className="btn btn-small m-menu-btn"
-            aria-haspopup="dialog"
-            aria-expanded={menuOpen}
-            aria-controls={menuOpen ? drawerId : undefined}
-            onClick={() => setMenuOpen(true)}
-            data-testid="menu-btn"
-          >
-            <Menu size={18} aria-hidden="true" />
-            メニュー
-          </button>
-          <DateSwitcher />
-        </header>
-        {saveError && (
-          <div className="save-error">
-            <TriangleAlert size={16} aria-hidden="true" />
-            {saveError} <NavLink to="/data">データを書き出す</NavLink>
-          </div>
-        )}
-        <main className="app-main">
-          <Guarded
-            element={
-              <>
-                {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
-                {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
-                <Outlet />
-              </>
+              }
+            />
+          </main>
+          {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・日・空き状況。PRD D134・D144。印刷では出さない） */}
+          <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
+            {bottomTabs(groups).map(({ to, label, icon }) => {
+              const Icon = NAV_ICONS[icon];
+              // 比較はタブに無いので「日」（PRD D134・D180）
+              const on = isActiveTab(to, pathname);
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={on ? 'bottom-tab active' : 'bottom-tab'}
+                  aria-current={on ? 'page' : undefined}
+                  onClick={(e) => {
+                    // 今の画面のタブは何もしない（押し直して URL のクエリ＝画面の状態を消さない）
+                    if (to === pathname) e.preventDefault();
+                  }}
+                  data-testid="bottom-tab"
+                >
+                  <Icon size={20} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+        {paletteOpen && <CommandPalette sections={groups} terms={terms} onClose={() => setPaletteOpen(false)} />}
+        {menuOpen && (
+          <NavDrawer
+            id={drawerId}
+            label="メニュー"
+            onClose={() => setMenuOpen(false)}
+            // 広い画面へ戻して閉じたときは「メニュー」ボタンが隠れているので、左のメニューの今の項目へ
+            returnFocus={() =>
+              window.matchMedia(NARROW_QUERY).matches
+                ? menuBtnRef.current
+                : (sideNavRef.current?.querySelector<HTMLElement>('[aria-current="page"]') ??
+                  sideNavRef.current?.querySelector<HTMLElement>('a[href]'))
             }
-          />
-        </main>
-        {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・日・空き状況。PRD D134・D144。印刷では出さない） */}
-        <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
-          {bottomTabs(groups).map(({ to, label, icon }) => {
-            const Icon = NAV_ICONS[icon];
-            // 比較はタブに無いので「日」（PRD D134・D180）
-            const on = isActiveTab(to, pathname);
-            return (
-              <Link
-                key={to}
-                to={to}
-                className={on ? 'bottom-tab active' : 'bottom-tab'}
-                aria-current={on ? 'page' : undefined}
-                onClick={(e) => {
-                  // 今の画面のタブは何もしない（押し直して URL のクエリ＝画面の状態を消さない）
-                  if (to === pathname) e.preventDefault();
-                }}
-                data-testid="bottom-tab"
-              >
-                <Icon size={20} strokeWidth={2.1} aria-hidden="true" />
-                <span>{label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+            head={brand}
+          >
+            <NavGroups
+              groups={groups}
+              pathname={pathname}
+              onPick={(e, to) => {
+                // 今の画面の項目は閉じるだけ（移り直して URL のクエリ＝画面の状態を消さない）
+                if (to === pathname) e.preventDefault();
+                setMenuOpen(false);
+              }}
+            />
+          </NavDrawer>
+        )}
       </div>
-      {paletteOpen && <CommandPalette sections={groups} terms={terms} onClose={() => setPaletteOpen(false)} />}
-      {menuOpen && (
-        <NavDrawer
-          id={drawerId}
-          label="メニュー"
-          onClose={() => setMenuOpen(false)}
-          // 広い画面へ戻して閉じたときは「メニュー」ボタンが隠れているので、左のメニューの今の項目へ
-          returnFocus={() =>
-            window.matchMedia(NARROW_QUERY).matches
-              ? menuBtnRef.current
-              : (sideNavRef.current?.querySelector<HTMLElement>('[aria-current="page"]') ??
-                sideNavRef.current?.querySelector<HTMLElement>('a[href]'))
-          }
-          head={brand}
-        >
-          <NavGroups
-            groups={groups}
-            pathname={pathname}
-            onPick={(e, to) => {
-              // 今の画面の項目は閉じるだけ（移り直して URL のクエリ＝画面の状態を消さない）
-              if (to === pathname) e.preventDefault();
-              setMenuOpen(false);
-            }}
-          />
-        </NavDrawer>
-      )}
-    </div>
+    </TourProvider>
   );
 }
 

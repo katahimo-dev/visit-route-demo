@@ -1613,6 +1613,17 @@ a.icon-btn:hover {
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(40, 25, 15, 0.25);
 }
+/* スマホ（PRD D190）：地図のボタンは下のタブ（--bottom-tabs-h。ホームバーの safe-area を含む）のすぐ上、右の切り欠きも避ける。
+   トーストはボタンの上端（--map-dock-top）より上に出るので重ならない。ボタンが出ている間は、本文の最後がボタンに隠れないよう下を空ける */
+@media (max-width: 860px) {
+  .map-dock-fab {
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: calc(12px + var(--bottom-tabs-h));
+  }
+  body:has(.map-dock-fab) .app-main {
+    padding-bottom: calc(40px + 56px + var(--bottom-tabs-h));
+  }
+}
 @media (max-width: 600px) {
   .map-dock {
     right: max(12px, env(safe-area-inset-right, 0px));

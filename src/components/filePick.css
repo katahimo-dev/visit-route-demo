@@ -1,0 +1,67 @@
+/* ファイルを選ぶ部品（components/FilePick.tsx。PRD D191） */
+.file-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.file-pick-caption {
+  font-size: 0.9rem;
+  color: var(--sub);
+}
+.file-pick-row {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+/* input は見えない形で残す（Tab で届き、Space・Enter で開ける）。見た目のボタン（label）と同じ大きさで上に重ね、
+   押す・VoiceOver で触れるのは input（PR #45 のレビュー） */
+.file-pick-hit {
+  position: relative;
+  display: inline-flex;
+}
+.file-pick-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
+.file-pick-input:disabled {
+  cursor: not-allowed;
+}
+.file-pick-input:hover:not(:disabled) + .file-pick-btn {
+  border-color: #d9c8bb;
+}
+.file-pick-btn {
+  /* label の共通の形（縦並び・小さい灰色の字）を使わず、ほかのボタンと同じ見た目にする */
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  font-size: 1rem;
+  color: var(--ink);
+  gap: 6px;
+  cursor: pointer;
+}
+.file-pick-input:focus-visible + .file-pick-btn {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+.file-pick-input:disabled + .file-pick-btn {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.file-pick-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}

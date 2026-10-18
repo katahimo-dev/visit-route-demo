@@ -175,3 +175,4 @@ export function reset(): DemoData {
 
 export { DemoDataProvider, useDemoData } from './react';
 export { repair } from './repair';
+export { TOUR_SEEN_KEY, tourMemory } from './tour';
