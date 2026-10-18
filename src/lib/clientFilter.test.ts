@@ -18,6 +18,7 @@ import {
   NO_AREA,
   resolveStaffId,
   sameFilter,
+  staffCounts,
   toggleChip,
   toggleCity,
   toggleTown,
@@ -50,6 +51,7 @@ const facts = (over: Partial<FilterFacts> = {}): FilterFacts => ({
   patternClientIds: new Set(['a', 'c']),
   staffClientIds: (id) => new Set(id === 's1' ? ['a', 'c'] : id === 's2' ? ['b'] : []),
   workingStaffIds: new Set(['s1']),
+  endedShownIds: new Set(),
   ...over,
 });
 const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
@@ -92,6 +94,11 @@ describe('絞り込み（filterClients。AND）', () => {
     expect(ids(filterClients(people, f({ chips: ['period', 'limited'] }), F, 's1'))).toEqual(['c']);
     expect(ids(filterClients(people, f({ chips: ['period'], cities: ['仙台市青葉区'] }), F, 's1'))).toEqual(['a']);
     expect(ids(filterClients(people, f({ chips: ['leave', 'period'] }), F, 's1'))).toEqual([]);
+  });
+  it('endedShownIds の人（週間の表のこの週に訪問がある人）は終了でも出す', () => {
+    const F2 = facts({ periodIds: new Set(['a', 'd']), endedShownIds: new Set(['d']) });
+    expect(ids(filterClients(people, WEEK_TABLE_FILTER, F2, 's1'))).toEqual(['a', 'd']);
+    expect(ids(filterClients(people, f(), F2, 's1'))).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
   it('週間の表の既定はこの週に訪問がある人', () => {
     expect(ids(filterClients(people, WEEK_TABLE_FILTER, F, 's1'))).toEqual(['a', 'c']);
@@ -154,12 +161,28 @@ describe('toggleChip・resolveStaffId', () => {
     expect(toggleChip(f({ chips: ['leave'] }), 'period').chips).toEqual(['period', 'leave']);
     expect(toggleChip(f({ chips: ['period', 'leave'] }), 'period').chips).toEqual(['leave']);
   });
-  it('選んだ〈スタッフ〉がいなければ、担当する人がいる最初の人', () => {
-    const staffList = [{ id: 's0' }, { id: 's2' }, { id: 's1' }];
-    expect(resolveStaffId({ staffId: null }, staffList, facts(), people)).toBe('s2');
-    expect(resolveStaffId({ staffId: 's1' }, staffList, facts(), people)).toBe('s1');
-    expect(resolveStaffId({ staffId: 'gone' }, staffList, facts(), people)).toBe('s2');
-    expect(resolveStaffId({ staffId: null }, [], facts(), people)).toBe('');
+  const staffList = [{ id: 's0' }, { id: 's2' }, { id: 's1' }];
+  it('選んだ〈スタッフ〉がいなければ、今の絞り込みで担当する人がいる最初の人', () => {
+    expect(resolveStaffId(f(), staffList, facts(), people)).toBe('s2');
+    expect(resolveStaffId(f({ staffId: 's1' }), staffList, facts(), people)).toBe('s1');
+    expect(resolveStaffId(f({ staffId: 'gone' }), staffList, facts(), people)).toBe('s2');
+    expect(resolveStaffId(f(), [], facts(), people)).toBe('');
+    // s2 の担当の b は休み。ほかのチップ（この期間に訪問がある人）で b が外れると、最初の人は s1
+    expect(resolveStaffId(f({ chips: ['period'] }), staffList, facts(), people)).toBe('s1');
+    // 地区で絞っても同じ（泉区には s1 の c だけ）
+    expect(resolveStaffId(f({ cities: ['仙台市泉区'] }), staffList, facts(), people)).toBe('s1');
+  });
+  it('select の人数は、その〈スタッフ〉で押したら何人になるか', () => {
+    expect([...staffCounts(people, f(), facts(), staffList)]).toEqual([
+      ['s0', 0],
+      ['s2', 1],
+      ['s1', 2],
+    ]);
+    expect([...staffCounts(people, f({ chips: ['limited'] }), facts(), staffList)]).toEqual([
+      ['s0', 0],
+      ['s2', 0],
+      ['s1', 1],
+    ]);
   });
 });
 
@@ -185,6 +208,11 @@ describe('URL（?cf=）', () => {
   it('知らない項目・チップ・選んでいない市区の町名・壊れた文字は捨てる', () => {
     const s = decodeFilter('chip:period,bogus;zzz:1;town:%E5%A4%96|x;city:%E0%A4%A;ended:yes', WEEK_TABLE_FILTER);
     expect(s).toEqual({ ...EMPTY_FILTER, chips: ['period'] });
+  });
+  it('〈スタッフ〉はチップ「〈スタッフ〉が担当する人」を押しているときだけ書く', () => {
+    expect(encodeFilter(f({ staffId: 's1' }))).toBe('chip:');
+    expect(encodeFilter(f({ staffId: 's1', chips: ['staff'] }))).toBe('chip:staff;staff:s1');
+    expect(sameFilter(f({ staffId: 's1' }), f())).toBe(true);
   });
   it('既定と同じなら sameFilter が true（URL から消す）', () => {
     expect(sameFilter(toggleChip(toggleChip(WEEK_TABLE_FILTER, 'leave'), 'leave'), WEEK_TABLE_FILTER)).toBe(true);
@@ -243,26 +271,56 @@ describe('filterFacts（週の帯から作る）', () => {
     expect([...F.workingStaffIds]).toEqual(['s1']);
     expect([...F.staffClientIds('s2')]).toEqual(['c1']);
   });
+  const planOf = (routes: Record<string, string[]>, unassigned: string[] = []): AiPlan => ({
+    date: DATE,
+    createdAt: 1,
+    seed: 1,
+    iterations: 1,
+    routes,
+    unassigned,
+    score: 0,
+    stopped: false,
+    rules: [],
+    generated: { routes, unassigned, score: 0 },
+    pins: {},
+  });
   it('今の案に入った訪問は担当が決まっている（担当の〈スタッフ〉が担当する人に入る）', () => {
-    const routes = { s1: ['v1'] };
-    const plan: AiPlan = {
-      date: DATE,
-      createdAt: 1,
-      seed: 1,
-      iterations: 1,
-      routes,
-      unassigned: [],
-      score: 0,
-      stopped: false,
-      rules: [],
-      generated: { routes, unassigned: [], score: 0 },
-      pins: {},
-    };
     const d = base();
-    const withPlan = { ...d, aiPlans: { [DATE]: plan } };
+    const withPlan = { ...d, aiPlans: { [DATE]: planOf({ s1: ['v1'] }) } };
     const days = dates.map((x) => weekDay(withPlan, x));
     const F = filterFacts({ ...withPlan, days });
     expect([...F.unassignedIds]).toEqual(['c2']);
     expect([...F.staffClientIds('s1')]).toEqual(['c1']);
+  });
+  it('案がある日でも、案に入らない訪問は担当が決まっていない', () => {
+    const d = base();
+    const data = {
+      ...d,
+      visits: [...d.visits, visit('v4', 'c3', '15:00', '16:00')],
+      aiPlans: { [DATE]: planOf({ s1: ['v1'] }, ['v4']) },
+    };
+    const F = filterFacts({ ...data, days: dates.map((x) => weekDay(data, x)) });
+    expect([...F.unassignedIds].sort()).toEqual(['c2', 'c3']);
+  });
+  it('休みの帯は担当が決まっていない訪問に数えない（期間に訪問がある人には入る）', () => {
+    const d = base();
+    const data = { ...d, clientLeaves: [{ id: 'l2', clientId: 'c1', from: DATE, to: DATE, note: '' }] };
+    const F = filterFacts({ ...data, days: dates.map((x) => weekDay(data, x)) });
+    expect([...F.unassignedIds]).toEqual(['c2']);
+    expect(F.periodIds.has('c1')).toBe(true);
+    expect(F.leaveIds.has('c1')).toBe(true);
+  });
+  it('確定した割当（manualPlans）でも担当が決まっている', () => {
+    const d = base();
+    const data = { ...d, manualPlans: { '2026-10-14': { s1: ['v2'] } } };
+    const F = filterFacts({ ...data, days: dates.map((x) => weekDay(data, x)) });
+    expect([...F.unassignedIds]).toEqual(['c1']);
+    expect(F.staffClientIds('s1').has('c2')).toBe(true);
+  });
+  it('showEndedInPeriod なら、期間に訪問がある人を endedShownIds に入れる', () => {
+    const d = base();
+    const days = dates.map((x) => weekDay(d, x));
+    expect([...filterFacts({ ...d, days, showEndedInPeriod: true }).endedShownIds].sort()).toEqual(['c1', 'c2']);
+    expect(filterFacts({ ...d, days }).endedShownIds.size).toBe(0);
   });
 });

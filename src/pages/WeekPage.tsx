@@ -196,6 +196,8 @@ export default function WeekPage() {
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff,
+        // この週に訪問がある人は終了でも表に出す（その訪問をドラッグできるように。PRD D111）
+        showEndedInPeriod: true,
       }),
     [days, data.visits, clients, data.patterns, data.clientLeaves, staff],
   );
@@ -263,15 +265,19 @@ export default function WeekPage() {
   const setTableFilter = (f: ClientFilterState) =>
     go({ cf: sameFilter(f, WEEK_TABLE_FILTER) ? null : encodeFilter(f) }, true);
   /**
-   * 時間軸へ移る。表から移るとき、時間軸の選択が空なら、表で絞り込んだ人の先頭8人を引き継ぐ（PRD D108）
+   * 時間軸へ移る。表から移るとき、時間軸の選択が空なら、表で絞り込んだ人のうち時間軸に出せる人（検索欄の候補
+   * weekClients にいる人）の先頭8人を引き継ぐ（PRD D108）
    */
   const goTimeline = () => {
     const next: Record<string, string | null> = { view: 'timeline' };
-    if (tab === 'clients' && pickedClients.length === 0 && filteredClients.length > 0)
-      next.client = filteredClients
+    if (tab === 'clients' && pickedClients.length === 0) {
+      const known = new Set(weekClients.map((c) => c.id));
+      const ids = filteredClients
+        .filter((c) => known.has(c.id))
         .slice(0, TIMELINE_CLIENT_MAX)
-        .map((c) => c.id)
-        .join(',');
+        .map((c) => c.id);
+      if (ids.length > 0) next.client = ids.join(',');
+    }
     go(next);
   };
   /** 週を送る：選んでいる日付もその日にする（PRD D59。曜日はそのまま） */

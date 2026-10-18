@@ -2,7 +2,7 @@
 // 名前・よみの検索・地区（市区→町名）・絞り込みのチップ（AND）・「終了の人も出す」。純粋関数（データは書き換えない）
 import type { Client, ClientLeave, Pattern, Staff, Visit } from '../contracts/documents';
 import { type Area, areaOf } from './area';
-import { countAmong, defaultStaffOf, matchClient, staffClientMap } from './search';
+import { defaultStaffOf, matchClient, staffClientMap } from './search';
 import type { WeekDay } from './week';
 
 /**
@@ -65,6 +65,11 @@ export type FilterFacts = {
   staffClientIds: (staffId: string) => ReadonlySet<string>;
   /** いつもの担当として期間の終わりまで働ける〈スタッフ〉（利用中で、最終勤務日が無いか期間の終わり以降） */
   workingStaffIds: ReadonlySet<string>;
+  /**
+   * 終了でも「終了の人も出す」を入れずに出す〈利用者さん〉。週間の表では、この週に（取り消しでない）訪問がある人
+   * （その訪問を表でドラッグできるように。PRD D111）。〈利用者さん〉の画面は空
+   */
+  endedShownIds: ReadonlySet<string>;
 };
 
 const EMPTY_SET: ReadonlySet<string> = new Set<string>();
@@ -80,8 +85,10 @@ export function filterFacts(input: {
   patterns: readonly Pick<Pattern, 'clientId'>[];
   clientLeaves: readonly ClientLeave[];
   staff: readonly Pick<Staff, 'id' | 'active' | 'lastDay'>[];
+  /** この期間に訪問がある人は終了でも出す（週間の表） */
+  showEndedInPeriod?: boolean;
 }): FilterFacts {
-  const { days, visits, clients, patterns, clientLeaves, staff } = input;
+  const { days, visits, clients, patterns, clientLeaves, staff, showEndedInPeriod = false } = input;
   const from = days[0]?.date ?? '';
   const to = days.at(-1)?.date ?? '';
   const visitById = new Map(visits.map((v) => [v.id, v]));
@@ -107,6 +114,7 @@ export function filterFacts(input: {
     patternClientIds: new Set(patterns.map((p) => p.clientId)),
     staffClientIds: (id) => byStaff.get(id) ?? EMPTY_SET,
     workingStaffIds: new Set(staff.filter((s) => s.active && (s.lastDay === null || s.lastDay >= to)).map((s) => s.id)),
+    endedShownIds: showEndedInPeriod ? periodIds : EMPTY_SET,
   };
 }
 
@@ -149,11 +157,18 @@ export function matchArea(c: FilterClient, state: Pick<ClientFilterState, 'citie
 }
 
 /** 地区・チップを除いた絞り込み（終了の人・名前・よみ） */
-const baseMatch = (c: FilterClient, state: ClientFilterState) =>
-  (state.showEnded || c.stage !== 'ended') && matchClient(c, state.query);
+/** 終了の扱いで出す人か（終了でない・「終了の人も出す」・facts.endedShownIds にいる） */
+export const endedVisible = (
+  c: Pick<Client, 'id' | 'stage'>,
+  state: Pick<ClientFilterState, 'showEnded'>,
+  facts: Pick<FilterFacts, 'endedShownIds'>,
+): boolean => state.showEnded || c.stage !== 'ended' || facts.endedShownIds.has(c.id);
+
+const baseMatch = (c: FilterClient, state: ClientFilterState, facts: FilterFacts) =>
+  endedVisible(c, state, facts) && matchClient(c, state.query);
 
 /**
- * 絞り込む（AND）：終了の人（showEnded でなければ除く）・名前・よみ・地区・押しているチップすべて。渡した順のまま。
+ * 絞り込む（AND）：終了の人（showEnded でなければ除く。facts.endedShownIds の人は出す）・名前・よみ・地区・押しているチップすべて。渡した順のまま。
  * staffId はチップ「〈スタッフ〉が担当する人」の〈スタッフ〉（resolveStaffId で決める）
  */
 export function filterClients<T extends FilterClient>(
@@ -163,7 +178,10 @@ export function filterClients<T extends FilterClient>(
   staffId: string,
 ): T[] {
   return clients.filter(
-    (c) => baseMatch(c, state) && matchArea(c, state) && state.chips.every((ch) => chipMatches(ch, c, facts, staffId)),
+    (c) =>
+      baseMatch(c, state, facts) &&
+      matchArea(c, state) &&
+      state.chips.every((ch) => chipMatches(ch, c, facts, staffId)),
   );
 }
 
@@ -205,7 +223,7 @@ export function cityChips(
   facts: FilterFacts,
   staffId: string,
 ): AreaChip[] {
-  const all = new Set(clients.filter((c) => state.showEnded || c.stage !== 'ended').map((c) => clientArea(c).city));
+  const all = new Set(clients.filter((c) => endedVisible(c, state, facts)).map((c) => clientArea(c).city));
   for (const c of state.cities) all.add(c);
   const counts = new Map<string, number>();
   for (const c of withoutArea(clients, state, facts, staffId)) {
@@ -228,7 +246,7 @@ export function townChips(
   if (city === NO_AREA) return [];
   const towns = new Set<string>();
   for (const c of clients) {
-    if (!state.showEnded && c.stage === 'ended') continue;
+    if (!endedVisible(c, state, facts)) continue;
     const a = clientArea(c);
     if (a.city === city) towns.add(a.town);
   }
@@ -269,17 +287,32 @@ export function toggleChip(state: ClientFilterState, chip: FilterChip): ClientFi
 }
 
 /**
- * チップ「〈スタッフ〉が担当する人」の〈スタッフ〉：選んだ人が staff にいればその人、いなければ候補の中で担当する人が
- * 1人以上いる最初の人（defaultStaffOf。〈スタッフ〉がいなければ ''）
+ * 〈スタッフ〉ごとの「チップ『〈スタッフ〉が担当する人』をその人で押したら何人になるか」（今の絞り込み＝終了の扱い・
+ * 名前・よみ・地区・ほかのチップをかけた数。select の「（N人）」と、最初に選んでおく人に使う）
+ */
+export function staffCounts(
+  clients: readonly FilterClient[],
+  state: ClientFilterState,
+  facts: FilterFacts,
+  staff: readonly { id: string }[],
+): Map<string, number> {
+  const chips = state.chips.includes('staff') ? state.chips : toggleChip(state, 'staff').chips;
+  return new Map(staff.map((s) => [s.id, filterClients(clients, { ...state, chips }, facts, s.id).length]));
+}
+
+/**
+ * チップ「〈スタッフ〉が担当する人」の〈スタッフ〉：選んだ人が staff にいればその人、いなければ今の絞り込みで
+ * 担当する人が1人以上いる最初の人（staffCounts・defaultStaffOf。だれも0人なら先頭、〈スタッフ〉がいなければ ''）
  */
 export function resolveStaffId(
-  state: Pick<ClientFilterState, 'staffId'>,
+  state: ClientFilterState,
   staff: readonly { id: string }[],
   facts: FilterFacts,
-  clients: readonly { id: string }[],
+  clients: readonly FilterClient[],
 ): string {
   if (state.staffId !== null && staff.some((s) => s.id === state.staffId)) return state.staffId;
-  return defaultStaffOf(staff, (id) => countAmong(facts.staffClientIds(id), clients));
+  const counts = staffCounts(clients, state, facts, staff);
+  return defaultStaffOf(staff, (id) => counts.get(id) ?? 0);
 }
 
 // ---- URL（?cf=）----
@@ -306,7 +339,8 @@ export function encodeFilter(state: ClientFilterState): string {
   if (state.cities.length > 0) parts.push(`city:${enc(state.cities)}`);
   if (state.towns.length > 0) parts.push(`town:${enc(state.towns)}`);
   parts.push(`chip:${FILTER_CHIPS.filter((c) => state.chips.includes(c)).join(',')}`);
-  if (state.staffId) parts.push(`staff:${encodeURIComponent(state.staffId)}`);
+  // 〈スタッフ〉はチップ「〈スタッフ〉が担当する人」を押しているときだけ書く
+  if (state.staffId && state.chips.includes('staff')) parts.push(`staff:${encodeURIComponent(state.staffId)}`);
   if (state.showEnded) parts.push('ended:1');
   return parts.join(';');
 }

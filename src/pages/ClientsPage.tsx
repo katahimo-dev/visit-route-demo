@@ -176,7 +176,12 @@ export default function ClientsPage() {
           : [...d.clients, c],
       }));
       setIsNew(false);
-      toast('保存しました');
+      // 終了にした人は、一覧からは消える（「終了の人も出す」のときだけ出る。PRD D111）
+      toast(
+        c.stage === 'ended' && !filter.showEnded
+          ? `保存しました。${STAGE_LABELS.ended}の人は「${STAGE_LABELS.ended}の人も出す」で出ます`
+          : '保存しました',
+      );
     } catch (e) {
       setError(formError(e));
     }
@@ -234,7 +239,8 @@ export default function ClientsPage() {
           testId="clients-cf"
         />
         <span className="sub">
-          相談受付〜契約の人は、一覧の「状態」の印で見分けられます。新しい相談は「空き状況」の画面で受けられる曜日・時間を試算し、仮押さえすると「
+          {STAGE_LABELS.inquiry}〜{STAGE_LABELS.contract}
+          の人は、一覧の「状態」の印で見分けられます。新しい相談は「空き状況」の画面で受けられる曜日・時間を試算し、仮押さえすると「
           {STAGE_LABELS.inquiry}」で入ります
         </span>
       </div>

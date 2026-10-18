@@ -1,6 +1,6 @@
 // 〈利用者さん〉の段階（PRD D73。ADR-0015）：相談受付 → 顔合わせ → 契約 → 利用中 → 終了。
 // 段階が正で、予定・AI案の対象（active）と仮押さえ（tentative）は段階から決める。純粋関数（データは書き換えない）
-import { CLIENT_STAGES, type Client, type ClientStage } from '../contracts/documents';
+import type { Client, ClientStage } from '../contracts/documents';
 
 export const STAGE_LABELS: Record<ClientStage, string> = {
   inquiry: '相談受付',
@@ -33,11 +33,4 @@ export function withStage<T extends Pick<Client, 'stage' | 'active' | 'tentative
   const f = stageFlags(stage, tentative);
   if (c.stage === stage && c.active === f.active && c.tentative === f.tentative) return c;
   return { ...c, stage, ...f };
-}
-
-/** 段階ごとの件数（CLIENT_STAGES の順） */
-export function stageCounts(clients: readonly Pick<Client, 'stage'>[]): Record<ClientStage, number> {
-  const out = Object.fromEntries(CLIENT_STAGES.map((s) => [s, 0])) as Record<ClientStage, number>;
-  for (const c of clients) out[c.stage]++;
-  return out;
 }

@@ -60,6 +60,22 @@ describe('areaOf：県から始まる住所・郡・政令市でない市', () =
     expect(areaOf('三重県四日市市諏訪町1-5')).toEqual({ city: '四日市市', town: '諏訪町' });
     expect(areaOf('千葉県市川市八幡1丁目')).toEqual({ city: '市川市', town: '八幡' });
   });
+  it('町村・町名に「市」が入っても取り違えない', () => {
+    expect(areaOf('北海道余市郡余市町黒川町1丁目')).toEqual({ city: '余市郡余市町', town: '黒川町' });
+    expect(areaOf('富山県中新川郡上市町横法音寺40')).toEqual({ city: '中新川郡上市町', town: '横法音寺' });
+    expect(areaOf('奈良県吉野郡下市町下市2770')).toEqual({ city: '吉野郡下市町', town: '下市' });
+    expect(areaOf('栃木県芳賀郡市貝町市塙1280')).toEqual({ city: '芳賀郡市貝町', town: '市塙' });
+    expect(areaOf('東京都新宿区市谷加賀町1丁目')).toEqual({ city: '新宿区', town: '市谷加賀町' });
+    expect(areaOf('福岡県小郡市小郡255-1')).toEqual({ city: '小郡市', town: '小郡' });
+  });
+  it('市と区・郡と町村のあいだの空白は詰める', () => {
+    expect(areaOf('仙台市 青葉区 国分町3丁目')).toEqual({ city: '仙台市青葉区', town: '国分町' });
+    expect(areaOf('宮城郡 七ヶ浜町 汐見台')).toEqual({ city: '宮城郡七ヶ浜町', town: '汐見台' });
+  });
+  it('町名が無く丁目だけなら、その丁目を町名にする', () => {
+    expect(areaOf('仙台市若林区六丁目')).toEqual({ city: '仙台市若林区', town: '六丁目' });
+    expect(areaOf('仙台市若林区6丁目12-3')).toEqual({ city: '仙台市若林区', town: '6丁目' });
+  });
   it('町名は 数字・丁目・番地・括弧・空白 の前まで（漢数字の丁目も）', () => {
     expect(areaOf('仙台市青葉区一番町4丁目')).toEqual({ city: '仙台市青葉区', town: '一番町' });
     expect(areaOf('仙台市青葉区国分町三丁目7-1')).toEqual({ city: '仙台市青葉区', town: '国分町' });
@@ -71,6 +87,9 @@ describe('areaOf：県から始まる住所・郡・政令市でない市', () =
   it('頭の郵便番号と前後の空白を外す', () => {
     expect(areaOf('  〒980-8671 仙台市青葉区国分町3丁目  ')).toEqual({ city: '仙台市青葉区', town: '国分町' });
     expect(areaOf('9808671仙台市泉区泉中央1丁目')).toEqual({ city: '仙台市泉区', town: '泉中央' });
+    // ハイフンが全角のマイナス・長音でも外す
+    expect(areaOf('〒980−8671 仙台市青葉区国分町')).toEqual({ city: '仙台市青葉区', town: '国分町' });
+    expect(areaOf('980ー8671 仙台市青葉区国分町')).toEqual({ city: '仙台市青葉区', town: '国分町' });
   });
 });
 

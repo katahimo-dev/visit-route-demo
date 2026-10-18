@@ -6,7 +6,7 @@ import { client } from '../matching/fixtures';
 import { createDemoData } from '../seed';
 import { importJson, isImportError, migrate } from '../store';
 import { repair } from '../store/repair';
-import { isBeforeActive, stageCounts, stageFlags, withStage } from './clientStage';
+import { isBeforeActive, stageFlags, withStage } from './clientStage';
 
 const base = () => createDemoData('2026-10-12');
 
@@ -27,7 +27,6 @@ describe('段階と予定の対象（stageFlags・withStage）', () => {
     expect([held.stage, held.active, held.tentative]).toEqual(['inquiry', true, true]);
     const done = withStage(held, 'active');
     expect([done.stage, done.active, done.tentative]).toEqual(['active', true, false]);
-    expect(stageCounts([held, done, c])).toEqual({ inquiry: 1, meeting: 0, contract: 0, active: 2, ended: 0 });
   });
 });
 

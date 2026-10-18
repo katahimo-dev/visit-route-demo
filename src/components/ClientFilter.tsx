@@ -1,8 +1,10 @@
 // 〈利用者さん〉の絞り込みの欄（PRD D108〜D112。ADR-0021）。週間の〈利用者さん〉×曜日の表と〈利用者さん〉の画面の一覧で使う。
 // 名前・よみの検索、地区（1段目＝市区、選んだ市区の2段目＝町名。どちらも複数・人数つき）、絞り込みのチップ（AND）、
-// 「終了の人も出す」。中身の判定は lib/clientFilter の純粋関数。状態は呼ぶ側が持つ（週間は URL の ?cf=）
+// 「終了の人も出す」。中身の判定は lib/clientFilter の純粋関数。状態は呼ぶ側が持つ（週間は URL の ?cf=）。
+// 検索の文字だけはこの部品の中にも持つ（日本語の変換を壊さないため。変換中は呼ぶ側へ渡さず、確定後に、
+// ふつうの入力は少し遅らせて渡す。呼ぶ側の値が外から変わったら（戻るボタンなど）入力欄を合わせる）
 import { Search } from 'lucide-react';
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Client } from '../contracts/documents';
 import {
   type AreaChip,
@@ -11,6 +13,7 @@ import {
   chipHelp,
   chipLabel,
   cityChips,
+  endedVisible,
   FILTER_CHIPS,
   type FilterChip,
   type FilterFacts,
@@ -18,12 +21,12 @@ import {
   NO_AREA,
   resolveStaffId,
   sameFilter,
+  staffCounts,
   toggleChip,
   toggleCity,
   toggleTown,
   townChips,
 } from '../lib/clientFilter';
-import { countAmong } from '../lib/search';
 import './clientFilter.css';
 
 export type ClientFilterProps = {
@@ -45,9 +48,13 @@ export type ClientFilterProps = {
   testId?: string;
 };
 
+/** 検索の文字を呼ぶ側へ渡すまでの待ち（ミリ秒。打つたびに URL を書かない） */
+export const QUERY_DELAY_MS = 300;
+
 /**
  * 絞り込みの欄。チップ・地区は押すと付け外し（aria-pressed）。押しても0人になるものは薄くして押せなくする
- * （aria-disabled。押しているものはいつでも外せる）。人数は「押したら何人になるか」
+ * （aria-disabled。押しているものはいつでも外せる。「〈スタッフ〉が担当する人」は0人でも押せ、select で選び直せる）。
+ * 人数は「押したら何人になるか」
  */
 export function ClientFilter({
   clients,
@@ -61,12 +68,56 @@ export function ClientFilter({
   testId = 'client-filter',
 }: ClientFilterProps) {
   const uid = useId();
+  // ---- 検索の文字（変換中は呼ぶ側へ渡さない）----
+  const [text, setText] = useState(state.query);
+  const textRef = useRef(state.query);
+  /** 最後に呼ぶ側へ渡した文字（呼ぶ側の値がこれと違えば、外から変わった） */
+  const sent = useRef(state.query);
+  const composing = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef({ state, onChange });
+  latest.current = { state, onChange };
+  const clearTimer = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  // 外すときは、待っている書き込みを取り消す
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    };
+  }, []);
+  // 呼ぶ側の値が外から変わったら入力欄を合わせる（変換中は触らない）
+  useEffect(() => {
+    if (state.query === sent.current || composing.current) return;
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    sent.current = state.query;
+    textRef.current = state.query;
+    setText(state.query);
+  }, [state.query]);
+  const setLocalText = (q: string) => {
+    textRef.current = q;
+    setText(q);
+  };
+  /** 呼ぶ側へ渡す（待っている文字の書き込みは取り消す） */
+  const send = (next: ClientFilterState) => {
+    clearTimer();
+    sent.current = next.query;
+    latest.current.onChange(next);
+  };
+  /** 入力欄の文字を渡す */
+  const flushQuery = () => {
+    if (textRef.current !== latest.current.state.query) send({ ...latest.current.state, query: textRef.current });
+    else clearTimer();
+  };
+  /** チップなどの変更：入力欄の文字もいっしょに渡す（変換中なら渡し済みの文字のまま） */
+  const change = (next: ClientFilterState) =>
+    send({ ...next, query: composing.current ? sent.current : textRef.current });
+
   const staffId = useMemo(() => resolveStaffId(state, staff, facts, clients), [state, staff, facts, clients]);
   const shown = useMemo(() => filterClients(clients, state, facts, staffId), [clients, state, facts, staffId]);
-  const total = useMemo(
-    () => clients.filter((c) => state.showEnded || c.stage !== 'ended').length,
-    [clients, state.showEnded],
-  );
+  const total = useMemo(() => clients.filter((c) => endedVisible(c, state, facts)).length, [clients, state, facts]);
   const counts = useMemo(() => chipCounts(clients, state, facts, staffId), [clients, state, facts, staffId]);
   const cities = useMemo(() => cityChips(clients, state, facts, staffId), [clients, state, facts, staffId]);
   const towns = useMemo(
@@ -77,10 +128,8 @@ export function ClientFilter({
         .filter((x) => x.chips.length > 0),
     [clients, state, facts, staffId],
   );
-  const staffCount = useMemo(
-    () => new Map(staff.map((s) => [s.id, countAmong(facts.staffClientIds(s.id), clients)])),
-    [staff, facts, clients],
-  );
+  /** select の「（N人）」：その〈スタッフ〉で押したら何人になるか（チップの人数と同じ数え方） */
+  const staffCount = useMemo(() => staffCounts(clients, state, facts, staff), [clients, state, facts, staff]);
   const t = { periodLabel, staffTerm: terms.staff };
 
   const areaChip = (a: AreaChip, on: boolean, toggle: () => void, kind: 'city' | 'town') => {
@@ -113,15 +162,17 @@ export function ClientFilter({
     const on = state.chips.includes(chip);
     const n = counts[chip];
     const empty = !on && n === 0;
+    // 「〈スタッフ〉が担当する人」は0人でも押せる（押すと select で〈スタッフ〉を選び直せる）
+    const blocked = empty && chip !== 'staff';
     return (
       <button
         key={chip}
         type="button"
         className={`pick-chip client-filter-chip${on ? ' is-on' : ''}${empty ? ' is-empty' : ''}`}
         aria-pressed={on}
-        aria-disabled={empty || undefined}
+        aria-disabled={blocked || undefined}
         title={`${chipHelp(chip, t)}${empty ? '（当てはまる人はいません。0人）' : ''}`}
-        onClick={() => !empty && onChange(toggleChip(state, chip))}
+        onClick={() => !blocked && change(toggleChip(state, chip))}
         data-testid={`${testId}-chip`}
         data-chip={chip}
       >
@@ -147,16 +198,34 @@ export function ClientFilter({
             <input
               id={`${uid}-q`}
               type="search"
-              value={state.query}
+              value={text}
               placeholder="名前・よみで探す"
               maxLength={50}
               autoComplete="off"
-              onChange={(e) => onChange({ ...state, query: e.target.value })}
+              onChange={(e) => {
+                setLocalText(e.target.value);
+                // 変換中は渡さない（確定の compositionend で渡す）。ふつうの入力は少し待ってから
+                if (composing.current || (e.nativeEvent as InputEvent).isComposing) return;
+                clearTimer();
+                timer.current = setTimeout(flushQuery, QUERY_DELAY_MS);
+              }}
+              onCompositionStart={() => {
+                composing.current = true;
+                clearTimer();
+              }}
+              onCompositionEnd={(e) => {
+                composing.current = false;
+                setLocalText(e.currentTarget.value);
+                flushQuery();
+              }}
+              onBlur={() => !composing.current && flushQuery()}
               onKeyDown={(e) => {
-                if (e.key === 'Escape' && state.query !== '') {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                if (e.key === 'Escape' && text !== '') {
                   e.preventDefault();
-                  onChange({ ...state, query: '' });
-                }
+                  setLocalText('');
+                  flushQuery();
+                } else if (e.key === 'Enter') flushQuery();
               }}
               data-testid={`${testId}-input`}
             />
@@ -166,7 +235,7 @@ export function ClientFilter({
           <input
             type="checkbox"
             checked={state.showEnded}
-            onChange={(e) => onChange({ ...state, showEnded: e.target.checked })}
+            onChange={(e) => change({ ...state, showEnded: e.target.checked })}
             data-testid={`${testId}-ended`}
           />
           終了の人も出す
@@ -174,11 +243,14 @@ export function ClientFilter({
         <output className="sub client-filter-total" data-testid={`${testId}-count`} aria-live="polite">
           {shown.length === total ? `${total}人` : `${shown.length}人／${total}人`}
         </output>
-        {!sameFilter(state, defaults) && (
+        {!sameFilter({ ...state, query: text }, defaults) && (
           <button
             type="button"
             className="btn btn-small"
-            onClick={() => onChange(defaults)}
+            onClick={() => {
+              setLocalText(defaults.query);
+              send(defaults);
+            }}
             data-testid={`${testId}-reset`}
           >
             絞り込みを戻す
@@ -187,12 +259,12 @@ export function ClientFilter({
       </div>
       <fieldset className="pick-chips client-filter-row" data-testid={`${testId}-cities`}>
         <legend className="pick-chips-legend">地区</legend>
-        {cities.map((a) => areaChip(a, state.cities.includes(a.key), () => onChange(toggleCity(state, a.key)), 'city'))}
+        {cities.map((a) => areaChip(a, state.cities.includes(a.key), () => change(toggleCity(state, a.key)), 'city'))}
       </fieldset>
       {towns.map(({ city, chips }) => (
         <fieldset key={city} className="pick-chips client-filter-row client-filter-towns" data-city={city}>
           <legend className="pick-chips-legend">{city}の町名</legend>
-          {chips.map((a) => areaChip(a, state.towns.includes(a.key), () => onChange(toggleTown(state, a.key)), 'town'))}
+          {chips.map((a) => areaChip(a, state.towns.includes(a.key), () => change(toggleTown(state, a.key)), 'town'))}
         </fieldset>
       ))}
       <fieldset className="pick-chips client-filter-row" data-testid={`${testId}-chips`}>
@@ -206,7 +278,7 @@ export function ClientFilter({
                     <select
                       aria-label={`担当する${terms.staff}`}
                       value={staffId}
-                      onChange={(e) => onChange({ ...state, staffId: e.target.value })}
+                      onChange={(e) => change({ ...state, staffId: e.target.value })}
                       data-testid={`${testId}-staff`}
                     >
                       {staff.map((s) => (
