@@ -1,0 +1,60 @@
+/* 用語の説明の部品（components/Term。PRD D175）。用語は点線の下線、説明は body の直下に浮かせる（位置は部品が style で決める） */
+.term {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: help;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--sub);
+  text-underline-offset: 3px;
+}
+.term:hover {
+  text-decoration-color: var(--ink);
+}
+.term:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.term-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1060;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 16px));
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: #3b2a20;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(40, 25, 15, 0.25);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.55;
+  text-align: left;
+  white-space: normal;
+}
+.term-tip[hidden] {
+  display: none;
+}
+.term-tip ul {
+  margin: 4px 0 0;
+  padding-left: 1.1em;
+}
+.term-tip strong {
+  display: block;
+}
+@media print {
+  .term {
+    text-decoration: none;
+  }
+  .term-tip {
+    display: none !important;
+  }
+}

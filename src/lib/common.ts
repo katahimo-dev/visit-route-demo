@@ -80,7 +80,8 @@ export function ruleTypeLabel(type: RuleType, t: Terms): string {
     case 'balance':
       return '負担の均等';
     case 'wait':
-      return '待ち時間';
+      // 画面の名前（PRD D174）。Excel の見出しは excel/text の ruleTypeLabels で今の「待ち時間」のまま
+      return '空き時間（待ち）';
   }
 }
 
@@ -102,7 +103,7 @@ export function ruleTypeHelp(type: RuleType, t: Terms): string {
     case 'balance':
       return `勤務時間に合わせた件数の目安（例：2〜3件）から外れるほど重くします（外れた件数の2乗×重み×10点。1件で30点、2件で120点＜重み3のとき＞）。${t.staff}の件数をそろえます。必須にすると、目安の上限＋1件を超える割当はしません（重みも使います）。`;
     case 'wait':
-      return '訪問のあいだの待ち時間1分につき 重み×0.1点（必須にはできません）。';
+      return '訪問のあいだの空き時間（待ち）1分につき 重み×0.1点（必須にはできません）。';
   }
 }
 

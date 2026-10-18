@@ -1,6 +1,7 @@
 import { Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
+import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
@@ -238,7 +239,11 @@ export default function DataPage() {
 
   return (
     <div className="stack" style={{ maxWidth: 720 }}>
-      <PageHeader icon={Database} title="データ" lead="書き出し・読み込み（控え・Excel）・初期状態に戻す" />
+      <PageHeader
+        icon={Database}
+        title="データ"
+        lead="書き出し・読み込み（控え（バックアップ）・Excel）・初期状態に戻す"
+      />
       <div className="warn-box">
         <TriangleAlert size={20} strokeWidth={2.2} aria-hidden="true" />
         <p>
@@ -253,7 +258,9 @@ export default function DataPage() {
       )}
 
       <div className="card stack">
-        <SectionTitle icon={Tags}>呼び方</SectionTitle>
+        <SectionTitle icon={Tags}>
+          <Term k="terms" testId="term-terms" />
+        </SectionTitle>
         <Hint>画面に出る呼び方です（各10文字まで）。呼び方もデータに保存され、書き出しに入ります。</Hint>
         <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label>
@@ -276,7 +283,10 @@ export default function DataPage() {
       </div>
 
       <div className="card stack">
-        <SectionTitle icon={Save}>控え（JSON）</SectionTitle>
+        <SectionTitle icon={Save}>
+          <Term k="backup" testId="term-backup" />
+          （JSON）
+        </SectionTitle>
         <Hint>
           データ一式（AI案・記録・確定した割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
           下の欄で書き出したファイルを選ぶと、いまのデータと置き換えます（置き換える前に確認します）。

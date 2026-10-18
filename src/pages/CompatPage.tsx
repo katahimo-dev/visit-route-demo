@@ -51,6 +51,15 @@ const LEGEND: { mark: string; cls: string; text: string }[] = [
   { mark: '×', cls: 'lvm2', text: '担当にしない' },
 ];
 
+/** 相性の記号の意味（セルの title・読み上げ。PRD D177。凡例を見なくても分かるように） */
+const COMPAT_MEANING: Record<CompatLevel, string> = {
+  2: '◎ 選ばれやすい',
+  1: '○ やや選ばれやすい',
+  0: '未入力（ふつう）',
+  [-1]: '△ 選ばれにくい',
+  [-2]: '× 担当にしない',
+};
+
 /** 次の相性（◎→○→空→△→×→◎） */
 const nextLevel = (l: CompatLevel): CompatLevel =>
   COMPAT_LEVELS[(COMPAT_LEVELS.indexOf(l) + 1) % COMPAT_LEVELS.length] as CompatLevel;
@@ -112,8 +121,9 @@ const CompatRow = memo(function CompatRow({
             <button
               type="button"
               className={`compat-btn lv${l < 0 ? `m${-l}` : l}`}
-              title={`${c.displayName} × ${s.name}`}
-              aria-label={`${c.displayName}と${s.name}の相性：${COMPAT_LABELS[l] || '未入力'}`}
+              title={`${c.displayName} × ${s.name}：${COMPAT_MEANING[l]}（押すと変わります）`}
+              aria-label={`${c.displayName}と${s.name}の相性：${COMPAT_MEANING[l]}`}
+              data-testid="compat-cell"
               onClick={() => onCycle(c.id, s.id)}
               data-sid={s.id}
             >

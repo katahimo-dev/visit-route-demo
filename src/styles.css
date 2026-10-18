@@ -1726,3 +1726,87 @@ a.icon-btn:hover {
   color: #3f4f63;
   border-color: #c9d3df;
 }
+/* 点を下げているいちばん大きい理由（PRD D173。pages/planParts の ScoreReasonText） */
+.score-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #8a5a00;
+}
+.score-reason svg {
+  flex-shrink: 0;
+}
+/* 空の画面の「なぜ空か」と次の一手（PRD D176。components/EmptyNext） */
+.empty-next {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 12px;
+  text-align: center;
+}
+.empty-next > svg {
+  color: #c9b8ab;
+}
+.empty-next .sub {
+  margin: 0;
+  max-width: 560px;
+}
+.empty-next-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* 横1行の帯（週の時間軸の上。高さを取らない） */
+.empty-next.is-compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 0;
+  text-align: left;
+}
+.empty-next.is-compact .empty-next-text {
+  flex: 1 1 320px;
+  align-items: flex-start;
+  gap: 0;
+}
+.empty-next.is-compact .sub {
+  font-size: 0.82rem;
+}
+.empty-next.is-compact .empty-next-actions {
+  margin-top: 0;
+}
+.empty-next-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+@media (max-width: 480px) {
+  .empty-next-actions {
+    flex-direction: column;
+    align-self: stretch;
+  }
+  /* 狭い画面の横1行の帯：アイコンを隠し、文とボタンを縦に（flex-basis で横にはみ出さない。PR #42 のレビュー） */
+  .empty-next.is-compact {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .empty-next.is-compact > svg {
+    display: none;
+  }
+  .empty-next.is-compact .empty-next-text {
+    flex: none;
+    min-width: 0;
+  }
+}
+@media print {
+  .empty-next-actions {
+    display: none;
+  }
+}

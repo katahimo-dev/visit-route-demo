@@ -141,8 +141,10 @@ export function dayLineText(x: DayLine): string {
   const visits = x.parts.filter((p) => p.kind === 'visit');
   const from = Math.min(...visits.map((p) => p.start));
   const to = Math.max(...visits.map((p) => p.end));
-  const inner = [`訪問 ${len(x.visit)}`, `移動 ${len(x.travel)}`, ...(x.wait > 0 ? [`待ち ${len(x.wait)}`] : [])].join(
-    '・',
-  );
+  const inner = [
+    `訪問 ${len(x.visit)}`,
+    `移動 ${len(x.travel)}`,
+    ...(x.wait > 0 ? [`空き時間（待ち） ${len(x.wait)}`] : []),
+  ].join('・');
   return `${x.count}件・${shift}・訪問 ${clock(from)}〜${clock(to)}（${inner}）・空き ${len(x.free)}`;
 }

@@ -72,11 +72,14 @@ export function useDayModel(date: string) {
    * 点数の物差しの問題（ADR-0010）：条件に点数の基準のプリセットの重み・必須を当てて作る。
    * いまの条件と同じなら compile し直さずに同じものを使う（重い compile を二重にしない）
    */
+  const scoreRules = useMemo(
+    () => (scorePreset ? applyPreset(compileInput.rules, scorePreset) : compileInput.rules),
+    [compileInput.rules, scorePreset],
+  );
   const scoreCompiled = useMemo(() => {
-    const rules = scorePreset ? applyPreset(compileInput.rules, scorePreset) : compileInput.rules;
-    if (JSON.stringify(rules) === JSON.stringify(compileInput.rules)) return compiled;
-    return attempt(() => compile({ ...compileInput, rules }, date));
-  }, [compileInput, scorePreset, date, compiled]);
+    if (JSON.stringify(scoreRules) === JSON.stringify(compileInput.rules)) return compiled;
+    return attempt(() => compile({ ...compileInput, rules: scoreRules }, date));
+  }, [compileInput, scoreRules, date, compiled]);
   /** 100点満点の物差し（下限＝100点、1件あたりの超過で減点。ADR-0007 案A）。点数の基準の条件で作る（ADR-0010） */
   const scoreScale = useMemo(() => {
     const p = scoreCompiled.value;
@@ -111,6 +114,8 @@ export function useDayModel(date: string) {
     /** 点数（100点満点）・必須の違反・条件ごとの達成を付ける問題（点数の基準の条件。ADR-0010） */
     scoreProblem: scoreCompiled.value as Problem | null,
     scoreScale: scoreScale as ScoreScale | null,
+    /** 点数の基準の条件（名前・重み。点数の理由の文に使う。PRD D173） */
+    scoreRules,
     /** 点数の基準のプリセットの名前（「物差し：標準」の表示。プリセットが無ければ「いまの条件」） */
     scoreRulerName: scorePreset?.name ?? 'いまの条件',
     savedView,

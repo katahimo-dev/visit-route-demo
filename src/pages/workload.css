@@ -8,7 +8,8 @@
   margin: 0;
   font-size: 1.2rem;
 }
-label.work-setting {
+label.work-setting,
+div.work-setting {
   display: inline-flex;
   flex-direction: row;
   align-items: center;

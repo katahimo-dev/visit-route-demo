@@ -19,7 +19,19 @@ import {
   UserX,
   X,
 } from 'lucide-react';
-import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
@@ -29,6 +41,7 @@ import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../
 import { PersonButton } from '../components/PersonPopover';
 import { type BandModel, ProgressBand } from '../components/progressBand';
 import { StaffBar, StaffLegend } from '../components/staffBar';
+import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
@@ -80,6 +93,7 @@ import {
   type TypeCount,
   ymOf,
 } from '../lib/month';
+import { cellGuide, createTipStore, type TipStore } from '../lib/monthGuide';
 import { mdText } from '../lib/patternText';
 import { type BandOp, urgentCount } from '../lib/progressBand';
 import { rebuildWith } from '../lib/rebuildBand';
@@ -171,6 +185,12 @@ export default function MonthPage() {
   /** 選ばないときの右の欄：要対応／確定していない日（進み具合の帯の「確定」から。PRD D153） */
   const [asideView, setAsideView] = useState<'attention' | 'unconfirmed'>('attention');
   const asideRef = useRef<HTMLElement>(null);
+  /** 日のマスの表（読み方の吹き出し MonthCellTip が見る。PRD D177） */
+  const gridRef = useRef<HTMLTableElement>(null);
+  /** 「混み具合：空きを数える人」の選ぶ欄の名前（aria-labelledby） */
+  const loadTypeId = useId();
+  /** マスの読み方の文の置き場（日付 → 文。PRD D177） */
+  const tipStore = useMemo(() => createTipStore(), []);
   const [mode, setMode] = useState<BatchMode>('empty');
   const [batch, setBatch] = useState<Batch | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -786,7 +806,7 @@ export default function MonthPage() {
             type="button"
             className="btn btn-small"
             onClick={() => navigate(`/workload?ym=${ym}`)}
-            title="予定から、この月の拘束・移動・待ちの時間と交通費を見込みます"
+            title="予定から、この月の出勤〜退勤（拘束）・移動・空き時間（待ち）の時間と交通費を見込みます"
             data-testid="month-workload"
           >
             <WithIcon icon={Timer} size={14}>
@@ -842,9 +862,15 @@ export default function MonthPage() {
             </button>
           )}
           {focus.kind === 'all' && (
-            <label className="month-picker">
-              <span>混み具合で数える人</span>
+            // 用語の説明（ボタン）は label の中に置かない（入力欄の名前が用語のボタンへ移るため。PR #42 のレビュー）。
+            // 選ぶ欄の名前は aria-labelledby で「混み具合：」と用語をつなぐ
+            <div className="month-picker">
+              <span>
+                <span id={`${loadTypeId}-label`}>混み具合：</span>
+                <Term k="loadCount" testId="term-load-count" id={`${loadTypeId}-term`} />
+              </span>
               <select
+                aria-labelledby={`${loadTypeId}-label ${loadTypeId}-term`}
                 value={loadType ?? ''}
                 onChange={(e) => setLoadType(e.target.value === '' ? null : e.target.value)}
                 data-testid="month-load-type"
@@ -856,7 +882,7 @@ export default function MonthPage() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
           )}
         </div>
         <div className="row month-tools">
@@ -938,7 +964,7 @@ export default function MonthPage() {
 
       <div className="month-body">
         <div className="card month-card">
-          <table className="month-grid" data-testid="month-grid">
+          <table ref={gridRef} className="month-grid" data-testid="month-grid">
             <thead>
               <tr>
                 {WEEKDAY_LABELS.map((w, i) => (
@@ -964,6 +990,7 @@ export default function MonthPage() {
                       <DayCell
                         key={d}
                         date={d}
+                        tipStore={tipStore}
                         status={s}
                         today={today}
                         picked={d === date}
@@ -987,6 +1014,7 @@ export default function MonthPage() {
               ))}
             </tbody>
           </table>
+          <MonthCellTip gridRef={gridRef} tipStore={tipStore} />
         </div>
 
         <aside
@@ -1038,7 +1066,7 @@ export default function MonthPage() {
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
-                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・拘束が上限を超える日・欠勤のある日はありません。
+                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日はありません。
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
@@ -1071,7 +1099,8 @@ export default function MonthPage() {
                           )}
                           {a.kind === 'overSpan' && (
                             <WithIcon icon={Timer} size={14}>
-                              拘束が{data.org.spanLimitHours}時間を超える {a.names.map(shortName).join('・')}
+                              出勤〜退勤（拘束）が{data.org.spanLimitHours}時間を超える{' '}
+                              {a.names.map(shortName).join('・')}
                             </WithIcon>
                           )}
                           {a.kind === 'absence' && (
@@ -1224,7 +1253,7 @@ export default function MonthPage() {
           <div className="stack">
             <p>
               使うプリセット：<strong data-testid="batch-preset">{basePreset?.name ?? 'いまの条件'}</strong>
-              <span className="sub">（点数の基準。物差し：{scoreRulerName}）</span>
+              <span className="sub">（点数の基準も「{scoreRulerName}」）</span>
             </p>
             <fieldset className="stack batch-mode" style={{ gap: 6 }}>
               <legend>対象</legend>
@@ -1304,11 +1333,137 @@ export default function MonthPage() {
   );
 }
 
+/** マウスを重ねてから読み方を出すまで（ms。マスの上を通り過ぎるだけでは出さない） */
+const TIP_SHOW_MS = 300;
+/** マスから離れてから読み方を消すまで（ms。隣のマスへ移るときにちらつかない） */
+const TIP_HIDE_MS = 120;
+
+/**
+ * 月のマスの読み方の吹き出し（PRD D177）。マスにマウスを重ねる（少し止まったら）・キーボードでフォーカスする（:focus-visible）と、
+ * そのマスの日付・状態の文と、出ている印の読み方（lib/monthGuide。マスの data-guide）を、マスの下（入らなければ上）に出す。
+ * Esc・離れる・フォーカスが外れると消す。吹き出しはマウスを受けない（下のマスを隠して押せなくしない）。タッチでは出さない（押すと日の画面）
+ */
+function MonthCellTip({ gridRef, tipStore }: { gridRef: RefObject<HTMLElement | null>; tipStore: TipStore }) {
+  const tipId = `month-cell-tip-${useId().replace(/:/g, '')}`;
+  const [at, setAt] = useState<HTMLElement | null>(null);
+  const timer = useRef<number | null>(null);
+  const clear = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 表の要素に1回だけ付ける
+  useEffect(() => {
+    const root = gridRef.current;
+    if (!root) return;
+    const cellOf = (t: EventTarget | null): HTMLElement | null =>
+      t instanceof Element ? (t.closest('[data-tip]') as HTMLElement | null) : null;
+    const over = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      const c = cellOf(e.target);
+      if (!c) return;
+      clear();
+      // すでに出ていれば隣のマスへすぐ移す
+      setAt((cur) => {
+        if (cur) return c;
+        timer.current = window.setTimeout(() => setAt(c), TIP_SHOW_MS);
+        return cur;
+      });
+    };
+    const out = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      const c = cellOf(e.target);
+      if (c && cellOf(e.relatedTarget) === c) return;
+      clear();
+      timer.current = window.setTimeout(() => setAt(null), TIP_HIDE_MS);
+    };
+    const focusIn = (e: FocusEvent) => {
+      const c = cellOf(e.target);
+      clear();
+      setAt(c?.matches(':focus-visible') ? c : null);
+    };
+    const focusOut = () => {
+      clear();
+      setAt(null);
+    };
+    root.addEventListener('pointerover', over);
+    root.addEventListener('pointerout', out);
+    root.addEventListener('focusin', focusIn);
+    root.addEventListener('focusout', focusOut);
+    return () => {
+      clear();
+      root.removeEventListener('pointerover', over);
+      root.removeEventListener('pointerout', out);
+      root.removeEventListener('focusin', focusIn);
+      root.removeEventListener('focusout', focusOut);
+    };
+  }, []);
+  // 出ている間の Esc は読み方を消すだけ（ほかの欄の Esc は出ていないときだけ届く）
+  useEffect(() => {
+    if (!at) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = null;
+      setAt(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [at]);
+  // 文は日付で引く（描画中に DOM の data-* を読まない。休みを切り替えたら新しい文。PR #42 のレビュー）
+  const date = at?.dataset.date ?? null;
+  const tip = useSyncExternalStore(tipStore.subscribe, () => (date ? tipStore.get(date) : null));
+  return (
+    <TipBubble
+      id={tipId}
+      anchor={() => (at?.isConnected ? at : null)}
+      open={!!at?.isConnected}
+      className="is-passive month-cell-tip"
+      testId="month-cell-tip"
+    >
+      {tip && (
+        <>
+          <strong>{tip.head}</strong>
+          <span>{tip.text}</span>
+          <strong className="month-cell-tip-sub">このマスの読み方</strong>
+          <ul>
+            {tip.lines.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </TipBubble>
+  );
+}
+
 /**
  * 月の見出しの凡例：日の状態（背景・枠と印）と、3段バーの色と目盛り（見出しに1回）。
+ * はじめは1行の要約と「凡例を見る」に畳む（PRD D177。開いたかどうかは保存しない）。
  * bar：全体は混み具合（load）、〈スタッフ〉を選んだときはその人の時間帯の状態（staff。PRD D75）
  */
 function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
+  return (
+    <details className="month-legend-fold" data-testid="month-legend-fold">
+      <summary className="month-legend-summary" data-testid="month-legend-toggle">
+        <span className="month-legend-open">
+          <span className="is-closed">凡例を見る</span>
+          <span className="is-opened">凡例を閉じる</span>
+        </span>
+        <span className="sub month-legend-line">
+          色＝日の状態・赤い点＝要確認・▶■＝始まる／終わる
+          {bar === 'load' ? '・棒＝30分ごとの空き' : bar === 'staff' ? '・棒＝その人の時間帯' : ''}
+          。マスにマウスを乗せるかフォーカスすると、そのマスの読み方が出ます
+        </span>
+      </summary>
+      <MonthLegendBody bar={bar} />
+    </details>
+  );
+}
+
+/** 凡例の中身（開いたとき） */
+function MonthLegendBody({ bar }: { bar: 'load' | 'staff' | null }) {
   return (
     <div className="month-legend" data-testid="month-legend">
       <span className="month-legend-group">
@@ -1383,6 +1538,8 @@ function namesShort(names: readonly string[]): string {
 
 type CellProps = {
   date: string;
+  /** マスの読み方の文の置き場（日付で引く。MonthCellTip） */
+  tipStore: TipStore;
   status: DayStatus;
   today: string;
   picked: boolean;
@@ -1444,7 +1601,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
   if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
   if (s.absentLeft > 0) parts.push(`休みの人に訪問 ${s.absentLeft}件`);
   if (s.stale) parts.push('条件が変わった');
-  if (s.overSpan.length > 0) parts.push(`拘束が上限を超える ${s.overSpan.length}人`);
+  if (s.overSpan.length > 0) parts.push(`出勤〜退勤（拘束）が上限を超える ${s.overSpan.length}人`);
   if (making) parts.push('作っています');
 
   const flags = (
@@ -1480,7 +1637,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
       {s.overSpan.length > 0 && (
         <span
           className="month-flag is-warn"
-          title={`拘束（最初の訪問の開始〜最後の訪問の終わり）が上限を超える${staffTerm}：${s.overSpan
+          title={`出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限を超える${staffTerm}：${s.overSpan
             .map((id) => staffById.get(id)?.name ?? '')
             .join('・')}`}
           data-testid="month-over-span"
@@ -1701,7 +1858,41 @@ const DayCell = memo(function DayCell(props: CellProps) {
 
   if (offState) parts.push(OFF_STATE_TEXT[offState]);
   const label = parts.join('・');
+  // マスの読み方（PRD D177）：出ている印だけの説明。マウスを重ねる・フォーカスで出す吹き出し（MonthCellTip）が読む
+  const restingAll = mk.off.length + mk.requested.length;
+  const cv = focus === 'client' ? (props.clientDay?.visits ?? []) : [];
+  const guide = cellGuide({
+    focus,
+    count: s.count,
+    stateText: s.count > 0 ? STATE_TEXT[s.state] : null,
+    care,
+    types: focus === 'all' && mk.types.length > 0,
+    resting: restingAll,
+    requested: mk.requested.length,
+    absent: mk.absent.length > 0,
+    starts: mk.starts.length > 0,
+    ends: mk.ends.length > 0,
+    leaves: mk.leaves.length > 0,
+    lastDays: mk.lastDays.length > 0,
+    loadBar: focus !== 'all' ? null : load ? 'load' : load === null ? 'noPlan' : null,
+    unassigned: s.unassigned > 0,
+    hard: s.hard > 0,
+    absentLeft: s.absentLeft > 0,
+    stale: s.stale,
+    overSpan: s.overSpan.length > 0,
+    substitute: cv.slice(0, 4).some((v) => v.substitute),
+    edited: cv.slice(0, 4).some((v) => v.edited && !v.cancelled),
+    staffTerm,
+    clientTerm,
+  });
   const offPress = offState === 'open' || offState === 'requested';
+  const tipText = `${parts.slice(1).join('・')}${offState ? '' : '（押すとこの日の予定の画面を開きます）'}`;
+  const guideKey = guide.join('\n');
+  // 描いたあとに、日付をキーに読み方の文を置く（吹き出しは日付で引く。描画中に DOM を読まない。PR #42 のレビュー）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 文（guideKey）が変わったときだけ置き直す
+  useLayoutEffect(() => {
+    props.tipStore.set(d, { head: longDate(d), text: tipText, lines: guide });
+  }, [props.tipStore, d, tipText, guideKey]);
   return (
     <td
       className={[
@@ -1727,7 +1918,8 @@ const DayCell = memo(function DayCell(props: CellProps) {
         aria-pressed={offState ? offState === 'requested' : undefined}
         // 押せない日も Tab で届き、理由（aria-label）が読み上がるよう disabled にしない。押しても何もしない
         aria-disabled={offState !== undefined && !offPress ? true : undefined}
-        title={offState ? label : `${label}（押すとこの日の予定の画面を開きます）`}
+        // 見た目の説明は title ではなく読み方の吹き出し（MonthCellTip。title と二重に出さない）
+        data-tip="cell"
         onClick={() => {
           if (!offState) props.onOpen(d);
           else if (offPress) props.onToggleOff(d);

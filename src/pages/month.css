@@ -570,3 +570,74 @@
   padding: 0 4px;
   border-radius: 4px;
 }
+/* 凡例を畳む（PRD D177）：はじめは「凡例を見る」と1行の要約。開いたかどうかは保存しない */
+.month-legend-fold {
+  font-size: 0.8rem;
+}
+.month-legend-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  min-width: 0;
+}
+.month-legend-summary::-webkit-details-marker {
+  display: none;
+}
+.month-legend-open {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.month-legend-open::before {
+  content: '▸ ';
+}
+.month-legend-fold[open] .month-legend-open::before {
+  content: '▾ ';
+}
+.month-legend-open .is-opened,
+.month-legend-fold[open] .month-legend-open .is-closed {
+  display: none;
+}
+.month-legend-fold[open] .month-legend-open .is-opened {
+  display: inline;
+}
+.month-legend-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.month-legend-fold[open] .month-legend-line {
+  display: none;
+}
+.month-legend-fold[open] .month-legend {
+  margin-top: 6px;
+}
+/* マスの読み方の吹き出し（MonthCellTip）。マウスを受けない（下のマスを押せる） */
+.term-tip.is-passive {
+  pointer-events: none;
+}
+.month-cell-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(320px, calc(100vw - 16px));
+}
+.month-cell-tip[hidden] {
+  display: none;
+}
+.month-cell-tip-sub {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+.month-cell-tip ul {
+  margin: 0;
+}
+@media print {
+  .month-legend-open {
+    display: none;
+  }
+}

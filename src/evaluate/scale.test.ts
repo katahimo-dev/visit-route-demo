@@ -4,7 +4,7 @@ import { compile } from '../matching';
 import { DATE, randomData } from '../matching/fixtures';
 import { applyPreset, createDemoData, INITIAL_PRESETS as PRESETS } from '../seed';
 import { defaultIterations, solve } from '../solver';
-import { hundredBreakdown, naivePlan, normalize, score, toHundred } from './index';
+import { hundredBreakdown, naivePlan, normalize, ruleLowerBounds, score, toHundred } from './index';
 
 const DEMO_DATE = '2026-10-13';
 
@@ -97,4 +97,13 @@ describe('点数（ADR-0007 案A。100 −（費用 − 下限）÷ 訪問の件
       expect(s.lowerBound).toBeLessThanOrEqual(score(q, {}).total + 1e-6);
     }
   }, 60000);
+});
+
+describe('ruleLowerBounds（下限の条件ごとの内訳。PRD D173 の点数の理由）', () => {
+  it('条件ごとの下限の和は物差しの割当の下限（lowerAssign）と同じ（理由の点の和＝割当費用）', () => {
+    const p = compile(createDemoData('2026-10-12'), DEMO_DATE);
+    const lower = ruleLowerBounds(p);
+    const sum = Object.values(lower).reduce((a, b) => a + b, 0);
+    expect(sum).toBeCloseTo(normalize(p).lowerAssign, 6);
+  });
 });

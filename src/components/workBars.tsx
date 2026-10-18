@@ -10,7 +10,7 @@ import type { WorkStat } from '../lib/workload';
 
 /** 内訳の種類 → 3段バーの状態の塗り（待ちは勤務内の空き） */
 const PART_LEVEL: Record<RoutePart['kind'], string> = { visit: 'st-visit', travel: 'st-travel', wait: 'st-free' };
-const PART_LABEL: Record<RoutePart['kind'], string> = { visit: '訪問', travel: '移動', wait: '待ち' };
+const PART_LABEL: Record<RoutePart['kind'], string> = { visit: '訪問', travel: '移動', wait: '空き時間（待ち）' };
 const clock = (m: number) => timeText(minutesToHhmm(Math.round(m)));
 
 /** 軸の中の正時（0時からの分）。両端は含まない（1時間の隙間の位置） */

@@ -63,7 +63,7 @@ const ATTENTION_LABEL: Record<AttentionKind, string> = {
   unassigned: '入らない訪問がある日',
   absentLeft: '欠勤の人に訪問が残る日',
   stale: '条件が変わった日',
-  overSpan: '拘束が上限を超える日',
+  overSpan: '出勤〜退勤（拘束）が上限を超える日',
   absence: '欠勤がある日',
 };
 const ATTENTION_ORDER: AttentionKind[] = ['unassigned', 'absentLeft', 'stale', 'overSpan', 'absence'];

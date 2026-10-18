@@ -1,8 +1,10 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCopy, Timer, TriangleAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { EmptyNext } from '../components/EmptyNext';
 import { StaffLegend } from '../components/staffBar';
+import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { SpanBar, SpanMini } from '../components/workBars';
@@ -10,7 +12,8 @@ import { timeText } from '../domain/availability';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
 import { copyText } from '../lib/clipboard';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
-import { addMonths, isYm, ymOf } from '../lib/month';
+import { periodEmptyGuide } from '../lib/emptyGuide';
+import { activeVisitsOn, addMonths, isYm, monthDates, ymOf } from '../lib/month';
 import { mdText } from '../lib/patternText';
 import { hmText, kmOf, type WorkDay, type WorkStat, workloadTsv, workMonth, workTotals } from '../lib/workload';
 import { useDemoData } from '../store';
@@ -23,7 +26,10 @@ import './workload.css';
  */
 export default function WorkloadPage() {
   const { data, update } = useDemoData();
-  const { date } = useDay();
+  const { date, setDate } = useDay();
+  const navigate = useNavigate();
+  /** 上限の入力欄の名前（aria-labelledby） */
+  const limitId = useId();
   const toast = useToast();
   const terms = data.org.terms;
   const [params, setParams] = useSearchParams();
@@ -45,6 +51,17 @@ export default function WorkloadPage() {
     rows.reduce((m, s) => m + pick(totals.get(s.id)!), 0);
   const overDays = sumOf((t) => t.overDays);
   const planDays = days.filter((d) => d.source !== null).length;
+  /** 空の画面の文とボタン（PRD D176。案のある日があれば null） */
+  const emptyGuide = useMemo(() => {
+    const dates = monthDates(ym);
+    return periodEmptyGuide({
+      period: 'この月',
+      dates,
+      today,
+      visitDays: dates.filter((d) => activeVisitsOn(data, d).length > 0),
+      planDays: days.filter((d) => d.source !== null).map((d) => d.date),
+    });
+  }, [ym, today, data, days]);
 
   // ---- 選んだ人の日ごと ----
   const sid = params.get('staff');
@@ -114,7 +131,11 @@ export default function WorkloadPage() {
   const saveLimit = () => {
     if (limitError || limitNum === org.spanLimitHours) return;
     update((d) => ({ ...d, org: { ...d.org, spanLimitHours: limitNum } }));
-    toast(limitNum > 0 ? `拘束の上限を ${limitNum}時間 にしました` : '拘束の注意を出さないようにしました');
+    toast(
+      limitNum > 0
+        ? `出勤〜退勤（拘束）の上限を ${limitNum}時間 にしました`
+        : '出勤〜退勤（拘束）の注意を出さないようにしました',
+    );
   };
 
   const copy = async () => {
@@ -123,16 +144,16 @@ export default function WorkloadPage() {
   };
 
   const statTitle = (name: string, d: string, x: WorkStat) =>
-    `${name}さん ${mdText(d)}：${clock(x.start)}〜${clock(x.end)}・拘束 ${hmText(x.span)}（訪問 ${hmText(x.visit)}・移動 ${hmText(
+    `${name}さん ${mdText(d)}：${clock(x.start)}〜${clock(x.end)}・出勤〜退勤（拘束） ${hmText(x.span)}（訪問 ${hmText(x.visit)}・移動 ${hmText(
       x.travel,
-    )}・待ち ${hmText(x.wait)}）・訪問 ${x.count}件${x.over ? '・拘束が上限を超える' : ''}`;
+    )}・空き時間（待ち） ${hmText(x.wait)}）・訪問 ${x.count}件${x.over ? '・出勤〜退勤（拘束）が上限を超える' : ''}`;
 
   return (
     <div className="stack">
       <PageHeader
         icon={Timer}
         title="稼働の見込み"
-        lead={`予定から見込んだ、${terms.staff}ごとの拘束・移動・待ちの時間と交通費です。実績ではありません`}
+        lead={`予定から見込んだ、${terms.staff}ごとの出勤〜退勤（拘束）・移動・空き時間（待ち）の時間と交通費です。実績ではありません`}
       />
 
       <div className="card stack work-head">
@@ -188,7 +209,7 @@ export default function WorkloadPage() {
           </button>
           <span className="sub" data-testid="work-summary">
             案のある日 {planDays}日・{terms.staff} {rows.length}人
-            {overDays > 0 ? `・拘束が上限を超える ${overDays}日（のべ）` : ''}
+            {overDays > 0 ? `・出勤〜退勤（拘束）が上限を超える ${overDays}日（のべ）` : ''}
           </span>
         </div>
         <div className="row work-settings">
@@ -211,9 +232,14 @@ export default function WorkloadPage() {
             <span>円/km（0 なら交通費を出しません）</span>
             {fareError && <span className="error">{fareError}</span>}
           </label>
-          <label className="work-setting">
-            <span>拘束の上限</span>
+          {/* 用語の説明（ボタン）は label の中に置かない（PR #42 のレビュー）。入力欄の名前は aria-labelledby でつなぐ */}
+          <div className="work-setting">
+            <span>
+              <Term k="span" testId="term-span" id={`${limitId}-term`} />
+              <span id={`${limitId}-label`}>の上限</span>
+            </span>
             <input
+              aria-labelledby={`${limitId}-term ${limitId}-label`}
               type="number"
               min={0}
               max={24}
@@ -229,18 +255,28 @@ export default function WorkloadPage() {
             />
             <span>時間（超える日に注意。0 なら出しません）</span>
             {limitError && <span className="error">{limitError}</span>}
-          </label>
+          </div>
         </div>
         <Hint label="見込みの数え方">
-          数えるのはその日の確定した割当（無ければ今の案）です。拘束は最初の訪問の開始から最後の訪問の終わりまでで、直行直帰として自宅との行き帰りは入れません（距離と交通費には入れます）。待ちは訪問のあいだの空き（休憩に使える時間）です。移動の時間と距離は直線距離からの概算です。拘束の上限は注意を出すだけで、AI案の条件には入りません。予定からの見込みで、実績（打刻）ではありません。
+          数えるのはその日の確定した割当（無ければ今の案）です。出勤〜退勤（拘束）は最初の訪問の開始から最後の訪問の終わりまでで、直行直帰として自宅との行き帰りは入れません（距離と交通費には入れます）。空き時間（待ち）は訪問のあいだの空き（休憩に使える時間）です。移動の時間と距離は直線距離からの概算です。出勤〜退勤（拘束）の上限は注意を出すだけで、AI案の条件には入りません。予定からの見込みで、実績（打刻）ではありません。
         </Hint>
       </div>
 
       {rows.length === 0 ? (
-        <div className="card">
-          <p className="sub" data-testid="work-empty">
-            この月には、確定した割当か今の案のある日がありません。月間で案を作ると見込みが出ます。
-          </p>
+        <div className="card" data-testid="work-empty">
+          {/* 空の画面（PRD D176）：なぜ空かと次の一手（月の画面のまとめて作る・日の画面） */}
+          {emptyGuide ? (
+            <EmptyNext
+              guide={emptyGuide}
+              icon={Timer}
+              onOpenDay={(d) => {
+                setDate(d);
+                navigate('/plan');
+              }}
+            />
+          ) : (
+            <p className="sub">この月には、見込める予定（訪問のある案）がありません。</p>
+          )}
         </div>
       ) : (
         <>
@@ -260,7 +296,7 @@ export default function WorkloadPage() {
                       訪問
                     </th>
                     <th scope="col" className="num">
-                      拘束
+                      <Term k="span" />
                     </th>
                     <th scope="col">一番長い日</th>
                     <th scope="col" className="num">
@@ -270,7 +306,7 @@ export default function WorkloadPage() {
                       移動
                     </th>
                     <th scope="col" className="num">
-                      待ち
+                      <Term k="wait" />
                     </th>
                     <th scope="col" className="num">
                       自宅との行き帰り
@@ -360,11 +396,11 @@ export default function WorkloadPage() {
               icon={Timer}
               aside={
                 <span className="sub">
-                  横棒は拘束の長さ（{12}時間で端まで。縦の線は上限）。上限を超える日は斜線と「!」
+                  横棒は出勤〜退勤（拘束）の長さ（{12}時間で端まで。縦の線は上限）。上限を超える日は斜線と「!」
                 </span>
               }
             >
-              {terms.staff}×日の拘束
+              {terms.staff}×日の出勤〜退勤（拘束）
             </SectionTitle>
             <div className="table-scroll">
               <table className="work-grid" data-testid="work-grid">
@@ -421,7 +457,7 @@ export default function WorkloadPage() {
                 </tbody>
               </table>
             </div>
-            <p className="sub">数字は拘束の時間（時間）です。マスに指を置くと内訳が出ます。</p>
+            <p className="sub">数字は出勤〜退勤（拘束）の時間（時間）です。マスに指を置くと内訳が出ます。</p>
           </section>
 
           {picked && (
@@ -445,7 +481,10 @@ export default function WorkloadPage() {
               </SectionTitle>
               <p className="row work-legend sub">
                 <span>横棒は最初の訪問の開始〜最後の訪問の終わり（拘束）。</span>
-                <StaffLegend states={['visit', 'travel', 'free']} labels={{ free: '待ち（休憩に使える時間）' }} />
+                <StaffLegend
+                  states={['visit', 'travel', 'free']}
+                  labels={{ free: '空き時間（待ち。休憩に使える時間）' }}
+                />
                 <span>上限を超える日は太い枠と注意の印</span>
               </p>
               <div className="table-scroll">
@@ -465,7 +504,7 @@ export default function WorkloadPage() {
                       </th>
                       <th scope="col">始め〜終わり</th>
                       <th scope="col" className="num">
-                        拘束
+                        <Term k="span" />
                       </th>
                       <th scope="col" className="num">
                         訪問
@@ -474,7 +513,7 @@ export default function WorkloadPage() {
                         移動
                       </th>
                       <th scope="col" className="num">
-                        待ち
+                        <Term k="wait" />
                       </th>
                       <th scope="col" className="num">
                         距離

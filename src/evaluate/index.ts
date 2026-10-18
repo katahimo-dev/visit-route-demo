@@ -341,6 +341,32 @@ export function normalize(problem: Problem): ScoreScale {
 }
 
 /**
+ * 物差しの下限（normalize の lowerAssign）を条件（Reason.ruleId）ごとに分けたもの：各訪問で、normalize と同じく割当費用が最小の
+ * 担当（同じなら先の人）の理由の点（有限のもの）を条件ごとに足す。点数の理由（PRD D173）で、条件ごとの点（PlanScore.perRule の points）
+ * の下限からの超過を比べるのに使う（新しい採点ではなく、下限の内訳）
+ */
+export function ruleLowerBounds(problem: Problem): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (let v = 0; v < problem.visits.length; v++) {
+    let best = -1;
+    let min = INF;
+    for (let s = 0; s < problem.staff.length; s++) {
+      if (!problem.allowed[v]![s]) continue;
+      if (problem.assignCost[v]![s]! < min) {
+        min = problem.assignCost[v]![s]!;
+        best = s;
+      }
+    }
+    if (best < 0) continue;
+    for (const r of problem.reasons[v]![best]!) {
+      if (r.points === INF) continue;
+      out[r.ruleId] = (out[r.ruleId] ?? 0) + r.points;
+    }
+  }
+  return out;
+}
+
+/**
  * 費用 → 点数（高いほど良い。費用について単調に減る。0〜SCORE_MAX（100）の整数）。
  * 100 −（費用 − 下限）÷ 訪問の件数（1件あたり、理想より余計にかかった分だけ減点。ADR-0007 案A）。訪問が0件なら100
  */
@@ -359,7 +385,7 @@ export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Prob
   const k = 1 / scale.visits;
   const parts: HundredPart[] = [
     { key: 'travel', label: '移動', points: (sc.travelMinutes - scale.lowerTravel) * k },
-    { key: 'wait', label: '待ち', points: sc.waitMinutes * problem.waitPerMinute * k },
+    { key: 'wait', label: '空き時間（待ち）', points: sc.waitMinutes * problem.waitPerMinute * k },
     { key: 'assign', label: '担当の条件', points: (sc.assignPoints - scale.lowerAssign) * k },
     { key: 'balance', label: '負担の均等', points: sc.balancePoints * k },
     { key: 'dropped', label: '入らない訪問', points: (sc.dropped - scale.lowerDropped) * DROP_POINTS * k },
