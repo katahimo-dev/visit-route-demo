@@ -877,6 +877,7 @@ export default function PlanPage() {
       tone: 'danger',
     });
     if (!ok) return;
+    if (runRef.current) return;
     update((d) =>
       patchPlan(d, date, problem, (plan) => ({
         ...plan,
@@ -899,6 +900,7 @@ export default function PlanPage() {
       confirmLabel: '確定する',
     });
     if (!ok) return;
+    if (runRef.current) return;
     const inProblem = new Set(problem.visits.map((v) => v.id));
     const aiOwner = ownerMap(aiPlan.routes);
     const before = ownerMap(m.savedView.cols);
@@ -1376,6 +1378,7 @@ export default function PlanPage() {
       confirmLabel: '元の案に戻す',
     });
     if (!ok) return;
+    if (runRef.current) return;
     const p = problem;
     update((d) => revertReassign(d, date, p));
     sel.reset();
@@ -1401,6 +1404,7 @@ export default function PlanPage() {
       }))
     )
       return;
+    if (runRef.current) return;
     const p = problem;
     update((d) =>
       patchPlan(d, date, p, (plan) => ({

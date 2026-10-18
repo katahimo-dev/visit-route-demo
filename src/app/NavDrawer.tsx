@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { FOCUSABLE } from '../components/ui';
-import { useBodyScrollLock } from '../components/useBodyScrollLock';
+import { inertLock, useBodyScrollLock } from '../components/useBodyScrollLock';
 
 /**
  * スマホ（幅860px以下）のメニューの引き出し（PRD D133。design.md §4 app「スマホのメニュー（2026-10-18）」）。
@@ -39,8 +39,7 @@ export function NavDrawer({
   useEffect(() => {
     // 後ろの画面を操作できなくする（読み上げ・Tab・クリック）
     const root = document.getElementById('root');
-    const wasInert = root?.inert ?? false;
-    if (root) root.inert = true;
+    const releaseInert = root ? inertLock.lock([root]) : () => {};
     // 開いたら今の画面の項目（無ければ最初の項目）へ
     const first =
       ref.current?.querySelector<HTMLElement>('[aria-current="page"]') ??
@@ -73,7 +72,7 @@ export function NavDrawer({
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      if (root) root.inert = wasInert;
+      releaseInert();
       returnRef.current()?.focus({ preventScroll: true });
     };
   }, []);

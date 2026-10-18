@@ -1,10 +1,14 @@
 import { CircleQuestionMark, TriangleAlert } from 'lucide-react';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router-dom';
 import { type ConfirmOptions, type ConfirmRequest, enqueue, settle, toRequest, trapTarget } from '../lib/confirmDialog';
 import { FOCUSABLE } from './ui';
-import { useBodyScrollLock } from './useBodyScrollLock';
+import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
 import './confirmDialog.css';
+
+/** 開いてから背景のクリックを無視する時間（ミリ秒。PR #37 のレビュー） */
+const BACKDROP_GUARD_MS = 300;
 
 /**
  * 独自の確認ダイアログ（PRD D146〜D150。ADR-0026）。ブラウザの confirm の代わりに、画面の中央にアプリの見た目で出す。
@@ -27,16 +31,17 @@ export function ConfirmDialog({
   closeRef.current = onClose;
   const titleId = useId();
   const bodyId = useId();
+  /** 開いた時刻（背景のクリックを少しのあいだ無視する） */
+  const openedAt = useRef(performance.now());
   useBodyScrollLock();
   useEffect(() => {
     const back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    // 裏（body のほかの子）を操作できなくする。閉じたら元の値に戻す
-    const saved: [HTMLElement, boolean][] = [];
-    for (const el of Array.from(document.body.children)) {
-      if (el === wrapRef.current || !(el instanceof HTMLElement)) continue;
-      saved.push([el, el.inert]);
-      el.inert = true;
-    }
+    // 裏（body のほかの子）を操作できなくする。要素ごとに数えるロックで、引き出しと閉じる順が逆でも残さない
+    const releaseInert = inertLock.lock(
+      Array.from(document.body.children).filter(
+        (el): el is HTMLElement => el instanceof HTMLElement && el !== wrapRef.current,
+      ),
+    );
     cancelRef.current?.focus();
     // 捕捉の段で受け、右の欄・引き出しの Esc（document で受けている）に渡さない
     const onKey = (e: KeyboardEvent) => {
@@ -58,7 +63,7 @@ export function ConfirmDialog({
     window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('keydown', onKey, true);
-      for (const [el, was] of saved) el.inert = was;
+      releaseInert();
       if (back?.isConnected) back.focus({ preventScroll: true });
     };
   }, []);
@@ -70,7 +75,11 @@ export function ConfirmDialog({
       <div
         className="confirm-backdrop"
         aria-hidden="true"
-        onClick={() => onClose(false)}
+        onClick={(e) => {
+          // 開くボタンのダブルクリックの2回目が背景に当たって取り消しにならないよう、開いてすぐ・連続のクリックは無視する
+          if (e.detail > 1 || performance.now() - openedAt.current < BACKDROP_GUARD_MS) return;
+          onClose(false);
+        }}
         data-testid="confirm-backdrop"
       />
       <div
@@ -125,7 +134,10 @@ export type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
 
 const Ctx = createContext<ConfirmFn | null>(null);
 
-/** 画面全体で1つ。頼まれた確認を順に1つずつ出す（出ている間に頼まれたら、閉じてから次を出す） */
+/**
+ * 画面全体で1つ（Router の内側に置く）。頼まれた確認を順に1つずつ出す（出ている間に頼まれたら、閉じてから次を出す）。
+ * 画面（ルート）が変わったら、待っている確認はすべて取り消し
+ */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<readonly ConfirmRequest[]>([]);
   const resolvers = useRef(new Map<number, (ok: boolean) => void>());
@@ -145,6 +157,18 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     setQueue((q) => settle(q, id));
     resolve?.(ok);
   }, []);
+  // 画面（ルート）が変わったら、待っている確認をすべて取り消しとして答えて閉じる
+  // （「戻る」で移ったあとに確定して、外れた画面の続きがデータを書かないように。PR #37 のレビュー）
+  const { pathname } = useLocation();
+  const lastPath = useRef(pathname);
+  useEffect(() => {
+    if (lastPath.current === pathname) return;
+    lastPath.current = pathname;
+    const pending = [...resolvers.current.values()];
+    resolvers.current.clear();
+    setQueue([]);
+    for (const resolve of pending) resolve(false);
+  }, [pathname]);
   // 外れるとき（画面ごと消えるとき）は残りを取り消しとして答える
   useEffect(() => {
     const map = resolvers.current;

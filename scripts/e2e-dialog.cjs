@@ -3,7 +3,8 @@
 // 画面の中央に独自のダイアログが出て、ブラウザのネイティブのダイアログは出ない（page.on('dialog') が呼ばれたら失敗）。
 // role=alertdialog・aria-modal・見出しと本文の aria-labelledby/describedby、最初のフォーカスは取り消し、Tab・Shift+Tab は中で回る、
 // 裏（#root）は inert・巻かない。Esc・取り消す・背景を押すでは何も変わらず、確定で処理が進む。閉じたら押したボタンへフォーカスが戻る。
-// 右の欄（SidePanel）の上に出たとき、Esc は確認だけを閉じる（欄は閉じない）。390px で画面に収まる。印刷では出さない。
+// 右の欄（SidePanel）の上に出たとき、Esc は確認だけを閉じる（欄は閉じない）。ダブルクリックの2回目で取り消しにならない。
+// 確認中に「戻る」で別の画面へ移ると、確認が閉じてデータは変わらない。390px で画面に収まる。印刷では出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-dialog.cjs
 // 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -161,9 +162,11 @@ async function rules(page) {
     (await dialog(page).count()) === 0 && (await stored(page)).rules.length === before.length,
     '条件を消す：「取り消す」で何も変わらない',
   );
-  // 背景を押す
-  await btn.click();
-  await dialog(page).waitFor();
+  // ボタンのダブルクリック：2回目が背景に当たっても取り消しにしない（開いてすぐ・連続のクリックは無視）
+  await btn.dblclick();
+  await settle(page, 400);
+  check((await dialog(page).count()) === 1, '条件を消す：ダブルクリックでも確認が残る');
+  // 背景を押す（開いてから少したったクリック）
   await page.mouse.click(8, 8);
   await settle(page);
   check(
@@ -182,6 +185,27 @@ async function rules(page) {
     '条件を消す：確定（キーボード）で消える',
     after.length,
   );
+}
+
+// ---- 確認中に「戻る」で別の画面へ：確認が閉じ、外れた画面の続きはデータを書かない ----
+async function backWhileAsking(page) {
+  await open(page, '/data', 'h1');
+  await page.goto(`${BASE}#/rules`);
+  await page.locator('table').first().waitFor();
+  await settle(page, 400);
+  const before = (await stored(page)).rules.length;
+  const r0 = (await stored(page)).rules[0];
+  await page.getByRole('button', { name: `条件「${r0.label}」を消す` }).click();
+  await dialog(page).waitFor();
+  await page.goBack();
+  await page.waitForURL(/#\/data/);
+  await settle(page, 500);
+  check(
+    (await dialog(page).count()) === 0 && (await stored(page)).rules.length === before,
+    '確認中に戻る：確認が閉じ、データが変わらない',
+  );
+  const rootInert = await page.evaluate(() => document.getElementById('root')?.inert ?? false);
+  check(!rootInert, '確認中に戻る：裏の inert が残らない');
 }
 
 // ---- データを初期状態に戻す（#/data）：取り消しでトーストなし、確定でトースト ----
@@ -292,7 +316,7 @@ async function narrow(page) {
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const errors = [];
-  for (const step of [rules, dataReset, adopt, staffDiscard, narrow]) {
+  for (const step of [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow]) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
     // 地図のタイルは外へ取りに行かない
     await ctx.route(/cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org/, (r) =>
