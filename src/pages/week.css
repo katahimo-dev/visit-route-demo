@@ -365,3 +365,30 @@ label.week-who {
   justify-content: flex-end;
   margin-bottom: 6px;
 }
+
+/* 時間軸の〈利用者さん〉のチップの上限の文と、畳んだ「ほかの人を探す」（PRD D138） */
+/* 上限の文の枠はいつも描く（空なら高さ0。読み上げの live 領域を消さない） */
+.week-client-message {
+  display: block;
+  min-height: 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+.week-client-search > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--sub);
+  font-size: 0.85rem;
+}
+.week-client-search > summary:hover,
+.week-client-search[open] > summary {
+  color: var(--ink);
+}
+.week-client-search[open] > summary {
+  margin-bottom: 6px;
+}
+@media print {
+  .week-client-search {
+    display: none;
+  }
+}

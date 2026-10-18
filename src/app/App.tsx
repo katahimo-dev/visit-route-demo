@@ -12,6 +12,7 @@ import {
   House,
   Layers,
   type LucideIcon,
+  Menu,
   Route as RouteIcon,
   SlidersHorizontal,
   Tags,
@@ -19,11 +20,22 @@ import {
   TriangleAlert,
   UserRound,
 } from 'lucide-react';
-import { type ReactElement, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type MouseEvent,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { addDays, jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
+import { bottomTabs, isActiveNav, type NavSection, navTitle } from '../lib/nav';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientsPage from '../pages/ClientsPage';
 import ComparePage from '../pages/ComparePage';
@@ -43,6 +55,7 @@ import WorkloadPage from '../pages/WorkloadPage';
 import { useDemoData } from '../store';
 import { DayProvider, useDay } from './day';
 import { ErrorBoundary } from './ErrorBoundary';
+import { NavDrawer } from './NavDrawer';
 
 /** seed は基準日から14日分 */
 const DAYS = 14;
@@ -116,19 +129,59 @@ function Guarded({ element }: { element: ReactElement }) {
 /** 左のメニュー：予定（月・週・日）・問い合わせ・〈利用者さん〉・〈スタッフ〉・割当の設定・データ（PRD D59・D102） */
 type NavItem = { to: string; label: string; icon: LucideIcon };
 
+/** スマホのメニューに切り替わる幅（styles.css の @media (max-width: 860px) と同じ。PRD D132） */
+const NARROW_QUERY = '(max-width: 860px)';
+
 function AdminShell() {
   const { data, saveError } = useDemoData();
   const terms = data.org.terms;
   const { pathname } = useLocation();
-  // 画面を移ったら上へ
+  /** スマホの引き出しを開いているか（PRD D133） */
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const sideNavRef = useRef<HTMLElement>(null);
+  const drawerId = useId();
+  // 画面を移ったら上へ。引き出しも閉じる（画面を選ぶと閉じる。PRD D133）
   // 本体はブロックにする（式本体だと戻り値が後始末として呼ばれる。Brave の scrollTo は値を返し「is not a function」になった）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 画面を移ったときだけ
   useEffect(() => {
     window.scrollTo(0, 0);
+    setMenuOpen(false);
   }, [pathname]);
+  // 広い画面へ戻ったら引き出しを閉じる（左のメニューが出るので）
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_QUERY);
+    const onChange = () => {
+      if (!mq.matches) setMenuOpen(false);
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  // スマホでは上の帯が2段に折り返すことがあるので、帯の高さ（--header-h。この下に貼り付く要素が使う）を測って出す。
+  // 広い画面では styles.css の値（72px）のまま
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const mq = window.matchMedia(NARROW_QUERY);
+    const root = document.documentElement.style;
+    const put = () => {
+      if (mq.matches) root.setProperty('--header-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+      else root.removeProperty('--header-h');
+    };
+    put();
+    const ro = new ResizeObserver(put);
+    ro.observe(el);
+    mq.addEventListener('change', put);
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener('change', put);
+      root.removeProperty('--header-h');
+    };
+  }, []);
   // 動線の整理（PRD D59・D102）：予定（月・週・日）／問い合わせ／〈利用者さん〉／〈スタッフ〉／割当の設定／データ。
   // 比較は日の画面の「案を比べる」から開く（メニューには出さない）。ルートの URL は変えない
-  const groups: { title?: string; items: NavItem[] }[] = [
+  const groups: NavSection<NavItem>[] = [
     {
       title: '予定',
       items: [
@@ -168,46 +221,52 @@ function AdminShell() {
       items: [{ to: '/data', label: 'データ', icon: Database }],
     },
   ];
+  const brand = (
+    <div className="brand">
+      <span className="brand-mark" aria-hidden="true">
+        <RouteIcon size={20} strokeWidth={2.4} />
+      </span>
+      <div className="brand-text">
+        <strong>{data.org.name}</strong>
+        <span className="demo-badge" title="データはこのブラウザだけに保存。実在の個人情報は入れない">
+          <FlaskConical size={12} aria-hidden="true" />
+          デモ（ブラウザ内に保存）
+        </span>
+      </div>
+    </div>
+  );
+  /** 上の帯の今の画面の名前（スマホ。PRD D132） */
+  const screenName = navTitle(groups, pathname);
   return (
     <div className="app-shell">
-      <aside className="side-nav">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            <RouteIcon size={20} strokeWidth={2.4} />
-          </span>
-          <div className="brand-text">
-            <strong>{data.org.name}</strong>
-            <span className="demo-badge" title="データはこのブラウザだけに保存。実在の個人情報は入れない">
-              <FlaskConical size={12} aria-hidden="true" />
-              デモ（ブラウザ内に保存）
-            </span>
-          </div>
-        </div>
-        <nav className="nav-groups">
-          {groups.map((g) => (
-            <div key={g.items[0]!.to} className="nav-group">
-              {g.title && <span className="nav-group-title">{g.title}</span>}
-              {g.items.map(({ to, label, icon: Icon }) =>
-                // 比較（メニューに無い）は日の画面の続きなので、日を選んだ状態で見せる（読み上げにも今の画面と伝える）。
-                // NavLink は自分の URL のときしか aria-current を付けないので、このときだけ Link にする
-                to === '/plan' && pathname === '/compare' ? (
-                  <Link key={to} to={to} className="nav-link active" aria-current="page">
-                    <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
-                    <span>{label}</span>
-                  </Link>
-                ) : (
-                  <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-                    <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
-                    <span>{label}</span>
-                  </NavLink>
-                ),
-              )}
-            </div>
-          ))}
-        </nav>
+      <aside ref={sideNavRef} className="side-nav">
+        {brand}
+        <NavGroups groups={groups} pathname={pathname} />
       </aside>
       <div className="app-body">
-        <header className="app-header">
+        <header ref={headerRef} className="app-header">
+          {/* スマホだけ：ロゴと今の画面の名前・「メニュー」ボタン（PRD D132。広い画面では出さない） */}
+          <div className="m-head-title">
+            <span className="brand-mark" aria-hidden="true">
+              <RouteIcon size={18} strokeWidth={2.4} />
+            </span>
+            <strong className="m-screen-name" data-testid="screen-name">
+              {screenName ?? data.org.name}
+            </strong>
+          </div>
+          <button
+            ref={menuBtnRef}
+            type="button"
+            className="btn btn-small m-menu-btn"
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            aria-controls={menuOpen ? drawerId : undefined}
+            onClick={() => setMenuOpen(true)}
+            data-testid="menu-btn"
+          >
+            <Menu size={18} aria-hidden="true" />
+            メニュー
+          </button>
           <DateSwitcher />
         </header>
         {saveError && (
@@ -219,8 +278,97 @@ function AdminShell() {
         <main className="app-main">
           <Guarded element={<Outlet />} />
         </main>
+        {/* スマホだけ：よく使う4つのタブ（PRD D134。印刷では出さない） */}
+        <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
+          {bottomTabs(groups).map(({ to, label, icon: Icon }) => {
+            const on = isActiveNav(to, pathname);
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={on ? 'bottom-tab active' : 'bottom-tab'}
+                aria-current={on ? 'page' : undefined}
+                onClick={(e) => {
+                  // 今の画面のタブは何もしない（押し直して URL のクエリ＝画面の状態を消さない）
+                  if (to === pathname) e.preventDefault();
+                }}
+                data-testid="bottom-tab"
+              >
+                <Icon size={20} strokeWidth={2.1} aria-hidden="true" />
+                <span>{label}</span>
+              </Link>
+            );
+          })}
+        </nav>
       </div>
+      {menuOpen && (
+        <NavDrawer
+          id={drawerId}
+          label="メニュー"
+          onClose={() => setMenuOpen(false)}
+          // 広い画面へ戻して閉じたときは「メニュー」ボタンが隠れているので、左のメニューの今の項目へ
+          returnFocus={() =>
+            window.matchMedia(NARROW_QUERY).matches
+              ? menuBtnRef.current
+              : (sideNavRef.current?.querySelector<HTMLElement>('[aria-current="page"]') ??
+                sideNavRef.current?.querySelector<HTMLElement>('a[href]'))
+          }
+          head={brand}
+        >
+          <NavGroups
+            groups={groups}
+            pathname={pathname}
+            onPick={(e, to) => {
+              // 今の画面の項目は閉じるだけ（移り直して URL のクエリ＝画面の状態を消さない）
+              if (to === pathname) e.preventDefault();
+              setMenuOpen(false);
+            }}
+          />
+        </NavDrawer>
+      )}
     </div>
+  );
+}
+
+/** メニューの並び（左のメニューとスマホの引き出しで共通。グループの見出し付きの縦並び） */
+function NavGroups({
+  groups,
+  pathname,
+  onPick,
+}: {
+  groups: readonly NavSection<NavItem>[];
+  pathname: string;
+  /** 項目を押したとき（引き出しを閉じる。今の画面なら移らない） */
+  onPick?: (e: MouseEvent<HTMLAnchorElement>, to: string) => void;
+}) {
+  return (
+    <nav className="nav-groups" aria-label="画面の一覧">
+      {groups.map((g) => (
+        <div key={g.items[0]!.to} className="nav-group">
+          {g.title && <h2 className="nav-group-title">{g.title}</h2>}
+          {g.items.map(({ to, label, icon: Icon }) =>
+            // 比較（メニューに無い）は日の画面の続きなので、日を選んだ状態で見せる（読み上げにも今の画面と伝える）。
+            // NavLink は自分の URL のときしか aria-current を付けないので、このときだけ Link にする
+            to !== pathname && isActiveNav(to, pathname) ? (
+              <Link key={to} to={to} className="nav-link active" aria-current="page" onClick={(e) => onPick?.(e, to)}>
+                <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+                <span>{label}</span>
+              </Link>
+            ) : (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+                onClick={(e) => onPick?.(e, to)}
+              >
+                <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+                <span>{label}</span>
+              </NavLink>
+            ),
+          )}
+        </div>
+      ))}
+    </nav>
   );
 }
 

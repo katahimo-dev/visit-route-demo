@@ -779,12 +779,12 @@ p.plan-band.error {
     max-width: none;
   }
 }
-/* 左のメニューが上に回る幅 */
+/* スマホのメニューの幅（下のタブ（--bottom-tabs-h）の上に出す。PRD D134） */
 @media (max-width: 860px) {
   .reassign-dock {
     left: 8px;
     right: 8px;
-    bottom: max(12px, calc(var(--map-dock-top, 0px) + 8px));
+    bottom: max(calc(12px + var(--bottom-tabs-h)), calc(var(--map-dock-top, 0px) + 8px));
     padding: 6px 8px;
   }
 }

@@ -1,5 +1,5 @@
 // 予定（月・週・日）の名前から開く〈スタッフ〉・〈利用者さん〉の詳細（PRD D122〜D126。ADR-0022 追記）を本物のブラウザで確かめる：
-// 月：右の欄の名前（〈スタッフ〉・〈利用者さん〉）／週：時間軸の〈スタッフ〉のチップの横の i・〈利用者さん〉のチップの名前・
+// 月：右の欄の名前（〈スタッフ〉・〈利用者さん〉）／週：時間軸の〈スタッフ〉・〈利用者さん〉のチップの横の i・
 // 〈スタッフ〉×曜日と〈利用者さん〉×曜日の表の名前／日：列の見出しの i・訪問の詳細の名前・担当ごとの1日の i・一覧の名前。
 // 吹き出しの開閉（もう一度押す・Esc・外を押す・Tab）とフォーカスの戻り・同時に1つ・見出しが消えたら閉じる・
 // 「〈スタッフ〉の画面で開く」「〈利用者さん〉の画面で開く」で閲覧の欄が開く・i を押してもチップ・見出しの動き（選ぶ・地図の絞り込み）が起きない・
@@ -181,13 +181,17 @@ async function week(page) {
   });
   await page.waitForTimeout(400);
   check((await pop(page).count()) === 0, '週：見出し（チップ）が消えたら吹き出しを閉じる');
-  // 時間軸（〈利用者さん〉で見る）：選んだ人のチップの名前
-  await page.getByTestId('week-client-picker-shortcut-period').click();
-  await page.getByTestId('week-client-picker-option').first().click();
-  const cname = page.getByTestId('week-client-picker-chip').first().getByTestId('person-btn');
+  // 時間軸（〈利用者さん〉で見る）：この週に訪問がある人のチップの横の i（PRD D136。〈スタッフ〉のチップと同じ）
+  const cchips = page.getByTestId('week-client-chips');
+  const cname = cchips.getByTestId('person-info').first();
   await cname.waitFor();
-  await rules(page, cname, '週・時間軸の〈利用者さん〉のチップ', ['段階', '必要条件']);
-  check((await page.getByTestId('week-client-picker-chip').count()) === 1, '週：名前を押しても選んだ人は外れない');
+  const cpressed = await cchips.getByTestId('pick-chip').evaluateAll((els) => els.map((el) => el.ariaPressed));
+  await rules(page, cname, '週・時間軸の〈利用者さん〉のチップの i', ['段階', '必要条件']);
+  check(
+    JSON.stringify(await cchips.getByTestId('pick-chip').evaluateAll((els) => els.map((el) => el.ariaPressed))) ===
+      JSON.stringify(cpressed),
+    '週：i を押しても〈利用者さん〉のチップの選択は変わらない',
+  );
   // 〈スタッフ〉×曜日の表
   await open(page, '/week?view=table', '[data-testid="week-table"]');
   const tbtn = page.getByTestId('week-table').locator('tbody th').first().getByTestId('person-btn');
