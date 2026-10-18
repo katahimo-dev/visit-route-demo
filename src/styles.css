@@ -980,14 +980,16 @@ tbody tr:hover td {
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.section-title h2 {
+.section-title h2,
+.section-title h3 {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
   font-size: 1.08rem;
 }
-.section-title h2 svg {
+.section-title h2 svg,
+.section-title h3 svg {
   color: var(--primary);
 }
 .section-aside {

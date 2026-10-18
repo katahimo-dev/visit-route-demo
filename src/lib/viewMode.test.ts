@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClientLeave } from '../contracts/documents';
-import { discardMessage, isDirty, orDash, splitLeaves } from './viewMode';
+import { cleanTraits, discardMessage, isDirty, orDash, splitLeaves } from './viewMode';
 
 describe('isDirty', () => {
   const saved = { id: 'a', name: '山田', tags: ['x'] };
@@ -21,8 +21,29 @@ describe('isDirty', () => {
     expect(isDirty(structuredClone(blank), blank)).toBe(false);
     expect(isDirty({ ...blank, name: '新' }, blank)).toBe(true);
   });
+  it('特性を選んでから未入力に戻しても変更なし（null・空の文字・空の配列は無いのと同じ）', () => {
+    const base = { id: 'a', traits: { t1: true } as Record<string, unknown> };
+    expect(isDirty({ id: 'a', traits: { t1: true, t2: null } }, base)).toBe(false);
+    expect(isDirty({ id: 'a', traits: { t1: true, t3: '', t4: [] } }, base)).toBe(false);
+    expect(isDirty({ id: 'a', traits: { t1: false } }, base)).toBe(true);
+    expect(isDirty({ id: 'a', traits: { t1: true, t2: 0 } }, base)).toBe(true);
+    // 元のほうに未入力が残っていても同じ
+    expect(isDirty({ id: 'a', traits: {} }, { id: 'a', traits: { t2: null } })).toBe(false);
+  });
   it('欄の外の入力が変わっていれば変更あり', () => {
     expect(isDirty(structuredClone(saved), saved, true)).toBe(true);
+  });
+});
+
+describe('cleanTraits', () => {
+  it('null・空の文字・空の配列のキーを消し、ほかは残す', () => {
+    expect(cleanTraits({ a: null, b: '', c: [], d: false, e: 0, f: ['x'], g: 'y', h: true })).toEqual({
+      d: false,
+      e: 0,
+      f: ['x'],
+      g: 'y',
+      h: true,
+    });
   });
 });
 

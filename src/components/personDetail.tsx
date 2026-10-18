@@ -191,10 +191,15 @@ export function ClientStageRow({ client: c }: { client: Client }) {
   return <DlRow term="段階" value={`${STAGE_LABELS[c.stage]}${c.tentative ? '（仮押さえ）' : ''}`} />;
 }
 
-/** 〈利用者さん〉の地区（住所から取り出す。取り出せなければ「住所なし」） */
+/** 〈利用者さん〉の地区（住所から取り出す。住所が無ければ「住所なし」、住所はあるが取り出せなければ「—」） */
 export function ClientAreaRow({ client: c }: { client: Client }) {
   const area = areaOf(c.place.address);
-  return <DlRow term="地区" value={area ? `${area.city}${area.town ? ` ${area.town}` : ''}` : '住所なし'} />;
+  const text = area
+    ? `${area.city}${area.town ? ` ${area.town}` : ''}`
+    : c.place.address.trim() === ''
+      ? '住所なし'
+      : '—';
+  return <DlRow term="地区" value={text} />;
 }
 
 /** 〈利用者さん〉の担当できる人（限らなければ「限らない」）・いつもの担当（休止中なら添える） */

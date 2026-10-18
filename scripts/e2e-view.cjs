@@ -1,8 +1,9 @@
 // 〈スタッフ〉・〈利用者さん〉の画面の閲覧の欄（PRD D127〜D131。ADR-0023）を本物のブラウザで確かめる：
-// 一覧・`?id=` で閲覧の欄が開き入力欄が無い／「編集する」で編集の欄になる（主ボタンにしない）／保存・取り消しで閲覧に戻る／
-// 変更があるまま取り消す・閉じる（×・Esc）・別の人を開く（`?id=`）と確認が出る（変更が無ければ出ない）／
-// 「追加」はすぐ編集の欄で開く／定期パターン・休みは閲覧では読むだけ（足す・直す・消すのボタンを出さない）／
-// 相性・予定の吹き出しのリンクで閲覧の欄が開く。
+// 一覧・`?id=`・相性の吹き出しのリンクで閲覧の欄が開き入力欄が無い（中身・地図・節の見出しは h3）／「編集する」で編集の欄（主ボタンにしない）／
+// 保存・取り消しで閲覧に戻りフォーカスは「編集する」／変更があるまま取り消す・×・Esc・別の人の `?id=` で確認が出て、断れば編集が続く／
+// 変更が無い・同じ人の `?id=`・特性を未確認に戻しただけ・担当できる人を限るを入れて外しただけなら確認しない／変更があるときだけ beforeunload／
+// 「追加」はすぐ編集の欄／「まとめて地図に置く」の「編集」は編集の欄／定期パターン・休みは閲覧では読むだけ（これからの休みと終わった休みの件数）／
+// 最終勤務日の振り直しの欄は今どおり。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-view.cjs
 // 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -354,10 +355,232 @@ async function links(page) {
   await isView(page, '相性の吹き出しのリンク（〈利用者さん〉）');
 }
 
+/** 編集の欄のメモの入力（〈利用者さん〉） */
+const memoInput = (page) => panel(page).locator('label', { hasText: 'メモ' }).first().locator('input');
+const headText = async (page) => (await panel(page).locator('h2').first().textContent()) ?? '';
+const goHash = (page, hash) =>
+  page.evaluate((h) => {
+    location.hash = h;
+  }, hash);
+
+/** 〈利用者さん〉：同じ人の ?id= で編集が続く・特性を戻す／担当を限るを入れて外すだけなら確認なし・保存後のフォーカス・節の見出し */
+async function clientsMore(page, dlg) {
+  await open(page, '/clients', '[data-testid="client-row"]');
+  await page.getByRole('button', { name: '図書館 ふみを開く' }).click();
+  await view(page).waitFor();
+  check(
+    (await panel(page).locator('.section-title h3').count()) > 3 &&
+      (await panel(page).locator('.section-title h2').count()) === 0,
+    '〈利用者さん〉：閲覧の欄の節の見出しは h3',
+  );
+  await page.getByTestId('view-edit').click();
+  check(
+    (await panel(page).locator('.section-title h3').count()) > 3 &&
+      (await panel(page).locator('.section-title h2').count()) === 0,
+    '〈利用者さん〉：編集の欄の節の見出しも h3（定期パターン・休みの節を含む）',
+  );
+  // 同じ人の ?id=：確認なしで編集が続く
+  await memoInput(page).fill('同じ人の id');
+  dlg.messages.length = 0;
+  await goHash(page, '#/clients?id=c1');
+  await settle(page, 500);
+  check(
+    dlg.messages.length === 0 &&
+      (await view(page).count()) === 0 &&
+      (await memoInput(page).inputValue()) === '同じ人の id',
+    '〈利用者さん〉：編集中に同じ人の ?id= が来ても、確認なしで編集が続く',
+  );
+  check(!urlOf(page).includes('id='), '〈利用者さん〉：そのときも URL から id を消す');
+  // 変更があるときの再読込の確認（beforeunload）
+  const blocked = await page.evaluate(() => {
+    const e = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  check(blocked, '〈利用者さん〉：変更があるとき、再読込・タブを閉じる前に確認する（beforeunload）');
+  dlg.answer = true;
+  await page.getByTestId('edit-cancel').click();
+  await settle(page);
+  const free = await page.evaluate(() => {
+    const e = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  check(!free, '〈利用者さん〉：変更が無ければ beforeunload で止めない');
+  check(
+    await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'view-edit'),
+    '〈利用者さん〉：取り消して閲覧に戻ると、フォーカスは「編集する」',
+  );
+  // 「担当できる人を限る」を入れてすぐ外すだけなら変更なし
+  await page.getByTestId('view-edit').click();
+  const lim = panel(page).getByLabel('担当できる人を限る');
+  await lim.check();
+  await lim.uncheck();
+  dlg.messages.length = 0;
+  await page.getByTestId('edit-cancel').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 0 && (await view(page).count()) === 1,
+    '〈利用者さん〉：担当できる人を限るを入れてすぐ外しただけなら、確認なしで閲覧に戻る',
+    dlg.messages,
+  );
+  // 保存したらフォーカスは「編集する」
+  await page.getByTestId('view-edit').click();
+  await memoInput(page).fill('保存のフォーカス');
+  await page.getByRole('button', { name: '保存' }).click();
+  await settle(page, 600);
+  check(
+    (await view(page).count()) === 1 &&
+      (await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'view-edit')),
+    '〈利用者さん〉：保存して閲覧に戻ると、フォーカスは「編集する」',
+  );
+  await panel(page).getByRole('button', { name: '閉じる' }).click();
+  // 追加で特性を選んでから未確認に戻すだけなら変更なし
+  await page.getByRole('button', { name: /を追加$/ }).click();
+  const seg = panel(page).locator('fieldset.segmented').first();
+  await seg.getByRole('button', { name: 'あり' }).click();
+  await seg.getByRole('button', { name: '未確認' }).click();
+  dlg.messages.length = 0;
+  await page.getByTestId('edit-cancel').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 0 && (await panel(page).count()) === 0,
+    '〈利用者さん〉：特性を選んでから未確認に戻しただけなら、確認なしで取り消せる',
+    dlg.messages,
+  );
+}
+
+/** 閲覧の休みの一覧と終わった休みの件数・「まとめて地図に置く」の「編集」は編集の欄 */
+async function seeded(page) {
+  await open(page, '/clients', '[data-testid="client-row"]');
+  const today = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
+  const shift = (n) => new Date(NOW.getTime() + JST + n * 86400000).toISOString().slice(0, 10);
+  const leaves = [
+    { id: 'lv-past', clientId: 'c1', from: shift(-20), to: shift(-15), note: '終わった入院' },
+    { id: 'lv-now', clientId: 'c1', from: shift(-1), to: today, note: '' },
+    { id: 'lv-next', clientId: 'c1', from: shift(10), to: shift(12), note: 'ショートステイ' },
+  ];
+  // c1 に休みを入れ、c2 の位置と住所を消してから開き直す
+  await page.evaluate(
+    ([k, ls]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      d.clientLeaves = [...d.clientLeaves.filter((l) => l.clientId !== 'c1'), ...ls];
+      d.clients = d.clients.map((c) =>
+        c.id === 'c2' ? { ...c, place: { address: '', lat: null, lng: null, postalCode: '' } } : c,
+      );
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    [STORAGE_KEY, leaves],
+  );
+  await page.reload();
+
+  await page.locator('[data-testid="client-row"]').first().waitFor();
+  await settle(page, 400);
+  await page.getByRole('button', { name: '図書館 ふみを開く' }).click();
+  await view(page).waitFor();
+  const items = await page.getByTestId('view-leaves').locator('li').allTextContents();
+  const text = await view(page).textContent();
+  check(
+    items.length === 2 &&
+      items[0].includes('理由なし') &&
+      items[1].includes('ショートステイ') &&
+      !text.includes('終わった入院') &&
+      text.includes('終わった休み 1件'),
+    '〈利用者さん〉：閲覧の休みはこれからの休み（今日を含む・開始日の順）と、終わった休みの件数',
+    items,
+  );
+  await panel(page).getByRole('button', { name: '閉じる' }).click();
+  // 位置も住所も無い人の「編集」（まとめて地図に置く）は、閲覧を挟まず編集の欄
+  await page
+    .getByTestId('place-all-skipped')
+    .getByRole('button', { name: /動物公園 やぎお/ })
+    .click();
+  await settle(page);
+  check(
+    (await view(page).count()) === 0 &&
+      (await inputs(page)) > 5 &&
+      (await headText(page)).includes('を編集：動物公園 やぎお'),
+    '〈利用者さん〉：「まとめて地図に置く」の「編集」は編集の欄で開く',
+  );
+  await page.getByTestId('edit-cancel').click();
+  await settle(page);
+  check((await view(page).count()) === 1, '〈利用者さん〉：そこから取り消すと、その人の閲覧の欄');
+  check((await view(page).textContent()).includes('住所なし'), '〈利用者さん〉：住所が無ければ地区は「住所なし」');
+}
+
+/** 〈スタッフ〉：変更があるときの ×・Esc・?id=（別の人・同じ人）、取り消しを断ると編集が続く */
+async function staffMore(page, dlg) {
+  await open(page, '/staff', '.people-table tbody tr');
+  await page.getByRole('button', { name: '市役所 まち子を開く' }).click();
+  await page.getByTestId('view-edit').click();
+  const email = page.getByTestId('staff-email');
+  await email.fill('more@example.com');
+  // 取り消しを断ると編集が続く
+  dlg.answer = false;
+  dlg.messages.length = 0;
+  await page.getByTestId('edit-cancel').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 1 && (await email.inputValue()) === 'more@example.com' && (await view(page).count()) === 0,
+    '〈スタッフ〉：変更ありの取り消しを断ると、編集が続く',
+  );
+  // ×
+  dlg.messages.length = 0;
+  await panel(page).getByRole('button', { name: '閉じる' }).click();
+  await settle(page);
+  check(
+    dlg.messages.length === 1 &&
+      /欄を閉じますか/.test(dlg.messages[0]) &&
+      (await email.inputValue()) === 'more@example.com',
+    '〈スタッフ〉：変更ありで × を押すと確認が出て、断れば編集が続く',
+    dlg.messages,
+  );
+  // Esc
+  dlg.messages.length = 0;
+  await page.keyboard.press('Escape');
+  await settle(page);
+  check(
+    dlg.messages.length === 1 && /欄を閉じますか/.test(dlg.messages[0]) && (await panel(page).count()) === 1,
+    '〈スタッフ〉：変更ありで Esc を押すと確認が出て、断れば欄が残る',
+  );
+  // 同じ人の ?id=：確認なしで編集が続く
+  dlg.messages.length = 0;
+  await goHash(page, '#/staff?id=s1');
+  await settle(page, 500);
+  check(
+    dlg.messages.length === 0 && (await email.inputValue()) === 'more@example.com',
+    '〈スタッフ〉：編集中に同じ人の ?id= が来ても、確認なしで編集が続く',
+  );
+  // 別の人の ?id=：確認が出る。断れば編集のまま、受ければその人の閲覧
+  const s2 = (await stored(page)).staff.find((s) => s.id === 's2');
+  await goHash(page, '#/staff?id=s2');
+  await settle(page, 500);
+  check(
+    dlg.messages.length === 1 &&
+      dlg.messages[0].includes(`${s2.name}を開きますか`) &&
+      (await email.inputValue()) === 'more@example.com',
+    '〈スタッフ〉：変更があるまま別の人を ?id= で開くと確認が出て、断れば編集のまま',
+    dlg.messages,
+  );
+  dlg.answer = true;
+  await goHash(page, '#/staff?id=s2');
+  await settle(page, 500);
+  const head = await headText(page);
+  check(
+    (await view(page).count()) === 1 &&
+      head.slice(head.indexOf('：') + 1) === s2.name &&
+      (await view(page).getAttribute('data-id')) === 's2',
+    '〈スタッフ〉：受ければ別の人の閲覧の欄になる',
+    head,
+  );
+  const s1 = (await stored(page)).staff.find((s) => s.id === 's1');
+  check(s1.email !== 'more@example.com', '〈スタッフ〉：捨てた変更は保存しない');
+}
+
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const errors = [];
-  for (const step of [clients, staff, links]) {
+  for (const step of [clients, clientsMore, seeded, staff, staffMore, links]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 地図のタイルは外へ取りに行かない
     await ctx.route(/cyberjapandata\.gsi\.go\.jp/, (r) => r.fulfill({ status: 204, body: '' }));

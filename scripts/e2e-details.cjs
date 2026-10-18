@@ -104,17 +104,22 @@ async function rules(page, btn, where, words) {
 /** リンクで各画面のその人の閲覧の欄が開く（?id=。PRD D127） */
 async function link(page, btn, where, to) {
   const name = await nameOf(btn);
+  const id = await btn.getAttribute('data-id');
   await btn.scrollIntoViewIfNeeded();
   await btn.click();
   await pop(page).getByTestId('person-pop-link').click();
   await page.waitForTimeout(500);
+  // 見出しは「〈呼び方〉：〈名前〉」。名前は完全一致、閲覧の欄の data-id は押した人の ID
   const head = (await page.locator('.drawer h2').first().textContent()) ?? '';
+  const view = page.getByTestId('person-view');
   check(
     urlOf(page).includes(to) &&
-      head.includes(name) &&
-      (await page.getByTestId('person-view').count()) === 1 &&
+      head.slice(head.indexOf('：') + 1) === name &&
+      (await view.count()) === 1 &&
+      (await view.getAttribute('data-id')) === id &&
       (await pop(page).count()) === 0,
     `${where}：リンクで ${name} の閲覧の欄が開く`,
+    head,
   );
 }
 

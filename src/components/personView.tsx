@@ -48,7 +48,7 @@ const placeText = (p: { lat: number | null; lng: number | null }) =>
 export function StaffView({ staff: s, data }: { staff: Staff; data: DemoData }) {
   const terms = data.org.terms;
   return (
-    <div className="person-view stack" data-testid="person-view" data-kind="staff">
+    <div className="person-view stack" data-testid="person-view" data-kind="staff" data-id={s.id}>
       <SectionTitle icon={UserRound}>基本</SectionTitle>
       <dl>
         <DlRow term="状態" value={s.active ? '利用中' : '休止中'} />
@@ -87,8 +87,13 @@ export function ClientView({ client: c, data }: { client: Client; data: DemoData
   const today = jstDate(Date.now());
   const patterns = data.patterns.filter((p) => p.clientId === c.id);
   const leaves = splitLeaves(leavesOf(data, c.id), today);
-  const staffName = (id: string | null) => (id ? (data.staff.find((s) => s.id === id)?.name ?? '（不明）') : null);
-  // 地図は位置が変わったときだけ描き直す（点の配列を作り直すと寄せ直すため）
+  /** 〈スタッフ〉の名前（休止中なら添える。いなければ「（不明）」） */
+  const staffName = (id: string | null) => {
+    if (!id) return null;
+    const s = data.staff.find((x) => x.id === id);
+    return s ? `${s.name}${s.active ? '' : '（休止中）'}` : '（不明）';
+  };
+  // 地図の点は位置か色が変わったときだけ作り直す（点の配列が替わると地図が寄せ直すため）
   const lat = c.place.lat;
   const lng = c.place.lng;
   const points = useMemo(
@@ -96,7 +101,7 @@ export function ClientView({ client: c, data }: { client: Client; data: DemoData
     [lat, lng, c.color],
   );
   return (
-    <div className="person-view stack" data-testid="person-view" data-kind="client">
+    <div className="person-view stack" data-testid="person-view" data-kind="client" data-id={c.id}>
       <SectionTitle icon={Route}>基本</SectionTitle>
       <dl>
         <DlRow
