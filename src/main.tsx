@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './app/App';
 import { ErrorBoundary } from './app/ErrorBoundary';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { ToastProvider } from './components/Toast';
 import { DemoDataProvider, reset } from './store';
 
@@ -25,7 +26,10 @@ createRoot(document.getElementById('root')!).render(
       <DemoDataProvider>
         <HashRouter>
           <ToastProvider>
-            <App />
+            {/* 独自の確認ダイアログ（PRD D146。ブラウザの confirm の代わり） */}
+            <ConfirmProvider>
+              <App />
+            </ConfirmProvider>
           </ToastProvider>
         </HashRouter>
       </DemoDataProvider>

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createInertLock } from '../lib/inertLock';
 import { createScrollLock } from '../lib/scrollLock';
 
 /** 画面全体で1つのロック（html と body の overflow） */
@@ -16,3 +17,9 @@ export function useBodyScrollLock(active = true): void {
     return shared.lock();
   }, [active]);
 }
+
+/**
+ * 画面全体で1つの inert のロック（要素ごとに数える。スマホのメニューの引き出しと確認ダイアログが重なっても、
+ * 閉じる順にかかわらず最後の1つが閉じるまで戻さない。ADR-0026 追記）
+ */
+export const inertLock = createInertLock();

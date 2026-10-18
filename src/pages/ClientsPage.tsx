@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
+import { useConfirm } from '../components/ConfirmDialog';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { PickChips } from '../components/PickChips';
 import { Check, TentativeMark } from '../components/parts';
@@ -47,7 +48,7 @@ import { normalizeEmail } from '../lib/mailto';
 import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
-import { type DiscardWhen, discardMessage, isDirty } from '../lib/viewMode';
+import { type DiscardWhen, discardDialog, isDirty } from '../lib/viewMode';
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
 import { ClientLeavesSection } from './ClientLeavesSection';
@@ -83,6 +84,7 @@ export default function ClientsPage() {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   /** 閲覧の欄で開いている人（PRD D127。編集中はその人の ID のまま。null：閲覧の欄なし） */
   const [viewId, setViewId] = useState<string | null>(null);
   /** 編集の欄の入力（null：編集していない） */
@@ -155,13 +157,13 @@ export default function ClientsPage() {
     dirtyBase && { ...dirtyBase, allowedStaffIds: allowedAsSaved(dirtyBase, openedLimit) },
   );
   /** 変更があれば捨ててよいか確かめる（無ければそのまま進む） */
-  const okToDiscard = (when: DiscardWhen, next = '') =>
-    !dirty || !form || confirm(discardMessage(when, terms.client, form.displayName, next));
+  const okToDiscard = async (when: DiscardWhen, next = ''): Promise<boolean> =>
+    !dirty || !form || confirmDialog(discardDialog(when, terms.client, form.displayName, next));
 
   /** 閲覧の欄で開く（PRD D127。編集中で変更があれば確かめる） */
-  const openView = (c: Client) => {
+  const openView = async (c: Client) => {
     if (form && form.id === c.id && !isNew) return;
-    if (!okToDiscard('switch', c.displayName)) return;
+    if (!(await okToDiscard('switch', c.displayName))) return;
     setForm(null);
     setError(null);
     setViewId(c.id);
@@ -172,15 +174,15 @@ export default function ClientsPage() {
     openForm(structuredClone(c), false);
   };
   /** 編集を取り消して閲覧に戻る（新しい人なら欄を閉じる。PRD D129） */
-  const cancelEdit = () => {
-    if (!okToDiscard(isNew ? 'close' : 'view')) return;
+  const cancelEdit = async () => {
+    if (!(await okToDiscard(isNew ? 'close' : 'view'))) return;
     if (isNew) setViewId(null);
     setForm(null);
     setError(null);
   };
   /** 欄を閉じる（× ・Esc。編集中で変更があれば確かめる） */
-  const closePanel = () => {
-    if (!okToDiscard('close')) return;
+  const closePanel = async () => {
+    if (!(await okToDiscard('close'))) return;
     setForm(null);
     setViewId(null);
     setError(null);
@@ -204,7 +206,7 @@ export default function ClientsPage() {
   useEffect(() => {
     if (openId === null) return;
     const c = data.clients.find((x) => x.id === openId);
-    if (c) openView(c);
+    if (c) void openView(c);
     setParams(
       (prev) => {
         const p = new URLSearchParams(prev);
@@ -295,14 +297,20 @@ export default function ClientsPage() {
    * 仮押さえを取り消す（D47）：確認のうえ、lib/tentative の cancelTentative でその人の定期パターン・訪問・〈利用者さん〉を消し、
    * 消した訪問を今の案・記録・確定した割当から、〈利用者さん〉を相性から除く。確定した日を含むなら確認の文にその日数を出す
    */
-  const cancelTentative = (c: Client) => {
+  const cancelTentative = async (c: Client) => {
     const today = jstDate(Date.now());
     const n = data.visits.filter((v) => v.clientId === c.id).length;
     const fixed = confirmedDatesOf(data, c.id).length;
-    const msg = `仮押さえの${c.displayName}を取り消します。定期パターンと訪問 ${n}件を消し、${terms.client}も消します。${
-      fixed > 0 ? `確定した日（${fixed}日）の割当からも外します。` : ''
-    }よろしいですか？`;
-    if (!confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: `仮押さえの${c.displayName}を取り消しますか？`,
+      body: `定期パターンと訪問 ${n}件を消し、${terms.client}も消します。${
+        fixed > 0 ? `確定した日（${fixed}日）の割当からも外します。` : ''
+      }`,
+      confirmLabel: '仮押さえを取り消す',
+      cancelLabel: '残しておく',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update((d) => cancelTentativeData(d, c.id, today));
     setForm(null);
     setViewId(null);
@@ -323,8 +331,8 @@ export default function ClientsPage() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => {
-              if (!okToDiscard('switch', `新しい${terms.client}`)) return;
+            onClick={async () => {
+              if (!(await okToDiscard('switch', `新しい${terms.client}`))) return;
               setViewId(null);
               openForm(blank(clients.length), true);
             }}
@@ -355,9 +363,9 @@ export default function ClientsPage() {
 
       {/* まとめて置けなかった人の「編集」は、住所を入れるために編集の欄で開く */}
       <PlaceAllPanel
-        onEdit={(c) => {
+        onEdit={async (c) => {
           if (form?.id === c.id) return;
-          if (!okToDiscard('switch', c.displayName)) return;
+          if (!(await okToDiscard('switch', c.displayName))) return;
           startEdit(c);
         }}
       />

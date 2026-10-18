@@ -11,6 +11,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { answerConfirms } = require('./lib/confirmDialog.cjs');
 
 function loadPlaywright() {
   const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
@@ -298,7 +299,8 @@ async function mobile(page) {
     errors.push(String(e));
     console.log('ERR', String(e));
   });
-  page.on('dialog', (d) => d.accept());
+  // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
+  const dlg = await answerConfirms(page);
   for (const [name, fn] of [
     ['start', start],
     ['first-state', firstState],
@@ -315,6 +317,7 @@ async function mobile(page) {
       await page.screenshot({ path: path.join(OUT_DIR, `fail-${name}.png`) }).catch(() => {});
     }
   }
+  check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native);
   await b.close();
   console.log(`スクリーンショット：${OUT_DIR}`);
   const ng = fails + errors.length;

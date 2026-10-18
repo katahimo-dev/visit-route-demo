@@ -1,0 +1,106 @@
+/* 独自の確認ダイアログ（components/ConfirmDialog.tsx。PRD D146〜D150）。画面の中央。
+   右の欄・メニューの引き出し（1100）・トースト（1200）より前 */
+.confirm-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+.confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(40, 25, 15, 0.4);
+  animation: drawer-fade 0.15s ease-out;
+}
+.confirm-dialog {
+  position: relative;
+  width: min(460px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px 18px;
+  background: var(--card);
+  border-radius: var(--radius);
+  border-top: 6px solid var(--primary);
+  box-shadow: 0 18px 50px rgba(40, 25, 15, 0.3);
+  animation: confirm-in 0.15s ease-out;
+}
+.confirm-dialog.is-danger {
+  border-top-color: var(--danger);
+}
+.confirm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.confirm-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+.confirm-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+.is-danger .confirm-icon {
+  background: #fbeceb;
+  color: var(--danger);
+}
+.confirm-body {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+/* 消す・捨てる操作の確定（赤の塗り。オレンジの主ボタンとは別） */
+.btn-danger-solid {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  box-shadow: 0 4px 0 #9e3527;
+}
+.btn-danger-solid:hover:not(:disabled) {
+  background: #d65a4a;
+  border-color: #9e3527;
+}
+/* 狭い画面：ボタンは縦に並べて押しやすく（確定を上） */
+@media (max-width: 480px) {
+  .confirm-actions {
+    flex-direction: column-reverse;
+  }
+  .confirm-actions .btn {
+    width: 100%;
+  }
+}
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@media print {
+  .confirm-wrap {
+    display: none !important;
+  }
+}

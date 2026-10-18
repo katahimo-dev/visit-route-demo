@@ -39,6 +39,7 @@ import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { flushSync } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { useConfirm } from '../components/ConfirmDialog';
 import { DayLines } from '../components/dayLines';
 import { MapDock } from '../components/MapDock';
 import { MenuButton, type MenuItem } from '../components/MenuButton';
@@ -225,6 +226,7 @@ export default function PlanPage() {
     return Object.entries(saved).some(([k, list]) => k !== NONE && list.some((id) => ids.has(id)));
   }, [data.manualPlans, date, m.leaveVisits]);
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const [progress, setProgress] = useState<Progress | null>(null);
   /** プリセットのカードの詳細の id の頭（aria-describedby） */
   const cardIdBase = useId();
@@ -504,20 +506,19 @@ export default function PlanPage() {
 
   /**
    * AI案を作る（固定なし。作ると generated と routes を同じにし、固定を空に）。作った案は記録に残す。
-   * rules を渡すとその条件で作る。mode：'preset' は確認ずみ、'auto' は自動作成（確認・失敗・終わりの表示を出さない）。
+   * rules を渡すとその条件で作る。mode：'preset' は確認ずみ、'auto' は自動作成（失敗・終わりの表示を出さない）。
+   * 手直し・固定を捨てる確認は呼ぶ側（recreate）でする（確認は待つので、ここは同期のままにして戻り値を自動作成が使う）。
    * 'auto' は今の案がまだ無いときだけ今の案にし、あれば記録に足すだけ。onMade は作れたとき（作った案）、
    * after は計算が終わったあと（成功・失敗とも。順に作る次へ）。計算を始めたら true
    */
   const create = (
     rules: Rule[] = data.rules,
-    mode: 'manual' | 'preset' | 'auto' = 'manual',
+    mode: 'preset' | 'auto' = 'preset',
     opts: { after?: () => void; onMade?: (plan: AiPlan) => void } = {},
   ): boolean => {
     const auto = mode === 'auto';
     const p = check(rules, auto);
     if (!p) return false;
-    if (mode === 'manual' && edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？'))
-      return false;
     const forDate = date;
     const rulesSnapshot = rules;
     // 計算に使う問題のキー（記録に残し、同じ問題なら再計算を省く。ADR-0010）
@@ -555,6 +556,22 @@ export default function PlanPage() {
       },
       opts.after,
     );
+  };
+
+  /** 手直し・固定を捨てて AI案を作り直すときの確認（PRD D147） */
+  const DISCARD_RECREATE = {
+    title: '手直しと固定を捨てて、AI案を作り直しますか？',
+    body: 'この日の手直しと固定は消えます（作った案の記録は残ります）。',
+    confirmLabel: '捨てて作り直す',
+    tone: 'danger',
+  } as const;
+  /** 「AI案を作る」（手で押したとき）：作れるか確かめ、手直し・固定があれば確認してから作る */
+  const recreate = async (rules: Rule[] = data.rules) => {
+    if (!check(rules)) return;
+    if (edited && !(await confirmDialog(DISCARD_RECREATE))) return;
+    // 確認のあいだに計算が始まっていたら何もしない
+    if (runRef.current) return;
+    create(rules);
   };
 
   /**
@@ -633,7 +650,7 @@ export default function PlanPage() {
    * 同じ条件・同じデータで作った記録がその日にあれば計算せずにその記録を今の案にし（lib/runs の reusableRun）、
    * 無ければその条件で計算して作る。作り直したいときは「AI案を作る」
    */
-  const runPreset = (preset: Preset) => {
+  const runPreset = async (preset: Preset) => {
     const rules = applyPreset(data.rules, preset);
     // 作れない日（訪問が無いなど）は条件も変えない
     const target = check(rules);
@@ -645,7 +662,16 @@ export default function PlanPage() {
         update((d) => ({ ...d, rules: applyPreset(d.rules, preset) }));
         return;
       }
-      if (edited && !confirm('手直しと固定を捨てて、この案を今の案にします。よろしいですか？')) return;
+      if (
+        edited &&
+        !(await confirmDialog({
+          title: `手直しと固定を捨てて、${preset.name}の案を今の案にしますか？`,
+          body: '保存してある案を今の案にします（計算し直しません）。この日の手直しと固定は消えます。',
+          confirmLabel: '捨てて今の案にする',
+          tone: 'danger',
+        }))
+      )
+        return;
       update((d) => ({
         ...d,
         rules: applyPreset(d.rules, preset),
@@ -655,7 +681,8 @@ export default function PlanPage() {
       toast(`保存してある${preset.name}の案を今の案にしました（再計算なし）`);
       return;
     }
-    if (edited && !confirm('手直しと固定を捨てて、AI案を作り直します。よろしいですか？')) return;
+    if (edited && !(await confirmDialog(DISCARD_RECREATE))) return;
+    if (runRef.current) return;
     update((d) => ({ ...d, rules: applyPreset(d.rules, preset) }));
     create(rules, 'preset');
   };
@@ -739,8 +766,8 @@ export default function PlanPage() {
     const run = planRunOf(data, date);
     if (!run) return;
     const preset = presetOf(run.rules, data.presets);
-    if (preset) runPreset(preset);
-    else create(run.rules);
+    if (preset) void runPreset(preset);
+    else void recreate(run.rules);
   };
   /** 固定を残して組み直す（generated は変えない。固定は残す） */
   const resolve = () => {
@@ -841,9 +868,16 @@ export default function PlanPage() {
   };
 
   /** AI案に戻す（手直しと固定を捨てる） */
-  const revert = () => {
+  const revert = async () => {
     if (!aiPlan) return;
-    if (!confirm('手直しと固定を捨てて、AIが出したままの案に戻します。よろしいですか？')) return;
+    const ok = await confirmDialog({
+      title: 'AIが出したままの案に戻しますか？',
+      body: '手直しと固定を捨てて、AIが出したままの案に戻します。',
+      confirmLabel: '捨てて元に戻す',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    if (runRef.current) return;
     update((d) =>
       patchPlan(d, date, problem, (plan) => ({
         ...plan,
@@ -858,14 +892,15 @@ export default function PlanPage() {
   };
 
   // ---- この割当で確定（D13）：今の案を manualPlans と visits.staffId に写す ----
-  const adopt = () => {
+  const adopt = async () => {
     if (!aiPlan || !problem) return;
-    if (
-      !confirm(
-        'この割当（手直し後）で確定します。各訪問の担当がこのとおりに書き換わり、スタッフの画面にも出ます。よろしいですか？\n（計算に入れていない訪問の担当はそのままです）',
-      )
-    )
-      return;
+    const ok = await confirmDialog({
+      title: 'この割当で確定しますか？',
+      body: `この割当（手直し後）で確定します。各訪問の担当がこのとおりに書き換わり、${terms.staff}の画面にも出ます。\n（計算に入れていない訪問の担当はそのままです）`,
+      confirmLabel: '確定する',
+    });
+    if (!ok) return;
+    if (runRef.current) return;
     const inProblem = new Set(problem.visits.map((v) => v.id));
     const aiOwner = ownerMap(aiPlan.routes);
     const before = ownerMap(m.savedView.cols);
@@ -956,7 +991,7 @@ export default function PlanPage() {
   const shortName = (id: string) => staffName(id).slice(0, 40);
 
   /** 「登録して振り直す」：欠勤を足したデータで compile し、元の案から振り直して今の案にする（1回の update で書く） */
-  const registerAndReassign = (absence: Absence, anneal = false) => {
+  const registerAndReassign = async (absence: Absence, anneal = false) => {
     if (running) return;
     setError(null);
     const d1 = saveAbsence(data, absence);
@@ -974,9 +1009,15 @@ export default function PlanPage() {
     if (
       base.from === 'confirmed' &&
       confirmState === 'diff' &&
-      !confirm('今の案の未確定の変更を捨てて、確定した割当を元に振り直します。よろしいですか？')
+      !(await confirmDialog({
+        title: '未確定の変更を捨てて振り直しますか？',
+        body: '今の案の未確定の変更を捨てて、確定した割当を元に振り直します。',
+        confirmLabel: '捨てて振り直す',
+        tone: 'danger',
+      }))
     )
       return;
+    if (runRef.current) return;
     const used = absencesOn(d1, date);
     const absent = [...new Set(used.map((a) => a.staffId))];
     const result = attempt(() => {
@@ -1093,7 +1134,7 @@ export default function PlanPage() {
   const reassignAgain = () => {
     const a = data.absences.find((x) => x.date === date && absentStaff.has(x.staffId));
     if (!a) return;
-    registerAndReassign(a);
+    void registerAndReassign(a);
   };
   const annealDisabled = !reassignInfo
     ? '振り直しの案がありません'
@@ -1190,11 +1231,20 @@ export default function PlanPage() {
     return method === 'anneal' ? `欠勤の振り直し・案B（${names}さん）` : `欠勤の振り直し（${names}さん）`;
   };
   /** 案A・案B のどちらかを今の案にする（記録にも残す） */
-  const chooseOption = (key: 'insert' | 'anneal') => {
+  const chooseOption = async (key: 'insert' | 'anneal') => {
     if (!problem || !reassignInfo || running) return;
     // 今の案が案A・案B のどちらとも違う（手直しした）ときだけ確認する
-    if (!annealOptions.some((o) => o.current) && !confirm('今の案の手直しを捨てて切り替えます。よろしいですか？'))
+    if (
+      !annealOptions.some((o) => o.current) &&
+      !(await confirmDialog({
+        title: `手直しを捨てて${key === 'anneal' ? '案B' : '案A'}に切り替えますか？`,
+        body: '今の案の手直しは消えます。',
+        confirmLabel: '捨てて切り替える',
+        tone: 'danger',
+      }))
+    )
       return;
+    if (runRef.current) return;
     const p = problem;
     const createdAt = Date.now();
     if (key === 'anneal') {
@@ -1307,15 +1357,28 @@ export default function PlanPage() {
     setAbsenceFor(null);
     toast('欠勤を登録しました（今の案はそのままです）');
   };
-  const cancelAbsence = (absence: Absence) => {
-    if (!confirm(`${staffName(absence.staffId)}さんの欠勤を取り消しますか？（今の案はそのままです）`)) return;
+  const cancelAbsence = async (absence: Absence) => {
+    const ok = await confirmDialog({
+      title: `${staffName(absence.staffId)}さんの欠勤を取り消しますか？`,
+      body: '今の案はそのままです。',
+      confirmLabel: '欠勤を取り消す',
+      cancelLabel: '残しておく',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update((d) => removeAbsence(d, absence.id));
     setAbsenceFor(null);
     toast(reassignInfo ? '欠勤を取り消しました。案を戻すには「元の案に戻す」を押してください' : '欠勤を取り消しました');
   };
-  const revertToBase = () => {
+  const revertToBase = async () => {
     if (!problem || !reassignInfo) return;
-    if (!confirm('振り直す前の案（担当・固定）に戻します。よろしいですか？')) return;
+    const ok = await confirmDialog({
+      title: '振り直す前の案に戻しますか？',
+      body: '振り直す前の案（担当・固定）に戻します。',
+      confirmLabel: '元の案に戻す',
+    });
+    if (!ok) return;
+    if (runRef.current) return;
     const p = problem;
     update((d) => revertReassign(d, date, p));
     sel.reset();
@@ -1325,14 +1388,23 @@ export default function PlanPage() {
    * 入らない訪問を候補の人に入れる（固定。時刻は変えない。間に合わなければ必須の違反の赤い枠）。
    * その人の既存の訪問の開始が遅れるときは確認を出す
    */
-  const placeCandidate = (visitId: string, c: ReassignCandidate) => {
+  const placeCandidate = async (visitId: string, c: ReassignCandidate) => {
     if (!problem || !aiPlan || running) return;
     const staffId = c.staffId;
     const notes: string[] = [];
     if (c.delayedCount > 0) {
       notes.push(`${staffName(staffId)}さんの訪問 ${c.delayedCount}件の開始が最大 +${c.maxDelayMinutes}分 遅れます。`);
     }
-    if (notes.length > 0 && !confirm(`${notes.join('')}入れますか？`)) return;
+    if (
+      notes.length > 0 &&
+      !(await confirmDialog({
+        title: `${staffName(staffId)}さんに入れますか？`,
+        body: notes.join(''),
+        confirmLabel: '遅れても入れる',
+      }))
+    )
+      return;
+    if (runRef.current) return;
     const p = problem;
     update((d) =>
       patchPlan(d, date, p, (plan) => ({
@@ -1383,7 +1455,7 @@ export default function PlanPage() {
     return workStats(problem, src.routes, data.org, src.sort).filter((x) => x.over);
   }, [problem, aiPlan, data.manualPlans, data.org, date]);
   /** 1週前の訪問（と確定した割当）をこの日に写す。訪問が無い日だけ */
-  const copyFromLastWeek = () => {
+  const copyFromLastWeek = async () => {
     setError(null);
     const from = addDays(date, -7);
     const src = data.visits.filter((v) => v.date === from && !v.cancelled && !isOnLeave(data.clientLeaves, v));
@@ -1391,7 +1463,12 @@ export default function PlanPage() {
       setError(`${from} にコピーできる訪問がありません`);
       return;
     }
-    if (!confirm(`${from} の訪問（と確定した割当）を ${date} にコピーします。よろしいですか？`)) return;
+    const ok = await confirmDialog({
+      title: '1週前の訪問をこの日にコピーしますか？',
+      body: `${from} の訪問（と確定した割当）を ${date} にコピーします。`,
+      confirmLabel: 'コピーする',
+    });
+    if (!ok) return;
     // コピー先がパターンの回なら、その回の ID で写す（あとの展開で二重にしない。ADR-0012）。それ以外は単発
     const copy = copyDayVisits(data, from, date, () => newId('v'));
     update((d) => ({
@@ -1948,7 +2025,7 @@ export default function PlanPage() {
       </Empty>
       {!running && (
         <div className="row" style={{ justifyContent: 'center' }}>
-          <button type="button" className="btn btn-primary" disabled={!problem} onClick={() => create()}>
+          <button type="button" className="btn btn-primary" disabled={!problem} onClick={() => recreate()}>
             <WithIcon icon={Sparkles}>AI案を作る</WithIcon>
           </button>
         </div>
@@ -1994,7 +2071,7 @@ export default function PlanPage() {
       label: aiPlan ? 'AI案を作り直す' : 'AI案を作る',
       icon: Sparkles,
       disabled: busyWhy,
-      onSelect: () => create(),
+      onSelect: () => recreate(),
     },
     {
       key: 'resolve',
@@ -2779,7 +2856,7 @@ export default function PlanPage() {
             )}
             <WeightPanel
               running={!!running}
-              onRecalc={() => create()}
+              onRecalc={() => recreate()}
               showPresets
               canRun={!!problem}
               recalcLabel="この重みで作り直す"

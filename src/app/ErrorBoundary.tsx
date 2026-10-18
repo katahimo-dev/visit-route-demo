@@ -1,12 +1,14 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 /**
- * 画面の例外で真っ白にしない。データが壊れていても戻れるよう「データを初期状態に戻す」を出す
+ * 画面の例外で真っ白にしない。データが壊れていても戻れるよう「データを初期状態に戻す」を出す。
+ * 戻す前の確認は、Provider に頼らず ConfirmDialog をここで直に出す（React の木が壊れた後・Provider の外でも出せる。PRD D149）
  */
-type State = { error: Error | null; componentStack: string };
+type State = { error: Error | null; componentStack: string; asking: boolean };
 
 export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () => void }, State> {
-  state: State = { error: null, componentStack: '' };
+  state: State = { error: null, componentStack: '', asking: false };
 
   static getDerivedStateFromError(error: Error) {
     return { error };
@@ -44,18 +46,29 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
           <button type="button" className="btn" onClick={() => this.setState({ error: null, componentStack: '' })}>
             もう一度表示する
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              if (!confirm('データをデモの初期状態に戻します。いまのデータは消えます。よろしいですか？')) return;
-              this.props.onReset();
-              this.setState({ error: null, componentStack: '' });
-            }}
-          >
+          <button type="button" className="btn btn-primary" onClick={() => this.setState({ asking: true })}>
             データを初期状態に戻す
           </button>
         </div>
+        {this.state.asking && (
+          <ConfirmDialog
+            request={{
+              title: 'データを初期状態に戻しますか？',
+              body: 'データをデモの初期状態に戻します。いまのデータは消えます。',
+              confirmLabel: '消して初期状態に戻す',
+              cancelLabel: '取り消す',
+              tone: 'danger',
+            }}
+            onClose={(ok) => {
+              if (!ok) {
+                this.setState({ asking: false });
+                return;
+              }
+              this.props.onReset();
+              this.setState({ error: null, componentStack: '', asking: false });
+            }}
+          />
+        )}
       </div>
     );
   }

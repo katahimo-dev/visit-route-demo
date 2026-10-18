@@ -1,5 +1,6 @@
 import { CalendarClock, Check, Pencil, Plus, Repeat, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, SectionTitle, WithIcon } from '../components/ui';
 import { TypeDot } from '../components/visitType';
@@ -103,6 +104,7 @@ export function PatternsSection({ client }: { client: Client }) {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const today = jstDate(Date.now());
   const [form, setForm] = useState<Form | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +168,7 @@ export function PatternsSection({ client }: { client: Client }) {
     return r.data;
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form) return;
     setError(null);
     if (!form.id) {
@@ -203,11 +205,15 @@ export function PatternsSection({ client }: { client: Client }) {
     const nid = newId('pt');
     const c = splitPattern(data, original.id, next, form.since, today, nid);
     const m = confirmedDays(data, c);
-    const msg =
-      `${mdText(form.since)}から変えます。作り直す訪問は ${c.removed.length}件（新しく ${c.added.length}件を作ります）。` +
-      (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります（その日の確定した割当は見直しが要ります）。` : '') +
-      '\nこの回だけ変えた訪問・取り消した訪問はそのままです。よろしいですか？';
-    if (!confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: `定期パターンを${mdText(form.since)}から変えますか？`,
+      body:
+        `作り直す訪問は ${c.removed.length}件（新しく ${c.added.length}件を作ります）。` +
+        (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります（その日の確定した割当は見直しが要ります）。` : '') +
+        '\nこの回だけ変えた訪問・取り消した訪問はそのままです。',
+      confirmLabel: '訪問を作り直して変える',
+    });
+    if (!ok) return;
     update((d) => {
       const x = splitPattern(d, original.id, next, form.since, today, nid);
       return { ...d, patterns: x.patterns, visits: x.visits };
@@ -216,14 +222,18 @@ export function PatternsSection({ client }: { client: Client }) {
     toast(`定期パターンを直しました（作り直した訪問 ${c.added.length}件）`);
   };
 
-  const remove = (p: Pattern) => {
+  const remove = async (p: Pattern) => {
     const c = removePattern(data, p.id, today);
     const m = confirmedDays(data, c);
-    const msg =
-      `この定期パターンを消します。今日以降の訪問 ${c.removed.length}件を消します（今日より前の訪問・この回だけ変えた訪問は単発の訪問として残します）。` +
-      (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります。` : '') +
-      '\nよろしいですか？';
-    if (!confirm(msg)) return;
+    const ok = await confirmDialog({
+      title: 'この定期パターンを消しますか？',
+      body:
+        `今日以降の訪問 ${c.removed.length}件を消します（今日より前の訪問・この回だけ変えた訪問は単発の訪問として残します）。` +
+        (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります。` : ''),
+      confirmLabel: '訪問ごと消す',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update((d) => {
       const x = removePattern(d, p.id, today);
       return { ...d, patterns: x.patterns, visits: x.visits };
