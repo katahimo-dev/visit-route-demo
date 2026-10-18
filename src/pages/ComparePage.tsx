@@ -251,17 +251,29 @@ export default function ComparePage() {
   /** 今ある1つの案（案が1つだけのとき） */
   const only = choices.length === 1 ? choices[0] : undefined;
   const onlyRun = only ? runs.find((r) => r.id === only.id) : undefined;
+  /**
+   * 今ある記録が、いまのデータでも同じ問題か（記録の条件でいまのデータから作った問題のキー＝記録の inputKey。
+   * 日の画面のカードと同じ作り方）。違えば同じ条件のプリセットでも別の案になるので除かない（PR #39 のレビュー）
+   */
+  const onlyFresh = useMemo(() => {
+    if (!onlyRun?.inputKey || Object.keys(onlyRun.pins).length > 0) return false;
+    const p =
+      problem && JSON.stringify(onlyRun.rules) === JSON.stringify(m.compileInput.rules)
+        ? problem
+        : attempt(() => compile({ ...m.compileInput, rules: onlyRun.rules }, date)).value;
+    return !!p && problemKey(p) === onlyRun.inputKey;
+  }, [onlyRun, problem, m.compileInput, date]);
   const anotherOpts = useMemo(
     () =>
       only
         ? anotherPlanOptions(
             data.presets,
-            // AI が出したままの記録なら、同じ条件のプリセットは出さない（同じ案になる）
-            onlyRun && Object.keys(onlyRun.pins).length === 0 ? onlyRun.rules : null,
+            // AI が出したままの記録で、いまのデータでも同じ問題なら、同じ条件のプリセットは出さない（同じ案になる）
+            onlyRun && onlyFresh ? onlyRun.rules : null,
             data.rules,
           )
         : [],
-    [only, onlyRun, data.presets, data.rules],
+    [only, onlyRun, onlyFresh, data.presets, data.rules],
   );
   const [anotherKey, setAnotherKey] = useState('');
   const another = anotherOpts.find((o) => o.key === anotherKey) ?? anotherOpts[0];
@@ -285,10 +297,17 @@ export default function ComparePage() {
     },
     [],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら前の日の知らせを消す（作っている計算はその日の記録に足す）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら前の日の知らせを消し、作っている計算は止めて捨てる（進み具合と「止める」が見えなくなるため。PR #39 のレビュー）
   useEffect(() => {
     setMakeError(null);
     setAnotherKey('');
+    if (makeRef.current) {
+      makeGen.current++;
+      makeRef.current.stop();
+      makeRef.current = null;
+      setMaking(null);
+      toast('日付を変えたので、作っていた案をやめました');
+    }
   }, [date]);
   // 作った案が記録に出たら A・B に並べる
   // biome-ignore lint/correctness/useExhaustiveDependencies: 記録が変わったときだけ
@@ -305,7 +324,11 @@ export default function ComparePage() {
     const a = made.before && choices.some((c) => c.id === made.before) ? made.before : null;
     setSel({ a, b: found.id });
     rs.reset();
-    toast(`#${found.no}「${found.label}」を作りました。A と B に並べています`);
+    toast(
+      made.x.result.stopped
+        ? `途中で止めた #${found.no}「${found.label}」（途中までの最良）を記録に足しました。A と B に並べています`
+        : `#${found.no}「${found.label}」を作りました。A と B に並べています`,
+    );
   }, [runs]);
   const makeAnother = () => {
     if (!another || makeRef.current) return;

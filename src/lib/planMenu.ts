@@ -1,7 +1,36 @@
 // 日の画面の「案を変える ▾」の項目の文（PRD D156〜D158。ADR-0025 追記。design.md §4 pages「案を変える ▾ の項目」）と、
 // 比較の画面の「もう1案作って比べる」の選択肢（PRD D159）を決める純粋関数。データは書き換えない
 import type { Preset, Rule } from '../contracts/rules';
+import { NONE } from '../domain/scheduleModel';
 import { matchesPreset } from '../seed';
+
+/** 担当 → 訪問ID の列から、訪問ID → 担当（未割当の列 NONE は数えない） */
+function ownersOf(routes: Record<string, string[]>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [s, ids] of Object.entries(routes)) if (s !== NONE) for (const id of ids) out.set(id, s);
+  return out;
+}
+
+/**
+ * 固定していない手直しがあるか（PR #39 のレビュー）：今の案（routes）と AI が出したまま（generated）で担当の違う訪問のうち、
+ * 今の担当への固定（pins）で説明できないものがあれば true。「入らなかった訪問」へ移した（unassign。固定も外れる）・
+ * 動かしてから固定を外した（unpin）訪問がこれに当たる。固定を残して組み直すとこれらは消える。
+ * 担当が同じで順番だけ違うのは手直しとしない（固定した訪問を入れたときの順番の変わりで、組み直すと付け直す）
+ */
+export function hasUnpinnedEdits(
+  generated: Record<string, string[]>,
+  routes: Record<string, string[]>,
+  pins: Record<string, string>,
+): boolean {
+  const g = ownersOf(generated);
+  const r = ownersOf(routes);
+  for (const id of new Set([...g.keys(), ...r.keys()])) {
+    const now = r.get(id);
+    if (now === g.get(id)) continue;
+    if (now === undefined || pins[id] !== now) return true;
+  }
+  return false;
+}
 
 /** 項目の文：名前・1行の説明・押せない理由（false なら押せる） */
 export type MenuText = { label: string; description: string; disabled: string | false };
@@ -13,6 +42,8 @@ export type PlanMenuInput = {
   edited: boolean;
   /** 固定した訪問の件数 */
   pinCount: number;
+  /** 固定していない手直しがある（hasUnpinnedEdits） */
+  unpinned: boolean;
   /** 計算中・計算できる訪問が無いなど、計算を始められない理由（無ければ false） */
   busy: string | false;
   /** 計算中 */
@@ -37,16 +68,19 @@ export function createText(i: PlanMenuInput): MenuText {
     : { label: 'AI に案を作らせる', description: `今の条件（${i.ruleName}）で作ります`, disabled: i.busy };
 }
 
-/** 「手で動かした所は残して、ほかを作り直す」（固定を残して組み直す） */
+/**
+ * 「固定した訪問は残して、ほかを作り直す」（固定を残して組み直す）。固定が無くても押せる（AI が出したまま（戻す先）を残すので
+ * 「AI にもう一度作らせる」とは結果が違う）。固定していない手直しがあれば、消えると書く（押すと確かめる）
+ */
 export function resolveText(i: PlanMenuInput): MenuText {
+  const head =
+    i.pinCount > 0
+      ? `固定した ${i.pinCount}件の担当はそのままで、ほかを今の条件で組み直します`
+      : '固定がありません。AI が出したままの案（戻す先）は残して、今の条件で作り直します';
   return {
-    label: '手で動かした所は残して、ほかを作り直す',
-    description: `固定した ${i.pinCount}件の担当はそのままで、ほかを今の条件で組み直します`,
-    disabled: !i.hasPlan
-      ? 'AI の案がまだありません'
-      : i.pinCount === 0
-        ? '固定した訪問がありません（訪問を手で動かすと固定になります）'
-        : i.busy,
+    label: '固定した訪問は残して、ほかを作り直す',
+    description: i.unpinned ? `${head}。固定していない手直しは消えます（確かめてから）` : head,
+    disabled: !i.hasPlan ? 'AI の案がまだありません' : i.busy,
   };
 }
 
@@ -75,6 +109,13 @@ export function compareText(i: PlanMenuInput): MenuText {
         : '案がまだ1つです。比較の画面で、もう1案作って比べられます',
     disabled: false,
   };
+}
+
+/** 「まだ作っていない考え方をまとめて作る」の説明。今の案が無い日は、作った中で一番点の高い案を今の案にする（runBatch） */
+export function batchDescription(hasPlan: boolean): string {
+  return hasPlan
+    ? '今の案は変えずに、比べるための案を作って残します'
+    : '考え方ごとに作り、一番点の高い案を今の案にします';
 }
 
 /** プリセットの項目の説明（押すと何が起きるか） */

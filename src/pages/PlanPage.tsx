@@ -90,8 +90,10 @@ import { HOME_LABEL } from '../lib/mapsLink';
 import { planRunOf, planStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import {
+  batchDescription,
   compareText,
   createText,
+  hasUnpinnedEdits,
   type PlanMenuInput,
   presetDescription,
   resolveText,
@@ -152,7 +154,7 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
 /**
  * 予定（D4・D13・D18・ADR-0004・ADR-0009）：その日の訪問の一覧（追加・編集・取消・前の同じ曜日からコピー）と、
  * 担当の割り当てを1画面で扱う。AI案を作る → 担当ごとの列で手直し（ドラッグ）→ 動かした訪問は固定 →
- * 「手で動かした所は残して、ほかを作り直す」（固定を残して組み直す）で残りを AI が組み直す →「この割当で確定」（manualPlans と各訪問の担当に写す）。
+ * 「固定した訪問は残して、ほかを作り直す」（固定を残して組み直す）で残りを AI が組み直す →「この割当で確定」（manualPlans と各訪問の担当に写す）。
  * AI案の routes は手直し後の今の案、generated は AI が出したまま、pins は固定（訪問ID → 担当ID）。
  * AI案が無い日は、開いたときに点数の基準のプリセットの案だけを自動で作る（D52。残りは「まだ作っていない考え方をまとめて作る」）。作る・組み直すたびに、条件と結果を
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
@@ -369,6 +371,8 @@ export default function PlanPage() {
   const pinCount = Object.keys(pins).length;
   const edited =
     !!aiPlan && (pinCount > 0 || JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes));
+  /** 固定していない手直しがある（固定を残して組み直すと消える。PR #39 のレビュー） */
+  const unpinned = !!aiPlan && hasUnpinnedEdits(aiPlan.generated.routes, aiPlan.routes, aiPlan.pins);
   /**
    * 記録が今の案の元か（カードの「今の案」・カードを押したときの判定に共通）。今の案の元になった記録の id で
    * （無い古いデータは経路の一致で）。手直し中は今の案としない
@@ -778,8 +782,24 @@ export default function PlanPage() {
     if (preset) void runPreset(preset);
     else void recreate(run.rules);
   };
-  /** 固定を残して組み直す（generated は変えない。固定は残す） */
-  const resolve = () => {
+  /**
+   * 固定を残して組み直す（generated は変えない。固定は残す）。固定していない手直し（「入らなかった訪問」へ移した・
+   * 固定を外した）は消えるので、あれば確かめる（PR #39 のレビュー）
+   */
+  const resolve = async () => {
+    if (!check() || !aiPlan) return;
+    if (
+      unpinned &&
+      !(await confirmDialog({
+        title: '固定していない手直しを捨てて、作り直しますか？',
+        body: '固定した訪問の担当は残し、ほかを今の条件で組み直します。「入らなかった訪問」へ移した訪問や、固定を外した訪問の手直しは消えます（AI が出したままの案は戻す先として残ります）。',
+        confirmLabel: '捨てて作り直す',
+        tone: 'danger',
+      }))
+    )
+      return;
+    // 確認のあいだに計算が始まっていたら何もしない
+    if (runRef.current) return;
     const p = check();
     if (!p || !aiPlan) return;
     const forDate = date;
@@ -2047,6 +2067,7 @@ export default function PlanPage() {
     hasPlan: !!aiPlan,
     edited,
     pinCount,
+    unpinned,
     busy: busyWhy,
     running: !!running,
     ruleName: presetOf(data.rules, data.presets)?.name ?? '今の重み',
@@ -2110,7 +2131,7 @@ export default function PlanPage() {
       key: 'batch',
       testId: 'plan-menu-batch',
       label: `まだ作っていない考え方をまとめて作る${missing.length > 0 ? `（${missing.length}つ）` : ''}`,
-      description: '今の案は変えずに、比べるための案を作って残します',
+      description: batchDescription(!!aiPlan),
       icon: LayoutGrid,
       disabled: batch ? '作っています' : missing.length === 0 ? 'どの考え方の案もあります' : busyWhy,
       onSelect: () => runBatch(missing),
@@ -2467,7 +2488,7 @@ export default function PlanPage() {
           <Hint>
             点数はいつも点数の基準のプリセット「{scoreRulerName}
             」の物差しで付けます（条件を変えても点の物差しは変わりません）。「案を変える」の「AI
-            にもう一度作らせる」か「手で動かした所は残して、ほかを作り直す」で作り直せます。
+            にもう一度作らせる」か「固定した訪問は残して、ほかを作り直す」で作り直せます。
           </Hint>
         </div>
       )}
@@ -2505,7 +2526,7 @@ export default function PlanPage() {
         {progressView}
         <Hint label="使い方">
           訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
-          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。「案を変える」の「手で動かした所は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
+          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。「案を変える」の「固定した訪問は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
           名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
         </Hint>
       </div>

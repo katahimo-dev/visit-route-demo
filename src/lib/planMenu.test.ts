@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { applyPreset, createDemoData } from '../seed';
 import {
   anotherPlanOptions,
+  batchDescription,
   compareText,
   createText,
+  hasUnpinnedEdits,
   type PlanMenuInput,
   presetDescription,
   resolveText,
@@ -14,6 +16,7 @@ const base: PlanMenuInput = {
   hasPlan: true,
   edited: false,
   pinCount: 0,
+  unpinned: false,
   busy: false,
   running: false,
   ruleName: '標準',
@@ -34,20 +37,54 @@ describe('createText（AI にもう一度作らせる）', () => {
   });
 });
 
-describe('resolveText（手で動かした所は残して、ほかを作り直す）', () => {
-  it('固定が無ければ押せず、理由を出す', () => {
-    expect(resolveText(base).disabled).toContain('固定した訪問がありません');
+describe('resolveText（固定した訪問は残して、ほかを作り直す）', () => {
+  it('固定が無くても押せて、戻す先を残すと書く', () => {
+    const t = resolveText(base);
+    expect(t.label).toBe('固定した訪問は残して、ほかを作り直す');
+    expect(t.disabled).toBe(false);
+    expect(t.description).toContain('固定がありません');
+    expect(t.description).toContain('戻す先');
   });
   it('案が無ければ押せない', () => {
     expect(resolveText({ ...base, hasPlan: false, pinCount: 2 }).disabled).toBe('AI の案がまだありません');
   });
-  it('固定があれば押せて、件数を説明に出す', () => {
+  it('固定があれば件数を説明に出す', () => {
     const t = resolveText({ ...base, pinCount: 2, edited: true });
     expect(t.disabled).toBe(false);
     expect(t.description).toContain('固定した 2件');
+    expect(t.description).not.toContain('消えます');
   });
-  it('固定があっても計算中は押せない', () => {
+  it('固定していない手直しがあれば「消えます」と書く', () => {
+    expect(resolveText({ ...base, unpinned: true, edited: true }).description).toContain(
+      '固定していない手直しは消えます',
+    );
+  });
+  it('計算中は押せない', () => {
     expect(resolveText({ ...base, pinCount: 1, busy: '計算中は選べません' }).disabled).toBe('計算中は選べません');
+  });
+});
+
+describe('hasUnpinnedEdits（固定していない手直し）', () => {
+  const gen = { s1: ['a', 'b'], s2: ['c'] };
+  it('AI が出したままなら無い', () => {
+    expect(hasUnpinnedEdits(gen, gen, {})).toBe(false);
+  });
+  it('動かして固定した訪問だけなら無い（順番の違いも手直しとしない）', () => {
+    expect(hasUnpinnedEdits(gen, { s1: ['b'], s2: ['a', 'c'] }, { a: 's2' })).toBe(false);
+    expect(hasUnpinnedEdits(gen, { s1: ['b', 'a'], s2: ['c'] }, {})).toBe(false);
+  });
+  it('「入らなかった訪問」へ移した（unassign）ならある', () => {
+    expect(hasUnpinnedEdits(gen, { s1: ['b'], s2: ['c'] }, {})).toBe(true);
+    expect(hasUnpinnedEdits(gen, { s1: ['b'], s2: ['c'], __none: ['a'] }, {})).toBe(true);
+  });
+  it('動かしてから固定を外した（unpin）ならある', () => {
+    expect(hasUnpinnedEdits(gen, { s1: ['b'], s2: ['a', 'c'] }, {})).toBe(true);
+  });
+  it('固定の担当が今の担当と違えばある', () => {
+    expect(hasUnpinnedEdits(gen, { s1: ['b'], s2: ['a', 'c'] }, { a: 's1' })).toBe(true);
+  });
+  it('AI で入らなかった訪問を手で入れて固定したなら無い', () => {
+    expect(hasUnpinnedEdits({ s1: ['a'] }, { s1: ['a', 'x'] }, { x: 's1' })).toBe(false);
   });
 });
 
@@ -114,5 +151,12 @@ describe('anotherPlanOptions（もう1案作って比べる。D159）', () => {
     expect(anotherPlanOptions([standard!], applyPreset(d.rules, standard!), applyPreset(d.rules, standard!))).toEqual(
       [],
     );
+  });
+});
+
+describe('batchDescription', () => {
+  it('今の案があれば変えない・無ければ一番点の高い案を今の案にする', () => {
+    expect(batchDescription(true)).toContain('今の案は変えずに');
+    expect(batchDescription(false)).toContain('一番点の高い案を今の案にします');
   });
 });

@@ -139,13 +139,13 @@ async function plain(page) {
       keys[1] === 'resolve' &&
       keys.slice(2, -5).every((k) => k.startsWith('preset-')) &&
       JSON.stringify(keys.slice(-5)) === JSON.stringify(['batch', 'compare', 'revert', 'copy', 'tune']),
-    '並び：作らせる→手で動かした所は残す→考え方→まとめて作る→比べる→戻す→コピー→条件',
+    '並び：作らせる→固定した訪問は残す→考え方→まとめて作る→比べる→戻す→コピー→条件',
     keys,
   );
   check(item(s, 'create')?.name === 'AI にもう一度作らせる', '名前：「AI にもう一度作らせる」', item(s, 'create'));
   check(
-    item(s, 'resolve')?.name === '手で動かした所は残して、ほかを作り直す',
-    '名前：「手で動かした所は残して、ほかを作り直す」',
+    item(s, 'resolve')?.name === '固定した訪問は残して、ほかを作り直す',
+    '名前：「固定した訪問は残して、ほかを作り直す」',
   );
   check(/^2つの案を比べる/.test(item(s, 'compare')?.name ?? ''), '名前：「2つの案を比べる」（件数つき）');
   check(item(s, 'revert')?.name === 'AI が出したままに戻す', '名前：「AI が出したままに戻す」');
@@ -160,8 +160,9 @@ async function plain(page) {
     item(s, 'create')?.desc,
   );
   check(
-    item(s, 'resolve')?.disabled && /固定した訪問がありません/.test(item(s, 'resolve')?.visibleDesc ?? ''),
-    '固定が無い：「手で動かした所は残して…」は押せず、理由を見える文で',
+    !item(s, 'resolve')?.disabled &&
+      /固定がありません。AI が出したままの案（戻す先）は残して/.test(item(s, 'resolve')?.visibleDesc ?? ''),
+    '固定が無い：「固定した訪問は残して…」も押せて、戻す先を残すと書く（PR #39 のレビュー）',
     item(s, 'resolve'),
   );
   check(
@@ -230,8 +231,10 @@ async function edited(page) {
     item(s, 'create')?.desc,
   );
   check(
-    !item(s, 'resolve')?.disabled && /固定した 1件の担当はそのまま/.test(item(s, 'resolve')?.desc ?? ''),
-    '固定あり：「手で動かした所は残して…」は押せて、固定の件数を書く',
+    !item(s, 'resolve')?.disabled &&
+      /固定した 1件の担当はそのまま/.test(item(s, 'resolve')?.desc ?? '') &&
+      !/消えます/.test(item(s, 'resolve')?.desc ?? ''),
+    '固定あり：「固定した訪問は残して…」は押せて、固定の件数を書く（固定していない手直しは無いので「消えます」を書かない）',
     item(s, 'resolve'),
   );
   check(!item(s, 'revert')?.disabled, '手直しあり：「AI が出したままに戻す」は押せる');
@@ -278,8 +281,63 @@ async function edited(page) {
   await menuBtn(page).click();
   await menuList(page).waitFor();
   const s2 = await menuShape(page);
-  check(item(s2, 'revert')?.disabled && item(s2, 'resolve')?.disabled, '戻したあと：戻す・残して作り直すは押せない');
+  check(
+    item(s2, 'revert')?.disabled && !item(s2, 'resolve')?.disabled,
+    '戻したあと：戻すは押せない（固定した訪問は残して…は押せる）',
+  );
   await page.keyboard.press('Escape');
+}
+
+// ---- 固定していない手直し（「入らなかった訪問」へ移した）があるとき：固定した訪問は残して…は確かめる（PR #39 のレビュー） ----
+async function unpinnedEdit(page) {
+  await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
+  await openPlan(page);
+  // 担当の列の最初の訪問を「入らなかった訪問」へ移す（日の画面の unassign と同じ書き換え：列から外し、固定も外す。
+  // ドラッグそのものは e2e-drag で確かめる）
+  await editData(
+    page,
+    ([key, date]) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      const plan = d.aiPlans[date];
+      const [sid, ids] = Object.entries(plan.routes).find(([s, v]) => s !== '__none' && v.length > 0);
+      const id = ids[0];
+      plan.routes[sid] = ids.slice(1);
+      delete plan.pins[id];
+      localStorage.setItem(key, JSON.stringify(d));
+      localStorage.setItem('e2e-plan-menu-vid', id);
+    },
+    [STORAGE_KEY, TODAY],
+  );
+  const vid = await page.evaluate(() => localStorage.getItem('e2e-plan-menu-vid'));
+  await openPlan(page);
+  const before = (await stored(page)).aiPlans[TODAY];
+  check(
+    !Object.values(before.routes).some((ids) => ids.includes(vid)) && !before.pins[vid],
+    '手直し：訪問を「入らなかった訪問」へ移した（固定は付かない）',
+    vid,
+  );
+  await menuBtn(page).click();
+  await menuList(page).waitFor();
+  const s = await menuShape(page);
+  check(
+    !item(s, 'resolve')?.disabled && /固定していない手直しは消えます/.test(item(s, 'resolve')?.desc ?? ''),
+    '固定していない手直しあり：説明に「固定していない手直しは消えます」',
+    item(s, 'resolve')?.desc,
+  );
+  await page.getByTestId('plan-menu-resolve').click();
+  await dialog(page).waitFor({ timeout: 5000 });
+  const title = await page.getByTestId('confirm-title').innerText();
+  check(/固定していない手直しを捨てて/.test(title), '固定した訪問は残して…：確認ダイアログを出す', title);
+  await page.getByTestId('confirm-cancel').click();
+  await dialog(page).waitFor({ state: 'detached' });
+  await settle(page, 600);
+  const after = (await stored(page)).aiPlans[TODAY];
+  check(
+    JSON.stringify(after.routes) === JSON.stringify(before.routes) && after.createdAt === before.createdAt,
+    '取り消すと何も変わらない（移した訪問は入らなかった訪問のまま）',
+  );
+  check((await page.getByTestId('plan-progress').count()) === 0, '取り消すと計算を始めない');
+  check((await focusedId(page)) === 'plan-menu', '閉じたらフォーカスは「案を変える」へ', await focusedId(page));
 }
 
 // ---- 比較：「2つの案を比べる」から入り、案が1つなら「もう1案作って比べる」 ----
@@ -421,6 +479,7 @@ async function mobile(page) {
   for (const [name, fn] of [
     ['plain', plain],
     ['edited', edited],
+    ['unpinned-edit', unpinnedEdit],
     ['compare-more', compareMore],
     ['compare-no-option', compareNoOption],
     ['mobile', mobile],
