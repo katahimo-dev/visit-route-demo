@@ -1,0 +1,72 @@
+/* 〈利用者さん〉の絞り込みの欄（ClientFilter。PRD D108〜D112。ADR-0021）。チップの形は pickChips.css の pick-chip */
+.client-filter {
+  gap: 8px;
+  min-width: 0;
+}
+.client-filter-top {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.client-filter-search {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.client-filter-label {
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.client-filter-box {
+  position: relative;
+}
+.client-filter-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--sub);
+  pointer-events: none;
+}
+.client-filter-box input {
+  padding: 6px 10px 6px 30px;
+  min-width: 14em;
+}
+.client-filter-ended {
+  align-self: center;
+  font-size: 0.85rem;
+}
+.client-filter-chip.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  font-weight: 700;
+}
+/* 押しても0人のチップ：薄くして押せない（読み上げは aria-disabled） */
+.client-filter-chip.is-empty {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.client-filter-chip.is-empty:hover,
+.client-filter-chip.is-empty:focus-visible {
+  border-color: var(--line);
+}
+.client-filter-count {
+  min-width: 1.4em;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-align: center;
+}
+.client-filter-towns {
+  padding-left: 12px;
+  border-left: 3px solid var(--soft);
+}
+.client-filter-staff {
+  gap: 4px;
+}
+.client-filter-staff select {
+  padding: 2px 6px;
+  font-size: 0.8rem;
+}

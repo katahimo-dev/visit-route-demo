@@ -465,46 +465,7 @@ fieldset.weekday-toggles {
   margin-left: 4px;
 }
 
-/* 〈利用者さん〉の段階（PRD D73。ADR-0015）：段階で絞り込むボタン（選んだものは太字・下線・枠。色だけに頼らない） */
-.stage-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.stage-filter-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 2px solid var(--line);
-  background: var(--card);
-  color: var(--ink);
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-.stage-filter-btn.is-on {
-  border-color: var(--primary);
-  background: var(--primary-soft);
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.stage-arrow {
-  color: var(--sub);
-  margin-right: 2px;
-}
-.stage-count {
-  display: inline-block;
-  min-width: 1.6em;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: #f3ebe4;
-  font-size: 0.78rem;
-  text-align: center;
-  font-weight: 700;
-}
+/* 〈利用者さん〉の段階（PRD D73。ADR-0015）：一覧の状態の印（段階の絞り込みのボタンは PRD D111 でやめ、ClientFilter の「終了の人も出す」に） */
 .stage-chip.is-active {
   background: #e1f1e7;
   color: var(--ok);
@@ -565,10 +526,4 @@ fieldset.weekday-toggles {
 .chip-lastday {
   background: #ece7f6;
   color: #5b4a8a;
-}
-fieldset.stage-filter {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
 }

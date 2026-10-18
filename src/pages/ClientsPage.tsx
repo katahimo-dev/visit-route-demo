@@ -16,7 +16,8 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { ClientPicker } from '../components/ClientPicker';
+import { useDay } from '../app/day';
+import { ClientFilter } from '../components/ClientFilter';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
 import { PickChips } from '../components/PickChips';
 import { Check, TentativeMark } from '../components/parts';
@@ -26,15 +27,16 @@ import { Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from 
 import { VISIT_RULE_FIELDS } from '../components/VisitRules';
 import { CLIENT_STAGES, type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
-import { jstDate } from '../domain/time';
-import { isBeforeActive, STAGE_LABELS, stageCounts, withStage } from '../lib/clientStage';
+import { jstDate, weekday } from '../domain/time';
+import { EMPTY_FILTER, filterClients, filterFacts, resolveStaffId } from '../lib/clientFilter';
+import { isBeforeActive, STAGE_LABELS, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
-import { byDisplayName, byName, formError, hasLocation, nameTaken, newId } from '../lib/common';
+import { byDisplayName, byName, formError, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { normalizeEmail } from '../lib/mailto';
 import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
-import { matchClient, staffClientMap } from '../lib/search';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
+import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
 import { ClientLeavesSection } from './ClientLeavesSection';
 import { PatternsSection } from './PatternsSection';
@@ -78,19 +80,33 @@ export default function ClientsPage() {
   const [limit, setLimit] = useState(false);
   const clients = useMemo(() => [...data.clients].sort(byDisplayName), [data.clients]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
-  // 一覧の絞り込み（PRD D61）：選んだ人がいればその人たち、いなければ検索欄の文字（表示名・よみ）で
-  const [picked, setPicked] = useState<string[]>([]);
-  const [query, setQuery] = useState('');
-  /** 段階で絞る（PRD D73。'all'＝すべて） */
-  const [stageFilter, setStageFilter] = useState<ClientStage | 'all'>('all');
-  const counts = useMemo(() => stageCounts(clients), [clients]);
-  const shown = useMemo(() => {
-    const byStage = (c: Client) => stageFilter === 'all' || c.stage === stageFilter;
-    if (picked.length > 0) return clients.filter((c) => picked.includes(c.id) && byStage(c));
-    return clients.filter((c) => matchClient(c, query) && byStage(c));
-  }, [clients, picked, query, stageFilter]);
-  /** 近道「〈スタッフ〉が担当する人」：いつもの担当がその人の〈利用者さん〉 */
-  const usualOf = useMemo(() => staffClientMap([], data.clients), [data.clients]);
+  /**
+   * 一覧の絞り込み（PRD D108〜D112。ClientFilter。画面の状態）：名前・よみ・地区・チップ（AND）・終了の人も出す。
+   * チップの期間は選んでいる日を含む週（月〜日。週間の weekDay で、案・確定の判定も週間と同じ）
+   */
+  const { date } = useDay();
+  const [filter, setFilter] = useState(EMPTY_FILTER);
+  const activeStaff = useMemo(() => staff.filter((s) => s.active), [staff]);
+  const dates = useMemo(() => weekDates(date), [date]);
+  const days = useMemo(() => dates.map((d) => weekDay(data, d)), [data, dates]);
+  const facts = useMemo(
+    () =>
+      filterFacts({
+        days,
+        visits: data.visits,
+        clients,
+        patterns: data.patterns,
+        clientLeaves: data.clientLeaves,
+        staff,
+      }),
+    [days, data.visits, clients, data.patterns, data.clientLeaves, staff],
+  );
+  const shown = useMemo(
+    () => filterClients(clients, filter, facts, resolveStaffId(filter, activeStaff, facts, clients)),
+    [clients, filter, facts, activeStaff],
+  );
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  const periodLabel = `${md(dates[0]!)}（${WEEKDAY_LABELS[weekday(dates[0]!)]}）からの週`;
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
   const clientItems = data.items.filter((i) => i.target === 'client');
   const today = jstDate(Date.now());
@@ -160,7 +176,12 @@ export default function ClientsPage() {
           : [...d.clients, c],
       }));
       setIsNew(false);
-      toast('保存しました');
+      // 終了にした人は、一覧からは消える（「終了の人も出す」のときだけ出る。PRD D111）
+      toast(
+        c.stage === 'ended' && !filter.showEnded
+          ? `保存しました。${STAGE_LABELS.ended}の人は「${STAGE_LABELS.ended}の人も出す」で出ます`
+          : '保存しました',
+      );
     } catch (e) {
       setError(formError(e));
     }
@@ -205,59 +226,22 @@ export default function ClientsPage() {
         }
       />
 
-      <div
-        className="card row"
-        style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}
-        data-testid="clients-filter"
-      >
-        <ClientPicker
+      <div className="card stack" data-testid="clients-filter">
+        <ClientFilter
           clients={clients}
-          selected={picked}
-          onChange={setPicked}
-          multiple
-          label={`${terms.client}を絞り込む`}
-          byStaff={{
-            staffLabel: terms.staff,
-            staff: staff.filter((s) => s.active),
-            clientIdsOf: (id) => usualOf.get(id) ?? new Set(),
-          }}
-          onQueryChange={setQuery}
-          testId="clients-picker"
+          state={filter}
+          onChange={setFilter}
+          facts={facts}
+          staff={activeStaff}
+          terms={{ client: terms.client, staff: terms.staff }}
+          periodLabel={periodLabel}
+          defaults={EMPTY_FILTER}
+          testId="clients-cf"
         />
-        <span className="sub" data-testid="clients-count">
-          {shown.length === clients.length ? `${clients.length}人` : `${shown.length}人／${clients.length}人`}
-        </span>
-        <fieldset className="stage-filter" data-testid="clients-stage-filter">
-          <legend className="sr-only">段階で絞り込む</legend>
-          <button
-            type="button"
-            className={`stage-filter-btn${stageFilter === 'all' ? ' is-on' : ''}`}
-            aria-pressed={stageFilter === 'all'}
-            onClick={() => setStageFilter('all')}
-          >
-            すべて <span className="stage-count">{clients.length}</span>
-          </button>
-          {CLIENT_STAGES.map((st, i) => (
-            <button
-              key={st}
-              type="button"
-              className={`stage-filter-btn is-${st}${stageFilter === st ? ' is-on' : ''}`}
-              aria-pressed={stageFilter === st}
-              onClick={() => setStageFilter(st)}
-              data-stage={st}
-            >
-              {i > 0 && i < 4 && (
-                <span className="stage-arrow" aria-hidden="true">
-                  →
-                </span>
-              )}
-              {STAGE_LABELS[st]} <span className="stage-count">{counts[st]}</span>
-            </button>
-          ))}
-        </fieldset>
         <span className="sub">
-          新しい相談は「空き状況」の画面で受けられる曜日・時間を試算し、仮押さえすると「{STAGE_LABELS.inquiry}
-          」で入ります
+          {STAGE_LABELS.inquiry}〜{STAGE_LABELS.contract}
+          の人は、一覧の「状態」の印で見分けられます。新しい相談は「空き状況」の画面で受けられる曜日・時間を試算し、仮押さえすると「
+          {STAGE_LABELS.inquiry}」で入ります
         </span>
       </div>
 

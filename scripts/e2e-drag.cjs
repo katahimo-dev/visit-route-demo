@@ -1,5 +1,7 @@
 // 本物のマウス操作（mouse.down → move → up）で、画面のドラッグが動くかを確かめる（6種類）。
 // 週・スタッフ／週・利用者さん／利用者さん×曜日の表／予定の時間軸／予定の順番／月 → 日（予定の時間軸）。
+// あわせて、週間の〈利用者さん〉×曜日の表の検索欄で日本語の変換（IME。CDP の Input.imeSetComposition）が壊れないかも確かめる
+// （week-clients-ime。変換中は URL の ?cf= を書かず、確定後に書く。URL が外から変わったら入力欄を合わせる。PRD D109）。
 // Playwright の dragTo や合成の DragEvent では、dragstart の中で画面の高さが変わってドラッグが取り消される不具合
 // （src/lib/dragStart.ts）を再現できないため、マウスを本当に動かす。
 //
@@ -150,11 +152,9 @@ async function weekClients(page) {
   const name = 'week-clients';
   await page.goto(`${BASE}#/week?view=clients`);
   await page.reload();
-  await page.getByTestId('week-client-picker').waitFor();
+  await page.getByTestId('week-client-filter').waitFor();
   await page.waitForTimeout(800);
-  // 表は上限なし：この週に訪問がある人をまとめて選ぶ
-  await page.getByTestId('week-client-picker-shortcut-period').click();
-  await page.getByTestId('week-client-picker-choose-all').click();
+  // 表は選ばずに、この週に訪問がある人を全員出す（PRD D108。絞り込みは既定のまま）
   await page.getByTestId('week-ccell').first().waitFor();
   const items = page.locator('[data-testid="week-citem"][draggable="true"]');
   let item = null;
@@ -235,6 +235,42 @@ async function planMove(page, view, name) {
   report(name, r.ev.includes('drop') && to !== from && r.moved === 0, { vid, from, to, ...r });
 }
 
+/** 週間の表の検索欄で日本語を変換して確定する（変換中に入力欄が戻されない・確定後に URL に入る・外からの変更に合わせる） */
+async function weekClientsIme(page) {
+  const name = 'week-clients-ime';
+  await page.goto(`${BASE}#/week?view=clients`);
+  await page.reload();
+  const input = page.getByTestId('week-client-filter-input');
+  await input.waitFor();
+  await input.click();
+  const cdp = await page.context().newCDPSession(page);
+  const steps = ['と', 'とし', 'としょ'];
+  const during = [];
+  for (const text of steps) {
+    await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length });
+    // 遅らせて書く時間（300ms）より長く待つ。変換中に URL を書くと入力欄が戻され、変換が壊れる
+    await page.waitForTimeout(450);
+    during.push({ value: await input.inputValue(), cf: new URL(page.url().replace('#/', '')).searchParams.get('cf') });
+  }
+  await cdp.send('Input.insertText', { text: '図書' });
+  await page.waitForTimeout(450);
+  const value = await input.inputValue();
+  const cf = new URL(page.url().replace('#/', '')).searchParams.get('cf') ?? '';
+  // URL が外から変わったとき（戻るボタンなど）は入力欄を合わせる
+  await page.evaluate(() => {
+    location.hash = `#/week?view=clients&cf=${encodeURIComponent(`q:${encodeURIComponent('市')};chip:period`)}`;
+  });
+  await page.waitForTimeout(300);
+  const synced = await input.inputValue();
+  const okDuring = during.every((d, i) => d.value === steps[i] && (d.cf === null || !d.cf.includes('q:')));
+  report(name, okDuring && value === '図書' && decodeURIComponent(cf).includes('図書') && synced === '市', {
+    during,
+    value,
+    cf: decodeURIComponent(cf),
+    synced,
+  });
+}
+
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
@@ -256,6 +292,7 @@ async function planMove(page, view, name) {
   await run('week-staff', () => weekTimeline(page, 'staff'));
   await run('week-client', () => weekTimeline(page, 'client'));
   await run('week-clients', () => weekClients(page));
+  await run('week-clients-ime', () => weekClientsIme(page));
   await run('plan-timeline', async () => {
     await page.goto(`${BASE}#/plan`);
     await page.reload();
