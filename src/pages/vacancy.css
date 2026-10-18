@@ -7,8 +7,128 @@
 .vacancy-place-title {
   font-weight: 700;
 }
-.vacancy-legend {
+/* 段階（PRD D184〜D186）：1 いつ・何を → 2 場所（任意。畳む）→ 3 受けられる曜日・時間帯 → 4 次の一手 */
+.vacancy-step-no {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.vacancy-stage > .section-title h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* 畳む段階（場所・案内文）：見出しの行と要約の行 */
+.vacancy-place-stage > summary,
+.vacancy-notice > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.vacancy-place-stage > summary::-webkit-details-marker,
+.vacancy-notice > summary::-webkit-details-marker {
+  display: none;
+}
+.vacancy-place-stage > summary::after,
+.vacancy-notice > summary::after {
+  content: '開く ▾';
+  margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+.vacancy-place-stage[open] > summary::after,
+.vacancy-notice[open] > summary::after {
+  content: '畳む ▴';
+}
+.vacancy-place-stage > summary:focus-visible,
+.vacancy-notice > summary:focus-visible {
+  outline: 2px solid var(--primary-dark);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.vacancy-place-stage[open] > summary {
+  margin-bottom: 12px;
+}
+.vacancy-notice[open] > summary {
+  margin-bottom: 8px;
+}
+.vacancy-stage-head {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.vacancy-stage-line {
+  flex: 1 1 260px;
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.vacancy-stage-line.is-set {
+  color: var(--ink);
+  font-weight: 700;
+}
+.vacancy-notice {
+  border-top: 1.5px solid var(--line);
+  padding-top: 12px;
+}
+.vacancy-sub-title {
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.vacancy-when-line {
   margin: 0;
+}
+/* マスの読み方（PRD D187）：見本の印と短い文 */
+.vacancy-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+.vacancy-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.vacancy-legend-face {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1.5px solid var(--line);
+  background: var(--card);
+  line-height: 1.05;
+}
+.vacancy-legend-face small {
+  font-size: 0.62rem;
+}
+.vacancy-legend-note {
+  margin: 0;
+}
+@media print {
+  .vacancy-place-stage > summary::after,
+  .vacancy-notice > summary::after {
+    display: none;
+  }
 }
 .vacancy-noplan {
   display: flex;
@@ -179,4 +299,11 @@
 .notice-mail-to legend {
   padding: 0 4px;
   font-size: 0.9rem;
+}
+/* 390px：1段目の入力は2列にして縦の長さを抑える（PRD D184） */
+@media (max-width: 600px) {
+  .vacancy-stage .form-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+  }
 }

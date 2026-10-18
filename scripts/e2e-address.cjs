@@ -260,10 +260,18 @@ async function failures(page, fake) {
   check(c2.place.address === addr0, '失敗しても store は変えない');
 }
 
+/** 空き状況の「2 場所（任意）」を開く（PRD D185。はじめは畳んで要約の行だけ） */
+async function openVacancyPlace(page) {
+  const stage = page.getByTestId('vacancy-step-place');
+  await stage.waitFor();
+  if ((await stage.getAttribute('open')) === null) await page.getByTestId('vacancy-place-toggle').click();
+  await page.getByTestId('vacancy-place').waitFor();
+}
+
 /** 5・6：連打・閉じる・途中で書き換え */
 async function races(page, fake) {
   await page.goto(`${BASE}#/vacancy`);
-  await page.getByTestId('vacancy-place').waitFor();
+  await openVacancyPlace(page);
   const status = page.getByTestId('vacancy-status');
   // 5 連打しても1回
   fake.zip.delay = 600;
@@ -326,7 +334,7 @@ async function races(page, fake) {
 /** 7：空き状況 */
 async function vacancy(page) {
   await page.goto(`${BASE}#/vacancy`);
-  await page.getByTestId('vacancy-place').waitFor();
+  await openVacancyPlace(page);
   await page.waitForTimeout(800);
   // 「計算しています…」が出たら記録する
   await page.evaluate(() => {
@@ -394,7 +402,7 @@ async function vacancy(page) {
 /** 7：仮押さえの注記の出し分け */
 async function holdNote(page) {
   await page.goto(`${BASE}#/vacancy`);
-  await page.getByTestId('vacancy-place').waitFor();
+  await openVacancyPlace(page);
   await page.waitForTimeout(800);
   await page.getByTestId('hold-open').click();
   check(

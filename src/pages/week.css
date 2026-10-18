@@ -10,8 +10,30 @@
   min-width: 12em;
   text-align: center;
 }
-.week-tabs {
+.week-views {
   margin-left: auto;
+}
+/* 表示の切り替えは1つ（PRD D188）。狭い画面では幅いっぱいの2列×2段（時間軸の2つが上、表の2つが下） */
+@media (max-width: 600px) {
+  .week-views {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    margin-left: 0;
+  }
+  .week-views button {
+    padding: 7px 6px;
+    font-size: 0.85rem;
+  }
+  .segmented.week-views button + button {
+    border-left: 0;
+  }
+  .week-views button:nth-child(even) {
+    border-left: 2px solid var(--line);
+  }
+  .week-views button:nth-child(n + 3) {
+    border-top: 2px solid var(--line);
+  }
 }
 .week-tools {
   align-items: center;
@@ -230,9 +252,6 @@ label.week-who {
 }
 
 /* ---- 月間・週間の改定（D56・D57） ---- */
-.week-by {
-  flex: none;
-}
 /* 担当が種類の必要条件を満たさない帯：赤い枠と「資格✗」 */
 .week-band.is-unfit,
 .week-citem.is-unfit {
