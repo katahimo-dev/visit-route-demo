@@ -728,7 +728,7 @@ export function attentionList(
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
 }
 
-// ---- 今月の準備（PRD D59。design.md §4 pages「動線の整理」）----
+// ---- 今月の準備（PRD D59。D151 から進み具合の帯（月・週・日）に出す。design.md §4 pages「動線の整理」「進み具合の帯」）----
 
 /** 月の「今月の準備」の進み具合（その月の今日以降の日について） */
 export type MonthProgress = {

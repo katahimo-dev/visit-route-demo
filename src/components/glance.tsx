@@ -1,11 +1,11 @@
-// 一目で分かる表示の部品（PRD D78〜D81）：段階の凡例、今月の準備の積み上げ、〈利用者さん〉の月の日ごとの点。
+// 一目で分かる表示の部品（PRD D78〜D81）：段階の凡例、〈利用者さん〉の月の日ごとの点。
+// （今月の準備の積み上げ PrepBar は進み具合の帯（components/progressBand。PRD D154）にまとめて消した。色の CSS .prep-bar・.prep-part は帯が使う）
 // 色だけに頼らない：文字（○△×？・数字）・枠（0人の濃い枠・案なしの破線）・形（丸・三角・白抜き・四角）と、title・読み上げの文。
 // 色の言葉は3段バーと同じ components/barMarks.css（PRD D85。柄は使わない）
 import './barMarks.css';
 import './glance.css';
 import { WEEKDAY_LABELS } from '../lib/common';
-import { type ClientDot, type PrepPart, prepParts } from '../lib/glance';
-import type { MonthProgress } from '../lib/month';
+import type { ClientDot } from '../lib/glance';
 
 /** 段階の凡例（class は lv-〈段階〉） */
 export function LevelLegend({ items }: { items: readonly (readonly [string, string])[] }) {
@@ -18,44 +18,6 @@ export function LevelLegend({ items }: { items: readonly (readonly [string, stri
         </span>
       ))}
     </span>
-  );
-}
-
-const PREP_LABEL: Record<PrepPart['kind'], string> = {
-  confirmed: '確定済み',
-  planned: '案あり（未確定）',
-  none: '案なし',
-};
-
-/** 今月の準備の積み上げ（D80）：訪問のある日を 確定済み・案あり（未確定）・案なし の日数で横に積む。数字も出す */
-export function PrepBar({ progress }: { progress: Pick<MonthProgress, 'days' | 'planned' | 'confirmed'> }) {
-  if (progress.days === 0) return null;
-  const parts = prepParts(progress);
-  const text = parts.map((x) => `${PREP_LABEL[x.kind]} ${x.days}日`).join('・');
-  return (
-    <div className="prep-bar-wrap" data-testid="prep-bar">
-      <span
-        className="prep-bar"
-        role="img"
-        aria-label={`今日以降の訪問のある日 ${progress.days}日：${text}（案あり（未確定）には未確定の変更ありの日も含む）`}
-        title={text}
-      >
-        {parts
-          .filter((x) => x.days > 0)
-          .map((x) => (
-            <span key={x.kind} className={`prep-part is-${x.kind}`} style={{ flexGrow: x.days }} />
-          ))}
-      </span>
-      <span className="glance-legend" aria-hidden="true">
-        {parts.map((x) => (
-          <span key={x.kind} className="glance-legend-item">
-            <span className={`glance-swatch is-${x.kind}`} />
-            {PREP_LABEL[x.kind]} {x.days}日
-          </span>
-        ))}
-        <span>（今日以降の訪問のある日。案あり（未確定）には未確定の変更ありの日も含む）</span>
-      </span>
-    </div>
   );
 }
 

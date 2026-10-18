@@ -19,6 +19,7 @@ import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
 import { LoadRowsSample } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
+import { ScheduleBand } from '../components/progressBand';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -562,6 +563,8 @@ export default function WeekPage() {
         title="週間"
         lead={`日時をドラッグでずらし、${terms.staff}の偏りを見ます`}
       />
+      {/* 進み具合の帯（PRD D151。選んでいる日付＝週の中の日の月） */}
+      <ScheduleBand date={anchor} />
 
       <div className="card stack week-head">
         <div className="row week-nav">

@@ -158,11 +158,12 @@ async function firstState(page) {
   await page.getByTestId('month-unconfirmed').waitFor({ timeout: 10000 });
   await page.waitForTimeout(300);
   const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
-  const prep = await page.getByTestId('prep-confirm').innerText();
-  check(listed === n2 && prep.includes(`確定していない日（${n2}日）`), 'ホームの日数＝月の右の欄の日数＝③の日数', {
+  // 今月の準備の③は進み具合の帯にまとめた（PRD D154）。帯の確定していない日数も同じ
+  const band = Number(await page.getByTestId('band-confirm').getAttribute('data-unconfirmed'));
+  check(listed === n2 && band === n2, 'ホームの日数＝月の右の欄の日数＝帯の確定していない日数', {
     home: n2,
     listed,
-    prep,
+    band,
   });
   // 確定すると今日のカードは「確定済み」、確定していない日は1日減る
   await page.goto(`${BASE}#/plan`);

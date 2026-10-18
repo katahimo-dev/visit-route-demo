@@ -2,7 +2,6 @@ import {
   BedSingle,
   CalendarOff,
   CalendarRange,
-  Check,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -25,9 +24,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
 import { useConfirm } from '../components/ConfirmDialog';
-import { ClientDots, PrepBar } from '../components/glance';
+import { ClientDots } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
+import { type BandModel, ProgressBand } from '../components/progressBand';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -70,7 +70,6 @@ import {
   expandMonth,
   firstDayOf,
   isYm,
-  type MonthProgress,
   monthDates,
   monthProgress,
   planEdited,
@@ -82,6 +81,7 @@ import {
   ymOf,
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
+import { type BandOp, urgentCount } from '../lib/progressBand';
 import {
   type OffDayState,
   offDayState,
@@ -167,7 +167,7 @@ export default function MonthPage() {
   const monthNo = Number(ym.slice(5, 7));
 
   const [panel, setPanel] = useState(false);
-  /** 選ばないときの右の欄：要対応／確定していない日（「今月の準備」の③から） */
+  /** 選ばないときの右の欄：要対応／確定していない日（進み具合の帯の「確定」から。PRD D153） */
   const [asideView, setAsideView] = useState<'attention' | 'unconfirmed'>('attention');
   const asideRef = useRef<HTMLElement>(null);
   const [mode, setMode] = useState<'empty' | 'all'>('empty');
@@ -429,7 +429,7 @@ export default function MonthPage() {
     [data, days, statuses, today],
   );
 
-  /** 今月の準備（PRD D59）。日の状態は上で compile・採点したものを使う（要対応の欄と同じ数え方） */
+  /** 今月の準備（PRD D59。進み具合の帯に出す。D151）。日の状態は上で compile・採点したものを使う（要対応の欄と同じ数え方） */
   const progress = useMemo(
     () => monthProgress(data, ym, today, undefined, (d) => statuses.get(d)),
     [data, ym, today, statuses],
@@ -482,8 +482,47 @@ export default function MonthPage() {
   const running = batch !== null;
   const noVisitsWhy = futureVisits === 0 ? '定期パターンが無いか、この月の訪問がありません' : null;
 
-  // ---- ホームから来たときの操作（PRD D143。?do=）----
-  // batch：まとめて作るの欄を「まだ案の無い日だけ」で開く（見出しのボタンと同じ欄。対象の日が無ければ開かない）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
+  /**
+   * まとめて作るの欄を開く（入口は進み具合の帯の1か所と ?do=batch。PRD D154）。対象は「まだ案の無い日だけ」。
+   * まだ案の無い日が無く、作っていない訪問も無ければ「確定していない日をすべて作り直す」で開く。
+   * 開かないとき：この月に訪問が無い・作っている間・どちらの対象の日も無い（知らせを出す）
+   */
+  const openBatch = () => {
+    if (runningRef.current) return;
+    if (noVisitsWhy) {
+      toast(noVisitsWhy);
+      return;
+    }
+    const m: 'empty' | 'all' | null =
+      preview.added > 0 || targetsOf('empty').length > 0 ? 'empty' : targetsOf('all').length > 0 ? 'all' : null;
+    if (!m) {
+      toast('作る日がありません（今日より前の日・確定した日は作りません）');
+      return;
+    }
+    setError(null);
+    setMode(m);
+    setPanel(true);
+  };
+
+  /** 進み具合の帯（PRD D151〜D155）：今月の準備と同じ数え方。週・日の画面の帯と同じもの */
+  const band = useMemo(
+    (): BandModel => ({
+      ym,
+      progress,
+      canExpand: preview.added,
+      emptyTargets: batchTargets(preview.data, ym, today, 'empty', (d) => statuses.get(d)?.stale ?? false).length,
+      urgent: urgentCount(attention),
+    }),
+    [ym, progress, preview, today, statuses, attention],
+  );
+  /** 帯の数字・ボタン：この画面の中で欄を開く（URL の ?staff= などは showAside のとおり） */
+  const onBandOp = (op: BandOp) => {
+    if (op === 'batch') openBatch();
+    else showAside(op);
+  };
+
+  // ---- ホーム・週・日の帯から来たときの操作（PRD D143・D153。?do=）----
+  // batch：まとめて作るの欄を開く（openBatch）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
   // 1回だけ行い、URL から ?do= を消す（戻る・再読込で繰り返さない）
   const doParam = params.get('do');
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
@@ -494,15 +533,10 @@ export default function MonthPage() {
       return;
     }
     patchParams({ do: null });
-    // 開かないとき：この月に訪問が無い・作っている間・「まだ案の無い日だけ」の対象の日が無い（D143）
-    if (doParam === 'batch' && !noVisitsWhy && !runningRef.current && targetsOf('empty').length > 0) {
-      setError(null);
-      setMode('empty');
-      setPanel(true);
-    }
+    if (doParam === 'batch') openBatch();
   }, [doParam]);
 
-  // ---- 定期パターンから訪問だけ作る（①だけ）----
+  // ---- 定期パターンから訪問だけ作る（案は作らない。まとめて作るの欄の「訪問だけ作る」。D154）----
   const expandOnly = () => {
     setError(null);
     const n = preview.added;
@@ -686,39 +720,10 @@ export default function MonthPage() {
         icon={CalendarRange}
         title="月間"
         lead="定期パターンから訪問を作り、一月分の案をまとめて作ります"
-        actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={running || !!noVisitsWhy}
-            title={noVisitsWhy ?? ''}
-            onClick={() => {
-              setError(null);
-              setMode('empty');
-              setPanel(true);
-            }}
-          >
-            <WithIcon icon={Sparkles}>{monthNo}月の案をまとめて作る</WithIcon>
-          </button>
-        }
       />
 
-      <MonthPrep
-        title={ym === ymOf(today) ? '今月の準備' : `${monthNo}月の準備`}
-        progress={progress}
-        canExpand={preview.added}
-        running={running}
-        noVisitsWhy={noVisitsWhy}
-        noPatterns={data.patterns.length === 0}
-        onExpand={expandOnly}
-        onBatch={() => {
-          setError(null);
-          setMode('empty');
-          setPanel(true);
-        }}
-        onUnconfirmed={() => showAside('unconfirmed')}
-        onAttention={() => showAside('attention')}
-      />
+      {/* 進み具合の帯（PRD D151〜D155）。「まとめて作る」の入口はここの1か所（D154。見出しのボタン・今月の準備の①〜③をまとめた） */}
+      <ProgressBand ym={ym} model={band} primary onOp={onBandOp} />
 
       <div className="card stack month-head">
         <div className="row month-nav">
@@ -1242,6 +1247,16 @@ export default function MonthPage() {
               </p>
             )}
             <p className="sub">先に定期パターンからこの月の訪問を作ります。今日より前の日・確定した日は作りません。</p>
+            {/* 案は作らずに訪問だけ作る（今月の準備の①から移した。PRD D154） */}
+            {preview.added > 0 && (
+              <p className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-small" onClick={expandOnly} data-testid="batch-expand-only">
+                  <WithIcon icon={Repeat} size={14}>
+                    訪問だけ作る（{preview.added}件。案は作らない）
+                  </WithIcon>
+                </button>
+              </p>
+            )}
             <p className="sub">
               1日ずつ作り、作れた日はすぐに保存します。「止める」で、作っている日はそれまでの最良の案で残し、残りの日はやめます。画面を離れても止まります（作れた日は残ります）。
             </p>
@@ -1699,127 +1714,3 @@ const DayCell = memo(function DayCell(props: CellProps) {
     </td>
   );
 });
-
-/**
- * 今月の準備（PRD D59）：①訪問を作る ②案を作る ③確定 と要対応を横に並べる。済んだものに✓と「済」（色だけに頼らない）。
- * ①は作れる訪問があれば「定期パターンから訪問だけ作る」、②は足りなければまとめて作る欄、③は確定していない日の一覧、
- * 要対応は右の欄へ
- */
-function MonthPrep({
-  title,
-  progress: p,
-  canExpand,
-  running,
-  noVisitsWhy,
-  noPatterns,
-  onExpand,
-  onBatch,
-  onUnconfirmed,
-  onAttention,
-}: {
-  title: string;
-  progress: MonthProgress;
-  /** 定期パターンから作れる訪問の件数 */
-  canExpand: number;
-  running: boolean;
-  noVisitsWhy: string | null;
-  noPatterns: boolean;
-  onExpand: () => void;
-  onBatch: () => void;
-  onUnconfirmed: () => void;
-  onAttention: () => void;
-}) {
-  const visitsDone = p.visits > 0 && canExpand === 0;
-  const planDone = p.days > 0 && p.planned === p.days;
-  const confirmDone = p.days > 0 && p.confirmed === p.days;
-  const attentionDone = p.attention === 0;
-  return (
-    <section className="card month-prep" aria-label={title} data-testid="month-prep">
-      <h2 className="month-prep-title">{title}</h2>
-      <ol className="month-prep-steps">
-        <PrepStep no="①" label="訪問を作る" value={`${p.visits}件`} done={visitsDone} testId="prep-visits">
-          {!visitsDone && (
-            <button
-              type="button"
-              className="btn btn-small"
-              disabled={running || noPatterns || canExpand === 0}
-              title={noPatterns ? '定期パターンがありません' : ''}
-              onClick={onExpand}
-            >
-              <WithIcon icon={Repeat} size={14}>
-                定期パターンから訪問だけ作る{canExpand > 0 ? `（${canExpand}件）` : ''}
-              </WithIcon>
-            </button>
-          )}
-        </PrepStep>
-        <PrepStep no="②" label="案を作る" value={`${p.planned}/${p.days}日`} done={planDone} testId="prep-plans">
-          {!planDone && (
-            <button
-              type="button"
-              className="btn btn-small"
-              disabled={running || !!noVisitsWhy}
-              title={noVisitsWhy ?? ''}
-              onClick={onBatch}
-            >
-              <WithIcon icon={Sparkles} size={14}>
-                まとめて作る
-              </WithIcon>
-            </button>
-          )}
-        </PrepStep>
-        <PrepStep no="③" label="確定" value={`${p.confirmed}/${p.days}日`} done={confirmDone} testId="prep-confirm">
-          {!confirmDone && p.unconfirmed.length > 0 && (
-            <button type="button" className="btn btn-small" onClick={onUnconfirmed}>
-              <WithIcon icon={Lock} size={14}>
-                確定していない日（{p.unconfirmed.length}日）
-              </WithIcon>
-            </button>
-          )}
-        </PrepStep>
-        <PrepStep label="要対応" value={`${p.attention}件`} done={attentionDone} testId="prep-attention">
-          {!attentionDone && (
-            <button type="button" className="btn btn-small" onClick={onAttention}>
-              <WithIcon icon={ListChecks} size={14}>
-                要対応を見る
-              </WithIcon>
-            </button>
-          )}
-        </PrepStep>
-      </ol>
-      <PrepBar progress={p} />
-    </section>
-  );
-}
-
-function PrepStep({
-  no,
-  label,
-  value,
-  done,
-  testId,
-  children,
-}: {
-  no?: string;
-  label: string;
-  value: string;
-  done: boolean;
-  testId: string;
-  children?: ReactNode;
-}) {
-  return (
-    <li className={`month-prep-step${done ? ' is-done' : ''}`} data-testid={testId} data-done={done}>
-      <span className="month-prep-head">
-        {done && (
-          <span className="month-prep-mark">
-            <Check size={16} strokeWidth={3} aria-hidden="true" />
-            <span className="sr-only">済</span>
-          </span>
-        )}
-        {no && <span className="month-prep-no">{no}</span>}
-        <strong>{label}</strong>
-        <span className="month-prep-value">{value}</span>
-      </span>
-      {children}
-    </li>
-  );
-}

@@ -47,6 +47,7 @@ import { useMailLimit } from '../components/mailParts';
 import { VisitRouteLinks } from '../components/mapsLinks';
 import { PersonButton, PersonInfo } from '../components/PersonPopover';
 import { ClientName } from '../components/parts';
+import { ScheduleBand } from '../components/progressBand';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
@@ -2295,6 +2296,8 @@ export default function PlanPage() {
           )
         }
       />
+      {/* 進み具合の帯（PRD D151・D155。この日の確定の状態も出す） */}
+      <ScheduleBand date={date} withDay />
       {m.clients.length === 0 && (
         <div className="card">
           <p className="sub">先に{terms.client}を登録してください。</p>
