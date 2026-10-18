@@ -2,6 +2,7 @@
 // 特性のチップ AND・人数・URL の ?sf=）、行の絞り込みに足す相性のチップ、吹き出しに出す件数。データは書き換えない
 import type { Client, Staff } from '../contracts/documents';
 import type { Compat, Item, TraitValue } from '../contracts/rules';
+import type { ClientFilterState } from './clientFilter';
 import { normalizeKana } from './search';
 
 // ---- 列の見出しの名前 ----
@@ -170,23 +171,31 @@ export function compatChipText(chip: CompatChip, staffTerm: string): { label: st
 }
 
 /**
- * 相性のチップの判定（lib/clientFilter の FilterFacts.extraTests に渡す）。
- * pending は visibleStaffIds（いま見えている列）との組で、ng は activeStaffIds（休止中でない〈スタッフ〉）との組で数える
+ * 相性のチップに当てはまる人（PRD D116）。pending は visibleStaffIds（いま見えている列）との組に空があるか、
+ * ng は activeStaffIds（休止中でない〈スタッフ〉）との組に × があるか。前もって集まりにしておく（表が大きくても速く引ける）
  */
-export function compatChipTests(
+export function compatChipSets(
   compat: Compat,
+  clientIds: readonly string[],
   visibleStaffIds: readonly string[],
   activeStaffIds: readonly string[],
+): Record<CompatChip, ReadonlySet<string>> {
+  const pending = new Set<string>();
+  const ng = new Set<string>();
+  for (const cid of clientIds) {
+    const r = Object.hasOwn(compat, cid) ? compat[cid] : undefined;
+    const level = (sid: string) => (r && Object.hasOwn(r, sid) ? (r[sid] ?? 0) : 0);
+    if (visibleStaffIds.some((sid) => level(sid) === 0)) pending.add(cid);
+    if (activeStaffIds.some((sid) => level(sid) === -2)) ng.add(cid);
+  }
+  return { pending, ng };
+}
+
+/** 相性のチップの判定（lib/clientFilter の FilterFacts.extraTests に渡す） */
+export function compatChipTests(
+  sets: Record<CompatChip, ReadonlySet<string>>,
 ): Record<CompatChip, (c: Pick<Client, 'id'>) => boolean> {
-  const row = (id: string) => (Object.hasOwn(compat, id) ? compat[id] : undefined);
-  const level = (cid: string, sid: string) => {
-    const r = row(cid);
-    return r && Object.hasOwn(r, sid) ? (r[sid] ?? 0) : 0;
-  };
-  return {
-    pending: (c) => visibleStaffIds.some((sid) => level(c.id, sid) === 0),
-    ng: (c) => activeStaffIds.some((sid) => level(c.id, sid) === -2),
-  };
+  return { pending: (c) => sets.pending.has(c.id), ng: (c) => sets.ng.has(c.id) };
 }
 
 // ---- 吹き出しの中身 ----
@@ -229,4 +238,33 @@ export function weeklyHours(
     weekday: d,
     hours: s.workDays.includes(d) ? { start: s.shiftStart, end: s.shiftEnd } : null,
   }));
+}
+
+// ---- 畳んだ絞り込みの欄の要約 ----
+
+/** 人数の文字（絞っていなければ「N人」、絞っていれば「N人／M人」） */
+const countText = (shown: number, total: number) => (shown === total ? `${total}人` : `${shown}人／${total}人`);
+
+/** 〈スタッフ〉の列の欄の要約（例「スタッフ 8人・絞り込みなし」「スタッフ 3人／8人・名前「市」・特性2」） */
+export function staffFilterSummary(state: StaffFilterState, shown: number, total: number, staffTerm: string): string {
+  const parts: string[] = [];
+  if (state.query.trim() !== '') parts.push(`名前「${state.query.trim()}」`);
+  if (state.chips.length > 0) parts.push(`特性${state.chips.length}`);
+  return `${staffTerm} ${countText(shown, total)}・${parts.length > 0 ? parts.join('・') : '絞り込みなし'}`;
+}
+
+/** 〈利用者さん〉の行の欄の要約（例「利用者さん 2人／20人・地区1・チップ1」）。地区は選んだ市区と町名の数 */
+export function clientFilterSummary(
+  state: Pick<ClientFilterState, 'query' | 'cities' | 'towns' | 'chips' | 'extra'>,
+  shown: number,
+  total: number,
+  clientTerm: string,
+): string {
+  const parts: string[] = [];
+  if (state.query.trim() !== '') parts.push(`名前「${state.query.trim()}」`);
+  const area = state.cities.length + state.towns.length;
+  if (area > 0) parts.push(`地区${area}`);
+  const chips = state.chips.length + (state.extra?.length ?? 0);
+  if (chips > 0) parts.push(`チップ${chips}`);
+  return `${clientTerm} ${countText(shown, total)}・${parts.length > 0 ? parts.join('・') : '絞り込みなし'}`;
 }

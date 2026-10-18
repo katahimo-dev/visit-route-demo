@@ -78,7 +78,10 @@ export default function StaffPage() {
   useEffect(() => {
     if (openId === null) return;
     const s = data.staff.find((x) => x.id === openId);
-    if (s) {
+    // ほかの人を編集中で、変更があれば確かめる（開いている欄の中身を捨てる）
+    const before = form && data.staff.find((x) => x.id === form.id);
+    const dirty = form !== null && form.id !== openId && (isNew || JSON.stringify(form) !== JSON.stringify(before));
+    if (s && (!dirty || confirm(`編集中の${terms.staff}の変更を捨てて、${s.name}を開きますか？`))) {
       setError(null);
       setIsNew(false);
       setOffboardFor(null);

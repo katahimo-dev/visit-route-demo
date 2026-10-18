@@ -31,12 +31,14 @@ export function popoverPlace(
 }
 
 /**
- * 吹き出し（role="dialog"。名前は見出し titleId）。閉じ方：Esc・外を押す・ボタンをもう一度押す（呼ぶ側）・閉じるボタン。
- * 閉じたらフォーカスを押したボタン（anchor）に戻す。開いたら吹き出しへフォーカスを移す（中の文を読める）
+ * 吹き出し（role="dialog"。名前は見出し titleId）。閉じ方：Esc（吹き出しの中で押したとき）・外を押す・Tab で外へ出る・
+ * ボタンをもう一度押す（呼ぶ側）・閉じるボタン。閉じたらフォーカスを押したボタン（anchorId の要素）に戻す
+ * （ボタンが消えていれば戻さない）。開いたら吹き出しへフォーカスを移す（中の文を読める）。
+ * ボタンは要素ではなく ID で受け、使うたびに引く（絞り込みで描き直されても古い要素を指さない）
  */
 export function DetailPopover({
   id,
-  anchor,
+  anchorId,
   title,
   titleId,
   onClose,
@@ -44,8 +46,8 @@ export function DetailPopover({
   testId,
 }: {
   id: string;
-  /** 押したボタン（位置を合わせ、閉じたらフォーカスを戻す） */
-  anchor: HTMLElement;
+  /** 押したボタンの id（位置を合わせ、閉じたらフォーカスを戻す） */
+  anchorId: string;
   title: ReactNode;
   titleId: string;
   onClose: () => void;
@@ -55,65 +57,64 @@ export function DetailPopover({
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(onClose);
   latest.current = onClose;
+  const anchorEl = () => document.getElementById(anchorId);
 
-  // 位置：開いたとき・画面の大きさ・スクロール（表の横スクロールも）・中身の大きさが変わったとき
+  // 位置：開いたとき・画面の大きさ・スクロール（表の横スクロールも。吹き出しの中のスクロールは除く）・中身の大きさが変わったとき
+  // biome-ignore lint/correctness/useExhaustiveDependencies: anchorEl は anchorId だけで決まる
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const put = () => {
-      el.style.maxHeight = '';
-      const a = anchor.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
+      const a = anchorEl();
+      if (!a) return;
+      // 中を巻いた位置を保つため maxHeight は外さない。中身の高さは scrollHeight（＋枠の太さ）で取る
+      const frame = el.offsetHeight - el.clientHeight;
       const p = popoverPlace(
-        a,
-        { width: r.width, height: el.scrollHeight },
+        a.getBoundingClientRect(),
+        { width: el.offsetWidth, height: el.scrollHeight + frame },
         { width: window.innerWidth, height: window.innerHeight },
       );
       el.style.top = `${Math.round(p.top)}px`;
       el.style.left = `${Math.round(p.left)}px`;
       el.style.maxHeight = `${Math.round(p.maxHeight)}px`;
     };
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && el.contains(e.target)) return;
+      put();
+    };
     put();
     const ro = new ResizeObserver(put);
     ro.observe(el);
     window.addEventListener('resize', put);
-    window.addEventListener('scroll', put, true);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', put);
-      window.removeEventListener('scroll', put, true);
+      window.removeEventListener('scroll', onScroll, true);
     };
-  }, [anchor]);
+  }, [anchorId]);
 
   // フォーカス：開いたら吹き出しへ、閉じたら（外したら）押したボタンへ
+  // biome-ignore lint/correctness/useExhaustiveDependencies: anchorEl は anchorId だけで決まる
   useEffect(() => {
     ref.current?.focus({ preventScroll: true });
     return () => {
-      if (anchor.isConnected) anchor.focus({ preventScroll: true });
+      anchorEl()?.focus({ preventScroll: true });
     };
-  }, [anchor]);
+  }, [anchorId]);
 
-  // Esc・外を押す
+  // 外を押す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: anchorEl は anchorId だけで決まる
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.isComposing) return;
-      e.preventDefault();
-      e.stopPropagation();
-      latest.current();
-    };
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       // ボタンを押したときはボタンの onClick（もう一度押すと閉じる）に任せる
-      if (ref.current?.contains(t) || anchor.contains(t)) return;
+      if (ref.current?.contains(t) || anchorEl()?.contains(t)) return;
       latest.current();
     };
-    document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onDown);
-    return () => {
-      document.removeEventListener('keydown', onKey, true);
-      document.removeEventListener('pointerdown', onDown);
-    };
-  }, [anchor]);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [anchorId]);
 
   return createPortal(
     <div
@@ -124,6 +125,33 @@ export function DetailPopover({
       tabIndex={-1}
       className="detail-popover"
       data-testid={testId}
+      onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing) return;
+        if (e.key === 'Tab') {
+          // 吹き出しの端から Tab で外へ出るときは閉じてボタンへ戻す（吹き出しは body の最後にあり、
+          // そのままだとページの外へ出てしまう）
+          const list = [...e.currentTarget.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')];
+          const at = document.activeElement;
+          const out = e.shiftKey ? at === e.currentTarget || at === list[0] : at === list.at(-1);
+          if (out) {
+            e.preventDefault();
+            latest.current();
+          }
+          return;
+        }
+        // Esc は吹き出しの中で押したときだけ取る（ほかの欄の Esc を奪わない）
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        e.stopPropagation();
+        latest.current();
+      }}
+      onBlur={(e) => {
+        // Tab などでフォーカスが吹き出しの外へ出たら閉じる（閉じるとボタンへ戻る）。
+        // 移り先が無い（ほかのウィンドウへ移った）ときは閉じない。外を押したときは pointerdown で閉じている
+        const to = e.relatedTarget;
+        // ボタンへ移ったとき（ボタンを押した）は、ボタンの onClick（もう一度押すと閉じる）に任せる
+        if (to instanceof Node && !e.currentTarget.contains(to) && !anchorEl()?.contains(to)) latest.current();
+      }}
     >
       <div className="detail-popover-head">
         <h3 id={titleId} className="detail-popover-title">

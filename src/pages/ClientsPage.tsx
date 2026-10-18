@@ -129,7 +129,11 @@ export default function ClientsPage() {
   useEffect(() => {
     if (openId === null) return;
     const c = data.clients.find((x) => x.id === openId);
-    if (c) openForm(structuredClone(c), false);
+    // ほかの人を編集中で、変更があれば確かめる（開いている欄の中身を捨てる）
+    const before = form && data.clients.find((x) => x.id === form.id);
+    const dirty = form !== null && form.id !== openId && (isNew || JSON.stringify(form) !== JSON.stringify(before));
+    if (c && (!dirty || confirm(`編集中の${terms.client}の変更を捨てて、${c.displayName}を開きますか？`)))
+      openForm(structuredClone(c), false);
     setParams(
       (prev) => {
         const p = new URLSearchParams(prev);

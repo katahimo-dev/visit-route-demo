@@ -568,7 +568,51 @@ fieldset.weekday-toggles {
   border-color: var(--line);
   background: var(--primary-soft);
 }
+/* 絞り込みの欄（PRD D116）：2つを畳める欄にし、広い画面では横に並べる */
+.compat-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .compat-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.compat-filter {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.compat-filter[open] > summary {
+  margin-bottom: 10px;
+}
+.compat-filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  cursor: pointer;
+}
 .compat-filter-title {
-  margin: 0;
+  font-weight: 700;
   font-size: 0.95rem;
+}
+.compat-resort {
+  margin-left: auto;
+}
+/* 表は枠の中で巻き、見出しの行と1列目を止める（PRD D116） */
+.compat-scroll {
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+.compat-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+}
+.compat-table thead th.avail-name {
+  left: 0;
+  z-index: 3;
 }

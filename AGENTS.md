@@ -37,6 +37,7 @@ docs/ … prd.md / design.md / adr/ / handoff/
 - 型チェック：`npm run typecheck`
 - ビルド：`npm run build`（`dist/`、`base: './'`）
 - ドラッグの確認（本物のマウス操作。6種類）：`npm run build && npx vite preview --port 4183` のあとで `node scripts/e2e-drag.cjs`（Playwright・Chromium は手元のものを使う。場所は環境変数 `PLAYWRIGHT`・`CHROMIUM`、サイトは `BASE`、スクリーンショットの置き場所は `OUT_DIR`。ページの時計は `FAKE_NOW`（既定は次の水曜の日本時間 12:00）に止め、テストの「今日」もアプリと同じく日本時間で決める。日曜に実行しても今週に動かし先の日が残る）
+- 相性の画面の確認（名前・吹き出しの開閉とフォーカス・中を巻く・絞り込みと URL の復元・`?id=`・回帰・300人×60人の速さ）：同じく preview のあとで `node scripts/e2e-compat.cjs`（環境変数は e2e-drag と同じ。`PERF_MS` でセルを押して描き終わるまでの上限（既定 100ms））
 
 ## 規約
 - 言語：TypeScript（strict）、React 19、Vite。コメント・ドキュメント・コミットメッセージは日本語
