@@ -392,3 +392,7 @@ label.week-who {
     display: none;
   }
 }
+/* 空の画面の帯（PRD D176）：時間軸の上で高さを取らない */
+.week-empty-card {
+  padding: 10px 14px;
+}

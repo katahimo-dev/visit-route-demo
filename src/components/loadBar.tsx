@@ -1,6 +1,8 @@
 // 日の混み具合バー（PRD D54。3段は D60・区切りは D82＝lib/barRows・見た目は D85）と種類ごとの件数の積み上げバー（D53）。
 // 月間カレンダーの日のマスで使う。色だけに頼らない：空き 0人は段いっぱい・1人は2/3・2人以上は1/3の高さ（下にそろえる）、
 // 30分ごとの title と、まとめた読み上げの文（loadSummary）を出す
+import type { ReactNode } from 'react';
+import { Term } from './Term';
 import './barMarks.css';
 import './loadBar.css';
 import type { VisitType } from '../contracts/documents';
@@ -216,8 +218,8 @@ export function BarSwatch({ level }: { level: string }) {
 
 /** 凡例（色と高さの意味：0人は段いっぱい・1人は2/3・2人以上は1/3） */
 export function LoadLegend() {
-  const items: [LoadLevel, string][] = [
-    ['none', '空き 0人'],
+  const items: [LoadLevel, ReactNode][] = [
+    ['none', <Term key="t" k="freeZero" testId="term-free-zero" />],
     ['one', '空き 1人'],
     ['many', '空き 2人以上'],
     ['off', '働く人なし'],

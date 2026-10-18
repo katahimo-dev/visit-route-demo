@@ -42,6 +42,7 @@ import { pinnedAddressAfter, toPlace } from '../lib/addressLookup';
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
+import { batchHref } from '../lib/emptyGuide';
 import { type InquiryDayMark, type InquiryRow, inquiryDayLevel, inquiryRows, vacancyLevel } from '../lib/glance';
 import { referrerRecipients, vacancySubject } from '../lib/mail';
 import { buildBccMails } from '../lib/mailto';
@@ -86,6 +87,9 @@ const VACANCY_LEGEND: [string, string][] = [
   ['many', '4人以上'],
   ['unknown', '案なし'],
 ];
+
+/** 案の無い日の注意に並べる日付の数（それより多ければ「ほか N日」） */
+const NOPLAN_SHOWN = 6;
 
 const DAY_MARK: Record<InquiryDayMark, string> = { ok: '○', ng: '×', unknown: '？' };
 const DAY_TEXT: Record<InquiryDayMark, string> = {
@@ -565,11 +569,18 @@ export default function VacancyPage() {
           {vType && ` 種類「${vType.name}」の担当に必要な条件を満たす人だけを数えます。`}
         </p>
         <LevelLegend items={VACANCY_LEGEND} />
+        {/* 案の無い日の注意はここ1か所（PRD D176。案内文・日付ごとの欄には繰り返さない） */}
         {noPlan.length > 0 && (
-          <p className="vacancy-noplan" data-testid="vacancy-noplan">
-            案の無い日（{noPlan.length}日）は数えていません。
-            <Link to={`/month?ym=${ymOf(noPlan[0]!)}`}>月間カレンダーで案を作ってください</Link>
-          </p>
+          <div className="vacancy-noplan" data-testid="vacancy-noplan">
+            <p>
+              案の無い日（{noPlan.length}日：{noPlan.slice(0, NOPLAN_SHOWN).map(mdText).join('・')}
+              {noPlan.length > NOPLAN_SHOWN ? ` ほか${noPlan.length - NOPLAN_SHOWN}日` : ''}
+              ）は数えていません（表は「？」、案内文にも載せません）。
+            </p>
+            <Link className="btn btn-small" to={batchHref(ymOf(noPlan[0]!))} data-testid="vacancy-noplan-make">
+              {Number(noPlan[0]!.slice(5, 7))}月の案を作る
+            </Link>
+          </div>
         )}
         {result && result.times.length === 0 && <p className="sub">所要が長すぎて、入る時刻がありません</p>}
         {result && result.times.length > 0 && (
@@ -761,9 +772,8 @@ export default function VacancyPage() {
               {notice.text}
             </output>
             {notice.noPlan.length > 0 && (
-              <p className="vacancy-noplan" data-testid="notice-noplan">
-                案の無い日（{notice.noPlan.length}日：{notice.noPlan.map(mdText).join('・')}）は載せていません。
-                <Link to={`/month?ym=${ymOf(notice.noPlan[0]!)}`}>月間カレンダーで案を作ってください</Link>
+              <p className="sub" data-testid="notice-noplan">
+                案の無い日（{notice.noPlan.length}日）は載せていません（上の表の注意）。
               </p>
             )}
             <div className="row">
@@ -879,15 +889,8 @@ export default function VacancyPage() {
               ))}
             </ul>
           )}
-          {noPlan.filter((d) => weekday(d) === picked.weekday).length > 0 && (
-            <p className="sub">
-              案の無い日：
-              {noPlan
-                .filter((d) => weekday(d) === picked.weekday)
-                .map(dateText)
-                .join('、')}
-              （数えていません）
-            </p>
+          {noPlan.some((d) => weekday(d) === picked.weekday) && (
+            <p className="sub">案の無い日は数えていません（表の上の注意）。</p>
           )}
         </SidePanel>
       )}

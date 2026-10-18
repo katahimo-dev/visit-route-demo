@@ -359,7 +359,7 @@ export function hundredBreakdown(sc: PlanScore, scale: ScoreScale, problem: Prob
   const k = 1 / scale.visits;
   const parts: HundredPart[] = [
     { key: 'travel', label: '移動', points: (sc.travelMinutes - scale.lowerTravel) * k },
-    { key: 'wait', label: '待ち', points: sc.waitMinutes * problem.waitPerMinute * k },
+    { key: 'wait', label: '空き時間（待ち）', points: sc.waitMinutes * problem.waitPerMinute * k },
     { key: 'assign', label: '担当の条件', points: (sc.assignPoints - scale.lowerAssign) * k },
     { key: 'balance', label: '負担の均等', points: sc.balancePoints * k },
     { key: 'dropped', label: '入らない訪問', points: (sc.dropped - scale.lowerDropped) * DROP_POINTS * k },

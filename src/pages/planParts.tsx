@@ -13,6 +13,7 @@ import {
   RefreshCw,
   ShieldAlert,
   SlidersHorizontal,
+  TrendingDown,
 } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
@@ -25,6 +26,7 @@ import { minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel, weightLocked } from '../lib/common';
 import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
+import { type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
 import { ALLOWED_STAFF_RULE_ID, VISIT_TYPE_RULE_ID } from '../matching';
 import { presetOf } from '../seed';
 import { useDemoData } from '../store';
@@ -45,12 +47,26 @@ export function breakdownText(parts: HundredPart[], n = 2): string {
     .join('・');
 }
 
+/**
+ * 点を下げているいちばん大きい理由の短い文（PRD D173。lib/scoreReason）。点数の横に小さく出す。
+ * 読み上げは「点を下げているいちばんの理由：…」
+ */
+export function ScoreReasonText({ reason, testId }: { reason: ScoreReason; testId?: string }) {
+  return (
+    <span className="score-reason" title={scoreReasonLabel(reason)} data-testid={testId} data-key={reason.key}>
+      <TrendingDown size={13} aria-hidden="true" />
+      <span className="sr-only">点を下げているいちばんの理由：</span>
+      {reason.text}
+    </span>
+  );
+}
+
 /** 点数の説明の文（ADR-0007 案A） */
 export const SCORE_TEXT = '理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点';
 
 /** 点数の物差しの説明の文（ADR-0010）。name は点数の基準のプリセットの名前 */
 export const rulerText = (name: string) =>
-  `点数はいつも点数の基準のプリセット「${name}」の重みで付けます。プリセットを替えても点数の物差しは変わりません`;
+  `点数はいつも点数の基準のプリセット「${name}」の重みで付けます。プリセットを替えても点数の付け方は変わりません`;
 
 /** 必須を守っていない案（手作業案・手直しで必須の条件に合わない担当にした案）の点の印の説明（ADR-0007） */
 export const HARD_NOTE = '必須を守っていない案の点は比べられません（参考の点です）';
@@ -86,7 +102,7 @@ export function HundredHint({
   return (
     <Hint label="点数の決め方">
       {SCORE_TEXT}（高いほど良い。1件あたり10分余計なら90点）。
-      理想は、どの訪問もいちばん条件の合う担当にし、移動はどの訪問にもいちばん近い場所から来る（出る）とし、待ちを0にした値です。
+      理想は、どの訪問もいちばん条件の合う担当にし、移動はどの訪問にもいちばん近い場所から来る（出る）とし、空き時間（待ち）を0にした値です。
       {rulerText(rulerName)}（条件の画面で基準を選べます）。
       {shown.length > 0 && (
         <>
@@ -212,7 +228,7 @@ export function CompareTable({
         <tbody>
           {scale && row(Gauge, '合計点', toHundred(manual.total, scale), toHundred(ai.total, scale), '点', 0, true)}
           {row(Car, '移動時間', manual.travelMinutes, ai.travelMinutes, '分')}
-          {row(Hourglass, '待ち時間', manual.waitMinutes, ai.waitMinutes, '分')}
+          {row(Hourglass, '空き時間（待ち）', manual.waitMinutes, ai.waitMinutes, '分')}
           {row(MapPin, '移動距離', manual.meters / 1000, ai.meters / 1000, 'km', 1)}
           {row(CircleOff, '入らなかった訪問', manual.dropped, ai.dropped, '件')}
           {row(ShieldAlert, '必須の違反', manual.hardViolations.length, ai.hardViolations.length, '件')}

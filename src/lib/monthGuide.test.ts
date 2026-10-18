@@ -1,0 +1,75 @@
+import { describe, expect, it } from 'vitest';
+import { type CellGuideInput, cellGuide } from './monthGuide';
+
+const base: CellGuideInput = {
+  focus: 'all',
+  count: 0,
+  stateText: null,
+  care: false,
+  types: false,
+  resting: 0,
+  requested: 0,
+  absent: false,
+  starts: false,
+  ends: false,
+  leaves: false,
+  lastDays: false,
+  loadBar: null,
+  unassigned: false,
+  hard: false,
+  absentLeft: false,
+  stale: false,
+  overSpan: false,
+  staffTerm: 'スタッフ',
+  clientTerm: '利用者さん',
+};
+
+describe('cellGuide', () => {
+  it('訪問の無い日：背景だけ', () => {
+    expect(cellGuide(base)).toEqual(['白い背景＝訪問の無い日']);
+  });
+  it('出ている印だけを、呼び方を入れて書く（休 N・希望休・棒）', () => {
+    const lines = cellGuide({
+      ...base,
+      count: 12,
+      stateText: '案あり',
+      types: true,
+      resting: 2,
+      requested: 1,
+      loadBar: 'load',
+    });
+    expect(lines[0]).toBe('背景の色＝日の状態（案あり）');
+    expect(lines).toContain('右上の「N件」＝この日の訪問の件数');
+    expect(lines).toContain('「休 N」＝休むスタッフの人数（「（希 N）」はそのうち希望休の人数）');
+    expect(lines.some((l) => l.startsWith('下の3段の棒＝30分ごとの空きの人数') && l.includes('8〜12時'))).toBe(true);
+    expect(lines.some((l) => l.includes('欠勤'))).toBe(false);
+  });
+  it('希望休が無ければ希の説明は書かない。案の無い日は棒が無い理由', () => {
+    const lines = cellGuide({ ...base, count: 3, stateText: '案なし', care: true, resting: 1, loadBar: 'noPlan' });
+    expect(lines).toContain('「休 N」＝休むスタッフの人数');
+    expect(lines).toContain('棒が無い＝案が無いので空きを数えていない');
+    expect(lines).toContain('赤い点・赤い枠＝要確認（案が無い・入らない訪問・必須の違反）');
+  });
+  it('手当ての印（入らない・違反・休みの人に・条件が変わった・拘束超）', () => {
+    const lines = cellGuide({
+      ...base,
+      count: 3,
+      stateText: '案あり',
+      unassigned: true,
+      hard: true,
+      absentLeft: true,
+      stale: true,
+      overSpan: true,
+    });
+    expect(lines.filter((l) => /^「(入らない|違反|休みの人に|条件が変わった|拘束超)/.test(l))).toHaveLength(5);
+  });
+  it('〈スタッフ〉・〈利用者さん〉の表示：全体の印（件数・休 N）は書かず、その表示の棒・印', () => {
+    const staff = cellGuide({ ...base, focus: 'staff', count: 3, stateText: '案あり', resting: 2 });
+    expect(staff.some((l) => l.startsWith('棒＝この人の時間帯ごとの状態'))).toBe(true);
+    expect(staff.some((l) => l.startsWith('「休 N」'))).toBe(false);
+    const client = cellGuide({ ...base, focus: 'client', count: 3, stateText: '案あり', substitute: true });
+    expect(client).toContain('時刻と名前＝この利用者さんの訪問の時刻と担当');
+    expect(client).toContain('「代」＝いつもの担当でない');
+    expect(client.some((l) => l.startsWith('「変」'))).toBe(false);
+  });
+});

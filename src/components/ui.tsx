@@ -98,7 +98,8 @@ export function Stat({
   note,
 }: {
   icon: LucideIcon;
-  label: string;
+  /** 見出し（用語の説明の部品 Term を入れてもよい。PRD D175） */
+  label: ReactNode;
   value: ReactNode;
   unit?: string;
   tone?: 'plain' | 'ok' | 'warn' | 'danger' | 'primary';

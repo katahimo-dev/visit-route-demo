@@ -616,3 +616,14 @@ fieldset.weekday-toggles {
   left: 0;
   z-index: 3;
 }
+/* 詳細設定（乱数の種。PRD D174）：ふだんは畳む */
+.rules-advanced-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.rules-advanced p {
+  margin: 0;
+}

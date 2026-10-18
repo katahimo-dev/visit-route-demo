@@ -16,6 +16,7 @@ import { ClientFilter } from '../components/ClientFilter';
 import { ClientPicker } from '../components/ClientPicker';
 import { useConfirm } from '../components/ConfirmDialog';
 import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
+import { EmptyNext } from '../components/EmptyNext';
 import { LoadRowsSample } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
@@ -42,6 +43,7 @@ import {
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { deferredDragStart } from '../lib/dragStart';
+import { periodEmptyGuide } from '../lib/emptyGuide';
 import { isDate } from '../lib/isDate';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
@@ -553,6 +555,14 @@ export default function WeekPage() {
     if (by === 'client') return clientSet.has(visitById.get(b.visitId)?.clientId ?? '');
     return !staffSet || (b.staffId !== null && staffSet.has(b.staffId));
   };
+  /** 空の画面の文とボタン（PRD D176。案のある日が1日でもあれば null） */
+  const emptyGuide = periodEmptyGuide({
+    period: 'この週',
+    dates,
+    today,
+    visitDays: days.filter((d) => d.bands.some((b) => !b.leave)).map((d) => d.date),
+    planDays: days.filter((d) => d.source !== null).map((d) => d.date),
+  });
   const nothingPicked = by === 'client' ? timelineClients.length === 0 : staffSel?.length === 0;
 
   return (
@@ -835,6 +845,20 @@ export default function WeekPage() {
             </button>
           </div>
         </output>
+      )}
+
+      {/* 空の画面（PRD D176）：この週に案が1日も無いとき、なぜ空かと次の一手（主ボタンは進み具合の帯に任せる） */}
+      {emptyGuide && (
+        <div className="card week-empty-card">
+          <EmptyNext
+            guide={emptyGuide}
+            icon={CalendarClock}
+            onOpenDay={openDay}
+            primary={false}
+            compact
+            testId="week-empty"
+          />
+        </div>
       )}
 
       {tab === 'timeline' ? (

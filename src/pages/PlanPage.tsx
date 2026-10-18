@@ -51,6 +51,7 @@ import { ScheduleBand } from '../components/progressBand';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
+import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
@@ -103,6 +104,7 @@ import {
 import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
+import { scoreReason } from '../lib/scoreReason';
 import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
@@ -139,6 +141,7 @@ import {
   RefMark,
   rulerText,
   SCORE_TEXT,
+  ScoreReasonText,
   WeightPanel,
 } from './planParts';
 import {
@@ -220,6 +223,7 @@ export default function PlanPage() {
     scoreProblem,
     scoreScale,
     scoreRulerName,
+    scoreRules,
     slotsOf,
   } = m;
   const terms = data.org.terms;
@@ -2092,6 +2096,11 @@ export default function PlanPage() {
   // ---- 日の画面の整理（PRD D63）：1行のまとめ・案を変えるメニュー・右の欄・表示の切り替え・地図の横置き ----
   const hardCount = cs?.hardViolations.length ?? 0;
   const hundredNow = cs && scoreScale ? toHundred(cs.total, scoreScale) : null;
+  /** 点を下げているいちばん大きい理由（PRD D173。減点の内訳と条件ごとの達成から） */
+  const reasonNow =
+    cs && scoreScale && scoreProblem
+      ? scoreReason(hundredBreakdown(cs, scoreScale, scoreProblem), cs, curAch, scoreRules)
+      : null;
   /** 訪問の一覧（表示の「一覧」。休みのため無しの訪問も薄く出す。ADR-0013） */
   const visitList = (
     <VisitList
@@ -2540,15 +2549,15 @@ export default function PlanPage() {
             訪問 <strong>{visits.length}</strong>件
           </span>
           <span className={cs.dropped > 0 ? 'warn-text' : ''}>
-            入らない <strong>{cs.dropped}</strong>
+            <Term k="dropped" /> <strong>{cs.dropped}</strong>
           </span>
           <span className={hardCount > 0 ? 'error' : ''}>
-            必須の違反 <strong>{hardCount}</strong>
+            <Term k="hard" /> <strong>{hardCount}</strong>
           </span>
           <span>
-            移動 <strong>{r0(cs.travelMinutes)}</strong>分
+            <Term k="travel" /> <strong>{r0(cs.travelMinutes)}</strong>分
           </span>
-          <span className="plan-oneline-score" title={`点数の物差し：${scoreRulerName}`}>
+          <span className="plan-oneline-score" title={`点数の基準：${scoreRulerName}`}>
             <strong data-testid="plan-total">{hundredNow ?? '—'}</strong>点
             {hardCount > 0 && (
               <span className="chip chip-warn" title={HARD_NOTE}>
@@ -2556,6 +2565,8 @@ export default function PlanPage() {
               </span>
             )}
           </span>
+          {/* 点を下げているいちばん大きい理由（PRD D173） */}
+          {reasonNow && <ScoreReasonText reason={reasonNow} testId="plan-reason" />}
           <button
             type="button"
             className="link-btn plan-oneline-more"
@@ -2662,7 +2673,7 @@ export default function PlanPage() {
           </WithIcon>
           <Hint>
             点数はいつも点数の基準のプリセット「{scoreRulerName}
-            」の物差しで付けます（条件を変えても点の物差しは変わりません）。「案を変える」の「AI
+            」の重みで付けます（条件を変えても点の付け方は変わりません）。「案を変える」の「AI
             にもう一度作らせる」か「固定した訪問は残して、ほかを作り直す」で作り直せます。
           </Hint>
         </div>
@@ -3037,8 +3048,7 @@ export default function PlanPage() {
                   </WithIcon>
                   <Hint>
                     いまの条件とは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
-                    」の物差しで付けます。いまの条件で作るには「案を変える」の「AI
-                    にもう一度作らせる」を押してください。
+                    」の重みで付けます。いまの条件で作るには「案を変える」の「AI にもう一度作らせる」を押してください。
                   </Hint>
                 </div>
               )}
@@ -3075,7 +3085,7 @@ export default function PlanPage() {
               aside={
                 <span className="row" style={{ gap: 6 }}>
                   <span className="sub" data-testid="preset-score-ruler">
-                    物差し：{scoreRulerName}
+                    <Term k="scoreBase" />：{scoreRulerName}
                   </span>
                   <Hint>
                     プリセットごとに、この日の記録のうち、同じ条件・いまのデータで作った案（無ければ重みが一致する最新の案）です。カードを押すと、その日の条件をそのプリセットの重みにして、その案を今の案にします（同じ条件・いまのデータで作った案なら計算せずに切り替えます。記録のあとにデータが変わった案は「データが変わったので押すと作り直します」と出し、押すと計算して作ります）。
@@ -3269,7 +3279,7 @@ function PlanSummary({
         />
         <Stat
           icon={Hourglass}
-          label="待ち"
+          label={<Term k="wait" />}
           value={r0(current.waitMinutes)}
           unit="分"
           note={note(current.waitMinutes, generated?.waitMinutes, '分')}
@@ -3298,15 +3308,15 @@ function PlanSummary({
       <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
         {scale && (
           <span className="sub" data-testid="score-ruler">
-            物差し：{rulerName}
+            <Term k="scoreBase" />：{rulerName}
           </span>
         )}
         {scale && <HundredHint cost={current.total} parts={parts} scale={scale} rulerName={rulerName} />}
         {scale && <RefMark hard={hard} />}
         {generated && (
           <Hint label="AIが出したまま">
-            合計 {genHundred ?? '—'}点・移動 {r0(generated.travelMinutes)}分・待ち {r0(generated.waitMinutes)}分
-            {changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
+            合計 {genHundred ?? '—'}点・移動 {r0(generated.travelMinutes)}分・空き時間（待ち）{' '}
+            {r0(generated.waitMinutes)}分{changed > 0 ? `。担当を変えた訪問 ${changed}件` : '（手直しなし）'}
           </Hint>
         )}
       </div>

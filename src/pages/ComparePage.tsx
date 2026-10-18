@@ -20,25 +20,30 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
+import { EmptyNext } from '../components/EmptyNext';
 import { MapDock } from '../components/MapDock';
 import { RouteMap } from '../components/RouteMap';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
+import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
 import type { AiPlan, AiRun } from '../contracts/data';
 import type { Reason, SolveResult, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
-import { diff, score, toHundred } from '../evaluate';
+import { jstDate } from '../domain/time';
+import { achievements, diff, hundredBreakdown, score, toHundred } from '../evaluate';
 import { attempt, dateText, deltaText, formError, own, pointsText, r0 } from '../lib/common';
+import { compareEmptyGuide } from '../lib/emptyGuide';
 import { anotherPlanOptions } from '../lib/planMenu';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, findRun, planOfRun, problemKey } from '../lib/runs';
+import { type ScoreReason, scoreReason } from '../lib/scoreReason';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { compile, scheduleRoute } from '../matching';
 import { applyPreset } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
-import { CompareTable, explainMap, ReasonBox, RefMark, rulerText, SCORE_TEXT } from './planParts';
+import { CompareTable, explainMap, ReasonBox, RefMark, rulerText, SCORE_TEXT, ScoreReasonText } from './planParts';
 
 /**
  * 比較（D19・D22・ADR-0005）：その日のAI案の記録（作るたびに条件と結果を残したもの）と「今の案」から、
@@ -62,7 +67,7 @@ function weightText(r: Rule | undefined): string {
 }
 
 export default function ComparePage() {
-  const { date } = useDay();
+  const { date, setDate } = useDay();
   const m = useDayModel(date);
   const {
     data,
@@ -77,6 +82,7 @@ export default function ComparePage() {
     scoreProblem,
     scoreScale: scale,
     scoreRulerName,
+    scoreRules,
   } = m;
   const terms = data.org.terms;
   const toast = useToast();
@@ -176,6 +182,18 @@ export default function ComparePage() {
     () => new Map(choices.map((c) => [c.id, scoreProblem ? attempt(() => score(scoreProblem, c.routes)) : null])),
     [choices, scoreProblem],
   );
+  /** 案ごとの点を下げているいちばん大きい理由（PRD D173。日の画面の今の案の帯と同じ決まり） */
+  const reasons = useMemo(() => {
+    const out = new Map<string, ScoreReason | null>();
+    if (!scoreProblem || !scale) return out;
+    for (const c of choices) {
+      const sc = scores.get(c.id)?.value;
+      if (!sc) continue;
+      const ach = attempt(() => achievements(scoreProblem, c.routes)).value ?? [];
+      out.set(c.id, scoreReason(hundredBreakdown(sc, scale, scoreProblem), sc, ach, scoreRules));
+    }
+    return out;
+  }, [choices, scores, scoreProblem, scale, scoreRules]);
   const aScore = A ? (scores.get(A.id) ?? null) : null;
   const bScore = B ? (scores.get(B.id) ?? null) : null;
   const aExplain = useMemo(() => explainMap(A ? problem : null, aRoutes), [problem, A, aRoutes]);
@@ -577,7 +595,7 @@ export default function ComparePage() {
           aside={
             <span className="row" style={{ gap: 6 }}>
               <span className="sub" data-testid="score-ruler">
-                物差し：{scoreRulerName}
+                <Term k="scoreBase" />：{scoreRulerName}
               </span>
               <Hint>
                 予定の画面でAI案を作る・組み直すたびに、条件と結果が残ります。{rulerText(scoreRulerName)}
@@ -590,10 +608,20 @@ export default function ComparePage() {
           この日の記録（{runs.length}件）
         </SectionTitle>
         {choices.length === 0 ? (
-          <Empty icon={History}>
-            この日の記録はまだありません。<NavLink to="/plan">予定</NavLink>
-            の画面を開くと、標準の条件で自動で作ります。
-          </Empty>
+          // 空の画面（PRD D176）：なぜ空かと次の一手（日の画面で作る・月のまとめて作る）
+          <EmptyNext
+            guide={compareEmptyGuide({
+              date,
+              today: jstDate(Date.now()),
+              visits: problem?.visits.length ?? visits.length,
+            })}
+            icon={History}
+            onOpenDay={(d) => {
+              setDate(d);
+              navigate('/plan');
+            }}
+            testId="compare-empty"
+          />
         ) : (
           <div className="table-scroll">
             <table className="compare-table runs-table">
@@ -670,6 +698,11 @@ export default function ComparePage() {
                       <td className="num" title={sc ? `費用 ${r0(sc.total)}（内部の値）` : undefined}>
                         {sc && scale ? `${toHundred(sc.total, scale)}点` : '—'}
                         {sc && scale && <RefMark hard={sc.hardViolations.length} />}
+                        {reasons.get(c.id) && (
+                          <div>
+                            <ScoreReasonText reason={reasons.get(c.id)!} testId="compare-reason" />
+                          </div>
+                        )}
                       </td>
                       <td className="num">{sc ? `${r0(sc.travelMinutes)}分` : '—'}</td>
                       <td className="num">{sc ? `${sc.dropped}件` : '—'}</td>
@@ -804,7 +837,7 @@ export default function ComparePage() {
                 <WithIcon icon={TriangleAlert} size={14}>
                   いまの条件と違う条件で作った案があります
                 </WithIcon>
-                <Hint>下の点数は A・B とも点数の基準のプリセット「{scoreRulerName}」の物差しで付けています。</Hint>
+                <Hint>下の点数は A・B とも点数の基準のプリセット「{scoreRulerName}」の重みで付けています。</Hint>
               </div>
             )}
           </div>

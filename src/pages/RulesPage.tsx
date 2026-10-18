@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { WeightSlider } from '../components/parts';
+import { Term } from '../components/Term';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
@@ -96,7 +97,7 @@ export default function RulesPage() {
           <strong>重み1＝1件あたり移動10分ぶん</strong>
           （重み5＝50分ぶん）。重み0の条件は使いません。必須にした条件は、点ではなく「守らなければ担当にしない」になります。
           時間の約束と稼働時間帯はいつも必須です。 画面の合計点は、この合計を高いほど良い点数（{SCORE_TEXT}
-          ）に直して出します。点数はいつも、下のプリセットで選んだ「点数の基準」の重みで付けます（ここで重みを変えても点数の物差しは変わりません）。
+          ）に直して出します。点数はいつも、下のプリセットで選んだ「点数の基準」の重みで付けます（ここで重みを変えても点数の付け方は変わりません）。
         </Hint>
         <div className="table-scroll">
           <table className="rules-table">
@@ -191,11 +192,17 @@ export default function RulesPage() {
 
       <PresetSection />
 
-      <div className="card seed-card">
-        <SectionTitle icon={Dices}>乱数の種</SectionTitle>
-        <Hint label="説明">
-          AI案は同じデータ・同じ種からは同じ案になります。種を変えると、別の探し方で案を作ります。
-        </Hint>
+      {/* 乱数の種はふだん使わないので「詳細設定」に畳む（PRD D174。開いたかどうかは保存しない） */}
+      <details className="card seed-card rules-advanced" data-testid="rules-advanced">
+        <summary className="rules-advanced-summary">
+          <Dices size={16} aria-hidden="true" />
+          詳細設定
+          <span className="sub">（乱数の種）</span>
+        </summary>
+        <p className="sub">
+          <Term k="seed" testId="term-seed" />
+          ：AI案は同じデータ・同じ種からは同じ案になります。種を変えると、別の探し方で案を作ります。ふだんは変えなくてかまいません。
+        </p>
         <div className="row">
           <input
             className="seed-input"
@@ -213,7 +220,7 @@ export default function RulesPage() {
           />
           {!seedOk && <span className="error">整数で入れてください</span>}
         </div>
-      </div>
+      </details>
     </div>
   );
 }
@@ -302,7 +309,7 @@ function PresetSection() {
         <legend>
           点数の基準
           <Hint ariaLabel="点数の基準の説明">
-            画面の点数（100点満点）は、いつもここで選んだプリセットの重み・必須で付けます。予定の画面でプリセットを押して条件を変えても、点数の物差しは変わりません（プリセットは「どう組むか」だけを変えます）。基準のプリセットの重みを変えると点数も変わります。基準のプリセットを消すと、先頭のプリセットが基準になります。
+            画面の点数（100点満点）は、いつもここで選んだプリセットの重み・必須で付けます。予定の画面でプリセットを押して条件を変えても、点数の付け方は変わりません（プリセットは「どう組むか」だけを変えます）。基準のプリセットの重みを変えると点数も変わります。基準のプリセットを消すと、先頭のプリセットが基準になります。
           </Hint>
         </legend>
         <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
