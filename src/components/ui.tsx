@@ -168,7 +168,7 @@ export function Empty({ icon: Icon, children }: { icon: LucideIcon; children: Re
 }
 
 /** 欄の中で Tab で移れるもの */
-const FOCUSABLE =
+export const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
 /**

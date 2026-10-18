@@ -15,6 +15,8 @@
   --primary-soft: #fde7e1;
   /* 上の帯（.app-header。sticky）の高さ。この下に貼り付く・スクロールで止める要素が使う */
   --header-h: 72px;
+  /* スマホの下のタブ（.bottom-tabs）の高さ。広い画面では 0。浮いている部品・本文の下の余白がこれを避ける（PRD D134） */
+  --bottom-tabs-h: 0px;
   font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -199,7 +201,12 @@ label {
   position: fixed;
   left: 50%;
   /* 左下の欠勤の振り直しの帯・右下の地図（--*-top は画面の下端から上端まで）より上に出す */
-  bottom: max(96px, calc(var(--reassign-dock-top, 0px) + 12px), calc(var(--map-dock-top, 0px) + 12px));
+  bottom: max(
+    96px,
+    calc(var(--bottom-tabs-h) + 12px),
+    calc(var(--reassign-dock-top, 0px) + 12px),
+    calc(var(--map-dock-top, 0px) + 12px)
+  );
   max-width: calc(100vw - 24px);
   transform: translateX(-50%);
   background: var(--ink);
@@ -854,43 +861,153 @@ tbody tr:hover td {
   min-width: 0;
   max-width: 1440px;
 }
+/* スマホの上の帯の部品（ロゴと画面の名前・「メニュー」ボタン）と下のタブは、広い画面では出さない（PRD D132・D134） */
+.m-head-title,
+.m-menu-btn,
+.bottom-tabs {
+  display: none;
+}
 @media (max-width: 860px) {
+  :root {
+    --bottom-tabs-h: calc(58px + env(safe-area-inset-bottom, 0px));
+  }
   .app-shell {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* 左のメニューは「メニュー」ボタンの引き出しへ（PRD D133） */
   .side-nav {
-    position: static;
-    height: auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-    overflow-x: auto;
-  }
-  .brand-text,
-  .nav-group-title {
     display: none;
   }
-  .nav-groups,
-  .nav-group {
-    flex-direction: row;
-    gap: 2px;
+  /* 上の帯：左にロゴと今の画面の名前、右に「メニュー」と日付の切り替え。狭ければ日付の切り替えを2段目へ */
+  .app-header {
+    min-height: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 8px 12px;
   }
-  .nav-groups {
-    gap: 10px;
+  .m-head-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 150px;
+    min-width: 0;
   }
-  .nav-link {
+  .m-head-title .brand-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+  .m-screen-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 8px;
+    font-size: 1rem;
   }
-  /* 横に続きがあるのがわかるよう、右端をぼかす */
-  .side-nav {
-    mask-image: linear-gradient(to right, #000 85%, transparent);
+  .m-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
   }
+  .app-header .date-switch {
+    margin-left: auto;
+  }
+  /* 下のタブの分だけ本文の下を空ける */
   .app-main {
-    padding: 16px 14px 40px;
+    padding: 16px 14px calc(40px + var(--bottom-tabs-h));
+  }
+  /* 下のタブ：月・週・日・空き状況（iPhone のホームバーは safe-area で避ける） */
+  .bottom-tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 950;
+    height: var(--bottom-tabs-h);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -4px 16px rgba(40, 25, 15, 0.06);
+  }
+  .bottom-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    text-decoration: none;
+    color: var(--sub);
+    font-size: 0.78rem;
+  }
+  .bottom-tab.active {
+    color: var(--primary-dark);
+    font-weight: 700;
+  }
+  .bottom-tab.active svg {
+    color: var(--primary);
+  }
+}
+/* スマホのメニューの引き出し（左から。PRD D133）。地図（Leaflet の重なり 1000 未満）・下のタブより前、トーストより後ろ */
+.nav-drawer-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+}
+.nav-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(40, 25, 15, 0.35);
+  animation: drawer-fade 0.15s ease-out;
+}
+.nav-drawer {
+  position: relative;
+  width: min(300px, 86vw);
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: var(--card);
+  box-shadow: 12px 0 36px rgba(40, 25, 15, 0.22);
+  animation: nav-drawer-in 0.2s ease-out;
+}
+.nav-drawer:focus {
+  outline: none;
+}
+.nav-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nav-drawer-head .brand {
+  flex: 1;
+  min-width: 0;
+}
+@keyframes nav-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+/* 印刷では下のタブ・引き出しを出さない。スマホの幅（用紙の幅が860px以下のときも）では上の帯も出さない（PRD D135） */
+@media print {
+  :root {
+    --bottom-tabs-h: 0px;
+  }
+  .bottom-tabs,
+  .nav-drawer-wrap {
+    display: none !important;
+  }
+}
+@media print and (max-width: 860px) {
+  .app-header {
+    display: none !important;
   }
 }
 .save-error {
@@ -1420,7 +1537,8 @@ a.icon-btn:hover {
 .map-dock {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  /* スマホでは下のタブ（--bottom-tabs-h）の上に出す */
+  bottom: calc(20px + var(--bottom-tabs-h));
   z-index: 900;
   width: min(380px, calc(100vw - 24px));
   display: flex;
@@ -1453,7 +1571,7 @@ a.icon-btn:hover {
 .map-dock-fab {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + var(--bottom-tabs-h));
   z-index: 900;
   display: inline-flex;
   align-items: center;
@@ -1471,7 +1589,7 @@ a.icon-btn:hover {
 @media (max-width: 600px) {
   .map-dock {
     right: 12px;
-    bottom: 12px;
+    bottom: calc(12px + var(--bottom-tabs-h));
   }
   .map-dock .map {
     height: 200px !important;
