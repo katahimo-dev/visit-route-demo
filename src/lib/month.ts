@@ -4,13 +4,14 @@ import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import type { Problem, SolveResult, StopTiming } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
-import type { Rule } from '../contracts/rules';
+import { HARDABLE, type Preset, type Rule } from '../contracts/rules';
 import { afterLastDay, availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
 import { type CompileInput, compile, scheduleRoute } from '../matching';
 import { applyPatterns } from '../patterns';
+import { applyPreset } from '../seed/presets';
 import { attempt, own } from './common';
 import { isRequestedOff } from './requestedOff';
 import { addRun, findRun, problemKey } from './runs';
@@ -131,6 +132,46 @@ export function planStale(
 }
 
 /**
+ * 条件の組のキー（PRD D161）：条件の ID・型・重み・必須（必須にできない型は必須にしない）。名前は計算に効かないので入れない
+ */
+export function ruleSetKey(rules: readonly Rule[]): string {
+  return JSON.stringify(rules.map((r) => [r.id, r.type, r.weight, HARDABLE.has(r.type) && r.hard]));
+}
+
+/** いまある条件の組のキー（PRD D161） */
+export type RuleKeys = {
+  /** いまの条件に各プリセットを当てたもの */
+  presets: ReadonlySet<string>;
+  /** いまの条件（条件の重みの画面の重み）そのもの */
+  current: string;
+};
+
+/** いまある条件の組のキー（PRD D161）：いまの条件に各プリセットを当てたものと、いまの条件そのもの */
+export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): RuleKeys {
+  return {
+    presets: new Set(presets.map((p) => ruleSetKey(applyPreset([...rules], p)))),
+    current: ruleSetKey(rules),
+  };
+}
+
+/**
+ * （D43・D161）今の案の元の記録を作った条件（重み・必須）が、いまはもう無いか：
+ * - プリセットの重みで作った案（記録の presetId がある＝作ったときにどれかのプリセットと重みが一致した。自動作成・月のまとめて作る・
+ *   プリセットのカード）は、いまの条件に各プリセットを当てたもののどれとも違えば変わった。いまの条件が古い重みのままでも、
+ *   プリセットの重みを変えれば変わったになる（初期状態で標準の重みを変えたとき）
+ * - いまの条件で作った案（presetId が null＝どのプリセットとも一致しなかった）は、それに加えていまの条件とも違えば変わった
+ * 作り直しは点数の基準のプリセットで作るので、作り直した案は必ず当てはまる（true が残り続けない）。点数の基準を切り替えただけでは
+ * 変わらない（前の基準のプリセットもまだある）。名前は計算に効かないので見ない。記録が無い・欠勤の振り直しの記録は判定しない（false）
+ */
+export function rulesStale(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string, keys: RuleKeys): boolean {
+  const run = planRunOf(data, date);
+  if (!run || run.reassign) return false;
+  const key = ruleSetKey(run.rules);
+  if (keys.presets.has(key)) return false;
+  return run.presetId !== null || key !== keys.current;
+}
+
+/**
  * 月まとめ作成の対象の日（日付の順）：その月・今日以降・取り消しでない訪問がある・確定した割当（manualPlans）が無い日のうち、
  * mode が 'empty' なら今の案が無い日、'all' なら全部、'stale' なら条件が変わった日（planStale）。
  * staleOf を渡すと条件が変わったかをそれで決める（画面で計算済みのもの）
@@ -234,7 +275,8 @@ export function dayStatus(
     overSpan: view.overSpan ?? [],
     hundred: plan ? (view.hundred ?? null) : null,
     hard,
-    stale: !!plan && !!view.stale,
+    // 計算に入れる訪問が無い日（取り消し・休みだけ）は作り直す対象にならないので数えない（batchTargets と同じ。PR #40 のレビュー）
+    stale: !!plan && visits.length > 0 && !!view.stale,
     needsCare: visits.length > 0 && (state === 'none' || unassigned > 0 || hard > 0 || absentLeft > 0),
   };
 }

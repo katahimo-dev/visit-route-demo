@@ -34,9 +34,11 @@ import {
 } from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { PersonPopoverProvider } from '../components/PersonPopover';
+import { RebuildBand } from '../components/rebuildBand';
 import { addDays, jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import { bottomTabs, isActiveNav, type NavSection, navTitle } from '../lib/nav';
+import { showsRebuildBand } from '../lib/rebuildBand';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientsPage from '../pages/ClientsPage';
 import ComparePage from '../pages/ComparePage';
@@ -284,7 +286,15 @@ function AdminShell() {
           </div>
         )}
         <main className="app-main">
-          <Guarded element={<Outlet />} />
+          <Guarded
+            element={
+              <>
+                {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
+                {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
+                <Outlet />
+              </>
+            }
+          />
         </main>
         {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・日・空き状況。PRD D134・D144。印刷では出さない） */}
         <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">

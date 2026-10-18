@@ -41,6 +41,21 @@ describe('AI案の記録（ADR-0005）', () => {
     expect(d2.aiRuns[DAY]![0]!.id).not.toBe(d1.aiRuns[DAY]![0]!.id);
   });
 
+  it('同じ記録を使い回すときも presetId を今の時点で一致するプリセットに書き直す（PR #40 の再レビュー）', () => {
+    const d0 = createDemoData(DAY);
+    const x = { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 };
+    const d1 = addRun(d0, DAY, x);
+    expect(d1.aiRuns[DAY]![0]!.presetId).toBe('standard');
+    // 標準の重みを変えると、同じ条件はどのプリセットとも一致しない
+    const presets = d1.presets.map((p) =>
+      p.id === 'standard' ? { ...p, weights: { ...p.weights, wait: { weight: 1, hard: false } } } : p,
+    );
+    const d2 = addRun({ ...d1, presets }, DAY, { ...x, createdAt: 2 });
+    expect(d2.aiRuns[DAY]!.length).toBe(1);
+    expect(d2.aiRuns[DAY]![0]!.presetId).toBeNull();
+    expect(d2.aiRuns[DAY]![0]!.id).toBe(d1.aiRuns[DAY]![0]!.id);
+  });
+
   it('同じ条件・種・固定・結果は足さない', () => {
     const d0 = createDemoData(DAY);
     const x = { rules: d0.rules, pins: {}, result: result({ s1: ['a'] }), createdAt: 1 };

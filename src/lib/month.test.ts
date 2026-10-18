@@ -15,6 +15,7 @@ import {
   calendarWeeks,
   clientDay,
   clientMonth,
+  currentRuleKeys,
   type DayStatus,
   dayMarks,
   dayPlanOf,
@@ -25,11 +26,15 @@ import {
   isYm,
   monthDates,
   monthProgress,
+  planRunOf,
   planStale,
+  ruleSetKey,
+  rulesStale,
   staffDay,
   staffMonth,
   ymOf,
 } from './month';
+import { addPresetFromRules, patchPreset, setScorePreset } from './presets';
 import { problemKey } from './runs';
 
 const TODAY = '2026-11-10';
@@ -137,6 +142,124 @@ describe('月まとめ作成の対象（batchTargets）', () => {
     };
     expect(planStale(d, d, a!)).toBe(true);
     expect(batchTargets(d, '2026-11', TODAY, 'stale')).toEqual([a]);
+  });
+});
+
+describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
+  const keysOf = (d: DemoData) => currentRuleKeys(d.rules, d.presets);
+  /** 点数の基準のプリセットで案を作る（月のまとめて作る・作り直しと同じ条件） */
+  const build = (d: DemoData, date: string) => withPlan(d, date);
+  const firstDay = (d: DemoData) => batchTargets(d, '2026-11', TODAY, 'empty')[0]!;
+  const setWeight = (d: DemoData, presetId: string, weight: number): DemoData =>
+    patchPreset(d, presetId, {
+      weights: { ...d.presets.find((p) => p.id === presetId)!.weights, wait: { weight, hard: false } },
+    });
+
+  it('基準のプリセットで作った案：いまの条件の重み・名前を変えても、プリセットが同じなら変わったにしない', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    const d = build(d0, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    const moved = { ...d, rules: d.rules.map((r, i) => (i === 1 ? { ...r, weight: r.weight + 1.5 } : r)) };
+    expect(rulesStale(moved, a, keysOf(moved))).toBe(false);
+    const renamed = { ...d, rules: d.rules.map((r) => ({ ...r, label: `${r.label}（改）` })) };
+    expect(rulesStale(renamed, a, keysOf(renamed))).toBe(false);
+  });
+  it('初期状態（いまの条件が標準と同じ重み）で標準の重みを変える：変わった。基準で作り直すと消える', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    let d = build(d0, a);
+    d = setWeight(d, 'standard', 1);
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    d = build(d, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
+  it('条件を消した：変わった', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    const d = build(d0, a);
+    const removed = { ...d, rules: d.rules.slice(1) };
+    expect(rulesStale(removed, a, keysOf(removed))).toBe(true);
+  });
+  it('点数の基準を切り替えただけでは変わったにしない', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    const d = build(d0, a);
+    const other = d.presets.find((p) => p.id !== d.scorePresetId)!;
+    const switched = setScorePreset(d, other.id);
+    expect(rulesStale(switched, a, keysOf(switched))).toBe(false);
+  });
+  it('自動作成（標準）→ 標準の重みを変える → いまの条件で作り直して同じ案になる：記録を使い回しても presetId が今のものになり消える（PR #40 の再レビュー）', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    let d = build(d0, a);
+    expect(planRunOf(d, a)?.presetId).toBe('standard');
+    d = setWeight(d, 'standard', 1);
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    // いまの条件（古い標準の重み）で解いて同じ結果：addRun は同じ記録を使い回す
+    const run = planRunOf(d, a)!;
+    const before = (d.aiRuns[a] ?? []).length;
+    d = applyDayRun(d, a, {
+      rules: d.rules,
+      result: resultOf(d, a),
+      createdAt: 2,
+      inputKey: run.inputKey!,
+      onlyEmpty: false,
+    });
+    expect((d.aiRuns[a] ?? []).length).toBe(before);
+    expect(planRunOf(d, a)?.presetId).toBeNull();
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
+  it('いまの条件（プリセットに無い重み）で作った案のあとに重みを変えた：変わった。基準で作り直すと消える', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    const custom = d0.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r));
+    const d1 = { ...d0, rules: custom };
+    let d = applyDayRun(d1, a, {
+      rules: custom,
+      result: resultOf(d1, a),
+      createdAt: 1,
+      inputKey: problemKey(compile({ ...d1, rules: custom }, a)),
+      onlyEmpty: false,
+    });
+    expect(planRunOf(d, a)?.presetId).toBeNull();
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    // プリセットを変えても、いまの条件が変わらない限り変わったにしない
+    const edited = setWeight(d, 'standard', 1);
+    expect(rulesStale(edited, a, keysOf(edited))).toBe(false);
+    d = { ...d, rules: d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 1 } : r)) };
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    d = build(d, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
+  it('「プリセットとして保存」→ 基準にする → 作る → 標準を変える → 作り直す：作り直すと必ず消える（PR #40 のレビュー）', () => {
+    let d = novData();
+    d = addPresetFromRules(d, 'マイ');
+    const my = d.presets.at(-1)!.id;
+    d = setScorePreset(d, my);
+    const a = firstDay(d);
+    d = build(d, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    // 標準の重みを変えても、作った重みは「マイ」に残っている
+    d = setWeight(d, 'standard', 1);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    d = build(d, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    // 基準の「マイ」を変えると変わった。作り直すと消える
+    d = setWeight(d, my, 0.5);
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    d = build(d, a);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
+  it('案が無い・記録が無い日は判定しない', () => {
+    const d = novData();
+    const a = firstDay(d);
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
+  it('ruleSetKey：必須にできない型の必須は数えない', () => {
+    const r = { id: 'x', type: 'wait' as const, label: '待ち', weight: 3, hard: false };
+    expect(ruleSetKey([r])).toBe(ruleSetKey([{ ...r, hard: true }]));
+    expect(ruleSetKey([r])).not.toBe(ruleSetKey([{ ...r, weight: 2 }]));
   });
 });
 

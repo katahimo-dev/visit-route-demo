@@ -15,7 +15,7 @@ export function runLabel(rules: Rule[], pinCount: number, presets: readonly Pres
 /**
  * その日の記録に1件足す。同じ条件・種・固定・結果の記録がすでにあれば足さない（同じ入力からは同じ案になる）。
  * そのとき inputKey（計算に使った問題のキー。problemKey）が違えば、その記録の inputKey を今回のものにする
- * （データを変えても同じ案になった。いまのデータで再計算を省けるように）。
+ * （データを変えても同じ案になった。いまのデータで再計算を省けるように）。presetId も今の時点で一致するプリセットに書き直す。
  * 1日 MAX_RUNS_PER_DAY 件まで（古いものから消す）。
  * 欠勤の振り直し（ADR-0011）は reassign（元の案）と label（「欠勤の振り直し（〈名前〉さん）」）を付けて足す
  */
@@ -33,13 +33,18 @@ export function addRun(
   },
 ): DemoData {
   const runs = own(d.aiRuns, date) ?? [];
+  /** 今の時点で重みが一致するプリセット（どれとも一致しなければ null）。記録の presetId は「最後に作ったときに一致したプリセット」 */
+  const presetId = presetOf(x.rules, d.presets)?.id ?? null;
   const found = findRun(d, date, x);
   if (found) {
-    if (x.inputKey === undefined || found.inputKey === x.inputKey) return d;
-    const inputKey = x.inputKey;
+    // 使い回すときも presetId を今の時点のものに書き直す（プリセットの重みを変えたあとにいまの条件で作り直して同じ案になったとき、
+    // 古い presetId のままだと「条件が変わった」（lib/month の rulesStale）が消えない。PR #40 の再レビュー）
+    const inputKey = x.inputKey === undefined ? found.inputKey : x.inputKey;
+    if (found.inputKey === inputKey && found.presetId === presetId) return d;
+    const patched: AiRun = { ...found, presetId, ...(inputKey !== undefined ? { inputKey } : {}) };
     return {
       ...d,
-      aiRuns: { ...d.aiRuns, [date]: runs.map((r) => (r === found ? { ...r, inputKey } : r)) },
+      aiRuns: { ...d.aiRuns, [date]: runs.map((r) => (r === found ? patched : r)) },
     };
   }
   const no = runs.reduce((m, r) => Math.max(m, r.no), 0) + 1;
@@ -50,7 +55,7 @@ export function addRun(
     date,
     createdAt: x.createdAt,
     label: x.label ?? runLabel(x.rules, Object.keys(x.pins).length, d.presets),
-    presetId: presetOf(x.rules, d.presets)?.id ?? null,
+    presetId,
     seed: x.result.seed,
     iterations: x.result.iterations,
     rules: x.rules,
