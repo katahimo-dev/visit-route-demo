@@ -83,13 +83,14 @@ import {
   weekDates,
   weekDay,
 } from '../lib/week';
+import { isTimeline, WEEK_VIEWS, type WeekView, weekViewLabel, weekViewOf, weekViewParams } from '../lib/weekView';
 import { WeekMailPanel } from './mailPanels';
 import './week.css';
 
 /**
  * 週間（ADR-0012 追記の段階2。PRD D49〜D51・D56・D57。design.md §4 pages「週間（段階2）」「月間・週間の改定（2026-10-17）」）。
  * 時間軸（月〜日 × 07:00〜20:00。訪問の帯を種類の色で。ドラッグ・キーボードで日時を動かす）と〈スタッフ〉×曜日・〈利用者さん〉×曜日の表。
- * 時間軸は〈スタッフ〉か〈利用者さん〉で見る。〈スタッフ〉はチップで複数選ぶ（?staff=s1,s2。無ければ全員）。
+ * 表示は1つの切り替え（時間軸：〈スタッフ〉／時間軸：〈利用者さん〉／〈スタッフ〉×曜日／〈利用者さん〉×曜日。PRD D188。lib/weekView）。〈スタッフ〉はチップで複数選ぶ（?staff=s1,s2。無ければ全員）。
  * 時間軸の〈利用者さん〉は、この週に訪問がある人をチップ PickChips で並べて選ぶ（PRD D136〜D139。?by=client・?client=c1,c2。
  * 8人まで。?client= が無ければ先頭8人＝初期値で、初期値のあいだは URL に書かない）。この週に訪問の無い人は「ほかの人を探す」の
  * 検索欄 ClientPicker で選ぶ。〈利用者さん〉×曜日の表は選択と分け、この週に訪問がある人を全員出して
@@ -101,6 +102,14 @@ import './week.css';
 /** 時間軸の上限の文（呼び方は org.terms から作る） */
 const timelineClientMaxText = (client: string) =>
   `時間軸は${TIMELINE_CLIENT_MAX}人まで。表（${client}×曜日）なら絞り込んだ全員を見られます`;
+
+/** 表示の切り替えのボタンの data-testid（今までの e2e の名前を引き継ぐ：時間軸の見る人は by-*、表は tab-*） */
+const VIEW_TEST_ID: Record<WeekView, string> = {
+  'timeline-staff': 'by-staff',
+  'timeline-client': 'by-client',
+  table: 'tab-table',
+  clients: 'tab-clients',
+};
 
 /** 1分あたりの高さ（px） */
 const PX_PER_MIN = 0.8;
@@ -139,10 +148,10 @@ export default function WeekPage() {
   const anchor = isDate(rawD) ? rawD : date;
   const dates = useMemo(() => weekDates(anchor), [anchor]);
   const start = dates[0]!;
-  const rawView = params.get('view');
-  const tab: 'timeline' | 'table' | 'clients' =
-    rawView === 'table' ? 'table' : rawView === 'clients' ? 'clients' : 'timeline';
-  const by: 'staff' | 'client' = params.get('by') === 'client' ? 'client' : 'staff';
+  /** 表示（PRD D188。1つの切り替え。URL は今までの ?view=・?by= のまま。lib/weekView） */
+  const view = weekViewOf(params.get('view'), params.get('by'));
+  const tab: 'timeline' | 'table' | 'clients' = view === 'table' || view === 'clients' ? view : 'timeline';
+  const by: 'staff' | 'client' = view === 'timeline-client' ? 'client' : 'staff';
   const staffParam = paramOf(params, 'staff');
   const clientParam = paramOf(params, 'client');
   const staffSel = useMemo(() => selectionOf(staffParam), [staffParam]);
@@ -318,12 +327,16 @@ export default function WeekPage() {
   const setTableFilter = (f: ClientFilterState) =>
     go({ cf: sameFilter(f, WEEK_TABLE_FILTER) ? null : encodeFilter(f) }, true);
   /**
-   * 時間軸へ移る。表から移るとき、?client= が無く表で絞り込んでいれば、表で絞り込んだ人のうち時間軸に出せる人（検索欄の候補
-   * weekClients にいる人）の先頭8人を引き継ぐ。絞り込んでいなければ書かない＝この週の先頭8人（PRD D139。lib/timelineClients）
+   * 表示を切り替える（PRD D188）。表から時間軸へ移るとき、?client= が無く表で絞り込んでいれば、表で絞り込んだ人の
+   * うち時間軸に出せる人（検索欄の候補 weekClients にいる人）の先頭8人を引き継ぐ。絞り込んでいなければ書かない＝この週の先頭8人
+   * （PRD D139。lib/timelineClients）
    */
-  const goTimeline = () => {
-    const next: Record<string, string | null> = { view: 'timeline' };
-    if (tab === 'clients') {
+  const goView = (v: WeekView) => {
+    if (v === view) return;
+    const next: Record<string, string | null> = { ...weekViewParams(v) };
+    // 表から時間軸（〈スタッフ〉・〈利用者さん〉どちらでも）へ移るときに書く（main と同じ。〈スタッフ〉の時間軸から
+    // 〈利用者さん〉に切り替えたときも引き継がれる。PR #44 のレビュー）
+    if (tab === 'clients' && isTimeline(v)) {
       const known = new Set(weekClients.map((c) => c.id));
       const handoff = handoffFromTable({
         hasParam: clientParam !== null,
@@ -595,57 +608,23 @@ export default function WeekPage() {
           >
             今週
           </button>
-          <fieldset className="segmented week-tabs" aria-label="表示">
-            <button
-              type="button"
-              className={tab === 'timeline' ? 'is-on' : ''}
-              aria-pressed={tab === 'timeline'}
-              onClick={goTimeline}
-              data-testid="tab-timeline"
-            >
-              時間軸
-            </button>
-            <button
-              type="button"
-              className={tab === 'table' ? 'is-on' : ''}
-              aria-pressed={tab === 'table'}
-              onClick={() => go({ view: 'table' })}
-            >
-              {terms.staff}×曜日
-            </button>
-            <button
-              type="button"
-              className={tab === 'clients' ? 'is-on' : ''}
-              aria-pressed={tab === 'clients'}
-              onClick={() => go({ view: 'clients' })}
-              data-testid="tab-clients"
-            >
-              {terms.client}×曜日
-            </button>
+          <fieldset className="segmented week-views" aria-label="表示" data-testid="week-views">
+            {WEEK_VIEWS.map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={view === v ? 'is-on' : ''}
+                aria-pressed={view === v}
+                onClick={() => goView(v)}
+                data-testid={VIEW_TEST_ID[v]}
+              >
+                {weekViewLabel(v, terms)}
+              </button>
+            ))}
           </fieldset>
         </div>
         {tab === 'timeline' && (
           <div className="row week-tools">
-            <fieldset className="segmented week-by" aria-label="見る人">
-              <button
-                type="button"
-                className={by === 'staff' ? 'is-on' : ''}
-                aria-pressed={by === 'staff'}
-                onClick={() => go({ by: null })}
-                data-testid="by-staff"
-              >
-                {terms.staff}で見る
-              </button>
-              <button
-                type="button"
-                className={by === 'client' ? 'is-on' : ''}
-                aria-pressed={by === 'client'}
-                onClick={() => go({ by: 'client' })}
-                data-testid="by-client"
-              >
-                {terms.client}で見る
-              </button>
-            </fieldset>
             <span className="row week-legend">
               {data.visitTypes.map((t) => (
                 <span key={t.id} className="row week-legend-item">

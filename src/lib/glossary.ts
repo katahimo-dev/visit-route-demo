@@ -17,7 +17,9 @@ export type GlossaryKey =
   | 'backup'
   | 'terms'
   | 'typeUnfit'
-  | 'limitUnfit';
+  | 'limitUnfit'
+  | 'vacancyCount'
+  | 'vacancyEstimate';
 
 export type GlossaryEntry = {
   /** 画面に出す言い換えた名前 */
@@ -82,6 +84,15 @@ export const GLOSSARY: Record<GlossaryKey, GlossaryEntry> = {
   limitUnfit: {
     label: '限✗',
     text: '担当できる人を限っている〈client〉で、限った人以外が担当になっています。',
+  },
+  // 空き状況のマス（PRD D187。区切り8a）
+  vacancyCount: {
+    label: '受けられる人数',
+    text: 'その曜日・開始時刻から新しい訪問を受けられる〈staff〉の人数です。見る週のうち、いちばん少ない週の人数です。',
+  },
+  vacancyEstimate: {
+    label: '目安（約）',
+    text: '場所が無いので、訪問の前後の移動を15分ずつと見込んで数えた人数です。場所を入れると移動を含めて数えます。',
   },
 };
 

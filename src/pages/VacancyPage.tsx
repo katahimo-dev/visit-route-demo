@@ -1,22 +1,13 @@
-import {
-  BookmarkPlus,
-  CalendarSearch,
-  ClipboardList,
-  Copy,
-  MapPin,
-  MessageSquareText,
-  SlidersHorizontal,
-  Users,
-  X,
-} from 'lucide-react';
+import { BookmarkPlus, CalendarSearch, ClipboardList, Copy, MapPin, MessageSquareText, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ConditionsEditor } from '../components/conditions';
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
 import { AddressField } from '../components/placeLookup';
+import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
-import { Hint, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
+import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import type { Client, ClientPlace, Pattern } from '../contracts/documents';
 import { EMPTY_REFERRER, patternSchema } from '../contracts/documents';
 import type { Condition } from '../contracts/rules';
@@ -34,7 +25,6 @@ import {
   type VacancyQuery,
   type VacancyRange,
   type VacancyResult,
-  type Verdict,
 } from '../contracts/vacancy';
 import { HALF_HOURS, timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, jstHhmm, minutesToHhmm, weekday } from '../domain/time';
@@ -49,6 +39,15 @@ import { buildBccMails } from '../lib/mailto';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
 import { normalizePostalCode } from '../lib/postalCode';
+import {
+  cellFace,
+  markLegend,
+  noticeLine,
+  placeLine,
+  VACANCY_MARK,
+  VACANCY_MARK_TEXT,
+  whenWhatLine,
+} from '../lib/vacancyView';
 import { insertAllIntoPlans, weekStart } from '../lib/week';
 import { applyPatterns } from '../patterns';
 import { useDemoData } from '../store';
@@ -67,13 +66,28 @@ const ROW_WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
 /** 条件を変えてから計算し直すまで（ms） */
 const DEBOUNCE_MS = 300;
 
-const MARK: Record<Verdict, string> = { ok: '○', partial: '△', ng: '×', unknown: '？' };
-const VERDICT_TEXT: Record<Verdict, string> = {
-  ok: 'どの週も受けられる',
-  partial: '受けられない週がある',
-  ng: '受けられない',
-  unknown: '案が無く数えていない',
-};
+const MARK = VACANCY_MARK;
+const VERDICT_TEXT = VACANCY_MARK_TEXT;
+
+/** 畳む欄の「開く ▾」「畳む ▴」（見た目だけ。読み上げの名前に入れない。開いているかは details が伝える） */
+function FoldMark() {
+  return (
+    <span className="vacancy-fold-mark" aria-hidden="true">
+      <span className="when-closed">開く ▾</span>
+      <span className="when-open">畳む ▴</span>
+    </span>
+  );
+}
+
+/** 段階の番号の丸（PRD D184。読み上げは見出しの文に「1.」を入れる） */
+function StepNo({ n }: { n: number }) {
+  return (
+    <span className="vacancy-step-no">
+      {n}
+      <span className="sr-only">.</span>
+    </span>
+  );
+}
 
 const hm = (t: number) => timeText(minutesToHhmm(t));
 
@@ -298,7 +312,19 @@ export default function VacancyPage() {
   const noticeType = typeOf(data.visitTypes, noticeTypeId);
   const noticeDuration = noticeType ? noticeType.durationMinutes : durationOk ? durationNum : null;
   const noticeSpan = useMemo(() => noticeRange(noticePeriod, today), [noticePeriod, today]);
-  const [notice, setNotice] = useState<{ text: string; noPlan: string[] } | null>(null);
+  /**
+   * 案内文を作る元の条件（変わるたびに新しい物）。作った文にはこれを付けておき、今の条件と違えば古い文として
+   * コピー・メールを押せなくする（描いた時点で決まるので、計算し直すまでの間にも古い文で動かない。PR #44 のレビュー）
+   */
+  const noticeInputs = useMemo(
+    () => ({ data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms }),
+    [data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms],
+  );
+  const [notice, setNotice] = useState<{ text: string; noPlan: string[]; inputs: typeof noticeInputs } | null>(null);
+  /** 案内文の欄を開いているか（畳んでいる間は計算しない。問い合わせの即答の速さを落とさない。PRD D185） */
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  /** 条件を変えてから案内文を計算し直すまで（古い文でコピー・メールさせない。PR #44 のレビュー） */
+  const noticeStale = notice === null || notice.inputs !== noticeInputs;
   // 紹介元へ BCC で一斉に（PRD D95。ADR-0017）：宛先は紹介元のメールを重複なく。外した宛先（小文字）だけを画面の中で持つ
   const referrers = useMemo(() => referrerRecipients(data.clients), [data.clients]);
   const [mailOff, setMailOff] = useState<ReadonlySet<string>>(new Set());
@@ -306,7 +332,7 @@ export default function VacancyPage() {
   const mailLimit = useMailLimit();
   // 宛先が多いと mailto が長すぎるので、目安の長さに収まるよう宛先を分けて複数のボタンにする（PRD D95・D96）
   const noticeMails =
-    notice && mailBcc.length > 0
+    notice && !noticeStale && mailBcc.length > 0
       ? buildBccMails({ bcc: mailBcc, subject: vacancySubject(data.org), full: notice.text }, mailLimit)
       : [];
   const copyRecipients = async () =>
@@ -315,11 +341,19 @@ export default function VacancyPage() {
         ? `宛先（${mailBcc.length}件）をコピーしました。メールの BCC に貼り付けてください`
         : 'コピーできませんでした。文を選んでコピーしてください',
     );
-  const noticeMailWhy =
-    referrers.length === 0
+  const noticeMailWhy = noticeStale
+    ? '案内文を計算し直しています'
+    : referrers.length === 0
       ? `紹介元のメールアドレスが未登録です（${terms.client}の画面の「紹介元のメールアドレス」で入れられます）`
       : '宛先を1つ以上選んでください';
   useEffect(() => {
+    const { data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms } =
+      noticeInputs;
+    // 畳んだら古い文を捨てる（開き直したときに前の文を出さない）
+    if (!noticeOpen) {
+      setNotice(null);
+      return;
+    }
     if (noticeDuration === null) {
       setNotice(null);
       return;
@@ -352,12 +386,12 @@ export default function VacancyPage() {
         notBefore: { date: jstDate(Date.now()), minutes: hhmmToMinutes(jstHhmm(Date.now())) },
       });
       const noPlan = r.noPlanDates.filter((d) => d >= noticeSpan.from && d <= noticeSpan.to);
-      setNotice({ text, noPlan });
+      setNotice({ text, noPlan, inputs: noticeInputs });
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(id);
-  }, [data, noticeType, noticeDuration, requirements, exactPlace, noticeSpan, noticePeriod, terms]);
+  }, [noticeOpen, noticeInputs]);
   const copyNotice = async () => {
-    if (!notice) return;
+    if (!notice || noticeStale) return;
     toast(
       (await copyText(notice.text)) ? '案内文をコピーしました' : 'コピーできませんでした。文を選んでコピーしてください',
     );
@@ -457,22 +491,46 @@ export default function VacancyPage() {
   };
 
   const noPlan = result?.noPlanDates ?? [];
+  // 段階の要約の行（PRD D184・D185）
+  const placeSummary = placeLine(
+    { address: place.address, pinnedAddress: place.pinnedAddress, hasPin: exactPlace !== null },
+    VACANCY_MARGIN_DEFAULT,
+  );
+  const whenLine = whenWhatLine({
+    durationOk,
+    wishOk,
+    typeName: vType?.name ?? null,
+    duration,
+    weekdayLabels: ROW_WEEKDAYS.filter((w) => wishDays.includes(w)).map((w) => WEEKDAY_LABELS[w]!),
+    from: timeText(wishFrom),
+    to: timeText(wishTo),
+    perWeek,
+    startMd: fromOk ? mdText(from) : '—',
+    weeks,
+  });
 
   return (
     <div className="stack vacancy-page">
       <PageHeader
         icon={CalendarSearch}
         title="空き状況"
-        lead={`曜日・時刻ごとに、新しい訪問を受けられる${terms.staff}の人数を見て、問い合わせに答えます`}
+        lead={`いつ・何をを入れると、受けられる曜日・時間帯と${terms.staff}の人数がすぐに出ます。場所はあとから足せます`}
       />
 
-      <div className="card stack">
-        <SectionTitle icon={SlidersHorizontal}>条件</SectionTitle>
+      {/* 1 いつ・何を（PRD D184）。入れるとすぐ下の結果が変わる（自動で計算し直すので主ボタンは無い） */}
+      <section className="card stack vacancy-stage" data-testid="vacancy-step-when">
+        <div className="section-title">
+          <h2>
+            <StepNo n={1} />
+            いつ・何を
+          </h2>
+        </div>
         <div className="form-grid">
           <label>
             種類
             <select
               value={typeId}
+              data-testid="vacancy-type"
               onChange={(e) => {
                 const t = typeOf(data.visitTypes, e.target.value);
                 setTypeId(e.target.value);
@@ -496,8 +554,43 @@ export default function VacancyPage() {
               max={VACANCY_DURATION_MAX}
               step={5}
               value={duration}
+              data-testid="vacancy-duration"
               onChange={(e) => setDuration(e.target.value)}
             />
+          </label>
+          <label>
+            希望の開始（から）
+            <select value={wishFrom} onChange={(e) => setWishFrom(e.target.value)} data-testid="wish-from">
+              {HALF_HOURS.map((h) => (
+                <option key={h} value={h}>
+                  {timeText(h)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            希望の開始（まで）
+            <select value={wishTo} onChange={(e) => setWishTo(e.target.value)} data-testid="wish-to">
+              {HALF_HOURS.map((h) => (
+                <option key={h} value={h}>
+                  {timeText(h)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            週の回数
+            <select value={perWeek} onChange={(e) => setPerWeek(Number(e.target.value))}>
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                <option key={n} value={n}>
+                  週{n}回
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            開始日
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </label>
           <label>
             見る週の数
@@ -511,10 +604,22 @@ export default function VacancyPage() {
               )}
             </select>
           </label>
-          <label>
-            開始日
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
+        </div>
+        <div className="stack" style={{ gap: 4 }}>
+          <span className="sub">希望の曜日（選ばない＝どの曜日でも）</span>
+          <fieldset className="weekday-toggles" aria-label="希望の曜日" data-testid="wish-days">
+            {ROW_WEEKDAYS.map((w) => (
+              <button
+                key={w}
+                type="button"
+                className={`weekday-toggle${wishDays.includes(w) ? ' is-on' : ''}`}
+                aria-pressed={wishDays.includes(w)}
+                onClick={() => toggleDay(w)}
+              >
+                {WEEKDAY_LABELS[w]}
+              </button>
+            ))}
+          </fieldset>
         </div>
         {!durationOk && (
           <p className="error" role="alert">
@@ -526,6 +631,11 @@ export default function VacancyPage() {
             開始日を入れてください
           </p>
         )}
+        {!wishOk && (
+          <p className="error" role="alert">
+            希望の開始は「から」を「まで」より前にしてください
+          </p>
+        )}
         <details className="vacancy-more">
           <summary>
             {terms.staff}の条件
@@ -534,14 +644,28 @@ export default function VacancyPage() {
           <Hint>例：性別が女性。種類の「担当に必要な条件」は、ここで選ばなくても入ります。</Hint>
           <ConditionsEditor items={data.items} target="staff" value={requirements} onChange={setRequirements} />
         </details>
-        <div className="stack vacancy-place">
-          <span className="vacancy-place-title">
-            <WithIcon icon={MapPin} size={14}>
-              場所{exactPlace ? '' : '（空＝目安）'}
+      </section>
+
+      {/*
+        2 場所（任意。PRD D184・D185）：はじめは畳んで要約の行だけ。開くと郵便番号・住所・地図。
+        畳んでも中の入力・ピンは残す（details の中に置いたまま。閉じても消さない）
+      */}
+      <details className="card vacancy-stage vacancy-place-stage" data-testid="vacancy-step-place">
+        <summary data-testid="vacancy-place-toggle">
+          <h2 className="vacancy-stage-head">
+            <StepNo n={2} />
+            <WithIcon icon={MapPin} size={16}>
+              場所（任意）
             </WithIcon>
+          </h2>
+          <span className={`vacancy-stage-line${placeSummary.set ? ' is-set' : ''}`} data-testid="vacancy-place-line">
+            {placeSummary.text}
           </span>
+          <FoldMark />
+        </summary>
+        <div className="stack vacancy-place">
           <span className="sub">
-            郵便番号・住所から探して置くか、地図に点を置くと、その場所への移動を含めて正確に数えます。空のときは移動を前後
+            郵便番号・住所から探して置くか、地図に点を置くと、その場所への移動を含めて正確に数えます（すぐ下の結果が変わります）。空のときは移動を前後
             {VACANCY_MARGIN_DEFAULT}分で見込んだ目安です。
           </span>
           <AddressField
@@ -555,20 +679,36 @@ export default function VacancyPage() {
             noticeNote="（押したときだけ。条件などほかの項目は送りません）"
           />
         </div>
-      </div>
+      </details>
 
-      <div className="card stack" data-testid="vacancy-table-card">
-        <SectionTitle icon={Users} aside={busy && <span className="sub">計算しています…</span>}>
-          {result?.exact
-            ? `${exactPlace?.address.trim() || '選んだ場所'}への移動を含む`
-            : `目安（移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む）`}
-        </SectionTitle>
-        <p className="sub vacancy-legend">
-          マスの数字はどの週でも受けられる人数{result?.exact ? '' : '（目安なので「約」）'}
-          。○＝どの週も受けられる・△＝受けられない週がある・×＝受けられない・？＝案が無く数えていない。マスを押すと日付ごとの人を見られます。
-          {vType && ` 種類「${vType.name}」の担当に必要な条件を満たす人だけを数えます。`}
+      {/* 3 受けられる曜日・時間帯（PRD D184・D187）：要約・週ごとのマス・曜日×開始時刻の表 */}
+      <section className="card stack vacancy-stage" data-testid="vacancy-table-card">
+        <div className="section-title">
+          <h2>
+            <StepNo n={3} />
+            受けられる曜日・時間帯（
+            {result?.exact
+              ? `${exactPlace?.address.trim() || '選んだ場所'}への移動を含む`
+              : `目安。移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む`}
+            ）
+          </h2>
+          {busy && (
+            <div className="section-aside">
+              <span className="sub">計算しています…</span>
+            </div>
+          )}
+        </div>
+        <p className="sub vacancy-when-line" data-testid="vacancy-when-line">
+          {whenLine}
         </p>
-        <LevelLegend items={VACANCY_LEGEND} />
+        {summary && (
+          <>
+            <output className="inquiry-summary" data-testid="inquiry-summary">
+              {summary}
+            </output>
+            {result && <InquiryWeeks rows={inquiryRows(result, wish)} exact={result.exact} />}
+          </>
+        )}
         {/* 案の無い日の注意はここ1か所（PRD D176。案内文・日付ごとの欄には繰り返さない） */}
         {noPlan.length > 0 && (
           <div className="vacancy-noplan" data-testid="vacancy-noplan">
@@ -582,10 +722,44 @@ export default function VacancyPage() {
             </Link>
           </div>
         )}
+        <h3 className="vacancy-sub-title">曜日・開始時刻ごとの表</h3>
+        <ul className="vacancy-legend" data-testid="vacancy-mark-legend" aria-label="マスの読み方">
+          {markLegend(!!result?.exact).map((x) => (
+            <li key={x.verdict} className="vacancy-legend-item">
+              <span className={`vacancy-legend-face is-${x.verdict}`} aria-hidden="true">
+                <b>{x.mark}</b>
+                {x.sample && <small>{x.sample}</small>}
+              </span>
+              <span>
+                <span className="sr-only">{x.mark}：</span>
+                {x.text}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="sub vacancy-legend-note">
+          ○ の数字は
+          <Term k="vacancyCount" testId="term-vacancy-count" />
+          {result?.exact ? (
+            ''
+          ) : (
+            <>
+              （場所が無いので
+              <Term k="vacancyEstimate" testId="term-vacancy-estimate" />）
+            </>
+          )}
+          。マスを押すと日付ごとの人を見られます。
+          {vType && ` 種類「${vType.name}」の担当に必要な条件を満たす人だけを数えます。`}
+        </p>
+        <LevelLegend items={VACANCY_LEGEND} />
         {result && result.times.length === 0 && <p className="sub">所要が長すぎて、入る時刻がありません</p>}
         {result && result.times.length > 0 && (
           <div className="vacancy-scroll">
             <table className="vacancy-grid" data-testid="vacancy-grid">
+              <caption className="sr-only">
+                曜日と開始時刻ごとの、受けられる{terms.staff}の人数（○ どの週も受けられる・△ 受けられない週がある・×
+                受けられない・？ 案が無く数えていない）
+              </caption>
               <thead>
                 <tr>
                   <th scope="col" className="vacancy-corner">
@@ -607,28 +781,25 @@ export default function VacancyPage() {
                     {result.times.map((t) => {
                       const c = cellOf.get(`${wd}-${t}`);
                       if (!c) return <td key={t} />;
-                      const v = verdictOf(c);
-                      const count = v === 'unknown' ? '' : `${result.exact ? '' : '約'}${c.min}`;
-                      const label = `${WEEKDAY_LABELS[wd]} ${hm(t)}から：${MARK[v]} ${VERDICT_TEXT[v]}${
-                        v === 'unknown' ? '' : `・どの週でも ${count}人（${c.weeksOk}/${c.weeksTotal}週）`
-                      }`;
+                      const f = cellFace(c, result.exact, `${WEEKDAY_LABELS[wd]} ${hm(t)}から`);
                       return (
                         <td key={t}>
                           <button
                             type="button"
-                            className={`vacancy-cell is-${v} lv-${vacancyLevel(c)}${picked === c ? ' is-picked' : ''}`}
+                            className={`vacancy-cell is-${f.verdict} lv-${vacancyLevel(c)}${picked === c ? ' is-picked' : ''}`}
                             data-testid="vacancy-cell"
                             data-weekday={wd}
                             data-start={minutesToHhmm(t)}
-                            aria-label={label}
-                            title={label}
+                            data-verdict={f.verdict}
+                            aria-label={f.label}
+                            title={f.label}
                             onClick={() => setPicked(c)}
                           >
                             <span className="vacancy-mark" aria-hidden="true">
-                              {MARK[v]}
+                              {f.mark}
                             </span>
                             <span className="vacancy-count" aria-hidden="true">
-                              {count}
+                              {f.sub}
                             </span>
                           </button>
                         </td>
@@ -640,215 +811,217 @@ export default function VacancyPage() {
             </table>
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="card stack" data-testid="inquiry-card">
-        <SectionTitle icon={MessageSquareText}>問い合わせの試算</SectionTitle>
-        {!exactPlace && <p className="sub">場所を入れると、移動を含めて試算します（上の「場所」）。</p>}
-        <div className="stack" style={{ gap: 4 }}>
-          <span className="sub">希望の曜日（選ばない＝どの曜日でも）</span>
-          <fieldset className="weekday-toggles" aria-label="希望の曜日">
-            {ROW_WEEKDAYS.map((w) => (
-              <button
-                key={w}
-                type="button"
-                className={`weekday-toggle${wishDays.includes(w) ? ' is-on' : ''}`}
-                aria-pressed={wishDays.includes(w)}
-                onClick={() => toggleDay(w)}
-              >
-                {WEEKDAY_LABELS[w]}
-              </button>
-            ))}
-          </fieldset>
+      {/*
+        4 次の一手（PRD D184・D186）：この問い合わせに答える（要約をコピー＝この段階の主ボタン・仮押さえ）と、
+        空き枠を広く知らせる（案内文・コピー・紹介元へメール。はじめは畳む）
+      */}
+      <section className="card stack vacancy-stage" data-testid="vacancy-step-next">
+        <div className="section-title">
+          <h2>
+            <StepNo n={4} />
+            次の一手
+          </h2>
         </div>
-        <div className="form-grid">
-          <label>
-            希望の開始（から）
-            <select value={wishFrom} onChange={(e) => setWishFrom(e.target.value)}>
-              {HALF_HOURS.map((h) => (
-                <option key={h} value={h}>
-                  {timeText(h)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            希望の開始（まで）
-            <select value={wishTo} onChange={(e) => setWishTo(e.target.value)}>
-              {HALF_HOURS.map((h) => (
-                <option key={h} value={h}>
-                  {timeText(h)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            週の回数
-            <select value={perWeek} onChange={(e) => setPerWeek(Number(e.target.value))}>
-              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                <option key={n} value={n}>
-                  週{n}回
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {!wishOk && (
-          <p className="error" role="alert">
-            希望の開始は「から」を「まで」より前にしてください
-          </p>
-        )}
-        {summary && (
-          <>
-            <output className="inquiry-summary" data-testid="inquiry-summary">
-              {summary}
-            </output>
-            {result && <InquiryWeeks rows={inquiryRows(result, wish)} exact={result.exact} />}
-            <div className="row" style={{ flexWrap: 'wrap' }}>
-              <button type="button" className="btn btn-primary" onClick={copy} data-testid="copy-summary">
-                <WithIcon icon={Copy}>要約をコピー</WithIcon>
-              </button>
-              {slots.length > 0 && (
-                <button
-                  type="button"
-                  className="btn"
-                  data-testid="hold-open"
-                  onClick={() => setHold({ name: '', error: null })}
-                >
-                  <WithIcon icon={BookmarkPlus}>仮の{terms.client}として押さえる</WithIcon>
+        <div className="stack vacancy-next" data-testid="inquiry-card">
+          <h3 className="vacancy-sub-title">
+            <WithIcon icon={MessageSquareText} size={16}>
+              この問い合わせに答える
+            </WithIcon>
+          </h3>
+          {summary ? (
+            <>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-primary" onClick={copy} data-testid="copy-summary">
+                  <WithIcon icon={Copy}>要約をコピー</WithIcon>
                 </button>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="card stack" data-testid="notice-card">
-        <SectionTitle icon={ClipboardList}>空き枠の案内文</SectionTitle>
-        <p className="sub">
-          紹介元などへ空いている枠を知らせる文を作ります。{terms.staff}の条件・場所は上の「条件」のままです。
-        </p>
-        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
-          <fieldset className="segmented seg-sm" aria-label="案内する期間" data-testid="notice-period">
-            {NOTICE_PERIODS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                aria-pressed={noticePeriod === p.id}
-                className={noticePeriod === p.id ? 'is-on' : ''}
-                onClick={() => setNoticePeriod(p.id)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </fieldset>
-          <label style={{ minWidth: 220 }}>
-            種類
-            <select value={noticeTypeId} onChange={(e) => setNoticeTypeId(e.target.value)} data-testid="notice-type">
-              <option value="">種類なし（所要 {durationOk ? `${durationNum}分` : '—'}）</option>
-              {data.visitTypes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}（{t.durationMinutes}分）
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <p className="sub">
-          {mdText(noticeSpan.from)}〜{mdText(noticeSpan.to)}
-          {noticePeriod === 'fourWeeks'
-            ? '：毎週続けて受けられる曜日・開始の時間を載せます'
-            : '：日ごとに、受けられる開始の時間を載せます'}
-          {exactPlace ? '（場所への移動を含む）' : `（目安。移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む）`}
-        </p>
-        {noticeDuration === null && (
-          <p className="error" role="alert">
-            種類を選ぶか、上の条件の所要を正しく入れてください
-          </p>
-        )}
-        {notice && (
-          <>
-            <output className="inquiry-summary notice-text" data-testid="notice-text">
-              {notice.text}
-            </output>
-            {notice.noPlan.length > 0 && (
-              <p className="sub" data-testid="notice-noplan">
-                案の無い日（{notice.noPlan.length}日）は載せていません（上の表の注意）。
-              </p>
-            )}
-            <div className="row">
-              <button type="button" className="btn" onClick={copyNotice} data-testid="copy-notice">
-                <WithIcon icon={Copy}>案内文をコピー</WithIcon>
-              </button>
-            </div>
-            <div className="stack notice-mail" style={{ gap: 6 }} data-testid="notice-mail">
-              {referrers.length > 0 && (
-                <fieldset className="notice-mail-to">
-                  <legend>紹介元へメール（BCC で一斉。宛先どうしにアドレスは見えません）</legend>
-                  {referrers.map((r) => {
-                    const key = r.email.toLowerCase();
-                    return (
-                      <label key={key} className="check">
-                        <input
-                          type="checkbox"
-                          checked={!mailOff.has(key)}
-                          onChange={(e) =>
-                            setMailOff((prev) => {
-                              const next = new Set(prev);
-                              if (e.target.checked) next.delete(key);
-                              else next.add(key);
-                              return next;
-                            })
-                          }
-                          style={{ width: 'auto' }}
-                          data-testid="notice-mail-pick"
-                        />
-                        {r.names.join('・') || '（名前なし）'} <span className="sub">{r.email}</span>
-                      </label>
-                    );
-                  })}
-                </fieldset>
-              )}
-              <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                {noticeMails.length === 0 ? (
-                  <MailButton mail={null} label="紹介元へメール（BCC）" why={noticeMailWhy} testId="notice-mail-open" />
-                ) : (
-                  noticeMails.map((g, i) => (
-                    <span key={g.bcc[0]} className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                      <MailButton
-                        mail={g.mail}
-                        label={`紹介元へメール（${noticeMails.length > 1 ? `${i + 1}/${noticeMails.length}・` : ''}BCC ${g.bcc.length}件）`}
-                        why={noticeMailWhy}
-                        testId="notice-mail-open"
-                      />
-                      <MailLengthNote mail={g.mail} />
-                    </span>
-                  ))
-                )}
-                {mailBcc.length > 0 && (
+                {slots.length > 0 && (
                   <button
                     type="button"
-                    className="btn btn-small"
-                    onClick={() => void copyRecipients()}
-                    data-testid="notice-mail-copy-to"
+                    className="btn"
+                    data-testid="hold-open"
+                    onClick={() => setHold({ name: '', error: null })}
                   >
-                    <WithIcon icon={Copy} size={14}>
-                      宛先をコピー
-                    </WithIcon>
+                    <WithIcon icon={BookmarkPlus}>仮の{terms.client}として押さえる</WithIcon>
                   </button>
                 )}
               </div>
-              {noticeMails.length > 1 && (
-                <p className="sub" data-testid="notice-mail-split">
-                  宛先が多いので、メールアプリに渡せる長さに収まるよう {noticeMails.length}{' '}
-                  通に分けました。順に押してください。
+              {slots.length === 0 && (
+                <p className="sub" data-testid="hold-why">
+                  仮押さえは、希望の曜日・時間帯に、どの週も受けられる（○）開始時刻が週{perWeek}回分あるときにできます。
                 </p>
               )}
-              <MailNotice />
+              {!exactPlace && <p className="sub">場所を入れると、移動を含めて答えられます（上の「2 場所」）。</p>}
+            </>
+          ) : (
+            <p className="sub">上の「1 いつ・何を」を直すと、要約と仮押さえが出ます。</p>
+          )}
+        </div>
+
+        <details
+          className="vacancy-notice"
+          data-testid="notice-card"
+          onToggle={(e) => setNoticeOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary data-testid="notice-toggle">
+            <h3 className="vacancy-sub-title">
+              <WithIcon icon={ClipboardList} size={16}>
+                空き枠の案内文・紹介元へメール
+              </WithIcon>
+            </h3>
+            <span className="vacancy-stage-line" data-testid="notice-line">
+              {noticeLine(
+                NOTICE_PERIODS.find((p) => p.id === noticePeriod)?.label ?? '',
+                noticeType?.name ?? null,
+                noticeDuration,
+              )}
+            </span>
+            <FoldMark />
+          </summary>
+          <div className="stack">
+            <p className="sub">
+              紹介元などへ空いている枠を知らせる文を作ります。{terms.staff}の条件・場所は上の「1 いつ・何を」「2
+              場所」のままです。
+            </p>
+            <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
+              <fieldset className="segmented seg-sm" aria-label="案内する期間" data-testid="notice-period">
+                {NOTICE_PERIODS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={noticePeriod === p.id}
+                    className={noticePeriod === p.id ? 'is-on' : ''}
+                    onClick={() => setNoticePeriod(p.id)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </fieldset>
+              <label style={{ minWidth: 220 }}>
+                種類
+                <select
+                  value={noticeTypeId}
+                  onChange={(e) => setNoticeTypeId(e.target.value)}
+                  data-testid="notice-type"
+                >
+                  <option value="">種類なし（所要 {durationOk ? `${durationNum}分` : '—'}）</option>
+                  {data.visitTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}（{t.durationMinutes}分）
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-          </>
-        )}
-      </div>
+            <p className="sub">
+              {mdText(noticeSpan.from)}〜{mdText(noticeSpan.to)}
+              {noticePeriod === 'fourWeeks'
+                ? '：毎週続けて受けられる曜日・開始の時間を載せます'
+                : '：日ごとに、受けられる開始の時間を載せます'}
+              {exactPlace ? '（場所への移動を含む）' : `（目安。移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む）`}
+            </p>
+            {noticeDuration === null && (
+              <p className="error" role="alert">
+                種類を選ぶか、上の「1 いつ・何を」の所要を正しく入れてください
+              </p>
+            )}
+            {notice && (
+              <>
+                <output className="inquiry-summary notice-text" data-testid="notice-text">
+                  {notice.text}
+                </output>
+                {notice.noPlan.length > 0 && (
+                  <p className="sub" data-testid="notice-noplan">
+                    案の無い日（{notice.noPlan.length}日）は載せていません（上の表の注意）。
+                  </p>
+                )}
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={copyNotice}
+                    disabled={noticeStale}
+                    data-testid="copy-notice"
+                  >
+                    <WithIcon icon={Copy}>案内文をコピー</WithIcon>
+                  </button>
+                </div>
+                <div className="stack notice-mail" style={{ gap: 6 }} data-testid="notice-mail">
+                  {referrers.length > 0 && (
+                    <fieldset className="notice-mail-to">
+                      <legend>紹介元へメール（BCC で一斉。宛先どうしにアドレスは見えません）</legend>
+                      {referrers.map((r) => {
+                        const key = r.email.toLowerCase();
+                        return (
+                          <label key={key} className="check">
+                            <input
+                              type="checkbox"
+                              checked={!mailOff.has(key)}
+                              onChange={(e) =>
+                                setMailOff((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.delete(key);
+                                  else next.add(key);
+                                  return next;
+                                })
+                              }
+                              style={{ width: 'auto' }}
+                              data-testid="notice-mail-pick"
+                            />
+                            {r.names.join('・') || '（名前なし）'} <span className="sub">{r.email}</span>
+                          </label>
+                        );
+                      })}
+                    </fieldset>
+                  )}
+                  <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                    {noticeMails.length === 0 ? (
+                      <MailButton
+                        mail={null}
+                        label="紹介元へメール（BCC）"
+                        why={noticeMailWhy}
+                        testId="notice-mail-open"
+                      />
+                    ) : (
+                      noticeMails.map((g, i) => (
+                        <span key={g.bcc[0]} className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                          <MailButton
+                            mail={g.mail}
+                            label={`紹介元へメール（${noticeMails.length > 1 ? `${i + 1}/${noticeMails.length}・` : ''}BCC ${g.bcc.length}件）`}
+                            why={noticeMailWhy}
+                            testId="notice-mail-open"
+                          />
+                          <MailLengthNote mail={g.mail} />
+                        </span>
+                      ))
+                    )}
+                    {mailBcc.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => void copyRecipients()}
+                        data-testid="notice-mail-copy-to"
+                      >
+                        <WithIcon icon={Copy} size={14}>
+                          宛先をコピー
+                        </WithIcon>
+                      </button>
+                    )}
+                  </div>
+                  {noticeMails.length > 1 && (
+                    <p className="sub" data-testid="notice-mail-split">
+                      宛先が多いので、メールアプリに渡せる長さに収まるよう {noticeMails.length}{' '}
+                      通に分けました。順に押してください。
+                    </p>
+                  )}
+                  <MailNotice />
+                </div>
+              </>
+            )}
+          </div>
+        </details>
+      </section>
 
       {picked && result && (
         <SidePanel
