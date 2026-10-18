@@ -1,8 +1,7 @@
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import type { AiPlan, AiRun, DemoData } from '../contracts/data';
 import type { Visit } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
-import type { Rule } from '../contracts/rules';
 import { score } from '../evaluate';
 import { type CompileInput, compile } from '../matching';
 import { scoreRulesOf } from '../seed';
@@ -19,10 +18,26 @@ type Memo = {
   plan: AiPlan | undefined;
   saved: unknown;
   runs: AiRun[] | undefined;
-  rules: Rule[];
+  /** 点数の物差しの条件のキー（JSON。画面ごとに作る配列でなく中身で比べ、画面を移っても覚えを使う） */
+  rules: string;
   problem: Problem | null;
   view: DayView;
 };
+
+/**
+ * 日ごとの覚え（モジュールに置き、画面を移っても消えない。PR #40 のレビュー）。日付ごとに最近の数件（月の画面と設定の画面の帯の
+ * ように、少し前のデータと今のデータを同時に数えることがあるので1件にしない）。入力はすべて同じもの（===）か同じ中身のときだけ使う
+ */
+const MEMO = new Map<string, Memo[]>();
+const MEMO_PER_DAY = 3;
+const MEMO_DAYS = 400;
+function remember(date: string, m: Memo) {
+  const list = MEMO.get(date) ?? [];
+  MEMO.delete(date);
+  MEMO.set(date, [m, ...list].slice(0, MEMO_PER_DAY));
+  // 古い日付から捨てる（Map は入れた順）
+  while (MEMO.size > MEMO_DAYS) MEMO.delete(MEMO.keys().next().value as string);
+}
 
 const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
@@ -59,10 +74,10 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
   }, [data.visits]);
   /** いま作れる条件の組（いまの条件と各プリセット。今の案の条件がどれでもなければ「条件が変わった」。PRD D161） */
   const ruleKeys = useMemo(() => currentRuleKeys(data.rules, data.presets), [data.rules, data.presets]);
-  const memoRef = useRef(new Map<string, Memo>());
   return useMemo(() => {
     const out: DayStatuses = new Map();
     const c = compileInput;
+    const rulesKey = JSON.stringify(scoreRules);
     // compile が読むデータのうち訪問以外のすべて（CompileInput のキーから作り、足したフィールドを漏らさない。休み clientLeaves など）
     const base = (Object.keys(c) as (keyof CompileInput)[])
       .filter((k) => k !== 'visits')
@@ -77,16 +92,16 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
         continue;
       }
       const runs = own(data.aiRuns, d);
-      const hit = memoRef.current.get(d);
-      if (
-        hit &&
-        hit.plan === plan &&
-        hit.saved === saved &&
-        hit.runs === runs &&
-        hit.rules === scoreRules &&
-        sameList(hit.base, base) &&
-        sameList(hit.visits, visits)
-      ) {
+      const hit = MEMO.get(d)?.find(
+        (x) =>
+          x.plan === plan &&
+          x.saved === saved &&
+          x.runs === runs &&
+          x.rules === rulesKey &&
+          sameList(x.base, base) &&
+          sameList(x.visits, visits),
+      );
+      if (hit) {
         out.set(d, {
           status: dayStatus(data, d, withRules(hit.view, rulesStale(data, d, ruleKeys))),
           problem: hit.problem,
@@ -107,12 +122,11 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
       if (sp && plan) {
         const aligned = attempt(() => alignPlan(sp, plan)).value ?? plan;
         const sc = attempt(() => score(sp, aligned.routes)).value;
-        const scoreKey = JSON.stringify(scoreRules);
         view = {
           visitIds: sp.visits.map((v) => v.id),
           hard: sc?.hardViolations.filter((h) => !left.has(h.visitId)).length ?? 0,
           stale: planStale(input, data, d, (rules, pins) =>
-            Object.keys(pins).length === 0 && JSON.stringify(rules) === scoreKey ? sp : undefined,
+            Object.keys(pins).length === 0 && JSON.stringify(rules) === rulesKey ? sp : undefined,
           ),
         };
       } else if (sp) {
@@ -131,7 +145,7 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
             : [];
         if (over.length > 0) view = { ...view, overSpan: over };
       }
-      memoRef.current.set(d, { base, visits, plan, saved, runs, rules: scoreRules, problem: sp, view });
+      remember(d, { base, visits, plan, saved, runs, rules: rulesKey, problem: sp, view });
       out.set(d, { status: dayStatus(data, d, withRules(view, rulesStale(data, d, ruleKeys))), problem: sp });
     }
     return out;

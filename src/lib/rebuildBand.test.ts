@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { DayState, DayStatus } from './month';
-import { rebuildAction, rebuildDays, rebuildSummary, rebuildText, showsRebuildBand } from './rebuildBand';
+import {
+  customRulesText,
+  rebuildAction,
+  rebuildDays,
+  rebuildSummary,
+  rebuildText,
+  rebuildWith,
+  recreateTodayHref,
+  showsRebuildBand,
+} from './rebuildBand';
 
 const TODAY = '2026-10-21';
 
@@ -38,7 +47,8 @@ describe('rebuildDays', () => {
 });
 
 describe('rebuildSummary', () => {
-  it('条件が変わった日だけ、今日より前は数えない。確定済み・未確定の変更ありは確定済みに数える', () => {
+  it('条件が変わった日だけ、今日より前は数えない。確定した割当がある日は確定済み、無い日は未確定（batchTargets と同じ）', () => {
+    const manual = { '2026-10-23': {}, '2026-10-24': {} };
     const s = rebuildSummary(
       [
         st('2026-10-20'),
@@ -49,6 +59,7 @@ describe('rebuildSummary', () => {
         st('2026-11-03'),
       ],
       TODAY,
+      manual,
     );
     expect(s).toEqual({
       days: ['2026-10-21', '2026-10-23', '2026-10-24', '2026-11-03'],
@@ -58,28 +69,42 @@ describe('rebuildSummary', () => {
     expect(rebuildText(s)).toBe('条件が変わりました：影響する日 4日（未確定 2日・確定済み 2日）');
   });
   it('無ければ0日で、ボタンも無い', () => {
-    const s = rebuildSummary([st('2026-10-22', 'plan', false)], TODAY);
+    const s = rebuildSummary([st('2026-10-22', 'plan', false)], TODAY, {});
     expect(s.days).toEqual([]);
-    expect(rebuildAction(s)).toBeNull();
+    expect(rebuildAction(s, '標準')).toBeNull();
   });
 });
 
 describe('rebuildAction', () => {
-  it('未確定の日があれば、その最初の日の月の「条件が変わった日を作り直す」の欄（?do=stale）', () => {
-    const a = rebuildAction(rebuildSummary([st('2026-10-30'), st('2026-11-03'), st('2026-10-31')], TODAY));
+  it('未確定の日があれば、その最初の日の月の「条件が変わった日を作り直す」の欄（?do=stale）。基準のプリセットの名前を書く', () => {
+    const a = rebuildAction(rebuildSummary([st('2026-10-30'), st('2026-11-03'), st('2026-10-31')], TODAY, {}), '標準');
     expect(a?.href).toBe('/month?ym=2026-10&do=stale');
     expect(a?.label).toBe('作り直す');
     expect(a?.note).toMatch(/10月.*（2日）/);
+    expect(a?.note).toMatch(/「標準」で作り直します/);
     expect(a?.note).toMatch(/ほかの月/);
   });
   it('確定済みの日もあれば、作り直さないと書く', () => {
-    const a = rebuildAction(rebuildSummary([st('2026-10-30'), st('2026-10-29', 'confirmed')], TODAY));
+    const a = rebuildAction(
+      rebuildSummary([st('2026-10-30'), st('2026-10-29', 'confirmed')], TODAY, { '2026-10-29': {} }),
+      '標準',
+    );
     expect(a?.href).toBe('/month?ym=2026-10&do=stale');
     expect(a?.note).toMatch(/確定済みの日は作り直しません/);
     expect(a?.note).not.toMatch(/ほかの月/);
   });
   it('確定済みの日だけなら、作り直す日が無いので要対応を見る（?do=attention）', () => {
-    const a = rebuildAction(rebuildSummary([st('2026-11-04', 'confirmed')], TODAY));
+    const a = rebuildAction(rebuildSummary([st('2026-11-04', 'confirmed')], TODAY, { '2026-11-04': {} }), '標準');
     expect(a).toMatchObject({ href: '/month?ym=2026-11&do=attention', label: '要対応を見る' });
+  });
+});
+
+describe('いまの条件の案内', () => {
+  it('文と、今日の日の画面で作り直す行き先', () => {
+    expect(customRulesText('標準')).toBe(
+      'いまの条件は日の画面の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります',
+    );
+    expect(recreateTodayHref(TODAY)).toBe('/plan?date=2026-10-21&do=recreate');
+    expect(rebuildWith('標準')).toMatch(/いまの条件で作った案も「標準」の案になります/);
   });
 });

@@ -138,35 +138,29 @@ export function ruleSetKey(rules: readonly Rule[]): string {
   return JSON.stringify(rules.map((r) => [r.id, r.type, r.weight, HARDABLE.has(r.type) && r.hard]));
 }
 
-/** いま作れる条件の組のキー（PRD D161） */
-export type RuleKeys = {
-  /** いまの条件（条件の重みの画面の重み）と、いまの条件に各プリセットを当てたもの */
-  all: ReadonlySet<string>;
-  /** プリセットの ID → いまの条件にそのプリセットを当てたもの */
-  byPreset: ReadonlyMap<string, string>;
-};
-
-/** いま作れる条件の組のキー（いまの条件と各プリセット。PRD D161） */
-export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): RuleKeys {
-  const byPreset = new Map(presets.map((p) => [p.id, ruleSetKey(applyPreset([...rules], p))] as const));
-  return { all: new Set([ruleSetKey(rules), ...byPreset.values()]), byPreset };
+/**
+ * いまある条件の組のキー（PRD D161）：いまの条件（条件の重みの画面の重み）と、いまの条件に各プリセットを当てたもの。
+ * 今の案を作った条件がこのどれでもなければ、作ったときの条件はもうどこにも無い（＝条件が変わった）
+ */
+export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): ReadonlySet<string> {
+  return new Set([ruleSetKey(rules), ...presets.map((p) => ruleSetKey(applyPreset([...rules], p)))]);
 }
 
 /**
- * （D43・D161）今の案の元の記録を作った条件（重み・必須）が、いまは変わったか：
- * - 記録がプリセットの重みで作った案（記録の presetId がいまもあるプリセット。月のまとめて作る・日の自動作成・プリセットのカード）なら、
- *   いまの条件にそのプリセットを当てたものと違えば変わった（プリセットの重みを変えた・条件を足した・消した）。
- *   条件の重みの画面の重みを変えただけでは変わらない（プリセットの重みで上書きするので、作り直しても同じ）
- * - そのほか（いまの条件で作った・プリセットが消えた）なら、いまの条件にもどのプリセットにも当てはまらなければ変わった
- * 名前は計算に効かないので見ない。記録が無い・欠勤の振り直しの記録は判定しない（false）
+ * （D43・D161）今の案の元の記録を作った条件（重み・必須）が、いまの条件にもどのプリセットにも当てはまらないか
+ * （プリセットの重みを変えた・条件を足した・消した・いまの条件の重みを変えたなどで、作ったときの条件がもうどこにも無い）。
+ * 作り直しは点数の基準のプリセットで作るので、作り直した案は必ず当てはまる（true が残り続けない）。
+ * 点数の基準を切り替えただけでは変わらない（前の基準のプリセットもまだある）。名前は計算に効かないので見ない。
+ * 記録が無い・欠勤の振り直しの記録は判定しない（false）
  */
-export function rulesStale(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string, keys: RuleKeys): boolean {
+export function rulesStale(
+  data: Pick<DemoData, 'aiPlans' | 'aiRuns'>,
+  date: string,
+  keys: ReadonlySet<string>,
+): boolean {
   const run = planRunOf(data, date);
   if (!run || run.reassign) return false;
-  const key = ruleSetKey(run.rules);
-  const preset = run.presetId !== null ? keys.byPreset.get(run.presetId) : undefined;
-  if (preset !== undefined) return preset !== key;
-  return !keys.all.has(key);
+  return !keys.has(ruleSetKey(run.rules));
 }
 
 /**
@@ -273,7 +267,8 @@ export function dayStatus(
     overSpan: view.overSpan ?? [],
     hundred: plan ? (view.hundred ?? null) : null,
     hard,
-    stale: !!plan && !!view.stale,
+    // 計算に入れる訪問が無い日（取り消し・休みだけ）は作り直す対象にならないので数えない（batchTargets と同じ。PR #40 のレビュー）
+    stale: !!plan && visits.length > 0 && !!view.stale,
     needsCare: visits.length > 0 && (state === 'none' || unassigned > 0 || hard > 0 || absentLeft > 0),
   };
 }

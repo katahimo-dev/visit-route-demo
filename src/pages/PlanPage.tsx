@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { DayLines } from '../components/dayLines';
@@ -84,10 +84,11 @@ import { contactCount, dayWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
 import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
+import { isDate } from '../lib/isDate';
 import { keepLeaveVisits } from '../lib/leaves';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
-import { planRunOf, planStale } from '../lib/month';
+import { currentRuleKeys, planStale, rulesStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import {
   batchDescription,
@@ -99,6 +100,7 @@ import {
   resolveText,
   revertText,
 } from '../lib/planMenu';
+import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
@@ -200,7 +202,7 @@ function withRoutes(problem: Problem, plan: AiPlan, routes: Record<string, strin
 }
 
 export default function PlanPage() {
-  const { date } = useDay();
+  const { date, setDate } = useDay();
   const m = useDayModel(date);
   const {
     data,
@@ -700,6 +702,36 @@ export default function PlanPage() {
     create(rules, 'preset');
   };
 
+  // ---- 設定の画面の帯の［今日の案をいまの条件で作り直す］（?date=…&do=recreate。PRD D166）----
+  // その日を選び、URL から ?date= と ?do= を消し、問題ができたら「AI にもう一度作らせる」（recreate。手直しがあれば今どおり確認）。
+  // その日の自動作成（基準のプリセット）はしない（いまの条件で作るため）
+  const [params, setParams] = useSearchParams();
+  const pendingRecreate = useRef<string | null>(null);
+  const doParam = params.get('do');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
+  useEffect(() => {
+    if (doParam !== 'recreate') return;
+    const raw = params.get('date');
+    const target = raw && isDate(raw) ? raw : date;
+    pendingRecreate.current = target;
+    autoTried.current.add(target);
+    if (target !== date) setDate(target);
+    setParams(
+      (p) => {
+        p.delete('do');
+        p.delete('date');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [doParam]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 選んだ日の問題ができたときだけ
+  useEffect(() => {
+    if (pendingRecreate.current === null || pendingRecreate.current !== date || !problem || running) return;
+    pendingRecreate.current = null;
+    void recreate();
+  }, [date, problem, running]);
+
   // AI案が無い日は、開いたときに点数の基準のプリセット（scorePresetId）の案だけを自動で作る（同じ日に2回は試さない。
   // D52。ADR-0012 追記）。他のプリセットはカードか「まだ作っていない考え方をまとめて作る」で作る
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案の有無・問題が変わったときだけ
@@ -767,6 +799,8 @@ export default function PlanPage() {
    */
   const planIsStale = useMemo(() => {
     if (!aiPlan) return false;
+    // 作った条件（重み・必須）がいまの条件にもどのプリセットにも無い（PRD D161。月・ホーム・帯と同じ lib/month の rulesStale）
+    if (rulesStale(data, date, currentRuleKeys(data.rules, data.presets))) return true;
     return planStale(compileInput, data, date, (rules, pins) => {
       if (Object.keys(pins).length > 0) return undefined;
       const key = JSON.stringify(rules);
@@ -774,13 +808,15 @@ export default function PlanPage() {
       return presetKeys.find((k) => JSON.stringify(k.rules) === key)?.problem ?? undefined;
     });
   }, [aiPlan, compileInput, data, date, problem, presetKeys]);
-  /** （D43）作り直す：プリセットのカードを押したのと同じ（手直し・固定があれば確認）。プリセットに無い条件ならその条件で作る */
+  /**
+   * （D43）作り直す：月の「条件が変わった日を作り直す」と同じく点数の基準のプリセットで作る（プリセットのカードを押したのと同じ。
+   * 手直し・固定があれば確認）。古い記録の条件では作らない（作った条件がもう無いときに「条件が変わった」が消えないため。PR #40 のレビュー）。
+   * プリセットが無い（ありえない）ときはいまの条件で作る
+   */
   const remakeStale = () => {
-    const run = planRunOf(data, date);
-    if (!run) return;
-    const preset = presetOf(run.rules, data.presets);
-    if (preset) void runPreset(preset);
-    else void recreate(run.rules);
+    const base = scorePresetOf(data.presets, data.scorePresetId);
+    if (base) void runPreset(base);
+    else void recreate();
   };
   /**
    * 固定を残して組み直す（generated は変えない。固定は残す）。固定していない手直し（「入らなかった訪問」へ移した・
@@ -2455,6 +2491,9 @@ export default function PlanPage() {
           <WithIcon icon={TriangleAlert} size={16}>
             この案を作ったあとに、訪問・{terms.staff}・稼働時間・条件が変わりました
           </WithIcon>
+          <span className="sub" data-testid="plan-stale-with">
+            {rebuildWith(scoreRulerName)}
+          </span>
           <button type="button" className="btn btn-small" disabled={!!running || !problem} onClick={remakeStale}>
             <WithIcon icon={RefreshCw} size={14}>
               作り直す

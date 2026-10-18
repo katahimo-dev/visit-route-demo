@@ -1,13 +1,27 @@
-/* 条件を変えたら出す作り直しの帯（PRD D161〜D165。ADR-0025 追記）。色は日の画面の注意の帯（.plan-band.is-warn）にそろえる */
+/* 条件を変えたら出す作り直しの帯（PRD D161〜D166。ADR-0025 追記）。色は日の画面の注意の帯（.plan-band.is-warn）にそろえる */
 .rebuild-band {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 14px;
   background: #fbefd6;
   border: 1.5px solid #ecc97e;
   color: #7a5208;
+}
+.rb-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+/* 2行のとき（影響する日といまの条件の案内）は間に細い線 */
+.rb-row + .rb-row {
+  border-top: 1px solid #ecc97e;
+  padding-top: 6px;
+}
+.rb-with {
+  display: block;
+  font-size: 0.85rem;
 }
 .rb-text {
   margin: 0;
@@ -29,6 +43,8 @@
 }
 .rb-actions {
   display: inline-flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
   margin-left: auto;
 }
@@ -40,7 +56,7 @@
 @media (min-width: 861px) {
   .rebuild-band {
     position: sticky;
-    top: calc(var(--header-h) + 8px);
+    top: var(--header-h);
     z-index: 15;
     box-shadow: 0 4px 14px rgba(122, 82, 8, 0.12);
   }

@@ -40,6 +40,8 @@ if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読
 /** アプリと同じく日本時間の今日（YYYY-MM-DD） */
 const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
 const STORAGE_KEY = 'vrdemo:data:v1';
+/** 帯が数え直すまでの待ち（components/rebuildBand の SETTLE_MS） */
+const SETTLE = 600;
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 let fails = 0;
@@ -53,6 +55,9 @@ const hashOf = (page) => decodeURIComponent(new URL(page.url()).hash);
 const monthNo = (ym) => Number(ym.slice(5, 7));
 const band = (page) => page.getByTestId('rebuild-band');
 const live = (page) => page.getByTestId('rebuild-live');
+/** 影響する日の行・いまの条件の案内の行（1つの帯の中の2行） */
+const daysRow = (page) => page.getByTestId('rebuild-days-row');
+const customRow = (page) => page.getByTestId('rebuild-custom');
 
 /** 帯の数え（読み上げの領域の data-*。帯を隠していても数える） */
 async function counts(page) {
@@ -66,7 +71,7 @@ async function counts(page) {
 async function openSettings(page, hash) {
   await page.goto(`${BASE}#${hash}`);
   await page.locator('h1').first().waitFor({ timeout: 30000 });
-  await live(page).waitFor({ state: 'attached', timeout: 30000 });
+  await page.locator('[data-testid="rebuild-live"][data-ready="1"]').waitFor({ state: 'attached', timeout: 30000 });
   await page.waitForTimeout(300);
 }
 /** 日の画面で今の案ができる（自動作成）まで待つ */
@@ -118,11 +123,32 @@ async function prepare(page) {
   check(!!SECOND, '用意：今日の案（未確定）と次の日の案（確定）', { today: TODAY, second: SECOND });
 }
 
-// ---- 条件の重みの画面：変わった日が無ければ出さない → 基準のプリセットの重みを変えると出る ----
+// ---- 条件の重みの画面：変わった日が無ければ出さない → いまの条件と基準のプリセットの重みを変えると出る ----
 async function rules(page) {
   await openSettings(page, '/rules');
-  check((await band(page).count()) === 0, '条件が変わった日が無ければ帯を出さない', await counts(page));
+  check(
+    (await band(page).count()) === 0,
+    '条件が変わった日が無く、いまの条件がプリセットと同じなら帯を出さない',
+    await counts(page),
+  );
   check((await live(page).innerText()) === '', '読み上げの領域は最初から空で置く');
+  // いまの条件の重みを変える：どのプリセットとも違うので案内が出る（プリセットで作った案は「変わった」にしない）
+  const main = page.locator('.rules-table input[type="range"]:not([disabled])').first();
+  await main.focus();
+  await page.keyboard.press('ArrowLeft');
+  await customRow(page).waitFor({ timeout: 5000 });
+  const ct = await customRow(page).innerText();
+  check(
+    /いまの条件は日の画面の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります/.test(
+      ct,
+    ) &&
+      (await page.getByTestId('rebuild-today').count()) === 1 &&
+      /プリセットとして保存/.test(ct),
+    'いまの条件がプリセットと違えば案内と［今日の案をいまの条件で作り直す］［プリセットとして保存］',
+    ct,
+  );
+  await page.waitForTimeout(SETTLE + 300);
+  check((await daysRow(page).count()) === 0, 'プリセットで作った案は、いまの条件の重みだけでは「変わった」にしない');
   // 点数の基準のプリセット（標準）の「待ち」の重みを動かす（スライダーの1段ずつ。入力の間は数えない）
   const preset = page.getByTestId('preset-edit').filter({ has: page.locator('.chip', { hasText: '点数の基準' }) });
   await preset.locator('summary').click();
@@ -130,18 +156,23 @@ async function rules(page) {
   await slider.focus();
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft');
   await page.waitForTimeout(100);
-  check((await band(page).count()) === 0, '動かしている間（止まってから少しのあいだ）は数え直さない');
-  await band(page).waitFor({ timeout: 10000 });
+  check((await daysRow(page).count()) === 0, '動かしている間（止まってから少しのあいだ）は数え直さない');
+  await daysRow(page).waitFor({ timeout: 10000 });
   const c = await counts(page);
   check(
     c.days === 2 && c.unconfirmed === 1 && c.confirmed === 1,
-    '重みを変えると帯：影響する日 2日（未確定 1・確定済み 1）',
+    '作った重みがどこにも無くなると帯：影響する日 2日（未確定 1・確定済み 1）',
     c,
   );
-  const text = await band(page).innerText();
   check(
-    text.replace(/\s+/g, ' ').includes('条件が変わりました：影響する日 2日（未確定 1日・確定済み 1日）'),
-    '帯の文',
+    (await band(page).count()) === 1 && (await band(page).locator('.rb-row').count()) === 2,
+    '影響する日といまの条件の案内は1つの帯の2行',
+  );
+  const text = await daysRow(page).innerText();
+  check(
+    text.replace(/\s+/g, ' ').includes('条件が変わりました：影響する日 2日（未確定 1日・確定済み 1日）') &&
+      /点数の基準のプリセット「標準」で作り直します（いまの条件で作った案も「標準」の案になります）/.test(text),
+    '帯の文（基準のプリセットで作り直すと書く）',
     text,
   );
   await page.waitForFunction(() => document.querySelector('[data-testid="rebuild-live"]')?.textContent !== '');
@@ -150,6 +181,18 @@ async function rules(page) {
     '数えた結果が変わったときだけ読み上げる',
     await live(page).innerText(),
   );
+  // 戻すと0日になり、1度だけ「影響する日は無くなりました」
+  await slider.focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+  await daysRow(page).waitFor({ state: 'detached', timeout: 10000 });
+  check(
+    (await live(page).innerText()) === '影響する日は無くなりました',
+    '0日になったら「影響する日は無くなりました」と読み上げる',
+    await live(page).innerText(),
+  );
+  await slider.focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft');
+  await daysRow(page).waitFor({ timeout: 10000 });
   const go = page.getByTestId('rebuild-go');
   check(
     /作り直す/.test(await go.innerText()) && !!(await go.getAttribute('aria-describedby')),
@@ -166,7 +209,7 @@ async function rules(page) {
     return !!b && !!h && !!(b.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING);
   });
   check(order, '帯は画面の上（見出しより前）');
-  // 下へ巻いて設定を変えていても見える（広い画面では上の帯の下に貼り付く）
+  // 下へ巻いて設定を変えていても見える（広い画面では上の帯のすぐ下に貼り付く）
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await page.waitForTimeout(200);
   const pos = await band(page).evaluate((el) => {
@@ -174,8 +217,31 @@ async function rules(page) {
     const h = document.querySelector('.app-header').getBoundingClientRect();
     return { top: Math.round(r.top), bottom: Math.round(r.bottom), header: Math.round(h.bottom) };
   });
-  check(pos.top >= pos.header && pos.bottom <= 1000, '下へ巻いても帯が上の帯の下に見えている', pos);
+  check(
+    Math.abs(pos.top - pos.header) <= 1 && pos.bottom <= 1000,
+    '下へ巻いても帯が上の帯のすぐ下（隙間なし）に見えている',
+    pos,
+  );
   await page.screenshot({ path: path.join(OUT_DIR, 'rules-band.png') });
+  // Tab で入った入力欄が帯の下に隠れない（scroll-padding-top）
+  await page.evaluate(() => {
+    const target = document.querySelector('.rules-table input:not([type="range"])');
+    const all = [
+      ...document.querySelectorAll('.app-main input, .app-main button, .app-main a[href], .app-main select, .app-main summary'),
+    ].filter((x) => !x.disabled && x.getClientRects().length > 0);
+    const prev = all[all.indexOf(target) - 1];
+    prev.focus({ preventScroll: true });
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+  await page.waitForTimeout(100);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(300);
+  const hid = await page.evaluate(() => {
+    const t = document.activeElement.getBoundingClientRect();
+    const b = document.querySelector('[data-testid="rebuild-band"]').getBoundingClientRect();
+    return { input: Math.round(t.top), band: Math.round(b.bottom), tag: document.activeElement.tagName };
+  });
+  check(hid.tag === 'INPUT' && hid.input >= hid.band, 'Tab で入った入力欄が帯の下に隠れない', hid);
 }
 
 // ---- 月の要対応と同じ数 ----
@@ -203,10 +269,10 @@ async function later(page) {
   );
   const after = await page.evaluate((k) => localStorage.getItem(k), STORAGE_KEY);
   check(before === after, '［後で］はデータに保存しない');
-  // 同じ画面で条件をまた変えても、この画面の間は隠したまま
+  // 同じ画面で条件をまた変えても、この画面の間は隠したまま（いまの条件をプリセットからさらに離す）
   const slider = page.locator('.rules-table input[type="range"]:not([disabled])').first();
   await slider.focus();
-  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
   await page.waitForTimeout(1200);
   check((await band(page).count()) === 0, '同じ画面の間は隠したまま');
   check((await live(page).innerText()) === '', '隠したあとは読み上げない');
@@ -220,9 +286,13 @@ async function later(page) {
     ['/items', '特性の項目'],
   ]) {
     await openSettings(page, hash);
-    await band(page).waitFor({ timeout: 10000 });
+    await daysRow(page).waitFor({ timeout: 10000 });
     const c = await counts(page);
-    check(c.days === BAND_DAYS, `${name}の画面にも同じ帯`, c);
+    check(
+      c.days === BAND_DAYS && (await customRow(page).count()) === 0,
+      `${name}の画面にも同じ帯（いまの条件の案内は条件の重みの画面だけ）`,
+      c,
+    );
   }
   // 予定の画面・ホームには出さない（要対応・進み具合の帯に残る）
   await page.goto(`${BASE}#/month`);
@@ -252,6 +322,7 @@ async function rebuild(page) {
   const count = await page.getByTestId('batch-count').innerText();
   check(/対象の日：\s*1日/.test(count), '対象は未確定の日だけ（1日）', count);
   const note = await page.getByTestId('batch-stale-note').innerText();
+  check(/点数の基準のプリセット「標準」で作り直します/.test(note), '欄に基準のプリセットで作り直すと書く', note);
   // 確定済みの日が同じ月なら欄に書く（月末で来月なら、この月の欄には書かない）
   const sameMonth = SECOND.slice(0, 7) === ym;
   check(
@@ -271,6 +342,35 @@ async function rebuild(page) {
   await go.click();
   await page.getByTestId('month-attention').waitFor({ timeout: 10000 });
   check(!/do=/.test(hashOf(page)), '［要対応を見る］で月の画面の要対応（?do= は消える）', hashOf(page));
+}
+
+// ---- ［今日の案をいまの条件で作り直す］：日の画面で今日の案をいまの条件で作る ----
+async function today(page) {
+  await openSettings(page, '/rules');
+  await customRow(page).waitFor({ timeout: 10000 });
+  const runsBefore = await page.evaluate(
+    ({ key, d }) => (JSON.parse(localStorage.getItem(key)).aiRuns[d] ?? []).length,
+    { key: STORAGE_KEY, d: TODAY },
+  );
+  await page.getByTestId('rebuild-today').click();
+  await page.getByTestId('confirm-state').waitFor({ timeout: 30000 });
+  await page.waitForFunction(() => !/do=|date=/.test(decodeURIComponent(location.hash)));
+  check(hashOf(page) === '#/plan', '日の画面へ。?date= と ?do= は消える', hashOf(page));
+  check((await page.locator('.date-switch select').inputValue()) === TODAY, '今日を選んでいる');
+  await page.waitForFunction(
+    ({ key, d, n }) => (JSON.parse(localStorage.getItem(key)).aiRuns[d] ?? []).length > n,
+    { key: STORAGE_KEY, d: TODAY, n: runsBefore },
+    { timeout: 60000 },
+  );
+  const same = await page.evaluate(
+    ({ key, d }) => {
+      const x = JSON.parse(localStorage.getItem(key));
+      const k = (rs) => JSON.stringify(rs.map((r) => [r.id, r.weight]));
+      return k(x.aiPlans[d].rules) === k(x.rules);
+    },
+    { key: STORAGE_KEY, d: TODAY },
+  );
+  check(same, '今日の案をいまの条件で作り直した');
 }
 
 // ---- 390px・印刷 ----
@@ -312,6 +412,7 @@ async function mobile(page) {
     ['later', later],
     ['mobile', mobile],
     ['rebuild', rebuild],
+    ['today', today],
   ]) {
     try {
       await fn(page);

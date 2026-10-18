@@ -82,6 +82,7 @@ import {
 } from '../lib/month';
 import { mdText } from '../lib/patternText';
 import { type BandOp, urgentCount } from '../lib/progressBand';
+import { rebuildWith } from '../lib/rebuildBand';
 import {
   type OffDayState,
   offDayState,
@@ -1272,7 +1273,8 @@ export default function MonthPage() {
             )}
             {mode === 'stale' ? (
               <p className="sub" data-testid="batch-stale-note">
-                案を作ったあとに条件が変わった日を、点数の基準のプリセットで作り直します。手直しのある日は、作り始める前に確かめます。今日より前の日・確定した日は作りません
+                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? 'いまの条件')}
+                。手直しのある日は、作り始める前に確かめます。今日より前の日・確定した日は作りません
                 {staleConfirmed > 0 &&
                   `（条件が変わった確定済みの日 ${staleConfirmed}日は、日の画面で確かめてください）`}
                 。

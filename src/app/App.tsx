@@ -290,7 +290,7 @@ function AdminShell() {
             element={
               <>
                 {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
-                {showsRebuildBand(pathname) && <RebuildBand key={pathname} />}
+                {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
                 <Outlet />
               </>
             }
