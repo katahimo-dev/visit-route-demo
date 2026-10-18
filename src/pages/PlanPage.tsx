@@ -103,6 +103,7 @@ import {
 import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
+import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
@@ -125,7 +126,7 @@ import { applyPreset, matchesPreset, presetOf, scorePresetOf, scoreRulesOf } fro
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
-import { AbsencePanel, CandidateBox, leftReasonText, ReassignBar } from './absenceParts';
+import { CandidateBox, leftReasonText, ReassignBar, ReassignSummary } from './absenceParts';
 import { DayMailPanel } from './mailPanels';
 import {
   AchievementList,
@@ -148,6 +149,7 @@ import {
   ReassignDock,
   type ReassignOption,
 } from './reassignParts';
+import { type SuddenInit, SuddenPanel } from './SuddenPanel';
 import { VisitForm } from './VisitForm';
 
 /** 連絡の一覧が出せない（差を出せない）ときでも、欠勤の人に残る訪問だけで開くための空の一覧 */
@@ -252,8 +254,20 @@ export default function PlanPage() {
   const { focusStaff, focusOn } = sel;
   /** 開いている訪問の入力欄（null：閉じている、'new'：足す、それ以外：直す訪問の ID） */
   const [editing, setEditing] = useState<string | null>(null);
-  /** 急な欠勤の欄を開いている人（ADR-0011。null：閉じている） */
-  const [absenceFor, setAbsenceFor] = useState<string | null>(null);
+  /**
+   * 「欠勤・キャンセル」の欄（PRD D167〜D172。null：閉じている）。日の画面の入口・ホーム（`?do=absence`）からは1段目、
+   * 列の見出しの「急な欠勤」「欠勤を直す」からはその人を選んだ2段目で開く
+   */
+  const [sudden, setSudden] = useState<SuddenInit | null>(null);
+  /** 「欠勤・キャンセル」の欄を閉じたあと、差の欄へ移るか（振り直したあと） */
+  const suddenToBar = useRef(false);
+  /** 日の画面の「欠勤・キャンセル」のボタン（欄を閉じたときの戻り先が消えていたら） */
+  const suddenBtnRef = useRef<HTMLButtonElement>(null);
+  /** 欄を開く（前に振り直して閉じたときの「差の欄へ移る」を戻す。開き直して欠勤だけ登録したときに差の欄へ飛ばない） */
+  const openSudden = (init: SuddenInit) => {
+    suddenToBar.current = false;
+    setSudden(init);
+  };
   /** 取り消しの欄を開いている訪問（PRD D74。null：閉じている）と、当日キャンセルか */
   const [cancelFor, setCancelFor] = useState<Visit | null>(null);
   const [cancelSameDay, setCancelSameDay] = useState(false);
@@ -341,7 +355,7 @@ export default function PlanPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた入力欄を閉じ、前の日のエラーを消す
   useEffect(() => {
     setEditing(null);
-    setAbsenceFor(null);
+    setSudden(null);
     setCancelFor(null);
     setContactsOpen(false);
     setPanel(null);
@@ -708,6 +722,31 @@ export default function PlanPage() {
   const [params, setParams] = useSearchParams();
   const pendingRecreate = useRef<string | null>(null);
   const doParam = params.get('do');
+  /** ?do=absence で開く日（日付を切り替えたあとに開く。日付を変えると欄を閉じる effect より後で開くため） */
+  const pendingSudden = useRef<string | null>(null);
+  // ホームの「急な欠勤・キャンセルを登録」（?date=今日&do=absence。PRD D172）：その日を選び、「欠勤・キャンセル」の欄を1段目で開き、
+  // URL から ?date= と ?do= を消す（1回だけ。戻るで繰り返さない）。自動作成は今どおり（案ができるまで振り直しは押せない）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
+  useEffect(() => {
+    if (doParam !== SUDDEN_DO) return;
+    const raw = params.get('date');
+    const target = raw && isDate(raw) ? raw : date;
+    if (target !== date) setDate(target);
+    pendingSudden.current = target;
+    setParams(
+      (p) => {
+        p.delete('do');
+        p.delete('date');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [doParam]);
+  useEffect(() => {
+    if (pendingSudden.current === null || pendingSudden.current !== date) return;
+    pendingSudden.current = null;
+    openSudden({});
+  });
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
   useEffect(() => {
     if (doParam !== 'recreate') return;
@@ -959,15 +998,16 @@ export default function PlanPage() {
   };
 
   // ---- この割当で確定（D13）：今の案を manualPlans と visits.staffId に写す ----
-  const adopt = async () => {
-    if (!aiPlan || !problem) return;
+  /** この割当で確定（確定したら true） */
+  const adopt = async (): Promise<boolean> => {
+    if (!aiPlan || !problem) return false;
     const ok = await confirmDialog({
       title: 'この割当で確定しますか？',
       body: `この割当（手直し後）で確定します。各訪問の担当がこのとおりに書き換わり、${terms.staff}の画面にも出ます。\n（計算に入れていない訪問の担当はそのままです）`,
       confirmLabel: '確定する',
     });
-    if (!ok) return;
-    if (runRef.current) return;
+    if (!ok) return false;
+    if (runRef.current) return false;
     const inProblem = new Set(problem.visits.map((v) => v.id));
     const aiOwner = ownerMap(aiPlan.routes);
     const before = ownerMap(m.savedView.cols);
@@ -994,6 +1034,7 @@ export default function PlanPage() {
       }),
     }));
     toast('この割当で確定しました');
+    return true;
   };
   /**
    * 確定の状態：'none' は確定した割当（manualPlans[date]）が無い、'same' は今の案と一致、'diff' は違う。
@@ -1057,21 +1098,25 @@ export default function PlanPage() {
   /** 名前を記録の名前に入れる長さ（記録の名前は60字まで） */
   const shortName = (id: string) => staffName(id).slice(0, 40);
 
-  /** 「登録して振り直す」：欠勤を足したデータで compile し、元の案から振り直して今の案にする（1回の update で書く） */
-  const registerAndReassign = async (absence: Absence, anneal = false) => {
-    if (running) return;
+  /**
+   * 「登録して振り直す」：欠勤を足したデータで compile し、元の案から振り直して今の案にする（1回の update で書く）。
+   * stay：「欠勤・キャンセル」の欄から押した（欄は閉じず4段目へ進むので、差の欄へは移らない）。振り直せたら true
+   */
+  const registerAndReassign = async (absence: Absence, anneal = false, stay = false): Promise<boolean> => {
+    if (running) return false;
     setError(null);
     const d1 = saveAbsence(data, absence);
     const built = attempt(() => compile(d1, date));
     const p = built.value;
     if (!p) {
       setError(`振り直せませんでした（${built.error}）`);
-      return;
+      if (stay) toast(`振り直せませんでした（${built.error}）`);
+      return false;
     }
     const base = baseOf(d1, date, p);
     if (!base) {
       setError('先にAI案を作ってください（欠勤だけは登録できます）');
-      return;
+      return false;
     }
     if (
       base.from === 'confirmed' &&
@@ -1083,8 +1128,8 @@ export default function PlanPage() {
         tone: 'danger',
       }))
     )
-      return;
-    if (runRef.current) return;
+      return false;
+    if (runRef.current) return false;
     const used = absencesOn(d1, date);
     const absent = [...new Set(used.map((a) => a.staffId))];
     const result = attempt(() => {
@@ -1094,7 +1139,8 @@ export default function PlanPage() {
     });
     if (!result.value) {
       setError(`振り直せませんでした（${result.error}）`);
-      return;
+      if (stay) toast(`振り直せませんでした（${result.error}）`);
+      return false;
     }
     const r = result.value;
     const createdAt = Date.now();
@@ -1108,16 +1154,18 @@ export default function PlanPage() {
         createdAt,
       }),
     );
-    setAbsenceFor(null);
+    if (!stay) setSudden(null);
     sel.reset();
     toast(`振り直しました（振り直し ${r.placed.length}件・入らない ${r.unplaced.length}件）`);
     // 案B も作る：書き込んだ今の案（reassign）と新しい問題が画面に出てから始める（下の effect）
     if (anneal) pendingAnneal.current = date;
+    if (stay) return true;
     pendingBarFocus.current = date;
     const token = date;
     window.setTimeout(() => {
       if (pendingBarFocus.current === token) pendingBarFocus.current = null;
     }, 1500);
+    return true;
   };
 
   // ---- 2回目：案B「少し動かしてよい」・連絡の一覧（PRD D34・D35。ADR-0011 追記）----
@@ -1421,10 +1469,14 @@ export default function PlanPage() {
   };
   const saveAbsenceOnly = (absence: Absence) => {
     update((d) => saveAbsence(d, absence));
-    setAbsenceFor(null);
-    toast('欠勤を登録しました（今の案はそのままです）');
+    setSudden(null);
+    toast(
+      aiPlan
+        ? '欠勤を登録しました（今の案はそのままです）'
+        : '欠勤を登録しました（案を作るときは欠勤の時間を除いて作ります）',
+    );
   };
-  const cancelAbsence = async (absence: Absence) => {
+  const cancelAbsence = async (absence: Absence): Promise<boolean> => {
     const ok = await confirmDialog({
       title: `${staffName(absence.staffId)}さんの欠勤を取り消しますか？`,
       body: '今の案はそのままです。',
@@ -1432,24 +1484,26 @@ export default function PlanPage() {
       cancelLabel: '残しておく',
       tone: 'danger',
     });
-    if (!ok) return;
+    if (!ok) return false;
     update((d) => removeAbsence(d, absence.id));
-    setAbsenceFor(null);
+    setSudden(null);
     toast(reassignInfo ? '欠勤を取り消しました。案を戻すには「元の案に戻す」を押してください' : '欠勤を取り消しました');
+    return true;
   };
-  const revertToBase = async () => {
-    if (!problem || !reassignInfo) return;
+  const revertToBase = async (): Promise<boolean> => {
+    if (!problem || !reassignInfo) return false;
     const ok = await confirmDialog({
       title: '振り直す前の案に戻しますか？',
       body: '振り直す前の案（担当・固定）に戻します。',
       confirmLabel: '元の案に戻す',
     });
-    if (!ok) return;
-    if (runRef.current) return;
+    if (!ok) return false;
+    if (runRef.current) return false;
     const p = problem;
     update((d) => revertReassign(d, date, p));
     sel.reset();
     toast('元の案に戻しました');
+    return true;
   };
   /**
    * 入らない訪問を候補の人に入れる（固定。時刻は変えない。間に合わなければ必須の違反の赤い枠）。
@@ -1489,11 +1543,20 @@ export default function PlanPage() {
     setCancelFor(v);
     setCancelSameDay(false);
   };
-  /** 取り消す。当日キャンセルなら取り消しの種類 'sameDay'（回数を数えるだけ。請求はしない。ADR-0015） */
+  /** 取り消しの欄の「取り消す」 */
   const doCancel = () => {
-    const v = cancelFor;
+    if (!cancelFor) return;
+    applyCancel(cancelFor.id, cancelSameDay);
+    setCancelFor(null);
+  };
+  /**
+   * 訪問を取り消す（取り消しの欄・「欠勤・キャンセル」の欄で共通）。当日キャンセルなら取り消しの種類 'sameDay'
+   * （回数を数えるだけ。請求はしない。ADR-0015）。今の案はそのままで、この訪問は計算から外れる
+   */
+  const applyCancel = (visitId: string, sameDay: boolean) => {
+    const v = m.allVisits.find((x) => x.id === visitId && !x.cancelled);
     if (!v) return;
-    const kind = cancelSameDay ? ('sameDay' as const) : null;
+    const kind = sameDay ? ('sameDay' as const) : null;
     // 定期パターンの訪問を取り消したら「この回だけの変更」（ADR-0012）
     update((d) => ({
       ...d,
@@ -1503,7 +1566,6 @@ export default function PlanPage() {
           : x,
       ),
     }));
-    setCancelFor(null);
     toast(kind ? '当日キャンセルとして取り消しました' : '取り消しました');
   };
   /**
@@ -1906,7 +1968,7 @@ export default function PlanPage() {
             <button
               type="button"
               className="link-btn absence-btn"
-              onClick={() => setAbsenceFor(sid)}
+              onClick={() => openSudden({ kind: 'staff', staffId: sid })}
               aria-label={`${staffName(sid)}さんの${avail?.absence ? '欠勤を直す' : '急な欠勤'}`}
             >
               {avail?.absence ? '欠勤を直す' : '急な欠勤'}
@@ -2354,6 +2416,78 @@ export default function PlanPage() {
     </div>
   );
 
+  // ---- 「欠勤・キャンセル」の欄（PRD D167〜D172）：選択肢・訪問の担当・4段目の振り直しの結果 ----
+  /** いまの担当（今の案。無ければ確定した割当） */
+  const suddenOwner = (visitId: string): string | null => {
+    const sid = aiPlan ? owner.get(visitId) : ownerMap(m.savedView.cols).get(visitId);
+    return sid && sid !== NONE ? staffName(sid) : null;
+  };
+  const suddenStaff = useMemo(
+    () => staffChoices(staff, slotsOf, (sid) => (own(routes, sid) ?? []).length),
+    [staff, slotsOf, routes],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 訪問・〈利用者さん〉・担当が変わったときだけ
+  const suddenVisits = useMemo(
+    () =>
+      sudden
+        ? visitChoices(
+            visits,
+            (id) => clientById.get(id)?.displayName ?? '（不明）',
+            (id) => {
+              const v = visitById.get(id);
+              return v ? windowText(v) : '';
+            },
+            suddenOwner,
+          )
+        : [],
+    [sudden, visits, clientById, visitById, owner, m.savedView],
+  );
+  const suddenVisitInfo = (visitId: string) => {
+    const v = visitById.get(visitId);
+    return {
+      client: v ? (clientById.get(v.clientId)?.displayName ?? '（不明）') : '（不明）',
+      window: v ? windowText(v) : '',
+      owner: suddenOwner(visitId),
+    };
+  };
+  /** 4段目：今の案の振り直しのまとめと、案A・案B を選ぶ欄（差の欄と同じ部品・同じ操作） */
+  const suddenResult =
+    aiPlan && reassignInfo ? (
+      <div className="stack" style={{ gap: 8 }} data-testid="sudden-result">
+        <strong>
+          今の案：
+          {reassignInfo.method === 'anneal' ? '案B（少し動かした案）' : '案A（空き時間に入れた案）'}
+        </strong>
+        {rDiff && <ReassignSummary diff={rDiff} left={left.length} testId="sudden-summary" />}
+        {rDiff && rDiff.unplaced.length > 0 && (
+          <p className="sub">
+            入らない訪問は、下の案B を作るか、日の画面の「入らなかった訪問」の「受けられる人」から入れられます
+          </p>
+        )}
+        <AnnealBox
+          weight={stayWeight}
+          onWeight={setStayWeight}
+          recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
+          disabledWhy={annealDisabled}
+          running={running === 'anneal'}
+          progress={running === 'anneal' ? progress : null}
+          onStart={startAnneal}
+          onStop={stopAnneal}
+          options={annealOptions}
+          absentStaff={absentStaff}
+          onChoose={chooseOption}
+          stopped={!!anneal?.stopped}
+          note={note}
+        />
+      </div>
+    ) : null;
+  /** 欄を閉じる（toBar：振り直したあとなので差の欄へ） */
+  const closeSudden = (toBar: boolean) => {
+    suddenToBar.current = toBar && !!reassignInfo;
+    setSudden(null);
+    if (suddenToBar.current) requestAnimationFrame(goToBar);
+  };
+
   /** 地図を出すか（1280px 以上で畳んだときだけ出さない。狭い画面は今どおり下に置き、画面の外なら MapDock） */
   const mapShown = !wideMap || mapOpen;
 
@@ -2535,6 +2669,17 @@ export default function PlanPage() {
       )}
 
       <div className="plan-toolbar row" data-testid="plan-toolbar">
+        {/* 急な欠勤・当日キャンセルの入口（PRD D167）。スマホでも見つけやすいよう操作の行の先頭。主ボタンにはしない */}
+        <button
+          ref={suddenBtnRef}
+          type="button"
+          className="btn plan-sudden-btn"
+          onClick={() => openSudden({})}
+          disabled={visits.length === 0 && suddenStaff.length === 0}
+          data-testid="sudden-open"
+        >
+          <WithIcon icon={UserRoundX}>欠勤・キャンセル</WithIcon>
+        </button>
         <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
           <WithIcon icon={Plus}>訪問を追加</WithIcon>
         </button>
@@ -2982,30 +3127,34 @@ export default function PlanPage() {
           onClose={() => setContactsOpen(false)}
         />
       )}
-      {absenceFor &&
-        (() => {
-          const st = staffById.get(absenceFor);
-          const av = slotsOf.get(absenceFor);
-          if (!st || !av) return null;
-          return (
-            <AbsencePanel
-              key={`${absenceFor}-${date}`}
-              staff={st}
-              date={date}
-              baseSlots={av.baseSlots}
-              existing={av.absence}
-              data={data}
-              visitLabel={visitLabel}
-              canReassign={running ? { ok: false, why: '計算中は押せません' } : { ok: true }}
-              onReassign={registerAndReassign}
-              onSaveOnly={saveAbsenceOnly}
-              onRemove={cancelAbsence}
-              onClose={() => setAbsenceFor(null)}
-              fallbackFocus={() => colHeadOf(st.id)}
-              returnFocus={() => (pendingBarFocus.current === date ? document.getElementById(barId) : null)}
-            />
-          );
-        })()}
+      {sudden && (
+        <SuddenPanel
+          key={date}
+          init={sudden}
+          date={date}
+          data={data}
+          terms={terms}
+          staffList={suddenStaff}
+          visitList={suddenVisits}
+          slotsOf={slotsOf}
+          staffName={staffName}
+          visitLabel={visitLabel}
+          visitInfo={suddenVisitInfo}
+          running={!!running}
+          hasPlan={!!aiPlan}
+          confirmState={confirmState}
+          result={suddenResult}
+          onReassign={(a, anneal) => registerAndReassign(a, anneal, true)}
+          onSaveOnly={saveAbsenceOnly}
+          onRemoveAbsence={cancelAbsence}
+          onCancelVisit={applyCancel}
+          onAdopt={adopt}
+          onRevert={reassignInfo ? revertToBase : undefined}
+          onClose={closeSudden}
+          fallbackFocus={() => (sudden.staffId ? colHeadOf(sudden.staffId) : suddenBtnRef.current)}
+          returnFocus={() => (suddenToBar.current ? document.getElementById(barId) : null)}
+        />
+      )}
     </div>
   );
 }

@@ -53,11 +53,23 @@ function check(ok, name, info = '') {
 const hashOf = (page) => decodeURIComponent(new URL(page.url()).hash);
 const RANK = { attention: 0, today: 1, confirm: 2, create: 3 };
 
+/**
+ * 画面を新しく開く。同じ文書の中で hash を移すと、読み直す前に `?do=` が処理されて消えることがあるので、
+ * いったん about:blank に移ってから開く（読み直しはしない）。固定の秒数で待たず、目印と見出しの文が出るのを待つ
+ */
 async function open(page, hash, ready = '[data-testid="home-tasks"]') {
+  await page.goto('about:blank');
   await page.goto(`${BASE}#${hash}`);
-  await page.reload();
   await page.locator(ready).first().waitFor({ timeout: 30000 });
-  await page.waitForTimeout(300);
+  await page.locator('h1').filter({ hasText: /\S/ }).first().waitFor({ timeout: 30000 });
+}
+/** 文が出るまで待つ（出なければ時間切れで続け、呼ぶ側の check で落とす） */
+async function waitText(locator, text, timeout = 10000) {
+  await locator
+    .filter({ hasText: text })
+    .first()
+    .waitFor({ timeout })
+    .catch(() => {});
 }
 /** 次の一手のカード（種類・色・題名） */
 async function tasks(page) {
@@ -196,7 +208,10 @@ async function firstState(page) {
 
 async function monthDo(page) {
   await open(page, `/month?ym=${YM}&do=attention`, '[data-testid="month-aside"]');
-  await page.waitForTimeout(400);
+  await waitText(page.locator('.month-aside-title'), '要対応');
+  await page
+    .waitForFunction(() => document.activeElement?.dataset.testid === 'month-aside', null, { timeout: 5000 })
+    .catch(() => {});
   check(
     hashOf(page) === `#/month?ym=${YM}` &&
       (await page.locator('.month-aside-title').first().innerText()).includes('要対応') &&
@@ -205,7 +220,7 @@ async function monthDo(page) {
     hashOf(page),
   );
   await open(page, `/month?ym=${YM}&staff=s1&do=unconfirmed`, '[data-testid="month-aside"]');
-  await page.waitForTimeout(400);
+  await waitText(page.locator('.month-aside-title'), '確定していない日');
   check(
     hashOf(page) === `#/month?ym=${YM}` &&
       (await page.locator('.month-aside-title').first().innerText()).includes('確定していない日'),

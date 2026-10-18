@@ -1,31 +1,19 @@
-// 予定の画面の急な欠勤（ADR-0011。PRD D26〜D32）：欠勤の欄・振り直しの差の欄・入らない訪問の受けられる人
-import {
-  CircleOff,
-  GitCompareArrows,
-  Send,
-  ShieldAlert,
-  Trash2,
-  TriangleAlert,
-  Undo2,
-  UserRoundCheck,
-  UserRoundX,
-  X,
-} from 'lucide-react';
+// 予定の画面の急な欠勤（ADR-0011。PRD D26〜D32）：欠勤の入力欄と見込み（「欠勤・キャンセル」の欄で使う。PRD D169）・
+// 振り直しの差の欄・入らない訪問の受けられる人
+import { CircleOff, GitCompareArrows, ShieldAlert, TriangleAlert, Undo2, UserRoundCheck } from 'lucide-react';
 import { type ReactNode, useId, useMemo, useState } from 'react';
-import { Hint, SidePanel, WithIcon } from '../components/ui';
+import { Hint, WithIcon } from '../components/ui';
 import type { DemoData, ReassignInfo } from '../contracts/data';
-import type { Absence, Staff, Visit } from '../contracts/documents';
+import type { Absence, Visit } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import type { ReassignCandidate, ReassignDiff, ReassignLeft, ReassignTarget } from '../contracts/reassign';
 import { HALF_HOURS, type Slot, slotsText, timeText as t } from '../domain/availability';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
-import { absenceError, absencesOn, absenceText, baseOf, saveAbsence, withoutAbsencesOn } from '../lib/absences';
-import { attempt, deltaText, newId, r0 } from '../lib/common';
+import { absencesOn, absenceText, baseOf, saveAbsence, withoutAbsencesOn } from '../lib/absences';
+import { attempt, deltaText, r0 } from '../lib/common';
+import type { AbsenceDraft } from '../lib/sudden';
 import { compile } from '../matching';
 import { candidatesFor, reassign, targetsOf } from '../reassign';
-
-/** 欠勤の欄の入力 */
-type Draft = { allDay: boolean; from: string; to: string; note: string };
 
 /** 見込み（振り直す訪問）：入力のたびに targetsOf を呼ぶ */
 export type AbsencePreview = {
@@ -53,112 +41,30 @@ export function previewOf(data: DemoData, date: string, absence: Absence): Absen
 }
 
 /**
- * 欠勤の欄（右から出る）。終日／時間帯・開始と終了（30分刻み。空＝始業から・終業まで）・早道・メモ・見込み（いまの時刻は扱わない。過去の欠勤は登録しない前提）。
- * 主ボタン「登録して振り直す」・「欠勤だけ登録」・既存なら「欠勤を取り消す」・閉じる
+ * 欠勤の入力欄（終日／時間帯・開始と終了（30分刻み。空＝始業から・終業まで）・早道・メモ）。値は呼ぶ側が持つ
+ * （「欠勤・キャンセル」の欄の2段目。PRD D26・D169。いまの時刻は扱わない。過去の欠勤は登録しない前提）
  */
-export function AbsencePanel({
-  staff,
-  date,
+export function AbsenceFields({
+  draft: d,
+  onChange,
   baseSlots,
   existing,
-  data,
-  visitLabel,
-  canReassign,
-  onReassign,
-  onSaveOnly,
-  onRemove,
-  onClose,
-  fallbackFocus,
-  returnFocus,
+  date,
+  error,
 }: {
-  staff: Staff;
-  date: string;
+  draft: AbsenceDraft;
+  onChange: (x: Partial<AbsenceDraft>) => void;
   /** 欠勤を差し引く前のその日の稼働時間帯 */
   baseSlots: Slot[];
   existing: Absence | null;
-  data: DemoData;
-  visitLabel: (id: string) => string;
-  /** 振り直しを押せるか（計算中は押せない）。押せないときの理由 */
-  canReassign: { ok: boolean; why?: string };
-  /** anneal：登録して案A にしたあと、続けて案B（少し動かしてよい）を作る */
-  onReassign: (absence: Absence, anneal?: boolean) => void;
-  onSaveOnly: (absence: Absence) => void;
-  onRemove: (absence: Absence) => void;
-  onClose: () => void;
-  /** 閉じたとき、フォーカスの戻り先が消えていたら移す先（列の見出し） */
-  fallbackFocus?: () => HTMLElement | null;
-  /** 閉じたときの戻り先の差し替え（登録して振り直したら差の欄へ。SidePanel.returnFocus） */
-  returnFocus?: () => HTMLElement | null;
+  date: string;
+  error: string | null;
 }) {
-  const [d, setD] = useState<Draft>(() => ({
-    allDay: existing ? existing.from === null && existing.to === null : true,
-    from: existing?.from ?? '',
-    to: existing?.to ?? '',
-    note: existing?.note ?? '',
-  }));
-  const absence: Absence = {
-    id: existing?.id ?? `${staff.id}-${date}`,
-    staffId: staff.id,
-    date,
-    from: d.allDay || d.from === '' ? null : d.from,
-    to: d.allDay || d.to === '' ? null : d.to,
-    note: d.note,
-  };
-  const timeError = d.allDay ? null : absenceError(absence);
-  const rangeError = !d.allDay && absence.from === null && absence.to === null ? '開始か終了を選んでください' : null;
-  const error = timeError ?? rangeError;
-  // メモは見込みに効かないので key に入れない（メモの入力で計算し直さない）
-  const key = JSON.stringify([absence.staffId, absence.from, absence.to]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 入力（key）とデータが変わったときだけ見込みを作り直す
-  const preview = useMemo(() => (error ? null : previewOf(data, date, absence)), [key, data, date, error]);
-  const reasonCount = (r: ReassignTarget['reason']) => preview?.targets.filter((x) => x.reason === r).length ?? 0;
   const shift = baseSlots[0];
   const end = baseSlots.at(-1);
-  const set = (x: Partial<Draft>) => setD((cur) => ({ ...cur, ...x }));
-  const save = (fn: (a: Absence) => void) => () => {
-    if (error) return;
-    fn({ ...absence, id: existing?.id ?? newId('a') });
-  };
-
+  const set = onChange;
   return (
-    <SidePanel
-      narrow
-      icon={UserRoundX}
-      title={`${staff.name}さんの急な欠勤`}
-      onClose={onClose}
-      fallbackFocus={fallbackFocus}
-      returnFocus={returnFocus}
-      footer={
-        <>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!!error || !canReassign.ok || !preview || preview.baseFrom === null}
-            title={
-              !canReassign.ok
-                ? canReassign.why
-                : preview?.baseFrom === null
-                  ? '先にAI案を作ってください（欠勤だけは登録できます）'
-                  : undefined
-            }
-            onClick={save((a) => onReassign(a))}
-          >
-            <WithIcon icon={Send}>登録して振り直す</WithIcon>
-          </button>
-          <button type="button" className="btn" disabled={!!error} onClick={save(onSaveOnly)}>
-            欠勤だけ登録
-          </button>
-          {existing && (
-            <button type="button" className="btn btn-danger-text" onClick={() => onRemove(existing)}>
-              <WithIcon icon={Trash2}>欠勤を取り消す</WithIcon>
-            </button>
-          )}
-          <button type="button" className="btn" onClick={onClose}>
-            <WithIcon icon={X}>閉じる</WithIcon>
-          </button>
-        </>
-      }
-    >
+    <div className="stack" style={{ gap: 10 }}>
       <p className="sub">
         {date.slice(5).replace('-', '/')} の稼働時間帯：{slotsText(baseSlots)}
         {existing && `（いま：${absenceText(existing, baseSlots)}）`}
@@ -200,7 +106,7 @@ export function AbsencePanel({
           <div className="form-grid">
             <label>
               開始
-              <select value={d.from} onChange={(e) => set({ from: e.target.value })}>
+              <select value={d.from} onChange={(e) => set({ from: e.target.value })} data-testid="absence-from">
                 <option value="">始業から{shift ? `（${t(shift.start)}）` : ''}</option>
                 {HALF_HOURS.map((h) => (
                   <option key={h} value={h}>
@@ -211,7 +117,7 @@ export function AbsencePanel({
             </label>
             <label>
               終了
-              <select value={d.to} onChange={(e) => set({ to: e.target.value })}>
+              <select value={d.to} onChange={(e) => set({ to: e.target.value })} data-testid="absence-to">
                 <option value="">終業まで{end ? `（${t(end.end)}）` : ''}</option>
                 {HALF_HOURS.map((h) => (
                   <option key={h} value={h}>
@@ -229,51 +135,28 @@ export function AbsencePanel({
         <input value={d.note} maxLength={100} onChange={(e) => set({ note: e.target.value })} />
       </label>
       {error && <p className="error">{error}</p>}
-      <div aria-live="polite">
-        {!error && preview && (
-          <div className="stack absence-preview" style={{ gap: 4 }} data-testid="absence-preview">
-            <strong>
-              振り直す訪問 {preview.targets.length}件（欠勤と重なる {reasonCount('absence')}件・間に合わない{' '}
-              {reasonCount('unreachable')}件
-              {reasonCount('notAllowed') > 0 ? `・ほかの必須の条件 ${reasonCount('notAllowed')}件` : ''}）
-            </strong>
-            {preview.targets.map((x) => (
-              <span key={x.visitId} className="sub">
-                ・{visitLabel(x.visitId)}
-                {x.reason === 'unreachable' ? '（間に合わない）' : x.reason === 'notAllowed' ? '（必須の条件）' : ''}
-              </span>
-            ))}
-            {preview.baseFrom !== null && preview.unplacedA > 0 && (
-              <div className="stack anneal-suggest" style={{ gap: 4 }} data-testid="anneal-suggest">
-                <span className="warn-text">
-                  空き時間に入れるだけ（案A）では {preview.unplacedA}件
-                  が入らない見込みです。ほかの人の訪問も少し動かしてよい（案B）なら入るかもしれません
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  style={{ alignSelf: 'flex-start' }}
-                  disabled={!!error || !canReassign.ok}
-                  title={!canReassign.ok ? canReassign.why : undefined}
-                  onClick={save((a) => onReassign(a, true))}
-                >
-                  登録して、少し動かしてよい（案B）も作る
-                </button>
-              </div>
-            )}
-            {preview.baseFrom === null ? (
-              <span className="warn-text">先にAI案を作ってください（欠勤だけは登録できます）</span>
-            ) : (
-              <span className="sub">
-                元の案：{preview.baseFrom === 'confirmed' ? '確定した割当' : '今の案'}
-                。ほかの人の担当・順番・時刻は変えず、空き時間に入れます（{staff.name}
-                さんの残りの訪問は、欠勤明けの移動で開始が遅れることがあります）
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    </SidePanel>
+    </div>
+  );
+}
+
+/** 見込みの振り直す訪問の一覧（理由つき。「欠勤・キャンセル」の欄の3段目） */
+export function AbsenceTargets({
+  targets,
+  visitLabel,
+}: {
+  targets: ReassignTarget[];
+  visitLabel: (id: string) => string;
+}) {
+  if (targets.length === 0) return null;
+  return (
+    <ul className="sudden-targets">
+      {targets.map((x) => (
+        <li key={x.visitId} className="sub">
+          {visitLabel(x.visitId)}
+          {x.reason === 'unreachable' ? '（間に合わない）' : x.reason === 'notAllowed' ? '（必須の条件）' : ''}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -313,7 +196,6 @@ export function ReassignBar({
   /** 下に足す欄（案B。2回目） */
   children?: ReactNode;
 }) {
-  const reassigned = diff?.moved.filter((m) => m.to !== null && m.from !== null).length ?? 0;
   const titleId = useId();
   return (
     <section
@@ -342,17 +224,7 @@ export function ReassignBar({
           </button>
         </span>
       </div>
-      {diff && (
-        <div className="row reassign-summary" style={{ flexWrap: 'wrap', gap: 8 }} data-testid="reassign-summary">
-          <span className="chip">変わる人 {diff.changedStaff.length}人</span>
-          <span className="chip chip-move">振り直し {reassigned}件</span>
-          <span className={`chip ${diff.unplaced.length > 0 ? 'chip-warn' : 'chip-ok'}`}>
-            入らない {diff.unplaced.length}件
-          </span>
-          {left.length > 0 && <span className="chip chip-red">欠勤の人のまま {left.length}件</span>}
-          <span className="chip">移動 {deltaText(r0(diff.travelDelta), '分') || '±0分'}</span>
-        </div>
-      )}
+      {diff && <ReassignSummary diff={diff} left={left.length} />}
       {diff && diff.unplaced.length > 0 && (
         <div className="stack left-box left-box-warn" style={{ gap: 4 }} data-testid="unplaced-why">
           <strong className="row warn-text" style={{ gap: 4 }}>
@@ -411,6 +283,30 @@ export function ReassignBar({
       )}
       {children}
     </section>
+  );
+}
+
+/** 振り直しのまとめ（変わる人・振り直し・入らない・欠勤の人のまま・移動）。差の欄と「欠勤・キャンセル」の欄の4段目で共通 */
+export function ReassignSummary({
+  diff,
+  left,
+  testId = 'reassign-summary',
+}: {
+  diff: ReassignDiff;
+  left: number;
+  testId?: string;
+}) {
+  const reassigned = diff.moved.filter((m) => m.to !== null && m.from !== null).length;
+  return (
+    <div className="row reassign-summary" style={{ flexWrap: 'wrap', gap: 8 }} data-testid={testId}>
+      <span className="chip">変わる人 {diff.changedStaff.length}人</span>
+      <span className="chip chip-move">振り直し {reassigned}件</span>
+      <span className={`chip ${diff.unplaced.length > 0 ? 'chip-warn' : 'chip-ok'}`}>
+        入らない {diff.unplaced.length}件
+      </span>
+      {left > 0 && <span className="chip chip-red">欠勤の人のまま {left}件</span>}
+      <span className="chip">移動 {deltaText(r0(diff.travelDelta), '分') || '±0分'}</span>
+    </div>
   );
 }
 
