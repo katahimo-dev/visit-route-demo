@@ -38,7 +38,7 @@ import {
 } from '../contracts/vacancy';
 import { HALF_HOURS, timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, jstHhmm, minutesToHhmm, weekday } from '../domain/time';
-import { toPlace } from '../lib/addressLookup';
+import { pinnedAddressAfter, toPlace } from '../lib/addressLookup';
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
@@ -208,7 +208,14 @@ export default function VacancyPage() {
   const [duration, setDuration] = useState('60');
   const [requirements, setRequirements] = useState<Condition[]>([]);
   // 場所（データには保存しない一時の入力。郵便番号は住所を探すためと、仮押さえで〈利用者さん〉に写すため。PRD D118〜D121）
-  const [place, setPlace] = useState<ClientPlace>({ address: '', lat: null, lng: null, postalCode: '' });
+  // pinnedAddress はピンを置いたときの住所（見出し・試算に使う。住所を打っても置き直すまで変えない。PRD D119）
+  const [place, setPlace] = useState<ClientPlace & { pinnedAddress: string }>({
+    address: '',
+    lat: null,
+    lng: null,
+    postalCode: '',
+    pinnedAddress: '',
+  });
   const [weeks, setWeeks] = useState(VACANCY_WEEKS_DEFAULT);
   const [from, setFrom] = useState(today);
   // 問い合わせの試算
@@ -224,11 +231,13 @@ export default function VacancyPage() {
   const durationOk =
     Number.isInteger(durationNum) && durationNum >= VACANCY_DURATION_MIN && durationNum <= VACANCY_DURATION_MAX;
   const fromOk = /^\d{4}-\d{2}-\d{2}$/.test(from);
-  // 試算に渡すのは住所・位置だけ（契約の Place）。郵便番号を打っても計算し直さない
+  // 試算に渡すのはピンの位置と、置いたときの住所だけ（契約の Place）。郵便番号・住所を打っても計算し直さない
   const exactPlace = useMemo(
     () =>
-      place.lat !== null && place.lng !== null ? { address: place.address, lat: place.lat, lng: place.lng } : null,
-    [place.address, place.lat, place.lng],
+      place.lat !== null && place.lng !== null
+        ? { address: place.pinnedAddress, lat: place.lat, lng: place.lng }
+        : null,
+    [place.pinnedAddress, place.lat, place.lng],
   );
 
   const query = useMemo<VacancyQuery | null>(
@@ -533,7 +542,9 @@ export default function VacancyPage() {
           </span>
           <AddressField
             value={place}
-            onChange={(p) => setPlace((cur) => ({ ...p, postalCode: cur.postalCode }))}
+            onChange={(p) =>
+              setPlace((cur) => ({ ...p, postalCode: cur.postalCode, pinnedAddress: pinnedAddressAfter(cur, p) }))
+            }
             postalCode={place.postalCode}
             onPostalCodeChange={(postalCode) => setPlace((cur) => ({ ...cur, postalCode }))}
             testId="vacancy"
@@ -545,7 +556,7 @@ export default function VacancyPage() {
       <div className="card stack" data-testid="vacancy-table-card">
         <SectionTitle icon={Users} aside={busy && <span className="sub">計算しています…</span>}>
           {result?.exact
-            ? `${place.address.trim() || '選んだ場所'}への移動を含む`
+            ? `${exactPlace?.address.trim() || '選んだ場所'}への移動を含む`
             : `目安（移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む）`}
         </SectionTitle>
         <p className="sub vacancy-legend">
@@ -926,7 +937,11 @@ export default function VacancyPage() {
             「仮」の印の{terms.client}
             として登録し、いまある訪問の最後の日までの訪問を作ります。今の案がある日は、他の人の予定を変えずに空き時間へ入れて固定します（入らない日は知らせます。予定の画面で入れてください）。確定した割当は変えません。
             {terms.client}の画面で「本登録にする」か「仮押さえを取り消す」を選べます。
-            {exactPlace ? '' : ' 場所が空なので、住所・位置はあとで入れてください。'}
+            {exactPlace
+              ? ''
+              : place.address.trim() !== ''
+                ? ' 位置はあとで入れてください。'
+                : ' 場所が空なので、住所・位置はあとで入れてください。'}
           </Hint>
         </SidePanel>
       )}

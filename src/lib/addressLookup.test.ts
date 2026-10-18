@@ -9,10 +9,12 @@ import {
   failStatus,
   geoCandidates,
   nextUndoAddress,
+  pinnedAddressAfter,
   pinStatus,
   postalBlockReason,
   postalCandidates,
   postalInputError,
+  sameQuery,
   statusClass,
   toPlace,
 } from './addressLookup';
@@ -54,6 +56,15 @@ describe('applyFoundAddress（見つけた住所の当て方）', () => {
       status: { kind: 'ok', text: '住所に「宮城県仙台市青葉区一番町」を入れました。番地を続けて書いてください' },
     });
     expect(applyFoundAddress('', '宮城県').replace).toBe(true);
+  });
+  it('ピンがあれば消さずに残し、置き直しを促す一言を足す（PRD D119）', () => {
+    const r = applyFoundAddress('東京都', '宮城県仙台市', true);
+    expect(r.replace).toBe(true);
+    expect(r.status?.text).toBe(
+      '住所に「宮城県仙台市」を入れました。番地を続けて書いてください。位置は前のままです。『住所から置き直す』を押してください',
+    );
+    // そのままにしたときは足さない
+    expect(applyFoundAddress('宮城県仙台市1', '宮城県仙台市', true).status?.text).not.toContain('位置は前のまま');
   });
   it('「元に戻す」の先は最初の住所を残し、空なら出さない', () => {
     expect(nextUndoAddress(null, '東京都')).toBe('東京都');
@@ -113,5 +124,26 @@ describe('toPlace', () => {
   it('郵便番号を落として住所・位置だけにする', () => {
     const p: ClientPlace = { address: 'a', lat: 1, lng: 2, postalCode: '9800811' };
     expect(toPlace(p)).toEqual({ address: 'a', lat: 1, lng: 2 });
+  });
+});
+
+describe('sameQuery（古い応答を捨てる）', () => {
+  it('郵便番号は7桁に直して比べ、住所は前後の空白を除いて比べる', () => {
+    expect(sameQuery('postal', '9800811', '980-0811')).toBe(true);
+    expect(sameQuery('postal', '9800811', '980-0812')).toBe(false);
+    expect(sameQuery('postal', '9800811', '')).toBe(false);
+    expect(sameQuery('address', '仙台市', ' 仙台市 ')).toBe(true);
+    expect(sameQuery('address', '仙台市', '仙台市青葉区')).toBe(false);
+  });
+});
+
+describe('pinnedAddressAfter（ピンを置いたときの住所）', () => {
+  const cur = { address: 'A町', lat: 1, lng: 2, pinnedAddress: 'A町' };
+  it('住所を打っても位置が同じなら前のまま', () => {
+    expect(pinnedAddressAfter(cur, { address: 'B町', lat: 1, lng: 2 })).toBe('A町');
+  });
+  it('位置が変わったら新しい住所、消したら空', () => {
+    expect(pinnedAddressAfter(cur, { address: 'B町', lat: 3, lng: 2 })).toBe('B町');
+    expect(pinnedAddressAfter(cur, { address: 'B町', lat: null, lng: null })).toBe('');
   });
 });

@@ -47,23 +47,43 @@ export const failStatus = (reason: LookupFail, what: 'postal' | 'address'): Look
   text: lookupMessage(reason, what),
 });
 
+/** 住所を差し替えたが、ピンは前の位置のまま残すときに足す知らせ（PRD D119） */
+export const PIN_KEPT_NOTE = '位置は前のままです。『住所から置き直す』を押してください';
+
 /**
  * 見つけた住所の当て方：いまの住所が見つけた住所で始まるなら（番地まで書いてあれば）そのまま、
- * そうでなければ見つけた住所で置き換える
+ * そうでなければ見つけた住所で置き換える。hasPin（もうピンがある）なら、ピンは消さずに残し、知らせに置き直しを促す一言を足す
  */
 export type AddressApply =
   | { replace: false; status: LookupStatus }
   | { replace: true; address: string; status: LookupStatus };
-export function applyFoundAddress(current: string, found: string): AddressApply {
+export function applyFoundAddress(current: string, found: string, hasPin = false): AddressApply {
   if (current.trim().startsWith(found)) {
     return { replace: false, status: { kind: 'ok', text: `住所は「${found}」で始まっているので、そのままにしました` } };
   }
   return {
     replace: true,
     address: found,
-    status: { kind: 'ok', text: `住所に「${found}」を入れました。番地を続けて書いてください` },
+    status: {
+      kind: 'ok',
+      text: `住所に「${found}」を入れました。番地を続けて書いてください${hasPin ? `。${PIN_KEPT_NOTE}` : ''}`,
+    },
   };
 }
+
+/**
+ * 検索の応答を使ってよいか：送ったときの値（郵便番号は7桁、住所は前後の空白を除いたもの）と、いまの欄の値が同じときだけ。
+ * 待っている間に欄を書き換えたら、古い応答は捨てる
+ */
+export const sameQuery = (what: 'postal' | 'address', sent: string, now: string): boolean =>
+  what === 'postal' ? normalizePostalCode(now) === sent : now.trim() === sent;
+
+/**
+ * ピンを置いたときの住所（空き状況の見出しに使う。PRD D119）：位置が変わったら新しい住所、変わらなければ前のまま。
+ * 住所を打ったり郵便番号から差し替えたりしても、置き直すまでは変えない
+ */
+export const pinnedAddressAfter = (prev: Place & { pinnedAddress: string }, next: Place): string =>
+  next.lat !== prev.lat || next.lng !== prev.lng ? (next.lat === null ? '' : next.address) : prev.pinnedAddress;
 
 /** 「元に戻す」の先：最初に置き換える前の住所を残す（候補を選び直しても上書きしない） */
 export const nextUndoAddress = (prev: string | null, before: string): string => (prev !== null ? prev : before);

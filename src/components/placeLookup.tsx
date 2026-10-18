@@ -1,5 +1,5 @@
 import { MapPin, Search, Undo2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ClientPlace, Place } from '../contracts/documents';
 import {
   addressBlockReason,
@@ -16,6 +16,7 @@ import {
   postalBlockReason,
   postalCandidates,
   postalInputError,
+  sameQuery,
   statusClass,
 } from '../lib/addressLookup';
 import { hasLocation } from '../lib/common';
@@ -59,11 +60,13 @@ export function AddressField<T extends Place>({
 }: AddressFieldProps<T>) {
   const [ownPostal, setOwnPostal] = useState('');
   const postalText = postalCode ?? ownPostal;
-  const setPostal = (code: string) => {
-    if (postalCode === undefined) setOwnPostal(code);
-    onPostalCodeChange?.(code);
+  const [busy, setBusyState] = useState<LookupBusy>(null);
+  // 連打しても1回だけ呼ぶ（描き直しを待たずに止める）
+  const busyRef = useRef<LookupBusy>(null);
+  const setBusy = (b: LookupBusy) => {
+    busyRef.current = b;
+    setBusyState(b);
   };
-  const [busy, setBusy] = useState<LookupBusy>(null);
   const [status, setStatus] = useState<LookupStatus>(null);
   const [postalHits, setPostalHits] = useState<PostalHit[]>([]);
   const [geoHits, setGeoHits] = useState<GeoHit[]>([]);
@@ -72,23 +75,47 @@ export function AddressField<T extends Place>({
    * '' は空から入れた（戻す先が空なので「元に戻す」は出さない）
    */
   const [undoAddress, setUndoAddress] = useState<string | null>(null);
-  // 待っている間に入力・画面が変わっても最新の値と書き先に書く
+  // 待っている間に入力・画面が変わっても最新の値と書き先に書く（描いたときの値に頼らない）
   const latest = useRef(value);
   latest.current = value;
+  const latestPostal = useRef(postalText);
+  latestPostal.current = postalText;
   const emit = useRef(onChange);
   emit.current = onChange;
+  const emitPostal = useRef(onPostalCodeChange);
+  emitPostal.current = onPostalCodeChange;
   const put = (p: T) => {
     latest.current = p;
     emit.current(p);
   };
+  const setPostal = (code: string) => {
+    latestPostal.current = code;
+    if (postalCode === undefined) setOwnPostal(code);
+    emitPostal.current?.(code);
+  };
   const ctrl = useRef<AbortController | null>(null);
   // 欄を閉じたら呼び出しを止める
   useEffect(() => () => ctrl.current?.abort(), []);
+  const ids = useId();
+  const postalErrorId = `${ids}-postal-error`;
+  const postalWhyId = `${ids}-postal-why`;
+  const addressWhyId = `${ids}-address-why`;
+  // 〈利用者さん〉は今までの data-testid（place-notice など）を残す
+  const tid = (name: string, legacy: string) => (testId === 'client' ? legacy : `${testId}-${name}`);
 
   const postal = normalizePostalCode(postalText);
   const postalWhy = postalBlockReason(postalText, busy);
   const addressWhy = addressBlockReason(value.address, busy);
   const postalError = postalInputError(postalText);
+
+  /** 欄を書き換えたら、探している途中の呼び出しを止める（古い応答で上書きしない） */
+  const cancel = () => {
+    if (!busyRef.current) return;
+    ctrl.current?.abort();
+    ctrl.current = null;
+    setBusy(null);
+    setStatus(null);
+  };
 
   const begin = (what: 'postal' | 'address') => {
     ctrl.current?.abort();
@@ -98,9 +125,9 @@ export function AddressField<T extends Place>({
     return ctrl.current.signal;
   };
 
-  /** 見つけた住所を入れる。いまの住所が見つけた住所で始まるなら（番地まで書いてあれば）そのまま */
+  /** 見つけた住所を入れる。いまの住所が見つけた住所で始まるなら（番地まで書いてあれば）そのまま。ピンは消さない */
   const putAddress = (found: string) => {
-    const r = applyFoundAddress(latest.current.address, found);
+    const r = applyFoundAddress(latest.current.address, found, hasLocation(latest.current));
     if (r.replace) {
       const before = latest.current.address;
       setUndoAddress((prev) => nextUndoAddress(prev, before));
@@ -115,30 +142,42 @@ export function AddressField<T extends Place>({
   };
 
   const findAddress = async () => {
-    if (postalWhy || !postal) return;
+    const sent = normalizePostalCode(latestPostal.current);
+    if (busyRef.current || !sent) return;
     const signal = begin('postal');
     setPostalHits([]);
     setUndoAddress(null);
-    const r = await lookupPostalCode(postal, { signal });
+    const r = await lookupPostalCode(sent, { signal });
     if (signal.aborted) return;
     setBusy(null);
+    // 念のため：待っている間に郵便番号が変わっていたら使わない
+    if (!sameQuery('postal', sent, latestPostal.current)) {
+      setStatus(null);
+      return;
+    }
     if (!r.ok) {
       setStatus(failStatus(r.reason, 'postal'));
       return;
     }
     // 郵便番号は7桁に直して残す
-    if (postalText !== postal) setPostal(postal);
+    if (latestPostal.current !== sent) setPostal(sent);
     putAddress(r.hits[0].address);
     setPostalHits(r.hits.length > 1 ? r.hits : []);
   };
 
   const findPin = async () => {
-    if (addressWhy) return;
+    const sent = latest.current.address.trim();
+    if (busyRef.current || sent === '') return;
     const signal = begin('address');
     setGeoHits([]);
-    const r = await searchAddress(latest.current.address, { signal });
+    const r = await searchAddress(sent, { signal });
     if (signal.aborted) return;
     setBusy(null);
+    // 念のため：待っている間に住所が変わっていたら使わない
+    if (!sameQuery('address', sent, latest.current.address)) {
+      setStatus(null);
+      return;
+    }
     if (!r.ok) {
       setStatus(failStatus(r.reason, 'address'));
       return;
@@ -154,11 +193,15 @@ export function AddressField<T extends Place>({
           {postalLabel}
           <input
             value={postalText}
-            maxLength={10}
+            maxLength={16}
             inputMode="numeric"
             placeholder="例：980-0811"
             aria-invalid={postalError || undefined}
-            onChange={(e) => setPostal(e.target.value)}
+            aria-describedby={postalError ? postalErrorId : undefined}
+            onChange={(e) => {
+              cancel();
+              setPostal(e.target.value);
+            }}
             onBlur={() => {
               // 7桁にできるなら直して見せる（できなければそのまま。保存のときに止める）
               if (postal && postal !== postalText) setPostal(postal);
@@ -170,6 +213,7 @@ export function AddressField<T extends Place>({
           type="button"
           className="btn btn-small"
           aria-disabled={postalWhy ? true : undefined}
+          aria-describedby={postalWhy ? postalWhyId : undefined}
           title={postalWhy ?? '郵便番号から住所（都道府県・市区町村・町名）を探して入れます'}
           onClick={() => void findAddress()}
           data-testid={`${testId}-postal-search`}
@@ -178,16 +222,23 @@ export function AddressField<T extends Place>({
             住所を探す
           </WithIcon>
         </button>
+        {postalWhy && (
+          <span id={postalWhyId} className="sr-only">
+            {postalWhy}
+          </span>
+        )}
       </div>
       {postalError && (
-        <span className="error">郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません）</span>
+        <span id={postalErrorId} className="error" data-testid={`${testId}-postal-error`}>
+          郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません）
+        </span>
       )}
       {postalHits.length > 0 && (
         <Candidates
           label="ほかの候補（押すと住所を置き換えます）"
           items={postalCandidates(postalHits, value.address)}
           onPick={(i) => putAddress(postalHits[i].address)}
-          testId="postal-candidate"
+          testId={tid('postal-candidate', 'postal-candidate')}
         />
       )}
       <label>
@@ -195,7 +246,10 @@ export function AddressField<T extends Place>({
         <input
           value={value.address}
           maxLength={200}
-          onChange={(e) => onChange({ ...value, address: e.target.value })}
+          onChange={(e) => {
+            cancel();
+            onChange({ ...value, address: e.target.value });
+          }}
           data-testid={`${testId}-address`}
         />
       </label>
@@ -204,6 +258,7 @@ export function AddressField<T extends Place>({
           type="button"
           className="btn btn-small"
           aria-disabled={addressWhy ? true : undefined}
+          aria-describedby={addressWhy ? addressWhyId : undefined}
           title={addressWhy ?? '住所から位置を探して、地図にピンを置きます'}
           onClick={() => void findPin()}
           data-testid={`${testId}-geo-search`}
@@ -212,6 +267,11 @@ export function AddressField<T extends Place>({
             {hasLocation(value) ? '住所から置き直す' : '地図に置く'}
           </WithIcon>
         </button>
+        {addressWhy && (
+          <span id={addressWhyId} className="sr-only">
+            {addressWhy}
+          </span>
+        )}
         {canUndoAddress(undoAddress) && (
           <button
             type="button"
@@ -229,11 +289,11 @@ export function AddressField<T extends Place>({
           </button>
         )}
       </div>
-      <span className="sub place-notice" data-testid="place-notice">
+      <span className="sub place-notice" data-testid={tid('notice', 'place-notice')}>
         {EXTERNAL_NOTICE}
         {noticeNote}
       </span>
-      <output className={statusClass(status)} data-testid="place-lookup-status">
+      <output className={statusClass(status)} data-testid={tid('status', 'place-lookup-status')}>
         {status?.text ?? ''}
       </output>
       {geoHits.length > 0 && (
@@ -241,10 +301,17 @@ export function AddressField<T extends Place>({
           label="ほかの候補（押すとピンを置き直します）"
           items={geoCandidates(geoHits, value)}
           onPick={(i) => putPin(geoHits[i])}
-          testId="geo-candidate"
+          testId={tid('geo-candidate', 'geo-candidate')}
         />
       )}
-      <PlacePin value={value} onChange={onChange} />
+      <PlacePin
+        value={value}
+        onChange={(p) => {
+          // 地図で置いた・消したら、探している途中の呼び出しを止める
+          cancel();
+          onChange(p);
+        }}
+      />
     </div>
   );
 }
