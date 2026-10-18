@@ -1,0 +1,562 @@
+// 右の欄（SidePanel）の確定のボタンの帯が中身に付いてくること（PRD D194〜D198。ADR-0025 追記）を本物のブラウザで確かめる：
+// 中身が短い欄は帯が内容のすぐ下（欄の下端より上）・区切りの線と影を出さない、中身が長い欄は帯が欄の下に貼り付き
+// 巻いても見え、内容が帯の下に隠れている間だけ区切り（data-stuck="true"）・巻き終えると区切りを消す、
+// 帯の下に隠れた入力欄へ Tab で入ると帯の上まで巻く（scroll-padding-bottom）、Tab が中で回る・Esc で閉じて戻る、
+// 帯の無い欄（閲覧）、390px：2つまでは横に並べ主ボタンが先、3つ以上は主ボタンを1行目に全幅・残りは2つずつ、
+// 下のタブ・safe-area に隠れない、キーボード（visualViewport が縮む）が出ても帯が見える、印刷（連絡の一覧）で帯を出さない。
+// 代表の欄：欠勤・キャンセル（1〜4段目・キャンセルの3段目）、〈スタッフ〉の閲覧と編集、月の「まとめて作る」、日の差の欄の「連絡の一覧」。
+// 1400×1000 と 390×844 の両方で見る。
+//
+// 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-panel-foot.cjs
+// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
+// 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { skipTour } = require('./lib/tourSeen.cjs');
+const { answerConfirms } = require('./lib/confirmDialog.cjs');
+
+function loadPlaywright() {
+  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
+  for (const p of tries) {
+    try {
+      return require(p);
+    } catch {
+      // 次の候補へ
+    }
+  }
+  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
+}
+
+const { chromium } = loadPlaywright();
+const BASE = process.env.BASE || 'http://localhost:4183/';
+const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-panel-foot');
+const JST = 9 * 3600 * 1000;
+/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
+function nextWednesdayNoonJst(now) {
+  const j = new Date(now.getTime() + JST);
+  const add = (3 - j.getUTCDay() + 7) % 7;
+  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
+}
+const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
+if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
+/** アプリと同じく日本時間の今日（YYYY-MM-DD） */
+const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
+const YM = TODAY.slice(0, 7);
+const STORAGE_KEY = 'vrdemo:data:v1';
+fs.mkdirSync(OUT_DIR, { recursive: true });
+
+let fails = 0;
+function check(ok, name, info = '') {
+  if (!ok) fails++;
+  console.log(
+    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
+  );
+}
+const settle = (page, ms = 250) => page.waitForTimeout(ms);
+const drawer = (page) => page.locator('.drawer');
+const sudden = (page) => page.getByTestId('sudden-panel');
+const shot = (page, name) => page.screenshot({ path: path.join(OUT_DIR, `${name}.png`) });
+
+async function open(page, hash, ready) {
+  await page.goto(`${BASE}#${hash}`);
+  await page.reload();
+  await page.locator(ready).first().waitFor({ timeout: 60000 });
+  await settle(page, 400);
+}
+/** 今の案が出て計算が終わるまで待つ */
+async function waitPlan(page) {
+  await page.getByTestId('confirm-state').waitFor({ state: 'attached', timeout: 60000 });
+  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
+  await settle(page, 300);
+}
+/** データを初期状態に戻して今日の日の画面を開く */
+async function freshPlan(page) {
+  await page.goto(`${BASE}#/home`);
+  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
+  await page.goto(`${BASE}#/plan?date=${TODAY}`);
+  await page.reload();
+  await waitPlan(page);
+}
+
+/**
+ * 欄と帯の位置（画面の座標）。帯が無ければ foot は null。
+ * last＝内容（帯の前）の最後の子の下端、body＝巻く領域
+ */
+const metrics = (page) =>
+  page.evaluate(() => {
+    const dr = document.querySelector('.drawer');
+    if (!dr) return null;
+    const body = dr.querySelector('.drawer-body');
+    const foot = dr.querySelector('.drawer-foot');
+    const content = dr.querySelector('.drawer-content') ?? body;
+    const kids = [...content.children].filter((el) => el.offsetParent !== null && el !== foot);
+    const last = kids.length ? Math.max(...kids.map((el) => el.getBoundingClientRect().bottom)) : 0;
+    const r = (el) => {
+      const b = el.getBoundingClientRect();
+      return {
+        top: Math.round(b.top),
+        bottom: Math.round(b.bottom),
+        left: Math.round(b.left),
+        right: Math.round(b.right),
+      };
+    };
+    const btns = foot
+      ? [...foot.querySelectorAll(':scope > .btn')].map((b) => ({
+          ...r(b),
+          width: Math.round(b.getBoundingClientRect().width),
+          primary: b.classList.contains('btn-primary') || b.classList.contains('btn-danger'),
+          // ボタンの真ん中に、ほかの物（下のタブなど）が重なっていないか
+          hit: (() => {
+            const c = b.getBoundingClientRect();
+            const at = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2);
+            return !!at && b.contains(at);
+          })(),
+        }))
+      : [];
+    return {
+      drawer: r(dr),
+      body: {
+        ...r(body),
+        scrollTop: Math.round(body.scrollTop),
+        scrollable: body.scrollHeight > body.clientHeight + 1,
+      },
+      foot: foot ? r(foot) : null,
+      footWidth: foot ? Math.round(foot.getBoundingClientRect().width) : 0,
+      footScrollW: foot ? foot.scrollWidth : 0,
+      footClientW: foot ? foot.clientWidth : 0,
+      stuck: foot?.getAttribute('data-stuck') ?? null,
+      last: Math.round(last),
+      innerHeight: window.innerHeight,
+      btns,
+    };
+  });
+
+/** 中身が短い欄：帯は内容のすぐ下で、欄の下端より上。区切りは出さない */
+async function expectShort(page, label) {
+  const m = await metrics(page);
+  check(!!m?.foot, `${label}：帯がある`);
+  if (!m?.foot) return m;
+  check(!m.body.scrollable, `${label}：中身が短く巻かない`, m.body);
+  const gap = m.foot.top - m.last;
+  check(gap >= 0 && gap <= 40, `${label}：帯が内容のすぐ下（間 ${gap}px）`, { footTop: m.foot.top, last: m.last });
+  check(m.foot.bottom <= m.drawer.bottom - 40, `${label}：帯が欄の下端より上`, {
+    foot: m.foot.bottom,
+    drawer: m.drawer.bottom,
+  });
+  check(m.stuck === 'false', `${label}：貼り付いていないので区切り（線・影）を出さない`, m.stuck);
+  check(
+    m.btns.every((b) => b.hit && b.bottom <= m.innerHeight),
+    `${label}：ボタンが見えて押せる`,
+    m.btns,
+  );
+  return m;
+}
+
+/** 中身が長い欄：帯は欄の下に貼り付き、巻いても見える。内容が隠れている間だけ区切り、巻き終えると消える */
+async function expectLong(page, label) {
+  const body = page.locator('.drawer-body');
+  await body.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await settle(page, 200);
+  let m = await metrics(page);
+  check(!!m?.foot, `${label}：帯がある`);
+  if (!m?.foot) return m;
+  check(m.body.scrollable, `${label}：中身が長く巻く`, m.body);
+  check(Math.abs(m.foot.bottom - m.drawer.bottom) <= 1, `${label}：帯が欄の下に貼り付く（上の端）`, {
+    foot: m.foot.bottom,
+    drawer: m.drawer.bottom,
+  });
+  check(m.stuck === 'true', `${label}：内容が帯の下にある間は区切り（線・影）を出す`, m.stuck);
+  check(
+    m.btns.every((b) => b.hit && b.bottom <= m.innerHeight),
+    `${label}：巻かなくても確定のボタンが見えて押せる`,
+    m.btns,
+  );
+  await body.evaluate((el) => {
+    el.scrollTop = (el.scrollHeight - el.clientHeight) / 2;
+  });
+  await settle(page, 200);
+  m = await metrics(page);
+  check(
+    Math.abs(m.foot.bottom - m.drawer.bottom) <= 1 && m.stuck === 'true' && m.btns.every((b) => b.hit),
+    `${label}：途中まで巻いても帯が下に見える`,
+    { foot: m.foot, stuck: m.stuck },
+  );
+  await body.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await settle(page, 250);
+  m = await metrics(page);
+  const gap = m.foot.top - m.last;
+  check(
+    Math.abs(m.foot.bottom - m.drawer.bottom) <= 1 && gap >= 0 && gap <= 40,
+    `${label}：巻き終えると帯は内容のすぐ下（間 ${gap}px）`,
+    { foot: m.foot, last: m.last },
+  );
+  check(m.stuck === 'false', `${label}：巻き終えると区切りを消す`, m.stuck);
+  await body.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await settle(page, 200);
+  return m;
+}
+
+/** 長さに合わせてどちらか（中身が幅や段階で変わる欄） */
+async function expectFits(page, label) {
+  const m = await metrics(page);
+  if (!m?.foot) {
+    check(false, `${label}：帯がある`);
+    return m;
+  }
+  return m.body.scrollable ? expectLong(page, `${label}（長い）`) : expectShort(page, `${label}（短い）`);
+}
+
+/** 390px の並び：2つまでは1行で主ボタンが先、3つ以上は主ボタンが1行目に全幅・残りは2つずつ。横にはみ出さない */
+async function expectMobileRow(page, label) {
+  const m = await metrics(page);
+  if (!m?.foot) return;
+  const b = m.btns;
+  check(
+    m.footScrollW <= m.footClientW && b.every((x) => x.left >= 0 && x.right <= 390),
+    `${label}：帯が横にはみ出さない`,
+    {
+      sw: m.footScrollW,
+      cw: m.footClientW,
+    },
+  );
+  if (b.length === 0) return;
+  if (b.some((x) => x.primary)) check(b[0].primary, `${label}：主ボタンが先頭`, b);
+  if (b.length === 2) {
+    check(b[0].top === b[1].top && b[0].left < b[1].left, `${label}：2つは横に並べ、主ボタンが左`, b);
+    check(Math.abs(b[0].width - b[1].width) <= 2, `${label}：2つは同じ幅`, b);
+  } else if (b.length === 1) {
+    check(b[0].width >= m.footWidth - 60, `${label}：1つは帯いっぱい`, { w: b[0].width, foot: m.footWidth });
+  } else {
+    check(
+      b[0].width >= m.footWidth - 60 && b.slice(1).every((x) => x.top > b[0].top),
+      `${label}：3つ以上は主ボタンを1行目に全幅`,
+      b,
+    );
+    const rows = new Map();
+    for (const x of b.slice(1)) rows.set(x.top, (rows.get(x.top) ?? 0) + 1);
+    check(
+      [...rows.values()].every((n) => n <= 2),
+      `${label}：残りは1行に2つまで`,
+      [...rows.entries()],
+    );
+  }
+  check(
+    b.every((x) => x.hit && x.bottom <= m.innerHeight),
+    `${label}：下のタブ・画面の端に隠れない`,
+    b,
+  );
+}
+
+// ---- 欠勤・キャンセルの欄の各段階 ----
+async function suddenSteps(page, w) {
+  await freshPlan(page);
+  await page.getByTestId('sudden-open').click();
+  await sudden(page).waitFor();
+  await settle(page, 300);
+  const m1 = await expectShort(page, `${w}・欠勤・キャンセル 1段目`);
+  await shot(page, `${w}-sudden-step1`);
+  if (w === '390') await expectMobileRow(page, `${w}・1段目`);
+  // 帯の上下の余白：画面の下の safe-area を足す（CSS の決まり）
+  const safe = await page.evaluate(() =>
+    [...document.styleSheets].some((s) => {
+      try {
+        return [...s.cssRules].some(
+          (r) => r.cssText.includes('.drawer-foot') && r.cssText.includes('safe-area-inset-bottom'),
+        );
+      } catch {
+        return false;
+      }
+    }),
+  );
+  check(safe, `${w}・帯の下の余白に safe-area-inset-bottom を足す`);
+  void m1;
+
+  await page.getByTestId('sudden-kind-staff').click();
+  await settle(page);
+  const best = await page.getByTestId('sudden-staff').evaluate((sel) => {
+    let b = { value: '', count: -1 };
+    for (const o of sel.options) {
+      const mm = /訪問 (\d+)件/.exec(o.textContent);
+      if (o.value && mm && Number(mm[1]) > b.count) b = { value: o.value, count: Number(mm[1]) };
+    }
+    return b;
+  });
+  await page.getByTestId('sudden-staff').selectOption(best.value);
+  await settle(page, 300);
+  await expectFits(page, `${w}・〈スタッフ〉が休む 2段目`);
+  if (w === '390') await expectMobileRow(page, `${w}・2段目`);
+  await shot(page, `${w}-sudden-step2`);
+  await page.getByTestId('sudden-next').click();
+  await settle(page, 500);
+  await expectFits(page, `${w}・〈スタッフ〉が休む 3段目`);
+  if (w === '390') await expectMobileRow(page, `${w}・3段目（ボタンが3つ以上）`);
+  await shot(page, `${w}-sudden-step3`);
+  // フォーカス：段階の見出しへ（focusKey）。Tab は欄の中で回る
+  const inStep = await page.evaluate(() => !!document.activeElement?.closest('.drawer'));
+  check(inStep, `${w}・段階が進んでもフォーカスは欄の中`);
+  await page.getByTestId('sudden-reassign').click();
+  await page.getByTestId('sudden-done').waitFor({ timeout: 15000 });
+  await settle(page, 500);
+  await expectFits(page, `${w}・4段目（済んだこと）`);
+  if (w === '390') await expectMobileRow(page, `${w}・4段目`);
+  await shot(page, `${w}-sudden-step4`);
+  // 差の欄の「連絡の一覧」（日の差の欄から開く右の欄）
+  await page.getByTestId('sudden-close').click();
+  await sudden(page).waitFor({ state: 'detached' });
+  await settle(page, 300);
+  const contact = page.getByRole('button', { name: /^連絡の一覧/ }).first();
+  if ((await contact.count()) > 0) {
+    await contact.scrollIntoViewIfNeeded();
+    await contact.click();
+    await page.getByTestId('contact-sheet').waitFor();
+    await settle(page, 300);
+    await expectFits(page, `${w}・差の欄の「連絡の一覧」`);
+    if (w === '390') await expectMobileRow(page, `${w}・連絡の一覧（ボタン3つ）`);
+    await shot(page, `${w}-contact`);
+    // 印刷では帯を出さない（今の決まりのまま）
+    await page.emulateMedia({ media: 'print' });
+    check(!(await page.locator('.drawer-foot').isVisible()), `${w}・印刷：連絡の一覧の帯を出さない`);
+    check(await page.getByTestId('contact-sheet').isVisible(), `${w}・印刷：連絡の一覧は出す`);
+    await page.emulateMedia({ media: 'screen' });
+    await page.keyboard.press('Escape');
+    await drawer(page).waitFor({ state: 'detached' });
+  } else {
+    check(false, `${w}・差の欄に「連絡の一覧」がある`);
+  }
+  // 当日キャンセルの3段目
+  await page.getByTestId('sudden-open').click();
+  await sudden(page).waitFor();
+  await page.getByTestId('sudden-kind-client').click();
+  await settle(page);
+  const first = await page
+    .getByTestId('sudden-visit')
+    .evaluate((sel) => [...sel.options].find((o) => o.value)?.value ?? '');
+  await page.getByTestId('sudden-visit').selectOption(first);
+  await settle(page);
+  await expectFits(page, `${w}・キャンセル 2段目`);
+  await page.getByTestId('sudden-next').click();
+  await settle(page, 300);
+  await expectFits(page, `${w}・キャンセル 3段目`);
+  if (w === '390') await expectMobileRow(page, `${w}・キャンセル 3段目（ボタン2つ）`);
+  await shot(page, `${w}-cancel-step3`);
+  // Esc で閉じて入口へ戻る
+  await page.keyboard.press('Escape');
+  await sudden(page).waitFor({ state: 'detached' });
+  await settle(page, 200);
+  check(
+    (await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))) === 'sudden-open',
+    `${w}・Esc で閉じてフォーカスが入口に戻る`,
+  );
+}
+
+// ---- 〈スタッフ〉の閲覧（帯なし）と編集（長い） ----
+async function staffPanel(page, w) {
+  await open(page, '/staff?id=s1', '.drawer');
+  await page.getByTestId('person-view').waitFor();
+  const v = await metrics(page);
+  check(v && v.foot === null, `${w}・〈スタッフ〉の閲覧：帯が無い`);
+  check(
+    v && v.body.bottom === v.drawer.bottom,
+    `${w}・〈スタッフ〉の閲覧：巻く領域が欄の下まで`,
+    v && { body: v.body.bottom, drawer: v.drawer.bottom },
+  );
+  await shot(page, `${w}-staff-view`);
+  await drawer(page).getByTestId('view-edit').click();
+  await settle(page, 400);
+  check(
+    await page.evaluate(() => document.activeElement?.tagName === 'INPUT'),
+    `${w}・〈スタッフ〉の編集：最初の入力欄にフォーカス`,
+  );
+  await expectLong(page, `${w}・〈スタッフ〉の編集`);
+  if (w === '390') await expectMobileRow(page, `${w}・〈スタッフ〉の編集（ボタン2つ）`);
+  await shot(page, `${w}-staff-edit`);
+  // 帯の下に隠れた入力欄へ Tab で入ると、帯の上まで巻く（scroll-padding-bottom）
+  const hidden = await page.evaluate(() => {
+    const body = document.querySelector('.drawer-body');
+    const foot = document.querySelector('.drawer-foot');
+    body.scrollTop = 0;
+    const ft = foot.getBoundingClientRect().top;
+    const list = [...body.querySelectorAll('input:not([type="hidden"]), select, textarea')].filter(
+      (el) => el.offsetParent !== null && !foot.contains(el),
+    );
+    // 帯より下にある入力欄を1つ選び、その上端がちょうど帯の裏に来るまで巻く
+    const i = list.findIndex((el, k) => k > 0 && el.getBoundingClientRect().top > ft);
+    if (i > 0) body.scrollTop += list[i].getBoundingClientRect().top - (ft + 4);
+    if (i <= 0) return null;
+    list[i - 1].focus({ preventScroll: true });
+    list[i].setAttribute('data-e2e-target', '1');
+    const t = list[i].getBoundingClientRect().top;
+    const f = foot.getBoundingClientRect();
+    return { i, covered: t >= f.top && t < f.bottom };
+  });
+  if (hidden !== null) {
+    check(hidden.covered, `${w}・確かめの前提：目当ての入力欄が帯の裏にある`, hidden);
+    // 1つ前の入力欄から Tab（間にボタンがあれば、目当ての入力欄に着くまで Tab を続ける）
+    for (let k = 0; k < 60; k++) {
+      await page.keyboard.press('Tab');
+      if (await page.evaluate(() => document.activeElement?.hasAttribute('data-e2e-target'))) break;
+    }
+    await settle(page, 300);
+    const r = await page.evaluate(() => {
+      const el = document.activeElement;
+      const foot = document.querySelector('.drawer-foot');
+      return {
+        target: el?.hasAttribute('data-e2e-target') ?? false,
+        bottom: Math.round(el.getBoundingClientRect().bottom),
+        footTop: Math.round(foot.getBoundingClientRect().top),
+      };
+    });
+    check(r.target && r.bottom <= r.footTop, `${w}・Tab で入った入力欄が帯に隠れない`, r);
+  } else {
+    check(false, `${w}・帯の下に隠れた入力欄がある（確かめの前提）`);
+  }
+  // Tab は欄の中で回る：帯の最後のボタンから Tab で欄の先頭へ
+  await page.locator('.drawer-foot .btn').last().focus();
+  await page.keyboard.press('Tab');
+  check(
+    await page.evaluate(() => !!document.activeElement?.closest('.drawer-head')),
+    `${w}・帯の最後のボタンから Tab で欄の先頭（見出しの × など）へ回る`,
+  );
+  await page.keyboard.press('Shift+Tab');
+  check(
+    await page.evaluate(() => document.activeElement === [...document.querySelectorAll('.drawer-foot .btn')].at(-1)),
+    `${w}・Shift+Tab で帯の最後のボタンへ戻る`,
+  );
+  // 裏の画面は巻かない（スクロールのロック）
+  check(
+    (await page.evaluate(() => getComputedStyle(document.documentElement).overflow)) === 'hidden',
+    `${w}・欄が開いている間は裏の画面を巻かない`,
+  );
+  await page.getByTestId('edit-cancel').click();
+  await settle(page, 300);
+  check((await metrics(page))?.foot === null, `${w}・取り消しで閲覧に戻ると帯が消える`);
+  await page.keyboard.press('Escape');
+  await drawer(page).waitFor({ state: 'detached' });
+}
+
+// ---- 月の「まとめて作る」 ----
+async function monthBatch(page, w) {
+  await page.goto(`${BASE}#/home`);
+  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
+  await open(page, `/month?ym=${YM}&do=batch`, '.drawer');
+  await page.getByTestId('batch-preset').waitFor();
+  if (w === '1400') await expectShort(page, `${w}・月の「まとめて作る」`);
+  else await expectFits(page, `${w}・月の「まとめて作る」`);
+  if (w === '390') await expectMobileRow(page, `${w}・まとめて作る（ボタン2つ）`);
+  await shot(page, `${w}-month-batch`);
+  await page.keyboard.press('Escape');
+  await drawer(page).waitFor({ state: 'detached' });
+}
+
+// ---- キーボード（スマホ）：visualViewport が縮んだら欄を見えている所に合わせ、帯を見える所に置く ----
+async function keyboard(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await skipTour(ctx);
+  await ctx.addInitScript(() => {
+    // 本物のキーボードは出せないので、visualViewport を差し替えて縮める
+    const fake = new EventTarget();
+    let h = window.innerHeight;
+    let top = 0;
+    for (const [k, get] of Object.entries({
+      height: () => h,
+      width: () => window.innerWidth,
+      offsetTop: () => top,
+      offsetLeft: () => 0,
+      pageTop: () => top,
+      pageLeft: () => 0,
+      scale: () => 1,
+    }))
+      Object.defineProperty(fake, k, { get });
+    Object.defineProperty(window, 'visualViewport', { get: () => fake, configurable: true });
+    window.__setViewport = (nh, nt = 0) => {
+      h = nh;
+      top = nt;
+      fake.dispatchEvent(new Event('resize'));
+    };
+  });
+  const page = await ctx.newPage();
+  await page.clock.setFixedTime(NOW);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await open(page, '/staff?id=s1', '.drawer');
+  await drawer(page).getByTestId('view-edit').click();
+  await settle(page, 300);
+  await page.evaluate(() => window.__setViewport(500, 0));
+  await settle(page, 300);
+  let m = await metrics(page);
+  check(
+    m && Math.abs(m.drawer.bottom - 500) <= 1 && m.foot && m.foot.bottom <= 500 && m.btns.every((b) => b.bottom <= 500),
+    '390・キーボードが出たら（見えている高さ 500px）帯がその上に出る',
+    m && { drawer: m.drawer, foot: m.foot },
+  );
+  await shot(page, '390-keyboard');
+  // iOS のように見えている所が下へずれたとき
+  await page.evaluate(() => window.__setViewport(500, 120));
+  await settle(page, 300);
+  m = await metrics(page);
+  check(
+    m && Math.abs(m.drawer.top - 120) <= 1 && Math.abs(m.drawer.bottom - 620) <= 1,
+    '390・見えている所がずれたら欄もそこへ合わせる',
+    m?.drawer,
+  );
+  await page.evaluate(() => window.__setViewport(window.innerHeight, 0));
+  await settle(page, 300);
+  m = await metrics(page);
+  check(
+    m && m.drawer.top === 0 && m.drawer.bottom === m.innerHeight,
+    '390・キーボードが閉じたら欄は画面の高さに戻る',
+    m?.drawer,
+  );
+  check(errors.length === 0, '390・キーボード：ページのエラーが無い', errors);
+  await ctx.close();
+}
+
+(async () => {
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+  for (const [w, vp] of [
+    ['1400', { width: 1400, height: 1000 }],
+    ['390', { width: 390, height: 844 }],
+  ]) {
+    console.log(`---- ${w}px ----`);
+    const ctx = await b.newContext({ viewport: vp, ...(w === '390' ? { hasTouch: true, isMobile: true } : {}) });
+    await skipTour(ctx);
+    const page = await ctx.newPage();
+    await page.clock.setFixedTime(NOW);
+    await answerConfirms(page);
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('dialog', (d) => {
+      errors.push(`ブラウザの確認：${d.message()}`);
+      void d.dismiss();
+    });
+    for (const [name, fn] of [
+      ['sudden', suddenSteps],
+      ['staff', staffPanel],
+      ['month', monthBatch],
+    ]) {
+      try {
+        await fn(page, w);
+      } catch (e) {
+        check(false, `${w}・${name} が最後まで動く`, String(e).split('\n')[0]);
+        await shot(page, `${w}-${name}-error`).catch(() => {});
+      }
+    }
+    check(errors.length === 0, `${w}・ページのエラー・ブラウザの確認が無い`, errors);
+    await ctx.close();
+  }
+  try {
+    await keyboard(b);
+  } catch (e) {
+    check(false, 'キーボードの確かめが最後まで動く', String(e).split('\n')[0]);
+  }
+  await b.close();
+  console.log(fails === 0 ? 'ALL OK' : `NG ${fails}件`);
+  process.exit(fails === 0 ? 0 : 1);
+})();

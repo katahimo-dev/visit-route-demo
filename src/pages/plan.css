@@ -989,9 +989,6 @@ p.plan-band.error {
     display: none;
   }
 }
-.drawer:has(.sudden-panel) .drawer-foot {
-  flex-wrap: wrap;
-}
 /* 段階の表示は1行（番号の丸＋短い名前）。狭い画面では今の段階だけ名前を出し、ほかは番号だけ（名前は読み上げに残す） */
 .sudden-steps {
   display: flex;
@@ -1099,9 +1096,4 @@ p.plan-band.error {
 /* 4段目の案A・案B の表は欄の幅に収め、はみ出す分は表だけ横に巻く */
 .sudden-panel .anneal-box {
   overflow-x: auto;
-}
-@media (max-width: 600px) {
-  .drawer:has(.sudden-panel) .drawer-foot .btn {
-    flex: 1 1 100%;
-  }
 }
