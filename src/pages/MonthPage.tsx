@@ -885,7 +885,7 @@ export default function MonthPage() {
       <PageHeader
         nav={<ViewSwitch current="month" />}
         icon={CalendarRange}
-        title="月間"
+        title="月の予定"
         lead="定期パターンから訪問を作り、一月分の案をまとめて作ります"
       />
 

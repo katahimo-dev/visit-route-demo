@@ -94,7 +94,7 @@ export default function AvailabilityPage() {
 
   return (
     <div className="stack">
-      <PageHeader icon={Clock} title="稼働時間" lead={`${terms.staff}ごとの働ける時間`} />
+      <PageHeader icon={Clock} title="勤務時間（シフト）" lead={`${terms.staff}ごとの働ける時間`} />
       <div className="card stack">
         <div className="avail-legend">
           <span>

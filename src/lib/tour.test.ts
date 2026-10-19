@@ -34,6 +34,15 @@ describe('tourSteps', () => {
     expect(last.points![2]).toMatch(/^確定：/);
     expect(last.body).toContain('今日の予定を開いて');
   });
+  it('場所の文はメニューの名前（予定・当日・問い合わせ・AI の条件。ADR-0034）', () => {
+    const s = tourSteps(terms, false);
+    expect(s[0]!.title).toContain('今日やること');
+    expect(s[1]!.where).toBe('メニューの「予定」（月の予定・週の予定・日の予定・案を比べる）');
+    expect(s[2]!.where).toBe('メニューの「当日・問い合わせ」の「欠勤・キャンセルを登録」');
+    expect(s[3]!.where).toBe('メニューの「AI の条件」（条件の重み・相性）');
+    expect(tourSteps(terms, false, { compat: false })[3]!.where).toBe('メニューの「AI の条件」（条件の重み）');
+    expect(s[5]!.where).toContain('「日の予定」');
+  });
 });
 
 describe('tourMove', () => {

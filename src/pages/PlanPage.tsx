@@ -2763,7 +2763,7 @@ export default function PlanPage() {
       <PageHeader
         nav={<ViewSwitch current="day" />}
         icon={CalendarDays}
-        title="予定"
+        title="日の予定"
         lead="その日の欠勤・手直しをして、割当を確定します"
         actions={
           aiPlan && (

@@ -161,7 +161,7 @@ export default function WorkloadPage() {
     <div className="stack">
       <PageHeader
         icon={Timer}
-        title="稼働の見込み"
+        title="勤務の見込み"
         lead={`予定から見込んだ、${terms.staff}ごとの出勤〜退勤（拘束）・移動・空き時間（待ち）の時間${fareFeature ? 'と交通費' : ''}です。実績ではありません`}
       />
 

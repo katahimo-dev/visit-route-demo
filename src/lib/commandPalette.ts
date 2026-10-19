@@ -24,7 +24,7 @@ export type PaletteItem = {
   hint: string;
   /** 移る先（HashRouter の中の URL） */
   to: string;
-  /** 移る前に選ぶ日付（日の画面へ移るもの） */
+  /** 移る前に選ぶ日付（日の予定へ移るもの） */
   date?: string;
   /** 比べる形（normalizeKana）にそろえた語：名前・よみ・別名。先頭が名前 */
   keys: readonly string[];
@@ -47,19 +47,22 @@ export function paletteKindLabel(kind: PaletteKind, terms: Pick<Terms, 'client' 
   return kind === 'client' ? terms.client : terms.staff;
 }
 
-/** 画面の名前の読み・別名（ひらがなで打っても引けるように） */
+/**
+ * 画面の名前の読み・別名（ひらがなで打っても引けるように）。名前を変えた画面は前の名前も別名に残す
+ * （月間・週間・予定・日の画面・稼働時間・稼働の見込み。PRD D230。ADR-0034）
+ */
 const SCREEN_WORDS: Record<string, readonly string[]> = {
   '/home': ['ほーむ', 'きょうやること', '今日やること'],
-  '/month': ['つき', 'げつ', 'かれんだー', '月の予定'],
-  '/week': ['しゅう', '週の予定', 'じかんじく'],
-  '/plan': ['ひ', 'にち', '日の予定', 'わりあて'],
+  '/month': ['つき', 'げつ', 'かれんだー', 'つきのよてい', '月間', 'げっかん', '月の画面'],
+  '/week': ['しゅう', 'しゅうのよてい', 'じかんじく', '週間', 'しゅうかん'],
+  '/plan': ['ひ', 'にち', 'ひのよてい', 'わりあて', '予定', '日の画面', 'きょう'],
   '/compare': ['あんをくらべる', 'ひかく', '比較'],
   '/vacancy': ['あきじょうきょう', 'といあわせ', '問い合わせ'],
   '/clients': ['いちらん'],
   '/compat': ['あいしょう'],
   '/staff': ['いちらん'],
-  '/availability': ['かどうじかん'],
-  '/workload': ['かどうのみこみ'],
+  '/availability': ['きんむじかん', 'しふと', '稼働時間', 'かどうじかん'],
+  '/workload': ['きんむのみこみ', '稼働の見込み', 'かどうのみこみ', 'こうつうひ'],
   '/rules': ['じょうけんのおもみ', 'ぷりせっと'],
   '/types': ['ほうもんのしゅるい'],
   '/items': ['とくせいのこうもく'],
@@ -129,16 +132,16 @@ export function paletteActions(
       id: 'action:absence',
       kind: 'action',
       label: '欠勤・キャンセルを登録',
-      hint: '今日の日の画面',
+      hint: '日の予定（今日）',
       to: absenceHref(today),
       date: today,
-      words: ['けっきん', 'きゃんせる', 'やすみ', 'きゅうなけっきん', 'とうじつのたいおう', '当日の対応'],
+      words: ['けっきん', 'きゃんせる', 'やすみ', 'きゅうなけっきん', 'とうじつのたいおう', '当日の対応', 'とうじつ'],
     }),
     paletteItem({
       id: 'action:today',
       kind: 'action',
       label: '今日の予定を見る',
-      hint: '日の画面',
+      hint: '日の予定',
       to: '/plan',
       date: today,
       words: ['きょうのよてい', 'ひのよてい'],
@@ -147,7 +150,7 @@ export function paletteActions(
       id: 'action:batch',
       kind: 'action',
       label: `${monthNo(ym)}月の案をまとめて作る`,
-      hint: '月の画面',
+      hint: '月の予定',
       to: month('batch'),
       words: ['こんげつ', '今月', 'まとめてつくる', 'あんをつくる', 'つきをくむ'],
     }),
@@ -155,7 +158,7 @@ export function paletteActions(
       id: 'action:batch-next',
       kind: 'action',
       label: `${monthNo(next)}月の案をまとめて作る`,
-      hint: '月の画面',
+      hint: '月の予定',
       to: month('batch', next),
       words: ['らいげつ', '来月', 'まとめてつくる', 'あんをつくる', 'つきをくむ'],
     }),
@@ -163,7 +166,7 @@ export function paletteActions(
       id: 'action:attention',
       kind: 'action',
       label: '要対応を見る',
-      hint: '月の画面',
+      hint: '月の予定',
       to: month('attention'),
       words: ['ようたいおう'],
     }),
@@ -171,7 +174,7 @@ export function paletteActions(
       id: 'action:unconfirmed',
       kind: 'action',
       label: '確定していない日を見る',
-      hint: '月の画面',
+      hint: '月の予定',
       to: month('unconfirmed'),
       words: ['かくてい', 'みかくてい', '未確定'],
     }),
@@ -179,7 +182,7 @@ export function paletteActions(
       id: 'action:stale',
       kind: 'action',
       label: '条件が変わった日を作り直す',
-      hint: '月の画面',
+      hint: '月の予定',
       to: month('stale'),
       words: ['つくりなおす', 'じょうけんがかわった'],
     }),
@@ -189,7 +192,7 @@ export function paletteActions(
             id: 'action:recreate',
             kind: 'action',
             label: '今日の案をいまの条件で作り直す',
-            hint: '日の画面',
+            hint: '日の予定',
             to: recreateTodayHref(today),
             date: today,
             words: ['つくりなおす', 'いまのじょうけん', 'じょうけんのおもみ'],

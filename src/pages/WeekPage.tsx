@@ -585,7 +585,7 @@ export default function WeekPage() {
       <PageHeader
         nav={<ViewSwitch current="week" />}
         icon={CalendarClock}
-        title="週間"
+        title="週の予定"
         lead={`日時をドラッグでずらし、${terms.staff}の偏りを見ます`}
       />
       {/* 進み具合の帯（PRD D151。選んでいる日付＝週の中の日の月） */}
