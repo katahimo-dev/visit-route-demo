@@ -99,12 +99,12 @@ describe('rebuildAction', () => {
   });
 });
 
-describe('いまの条件の案内', () => {
+describe('試す重みの案内', () => {
   it('文と、今日の日の画面で作り直す行き先', () => {
     expect(customRulesText('標準')).toBe(
-      'いまの条件は日の予定の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります',
+      '日の予定で変えた「この日だけ試す重み」がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「標準」）で作ります',
     );
     expect(recreateTodayHref(TODAY)).toBe('/plan?date=2026-10-21&do=recreate');
-    expect(rebuildWith('標準')).toMatch(/いまの条件で作った案も「標準」の案になります/);
+    expect(rebuildWith('標準')).toMatch(/この日だけ試す重みで作った案も「標準」の案になります/);
   });
 });

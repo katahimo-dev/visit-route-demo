@@ -359,7 +359,7 @@ export default function ComparePage() {
     const preset = another.kind === 'preset' ? data.presets.find((p) => p.id === another.presetId) : undefined;
     if (another.kind === 'preset' && !preset) return;
     const rules = preset ? applyPreset(data.rules, preset) : data.rules;
-    const name = preset ? `「${preset.name}」` : '今の条件';
+    const name = preset ? `「${preset.name}」` : '試す重み';
     const target = attempt(() => compile({ ...data, rules }, date));
     const p = target.value;
     if (!p) {
@@ -875,7 +875,7 @@ export default function ComparePage() {
             {(stale(A) || stale(B)) && (
               <div className="sub row">
                 <WithIcon icon={TriangleAlert} size={14}>
-                  いまの条件と違う条件で作った案があります
+                  この日だけ試す重みと違う条件で作った案があります
                 </WithIcon>
                 <Hint>下の点数は A・B とも点数の基準のプリセット「{scoreRulerName}」の重みで付けています。</Hint>
               </div>

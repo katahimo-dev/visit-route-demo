@@ -62,7 +62,7 @@ export function CommandPalette({
   const [typed, setTyped] = useState(false);
 
   // 候補（人の名前は比べる形にそろえておき、打つたびにそろえ直さない。300人×60人でも打つたびは絞り込むだけ）
-  // いまの条件がどのプリセットとも違えば「今日の案をいまの条件で作り直す」も出す（PRD D166・D182）
+  // この日だけ試す重みがどのプリセットとも違えば「今日の案を試す重みで作り直す」も出す（PRD D166・D182・D234）
   const customRules = useMemo(() => presetOf(data.rules, data.presets) === null, [data.rules, data.presets]);
   // 切った機能の操作は出さない（PRD D213。画面はメニューと同じ sections から引くので、切った画面はもう無い）
   const features = data.org.features;

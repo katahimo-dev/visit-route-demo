@@ -126,7 +126,7 @@ import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { compile } from '../matching';
-import { applyPreset, scorePresetOf } from '../seed';
+import { scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
@@ -710,8 +710,8 @@ export default function MonthPage() {
         step(i + 1);
         return;
       }
-      const preset = scorePresetOf(latest.presets, latest.scorePresetId);
-      const rules = preset ? applyPreset(latest.rules, preset) : latest.rules;
+      // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
+      const rules = scoreRulesOf(latest);
       const p = attempt(() => compile({ ...latest, rules }, day)).value;
       if (!p || p.visits.length === 0 || p.staff.length === 0) {
         step(i + 1);
@@ -1523,7 +1523,7 @@ export default function MonthPage() {
           <div className="stack">
             <p>
               使うプリセット：<strong data-testid="batch-preset">{basePreset?.name ?? 'いまの条件'}</strong>
-              <span className="sub">（点数の基準も「{scoreRulerName}」）</span>
+              <span className="sub">（点数の基準。重みは「条件の重み」の画面で直します）</span>
             </p>
             <fieldset className="stack batch-mode" style={{ gap: 6 }}>
               <legend>対象</legend>

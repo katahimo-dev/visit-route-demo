@@ -116,7 +116,7 @@ export function paletteScreens(
 /**
  * 操作の候補（区切り1〜5 で足した入口。PRD D182）：欠勤・キャンセルを登録・今日の予定・今月（と来月）の案をまとめて作る・
  * 要対応・確定していない日・条件が変わった日を作り直す・問い合わせに答える。today は日本時間の今日。
- * customRules（いまの条件がどのプリセットとも違う）なら「今日の案をいまの条件で作り直す」（`?do=recreate`。D166）も。
+ * customRules（この日だけ試す重みがどのプリセットとも違う）なら「今日の案を試す重みで作り直す」（`?do=recreate`。D166・D234）も。
  * features で切った機能の操作（欠勤・キャンセル・問い合わせ・作り直す）は出さない（PRD D213。lib/features の表から引く）
  */
 export function paletteActions(
@@ -191,11 +191,11 @@ export function paletteActions(
           paletteItem({
             id: 'action:recreate',
             kind: 'action',
-            label: '今日の案をいまの条件で作り直す',
+            label: '今日の案を試す重みで作り直す',
             hint: '日の予定',
             to: recreateTodayHref(today),
             date: today,
-            words: ['つくりなおす', 'いまのじょうけん', 'じょうけんのおもみ'],
+            words: ['つくりなおす', 'ためすおもみ', 'いまのじょうけん', 'じょうけんのおもみ'],
           }),
         ]
       : []),

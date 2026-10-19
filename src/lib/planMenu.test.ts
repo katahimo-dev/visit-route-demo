@@ -139,10 +139,10 @@ describe('anotherPlanOptions（もう1案作って比べる。D159）', () => {
   it('AI が出したままでない案（base が null）なら、どのプリセットも出す', () => {
     expect(anotherPlanOptions(d.presets, null, d.rules)).toHaveLength(d.presets.length);
   });
-  it('今の条件がどのプリセットとも違い、今ある案とも違えば「今の条件（重み）で作る」を最後に足す', () => {
+  it('試す重みがどのプリセットとも違い、今ある案とも違えば「試す重みで作る」を最後に足す', () => {
     const custom = d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 0.5 } : r));
     const r = anotherPlanOptions(d.presets, applyPreset(d.rules, standard!), custom);
-    expect(r.at(-1)).toMatchObject({ kind: 'rules', key: 'rules' });
+    expect(r.at(-1)).toMatchObject({ kind: 'rules', key: 'rules', label: '試す重みで作る' });
     // 今ある案がその条件なら足さない
     const same = anotherPlanOptions(d.presets, custom, custom);
     expect(same.some((o) => o.kind === 'rules')).toBe(false);

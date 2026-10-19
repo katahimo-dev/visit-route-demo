@@ -769,9 +769,9 @@ export default function PlanPage() {
     create(rules, 'preset');
   };
 
-  // ---- 設定の画面の帯の［今日の案をいまの条件で作り直す］（?date=…&do=recreate。PRD D166）----
+  // ---- 設定の画面の帯の［今日の案を試す重みで作り直す］（?date=…&do=recreate。PRD D166・D234）----
   // その日を選び、URL から ?date= と ?do= を消し、問題ができたら「AI にもう一度作らせる」（recreate。手直しがあれば今どおり確認）。
-  // その日の自動作成（基準のプリセット）はしない（いまの条件で作るため）
+  // その日の自動作成（基準のプリセット）はしない（この日だけ試す重みで作るため）
   const [params, setParams] = useSearchParams();
   const pendingRecreate = useRef<string | null>(null);
   const doParam = params.get('do');
@@ -965,8 +965,8 @@ export default function PlanPage() {
   const remakeStale = () => {
     // 月の作り直しと同じく、いまの条件（data.rules）は書き換えず、基準のプリセットの重みで解くだけ（runPreset はいまの条件を
     // プリセットの重みに書き換え、いまの条件で作ったほかの日が「条件が変わった」になるため使わない。PR #40 の再レビュー）
-    const base = scorePresetOf(data.presets, data.scorePresetId);
-    void recreate(base ? applyPreset(data.rules, base) : data.rules);
+    // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
+    void recreate(scoreRulesOf(data));
   };
   /**
    * 固定を残して組み直す（generated は変えない。固定は残す）。固定していない手直し（「入らなかった訪問」へ移した・
@@ -978,7 +978,7 @@ export default function PlanPage() {
       unpinned &&
       !(await confirmDialog({
         title: '固定していない手直しを捨てて、作り直しますか？',
-        body: '固定した訪問の担当は残し、ほかを今の条件で組み直します。「入らなかった訪問」へ移した訪問や、固定を外した訪問の手直しは消えます（AI が出したままの案は戻す先として残ります）。',
+        body: '固定した訪問の担当は残し、ほかを試す重みで組み直します。「入らなかった訪問」へ移した訪問や、固定を外した訪問の手直しは消えます（AI が出したままの案は戻す先として残ります）。',
         confirmLabel: '捨てて作り直す',
         tone: 'danger',
       }))
@@ -2444,7 +2444,7 @@ export default function PlanPage() {
     unpinned,
     busy: busyWhy,
     running: !!running,
-    ruleName: presetOf(planRules, data.presets)?.name ?? '今の重み',
+    ruleName: presetOf(planRules, data.presets)?.name ?? 'プリセットから変えた重み',
     runCount,
   };
   const createT = createText(menuInput);
@@ -3410,8 +3410,8 @@ export default function PlanPage() {
                     プリセット「{madeBy?.name}」の条件で作った案です
                   </WithIcon>
                   <Hint>
-                    いまの条件とは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
-                    」の重みで付けます。いまの条件で作るには「案を変える」の「AI にもう一度作らせる」を押してください。
+                    この日だけ試す重みとは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
+                    」の重みで付けます。試す重みで作るには「案を変える」の「AI にもう一度作らせる」を押してください。
                   </Hint>
                 </div>
               )}
