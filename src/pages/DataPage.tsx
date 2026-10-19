@@ -1,8 +1,10 @@
 import {
+  ArchiveRestore,
   CalendarClock,
   CircleHelp,
   Database,
   Download,
+  Eraser,
   FileSpreadsheet,
   RotateCcw,
   Save,
@@ -10,7 +12,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { FilePick } from '../components/FilePick';
@@ -20,15 +22,43 @@ import { useTour } from '../components/Tour';
 import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
 import { jstDate } from '../domain/time';
+import { exportAgoText, previousText } from '../lib/backupReminder';
 import { attempt, formError, isStaleBuild } from '../lib/common';
 import { backupFileName, saveBlob } from '../lib/download';
 import { type LastDayPerson, lastDayChanged } from '../lib/personLinks';
+import { sizeText, tidyMonthLabel, tidyMonthOptions, tidyOld, tidyPreview } from '../lib/tidy';
 import { useFeature } from '../lib/useFeature';
-import { exportJson, importJson, isImportError, useDemoData } from '../store';
+import {
+  backupMemory,
+  canKeepPrevious,
+  type ExportKind,
+  exportJson,
+  importJson,
+  isImportError,
+  type PreviousKeep,
+  QUOTA_MESSAGE,
+  useDemoData,
+} from '../store';
 import './settings.css';
 
 /** ファイル名の日付（日本時間） */
 const today = () => jstDate(Date.now());
+
+/**
+ * 置き換える確認の本文に添える、1世代の控えの文（PRD D227。残せなければ理由）。
+ * 控えは確認で OK になってから残すので、ここは見込み（canKeepPrevious）
+ */
+const keepNote = (k: { kept: boolean; why: string | null }): string =>
+  k.kept
+    ? 'いまのデータは控えとして1つだけ残し、この画面の「直前の状態に戻す」で戻せます。'
+    : `${k.why ?? '控えを残せません'}。`;
+
+/** 操作のあとの知らせに添える文：見込みに反して控えを残せなかったら理由（操作は止めない） */
+const keptSuffix = (k: PreviousKeep): string => (k.kept ? '' : `（${k.why ?? '控えを残せません'}）`);
+
+/** 片づけの確認の本文：確定した日の今の案は残す（記録だけ消す。PRD D227） */
+const keptPlansText = (n: number): string =>
+  n > 0 ? `確定した日の AI案 ${n}件は残します（その日の記録だけ消します）。` : '';
 
 /** データ：書き出し・読み込み（控えの JSON・Excel）・初期状態に戻す（D2・D3・D23） */
 /** 画面を開いたあとに新しい版が公開されて、Excel の部品を読めなかったとき */
@@ -36,7 +66,7 @@ const STALE_TEXT =
   '新しい版が公開されたため、Excel の部品を読み込めませんでした。「画面を読み直す」を押してから、もう一度お試しください（データはそのままです）';
 
 export default function DataPage() {
-  const { data, update, replace, reset, saveError } = useDemoData();
+  const { data, update, replace, reset, saveError, keepPrevious, restorePrevious, previous } = useDemoData();
   const excelOn = useFeature('excel');
   const offboardOn = useFeature('offboard');
   const [terms, setTerms] = useState(data.org.terms);
@@ -67,7 +97,13 @@ export default function DataPage() {
   const latest = useRef(data);
   latest.current = data;
   /** 名簿を update で入れたところ（入ったかは次の描画で data を見て決める。入らなければ成功と言わない） */
-  const pendingRoster = useRef<{ base: DemoData; next: DemoData; done: string; lastDay: LastDayPerson[] } | null>(null);
+  const pendingRoster = useRef<{
+    base: DemoData;
+    next: DemoData;
+    done: string;
+    lastDay: LastDayPerson[];
+    keep: PreviousKeep;
+  } | null>(null);
   /**
    * 名簿の読み込みで最終勤務日が入った〈スタッフ〉の知らせ（PRD D209）。名前と閲覧の欄へのリンクを出す。
    * 画面の中の状態で保存しない（閉じる・次の読み込み・画面を移るで消える）
@@ -86,6 +122,8 @@ export default function DataPage() {
       if (p.lastDay.length > 0) setLastDayNotice(p.lastDay);
     } else if (data !== p.base) {
       pendingRoster.current = null;
+      // 入らなかったので、残した控えは前の世代に戻す
+      p.keep.cancel();
       setExcelError(
         '読み込みのあいだにデータが変わったので入れませんでした（いまのデータはそのままです）。もう一度読み込んでください',
       );
@@ -93,6 +131,13 @@ export default function DataPage() {
   }, [data, toast]);
   const t = data.org.terms;
   const rosterTerm = excelKind === 'staff' ? t.staff : t.client;
+
+  /** 最後に書き出した日（PRD D227。このブラウザの記録で、データには入れない） */
+  const [lastExport, setLastExport] = useState(() => backupMemory.lastExport());
+  const markExported = (kind: ExportKind) => {
+    backupMemory.markExported(kind, today());
+    setLastExport(backupMemory.lastExport());
+  };
 
   const download = () => {
     setError(null);
@@ -102,6 +147,7 @@ export default function DataPage() {
       return;
     }
     saveBlob(r.value, backupFileName(today()));
+    markExported('json');
     toast('書き出しました');
   };
 
@@ -113,6 +159,8 @@ export default function DataPage() {
       const { exportRosterWorkbook, exportWorkbook } = await import('../excel');
       if (excelKind === 'all') {
         saveBlob(await exportWorkbook(data), `visit-route-demo-${today()}.xlsx`);
+        // 全体の Excel も書き出した日に数える（名簿だけは数えない）
+        markExported('excel');
         toast('Excel に書き出しました');
       } else {
         // ファイル名は英字（呼び方の文字を入れると、Chromium で保存名が「download」になったため）
@@ -149,14 +197,16 @@ export default function DataPage() {
       const counts = `${rt.staff} ${r.staff.length}人・${rt.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
       const ok = await confirmDialog({
         title: `「${file.name}」でデータを置き換えますか？`,
-        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。`,
+        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。\n${keepNote(canKeepPrevious())}`,
         confirmLabel: 'すべて置き換える',
         tone: 'danger',
       });
       if (!ok) return;
+      // 置き換える前に、いまのデータを1世代だけ控える（確認で OK になってから。PRD D227）
+      const keep = keepPrevious('Excel 全体の読み込み');
       setLastDayNotice(null);
       replace(r);
-      toast('Excel を読み込みました');
+      toast(`Excel を読み込みました${keptSuffix(keep)}`);
     } catch (e) {
       setExcelError(
         isStaleBuild(e) ? STALE_TEXT : `読み込めませんでした：${formError(e)}（いまのデータはそのままです）`,
@@ -196,6 +246,7 @@ export default function DataPage() {
       `「${file.name}」の${term}の名簿を読み込みます（${how}）。`,
       rosterSummary(r, kind, terms),
       'AI案・記録・確定した割当・訪問はそのままです。',
+      keepNote(canKeepPrevious()),
     ].join('\n');
     const ok = await confirmDialog({
       title: `${term}の名簿を読み込みますか？（${how}）`,
@@ -206,16 +257,19 @@ export default function DataPage() {
     });
     if (!ok) return;
     if (latest.current !== base) return changed();
+    // 名簿の読み込みも人をまとめて書き換えるので、いまのデータを1世代だけ控える（確認で OK になってから。PRD D227）
+    const keep = keepPrevious(`${term}の名簿の${how}`);
     // 最終勤務日が入った人は ID も要る（知らせのリンク。PRD D209）ので、読み込む前と後を比べて引く
     const lastDay = kind === 'staff' ? lastDayChanged(base.staff, r.data.staff) : [];
     pendingRoster.current = {
       base,
       next: r.data,
       done:
-        lastDay.length > 0
+        (lastDay.length > 0
           ? `${term}の名簿を読み込みました。最終勤務日の入った${terms.staff}がいます。Excel の欄に名前を出しました`
-          : `${term}の名簿を読み込みました`,
+          : `${term}の名簿を読み込みました`) + keptSuffix(keep),
       lastDay,
+      keep,
     };
     update((d) => (d === base ? r.data : d));
   };
@@ -231,15 +285,16 @@ export default function DataPage() {
       }
       const ok = await confirmDialog({
         title: `「${file.name}」でデータを置き換えますか？`,
-        body: `「${file.name}」の内容で、いまのデータをすべて置き換えます。`,
+        body: `「${file.name}」の内容で、いまのデータをすべて置き換えます。\n${keepNote(canKeepPrevious())}`,
         confirmLabel: 'すべて置き換える',
         tone: 'danger',
       });
       if (!ok) return;
+      const keep = keepPrevious('控えの読み込み');
       // データを置き換えたら、前の名簿の知らせは消す（PRD D209）
       setLastDayNotice(null);
       replace(r);
-      toast('読み込みました');
+      toast(`読み込みました${keptSuffix(keep)}`);
     } catch (e) {
       setError(`読み込めませんでした：${formError(e)}（いまのデータはそのままです）`);
     }
@@ -248,14 +303,55 @@ export default function DataPage() {
   const doReset = async () => {
     const ok = await confirmDialog({
       title: 'データを初期状態に戻しますか？',
-      body: 'データをデモの初期状態に戻します。いまの変更はすべて消えます。',
+      body: `データをデモの初期状態に戻します。いまの変更はすべて消えます。\n${keepNote(canKeepPrevious())}`,
       confirmLabel: '消して初期状態に戻す',
       tone: 'danger',
     });
     if (!ok) return;
+    // 確認で OK になってから控えを残す（確認中に閉じても控えは残らない。PRD D227）
+    const keep = keepPrevious('初期状態に戻す');
     setLastDayNotice(null);
     reset();
-    toast('初期状態に戻しました');
+    toast(`初期状態に戻しました${keptSuffix(keep)}`);
+  };
+
+  /** 直前の状態に戻す（PRD D227）：控えと入れ替える。確認つき */
+  const doRestore = async () => {
+    if (!previous) return;
+    const ok = await confirmDialog({
+      title: '直前の状態に戻しますか？',
+      body: `${previousText(previous)}。いまのデータは控えと入れ替わり、もう一度「直前の状態に戻す」で戻せます。`,
+      confirmLabel: '直前の状態に戻す',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    const err = restorePrevious();
+    if (err) {
+      toast(err);
+      return;
+    }
+    setLastDayNotice(null);
+    toast('直前の状態に戻しました');
+  };
+
+  /** 古い案と記録の片づけ（PRD D227。ADR-0032）。選んだ月より前の日の AI案・記録だけ消す */
+  const tidyChoice = useMemo(() => tidyMonthOptions(today()), []);
+  const [tidyYm, setTidyYm] = useState(tidyChoice.initial);
+  const tidy = useMemo(() => tidyPreview(data, tidyYm), [data, tidyYm]);
+  const tidyCard = useRef<HTMLElement>(null);
+  const tidyTitleId = useId();
+  const doTidy = async () => {
+    if (tidy.runs + tidy.plans === 0) return;
+    const ok = await confirmDialog({
+      title: `${tidyMonthLabel(tidyYm)}の AI案と記録を消しますか？`,
+      body: `${tidy.days}日分の AI案 ${tidy.plans}件と記録 ${tidy.runs}件を消します（${sizeText(tidy.chars)}空きます）。${keptPlansText(tidy.keptPlans)}確定した割当・訪問・人・条件は消えません。消した案と記録は戻せません（容量を空けるため、直前の状態の控えも残しません）。`,
+      confirmLabel: '消す',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    const ym = tidyYm;
+    update((d) => tidyOld(d, ym));
+    toast(`${tidyMonthLabel(ym)}の AI案と記録を消しました`);
   };
 
   return (
@@ -273,9 +369,46 @@ export default function DataPage() {
         </p>
       </div>
       {saveError && (
-        <div className="card">
+        <div className="card stack">
           <p className="error">保存できませんでした：{saveError}。書き出して保管してください。</p>
+          {saveError === QUOTA_MESSAGE && (
+            <button
+              type="button"
+              className="btn"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() => {
+                tidyCard.current?.scrollIntoView({ block: 'center' });
+                tidyCard.current?.focus();
+              }}
+              data-testid="data-tidy-go"
+            >
+              <WithIcon icon={Eraser}>古い案と記録を片づける</WithIcon>
+            </button>
+          )}
         </div>
+      )}
+
+      {/* 直前の状態に戻す（PRD D227。1世代の控えがあるときだけ） */}
+      {previous && (
+        <section className="card stack" aria-label="直前の状態に戻す" data-testid="data-prev-card">
+          <SectionTitle icon={ArchiveRestore}>直前の状態に戻す</SectionTitle>
+          <p className="data-prev-text" data-testid="data-prev-text">
+            {previousText(previous)}
+          </p>
+          <Hint>
+            初期状態に戻す・控えや Excel
+            全体の読み込み・名簿の読み込みの前のデータを、このブラウザに1つだけ残しています（次に置き換えると上書きします）。戻すと、いまのデータが代わりに残ります。
+          </Hint>
+          <button
+            type="button"
+            className="btn"
+            style={{ alignSelf: 'flex-start' }}
+            onClick={() => void doRestore()}
+            data-testid="data-prev-restore"
+          >
+            <WithIcon icon={ArchiveRestore}>直前の状態に戻す</WithIcon>
+          </button>
+        </section>
       )}
 
       <div className="card stack">
@@ -315,6 +448,10 @@ export default function DataPage() {
         <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
           <WithIcon icon={Download}>ファイルに書き出す</WithIcon>
         </button>
+        <p className="sub data-last-export" data-testid="data-last-export">
+          最後に書き出した日：{exportAgoText(lastExport?.date ?? null, today())}
+          {lastExport?.kind === 'excel' ? '（Excel 全体）' : ''}
+        </p>
         <FilePick
           caption="読み込む控え（JSON）"
           accept="application/json,.json"
@@ -466,6 +603,48 @@ export default function DataPage() {
           )}
         </section>
       )}
+
+      <section
+        className="card stack data-tidy"
+        ref={tidyCard}
+        tabIndex={-1}
+        aria-labelledby={tidyTitleId}
+        data-testid="data-tidy-card"
+      >
+        <SectionTitle icon={Eraser}>
+          <span id={tidyTitleId}>古い案と記録を片づける</span>
+        </SectionTitle>
+        <Hint>
+          保存の容量が足りなくなったときに使います。選んだ月より前の日の
+          AI案と記録（比較の画面の記録）を消します。確定した日の
+          AI案・確定した割当・訪問・人・条件は消えません。消す前に控えを書き出してください。
+        </Hint>
+        <label className="data-tidy-month">
+          消す範囲
+          <select value={tidyYm} onChange={(e) => setTidyYm(e.target.value)} data-testid="data-tidy-month">
+            {tidyChoice.options.map((ym) => (
+              <option key={ym} value={ym}>
+                {tidyMonthLabel(ym)}の AI案と記録
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="sub" data-testid="data-tidy-preview">
+          {tidy.runs + tidy.plans === 0
+            ? `${tidyMonthLabel(tidyYm)}に消せる AI案・記録はありません`
+            : `${tidy.days}日分の AI案 ${tidy.plans}件・記録 ${tidy.runs}件（${sizeText(tidy.chars)}空きます）${tidy.keptPlans > 0 ? `。確定した日の AI案 ${tidy.keptPlans}件は残します` : ''}`}
+        </p>
+        <button
+          type="button"
+          className="btn"
+          style={{ alignSelf: 'flex-start' }}
+          disabled={tidy.runs + tidy.plans === 0}
+          onClick={() => void doTidy()}
+          data-testid="data-tidy-run"
+        >
+          <WithIcon icon={Eraser}>古い案と記録を消す</WithIcon>
+        </button>
+      </section>
 
       <div className="card stack">
         <SectionTitle icon={CircleHelp}>使い方の案内</SectionTitle>

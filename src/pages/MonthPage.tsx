@@ -1060,8 +1060,10 @@ export default function MonthPage() {
             </WithIcon>
           </button>
           <Hint>
-            日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要確認」）は、訪問があるのに案が無い・入らない訪問がある・必須の違反がある日です（必須の違反は点数の基準のプリセット「
-            {scoreRulerName}」の条件で見ます）。「条件が変わった」は、案を作ったあとに訪問・{terms.staff}
+            日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要対応」）は、入らない訪問がある・必須の違反がある・休みの人に訪問が残る日です（必須の違反は点数の基準のプリセット「
+            {scoreRulerName}
+            」の条件で見ます）。黄の点線の枠の日（「注意」）は、今日以降で訪問があるのにまだ案が無い日です（まとめて作るか日の予定で作ります）。「条件が変わった」は、案を作ったあとに訪問・
+            {terms.staff}
             ・稼働時間・条件が変わった日です。混み具合のバーは {barRangeText()} を3段（
             {BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}）・30分ずつに分け、その30分に空いている
             {terms.staff}
@@ -1154,6 +1156,7 @@ export default function MonthPage() {
                         `is-state-${r.state}`,
                         r.isPast ? 'is-past' : '',
                         r.care ? 'is-care' : '',
+                        r.caution ? 'is-caution' : '',
                         r.isToday ? 'is-today' : '',
                         r.date === date ? 'is-picked' : '',
                         off ? `is-off-${off}` : '',
@@ -1734,7 +1737,7 @@ function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
           <span className="is-opened">凡例を閉じる</span>
         </span>
         <span className="sub month-legend-line">
-          色＝日の状態・赤い点＝要確認・▶■＝始まる／終わる
+          色＝日の状態・黄の点線＝案なし（注意）・赤い枠と点＝要対応・▶■＝始まる／終わる
           {bar === 'load' ? '・棒＝30分ごとの空き' : bar === 'staff' ? '・棒＝その人の時間帯' : ''}
           。マスにマウスを乗せるかフォーカスすると、そのマスの読み方が出ます
         </span>
@@ -1759,10 +1762,14 @@ function MonthLegendBody({ bar }: { bar: 'load' | 'staff' | null }) {
           </span>
         ))}
         <span className="month-legend-item">
+          <span className="month-swatch is-caution" aria-hidden="true" />
+          注意（今日以降で案なし）
+        </span>
+        <span className="month-legend-item">
           <span className="month-swatch is-care" aria-hidden="true">
             <span className="month-dot" />
           </span>
-          手当てが必要
+          要対応（入らない・違反・休みの人に訪問）
         </span>
         <span className="month-legend-item">▶ 始まる・■ 終わる</span>
       </span>
@@ -1873,14 +1880,17 @@ const DayCell = memo(function DayCell(props: CellProps) {
   /** 「休みの人に N」の印（欠勤・希望休・最終勤務日の後の人に残る訪問の事実なので、希望休のまとめ入力を切っても出す。ADR-0028） */
   const absentLeft = s.absentLeft;
   const past = d < today;
+  // 赤は要対応だけ（PRD D228）。今日以降で訪問があるのに案の無い日は注意（黄の点線）
   const care = s.needsCare && !past;
+  const caution = !care && !past && s.count > 0 && s.state === 'none';
   const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));
   const parts: string[] = [longDate(d)];
   const body: ReactNode[] = [];
 
   if (s.count > 0) parts.push(`訪問 ${s.count}件`, STATE_TEXT[s.state]);
   else parts.push('訪問なし');
-  if (care) parts.push('要確認');
+  if (care) parts.push('要対応');
+  if (caution) parts.push('注意：まだ案が無い');
   if (s.unassigned > 0) parts.push(`入らない ${s.unassigned}件`);
   if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
   if (absentLeft > 0) parts.push(`休みの人に訪問 ${absentLeft}件`);
@@ -2150,6 +2160,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     count: s.count,
     stateText: s.count > 0 ? STATE_TEXT[s.state] : null,
     care,
+    caution,
     types: focus === 'all' && mk.types.length > 0,
     resting: restingAll,
     requested: mk.requested.length,
@@ -2184,6 +2195,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
         s.count > 0 ? `is-state-${s.state}` : 'is-novisit',
         past ? 'is-past' : '',
         care ? 'is-care' : '',
+        caution ? 'is-caution' : '',
         d === today ? 'is-today' : '',
         picked ? 'is-picked' : '',
         making ? 'is-making' : '',

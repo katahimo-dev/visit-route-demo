@@ -63,6 +63,13 @@ label.week-who {
   border: 2px dashed var(--sub);
   border-radius: 4px;
 }
+.week-legend-dash.is-noplan {
+  border: 1.5px dashed var(--warn-line);
+  background: #fffaf0;
+}
+.week-legend-dash.is-unassigned {
+  border-color: var(--danger);
+}
 .week-notice {
   border: 2px solid var(--warn);
 }
@@ -151,9 +158,15 @@ label.week-who {
   outline: 3px solid var(--focus);
   z-index: 2;
 }
+/* 担当の無い帯：入らない（案があるのに入らない）は要対応の赤、案なし（その日に案がまだ無い）は注意の黄（PRD D228） */
 .week-band.is-unassigned {
   border: 2px dashed var(--danger);
   background-color: #fff !important;
+  background-image: none;
+}
+.week-band.is-noplan {
+  border: 1.5px dashed var(--warn-line);
+  background-color: #fffaf0 !important;
   background-image: none;
 }
 .week-band-time {

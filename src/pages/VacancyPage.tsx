@@ -99,7 +99,7 @@ const hm = (t: number) => timeText(minutesToHhmm(t));
 
 /** 空き状況の表の凡例（PRD D78。どの週でも受けられる人数の段階） */
 const VACANCY_LEGEND: [string, string][] = [
-  ['none', '0人（どの週も）'],
+  ['none', '0人（受けられない）'],
   ['partial', '0人の週がある'],
   ['one', '1人'],
   ['two', '2人'],

@@ -236,7 +236,8 @@
   margin: 0;
   line-height: 1.6;
 }
-/* 知らせを閉じたあとのフォーカスの先（Excel の欄。tabIndex=-1 でコードからだけ移る）は枠を見せる */
+/* 知らせを閉じたあとのフォーカスの先（Excel の欄・片づけの欄。tabIndex=-1 でコードからだけ移る）は枠を見せる */
+.data-tidy:focus,
 .data-excel:focus {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
@@ -684,5 +685,18 @@ fieldset.weekday-toggles {
   font-weight: 700;
 }
 .rules-advanced p {
+  margin: 0;
+}
+
+/* 古い案と記録の片づけ（PRD D227）：月の選択は中身の幅で左にそろえる */
+.data-tidy-month {
+  align-items: flex-start;
+}
+.data-tidy-month select {
+  width: auto;
+  max-width: 100%;
+}
+.data-prev-text,
+.data-last-export {
   margin: 0;
 }

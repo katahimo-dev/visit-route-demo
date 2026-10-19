@@ -11,14 +11,18 @@
 // ファイル名・取り消してもデータはそのまま・確定で読み込む・Excel の壊れたファイルは誤りの文・名簿の見出し）、
 // 月の画面の日ごとの一覧（390px ははじめ一覧で横にはみ出さず土曜も見える・今日の行が画面に入る・「今日へ」・切り替えは操作の欄より上・行の読み上げ・押すとその日の日の画面・
 // カレンダーへ切り替えると URL の ?layout=calendar・読み直しても同じ・戻すと ?layout=list（押したら必ず書く）・1400px ははじめカレンダー・
-// ?layout=list で一覧・「休みを入れる」の行は押すと希望休を付け外し・印刷の画面は今のまま）。
+// ?layout=list で一覧・「休みを入れる」の行は押すと希望休を付け外し・印刷の画面は今のまま）、
+// データを守る（PRD D227。ADR-0032）：初期状態に戻したあと「直前の状態に戻す」で戻る（確認の本文に控えの文・欄の文・もう一度戻せる）・
+// 書き出すと「最後に書き出した日」が今日になる（download）・「古い案と記録を片づける」で古い記録が消え新しいものは残る・
+// 保存していたデータが壊れていると起動時の知らせ（閉じられる）と「読めなかったデータを書き出す」（元の文字）・別のタブの変更の知らせ・控えの知らせ（トースト）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-tour.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
+const fs = require('node:fs');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, stored, run } = require('./lib/env.cjs');
 
 const YM = TODAY.slice(0, 7);
 const TOUR_KEY = 'vrdemo:tour:seen';
@@ -616,6 +620,238 @@ async function monthList(b) {
   await ctx.close();
 }
 
+// ---- データを守る（PRD D227。ADR-0032）----
+const PREV_KEY = 'vrdemo:data:prev';
+const BACKUP_LAST_KEY = 'vrdemo:backup:last';
+/** 日付を n か月ずらした月の d 日（YYYY-MM-DD） */
+function monthsAgo(n, d) {
+  const [y, m] = TODAY.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 - n, d));
+  return t.toISOString().slice(0, 10);
+}
+/** 中身の無い記録（形だけ。古い日付の片づけの確かめ用） */
+const fakeRun = (date, no) => ({
+  id: `${date}#e2e${no}`,
+  no,
+  date,
+  createdAt: Date.parse(`${date}T09:00:00+09:00`),
+  label: '標準',
+  presetId: null,
+  seed: no,
+  iterations: 10,
+  rules: [],
+  pins: {},
+  routes: {},
+  unassigned: [],
+  score: 0,
+  stopped: false,
+});
+/** 同じタブで localStorage のデータを書き換えて読み直す（storage イベントは出ない） */
+async function writeData(page, fn, arg) {
+  await page.evaluate(
+    ({ k, src, a }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      // e2e の中だけ：関数の本文を文字で渡して作る
+      const next = new Function(`return (${src})`)()(d, a);
+      localStorage.setItem(k, JSON.stringify(next));
+    },
+    { k: STORAGE_KEY, src: fn.toString(), a: arg },
+  );
+  await page.reload();
+}
+
+async function dataProtect(b) {
+  const { ctx, page } = await newPage(b, { human: false });
+  await open(page, '/data', '[data-testid="tour-again"]');
+  await page.waitForTimeout(600);
+  // 控えはまだ無い・最後に書き出した日もまだ
+  check((await page.getByTestId('data-prev-card').count()) === 0, '控えが無いうちは「直前の状態に戻す」を出さない');
+  check(
+    (await page.getByTestId('data-last-export').innerText()).includes('まだ書き出していません'),
+    '最後に書き出した日：まだ書き出していません',
+  );
+  // いまのデータに印（乱数の種）を付けてから、初期状態に戻す
+  await writeData(page, (d) => ({ ...d, seed: 424242 }));
+  await page.getByTestId('tour-again').waitFor();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'デモの初期状態に戻す' }).click();
+  await page.getByTestId('confirm-dialog').waitFor();
+  const body = await page.getByTestId('confirm-body').innerText();
+  check(
+    /控えとして1つだけ残し/.test(body) && /直前の状態に戻す/.test(body),
+    '初期状態に戻す：確認の本文に控えの文',
+    body,
+  );
+  // 取り消すと控えは前の世代のまま（無い）
+  await page.getByTestId('confirm-cancel').click();
+  await page.waitForTimeout(300);
+  check((await page.getByTestId('data-prev-card').count()) === 0, '取り消すと控えは残らない（前の世代に戻す）');
+  check((await stored(page)).seed === 424242, '取り消すとデータはそのまま');
+  await page.getByRole('button', { name: 'デモの初期状態に戻す' }).click();
+  await page.getByTestId('confirm-ok').click();
+  await page.locator('.toast').filter({ hasText: '初期状態に戻しました' }).waitFor();
+  await page.waitForTimeout(500);
+  check((await stored(page)).seed !== 424242, '初期状態に戻した（印が消えた）');
+  const prevText = await page.getByTestId('data-prev-text').innerText();
+  check(
+    /^\d{1,2}\/\d{1,2} \d{2}:\d{2} の『初期状態に戻す』の前の状態に戻せます$/.test(prevText),
+    '「直前の状態に戻す」の欄の文',
+    prevText,
+  );
+  check(await page.evaluate((k) => localStorage.getItem(k) !== null, PREV_KEY), '控えは別のキー（vrdemo:data:prev）');
+  await page.getByTestId('data-prev-restore').click();
+  await page.getByTestId('confirm-dialog').waitFor();
+  check(/前の状態に戻せます/.test(await page.getByTestId('confirm-body').innerText()), '直前の状態に戻す：確認つき');
+  await page.getByTestId('confirm-ok').click();
+  await page.locator('.toast').filter({ hasText: '直前の状態に戻しました' }).waitFor();
+  await page.waitForTimeout(500);
+  check((await stored(page)).seed === 424242, '直前の状態に戻すと、初期状態に戻す前のデータになる');
+  check(
+    /『直前の状態に戻す』の前の状態に戻せます/.test(await page.getByTestId('data-prev-text').innerText()),
+    '戻したあとは、戻す前のデータが控えに残る（もう一度戻せる）',
+  );
+  // 書き出すと「最後に書き出した日」が今日になる
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'ファイルに書き出す' }).click();
+  const file = await dl;
+  check(/\.json$/.test(file.suggestedFilename()), '控えを書き出す（download）', file.suggestedFilename());
+  await page.waitForTimeout(300);
+  const last = await page.getByTestId('data-last-export').innerText();
+  const md = `${Number(TODAY.slice(5, 7))}/${Number(TODAY.slice(8, 10))}`;
+  check(last.includes(`${md}（今日）`), '書き出すと最後に書き出した日が今日', last);
+  check(
+    (await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), BACKUP_LAST_KEY))?.date === TODAY,
+    '最後に書き出した日は別のキー（vrdemo:backup:last）',
+  );
+  await page.reload();
+  await page.getByTestId('data-last-export').waitFor();
+  check(
+    (await page.getByTestId('data-last-export').innerText()).includes('（今日）'),
+    '読み直しても最後に書き出した日が残る',
+  );
+  // 古い案と記録を片づける：既定は3か月前の月より前。古い記録だけ消え、新しい記録は残る
+  const old1 = monthsAgo(5, 10);
+  const old2 = monthsAgo(4, 3);
+  const recent = monthsAgo(1, 12);
+  await writeData(
+    page,
+    (d, a) => ({
+      ...d,
+      aiRuns: { ...d.aiRuns, [a.old1]: [a.r1, a.r2], [a.old2]: [a.r3], [a.recent]: [a.r4] },
+    }),
+    { old1, old2, recent, r1: fakeRun(old1, 1), r2: fakeRun(old1, 2), r3: fakeRun(old2, 1), r4: fakeRun(recent, 1) },
+  );
+  await page.getByTestId('data-tidy-card').waitFor();
+  await page.waitForTimeout(400);
+  const sel = await page.getByTestId('data-tidy-month').inputValue();
+  check(sel === monthsAgo(3, 1).slice(0, 7), '片づけ：既定は3か月前の月', sel);
+  const pv = await page.getByTestId('data-tidy-preview').innerText();
+  check(/2日分の AI案 0件・記録 3件/.test(pv), '片づけ：件数と空く見込み', pv);
+  await page.getByTestId('data-tidy-run').click();
+  await page.getByTestId('confirm-dialog').waitFor();
+  check(/記録 3件を消します/.test(await page.getByTestId('confirm-body').innerText()), '片づけ：確認つき');
+  await page.getByTestId('confirm-ok').click();
+  await page.locator('.toast').filter({ hasText: 'AI案と記録を消しました' }).waitFor();
+  await page.waitForTimeout(600);
+  const after = await stored(page);
+  check(!after.aiRuns[old1] && !after.aiRuns[old2], '片づけ：選んだ月より前の記録が消える', Object.keys(after.aiRuns));
+  check(after.aiRuns[recent]?.length === 1, '片づけ：新しい記録は残る');
+  check(after.seed === 424242, '片づけ：ほかのデータはそのまま');
+  check(await page.getByTestId('data-tidy-run').isDisabled(), '片づけ：消せるものが無ければ押せない');
+  await page.screenshot({ path: path.join(OUT_DIR, 'data-protect.png'), fullPage: true });
+  // 別のタブで変わったら知らせる
+  const other = await ctx.newPage();
+  await other.clock.setFixedTime(NOW);
+  await other.goto(`${BASE}#/home`);
+  await other.locator('h1').waitFor();
+  await other.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    localStorage.setItem(k, JSON.stringify({ ...d, seed: 515151 }));
+  }, STORAGE_KEY);
+  await page.locator('.toast').filter({ hasText: '別のタブで変わったので読み直しました' }).waitFor({ timeout: 5000 });
+  check(true, '別のタブで変わると「別のタブで変わったので読み直しました」');
+  await other.close();
+  await ctx.close();
+}
+
+async function brokenData(b) {
+  // 保存していたデータが壊れている：起動時に知らせと「読めなかったデータを書き出す」
+  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
+  await skipTour(ctx);
+  await ctx.addInitScript((k) => {
+    if (sessionStorage.getItem('e2e-broken')) return;
+    sessionStorage.setItem('e2e-broken', '1');
+    localStorage.setItem(k, '{こわれた');
+  }, STORAGE_KEY);
+  const page = await ctx.newPage();
+  await page.clock.setFixedTime(NOW);
+  page.on('pageerror', (e) => {
+    errors.push(String(e));
+    console.log('ERR', String(e));
+  });
+  await page.goto(`${BASE}#/home`);
+  const notice = page.getByTestId('data-broken-notice');
+  await notice.waitFor({ timeout: 30000 });
+  check(
+    /保存していたデータを読めなかったため、初期データで開きました/.test(await notice.innerText()),
+    '壊れたデータ：起動時に知らせる',
+  );
+  await page.emulateMedia({ media: 'print' });
+  check(!(await notice.isVisible()), '印刷では知らせを出さない');
+  await page.emulateMedia({ media: 'screen' });
+  const dl = page.waitForEvent('download');
+  await page.getByTestId('data-broken-download').click();
+  const file = await dl;
+  const text = fs.readFileSync(await file.path(), 'utf8');
+  check(text === '{こわれた', '「読めなかったデータを書き出す」は元の文字のまま', text);
+  await page.screenshot({ path: path.join(OUT_DIR, 'data-broken.png') });
+  await page.getByTestId('data-broken-close').click();
+  await page.waitForTimeout(300);
+  check((await notice.count()) === 0, '閉じると消える');
+  check(await page.evaluate(() => document.activeElement?.tagName === 'H1'), '閉じるとフォーカスは画面の見出し');
+  // 退避できたので初期データを書いた：読み直しても知らせは出ない（1回だけ）。元の文字は退避先に残る
+  await page.reload();
+  await page.locator('h1').waitFor();
+  await page.waitForTimeout(500);
+  check((await notice.count()) === 0, '退避して初期データを書いたので、読み直すと知らせは出ない（1回だけ）');
+  check(
+    (await page.evaluate(() => localStorage.getItem('vrdemo:data:broken'))) === '{こわれた',
+    '元の文字は vrdemo:data:broken に残る',
+  );
+  await ctx.close();
+}
+
+async function backupRemind(b) {
+  // 確定した日があり、2週間以上書き出していなければ起動時に1回トースト（1日1回）
+  const { ctx, page } = await newPage(b, { human: false });
+  await open(page, '/home', 'h1');
+  await page.evaluate(
+    ({ k, last, today }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      const v = d.visits.find((x) => x.date === today && !x.cancelled);
+      d.manualPlans = { ...d.manualPlans, [today]: { [d.staff[0].id]: [v.id] } };
+      localStorage.setItem(k, JSON.stringify(d));
+      localStorage.setItem(last, JSON.stringify({ date: '2026-01-01', kind: 'json' }));
+      localStorage.removeItem('vrdemo:backup:reminded');
+    },
+    { k: STORAGE_KEY, last: BACKUP_LAST_KEY, today: TODAY },
+  );
+  await page.reload();
+  await page
+    .locator('.toast')
+    .filter({ hasText: '控え（バックアップ）を2週間以上書き出していません' })
+    .waitFor({ timeout: 5000 });
+  check(true, '控えの知らせ：確定した日があり2週間以上書き出していなければトースト');
+  await page.reload();
+  await page.locator('h1').waitFor();
+  await page.waitForTimeout(800);
+  check(
+    (await page.locator('.toast').filter({ hasText: '控え（バックアップ）' }).count()) === 0,
+    '控えの知らせ：1日1回まで',
+  );
+  await ctx.close();
+}
+
 run(async () => {
   const b = await launch();
   for (const [name, fn] of [
@@ -626,6 +862,9 @@ run(async () => {
     ['tour-mobile-print', tourMobilePrint],
     ['file-pick', filePick],
     ['month-list', monthList],
+    ['data-protect', dataProtect],
+    ['broken-data', brokenData],
+    ['backup-remind', backupRemind],
   ]) {
     try {
       await fn(b);

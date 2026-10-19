@@ -1,6 +1,6 @@
 # 空き状況と問い合わせの試算
 
-> この画面のファイル：`src/pages/VacancyPage.tsx`（`vacancy.css`）、`src/lib/vacancyView.ts`・`glance.ts`・`tentative.ts`・`mail.ts`、`src/components/placeLookup.tsx`（`AddressField`）・`glance.tsx`・`conditions.tsx`。関連 ADR：0012 追記・0013・0015・0016 追記・0017・0025 追記。関連 PRD：D45〜D47・D67・D78〜D81・D118〜D120・D184〜D187・D201〜D204・D221。
+> この画面のファイル：`src/pages/VacancyPage.tsx`（`vacancy.css`）、`src/lib/vacancyView.ts`・`glance.ts`・`tentative.ts`・`mail.ts`、`src/components/placeLookup.tsx`（`AddressField`）・`glance.tsx`・`conditions.tsx`。関連 ADR：0012 追記・0013・0015・0016 追記・0017・0025 追記。関連 PRD：D45〜D47・D67・D78〜D81・D118〜D120・D184〜D187・D201〜D204・D221・D228。
 > 計算（`vacancyOf`・`verdictOf`・`inquirySummary`・`vacancyNotice`）は design.md の「vacancy」。
 
 ### 空き状況（`#/vacancy`）
@@ -15,7 +15,7 @@
 |---|---|---|
 | 1 いつ・何を | `vacancy-step-when` | 種類（選ぶと所要の初期値）・所要・〈スタッフ〉の条件（`components/conditions.tsx` の1行のチェック表。例：性別）・見る週の数（1〜8、初期値4）・開始日（初期値：今日）・希望の曜日（複数）・希望の時間帯（開始〜終了）・週の回数 |
 | 2 場所（任意） | `vacancy-step-place` | `details`。はじめ畳み、要約の行 `vacancy-place-line`（`placeLine`）・開く `vacancy-place-toggle`。summary の見出しは h2。中の `AddressField` は閉じても置いたまま |
-| 3 受けられる曜日・時間帯 | `vacancy-table-card` | 見出しに「目安（移動を前後15分で見込む）」か「〈場所〉への移動を含む」・`vacancy-when-line`（`whenWhatLine`）・試算の要約 `inquiry-summary`・曜日×週のマス（`InquiryWeeks`）・案の無い日の注意 `vacancy-noplan`・凡例 `vacancy-mark-legend`・`Term`（`vacancyCount`、場所が無いときだけ `vacancyEstimate`）・色の凡例・表 |
+| 3 受けられる曜日・時間帯 | `vacancy-table-card` | 見出しに「目安（移動を前後15分で見込む）」か「〈場所〉への移動を含む」・`vacancy-when-line`（`whenWhatLine`）・試算の要約 `inquiry-summary`・曜日×週のマス（`InquiryWeeks`）・案の無い日の注意 `vacancy-noplan`・凡例 `vacancy-mark-legend`・`Term`（`vacancyCount`、場所が無いときだけ `vacancyEstimate`）・色の凡例（`VACANCY_LEGEND`。「0人（受けられない）」は薄い灰）・表 |
 | 4 次の一手 | `vacancy-step-next` | `inquiry-card`（主ボタン「要約をコピー」`copy-summary`・「仮の〈利用者さん〉として押さえる」`hold-open`・できないときの理由 `hold-why`）と `notice-card`（空き枠の案内文。`details`。見出しは h3） |
 
 「開く ▾」「畳む ▴」は `FoldMark`（`aria-hidden`）。
@@ -34,7 +34,7 @@
 - 箱は `EdgeScroll`（`vacancy-scroll`。PRD D221）。狭い画面（600px 以下）では曜日の列を止め（行は7つなので見出しの行は止めない）、右に続きがあるあいだ右の端をぼかす（[pages.md](pages.md) の「狭い画面の表」）
 - 狭い画面では、表がはじめに出たとき `NARROW_FIRST_START`（`09:00`。朝の早い列はたいてい × のため）の列が曜日の列のすぐ右に来るまで横に巻く（`scrollLeftToShow`）。1回だけで、条件を変えても人が巻いた位置のまま。その列が無い（希望の時間帯が 9:00 を含まない）ときは巻かない
 - マス：段階の色 `lv-*`（`vacancyLevel`）と、`lib/vacancyView` の `cellFace` の印と下の小さい文字（○ は人数（目安は「約」）、△ は `weeksOk/weeksTotal`、×・？ は空。× に「約0」を出さない）。色だけに頼らない。読み上げの文も `cellFace`
-- マスを押すと右の欄に日付ごとの人（名前）と入らない日付。各行に `Link.vacancy-day-open`（`dayHref(日付)`。「その日の案を見る」・`data-date`・aria-label「その日の案を見る（M/D（曜）・日の画面で開く）」。Ctrl+クリック・中クリックで新しいタブ。`?date=` だけで開く）。名前の吹き出しは付けない
+- マスを押すと右の欄に日付ごとの人（名前）と入らない日付（灰の文字。赤にしない。PRD D228）。各行に `Link.vacancy-day-open`（`dayHref(日付)`。「その日の案を見る」・`data-date`・aria-label「その日の案を見る（M/D（曜）・日の画面で開く）」。Ctrl+クリック・中クリックで新しいタブ。`?date=` だけで開く）。名前の吹き出しは付けない
 - 案の無い日の注意は表の上の1か所（`vacancy-noplan`：日数と日付（6日まで・ほか N日）・「表は「？」、案内文にも載せません」・［〈M月〉の案を作る］＝`?do=batch`）。案内文の下・日付ごとの欄は短い一言だけ
 
 #### 問い合わせの試算と曜日×週のマス

@@ -55,7 +55,7 @@ describe('monthListRow', () => {
     expect(r.stateText).toBe(DAY_STATE_TEXT.plan);
     expect(r.label).toBe('10月21日（水）・今日・訪問 17件・案あり');
   });
-  it('要対応の印はマスと同じ並び（赤 → 注意）、要確認は今日以降だけ', () => {
+  it('要対応の印はマスと同じ並び（赤 → 注意）、要対応は今日以降だけ', () => {
     const s = status({
       date: '2026-10-24',
       count: 8,
@@ -77,12 +77,20 @@ describe('monthListRow', () => {
       { text: '拘束超 2人', tone: 'warn' },
     ]);
     expect(r.label).toBe(
-      '10月24日（土）・訪問 8件・未確定の変更あり・要確認・入らない 2件・必須の違反 1件・休みの人に訪問 3件・条件が変わった・拘束超 2人',
+      '10月24日（土）・訪問 8件・未確定の変更あり・要対応・入らない 2件・必須の違反 1件・休みの人に訪問 3件・条件が変わった・拘束超 2人',
     );
-    // 過ぎた日は要確認にしない
+    // 過ぎた日は要対応にしない
     const past = monthListRow({ ...s, date: '2026-10-20' }, today);
     expect(past.care).toBe(false);
     expect(past.isPast).toBe(true);
+  });
+  it('今日以降で訪問があって案の無い日は注意（黄）で、要対応（赤）にしない（PRD D228）', () => {
+    const r = monthListRow(status({ date: '2026-10-24', count: 5, state: 'none' }), today);
+    expect(r.care).toBe(false);
+    expect(r.caution).toBe(true);
+    expect(r.label).toBe('10月24日（土）・訪問 5件・案なし・注意：まだ案が無い');
+    expect(monthListRow(status({ date: '2026-10-20', count: 5, state: 'none' }), today).caution).toBe(false);
+    expect(monthListRow(status({ date: '2026-10-24', count: 0, state: 'none' }), today).caution).toBe(false);
   });
   it('補足の文を読み上げの最後に足す', () => {
     const r = monthListRow(status({ date: '2026-10-22', count: 3, state: 'confirmed' }), today, ['担当 2件']);

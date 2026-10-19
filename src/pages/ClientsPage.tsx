@@ -46,6 +46,7 @@ import { activeFilterCount, EMPTY_FILTER, filterClients, filterFacts, resolveSta
 import { isBeforeActive, STAGE_LABELS, stageChoices, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
+import { useDirtyMark } from '../lib/dirtyForms';
 import { normalizeEmail } from '../lib/mailto';
 import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
@@ -208,6 +209,8 @@ export default function ClientsPage() {
     setError(null);
   };
 
+  // 別のタブの変更で読み直したときの知らせの文を選ぶ（PRD D227。変更があれば「保存すると上書きします」）
+  useDirtyMark(dirty);
   // 変更があるまま再読込・タブを閉じるときはブラウザの確認を出す（PRD D130。戻る・画面の移動では出せない。ADR-0023）
   useEffect(() => {
     if (!dirty) return;

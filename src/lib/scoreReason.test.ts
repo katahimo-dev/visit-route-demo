@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HundredPart, PlanScore, RuleAchievement } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
-import { REASON_MIN_POINTS, scoreReason, scoreReasonLabel } from './scoreReason';
+import { NEXT_STEP_TEXT, REASON_MIN_POINTS, reasonFace, scoreReason, scoreReasonLabel } from './scoreReason';
 
 const part = (key: HundredPart['key'], points: number): HundredPart => ({ key, label: key, points });
 type Sc = Pick<PlanScore, 'travelMinutes' | 'waitMinutes' | 'dropped' | 'perRule' | 'hardViolations'>;
@@ -111,5 +111,69 @@ describe('scoreReason', () => {
   it('読み上げの文', () => {
     const r = scoreReason([part('travel', 12)], sc());
     expect(r && scoreReasonLabel(r)).toBe('点を下げているいちばんの理由：移動が長め（190分）');
+  });
+});
+
+describe('次の一手（PRD D229）', () => {
+  it('移動が長い → 「移動を短く」で作る', () => {
+    const r = scoreReason([part('travel', 12)], sc());
+    expect(r?.nextStep).toEqual({ kind: 'shortTravel', text: '「移動を短く」で作る' });
+  });
+  it('入らない訪問 → 受けられる人を見る', () => {
+    expect(scoreReason([part('travel', 30)], sc({ dropped: 2 }))?.nextStep).toEqual({
+      kind: 'candidates',
+      text: NEXT_STEP_TEXT.candidates,
+    });
+  });
+  it('相性△ → 相性の表を開く。ほかの担当の条件・待ち・偏り・必須の違反は次の一手なし', () => {
+    const rules = [rule('cp', 'compatibility', 3, '相性')];
+    const r = scoreReason([part('assign', 6)], sc({ perRule: { cp: pr(30, 1) } }), {
+      rules,
+      achievements: [compat(1)],
+    });
+    expect(r?.text).toBe('相性△が1件');
+    expect(r?.nextStep).toEqual({ kind: 'compat', text: '相性の表を開く' });
+    const co = scoreReason([part('assign', 6)], sc({ perRule: { co: pr(30, 3) } }), {
+      rules: [rule('co', 'continuity', 1)],
+    });
+    expect(co?.nextStep).toBeUndefined();
+    expect(scoreReason([part('wait', 3)], sc())?.nextStep).toBeUndefined();
+    expect(scoreReason([part('balance', 3)], sc())?.nextStep).toBeUndefined();
+    expect(scoreReason([part('travel', 3)], sc({ hardViolations: [hv] }))?.nextStep).toBeUndefined();
+  });
+});
+
+describe('訪問ごとの理由の見せ方（PRD D229）', () => {
+  it('符号の無い言葉：「✓ 相性◎（選ばれやすい）」「! 移動12分（やや遠い）」。内部の値は title だけ', () => {
+    const good = reasonFace({ ruleId: 'cp', label: '相性◎', points: -30, level: 2 });
+    expect(good).toMatchObject({ tone: 'good', mark: '✓', text: '相性◎', note: '選ばれやすい' });
+    expect(good.title).toContain('内部の値 −30');
+    const far = reasonFace({ ruleId: 'travel', label: '移動12分', points: 12 });
+    expect(far).toMatchObject({ tone: 'bad', mark: '!', text: '移動12分', note: 'やや遠い' });
+    expect(far.title).toContain('内部の値 +12');
+    for (const f of [good, far]) expect(`${f.mark} ${f.text}（${f.note}）`).not.toMatch(/[+−-]\s*\d/);
+  });
+  it('移動の言葉：10分以下は近い（✓）、20分を超えると遠い', () => {
+    expect(reasonFace({ ruleId: 'travel', label: '移動8分', points: 8 })).toMatchObject({ mark: '✓', note: '近い' });
+    expect(reasonFace({ ruleId: 'travel', label: '移動25分', points: 25 })).toMatchObject({ mark: '!', note: '遠い' });
+  });
+  it('相性○・△、待ち、満たした条件、合わない条件、担当にできない', () => {
+    expect(reasonFace({ ruleId: 'cp', label: '相性○', points: -15, level: 1 }).note).toBe('やや選ばれやすい');
+    expect(reasonFace({ ruleId: 'cp', label: '相性△', points: 30, level: -1 })).toMatchObject({
+      mark: '!',
+      note: '選ばれにくい',
+    });
+    expect(reasonFace({ ruleId: 'wait', label: '待ち20分', points: 6 })).toMatchObject({
+      mark: '!',
+      note: '空き時間がある',
+    });
+    expect(reasonFace({ ruleId: 'q', label: '資格に看護師 ✓', points: 0 })).toMatchObject({ mark: '✓', note: '' });
+    expect(reasonFace({ ruleId: 'co', label: 'いつもの担当でない', points: 20 })).toMatchObject({
+      mark: '!',
+      note: '',
+    });
+    const inf = reasonFace({ ruleId: 'slot', label: '時間が合わない', points: Number.POSITIVE_INFINITY });
+    expect(inf).toMatchObject({ mark: '!', note: '担当にできない' });
+    expect(inf.title).not.toContain('Infinity');
   });
 });

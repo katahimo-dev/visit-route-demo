@@ -1153,3 +1153,51 @@ p.plan-band.error {
 .sudden-panel .anneal-box {
   overflow-x: auto;
 }
+
+/* 訪問ごとの理由（PRD D229）：符号の無い言葉。✓ はよい点（緑の文字）、! は気になる点（注意の文字） */
+.reason-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.reason-mark {
+  flex-shrink: 0;
+  width: 1em;
+  font-weight: 700;
+  text-align: center;
+}
+.reason-line.is-good .reason-mark {
+  color: var(--ok-ink);
+}
+.reason-line.is-bad .reason-mark {
+  color: var(--warn-ink);
+}
+/* いちばんの理由の次の一手（PRD D229）：理由の下に1行 */
+.score-next {
+  margin: -4px 0 0;
+  font-size: 0.85rem;
+}
+.score-next .link-btn,
+.score-next a {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--primary-dark);
+  text-decoration: underline;
+  cursor: pointer;
+}
+/* 比較の画面の詳細設定（記録ごとの乱数の種。PRD D229） */
+.compare-advanced summary {
+  cursor: pointer;
+}
+.compare-advanced-list {
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+}
+@media print {
+  .score-next {
+    display: none;
+  }
+}

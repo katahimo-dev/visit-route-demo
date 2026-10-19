@@ -696,8 +696,12 @@ export default function WeekPage() {
                 </span>
               ))}
               <span className="row week-legend-item">
-                <span className="week-legend-dash" aria-hidden="true" />
-                未割当・入らない
+                <span className="week-legend-dash is-noplan" aria-hidden="true" />
+                案なし（担当未定・注意）
+              </span>
+              <span className="row week-legend-item">
+                <span className="week-legend-dash is-unassigned" aria-hidden="true" />
+                入らない（要対応）
               </span>
               <span className="row week-legend-item">
                 <span className="week-legend-unfit" aria-hidden="true">
@@ -953,7 +957,9 @@ export default function WeekPage() {
                 visitById={visitById}
                 bandLabel={(b) => {
                   const v = visitById.get(b.visitId);
-                  return { client: clientName(v), staff: staffName(b.staffId) };
+                  // 担当の無い帯：その日に案が無ければ「案なし」（注意）、案があるのに入らなければ「入らない」（要対応。PRD D228）
+                  const none = b.source === 'visit' ? '案なし' : '入らない';
+                  return { client: clientName(v), staff: b.staffId === null ? none : staffName(b.staffId) };
                 }}
                 typeColor={(v) => {
                   const t = typeOf(data.visitTypes, v?.typeId);
@@ -1436,7 +1442,7 @@ function DayColumn({
             key={b.visitId}
             type="button"
             draggable={movable}
-            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
+            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? (b.source === 'visit' ? ' is-noplan' : ' is-unassigned') : ''}${bad ? ' is-unfit' : ''}`}
             style={{
               top: top(b.start),
               height: h,

@@ -700,7 +700,6 @@ export default function ComparePage() {
                           </span>
                         )}
                         {run?.stopped && <span className="sub">（途中で止めた案）</span>}
-                        {run && <div className="weights-text">乱数の種 {run.seed}</div>}
                       </td>
                       <td {...narrowRole.cell} className="nowrap sub" data-label="作った時刻">
                         {run
@@ -762,6 +761,19 @@ export default function ComparePage() {
               </tbody>
             </table>
           </div>
+        )}
+        {/* 乱数の種はふだん見ないので表に出さず「詳細設定」に畳む（PRD D229。条件の画面の詳細設定と同じ扱い） */}
+        {runs.length > 0 && (
+          <details className="compare-advanced" data-testid="compare-advanced">
+            <summary className="sub">詳細設定（記録ごとの乱数の種）</summary>
+            <ul className="sub compare-advanced-list">
+              {runs.map((r) => (
+                <li key={r.id}>
+                  {choices.find((c) => c.id === r.id)?.title ?? r.id}：乱数の種 {r.seed}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
         {(choices.length === 1 || (making && making.date === date)) && (
           <div className="compare-another stack" data-testid="compare-another">

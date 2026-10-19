@@ -138,9 +138,9 @@ flowchart LR
 型・関数の形は §5。「決定的」＝乱数・`Date.now` を使わず、今日・今の時刻は引数で受ける純粋関数。
 
 ### store（データ一式の保存）
-- 責務：`DemoData` の読み込み・保存・検査（zod）・版の移行・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す。画面へは `useDemoData()`（`data`・`update(fn)`・`replace(d)`・`reset()`・`saveError`）。書き換えは update・replace・reset だけ
-- 持つデータ（持ち主）：`DemoData`（キー `vrdemo:data:v1` の1つの JSON）、案内ツアーを見たか（キー `vrdemo:tour:seen`）
-- 提供するAPI：`load()`（無ければ seed の `createInitialData(今日)` で作る。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データ（退避できたら初期データを書き、読み直すたびに作り直さない。退避できなければ元の文字を残す）。読めたら `extendDays`）、`save(data)`（300ms 間引き。`flushSave()`）、`reset()`（`createInitialData(今日)`）、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
+- 責務：`DemoData` の読み込み・保存・検査（zod）・版の移行・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す、置き換える前の1世代の控え（ADR-0032）。画面へは `useDemoData()`（`data`・`update(fn)`・`replace(d)`・`reset()`・`saveError`・`keepPrevious(reason)`・`restorePrevious()`・`previous`・`broken`・`brokenKept`・`dismissBroken()`・`externalReloads`・`previousDrops`）。書き換えは update・replace・reset・restorePrevious だけ
+- 持つデータ（持ち主）：`DemoData`（キー `vrdemo:data:v1` の1つの JSON）、読めなかった元の文字（`vrdemo:data:broken`）、1世代の控え（`vrdemo:data:prev`＝置き換える前の `DemoData` の JSON、`vrdemo:data:prev:info`＝`{ at, reason }`（時刻 ms・操作の名前））、案内ツアーを見たか（キー `vrdemo:tour:seen`）、最後に書き出した日（`vrdemo:backup:last`＝`{ date: 'YYYY-MM-DD', kind: 'json' | 'excel' }`）と控えの知らせを出した日（`vrdemo:backup:reminded`＝'YYYY-MM-DD'）。`vrdemo:data:v1` 以外はブラウザごとの記録で、DemoData の外（版・書き出し・読み込み・初期状態に戻すの対象外。`src/contracts/` に足さない）
+- 提供するAPI：`load()`・`loadWithStatus()`（無ければ seed の `createInitialData(今日)` で作る。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データで `broken: true`（退避が容量超過なら1世代の控えを捨ててもう1回。退避できたら初期データを書き、読み直すたびに作り直さない。それでも退避できなければ元の文字を残して `brokenKept: false`）。読めたら `extendDays`）、`brokenText()`（退避した元の文字。退避できていなければ開いたときに覚えた元の文字、それも無ければ本体のキーの読めない文字）、`save(data, onResult)`（300ms 間引き。`flushSave()`。結果は `(message, droppedPrevious)`：容量のために控えを捨てたか）、`reset()`（`createInitialData(今日)`）、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
 - repair（いない物を指す参照を除き、ID の重複は最初の1件）：
   - 割当・相性・上書き・固定・記録・今の案と記録の `reassign` の `base*`（`absenceIds` は残す）。記録は1日20件まで（古いものから捨てる）
   - プリセット：6つまで・0件なら初期の3種・重みは 0〜5・0.5刻み（`clampWeight`）・必須にできない型の必須は外す。`scorePresetId` が無効なら先頭
@@ -149,12 +149,16 @@ flowchart LR
   - 訪問：無効な `typeId`・`pattern` は null（訪問は残す）。取り消していない訪問の `cancelKind` は null
   - `allowedStaffIds`：いない・休止中の人と重なりを除く（空になれば限らない）。active・tentative を段階に合わせる（`stageFlags`）
 - 案内ツアー：`store/tour.ts` の `tourMemory`（`seen()`・`markSeen()`。値 `'1'`。`createTourMemory(getStorage)`）。DemoData の外（update・版・書き出し・reset の対象外）。保存できなければ開いている間だけ
+- 1世代の控え（PRD D227。ADR-0032）：`keepPrevious(data, reason, at)` は置き換える前のデータを `vrdemo:data:prev` に書く（次に残すと上書き）。書けなければ前の世代を消して1回だけ試し直し、それでもだめなら残さず `{ kept: false, why: '控えを残せません：容量不足' }`（操作は止めない）。`cancel()` で前の世代に戻す（確認を取り消したとき）。画面は確認で OK になってから残す（確認の本文は見込みの `canKeepPrevious()`：保存が使えない・最後の保存が容量超過なら「容量不足」）。`previousInfo()`・`readPrevious()`（`importJson` を通す）・`samePreviousInfo(a, b)`（同じなら react の state を替えない）。`swapPrevious(now)` は控えを読み、いまのデータを「直前の状態に戻す」として控えてから控えのデータを返す（もう一度戻せる）。いまのデータを控えに残せなければ戻さず（控えは元のまま）「いまのデータを控えに残せないため戻せません：容量不足」。react の `restorePrevious()` はこれを使う。本体の保存（`writeNow`）が容量超過なら控えを捨ててもう1回書き（いまのデータが先）、捨てたら `previousDrops` を1つ増やす（画面がトースト「容量が足りないため、直前の状態の控えを消しました」）
+- 最後に書き出した日・控えの知らせ：`store/backup.ts` の `backupMemory`（`lastExport()`・`markExported(kind, date)`・`lastReminded()`・`markReminded(date)`。`createBackupMemory(getStorage)`）。ツアーと同じく DemoData の外。知らせるかは `lib/backupReminder` の `shouldRemindBackup`（純粋関数）
+- 別のタブの変更：`storage` イベントで `vrdemo:data:v1` が変われば読み直し（書き戻さない）、`externalReloads` を1つ増やす（画面が知らせを出す）。控えのキーが変われば `previous` を読み直す
 - 依存するもの：seed（`seed/plans` の `createInitialData` も）、patterns、zod
 - 配置：`src/store/`
 - 完了の条件：
   - [ ] 壊れた・古い版の JSON は移行するか、元のデータを残して日本語のエラーを返す（画面が真っ白にならない）
   - [ ] 書き出し → 読み込みで同じデータに戻る（欠勤・振り直し・種類・パターン・休みを含む。テスト）
-  - [ ] 容量超過で書き出しを促す（`QUOTA_MESSAGE`）
+  - [ ] 容量超過で書き出しと「古い案と記録を片づける」を促す（`QUOTA_MESSAGE`）
+  - [ ] 置き換える前の1世代の控え・取り消しで前の世代・容量超過なら残さず理由（テスト）
   - [ ] 古いデータが §5 の既定値で読め、repair が効き、直す所の無い〈利用者さん〉は同じ物（テスト）
   - [ ] パターンがあり今日以降の訪問が無いと、起動時に14日分が足される（テスト）
 
@@ -387,7 +391,7 @@ flowchart LR
 
 | コンポーネント | メソッド | エンドポイント | 概要 |
 |---|---|---|---|
-| store | 関数 | `load / save / reset / exportJson / importJson / migrate / repair / extendDays / backup / rememberCurrent` | 保存・入出力・版の移行・例外の画面の控え |
+| store | 関数 | `load / save / reset / exportJson / importJson / migrate / repair / extendDays / backup / rememberCurrent / keepPrevious / canKeepPrevious / swapPrevious` | 保存・入出力・版の移行・例外の画面の控え |
 | domain | 関数 | `withoutAbsences / afterLastDay / leaveOn / isOnLeave` | 欠勤・最終勤務日・休み（デモ独自） |
 | matching | 関数 | `compile(data, date, pins?) → Problem` | 項目・条件 → 可否・費用表 |
 | solver | Worker | `solve` → `progress`…`done`／`error`、`stop` | AI案を作る。stop で最良案を返す |
@@ -738,7 +742,8 @@ BICYCLE_NOTE = '自転車の経路が出ないときは、Google マップで徒
 | FAILED_PRECONDITION | — | 訪問・稼働中のスタッフがいない、担当の候補がいない訪問がある | 原因を出し、解ける訪問だけで解く |
 | FAILED_PRECONDITION | — | 振り直しの元の案が無い | 「先にAI案を作ってください」。欠勤だけは登録できる |
 | FAILED_PRECONDITION | — | 月まとめ作成の対象の日が無い | 理由を出してボタンを押せなくする |
-| RESOURCE_EXHAUSTED | — | localStorage の容量超過 | 書き出しを促す |
+| RESOURCE_EXHAUSTED | — | localStorage の容量超過 | 書き出しと、データの画面の「古い案と記録を片づける」を促す（`QUOTA_MESSAGE`）。1世代の控えがあれば先に捨てて書き直し、捨てたことを知らせる。控えが残せない見込みなら確認の本文に出し、置き換えは止めない。いまのデータを控えに残せなければ「直前の状態に戻す」はしない（ADR-0032） |
+| INVALID_ARGUMENT | — | 起動したとき、保存していたデータが読めない（壊れた JSON・契約に合わない） | 元の文字を `vrdemo:data:broken` に退避して初期データで開き、閉じられる知らせと「読めなかったデータを書き出す」 |
 | ABORTED | — | 計算・月まとめ作成を止めた・画面を離れた | 最良案を出す。月は作れた日を残し「N日分で止めました」 |
 | NOT_FOUND | — | 郵便番号・住所の候補が無い | 「見つかりませんでした」。地図のクリックで置ける |
 | DEADLINE_EXCEEDED | — | 検索が8秒で返らない | 「時間内に応答がありませんでした」。もう一度押せる |
@@ -749,7 +754,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 ### 冪等性・タイムアウト
 - 同じ `Problem`・`seed`・`iterations` から同じ結果（時刻・`Math.random` を使わない）。案B も同じ入力・重み・種から同じ
 - 反復回数の既定は問題の大きさから（目安3秒）。上限30秒で `stop` を送り最良案を採る
-- 保存は上書きのみ（1キー）。読み込みは置き換える前に確認
+- 保存は上書きのみ（1キー）。読み込み・初期状態に戻すは置き換える前に確認し、確認で OK になってから1世代の控えを残す（次に置き換えると上書き。ADR-0032）
 - 検索は押すごとに8秒で打ち切り、再試行は利用者が押す。まとめて置くの再実行はまだ位置の無い人だけ
 - 展開は2回続けても増えない（ID が決定的）
 - 月まとめ作成は1日ずつ書く（画面を離れて止まった日は残さず、「止める」のときだけ途中の最良を残す）。使い回せる記録がある日は計算しない。「まだ案の無い日だけ」の再実行は残りの日だけ
@@ -773,6 +778,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 |---|---|---|---|
 | 置き場所・コード | 新リポジトリ・GitHub Pages。純粋関数は写す | push だけで回せ、PoC本体の α版を止めない | 0001 |
 | 保存 | localStorage（1キー JSON） | 数百KB で足り、同期APIで単純 | — |
+| データを守る | 置き換える前に1世代だけ別のキーに控え、書き出した日を覚えて知らせ、古い案と記録を月で片づける | 誤操作から1手で戻れ、容量を倍にしない | 0032 |
 | 条件の表し方 | 項目＋条件の型＋重み0〜5＋必須 | 管理者が自分で組める範囲 | 0002 |
 | 最適化 | 焼きなまし（Web Worker） | 依存が軽く任意の費用を入れられる（最適性の保証は失う） | 0003 |
 | 時間の約束 | 必須のまま | PoC本体と同じ前提で比べる | — |
@@ -803,10 +809,10 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 項目の初期セット | 初回デモ前に、alca様・フォール様のヒアリング内容から |
 | 写した純粋関数を PoC本体と揃え直す時期 | PoC本体の α版リリース後（11月） |
 | 空き状況の余白（前後15分）・週の数（4週） | 空き状況のデモの反応から |
-| 古い月の案・記録の片づけ（容量） | 一月分を作って容量の警告が出たら |
 | 連絡文のひな形・「変更を減らす」の既定（3） | 欠勤の振り直しのデモの反応から |
 | 希望休の見分け方・欠勤の種類、限った人が全員いなくなったら止めるか、印刷の1マスの件数・文字（ADR-0014） | 訪問看護事業所でのデモから |
 | 段階の名前・拘束の上限の既定（10時間）・実働の上限・見本の期間（28日）（ADR-0015） | 訪問介護の事業所でのデモから |
 | mailto の長さの目安（実機で未測定）・要点の項目・件名（ADR-0017） | 実際のメールアプリで開いた反応から |
 | 経由地の上限（3件）・公共交通・自転車・区間ごとのリンクの置き方（ADR-0018） | 実機の Google マップで開いた反応から |
 | ひな形の入・切と名前・機能の分け方（ADR-0028） | ほかの法人でのデモから |
+| 控えの世代数（1）・知らせの日数（14日）・片づけの既定（3か月前）（ADR-0032） | 実際に一月分以上を使った容量と、戻したい場面の声から |
