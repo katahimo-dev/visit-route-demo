@@ -59,17 +59,17 @@ export function attentionTarget(a: Attention, features: Features): LinkTarget {
 }
 
 /** その日の日の画面へ移る行き先 */
-const dayTarget = (date: string): LinkTarget => ({ to: '/plan', date, note: '（日の画面で開く）' });
+const dayTarget = (date: string): LinkTarget => ({ to: '/plan', date, note: '（日の予定で開く）' });
 
 /** すべて入のときの行き先 */
 function attentionTargetAll(a: Attention): LinkTarget {
   switch (a.kind) {
     case 'unassigned':
-      return { to: unassignedHref(a.date), date: a.date, note: '（日の画面の「入らなかった訪問」で開く）' };
+      return { to: unassignedHref(a.date), date: a.date, note: '（日の予定の「入らなかった訪問」で開く）' };
     case 'absentLeft':
-      return { to: suddenHref(a.date), date: a.date, note: '（日の画面の「欠勤・キャンセル」で開く）' };
+      return { to: suddenHref(a.date), date: a.date, note: '（日の予定の「欠勤・キャンセル」で開く）' };
     case 'overSpan':
-      return { to: workloadHref(ymOf(a.date), a.staffIds?.[0]), date: a.date, note: '（稼働の見込みで開く）' };
+      return { to: workloadHref(ymOf(a.date), a.staffIds?.[0]), date: a.date, note: '（勤務の見込みで開く）' };
     default:
       return dayTarget(a.date);
   }

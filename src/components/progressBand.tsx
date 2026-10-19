@@ -136,7 +136,7 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${visitsDone ? ' is-done' : ''}`}
-            title={`今日以降の訪問 ${p.visits}件${canExpand > 0 ? `。定期パターンからまだ作っていない訪問 ${canExpand}件` : ''}。押すと月の画面の「まとめて作る」の欄を開きます`}
+            title={`今日以降の訪問 ${p.visits}件${canExpand > 0 ? `。定期パターンからまだ作っていない訪問 ${canExpand}件` : ''}。押すと月の予定の「まとめて作る」の欄を開きます`}
             aria-label={`訪問 ${visitsText(p.visits, canExpand)}${done(visitsDone)}。まとめて作るを開く`}
             data-testid="band-visits"
           >
@@ -149,7 +149,7 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${planDone ? ' is-done' : ''}`}
-            title={`案を作った日 ${p.planned}/${p.days}日（訪問のある日のうち）。押すと月の画面の「まとめて作る」の欄を開きます`}
+            title={`案を作った日 ${p.planned}/${p.days}日（訪問のある日のうち）。押すと月の予定の「まとめて作る」の欄を開きます`}
             data-testid="band-plans"
             data-planned={p.planned}
             data-days={p.days}
@@ -167,7 +167,7 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'unconfirmed')}
             onClick={click('unconfirmed')}
             className={`pb-item${confirmDone ? ' is-done' : ''}`}
-            title={`確定した日 ${p.confirmed}/${p.days}日（確定していない日 ${unconfirmed}日）。押すと月の画面の「確定していない日」を開きます`}
+            title={`確定した日 ${p.confirmed}/${p.days}日（確定していない日 ${unconfirmed}日）。押すと月の予定の「確定していない日」を開きます`}
             data-testid="band-confirm"
             data-confirmed={p.confirmed}
             data-unconfirmed={unconfirmed}
@@ -186,7 +186,7 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'attention')}
             onClick={click('attention')}
             className={`pb-item${p.attention === 0 ? ' is-done' : model.urgent > 0 ? ' is-warn' : ''}`}
-            title={`要対応 ${p.attention}件（うち手当てが要るもの ${model.urgent}件）。押すと月の画面の「要対応」を開きます`}
+            title={`要対応 ${p.attention}件（うち手当てが要るもの ${model.urgent}件）。押すと月の予定の「要対応」を開きます`}
             data-testid="band-attention"
             data-count={p.attention}
             aria-label={`要対応 ${p.attention}件${p.attention === 0 ? done(true) : model.urgent > 0 ? `（要手当て ${model.urgent}件）` : ''}。要対応を開く`}

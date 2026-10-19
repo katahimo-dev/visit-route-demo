@@ -102,7 +102,7 @@ describe('rebuildAction', () => {
 describe('いまの条件の案内', () => {
   it('文と、今日の日の画面で作り直す行き先', () => {
     expect(customRulesText('標準')).toBe(
-      'いまの条件は日の画面の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります',
+      'いまの条件は日の予定の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります',
     );
     expect(recreateTodayHref(TODAY)).toBe('/plan?date=2026-10-21&do=recreate');
     expect(rebuildWith('標準')).toMatch(/いまの条件で作った案も「標準」の案になります/);

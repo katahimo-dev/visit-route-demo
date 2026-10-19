@@ -110,7 +110,7 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
     let k = 0;
     update((d) => applyOffboard(d, staffId, picked, from, today, () => pids[k++] ?? newId('pt')));
     toast(
-      `${scope.clients.length}人の担当を置き換えました。訪問の案は月間の「条件が変わった日を作り直す」か、日の画面で直してください`,
+      `${scope.clients.length}人の担当を置き換えました。訪問の案は月の予定の「条件が変わった日を作り直す」か、日の予定で直してください`,
     );
   };
 
@@ -238,7 +238,7 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
             <>
               <p className="sub">
                 この訪問は{mdText(addDays(scope.lastDay, 1))}
-                から「休みの人に残る訪問」になり、案のある日は「条件が変わった」になります。月間の「条件が変わった日を作り直す」か、日の画面で直してください。
+                から「休みの人に残る訪問」になり、案のある日は「条件が変わった」になります。月の予定の「条件が変わった日を作り直す」か、日の予定で直してください。
               </p>
               <button
                 type="button"
@@ -249,7 +249,7 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
                 }}
               >
                 <WithIcon icon={CalendarDays} size={14}>
-                  {Number(scope.from.slice(5, 7))}月の月間を開く
+                  {Number(scope.from.slice(5, 7))}月の「月の予定」を開く
                 </WithIcon>
               </button>
               <ul className="offboard-days" data-testid="offboard-visits">

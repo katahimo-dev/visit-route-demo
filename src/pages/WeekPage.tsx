@@ -615,7 +615,7 @@ export default function WeekPage() {
     if (!r.staffId) {
       setNotice({
         ...notice,
-        error: '空き時間に入りません。その日を作り直すか、予定の画面で手で入れてください',
+        error: '空き時間に入りません。その日を作り直すか、日の予定で手で入れてください',
       });
       return;
     }
@@ -714,7 +714,7 @@ export default function WeekPage() {
             </span>
             <Hint>
               帯の中の色は種類、縁の色は{by === 'staff' ? `担当の${terms.staff}` : terms.client}
-              です。帯は、その日の今の案（無ければ確定した割当、どちらも無ければ訪問の開始（早））の時刻です。帯を押すとその日の予定の画面を開きます。
+              です。帯は、その日の今の案（無ければ確定した割当、どちらも無ければ訪問の開始（早））の時刻です。帯を押すとその日の「日の予定」を開きます。
               帯をドラッグして別の日・時刻へ動かせます（{SNAP_MINUTES}
               分刻み）。つかんでいる間は、担当できる人のチップを強調し、落とす先に空き時間に入れられる人の数（入れる人
               N人）を出します。キーボードでは帯で Enter
@@ -1207,7 +1207,7 @@ export default function WeekPage() {
                                       onKeyDown={(e) => (it.leave || it.cancelled ? undefined : onItemKey(e, it))}
                                       onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
                                       onDragEnd={onDragEnd}
-                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
+                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}（押すと日の予定${movable ? '、Enter で日時を動かす' : ''}）`}
                                       title={[text, ...marks.map((m) => `${m.short}：${m.why}`)].join('／')}
                                       data-testid="week-citem"
                                       data-visit={it.visitId}
@@ -1446,7 +1446,7 @@ function DayColumn({
               borderColor: !bad && b.staffId !== null && edge ? edge : undefined,
             }}
             title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${marks.map((m) => `（${m.short}：${m.why}）`).join('')}`}
-            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}（押すと予定の画面${movable ? '、Enter で日時を動かす' : ''}）`}
+            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}（押すと日の予定${movable ? '、Enter で日時を動かす' : ''}）`}
             onClick={() => onOpen(b)}
             onKeyDown={(e) => (b.leave ? undefined : onKey(e, b))}
             onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}

@@ -283,7 +283,7 @@ export function PatternsSection({ client }: { client: Client }) {
         定期パターン
       </SectionTitle>
       <Hint>
-        決まった曜日・時刻の訪問です。足すと、今日から、いまある訪問の最後の日までの訪問を作ります（その先の月は「月間」の画面で作ります）。
+        決まった曜日・時刻の訪問です。足すと、今日から、いまある訪問の最後の日までの訪問を作ります（その先の月は「月の予定」で作ります）。
         {!client.active && ` この${terms.client}は休止中なので、訪問は作りません。`}
       </Hint>
       {patterns.length === 0 ? (

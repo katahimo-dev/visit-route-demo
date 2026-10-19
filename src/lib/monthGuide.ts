@@ -56,7 +56,7 @@ export function cellGuide(x: CellGuideInput): string[] {
   }
   if (x.unassigned) out.push('「入らない N」＝案に入らない訪問の件数');
   if (x.hard) out.push('「違反 N」＝必須の条件を守れていない割当の件数');
-  if (x.absentLeft) out.push('「休みの人に N」＝休みの人に残っている訪問の件数（日の画面で振り直す）');
+  if (x.absentLeft) out.push('「休みの人に N」＝休みの人に残っている訪問の件数（日の予定で振り直す）');
   if (x.stale) out.push('「条件が変わった」＝案を作ったあとに訪問・稼働時間・条件が変わった');
   if (x.overSpan) out.push('「拘束超 N」＝出勤〜退勤（拘束）が上限を超える人数');
   if (x.loadBar === 'load') out.push(`下の3段の棒＝30分ごとの空きの人数（高いほど空きが少ない。${barRowsText()}）`);

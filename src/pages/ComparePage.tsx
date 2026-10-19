@@ -138,7 +138,7 @@ export default function ComparePage() {
     if (aiPlan && !runs.some((r) => key(r.routes) === key(aiPlan.routes))) {
       out.push({
         id: CURRENT,
-        title: '今の案（予定の画面）',
+        title: '今の案（日の予定）',
         rules: aiPlan.rules,
         routes: aiPlan.routes,
         unassigned: aiPlan.unassigned,
@@ -225,7 +225,7 @@ export default function ComparePage() {
         JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes)) &&
       !(await confirmDialog({
         title: `手直しを捨てて、#${r.no} を今の案にしますか？`,
-        body: '予定の画面の手直しと固定を捨てて、この記録を今の案にします。',
+        body: '日の予定の手直しと固定を捨てて、この記録を今の案にします。',
         confirmLabel: '捨てて今の案にする',
         tone: 'danger',
       }))
@@ -411,7 +411,7 @@ export default function ComparePage() {
   const anotherWhy = !problem
     ? 'この日に計算できる訪問がありません'
     : anotherOpts.length === 0
-      ? `どの考え方（プリセット）で作っても、今ある案と同じ条件になります。日の画面の「案を変える」の「条件を調整する」で重みを変えてから作ってください`
+      ? `どの考え方（プリセット）で作っても、今ある案と同じ条件になります。日の予定の「案を変える」の「条件を調整する」で重みを変えてから作ってください`
       : null;
 
   // ---- 条件の差 ----
@@ -585,7 +585,7 @@ export default function ComparePage() {
       <PageHeader
         icon={GitCompareArrows}
         title="案を比べる"
-        lead="選んでいる日の、条件を変えたAI案を2つ選んで比べます（メニューの「案を比べる」か、日の画面の「案を変える」の「2つの案を比べる」から開きます。案が1つならここでもう1案作れます）"
+        lead="選んでいる日の、条件を変えたAI案を2つ選んで比べます（メニューの「案を比べる」か、日の予定の「案を変える」の「2つの案を比べる」から開きます。案が1つならここでもう1案作れます）"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
             <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>
@@ -603,7 +603,7 @@ export default function ComparePage() {
                 <Term k="scoreBase" />：{scoreRulerName}
               </span>
               <Hint>
-                予定の画面でAI案を作る・組み直すたびに、条件と結果が残ります。{rulerText(scoreRulerName)}
+                日の予定でAI案を作る・組み直すたびに、条件と結果が残ります。{rulerText(scoreRulerName)}
                 （高いほど良い。
                 {SCORE_TEXT}）。理想（届かない下限）は100点です。
               </Hint>
@@ -739,7 +739,7 @@ export default function ComparePage() {
                           <div className="actions">
                             <IconButton
                               icon={ExternalLink}
-                              label={`${c.title} を予定の画面で開く`}
+                              label={`${c.title} を日の予定で開く`}
                               onClick={() => openRun(run)}
                             />
                             <IconButton

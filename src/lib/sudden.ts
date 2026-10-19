@@ -164,7 +164,7 @@ export function cancelImpact(i: {
   if (!i.hasPlan) out.push('この日はまだ案がありません。案を作るときはこの訪問を除いて作ります');
   out.push(
     i.sameDay
-      ? `当日キャンセルは、月の画面と${i.clientWord}ごとの月の集計に回数が出ます（請求はしません）`
+      ? `当日キャンセルは、月の予定と${i.clientWord}ごとの月の集計に回数が出ます（請求はしません）`
       : 'ふつうの取り消しは回数に数えません',
   );
   return out;

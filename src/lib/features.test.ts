@@ -429,7 +429,7 @@ describe('切った機能の入口を出さない（PRD D213）', () => {
   });
   it('月の要対応の行き先：切った機能なら、その日の日の画面', () => {
     const at = (kind: Attention['kind']): Attention => ({ date: TODAY, kind, count: 1, names: [], staffIds: ['s1'] });
-    const day = { to: '/plan', date: TODAY, note: '（日の画面で開く）' };
+    const day = { to: '/plan', date: TODAY, note: '（日の予定で開く）' };
     expect(attentionTarget(at('overSpan'), { workload: false })).toEqual(day);
     expect(attentionTarget(at('absentLeft'), { sudden: false })).toEqual(day);
     expect(attentionTarget(at('overSpan'), {}).to).toBe('/workload?ym=2026-10&staff=s1');

@@ -786,7 +786,7 @@ export default function ClientsPage() {
                   <>
                     <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
                     <Hint>
-                      入り方・鍵・駐車場・注意を書くと、{terms.staff}の画面と予定の画面の訪問に出ます（各200文字まで）。
+                      入り方・鍵・駐車場・注意を書くと、{terms.staff}の画面と日の予定の訪問に出ます（各200文字まで）。
                       実在の人の名前・住所などの個人情報は入れないでください。
                     </Hint>
                     <div className="form-grid" data-testid="visit-rules-form">

@@ -143,7 +143,7 @@ describe('bulkConfirmTargets（PRD D223）', () => {
     expect(dlg.body).toContain(
       '問題のある 5日は残します（要対応で確認）：10/23（金）・10/24（土）・10/25（日）・10/29（木）・10/30（金）',
     );
-    expect(dlg.body).toContain('前に確定した割当と違う 1日も残します（日の画面で確定し直します）。');
+    expect(dlg.body).toContain('前に確定した割当と違う 1日も残します（日の予定で確定し直します）。');
     expect(dlg.body).toContain('案の無い 1日も残します。');
     const plain = bulkConfirmDialog({ ...none, targets: ['2026-10-21'] }, 'ヘルパー');
     expect(plain.body).not.toContain('残します');
