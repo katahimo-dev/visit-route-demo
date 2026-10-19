@@ -74,7 +74,7 @@
 - `ScheduleBand({ date, withDay? })`：週・日の帯。`useDeferredValue(data, null)` で描画の後に数える
   - `useCompileInput`・`useDayStatuses`（その月の今日以降の日と、日の画面で選んでいる日）・`monthProgress`（statusOf）・`attentionList`・`lib/month` の `expandMonthVisits`（定期パターン・訪問・〈利用者さん〉と月・今日で覚え、案の手直し・確定では展開し直さない）・`batchTargets(…, 'empty')`
   - 数字とボタンは月の画面の欄へ移る（`?do=` は月の画面が消す）
-  - 案が全部ある月でも速く出す（e2e の上限 `PERF_MS` 既定 3000ms）
+  - 案が全部ある月でも速く出す（e2e の上限 `PERF_MS_PROGRESS` 既定 3000ms）
 
 #### 置く所
 

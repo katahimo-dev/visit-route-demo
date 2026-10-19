@@ -26,4 +26,5 @@
 npm ci
 npm run dev        # http://localhost:5173
 npm test && npm run lint && npm run typecheck && npm run build
+npm run e2e        # 本物のブラウザの e2e（ビルドと配信も。ADR-0029）
 ```

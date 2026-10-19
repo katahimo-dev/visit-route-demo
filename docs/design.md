@@ -60,7 +60,7 @@ flowchart TB
     ls[("端末保存［localStorage］<br/>データ一式（版付きJSON・1キー）")]
   end
   gh["GitHub Pages［静的ホスティング］"]
-  ci["GitHub Actions<br/>test → build → deploy"]
+  ci["GitHub Actions<br/>test → build → deploy／e2e（PR・夜間）"]
   gsi["地理院タイル［外部］"]
   zipcloud["郵便番号検索 zipcloud［外部］"]
   gsiAddr["国土地理院の住所検索［外部］"]
@@ -365,17 +365,18 @@ flowchart LR
   - データ・管理者設定：[design/pages-data.md](design/pages-data.md)
 - 完了の条件：
   - [ ] 各画面ファイルの「完了の条件」を満たす
-  - [ ] `npm test`・`npm run typecheck`・`npm run lint`・e2e（AGENTS.md のコマンド）が通る
+  - [ ] `npm test`・`npm run typecheck`・`npm run lint`・`npm run e2e`・`npm run e2e:perf`（AGENTS.md のコマンド。ADR-0029）が通る
 
 ### deploy（公開）
-- 責務：main への push で `npm ci → npm test → npm run build → GitHub Pages へ公開`。
+- 責務：main への push で `npm ci → npm test → npm run build → GitHub Pages へ公開`。e2e は別のワークフローで PR・手動・夜間に `npm run e2e → npm run e2e:perf`（夜間は `FAKE_NOW` を月末の日にも替えて3通り。ADR-0029）。公開は e2e を待たない
 - 持つデータ（持ち主）：なし
 - 提供するAPI：なし
-- 依存するもの：GitHub Actions（`actions/upload-pages-artifact`・`actions/deploy-pages`）
-- 配置：`.github/workflows/deploy.yml`、`vite.config.ts`（`base: './'`）
+- 依存するもの：GitHub Actions（`actions/upload-pages-artifact`・`actions/deploy-pages`）、e2e は `@playwright/test`（devDependency）と Chromium
+- 配置：`.github/workflows/deploy.yml`、`.github/workflows/e2e.yml`、`vite.config.ts`（`base: './'`）、`playwright.config.ts`・`e2e/`
 - 完了の条件：
   - [ ] push から5分以内に Pages の公開URL に反映される
   - [ ] サブパスで再読込しても 404 にならない（HashRouter）
+  - [ ] PR・夜間に e2e のワークフローが走り、報告（HTML）が残る
 
 ## 5. API契約
 
