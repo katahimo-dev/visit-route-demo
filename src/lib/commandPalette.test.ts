@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_TERMS } from '../domain/terms';
 import {
   filterPalette,
+  hashPathname,
   isMacPlatform,
   isPaletteShortcut,
+  keepPaletteOn,
   moveActive,
   PALETTE_PEOPLE_LIMIT,
   paletteActions,
@@ -244,5 +246,20 @@ describe('isPaletteShortcut（PRD D181）', () => {
     expect(isMacPlatform('iPhone')).toBe(true);
     expect(isMacPlatform('Win32')).toBe(false);
     expect(isMacPlatform('Linux x86_64')).toBe(false);
+  });
+});
+
+describe('画面を移ったときのパレット（hashPathname・keepPaletteOn）', () => {
+  it('hash から画面のパス', () => {
+    expect(hashPathname('#/workload?ym=2026-10')).toBe('/workload');
+    expect(hashPathname('#/plan')).toBe('/plan');
+    expect(hashPathname('#/')).toBe('/');
+    expect(hashPathname('')).toBe('/');
+  });
+  it('移る前の画面で開いていたら閉じ、移った先で開き直していれば閉じない', () => {
+    expect(keepPaletteOn('/week', '/workload')).toBeNull();
+    // 画面を移ってすぐ（描画の前）に Ctrl+K で開いた：あとから来た「画面を移った」で閉じない
+    expect(keepPaletteOn('/workload', '/workload')).toBe('/workload');
+    expect(keepPaletteOn(null, '/workload')).toBeNull();
   });
 });
