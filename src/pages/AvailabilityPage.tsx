@@ -2,6 +2,7 @@ import { Clock, Coffee, Pencil, RotateCcw, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { EdgeScroll } from '../components/EdgeScroll';
 import { SlotEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -119,7 +120,7 @@ export default function AvailabilityPage() {
           薄い字は基本の曜日と時間（{terms.staff}
           の設定）。色の付いた日は、その日だけ変えた時間です。セルを押すと下で変更できます。
         </Hint>
-        <div className="table-scroll">
+        <EdgeScroll className="table-scroll avail-scroll">
           <table className="avail-table">
             <thead>
               <tr>
@@ -178,7 +179,7 @@ export default function AvailabilityPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </EdgeScroll>
         {staff.length === 0 && <p className="sub">在籍中の{terms.staff}がいません。</p>}
       </div>
 

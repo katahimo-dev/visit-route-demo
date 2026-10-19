@@ -1,6 +1,6 @@
 # 空き状況と問い合わせの試算
 
-> この画面のファイル：`src/pages/VacancyPage.tsx`（`vacancy.css`）、`src/lib/vacancyView.ts`・`glance.ts`・`tentative.ts`・`mail.ts`、`src/components/placeLookup.tsx`（`AddressField`）・`glance.tsx`・`conditions.tsx`。関連 ADR：0012 追記・0013・0015・0016 追記・0017・0025 追記。関連 PRD：D45〜D47・D67・D78〜D81・D118〜D120・D184〜D187・D201〜D204。
+> この画面のファイル：`src/pages/VacancyPage.tsx`（`vacancy.css`）、`src/lib/vacancyView.ts`・`glance.ts`・`tentative.ts`・`mail.ts`、`src/components/placeLookup.tsx`（`AddressField`）・`glance.tsx`・`conditions.tsx`。関連 ADR：0012 追記・0013・0015・0016 追記・0017・0025 追記。関連 PRD：D45〜D47・D67・D78〜D81・D118〜D120・D184〜D187・D201〜D204・D221。
 > 計算（`vacancyOf`・`verdictOf`・`inquirySummary`・`vacancyNotice`）は design.md の「vacancy」。
 
 ### 空き状況（`#/vacancy`）
@@ -30,7 +30,9 @@
 
 #### 表
 
-- 行＝曜日（月〜日）、列＝開始時刻（30分刻み）
+- 行＝曜日（月〜日）、列＝開始時刻（30分刻み。見出しに `data-start`＝`HH:MM`）
+- 箱は `EdgeScroll`（`vacancy-scroll`。PRD D221）。狭い画面（600px 以下）では曜日の列を止め（行は7つなので見出しの行は止めない）、右に続きがあるあいだ右の端をぼかす（[pages.md](pages.md) の「狭い画面の表」）
+- 狭い画面では、表がはじめに出たとき `NARROW_FIRST_START`（`09:00`。朝の早い列はたいてい × のため）の列が曜日の列のすぐ右に来るまで横に巻く（`scrollLeftToShow`）。1回だけで、条件を変えても人が巻いた位置のまま。その列が無い（希望の時間帯が 9:00 を含まない）ときは巻かない
 - マス：段階の色 `lv-*`（`vacancyLevel`）と、`lib/vacancyView` の `cellFace` の印と下の小さい文字（○ は人数（目安は「約」）、△ は `weeksOk/weeksTotal`、×・？ は空。× に「約0」を出さない）。色だけに頼らない。読み上げの文も `cellFace`
 - マスを押すと右の欄に日付ごとの人（名前）と入らない日付。各行に `Link.vacancy-day-open`（`dayHref(日付)`。「その日の案を見る」・`data-date`・aria-label「その日の案を見る（M/D（曜）・日の画面で開く）」。Ctrl+クリック・中クリックで新しいタブ。`?date=` だけで開く）。名前の吹き出しは付けない
 - 案の無い日の注意は表の上の1か所（`vacancy-noplan`：日数と日付（6日まで・ほか N日）・「表は「？」、案内文にも載せません」・［〈M月〉の案を作る］＝`?do=batch`）。案内文の下・日付ごとの欄は短い一言だけ
@@ -57,6 +59,7 @@
 
 #### `lib/vacancyView.ts`（純粋関数。テストあり）
 
+- `NARROW_FIRST_START`：狭い画面で表をはじめに見せる開始時刻（`09:00`。PRD D221）
 - `cellFace(cell, exact, head)`：マスの印・下の小さい文字・読み上げの文
 - `markLegend(exact)`：凡例の4つ。`VACANCY_MARK`・`VACANCY_MARK_TEXT`
 - `placeLine`（場所の要約の行）・`noticeLine`（案内文の要約の行）・`whenWhatLine`（いつ・何をの1行。所要・時間帯が正しくなければその部分を「—」）

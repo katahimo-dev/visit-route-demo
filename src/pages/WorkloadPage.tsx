@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCopy, Timer, TriangleAle
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { StaffLegend } from '../components/staffBar';
 import { Term } from '../components/Term';
@@ -406,7 +407,7 @@ export default function WorkloadPage() {
             >
               {terms.staff}×日の出勤〜退勤（拘束）
             </SectionTitle>
-            <div className="table-scroll">
+            <EdgeScroll className="table-scroll work-grid-scroll">
               <table className="work-grid" data-testid="work-grid">
                 <thead>
                   <tr>
@@ -468,7 +469,7 @@ export default function WorkloadPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </EdgeScroll>
             <p className="sub" data-testid="work-grid-note">
               数字は出勤〜退勤（拘束）の時間（時間）です。マスを押すとその日の日の画面を開きます。内訳は下の「日ごと」の表で見られます。
             </p>

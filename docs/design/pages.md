@@ -1,6 +1,6 @@
 # pages（画面）：共通事項と索引
 
-> この画面のファイル：`src/app/App.tsx`・`src/app/NavDrawer.tsx`・`src/components/`・`src/lib/`（画面横断の部品）。関連 ADR：0009・0019・0022〜0028。関連 PRD：D59・D102・D122〜D126・D132〜D135・D146〜D150・D161〜D166（帯）・D173〜D183・D189〜D197・D201〜D204・D210〜D216。
+> この画面のファイル：`src/app/App.tsx`・`src/app/NavDrawer.tsx`・`src/components/`・`src/lib/`（画面横断の部品）。関連 ADR：0009・0019・0022〜0028・0033。関連 PRD：D59・D102・D122〜D126・D132〜D135・D146〜D150・D161〜D166（帯）・D173〜D183・D189〜D197・D201〜D204・D210〜D216・D220〜D222。
 > 画面ごとの詳細は下の「画面別ファイルの索引」から。画面共通の部品（右の欄・名前から開く詳細・用語・ツアー・作り直しの帯・リンク・メール）は [pages-common.md](pages-common.md)。
 
 ### 責務・持つデータ・依存
@@ -69,6 +69,21 @@
 - 確認はブラウザの `confirm`・`alert`・`prompt` を使わず、独自の確認ダイアログ（下）。src の画面に `confirm(`・`alert(`・`prompt(` は0。例外は `beforeunload`（〈スタッフ〉・〈利用者さん〉の変更があるとき）だけ
 - 画面の見出しは `PageHeader`（`lead` に「この画面でやること」）、節は `SectionTitle`（`SectionLevelProvider` で h2／h3）
 - 狭い画面の境目：860px 以下でスマホのメニュー（左のメニューを隠す・下のタブ）。600px 以下で帯・欄のボタンを詰める
+
+### 狭い画面の表（PRD D220〜D222。ADR-0033。`styles.css` の末尾）
+
+- 境目は今までの 600px（`lib/useMedia` の `COMPACT_QUERY`＝`lib/monthList` の `MONTH_LIST_QUERY`＝CSS の `@media (max-width: 600px)`）。新しい境目は作らない。広い画面の見た目は変えない
+- **一覧の表をカードに**（D220）：`table.narrow-cards` を付けた表は、600px 以下で行（`tr`）を1枚のカードにする。表の印（`table`・`tr`・`td`・data-testid）は変えず CSS で組み替える。`thead` は読み上げにだけ残す（見えない形）。列は隠さない
+  - role：`table` を block、`tbody`・`tr` を flex にすると WebKit は表の role を落とすので、`table`・`thead`／`tbody`・`tr`・`td`・`th` に `table`・`rowgroup`・`row`・`cell`・`columnheader` を明示する（`lib/narrowRoles` の `narrowRole` を展開。`role="cell"` と直に書くとリントの noRedundantRoles に止められる）
+  - `td::before` の見出し（data-label）は読み上げでも読まれ、見出しの行（`thead`）の列の名前と二重になる。見出しの行は表として読むために残し、`::before` の二重は許す（CSS の生成内容は aria-hidden にできない。見た目の見出しを消すと目で読めなくなる）
+  - `td.narrow-title`：1行目の名前（残りの幅・太字）。`td.narrow-head`：1行目の右に置く大事な値（必須・状態・A／B）。どちらも見出しを出さない
+  - ほかの `td[data-label]`：左に見出し（`::before { content: attr(data-label) }`。6rem）・右に値。`td.narrow-block` は見出しを上に置く（選択肢の一覧など広い中身）
+  - `td.narrow-act`：操作（開く・消す）を右下
+  - 付けた表：条件の重み（`narrow-rules`）・プリセットの重み・特性の項目・〈スタッフ〉一覧（`narrow-staff`）・〈利用者さん〉一覧（`narrow-clients`）・比較の記録（`narrow-runs`）。中身は各画面のファイル
+  - `.narrow-stack`：ボタンの行を縦に幅いっぱいで並べ、文字を折り返さない
+- **格子の表の端**（D221）：`components/EdgeScroll`（`className` 既定 `table-scroll`・`scrollRef`）が巻く箱を外の枠 `.scroll-edge` で包み、右に続きがあるあいだ枠に `has-more-right` を付ける（`lib/useScrollEdge`。巻く・幅・中身の大きさが変わるたびに測る。判定は `lib/scrollEdge` の `moreRight`（純粋関数。端の余り 2px））。600px 以下では枠の `::after` で右の端を 28px ぼかし、`has-more-right` が外れると消す（印刷では出さない）。使う所：相性・稼働時間・稼働の見込み・空き状況・週の2つの表
+  - 1列目と見出しの行を止める：相性（今まで）・稼働時間と稼働の見込み（600px 以下で箱の高さを画面の中に収め、見出しの行と名前の列を止める）・空き状況（曜日の列だけ。行は7つ）・週の表（名前の列）・週の時間軸（時刻の列）
+  - はじめの巻き位置は `scrollLeftToShow(box, targetLeft, stickyRight)`（純粋関数。ある列を止めた列のすぐ右に見せる。巻ける範囲に収める）：空き状況の 9:00 の列（[pages-vacancy.md](pages-vacancy.md)）・週の今日の列（[pages-week.md](pages-week.md)）
 
 ### 色・フォーカス・動き・タッチ（`styles.css` の `:root`）
 
@@ -241,6 +256,7 @@
 | `DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx` | 名前から開く詳細 | [pages-common.md](pages-common.md) |
 | `personView.tsx` | 閲覧の欄 `StaffView`・`ClientView` | [pages-clients.md](pages-clients.md) |
 | `ViewSwitch.tsx` | ［月｜週｜日］ | このファイル |
+| `EdgeScroll.tsx` | 横に巻く格子の表の箱（右に続きがある印 `has-more-right`） | このファイル（狭い画面の表） |
 | `progressBand.tsx` | `ProgressBand`・`ScheduleBand`・`BandLive` | [pages-home.md](pages-home.md) |
 | `rebuildBand.tsx` | `RebuildBand` | [pages-common.md](pages-common.md) |
 | `EmptyNext.tsx` | 空の画面の次の一手 | [pages-common.md](pages-common.md) |
@@ -275,6 +291,7 @@
 | `compatView.ts` | 相性 | [pages-compat.md](pages-compat.md) |
 | `presets.ts` | プリセット | [pages-rules.md](pages-rules.md) |
 | `filePick.ts` | ファイル選択 | [pages-data.md](pages-data.md) |
+| `useMedia.ts`・`scrollEdge.ts`・`useScrollEdge.ts` | 狭い画面の判定（`COMPACT_QUERY`）・横に巻く表の端と巻き位置 | このファイル（狭い画面の表） |
 | `isDate.ts`・`common.ts`・`colors.ts`・`motion.ts`・`download.ts` | 小さな共通（動きを減らす設定・ファイルの保存） | — |
 
 ### 完了の条件（共通）
@@ -285,6 +302,7 @@
 - [ ] （ADR-0026）画面のどの確認もブラウザの確認でなく、画面の中央にアプリの見た目のダイアログで出る（見出しの問い・本文・動詞のボタン、消す・捨てるは赤）。最初のフォーカスは取り消し、Tab は中で回り、Esc・背景・取り消すでは何も変わらず、確定で進み、閉じたら押したボタンへ戻る。右の欄の上の Esc は確認だけを閉じる。390px で収まり、印刷では出ない（`scripts/e2e-dialog.cjs`）
 - [ ] （ADR-0027）メニューが ホーム／予定を組む／当日の対応／問い合わせ／人の情報／AI の考え方／管理者 の順で、「〈利用者さん〉一覧」「〈スタッフ〉一覧」と見分けられ、比較は「案を比べる」。Ctrl+K（上の帯の「探す・移動」）で開き、打って↑↓・Enter で画面・操作・人の閲覧の欄へ移り、Esc でフォーカスが戻る（`scripts/e2e-nav.cjs`）
 - [ ] （ADR-0022 追記）月・週・日の名前から詳細の吹き出しが開き、Esc・外を押す・もう一度押す・Tab で閉じてボタンへ戻る。同時に1つ、見出しが消えたら閉じる。リンクで各画面の閲覧の欄が開く。印刷では i を出さない（`lib/personPopover` のテスト・`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）
+- [ ] （PRD D220〜D222）390×844 で条件の重み・特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧・比較が横に巻かず、行がカードになる。条件の重みのスライダーと必須が画面の中。〈利用者さん〉一覧の絞り込みが「絞り込み（N）」に畳まれる。比較の主ボタンがタブに隠れない。週は今日の列が見え、空き状況の表は 9:00 から（`lib/scrollEdge`・`lib/weekView`・`lib/clientFilter` のテスト・`scripts/e2e-mobile.cjs`）
 - [ ] 右の欄の確定のボタンの帯：短い欄は帯が内容のすぐ下・区切りなし、長い欄は欄の下に貼り付き、内容が隠れている間だけ区切り。390px の並び・タブに隠れない・キーボード（`lib/panelFit` のテスト・`scripts/e2e-panel-foot.cjs`）
 - [ ] 用語の説明・空の画面・ツアー（`lib/glossary`・`lib/emptyGuide`・`lib/tour`・`src/store/tour.test.ts` のテスト・`scripts/e2e-words.cjs`・`scripts/e2e-tour.cjs`）
 - [ ] 作り直しの帯（`lib/rebuildBand` のテスト・`scripts/e2e-rebuild.cjs`）・行き先のリンク（`lib/links` のテスト・`scripts/e2e-links.cjs`）・機能の入り切り（`scripts/e2e-features.cjs`）

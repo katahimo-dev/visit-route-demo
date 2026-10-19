@@ -4,6 +4,7 @@ import type { AiPlan } from '../contracts/data';
 import type { Pattern } from '../contracts/documents';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import {
+  activeFilterCount,
   type ClientFilterState,
   chipCounts,
   chipMatches,
@@ -322,5 +323,25 @@ describe('filterFacts（週の帯から作る）', () => {
     const days = dates.map((x) => weekDay(d, x));
     expect([...filterFacts({ ...d, days, showEndedInPeriod: true }).endedShownIds].sort()).toEqual(['c1', 'c2']);
     expect(filterFacts({ ...d, days }).endedShownIds.size).toBe(0);
+  });
+});
+
+describe('activeFilterCount（PRD D220。畳んだ「絞り込み（N）」）', () => {
+  it('何も絞らなければ0', () => {
+    expect(activeFilterCount(EMPTY_FILTER)).toBe(0);
+    expect(activeFilterCount({ ...EMPTY_FILTER, query: '  ' })).toBe(0);
+  });
+  it('検索の文字・市区・町名・チップ・足すチップ・終了の人も出すを足す', () => {
+    const s: ClientFilterState = {
+      ...EMPTY_FILTER,
+      query: 'やま',
+      cities: ['中央区', NO_AREA],
+      towns: [townKey('中央区', '本町')],
+      chips: ['period', 'leave'],
+      extra: ['pending'],
+      showEnded: true,
+    };
+    expect(activeFilterCount(s)).toBe(1 + 2 + 1 + 2 + 1 + 1);
+    expect(activeFilterCount(WEEK_TABLE_FILTER)).toBe(1);
   });
 });

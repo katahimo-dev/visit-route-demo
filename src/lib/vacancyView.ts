@@ -3,6 +3,9 @@
 import type { VacancyCell, Verdict } from '../contracts/vacancy';
 import { verdictOf } from '../vacancy';
 
+/** 狭い画面で表をはじめに見せる開始時刻（PRD D221。朝の早い列はたいてい × なので 9:00 の列から） */
+export const NARROW_FIRST_START = '09:00';
+
 /** マスの印（○△×？） */
 export const VACANCY_MARK: Record<Verdict, string> = { ok: '○', partial: '△', ng: '×', unknown: '？' };
 

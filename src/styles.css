@@ -2025,3 +2025,239 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- 狭い画面（600px 以下）：一覧の表をカードに組み替える（PRD D220） ----
+   表の印（table・tr・td・data-testid）は変えず、行（tr）を1枚のカードにする。列は隠さない。
+   名前（.narrow-title）と大事な値（.narrow-head）が1行目、ほかのマスは見出し（data-label）と値の行、
+   操作（.narrow-act）は右下。見出しの行（thead）は読み上げにだけ残す。広い画面の見た目は変えない */
+@media (max-width: 600px) {
+  table.narrow-cards {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+  }
+  .narrow-cards > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .narrow-cards > tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .narrow-cards > tbody > tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+  }
+  .narrow-cards > tbody > tr > td {
+    order: 1;
+    flex: 1 1 100%;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0;
+    border: 0;
+    background: transparent !important;
+    text-align: left;
+    white-space: normal;
+  }
+  /* 見出しと値の行：左に見出し（6rem）、右に値。見出しは値の高さの真ん中 */
+  .narrow-cards > tbody > tr > td[data-label] {
+    position: relative;
+    min-height: 1.5em;
+    padding-left: 6.4rem;
+  }
+  .narrow-cards > tbody > tr > td[data-label]::before {
+    content: attr(data-label);
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 6rem;
+    transform: translateY(-50%);
+    color: var(--sub);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  /* 中身の広いマス（選択肢の一覧など）は見出しを上に置く */
+  .narrow-cards > tbody > tr > td.narrow-block {
+    padding-left: 0;
+  }
+  .narrow-cards > tbody > tr > td.narrow-block::before {
+    position: static;
+    display: block;
+    width: auto;
+    margin-bottom: 4px;
+    transform: none;
+  }
+  /* 1行目：名前（残りの幅）と大事な値（見出しは出さない） */
+  .narrow-cards > tbody > tr > td.narrow-title,
+  .narrow-cards > tbody > tr > td.narrow-head {
+    order: 0;
+    padding-left: 0;
+  }
+  .narrow-cards > tbody > tr > td.narrow-title {
+    flex: 1 1 0;
+    font-weight: 700;
+  }
+  .narrow-cards > tbody > tr > td.narrow-head {
+    flex: 0 0 auto;
+  }
+  .narrow-cards > tbody > tr > td.narrow-title::before,
+  .narrow-cards > tbody > tr > td.narrow-head::before {
+    content: none;
+  }
+  /* 操作（開く・消すなど）は右下 */
+  .narrow-cards > tbody > tr > td.narrow-act {
+    order: 2;
+    flex: 0 0 auto;
+    margin-left: auto;
+    padding-left: 0;
+  }
+  .narrow-cards > tbody > tr > td.narrow-act .actions {
+    justify-content: flex-end;
+  }
+  .narrow-cards .person-name,
+  .narrow-cards .person-sub {
+    white-space: normal;
+  }
+  /* 〈スタッフ〉・〈利用者さん〉の一覧は外の枠を消し、カードを本文の上に並べる */
+  .card.table-scroll:has(> .narrow-cards) {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+  }
+  /* 条件の重み：スライダーは見出しの右の幅いっぱい */
+  .rules-table.narrow-cards .weight {
+    width: 100%;
+  }
+  .rules-table.narrow-cards .weight input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* 比較の記録：A・B に選んだ行は地を淡く */
+  .runs-table.narrow-cards > tbody > tr:is(.is-a, .is-b) {
+    background: var(--soft);
+  }
+  /* プリセットの見出し：名前は1行（入らなければ「…」）、一言は次の行 */
+  .narrow-preset-summary {
+    flex-wrap: wrap;
+  }
+  .narrow-preset-summary > strong {
+    max-width: calc(100% - 28px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .narrow-preset-summary > .ellipsis {
+    flex: 1 1 100%;
+  }
+  /* ボタンを縦に幅いっぱいで並べ、文字を折り返さない */
+  .narrow-stack {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  .narrow-stack > .btn {
+    justify-content: center;
+    white-space: nowrap;
+  }
+  /* 案が1つの比較の画面の「もう1案作って比べる」：下のタブに隠れないよう、右の欄の確定のボタンの帯（panel-foot）と同じく
+     カードの下に貼り付け、巻いても下のタブのすぐ上に見せる。外の箱は display: contents にして（下の screen だけ。印刷では出さない）、
+     カード全体を貼り付く範囲にする */
+  .compare-another-row {
+    position: sticky;
+    bottom: var(--bottom-tabs-h);
+    z-index: 2;
+    padding: 10px 0 12px;
+    border-top: 1px solid var(--line);
+    background: var(--card);
+  }
+}
+@media screen and (max-width: 600px) {
+  .compare-another {
+    display: contents;
+  }
+}
+/* 〈利用者さん〉一覧の畳んだ絞り込み（PRD D220。狭い画面だけ出す） */
+.narrow-filter-body[hidden] {
+  display: none;
+}
+.narrow-filter-head {
+  justify-content: space-between;
+  gap: 8px;
+}
+.narrow-filter-mark {
+  transition: transform 0.15s;
+}
+.narrow-filter-toggle[aria-expanded="true"] .narrow-filter-mark {
+  transform: rotate(180deg);
+}
+
+/* ---- 格子の表（相性・稼働時間・空き状況・稼働の見込み・週の表）：右に続きがあることを示す（PRD D221） ----
+   components/EdgeScroll が巻く箱の外の枠（.scroll-edge）に has-more-right を付け、狭い画面では右の端をぼかす */
+.scroll-edge {
+  position: relative;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .scroll-edge::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 28px;
+    background: linear-gradient(to right, rgba(255, 255, 255, 0), var(--card));
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .scroll-edge.has-more-right::after {
+    opacity: 1;
+  }
+}
+/* 画面だけ（狭い用紙に印刷するときは枠の高さで切らない・止めない） */
+@media screen and (max-width: 600px) {
+  /* 稼働時間・稼働の見込み：枠の中で巻き、見出しの行と1列目を止める（相性と同じ） */
+  .avail-scroll,
+  .work-grid-scroll {
+    max-height: calc(100dvh - var(--header-h) - var(--bottom-tabs-h) - 24px);
+    overflow: auto;
+  }
+  .avail-table thead th,
+  .work-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--card);
+  }
+  .avail-table thead th.avail-name,
+  .work-grid thead th.work-grid-name {
+    left: 0;
+    z-index: 3;
+  }
+  /* 空き状況：曜日の列を止める（行は7つなので見出しの行は止めない） */
+  .vacancy-grid tbody th,
+  .vacancy-grid thead th.vacancy-corner {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--card);
+  }
+}
+@media print {
+  .scroll-edge::after {
+    display: none;
+  }
+}
