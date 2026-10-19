@@ -1,6 +1,6 @@
 # データの画面と管理者設定
 
-> この画面のファイル：`src/pages/DataPage.tsx`・`SettingsPage.tsx`（`settings.css`）、`src/components/FilePick.tsx`（`filePick.css`）・`Tour.tsx`、`src/lib/filePick.ts`・`personLinks.ts`・`features.ts`・`backupReminder.ts`・`tidy.ts`・`dirtyForms.ts`、`src/components/DataNotices.tsx`（`dataNotices.css`）。関連 ADR：0006・0020・0025 追記・0028・0032。関連 PRD：D191〜D193・D209・D210〜D216・D227。
+> この画面のファイル：`src/pages/DataPage.tsx`・`SettingsPage.tsx`（`settings.css`）、`src/components/FilePick.tsx`（`filePick.css`）・`Tour.tsx`、`src/lib/filePick.ts`・`personLinks.ts`・`features.ts`・`backupReminder.ts`・`tidy.ts`・`dirtyForms.ts`、`src/components/DataNotices.tsx`（`dataNotices.css`）。関連 ADR：0006・0020・0025 追記・0028・0032・0043。関連 PRD：D191〜D193・D209・D210〜D216・D227・D260。
 > Excel の変換は design.md の「excel」、機能の表と判定は design.md の「features」。
 
 ### データ（`#/data`）
@@ -47,6 +47,11 @@
 - 閉じる（`lastday-close`・aria-label「最終勤務日の知らせを閉じる」）でフォーカスは Excel の欄（枠が見える）
 - 画面の state で保存しない。次の読み込みの始め・Excel の種類の切り替え・控えや Excel 全体の読み込み・初期状態に戻すでも消す。読み直すと出ない
 - `offboard` を切っていれば出さない。印刷では閉じるボタンを出さない
+
+#### 手直しの記憶（PRD D260。ADR-0043）
+
+- 欄 `data-prefs-card`（aria-label「手直しの記憶」）。説明「日の予定で担当を手で変えて「次からもこの人にする」を選ぶと、同じ〈呼び方〉・同じ曜日・同じ時間の訪問は、次に作る案でその担当になります（その日に担当できないときはふつうに決めます）。」
+- 件数（`data-prefs-count`）「いま N件 覚えています」／「いま覚えている手直しはありません」と［すべて消す］（`data-prefs-clear`。0件なら押せない。独自の確認（危険の色）「覚えている N件を消します。作った案と固定はそのままです。」→ `manualPrefs` を `{}` にしてトースト「手直しの記憶を消しました」）。一覧・1件ずつの編集は無い
 
 #### 使い方の案内・初期状態に戻す
 

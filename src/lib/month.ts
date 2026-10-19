@@ -9,7 +9,7 @@ import { afterLastDay, availabilityOf, type Slot, withoutAbsences } from '../dom
 import { isOnLeave } from '../domain/leaves';
 import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
-import { type CompileInput, compile, scheduleRoute } from '../matching';
+import { applyPrefPins, type CompileInput, compile, scheduleRoute } from '../matching';
 import { applyPatterns } from '../patterns';
 import { applyPreset } from '../seed/presets';
 import { attempt, own } from './common';
@@ -111,6 +111,7 @@ export function planRunOf(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: stri
  * （D43）今の案の元の記録を作ったあとに、その日の問題が変わったか：記録の inputKey と、
  * いまのデータに記録の条件（と固定）を当てた問題のキーが違えば true。
  * 記録が無い・inputKey が無い古い記録・欠勤の振り直しの記録は判定しない（false）。
+ * 記録の prefPins（手直しの記憶で固定した訪問。ADR-0043）は記録のまま当てる（いまの記憶は見ない）。
  * problemOf を渡すと、その条件の問題をそこから引く（画面が作った問題を使い回して compile を省く）
  */
 export function planStale(
@@ -125,7 +126,8 @@ export function planStale(
     const p =
       problemOf?.(run.rules, run.pins) ??
       compile({ ...input, rules: run.rules }, date, Object.keys(run.pins).length > 0 ? run.pins : undefined);
-    return problemKey(p) !== run.inputKey;
+    // 手直しの記憶（ADR-0043）は作ったときに当てた固定（prefPins）のまま当てる（記憶が変わっても「条件が変わった」にしない）
+    return problemKey(applyPrefPins(p, run.prefPins).problem) !== run.inputKey;
   } catch {
     return false;
   }
@@ -294,9 +296,24 @@ export function dayStatus(
 export function applyDayRun(
   d: DemoData,
   date: string,
-  run: { rules: Rule[]; result: SolveResult; createdAt: number; inputKey: string; onlyEmpty: boolean },
+  run: {
+    rules: Rule[];
+    result: SolveResult;
+    createdAt: number;
+    inputKey: string;
+    onlyEmpty: boolean;
+    /** 手直しの記憶で固定した訪問（ADR-0043） */
+    prefPins?: Record<string, string>;
+  },
 ): DemoData {
-  const x = { rules: run.rules, pins: {}, result: run.result, createdAt: run.createdAt, inputKey: run.inputKey };
+  const x = {
+    rules: run.rules,
+    pins: {},
+    result: run.result,
+    createdAt: run.createdAt,
+    inputKey: run.inputKey,
+    prefPins: run.prefPins,
+  };
   const added = addRun(d, date, x);
   if ((run.onlyEmpty && own(d.aiPlans, date)) || own(d.manualPlans, date)) return added;
   const r = run.result;

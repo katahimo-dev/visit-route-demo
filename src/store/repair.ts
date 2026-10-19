@@ -1,5 +1,13 @@
 // 読み込んだデータの中身の食い違いを直す（store がデータの持ち主。design.md §4）
-import { type AiPlan, type AiRun, type DemoData, MAX_RUNS_PER_DAY, type ReassignInfo } from '../contracts/data';
+import {
+  type AiPlan,
+  type AiRun,
+  type DemoData,
+  MAX_MANUAL_PREFS,
+  MAX_RUNS_PER_DAY,
+  type ManualPrefs,
+  type ReassignInfo,
+} from '../contracts/data';
 import { type Absence, type Availability, MAX_VISIT_TYPES, type Pattern, type Place } from '../contracts/documents';
 import { type Compat, HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES } from '../contracts/rules';
 import { stageFlags } from '../lib/clientStage';
@@ -77,6 +85,8 @@ function repairPresets(presets: Preset[]): Preset[] {
  * - 担当できる人（ADR-0014）：いない・休止中（active=false）の〈スタッフ〉の ID と重なりを除く（全員いなくなれば [] ＝限らない）
  * - 〈利用者さん〉の段階（ADR-0015）：active・tentative を段階に合わせる（lib/clientStage の stageFlags。段階が正）
  * - 取り消しの種類（ADR-0015）：取り消していない訪問の cancelKind は null
+ * - 手直しの記憶（ADR-0043）：いない〈スタッフ〉の記憶は消し、MAX_MANUAL_PREFS 件を超える分は updatedAt の古い順に消す。
+ *   記録の prefPins（記憶で固定した訪問）は pins と同じ規則
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
 export function repair(d: DemoData): DemoData {
@@ -227,7 +237,8 @@ export function repair(d: DemoData): DemoData {
   const repairRun = (date: string, r: AiRun): AiRun => {
     const cur = repairRoutes(date, r.routes, r.unassigned);
     const pins = repairPins(date, r.pins);
-    return { ...r, date, ...cur, pins, ...repairReassign(date, r.reassign) };
+    const prefPins = r.prefPins ? { prefPins: repairPins(date, r.prefPins) } : {};
+    return { ...r, date, ...cur, pins, ...prefPins, ...repairReassign(date, r.reassign) };
   };
   const aiRuns: DemoData['aiRuns'] = Object.fromEntries(
     Object.entries(d.aiRuns).map(([date, runs]) => [
@@ -237,6 +248,17 @@ export function repair(d: DemoData): DemoData {
         .map((r) => repairRun(date, r)),
     ]),
   );
+
+  // 手直しの記憶（ADR-0043）：いない人の記憶を消し、件数を上限までに（新しい順に残す）
+  let manualPrefs: ManualPrefs = d.manualPrefs;
+  const prefKeys = Object.keys(manualPrefs);
+  if (prefKeys.some((k) => !staffIds.has(manualPrefs[k]!.staffId)) || prefKeys.length > MAX_MANUAL_PREFS) {
+    const alive = prefKeys.filter((k) => staffIds.has(manualPrefs[k]!.staffId));
+    const keep = alive
+      .sort((a, b) => manualPrefs[b]!.updatedAt - manualPrefs[a]!.updatedAt || (a < b ? -1 : a > b ? 1 : 0))
+      .slice(0, MAX_MANUAL_PREFS);
+    manualPrefs = Object.fromEntries(keep.map((k) => [k, d.manualPrefs[k]!]));
+  }
 
   const presets = repairPresets(d.presets);
   // 点数の基準（ADR-0010）：無い・存在しない id なら先頭のプリセット
@@ -256,6 +278,7 @@ export function repair(d: DemoData): DemoData {
     absences,
     clientLeaves,
     manualPlans,
+    manualPrefs,
     aiPlans: repairPlans(d.aiPlans),
     aiRuns,
     presets,

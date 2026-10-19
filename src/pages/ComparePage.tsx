@@ -39,7 +39,7 @@ import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib
 import { addRun, alignPlan, findRun, planOfRun, problemKey } from '../lib/runs';
 import { type ScoreReason, scoreReason } from '../lib/scoreReason';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
-import { compile, scheduleRoute } from '../matching';
+import { compile, scheduleRoute, withManualPrefs } from '../matching';
 import { applyPreset } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
@@ -284,8 +284,9 @@ export default function ComparePage() {
       problem && JSON.stringify(onlyRun.rules) === JSON.stringify(m.compileInput.rules)
         ? problem
         : attempt(() => compile({ ...m.compileInput, rules: onlyRun.rules }, date)).value;
-    return !!p && problemKey(p) === onlyRun.inputKey;
-  }, [onlyRun, problem, m.compileInput, date]);
+    // 作り直すときと同じく、いまの手直しの記憶（ADR-0043）を当てた問題で比べる
+    return !!p && problemKey(withManualPrefs(p, data).problem) === onlyRun.inputKey;
+  }, [onlyRun, problem, m.compileInput, date, data]);
   const anotherOpts = useMemo(
     () =>
       only
@@ -361,7 +362,9 @@ export default function ComparePage() {
     const rules = preset ? applyPreset(data.rules, preset) : data.rules;
     const name = preset ? `「${preset.name}」` : '今の条件';
     const target = attempt(() => compile({ ...data, rules }, date));
-    const p = target.value;
+    // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
+    const prefed = target.value ? withManualPrefs(target.value, data) : null;
+    const p = prefed?.problem;
     if (!p) {
       setMakeError(target.error ?? '問題を作れませんでした');
       return;
@@ -393,7 +396,7 @@ export default function ComparePage() {
     started.value.promise
       .then((result) => {
         if (!live()) return;
-        const x = { rules, pins: {}, result, createdAt: Date.now(), inputKey };
+        const x = { rules, pins: {}, result, createdAt: Date.now(), inputKey, prefPins: prefed?.applied };
         madeRef.current = { date: forDate, x, before };
         // 記録に足すだけ（今の案・条件は変えない。今の案にするには表の「予定の画面で開く」）
         update((d) => addRun(d, forDate, x));

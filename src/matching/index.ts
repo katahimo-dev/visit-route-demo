@@ -14,5 +14,13 @@ export {
 export { conditionText, matches } from './conditions';
 export { balanceOff, balancePoints, dropPointsOf, totalPoints } from './cost';
 export { bestInsertion } from './insertion';
+export {
+  applyPrefPins,
+  MANUAL_PREF_RULE_ID,
+  type PrefVisit,
+  prefKey,
+  requestedPrefPins,
+  withManualPrefs,
+} from './manualPrefs';
 export { naiveSeqs } from './naive';
 export { fitStart, routeCost, scheduleRoute } from './timing';

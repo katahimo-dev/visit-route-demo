@@ -6,6 +6,7 @@ import {
   Download,
   Eraser,
   FileSpreadsheet,
+  History,
   RotateCcw,
   Save,
   Tags,
@@ -334,6 +335,19 @@ export default function DataPage() {
     toast('直前の状態に戻しました');
   };
 
+  /** 手直しの記憶の件数と、すべて消す（ADR-0043。作った案・固定は変えない） */
+  const prefCount = Object.keys(data.manualPrefs).length;
+  const clearPrefs = async () => {
+    const ok = await confirmDialog({
+      title: '手直しの記憶をすべて消しますか？',
+      body: `覚えている ${prefCount}件を消します。作った案と固定はそのままです。`,
+      confirmLabel: 'すべて消す',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    update((d) => ({ ...d, manualPrefs: {} }));
+    toast('手直しの記憶を消しました');
+  };
   /** 古い案と記録の片づけ（PRD D227。ADR-0032）。選んだ月より前の日の AI案・記録だけ消す */
   const tidyChoice = useMemo(() => tidyMonthOptions(today()), []);
   const [tidyYm, setTidyYm] = useState(tidyChoice.initial);
@@ -643,6 +657,28 @@ export default function DataPage() {
           data-testid="data-tidy-run"
         >
           <WithIcon icon={Eraser}>古い案と記録を消す</WithIcon>
+        </button>
+      </section>
+
+      {/* 手直しの記憶（PRD D260〜D262。ADR-0043）：件数と［すべて消す］だけ */}
+      <section className="card stack" aria-label="手直しの記憶" data-testid="data-prefs-card">
+        <SectionTitle icon={History}>手直しの記憶</SectionTitle>
+        <Hint>
+          日の予定で担当を手で変えて「次からもこの人にする」を選ぶと、同じ{data.org.terms.client}
+          ・同じ曜日・同じ時間の訪問は、次に作る案でその担当になります（その日に担当できないときはふつうに決めます）。
+        </Hint>
+        <p className="sub" data-testid="data-prefs-count">
+          {prefCount > 0 ? `いま ${prefCount}件 覚えています` : 'いま覚えている手直しはありません'}
+        </p>
+        <button
+          type="button"
+          className="btn"
+          style={{ alignSelf: 'flex-start' }}
+          disabled={prefCount === 0}
+          onClick={() => void clearPrefs()}
+          data-testid="data-prefs-clear"
+        >
+          <WithIcon icon={Eraser}>すべて消す</WithIcon>
         </button>
       </section>
 

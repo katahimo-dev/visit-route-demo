@@ -113,6 +113,7 @@ const EMPTY = {
   clientLeaves: [],
   aiPlans: {},
   aiRuns: {},
+  manualPrefs: {},
   manualPlans: {},
 } as unknown as DemoData;
 

@@ -95,6 +95,7 @@ export function createDemoData(today: string): DemoData {
     clientLeaves: [],
     visitTypes: INITIAL_VISIT_TYPES.map((t) => ({ ...t, requirements: t.requirements.map((c) => ({ ...c })) })),
     patterns: seedPatterns(today),
+    manualPrefs: {},
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},

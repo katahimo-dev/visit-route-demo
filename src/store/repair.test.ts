@@ -634,3 +634,28 @@ describe('担当できる人を限る（ADR-0014）', () => {
     expect(isImportError(importJson(JSON.stringify(bad)))).toBe(true);
   });
 });
+
+describe('手直しの記憶（ADR-0043）', () => {
+  it('無い古いデータは {}（版は1のまま）', () => {
+    const { manualPrefs: _, ...old } = base();
+    const r = migrate(JSON.parse(JSON.stringify(old)));
+    expect(isImportError(r)).toBe(false);
+    expect((r as DemoData).manualPrefs).toEqual({});
+  });
+  it('いない〈スタッフ〉の記憶を消し、2000件を超えたら古い順に消す。書き出し → 読み込みで同じ', () => {
+    const d = base();
+    const sid = d.staff[0]!.id;
+    const prefs: DemoData['manualPrefs'] = { gone: { staffId: 'nobody', updatedAt: 99999 } };
+    for (let i = 0; i < 2001; i++) prefs[`k${i}`] = { staffId: sid, updatedAt: i };
+    const r = repair({ ...d, manualPrefs: prefs });
+    expect(Object.keys(r.manualPrefs)).toHaveLength(2000);
+    expect(r.manualPrefs.gone).toBeUndefined();
+    expect(r.manualPrefs.k0).toBeUndefined();
+    expect(r.manualPrefs.k2000).toEqual({ staffId: sid, updatedAt: 2000 });
+    const back = importJson(JSON.stringify(r));
+    expect(isImportError(back)).toBe(false);
+    expect((back as DemoData).manualPrefs).toEqual(r.manualPrefs);
+    // 直す所が無ければ同じ物
+    expect(repair(r).manualPrefs).toBe(r.manualPrefs);
+  });
+});
