@@ -1334,7 +1334,12 @@ export default function PlanPage() {
     });
     if (u.visitId) {
       sel.follow(u.visitId, u.from);
-      noteManual(u.visitId, u.from);
+      // 戻した手直しは聞かない（戻した先を手で選んだのではない）
+      const vid = u.visitId;
+      setPrefAsk((cur) => {
+        const rest = cur?.items.filter((x) => x.visitId !== vid) ?? [];
+        return cur && rest.length > 0 ? { ...cur, items: rest } : null;
+      });
     }
     setUndoSnap(null);
     setPrefBulk(null);
