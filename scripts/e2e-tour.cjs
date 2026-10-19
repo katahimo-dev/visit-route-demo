@@ -557,14 +557,31 @@ async function monthList(b) {
   await page.waitForURL(/#\/plan/);
   const sel = await page.locator('.date-switch select').inputValue();
   check(sel === target, '行を押すとその日の日の画面', { sel, target });
-  // 「休みを入れる」：〈スタッフ〉を選んで、勤務日の行を押すと希望休を付け外し
-  await open(page, `/month?ym=${YM}`, '[data-testid="month-list"]');
-  const staffOpt = await page
-    .locator('[data-testid="month-focus"] option')
-    .evaluateAll((els) => els.map((e) => e.value).find((v) => v.startsWith('staff:')));
-  await page.getByTestId('month-focus').selectOption(staffOpt);
-  await page.getByTestId('month-off-toggle').click();
+  // 「休みを入れる」：〈スタッフ〉を選んで、勤務日の行を押すと希望休を付け外し。
+  // 希望休を入れられる行（data-off="open"）がある〈スタッフ〉を探す。今月に1つも無ければ（月末で残りの日に働く人がいない）翌月で
+  const nextYm = (() => {
+    const [y, m] = YM.split('-').map(Number);
+    return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+  })();
   const openRow = page.locator('[data-testid="month-list-day"][data-off="open"]').first();
+  let found = false;
+  for (const ym of [YM, nextYm]) {
+    await open(page, `/month?ym=${ym}`, '[data-testid="month-list"]');
+    const staffOpts = await page
+      .locator('[data-testid="month-focus"] option')
+      .evaluateAll((els) => els.map((e) => e.value).filter((v) => v.startsWith('staff:')));
+    for (const [i, v] of staffOpts.entries()) {
+      await page.getByTestId('month-focus').selectOption(v);
+      if (i === 0) await page.getByTestId('month-off-toggle').click();
+      await page.locator('[data-testid="month-list-day"][data-off]').first().waitFor({ timeout: 10000 });
+      if ((await openRow.count()) > 0) {
+        found = true;
+        break;
+      }
+    }
+    if (found) break;
+  }
+  check(found, '「休みを入れる」：希望休を入れられる行のある〈スタッフ〉がいる（今月に無ければ翌月）');
   await openRow.waitFor({ timeout: 10000 });
   const offDate = await openRow.getAttribute('data-date');
   await openRow.click();
