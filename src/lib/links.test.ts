@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attentionTarget, suddenHref, UNASSIGNED_DO, unassignedHref, workloadHref } from './links';
+import { attentionTarget, dayHref, suddenHref, UNASSIGNED_DO, unassignedHref, workloadHref } from './links';
 import type { Attention } from './month';
 
 const D = '2026-10-21';
@@ -15,6 +15,9 @@ describe('行き先の URL（PRD D201〜D204）', () => {
   it('欠勤・キャンセルの欄：日付と ?do=absence。人を渡すと &staff=', () => {
     expect(suddenHref(D)).toBe('/plan?date=2026-10-21&do=absence');
     expect(suddenHref(D, 's1')).toBe('/plan?date=2026-10-21&do=absence&staff=s1');
+  });
+  it('日の画面：?date= だけ', () => {
+    expect(dayHref(D)).toBe('/plan?date=2026-10-21');
   });
   it('入らなかった訪問：日付と ?do=unassigned', () => {
     expect(UNASSIGNED_DO).toBe('unassigned');

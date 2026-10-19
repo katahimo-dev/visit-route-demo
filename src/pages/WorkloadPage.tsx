@@ -436,12 +436,12 @@ export default function WorkloadPage() {
                                 type="button"
                                 className="work-cell-in work-cell-btn"
                                 title={statTitle(s.name, d.date, x)}
-                                aria-label={`${statTitle(s.name, d.date, x)}（日の画面で開く）`}
+                                aria-label={`${spanNum(x)}${x.over ? '!' : ''}：${statTitle(s.name, d.date, x)}（日の画面で開く）`}
                                 onClick={() => openDay(d.date)}
                                 data-date={d.date}
                               >
                                 <span className="work-cell-num">
-                                  {(Math.round((x.span / 60) * 10) / 10).toFixed(1)}
+                                  {spanNum(x)}
                                   {x.over && (
                                     <strong>
                                       !<span className="sr-only">（上限を超える）</span>
@@ -464,8 +464,8 @@ export default function WorkloadPage() {
                 </tbody>
               </table>
             </div>
-            <p className="sub">
-              数字は出勤〜退勤（拘束）の時間（時間）です。マスに指を置くと内訳が出ます。押すとその日の日の画面を開きます。
+            <p className="sub" data-testid="work-grid-note">
+              数字は出勤〜退勤（拘束）の時間（時間）です。マスを押すとその日の日の画面を開きます。内訳は下の「日ごと」の表で見られます。
             </p>
           </section>
 
@@ -587,6 +587,9 @@ export default function WorkloadPage() {
     </div>
   );
 }
+
+/** マスに出す拘束の時間（時間。小数1桁。読み上げの先頭にも同じ文字を置く） */
+const spanNum = (x: WorkStat): string => (Math.round((x.span / 60) * 10) / 10).toFixed(1);
 
 const clock = (m: number) => timeText(minutesToHhmm(Math.round(m)));
 

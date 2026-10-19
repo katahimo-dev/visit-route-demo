@@ -18,6 +18,9 @@ export function suddenHref(date: string, staffId?: string): string {
   return `/plan?${q.toString()}`;
 }
 
+/** その日の日の画面を開く URL（PRD D204。日の画面が ?date= を読んで消す。新しいタブでも開ける） */
+export const dayHref = (date: string): string => `/plan?date=${date}`;
+
 /** 日の画面で「入らなかった訪問」の列へ巻いて開く URL（PRD D201） */
 export const unassignedHref = (date: string): string => `/plan?date=${date}&do=${UNASSIGNED_DO}`;
 

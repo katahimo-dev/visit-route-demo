@@ -34,7 +34,7 @@ const short = (slots: Slot[]) =>
  */
 export default function AvailabilityPage() {
   const { data, update } = useDemoData();
-  const { date: today, dates, setDate } = useDay();
+  const { date: today, dates } = useDay();
   const terms = data.org.terms;
   const toast = useToast();
   const staff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
@@ -55,6 +55,12 @@ export default function AvailabilityPage() {
     picked && pickedStaff && afterLastDay(pickedStaff, picked.date)
       ? `最終勤務日（${pickedStaff.lastDay?.slice(5).replace('-', '/')}）の後は勤務なしです。時間帯を入れても予定に入りません（${terms.staff}の画面で最終勤務日を変えてください）`
       : null;
+  /** その日に働くか（保存した時間帯がある・最終勤務日の後でない）。欠勤・キャンセルの欄へのリンクを出すか（PRD D203） */
+  const pickedWorks =
+    !!picked &&
+    !!pickedStaff &&
+    !retiredWhy &&
+    availabilityOf(pickedStaff, picked.date, pickedOverride).slots.length > 0;
   const pick = (staffId: string, date: string) => {
     const s = staff.find((x) => x.id === staffId);
     if (!s) return;
@@ -219,18 +225,21 @@ export default function AvailabilityPage() {
               {pickedAbsence.note && `（${pickedAbsence.note}）`}。欠勤の登録・取り消しは予定の画面で
             </p>
           )}
-          {/* その日の「欠勤・キャンセル」の欄をこの人で開く（PRD D203） */}
-          <p>
-            <Link
-              to={suddenHref(picked.date, picked.staffId)}
-              onClick={() => setDate(picked.date)}
-              className="avail-absence-link"
-              data-testid="availability-absence-link"
-            >
-              {pickedAbsence ? 'この日の欠勤を直す・取り消す' : 'この日の欠勤を登録する'}
-              （日の画面の「欠勤・キャンセル」で開く）
-            </Link>
-          </p>
+          {/* その日の「欠勤・キャンセル」の欄をこの人で開く（PRD D203）。その日に働く日（保存した時間帯があり、
+              最終勤務日の後でない）だけ。休みの日は欄の「休む人」に出ないので出さない（PR #48 のレビュー）。
+              日の画面は ?date= を読むので setDate しない（Ctrl+クリックで元のタブの日付を変えない） */}
+          {pickedWorks && (
+            <p>
+              <Link
+                to={suddenHref(picked.date, picked.staffId)}
+                className="avail-absence-link"
+                data-testid="availability-absence-link"
+              >
+                {pickedAbsence ? 'この日の欠勤を直す・取り消す' : 'この日の欠勤を登録する'}
+                （日の画面の「欠勤・キャンセル」で開く）
+              </Link>
+            </p>
+          )}
           {retiredWhy && (
             <p className="warn-text" data-testid="availability-retired">
               {retiredWhy}

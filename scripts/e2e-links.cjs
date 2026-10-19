@@ -87,14 +87,42 @@ async function planReady(page) {
     { timeout: 60000 },
   );
 }
-/** 要素が画面の中に見えている（巻いて見せたか） */
-const inView = (page, sel) =>
-  page.evaluate((s) => {
-    const el = document.querySelector(s);
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    return r.top >= -2 && r.top < window.innerHeight;
-  }, sel);
+/**
+ * 「入らなかった訪問」の列へ巻いたか：ページが巻かれていて（scrollY > 0）、列の上端が画面の上半分にある。
+ * 巻かずに開くと列は画面の下の方（1280×900 で上から 640px ほど）・scrollY は 0 なので、巻かなければ通らない。
+ * 待っても巻かれなければ false（NG に数える）
+ */
+async function scrolledToNone(page, timeout = 15000) {
+  return page
+    .waitForFunction(
+      () => {
+        const el = document.querySelector('.route-col-none');
+        if (!el) return false;
+        const top = el.getBoundingClientRect().top;
+        return window.scrollY > 0 && top >= -2 && top < window.innerHeight * 0.5;
+      },
+      null,
+      { timeout },
+    )
+    .then(() => true)
+    .catch(() => false);
+}
+/** 巻いていない（対照）：しばらく待っても scrollY が 0 で、列が画面の上半分に来ていない */
+async function notScrolled(page, ms = 1500) {
+  await settle(page, ms);
+  return page.evaluate(() => {
+    const el = document.querySelector('.route-col-none');
+    const top = el ? el.getBoundingClientRect().top : Number.POSITIVE_INFINITY;
+    return window.scrollY === 0 && top >= window.innerHeight * 0.5;
+  });
+}
+/** ページの一番上へ戻す（同じ文書の中で開き直す前に） */
+const toTop = (page) => page.evaluate(() => window.scrollTo(0, 0));
+/** 同じ文書の中で hash を変える（読み直さない） */
+const setHash = (page, hash) =>
+  page.evaluate((h) => {
+    location.hash = h;
+  }, hash);
 
 // ---- 用意：今日より後の、訪問のある日（SECOND）に案を作り、入らない訪問・欠勤の人に残る訪問・拘束の上限超えを作る ----
 let SECOND = '';
@@ -177,21 +205,28 @@ async function attention(page) {
   await row.click();
   check(await onPlan(page, SECOND), '入らない訪問 → その日の日の画面', await dayOf(page));
   await page.locator('.route-col-none').first().waitFor({ timeout: 30000 });
-  await page
-    .waitForFunction(
-      () => {
-        const el = document.querySelector('.route-col-none');
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        return r.top >= -2 && r.top < window.innerHeight * 0.5;
-      },
-      null,
-      { timeout: 10000 },
-    )
-    .catch(() => {});
-  check(await inView(page, '.route-col-none'), '入らない訪問 → 「入らなかった訪問」の列へ巻いて見せる');
+  check(await scrolledToNone(page), '入らない訪問 → 「入らなかった訪問」の列へ巻いて見せる');
   check(!/do=|date=/.test(hashOf(page)), '入らない訪問 → ?do=・?date= は消える', hashOf(page));
   await page.screenshot({ path: path.join(OUT_DIR, 'links-unassigned.png') });
+
+  // 対照：?do= 無しで同じ日を開くと巻かない
+  await open(page, '/plan', '.date-switch select');
+  await page.locator('.date-switch select').selectOption(SECOND);
+  await page.locator('.route-col-none').first().waitFor({ timeout: 30000 });
+  check(await notScrolled(page), '対照：?do= 無しで開くと「入らなかった訪問」へ巻かない');
+
+  // 同じ文書の中で hash を変える：同じ日を開いているとき
+  await toTop(page);
+  await setHash(page, `#/plan?date=${SECOND}&do=unassigned`);
+  check(await scrolledToNone(page), '同じ文書・同じ日：?do=unassigned で巻く');
+  check(hashOf(page) === '#/plan', '同じ文書・同じ日：?do= は消える', hashOf(page));
+  // 同じ文書の中で hash を変える：別の日を開いているとき
+  await page.locator('.date-switch select').selectOption(TODAY);
+  await settle(page, 300);
+  await toTop(page);
+  await setHash(page, `#/plan?date=${SECOND}&do=unassigned`);
+  check(await onPlan(page, SECOND), '同じ文書・別の日：その日を選ぶ', await dayOf(page));
+  check(await scrolledToNone(page), '同じ文書・別の日：?do=unassigned で巻く');
 
   // URL から直接（?date=…&do=unassigned）。今日を選んでいても、その日を選んで巻く
   await open(page, '/plan', '.date-switch select');
@@ -199,17 +234,7 @@ async function attention(page) {
   await settle(page, 300);
   await open(page, `/plan?date=${SECOND}&do=unassigned`, '.date-switch select');
   check(await onPlan(page, SECOND), '?date=…&do=unassigned でその日を選ぶ', await dayOf(page));
-  await page
-    .waitForFunction(
-      () => {
-        const el = document.querySelector('.route-col-none');
-        return !!el && el.getBoundingClientRect().top < window.innerHeight * 0.5;
-      },
-      null,
-      { timeout: 10000 },
-    )
-    .catch(() => {});
-  check(await inView(page, '.route-col-none'), '?do=unassigned で「入らなかった訪問」の列へ巻く');
+  check(await scrolledToNone(page), '?do=unassigned で「入らなかった訪問」の列へ巻く');
   check(hashOf(page) === '#/plan', '?do=unassigned は読んだら消す', hashOf(page));
   check((await page.getByTestId('tour').count()) === 0, '?do= のリンクでは案内ツアーを出さない');
 
@@ -269,6 +294,60 @@ async function attention(page) {
   check(hashOf(page) === '#/plan', '欠勤がある → URL は /plan', hashOf(page));
 }
 
+// ---- D201 案の無い日：自動作成のあとに巻く・自動作成が走らないなら忘れる（PR #48 のレビュー）----
+async function noPlanDay(page) {
+  await prepare(page);
+  const options = await page.locator('.date-switch select option').evaluateAll((os) => os.map((o) => o.value));
+  const third = options.find((d) => d > SECOND) ?? '';
+  check(third !== '', '用意：案の無い日がある', third);
+  // 別のタブで書く（e2e-view の names() と同じ）
+  const edit = async (fn) => {
+    const other = await page.context().newPage();
+    await other.goto(`${BASE}#/data`);
+    await other.evaluate(fn, { k: STORAGE_KEY, d: third });
+    await other.close();
+    await settle(page, 300);
+  };
+  // その日に誰も入れない夜中の訪問を足し（入らない訪問になる）、案を消しておく
+  await edit(({ k, d }) => {
+    const data = JSON.parse(localStorage.getItem(k));
+    const base = data.visits.find((v) => v.date === d && !v.cancelled);
+    data.visits.push({
+      ...base,
+      id: 'e2e-links-night',
+      earliestStart: '03:00',
+      latestStart: '03:00',
+      staffId: null,
+      pattern: null,
+    });
+    delete data.aiPlans[d];
+    localStorage.setItem(k, JSON.stringify(data));
+  });
+  // 案の無い日を ?do=unassigned で開く：自動作成のあとに巻く
+  await open(page, `/plan?date=${third}&do=unassigned`, '.date-switch select');
+  check(await onPlan(page, third), '案の無い日：その日を選ぶ', await dayOf(page));
+  await planReady(page);
+  check(await scrolledToNone(page, 60000), '案の無い日：自動作成のあとに「入らなかった訪問」へ巻く');
+  // 案を消し（この文書ではもう自動作成しない日）、同じ文書で ?do=unassigned を受ける → 巻かずに忘れる
+  await edit(({ k, d }) => {
+    const data = JSON.parse(localStorage.getItem(k));
+    delete data.aiPlans[d];
+    localStorage.setItem(k, JSON.stringify(data));
+  });
+  const makeBtn = page.locator('.card .btn-primary', { hasText: 'AI案を作る' });
+  await makeBtn.waitFor({ timeout: 10000 });
+  await toTop(page);
+  await setHash(page, `#/plan?date=${third}&do=unassigned`);
+  await page.waitForFunction(() => location.hash === '#/plan', null, { timeout: 5000 }).catch(() => {});
+  check(hashOf(page) === '#/plan', '自動作成が走らない日：?do= は消える', hashOf(page));
+  // あとで「AI案を作る」を押しても急に巻かない
+  await settle(page, 500);
+  await makeBtn.click();
+  await planReady(page);
+  await page.locator('.route-col-none').first().waitFor({ timeout: 30000 });
+  check(await notScrolled(page, 2000), '自動作成が走らない日：あとで「AI案を作る」を押しても巻かない');
+}
+
 // ---- D202 稼働の見込み ----
 async function workload(page) {
   await prepare(page);
@@ -292,12 +371,20 @@ async function workload(page) {
   );
   const cell = grid.locator(`.work-cell.is-over .work-cell-btn[data-date="${SECOND}"]`).first();
   check((await cell.count()) === 1, '上限を超えるマス（「!」）がある', SECOND);
+  const label = (await cell.getAttribute('aria-label')) ?? '';
+  const num = ((await cell.locator('.work-cell-num').textContent()) ?? '').replace('（上限を超える）', '').trim();
   check(
-    /上限を超える（日の画面で開く）$/.test((await cell.getAttribute('aria-label')) ?? ''),
-    'マス：読み上げに内訳と「（日の画面で開く）」',
-    await cell.getAttribute('aria-label'),
+    label.startsWith(num) && /^\d+\.\d!$/.test(num) && /上限を超える（日の画面で開く）$/.test(label),
+    'マス：読み上げの先頭は見えている数字、続けて内訳と「（日の画面で開く）」',
+    { num, label },
   );
-  check(!!(await cell.getAttribute('title')), 'マス：指を置くと内訳（title）は今どおり');
+  check(!!(await cell.getAttribute('title')), 'マス：内訳の title は今どおり');
+  const note = await page.getByTestId('work-grid-note').innerText();
+  check(
+    note.includes('内訳は下の「日ごと」の表で') && !note.includes('指を置く'),
+    'マスの説明：タッチでも成り立つ文（内訳は「日ごと」の表）',
+    note,
+  );
   // キーボードで押せる
   await cell.focus();
   await page.keyboard.press('Enter');
@@ -356,6 +443,76 @@ async function availability(page) {
       await link.innerText(),
     );
   }
+  // 休みの日のセル（その日に働かない人）にはリンクを出さない（PR #48 のレビュー）
+  await open(page, '/availability', '.avail-table');
+  const offCell = page.locator(`.avail-table tbody tr td:nth-child(${col + 1}) button.is-off`).first();
+  let offId = '';
+  if ((await offCell.count()) === 1) {
+    const offName = (await offCell.locator('xpath=ancestor::tr[1]/th').innerText()).trim();
+    offId = data.staff.find((s) => s.name === offName)?.id ?? '';
+    await offCell.click();
+    await page.locator('.drawer').waitFor({ timeout: 5000 });
+    await settle(page, 200);
+    check((await link.count()) === 0, '休みの日のセル：欠勤・キャンセルへのリンクを出さない', offName);
+  } else {
+    check(false, '用意：その日に休みの人がいる');
+  }
+  // URL で休みの人を渡しても2段目にしない（1段目）
+  if (offId) {
+    await open(page, `/plan?date=${SECOND}&do=absence&staff=${offId}`, '.date-switch select');
+    await page.getByTestId('sudden-panel').waitFor({ timeout: 10000 });
+    check(
+      (await page.locator('h3.sudden-step-title').textContent()) === '何が起きましたか？',
+      'その日に働かない人の staff= は1段目で開く',
+      offId,
+    );
+  }
+  // Ctrl+クリックで新しいタブ：元のタブの日付は変わらない（setDate しない）
+  if (PRESENT) {
+    await open(page, '/availability', '.avail-table');
+    const before = await page.locator('.date-switch select').inputValue();
+    await cellOf(PRESENT).click();
+    await link.waitFor({ timeout: 5000 });
+    const [tab] = await Promise.all([
+      page.context().waitForEvent('page', { timeout: 10000 }),
+      link.click({ modifiers: ['Control'] }),
+    ]);
+    await tab.waitForLoadState();
+    await settle(page, 300);
+    check(
+      before !== SECOND &&
+        (await page.locator('.date-switch select').inputValue()) === before &&
+        /#\/availability/.test(page.url()),
+      'Ctrl+クリック：元のタブは稼働時間のまま・日付も変わらない',
+      { before, after: await page.locator('.date-switch select').inputValue() },
+    );
+    await tab.getByTestId('sudden-staff').waitFor({ timeout: 30000 });
+    check(
+      (await tab.locator('.date-switch select').inputValue()) === SECOND &&
+        (await tab.getByTestId('sudden-staff').inputValue()) === PRESENT,
+      'Ctrl+クリック：新しいタブでその日・その人の2段目',
+    );
+    await tab.close();
+  }
+  // 最終勤務日の後の人にもリンクを出さない
+  const retired = data.staff.find((s) => s.active && s.id !== ABSENT && s.id !== PRESENT && s.id !== offId);
+  if (retired) {
+    const other = await page.context().newPage();
+    await other.goto(`${BASE}#/data`);
+    await other.evaluate(
+      ({ k, id, d }) => {
+        const x = JSON.parse(localStorage.getItem(k));
+        x.staff.find((s) => s.id === id).lastDay = d;
+        localStorage.setItem(k, JSON.stringify(x));
+      },
+      { k: STORAGE_KEY, id: retired.id, d: TODAY },
+    );
+    await other.close();
+    await open(page, '/availability', '.avail-table');
+    await cellOf(retired.id).click();
+    await page.getByTestId('availability-retired').waitFor({ timeout: 5000 });
+    check((await link.count()) === 0, '最終勤務日の後：欠勤・キャンセルへのリンクを出さない');
+  }
   // 知らない人の staff= は1段目
   await open(page, `/plan?date=${SECOND}&do=absence&staff=nobody`, '.date-switch select');
   await page.getByTestId('sudden-panel').waitFor({ timeout: 10000 });
@@ -390,11 +547,40 @@ async function vacancy(page) {
   const d = (await btn.getAttribute('data-date')) ?? '';
   check((await btn.innerText()) === 'その日の案を見る', 'ボタンの文', await btn.innerText());
   check(
-    /の案を見る（日の画面で開く）$/.test((await btn.getAttribute('aria-label')) ?? ''),
-    '読み上げに「（日の画面で開く）」',
+    /^その日の案を見る（.+・日の画面で開く）$/.test((await btn.getAttribute('aria-label')) ?? ''),
+    '読み上げは見えている文字が先頭で、日付と「日の画面で開く」',
     await btn.getAttribute('aria-label'),
   );
+  check(
+    (await btn.getAttribute('href')) === `#/plan?date=${d}`,
+    'リンク（?date= だけ）',
+    await btn.getAttribute('href'),
+  );
   check((await page.locator('.drawer .btn-primary').count()) === 0, '右の欄に主ボタンを足さない');
+  // Ctrl+クリックで新しいタブ（元のタブは空き状況のまま・右の欄も開いたまま）
+  const before = await page.locator('.date-switch select').inputValue();
+  const [tab] = await Promise.all([
+    page.context().waitForEvent('page', { timeout: 10000 }),
+    btn.click({ modifiers: ['Control'] }),
+  ]);
+  await tab.waitForLoadState();
+  await tab.locator('.date-switch select').waitFor({ timeout: 30000 });
+  await tab
+    .waitForFunction((x) => document.querySelector('.date-switch select')?.value === x, d, { timeout: 10000 })
+    .catch(() => {});
+  check(
+    (await tab.locator('.date-switch select').inputValue()) === d && /#\/plan$/.test(tab.url()),
+    'Ctrl+クリック：新しいタブで ?date= だけでもその日の日の画面（?date= は消える）',
+    { d, now: await tab.locator('.date-switch select').inputValue(), url: tab.url() },
+  );
+  await tab.close();
+  check(
+    /#\/vacancy/.test(page.url()) &&
+      (await page.getByTestId('vacancy-dates').count()) === 1 &&
+      (await page.locator('.date-switch select').inputValue()) === before,
+    'Ctrl+クリック：元のタブは空き状況のまま（右の欄も開いたまま・日付も変わらない）',
+  );
+  // ふつうに押すと同じタブで移る
   await btn.click();
   check(await onPlan(page, d), '空き状況 → その日の日の画面', { d, now: await dayOf(page) });
   await page.screenshot({ path: path.join(OUT_DIR, 'links-vacancy.png') });
@@ -403,7 +589,7 @@ async function vacancy(page) {
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const errors = [];
-  for (const step of [attention, workload, availability, vacancy]) {
+  for (const step of [attention, noPlanDay, workload, availability, vacancy]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
