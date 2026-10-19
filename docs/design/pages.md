@@ -1,6 +1,6 @@
 # pages（画面）：共通事項と索引
 
-> この画面のファイル：`src/app/App.tsx`・`src/app/NavDrawer.tsx`・`src/components/`・`src/lib/`（画面横断の部品）。関連 ADR：0009・0019・0022〜0028。関連 PRD：D59・D102・D122〜D126・D132〜D135・D146〜D150・D161〜D166（帯）・D173〜D183・D189〜D197・D201〜D204・D210〜D216・D220〜D222。
+> この画面のファイル：`src/app/App.tsx`・`src/app/NavDrawer.tsx`・`src/components/`・`src/lib/`（画面横断の部品）。関連 ADR：0009・0019・0022〜0028・0033。関連 PRD：D59・D102・D122〜D126・D132〜D135・D146〜D150・D161〜D166（帯）・D173〜D183・D189〜D197・D201〜D204・D210〜D216・D220〜D222。
 > 画面ごとの詳細は下の「画面別ファイルの索引」から。画面共通の部品（右の欄・名前から開く詳細・用語・ツアー・作り直しの帯・リンク・メール）は [pages-common.md](pages-common.md)。
 
 ### 責務・持つデータ・依存
@@ -70,7 +70,7 @@
 - 画面の見出しは `PageHeader`（`lead` に「この画面でやること」）、節は `SectionTitle`（`SectionLevelProvider` で h2／h3）
 - 狭い画面の境目：860px 以下でスマホのメニュー（左のメニューを隠す・下のタブ）。600px 以下で帯・欄のボタンを詰める
 
-### 狭い画面の表（PRD D220〜D222。`styles.css` の末尾）
+### 狭い画面の表（PRD D220〜D222。ADR-0033。`styles.css` の末尾）
 
 - 境目は今までの 600px（`lib/useMedia` の `COMPACT_QUERY`＝`lib/monthList` の `MONTH_LIST_QUERY`＝CSS の `@media (max-width: 600px)`）。新しい境目は作らない。広い画面の見た目は変えない
 - **一覧の表をカードに**（D220）：`table.narrow-cards` を付けた表は、600px 以下で行（`tr`）を1枚のカードにする。表の印（`table`・`tr`・`td`・data-testid）は変えず CSS だけで組み替える。`thead` は読み上げにだけ残す（見えない形）。列は隠さない

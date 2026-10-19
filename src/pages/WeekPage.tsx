@@ -237,12 +237,14 @@ export default function WeekPage() {
   });
   /**
    * 開いて最初の1回だけ、今日の列の見出しが下のタブの裏・画面の下にあれば、上の帯のすぐ下まで縦に巻く（月の日ごとの一覧と同じ）。
-   * 画面を移ったときの「上へ」（App の useEffect）のあとに巻くので、useEffect から次の描画で。表示を切り替えたときは巻かない
+   * 画面を移ったときの「上へ」（App の useEffect）のあとに巻くので、useEffect から次の描画で。表示を切り替えたときは巻かない。
+   * 空の画面の案内（week-empty「この週は案がありません」）が出ているときは巻かない（案内と次の一手を先に見せる。ADR-0033）
    */
   useEffect(() => {
     const target = todayPaged.current;
     if (!target || target === true) return;
     todayPaged.current = true;
+    if (document.querySelector('[data-testid="week-empty"]')) return;
     requestAnimationFrame(() => {
       const tabsH = document.querySelector('.bottom-tabs')?.getBoundingClientRect().height ?? 0;
       const headBottom = document.querySelector('.app-header')?.getBoundingClientRect().bottom ?? 0;

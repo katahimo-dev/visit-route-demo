@@ -552,6 +552,32 @@ async function narrowWeek(page) {
     '週：390px で時間軸：〈スタッフ〉を押すと ?view=timeline で時間軸',
   );
   check((await pageWidth(page)) <= 390, '週：横にはみ出さない');
+
+  // 案の無い週（新しい文脈。データは初期のまま）：案内「この週は案がありません」が見え、縦には巻かない。今日の列まで横には巻く
+  const ctx2 = await page
+    .context()
+    .browser()
+    .newContext({ viewport: { width: 390, height: 844 } });
+  await skipTour(ctx2);
+  const p2 = await ctx2.newPage();
+  await p2.clock.setFixedTime(NOW);
+  try {
+    await open(p2, '/week', '[data-testid="week-table"]');
+    await p2.waitForTimeout(300);
+    const empty = await p2.getByTestId('week-empty').boundingBox();
+    const vb2 = await viewBand(p2);
+    const y = await p2.evaluate(() => window.scrollY);
+    const t2 = await p2.locator('[data-testid="week-table"] thead th.is-today').boundingBox();
+    const n2 = await p2.locator('[data-testid="week-table"] thead th').first().boundingBox();
+    check(
+      empty && empty.y >= vb2.top - 1 && empty.y + empty.height <= vb2.bottom && y === 0 && t2.x >= n2.x + n2.width - 1,
+      '週：案の無い週は案内「この週は案がありません」が見え（縦に巻かない）、表は今日の列まで横に巻く',
+      { empty, vb2, y, t2 },
+    );
+    await p2.screenshot({ path: path.join(OUT_DIR, 'narrow-week-empty.png') });
+  } finally {
+    await ctx2.close();
+  }
 }
 
 /** 空き状況（PRD D221）：表ははじめ 9:00 の列から（曜日の列のすぐ右）。右に続きがある印は端まで巻くと消える */
