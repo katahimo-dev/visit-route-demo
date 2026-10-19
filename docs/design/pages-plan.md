@@ -175,8 +175,9 @@
 #### 担当ごとの1日（PRD D84。`components/dayLines.tsx`）
 
 - `DayLines`：1行のまとめの下に1人1行（名前・横棒・件数）。横棒は `components/workBars` の `PartsBar`（塗りは [pages-bars.md](pages-bars.md)）
-- 計算は `lib/dayLine.ts`（純粋関数）：`dayLines(problem, routes, staffIds)`（担当ごとの勤務の時間帯（欠勤を差し引く）・件数・時間軸の区間（`spanParts` に自宅からの移動を足す）・訪問・移動・待ち・空きの分）、`dayLineRange(lines)`（8〜20時。はみ出せば1時間単位で広げる）、`dayLineText(line)`（title・読み上げ）
-- 行のボタンを押すとその人の列（`.route-col` の data-staff）へスクロールして列の見出しにフォーカス（一覧のときは時間軸に切り替えてから）
+- 計算は `lib/dayLine.ts`（純粋関数）：`dayLines(problem, routes, staffIds)`（担当ごとの勤務の時間帯（欠勤を差し引く）・件数・時間軸の区間（`spanParts` に自宅からの移動を足す）・訪問の区間と訪問ID・訪問・移動・待ち・空きの分）、`dayLineRange(lines)`（8〜20時。はみ出せば1時間単位で広げる）、`dayLineText(line)`（title・読み上げ）
+- 行のボタンを押すとその人を選び（列の見出しを押したときと同じ `focusOn`。列を強調・地図をその人に絞る）、その人の列（`.route-col` の data-staff）へスクロールして列の見出しにフォーカス（一覧のときは時間軸に切り替えてから）
+- 横棒の訪問の所をマウス・タッチで押すと（押した位置の時刻から `DayLine.visits` の訪問を引く。両側 1% の幅まで近い訪問に寄せる）その訪問を選び（カードを押したときと同じ `togglePick`。選んだままなら外さない）、カード（data-visit）へスクロール。キーボードで押したときは人を選ぶ
 - `detailName` で行のボタンの外の右に名前の i
 - 今の案（`aiPlan`）が無い日は出さない。900px 以下・印刷は details 要素で畳む（`collapsed`）。高さの変数 `--header-h` は触らない
 

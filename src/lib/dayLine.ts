@@ -20,6 +20,8 @@ export type DayLine = {
   rest: Span[];
   /** 時間軸の上の区間（自宅からの移動・訪問・移動・待ち。時刻の順） */
   parts: RoutePart[];
+  /** 訪問の区間と訪問ID（時刻の順。横棒の訪問を押してその訪問を選ぶため） */
+  visits: (Span & { visitId: string })[];
   /** 分：訪問・移動（自宅からを含む）・待ち */
   visit: number;
   travel: number;
@@ -101,6 +103,7 @@ export function dayLines(
       shift,
       rest: baseOf ? subtractSpans(baseOf(sid), shift) : [],
       parts,
+      visits: stops.map((x) => ({ visitId: x.visitId, start: x.start, end: x.end })),
       visit: of('visit'),
       travel: of('travel'),
       wait: of('wait'),

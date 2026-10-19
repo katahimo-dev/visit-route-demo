@@ -2238,8 +2238,21 @@ export default function PlanPage() {
     [problem, aiPlan, columns, slotsOf],
   );
   const lineRange = useMemo(() => dayLineRange(staffLines), [staffLines]);
-  /** その人の列へ移って列の見出しにフォーカス（一覧のときは担当ごとの表示に切り替えてから。PRD D84） */
-  const goToStaff = (sid: string) => {
+  /**
+   * 担当ごとの1日から（PRD D84）：その人を選んで（列の見出しを押したときと同じ。地図もその人に絞る）列へ移り、列の見出しにフォーカス
+   * （一覧のときは担当ごとの表示に切り替えてから）。visitId があればその訪問を選んで（カードを押したときと同じ）カードへ移る
+   */
+  const goToStaff = (sid: string, visitId?: string) => {
+    if (visitId) {
+      if (!sel.isPicked({ id: visitId, set: PLAN_SET })) sel.togglePick({ id: visitId, set: PLAN_SET });
+      requestAnimationFrame(() =>
+        document
+          .querySelector(`[data-visit="${CSS.escape(visitId)}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }),
+      );
+      return;
+    }
+    focusOn(sid);
     if (shownView === 'list') setColView('timeline');
     requestAnimationFrame(() => {
       const col = document.querySelector<HTMLElement>(`.route-col[data-staff="${CSS.escape(sid)}"]`);
