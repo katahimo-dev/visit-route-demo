@@ -1,6 +1,6 @@
 # 相性の画面
 
-> この画面のファイル：`src/pages/CompatPage.tsx`、`src/lib/compatView.ts`・`clientFilter.ts`、`src/components/StaffFilter.tsx`・`ClientFilter.tsx`・`DetailPopover.tsx`・`personDetail.tsx`。関連 ADR：0022・0028。関連 PRD：D113〜D117・D177・D214〜D215。
+> この画面のファイル：`src/pages/CompatPage.tsx`、`src/lib/compatView.ts`・`clientFilter.ts`、`src/components/StaffFilter.tsx`・`ClientFilter.tsx`・`DetailPopover.tsx`・`personDetail.tsx`。関連 ADR：0022・0028。関連 PRD：D113〜D117・D177・D214〜D215・D221。
 > 名前から開く詳細の部品は [pages-common.md](pages-common.md)、`ClientFilter` は [pages-clients.md](pages-clients.md)。
 
 ### 相性（`#/compat`）
@@ -27,6 +27,7 @@ URL は既定のままなら消し、`replace` で書く。知らないチップ
 #### 表
 
 - 枠の中で巻き、見出しの行と1列目を止める（sticky）
+- 箱は `EdgeScroll`（`table-scroll compat-scroll`。PRD D221）：狭い画面では右に続きがあるあいだ右の端をぼかし、右の端まで巻くと消す（[pages.md](pages.md) の「狭い画面の表」）
 - 列の見出しの名前は `nameLines`（最初の空白で名字・名の2行、空白が無ければ `NAME_CHUNK`＝4文字ごと）で切れずに出す
 - 行は `memo` の部品（その行の相性・列・開いているかを渡す）。300人×60人でセルを1回押して描き終わるまで 100ms 以下
 - セル：押すと ◎→○→空→△→×→◎ と回す（`update`）。`title`「〈利用者さん〉 × 〈スタッフ〉：〈意味〉（押すと変わります）」・`aria-label`「〈利用者さん〉と〈スタッフ〉の相性：〈意味〉」。意味は `COMPAT_MEANING`（◎ 選ばれやすい・○ やや選ばれやすい・未入力（ふつう）・△ 選ばれにくい・× 担当にしない）
