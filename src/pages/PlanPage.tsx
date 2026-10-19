@@ -2165,7 +2165,16 @@ export default function PlanPage() {
               }
             >
               {/* 入口の呼び方（PRD D231）：欠勤が無ければ「この人の欠勤を登録」、あれば「欠勤を直す」 */}
-              {avail?.absence ? '欠勤を直す' : 'この人の欠勤を登録'}
+              {/* 狭い列では「この人の／欠勤を登録」の区切りで折り返す（plan.css の keep-all と wbr） */}
+              {avail?.absence ? (
+                '欠勤を直す'
+              ) : (
+                <>
+                  この人の
+                  <wbr />
+                  欠勤を登録
+                </>
+              )}
             </button>
           )}
           {/*
