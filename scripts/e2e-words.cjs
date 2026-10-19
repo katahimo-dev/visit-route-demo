@@ -430,6 +430,8 @@ async function legend(page) {
   if ((await openDay.count()) > 0) {
     const od = await openDay.getAttribute('data-date');
     const offCell = page.locator(`[data-testid="month-day"][data-date="${od}"]`);
+    // 「休みを入れる」を押したマウスが表の上に残ると、描き直しでマスから離れた扱いになり読み方が消えるので、表の外へ動かしておく
+    await page.mouse.move(1, 1);
     await tabInto(page, offCell);
     const before = await tip.innerText();
     await page.keyboard.press('Enter');

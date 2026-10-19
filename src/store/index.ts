@@ -151,7 +151,10 @@ export function flushSave(): void {
   timer = null;
   const p = pending;
   pending = null;
-  if (p) p.onError?.(writeNow(p.data));
+  if (!p) return;
+  // onError が無くても書く（p.onError?.(writeNow(...)) だと onError の無いときに書かない）
+  const message = writeNow(p.data);
+  p.onError?.(message);
 }
 
 /**
@@ -162,6 +165,19 @@ export function save(data: DemoData, onError?: (message: string | null) => void)
   pending = { data, onError };
   if (timer) return;
   timer = setTimeout(flushSave, SAVE_INTERVAL_MS);
+}
+
+/**
+ * 例外の画面の控え（バックアップ）：待っている保存を先に書き、保存してある JSON の文字をそのまま返す（壊れていても手を加えない）。
+ * 保存が無い・読めないときは null
+ */
+export function backupText(): string | null {
+  flushSave();
+  try {
+    return storage()?.getItem(STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function reset(): DemoData {

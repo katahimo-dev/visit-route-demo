@@ -70,7 +70,7 @@
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: #b3a397;
+  color: var(--sub);
 }
 .cmdk-option {
   display: flex;

@@ -46,6 +46,17 @@
   color: var(--sub);
   cursor: pointer;
 }
+/* タッチの端末では押せる所を 32px に（見た目の 22px と並びは変えず ::before で広げる） */
+@media (pointer: coarse) {
+  .client-picker-remove {
+    position: relative;
+  }
+  .client-picker-remove::before {
+    content: "";
+    position: absolute;
+    inset: -5px;
+  }
+}
 .client-picker-remove:hover,
 .client-picker-remove:focus-visible {
   background: var(--primary-soft);
@@ -98,8 +109,8 @@
 }
 .client-picker-option.is-active {
   background: var(--primary-soft);
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
 }
 .client-picker-option[aria-selected='true'] {
   font-weight: 700;
@@ -145,6 +156,12 @@
   width: auto;
   padding: 2px 6px;
   font-size: 0.8rem;
+}
+/* iPhone で押したときに画面が拡大されないよう 16px */
+@media (max-width: 860px) {
+  .client-picker-staff select {
+    font-size: 16px;
+  }
 }
 .client-picker-shortcut {
   display: inline-flex;

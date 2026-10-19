@@ -4,6 +4,7 @@ import type { Pattern } from '../contracts/documents';
 import { createDemoData } from '../seed';
 import {
   BROKEN_KEY,
+  backupText,
   exportJson,
   extendDays,
   flushSave,
@@ -143,6 +144,23 @@ describe('load・save', () => {
     save(createDemoData('2026-10-12'), onError);
     flushSave();
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('保存容量'));
+  });
+
+  it('backupText は待っている保存を先に書いて、保存してある文字をそのまま返す', () => {
+    vi.useFakeTimers();
+    save({ ...createDemoData('2026-10-12'), seed: 9 });
+    const text = backupText();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+    expect((JSON.parse(text ?? '{}') as DemoData).seed).toBe(9);
+    expect(text).toBe(mem.get(STORAGE_KEY));
+  });
+
+  it('backupText は壊れた JSON も手を加えずに返し、保存が無ければ null', () => {
+    mem.set(STORAGE_KEY, '{こわれた');
+    expect(backupText()).toBe('{こわれた');
+    mem.delete(STORAGE_KEY);
+    expect(backupText()).toBeNull();
   });
 
   it('reset は初期データで置き換える', () => {

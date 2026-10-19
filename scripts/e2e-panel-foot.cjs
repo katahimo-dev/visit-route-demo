@@ -105,7 +105,8 @@ async function expectShort(page, label) {
   check(!m.body.scrollable, `${label}：中身が短く巻かない`, m.body);
   const gap = m.foot.top - m.last;
   check(gap >= 0 && gap <= 40, `${label}：帯が内容のすぐ下（間 ${gap}px）`, { footTop: m.foot.top, last: m.last });
-  check(m.foot.bottom <= m.drawer.bottom - 40, `${label}：帯が欄の下端より上`, {
+  // 貼り付いた帯（下端が欄の下端と同じ）と見分けられれば足りる。行の高さ（1.5）で中身が伸びた欄でも 16px は空く
+  check(m.foot.bottom <= m.drawer.bottom - 16, `${label}：帯が欄の下端より上`, {
     foot: m.foot.bottom,
     drawer: m.drawer.bottom,
   });

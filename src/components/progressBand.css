@@ -42,7 +42,7 @@
   border-color: var(--primary);
 }
 .pb-item:focus-visible {
-  outline: 3px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 1px;
 }
 .pb-item.is-done {
@@ -50,7 +50,7 @@
   background: #eef7f1;
 }
 .pb-item.is-done > svg {
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .pb-item.is-warn {
   border-color: var(--warn);
@@ -80,7 +80,7 @@
   white-space: nowrap;
 }
 .pb-status.is-done {
-  color: var(--ok);
+  color: var(--ok-ink);
   font-weight: 700;
 }
 .pb-label-short {

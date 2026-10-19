@@ -32,7 +32,7 @@ export function useFloatingEdge(name: string): (el: HTMLElement | null) => void 
       if ((e as CustomEvent<string>).detail !== name) put();
     };
     window.addEventListener(FLOATING_EVENT, onOther);
-    // 出てくるときの動き（toast-in）が終わってから位置を出し直す
+    // 出てくるときの動き（地図の map-dock-in）が終わってから位置を出し直す
     el.addEventListener('animationend', put);
     return () => {
       el.removeEventListener('animationend', put);

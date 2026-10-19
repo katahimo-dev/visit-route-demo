@@ -108,6 +108,7 @@ import {
   monthListFocusDate,
   monthListRow,
 } from '../lib/monthList';
+import { scrollBehavior } from '../lib/motion';
 import { mdText } from '../lib/patternText';
 import { type BandOp, urgentCount } from '../lib/progressBand';
 import { rebuildWith } from '../lib/rebuildBand';
@@ -491,7 +492,7 @@ export default function MonthPage() {
     patchParams({ staff: null, client: null, ...extra });
     setAsideView(view);
     requestAnimationFrame(() => {
-      asideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      asideRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
       asideRef.current?.focus({ preventScroll: true });
     });
   };
@@ -821,7 +822,7 @@ export default function MonthPage() {
   const showListDay = (d: string, focus: boolean) => {
     const el = listRef.current?.querySelector<HTMLElement>(`[data-date="${d}"]`);
     if (!el) return;
-    el.scrollIntoView({ block: 'start', behavior: focus ? 'smooth' : 'auto' });
+    el.scrollIntoView({ block: 'start', behavior: focus ? scrollBehavior() : 'auto' });
     if (focus) el.focus({ preventScroll: true });
   };
   /** 最初に巻いた月と見せ方（同じ月・見せ方では巻き直さない） */

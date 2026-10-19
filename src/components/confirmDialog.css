@@ -28,7 +28,7 @@
   padding: 20px 22px 18px;
   background: var(--card);
   border-radius: var(--radius);
-  border-top: 6px solid var(--primary);
+  border-top: 6px solid var(--accent);
   box-shadow: 0 18px 50px rgba(40, 25, 15, 0.3);
   animation: confirm-in 0.15s ease-out;
 }
@@ -73,7 +73,7 @@
   gap: 10px;
   margin-top: 4px;
 }
-/* 消す・捨てる操作の確定（赤の塗り。オレンジの主ボタンとは別） */
+/* 消す・捨てる操作の確定（赤の塗り。朱の主ボタンとは別） */
 .btn-danger-solid {
   background: var(--danger);
   border-color: var(--danger);

@@ -49,7 +49,7 @@
 }
 button.cbar-item:hover,
 button.cbar-item:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 1px;
   /* 重なる帯・1時間の隙間に枠を削られないよう一番上に */
   z-index: 3;

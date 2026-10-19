@@ -48,7 +48,7 @@
   color: var(--primary-dark);
 }
 .hard-toggle:focus-within {
-  outline: 2px solid var(--primary-dark);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 .seed-card {
@@ -162,11 +162,11 @@
 .compat-legend-item.lv2,
 .compat-legend-item.lv1 {
   background: #e1f1e7;
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .compat-legend-item.lvm1 {
   background: #fbefd6;
-  color: #a46d0a;
+  color: var(--warn-ink);
 }
 .compat-legend-item.lvm2 {
   background: #fbe1dd;
@@ -221,7 +221,7 @@
 .warn-box svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--warn);
+  color: var(--warn-ink);
 }
 .warn-box p {
   margin: 0;
@@ -229,7 +229,7 @@
 }
 /* 知らせを閉じたあとのフォーカスの先（Excel の欄。tabIndex=-1 でコードからだけ移る）は枠を見せる */
 .data-excel:focus {
-  outline: 2px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 /* 名簿の読み込みのあとの知らせ（最終勤務日の入った人。PRD D209）。色は日の画面の注意の帯（.plan-band.is-warn）にそろえる */
@@ -421,7 +421,7 @@
   color: var(--primary-dark);
 }
 .weekday-toggle:focus-visible {
-  outline: 2px solid var(--primary-dark);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 fieldset.weekday-toggles {
@@ -508,7 +508,7 @@ fieldset.weekday-toggles {
 /* 〈利用者さん〉の段階（PRD D73。ADR-0015）：一覧の状態の印（段階の絞り込みのボタンは PRD D111 でやめ、ClientFilter の「終了の人も出す」に） */
 .stage-chip.is-active {
   background: #e1f1e7;
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .stage-chip.is-ended {
   background: #eee;
@@ -590,7 +590,7 @@ fieldset.weekday-toggles {
 }
 .compat-head-btn:focus-visible,
 .compat-client-btn:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 1px;
 }
 .compat-head-line {

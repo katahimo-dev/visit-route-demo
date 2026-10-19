@@ -1,15 +1,30 @@
-/* 案D-3：枠・背景は白、押すところと選んだ印はオレンジ1色、お客様は色の丸。文字は大きく短く */
+/* 案D-3：枠・背景は白、押すところと選んだ印は朱1色、お客様は色の丸。文字は大きく短く */
 :root {
   --bg: #f7f1ec;
   --card: #ffffff;
   --ink: #3b2f2a;
-  --sub: #8a7a70;
+  /* 補足の文字・表の見出し（白で 6.0・--bg で 5.4） */
+  --sub: #6f6058;
+  /* カードの区切り・飾りの線（入力欄の枠には使わない） */
   --line: #eadfd6;
-  --primary: #e8735f;
-  --primary-dark: #c85c49;
+  /* 入力欄・選ぶ欄の枠（白で 3.6・--bg で 3.2） */
+  --line-strong: #968478;
+  /* 主ボタンの地・選んだ印（濃い朱。白い文字で 4.9） */
+  --primary: #b8503e;
+  /* 主ボタンの影・押す前の濃い色・選んだ印の文字 */
+  --primary-dark: #9c4232;
+  /* 飾りの帯・線だけに使う明るい朱（文字・枠の印には使わない） */
+  --accent: #e8735f;
+  /* フォーカスの輪（白で 6.5・--bg で 5.8） */
+  --focus: var(--primary-dark);
+  /* 状態の色は 緑＝済み・よい／黄＝注意／赤＝要対応・戻せない操作 の3つ。
+     --ok・--warn は枠・帯・塗り、文字とアイコンは -ink（白で 5.6・5.9） */
   --ok: #5aa57a;
+  --ok-ink: #37734f;
   --warn: #d99a2b;
-  --danger: #c94a3a;
+  --warn-ink: #8a5a00;
+  /* 赤は文字にも使う（白で 5.7・--bg で 5.1） */
+  --danger: #b8393a;
   --radius: 18px;
   --soft: #faf5f0;
   --primary-soft: #fde7e1;
@@ -17,7 +32,10 @@
   --header-h: 72px;
   /* スマホの下のタブ（.bottom-tabs）の高さ。広い画面では 0。浮いている部品・本文の下の余白がこれを避ける（PRD D134） */
   --bottom-tabs-h: 0px;
-  font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  /* Mac は丸ゴシック、Windows は BIZ UDPゴシック・游ゴシック・メイリオ（system-ui より前。後ろだと Windows の UI の書体になる） */
+  font-family:
+    "Hiragino Maru Gothic ProN", "Hiragino Sans", "BIZ UDPGothic", "Yu Gothic", "Meiryo", "Noto Sans JP", system-ui,
+    sans-serif;
   color: var(--ink);
   background: var(--bg);
 }
@@ -27,6 +45,7 @@
 body {
   margin: 0;
   min-height: 100dvh;
+  line-height: 1.5;
   -webkit-tap-highlight-color: transparent;
 }
 a {
@@ -106,9 +125,10 @@ h3 {
   border-color: var(--primary);
   background: var(--primary);
 }
+/* 重ねたら1段濃く（白い文字で 5.8） */
 .btn-primary:hover:not(:disabled) {
   border-color: var(--primary-dark);
-  background: #ec7f6b;
+  background: #a64838;
 }
 .btn-primary {
   background: var(--primary);
@@ -116,7 +136,7 @@ h3 {
   border-color: var(--primary);
   box-shadow: 0 4px 0 var(--primary-dark);
 }
-/* 取り消しなど、戻せない操作のボタン（オレンジの主ボタンとは別。赤い枠と文字） */
+/* 取り消しなど、戻せない操作のボタン（朱の塗りの主ボタンとは別。赤い枠と文字） */
 .btn-danger {
   border-color: var(--danger);
   color: var(--danger);
@@ -153,11 +173,11 @@ h3 {
 }
 .chip-ok {
   background: #e1f1e7;
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .chip-warn {
   background: #fbefd6;
-  color: #a46d0a;
+  color: var(--warn-ink);
 }
 .dot {
   display: inline-flex;
@@ -182,7 +202,7 @@ textarea {
   font: inherit;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--line-strong);
   background: #fff;
   width: 100%;
 }
@@ -299,7 +319,7 @@ tbody tr:hover td {
   align-items: center;
   gap: 6px;
   font-size: 0.85rem;
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .tracking::before {
   content: "";
@@ -316,7 +336,7 @@ tbody tr:hover td {
 }
 .offline {
   background: #fbefd6;
-  color: #a46d0a;
+  color: var(--warn-ink);
   padding: 6px 12px;
   border-radius: 10px;
   font-size: 0.85rem;
@@ -392,7 +412,7 @@ tbody tr:hover td {
   white-space: nowrap;
 }
 .warn-text {
-  color: #a46d0a;
+  color: var(--warn-ink);
 }
 .table-scroll {
   overflow-x: auto;
@@ -635,6 +655,11 @@ tbody tr:hover td {
   color: var(--primary-dark);
   font-weight: 700;
 }
+/* 枠の overflow: hidden で切れないよう、フォーカスの輪はボタンの内側に描く */
+.segmented button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
 
 /* AI案：手作業案と並べて比較 */
 .method-help {
@@ -791,7 +816,7 @@ tbody tr:hover td {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #b3a397;
+  color: var(--sub);
 }
 .nav-link {
   display: flex;
@@ -1236,13 +1261,13 @@ tbody tr:hover td {
   background: #e9f5ee;
 }
 .stat.tone-ok .stat-icon {
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .stat.tone-warn {
   background: #fcf3e1;
 }
 .stat.tone-warn .stat-icon {
-  color: #a46d0a;
+  color: var(--warn-ink);
 }
 .stat.tone-danger {
   background: #fbe6e2;
@@ -1318,7 +1343,7 @@ tbody tr:hover td {
   border-radius: 8px;
 }
 .ok-text {
-  color: var(--ok);
+  color: var(--ok-ink);
   font-weight: 700;
 }
 a.btn {
@@ -1496,11 +1521,11 @@ label.check input {
 .compat-btn.lv2,
 .compat-btn.lv1 {
   background: #e1f1e7;
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .compat-btn.lvm1 {
   background: #fbefd6;
-  color: #a46d0a;
+  color: var(--warn-ink);
 }
 .compat-btn.lvm2 {
   background: #fbe1dd;
@@ -1580,7 +1605,14 @@ a.icon-btn:hover {
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 12px 36px rgba(40, 25, 15, 0.22);
-  animation: toast-in 0.2s ease-out;
+  animation: map-dock-in 0.2s ease-out;
+}
+/* 右下に置いたまま、薄い所から少し下から出る（トーストの toast-in は横の中央寄せの translate を含むので使わない） */
+@keyframes map-dock-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 .map-dock-head {
   display: flex;
@@ -1921,5 +1953,44 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
 @media print {
   .empty-next-actions {
     display: none;
+  }
+}
+
+/* アイコンだけのボタンの押せる所：タッチの端末では 44px（見た目と並びは変えず、::before で押せる所だけ広げる） */
+@media (pointer: coarse) {
+  .icon-btn {
+    position: relative;
+  }
+  .icon-btn::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+  /* 横に押せる要素が並ぶ側は、間（4px）の半分だけ広げる（隣の押せる所に掛けない） */
+  .icon-btn:has(+ :is(button, a, select, input))::before {
+    right: -2px;
+  }
+  :is(button, a, select, input) + .icon-btn::before {
+    left: -2px;
+  }
+}
+/* iPhone で入力欄を押したときに画面が拡大されないよう、狭い画面の入力欄の文字は 16px 以上（label の中の 0.9rem も。字の大きさをクラスで決めている欄はそれぞれの CSS で） */
+@media (max-width: 860px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}
+/* 動きを減らす設定（OS の「視差効果を減らす」など）では、出てくる動き・点滅・なめらかな巻き取りをやめる。
+   animationend を待つ所（components/floating.ts）があるので、動きは消さずに一瞬で終える */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

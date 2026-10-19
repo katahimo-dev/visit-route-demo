@@ -21,6 +21,7 @@ import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
 import { jstDate } from '../domain/time';
 import { attempt, formError, isStaleBuild } from '../lib/common';
+import { backupFileName, saveBlob } from '../lib/download';
 import { type LastDayPerson, lastDayChanged } from '../lib/personLinks';
 import { useFeature } from '../lib/useFeature';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
@@ -28,18 +29,6 @@ import './settings.css';
 
 /** ファイル名の日付（日本時間） */
 const today = () => jstDate(Date.now());
-
-/** Blob をファイルとして保存させる */
-function saveBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 /** データ：書き出し・読み込み（控えの JSON・Excel）・初期状態に戻す（D2・D3・D23） */
 /** 画面を開いたあとに新しい版が公開されて、Excel の部品を読めなかったとき */
@@ -112,7 +101,7 @@ export default function DataPage() {
       setError(`書き出せませんでした（${r.error}）`);
       return;
     }
-    saveBlob(r.value, `visit-route-demo-${today()}.json`);
+    saveBlob(r.value, backupFileName(today()));
     toast('書き出しました');
   };
 
