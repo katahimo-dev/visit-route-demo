@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
+import { PersonButton } from '../components/PersonPopover';
 import { useToast } from '../components/Toast';
 import { Hint, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { addDays, jstDate, weekday } from '../domain/time';
@@ -177,7 +178,13 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
                     return (
                       <tr key={c.clientId} data-testid="offboard-client">
                         <th scope="row" className="person-name">
-                          {clientById.get(c.clientId)?.displayName ?? ''}
+                          {/* 名前から詳細（select の option には置けないので行の見出しだけ。PRD D208） */}
+                          <PersonButton
+                            kind="client"
+                            id={c.clientId}
+                            name={clientById.get(c.clientId)?.displayName ?? ''}
+                            testId="offboard-client-name"
+                          />
                         </th>
                         <td className="nowrap">
                           {c.roles

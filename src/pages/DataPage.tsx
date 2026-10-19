@@ -1,5 +1,17 @@
-import { CircleHelp, Database, Download, FileSpreadsheet, RotateCcw, Save, Tags, TriangleAlert } from 'lucide-react';
+import {
+  CalendarClock,
+  CircleHelp,
+  Database,
+  Download,
+  FileSpreadsheet,
+  RotateCcw,
+  Save,
+  Tags,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { FilePick } from '../components/FilePick';
 import { Term } from '../components/Term';
@@ -9,6 +21,7 @@ import { Hint, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
 import { jstDate } from '../domain/time';
 import { attempt, formError, isStaleBuild } from '../lib/common';
+import { type LastDayPerson, lastDayChanged } from '../lib/personLinks';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
 import './settings.css';
 
@@ -62,13 +75,21 @@ export default function DataPage() {
   const latest = useRef(data);
   latest.current = data;
   /** 名簿を update で入れたところ（入ったかは次の描画で data を見て決める。入らなければ成功と言わない） */
-  const pendingRoster = useRef<{ base: DemoData; next: DemoData; done: string } | null>(null);
+  const pendingRoster = useRef<{ base: DemoData; next: DemoData; done: string; lastDay: LastDayPerson[] } | null>(null);
+  /**
+   * 名簿の読み込みで最終勤務日が入った〈スタッフ〉の知らせ（PRD D209）。名前と閲覧の欄へのリンクを出す。
+   * 画面の中の状態で保存しない（閉じる・次の読み込み・画面を移るで消える）
+   */
+  const [lastDayNotice, setLastDayNotice] = useState<LastDayPerson[] | null>(null);
+  /** 知らせを閉じたらフォーカスを戻す先（Excel の欄） */
+  const excelCard = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const p = pendingRoster.current;
     if (!p) return;
     if (data === p.next) {
       pendingRoster.current = null;
       toast(p.done);
+      if (p.lastDay.length > 0) setLastDayNotice(p.lastDay);
     } else if (data !== p.base) {
       pendingRoster.current = null;
       setExcelError(
@@ -116,6 +137,7 @@ export default function DataPage() {
 
   const loadExcel = async (file: File) => {
     setExcelError(null);
+    setLastDayNotice(null);
     try {
       setExcelBusy(true);
       // 先に読んで検査し、通ったら件数を見せて確かめる（取り消しならデータは変えない）
@@ -189,13 +211,16 @@ export default function DataPage() {
     });
     if (!ok) return;
     if (latest.current !== base) return changed();
+    // 最終勤務日が入った人は ID も要る（知らせのリンク。PRD D209）ので、読み込む前と後を比べて引く
+    const lastDay = kind === 'staff' ? lastDayChanged(base.staff, r.data.staff) : [];
     pendingRoster.current = {
       base,
       next: r.data,
       done:
-        r.lastDaySet.length > 0
-          ? `${term}の名簿を読み込みました。最終勤務日の入った${terms.staff}がいます。${terms.staff}の画面で担当の振り直しを確かめてください`
+        lastDay.length > 0
+          ? `${term}の名簿を読み込みました。最終勤務日の入った${terms.staff}がいます。Excel の欄に名前を出しました`
           : `${term}の名簿を読み込みました`,
+      lastDay,
     };
     update((d) => (d === base ? r.data : d));
   };
@@ -301,7 +326,7 @@ export default function DataPage() {
         {error && <p className="error">{error}</p>}
       </div>
 
-      <div className="card stack">
+      <div className="card stack" ref={excelCard} tabIndex={-1} style={{ outline: 'none' }}>
         <SectionTitle icon={FileSpreadsheet}>Excel</SectionTitle>
         <Hint>
           {excelKind === 'all' ? (
@@ -378,6 +403,38 @@ export default function DataPage() {
           onPick={(f) => void loadExcel(f)}
           testId="excel-file"
         />
+        {lastDayNotice && (
+          <section className="data-notice" aria-label="最終勤務日の知らせ" data-testid="lastday-notice">
+            <p className="data-notice-text">
+              <CalendarClock size={16} strokeWidth={2.2} aria-hidden="true" />
+              <span>
+                最終勤務日の入った{t.staff}がいます。{t.staff}の画面（名前から開く）で担当の振り直しを確かめてください
+              </span>
+            </p>
+            <ul className="data-notice-list">
+              {lastDayNotice.map((x) => (
+                <li key={x.id}>
+                  <Link to={`/staff?id=${encodeURIComponent(x.id)}`} data-testid="lastday-link">
+                    {x.name}
+                  </Link>
+                  （最終勤務日 {x.lastDay}）
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="btn btn-small data-notice-close"
+              onClick={() => {
+                setLastDayNotice(null);
+                excelCard.current?.focus();
+              }}
+              aria-label="最終勤務日の知らせを閉じる"
+              data-testid="lastday-close"
+            >
+              <WithIcon icon={X}>閉じる</WithIcon>
+            </button>
+          </section>
+        )}
         {excelError && (
           <p className="error" style={{ whiteSpace: 'pre-line' }}>
             {excelError}

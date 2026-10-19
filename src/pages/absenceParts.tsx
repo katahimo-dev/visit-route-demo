@@ -2,6 +2,7 @@
 // 振り直しの差の欄・入らない訪問の受けられる人
 import { CircleOff, GitCompareArrows, ShieldAlert, TriangleAlert, Undo2, UserRoundCheck } from 'lucide-react';
 import { type ReactNode, useId, useMemo, useState } from 'react';
+import { PersonButton } from '../components/PersonPopover';
 import { Hint, WithIcon } from '../components/ui';
 import type { DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence, Visit } from '../contracts/documents';
@@ -167,6 +168,7 @@ export function ReassignBar({
   diff,
   left,
   visitLabel,
+  visitNode,
   staffName,
   cancelled,
   running,
@@ -183,6 +185,8 @@ export function ReassignBar({
   /** 欠勤の人に残る、欠勤と重なる訪問（leftOf。今の案で） */
   left: ReassignLeft[];
   visitLabel: (id: string) => string;
+  /** 欠勤の人に残る訪問の見た目（〈利用者さん〉の名前から詳細を開く。PRD D206）。無ければ visitLabel の文字 */
+  visitNode?: (id: string) => ReactNode;
   staffName: (id: string) => string;
   /** 振り直しに使った欠勤が取り消されている */
   cancelled: boolean;
@@ -252,7 +256,8 @@ export function ReassignBar({
           </span>
           {left.map((x) => (
             <span key={x.visitId} className="sub">
-              ・{visitLabel(x.visitId)}（{staffName(x.staffId)}さん・{leftReasonText(x)}）
+              ・{visitNode ? visitNode(x.visitId) : visitLabel(x.visitId)}（{staffName(x.staffId)}さん・
+              {leftReasonText(x)}）
             </span>
           ))}
           <button
@@ -365,7 +370,10 @@ export function CandidateBox({
           {shown.map((c) => (
             <li key={c.staffId} className="candidate-row">
               <div className="spread" style={{ gap: 6 }}>
-                <strong className="ellipsis">{staffName(c.staffId)}</strong>
+                {/* 名前から詳細（「この人に入れる」とは別のボタン。PRD D206） */}
+                <strong className="ellipsis">
+                  <PersonButton kind="staff" id={c.staffId} name={staffName(c.staffId)} testId="candidate-name" />
+                </strong>
                 <button
                   type="button"
                   className="btn btn-small"

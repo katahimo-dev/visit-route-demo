@@ -82,6 +82,41 @@
   border-color: #ecc97e;
   color: #7a5208;
 }
+/* 帯の文（名前のボタンを並べても折り返す。with-icon の横並びの中で1つの要素にする） */
+.band-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* 文が長くても印（アイコン）を縮めない */
+.plan-band .with-icon:has(> .band-text) > svg {
+  flex: none;
+}
+/* 入らなかった訪問の i と理由の札（狭い画面では札の中でも折り返す） */
+.unplaced-reasons {
+  min-width: 0;
+}
+.unplaced-reasons .chip {
+  max-width: 100%;
+  white-space: normal;
+}
+/* 拘束が上限を超える人の1人ぶん（狭い画面でも名前・拘束・リンクを同じ行に） */
+.over-span-item {
+  display: inline-block;
+  max-width: 100%;
+}
+/* 拘束が上限を超える人が2人以上のとき、名前ごとの稼働の見込みへのリンク（PRD D207）。印刷では出さない */
+.over-span-link {
+  margin-left: 4px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+  white-space: nowrap;
+}
+@media print {
+  .over-span-link {
+    display: none;
+  }
+}
 p.plan-band.error {
   background: #fbe1dd;
   border-color: #efb3a8;
