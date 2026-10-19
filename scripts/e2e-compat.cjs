@@ -396,20 +396,21 @@ async function perf(page) {
 run(async () => {
   const browser = await launch();
   const errors = [];
-  const fresh = async () => {
+  const fresh = async (fixClock) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
     const page = await ctx.newPage();
     // ページの時計を止める（ほかの e2e と同じ）
-    await page.clock.setFixedTime(NOW);
+    if (fixClock) await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
     const dlg = await answerConfirms(page);
     return { ctx, page, dlg };
   };
   for (const step of [namesAndLayout, popover, openById, filters, regressions, perf]) {
-    const { ctx, page, dlg } = await fresh();
+    // 速さは時計を止めない文脈で測る（setFixedTime は requestAnimationFrame・performance.now も差し替える。scripts/lib/env.cjs の withRealClock）
+    const { ctx, page, dlg } = await fresh(step !== perf);
     try {
       await step(page);
     } catch (e) {

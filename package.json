@@ -12,7 +12,7 @@
     "lint": "biome check .",
     "e2e": "playwright test --project=e2e",
     "e2e:perf": "playwright test --project=perf",
-    "e2e:all": "playwright test"
+    "e2e:all": "npm run e2e && npm run e2e:perf"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

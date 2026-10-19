@@ -10,7 +10,19 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, perfMs, check, urlOf, isFocused, failShot, run } = require('./lib/env.cjs');
+const {
+  launch,
+  BASE,
+  OUT_DIR,
+  NOW,
+  perfMs,
+  check,
+  withRealClock,
+  urlOf,
+  isFocused,
+  failShot,
+  run,
+} = require('./lib/env.cjs');
 
 const PERF_MS = perfMs('PERF_MS_DETAILS', 100);
 const pop = (page) => page.getByTestId('person-pop');
@@ -393,7 +405,8 @@ run(async () => {
     ['week', week],
     ['plan', plan],
     ['same-button-and-twice', sameButtonAndTwice],
-    ['speed', speed],
+    // 速さは時計を止めない別の文脈で測る（scripts/lib/env.cjs の withRealClock）
+    ['speed', () => withRealClock(b, errors, speed)],
     // データを書き換えるので最後に
     ['removed', removed],
   ]) {

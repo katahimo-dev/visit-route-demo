@@ -21,6 +21,7 @@ const {
   STORAGE_KEY,
   perfMs,
   check,
+  withRealClock,
   hashOf,
   isFocused,
   failShot,
@@ -642,7 +643,8 @@ run(async () => {
     ['focus', focus],
     ['mobile', mobile],
     ['print', print],
-    ['perf', perf],
+    // 速さは時計を止めない別の文脈で測る（scripts/lib/env.cjs の withRealClock）
+    ['perf', () => withRealClock(b, errors, perf)],
   ]) {
     try {
       await fn(page);

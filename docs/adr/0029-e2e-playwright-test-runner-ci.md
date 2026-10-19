@@ -21,7 +21,8 @@
 `@playwright/test` を devDependency（`1.56.1` に固定。手元の playwright 1.56.1・chromium-1194 と同じ版）に入れ、今のスクリプトを包むランナーにする。段階を分けて移す。
 
 - 段階0（共通化）：重なりを `scripts/lib/env.cjs` に寄せる（Playwright の読み込み・`launch`・BASE・OUT_DIR・FAKE_NOW・NOW・TODAY・`check`・`settle`・`hashOf`・`stored`・`failShot`・`run`／`finish`）。各スクリプトに固有の補助はそのまま。あわせて
-  - e2e-address・e2e-compat もページの時計を止める
+  - e2e-address・e2e-compat もページの時計を止める。`setFixedTime` は Date を止めるがタイマーは実時間で進むので、e2e-address の時間切れの待ちはそのまま。住所の検索の残り時間の計算（`src/lib/geocode.ts`）は Date が進まないので、その経路は e2e の対象外
+  - 速さの確かめ（compat・nav・details）は時計を止めない別の文脈で測る（`withRealClock`）。`setFixedTime` は requestAnimationFrame・performance.now も差し替え、rAF で描き終わりを待つ測り方が本物の描画を待たなくなるため
   - 速さの上限はスクリプトごとの名前 `PERF_MS_COMPAT`・`PERF_MS_NAV`・`PERF_MS_PROGRESS`・`PERF_MS_VACANCY`・`PERF_MS_DETAILS`（無ければ今までの `PERF_MS`）
   - 失敗のスクリーンショットは `<名前>-fail-<段階>.png`（OUT_DIR を共有してもぶつからない）
   - e2e-tour は filechooser の受け口をページを開いた直後に付ける（受け口を付けたときのブラウザへの横取りの頼みは待たずに送られるので、押す直前に付けると Space が先に届くことがある）
@@ -31,7 +32,8 @@
   - サイトは `BASE` があればそれ、無ければ webServer が `npm run build && npx vite preview --port 4183 --strictPort` で出す（手元は動いているものを使い回す）
   - 「今日」（`FAKE_NOW`）は設定ファイルで1回だけ決め、どの worker も同じ日にする
   - 速さを見る5本は `@perf` を付け、project `perf`（worker 1）で別に走らせる。ほかは project `e2e`
-  - コマンド：`npm run e2e`・`npm run e2e:perf`・`npm run e2e:all`
+  - コマンド：`npm run e2e`・`npm run e2e:perf`・`npm run e2e:all`（e2e のあとに e2e:perf。同時に走らせると速さの上限が揺れる）
+  - 子のプロセスは test の時間切れの30秒前に Chromium ごと止め（SIGTERM → SIGKILL）、記録はいつも添付する
 - CI：`.github/workflows/e2e.yml` を PR・手動・夜間（03:00 日本時間）に走らせる。ビルドと `vite preview` はジョブで1回だけ行い、`BASE` を渡して `npm run e2e` のあと `npm run e2e:perf`（webServer は使わない）。夜間は `FAKE_NOW` を次の水曜・`2026-10-28T12:00+09:00`・`2026-10-31T12:00+09:00` の3通りで走らせる（月末）。報告（HTML）はいつも、test-results は失敗のときに残す。公開（`deploy.yml`）はまだ e2e を待たない
 - 「Playwright を npm の依存に入れない」は、この決定で置き換える
 - 段階2（このあと）：スクリプトの中を `test.step` と `expect.soft` に移し、確かめの1つずつを報告に出す（名前はそのまま）

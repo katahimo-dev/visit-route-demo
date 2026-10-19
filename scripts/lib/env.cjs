@@ -14,6 +14,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { skipTour } = require('./tourSeen.cjs');
 
 /** 走らせたスクリプトの名前（e2e-home など） */
 const SCRIPT = path.basename(require.main?.filename ?? 'e2e', '.cjs');
@@ -75,6 +76,23 @@ const urlOf = (page) => decodeURIComponent(page.url());
 const isFocused = (loc) => loc.evaluate((el) => document.activeElement === el);
 const stored = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
 
+/**
+ * 速さを測る文脈（ページの時計を止めない）で fn(page) を走らせ、終わったら閉じる。
+ * page.clock.setFixedTime は Date だけでなく requestAnimationFrame・performance.now も差し替えるので、
+ * 「押してから描き終わるまで」を rAF で待つ測り方では本物の描画を待たなくなる。ページのエラーは errors に入れる
+ */
+async function withRealClock(browser, errors, fn, viewport = { width: 1400, height: 1000 }) {
+  const ctx = await browser.newContext({ viewport });
+  await skipTour(ctx);
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(String(e)));
+  try {
+    return await fn(page);
+  } finally {
+    await ctx.close();
+  }
+}
+
 /** 止まったときのスクリーンショット（<名前>-fail-<段階>.png。OUT_DIR を共有してもぶつからない） */
 const failShot = (page, step) =>
   page.screenshot({ path: path.join(OUT_DIR, `${NAME}-fail-${step}.png`) }).catch(() => {});
@@ -119,6 +137,7 @@ module.exports = {
   urlOf,
   isFocused,
   stored,
+  withRealClock,
   failShot,
   finish,
   run,
