@@ -1553,7 +1553,11 @@ const TIP_HIDE_MS = 120;
  */
 function MonthCellTip({ gridRef, tipStore }: { gridRef: RefObject<HTMLElement | null>; tipStore: TipStore }) {
   const tipId = `month-cell-tip-${useId().replace(/:/g, '')}`;
-  const [at, setAt] = useState<HTMLElement | null>(null);
+  /**
+   * 出しているマス。日付で持つ（描き直しでマスの要素が替わっても閉じない）。by：出したきっかけ。
+   * キーボードで出しているあいだはマウスの出入りを見ない（止まったマウスの上で表が描き直されると、動かしていなくても出入りが起きる）
+   */
+  const [at, setAt] = useState<{ date: string; by: 'pointer' | 'focus' } | null>(null);
   const timer = useRef<number | null>(null);
   const clear = () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
@@ -1565,29 +1569,37 @@ function MonthCellTip({ gridRef, tipStore }: { gridRef: RefObject<HTMLElement | 
     if (!root) return;
     const cellOf = (t: EventTarget | null): HTMLElement | null =>
       t instanceof Element ? (t.closest('[data-tip]') as HTMLElement | null) : null;
+    const dateOf = (t: EventTarget | null): string | null => cellOf(t)?.dataset.date ?? null;
     const over = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse') return;
-      const c = cellOf(e.target);
-      if (!c) return;
-      clear();
-      // すでに出ていれば隣のマスへすぐ移す
+      const d = dateOf(e.target);
+      if (!d) return;
       setAt((cur) => {
-        if (cur) return c;
-        timer.current = window.setTimeout(() => setAt(c), TIP_SHOW_MS);
+        if (cur?.by === 'focus') return cur;
+        clear();
+        // すでに出ていれば隣のマスへすぐ移す
+        if (cur) return cur.date === d ? cur : { date: d, by: 'pointer' };
+        timer.current = window.setTimeout(() => setAt({ date: d, by: 'pointer' }), TIP_SHOW_MS);
         return cur;
       });
     };
     const out = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse') return;
-      const c = cellOf(e.target);
-      if (c && cellOf(e.relatedTarget) === c) return;
-      clear();
-      timer.current = window.setTimeout(() => setAt(null), TIP_HIDE_MS);
+      const d = dateOf(e.target);
+      // 同じ日のマスの中（描き直して替わった要素も）へ移るだけなら消さない
+      if (d && dateOf(e.relatedTarget) === d) return;
+      setAt((cur) => {
+        if (cur?.by === 'focus') return cur;
+        clear();
+        timer.current = window.setTimeout(() => setAt(null), TIP_HIDE_MS);
+        return cur;
+      });
     };
     const focusIn = (e: FocusEvent) => {
       const c = cellOf(e.target);
+      const d = c?.dataset.date;
       clear();
-      setAt(c?.matches(':focus-visible') ? c : null);
+      setAt(c?.matches(':focus-visible') && d ? { date: d, by: 'focus' } : null);
     };
     const focusOut = () => {
       clear();
@@ -1620,13 +1632,16 @@ function MonthCellTip({ gridRef, tipStore }: { gridRef: RefObject<HTMLElement | 
     return () => window.removeEventListener('keydown', onKey, true);
   }, [at]);
   // 文は日付で引く（描画中に DOM の data-* を読まない。休みを切り替えたら新しい文。PR #42 のレビュー）
-  const date = at?.dataset.date ?? null;
+  const date = at?.date ?? null;
   const tip = useSyncExternalStore(tipStore.subscribe, () => (date ? tipStore.get(date) : null));
+  // 置く先は日付でいまのマスを引く（描き直しで要素が替わっても同じ日のマス）
+  const cellAt = () =>
+    date ? (gridRef.current?.querySelector<HTMLElement>(`[data-tip][data-date="${date}"]`) ?? null) : null;
   return (
     <TipBubble
       id={tipId}
-      anchor={() => (at?.isConnected ? at : null)}
-      open={!!at?.isConnected}
+      anchor={cellAt}
+      open={!!tip && !!cellAt()}
       className="is-passive month-cell-tip"
       testId="month-cell-tip"
     >

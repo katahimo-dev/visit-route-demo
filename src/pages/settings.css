@@ -109,6 +109,15 @@
   border-color: transparent;
   background: transparent;
 }
+/* タッチの端末：24px のボタンの押せる所を 44px に。「名前を変える」と「消す」の間を広げ、押せる所を重ねない */
+@media (pointer: coarse) {
+  .opt-chip .icon-btn::before {
+    inset: -10px;
+  }
+  .opt-chip .icon-btn + .icon-btn {
+    margin-left: 16px;
+  }
+}
 .opt-chip .icon-btn svg {
   width: 13px;
   height: 13px;

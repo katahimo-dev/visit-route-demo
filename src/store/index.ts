@@ -98,14 +98,39 @@ export function importJson(text: string): DemoData | ImportError {
   return migrate(raw);
 }
 
+/** 書き出す JSON の文字（控えのファイルの中身） */
+function jsonText(data: DemoData): string {
+  return JSON.stringify(data, null, 2);
+}
+
 export function exportJson(data: DemoData): Blob {
-  return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  return new Blob([jsonText(data)], { type: 'application/json' });
 }
 
 export const isImportError = (x: DemoData | ImportError): x is ImportError => 'code' in x && 'message' in x;
 
-/** 即時に書く。失敗したら利用者向けの文言を返す（成功は null） */
+/** 画面が使っている最新のデータ（読み込み・保存・初期化・別のタブからの読み直しで覚える。例外の画面の控えに使う） */
+let current: DemoData | null = null;
+/** 最後に書いたときの失敗の文言（成功したら null） */
+let lastSaveError: string | null = null;
+
+/** 画面が使っている最新のデータを覚える（Provider がデータの変わるたびに呼ぶ。null で忘れる） */
+export function rememberCurrent(data: DemoData | null): void {
+  current = data;
+}
+
+/** 覚えている最新のデータ（まだ無ければ null） */
+export function currentData(): DemoData | null {
+  return current;
+}
+
+/** 即時に書く。失敗したら利用者向けの文言を返す（成功は null）。結果は lastSaveError にも残す */
 function writeNow(data: DemoData): string | null {
+  lastSaveError = tryWrite(data);
+  return lastSaveError;
+}
+
+function tryWrite(data: DemoData): string | null {
   const ls = storage();
   if (!ls) return '保存できませんでした（このブラウザでは保存が使えません）。データを書き出してください';
   try {
@@ -126,6 +151,7 @@ export function load(): DemoData {
   if (text === null) {
     const d = createDemoData(todayDate);
     writeNow(d);
+    current = d;
     return d;
   }
   const r = importJson(text);
@@ -135,10 +161,12 @@ export function load(): DemoData {
     } catch {
       // 退避できなくても続ける
     }
-    return createDemoData(todayDate);
+    current = createDemoData(todayDate);
+    return current;
   }
   const extended = extendDays(r, todayDate);
   if (extended !== r) writeNow(extended);
+  current = extended;
   return extended;
 }
 
@@ -162,22 +190,52 @@ export function flushSave(): void {
  * 結果は onError に渡す（成功は null、容量超過などは利用者向けの文言）
  */
 export function save(data: DemoData, onError?: (message: string | null) => void): void {
+  current = data;
   pending = { data, onError };
   if (timer) return;
   timer = setTimeout(flushSave, SAVE_INTERVAL_MS);
 }
 
+/** 控え（バックアップ）のファイル。current＝いまのデータ、broken＝壊れて読めず退避したデータ（BROKEN_KEY の文字のまま） */
+export type BackupFile = { kind: 'current' | 'broken'; text: string };
+export type Backup = {
+  files: BackupFile[];
+  /** いまのデータをどこから取ったか：memory＝画面が使っている最新のデータ、storage＝ブラウザに保存してある文字。無ければ null */
+  source: 'memory' | 'storage' | null;
+  /** 保存に失敗していたときの文言（容量超過・保存が使えない）。失敗していなければ null */
+  saveError: string | null;
+};
+
 /**
- * 例外の画面の控え（バックアップ）：待っている保存を先に書き、保存してある JSON の文字をそのまま返す（壊れていても手を加えない）。
- * 保存が無い・読めないときは null
+ * 例外の画面の控え（バックアップ）。待っている保存を先に書き（失敗は saveError に）、
+ * いまのデータは画面が使っている最新のデータ（データの画面の書き出しと同じ形）を、無ければ保存してある文字をそのまま使う。
+ * 壊れて退避したデータ（BROKEN_KEY）があれば、それも別のファイルとして返す
  */
-export function backupText(): string | null {
+export function backup(): Backup {
   flushSave();
-  try {
-    return storage()?.getItem(STORAGE_KEY) ?? null;
-  } catch {
-    return null;
+  const ls = storage();
+  const read = (key: string): string | null => {
+    try {
+      return ls?.getItem(key) ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const files: BackupFile[] = [];
+  let source: Backup['source'] = null;
+  if (current) {
+    files.push({ kind: 'current', text: jsonText(current) });
+    source = 'memory';
+  } else {
+    const text = read(STORAGE_KEY);
+    if (text !== null) {
+      files.push({ kind: 'current', text });
+      source = 'storage';
+    }
   }
+  const broken = read(BROKEN_KEY);
+  if (broken !== null) files.push({ kind: 'broken', text: broken });
+  return { files, source, saveError: lastSaveError };
 }
 
 export function reset(): DemoData {
@@ -186,6 +244,7 @@ export function reset(): DemoData {
   pending = null;
   const d = createDemoData(today());
   writeNow(d);
+  current = d;
   return d;
 }
 

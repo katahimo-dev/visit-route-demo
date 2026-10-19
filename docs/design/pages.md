@@ -78,7 +78,7 @@
 |---|---|---|---|
 | `--primary` | `#b8503e`（濃い朱） | 主ボタンの地（白い文字）・選んだ印の枠・今の画面の印 | 白い文字 4.9 |
 | `--primary-dark` | `#9c4232` | 主ボタンの影・選んだ印の文字（淡い朱の地 `--primary-soft` の上） | 白で 6.5・淡い朱で 5.5 |
-| 主ボタンを重ねたとき | `#a64838` | `.btn-primary:hover` の地 | 白い文字 5.8 |
+| `--primary-hover` | `#a64838` | 主ボタンを重ねたときの地（`.btn-primary:hover`） | 白い文字 5.8 |
 | `--accent` | `#e8735f`（明るい朱） | 飾りの帯・線だけ（確認ダイアログとツアーの上の帯、ホームの「やること」と振り直しの帯の左の線）。文字・枠の印には使わない | — |
 | `--focus` | `--primary-dark` | フォーカスの輪 | 白で 6.5・`--bg` で 5.8 |
 | `--ink` | `#3b2f2a` | 本文 | 白で 12.9 |
@@ -98,10 +98,10 @@
 
 - 主ボタン（`.btn-primary`）は塗り、戻せない操作（`.btn-danger`）は白地に赤い枠と文字で、形でも分ける
 - フォーカスの輪は `outline: 3px solid var(--focus)`（`:focus-visible`。リストの候補の `is-active` も）。枠の中に描く所（`.segmented` は `overflow: hidden` で外側が切れる・帯の中のボタン）は `outline-offset: -3px`
-- 書体は Mac の丸ゴシック・ヒラギノの次に Windows の BIZ UDPゴシック・游ゴシック・メイリオ、その後ろに Noto Sans JP・`system-ui`。本文の行の高さは 1.5
+- 書体は Mac の丸ゴシック・ヒラギノの次に Windows の BIZ UDPゴシック・游ゴシック（Regular は細いので Medium を先）・メイリオ、その後ろに Noto Sans JP・`system-ui`。本文の行の高さは 1.5
 - 動きを減らす設定（`prefers-reduced-motion: reduce`）では、出てくる動き・点滅・なめらかな巻き取りをやめる（CSS は動きと移り変わりを一瞬で終える。`animationend` を待つ所があるので消さない）。`scrollIntoView` の `behavior` は `lib/motion` の `scrollBehavior()`（設定があれば `auto`、ほかは `smooth`。テストあり）
 - 浮かせた地図（`.map-dock`）は専用の `map-dock-in`（薄い所から少し下から出る）。トーストの `toast-in` は横の中央寄せを含むので使わない
-- タッチの端末（`pointer: coarse`）では、押せる所を見た目と並びを変えずに `::before` で広げる：アイコンだけのボタン（`.icon-btn` 32px・`.icon-btn-sm` 26px）は 44px、名前の i（`.person-info`）と〈利用者さん〉の選択の ×（`.client-picker-remove`）は 32px。隣に押せる要素が並ぶ側は間の半分だけ（アイコンのボタンは 2px、i は 1px）広げ、隣の押せる所に掛けない。担当ごとの1日の行の i は上下の行に掛けず右へ（32×24px）、チップの中の i は名前に掛からないよう縦に（25×29px）。390px で広げた所がほかの押せる要素に掛からない（上の帯・下のタブなど前に重なる部品は除く）
+- タッチの端末（`pointer: coarse`）では、押せる所を見た目と並びを変えずに `::before` で広げる：アイコンだけのボタン（`.icon-btn` 32px・`.icon-btn-sm` 26px・項目の選択肢のチップの中の 24px）は 44px、名前の i（`.person-info`）と〈利用者さん〉の選択の ×（`.client-picker-remove`）は 32px。隣に押せる要素が並ぶ側は間の半分だけ（アイコンのボタンは 2px、i は 1px）広げ、隣の押せる所に掛けない。担当ごとの1日の行の i は上下の行に掛けず右へ（32×24px）、チップの中の i は名前に掛からないよう縦に（25×29px）。選択肢のチップの「名前を変える」と「消す」は、タッチの端末でだけ間を 16px 広げて 44×44px ずつにする（消すの押し間違いを防ぐ）。390px で広げた所がほかの押せる要素に掛からない（上の帯・下のタブなど前に重なる部品は除く）
 - 860px 以下では入力欄の文字を 16px 以上にする（iPhone で押したときに画面が拡大されない）。クラスで小さくしている欄（`ClientPicker`・`ClientFilter` の〈スタッフ〉の選択）はそれぞれの CSS で 16px
 
 ### メニューとナビゲーション（ADR-0024・ADR-0027。PRD D132〜D135・D178〜D183）
@@ -208,7 +208,7 @@
 - z-index 1300。480px 以下はボタンを縦に幅いっぱい（確定が上）。印刷では出さない
 - `ConfirmProvider`：`main.tsx` でトーストの内側（Router の内側）に1つ。並びと答え（Promise の resolve）を持ち、外れるとき・画面（`useLocation().pathname`）が変わったときは残りを取り消しで答えて並びを空にする
 - `useConfirm()`：`const ok = await confirmDialog({...})`。Provider の外では例外
-- `app/ErrorBoundary`：状態 `asking` で `ConfirmDialog` を直に出す（Provider・ルーターに頼らない。main.tsx の外側の ErrorBoundary でも出る）。ボタンは［控え（バックアップ）を書き出す］（主ボタン。store の `backupText()`＝待っている保存を先に書き、保存してある JSON の文字をそのまま返す。`lib/download` の `saveBlob`・`backupFileName` でデータの画面と同じファイル名。結果は `output` の文で知らせる（トーストは Provider の外で出せない））・［もう一度表示する］・［データを初期状態に戻す］（`.btn-danger`。確認の本文で先に控えを書き出せることを添える）
+- `app/ErrorBoundary`：状態 `asking` で `ConfirmDialog` を直に出す（Provider・ルーターに頼らない。main.tsx の外側の ErrorBoundary でも出る）。ボタンは［控え（バックアップ）を書き出す］（主ボタン。store の `backup()` のファイルを `lib/download` の `saveBlob` で書き出す。いまのデータは `backupFileName(date)`＝データの画面と同じ名前、壊れて退避したデータは `-broken.json` の別のファイル。結果は `backupNote` の文を `output` で知らせる（保存に失敗していたら「画面で使っていた最新の状態」か「最後に保存できた状態」かと理由を区別する。トーストは Provider の外で出せない。テストあり））・［もう一度表示する］・［データを初期状態に戻す］（`.btn-danger`。確認の本文で先に控えを書き出せることを添える）
 
 #### 呼ぶ側の決まり
 

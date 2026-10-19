@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { type DemoData, STORAGE_KEY } from '../contracts/data';
-import { flushSave, importJson, isImportError, load, reset as resetStore, save } from './index';
+import { flushSave, importJson, isImportError, load, rememberCurrent, reset as resetStore, save } from './index';
 
 export type DemoStore = {
   data: DemoData;
@@ -23,6 +23,8 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
   const skipSave = useRef(true);
 
   useEffect(() => {
+    // 例外の画面の控えは、画面が使っている最新のデータを書き出す（別のタブから読み直したデータも）
+    rememberCurrent(data);
     if (skipSave.current) {
       skipSave.current = false;
       return;

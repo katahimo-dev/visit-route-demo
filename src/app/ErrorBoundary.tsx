@@ -1,8 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { jstDate } from '../domain/time';
-import { backupFileName, saveBlob } from '../lib/download';
-import { backupText } from '../store';
+import { backupFileName, backupNote, saveBlob } from '../lib/download';
+import { backup } from '../store';
 
 /**
  * 画面の例外で真っ白にしない。主ボタンは「控え（バックアップ）を書き出す」（いまのデータを JSON で残す）、
@@ -24,16 +24,21 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
     this.setState({ componentStack: info.componentStack ?? '' });
   }
 
-  /** 保存してあるデータを JSON のファイルに書き出す（トーストは Provider の外では出せないので、結果は画面の文で知らせる） */
+  /**
+   * いまのデータ（画面の最新。無ければ保存してある文字）を JSON のファイルに書き出す。壊れて退避したデータがあれば別のファイルにも。
+   * 保存に失敗していたときは文で区別する（トーストは Provider の外では出せないので、結果は画面の文で知らせる）
+   */
   backup = () => {
     try {
-      const text = backupText();
-      if (text === null) {
-        this.setState({ backup: '書き出せるデータがありません（このブラウザに保存されていません）' });
-        return;
+      const b = backup();
+      const date = jstDate(Date.now());
+      let brokenName: string | null = null;
+      for (const f of b.files) {
+        const name = backupFileName(date, f.kind);
+        if (f.kind === 'broken') brokenName = name;
+        saveBlob(new Blob([f.text], { type: 'application/json' }), name);
       }
-      saveBlob(new Blob([text], { type: 'application/json' }), backupFileName(jstDate(Date.now())));
-      this.setState({ backup: '書き出しました' });
+      this.setState({ backup: backupNote({ source: b.source, saveError: b.saveError, brokenName }) });
     } catch (e) {
       this.setState({ backup: `書き出せませんでした（${e instanceof Error ? e.message : String(e)}）` });
     }
