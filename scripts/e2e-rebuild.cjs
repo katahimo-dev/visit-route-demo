@@ -66,6 +66,15 @@ let SECOND = '';
 async function prepare(page) {
   await page.goto(`${BASE}#/home`);
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
+  // 初期データ（今日から7日分の案を持つ。PRD D225）を作らせてから案を消し、案は今日と次の日の2日だけにする
+  await page.reload();
+  await page.getByTestId('home-tasks').waitFor({ timeout: 30000 });
+  await page.evaluate((key) => {
+    const d = JSON.parse(localStorage.getItem(key));
+    d.aiPlans = {};
+    d.aiRuns = {};
+    localStorage.setItem(key, JSON.stringify(d));
+  }, STORAGE_KEY);
   await page.goto(`${BASE}#/plan`);
   await page.reload();
   await planReady(page);

@@ -1,6 +1,6 @@
 # 月の画面と月の印刷
 
-> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）・`ClientLeavesSection.tsx`、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204。
+> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）・`ClientLeavesSection.tsx`、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223。
 > 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)。
 
 ### 月の画面（`#/month`）
@@ -95,7 +95,13 @@
 
 #### 右の欄（要対応・確定していない日）
 
-- 確定していない日 `month-unconfirmed`：行は `openDay`
+- 確定していない日（`progress.unconfirmed`＝今日以降の訪問があって確定済みでない日）：
+  - 上に「問題の無い日をまとめて確定（N日）」（`month-confirm-bulk`・`data-count`。PRD D223。主ボタンにしない（月の主ボタンは帯の次の一手））。確定していない日が0日なら出さない
+  - 対象は `lib/confirmDay` の `bulkConfirmTargets(unconfirmed, statusOf, attention)`（日の状態は `useDayStatuses` のもの）：一度も確定していない日（状態が「案あり」）で、必須の違反が0、かつ要対応（第3引数の `attentionList` の日付。入らない訪問・休みの人に残る訪問・条件が変わった・拘束超・欠勤）に出ない日。入らない訪問・休みの人に残る訪問・条件が変わったは状態からも見る。希望休だけの日（要対応に出ない）は対象に入れる。残すのは問題のある日（`problem`）・未確定の変更ありの日（`changed`。前に確定した割当を置き換えない。日の画面で確定し直す）・案の無い日（`noPlan`）
+  - 0日なら押せず、下に理由 `month-confirm-why`（aria-describedby。`bulkConfirmWhy`：問題のある日がある／未確定の変更ありの日がある／案の無い日だけ）。あれば下に対象の決まりの1行（`month-confirm-note`）。作っている間（まとめて作る）は押せない。印刷では出さない
+  - 押すと独自の確認（`bulkConfirmDialog`）：見出し「問題の無い N日を確定しますか？」、本文に日付（`datesText`：「10/22（水）・10/23（木）… 計 N日」。7日を超えたら先頭6日と「…」）・担当が書き換わる旨・「問題のある M日は残します（要対応で確認）：日付」・「前に確定した割当と違う M日も残します（日の画面で確定し直します）。」・「案の無い M日も残します。」、ボタン「N日を確定する」
+  - 確定すると1回の `update` で、日ごとに `confirmDay(d, date, problem)`（日の画面の「この割当で確定」と同じ書き方。問題は日の状態を数えたときのもの）。確認のあいだに案が消えた日は飛ばす。知らせ「N日を確定しました」。フォーカスは右の欄へ（ボタンは0日になって押せなくなる）
+- 確定していない日の一覧 `month-unconfirmed`：行は `openDay`（その日の日の画面）
 - 要対応 `month-attention`（`attentionList`）：入らない訪問・休みの人に訪問 N件（`absentLeft`）・欠勤（希望休でない欠勤だけ）・条件が変わった・「拘束が N時間を超える 名前」（overSpan）。無ければ「今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日はありません。」
 - 要対応の行は `attentionTarget` の行き先へ（`openTarget`＝選んでいる日付をその日にしてから `navigate(to)`）。行は1つのボタンのまま、2つ目の span の下に `.month-attention-go`（行き先の文「（〜で開く）」）。`data-to` に行き先
 - `Attention` の `staffIds?`（overSpan のときだけ。拘束が上限を超える人の id。`names` と同じ順）
@@ -177,4 +183,5 @@
 - [ ] 要対応の行き先（入らない訪問 → 日の画面の入らなかった訪問・休みの人に訪問 → 欠勤・キャンセルの欄の1段目・拘束の上限超え → 稼働の見込みのその月・その人・そのほか → 日の画面）（`scripts/e2e-links.cjs`）
 - [ ] 390px ははじめ日ごとの一覧（今日の行が画面に入る・「今日へ」）・`?layout=`・1400px ははじめカレンダー・月の印刷は変わらない（`scripts/e2e-tour.cjs`）
 - [ ] 凡例ははじめ畳む・マスに title を出さない・マウスを重ねる／キーボードでマスの読み方（`scripts/e2e-words.cjs`）
-- [ ] `lib/month`（月の日付・6週・対象の日の3つの mode・状態・overSpan の `staffIds`）・`lib/monthList`・`lib/monthGuide`・`lib/requestedOff`・`lib/monthPrint` のテストが通る
+- [ ] （D223）初期データの月で「問題の無い日をまとめて確定（N日）」を押すと確認に日付が並び、確定するとその日が確定済み・ホームの確定していない日が N日減る。欠勤の人に訪問が残る日は対象から外れ、確認に日付が出る。未確定の変更ありの日は外れ、そのまま残る（`scripts/e2e-home.cjs`）
+- [ ] `lib/month`（月の日付・6週・対象の日の3つの mode・状態・overSpan の `staffIds`）・`lib/monthList`・`lib/monthGuide`・`lib/requestedOff`・`lib/monthPrint`・`lib/confirmDay` のテストが通る

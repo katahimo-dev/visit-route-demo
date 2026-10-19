@@ -1,7 +1,8 @@
 // 区切り8b（PRD D189〜D193。ADR-0025 追記）を本物のブラウザで確かめる：
-// 初回の案内ツアー（初めて開くと中央のカード・role="dialog"・aria-modal・見出しと本文・1 / 5・最初のフォーカスは「次へ」・
+// 初回の案内ツアー（初めて開くと中央のカード・role="dialog"・aria-modal・見出しと本文・1 / 6・最初のフォーカスは「次へ」・
 // 裏の inert とスクロールのロック・「戻る」は最初の枚で押せずフォーカスを「次へ」へ・Tab と Shift+Tab が中で回る・
-// 開いている間は Ctrl+K でパレットを開かない・最後は「はじめる」で閉じて見たことを localStorage（DemoData と別のキー）に覚える・
+// 開いている間は Ctrl+K でパレットを開かない・最後の枚は3段（AI案 → 手直し（固定）→ 確定）の説明と主ボタン「今日の予定を開く」・「閉じる」（とばすは出さない。PRD D226）・
+// 「閉じる」で閉じて見たことを localStorage（DemoData と別のキー）に覚える・「今日の予定を開く」で閉じて今日の日の画面へ・
 // 最後の枚まで進んだら覚える・読み直しても出ない・Esc と「とばす」でも覚える・?id=・?do= のリンクでは出さない（見たことにもしない）・データの画面の「案内をもう一度見る」で開き閉じるとフォーカスがボタンへ・
 // 初期状態に戻しても見たことは残る・「見た」の印（scripts/lib/tourSeen.cjs）があれば自動で出ない・月の印刷の画面では出ない・
 // 390px で収まる・印刷で出さない）、
@@ -75,7 +76,7 @@ async function tourFirst(b) {
     attrs,
   );
   check(/#\/home/.test(hashOf(page)), 'ツアー：裏はホーム', hashOf(page));
-  check((await page.getByTestId('tour-count').innerText()).includes('1 / 5'), 'ツアー：1 / 5');
+  check((await page.getByTestId('tour-count').innerText()).includes('1 / 6'), 'ツアー：1 / 6');
   check((await activeTestId(page)) === 'tour-next', 'ツアー：最初のフォーカスは「次へ」');
   check(await page.getByTestId('tour-back').isDisabled(), 'ツアー：最初の枚は「戻る」を押せない');
   const lock = await page.evaluate(() => ({
@@ -107,31 +108,66 @@ async function tourFirst(b) {
   check((await page.getByTestId('cmdk-wrap').count()) === 0, 'ツアー：開いている間は Ctrl+K で探す画面を開かない');
   // 次へ → 戻る
   await page.getByTestId('tour-next').click();
-  check((await page.getByTestId('tour-count').innerText()).includes('2 / 5'), 'ツアー：次へで 2 / 5');
+  check((await page.getByTestId('tour-count').innerText()).includes('2 / 6'), 'ツアー：次へで 2 / 6');
   check((await tour(page).getAttribute('data-step')) === 'plan', 'ツアー：2枚目は予定（月・週・日）');
   await page.getByTestId('tour-back').click();
-  check((await page.getByTestId('tour-count').innerText()).includes('1 / 5'), 'ツアー：戻るで 1 / 5');
+  check((await page.getByTestId('tour-count').innerText()).includes('1 / 6'), 'ツアー：戻るで 1 / 6');
   check(
     (await activeTestId(page)) === 'tour-next',
     'ツアー：最初の枚へ戻って「戻る」が押せなくなるとフォーカスは「次へ」',
   );
   const keys = [];
-  for (let i = 0; i < 4; i++) {
+  let searchTitle = '';
+  for (let i = 0; i < 5; i++) {
     keys.push(await tour(page).getAttribute('data-step'));
-    if (i === 3) check((await seenValue(page)) === null, 'ツアー：途中（4枚目まで）は覚えない');
+    if (i === 4) {
+      searchTitle = await page.getByTestId('tour-title').innerText();
+      check((await seenValue(page)) === null, 'ツアー：途中（5枚目まで）は覚えない');
+    }
     await page.getByTestId('tour-next').click();
   }
   keys.push(await tour(page).getAttribute('data-step'));
   check(
-    JSON.stringify(keys) === JSON.stringify(['home', 'plan', 'absence', 'rules', 'search']),
-    'ツアー：5枚（ホーム・予定・欠勤・キャンセル・条件・探す）',
+    JSON.stringify(keys) === JSON.stringify(['home', 'plan', 'absence', 'rules', 'search', 'flow']),
+    'ツアー：6枚（ホーム・予定・欠勤・キャンセル・条件・探す・3段）',
     keys,
   );
-  check((await page.getByTestId('tour-title').innerText()).includes('Ctrl+K'), 'ツアー：最後は Ctrl+K で探せる');
+  check(searchTitle.includes('Ctrl+K'), 'ツアー：5枚目は Ctrl+K で探せる', searchTitle);
+  // 最後の枚：3段の説明と「今日の予定を開く」（PRD D226）
+  const points = await page.getByTestId('tour-points').locator('li').allInnerTexts();
   check(
-    (await page.getByTestId('tour-next').innerText()).trim() === 'はじめる',
-    'ツアー：最後の枚のボタンは「はじめる」',
+    (await page.getByTestId('tour-title').innerText()).includes('AI案 → 手直し → 確定') &&
+      points.length === 3 &&
+      /^AI案：/.test(points[0]) &&
+      /^手直し（固定）：/.test(points[1]) &&
+      /^確定：/.test(points[2]),
+    'ツアー：最後の枚は3段（AI案 → 手直し（固定）→ 確定）の説明',
+    points,
   );
+  const lastBtns = await page.locator('[data-testid="tour"] .tour-actions button').evaluateAll((els) =>
+    els.map((e) => ({
+      id: e.dataset.testid,
+      text: e.textContent.trim(),
+      primary: e.classList.contains('btn-primary'),
+    })),
+  );
+  check(
+    JSON.stringify(lastBtns.filter((x) => x.primary).map((x) => x.id)) === '["tour-today"]' &&
+      lastBtns.find((x) => x.id === 'tour-today')?.text === '今日の予定を開く' &&
+      !lastBtns.some((x) => x.id === 'tour-skip'),
+    'ツアー：最後の枚の主ボタンは「今日の予定を開く」だけ（「とばす」は出さない）',
+    lastBtns,
+  );
+  check((await page.getByTestId('tour-next').innerText()).trim() === '閉じる', 'ツアー：最後の枚のボタンは「閉じる」');
+  check(
+    (await activeTestId(page)) === 'tour-today',
+    'ツアー：最後の枚に入るとフォーカスは主ボタン「今日の予定を開く」',
+    await activeTestId(page),
+  );
+  const body = await tour(page).evaluate(
+    (el) => document.getElementById(el.getAttribute('aria-describedby'))?.textContent ?? '',
+  );
+  check(/AI案：/.test(body) && /確定：/.test(body), 'ツアー：最後の枚の説明（aria-describedby）に3段も入る', body);
   check((await seenValue(page)) === '1', 'ツアー：最後の枚まで進んだら閉じる前でも見たことを覚える');
   await page.screenshot({ path: path.join(OUT_DIR, 'tour-last.png') });
   await page.getByTestId('tour-next').click();
@@ -147,7 +183,7 @@ async function tourFirst(b) {
   );
   check(
     after.seen === '1' && !after.inert && after.html === '' && !after.dataHasTour,
-    '「はじめる」で閉じ、見たことを DemoData と別のキーに覚える・裏の inert とロックを戻す',
+    '「閉じる」で閉じ、見たことを DemoData と別のキーに覚える・裏の inert とロックを戻す',
     after,
   );
   // 読み直しても出ない
@@ -211,6 +247,42 @@ async function tourEscSkip(b) {
   }
 }
 
+// 最後の枚の「今日の予定を開く」（PRD D226）：閉じて今日の日の画面（選んでいる日付は今日）。見たことを覚える
+async function tourToday(b) {
+  const { ctx, page } = await newPage(b, { human: true });
+  await open(page, '/month', '[data-testid="tour"]');
+  for (let i = 0; i < 5; i++) await page.getByTestId('tour-next').click();
+  check((await tour(page).getAttribute('data-step')) === 'flow', '「今日の予定を開く」：最後の枚まで進む');
+  // フォーカスは「今日の予定を開く」にあるので、Enter で押せる
+  check((await activeTestId(page)) === 'tour-today', '「今日の予定を開く」：最後の枚ではフォーカスがこのボタン');
+  await page.keyboard.press('Enter');
+  await tour(page).waitFor({ state: 'detached' });
+  await page.waitForURL(/#\/plan/);
+  await page.locator('.date-switch select').waitFor({ timeout: 30000 });
+  await page.waitForFunction(() => !/date=/.test(location.hash), null, { timeout: 5000 }).catch(() => {});
+  const st = await page.evaluate(
+    (k) => ({
+      date: document.querySelector('.date-switch select')?.value,
+      hash: decodeURIComponent(location.hash),
+      seen: localStorage.getItem(k),
+      inert: document.getElementById('root').inert,
+    }),
+    TOUR_KEY,
+  );
+  check(
+    st.date === TODAY && st.hash === '#/plan' && st.seen === '1' && !st.inert,
+    '「今日の予定を開く」で閉じ、今日の日の画面（?date= は消える）・見たことを覚える',
+    st,
+  );
+  // 初期データに今日の案がある（PRD D225）ので、そのまま確定の手前まで見える
+  await page.getByTestId('confirm-state').waitFor({ timeout: 30000 });
+  check(
+    /未確定/.test(await page.getByTestId('confirm-state').innerText()),
+    '「今日の予定を開く」：今日の案が出ている（未確定）',
+  );
+  await ctx.close();
+}
+
 async function tourAgain(b) {
   // 「見た」の印があれば自動で出ない（ほかの e2e は skipTour で印を入れる）。データの画面から開ける
   const { ctx, page } = await newPage(b, { human: false });
@@ -225,7 +297,7 @@ async function tourAgain(b) {
   await btn.click();
   await tour(page).waitFor();
   check(
-    (await page.getByTestId('tour-count').innerText()).includes('1 / 5'),
+    (await page.getByTestId('tour-count').innerText()).includes('1 / 6'),
     'データの「案内をもう一度見る」で1枚目から開く',
   );
   await page.keyboard.press('Escape');
@@ -255,7 +327,7 @@ async function tourAgain(b) {
 async function tourMobilePrint(b) {
   const { ctx, page } = await newPage(b, { human: true, width: 390, height: 844 });
   await open(page, '/', '[data-testid="tour"]');
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     const box = await tour(page).boundingBox();
     const btns = await page
       .locator('[data-testid="tour"] button')
@@ -274,7 +346,8 @@ async function tourMobilePrint(b) {
       { box, sw },
     );
     if (i === 0) await page.screenshot({ path: path.join(OUT_DIR, 'tour-390.png') });
-    if (i < 4) await page.getByTestId('tour-next').click();
+    if (i === 5) await page.screenshot({ path: path.join(OUT_DIR, 'tour-last-390.png') });
+    if (i < 5) await page.getByTestId('tour-next').click();
   }
   await page.emulateMedia({ media: 'print' });
   check(!(await visible(tour(page))), '印刷ではツアーを出さない');
@@ -484,14 +557,31 @@ async function monthList(b) {
   await page.waitForURL(/#\/plan/);
   const sel = await page.locator('.date-switch select').inputValue();
   check(sel === target, '行を押すとその日の日の画面', { sel, target });
-  // 「休みを入れる」：〈スタッフ〉を選んで、勤務日の行を押すと希望休を付け外し
-  await open(page, `/month?ym=${YM}`, '[data-testid="month-list"]');
-  const staffOpt = await page
-    .locator('[data-testid="month-focus"] option')
-    .evaluateAll((els) => els.map((e) => e.value).find((v) => v.startsWith('staff:')));
-  await page.getByTestId('month-focus').selectOption(staffOpt);
-  await page.getByTestId('month-off-toggle').click();
+  // 「休みを入れる」：〈スタッフ〉を選んで、勤務日の行を押すと希望休を付け外し。
+  // 希望休を入れられる行（data-off="open"）がある〈スタッフ〉を探す。今月に1つも無ければ（月末で残りの日に働く人がいない）翌月で
+  const nextYm = (() => {
+    const [y, m] = YM.split('-').map(Number);
+    return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+  })();
   const openRow = page.locator('[data-testid="month-list-day"][data-off="open"]').first();
+  let found = false;
+  for (const ym of [YM, nextYm]) {
+    await open(page, `/month?ym=${ym}`, '[data-testid="month-list"]');
+    const staffOpts = await page
+      .locator('[data-testid="month-focus"] option')
+      .evaluateAll((els) => els.map((e) => e.value).filter((v) => v.startsWith('staff:')));
+    for (const [i, v] of staffOpts.entries()) {
+      await page.getByTestId('month-focus').selectOption(v);
+      if (i === 0) await page.getByTestId('month-off-toggle').click();
+      await page.locator('[data-testid="month-list-day"][data-off]').first().waitFor({ timeout: 10000 });
+      if ((await openRow.count()) > 0) {
+        found = true;
+        break;
+      }
+    }
+    if (found) break;
+  }
+  check(found, '「休みを入れる」：希望休を入れられる行のある〈スタッフ〉がいる（今月に無ければ翌月）');
   await openRow.waitFor({ timeout: 10000 });
   const offDate = await openRow.getAttribute('data-date');
   await openRow.click();
@@ -531,6 +621,7 @@ run(async () => {
   for (const [name, fn] of [
     ['tour-first', tourFirst],
     ['tour-esc-skip', tourEscSkip],
+    ['tour-today', tourToday],
     ['tour-again', tourAgain],
     ['tour-mobile-print', tourMobilePrint],
     ['file-pick', filePick],

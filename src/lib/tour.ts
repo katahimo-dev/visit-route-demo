@@ -1,14 +1,16 @@
-// 初回の案内ツアー（PRD D192・D193。ADR-0025 追記。区切り8b）の純粋な部分：案内の中身（5枚）、
-// 「次へ」「戻る」「とばす」の行き先、自動で開くか。画面は components/Tour.tsx、見たかの保存は store/tour.ts
+// 初回の案内ツアー（PRD D192・D193・D226。ADR-0025 追記・ADR-0031）の純粋な部分：案内の中身（6枚。最後は3段の説明と
+// 「今日の予定を開く」）、「次へ」「戻る」「とばす」の行き先、自動で開くか。画面は components/Tour.tsx、見たかの保存は store/tour.ts
 import type { Terms } from '../contracts/documents';
 import type { FeatureId, Features } from '../contracts/features';
 import { isOn } from './features';
 
 /** 案内の1枚 */
 export type TourStep = {
-  key: 'home' | 'plan' | 'absence' | 'rules' | 'search';
+  key: 'home' | 'plan' | 'absence' | 'rules' | 'search' | 'flow';
   title: string;
   body: string;
+  /** 本文の下に番号付きで並べる段（3段の説明） */
+  points?: string[];
   /** どこにあるか（メニュー・下のタブ・上の帯の名前） */
   where: string;
   /** その枚が案内する機能（切っていたら枚を出さない。土台の枚は無し） */
@@ -16,7 +18,8 @@ export type TourStep = {
 };
 
 /**
- * 案内の5枚（呼び方は terms。キーの印は mac なら ⌘K）。
+ * 案内の6枚（呼び方は terms。キーの印は mac なら ⌘K）。最後の枚は予定の組み方の3段（AI案 → 手直し（固定）→ 確定）で、
+ * 画面は「今日の予定を開く」を添える（PRD D226）。
  * features で切った機能の枚（欠勤・キャンセル・条件の重み）は出さない（PRD D213。枚数はそのぶん減る）
  */
 export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean, features: Features = {}): TourStep[] {
@@ -33,7 +36,7 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
     {
       key: 'plan',
       title: '予定は月・週・日で組みます',
-      body: 'AI が割当の案を作ります。日の画面で案を確かめ、必要なら手直しして「この割当で確定」を押します。月の画面では一月分の案をまとめて作れます。',
+      body: '月で一月分を見渡し、案をまとめて作って、問題の無い日をまとめて確定できます。週は人ごとの1週間、日はその日の割当を手直しして確定する画面です。',
       where: `メニューの「予定を組む」（${planItems}）`,
     },
     {
@@ -56,6 +59,17 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
       body: `上の「探す」か ${key} で、画面・操作・${terms.client}・${terms.staff}の名前を打って探し、そこへ移れます。この案内は「データ」の画面からもう一度見られます。`,
       where: '上の帯の「探す」',
     },
+    {
+      key: 'flow',
+      title: '予定は「AI案 → 手直し → 確定」の3段です',
+      body: '日ごとに、この3段で割当を決めます。まず今日の予定を開いてみましょう。',
+      points: [
+        'AI案：AI が、条件に合う担当と回る順番の案を作ります（日を開くと自動で作ります）。',
+        `手直し（固定）：替えたい訪問は別の${terms.staff}へドラッグします。動かした訪問は「固定」になり、残りを AI に組み直させても担当が残ります。`,
+        `確定：「この割当で確定」を押すと各訪問の担当が決まり、${terms.staff}の画面にも出ます。`,
+      ],
+      where: 'メニューの「予定を組む」の「日」',
+    },
   ];
   return all.filter((s) => !s.feature || isOn(features, s.feature));
 }
@@ -64,7 +78,7 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
 export type TourMove = 'next' | 'back' | 'skip';
 
 /**
- * 次に出す枚の番号。閉じるときは null（とばす・最後の枚の「次へ」＝「はじめる」）。
+ * 次に出す枚の番号。閉じるときは null（とばす・最後の枚の「次へ」＝「閉じる」）。
  * 最初の枚の「戻る」は動かない。count が 0 なら閉じる
  */
 export function tourMove(index: number, count: number, move: TourMove): number | null {
@@ -74,10 +88,13 @@ export function tourMove(index: number, count: number, move: TourMove): number |
   return i + 1 >= count ? null : i + 1;
 }
 
-/** 「次へ」のボタンの文（最後の枚は「はじめる」） */
-export const tourNextLabel = (index: number, count: number): string => (index >= count - 1 ? 'はじめる' : '次へ');
+/** 「次へ」のボタンの文（最後の枚は「閉じる」。最後の枚の主ボタンは TOUR_TODAY_LABEL） */
+export const tourNextLabel = (index: number, count: number): string => (index >= count - 1 ? '閉じる' : '次へ');
 
-/** 何枚目か（「2 / 5」） */
+/** 最後の枚の主ボタン：閉じて今日の日の画面を開く（PRD D226） */
+export const TOUR_TODAY_LABEL = '今日の予定を開く';
+
+/** 何枚目か（「2 / 6」） */
 export const tourCountText = (index: number, count: number): string => `${index + 1} / ${count}`;
 
 /**
