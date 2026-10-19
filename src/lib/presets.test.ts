@@ -7,6 +7,7 @@ import {
   addPresetError,
   addPresetFromRules,
   patchPreset,
+  planRulesOf,
   removePreset,
   resetPresets,
   setScorePreset,
@@ -93,5 +94,22 @@ describe('点数の基準（ADR-0010）', () => {
     expect(scoreRulesOf(d)).toEqual(d.rules);
     expect(scorePresetOf(d.presets, 'nothing')?.id).toBe('standard');
     expect(scoreRulesOf({ rules: d.rules, presets: [] })).toBe(d.rules);
+  });
+});
+
+describe('AI案を作る条件（planRulesOf。ADR-0028。PRD D214）', () => {
+  it('条件の重みとプリセットが入ならいまの条件、切なら点数の基準のプリセットの重みを当てたもの（月まとめ作成と同じ）', () => {
+    const d0 = base();
+    // いまの条件をプリセットと違う重みにする
+    const d = { ...d0, rules: d0.rules.map((r, i) => (i === 0 ? { ...r, weight: r.weight + 7 } : r)) };
+    expect(planRulesOf(d, true)).toBe(d.rules);
+    const off = planRulesOf(d, false);
+    expect(off).toEqual(scoreRulesOf(d));
+    expect(off).not.toEqual(d.rules);
+    expect(presetOf(off, d.presets)?.id).toBe(scorePresetOf(d.presets, d.scorePresetId)!.id);
+    // 基準を切り替えると、その基準のプリセットで作る
+    const other = d.presets.find((p) => p.id !== scorePresetOf(d.presets, d.scorePresetId)!.id)!;
+    const d2 = setScorePreset(d, other.id);
+    expect(planRulesOf(d2, false)).toEqual(applyPreset(d.rules, other));
   });
 });

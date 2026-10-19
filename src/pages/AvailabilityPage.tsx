@@ -19,6 +19,7 @@ import { weekday } from '../domain/time';
 import { absenceText } from '../lib/absences';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
 import { linkIfOn, suddenHref } from '../lib/links';
+import { useFeature } from '../lib/useFeature';
 import { useDemoData } from '../store';
 import './schedule.css';
 
@@ -35,6 +36,8 @@ const short = (slots: Slot[]) =>
 export default function AvailabilityPage() {
   const { data, update } = useDemoData();
   const { date: today, dates } = useDay();
+  /** 欠勤・キャンセル（ADR-0028 の sudden）：切なら凡例で登録の場所（予定の画面）を案内しない（欠勤の印は事実なので出す） */
+  const suddenOn = useFeature('sudden');
   const terms = data.org.terms;
   const toast = useToast();
   const staff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
@@ -108,7 +111,7 @@ export default function AvailabilityPage() {
           </span>
           <span>
             <span className="avail-absence">欠勤</span>
-            急な欠勤（予定の画面で登録）
+            {suddenOn ? '急な欠勤（予定の画面で登録）' : '急な欠勤'}
           </span>
           <span>セルを押すと下で変えられます</span>
         </div>

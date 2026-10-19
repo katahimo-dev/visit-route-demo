@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import type { TravelMode } from '../contracts/codes';
 import type { Place } from '../contracts/documents';
 import { BICYCLE_NOTE, directionsHref, HOME_LABEL } from '../lib/mapsLink';
+import { useFeature } from '../lib/useFeature';
 import { WithIcon } from './ui';
 
 /** 開く先の注記（title） */
@@ -25,7 +26,9 @@ export function MapsLink({
   icon?: typeof Navigation;
   testId?: string;
 }) {
-  if (!href) return null;
+  // 道順のリンク（ADR-0028 の mapsLink）を切っていれば出さない
+  const on = useFeature('mapsLink');
+  if (!href || !on) return null;
   return (
     <a
       className="btn btn-small"
@@ -75,7 +78,10 @@ export function VisitRouteLinks({
   note?: string;
   testId?: string;
 }) {
+  const on = useFeature('mapsLink');
   const here = to ? directionsHref({ origin: null, destination: to, mode }) : null;
+  // 道順のリンク（ADR-0028 の mapsLink）を切っていれば、リンクも「未登録のため…」の文も出さない
+  if (!on) return null;
   const prev = to && from ? directionsHref({ origin: from, destination: to, mode }) : null;
   if (!here) {
     return (

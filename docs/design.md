@@ -367,10 +367,10 @@ flowchart LR
 - 責務：機能の表（ID・名前・1行の説明・グループ・依存・その機能の URL（ルート・`?do=`）・切ると隠れるもの・ひな形の入・切）と、入り切りの判定・ひな形の当て方・どのひな形と同じかの判定・切るときの件数の数え方。すべて純粋関数
 - 持つデータ（持ち主）：なし（入り切りは store の `org.features`。書き換えは画面が `update(fn)` で）
 - 提供するAPI：
-  - `lib/features.ts`（テストあり）：`FEATURES`（表）、`isOn(features, id)`（依存を見る。依存先が切なら切）、`featureOfLocation(pathname, search)`・`featureOfHref(href)`（URL がどの機能か。土台なら null）、`TEMPLATES`（基本・労務・契約管理・月次予定・現場共有・すべて）・`applyTemplate(id): Features`・`matchTemplate(features): TemplateId | 'custom'`、`templateDiff(features, id)`（入る機能・切れる機能。確認ダイアログの文）、`turnOffImpact(data, id)`（切るときに残る・外れるデータの件数と効き方。D215）、`calcFeaturesOf(features)`（計算に効く入り切り）
+  - `lib/features.ts`（テストあり）：`FEATURES`（表）、`isOn(features, id)`（依存を見る。依存先が切なら切）、`featureOfLocation(pathname, search)`・`featureOfHref(href)`（URL がどの機能か。土台なら null）、`TEMPLATES`（基本・労務・契約管理・月次予定・現場共有・すべて）・`applyTemplate(id): Features`・`matchTemplate(features): TemplateId | 'custom'`、`templateDiff(features, id)`（入る機能・切れる機能。確認ダイアログの文）、`turnOffImpact(data, id, today)`（切るときに残る・外れるデータの件数と効き方。D215。計算に効くものだけを数える：相性は利用中の〈利用者さん〉×休止でない〈スタッフ〉の組、担当を限るは限った人に休止でない人がいる利用中の〈利用者さん〉、休み・希望休・欠勤は今日以降に掛かるもの、空き状況は仮押さえの〈利用者さん〉。今日は引数で受け `Date.now` を使わない）、`calcFeaturesOf(features)`（計算に効く入り切り）
   - 表の `doParams`（その機能の操作の入口 `?do=`）：`sudden` は `/plan?do=absence`。`rules` は `/plan?do=recreate`（今日の案をいまの条件で作り直す）も持つ。`featureOfLocation` はパスを小文字にし末尾の `/` を落としてから比べる
   - `lib/useFeature.ts`：`useFeature(id): boolean`（`useDemoData()` の `org.features` を読むだけ）、`components/Feature.tsx`：`Feature` の部品（id を渡す）（切なら何も出さない）
-- 出し分ける所（URL の直書きをやめ、機能の表から引く）：`lib/nav.ts` の `menuSections(terms, today, features)`（下のタブ・上の帯の名前・パレットの画面は今どおりここから）、`app/App.tsx` のルート（切った機能の URL は `#/home` へ移し、知らせ（トースト）と `#/settings` へのリンク）、`lib/commandPalette.ts` の操作、`lib/home.ts` のカード、`lib/tour.ts` の枚、`lib/links.ts`（切った機能なら null を返し、呼ぶ側はリンクを出さない）、画面の中の欄・ボタン（`Feature` の部品）
+- 出し分ける所（URL の直書きをやめ、機能の表から引く）：`lib/nav.ts` の `menuSections(terms, today, features)`（下のタブ・上の帯の名前・パレットの画面は今どおりここから）、`app/App.tsx` のルート（切った機能の URL は `#/home` へ移し、知らせ（トースト）と `#/settings` へのリンク）、`lib/commandPalette.ts` の操作、`lib/home.ts` のカード、`lib/tour.ts` の枚、`lib/links.ts`（切った機能なら null を返し、呼ぶ側はリンクを出さない）、画面の中の欄・ボタン（`Feature` の部品）。`rules` が切なら、日の画面でいまの条件で作る所（「AI案を作る」・固定を残して組み直す）は `lib/presets` の `planRulesOf(data, false)`（いまの条件に点数の基準のプリセットの重みを当てたもの。月まとめ作成と同じ）で作る。切っても事実の表示（月の「休みの人に N」・すでに振り直した案の差の欄・帯・連絡の一覧）は残し、隠すのは入力・操作の入口だけ
 - 画面 `pages/SettingsPage.tsx`（`#/settings`。管理者設定）：ひな形の4つ（今のひな形の印・「当てる」は独自の確認ダイアログで `templateDiff` を出す）、グループごとのスイッチ（role="switch"・名前・説明・依存の注記・切ると隠れるもの）。切るときデータがあれば `turnOffImpact` の確認。主ボタンは置かない（スイッチはその場で保存）。だれでも開ける
 - 依存するもの：contracts（`features`）・store（読むだけ）
 - 配置：`src/lib/features.ts`・`src/lib/useFeature.ts`・`src/components/Feature.tsx`・`src/pages/SettingsPage.tsx`
@@ -1381,7 +1381,7 @@ export type RosterImportResult = {
 ### 機能の入り切り（`src/contracts/features.ts`・`src/contracts/documents.ts`・`src/contracts/data.ts`。ADR-0028）
 - `FEATURE_IDS`：`patternMonthly`・`clientLeave`・`requestedOff`・`monthPrint`・`compare`・`sudden`・`vacancy`・`vacancyNotice`・`compat`・`allowedStaff`・`clientStage`・`visitNotes`・`offboard`・`workload`・`fare`・`rules`・`mail`・`mapsLink`・`geocode`・`excel`（20）
 - `featuresSchema`：ID → boolean の部分的な表（知らない ID は捨てる）。無い ID は入。`orgSchema` に `features: featuresSchema.default({})`
-- `CALC_FEATURE_IDS = ['compat', 'allowedStaff']`（計算に効く機能）。`aiRunSchema` に `calcFeatures`（`Partial<Record<'compat'|'allowedStaff', boolean>>`。無ければすべて入）。今の `calcFeaturesOf(org.features)` と違う記録の日は「条件が変わった」（D43・D161。`rulesStale` と同じ扱い）
+- `CALC_FEATURE_IDS = ['compat', 'allowedStaff']`（計算に効く機能）。`aiRunSchema` に `calcFeatures`（`Partial<Record<'compat'|'allowedStaff', boolean>>`。無ければすべて入）。`lib/runs` の `addRun` が `calcFeaturesOf(org.features)`（切っているものだけ）を書き、すべて入なら書かない（すべて入のデータの記録は今までと同じ形）。`calcFeatures` は記録として書くだけで、「条件が変わった」の判定には使わない（`rulesStale` は見ない）。入り切りで AI案の問題が変わった日は、問題のキーの違い（`planStale`・`inputKey`）で「条件が変わった」（D43・D161）になる。問題が変わらない日は変わったにしない（使い回し `reusableRun` で同じ記録を返しても残り続けない）
 - 切った機能の画面の入力は出さないが、データの形・検査・repair は変えない（切ってもデータは残る）。`clientStage` が切のとき、画面は〈利用者さん〉の `stage` を「利用中（active）／終了（ended）」の2つで選ばせ、ほかの段階の人はそのまま（表示は「利用中」以外を「終了」と出さず、今の段階の名前を出す）
 - エラー：無い。入り切りは検査で落ちない（知らない ID は捨てるだけ）
 

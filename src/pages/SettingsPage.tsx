@@ -1,6 +1,7 @@
 import { CircleCheck, LayoutTemplate, Settings } from 'lucide-react';
 import { useId } from 'react';
 import { flushSync } from 'react-dom';
+import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/ui';
@@ -20,6 +21,7 @@ import {
   TEMPLATES,
   type TemplateDef,
   templateDiff,
+  turnOffImpact,
   withFeature,
 } from '../lib/features';
 import { useDemoData } from '../store';
@@ -33,6 +35,8 @@ import '../components/features.css';
  */
 export default function SettingsPage() {
   const { data, update } = useDemoData();
+  /** 今日（休み・希望休・欠勤は今日以降に掛かるものだけを数える。turnOffImpact） */
+  const { date: today } = useDay();
   const features = data.org.features;
   const terms = data.org.terms;
   const toast = useToast();
@@ -45,9 +49,12 @@ export default function SettingsPage() {
   /** ひな形を当てる（確認で入る機能・切れる機能を出す。PRD D212） */
   const apply = async (t: TemplateDef) => {
     const diff = templateDiff(features, t.id);
+    // 切れる機能に入っているデータの件数と効き方（PRD D215。turnOffImpact）
+    const impacts = diff.off.flatMap((id) => turnOffImpact(data, id, today)?.text ?? []);
     const body = [
       diff.on.length > 0 ? `入る機能：${names(diff.on)}` : '入る機能：なし',
       diff.off.length > 0 ? `切れる機能：${names(diff.off)}` : '切れる機能：なし',
+      ...impacts.map((x) => `・${x}`),
       '切った機能のデータは消えません。あとから1つずつ入り切りできます。',
     ].join('\n');
     const ok = await confirmDialog({
@@ -64,9 +71,24 @@ export default function SettingsPage() {
   /**
    * スイッチを押す（すぐ保存。依存先が切なら押せない）。新しい値は update の中で最新の d.org.features から決め、
    * トーストの文も同じ値から作る（素早く2回押したとき、描画前の古い features で決めて同じ値を2回書かない）。
-   * flushSync で update をその場で済ませ、決めた値を受け取る
+   * flushSync で update をその場で済ませ、決めた値を受け取る。
+   * 切るときにその機能のデータがあれば、先に独自の確認ダイアログで件数と効き方を出す（PRD D215。turnOffImpact）。
+   * 確認したあとは「切る」と決めて書く（確認の間に別のタブで切られていても入れ直さない）
    */
-  const toggle = (f: FeatureDef) => {
+  const toggle = async (f: FeatureDef) => {
+    let forced: boolean | null = null;
+    if (isSwitchOn(features, f.id) && !(f.requires && !isOn(features, f.requires))) {
+      const impact = turnOffImpact(data, f.id, today);
+      if (impact) {
+        const ok = await confirmDialog({
+          title: `${featureLabel(f.id, terms)}を切りますか？`,
+          body: `${impact.text}。\n切った機能のデータは消えません。入れ直せば元に戻ります。`,
+          confirmLabel: '切る',
+        });
+        if (!ok) return;
+        forced = false;
+      }
+    }
     /** update の中で決めた新しい値（依存先が切で押せなければ null） */
     const decided: { on: boolean | null } = { on: null };
     flushSync(() =>
@@ -76,7 +98,7 @@ export default function SettingsPage() {
           decided.on = null;
           return d;
         }
-        const on = !isSwitchOn(cur, f.id);
+        const on = forced ?? !isSwitchOn(cur, f.id);
         decided.on = on;
         return { ...d, org: { ...d.org, features: withFeature(cur, f.id, on) } };
       }),
@@ -147,7 +169,11 @@ export default function SettingsPage() {
 }
 
 /** グループごとのスイッチ（見出しはグループの名前） */
-type RowProps = { features: Features; terms: Pick<Terms, 'client' | 'staff'>; onToggle: (f: FeatureDef) => void };
+type RowProps = {
+  features: Features;
+  terms: Pick<Terms, 'client' | 'staff'>;
+  onToggle: (f: FeatureDef) => Promise<void>;
+};
 
 function FeatureGroupCard({ group, ...props }: RowProps & { group: FeatureGroup }) {
   const titleId = useId();
@@ -199,7 +225,7 @@ function FeatureRow({ f, features, terms, onToggle }: RowProps & { f: FeatureDef
           .filter(Boolean)
           .join(' ')}
         className={on ? 'feature-switch is-on' : 'feature-switch'}
-        onClick={() => onToggle(f)}
+        onClick={() => void onToggle(f)}
         data-testid="feature-switch"
       >
         <span className="feature-switch-track" aria-hidden="true">

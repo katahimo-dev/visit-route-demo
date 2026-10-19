@@ -184,7 +184,14 @@ export default function MonthPage() {
   const terms = data.org.terms;
   /** 切った機能（月の予定の印刷・稼働の見込み）の画面へ移るボタンは出さない（PRD D213。ADR-0028） */
   const printOn = isOn(data.org.features, 'monthPrint');
+  /**
+   * 希望休のまとめ入力（ADR-0028 の requestedOff）：切なら「休みを入れる」の入力だけ出さない（希望休そのものは事実で効き、
+   * 「休みの人に N」の印も欠勤・最終勤務日の分を含む事実の表示なので出す）
+   */
+  const requestedOn = isOn(data.org.features, 'requestedOff');
   const workloadOn = isOn(data.org.features, 'workload');
+  /** 欠勤・キャンセル（ADR-0028 の sudden）：切なら希望休を入れたときの知らせで「急な欠勤」の入口を案内しない */
+  const suddenOn = isOn(data.org.features, 'sudden');
   const toast = useToast();
   const confirmDialog = useConfirm();
   const navigate = useNavigate();
@@ -421,7 +428,7 @@ export default function MonthPage() {
   const staffDaysRef = useRef(staffDays);
   staffDaysRef.current = staffDays;
   /** 「休みを入れる」で選んでいる〈スタッフ〉（休みを入れるモードでなければ null） */
-  const offStaffId = offMode && focus.kind === 'staff' ? focus.id : null;
+  const offStaffId = requestedOn && offMode && focus.kind === 'staff' ? focus.id : null;
   /**
    * 希望休を付け外しする（PRD D69）。案・確定した割当は変えない（振り直しは日の画面で利用者が押す。ADR-0011）。
    * その日のその人に訪問があれば、欄に注意を残す
@@ -444,14 +451,14 @@ export default function MonthPage() {
           warn: n > 0,
           text:
             n > 0
-              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。日の画面の「急な欠勤」から振り直してください（自動では振り直しません）`
+              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の画面の「急な欠勤」から振り直してください' : '日の画面で担当を振り直してください'}（自動では振り直しません）`
               : `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました`,
         });
       } else {
         setOffNote({ date: d, warn: false, text: `${mdText(d)} の${REQUESTED_OFF_NOTE}を外しました` });
       }
     },
-    [offStaffId, today, update, staffById],
+    [offStaffId, today, update, staffById, suddenOn],
   );
   /** 選んでいる〈スタッフ〉のこの月の希望休の日 */
   const offDates = useMemo(
@@ -965,7 +972,7 @@ export default function MonthPage() {
               testId="month-client-picker"
             />
           )}
-          {focus.kind === 'staff' && (
+          {requestedOn && focus.kind === 'staff' && (
             <button
               type="button"
               className={`btn btn-small month-off-toggle${offMode ? ' is-on' : ''}`}
@@ -1029,7 +1036,7 @@ export default function MonthPage() {
           </Hint>
           {noVisitsWhy && <span className="sub">{noVisitsWhy}</span>}
         </div>
-        {offMode && focus.kind === 'staff' && (
+        {offStaffId !== null && (
           <div className="month-off-bar" data-testid="month-off-bar">
             <p>
               <strong>
@@ -1788,6 +1795,8 @@ const DayCell = memo(function DayCell(props: CellProps) {
     staffTerm,
     offState,
   } = props;
+  /** 「休みの人に N」の印（欠勤・希望休・最終勤務日の後の人に残る訪問の事実なので、希望休のまとめ入力を切っても出す。ADR-0028） */
+  const absentLeft = s.absentLeft;
   const past = d < today;
   const care = s.needsCare && !past;
   const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));
@@ -1799,7 +1808,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
   if (care) parts.push('要確認');
   if (s.unassigned > 0) parts.push(`入らない ${s.unassigned}件`);
   if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
-  if (s.absentLeft > 0) parts.push(`休みの人に訪問 ${s.absentLeft}件`);
+  if (absentLeft > 0) parts.push(`休みの人に訪問 ${absentLeft}件`);
   if (s.stale) parts.push('条件が変わった');
   if (s.overSpan.length > 0) parts.push(`出勤〜退勤（拘束）が上限を超える ${s.overSpan.length}人`);
   if (making) parts.push('作っています');
@@ -1818,14 +1827,14 @@ const DayCell = memo(function DayCell(props: CellProps) {
           違反 {s.hard}
         </span>
       )}
-      {s.absentLeft > 0 && (
+      {absentLeft > 0 && (
         <span
           className="month-flag is-red"
           title="休み（欠勤・希望休）の人に訪問が残っています。日の画面で振り直してください"
           data-testid="month-absent-left"
         >
           <UserX size={12} aria-hidden="true" />
-          休みの人に {s.absentLeft}
+          休みの人に {absentLeft}
         </span>
       )}
       {s.stale && (
@@ -2077,7 +2086,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     loadBar: focus !== 'all' ? null : load ? 'load' : load === null ? 'noPlan' : null,
     unassigned: s.unassigned > 0,
     hard: s.hard > 0,
-    absentLeft: s.absentLeft > 0,
+    absentLeft: absentLeft > 0,
     stale: s.stale,
     overSpan: s.overSpan.length > 0,
     substitute: cv.slice(0, 4).some((v) => v.substitute),

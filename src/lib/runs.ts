@@ -5,6 +5,7 @@ import type { Preset, Rule } from '../contracts/rules';
 import { score } from '../evaluate';
 import { presetOf } from '../seed';
 import { own } from './common';
+import { calcFeaturesOf, sameCalcFeatures } from './features';
 
 /** 記録の名前：プリセットと一致すればプリセット名、違えば「条件を変えた案」。固定を残した組み直しは件数を足す */
 export function runLabel(rules: Rule[], pinCount: number, presets: readonly Preset[]): string {
@@ -35,13 +36,28 @@ export function addRun(
   const runs = own(d.aiRuns, date) ?? [];
   /** 今の時点で重みが一致するプリセット（どれとも一致しなければ null）。記録の presetId は「最後に作ったときに一致したプリセット」 */
   const presetId = presetOf(x.rules, d.presets)?.id ?? null;
+  /**
+   * 作ったときの計算に効く入り切り（ADR-0028。PRD D214）。切っているものだけを書き、すべて入なら書かない
+   * （記録に無ければすべて入。すべて入のデータの記録は今までと同じ形）
+   */
+  const calc = calcFeaturesOf(d.org.features);
+  const calcField = Object.keys(calc).length > 0 ? { calcFeatures: calc } : {};
   const found = findRun(d, date, x);
   if (found) {
     // 使い回すときも presetId を今の時点のものに書き直す（プリセットの重みを変えたあとにいまの条件で作り直して同じ案になったとき、
     // 古い presetId のままだと「条件が変わった」（lib/month の rulesStale）が消えない。PR #40 の再レビュー）
+    // 計算に効く入り切り（ADR-0028）も今のものに書き直す（記録として。「条件が変わった」は入り切りを見ず問題の違いで決める）
     const inputKey = x.inputKey === undefined ? found.inputKey : x.inputKey;
-    if (found.inputKey === inputKey && found.presetId === presetId) return d;
-    const patched: AiRun = { ...found, presetId, ...(inputKey !== undefined ? { inputKey } : {}) };
+    if (found.inputKey === inputKey && found.presetId === presetId && sameCalcFeatures(found.calcFeatures, calc)) {
+      return d;
+    }
+    const { calcFeatures: _old, ...rest } = found;
+    const patched: AiRun = {
+      ...rest,
+      presetId,
+      ...(inputKey !== undefined ? { inputKey } : {}),
+      ...calcField,
+    };
     return {
       ...d,
       aiRuns: { ...d.aiRuns, [date]: runs.map((r) => (r === found ? patched : r)) },
@@ -66,6 +82,7 @@ export function addRun(
     stopped: x.result.stopped,
     ...(x.inputKey !== undefined ? { inputKey: x.inputKey } : {}),
     ...(x.reassign ? { reassign: x.reassign } : {}),
+    ...calcField,
   };
   return { ...d, aiRuns: { ...d.aiRuns, [date]: [...runs, run].slice(-MAX_RUNS_PER_DAY) } };
 }

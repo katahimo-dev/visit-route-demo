@@ -7,11 +7,18 @@ import { MailNotice, type MailRow, MailRows, useMailLimit } from '../components/
 import { SidePanel, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import { byName } from '../lib/common';
+import { isOn } from '../lib/features';
 import { dayByStaff, dayMailText, mailTo, mdw, sourceWord, weekByStaff, weekMailText } from '../lib/mail';
 
 /** 日の予定（担当ごと。PRD D92） */
 export function DayMailPanel({ data, date, onClose }: { data: DemoData; date: string; onClose: () => void }) {
   const terms = data.org.terms;
+  /**
+   * 機能の入り切り（ADR-0028）：訪問先の決まりごとを切れば入り方・鍵・駐車場・注意と「鍵の情報も入れる」、
+   * 道順のリンクを切れば Google マップの道順を本文に入れない
+   */
+  const notesOn = isOn(data.org.features, 'visitNotes');
+  const mapsOn = isOn(data.org.features, 'mapsLink');
   /** 鍵の情報も入れる（既定はオフ。保存しない） */
   const [includeKeys, setIncludeKeys] = useState(false);
   const { day, byStaff } = useMemo(() => dayByStaff(data, date), [data, date]);
@@ -23,14 +30,25 @@ export function DayMailPanel({ data, date, onClose }: { data: DemoData; date: st
   );
   const listed = staff.filter((s) => (byStaff.get(s.id)?.length ?? 0) > 0 || offOf.has(s.id));
   const rows: MailRow[] = listed.map((s) => {
-    const visits = byStaff.get(s.id) ?? [];
+    const all = byStaff.get(s.id) ?? [];
+    const visits = notesOn
+      ? all
+      : all.map((v) =>
+          v.client
+            ? { ...v, client: { ...v.client, entryNote: '', keyNote: '', parkingNote: '', cautionNote: '' } }
+            : v,
+        );
     const off = offOf.get(s.id);
     return {
       key: s.id,
       name: s.name,
       email: s.email,
       summary: [off, `訪問 ${visits.length}件`].filter(Boolean).join('・'),
-      mail: mailTo(s.email, dayMailText(data.org, s, date, day.source, visits, includeKeys), limit),
+      mail: mailTo(
+        s.email,
+        dayMailText(data.org, mapsOn ? s : { name: s.name }, date, day.source, visits, notesOn && includeKeys),
+        limit,
+      ),
     };
   });
   const noEmail = rows.filter((r) => !r.email).length;
@@ -52,19 +70,23 @@ export function DayMailPanel({ data, date, onClose }: { data: DemoData; date: st
           <>
             <p data-testid="day-mail-source">
               <strong>{sourceWord(day.source)}</strong>
-              の担当で、{terms.staff}ごとに 順番・時刻・{terms.client}・住所・入り方・駐車場・注意 と、Google
-              マップの道順のリンク（1日の全行程と区間ごと。{terms.staff}の自宅と移動手段から）を本文に入れます。
+              の担当で、{terms.staff}ごとに 順番・時刻・{terms.client}・住所{notesOn ? '・入り方・駐車場・注意' : ''}
+              {mapsOn &&
+                ` と、Google マップの道順のリンク（1日の全行程と区間ごと。${terms.staff}の自宅と移動手段から）`}
+              を本文に入れます。
             </p>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={includeKeys}
-                onChange={(e) => setIncludeKeys(e.target.checked)}
-                style={{ width: 'auto' }}
-                data-testid="mail-include-keys"
-              />
-              鍵の情報も入れる（既定は入れません。メールは転送・誤送信で人の目に触れることがあります）
-            </label>
+            {notesOn && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={includeKeys}
+                  onChange={(e) => setIncludeKeys(e.target.checked)}
+                  style={{ width: 'auto' }}
+                  data-testid="mail-include-keys"
+                />
+                鍵の情報も入れる（既定は入れません。メールは転送・誤送信で人の目に触れることがあります）
+              </label>
+            )}
             <MailNotice>
               {noEmail > 0 &&
                 ` メールアドレスの無い${terms.staff}（${noEmail}人）は、${terms.staff}の画面で入れられます。`}

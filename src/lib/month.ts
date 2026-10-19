@@ -146,7 +146,7 @@ export type RuleKeys = {
   current: string;
 };
 
-/** いまある条件の組のキー（PRD D161）：いまの条件に各プリセットを当てたものと、いまの条件そのもの */
+/** いまある条件の組のキー（PRD D161）：いまの条件に各プリセットを当てたもの、いまの条件そのもの */
 export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): RuleKeys {
   return {
     presets: new Set(presets.map((p) => ruleSetKey(applyPreset([...rules], p)))),
@@ -162,6 +162,8 @@ export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset
  * - いまの条件で作った案（presetId が null＝どのプリセットとも一致しなかった）は、それに加えていまの条件とも違えば変わった
  * 作り直しは点数の基準のプリセットで作るので、作り直した案は必ず当てはまる（true が残り続けない）。点数の基準を切り替えただけでは
  * 変わらない（前の基準のプリセットもまだある）。名前は計算に効かないので見ない。記録が無い・欠勤の振り直しの記録は判定しない（false）
+ * 機能の入り切り（ADR-0028。PRD D214）は見ない：入り切りで AI案の問題が変わった日は planStale（inputKey）で変わったになる
+ * （記録の calcFeatures は記録として書くだけ。使い回し（reusableRun）で同じ記録を返しても変わったが残り続けない）
  */
 export function rulesStale(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string, keys: RuleKeys): boolean {
   const run = planRunOf(data, date);

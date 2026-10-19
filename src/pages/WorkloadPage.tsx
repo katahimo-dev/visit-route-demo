@@ -15,6 +15,7 @@ import { byName, WEEKDAY_LABELS } from '../lib/common';
 import { periodEmptyGuide } from '../lib/emptyGuide';
 import { activeVisitsOn, addMonths, isYm, monthDates, ymOf } from '../lib/month';
 import { mdText } from '../lib/patternText';
+import { useFeature } from '../lib/useFeature';
 import { hmText, kmOf, type WorkDay, type WorkStat, workloadTsv, workMonth, workTotals } from '../lib/workload';
 import { useDemoData } from '../store';
 import './workload.css';
@@ -37,7 +38,9 @@ export default function WorkloadPage() {
   const ym = isYm(raw) ? raw : ymOf(date);
   const today = jstDate(Date.now());
   const org = data.org;
-  const fareOn = org.fareYenPerKm > 0;
+  // 交通費（ADR-0028 の fare）を切っていれば、単価の欄と交通費の列を出さない（単価の値は消さない）
+  const fareFeature = useFeature('fare');
+  const fareOn = fareFeature && org.fareYenPerKm > 0;
 
   const days: WorkDay[] = useMemo(() => workMonth(data, ym), [data, ym]);
   const totals = useMemo(() => workTotals(days), [days]);
@@ -159,7 +162,7 @@ export default function WorkloadPage() {
       <PageHeader
         icon={Timer}
         title="稼働の見込み"
-        lead={`予定から見込んだ、${terms.staff}ごとの出勤〜退勤（拘束）・移動・空き時間（待ち）の時間と交通費です。実績ではありません`}
+        lead={`予定から見込んだ、${terms.staff}ごとの出勤〜退勤（拘束）・移動・空き時間（待ち）の時間${fareFeature ? 'と交通費' : ''}です。実績ではありません`}
       />
 
       <div className="card stack work-head">
@@ -219,25 +222,27 @@ export default function WorkloadPage() {
           </span>
         </div>
         <div className="row work-settings">
-          <label className="work-setting">
-            <span>交通費の単価</span>
-            <input
-              type="number"
-              min={0}
-              max={1000}
-              step={1}
-              value={fare}
-              onChange={(e) => setFare(e.target.value)}
-              onBlur={saveFare}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveFare();
-              }}
-              aria-invalid={!!fareError || undefined}
-              data-testid="work-fare"
-            />
-            <span>円/km（0 なら交通費を出しません）</span>
-            {fareError && <span className="error">{fareError}</span>}
-          </label>
+          {fareFeature && (
+            <label className="work-setting">
+              <span>交通費の単価</span>
+              <input
+                type="number"
+                min={0}
+                max={1000}
+                step={1}
+                value={fare}
+                onChange={(e) => setFare(e.target.value)}
+                onBlur={saveFare}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveFare();
+                }}
+                aria-invalid={!!fareError || undefined}
+                data-testid="work-fare"
+              />
+              <span>円/km（0 なら交通費を出しません）</span>
+              {fareError && <span className="error">{fareError}</span>}
+            </label>
+          )}
           {/* 用語の説明（ボタン）は label の中に置かない（PR #42 のレビュー）。入力欄の名前は aria-labelledby でつなぐ */}
           <div className="work-setting">
             <span>
