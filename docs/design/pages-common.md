@@ -1,6 +1,6 @@
 # 画面共通の部品
 
-> この部品のファイル：`src/components/ui.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`rebuildBand.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/lib/panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`rebuildBand.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記。関連 PRD：D91〜D101・D122〜D126・D161〜D166・D173〜D177・D193〜D197・D201〜D209。
+> この部品のファイル：`src/components/ui.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`rebuildBand.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/lib/panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`rebuildBand.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031。関連 PRD：D91〜D101・D122〜D126・D161〜D166・D173〜D177・D193〜D197・D201〜D209・D226。
 > 画面全体の決まり・メニュー・確認ダイアログ・機能の入り切りは [pages.md](pages.md)。
 
 ### 右の欄（`SidePanel`）と確定のボタンの帯（PRD D194〜D197）
@@ -97,15 +97,17 @@
   - `compareEmptyGuide({ date, today, visits })`、`batchHref(ym)`
 - `components/EmptyNext.tsx`：見出し・補足・ボタン（まとめて作るは `Link`、日の画面は呼ぶ側の `onOpenDay`＝選んでいる日付を変えて `/plan`）。`primary={false}` で主ボタンにしない。480px 以下は縦に並べ、印刷ではボタンを出さない。使う所：週（`week-empty`。`compact`）・稼働の見込み（`work-empty`）・比較（`compare-empty`）
 
-### 初回の案内ツアー（PRD D193）
+### 初回の案内ツアー（PRD D192・D193・D226）
 
-- `lib/tour.ts`（純粋関数。テストあり）：`tourSteps(terms, isMac)`（5枚：home・plan・absence・rules・search。見出し・本文・場所。切った機能の枚は出さない）、`tourMove(index, count, 'next'|'back'|'skip')`（閉じるときは null。最初の「戻る」は動かない）、`tourNextLabel`（最後は「はじめる」）、`tourCountText`、`shouldAutoOpenTour(seen, search)`（`?id=`・`?do=` があれば開かない）
+- `lib/tour.ts`（純粋関数。テストあり）：`tourSteps(terms, isMac)`（6枚：home・plan・absence・rules・search・flow。見出し・本文・場所、flow は `points`（3段の説明：AI案／手直し（固定）／確定）。切った機能の枚は出さない。flow はいつも最後）、`tourMove(index, count, 'next'|'back'|'skip')`（閉じるときは null。最初の「戻る」は動かない）、`tourNextLabel`（最後は「閉じる」）、`TOUR_TODAY_LABEL`（「今日の予定を開く」）、`tourCountText`、`shouldAutoOpenTour(seen, search)`（`?id=`・`?do=` があれば開かない）
 - 見たことは DemoData と別のキーに覚える（`tourMemory`。初期状態に戻しても残る）
 - `components/Tour.tsx`（`tour.css`）：
-  - `TourProvider`：`AdminShell` の外側。はじめに `shouldAutoOpenTour(tourMemory.seen(), location.search)` で開く（月の印刷の画面では出ない）。閉じたら・最後の枚まで進んだら `tourMemory.markSeen()`
+  - `TourProvider`：`AdminShell` の外側。はじめに `shouldAutoOpenTour(tourMemory.seen(), location.search)` で開く（月の印刷の画面では出ない）。閉じたら・最後の枚まで進んだら `tourMemory.markSeen()`。「今日の予定を開く」は閉じて `dayHref(今日)`（`/plan?date=今日`）へ移る（PRD D226）
   - `useTour()`：開く関数（データの画面の「案内をもう一度見る」`tour-again`）
   - `TourDialog`：body の直下の中央のカード `role="dialog"`・`aria-modal`・`aria-labelledby`・`aria-describedby`。`inertLock`・`useBodyScrollLock`・捕捉の段で Esc（とばすと同じ）と Tab（`trapTarget`）。Ctrl+K を開かない。最初のフォーカスは「次へ」、枚が変わってフォーカスが外れたら「次へ」へ、閉じたら開く前の要素へ。見出しと本文は `aria-live="polite"`。z-index 1250（トーストより前・確認ダイアログより後ろ）。印刷では出さない
-  - data-testid：`tour`（`data-step`）・`tour-count`・`tour-title`・`tour-body`・`tour-next`・`tour-back`・`tour-skip`
+  - 本文 `tour-body` は文と、`points` があれば番号付きの一覧 `tour-points`（aria-describedby は両方を含む）
+  - 最後の枚：「次へ」は「閉じる」（主ボタンにしない）、その右に主ボタン「今日の予定を開く」（`tour-today`）。「とばす」は出さない
+  - data-testid：`tour`（`data-step`）・`tour-count`・`tour-title`・`tour-body`・`tour-points`・`tour-next`・`tour-back`・`tour-skip`・`tour-today`
 - e2e は文脈を作ったらすぐ `scripts/lib/tourSeen.cjs` の `skipTour(ctx)` を呼ぶ（e2e-tour は除く）
 
 ### 条件を変えたら出す作り直しの帯（ADR-0025 追記。PRD D161〜D166）
@@ -189,7 +191,7 @@
 - `scripts/e2e-dialog.cjs`：条件を消す（ARIA・中央・最初のフォーカス・Tab が回る・Esc・取り消す・背景で変わらない・閉じたらボタンへフォーカス・inert とロックを戻す・確定（キーボード）で消える）／初期状態に戻す（取り消すと知らせなし・確定で知らせ）／この割当で確定（Esc で未確定のまま・確定で「確定済み」）／確認中に「戻る」（確認が閉じデータが変わらない）／ダブルクリックでも確認が残る／〈スタッフ〉の変更を捨てる（右の欄の上で Esc は確認だけを閉じる・「捨てて閉じる」で保存しない）／選択肢を消す／390px で収まりボタンが縦・印刷で出さない。どれもネイティブのダイアログが出たら失敗
 - `scripts/e2e-nav.cjs`：メニューの並び・名前・aria-current・見出し・欠勤・キャンセルの項目、Ctrl+K で開く・ARIA・inert・↑↓ が回る・Enter で移る・見つからない・Ctrl+K で閉じる・操作（欠勤・まとめて作る）・右の欄の上では開かない、よみ（カタカナ）で〈利用者さん〉・名前で〈スタッフ〉の閲覧の欄、Tab が回る・Esc・背景・×でフォーカスがボタンへ・入力欄の中の Ctrl+K・今の画面は閉じるだけ、390px（「探す」が1段目・パレットが収まる・上の帯の名前・引き出しの並び・下のタブ5つ・比較は「日」のタブ）、印刷、300人×60人で1文字の中央値 `PERF_MS_NAV`（既定 100ms）
 - `scripts/e2e-panel-foot.cjs`（1400px・390px）：欠勤・キャンセルの1〜4段目・キャンセルの2・3段目・〈スタッフ〉の閲覧と編集・月の「まとめて作る」・日の差の欄の「連絡の一覧」。短い欄・長い欄・Tab で帯の裏の入力欄が隠れない・Tab が回る・Esc で戻る・裏を巻かない・390px の並び・タブに隠れない・safe-area・visualViewport を差し替えたキーボード・印刷で帯を出さない
-- `scripts/e2e-tour.cjs`：ツアー（初めて開くと出る・ARIA・中央・フォーカス・inert とロック・Tab が回る・Ctrl+K を開かない・次へ／戻る・5枚・「はじめる」・覚える（別のキー）・読み直しても出ない・Esc・とばす・月の印刷では出ない・`?id=`・`?do=` のリンクでは出ない・印があれば自動で出ない・最後の枚で覚える・もう一度見る・フォーカスを戻す・初期状態に戻しても残る・390px・印刷）、ファイル選択、月の一覧
+- `scripts/e2e-tour.cjs`：ツアー（初めて開くと出る・ARIA・中央・フォーカス・inert とロック・Tab が回る・Ctrl+K を開かない・次へ／戻る・6枚・最後の枚の3段・「閉じる」・「今日の予定を開く」で今日の日の画面・覚える（別のキー）・読み直しても出ない・Esc・とばす・月の印刷では出ない・`?id=`・`?do=` のリンクでは出ない・印があれば自動で出ない・最後の枚で覚える・もう一度見る・フォーカスを戻す・初期状態に戻しても残る・390px・印刷）、ファイル選択、月の一覧
 - `scripts/e2e-words.cjs`：点数の理由・用語の説明（マウス・Tab・Esc・タッチ・同時に1つ・入力欄の名前）・言い換え・空の画面・月の凡例・相性のセルの記号・390px・印刷
 - `scripts/e2e-rebuild.cjs`：作り直しの帯（出さない条件・案内・影響する日・数・読み上げ・［後で］・sticky・Tab・月の要対応と同じ数・［作り直す］で月の欄・［今日の案をいまの条件で作り直す］で日の画面）
 - `scripts/e2e-links.cjs`：行き先のリンク（月の要対応の4種類・`?do=unassigned`・稼働の見込み・稼働時間・空き状況）
