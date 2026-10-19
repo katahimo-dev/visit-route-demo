@@ -2,9 +2,11 @@ import {
   BadgeCheck,
   BookmarkCheck,
   BookmarkX,
+  ChevronDown,
   DoorOpen,
   Eye,
   House,
+  ListFilter,
   MapPin,
   Pencil,
   Plus,
@@ -16,7 +18,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
@@ -40,7 +42,7 @@ import { VISIT_RULE_FIELDS } from '../components/VisitRules';
 import { type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
 import { jstDate, weekday } from '../domain/time';
-import { EMPTY_FILTER, filterClients, filterFacts, resolveStaffId } from '../lib/clientFilter';
+import { activeFilterCount, EMPTY_FILTER, filterClients, filterFacts, resolveStaffId } from '../lib/clientFilter';
 import { isBeforeActive, STAGE_LABELS, stageChoices, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
@@ -49,6 +51,7 @@ import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useFeature } from '../lib/useFeature';
+import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { type DiscardWhen, discardDialog, isDirty } from '../lib/viewMode';
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
@@ -133,6 +136,14 @@ export default function ClientsPage() {
     () => filterClients(clients, filter, facts, resolveStaffId(filter, activeStaff, facts, clients)),
     [clients, filter, facts, activeStaff],
   );
+  /**
+   * 狭い画面（600px 以下）では絞り込みの欄を「絞り込み（N）」のボタンの下に畳む（PRD D220。N は効いている絞り込みの数。
+   * はじめは畳む。開いたかは画面の中だけ。広い画面ではいつも開いたまま）
+   */
+  const narrow = useMedia(COMPACT_QUERY);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterBodyId = useId();
+  const filterCount = activeFilterCount(filter);
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const periodLabel = `${md(dates[0]!)}（${WEEKDAY_LABELS[weekday(dates[0]!)]}）からの週`;
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
@@ -356,22 +367,44 @@ export default function ClientsPage() {
       />
 
       <div className="card stack" data-testid="clients-filter">
-        <ClientFilter
-          clients={clients}
-          state={filter}
-          onChange={setFilter}
-          facts={facts}
-          staff={activeStaff}
-          terms={{ client: terms.client, staff: terms.staff }}
-          periodLabel={periodLabel}
-          defaults={EMPTY_FILTER}
-          testId="clients-cf"
-        />
-        <span className="sub">
-          {STAGE_LABELS.inquiry}〜{STAGE_LABELS.contract}
-          の人は、一覧の「状態」の印で見分けられます。新しい相談は「空き状況」の画面で受けられる曜日・時間を試算し、仮押さえすると「
-          {STAGE_LABELS.inquiry}」で入ります
-        </span>
+        {narrow && (
+          <div className="row narrow-filter-head">
+            <button
+              type="button"
+              className="btn btn-small narrow-filter-toggle"
+              aria-expanded={filterOpen}
+              aria-controls={filterBodyId}
+              onClick={() => setFilterOpen((o) => !o)}
+              data-testid="narrow-filter-toggle"
+            >
+              <WithIcon icon={ListFilter} size={14}>
+                絞り込み（{filterCount}）
+              </WithIcon>
+              <ChevronDown size={14} aria-hidden="true" className="narrow-filter-mark" />
+            </button>
+            <span className="sub" data-testid="narrow-filter-count">
+              {shown.length}人を表示
+            </span>
+          </div>
+        )}
+        <div id={filterBodyId} className="stack narrow-filter-body" hidden={narrow && !filterOpen}>
+          <ClientFilter
+            clients={clients}
+            state={filter}
+            onChange={setFilter}
+            facts={facts}
+            staff={activeStaff}
+            terms={{ client: terms.client, staff: terms.staff }}
+            periodLabel={periodLabel}
+            defaults={EMPTY_FILTER}
+            testId="clients-cf"
+          />
+          <span className="sub">
+            {STAGE_LABELS.inquiry}〜{STAGE_LABELS.contract}
+            の人は、一覧の「状態」の印で見分けられます。新しい相談は「空き状況」の画面で受けられる曜日・時間を試算し、仮押さえすると「
+            {STAGE_LABELS.inquiry}」で入ります
+          </span>
+        </div>
       </div>
 
       {/* まとめて置けなかった人の「編集」は、住所を入れるために編集の欄で開く */}
@@ -386,8 +419,9 @@ export default function ClientsPage() {
         />
       )}
 
+      {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と状態が1行目、ほかは見出し付きの行、開くは右下） */}
       <div className="card table-scroll">
-        <table className="people-table">
+        <table className="people-table narrow-cards" data-testid="narrow-clients">
           <thead>
             <tr>
               <th>名前</th>
@@ -409,7 +443,7 @@ export default function ClientsPage() {
             )}
             {shown.map((c) => (
               <tr key={c.id} data-testid="client-row">
-                <td>
+                <td className="narrow-title" data-label="名前">
                   <span className="row person-name">
                     <span className="dot dot-sm" style={{ background: colorOf(c.color) }}>
                       {initialOf(c.displayName)}
@@ -430,7 +464,7 @@ export default function ClientsPage() {
                     </span>
                   </span>
                 </td>
-                <td>
+                <td data-label="位置">
                   {hasLocation(c.place) ? (
                     <span className="chip chip-ok" title="位置あり">
                       <MapPin size={13} strokeWidth={2.2} aria-hidden="true" />
@@ -440,13 +474,13 @@ export default function ClientsPage() {
                     <span className="chip chip-warn">未登録</span>
                   )}
                 </td>
-                <td>
+                <td data-label="特性">
                   <TraitChips traits={c.traits} items={clientItems} />
                 </td>
-                <td className="cond-cell">
+                <td className="cond-cell" data-label={`${terms.staff}に求めること`}>
                   <CondChips requirements={c.requirements} preferences={c.preferences} itemById={itemById} />
                 </td>
-                <td className="nowrap">
+                <td className="nowrap" data-label="いつもの担当">
                   {c.usualStaffId && (
                     <WithIcon icon={Repeat} size={14}>
                       {staffName(c.usualStaffId)}
@@ -463,7 +497,7 @@ export default function ClientsPage() {
                     </span>
                   )}
                 </td>
-                <td>
+                <td className="narrow-head" data-label="状態">
                   <span className={`chip stage-chip is-${c.stage}`} data-testid="client-stage">
                     {STAGE_LABELS[c.stage]}
                   </span>
@@ -474,7 +508,7 @@ export default function ClientsPage() {
                     </span>
                   )}
                 </td>
-                <td>
+                <td className="narrow-act">
                   <IconButton icon={Eye} label={`${c.displayName}を開く`} onClick={() => openView(c)} />
                 </td>
               </tr>

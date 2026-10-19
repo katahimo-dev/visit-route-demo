@@ -416,3 +416,29 @@ label.week-who {
 .week-empty-card {
   padding: 10px 14px;
 }
+
+/* 狭い画面（PRD D222）：表は名前の列を、時間軸は時刻の列を止める。今日の列の見出しに印 */
+@media (max-width: 600px) {
+  .week-table thead th:first-child,
+  .week-table tbody th[scope="row"],
+  .week-table tfoot th {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+  }
+  .week-table thead th:first-child,
+  .week-table tbody th[scope="row"] {
+    background: var(--card);
+  }
+  .week-table thead th.is-today {
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+  }
+  .week-corner,
+  .week-gutter {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background: var(--card);
+  }
+}

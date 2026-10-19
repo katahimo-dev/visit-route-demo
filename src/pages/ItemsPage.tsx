@@ -241,7 +241,8 @@ function ItemTable({
       </SectionTitle>
       <span className="sub">{note}</span>
       <div className="table-scroll">
-        <table className="items-table">
+        {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前が1行目、種類・選択肢・使っている条件は見出し付きの行、消すは右下） */}
+        <table className="items-table narrow-cards">
           <thead>
             <tr>
               <th>名前</th>
@@ -258,14 +259,14 @@ function ItemTable({
               const refs = refsOf(data, it);
               return (
                 <tr key={it.id}>
-                  <td style={{ minWidth: 140 }}>
+                  <td style={{ minWidth: 140 }} className="narrow-title" data-label="名前">
                     <NameInput
                       value={it.name}
                       taken={(name) => nameTaken(items, (x) => x.name, name, it.id)}
                       onCommit={(name) => setItem(it.id, { name })}
                     />
                   </td>
-                  <td>
+                  <td data-label="種類">
                     <select value={it.kind} onChange={(e) => changeKind(it, e.target.value as ItemKind)}>
                       {ITEM_KINDS.map((k) => (
                         <option key={k} value={k}>
@@ -274,7 +275,7 @@ function ItemTable({
                       ))}
                     </select>
                   </td>
-                  <td style={{ minWidth: 220 }}>
+                  <td style={{ minWidth: 220 }} className="narrow-block" data-label="選択肢（人数）">
                     {hasOptions(it.kind) ? (
                       <OptionsEditor
                         options={it.options}
@@ -288,7 +289,7 @@ function ItemTable({
                       <span className="sub">{it.kind === 'flag' ? 'あり／なし' : '数値を入れる'}</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="使っている条件">
                     {refs.length > 0 ? (
                       <span className="badge-count" title={refs.join('、')}>
                         {refs.length}
@@ -298,7 +299,7 @@ function ItemTable({
                       <span className="sub">なし</span>
                     )}
                   </td>
-                  <td>
+                  <td className="narrow-act">
                     <IconButton
                       icon={Trash2}
                       label={`項目「${it.name}」を消す`}

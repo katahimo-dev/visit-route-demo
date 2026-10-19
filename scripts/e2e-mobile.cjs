@@ -6,6 +6,9 @@
 // 浮いている部品（地図の MapDock・欠勤の振り直しの ReassignDock・トースト）がタブに重ならない、
 // 本物の地図のボタンと本物のトースト（PRD D190。ボタンはタブのすぐ上・トーストが出ても互いに隠れない・本文の下を空ける・safe-area）、印刷で上の帯・下のタブ・引き出しを出さない、
 // 広い画面（1400px）では今の左のメニューのままで、上の帯の部品・下のタブを出さない。
+// 狭い画面の表（PRD D220〜D222）：条件の重み・特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧・比較の行がカードで横にはみ出さない、
+// 条件のスライダーと必須が画面の中、〈利用者さん〉の絞り込みは「絞り込み（N）」に畳む、比較の主ボタンがタブに隠れない、
+// 週の既定は〈スタッフ〉×曜日の表で今日が見える、空き状況の表は 9:00 から・右に続きがある印、1400px は表のまま。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-mobile.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -386,6 +389,224 @@ async function lockWithPanel(page) {
   );
 }
 
+/** ページが横にはみ出さない（documentElement.scrollWidth が画面の幅以下） */
+const pageWidth = (page) => page.evaluate(() => document.documentElement.scrollWidth);
+/** 下のタブの上端と上の帯の下端（見える所の上下） */
+const viewBand = (page) =>
+  page.evaluate(() => ({
+    top: document.querySelector('.app-header').getBoundingClientRect().bottom,
+    bottom: document.querySelector('.bottom-tabs').getBoundingClientRect().top,
+  }));
+
+/**
+ * 条件の重み（PRD D220）：行がカード（display: flex）・1つ目の条件のスライダーと必須の切り替えが画面の中・横にはみ出さない。
+ * プリセットの名前とボタンの文字が1字ずつ折り返さない
+ */
+async function narrowRules(page) {
+  await open(page, '/rules', '[data-testid="narrow-rules"]');
+  const row = page.getByTestId('narrow-rules').locator('tbody > tr').first();
+  const slider = await row.locator('input[type="range"]').boundingBox();
+  const hard = await row.locator('.hard-toggle').boundingBox();
+  const display = await row.evaluate((el) => getComputedStyle(el).display);
+  const sw = await pageWidth(page);
+  check(
+    display === 'flex' && slider && hard && slider.x + slider.width <= 390 && hard.x + hard.width <= 390 && sw <= 390,
+    '条件の重み：行がカードで、1つ目の条件のスライダーと必須が画面の中・横にはみ出さない（PRD D220）',
+    { display, slider, hard, sw },
+  );
+  const lines = await page.evaluate(() => {
+    const h = (el) => Math.round(el.getBoundingClientRect().height);
+    const lh = (el) => Number.parseFloat(getComputedStyle(el).lineHeight) || 24;
+    const names = [...document.querySelectorAll('.narrow-preset-summary > strong')].map((el) => h(el) / lh(el));
+    const btns = [...document.querySelectorAll('.narrow-stack > .btn')].map((el) => {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      return r.getClientRects().length > 0 ? h(el) : 0;
+    });
+    return { names, btns };
+  });
+  check(
+    lines.names.length >= 3 && lines.names.every((n) => n < 1.6) && lines.btns.every((b) => b > 0 && b < 60),
+    'プリセット：名前は1行・「いまの重みをプリセットとして保存」「初期値に戻す」は折り返さない',
+    lines,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'narrow-rules.png') });
+}
+
+/** 一覧の表（特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧）：行がカードで横にはみ出さない（PRD D220） */
+async function narrowLists(page) {
+  for (const [hash, ready] of [
+    ['/items', '.items-table'],
+    ['/staff', '[data-testid="narrow-staff"]'],
+    ['/clients', '[data-testid="narrow-clients"]'],
+  ]) {
+    await open(page, hash, ready);
+    const st = await page.evaluate((sel) => {
+      const t = document.querySelector(sel);
+      const tr = t.querySelector('tbody > tr');
+      const cells = [...t.querySelectorAll('tbody > tr:first-child > td')].map((td) => td.getBoundingClientRect());
+      return {
+        display: tr ? getComputedStyle(tr).display : '',
+        right: Math.max(...cells.map((r) => r.right)),
+        sw: document.documentElement.scrollWidth,
+      };
+    }, ready);
+    check(
+      st.display === 'flex' && st.right <= 390 && st.sw <= 390,
+      `${hash}：行がカードで、どのマスも画面の中・横にはみ出さない（PRD D220）`,
+      st,
+    );
+    await page.screenshot({ path: path.join(OUT_DIR, `narrow-${hash.slice(1)}.png`) });
+  }
+}
+
+/** 〈利用者さん〉一覧の絞り込み：「絞り込み（N）」に畳み、押すと開く。N は効いている絞り込みの数（PRD D220） */
+async function narrowClientFilter(page) {
+  await open(page, '/clients', '[data-testid="narrow-filter-toggle"]');
+  const btn = page.getByTestId('narrow-filter-toggle');
+  const cf = page.getByTestId('clients-cf');
+  const t0 = await btn.innerText();
+  const closed = (await btn.getAttribute('aria-expanded')) === 'false' && !(await visible(cf));
+  const firstRow = await page.getByTestId('client-row').first().boundingBox();
+  const vb = await viewBand(page);
+  check(
+    /^絞り込み（0）/.test(t0.trim()) && closed && firstRow && firstRow.y < vb.bottom,
+    '〈利用者さん〉一覧：絞り込みは「絞り込み（0）」に畳まれ、1枚目のカードが最初の画面に入る',
+    { t0, closed, firstRow, vb },
+  );
+  await btn.click();
+  await cf.waitFor();
+  const ctl = await btn.getAttribute('aria-controls');
+  const ctlOk = await page.evaluate(
+    (id) => !!document.getElementById(id)?.contains(document.querySelector('[data-testid="clients-cf"]')),
+    ctl,
+  );
+  // チップを1つ押すと数が 1 になる
+  await cf.locator('button[aria-pressed="false"]:not([disabled])').first().click();
+  await page.waitForTimeout(200);
+  const t1 = await btn.innerText();
+  check(
+    (await btn.getAttribute('aria-expanded')) === 'true' && ctlOk && /^絞り込み（1）/.test(t1.trim()),
+    '〈利用者さん〉一覧：押すと開き（aria-expanded・aria-controls）、チップを押すと「絞り込み（1）」',
+    { t1, ctl },
+  );
+  check((await pageWidth(page)) <= 390, '〈利用者さん〉一覧：絞り込みを開いても横にはみ出さない');
+  await page.screenshot({ path: path.join(OUT_DIR, 'narrow-clients-filter.png') });
+}
+
+/** 比較の画面（案が1つ）：記録がカード・横にはみ出さない・主ボタン「もう1案作って比べる」が下のタブに隠れない（PRD D220） */
+async function narrowCompare(page) {
+  await open(page, '/plan', '[data-testid="confirm-state"]');
+  await page
+    .getByTestId('plan-progress')
+    .waitFor({ state: 'detached', timeout: 60000 })
+    .catch(() => {});
+  await open(page, '/compare', '[data-testid="compare-another-make"]');
+  const b = await page.getByTestId('compare-another-make').boundingBox();
+  const vb = await viewBand(page);
+  const top = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x, y)?.closest('[data-testid="compare-another-make"]') !== null,
+    [b.x + b.width / 2, b.y + b.height - 2],
+  );
+  const display = await page
+    .getByTestId('narrow-runs')
+    .locator('tbody > tr')
+    .first()
+    .evaluate((el) => getComputedStyle(el).display);
+  check(
+    b.y >= vb.top && b.y + b.height <= vb.bottom && b.x + b.width <= 390 && top,
+    '比較：主ボタン「もう1案作って比べる」が下のタブの上にすべて見え、押せる',
+    { b, vb, top },
+  );
+  check(display === 'flex' && (await pageWidth(page)) <= 390, '比較：記録の行がカードで横にはみ出さない', display);
+  await page.screenshot({ path: path.join(OUT_DIR, 'narrow-compare.png') });
+}
+
+/** 週（PRD D222）：?view= なしは〈スタッフ〉×曜日の表で URL に書かず、今日の列が見える。時間軸を押すと ?view=timeline */
+async function narrowWeek(page) {
+  await open(page, '/week', '[data-testid="week-table"]');
+  await page.waitForTimeout(300);
+  const today = page.locator('[data-testid="week-table"] thead th.is-today');
+  const tb = await today.boundingBox();
+  const vb = await viewBand(page);
+  const name = await page.locator('[data-testid="week-table"] thead th').first().boundingBox();
+  check(
+    !page.url().includes('view=') &&
+      tb &&
+      tb.y >= vb.top - 1 &&
+      tb.y + tb.height <= vb.bottom &&
+      tb.x >= name.x + name.width - 1 &&
+      tb.x + tb.width <= 390,
+    '週：390px の既定は〈スタッフ〉×曜日の表（URL に書かない）で、今日の列の見出しが画面に見える',
+    { url: page.url(), tb, vb, name },
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'narrow-week.png') });
+  await page.getByTestId('by-staff').click();
+  await page.waitForURL(/view=timeline/);
+  await page
+    .getByTestId('week-grid')
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
+  check(
+    await visible(page.getByTestId('week-grid')),
+    '週：390px で時間軸：〈スタッフ〉を押すと ?view=timeline で時間軸',
+  );
+  check((await pageWidth(page)) <= 390, '週：横にはみ出さない');
+}
+
+/** 空き状況（PRD D221）：表ははじめ 9:00 の列から（曜日の列のすぐ右）。右に続きがある印は端まで巻くと消える */
+async function narrowVacancy(page) {
+  await open(page, '/vacancy', '[data-testid="vacancy-grid"]');
+  await page.waitForTimeout(300);
+  const st = await page.getByTestId('vacancy-grid').evaluate((t) => {
+    const box = t.parentElement;
+    const corner = t.querySelector('thead th.vacancy-corner').getBoundingClientRect();
+    const nine = t.querySelector('thead th[data-start="09:00"]').getBoundingClientRect();
+    return {
+      sl: box.scrollLeft,
+      cornerRight: corner.right,
+      nineLeft: nine.left,
+      more: box.parentElement.classList.contains('has-more-right'),
+    };
+  });
+  check(
+    st.sl > 0 && st.nineLeft >= st.cornerRight - 1 && st.nineLeft - st.cornerRight < 20 && st.more,
+    '空き状況：表ははじめ 9:00 の列が曜日の列のすぐ右（scrollLeft > 0）・右に続きがある印',
+    st,
+  );
+  await page.getByTestId('vacancy-grid').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUT_DIR, 'narrow-vacancy.png') });
+  await page.getByTestId('vacancy-grid').evaluate((t) => {
+    t.parentElement.scrollLeft = t.parentElement.scrollWidth;
+  });
+  await page.waitForTimeout(300);
+  const more = await page
+    .getByTestId('vacancy-grid')
+    .evaluate((t) => t.parentElement.parentElement.classList.contains('has-more-right'));
+  check(!more, '空き状況：右の端まで巻くと続きの印が消える');
+  check((await pageWidth(page)) <= 390, '空き状況：横にはみ出さない');
+}
+
+/** 広い画面（1400px）では表のまま（カードにしない・絞り込みを畳まない・週は時間軸） */
+async function narrowWide(page) {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await open(page, '/clients', '[data-testid="narrow-clients"]');
+  const st = await page.evaluate(() => ({
+    row: getComputedStyle(document.querySelector('[data-testid="narrow-clients"] tbody > tr')).display,
+    head: getComputedStyle(document.querySelector('[data-testid="narrow-clients"] thead')).position,
+    toggle: !!document.querySelector('[data-testid="narrow-filter-toggle"]'),
+    cf: !!document.querySelector('[data-testid="clients-cf"]')?.getClientRects().length,
+  }));
+  await open(page, '/week', '[data-testid="week-views"]');
+  const timeline = await visible(page.locator('.week-grid'));
+  check(
+    st.row === 'table-row' && st.head !== 'absolute' && !st.toggle && st.cf && timeline,
+    '1400px：一覧は表のまま・絞り込みは開いたまま・週の既定は時間軸',
+    { ...st, timeline },
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+}
+
 async function print(page) {
   await open(page, '/plan', '[data-testid="bottom-tabs"]');
   await menuBtn(page).click();
@@ -450,6 +671,13 @@ run(async () => {
     ['fab-with-toast', fabWithToast],
     ['wide-while-open', wideWhileOpen],
     ['lock-with-panel', lockWithPanel],
+    ['rules-narrow', narrowRules],
+    ['lists-narrow', narrowLists],
+    ['clients-filter-narrow', narrowClientFilter],
+    ['compare-narrow', narrowCompare],
+    ['week-narrow-default', narrowWeek],
+    ['vacancy-narrow-start', narrowVacancy],
+    ['narrow-wide', narrowWide],
     ['print', print],
     ['wide', wide],
   ]) {

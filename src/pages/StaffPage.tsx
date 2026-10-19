@@ -306,8 +306,9 @@ export default function StaffPage() {
         </div>
       )}
 
+      {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と状態が1行目、ほかは見出し付きの行、開くは右下） */}
       <div className="card table-scroll">
-        <table className="people-table">
+        <table className="people-table narrow-cards" data-testid="narrow-staff">
           <thead>
             <tr>
               <th>名前</th>
@@ -322,23 +323,23 @@ export default function StaffPage() {
           <tbody>
             {staff.map((s) => (
               <tr key={s.id}>
-                <td className="person-name">
+                <td className="person-name narrow-title" data-label="名前">
                   <WithIcon icon={UserRound} size={15}>
                     {s.name}
                   </WithIcon>
                 </td>
-                <td className="nowrap">
+                <td className="nowrap" data-label="勤務">
                   <WithIcon icon={Clock} size={14}>
                     {s.workDays.map((d) => WEEKDAY_LABELS[d]).join('')} {s.shiftStart}〜{s.shiftEnd}
                   </WithIcon>
                 </td>
-                <td>
+                <td data-label="特性">
                   <TraitChips traits={s.traits} items={staffItems} />
                 </td>
-                <td className="cond-cell">
+                <td className="cond-cell" data-label={`${terms.client}に求めること`}>
                   <CondChips requirements={s.requirements} preferences={s.preferences} itemById={itemById} />
                 </td>
-                <td>
+                <td data-label="自宅の位置">
                   {hasLocation(s.home) ? (
                     <span className="chip chip-ok">
                       <WithIcon icon={MapPin} size={13}>
@@ -349,7 +350,7 @@ export default function StaffPage() {
                     <span className="chip chip-warn">未登録</span>
                   )}
                 </td>
-                <td>
+                <td className="narrow-head" data-label="状態">
                   {!s.active && <span className="chip">休止中</span>}
                   {s.lastDay && (
                     <span
@@ -361,7 +362,7 @@ export default function StaffPage() {
                     </span>
                   )}
                 </td>
-                <td className="nowrap">
+                <td className="nowrap narrow-act">
                   <div className="actions">
                     <IconButton icon={Eye} label={`${s.name}を開く`} onClick={() => openView(s)} />
                     <Link

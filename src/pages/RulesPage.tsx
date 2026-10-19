@@ -109,8 +109,9 @@ export default function RulesPage() {
           時間の約束と稼働時間帯はいつも必須です。 画面の合計点は、この合計を高いほど良い点数（{SCORE_TEXT}
           ）に直して出します。点数はいつも、下のプリセットで選んだ「点数の基準」の重みで付けます（ここで重みを変えても点数の付け方は変わりません）。
         </Hint>
+        {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と必須が1行目、種類・重みは見出し付きの行、消すは右下） */}
         <div className="table-scroll">
-          <table className="rules-table">
+          <table className="rules-table narrow-cards" data-testid="narrow-rules">
             <thead>
               <tr>
                 <th>名前</th>
@@ -129,14 +130,14 @@ export default function RulesPage() {
                   const locked = weightLocked(r);
                   return (
                     <tr key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
-                      <td style={{ minWidth: 160 }}>
+                      <td style={{ minWidth: 160 }} className="narrow-title" data-label="名前">
                         <LabelInput
                           value={r.label}
                           onChange={(label) => setRule(r.id, { label })}
                           fallback={ruleTypeLabel(r.type, terms)}
                         />
                       </td>
-                      <td>
+                      <td data-label="種類">
                         <span className="chip chip-type">
                           <WithIcon icon={RULE_ICONS[r.type]} size={14}>
                             {ruleTypeLabel(r.type, terms)}
@@ -144,7 +145,7 @@ export default function RulesPage() {
                         </span>
                         <Hint ariaLabel={`${r.label}の説明`}>{ruleTypeHelp(r.type, terms)}</Hint>
                       </td>
-                      <td>
+                      <td data-label="重み">
                         <WeightSlider
                           label={r.label}
                           value={r.weight}
@@ -155,7 +156,7 @@ export default function RulesPage() {
                           <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>
                         )}
                       </td>
-                      <td className="nowrap">
+                      <td className={hardable ? 'nowrap narrow-head' : 'nowrap'} data-label="必須">
                         {hardable ? (
                           <label className={`hard-toggle${r.hard ? ' is-on' : ''}`}>
                             <input
@@ -171,7 +172,7 @@ export default function RulesPage() {
                           <span className="sub">—</span>
                         )}
                       </td>
-                      <td>
+                      <td className="narrow-act">
                         <IconButton
                           icon={Trash2}
                           label={`条件「${r.label}」を消す`}
@@ -345,7 +346,7 @@ function PresetSection() {
       <div className="stack" style={{ gap: 8 }}>
         {data.presets.map((p, i) => (
           <details key={p.id} className="preset-edit" data-testid="preset-edit">
-            <summary>
+            <summary className="narrow-preset-summary">
               <span className="preset-no">{i + 1}</span>
               <strong>{p.name}</strong>
               {current?.id === p.id && <span className="chip chip-primary">いまの重み</span>}
@@ -375,7 +376,7 @@ function PresetSection() {
                 </div>
               </div>
               <div className="table-scroll">
-                <table className="rules-table">
+                <table className="rules-table narrow-cards">
                   <thead>
                     <tr>
                       <th>条件の種類</th>
@@ -390,12 +391,12 @@ function PresetSection() {
                       const locked = hardable && w.hard && t !== 'balance';
                       return (
                         <tr key={t} className={w.weight === 0 && !w.hard ? 'is-dim' : ''}>
-                          <td>
+                          <td className="narrow-title" data-label="条件の種類">
                             <WithIcon icon={RULE_ICONS[t]} size={14}>
                               {ruleTypeLabel(t, terms)}
                             </WithIcon>
                           </td>
-                          <td>
+                          <td data-label="重み">
                             <WeightSlider
                               label={`${p.name}の${ruleTypeLabel(t, terms)}`}
                               value={w.weight}
@@ -403,7 +404,7 @@ function PresetSection() {
                               onChange={(weight) => setWeight(p, t, { weight })}
                             />
                           </td>
-                          <td className="nowrap">
+                          <td className={hardable ? 'nowrap narrow-head' : 'nowrap'} data-label="必須">
                             {hardable ? (
                               <label className={`hard-toggle${w.hard ? ' is-on' : ''}`}>
                                 <input
@@ -442,7 +443,7 @@ function PresetSection() {
           </details>
         ))}
       </div>
-      <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div className="row narrow-stack" style={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <SavePresetForm />
         <button type="button" className="btn" onClick={reset}>
           <WithIcon icon={RotateCcw}>初期値に戻す</WithIcon>
