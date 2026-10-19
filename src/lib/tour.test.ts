@@ -41,6 +41,10 @@ describe('tourSteps', () => {
     expect(s[2]!.where).toBe('メニューの「当日・問い合わせ」の「欠勤・キャンセルを登録」');
     expect(s[3]!.where).toBe('メニューの「AI の条件」（条件の重み・相性）');
     expect(tourSteps(terms, false, { compat: false })[3]!.where).toBe('メニューの「AI の条件」（条件の重み）');
+    expect(s[3]!.body).toMatch(/^条件の重み・相性を変えると/);
+    // 相性を切っていれば本文にも出さない
+    expect(tourSteps(terms, false, { compat: false })[3]!.body).toMatch(/^条件の重みを変えると/);
+    expect(tourSteps(terms, false, { compat: false })[3]!.body).not.toContain('相性');
     expect(s[5]!.where).toContain('「日の予定」');
   });
 });

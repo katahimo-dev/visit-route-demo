@@ -500,6 +500,18 @@ async function pathVariants(page, dlg, ctx) {
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'tabs-4-mobile.png') });
   await page.setViewportSize({ width: 1400, height: 1000 });
+  // 欠勤・キャンセルと空き状況の両方を切ると「当日・問い合わせ」は見出しごと消える（PRD D232。片方なら残るのは allOn で確かめる）
+  await writeFeaturesInOtherTab(ctx, { sudden: false, vacancy: false });
+  await open(page, '/home', '[data-testid="home-tasks"]');
+  const m = await menu(page);
+  check(
+    !m.titles.includes('当日・問い合わせ') &&
+      !m.labels.includes('欠勤・キャンセルを登録') &&
+      !m.labels.includes('空き状況') &&
+      same(m.titles, ['予定', '人', 'AI の条件', '設定']),
+    '欠勤・キャンセルと空き状況を切ると「当日・問い合わせ」は見出しごと出さない',
+    m.titles,
+  );
   await applyTemplate(page, dlg, 'all');
 }
 

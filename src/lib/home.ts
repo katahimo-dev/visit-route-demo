@@ -213,7 +213,7 @@ export function homeEntries(today: string, terms: Pick<Terms, 'client' | 'staff'
       key: 'absence',
       to: `/plan?date=${today}&do=${SUDDEN_DO}`,
       title: '欠勤・キャンセルを登録',
-      detail: '今日の日の予定で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定',
+      detail: '今日の予定で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定',
       date: today,
     },
     {

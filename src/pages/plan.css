@@ -754,12 +754,13 @@ p.plan-band.error {
   margin-left: auto;
   padding: 1px 8px;
   word-break: keep-all;
-  line-height: 1.35;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--card);
   font: inherit;
   font-size: 0.8rem;
+  /* font: inherit の後ろに置く（前に置くと上書きされる） */
+  line-height: 1.35;
   color: var(--sub);
   cursor: pointer;
 }

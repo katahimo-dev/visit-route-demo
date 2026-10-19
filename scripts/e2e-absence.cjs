@@ -474,6 +474,43 @@ async function mobile(page) {
   await page.emulateMedia({ media: 'screen' });
 }
 
+/**
+ * 列の見出しの入口の呼び名（PRD D231）：欠勤の無い人は「この人の欠勤を登録」。
+ * 390px（順番）では1行、1440px（時間軸の狭い列）では2行まで（「この人の／欠勤を登録」で折り返す）
+ */
+async function headerLabel(page) {
+  /** 欠勤の無い人の列の見出しのボタン：文字と行の数（内容の高さ ÷ 行の高さ）・列に収まるか */
+  const measure = () =>
+    page.locator('.absence-btn').evaluateAll((els) =>
+      els
+        .filter((el) => el.textContent === 'この人の欠勤を登録')
+        .map((el) => {
+          const cs = getComputedStyle(el);
+          const inner = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+          const r = el.getBoundingClientRect();
+          const col = el.closest('.route-col')?.getBoundingClientRect();
+          return {
+            lines: Math.round(inner / parseFloat(cs.lineHeight)),
+            fits: !col || (r.left >= col.left - 1 && r.right <= col.right + 1),
+          };
+        }),
+    );
+  for (const [w, h, max] of [
+    [390, 844, 1],
+    [1440, 1000, 2],
+  ]) {
+    await page.setViewportSize({ width: w, height: h });
+    await openPlan(page);
+    const got = await measure();
+    check(
+      got.length > 0 && got.every((x) => x.lines >= 1 && x.lines <= max && x.fits),
+      `${w}px：列の見出しは「この人の欠勤を登録」で${max === 1 ? '1行' : '2行まで'}・列に収まる`,
+      got.slice(0, 3),
+    );
+  }
+  await page.setViewportSize({ width: 1400, height: 1000 });
+}
+
 run(async () => {
   const b = await launch();
   const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
@@ -502,6 +539,7 @@ run(async () => {
     ['from-header', () => (best ? fromHeader(page, best) : check(false, 'from-header：前の段が通らない'))],
     ['no-plan', () => noPlanDay(page)],
     ['mobile', () => mobile(page)],
+    ['header-label', () => headerLabel(page)],
   ]) {
     try {
       await fn();

@@ -455,7 +455,7 @@ export default function MonthPage() {
           warn: n > 0,
           text:
             n > 0
-              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の予定の「この人の欠勤を登録」から振り直してください' : '日の予定で担当を振り直してください'}（自動では振り直しません）`
+              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の予定のその人の列の「欠勤を直す」から振り直してください' : '日の予定で担当を振り直してください'}（自動では振り直しません）`
               : `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました`,
         });
       } else {
