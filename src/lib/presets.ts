@@ -1,8 +1,16 @@
 // 条件のプリセットの編集（ADR-0008）。データを書き換えるのは store の update(fn) を通した画面だけ。ここは新しい DemoData を返す純粋関数
 import type { DemoData } from '../contracts/data';
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule } from '../contracts/rules';
-import { initialPresets } from '../seed';
+import { initialPresets, scoreRulesOf } from '../seed';
 import { newId } from './common';
+
+/**
+ * AI案を作る条件（ADR-0028。PRD D214）：「条件の重みとプリセット」（rules）が切なら、いまの条件に点数の基準のプリセットの重みを
+ * 当てたもの（月まとめ作成と同じ。切ると基準のプリセットだけで作る）。入ならいまの条件そのもの
+ */
+export function planRulesOf(d: Pick<DemoData, 'rules' | 'presets' | 'scorePresetId'>, rulesOn: boolean): Rule[] {
+  return rulesOn ? d.rules : scoreRulesOf(d);
+}
 
 /** プリセットの名前の上限（contracts の presetSchema と同じ） */
 export const PRESET_NAME_MAX = 20;

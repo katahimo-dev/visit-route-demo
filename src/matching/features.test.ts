@@ -2,7 +2,13 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { Features } from '../contracts/features';
+import type { Problem } from '../contracts/problem';
+import type { VacancyQuery } from '../contracts/vacancy';
+import { achievements, hundredBreakdown, normalize, ruleLowerBounds, score } from '../evaluate';
 import { problemKey } from '../lib/runs';
+import { scoreReason } from '../lib/scoreReason';
+import { fitsOf } from '../reassign';
+import { vacancyOf } from '../vacancy';
 import { client, DATE, makeData, rule, staff, visit } from './fixtures';
 import { ALLOWED_STAFF_RULE_ID, compile } from './index';
 
@@ -73,5 +79,65 @@ describe('機能の入り切り（compile）', () => {
     // 相性・担当を限る以外の機能を切っても問題は変わらない
     const q = compile(withFeatures(d, { ...off.org.features, compat: true, allowedStaff: true }), DATE);
     expect(problemKey(q)).toBe(problemKey(compile(d, DATE)));
+  });
+});
+
+describe('切ったときの採点・振り直し・空き状況は、そのデータが空のときと同じ（compile を通る先。ADR-0028）', () => {
+  /** 採点・達成・点の理由（日の画面・比較の画面と同じ組み立て） */
+  const evaluateAll = (p: Problem, routes: Record<string, string[]>) => {
+    const sc = score(p, routes);
+    const ach = achievements(p, routes);
+    const reason = scoreReason(hundredBreakdown(sc, normalize(p), p), sc, {
+      achievements: ach,
+      rules: [rule('r-compat', 'compatibility', 3)],
+      ruleLower: ruleLowerBounds(p),
+    });
+    return { sc, ach, reason };
+  };
+
+  it('相性を切ると score・achievements・scoreReason が相性のデータが空のときと同じ（×の組に担当しても）', () => {
+    const d = base();
+    // c1 の訪問を相性×の s1 に担当させる
+    const routes = { s1: ['v1', 'v2'], s2: [] };
+    const off = evaluateAll(compile(withFeatures(d, { compat: false }), DATE), routes);
+    const empty = evaluateAll(compile({ ...d, compat: {} }, DATE), routes);
+    expect(off).toEqual(empty);
+    // 入なら違う（相性が効いている）
+    const on = evaluateAll(compile(d, DATE), routes);
+    expect(on.sc).not.toEqual(empty.sc);
+  });
+
+  it('担当を限るを切ると、振り直しの「受けられる人」（fitsOf）も限らない（限らないデータと同じ）', () => {
+    const d = base();
+    const routes = { s1: ['v1'], s2: [] };
+    const ids = (p: Problem) => fitsOf(p, routes, 'v2').map((f) => f.staffId);
+    const on = ids(compile(d, DATE));
+    expect(on).toEqual(['s1']);
+    const off = ids(compile(withFeatures(d, { allowedStaff: false }), DATE));
+    const empty = ids(compile({ ...d, clients: d.clients.map((c) => ({ ...c, allowedStaffIds: [] })) }, DATE));
+    expect(off).toEqual(empty);
+    expect([...off].sort()).toEqual(['s1', 's2']);
+  });
+
+  it('担当を限る・相性を切った空き状況は、そのデータが空のときと同じ', () => {
+    const d = { ...base(), manualPlans: { [DATE]: { s1: ['v2'], s2: ['v1'] } } };
+    const q: VacancyQuery = {
+      typeId: null,
+      durationMinutes: 60,
+      requirements: [],
+      place: { address: '近く', lat: 38.2655, lng: 140.8755 },
+      marginMinutes: 15,
+      dayStart: '08:00',
+      dayEnd: '18:00',
+      stepMinutes: 60,
+    };
+    const range = { from: DATE, weeks: 1 };
+    const off = vacancyOf(withFeatures(d, { allowedStaff: false, compat: false }), q, range);
+    const empty = vacancyOf(
+      { ...d, compat: {}, clients: d.clients.map((c) => ({ ...c, allowedStaffIds: [] })) },
+      q,
+      range,
+    );
+    expect(off).toEqual(empty);
   });
 });

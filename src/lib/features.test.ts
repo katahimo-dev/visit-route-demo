@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Absence, Staff } from '../contracts/documents';
+import type { Absence, Client, Staff } from '../contracts/documents';
 import { FEATURE_IDS, type FeatureId, type Features } from '../contracts/features';
 import { createDemoData } from '../seed';
 import { paletteActions } from './commandPalette';
@@ -436,33 +436,87 @@ describe('計算に効く入り切り（calcFeaturesOf・sameCalcFeatures。ADR-
 });
 
 describe('turnOffImpact（切るときに残る・外れるデータ。PRD D215）', () => {
-  const d = createDemoData('2026-11-02');
-  const c0 = d.clients[0]!;
-  const c1 = d.clients[1]!;
-  const s0 = d.staff[0]!;
+  const TODAY_I = '2026-11-05';
+  const d0 = createDemoData('2026-11-02');
+  // 利用中・休止の区別をはっきりさせる（先頭3人の〈利用者さん〉は利用中、4人目は終了。〈スタッフ〉は先頭2人が利用中、3人目は休止）
+  const d = {
+    ...d0,
+    clients: d0.clients.map((c, i) =>
+      i === 3 ? { ...c, active: false, stage: 'ended' as const } : { ...c, active: true },
+    ),
+    staff: d0.staff.map((x, i) => (i === 2 ? { ...x, active: false } : { ...x, active: true })),
+  };
+  const [c0, c1, c2, c3] = d.clients as [Client, Client, Client, Client];
+  const [s0, s1, s2] = d.staff as [Staff, Staff, Staff];
   const data = {
     ...d,
-    compat: { [c0.id]: { [s0.id]: -2 as const, [d.staff[1]!.id]: 0 as const }, [c1.id]: { [s0.id]: 2 as const } },
-    clients: d.clients.map((c, i) => ({ ...c, allowedStaffIds: i < 3 ? [s0.id] : [] })),
+    compat: {
+      // 利用中×利用中の値のある組だけ数える（0・休止の〈スタッフ〉・終了の〈利用者さん〉は数えない）
+      [c0.id]: { [s0.id]: -2 as const, [s1.id]: 0 as const, [s2.id]: 2 as const },
+      [c1.id]: { [s0.id]: 2 as const },
+      [c3.id]: { [s0.id]: -2 as const },
+    },
+    clients: d.clients.map((c) =>
+      c.id === c0.id || c.id === c1.id
+        ? { ...c, allowedStaffIds: [s0.id] }
+        : // 休止の人だけに限った人・終了の人は計算に効かない
+          c.id === c2.id || c.id === c3.id
+          ? { ...c, allowedStaffIds: [s2.id] }
+          : c,
+    ),
     clientLeaves: [
       { id: 'l1', clientId: c0.id, from: '2026-11-03', to: '2026-11-05', note: '入院' },
       { id: 'l2', clientId: c1.id, from: '2026-11-10', to: '2026-11-10', note: '' },
+      { id: 'l3', clientId: c1.id, from: '2026-11-01', to: '2026-11-04', note: '終わった休み' },
     ],
     absences: [
-      { id: 'a1', staffId: s0.id, date: '2026-11-04', from: null, to: null, note: '希望休' },
-      { id: 'a2', staffId: s0.id, date: '2026-11-05', from: null, to: null, note: '病院' },
+      { id: 'a1', staffId: s0.id, date: '2026-11-05', from: null, to: null, note: '希望休' },
+      { id: 'a0', staffId: s0.id, date: '2026-11-04', from: null, to: null, note: '希望休' },
+      { id: 'a2', staffId: s1.id, date: '2026-11-06', from: null, to: null, note: '病院' },
+      { id: 'a3', staffId: s1.id, date: '2026-11-07', from: '09:00', to: '12:00', note: '' },
+      { id: 'a4', staffId: s1.id, date: '2026-11-01', from: null, to: null, note: '過ぎた欠勤' },
     ],
   };
-  it('相性は値のある組、担当を限るは限っている人の数で「計算から外れます」', () => {
-    expect(turnOffImpact(data, 'compat')).toEqual({ count: 2, text: '相性 2組は計算から外れます' });
-    expect(turnOffImpact(data, 'allowedStaff')).toEqual({ count: 3, text: '担当を限る 3人は計算から外れます' });
+  it('相性は利用中の〈利用者さん〉×休止でない〈スタッフ〉の値のある組、担当を限るは計算で効く人で「計算から外れます」', () => {
+    expect(turnOffImpact(data, 'compat', TODAY_I)).toEqual({ count: 2, text: '相性 2組は計算から外れます' });
+    expect(turnOffImpact(data, 'allowedStaff', TODAY_I)).toEqual({
+      count: 2,
+      text: `担当を限る 2人（${d.org.terms.client}）は計算から外れます`,
+    });
   });
-  it('事実（休み・希望休）は「残り、計算に効き続けます」。呼び方を使う', () => {
-    expect(turnOffImpact(data, 'clientLeave')).toEqual({
+  it('事実（休み・希望休・欠勤）は今日以降に掛かるものだけを「残り、計算に効き続けます」。呼び方を使う', () => {
+    expect(turnOffImpact(data, 'clientLeave', TODAY_I)).toEqual({
       count: 2,
       text: `${d.org.terms.client}の休み 2件は残り、計算に効き続けます`,
     });
-    expect(turnOffImpact(data, 'requestedOff')?.text).toBe('希望休 1件は残り、計算に効き続けます');
+    expect(turnOffImpact(data, 'requestedOff', TODAY_I)).toEqual({
+      count: 1,
+      text: '希望休 1件は残り、計算に効き続けます',
+    });
+    expect(turnOffImpact(data, 'sudden', TODAY_I)).toEqual({ count: 2, text: '欠勤 2件は残り、計算に効き続けます' });
+    // 今日が過ぎれば数えない
+    expect(turnOffImpact(data, 'clientLeave', '2026-11-11')).toBeNull();
+    expect(turnOffImpact(data, 'sudden', '2026-11-08')).toBeNull();
+  });
+  it('空き状況は仮押さえの〈利用者さん〉の件数で「AI案に入り続けます」', () => {
+    const held = { ...data, clients: data.clients.map((c, i) => (i < 2 ? { ...c, tentative: true } : c)) };
+    expect(turnOffImpact(held, 'vacancy', TODAY_I)).toEqual({
+      count: 2,
+      text: `仮押さえ 2人（${d.org.terms.client}）は残り、AI案に入り続けます`,
+    });
+    expect(turnOffImpact(data, 'vacancy', TODAY_I)).toBeNull();
+  });
+  it('呼び方を変えたデータでは、その呼び方で出す', () => {
+    const renamed = {
+      ...data,
+      org: { ...data.org, terms: { ...data.org.terms, client: 'お客様', staff: 'シッター' } },
+    };
+    expect(turnOffImpact(renamed, 'allowedStaff', TODAY_I)?.text).toBe('担当を限る 2人（お客様）は計算から外れます');
+    expect(turnOffImpact(renamed, 'clientLeave', TODAY_I)?.text).toBe('お客様の休み 2件は残り、計算に効き続けます');
+    const held = { ...renamed, clients: renamed.clients.map((c, i) => (i === 0 ? { ...c, tentative: true } : c)) };
+    expect(turnOffImpact(held, 'vacancy', TODAY_I)?.text).toBe('仮押さえ 1人（お客様）は残り、AI案に入り続けます');
+    const off = { ...renamed, staff: renamed.staff.map((x, i) => (i === 0 ? { ...x, lastDay: '2026-12-01' } : x)) };
+    expect(turnOffImpact(off, 'offboard', TODAY_I)?.text).toBe('最終勤務日 1人（シッター）は残り、計算に効き続けます');
   });
   it('定期パターンは毎月・曜日ごとの時刻を使うものだけ数える', () => {
     const p = d.patterns[0]!;
@@ -473,17 +527,18 @@ describe('turnOffImpact（切るときに残る・外れるデータ。PRD D215�
         { ...p, id: 'p2', repeat: 'weekly' as const, monthWeeks: [], dayTimes: [] },
       ],
     };
-    expect(turnOffImpact(withMonthly, 'patternMonthly')).toEqual({
+    expect(turnOffImpact(withMonthly, 'patternMonthly', TODAY_I)).toEqual({
       count: 1,
       text: '定期パターンの毎月・曜日ごとの時刻 1件は残り、訪問は今どおり作られます',
     });
   });
   it('データが無い・数えない機能は null（確認を出さない）', () => {
     const empty = { ...data, compat: {}, clientLeaves: [], absences: [] };
-    expect(turnOffImpact(empty, 'compat')).toBeNull();
-    expect(turnOffImpact(empty, 'clientLeave')).toBeNull();
-    expect(turnOffImpact(empty, 'requestedOff')).toBeNull();
-    expect(turnOffImpact(data, 'monthPrint')).toBeNull();
-    expect(turnOffImpact(data, 'compare')).toBeNull();
+    expect(turnOffImpact(empty, 'compat', TODAY_I)).toBeNull();
+    expect(turnOffImpact(empty, 'clientLeave', TODAY_I)).toBeNull();
+    expect(turnOffImpact(empty, 'requestedOff', TODAY_I)).toBeNull();
+    expect(turnOffImpact(empty, 'sudden', TODAY_I)).toBeNull();
+    expect(turnOffImpact(data, 'monthPrint', TODAY_I)).toBeNull();
+    expect(turnOffImpact(data, 'compare', TODAY_I)).toBeNull();
   });
 });

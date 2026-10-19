@@ -70,6 +70,8 @@ export default function StaffPage() {
   // （最終勤務日の値は事実なので計算に効き、一覧の「最終」の印も残す）
   const offboardOn = useFeature('offboard');
   const mailOn = useFeature('mail');
+  /** 担当を限る（ADR-0028 の allowedStaff）：切なら休止の確認で「担当できる人」に触れない（外すデータの書き換えは今どおり） */
+  const allowedStaffOn = useFeature('allowedStaff');
   const toast = useToast();
   const confirmDialog = useConfirm();
   /** 閲覧の欄で開いている人（PRD D127。編集中はその人の ID のまま。null：閲覧の欄なし） */
@@ -190,7 +192,8 @@ export default function StaffPage() {
       const s = staffSchema.parse({ ...form, email });
       // 休止にするとき、〈利用者さん〉の「担当できる人」から外す（ADR-0014。repair と同じ扱いを保存の時点で）
       const limited = s.active ? [] : data.clients.filter((c) => c.allowedStaffIds.includes(s.id));
-      if (limited.length > 0) {
+      // 担当を限るを切っていれば、見えない欄の話になるので確認を出さない（外すのは今どおり。入れ直しても戻らない）
+      if (limited.length > 0 && allowedStaffOn) {
         // ほかに利用中の人が残らない〈利用者さん〉（休止中の人は数えない）
         const activeOther = new Set(data.staff.filter((x) => x.active && x.id !== s.id).map((x) => x.id));
         const emptied = limited.filter((c) => !c.allowedStaffIds.some((id) => activeOther.has(id)));

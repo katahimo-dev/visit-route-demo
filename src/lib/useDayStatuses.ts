@@ -73,10 +73,7 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
     return out;
   }, [data.visits]);
   /** いま作れる条件の組（いまの条件と各プリセット。今の案の条件がどれでもなければ「条件が変わった」。PRD D161） */
-  const ruleKeys = useMemo(
-    () => currentRuleKeys(data.rules, data.presets, data.org.features),
-    [data.rules, data.presets, data.org.features],
-  );
+  const ruleKeys = useMemo(() => currentRuleKeys(data.rules, data.presets), [data.rules, data.presets]);
   return useMemo(() => {
     const out: DayStatuses = new Map();
     const c = compileInput;

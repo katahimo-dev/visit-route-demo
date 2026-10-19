@@ -1,6 +1,7 @@
 import { CircleCheck, LayoutTemplate, Settings } from 'lucide-react';
 import { useId } from 'react';
 import { flushSync } from 'react-dom';
+import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/ui';
@@ -34,6 +35,8 @@ import '../components/features.css';
  */
 export default function SettingsPage() {
   const { data, update } = useDemoData();
+  /** 今日（休み・希望休・欠勤は今日以降に掛かるものだけを数える。turnOffImpact） */
+  const { date: today } = useDay();
   const features = data.org.features;
   const terms = data.org.terms;
   const toast = useToast();
@@ -47,7 +50,7 @@ export default function SettingsPage() {
   const apply = async (t: TemplateDef) => {
     const diff = templateDiff(features, t.id);
     // 切れる機能に入っているデータの件数と効き方（PRD D215。turnOffImpact）
-    const impacts = diff.off.flatMap((id) => turnOffImpact(data, id)?.text ?? []);
+    const impacts = diff.off.flatMap((id) => turnOffImpact(data, id, today)?.text ?? []);
     const body = [
       diff.on.length > 0 ? `入る機能：${names(diff.on)}` : '入る機能：なし',
       diff.off.length > 0 ? `切れる機能：${names(diff.off)}` : '切れる機能：なし',
@@ -75,7 +78,7 @@ export default function SettingsPage() {
   const toggle = async (f: FeatureDef) => {
     let forced: boolean | null = null;
     if (isSwitchOn(features, f.id) && !(f.requires && !isOn(features, f.requires))) {
-      const impact = turnOffImpact(data, f.id);
+      const impact = turnOffImpact(data, f.id, today);
       if (impact) {
         const ok = await confirmDialog({
           title: `${featureLabel(f.id, terms)}を切りますか？`,

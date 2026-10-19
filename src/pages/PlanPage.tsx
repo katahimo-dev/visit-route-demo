@@ -112,6 +112,7 @@ import {
   resolveText,
   revertText,
 } from '../lib/planMenu';
+import { planRulesOf } from '../lib/presets';
 import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
@@ -249,6 +250,11 @@ export default function PlanPage() {
     slotsOf,
   } = m;
   const terms = data.org.terms;
+  /** AI案を作る条件（rules が切なら点数の基準のプリセットの重みを当てたもの。ADR-0028。lib/presets の planRulesOf） */
+  const planRules = useMemo(
+    () => planRulesOf({ rules: data.rules, presets: data.presets, scorePresetId: data.scorePresetId }, rulesOn),
+    [data.rules, data.presets, data.scorePresetId, rulesOn],
+  );
   /** 〈利用者さん〉の休み（ADR-0013）のため無しの訪問の〈利用者さん〉（名前から詳細を開く。理由を添える。PRD D208） */
   const leaveNames = useMemo(
     () => leavePeople(m.leaveVisits, data.clientLeaves, date, (id) => clientById.get(id)?.displayName),
@@ -572,7 +578,7 @@ export default function PlanPage() {
    * after は計算が終わったあと（成功・失敗とも。順に作る次へ）。計算を始めたら true
    */
   const create = (
-    rules: Rule[] = data.rules,
+    rules: Rule[] = planRules,
     mode: 'preset' | 'auto' = 'preset',
     opts: { after?: () => void; onMade?: (plan: AiPlan) => void } = {},
   ): boolean => {
@@ -626,7 +632,7 @@ export default function PlanPage() {
     tone: 'danger',
   } as const;
   /** 「AI案を作る」（手で押したとき）：作れるか確かめ、手直し・固定があれば確認してから作る */
-  const recreate = async (rules: Rule[] = data.rules) => {
+  const recreate = async (rules: Rule[] = planRules) => {
     if (!check(rules)) return;
     if (edited && !(await confirmDialog(DISCARD_RECREATE))) return;
     // 確認のあいだに計算が始まっていたら何もしない
@@ -928,7 +934,7 @@ export default function PlanPage() {
   const planIsStale = useMemo(() => {
     if (!aiPlan) return false;
     // 作った条件（重み・必須）がいまの条件にもどのプリセットにも無い（PRD D161。月・ホーム・帯と同じ lib/month の rulesStale）
-    if (rulesStale(data, date, currentRuleKeys(data.rules, data.presets, data.org.features))) return true;
+    if (rulesStale(data, date, currentRuleKeys(data.rules, data.presets))) return true;
     return planStale(compileInput, data, date, (rules, pins) => {
       if (Object.keys(pins).length > 0) return undefined;
       const key = JSON.stringify(rules);
@@ -951,7 +957,7 @@ export default function PlanPage() {
    * 固定を外した）は消えるので、あれば確かめる（PR #39 のレビュー）
    */
   const resolve = async () => {
-    if (!check() || !aiPlan) return;
+    if (!check(rulesOn ? undefined : planRules) || !aiPlan) return;
     if (
       unpinned &&
       !(await confirmDialog({
@@ -964,18 +970,18 @@ export default function PlanPage() {
       return;
     // 確認のあいだに計算が始まっていたら何もしない
     if (runRef.current) return;
-    const p = check();
+    const p = check(rulesOn ? undefined : planRules);
     if (!p || !aiPlan) return;
     const forDate = date;
-    const pinned = attempt(() => compile(data, forDate, aiPlan.pins));
+    const pinned = attempt(() => compile({ ...data, rules: planRules }, forDate, aiPlan.pins));
     if (!pinned.value) {
       setError(pinned.error);
       return;
     }
-    const rulesSnapshot = data.rules;
+    const rulesSnapshot = planRules;
     const pinsSnapshot = aiPlan.pins;
     const inputKey = problemKey(pinned.value);
-    run('resolve', pinned.value, `${presetOf(data.rules, data.presets)?.name ?? 'いま'}の`, (result) => {
+    run('resolve', pinned.value, `${presetOf(planRules, data.presets)?.name ?? 'いま'}の`, (result) => {
       const x = { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now(), inputKey };
       update((d) => {
         const added = addRun(
@@ -2302,7 +2308,7 @@ export default function PlanPage() {
     unpinned,
     busy: busyWhy,
     running: !!running,
-    ruleName: presetOf(data.rules, data.presets)?.name ?? '今の重み',
+    ruleName: presetOf(planRules, data.presets)?.name ?? '今の重み',
     runCount,
   };
   const createT = createText(menuInput);

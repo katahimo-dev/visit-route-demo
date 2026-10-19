@@ -114,6 +114,8 @@ export function PatternsSection({ client }: { client: Client }) {
    */
   const monthlyOn = useFeature('patternMonthly');
   const monthlyOffId = useId();
+  /** 曜日ごとの時刻のパターンで patternMonthly が切：曜日・曜日ごとの時刻は読むだけ（データを変えない） */
+  const daysLocked = !monthlyOn && !!form?.perDay;
   const [error, setError] = useState<string | null>(null);
   const patterns = useMemo(() => data.patterns.filter((p) => p.clientId === client.id), [data.patterns, client.id]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
@@ -381,19 +383,22 @@ export function PatternsSection({ client }: { client: Client }) {
             </label>
           </div>
           {!monthlyOn && (form.repeat === 'monthly' || form.perDay) && (
-            <span className="sub" id={monthlyOffId} data-testid={monthlyOffId}>
+            <span className="sub" id={monthlyOffId} data-testid="pattern-monthly-off">
               毎月の第N週・曜日ごとの時刻は管理者設定で切っています（読むだけです。訪問は今どおり作られます）
             </span>
           )}
           <div className="stack" style={{ gap: 4 }}>
             <span className="sub">曜日（1つ以上）</span>
-            <fieldset className="weekday-toggles" aria-label="曜日">
+            <fieldset className="weekday-toggles" aria-label="曜日" data-testid="pattern-weekdays">
               {WEEKDAY_LABELS.map((w, i) => (
                 <button
                   key={w}
                   type="button"
                   className={`weekday-toggle${form.weekdays.includes(i) ? ' is-on' : ''}`}
                   aria-pressed={form.weekdays.includes(i)}
+                  // 曜日ごとの時刻を切っているとき、曜日を足すと黙って共通の時刻になるので押せない（読むだけ。ADR-0028）
+                  disabled={daysLocked}
+                  aria-describedby={daysLocked ? monthlyOffId : undefined}
                   onClick={() => toggleDay(i)}
                 >
                   {w}

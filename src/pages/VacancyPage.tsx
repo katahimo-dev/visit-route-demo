@@ -222,6 +222,8 @@ export default function VacancyPage() {
   const terms = data.org.terms;
   const noticeOn = useFeature('vacancyNotice');
   const mailOn = useFeature('mail');
+  /** 段階・紹介元（ADR-0028 の clientStage）：切なら紹介元の名前・メールアドレスの一覧と BCC のメールを出さない（データは残す） */
+  const stageOn = useFeature('clientStage');
   const toast = useToast();
   const today = jstDate(Date.now());
 
@@ -953,7 +955,7 @@ export default function VacancyPage() {
                       <WithIcon icon={Copy}>案内文をコピー</WithIcon>
                     </button>
                   </div>
-                  {mailOn && (
+                  {mailOn && stageOn && (
                     <div className="stack notice-mail" style={{ gap: 6 }} data-testid="notice-mail">
                       {referrers.length > 0 && (
                         <fieldset className="notice-mail-to">

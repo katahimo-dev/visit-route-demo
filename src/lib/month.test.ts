@@ -726,45 +726,65 @@ describe('最終勤務日・拘束の上限・当日キャンセル（ADR-0015�
   });
 });
 
-describe('計算に効く入り切りが変わったか（rulesStale。ADR-0028。PRD D214）', () => {
-  const keysOf = (d: DemoData) => currentRuleKeys(d.rules, d.presets, d.org.features);
+describe('入り切りで計算が変わった日だけ「条件が変わった」（ADR-0028。PRD D214）', () => {
+  const keysOf = (d: DemoData) => currentRuleKeys(d.rules, d.presets);
   const firstDay = (d: DemoData) => batchTargets(d, '2026-11', TODAY, 'empty')[0]!;
   const withFeatures = (d: DemoData, features: DemoData['org']['features']): DemoData => ({
     ...d,
     org: { ...d.org, features },
   });
+  /** 条件が変わったか（月の要対応と同じ：問題の違い（planStale）か、作った条件がもう無い（rulesStale）） */
+  const stale = (d: DemoData, date: string) => planStale(d, d, date) || rulesStale(d, date, keysOf(d));
+  /** その日に訪問がある〈利用者さん〉の1人を、先頭の〈スタッフ〉だけに限る */
+  const limitOne = (d: DemoData, date: string): DemoData => {
+    const cid = d.visits.find((v) => v.date === date && !v.cancelled)!.clientId;
+    return {
+      ...d,
+      clients: d.clients.map((c) => (c.id === cid ? { ...c, allowedStaffIds: [d.staff[0]!.id] } : c)),
+    };
+  };
 
-  it('すべて入で作った記録は calcFeatures を書かず（今と同じ形）、すべて入のままなら変わったにしない', () => {
+  it('すべて入で作った記録は calcFeatures を書かず（今と同じ形）、計算に効かない機能を切っても変わらない', () => {
     const d0 = novData();
     const a = firstDay(d0);
     const d = withPlan(d0, a);
     expect(planRunOf(d, a)!.calcFeatures).toBeUndefined();
-    expect(rulesStale(d, a, keysOf(d))).toBe(false);
-    // 計算に効かない機能を切っても変わらない
+    expect(stale(d, a)).toBe(false);
     const off = withFeatures(d, { mail: false, clientLeave: false, rules: false });
-    expect(rulesStale(off, a, keysOf(off))).toBe(false);
+    expect(stale(off, a)).toBe(false);
   });
 
-  it('相性を切ると変わった。切ったまま作り直すと記録に calcFeatures が書かれて消え、入れ直すとまた変わった', () => {
+  it('担当を限るを切っても、限った人がいない（問題が変わらない）日は変わったにしない', () => {
     const d0 = novData();
     const a = firstDay(d0);
-    let d = withPlan(d0, a);
-    d = withFeatures(d, { compat: false });
-    expect(rulesStale(d, a, keysOf(d))).toBe(true);
-    d = withPlan(d, a);
-    expect(planRunOf(d, a)!.calcFeatures).toEqual({ compat: false });
+    const d = withFeatures(withPlan(d0, a), { allowedStaff: false });
+    expect(stale(d, a)).toBe(false);
+    expect(batchTargets(d, '2026-11', TODAY, 'stale')).toEqual([]);
+  });
+
+  it('担当を限るを切って問題が変わる日は変わった（planStale）。切ったまま作り直すと消え、記録に calcFeatures が残る', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    let d = withPlan(limitOne(d0, a), a);
+    expect(stale(d, a)).toBe(false);
+    d = withFeatures(d, { allowedStaff: false });
+    expect(planStale(d, d, a)).toBe(true);
     expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    expect(batchTargets(d, '2026-11', TODAY, 'stale')).toEqual([a]);
+    d = withPlan(d, a);
+    expect(planRunOf(d, a)!.calcFeatures).toEqual({ allowedStaff: false });
+    expect(stale(d, a)).toBe(false);
+    // 入れ直すと、また問題が変わる
     d = withFeatures(d, {});
-    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    expect(stale(d, a)).toBe(true);
   });
 
-  it('calcFeatures の無い古い記録はすべて入：担当を限るを切ると変わった、入を明示しても変わらない', () => {
+  it('記録の calcFeatures がいまと違っても、問題が同じなら変わったにしない（使い回しで同じ記録を返しても残らない）', () => {
     const d0 = novData();
     const a = firstDay(d0);
-    const d = withPlan(d0, a);
-    const on = withFeatures(d, { compat: true, allowedStaff: true });
-    expect(rulesStale(on, a, keysOf(on))).toBe(false);
-    const off = withFeatures(d, { allowedStaff: false });
-    expect(rulesStale(off, a, keysOf(off))).toBe(true);
+    const d = withFeatures(withPlan(withFeatures(d0, { compat: false }), a), {});
+    expect(planRunOf(d, a)!.calcFeatures).toEqual({ compat: false });
+    // novData の相性は計算に効く（相性の表がある）なら問題が変わる。どちらでも rulesStale は入り切りを見ない
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
   });
 });

@@ -184,9 +184,14 @@ export default function MonthPage() {
   const terms = data.org.terms;
   /** 切った機能（月の予定の印刷・稼働の見込み）の画面へ移るボタンは出さない（PRD D213。ADR-0028） */
   const printOn = isOn(data.org.features, 'monthPrint');
-  /** 希望休のまとめ入力（ADR-0028 の requestedOff）：切なら「休みを入れる」と「休みの人に N」の印を出さない（希望休そのものは事実で効く） */
+  /**
+   * 希望休のまとめ入力（ADR-0028 の requestedOff）：切なら「休みを入れる」の入力だけ出さない（希望休そのものは事実で効き、
+   * 「休みの人に N」の印も欠勤・最終勤務日の分を含む事実の表示なので出す）
+   */
   const requestedOn = isOn(data.org.features, 'requestedOff');
   const workloadOn = isOn(data.org.features, 'workload');
+  /** 欠勤・キャンセル（ADR-0028 の sudden）：切なら希望休を入れたときの知らせで「急な欠勤」の入口を案内しない */
+  const suddenOn = isOn(data.org.features, 'sudden');
   const toast = useToast();
   const confirmDialog = useConfirm();
   const navigate = useNavigate();
@@ -446,14 +451,14 @@ export default function MonthPage() {
           warn: n > 0,
           text:
             n > 0
-              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。日の画面の「急な欠勤」から振り直してください（自動では振り直しません）`
+              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の画面の「急な欠勤」から振り直してください' : '日の画面で担当を振り直してください'}（自動では振り直しません）`
               : `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました`,
         });
       } else {
         setOffNote({ date: d, warn: false, text: `${mdText(d)} の${REQUESTED_OFF_NOTE}を外しました` });
       }
     },
-    [offStaffId, today, update, staffById],
+    [offStaffId, today, update, staffById, suddenOn],
   );
   /** 選んでいる〈スタッフ〉のこの月の希望休の日 */
   const offDates = useMemo(
@@ -1200,7 +1205,6 @@ export default function MonthPage() {
                             clientTerm={terms.client}
                             staffTerm={terms.staff}
                             offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
-                            showAbsentLeft={requestedOn}
                             onOpen={openDay}
                             onToggleOff={toggleOff}
                           />
@@ -1761,8 +1765,6 @@ type CellProps = {
   staffTerm: string;
   /** 「休みを入れる」のときのその日の扱い（PRD D69。それ以外は undefined＝押すと日の画面へ） */
   offState: OffDayState | undefined;
-  /** 「休みの人に N」の印を出すか（希望休のまとめ入力が入のとき。ADR-0028） */
-  showAbsentLeft: boolean;
   onOpen: (date: string) => void;
   onToggleOff: (date: string) => void;
 };
@@ -1792,10 +1794,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
     clientTerm,
     staffTerm,
     offState,
-    showAbsentLeft,
   } = props;
-  /** 「休みの人に N」の印（希望休のまとめ入力を切っていれば出さない。ADR-0028 の requestedOff。月の要対応には残る） */
-  const absentLeft = showAbsentLeft ? s.absentLeft : 0;
+  /** 「休みの人に N」の印（欠勤・希望休・最終勤務日の後の人に残る訪問の事実なので、希望休のまとめ入力を切っても出す。ADR-0028） */
+  const absentLeft = s.absentLeft;
   const past = d < today;
   const care = s.needsCare && !past;
   const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));

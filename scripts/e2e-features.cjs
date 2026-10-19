@@ -13,6 +13,8 @@
 // 閲覧の欄の紹介元・決まりごと、〈スタッフ〉の欄のメールアドレス・最終勤務日、月の「休みを入れる」・印刷、空き状況の案内文、
 // データの Excel、稼働の見込みの交通費の単価）。相性を切るときの独自の確認（件数と効き方。取り消すと変わらない）と、
 // 切ったあとの月の要対応の「条件が変わった」、相性×の組が切ると担当に入ること（別のタブで×を書き、日の画面で作り直す）。
+// レビューの反映：希望休のまとめ入力を切っても月の「休みの人に N」は出す、欠勤・キャンセルを切ると稼働時間の凡例で登録の場所を出さない、
+// 切ったまま保存してもデータが残る（段階「契約」・担当できる人・〈スタッフ〉のメールアドレス・毎月のパターンの repeat と monthWeeks）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-features.cjs
 // 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -571,7 +573,8 @@ async function deadEnds(page, dlg, ctx) {
       ];
       data.org.spanLimitHours = 1;
       // 稼働の見込み・欠勤・キャンセル・月の印刷・案を比べるを切る
-      data.org.features = { workload: false, sudden: false, monthPrint: false, compare: false };
+      // 希望休のまとめ入力も切る（「休みの人に N」の印は事実なので残る）
+      data.org.features = { workload: false, sudden: false, monthPrint: false, compare: false, requestedOff: false };
       localStorage.setItem(k, JSON.stringify(data));
       return absentId;
     },
@@ -600,6 +603,10 @@ async function deadEnds(page, dlg, ctx) {
       r,
     );
   }
+  check(
+    (await page.getByTestId('month-absent-left').count()) > 0,
+    '月：希望休のまとめ入力を切っても「休みの人に N」の印は出す（欠勤の人に残る訪問の事実）',
+  );
   check((await page.getByTestId('month-workload').count()) === 0, '月：稼働の見込みのボタンを出さない');
   check((await page.getByTestId('month-print').count()) === 0, '月：印刷のボタンを出さない');
   const r = rows.find((x) => x.cls.includes('is-overSpan') && x.text.includes(md(second)));
@@ -640,6 +647,11 @@ async function deadEnds(page, dlg, ctx) {
   const data = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
   const name = data.staff.find((s) => s.id === absent)?.name ?? '';
   await open(page, '/availability', '.avail-table');
+  const legend = await page.locator('.app-main').innerText();
+  check(
+    legend.includes('急な欠勤') && !legend.includes('予定の画面で登録'),
+    '稼働時間の凡例：欠勤・キャンセルを切ると「（予定の画面で登録）」を出さない',
+  );
   const heads = await page.locator('.avail-table thead th').allInnerTexts();
   const col = heads.findIndex((t) => t.replace(/\s+/g, '').startsWith(md(second)));
   check(col > 0, '稼働時間の表にその日の列がある', col);
@@ -771,6 +783,108 @@ async function insideEntries(page, dlg, ctx) {
       await page.setViewportSize({ width: 1400, height: 1000 });
     }
   }
+  await applyTemplate(page, dlg, 'all');
+}
+
+/**
+ * 切ったまま保存してもデータが残る（ADR-0028。データは消さない）：段階が「契約」の〈利用者さん〉の段階・担当できる人、
+ * 〈スタッフ〉のメールアドレス、毎月のパターンの繰り返し方（repeat）と第何週（monthWeeks）
+ */
+async function keepData(page, dlg, ctx) {
+  await open(page, '/home', '[data-testid="home-tasks"]');
+  await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
+  await open(page, '/home', '[data-testid="home-tasks"]');
+  const other = await ctx.newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.locator('h1').first().waitFor({ timeout: 30000 });
+  const ids = await other.evaluate((k) => {
+    const data = JSON.parse(localStorage.getItem(k));
+    const withPattern = data.clients.find((c) => data.patterns.some((p) => p.clientId === c.id)) ?? data.clients[0];
+    const s0 = data.staff.find((s) => s.active);
+    const c = withPattern;
+    c.stage = 'contract';
+    c.active = false;
+    c.tentative = false;
+    c.allowedStaffIds = [s0.id];
+    s0.email = 'keep@example.com';
+    const p = data.patterns.find((x) => x.clientId === c.id);
+    if (p) {
+      p.repeat = 'monthly';
+      p.everyWeeks = 1;
+      p.monthWeeks = [1, 3];
+      p.dayTimes = [];
+    }
+    data.org.features = { clientStage: false, allowedStaff: false, mail: false, patternMonthly: false };
+    localStorage.setItem(k, JSON.stringify(data));
+    return {
+      client: c.id,
+      staff: s0.id,
+      pattern: p?.id ?? null,
+      others: data.patterns.filter((x) => x.clientId === c.id && x.id !== p?.id).map((x) => x.id),
+    };
+  }, STORAGE_KEY);
+  await other.close();
+  await page.waitForTimeout(300);
+  const stored = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
+
+  // 〈利用者さん〉：段階・担当できる人の欄が無いまま保存する
+  await open(page, `/clients?id=${encodeURIComponent(ids.client)}`, '[data-testid="person-view"]');
+  await page.getByTestId('view-edit').click();
+  await page.getByTestId('client-stage-select').waitFor({ timeout: 5000 });
+  check(
+    (await page.getByTestId('client-stage-select').inputValue()) === 'contract',
+    '段階・紹介元を切っても、契約の人の選択は今の段階のまま',
+  );
+  await page.locator('.drawer').getByRole('button', { name: '保存', exact: true }).click();
+  await page.getByTestId('person-view').waitFor({ timeout: 5000 });
+  await page.waitForTimeout(300);
+  let data = await stored();
+  const c = data.clients.find((x) => x.id === ids.client);
+  check(c.stage === 'contract', '切ったまま保存しても段階（契約）が残る', c.stage);
+  check(same(c.allowedStaffIds, [ids.staff]), '切ったまま保存しても担当できる人が残る', c.allowedStaffIds);
+
+  // 毎月のパターン：曜日ごと・第N週を切ったまま直す
+  if (ids.pattern) {
+    await page.getByTestId('view-edit').click();
+    await page.getByTestId('client-stage-select').waitFor({ timeout: 5000 });
+    await page
+      .getByRole('button', { name: /のパターンを直す$/ })
+      .first()
+      .click();
+    await page.getByTestId('pattern-form').waitFor({ timeout: 5000 });
+    check(
+      (await page.getByTestId('pattern-monthly-off').count()) === 1,
+      '切った毎月のパターン：管理者設定で切っていますの注記',
+    );
+    check(
+      (await page.getByTestId('pattern-repeat').isDisabled()) &&
+        (await page.getByTestId('pattern-month-weeks').locator('button').first().isDisabled()),
+      '切った毎月のパターン：繰り返し方と第何週は読むだけ',
+    );
+    await page.getByTestId('pattern-form').getByRole('button', { name: '直す', exact: true }).click();
+    await page.waitForTimeout(600);
+    data = await stored();
+    const mine = data.patterns.filter((p) => p.clientId === ids.client && !ids.others.includes(p.id));
+    check(
+      mine.length > 0 && mine.every((p) => p.repeat === 'monthly' && same(p.monthWeeks, [1, 3])),
+      '切ったまま直しても毎月のパターンの repeat・monthWeeks が残る',
+      mine.map((p) => [p.repeat, p.monthWeeks]),
+    );
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+  }
+
+  // 〈スタッフ〉：メールアドレスの欄が無いまま保存する
+  await open(page, `/staff?id=${encodeURIComponent(ids.staff)}`, '[data-testid="person-view"]');
+  await page.getByTestId('view-edit').click();
+  await page.locator('.drawer input').first().waitFor({ timeout: 5000 });
+  check((await page.getByTestId('staff-email').count()) === 0, 'メールを切るとメールアドレスの欄が無い');
+  await page.locator('.drawer').getByRole('button', { name: '保存', exact: true }).click();
+  await page.getByTestId('person-view').waitFor({ timeout: 5000 });
+  await page.waitForTimeout(300);
+  data = await stored();
+  const s = data.staff.find((x) => x.id === ids.staff);
+  check(s.email === 'keep@example.com', '切ったまま保存しても〈スタッフ〉のメールアドレスが残る', s.email);
   await applyTemplate(page, dlg, 'all');
 }
 
@@ -919,6 +1033,7 @@ async function turnOffCompat(page, dlg, ctx) {
     ['dead-ends', deadEnds],
     ['inside-entries', insideEntries],
     ['turn-off-compat', turnOffCompat],
+    ['keep-data', keepData],
   ]) {
     try {
       await fn(page, dlg, ctx);

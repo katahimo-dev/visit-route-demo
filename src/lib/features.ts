@@ -66,7 +66,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '月の画面で{staff}の希望休をまとめて入れられます',
     group: '予定を組む',
     paths: [],
-    hides: '月の「休みを入れる」、「休みの人に N」の印',
+    hides: '月の「休みを入れる」（希望休は残り計算に効く。「休みの人に N」の印も出る）',
   },
   {
     id: 'monthPrint',
@@ -91,7 +91,7 @@ export const FEATURES: readonly FeatureDef[] = [
     group: '当日の対応',
     paths: [],
     doParams: [{ path: '/plan', do: 'absence' }],
-    hides: 'メニュー・ホームのカード・探すの操作・列の見出しの「急な欠勤」・欄、案A・案B、連絡の一覧',
+    hides: '欠勤・キャンセルの入口と欄（登録・振り直しを始める所）',
   },
   {
     id: 'vacancy',
@@ -389,28 +389,39 @@ const usesMonthly = (p: Pattern): boolean => p.repeat === 'monthly' || p.dayTime
 
 /**
  * その機能を切るときに残る・外れるデータの件数と効き方（D215。管理者設定の確認ダイアログの文）。
- * 計算から外れるのは好み・社内の決まり（相性・担当を限る）、事実（休み・希望休・最終勤務日・パターン）は残って効き続ける。
+ * 計算から外れるのは好み・社内の決まり（相性・担当を限る）、事実（休み・希望休・欠勤・最終勤務日・パターン・仮押さえ）は残って効き続ける。
  * 画面から隠れるだけのデータ（段階・紹介元・決まりごと・メールアドレス）は残ると出す。
- * 件数の数え方の決まった機能でデータが無い・数えない機能は null（確認を出さない）
+ * 数えるのは計算に効くものだけ：相性は利用中の〈利用者さん〉×休止でない〈スタッフ〉の組、担当を限るは限った人に休止でない人がいる
+ * 利用中の〈利用者さん〉（compile と同じ）、休み・希望休・欠勤は今日（today。YYYY-MM-DD）以降に掛かるもの。
+ * 件数の数え方の決まった機能でデータが無い・数えない機能は null（確認を出さない）。Date.now は使わない（今日は引数）
  */
 export function turnOffImpact(
   data: Pick<DemoData, 'org' | 'compat' | 'clients' | 'staff' | 'clientLeaves' | 'absences' | 'patterns'>,
   id: FeatureId,
+  today: string,
 ): TurnOffImpact | null {
   const { client, staff } = data.org.terms;
   const one = (count: number, text: string): TurnOffImpact | null => (count > 0 ? { count, text } : null);
+  /** 計算に入る（利用中・仮押さえの）〈利用者さん〉と、休止でない〈スタッフ〉（compile と同じ） */
+  const activeClients = new Set(data.clients.filter((c) => c.active).map((c) => c.id));
+  const activeStaff = new Set(data.staff.filter((x) => x.active).map((x) => x.id));
   switch (id) {
     case 'compat': {
       let n = 0;
-      for (const row of Object.values(data.compat)) for (const level of Object.values(row)) if (level !== 0) n++;
+      for (const [cid, row] of Object.entries(data.compat)) {
+        if (!activeClients.has(cid)) continue;
+        for (const [sid, level] of Object.entries(row)) if (level !== 0 && activeStaff.has(sid)) n++;
+      }
       return one(n, `相性 ${n}組は計算から外れます`);
     }
     case 'allowedStaff': {
-      const n = data.clients.filter((c) => c.allowedStaffIds.length > 0).length;
-      return one(n, `担当を限る ${n}人は計算から外れます`);
+      const n = data.clients.filter(
+        (c) => activeClients.has(c.id) && c.allowedStaffIds.some((sid) => activeStaff.has(sid)),
+      ).length;
+      return one(n, `担当を限る ${n}人（${client}）は計算から外れます`);
     }
     case 'clientLeave': {
-      const n = data.clientLeaves.length;
+      const n = data.clientLeaves.filter((l) => l.to >= today).length;
       return one(n, `${client}の休み ${n}件は残り、計算に効き続けます`);
     }
     case 'patternMonthly': {
@@ -418,8 +429,16 @@ export function turnOffImpact(
       return one(n, `定期パターンの毎月・曜日ごとの時刻 ${n}件は残り、訪問は今どおり作られます`);
     }
     case 'requestedOff': {
-      const n = data.absences.filter(isRequestedOff).length;
+      const n = data.absences.filter((a) => a.date >= today && isRequestedOff(a)).length;
       return one(n, `希望休 ${n}件は残り、計算に効き続けます`);
+    }
+    case 'sudden': {
+      const n = data.absences.filter((a) => a.date >= today && !isRequestedOff(a)).length;
+      return one(n, `欠勤 ${n}件は残り、計算に効き続けます`);
+    }
+    case 'vacancy': {
+      const n = data.clients.filter((c) => c.tentative).length;
+      return one(n, `仮押さえ ${n}人（${client}）は残り、AI案に入り続けます`);
     }
     case 'offboard': {
       const n = data.staff.filter((s) => s.lastDay !== null).length;

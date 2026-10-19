@@ -46,7 +46,7 @@ export function addRun(
   if (found) {
     // 使い回すときも presetId を今の時点のものに書き直す（プリセットの重みを変えたあとにいまの条件で作り直して同じ案になったとき、
     // 古い presetId のままだと「条件が変わった」（lib/month の rulesStale）が消えない。PR #40 の再レビュー）
-    // 計算に効く入り切り（ADR-0028）も今のものに書き直す（入り切りを変えても同じ案になったとき「条件が変わった」を残さない）
+    // 計算に効く入り切り（ADR-0028）も今のものに書き直す（記録として。「条件が変わった」は入り切りを見ず問題の違いで決める）
     const inputKey = x.inputKey === undefined ? found.inputKey : x.inputKey;
     if (found.inputKey === inputKey && found.presetId === presetId && sameCalcFeatures(found.calcFeatures, calc)) {
       return d;
