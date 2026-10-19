@@ -17,6 +17,7 @@ import {
   Menu,
   Route as RouteIcon,
   Search,
+  Settings,
   SlidersHorizontal,
   Tags,
   Timer,
@@ -35,14 +36,16 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { CommandPalette, IS_MAC } from '../components/CommandPalette';
+import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { RebuildBand } from '../components/rebuildBand';
 import { TourProvider } from '../components/Tour';
 import { addDays, jstDate } from '../domain/time';
 import { isPaletteShortcut } from '../lib/commandPalette';
 import { dateText } from '../lib/common';
+import { featureLabel, featureOfLocation, isFeatureOffState, isOn } from '../lib/features';
 import {
   bottomTabs,
   isActiveNav,
@@ -65,6 +68,7 @@ import MonthPage from '../pages/MonthPage';
 import MonthPrintPage from '../pages/MonthPrintPage';
 import PlanPage from '../pages/PlanPage';
 import RulesPage from '../pages/RulesPage';
+import SettingsPage from '../pages/SettingsPage';
 import StaffPage from '../pages/StaffPage';
 import StaffViewPage from '../pages/StaffViewPage';
 import TypesPage from '../pages/TypesPage';
@@ -100,37 +104,48 @@ export default function App() {
     : dates.includes(data.baseDate)
       ? data.baseDate
       : (dates[0] ?? data.baseDate);
+  // 切った機能の URL（ブックマーク・古いリンク・`?do=`）はホームへ移し、ホームの上で知らせる（PRD D213。ADR-0028）。
+  // 管理者設定と土台の画面は表に無いので移さない（戻れなくならない）
+  const { pathname, search } = useLocation();
+  const needed = featureOfLocation(pathname, search);
+  const blocked = needed !== null && !isOn(data.org.features, needed) ? needed : null;
 
   return (
     <DayProvider value={{ date, setDate: setPicked, dates }}>
       {/* 予定の名前から開く〈スタッフ〉・〈利用者さん〉の詳細（PRD D122〜D126）。吹き出しは画面全体で1つ */}
       <PersonPopoverProvider>
-        <Routes>
-          <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
-          {/* 月の予定の印刷（PRD D70）：左のメニューの外（印刷にナビを出さない） */}
-          <Route path="/month/print" element={<Guarded element={<MonthPrintPage />} />} />
-          <Route element={<AdminShell />}>
-            {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
-            <Route path="/schedule" element={<Navigate to="/plan" replace />} />
-            {/* ホーム「今日やること」（PRD D141。ADR-0025）：起動したとき（#/・知らない URL）の画面 */}
-            <Route path="/home" element={<HomePage />} />
-            <Route path="/plan" element={<PlanPage />} />
-            <Route path="/month" element={<MonthPage />} />
-            <Route path="/week" element={<WeekPage />} />
-            <Route path="/workload" element={<WorkloadPage />} />
-            <Route path="/vacancy" element={<VacancyPage />} />
-            <Route path="/compare" element={<ComparePage />} />
-            <Route path="/rules" element={<RulesPage />} />
-            <Route path="/items" element={<ItemsPage />} />
-            <Route path="/types" element={<TypesPage />} />
-            <Route path="/compat" element={<CompatPage />} />
-            <Route path="/staff" element={<StaffPage />} />
-            <Route path="/clients" element={<ClientsPage />} />
-            <Route path="/availability" element={<AvailabilityPage />} />
-            <Route path="/data" element={<DataPage />} />
-            <Route path="*" element={<Navigate to="/home" replace />} />
-          </Route>
-        </Routes>
+        {blocked ? (
+          <Navigate to="/home" replace state={{ featureOff: blocked }} />
+        ) : (
+          <Routes>
+            <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
+            {/* 月の予定の印刷（PRD D70）：左のメニューの外（印刷にナビを出さない） */}
+            <Route path="/month/print" element={<Guarded element={<MonthPrintPage />} />} />
+            <Route element={<AdminShell />}>
+              {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
+              <Route path="/schedule" element={<Navigate to="/plan" replace />} />
+              {/* ホーム「今日やること」（PRD D141。ADR-0025）：起動したとき（#/・知らない URL）の画面 */}
+              <Route path="/home" element={<HomePage />} />
+              <Route path="/plan" element={<PlanPage />} />
+              <Route path="/month" element={<MonthPage />} />
+              <Route path="/week" element={<WeekPage />} />
+              <Route path="/workload" element={<WorkloadPage />} />
+              <Route path="/vacancy" element={<VacancyPage />} />
+              <Route path="/compare" element={<ComparePage />} />
+              <Route path="/rules" element={<RulesPage />} />
+              <Route path="/items" element={<ItemsPage />} />
+              <Route path="/types" element={<TypesPage />} />
+              <Route path="/compat" element={<CompatPage />} />
+              <Route path="/staff" element={<StaffPage />} />
+              <Route path="/clients" element={<ClientsPage />} />
+              <Route path="/availability" element={<AvailabilityPage />} />
+              <Route path="/data" element={<DataPage />} />
+              {/* 管理者設定（PRD D210。ADR-0028）：機能の入り切り。だれでも開ける・切れない */}
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/home" replace />} />
+            </Route>
+          </Routes>
+        )}
       </PersonPopoverProvider>
     </DayProvider>
   );
@@ -167,6 +182,7 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
   rules: SlidersHorizontal,
   types: Layers,
   items: Tags,
+  settings: Settings,
   data: Database,
 };
 
@@ -176,7 +192,12 @@ const NARROW_QUERY = '(max-width: 860px)';
 function AdminShell() {
   const { data, saveError } = useDemoData();
   const terms = data.org.terms;
-  const { pathname } = useLocation();
+  const features = data.org.features;
+  const location = useLocation();
+  const { pathname } = location;
+  const navigate = useNavigate();
+  /** 切った機能の URL から移ってきたときの、その機能（ホームの上に知らせを出す。PRD D213） */
+  const featureOff = pathname === '/home' && isFeatureOffState(location.state) ? location.state.featureOff : null;
   /** スマホの引き出しを開いているか（PRD D133） */
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
@@ -239,7 +260,8 @@ function AdminShell() {
   // メニューの並び（PRD D178〜D180。ADR-0027）：ホーム／予定を組む／当日の対応／問い合わせ／人の情報／AI の考え方／データ。
   // ルートの URL は変えない。当日の対応の「欠勤・キャンセル」は今日の日の画面の欄を開く操作（今の画面の印は付けない）
   const today = jstDate(Date.now());
-  const groups = useMemo(() => menuSections(terms, today), [terms, today]);
+  // 切った機能の項目は出さない（PRD D213）。下のタブ・上の帯の名前・パレットの画面もここから引く
+  const groups = useMemo(() => menuSections(terms, today, features), [terms, today, features]);
   const brand = (
     <div className="brand">
       <span className="brand-mark" aria-hidden="true">
@@ -328,6 +350,21 @@ function AdminShell() {
                 <>
                   {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
                   {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
+                  {featureOff && (
+                    <FeatureOffNotice
+                      name={featureLabel(featureOff, terms)}
+                      onClose={() => {
+                        // 知らせを閉じる（URL はそのまま。state だけ消す）。フォーカスは画面の見出しへ
+                        navigate('/home', { replace: true, state: null });
+                        requestAnimationFrame(() => {
+                          const h = document.querySelector<HTMLElement>('.app-main h1');
+                          if (!h) return;
+                          h.tabIndex = -1;
+                          h.focus();
+                        });
+                      }}
+                    />
+                  )}
                   <Outlet />
                 </>
               }
