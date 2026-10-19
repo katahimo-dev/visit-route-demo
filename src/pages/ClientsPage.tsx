@@ -59,6 +59,7 @@ import { ClientLeavesSection } from './ClientLeavesSection';
 import { PatternsSection } from './PatternsSection';
 import { PlaceAllPanel } from './PlaceAllPanel';
 import './settings.css';
+import { narrowRole } from '../lib/narrowRoles';
 
 /** 訪問先の一覧と編集（PoC本体 ClientsPage.tsx を写し、性別希望・NG を特性・条件・相性に置き換えた） */
 
@@ -421,29 +422,29 @@ export default function ClientsPage() {
 
       {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と状態が1行目、ほかは見出し付きの行、開くは右下） */}
       <div className="card table-scroll">
-        <table className="people-table narrow-cards" data-testid="narrow-clients">
-          <thead>
-            <tr>
-              <th>名前</th>
-              <th>位置</th>
-              <th>特性</th>
-              <th>{terms.staff}に求めること</th>
-              <th>いつもの担当</th>
-              <th>状態</th>
-              <th aria-label="操作" />
+        <table {...narrowRole.table} className="people-table narrow-cards" data-testid="narrow-clients">
+          <thead {...narrowRole.rowgroup}>
+            <tr {...narrowRole.row}>
+              <th {...narrowRole.columnheader}>名前</th>
+              <th {...narrowRole.columnheader}>位置</th>
+              <th {...narrowRole.columnheader}>特性</th>
+              <th {...narrowRole.columnheader}>{terms.staff}に求めること</th>
+              <th {...narrowRole.columnheader}>いつもの担当</th>
+              <th {...narrowRole.columnheader}>状態</th>
+              <th {...narrowRole.columnheader} aria-label="操作" />
             </tr>
           </thead>
-          <tbody>
+          <tbody {...narrowRole.rowgroup}>
             {shown.length === 0 && (
-              <tr>
-                <td colSpan={7} className="sub">
+              <tr {...narrowRole.row}>
+                <td {...narrowRole.cell} colSpan={7} className="sub">
                   当てはまる{terms.client}がいません
                 </td>
               </tr>
             )}
             {shown.map((c) => (
-              <tr key={c.id} data-testid="client-row">
-                <td className="narrow-title" data-label="名前">
+              <tr {...narrowRole.row} key={c.id} data-testid="client-row">
+                <td {...narrowRole.cell} className="narrow-title" data-label="名前">
                   <span className="row person-name">
                     <span className="dot dot-sm" style={{ background: colorOf(c.color) }}>
                       {initialOf(c.displayName)}
@@ -464,7 +465,7 @@ export default function ClientsPage() {
                     </span>
                   </span>
                 </td>
-                <td data-label="位置">
+                <td {...narrowRole.cell} data-label="位置">
                   {hasLocation(c.place) ? (
                     <span className="chip chip-ok" title="位置あり">
                       <MapPin size={13} strokeWidth={2.2} aria-hidden="true" />
@@ -474,13 +475,13 @@ export default function ClientsPage() {
                     <span className="chip chip-warn">未登録</span>
                   )}
                 </td>
-                <td data-label="特性">
+                <td {...narrowRole.cell} data-label="特性">
                   <TraitChips traits={c.traits} items={clientItems} />
                 </td>
-                <td className="cond-cell" data-label={`${terms.staff}に求めること`}>
+                <td {...narrowRole.cell} className="cond-cell" data-label={`${terms.staff}に求めること`}>
                   <CondChips requirements={c.requirements} preferences={c.preferences} itemById={itemById} />
                 </td>
-                <td className="nowrap" data-label="いつもの担当">
+                <td {...narrowRole.cell} className="nowrap" data-label="いつもの担当">
                   {c.usualStaffId && (
                     <WithIcon icon={Repeat} size={14}>
                       {staffName(c.usualStaffId)}
@@ -497,7 +498,7 @@ export default function ClientsPage() {
                     </span>
                   )}
                 </td>
-                <td className="narrow-head" data-label="状態">
+                <td {...narrowRole.cell} className="narrow-head" data-label="状態">
                   <span className={`chip stage-chip is-${c.stage}`} data-testid="client-stage">
                     {STAGE_LABELS[c.stage]}
                   </span>
@@ -508,7 +509,7 @@ export default function ClientsPage() {
                     </span>
                   )}
                 </td>
-                <td className="narrow-act">
+                <td {...narrowRole.cell} className="narrow-act">
                   <IconButton icon={Eye} label={`${c.displayName}を開く`} onClick={() => openView(c)} />
                 </td>
               </tr>

@@ -2226,6 +2226,9 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
   .scroll-edge.has-more-right::after {
     opacity: 1;
   }
+}
+/* 画面だけ（狭い用紙に印刷するときは枠の高さで切らない・止めない） */
+@media screen and (max-width: 600px) {
   /* 稼働時間・稼働の見込み：枠の中で巻き、見出しの行と1列目を止める（相性と同じ） */
   .avail-scroll,
   .work-grid-scroll {

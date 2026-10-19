@@ -43,6 +43,7 @@ import { compile, scheduleRoute } from '../matching';
 import { applyPreset } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
+import { narrowRole } from '../lib/narrowRoles';
 import { CompareTable, explainMap, ReasonBox, RefMark, rulerText, SCORE_TEXT, ScoreReasonText } from './planParts';
 
 /**
@@ -629,26 +630,40 @@ export default function ComparePage() {
         ) : (
           // 狭い画面（600px 以下）では行をカードにする（PRD D220。A・B と案の名前が1行目、ほかは見出し付きの行、操作は右下）
           <div className="table-scroll">
-            <table className="compare-table runs-table narrow-cards" data-testid="narrow-runs">
-              <thead>
-                <tr>
-                  <th className="ab-col">A</th>
-                  <th className="ab-col">B</th>
-                  <th>案</th>
-                  <th>作った時刻</th>
-                  <th className="num">合計点</th>
-                  <th className="num">移動</th>
-                  <th className="num">入らない</th>
-                  <th />
+            <table {...narrowRole.table} className="compare-table runs-table narrow-cards" data-testid="narrow-runs">
+              <thead {...narrowRole.rowgroup}>
+                <tr {...narrowRole.row}>
+                  <th {...narrowRole.columnheader} className="ab-col">
+                    A
+                  </th>
+                  <th {...narrowRole.columnheader} className="ab-col">
+                    B
+                  </th>
+                  <th {...narrowRole.columnheader}>案</th>
+                  <th {...narrowRole.columnheader}>作った時刻</th>
+                  <th {...narrowRole.columnheader} className="num">
+                    合計点
+                  </th>
+                  <th {...narrowRole.columnheader} className="num">
+                    移動
+                  </th>
+                  <th {...narrowRole.columnheader} className="num">
+                    入らない
+                  </th>
+                  <th {...narrowRole.columnheader} />
                 </tr>
               </thead>
-              <tbody>
+              <tbody {...narrowRole.rowgroup}>
                 {choices.map((c) => {
                   const run = runs.find((r) => r.id === c.id);
                   const sc = scores.get(c.id)?.value ?? null;
                   return (
-                    <tr key={c.id} className={`${A?.id === c.id ? 'is-a' : ''} ${B?.id === c.id ? 'is-b' : ''}`}>
-                      <td className="ab-col narrow-head">
+                    <tr
+                      {...narrowRole.row}
+                      key={c.id}
+                      className={`${A?.id === c.id ? 'is-a' : ''} ${B?.id === c.id ? 'is-b' : ''}`}
+                    >
+                      <td {...narrowRole.cell} className="ab-col narrow-head">
                         <label className="ab-pick ab-a">
                           <input
                             type="radio"
@@ -660,7 +675,7 @@ export default function ComparePage() {
                           <span>A</span>
                         </label>
                       </td>
-                      <td className="ab-col narrow-head">
+                      <td {...narrowRole.cell} className="ab-col narrow-head">
                         <label className="ab-pick ab-b">
                           <input
                             type="radio"
@@ -672,7 +687,7 @@ export default function ComparePage() {
                           <span>B</span>
                         </label>
                       </td>
-                      <td className="narrow-title" data-label="案">
+                      <td {...narrowRole.cell} className="narrow-title" data-label="案">
                         {c.title}
                         {run?.reassign && (
                           <span className="chip chip-move" style={{ marginLeft: 6 }}>
@@ -687,7 +702,7 @@ export default function ComparePage() {
                         {run?.stopped && <span className="sub">（途中で止めた案）</span>}
                         {run && <div className="weights-text">乱数の種 {run.seed}</div>}
                       </td>
-                      <td className="nowrap sub" data-label="作った時刻">
+                      <td {...narrowRole.cell} className="nowrap sub" data-label="作った時刻">
                         {run
                           ? new Date(run.createdAt).toLocaleString('ja-JP', {
                               timeZone: 'Asia/Tokyo',
@@ -713,13 +728,13 @@ export default function ComparePage() {
                           </div>
                         )}
                       </td>
-                      <td className="num" data-label="移動">
+                      <td {...narrowRole.cell} className="num" data-label="移動">
                         {sc ? `${r0(sc.travelMinutes)}分` : '—'}
                       </td>
-                      <td className="num" data-label="入らない">
+                      <td {...narrowRole.cell} className="num" data-label="入らない">
                         {sc ? `${sc.dropped}件` : '—'}
                       </td>
-                      <td className="nowrap narrow-act">
+                      <td {...narrowRole.cell} className="nowrap narrow-act">
                         {run && (
                           <div className="actions">
                             <IconButton

@@ -303,15 +303,20 @@ export default function VacancyPage() {
   }, [data, query, range]);
   /**
    * 狭い画面では、表がはじめに出たとき 9:00 の列が曜日の列のすぐ右に来るまで横に巻く（PRD D221）。
-   * 1回だけ（条件を変えても人が巻いた位置のまま）
+   * 表が出ているあいだは1回だけ（条件を変えても人が巻いた位置のまま）。表が消えたら（入る時刻が無い・計算できない）箱も消えて
+   * 7:00 に戻るので、次に表が出たときにまた巻く
    */
   const narrow = useMedia(COMPACT_QUERY);
   const gridRef = useRef<HTMLDivElement>(null);
   const gridScrolled = useRef(false);
   const hasGrid = !!result && result.times.length > 0;
   useLayoutEffect(() => {
+    if (!hasGrid) {
+      gridScrolled.current = false;
+      return;
+    }
     const box = gridRef.current;
-    if (!narrow || !hasGrid || !box || gridScrolled.current) return;
+    if (!narrow || !box || gridScrolled.current) return;
     const target = box.querySelector<HTMLElement>(`thead th[data-start="${NARROW_FIRST_START}"]`);
     if (!target) return;
     gridScrolled.current = true;

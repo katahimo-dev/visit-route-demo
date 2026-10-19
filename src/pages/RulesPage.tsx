@@ -35,6 +35,7 @@ import { presetOf, scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 import { SavePresetForm, SCORE_TEXT } from './planParts';
 import './settings.css';
+import { narrowRole } from '../lib/narrowRoles';
 
 /** 条件の種類ごとのアイコン（必要条件=盾、希望=ハート／いいね など） */
 const RULE_ICONS: Record<RuleType, LucideIcon> = {
@@ -111,17 +112,19 @@ export default function RulesPage() {
         </Hint>
         {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と必須が1行目、種類・重みは見出し付きの行、消すは右下） */}
         <div className="table-scroll">
-          <table className="rules-table narrow-cards" data-testid="narrow-rules">
-            <thead>
-              <tr>
-                <th>名前</th>
-                <th>種類</th>
-                <th style={{ width: 220 }}>重み</th>
-                <th>必須</th>
-                <th aria-label="操作" />
+          <table {...narrowRole.table} className="rules-table narrow-cards" data-testid="narrow-rules">
+            <thead {...narrowRole.rowgroup}>
+              <tr {...narrowRole.row}>
+                <th {...narrowRole.columnheader}>名前</th>
+                <th {...narrowRole.columnheader}>種類</th>
+                <th {...narrowRole.columnheader} style={{ width: 220 }}>
+                  重み
+                </th>
+                <th {...narrowRole.columnheader}>必須</th>
+                <th {...narrowRole.columnheader} aria-label="操作" />
               </tr>
             </thead>
-            <tbody>
+            <tbody {...narrowRole.rowgroup}>
               {data.rules
                 .filter((r) => compatOn || r.type !== 'compatibility')
                 .map((r) => {
@@ -129,15 +132,15 @@ export default function RulesPage() {
                   const hard = hardable && r.hard;
                   const locked = weightLocked(r);
                   return (
-                    <tr key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
-                      <td style={{ minWidth: 160 }} className="narrow-title" data-label="名前">
+                    <tr {...narrowRole.row} key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
+                      <td {...narrowRole.cell} style={{ minWidth: 160 }} className="narrow-title" data-label="名前">
                         <LabelInput
                           value={r.label}
                           onChange={(label) => setRule(r.id, { label })}
                           fallback={ruleTypeLabel(r.type, terms)}
                         />
                       </td>
-                      <td data-label="種類">
+                      <td {...narrowRole.cell} data-label="種類">
                         <span className="chip chip-type">
                           <WithIcon icon={RULE_ICONS[r.type]} size={14}>
                             {ruleTypeLabel(r.type, terms)}
@@ -145,7 +148,7 @@ export default function RulesPage() {
                         </span>
                         <Hint ariaLabel={`${r.label}の説明`}>{ruleTypeHelp(r.type, terms)}</Hint>
                       </td>
-                      <td data-label="重み">
+                      <td {...narrowRole.cell} data-label="重み">
                         <WeightSlider
                           label={r.label}
                           value={r.weight}
@@ -156,7 +159,7 @@ export default function RulesPage() {
                           <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>
                         )}
                       </td>
-                      <td className={hardable ? 'nowrap narrow-head' : 'nowrap'} data-label="必須">
+                      <td {...narrowRole.cell} className={hardable ? 'nowrap narrow-head' : 'nowrap'} data-label="必須">
                         {hardable ? (
                           <label className={`hard-toggle${r.hard ? ' is-on' : ''}`}>
                             <input
@@ -172,7 +175,7 @@ export default function RulesPage() {
                           <span className="sub">—</span>
                         )}
                       </td>
-                      <td className="narrow-act">
+                      <td {...narrowRole.cell} className="narrow-act">
                         <IconButton
                           icon={Trash2}
                           label={`条件「${r.label}」を消す`}
@@ -376,27 +379,29 @@ function PresetSection() {
                 </div>
               </div>
               <div className="table-scroll">
-                <table className="rules-table narrow-cards">
-                  <thead>
-                    <tr>
-                      <th>条件の種類</th>
-                      <th style={{ width: 220 }}>重み</th>
-                      <th>必須</th>
+                <table {...narrowRole.table} className="rules-table narrow-cards">
+                  <thead {...narrowRole.rowgroup}>
+                    <tr {...narrowRole.row}>
+                      <th {...narrowRole.columnheader}>条件の種類</th>
+                      <th {...narrowRole.columnheader} style={{ width: 220 }}>
+                        重み
+                      </th>
+                      <th {...narrowRole.columnheader}>必須</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody {...narrowRole.rowgroup}>
                     {shownTypes.map((t) => {
                       const w = p.weights[t];
                       const hardable = HARDABLE.has(t);
                       const locked = hardable && w.hard && t !== 'balance';
                       return (
-                        <tr key={t} className={w.weight === 0 && !w.hard ? 'is-dim' : ''}>
-                          <td className="narrow-title" data-label="条件の種類">
+                        <tr {...narrowRole.row} key={t} className={w.weight === 0 && !w.hard ? 'is-dim' : ''}>
+                          <td {...narrowRole.cell} className="narrow-title" data-label="条件の種類">
                             <WithIcon icon={RULE_ICONS[t]} size={14}>
                               {ruleTypeLabel(t, terms)}
                             </WithIcon>
                           </td>
-                          <td data-label="重み">
+                          <td {...narrowRole.cell} data-label="重み">
                             <WeightSlider
                               label={`${p.name}の${ruleTypeLabel(t, terms)}`}
                               value={w.weight}
@@ -404,7 +409,11 @@ function PresetSection() {
                               onChange={(weight) => setWeight(p, t, { weight })}
                             />
                           </td>
-                          <td className={hardable ? 'nowrap narrow-head' : 'nowrap'} data-label="必須">
+                          <td
+                            {...narrowRole.cell}
+                            className={hardable ? 'nowrap narrow-head' : 'nowrap'}
+                            data-label="必須"
+                          >
                             {hardable ? (
                               <label className={`hard-toggle${w.hard ? ' is-on' : ''}`}>
                                 <input

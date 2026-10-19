@@ -8,7 +8,7 @@
 // 広い画面（1400px）では今の左のメニューのままで、上の帯の部品・下のタブを出さない。
 // 狭い画面の表（PRD D220〜D222）：条件の重み・特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧・比較の行がカードで横にはみ出さない、
 // 条件のスライダーと必須が画面の中、〈利用者さん〉の絞り込みは「絞り込み（N）」に畳む、比較の主ボタンがタブに隠れない、
-// 週の既定は〈スタッフ〉×曜日の表で今日が見える、空き状況の表は 9:00 から・右に続きがある印、1400px は表のまま。
+// 表の role（table・row・cell・columnheader）を明示する、週の既定は〈スタッフ〉×曜日の表で今日が見え、右の端まで巻いても名前の列が上で押せる、空き状況の表は 9:00 から・右に続きがある印、1400px は表のまま。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-mobile.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -449,10 +449,17 @@ async function narrowLists(page) {
         display: tr ? getComputedStyle(tr).display : '',
         right: Math.max(...cells.map((r) => r.right)),
         sw: document.documentElement.scrollWidth,
+        // カードにしても表として読める（WebKit が落とす role を明示する。ADR-0033）
+        roles: [t, t.querySelector('thead'), tr, tr?.querySelector('td'), t.querySelector('thead th')].map((el) =>
+          el?.getAttribute('role'),
+        ),
       };
     }, ready);
     check(
-      st.display === 'flex' && st.right <= 390 && st.sw <= 390,
+      st.display === 'flex' &&
+        st.right <= 390 &&
+        st.sw <= 390 &&
+        JSON.stringify(st.roles) === '["table","rowgroup","row","cell","columnheader"]',
       `${hash}：行がカードで、どのマスも画面の中・横にはみ出さない（PRD D220）`,
       st,
     );
@@ -541,6 +548,36 @@ async function narrowWeek(page) {
     { url: page.url(), tb, vb, name },
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'narrow-week.png') });
+  // 右の端まで巻いても、止めた名前の列がマス（.load-slot など）の上に見え、名前を押せる
+  const hit = await page.getByTestId('week-table').evaluate((t) => {
+    const box = t.parentElement;
+    box.scrollLeft = box.scrollWidth;
+    // 表の本体を上の帯のすぐ下へ（見える所の行だけ見る。下のタブの裏・画面の外の行は押せないので数えない）
+    const top = document.querySelector('.app-header').getBoundingClientRect().bottom;
+    window.scrollBy(0, t.querySelector('tbody').getBoundingClientRect().top - top - 4);
+    return new Promise((res) =>
+      requestAnimationFrame(() => {
+        const bottom = document.querySelector('.bottom-tabs').getBoundingClientRect().top;
+        const names = [...t.querySelectorAll('tbody th[scope="row"] button')].filter((b) => {
+          const r = b.getBoundingClientRect();
+          return r.top >= top && r.bottom <= bottom;
+        });
+        const bad = names
+          .map((b) => {
+            const r = b.getBoundingClientRect();
+            const el = document.elementFromPoint(r.left + Math.min(r.width / 2, 20), r.top + r.height / 2);
+            return b.contains(el) ? null : { name: b.textContent, at: el?.className ?? String(el) };
+          })
+          .filter(Boolean);
+        res({ rows: names.length, sl: box.scrollLeft, bad });
+      }),
+    );
+  });
+  check(
+    hit.rows > 0 && hit.sl > 0 && hit.bad.length === 0,
+    '週：右の端まで巻いても、名前の列がマスの上に見え、名前を押せる',
+    hit,
+  );
   await page.getByTestId('by-staff').click();
   await page.waitForURL(/view=timeline/);
   await page
@@ -560,6 +597,7 @@ async function narrowWeek(page) {
     .newContext({ viewport: { width: 390, height: 844 } });
   await skipTour(ctx2);
   const p2 = await ctx2.newPage();
+  p2.on('pageerror', (e) => check(false, '週（案の無い週）：ページのエラー', String(e)));
   await p2.clock.setFixedTime(NOW);
   try {
     await open(p2, '/week', '[data-testid="week-table"]');

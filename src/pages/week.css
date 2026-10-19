@@ -424,7 +424,9 @@ label.week-who {
   .week-table tfoot th {
     position: sticky;
     left: 0;
-    z-index: 1;
+    /* マスの中の重なり（.load-slot・.bar-hours::after・.load-bar-cover・.cbar-item。1〜3）より上に（.week-gutter と同じ）。
+       右へ巻いてもマスが名前の上に出ず、名前を押せる */
+    z-index: 4;
   }
   .week-table thead th:first-child,
   .week-table tbody th[scope="row"] {
