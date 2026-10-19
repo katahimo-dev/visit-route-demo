@@ -54,7 +54,8 @@ div.work-setting {
   font-weight: 700;
   border-top: 2px solid var(--line);
 }
-.work-name .link-btn {
+.work-name .link-btn,
+.work-days th .link-btn {
   background: none;
   border: 0;
   padding: 0;
@@ -65,6 +66,9 @@ div.work-setting {
   text-decoration: underline;
   text-decoration-color: var(--line);
   text-underline-offset: 3px;
+}
+.work-days th .link-btn {
+  font-weight: 400;
 }
 .work-name .link-btn[aria-pressed='true'] {
   text-decoration-color: var(--primary);
@@ -149,6 +153,21 @@ div.work-setting {
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
+}
+/* 押すとその日の日の画面（PRD D202）。見た目はマスのまま */
+.work-cell-btn {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.work-cell-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 .work-cell-num {
   font-variant-numeric: tabular-nums;

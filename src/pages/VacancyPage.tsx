@@ -34,6 +34,7 @@ import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { batchHref } from '../lib/emptyGuide';
 import { type InquiryDayMark, type InquiryRow, inquiryDayLevel, inquiryRows, vacancyLevel } from '../lib/glance';
+import { dayHref } from '../lib/links';
 import { referrerRecipients, vacancySubject } from '../lib/mail';
 import { buildBccMails } from '../lib/mailto';
 import { ymOf } from '../lib/month';
@@ -1058,6 +1059,17 @@ export default function VacancyPage() {
                       {x.staffIds.length}人：{x.staffIds.map((id) => staffName.get(id) ?? '（不明）').join('、')}
                     </span>
                   )}
+                  {/* その日の案を日の画面で（PRD D204。名前の吹き出しは付けない：D124）。Link なので Ctrl+クリック・中クリックで
+                      新しいタブにも開ける。ふつうに押すと同じタブで移る（日の画面が ?date= を読む） */}
+                  <Link
+                    to={dayHref(x.date)}
+                    className="vacancy-day-open"
+                    aria-label={`その日の案を見る（${dateText(x.date)}・日の画面で開く）`}
+                    data-testid="vacancy-day-open"
+                    data-date={x.date}
+                  >
+                    その日の案を見る
+                  </Link>
                 </li>
               ))}
             </ul>

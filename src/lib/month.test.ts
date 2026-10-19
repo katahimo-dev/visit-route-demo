@@ -707,7 +707,9 @@ describe('最終勤務日・拘束の上限・当日キャンセル（ADR-0015�
     const s = dayStatus(d, DATE, { overSpan: ['s1'] });
     expect(s.overSpan).toEqual(['s1']);
     expect(s.needsCare).toBe(false);
-    expect(attentionList(d, [s], DATE)).toEqual([{ date: DATE, kind: 'overSpan', count: 1, names: ['青葉 一郎'] }]);
+    expect(attentionList(d, [s], DATE)).toEqual([
+      { date: DATE, kind: 'overSpan', count: 1, names: ['青葉 一郎'], staffIds: ['s1'] },
+    ]);
   });
 
   it('〈利用者さん〉の月の集計に当日キャンセルの回数', () => {

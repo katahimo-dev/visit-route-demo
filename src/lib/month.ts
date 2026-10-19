@@ -741,6 +741,8 @@ export type Attention = {
   count: number;
   /** 欠勤の人の名前（kind が absence のとき）・拘束が上限を超える人の名前（overSpan のとき） */
   names: string[];
+  /** 拘束が上限を超える人の id（overSpan のときだけ。稼働の見込みでその人を選んで開く。PRD D201） */
+  staffIds?: string[];
 };
 
 const KIND_ORDER: Record<AttentionKind, number> = { unassigned: 0, absentLeft: 1, stale: 2, overSpan: 3, absence: 4 };
@@ -769,6 +771,7 @@ export function attentionList(
         kind: 'overSpan',
         count: s.overSpan.length,
         names: s.overSpan.map((id) => nameOf.get(id) ?? '').filter(Boolean),
+        staffIds: [...s.overSpan],
       });
     if (s.absence) {
       // 同じ人の欠勤が2件（時間帯が2つ・続けて振り直した）でも1人と数える。希望休は数えない

@@ -87,6 +87,12 @@ export default function WorkloadPage() {
     return { start, end };
   }, [pickedDays]);
 
+  /** その日の日の画面を開く（選んでいる日付をその日にしてから移る。PRD D202） */
+  const openDay = (d: string) => {
+    setDate(d);
+    navigate('/plan');
+  };
+
   const patch = (next: Record<string, string | null>) =>
     setParams(
       (prev) => {
@@ -266,14 +272,7 @@ export default function WorkloadPage() {
         <div className="card" data-testid="work-empty">
           {/* 空の画面（PRD D176）：なぜ空かと次の一手（月の画面のまとめて作る・日の画面） */}
           {emptyGuide ? (
-            <EmptyNext
-              guide={emptyGuide}
-              icon={Timer}
-              onOpenDay={(d) => {
-                setDate(d);
-                navigate('/plan');
-              }}
-            />
+            <EmptyNext guide={emptyGuide} icon={Timer} onOpenDay={openDay} />
           ) : (
             <p className="sub">この月には、見込める予定（訪問のある案）がありません。</p>
           )}
@@ -432,9 +431,17 @@ export default function WorkloadPage() {
                         return (
                           <td key={d.date} className={`work-cell${x?.over ? ' is-over' : ''}`}>
                             {x ? (
-                              <span className="work-cell-in" title={statTitle(s.name, d.date, x)}>
+                              // 押すとその日の日の画面（PRD D202。名前の吹き出しは付けない：D124）
+                              <button
+                                type="button"
+                                className="work-cell-in work-cell-btn"
+                                title={statTitle(s.name, d.date, x)}
+                                aria-label={`${spanNum(x)}${x.over ? '!' : ''}：${statTitle(s.name, d.date, x)}（日の画面で開く）`}
+                                onClick={() => openDay(d.date)}
+                                data-date={d.date}
+                              >
                                 <span className="work-cell-num">
-                                  {(Math.round((x.span / 60) * 10) / 10).toFixed(1)}
+                                  {spanNum(x)}
                                   {x.over && (
                                     <strong>
                                       !<span className="sr-only">（上限を超える）</span>
@@ -442,7 +449,7 @@ export default function WorkloadPage() {
                                   )}
                                 </span>
                                 <SpanMini stat={x} limitHours={org.spanLimitHours} />
-                              </span>
+                              </button>
                             ) : (
                               <span className="sub">
                                 <span aria-hidden="true">・</span>
@@ -457,7 +464,9 @@ export default function WorkloadPage() {
                 </tbody>
               </table>
             </div>
-            <p className="sub">数字は出勤〜退勤（拘束）の時間（時間）です。マスに指を置くと内訳が出ます。</p>
+            <p className="sub" data-testid="work-grid-note">
+              数字は出勤〜退勤（拘束）の時間（時間）です。マスを押すとその日の日の画面を開きます。内訳は下の「日ごと」の表で見られます。
+            </p>
           </section>
 
           {picked && (
@@ -530,7 +539,18 @@ export default function WorkloadPage() {
                     {pickedDays.map(({ day, stat }) => (
                       <tr key={day.date} className={stat.over ? 'is-over' : ''}>
                         <th scope="row" className="nowrap">
-                          {mdText(day.date)}（{WEEKDAY_LABELS[weekday(day.date)]}）
+                          {/* 日付から日の画面（PRD D202） */}
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={() => openDay(day.date)}
+                            aria-label={`${mdText(day.date)}（${WEEKDAY_LABELS[weekday(day.date)]}）（日の画面で開く）`}
+                            title="押すとその日の日の画面を開きます"
+                            data-testid="work-day-open"
+                            data-date={day.date}
+                          >
+                            {mdText(day.date)}（{WEEKDAY_LABELS[weekday(day.date)]}）
+                          </button>
                         </th>
                         <td className="work-axis-cell">
                           <SpanBar stat={stat} range={axis} />
@@ -567,6 +587,9 @@ export default function WorkloadPage() {
     </div>
   );
 }
+
+/** マスに出す拘束の時間（時間。小数1桁。読み上げの先頭にも同じ文字を置く） */
+const spanNum = (x: WorkStat): string => (Math.round((x.span / 60) * 10) / 10).toFixed(1);
 
 const clock = (m: number) => timeText(minutesToHhmm(Math.round(m)));
 
