@@ -43,7 +43,7 @@ function useSettled<T>(value: T, ms: number): T {
 /**
  * 作り直しの帯（PRD D161）。［後で］はこの画面を出ている間だけ隠す（データには保存しない。画面を移ると key で作り直されて戻る。PRD D164）。
  * 数えるのは入力が止まってから（useSettled）、さらに画面を描いた後（useDeferredValue）。最初に数え終わるまでは影響する日を出さない。
- * 条件の重みの画面（rules）では、いまの条件がどのプリセットとも同じでなければ、いまの条件の使われ方の案内を同じ帯の2行目に出す（PRD D166）
+ * 条件の重みの画面（rules）では、この日だけ試す重みがどのプリセットとも同じでなければ、試す重みの使われ方の案内を同じ帯の2行目に出す（PRD D166・D234）
  */
 export function RebuildBand({ rules = false }: { rules?: boolean }) {
   // 条件の重みとプリセット（ADR-0028 の rules）を切っていれば帯を出さない（数えもしない）。「条件が変わった」は月の要対応に残る
@@ -55,7 +55,7 @@ function RebuildBandOn({ rules }: { rules: boolean }) {
   const settled = useSettled(data, SETTLE_MS);
   const deferred = useDeferredValue<DemoData | null>(settled, null);
   const [later, setLater] = useState(false);
-  const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? 'いまの条件';
+  const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '試す重み';
   // 案内は入力のたびに数えても軽い（重み・必須の比べだけ）
   const custom = rules && presetOf(data.rules, data.presets) === null;
   return (
@@ -131,7 +131,7 @@ function RebuildBandBody({
 }) {
   const today = jstDate(Date.now());
   const summary = useSummary(data, today);
-  /** ［今日の案をいまの条件で作り直す］を出すか（条件の重みとプリセットを切っていれば出さない。PRD D213） */
+  /** ［今日の案を試す重みで作り直す］を出すか（条件の重みとプリセットを切っていれば出さない。PRD D213） */
   const todayOn = isHrefOn(useFeatures(), recreateTodayHref(today));
   const action = summary ? rebuildAction(summary, basis) : null;
   const textId = useId();
@@ -205,7 +205,7 @@ function RebuildBandBody({
                 {/* ?do=recreate は条件の重みとプリセット（rules）の入口 */}
                 {todayOn && (
                   <Link to={recreateTodayHref(today)} className="btn btn-small" data-testid="rebuild-today">
-                    今日の案をいまの条件で作り直す
+                    今日の案を試す重みで作り直す
                   </Link>
                 )}
                 <SavePresetForm compact />

@@ -126,7 +126,7 @@ import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { compile } from '../matching';
-import { applyPreset, scorePresetOf } from '../seed';
+import { scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
@@ -710,8 +710,8 @@ export default function MonthPage() {
         step(i + 1);
         return;
       }
-      const preset = scorePresetOf(latest.presets, latest.scorePresetId);
-      const rules = preset ? applyPreset(latest.rules, preset) : latest.rules;
+      // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
+      const rules = scoreRulesOf(latest);
       const p = attempt(() => compile({ ...latest, rules }, day)).value;
       if (!p || p.visits.length === 0 || p.staff.length === 0) {
         step(i + 1);
@@ -1522,8 +1522,8 @@ export default function MonthPage() {
         >
           <div className="stack">
             <p>
-              使うプリセット：<strong data-testid="batch-preset">{basePreset?.name ?? 'いまの条件'}</strong>
-              <span className="sub">（点数の基準も「{scoreRulerName}」）</span>
+              使うプリセット：<strong data-testid="batch-preset">{basePreset?.name ?? '試す重み'}</strong>
+              <span className="sub">（点数の基準。重みは「条件の重み」の画面で直します）</span>
             </p>
             <fieldset className="stack batch-mode" style={{ gap: 6 }}>
               <legend>対象</legend>
@@ -1572,7 +1572,7 @@ export default function MonthPage() {
             )}
             {mode === 'stale' ? (
               <p className="sub" data-testid="batch-stale-note">
-                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? 'いまの条件')}
+                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? '試す重み')}
                 。手直しのある日は、作り始める前に確かめます。今日より前の日・確定した日は作りません
                 {staleConfirmed > 0 &&
                   `（条件が変わった確定済みの日 ${staleConfirmed}日は、日の予定で確かめてください）`}

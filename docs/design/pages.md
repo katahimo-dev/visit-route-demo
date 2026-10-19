@@ -190,7 +190,7 @@
 #### `lib/commandPalette.ts`（純粋関数。テストあり）
 
 - `PaletteItem`：`id`・`kind`（`action|screen|client|staff`）・`label`・`hint`・`to`・`date?`・`keys`（`lib/search` の `normalizeKana` でそろえた名前・よみ・別名）。`paletteItem` で作る
-- `paletteActions(today)`：欠勤・キャンセルを登録・今日の予定を見る・今月／来月の案をまとめて作る（`?do=batch`）・要対応（`attention`）・確定していない日（`unconfirmed`）・条件が変わった日を作り直す（`stale`）・問い合わせに答える。`{ customRules }` なら「今日の案をいまの条件で作り直す」（`recreateTodayHref`）も。切った機能の操作は出さない
+- `paletteActions(today)`：欠勤・キャンセルを登録・今日の予定を見る・今月／来月の案をまとめて作る（`?do=batch`）・要対応（`attention`）・確定していない日（`unconfirmed`）・条件が変わった日を作り直す（`stale`）・問い合わせに答える。`{ customRules }` なら「今日の案を試す重みで作り直す」（`recreateTodayHref`）も。切った機能の操作は出さない
 - `paletteScreens(sections, terms)`：操作でない項目。補足はグループの見出し。読み・言い換え `SCREEN_WORDS`、〈利用者さん〉一覧・〈スタッフ〉一覧には呼び方のよみ `TERM_READINGS`（既定の呼び方の漢字だけ）
 - `palettePeople(clients, staff, terms)`：`/clients?id=`・`/staff?id=`。段階・休止中を補足に
 - `filterPalette(items, query, limit=8)`：語に分けて AND、種類の順・先頭一致を前に、人は種類ごと limit まで（`rest`）。空なら操作と画面だけ
@@ -241,7 +241,7 @@
 
 - `lib/useFeature.ts` の `useFeature(id): boolean`（`org.features` を読むだけ）、`components/Feature.tsx` の `Feature`（id を渡す。切なら何も出さない）
 - URL の直書きをやめ機能の表から引く：`menuSections`（下のタブ・上の帯の名前・パレットの画面もここから）、`app/App.tsx` のルート（切った機能の URL（`?do=` も）は `#/home` へ移し（replace。`state.featureOff`）、知らせ（トースト）と `#/settings` へのリンク。管理者設定と土台の画面は開ける）、`lib/commandPalette.ts` の操作、`lib/home.ts` のカード、`lib/tour.ts` の枚、`lib/links.ts`、画面の中の欄・ボタン（`Feature`）
-- `rules` が切なら、日の予定でいまの条件で作る所（AI に作らせる・固定を残して作り直す）は `lib/presets` の `planRulesOf(data, false)`（いまの条件に点数の基準のプリセットの重みを当てたもの。月まとめ作成と同じ）で作る。「案を変える ▾」のプリセットは点数の基準の1枚だけ（王冠・まとめて作るなし）、「条件を調整する」は出さない
+- `rules` が切なら、日の予定でこの日だけ試す重みで作る所（AI に作らせる・固定を残して作り直す）は `lib/presets` の `planRulesOf(data, false)`（いまの条件に点数の基準のプリセットの重みを当てたもの。月まとめ作成と同じ）で作る。「案を変える ▾」のプリセットは点数の基準の1枚だけ（王冠・まとめて作るなし）、「条件を調整する」は出さない
 - 切っても事実の表示（月の「休みの人に N」・すでに振り直した案の差の欄・帯・連絡の一覧）は残し、隠すのは入力・操作の入口だけ
 - 切ったまま保存しても、データ（段階・担当できる人・メールアドレス・毎月のパターンの `repeat` と `monthWeeks`）は残す（毎月のパターンは読むだけと注記）。`clientStage` が切なら段階は「利用中／終了」の2つで選ばせる
 - 管理者設定の画面は [pages-data.md](pages-data.md)

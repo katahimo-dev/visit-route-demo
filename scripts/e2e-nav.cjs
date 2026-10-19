@@ -300,12 +300,12 @@ async function keyboard(page) {
   await type(page, 'つくりなおす');
   list = await listed(page);
   check(
-    !list.some((o) => o.label === '今日の案をいまの条件で作り直す'),
+    !list.some((o) => o.label === '今日の案を試す重みで作り直す'),
     'いまの条件がプリセットと同じなら「いまの条件で作り直す」を出さない',
     list.map((o) => o.label),
   );
   await page.keyboard.press('Escape');
-  // いまの条件がどのプリセットとも違えば「今日の案をいまの条件で作り直す」（?do=recreate）
+  // この日だけ試す重みがどのプリセットとも違えば「今日の案を試す重みで作り直す」（?do=recreate。PRD D234）
   await page.evaluate((key) => {
     const d = JSON.parse(localStorage.getItem(key));
     const r = d.rules.find((x) => typeof x.weight === 'number');
@@ -317,7 +317,7 @@ async function keyboard(page) {
   await palette(page).waitFor();
   await type(page, 'つくりなおす');
   list = await listed(page);
-  const ri = list.findIndex((o) => o.label === '今日の案をいまの条件で作り直す');
+  const ri = list.findIndex((o) => o.label === '今日の案を試す重みで作り直す');
   check(
     ri >= 0 && list[ri].kind === 'action',
     'いまの条件がプリセットと違えば「今日の案をいまの条件で作り直す」',
