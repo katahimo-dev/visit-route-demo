@@ -25,15 +25,15 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [pages.md](design/pages.md) | 共通事項・ルート一覧・メニュー・コマンドパレット・確認ダイアログ・機能の入り切り（画面側） |
 | [pages-common.md](design/pages-common.md) | 右の欄・名前の詳細の吹き出し・用語・ツアー・作り直しの帯・リンク・メール・道順 |
 | [pages-bars.md](design/pages-bars.md) | 3段の時間帯のバー・ひと目で分かる表示（月・週・日・空き状況・稼働で共通） |
-| [pages-home.md](design/pages-home.md) | ホーム「今日やること」 |
-| [pages-plan.md](design/pages-plan.md) | 日の画面（予定と AI案・手直し・確定） |
+| [pages-home.md](design/pages-home.md) | ホーム（今日やること） |
+| [pages-plan.md](design/pages-plan.md) | 日の予定（予定と AI案・手直し・確定） |
 | [pages-plan-absence.md](design/pages-plan-absence.md) | 欠勤・キャンセル・振り直し（案A・案B）・連絡の一覧 |
 | [pages-month.md](design/pages-month.md) | 月の予定・まとめて作る・まとめて確定・希望休・印刷 |
 | [pages-week.md](design/pages-week.md) | 週の予定 |
 | [pages-vacancy.md](design/pages-vacancy.md) | 空き状況・問い合わせの試算・案内文 |
 | [pages-clients.md](design/pages-clients.md) | 〈利用者さん〉の一覧・閲覧・編集・住所の入力・絞り込み |
 | [pages-compat.md](design/pages-compat.md) | 相性の表 |
-| [pages-staff.md](design/pages-staff.md) | 〈スタッフ〉・稼働時間・稼働の見込み・スマホ画面 |
+| [pages-staff.md](design/pages-staff.md) | 〈スタッフ〉・勤務時間（シフト）・勤務の見込み・スマホ画面 |
 | [pages-rules.md](design/pages-rules.md) | 条件・プリセット・訪問の種類・項目・案の比較 |
 | [pages-data.md](design/pages-data.md) | データ（控え・直前の状態・Excel・初期化・片づけ・データを守る知らせ）・管理者設定 |
 
@@ -74,6 +74,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0031](adr/0031-month-bulk-confirm-and-seed-plans.md) | 月のまとめて確定と初期データの案 |
 | [0032](adr/0032-protect-data.md) | データを守る（1世代の控え・書き出しの知らせ・古い案の片づけ・壊れたデータと別のタブの知らせ） |
 | [0033](adr/0033-narrow-tables-as-cards.md) | 狭い画面では一覧の表をカードに（ADR-0024 の見直し） |
+| [0034](adr/0034-screen-names-and-five-menu-groups.md) | 画面名をメニューの名前に・欠勤の入口の呼び名・メニューの5つのグループ・下のタブの「今日」 |
 
 ## 文書の保ち方
 

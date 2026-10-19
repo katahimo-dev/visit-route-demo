@@ -5,8 +5,8 @@
 
 ### 責務・持つデータ・依存
 
-- 責務：PoC本体の管理者画面（予定・AI案の比較・稼働時間帯・〈スタッフ〉・訪問先）を Firebase なしで動かす。加えて ホーム・月・週・空き状況・稼働の見込み・項目・条件（重みのスライダー 0〜5・必須の切り替え。ClassClassify の Setup にならう）・訪問の種類・相性の表・データ・管理者設定・〈スタッフ〉の今日の順番を見る画面（D16。表示だけ）
-- 最初に開く画面：`#/home`（ホーム「今日やること」。`#/`・知らない URL もここへ。ADR-0025）
+- 責務：PoC本体の管理者画面（予定・AI案の比較・稼働時間帯・〈スタッフ〉・訪問先）を Firebase なしで動かす。加えて ホーム・月・週・空き状況・勤務の見込み・項目・条件（重みのスライダー 0〜5・必須の切り替え。ClassClassify の Setup にならう）・訪問の種類・相性の表・データ・管理者設定・〈スタッフ〉の今日の順番を見る画面（D16。表示だけ）
+- 最初に開く画面：`#/home`（ホーム。見出しの下に「今日やること」。`#/`・知らない URL もここへ。ADR-0025）
 - 持つデータ（持ち主）：画面の一時状態のみ。`DemoData` を書き換えるのは store だけで、画面は `update(fn)` を通す
 - 提供するAPI：なし（ルートは下の表）
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign・patterns・vacancy・features、Leaflet（PoC本体 `RouteMap.tsx` を写す）
@@ -18,8 +18,8 @@
 
 | ルート | ページのファイル | 役割 | 詳細 |
 |---|---|---|---|
-| `#/home` | `pages/HomePage.tsx` | ホーム「今日やること」。起動・知らない URL の行き先 | [pages-home.md](pages-home.md) |
-| `#/plan` | `pages/PlanPage.tsx` | 日の画面（予定と AI案・手直し・確定）。`?date=`・`?do=absence|unassigned|recreate`・`&staff=` | [pages-plan.md](pages-plan.md)・[pages-plan-absence.md](pages-plan-absence.md) |
+| `#/home` | `pages/HomePage.tsx` | ホーム（見出しの下に「今日やること」）。起動・知らない URL の行き先 | [pages-home.md](pages-home.md) |
+| `#/plan` | `pages/PlanPage.tsx` | 日の予定（予定と AI案・手直し・確定）。`?date=`・`?do=absence|unassigned|recreate`・`&staff=` | [pages-plan.md](pages-plan.md)・[pages-plan-absence.md](pages-plan-absence.md) |
 | `#/schedule` | （`Navigate`） | 古いリンク。`#/plan` へ移す | — |
 | `#/month` | `pages/MonthPage.tsx` | 月の予定（カレンダー／日ごとの一覧・まとめて作る・希望休）。`?ym=`・`?staff=`・`?client=`・`?layout=`・`?do=` | [pages-month.md](pages-month.md) |
 | `#/month/print` | `pages/MonthPrintPage.tsx` | 月の予定の印刷（A4横）。`AdminShell` の外（`Guarded`） | [pages-month.md](pages-month.md) |
@@ -29,8 +29,8 @@
 | `#/clients` | `pages/ClientsPage.tsx` | 〈利用者さん〉一覧・閲覧・編集。`?id=` | [pages-clients.md](pages-clients.md) |
 | `#/compat` | `pages/CompatPage.tsx` | 相性の表（訪問先×〈スタッフ〉）。`?sf=`・`?cf=` | [pages-compat.md](pages-compat.md) |
 | `#/staff` | `pages/StaffPage.tsx` | 〈スタッフ〉一覧・閲覧・編集・最終勤務日。`?id=` | [pages-staff.md](pages-staff.md) |
-| `#/availability` | `pages/AvailabilityPage.tsx` | 稼働時間（〈スタッフ〉×日の稼働時間帯） | [pages-staff.md](pages-staff.md) |
-| `#/workload` | `pages/WorkloadPage.tsx` | 稼働の見込み（拘束・移動・待ち・交通費）。`?ym=`・`?staff=` | [pages-staff.md](pages-staff.md) |
+| `#/availability` | `pages/AvailabilityPage.tsx` | 勤務時間（シフト）（〈スタッフ〉×日の稼働時間帯） | [pages-staff.md](pages-staff.md) |
+| `#/workload` | `pages/WorkloadPage.tsx` | 勤務の見込み（拘束・移動・待ち・交通費）。`?ym=`・`?staff=` | [pages-staff.md](pages-staff.md) |
 | `#/staff-view/:staffId` | `pages/StaffViewPage.tsx` | 〈スタッフ〉のスマホ画面（今日の順番。見本）。`AdminShell` の外（`Guarded`） | [pages-staff.md](pages-staff.md) |
 | `#/rules` | `pages/RulesPage.tsx` | 条件の重みとプリセット・点数の基準 | [pages-rules.md](pages-rules.md) |
 | `#/types` | `pages/TypesPage.tsx` | 訪問の種類 | [pages-rules.md](pages-rules.md) |
@@ -46,15 +46,15 @@
 | ファイル | 中身 |
 |---|---|
 | [pages-common.md](pages-common.md) | 画面共通の部品：右の欄 `SidePanel` と確定のボタンの帯・浮いている部品とトースト・名前から開く詳細（`PersonPopover`）・用語の説明（`Term`）・空の画面（`EmptyNext`）・初回の案内ツアー・作り直しの帯（`RebuildBand`）・行き先のリンク（`lib/links`）・メールと道順のリンク・画面横断の e2e |
-| [pages-home.md](pages-home.md) | ホーム「今日やること」・予定に共通の進み具合の帯（`ProgressBand`・`ScheduleBand`）・`useDayStatuses` |
-| [pages-plan.md](pages-plan.md) | 日の画面：並び・1行のまとめ・「案を変える ▾」・右の欄（詳しく・条件を調整する・プリセットのカード）・自動作成・時間軸／順番／一覧・担当ごとの1日・地図・入らなかった訪問・訪問の欄・取り消し・条件が変わった・点数の理由・日の予定のメール・道順のリンク |
-| [pages-plan-absence.md](pages-plan-absence.md) | 日の画面の「欠勤・キャンセル」の欄（4段階）・振り直し（案A・案B）・差の欄・左下の帯・連絡の一覧・比較の画面の「欠勤前」 |
+| [pages-home.md](pages-home.md) | ホーム（今日やること）・予定に共通の進み具合の帯（`ProgressBand`・`ScheduleBand`）・`useDayStatuses` |
+| [pages-plan.md](pages-plan.md) | 日の予定：並び・1行のまとめ・「案を変える ▾」・右の欄（詳しく・条件を調整する・プリセットのカード）・自動作成・時間軸／順番／一覧・担当ごとの1日・地図・入らなかった訪問・訪問の欄・取り消し・条件が変わった・点数の理由・日の予定のメール・道順のリンク |
+| [pages-plan-absence.md](pages-plan-absence.md) | 日の予定の「欠勤・キャンセル」の欄（4段階）・振り直し（案A・案B）・差の欄・左下の帯・連絡の一覧・比較の画面の「欠勤前」 |
 | [pages-month.md](pages-month.md) | 月：カレンダーと日ごとの一覧・日のマスと読み方の吹き出し・凡例・表示の選択・まとめて作る・希望休・要対応・月の印刷 |
 | [pages-week.md](pages-week.md) | 週：表示の切り替え・時間軸・ドラッグ・〈スタッフ〉×曜日・〈利用者さん〉×曜日・時間軸の〈利用者さん〉の初期値・週の予定のメール |
 | [pages-bars.md](pages-bars.md) | 時間帯のバー（3段・30分）と一目で分かる表示：`barRows`・`staffBar`・`loadBar`・`barMarks.css`・`glance`・`dayLine`・`workBars`・`clientBar` |
 | [pages-vacancy.md](pages-vacancy.md) | 空き状況：4つの段階・表・試算・仮押さえ・案内文・紹介元へのメール |
 | [pages-clients.md](pages-clients.md) | 〈利用者さん〉：一覧と絞り込み（`ClientFilter`・`area`）・閲覧と編集（`viewMode` 共通）・定期パターン・休み・決まりごと・担当できる人・段階と仮押さえ・住所の入力（`AddressField`）・まとめて地図に置く・`ClientPicker`・訪問の欄 |
-| [pages-staff.md](pages-staff.md) | 〈スタッフ〉：一覧・閲覧と編集・最終勤務日と担当の振り直し・自宅・稼働時間・稼働の見込み・スマホ画面（見本） |
+| [pages-staff.md](pages-staff.md) | 〈スタッフ〉：一覧・閲覧と編集・最終勤務日と担当の振り直し・自宅・勤務時間（シフト）・勤務の見込み・スマホ画面（見本） |
 | [pages-compat.md](pages-compat.md) | 相性の画面：表・絞り込み（`StaffFilter`・相性のチップ）・吹き出し |
 | [pages-rules.md](pages-rules.md) | 条件の重みとプリセット・点数の基準・特性と条件の入力・訪問の種類・特性の項目・比較の画面 |
 | [pages-data.md](pages-data.md) | データの画面（控え・Excel・名簿・最終勤務日の知らせ・ファイル選択）・管理者設定 |
@@ -81,8 +81,8 @@
   - `td.narrow-act`：操作（開く・消す）を右下
   - 付けた表：条件の重み（`narrow-rules`）・プリセットの重み・特性の項目・〈スタッフ〉一覧（`narrow-staff`）・〈利用者さん〉一覧（`narrow-clients`）・比較の記録（`narrow-runs`）。中身は各画面のファイル
   - `.narrow-stack`：ボタンの行を縦に幅いっぱいで並べ、文字を折り返さない
-- **格子の表の端**（D221）：`components/EdgeScroll`（`className` 既定 `table-scroll`・`scrollRef`）が巻く箱を外の枠 `.scroll-edge` で包み、右に続きがあるあいだ枠に `has-more-right` を付ける（`lib/useScrollEdge`。巻く・幅・中身の大きさが変わるたびに測る。判定は `lib/scrollEdge` の `moreRight`（純粋関数。端の余り 2px））。600px 以下では枠の `::after` で右の端を 28px ぼかし、`has-more-right` が外れると消す（印刷では出さない）。使う所：相性・稼働時間・稼働の見込み・空き状況・週の2つの表
-  - 1列目と見出しの行を止める：相性（今まで）・稼働時間と稼働の見込み（600px 以下で箱の高さを画面の中に収め、見出しの行と名前の列を止める）・空き状況（曜日の列だけ。行は7つ）・週の表（名前の列）・週の時間軸（時刻の列）
+- **格子の表の端**（D221）：`components/EdgeScroll`（`className` 既定 `table-scroll`・`scrollRef`）が巻く箱を外の枠 `.scroll-edge` で包み、右に続きがあるあいだ枠に `has-more-right` を付ける（`lib/useScrollEdge`。巻く・幅・中身の大きさが変わるたびに測る。判定は `lib/scrollEdge` の `moreRight`（純粋関数。端の余り 2px））。600px 以下では枠の `::after` で右の端を 28px ぼかし、`has-more-right` が外れると消す（印刷では出さない）。使う所：相性・稼働時間・勤務の見込み・空き状況・週の2つの表
+  - 1列目と見出しの行を止める：相性（今まで）・勤務時間（シフト）と勤務の見込み（600px 以下で箱の高さを画面の中に収め、見出しの行と名前の列を止める）・空き状況（曜日の列だけ。行は7つ）・週の表（名前の列）・週の時間軸（時刻の列）
   - はじめの巻き位置は `scrollLeftToShow(box, targetLeft, stickyRight)`（純粋関数。ある列を止めた列のすぐ右に見せる。巻ける範囲に収める）：空き状況の 9:00 の列（[pages-vacancy.md](pages-vacancy.md)）・週の今日の列（[pages-week.md](pages-week.md)）
 
 ### 色・フォーカス・動き・タッチ（`styles.css` の `:root`）
@@ -125,26 +125,27 @@
 
 #### `lib/nav.ts`（純粋関数。テストあり）
 
-- `menuSections(terms, today, features)`：メニューの並びの1か所。項目は `MenuItem`＝`{ to, label, icon }`（アイコンは名前 `NavIcon`）。切った機能の項目は出さず、項目の無くなったグループは見出しごと出さない
+- `menuSections(terms, today, features)`：メニューの並びの1か所（PRD D178・D230〜D232。ADR-0034）。項目は `MenuItem`＝`{ to, label, short?, icon }`（アイコンは名前 `NavIcon`。`short` は下のタブの短い名前）。項目名は画面の見出しと同じ。切った機能の項目は出さず、項目の無くなったグループは見出しごと出さない（当日・問い合わせは欠勤・キャンセルと空き状況の両方、AI の条件は条件の重みと相性の両方を切ったとき。設定は消えない）
 
-| グループの見出し | 項目（`to`） |
+| グループの見出し | 項目（`to`。下のタブは `short`） |
 |---|---|
-| （なし） | ホーム（`/home`） |
-| 予定を組む | 月（`/month`）・週（`/week`）・日（`/plan`）・案を比べる（`/compare`） |
-| 当日の対応 | 欠勤・キャンセル（`absenceHref(today)`＝`/plan?date=今日&do=absence`） |
-| 問い合わせ | 空き状況（`/vacancy`） |
-| 人の情報 | `${terms.client}一覧`（`/clients`）・相性（`/compat`）・`${terms.staff}一覧`（`/staff`）・稼働時間（`/availability`）・稼働の見込み（`/workload`） |
-| AI の考え方 | 条件の重み（`/rules`）・訪問の種類（`/types`）・特性の項目（`/items`） |
-| 管理者 | 管理者設定（`/settings`）・データ（`/data`） |
+| （なし） | ホーム（`/home`。short「ホーム」） |
+| 予定（`SCHEDULE_GROUP`） | 月の予定（`/month`。short「月」）・週の予定（`/week`。short「週」）・日の予定（`/plan`。short「今日」）・案を比べる（`/compare`） |
+| 当日・問い合わせ | 欠勤・キャンセルを登録（`absenceHref(today)`＝`/plan?date=今日&do=absence`）・空き状況（`/vacancy`。short「空き状況」） |
+| 人 | `${terms.client}一覧`（`/clients`）・`${terms.staff}一覧`（`/staff`）・勤務時間（シフト）（`/availability`）・勤務の見込み（`/workload`） |
+| AI の条件 | 条件の重み（`/rules`）・相性（`/compat`） |
+| 設定 | 訪問の種類（`/types`）・特性の項目（`/items`）・管理者設定（`/settings`）・データ（`/data`） |
 
 - `isNavAction(to)`：クエリを持つ＝操作の項目（欠勤・キャンセル）
 - `activeNavPath(pathname)`：`#/schedule` は `/plan`。比較は `/compare` のまま
-- `isActiveNav(to, pathname)`：操作の項目はいつも false（日の画面で欠勤・キャンセルに印を付けない）
-- `activeTabPath`・`isActiveTab`：下のタブ用。比較は `/plan`（「日」のタブ）
-- `navTitle(groups, pathname)`：グループの見出し＋「・」＋項目名。見出しの無いグループは項目名だけ。メニューに無い画面は null
+- `isActiveNav(to, pathname)`：操作の項目はいつも false（日の予定で欠勤・キャンセルに印を付けない）
+- `activeTabPath`・`isActiveTab`：下のタブ用。比較は `/plan`（「今日」のタブ）
+- `tabLabel(item)`：下のタブの名前（`short`、無ければ `label`）。`tabHref(to, today)`：「今日」は `todayPlanHref(today)`＝`/plan?date=今日`、ほかは `to`。`tabClick(to, pathname)`：今の画面のタブは `stay`（何もしない）、ただし「今日」は `replace`（日の予定でも今日を選び直す・履歴を増やさない）、ほかは `go`
+- `navTitle(groups, pathname)`：グループの見出し＋「・」＋項目名（例「人・利用者さん一覧」）。見出しの無いグループと予定のグループは項目名だけ（「日の予定」。「予定・日の予定」と重ねない）。メニューに無い画面は null
 - `navTitleParts`：見出しと項目名を分けたもの（上の帯は `.m-screen-group`・`.m-screen-item` の inline-block。入りきらなければ項目名を次の行へ）
-- `bottomTabs(groups)`：`BOTTOM_TABS`＝`['/home', '/month', '/week', '/plan', '/vacancy']` の順にメニューから引く（メニューに無い URL は出さない）
+- `bottomTabs(groups)`：`BOTTOM_TABS`＝`['/home', '/month', '/week', '/plan', '/vacancy']` の順にメニューから引く（メニューに無い URL は出さない。名前は `tabLabel`＝ホーム・月・週・今日・空き状況）
 - 左のメニュー・引き出し・下のタブ・上の帯の名前は、どれもこの決まりで今の画面を見る
+- 画面の見出し（`PageHeader` の h1）はメニューの項目名と同じ（PRD D179・D230）：ホーム（見出しの下の文は「今日やること：…」）・月の予定・週の予定・日の予定・勤務時間（シフト）・勤務の見込み（`fare` の入り切りで変えない）ほか。本文・行き先の文の画面名もこれにそろえる（人の稼働時間・Excel のシート名・［月｜週｜日］は変えない）
 
 #### `AdminShell`（`src/app/App.tsx`）
 
@@ -157,7 +158,7 @@
 - 画面を移ったら引き出しとコマンドパレットを閉じる（パレットは開いたときの URL の hash の画面のパスを覚え、移った先の画面で開き直していれば閉じない。`keepPaletteOn`）。`matchMedia('(max-width: 860px)')` が外れたら（広い画面へ戻ったら）引き出しを閉じ、フォーカスは左のメニューの今の項目へ
 - window の keydown で `isPaletteShortcut` なら `preventDefault` し、`[aria-modal="true"]` が無ければコマンドパレットを開く（右の欄・確認・ツアーの上では開かない）
 - main の `Guarded` の中、`Outlet` の前に、`showsRebuildBand(pathname)` のときだけ `RebuildBand`（[pages-common.md](pages-common.md) の「作り直しの帯」）
-- 今の画面の項目（引き出し）は閉じるだけ、今の画面の下のタブは何もしない（どちらも `to === pathname` で `preventDefault`。URL のクエリ＝画面の状態を消さない。比較のときの「日」は別の画面なので移る）
+- 今の画面の項目（引き出し）は閉じるだけ（`to === pathname` で `preventDefault`）、今の画面の下のタブは何もしない（`tabClick` が `stay`）。URL のクエリ＝画面の状態を消さない。「今日」のタブは `tabHref` の `/plan?date=今日` へ移り、日の予定の上では `replace`（日の予定が `?date=` を読んで消す）。比較のときの「今日」は別の画面なので移る
 
 #### 引き出し（`src/app/NavDrawer.tsx`）
 
@@ -229,8 +230,8 @@
 
 #### 呼ぶ側の決まり
 
-- 確認を出す関数は async。確認の後に計算中なら何もしない（日の画面の `runRef`：`recreate`・`runPreset`・`registerAndReassign`・`chooseOption`・`revert`・`adopt`・`revertToBase`・`placeCandidate`、月の `start` は `runningRef`）
-- 日の画面の `create` は同期のまま（自動作成・順に作るが戻り値を使う）。手で押す作る・作り直す・プリセットは `recreate`／`runPreset`（async）が確認してから呼ぶ
+- 確認を出す関数は async。確認の後に計算中なら何もしない（日の予定の `runRef`：`recreate`・`runPreset`・`registerAndReassign`・`chooseOption`・`revert`・`adopt`・`revertToBase`・`placeCandidate`、月の `start` は `runningRef`）
+- 日の予定の `create` は同期のまま（自動作成・順に作るが戻り値を使う）。手で押す作る・作り直す・プリセットは `recreate`／`runPreset`（async）が確認してから呼ぶ
 - 名簿の読み込みは確認の後にデータが変わっていないかを見直す
 - e2e で確認に答えるときは `scripts/lib/confirmDialog.cjs` の `answerConfirms(page)`（出た確認の見出しと本文を記録し `answer` のボタンを押す。ネイティブのダイアログは記録して失敗に、beforeunload だけ受ける）
 
@@ -240,7 +241,7 @@
 
 - `lib/useFeature.ts` の `useFeature(id): boolean`（`org.features` を読むだけ）、`components/Feature.tsx` の `Feature`（id を渡す。切なら何も出さない）
 - URL の直書きをやめ機能の表から引く：`menuSections`（下のタブ・上の帯の名前・パレットの画面もここから）、`app/App.tsx` のルート（切った機能の URL（`?do=` も）は `#/home` へ移し（replace。`state.featureOff`）、知らせ（トースト）と `#/settings` へのリンク。管理者設定と土台の画面は開ける）、`lib/commandPalette.ts` の操作、`lib/home.ts` のカード、`lib/tour.ts` の枚、`lib/links.ts`、画面の中の欄・ボタン（`Feature`）
-- `rules` が切なら、日の画面でいまの条件で作る所（AI に作らせる・固定を残して作り直す）は `lib/presets` の `planRulesOf(data, false)`（いまの条件に点数の基準のプリセットの重みを当てたもの。月まとめ作成と同じ）で作る。「案を変える ▾」のプリセットは点数の基準の1枚だけ（王冠・まとめて作るなし）、「条件を調整する」は出さない
+- `rules` が切なら、日の予定でいまの条件で作る所（AI に作らせる・固定を残して作り直す）は `lib/presets` の `planRulesOf(data, false)`（いまの条件に点数の基準のプリセットの重みを当てたもの。月まとめ作成と同じ）で作る。「案を変える ▾」のプリセットは点数の基準の1枚だけ（王冠・まとめて作るなし）、「条件を調整する」は出さない
 - 切っても事実の表示（月の「休みの人に N」・すでに振り直した案の差の欄・帯・連絡の一覧）は残し、隠すのは入力・操作の入口だけ
 - 切ったまま保存しても、データ（段階・担当できる人・メールアドレス・毎月のパターンの `repeat` と `monthWeeks`）は残す（毎月のパターンは読むだけと注記）。`clientStage` が切なら段階は「利用中／終了」の2つで選ばせる
 - 管理者設定の画面は [pages-data.md](pages-data.md)
@@ -282,7 +283,7 @@
 |---|---|---|
 | `nav.ts`・`commandPalette.ts`・`confirmDialog.ts`・`inertLock.ts`・`scrollLock.ts`・`panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`rebuildBand.ts`・`links.ts`・`features.ts`・`useFeature.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`・`clipboard.ts` | 画面横断 | このファイル（nav・パレット・確認・ロック・features）・[pages-common.md](pages-common.md)（ほか） |
 | `useDayModel.ts`・`useDayStatuses.ts`・`home.ts`・`progressBand.ts` | 日のモデル・日の状態・ホーム・帯 | [pages-home.md](pages-home.md)・[pages-plan.md](pages-plan.md) |
-| `absences.ts`・`sudden.ts`・`contacts.ts`・`runs.ts`・`planMenu.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`visitEdit.ts`・`copyDay.ts`・`dragStart.ts` | 日の画面 | [pages-plan.md](pages-plan.md)・[pages-plan-absence.md](pages-plan-absence.md) |
+| `absences.ts`・`sudden.ts`・`contacts.ts`・`runs.ts`・`planMenu.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`visitEdit.ts`・`copyDay.ts`・`dragStart.ts` | 日の予定 | [pages-plan.md](pages-plan.md)・[pages-plan-absence.md](pages-plan-absence.md) |
 | `month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts` | 月 | [pages-month.md](pages-month.md) |
 | `week.ts`・`weekView.ts`・`timelineClients.ts`・`fold.ts` | 週 | [pages-week.md](pages-week.md) |
 | `barRows.ts`・`staffBar.ts`・`glance.ts`・`dayLine.ts` | 時間帯のバー | [pages-bars.md](pages-bars.md) |
@@ -299,9 +300,9 @@
 
 - [ ] 呼び方は `org.terms` から引き、「お客様」「シッター」を直書きしない。主ボタンは濃い朱1色・1画面1〜2個
 - [ ] 色は役割の変数から引き、文字は 4.5・枠とフォーカスの輪は 3 以上の比。フォーカスの輪は `--focus` の 3px。動きを減らす設定で動きが止まり、タッチの端末でアイコンのボタンの押せる所が 44px（`lib/motion` のテスト）
-- [ ] （ADR-0024）390×844 で左のメニューが出ず、上の帯に今の画面の名前（〈利用者さん〉一覧と〈スタッフ〉一覧を見分けられる）・「メニュー」・日付の切り替えが出て横に巻かない。「メニュー」で左から見出し付きの引き出しが開き、画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」に戻る。開いているあいだ裏は巻かず、Tab は中で回る。下の5つのタブで移れ、今の画面（比較は「日」）が `aria-current`。地図・欠勤の振り直しの帯・トーストがタブに重ならない。印刷に出ない。1400px の見た目（左のメニュー・上の帯 72px）は変わらない（`lib/nav` のテスト・`scripts/e2e-mobile.cjs`）
+- [ ] （ADR-0024）390×844 で左のメニューが出ず、上の帯に今の画面の名前（〈利用者さん〉一覧と〈スタッフ〉一覧を見分けられる）・「メニュー」・日付の切り替えが出て横に巻かない。「メニュー」で左から見出し付きの引き出しが開き、画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」に戻る。開いているあいだ裏は巻かず、Tab は中で回る。下の5つのタブで移れ、今の画面（比較は「今日」）が `aria-current`。地図・欠勤の振り直しの帯・トーストがタブに重ならない。印刷に出ない。1400px の見た目（左のメニュー・上の帯 72px）は変わらない（`lib/nav` のテスト・`scripts/e2e-mobile.cjs`）
 - [ ] （ADR-0026）画面のどの確認もブラウザの確認でなく、画面の中央にアプリの見た目のダイアログで出る（見出しの問い・本文・動詞のボタン、消す・捨てるは赤）。最初のフォーカスは取り消し、Tab は中で回り、Esc・背景・取り消すでは何も変わらず、確定で進み、閉じたら押したボタンへ戻る。右の欄の上の Esc は確認だけを閉じる。390px で収まり、印刷では出ない（`scripts/e2e-dialog.cjs`）
-- [ ] （ADR-0027）メニューが ホーム／予定を組む／当日の対応／問い合わせ／人の情報／AI の考え方／管理者 の順で、「〈利用者さん〉一覧」「〈スタッフ〉一覧」と見分けられ、比較は「案を比べる」。Ctrl+K（上の帯の「探す・移動」）で開き、打って↑↓・Enter で画面・操作・人の閲覧の欄へ移り、Esc でフォーカスが戻る（`scripts/e2e-nav.cjs`）
+- [ ] （ADR-0027）メニューが ホーム／予定／当日・問い合わせ／人／AI の条件／設定 の順で（ADR-0034）、画面の見出しがメニューの名前と同じで、「〈利用者さん〉一覧」「〈スタッフ〉一覧」と見分けられ、比較は「案を比べる」。Ctrl+K（上の帯の「探す・移動」）で開き、打って↑↓・Enter で画面・操作・人の閲覧の欄へ移り、Esc でフォーカスが戻る（`scripts/e2e-nav.cjs`）
 - [ ] （ADR-0022 追記）月・週・日の名前から詳細の吹き出しが開き、Esc・外を押す・もう一度押す・Tab で閉じてボタンへ戻る。同時に1つ、見出しが消えたら閉じる。リンクで各画面の閲覧の欄が開く。印刷では i を出さない（`lib/personPopover` のテスト・`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）
 - [ ] （PRD D220〜D222）390×844 で条件の重み・特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧・比較が横に巻かず、行がカードになる。条件の重みのスライダーと必須が画面の中。〈利用者さん〉一覧の絞り込みが「絞り込み（N）」に畳まれる。比較の主ボタンがタブに隠れない。週は今日の列が見え、空き状況の表は 9:00 から（`lib/scrollEdge`・`lib/weekView`・`lib/clientFilter` のテスト・`scripts/e2e-mobile.cjs`）
 - [ ] 右の欄の確定のボタンの帯：短い欄は帯が内容のすぐ下・区切りなし、長い欄は欄の下に貼り付き、内容が隠れている間だけ区切り。390px の並び・タブに隠れない・キーボード（`lib/panelFit` のテスト・`scripts/e2e-panel-foot.cjs`）

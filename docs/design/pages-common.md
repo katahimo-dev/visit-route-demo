@@ -37,11 +37,11 @@
 
 - 地図の浮かせた表示：`components/MapDock.tsx`（画面の外の地図を右下に浮かせる）。位置は `--map-dock-left`・`--map-dock-top`
 - `components/floating.ts`（`FLOATING_EVENT`・`useFloatingEdge(name)`）：知らせ（トースト）は欠勤の振り直しの帯・地図より上に出す（`--reassign-dock-top`・`--map-dock-top`）
-- `components/Toast.tsx`：z-index 1200。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・6秒・フォーカスがある間は消さない）。今は日の画面の手直しの「元に戻す」だけ（[pages-plan.md](pages-plan.md)。PRD D218）
+- `components/Toast.tsx`：z-index 1200。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・6秒・フォーカスがある間は消さない）。今は日の予定の手直しの「元に戻す」だけ（[pages-plan.md](pages-plan.md)。PRD D218）
 
 ### 名前から開く詳細（ADR-0022 追記。PRD D122〜D126・D205〜D209）
 
-付けた所は各画面のファイル。付けない所：〈スタッフ〉のスマホ画面（見本）・比較・稼働の見込み・空き状況・月の印刷・連絡の一覧・行き先のリンク（D124）。
+付けた所は各画面のファイル。付けない所：〈スタッフ〉のスマホ画面（見本）・比較・勤務の見込み・空き状況・月の印刷・連絡の一覧・行き先のリンク（D124）。
 
 #### `components/DetailPopover.tsx`
 
@@ -88,14 +88,14 @@
   - label の中には置かない（入力欄の名前は `id` と `aria-labelledby` でつなぐ）。押しても行・ラベルの動きを起こさない（preventDefault・stopPropagation）
   - `TipBubble`：body の直下の浮かせた説明。位置は `popoverPlace`
   - 印刷では説明を出さず下線も消す
-- 用語を使う所：日の画面の今の案の帯（入らない・必須の違反・移動）・詳しくの「空き時間（待ち）」と「点数の基準」・条件を調整するの「点数の基準」・比較の画面の「点数の基準」・稼働の見込みの表の見出しと上限の設定・条件の重みの「詳細設定」・月の「混み具合：空きを数える人」と凡例の「空き 0人」・空き状況のマスの読み方・データの「控え（バックアップ）」「画面での呼び方」。点のしくみ・点数の決め方は `Hint`
+- 用語を使う所：日の予定の今の案の帯（入らない・必須の違反・移動）・詳しくの「空き時間（待ち）」と「点数の基準」・条件を調整するの「点数の基準」・比較の画面の「点数の基準」・勤務の見込みの表の見出しと上限の設定・条件の重みの「詳細設定」・月の「混み具合：空きを数える人」と凡例の「空き 0人」・空き状況のマスの読み方・データの「控え（バックアップ）」「画面での呼び方」。点のしくみ・点数の決め方は `Hint`
 
 ### 空の画面の次の一手（PRD D175）
 
 - `lib/emptyGuide.ts`（純粋関数。テストあり）：
-  - `periodEmptyGuide({ period, dates, today, visitDays, planDays })`（週・稼働の見込み）：案のある日があれば null。訪問があるのに案が無い：今日以降の訪問のある月ごとに［〈M月〉の案をまとめて作る］（`?do=batch`。月をまたぐ週は2つと補足の文）・［〈M/D〉の案を日の画面で作る］、過ぎた期間は日の画面だけ。訪問が無い：［〈M月〉の訪問と案を作る］・［日の画面で訪問を足す］
+  - `periodEmptyGuide({ period, dates, today, visitDays, planDays })`（週・勤務の見込み）：案のある日があれば null。訪問があるのに案が無い：今日以降の訪問のある月ごとに［〈M月〉の案をまとめて作る］（`?do=batch`。月をまたぐ週は2つと補足の文）・［〈M/D〉の案を日の予定で作る］、過ぎた期間は日の予定だけ。訪問が無い：［〈M月〉の訪問と案を作る］・［日の予定で訪問を足す］
   - `compareEmptyGuide({ date, today, visits })`、`batchHref(ym)`
-- `components/EmptyNext.tsx`：見出し・補足・ボタン（まとめて作るは `Link`、日の画面は呼ぶ側の `onOpenDay`＝選んでいる日付を変えて `/plan`）。`primary={false}` で主ボタンにしない。480px 以下は縦に並べ、印刷ではボタンを出さない。使う所：週（`week-empty`。`compact`）・稼働の見込み（`work-empty`）・比較（`compare-empty`）
+- `components/EmptyNext.tsx`：見出し・補足・ボタン（まとめて作るは `Link`、日の予定は呼ぶ側の `onOpenDay`＝選んでいる日付を変えて `/plan`）。`primary={false}` で主ボタンにしない。480px 以下は縦に並べ、印刷ではボタンを出さない。使う所：週（`week-empty`。`compact`）・勤務の見込み（`work-empty`）・比較（`compare-empty`）
 
 ### 初回の案内ツアー（PRD D192・D193・D226）
 
@@ -127,7 +127,7 @@
   - ［後で］は状態 `later`（保存しない。その画面の間だけ隠し、ほかの設定の画面では出る。押したらフォーカスを `.app-main h1` へ）
   - 読み上げは `progressBand` の `BandLive`（`data-ready`・`data-days` など付き。0日になったら1度 `REBUILD_CLEARED`、隠している間は空）
   - 861px 以上は `position: sticky; top: var(--header-h)`。その間は ResizeObserver で `--rebuild-band-h` と html の `scroll-padding-top` を入れ、消えたら戻す（Tab で入った入力欄が帯に隠れない）。600px 以下は文の下にボタン。印刷では出さない
-- `app/App.tsx`：main の `Guarded` の中、`Outlet` の前に `showsRebuildBand(pathname)` のときだけ（key は pathname）。月の画面には出さず要対応に残る
+- `app/App.tsx`：main の `Guarded` の中、`Outlet` の前に `showsRebuildBand(pathname)` のときだけ（key は pathname）。月の予定には出さず要対応に残る
 - 影響する日の数は月の要対応の「条件が変わった」と同じ
 
 ### 行き先のリンク（`lib/links.ts`。PRD D201〜D204）
@@ -141,7 +141,7 @@
 - `workloadHref(ym, staffId?)`：`/workload?ym=…&staff=…`
 - `attentionTarget(a, features)`：要対応の1行の `{ to, date, note }`。入らない訪問 → `unassignedHref`、休みの人に訪問 → `suddenHref`、拘束の上限超え → `workloadHref(その日の月, staffIds[0])`、そのほか → `/plan`。note は「（〜で開く）」
 
-使う所：月の要対応・日の画面の拘束超えの帯・稼働の見込み・稼働時間の右の欄・空き状況の右の欄。名前の吹き出しは足さず、主ボタンも足さない。
+使う所：月の要対応・日の予定の拘束超えの帯・勤務の見込み・勤務時間（シフト）の右の欄・空き状況の右の欄。名前の吹き出しは足さず、主ボタンも足さない。
 
 ### メールと道順のリンク（ADR-0017・ADR-0018。PRD D91〜D101）
 
@@ -168,8 +168,8 @@
 
 #### `pages/mailPanels.tsx`
 
-- `DayMailPanel`：日の画面（[pages-plan.md](pages-plan.md)）
-- `WeekMailPanel`：週の画面（[pages-week.md](pages-week.md)）
+- `DayMailPanel`：日の予定（[pages-plan.md](pages-plan.md)）
+- `WeekMailPanel`：週の予定（[pages-week.md](pages-week.md)）
 
 #### `lib/mapsLink.ts`（純粋関数）
 
@@ -191,9 +191,9 @@
 - `scripts/e2e-dialog.cjs`：条件を消す（ARIA・中央・最初のフォーカス・Tab が回る・Esc・取り消す・背景で変わらない・閉じたらボタンへフォーカス・inert とロックを戻す・確定（キーボード）で消える）／初期状態に戻す（取り消すと知らせなし・確定で知らせ）／この割当で確定（Esc で未確定のまま・確定で「確定済み」）／確認中に「戻る」（確認が閉じデータが変わらない）／ダブルクリックでも確認が残る／〈スタッフ〉の変更を捨てる（右の欄の上で Esc は確認だけを閉じる・「捨てて閉じる」で保存しない）／選択肢を消す／390px で収まりボタンが縦・印刷で出さない。どれもネイティブのダイアログが出たら失敗
 - `scripts/e2e-nav.cjs`：メニューの並び・名前・aria-current・見出し・欠勤・キャンセルの項目、Ctrl+K で開く・ARIA・inert・↑↓ が回る・Enter で移る・見つからない・Ctrl+K で閉じる・操作（欠勤・まとめて作る）・右の欄の上では開かない、よみ（カタカナ）で〈利用者さん〉・名前で〈スタッフ〉の閲覧の欄、Tab が回る・Esc・背景・×でフォーカスがボタンへ・入力欄の中の Ctrl+K・今の画面は閉じるだけ、390px（「探す」が1段目・パレットが収まる・上の帯の名前・引き出しの並び・下のタブ5つ・比較は「日」のタブ）、印刷、300人×60人で1文字の中央値 `PERF_MS_NAV`（既定 100ms）
 - `scripts/e2e-panel-foot.cjs`（1400px・390px）：欠勤・キャンセルの1〜4段目・キャンセルの2・3段目・〈スタッフ〉の閲覧と編集・月の「まとめて作る」・日の差の欄の「連絡の一覧」。短い欄・長い欄・Tab で帯の裏の入力欄が隠れない・Tab が回る・Esc で戻る・裏を巻かない・390px の並び・タブに隠れない・safe-area・visualViewport を差し替えたキーボード・印刷で帯を出さない
-- `scripts/e2e-tour.cjs`：ツアー（初めて開くと出る・ARIA・中央・フォーカス・inert とロック・Tab が回る・Ctrl+K を開かない・次へ／戻る・6枚・最後の枚の3段・「閉じる」・「今日の予定を開く」で今日の日の画面・覚える（別のキー）・読み直しても出ない・Esc・とばす・月の印刷では出ない・`?id=`・`?do=` のリンクでは出ない・印があれば自動で出ない・最後の枚で覚える・もう一度見る・フォーカスを戻す・初期状態に戻しても残る・390px・印刷）、ファイル選択、月の一覧
+- `scripts/e2e-tour.cjs`：ツアー（初めて開くと出る・ARIA・中央・フォーカス・inert とロック・Tab が回る・Ctrl+K を開かない・次へ／戻る・6枚・最後の枚の3段・「閉じる」・「今日の予定を開く」で今日の日の予定・覚える（別のキー）・読み直しても出ない・Esc・とばす・月の印刷では出ない・`?id=`・`?do=` のリンクでは出ない・印があれば自動で出ない・最後の枚で覚える・もう一度見る・フォーカスを戻す・初期状態に戻しても残る・390px・印刷）、ファイル選択、月の一覧
 - `scripts/e2e-words.cjs`：点数の理由・用語の説明（マウス・Tab・Esc・タッチ・同時に1つ・入力欄の名前）・言い換え・空の画面・月の凡例・相性のセルの記号・390px・印刷
-- `scripts/e2e-rebuild.cjs`：作り直しの帯（出さない条件・案内・影響する日・数・読み上げ・［後で］・sticky・Tab・月の要対応と同じ数・［作り直す］で月の欄・［今日の案をいまの条件で作り直す］で日の画面）
-- `scripts/e2e-links.cjs`：行き先のリンク（月の要対応の4種類・`?do=unassigned`・稼働の見込み・稼働時間・空き状況）
+- `scripts/e2e-rebuild.cjs`：作り直しの帯（出さない条件・案内・影響する日・数・読み上げ・［後で］・sticky・Tab・月の要対応と同じ数・［作り直す］で月の欄・［今日の案をいまの条件で作り直す］で日の予定）
+- `scripts/e2e-links.cjs`：行き先のリンク（月の要対応の4種類・`?do=unassigned`・勤務の見込み・勤務時間（シフト）・空き状況）
 - `scripts/e2e-features.cjs`：機能の入り切り（ひな形ごとのメニュー・下のタブ・パレット・ホーム・画面の中の入口・切った URL・390px・印刷）
 
