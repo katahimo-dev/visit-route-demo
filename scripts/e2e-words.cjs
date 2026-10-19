@@ -54,6 +54,17 @@ async function resetData(page) {
   await page.reload();
   await page.locator('h1').waitFor();
 }
+/** 初期データの案（今日から7日分。PRD D225）を消して読み直す（案の無い画面を確かめる所だけ） */
+async function clearPlans(page) {
+  await page.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.aiPlans = {};
+    d.aiRuns = {};
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await page.reload();
+  await page.locator('h1').waitFor();
+}
 /** 日の画面を開き、今の案が出て計算が終わるまで待つ */
 async function openPlan(page) {
   await open(page, '/plan', '[data-testid="confirm-state"]');
@@ -268,7 +279,8 @@ async function rename(page) {
 // ---- 空の画面 ----
 async function empties(page) {
   await resetData(page);
-  // 週：案が1日も無い（初期データは案が無い）
+  // 週：案が1日も無い（初期データの案を消す）
+  await clearPlans(page);
   await open(page, `/week?d=${TODAY}`, 'h1');
   const we = page.getByTestId('week-empty');
   await we.waitFor({ timeout: 10000 });

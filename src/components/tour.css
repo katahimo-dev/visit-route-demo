@@ -63,6 +63,22 @@
   line-height: 1.75;
   overflow-wrap: anywhere;
 }
+.tour-body p {
+  margin: 0;
+}
+/* 3段の説明（AI案 → 手直し → 確定。PRD D226） */
+.tour-points {
+  margin: 8px 0 0;
+  padding-left: 1.6em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.6;
+}
+.tour-points li::marker {
+  font-weight: 700;
+  color: var(--primary-dark);
+}
 .tour-where {
   margin: 8px 0 0;
   padding: 8px 10px;

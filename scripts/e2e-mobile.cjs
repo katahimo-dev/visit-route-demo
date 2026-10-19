@@ -15,7 +15,7 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, check, isFocused, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, check, isFocused, failShot, run } = require('./lib/env.cjs');
 
 const drawer = (page) => page.getByTestId('nav-drawer');
 const menuBtn = (page) => page.getByTestId('menu-btn');
@@ -259,8 +259,15 @@ async function floating(page) {
   await page.evaluate(() => {
     for (const el of document.querySelectorAll('[data-probe]')) el.remove();
   });
-  // 本物の地図のボタン：地図のカードが画面の外に出るまで巻いたとき（出れば重ならないかを見る）
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  // 本物の地図のボタン：地図のカードが画面の外に出るまで巻いたとき（出れば重ならないかを見る）。
+  // 狭い画面の地図のカードは本体の下（ページの終わり）なので、カードの上端が画面の下より下になる所まで巻く
+  // （初期データに今日の案がある（PRD D225）ので、開いた時点で地図のカードまで描かれている。いちばん下へ巻くとカードが見えてボタンは出ない）
+  await page.locator('.plan-map').first().waitFor({ timeout: 30000 });
+  await page.evaluate(() => {
+    const card = document.querySelector('.plan-map');
+    const top = card.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo(0, Math.max(0, top - window.innerHeight - 40));
+  });
   await page.waitForTimeout(800);
   const fabReal = page.locator('.map-dock-fab');
   await fabReal.waitFor({ timeout: 20000 });
@@ -590,7 +597,8 @@ async function narrowWeek(page) {
   );
   check((await pageWidth(page)) <= 390, '週：横にはみ出さない');
 
-  // 案の無い週（新しい文脈。データは初期のまま）：案内「この週は案がありません」が見え、縦には巻かない。今日の列まで横には巻く
+  // 案の無い週（新しい文脈。初期データの案（今日から7日分。PRD D225）を消す）：案内「この週は案がありません」が見え、
+  // 縦には巻かない。今日の列まで横には巻く
   const ctx2 = await page
     .context()
     .browser()
@@ -600,6 +608,13 @@ async function narrowWeek(page) {
   p2.on('pageerror', (e) => check(false, '週（案の無い週）：ページのエラー', String(e)));
   await p2.clock.setFixedTime(NOW);
   try {
+    await open(p2, '/home', 'h1');
+    await p2.evaluate((k) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      d.aiPlans = {};
+      d.aiRuns = {};
+      localStorage.setItem(k, JSON.stringify(d));
+    }, STORAGE_KEY);
     await open(p2, '/week', '[data-testid="week-table"]');
     await p2.waitForTimeout(300);
     const empty = await p2.getByTestId('week-empty').boundingBox();

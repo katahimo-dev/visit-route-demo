@@ -387,17 +387,26 @@ describe('切った機能の入口を出さない（PRD D213）', () => {
     expect(homeTasks(homeInput(applyTemplate('basic')))).toEqual(homeTasks(homeInput()));
   });
   it('ツアー：欠勤・キャンセルと条件の重みの枚を出さず、枚数が減る', () => {
-    expect(tourSteps(terms, false, {}).map((s) => s.key)).toEqual(['home', 'plan', 'absence', 'rules', 'search']);
+    expect(tourSteps(terms, false, {}).map((s) => s.key)).toEqual([
+      'home',
+      'plan',
+      'absence',
+      'rules',
+      'search',
+      'flow',
+    ]);
     expect(tourSteps(terms, false, applyTemplate('basic')).map((s) => s.key)).toEqual([
       'home',
       'plan',
       'absence',
       'search',
+      'flow',
     ]);
     expect(tourSteps(terms, false, { sudden: false, rules: false }).map((s) => s.key)).toEqual([
       'home',
       'plan',
       'search',
+      'flow',
     ]);
     // 案を比べるを切ると、予定を組むの場所の文から外す
     expect(tourSteps(terms, false, {})[1]!.where).toContain('案を比べる');

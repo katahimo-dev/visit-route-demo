@@ -29,7 +29,7 @@ const {
 
 /** 案の無い日を作るのに使う、今日の次の日 */
 const NEXT = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
-/** 案がまだ無く、開くと自動で作る日（今日の2日後） */
+/** 開くと自動で案を作る日（今日の2日後）。初期データでは案があるので、runningDay の用意で案と記録を消す（PRD D225） */
 const DAY2 = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 2 * 86400000).toISOString().slice(0, 10);
 
 /** 保存（少し遅れて書く）が条件を満たすまで待つ（満たさなければ時間切れで続ける） */
@@ -278,6 +278,19 @@ async function reopenFocus(page, best) {
 
 // ---- 自動作成の計算中に案の無い日を開く：振り直し・欠勤だけ登録は押せず「案を作っています」 ----
 async function runningDay(page) {
+  // 用意：初期データの DAY2 の案と記録を別のタブで消す（案の無い日にして、開くと自動で作らせる）
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.evaluate(
+    ([k, day]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      delete d.aiPlans[day];
+      delete d.aiRuns[day];
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    [STORAGE_KEY, DAY2],
+  );
+  await other.close();
   await page.goto('about:blank');
   await page.goto(`${BASE}#/plan?date=${DAY2}&do=absence`);
   await panel(page).waitFor({ timeout: 20000 });
