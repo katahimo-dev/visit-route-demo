@@ -270,7 +270,8 @@ describe('日の状態（dayStatus）', () => {
     const s0 = dayStatus(d0, a!);
     expect(s0.state).toBe('none');
     expect(s0.count).toBe(d0.visits.filter((v) => v.date === a && !v.cancelled).length);
-    expect(s0.needsCare).toBe(true);
+    // 案の無い日は注意（黄）で、要対応（赤）にしない（PRD D228）
+    expect(s0.needsCare).toBe(false);
 
     const d1 = withPlan(d0, a!);
     const s1 = dayStatus(d1, a!, { hundred: 80, hard: 0, stale: false });

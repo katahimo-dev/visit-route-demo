@@ -179,7 +179,8 @@
   background: #fff;
   color: #fff;
 }
-/* 状態：案なし＝白・点線、案あり＝淡い緑、確定済み＝濃い緑＋鍵、未確定の変更あり＝淡い黄、手当てが必要＝赤い枠＋赤い点 */
+/* 状態：案なし＝白・点線、案あり＝淡い緑、確定済み＝濃い緑＋鍵、未確定の変更あり＝淡い黄。
+   赤は要対応だけ（入らない・必須の違反・休みの人に訪問＝赤い太枠＋赤い点）。今日以降の案なしは注意（黄の細い点線。PRD D228） */
 .month-swatch.is-state-none,
 .month-cell.is-state-none .month-cell-btn {
   background: #fff;
@@ -206,6 +207,11 @@
 .month-cell.is-state-diff .month-cell-btn {
   background: #fdf4d8;
   border-color: #ecd48f;
+}
+.month-swatch.is-caution,
+.month-cell.is-caution:not(.is-making) .month-cell-btn {
+  background: #fffaf0;
+  border: 1.5px dashed var(--warn);
 }
 .month-swatch.is-care,
 .month-cell.is-care .month-cell-btn {
@@ -597,6 +603,10 @@
 .month-list-btn.is-state-diff {
   background: #fdf4d8;
   border-color: #ecd48f;
+}
+.month-list-btn.is-caution {
+  background: #fffaf0;
+  border: 1.5px dashed var(--warn);
 }
 .month-list-btn.is-care {
   border: 2.5px solid var(--danger);

@@ -52,8 +52,10 @@ export type MonthListRow = {
   state: DayStatus['state'] | 'empty';
   /** 状態の言葉（訪問が無ければ「訪問なし」） */
   stateText: string;
-  /** 要確認（赤い点。今日より前の日は付けない。マスと同じ） */
+  /** 要対応（赤い枠と点。今日より前の日は付けない。マスと同じ。PRD D228） */
   care: boolean;
+  /** 注意（黄の点線。今日以降で訪問があるのに案が無い。マスと同じ） */
+  caution: boolean;
   /** 要対応の印の短い文（入らない・違反・休みの人に・条件が変わった・拘束超）。赤は red、注意は warn */
   flags: readonly { text: string; tone: 'red' | 'warn' }[];
   /** 読み上げの名前（日付・件数・状態・要確認・印・補足） */
@@ -69,6 +71,7 @@ export function monthListRow(s: DayStatus, today: string, extra: readonly string
   const wd = weekday(d);
   const isPast = d < today;
   const care = s.needsCare && !isPast;
+  const caution = !care && !isPast && s.count > 0 && s.state === 'none';
   const flags: { text: string; tone: 'red' | 'warn' }[] = [];
   if (s.unassigned > 0) flags.push({ text: `入らない ${s.unassigned}件`, tone: 'red' });
   if (s.hard > 0) flags.push({ text: `必須の違反 ${s.hard}件`, tone: 'red' });
@@ -81,7 +84,8 @@ export function monthListRow(s: DayStatus, today: string, extra: readonly string
     `${Number(d.slice(5, 7))}月${dayText}${d === today ? '・今日' : ''}`,
     ...(s.count > 0 ? [`訪問 ${s.count}件`] : []),
     stateText,
-    ...(care ? ['要確認'] : []),
+    ...(care ? ['要対応'] : []),
+    ...(caution ? ['注意：まだ案が無い'] : []),
     ...flags.map((f) => f.text),
     ...extra,
   ].join('・');
@@ -95,6 +99,7 @@ export function monthListRow(s: DayStatus, today: string, extra: readonly string
     state: s.count > 0 ? s.state : 'empty',
     stateText,
     care,
+    caution,
     flags,
     label,
   };

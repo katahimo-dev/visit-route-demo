@@ -15,8 +15,8 @@ import {
   SlidersHorizontal,
   TrendingDown,
 } from 'lucide-react';
-import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { type ReactNode, useState } from 'react';
+import { Link, NavLink } from 'react-router-dom';
 import { WeightSlider } from '../components/parts';
 import { Hint, SectionTitle, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
@@ -26,8 +26,9 @@ import { minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel, weightLocked } from '../lib/common';
 import { isHrefOn } from '../lib/features';
+import { unassignedHref } from '../lib/links';
 import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
-import { type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
+import { reasonFace, type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
 import { ALLOWED_STAFF_RULE_ID, VISIT_TYPE_RULE_ID } from '../matching';
 import { presetOf } from '../seed';
 import { useDemoData } from '../store';
@@ -62,6 +63,53 @@ export function ScoreReasonText({ reason, testId }: { reason: ScoreReason; testI
   );
 }
 
+/**
+ * 点を下げているいちばんの理由の次の一手（PRD D229）。理由の下に1行：「次の一手：［「移動を短く」で作る］」など。
+ * onShortTravel が無い（「移動を短く」のプリセットが無い・今の案がそれ・計算中）、相性を切っている（compatOn=false）ときは出さない
+ */
+export function ScoreNextStep({
+  reason,
+  date,
+  onShortTravel,
+  compatOn,
+}: {
+  reason: ScoreReason;
+  /** 日の画面の日付（受けられる人の欄へ巻くリンク） */
+  date: string;
+  onShortTravel?: () => void;
+  compatOn: boolean;
+}) {
+  const next = reason.nextStep;
+  if (!next) return null;
+  let action: ReactNode = null;
+  if (next.kind === 'shortTravel' && onShortTravel) {
+    action = (
+      <button type="button" className="link-btn" onClick={onShortTravel} data-testid="reason-next-action">
+        {next.text}
+      </button>
+    );
+  } else if (next.kind === 'candidates') {
+    action = (
+      <Link to={unassignedHref(date)} data-testid="reason-next-action">
+        {next.text}
+      </Link>
+    );
+  } else if (next.kind === 'compat' && compatOn) {
+    action = (
+      <Link to="/compat" data-testid="reason-next-action">
+        {next.text}
+      </Link>
+    );
+  }
+  if (!action) return null;
+  return (
+    <p className="score-next" data-testid="reason-next" data-kind={next.kind}>
+      <span className="sub">次の一手：</span>
+      {action}
+    </p>
+  );
+}
+
 /** 点数の説明の文（ADR-0007 案A） */
 export const SCORE_TEXT = '理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点';
 
@@ -85,13 +133,12 @@ export function RefMark({ hard }: { hard: number }) {
   );
 }
 
-/** 点数の決め方と、減点の内訳・内部の費用（説明の中） */
+/** 点数の決め方と、減点の内訳（説明の中。内部の費用は出さない。PRD D229） */
 export function HundredHint({
-  cost,
   parts,
-  scale,
   rulerName,
 }: {
+  /** 内部の費用・物差し（画面には出さない。呼び出し側の形はそのまま） */
   cost: number;
   parts: HundredPart[];
   scale: ScoreScale;
@@ -112,26 +159,39 @@ export function HundredHint({
           {shown.map((x) => `${x.label} −${r1(x.points)}点`).join('・')}
         </>
       )}
-      <br />
-      <span className="sub">
-        費用 {r0(cost)}（内部の値。移動1分＝1、低いほど良い）・理想 {r0(scale.lowerBound)}・訪問 {scale.visits}件
-      </span>
     </Hint>
   );
 }
 
-/** 訪問カードを押したときの理由（例「相性◎ −30」「移動12分 +12」） */
+/**
+ * 訪問カードを押したときの理由（PRD D12・D229）。符号の無い言葉で「✓ 相性◎（選ばれやすい）」「! 移動12分（やや遠い）」。
+ * 内部の値（費用の符号つきの数）は title にだけ置く（100点の点数と向きが逆なので画面に出さない）
+ */
 export function ReasonBox({ explain: e }: { explain: VisitExplain | undefined }) {
   if (!e) return <div className="reason-box sub">理由を出せませんでした</div>;
   return (
-    <div className="reason-box">
+    <div className="reason-box" data-testid="reason-box">
       {e.reasons.length === 0 && <span className="sub">点の付く条件はありません</span>}
-      {e.reasons.map((r) => (
-        <div key={`${r.ruleId}:${r.label}`} className="spread">
-          <span>{r.label}</span>
-          <strong className={r.points < 0 ? 'ok-text' : r.points > 0 ? 'warn-text' : ''}>{pointsText(r.points)}</strong>
-        </div>
-      ))}
+      {e.reasons.map((r) => {
+        const f = reasonFace(r);
+        return (
+          <div
+            key={`${r.ruleId}:${r.label}`}
+            className={`reason-line is-${f.tone}`}
+            title={f.title}
+            data-testid="reason-line"
+          >
+            <span className="reason-mark" aria-hidden="true">
+              {f.mark}
+            </span>
+            <span className="sr-only">{f.tone === 'good' ? 'よい点：' : '気になる点：'}</span>
+            <span>
+              {f.text}
+              {f.note && `（${f.note}）`}
+            </span>
+          </div>
+        );
+      })}
       {e.timing && (
         <span className="sub reason-timing">
           <WithIcon icon={Clock} size={13}>

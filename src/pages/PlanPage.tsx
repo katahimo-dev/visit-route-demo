@@ -167,6 +167,7 @@ import {
   RefMark,
   rulerText,
   SCORE_TEXT,
+  ScoreNextStep,
   ScoreReasonText,
   WeightPanel,
 } from './planParts';
@@ -245,6 +246,7 @@ export default function PlanPage() {
   const suddenOn = useFeature('sudden');
   const mailOn = useFeature('mail');
   const rulesOn = useFeature('rules');
+  const compatOn = useFeature('compat');
   const {
     data,
     update,
@@ -2322,6 +2324,8 @@ export default function PlanPage() {
           ruleLower: scoreLower,
         })
       : null;
+  /** 次の一手「「移動を短く」で作る」のプリセット（初期の ID か名前。消していれば出さない。PRD D229） */
+  const travelPreset = data.presets.find((p) => p.id === 'travel') ?? data.presets.find((p) => p.name === '移動を短く');
   /** 訪問の一覧（表示の「一覧」。休みのため無しの訪問も薄く出す。ADR-0013） */
   const visitList = (
     <VisitList
@@ -2858,6 +2862,19 @@ export default function PlanPage() {
             </WithIcon>
           </button>
         </div>
+      )}
+      {/* いちばんの理由の次の一手（PRD D229）：移動が長い → 「移動を短く」で作る（「案を変える ▾」の項目と同じ）・入らない → 受けられる人・相性 → 相性の表 */}
+      {aiPlan && cs && rulesOn && reasonNow && (
+        <ScoreNextStep
+          reason={reasonNow}
+          date={date}
+          compatOn={compatOn}
+          onShortTravel={
+            travelPreset && !busyWhy && presetOf(planRules, data.presets)?.id !== travelPreset.id
+              ? () => void runPreset(travelPreset)
+              : undefined
+          }
+        />
       )}
 
       {/* 担当ごとの1日（PRD D84）。今の案のある日だけ。狭い幅では畳む */}
