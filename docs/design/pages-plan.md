@@ -192,6 +192,7 @@
 #### 入らなかった訪問
 
 - 入らない訪問の列。理由の札の行 `unplaced-reasons` の先頭に〈利用者さん〉の i（data-testid `unplaced-info`。名前はカードの中なのでカードの外に置く。押してもカードを選ばない）
+- 理由の札（data-testid `unplaced-reason`。PRD D12・D229）は訪問の理由の欄と同じ `reasonFace` の名前と（　）の言葉（入らなかった理由の一覧なので「担当にできない」の言葉は付けない。例「さくら：9:00〜9:45 の訪問と時間が合わない」）。符号つきの数・「必須」を付けず、内部の値は札の `title` にだけ
 - カードの「受けられる人」で候補（`candidatesFor`。先頭5人＋「すべて見る」）を開く。行ごとに：
   - 名前（`candidate-name`。`PersonButton`。押しても入れない。箱 `.candidate-name` は `min-width:0` で overflow を隠さず、名前はボタンの中の `span.ellipsis` で「…」にする（フォーカスの枠を切らない））
   - 移動 +N分・「時間の約束を守れる」／「N分ずらせば入る」／「空き時間に入らない」・「いまの予定に必須の違反があるため、空き時間に入れられません」・「入れると後ろの N件が最大 +M分 遅れる」・条件の違反（理由の文）・「件数の上限を超える」（札 `.candidate-row .chip` は折り返す）
@@ -278,6 +279,6 @@
 - [ ] （D43）案を作ったあとにその日の訪問を直すと「条件が変わった」が出て、作り直すと消える
 - [ ] 「案を変える ▾」の並び・まとまり・説明・押せない理由・キーボード（`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
 - [ ] （D217〜D219）「担当を変える ▾」の項目（role=menuitem・説明・今の担当・入らなかった訪問へ）、キーボードで移すと担当が変わり固定、トーストと操作の行の「元に戻す」で担当と固定が戻る、確定の確認に入らない訪問の件数、390px で押せる（`lib/undoEdit`・`lib/reassignMenu`・`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
-- [ ] 点数の理由・次の一手・訪問ごとの理由の言葉（符号・「費用」を出さない）（`lib/scoreReason` のテスト・`scripts/e2e-words.cjs`）
+- [ ] 点数の理由・次の一手・訪問ごとの理由の言葉（入らなかった訪問の札も。符号・「費用」を出さない）（`lib/scoreReason` のテスト・`scripts/e2e-words.cjs`）
 - [ ] `?do=unassigned` で入らなかった訪問へ巻く（`scripts/e2e-links.cjs`）
 - [ ] 名前から開く詳細（列の見出しの i・訪問の詳細・担当ごとの1日・一覧・入らなかった訪問・受けられる人・休みの帯・拘束超えの帯）（`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）

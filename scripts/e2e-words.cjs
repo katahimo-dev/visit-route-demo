@@ -8,6 +8,7 @@
 // 月の凡例（はじめは畳む・開く・読み直すと畳む（保存しない）・マスにマウスを重ねる／フォーカスで読み方・Esc で消す）、
 // 相性のセルの記号の意味（title・aria-label）、390px で収まる・印刷で用語の説明・ボタン・凡例の開け閉めを出さない、ブラウザの確認を出さない。
 // 理由の見せ方と警告の色（PRD D228・D229）：訪問ごとの理由は「✓ 相性◎（選ばれやすい）」のような符号の無い言葉で「費用」を出さず内部の値は title、
+// 入らなかった訪問の理由の札も符号で始めず符号つきの数を付けない、
 // 点を下げている理由の次の一手、比較の表に乱数の種を出さず「詳細設定」に畳む、月の今日以降の案なしのマスは注意（黄の点線）で赤くしない・凡例、
 // 週の担当の無い帯は案なし（注意）と入らない（要対応）を分け凡例も2つ。
 //
@@ -527,6 +528,54 @@ async function reasonWords(page) {
   check(/乱数の種 -?\d+/.test(await adv.innerText()), '比較：詳細設定を開くと記録ごとの乱数の種');
 }
 
+async function unplacedWords(page) {
+  // 入らなかった訪問の理由の札も符号の無い言葉（PRD D229）：今日の案のいちばん長い列の1件目を入らなかったことにする
+  await openPlan(page);
+  await page.goto('about:blank');
+  await page.goto(`${BASE}#/home`);
+  await page.locator('h1').waitFor();
+  const moved = await page.evaluate(
+    ({ k, today }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      const plan = d.aiPlans?.[today];
+      if (!plan) return null;
+      const [sid, list] = Object.entries(plan.routes).sort((a, b) => b[1].length - a[1].length)[0] ?? [];
+      if (!sid || list.length === 0) return null;
+      const vid = list[0];
+      plan.routes[sid] = list.filter((v) => v !== vid);
+      plan.unassigned = [...(plan.unassigned ?? []), vid];
+      localStorage.setItem(k, JSON.stringify(d));
+      return vid;
+    },
+    { k: STORAGE_KEY, today: TODAY },
+  );
+  check(!!moved, '入らなかった訪問を作った（今日の案の1件を外す）', moved);
+  await openPlan(page);
+  const chips = await page
+    .getByTestId('unplaced-reason')
+    .evaluateAll((els) =>
+      els.map((e) => ({ text: (e.textContent ?? '').trim(), title: e.getAttribute('title') ?? '' })),
+    );
+  check(chips.length > 0, '入らなかった訪問：理由の札が出る', chips.length);
+  check(
+    chips.every(
+      (c) =>
+        !/^[+−±-]/.test(c.text) &&
+        !/\s[+−±-]?\d+$/.test(c.text) &&
+        !/\s(必須|±0)$/.test(c.text) &&
+        !/（担当にできない）$/.test(c.text),
+    ),
+    '入らなかった訪問：理由の札は符号で始めず、符号つきの数・「必須」・（担当にできない）を付けない',
+    chips.map((c) => c.text),
+  );
+  check(
+    chips.every((c) => !/費用/.test(c.text) && /内部の値|担当にできない/.test(c.title)),
+    '入らなかった訪問：「費用」を出さず、内部の値は title にだけ',
+    chips.slice(0, 3),
+  );
+  await resetData(page);
+}
+
 async function warnColors(page) {
   // 月：今日以降で訪問があり案の無い日は注意（黄の細い点線）。赤（要対応）にしない
   await resetData(page);
@@ -691,6 +740,7 @@ run(async () => {
     ['empties', empties],
     ['legend', legend],
     ['reason-words', reasonWords],
+    ['unplaced-words', unplacedWords],
     ['warn-colors', warnColors],
   ]) {
     try {
