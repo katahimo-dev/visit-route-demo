@@ -32,7 +32,8 @@ export type StaffSlot = { start: number; state: StaffSlotState };
 export type Span = { start: number; end: number };
 
 /** 1日の時間軸の上の区間の種類：訪問／移動／待ち */
-export type RoutePart = Span & { kind: 'visit' | 'travel' | 'wait' };
+/** visitId は訪問の区間に付ける（日の画面の担当ごとの1日で、押した訪問を引くため。無くてもよい） */
+export type RoutePart = Span & { kind: 'visit' | 'travel' | 'wait'; visitId?: string };
 
 /** 状態の呼び方（凡例・title・読み上げで同じ言葉を使う） */
 export const STAFF_SLOT_LABEL: Record<StaffSlotState, string> = {

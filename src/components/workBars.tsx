@@ -54,7 +54,7 @@ export function SpanBar({ stat, range }: { stat: WorkStat; range: { start: numbe
  * 時間軸の上の区間の横棒（稼働の見込みの SpanBar と、日の画面の担当ごとの1日（PRD D84）で共通）。
  * parts を訪問・移動・待ちの塗り（components/barMarks.css の .bar-seg）で描く。shift（勤務の時間帯）があれば、その下地を空きで塗り、
  * rest（欠勤の時間）は休み（勤務外は棒の地の薄い灰）。区間は下地の上に描く（欠勤の時間に残った訪問も訪問で見える）。
- * frame があれば拘束の枠。読み上げは使う側の文で出すので、棒は隠す
+ * 訪問の区間に visitId があれば data-visit-id に書く（押した訪問を引く。担当ごとの1日）。frame があれば拘束の枠。読み上げは使う側の文で出すので、棒は隠す
  */
 export function PartsBar({
   parts,
@@ -97,6 +97,7 @@ export function PartsBar({
           key={`${x.kind}-${x.start}`}
           className={`work-part bar-seg is-${PART_LEVEL[x.kind]}`}
           style={at(x)}
+          data-visit-id={x.visitId}
           title={`${clock(x.start)}〜${clock(x.end)} ${PART_LABEL[x.kind]}`}
         />
       ))}

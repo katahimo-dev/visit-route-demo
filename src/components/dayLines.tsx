@@ -16,23 +16,12 @@ function ticks(range: { start: number; end: number }): number[] {
 }
 
 /**
- * 横棒の上で押した所の訪問（押した時刻を含む訪問。無ければ両側 1% の幅の中でいちばん近い訪問）。
- * キーボードで押したとき（detail が 0）・横棒の外を押したときは undefined
+ * 横棒の訪問の区間（PartsBar の data-visit-id）を押したときの訪問ID。
+ * キーボードで押したとき（detail が 0）・訪問の区間の外を押したときは undefined（その人を選ぶ）
  */
-function visitAt(e: MouseEvent<HTMLElement>, x: DayLine, range: { start: number; end: number }): string | undefined {
-  if (e.detail === 0) return undefined;
-  const bar = e.currentTarget.querySelector<HTMLElement>('.daylines-bar');
-  const r = bar?.getBoundingClientRect();
-  if (!r || r.width <= 0 || e.clientX < r.left || e.clientX > r.right) return undefined;
-  const len = range.end - range.start;
-  const t = range.start + ((e.clientX - r.left) / r.width) * len;
-  const slack = len * 0.01;
-  let best: { id: string; d: number } | undefined;
-  for (const v of x.visits) {
-    const d = t < v.start ? v.start - t : t > v.end ? t - v.end : 0;
-    if (d <= slack && (!best || d < best.d)) best = { id: v.visitId, d };
-  }
-  return best?.id;
+function visitAt(e: MouseEvent<HTMLElement>): string | undefined {
+  if (e.detail === 0 || !(e.target instanceof Element)) return undefined;
+  return e.target.closest<HTMLElement>('[data-visit-id]')?.dataset.visitId;
 }
 
 export function DayLines({
@@ -85,7 +74,7 @@ export function DayLines({
               <button
                 type="button"
                 className="daylines-row daylines-btn"
-                onClick={(e) => onPick(x.staffId, visitAt(e, x, range))}
+                onClick={(e) => onPick(x.staffId, visitAt(e))}
                 title={`${text}（押すとこの人の列へ。訪問の所を押すとその訪問へ）`}
                 aria-label={`${text}（押すとこの人の列へ）`}
                 data-testid="dayline"
