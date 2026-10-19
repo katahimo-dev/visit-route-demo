@@ -66,6 +66,7 @@ import {
 } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { bulkConfirmDialog, bulkConfirmLabel, bulkConfirmTargets, bulkConfirmWhy, confirmDay } from '../lib/confirmDay';
 import { isOn } from '../lib/features';
 import { clientDot } from '../lib/glance';
 import { attentionTarget, type LinkTarget } from '../lib/links';
@@ -212,6 +213,8 @@ export default function MonthPage() {
   const gridRef = useRef<HTMLTableElement>(null);
   /** 「混み具合：空きを数える人」の選ぶ欄の名前（aria-labelledby） */
   const loadTypeId = useId();
+  /** まとめて確定を押せない理由の文（aria-describedby） */
+  const bulkWhyId = useId();
   /** マスの読み方の文の置き場（日付 → 文。PRD D177） */
   const tipStore = useMemo(() => createTipStore(), []);
   const [mode, setMode] = useState<BatchMode>('empty');
@@ -608,6 +611,33 @@ export default function MonthPage() {
     }
     update((d) => expandMonth(d, ym, today).data);
     toast(`${monthNo}月の訪問を${n}件作りました`);
+  };
+
+  // ---- 問題の無い日をまとめて確定（PRD D223。右の欄の「確定していない日」）----
+  /** 確定していない日（今日以降）のうち、今の案があって入らない・必須の違反・休みの人に残る訪問が無い日 */
+  const bulk = useMemo(() => bulkConfirmTargets(progress.unconfirmed, (d) => statuses.get(d)), [progress, statuses]);
+  /**
+   * まとめて確定：独自の確認（日付と残す日）のあと、1回の update で日ごとに日の画面の「この割当で確定」と同じ書き方
+   * （lib/confirmDay）。問題は日の状態を数えたときのもの（計算に入れる訪問は条件の重みに依らない）。作っている間は押せない
+   */
+  const confirmBulk = async () => {
+    if (runningRef.current || bulk.targets.length === 0) return;
+    const targets = bulk.targets;
+    const ok = await confirmDialog({
+      ...bulkConfirmDialog(bulk, terms.staff),
+      confirmLabel: `${targets.length}日を確定する`,
+    });
+    if (!ok || runningRef.current) return;
+    // 確認のあいだに案が消えた日（別のタブ）は飛ばす
+    const ready = targets.flatMap((date) => {
+      const p = perDay.get(date)?.problem;
+      return p && own(dataRef.current.aiPlans, date) ? [{ date, p }] : [];
+    });
+    if (ready.length === 0) return;
+    update((d) => ready.reduce((out, x) => (own(out.aiPlans, x.date) ? confirmDay(out, x.date, x.p) : out), d));
+    toast(`${ready.length}日を確定しました`);
+    // 押したボタンは0日になって押せなくなるので、フォーカスは右の欄へ（確定していない日の一覧の先頭から読める）
+    requestAnimationFrame(() => asideRef.current?.focus({ preventScroll: true }));
   };
 
   // ---- 月まとめ作成（③）----
@@ -1232,6 +1262,32 @@ export default function MonthPage() {
                 <Lock size={18} aria-hidden="true" />
                 確定していない日
               </h2>
+              {progress.unconfirmed.length > 0 && (
+                <div className="month-confirm-bulk">
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={running || bulk.targets.length === 0}
+                    aria-describedby={bulk.targets.length === 0 ? bulkWhyId : undefined}
+                    onClick={confirmBulk}
+                    data-testid="month-confirm-bulk"
+                    data-count={bulk.targets.length}
+                  >
+                    <WithIcon icon={Lock} size={14}>
+                      {bulkConfirmLabel(bulk.targets.length)}
+                    </WithIcon>
+                  </button>
+                  {bulk.targets.length === 0 ? (
+                    <p className="sub" id={bulkWhyId} data-testid="month-confirm-why">
+                      {bulkConfirmWhy(bulk)}
+                    </p>
+                  ) : (
+                    <p className="sub" data-testid="month-confirm-note">
+                      今の案があり、入らない訪問・必須の違反・休みの人に残る訪問が無い日を確定します。
+                    </p>
+                  )}
+                </div>
+              )}
               {progress.unconfirmed.length === 0 ? (
                 <p className="sub">今日以降で、確定していない日はありません。</p>
               ) : (

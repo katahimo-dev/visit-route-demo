@@ -91,12 +91,12 @@ import {
 } from '../lib/absences';
 import { colorOf } from '../lib/colors';
 import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
+import { confirmDay } from '../lib/confirmDay';
 import { contactCount, dayWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
 import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
-import { keepLeaveVisits } from '../lib/leaves';
 import { UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
@@ -162,6 +162,7 @@ import {
   explainMap,
   HARD_NOTE,
   HundredHint,
+  NextUnconfirmed,
   ReasonBox,
   RefMark,
   rulerText,
@@ -1186,31 +1187,8 @@ export default function PlanPage() {
     });
     if (!ok) return false;
     if (runRef.current) return false;
-    const inProblem = new Set(problem.visits.map((v) => v.id));
-    const aiOwner = ownerMap(aiPlan.routes);
-    const before = ownerMap(m.savedView.cols);
-    const ownerOf = (id: string): string | null =>
-      inProblem.has(id) ? (aiOwner.get(id) ?? null) : (before.get(id) ?? null);
-    const fresh: Record<string, string[]> = {};
-    for (const v of visits) {
-      const o = ownerOf(v.id) ?? NONE;
-      fresh[o] = [...(own(fresh, o) ?? []), v.id];
-    }
-    // 〈利用者さん〉の休み（ADR-0013）の訪問は、確定済みの担当のまま残す（休みを消せば元の確定に戻る）
-    const cols = keepLeaveVisits(
-      fresh,
-      m.leaveVisits.map((v) => v.id),
-      own(data.manualPlans, date),
-    );
-    update((d) => ({
-      ...d,
-      manualPlans: { ...d.manualPlans, [date]: cols },
-      visits: d.visits.map((v) => {
-        if (v.date !== date || v.cancelled || !visitById.has(v.id)) return v;
-        const next = ownerOf(v.id);
-        return (v.staffId ?? null) === next ? v : { ...v, staffId: next };
-      }),
-    }));
+    // 書き方は lib/confirmDay（月のまとめて確定と共通。PRD D223）
+    update((d) => confirmDay(d, date, problem));
     // 確定したら手直しの控えは捨てる（戻すと今の案だけが戻り、確定した担当と食い違うため。PRD D218）
     setUndoSnap(null);
     toast('この割当で確定しました');
@@ -2790,10 +2768,14 @@ export default function PlanPage() {
           aiPlan && (
             <>
               {confirmState === 'same' ? (
-                <span className="chip chip-ok" data-testid="confirm-state">
-                  <CircleCheck size={12} aria-hidden="true" />
-                  確定済み
-                </span>
+                <>
+                  <span className="chip chip-ok" data-testid="confirm-state">
+                    <CircleCheck size={12} aria-hidden="true" />
+                    確定済み
+                  </span>
+                  {/* 確定したら次の確定していない日へ（PRD D224） */}
+                  <NextUnconfirmed date={date} onPick={setDate} />
+                </>
               ) : (
                 <span className="chip chip-warn" data-testid="confirm-state">
                   <TriangleAlert size={12} aria-hidden="true" />
