@@ -132,7 +132,7 @@ export const aiRunSchema = z.object({
   inputKey: z.string().max(100).optional(),
   /** 記録が欠勤の振り直しなら付く（比較の「欠勤前」。reusableRun の対象外。ADR-0011） */
   reassign: reassignInfoSchema.optional(),
-  /** 作ったときの計算に効く機能の入り切り（ADR-0028）。無ければすべて入。今と違えば「条件が変わった」（lib/month の rulesStale） */
+  /** 作ったときの計算に効く機能の入り切り（ADR-0028）。切っているものだけを書き、無ければすべて入。記録として書くだけで「条件が変わった」には使わない（入り切りで問題が変われば lib/month の planStale（inputKey）で分かる） */
   calcFeatures: calcFeaturesSchema.optional(),
 });
 export type AiRun = z.infer<typeof aiRunSchema>;
