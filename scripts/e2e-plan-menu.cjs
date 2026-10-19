@@ -378,7 +378,7 @@ async function compareMore(page) {
   const s = await menuShape(page);
   check(
     /2件/.test(item(s, 'compare')?.desc ?? ''),
-    '日の画面：比べるの説明が「この日に作った案（2件）」に',
+    '日の予定：比べるの説明が「この日に作った案（2件）」に',
     item(s, 'compare'),
   );
   await page.keyboard.press('Escape');

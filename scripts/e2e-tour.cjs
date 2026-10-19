@@ -271,7 +271,7 @@ async function tourToday(b) {
   );
   check(
     st.date === TODAY && st.hash === '#/plan' && st.seen === '1' && !st.inert,
-    '「今日の予定を開く」で閉じ、今日の日の画面（?date= は消える）・見たことを覚える',
+    '「今日の予定を開く」で閉じ、今日の日の予定（?date= は消える）・見たことを覚える',
     st,
   );
   // 初期データに今日の案がある（PRD D225）ので、そのまま確定の手前まで見える
@@ -556,7 +556,7 @@ async function monthList(b) {
   await page.locator(`[data-testid="month-list-day"][data-date="${target}"]`).click();
   await page.waitForURL(/#\/plan/);
   const sel = await page.locator('.date-switch select').inputValue();
-  check(sel === target, '行を押すとその日の日の画面', { sel, target });
+  check(sel === target, '行を押すとその日の「日の予定」', { sel, target });
   // 「休みを入れる」：〈スタッフ〉を選んで、勤務日の行を押すと希望休を付け外し。
   // 希望休を入れられる行（data-off="open"）がある〈スタッフ〉を探す。今月に1つも無ければ（月末で残りの日に働く人がいない）翌月で
   const nextYm = (() => {
@@ -594,7 +594,7 @@ async function monthList(b) {
   await row.click();
   await page.waitForTimeout(400);
   check((await row.getAttribute('data-off')) === 'open', '「休みを入れる」：もう一度押すと外す');
-  check(/#\/month/.test(hashOf(page)), '「休みを入れる」の間は日の画面へ移らない');
+  check(/#\/month/.test(hashOf(page)), '「休みを入れる」の間は日の予定へ移らない');
   // 広い画面：はじめカレンダー、?layout=list で一覧
   await page.setViewportSize({ width: 1400, height: 1000 });
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');

@@ -102,7 +102,7 @@ async function reason(page) {
     /移動が長め（\d+分）|相性.+が\d+件|入らない訪問 \d+件|空き時間（待ち）が長め|件数の偏り|合わない訪問|いつもの担当でない/.test(
       text,
     ),
-    '日の画面：点数の横に点を下げているいちばんの理由',
+    '日の予定：点数の横に点を下げているいちばんの理由',
     text,
   );
   const sr = await r.locator('.sr-only').innerText();
@@ -123,7 +123,7 @@ async function reason(page) {
   const ct = n > 0 ? await page.getByTestId('compare-reason').first().innerText() : '';
   check(
     ct.length > 0 && ct.replace(/\s/g, '') === text.replace(/\s/g, ''),
-    '比較の画面：今の案と同じ記録なら日の画面と同じ文',
+    '比較の画面：今の案と同じ記録なら日の予定と同じ文',
     {
       plan: text,
       compare: ct,
@@ -227,9 +227,9 @@ async function termMouseKeyboard(page) {
 async function rename(page) {
   await open(page, `/workload?ym=${YM}`, 'h1');
   const lead = await page.locator('.page-lead').innerText();
-  check(/出勤〜退勤（拘束）/.test(lead) && /空き時間（待ち）/.test(lead), '稼働の見込み：見出しの文の言い換え', lead);
+  check(/出勤〜退勤（拘束）/.test(lead) && /空き時間（待ち）/.test(lead), '勤務の見込み：見出しの文の言い換え', lead);
   const span = page.getByTestId('term-span');
-  check((await span.innerText()) === '出勤〜退勤（拘束）', '稼働の見込み：上限の設定の用語', await span.innerText());
+  check((await span.innerText()) === '出勤〜退勤（拘束）', '勤務の見込み：上限の設定の用語', await span.innerText());
   // 入力欄の名前（PR #42 のレビュー：用語のボタンを label の中に置かない。aria-labelledby か labels で名前が付く）
   for (const [tid, want] of [
     ['work-limit', /出勤〜退勤（拘束）の上限/],
@@ -299,13 +299,13 @@ async function empties(page) {
   );
   check((await we.locator('.btn-primary').count()) === 0, '週：主ボタンにしない（進み具合の帯の主ボタンと重ねない）');
   const href = await batch.getAttribute('href');
-  check(/#\/month\?ym=\d{4}-\d{2}&do=batch$/.test(href ?? ''), '週：行き先は月の画面の ?do=batch', href);
+  check(/#\/month\?ym=\d{4}-\d{2}&do=batch$/.test(href ?? ''), '週：行き先は月の予定の ?do=batch', href);
   await page.screenshot({ path: path.join(OUT_DIR, 'week-empty.png') });
   await batch.click();
   const panel = page.getByRole('dialog', { name: /月の案をまとめて作る/ });
   await panel.waitFor({ timeout: 10000 });
-  check(true, '週の［この週の案を作る］で月の画面のまとめて作るの欄が開く');
-  check(/^#\/month\?ym=\d{4}-\d{2}$/.test(hashOf(page)), '月の画面：?do= は消える', hashOf(page));
+  check(true, '週の［この週の案を作る］で月の予定のまとめて作るの欄が開く');
+  check(/^#\/month\?ym=\d{4}-\d{2}$/.test(hashOf(page)), '月の予定：?do= は消える', hashOf(page));
   await page.keyboard.press('Escape');
   // 週：日の画面のボタンでその日の日の画面
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-empty"]');
@@ -313,7 +313,7 @@ async function empties(page) {
   const dayLabel = await day.innerText();
   await day.click();
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  check(hashOf(page).startsWith('#/plan'), '週の日の画面のボタンで日の画面（その日の案を自動で作る）', dayLabel);
+  check(hashOf(page).startsWith('#/plan'), '週の日の予定のボタンで日の予定（その日の案を自動で作る）', dayLabel);
   await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
   // 案ができた週は空の画面を出さない
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-grid"]');
@@ -328,9 +328,9 @@ async function empties(page) {
   await open(page, `/workload?ym=${nextYm}`, '[data-testid="work-empty"]');
   const wk = page.getByTestId('work-empty');
   const wkt = await wk.innerText();
-  check(/この月(は案がありません|には訪問がありません)/.test(wkt), '稼働の見込み：なぜ空か', wkt);
-  check((await wk.getByTestId('empty-next-batch').count()) === 1, '稼働の見込み：月の画面のまとめて作るへのボタン');
-  check((await wk.locator('.btn-primary').count()) === 1, '稼働の見込み：次の一手が主ボタン');
+  check(/この月(は案がありません|には訪問がありません)/.test(wkt), '勤務の見込み：なぜ空か', wkt);
+  check((await wk.getByTestId('empty-next-batch').count()) === 1, '勤務の見込み：月の予定のまとめて作るへのボタン');
+  check((await wk.locator('.btn-primary').count()) === 1, '勤務の見込み：次の一手が主ボタン');
   await page.screenshot({ path: path.join(OUT_DIR, 'workload-empty.png') });
   // 比較：案の無い日（明日。週の ?d= で選んでいる日付を明日にし、読み直さずに比較の画面へ）
   const tomorrow = addDays(TODAY, 1);
@@ -343,10 +343,10 @@ async function empties(page) {
   check(/この日(の案はまだありません|には訪問がありません)/.test(cet), '比較：なぜ空か', cet);
   await page.screenshot({ path: path.join(OUT_DIR, 'compare-empty.png') });
   const cday = page.getByTestId('compare-empty').getByTestId('empty-next-day');
-  check((await cday.count()) === 1, '比較：［日の画面で案を作る］');
+  check((await cday.count()) === 1, '比較：［日の予定で案を作る］');
   await cday.click();
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  check(hashOf(page).startsWith('#/plan'), '比較の空の画面のボタンで日の画面へ（案を自動で作る）');
+  check(hashOf(page).startsWith('#/plan'), '比較の空の画面のボタンで日の予定へ（案を自動で作る）');
   // 空き状況：案の無い日の注意は1か所（表の上）
   await open(page, '/vacancy', 'h1');
   await page.getByTestId('vacancy-table-card').waitFor();
@@ -483,7 +483,7 @@ async function mobile(browser) {
   page.on('pageerror', (e) => check(false, 'ページのエラー（390px）', String(e)));
   await openPlan(page);
   const sw = await page.evaluate(() => document.documentElement.scrollWidth);
-  check(sw <= 390, '390px：日の画面が横にはみ出さない（点数の理由を足しても）', sw);
+  check(sw <= 390, '390px：日の予定が横にはみ出さない（点数の理由を足しても）', sw);
   const r = await page.getByTestId('plan-reason').boundingBox();
   check(r && r.x >= 0 && r.x + r.width <= 390, '390px：点数の理由が画面に収まる', r);
   const term = page.locator('[data-testid="plan-summary"] [data-term="dropped"]');

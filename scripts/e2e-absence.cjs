@@ -1,5 +1,5 @@
 // 急な欠勤・当日キャンセルを目立つ入口から登録して振り直すこと（PRD D167〜D172。ADR-0025 追記・ADR-0011・ADR-0015）を本物のブラウザで確かめる：
-// ホームの「急な欠勤・キャンセルを登録」で今日の日の画面の「欠勤・キャンセル」の欄が1段目で開き `?do=`・`?date=` が URL から消える、
+// ホームの「欠勤・キャンセルを登録」で今日の日の予定の「欠勤・キャンセル」の欄が1段目で開き `?do=`・`?date=` が URL から消える、
 // 段階の表示（aria-current="step"）と段階ごとのフォーカス（段階の見出し）、〈スタッフ〉が休む → 人と時間帯 → 影響（入らなくなる訪問 N件）→
 // 登録して振り直す（案A）→ 4段目のまとめと案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→ 確定済み、
 // 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目）、
@@ -99,7 +99,7 @@ async function fromHome(page) {
   await panel(page).waitFor({ timeout: 20000 });
   await settle(page, 300);
   check(hashOf(page) === '#/plan', '開いたら URL から ?do=・?date= が消える', hashOf(page));
-  check((await page.locator('.date-switch select').inputValue()) === TODAY, '今日の日の画面');
+  check((await page.locator('.date-switch select').inputValue()) === TODAY, '今日の日の予定');
   check((await stepOf(page)) === '1', '1段目（何が起きたか）で開く');
   check(
     (await page.locator('.drawer').getAttribute('role')) === 'dialog' &&

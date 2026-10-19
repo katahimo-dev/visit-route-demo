@@ -154,7 +154,7 @@ async function rules(page) {
   await customRow(page).waitFor({ timeout: 5000 });
   const ct = await customRow(page).innerText();
   check(
-    /いまの条件は日の画面の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります/.test(
+    /いまの条件は日の予定の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります/.test(
       ct,
     ) &&
       (await page.getByTestId('rebuild-today').count()) === 1 &&
@@ -232,7 +232,7 @@ async function sameAsMonth(page) {
   const ym = TODAY.slice(0, 7);
   let n = await staleInMonth(page, ym);
   if (SECOND.slice(0, 7) !== ym) n += await staleInMonth(page, SECOND.slice(0, 7));
-  check(n === BAND_DAYS, '帯の影響する日＝月の画面の要対応の「条件が変わった」', { band: BAND_DAYS, month: n });
+  check(n === BAND_DAYS, '帯の影響する日＝月の予定の要対応の「条件が変わった」', { band: BAND_DAYS, month: n });
 }
 
 // ---- ［後で］：その画面の間だけ隠す ----
@@ -260,7 +260,7 @@ async function later(page) {
     ['/compat', '相性'],
     ['/staff', '〈スタッフ〉'],
     ['/clients', '〈利用者さん〉'],
-    ['/availability', '稼働時間'],
+    ['/availability', '勤務時間（シフト）'],
     ['/types', '訪問の種類'],
     ['/items', '特性の項目'],
   ]) {
@@ -276,7 +276,7 @@ async function later(page) {
   // 予定の画面・ホームには出さない（要対応・進み具合の帯に残る）
   await page.goto(`${BASE}#/month`);
   await page.locator('[data-testid="progress-band"][data-ym]').waitFor({ timeout: 30000 });
-  check((await band(page).count()) === 0, '月の画面には作り直しの帯を出さない');
+  check((await band(page).count()) === 0, '月の予定には作り直しの帯を出さない');
   check(
     Number(await page.getByTestId('band-attention').getAttribute('data-count')) >= 1,
     '月の進み具合の帯の要対応には残る',
@@ -296,7 +296,7 @@ async function rebuild(page) {
   const panel = page.getByRole('dialog', { name: `${monthNo(ym)}月の案をまとめて作る` });
   await panel.waitFor({ timeout: 10000 });
   await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)));
-  check(hashOf(page) === `#/month?ym=${ym}`, '［作り直す］で月の画面へ。?do= は消える', hashOf(page));
+  check(hashOf(page) === `#/month?ym=${ym}`, '［作り直す］で月の予定へ。?do= は消える', hashOf(page));
   check(await page.getByTestId('batch-mode-stale').isChecked(), '欄は「条件が変わった日だけ作り直す」');
   const count = await page.getByTestId('batch-count').innerText();
   check(/対象の日：\s*1日/.test(count), '対象は未確定の日だけ（1日）', count);
@@ -320,7 +320,7 @@ async function rebuild(page) {
   check(/要対応を見る/.test(await go.innerText()), '確定済みの日だけなら［要対応を見る］', await go.innerText());
   await go.click();
   await page.getByTestId('month-attention').waitFor({ timeout: 10000 });
-  check(!/do=/.test(hashOf(page)), '［要対応を見る］で月の画面の要対応（?do= は消える）', hashOf(page));
+  check(!/do=/.test(hashOf(page)), '［要対応を見る］で月の予定の要対応（?do= は消える）', hashOf(page));
 }
 
 // ---- ［今日の案をいまの条件で作り直す］：日の画面で今日の案をいまの条件で作る ----
@@ -334,7 +334,7 @@ async function today(page) {
   await page.getByTestId('rebuild-today').click();
   await page.getByTestId('confirm-state').waitFor({ timeout: 30000 });
   await page.waitForFunction(() => !/do=|date=/.test(decodeURIComponent(location.hash)));
-  check(hashOf(page) === '#/plan', '日の画面へ。?date= と ?do= は消える', hashOf(page));
+  check(hashOf(page) === '#/plan', '日の予定へ。?date= と ?do= は消える', hashOf(page));
   check((await page.locator('.date-switch select').inputValue()) === TODAY, '今日を選んでいる');
   await page.waitForFunction(
     ({ key, d, n }) => (JSON.parse(localStorage.getItem(key)).aiRuns[d] ?? []).length > n,
@@ -372,7 +372,7 @@ async function dayRemake(page) {
   await page.getByTestId('plan-stale').waitFor({ timeout: 60000 });
   check(
     /点数の基準のプリセット「標準」で作り直します/.test(await page.getByTestId('plan-stale-with').innerText()),
-    '日の画面の作り直すの帯に「標準」で作り直すと書く',
+    '日の予定の作り直すの帯に「標準」で作り直すと書く',
   );
   const runIdOf = () =>
     page.evaluate(({ key, d }) => JSON.parse(localStorage.getItem(key)).aiPlans[d]?.runId ?? null, {
@@ -388,9 +388,9 @@ async function dayRemake(page) {
     { timeout: 60000 },
   );
   await page.waitForTimeout(500);
-  check((await page.getByTestId('plan-stale').count()) === 0, '作り直すと日の画面の作り直すの帯が消える');
+  check((await page.getByTestId('plan-stale').count()) === 0, '作り直すと日の予定の作り直すの帯が消える');
   const after = await page.evaluate((key) => JSON.stringify(JSON.parse(localStorage.getItem(key)).rules), STORAGE_KEY);
-  check(after === rulesBefore, '日の画面の［作り直す］はいまの条件を書き換えない');
+  check(after === rulesBefore, '日の予定の［作り直す］はいまの条件を書き換えない');
   await openSettings(page, '/rules');
   await page.waitForTimeout(SETTLE + 300);
   const c = await counts(page);
