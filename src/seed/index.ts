@@ -81,6 +81,8 @@ export function createDemoData(today: string): DemoData {
       terms: { client: DEFAULT_TERMS.care.client, staff: 'スタッフ' },
       fareYenPerKm: 10,
       spanLimitHours: SPAN_LIMIT_DEFAULT_HOURS,
+      // 機能の入り切り（ADR-0028）：初期データはすべて入
+      features: {},
     },
     items: INITIAL_ITEMS.map((i) => ({ ...i, options: [...i.options] })),
     rules: INITIAL_RULES.map((r) => ({ ...r })),

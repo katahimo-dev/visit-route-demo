@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_SLOTS, slotsError } from '../domain/availability';
 import { INDUSTRIES, TRAVEL_MODES, WINDOW_KINDS } from './codes';
+import { featuresSchema } from './features';
 import { conditionSchema, traitsSchema } from './rules';
 
 /**
@@ -62,6 +63,11 @@ export const orgSchema = z.object({
    * これを超える日に注意を出す（AI案の条件には入れない。注意だけ）。0 なら注意しない。無い古いデータは 10
    */
   spanLimitHours: z.number().min(0).max(24).multipleOf(0.5).default(SPAN_LIMIT_DEFAULT_HOURS),
+  /**
+   * 機能の入り切り（PRD D216。ADR-0028）。機能の ID → 入・切。無い ID は入。無い古いデータ・初期データは {}（すべて入）。
+   * 知らない ID は読むときに捨てる。Excel のブックには入れない
+   */
+  features: featuresSchema.default({}),
 });
 export type Org = z.infer<typeof orgSchema>;
 

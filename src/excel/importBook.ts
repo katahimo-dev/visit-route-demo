@@ -1319,6 +1319,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     terms,
     fareYenPerKm: fare,
     spanLimitHours: spanLimit ?? SPAN_LIMIT_DEFAULT_HOURS,
+    // 機能の入り切りはブックに入れない（ADR-0028）。読み込んでも今の入り切りのまま
+    features: base.org.features,
   };
   const next: DemoData = {
     version: base.version,

@@ -37,6 +37,7 @@ function data(over: Partial<DemoData> = {}): DemoData {
       terms: { client: '利用者さん', staff: 'ヘルパー' },
       fareYenPerKm: 10,
       spanLimitHours: 10,
+      features: {},
     },
     staff: [staff('s1', 38.26, 140.87, { name: '山田 花' }), staff('s2', 38.3, 140.9, { name: '佐藤 一' })],
     clients: [

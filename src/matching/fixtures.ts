@@ -98,6 +98,7 @@ export function makeData(over: Partial<DemoData> = {}): DemoData {
       terms: { client: '利用者さん', staff: 'ヘルパー' },
       fareYenPerKm: 0,
       spanLimitHours: 10,
+      features: {},
     },
     items: ITEMS,
     rules: [],
