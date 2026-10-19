@@ -1,10 +1,20 @@
 import { Compass } from 'lucide-react';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { Terms } from '../contracts/documents';
+import { jstDate } from '../domain/time';
 import { trapTarget } from '../lib/confirmDialog';
-import { shouldAutoOpenTour, type TourMove, tourCountText, tourMove, tourNextLabel, tourSteps } from '../lib/tour';
+import { dayHref } from '../lib/links';
+import {
+  shouldAutoOpenTour,
+  TOUR_TODAY_LABEL,
+  type TourMove,
+  tourCountText,
+  tourMove,
+  tourNextLabel,
+  tourSteps,
+} from '../lib/tour';
 import { useFeatures } from '../lib/useFeature';
 import { tourMemory } from '../store';
 import { IS_MAC } from './CommandPalette';
@@ -30,10 +40,16 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
     tourMemory.markSeen();
     setOpen(false);
   }, []);
+  const navigate = useNavigate();
+  /** 最後の枚の「今日の予定を開く」：閉じて今日の日の画面へ（PRD D226） */
+  const openToday = useCallback(() => {
+    close();
+    navigate(dayHref(jstDate(Date.now())));
+  }, [close, navigate]);
   return (
     <Ctx.Provider value={openTour}>
       {children}
-      {open && <TourDialog terms={terms} onClose={close} />}
+      {open && <TourDialog terms={terms} onClose={close} onToday={openToday} />}
     </Ctx.Provider>
   );
 }
@@ -41,9 +57,18 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
 /**
  * 画面の中央のカード（PRD D192）。確認ダイアログ（ADR-0026）と同じ流儀：body の直下に出し、body のほかの子を inert（inertLock）、
  * 裏を巻かない、Tab は中で回す、Esc は「とばす」と同じ、閉じたら開く前の要素へフォーカスを戻す。
- * 最初のフォーカスは「次へ」。枚が変わってフォーカスが外れたら（最初の枚で「戻る」が押せなくなったとき）「次へ」へ
+ * 最初のフォーカスは「次へ」。枚が変わってフォーカスが外れたら（最初の枚で「戻る」が押せなくなったとき）「次へ」へ。
+ * 最後の枚は「次へ」が「閉じる」になり、主ボタン「今日の予定を開く」を添える（「とばす」は出さない。PRD D226）
  */
-function TourDialog({ terms, onClose }: { terms: Pick<Terms, 'client' | 'staff'>; onClose: () => void }) {
+function TourDialog({
+  terms,
+  onClose,
+  onToday,
+}: {
+  terms: Pick<Terms, 'client' | 'staff'>;
+  onClose: () => void;
+  onToday: () => void;
+}) {
   // 切った機能の枚は出さない（PRD D213）
   const steps = tourSteps(terms, IS_MAC, useFeatures());
   const [rawIndex, setIndex] = useState(0);
@@ -105,6 +130,7 @@ function TourDialog({ terms, onClose }: { terms: Pick<Terms, 'client' | 'staff'>
     else setIndex(to);
   };
   const step = steps[index]!;
+  const last = index === steps.length - 1;
   return createPortal(
     <div ref={wrapRef} className="tour-wrap" data-testid="tour-wrap">
       <div className="tour-backdrop" aria-hidden="true" />
@@ -131,9 +157,16 @@ function TourDialog({ terms, onClose }: { terms: Pick<Terms, 'client' | 'staff'>
           <h2 id={titleId} data-testid="tour-title">
             {step.title}
           </h2>
-          <p id={bodyId} className="tour-body" data-testid="tour-body">
-            {step.body}
-          </p>
+          <div id={bodyId} className="tour-body" data-testid="tour-body">
+            <p>{step.body}</p>
+            {step.points && (
+              <ol className="tour-points" data-testid="tour-points">
+                {step.points.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ol>
+            )}
+          </div>
           <p className="tour-where">
             <strong>場所：</strong>
             {step.where}
@@ -145,9 +178,16 @@ function TourDialog({ terms, onClose }: { terms: Pick<Terms, 'client' | 'staff'>
           ))}
         </ol>
         <div className="tour-actions">
-          <button type="button" className="btn btn-small tour-skip" onClick={() => go('skip')} data-testid="tour-skip">
-            とばす
-          </button>
+          {!last && (
+            <button
+              type="button"
+              className="btn btn-small tour-skip"
+              onClick={() => go('skip')}
+              data-testid="tour-skip"
+            >
+              とばす
+            </button>
+          )}
           <span className="tour-spacer" />
           <button
             type="button"
@@ -161,12 +201,17 @@ function TourDialog({ terms, onClose }: { terms: Pick<Terms, 'client' | 'staff'>
           <button
             ref={nextRef}
             type="button"
-            className="btn btn-small btn-primary"
+            className={last ? 'btn btn-small' : 'btn btn-small btn-primary'}
             onClick={() => go('next')}
             data-testid="tour-next"
           >
             {tourNextLabel(index, steps.length)}
           </button>
+          {last && (
+            <button type="button" className="btn btn-small btn-primary" onClick={onToday} data-testid="tour-today">
+              {TOUR_TODAY_LABEL}
+            </button>
+          )}
         </div>
       </div>
     </div>,

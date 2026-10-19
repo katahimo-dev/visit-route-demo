@@ -111,6 +111,8 @@ describe('load・save', () => {
     expect(d.version).toBe(1);
     expect(d.visits.length).toBeGreaterThan(0);
     expect(mem.has(STORAGE_KEY)).toBe(true);
+    // 今日から7日分の案を入れる（PRD D225）
+    expect(Object.keys(d.aiPlans)).toHaveLength(7);
   });
 
   it('壊れた JSON は退避して初期データを返す', () => {

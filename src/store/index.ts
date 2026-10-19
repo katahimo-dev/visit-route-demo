@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { DATA_VERSION, type DemoData, demoDataSchema, type ImportError, STORAGE_KEY } from '../contracts/data';
 import { addDays, jstDate } from '../domain/time';
 import { applyPatterns } from '../patterns';
-import { createDemoData, DEMO_DAYS, daysFrom, initialPresets } from '../seed';
+import { DEMO_DAYS, daysFrom, initialPresets } from '../seed';
+import { createInitialData } from '../seed/plans';
 import { repair } from './repair';
 
 /** 壊れた JSON の退避先 */
@@ -124,7 +125,7 @@ export function load(): DemoData {
   const todayDate = today();
   const text = ls?.getItem(STORAGE_KEY) ?? null;
   if (text === null) {
-    const d = createDemoData(todayDate);
+    const d = createInitialData(todayDate);
     writeNow(d);
     return d;
   }
@@ -135,7 +136,7 @@ export function load(): DemoData {
     } catch {
       // 退避できなくても続ける
     }
-    return createDemoData(todayDate);
+    return createInitialData(todayDate);
   }
   const extended = extendDays(r, todayDate);
   if (extended !== r) writeNow(extended);
@@ -168,7 +169,7 @@ export function reset(): DemoData {
   if (timer) clearTimeout(timer);
   timer = null;
   pending = null;
-  const d = createDemoData(today());
+  const d = createInitialData(today());
   writeNow(d);
   return d;
 }
