@@ -1,6 +1,6 @@
 # AI の考え方（条件の重み・プリセット・種類・特性の項目）と比較の画面
 
-> この画面のファイル：`src/pages/RulesPage.tsx`・`TypesPage.tsx`・`ItemsPage.tsx`・`ComparePage.tsx`、`src/components/conditions.tsx`・`routeView.tsx`、`src/lib/presets.ts`・`runs.ts`・`planMenu.ts`・`emptyGuide.ts`・`scoreReason.ts`。関連 ADR：0002・0005・0007・0008・0010・0011・0012・0025 追記・0028。関連 PRD：D19〜D25・D36・D156〜D160・D173〜D175。
+> この画面のファイル：`src/pages/RulesPage.tsx`・`TypesPage.tsx`・`ItemsPage.tsx`・`ComparePage.tsx`、`src/components/conditions.tsx`・`routeView.tsx`、`src/lib/presets.ts`・`runs.ts`・`planMenu.ts`・`emptyGuide.ts`・`scoreReason.ts`。関連 ADR：0002・0005・0007・0008・0010・0011・0012・0025 追記・0028。関連 PRD：D19〜D25・D36・D156〜D160・D173〜D175・D220。
 > 契約（`Preset`・`AiRun`・`scorePresetId`）は design.md §5「AI案の記録と条件のプリセット」。
 
 ### 条件の重み（`#/rules`）
@@ -10,12 +10,14 @@
 #### 条件
 
 - 型ごとの重みのスライダー（0〜5）・必須の切り替え。変えるとすぐ保存（`update`）
+- 狭い画面（600px 以下。PRD D220）：条件の表（`narrow-rules`）は1つの条件を1枚のカードに（[pages.md](pages.md) の「狭い画面の表」）。1行目に名前の入力欄と「必須」の切り替え、続けて「種類」（札と説明）・「重み」（スライダーは幅いっぱい）、消すは右下。スライダーと必須は横に巻かずに見える
 - 「詳細設定」（`rules-advanced`。`details` で畳み、読み直すと畳む）：乱数の種（`Term` `seed`）
 
 #### プリセットの節（`preset-section`。ADR-0008）
 
 - プリセットごとに名前・一言・型ごとの重み（0〜5、0.5刻み）・必須を編集（`preset-edit`。変えるとすぐ保存）
 - 消す（最後の1つは消せない。独自の確認）
+- 狭い画面（PRD D220）：見出し（`narrow-preset-summary`）の名前は1行（入らなければ「…」）、一言は次の行。重みの表もカード（1行目に条件の種類と必須、続けて重み）。「いまの重みをプリセットとして保存」「初期値に戻す」の行（`narrow-stack`）は縦に幅いっぱいで並べ、文字を折り返さない
 - 「いまの重みをプリセットとして保存」（名前を入れて足す。6つまで）
 - 「初期値に戻す」：初期の3種に戻す。点数の基準も標準に。確認を出す
 - 「点数の基準」のラジオ（`score-ruler-choice`。ADR-0010）でプリセットを1つ選ぶ。基準のプリセットの見出しに「点数の基準」の印。基準のプリセットを消すと残りの先頭に移り、確認の文に出す
@@ -41,6 +43,7 @@
 
 - `lead`「〈スタッフ〉や〈利用者さん〉の特性（資格・ペットなど）を決めます」
 - 項目（型：choice・multi・flag・number など）と選択肢を足す・直す・消す（選択肢を消すときは独自の確認）。項目「資格」の選択肢は週の資格のチップ・バッジに使う
+- 狭い画面（PRD D220）：〈スタッフ〉・〈利用者さん〉の項目の表は1つの項目を1枚のカードに。1行目に名前の入力欄、続けて「種類」・「選択肢（人数）」（見出しを上に置き、選択肢の一覧と足す欄は幅いっぱい。`narrow-block`）・「使っている条件」、消すは右下
 
 ### 案を比べる（`#/compare`。ADR-0005・ADR-0010。PRD D19・D22）
 
@@ -58,6 +61,7 @@
 - 地図（A：点線、B：実線。線は担当の色。訪問・区間・「自宅まで」・担当を押すと日の画面と同じに強調・絞り込み（`lib/routeView`。[pages-plan.md](pages-plan.md)）、画面の外なら `MapDock`）
 - 記録の一覧：「予定の画面で開く」（その記録を今の案にする。`planOfRun`）・「この条件にする」（その日の条件の重み・必須を記録と同じにする）・「消す」
 - 欠勤の振り直しの記録（「欠勤前」・案A・案B）は [pages-plan-absence.md](pages-plan-absence.md) の「比較の画面での振り直し」
+- 狭い画面（PRD D220）：記録の表（`narrow-runs`）は1つの案を1枚のカードに。1行目に A・B の選択と案の名前（乱数の種）、続けて「作った時刻」・「合計点」（点数の理由も）・「移動」・「入らない」、操作（予定の画面で開く・この条件にする・消す）は右下。A・B に選んだカードは地を淡く
 - 空の画面（`compare-empty`。`compareEmptyGuide`。［日の画面で案を作る］）
 
 #### もう1案作って比べる（PRD D160。`compare-another`）
@@ -67,6 +71,7 @@
 - 流れ：`compile({ ...data, rules }, date)` → `runSolve(p, { seed: data.seed, iterations: defaultIterations(p) })` → `update(addRun(...))`（今の案・条件は変えない）。記録に出たら（`findRun`）A＝今ある案、B＝作った案にしてトースト。同じ案なら（addRun が足さない）そう知らせる。止めた案はトーストの文を分ける
 - 画面を離れたら・日付を変えたら計算を止め結果を捨てる（世代）
 - 選択肢が無い（プリセットが1つ等）・計算できる訪問が無いときは理由（`compare-another-why`）
+- 狭い画面（PRD D220）：考え方の select と主ボタンの行（`compare-another-row`）を、右の欄の確定のボタンの帯と同じく記録のカードの下に貼り付け（sticky・`bottom: var(--bottom-tabs-h)`。外の箱 `compare-another` は screen の 600px 以下で `display: contents` にしてカード全体を貼り付く範囲にする）、主ボタンが下のタブに隠れない
 - 印刷では出さない
 
 ### 完了の条件

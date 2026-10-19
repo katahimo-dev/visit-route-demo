@@ -425,6 +425,21 @@ export function decodeFilter(
 /** 同じ絞り込みか（URL に書く形で比べる） */
 export const sameFilter = (a: ClientFilterState, b: ClientFilterState): boolean => encodeFilter(a) === encodeFilter(b);
 
+/**
+ * 効いている絞り込みの数（PRD D220。狭い画面で畳んだ「絞り込み（N）」の N）：検索の文字（あれば1）・選んだ市区・町名・
+ * 押しているチップ・足すチップ・「終了の人も出す」（入なら1）を足す
+ */
+export function activeFilterCount(state: ClientFilterState): number {
+  return (
+    (state.query.trim() !== '' ? 1 : 0) +
+    state.cities.length +
+    state.towns.length +
+    state.chips.length +
+    (state.extra?.length ?? 0) +
+    (state.showEnded ? 1 : 0)
+  );
+}
+
 // ---- 画面の文字 ----
 
 /** チップの文字（periodLabel は「この週」など、staffTerm は呼び方 org.terms.staff） */

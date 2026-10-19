@@ -73,6 +73,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0030](adr/0030-reassign-and-undo-without-drag.md) | 担当替え・戻すをドラッグ以外でも（キーボード・タッチ） |
 | [0031](adr/0031-month-bulk-confirm-and-seed-plans.md) | 月のまとめて確定と初期データの案 |
 | [0032](adr/0032-protect-data.md) | データを守る（1世代の控え・書き出しの知らせ・古い案の片づけ・壊れたデータと別のタブの知らせ） |
+| [0033](adr/0033-narrow-tables-as-cards.md) | 狭い画面では一覧の表をカードに（ADR-0024 の見直し） |
 
 ## 文書の保ち方
 
