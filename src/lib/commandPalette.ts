@@ -313,6 +313,21 @@ export function isPaletteShortcut(e: ShortcutKey, isMac: boolean): boolean {
   return isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
 }
 
+/** HashRouter の hash（`#/workload?ym=…`）の画面のパス（`/workload`）。hash が空なら `/` */
+export function hashPathname(hash: string): string {
+  const p = hash.replace(/^#/, '').split(/[?#]/)[0] ?? '';
+  return p === '' ? '/' : p;
+}
+
+/**
+ * 画面を移ったあとも開いたままにするか。openFor は開いたときの画面のパス（URL の hash から。閉じていれば null）。
+ * 移ったら閉じる（移った先の画面でもう開き直していれば閉じない：画面を移ってすぐの Ctrl+K で、
+ * 新しい画面の描画が終わる前に開いたパレットを、あとから来た「画面を移った」で閉じない）
+ */
+export function keepPaletteOn(openFor: string | null, pathname: string): string | null {
+  return openFor !== null && openFor === pathname ? openFor : null;
+}
+
 /** mac か（キーの印「⌘K」と、⌘ と Ctrl のどちらで開くか） */
 export function isMacPlatform(platform: string): boolean {
   return /mac|iphone|ipad|ipod/i.test(platform);

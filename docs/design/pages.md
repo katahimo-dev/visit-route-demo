@@ -151,7 +151,7 @@
 - 上の帯に「探す・移動」（`cmdk-open`。`aria-haspopup="dialog"`・`aria-expanded`・`aria-keyshortcuts`。狭い画面は「探す」だけでキーの印を隠し、上の帯の1段目に置く）
 - 帯の高さ：狭い画面では2段に折り返すことがあるので `ResizeObserver` で測って `--header-h` に出す（広い画面では消して styles.css の 72px のまま）
 - 本文の後ろに下のタブ（`nav.bottom-tabs`・`aria-label="よく使う画面"`・今の画面は `aria-current="page"`（`isActiveTab`））
-- 画面を移ったら引き出しとコマンドパレットを閉じる。`matchMedia('(max-width: 860px)')` が外れたら（広い画面へ戻ったら）引き出しを閉じ、フォーカスは左のメニューの今の項目へ
+- 画面を移ったら引き出しとコマンドパレットを閉じる（パレットは開いたときの URL の hash の画面のパスを覚え、移った先の画面で開き直していれば閉じない。`keepPaletteOn`）。`matchMedia('(max-width: 860px)')` が外れたら（広い画面へ戻ったら）引き出しを閉じ、フォーカスは左のメニューの今の項目へ
 - window の keydown で `isPaletteShortcut` なら `preventDefault` し、`[aria-modal="true"]` が無ければコマンドパレットを開く（右の欄・確認・ツアーの上では開かない）
 - main の `Guarded` の中、`Outlet` の前に、`showsRebuildBand(pathname)` のときだけ `RebuildBand`（[pages-common.md](pages-common.md) の「作り直しの帯」）
 - 今の画面の項目（引き出し）は閉じるだけ、今の画面の下のタブは何もしない（どちらも `to === pathname` で `preventDefault`。URL のクエリ＝画面の状態を消さない。比較のときの「日」は別の画面なので移る）
@@ -190,7 +190,7 @@
 - `paletteScreens(sections, terms)`：操作でない項目。補足はグループの見出し。読み・言い換え `SCREEN_WORDS`、〈利用者さん〉一覧・〈スタッフ〉一覧には呼び方のよみ `TERM_READINGS`（既定の呼び方の漢字だけ）
 - `palettePeople(clients, staff, terms)`：`/clients?id=`・`/staff?id=`。段階・休止中を補足に
 - `filterPalette(items, query, limit=8)`：語に分けて AND、種類の順・先頭一致を前に、人は種類ごと limit まで（`rest`）。空なら操作と画面だけ
-- `paletteTerms`・`moveActive`（端で回る）・`isPaletteShortcut(e, isMac)`（mac は ⌘K、ほかは Ctrl+K。Shift・Alt・変換中は違う）・`isMacPlatform`・`paletteKindLabel`
+- `paletteTerms`・`moveActive`（端で回る）・`isPaletteShortcut(e, isMac)`（mac は ⌘K、ほかは Ctrl+K。Shift・Alt・変換中は違う）・`isMacPlatform`・`paletteKindLabel`・`hashPathname(hash)`・`keepPaletteOn(openFor, pathname)`
 
 #### `components/CommandPalette.tsx`（`commandPalette.css`）
 
