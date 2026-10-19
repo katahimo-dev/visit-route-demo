@@ -1,7 +1,7 @@
-# 日の画面：欠勤・キャンセルと振り直し
+# 日の予定：欠勤・キャンセルと振り直し
 
 > この画面のファイル：`src/pages/SuddenPanel.tsx`・`absenceParts.tsx`（`AbsenceFields`・`AbsenceTargets`・`ReassignBar`・`ReassignSummary`・`CandidateBox`・`previewOf`）・`reassignParts.tsx`（`AnnealBox`・`ContactPanel`・`ContactButton`・`ReassignDock`）・`PlanPage.tsx`・`plan.css`、`src/lib/sudden.ts`・`absences.ts`・`contacts.ts`・`clipboard.ts`・`runs.ts`。関連 ADR：0011（追記を含む）・0015 追記・0025 追記。関連 PRD：D26〜D35・D167〜D172。
-> 日の画面の全体は [pages-plan.md](pages-plan.md)。計算（`reassign`・`targetsOf`・`prepareAnneal`・`settleAnneal`）は design.md の「reassign」。
+> 日の予定の全体は [pages-plan.md](pages-plan.md)。計算（`reassign`・`targetsOf`・`prepareAnneal`・`settleAnneal`）は design.md の「reassign」。
 
 ### 「欠勤・キャンセル」の欄（PRD D167〜D172）
 
@@ -11,11 +11,11 @@
 
 | 入口 | 開き方 |
 |---|---|
-| 日の画面の操作の行の先頭「欠勤・キャンセル」（`sudden-open`） | 1段目。主ボタンにしない・赤い縁（`.plan-sudden-btn`）。訪問も働く人もいない日は押せない。印刷では出さない |
-| 列の見出しの「急な欠勤」「欠勤を直す」 | `openSudden({ kind: 'staff', staffId })`。その人を選んだ2段目（開くたびに差の欄へ移る印 `suddenToBar` を戻す） |
-| `/plan?date=…&do=absence`（ホームの「急な欠勤・キャンセルを登録」・メニューの「欠勤・キャンセル」・パレット・月の要対応・稼働時間の右の欄） | 1段目（`&staff=` の人がその日に働けば2段目）。`?do=`・`?date=`・`staff` を消す |
+| 日の予定の操作の行の先頭「欠勤・キャンセルを登録」（`sudden-open`） | 1段目。主ボタンにしない・赤い縁（`.plan-sudden-btn`）。訪問も働く人もいない日は押せない。印刷では出さない |
+| 列の見出しの「この人の欠勤を登録」「欠勤を直す」 | `openSudden({ kind: 'staff', staffId })`。その人を選んだ2段目（開くたびに差の欄へ移る印 `suddenToBar` を戻す） |
+| `/plan?date=…&do=absence`（ホーム・メニュー・パレットの「欠勤・キャンセルを登録」・月の要対応・勤務時間（シフト）の右の欄） | 1段目（`&staff=` の人がその日に働けば2段目）。`?do=`・`?date=`・`staff` を消す |
 
-下のタブは変えない（5つのまま）。日の画面で欠勤・キャンセルのメニューの項目に印を付けない。
+下のタブは変えない（5つのまま）。日の予定で欠勤・キャンセルのメニューの項目に印を付けない。
 
 #### `pages/SuddenPanel.tsx`
 
@@ -23,7 +23,7 @@
 - 段階・何が起きたか・人・欠勤の入力・訪問・取り消しの種類・済んだことは欄の中の状態
 - 段階の表示は `ol.sudden-steps`（aria-label「段階」。今の段階に `aria-current="step"`）。段階の見出し（`h3`・`data-return-focus`）へ `focusKey` でフォーカス
 - 戻る（`sudden-back`）・閉じる（`sudden-close`）。Esc で閉じると入口へフォーカス。閉じる `onClose(toBar)`：閉じたあと、振り直していれば差の欄へ（`returnFocus` と `goToBar`）
-- 振り直し・欠勤だけ登録・欠勤の取り消し・取り消し・確定・元に戻すは日の画面の関数を受けて呼ぶだけ。4段目の振り直しの結果（まとめ `ReassignSummary` と `AnnealBox`）は日の画面が `result` で渡す
+- 振り直し・欠勤だけ登録・欠勤の取り消し・取り消し・確定・元に戻すは日の予定の関数を受けて呼ぶだけ。4段目の振り直しの結果（まとめ `ReassignSummary` と `AnnealBox`）は日の予定が `result` で渡す
 - 確定のボタンは欄の下の帯（`footer`）。600px 以下は幅いっぱい、4段目の表は欄の中で横に巻く
 - `plan.css`：`.plan-sudden-btn`（入口）・`.sudden-steps`（段階の表示）・`.sudden-choice`（1段目の選択肢）・`.sudden-option`（3段目の案）
 
@@ -35,7 +35,7 @@
 | 1 見出し「何が起きましたか？」 | `sudden-kind-staff`（「急な欠勤・遅刻・早退。休む人の訪問を、ほかの人へ振り直します」） | `sudden-kind-client` |
 | 2 | 「休む〈スタッフ〉と時間帯を選ぶ」：人（`sudden-staff`）と `AbsenceFields`。人を選ぶまで「次へ」（`sudden-next`）を押せない。時間帯の誤りは理由を出して押せない。既にある欠勤は `sudden-existing` | 「キャンセルの訪問を選ぶ」：訪問（`sudden-visit`）と当日キャンセルか（`sudden-same-day`。既定は当日キャンセル） |
 | 3 | 「影響を確かめて振り直す」：見込み（`absence-preview`・`sudden-impact`）と振り直しのボタン | 「影響を確かめて取り消す」：`cancelImpact` の文（`sudden-cancel-impact`）と「当日キャンセルとして取り消す」／「取り消す」（`sudden-cancel-ok`） |
-| 4 | 「案を選んで確定する」：済んだこと（`sudden-done`「〈欠勤〉を登録して振り直しました」）・`ReassignSummary`・`AnnealBox`・`confirmNote`（`sudden-confirm-note`）・「この割当で確定」（`sudden-adopt`。独自の確認）・「元の案に戻す」（`sudden-revert`）・「日の画面で差を見る」（`sudden-to-bar`） | 「確定する」：済んだこと（「〈訪問〉 を当日キャンセルとして取り消しました」）・確定 |
+| 4 | 「案を選んで確定する」：済んだこと（`sudden-done`「〈欠勤〉を登録して振り直しました」）・`ReassignSummary`・`AnnealBox`・`confirmNote`（`sudden-confirm-note`）・「この割当で確定」（`sudden-adopt`。独自の確認）・「元の案に戻す」（`sudden-revert`）・「日の予定で差を見る」（`sudden-to-bar`） | 「確定する」：済んだこと（「〈訪問〉 を当日キャンセルとして取り消しました」）・確定 |
 
 #### 2段目の欠勤の入力（`AbsenceFields`）
 
@@ -58,7 +58,7 @@
 - 押せない理由（`reassignBlocked({ error, running, hasPreview, hasBase })`）：「計算中は押せません（終わるまで待ってください）」・「見込みを出せませんでした」・「この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）」
 - 案の無い日（`sudden-no-plan`。`noPlanText(running)`）：計算中は「案を作っています。終わると振り直せます」、ほかは欠勤だけ登録できる
 
-#### 日の画面の関数（`pages/PlanPage.tsx`）
+#### 日の予定の関数（`pages/PlanPage.tsx`）
 
 - 状態 `sudden`
 - `registerAndReassign(absence, anneal, stay)`：欄から呼ぶとき（`stay`）は欄を閉じず差の欄へも移らず、振り直せたかを返す
@@ -79,7 +79,7 @@
 
 #### 確かめ
 
-`scripts/e2e-absence.cjs`：ホームのカードから今日の日の画面で1段目が開き `?do=`・`?date=` が消える・段階の表示（aria-current）と見出しへのフォーカス・人を選ぶまで次へが押せない・時間帯の誤り・影響（入らなくなる訪問 N件）・戻る・案A で4段目・案B を作って選ぶ・確定（独自の確認）で確定済み・当日キャンセル（既定・影響の文・cancelKind）・Esc で入口へフォーカス・列の見出しの「欠勤を直す」から2段目・欠勤の取り消し・案の無い日は欠勤だけ・390px で入口と欄が収まり下のタブは5つ・印刷で入口を出さない。
+`scripts/e2e-absence.cjs`：ホームのカードから今日の日の予定で1段目が開き `?do=`・`?date=` が消える・段階の表示（aria-current）と見出しへのフォーカス・人を選ぶまで次へが押せない・時間帯の誤り・影響（入らなくなる訪問 N件）・戻る・案A で4段目・案B を作って選ぶ・確定（独自の確認）で確定済み・当日キャンセル（既定・影響の文・cancelKind）・Esc で入口へフォーカス・列の見出しの「欠勤を直す」から2段目・欠勤の取り消し・案の無い日は欠勤だけ・390px で入口と欄が収まり下のタブは5つ・印刷で入口を出さない。
 
 ### 振り直し（案A。ADR-0011。PRD D26〜D32）
 
@@ -102,7 +102,7 @@
 - 地図は振り直した訪問へ来る区間を太くする（`buildRouteMap` に強調する訪問の集まりを渡す）
 - 欠勤の人に残る訪問に「欠勤と重なる：振り直していない（対応が必要）」などの赤い印（理由は `leftOf` の reason。`leftOf` は欠勤のせいの訪問（absence・unreachable）だけで、欠勤と関係ない元からの違反（notAllowed）は含めない＝必須の違反の赤い枠で出る）
 - 欠勤の人の列の見出しの下に近道：「振り直し済み・入らない（全体） N件」（差の欄へ）・「欠勤の人のまま N件」（あれば）・「案B を作る」（案A で入らない訪問があり案B をまだ作っていないとき。作り始めて差の欄へ）
-- 日の画面のあるときだけの帯（`band-reassign`）：「欠勤の振り直し：入らない N件・欠勤の人のまま N件」と「差の欄へ」
+- 日の予定のあるときだけの帯（`band-reassign`）：「欠勤の振り直し：入らない N件・欠勤の人のまま N件」と「差の欄へ」
 
 ### 差の欄（`ReassignBar`）
 
@@ -191,15 +191,15 @@
 
 - 記録に `reassign` があれば、選べる案に「欠勤前（記録の名前）」を足す（記録の `reassign.baseRoutes`。いまの問題で採点するので、欠勤の人の訪問は必須の違反として出る）。同じ元の案の「欠勤前」は1つだけ（案A・案B の記録が同じ元の案を持つ）。よって 欠勤前／案A／案B を選んで比べられる
 - 記録の一覧の印は「欠勤の振り直し（案A）／（案B）」
-- 「予定の画面で開く」は `planOfRun`（記録の `reassign` も今の案に写す）
+- 「日の予定で開く」は `planOfRun`（記録の `reassign` も今の案に写す）
 
-### 稼働時間の画面での欠勤
+### 勤務時間（シフト）の画面での欠勤
 
-[pages-staff.md](pages-staff.md) の「稼働時間」。
+[pages-staff.md](pages-staff.md) の「勤務時間（シフト）」。
 
 ### 完了の条件
 
-- [ ] 列の見出しの「急な欠勤」（または操作の行の「欠勤・キャンセル」で人を選ぶ）→ 午前だけ → 次へ →「登録して振り直す（案A）」で、その人の午前の訪問が他の人へ移り「代行」の印が付き、他の人の訪問の担当・順番・時刻は変わらず、まとめの件数が出る。変わらない人の列は薄い。地図で振り直した訪問へ来る区間が太い
+- [ ] 列の見出しの「この人の欠勤を登録」（または操作の行の「欠勤・キャンセルを登録」で人を選ぶ）→ 午前だけ → 次へ →「登録して振り直す（案A）」で、その人の午前の訪問が他の人へ移り「代行」の印が付き、他の人の訪問の担当・順番・時刻は変わらず、まとめの件数が出る。変わらない人の列は薄い。地図で振り直した訪問へ来る区間が太い
 - [ ] 振り直したあとの今の案は全訪問が固定で、「固定を残して作り直す」をしても担当が変わらない。記録に「欠勤の振り直し」が1件増え、比較の画面で「欠勤前」と比べられる
 - [ ] 2人を順に欠勤にして振り直すと、差の欄は最初の元の案との差で、「元の案に戻す」で最初の元の案（generated・記録も）に戻る
 - [ ] 欠勤の欄を閉じたとき、フォーカスの戻り先が消えていたら、その人の列の見出しにフォーカスが移る

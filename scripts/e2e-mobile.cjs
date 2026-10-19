@@ -40,7 +40,7 @@ async function header(page) {
   await open(page, '/staff', '[data-testid="screen-name"]');
   const name2 = await page.getByTestId('screen-name').innerText();
   check(
-    name === '人の情報・利用者さん一覧' && name2 === '人の情報・スタッフ一覧',
+    name === '人・利用者さん一覧' && name2 === '人・スタッフ一覧',
     '上の帯：〈利用者さん〉一覧と〈スタッフ〉一覧を見分ける',
     {
       name,
@@ -48,7 +48,10 @@ async function header(page) {
     },
   );
   await open(page, '/plan', '[data-testid="screen-name"]');
-  check((await page.getByTestId('screen-name').innerText()) === '予定を組む・日', '上の帯：予定を組む・日');
+  check(
+    (await page.getByTestId('screen-name').innerText()) === '日の予定',
+    '上の帯：日の予定（予定のグループは項目名だけ）',
+  );
   check(await visible(page.locator('.app-header .date-switch')), '上の帯：日付の切り替えがある');
   check(!(await visible(page.locator('.side-nav'))), '左のメニューは出さない');
   const hb = await page.locator('.app-header').boundingBox();
@@ -90,7 +93,7 @@ async function drawerOpenClose(page) {
   );
   const titles = await d.locator('.nav-group-title').allInnerTexts();
   check(
-    titles.length >= 5 && titles.includes('予定を組む') && titles.includes('AI の考え方'),
+    titles.length >= 5 && titles.includes('予定') && titles.includes('AI の条件'),
     '引き出し：グループの見出し付き',
     titles,
   );
@@ -181,8 +184,8 @@ async function bottom(page) {
   const t = tabs(page);
   const labels = await t.getByTestId('bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(labels) === JSON.stringify(['ホーム', '月', '週', '日', '空き状況']),
-    '下のタブ：ホーム・月・週・日・空き状況（PRD D144）',
+    JSON.stringify(labels) === JSON.stringify(['ホーム', '月', '週', '今日', '空き状況']),
+    '下のタブ：ホーム・月・週・今日・空き状況（PRD D144・D232）',
     labels,
   );
   const tb = await t.boundingBox();
@@ -203,7 +206,7 @@ async function bottom(page) {
   await page.waitForTimeout(300);
   check(JSON.stringify(await active()) === '["空き状況"]', '下のタブ：押すと移る（空き状況）', await active());
   await open(page, '/compare', '[data-testid="bottom-tabs"]');
-  check(JSON.stringify(await active()) === '["日"]', '下のタブ：比較では「日」');
+  check(JSON.stringify(await active()) === '["今日"]', '下のタブ：比較では「今日」');
   await open(page, '/clients', '[data-testid="bottom-tabs"]');
   check((await active()).length === 0, '下のタブ：5つ以外の画面ではどれも active にしない');
   // 本文の最後がタブに隠れない（いちばん下まで巻いて、本文の下の端がタブより上）

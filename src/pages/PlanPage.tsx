@@ -299,12 +299,12 @@ export default function PlanPage() {
   const [editing, setEditing] = useState<string | null>(null);
   /**
    * 「欠勤・キャンセル」の欄（PRD D167〜D172。null：閉じている）。日の画面の入口・ホーム（`?do=absence`）からは1段目、
-   * 列の見出しの「急な欠勤」「欠勤を直す」からはその人を選んだ2段目で開く
+   * 列の見出しの「この人の欠勤を登録」「欠勤を直す」からはその人を選んだ2段目で開く
    */
   const [sudden, setSudden] = useState<SuddenInit | null>(null);
   /** 「欠勤・キャンセル」の欄を閉じたあと、差の欄へ移るか（振り直したあと） */
   const suddenToBar = useRef(false);
-  /** 日の画面の「欠勤・キャンセル」のボタン（欄を閉じたときの戻り先が消えていたら） */
+  /** 日の予定の「欠勤・キャンセルを登録」のボタン（欄を閉じたときの戻り先が消えていたら） */
   const suddenBtnRef = useRef<HTMLButtonElement>(null);
   /** 欄を開く（前に振り直して閉じたときの「差の欄へ移る」を戻す。開き直して欠勤だけ登録したときに差の欄へ飛ばない） */
   const openSudden = (init: SuddenInit) => {
@@ -2160,9 +2160,21 @@ export default function PlanPage() {
               type="button"
               className="link-btn absence-btn"
               onClick={() => openSudden({ kind: 'staff', staffId: sid })}
-              aria-label={`${staffName(sid)}さんの${avail?.absence ? '欠勤を直す' : '急な欠勤'}`}
+              aria-label={
+                avail?.absence ? `${staffName(sid)}さんの欠勤を直す` : `この人の欠勤を登録（${staffName(sid)}さん）`
+              }
             >
-              {avail?.absence ? '欠勤を直す' : '急な欠勤'}
+              {/* 入口の呼び方（PRD D231）：欠勤が無ければ「この人の欠勤を登録」、あれば「欠勤を直す」 */}
+              {/* 狭い列では「この人の／欠勤を登録」の区切りで折り返す（plan.css の keep-all と wbr） */}
+              {avail?.absence ? (
+                '欠勤を直す'
+              ) : (
+                <>
+                  この人の
+                  <wbr />
+                  欠勤を登録
+                </>
+              )}
             </button>
           )}
           {/*
@@ -2742,7 +2754,7 @@ export default function PlanPage() {
         {rDiff && <ReassignSummary diff={rDiff} left={left.length} testId="sudden-summary" />}
         {rDiff && rDiff.unplaced.length > 0 && (
           <p className="sub">
-            入らない訪問は、下の案B を作るか、日の画面の「入らなかった訪問」の「受けられる人」から入れられます
+            入らない訪問は、下の案B を作るか、日の予定の「入らなかった訪問」の「受けられる人」から入れられます
           </p>
         )}
         <AnnealBox
@@ -2777,7 +2789,7 @@ export default function PlanPage() {
       <PageHeader
         nav={<ViewSwitch current="day" />}
         icon={CalendarDays}
-        title="予定"
+        title="日の予定"
         lead="その日の欠勤・手直しをして、割当を確定します"
         actions={
           aiPlan && (
@@ -2971,10 +2983,10 @@ export default function PlanPage() {
                         <Link
                           to={workloadHref(date.slice(0, 7), x.staffId)}
                           className="over-span-link"
-                          aria-label={`${staffName(x.staffId)}さんの稼働の見込み`}
+                          aria-label={`${staffName(x.staffId)}さんの勤務の見込み`}
                           data-testid="over-span-link"
                         >
-                          稼働の見込み
+                          勤務の見込み
                         </Link>
                       )}
                     </span>
@@ -2990,7 +3002,7 @@ export default function PlanPage() {
               className="btn btn-small"
               onClick={() => navigate(workloadHref(date.slice(0, 7), overSpan[0]!.staffId))}
             >
-              稼働の見込み
+              勤務の見込み
             </button>
           )}
         </div>
@@ -3019,7 +3031,7 @@ export default function PlanPage() {
             disabled={visits.length === 0 && suddenStaff.length === 0}
             data-testid="sudden-open"
           >
-            <WithIcon icon={UserRoundX}>欠勤・キャンセル</WithIcon>
+            <WithIcon icon={UserRoundX}>欠勤・キャンセルを登録</WithIcon>
           </button>
         )}
         <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
@@ -3363,7 +3375,7 @@ export default function PlanPage() {
                 </label>
               </fieldset>
               <p className="sub">
-                当日キャンセルは、月間の画面と{terms.client}
+                当日キャンセルは、月の予定と{terms.client}
                 ごとの月の集計に回数が出ます（請求はしません）。今の案はそのままで、この訪問は計算から外れます。
               </p>
             </>

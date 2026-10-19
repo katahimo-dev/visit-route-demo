@@ -53,7 +53,7 @@ export type DayStatuses = Map<string, { status: DayStatus; problem: Problem | nu
 
 /**
  * 日ごとの状態（月のマスの色・要対応・今月の準備と同じ数え方。lib/month の dayStatus に、点数の物差しで compile・採点した
- * 必須の違反・条件が変わった・欠勤の人に残る訪問・拘束が上限を超える人を足す）。月間の画面とホーム（PRD D141〜）で共通。
+ * 必須の違反・条件が変わった・欠勤の人に残る訪問・拘束が上限を超える人を足す）。月の予定とホーム（PRD D141〜）で共通。
  * 日付・compile が読むデータ・案で覚える（8人・約17件／日の一月で 500ms 以内）
  */
 export function useDayStatuses(data: DemoData, compileInput: CompileInput, days: readonly string[]): DayStatuses {

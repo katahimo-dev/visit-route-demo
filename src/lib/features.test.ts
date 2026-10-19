@@ -35,7 +35,7 @@ import { tourSteps } from './tour';
 const terms = { client: '利用者さん', staff: 'スタッフ' };
 const TODAY = '2026-10-21';
 
-/** 土台の画面（切れない。PRD D210）：ホーム・月・週・日・〈利用者さん〉一覧・〈スタッフ〉一覧・稼働時間・訪問の種類・データ・管理者設定 */
+/** 土台の画面（切れない。PRD D210）：ホーム・月の予定・週の予定・日の予定・〈利用者さん〉一覧・〈スタッフ〉一覧・勤務時間（シフト）・訪問の種類・データ・管理者設定 */
 const BASE_PATHS = new Set([
   '/home',
   '/month',
@@ -75,7 +75,12 @@ const TABLE: Record<TemplateId, FeatureId[]> = {
 };
 
 describe('機能の表（ADR-0028 の機能の一覧）', () => {
-  it('20の機能が契約の ID と同じ順に1つずつ。グループは決まった7つのどれか', () => {
+  it('20の機能が契約の ID と同じ順に1つずつ。グループは決まった6つのどれか（メニューのグループにそろえる。ADR-0034）', () => {
+    expect(FEATURE_GROUPS).toEqual(['予定', '当日・問い合わせ', '人', 'AI の条件', '連絡', 'データ']);
+    expect(featureDef('compat').group).toBe('AI の条件');
+    expect(featureDef('allowedStaff').group).toBe('AI の条件');
+    expect(featureDef('rules').group).toBe('AI の条件');
+    expect(featureDef('vacancy').group).toBe('当日・問い合わせ');
     expect(FEATURES.map((f) => f.id)).toEqual([...FEATURE_IDS]);
     expect(FEATURES).toHaveLength(20);
     for (const f of FEATURES) {
@@ -85,7 +90,7 @@ describe('機能の表（ADR-0028 の機能の一覧）', () => {
       expect(f.hides).not.toBe('');
     }
   });
-  it('依存は 空き枠の案内文 → 空き状況、交通費 → 稼働の見込み の2つだけ', () => {
+  it('依存は 空き枠の案内文 → 空き状況、交通費 → 勤務の見込み の2つだけ', () => {
     expect(FEATURES.filter((f) => f.requires).map((f) => [f.id, f.requires])).toEqual([
       ['vacancyNotice', 'vacancy'],
       ['fare', 'workload'],
@@ -107,7 +112,7 @@ describe('isOn（依存を見る）', () => {
     expect(isOn({ compat: false }, 'compat')).toBe(false);
     expect(isOn({ compat: true }, 'compat')).toBe(true);
   });
-  it('空き状況を切ると空き枠の案内文も切、稼働の見込みを切ると交通費も切（スイッチが入でも）', () => {
+  it('空き状況を切ると空き枠の案内文も切、勤務の見込みを切ると交通費も切（スイッチが入でも）', () => {
     expect(isOn({ vacancy: false, vacancyNotice: true }, 'vacancyNotice')).toBe(false);
     expect(isOn({ workload: false }, 'fare')).toBe(false);
     expect(isOn({ workload: true, fare: true }, 'fare')).toBe(true);
@@ -208,11 +213,11 @@ describe('ひな形（ADR-0028 の表）', () => {
     expect(matchTemplate(withFeature(applyTemplate('laborContract'), 'fare', false))).toBe('custom');
   });
   it('使えるか（依存を見る）で比べる：依存先が切なら、依存する機能のスイッチが入でもひな形と同じ', () => {
-    // 基本（稼働の見込み・空き状況の案内文は切）に、交通費だけ入れても稼働の見込みが切なので使えない＝基本のまま
+    // 基本（勤務の見込み・空き状況の案内文は切）に、交通費だけ入れても勤務の見込みが切なので使えない＝基本のまま
     expect(matchTemplate(withFeature(applyTemplate('basic'), 'fare', true))).toBe('basic');
     // 月次予定・現場共有から空き状況を切ると案内文も使えない。基本との差は残るので custom
     expect(matchTemplate(withFeature(applyTemplate('monthlyField'), 'vacancy', false))).toBe('custom');
-    // すべてから稼働の見込みを切った（交通費のスイッチは入のまま）ものは、どのひな形とも違う
+    // すべてから勤務の見込みを切った（交通費のスイッチは入のまま）ものは、どのひな形とも違う
     expect(matchTemplate({ workload: false })).toBe('custom');
   });
   it('templateDiff：入る機能・切れる機能（表の順）', () => {
@@ -252,49 +257,52 @@ describe('menuSections（ひな形ごとの項目。PRD D213）', () => {
     expect(labels(applyTemplate('all'))).toEqual(labels({}));
     expect(labels({})).toHaveLength(17);
   });
-  it('基本：12＋管理者設定（案を比べる・稼働の見込み・条件の重み・特性の項目が無い）', () => {
+  it('基本：12＋管理者設定（案を比べる・勤務の見込み・条件の重み・特性の項目が無い）', () => {
     expect(labels(applyTemplate('basic'))).toEqual([
       'ホーム',
-      '月',
-      '週',
-      '日',
-      '欠勤・キャンセル',
+      '月の予定',
+      '週の予定',
+      '日の予定',
+      '欠勤・キャンセルを登録',
       '空き状況',
       '利用者さん一覧',
-      '相性',
       'スタッフ一覧',
-      '稼働時間',
+      '勤務時間（シフト）',
+      '相性',
       '訪問の種類',
       '管理者設定',
       'データ',
     ]);
   });
-  it('労務・契約管理：13＋管理者設定（稼働の見込みが戻る）', () => {
+  it('労務・契約管理：13＋管理者設定（勤務の見込みが戻る）', () => {
     const l = labels(applyTemplate('laborContract'));
     expect(l).toHaveLength(14);
-    expect(l).toContain('稼働の見込み');
+    expect(l).toContain('勤務の見込み');
     expect(l).not.toContain('案を比べる');
     expect(l).not.toContain('条件の重み');
   });
   it('月次予定・現場共有：12＋管理者設定', () => {
     const l = labels(applyTemplate('monthlyField'));
     expect(l).toHaveLength(13);
-    expect(l).not.toContain('稼働の見込み');
+    expect(l).not.toContain('勤務の見込み');
   });
   it('項目の無くなったグループは見出しごと出さない', () => {
-    expect(titles({ sudden: false })).not.toContain('当日の対応');
-    expect(titles({ vacancy: false })).not.toContain('問い合わせ');
-    // AI の考え方は訪問の種類（土台）が残る
-    expect(titles({ rules: false })).toContain('AI の考え方');
-    expect(titles(applyTemplate('basic'))).toEqual([
+    // 当日・問い合わせは欠勤・キャンセルと空き状況の両方を切ったときだけ消える
+    expect(titles({ sudden: false })).toContain('当日・問い合わせ');
+    expect(titles({ vacancy: false })).toContain('当日・問い合わせ');
+    expect(titles({ sudden: false, vacancy: false })).not.toContain('当日・問い合わせ');
+    // AI の条件は条件の重みと相性の両方を切ったときだけ消える
+    expect(titles({ rules: false })).toContain('AI の条件');
+    expect(titles({ compat: false })).toContain('AI の条件');
+    expect(titles({ rules: false, compat: false })).not.toContain('AI の条件');
+    // 設定は土台（訪問の種類・管理者設定・データ）があるので消えない
+    expect(titles({ rules: false, compat: false, sudden: false, vacancy: false })).toEqual([
       null,
-      '予定を組む',
-      '当日の対応',
-      '問い合わせ',
-      '人の情報',
-      'AI の考え方',
-      '管理者',
+      '予定',
+      '人',
+      '設定',
     ]);
+    expect(titles(applyTemplate('basic'))).toEqual([null, '予定', '当日・問い合わせ', '人', 'AI の条件', '設定']);
   });
   it('下のタブは空き状況を切ると4つ', () => {
     expect(bottomTabs(menuSections(terms, TODAY, {})).map((t) => t.to)).toEqual([
@@ -421,7 +429,7 @@ describe('切った機能の入口を出さない（PRD D213）', () => {
   });
   it('月の要対応の行き先：切った機能なら、その日の日の画面', () => {
     const at = (kind: Attention['kind']): Attention => ({ date: TODAY, kind, count: 1, names: [], staffIds: ['s1'] });
-    const day = { to: '/plan', date: TODAY, note: '（日の画面で開く）' };
+    const day = { to: '/plan', date: TODAY, note: '（日の予定で開く）' };
     expect(attentionTarget(at('overSpan'), { workload: false })).toEqual(day);
     expect(attentionTarget(at('absentLeft'), { sudden: false })).toEqual(day);
     expect(attentionTarget(at('overSpan'), {}).to).toBe('/workload?ym=2026-10&staff=s1');

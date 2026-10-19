@@ -56,6 +56,9 @@ import {
   type NavIcon,
   type NavSection,
   navTitleParts,
+  tabClick,
+  tabHref,
+  tabLabel,
 } from '../lib/nav';
 import { showsRebuildBand } from '../lib/rebuildBand';
 import AvailabilityPage from '../pages/AvailabilityPage';
@@ -127,7 +130,7 @@ export default function App() {
             <Route element={<AdminShell />}>
               {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
               <Route path="/schedule" element={<Navigate to="/plan" replace />} />
-              {/* ホーム「今日やること」（PRD D141。ADR-0025）：起動したとき（#/・知らない URL）の画面 */}
+              {/* ホーム（見出しの下に「今日やること」。PRD D141・D230。ADR-0025・0034）：起動したとき（#/・知らない URL）の画面 */}
               <Route path="/home" element={<HomePage />} />
               <Route path="/plan" element={<PlanPage />} />
               <Route path="/month" element={<MonthPage />} />
@@ -275,8 +278,8 @@ function AdminShell() {
       root.removeProperty('--header-h');
     };
   }, []);
-  // メニューの並び（PRD D178〜D180。ADR-0027）：ホーム／予定を組む／当日の対応／問い合わせ／人の情報／AI の考え方／データ。
-  // ルートの URL は変えない。当日の対応の「欠勤・キャンセル」は今日の日の画面の欄を開く操作（今の画面の印は付けない）
+  // メニューの並び（PRD D178〜D180・D230〜D232。ADR-0027・0034）：ホーム／予定／当日・問い合わせ／人／AI の条件／設定。
+  // ルートの URL は変えない。当日・問い合わせの「欠勤・キャンセルを登録」は今日の日の予定の欄を開く操作（今の画面の印は付けない）
   const today = jstDate(Date.now());
   // 切った機能の項目は出さない（PRD D213）。下のタブ・上の帯の名前・パレットの画面もここから引く
   const groups = useMemo(() => menuSections(terms, today, features), [terms, today, features]);
@@ -385,26 +388,30 @@ function AdminShell() {
               }
             />
           </main>
-          {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・日・空き状況。PRD D134・D144。印刷では出さない） */}
+          {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・今日・空き状況。PRD D134・D144・D232。印刷では出さない） */}
           <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
-            {bottomTabs(groups).map(({ to, label, icon }) => {
+            {bottomTabs(groups).map((item) => {
+              const { to, icon } = item;
               const Icon = NAV_ICONS[icon];
-              // 比較はタブに無いので「日」（PRD D134・D180）
+              // 比較はタブに無いので「今日」（PRD D134・D180・D232）
               const on = isActiveTab(to, pathname);
+              // 「今日」は今日の日の予定（?date=今日）。日の予定を開いていても今日を選ぶ（履歴は増やさない）
+              const click = tabClick(to, pathname);
               return (
                 <Link
                   key={to}
-                  to={to}
+                  to={tabHref(to, today)}
+                  replace={click === 'replace'}
                   className={on ? 'bottom-tab active' : 'bottom-tab'}
                   aria-current={on ? 'page' : undefined}
                   onClick={(e) => {
                     // 今の画面のタブは何もしない（押し直して URL のクエリ＝画面の状態を消さない）
-                    if (to === pathname) e.preventDefault();
+                    if (click === 'stay') e.preventDefault();
                   }}
                   data-testid="bottom-tab"
                 >
                   <Icon size={20} strokeWidth={2.1} aria-hidden="true" />
-                  <span>{label}</span>
+                  <span>{tabLabel(item)}</span>
                 </Link>
               );
             })}

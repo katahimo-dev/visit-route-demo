@@ -99,8 +99,8 @@ export function rebuildAction(s: RebuildSummary, basis: string): RebuildAction |
       href: `/month?ym=${ym}&do=stale`,
       label: '作り直す',
       note:
-        `${Number(ym.slice(5, 7))}月の月の画面で、条件が変わった未確定の日（${inMonth}日）を作り直す欄を開きます。${rebuildWith(basis)}` +
-        (months.size > 1 ? '。ほかの月は、その月の画面で作り直します' : '') +
+        `${Number(ym.slice(5, 7))}月の「月の予定」で、条件が変わった未確定の日（${inMonth}日）を作り直す欄を開きます。${rebuildWith(basis)}` +
+        (months.size > 1 ? '。ほかの月は、それぞれの月の予定で作り直します' : '') +
         (s.confirmed.length > 0 ? '。確定済みの日は作り直しません' : ''),
     };
   }
@@ -108,7 +108,7 @@ export function rebuildAction(s: RebuildSummary, basis: string): RebuildAction |
   return {
     href: `/month?ym=${ym}&do=attention`,
     label: '要対応を見る',
-    note: `確定済みの日は作り直しません。${Number(ym.slice(5, 7))}月の月の画面の要対応を開きます（日の画面で確かめてください）`,
+    note: `確定済みの日は作り直しません。${Number(ym.slice(5, 7))}月の「月の予定」の要対応を開きます（日の予定で確かめてください）`,
   };
 }
 
@@ -117,7 +117,7 @@ export function rebuildAction(s: RebuildSummary, basis: string): RebuildAction |
  * いまの条件は日の画面の「AI にもう一度作らせる」だけが使い、月のまとめて作る・自動の案・作り直しは基準のプリセットで作る
  */
 export function customRulesText(basis: string): string {
-  return `いまの条件は日の画面の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「${basis}」で作ります`;
+  return `いまの条件は日の予定の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「${basis}」で作ります`;
 }
 
 /** ［今日の案をいまの条件で作り直す］の行き先（日の画面の ?do=recreate。PRD D166） */

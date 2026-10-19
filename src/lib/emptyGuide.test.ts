@@ -16,7 +16,7 @@ describe('periodEmptyGuide', () => {
     expect(g?.why).not.toContain('またがる');
     expect(g?.actions).toEqual([
       { kind: 'batch', ym: '2026-10', label: '10月の案をまとめて作る', primary: true },
-      { kind: 'day', date: '2026-10-22', label: '10/22の案を日の画面で作る', primary: false },
+      { kind: 'day', date: '2026-10-22', label: '10/22の案を日の予定で作る', primary: false },
     ]);
   });
   it('月をまたぐ週：今日以降の最初の訪問の日の月', () => {
@@ -44,7 +44,7 @@ describe('periodEmptyGuide', () => {
   });
   it('訪問の日がみな過ぎた：日の画面だけ（まとめて作るは出さない）', () => {
     const g = periodEmptyGuide({ ...base, today: '2026-10-30', visitDays: ['2026-10-20'] });
-    expect(g?.actions).toEqual([{ kind: 'day', date: '2026-10-20', label: '10/20を日の画面で開く', primary: true }]);
+    expect(g?.actions).toEqual([{ kind: 'day', date: '2026-10-20', label: '10/20を日の予定で開く', primary: true }]);
     expect(g?.why).toContain('過ぎています');
   });
   it('訪問が無い：訪問と案を作る（月の画面）と、日の画面で訪問を足す', () => {
@@ -52,13 +52,13 @@ describe('periodEmptyGuide', () => {
     expect(g?.title).toBe('この週には訪問がありません');
     expect(g?.actions).toEqual([
       { kind: 'batch', ym: '2026-10', label: '10月の訪問と案を作る', primary: true },
-      { kind: 'day', date: '2026-10-21', label: '日の画面で訪問を足す', primary: false },
+      { kind: 'day', date: '2026-10-21', label: '日の予定で訪問を足す', primary: false },
     ]);
   });
   it('訪問が無い過ぎた期間：日の画面だけ（主ボタン）', () => {
     const g = periodEmptyGuide({ ...base, period: 'この月', today: '2026-11-05' });
     expect(g?.title).toBe('この月には訪問がありません');
-    expect(g?.actions).toEqual([{ kind: 'day', date: '2026-10-19', label: '日の画面で訪問を足す', primary: true }]);
+    expect(g?.actions).toEqual([{ kind: 'day', date: '2026-10-19', label: '日の予定で訪問を足す', primary: true }]);
   });
 });
 
@@ -71,7 +71,7 @@ describe('compareEmptyGuide', () => {
   it('訪問があり案が無い：日の画面で案を作る（主）と、今日以降ならまとめて作る', () => {
     const g = compareEmptyGuide({ date: '2026-10-22', today: '2026-10-21', visits: 5 });
     expect(g.actions).toEqual([
-      { kind: 'day', date: '2026-10-22', label: '日の画面で案を作る', primary: true },
+      { kind: 'day', date: '2026-10-22', label: '日の予定で案を作る', primary: true },
       { kind: 'batch', ym: '2026-10', label: '10月の案をまとめて作る', primary: false },
     ]);
     expect(compareEmptyGuide({ date: '2026-10-20', today: '2026-10-21', visits: 5 }).actions).toHaveLength(1);

@@ -22,7 +22,7 @@ PoC本体（`katahimo-dev/visit-route-poc`）の管理者画面（予定・手�
 - 勤務シフトの自動作成、日をまたいだ最適化（月まとめ作成は1日ずつ。ADR-0012）、定期パターンの日付指定・祝日（ADR-0013）
 - 休みでの自動の振り替え、確定した割当の自動の作り直し、決まりごとを割当の条件に使うこと、案内文の送信（ADR-0013）
 - 希望休の申請・承認・日数の確認と、それを考えたシフト作成・自動の振り直し、担当を限る期間・「なるべく」、印刷の書式設定・PDF（ADR-0014）
-- 実績・打刻・請求・LINE・集金。稼働の見込みは予定からの見込み。拘束の上限を AI案の条件にすること、退職者の訪問の自動の作り直し、段階ごとの期日管理、紹介元とのやりとりの記録、当日キャンセルの請求（ADR-0015）
+- 実績・打刻・請求・LINE・集金。勤務の見込みは予定からの見込み。拘束の上限を AI案の条件にすること、退職者の訪問の自動の作り直し、段階ごとの期日管理、紹介元とのやりとりの記録、当日キャンセルの請求（ADR-0015）
 - 欠勤の受付・通知の自動送信・複数日の一括入力・有給の管理、欠勤を入れただけで振り直すこと、中止・日時変更の自動提案（ADR-0011）
 - 名簿で人を消すこと（総入れ替えも終了・休止まで）、ほかのシートだけの入出力、読み込みの取り消し（ADR-0020）
 - PoC本体へのコードの書き戻し。共通の純粋関数は**写して**使い、同期しない（ADR-0001）
@@ -341,7 +341,7 @@ flowchart LR
 - 提供するAPI：`lib/features.ts` の `FEATURES`・`FEATURE_GROUPS`・`isOn`（依存先が切なら切）・`isSwitchOn`・`featureOfLocation(pathname, search)`・`featureOfHref`・`isHrefOn`（土台は null。パスは小文字・末尾の `/` を落とす）・`TEMPLATES`（`basic` 基本／`laborContract` 労務・契約管理／`monthlyField` 月次予定・現場共有／`all` すべて）・`applyTemplate`・`matchTemplate`（違えば `custom`）・`templateDiff`・`turnOffImpact(data, id, today)`・`calcFeaturesOf`・`sameCalcFeatures`、`useFeature(id)`、部品 `Feature`
 - 表の `doParams`：`sudden` は `/plan?do=absence`、`rules` は `/plan?do=recreate` も
 - `turnOffImpact`（D215）は計算に効くものだけ：相性は利用中の〈利用者さん〉×休止でない〈スタッフ〉、担当を限るは限った人に休止でない人がいる利用中の〈利用者さん〉、休み・希望休・欠勤は今日以降、空き状況は仮押さえの〈利用者さん〉
-- 出し分け：`menuSections(terms, today, features)`、`app/App.tsx` のルート（切った URL は `#/home` へ移し、知らせと `#/settings` へのリンク）、`lib/commandPalette`・`lib/home`・`lib/tour`・`lib/links`（切なら null）、画面の欄・ボタン。`rules` が切なら日の画面は `planRulesOf(data, false)`（点数の基準のプリセットを当てた条件）で作る。事実の表示（休みの人に N・振り直しの差・連絡の一覧）は残し、入力・操作の入口だけ隠す
+- 出し分け：`menuSections(terms, today, features)`、`app/App.tsx` のルート（切った URL は `#/home` へ移し、知らせと `#/settings` へのリンク）、`lib/commandPalette`・`lib/home`・`lib/tour`・`lib/links`（切なら null）、画面の欄・ボタン。`rules` が切なら日の予定は `planRulesOf(data, false)`（点数の基準のプリセットを当てた条件）で作る。事実の表示（休みの人に N・振り直しの差・連絡の一覧）は残し、入力・操作の入口だけ隠す
 - 管理者設定 `pages/SettingsPage.tsx`（`#/settings`。だれでも開ける）：ひな形の4つ（当てるときは `templateDiff` の確認）とグループごとのスイッチ（role="switch"、その場で保存。データがあれば `turnOffImpact` の確認）
 - 依存するもの：contracts、store（読むだけ）
 - 配置：`src/lib/features.ts`・`src/lib/useFeature.ts`・`src/components/Feature.tsx`・`src/pages/SettingsPage.tsx`
@@ -361,13 +361,13 @@ flowchart LR
   - 画面共通の部品（右の欄・名前の詳細・用語・ツアー・作り直しの帯・リンク・メール・道順）：[design/pages-common.md](design/pages-common.md)
   - 3段の時間帯のバー・ひと目で分かる表示：[design/pages-bars.md](design/pages-bars.md)
   - ホーム：[design/pages-home.md](design/pages-home.md)
-  - 日の画面：[design/pages-plan.md](design/pages-plan.md)／欠勤・キャンセル・振り直し・連絡：[design/pages-plan-absence.md](design/pages-plan-absence.md)
+  - 日の予定：[design/pages-plan.md](design/pages-plan.md)／欠勤・キャンセル・振り直し・連絡：[design/pages-plan-absence.md](design/pages-plan-absence.md)
   - 月（まとめて作る・希望休・印刷）：[design/pages-month.md](design/pages-month.md)
   - 週：[design/pages-week.md](design/pages-week.md)
   - 空き状況：[design/pages-vacancy.md](design/pages-vacancy.md)
   - 〈利用者さん〉（閲覧・編集・住所・絞り込み）：[design/pages-clients.md](design/pages-clients.md)
   - 相性：[design/pages-compat.md](design/pages-compat.md)
-  - 〈スタッフ〉・稼働時間・稼働の見込み・スマホ画面：[design/pages-staff.md](design/pages-staff.md)
+  - 〈スタッフ〉・勤務時間（シフト）・勤務の見込み・スマホ画面：[design/pages-staff.md](design/pages-staff.md)
   - 条件・プリセット・種類・項目・比較：[design/pages-rules.md](design/pages-rules.md)
   - データ・管理者設定：[design/pages-data.md](design/pages-data.md)
 - 完了の条件：
@@ -588,7 +588,7 @@ vacancyNotice(result, input)
 - 切ってもデータの形・検査・repair は変えない。`clientStage` が切なら段階は「利用中／終了」で選ばせ、ほかの段階の人はそのまま
 - エラーは無い（検査で落ちない）
 
-### 担当を限る・希望休・印刷・最終勤務日・稼働の見込み（`src/lib/`。PRD D68〜D74。ADR-0014・ADR-0015）
+### 担当を限る・希望休・印刷・最終勤務日・勤務の見込み（`src/lib/`。PRD D68〜D74。ADR-0014・ADR-0015）
 
 ```ts
 // lib/requestedOff
@@ -614,7 +614,7 @@ applyOffboard(...); unlimitedBy(data, staffId, choices); defaultChoice
 - `offboardScope` の候補：見本の期間（`from` から28日。未展開の回も入れる）の訪問ごとに、担当を限るを外した問題とその日の案（`baseOf`。その人の列は除く）に `fitsOf` で入る人を数える。並びは入る回の多い順 → 受け持ちの少ない順 → 名前。候補は `from` に勤める利用中の人（本人を除く）
 - `applyOffboard`：`from` から受け持ちを移す。実際のいつもの担当がその人のパターンは、`from` より前から続くなら `splitPattern` で分け（前はその人・後ろは代わり）、`from` 以降に始まるならその場で、前に終わるならその人と書く。〈利用者さん〉のいつもの担当は代わり、担当できる人は代わりを足す（null ならその人を外す）。前の日のいつもの担当・案・確定した割当は変えない
 - 分けたパターンの回（元の日が `from` 以降。`edited` も）は中身のまま ID を `元の日_新しいパターンID` に付け替え、確定した割当・今の案（routes・unassigned・generated・pins・reassign）・記録も置き換える。前から後へずらした回・ID が重なる回は残す（`renamed`）
-- 稼働の見込み：画面・Excel は確定した割当を先に、月のマスと日の画面は今の案を先に。確定した割当は開始（早）の順、時刻は lenient。拘束は分に丸めてから上限と比べる
+- 勤務の見込み：画面・Excel は確定した割当を先に、月のマスと日の予定は今の案を先に。確定した割当は開始（早）の順、時刻は lenient。拘束は分に丸めてから上限と比べる
 
 ### 郵便番号と住所の検索（`src/lib/geocode.ts`・`placeAll.ts`・`postalCode.ts`・`addressLookup.ts`。PRD D86〜D90・D118〜D121。ADR-0016）
 
@@ -795,12 +795,12 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 退職・拘束・段階 | 最終勤務日＋一括振り直し、上限は注意だけ、段階が正 | 1か所で勤務なしになり、影響が狭い | 0015 |
 | 住所から位置 | 押したときだけ外部の検索（郵便番号は fetch、だめなら JSONP） | 同梱は重く、送るのは押したときの値だけ | 0016 |
 | メール・道順 | `mailto:` と Maps URLs のリンクだけ | キー・サーバーが要らず、外へ送らない | 0017・0018 |
-| メニュー・パレット | 用途ごとの並び（人の情報の中は人ごと）と自前のパレット | 仕事の順で探せ、行き先は今ある URL だけ | 0019・0027 |
+| メニュー・パレット | 用途ごとの5つのグループ（予定／当日・問い合わせ／人／AI の条件／設定）、メニューの名前＝画面の見出しと自前のパレット | 仕事の順で探せ、名前が1つ、行き先は今ある URL だけ | 0019・0027・0034 |
 | 名簿 | 1シートを ID か名前で突き合わせ、総入れ替えは終了・休止 | 案・記録を消さずに人を直せる | 0020 |
 | 絞り込み・詳細・閲覧 | 共通の `ClientFilter`、吹き出し、まず閲覧 | 画面ごとの作りがそろい、見るだけのときに書き換えない | 0021〜0023 |
-| スマホ・ホーム・確認 | 引き出し＋下のタブ、「今日やること」、`useConfirm` | よく使う画面が1手、次の一手が分かる、扱いが1か所 | 0024〜0026 |
+| スマホ・ホーム・確認 | 引き出し＋下のタブ（「今日」は今日の日の予定）、ホームの「今日やること」、`useConfirm` | よく使う画面が1手、次の一手が分かる、扱いが1か所 | 0024〜0026 |
 | 機能の入り切り | 機能ごと（20）を `org.features`、ひな形は一度書き込む、好み・決まりは計算からも外す | 欄まで切れ隠れた条件が残らない。デモなので鍵なし | 0028 |
-| 初期の案・まとめて確定 | 起動で7日分を同期で解く（反復を減らす）、一度も確定していない・要対応に出ない日だけ1度に確定（日の画面と同じ書き方） | 初めから中身が見え決定的。確定の手数が1回になり、要対応の日・確定し直す日は残る | 0031 |
+| 初期の案・まとめて確定 | 起動で7日分を同期で解く（反復を減らす）、一度も確定していない・要対応に出ない日だけ1度に確定（日の予定と同じ書き方） | 初めから中身が見え決定的。確定の手数が1回になり、要対応の日・確定し直す日は残る | 0031 |
 
 ## 8. 未決事項
 | 項目 | いつ・何をもとに決めるか |

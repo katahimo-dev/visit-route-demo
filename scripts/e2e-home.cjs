@@ -70,13 +70,17 @@ async function tasks(page) {
 async function start(page) {
   await open(page, '/');
   check(hashOf(page) === '#/home', '起動（#/）でホームへ', hashOf(page));
-  check((await page.locator('h1').innerText()) === '今日やること', '見出し「今日やること」');
+  check((await page.locator('h1').innerText()) === 'ホーム', '見出し「ホーム」（メニューの名前と同じ。PRD D230）');
+  check(
+    (await page.locator('.page-lead').first().innerText()).startsWith('今日やること'),
+    '見出しの下の文は「今日やること」から',
+  );
   await open(page, '/nowhere');
   check(hashOf(page) === '#/home', '知らない URL もホームへ', hashOf(page));
   await open(page, '/staff?id=s1', '[data-testid="person-view"]');
   check(hashOf(page).startsWith('#/staff'), 'ほかの画面の URL（?id=）はそのまま（閲覧の欄が開く）', hashOf(page));
   await open(page, '/schedule', '.app-header');
-  check(hashOf(page).startsWith('#/plan'), '古い #/schedule は今までどおり日の画面へ', hashOf(page));
+  check(hashOf(page).startsWith('#/plan'), '古い #/schedule は今までどおり日の予定へ', hashOf(page));
 }
 
 /** 保存したデータを消して初期データから始める */
@@ -138,7 +142,7 @@ async function firstState(page) {
   await panel.waitFor({ timeout: 10000 });
   check(true, 'まとめて作るの欄が開く');
   await page.waitForTimeout(300);
-  check(hashOf(page) === `#/month?ym=${YM}`, '月の画面：?ym= の月、?do= は消える', hashOf(page));
+  check(hashOf(page) === `#/month?ym=${YM}`, '月の予定：?ym= の月、?do= は消える', hashOf(page));
   await page.goBack();
   await page.waitForTimeout(500);
   check(hashOf(page) === '#/home', '戻るでホームへ（?do= を残さないので欄を繰り返し開かない）', hashOf(page));
@@ -149,7 +153,7 @@ async function firstState(page) {
   await page.waitForURL(/#\/plan/);
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
   const picked = await page.locator('.date-switch select').inputValue();
-  check(picked === TODAY, '今日のカード：日の画面で今日を選んでいる', picked);
+  check(picked === TODAY, '今日のカード：日の予定で今日を選んでいる', picked);
   // 案ができたらホームの今日のカードは「未確定」。確定していない日は案の無い日も含めて数える（月の③と同じ。PR #36 のレビュー）
   await open(page, '/home');
   const list2 = await tasks(page);
@@ -189,7 +193,7 @@ async function firstState(page) {
     await page.locator('[data-testid="progress-band"][data-ym]').waitFor({ timeout: 30000 });
     const picked = await page.locator('.date-switch select').inputValue();
     const band = Number(await page.getByTestId('band-confirm').getAttribute('data-unconfirmed'));
-    check(picked === TODAY && band === 1, '確定していない日が1日だけ：日の画面のその日へ（帯も1日）', { picked, band });
+    check(picked === TODAY && band === 1, '確定していない日が1日だけ：日の予定のその日へ（帯も1日）', { picked, band });
   }
   // 確定すると今日のカードは「確定済み」、確定していない日は1日減る
   await page.goto(`${BASE}#/plan`);
@@ -343,7 +347,7 @@ async function seedPlans(page) {
     );
     check(
       changed === null ||
-        (body.includes('前に確定した割当と違う 1日も残します（日の画面で確定し直します）。') &&
+        (body.includes('前に確定した割当と違う 1日も残します（日の予定で確定し直します）。') &&
           !body.includes('置き換えます')),
       'まとめて確定の確認：未確定の変更ありの日は残す（置き換えない）',
       { changed, body },
@@ -427,7 +431,7 @@ async function monthDo(page) {
     hashOf(page) === `#/month?ym=${YM}` &&
       (await page.locator('.month-aside-title').first().innerText()).includes('要対応') &&
       (await page.evaluate(() => document.activeElement?.dataset.testid)) === 'month-aside',
-    '月の画面 ?do=attention：右の欄の要対応へ（フォーカス）、?do= は消える',
+    '月の予定 ?do=attention：右の欄の要対応へ（フォーカス）、?do= は消える',
     hashOf(page),
   );
   await open(page, `/month?ym=${YM}&staff=s1&do=unconfirmed`, '[data-testid="month-aside"]');
@@ -435,7 +439,7 @@ async function monthDo(page) {
   check(
     hashOf(page) === `#/month?ym=${YM}` &&
       (await page.locator('.month-aside-title').first().innerText()).includes('確定していない日'),
-    '月の画面 ?do=unconfirmed：全体の表示にして確定していない日へ',
+    '月の予定 ?do=unconfirmed：全体の表示にして確定していない日へ',
     hashOf(page),
   );
 }
@@ -445,7 +449,7 @@ async function anytime(page) {
   await page.getByTestId('home-absence').click();
   await page.waitForURL(/#\/plan/);
   await page.locator('.date-switch select').waitFor();
-  check((await page.locator('.date-switch select').inputValue()) === TODAY, '欠勤・キャンセル → 今日の日の画面');
+  check((await page.locator('.date-switch select').inputValue()) === TODAY, '欠勤・キャンセル → 今日の日の予定');
   await open(page, '/home');
   await page.getByTestId('home-vacancy').click();
   await page.waitForURL(/#\/vacancy/);
@@ -506,7 +510,7 @@ async function mobile(page) {
   check((await page.getByTestId('screen-name').innerText()) === 'ホーム', 'スマホ：上の帯の名前「ホーム」');
   const labels = await page.getByTestId('bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(labels) === JSON.stringify(['ホーム', '月', '週', '日', '空き状況']),
+    JSON.stringify(labels) === JSON.stringify(['ホーム', '月', '週', '今日', '空き状況']),
     'スマホ：下のタブの先頭に「ホーム」',
     labels,
   );

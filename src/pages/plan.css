@@ -748,15 +748,19 @@ p.plan-band.error {
   font-weight: 700;
 }
 
-/* 急な欠勤（ADR-0011）：列の見出しの下の小さなボタン・差の欄・変わらない人の列・受けられる人 */
+/* 急な欠勤（ADR-0011）：列の見出しの下の小さなボタン「この人の欠勤を登録」（PRD D231）・差の欄・変わらない人の列・受けられる人。
+   狭い列では語の途中で切らず「この人の／欠勤を登録」で折り返す（keep-all と wbr） */
 .absence-btn {
   margin-left: auto;
   padding: 1px 8px;
+  word-break: keep-all;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--card);
   font: inherit;
   font-size: 0.8rem;
+  /* font: inherit の後ろに置く（前に置くと上書きされる） */
+  line-height: 1.35;
   color: var(--sub);
   cursor: pointer;
 }

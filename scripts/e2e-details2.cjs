@@ -290,7 +290,7 @@ async function day(page) {
   check(n >= 2, '上限を超える帯：2人以上', n);
   check(
     (await links.count()) === n && (await band.locator('button.btn').count()) === 0,
-    '上限を超える帯：2人以上なら名前ごとに稼働の見込みのリンク（帯のボタンは出さない）',
+    '上限を超える帯：2人以上なら名前ごとに勤務の見込みのリンク（帯のボタンは出さない）',
     { links: await links.count() },
   );
   const ids = [];
@@ -298,11 +298,11 @@ async function day(page) {
   const hrefs = await links.evaluateAll((els) => els.map((el) => el.getAttribute('href')));
   check(
     ids.every((id, i) => hrefs[i]?.endsWith(`/workload?ym=${TODAY.slice(0, 7)}&staff=${encodeURIComponent(id)}`)),
-    '上限を超える帯：リンクの行き先はその人の稼働の見込み',
+    '上限を超える帯：リンクの行き先はその人の勤務の見込み',
     hrefs,
   );
   check(
-    (await links.first().getAttribute('aria-label')).endsWith('さんの稼働の見込み'),
+    (await links.first().getAttribute('aria-label')).endsWith('さんの勤務の見込み'),
     '上限を超える帯：リンクの読み上げに名前',
   );
   // 印刷：i とリンクを出さず、名前は文字のまま
@@ -311,7 +311,7 @@ async function day(page) {
     !(await links.first().isVisible()) &&
       !(await page.locator('.route-col-none [data-testid="unplaced-info"]').first().isVisible()) &&
       (await names.first().isVisible()),
-    '印刷：i と稼働の見込みのリンクを出さず、名前は出す',
+    '印刷：i と勤務の見込みのリンクを出さず、名前は出す',
   );
   await page.emulateMedia({ media: 'screen' });
   await page.getByTestId('band-over-span').screenshot({ path: path.join(OUT_DIR, 'day-over-span.png') });
@@ -320,7 +320,7 @@ async function day(page) {
   await settle(page, 600);
   check(
     urlOf(page).includes(`#/workload?ym=${TODAY.slice(0, 7)}&staff=${ids[1]}`),
-    '上限を超える帯：2人目のリンクでその人の稼働の見込み',
+    '上限を超える帯：2人目のリンクでその人の勤務の見込み',
     urlOf(page),
   );
   await openPlan(page);
@@ -334,7 +334,7 @@ async function day(page) {
   // 390px
   await page.setViewportSize({ width: 390, height: 844 });
   await openPlan(page);
-  await fitsNarrow(page, '日の画面の帯', '[data-testid="band-over-span"], [data-testid="band-leave"]');
+  await fitsNarrow(page, '日の予定の帯', '[data-testid="band-over-span"], [data-testid="band-leave"]');
   await page.getByTestId('band-over-span').screenshot({ path: path.join(OUT_DIR, 'day-390-over-span.png') });
   await page.getByTestId('band-leave').screenshot({ path: path.join(OUT_DIR, 'day-390-leave.png') });
 }
@@ -362,10 +362,10 @@ async function overOne(page) {
   await openPlan(page);
   const band = page.getByTestId('band-over-span');
   const name = band.getByTestId('over-span-name');
-  const btn = band.locator('button.btn', { hasText: '稼働の見込み' });
+  const btn = band.locator('button.btn', { hasText: '勤務の見込み' });
   check(
     (await name.count()) === 1 && (await band.getByTestId('over-span-link').count()) === 0 && (await btn.count()) === 1,
-    '上限を超える帯：1人なら名前のボタンと今までの「稼働の見込み」ボタン（リンクは出さない）',
+    '上限を超える帯：1人なら名前のボタンと今までの「勤務の見込み」ボタン（リンクは出さない）',
     { only, n: await name.count() },
   );
   const id = await name.getAttribute('data-id');
@@ -374,7 +374,7 @@ async function overOne(page) {
   await settle(page, 600);
   check(
     urlOf(page).includes(`#/workload?ym=${TODAY.slice(0, 7)}&staff=${id}`),
-    '上限を超える帯：1人なら「稼働の見込み」でその人',
+    '上限を超える帯：1人なら「勤務の見込み」でその人',
     urlOf(page),
   );
   await openPlan(page);

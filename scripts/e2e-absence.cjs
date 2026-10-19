@@ -1,5 +1,5 @@
 // 急な欠勤・当日キャンセルを目立つ入口から登録して振り直すこと（PRD D167〜D172。ADR-0025 追記・ADR-0011・ADR-0015）を本物のブラウザで確かめる：
-// ホームの「急な欠勤・キャンセルを登録」で今日の日の画面の「欠勤・キャンセル」の欄が1段目で開き `?do=`・`?date=` が URL から消える、
+// ホームの「欠勤・キャンセルを登録」で今日の日の予定の「欠勤・キャンセル」の欄が1段目で開き `?do=`・`?date=` が URL から消える、
 // 段階の表示（aria-current="step"）と段階ごとのフォーカス（段階の見出し）、〈スタッフ〉が休む → 人と時間帯 → 影響（入らなくなる訪問 N件）→
 // 登録して振り直す（案A）→ 4段目のまとめと案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→ 確定済み、
 // 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目）、
@@ -99,7 +99,7 @@ async function fromHome(page) {
   await panel(page).waitFor({ timeout: 20000 });
   await settle(page, 300);
   check(hashOf(page) === '#/plan', '開いたら URL から ?do=・?date= が消える', hashOf(page));
-  check((await page.locator('.date-switch select').inputValue()) === TODAY, '今日の日の画面');
+  check((await page.locator('.date-switch select').inputValue()) === TODAY, '今日の日の予定');
   check((await stepOf(page)) === '1', '1段目（何が起きたか）で開く');
   check(
     (await page.locator('.drawer').getAttribute('role')) === 'dialog' &&
@@ -474,6 +474,43 @@ async function mobile(page) {
   await page.emulateMedia({ media: 'screen' });
 }
 
+/**
+ * 列の見出しの入口の呼び名（PRD D231）：欠勤の無い人は「この人の欠勤を登録」。
+ * 390px（順番）では1行、1440px（時間軸の狭い列）では2行まで（「この人の／欠勤を登録」で折り返す）
+ */
+async function headerLabel(page) {
+  /** 欠勤の無い人の列の見出しのボタン：文字と行の数（内容の高さ ÷ 行の高さ）・列に収まるか */
+  const measure = () =>
+    page.locator('.absence-btn').evaluateAll((els) =>
+      els
+        .filter((el) => el.textContent === 'この人の欠勤を登録')
+        .map((el) => {
+          const cs = getComputedStyle(el);
+          const inner = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+          const r = el.getBoundingClientRect();
+          const col = el.closest('.route-col')?.getBoundingClientRect();
+          return {
+            lines: Math.round(inner / parseFloat(cs.lineHeight)),
+            fits: !col || (r.left >= col.left - 1 && r.right <= col.right + 1),
+          };
+        }),
+    );
+  for (const [w, h, max] of [
+    [390, 844, 1],
+    [1440, 1000, 2],
+  ]) {
+    await page.setViewportSize({ width: w, height: h });
+    await openPlan(page);
+    const got = await measure();
+    check(
+      got.length > 0 && got.every((x) => x.lines >= 1 && x.lines <= max && x.fits),
+      `${w}px：列の見出しは「この人の欠勤を登録」で${max === 1 ? '1行' : '2行まで'}・列に収まる`,
+      got.slice(0, 3),
+    );
+  }
+  await page.setViewportSize({ width: 1400, height: 1000 });
+}
+
 run(async () => {
   const b = await launch();
   const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
@@ -502,6 +539,7 @@ run(async () => {
     ['from-header', () => (best ? fromHeader(page, best) : check(false, 'from-header：前の段が通らない'))],
     ['no-plan', () => noPlanDay(page)],
     ['mobile', () => mobile(page)],
+    ['header-label', () => headerLabel(page)],
   ]) {
     try {
       await fn();

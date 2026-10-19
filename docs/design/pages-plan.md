@@ -1,9 +1,9 @@
-# 日の画面（予定と AI案）
+# 日の予定（予定と AI案）
 
 > この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`、`src/components/Toast.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224。
 > 欠勤・キャンセルの欄と振り直しは [pages-plan-absence.md](pages-plan-absence.md)、バーの塗りは [pages-bars.md](pages-bars.md)。
 
-### 日の画面（`#/plan`。ADR-0009）
+### 日の予定（`#/plan`。ADR-0009）
 
 その日の訪問と AI案・手直し（ドラッグ・「担当を変える ▾」）・固定・作り直し・「この割当で確定」を1画面で扱う。古いリンクの `#/schedule` は `#/plan` へ移す。
 
@@ -25,7 +25,7 @@
 3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`。title「点数の基準：〈名前〉」）・点数の理由（`plan-reason`）・「詳しく」
 4. 担当ごとの1日（`DayLines`。下）
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
-6. 操作の行（`plan-toolbar`）：「欠勤・キャンセル」（`sudden-open`）・「訪問を追加」・「案を変える ▾」・「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・表示［時間軸｜順番｜一覧］・「メールで送る」・計算中の進み具合と止める
+6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」・「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・表示［時間軸｜順番｜一覧］・「メールで送る」・計算中の進み具合と止める
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
 8. 本体（時間軸か順番か一覧）と地図：1280px 以上で横に並べ（地図は上に貼りつく）、見出しの「地図を畳む」で畳む。狭い画面は `MapDock`
 
@@ -48,7 +48,7 @@
   - evaluate の `ruleLowerBounds(problem)`：normalize の割当の下限を条件ごとに分けたもの（各訪問で割当費用が最小の担当の理由の点の和。和は lowerAssign と同じ）
   - 次の一手 `nextStep`（PRD D229。`NEXT_STEP_TEXT`）：移動が長め＝「「移動を短く」で作る」（`shortTravel`）、入らない訪問＝「受けられる人を見る」（`candidates`）、相性△・×・◎の取り逃し＝「相性の表を開く」（`compat`）。ほか（必須の違反・待ち・偏り・ほかの担当の条件）は無し
 - `lib/useDayModel.ts` は `scoreRules`（点数の基準の条件。名前と重みを理由の文に使う）を返す
-- `pages/planParts.tsx` の `ScoreReasonText`：↘ と短い文。読み上げの前置き「点を下げているいちばんの理由：」は sr-only。使う所は日の画面の今の案の帯（`plan-reason`）と比較の画面（`compare-reason`）
+- `pages/planParts.tsx` の `ScoreReasonText`：↘ と短い文。読み上げの前置き「点を下げているいちばんの理由：」は sr-only。使う所は日の予定の今の案の帯（`plan-reason`）と比較の画面（`compare-reason`）
 - `planParts.tsx` の `ScoreNextStep`：1行のまとめの下に1行「次の一手：［…］」（`p.score-next`・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「案を変える ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
 - 点数の説明（`HundredHint`）は決め方と減点の内訳だけ。内部の費用（「費用 N（内部の値…）」）は出さない（PRD D229）
 - `planParts.tsx` の文：`SCORE_TEXT`（「理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点」）・`rulerText(name)`（「点数はいつも点数の基準のプリセット「〈名前〉」の重みで付けます。プリセットを替えても点数の付け方は変わりません」）
@@ -150,8 +150,8 @@
 
 #### 列の見出し
 
-- 担当の名前・その日の稼働時間帯と「この日だけ変更」・欠勤の印（「欠勤 9:00〜12:00」「欠勤（終日）」、メモは title）・小さな「急な欠勤」／欠勤があれば「欠勤を直す」（aria-label「〈名前〉さんの急な欠勤／欠勤を直す」。欄は [pages-plan-absence.md](pages-plan-absence.md)）
-- 2行目（稼働時間・急な欠勤）の右端に名前の i（data-testid `col-info`。名前の幅を食わない）。時間軸・順番とも
+- 担当の名前・その日の稼働時間帯と「この日だけ変更」・欠勤の印（「欠勤 9:00〜12:00」「欠勤（終日）」、メモは title）・小さな「この人の欠勤を登録」（aria-label「この人の欠勤を登録（〈名前〉さん）」）／欠勤があれば「欠勤を直す」（aria-label「〈名前〉さんの欠勤を直す」。欄は [pages-plan-absence.md](pages-plan-absence.md)）
+- 2行目（稼働時間・「この人の欠勤を登録」）の右端に名前の i（data-testid `col-info`。名前の幅を食わない）。時間軸・順番とも
 - 休み・休止中の人の列は出さない（今の案で訪問がある人と、欠勤で稼働時間帯が無くなったもともと働く人は出す）
 
 #### 手直し（ドラッグ・担当を変える）と固定（ADR-0004・ADR-0030）
@@ -227,7 +227,7 @@
 #### 帯：休み・拘束超え
 
 - 休み（`band-leave`。ADR-0013）：「〈利用者さん〉の休みのため無し N件：」と名前（`leave-name`。`lib/personLinks` の `leavePeople(visits, leaves, date, nameOf)` で並べ、理由を添える）。確定した日なら「（確定した日です。必要なら案を作り直して確定し直してください。休みの訪問の担当は、休みを消したときのために残します）」。「一覧で見る」。文は `band-text` の1つの要素に入れる（`with-icon` の横並びの中で折り返す）
-- 拘束超え（`band-over-span`。ADR-0015。`workload` が入のとき）：今の案、無ければ確定した割当で、出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の `org.spanLimitHours` 時間を超える人。名前（`over-span-name`）と拘束の時間。1人ぶんは `over-span-item` で途中で折り返さない。1人なら帯のボタン「稼働の見込み」、2人以上なら帯のボタンをやめ人ごとのリンク `over-span-link`「稼働の見込み」（`workloadHref(年月, ID)`。aria-label「〈名前〉さんの稼働の見込み」）。印刷ではリンクを出さない
+- 拘束超え（`band-over-span`。ADR-0015。`workload` が入のとき）：今の案、無ければ確定した割当で、出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の `org.spanLimitHours` 時間を超える人。名前（`over-span-name`）と拘束の時間。1人ぶんは `over-span-item` で途中で折り返さない。1人なら帯のボタン「勤務の見込み」、2人以上なら帯のボタンをやめ人ごとのリンク `over-span-link`「勤務の見込み」（`workloadHref(年月, ID)`。aria-label「〈名前〉さんの勤務の見込み」）。印刷ではリンクを出さない
 
 #### 訪問の欄（`pages/VisitForm.tsx`）と取り消し
 

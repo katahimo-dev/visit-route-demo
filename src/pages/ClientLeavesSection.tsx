@@ -199,7 +199,7 @@ export function ClientLeavesSection({
             <div className="leave-warn" data-testid="leave-warn">
               <WithIcon icon={TriangleAlert} size={14}>
                 確定した日（{draftConfirmed.map(mdText).join('・')}）に{client.displayName}の訪問があります。
-                休みを入れても確定した割当は変わりません。その日の予定の画面で案を作り直してください。
+                休みを入れても確定した割当は変わりません。その日の「日の予定」で案を作り直してください。
               </WithIcon>
               <ul>
                 {draftConfirmed.map((d) => (
@@ -238,7 +238,7 @@ export function ClientLeavesSection({
           </div>
           {!compact && (
             <span className="sub">
-              {terms.client}の休みは、訪問を別の日に振り替えません。振り替えるときは、予定の画面で訪問を足してください。
+              {terms.client}の休みは、訪問を別の日に振り替えません。振り替えるときは、日の予定で訪問を足してください。
             </span>
           )}
         </fieldset>

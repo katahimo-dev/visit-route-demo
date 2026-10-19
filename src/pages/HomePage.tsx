@@ -84,8 +84,8 @@ export default function HomePage() {
     <div className="stack home-page">
       <PageHeader
         icon={ListTodo}
-        title="今日やること"
-        lead={`${dateText(today)}の状態から、次にすることを並べています`}
+        title="ホーム"
+        lead={`今日やること：${dateText(today)}の状態から、次にすることを並べています`}
       />
 
       <section className="stack" aria-labelledby={nextId} style={{ gap: 10 }}>

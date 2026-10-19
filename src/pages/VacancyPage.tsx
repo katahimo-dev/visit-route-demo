@@ -1098,11 +1098,11 @@ export default function VacancyPage() {
                     </span>
                   )}
                   {/* その日の案を日の画面で（PRD D204。名前の吹き出しは付けない：D124）。Link なので Ctrl+クリック・中クリックで
-                      新しいタブにも開ける。ふつうに押すと同じタブで移る（日の画面が ?date= を読む） */}
+                      新しいタブにも開ける。ふつうに押すと同じタブで移る（日の予定が ?date= を読む） */}
                   <Link
                     to={dayHref(x.date)}
                     className="vacancy-day-open"
-                    aria-label={`その日の案を見る（${dateText(x.date)}・日の画面で開く）`}
+                    aria-label={`その日の案を見る（${dateText(x.date)}・日の予定で開く）`}
                     data-testid="vacancy-day-open"
                     data-date={x.date}
                   >
@@ -1161,7 +1161,7 @@ export default function VacancyPage() {
           </ul>
           <Hint>
             「仮」の印の{terms.client}
-            として登録し、いまある訪問の最後の日までの訪問を作ります。今の案がある日は、他の人の予定を変えずに空き時間へ入れて固定します（入らない日は知らせます。予定の画面で入れてください）。確定した割当は変えません。
+            として登録し、いまある訪問の最後の日までの訪問を作ります。今の案がある日は、他の人の予定を変えずに空き時間へ入れて固定します（入らない日は知らせます。日の予定で入れてください）。確定した割当は変えません。
             {terms.client}の画面で「本登録にする」か「仮押さえを取り消す」を選べます。
             {exactPlace
               ? ''

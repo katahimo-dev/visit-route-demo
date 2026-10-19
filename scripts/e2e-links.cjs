@@ -170,13 +170,13 @@ async function attention(page) {
   let row = await attentionRow(page, 'unassigned');
   check((await row.count()) === 1, '要対応に「入らない訪問」の行がある', SECOND);
   check(
-    (await row.innerText()).includes('（日の画面の「入らなかった訪問」で開く）'),
+    (await row.innerText()).includes('（日の予定の「入らなかった訪問」で開く）'),
     '入らない訪問：行き先の文',
     await row.innerText(),
   );
   check((await row.locator('button, a').count()) === 0, '行の中にボタンを入れ子にしない');
   await row.click();
-  check(await onPlan(page, SECOND), '入らない訪問 → その日の日の画面', await dayOf(page));
+  check(await onPlan(page, SECOND), '入らない訪問 → その日の「日の予定」', await dayOf(page));
   await page.locator('.route-col-none').first().waitFor({ timeout: 30000 });
   check(await scrolledToNone(page), '入らない訪問 → 「入らなかった訪問」の列へ巻いて見せる');
   check(!/do=|date=/.test(hashOf(page)), '入らない訪問 → ?do=・?date= は消える', hashOf(page));
@@ -215,12 +215,12 @@ async function attention(page) {
   row = await attentionRow(page, 'absentLeft');
   check((await row.count()) === 1, '要対応に「休みの人に訪問」の行がある');
   check(
-    (await row.innerText()).includes('（日の画面の「欠勤・キャンセル」で開く）'),
+    (await row.innerText()).includes('（日の予定の「欠勤・キャンセル」で開く）'),
     '休みの人に訪問：行き先の文',
     await row.innerText(),
   );
   await row.click();
-  check(await onPlan(page, SECOND), '休みの人に訪問 → その日の日の画面', await dayOf(page));
+  check(await onPlan(page, SECOND), '休みの人に訪問 → その日の「日の予定」', await dayOf(page));
   await page.getByTestId('sudden-panel').waitFor({ timeout: 10000 });
   check(
     (await page.locator('h3.sudden-step-title').textContent()) === '何が起きましたか？',
@@ -232,7 +232,7 @@ async function attention(page) {
   // 拘束が上限を超える → 稼働の見込み（その月・その人）
   row = await attentionRow(page, 'overSpan');
   check((await row.count()) === 1, '要対応に「出勤〜退勤（拘束）が上限を超える」の行がある');
-  check((await row.innerText()).includes('（稼働の見込みで開く）'), '拘束の上限：行き先の文', await row.innerText());
+  check((await row.innerText()).includes('（勤務の見込みで開く）'), '拘束の上限：行き先の文', await row.innerText());
   const to = (await row.getAttribute('data-to')) ?? '';
   const sid = new URLSearchParams(to.split('?')[1] ?? '').get('staff') ?? '';
   await row.click();
@@ -240,29 +240,29 @@ async function attention(page) {
   await page.getByTestId('work-staff').waitFor({ timeout: 30000 });
   check(
     hashOf(page) === `#/workload?ym=${YM2}&staff=${sid}`,
-    '拘束の上限 → 稼働の見込み（その月・その人）',
+    '拘束の上限 → 勤務の見込み（その月・その人）',
     hashOf(page),
   );
   check(
     sid !== '' && (await page.getByTestId('work-staff').inputValue()) === sid,
-    '稼働の見込み：その人を日ごとに選んでいる',
+    '勤務の見込み：その人を日ごとに選んでいる',
     { sid, value: await page.getByTestId('work-staff').inputValue() },
   );
   check(
     (await page.locator('.work-nav').innerText()).includes(`${Number(YM2.slice(5, 7))}月`),
-    '稼働の見込み：その月を開いている',
+    '勤務の見込み：その月を開いている',
   );
   check(
     (await page.getByTestId('work-detail').locator(`[data-testid="work-day-open"][data-date="${SECOND}"]`).count()) ===
       1,
-    '稼働の見込み：選んだ人の日ごとの表にその日がある',
+    '勤務の見込み：選んだ人の日ごとの表にその日がある',
   );
 
   // そのほか（欠勤がある）→ 今のまま日の画面
   row = await attentionRow(page, 'absence');
-  check((await row.innerText()).includes('（日の画面で開く）'), 'そのほか：行き先の文', await row.innerText());
+  check((await row.innerText()).includes('（日の予定で開く）'), 'そのほか：行き先の文', await row.innerText());
   await row.click();
-  check(await onPlan(page, SECOND), '欠勤がある → その日の日の画面', await dayOf(page));
+  check(await onPlan(page, SECOND), '欠勤がある → その日の「日の予定」', await dayOf(page));
   check((await page.getByTestId('sudden-panel').count()) === 0, '欠勤がある → 欄は開かない（今のまま）');
   check(hashOf(page) === '#/plan', '欠勤がある → URL は /plan', hashOf(page));
 }
@@ -329,12 +329,12 @@ async function workload(page) {
   const link = page.getByTestId('work-day-open').first();
   const d1 = (await link.getAttribute('data-date')) ?? '';
   check(
-    /（日の画面で開く）$/.test((await link.getAttribute('aria-label')) ?? ''),
-    '日ごとの表の日付：読み上げに「（日の画面で開く）」',
+    /（日の予定で開く）$/.test((await link.getAttribute('aria-label')) ?? ''),
+    '日ごとの表の日付：読み上げに「（日の予定で開く）」',
     await link.getAttribute('aria-label'),
   );
   await link.click();
-  check(await onPlan(page, d1), '日ごとの表の日付 → その日の日の画面', { d1, now: await dayOf(page) });
+  check(await onPlan(page, d1), '日ごとの表の日付 → その日の「日の予定」', { d1, now: await dayOf(page) });
   // 〈スタッフ〉×日の表のマス（今日でない日・上限を超えるマス）
   await open(page, `/workload?ym=${YM2}`, '[data-testid="work-grid"]');
   const grid = page.getByTestId('work-grid');
@@ -347,8 +347,8 @@ async function workload(page) {
   const label = (await cell.getAttribute('aria-label')) ?? '';
   const num = ((await cell.locator('.work-cell-num').textContent()) ?? '').replace('（上限を超える）', '').trim();
   check(
-    label.startsWith(num) && /^\d+\.\d!$/.test(num) && /上限を超える（日の画面で開く）$/.test(label),
-    'マス：読み上げの先頭は見えている数字、続けて内訳と「（日の画面で開く）」',
+    label.startsWith(num) && /^\d+\.\d!$/.test(num) && /上限を超える（日の予定で開く）$/.test(label),
+    'マス：読み上げの先頭は見えている数字、続けて内訳と「（日の予定で開く）」',
     { num, label },
   );
   check(!!(await cell.getAttribute('title')), 'マス：内訳の title は今どおり');
@@ -361,7 +361,7 @@ async function workload(page) {
   // キーボードで押せる
   await cell.focus();
   await page.keyboard.press('Enter');
-  check(await onPlan(page, SECOND), 'マス → その日の日の画面（キーボード）', await dayOf(page));
+  check(await onPlan(page, SECOND), 'マス → その日の「日の予定」（キーボード）', await dayOf(page));
   await page.screenshot({ path: path.join(OUT_DIR, 'links-workload.png') });
 }
 
@@ -386,7 +386,7 @@ async function availability(page) {
   const link = page.getByTestId('availability-absence-link');
   await link.waitFor({ timeout: 5000 });
   check(
-    (await link.innerText()).includes('この日の欠勤を直す・取り消す（日の画面の「欠勤・キャンセル」で開く）'),
+    (await link.innerText()).includes('この日の欠勤を直す・取り消す（日の予定の「欠勤・キャンセル」で開く）'),
     '欠勤のある日：直す・取り消すのリンクと行き先',
     await link.innerText(),
   );
@@ -396,7 +396,7 @@ async function availability(page) {
     await link.getAttribute('href'),
   );
   await link.click();
-  check(await onPlan(page, SECOND), '稼働時間 → その日の日の画面', await dayOf(page));
+  check(await onPlan(page, SECOND), '稼働時間 → その日の「日の予定」', await dayOf(page));
   await page.getByTestId('sudden-staff').waitFor({ timeout: 10000 });
   check(
     (await page.getByTestId('sudden-staff').inputValue()) === ABSENT,
@@ -520,8 +520,8 @@ async function vacancy(page) {
   const d = (await btn.getAttribute('data-date')) ?? '';
   check((await btn.innerText()) === 'その日の案を見る', 'ボタンの文', await btn.innerText());
   check(
-    /^その日の案を見る（.+・日の画面で開く）$/.test((await btn.getAttribute('aria-label')) ?? ''),
-    '読み上げは見えている文字が先頭で、日付と「日の画面で開く」',
+    /^その日の案を見る（.+・日の予定で開く）$/.test((await btn.getAttribute('aria-label')) ?? ''),
+    '読み上げは見えている文字が先頭で、日付と「日の予定で開く」',
     await btn.getAttribute('aria-label'),
   );
   check(
@@ -543,7 +543,7 @@ async function vacancy(page) {
     .catch(() => {});
   check(
     (await tab.locator('.date-switch select').inputValue()) === d && /#\/plan$/.test(tab.url()),
-    'Ctrl+クリック：新しいタブで ?date= だけでもその日の日の画面（?date= は消える）',
+    'Ctrl+クリック：新しいタブで ?date= だけでもその日の「日の予定」（?date= は消える）',
     { d, now: await tab.locator('.date-switch select').inputValue(), url: tab.url() },
   );
   await tab.close();
@@ -555,7 +555,7 @@ async function vacancy(page) {
   );
   // ふつうに押すと同じタブで移る
   await btn.click();
-  check(await onPlan(page, d), '空き状況 → その日の日の画面', { d, now: await dayOf(page) });
+  check(await onPlan(page, d), '空き状況 → その日の「日の予定」', { d, now: await dayOf(page) });
   await page.screenshot({ path: path.join(OUT_DIR, 'links-vacancy.png') });
 }
 

@@ -162,7 +162,7 @@ export default function WorkloadPage() {
     <div className="stack">
       <PageHeader
         icon={Timer}
-        title="稼働の見込み"
+        title="勤務の見込み"
         lead={`予定から見込んだ、${terms.staff}ごとの出勤〜退勤（拘束）・移動・空き時間（待ち）の時間${fareFeature ? 'と交通費' : ''}です。実績ではありません`}
       />
 
@@ -170,7 +170,7 @@ export default function WorkloadPage() {
         <div className="row work-nav">
           <Link className="btn btn-small" to={`/month?ym=${ym}`}>
             <WithIcon icon={ArrowLeft} size={14}>
-              月間に戻る
+              月の予定に戻る
             </WithIcon>
           </Link>
           <button
@@ -442,7 +442,7 @@ export default function WorkloadPage() {
                                 type="button"
                                 className="work-cell-in work-cell-btn"
                                 title={statTitle(s.name, d.date, x)}
-                                aria-label={`${spanNum(x)}${x.over ? '!' : ''}：${statTitle(s.name, d.date, x)}（日の画面で開く）`}
+                                aria-label={`${spanNum(x)}${x.over ? '!' : ''}：${statTitle(s.name, d.date, x)}（日の予定で開く）`}
                                 onClick={() => openDay(d.date)}
                                 data-date={d.date}
                               >
@@ -471,7 +471,7 @@ export default function WorkloadPage() {
               </table>
             </EdgeScroll>
             <p className="sub" data-testid="work-grid-note">
-              数字は出勤〜退勤（拘束）の時間（時間）です。マスを押すとその日の日の画面を開きます。内訳は下の「日ごと」の表で見られます。
+              数字は出勤〜退勤（拘束）の時間（時間）です。マスを押すとその日の「日の予定」を開きます。内訳は下の「日ごと」の表で見られます。
             </p>
           </section>
 
@@ -550,8 +550,8 @@ export default function WorkloadPage() {
                             type="button"
                             className="link-btn"
                             onClick={() => openDay(day.date)}
-                            aria-label={`${mdText(day.date)}（${WEEKDAY_LABELS[weekday(day.date)]}）（日の画面で開く）`}
-                            title="押すとその日の日の画面を開きます"
+                            aria-label={`${mdText(day.date)}（${WEEKDAY_LABELS[weekday(day.date)]}）（日の予定で開く）`}
+                            title="押すとその日の「日の予定」を開きます"
                             data-testid="work-day-open"
                             data-date={day.date}
                           >

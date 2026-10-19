@@ -99,8 +99,8 @@ export const bulkConfirmLabel = (n: number): string => `問題の無い日をま
 /** 押せないときの理由（見える文） */
 export function bulkConfirmWhy(b: BulkConfirm): string {
   if (b.problem.length > 0)
-    return '問題の無い日がありません（問題のある日は要対応で確かめてから、日の画面で確定します）';
-  if (b.changed.length > 0) return '問題の無い日がありません（前に確定した割当と違う日は、日の画面で確定し直します）';
+    return '問題の無い日がありません（問題のある日は要対応で確かめてから、日の予定で確定します）';
+  if (b.changed.length > 0) return '問題の無い日がありません（前に確定した割当と違う日は、日の予定で確定し直します）';
   if (b.noPlan.length > 0) return '問題の無い日がありません（案の無い日は、先に案を作ります）';
   return '確定していない日はありません';
 }
@@ -124,7 +124,7 @@ export function bulkConfirmDialog(b: BulkConfirm, staffTerm: string): { title: s
   if (b.problem.length > 0)
     lines.push(`問題のある ${b.problem.length}日は残します（要対応で確認）：${b.problem.map(dayLabel).join('・')}`);
   if (b.changed.length > 0)
-    lines.push(`前に確定した割当と違う ${b.changed.length}日も残します（日の画面で確定し直します）。`);
+    lines.push(`前に確定した割当と違う ${b.changed.length}日も残します（日の予定で確定し直します）。`);
   if (b.noPlan.length > 0) lines.push(`案の無い ${b.noPlan.length}日も残します。`);
   return { title: `問題の無い ${b.targets.length}日を確定しますか？`, body: lines.join('\n') };
 }

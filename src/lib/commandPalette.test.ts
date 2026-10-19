@@ -88,24 +88,45 @@ describe('候補', () => {
     const s = paletteScreens(menuSections(terms, TODAY, {}), terms);
     expect(s.map((x) => x.label)).toEqual([
       'ホーム',
-      '月',
-      '週',
-      '日',
+      '月の予定',
+      '週の予定',
+      '日の予定',
       '案を比べる',
       '空き状況',
       '利用者さん一覧',
-      '相性',
       'スタッフ一覧',
-      '稼働時間',
-      '稼働の見込み',
+      '勤務時間（シフト）',
+      '勤務の見込み',
       '条件の重み',
+      '相性',
       '訪問の種類',
       '特性の項目',
       '管理者設定',
       'データ',
     ]);
-    expect(s.find((x) => x.to === '/clients')!.hint).toBe('人の情報');
-    expect(s.find((x) => x.to === '/data')!.hint).toBe('管理者');
+    expect(s.find((x) => x.to === '/clients')!.hint).toBe('人');
+    expect(s.find((x) => x.to === '/data')!.hint).toBe('設定');
+    expect(s.find((x) => x.to === '/plan')!.hint).toBe('予定');
+  });
+  it('名前を変えた画面は前の名前でも引ける（月間・週間・日の画面・稼働時間・稼働の見込み。PRD D230）', () => {
+    const scr = paletteScreens(menuSections(terms, TODAY, {}), terms);
+    const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
+    expect(hit('月間')).toEqual(['/month']);
+    expect(hit('げっかん')).toEqual(['/month']);
+    expect(hit('週間')).toEqual(['/week']);
+    expect(hit('日の画面')).toEqual(['/plan']);
+    expect(hit('稼働時間')).toEqual(['/availability']);
+    expect(hit('しふと')).toEqual(['/availability']);
+    expect(hit('稼働の見込み')).toEqual(['/workload']);
+    expect(hit('かどう')).toEqual(['/availability', '/workload']);
+    expect(hit('こうつうひ')).toEqual(['/workload']);
+  });
+  it('操作の補足は画面の名前（日の予定・月の予定）。欠勤・キャンセルを登録は「当日の対応」でも引ける', () => {
+    const acts = paletteActions(TODAY);
+    expect(acts.find((x) => x.id === 'action:absence')!.hint).toBe('日の予定（今日）');
+    expect(acts.find((x) => x.id === 'action:today')!.hint).toBe('日の予定');
+    expect(acts.find((x) => x.id === 'action:batch')!.hint).toBe('月の予定');
+    expect(filterPalette(acts, '当日の対応').flat.map((i) => i.id)).toEqual(['action:absence']);
   });
   it('人は ?id= で閲覧の欄へ。利用中でなければ段階、休止中の〈スタッフ〉はそう添える', () => {
     const p = palettePeople(clients, staff, terms);

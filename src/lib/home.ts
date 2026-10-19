@@ -1,4 +1,4 @@
-// ホーム「今日やること」（PRD D141〜D145。ADR-0025。design.md §4 pages「ホーム」）の決まり。
+// ホーム（見出しの下に「今日やること」。PRD D141〜D145・D230。ADR-0025・0034。design.md §4 pages「ホーム」）の決まり。
 // 今の状態（日の状態・定期パターンから作れる訪問の件数）から次の一手を並べる純粋関数。データは書き換えない
 import type { DemoData } from '../contracts/data';
 import type { Terms } from '../contracts/documents';
@@ -175,13 +175,13 @@ function todayTask(today: string, s: DayStatus | undefined, staff: number): Home
   const base = { kind: 'today' as const, to: '/plan', date: today };
   const when = `今日 ${dateText(today)}`;
   if (!s || s.count === 0)
-    return { ...base, tone: 'info', title: `${when}の訪問はありません`, detail: '日の画面で訪問を足せます' };
+    return { ...base, tone: 'info', title: `${when}の訪問はありません`, detail: '日の予定で訪問を足せます' };
   if (s.state === 'none')
     return {
       ...base,
       tone: 'warn',
       title: `${when}の案がまだありません`,
-      detail: `訪問 ${s.count}件。日の画面を開くと案を作ります`,
+      detail: `訪問 ${s.count}件。日の予定を開くと案を作ります`,
     };
   const issues = [
     s.absentLeft > 0 ? `欠勤の人に残る ${s.absentLeft}件` : '',
@@ -212,8 +212,8 @@ export function homeEntries(today: string, terms: Pick<Terms, 'client' | 'staff'
     {
       key: 'absence',
       to: `/plan?date=${today}&do=${SUDDEN_DO}`,
-      title: '急な欠勤・キャンセルを登録',
-      detail: '今日の日の画面で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定',
+      title: '欠勤・キャンセルを登録',
+      detail: '今日の予定で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定',
       date: today,
     },
     {

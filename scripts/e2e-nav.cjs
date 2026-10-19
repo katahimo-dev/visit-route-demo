@@ -71,26 +71,35 @@ async function seedPeople(page) {
 /** ひらがな → カタカナ */
 const toKata = (s) => s.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
 
-// 最後のグループ「管理者」（管理者設定・データ。PRD D210。ADR-0028）
-const GROUPS = ['予定を組む', '当日の対応', '問い合わせ', '人の情報', 'AI の考え方', '管理者'];
+// 5つのグループ（PRD D232。ADR-0034）。最後の「設定」に管理者設定・データ（PRD D210。ADR-0028）
+const GROUPS = ['予定', '当日・問い合わせ', '人', 'AI の条件', '設定'];
 const LABELS = [
   'ホーム',
-  '月',
-  '週',
-  '日',
+  '月の予定',
+  '週の予定',
+  '日の予定',
   '案を比べる',
-  '欠勤・キャンセル',
+  '欠勤・キャンセルを登録',
   '空き状況',
   '利用者さん一覧',
-  '相性',
   'スタッフ一覧',
-  '稼働時間',
-  '稼働の見込み',
+  '勤務時間（シフト）',
+  '勤務の見込み',
   '条件の重み',
+  '相性',
   '訪問の種類',
   '特性の項目',
   '管理者設定',
   'データ',
+];
+/** 画面の見出し（h1）はメニューの名前と同じ（PRD D179・D230） */
+const HEADINGS = [
+  ['/home', 'ホーム'],
+  ['/month', '月の予定'],
+  ['/week', '週の予定'],
+  ['/plan', '日の予定'],
+  ['/availability', '勤務時間（シフト）'],
+  ['/workload', '勤務の見込み'],
 ];
 
 // ---- メニューの並び・名前・aria-current（1400px）----
@@ -109,9 +118,13 @@ async function menu(page) {
   check((await page.locator('h1').innerText()).trim() === '案を比べる', '比較の見出しはメニューと同じ「案を比べる」');
   await open(page, '/plan', '[data-testid="sudden-open"]');
   check(
-    JSON.stringify(await current()) === '["日"]',
-    'aria-current：日の画面は「日」だけ（欠勤・キャンセルに印を付けない）',
+    JSON.stringify(await current()) === '["日の予定"]',
+    'aria-current：日の予定は「日の予定」だけ（欠勤・キャンセルを登録に印を付けない）',
   );
+  for (const [hash, h1] of HEADINGS) {
+    await open(page, hash);
+    check((await page.locator('h1').innerText()).trim() === h1, `見出しはメニューと同じ「${h1}」`);
+  }
   await open(page, '/clients');
   check(JSON.stringify(await current()) === '["利用者さん一覧"]', 'aria-current：〈利用者さん〉一覧');
   check(
@@ -122,12 +135,12 @@ async function menu(page) {
   check((await page.locator('h1').innerText()).trim() === 'スタッフ一覧', '〈スタッフ〉の見出しは「スタッフ一覧」');
   // 欠勤・キャンセル：今日の日の画面で欄が開き、?do=・?date= は消える
   await open(page, '/week');
-  await side.getByTestId('nav-link').filter({ hasText: '欠勤・キャンセル' }).click();
+  await side.getByTestId('nav-link').filter({ hasText: '欠勤・キャンセルを登録' }).click();
   await page.getByTestId('sudden-panel').waitFor({ timeout: 15000 });
   const h = hashOf(page);
   check(
     h.startsWith('#/plan') && !h.includes('do=') && !h.includes('date='),
-    'メニューの欠勤・キャンセルで日の画面の欄が開き URL から消える',
+    'メニューの欠勤・キャンセルで日の予定の欄が開き URL から消える',
     h,
   );
   check(
@@ -186,8 +199,8 @@ async function keyboard(page) {
   await type(page, 'かどう');
   let list = await listed(page);
   check(
-    JSON.stringify(list.map((o) => o.label)) === '["稼働時間","稼働の見込み"]',
-    '打つと絞り込む（ひらがなで画面の名前を引く）',
+    JSON.stringify(list.map((o) => o.label)) === '["勤務時間（シフト）","勤務の見込み"]',
+    '打つと絞り込む（ひらがなで画面の名前を引く。前の名前のよみでも引ける）',
     list.map((o) => o.label),
   );
   check((await page.getByTestId('cmdk-status').innerText()) === '2件', '件数を読み上げる（aria-live）');
@@ -241,7 +254,7 @@ async function keyboard(page) {
   await page.getByTestId('sudden-panel').waitFor({ timeout: 15000 });
   check(
     hashOf(page).startsWith('#/plan') && !hashOf(page).includes('do='),
-    '操作「欠勤・キャンセルを登録」で日の画面の欄が開く',
+    '操作「欠勤・キャンセルを登録」で日の予定の欄が開く',
     hashOf(page),
   );
   // 右の欄が開いているあいだは Ctrl+K で開かない（ブラウザの動き（アドレスバーへ移る）は止める）
@@ -272,7 +285,7 @@ async function keyboard(page) {
   await page.keyboard.press('Enter');
   await page.waitForURL(/#\/month/);
   await page.waitForTimeout(600);
-  check(!hashOf(page).includes('do='), '月の画面へ移り ?do= は月の画面が消す', hashOf(page));
+  check(!hashOf(page).includes('do='), '月の予定へ移り ?do= は月の予定が消す', hashOf(page));
   // 呼び方のよみで画面を引く
   await open(page, '/home');
   await page.keyboard.press('Control+k');
@@ -314,7 +327,7 @@ async function keyboard(page) {
   await page.keyboard.press('Enter');
   await page.waitForURL(/#\/plan/);
   await page.waitForTimeout(800);
-  check(!hashOf(page).includes('do='), '日の画面へ移り ?do=recreate は日の画面が消す', hashOf(page));
+  check(!hashOf(page).includes('do='), '日の予定へ移り ?do=recreate は日の予定が消す', hashOf(page));
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
 
@@ -474,9 +487,19 @@ async function mobile(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, '/clients');
   check(
-    (await page.getByTestId('screen-name').innerText()) === '人の情報・利用者さん一覧',
-    '390px：上の帯の名前「人の情報・利用者さん一覧」',
+    (await page.getByTestId('screen-name').innerText()) === '人・利用者さん一覧',
+    '390px：上の帯の名前「人・利用者さん一覧」',
   );
+  // 予定のグループは項目名だけ（「予定・日の予定」と重ねない。PRD D230）
+  for (const [h, name] of [
+    ['/plan', '日の予定'],
+    ['/month', '月の予定'],
+    ['/availability', '人・勤務時間（シフト）'],
+  ]) {
+    await open(page, h);
+    const got = (await page.getByTestId('screen-name').innerText()).replace(/\s/g, '');
+    check(got === name, `390px：上の帯の名前「${name}」`, got);
+  }
   // 名前が切れない（見出し・項目名をそれぞれひとまとまりで折り返す）
   const clipped = [];
   for (const h of ['/clients', '/rules', '/workload', '/compare']) {
@@ -531,17 +554,64 @@ async function mobile(page) {
   await page.keyboard.press('Escape');
   const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(tabs) === JSON.stringify(['ホーム', '月', '週', '日', '空き状況']),
-    '390px：下のタブは5つのまま',
+    JSON.stringify(tabs) === JSON.stringify(['ホーム', '月', '週', '今日', '空き状況']),
+    '390px：下のタブは5つのまま（短い名前。日の予定は「今日」）',
     tabs,
   );
   await open(page, '/compare');
   check(
-    (await page.getByTestId('screen-name').innerText()) === '予定を組む・案を比べる' &&
-      JSON.stringify(await page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts()) === '["日"]',
-    '390px：比較は上の帯「予定を組む・案を比べる」、下のタブは「日」',
+    (await page.getByTestId('screen-name').innerText()) === '案を比べる' &&
+      JSON.stringify(await page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts()) === '["今日"]',
+    '390px：比較は上の帯「案を比べる」、下のタブは「今日」',
   );
+  await todayTab(page);
   await page.setViewportSize({ width: 1400, height: 1000 });
+}
+
+/**
+ * 下のタブの「今日」（PRD D232）：ほかの日を選んでいても今日の日の予定を開き（?date= は消える）、
+ * 日の予定を開いていても今日を選び直す（履歴は増やさない）
+ */
+async function todayTab(page) {
+  const sel = page.locator('.app-header select[aria-label="日付"]');
+  const tab = page.getByTestId('bottom-tab').filter({ hasText: '今日' });
+  /** 今日でない日を選ぶ（日付の切り替えの選択肢から） */
+  const pickOther = async () => {
+    const other = (await sel.locator('option').evaluateAll((os) => os.map((o) => o.value))).find((v) => v !== TODAY);
+    await sel.selectOption(other);
+    await page.waitForTimeout(150);
+    return other;
+  };
+  await open(page, '/week');
+  const o1 = await pickOther();
+  await tab.click();
+  await page.waitForFunction(() => location.hash === '#/plan', null, { timeout: 10000 });
+  check(
+    (await sel.inputValue()) === TODAY && o1 !== TODAY,
+    '「今日」のタブ：ほかの日を選んでいても今日の日の予定を開く（?date= は消える）',
+    { hash: hashOf(page), sel: await sel.inputValue() },
+  );
+  const o2 = await pickOther();
+  check((await sel.inputValue()) === o2, '日の予定でほかの日を選んだ', o2);
+  const len = await page.evaluate(() => history.length);
+  await tab.click();
+  await page.waitForFunction(
+    (t) => document.querySelector('.app-header select[aria-label="日付"]')?.value === t,
+    TODAY,
+    {
+      timeout: 10000,
+    },
+  );
+  await page.waitForTimeout(200);
+  check(
+    hashOf(page) === '#/plan' && (await page.evaluate(() => history.length)) === len,
+    '「今日」のタブ：日の予定を開いていても今日を選び直す（URL は #/plan のまま・履歴を増やさない）',
+    { hash: hashOf(page), len, now: await page.evaluate(() => history.length) },
+  );
+  check(
+    JSON.stringify(await page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts()) === '["今日"]',
+    '「今日」のタブ：日の予定では aria-current',
+  );
 }
 
 // ---- 印刷で出さない ----

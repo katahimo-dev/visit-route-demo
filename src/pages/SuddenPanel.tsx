@@ -572,7 +572,7 @@ export function SuddenPanel({
         )}
         {done.kind === 'staff' && (
           <button type="button" className="btn" onClick={() => onClose(true)} data-testid="sudden-to-bar">
-            <WithIcon icon={UserRoundCheck}>日の画面で差を見る</WithIcon>
+            <WithIcon icon={UserRoundCheck}>日の予定で差を見る</WithIcon>
           </button>
         )}
         {closeBtn}

@@ -95,7 +95,7 @@ export default function AvailabilityPage() {
 
   return (
     <div className="stack">
-      <PageHeader icon={Clock} title="稼働時間" lead={`${terms.staff}ごとの働ける時間`} />
+      <PageHeader icon={Clock} title="勤務時間（シフト）" lead={`${terms.staff}ごとの働ける時間`} />
       <div className="card stack">
         <div className="avail-legend">
           <span>
@@ -112,7 +112,7 @@ export default function AvailabilityPage() {
           </span>
           <span>
             <span className="avail-absence">欠勤</span>
-            {suddenOn ? '急な欠勤（予定の画面で登録）' : '急な欠勤'}
+            {suddenOn ? '急な欠勤（日の予定で登録）' : '急な欠勤'}
           </span>
           <span>セルを押すと下で変えられます</span>
         </div>
@@ -228,17 +228,17 @@ export default function AvailabilityPage() {
                 pickedAbsence,
                 availabilityOf(pickedStaff, picked.date, overrides.get(`${picked.staffId}_${picked.date}`)).slots,
               )}
-              {pickedAbsence.note && `（${pickedAbsence.note}）`}。欠勤の登録・取り消しは予定の画面で
+              {pickedAbsence.note && `（${pickedAbsence.note}）`}。欠勤の登録・取り消しは日の予定で
             </p>
           )}
           {/* その日の「欠勤・キャンセル」の欄をこの人で開く（PRD D203）。その日に働く日（保存した時間帯があり、
               最終勤務日の後でない）だけ。休みの日は欄の「休む人」に出ないので出さない（PR #48 のレビュー）。
-              日の画面は ?date= を読むので setDate しない（Ctrl+クリックで元のタブの日付を変えない） */}
+              日の予定は ?date= を読むので setDate しない（Ctrl+クリックで元のタブの日付を変えない） */}
           {pickedWorks && absenceHref && (
             <p>
               <Link to={absenceHref} className="avail-absence-link" data-testid="availability-absence-link">
                 {pickedAbsence ? 'この日の欠勤を直す・取り消す' : 'この日の欠勤を登録する'}
-                （日の画面の「欠勤・キャンセル」で開く）
+                （日の予定の「欠勤・キャンセル」で開く）
               </Link>
             </p>
           )}

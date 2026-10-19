@@ -57,7 +57,7 @@ describe('cellGuide', () => {
     expect(lines).toContain('「休 N」＝休むスタッフの人数');
     expect(lines).toContain('棒が無い＝案が無いので空きを数えていない');
     // 案の無い日は注意（黄）。赤は要対応だけ（PRD D228）
-    expect(lines).toContain('黄の点線の枠＝注意（訪問があるのにまだ案が無い。まとめて作るか日の画面で作る）');
+    expect(lines).toContain('黄の点線の枠＝注意（訪問があるのにまだ案が無い。まとめて作るか日の予定で作る）');
     expect(lines.some((l) => l.startsWith('赤い点'))).toBe(false);
     const red = cellGuide({ ...base, count: 3, stateText: '案あり', care: true, unassigned: true });
     expect(red).toContain('赤い点・赤い枠＝要対応（入らない訪問・必須の違反・休みの人に訪問）');

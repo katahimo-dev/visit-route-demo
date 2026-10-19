@@ -51,7 +51,7 @@ export default function MonthPrintPage() {
       <div className="mprint-bar no-print" data-testid="mprint-bar">
         <Link className="btn btn-small" to={back}>
           <WithIcon icon={ArrowLeft} size={14}>
-            月間に戻る
+            月の予定に戻る
           </WithIcon>
         </Link>
         <button type="button" className="icon-btn" aria-label="前の月" onClick={() => patch({ ym: addMonths(ym, -1) })}>

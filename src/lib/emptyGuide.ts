@@ -53,7 +53,7 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
     const at = firstFuture ?? dates[0]!;
     return {
       title: `${period}には訪問がありません`,
-      why: '定期パターンから訪問を作るか、日の画面で訪問を足すと、ここに出ます。',
+      why: '定期パターンから訪問を作るか、日の予定で訪問を足すと、ここに出ます。',
       actions: [
         ...(firstFuture
           ? [
@@ -65,7 +65,7 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
               },
             ]
           : []),
-        { kind: 'day', date: at, label: '日の画面で訪問を足す', primary: !firstFuture },
+        { kind: 'day', date: at, label: '日の予定で訪問を足す', primary: !firstFuture },
       ],
     };
   }
@@ -73,8 +73,8 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
   if (future.length === 0) {
     return {
       title: `${period}は案がありません`,
-      why: `訪問のある ${visitDays.length}日はもう過ぎています（まとめて作るは今日より前の日を作りません）。日の画面で1日ずつ作れます。`,
-      actions: [{ kind: 'day', date: visitDays[0]!, label: `${mdText(visitDays[0]!)}を日の画面で開く`, primary: true }],
+      why: `訪問のある ${visitDays.length}日はもう過ぎています（まとめて作るは今日より前の日を作りません）。日の予定で1日ずつ作れます。`,
+      actions: [{ kind: 'day', date: visitDays[0]!, label: `${mdText(visitDays[0]!)}を日の予定で開く`, primary: true }],
     };
   }
   const first = future[0]!;
@@ -84,7 +84,7 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
     months.length > 1 ? `${months.map(monthText).join('と')}にまたがるので、月ごとにまとめて作ります。` : '';
   return {
     title: `${period}は案がありません`,
-    why: `訪問のある ${visitDays.length}日に、まだ案（割当）がありません。月の画面の「まとめて作る」で、その月のまだ案の無い日をまとめて作れます。${across}`,
+    why: `訪問のある ${visitDays.length}日に、まだ案（割当）がありません。月の予定の「まとめて作る」で、その月のまだ案の無い日をまとめて作れます。${across}`,
     actions: [
       ...months.map((ym, i) => ({
         kind: 'batch' as const,
@@ -92,7 +92,7 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
         label: `${monthText(ym)}の案をまとめて作る`,
         primary: i === 0,
       })),
-      { kind: 'day', date: first, label: `${mdText(first)}の案を日の画面で作る`, primary: false },
+      { kind: 'day', date: first, label: `${mdText(first)}の案を日の予定で作る`, primary: false },
     ],
   };
 }
@@ -108,14 +108,14 @@ export function compareEmptyGuide(input: { date: string; today: string; visits: 
     return {
       title: 'この日には訪問がありません',
       why: '訪問を足して案を作ると、ここで2つの案を比べられます。',
-      actions: [{ kind: 'day', date, label: '日の画面で訪問を足す', primary: true }],
+      actions: [{ kind: 'day', date, label: '日の予定で訪問を足す', primary: true }],
     };
   }
   return {
     title: 'この日の案はまだありません',
-    why: '日の画面を開くと、点数の基準の考え方で案を自動で作ります。案ができたら、ここでもう1案作って比べられます。',
+    why: '日の予定を開くと、点数の基準の考え方で案を自動で作ります。案ができたら、ここでもう1案作って比べられます。',
     actions: [
-      { kind: 'day', date, label: '日の画面で案を作る', primary: true },
+      { kind: 'day', date, label: '日の予定で案を作る', primary: true },
       ...(date >= today
         ? [
             {

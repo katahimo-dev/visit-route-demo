@@ -455,7 +455,7 @@ export default function MonthPage() {
           warn: n > 0,
           text:
             n > 0
-              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の画面の「急な欠勤」から振り直してください' : '日の画面で担当を振り直してください'}（自動では振り直しません）`
+              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の予定のその人の列の「欠勤を直す」から振り直してください' : '日の予定で担当を振り直してください'}（自動では振り直しません）`
               : `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました`,
         });
       } else {
@@ -885,7 +885,7 @@ export default function MonthPage() {
       <PageHeader
         nav={<ViewSwitch current="month" />}
         icon={CalendarRange}
-        title="月間"
+        title="月の予定"
         lead="定期パターンから訪問を作り、一月分の案をまとめて作ります"
       />
 
@@ -971,7 +971,7 @@ export default function MonthPage() {
               data-testid="month-workload"
             >
               <WithIcon icon={Timer} size={14}>
-                稼働の見込み
+                勤務の見込み
               </WithIcon>
             </button>
           )}
@@ -1060,9 +1060,9 @@ export default function MonthPage() {
             </WithIcon>
           </button>
           <Hint>
-            日のマスを押すと、その日の予定の画面を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要対応」）は、入らない訪問がある・必須の違反がある・休みの人に訪問が残る日です（必須の違反は点数の基準のプリセット「
+            日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要対応」）は、入らない訪問がある・必須の違反がある・休みの人に訪問が残る日です（必須の違反は点数の基準のプリセット「
             {scoreRulerName}
-            」の条件で見ます）。黄の点線の枠の日（「注意」）は、今日以降で訪問があるのにまだ案が無い日です（まとめて作るか日の画面で作ります）。「条件が変わった」は、案を作ったあとに訪問・
+            」の条件で見ます）。黄の点線の枠の日（「注意」）は、今日以降で訪問があるのにまだ案が無い日です（まとめて作るか日の予定で作ります）。「条件が変わった」は、案を作ったあとに訪問・
             {terms.staff}
             ・稼働時間・条件が変わった日です。混み具合のバーは {barRangeText()} を3段（
             {BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}）・30分ずつに分け、その30分に空いている
@@ -1305,7 +1305,7 @@ export default function MonthPage() {
                         type="button"
                         className="month-attention-btn"
                         onClick={() => openDay(d)}
-                        title="押すとその日の予定の画面を開きます"
+                        title="押すとその日の「日の予定」を開きます"
                       >
                         <span className="month-attention-date">
                           {mdText(d)}（{WEEKDAY_LABELS[weekday(d)]}）
@@ -1575,7 +1575,7 @@ export default function MonthPage() {
                 案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? 'いまの条件')}
                 。手直しのある日は、作り始める前に確かめます。今日より前の日・確定した日は作りません
                 {staleConfirmed > 0 &&
-                  `（条件が変わった確定済みの日 ${staleConfirmed}日は、日の画面で確かめてください）`}
+                  `（条件が変わった確定済みの日 ${staleConfirmed}日は、日の予定で確かめてください）`}
                 。
               </p>
             ) : (
@@ -1857,7 +1857,7 @@ const OFF_STATE_TEXT: Record<OffDayState, string> = {
   requested: `${REQUESTED_OFF_NOTE}です。押すと外します`,
   noShift: '勤務の無い日です（押せません）',
   past: '今日より前の日です（押せません）',
-  absent: 'ほかの欠勤が入っています。日の画面で直してください（押せません）',
+  absent: 'ほかの欠勤が入っています。日の予定で直してください（押せません）',
 };
 
 /** 日のマス（memo。月まとめ作成の進み具合などで、変わらないマスは描き直さない） */
@@ -1915,7 +1915,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
       {absentLeft > 0 && (
         <span
           className="month-flag is-red"
-          title="休み（欠勤・希望休）の人に訪問が残っています。日の画面で振り直してください"
+          title="休み（欠勤・希望休）の人に訪問が残っています。日の予定で振り直してください"
           data-testid="month-absent-left"
         >
           <UserX size={12} aria-hidden="true" />
@@ -2181,7 +2181,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     clientTerm,
   });
   const offPress = offState === 'open' || offState === 'requested';
-  const tipText = `${parts.slice(1).join('・')}${offState ? '' : '（押すとこの日の予定の画面を開きます）'}`;
+  const tipText = `${parts.slice(1).join('・')}${offState ? '' : '（押すとこの日の「日の予定」を開きます）'}`;
   const guideKey = guide.join('\n');
   // 描いたあとに、日付をキーに読み方の文を置く（吹き出しは日付で引く。描画中に DOM を読まない。PR #42 のレビュー）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 文（guideKey）が変わったときだけ置き直す

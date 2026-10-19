@@ -7,16 +7,8 @@ import type { Pattern, Terms } from '../contracts/documents';
 import { CALC_FEATURE_IDS, FEATURE_IDS, type FeatureId, type Features, isFeatureId } from '../contracts/features';
 import { isRequestedOff } from './requestedOff';
 
-/** 機能のグループ（管理者設定のスイッチの並び。ADR-0028 の表の順） */
-export const FEATURE_GROUPS = [
-  '予定を組む',
-  '当日の対応',
-  '問い合わせ',
-  '人の情報',
-  'AI の考え方',
-  '連絡',
-  'データ',
-] as const;
+/** 機能のグループ（管理者設定のスイッチの並び。メニューのグループにそろえる（PRD D232。ADR-0034）。メニューに無い連絡・データは後ろ） */
+export const FEATURE_GROUPS = ['予定', '当日・問い合わせ', '人', 'AI の条件', '連絡', 'データ'] as const;
 export type FeatureGroup = (typeof FEATURE_GROUPS)[number];
 
 /** その機能の操作の入口（`?do=` で画面の中の欄を開く URL。例：欠勤・キャンセル＝ `/plan?do=absence`） */
@@ -40,15 +32,15 @@ export type FeatureDef = {
 };
 
 /**
- * 機能の表（20。ADR-0028 の「機能の一覧」）。土台（ホーム・月・週・日・〈利用者さん〉一覧・〈スタッフ〉一覧・稼働時間・
- * 訪問の種類・データ・管理者設定）は表に入れず、切れない
+ * 機能の表（20。ADR-0028 の「機能の一覧」）。土台（ホーム・月の予定・週の予定・日の予定・〈利用者さん〉一覧・〈スタッフ〉一覧・
+ * 勤務時間（シフト）・訪問の種類・データ・管理者設定）は表に入れず、切れない
  */
 export const FEATURES: readonly FeatureDef[] = [
   {
     id: 'patternMonthly',
     label: '毎月の第N曜日・曜日ごとの時刻',
     description: '定期パターンで「毎月の第N週」や、曜日ごとに違う時刻を決められます',
-    group: '予定を組む',
+    group: '予定',
     paths: [],
     hides: '定期パターンの欄の「毎月の第N週」「曜日ごとの時刻」（毎週〜4週ごと・同じ時刻は残る）',
   },
@@ -56,15 +48,15 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'clientLeave',
     label: '{client}の休み',
     description: '入院などで{client}が休む期間を入れ、その間は訪問を入れません',
-    group: '予定を組む',
+    group: '予定',
     paths: [],
     hides: '{client}の欄の休み、休みの帯・点、月の要対応の「休みの人に訪問」',
   },
   {
     id: 'requestedOff',
     label: '希望休のまとめ入力',
-    description: '月の画面で{staff}の希望休をまとめて入れられます',
-    group: '予定を組む',
+    description: '月の予定で{staff}の希望休をまとめて入れられます',
+    group: '予定',
     paths: [],
     hides: '月の「休みを入れる」（希望休は残り計算に効く。「休みの人に N」の印も出る）',
   },
@@ -72,7 +64,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'monthPrint',
     label: '月の予定の印刷',
     description: '月の予定を紙のカレンダーの代わりに印刷できます',
-    group: '予定を組む',
+    group: '予定',
     paths: ['/month/print'],
     hides: '月の印刷のボタン、月の印刷の画面',
   },
@@ -80,7 +72,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'compare',
     label: '案を比べる',
     description: '同じ日の2つの案を並べて、点数と違いを比べられます',
-    group: '予定を組む',
+    group: '予定',
     paths: ['/compare'],
     hides: 'メニューの「案を比べる」、比較の画面、「案を変える ▾」の比べる・戻す',
   },
@@ -88,7 +80,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'sudden',
     label: '欠勤・キャンセル',
     description: '急な欠勤・当日キャンセルを登録し、その日の案を振り直します',
-    group: '当日の対応',
+    group: '当日・問い合わせ',
     paths: [],
     doParams: [{ path: '/plan', do: 'absence' }],
     hides: '欠勤・キャンセルの入口と欄（登録・振り直しを始める所）',
@@ -97,7 +89,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'vacancy',
     label: '空き状況',
     description: '新しい依頼の曜日・時間に、入れる人と空きを見ます',
-    group: '問い合わせ',
+    group: '当日・問い合わせ',
     paths: ['/vacancy'],
     hides: 'メニュー・下のタブ・空き状況の画面、仮押さえ',
   },
@@ -105,7 +97,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'vacancyNotice',
     label: '空き枠の案内文',
     description: '空き状況から、紹介元へ送る空き枠の案内文を作ります',
-    group: '問い合わせ',
+    group: '当日・問い合わせ',
     requires: 'vacancy',
     paths: [],
     hides: '空き状況の4段目の案内文',
@@ -114,7 +106,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'compat',
     label: '相性',
     description: '{staff}と{client}の相性（◎〜×）を AI案に効かせます',
-    group: '人の情報',
+    group: 'AI の条件',
     paths: ['/compat'],
     hides: 'メニュー・相性の画面、閲覧の欄の相性、条件の「相性」',
   },
@@ -122,7 +114,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'allowedStaff',
     label: '担当を限る',
     description: '{client}ごとに、担当できる{staff}を決められます',
-    group: '人の情報',
+    group: 'AI の条件',
     paths: [],
     hides: '{client}の「担当できる人」、絞り込みのチップ',
   },
@@ -130,7 +122,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'clientStage',
     label: '段階・紹介元',
     description: '相談受付 → 契約 → 利用中の段階と、紹介元を記録します',
-    group: '人の情報',
+    group: '人',
     paths: [],
     hides: '段階の5つの選択・紹介元の欄（切ると「利用中／終了」の2つだけ選べる。段階のデータは残す）',
   },
@@ -138,7 +130,7 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'visitNotes',
     label: '訪問先の決まりごと',
     description: '入り方・鍵・駐車場・注意を記録して、予定と一緒に見られます',
-    group: '人の情報',
+    group: '人',
     paths: [],
     hides: '入り方・鍵・駐車場・注意の欄と表示',
   },
@@ -146,32 +138,32 @@ export const FEATURES: readonly FeatureDef[] = [
     id: 'offboard',
     label: '退職・担当替え',
     description: '{staff}の最終勤務日を入れ、担当をまとめて振り直します',
-    group: '人の情報',
+    group: '人',
     paths: [],
     hides: '最終勤務日の欄と一括の振り直し、名簿の読み込みの知らせ',
   },
   {
     id: 'workload',
-    label: '稼働の見込み',
+    label: '勤務の見込み',
     description: '{staff}ごとの月の稼働・拘束の見込みを見ます',
-    group: '人の情報',
+    group: '人',
     paths: ['/workload'],
-    hides: 'メニュー・稼働の見込みの画面、拘束の上限の帯、行き止まりから移るリンク',
+    hides: 'メニュー・勤務の見込みの画面、拘束の上限の帯、行き止まりから移るリンク',
   },
   {
     id: 'fare',
     label: '交通費',
-    description: '稼働の見込みに、移動の距離から交通費の見込みを出します',
-    group: '人の情報',
+    description: '勤務の見込みに、移動の距離から交通費の見込みを出します',
+    group: '人',
     requires: 'workload',
     paths: [],
-    hides: '稼働の見込みの交通費の列と単価の欄',
+    hides: '勤務の見込みの交通費の列と単価の欄',
   },
   {
     id: 'rules',
     label: '条件の重みとプリセット',
     description: 'AI案の条件の重み・特性の項目・プリセットを変えられます',
-    group: 'AI の考え方',
+    group: 'AI の条件',
     paths: ['/rules', '/items'],
     // 「今日の案をいまの条件で作り直す」（lib/rebuildBand の recreateTodayHref）も作り直しの帯の続きなのでこの機能
     doParams: [{ path: '/plan', do: 'recreate' }],
@@ -304,7 +296,7 @@ export const TEMPLATES: readonly TemplateDef[] = [
     id: 'laborContract',
     label: '労務・契約管理',
     description:
-      '基本に、稼働の見込み・交通費・退職・担当替え・段階・紹介元。拘束時間・交通費・人の入れ替わりを見たいとき',
+      '基本に、勤務の見込み・交通費・退職・担当替え・段階・紹介元。拘束時間・交通費・人の入れ替わりを見たいとき',
     on: [...BASIC_ON, 'clientStage', 'offboard', 'workload', 'fare'],
   },
   {

@@ -287,8 +287,8 @@ async function links(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'week-band.png') });
   await page.getByTestId('band-plans').click();
   await page.waitForURL(/#\/month/);
-  await expectBatch(page, nw, '週の帯の「案」→ 月の画面');
-  check(hashOf(page) === `#/month?ym=${YM}`, '週の帯の「案」→ 月の画面、?do= は消える', hashOf(page));
+  await expectBatch(page, nw, '週の帯の「案」→ 月の予定');
+  check(hashOf(page) === `#/month?ym=${YM}`, '週の帯の「案」→ 月の予定、?do= は消える', hashOf(page));
   await page.keyboard.press('Escape');
 
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
@@ -298,7 +298,7 @@ async function links(page) {
   check(
     hashOf(page) === `#/month?ym=${YM}` &&
       (await page.locator('.month-aside-title').first().innerText()).includes('要対応'),
-    '週の帯の「要対応」→ 月の画面の要対応',
+    '週の帯の「要対応」→ 月の予定の要対応',
     hashOf(page),
   );
 
@@ -310,7 +310,7 @@ async function links(page) {
   const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
   check(
     hashOf(page) === `#/month?ym=${YM}` && listed === n.unconfirmed,
-    '日の帯の「確定」→ 月の画面の確定していない日（同じ日数）',
+    '日の帯の「確定」→ 月の予定の確定していない日（同じ日数）',
     { hash: hashOf(page), listed, band: n.unconfirmed },
   );
   await open(page, '/plan', '[data-testid="band-day"]');
@@ -318,7 +318,7 @@ async function links(page) {
     await page.getByTestId('band-next').click();
     await page.waitForURL(/#\/month/);
     await batchPanel(page, YM).waitFor({ timeout: 10000 });
-    check(true, '日の帯の次の一手「まとめて作る」→ 月の画面の欄');
+    check(true, '日の帯の次の一手「まとめて作る」→ 月の予定の欄');
     await page.keyboard.press('Escape');
   }
 }

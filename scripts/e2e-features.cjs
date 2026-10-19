@@ -75,21 +75,21 @@ const TEMPLATE_LABEL = {
 };
 const asFeatures = (on) => Object.fromEntries(FEATURE_IDS.map((id) => [id, on.includes(id)]));
 
-/** すべて入のメニュー（今の16＋管理者設定） */
+/** すべて入のメニュー（今の16＋管理者設定。5つのグループの並び。ADR-0034） */
 const ALL_LABELS = [
   'ホーム',
-  '月',
-  '週',
-  '日',
+  '月の予定',
+  '週の予定',
+  '日の予定',
   '案を比べる',
-  '欠勤・キャンセル',
+  '欠勤・キャンセルを登録',
   '空き状況',
   '利用者さん一覧',
-  '相性',
   'スタッフ一覧',
-  '稼働時間',
-  '稼働の見込み',
+  '勤務時間（シフト）',
+  '勤務の見込み',
   '条件の重み',
+  '相性',
   '訪問の種類',
   '特性の項目',
   '管理者設定',
@@ -97,9 +97,9 @@ const ALL_LABELS = [
 ];
 /** ひな形ごとの、メニューに出ない項目 */
 const HIDDEN = {
-  basic: ['案を比べる', '稼働の見込み', '条件の重み', '特性の項目'],
+  basic: ['案を比べる', '勤務の見込み', '条件の重み', '特性の項目'],
   laborContract: ['案を比べる', '条件の重み', '特性の項目'],
-  monthlyField: ['案を比べる', '稼働の見込み', '条件の重み', '特性の項目'],
+  monthlyField: ['案を比べる', '勤務の見込み', '条件の重み', '特性の項目'],
   all: [],
 };
 const menuFor = (t) => ALL_LABELS.filter((l) => !HIDDEN[t].includes(l));
@@ -191,7 +191,7 @@ async function allOn(page) {
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
-  check(m.titles.at(-1) === '管理者', 'すべて入：メニューの最後のグループは「管理者」', m.titles);
+  check(m.titles.at(-1) === '設定', 'すべて入：メニューの最後のグループは「設定」', m.titles);
   check(same(m.labels, ALL_LABELS), 'すべて入：今の16に管理者設定が足されるだけ', m.labels);
   check(same(await storedFeatures(page), {}), '初期データの入り切りは {}', await storedFeatures(page));
 
@@ -270,8 +270,8 @@ async function switches(page) {
   check(!tabs.includes('空き状況'), '下のタブから空き状況が消える（DOM）', tabs);
   const m = await menu(page);
   check(
-    !m.titles.includes('問い合わせ') && !m.labels.includes('空き状況'),
-    '項目の無いグループは見出しごと出さない',
+    m.titles.includes('当日・問い合わせ') && !m.labels.includes('空き状況'),
+    '空き状況を切っても「当日・問い合わせ」は欠勤・キャンセルを登録が残るので出す',
     m,
   );
 
@@ -317,7 +317,7 @@ async function checkTemplate(page, t) {
   check(same(m.labels, menuFor(t)), `${label}：メニューの項目`, m.labels);
   const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
   check(
-    same(tabs, on.includes('vacancy') ? ['ホーム', '月', '週', '日', '空き状況'] : ['ホーム', '月', '週', '日']),
+    same(tabs, on.includes('vacancy') ? ['ホーム', '月', '週', '今日', '空き状況'] : ['ホーム', '月', '週', '今日']),
     `${label}：下のタブ`,
     tabs,
   );
@@ -325,7 +325,7 @@ async function checkTemplate(page, t) {
   check(
     same(
       pal.screens,
-      menuFor(t).filter((l) => l !== '欠勤・キャンセル'),
+      menuFor(t).filter((l) => l !== '欠勤・キャンセルを登録'),
     ),
     `${label}：パレットの画面`,
     pal.screens,
@@ -371,7 +371,15 @@ async function checkTemplate(page, t) {
       .evaluateAll((els) => els.map((el) => el.dataset.template)),
   );
   check(same(s, [t]), `${label}：管理者設定の「いまの設定」`, s);
-  const checked = await page.getByRole('switch').evaluateAll((els) => els.map((el) => el.getAttribute('aria-checked')));
+  // スイッチの並びはグループ順（メニューのグループにそろえる。ADR-0034）なので、行の data-feature で ID に引き当てる
+  const byId = Object.fromEntries(
+    await page
+      .getByTestId('feature-row')
+      .evaluateAll((els) =>
+        els.map((el) => [el.dataset.feature, el.querySelector('[role="switch"]')?.getAttribute('aria-checked')]),
+      ),
+  );
+  const checked = FEATURE_IDS.map((id) => byId[id]);
   check(
     same(
       checked,
@@ -414,7 +422,7 @@ async function templates(page, dlg, ctx) {
     msg[0]?.includes('入る機能：') &&
       msg[0]?.includes('月の予定の印刷') &&
       msg[0]?.includes('切れる機能：') &&
-      msg[0]?.includes('稼働の見込み'),
+      msg[0]?.includes('勤務の見込み'),
     '月次予定・現場共有：確認に入る機能・切れる機能',
     msg,
   );
@@ -433,7 +441,7 @@ async function mobile(page, dlg) {
   const w1 = await page.evaluate(() => document.documentElement.scrollWidth);
   check(w1 <= 390, '390px：管理者設定が横にはみ出さない', w1);
   const name = await page.getByTestId('screen-name').innerText();
-  check(name.replace(/\s/g, '') === '管理者・管理者設定', '390px：上の帯の名前', name);
+  check(name.replace(/\s/g, '') === '設定・管理者設定', '390px：上の帯の名前', name);
   await page.screenshot({ path: path.join(OUT_DIR, 'settings-mobile.png'), fullPage: true });
   await page.goto('about:blank');
   await page.goto(`${BASE}#/compare`);
@@ -492,6 +500,18 @@ async function pathVariants(page, dlg, ctx) {
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'tabs-4-mobile.png') });
   await page.setViewportSize({ width: 1400, height: 1000 });
+  // 欠勤・キャンセルと空き状況の両方を切ると「当日・問い合わせ」は見出しごと消える（PRD D232。片方なら残るのは allOn で確かめる）
+  await writeFeaturesInOtherTab(ctx, { sudden: false, vacancy: false });
+  await open(page, '/home', '[data-testid="home-tasks"]');
+  const m = await menu(page);
+  check(
+    !m.titles.includes('当日・問い合わせ') &&
+      !m.labels.includes('欠勤・キャンセルを登録') &&
+      !m.labels.includes('空き状況') &&
+      same(m.titles, ['予定', '人', 'AI の条件', '設定']),
+    '欠勤・キャンセルと空き状況を切ると「当日・問い合わせ」は見出しごと出さない',
+    m.titles,
+  );
   await applyTemplate(page, dlg, 'all');
 }
 
@@ -554,14 +574,14 @@ async function deadEnds(page, dlg, ctx) {
   check(rows.length > 0, '月の要対応の行がある', rows.length);
   check(
     rows.every((r) => !r.to.includes('/workload') && !r.to.includes('do=absence')),
-    '月の要対応：切った機能（稼働の見込み・欠勤・キャンセル）への行き先が無い',
+    '月の要対応：切った機能（勤務の見込み・欠勤・キャンセル）への行き先が無い',
     rows.map((r) => r.to),
   );
   for (const kind of ['absentLeft', 'overSpan']) {
     const r = rows.find((x) => x.cls.includes(`is-${kind}`) && x.text.includes(md(second)));
     check(
-      !!r && r.to === '/plan' && r.text.includes('（日の画面で開く）'),
-      `月の要対応：${kind} の行は日の画面へ（「（日の画面で開く）」）`,
+      !!r && r.to === '/plan' && r.text.includes('（日の予定で開く）'),
+      `月の要対応：${kind} の行は日の予定へ（「（日の予定で開く）」）`,
       r,
     );
   }
@@ -569,7 +589,7 @@ async function deadEnds(page, dlg, ctx) {
     (await page.getByTestId('month-absent-left').count()) > 0,
     '月：希望休のまとめ入力を切っても「休みの人に N」の印は出す（欠勤の人に残る訪問の事実）',
   );
-  check((await page.getByTestId('month-workload').count()) === 0, '月：稼働の見込みのボタンを出さない');
+  check((await page.getByTestId('month-workload').count()) === 0, '月：勤務の見込みのボタンを出さない');
   check((await page.getByTestId('month-print').count()) === 0, '月：印刷のボタンを出さない');
   const r = rows.find((x) => x.cls.includes('is-overSpan') && x.text.includes(md(second)));
   if (r) {
@@ -581,7 +601,7 @@ async function deadEnds(page, dlg, ctx) {
     await page.waitForURL(/#\/plan/, { timeout: 10000 });
     check(
       !/workload/.test(hashOf(page)) && !(await page.getByTestId('feature-off-notice').count()),
-      '拘束の上限の行を押すと日の画面',
+      '拘束の上限の行を押すと日の予定',
       hashOf(page),
     );
   }
@@ -594,14 +614,14 @@ async function deadEnds(page, dlg, ctx) {
     (await page.getByTestId('band-over-span').count()) === 0 &&
       (await page.getByTestId('over-span-link').count()) === 0 &&
       (await page.locator('.app-main a[href*="workload"]').count()) === 0,
-    '日の画面：稼働の見込みを切ると拘束の上限の帯と稼働の見込みへのリンクを出さない',
+    '日の予定：勤務の見込みを切ると拘束の上限の帯と勤務の見込みへのリンクを出さない',
   );
   await page.getByTestId('plan-menu').click();
   await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
   check(
     (await page.getByTestId('plan-menu-compare').count()) === 0 &&
       (await page.getByTestId('plan-menu-revert').count()) === 1,
-    '日の画面：「案を変える ▾」に比べるを出さない（戻すは残る）',
+    '日の予定：「案を変える ▾」に比べるを出さない（戻すは残る）',
   );
   await page.keyboard.press('Escape');
 
@@ -611,8 +631,8 @@ async function deadEnds(page, dlg, ctx) {
   await open(page, '/availability', '.avail-table');
   const legend = await page.locator('.app-main').innerText();
   check(
-    legend.includes('急な欠勤') && !legend.includes('予定の画面で登録'),
-    '稼働時間の凡例：欠勤・キャンセルを切ると「（予定の画面で登録）」を出さない',
+    legend.includes('急な欠勤') && !legend.includes('急な欠勤（日の予定で登録）') && !legend.includes('予定の画面'),
+    '勤務時間（シフト）の凡例：欠勤・キャンセルを切ると「（日の予定で登録）」を出さない',
   );
   const heads = await page.locator('.avail-table thead th').allInnerTexts();
   const col = heads.findIndex((t) => t.replace(/\s+/g, '').startsWith(md(second)));
@@ -633,6 +653,12 @@ async function deadEnds(page, dlg, ctx) {
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'dead-ends-availability.png') });
   await applyTemplate(page, dlg, 'all');
+  // 入に戻すと凡例に登録の場所（新しい画面名「日の予定」）が出る（PRD D230）
+  await open(page, '/availability', '.avail-table');
+  check(
+    (await page.locator('.app-main').innerText()).includes('急な欠勤（日の予定で登録）'),
+    '勤務時間（シフト）の凡例：欠勤・キャンセルが入なら「急な欠勤（日の予定で登録）」',
+  );
 }
 
 /** ひな形ごとの、画面の中の入口（その2。ADR-0028 の「切ると隠れるもの」） */
@@ -657,9 +683,12 @@ async function insideEntries(page, dlg, ctx) {
       { timeout: 60000 },
     );
     await page.waitForTimeout(500);
-    check((await count('sudden-open')) === (on('sudden') ? 1 : 0), `${label}：日の画面の「欠勤・キャンセル」`);
-    check((await page.locator('.absence-btn').count()) > 0 === on('sudden'), `${label}：列の見出しの「急な欠勤」`);
-    check((await count('day-mail')) === (on('mail') ? 1 : 0), `${label}：日の画面の「メールで送る」`);
+    check((await count('sudden-open')) === (on('sudden') ? 1 : 0), `${label}：日の予定の「欠勤・キャンセルを登録」`);
+    check(
+      (await page.locator('.absence-btn').count()) > 0 === on('sudden'),
+      `${label}：列の見出しの「この人の欠勤を登録」`,
+    );
+    check((await count('day-mail')) === (on('mail') ? 1 : 0), `${label}：日の予定の「メールで送る」`);
     if (!on('rules')) check((await count('plan-reason')) === 0, `${label}：点数の横の理由を出さない`);
     await page.getByTestId('plan-menu').click();
     await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
@@ -740,7 +769,7 @@ async function insideEntries(page, dlg, ctx) {
       await open(page, `/plan?date=${TODAY}`, '.date-switch select');
       await page.getByTestId('plan-menu').waitFor({ timeout: 60000 });
       const w = await page.evaluate(() => document.documentElement.scrollWidth);
-      check(w <= 390, '390px・基本：日の画面が横にはみ出さない', w);
+      check(w <= 390, '390px・基本：日の予定が横にはみ出さない', w);
       await page.screenshot({ path: path.join(OUT_DIR, 'inside-basic-mobile.png') });
       await page.setViewportSize({ width: 1400, height: 1000 });
     }

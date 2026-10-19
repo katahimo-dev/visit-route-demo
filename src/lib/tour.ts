@@ -24,12 +24,16 @@ export type TourStep = {
  */
 export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean, features: Features = {}): TourStep[] {
   const key = isMac ? '⌘K' : 'Ctrl+K';
-  // 予定を組むのメニューの項目（案を比べるを切っていれば出さない）
-  const planItems = isOn(features, 'compare') ? '月・週・日・案を比べる' : '月・週・日';
+  // 予定のメニューの項目（案を比べるを切っていれば出さない）
+  const planItems = isOn(features, 'compare')
+    ? '月の予定・週の予定・日の予定・案を比べる'
+    : '月の予定・週の予定・日の予定';
+  // AI の条件のメニューの項目（相性を切っていれば出さない）
+  const ruleItems = isOn(features, 'compat') ? '条件の重み・相性' : '条件の重み';
   const all: TourStep[] = [
     {
       key: 'home',
-      title: 'ここが「今日やること」です',
+      title: 'ホームに「今日やること」が出ます',
       body: '開くとまずホームが出ます。今月の案づくり・確定していない日・要対応など、次にやることをカードで出します。カードを押すと、その操作の画面へ移ります。',
       where: 'メニューの「ホーム」（スマホは下のタブ）',
     },
@@ -37,20 +41,20 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
       key: 'plan',
       title: '予定は月・週・日で組みます',
       body: '月で一月分を見渡し、案をまとめて作って、問題の無い日をまとめて確定できます。週は人ごとの1週間、日はその日の割当を手直しして確定する画面です。',
-      where: `メニューの「予定を組む」（${planItems}）`,
+      where: `メニューの「予定」（${planItems}）`,
     },
     {
       key: 'absence',
       title: '欠勤・キャンセルはここから',
-      body: `${terms.staff}の急な欠勤や${terms.client}の当日キャンセルは、登録すると、その日の案を振り直す手順に進みます。日の画面の「欠勤・キャンセル」からも同じです。`,
-      where: 'メニューの「当日の対応」の「欠勤・キャンセル」',
+      body: `${terms.staff}の急な欠勤や${terms.client}の当日キャンセルは、登録すると、その日の案を振り直す手順に進みます。日の予定の「欠勤・キャンセルを登録」からも同じです。`,
+      where: 'メニューの「当日・問い合わせ」の「欠勤・キャンセルを登録」',
       feature: 'sudden',
     },
     {
       key: 'rules',
-      title: '条件（AI の考え方）はここで変えます',
-      body: '条件の重み・訪問の種類・特性の項目を変えると、AI の案の作り方が変わります。変えたあとは、影響する日と「作り直す」が画面の上に出ます。',
-      where: 'メニューの「AI の考え方」',
+      title: 'AI の条件はここで変えます',
+      body: `${ruleItems}を変えると、AI の案の作り方が変わります（訪問の種類・特性の項目は「設定」）。変えたあとは、影響する日と「作り直す」が画面の上に出ます。`,
+      where: `メニューの「AI の条件」（${ruleItems}）`,
       feature: 'rules',
     },
     {
@@ -68,7 +72,7 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
         `手直し（固定）：替えたい訪問は別の${terms.staff}へドラッグします。動かした訪問は「固定」になり、残りを AI に組み直させても担当が残ります。`,
         `確定：「この割当で確定」を押すと各訪問の担当が決まり、${terms.staff}の画面にも出ます。`,
       ],
-      where: 'メニューの「予定を組む」の「日」',
+      where: 'メニューの「予定」の「日の予定」（スマホは下のタブの「今日」）',
     },
   ];
   return all.filter((s) => !s.feature || isOn(features, s.feature));
