@@ -96,6 +96,7 @@ import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
 import { keepLeaveVisits } from '../lib/leaves';
+import { UNASSIGNED_DO } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { currentRuleKeys, planStale, rulesStale } from '../lib/month';
@@ -735,8 +736,9 @@ export default function PlanPage() {
   const [params, setParams] = useSearchParams();
   const pendingRecreate = useRef<string | null>(null);
   const doParam = params.get('do');
-  /** ?do=absence で開く日（日付を切り替えたあとに開く。日付を変えると欄を閉じる effect より後で開くため） */
+  /** ?do=absence で開く日（日付を切り替えたあとに開く。日付を変えると欄を閉じる effect より後で開くため）と、`&staff=` の人 */
   const pendingSudden = useRef<string | null>(null);
+  const pendingSuddenStaff = useRef<string | null>(null);
   // ホームの「急な欠勤・キャンセルを登録」（?date=今日&do=absence。PRD D172）：その日を選び、「欠勤・キャンセル」の欄を1段目で開き、
   // URL から ?date= と ?do= を消す（1回だけ。戻るで繰り返さない）。自動作成は今どおり（案ができるまで振り直しは押せない）
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
@@ -746,6 +748,58 @@ export default function PlanPage() {
     const target = raw && isDate(raw) ? raw : date;
     if (target !== date) setDate(target);
     pendingSudden.current = target;
+    // 稼働時間の右の欄から（PRD D203）：`&staff=` の人の欠勤（2段目）で開く。知らない人・その日に働かない人なら1段目
+    const sid = params.get('staff');
+    pendingSuddenStaff.current = sid && data.staff.some((s) => s.id === sid) ? sid : null;
+    setParams(
+      (p) => {
+        p.delete('do');
+        p.delete('date');
+        p.delete('staff');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [doParam]);
+  useEffect(() => {
+    if (pendingSudden.current === null || pendingSudden.current !== date) return;
+    pendingSudden.current = null;
+    const sid = pendingSuddenStaff.current;
+    pendingSuddenStaff.current = null;
+    // その日に働く人（稼働時間帯がある＝「休む人」の選択肢 staffChoices に出る人）のときだけ2段目。
+    // 休みの日・最終勤務日の後の人は選択肢に無く2段目が壊れるので1段目（PR #48 のレビュー）
+    const works = !!sid && (slotsOf.get(sid)?.baseSlots.length ?? 0) > 0;
+    openSudden(works ? { kind: 'staff', staffId: sid } : {});
+  });
+  // ?date= だけのリンク（空き状況の「その日の案を見る」。新しいタブでも開ける。PRD D204）：その日を選び、?date= を消す。
+  // ?do= があるときはそれぞれの effect が読む
+  const dateParam = params.get('date');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ?date= が付いたときだけ
+  useEffect(() => {
+    if (dateParam === null || doParam !== null) return;
+    if (isDate(dateParam) && dateParam !== date) setDate(dateParam);
+    setParams(
+      (p) => {
+        p.delete('date');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [dateParam]);
+  // 月の要対応の「入らない訪問」から（?date=…&do=unassigned。PRD D201）：その日を選び、URL から ?date= と ?do= を消し、
+  // 案ができたら「入らなかった訪問」の列へ巻く（帯の「見る」と同じ。1回だけ。入らない訪問が無くなっていれば巻かない）
+  /**
+   * ?do=unassigned を受けた日。arrived：その日に着いた、auto：着いてから自動作成を始めた、busy：作っている途中を見た
+   * （自動作成を始めた直後は running・batch がまだ立っていないので、立つまで待つ）
+   */
+  const pendingNone = useRef<{ date: string; arrived: boolean; auto: boolean; busy: boolean } | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
+  useEffect(() => {
+    if (doParam !== UNASSIGNED_DO) return;
+    const raw = params.get('date');
+    const target = raw && isDate(raw) ? raw : date;
+    if (target !== date) setDate(target);
+    pendingNone.current = { date: target, arrived: false, auto: false, busy: false };
     setParams(
       (p) => {
         p.delete('do');
@@ -755,11 +809,6 @@ export default function PlanPage() {
       { replace: true },
     );
   }, [doParam]);
-  useEffect(() => {
-    if (pendingSudden.current === null || pendingSudden.current !== date) return;
-    pendingSudden.current = null;
-    openSudden({});
-  });
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
   useEffect(() => {
     if (doParam !== 'recreate') return;
@@ -793,6 +842,12 @@ export default function PlanPage() {
     if (pendingRecreate.current !== null) return;
     if (aiPlan || running || batch || !problem || problem.visits.length === 0 || autoTried.current.has(date)) return;
     autoTried.current.add(date);
+    // ?do=unassigned を待っている日なら、自動作成が終わるまで待つ印（PR #48 のレビュー）
+    // （ほかの日の作成が終わるのを待っていた間の busy は数えない）
+    if (pendingNone.current?.date === date) {
+      pendingNone.current.auto = true;
+      pendingNone.current.busy = false;
+    }
     const base = scorePresetOf(data.presets, data.scorePresetId);
     runBatch(base ? [base] : []);
   }, [date, aiPlan, problem, running]);
@@ -2169,6 +2224,32 @@ export default function PlanPage() {
       document.getElementById(noneColId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
     );
   };
+  // ?do=unassigned を受けた日（PRD D201）：案ができて作っている途中でなければ1回だけ巻く。
+  // 訪問が無い・入らない訪問が無いときは巻かずに終える。別の日へ移ったら忘れる
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・案・作っている途中かが変わったときだけ
+  useEffect(() => {
+    const want = pendingNone.current;
+    if (want === null) return;
+    if (want.date !== date) {
+      // 日付を切り替えている途中（setDate の直後）は待つ。その日に着いたあとでほかの日を選んだら忘れる
+      if (want.arrived) pendingNone.current = null;
+      return;
+    }
+    want.arrived = true;
+    if (running || batch) {
+      want.busy = true;
+      return;
+    }
+    if (aiPlan) {
+      pendingNone.current = null;
+      if (unassigned.length > 0) goToNone();
+      return;
+    }
+    // 自動作成を始めた直後（まだ作っている途中を見ていない）は待つ。それ以外で案が無い（自動作成が走らない・
+    // 作れなかった・訪問が無い）なら忘れる（あとで「AI案を作る」を押したときに急に巻かない。PR #48 のレビュー）
+    if (want.auto && !want.busy) return;
+    pendingNone.current = null;
+  }, [date, aiPlan, running, batch, problem, doParam]);
   /** この日にAI案が無いときの案内と「AI案を作る」（担当ごと・一覧のどちらの表示でも出す） */
   const noPlanCard = (
     <div className="card">

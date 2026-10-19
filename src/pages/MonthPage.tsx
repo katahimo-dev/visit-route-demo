@@ -67,6 +67,7 @@ import {
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { clientDot } from '../lib/glance';
+import { attentionTarget, type LinkTarget } from '../lib/links';
 import {
   addMonths,
   applyDayRun,
@@ -751,6 +752,12 @@ export default function MonthPage() {
     },
     [setDate, navigate],
   );
+  /** 要対応の1行の行き先へ移る（PRD D201。行き先は lib/links の attentionTarget。日付も選んでおく） */
+  const openTarget = (t: LinkTarget) => {
+    lastDate.current = t.date;
+    setDate(t.date);
+    navigate(t.to);
+  };
 
   const current = batch ? batch.targets[batch.index] : undefined;
   /**
@@ -1248,48 +1255,53 @@ export default function MonthPage() {
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
-                  {attention.map((a) => (
-                    <li key={`${a.date}-${a.kind}`}>
-                      <button
-                        type="button"
-                        className={`month-attention-btn is-${a.kind}`}
-                        onClick={() => openDay(a.date)}
-                        title="押すとその日の予定の画面を開きます"
-                      >
-                        <span className="month-attention-date">
-                          {mdText(a.date)}（{WEEKDAY_LABELS[weekday(a.date)]}）
-                        </span>
-                        <span>
-                          {a.kind === 'unassigned' && (
-                            <WithIcon icon={CircleAlert} size={14}>
-                              入らない訪問 {a.count}件
-                            </WithIcon>
-                          )}
-                          {a.kind === 'absentLeft' && (
-                            <WithIcon icon={UserX} size={14}>
-                              休みの人に訪問 {a.count}件
-                            </WithIcon>
-                          )}
-                          {a.kind === 'stale' && (
-                            <WithIcon icon={RefreshCw} size={14}>
-                              条件が変わった
-                            </WithIcon>
-                          )}
-                          {a.kind === 'overSpan' && (
-                            <WithIcon icon={Timer} size={14}>
-                              出勤〜退勤（拘束）が{data.org.spanLimitHours}時間を超える{' '}
-                              {a.names.map(shortName).join('・')}
-                            </WithIcon>
-                          )}
-                          {a.kind === 'absence' && (
-                            <WithIcon icon={UserX} size={14}>
-                              欠勤 {a.names.map(shortName).join('・') || `${a.count}人`}
-                            </WithIcon>
-                          )}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                  {attention.map((a) => {
+                    const t = attentionTarget(a);
+                    return (
+                      <li key={`${a.date}-${a.kind}`}>
+                        <button
+                          type="button"
+                          className={`month-attention-btn is-${a.kind}`}
+                          onClick={() => openTarget(t)}
+                          data-to={t.to}
+                        >
+                          <span className="month-attention-date">
+                            {mdText(a.date)}（{WEEKDAY_LABELS[weekday(a.date)]}）
+                          </span>
+                          <span>
+                            {a.kind === 'unassigned' && (
+                              <WithIcon icon={CircleAlert} size={14}>
+                                入らない訪問 {a.count}件
+                              </WithIcon>
+                            )}
+                            {a.kind === 'absentLeft' && (
+                              <WithIcon icon={UserX} size={14}>
+                                休みの人に訪問 {a.count}件
+                              </WithIcon>
+                            )}
+                            {a.kind === 'stale' && (
+                              <WithIcon icon={RefreshCw} size={14}>
+                                条件が変わった
+                              </WithIcon>
+                            )}
+                            {a.kind === 'overSpan' && (
+                              <WithIcon icon={Timer} size={14}>
+                                出勤〜退勤（拘束）が{data.org.spanLimitHours}時間を超える{' '}
+                                {a.names.map(shortName).join('・')}
+                              </WithIcon>
+                            )}
+                            {a.kind === 'absence' && (
+                              <WithIcon icon={UserX} size={14}>
+                                欠勤 {a.names.map(shortName).join('・') || `${a.count}人`}
+                              </WithIcon>
+                            )}
+                            {/* 行き先を添える（PRD D201） */}
+                            <small className="month-attention-go">{t.note}</small>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </>
