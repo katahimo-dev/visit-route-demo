@@ -101,6 +101,7 @@ import { UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { currentRuleKeys, planStale, rulesStale } from '../lib/month';
+import { scrollBehavior } from '../lib/motion';
 import { typeOf } from '../lib/patternText';
 import { leavePeople } from '../lib/personLinks';
 import {
@@ -405,7 +406,7 @@ export default function PlanPage() {
   }, [date]);
   // 訪問の入力欄を開いたら見える所へ（一覧の行の「編集」から開いたとき、欄は操作の行のすぐ下に出る）
   useEffect(() => {
-    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (editing) formRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
   }, [editing]);
   /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
   const dateRef = useRef(date);
@@ -1388,7 +1389,7 @@ export default function PlanPage() {
   const goToBar = () => {
     const el = document.getElementById(barId);
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
     el.focus({ preventScroll: true });
   };
   // 欠勤を登録して振り直したら、差の欄（案A の結果・案B・連絡の一覧）へ移る
@@ -2349,10 +2350,10 @@ export default function PlanPage() {
       const col = document.querySelector<HTMLElement>(`.route-col[data-staff="${CSS.escape(sid)}"]`);
       const card = visitId ? col?.querySelector<HTMLElement>(`[data-visit="${CSS.escape(visitId)}"]`) : null;
       if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        card.scrollIntoView({ behavior: scrollBehavior(), block: 'center', inline: 'nearest' });
         return;
       }
-      col?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+      col?.scrollIntoView({ behavior: scrollBehavior(), block: 'start', inline: 'nearest' });
       colHeadOf(sid)?.focus({ preventScroll: true });
     });
   };
@@ -2360,7 +2361,7 @@ export default function PlanPage() {
   const goToNone = () => {
     if (shownView === 'list') setColView('timeline');
     requestAnimationFrame(() =>
-      document.getElementById(noneColId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      document.getElementById(noneColId)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }),
     );
   };
   // ?do=unassigned を受けた日（PRD D201）：案ができて作っている途中でなければ1回だけ巻く。

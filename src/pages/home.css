@@ -31,7 +31,7 @@
   box-shadow: 0 2px 4px rgba(80, 50, 30, 0.08), 0 10px 24px rgba(80, 50, 30, 0.08);
 }
 .home-task:focus-visible {
-  outline: 3px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 .home-task-icon {
@@ -69,7 +69,7 @@
 }
 /* やること */
 .home-task.is-todo {
-  border-left-color: var(--primary);
+  border-left-color: var(--accent);
 }
 .home-task.is-todo .home-task-icon {
   background: var(--primary-soft);
@@ -81,14 +81,14 @@
 }
 .home-task.is-info .home-task-icon {
   background: #e3f2e8;
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 .home-ready {
   margin: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--ok);
+  color: var(--ok-ink);
   border-left: 6px solid var(--ok);
 }
 .home-ready strong {

@@ -106,6 +106,14 @@
     margin-right: 0;
   }
 }
+/* タッチの端末：行の右の i は上下の行に掛けず、右の余白へ広げる（32×24px） */
+@media (pointer: coarse) {
+  .daylines-item > .person-info::before {
+    top: -1px;
+    bottom: -1px;
+    right: -10px;
+  }
+}
 /* データにいない人の行（i を出さない）も同じ幅だけ右を空ける */
 .daylines-body.has-info .daylines-item:not(:has(.person-info)) {
   padding-right: 24px;

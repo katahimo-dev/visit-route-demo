@@ -1,14 +1,18 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { jstDate } from '../domain/time';
+import { backupFileName, backupNote, saveBlob } from '../lib/download';
+import { backup } from '../store';
 
 /**
- * 画面の例外で真っ白にしない。データが壊れていても戻れるよう「データを初期状態に戻す」を出す。
+ * 画面の例外で真っ白にしない。主ボタンは「控え（バックアップ）を書き出す」（いまのデータを JSON で残す）、
+ * データが壊れていても戻れるよう「データを初期状態に戻す」を赤いボタンで後ろに出す。
  * 戻す前の確認は、Provider に頼らず ConfirmDialog をここで直に出す（React の木が壊れた後・Provider の外でも出せる。PRD D149）
  */
-type State = { error: Error | null; componentStack: string; asking: boolean };
+type State = { error: Error | null; componentStack: string; asking: boolean; backup: string | null };
 
 export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () => void }, State> {
-  state: State = { error: null, componentStack: '', asking: false };
+  state: State = { error: null, componentStack: '', asking: false, backup: null };
 
   static getDerivedStateFromError(error: Error) {
     return { error };
@@ -19,6 +23,26 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
     console.error(error, info.componentStack);
     this.setState({ componentStack: info.componentStack ?? '' });
   }
+
+  /**
+   * いまのデータ（画面の最新。無ければ保存してある文字）を JSON のファイルに書き出す。壊れて退避したデータがあれば別のファイルにも。
+   * 保存に失敗していたときは文で区別する（トーストは Provider の外では出せないので、結果は画面の文で知らせる）
+   */
+  backup = () => {
+    try {
+      const b = backup();
+      const date = jstDate(Date.now());
+      let brokenName: string | null = null;
+      for (const f of b.files) {
+        const name = backupFileName(date, f.kind);
+        if (f.kind === 'broken') brokenName = name;
+        saveBlob(new Blob([f.text], { type: 'application/json' }), name);
+      }
+      this.setState({ backup: backupNote({ source: b.source, saveError: b.saveError, brokenName }) });
+    } catch (e) {
+      this.setState({ backup: `書き出せませんでした（${e instanceof Error ? e.message : String(e)}）` });
+    }
+  };
 
   render() {
     const { error } = this.state;
@@ -43,18 +67,26 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
           </pre>
         </details>
         <div className="row" style={{ flexWrap: 'wrap' }}>
-          <button type="button" className="btn" onClick={() => this.setState({ error: null, componentStack: '' })}>
+          <button type="button" className="btn btn-primary" onClick={this.backup}>
+            控え（バックアップ）を書き出す
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => this.setState({ error: null, componentStack: '', backup: null })}
+          >
             もう一度表示する
           </button>
-          <button type="button" className="btn btn-primary" onClick={() => this.setState({ asking: true })}>
+          <button type="button" className="btn btn-danger" onClick={() => this.setState({ asking: true })}>
             データを初期状態に戻す
           </button>
         </div>
+        <output className="sub">{this.state.backup ?? ''}</output>
         {this.state.asking && (
           <ConfirmDialog
             request={{
               title: 'データを初期状態に戻しますか？',
-              body: 'データをデモの初期状態に戻します。いまのデータは消えます。',
+              body: 'データをデモの初期状態に戻します。いまのデータは消えます（残すときは、先に「控え（バックアップ）を書き出す」）。',
               confirmLabel: '消して初期状態に戻す',
               cancelLabel: '取り消す',
               tone: 'danger',
@@ -65,7 +97,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
                 return;
               }
               this.props.onReset();
-              this.setState({ error: null, componentStack: '', asking: false });
+              this.setState({ error: null, componentStack: '', asking: false, backup: null });
             }}
           />
         )}

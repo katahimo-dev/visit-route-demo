@@ -70,7 +70,7 @@ fieldset.pick-chips {
   right: -4px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--ok);
+  background: var(--ok-ink);
   color: #fff;
   font-size: 0.65rem;
   line-height: 1.4;
@@ -107,6 +107,12 @@ abbr.pick-badge {
   width: 17px;
   height: 17px;
   transform: translateY(-50%);
+}
+/* タッチの端末：チップの中の i は横に広げるとチップの名前に掛かるので、縦に広げ横は右の余白の中だけ（25×29px） */
+@media (pointer: coarse) {
+  .pick-chip-wrap > .person-info::before {
+    inset: -6px -4px;
+  }
 }
 @media print {
   .pick-chip-wrap > .pick-chip {

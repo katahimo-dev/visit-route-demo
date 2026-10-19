@@ -28,7 +28,7 @@
   padding: 20px 22px 18px;
   background: var(--card);
   border-radius: var(--radius);
-  border-top: 6px solid var(--primary);
+  border-top: 6px solid var(--accent);
   box-shadow: 0 18px 50px rgba(40, 25, 15, 0.3);
   animation: tour-in 0.15s ease-out;
 }

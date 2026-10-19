@@ -140,7 +140,7 @@ flowchart LR
 ### store（データ一式の保存）
 - 責務：`DemoData` の読み込み・保存・検査（zod）・版の移行・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す。画面へは `useDemoData()`（`data`・`update(fn)`・`replace(d)`・`reset()`・`saveError`）。書き換えは update・replace・reset だけ
 - 持つデータ（持ち主）：`DemoData`（キー `vrdemo:data:v1` の1つの JSON）、案内ツアーを見たか（キー `vrdemo:tour:seen`）
-- 提供するAPI：`load()`（無ければ seed の `createInitialData(今日)` で作る。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データ（退避できたら初期データを書き、読み直すたびに作り直さない。退避できなければ元の文字を残す）。読めたら `extendDays`）、`save(data)`（300ms 間引き。`flushSave()`）、`reset()`（`createInitialData(今日)`）、`exportJson`、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
+- 提供するAPI：`load()`（無ければ seed の `createInitialData(今日)` で作る。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データ（退避できたら初期データを書き、読み直すたびに作り直さない。退避できなければ元の文字を残す）。読めたら `extendDays`）、`save(data)`（300ms 間引き。`flushSave()`）、`reset()`（`createInitialData(今日)`）、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
 - repair（いない物を指す参照を除き、ID の重複は最初の1件）：
   - 割当・相性・上書き・固定・記録・今の案と記録の `reassign` の `base*`（`absenceIds` は残す）。記録は1日20件まで（古いものから捨てる）
   - プリセット：6つまで・0件なら初期の3種・重みは 0〜5・0.5刻み（`clampWeight`）・必須にできない型の必須は外す。`scorePresetId` が無効なら先頭
@@ -387,7 +387,7 @@ flowchart LR
 
 | コンポーネント | メソッド | エンドポイント | 概要 |
 |---|---|---|---|
-| store | 関数 | `load / save / reset / exportJson / importJson / migrate / repair / extendDays` | 保存・入出力・版の移行 |
+| store | 関数 | `load / save / reset / exportJson / importJson / migrate / repair / extendDays / backup / rememberCurrent` | 保存・入出力・版の移行・例外の画面の控え |
 | domain | 関数 | `withoutAbsences / afterLastDay / leaveOn / isOnLeave` | 欠勤・最終勤務日・休み（デモ独自） |
 | matching | 関数 | `compile(data, date, pins?) → Problem` | 項目・条件 → 可否・費用表 |
 | solver | Worker | `solve` → `progress`…`done`／`error`、`stop` | AI案を作る。stop で最良案を返す |
