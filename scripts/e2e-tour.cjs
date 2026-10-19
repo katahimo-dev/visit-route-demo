@@ -159,6 +159,11 @@ async function tourFirst(b) {
     lastBtns,
   );
   check((await page.getByTestId('tour-next').innerText()).trim() === '閉じる', 'ツアー：最後の枚のボタンは「閉じる」');
+  check(
+    (await activeTestId(page)) === 'tour-today',
+    'ツアー：最後の枚に入るとフォーカスは主ボタン「今日の予定を開く」',
+    await activeTestId(page),
+  );
   const body = await tour(page).evaluate(
     (el) => document.getElementById(el.getAttribute('aria-describedby'))?.textContent ?? '',
   );
@@ -248,7 +253,9 @@ async function tourToday(b) {
   await open(page, '/month', '[data-testid="tour"]');
   for (let i = 0; i < 5; i++) await page.getByTestId('tour-next').click();
   check((await tour(page).getAttribute('data-step')) === 'flow', '「今日の予定を開く」：最後の枚まで進む');
-  await page.getByTestId('tour-today').click();
+  // フォーカスは「今日の予定を開く」にあるので、Enter で押せる
+  check((await activeTestId(page)) === 'tour-today', '「今日の予定を開く」：最後の枚ではフォーカスがこのボタン');
+  await page.keyboard.press('Enter');
   await tour(page).waitFor({ state: 'detached' });
   await page.waitForURL(/#\/plan/);
   await page.locator('.date-switch select').waitFor({ timeout: 30000 });

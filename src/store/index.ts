@@ -131,12 +131,18 @@ export function load(): DemoData {
   }
   const r = importJson(text);
   if (isImportError(r)) {
+    let kept = false;
     try {
       ls?.setItem(BROKEN_KEY, text);
+      kept = !!ls;
     } catch {
       // 退避できなくても続ける
     }
-    return createInitialData(todayDate);
+    const d = createInitialData(todayDate);
+    // 退避できたら作った初期データを書く（読み直すたびに初期データの計算と退避を繰り返さない）。
+    // 退避できなかったときは元の文字を残す（上書きすると壊れたデータが消える）
+    if (kept) writeNow(d);
+    return d;
   }
   const extended = extendDays(r, todayDate);
   if (extended !== r) writeNow(extended);

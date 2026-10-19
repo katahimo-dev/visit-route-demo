@@ -58,7 +58,8 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
  * 画面の中央のカード（PRD D192）。確認ダイアログ（ADR-0026）と同じ流儀：body の直下に出し、body のほかの子を inert（inertLock）、
  * 裏を巻かない、Tab は中で回す、Esc は「とばす」と同じ、閉じたら開く前の要素へフォーカスを戻す。
  * 最初のフォーカスは「次へ」。枚が変わってフォーカスが外れたら（最初の枚で「戻る」が押せなくなったとき）「次へ」へ。
- * 最後の枚は「次へ」が「閉じる」になり、主ボタン「今日の予定を開く」を添える（「とばす」は出さない。PRD D226）
+ * 最後の枚は「次へ」が「閉じる」になり、主ボタン「今日の予定を開く」を添える（「とばす」は出さない。PRD D226）。
+ * 最後の枚に入ったらフォーカスは「今日の予定を開く」へ
  */
 function TourDialog({
   terms,
@@ -77,6 +78,8 @@ function TourDialog({
   const wrapRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
+  /** 最後の枚の主ボタン「今日の予定を開く」（最後の枚に入ったらここへフォーカス。PRD D226） */
+  const todayRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const titleId = useId();
@@ -116,6 +119,11 @@ function TourDialog({
   }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 枚が変わったときだけ
   useEffect(() => {
+    // 最後の枚は次の一手の主ボタン「今日の予定を開く」へ
+    if (index === steps.length - 1 && todayRef.current) {
+      todayRef.current.focus();
+      return;
+    }
     const at = document.activeElement;
     if (!(at instanceof Node) || !boxRef.current?.contains(at) || (at as HTMLButtonElement).disabled)
       nextRef.current?.focus();
@@ -208,7 +216,13 @@ function TourDialog({
             {tourNextLabel(index, steps.length)}
           </button>
           {last && (
-            <button type="button" className="btn btn-small btn-primary" onClick={onToday} data-testid="tour-today">
+            <button
+              ref={todayRef}
+              type="button"
+              className="btn btn-small btn-primary"
+              onClick={onToday}
+              data-testid="tour-today"
+            >
               {TOUR_TODAY_LABEL}
             </button>
           )}

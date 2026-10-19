@@ -122,6 +122,30 @@ describe('load・save', () => {
     expect(mem.get(BROKEN_KEY)).toBe('{こわれた');
   });
 
+  it('壊れた JSON のときは作った初期データを書き、読み直しても退避と計算を繰り返さない', () => {
+    mem.set(STORAGE_KEY, '{こわれた');
+    const d = load();
+    // 作った初期データ（7日分の案を含む）が書かれている
+    expect(JSON.parse(mem.get(STORAGE_KEY) ?? '{}')).toEqual(JSON.parse(JSON.stringify(d)));
+    // 読み直すと書いたデータを読み、退避は1回のまま（同じ値で上書きしない）
+    mem.set(BROKEN_KEY, '退避は1回');
+    const again = load();
+    expect(mem.get(BROKEN_KEY)).toBe('退避は1回');
+    expect(again.aiPlans).toEqual(JSON.parse(JSON.stringify(d.aiPlans)));
+  });
+
+  it('壊れた JSON を退避できなければ、元の文字を上書きしない', () => {
+    mem.set(STORAGE_KEY, '{こわれた');
+    const real = (globalThis.localStorage as Storage).setItem;
+    (globalThis.localStorage as Storage).setItem = (k: string, v: string) => {
+      if (k === BROKEN_KEY) throw new DOMException('full', 'QuotaExceededError');
+      real.call(globalThis.localStorage, k, v);
+    };
+    const d = load();
+    expect(d.staff).toHaveLength(8);
+    expect(mem.get(STORAGE_KEY)).toBe('{こわれた');
+  });
+
   it('保存したものを読み直せる（間引きは最後の値）', () => {
     vi.useFakeTimers();
     const a = createDemoData('2026-10-12');

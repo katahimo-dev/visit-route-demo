@@ -28,6 +28,11 @@ function addDays(d, n) {
 }
 /** 初期データに案が入る日（今日から7日。PRD D225） */
 const SEED_DAYS = Array.from({ length: 7 }, (_, i) => addDays(TODAY, i));
+/**
+ * 初期データの案・まとめて確定を確かめる月：今月に初期データの案の日が3日以上あれば今月、無ければ（月末）翌月
+ * （月末の日は今月の案の日が今日だけになり、問題のある日・未確定の変更ありの日・確定する日を作れないため）
+ */
+const SYM = SEED_DAYS.filter((d) => d.slice(0, 7) === YM).length >= 3 ? YM : SEED_DAYS[6].slice(0, 7);
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 /** 「10/22（木）」（アプリの lib/confirmDay の dayLabel と同じ） */
 const dayLabel = (d) =>
@@ -201,19 +206,19 @@ async function firstState(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'home-after.png'), fullPage: true });
 }
 
-/** 今月の日のマスの状態（日付 → data-state） */
-async function cellStates(page) {
-  await open(page, `/month?ym=${YM}&layout=calendar`, '[data-testid="month-day"]');
+/** その月（既定は今月）の日のマスの状態（日付 → data-state） */
+async function cellStates(page, ym = YM) {
+  await open(page, `/month?ym=${ym}&layout=calendar`, '[data-testid="month-day"]');
   await page.locator('[data-testid="month-aside"]').waitFor();
   return page
     .locator('[data-testid="month-day"]')
     .evaluateAll((els) => Object.fromEntries(els.map((e) => [e.dataset.date, e.dataset.state])));
 }
 
-/** ホームの今月の「確定していない日」の日数（カードが無ければ 0） */
-async function homeConfirmDays(page) {
+/** ホームのその月（既定は今月）の「確定していない日」の日数（カードが無ければ 0） */
+async function homeConfirmDays(page, ym = YM) {
   await open(page, '/home');
-  const title = `${Number(YM.slice(5, 7))}月の確定していない日`;
+  const title = `${Number(ym.slice(5, 7))}月の確定していない日`;
   const t = (await tasks(page)).find((x) => x.kind === 'confirm' && x.title.startsWith(title));
   const m = t && /確定していない日 (\d+)日/.exec(t.title);
   return m ? Number(m[1]) : 0;
@@ -234,8 +239,9 @@ async function seedPlans(page) {
   });
   try {
     await p.setViewportSize({ width: 1440, height: 1000 });
-    const inMonth = SEED_DAYS.filter((d) => d.slice(0, 7) === YM);
-    const states = await cellStates(p);
+    // 確かめる月（SYM）：ふだんは今月、月末は翌月
+    const inMonth = SEED_DAYS.filter((d) => d.slice(0, 7) === SYM);
+    const states = await cellStates(p, SYM);
     check(
       inMonth.length > 0 && inMonth.every((d) => states[d] === 'plan'),
       '初めて開くと今日から7日分（今月の分）の日のマスが「案あり」（案なしでない）',
@@ -261,9 +267,9 @@ async function seedPlans(page) {
     await p.screenshot({ path: path.join(OUT_DIR, 'month-first-run-1440.png'), fullPage: true });
     // ホーム：今日のカードは未確定、確定していない日は今日以降の訪問のある日（案の無い日も含む）
     const unconfirmed = Object.entries(states).filter(
-      ([d, st]) => d >= TODAY && d.slice(0, 7) === YM && st !== 'empty' && st !== 'confirmed',
+      ([d, st]) => d >= TODAY && d.slice(0, 7) === SYM && st !== 'empty' && st !== 'confirmed',
     ).length;
-    const n0 = await homeConfirmDays(p);
+    const n0 = await homeConfirmDays(p, SYM);
     const today = (await tasks(p)).find((t) => t.kind === 'today');
     check(!!today && /（未確定）/.test(today.title), '初めて開いたホームの今日のカードは「未確定」（案がある）', today);
     check(
@@ -301,7 +307,7 @@ async function seedPlans(page) {
     const good = inMonth.filter((d) => d !== bad && d !== changed);
 
     // 月の右の欄の「確定していない日」：問題の無い日をまとめて確定（N日）
-    await open(p, `/month?ym=${YM}&do=unconfirmed`, '[data-testid="month-unconfirmed"]');
+    await open(p, `/month?ym=${SYM}&do=unconfirmed`, '[data-testid="month-unconfirmed"]');
     const btn = p.getByTestId('month-confirm-bulk');
     await btn.waitFor({ timeout: 10000 });
     await p
@@ -381,7 +387,7 @@ async function seedPlans(page) {
         .innerText()
         .catch(() => ''),
     );
-    const n1 = await homeConfirmDays(p);
+    const n1 = await homeConfirmDays(p, SYM);
     check(n1 === n0 - good.length, 'まとめて確定のあと、ホームの確定していない日が N日減る', { before: n0, after: n1 });
 
     // 確定した日の「次の確定していない日へ」（PRD D224）：その日より後の最初の確定していない日へ
