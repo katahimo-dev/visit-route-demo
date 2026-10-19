@@ -100,39 +100,54 @@ describe('bulkConfirmTargets（PRD D223）', () => {
     st('2026-10-26', { state: 'none' }),
     st('2026-10-27', { state: 'confirmed' }),
     st('2026-10-28', { count: 0 }),
-    // 条件が変わった・拘束超・欠勤があるだけでは残さない（見るだけの要対応）
-    st('2026-10-29', { stale: true, overSpan: ['s1'], absence: true }),
+    // 条件が変わった日は残す（要対応に出る日を黙って確定しない）
+    st('2026-10-29', { stale: true }),
+    // 拘束超・欠勤（訪問は残っていない）も要対応に出るので残す
+    st('2026-10-30', { overSpan: ['s1'], absence: true }),
+    // 希望休だけ（要対応に出ない）の日は確定する
+    st('2026-10-31', { absence: true }),
   ];
   const map = new Map(list.map((s) => [s.date, s]));
+  // 月の要対応（attentionList）に出る日。10/29 は条件が変わったで、10/30 は拘束超・欠勤で出る
+  const attention = [{ date: '2026-10-29' }, { date: '2026-10-30' }];
   const b = bulkConfirmTargets(
     list.map((s) => s.date),
     (d) => map.get(d),
+    attention,
   );
-  it('今の案があり、入らない訪問・必須の違反・休みの人に残る訪問が無い日だけ', () => {
-    expect(b.targets).toEqual(['2026-10-21', '2026-10-22', '2026-10-29']);
-    expect(b.redo).toEqual(['2026-10-22']);
-    expect(b.problem).toEqual(['2026-10-23', '2026-10-24', '2026-10-25']);
+  it('一度も確定していない日で、必須の違反が無く要対応に出ない日だけ', () => {
+    expect(b.targets).toEqual(['2026-10-21', '2026-10-31']);
+    expect(b.problem).toEqual(['2026-10-23', '2026-10-24', '2026-10-25', '2026-10-29', '2026-10-30']);
+    // 未確定の変更あり（前に確定した割当と今の案が違う）は残す
+    expect(b.changed).toEqual(['2026-10-22']);
     expect(b.noPlan).toEqual(['2026-10-26']);
+  });
+  it('条件が変わった日は要対応を渡さなくても残す', () => {
+    expect(bulkConfirmTargets(['2026-10-29'], (d) => map.get(d)).problem).toEqual(['2026-10-29']);
   });
   it('状態の分からない日は数えない', () => {
     expect(bulkConfirmTargets(['2026-11-01'], () => undefined).targets).toEqual([]);
   });
   it('ボタン・押せない理由・確認の文', () => {
     expect(bulkConfirmLabel(6)).toBe('問題の無い日をまとめて確定（6日）');
-    const none: BulkConfirm = { targets: [], redo: [], problem: [], noPlan: [] };
+    const none: BulkConfirm = { targets: [], problem: [], changed: [], noPlan: [] };
     expect(bulkConfirmWhy(none)).toBe('確定していない日はありません');
     expect(bulkConfirmWhy({ ...none, noPlan: ['2026-10-26'] })).toContain('案の無い日');
+    expect(bulkConfirmWhy({ ...none, changed: ['2026-10-22'] })).toContain('確定し直します');
     expect(bulkConfirmWhy({ ...none, problem: ['2026-10-23'] })).toContain('要対応');
     const dlg = bulkConfirmDialog(b, 'スタッフ');
-    expect(dlg.title).toBe('問題の無い 3日を確定しますか？');
-    expect(dlg.body).toContain('10/21（水）・10/22（木）・10/29（木） 計 3日');
+    expect(dlg.title).toBe('問題の無い 2日を確定しますか？');
+    expect(dlg.body).toContain('10/21（水）・10/31（土） 計 2日');
     expect(dlg.body).toContain('スタッフの画面');
-    expect(dlg.body).toContain('うち 1日は、前に確定した割当を今の案で置き換えます。');
-    expect(dlg.body).toContain('問題のある 3日は残します（要対応で確認）：10/23（金）・10/24（土）・10/25（日）');
+    expect(dlg.body).not.toContain('置き換えます');
+    expect(dlg.body).toContain(
+      '問題のある 5日は残します（要対応で確認）：10/23（金）・10/24（土）・10/25（日）・10/29（木）・10/30（金）',
+    );
+    expect(dlg.body).toContain('前に確定した割当と違う 1日も残します（日の画面で確定し直します）。');
     expect(dlg.body).toContain('案の無い 1日も残します。');
     const plain = bulkConfirmDialog({ ...none, targets: ['2026-10-21'] }, 'ヘルパー');
     expect(plain.body).not.toContain('残します');
-    expect(plain.body).not.toContain('置き換えます');
+    expect(plain.body).not.toContain('確定し直します');
   });
 });
 

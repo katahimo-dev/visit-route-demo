@@ -7,7 +7,7 @@ import { NONE, reconcile } from '../domain/scheduleModel';
 import { weekday } from '../domain/time';
 import { byName, own, WEEKDAY_LABELS } from './common';
 import { keepLeaveVisits } from './leaves';
-import type { DayStatus } from './month';
+import type { Attention, DayStatus } from './month';
 import { mdText } from './patternText';
 import { alignRoutes } from './runs';
 
@@ -62,32 +62,33 @@ export function confirmDay(d: DemoData, date: string, problem: Problem): DemoDat
 export type BulkConfirm = {
   /** 確定する日（日付の順） */
   targets: string[];
-  /** そのうち確定した割当を今の案で置き換える日（未確定の変更あり） */
-  redo: string[];
-  /** 問題があって残す日（入らない訪問・必須の違反・休みの人に残る訪問） */
+  /** 問題があって残す日（必須の違反か、月の要対応に出る日：入らない訪問・休みの人に残る訪問・条件が変わった・拘束超・欠勤） */
   problem: string[];
+  /** 前に確定した割当と今の案が違うので残す日（未確定の変更あり。日の画面で確定し直す） */
+  changed: string[];
   /** 案が無くて残す日 */
   noPlan: string[];
 };
 
 /**
- * 「確定していない日」（月の右の欄。`monthProgress` の unconfirmed）のうち、今の案があり、入らない訪問・必須の違反・
- * 休み（欠勤・希望休・最終勤務日の後）の人に残る訪問が無い日を確定する。状態は月の画面の日の状態（`useDayStatuses`）から引く
+ * 「確定していない日」（月の右の欄。`monthProgress` の unconfirmed）のうち、一度も確定していない（案あり・未確定）日で、
+ * 必須の違反が無く、月の要対応（`attentionList`。入らない訪問・休みの人に残る訪問・条件が変わった・拘束超・欠勤）に出ない日を確定する
+ * （要対応に出ている日を黙って確定しない。ADR-0031）。状態は月の画面の日の状態（`useDayStatuses`）、attention はその日付から引く
  */
 export function bulkConfirmTargets(
   unconfirmed: readonly string[],
   statusOf: (date: string) => DayStatus | undefined,
+  attention: readonly Pick<Attention, 'date'>[] = [],
 ): BulkConfirm {
-  const out: BulkConfirm = { targets: [], redo: [], problem: [], noPlan: [] };
+  const flagged = new Set(attention.map((a) => a.date));
+  const out: BulkConfirm = { targets: [], problem: [], changed: [], noPlan: [] };
   for (const date of unconfirmed) {
     const s = statusOf(date);
     if (!s || s.count === 0 || s.state === 'confirmed') continue;
     if (s.state === 'none') out.noPlan.push(date);
-    else if (s.unassigned > 0 || s.hard > 0 || s.absentLeft > 0) out.problem.push(date);
-    else {
-      out.targets.push(date);
-      if (s.state === 'diff') out.redo.push(date);
-    }
+    else if (s.unassigned > 0 || s.hard > 0 || s.absentLeft > 0 || s.stale || flagged.has(date)) out.problem.push(date);
+    else if (s.state === 'diff') out.changed.push(date);
+    else out.targets.push(date);
   }
   return out;
 }
@@ -99,6 +100,7 @@ export const bulkConfirmLabel = (n: number): string => `問題の無い日をま
 export function bulkConfirmWhy(b: BulkConfirm): string {
   if (b.problem.length > 0)
     return '問題の無い日がありません（問題のある日は要対応で確かめてから、日の画面で確定します）';
+  if (b.changed.length > 0) return '問題の無い日がありません（前に確定した割当と違う日は、日の画面で確定し直します）';
   if (b.noPlan.length > 0) return '問題の無い日がありません（案の無い日は、先に案を作ります）';
   return '確定していない日はありません';
 }
@@ -119,9 +121,10 @@ export function datesText(dates: readonly string[]): string {
 /** 確認ダイアログの中身（独自の確認。ADR-0026） */
 export function bulkConfirmDialog(b: BulkConfirm, staffTerm: string): { title: string; body: string } {
   const lines = [datesText(b.targets), `各訪問の担当が今の案のとおりに書き換わり、${staffTerm}の画面にも出ます。`];
-  if (b.redo.length > 0) lines.push(`うち ${b.redo.length}日は、前に確定した割当を今の案で置き換えます。`);
   if (b.problem.length > 0)
     lines.push(`問題のある ${b.problem.length}日は残します（要対応で確認）：${b.problem.map(dayLabel).join('・')}`);
+  if (b.changed.length > 0)
+    lines.push(`前に確定した割当と違う ${b.changed.length}日も残します（日の画面で確定し直します）。`);
   if (b.noPlan.length > 0) lines.push(`案の無い ${b.noPlan.length}日も残します。`);
   return { title: `問題の無い ${b.targets.length}日を確定しますか？`, body: lines.join('\n') };
 }

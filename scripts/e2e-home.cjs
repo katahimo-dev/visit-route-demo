@@ -5,7 +5,8 @@
 // いつでもの入口（欠勤・空き状況・探す）、何も無いデータで「今日の準備はできています」、
 // メニューの先頭の「ホーム」（1400px）、スマホ（390×844）で縦に並び横にはみ出さない・下のタブの「ホーム」、印刷で出さない。
 // 初期データの案（PRD D225。今日から7日分が月で「案あり」・ホームの確定していない日の数）、月の「問題の無い日をまとめて確定」
-// （PRD D223。N日・確認に日付と残す日・確定済みになりホームの数が減る・欠勤の人に訪問が残る日は外れ確認に日付が出る・0日なら押せず理由）、
+// （PRD D223。N日・確認に日付と残す日・確定済みになりホームの数が減る・欠勤の人に訪問が残る日は外れ確認に日付が出る・
+// 未確定の変更ありの日は外れる・0日なら押せず理由）、
 // 確定した日の「次の確定していない日へ」（PRD D224）。案なしから始める確かめは、先に初期データの案を消す（clearPlans）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-home.cjs
@@ -274,12 +275,15 @@ async function seedPlans(page) {
       },
     );
 
-    // 別のタブで、案のある日（今日の次の日）の担当1人を終日の欠勤にする（訪問が残る＝休みの人に訪問）
+    // 別のタブで、案のある日（今日の次の日）の担当1人を終日の欠勤にする（訪問が残る＝休みの人に訪問）。
+    // もう1日（今月の最後の案の日）は前に確定した割当を今の案と違うものにする（未確定の変更あり）
     const bad = inMonth.find((d) => d > TODAY) ?? inMonth[0];
+    const rest = inMonth.filter((d) => d !== bad && d !== TODAY);
+    const changed = rest.length >= 2 ? rest[rest.length - 1] : null;
     const other = await p.context().newPage();
     await other.goto(`${BASE}#/data`);
     await other.evaluate(
-      ({ k, d }) => {
+      ({ k, d, c }) => {
         const data = JSON.parse(localStorage.getItem(k));
         const plan = data.aiPlans[d];
         const sid = Object.keys(plan.routes).find((s) => s !== '__none' && plan.routes[s].length > 0);
@@ -287,12 +291,14 @@ async function seedPlans(page) {
           ...data.absences,
           { id: 'e2e-home-absent', staffId: sid, date: d, from: null, to: null, note: '' },
         ];
+        // 確定した割当を「全部未割当」にする（今の案と違う＝未確定の変更あり）
+        if (c) data.manualPlans[c] = { __none: Object.values(data.aiPlans[c].routes).flat() };
         localStorage.setItem(k, JSON.stringify(data));
       },
-      { k: STORAGE_KEY, d: bad },
+      { k: STORAGE_KEY, d: bad, c: changed },
     );
     await other.close();
-    const good = inMonth.filter((d) => d !== bad);
+    const good = inMonth.filter((d) => d !== bad && d !== changed);
 
     // 月の右の欄の「確定していない日」：問題の無い日をまとめて確定（N日）
     await open(p, `/month?ym=${YM}&do=unconfirmed`, '[data-testid="month-unconfirmed"]');
@@ -330,6 +336,13 @@ async function seedPlans(page) {
       body,
     );
     check(
+      changed === null ||
+        (body.includes('前に確定した割当と違う 1日も残します（日の画面で確定し直します）。') &&
+          !body.includes('置き換えます')),
+      'まとめて確定の確認：未確定の変更ありの日は残す（置き換えない）',
+      { changed, body },
+    );
+    check(
       (await p.evaluate(() => document.activeElement?.dataset.testid)) === 'confirm-cancel',
       'まとめて確定の確認：最初のフォーカスは取り消し（独自の確認）',
     );
@@ -340,7 +353,8 @@ async function seedPlans(page) {
     await p.getByTestId('confirm-cancel').click();
     await dlg.waitFor({ state: 'detached' });
     check(
-      (await p.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).manualPlans).length, STORAGE_KEY)) === 0,
+      (await p.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).manualPlans).length, STORAGE_KEY)) ===
+        (changed ? 1 : 0),
       'まとめて確定の確認を取り消すと何も確定しない',
     );
     await btn.click();
@@ -355,9 +369,9 @@ async function seedPlans(page) {
       .locator('[data-testid="month-day"]')
       .evaluateAll((els) => Object.fromEntries(els.map((e) => [e.dataset.date, e.dataset.state])));
     check(
-      good.every((d) => after[d] === 'confirmed') && after[bad] === 'plan',
-      'まとめて確定：問題の無い日は確定済み、問題のある日は案ありのまま',
-      { good: good.map((d) => after[d]), bad: after[bad] },
+      good.every((d) => after[d] === 'confirmed') && after[bad] === 'plan' && (!changed || after[changed] === 'diff'),
+      'まとめて確定：問題の無い日は確定済み、問題のある日は案あり・未確定の変更ありの日はそのまま',
+      { good: good.map((d) => after[d]), bad: after[bad], changed: changed && after[changed] },
     );
     check(
       (await btn.isDisabled()) && /問題の無い日がありません/.test(await p.getByTestId('month-confirm-why').innerText()),

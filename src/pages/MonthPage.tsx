@@ -614,8 +614,11 @@ export default function MonthPage() {
   };
 
   // ---- 問題の無い日をまとめて確定（PRD D223。右の欄の「確定していない日」）----
-  /** 確定していない日（今日以降）のうち、今の案があって入らない・必須の違反・休みの人に残る訪問が無い日 */
-  const bulk = useMemo(() => bulkConfirmTargets(progress.unconfirmed, (d) => statuses.get(d)), [progress, statuses]);
+  /** 確定していない日（今日以降）のうち、一度も確定していない日で、必須の違反が無く要対応に出ない日（ADR-0031） */
+  const bulk = useMemo(
+    () => bulkConfirmTargets(progress.unconfirmed, (d) => statuses.get(d), attention),
+    [progress, statuses, attention],
+  );
   /**
    * まとめて確定：独自の確認（日付と残す日）のあと、1回の update で日ごとに日の画面の「この割当で確定」と同じ書き方
    * （lib/confirmDay）。問題は日の状態を数えたときのもの（計算に入れる訪問は条件の重みに依らない）。作っている間は押せない
@@ -1283,7 +1286,7 @@ export default function MonthPage() {
                     </p>
                   ) : (
                     <p className="sub" data-testid="month-confirm-note">
-                      今の案があり、入らない訪問・必須の違反・休みの人に残る訪問が無い日を確定します。
+                      一度も確定していない日のうち、必須の違反が無く、要対応に出ていない日を確定します。
                     </p>
                   )}
                 </div>
