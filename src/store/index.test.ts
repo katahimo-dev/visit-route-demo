@@ -11,8 +11,15 @@ import {
   flushSave,
   importJson,
   isImportError,
+  keepPrevious,
   load,
+  loadWithStatus,
   migrate,
+  PREV_INFO_KEY,
+  PREV_KEY,
+  previousInfo,
+  QUOTA_MESSAGE,
+  readPrevious,
   rememberCurrent,
   reset,
   save,
@@ -121,6 +128,15 @@ describe('load・save', () => {
     const d = load();
     expect(d.staff).toHaveLength(8);
     expect(mem.get(BROKEN_KEY)).toBe('{こわれた');
+  });
+
+  it('loadWithStatus は壊れた JSON のとき broken＝true（読めたとき・無いときは false）', () => {
+    expect(loadWithStatus().broken).toBe(false);
+    expect(loadWithStatus().broken).toBe(false);
+    mem.set(STORAGE_KEY, '{こわれた');
+    const r = loadWithStatus();
+    expect(r.broken).toBe(true);
+    expect(r.data.staff).toHaveLength(8);
   });
 
   it('保存したものを読み直せる（間引きは最後の値）', () => {
@@ -277,5 +293,107 @@ describe('extendDays', () => {
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).visits).toEqual(loaded.visits);
     // パターンがあれば seed の daysFrom は使わない
     expect(extendDays(withPattern, '2026-11-20').visits).toEqual(loaded.visits);
+  });
+});
+
+describe('1世代の控え（PRD D227。ADR-0032）', () => {
+  const at = Date.parse('2026-10-19T14:03:00+09:00');
+
+  it('控えを残すと別のキーに JSON と時刻・操作の名前が入り、読み戻せる', () => {
+    const d = { ...createDemoData('2026-10-12'), seed: 5 };
+    const k = keepPrevious(d, '初期状態に戻す', at);
+    expect(k.kept).toBe(true);
+    expect(k.why).toBeNull();
+    expect(previousInfo()).toEqual({ at, reason: '初期状態に戻す' });
+    expect(PREV_KEY).not.toBe(STORAGE_KEY);
+    expect(readPrevious()).toEqual(d);
+    // 本体のデータのキーは触らない
+    expect(mem.has(STORAGE_KEY)).toBe(false);
+  });
+
+  it('1世代だけ：次に残すと上書き。取り消すと前の世代に戻る', () => {
+    const a = { ...createDemoData('2026-10-12'), seed: 1 };
+    const b = { ...a, seed: 2 };
+    keepPrevious(a, '初期状態に戻す', at);
+    const k = keepPrevious(b, '控えの読み込み', at + 60000);
+    expect((readPrevious() as DemoData).seed).toBe(2);
+    expect(previousInfo()?.reason).toBe('控えの読み込み');
+    k.cancel();
+    expect((readPrevious() as DemoData).seed).toBe(1);
+    expect(previousInfo()).toEqual({ at, reason: '初期状態に戻す' });
+  });
+
+  it('前の世代が無いときに取り消すと、控えは無くなる', () => {
+    const k = keepPrevious(createDemoData('2026-10-12'), '初期状態に戻す', at);
+    k.cancel();
+    expect(previousInfo()).toBeNull();
+    expect(readPrevious()).toBeNull();
+  });
+
+  it('容量超過なら控えを残さず（前の世代も消す）、理由「控えを残せません：容量不足」を返す（操作は止めない）', () => {
+    const d = createDemoData('2026-10-12');
+    keepPrevious(d, '初期状態に戻す', at);
+    const ls = globalThis.localStorage as Storage;
+    const orig = ls.setItem;
+    ls.setItem = (key: string, value: string) => {
+      if (key === PREV_KEY) throw new DOMException('full', 'QuotaExceededError');
+      orig(key, value);
+    };
+    const k = keepPrevious({ ...d, seed: 3 }, 'Excel 全体の読み込み', at);
+    expect(k.kept).toBe(false);
+    expect(k.why).toBe('控えを残せません：容量不足');
+    expect(previousInfo()).toBeNull();
+    // 取り消すと前の世代に戻す
+    ls.setItem = orig;
+    k.cancel();
+    expect(previousInfo()?.reason).toBe('初期状態に戻す');
+  });
+
+  it('前の世代が場所を取っているときは、消して1回だけ試し直す', () => {
+    const d = createDemoData('2026-10-12');
+    keepPrevious(d, '初期状態に戻す', at);
+    const ls = globalThis.localStorage as Storage;
+    const orig = ls.setItem;
+    // 控えが1つあるあいだは書けない（容量）
+    ls.setItem = (key: string, value: string) => {
+      if (key === PREV_KEY && mem.has(PREV_KEY)) throw new DOMException('full', 'QuotaExceededError');
+      orig(key, value);
+    };
+    const k = keepPrevious({ ...d, seed: 4 }, '控えの読み込み', at);
+    expect(k.kept).toBe(true);
+    expect((readPrevious() as DemoData).seed).toBe(4);
+  });
+
+  it('時刻・操作の名前が読めなければ控えは無いとみなす', () => {
+    mem.set(PREV_KEY, '{}');
+    mem.set(PREV_INFO_KEY, 'こわれた');
+    expect(previousInfo()).toBeNull();
+    mem.set(PREV_INFO_KEY, JSON.stringify({ at: 'x', reason: 1 }));
+    expect(previousInfo()).toBeNull();
+    mem.delete(PREV_KEY);
+    mem.set(PREV_INFO_KEY, JSON.stringify({ at, reason: '初期状態に戻す' }));
+    expect(previousInfo()).toBeNull();
+  });
+
+  it('本体の保存が容量超過なら、控えを捨ててもう1回書く（いまのデータが先）', () => {
+    const d = createDemoData('2026-10-12');
+    keepPrevious(d, '初期状態に戻す', at);
+    const ls = globalThis.localStorage as Storage;
+    const orig = ls.setItem;
+    ls.setItem = (key: string, value: string) => {
+      if (key === STORAGE_KEY && mem.has(PREV_KEY)) throw new DOMException('full', 'QuotaExceededError');
+      orig(key, value);
+    };
+    const onError = vi.fn();
+    save({ ...d, seed: 8 }, onError);
+    flushSave();
+    expect(onError).toHaveBeenCalledWith(null);
+    expect(previousInfo()).toBeNull();
+    expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(8);
+  });
+
+  it('容量超過の文は、画面にある片づけの操作を指す', () => {
+    expect(QUOTA_MESSAGE).toContain('古い案と記録を片づける');
+    expect(QUOTA_MESSAGE).not.toContain('古い日の予定を消して');
   });
 });

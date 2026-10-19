@@ -1,0 +1,35 @@
+/* 壊れたデータの知らせ（PRD D227）。色は注意の帯（黄）。要対応の赤にはしない（初期データで使い続けられる） */
+.data-broken-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  border: 1.5px solid #f0d49b;
+  background: #fdf3df;
+  color: var(--ink);
+}
+.data-broken-notice > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warn-ink);
+}
+.data-broken-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.data-broken-text p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+@media print {
+  .data-broken-notice {
+    display: none !important;
+  }
+}
