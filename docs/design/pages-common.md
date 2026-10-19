@@ -37,7 +37,7 @@
 
 - 地図の浮かせた表示：`components/MapDock.tsx`（画面の外の地図を右下に浮かせる）。位置は `--map-dock-left`・`--map-dock-top`
 - `components/floating.ts`（`FLOATING_EVENT`・`useFloatingEdge(name)`）：知らせ（トースト）は欠勤の振り直しの帯・地図より上に出す（`--reassign-dock-top`・`--map-dock-top`）
-- `components/Toast.tsx`：z-index 1200
+- `components/Toast.tsx`：z-index 1200。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・6秒・フォーカスがある間は消さない）。今は日の画面の手直しの「元に戻す」だけ（[pages-plan.md](pages-plan.md)。PRD D218）
 
 ### 名前から開く詳細（ADR-0022 追記。PRD D122〜D126・D205〜D209）
 
