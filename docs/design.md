@@ -1381,7 +1381,7 @@ export type RosterImportResult = {
 ### 機能の入り切り（`src/contracts/features.ts`・`src/contracts/documents.ts`・`src/contracts/data.ts`。ADR-0028）
 - `FEATURE_IDS`：`patternMonthly`・`clientLeave`・`requestedOff`・`monthPrint`・`compare`・`sudden`・`vacancy`・`vacancyNotice`・`compat`・`allowedStaff`・`clientStage`・`visitNotes`・`offboard`・`workload`・`fare`・`rules`・`mail`・`mapsLink`・`geocode`・`excel`（20）
 - `featuresSchema`：ID → boolean の部分的な表（知らない ID は捨てる）。無い ID は入。`orgSchema` に `features: featuresSchema.default({})`
-- `CALC_FEATURE_IDS = ['compat', 'allowedStaff']`（計算に効く機能）。`aiRunSchema` に `calcFeatures`（`Partial<Record<'compat'|'allowedStaff', boolean>>`。無ければすべて入）。今の `calcFeaturesOf(org.features)` と違う記録の日は「条件が変わった」（D43・D161。`rulesStale` と同じ扱い）
+- `CALC_FEATURE_IDS = ['compat', 'allowedStaff']`（計算に効く機能）。`aiRunSchema` に `calcFeatures`（`Partial<Record<'compat'|'allowedStaff', boolean>>`。無ければすべて入）。`lib/runs` の `addRun` が `calcFeaturesOf(org.features)`（切っているものだけ）を書き、すべて入なら書かない（すべて入のデータの記録は今までと同じ形）。今の `calcFeaturesOf(org.features)` と違う記録の日は「条件が変わった」（D43・D161。`rulesStale` と同じ扱い）
 - 切った機能の画面の入力は出さないが、データの形・検査・repair は変えない（切ってもデータは残る）。`clientStage` が切のとき、画面は〈利用者さん〉の `stage` を「利用中（active）／終了（ended）」の2つで選ばせ、ほかの段階の人はそのまま（表示は「利用中」以外を「終了」と出さず、今の段階の名前を出す）
 - エラー：無い。入り切りは検査で落ちない（知らない ID は捨てるだけ）
 
