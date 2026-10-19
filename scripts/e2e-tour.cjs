@@ -13,56 +13,19 @@
 // ?layout=list で一覧・「休みを入れる」の行は押すと希望休を付け外し・印刷の画面は今のまま）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-tour.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, run } = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-tour');
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-/** アプリと同じく日本時間の今日（YYYY-MM-DD） */
-const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
 const YM = TODAY.slice(0, 7);
-const STORAGE_KEY = 'vrdemo:data:v1';
 const TOUR_KEY = 'vrdemo:tour:seen';
-fs.mkdirSync(OUT_DIR, { recursive: true });
 
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
 const errors = [];
 const native = [];
 const tour = (page) => page.getByTestId('tour');
 const visible = (loc) => loc.isVisible().catch(() => false);
-const hashOf = (page) => decodeURIComponent(new URL(page.url()).hash);
 /** フォーカスがツアーのカードの中か */
 const focusInTour = (page) => page.evaluate(() => !!document.activeElement?.closest('[data-testid="tour"]'));
 const activeTestId = (page) => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '');
@@ -322,6 +285,9 @@ async function tourMobilePrint(b) {
 // ---- データの画面のファイル選択 ----
 async function filePick(b) {
   const { ctx, page } = await newPage(b, { human: false });
+  // 選ぶ画面（filechooser）の受け口は先に付けておく。受け口を付けたときにブラウザへ横取りを頼む知らせは待たずに送られるので、
+  // 押す直前に waitForEvent を付けるだけでは、横取りが入る前に Space が届いて取りこぼすことがある
+  page.on('filechooser', () => {});
   await open(page, '/data', '[data-testid="backup-file"]');
   const counts = await page.evaluate(() => ({
     all: document.querySelectorAll('input[type="file"]').length,
@@ -380,13 +346,10 @@ async function filePick(b) {
     .locator('[data-testid="backup-file"] label.file-pick-btn')
     .evaluate((el) => getComputedStyle(el).outlineStyle);
   check(outline === 'solid', 'フォーカスしているときはボタンの見た目に枠', outline);
-  // Space で選ぶ画面（filechooser）。まれに最初の1回を取りこぼすので、出なければもう1回だけ押す
-  let chosen = null;
-  for (let i = 0; i < 2 && !chosen; i++) {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null);
-    await page.keyboard.press('Space');
-    chosen = await chooser;
-  }
+  // Space で選ぶ画面（filechooser）。待ち受けは押す前に始める
+  const chooser = page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null);
+  await page.keyboard.press('Space');
+  const chosen = await chooser;
   check(chosen !== null, 'Space でファイルを選ぶ画面が開く');
   // 控え（JSON）を選ぶ：確認 → 取り消すでデータはそのまま、文はファイル名
   const json = await page.evaluate((k) => localStorage.getItem(k), STORAGE_KEY);
@@ -563,8 +526,8 @@ async function monthList(b) {
   await ctx.close();
 }
 
-(async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const b = await launch();
   for (const [name, fn] of [
     ['tour-first', tourFirst],
     ['tour-esc-skip', tourEscSkip],
@@ -581,8 +544,5 @@ async function monthList(b) {
   }
   check(native.length === 0, 'ブラウザのダイアログを出さない', native);
   await b.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  const ng = fails + errors.length;
-  console.log(ng === 0 ? '全部通った' : `${fails} 件が通らない・ページのエラー ${errors.length} 件`);
-  process.exit(ng === 0 ? 0 : 1);
-})();
+  return errors;
+});

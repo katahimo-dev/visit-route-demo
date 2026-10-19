@@ -69,6 +69,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0026](adr/0026-custom-confirm-dialog.md) | 独自の確認ダイアログ |
 | [0027](adr/0027-task-ordered-menu-command-palette.md) | 用途順のメニュー・コマンドパレット |
 | [0028](adr/0028-feature-toggles-by-admin.md) | 管理者設定で機能を入り切り |
+| [0029](adr/0029-e2e-playwright-test-runner-ci.md) | e2e を @playwright/test で包み、PR・夜間の CI で回す |
 
 ## 文書の保ち方
 

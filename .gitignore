@@ -3,3 +3,5 @@ dist/
 __pycache__/
 *.local
 .claude/worktrees/
+test-results/
+playwright-report/

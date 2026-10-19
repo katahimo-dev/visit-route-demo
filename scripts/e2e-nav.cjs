@@ -7,56 +7,32 @@
 // 390px（上の帯のボタンから開ける・収まる・上の帯の名前・引き出しの並び・下のタブ）、印刷で出さない、300人×60人で打つたびの速さ。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-nav.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS で1文字打って描き終わるまでの上限（既定 100ms）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_NAV で1文字打って描き終わるまでの上限（既定 100ms。無ければ PERF_MS）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
+const {
+  launch,
+  BASE,
+  OUT_DIR,
+  NOW,
+  TODAY,
+  STORAGE_KEY,
+  perfMs,
+  check,
+  withRealClock,
+  hashOf,
+  isFocused,
+  failShot,
+  run,
+} = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
+const PERF_MS = perfMs('PERF_MS_NAV', 100);
 
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-nav');
-const PERF_MS = Number(process.env.PERF_MS || 100);
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-/** アプリと同じく日本時間の今日（YYYY-MM-DD） */
-const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
-const STORAGE_KEY = 'vrdemo:data:v1';
-fs.mkdirSync(OUT_DIR, { recursive: true });
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
-const hashOf = (page) => decodeURIComponent(new URL(page.url()).hash);
 const palette = (page) => page.getByTestId('cmdk');
 const input = (page) => page.getByTestId('cmdk-input');
 const options = (page) => page.getByTestId('cmdk-option');
-const isFocused = (loc) => loc.evaluate((el) => document.activeElement === el);
 const rootInert = (page) => page.evaluate(() => document.getElementById('root').inert);
 
 /** 画面を新しく開く（about:blank を挟み、`?do=`・`?id=` を読み直す前に消さない） */
@@ -647,8 +623,8 @@ async function perf(page) {
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
 
-(async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const b = await launch();
   const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
   // 初回の案内ツアーを見た扱いにする（PRD D193）
   await skipTour(ctx);
@@ -667,19 +643,17 @@ async function perf(page) {
     ['focus', focus],
     ['mobile', mobile],
     ['print', print],
-    ['perf', perf],
+    // 速さは時計を止めない別の文脈で測る（scripts/lib/env.cjs の withRealClock）
+    ['perf', () => withRealClock(b, errors, perf)],
   ]) {
     try {
       await fn(page);
     } catch (e) {
       check(false, name, String(e.message || e));
-      await page.screenshot({ path: path.join(OUT_DIR, `fail-${name}.png`) }).catch(() => {});
+      await failShot(page, name);
     }
   }
   check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native);
   await b.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  const ng = fails + errors.length;
-  console.log(ng === 0 ? '全部通った' : `${fails} 件が通らない・ページのエラー ${errors.length} 件`);
-  process.exit(ng === 0 ? 0 : 1);
-})();
+  return errors;
+});

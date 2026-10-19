@@ -5,50 +5,12 @@
 // 週を送ると その週の先頭8人（データを作って確かめる）、「ほかの人を探す」で選んだ この週に訪問の無い人がチップの後ろに出る。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-week.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, urlOf, failShot, run } = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-week');
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-fs.mkdirSync(OUT_DIR, { recursive: true });
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
-
-const KEY = 'vrdemo:data:v1';
-/** テストの「今日」（日本時間）と、その週・次の週の月曜 */
-const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
 const addDays = (d, n) => {
   const t = new Date(`${d}T00:00:00Z`);
   t.setUTCDate(t.getUTCDate() + n);
@@ -63,7 +25,6 @@ const pressedIds = (page) =>
     els.filter((e) => e.getAttribute('aria-pressed') === 'true').map((e) => e.dataset.id),
   );
 const allIds = (page) => chipsOf(page).evaluateAll((els) => els.map((e) => e.dataset.id));
-const urlOf = (page) => decodeURIComponent(page.url());
 
 async function open(page, hash) {
   await page.goto(`${BASE}#${hash}`);
@@ -272,7 +233,7 @@ async function search(page) {
       allowedStaffIds: [],
     });
     localStorage.setItem(key, JSON.stringify(d));
-  }, KEY);
+  }, STORAGE_KEY);
   await open(page, '/week?by=client');
   await page.getByTestId('week-client-chips-none').click();
   await page.getByTestId('week-client-search').locator('summary').click();
@@ -381,7 +342,7 @@ async function nextWeek(page) {
       for (const v of d.visits) if (v.clientId === cid && v.date >= from && v.date < end) v.cancelled = true;
       localStorage.setItem(key, JSON.stringify(d));
     },
-    [KEY, top, NEXT_MON],
+    [STORAGE_KEY, top, NEXT_MON],
   );
   await open(page, '/week?by=client');
   await page.getByLabel('次の週').click();
@@ -398,8 +359,8 @@ async function nextWeek(page) {
   );
 }
 
-(async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const b = await launch();
   const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
   // 初回の案内ツアーを見た扱いにする（PRD D193）
   await skipTour(ctx);
@@ -425,12 +386,9 @@ async function nextWeek(page) {
       await fn(page);
     } catch (e) {
       check(false, name, String(e.message || e));
-      await page.screenshot({ path: path.join(OUT_DIR, `fail-${name}.png`) }).catch(() => {});
+      await failShot(page, name);
     }
   }
   await b.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  const ng = fails + errors.length;
-  console.log(ng === 0 ? '全部通った' : `${fails} 件が通らない・ページのエラー ${errors.length} 件`);
-  process.exit(ng === 0 ? 0 : 1);
-})();
+  return errors;
+});

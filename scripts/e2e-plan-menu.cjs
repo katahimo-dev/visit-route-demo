@@ -8,51 +8,25 @@
 // プリセットが1つだけのときの作れない理由、390px で一覧と「もう1案作って比べる」が画面に収まる、ブラウザの確認を出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-plan-menu.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
+const {
+  launch,
+  BASE,
+  OUT_DIR,
+  NOW,
+  TODAY,
+  STORAGE_KEY,
+  check,
+  settle,
+  hashOf,
+  stored,
+  failShot,
+  run,
+} = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-plan-menu');
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-/** アプリと同じく日本時間の今日（YYYY-MM-DD） */
-const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
-const STORAGE_KEY = 'vrdemo:data:v1';
-fs.mkdirSync(OUT_DIR, { recursive: true });
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
-const settle = (page, ms = 250) => page.waitForTimeout(ms);
-const stored = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
 /** 保存（少し遅れて書く）が条件を満たすまで待つ（満たさなければ時間切れで続ける） */
 async function waitStored(page, pred, arg, timeout = 5000) {
   const end = Date.now() + timeout;
@@ -62,7 +36,6 @@ async function waitStored(page, pred, arg, timeout = 5000) {
     await page.waitForTimeout(100);
   }
 }
-const hashOf = (page) => decodeURIComponent(new URL(page.url()).hash);
 const dialog = (page) => page.getByTestId('confirm-dialog');
 const menuBtn = (page) => page.getByTestId('plan-menu');
 const menuList = (page) => page.getByTestId('plan-menu-list');
@@ -457,8 +430,8 @@ async function mobile(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
-(async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const b = await launch();
   const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
   // 初回の案内ツアーを見た扱いにする（PRD D193）
   await skipTour(ctx);
@@ -491,13 +464,10 @@ async function mobile(page) {
       await fn(page);
     } catch (e) {
       check(false, name, String(e.message || e));
-      await page.screenshot({ path: path.join(OUT_DIR, `fail-${name}.png`) }).catch(() => {});
+      await failShot(page, name);
     }
   }
   check(native.length === 0, 'ブラウザのダイアログを出さない', native);
   await b.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  const ng = fails + errors.length;
-  console.log(ng === 0 ? '全部通った' : `${fails} 件が通らない・ページのエラー ${errors.length} 件`);
-  process.exit(ng === 0 ? 0 : 1);
-})();
+  return errors;
+});

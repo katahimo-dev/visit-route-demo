@@ -7,55 +7,18 @@
 // （src/lib/dragStart.ts）を再現できないため、マウスを本当に動かす。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-drag.cjs
-// 環境変数（npm の依存には入れない。手元の Playwright・Chromium を使う）：
-//   PLAYWRIGHT … Playwright のモジュールの場所（既定：require('playwright')、無ければ /opt/node22/lib/node_modules/playwright）
-//   CHROMIUM   … Chromium の実行ファイル（既定：Playwright の既定の場所）
-//   BASE       … 開くサイト（既定：http://localhost:4183/）
-//   OUT_DIR    … スクリーンショットの置き場所（既定：OS の一時フォルダの e2e-drag）
-//   FAKE_NOW   … ページの時計をこの時刻に止める（ISO 8601。例 2026-10-21T12:00:00+09:00）。既定は、実行した日から見て
-//                次の水曜（今日が水曜なら今日）の日本時間 12:00。アプリは「今日」を日本時間で決め、今日より前の訪問は動かせないので、
-//                週の途中に止めて今週に今日より後の日を残す（日曜に実行すると今週に動かし先が無くなるため）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。FAKE_NOW の既定（次の水曜の日本時間 12:00）は、
+// 今日より前の訪問は動かせないので週の途中に止めて今週に今日より後の日を残すため
 // 終了コード：全部動けば 0、動かないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, check, withTimeout, run } = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-drag');
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00 */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-/** テストの「今日」（アプリと同じく日本時間で決める） */
-const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
 /** 動かし先が見つからないときは、null のまま進まず分かる言葉で止める */
 function need(x, what) {
   if (!x) throw new Error(`${what}が見つかりません（今日＝${TODAY}。FAKE_NOW で週の途中の日にしてください）`);
   return x;
 }
-fs.mkdirSync(OUT_DIR, { recursive: true });
-
-const withTimeout = (p, ms, what) =>
-  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`固まった：${what}`)), ms))]);
 
 /** 本物のマウス操作でつかんで動かして離す。つかんだあと（遅らせた再描画のあと）に元の要素が動いた距離も返す */
 async function realDrag(page, src, target, name) {
@@ -84,11 +47,8 @@ async function realDrag(page, src, target, name) {
   return { ev, moved };
 }
 
-const results = [];
-function report(name, ok, info) {
-  results.push(ok);
-  console.log(`${ok ? 'OK  ' : 'NG  '} ${name}  ${JSON.stringify(info)}`);
-}
+/** 結果を出す（情報はいつも JSON で出す） */
+const report = (name, ok, info) => check(ok, name, JSON.stringify(info));
 
 /**
  * 週間の時間軸の「〈利用者さん〉で見る」の初期値（PRD D136・D137）：この週に訪問がある人のチップが並び、?client= が無くても
@@ -306,8 +266,8 @@ async function weekClientsIme(page) {
   });
 }
 
-(async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const b = await launch();
   const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
   // 初回の案内ツアーを見た扱いにする（PRD D193）
   await skipTour(page);
@@ -319,28 +279,28 @@ async function weekClientsIme(page) {
     errors.push(String(e));
     console.log('ERR', String(e));
   });
-  const run = async (name, fn) => {
+  const step = async (name, fn) => {
     try {
       await fn();
     } catch (e) {
       report(name, false, String(e.message || e));
     }
   };
-  await run('week-staff', () => weekTimeline(page, 'staff'));
-  await run('week-client', () => weekTimeline(page, 'client'));
-  await run('week-clients', () => weekClients(page));
-  await run('week-clients-ime', () => weekClientsIme(page));
-  await run('plan-timeline', async () => {
+  await step('week-staff', () => weekTimeline(page, 'staff'));
+  await step('week-client', () => weekTimeline(page, 'client'));
+  await step('week-clients', () => weekClients(page));
+  await step('week-clients-ime', () => weekClientsIme(page));
+  await step('plan-timeline', async () => {
     await page.goto(`${BASE}#/plan`);
     await page.reload();
     await planMove(page, 'timeline', 'plan-timeline');
   });
-  await run('plan-order', async () => {
+  await step('plan-order', async () => {
     await page.goto(`${BASE}#/plan`);
     await page.reload();
     await planMove(page, 'order', 'plan-order');
   });
-  await run('month-day', async () => {
+  await step('month-day', async () => {
     await page.goto(`${BASE}#/month`);
     await page.reload();
     const days = page.locator('[data-testid="month-day"]:not([data-state="empty"])');
@@ -357,10 +317,5 @@ async function weekClientsIme(page) {
     await planMove(page, 'timeline', 'month-day');
   });
   await b.close();
-  const ng = results.filter((x) => !x).length;
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  console.log(
-    ng === 0 && errors.length === 0 ? '全部動いた' : `${ng} 件が動かない・ページのエラー ${errors.length} 件`,
-  );
-  process.exit(ng === 0 && errors.length === 0 ? 0 : 1);
-})();
+  return errors;
+});

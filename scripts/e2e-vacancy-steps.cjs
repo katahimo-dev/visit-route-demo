@@ -5,49 +5,14 @@
 // 案の無い日の注意は1か所、案内文ははじめ畳み開くまで計算しない、仮押さえ、390px で収まる、ブラウザの確認を出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-vacancy-steps.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS で結果が出るまでの上限（既定 5000ms。PRD §5）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_VACANCY で結果が出るまでの上限（既定 5000ms。PRD §5。無ければ PERF_MS）
 // 外部の検索（国土地理院）は page.route の偽の応答に差し替え、外へは出さない。地図のタイルは取りに行かない
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
+const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, perfMs, check, failShot, run } = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-vacancy-steps');
-const PERF_MS = Number(process.env.PERF_MS || 5000);
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-fs.mkdirSync(OUT_DIR, { recursive: true });
-const KEY = 'vrdemo:data:v1';
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
+const PERF_MS = perfMs('PERF_MS_VACANCY', 5000);
 
 const GSI_ONE = [
   {
@@ -325,7 +290,7 @@ async function placeLater(page) {
   await page.waitForTimeout(600);
   const c = await page.evaluate(
     (k) => JSON.parse(localStorage.getItem(k)).clients.find((x) => x.displayName === '段階 確認さん'),
-    KEY,
+    STORAGE_KEY,
   );
   check(c && c.tentative === true && c.place.lat === 38.2601, '仮押さえで仮の利用者さんと場所が入る', c?.place);
 }
@@ -356,8 +321,8 @@ async function narrow(page) {
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
-(async () => {
-  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const b = await launch();
   const errors = [];
   for (const [name, fn] of [
     ['steps', steps],
@@ -384,13 +349,10 @@ async function narrow(page) {
       await fn(page);
     } catch (e) {
       check(false, name, String(e.message || e).split('\n')[0]);
-      await page.screenshot({ path: path.join(OUT_DIR, `fail-${name}.png`) }).catch(() => {});
+      await failShot(page, name);
     }
     await ctx.close();
   }
   await b.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  const ng = fails + errors.length;
-  console.log(ng === 0 ? '全部通った' : `${fails} 件が通らない・ページのエラー ${errors.length} 件`);
-  process.exit(ng === 0 ? 0 : 1);
-})();
+  return errors;
+});
