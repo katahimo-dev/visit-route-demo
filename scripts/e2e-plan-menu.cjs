@@ -441,6 +441,17 @@ async function reassignShape(page) {
   });
 }
 
+/** いまのフォーカス：body か・いちばん近い訪問（data-visit）と、どの描き方か（時間軸の帯・順番のカード） */
+const activeInfo = (page) =>
+  page.evaluate(() => {
+    const el = document.activeElement;
+    return {
+      body: !el || el === document.body,
+      visit: el?.closest('[data-visit]')?.getAttribute('data-visit') ?? null,
+      cls: el?.className ?? '',
+    };
+  });
+
 async function reassignMenu(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
   await openPlan(page);
@@ -513,6 +524,9 @@ async function reassignMenu(page) {
     'Enter で選ぶと担当が変わり固定になる（ドラッグと同じ）',
     { from, to: ownerOf(moved, vid), pin: moved.pins[vid] },
   );
+  await settle(page, 200);
+  const f1 = await activeInfo(page);
+  check(!f1.body && f1.visit === vid, '選んだあと：フォーカスは body に落ちず、移した先の訪問へ', f1);
   const toastUndo = page.getByTestId('plan-reassign-toast-undo');
   await toastUndo.waitFor({ timeout: 3000 });
   const toastText = await page.locator('.toast').innerText();
@@ -540,6 +554,8 @@ async function reassignMenu(page) {
   );
   await page.locator('.toast').filter({ hasText: '元に戻しました' }).waitFor({ timeout: 3000 });
   check(true, '戻すと知らせ「元に戻しました」');
+  const f2 = await activeInfo(page);
+  check(!f2.body && f2.visit === vid, 'トーストの「元に戻す」のあと：フォーカスは body に落ちず、戻した訪問へ', f2);
   check((await undoBtn.getAttribute('aria-disabled')) === 'true', '戻したあとは「元に戻す」を押せない（1手だけ）');
 
   // 「入らなかった訪問へ」→ 確定の確認に件数 → 取り消す → 操作の行の「元に戻す」
@@ -553,6 +569,13 @@ async function reassignMenu(page) {
   check(
     none.unassigned.includes(vid) && !none.pins[vid] && ownerOf(none, vid) === null,
     '「入らなかった訪問へ」：担当なしになり固定は付かない',
+  );
+  await settle(page, 200);
+  const f3 = await activeInfo(page);
+  check(
+    !f3.body && f3.visit === vid,
+    '「入らなかった訪問へ」のあと：フォーカスは body に落ちず、入らなかった訪問のカードへ',
+    f3,
   );
   check(
     /入らなかった訪問へ移しました/.test(await page.locator('.toast').innerText()),
@@ -588,6 +611,25 @@ async function reassignMenu(page) {
     await page.keyboard.press('Escape');
     await dialog(page).waitFor({ state: 'detached' });
   }
+  // 移したあとに確定したら、元に戻すは押せない（今の案だけ戻って確定した担当と食い違うため。PRD D218）
+  if (!(await reBtn(page).count())) await pick.click();
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  await reList(page).locator(`[data-key="${target.key}"]`).click();
+  await waitStored(page, (d, [date, v, t]) => d.aiPlans[date].pins[v] === t, [TODAY, vid, to]);
+  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '確定の前：移したあとは「元に戻す」を押せる');
+  await page.getByTestId('adopt').click();
+  await dialog(page).waitFor({ timeout: 5000 });
+  await page.getByTestId('confirm-ok').click();
+  await dialog(page).waitFor({ state: 'detached' });
+  await waitStored(page, (d, [date, v, t]) => (d.manualPlans[date]?.[t] ?? []).includes(v), [TODAY, vid, to]);
+  await settle(page);
+  check(
+    (await undoBtn.getAttribute('aria-disabled')) === 'true' &&
+      /戻せません/.test((await undoBtn.getAttribute('title')) ?? ''),
+    '確定したあと：「元に戻す」は押せず、title に戻せない理由',
+    await undoBtn.getAttribute('title'),
+  );
 }
 
 // ---- スマホ（390×844）：一覧と「もう1案作って比べる」が画面に収まる ----

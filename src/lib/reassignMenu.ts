@@ -10,7 +10,7 @@ export type ReassignItemText = { description: string; disabled: string | false }
 /** 1行に出す重みの違反の数（相性は別に出す） */
 const MAX_SOFT = 2;
 
-/** ずらせば入る分（「受けられる人」と同じ言い方） */
+/** 「〇分ずらせば入る」の文（「受けられる人」（pages/absenceParts の CandidateBox）と「担当を変える ▾」で共通） */
 export function shiftText(m: number): string {
   return m > 0 ? `${m}分遅らせれば入る` : `${-m}分早めれば入る`;
 }

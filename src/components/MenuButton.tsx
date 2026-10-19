@@ -40,6 +40,7 @@ export function MenuButton({
   disabled = false,
   testId,
   className = '',
+  onOpenChange,
 }: {
   label: ReactNode;
   icon?: LucideIcon;
@@ -47,8 +48,16 @@ export function MenuButton({
   disabled?: boolean;
   testId?: string;
   className?: string;
+  /**
+   * 開く・閉じるときに呼ぶ（開くのと同じ描画で items を作り直せる。日の画面の「担当を変える ▾」は開いたときだけ候補を計算する）
+   */
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  const setOpen = (v: boolean) => {
+    setOpenState(v);
+    onOpenChange?.(v);
+  };
   const wrapRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
