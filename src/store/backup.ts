@@ -43,14 +43,16 @@ export function createBackupMemory(getStorage: () => KeyStore | null) {
   return {
     /** 最後に書き出した日。まだなら null */
     lastExport(): LastExport | null {
-      if (lastHere) return lastHere;
+      // 先にこのブラウザの記録を読む（別のタブで書き出した日も拾う）。読めないときだけ開いている間に覚えたもの
       try {
         const raw = JSON.parse(read(BACKUP_LAST_KEY) ?? 'null') as Partial<LastExport> | null;
-        if (!raw || !isDate(raw.date) || (raw.kind !== 'json' && raw.kind !== 'excel')) return null;
-        return { date: raw.date, kind: raw.kind };
+        if (raw && isDate(raw.date) && (raw.kind === 'json' || raw.kind === 'excel')) {
+          return { date: raw.date, kind: raw.kind };
+        }
       } catch {
-        return null;
+        // 下で開いている間に覚えたものを返す
       }
+      return lastHere;
     },
     /** 書き出したことを覚える（date は日本時間の YYYY-MM-DD） */
     markExported(kind: ExportKind, date: string): void {
@@ -59,9 +61,8 @@ export function createBackupMemory(getStorage: () => KeyStore | null) {
     },
     /** 控えの知らせを最後に出した日。まだなら null */
     lastReminded(): string | null {
-      if (remindedHere) return remindedHere;
       const v = read(BACKUP_REMINDED_KEY);
-      return isDate(v) ? v : null;
+      return isDate(v) ? v : remindedHere;
     },
     /** 控えの知らせを出したことを覚える */
     markReminded(date: string): void {

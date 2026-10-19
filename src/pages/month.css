@@ -211,7 +211,7 @@
 .month-swatch.is-caution,
 .month-cell.is-caution:not(.is-making) .month-cell-btn {
   background: #fffaf0;
-  border: 1.5px dashed var(--warn);
+  border: 1.5px dashed var(--warn-line);
 }
 .month-swatch.is-care,
 .month-cell.is-care .month-cell-btn {
@@ -606,7 +606,7 @@
 }
 .month-list-btn.is-caution {
   background: #fffaf0;
-  border: 1.5px dashed var(--warn);
+  border: 1.5px dashed var(--warn-line);
 }
 .month-list-btn.is-care {
   border: 2.5px solid var(--danger);

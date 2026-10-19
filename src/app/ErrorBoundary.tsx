@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { jstDate } from '../domain/time';
 import { backupFileName, backupNote, saveBlob } from '../lib/download';
-import { backup } from '../store';
+import { backup, backupMemory } from '../store';
 
 /**
  * 画面の例外で真っ白にしない。主ボタンは「控え（バックアップ）を書き出す」（いまのデータを JSON で残す）、
@@ -38,6 +38,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
         if (f.kind === 'broken') brokenName = name;
         saveBlob(new Blob([f.text], { type: 'application/json' }), name);
       }
+      // いまのデータを書き出したら「最後に書き出した日」に数える（データの画面の書き出しと同じ。PRD D227）
+      if (b.files.some((f) => f.kind === 'current')) backupMemory.markExported('json', date);
       this.setState({ backup: backupNote({ source: b.source, saveError: b.saveError, brokenName }) });
     } catch (e) {
       this.setState({ backup: `書き出せませんでした（${e instanceof Error ? e.message : String(e)}）` });

@@ -46,6 +46,17 @@ describe('backupMemory（PRD D227）', () => {
     m.set(BACKUP_LAST_KEY, JSON.stringify({ date: '2026-10-12', kind: 'csv' }));
     expect(b.lastExport()).toBeNull();
   });
+  it('このブラウザの記録を先に読む（別のタブで書き出した日・知らせた日も拾う）', () => {
+    const { m, ls } = fake();
+    const b = createBackupMemory(() => ls);
+    b.markExported('json', '2026-10-12');
+    b.markReminded('2026-10-12');
+    // 別のタブが新しい日を書いた
+    m.set(BACKUP_LAST_KEY, JSON.stringify({ date: '2026-10-19', kind: 'excel' }));
+    m.set(BACKUP_REMINDED_KEY, '2026-10-19');
+    expect(b.lastExport()).toEqual({ date: '2026-10-19', kind: 'excel' });
+    expect(b.lastReminded()).toBe('2026-10-19');
+  });
   it('localStorage が使えなくても落ちず、開いている間は覚える', () => {
     const b = createBackupMemory(() => {
       throw new Error('使えない');

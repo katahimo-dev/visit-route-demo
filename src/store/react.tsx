@@ -11,14 +11,12 @@ import {
   type PreviousInfo,
   type PreviousKeep,
   previousInfo,
-  readPrevious,
   rememberCurrent,
   reset as resetStore,
+  samePreviousInfo,
   save,
+  swapPrevious,
 } from './index';
-
-/** 「直前の状態に戻す」でいまのデータを控えるときの操作の名前 */
-export const RESTORE_REASON = '直前の状態に戻す';
 
 export type DemoStore = {
   data: DemoData;
@@ -41,9 +39,13 @@ export type DemoStore = {
   previous: PreviousInfo | null;
   /** 起動したとき、保存していたデータが読めず初期データで開いたか（知らせを閉じると false） */
   broken: boolean;
+  /** 読めなかった元の文字を退避できたか（できなければ知らせは「今すぐ書き出してください」） */
+  brokenKept: boolean;
   dismissBroken(): void;
   /** 別のタブの変更で読み直した回数（画面が知らせを出すきっかけ） */
   externalReloads: number;
+  /** 保存の容量が足りず1世代の控えを捨てた回数（画面が知らせを出すきっかけ。ADR-0032） */
+  previousDrops: number;
 };
 
 const Ctx = createContext<DemoStore | null>(null);
@@ -52,9 +54,15 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
   const [initial] = useState(() => loadWithStatus());
   const [data, setData] = useState<DemoData>(initial.data);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [previous, setPrevious] = useState<PreviousInfo | null>(() => previousInfo());
+  const [previous, setPreviousState] = useState<PreviousInfo | null>(() => previousInfo());
+  /** 控えの時刻と操作の名前が同じなら state を替えない（全体を描き直さない） */
+  const setPrevious = useCallback(
+    (next: PreviousInfo | null) => setPreviousState((cur) => (samePreviousInfo(cur, next) ? cur : next)),
+    [],
+  );
   const [broken, setBroken] = useState(initial.broken);
   const [externalReloads, setExternalReloads] = useState(0);
+  const [previousDrops, setPreviousDrops] = useState(0);
   // 別タブから読み直したデータは、書き戻さない（往復で上書き合戦にしない）
   const skipSave = useRef(true);
   const latest = useRef(data);
@@ -67,12 +75,15 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       skipSave.current = false;
       return;
     }
-    save(data, (message) => {
+    save(data, (message, dropped) => {
       setSaveError(message);
-      // 容量超過で控えを捨てたことがあるので読み直す（ADR-0032）
-      setPrevious(previousInfo());
+      // 容量が足りず控えを捨てたときだけ、控えの欄を消して知らせる（ADR-0032）
+      if (dropped) {
+        setPrevious(null);
+        setPreviousDrops((n) => n + 1);
+      }
     });
-  }, [data]);
+  }, [data, setPrevious]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -94,7 +105,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('pagehide', onUnload);
     };
-  }, []);
+  }, [setPrevious]);
 
   const update = useCallback((fn: (d: DemoData) => DemoData) => setData((d) => fn(d)), []);
   const replace = useCallback((d: DemoData) => setData(d), []);
@@ -102,31 +113,29 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
     setSaveError(null);
     setData(resetStore());
   }, []);
-  const keepPrevious = useCallback((reason: string): PreviousKeep => {
-    const k = keepPreviousStore(latest.current, reason);
-    setPrevious(previousInfo());
-    return {
-      ...k,
-      cancel: () => {
-        k.cancel();
-        setPrevious(previousInfo());
-      },
-    };
-  }, []);
+  const keepPrevious = useCallback(
+    (reason: string): PreviousKeep => {
+      const k = keepPreviousStore(latest.current, reason);
+      setPrevious(previousInfo());
+      return {
+        ...k,
+        cancel: () => {
+          k.cancel();
+          setPrevious(previousInfo());
+        },
+      };
+    },
+    [setPrevious],
+  );
   const restorePrevious = useCallback((): string | null => {
-    const r = readPrevious();
-    if (r === null) {
-      setPrevious(null);
-      return '戻せる控えがありません（別のタブで使ったか、容量のために消えました）';
-    }
-    if (isImportError(r)) return `控えを読めませんでした（${r.message}）`;
-    // いまのデータを控えと入れ替える（戻したあとにもう一度戻せる）
-    keepPreviousStore(latest.current, RESTORE_REASON);
+    // いまのデータを控えと入れ替える（戻したあとにもう一度戻せる）。いまのデータを控えに残せなければ戻さない
+    const r = swapPrevious(latest.current);
     setPrevious(previousInfo());
+    if ('error' in r) return r.error;
     setSaveError(null);
-    setData(r);
+    setData(r.data);
     return null;
-  }, []);
+  }, [setPrevious]);
   const dismissBroken = useCallback(() => setBroken(false), []);
 
   const value = useMemo(
@@ -140,8 +149,10 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       restorePrevious,
       previous,
       broken,
+      brokenKept: initial.brokenKept,
       dismissBroken,
       externalReloads,
+      previousDrops,
     }),
     [
       data,
@@ -153,8 +164,10 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       restorePrevious,
       previous,
       broken,
+      initial.brokenKept,
       dismissBroken,
       externalReloads,
+      previousDrops,
     ],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

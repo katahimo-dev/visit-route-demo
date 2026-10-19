@@ -39,18 +39,29 @@ describe('古い案と記録の片づけ（PRD D227。ADR-0032）', () => {
   it('選んだ月より前の日の案と記録を数え、空く見込み（JSON の文字数）を出す', () => {
     const d = withOld();
     const p = tidyPreview(d, '2026-07');
-    expect(p).toMatchObject({ runs: 3, plans: 1, days: 2 });
+    // 2026-06-30 は確定した日なので案は残す（記録だけ数える）
+    expect(p).toMatchObject({ runs: 3, plans: 0, keptPlans: 1, days: 2 });
     expect(p.chars).toBeGreaterThan(JSON.stringify(d.aiRuns['2026-06-10']).length);
-    expect(tidyPreview(d, '2025-12')).toEqual({ runs: 0, plans: 0, days: 0, chars: 0 });
+    expect(tidyPreview(d, '2025-12')).toEqual({ runs: 0, plans: 0, keptPlans: 0, days: 0, chars: 0 });
   });
   it('消すのは aiRuns・aiPlans だけ。確定した割当・訪問・人は残す', () => {
     const d = withOld();
     const t = tidyOld(d, '2026-07');
-    expect(Object.keys(t.aiPlans).sort()).toEqual(['2026-07-01', '2026-10-12']);
+    expect(Object.keys(t.aiPlans).sort()).toEqual(['2026-06-30', '2026-07-01', '2026-10-12']);
     expect(Object.keys(t.aiRuns)).toEqual(['2026-07-15']);
     expect(t.manualPlans).toBe(d.manualPlans);
     expect(t.visits).toBe(d.visits);
     expect(t.staff).toBe(d.staff);
+  });
+  it('確定した日の案は残り、確定していない古い日の案は消える', () => {
+    const base = withOld();
+    const d: DemoData = { ...base, aiPlans: { ...base.aiPlans, '2026-05-01': fake('2026-05-01') } };
+    const p = tidyPreview(d, '2026-07');
+    expect(p).toMatchObject({ plans: 1, keptPlans: 1 });
+    const t = tidyOld(d, '2026-07');
+    expect(t.aiPlans['2026-06-30']).toBe(d.aiPlans['2026-06-30']);
+    expect(t.aiPlans['2026-05-01']).toBeUndefined();
+    expect(t.aiRuns['2026-06-30']).toBeUndefined();
   });
   it('消すものが無ければ同じもの', () => {
     const d = withOld();

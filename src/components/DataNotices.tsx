@@ -2,6 +2,7 @@
 // - 壊れたデータの知らせ（起動したとき、保存していたデータが読めず初期データで開いたら、閉じられる帯と「読めなかったデータを書き出す」）
 // - 控えの知らせ（起動したとき1回。確定した日があり、2週間以上書き出していなければトースト。1日1回まで）
 // - 別のタブの変更（読み直したらトースト。編集の欄に変更があれば「保存すると上書きします」）
+// - 容量が足りず、保存のときに直前の状態の控えを捨てた（トースト）
 import { Download, FileWarning, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { jstDate } from '../domain/time';
@@ -13,12 +14,15 @@ import { useToast } from './Toast';
 import { WithIcon } from './ui';
 import './dataNotices.css';
 
+/** 容量のために控えを捨てたときの知らせ */
+export const PREVIOUS_DROPPED_TEXT = '容量が足りないため、直前の状態の控えを消しました';
+
 /** 起動したときの控えの知らせを、開いている間に2回出さない */
 let remindedThisSession = false;
 
 /** 控えの知らせと別のタブの変更の知らせ（トースト）。画面全体で1つ置く */
 export function DataWatch() {
-  const { data, externalReloads } = useDemoData();
+  const { data, externalReloads, previousDrops } = useDemoData();
   const toast = useToast();
   // 起動したときに1回だけ（そのときのデータで決める）
   const first = useRef(data);
@@ -41,8 +45,17 @@ export function DataWatch() {
   useEffect(() => {
     if (externalReloads === seen.current) return;
     seen.current = externalReloads;
-    toast(otherTabText(hasDirtyForm()));
+    // 編集の欄に変更があるかは、読み直したデータで欄が描き直されたあとに見る（1つ前の描画で決めない）
+    const t = setTimeout(() => toast(otherTabText(hasDirtyForm())), 0);
+    return () => clearTimeout(t);
   }, [externalReloads, toast]);
+  // 容量が足りず、保存のときに控えを捨てた（ADR-0032）
+  const drops = useRef(previousDrops);
+  useEffect(() => {
+    if (previousDrops === drops.current) return;
+    drops.current = previousDrops;
+    toast(PREVIOUS_DROPPED_TEXT);
+  }, [previousDrops, toast]);
   return null;
 }
 
@@ -51,7 +64,7 @@ export function DataWatch() {
  * onClose：閉じたあと（フォーカスを画面の見出しへ）
  */
 export function BrokenDataNotice({ onClose }: { onClose: () => void }) {
-  const { broken, dismissBroken } = useDemoData();
+  const { broken, brokenKept, dismissBroken } = useDemoData();
   const [message, setMessage] = useState('');
   if (!broken) return null;
   const download = () => {
@@ -73,7 +86,9 @@ export function BrokenDataNotice({ onClose }: { onClose: () => void }) {
       <div className="data-broken-text">
         <p>
           <strong>保存していたデータを読めなかったため、初期データで開きました。</strong>
-          元のデータはこのブラウザに残しています。書き出して保管するか、詳しい人に見てもらってください。
+          {brokenKept
+            ? '元のデータはこのブラウザに残しています。書き出して保管するか、詳しい人に見てもらってください。'
+            : '元のデータを退避できませんでした。今すぐ書き出してください。'}
         </p>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-small" onClick={download} data-testid="data-broken-download">

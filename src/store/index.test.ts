@@ -5,6 +5,8 @@ import { createDemoData } from '../seed';
 import {
   BROKEN_KEY,
   backup,
+  brokenText,
+  canKeepPrevious,
   currentData,
   exportJson,
   extendDays,
@@ -19,10 +21,13 @@ import {
   PREV_KEY,
   previousInfo,
   QUOTA_MESSAGE,
+  RESTORE_REASON,
   readPrevious,
   rememberCurrent,
   reset,
+  samePreviousInfo,
   save,
+  swapPrevious,
 } from './index';
 
 /** 環境は node なので localStorage の簡単なモック */
@@ -139,6 +144,34 @@ describe('load・save', () => {
     expect(r.data.staff).toHaveLength(8);
   });
 
+  it('読めないデータの退避が容量超過なら控えを捨ててもう1回。それでもだめなら brokenKept＝false、元の文字は brokenText で取れる', () => {
+    mem.set(PREV_KEY, '{}');
+    mem.set(PREV_INFO_KEY, '{}');
+    mem.set(STORAGE_KEY, '{こわれた1');
+    const ls = globalThis.localStorage as Storage;
+    const orig = ls.setItem;
+    // 控えがあるあいだは退避できない
+    ls.setItem = (key: string, value: string) => {
+      if (key === BROKEN_KEY && mem.has(PREV_KEY)) throw new DOMException('full', 'QuotaExceededError');
+      orig(key, value);
+    };
+    const a = loadWithStatus();
+    expect(a).toMatchObject({ broken: true, brokenKept: true });
+    expect(mem.has(PREV_KEY)).toBe(false);
+    expect(mem.get(BROKEN_KEY)).toBe('{こわれた1');
+    // まったく退避できない
+    mem.delete(BROKEN_KEY);
+    mem.set(STORAGE_KEY, '{こわれた2');
+    ls.setItem = (key: string, value: string) => {
+      if (key === BROKEN_KEY) throw new DOMException('full', 'QuotaExceededError');
+      orig(key, value);
+    };
+    const b = loadWithStatus();
+    expect(b).toMatchObject({ broken: true, brokenKept: false });
+    expect(mem.has(BROKEN_KEY)).toBe(false);
+    expect(brokenText()).toBe('{こわれた2');
+  });
+
   it('保存したものを読み直せる（間引きは最後の値）', () => {
     vi.useFakeTimers();
     const a = createDemoData('2026-10-12');
@@ -150,7 +183,7 @@ describe('load・save', () => {
     vi.advanceTimersByTime(300);
     vi.useRealTimers();
     expect(flushed).toHaveBeenCalledTimes(1);
-    expect(flushed).toHaveBeenCalledWith(null);
+    expect(flushed).toHaveBeenCalledWith(null, false);
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(42);
   });
 
@@ -161,7 +194,7 @@ describe('load・save', () => {
     const onError = vi.fn();
     save(createDemoData('2026-10-12'), onError);
     flushSave();
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('保存容量'));
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('保存容量'), false);
   });
 
   it('reset は初期データで置き換える', () => {
@@ -387,9 +420,64 @@ describe('1世代の控え（PRD D227。ADR-0032）', () => {
     const onError = vi.fn();
     save({ ...d, seed: 8 }, onError);
     flushSave();
-    expect(onError).toHaveBeenCalledWith(null);
+    // 控えを捨てたことを返す（画面が知らせる）
+    expect(onError).toHaveBeenCalledWith(null, true);
     expect(previousInfo()).toBeNull();
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(8);
+  });
+
+  it('直前の状態に戻す：いまのデータを控えに残し、控えのデータを返す（もう一度戻せる）', () => {
+    const a = { ...createDemoData('2026-10-12'), seed: 1 };
+    keepPrevious(a, '初期状態に戻す', at);
+    const now = { ...a, seed: 2 };
+    const r = swapPrevious(now, at + 1000);
+    expect('data' in r && r.data.seed).toBe(1);
+    expect((readPrevious() as DemoData).seed).toBe(2);
+    expect(previousInfo()).toEqual({ at: at + 1000, reason: RESTORE_REASON });
+  });
+
+  it('直前の状態に戻す：いまのデータを控えに残せなければ戻さず、控えも元のまま', () => {
+    const a = { ...createDemoData('2026-10-12'), seed: 1 };
+    keepPrevious(a, '初期状態に戻す', at);
+    const ls = globalThis.localStorage as Storage;
+    const orig = ls.setItem;
+    // 新しい控え（いまのデータ）は容量不足で書けない
+    ls.setItem = (key: string, value: string) => {
+      if (key === PREV_KEY && (JSON.parse(value) as DemoData).seed === 2) {
+        throw new DOMException('full', 'QuotaExceededError');
+      }
+      orig(key, value);
+    };
+    const r = swapPrevious({ ...a, seed: 2 }, at + 1000);
+    expect(r).toEqual({ error: 'いまのデータを控えに残せないため戻せません：容量不足' });
+    expect((readPrevious() as DemoData).seed).toBe(1);
+    expect(previousInfo()).toEqual({ at, reason: '初期状態に戻す' });
+  });
+
+  it('直前の状態に戻す：控えが無ければ文言', () => {
+    expect(swapPrevious(createDemoData('2026-10-12'))).toEqual({
+      error: '戻せる控えがありません（別のタブで使ったか、容量のために消えました）',
+    });
+  });
+
+  it('控えを残せそうかの見込み：保存が容量超過のあとは「容量不足」', () => {
+    // 直前の保存が成功していれば残せる見込み（前のテストの保存の結果を消す）
+    reset();
+    expect(canKeepPrevious()).toEqual({ kept: true, why: null });
+    const ls = globalThis.localStorage as Storage;
+    ls.setItem = () => {
+      throw new DOMException('full', 'QuotaExceededError');
+    };
+    save(createDemoData('2026-10-12'));
+    flushSave();
+    expect(canKeepPrevious()).toEqual({ kept: false, why: '控えを残せません：容量不足' });
+  });
+
+  it('控えの時刻と操作の名前が同じか', () => {
+    expect(samePreviousInfo(null, null)).toBe(true);
+    expect(samePreviousInfo({ at, reason: 'a' }, { at, reason: 'a' })).toBe(true);
+    expect(samePreviousInfo({ at, reason: 'a' }, { at, reason: 'b' })).toBe(false);
+    expect(samePreviousInfo({ at, reason: 'a' }, null)).toBe(false);
   });
 
   it('容量超過の文は、画面にある片づけの操作を指す', () => {

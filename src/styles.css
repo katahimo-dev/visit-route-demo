@@ -25,6 +25,8 @@
   --ok-ink: #37734f;
   --warn: #d99a2b;
   --warn-ink: #8a5a00;
+  /* 注意の点線（案なしの日・帯の枠。地 #fffaf0 で 3.6。--warn は 2.3 で足りない。PRD D228） */
+  --warn-line: #b07a12;
   /* 赤は文字にも使う（白で 5.7・--bg で 5.1） */
   --danger: #b8393a;
   --radius: 18px;

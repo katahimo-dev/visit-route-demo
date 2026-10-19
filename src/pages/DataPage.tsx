@@ -30,6 +30,7 @@ import { sizeText, tidyMonthLabel, tidyMonthOptions, tidyOld, tidyPreview } from
 import { useFeature } from '../lib/useFeature';
 import {
   backupMemory,
+  canKeepPrevious,
   type ExportKind,
   exportJson,
   importJson,
@@ -43,11 +44,21 @@ import './settings.css';
 /** ファイル名の日付（日本時間） */
 const today = () => jstDate(Date.now());
 
-/** 置き換える確認の本文に添える、1世代の控えの文（PRD D227。残せなければ理由） */
-const keepNote = (k: PreviousKeep): string =>
+/**
+ * 置き換える確認の本文に添える、1世代の控えの文（PRD D227。残せなければ理由）。
+ * 控えは確認で OK になってから残すので、ここは見込み（canKeepPrevious）
+ */
+const keepNote = (k: { kept: boolean; why: string | null }): string =>
   k.kept
     ? 'いまのデータは控えとして1つだけ残し、この画面の「直前の状態に戻す」で戻せます。'
     : `${k.why ?? '控えを残せません'}。`;
+
+/** 操作のあとの知らせに添える文：見込みに反して控えを残せなかったら理由（操作は止めない） */
+const keptSuffix = (k: PreviousKeep): string => (k.kept ? '' : `（${k.why ?? '控えを残せません'}）`);
+
+/** 片づけの確認の本文：確定した日の今の案は残す（記録だけ消す。PRD D227） */
+const keptPlansText = (n: number): string =>
+  n > 0 ? `確定した日の AI案 ${n}件は残します（その日の記録だけ消します）。` : '';
 
 /** データ：書き出し・読み込み（控えの JSON・Excel）・初期状態に戻す（D2・D3・D23） */
 /** 画面を開いたあとに新しい版が公開されて、Excel の部品を読めなかったとき */
@@ -184,21 +195,18 @@ export default function DataPage() {
       }
       const rt = r.org.terms;
       const counts = `${rt.staff} ${r.staff.length}人・${rt.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
-      // 置き換える前に、いまのデータを1世代だけ控える（取り消したら前の世代に戻す。PRD D227）
-      const keep = keepPrevious('Excel 全体の読み込み');
       const ok = await confirmDialog({
         title: `「${file.name}」でデータを置き換えますか？`,
-        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。\n${keepNote(keep)}`,
+        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。\n${keepNote(canKeepPrevious())}`,
         confirmLabel: 'すべて置き換える',
         tone: 'danger',
       });
-      if (!ok) {
-        keep.cancel();
-        return;
-      }
+      if (!ok) return;
+      // 置き換える前に、いまのデータを1世代だけ控える（確認で OK になってから。PRD D227）
+      const keep = keepPrevious('Excel 全体の読み込み');
       setLastDayNotice(null);
       replace(r);
-      toast('Excel を読み込みました');
+      toast(`Excel を読み込みました${keptSuffix(keep)}`);
     } catch (e) {
       setExcelError(
         isStaleBuild(e) ? STALE_TEXT : `読み込めませんでした：${formError(e)}（いまのデータはそのままです）`,
@@ -233,14 +241,12 @@ export default function DataPage() {
     const terms = base.org.terms;
     const how = rosterMode === 'replace' ? '総入れ替え' : '追加・更新';
     const warning = rosterWarning(r, kind, terms);
-    // 名簿の読み込みも人をまとめて書き換えるので、いまのデータを1世代だけ控える（PRD D227）
-    const keep = keepPrevious(`${term}の名簿の${how}`);
     const body = [
       ...(warning ? [warning, ''] : []),
       `「${file.name}」の${term}の名簿を読み込みます（${how}）。`,
       rosterSummary(r, kind, terms),
       'AI案・記録・確定した割当・訪問はそのままです。',
-      keepNote(keep),
+      keepNote(canKeepPrevious()),
     ].join('\n');
     const ok = await confirmDialog({
       title: `${term}の名簿を読み込みますか？（${how}）`,
@@ -249,23 +255,19 @@ export default function DataPage() {
       // 総入れ替え（名簿にいない人を終了・休止にする）は危険の色
       tone: rosterMode === 'replace' ? 'danger' : 'primary',
     });
-    if (!ok) {
-      keep.cancel();
-      return;
-    }
-    if (latest.current !== base) {
-      keep.cancel();
-      return changed();
-    }
+    if (!ok) return;
+    if (latest.current !== base) return changed();
+    // 名簿の読み込みも人をまとめて書き換えるので、いまのデータを1世代だけ控える（確認で OK になってから。PRD D227）
+    const keep = keepPrevious(`${term}の名簿の${how}`);
     // 最終勤務日が入った人は ID も要る（知らせのリンク。PRD D209）ので、読み込む前と後を比べて引く
     const lastDay = kind === 'staff' ? lastDayChanged(base.staff, r.data.staff) : [];
     pendingRoster.current = {
       base,
       next: r.data,
       done:
-        lastDay.length > 0
+        (lastDay.length > 0
           ? `${term}の名簿を読み込みました。最終勤務日の入った${terms.staff}がいます。Excel の欄に名前を出しました`
-          : `${term}の名簿を読み込みました`,
+          : `${term}の名簿を読み込みました`) + keptSuffix(keep),
       lastDay,
       keep,
     };
@@ -281,41 +283,36 @@ export default function DataPage() {
         setError(`読み込めませんでした：${r.message}（いまのデータはそのままです）`);
         return;
       }
-      const keep = keepPrevious('控えの読み込み');
       const ok = await confirmDialog({
         title: `「${file.name}」でデータを置き換えますか？`,
-        body: `「${file.name}」の内容で、いまのデータをすべて置き換えます。\n${keepNote(keep)}`,
+        body: `「${file.name}」の内容で、いまのデータをすべて置き換えます。\n${keepNote(canKeepPrevious())}`,
         confirmLabel: 'すべて置き換える',
         tone: 'danger',
       });
-      if (!ok) {
-        keep.cancel();
-        return;
-      }
+      if (!ok) return;
+      const keep = keepPrevious('控えの読み込み');
       // データを置き換えたら、前の名簿の知らせは消す（PRD D209）
       setLastDayNotice(null);
       replace(r);
-      toast('読み込みました');
+      toast(`読み込みました${keptSuffix(keep)}`);
     } catch (e) {
       setError(`読み込めませんでした：${formError(e)}（いまのデータはそのままです）`);
     }
   };
 
   const doReset = async () => {
-    const keep = keepPrevious('初期状態に戻す');
     const ok = await confirmDialog({
       title: 'データを初期状態に戻しますか？',
-      body: `データをデモの初期状態に戻します。いまの変更はすべて消えます。\n${keepNote(keep)}`,
+      body: `データをデモの初期状態に戻します。いまの変更はすべて消えます。\n${keepNote(canKeepPrevious())}`,
       confirmLabel: '消して初期状態に戻す',
       tone: 'danger',
     });
-    if (!ok) {
-      keep.cancel();
-      return;
-    }
+    if (!ok) return;
+    // 確認で OK になってから控えを残す（確認中に閉じても控えは残らない。PRD D227）
+    const keep = keepPrevious('初期状態に戻す');
     setLastDayNotice(null);
     reset();
-    toast('初期状態に戻しました');
+    toast(`初期状態に戻しました${keptSuffix(keep)}`);
   };
 
   /** 直前の状態に戻す（PRD D227）：控えと入れ替える。確認つき */
@@ -347,7 +344,7 @@ export default function DataPage() {
     if (tidy.runs + tidy.plans === 0) return;
     const ok = await confirmDialog({
       title: `${tidyMonthLabel(tidyYm)}の AI案と記録を消しますか？`,
-      body: `${tidy.days}日分の AI案 ${tidy.plans}件と記録 ${tidy.runs}件を消します（${sizeText(tidy.chars)}空きます）。確定した割当・訪問・人・条件は消えません。消した案と記録は戻せません（容量を空けるため、直前の状態の控えも残しません）。`,
+      body: `${tidy.days}日分の AI案 ${tidy.plans}件と記録 ${tidy.runs}件を消します（${sizeText(tidy.chars)}空きます）。${keptPlansText(tidy.keptPlans)}確定した割当・訪問・人・条件は消えません。消した案と記録は戻せません（容量を空けるため、直前の状態の控えも残しません）。`,
       confirmLabel: '消す',
       tone: 'danger',
     });
@@ -619,7 +616,8 @@ export default function DataPage() {
         </SectionTitle>
         <Hint>
           保存の容量が足りなくなったときに使います。選んだ月より前の日の
-          AI案と記録（比較の画面の記録）を消します。確定した割当・訪問・人・条件は消えません。消す前に控えを書き出してください。
+          AI案と記録（比較の画面の記録）を消します。確定した日の
+          AI案・確定した割当・訪問・人・条件は消えません。消す前に控えを書き出してください。
         </Hint>
         <label className="data-tidy-month">
           消す範囲
@@ -634,7 +632,7 @@ export default function DataPage() {
         <p className="sub" data-testid="data-tidy-preview">
           {tidy.runs + tidy.plans === 0
             ? `${tidyMonthLabel(tidyYm)}に消せる AI案・記録はありません`
-            : `${tidy.days}日分の AI案 ${tidy.plans}件・記録 ${tidy.runs}件（${sizeText(tidy.chars)}空きます）`}
+            : `${tidy.days}日分の AI案 ${tidy.plans}件・記録 ${tidy.runs}件（${sizeText(tidy.chars)}空きます）${tidy.keptPlans > 0 ? `。確定した日の AI案 ${tidy.keptPlans}件は残します` : ''}`}
         </p>
         <button
           type="button"

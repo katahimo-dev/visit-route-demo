@@ -64,7 +64,7 @@ label.week-who {
   border-radius: 4px;
 }
 .week-legend-dash.is-noplan {
-  border: 1.5px dashed var(--warn);
+  border: 1.5px dashed var(--warn-line);
   background: #fffaf0;
 }
 .week-legend-dash.is-unassigned {
@@ -165,7 +165,7 @@ label.week-who {
   background-image: none;
 }
 .week-band.is-noplan {
-  border: 1.5px dashed var(--warn);
+  border: 1.5px dashed var(--warn-line);
   background-color: #fffaf0 !important;
   background-image: none;
 }
