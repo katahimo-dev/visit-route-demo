@@ -371,7 +371,15 @@ async function checkTemplate(page, t) {
       .evaluateAll((els) => els.map((el) => el.dataset.template)),
   );
   check(same(s, [t]), `${label}：管理者設定の「いまの設定」`, s);
-  const checked = await page.getByRole('switch').evaluateAll((els) => els.map((el) => el.getAttribute('aria-checked')));
+  // スイッチの並びはグループ順（メニューのグループにそろえる。ADR-0034）なので、行の data-feature で ID に引き当てる
+  const byId = Object.fromEntries(
+    await page
+      .getByTestId('feature-row')
+      .evaluateAll((els) =>
+        els.map((el) => [el.dataset.feature, el.querySelector('[role="switch"]')?.getAttribute('aria-checked')]),
+      ),
+  );
+  const checked = FEATURE_IDS.map((id) => byId[id]);
   check(
     same(
       checked,
