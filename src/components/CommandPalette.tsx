@@ -64,7 +64,9 @@ export function CommandPalette({
   // 候補（人の名前は比べる形にそろえておき、打つたびにそろえ直さない。300人×60人でも打つたびは絞り込むだけ）
   // いまの条件がどのプリセットとも違えば「今日の案をいまの条件で作り直す」も出す（PRD D166・D182）
   const customRules = useMemo(() => presetOf(data.rules, data.presets) === null, [data.rules, data.presets]);
-  const actions = useMemo(() => paletteActions(today, { customRules }), [today, customRules]);
+  // 切った機能の操作は出さない（PRD D213。画面はメニューと同じ sections から引くので、切った画面はもう無い）
+  const features = data.org.features;
+  const actions = useMemo(() => paletteActions(today, { customRules, features }), [today, customRules, features]);
   const screens = useMemo(() => paletteScreens(sections, terms), [sections, terms]);
   const people = useMemo(() => palettePeople(data.clients, data.staff, terms), [data.clients, data.staff, terms]);
   const items = useMemo(() => [...actions, ...screens, ...people], [actions, screens, people]);

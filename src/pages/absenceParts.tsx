@@ -192,7 +192,8 @@ export function ReassignBar({
   cancelled: boolean;
   running: boolean;
   onRevert: () => void;
-  onCompare: () => void;
+  /** 比較の画面へ移る（無ければボタンを出さない。案を比べるを切ったとき。PRD D213） */
+  onCompare?: () => void;
   /** もう一度振り直す（欠勤の人に残る訪問があるとき） */
   onReassignAgain: () => void;
   /** 見出しの横に足す操作（連絡の一覧。2回目） */
@@ -221,11 +222,13 @@ export function ReassignBar({
               元の案に戻す
             </WithIcon>
           </button>
-          <button type="button" className="btn btn-small" onClick={onCompare}>
-            <WithIcon icon={GitCompareArrows} size={14}>
-              比較の画面で見る
-            </WithIcon>
-          </button>
+          {onCompare && (
+            <button type="button" className="btn btn-small" onClick={onCompare}>
+              <WithIcon icon={GitCompareArrows} size={14}>
+                比較の画面で見る
+              </WithIcon>
+            </button>
+          )}
         </span>
       </div>
       {diff && <ReassignSummary diff={diff} left={left.length} />}

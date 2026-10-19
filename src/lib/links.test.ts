@@ -31,33 +31,36 @@ describe('行き先の URL（PRD D201〜D204）', () => {
 
 describe('月の要対応の行き先（attentionTarget。PRD D201）', () => {
   it('入らない訪問は日の画面の「入らなかった訪問」', () => {
-    expect(attentionTarget(at('unassigned', { count: 2 }))).toEqual({
+    expect(attentionTarget(at('unassigned', { count: 2 }), {})).toEqual({
       to: '/plan?date=2026-10-21&do=unassigned',
       date: D,
       note: '（日の画面の「入らなかった訪問」で開く）',
     });
   });
   it('休みの人に訪問が残るは、その日の「欠勤・キャンセル」の欄（1段目）', () => {
-    const t = attentionTarget(at('absentLeft'));
+    const t = attentionTarget(at('absentLeft'), {});
     expect(t.to).toBe('/plan?date=2026-10-21&do=absence');
     expect(t.date).toBe(D);
     expect(t.note).toBe('（日の画面の「欠勤・キャンセル」で開く）');
   });
   it('拘束が上限を超えるは、稼働の見込みをその月・先頭の人で', () => {
-    const t = attentionTarget(at('overSpan', { count: 2, names: ['青葉 一郎', '泉 二郎'], staffIds: ['s1', 's2'] }));
+    const t = attentionTarget(
+      at('overSpan', { count: 2, names: ['青葉 一郎', '泉 二郎'], staffIds: ['s1', 's2'] }),
+      {},
+    );
     expect(t.to).toBe('/workload?ym=2026-10&staff=s1');
     expect(t.note).toBe('（稼働の見込みで開く）');
     // 人が分からなければ月だけ
-    expect(attentionTarget(at('overSpan')).to).toBe('/workload?ym=2026-10');
+    expect(attentionTarget(at('overSpan'), {}).to).toBe('/workload?ym=2026-10');
   });
   it('月末の日でもその日の月', () => {
-    expect(attentionTarget({ ...at('overSpan', { staffIds: ['s1'] }), date: '2026-10-31' }).to).toBe(
+    expect(attentionTarget({ ...at('overSpan', { staffIds: ['s1'] }), date: '2026-10-31' }, {}).to).toBe(
       '/workload?ym=2026-10&staff=s1',
     );
   });
   it('そのほか（条件が変わった・欠勤がある）は今のまま日の画面', () => {
     for (const k of ['stale', 'absence'] as const) {
-      expect(attentionTarget(at(k))).toEqual({ to: '/plan', date: D, note: '（日の画面で開く）' });
+      expect(attentionTarget(at(k), {})).toEqual({ to: '/plan', date: D, note: '（日の画面で開く）' });
     }
   });
 });

@@ -1,9 +1,13 @@
 // ホーム「今日やること」（PRD D141〜D145。ADR-0025。design.md §4 pages「ホーム」）の決まり。
 // 今の状態（日の状態・定期パターンから作れる訪問の件数）から次の一手を並べる純粋関数。データは書き換えない
 import type { DemoData } from '../contracts/data';
+import type { Terms } from '../contracts/documents';
+import type { Features } from '../contracts/features';
 import { addDays } from '../domain/time';
 import { dateText } from './common';
+import { isHrefOn } from './features';
 import { type AttentionKind, attentionList, type DayStatus, monthDates, ymOf } from './month';
+import { SUDDEN_DO } from './sudden';
 
 /** 今月の残り（今日を含む）がこの日数以下なら、来月も見る（月末の準備。PRD D142） */
 export const HOME_NEXT_MONTH_DAYS = 7;
@@ -57,6 +61,8 @@ export type HomeInput = {
   /** 今日の担当の人数（数える案＝今の案、無ければ確定した割当で、訪問がある人） */
   todayStaff: number;
   data: Pick<DemoData, 'absences' | 'staff'>;
+  /** 機能の入り切り（切った機能へ向かうカードは出さない。PRD D213。{} ならすべて入） */
+  features: Features;
 };
 
 const ATTENTION_LABEL: Record<AttentionKind, string> = {
@@ -84,7 +90,7 @@ function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfi
  * ready は手当て・やることが1つも無いとき（今日の予定の知らせだけ）
  */
 export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean } {
-  const { today, statuses, months, todayStaff, data } = input;
+  const { today, statuses, months, todayStaff, data, features } = input;
   const future = statuses.filter((s) => s.date >= today);
   const inMonth = (ym: string) => future.filter((s) => ymOf(s.date) === ym);
   const attention: HomeTask[] = [];
@@ -150,6 +156,7 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
       });
     }
   }
+  // 切った機能へ向かうカードは出さない（今のカードはどれも土台の画面へ向かうが、表から引いて守る。PRD D213）
   const tasks = [
     ...attention,
     todayTask(
@@ -159,7 +166,7 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
     ),
     ...confirm,
     ...create,
-  ];
+  ].filter((t) => isHrefOn(features, t.to));
   return { tasks, ready: tasks.every((t) => t.tone === 'info') };
 }
 
@@ -188,4 +195,45 @@ function todayTask(today: string, s: DayStatus | undefined, staff: number): Home
     title: `${when}の予定（${state}）`,
     detail: [`訪問 ${s.count}件`, `担当 ${staff}人`, `入らない ${s.unassigned}件`, ...issues].join('・'),
   };
+}
+
+/** いつでも使う入口の種類（アイコンは画面で引く） */
+export type HomeEntryKey = 'absence' | 'vacancy' | 'clients' | 'staff';
+
+/** いつでも使う入口のカード。date があれば移る前に選んでいる日付をその日にする */
+export type HomeEntry = { key: HomeEntryKey; to: string; title: string; detail: string; date?: string };
+
+/**
+ * いつでも使う入口（PRD D144）：欠勤・キャンセル・問い合わせ（空き状況）・〈利用者さん〉を探す・〈スタッフ〉を探す。
+ * 呼び方は terms。切った機能の入口（欠勤・キャンセル・問い合わせ）は出さない（PRD D213）
+ */
+export function homeEntries(today: string, terms: Pick<Terms, 'client' | 'staff'>, features: Features): HomeEntry[] {
+  const all: HomeEntry[] = [
+    {
+      key: 'absence',
+      to: `/plan?date=${today}&do=${SUDDEN_DO}`,
+      title: '急な欠勤・キャンセルを登録',
+      detail: '今日の日の画面で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定',
+      date: today,
+    },
+    {
+      key: 'vacancy',
+      to: '/vacancy',
+      title: '問い合わせに答える（空き状況）',
+      detail: '新しい依頼の曜日・時間に、入れる人と空きを見る',
+    },
+    {
+      key: 'clients',
+      to: '/clients',
+      title: `${terms.client}を探す`,
+      detail: '名前・よみ・地区で探して、詳しく見る・直す',
+    },
+    {
+      key: 'staff',
+      to: '/staff',
+      title: `${terms.staff}を探す`,
+      detail: '一覧から開いて、稼働時間・特性・休みを見る・直す',
+    },
+  ];
+  return all.filter((e) => isHrefOn(features, e.to));
 }

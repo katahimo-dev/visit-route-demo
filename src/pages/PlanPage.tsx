@@ -119,6 +119,7 @@ import { scoreReason } from '../lib/scoreReason';
 import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
+import { useFeature } from '../lib/useFeature';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile } from '../matching';
 import {
@@ -220,6 +221,9 @@ function withRoutes(problem: Problem, plan: AiPlan, routes: Record<string, strin
 export default function PlanPage() {
   const { date, setDate } = useDay();
   const m = useDayModel(date);
+  /** 切った機能（案を比べる・稼働の見込み）の画面へ移るボタン・リンクは出さない（PRD D213。ADR-0028） */
+  const compareOn = useFeature('compare');
+  const workloadOn = useFeature('workload');
   const {
     data,
     update,
@@ -2355,18 +2359,24 @@ export default function PlanPage() {
       disabled: batch ? '作っています' : missing.length === 0 ? 'どの考え方の案もあります' : busyWhy,
       onSelect: () => runBatch(missing),
     },
-    {
-      key: 'compare',
-      group: '比べる・戻す',
-      testId: 'plan-menu-compare',
-      label: compareT.label,
-      description: compareT.description,
-      note: `${runCount}件`,
-      icon: GitCompareArrows,
-      onSelect: () => navigate('/compare'),
-    },
+    // 案を比べるを切っていれば比べるの項目は出さず、見出し「比べる・戻す」は戻すの項目から始める
+    ...(compareOn
+      ? [
+          {
+            key: 'compare',
+            group: '比べる・戻す',
+            testId: 'plan-menu-compare',
+            label: compareT.label,
+            description: compareT.description,
+            note: `${runCount}件`,
+            icon: GitCompareArrows,
+            onSelect: () => navigate('/compare'),
+          },
+        ]
+      : []),
     {
       key: 'revert',
+      group: compareOn ? undefined : '比べる・戻す',
       testId: 'plan-menu-revert',
       label: revertT.label,
       description: revertT.description,
@@ -2788,7 +2798,7 @@ export default function PlanPage() {
                       </PersonButton>{' '}
                       {hmText(x.span)}
                       {/* 2人以上なら人ごとに稼働の見込みへ（主ボタンは増やさない。PRD D207） */}
-                      {overSpan.length > 1 && (
+                      {overSpan.length > 1 && workloadOn && (
                         <Link
                           to={workloadHref(date.slice(0, 7), x.staffId)}
                           className="over-span-link"
@@ -2805,7 +2815,7 @@ export default function PlanPage() {
               （{aiPlan ? '今の案' : '確定した割当'}からの見込み）
             </span>
           </WithIcon>
-          {overSpan.length === 1 && (
+          {overSpan.length === 1 && workloadOn && (
             <button
               type="button"
               className="btn btn-small"
@@ -2917,7 +2927,7 @@ export default function PlanPage() {
                 cancelled={absenceCancelled}
                 running={!!running}
                 onRevert={revertToBase}
-                onCompare={() => navigate('/compare', { state: { a: 'before', b: 'current' } })}
+                onCompare={compareOn ? () => navigate('/compare', { state: { a: 'before', b: 'current' } }) : undefined}
                 extraActions={<ContactButton count={contactsTotal} onOpen={() => setContactsOpen(true)} />}
               >
                 <AnnealBox

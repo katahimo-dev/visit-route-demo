@@ -18,9 +18,16 @@ import { useDay } from '../app/day';
 import { PageHeader } from '../components/ui';
 import { jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
-import { type HomeTask, type HomeTaskKind, homeDays, homeMonths, homeTasks } from '../lib/home';
+import {
+  type HomeEntryKey,
+  type HomeTask,
+  type HomeTaskKind,
+  homeDays,
+  homeEntries,
+  homeMonths,
+  homeTasks,
+} from '../lib/home';
 import { dayPlanOf, expandMonth } from '../lib/month';
-import { SUDDEN_DO } from '../lib/sudden';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { useDemoData } from '../store';
@@ -31,6 +38,13 @@ const KIND_ICON: Record<HomeTaskKind, LucideIcon> = {
   today: CalendarDays,
   confirm: Lock,
   create: Sparkles,
+};
+
+const ENTRY_ICON: Record<HomeEntryKey, LucideIcon> = {
+  absence: UserX,
+  vacancy: CalendarSearch,
+  clients: House,
+  staff: UserRound,
 };
 
 /**
@@ -55,8 +69,9 @@ export default function HomePage() {
     const statuses = days.flatMap((d) => perDay.get(d)?.status ?? []);
     const todayPlan = dayPlanOf(data, today, perDay.get(today)?.problem ?? null);
     const todayStaff = Object.values(todayPlan.routes).filter((list) => list.length > 0).length;
-    return homeTasks({ today, statuses, months, todayStaff, data });
+    return homeTasks({ today, statuses, months, todayStaff, data, features: data.org.features });
   }, [days, perDay, months, data, today]);
+  const entries = useMemo(() => homeEntries(today, terms, data.org.features), [today, terms, data.org.features]);
 
   const nextId = useId();
   const anytimeId = useId();
@@ -96,44 +111,20 @@ export default function HomePage() {
         <h2 id={anytimeId} className="home-section-title">
           いつでも
         </h2>
+        {/* 切った機能の入口（欠勤・キャンセル・問い合わせ）は出さない（PRD D213。並びと文は lib/home の homeEntries） */}
         <ul className="home-tasks home-anytime" data-testid="home-anytime">
-          <li>
-            <EntryCard
-              to={`/plan?date=${today}&do=${SUDDEN_DO}`}
-              icon={UserX}
-              title="急な欠勤・キャンセルを登録"
-              detail="今日の日の画面で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定"
-              onPick={() => setDate(today)}
-              testId="home-absence"
-            />
-          </li>
-          <li>
-            <EntryCard
-              to="/vacancy"
-              icon={CalendarSearch}
-              title="問い合わせに答える（空き状況）"
-              detail="新しい依頼の曜日・時間に、入れる人と空きを見る"
-              testId="home-vacancy"
-            />
-          </li>
-          <li>
-            <EntryCard
-              to="/clients"
-              icon={House}
-              title={`${terms.client}を探す`}
-              detail="名前・よみ・地区で探して、詳しく見る・直す"
-              testId="home-clients"
-            />
-          </li>
-          <li>
-            <EntryCard
-              to="/staff"
-              icon={UserRound}
-              title={`${terms.staff}を探す`}
-              detail="一覧から開いて、稼働時間・特性・休みを見る・直す"
-              testId="home-staff"
-            />
-          </li>
+          {entries.map((e) => (
+            <li key={e.key}>
+              <EntryCard
+                to={e.to}
+                icon={ENTRY_ICON[e.key]}
+                title={e.title}
+                detail={e.detail}
+                onPick={() => pickDate(e.date)}
+                testId={`home-${e.key}`}
+              />
+            </li>
+          ))}
         </ul>
       </section>
     </div>

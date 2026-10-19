@@ -1,6 +1,8 @@
 // メニューの決まり（PRD D102・D132〜D135・D178〜D180。design.md §4 app「スマホのメニュー（2026-10-18）」「メニューの用途ごとの並び」）。
 // 左のメニュー・スマホの引き出し・下のタブ・上の帯の画面の名前・コマンドパレットの画面で、並びと今の画面をどれと見るかを1か所で決める
 import type { Terms } from '../contracts/documents';
+import type { Features } from '../contracts/features';
+import { isHrefOn } from './features';
 import { SUDDEN_DO } from './sudden';
 
 /** メニューの1項目（アイコンなどは呼ぶ側で足す）。to に `?` を含むものは操作（画面の中の欄を開く）で、今の画面の印を付けない */
@@ -40,7 +42,7 @@ export const isActiveTab = (to: string, pathname: string): boolean => activeTabP
 
 /**
  * 上の帯に出す今の画面の名前：グループの見出し＋項目名（例「人の情報・利用者さん一覧」「予定を組む・日」）。
- * 見出しの無いグループ（ホーム・データ）は項目名だけ。メニューに無い画面は null（PRD D132・D179）
+ * 見出しの無いグループ（ホーム）は項目名だけ。メニューに無い画面は null（PRD D132・D179）
  */
 export function navTitle(groups: readonly NavSection[], pathname: string): string | null {
   const parts = navTitleParts(groups, pathname);
@@ -85,6 +87,7 @@ export type NavIcon =
   | 'rules'
   | 'types'
   | 'items'
+  | 'settings'
   | 'data';
 /** メニューの項目（アイコンの名前つき） */
 export type MenuItem = NavEntry & { icon: NavIcon };
@@ -93,14 +96,20 @@ export type MenuItem = NavEntry & { icon: NavIcon };
 export const absenceHref = (today: string): string => `/plan?date=${today}&do=${SUDDEN_DO}`;
 
 /**
- * メニューの並び（PRD D178・D179。ADR-0027。D102 の人ごとの並びを置き換え）：やりたいことの順に
+ * メニューの並び（PRD D178・D179・D210・D213。ADR-0027・0028。D102 の人ごとの並びを置き換え）：やりたいことの順に
  * ホーム／予定を組む（月・週・日・案を比べる）／当日の対応（欠勤・キャンセル）／問い合わせ（空き状況）／
- * 人の情報（〈利用者さん〉一覧・相性・〈スタッフ〉一覧・稼働時間・稼働の見込み）／AI の考え方（条件の重み・訪問の種類・特性の項目）／データ。
+ * 人の情報（〈利用者さん〉一覧・相性・〈スタッフ〉一覧・稼働時間・稼働の見込み）／AI の考え方（条件の重み・訪問の種類・特性の項目）／
+ * 管理者（管理者設定・データ）。
  * 人の情報の中は人ごとの順（〈利用者さん〉に付くもの → 〈スタッフ〉に付くもの。ADR-0019 の「誰の何を直すか」でたどれる並びを残す）。
- * 呼び方は terms から引く。URL は変えない。today は欠勤・キャンセルの欄を開く日
+ * 呼び方は terms から引く。URL は変えない。today は欠勤・キャンセルの欄を開く日。
+ * features で切った機能の項目は出さない（lib/features の表から引く）。項目の無くなったグループは見出しごと出さない
  */
-export function menuSections(terms: Pick<Terms, 'client' | 'staff'>, today: string): NavSection<MenuItem>[] {
-  return [
+export function menuSections(
+  terms: Pick<Terms, 'client' | 'staff'>,
+  today: string,
+  features: Features,
+): NavSection<MenuItem>[] {
+  const all: NavSection<MenuItem>[] = [
     { items: [{ to: '/home', label: 'ホーム', icon: 'home' }] },
     {
       title: '予定を組む',
@@ -131,6 +140,17 @@ export function menuSections(terms: Pick<Terms, 'client' | 'staff'>, today: stri
         { to: '/items', label: '特性の項目', icon: 'items' },
       ],
     },
-    { items: [{ to: '/data', label: 'データ', icon: 'data' }] },
+    // 管理者設定（PRD D210。だれでも開ける）とデータ。どちらも土台で切れない
+    {
+      title: '管理者',
+      items: [
+        { to: '/settings', label: '管理者設定', icon: 'settings' },
+        { to: '/data', label: 'データ', icon: 'data' },
+      ],
+    },
   ];
+  return all.flatMap((g) => {
+    const items = g.items.filter((i) => isHrefOn(features, i.to));
+    return items.length > 0 ? [{ ...g, items }] : [];
+  });
 }

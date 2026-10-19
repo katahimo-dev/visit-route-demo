@@ -1,7 +1,9 @@
 // コマンドパレット（Ctrl+K。PRD D181〜D183。ADR-0027）の中身と絞り込みを決める純粋関数。
 // 行き先は今ある URL だけ（画面・`?do=` の入口・`?id=` の閲覧の欄）。データは書き換えない
 import type { Client, Staff, Terms } from '../contracts/documents';
+import type { Features } from '../contracts/features';
 import { STAGE_LABELS } from './clientStage';
+import { isHrefOn } from './features';
 import { addMonths, ymOf } from './month';
 import { absenceHref, isNavAction, type MenuItem, type NavSection } from './nav';
 import { recreateTodayHref } from './rebuildBand';
@@ -61,6 +63,7 @@ const SCREEN_WORDS: Record<string, readonly string[]> = {
   '/rules': ['じょうけんのおもみ', 'ぷりせっと'],
   '/types': ['ほうもんのしゅるい'],
   '/items': ['とくせいのこうもく'],
+  '/settings': ['かんりしゃせってい', 'かんりしゃ', 'せってい', 'きのう', '機能', '設定'],
   '/data': ['でーた', 'かきだし', 'よみこみ', 'ばっくあっぷ', 'えくせる', 'Excel'],
 };
 
@@ -110,14 +113,18 @@ export function paletteScreens(
 /**
  * 操作の候補（区切り1〜5 で足した入口。PRD D182）：欠勤・キャンセルを登録・今日の予定・今月（と来月）の案をまとめて作る・
  * 要対応・確定していない日・条件が変わった日を作り直す・問い合わせに答える。today は日本時間の今日。
- * customRules（いまの条件がどのプリセットとも違う）なら「今日の案をいまの条件で作り直す」（`?do=recreate`。D166）も
+ * customRules（いまの条件がどのプリセットとも違う）なら「今日の案をいまの条件で作り直す」（`?do=recreate`。D166）も。
+ * features で切った機能の操作（欠勤・キャンセル・問い合わせ・作り直す）は出さない（PRD D213。lib/features の表から引く）
  */
-export function paletteActions(today: string, { customRules = false }: { customRules?: boolean } = {}): PaletteItem[] {
+export function paletteActions(
+  today: string,
+  { customRules = false, features = {} }: { customRules?: boolean; features?: Features } = {},
+): PaletteItem[] {
   const ym = ymOf(today);
   const next = addMonths(ym, 1);
   const monthNo = (m: string) => Number(m.slice(5, 7));
   const month = (op: string, m = ym) => `/month?ym=${m}&do=${op}`;
-  return [
+  const all = [
     paletteItem({
       id: 'action:absence',
       kind: 'action',
@@ -198,6 +205,7 @@ export function paletteActions(today: string, { customRules = false }: { customR
       words: ['といあわせ', 'あきじょうきょう', '空き状況'],
     }),
   ];
+  return all.filter((a) => isHrefOn(features, a.to));
 }
 
 /**

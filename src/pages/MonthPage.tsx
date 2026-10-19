@@ -66,6 +66,7 @@ import {
 } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
 import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { isOn } from '../lib/features';
 import { clientDot } from '../lib/glance';
 import { attentionTarget, type LinkTarget } from '../lib/links';
 import {
@@ -181,6 +182,9 @@ export default function MonthPage() {
   const { date, setDate } = useDay();
   const { data, update, compileInput, scoreRulerName } = useDayModel(date);
   const terms = data.org.terms;
+  /** 切った機能（月の予定の印刷・稼働の見込み）の画面へ移るボタンは出さない（PRD D213。ADR-0028） */
+  const printOn = isOn(data.org.features, 'monthPrint');
+  const workloadOn = isOn(data.org.features, 'workload');
   const toast = useToast();
   const confirmDialog = useConfirm();
   const navigate = useNavigate();
@@ -900,30 +904,36 @@ export default function MonthPage() {
           >
             今月
           </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() =>
-              navigate(`/month/print?ym=${ym}${focus.kind === 'staff' ? `&staff=${encodeURIComponent(focus.id)}` : ''}`)
-            }
-            title="紙のカレンダーの代わりに、この月の予定をA4横で印刷します"
-            data-testid="month-print"
-          >
-            <WithIcon icon={Printer} size={14}>
-              印刷
-            </WithIcon>
-          </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() => navigate(`/workload?ym=${ym}`)}
-            title="予定から、この月の出勤〜退勤（拘束）・移動・空き時間（待ち）の時間と交通費を見込みます"
-            data-testid="month-workload"
-          >
-            <WithIcon icon={Timer} size={14}>
-              稼働の見込み
-            </WithIcon>
-          </button>
+          {printOn && (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() =>
+                navigate(
+                  `/month/print?ym=${ym}${focus.kind === 'staff' ? `&staff=${encodeURIComponent(focus.id)}` : ''}`,
+                )
+              }
+              title="紙のカレンダーの代わりに、この月の予定をA4横で印刷します"
+              data-testid="month-print"
+            >
+              <WithIcon icon={Printer} size={14}>
+                印刷
+              </WithIcon>
+            </button>
+          )}
+          {workloadOn && (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => navigate(`/workload?ym=${ym}`)}
+              title="予定から、この月の出勤〜退勤（拘束）・移動・空き時間（待ち）の時間と交通費を見込みます"
+              data-testid="month-workload"
+            >
+              <WithIcon icon={Timer} size={14}>
+                稼働の見込み
+              </WithIcon>
+            </button>
+          )}
           <span className="month-summary sub" data-testid="month-summary">
             月全体：入らない {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>
@@ -1256,7 +1266,7 @@ export default function MonthPage() {
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
                   {attention.map((a) => {
-                    const t = attentionTarget(a);
+                    const t = attentionTarget(a, data.org.features);
                     return (
                       <li key={`${a.date}-${a.kind}`}>
                         <button

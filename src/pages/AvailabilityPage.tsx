@@ -18,7 +18,7 @@ import {
 import { weekday } from '../domain/time';
 import { absenceText } from '../lib/absences';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
-import { suddenHref } from '../lib/links';
+import { linkIfOn, suddenHref } from '../lib/links';
 import { useDemoData } from '../store';
 import './schedule.css';
 
@@ -61,6 +61,8 @@ export default function AvailabilityPage() {
     !!pickedStaff &&
     !retiredWhy &&
     availabilityOf(pickedStaff, picked.date, pickedOverride).slots.length > 0;
+  /** 欠勤・キャンセルの欄を開く URL（欠勤・キャンセルを切っていれば null でリンクを出さない。PRD D213） */
+  const absenceHref = picked ? linkIfOn(data.org.features, suddenHref(picked.date, picked.staffId)) : null;
   const pick = (staffId: string, date: string) => {
     const s = staff.find((x) => x.id === staffId);
     if (!s) return;
@@ -228,13 +230,9 @@ export default function AvailabilityPage() {
           {/* その日の「欠勤・キャンセル」の欄をこの人で開く（PRD D203）。その日に働く日（保存した時間帯があり、
               最終勤務日の後でない）だけ。休みの日は欄の「休む人」に出ないので出さない（PR #48 のレビュー）。
               日の画面は ?date= を読むので setDate しない（Ctrl+クリックで元のタブの日付を変えない） */}
-          {pickedWorks && (
+          {pickedWorks && absenceHref && (
             <p>
-              <Link
-                to={suddenHref(picked.date, picked.staffId)}
-                className="avail-absence-link"
-                data-testid="availability-absence-link"
-              >
+              <Link to={absenceHref} className="avail-absence-link" data-testid="availability-absence-link">
                 {pickedAbsence ? 'この日の欠勤を直す・取り消す' : 'この日の欠勤を登録する'}
                 （日の画面の「欠勤・キャンセル」で開く）
               </Link>

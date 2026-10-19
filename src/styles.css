@@ -946,7 +946,8 @@ tbody tr:hover td {
     padding: 16px max(14px, env(safe-area-inset-right, 0px)) calc(40px + var(--bottom-tabs-h))
       max(14px, env(safe-area-inset-left, 0px));
   }
-  /* 下のタブ：ホーム・月・週・日・空き状況（iPhone のホームバーは safe-area で避ける） */
+  /* 下のタブ：ホーム・月・週・日・空き状況（iPhone のホームバーは safe-area で避ける）。
+     タブの数（空き状況を切ると4つ。ADR-0028）に合わせて全幅を等分する */
   .bottom-tabs {
     position: fixed;
     left: 0;
@@ -955,7 +956,8 @@ tbody tr:hover td {
     z-index: 950;
     height: var(--bottom-tabs-h);
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     background: var(--card);
     border-top: 1px solid var(--line);

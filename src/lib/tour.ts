@@ -1,6 +1,8 @@
 // 初回の案内ツアー（PRD D192・D193。ADR-0025 追記。区切り8b）の純粋な部分：案内の中身（5枚）、
 // 「次へ」「戻る」「とばす」の行き先、自動で開くか。画面は components/Tour.tsx、見たかの保存は store/tour.ts
 import type { Terms } from '../contracts/documents';
+import type { FeatureId, Features } from '../contracts/features';
+import { isOn } from './features';
 
 /** 案内の1枚 */
 export type TourStep = {
@@ -9,12 +11,19 @@ export type TourStep = {
   body: string;
   /** どこにあるか（メニュー・下のタブ・上の帯の名前） */
   where: string;
+  /** その枚が案内する機能（切っていたら枚を出さない。土台の枚は無し） */
+  feature?: FeatureId;
 };
 
-/** 案内の5枚（呼び方は terms。キーの印は mac なら ⌘K） */
-export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean): TourStep[] {
+/**
+ * 案内の5枚（呼び方は terms。キーの印は mac なら ⌘K）。
+ * features で切った機能の枚（欠勤・キャンセル・条件の重み）は出さない（PRD D213。枚数はそのぶん減る）
+ */
+export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean, features: Features = {}): TourStep[] {
   const key = isMac ? '⌘K' : 'Ctrl+K';
-  return [
+  // 予定を組むのメニューの項目（案を比べるを切っていれば出さない）
+  const planItems = isOn(features, 'compare') ? '月・週・日・案を比べる' : '月・週・日';
+  const all: TourStep[] = [
     {
       key: 'home',
       title: 'ここが「今日やること」です',
@@ -25,19 +34,21 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
       key: 'plan',
       title: '予定は月・週・日で組みます',
       body: 'AI が割当の案を作ります。日の画面で案を確かめ、必要なら手直しして「この割当で確定」を押します。月の画面では一月分の案をまとめて作れます。',
-      where: 'メニューの「予定を組む」（月・週・日・案を比べる）',
+      where: `メニューの「予定を組む」（${planItems}）`,
     },
     {
       key: 'absence',
       title: '欠勤・キャンセルはここから',
       body: `${terms.staff}の急な欠勤や${terms.client}の当日キャンセルは、登録すると、その日の案を振り直す手順に進みます。日の画面の「欠勤・キャンセル」からも同じです。`,
       where: 'メニューの「当日の対応」の「欠勤・キャンセル」',
+      feature: 'sudden',
     },
     {
       key: 'rules',
       title: '条件（AI の考え方）はここで変えます',
       body: '条件の重み・訪問の種類・特性の項目を変えると、AI の案の作り方が変わります。変えたあとは、影響する日と「作り直す」が画面の上に出ます。',
       where: 'メニューの「AI の考え方」',
+      feature: 'rules',
     },
     {
       key: 'search',
@@ -46,6 +57,7 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
       where: '上の帯の「探す」',
     },
   ];
+  return all.filter((s) => !s.feature || isOn(features, s.feature));
 }
 
 /** 押したボタン（Esc は skip と同じ） */

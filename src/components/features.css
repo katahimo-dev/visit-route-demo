@@ -1,0 +1,188 @@
+/* 機能の入り切り（ADR-0028）：管理者設定の画面（pages/SettingsPage）と、切った機能の URL を開いたときの知らせ（FeatureOffNotice） */
+
+.feature-section-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 1.05rem;
+  margin: 0;
+}
+.feature-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.feature-badge.is-custom {
+  background: var(--soft);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+}
+
+/* ひな形の4つ（狭い画面では縦1列） */
+.feature-templates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 10px;
+}
+.feature-template {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+  min-width: 0;
+}
+.feature-template.is-now {
+  border-color: #f4b9ab;
+  background: var(--card);
+}
+.feature-template h3 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.98rem;
+  margin: 0;
+}
+.feature-template p {
+  margin: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.feature-template .btn {
+  align-self: flex-start;
+}
+
+/* グループごとのスイッチ */
+.feature-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feature-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.feature-row:first-child {
+  border-top: 0;
+}
+.feature-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feature-hides {
+  color: var(--sub);
+  font-size: 0.82rem;
+}
+.feature-req {
+  color: var(--sub);
+  font-size: 0.82rem;
+}
+.feature-req.is-blocked {
+  color: var(--warn);
+  font-weight: 700;
+}
+.feature-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--sub);
+  font-weight: 700;
+}
+.feature-switch-track {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: #d9c8bb;
+  transition: background 0.15s;
+}
+.feature-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+}
+.feature-switch.is-on {
+  color: var(--primary-dark);
+}
+.feature-switch.is-on .feature-switch-track {
+  background: var(--primary);
+}
+.feature-switch.is-on .feature-switch-knob {
+  transform: translateX(18px);
+}
+.feature-switch[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.feature-switch:focus-visible {
+  outline: 2px solid var(--primary-dark);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+/* 切った機能の URL を開いたときの知らせ（ホームの上。閉じられる） */
+.feature-off-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1.5px solid #f0d49b;
+  background: #fdf3df;
+  color: var(--ink);
+}
+.feature-off-notice > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warn);
+}
+.feature-off-text {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feature-off-notice a {
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+@media print {
+  .feature-off-notice,
+  .feature-template .btn {
+    display: none !important;
+  }
+}
