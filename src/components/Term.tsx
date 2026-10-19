@@ -2,7 +2,11 @@
 // マウスを重ねる・キーボードでフォーカスする（:focus-visible）と出し、タッチ（押す）で開け閉めする。説明は role="tooltip" で、
 // 用語のボタンの aria-describedby から引く（閉じている間も文書の中に置き、読み上げは開け閉めに頼らない）。
 // 位置は押して出す吹き出し（DetailPopover）と同じ popoverPlace で、画面の端で切れない。Esc で閉じる（ほかの欄の Esc は奪わない：
-// 説明が出ているときだけ取る）。説明の上にマウスを移しても消えない
+// 説明が出ているときだけ取る）。説明の上にマウスを移しても消えない。
+// 見た目（PRD D240・D241。ADR-0037）：点線の下線はやめ、用語の後ろの小さな ⓘ（lucide の Info）を目印にする。
+// ボタンは用語の文字と ⓘ をまとめた1つ（読み上げの名前＝見える用語の文字）。タッチでは ⓘ のまわり 24px 角を押せる（文字の上も押せる）。
+// 1画面で同じ語は最初の1か所だけ説明を付け、2か所目からは plain で文字だけにする
+import { Info } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { GLOSSARY, type GlossaryKey, glossaryText } from '../lib/glossary';
@@ -86,10 +90,35 @@ export function TipBubble({
 }
 
 /**
- * 用語（点線の下線のボタン）と、その説明。k は用語のキー（lib/glossary）。children を渡すとその文字を出す（既定は言い換えた名前）。
- * 開き方：マウスを重ねる・Tab でフォーカス・押す（タッチ。もう一度押す・外を押すと閉じる）。閉じ方：離れる・フォーカスが外れる・Esc
+ * 用語（文字と ⓘ のボタン）と、その説明。k は用語のキー（lib/glossary）。children を渡すとその文字を出す（既定は言い換えた名前）。
+ * 開き方：マウスを重ねる・Tab でフォーカス・押す（タッチ。もう一度押す・外を押すと閉じる）。閉じ方：離れる・フォーカスが外れる・Esc。
+ * plain なら説明を付けず文字だけ（同じ画面の2か所目から。PRD D241）
  */
 export function Term({
+  k,
+  children,
+  testId,
+  id,
+  plain = false,
+}: {
+  k: GlossaryKey;
+  children?: ReactNode;
+  testId?: string;
+  /** 用語のボタンの id（入力欄の aria-labelledby から引くとき。PR #42 のレビュー：label の中には置かない） */
+  id?: string;
+  /** 説明を付けず文字だけ出す（1画面で同じ語の2か所目から） */
+  plain?: boolean;
+}) {
+  if (plain) return <>{children ?? GLOSSARY[k].label}</>;
+  return (
+    <TermButton k={k} testId={testId} id={id}>
+      {children}
+    </TermButton>
+  );
+}
+
+/** 説明つきの用語のボタン（Term の中身。plain でないとき） */
+function TermButton({
   k,
   children,
   testId,
@@ -98,7 +127,6 @@ export function Term({
   k: GlossaryKey;
   children?: ReactNode;
   testId?: string;
-  /** 用語のボタンの id（入力欄の aria-labelledby から引くとき。PR #42 のレビュー：label の中には置かない） */
   id?: string;
 }) {
   const { data } = useDemoData();
@@ -220,6 +248,10 @@ export function Term({
         }}
       >
         {children ?? GLOSSARY[k].label}
+        {/* 説明がある目印（ⓘ）。文字を持たないので innerText・読み上げの名前は用語の文字のまま */}
+        <span className="term-i" aria-hidden="true">
+          <Info size={13} strokeWidth={2.2} />
+        </span>
       </button>
       <TipBubble
         id={tipId}
