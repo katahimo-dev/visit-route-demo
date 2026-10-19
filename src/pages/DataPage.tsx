@@ -22,6 +22,7 @@ import type { DemoData, RosterKind, RosterMode } from '../contracts/data';
 import { jstDate } from '../domain/time';
 import { attempt, formError, isStaleBuild } from '../lib/common';
 import { type LastDayPerson, lastDayChanged } from '../lib/personLinks';
+import { useFeature } from '../lib/useFeature';
 import { exportJson, importJson, isImportError, useDemoData } from '../store';
 import './settings.css';
 
@@ -47,6 +48,8 @@ const STALE_TEXT =
 
 export default function DataPage() {
   const { data, update, replace, reset, saveError } = useDemoData();
+  const excelOn = useFeature('excel');
+  const offboardOn = useFeature('offboard');
   const [terms, setTerms] = useState(data.org.terms);
   // 読み込み・初期化で呼び方が変わったら入力欄も合わせる
   useEffect(() => {
@@ -271,7 +274,7 @@ export default function DataPage() {
       <PageHeader
         icon={Database}
         title="データ"
-        lead="書き出し・読み込み（控え（バックアップ）・Excel）・初期状態に戻す・使い方の案内"
+        lead={`書き出し・読み込み（控え（バックアップ）${excelOn ? '・Excel' : ''}）・初期状態に戻す・使い方の案内`}
       />
       <div className="warn-box">
         <TriangleAlert size={20} strokeWidth={2.2} aria-hidden="true" />
@@ -332,144 +335,148 @@ export default function DataPage() {
         {error && <p className="error">{error}</p>}
       </div>
 
-      <section
-        className="card stack data-excel"
-        ref={excelCard}
-        tabIndex={-1}
-        aria-labelledby={excelTitleId}
-        data-testid="excel-card"
-      >
-        <SectionTitle icon={FileSpreadsheet}>
-          <span id={excelTitleId}>Excel</span>
-        </SectionTitle>
-        <Hint>
-          {excelKind === 'all' ? (
-            <>
-              {t.staff}・{t.client}
-              ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。Excel
-              で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当は消えます）。
-              書き方はブックの「使い方」のシートにあります。
-            </>
-          ) : (
-            <>
-              {`${rosterTerm}の一覧（シート1枚）だけを書き出し・読み込みます。列は全体のブックの「${rosterTerm}」シートと同じで、全体のブックも名簿として読めます。`}
-              {
-                '読み込むと ID か名前で同じ人を探して直し、いない人は足します。AI案・記録・確定した割当・訪問は消えません。'
-              }
-            </>
-          )}
-        </Hint>
-        <fieldset className="segmented" aria-label="Excel の対象" data-testid="excel-kind">
-          {(
-            [
-              ['all', '全体'],
-              ['client', `${t.client}の名簿`],
-              ['staff', `${t.staff}の名簿`],
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              className={excelKind === k ? 'is-on' : undefined}
-              aria-pressed={excelKind === k}
-              onClick={() => {
-                // 種類を切り替えたら、前の名簿の知らせは消す（PRD D209）
-                if (k !== excelKind) setLastDayNotice(null);
-                setExcelKind(k);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </fieldset>
-        {excelKind !== 'all' && (
-          <fieldset className="stack" style={{ gap: 6 }} data-testid="roster-mode">
-            <legend>名簿の読み込み方</legend>
-            <label className="check">
-              <input
-                type="radio"
-                name="roster-mode"
-                checked={rosterMode === 'merge'}
-                onChange={() => setRosterMode('merge')}
-                style={{ width: 'auto' }}
-              />
-              追加・更新（ブックに無い人はそのまま）
-            </label>
-            <label className="check">
-              <input
-                type="radio"
-                name="roster-mode"
-                checked={rosterMode === 'replace'}
-                onChange={() => setRosterMode('replace')}
-                style={{ width: 'auto' }}
-              />
-              総入れ替え（ブックに無い人を{excelKind === 'staff' ? '休止' : '段階「終了」'}にします。消しはしません）
-            </label>
+      {/* Excel の入出力を切っていれば欄ごと出さない（控え（JSON）は残す。ADR-0028 の excel） */}
+      {excelOn && (
+        <section
+          className="card stack data-excel"
+          ref={excelCard}
+          tabIndex={-1}
+          aria-labelledby={excelTitleId}
+          data-testid="excel-card"
+        >
+          <SectionTitle icon={FileSpreadsheet}>
+            <span id={excelTitleId}>Excel</span>
+          </SectionTitle>
+          <Hint>
+            {excelKind === 'all' ? (
+              <>
+                {t.staff}・{t.client}
+                ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。Excel
+                で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当は消えます）。
+                書き方はブックの「使い方」のシートにあります。
+              </>
+            ) : (
+              <>
+                {`${rosterTerm}の一覧（シート1枚）だけを書き出し・読み込みます。列は全体のブックの「${rosterTerm}」シートと同じで、全体のブックも名簿として読めます。`}
+                {
+                  '読み込むと ID か名前で同じ人を探して直し、いない人は足します。AI案・記録・確定した割当・訪問は消えません。'
+                }
+              </>
+            )}
+          </Hint>
+          <fieldset className="segmented" aria-label="Excel の対象" data-testid="excel-kind">
+            {(
+              [
+                ['all', '全体'],
+                ['client', `${t.client}の名簿`],
+                ['staff', `${t.staff}の名簿`],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                className={excelKind === k ? 'is-on' : undefined}
+                aria-pressed={excelKind === k}
+                onClick={() => {
+                  // 種類を切り替えたら、前の名簿の知らせは消す（PRD D209）
+                  if (k !== excelKind) setLastDayNotice(null);
+                  setExcelKind(k);
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </fieldset>
-        )}
-        <div className="row" style={{ flexWrap: 'wrap' }}>
-          <button type="button" className="btn" disabled={excelBusy} onClick={() => void downloadExcel()}>
-            <WithIcon icon={FileSpreadsheet}>Excel に書き出す</WithIcon>
-          </button>
-        </div>
-        <FilePick
-          // 種類を切り替えたら、選んだファイルの文を消す（前の種類で選んだ名前を残さない）
-          key={excelKind}
-          caption={excelKind === 'all' ? '読み込む Excel（全体）' : `読み込む${rosterTerm}の名簿（Excel）`}
-          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          disabled={excelBusy}
-          onPick={(f) => void loadExcel(f)}
-          testId="excel-file"
-        />
-        {lastDayNotice && (
-          <section className="data-notice" aria-label="最終勤務日の知らせ" data-testid="lastday-notice">
-            <p className="data-notice-text">
-              <CalendarClock size={16} strokeWidth={2.2} aria-hidden="true" />
-              <span>
-                最終勤務日の入った{t.staff}がいます。{t.staff}の画面（名前から開く）で担当の振り直しを確かめてください
-              </span>
+          {excelKind !== 'all' && (
+            <fieldset className="stack" style={{ gap: 6 }} data-testid="roster-mode">
+              <legend>名簿の読み込み方</legend>
+              <label className="check">
+                <input
+                  type="radio"
+                  name="roster-mode"
+                  checked={rosterMode === 'merge'}
+                  onChange={() => setRosterMode('merge')}
+                  style={{ width: 'auto' }}
+                />
+                追加・更新（ブックに無い人はそのまま）
+              </label>
+              <label className="check">
+                <input
+                  type="radio"
+                  name="roster-mode"
+                  checked={rosterMode === 'replace'}
+                  onChange={() => setRosterMode('replace')}
+                  style={{ width: 'auto' }}
+                />
+                総入れ替え（ブックに無い人を{excelKind === 'staff' ? '休止' : '段階「終了」'}にします。消しはしません）
+              </label>
+            </fieldset>
+          )}
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn" disabled={excelBusy} onClick={() => void downloadExcel()}>
+              <WithIcon icon={FileSpreadsheet}>Excel に書き出す</WithIcon>
+            </button>
+          </div>
+          <FilePick
+            // 種類を切り替えたら、選んだファイルの文を消す（前の種類で選んだ名前を残さない）
+            key={excelKind}
+            caption={excelKind === 'all' ? '読み込む Excel（全体）' : `読み込む${rosterTerm}の名簿（Excel）`}
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            disabled={excelBusy}
+            onPick={(f) => void loadExcel(f)}
+            testId="excel-file"
+          />
+          {/* 退職・担当替えを切っていれば最終勤務日の知らせを出さない（ADR-0028 の offboard。PRD D209） */}
+          {offboardOn && lastDayNotice && (
+            <section className="data-notice" aria-label="最終勤務日の知らせ" data-testid="lastday-notice">
+              <p className="data-notice-text">
+                <CalendarClock size={16} strokeWidth={2.2} aria-hidden="true" />
+                <span>
+                  最終勤務日の入った{t.staff}がいます。{t.staff}の画面（名前から開く）で担当の振り直しを確かめてください
+                </span>
+              </p>
+              <ul className="data-notice-list">
+                {lastDayNotice.map((x) => (
+                  <li key={x.id}>
+                    <Link to={`/staff?id=${encodeURIComponent(x.id)}`} data-testid="lastday-link">
+                      {x.name}
+                    </Link>
+                    （最終勤務日 {x.lastDay}）
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                className="btn btn-small data-notice-close"
+                onClick={() => {
+                  setLastDayNotice(null);
+                  excelCard.current?.focus();
+                }}
+                aria-label="最終勤務日の知らせを閉じる"
+                data-testid="lastday-close"
+              >
+                <WithIcon icon={X}>閉じる</WithIcon>
+              </button>
+            </section>
+          )}
+          {excelError && (
+            <p className="error" style={{ whiteSpace: 'pre-line' }}>
+              {excelError}
             </p>
-            <ul className="data-notice-list">
-              {lastDayNotice.map((x) => (
-                <li key={x.id}>
-                  <Link to={`/staff?id=${encodeURIComponent(x.id)}`} data-testid="lastday-link">
-                    {x.name}
-                  </Link>
-                  （最終勤務日 {x.lastDay}）
-                </li>
-              ))}
-            </ul>
+          )}
+          {excelError === STALE_TEXT && (
             <button
               type="button"
-              className="btn btn-small data-notice-close"
-              onClick={() => {
-                setLastDayNotice(null);
-                excelCard.current?.focus();
-              }}
-              aria-label="最終勤務日の知らせを閉じる"
-              data-testid="lastday-close"
+              className="btn"
+              style={{ alignSelf: 'flex-start' }}
+              // 保存は間引いているので、書き終わるのを少し待ってから読み直す
+              onClick={() => setTimeout(() => location.reload(), 500)}
             >
-              <WithIcon icon={X}>閉じる</WithIcon>
+              <WithIcon icon={RotateCcw}>画面を読み直す</WithIcon>
             </button>
-          </section>
-        )}
-        {excelError && (
-          <p className="error" style={{ whiteSpace: 'pre-line' }}>
-            {excelError}
-          </p>
-        )}
-        {excelError === STALE_TEXT && (
-          <button
-            type="button"
-            className="btn"
-            style={{ alignSelf: 'flex-start' }}
-            // 保存は間引いているので、書き終わるのを少し待ってから読み直す
-            onClick={() => setTimeout(() => location.reload(), 500)}
-          >
-            <WithIcon icon={RotateCcw}>画面を読み直す</WithIcon>
-          </button>
-        )}
-      </section>
+          )}
+        </section>
+      )}
 
       <div className="card stack">
         <SectionTitle icon={CircleHelp}>使い方の案内</SectionTitle>

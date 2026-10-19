@@ -37,17 +37,18 @@ import {
   WithIcon,
 } from '../components/ui';
 import { VISIT_RULE_FIELDS } from '../components/VisitRules';
-import { CLIENT_STAGES, type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
+import { type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
 import { jstDate, weekday } from '../domain/time';
 import { EMPTY_FILTER, filterClients, filterFacts, resolveStaffId } from '../lib/clientFilter';
-import { isBeforeActive, STAGE_LABELS, withStage } from '../lib/clientStage';
+import { isBeforeActive, STAGE_LABELS, stageChoices, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, formError, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { normalizeEmail } from '../lib/mailto';
 import { keepStorePlace } from '../lib/placeAll';
 import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
+import { useFeature } from '../lib/useFeature';
 import { type DiscardWhen, discardDialog, isDirty } from '../lib/viewMode';
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
@@ -82,6 +83,13 @@ const blank = (nextColor: number): Client => ({
 
 export default function ClientsPage() {
   const { data, update } = useDemoData();
+  // 機能の入り切り（ADR-0028）：切った機能の入力の欄・表示を出さない（データは消さず、保存しても今の値を残す）
+  const stageOn = useFeature('clientStage');
+  const allowedOn = useFeature('allowedStaff');
+  const leavesOn = useFeature('clientLeave');
+  const notesOn = useFeature('visitNotes');
+  const compatOn = useFeature('compat');
+  const geocodeOn = useFeature('geocode');
   const terms = data.org.terms;
   const toast = useToast();
   const confirmDialog = useConfirm();
@@ -221,7 +229,12 @@ export default function ClientsPage() {
     if (!form) return;
     setError(null);
     // 担当を限るなら利用中の人を1人以上（休止中の人は数えない。保存時に外す。ADR-0014）
-    const allowed = limit ? form.allowedStaffIds.filter((id) => staff.some((s) => s.id === id && s.active)) : [];
+    // 担当を限るを切っている（ADR-0028）ときは欄が無いので、今の値をそのまま残す（データは消さない）
+    const allowed = !allowedOn
+      ? form.allowedStaffIds
+      : limit
+        ? form.allowedStaffIds.filter((id) => staff.some((s) => s.id === id && s.active))
+        : [];
     if (limit && allowed.length === 0) {
       setError(`担当できる${terms.staff}を1人以上選ぶか、「担当できる人を限る」を外してください`);
       return;
@@ -362,13 +375,16 @@ export default function ClientsPage() {
       </div>
 
       {/* まとめて置けなかった人の「編集」は、住所を入れるために編集の欄で開く */}
-      <PlaceAllPanel
-        onEdit={async (c) => {
-          if (form?.id === c.id) return;
-          if (!(await okToDiscard('switch', c.displayName))) return;
-          startEdit(c);
-        }}
-      />
+      {/* 郵便番号・住所の検索を切っていれば出さない（ADR-0028 の geocode） */}
+      {geocodeOn && (
+        <PlaceAllPanel
+          onEdit={async (c) => {
+            if (form?.id === c.id) return;
+            if (!(await okToDiscard('switch', c.displayName))) return;
+            startEdit(c);
+          }}
+        />
+      )}
 
       <div className="card table-scroll">
         <table className="people-table">
@@ -410,7 +426,7 @@ export default function ClientsPage() {
                           {c.place.address}
                         </small>
                       )}
-                      {c.referrer.name && <small className="person-sub">紹介元：{c.referrer.name}</small>}
+                      {stageOn && c.referrer.name && <small className="person-sub">紹介元：{c.referrer.name}</small>}
                     </span>
                   </span>
                 </td>
@@ -436,7 +452,7 @@ export default function ClientsPage() {
                       {staffName(c.usualStaffId)}
                     </WithIcon>
                   )}
-                  {c.allowedStaffIds.length > 0 && (
+                  {allowedOn && c.allowedStaffIds.length > 0 && (
                     <span
                       className="chip chip-limit"
                       title={`担当できる人を限っています：${c.allowedStaffIds.map(staffName).join('、')}`}
@@ -600,12 +616,16 @@ export default function ClientsPage() {
                   ))}
                 </div>
 
-                <SectionTitle icon={Route}>段階と紹介元</SectionTitle>
-                <Hint>
-                  段階は 相談受付 → 顔合わせ → 契約 → 利用中 → 終了
-                  です。予定・AI案に入るのは「利用中」と、利用中の前で枠を仮押さえしている
-                  {terms.client}だけです（「終了」にすると予定に入りません）。
-                </Hint>
+                <SectionTitle icon={Route}>{stageOn ? '段階と紹介元' : '段階'}</SectionTitle>
+                {stageOn ? (
+                  <Hint>
+                    段階は 相談受付 → 顔合わせ → 契約 → 利用中 → 終了
+                    です。予定・AI案に入るのは「利用中」と、利用中の前で枠を仮押さえしている
+                    {terms.client}だけです（「終了」にすると予定に入りません）。
+                  </Hint>
+                ) : (
+                  <Hint>予定・AI案に入るのは「利用中」の{terms.client}です（「終了」にすると予定に入りません）。</Hint>
+                )}
                 <div className="form-grid" data-testid="client-stage-form">
                   <label>
                     段階
@@ -614,7 +634,7 @@ export default function ClientsPage() {
                       onChange={(e) => setForm(withStage(form, e.target.value as ClientStage))}
                       data-testid="client-stage-select"
                     >
-                      {CLIENT_STAGES.map((st) => (
+                      {stageChoices(form.stage, stageOn).map((st) => (
                         <option key={st} value={st}>
                           {STAGE_LABELS[st]}
                         </option>
@@ -626,116 +646,132 @@ export default function ClientsPage() {
                       枠を仮押さえする（予定・AI案に入れる）
                     </Check>
                   )}
-                  <label>
-                    紹介元
-                    <input
-                      value={form.referrer.name}
-                      maxLength={50}
-                      placeholder="例：〇〇相談室"
-                      onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, name: e.target.value } })}
-                      data-testid="client-referrer-name"
-                    />
-                  </label>
-                  <label>
-                    紹介元の連絡先
-                    <input
-                      value={form.referrer.contact}
-                      maxLength={100}
-                      placeholder="電話・メールなど"
-                      onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, contact: e.target.value } })}
-                    />
-                  </label>
-                  <label>
-                    紹介元のメールアドレス（任意）
-                    <input
-                      type="email"
-                      value={form.referrer.email}
-                      maxLength={254}
-                      autoComplete="off"
-                      placeholder="name@example.com"
-                      onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, email: e.target.value } })}
-                      data-testid="client-referrer-email"
-                    />
-                  </label>
-                  <label>
-                    紹介元のメモ
-                    <input
-                      value={form.referrer.note}
-                      maxLength={200}
-                      placeholder="例：返事待ち・顔合わせの日程"
-                      onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, note: e.target.value } })}
-                    />
-                  </label>
+                  {stageOn && (
+                    <>
+                      <label>
+                        紹介元
+                        <input
+                          value={form.referrer.name}
+                          maxLength={50}
+                          placeholder="例：〇〇相談室"
+                          onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, name: e.target.value } })}
+                          data-testid="client-referrer-name"
+                        />
+                      </label>
+                      <label>
+                        紹介元の連絡先
+                        <input
+                          value={form.referrer.contact}
+                          maxLength={100}
+                          placeholder="電話・メールなど"
+                          onChange={(e) =>
+                            setForm({ ...form, referrer: { ...form.referrer, contact: e.target.value } })
+                          }
+                        />
+                      </label>
+                      <label>
+                        紹介元のメールアドレス（任意）
+                        <input
+                          type="email"
+                          value={form.referrer.email}
+                          maxLength={254}
+                          autoComplete="off"
+                          placeholder="name@example.com"
+                          onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, email: e.target.value } })}
+                          data-testid="client-referrer-email"
+                        />
+                      </label>
+                      <label>
+                        紹介元のメモ
+                        <input
+                          value={form.referrer.note}
+                          maxLength={200}
+                          placeholder="例：返事待ち・顔合わせの日程"
+                          onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, note: e.target.value } })}
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
 
-                <SectionTitle icon={ShieldCheck}>担当できる人（社内の決まり）</SectionTitle>
-                <Hint>
-                  「この方は2人だけで担当する」のような決まりがあれば、担当できる{terms.staff}
-                  を選びます。選んだ人以外は、条件の重みにかかわらず担当になりません（AI案・振り直し・週のドラッグ・空き状況のどれでも）。休止中の
-                  {terms.staff}
-                  は選べず、休止にすると外れます。選んだ人が全員いなくなると、限らない（だれでも担当できる）に戻ります。
-                </Hint>
-                <Check
-                  checked={limit}
-                  onChange={(on) => {
-                    setLimit(on);
-                    // 入れたときに誰も選んでいなければ、いつもの担当を最初に選んでおく
-                    if (
-                      on &&
-                      form.allowedStaffIds.length === 0 &&
-                      staff.some((s) => s.id === form.usualStaffId && s.active)
-                    )
-                      setForm({ ...form, allowedStaffIds: form.usualStaffId ? [form.usualStaffId] : [] });
-                  }}
-                >
-                  担当できる人を限る
-                </Check>
-                {limit && (
-                  <PickChips
-                    label={`担当できる${terms.staff}（押して選ぶ・外す）`}
-                    people={staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }))}
-                    selected={form.allowedStaffIds}
-                    // 全員を選ぶと PickChips は null を返す（全員の ID にする）
-                    onChange={(next) =>
-                      setForm({ ...form, allowedStaffIds: next ?? staff.filter((s) => s.active).map((s) => s.id) })
-                    }
-                    bulk={false}
-                    testId="client-allowed"
-                  />
+                {allowedOn && (
+                  <>
+                    <SectionTitle icon={ShieldCheck}>担当できる人（社内の決まり）</SectionTitle>
+                    <Hint>
+                      「この方は2人だけで担当する」のような決まりがあれば、担当できる{terms.staff}
+                      を選びます。選んだ人以外は、条件の重みにかかわらず担当になりません（AI案・振り直し・週のドラッグ・空き状況のどれでも）。休止中の
+                      {terms.staff}
+                      は選べず、休止にすると外れます。選んだ人が全員いなくなると、限らない（だれでも担当できる）に戻ります。
+                    </Hint>
+                    <Check
+                      checked={limit}
+                      onChange={(on) => {
+                        setLimit(on);
+                        // 入れたときに誰も選んでいなければ、いつもの担当を最初に選んでおく
+                        if (
+                          on &&
+                          form.allowedStaffIds.length === 0 &&
+                          staff.some((s) => s.id === form.usualStaffId && s.active)
+                        )
+                          setForm({ ...form, allowedStaffIds: form.usualStaffId ? [form.usualStaffId] : [] });
+                      }}
+                    >
+                      担当できる人を限る
+                    </Check>
+                    {limit && (
+                      <PickChips
+                        label={`担当できる${terms.staff}（押して選ぶ・外す）`}
+                        people={staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }))}
+                        selected={form.allowedStaffIds}
+                        // 全員を選ぶと PickChips は null を返す（全員の ID にする）
+                        onChange={(next) =>
+                          setForm({ ...form, allowedStaffIds: next ?? staff.filter((s) => s.active).map((s) => s.id) })
+                        }
+                        bulk={false}
+                        testId="client-allowed"
+                      />
+                    )}
+                  </>
                 )}
 
                 {isNew || !data.clients.some((x) => x.id === form.id) ? (
                   <Hint label="定期パターン">
-                    定期パターン（決まった曜日・時刻の訪問）と休み（入院・ショートステイなど）は、保存してから入れられます。
+                    {leavesOn
+                      ? '定期パターン（決まった曜日・時刻の訪問）と休み（入院・ショートステイなど）は、保存してから入れられます。'
+                      : '定期パターン（決まった曜日・時刻の訪問）は、保存してから入れられます。'}
                   </Hint>
                 ) : (
                   <>
                     <PatternsSection client={form} />
-                    <ClientLeavesSection client={form} />
+                    {leavesOn && <ClientLeavesSection client={form} />}
                   </>
                 )}
 
-                <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
-                <Hint>
-                  入り方・鍵・駐車場・注意を書くと、{terms.staff}の画面と予定の画面の訪問に出ます（各200文字まで）。
-                  実在の人の名前・住所などの個人情報は入れないでください。
-                </Hint>
-                <div className="form-grid" data-testid="visit-rules-form">
-                  {VISIT_RULE_FIELDS.map((f) => (
-                    <label key={f.key}>
-                      <WithIcon icon={f.icon} size={14}>
-                        {f.label}
-                      </WithIcon>
-                      <input
-                        value={form[f.key]}
-                        maxLength={200}
-                        placeholder={f.placeholder}
-                        data-testid={`client-${f.key}`}
-                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                      />
-                    </label>
-                  ))}
-                </div>
+                {notesOn && (
+                  <>
+                    <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
+                    <Hint>
+                      入り方・鍵・駐車場・注意を書くと、{terms.staff}の画面と予定の画面の訪問に出ます（各200文字まで）。
+                      実在の人の名前・住所などの個人情報は入れないでください。
+                    </Hint>
+                    <div className="form-grid" data-testid="visit-rules-form">
+                      {VISIT_RULE_FIELDS.map((f) => (
+                        <label key={f.key}>
+                          <WithIcon icon={f.icon} size={14}>
+                            {f.label}
+                          </WithIcon>
+                          <input
+                            value={form[f.key]}
+                            maxLength={200}
+                            placeholder={f.placeholder}
+                            data-testid={`client-${f.key}`}
+                            onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
                 <TraitsEditor
@@ -763,9 +799,11 @@ export default function ClientsPage() {
                   value={form.preferences}
                   onChange={(preferences) => setForm({ ...form, preferences })}
                 />
-                <Hint label="相性について">
-                  相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。
-                </Hint>
+                {compatOn && (
+                  <Hint label="相性について">
+                    相性（◎○△×）は「相性」の画面で入れます。×の{terms.staff}は担当になりません。
+                  </Hint>
+                )}
 
                 <SectionTitle icon={House}>住所</SectionTitle>
                 <ClientPlaceEditor

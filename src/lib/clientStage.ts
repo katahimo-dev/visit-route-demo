@@ -1,6 +1,6 @@
 // 〈利用者さん〉の段階（PRD D73。ADR-0015）：相談受付 → 顔合わせ → 契約 → 利用中 → 終了。
 // 段階が正で、予定・AI案の対象（active）と仮押さえ（tentative）は段階から決める。純粋関数（データは書き換えない）
-import type { Client, ClientStage } from '../contracts/documents';
+import { CLIENT_STAGES, type Client, type ClientStage } from '../contracts/documents';
 
 export const STAGE_LABELS: Record<ClientStage, string> = {
   inquiry: '相談受付',
@@ -33,4 +33,13 @@ export function withStage<T extends Pick<Client, 'stage' | 'active' | 'tentative
   const f = stageFlags(stage, tentative);
   if (c.stage === stage && c.active === f.active && c.tentative === f.tentative) return c;
   return { ...c, stage, ...f };
+}
+
+/**
+ * 段階の選択肢（ADR-0028 の clientStage。PRD D215）。入なら5つ。切なら「利用中／終了」の2つで、今の段階がほかの段階なら
+ * その名前を先頭に残す（表示は今の段階の名前のまま。選び直せば利用中か終了になる）
+ */
+export function stageChoices(current: ClientStage, stageOn: boolean): readonly ClientStage[] {
+  if (stageOn) return CLIENT_STAGES;
+  return current === 'active' || current === 'ended' ? ['active', 'ended'] : [current, 'active', 'ended'];
 }

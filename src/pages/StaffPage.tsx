@@ -39,6 +39,7 @@ import { byName, formError, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, W
 import { normalizeEmail } from '../lib/mailto';
 import { offboardScope } from '../lib/offboard';
 import { mdText } from '../lib/patternText';
+import { useFeature } from '../lib/useFeature';
 import { type DiscardWhen, discardDialog, isDirty } from '../lib/viewMode';
 import { useDemoData } from '../store';
 import { leavingStaff, OffboardPanel } from './OffboardPanel';
@@ -65,6 +66,10 @@ const blank = (): Staff => ({
 export default function StaffPage() {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
+  // 機能の入り切り（ADR-0028）：退職・担当替えを切れば最終勤務日の欄・振り直しの欄、メールを切ればメールアドレスの欄を出さない
+  // （最終勤務日の値は事実なので計算に効き、一覧の「最終」の印も残す）
+  const offboardOn = useFeature('offboard');
+  const mailOn = useFeature('mail');
   const toast = useToast();
   const confirmDialog = useConfirm();
   /** 閲覧の欄で開いている人（PRD D127。編集中はその人の ID のまま。null：閲覧の欄なし） */
@@ -209,7 +214,7 @@ export default function StaffPage() {
           ? data.staff.map((x) => (x.id === s.id ? s : x))
           : [...data.staff, s],
       };
-      const sc = lastDayChanged ? offboardScope(nextData, s.id, today, false) : null;
+      const sc = lastDayChanged && offboardOn ? offboardScope(nextData, s.id, today, false) : null;
       update((d) => ({
         ...d,
         staff: d.staff.some((x) => x.id === s.id) ? d.staff.map((x) => (x.id === s.id ? s : x)) : [...d.staff, s],
@@ -259,7 +264,7 @@ export default function StaffPage() {
         }
       />
 
-      {leaving.length > 0 && (
+      {offboardOn && leaving.length > 0 && (
         <div className="card stack leaving-card" data-testid="leaving-card">
           <strong>
             <WithIcon icon={CalendarX} size={16}>
@@ -426,19 +431,21 @@ export default function StaffPage() {
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
                     />
                   </label>
-                  <label>
-                    メールアドレス（任意）
-                    <input
-                      type="email"
-                      value={form.email}
-                      maxLength={254}
-                      autoComplete="off"
-                      placeholder="name@example.com"
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      data-testid="staff-email"
-                    />
-                    <span className="sub">予定をメールアプリで開くときの宛先（送信は人が押します）</span>
-                  </label>
+                  {mailOn && (
+                    <label>
+                      メールアドレス（任意）
+                      <input
+                        type="email"
+                        value={form.email}
+                        maxLength={254}
+                        autoComplete="off"
+                        placeholder="name@example.com"
+                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                        data-testid="staff-email"
+                      />
+                      <span className="sub">予定をメールアプリで開くときの宛先（送信は人が押します）</span>
+                    </label>
+                  )}
                   <label>
                     移動手段
                     <select
@@ -493,29 +500,38 @@ export default function StaffPage() {
                   </Check>
                 </div>
 
-                <SectionTitle icon={CalendarX}>最終勤務日（退職・担当替え）</SectionTitle>
-                <Hint>
-                  退職や担当替えで、この日を最後に勤務しなくなるときに入れます。翌日からは勤務なしになり、予定・AI案に入りません。保存すると、その人が担当している
-                  {terms.client}の代わりの{terms.staff}をまとめて選ぶ欄が開きます（訪問の案は自動では作り直しません）。
-                </Hint>
-                <div className="row" style={{ flexWrap: 'wrap' }}>
-                  <label className="row" style={{ gap: 6 }}>
-                    最終勤務日
-                    <input
-                      type="date"
-                      value={form.lastDay ?? ''}
-                      onChange={(e) => setForm({ ...form, lastDay: e.target.value || null })}
-                      data-testid="staff-lastday-input"
-                      style={{ width: 'auto' }}
-                    />
-                  </label>
-                  {form.lastDay && (
-                    <button type="button" className="btn btn-small" onClick={() => setForm({ ...form, lastDay: null })}>
-                      最終勤務日を消す
-                    </button>
-                  )}
-                  {form.lastDay && <span className="sub">{mdText(addDays(form.lastDay, 1))}から勤務なし</span>}
-                </div>
+                {offboardOn && (
+                  <>
+                    <SectionTitle icon={CalendarX}>最終勤務日（退職・担当替え）</SectionTitle>
+                    <Hint>
+                      退職や担当替えで、この日を最後に勤務しなくなるときに入れます。翌日からは勤務なしになり、予定・AI案に入りません。保存すると、その人が担当している
+                      {terms.client}の代わりの{terms.staff}
+                      をまとめて選ぶ欄が開きます（訪問の案は自動では作り直しません）。
+                    </Hint>
+                    <div className="row" style={{ flexWrap: 'wrap' }}>
+                      <label className="row" style={{ gap: 6 }}>
+                        最終勤務日
+                        <input
+                          type="date"
+                          value={form.lastDay ?? ''}
+                          onChange={(e) => setForm({ ...form, lastDay: e.target.value || null })}
+                          data-testid="staff-lastday-input"
+                          style={{ width: 'auto' }}
+                        />
+                      </label>
+                      {form.lastDay && (
+                        <button
+                          type="button"
+                          className="btn btn-small"
+                          onClick={() => setForm({ ...form, lastDay: null })}
+                        >
+                          最終勤務日を消す
+                        </button>
+                      )}
+                      {form.lastDay && <span className="sub">{mdText(addDays(form.lastDay, 1))}から勤務なし</span>}
+                    </div>
+                  </>
+                )}
 
                 <SectionTitle icon={BadgeCheck}>特性</SectionTitle>
                 <TraitsEditor
@@ -559,7 +575,9 @@ export default function StaffPage() {
           </SectionLevelProvider>
         </SidePanel>
       )}
-      {offboardFor && !form && !viewed && <OffboardPanel staffId={offboardFor} onClose={() => setOffboardFor(null)} />}
+      {offboardOn && offboardFor && !form && !viewed && (
+        <OffboardPanel staffId={offboardFor} onClose={() => setOffboardFor(null)} />
+      )}
     </div>
   );
 }

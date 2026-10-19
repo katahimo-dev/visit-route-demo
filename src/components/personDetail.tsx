@@ -11,6 +11,7 @@ import { areaOf } from '../lib/area';
 import { STAGE_LABELS } from '../lib/clientStage';
 import { dateText, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
 import { staffCompatCounts, traitText, weeklyHours } from '../lib/compatView';
+import { isOn } from '../lib/features';
 import { condText } from './conditions';
 
 /** 〈スタッフ〉の詳細：名前・移動手段・特性・稼働時間・最終勤務日・相性の件数・いつもの担当の人数と「〈スタッフ〉の画面で開く」 */
@@ -122,7 +123,10 @@ export function StaffLastDayRow({ staff: s }: { staff: Staff }) {
   return <DlRow term="最終勤務日" value={s.lastDay ? dateText(s.lastDay) : '—'} />;
 }
 
-/** 〈スタッフ〉の相性の件数・いつもの担当の人数（数えるのは利用中の〈利用者さん〉。相性の画面の行と同じ） */
+/**
+ * 〈スタッフ〉の相性の件数・いつもの担当の人数（数えるのは利用中の〈利用者さん〉。相性の画面の行と同じ）。
+ * 相性を切っていれば相性の件数は出さない（ADR-0028）
+ */
 export function StaffCompatRows({
   staff: s,
   data,
@@ -139,12 +143,18 @@ export function StaffCompatRows({
     clients.map((c) => c.id),
   );
   const usual = clients.filter((c) => c.usualStaffId === s.id).length;
+  // 相性を切っている（ADR-0028）ときは相性の件数を出さない（いつもの担当は残す）
+  const compatOn = isOn(data.org.features, 'compat');
   return (
     <>
-      <dt>相性</dt>
-      <dd data-testid={countsTestId}>
-        ◎ {cc.great}・○ {cc.good}・△ {cc.poor}・× {cc.ng}
-      </dd>
+      {compatOn && (
+        <>
+          <dt>相性</dt>
+          <dd data-testid={countsTestId}>
+            ◎ {cc.great}・○ {cc.good}・△ {cc.poor}・× {cc.ng}
+          </dd>
+        </>
+      )}
       <DlRow term={`いつもの担当の${data.org.terms.client}`} value={`${usual}人`} />
     </>
   );
@@ -224,19 +234,22 @@ export function ClientStaffRows({
   const usual = c.usualStaffId ? staffOf(c.usualStaffId) : undefined;
   return (
     <>
-      <DlRow
-        term="担当できる人"
-        value={
-          allowed.length === 0
-            ? '限らない'
-            : names
-              ? names(
-                  allowed.flatMap((id) => staffOf(id) ?? []),
-                  'view-allowed-staff',
-                )
-              : allowed.map(nameOf).join('・')
-        }
-      />
+      {/* 担当を限るを切っている（ADR-0028）ときは出さない（計算にも効かない） */}
+      {isOn(data.org.features, 'allowedStaff') && (
+        <DlRow
+          term="担当できる人"
+          value={
+            allowed.length === 0
+              ? '限らない'
+              : names
+                ? names(
+                    allowed.flatMap((id) => staffOf(id) ?? []),
+                    'view-allowed-staff',
+                  )
+                : allowed.map(nameOf).join('・')
+          }
+        />
+      )}
       <DlRow
         term="いつもの担当"
         value={!c.usualStaffId ? '—' : names && usual ? names([usual], 'view-usual-staff') : nameOf(c.usualStaffId)}

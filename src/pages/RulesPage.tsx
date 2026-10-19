@@ -30,6 +30,7 @@ import {
   resetPresets,
   setScorePreset,
 } from '../lib/presets';
+import { useFeature } from '../lib/useFeature';
 import { presetOf, scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 import { SavePresetForm, SCORE_TEXT } from './planParts';
@@ -62,8 +63,17 @@ const DEFAULTS: Record<RuleType, { weight: number; hard: boolean }> = {
 /**
  * 条件（ルール）の一覧。ClassClassify の Setup にならい、重み 0〜5（0.5刻み、0 で半透明＝無効）と必須の切り替え
  */
+/**
+ * 相性（ADR-0028 の compat）を切っているときは「相性」の条件を出さない（計算からも外れる。条件のデータは消さない）
+ */
+function useShownTypes(): { compatOn: boolean; shownTypes: readonly RuleType[] } {
+  const compatOn = useFeature('compat');
+  return { compatOn, shownTypes: compatOn ? RULE_TYPES : RULE_TYPES.filter((t) => t !== 'compatibility') };
+}
+
 export default function RulesPage() {
   const { data, update } = useDemoData();
+  const { compatOn, shownTypes } = useShownTypes();
   const confirmDialog = useConfirm();
   const terms = data.org.terms;
   const [addType, setAddType] = useState<RuleType>('clientPreference');
@@ -111,63 +121,67 @@ export default function RulesPage() {
               </tr>
             </thead>
             <tbody>
-              {data.rules.map((r) => {
-                const hardable = HARDABLE.has(r.type);
-                const hard = hardable && r.hard;
-                const locked = weightLocked(r);
-                return (
-                  <tr key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
-                    <td style={{ minWidth: 160 }}>
-                      <LabelInput
-                        value={r.label}
-                        onChange={(label) => setRule(r.id, { label })}
-                        fallback={ruleTypeLabel(r.type, terms)}
-                      />
-                    </td>
-                    <td>
-                      <span className="chip chip-type">
-                        <WithIcon icon={RULE_ICONS[r.type]} size={14}>
-                          {ruleTypeLabel(r.type, terms)}
-                        </WithIcon>
-                      </span>
-                      <Hint ariaLabel={`${r.label}の説明`}>{ruleTypeHelp(r.type, terms)}</Hint>
-                    </td>
-                    <td>
-                      <WeightSlider
-                        label={r.label}
-                        value={r.weight}
-                        disabled={locked}
-                        onChange={(w) => setRule(r.id, { weight: w })}
-                      />
-                      {!locked && <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>}
-                    </td>
-                    <td className="nowrap">
-                      {hardable ? (
-                        <label className={`hard-toggle${r.hard ? ' is-on' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={r.hard}
-                            onChange={(e) => setRule(r.id, { hard: e.target.checked })}
-                          />
-                          <WithIcon icon={ShieldCheck} size={14}>
-                            必須
+              {data.rules
+                .filter((r) => compatOn || r.type !== 'compatibility')
+                .map((r) => {
+                  const hardable = HARDABLE.has(r.type);
+                  const hard = hardable && r.hard;
+                  const locked = weightLocked(r);
+                  return (
+                    <tr key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
+                      <td style={{ minWidth: 160 }}>
+                        <LabelInput
+                          value={r.label}
+                          onChange={(label) => setRule(r.id, { label })}
+                          fallback={ruleTypeLabel(r.type, terms)}
+                        />
+                      </td>
+                      <td>
+                        <span className="chip chip-type">
+                          <WithIcon icon={RULE_ICONS[r.type]} size={14}>
+                            {ruleTypeLabel(r.type, terms)}
                           </WithIcon>
-                        </label>
-                      ) : (
-                        <span className="sub">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <IconButton
-                        icon={Trash2}
-                        label={`条件「${r.label}」を消す`}
-                        tone="danger"
-                        onClick={() => remove(r)}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
+                        </span>
+                        <Hint ariaLabel={`${r.label}の説明`}>{ruleTypeHelp(r.type, terms)}</Hint>
+                      </td>
+                      <td>
+                        <WeightSlider
+                          label={r.label}
+                          value={r.weight}
+                          disabled={locked}
+                          onChange={(w) => setRule(r.id, { weight: w })}
+                        />
+                        {!locked && (
+                          <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>
+                        )}
+                      </td>
+                      <td className="nowrap">
+                        {hardable ? (
+                          <label className={`hard-toggle${r.hard ? ' is-on' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={r.hard}
+                              onChange={(e) => setRule(r.id, { hard: e.target.checked })}
+                            />
+                            <WithIcon icon={ShieldCheck} size={14}>
+                              必須
+                            </WithIcon>
+                          </label>
+                        ) : (
+                          <span className="sub">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <IconButton
+                          icon={Trash2}
+                          label={`条件「${r.label}」を消す`}
+                          tone="danger"
+                          onClick={() => remove(r)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -176,7 +190,7 @@ export default function RulesPage() {
           <label style={{ maxWidth: 260 }}>
             足す条件の種類
             <select value={addType} onChange={(e) => setAddType(e.target.value as RuleType)}>
-              {RULE_TYPES.map((t) => (
+              {shownTypes.map((t) => (
                 <option key={t} value={t}>
                   {ruleTypeLabel(t, terms)}
                 </option>
@@ -254,6 +268,7 @@ function LabelInput({ value, onChange, fallback }: { value: string; onChange: (v
  * 消す（最後の1つは消せない）・いまの重みを保存（6つまで）・初期値に戻す
  */
 function PresetSection() {
+  const { shownTypes } = useShownTypes();
   const { data, update } = useDemoData();
   const confirmDialog = useConfirm();
   const terms = data.org.terms;
@@ -369,7 +384,7 @@ function PresetSection() {
                     </tr>
                   </thead>
                   <tbody>
-                    {RULE_TYPES.map((t) => {
+                    {shownTypes.map((t) => {
                       const w = p.weights[t];
                       const hardable = HARDABLE.has(t);
                       const locked = hardable && w.hard && t !== 'balance';

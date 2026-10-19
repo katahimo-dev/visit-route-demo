@@ -1,5 +1,6 @@
 import { Car, DoorOpen, KeyRound, TriangleAlert } from 'lucide-react';
 import type { Client } from '../contracts/documents';
+import { useFeature } from '../lib/useFeature';
 
 /** 訪問先の決まりごと（PRD D66。ADR-0013）の見出しとアイコン（入力欄・表示で同じ並び） */
 export const VISIT_RULE_FIELDS = [
@@ -17,10 +18,12 @@ export const hasVisitRules = (c: Pick<Client, VisitRuleKey> | undefined | null):
 
 /**
  * 訪問先の決まりごと（入り方・鍵・駐車場・注意）の表示。空の項目は出さず、どれも空なら何も出さない。
- * スタッフ画面の各訪問・日の画面の訪問の詳細に置く
+ * スタッフ画面の各訪問・日の画面の訪問の詳細に置く。訪問先の決まりごとの機能を切っていれば出さない（ADR-0028）
  */
 export function VisitRules({ client }: { client: Pick<Client, VisitRuleKey> | undefined | null }) {
-  if (!client || !hasVisitRules(client)) return null;
+  // 訪問先の決まりごと（ADR-0028 の visitNotes）を切っていれば出さない
+  const on = useFeature('visitNotes');
+  if (!on || !client || !hasVisitRules(client)) return null;
   return (
     <dl className="visit-rules" data-testid="visit-rules">
       {VISIT_RULE_FIELDS.filter((f) => client[f.key].trim() !== '').map((f) => (

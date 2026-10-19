@@ -22,6 +22,7 @@ import {
 import { hasLocation } from '../lib/common';
 import { EXTERNAL_NOTICE, type GeoHit, lookupPostalCode, type PostalHit, searchAddress } from '../lib/geocode';
 import { normalizePostalCode } from '../lib/postalCode';
+import { useFeature } from '../lib/useFeature';
 import { PlacePin } from './parts';
 import { WithIcon } from './ui';
 import './placeLookup.css';
@@ -103,6 +104,8 @@ export function AddressField<T extends Place>({
   // 〈利用者さん〉は今までの data-testid（place-notice など）を残す
   const tid = (name: string, legacy: string) => (testId === 'client' ? legacy : `${testId}-${name}`);
 
+  // 郵便番号・住所の検索（ADR-0028 の geocode）を切っていれば、検索のボタン・注記を出さない（地図のクリックで置くのは残す）
+  const geocodeOn = useFeature('geocode');
   const postal = normalizePostalCode(postalText);
   const postalWhy = postalBlockReason(postalText, busy);
   const addressWhy = addressBlockReason(value.address, busy);
@@ -209,20 +212,22 @@ export function AddressField<T extends Place>({
             data-testid={`${testId}-postal`}
           />
         </label>
-        <button
-          type="button"
-          className="btn btn-small"
-          aria-disabled={postalWhy ? true : undefined}
-          aria-describedby={postalWhy ? postalWhyId : undefined}
-          title={postalWhy ?? '郵便番号から住所（都道府県・市区町村・町名）を探して入れます'}
-          onClick={() => void findAddress()}
-          data-testid={`${testId}-postal-search`}
-        >
-          <WithIcon icon={Search} size={14}>
-            住所を探す
-          </WithIcon>
-        </button>
-        {postalWhy && (
+        {geocodeOn && (
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-disabled={postalWhy ? true : undefined}
+            aria-describedby={postalWhy ? postalWhyId : undefined}
+            title={postalWhy ?? '郵便番号から住所（都道府県・市区町村・町名）を探して入れます'}
+            onClick={() => void findAddress()}
+            data-testid={`${testId}-postal-search`}
+          >
+            <WithIcon icon={Search} size={14}>
+              住所を探す
+            </WithIcon>
+          </button>
+        )}
+        {geocodeOn && postalWhy && (
           <span id={postalWhyId} className="sr-only">
             {postalWhy}
           </span>
@@ -253,46 +258,50 @@ export function AddressField<T extends Place>({
           data-testid={`${testId}-address`}
         />
       </label>
-      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <button
-          type="button"
-          className="btn btn-small"
-          aria-disabled={addressWhy ? true : undefined}
-          aria-describedby={addressWhy ? addressWhyId : undefined}
-          title={addressWhy ?? '住所から位置を探して、地図にピンを置きます'}
-          onClick={() => void findPin()}
-          data-testid={`${testId}-geo-search`}
-        >
-          <WithIcon icon={MapPin} size={14}>
-            {hasLocation(value) ? '住所から置き直す' : '地図に置く'}
-          </WithIcon>
-        </button>
-        {addressWhy && (
-          <span id={addressWhyId} className="sr-only">
-            {addressWhy}
-          </span>
-        )}
-        {canUndoAddress(undoAddress) && (
+      {geocodeOn && (
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
           <button
             type="button"
             className="btn btn-small"
-            onClick={() => {
-              put({ ...latest.current, address: undoAddress });
-              setUndoAddress(null);
-              setStatus(null);
-            }}
-            data-testid={`${testId}-address-undo`}
+            aria-disabled={addressWhy ? true : undefined}
+            aria-describedby={addressWhy ? addressWhyId : undefined}
+            title={addressWhy ?? '住所から位置を探して、地図にピンを置きます'}
+            onClick={() => void findPin()}
+            data-testid={`${testId}-geo-search`}
           >
-            <WithIcon icon={Undo2} size={14}>
-              住所を元に戻す
+            <WithIcon icon={MapPin} size={14}>
+              {hasLocation(value) ? '住所から置き直す' : '地図に置く'}
             </WithIcon>
           </button>
-        )}
-      </div>
-      <span className="sub place-notice" data-testid={tid('notice', 'place-notice')}>
-        {EXTERNAL_NOTICE}
-        {noticeNote}
-      </span>
+          {addressWhy && (
+            <span id={addressWhyId} className="sr-only">
+              {addressWhy}
+            </span>
+          )}
+          {canUndoAddress(undoAddress) && (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                put({ ...latest.current, address: undoAddress });
+                setUndoAddress(null);
+                setStatus(null);
+              }}
+              data-testid={`${testId}-address-undo`}
+            >
+              <WithIcon icon={Undo2} size={14}>
+                住所を元に戻す
+              </WithIcon>
+            </button>
+          )}
+        </div>
+      )}
+      {geocodeOn && (
+        <span className="sub place-notice" data-testid={tid('notice', 'place-notice')}>
+          {EXTERNAL_NOTICE}
+          {noticeNote}
+        </span>
+      )}
       <output className={statusClass(status)} data-testid={tid('status', 'place-lookup-status')}>
         {status?.text ?? ''}
       </output>

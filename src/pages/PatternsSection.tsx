@@ -1,5 +1,5 @@
 import { CalendarClock, Check, Pencil, Plus, Repeat, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, SectionTitle, WithIcon } from '../components/ui';
@@ -10,6 +10,7 @@ import type { PatternChange } from '../contracts/patterns';
 import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
 import { byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { EVERY_WEEKS_LABELS, mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
+import { useFeature } from '../lib/useFeature';
 import { applyPatterns, removePattern, splitPattern } from '../patterns';
 import { useDemoData } from '../store';
 
@@ -107,6 +108,12 @@ export function PatternsSection({ client }: { client: Client }) {
   const confirmDialog = useConfirm();
   const today = jstDate(Date.now());
   const [form, setForm] = useState<Form | null>(null);
+  /**
+   * 毎月の第N週・曜日ごとの時刻（ADR-0028 の patternMonthly）。切なら選べない。今の値がそれなら欄は読むだけで出す
+   * （パターンは事実なので、訪問は今どおり作られる）
+   */
+  const monthlyOn = useFeature('patternMonthly');
+  const monthlyOffId = useId();
   const [error, setError] = useState<string | null>(null);
   const patterns = useMemo(() => data.patterns.filter((p) => p.clientId === client.id), [data.patterns, client.id]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
@@ -352,6 +359,8 @@ export function PatternsSection({ client }: { client: Client }) {
             <label>
               繰り返し
               <select
+                disabled={!monthlyOn && form.repeat === 'monthly'}
+                aria-describedby={!monthlyOn && form.repeat === 'monthly' ? monthlyOffId : undefined}
                 value={form.repeat === 'monthly' ? 'monthly' : String(form.everyWeeks)}
                 onChange={(e) =>
                   setForm(
@@ -367,10 +376,15 @@ export function PatternsSection({ client }: { client: Client }) {
                     {EVERY_WEEKS_LABELS[n]}
                   </option>
                 ))}
-                <option value="monthly">毎月（第N週）</option>
+                {(monthlyOn || form.repeat === 'monthly') && <option value="monthly">毎月（第N週）</option>}
               </select>
             </label>
           </div>
+          {!monthlyOn && (form.repeat === 'monthly' || form.perDay) && (
+            <span className="sub" id={monthlyOffId} data-testid={monthlyOffId}>
+              毎月の第N週・曜日ごとの時刻は管理者設定で切っています（読むだけです。訪問は今どおり作られます）
+            </span>
+          )}
           <div className="stack" style={{ gap: 4 }}>
             <span className="sub">曜日（1つ以上）</span>
             <fieldset className="weekday-toggles" aria-label="曜日">
@@ -397,6 +411,7 @@ export function PatternsSection({ client }: { client: Client }) {
                     type="button"
                     className={`weekday-toggle month-week-toggle${form.monthWeeks.includes(n) ? ' is-on' : ''}`}
                     aria-pressed={form.monthWeeks.includes(n)}
+                    disabled={!monthlyOn}
                     title={n === 5 ? '第5の曜日がある月だけ' : undefined}
                     onClick={() =>
                       setForm({
@@ -495,10 +510,11 @@ export function PatternsSection({ client }: { client: Client }) {
               <input value={form.note} maxLength={200} onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </label>
           </div>
-          <div className="stack" style={{ gap: 4 }}>
+          <div className="stack" style={{ gap: 4 }} hidden={!monthlyOn && !form.perDay}>
             <label className="check">
               <input
                 type="checkbox"
+                disabled={!monthlyOn}
                 checked={form.perDay}
                 onChange={(e) => setForm({ ...form, perDay: e.target.checked })}
                 data-testid="pattern-per-day"
@@ -531,6 +547,7 @@ export function PatternsSection({ client }: { client: Client }) {
                             <input
                               type="time"
                               value={t.earliestStart}
+                              disabled={!monthlyOn}
                               onChange={(e) => set({ earliestStart: e.target.value })}
                             />
                           </label>
@@ -540,6 +557,7 @@ export function PatternsSection({ client }: { client: Client }) {
                               <input
                                 type="time"
                                 value={t.latestStart}
+                                disabled={!monthlyOn}
                                 onChange={(e) => set({ latestStart: e.target.value })}
                               />
                             </label>

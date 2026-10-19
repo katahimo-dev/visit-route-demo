@@ -224,6 +224,13 @@ export default function PlanPage() {
   /** 切った機能（案を比べる・稼働の見込み）の画面へ移るボタン・リンクは出さない（PRD D213。ADR-0028） */
   const compareOn = useFeature('compare');
   const workloadOn = useFeature('workload');
+  /**
+   * 画面の中の欄・ボタン（ADR-0028）：欠勤・キャンセル（操作の行・列の見出し・当日キャンセルの選択）、メール（ボタン・欄・連絡の一覧）、
+   * 条件の重みとプリセット（「条件を調整する」・点数の横の理由・プリセットは基準の1枚だけ）。欠勤の印・帯（事実）は残す
+   */
+  const suddenOn = useFeature('sudden');
+  const mailOn = useFeature('mail');
+  const rulesOn = useFeature('rules');
   const {
     data,
     update,
@@ -912,6 +919,8 @@ export default function PlanPage() {
     -1,
   );
   const missing = presetCards.filter((c) => !c.run).map((c) => c.preset);
+  /** 点数の基準のプリセットの ID（条件の重みとプリセットを切っているとき、メニューに出すのはこの1枚だけ） */
+  const basePresetId = scorePresetOf(data.presets, data.scorePresetId)?.id;
   /**
    * （D43）今の案の元の記録を作ったあとに、訪問・〈スタッフ〉・稼働時間・条件が変わったか：記録の inputKey と、
    * いまのデータに記録の条件（と固定）を当てた問題のキーが違う。作った問題はプリセットのカードのものを使い回す
@@ -2042,7 +2051,7 @@ export default function PlanPage() {
             </span>
           )}
           {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
-          {(avail?.baseSlots.length ?? 0) > 0 && (
+          {suddenOn && (avail?.baseSlots.length ?? 0) > 0 && (
             <button
               type="button"
               className="link-btn absence-btn"
@@ -2324,17 +2333,20 @@ export default function PlanPage() {
       disabled: resolveT.disabled,
       onSelect: resolve,
     },
-    ...presetCards.map((c, i): MenuItem => {
+    // 条件の重みとプリセットを切っていれば、プリセットは点数の基準の1枚だけ（王冠・まとめて作るは出さない。ADR-0028 の rules）
+    ...presetCards.flatMap((c, i): MenuItem[] => {
+      if (!rulesOn && c.preset.id !== basePresetId) return [];
+      const first = rulesOn ? i === 0 : true;
       const isCurrent = isCurrentRun(c.run);
       const making = batch?.date === date && batch.presetId === c.preset.id;
       const pt = c.hundred !== null ? `${c.hundred}点` : '—点';
-      return {
+      const item: MenuItem = {
         key: `preset-${c.preset.id}`,
-        group: i === 0 ? '別の考え方（プリセット）に切り替える' : undefined,
+        group: first ? '別の考え方（プリセット）に切り替える' : undefined,
         testId: 'plan-menu-preset',
         label: c.preset.name,
         description: presetDescription({ isCurrent, making, hasRun: !!c.run, remake: c.remake, edited }),
-        icon: i === bestCard ? Crown : undefined,
+        icon: rulesOn && i === bestCard ? Crown : undefined,
         note: making
           ? '作っています…'
           : !c.run
@@ -2349,16 +2361,21 @@ export default function PlanPage() {
         disabled: busyWhy || isCurrent,
         onSelect: () => runPreset(c.preset),
       };
+      return [item];
     }),
-    {
-      key: 'batch',
-      testId: 'plan-menu-batch',
-      label: `まだ作っていない考え方をまとめて作る${missing.length > 0 ? `（${missing.length}つ）` : ''}`,
-      description: batchDescription(!!aiPlan),
-      icon: LayoutGrid,
-      disabled: batch ? '作っています' : missing.length === 0 ? 'どの考え方の案もあります' : busyWhy,
-      onSelect: () => runBatch(missing),
-    },
+    ...(rulesOn
+      ? [
+          {
+            key: 'batch',
+            testId: 'plan-menu-batch',
+            label: `まだ作っていない考え方をまとめて作る${missing.length > 0 ? `（${missing.length}つ）` : ''}`,
+            description: batchDescription(!!aiPlan),
+            icon: LayoutGrid,
+            disabled: batch ? '作っています' : missing.length === 0 ? 'どの考え方の案もあります' : busyWhy,
+            onSelect: () => runBatch(missing),
+          },
+        ]
+      : []),
     // 案を比べるを切っていれば比べるの項目は出さず、見出し「比べる・戻す」は戻すの項目から始める
     ...(compareOn
       ? [
@@ -2394,14 +2411,19 @@ export default function PlanPage() {
       disabled: visits.length > 0 ? 'この日に訪問があるときはコピーできません' : running ? '計算中は選べません' : false,
       onSelect: copyFromLastWeek,
     },
-    {
-      key: 'tune',
-      label: '条件を調整する…',
-      description: '右の欄で、考え方ごとの案のカードと条件の重みを見比べて変えます',
-      icon: SlidersHorizontal,
-      testId: 'plan-menu-tune',
-      onSelect: () => setPanel('tune'),
-    },
+    // 条件の重みとプリセットを切っていれば「条件を調整する」は出さない（ADR-0028 の rules）
+    ...(rulesOn
+      ? [
+          {
+            key: 'tune',
+            label: '条件を調整する…',
+            description: '右の欄で、考え方ごとの案のカードと条件の重みを見比べて変えます',
+            icon: SlidersHorizontal,
+            testId: 'plan-menu-tune',
+            onSelect: () => setPanel('tune'),
+          },
+        ]
+      : []),
   ];
 
   /** プリセットごとの案のカード（ADR-0008・ADR-0010。右の欄「条件を調整する」の中） */
@@ -2686,7 +2708,7 @@ export default function PlanPage() {
             )}
           </span>
           {/* 点を下げているいちばん大きい理由（PRD D173） */}
-          {reasonNow && <ScoreReasonText reason={reasonNow} testId="plan-reason" />}
+          {rulesOn && reasonNow && <ScoreReasonText reason={reasonNow} testId="plan-reason" />}
           <button
             type="button"
             className="link-btn plan-oneline-more"
@@ -2780,7 +2802,7 @@ export default function PlanPage() {
           </button>
         </div>
       )}
-      {overSpan.length > 0 && (
+      {workloadOn && overSpan.length > 0 && (
         <div className="plan-band is-warn row" data-testid="band-over-span">
           <WithIcon icon={Timer} size={16}>
             <span className="band-text">
@@ -2841,24 +2863,28 @@ export default function PlanPage() {
 
       <div className="plan-toolbar row" data-testid="plan-toolbar">
         {/* 急な欠勤・当日キャンセルの入口（PRD D167）。スマホでも見つけやすいよう操作の行の先頭。主ボタンにはしない */}
-        <button
-          ref={suddenBtnRef}
-          type="button"
-          className="btn plan-sudden-btn"
-          onClick={() => openSudden({})}
-          disabled={visits.length === 0 && suddenStaff.length === 0}
-          data-testid="sudden-open"
-        >
-          <WithIcon icon={UserRoundX}>欠勤・キャンセル</WithIcon>
-        </button>
+        {suddenOn && (
+          <button
+            ref={suddenBtnRef}
+            type="button"
+            className="btn plan-sudden-btn"
+            onClick={() => openSudden({})}
+            disabled={visits.length === 0 && suddenStaff.length === 0}
+            data-testid="sudden-open"
+          >
+            <WithIcon icon={UserRoundX}>欠勤・キャンセル</WithIcon>
+          </button>
+        )}
         <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
           <WithIcon icon={Plus}>訪問を追加</WithIcon>
         </button>
         <MenuButton label="案を変える" icon={Sparkles} items={menuItems} testId="plan-menu" />
         {/* 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017。主ボタンにはしない） */}
-        <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
-          <WithIcon icon={Mail}>メールで送る</WithIcon>
-        </button>
+        {mailOn && (
+          <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
+            <WithIcon icon={Mail}>メールで送る</WithIcon>
+          </button>
+        )}
         {(visits.length > 0 || m.leaveVisits.length > 0) && (
           <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
             {(
@@ -3150,34 +3176,38 @@ export default function PlanPage() {
             </strong>{' '}
             の訪問を取り消します。
           </p>
-          <fieldset className="stack cancel-kind" style={{ gap: 6 }} data-testid="cancel-kind">
-            <legend>取り消しの種類</legend>
-            <label className="check">
-              <input
-                type="radio"
-                name="cancel-kind"
-                checked={!cancelSameDay}
-                onChange={() => setCancelSameDay(false)}
-                style={{ width: 'auto' }}
-              />
-              ふつうの取り消し（前もって決まった休み・予定の変更など）
-            </label>
-            <label className="check">
-              <input
-                type="radio"
-                name="cancel-kind"
-                checked={cancelSameDay}
-                onChange={() => setCancelSameDay(true)}
-                style={{ width: 'auto' }}
-                data-testid="cancel-same-day"
-              />
-              当日キャンセル（その日になって{terms.client}の都合で取りやめ）
-            </label>
-          </fieldset>
-          <p className="sub">
-            当日キャンセルは、月間の画面と{terms.client}
-            ごとの月の集計に回数が出ます（請求はしません）。今の案はそのままで、この訪問は計算から外れます。
-          </p>
+          {suddenOn && (
+            <>
+              <fieldset className="stack cancel-kind" style={{ gap: 6 }} data-testid="cancel-kind">
+                <legend>取り消しの種類</legend>
+                <label className="check">
+                  <input
+                    type="radio"
+                    name="cancel-kind"
+                    checked={!cancelSameDay}
+                    onChange={() => setCancelSameDay(false)}
+                    style={{ width: 'auto' }}
+                  />
+                  ふつうの取り消し（前もって決まった休み・予定の変更など）
+                </label>
+                <label className="check">
+                  <input
+                    type="radio"
+                    name="cancel-kind"
+                    checked={cancelSameDay}
+                    onChange={() => setCancelSameDay(true)}
+                    style={{ width: 'auto' }}
+                    data-testid="cancel-same-day"
+                  />
+                  当日キャンセル（その日になって{terms.client}の都合で取りやめ）
+                </label>
+              </fieldset>
+              <p className="sub">
+                当日キャンセルは、月間の画面と{terms.client}
+                ごとの月の集計に回数が出ます（請求はしません）。今の案はそのままで、この訪問は計算から外れます。
+              </p>
+            </>
+          )}
         </SidePanel>
       )}
 
@@ -3236,9 +3266,9 @@ export default function PlanPage() {
           )}
         </SidePanel>
       )}
-      {panel === 'mail' && <DayMailPanel data={data} date={date} onClose={() => setPanel(null)} />}
+      {panel === 'mail' && mailOn && <DayMailPanel data={data} date={date} onClose={() => setPanel(null)} />}
 
-      {panel === 'tune' && (
+      {panel === 'tune' && rulesOn && (
         <SidePanel icon={SlidersHorizontal} title="条件を調整する" onClose={() => setPanel(null)} focusPanel>
           <div className="stack" data-testid="plan-tune-panel">
             <SectionTitle
@@ -3289,8 +3319,11 @@ export default function PlanPage() {
           left={leftContacts}
           words={contactWords}
           terms={terms}
-          staffMail={(staffId, text) =>
-            mailTo(staffById.get(staffId)?.email ?? '', contactMailText(data.org, date, text), mailLimit)
+          staffMail={
+            mailOn
+              ? (staffId, text) =>
+                  mailTo(staffById.get(staffId)?.email ?? '', contactMailText(data.org, date, text), mailLimit)
+              : undefined
           }
           onCopied={(ok, what) =>
             toast(ok ? `${what}をコピーしました` : 'コピーできませんでした。文を選んでコピーしてください')

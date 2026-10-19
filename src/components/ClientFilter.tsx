@@ -29,6 +29,7 @@ import {
   toggleTown,
   townChips,
 } from '../lib/clientFilter';
+import { useFeature } from '../lib/useFeature';
 import './clientFilter.css';
 
 export type ClientFilterProps = {
@@ -79,6 +80,11 @@ export function ClientFilter({
   testId = 'client-filter',
 }: ClientFilterProps) {
   const uid = useId();
+  // 機能の入り切り（ADR-0028）：〈利用者さん〉の休みを切れば「休み」、担当を限るを切れば「担当を限る」のチップを出さない
+  // （URL などで押したまま来たときは外せるように出す）
+  const leaveOn = useFeature('clientLeave');
+  const limitOn = useFeature('allowedStaff');
+  const hiddenChip = (chip: FilterChip) => (chip === 'leave' && !leaveOn) || (chip === 'limited' && !limitOn);
   // ---- 検索の文字（変換中は呼ぶ側へ渡さない）----
   const [text, setText] = useState(state.query);
   const textRef = useRef(state.query);
@@ -315,7 +321,7 @@ export function ClientFilter({
       ))}
       <fieldset className="pick-chips client-filter-row" data-testid={`${testId}-chips`}>
         <legend className="pick-chips-legend">絞り込み（すべてに当てはまる人）</legend>
-        {FILTER_CHIPS.map((chip) =>
+        {FILTER_CHIPS.filter((chip) => !hiddenChip(chip) || state.chips.includes(chip)).map((chip) =>
           chip === 'staff'
             ? staff.length > 0 && (
                 <span key={chip} className="row client-filter-staff">

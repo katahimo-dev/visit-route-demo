@@ -21,6 +21,7 @@ import { STAGE_LABELS } from '../lib/clientStage';
 import { colorOf } from '../lib/colors';
 import { hasLocation } from '../lib/common';
 import { staffClientGroups, traitText } from '../lib/compatView';
+import { isOn } from '../lib/features';
 import { leavesOf } from '../lib/leaves';
 import { mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
 import { formatPostalCode } from '../lib/postalCode';
@@ -48,12 +49,15 @@ const placeText = (p: { lat: number | null; lng: number | null }) =>
 /** 〈スタッフ〉の閲覧の欄：基本（状態・メール・移動手段・稼働時間・最終勤務日）・特性・求めること・自宅・相性 */
 export function StaffView({ staff: s, data }: { staff: Staff; data: DemoData }) {
   const terms = data.org.terms;
+  // 機能の入り切り（ADR-0028）：メールを切ればメールアドレス、相性を切れば相性の行を出さない
+  const mailOn = isOn(data.org.features, 'mail');
+  const compatOn = isOn(data.org.features, 'compat');
   return (
     <div className="person-view stack" data-testid="person-view" data-kind="staff" data-id={s.id}>
       <SectionTitle icon={UserRound}>基本</SectionTitle>
       <dl>
         <DlRow term="状態" value={s.active ? '利用中' : '休止中'} />
-        <DlRow term="メールアドレス" value={orDash(s.email)} />
+        {mailOn && <DlRow term="メールアドレス" value={orDash(s.email)} />}
         <StaffTravelRow staff={s} />
         <StaffHoursRow staff={s} />
         <StaffLastDayRow staff={s} />
@@ -71,9 +75,9 @@ export function StaffView({ staff: s, data }: { staff: Staff; data: DemoData }) 
         <DlRow term="住所" value={orDash(s.home.address)} />
         <DlRow term="地図の位置" value={placeText(s.home)} />
       </dl>
-      <SectionTitle icon={Repeat}>相性・担当</SectionTitle>
+      <SectionTitle icon={Repeat}>{compatOn ? '相性・担当' : '担当'}</SectionTitle>
       <dl>
-        <StaffClientRows staff={s} data={data} />
+        <StaffClientRows staff={s} data={data} compatOn={compatOn} />
       </dl>
     </div>
   );
@@ -91,7 +95,7 @@ const COMPAT_ROWS = [
  * 〈スタッフ〉の相性・担当（PRD D198）：いつもの担当の〈利用者さん〉と、相性の記号ごとの〈利用者さん〉の名前（人数を添える）。
  * 数えるのは利用中の〈利用者さん〉（相性の画面の行・吹き出しの件数と同じ）。名前は押すと詳細の吹き出し
  */
-function StaffClientRows({ staff: s, data }: { staff: Staff; data: DemoData }) {
+function StaffClientRows({ staff: s, data, compatOn }: { staff: Staff; data: DemoData; compatOn: boolean }) {
   const g = staffClientGroups(
     data.compat,
     s.id,
@@ -103,7 +107,7 @@ function StaffClientRows({ staff: s, data }: { staff: Staff; data: DemoData }) {
         term={`いつもの担当の${data.org.terms.client}`}
         value={<PersonNames kind="client" people={g.usual} testId="view-usual-clients" count />}
       />
-      {COMPAT_ROWS.map((r) => (
+      {(compatOn ? COMPAT_ROWS : []).map((r) => (
         <DlRow
           key={r.key}
           term={r.term}
@@ -169,6 +173,9 @@ function PersonNames({
  */
 export function ClientView({ client: c, data }: { client: Client; data: DemoData }) {
   const terms = data.org.terms;
+  // 機能の入り切り（ADR-0028）：段階・紹介元を切れば紹介元、決まりごとを切れば決まりごとの節を出さない。休みは事実なので出す
+  const stageOn = isOn(data.org.features, 'clientStage');
+  const notesOn = isOn(data.org.features, 'visitNotes');
   const today = jstDate(Date.now());
   const patterns = data.patterns.filter((p) => p.clientId === c.id);
   const leaves = splitLeaves(leavesOf(data, c.id), today);
@@ -229,12 +236,16 @@ export function ClientView({ client: c, data }: { client: Client; data: DemoData
         />
       </dl>
 
-      <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
-      <dl>
-        {VISIT_RULE_FIELDS.map((f) => (
-          <DlRow key={f.key} term={f.label} value={orDash(c[f.key])} />
-        ))}
-      </dl>
+      {notesOn && (
+        <>
+          <SectionTitle icon={DoorOpen}>訪問先の決まりごと</SectionTitle>
+          <dl>
+            {VISIT_RULE_FIELDS.map((f) => (
+              <DlRow key={f.key} term={f.label} value={orDash(c[f.key])} />
+            ))}
+          </dl>
+        </>
+      )}
 
       <SectionTitle icon={Repeat}>定期パターン</SectionTitle>
       {patterns.length === 0 ? (
@@ -274,13 +285,17 @@ export function ClientView({ client: c, data }: { client: Client; data: DemoData
       )}
       {leaves.past > 0 && <span className="sub">終わった休み {leaves.past}件</span>}
 
-      <SectionTitle icon={Handshake}>紹介元</SectionTitle>
-      <dl>
-        <DlRow term="紹介元" value={orDash(c.referrer.name)} />
-        <DlRow term="連絡先" value={orDash(c.referrer.contact)} />
-        <DlRow term="メールアドレス" value={orDash(c.referrer.email)} />
-        <DlRow term="メモ" value={orDash(c.referrer.note)} />
-      </dl>
+      {stageOn && (
+        <>
+          <SectionTitle icon={Handshake}>紹介元</SectionTitle>
+          <dl>
+            <DlRow term="紹介元" value={orDash(c.referrer.name)} />
+            <DlRow term="連絡先" value={orDash(c.referrer.contact)} />
+            <DlRow term="メールアドレス" value={orDash(c.referrer.email)} />
+            <DlRow term="メモ" value={orDash(c.referrer.note)} />
+          </dl>
+        </>
+      )}
     </div>
   );
 }

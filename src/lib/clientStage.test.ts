@@ -1,12 +1,12 @@
 // 〈利用者さん〉の段階・紹介元・当日キャンセル・拘束の上限の読み込み（PRD D71〜D74。ADR-0015）
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
-import { clientSchema, stageOfLegacy } from '../contracts/documents';
+import { CLIENT_STAGES, clientSchema, stageOfLegacy } from '../contracts/documents';
 import { client } from '../matching/fixtures';
 import { createDemoData } from '../seed';
 import { importJson, isImportError, migrate } from '../store';
 import { repair } from '../store/repair';
-import { isBeforeActive, stageFlags, withStage } from './clientStage';
+import { isBeforeActive, stageChoices, stageFlags, withStage } from './clientStage';
 
 const base = () => createDemoData('2026-10-12');
 
@@ -86,5 +86,14 @@ describe('古いデータの読み替え（版は1のまま）', () => {
     };
     expect(repair(good)).toEqual(good);
     expect(importJson(JSON.stringify(good))).toEqual(good);
+  });
+});
+
+describe('段階の選択肢（stageChoices。ADR-0028 の clientStage）', () => {
+  it('入なら5つ、切なら利用中・終了の2つ（ほかの段階の人は今の段階を先頭に残す）', () => {
+    expect(stageChoices('inquiry', true)).toEqual(CLIENT_STAGES);
+    expect(stageChoices('active', false)).toEqual(['active', 'ended']);
+    expect(stageChoices('ended', false)).toEqual(['active', 'ended']);
+    expect(stageChoices('contract', false)).toEqual(['contract', 'active', 'ended']);
   });
 });

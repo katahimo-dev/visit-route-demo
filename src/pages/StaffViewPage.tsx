@@ -12,6 +12,7 @@ import { colorOf, initialOf } from '../lib/colors';
 import { AI_LINE, attempt, dateText, hasLocation, own, r0, TRAVEL_MODE_LABELS } from '../lib/common';
 import { BICYCLE_NOTE, dayStops, HOME_LABEL, tripLinks } from '../lib/mapsLink';
 import { useDayModel } from '../lib/useDayModel';
+import { useFeature } from '../lib/useFeature';
 import { scheduleRoute } from '../matching';
 import './schedule.css';
 
@@ -25,6 +26,8 @@ export default function StaffViewPage() {
   const m = useDayModel(date);
   const { data, staffById, clientById, visitById, problem, slotsOf } = m;
   const me = staffById.get(staffId);
+  // 道順のリンク（ADR-0028 の mapsLink）を切っていれば、1日の全行程のリンクと注記を出さない
+  const mapsOn = useFeature('mapsLink');
 
   const manualIds = own(m.savedView.cols, staffId) ?? [];
   const hasManual = Object.values(m.savedView.cols).some((ids) => ids.length > 0);
@@ -115,7 +118,7 @@ export default function StaffViewPage() {
               )}
             </div>
             {points.length > 0 && <RouteMap points={points} lines={[line]} height={240} />}
-            {trips.length > 0 && (
+            {mapsOn && trips.length > 0 && (
               <div className="row" style={{ flexWrap: 'wrap', gap: 6 }} data-testid="sv-trip">
                 {trips.map((t) => {
                   const text = trips.length > 1 ? `${t.label}を開く` : '1日の全行程を開く';
@@ -143,7 +146,7 @@ export default function StaffViewPage() {
                 {me.travelMode === 'BICYCLE' && <span className="sub">{BICYCLE_NOTE}</span>}
               </div>
             )}
-            {me.travelMode === 'TRANSIT' && ids.length > 0 && (
+            {mapsOn && me.travelMode === 'TRANSIT' && ids.length > 0 && (
               <p className="sub" data-testid="sv-transit">
                 公共交通のため、1日の全行程のリンクはありません。訪問ごとの「自宅から」「前の場所から」「ここへ道案内」を使ってください。
               </p>

@@ -19,7 +19,7 @@ import {
 } from '../lib/rebuildBand';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
-import { useFeatures } from '../lib/useFeature';
+import { useFeature, useFeatures } from '../lib/useFeature';
 import { SavePresetForm } from '../pages/planParts';
 import { presetOf, scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
@@ -46,6 +46,11 @@ function useSettled<T>(value: T, ms: number): T {
  * 条件の重みの画面（rules）では、いまの条件がどのプリセットとも同じでなければ、いまの条件の使われ方の案内を同じ帯の2行目に出す（PRD D166）
  */
 export function RebuildBand({ rules = false }: { rules?: boolean }) {
+  // 条件の重みとプリセット（ADR-0028 の rules）を切っていれば帯を出さない（数えもしない）。「条件が変わった」は月の要対応に残る
+  return useFeature('rules') ? <RebuildBandOn rules={rules} /> : null;
+}
+
+function RebuildBandOn({ rules }: { rules: boolean }) {
   const { data } = useDemoData();
   const settled = useSettled(data, SETTLE_MS);
   const deferred = useDeferredValue<DemoData | null>(settled, null);

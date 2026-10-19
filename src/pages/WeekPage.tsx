@@ -55,6 +55,7 @@ import {
   timelineSelection,
 } from '../lib/timelineClients';
 import { useDayModel } from '../lib/useDayModel';
+import { useFeature } from '../lib/useFeature';
 import {
   allowedStaffOf,
   type Band,
@@ -163,6 +164,7 @@ export default function WeekPage() {
   const [notice, setNotice] = useState<Notice | null>(null);
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
   const [mailOpen, setMailOpen] = useState(false);
+  const mailOn = useFeature('mail');
   const [hover, setHover] = useState<{ date: string; start: number } | null>(null);
   /** つかんでいる訪問（チップの強調・「入れる人」に使う） */
   const [dragId, setDragId] = useState<string | null>(null);
@@ -917,14 +919,21 @@ export default function WeekPage() {
       ) : tab === 'table' ? (
         table && (
           <div className="card week-card">
-            <div className="row week-mail-row">
-              {/* 担当ごとの週の予定をメールアプリで開く（PRD D93。主ボタンにはしない） */}
-              <button type="button" className="btn btn-small" onClick={() => setMailOpen(true)} data-testid="week-mail">
-                <WithIcon icon={Mail} size={14}>
-                  週の予定をメールで送る
-                </WithIcon>
-              </button>
-            </div>
+            {/* 担当ごとの週の予定をメールアプリで開く（PRD D93。主ボタンにはしない）。メールを切っていれば出さない（ADR-0028） */}
+            {mailOn && (
+              <div className="row week-mail-row">
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => setMailOpen(true)}
+                  data-testid="week-mail"
+                >
+                  <WithIcon icon={Mail} size={14}>
+                    週の予定をメールで送る
+                  </WithIcon>
+                </button>
+              </div>
+            )}
             <div className="week-table-legend" data-testid="week-legend">
               <span className="row week-table-legend-rows">
                 <LoadRowsSample />
@@ -1275,7 +1284,7 @@ export default function WeekPage() {
           </p>
         </SidePanel>
       )}
-      {mailOpen && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
+      {mailOpen && mailOn && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
     </div>
   );
 }
