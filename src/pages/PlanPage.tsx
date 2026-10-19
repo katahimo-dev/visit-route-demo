@@ -919,7 +919,7 @@ export default function PlanPage() {
   const planIsStale = useMemo(() => {
     if (!aiPlan) return false;
     // 作った条件（重み・必須）がいまの条件にもどのプリセットにも無い（PRD D161。月・ホーム・帯と同じ lib/month の rulesStale）
-    if (rulesStale(data, date, currentRuleKeys(data.rules, data.presets))) return true;
+    if (rulesStale(data, date, currentRuleKeys(data.rules, data.presets, data.org.features))) return true;
     return planStale(compileInput, data, date, (rules, pins) => {
       if (Object.keys(pins).length > 0) return undefined;
       const key = JSON.stringify(rules);

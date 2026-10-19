@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Absence, Staff } from '../contracts/documents';
 import { FEATURE_IDS, type FeatureId, type Features } from '../contracts/features';
+import { createDemoData } from '../seed';
 import { paletteActions } from './commandPalette';
 import {
   applyTemplate,
+  calcFeaturesOf,
   FEATURE_GROUPS,
   FEATURES,
   featureDef,
@@ -15,10 +17,12 @@ import {
   isHrefOn,
   isOn,
   matchTemplate,
+  sameCalcFeatures,
   TEMPLATE_IDS,
   TEMPLATES,
   type TemplateId,
   templateDiff,
+  turnOffImpact,
   withFeature,
 } from './features';
 import { homeEntries, homeTasks } from './home';
@@ -413,5 +417,73 @@ describe('切った機能の入口を出さない（PRD D213）', () => {
     expect(attentionTarget(at('absentLeft'), { sudden: false })).toEqual(day);
     expect(attentionTarget(at('overSpan'), {}).to).toBe('/workload?ym=2026-10&staff=s1');
     expect(attentionTarget(at('unassigned'), applyTemplate('basic')).to).toBe(unassignedHref(TODAY));
+  });
+});
+
+describe('計算に効く入り切り（calcFeaturesOf・sameCalcFeatures。ADR-0028）', () => {
+  it('切っている相性・担当を限るだけを書く。すべて入・ほかの機能だけ切ったときは {}', () => {
+    expect(calcFeaturesOf({})).toEqual({});
+    expect(calcFeaturesOf({ mail: false, clientLeave: false })).toEqual({});
+    expect(calcFeaturesOf({ compat: false, allowedStaff: true })).toEqual({ compat: false });
+    expect(calcFeaturesOf(applyTemplate('basic'))).toEqual({ allowedStaff: false });
+  });
+  it('無い（古い記録）はすべて入と同じ', () => {
+    expect(sameCalcFeatures(undefined, {})).toBe(true);
+    expect(sameCalcFeatures(undefined, { compat: true, allowedStaff: true })).toBe(true);
+    expect(sameCalcFeatures(undefined, { compat: false })).toBe(false);
+    expect(sameCalcFeatures({ allowedStaff: false }, { allowedStaff: false })).toBe(true);
+  });
+});
+
+describe('turnOffImpact（切るときに残る・外れるデータ。PRD D215）', () => {
+  const d = createDemoData('2026-11-02');
+  const c0 = d.clients[0]!;
+  const c1 = d.clients[1]!;
+  const s0 = d.staff[0]!;
+  const data = {
+    ...d,
+    compat: { [c0.id]: { [s0.id]: -2 as const, [d.staff[1]!.id]: 0 as const }, [c1.id]: { [s0.id]: 2 as const } },
+    clients: d.clients.map((c, i) => ({ ...c, allowedStaffIds: i < 3 ? [s0.id] : [] })),
+    clientLeaves: [
+      { id: 'l1', clientId: c0.id, from: '2026-11-03', to: '2026-11-05', note: '入院' },
+      { id: 'l2', clientId: c1.id, from: '2026-11-10', to: '2026-11-10', note: '' },
+    ],
+    absences: [
+      { id: 'a1', staffId: s0.id, date: '2026-11-04', from: null, to: null, note: '希望休' },
+      { id: 'a2', staffId: s0.id, date: '2026-11-05', from: null, to: null, note: '病院' },
+    ],
+  };
+  it('相性は値のある組、担当を限るは限っている人の数で「計算から外れます」', () => {
+    expect(turnOffImpact(data, 'compat')).toEqual({ count: 2, text: '相性 2組は計算から外れます' });
+    expect(turnOffImpact(data, 'allowedStaff')).toEqual({ count: 3, text: '担当を限る 3人は計算から外れます' });
+  });
+  it('事実（休み・希望休）は「残り、計算に効き続けます」。呼び方を使う', () => {
+    expect(turnOffImpact(data, 'clientLeave')).toEqual({
+      count: 2,
+      text: `${d.org.terms.client}の休み 2件は残り、計算に効き続けます`,
+    });
+    expect(turnOffImpact(data, 'requestedOff')?.text).toBe('希望休 1件は残り、計算に効き続けます');
+  });
+  it('定期パターンは毎月・曜日ごとの時刻を使うものだけ数える', () => {
+    const p = d.patterns[0]!;
+    const withMonthly = {
+      ...data,
+      patterns: [
+        { ...p, id: 'p1', repeat: 'monthly' as const, monthWeeks: [1] },
+        { ...p, id: 'p2', repeat: 'weekly' as const, monthWeeks: [], dayTimes: [] },
+      ],
+    };
+    expect(turnOffImpact(withMonthly, 'patternMonthly')).toEqual({
+      count: 1,
+      text: '定期パターンの毎月・曜日ごとの時刻 1件は残り、訪問は今どおり作られます',
+    });
+  });
+  it('データが無い・数えない機能は null（確認を出さない）', () => {
+    const empty = { ...data, compat: {}, clientLeaves: [], absences: [] };
+    expect(turnOffImpact(empty, 'compat')).toBeNull();
+    expect(turnOffImpact(empty, 'clientLeave')).toBeNull();
+    expect(turnOffImpact(empty, 'requestedOff')).toBeNull();
+    expect(turnOffImpact(data, 'monthPrint')).toBeNull();
+    expect(turnOffImpact(data, 'compare')).toBeNull();
   });
 });

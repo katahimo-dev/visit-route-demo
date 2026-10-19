@@ -2,8 +2,10 @@
 // 機能の名前・説明・グループ・依存・その機能の URL・切ると隠れるもの・ひな形の入り切りはここの1か所。
 // メニュー（lib/nav）・ルート（app/App）・パレット（lib/commandPalette）・ホーム（lib/home）・ツアー（lib/tour）・
 // 行き先（lib/links）はここから引く。データは書き換えない（入り切りを書くのは画面の update(fn)）
-import type { Terms } from '../contracts/documents';
-import { FEATURE_IDS, type FeatureId, type Features, isFeatureId } from '../contracts/features';
+import type { CalcFeatures, DemoData } from '../contracts/data';
+import type { Pattern, Terms } from '../contracts/documents';
+import { CALC_FEATURE_IDS, FEATURE_IDS, type FeatureId, type Features, isFeatureId } from '../contracts/features';
+import { isRequestedOff } from './requestedOff';
 
 /** 機能のグループ（管理者設定のスイッチの並び。ADR-0028 の表の順） */
 export const FEATURE_GROUPS = [
@@ -363,3 +365,83 @@ export function templateDiff(features: Features, id: TemplateId): { on: FeatureI
 
 /** スイッチを押したあとの入り切り（その機能だけ入・切を明示して書く。ほかは変えない） */
 export const withFeature = (features: Features, id: FeatureId, on: boolean): Features => ({ ...features, [id]: on });
+
+/**
+ * 計算に効く入り切り（ADR-0028。PRD D214。AiRun.calcFeatures に書く）：相性・担当を限るのうち、切っているものだけを書く
+ * （すべて入なら {}。無い ID は入なので、記録が無い古いデータと同じ）
+ */
+export function calcFeaturesOf(features: Features): CalcFeatures {
+  const out: CalcFeatures = {};
+  for (const id of CALC_FEATURE_IDS) if (!isOn(features, id)) out[id] = false;
+  return out;
+}
+
+/** 計算に効く入り切りが同じか（無い ID は入。記録に calcFeatures が無ければすべて入） */
+export function sameCalcFeatures(a: CalcFeatures | undefined, b: CalcFeatures | undefined): boolean {
+  return CALC_FEATURE_IDS.every((id) => (a?.[id] !== false) === (b?.[id] !== false));
+}
+
+/** 切るときに残る・外れるデータ（D215）：件数と、確認ダイアログに出す1行の文 */
+export type TurnOffImpact = { count: number; text: string };
+
+/** 定期パターンのうち、毎月の第N週か曜日ごとの時刻を使うもの */
+const usesMonthly = (p: Pattern): boolean => p.repeat === 'monthly' || p.dayTimes.length > 0;
+
+/**
+ * その機能を切るときに残る・外れるデータの件数と効き方（D215。管理者設定の確認ダイアログの文）。
+ * 計算から外れるのは好み・社内の決まり（相性・担当を限る）、事実（休み・希望休・最終勤務日・パターン）は残って効き続ける。
+ * 画面から隠れるだけのデータ（段階・紹介元・決まりごと・メールアドレス）は残ると出す。
+ * 件数の数え方の決まった機能でデータが無い・数えない機能は null（確認を出さない）
+ */
+export function turnOffImpact(
+  data: Pick<DemoData, 'org' | 'compat' | 'clients' | 'staff' | 'clientLeaves' | 'absences' | 'patterns'>,
+  id: FeatureId,
+): TurnOffImpact | null {
+  const { client, staff } = data.org.terms;
+  const one = (count: number, text: string): TurnOffImpact | null => (count > 0 ? { count, text } : null);
+  switch (id) {
+    case 'compat': {
+      let n = 0;
+      for (const row of Object.values(data.compat)) for (const level of Object.values(row)) if (level !== 0) n++;
+      return one(n, `相性 ${n}組は計算から外れます`);
+    }
+    case 'allowedStaff': {
+      const n = data.clients.filter((c) => c.allowedStaffIds.length > 0).length;
+      return one(n, `担当を限る ${n}人は計算から外れます`);
+    }
+    case 'clientLeave': {
+      const n = data.clientLeaves.length;
+      return one(n, `${client}の休み ${n}件は残り、計算に効き続けます`);
+    }
+    case 'patternMonthly': {
+      const n = data.patterns.filter(usesMonthly).length;
+      return one(n, `定期パターンの毎月・曜日ごとの時刻 ${n}件は残り、訪問は今どおり作られます`);
+    }
+    case 'requestedOff': {
+      const n = data.absences.filter(isRequestedOff).length;
+      return one(n, `希望休 ${n}件は残り、計算に効き続けます`);
+    }
+    case 'offboard': {
+      const n = data.staff.filter((s) => s.lastDay !== null).length;
+      return one(n, `最終勤務日 ${n}人（${staff}）は残り、計算に効き続けます`);
+    }
+    case 'clientStage': {
+      const n = data.clients.filter(
+        (c) => (c.stage !== 'active' && c.stage !== 'ended') || c.referrer.name.trim() !== '',
+      ).length;
+      return one(n, `段階・紹介元 ${n}人（${client}）は残ります（段階は今の名前で出ます）`);
+    }
+    case 'visitNotes': {
+      const n = data.clients.filter((c) =>
+        [c.entryNote, c.keyNote, c.parkingNote, c.cautionNote].some((x) => x.trim() !== ''),
+      ).length;
+      return one(n, `訪問先の決まりごと ${n}人（${client}）は残ります`);
+    }
+    case 'mail': {
+      const n = data.staff.filter((s) => s.email.trim() !== '').length;
+      return one(n, `メールアドレス ${n}人（${staff}）は残ります`);
+    }
+    default:
+      return null;
+  }
+}

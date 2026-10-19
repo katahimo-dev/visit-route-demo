@@ -1,7 +1,8 @@
 // 月間カレンダー・月まとめ作成（ADR-0012 段階1。design.md §4 pages「月単位の予定」）の画面の純粋関数。
 // データは書き換えず、新しい DemoData を返す（書くのは画面の update(fn)）
-import type { AiPlan, AiRun, DemoData } from '../contracts/data';
+import type { AiPlan, AiRun, CalcFeatures, DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
+import type { Features } from '../contracts/features';
 import type { Problem, SolveResult, StopTiming } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
 import { HARDABLE, type Preset, type Rule } from '../contracts/rules';
@@ -13,6 +14,7 @@ import { type CompileInput, compile, scheduleRoute } from '../matching';
 import { applyPatterns } from '../patterns';
 import { applyPreset } from '../seed/presets';
 import { attempt, own } from './common';
+import { calcFeaturesOf, sameCalcFeatures } from './features';
 import { isRequestedOff } from './requestedOff';
 import { addRun, findRun, problemKey } from './runs';
 import { busyParts, type StaffSlot, spansOf, staffSlots } from './staffBar';
@@ -144,13 +146,16 @@ export type RuleKeys = {
   presets: ReadonlySet<string>;
   /** いまの条件（条件の重みの画面の重み）そのもの */
   current: string;
+  /** いまの計算に効く入り切り（ADR-0028。PRD D214。切っているものだけ） */
+  calc: CalcFeatures;
 };
 
-/** いまある条件の組のキー（PRD D161）：いまの条件に各プリセットを当てたものと、いまの条件そのもの */
-export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): RuleKeys {
+/** いまある条件の組のキー（PRD D161）：いまの条件に各プリセットを当てたもの、いまの条件そのもの、いまの計算に効く入り切り */
+export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[], features: Features = {}): RuleKeys {
   return {
     presets: new Set(presets.map((p) => ruleSetKey(applyPreset([...rules], p)))),
     current: ruleSetKey(rules),
+    calc: calcFeaturesOf(features),
   };
 }
 
@@ -162,10 +167,12 @@ export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset
  * - いまの条件で作った案（presetId が null＝どのプリセットとも一致しなかった）は、それに加えていまの条件とも違えば変わった
  * 作り直しは点数の基準のプリセットで作るので、作り直した案は必ず当てはまる（true が残り続けない）。点数の基準を切り替えただけでは
  * 変わらない（前の基準のプリセットもまだある）。名前は計算に効かないので見ない。記録が無い・欠勤の振り直しの記録は判定しない（false）
+ * - 機能の入り切り（ADR-0028。PRD D214）：記録の計算に効く入り切り（calcFeatures。無ければすべて入）がいまと違えば変わった
  */
 export function rulesStale(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string, keys: RuleKeys): boolean {
   const run = planRunOf(data, date);
   if (!run || run.reassign) return false;
+  if (!sameCalcFeatures(run.calcFeatures, keys.calc)) return true;
   const key = ruleSetKey(run.rules);
   if (keys.presets.has(key)) return false;
   return run.presetId !== null || key !== keys.current;

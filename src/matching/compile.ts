@@ -149,7 +149,12 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   // 担当できる人（ADR-0014）：その日の問題にいる（利用中の）人だけを数える。だれもいなければ限らない（repair と同じ扱い）
   const activeName = new Map(staffDocs.map((s) => [s.id, s.name]));
   const limitOf = new Map<string, { ids: Set<string>; names: string }>();
-  for (const c of clients.values()) {
+  // 機能の入り切り（ADR-0028。PRD D214）：切った好み・社内の決まりは読まない（そのデータが空のときと同じ問題）。
+  // compat・allowedStaff は依存先が無いので、スイッチが切（false）かだけを見る。事実（休み・欠勤・最終勤務日・パターン）は読む
+  const features = data.org.features;
+  const compatOn = features.compat !== false;
+  const allowedStaffOn = features.allowedStaff !== false;
+  for (const c of allowedStaffOn ? clients.values() : []) {
     const ids = [...new Set(c.allowedStaffIds)].filter((id) => activeName.has(id));
     if (ids.length > 0) limitOf.set(c.id, { ids: new Set(ids), names: ids.map((id) => activeName.get(id)).join('、') });
   }
@@ -244,7 +249,7 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
         const label = day.absence && fits(day.base) ? ABSENCE_OVERLAP : '稼働時間帯に作業が収まらない';
         out.push({ ruleId: 'slot', label, points: INF });
       }
-      const level = data.compat[client.id]?.[s.id] ?? 0;
+      const level = compatOn ? (data.compat[client.id]?.[s.id] ?? 0) : 0;
       // 相性×は重み・hard にかかわらず外す
       if (level === -2) out.push({ ruleId: firstCompat, label: '相性×', points: INF, level: -2 });
       const pin = pins?.[pv.id];

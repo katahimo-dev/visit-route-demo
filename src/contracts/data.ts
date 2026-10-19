@@ -14,6 +14,7 @@ import {
   visitSchema,
   visitTypeSchema,
 } from './documents';
+import type { CalcFeatureId } from './features';
 import { compatSchema, itemSchema, presetSchema, ruleSchema } from './rules';
 
 /** localStorage のキー（1つの JSON） */
@@ -93,6 +94,16 @@ export type AiPlan = z.infer<typeof aiPlanSchema>;
 export const MAX_RUNS_PER_DAY = 20;
 
 /**
+ * 記録を作ったときの、計算に効く機能（CALC_FEATURE_IDS：相性・担当を限る）の入り切り（ADR-0028。PRD D214）。
+ * 部分的な表で、無い ID は入。記録に無ければすべて入（古い記録）。知らないキーは捨てる
+ */
+export const calcFeaturesSchema = z.object({
+  compat: z.boolean().optional(),
+  allowedStaff: z.boolean().optional(),
+});
+export type CalcFeatures = Partial<Record<CalcFeatureId, boolean>>;
+
+/**
  * AI案の記録（ADR-0005）：AI案を作る・固定を残して組み直すたびに、作ったときの条件と結果を1件残す。
  * 比較の画面で任意の2つを選んで比べる。label はプリセットと一致すればプリセット名、違えば「条件を変えた案」。
  * presetId は最後に作ったとき（同じ記録を使い回したときも）に重みが一致した最初のプリセット（どれとも一致しなければ null。lib/runs の addRun。PR #40 の再レビュー）。pins は組み直しで残した固定（作ったときは {}）
@@ -121,6 +132,8 @@ export const aiRunSchema = z.object({
   inputKey: z.string().max(100).optional(),
   /** 記録が欠勤の振り直しなら付く（比較の「欠勤前」。reusableRun の対象外。ADR-0011） */
   reassign: reassignInfoSchema.optional(),
+  /** 作ったときの計算に効く機能の入り切り（ADR-0028）。無ければすべて入。今と違えば「条件が変わった」（lib/month の rulesStale） */
+  calcFeatures: calcFeaturesSchema.optional(),
 });
 export type AiRun = z.infer<typeof aiRunSchema>;
 

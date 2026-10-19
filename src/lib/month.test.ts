@@ -725,3 +725,46 @@ describe('最終勤務日・拘束の上限・当日キャンセル（ADR-0015�
     expect(clientMonth(d, [dayPlanOf(d, DATE)], 'c1').sameDay).toBe(0);
   });
 });
+
+describe('計算に効く入り切りが変わったか（rulesStale。ADR-0028。PRD D214）', () => {
+  const keysOf = (d: DemoData) => currentRuleKeys(d.rules, d.presets, d.org.features);
+  const firstDay = (d: DemoData) => batchTargets(d, '2026-11', TODAY, 'empty')[0]!;
+  const withFeatures = (d: DemoData, features: DemoData['org']['features']): DemoData => ({
+    ...d,
+    org: { ...d.org, features },
+  });
+
+  it('すべて入で作った記録は calcFeatures を書かず（今と同じ形）、すべて入のままなら変わったにしない', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    const d = withPlan(d0, a);
+    expect(planRunOf(d, a)!.calcFeatures).toBeUndefined();
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    // 計算に効かない機能を切っても変わらない
+    const off = withFeatures(d, { mail: false, clientLeave: false, rules: false });
+    expect(rulesStale(off, a, keysOf(off))).toBe(false);
+  });
+
+  it('相性を切ると変わった。切ったまま作り直すと記録に calcFeatures が書かれて消え、入れ直すとまた変わった', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    let d = withPlan(d0, a);
+    d = withFeatures(d, { compat: false });
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+    d = withPlan(d, a);
+    expect(planRunOf(d, a)!.calcFeatures).toEqual({ compat: false });
+    expect(rulesStale(d, a, keysOf(d))).toBe(false);
+    d = withFeatures(d, {});
+    expect(rulesStale(d, a, keysOf(d))).toBe(true);
+  });
+
+  it('calcFeatures の無い古い記録はすべて入：担当を限るを切ると変わった、入を明示しても変わらない', () => {
+    const d0 = novData();
+    const a = firstDay(d0);
+    const d = withPlan(d0, a);
+    const on = withFeatures(d, { compat: true, allowedStaff: true });
+    expect(rulesStale(on, a, keysOf(on))).toBe(false);
+    const off = withFeatures(d, { allowedStaff: false });
+    expect(rulesStale(off, a, keysOf(off))).toBe(true);
+  });
+});
