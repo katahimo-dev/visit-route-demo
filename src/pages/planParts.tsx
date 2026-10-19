@@ -2,6 +2,7 @@
 
 import type { LucideIcon } from 'lucide-react';
 import {
+  ArrowRight,
   BookmarkPlus,
   Car,
   CircleOff,
@@ -15,20 +16,26 @@ import {
   SlidersHorizontal,
   TrendingDown,
 } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useDeferredValue, useMemo, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { WeightSlider } from '../components/parts';
 import { Hint, SectionTitle, WithIcon } from '../components/ui';
+import type { DemoData } from '../contracts/data';
 import type { Terms } from '../contracts/documents';
 import type { HundredPart, PlanScore, Problem, RuleAchievement, ScoreScale, VisitExplain } from '../contracts/problem';
 import { HARDABLE, MAX_PRESETS, type Rule } from '../contracts/rules';
-import { minutesToHhmm } from '../domain/time';
+import { jstDate, minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel, weightLocked } from '../lib/common';
+import { nextUnconfirmed } from '../lib/confirmDay';
 import { isHrefOn } from '../lib/features';
 import { unassignedHref } from '../lib/links';
+import { addMonths, monthDates, ymOf } from '../lib/month';
+import { mdText } from '../lib/patternText';
 import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
 import { reasonFace, type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
+import { useCompileInput } from '../lib/useDayModel';
+import { useDayStatuses } from '../lib/useDayStatuses';
 import { ALLOWED_STAFF_RULE_ID, VISIT_TYPE_RULE_ID } from '../matching';
 import { presetOf } from '../seed';
 import { useDemoData } from '../store';
@@ -519,4 +526,60 @@ export function achievementSummary(list: RuleAchievement[], rules: Rule[]): stri
     if (a.compat) out.push(`相性◎○ ${a.compat.great + a.compat.good}件`);
   for (const a of list.filter((x) => typeOf(x.ruleId) === 'continuity')) out.push(`いつもの担当 ${pct(a)}`);
   return out.join('・');
+}
+
+/**
+ * 確定した日の見出しの「次の確定していない日へ（10/23）」（PRD D224）。その日より後・今日以降で、訪問があって確定済みでない日
+ * （月の右の欄・ホームの「確定していない日」と同じ数え方。lib/useDayStatuses）のうち最初の日を選ぶ。見る範囲はその日の月と翌月。
+ * 数えるのは描画の後（useDeferredValue。確定の操作を待たせない）。無ければ出さない
+ */
+export function NextUnconfirmed({ date, onPick }: { date: string; onPick: (date: string) => void }) {
+  const { data } = useDemoData();
+  const deferred = useDeferredValue<DemoData | null>(data, null);
+  if (!deferred) return null;
+  return <NextUnconfirmedBody data={deferred} date={date} onPick={onPick} />;
+}
+
+function NextUnconfirmedBody({ data, date, onPick }: { data: DemoData; date: string; onPick: (date: string) => void }) {
+  const today = jstDate(Date.now());
+  const compileInput = useCompileInput(data);
+  const days = useMemo(() => {
+    const ym = ymOf(date);
+    return [...monthDates(ym), ...monthDates(addMonths(ym, 1))].filter((d) => d > date && d >= today);
+  }, [date, today]);
+  const perDay = useDayStatuses(data, compileInput, days);
+  const next = useMemo(
+    () =>
+      nextUnconfirmed(
+        days.filter((d) => {
+          const s = perDay.get(d)?.status;
+          return !!s && s.count > 0 && s.state !== 'confirmed';
+        }),
+        date,
+      ),
+    [days, perDay, date],
+  );
+  if (!next) return null;
+  return (
+    <button
+      type="button"
+      className="btn btn-small"
+      onClick={() => {
+        onPick(next);
+        // 押したボタンは消えることがあるので、フォーカスは画面の見出しへ
+        requestAnimationFrame(() => {
+          const to = document.querySelector<HTMLElement>('.app-main h1');
+          if (!to) return;
+          if (!to.hasAttribute('tabindex')) to.setAttribute('tabindex', '-1');
+          to.focus({ preventScroll: true });
+        });
+      }}
+      data-testid="plan-next-unconfirmed"
+      data-date={next}
+    >
+      <WithIcon icon={ArrowRight} size={14}>
+        次の確定していない日へ（{mdText(next)}）
+      </WithIcon>
+    </button>
+  );
 }

@@ -365,6 +365,27 @@
   margin: 4px 0 0;
   font-size: 0.9rem;
 }
+/* 問題の無い日をまとめて確定（PRD D223） */
+.month-confirm-bulk {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.month-confirm-bulk .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.month-confirm-bulk p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+@media print {
+  .month-confirm-bulk {
+    display: none;
+  }
+}
 .month-attention,
 .month-bystaff,
 .month-types {

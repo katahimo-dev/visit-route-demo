@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { shouldAutoOpenTour, tourCountText, tourMove, tourNextLabel, tourSteps } from './tour';
+import { shouldAutoOpenTour, TOUR_TODAY_LABEL, tourCountText, tourMove, tourNextLabel, tourSteps } from './tour';
 
 const terms = { staff: 'スタッフ', client: '利用者さん' };
 
 describe('tourSteps', () => {
-  it('5枚：ホーム → 予定 → 欠勤・キャンセル → 条件 → 探す', () => {
+  it('6枚：ホーム → 予定 → 欠勤・キャンセル → 条件 → 探す → 3段（PRD D226）', () => {
     const s = tourSteps(terms, false);
-    expect(s.map((x) => x.key)).toEqual(['home', 'plan', 'absence', 'rules', 'search']);
+    expect(s.map((x) => x.key)).toEqual(['home', 'plan', 'absence', 'rules', 'search', 'flow']);
     for (const x of s) {
       expect(x.title).not.toBe('');
       expect(x.body).not.toBe('');
@@ -19,8 +19,20 @@ describe('tourSteps', () => {
     expect(s[2]!.body).toContain('お客様の当日キャンセル');
     expect(s[4]!.title).toBe('Ctrl+K で探せます');
     expect(tourSteps(terms, true)[4]!.title).toBe('⌘K で探せます');
+    expect(s[5]!.points!.join('')).toContain('ヘルパーの画面');
     // 呼び方を直書きしない
     expect(JSON.stringify(s)).not.toContain('利用者さん');
+    expect(JSON.stringify(tourSteps(terms, false))).not.toContain('ヘルパー');
+  });
+  it('最後の枚は3段（AI案 → 手直し（固定）→ 確定）を順に並べる', () => {
+    const last = tourSteps(terms, false).at(-1)!;
+    expect(last.key).toBe('flow');
+    expect(last.title).toContain('AI案 → 手直し → 確定');
+    expect(last.points).toHaveLength(3);
+    expect(last.points![0]).toMatch(/^AI案：/);
+    expect(last.points![1]).toMatch(/^手直し（固定）：/);
+    expect(last.points![2]).toMatch(/^確定：/);
+    expect(last.body).toContain('今日の予定を開いて');
   });
 });
 
@@ -41,9 +53,10 @@ describe('tourMove', () => {
     expect(tourMove(0, 0, 'next')).toBeNull();
   });
   it('ボタンの文と何枚目か', () => {
-    expect(tourNextLabel(0, 5)).toBe('次へ');
-    expect(tourNextLabel(4, 5)).toBe('はじめる');
-    expect(tourCountText(1, 5)).toBe('2 / 5');
+    expect(tourNextLabel(0, 6)).toBe('次へ');
+    expect(tourNextLabel(5, 6)).toBe('閉じる');
+    expect(TOUR_TODAY_LABEL).toBe('今日の予定を開く');
+    expect(tourCountText(1, 6)).toBe('2 / 6');
   });
 });
 

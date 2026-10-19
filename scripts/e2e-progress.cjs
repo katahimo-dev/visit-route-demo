@@ -99,9 +99,27 @@ async function expectBatch(page, n, name) {
 /** まとめて作るの欄（SidePanel） */
 const batchPanel = (page, ym) => page.getByRole('dialog', { name: `${monthNo(ym)}月の案をまとめて作る` });
 
+/**
+ * 初期データの案（今日から7日分。PRD D225）を消して読み直す。案の無い日から始める確かめ用
+ * （月末の6日以内は今月の残りが全部案で埋まり、次の一手が「まとめて作る」にならないため）
+ */
+async function clearPlans(page) {
+  await editData(
+    page,
+    (key) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      d.aiPlans = {};
+      d.aiRuns = {};
+      localStorage.setItem(key, JSON.stringify(d));
+    },
+    STORAGE_KEY,
+  );
+}
+
 // ---- 月の画面：入口は帯の1か所 ----
 async function monthEntry(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
+  await clearPlans(page);
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   check(
     (await page.getByTestId('progress-band').isVisible()) &&

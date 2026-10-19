@@ -44,7 +44,7 @@ import { PersonPopoverProvider } from '../components/PersonPopover';
 import { RebuildBand } from '../components/rebuildBand';
 import { TourProvider } from '../components/Tour';
 import { addDays, jstDate } from '../domain/time';
-import { isPaletteShortcut } from '../lib/commandPalette';
+import { hashPathname, isPaletteShortcut, keepPaletteOn } from '../lib/commandPalette';
 import { dateText } from '../lib/common';
 import { featureLabel, featureOfLocation, isFeatureOffState, isOn } from '../lib/features';
 import {
@@ -217,8 +217,13 @@ function AdminShell() {
   const headerRef = useRef<HTMLElement>(null);
   const sideNavRef = useRef<HTMLElement>(null);
   const drawerId = useId();
-  /** コマンドパレットを開いているか（PRD D181） */
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  /**
+   * コマンドパレットを開いた画面のパス（閉じていれば null。PRD D181）。開いたときの URL の hash から決める
+   * （画面を移ってすぐ開いたとき、移った先の画面の描画より先に開いても、あとの「画面を移ったら閉じる」で閉じない）
+   */
+  const [paletteFor, setPaletteFor] = useState<string | null>(null);
+  const paletteOpen = paletteFor !== null;
+  const openPalette = useCallback(() => setPaletteFor(hashPathname(window.location.hash)), []);
   // Ctrl+K（mac は ⌘K）でコマンドパレットを開く（PRD D181）。入力欄・テキストエリアの中でも開く（入れた文字はそのまま、閉じるとそこへ戻る）。
   // ほかの欄・確認・引き出し（aria-modal）が開いているあいだは開かない（そのときもブラウザの動きは止める）。開いたあとのキーはパレットが受ける
   useEffect(() => {
@@ -227,18 +232,18 @@ function AdminShell() {
       // 開かないときもブラウザの動き（検索欄・アドレスバーへ移る）は止める
       e.preventDefault();
       if (document.querySelector('[aria-modal="true"]')) return;
-      setPaletteOpen(true);
+      openPalette();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [openPalette]);
   // 画面を移ったら上へ。引き出しも閉じる（画面を選ぶと閉じる。PRD D133）
   // 本体はブロックにする（式本体だと戻り値が後始末として呼ばれる。Brave の scrollTo は値を返し「is not a function」になった）
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 画面を移ったときだけ
   useEffect(() => {
     window.scrollTo(0, 0);
     setMenuOpen(false);
-    setPaletteOpen(false);
+    // 移った先の画面で開き直したパレットは閉じない
+    setPaletteFor((p) => keepPaletteOn(p, pathname));
   }, [pathname]);
   // 広い画面へ戻ったら引き出しを閉じる（左のメニューが出るので）
   useEffect(() => {
@@ -325,7 +330,7 @@ function AdminShell() {
               aria-haspopup="dialog"
               aria-expanded={paletteOpen}
               aria-keyshortcuts={IS_MAC ? 'Meta+K' : 'Control+K'}
-              onClick={() => setPaletteOpen(true)}
+              onClick={openPalette}
               data-testid="cmdk-open"
             >
               <Search size={16} aria-hidden="true" />
@@ -405,7 +410,7 @@ function AdminShell() {
             })}
           </nav>
         </div>
-        {paletteOpen && <CommandPalette sections={groups} terms={terms} onClose={() => setPaletteOpen(false)} />}
+        {paletteOpen && <CommandPalette sections={groups} terms={terms} onClose={() => setPaletteFor(null)} />}
         {menuOpen && (
           <NavDrawer
             id={drawerId}

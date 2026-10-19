@@ -1,6 +1,6 @@
 # 日の画面（予定と AI案）
 
-> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`、`src/components/Toast.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219。
+> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`、`src/components/Toast.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224。
 > 欠勤・キャンセルの欄と振り直しは [pages-plan-absence.md](pages-plan-absence.md)、バーの塗りは [pages-bars.md](pages-bars.md)。
 
 ### 日の画面（`#/plan`。ADR-0009）
@@ -31,9 +31,10 @@
 
 #### 状態の印と確定
 
-- 「この割当で確定」：`manualPlans[date]` と各訪問の `staffId` に今の案を写す（独自の確認ダイアログ）。休みの訪問は前の確定した担当のまま残す（`lib/leaves` の `keepLeaveVisits`）
+- 「この割当で確定」：`manualPlans[date]` と各訪問の `staffId` に今の案を写す（独自の確認ダイアログ）。書き方は `lib/confirmDay` の `confirmDay(d, date, problem)`（純粋関数。テストあり。月の「問題の無い日をまとめて確定」と共通）：計算に入れていない訪問の担当は確定した割当（無ければ訪問の担当）のまま、休みの訪問は前の確定した担当のまま残す（`lib/leaves` の `keepLeaveVisits`）
 - 確定の確認（PRD D219）：入らない訪問・必須の違反があれば、本文の先頭に件数の行（`lib/planMenu` の `adoptWarnings(dropped, hard)`：「入らない訪問が N件あります（担当なしのまま確定します）」「必須の違反が N件あります（必須の条件に合わないまま確定します）」）と空行、続けていつもの本文。数は1行のまとめと同じ今の案の採点（`curScore` の `dropped`・`hardViolations` の件数）。色はオレンジのまま（確認ダイアログに注意の色は無く、赤は消す・捨てる操作。ADR-0026・0030）
 - 計算に入れた訪問の担当が `manualPlans[date]` と一致すれば「確定済み」、違えば「未確定の変更あり」
+- 確定済みのとき、印の横に「次の確定していない日へ（10/23）」（`planParts` の `NextUnconfirmed`・`plan-next-unconfirmed`・`data-date`。PRD D224）：その日より後・今日以降で、その日の月と翌月の確定していない日（`useDayStatuses` の状態で訪問があり確定済みでない日。月の右の欄・ホームと同じ数え方。`lib/confirmDay` の `nextUnconfirmed`）の最初の日。描画の後に数える（`useDeferredValue`）。押すとその日を選び、フォーカスは画面の見出しへ。無ければ出さない
 - すべての訪問を取り消すと今の案の欄・列は出ず「この割当で確定」も押せない（`alignPlan`）
 
 #### 1行のまとめと点数の理由（PRD D173）
@@ -273,7 +274,8 @@
 - [ ] 訪問を取り消すと今の案の列・点からその訪問が消え、足すと「入らなかった訪問」に出る。すべて取り消すと今の案の欄・列は出ず「この割当で確定」も押せない（`alignPlan` のテスト）
 - [ ] 担当の列の見出しの下にその日の稼働時間帯と「この日だけ変更」が出る。訪問を「入らなかった訪問」（ドラッグ中は0件でも出る）へドラッグすると未割当になり固定が外れる
 - [ ] 休み・休止中の人の列は出さない（今の案で訪問がある人を除く）。時間の約束・稼働時間帯の違反は、移したあとに必須の違反として赤い枠で出る
-- [ ] 「この割当で確定」で `manualPlans[date]` と各訪問の担当が今の案になり、「確定済み」が出る。手直しすると「未確定の変更あり」になる
+- [ ] 「この割当で確定」で `manualPlans[date]` と各訪問の担当が今の案になり、「確定済み」が出る。手直しすると「未確定の変更あり」になる（`lib/confirmDay` のテスト）
+- [ ] 確定すると「次の確定していない日へ（M/D）」が出て、押すとその日が開く（`scripts/e2e-home.cjs`）
 - [ ] 手直しで必須の条件に合わない担当にすると赤い枠と違反の印が出る
 - [ ] 入らない訪問の「受けられる人」から「この人に入れる」を押すとその人の列に入り固定になる。後ろの訪問が遅れるときだけ確認が出る
 - [ ] （D43）案を作ったあとにその日の訪問を直すと「条件が変わった」が出て、作り直すと消える

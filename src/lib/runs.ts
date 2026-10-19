@@ -145,6 +145,8 @@ export function problemKey(p: Problem): string {
  * - 計算に使った問題のキー（inputKey）が、いまの条件で作った問題 target のキーと同じ（訪問・スタッフ・稼働時間・移動・相性などがすべて同じ）。
  *   inputKey が無い古い記録は使わない
  * 同じ入力からは同じ案になる（solver は決定的。反復の回数も問題から決まる）ので、作り直しても同じ案になる。無ければ undefined。
+ * 例外：初期データの案（seed/plans。PRD D225・ADR-0031）は反復を10万回までに減らして作るので、画面の既定の反復で作り直すと
+ * 少し違う案になることがある。それでも上の条件を満たせば使い回す（反復の回数は見ない。条件はこのまま）
  * key は problemKey(target)（すでに作ってあれば渡して計算を省く）
  */
 export function reusableRun(

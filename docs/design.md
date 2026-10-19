@@ -112,6 +112,7 @@ flowchart LR
   vacancy -->|問題を作る・時刻| matching
   vacancy -->|他の人を変えずに入る人| reassign
   seed -->|初期の訪問をパターンから作らせる| patterns
+  seed -->|初期の7日分の案の問題を作る・解かせる（seed/plans）| solver
   store -->|起動時に今日からの訪問を足させる| patterns
   patterns -->|日付・曜日| domain
   matching -->|休みの訪問を外す（leaveOn）| domain
@@ -139,7 +140,7 @@ flowchart LR
 ### store（データ一式の保存）
 - 責務：`DemoData` の読み込み・保存・検査（zod）・版の移行・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す、置き換える前の1世代の控え（ADR-0032）。画面へは `useDemoData()`（`data`・`update(fn)`・`replace(d)`・`reset()`・`saveError`・`keepPrevious(reason)`・`restorePrevious()`・`previous`・`broken`・`brokenKept`・`dismissBroken()`・`externalReloads`・`previousDrops`）。書き換えは update・replace・reset・restorePrevious だけ
 - 持つデータ（持ち主）：`DemoData`（キー `vrdemo:data:v1` の1つの JSON）、読めなかった元の文字（`vrdemo:data:broken`）、1世代の控え（`vrdemo:data:prev`＝置き換える前の `DemoData` の JSON、`vrdemo:data:prev:info`＝`{ at, reason }`（時刻 ms・操作の名前））、案内ツアーを見たか（キー `vrdemo:tour:seen`）、最後に書き出した日（`vrdemo:backup:last`＝`{ date: 'YYYY-MM-DD', kind: 'json' | 'excel' }`）と控えの知らせを出した日（`vrdemo:backup:reminded`＝'YYYY-MM-DD'）。`vrdemo:data:v1` 以外はブラウザごとの記録で、DemoData の外（版・書き出し・読み込み・初期状態に戻すの対象外。`src/contracts/` に足さない）
-- 提供するAPI：`load()`・`loadWithStatus()`（無ければ seed で作る。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データで `broken: true`。退避が容量超過なら1世代の控えを捨ててもう1回、それでもだめなら `brokenKept: false`。読めたら `extendDays`）、`brokenText()`（退避した元の文字。退避できていなければ開いたときに覚えた元の文字、それも無ければ本体のキーの読めない文字）、`save(data, onResult)`（300ms 間引き。`flushSave()`。結果は `(message, droppedPrevious)`：容量のために控えを捨てたか）、`reset()`、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
+- 提供するAPI：`load()`・`loadWithStatus()`（無ければ seed の `createInitialData(今日)` で作る。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データで `broken: true`（退避が容量超過なら1世代の控えを捨ててもう1回。退避できたら初期データを書き、読み直すたびに作り直さない。それでも退避できなければ元の文字を残して `brokenKept: false`）。読めたら `extendDays`）、`brokenText()`（退避した元の文字。退避できていなければ開いたときに覚えた元の文字、それも無ければ本体のキーの読めない文字）、`save(data, onResult)`（300ms 間引き。`flushSave()`。結果は `(message, droppedPrevious)`：容量のために控えを捨てたか）、`reset()`（`createInitialData(今日)`）、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
 - repair（いない物を指す参照を除き、ID の重複は最初の1件）：
   - 割当・相性・上書き・固定・記録・今の案と記録の `reassign` の `base*`（`absenceIds` は残す）。記録は1日20件まで（古いものから捨てる）
   - プリセット：6つまで・0件なら初期の3種・重みは 0〜5・0.5刻み（`clampWeight`）・必須にできない型の必須は外す。`scorePresetId` が無効なら先頭
@@ -151,7 +152,7 @@ flowchart LR
 - 1世代の控え（PRD D227。ADR-0032）：`keepPrevious(data, reason, at)` は置き換える前のデータを `vrdemo:data:prev` に書く（次に残すと上書き）。書けなければ前の世代を消して1回だけ試し直し、それでもだめなら残さず `{ kept: false, why: '控えを残せません：容量不足' }`（操作は止めない）。`cancel()` で前の世代に戻す（確認を取り消したとき）。画面は確認で OK になってから残す（確認の本文は見込みの `canKeepPrevious()`：保存が使えない・最後の保存が容量超過なら「容量不足」）。`previousInfo()`・`readPrevious()`（`importJson` を通す）・`samePreviousInfo(a, b)`（同じなら react の state を替えない）。`swapPrevious(now)` は控えを読み、いまのデータを「直前の状態に戻す」として控えてから控えのデータを返す（もう一度戻せる）。いまのデータを控えに残せなければ戻さず（控えは元のまま）「いまのデータを控えに残せないため戻せません：容量不足」。react の `restorePrevious()` はこれを使う。本体の保存（`writeNow`）が容量超過なら控えを捨ててもう1回書き（いまのデータが先）、捨てたら `previousDrops` を1つ増やす（画面がトースト「容量が足りないため、直前の状態の控えを消しました」）
 - 最後に書き出した日・控えの知らせ：`store/backup.ts` の `backupMemory`（`lastExport()`・`markExported(kind, date)`・`lastReminded()`・`markReminded(date)`。`createBackupMemory(getStorage)`）。ツアーと同じく DemoData の外。知らせるかは `lib/backupReminder` の `shouldRemindBackup`（純粋関数）
 - 別のタブの変更：`storage` イベントで `vrdemo:data:v1` が変われば読み直し（書き戻さない）、`externalReloads` を1つ増やす（画面が知らせを出す）。控えのキーが変われば `previous` を読み直す
-- 依存するもの：seed、patterns、zod
+- 依存するもの：seed（`seed/plans` の `createInitialData` も）、patterns、zod
 - 配置：`src/store/`
 - 完了の条件：
   - [ ] 壊れた・古い版の JSON は移行するか、元のデータを残して日本語のエラーを返す（画面が真っ白にならない）
@@ -162,11 +163,12 @@ flowchart LR
   - [ ] パターンがあり今日以降の訪問が無いと、起動時に14日分が足される（テスト）
 
 ### seed（デモの初期データ）
-- 責務：PoC本体 `scripts/seedDemo.ts` の生成（仙台・〈スタッフ〉8人・訪問先20か所・稼働時間帯の上書き）を写し、項目・条件・相性・種類・パターン・プリセットの初期値を足す。日付だけで結果が決まる
+- 責務：PoC本体 `scripts/seedDemo.ts` の生成（仙台・〈スタッフ〉8人・訪問先20か所・稼働時間帯の上書き）を写し、項目・条件・相性・種類・パターン・プリセットの初期値を足す。起動したときの初期データには今日から7日分の AI案も入れる（ADR-0031）。日付だけで結果が決まる
 - 持つデータ（持ち主）：なし
-- 提供するAPI：`createDemoData(today)`（14日分＝`DEMO_DAYS`）、`daysFrom`（`typeId`・`pattern` は null、リハビリは作らない）、`seedPatterns`、`INITIAL_PRESETS`・`applyPreset(rules, preset)`・`presetOf(rules, presets)`・`scorePresetOf(presets, id)`（無ければ先頭）・`scoreRulesOf(data)`（条件に点数の基準のプリセットを当てたもの。0件なら条件そのもの）
+- 提供するAPI：`createDemoData(today)`（14日分＝`DEMO_DAYS`。案は入れない）、`seed/plans` の `createInitialData(today)`（`createDemoData` ＋ `withSeedPlans`。store が起動・初期化で使う）・`withSeedPlans(data, today, days = SEED_PLAN_DAYS)`（7日。案も確定した割当も無い日だけ）・`SEED_ITERATIONS`（100000）・`seedCreatedAt(today)`（その日の日本時間 0:00）、`daysFrom`（`typeId`・`pattern` は null、リハビリは作らない）、`seedPatterns`、`INITIAL_PRESETS`・`applyPreset(rules, preset)`・`presetOf(rules, presets)`・`scorePresetOf(presets, id)`（無ければ先頭）・`scoreRulesOf(data)`（条件に点数の基準のプリセットを当てたもの。0件なら条件そのもの）
 - 初期データ：
-  - 手作業の割当は入れない（`staffId` はすべて null、`manualPlans` は `{}`）。`usualStaffId` は内部で作った割当で最も多く担当した人
+  - 手作業の割当・確定した割当は入れない（`staffId` はすべて null、`manualPlans` は `{}`）。`usualStaffId` は内部で作った割当で最も多く担当した人
+  - AI案（`createInitialData`。PRD D225）：今日から7日分、点数の基準のプリセット（`standard`）の重みを当てた条件で compile し、`solve`（種はデータの `seed`、反復は `min(defaultIterations, SEED_ITERATIONS)`。1日 約40ms・7日で 約0.3秒）で解いて、月の「まとめて作る」と同じ `lib/month` の `applyDayRun`（記録1件・`inputKey` 付き・今の案はその記録）で書く。`createdAt` は `seedCreatedAt`。作れない日は飛ばす
   - 呼び方は「スタッフ」（`domain/terms.ts` の care の既定「ヘルパー」は写したまま）
   - 訪問は希望の時刻ちょうど（PoC本体の幅は始まりの時刻。c4 だけ終わりの 10:30＝日曜に担当が足りなくなるため）
   - 項目：スタッフ側は性別・資格（介護福祉士/看護師/保育士/初任者研修/理学療法士/作業療法士/言語聴覚士）・経験年数・得意（高齢/子ども/障害/家事/話し相手/料理）・喫煙者・ペット可。訪問先側はペットあり・喫煙環境・対象（高齢/子ども/障害）
@@ -174,10 +176,11 @@ flowchart LR
   - 種類：介護（色0。資格に介護福祉士・初任者研修・看護師のどれか）、リハビリ（色3。理学療法士・作業療法士・言語聴覚士のどれか）。理学療法士は s4・s7
   - パターン：〈利用者さん〉ごとに1つ（ID＝〈利用者さん〉の ID。平日の1曜日だけ休み・`weekend` の印で土日も。毎週。時刻・所要は `slot`。子どもは種類なし、ほかは介護。開始日＝基準日）。リハビリ40分を c7（水 14:00・s4）・c14（金 15:00・s7）。訪問は `applyPatterns` で14日分（ID `${日付}_${利用者さんID}`）
   - 決まりごとの例は c2・c4・c9・c13（`VISIT_RULE_SEEDS`）。欠勤・休みなし。`scorePresetId` は `standard`
-- 依存するもの：domain、patterns
+- 依存するもの：domain、patterns。`seed/plans` だけ matching（compile）・solver（solve）・`lib/month`（`applyDayRun`）・`lib/runs`（`problemKey`）
 - 配置：`src/seed/`
 - 完了の条件：
   - [ ] 同じ日付で同じデータ。手作業の割当なし・`usualStaffId` あり（テスト）
+  - [ ] `createInitialData`：今日から続けて7日分の今の案と記録1件（契約どおり・「標準」・再計算を省ける `inputKey`）、同じ日付で同じ案、条件が変わったにならない（テスト）
   - [ ] 性別希望・NG・種類・パターン・訪問の ID が上のとおり、プリセットは §5 の3種（テスト）
 
 ### domain（PoC本体から写した純粋関数）
@@ -797,6 +800,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 絞り込み・詳細・閲覧 | 共通の `ClientFilter`、吹き出し、まず閲覧 | 画面ごとの作りがそろい、見るだけのときに書き換えない | 0021〜0023 |
 | スマホ・ホーム・確認 | 引き出し＋下のタブ、「今日やること」、`useConfirm` | よく使う画面が1手、次の一手が分かる、扱いが1か所 | 0024〜0026 |
 | 機能の入り切り | 機能ごと（20）を `org.features`、ひな形は一度書き込む、好み・決まりは計算からも外す | 欄まで切れ隠れた条件が残らない。デモなので鍵なし | 0028 |
+| 初期の案・まとめて確定 | 起動で7日分を同期で解く（反復を減らす）、一度も確定していない・要対応に出ない日だけ1度に確定（日の画面と同じ書き方） | 初めから中身が見え決定的。確定の手数が1回になり、要対応の日・確定し直す日は残る | 0031 |
 
 ## 8. 未決事項
 | 項目 | いつ・何をもとに決めるか |

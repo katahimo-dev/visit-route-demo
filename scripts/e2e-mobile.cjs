@@ -256,8 +256,15 @@ async function floating(page) {
   await page.evaluate(() => {
     for (const el of document.querySelectorAll('[data-probe]')) el.remove();
   });
-  // 本物の地図のボタン：地図のカードが画面の外に出るまで巻いたとき（出れば重ならないかを見る）
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  // 本物の地図のボタン：地図のカードが画面の外に出るまで巻いたとき（出れば重ならないかを見る）。
+  // 狭い画面の地図のカードは本体の下（ページの終わり）なので、カードの上端が画面の下より下になる所まで巻く
+  // （初期データに今日の案がある（PRD D225）ので、開いた時点で地図のカードまで描かれている。いちばん下へ巻くとカードが見えてボタンは出ない）
+  await page.locator('.plan-map').first().waitFor({ timeout: 30000 });
+  await page.evaluate(() => {
+    const card = document.querySelector('.plan-map');
+    const top = card.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo(0, Math.max(0, top - window.innerHeight - 40));
+  });
   await page.waitForTimeout(800);
   const fabReal = page.locator('.map-dock-fab');
   await fabReal.waitFor({ timeout: 20000 });

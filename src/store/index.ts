@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { DATA_VERSION, type DemoData, demoDataSchema, type ImportError, STORAGE_KEY } from '../contracts/data';
 import { addDays, jstDate } from '../domain/time';
 import { applyPatterns } from '../patterns';
-import { createDemoData, DEMO_DAYS, daysFrom, initialPresets } from '../seed';
+import { DEMO_DAYS, daysFrom, initialPresets } from '../seed';
+import { createInitialData } from '../seed/plans';
 import { repair } from './repair';
 
 /** 壊れた JSON の退避先 */
@@ -210,7 +211,7 @@ export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept:
   const todayDate = today();
   const text = ls?.getItem(STORAGE_KEY) ?? null;
   if (text === null) {
-    const d = createDemoData(todayDate);
+    const d = createInitialData(todayDate);
     writeNow(d);
     current = d;
     return { data: d, broken: false, brokenKept: false };
@@ -218,10 +219,14 @@ export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept:
   const r = importJson(text);
   if (isImportError(r)) {
     brokenOriginal = text;
-    // 退避できなくても続ける（本体のキーには読めない文字が残り、次に保存するまで消えない）
+    // 退避が容量超過なら1世代の控えを捨ててもう1回（keepBroken）。退避できなくても続ける
     const brokenKept = ls ? keepBroken(ls, text) : false;
-    current = createDemoData(todayDate);
-    return { data: current, broken: true, brokenKept };
+    const d = createInitialData(todayDate);
+    // 退避できたら作った初期データを書く（読み直すたびに初期データの計算と退避を繰り返さない）。
+    // 退避できなかったときは元の文字を残す（上書きすると壊れたデータが消える。brokenText が本体のキーから返す）
+    if (brokenKept) writeNow(d);
+    current = d;
+    return { data: d, broken: true, brokenKept };
   }
   const extended = extendDays(r, todayDate);
   if (extended !== r) writeNow(extended);
@@ -449,7 +454,7 @@ export function reset(): DemoData {
   if (timer) clearTimeout(timer);
   timer = null;
   pending = null;
-  const d = createDemoData(today());
+  const d = createInitialData(today());
   writeNow(d);
   current = d;
   return d;

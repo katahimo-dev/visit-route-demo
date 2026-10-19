@@ -58,6 +58,17 @@ async function resetData(page) {
   await page.reload();
   await page.locator('h1').waitFor();
 }
+/** 初期データの案（今日から7日分。PRD D225）を消して読み直す（案の無い画面を確かめる所だけ） */
+async function clearPlans(page) {
+  await page.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.aiPlans = {};
+    d.aiRuns = {};
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await page.reload();
+  await page.locator('h1').waitFor();
+}
 /** 日の画面を開き、今の案が出て計算が終わるまで待つ */
 async function openPlan(page) {
   await open(page, '/plan', '[data-testid="confirm-state"]');
@@ -272,7 +283,8 @@ async function rename(page) {
 // ---- 空の画面 ----
 async function empties(page) {
   await resetData(page);
-  // 週：案が1日も無い（初期データは案が無い）
+  // 週：案が1日も無い（初期データの案を消す）
+  await clearPlans(page);
   await open(page, `/week?d=${TODAY}`, 'h1');
   const we = page.getByTestId('week-empty');
   await we.waitFor({ timeout: 10000 });
@@ -625,7 +637,16 @@ async function warnColors(page) {
     body,
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'month-caution.png'), fullPage: false });
-  // 週：担当の無い帯は「案なし」（注意）と「入らない」（要対応）に分ける
+  // 週：担当の無い帯は「案なし」（注意）と「入らない」（要対応）に分ける。
+  // 初期データは今日から7日分の案があるので（PRD D225）、今日の案を消して案の無い日を作る
+  await page.evaluate(
+    ({ k, today }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      delete d.aiPlans[today];
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    { k: STORAGE_KEY, today: TODAY },
+  );
   await open(page, '/week', '.week-band');
   const legendText = await page.locator('.week-legend-item').allInnerTexts();
   check(
