@@ -1,4 +1,5 @@
 /* 予定（月・週・日）に共通の進み具合の帯（PRD D151〜D155。ADR-0025 追記） */
+/* 行の高さは帯の中で固定する（本文の line-height: 1.5 や書体の既定の行の高さで帯が太らない。390px で1行・高さ 50px 以内） */
 .progress-band {
   display: flex;
   align-items: center;
@@ -8,6 +9,11 @@
   min-height: 46px;
   box-sizing: border-box;
   position: relative;
+  line-height: 1.25;
+}
+/* button は親の行の高さを継がないので、a・button のどちらのボタンも同じ高さにそろえる */
+.progress-band .btn {
+  line-height: inherit;
 }
 .pb-month {
   font-weight: 700;

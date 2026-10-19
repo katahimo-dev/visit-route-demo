@@ -99,6 +99,7 @@
 - 主ボタン（`.btn-primary`）は塗り、戻せない操作（`.btn-danger`）は白地に赤い枠と文字で、形でも分ける
 - フォーカスの輪は `outline: 3px solid var(--focus)`（`:focus-visible`。リストの候補の `is-active` も）。枠の中に描く所（`.segmented` は `overflow: hidden` で外側が切れる・帯の中のボタン）は `outline-offset: -3px`
 - 書体は Mac の丸ゴシック・ヒラギノの次に Windows の BIZ UDPゴシック・游ゴシック（Regular は細いので Medium を先）・メイリオ、その後ろに Noto Sans JP・`system-ui`。本文の行の高さは 1.5
+- 高さの決まった1行の帯・バー（進み具合の帯 `.progress-band`。390px で1行・高さ 50px 以内）は `line-height: 1.25` を帯に固定し、中のボタンにも継がせる（`button` は親の行の高さを継がないので `.btn { line-height: inherit }`）。本文の 1.5 や、書体が無い環境の既定の行の高さで帯が太らない。a と button のボタンの高さもそろう
 - 動きを減らす設定（`prefers-reduced-motion: reduce`）では、出てくる動き・点滅・なめらかな巻き取りをやめる（CSS は動きと移り変わりを一瞬で終える。`animationend` を待つ所があるので消さない）。`scrollIntoView` の `behavior` は `lib/motion` の `scrollBehavior()`（設定があれば `auto`、ほかは `smooth`。テストあり）
 - 浮かせた地図（`.map-dock`）は専用の `map-dock-in`（薄い所から少し下から出る）。トーストの `toast-in` は横の中央寄せを含むので使わない
 - タッチの端末（`pointer: coarse`）では、押せる所を見た目と並びを変えずに `::before` で広げる：アイコンだけのボタン（`.icon-btn` 32px・`.icon-btn-sm` 26px・項目の選択肢のチップの中の 24px）は 44px、名前の i（`.person-info`）と〈利用者さん〉の選択の ×（`.client-picker-remove`）は 32px。隣に押せる要素が並ぶ側は間の半分だけ（アイコンのボタンは 2px、i は 1px）広げ、隣の押せる所に掛けない。担当ごとの1日の行の i は上下の行に掛けず右へ（32×24px）、チップの中の i は名前に掛からないよう縦に（25×29px）。選択肢のチップの「名前を変える」と「消す」は、タッチの端末でだけ間を 16px 広げて 44×44px ずつにする（消すの押し間違いを防ぐ）。390px で広げた所がほかの押せる要素に掛からない（上の帯・下のタブなど前に重なる部品は除く）
