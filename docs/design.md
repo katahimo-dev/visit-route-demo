@@ -454,14 +454,14 @@ RosterImportResult = { data /* migrate 済み */, added /* 行の順。「名前
 - 記録は AI案を作る・組み直すたびに `lib/runs` の `addRun` で1件足す。同じ条件・seed・pins・結果があれば足さず、その記録の `inputKey`・`presetId`・`calcFeatures` を今のものに書き直す
 - `problemKey(problem)`：日付・スタッフ（自宅・稼働時間帯）・訪問・行列・可否・割当費用・待ち・均等を決定的に JSON にし、FNV-1a（32bit、basis を変えて2回）と長さで短くしたもの（理由は入れない）
 - `reusableRun(runs, target, rules, seed, key?)`：固定なし・止めていない・`rules` が同じ（名前・ID・重み・必須）・seed が同じ・`inputKey` が `problemKey(target)` と同じ、の最新
-- 「条件が変わった」（D43・D161。`lib/month`）：`planStale`＝記録の `inputKey` がいまの問題と違う。`rulesStale`＝記録の条件がいまの条件に各プリセットを当てたもののどれとも違う（`presetId` が null ならいまの条件とも違う）。振り直しの記録は判定しない。`calcFeatures` は見ない
+- 「条件が変わった」（D43・D161。`lib/month`）：`planStale`＝記録の `inputKey` がいまの問題と違う。`rulesStale`＝記録の条件が条件に各プリセットを当てたもののどれとも違う（`presetId` が null ならこの日だけ試す重み（`data.rules`）とも違う）。振り直しの記録は判定しない。`calcFeatures` は見ない
 - 比較の画面は記録を点数の基準の物差し（`scoreRulesOf`）で採点し直す（記録の `score` は使わない）
 
 #### 版と移行
 
 版は1のまま。無いものは zod の既定値・`migrate` で読む：`aiRuns` は `{}`（前の版の `prevAiPlans` は捨てる）、`presets` は `INITIAL_PRESETS`、`scorePresetId` は repair が先頭、`AiPlan.generated` は routes・unassigned・score の写しで `pins` は `{}`、`absences`・`visitTypes`・`patterns`・`clientLeaves` は `[]`（null も）、`ReassignInfo.now` は捨てる、〈利用者さん〉の `stage` は `stageOfLegacy`（`active=false`→終了、仮押さえ→相談受付、ほか利用中）、`org.features` は知らない ID・真偽でない値を捨てオブジェクトでなければ `{}`、`AiRun.calcFeatures` が無ければすべて入。ほかは上の表の（　）。
 
-### 項目・条件・プリセット（`src/contracts/rules.ts`。ADR-0002・ADR-0008・ADR-0010）
+### 項目・条件・プリセット（`src/contracts/rules.ts`。ADR-0002・ADR-0008・ADR-0010・ADR-0035）
 
 ```ts
 Item = { id ≤50, name 1〜30, target: 'staff' | 'client', kind: 'flag' | 'choice' | 'multi' | 'number', options /* 1〜30字・30個 */ }
@@ -476,8 +476,9 @@ Preset = { id ≤50, name 1〜20, note ≤60, weights: RuleType → { weight, ha
 POINTS_PER_WEIGHT = 10; DROP_POINTS = 10000; KEEP_DROP_POINTS = DROP_POINTS * 10; MAX_PRESETS = 6
 ```
 
-- プリセットはデータ。型ごとの重み・必須を条件の同じ型に上書きする（`applyPreset`）。最後の1つは消せない。「いまの重みを保存」は型ごとの最初の条件を写す（無ければ0）
-- 点数の基準のプリセット（`scorePresetId`）：点数はいつもこのプリセットを当てた物差しで付ける。月まとめ作成・作り直しもこのプリセットで作る
+- プリセットはデータ。型ごとの重み・必須を条件の同じ型に上書きする（`applyPreset`）。最後の1つは消せない。「試す重みをプリセットとして保存」は型ごとの最初の条件を写す（無ければ0）。「基準の重みを写して保存」は基準のプリセットの重みを写す（`addPresetFromRules(d, name, note, 'basis')`）
+- 点数の基準のプリセット（`scorePresetId`）＝ふだんの考え方（ADR-0035。PRD D233）：点数はいつもこのプリセットを当てた物差し（`scoreRulesOf`）で付ける。月のまとめて作る・開いた日の自動作成・初期データの案・作り直し（月・日）もこれで作る。条件の重みの画面の表はこのプリセットの重み・必須を直す（`setBasisWeight`）
+- `data.rules`＝この日だけ試す重み（PRD D234）：日の予定の「条件を調整する」とプリセットのカードで変わり、「AI にもう一度作らせる」・固定を残して作り直す・比較の「試す重みで作る」だけが使う。基準の重み・必須が変わる（基準のプリセットを直す・基準を替える・基準のプリセットを消して基準が移る・初期値に戻す）と `withBasisRules` で基準にそろえる（`lib/presets` の `patchPreset`・`setScorePreset`・`removePreset`・`resetPresets`）
 
 | 初期のプリセット | 必要条件 | 訪問先の希望 | スタッフの希望 | 相性 | いつもの担当 | 負担の均等 | 待ち |
 |---|---|---|---|---|---|---|---|
@@ -786,6 +787,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | Excel | マスタと予定だけ・名前で参照・ExcelJS | 手で書き足しやすく古い案と食い違わない | 0006 |
 | 点数 | 100 −（費用 − 下限）÷ 件数、基準のプリセットで固定 | 順位が費用と一致し、押しても点が変わらない | 0007・0010 |
 | プリセット | データに持たせ編集可、開いた日に全プリセットで作る | 事業所ごとの考え方を残せ、開いただけで選べる | 0008 |
+| 条件の重みの画面 | 点数の基準のプリセット（ふだんの考え方）の重みを直す画面。日の重みは「この日だけ試す重み」で、基準が変わったら基準にそろえる | 直した重みがまとめて作る・自動作成・作り直しに効き、データの形を変えない | 0035 |
 | 予定と AI案 | 1画面「予定」 | 訪問の編集と手直しが重なっていた | 0009 |
 | 欠勤と振り直し | 別の記録 `absences`。案A＝空きに入れるだけ、案B＝減点つき焼きなまし。コンポーネント reassign、結果は今の案＋記録 | 他の人が変わらないことを保証でき、手直し・確定・比較がそのまま使える | 0011 |
 | 一月分の予定 | 定期パターンから展開して実体化、種類の条件は常に必須、1日ずつ基準のプリセットで解く | 既存の予定・AI案・Excel が訪問の形のまま動く | 0012 |
