@@ -53,7 +53,7 @@ export function tourSteps(terms: Pick<Terms, 'client' | 'staff'>, isMac: boolean
     {
       key: 'rules',
       title: 'AI の条件はここで変えます',
-      body: `${ruleItems}を変えると、AI の案の作り方が変わります（訪問の種類・特性の項目は「設定」）。変えたあとは、影響する日と「作り直す」が画面の上に出ます。`,
+      body: `${ruleItems}を変えると、AI の案の作り方が変わります。条件の重みはふだんの考え方（点数の基準）で、月のまとめて作る・自動作成・作り直しに使います（日の予定の右の欄で変えるのは「この日だけ試す重み」）。変えたあとは、影響する日と「作り直す」が画面の上に出ます。訪問の種類・特性の項目は「設定」です。`,
       where: `メニューの「AI の条件」（${ruleItems}）`,
       feature: 'rules',
     },

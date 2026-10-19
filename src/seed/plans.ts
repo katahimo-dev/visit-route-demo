@@ -10,7 +10,7 @@ import { problemKey } from '../lib/runs';
 import { compile } from '../matching';
 import { defaultIterations, solve } from '../solver';
 import { createDemoData } from './index';
-import { applyPreset, scorePresetOf } from './presets';
+import { scoreRulesOf } from './presets';
 
 /** 案を入れる日数（今日から） */
 export const SEED_PLAN_DAYS = 7;
@@ -29,8 +29,8 @@ export const seedCreatedAt = (today: string): number => Date.parse(`${today}T00:
  * 作れない日（問題を作れない・訪問や働ける人が無い）は飛ばす（起動を止めない）。元のデータは書き換えない
  */
 export function withSeedPlans(data: DemoData, today: string, days: number = SEED_PLAN_DAYS): DemoData {
-  const preset = scorePresetOf(data.presets, data.scorePresetId);
-  const rules = preset ? applyPreset(data.rules, preset) : data.rules;
+  // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
+  const rules = scoreRulesOf(data);
   const createdAt = seedCreatedAt(today);
   let out = data;
   for (let i = 0; i < days; i++) {

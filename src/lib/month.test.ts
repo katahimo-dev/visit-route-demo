@@ -194,9 +194,10 @@ describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
     const a = firstDay(d0);
     let d = build(d0, a);
     expect(planRunOf(d, a)?.presetId).toBe('standard');
-    d = setWeight(d, 'standard', 1);
+    // 試す重みは古い標準の重みのまま（ADR-0035 以降、基準を直すと試す重みもそろうので、比較の画面の「この条件にする」などで戻した形をデータで作る）
+    d = { ...setWeight(d, 'standard', 1), rules: d.rules };
     expect(rulesStale(d, a, keysOf(d))).toBe(true);
-    // いまの条件（古い標準の重み）で解いて同じ結果：addRun は同じ記録を使い回す
+    // 試す重み（古い標準の重み）で解いて同じ結果：addRun は同じ記録を使い回す
     const run = planRunOf(d, a)!;
     const before = (d.aiRuns[a] ?? []).length;
     d = applyDayRun(d, a, {
@@ -224,9 +225,13 @@ describe('作った条件が変わったか（rulesStale。PRD D161）', () => {
     });
     expect(planRunOf(d, a)?.presetId).toBeNull();
     expect(rulesStale(d, a, keysOf(d))).toBe(false);
-    // プリセットを変えても、いまの条件が変わらない限り変わったにしない
-    const edited = setWeight(d, 'standard', 1);
+    // 基準でないプリセットを変えても、試す重みが変わらない限り変わったにしない
+    const edited = setWeight(d, 'travel', 1);
     expect(rulesStale(edited, a, keysOf(edited))).toBe(false);
+    // 基準のプリセットを直すと、試す重みも基準に戻るので変わった（ADR-0035）
+    const basisEdited = setWeight(d, 'standard', 1);
+    expect(basisEdited.rules).not.toEqual(d.rules);
+    expect(rulesStale(basisEdited, a, keysOf(basisEdited))).toBe(true);
     d = { ...d, rules: d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 1 } : r)) };
     expect(rulesStale(d, a, keysOf(d))).toBe(true);
     d = build(d, a);

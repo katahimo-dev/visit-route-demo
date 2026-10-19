@@ -121,12 +121,12 @@
   - `REBUILD_PATHS`（`/rules`・`/compat`・`/availability`・`/types`・`/items`・`/staff`・`/clients`）・`showsRebuildBand(pathname)`
   - `rebuildDays(aiPlans, today)`・`rebuildSummary(statuses, today, manualPlans)`（`days`・`unconfirmed`（確定した割当なし）・`confirmed`（あり））・`rebuildText`（「影響する日 N日（未確定 a日・確定済み b日）」）・`REBUILD_CLEARED`（「影響する日は無くなりました」）・`rebuildWith(basis)`（「〈基準〉で作り直します」）
   - `rebuildAction(summary, basis)`（`href`・`label`・`note`）：未確定の最初の日の月の `/month?ym=…&do=stale`「作り直す」、未確定が無ければ最初の日の月の `do=attention`「要対応を見る」
-  - `customRulesText(basis)`・`recreateTodayHref(today)`（`/plan?date=今日&do=recreate`）
+  - `customRulesText(basis)`（この日だけ試す重みの案内。PRD D166・D234）・`recreateTodayHref(today)`（`/plan?date=今日&do=recreate`）
 - `components/rebuildBand.tsx`（`rebuildBand.css`）：`RebuildBand({ rules })`
   - データが `SETTLE_MS`＝600ms 変わらなくなってから `useDeferredValue` で描いた後に数える（動かしている間は数えない）。最初に数え終わるまでは影響する日の行を出さない
   - 帯は `section` の中に行 `rb-row` を2つまで：
     1. 影響する日：文・未確定があれば `rebuildWith`・［作り直す］は `Link`（主ボタンにしない。説明は title と aria-describedby）・［後で］
-    2. `rules`（`/rules` のとき）でいまの条件がどのプリセットとも違うときの案内：`customRulesText`・［今日の案をいまの条件で作り直す］・`SavePresetForm`
+    2. `rules`（`/rules` のとき）でこの日だけ試す重み（`data.rules`）がどのプリセットとも違うときの案内：`customRulesText`・［今日の案を試す重みで作り直す］・`SavePresetForm`（試す重みを保存）。条件の重みの表を動かしても試す重みは基準にそろうので出ない（ADR-0035）
   - ［後で］は状態 `later`（保存しない。その画面の間だけ隠し、ほかの設定の画面では出る。押したらフォーカスを `.app-main h1` へ）
   - 読み上げは `progressBand` の `BandLive`（`data-ready`・`data-days` など付き。0日になったら1度 `REBUILD_CLEARED`、隠している間は空）
   - 861px 以上は `position: sticky; top: var(--header-h)`。その間は ResizeObserver で `--rebuild-band-h` と html の `scroll-padding-top` を入れ、消えたら戻す（Tab で入った入力欄が帯に隠れない）。600px 以下は文の下にボタン。印刷では出さない
@@ -196,7 +196,7 @@
 - `scripts/e2e-panel-foot.cjs`（1400px・390px）：欠勤・キャンセルの1〜4段目・キャンセルの2・3段目・〈スタッフ〉の閲覧と編集・月の「まとめて作る」・日の差の欄の「連絡の一覧」。短い欄・長い欄・Tab で帯の裏の入力欄が隠れない・Tab が回る・Esc で戻る・裏を巻かない・390px の並び・タブに隠れない・safe-area・visualViewport を差し替えたキーボード・印刷で帯を出さない
 - `scripts/e2e-tour.cjs`：ツアー（初めて開くと出る・ARIA・中央・フォーカス・inert とロック・Tab が回る・Ctrl+K を開かない・次へ／戻る・6枚・最後の枚の3段・「閉じる」・「今日の予定を開く」で今日の日の予定・覚える（別のキー）・読み直しても出ない・Esc・とばす・月の印刷では出ない・`?id=`・`?do=` のリンクでは出ない・印があれば自動で出ない・最後の枚で覚える・もう一度見る・フォーカスを戻す・初期状態に戻しても残る・390px・印刷）、ファイル選択、月の一覧
 - `scripts/e2e-words.cjs`：点数の理由・用語の説明（マウス・Tab・Esc・タッチ・同時に1つ・入力欄の名前）・言い換え・空の画面・月の凡例・相性のセルの記号・390px・印刷
-- `scripts/e2e-rebuild.cjs`：作り直しの帯（出さない条件・案内・影響する日・数・読み上げ・［後で］・sticky・Tab・月の要対応と同じ数・［作り直す］で月の欄・［今日の案をいまの条件で作り直す］で日の予定）
+- `scripts/e2e-rebuild.cjs`：作り直しの帯（出さない条件・案内・影響する日・数・読み上げ・［後で］・sticky・Tab・月の要対応と同じ数・［作り直す］で月の欄・［今日の案を試す重みで作り直す］で日の予定）
 - `scripts/e2e-links.cjs`：行き先のリンク（月の要対応の4種類・`?do=unassigned`・勤務の見込み・勤務時間（シフト）・空き状況）
 - `scripts/e2e-features.cjs`：機能の入り切り（ひな形ごとのメニュー・下のタブ・パレット・ホーム・画面の中の入口・切った URL・390px・印刷）
 

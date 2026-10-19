@@ -23,15 +23,18 @@ import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../compone
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
 import {
+  addRule,
   PRESET_NAME_MAX,
   PRESET_NOTE_MAX,
   patchPreset,
   removePreset,
   resetPresets,
+  setBasisWeight,
   setScorePreset,
+  trialPresetOf,
 } from '../lib/presets';
 import { useFeature } from '../lib/useFeature';
-import { presetOf, scorePresetOf } from '../seed';
+import { scorePresetOf, scoreRulesOf } from '../seed';
 import { useDemoData } from '../store';
 import { SavePresetForm, SCORE_TEXT } from './planParts';
 import './settings.css';
@@ -62,7 +65,9 @@ const DEFAULTS: Record<RuleType, { weight: number; hard: boolean }> = {
 };
 
 /**
- * 条件（ルール）の一覧。ClassClassify の Setup にならい、重み 0〜5（0.5刻み、0 で半透明＝無効）と必須の切り替え
+ * 条件（ルール）の一覧。ClassClassify の Setup にならい、重み 0〜5（0.5刻み、0 で半透明＝無効）と必須の切り替え。
+ * この画面の重み・必須は点数の基準のプリセット（ふだんの考え方）のもの（ADR-0035。PRD D233）：変えると基準のプリセットの
+ * その型を直し、この日だけ試す重み（data.rules）も基準にそろえる。月のまとめて作る・自動作成・作り直しはこの重みで作る
  */
 /**
  * 相性（ADR-0028 の compat）を切っているときは「相性」の条件を出さない（計算からも外れる。条件のデータは消さない）
@@ -80,12 +85,18 @@ export default function RulesPage() {
   const [addType, setAddType] = useState<RuleType>('clientPreference');
   const [seedText, setSeedText] = useState<string | null>(null);
 
-  const setRule = (id: string, patch: Partial<Rule>) =>
-    update((d) => ({ ...d, rules: d.rules.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+  /** 点数の基準のプリセット（この画面で重みを直す相手。ADR-0035） */
+  const basis = scorePresetOf(data.presets, data.scorePresetId);
+  /** 表に出す条件：名前・種類は条件のまま、重み・必須は基準のプリセットのもの */
+  const shownRules = scoreRulesOf(data);
+  const setLabel = (id: string, label: string) =>
+    update((d) => ({ ...d, rules: d.rules.map((r) => (r.id === id ? { ...r, label } : r)) }));
+  const setWeight = (type: RuleType, patch: Partial<{ weight: number; hard: boolean }>) =>
+    update((d) => setBasisWeight(d, type, patch));
   const add = () => {
-    const rule: Rule = { id: newId('r'), type: addType, label: ruleTypeLabel(addType, terms), ...DEFAULTS[addType] };
-    if (!HARDABLE.has(addType)) rule.hard = false;
-    update((d) => ({ ...d, rules: [...d.rules, rule] }));
+    // 足す条件の重み・必須は、押した時点のデータで決める（試す重みが当てはまるプリセット、無ければ基準のその型。lib/presets の addRule）
+    const rule = { id: newId('r'), type: addType, label: ruleTypeLabel(addType, terms) };
+    update((d) => addRule(d, rule, DEFAULTS[addType]));
   };
   const remove = async (r: Rule) => {
     if (!(await confirmDialog({ title: `条件「${r.label}」を消しますか？`, confirmLabel: '消す', tone: 'danger' })))
@@ -100,7 +111,7 @@ export default function RulesPage() {
       <PageHeader
         icon={SlidersHorizontal}
         title="条件の重み"
-        lead="重み1＝1件あたり移動10分ぶん。必須は守れなければ担当にしません"
+        lead="ふだんの考え方（点数の基準）の重み。月のまとめて作る・自動作成・作り直しはこの重みで作ります"
       />
       <div className="card stack">
         <Hint label="点のしくみ">
@@ -108,8 +119,19 @@ export default function RulesPage() {
           <strong>重み1＝1件あたり移動10分ぶん</strong>
           （重み5＝50分ぶん）。重み0の条件は使いません。必須にした条件は、点ではなく「守らなければ担当にしない」になります。
           時間の約束と稼働時間帯はいつも必須です。 画面の合計点は、この合計を高いほど良い点数（{SCORE_TEXT}
-          ）に直して出します。点数はいつも、下のプリセットで選んだ「点数の基準」の重みで付けます（ここで重みを変えても点数の付け方は変わりません）。
+          ）に直して出します。
         </Hint>
+        <p className="sub" data-testid="rules-basis">
+          直しているのは
+          <Term k="scoreBase" testId="term-score-base" />
+          のプリセット「<strong>{basis?.name ?? '—'}</strong>
+          」の重みです（基準は下のプリセットの節で替えられます）。同じ種類の条件は同じ重みになります。
+        </p>
+        <p className="sub" data-testid="rules-trial-note">
+          {
+            '日の予定の右の欄の「この日だけ試す重み」は、その日の「AI にもう一度作らせる」だけに使い、ここで直すと基準に戻ります。'
+          }
+        </p>
         {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と必須が1行目、種類・重みは見出し付きの行、消すは右下） */}
         <div className="table-scroll">
           <table {...narrowRole.table} className="rules-table narrow-cards" data-testid="narrow-rules">
@@ -125,7 +147,7 @@ export default function RulesPage() {
               </tr>
             </thead>
             <tbody {...narrowRole.rowgroup}>
-              {data.rules
+              {shownRules
                 .filter((r) => compatOn || r.type !== 'compatibility')
                 .map((r) => {
                   const hardable = HARDABLE.has(r.type);
@@ -136,7 +158,7 @@ export default function RulesPage() {
                       <td {...narrowRole.cell} style={{ minWidth: 160 }} className="narrow-title" data-label="名前">
                         <LabelInput
                           value={r.label}
-                          onChange={(label) => setRule(r.id, { label })}
+                          onChange={(label) => setLabel(r.id, label)}
                           fallback={ruleTypeLabel(r.type, terms)}
                         />
                       </td>
@@ -153,7 +175,7 @@ export default function RulesPage() {
                           label={r.label}
                           value={r.weight}
                           disabled={locked}
-                          onChange={(w) => setRule(r.id, { weight: w })}
+                          onChange={(w) => setWeight(r.type, { weight: w })}
                         />
                         {!locked && (
                           <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>
@@ -165,7 +187,7 @@ export default function RulesPage() {
                             <input
                               type="checkbox"
                               checked={r.hard}
-                              onChange={(e) => setRule(r.id, { hard: e.target.checked })}
+                              onChange={(e) => setWeight(r.type, { hard: e.target.checked })}
                             />
                             <WithIcon icon={ShieldCheck} size={14}>
                               必須
@@ -268,8 +290,8 @@ function LabelInput({ value, onChange, fallback }: { value: string; onChange: (v
 }
 
 /**
- * 条件のプリセット（D20・D24。ADR-0008）。名前・一言・型ごとの重み・必須を変えるとすぐ保存。
- * 消す（最後の1つは消せない）・いまの重みを保存（6つまで）・初期値に戻す
+ * 条件のプリセット（D20・D24・D235。ADR-0008・ADR-0035）。名前・一言・型ごとの重み・必須を変えるとすぐ保存。
+ * 消す（最後の1つは消せない）・基準の重みを写して保存（6つまで）・初期値に戻す
  */
 function PresetSection() {
   const { shownTypes } = useShownTypes();
@@ -278,7 +300,8 @@ function PresetSection() {
   const terms = data.org.terms;
   const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
-  const current = presetOf(data.rules, data.presets);
+  /** この日だけ試す重みが当てはまるプリセット（基準を先に見る） */
+  const current = trialPresetOf(data);
   /** 点数の基準のプリセット（ADR-0010） */
   const ruler = scorePresetOf(data.presets, data.scorePresetId);
   // 予定の画面の「プリセットを編集する」（#/rules#presets）から来たら、この節を見せる
@@ -291,7 +314,10 @@ function PresetSection() {
   const remove = async (p: Preset) => {
     if (data.presets.length <= 1) return;
     const next = data.presets.find((x) => x.id !== p.id);
-    const moved = ruler?.id === p.id && next ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。` : '';
+    const moved =
+      ruler?.id === p.id && next
+        ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。この日だけ試す重みも基準に戻ります。`
+        : '';
     const ok = await confirmDialog({
       title: `プリセット「${p.name}」を消しますか？`,
       body: `作った案の記録は残ります。${moved}`,
@@ -304,7 +330,7 @@ function PresetSection() {
   const reset = async () => {
     const ok = await confirmDialog({
       title: 'プリセットを初期の3つに戻しますか？',
-      body: '初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。',
+      body: '初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。この日だけ試す重みも基準に戻ります。',
       confirmLabel: '初期の3つに戻す',
       tone: 'danger',
     });
@@ -317,7 +343,7 @@ function PresetSection() {
         icon={LayoutGrid}
         aside={
           <Hint>
-            日の予定のプリセットごとの案のカードと、開いた日に自動で作る案に使います。条件の種類ごとに重み・必須を決め、カードを押すとその日の条件の同じ種類に当てます。
+            日の予定のプリセットごとの案のカードに使い、点数の基準に選んだプリセットは月のまとめて作る・開いた日の自動作成・作り直しにも使います。条件の種類ごとに重み・必須を決め、カードを押すとその日の条件の同じ種類に当てます。
             {MAX_PRESETS}つまで。変えるとすぐ保存します。
           </Hint>
         }
@@ -330,7 +356,7 @@ function PresetSection() {
         <legend>
           点数の基準
           <Hint ariaLabel="点数の基準の説明">
-            画面の点数（100点満点）は、いつもここで選んだプリセットの重み・必須で付けます。日の予定でプリセットを押して条件を変えても、点数の付け方は変わりません（プリセットは「どう組むか」だけを変えます）。基準のプリセットの重みを変えると点数も変わります。基準のプリセットを消すと、先頭のプリセットが基準になります。
+            ここで選んだプリセットが、ふだんの考え方です。月のまとめて作る・自動作成・作り直しはこの重み・必須で作り、画面の点数（100点満点）もこの重み・必須で付けます。上の条件の重みの表は、このプリセットの重みを直します。日の予定でプリセットを押して試す重みを変えても、点数の付け方は変わりません。基準を替える・基準のプリセットの重みを変えると、試す重みも基準に戻ります。基準のプリセットを消すと、先頭のプリセットが基準になります。
           </Hint>
         </legend>
         <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
@@ -354,7 +380,8 @@ function PresetSection() {
             <summary className="narrow-preset-summary">
               <span className="preset-no">{i + 1}</span>
               <strong>{p.name}</strong>
-              {current?.id === p.id && <span className="chip chip-primary">いまの重み</span>}
+              {/* 日の予定で試している重みが基準と違うプリセットに当たるときだけ（ADR-0035） */}
+              {current?.id === p.id && ruler?.id !== p.id && <span className="chip chip-primary">試す重み</span>}
               {ruler?.id === p.id && <span className="chip">点数の基準</span>}
               <span className="sub ellipsis">{p.note}</span>
             </summary>
@@ -455,7 +482,7 @@ function PresetSection() {
         ))}
       </div>
       <div className="row narrow-stack" style={{ flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <SavePresetForm />
+        <SavePresetForm from="basis" />
         <button type="button" className="btn" onClick={reset}>
           <WithIcon icon={RotateCcw}>初期値に戻す</WithIcon>
         </button>
