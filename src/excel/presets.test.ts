@@ -2,7 +2,8 @@
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
 import type { DemoData, ImportError } from '../contracts/data';
-import { createDemoData } from '../seed';
+import { setBasisWeight } from '../lib/presets';
+import { createDemoData, presetOf, scorePresetOf } from '../seed';
 import { isImportError } from '../store';
 import { exportWorkbook, importWorkbook } from './index';
 
@@ -130,5 +131,23 @@ describe('Excel のプリセットのシート', () => {
     });
     if (isImportError(r)) throw new Error(r.message);
     expect(r.scorePresetId).toBe('travel');
+  });
+});
+
+describe('Excel の条件のシート＝この日だけ試す重み（ADR-0035）', () => {
+  it('基準の重みを直したデータは、書き出し → 読み込みで試す重みが基準のまま（「どのプリセットとも違う」案内が出ない）', async () => {
+    const d = setBasisWeight(base(), 'wait', { weight: 1 });
+    const r = await importWorkbook(await toBuffer(d), base());
+    if (isImportError(r)) throw new Error(r.message);
+    expect(r.rules).toEqual(d.rules);
+    expect(presetOf(r.rules, r.presets)?.id).toBe(scorePresetOf(r.presets, r.scorePresetId)?.id);
+  });
+  it('試す重みが基準と違うデータは、そのまま試す重みとして戻る（ふだんの重みはプリセットのシートの基準の行）', async () => {
+    const d0 = base();
+    const d = { ...d0, rules: d0.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r)) };
+    const r = await importWorkbook(await toBuffer(d), d0);
+    if (isImportError(r)) throw new Error(r.message);
+    expect(r.rules.find((x) => x.type === 'wait')!.weight).toBe(4.5);
+    expect(scorePresetOf(r.presets, r.scorePresetId)!.weights.wait.weight).toBe(3);
   });
 });

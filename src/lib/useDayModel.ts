@@ -14,7 +14,7 @@ import { attempt, byDisplayName, byName, staffColor } from './common';
 /**
  * その日の画面で共通に使う形（予定・AI案・スタッフの画面）。
  * 問題（compile）は useMemo。未実装・データの不整合で投げても problemError に文を入れて画面は続ける。
- * problem はいまの条件（solver の費用）、scoreProblem・scoreScale は点数の基準のプリセットの物差し（ADR-0010）。
+ * problem はこの日だけ試す重み（solver の費用）、scoreProblem・scoreScale は点数の基準のプリセットの物差し（ADR-0010）。
  * compile の依存は compile が読むフィールドだけ（compileInput）なので、案のドラッグ・固定・記録の更新では作り直さない
  */
 export function useDayModel(date: string) {
@@ -63,14 +63,14 @@ export function useDayModel(date: string) {
   /** compile が読むデータだけ（案・記録・プリセットの更新では変わらない） */
   const compileInput = useCompileInput(data);
   const compiled = useMemo(() => attempt(() => compile(compileInput, date)), [compileInput, date]);
-  /** 点数の基準のプリセット（ADR-0010。プリセットが0件なら null＝いまの条件そのもの） */
+  /** 点数の基準のプリセット（ADR-0010。プリセットが0件なら null＝この日だけ試す重みそのもの） */
   const scorePreset = useMemo(
     () => scorePresetOf(data.presets, data.scorePresetId),
     [data.presets, data.scorePresetId],
   );
   /**
    * 点数の物差しの問題（ADR-0010）：条件に点数の基準のプリセットの重み・必須を当てて作る。
-   * いまの条件と同じなら compile し直さずに同じものを使う（重い compile を二重にしない）
+   * この日だけ試す重みと同じなら compile し直さずに同じものを使う（重い compile を二重にしない）
    */
   const scoreRules = useMemo(
     () => (scorePreset ? applyPreset(compileInput.rules, scorePreset) : compileInput.rules),
@@ -116,8 +116,8 @@ export function useDayModel(date: string) {
     scoreScale: scoreScale as ScoreScale | null,
     /** 点数の基準の条件（名前・重み。点数の理由の文に使う。PRD D173） */
     scoreRules,
-    /** 点数の基準のプリセットの名前（「物差し：標準」の表示。プリセットが無ければ「いまの条件」） */
-    scoreRulerName: scorePreset?.name ?? 'いまの条件',
+    /** 点数の基準のプリセットの名前（「物差し：標準」の表示。プリセットが無ければ「試す重み」） */
+    scoreRulerName: scorePreset?.name ?? '試す重み',
     savedView,
   };
 }

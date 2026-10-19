@@ -32,12 +32,12 @@ import { isHrefOn } from '../lib/features';
 import { unassignedHref } from '../lib/links';
 import { addMonths, monthDates, ymOf } from '../lib/month';
 import { mdText } from '../lib/patternText';
-import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
+import { addPresetError, addPresetFromRules, PRESET_NAME_MAX, trialPresetOf } from '../lib/presets';
 import { reasonFace, type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { ALLOWED_STAFF_RULE_ID, VISIT_TYPE_RULE_ID } from '../matching';
-import { presetOf, scorePresetOf } from '../seed';
+import { scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 
 /** routes の訪問ごとの説明（未実装なら空） */
@@ -347,7 +347,8 @@ export function WeightPanel({
   recalcLabel?: string;
 }) {
   const { data, update } = useDemoData();
-  const current = presetOf(data.rules, data.presets);
+  /** 試す重みが当てはまるプリセット（基準を先に見る。ADR-0035） */
+  const current = trialPresetOf(data);
   const basisName = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '標準';
   return (
     <div className="stack side-panel">

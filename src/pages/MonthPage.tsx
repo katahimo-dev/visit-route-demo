@@ -1522,7 +1522,7 @@ export default function MonthPage() {
         >
           <div className="stack">
             <p>
-              使うプリセット：<strong data-testid="batch-preset">{basePreset?.name ?? 'いまの条件'}</strong>
+              使うプリセット：<strong data-testid="batch-preset">{basePreset?.name ?? '試す重み'}</strong>
               <span className="sub">（点数の基準。重みは「条件の重み」の画面で直します）</span>
             </p>
             <fieldset className="stack batch-mode" style={{ gap: 6 }}>
@@ -1572,7 +1572,7 @@ export default function MonthPage() {
             )}
             {mode === 'stale' ? (
               <p className="sub" data-testid="batch-stale-note">
-                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? 'いまの条件')}
+                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? '試す重み')}
                 。手直しのある日は、作り始める前に確かめます。今日より前の日・確定した日は作りません
                 {staleConfirmed > 0 &&
                   `（条件が変わった確定済みの日 ${staleConfirmed}日は、日の予定で確かめてください）`}

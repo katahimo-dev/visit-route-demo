@@ -190,7 +190,7 @@ async function rules(page) {
   await customRow(page).waitFor({ timeout: 5000 });
   const ct = await customRow(page).innerText();
   check(
-    /日の予定で変えた「この日だけ試す重み」がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「標準」）で作ります/.test(
+    /この日だけ試す重み（日の予定の右の欄の重み）がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「標準」）で作ります/.test(
       ct,
     ) &&
       (await page.getByTestId('rebuild-today').count()) === 1 &&

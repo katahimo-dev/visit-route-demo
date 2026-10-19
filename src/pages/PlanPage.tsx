@@ -195,7 +195,7 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
  * プリセットごとの案のカードを並べ、「この案にする」で今の案にする。
  * 点数（100点満点）・必須の違反・条件ごとの達成は、いつも点数の基準のプリセットの物差し（ADR-0010。useDayModel の scoreProblem）。
- * プリセットのカード・重みの欄で変わるのは「どう組むか（solver が最小にする費用）」だけ。訪問ごとの理由・ドラッグの可否はいまの条件
+ * プリセットのカード・重みの欄で変わるのは「どう組むか（solver が最小にする費用）」だけ。訪問ごとの理由・ドラッグの可否はこの日だけ試す重み
  */
 
 /** 予定の画面の地図・選択で使うルートの集まりのキー（今の案は1つだけ） */
@@ -461,9 +461,9 @@ export default function PlanPage() {
     () => (scoreProblem && aiPlan ? (attempt(() => achievements(scoreProblem, routes)).value ?? []) : []),
     [scoreProblem, aiPlan, routes],
   );
-  /** AI案を作った条件（重み・必須）と、いまの条件が違うか */
+  /** AI案を作った条件（重み・必須）と、この日だけ試す重みが違うか */
   const stale = !!aiPlan && JSON.stringify(aiPlan.rules) !== JSON.stringify(data.rules);
-  /** いまの条件を書き換えずにプリセットで作った案（自動作成・カードから選んだ。作ったあとに変えたのではない） */
+  /** この日だけ試す重みを書き換えずにプリセットで作った案（自動作成・カードから選んだ。作ったあとに変えたのではない） */
   const madeBy = stale && !!aiPlan && pinCount === 0 ? presetOf(aiPlan.rules, data.presets) : null;
   const autoMade = !!madeBy;
 
@@ -949,7 +949,7 @@ export default function PlanPage() {
    */
   const planIsStale = useMemo(() => {
     if (!aiPlan) return false;
-    // 作った条件（重み・必須）がいまの条件にもどのプリセットにも無い（PRD D161。月・ホーム・帯と同じ lib/month の rulesStale）
+    // 作った条件（重み・必須）がこの日だけ試す重みにもどのプリセットにも無い（PRD D161。月・ホーム・帯と同じ lib/month の rulesStale）
     if (rulesStale(data, date, currentRuleKeys(data.rules, data.presets))) return true;
     return planStale(compileInput, data, date, (rules, pins) => {
       if (Object.keys(pins).length > 0) return undefined;
@@ -960,11 +960,11 @@ export default function PlanPage() {
   }, [aiPlan, compileInput, data, date, problem, presetKeys]);
   /**
    * （D43）作り直す：月の「条件が変わった日を作り直す」と同じく点数の基準のプリセットの重みで作る（手直し・固定があれば確認）。古い記録の条件では作らない（作った条件がもう無いときに「条件が変わった」が消えないため。PR #40 のレビュー）。
-   * プリセットが無い（ありえない）ときはいまの条件で作る
+   * プリセットが無い（ありえない）ときはこの日だけ試す重みで作る
    */
   const remakeStale = () => {
-    // 月の作り直しと同じく、いまの条件（data.rules）は書き換えず、基準のプリセットの重みで解くだけ（runPreset はいまの条件を
-    // プリセットの重みに書き換え、いまの条件で作ったほかの日が「条件が変わった」になるため使わない。PR #40 の再レビュー）
+    // 月の作り直しと同じく、この日だけ試す重み（data.rules）は書き換えず、基準のプリセットの重みで解くだけ（runPreset はこの日だけ試す重みを
+    // プリセットの重みに書き換え、この日だけ試す重みで作ったほかの日が「条件が変わった」になるため使わない。PR #40 の再レビュー）
     // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
     void recreate(scoreRulesOf(data));
   };

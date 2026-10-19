@@ -23,6 +23,7 @@ import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../compone
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
 import {
+  addRule,
   PRESET_NAME_MAX,
   PRESET_NOTE_MAX,
   patchPreset,
@@ -30,9 +31,10 @@ import {
   resetPresets,
   setBasisWeight,
   setScorePreset,
+  trialPresetOf,
 } from '../lib/presets';
 import { useFeature } from '../lib/useFeature';
-import { presetOf, scorePresetOf, scoreRulesOf } from '../seed';
+import { scorePresetOf, scoreRulesOf } from '../seed';
 import { useDemoData } from '../store';
 import { SavePresetForm, SCORE_TEXT } from './planParts';
 import './settings.css';
@@ -92,11 +94,9 @@ export default function RulesPage() {
   const setWeight = (type: RuleType, patch: Partial<{ weight: number; hard: boolean }>) =>
     update((d) => setBasisWeight(d, type, patch));
   const add = () => {
-    // 足す条件の重み・必須は基準のプリセットのその型（無ければ型ごとの既定）
-    const w = basis?.weights[addType] ?? DEFAULTS[addType];
-    const rule: Rule = { id: newId('r'), type: addType, label: ruleTypeLabel(addType, terms), ...w };
-    if (!HARDABLE.has(addType)) rule.hard = false;
-    update((d) => ({ ...d, rules: [...d.rules, rule] }));
+    // 足す条件の重み・必須は、押した時点のデータで決める（試す重みが当てはまるプリセット、無ければ基準のその型。lib/presets の addRule）
+    const rule = { id: newId('r'), type: addType, label: ruleTypeLabel(addType, terms) };
+    update((d) => addRule(d, rule, DEFAULTS[addType]));
   };
   const remove = async (r: Rule) => {
     if (!(await confirmDialog({ title: `条件「${r.label}」を消しますか？`, confirmLabel: '消す', tone: 'danger' })))
@@ -290,8 +290,8 @@ function LabelInput({ value, onChange, fallback }: { value: string; onChange: (v
 }
 
 /**
- * 条件のプリセット（D20・D24。ADR-0008）。名前・一言・型ごとの重み・必須を変えるとすぐ保存。
- * 消す（最後の1つは消せない）・いまの重みを保存（6つまで）・初期値に戻す
+ * 条件のプリセット（D20・D24・D235。ADR-0008・ADR-0035）。名前・一言・型ごとの重み・必須を変えるとすぐ保存。
+ * 消す（最後の1つは消せない）・基準の重みを写して保存（6つまで）・初期値に戻す
  */
 function PresetSection() {
   const { shownTypes } = useShownTypes();
@@ -300,7 +300,8 @@ function PresetSection() {
   const terms = data.org.terms;
   const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
-  const current = presetOf(data.rules, data.presets);
+  /** この日だけ試す重みが当てはまるプリセット（基準を先に見る） */
+  const current = trialPresetOf(data);
   /** 点数の基準のプリセット（ADR-0010） */
   const ruler = scorePresetOf(data.presets, data.scorePresetId);
   // 予定の画面の「プリセットを編集する」（#/rules#presets）から来たら、この節を見せる
@@ -313,7 +314,10 @@ function PresetSection() {
   const remove = async (p: Preset) => {
     if (data.presets.length <= 1) return;
     const next = data.presets.find((x) => x.id !== p.id);
-    const moved = ruler?.id === p.id && next ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。` : '';
+    const moved =
+      ruler?.id === p.id && next
+        ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。この日だけ試す重みも基準に戻ります。`
+        : '';
     const ok = await confirmDialog({
       title: `プリセット「${p.name}」を消しますか？`,
       body: `作った案の記録は残ります。${moved}`,
@@ -326,7 +330,7 @@ function PresetSection() {
   const reset = async () => {
     const ok = await confirmDialog({
       title: 'プリセットを初期の3つに戻しますか？',
-      body: '初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。',
+      body: '初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。この日だけ試す重みも基準に戻ります。',
       confirmLabel: '初期の3つに戻す',
       tone: 'danger',
     });

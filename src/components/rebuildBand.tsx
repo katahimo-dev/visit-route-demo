@@ -55,7 +55,7 @@ function RebuildBandOn({ rules }: { rules: boolean }) {
   const settled = useSettled(data, SETTLE_MS);
   const deferred = useDeferredValue<DemoData | null>(settled, null);
   const [later, setLater] = useState(false);
-  const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? 'いまの条件';
+  const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '試す重み';
   // 案内は入力のたびに数えても軽い（重み・必須の比べだけ）
   const custom = rules && presetOf(data.rules, data.presets) === null;
   return (

@@ -118,7 +118,7 @@ export function rebuildAction(s: RebuildSummary, basis: string): RebuildAction |
  * 月のまとめて作る・自動作成・作り直しは、この画面の重み（点数の基準のプリセット）で作る
  */
 export function customRulesText(basis: string): string {
-  return `日の予定で変えた「この日だけ試す重み」がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「${basis}」）で作ります`;
+  return `この日だけ試す重み（日の予定の右の欄の重み）がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「${basis}」）で作ります`;
 }
 
 /** ［今日の案を試す重みで作り直す］の行き先（日の画面の ?do=recreate。PRD D166・D234） */

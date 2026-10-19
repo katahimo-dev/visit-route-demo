@@ -50,7 +50,7 @@ import { CompareTable, explainMap, ReasonBox, RefMark, rulerText, SCORE_TEXT, Sc
  * 比較（D19・D22・ADR-0005）：その日のAI案の記録（作るたびに条件と結果を残したもの）と「今の案」から、
  * 任意の2つを A・B に選んで比べる。条件の差・合計と条件ごと・担当ごとの順番・地図（A 点線、B 実線）。
  * 採点（点数・必須の違反・条件ごとの達成/違反）は A・B とも、点数の基準のプリセットの同じ物差し（evaluate.score。ADR-0010）。
- * 訪問ごとの理由はいまの条件。AI案を作る・手直しは「予定」の画面（#/plan）
+ * 訪問ごとの理由はこの日だけ試す重み。AI案を作る・手直しは「予定」の画面（#/plan）
  */
 
 type Side = 'a' | 'b';
@@ -237,9 +237,9 @@ export default function ComparePage() {
   };
   const applyRules = async (r: AiRun) => {
     const ok = await confirmDialog({
-      title: `条件を #${r.no} と同じにしますか？`,
-      body: `条件の重み・必須を #${r.no} を作ったときと同じにします。`,
-      confirmLabel: '条件を同じにする',
+      title: `この日だけ試す重みを #${r.no} と同じにしますか？`,
+      body: `日の予定の「AI にもう一度作らせる」で使う試す重み・必須を、#${r.no} を作ったときと同じにします。ふだんの重み（条件の重みの画面の点数の基準）は変えません。`,
+      confirmLabel: '試す重みを同じにする',
     });
     if (!ok) return;
     const saved = new Map(r.rules.map((x) => [x.id, x]));
@@ -250,7 +250,7 @@ export default function ComparePage() {
         return s ? { ...x, weight: s.weight, hard: s.hard } : x;
       }),
     }));
-    toast(`条件を #${r.no} と同じにしました`);
+    toast(`この日だけ試す重みを #${r.no} と同じにしました`);
   };
   const removeRun = async (r: AiRun) => {
     if (
@@ -743,7 +743,7 @@ export default function ComparePage() {
                             />
                             <IconButton
                               icon={SlidersHorizontal}
-                              label={`${c.title} の条件にする`}
+                              label={`試す重みを ${c.title} と同じにする`}
                               onClick={() => applyRules(run)}
                             />
                             <IconButton

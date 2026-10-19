@@ -8,12 +8,14 @@ import { batchTargets, currentRuleKeys, planRunOf, rulesStale } from './month';
 import {
   addPresetError,
   addPresetFromRules,
+  addRule,
   patchPreset,
   planRulesOf,
   removePreset,
   resetPresets,
   setBasisWeight,
   setScorePreset,
+  trialPresetOf,
   weightsFromRules,
   withBasisRules,
 } from './presets';
@@ -194,5 +196,42 @@ describe('条件の重みの画面＝点数の基準の重みを直す画面（A
     const keys = currentRuleKeys(after.rules, after.presets);
     expect(rulesStale(after, date, keys)).toBe(true);
     expect(batchTargets(after, date.slice(0, 7), date, 'stale', (x) => rulesStale(after, x, keys))).toContain(date);
+  });
+});
+
+describe('条件を足す・試す重みのプリセット（ADR-0035）', () => {
+  const fallback = { weight: 3, hard: false };
+  it('足す条件の重み・必須は、試す重みが当てはまるプリセットのその型（無ければ基準）。押した時点のデータで決める', () => {
+    const d0 = base();
+    // 試す重み＝基準（標準）：標準の重み
+    const a = addRule(d0, { id: 'rx', type: 'wait', label: '待ち2' }, fallback);
+    expect(a.rules.at(-1)).toMatchObject({ id: 'rx', weight: 3, hard: false });
+    expect(trialPresetOf(a)?.id).toBe('standard');
+    // 試す重み＝移動を短く：そのプリセットの重みで足し、試す重みは移動を短くのまま
+    const travel = { ...d0, rules: applyPreset(d0.rules, INITIAL_PRESETS[1]!) };
+    const b = addRule(travel, { id: 'ry', type: 'continuity', label: '継続2' }, fallback);
+    expect(b.rules.at(-1)!.weight).toBe(0.5);
+    expect(presetOf(b.rules, b.presets)?.id).toBe('travel');
+    // どのプリセットとも違う試す重み：基準のその型
+    const custom = { ...d0, rules: d0.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r)) };
+    expect(addRule(custom, { id: 'rz', type: 'compatibility', label: '相性2' }, fallback).rules.at(-1)!.weight).toBe(3);
+    // 必須にできない型は必須にしない・プリセットが無ければ fallback
+    expect(
+      addRule({ ...d0, presets: [] }, { id: 'rw', type: 'wait', label: 'w' }, { weight: 2, hard: true }).rules.at(-1),
+    ).toMatchObject({ weight: 2, hard: false });
+  });
+  it('試す重みのプリセットは基準を先に見る（同じ重みのプリセットが2つでも基準）', () => {
+    const d0 = base();
+    const dup = addPresetFromRules(d0, '標準の写し');
+    const d = setScorePreset(dup, dup.presets.at(-1)!.id);
+    expect(presetOf(d.rules, d.presets)?.id).toBe('standard');
+    expect(trialPresetOf(d)?.id).toBe(d.scorePresetId);
+  });
+  it('「基準の重みを写して保存」は深く写す（写したあとに基準を直しても写しは変わらない）', () => {
+    const d = addPresetFromRules(base(), '写し', '', 'basis');
+    const copy = d.presets.at(-1)!;
+    expect(copy.weights.wait).not.toBe(d.presets[0]!.weights.wait);
+    const edited = setBasisWeight(d, 'wait', { weight: 0.5 });
+    expect(edited.presets.at(-1)!.weights.wait.weight).toBe(3);
   });
 });

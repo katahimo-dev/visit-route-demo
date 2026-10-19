@@ -1,12 +1,12 @@
 // 条件のプリセットの編集（ADR-0008）。データを書き換えるのは store の update(fn) を通した画面だけ。ここは新しい DemoData を返す純粋関数
 import type { DemoData } from '../contracts/data';
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
-import { initialPresets, scorePresetOf, scoreRulesOf } from '../seed';
+import { initialPresets, matchesPreset, presetOf, scorePresetOf, scoreRulesOf } from '../seed';
 import { newId } from './common';
 
 /**
- * AI案を作る条件（ADR-0028。PRD D214）：「条件の重みとプリセット」（rules）が切なら、いまの条件に点数の基準のプリセットの重みを
- * 当てたもの（月まとめ作成と同じ。切ると基準のプリセットだけで作る）。入ならいまの条件そのもの
+ * AI案を作る条件（ADR-0028。PRD D214）：「条件の重みとプリセット」（rules）が切なら、この日だけ試す重みに点数の基準のプリセットの重みを
+ * 当てたもの（月まとめ作成と同じ。切ると基準のプリセットだけで作る）。入ならこの日だけ試す重みそのもの
  */
 export function planRulesOf(d: Pick<DemoData, 'rules' | 'presets' | 'scorePresetId'>, rulesOn: boolean): Rule[] {
   return rulesOn ? d.rules : scoreRulesOf(d);
@@ -17,7 +17,7 @@ export const PRESET_NAME_MAX = 20;
 export const PRESET_NOTE_MAX = 60;
 
 /**
- * いまの条件の重み・必須からプリセットの重みを作る。型ごとに最初の条件の重み・必須を写す
+ * この日だけ試す重みの重み・必須からプリセットの重みを作る。型ごとに最初の条件の重み・必須を写す
  * （同じ型の条件が2つ以上あっても、プリセットは型ごとの重みなので最初の1つだけ）。その型の条件が無ければ 重み0
  */
 export function weightsFromRules(rules: Rule[]): Preset['weights'] {
@@ -27,6 +27,11 @@ export function weightsFromRules(rules: Rule[]): Preset['weights'] {
       return [t, r ? { weight: r.weight, hard: HARDABLE.has(t) && r.hard } : { weight: 0, hard: false }];
     }),
   ) as Preset['weights'];
+}
+
+/** プリセットの重みの深い写し（型ごとの { weight, hard } も写す。元のプリセットと中身を共有しない） */
+function copyWeights(w: Preset['weights']): Preset['weights'] {
+  return Object.fromEntries(Object.entries(w).map(([k, v]) => [k, { ...v }])) as Preset['weights'];
 }
 
 /** 足せない理由（足せるなら null） */
@@ -53,7 +58,7 @@ export function addPresetFromRules(d: DemoData, name: string, note = '', from: '
     note: note.trim().slice(0, PRESET_NOTE_MAX),
     weights:
       from === 'basis'
-        ? { ...(scorePresetOf(d.presets, d.scorePresetId)?.weights ?? weightsFromRules(d.rules)) }
+        ? copyWeights(scorePresetOf(d.presets, d.scorePresetId)?.weights ?? weightsFromRules(d.rules))
         : weightsFromRules(d.rules),
   };
   return { ...d, presets: [...d.presets, preset] };
@@ -108,6 +113,31 @@ export function setBasisWeight(
   const basis = scorePresetOf(d.presets, d.scorePresetId);
   if (!basis) return { ...d, rules: d.rules.map((r) => (r.type === type ? { ...r, ...patch } : r)) };
   return patchPreset(d, basis.id, { weights: { ...basis.weights, [type]: { ...basis.weights[type], ...patch } } });
+}
+
+/**
+ * この日だけ試す重みが当てはまるプリセット（ADR-0035）。基準に当てはまれば基準を先に（同じ重みのプリセットが2つあっても基準を出す）、
+ * 無ければほかのプリセット（並びの先）、どれでもなければ null
+ */
+export function trialPresetOf(d: Pick<DemoData, 'rules' | 'presets' | 'scorePresetId'>): Preset | null {
+  const ruler = scorePresetOf(d.presets, d.scorePresetId);
+  return ruler && matchesPreset(d.rules, ruler) ? ruler : presetOf(d.rules, d.presets);
+}
+
+/**
+ * 条件を足す（条件の重みの画面。ADR-0035）。重み・必須は、試す重みが当てはまるプリセット（無ければ基準のプリセット）のその型。
+ * 試す重みが当てはまるプリセットのまま、基準と同じなら基準のままになる。プリセットが0件（ありえない）なら fallback。
+ * 必須にできない型は必須にしない
+ */
+export function addRule(
+  d: DemoData,
+  rule: Pick<Rule, 'id' | 'type' | 'label'>,
+  fallback: { weight: number; hard: boolean },
+): DemoData {
+  const p = trialPresetOf(d) ?? scorePresetOf(d.presets, d.scorePresetId);
+  const w = p?.weights[rule.type] ?? fallback;
+  const added: Rule = { ...rule, weight: w.weight, hard: HARDABLE.has(rule.type) && w.hard };
+  return { ...d, rules: [...d.rules, added] };
 }
 
 /** 初期の3種に戻す（点数の基準も先頭の「標準」に戻し、試す重みもそろえる） */
