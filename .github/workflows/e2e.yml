@@ -28,6 +28,14 @@ jobs:
     name: e2e ${{ matrix.fake_now || '次の水曜' }}
     env:
       FAKE_NOW: ${{ matrix.fake_now }}
+      # ビルドと配信はこのジョブで1回だけ。設定ファイルの webServer は使わない
+      BASE: http://localhost:4183/
+      # 速さの上限：手元は既定（100/3000/5000ms）、CI は共有ランナーのため緩める
+      PERF_MS_COMPAT: 300
+      PERF_MS_NAV: 300
+      PERF_MS_DETAILS: 300
+      PERF_MS_PROGRESS: 6000
+      PERF_MS_VACANCY: 10000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,6 +51,16 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: 配信を始めて待つ
+        run: |
+          npx vite preview --port 4183 --strictPort > preview.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null "$BASE" && exit 0
+            sleep 1
+          done
+          cat preview.log
+          exit 1
       # 2回目の実行が playwright-report/ と test-results/ を消すので、1回ごとに reports/ へ移す
       - run: npm run e2e
       - name: e2e の結果を移す
