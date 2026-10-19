@@ -1,5 +1,6 @@
 import { ArrowDownToLine, Map as MapIcon, Maximize2, X } from 'lucide-react';
 import { type RefObject, useEffect, useState } from 'react';
+import { scrollBehavior } from '../lib/motion';
 import { useFloatingEdge } from './floating';
 import { type MapLine, type MapPoint, RouteMap } from './RouteMap';
 import { IconButton } from './ui';
@@ -65,7 +66,7 @@ export function MapDock({
         <IconButton
           icon={ArrowDownToLine}
           label="ページの地図へ移る"
-          onClick={() => target.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          onClick={() => target.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })}
         />
         <IconButton icon={X} label="地図を閉じる" onClick={() => setOpen(false)} />
       </div>

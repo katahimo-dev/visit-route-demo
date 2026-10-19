@@ -99,7 +99,7 @@
   font-size: 0.82rem;
 }
 .feature-req.is-blocked {
-  color: var(--warn);
+  color: var(--warn-ink);
   font-weight: 700;
 }
 .feature-switch {
@@ -148,7 +148,7 @@
   opacity: 0.5;
 }
 .feature-switch:focus-visible {
-  outline: 2px solid var(--primary-dark);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
   border-radius: 999px;
 }
@@ -167,7 +167,7 @@
 .feature-off-notice > svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--warn);
+  color: var(--warn-ink);
 }
 .feature-off-text {
   flex: 1;

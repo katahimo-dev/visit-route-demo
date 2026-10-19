@@ -26,7 +26,7 @@
 }
 .person-btn:focus-visible,
 .person-info:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -50,6 +50,24 @@
   color: var(--ink);
   border-color: var(--line);
   background: var(--soft);
+}
+/* タッチの端末では押せる所を 32px に（見た目の 22px と並びは変えず ::before で広げる） */
+@media (pointer: coarse) {
+  .person-info {
+    position: relative;
+  }
+  .person-info::before {
+    content: "";
+    position: absolute;
+    inset: -5px;
+  }
+  /* 横に押せる要素が並ぶ側は、隣の押せる所に掛けない */
+  :is(button, a) + .person-info::before {
+    left: -1px;
+  }
+  .person-info:has(+ :is(button, a))::before {
+    right: -1px;
+  }
 }
 /* 印刷（月の印刷・連絡の一覧の印刷・日の画面の印刷）では i と開いている吹き出しを出さず、名前のボタンはただの文字にする（PRD D126） */
 @media print {

@@ -134,8 +134,8 @@
   cursor: inherit;
 }
 .tl-band-btn:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
 }
 .tl-band-line {
   display: flex;

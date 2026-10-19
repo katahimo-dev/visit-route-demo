@@ -4,6 +4,8 @@ import type { Pattern } from '../contracts/documents';
 import { createDemoData } from '../seed';
 import {
   BROKEN_KEY,
+  backup,
+  currentData,
   exportJson,
   extendDays,
   flushSave,
@@ -11,6 +13,7 @@ import {
   isImportError,
   load,
   migrate,
+  rememberCurrent,
   reset,
   save,
 } from './index';
@@ -150,6 +153,75 @@ describe('load・save', () => {
     const d = reset();
     expect(d.seed).toBe(1);
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(1);
+  });
+});
+
+describe('控え（backup。例外の画面）', () => {
+  const seedOf = (text: string | undefined) => (JSON.parse(text ?? '{}') as DemoData).seed;
+
+  it('画面の最新のデータ（メモリ）を優先し、待っている保存も先に書く', () => {
+    reset();
+    vi.useFakeTimers();
+    save({ ...createDemoData('2026-10-12'), seed: 9 });
+    const b = backup();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+    expect(b.source).toBe('memory');
+    expect(b.saveError).toBeNull();
+    expect(b.files.map((f) => f.kind)).toEqual(['current']);
+    expect(seedOf(b.files[0]?.text)).toBe(9);
+    expect(seedOf(mem.get(STORAGE_KEY))).toBe(9);
+  });
+
+  it('データの画面の書き出しと同じ形の JSON', async () => {
+    const d = { ...createDemoData('2026-10-12'), seed: 5 };
+    rememberCurrent(d);
+    expect(backup().files[0]?.text).toBe(await exportJson(d).text());
+  });
+
+  it('保存に失敗していたら（容量超過）、文言を返し、メモリの最新を書き出す', () => {
+    reset();
+    (globalThis.localStorage as Storage).setItem = () => {
+      throw new DOMException('full', 'QuotaExceededError');
+    };
+    save({ ...createDemoData('2026-10-12'), seed: 11 });
+    const b = backup();
+    expect(b.saveError).toContain('保存容量');
+    expect(b.source).toBe('memory');
+    expect(seedOf(b.files[0]?.text)).toBe(11);
+  });
+
+  it('保存が使えない（localStorage が無い）ときもメモリから書き出す', () => {
+    rememberCurrent(null);
+    Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true });
+    save({ ...createDemoData('2026-10-12'), seed: 12 });
+    const b = backup();
+    expect(b.source).toBe('memory');
+    expect(b.saveError).toMatch(/保存が使えません/);
+    expect(b.files.map((f) => f.kind)).toEqual(['current']);
+    expect(seedOf(b.files[0]?.text)).toBe(12);
+  });
+
+  it('メモリに無ければ保存してある文字をそのまま（壊れていても手を加えない）、何も無ければ空', () => {
+    reset();
+    rememberCurrent(null);
+    mem.set(STORAGE_KEY, '{こわれた');
+    const b = backup();
+    expect(b.source).toBe('storage');
+    expect(b.files).toEqual([{ kind: 'current', text: '{こわれた' }]);
+    mem.delete(STORAGE_KEY);
+    expect(backup()).toEqual({ files: [], source: null, saveError: null });
+  });
+
+  it('STORAGE_KEY が壊れて load() が退避したあとは、初期データと壊れたデータの2つを書き出す', () => {
+    reset();
+    mem.set(STORAGE_KEY, '{こわれた');
+    const d = load();
+    expect(currentData()).toBe(d);
+    const b = backup();
+    expect(b.files.map((f) => f.kind)).toEqual(['current', 'broken']);
+    expect(seedOf(b.files[0]?.text)).toBe(d.seed);
+    expect(b.files[1]?.text).toBe('{こわれた');
   });
 });
 

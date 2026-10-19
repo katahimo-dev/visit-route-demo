@@ -317,7 +317,7 @@ p.plan-band.error {
   font-weight: 400;
 }
 .balance-num.tone-warn {
-  color: #a46d0a;
+  color: var(--warn-ink);
 }
 .balance-num.tone-red {
   color: var(--danger);
@@ -347,6 +347,12 @@ p.plan-band.error {
 .icon-btn-sm {
   width: 26px;
   height: 26px;
+}
+/* タッチの端末では押せる所を 44px に（見た目の 26px は変えない） */
+@media (pointer: coarse) {
+  .icon-btn-sm::before {
+    inset: -9px;
+  }
 }
 .leg-line {
   display: flex;
@@ -416,7 +422,7 @@ p.plan-band.error {
 }
 .ab-badge.ab-a,
 .ab-pick.ab-a input:checked + span {
-  background: #8a7a70;
+  background: var(--sub);
 }
 .ab-badge.ab-b,
 .ab-pick.ab-b input:checked + span {
@@ -459,7 +465,7 @@ p.plan-band.error {
   color: #fff;
 }
 .ab-pick input:focus-visible + span {
-  outline: 2px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 .runs-table .actions {
@@ -530,7 +536,7 @@ p.plan-band.error {
   box-shadow: 0 2px 8px rgba(232, 115, 95, 0.18);
 }
 .preset-card:focus-visible {
-  outline: 3px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 .preset-card:disabled {
@@ -563,7 +569,7 @@ p.plan-band.error {
   font-size: 0.95rem;
 }
 .preset-crown {
-  color: var(--warn);
+  color: var(--warn-ink);
   display: inline-flex;
 }
 .preset-card-score {
@@ -774,11 +780,11 @@ p.plan-band.error {
   opacity: 0.4;
 }
 .reassign-bar {
-  border-left: 4px solid var(--primary);
+  border-left: 4px solid var(--accent);
   scroll-margin-top: calc(var(--header-h) + 8px);
 }
 .reassign-bar:focus-visible {
-  outline: 3px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 /* 欠勤の人に残る訪問・入らない訪問の理由 */
@@ -829,7 +835,7 @@ p.plan-band.error {
   white-space: nowrap;
   background: var(--card);
   border: 1px solid var(--line);
-  border-left: 4px solid var(--primary);
+  border-left: 4px solid var(--accent);
   border-radius: 14px;
   box-shadow: 0 10px 30px rgba(40, 25, 15, 0.2);
 }
@@ -1025,7 +1031,7 @@ p.plan-band.error {
   font-size: 0.85rem;
 }
 
-/* 「欠勤・キャンセル」の入口と欄（PRD D167〜D170）。入口は主ボタンにしない（オレンジ1色の決まり）が、赤い縁で見つけやすく */
+/* 「欠勤・キャンセル」の入口と欄（PRD D167〜D170）。入口は主ボタンにしない（朱1色の決まり）が、赤い縁で見つけやすく */
 .plan-sudden-btn {
   border-color: var(--danger);
   color: var(--danger);
@@ -1093,7 +1099,7 @@ p.plan-band.error {
   outline: none;
 }
 .sudden-step-title:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 .sudden-choices {

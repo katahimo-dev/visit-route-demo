@@ -1,7 +1,7 @@
 // 独自の確認ダイアログ（PRD D146〜D150。ADR-0026）の純粋な部分：頼まれた確認の並び（同時に出すのは先頭の1つ）、
 // 既定の文言、ダイアログの中で Tab を回す行き先。画面の部品は components/ConfirmDialog.tsx
 
-/** 確定のボタンの色：danger＝消す・捨てる（赤）、primary＝それ以外（オレンジ） */
+/** 確定のボタンの色：danger＝消す・捨てる（赤）、primary＝それ以外（濃い朱） */
 export type ConfirmTone = 'danger' | 'primary';
 
 /** 確認の頼み方（`const ok = await confirmDialog({...})`） */
