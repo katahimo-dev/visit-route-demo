@@ -870,6 +870,21 @@ p.plan-band.error {
   padding: 0;
   list-style: none;
 }
+/* 候補の名前（PRD D206）：箱は縮められるだけにし、名前はボタンの中の span で「…」にする */
+.candidate-name {
+  display: flex;
+  min-width: 0;
+  padding: 2px;
+}
+.candidate-name .person-btn {
+  min-width: 0;
+  max-width: 100%;
+}
+/* 候補の札の長い文は折り返す（390px で横にはみ出さない） */
+.candidate-row .chip {
+  max-width: 100%;
+  white-space: normal;
+}
 .candidate-row {
   display: flex;
   flex-direction: column;

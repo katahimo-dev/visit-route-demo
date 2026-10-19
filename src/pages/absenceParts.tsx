@@ -371,8 +371,11 @@ export function CandidateBox({
             <li key={c.staffId} className="candidate-row">
               <div className="spread" style={{ gap: 6 }}>
                 {/* 名前から詳細（「この人に入れる」とは別のボタン。PRD D206） */}
-                <strong className="ellipsis">
-                  <PersonButton kind="staff" id={c.staffId} name={staffName(c.staffId)} testId="candidate-name" />
+                {/* 長い名前は「…」で切り、フォーカスの枠は切らない（箱は overflow を隠さない） */}
+                <strong className="candidate-name">
+                  <PersonButton kind="staff" id={c.staffId} name={staffName(c.staffId)} testId="candidate-name">
+                    <span className="ellipsis">{staffName(c.staffId)}</span>
+                  </PersonButton>
                 </strong>
                 <button
                   type="button"

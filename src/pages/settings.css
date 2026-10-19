@@ -227,6 +227,11 @@
   margin: 0;
   line-height: 1.6;
 }
+/* 知らせを閉じたあとのフォーカスの先（Excel の欄。tabIndex=-1 でコードからだけ移る）は枠を見せる */
+.data-excel:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 /* 名簿の読み込みのあとの知らせ（最終勤務日の入った人。PRD D209）。色は日の画面の注意の帯（.plan-band.is-warn）にそろえる */
 .data-notice {
   display: flex;

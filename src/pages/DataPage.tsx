@@ -10,7 +10,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { FilePick } from '../components/FilePick';
@@ -82,7 +82,9 @@ export default function DataPage() {
    */
   const [lastDayNotice, setLastDayNotice] = useState<LastDayPerson[] | null>(null);
   /** 知らせを閉じたらフォーカスを戻す先（Excel の欄） */
-  const excelCard = useRef<HTMLDivElement>(null);
+  const excelCard = useRef<HTMLElement>(null);
+  /** Excel の欄の見出し（欄の名前。aria-labelledby） */
+  const excelTitleId = useId();
   useEffect(() => {
     const p = pendingRoster.current;
     if (!p) return;
@@ -160,6 +162,7 @@ export default function DataPage() {
         tone: 'danger',
       });
       if (!ok) return;
+      setLastDayNotice(null);
       replace(r);
       toast('Excel を読み込みました');
     } catch (e) {
@@ -241,6 +244,8 @@ export default function DataPage() {
         tone: 'danger',
       });
       if (!ok) return;
+      // データを置き換えたら、前の名簿の知らせは消す（PRD D209）
+      setLastDayNotice(null);
       replace(r);
       toast('読み込みました');
     } catch (e) {
@@ -256,6 +261,7 @@ export default function DataPage() {
       tone: 'danger',
     });
     if (!ok) return;
+    setLastDayNotice(null);
     reset();
     toast('初期状態に戻しました');
   };
@@ -326,8 +332,16 @@ export default function DataPage() {
         {error && <p className="error">{error}</p>}
       </div>
 
-      <div className="card stack" ref={excelCard} tabIndex={-1} style={{ outline: 'none' }}>
-        <SectionTitle icon={FileSpreadsheet}>Excel</SectionTitle>
+      <section
+        className="card stack data-excel"
+        ref={excelCard}
+        tabIndex={-1}
+        aria-labelledby={excelTitleId}
+        data-testid="excel-card"
+      >
+        <SectionTitle icon={FileSpreadsheet}>
+          <span id={excelTitleId}>Excel</span>
+        </SectionTitle>
         <Hint>
           {excelKind === 'all' ? (
             <>
@@ -358,7 +372,11 @@ export default function DataPage() {
               type="button"
               className={excelKind === k ? 'is-on' : undefined}
               aria-pressed={excelKind === k}
-              onClick={() => setExcelKind(k)}
+              onClick={() => {
+                // 種類を切り替えたら、前の名簿の知らせは消す（PRD D209）
+                if (k !== excelKind) setLastDayNotice(null);
+                setExcelKind(k);
+              }}
             >
               {label}
             </button>
@@ -451,7 +469,7 @@ export default function DataPage() {
             <WithIcon icon={RotateCcw}>画面を読み直す</WithIcon>
           </button>
         )}
-      </div>
+      </section>
 
       <div className="card stack">
         <SectionTitle icon={CircleHelp}>使い方の案内</SectionTitle>

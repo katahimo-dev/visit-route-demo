@@ -221,7 +221,71 @@ async function day(page) {
   );
   await page.keyboard.press('Escape');
   await settle(page);
+  const candId = await cand.getAttribute('data-id');
   await openAndLink(page, cand, '受けられる人', '#/staff');
+
+  // 390px：候補の一覧が横にはみ出さず、長い名前は「…」で切り、Tab で移ると枠が見える
+  await mutate(
+    page,
+    (d, id) => {
+      const s = d.staff.find((x) => x.id === id);
+      s.name = `${s.name}たいへん長い名前の例のスタッフさん`;
+    },
+    candId,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPlan(page);
+  await page.locator('.route-col-none .candidate-box button', { hasText: '受けられる人' }).first().click();
+  await page.getByTestId('candidate-list').waitFor({ timeout: 10000 });
+  const list = page.getByTestId('candidate-list');
+  await list.scrollIntoViewIfNeeded();
+  const listBox = await list.evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    const over = [...el.querySelectorAll('*')].filter((x) => x.getBoundingClientRect().right > b.right + 1).length;
+    return { right: b.right, over, inner: window.innerWidth };
+  });
+  check(
+    listBox.over === 0 && listBox.right <= listBox.inner + 1,
+    '受けられる人：390px で候補の一覧が横にはみ出さない',
+    listBox,
+  );
+  const long = list.getByTestId('candidate-name').filter({ hasText: 'たいへん長い名前' }).first();
+  const ell = await long.evaluate((el) => {
+    const sp = el.querySelector('.ellipsis');
+    return { cut: sp.scrollWidth > sp.clientWidth, overflow: getComputedStyle(sp).textOverflow };
+  });
+  check(ell.cut && ell.overflow === 'ellipsis', '受けられる人：長い名前は「…」で切る', ell);
+  await long.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  const ring = await long.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const box = el.parentElement.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return {
+      focused: document.activeElement === el,
+      outline: cs.outlineStyle,
+      // 枠（outline 2px・offset 2px）が親の箱の中に収まり、親は切らない
+      inside: r.left - 4 >= box.left - 0.5 && r.right + 4 <= box.right + 0.5,
+      clip: getComputedStyle(el.parentElement).overflow,
+    };
+  });
+  check(
+    ring.focused && ring.outline !== 'none' && ring.clip === 'visible',
+    '受けられる人：390px で長い名前に Tab で移ると枠が見える（箱で切らない）',
+    ring,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'candidate-390.png') });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // 名前を戻す（ほかの所の確認に長い名前を持ち込まない）
+  await mutate(
+    page,
+    (d, id) => {
+      const st = d.staff.find((x) => x.id === id);
+      st.name = st.name.replace('たいへん長い名前の例のスタッフさん', '');
+    },
+    candId,
+  );
 
   // D206：欠勤の人に残る訪問の〈利用者さん〉の名前
   await openPlan(page);
@@ -303,27 +367,22 @@ async function day(page) {
 // ---- 拘束が上限を超える人が1人なら、今までどおり帯の「稼働の見込み」ボタン ----
 async function overOne(page) {
   await openPlan(page);
-  await mutate(
+  // 今の案で、いちばん訪問の多い人だけに訪問を残し（ほかの人の訪問は入らない扱い）、上限を 0.5時間にする。
+  // 拘束は今の案から数えるので、上限を超えるのは必ずその1人になる
+  const only = await mutate(
     page,
-    (d) => {
+    (d, today) => {
+      const plan = d.aiPlans[today];
+      const [keep] = Object.entries(plan.routes).sort((x, y) => y[1].length - x[1].length)[0];
+      for (const [sid, ids] of Object.entries(plan.routes)) {
+        if (sid === keep) continue;
+        plan.unassigned.push(...ids);
+        plan.routes[sid] = [];
+      }
       d.org.spanLimitHours = 0.5;
+      return keep;
     },
-    null,
-  );
-  await openPlan(page);
-  const text = (await page.getByTestId('band-over-span').textContent()) ?? '';
-  const spans = [...text.matchAll(/(\d+):(\d{2})/g)].map((m) => Number(m[1]) * 60 + Number(m[2])).sort((a, b) => b - a);
-  const limit = spans.length >= 2 ? Math.ceil(spans[1] / 30) * 0.5 : 0.5;
-  if (spans.length < 1 || (spans.length >= 2 && limit * 60 >= spans[0])) {
-    check(true, '上限を超える人が1人の形を作れない（拘束の長さが同じ）ので、1人の確認はとばす', spans);
-    return;
-  }
-  await mutate(
-    page,
-    (d, h) => {
-      d.org.spanLimitHours = h;
-    },
-    limit,
+    TODAY,
   );
   await openPlan(page);
   const band = page.getByTestId('band-over-span');
@@ -332,9 +391,10 @@ async function overOne(page) {
   check(
     (await name.count()) === 1 && (await band.getByTestId('over-span-link').count()) === 0 && (await btn.count()) === 1,
     '上限を超える帯：1人なら名前のボタンと今までの「稼働の見込み」ボタン（リンクは出さない）',
-    { limit, spans },
+    { only, n: await name.count() },
   );
   const id = await name.getAttribute('data-id');
+  check(id === only, '上限を超える帯（1人）：訪問を残した人', { id, only });
   await btn.click();
   await settle(page, 600);
   check(
@@ -413,11 +473,13 @@ async function roster(page) {
     '知らせ：最終勤務日の入った人の名前と閲覧の欄へのリンク',
     got,
   );
-  check(
-    (await page.locator('.toast').count()) === 0 ||
-      (await page.locator('.toast').textContent()).includes('名簿を読み込みました'),
-    '知らせ：読み込んだことはトーストでも知らせる',
-  );
+  const toast = await page
+    .locator('.toast')
+    .filter({ hasText: '名簿を読み込みました' })
+    .waitFor({ timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  check(toast, '知らせ：読み込んだことはトーストでも知らせる');
   await page.screenshot({ path: path.join(OUT_DIR, 'data-notice.png') });
   // 390px
   await page.setViewportSize({ width: 390, height: 844 });
@@ -435,11 +497,44 @@ async function roster(page) {
   // 閉じる → 知らせが消えフォーカスは Excel の欄。保存しない（読み直すと出ない）
   await page.getByTestId('lastday-close').click();
   await settle(page);
+  const focusTo = await page.evaluate(() => {
+    const el = document.activeElement;
+    const name = el?.getAttribute('aria-labelledby');
+    return {
+      testId: el?.getAttribute('data-testid'),
+      role: el?.tagName,
+      name: name ? document.getElementById(name)?.textContent : null,
+      outline: el ? getComputedStyle(el).outlineStyle : '',
+    };
+  });
   check(
     (await notice.count()) === 0 &&
-      (await page.evaluate(() => document.activeElement?.textContent?.includes('Excel に書き出す') ?? false)),
-    '知らせ：閉じると消え、フォーカスは Excel の欄',
+      focusTo.testId === 'excel-card' &&
+      focusTo.role === 'SECTION' &&
+      focusTo.name === 'Excel' &&
+      focusTo.outline !== 'none',
+    '知らせ：閉じると消え、フォーカスは Excel の欄（名前は見出し・枠が見える）',
+    focusTo,
   );
+  // Excel の種類を切り替えると消える
+  await mutate(
+    page,
+    (d, id) => {
+      d.staff.find((x) => x.id === id).lastDay = null;
+    },
+    sid,
+  );
+  await page.getByTestId('excel-file-input').setInputFiles({
+    name: 'staff.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: book,
+  });
+  await notice.waitFor({ timeout: 20000 });
+  await page.getByTestId('excel-kind').locator('button').nth(0).click();
+  await settle(page);
+  check((await notice.count()) === 0, '知らせ：Excel の種類を切り替えると消える');
+  await page.getByTestId('excel-kind').locator('button').nth(2).click();
+  await settle(page);
   // もう一度読み込んで（同じ日なので変更なし）知らせが出ないこと → 外してから読み込み直して、リンクで閲覧の欄
   await mutate(
     page,
@@ -518,10 +613,55 @@ async function roster(page) {
   );
 }
 
+// ---- 「初期状態に戻す」で最終勤務日の知らせが消える ----
+async function rosterReset(page) {
+  await page.goto(`${BASE}#/data`);
+  await page.reload();
+  await page.getByTestId('excel-kind').waitFor({ timeout: 30000 });
+  const sid = await mutate(
+    page,
+    (d, day) => {
+      d.staff[0].lastDay = day;
+      return d.staff[0].id;
+    },
+    LAST_DAY,
+  );
+  await page.getByTestId('excel-kind').locator('button').nth(2).click();
+  await settle(page);
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    page.getByRole('button', { name: 'Excel に書き出す' }).click(),
+  ]);
+  const book = fs.readFileSync(await download.path());
+  await mutate(
+    page,
+    (d, id) => {
+      d.staff.find((s) => s.id === id).lastDay = null;
+    },
+    sid,
+  );
+  await page.getByTestId('excel-file-input').setInputFiles({
+    name: 'staff.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: book,
+  });
+  const notice = page.getByTestId('lastday-notice');
+  await notice.waitFor({ timeout: 20000 });
+  check((await notice.count()) === 1, '初期状態に戻す：前に知らせが出ている');
+  await page.getByRole('button', { name: 'デモの初期状態に戻す' }).click();
+  await page
+    .locator('.toast')
+    .filter({ hasText: '初期状態に戻しました' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
+  await settle(page);
+  check((await notice.count()) === 0, '知らせ：「初期状態に戻す」で消える');
+}
+
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const errors = [];
-  for (const step of [day, overOne, roster]) {
+  for (const step of [day, overOne, roster, rosterReset]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
