@@ -1,6 +1,6 @@
 # 週の画面
 
-> この画面のファイル：`src/pages/WeekPage.tsx`（`week.css`）・`mailPanels.tsx`（`WeekMailPanel`）、`src/components/PickChips.tsx`・`clientBar.tsx`・`staffBar.tsx`、`src/lib/week.ts`・`weekView.ts`・`timelineClients.ts`・`fold.ts`・`clientFilter.ts`。関連 ADR：0012 追記・0013・0014・0021・0024 追記・0025 追記。関連 PRD：D49〜D51・D56〜D57・D62・D65・D75・D83・D93・D108・D136〜D140・D175・D188・D221・D222。ADR-0033。
+> この画面のファイル：`src/pages/WeekPage.tsx`（`week.css`）・`mailPanels.tsx`（`WeekMailPanel`）、`src/components/PickChips.tsx`・`clientBar.tsx`・`staffBar.tsx`、`src/lib/week.ts`・`weekView.ts`・`timelineClients.ts`・`fold.ts`・`clientFilter.ts`。関連 ADR：0012 追記・0013・0014・0021・0024 追記・0025 追記。関連 PRD：D49〜D51・D56〜D57・D62・D65・D75・D83・D93・D108・D136〜D140・D175・D188・D221・D222・D228。ADR-0033。
 > 3段のバーと〈利用者さん〉の帯の塗りは [pages-bars.md](pages-bars.md)、絞り込みの欄 `ClientFilter` は [pages-clients.md](pages-clients.md)。
 
 ### 週の画面（`#/week`）
@@ -47,7 +47,7 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 - 列＝月〜日、縦＝`DAY_START` 07:00〜`DAY_END` 20:00（1時間ごとの目盛り。`lib/week`）
 - 訪問の帯：その日の今の案（無ければ確定した割当、どちらも無ければ訪問の開始（早））の lenient の開始〜終了の位置に、種類の色で（文字：時刻・〈利用者さん〉・担当の名前）。帯の縁は〈スタッフ〉で見るとき担当の色、〈利用者さん〉で見るとき〈利用者さん〉の色
 - 全員のとき、同じ時刻に重なる帯は列の中で横に並べる（`laneLayout`）
-- 未割当・入らない訪問は破線の枠。担当が `visitType` の理由で可でない帯は赤い枠と「資格✗」
+- 担当の無い帯は破線の枠で2つに分ける（PRD D228）：その日に案が無い（`source==='visit'`）＝「案なし」・注意の黄の細い破線（`is-noplan`）、案があるのに入らない＝「入らない」・要対応の赤い破線（`is-unassigned`）。凡例も「案なし（担当未定・注意）」「入らない（要対応）」の2つ。担当が `visitType` の理由で可でない帯は赤い枠と「資格✗」
 - 休みの訪問は薄い破線の帯で、担当の所に「休みのため無し」（ドラッグしない。押すとその日の日の画面）
 - 帯を押すとその日の日の画面へ（その訪問を選ぶ）。日の見出しを押すとその日の日の画面へ
 - 〈スタッフ〉で見る：`PickChips`（複数・全員・全解除。`?staff=`）。資格のチップ（項目「資格」の選択肢。押すとその資格を持つ人を選ぶ。`staffWithQualification`）と名前の資格バッジ（`QualificationBadges`。選択肢の頭文字を2字まで。`title` に正式名。`qualificationBadges`）。チップの i（`detailKind="staff"`）

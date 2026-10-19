@@ -46,8 +46,11 @@
   - それ以外は減点の内訳（evaluate の `hundredBreakdown`）のいちばん大きい成分を短い文に：移動が長め（N分）・空き時間（待ち）が長め（N分）・担当の条件（`perRule` の points の下限 `ruleLower`（evaluate の `ruleLowerBounds`）からの超過が最大の条件。必須の条件は外す。相性△が N件・いつもの担当でない訪問 N件・「名前」に合わない訪問 N件、外れが無ければ「相性◎を取り逃した訪問がある」など）・件数の偏り（目安から外れた人 N人）
   - 新しい採点は足さない。`scoreReasonLabel`（読み上げ・title）
   - evaluate の `ruleLowerBounds(problem)`：normalize の割当の下限を条件ごとに分けたもの（各訪問で割当費用が最小の担当の理由の点の和。和は lowerAssign と同じ）
+  - 次の一手 `nextStep`（PRD D229。`NEXT_STEP_TEXT`）：移動が長め＝「「移動を短く」で作る」（`shortTravel`）、入らない訪問＝「受けられる人を見る」（`candidates`）、相性△・×・◎の取り逃し＝「相性の表を開く」（`compat`）。ほか（必須の違反・待ち・偏り・ほかの担当の条件）は無し
 - `lib/useDayModel.ts` は `scoreRules`（点数の基準の条件。名前と重みを理由の文に使う）を返す
 - `pages/planParts.tsx` の `ScoreReasonText`：↘ と短い文。読み上げの前置き「点を下げているいちばんの理由：」は sr-only。使う所は日の画面の今の案の帯（`plan-reason`）と比較の画面（`compare-reason`）
+- `planParts.tsx` の `ScoreNextStep`：1行のまとめの下に1行「次の一手：［…］」（`p.score-next`・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「案を変える ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
+- 点数の説明（`HundredHint`）は決め方と減点の内訳だけ。内部の費用（「費用 N（内部の値…）」）は出さない（PRD D229）
 - `planParts.tsx` の文：`SCORE_TEXT`（「理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点」）・`rulerText(name)`（「点数はいつも点数の基準のプリセット「〈名前〉」の重みで付けます。プリセットを替えても点数の付け方は変わりません」）
 
 #### 「案を変える ▾」（PRD D156〜D160）
@@ -138,6 +141,7 @@
   - `StaffLegend`：地図の凡例から担当を選ぶ
 - 担当ごとの列の最後に「自宅まで N分」（最後の訪問先 → 自宅。`problem.travel[訪問先の点][自宅の点]`。`lib/routeView` の `homeTravel`）。押すと地図でその区間を強調
 - 訪問を押すと詳細（〈利用者さん〉・担当・「担当を変える ▾」・決まりごと・道順・理由）が出る（担当の select は置かない。ADR-0030）
+- 理由の欄（`planParts.tsx` の `ReasonBox`・data-testid `reason-box`。PRD D12・D229）：理由1つを1行（`reason-line`。`is-good`／`is-bad`）で、符号の無い言葉「✓ 相性◎（選ばれやすい）」「! 移動12分（やや遠い）」。`lib/scoreReason.ts` の `reasonFace(reason)`（純粋関数。テストあり）が印（✓・!）・名前・（　）の言葉を決める：相性◎＝選ばれやすい・○＝やや選ばれやすい・△＝選ばれにくい、移動は `TRAVEL_NEAR_MINUTES`（10分）以下＝近い・`TRAVEL_FAR_MINUTES`（20分）超＝遠い・その間＝やや遠い、待ち＝空き時間がある、担当にできない（Infinity）、満たした条件・合わない条件は名前だけ。読み上げは「よい点：」「気になる点：」（sr-only）。内部の値（費用の符号つきの数。100点の点数と向きが逆）は行の `title` にだけ（「内部の値 −30（移動1分＝1。小さいほど選ばれやすい）」）
 
 ##### 一覧
 
@@ -189,6 +193,7 @@
 #### 入らなかった訪問
 
 - 入らない訪問の列。理由の札の行 `unplaced-reasons` の先頭に〈利用者さん〉の i（data-testid `unplaced-info`。名前はカードの中なのでカードの外に置く。押してもカードを選ばない）
+- 理由の札（data-testid `unplaced-reason`。PRD D12・D229）は訪問の理由の欄と同じ `reasonFace` の名前と（　）の言葉（入らなかった理由の一覧なので「担当にできない」の言葉は付けない。例「さくら：9:00〜9:45 の訪問と時間が合わない」）。符号つきの数・「必須」を付けず、内部の値は札の `title` にだけ
 - カードの「受けられる人」で候補（`candidatesFor`。先頭5人＋「すべて見る」）を開く。行ごとに：
   - 名前（`candidate-name`。`PersonButton`。押しても入れない。箱 `.candidate-name` は `min-width:0` で overflow を隠さず、名前はボタンの中の `span.ellipsis` で「…」にする（フォーカスの枠を切らない））
   - 移動 +N分・「時間の約束を守れる」／「N分ずらせば入る」／「空き時間に入らない」・「いまの予定に必須の違反があるため、空き時間に入れられません」・「入れると後ろの N件が最大 +M分 遅れる」・条件の違反（理由の文）・「件数の上限を超える」（札 `.candidate-row .chip` は折り返す）
@@ -276,6 +281,6 @@
 - [ ] （D43）案を作ったあとにその日の訪問を直すと「条件が変わった」が出て、作り直すと消える
 - [ ] 「案を変える ▾」の並び・まとまり・説明・押せない理由・キーボード（`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
 - [ ] （D217〜D219）「担当を変える ▾」の項目（role=menuitem・説明・今の担当・入らなかった訪問へ）、キーボードで移すと担当が変わり固定、トーストと操作の行の「元に戻す」で担当と固定が戻る、確定の確認に入らない訪問の件数、390px で押せる（`lib/undoEdit`・`lib/reassignMenu`・`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
-- [ ] 点数の理由（`lib/scoreReason` のテスト・`scripts/e2e-words.cjs`）
+- [ ] 点数の理由・次の一手・訪問ごとの理由の言葉（入らなかった訪問の札も。符号・「費用」を出さない）（`lib/scoreReason` のテスト・`scripts/e2e-words.cjs`）
 - [ ] `?do=unassigned` で入らなかった訪問へ巻く（`scripts/e2e-links.cjs`）
 - [ ] 名前から開く詳細（列の見出しの i・訪問の詳細・担当ごとの1日・一覧・入らなかった訪問・受けられる人・休みの帯・拘束超えの帯）（`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）

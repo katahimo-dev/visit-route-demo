@@ -230,7 +230,10 @@ export type DayStatus = {
   hundred: number | null;
   hard: number;
   stale: boolean;
-  /** 手当てが必要（訪問があって案なし・入らない訪問がある・必須の違反がある・欠勤の人に訪問が残る） */
+  /**
+   * 要対応（赤。PRD D228）：入らない訪問がある・必須の違反がある・欠勤の人に訪問が残る。
+   * 訪問があって案の無い日は注意（黄）で、ここには入れない（画面が count と state から決める）
+   */
   needsCare: boolean;
 };
 
@@ -279,7 +282,7 @@ export function dayStatus(
     hard,
     // 計算に入れる訪問が無い日（取り消し・休みだけ）は作り直す対象にならないので数えない（batchTargets と同じ。PR #40 のレビュー）
     stale: !!plan && visits.length > 0 && !!view.stale,
-    needsCare: visits.length > 0 && (state === 'none' || unassigned > 0 || hard > 0 || absentLeft > 0),
+    needsCare: visits.length > 0 && (unassigned > 0 || hard > 0 || absentLeft > 0),
   };
 }
 

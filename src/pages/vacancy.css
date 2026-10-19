@@ -251,8 +251,9 @@ details[open] > summary .vacancy-fold-mark .when-open {
   text-decoration: underline;
   cursor: pointer;
 }
+/* 入らない日付は灰の文字（受けられないだけで要対応ではない。PRD D228） */
 .vacancy-dates li.is-ng {
-  color: var(--danger);
+  color: var(--sub);
 }
 .inquiry-summary {
   display: block;

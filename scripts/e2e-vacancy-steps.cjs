@@ -2,6 +2,7 @@
 // 段階の並び（1 いつ・何を → 2 場所（任意。畳む）→ 3 受けられる曜日・時間帯 → 4 次の一手）、開いてすぐ結果（PERF_MS 以内）、
 // 1段目を変えるとすぐ結果が変わる、場所をあとから足すと表が移動を含む値になり、畳んでも入力・ピンが残る、
 // 主ボタンは段階ごとに1つ（4段目の「要約をコピー」だけ）、マスの読み方（凡例・用語の説明・×に「約0」を出さない・読み上げ）、
+// × のマスは薄い灰で赤くしない・色の凡例「0人（受けられない）」（PRD D228）、
 // 案の無い日の注意は1か所、案内文ははじめ畳み開くまで計算しない、仮押さえ、390px で収まる、ブラウザの確認を出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-vacancy-steps.cjs
@@ -220,6 +221,21 @@ async function marks(page) {
     '× は数字なし・読み上げは「受けられない」',
     ng.length,
   );
+  // × のマスは薄い灰（赤は要対応だけ。PRD D228）
+  const ngColors = await page.locator('[data-testid="vacancy-cell"][data-verdict="ng"].lv-none').evaluateAll((els) =>
+    els.map((e) => {
+      const cs = getComputedStyle(e);
+      const [r, g, b] = (cs.backgroundColor.match(/\d+/g) ?? []).map(Number);
+      return { bg: cs.backgroundColor, shadow: cs.boxShadow, reddish: r - Math.min(g, b) > 40 };
+    }),
+  );
+  check(
+    ngColors.length > 0 && ngColors.every((c) => !c.reddish && !/rgb\((184|210), (57|63)/.test(c.shadow)),
+    '× のマスは薄い灰（赤の地・赤の枠にしない）',
+    ngColors.slice(0, 2),
+  );
+  const levelLegend = await page.getByTestId('level-legend').innerText();
+  check(/0人（受けられない）/.test(levelLegend), '色の凡例「0人（受けられない）」', levelLegend);
   check(
     ok.every((f) => /^約\d+$/.test(f.sub) && /どの週でも 約\d+人/.test(f.label)),
     '○ は人数（目安は「約」）',

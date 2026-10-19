@@ -120,7 +120,7 @@ import { CURRENT_TEXT, NONE_TEXT, reassignItemText } from '../lib/reassignMenu';
 import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
-import { scoreReason } from '../lib/scoreReason';
+import { reasonFace, scoreReason } from '../lib/scoreReason';
 import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
 import {
@@ -168,6 +168,7 @@ import {
   RefMark,
   rulerText,
   SCORE_TEXT,
+  ScoreNextStep,
   ScoreReasonText,
   WeightPanel,
 } from './planParts';
@@ -246,6 +247,7 @@ export default function PlanPage() {
   const suddenOn = useFeature('sudden');
   const mailOn = useFeature('mail');
   const rulesOn = useFeature('rules');
+  const compatOn = useFeature('compat');
   const {
     data,
     update,
@@ -2228,12 +2230,22 @@ export default function PlanPage() {
             {/* 〈利用者さん〉の名前はカード（押すと選ぶ・ドラッグ）の中なので、詳細は外の i から開く（PRD D205） */}
             <div className="row unplaced-reasons" style={{ flexWrap: 'wrap', gap: 4 }}>
               {client && <PersonInfo kind="client" id={client.id} name={client.displayName} testId="unplaced-info" />}
-              {reasons.map((r) => (
-                <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
-                  {r.label}
-                  {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
-                </span>
-              ))}
+              {/* 理由の札は符号の無い言葉（PRD D229。内部の値は title にだけ）。
+                  入らなかった理由の一覧なので、（担当にできない）は付けない（札の名前が理由そのもの。title に残る） */}
+              {reasons.map((r) => {
+                const f = reasonFace(r);
+                return (
+                  <span
+                    key={`${r.ruleId}:${r.label}`}
+                    className="chip chip-warn"
+                    title={f.title}
+                    data-testid="unplaced-reason"
+                  >
+                    {f.text}
+                    {f.note && f.note !== '担当にできない' && `（${f.note}）`}
+                  </span>
+                );
+              })}
             </div>
             {problem && reassignMarks.unplaced.has(id) && (
               <CandidateBox
@@ -2300,6 +2312,8 @@ export default function PlanPage() {
           ruleLower: scoreLower,
         })
       : null;
+  /** 次の一手「「移動を短く」で作る」のプリセット（初期の ID か名前。消していれば出さない。PRD D229） */
+  const travelPreset = data.presets.find((p) => p.id === 'travel') ?? data.presets.find((p) => p.name === '移動を短く');
   /** 訪問の一覧（表示の「一覧」。休みのため無しの訪問も薄く出す。ADR-0013） */
   const visitList = (
     <VisitList
@@ -2840,6 +2854,19 @@ export default function PlanPage() {
             </WithIcon>
           </button>
         </div>
+      )}
+      {/* いちばんの理由の次の一手（PRD D229）：移動が長い → 「移動を短く」で作る（「案を変える ▾」の項目と同じ）・入らない → 受けられる人・相性 → 相性の表 */}
+      {aiPlan && cs && rulesOn && reasonNow && (
+        <ScoreNextStep
+          reason={reasonNow}
+          date={date}
+          compatOn={compatOn}
+          onShortTravel={
+            travelPreset && !busyWhy && presetOf(planRules, data.presets)?.id !== travelPreset.id
+              ? () => void runPreset(travelPreset)
+              : undefined
+          }
+        />
       )}
 
       {/* 担当ごとの1日（PRD D84）。今の案のある日だけ。狭い幅では畳む */}

@@ -9,9 +9,14 @@ import { repair } from './repair';
 
 /** 壊れた JSON の退避先 */
 export const BROKEN_KEY = 'vrdemo:data:broken';
+/** 1世代の控え（置き換える前のデータの JSON。PRD D227。ADR-0032） */
+export const PREV_KEY = 'vrdemo:data:prev';
+/** 1世代の控えの時刻と操作の名前（`{ at, reason }`） */
+export const PREV_INFO_KEY = 'vrdemo:data:prev:info';
 /** 保存の間引き間隔（ms） */
 export const SAVE_INTERVAL_MS = 300;
-export const QUOTA_MESSAGE = 'ブラウザの保存容量を超えました。データを書き出してから、古い日の予定を消してください';
+export const QUOTA_MESSAGE =
+  'ブラウザの保存容量を超えました。データを書き出してから、データの画面の「古い案と記録を片づける」で古い月の AI案と記録を消してください';
 
 const today = () => jstDate(Date.now());
 
@@ -125,27 +130,83 @@ export function currentData(): DemoData | null {
   return current;
 }
 
-/** 即時に書く。失敗したら利用者向けの文言を返す（成功は null）。結果は lastSaveError にも残す */
-function writeNow(data: DemoData): string | null {
-  lastSaveError = tryWrite(data);
-  return lastSaveError;
+/** 容量超過の例外か */
+function isQuota(e: unknown): boolean {
+  if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22)) return true;
+  return (e as { name?: string } | null)?.name === 'QuotaExceededError';
 }
 
-function tryWrite(data: DemoData): string | null {
-  const ls = storage();
-  if (!ls) return '保存できませんでした（このブラウザでは保存が使えません）。データを書き出してください';
+/** 1世代の控えを消す（容量を空ける） */
+function dropPrevious(ls: Storage): void {
   try {
-    ls.setItem(STORAGE_KEY, JSON.stringify(data));
-    return null;
-  } catch (e) {
-    const quota = e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22);
-    return quota || (e as { name?: string })?.name === 'QuotaExceededError'
-      ? QUOTA_MESSAGE
-      : '保存できませんでした。データを書き出してください';
+    ls.removeItem(PREV_KEY);
+    ls.removeItem(PREV_INFO_KEY);
+  } catch {
+    // 消せなくても続ける
   }
 }
 
-export function load(): DemoData {
+/**
+ * 書いた結果。message：失敗したら利用者向けの文言（成功は null）。
+ * droppedPrevious：容量が足りず1世代の控えを捨てた（画面は控えの欄を消して知らせる。ADR-0032）
+ */
+export type WriteResult = { message: string | null; droppedPrevious: boolean };
+
+/** 即時に書く。結果の文言は lastSaveError にも残す */
+function writeNow(data: DemoData): WriteResult {
+  const r = tryWrite(data);
+  lastSaveError = r.message;
+  return r;
+}
+
+/**
+ * 書いてみる。容量超過なら1世代の控えを捨ててもう1回だけ書く（いまのデータを残すほうが先。ADR-0032）
+ */
+function tryWrite(data: DemoData): WriteResult {
+  const fail = (message: string, droppedPrevious = false): WriteResult => ({ message, droppedPrevious });
+  const ls = storage();
+  if (!ls) return fail('保存できませんでした（このブラウザでは保存が使えません）。データを書き出してください');
+  const text = JSON.stringify(data);
+  try {
+    ls.setItem(STORAGE_KEY, text);
+    return { message: null, droppedPrevious: false };
+  } catch (e) {
+    if (!isQuota(e)) return fail('保存できませんでした。データを書き出してください');
+    if (ls.getItem(PREV_KEY) === null) return fail(QUOTA_MESSAGE);
+    dropPrevious(ls);
+    try {
+      ls.setItem(STORAGE_KEY, text);
+      return { message: null, droppedPrevious: true };
+    } catch (e2) {
+      return fail(isQuota(e2) ? QUOTA_MESSAGE : '保存できませんでした。データを書き出してください', true);
+    }
+  }
+}
+
+/** 読めなかった元の文字（退避できなかったときもこれで書き出せるよう、開いている間は覚える） */
+let brokenOriginal: string | null = null;
+
+/** 読めなかった元の文字を BROKEN_KEY に退避する。容量超過なら1世代の控えを捨ててもう1回だけ。退避できたか */
+function keepBroken(ls: Storage, text: string): boolean {
+  try {
+    ls.setItem(BROKEN_KEY, text);
+    return true;
+  } catch {
+    dropPrevious(ls);
+    try {
+      ls.setItem(BROKEN_KEY, text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * 読み込む。broken：保存していたデータが読めず、元の文字を BROKEN_KEY に退避して初期データで開いた（PRD D227。画面が知らせる）。
+ * brokenKept：元の文字を退避できた（できなければ画面は「今すぐ書き出してください」と知らせる。元の文字は開いている間 brokenText で書き出せる）
+ */
+export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept: boolean } {
   const ls = storage();
   const todayDate = today();
   const text = ls?.getItem(STORAGE_KEY) ?? null;
@@ -153,32 +214,51 @@ export function load(): DemoData {
     const d = createInitialData(todayDate);
     writeNow(d);
     current = d;
-    return d;
+    return { data: d, broken: false, brokenKept: false };
   }
   const r = importJson(text);
   if (isImportError(r)) {
-    let kept = false;
-    try {
-      ls?.setItem(BROKEN_KEY, text);
-      kept = !!ls;
-    } catch {
-      // 退避できなくても続ける
-    }
+    brokenOriginal = text;
+    // 退避が容量超過なら1世代の控えを捨ててもう1回（keepBroken）。退避できなくても続ける
+    const brokenKept = ls ? keepBroken(ls, text) : false;
     const d = createInitialData(todayDate);
     // 退避できたら作った初期データを書く（読み直すたびに初期データの計算と退避を繰り返さない）。
-    // 退避できなかったときは元の文字を残す（上書きすると壊れたデータが消える）
-    if (kept) writeNow(d);
+    // 退避できなかったときは元の文字を残す（上書きすると壊れたデータが消える。brokenText が本体のキーから返す）
+    if (brokenKept) writeNow(d);
     current = d;
-    return d;
+    return { data: d, broken: true, brokenKept };
   }
   const extended = extendDays(r, todayDate);
   if (extended !== r) writeNow(extended);
   current = extended;
-  return extended;
+  return { data: extended, broken: false, brokenKept: false };
+}
+
+export function load(): DemoData {
+  return loadWithStatus().data;
+}
+
+/**
+ * 読めなかったデータ（BROKEN_KEY に退避した元の文字）。退避できていなければ、開いたときに覚えた元の文字、
+ * それも無ければ本体のキーの文字（まだ読めないままなら）。無ければ null
+ */
+export function brokenText(): string | null {
+  const read = (key: string): string | null => {
+    try {
+      return storage()?.getItem(key) ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const kept = read(BROKEN_KEY);
+  if (kept !== null) return kept;
+  if (brokenOriginal !== null) return brokenOriginal;
+  const text = read(STORAGE_KEY);
+  return text !== null && isImportError(importJson(text)) ? text : null;
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;
-let pending: { data: DemoData; onError?: (message: string | null) => void } | null = null;
+let pending: { data: DemoData; onError?: (message: string | null, droppedPrevious: boolean) => void } | null = null;
 
 /** 待っている保存をすぐ書く（ページを閉じる前・テスト用） */
 export function flushSave(): void {
@@ -188,15 +268,15 @@ export function flushSave(): void {
   pending = null;
   if (!p) return;
   // onError が無くても書く（p.onError?.(writeNow(...)) だと onError の無いときに書かない）
-  const message = writeNow(p.data);
-  p.onError?.(message);
+  const r = writeNow(p.data);
+  p.onError?.(r.message, r.droppedPrevious);
 }
 
 /**
  * 300ms 間引きで保存（その間の呼び出しは最後の値だけ書く）。
- * 結果は onError に渡す（成功は null、容量超過などは利用者向けの文言）
+ * 結果は onError に渡す（成功は null、容量超過などは利用者向けの文言。droppedPrevious：容量のために1世代の控えを捨てた）
  */
-export function save(data: DemoData, onError?: (message: string | null) => void): void {
+export function save(data: DemoData, onError?: (message: string | null, droppedPrevious: boolean) => void): void {
   current = data;
   pending = { data, onError };
   if (timer) return;
@@ -245,6 +325,131 @@ export function backup(): Backup {
   return { files, source, saveError: lastSaveError };
 }
 
+// ---- 1世代の控え（PRD D227。ADR-0032）----
+
+/** 控えの時刻（ms）と、控えを残した操作の名前（「初期状態に戻す」など） */
+export type PreviousInfo = { at: number; reason: string };
+
+/**
+ * 控えを残した結果。kept：残せた、why：残せなかった理由（確認の本文に出す）。
+ * cancel：操作を取り消したときに呼び、残す前の控え（前の世代）に戻す
+ */
+export type PreviousKeep = { kept: boolean; why: string | null; cancel(): void };
+
+const KEEP_FULL = '控えを残せません：容量不足';
+const KEEP_NO_STORAGE = '控えを残せません：このブラウザでは保存が使えません';
+
+/**
+ * 置き換える前のデータを1世代だけ控える（PREV_KEY・PREV_INFO_KEY。次に控えると上書き）。
+ * 書けなければ（容量超過）前の世代も消して1回だけ試し直し、それでも書けなければ控えなしで kept=false（操作は止めない）
+ */
+export function keepPrevious(data: DemoData, reason: string, at: number = Date.now()): PreviousKeep {
+  const ls = storage();
+  if (!ls) return { kept: false, why: KEEP_NO_STORAGE, cancel: () => {} };
+  let oldText: string | null = null;
+  let oldInfo: string | null = null;
+  try {
+    oldText = ls.getItem(PREV_KEY);
+    oldInfo = ls.getItem(PREV_INFO_KEY);
+  } catch {
+    return { kept: false, why: KEEP_NO_STORAGE, cancel: () => {} };
+  }
+  const text = JSON.stringify(data);
+  const info = JSON.stringify({ at, reason } satisfies PreviousInfo);
+  const write = () => {
+    ls.setItem(PREV_KEY, text);
+    ls.setItem(PREV_INFO_KEY, info);
+  };
+  /** 前の世代に戻す（取り消し） */
+  const restoreOld = () => {
+    dropPrevious(ls);
+    if (oldText === null || oldInfo === null) return;
+    try {
+      ls.setItem(PREV_KEY, oldText);
+      ls.setItem(PREV_INFO_KEY, oldInfo);
+    } catch {
+      dropPrevious(ls);
+    }
+  };
+  let kept = false;
+  let why: string | null = null;
+  try {
+    write();
+    kept = true;
+  } catch (e) {
+    // 前の世代が場所を取っているので、消してもう1回だけ
+    dropPrevious(ls);
+    try {
+      write();
+      kept = true;
+    } catch (e2) {
+      dropPrevious(ls);
+      why = isQuota(e) || isQuota(e2) ? KEEP_FULL : '控えを残せません：保存できませんでした';
+    }
+  }
+  return { kept, why, cancel: restoreOld };
+}
+
+/**
+ * 控えを残せそうか（確認の本文に出す見込み。PRD D227）。書いてはみない軽い判定：保存が使えない、
+ * または最後の保存が容量超過なら残せない見込み。実際に残すのは確認で OK になってから keepPrevious で
+ */
+export function canKeepPrevious(): { kept: boolean; why: string | null } {
+  if (!storage()) return { kept: false, why: KEEP_NO_STORAGE };
+  if (lastSaveError === QUOTA_MESSAGE) return { kept: false, why: KEEP_FULL };
+  return { kept: true, why: null };
+}
+
+/** 「直前の状態に戻す」でいまのデータを控えるときの操作の名前 */
+export const RESTORE_REASON = '直前の状態に戻す';
+
+/**
+ * 直前の状態に戻す（PRD D227）：控えを読み、いまのデータ now を代わりの控えに残してから控えのデータを返す。
+ * いまのデータを控えに残せなければ（容量不足など）戻さずに文言を返す（控えは元のまま。いまのデータを失わない）
+ */
+export function swapPrevious(now: DemoData, at: number = Date.now()): { data: DemoData } | { error: string } {
+  const r = readPrevious();
+  if (r === null) return { error: '戻せる控えがありません（別のタブで使ったか、容量のために消えました）' };
+  if (isImportError(r)) return { error: `控えを読めませんでした（${r.message}）` };
+  const k = keepPrevious(now, RESTORE_REASON, at);
+  if (!k.kept) {
+    // 書けなかったときに消した控えを元に戻す
+    k.cancel();
+    const why = (k.why ?? KEEP_FULL).replace(/^控えを残せません：/, '');
+    return { error: `いまのデータを控えに残せないため戻せません：${why}` };
+  }
+  return { data: r };
+}
+
+/** 控えの時刻と操作の名前が同じか（画面の state を無駄に替えない） */
+export const samePreviousInfo = (a: PreviousInfo | null, b: PreviousInfo | null): boolean =>
+  a === b || (!!a && !!b && a.at === b.at && a.reason === b.reason);
+
+/** 控えの時刻と操作の名前。控えが無い・読めなければ null */
+export function previousInfo(): PreviousInfo | null {
+  const ls = storage();
+  if (!ls) return null;
+  try {
+    if (ls.getItem(PREV_KEY) === null) return null;
+    const raw = JSON.parse(ls.getItem(PREV_INFO_KEY) ?? 'null') as Partial<PreviousInfo> | null;
+    if (!raw || typeof raw.at !== 'number' || !Number.isFinite(raw.at) || typeof raw.reason !== 'string') return null;
+    return { at: raw.at, reason: raw.reason };
+  } catch {
+    return null;
+  }
+}
+
+/** 控えのデータ（移行・repair 済み）。無ければ null、読めなければ ImportError */
+export function readPrevious(): DemoData | ImportError | null {
+  let text: string | null = null;
+  try {
+    text = storage()?.getItem(PREV_KEY) ?? null;
+  } catch {
+    return null;
+  }
+  return text === null ? null : importJson(text);
+}
+
 export function reset(): DemoData {
   if (timer) clearTimeout(timer);
   timer = null;
@@ -255,6 +460,7 @@ export function reset(): DemoData {
   return d;
 }
 
+export { BACKUP_LAST_KEY, BACKUP_REMINDED_KEY, backupMemory, type ExportKind, type LastExport } from './backup';
 export { DemoDataProvider, useDemoData } from './react';
 export { repair } from './repair';
 export { TOUR_SEEN_KEY, tourMemory } from './tour';

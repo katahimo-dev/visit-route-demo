@@ -1,6 +1,6 @@
 # 時間帯のバーと一目で分かる表示（画面共通）
 
-> この部品のファイル：`src/lib/barRows.ts`・`staffBar.ts`・`glance.ts`・`dayLine.ts`、`src/components/loadBar.tsx`（`loadBar.css`）・`staffBar.tsx`・`clientBar.tsx`（`clientBar.css`）・`workBars.tsx`（`workBars.css`）・`glance.tsx`（`glance.css`）・`dayLines.tsx`（`dayLines.css`）・`barMarks.css`。使う画面：月・週・日・空き状況・稼働の見込み。関連 ADR：0012 追記・0015。関連 PRD：D54・D60・D75〜D85。
+> この部品のファイル：`src/lib/barRows.ts`・`staffBar.ts`・`glance.ts`・`dayLine.ts`、`src/components/loadBar.tsx`（`loadBar.css`）・`staffBar.tsx`・`clientBar.tsx`（`clientBar.css`）・`workBars.tsx`（`workBars.css`）・`glance.tsx`（`glance.css`）・`dayLines.tsx`（`dayLines.css`）・`barMarks.css`。使う画面：月・週・日・空き状況・稼働の見込み。関連 ADR：0012 追記・0015。関連 PRD：D54・D60・D75〜D85・D228。
 
 ### 3段の区切り（`lib/barRows.ts`。PRD D82）
 
@@ -123,7 +123,7 @@
 
 #### `components/glance.tsx`（`glance.css`）
 
-- 段階の色 `lv-*`：0人＝淡い赤に濃い赤の枠、1人＝淡い橙、2人以上＝緑で多いほど濃い、案なし＝淡い無地（文字を載せるので淡い色）
+- 段階の色 `lv-*`：0人（受けられない）＝薄い灰の地と灰の文字（×。枠なし）、0人の週がある・1人＝淡い橙、2人以上＝緑で多いほど濃い、案なし＝淡い無地（文字を載せるので淡い色）。受けられない時間帯は手当てが要るものではないので赤にしない（赤は要対応だけ。PRD D228）
 - `LevelLegend`
 - `ClientDots`：7列のカレンダーの並びの点。形でも分ける（丸・三角・白抜きの丸・灰の四角・小さな点）。月の〈利用者さん〉を選んだときの右の欄（数えるのは `clientDay`＝今の案、無ければ確定した割当）
 

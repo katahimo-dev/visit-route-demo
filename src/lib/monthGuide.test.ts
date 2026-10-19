@@ -45,10 +45,22 @@ describe('cellGuide', () => {
     expect(lines.some((l) => l.includes('欠勤'))).toBe(false);
   });
   it('希望休が無ければ希の説明は書かない。案の無い日は棒が無い理由', () => {
-    const lines = cellGuide({ ...base, count: 3, stateText: '案なし', care: true, resting: 1, loadBar: 'noPlan' });
+    const lines = cellGuide({
+      ...base,
+      count: 3,
+      stateText: '案なし',
+      care: false,
+      caution: true,
+      resting: 1,
+      loadBar: 'noPlan',
+    });
     expect(lines).toContain('「休 N」＝休むスタッフの人数');
     expect(lines).toContain('棒が無い＝案が無いので空きを数えていない');
-    expect(lines).toContain('赤い点・赤い枠＝要確認（案が無い・入らない訪問・必須の違反）');
+    // 案の無い日は注意（黄）。赤は要対応だけ（PRD D228）
+    expect(lines).toContain('黄の点線の枠＝注意（訪問があるのにまだ案が無い。まとめて作るか日の画面で作る）');
+    expect(lines.some((l) => l.startsWith('赤い点'))).toBe(false);
+    const red = cellGuide({ ...base, count: 3, stateText: '案あり', care: true, unassigned: true });
+    expect(red).toContain('赤い点・赤い枠＝要対応（入らない訪問・必須の違反・休みの人に訪問）');
   });
   it('手当ての印（入らない・違反・休みの人に・条件が変わった・拘束超）', () => {
     const lines = cellGuide({

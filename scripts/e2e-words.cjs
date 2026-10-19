@@ -7,6 +7,10 @@
 // 日の画面のボタンでその日の日の画面）、空き状況の案の無い日の注意は1か所、
 // 月の凡例（はじめは畳む・開く・読み直すと畳む（保存しない）・マスにマウスを重ねる／フォーカスで読み方・Esc で消す）、
 // 相性のセルの記号の意味（title・aria-label）、390px で収まる・印刷で用語の説明・ボタン・凡例の開け閉めを出さない、ブラウザの確認を出さない。
+// 理由の見せ方と警告の色（PRD D228・D229）：訪問ごとの理由は「✓ 相性◎（選ばれやすい）」のような符号の無い言葉で「費用」を出さず内部の値は title、
+// 入らなかった訪問の理由の札も符号で始めず符号つきの数を付けない、
+// 点を下げている理由の次の一手、比較の表に乱数の種を出さず「詳細設定」に畳む、月の今日以降の案なしのマスは注意（黄の点線）で赤くしない・凡例、
+// 週の担当の無い帯は案なし（注意）と入らない（要対応）を分け凡例も2つ。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-words.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -473,6 +477,195 @@ async function legend(page) {
   check(/未入力/.test((await blank.getAttribute('aria-label')) ?? ''), '相性：空のセルは「未入力」');
 }
 
+// ---- 理由の見せ方と警告の色（PRD D228・D229）----
+const DANGER_RGB = 'rgb(184, 57, 58)';
+async function reasonWords(page) {
+  await openPlan(page);
+  // 訪問を押すと理由の欄：1行ずつ「✓ 名前（言葉）」「! 名前（言葉）」。符号つきの数・「費用」を出さず、内部の値は title
+  await page.locator('.tl-band-btn').first().click();
+  const box = page.getByTestId('reason-box').first();
+  await box.waitFor({ timeout: 10000 });
+  const lines = await box.getByTestId('reason-line').evaluateAll((els) =>
+    els.map((e) => ({
+      text: e.textContent ?? '',
+      seen: [...e.querySelectorAll(':scope > span:not(.sr-only)')].map((x) => x.textContent).join(' '),
+      title: e.getAttribute('title') ?? '',
+    })),
+  );
+  check(lines.length > 0, '日の画面：訪問を押すと理由の行が出る', lines.length);
+  check(
+    lines.every((l) => /^[✓!] /.test(l.seen)),
+    '理由の行は ✓ か ! で始まる（符号で始めない）',
+    lines.map((l) => l.seen),
+  );
+  check(
+    lines.every((l) => !/費用/.test(l.text) && !/[+−]\s*\d/.test(l.seen) && !/(^|\s)-\d/.test(l.seen)),
+    '理由の行に「費用」・符号つきの数を出さない',
+    lines.map((l) => l.seen),
+  );
+  check(
+    lines.every((l) => /内部の値|担当にできない/.test(l.title)),
+    '内部の値は title にだけ',
+    lines.map((l) => l.title),
+  );
+  check(
+    lines.some((l) =>
+      /（(近い|やや遠い|遠い|選ばれやすい|やや選ばれやすい|選ばれにくい|空き時間がある)）/.test(l.seen),
+    ),
+    '理由に（近い・やや遠い・選ばれやすい など）の言葉',
+    lines.map((l) => l.seen),
+  );
+  check(!(await page.locator('body').innerText()).includes('費用'), '日の画面に「費用」の文字を出さない');
+  // 点を下げているいちばんの理由の次の一手（理由が移動・入らない・相性のときだけ1行）
+  const key = await page.getByTestId('plan-reason').getAttribute('data-key');
+  const next = page.getByTestId('reason-next');
+  if ((await next.count()) > 0) {
+    const nt = await next.innerText();
+    check(
+      /^次の一手：(「移動を短く」で作る|受けられる人を見る|相性の表を開く)$/.test(nt.trim()),
+      '理由の下に次の一手を1行',
+      nt,
+    );
+  } else {
+    check(!['travel', 'dropped'].includes(key ?? ''), '移動・入らないが理由なら次の一手がある', key);
+  }
+  await page.screenshot({ path: path.join(OUT_DIR, 'plan-reason-lines.png'), fullPage: false });
+  // 比較の画面：記録の表に乱数の種を出さず、表の下の「詳細設定」に畳む
+  await open(page, '/compare', 'h1');
+  await page.locator('.runs-table').waitFor({ timeout: 10000 });
+  check(!(await page.locator('.runs-table').innerText()).includes('乱数の種'), '比較：記録の表に乱数の種を出さない');
+  const adv = page.getByTestId('compare-advanced');
+  check((await adv.count()) === 1 && (await adv.getAttribute('open')) === null, '比較：乱数の種は「詳細設定」に畳む');
+  await adv.locator('summary').click();
+  check(/乱数の種 -?\d+/.test(await adv.innerText()), '比較：詳細設定を開くと記録ごとの乱数の種');
+}
+
+async function unplacedWords(page) {
+  // 入らなかった訪問の理由の札も符号の無い言葉（PRD D229）：今日の案のいちばん長い列の1件目を入らなかったことにする
+  await openPlan(page);
+  await page.goto('about:blank');
+  await page.goto(`${BASE}#/home`);
+  await page.locator('h1').waitFor();
+  const moved = await page.evaluate(
+    ({ k, today }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      const plan = d.aiPlans?.[today];
+      if (!plan) return null;
+      const [sid, list] = Object.entries(plan.routes).sort((a, b) => b[1].length - a[1].length)[0] ?? [];
+      if (!sid || list.length === 0) return null;
+      const vid = list[0];
+      plan.routes[sid] = list.filter((v) => v !== vid);
+      plan.unassigned = [...(plan.unassigned ?? []), vid];
+      localStorage.setItem(k, JSON.stringify(d));
+      return vid;
+    },
+    { k: STORAGE_KEY, today: TODAY },
+  );
+  check(!!moved, '入らなかった訪問を作った（今日の案の1件を外す）', moved);
+  await openPlan(page);
+  const chips = await page
+    .getByTestId('unplaced-reason')
+    .evaluateAll((els) =>
+      els.map((e) => ({ text: (e.textContent ?? '').trim(), title: e.getAttribute('title') ?? '' })),
+    );
+  check(chips.length > 0, '入らなかった訪問：理由の札が出る', chips.length);
+  check(
+    chips.every(
+      (c) =>
+        !/^[+−±-]/.test(c.text) &&
+        !/\s[+−±-]?\d+$/.test(c.text) &&
+        !/\s(必須|±0)$/.test(c.text) &&
+        !/（担当にできない）$/.test(c.text),
+    ),
+    '入らなかった訪問：理由の札は符号で始めず、符号つきの数・「必須」・（担当にできない）を付けない',
+    chips.map((c) => c.text),
+  );
+  check(
+    chips.every((c) => !/費用/.test(c.text) && /内部の値|担当にできない/.test(c.title)),
+    '入らなかった訪問：「費用」を出さず、内部の値は title にだけ',
+    chips.slice(0, 3),
+  );
+  await resetData(page);
+}
+
+async function warnColors(page) {
+  // 月：今日以降で訪問があり案の無い日は注意（黄の細い点線）。赤（要対応）にしない
+  await resetData(page);
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
+  const line = await page.locator('.month-legend-line').innerText();
+  check(/黄の点線＝案なし（注意）/.test(line) && /赤い枠と点＝要対応/.test(line), '月：凡例の要約に注意と要対応', line);
+  const cells = await page.locator('.month-cell.is-state-none').evaluateAll(
+    (els, today) =>
+      els
+        .map((el) => {
+          const btn = el.querySelector('.month-cell-btn');
+          const cs = getComputedStyle(btn);
+          return {
+            date: btn?.getAttribute('data-date') ?? '',
+            caution: el.classList.contains('is-caution'),
+            care: el.classList.contains('is-care'),
+            count: el.querySelector('[data-testid="month-count"], .month-count')?.textContent ?? '',
+            color: cs.borderTopColor,
+            width: Number.parseFloat(cs.borderTopWidth),
+            dot: !!el.querySelector('.month-dot'),
+            label: btn?.getAttribute('aria-label') ?? '',
+          };
+        })
+        .filter((c) => c.date >= today && c.count !== ''),
+    TODAY,
+  );
+  check(cells.length > 0, '月：今日以降に案の無い日がある（初期データ）', cells.length);
+  check(
+    cells.every((c) => c.caution && !c.care && !c.dot),
+    '月：今日以降の案なしの日は注意（is-caution）で、要対応の赤い点を付けない',
+    cells.slice(0, 3),
+  );
+  check(
+    cells.every((c) => c.color !== DANGER_RGB && c.width < 2),
+    '月：案なしの日の枠は細く、赤でない',
+    cells.slice(0, 3).map((c) => [c.color, c.width]),
+  );
+  check(
+    cells.every((c) => /注意：まだ案が無い/.test(c.label)),
+    '月：読み上げに「注意：まだ案が無い」',
+  );
+  await page.getByTestId('month-legend-toggle').click();
+  const body = await page.getByTestId('month-legend').innerText();
+  check(
+    /注意（今日以降で案なし）/.test(body) && /要対応（入らない・違反・休みの人に訪問）/.test(body),
+    '月：凡例の見本',
+    body,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'month-caution.png'), fullPage: false });
+  // 週：担当の無い帯は「案なし」（注意）と「入らない」（要対応）に分ける。
+  // 初期データは今日から7日分の案があるので（PRD D225）、今日の案を消して案の無い日を作る
+  await page.evaluate(
+    ({ k, today }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      delete d.aiPlans[today];
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    { k: STORAGE_KEY, today: TODAY },
+  );
+  await open(page, '/week', '.week-band');
+  const legendText = await page.locator('.week-legend-item').allInnerTexts();
+  check(
+    legendText.some((t) => /案なし（担当未定・注意）/.test(t)) && legendText.some((t) => /入らない（要対応）/.test(t)),
+    '週：凡例は「案なし（担当未定・注意）」と「入らない（要対応）」',
+    legendText,
+  );
+  const noplan = await page
+    .locator('.week-band.is-noplan')
+    .evaluateAll((els) => els.map((e) => ({ color: getComputedStyle(e).borderTopColor, text: e.textContent ?? '' })));
+  check(noplan.length > 0, '週：案の無い日の帯は is-noplan', noplan.length);
+  check(
+    noplan.every((b) => b.color !== DANGER_RGB && /案なし/.test(b.text)),
+    '週：案なしの帯は赤でなく「案なし」の文字',
+    noplan.slice(0, 2),
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'week-noplan.png'), fullPage: false });
+}
+
 // ---- タッチ・390px・印刷 ----
 async function mobile(browser) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -567,6 +760,9 @@ run(async () => {
     ['rename', rename],
     ['empties', empties],
     ['legend', legend],
+    ['reason-words', reasonWords],
+    ['unplaced-words', unplacedWords],
+    ['warn-colors', warnColors],
   ]) {
     try {
       await fn(page);

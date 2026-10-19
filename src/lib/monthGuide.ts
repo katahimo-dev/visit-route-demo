@@ -9,8 +9,10 @@ export type CellGuideInput = {
   count: number;
   /** 日の状態の文（案なし・案あり・確定済み・未確定の変更あり）。訪問が無ければ null */
   stateText: string | null;
-  /** 要確認（赤い点・赤い枠） */
+  /** 要対応（赤い点・赤い枠） */
   care: boolean;
+  /** 注意（黄の点線の枠。今日以降で案なし） */
+  caution?: boolean;
   /** 種類ごとの積み上げの帯があるか */
   types: boolean;
   /** 休む〈スタッフ〉の人数・そのうち希望休 */
@@ -43,7 +45,8 @@ export function cellGuide(x: CellGuideInput): string[] {
   const out: string[] = [];
   if (x.stateText) out.push(`背景の色＝日の状態（${x.stateText}）`);
   else out.push('白い背景＝訪問の無い日');
-  if (x.care) out.push('赤い点・赤い枠＝要確認（案が無い・入らない訪問・必須の違反）');
+  if (x.care) out.push('赤い点・赤い枠＝要対応（入らない訪問・必須の違反・休みの人に訪問）');
+  if (x.caution) out.push('黄の点線の枠＝注意（訪問があるのにまだ案が無い。まとめて作るか日の画面で作る）');
   if (x.focus === 'all') {
     if (x.count > 0) out.push('右上の「N件」＝この日の訪問の件数');
     if (x.types) out.push('色の帯＝訪問の種類ごとの件数');

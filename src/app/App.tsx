@@ -38,6 +38,7 @@ import {
 } from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { CommandPalette, IS_MAC } from '../components/CommandPalette';
+import { BrokenDataNotice, DataWatch } from '../components/DataNotices';
 import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { RebuildBand } from '../components/rebuildBand';
@@ -114,6 +115,8 @@ export default function App() {
     <DayProvider value={{ date, setDate: setPicked, dates }}>
       {/* 予定の名前から開く〈スタッフ〉・〈利用者さん〉の詳細（PRD D122〜D126）。吹き出しは画面全体で1つ */}
       <PersonPopoverProvider>
+        {/* 控えの知らせ・別のタブの変更の知らせ（PRD D227。トースト） */}
+        <DataWatch />
         {blocked ? (
           <Navigate to="/home" replace state={{ featureOff: blocked }} />
         ) : (
@@ -149,6 +152,16 @@ export default function App() {
       </PersonPopoverProvider>
     </DayProvider>
   );
+}
+
+/** 知らせを閉じたあと、フォーカスを画面の見出しへ */
+function focusHeading() {
+  requestAnimationFrame(() => {
+    const h = document.querySelector<HTMLElement>('.app-main h1');
+    if (!h) return;
+    h.tabIndex = -1;
+    h.focus();
+  });
 }
 
 /** 画面ごとの例外の受け止め（ページを移ると戻る） */
@@ -355,18 +368,15 @@ function AdminShell() {
                 <>
                   {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
                   {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
+                  {/* 保存していたデータを読めず初期データで開いた知らせ（PRD D227）。閉じたらフォーカスは画面の見出しへ */}
+                  <BrokenDataNotice onClose={focusHeading} />
                   {featureOff && (
                     <FeatureOffNotice
                       name={featureLabel(featureOff, terms)}
                       onClose={() => {
                         // 知らせを閉じる（URL はそのまま。state だけ消す）。フォーカスは画面の見出しへ
                         navigate('/home', { replace: true, state: null });
-                        requestAnimationFrame(() => {
-                          const h = document.querySelector<HTMLElement>('.app-main h1');
-                          if (!h) return;
-                          h.tabIndex = -1;
-                          h.focus();
-                        });
+                        focusHeading();
                       }}
                     />
                   )}
