@@ -9,13 +9,23 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { type DragEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type DragEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { ClientPicker } from '../components/ClientPicker';
 import { useConfirm } from '../components/ConfirmDialog';
 import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
+import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { LoadRowsSample } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
@@ -47,6 +57,7 @@ import { periodEmptyGuide } from '../lib/emptyGuide';
 import { isDate } from '../lib/isDate';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
+import { scrollLeftToShow } from '../lib/scrollEdge';
 import {
   clientParamOf,
   handoffFromTable,
@@ -56,6 +67,7 @@ import {
 } from '../lib/timelineClients';
 import { useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
+import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import {
   allowedStaffOf,
   type Band,
@@ -149,8 +161,10 @@ export default function WeekPage() {
   const anchor = isDate(rawD) ? rawD : date;
   const dates = useMemo(() => weekDates(anchor), [anchor]);
   const start = dates[0]!;
+  /** 狭い画面（600px 以下）。?view=・?by= が無ければ〈スタッフ〉×曜日の表（PRD D222。URL には書かない） */
+  const narrow = useMedia(COMPACT_QUERY);
   /** 表示（PRD D188。1つの切り替え。URL は今までの ?view=・?by= のまま。lib/weekView） */
-  const view = weekViewOf(params.get('view'), params.get('by'));
+  const view = weekViewOf(params.get('view'), params.get('by'), narrow);
   const tab: 'timeline' | 'table' | 'clients' = view === 'table' || view === 'clients' ? view : 'timeline';
   const by: 'staff' | 'client' = view === 'timeline-client' ? 'client' : 'staff';
   const staffParam = paramOf(params, 'staff');
@@ -191,6 +205,53 @@ export default function WeekPage() {
     lastDate.current = date;
     if (isDate(rawD) && rawD !== date) go({ d: date });
   }, [date]);
+
+  /**
+   * 狭い画面では、はじめに今日の列を見せる（PRD D222）：時間軸の枠・表の箱を、今日の列が止めた列（時刻・名前）の
+   * すぐ右に来るまで横に巻く。表示と週ごとに1回だけ（あとは人が巻いた位置のまま）。今日を含まない週では巻かない
+   */
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const clientScrollRef = useRef<HTMLDivElement>(null);
+  const todayShown = useRef('');
+  /** 縦に巻く今日の列の見出し（はじめの1回。巻いたら true） */
+  const todayPaged = useRef<HTMLElement | true | null>(null);
+  useLayoutEffect(() => {
+    if (!narrow || !dates.includes(today)) {
+      // 開いたときに今日の週でない・広い画面なら、あとで今日の週へ送っても縦には巻かない
+      if (todayPaged.current === null) todayPaged.current = true;
+      return;
+    }
+    const key = `${view}:${start}`;
+    if (todayShown.current === key) return;
+    const timeline = tab === 'timeline';
+    const box = timeline ? timelineRef.current : tab === 'table' ? tableScrollRef.current : clientScrollRef.current;
+    const target = box?.querySelector<HTMLElement>(timeline ? '.week-day-head.is-today' : 'thead th.is-today');
+    if (!box || !target) return;
+    todayShown.current = key;
+    const sticky = box.querySelector<HTMLElement>(timeline ? '.week-gutter' : 'thead th');
+    const left = box.getBoundingClientRect().left;
+    const stickyRight = sticky ? sticky.getBoundingClientRect().right - left : 0;
+    box.scrollLeft = scrollLeftToShow(box, target.getBoundingClientRect().left - left, stickyRight);
+    if (!todayPaged.current) todayPaged.current = target;
+  });
+  /**
+   * 開いて最初の1回だけ、今日の列の見出しが下のタブの裏・画面の下にあれば、上の帯のすぐ下まで縦に巻く（月の日ごとの一覧と同じ）。
+   * 画面を移ったときの「上へ」（App の useEffect）のあとに巻くので、useEffect から次の描画で。表示を切り替えたときは巻かない。
+   * 空の画面の案内（week-empty「この週は案がありません」）が出ているときは巻かない（案内と次の一手を先に見せる。ADR-0033）
+   */
+  useEffect(() => {
+    const target = todayPaged.current;
+    if (!target || target === true) return;
+    todayPaged.current = true;
+    if (document.querySelector('[data-testid="week-empty"]')) return;
+    requestAnimationFrame(() => {
+      const tabsH = document.querySelector('.bottom-tabs')?.getBoundingClientRect().height ?? 0;
+      const headBottom = document.querySelector('.app-header')?.getBoundingClientRect().bottom ?? 0;
+      const r = target.getBoundingClientRect();
+      if (r.bottom > window.innerHeight - tabsH) window.scrollBy(0, r.top - Math.max(0, headBottom) - 8);
+    });
+  });
 
   const activeStaff = useMemo(() => staff.filter((s) => s.active), [staff]);
   const visitById = useMemo(() => new Map(data.visits.map((v) => [v.id, v])), [data.visits]);
@@ -335,7 +396,7 @@ export default function WeekPage() {
    */
   const goView = (v: WeekView) => {
     if (v === view) return;
-    const next: Record<string, string | null> = { ...weekViewParams(v) };
+    const next: Record<string, string | null> = { ...weekViewParams(v, narrow) };
     // 表から時間軸（〈スタッフ〉・〈利用者さん〉どちらでも）へ移るときに書く（main と同じ。〈スタッフ〉の時間軸から
     // 〈利用者さん〉に切り替えたときも引き継がれる。PR #44 のレビュー）
     if (tab === 'clients' && isTimeline(v)) {
@@ -843,7 +904,7 @@ export default function WeekPage() {
       )}
 
       {tab === 'timeline' ? (
-        <div className="card week-card">
+        <div className="card week-card" ref={timelineRef}>
           {nothingPicked && (
             <p className="sub" data-testid="week-none">
               {by === 'client'
@@ -944,13 +1005,13 @@ export default function WeekPage() {
               </span>
               <StaffLegend />
             </div>
-            <div className="table-scroll">
+            <EdgeScroll scrollRef={tableScrollRef}>
               <table className="week-table" data-testid="week-table">
                 <thead>
                   <tr>
                     <th scope="col">{terms.staff}</th>
                     {dates.map((d) => (
-                      <th key={d} scope="col">
+                      <th key={d} scope="col" className={d === today ? 'is-today' : undefined}>
                         {dateText(d)}
                       </th>
                     ))}
@@ -1045,7 +1106,7 @@ export default function WeekPage() {
                   </tr>
                 </tfoot>
               </table>
-            </div>
+            </EdgeScroll>
             <p className="sub">
               マスのバーは、その人の時間帯ごとの状態（訪問・移動・空き・休み・勤務外。30分ごと）です。訪問があるのに案の無い日は勤務内を「案なし」（空きかは分かりません）で出します。稼働時間・移動・種類の内訳は、パソコンではマスにマウスを乗せると出て、読み上げではマスごとに読みます（スマホでは週の合計の列を見てください）。
               数えるのは、その日の今の案（無ければ確定した割当）です。稼働時間は稼働時間帯の長さ（欠勤を差し引く）、移動は自宅へ帰る移動も含みます。
@@ -1066,13 +1127,13 @@ export default function WeekPage() {
               </span>
               <ClientBarLegend clientTerm={terms.client} />
             </div>
-            <div className="table-scroll">
+            <EdgeScroll scrollRef={clientScrollRef}>
               <table className="week-table week-clients" data-testid="week-client-table">
                 <thead>
                   <tr>
                     <th scope="col">{terms.client}</th>
                     {dates.map((d) => (
-                      <th key={d} scope="col">
+                      <th key={d} scope="col" className={d === today ? 'is-today' : undefined}>
                         {dateText(d)}
                       </th>
                     ))}
@@ -1170,7 +1231,7 @@ export default function WeekPage() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </EdgeScroll>
             {clientRows.length === 0 && (
               <p className="sub" data-testid="week-none">
                 {`当てはまる${terms.client}がいません。上の絞り込みを外すか「絞り込みを戻す」を押してください。`}

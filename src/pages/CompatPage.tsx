@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { DetailPopover } from '../components/DetailPopover';
+import { EdgeScroll } from '../components/EdgeScroll';
 import { TentativeMark } from '../components/parts';
 import { ClientDetail, StaffDetail } from '../components/personDetail';
 import { StaffFilter } from '../components/StaffFilter';
@@ -417,7 +418,7 @@ export default function CompatPage() {
             )}
           </div>
         ) : (
-          <div className="table-scroll compat-scroll">
+          <EdgeScroll className="table-scroll compat-scroll">
             <table className="compat-table" data-testid="compat-table">
               <thead>
                 <tr>
@@ -467,7 +468,7 @@ export default function CompatPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </EdgeScroll>
         )}
         <p className="sub">
           休止中の{terms.client}・{terms.staff}は出していません。

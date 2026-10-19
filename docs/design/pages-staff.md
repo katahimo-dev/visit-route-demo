@@ -1,6 +1,6 @@
 # 〈スタッフ〉の画面・稼働時間・稼働の見込み・スマホ画面
 
-> この画面のファイル：`src/pages/StaffPage.tsx`・`OffboardPanel.tsx`・`AvailabilityPage.tsx`・`WorkloadPage.tsx`（`workload.css`）・`StaffViewPage.tsx`、`src/components/workBars.tsx`・`mapsLinks.tsx`・`personView.tsx`・`placeLookup.tsx`、`src/lib/offboard.ts`・`workload.ts`・`links.ts`・`viewMode.ts`。関連 ADR：0011・0014・0015・0016 追記・0017・0018・0023。関連 PRD：D16・D68・D75〜D77・D91〜D101・D118〜D121・D127〜D131・D201〜D209。
+> この画面のファイル：`src/pages/StaffPage.tsx`・`OffboardPanel.tsx`・`AvailabilityPage.tsx`・`WorkloadPage.tsx`（`workload.css`）・`StaffViewPage.tsx`、`src/components/workBars.tsx`・`mapsLinks.tsx`・`personView.tsx`・`placeLookup.tsx`、`src/lib/offboard.ts`・`workload.ts`・`links.ts`・`viewMode.ts`。関連 ADR：0011・0014・0015・0016 追記・0017・0018・0023。関連 PRD：D16・D68・D75〜D77・D91〜D101・D118〜D121・D127〜D131・D201〜D209・D220・D221。
 > 閲覧の欄と編集の欄の仕組み（`viewMode`・`personView`）は [pages-clients.md](pages-clients.md)。
 
 ### 〈スタッフ〉一覧（`#/staff`）
@@ -8,6 +8,7 @@
 - 見出し「〈スタッフ〉一覧」。一覧の行の操作は「〈名前〉を開く」（`Eye`）で閲覧の欄。`?id=` も閲覧の欄。「追加」はすぐ編集の欄
 - 一覧の上に「最終勤務日のある〈スタッフ〉」のカード（`leaving-card`。振り直しが残っているか。「担当の振り直しを開く」`leaving-open`）
 - 一覧の状態に「最終 M/D」（`staff-lastday`）
+- 狭い画面（600px 以下。PRD D220）：一覧の表（`narrow-staff`）は1人を1枚のカードに（[pages.md](pages.md) の「狭い画面の表」）。1行目に名前と状態（休止中・最終 M/D）、続けて「勤務」・「特性」・「〈利用者さん〉に求めること」・「自宅の位置」、開く・スマホ画面は右下。外の枠のカードは消してカードを本文の上に並べる。列は隠さない
 - 閲覧の欄（`StaffView`）と編集の欄の動きは [pages-clients.md](pages-clients.md) の「閲覧の欄と編集の欄」。閲覧には相性・担当の名前（いつもの担当と記号ごとの〈利用者さん〉・人数・利用中だけ・「あと N人」・名前の吹き出し）
 
 #### 編集の欄の中身
@@ -32,6 +33,7 @@
 - 欠勤のある日のセルに「欠勤」の印（「欠勤（終日）」「欠勤 9:00〜12:00」。メモは title。`avail-absence`）
 - 右の欄（稼働時間の欄）：同じ欠勤の文と、`Link`（`availability-absence-link`。`suddenHref(日付, 人)`。`setDate` しない）。その日に働く日（`availabilityOf` の slots があり `retiredWhy` が無い＝`pickedWorks`）だけ出す。欠勤があれば「この日の欠勤を直す・取り消す」、無ければ「この日の欠勤を登録する」＋「（日の画面の「欠勤・キャンセル」で開く）」。休みの日・最終勤務日の後（`availability-retired`）は出さない。知らない人・その日に働かない人の `staff=` は日の画面で1段目
 - 欠勤・キャンセルを切ると、凡例に登録の場所を出さない
+- 狭い画面（PRD D221）：表は `EdgeScroll`（`avail-scroll`）。箱の高さを画面の中（上の帯と下のタブの間）に収めて中で巻き、見出しの行と名前の列を止める。右に続きがあるあいだ右の端をぼかす
 
 ### 稼働の見込み（`#/workload?ym=&staff=`。ADR-0015）
 
@@ -42,6 +44,7 @@
 - 空の画面（`work-empty`。`periodEmptyGuide`。`onOpenDay`）
 - 月の合計の表（`work-totals`。見出しは出勤〜退勤（拘束）・空き時間（待ち）の `Term`）
 - 〈スタッフ〉×日の表（`work-grid`）：拘束の時間と横棒 `SpanMini`（長さと上限の線）。マスの中を `button.work-cell-in.work-cell-btn`（`data-date`・title は内訳・aria-label は見えている数字（`spanNum`。上限超えは「!」）を先頭に内訳＋「（日の画面で開く）」。訪問の無いマスはボタンにしない）。上限を超える日は斜線と「!」。表の下の説明（`work-grid-note`）「マスを押すと…。内訳は下の「日ごと」の表で見られます」
+- 狭い画面（PRD D221）：〈スタッフ〉×日の表は `EdgeScroll`（`work-grid-scroll`）。稼働時間と同じく箱の中で巻き、見出しの行と名前の列を止め、右の端をぼかす
 - 選んだ人（`work-staff`）の日ごとの表（`work-detail`）：時間軸の横棒 `SpanBar`（`WorkStat.parts`＝`spanParts`。拘束の中を訪問・移動・待ちに塗り分け、上限を超える日は太い橙の枠。行の注意の印と文字）。日付は `link-btn`（`work-day-open`・`data-date`・aria-label「M/D（曜）（日の画面で開く）」）。上限を超えるマスもキーボード・読み上げで分かる。名前の吹き出しは付けない
 - `openDay(d)`：`setDate` → `/plan`（空の画面の `onOpenDay` も）
 - 上限を下げると、超える日に月の「拘束超」・要対応・日の画面の帯が出る

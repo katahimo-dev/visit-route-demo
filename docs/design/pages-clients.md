@@ -1,14 +1,16 @@
 # 〈利用者さん〉の画面と、閲覧の欄・住所の入力・絞り込み（共通部品）
 
-> この画面のファイル：`src/pages/ClientsPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/viewMode.ts`・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0023・0026。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D118〜D121・D127〜D131。
+> この画面のファイル：`src/pages/ClientsPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/viewMode.ts`・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0023・0026。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D118〜D121・D127〜D131・D220。
 > 〈スタッフ〉の画面は [pages-staff.md](pages-staff.md)（閲覧の欄の仕組みはこのファイルと共通）。
 
 ### 〈利用者さん〉一覧（`#/clients`）
 
 - 見出し「〈利用者さん〉一覧」
 - 一覧の上に `ClientFilter`（`clients-filter`。画面の状態。URL に残さない。既定 `EMPTY_FILTER`）。期間は選んでいる日（`useDay`）を含む週（月〜日）で、`weekDay` を7日分作って `filterFacts` に渡す。終了の人は「終了の人も出す」のときだけ出す（終了にして保存すると、そのことを知らせる）
+- 狭い画面（600px 以下。PRD D220）：絞り込みの欄の中身（`ClientFilter` と段階の説明）を「絞り込み（N）」のボタン（`narrow-filter-toggle`。`aria-expanded`・`aria-controls`）の下に畳み、横に「N人を表示」（`narrow-filter-count`）。N は `activeFilterCount`（下）。はじめは畳み、開いたかは画面の中だけ（URL・データに書かない）。広い画面ではボタンを出さずいつも開いたまま
 - 一覧の上に「位置の無い〈利用者さん〉」のカード（下の「まとめて地図に置く」）
 - 一覧の行（`client-row`）：状態に段階（`client-stage`）・「いつもの担当」の列に担当できる人の印「限 山田、佐藤」（`client-limit`。title に全員の名前）・「仮」の印。行の操作は「〈名前〉を開く」（lucide の `Eye`）で閲覧の欄
+- 狭い画面（PRD D220）：一覧の表（`narrow-clients`）は1人を1枚のカードに（[pages.md](pages.md) の「狭い画面の表」）。1行目に名前（よみ・住所）と状態（段階・仮）、続けて「位置」・「特性」・「〈スタッフ〉に求めること」・「いつもの担当」（限の印も）、開くは右下。外の枠のカードは消す。列は隠さない
 - 「追加」はすぐ編集の欄（何も入れずに取り消すと確認なしで閉じる）
 - `?id=` は閲覧の欄（下）
 
@@ -160,6 +162,7 @@
 - 既定：`EMPTY_FILTER`（〈利用者さん〉の画面・相性）・`WEEK_TABLE_FILTER`（chips＝period。週の表）
 - `filterFacts({ days, visits, clients, patterns, clientLeaves, staff })`：週の `weekDay` の帯から、期間に訪問がある人・担当が決まっていない訪問（担当 null・休みでない帯）がある人・〈スタッフ〉が担当する人（帯の担当＋いつもの担当。`staffClientMap`）、期間にかかる休み・パターンのある人・働ける〈スタッフ〉（利用中で最終勤務日が無いか期間の終わり以降）・終了でも出す人 `endedShownIds`（`showEndedInPeriod` のとき期間に訪問がある人）。`extraTests?`（キー → 判定。無いキーは絞らない）
 - `chipMatches`・`matchArea`・`filterClients`（AND。終了の人は showEnded のときだけ。渡した順のまま）・`chipCounts`（押したら何人か）・`cityChips`・`townChips`（地区のほかの絞り込みをかけた人数。住所なしは最後）・`toggleChip`・`toggleCity`（外すと町名も外す）・`toggleTown`・`staffCounts`（〈スタッフ〉ごとの「その人で押したら何人か」）・`resolveStaffId`（今の絞り込みで数えた `staffCounts` で `defaultStaffOf`）・`endedVisible`・`extraCounts`・`toggleExtra`・`sameFilter`・`chipLabel`・`chipHelp`
+- `activeFilterCount(state)`（PRD D220）：効いている絞り込みの数＝検索の文字（空白だけでなければ1）＋市区＋町名＋チップ＋足すチップ（`extra`）＋「終了の人も出す」（入なら1）。〈利用者さん〉一覧の畳んだ「絞り込み（N）」の N
 - `encodeFilter`・`decodeFilter(raw, fallback, extraKeys)`：`?cf=` には `extra` を押しているときだけ `x:k1,k2`（並びはそろえる）。`extraKeys` に無い値は捨てる（週・〈利用者さん〉の画面は渡さない）
 
 #### `components/ClientFilter.tsx`

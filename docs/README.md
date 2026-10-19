@@ -72,6 +72,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0029](adr/0029-e2e-playwright-test-runner-ci.md) | e2e を @playwright/test で包み、PR・夜間の CI で回す |
 | [0030](adr/0030-reassign-and-undo-without-drag.md) | 担当替え・戻すをドラッグ以外でも（キーボード・タッチ） |
 | [0031](adr/0031-month-bulk-confirm-and-seed-plans.md) | 月のまとめて確定と初期データの案 |
+| [0033](adr/0033-narrow-tables-as-cards.md) | 狭い画面では一覧の表をカードに（ADR-0024 の見直し） |
 
 ## 文書の保ち方
 

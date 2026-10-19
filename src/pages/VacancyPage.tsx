@@ -1,7 +1,8 @@
 import { BookmarkPlus, CalendarSearch, ClipboardList, Copy, MapPin, MessageSquareText, Users, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ConditionsEditor } from '../components/conditions';
+import { EdgeScroll } from '../components/EdgeScroll';
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
 import { AddressField } from '../components/placeLookup';
@@ -40,10 +41,13 @@ import { buildBccMails } from '../lib/mailto';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
 import { normalizePostalCode } from '../lib/postalCode';
+import { scrollLeftToShow } from '../lib/scrollEdge';
 import { useFeature } from '../lib/useFeature';
+import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import {
   cellFace,
   markLegend,
+  NARROW_FIRST_START,
   noticeLine,
   placeLine,
   VACANCY_MARK,
@@ -297,6 +301,30 @@ export default function VacancyPage() {
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(id);
   }, [data, query, range]);
+  /**
+   * 狭い画面では、表がはじめに出たとき 9:00 の列が曜日の列のすぐ右に来るまで横に巻く（PRD D221）。
+   * 表が出ているあいだは1回だけ（条件を変えても人が巻いた位置のまま）。表が消えたら（入る時刻が無い・計算できない）箱も消えて
+   * 7:00 に戻るので、次に表が出たときにまた巻く
+   */
+  const narrow = useMedia(COMPACT_QUERY);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const gridScrolled = useRef(false);
+  const hasGrid = !!result && result.times.length > 0;
+  useLayoutEffect(() => {
+    if (!hasGrid) {
+      gridScrolled.current = false;
+      return;
+    }
+    const box = gridRef.current;
+    if (!narrow || !box || gridScrolled.current) return;
+    const target = box.querySelector<HTMLElement>(`thead th[data-start="${NARROW_FIRST_START}"]`);
+    if (!target) return;
+    gridScrolled.current = true;
+    const left = box.getBoundingClientRect().left;
+    const corner = box.querySelector<HTMLElement>('thead th.vacancy-corner');
+    const stickyRight = corner ? corner.getBoundingClientRect().right - left : 0;
+    box.scrollLeft = scrollLeftToShow(box, target.getBoundingClientRect().left - left, stickyRight);
+  }, [narrow, hasGrid]);
 
   const cellOf = useMemo(() => {
     const m = new Map<string, VacancyCell>();
@@ -760,7 +788,7 @@ export default function VacancyPage() {
         <LevelLegend items={VACANCY_LEGEND} />
         {result && result.times.length === 0 && <p className="sub">所要が長すぎて、入る時刻がありません</p>}
         {result && result.times.length > 0 && (
-          <div className="vacancy-scroll">
+          <EdgeScroll className="vacancy-scroll" scrollRef={gridRef}>
             <table className="vacancy-grid" data-testid="vacancy-grid">
               <caption className="sr-only">
                 曜日と開始時刻ごとの、受けられる{terms.staff}の人数（○ どの週も受けられる・△ 受けられない週がある・×
@@ -772,7 +800,7 @@ export default function VacancyPage() {
                     曜日＼開始
                   </th>
                   {result.times.map((t) => (
-                    <th key={t} scope="col" className={t % 60 === 0 ? 'is-hour' : ''}>
+                    <th key={t} scope="col" className={t % 60 === 0 ? 'is-hour' : ''} data-start={minutesToHhmm(t)}>
                       {hm(t)}
                     </th>
                   ))}
@@ -815,7 +843,7 @@ export default function VacancyPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </EdgeScroll>
         )}
       </section>
 

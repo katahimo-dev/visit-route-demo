@@ -44,6 +44,7 @@ import { type DiscardWhen, discardDialog, isDirty } from '../lib/viewMode';
 import { useDemoData } from '../store';
 import { leavingStaff, OffboardPanel } from './OffboardPanel';
 import './settings.css';
+import { narrowRole } from '../lib/narrowRoles';
 
 /** スタッフの一覧と編集（PoC本体 StaffPage.tsx を写し、招待・メールを外して特性と条件を足した） */
 
@@ -306,39 +307,40 @@ export default function StaffPage() {
         </div>
       )}
 
+      {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と状態が1行目、ほかは見出し付きの行、開くは右下） */}
       <div className="card table-scroll">
-        <table className="people-table">
-          <thead>
-            <tr>
-              <th>名前</th>
-              <th>勤務</th>
-              <th>特性</th>
-              <th>{terms.client}に求めること</th>
-              <th>自宅の位置</th>
-              <th>状態</th>
-              <th aria-label="操作" />
+        <table {...narrowRole.table} className="people-table narrow-cards" data-testid="narrow-staff">
+          <thead {...narrowRole.rowgroup}>
+            <tr {...narrowRole.row}>
+              <th {...narrowRole.columnheader}>名前</th>
+              <th {...narrowRole.columnheader}>勤務</th>
+              <th {...narrowRole.columnheader}>特性</th>
+              <th {...narrowRole.columnheader}>{terms.client}に求めること</th>
+              <th {...narrowRole.columnheader}>自宅の位置</th>
+              <th {...narrowRole.columnheader}>状態</th>
+              <th {...narrowRole.columnheader} aria-label="操作" />
             </tr>
           </thead>
-          <tbody>
+          <tbody {...narrowRole.rowgroup}>
             {staff.map((s) => (
-              <tr key={s.id}>
-                <td className="person-name">
+              <tr {...narrowRole.row} key={s.id}>
+                <td {...narrowRole.cell} className="person-name narrow-title" data-label="名前">
                   <WithIcon icon={UserRound} size={15}>
                     {s.name}
                   </WithIcon>
                 </td>
-                <td className="nowrap">
+                <td {...narrowRole.cell} className="nowrap" data-label="勤務">
                   <WithIcon icon={Clock} size={14}>
                     {s.workDays.map((d) => WEEKDAY_LABELS[d]).join('')} {s.shiftStart}〜{s.shiftEnd}
                   </WithIcon>
                 </td>
-                <td>
+                <td {...narrowRole.cell} data-label="特性">
                   <TraitChips traits={s.traits} items={staffItems} />
                 </td>
-                <td className="cond-cell">
+                <td {...narrowRole.cell} className="cond-cell" data-label={`${terms.client}に求めること`}>
                   <CondChips requirements={s.requirements} preferences={s.preferences} itemById={itemById} />
                 </td>
-                <td>
+                <td {...narrowRole.cell} data-label="自宅の位置">
                   {hasLocation(s.home) ? (
                     <span className="chip chip-ok">
                       <WithIcon icon={MapPin} size={13}>
@@ -349,7 +351,7 @@ export default function StaffPage() {
                     <span className="chip chip-warn">未登録</span>
                   )}
                 </td>
-                <td>
+                <td {...narrowRole.cell} className="narrow-head" data-label="状態">
                   {!s.active && <span className="chip">休止中</span>}
                   {s.lastDay && (
                     <span
@@ -361,7 +363,7 @@ export default function StaffPage() {
                     </span>
                   )}
                 </td>
-                <td className="nowrap">
+                <td {...narrowRole.cell} className="nowrap narrow-act">
                   <div className="actions">
                     <IconButton icon={Eye} label={`${s.name}を開く`} onClick={() => openView(s)} />
                     <Link

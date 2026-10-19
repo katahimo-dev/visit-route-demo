@@ -15,6 +15,7 @@ import {
 import { ITEM_KIND_LABELS, nameTaken, newId, optionNameError } from '../lib/common';
 import { useDemoData } from '../store';
 import './settings.css';
+import { narrowRole } from '../lib/narrowRoles';
 
 /**
  * 項目：スタッフの項目・訪問先の項目の2つの表（ClassClassify の列の種類と OptionsEditor にならう）。
@@ -241,32 +242,37 @@ function ItemTable({
       </SectionTitle>
       <span className="sub">{note}</span>
       <div className="table-scroll">
-        <table className="items-table">
-          <thead>
-            <tr>
-              <th>名前</th>
-              <th>種類</th>
-              <th>
+        {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前が1行目、種類・選択肢・使っている条件は見出し付きの行、消すは右下） */}
+        <table {...narrowRole.table} className="items-table narrow-cards">
+          <thead {...narrowRole.rowgroup}>
+            <tr {...narrowRole.row}>
+              <th {...narrowRole.columnheader}>名前</th>
+              <th {...narrowRole.columnheader}>種類</th>
+              <th {...narrowRole.columnheader}>
                 選択肢<span className="th-note">（数字は当てはまる人数）</span>
               </th>
-              <th>使っている条件</th>
-              <th aria-label="操作" />
+              <th {...narrowRole.columnheader}>使っている条件</th>
+              <th {...narrowRole.columnheader} aria-label="操作" />
             </tr>
           </thead>
-          <tbody>
+          <tbody {...narrowRole.rowgroup}>
             {items.map((it) => {
               const refs = refsOf(data, it);
               return (
-                <tr key={it.id}>
-                  <td style={{ minWidth: 140 }}>
+                <tr {...narrowRole.row} key={it.id}>
+                  <td {...narrowRole.cell} style={{ minWidth: 140 }} className="narrow-title" data-label="名前">
                     <NameInput
                       value={it.name}
                       taken={(name) => nameTaken(items, (x) => x.name, name, it.id)}
                       onCommit={(name) => setItem(it.id, { name })}
                     />
                   </td>
-                  <td>
-                    <select value={it.kind} onChange={(e) => changeKind(it, e.target.value as ItemKind)}>
+                  <td {...narrowRole.cell} data-label="種類">
+                    <select
+                      value={it.kind}
+                      aria-label={`${it.name}の種類`}
+                      onChange={(e) => changeKind(it, e.target.value as ItemKind)}
+                    >
                       {ITEM_KINDS.map((k) => (
                         <option key={k} value={k}>
                           {ITEM_KIND_LABELS[k]}
@@ -274,7 +280,12 @@ function ItemTable({
                       ))}
                     </select>
                   </td>
-                  <td style={{ minWidth: 220 }}>
+                  <td
+                    {...narrowRole.cell}
+                    style={{ minWidth: 220 }}
+                    className="narrow-block"
+                    data-label="選択肢（人数）"
+                  >
                     {hasOptions(it.kind) ? (
                       <OptionsEditor
                         options={it.options}
@@ -288,7 +299,7 @@ function ItemTable({
                       <span className="sub">{it.kind === 'flag' ? 'あり／なし' : '数値を入れる'}</span>
                     )}
                   </td>
-                  <td>
+                  <td {...narrowRole.cell} data-label="使っている条件">
                     {refs.length > 0 ? (
                       <span className="badge-count" title={refs.join('、')}>
                         {refs.length}
@@ -298,7 +309,7 @@ function ItemTable({
                       <span className="sub">なし</span>
                     )}
                   </td>
-                  <td>
+                  <td {...narrowRole.cell} className="narrow-act">
                     <IconButton
                       icon={Trash2}
                       label={`項目「${it.name}」を消す`}
