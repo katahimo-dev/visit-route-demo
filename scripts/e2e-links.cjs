@@ -5,53 +5,26 @@
 // 稼働時間の右の欄から「欠勤・キャンセル」の欄（その人の2段目。欠勤が無ければ登録の文）、空き状況の右の欄の日ごとの結果から日の画面。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-links.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
+const {
+  launch,
+  BASE,
+  OUT_DIR,
+  NOW,
+  TODAY,
+  STORAGE_KEY,
+  check,
+  settle,
+  hashOf,
+  stored,
+  failShot,
+  run,
+} = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-links');
-const STORAGE_KEY = 'vrdemo:data:v1';
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-/** アプリと同じ日本時間の今日 */
-const TODAY = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
-fs.mkdirSync(OUT_DIR, { recursive: true });
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
-const hashOf = (page) => decodeURIComponent(new URL(page.url()).hash);
-const settle = (page, ms = 250) => page.waitForTimeout(ms);
-const stored = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
 /** 「10/21」の形（月の要対応の日付の文） */
 const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 /** 日の画面で選んでいる日付 */
@@ -586,8 +559,8 @@ async function vacancy(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'links-vacancy.png') });
 }
 
-(async () => {
-  const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const browser = await launch();
   const errors = [];
   for (const step of [attention, noPlanDay, workload, availability, vacancy]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -604,13 +577,11 @@ async function vacancy(page) {
       await step(page, dlg);
     } catch (e) {
       check(false, `${step.name}：途中で止まった`, String(e).split('\n')[0]);
-      await page.screenshot({ path: path.join(OUT_DIR, `${step.name}-error.png`) }).catch(() => {});
+      await failShot(page, step.name);
     }
     check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
     await ctx.close();
   }
   check(errors.length === 0, 'ページのエラーが無い', errors);
   await browser.close();
-  console.log(fails === 0 ? '\nすべて OK' : `\nNG ${fails} 件`);
-  process.exit(fails === 0 ? 0 : 1);
-})();
+});

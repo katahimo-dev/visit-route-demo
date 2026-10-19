@@ -7,49 +7,12 @@
 // 確認中に「戻る」で別の画面へ移ると、確認が閉じてデータは変わらない。390px で画面に収まる。印刷では出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-dialog.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
+const { launch, BASE, OUT_DIR, NOW, check, settle, stored, failShot, run } = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-dialog');
-const JST = 9 * 3600 * 1000;
-/** 次の水曜（今日が水曜なら今日）の日本時間 12:00（e2e-drag と同じ） */
-function nextWednesdayNoonJst(now) {
-  const j = new Date(now.getTime() + JST);
-  const add = (3 - j.getUTCDay() + 7) % 7;
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate() + add, 12) - JST);
-}
-const NOW = process.env.FAKE_NOW ? new Date(process.env.FAKE_NOW) : nextWednesdayNoonJst(new Date());
-if (Number.isNaN(NOW.getTime())) throw new Error(`FAKE_NOW が日時として読めません：${process.env.FAKE_NOW}`);
-const STORAGE_KEY = 'vrdemo:data:v1';
-fs.mkdirSync(OUT_DIR, { recursive: true });
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
-const settle = (page, ms = 250) => page.waitForTimeout(ms);
-const stored = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
 const dialog = (page) => page.getByTestId('confirm-dialog');
 /** いまフォーカスのある要素の data-testid・読み上げ名 */
 const focused = (page) =>
@@ -59,8 +22,10 @@ const focused = (page) =>
   });
 
 async function open(page, hash, ready) {
+  // 同じ文書の中で hash を移してから読み直すと、読み直す前に `?id=` が処理されて URL から消えることがあるので、
+  // about:blank を挟んで開く（e2e-home と同じ）
+  await page.goto('about:blank');
   await page.goto(`${BASE}#${hash}`);
-  await page.reload();
   await page.locator(ready).first().waitFor({ timeout: 30000 });
   await settle(page, 400);
 }
@@ -314,8 +279,8 @@ async function narrow(page) {
   check((await dialog(page).count()) === 0, '390px：取り消すで閉じる');
 }
 
-(async () => {
-  const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const browser = await launch();
   const errors = [];
   for (const step of [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow]) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
@@ -338,14 +303,11 @@ async function narrow(page) {
       await step(page);
     } catch (e) {
       check(false, `${step.name}：途中で止まった`, String(e).split('\n')[0]);
-      await page.screenshot({ path: path.join(OUT_DIR, `${step.name}-error.png`) }).catch(() => {});
+      await failShot(page, step.name);
     }
     check(native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, native);
     await ctx.close();
   }
   check(errors.length === 0, 'ページのエラーが無い', errors);
   await browser.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  console.log(fails === 0 ? 'すべて OK' : `NG ${fails}件`);
-  process.exit(fails === 0 ? 0 : 1);
-})();
+});

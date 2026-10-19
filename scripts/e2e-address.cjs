@@ -12,39 +12,12 @@
 //   9 〈利用者さん〉の回帰：data-testid がそろっている・保存で postalCode が入る
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-address.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
-
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-address');
-fs.mkdirSync(OUT_DIR, { recursive: true });
-const STORAGE_KEY = 'vrdemo:data:v1';
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
+const { launch, BASE, OUT_DIR, NOW, check, stored, failShot, run } = require('./lib/env.cjs');
 
 const ZIP_ONE = {
   status: 200,
@@ -106,7 +79,6 @@ async function fakeServices(page) {
   return fake;
 }
 
-const stored = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
 const pinText = (page, id) => page.getByTestId(`${id}-place`).getByTestId('place-pin-text').textContent();
 /** 要素の文字が正規表現に当たるまで待つ */
 async function until(loc, re, timeout = 5000) {
@@ -453,14 +425,16 @@ async function staffHome(page) {
   check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：開き直すと郵便番号は空');
 }
 
-(async () => {
-  const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const browser = await launch();
   const errors = [];
   for (const step of [basics, failures, races, vacancy, holdNote, staffHome]) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
     const page = await ctx.newPage();
+    // ページの時計を止める（ほかの e2e と同じ。タイマーは止めないので時間切れの待ちはそのまま）
+    await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
     const dlg = await answerConfirms(page);
@@ -469,7 +443,7 @@ async function staffHome(page) {
       await step(page, fake);
     } catch (e) {
       check(false, `${step.name} が止まった`, String(e).split('\n')[0]);
-      await page.screenshot({ path: path.join(OUT_DIR, `address-error-${step.name}.png`) }).catch(() => {});
+      await failShot(page, step.name);
     }
     check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
     // 送り先は2つのサービスだけ
@@ -485,7 +459,4 @@ async function staffHome(page) {
   }
   check(errors.length === 0, 'ページのエラーなし', errors.join(' / '));
   await browser.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  console.log(fails === 0 ? '全部通った' : `通らないもの ${fails}件`);
-  process.exit(fails === 0 ? 0 : 1);
-})();
+});

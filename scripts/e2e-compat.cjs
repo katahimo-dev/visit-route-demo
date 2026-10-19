@@ -6,44 +6,18 @@
 // 性能：〈利用者さん〉300人×〈スタッフ〉60人で、セルを1回押してから描き終わるまでの時間（目安 100ms 以下）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-compat.cjs
-// 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR）。ほかに
-//   PERF_MS … セルを押してから描き終わるまでの上限（ミリ秒。既定 100。中央値で比べる）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。ほかに
+//   PERF_MS_COMPAT … セルを押してから描き終わるまでの上限（ミリ秒。既定 100。中央値で比べる。無ければ PERF_MS）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
+const { launch, BASE, OUT_DIR, NOW, perfMs, check, settle, failShot, run } = require('./lib/env.cjs');
 
-function loadPlaywright() {
-  const tries = [process.env.PLAYWRIGHT, 'playwright', '/opt/node22/lib/node_modules/playwright'].filter(Boolean);
-  for (const p of tries) {
-    try {
-      return require(p);
-    } catch {
-      // 次の候補へ
-    }
-  }
-  throw new Error(`Playwright が見つかりません（試した場所：${tries.join('、')}）。PLAYWRIGHT で場所を渡してください`);
-}
+const PERF_MS = perfMs('PERF_MS_COMPAT', 100);
 
-const { chromium } = loadPlaywright();
-const BASE = process.env.BASE || 'http://localhost:4183/';
-const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), 'e2e-compat');
-const PERF_MS = Number(process.env.PERF_MS || 100);
-fs.mkdirSync(OUT_DIR, { recursive: true });
-
-let fails = 0;
-function check(ok, name, info = '') {
-  if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
-}
 /** URL（値の中も encodeURIComponent しているので2回戻す） */
 const urlOf = (page) => decodeURIComponent(decodeURIComponent(page.url()));
-/** 押したあとの描き直しを待つ */
-const settle = (page) => page.waitForTimeout(250);
 const countOf = async (loc) =>
   Number(((await loc.locator('.client-filter-count').textContent()) ?? '').replace(/\D/g, ''));
 
@@ -419,14 +393,16 @@ async function perf(page) {
   check(median <= PERF_MS, `セルを1回押して描き終わるまで（中央値 ${PERF_MS}ms 以下）`, { median, times });
 }
 
-(async () => {
-  const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+run(async () => {
+  const browser = await launch();
   const errors = [];
   const fresh = async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
     const page = await ctx.newPage();
+    // ページの時計を止める（ほかの e2e と同じ）
+    await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
     const dlg = await answerConfirms(page);
@@ -438,14 +414,11 @@ async function perf(page) {
       await step(page);
     } catch (e) {
       check(false, `${step.name} が止まった`, String(e).split('\n')[0]);
-      await page.screenshot({ path: path.join(OUT_DIR, `compat-error-${step.name}.png`) }).catch(() => {});
+      await failShot(page, step.name);
     }
     check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
     await ctx.close();
   }
   check(errors.length === 0, 'ページのエラーなし', errors.join(' / '));
   await browser.close();
-  console.log(`スクリーンショット：${OUT_DIR}`);
-  console.log(fails === 0 ? '全部通った' : `通らないもの ${fails}件`);
-  process.exit(fails === 0 ? 0 : 1);
-})();
+});
