@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "e2e": "playwright test --project=e2e",
+    "e2e:perf": "playwright test --project=perf",
+    "e2e:all": "playwright test"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
@@ -22,6 +25,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",
+    "@playwright/test": "1.56.1",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",

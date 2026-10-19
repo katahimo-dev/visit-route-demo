@@ -1,0 +1,67 @@
+name: e2e（本物のブラウザ）
+
+# PR・手動・夜間に scripts/e2e-*.cjs を @playwright/test で走らせる（ADR-0029）。
+# 公開（deploy.yml）はまだこれを待たない
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # 毎日 03:00（日本時間）
+    - cron: '0 18 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # 夜間だけ月末の「今日」でも走らせる（空は次の水曜の日本時間 12:00）
+        fake_now: ${{ github.event_name == 'schedule' && fromJSON('["", "2026-10-28T12:00:00+09:00", "2026-10-31T12:00:00+09:00"]') || fromJSON('[""]') }}
+    name: e2e ${{ matrix.fake_now || '次の水曜' }}
+    env:
+      FAKE_NOW: ${{ matrix.fake_now }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Playwright の版
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - run: npx playwright install --with-deps chromium
+      # 2回目の実行が playwright-report/ と test-results/ を消すので、1回ごとに reports/ へ移す
+      - run: npm run e2e
+      - name: e2e の結果を移す
+        if: ${{ !cancelled() }}
+        run: mkdir -p reports/e2e && mv playwright-report test-results reports/e2e/ 2>/dev/null || true
+      - run: npm run e2e:perf
+        if: ${{ !cancelled() }}
+      - name: perf の結果を移す
+        if: ${{ !cancelled() }}
+        run: mkdir -p reports/perf && mv playwright-report test-results reports/perf/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-${{ strategy.job-index }}
+          path: reports/*/playwright-report/
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: test-results-${{ strategy.job-index }}
+          path: reports/*/test-results/
+          retention-days: 14
