@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPreset, createDemoData } from '../seed';
 import {
+  adoptWarnings,
   anotherPlanOptions,
   batchDescription,
   compareText,
@@ -158,5 +159,15 @@ describe('batchDescription', () => {
   it('今の案があれば変えない・無ければ一番点の高い案を今の案にする', () => {
     expect(batchDescription(true)).toContain('今の案は変えずに');
     expect(batchDescription(false)).toContain('一番点の高い案を今の案にします');
+  });
+});
+
+describe('adoptWarnings（確定の確認の件数）', () => {
+  it('入らない訪問・必須の違反があるときだけ、その順に件数の文', () => {
+    expect(adoptWarnings(0, 0)).toEqual([]);
+    expect(adoptWarnings(2, 0)).toEqual(['入らない訪問が 2件あります（担当なしのまま確定します）']);
+    expect(adoptWarnings(0, 1)).toEqual(['必須の違反が 1件あります（必須の条件に合わないまま確定します）']);
+    expect(adoptWarnings(1, 3)).toHaveLength(2);
+    expect(adoptWarnings(1, 3)[0]).toContain('入らない訪問が 1件');
   });
 });

@@ -239,8 +239,36 @@ label {
   box-shadow: 0 10px 30px rgba(40, 25, 15, 0.25);
   z-index: 1200;
   animation: toast-in 0.2s ease-out;
-  /* 文だけの知らせなので、重なった下の入力欄・ボタンを押せるようにする（中にボタンは置かない） */
+  /* 文だけの知らせなので、重なった下の入力欄・ボタンを押せるようにする（ボタン付きの知らせはボタンだけ押せる） */
   pointer-events: none;
+}
+/* ボタン付きの知らせ（手直しの「元に戻す」。PRD D218） */
+.toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 18px;
+}
+.toast-action {
+  pointer-events: auto;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1.5px solid #fff;
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toast-action:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+.toast-action:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
 }
 @keyframes toast-in {
   from {

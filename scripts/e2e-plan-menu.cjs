@@ -6,6 +6,9 @@
 // 「AI が出したままに戻す」は確認して固定が消える）、「2つの案を比べる」で比較の画面へ、案が1つの比較の画面の「もう1案作って比べる」
 // （今ある案と同じ考え方は選択肢に出ない・作ると記録が2件で A＝今ある案・B＝作った案・今の案は変わらない）、
 // プリセットが1つだけのときの作れない理由、390px で一覧と「もう1案作って比べる」が画面に収まる、ブラウザの確認を出さない。
+// 訪問の詳細の「担当を変える ▾」（PRD D217〜D219。ADR-0030）：まとまりと項目（role="menuitem"・説明・今の担当・押せない理由・
+// 「入らなかった訪問へ」）、キーボード（Enter で開いて ↓・Enter）で移すと担当が変わり固定、トーストの「元に戻す」で担当・順・固定が戻る、
+// 「入らなかった訪問へ」のあとの確定の確認の本文の先頭に件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-plan-menu.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -401,6 +404,234 @@ async function compareNoOption(page) {
   check((await page.getByTestId('compare-another-make').count()) === 0, 'プリセットが1つ：作るボタンは出さない');
 }
 
+// ---- 担当を変える ▾・元に戻す・確定の確認の件数（PRD D217〜D219。ADR-0030） ----
+const reBtn = (page) => page.getByTestId('plan-reassign');
+const reList = (page) => page.getByTestId('plan-reassign-list');
+/** routes の形（担当の並び・空の列に左右されない） */
+const routesKey = (routes) =>
+  JSON.stringify(
+    Object.keys(routes)
+      .filter((k) => routes[k].length > 0)
+      .sort()
+      .map((k) => [k, routes[k]]),
+  );
+const ownerOf = (plan, vid) => Object.entries(plan.routes).find(([, ids]) => ids.includes(vid))?.[0] ?? null;
+/** 開いた「担当を変える」の一覧の中身（まとまり・項目の名前・説明・押せないか・今の担当） */
+async function reassignShape(page) {
+  return reList(page).evaluate((list) => {
+    const text = (ids) =>
+      (ids ?? '')
+        .split(' ')
+        .filter(Boolean)
+        .map((id) => document.getElementById(id)?.textContent ?? '')
+        .join(' ')
+        .trim();
+    return {
+      role: list.getAttribute('role'),
+      groups: [...list.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label')),
+      buttons: list.querySelectorAll('button').length,
+      items: [...list.querySelectorAll('[role="menuitem"]')].map((el) => ({
+        key: el.getAttribute('data-key'),
+        name: text(el.getAttribute('aria-labelledby')),
+        desc: text(el.getAttribute('aria-describedby')),
+        disabled: el.getAttribute('aria-disabled') === 'true',
+        current: el.getAttribute('aria-current') === 'true',
+      })),
+    };
+  });
+}
+
+/** いまのフォーカス：body か・いちばん近い訪問（data-visit）と、どの描き方か（時間軸の帯・順番のカード） */
+const activeInfo = (page) =>
+  page.evaluate(() => {
+    const el = document.activeElement;
+    return {
+      body: !el || el === document.body,
+      visit: el?.closest('[data-visit]')?.getAttribute('data-visit') ?? null,
+      cls: el?.className ?? '',
+    };
+  });
+
+async function reassignMenu(page) {
+  await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
+  await openPlan(page);
+  const before = (await stored(page)).aiPlans[TODAY];
+  // 時間軸の担当の列の最初の帯を押して詳細を開く
+  const band = page.locator('.route-col:not(.route-col-none) .tl-band').first();
+  const vid = await band.getAttribute('data-visit');
+  const from = ownerOf(before, vid);
+  await band.locator('.tl-band-btn').click();
+  await reBtn(page).waitFor({ timeout: 5000 });
+  check(
+    (await reBtn(page).getAttribute('aria-haspopup')) === 'menu',
+    '担当を変える：訪問の詳細にボタン（aria-haspopup="menu"）',
+  );
+  // キーボード：ボタンにフォーカスして Enter で開く（先頭＝今の担当）
+  await reBtn(page).focus();
+  await page.keyboard.press('Enter');
+  await reList(page).waitFor();
+  const s = await reassignShape(page);
+  check(
+    s.role === 'menu' && s.buttons === s.items.length,
+    '担当を変える：一覧は role="menu"・項目はすべて role="menuitem"',
+    s,
+  );
+  check(
+    JSON.stringify(s.groups) === JSON.stringify(['今の担当', 'ほかのスタッフへ移す', 'そのほか']),
+    '担当を変える：まとまり（今の担当／ほかの〈スタッフ〉へ移す／そのほか）',
+    s.groups,
+  );
+  const cur = s.items[0];
+  check(
+    cur?.key === `cur-${from}` && cur.current && cur.disabled && /今の担当です/.test(cur.desc),
+    '担当を変える：先頭は今の担当（印・押せない・説明「今の担当です」）',
+    cur,
+  );
+  const others = s.items.filter((x) => x.key.startsWith('to-'));
+  check(
+    others.length > 0 && others.every((x) => x.desc.length > 0),
+    '担当を変える：ほかの人ごとに1行の説明（aria-describedby）',
+    others.map((x) => `${x.name}：${x.desc}`),
+  );
+  check(
+    others.filter((x) => !x.disabled).every((x) => /時間の約束|件数の上限|必須の違反/.test(x.desc)),
+    '担当を変える：説明に時間の約束（✓／✗）か件数の上限',
+  );
+  const firstOff = others.findIndex((x) => x.disabled);
+  check(
+    firstOff < 0 || others.slice(firstOff).every((x) => x.disabled && /必須の条件に合いません/.test(x.desc)),
+    '担当を変える：押せる人が先、必須の条件に合わない人は後ろで押せず理由を出す',
+    others.filter((x) => x.disabled),
+  );
+  const last = s.items.at(-1);
+  check(last?.key === 'none' && !last.disabled, '担当を変える：最後に「入らなかった訪問へ」', last);
+  check((await focusedId(page)) === 'plan-reassign-current', 'キーボード：開くと先頭（今の担当）にフォーカス');
+  // ↓ で最初の候補へ、Enter で移す
+  await page.keyboard.press('ArrowDown');
+  const target = others[0];
+  check(
+    (await page.evaluate(() => document.activeElement?.getAttribute('data-key'))) === target.key && !target.disabled,
+    'キーボード：↓ で最初の候補（押せる人）へ',
+    target,
+  );
+  const to = target.key.slice(3);
+  await page.keyboard.press('Enter');
+  await reList(page).waitFor({ state: 'detached' });
+  await waitStored(page, (d, [date, v, t]) => d.aiPlans[date].pins[v] === t, [TODAY, vid, to]);
+  const moved = (await stored(page)).aiPlans[TODAY];
+  check(
+    ownerOf(moved, vid) === to && moved.pins[vid] === to,
+    'Enter で選ぶと担当が変わり固定になる（ドラッグと同じ）',
+    { from, to: ownerOf(moved, vid), pin: moved.pins[vid] },
+  );
+  await settle(page, 200);
+  const f1 = await activeInfo(page);
+  check(!f1.body && f1.visit === vid, '選んだあと：フォーカスは body に落ちず、移した先の訪問へ', f1);
+  const toastUndo = page.getByTestId('plan-reassign-toast-undo');
+  await toastUndo.waitFor({ timeout: 3000 });
+  const toastText = await page.locator('.toast').innerText();
+  check(
+    /さんへ移しました/.test(toastText) && /元に戻す/.test(toastText),
+    'トースト「〈名前〉さんへ移しました」と「元に戻す」',
+    toastText,
+  );
+  check(
+    (await page.locator('.toast output').innerText()).includes('さんへ移しました') &&
+      !(await page.locator('.toast output').innerText()).includes('元に戻す'),
+    'トースト：読み上げ（output）は文だけでボタンの名前を混ぜない',
+  );
+  const undoBtn = page.getByTestId('plan-reassign-undo');
+  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '操作の行の「元に戻す」：移したあとは押せる');
+  await page.screenshot({ path: path.join(OUT_DIR, 'reassign-moved.png') });
+  // トーストの「元に戻す」で、担当・順・固定が移す前に戻る
+  await toastUndo.click();
+  await waitStored(page, (d, [date, v]) => !d.aiPlans[date].pins[v], [TODAY, vid]);
+  const back = (await stored(page)).aiPlans[TODAY];
+  check(
+    routesKey(back.routes) === routesKey(before.routes) && JSON.stringify(back.pins) === JSON.stringify(before.pins),
+    'トーストの「元に戻す」：担当・回る順・固定が移す前のとおりに戻る',
+    { owner: ownerOf(back, vid), pins: back.pins },
+  );
+  await page.locator('.toast').filter({ hasText: '元に戻しました' }).waitFor({ timeout: 3000 });
+  check(true, '戻すと知らせ「元に戻しました」');
+  const f2 = await activeInfo(page);
+  check(!f2.body && f2.visit === vid, 'トーストの「元に戻す」のあと：フォーカスは body に落ちず、戻した訪問へ', f2);
+  check((await undoBtn.getAttribute('aria-disabled')) === 'true', '戻したあとは「元に戻す」を押せない（1手だけ）');
+
+  // 「入らなかった訪問へ」→ 確定の確認に件数 → 取り消す → 操作の行の「元に戻す」
+  const pick = page.locator(`.tl-band[data-visit="${vid}"] .tl-band-btn`);
+  if (!(await reBtn(page).count())) await pick.click();
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  await page.getByTestId('plan-reassign-none').click();
+  await waitStored(page, (d, [date, v]) => d.aiPlans[date].unassigned.includes(v), [TODAY, vid]);
+  const none = (await stored(page)).aiPlans[TODAY];
+  check(
+    none.unassigned.includes(vid) && !none.pins[vid] && ownerOf(none, vid) === null,
+    '「入らなかった訪問へ」：担当なしになり固定は付かない',
+  );
+  await settle(page, 200);
+  const f3 = await activeInfo(page);
+  check(
+    !f3.body && f3.visit === vid,
+    '「入らなかった訪問へ」のあと：フォーカスは body に落ちず、入らなかった訪問のカードへ',
+    f3,
+  );
+  check(
+    /入らなかった訪問へ移しました/.test(await page.locator('.toast').innerText()),
+    '「入らなかった訪問へ」：トーストに「元に戻す」',
+  );
+  await page.getByTestId('adopt').click();
+  await dialog(page).waitFor({ timeout: 5000 });
+  const body = await page.getByTestId('confirm-body').innerText();
+  check(
+    body.startsWith(`入らない訪問が ${none.unassigned.length}件あります（担当なしのまま確定します）`),
+    '確定の確認：本文の先頭に入らない訪問の件数',
+    body,
+  );
+  await page.getByTestId('confirm-cancel').click();
+  await dialog(page).waitFor({ state: 'detached' });
+  await page.screenshot({ path: path.join(OUT_DIR, 'reassign-none.png') });
+  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '確定を取り消しても「元に戻す」は押せる');
+  await undoBtn.focus();
+  await page.keyboard.press('Enter');
+  await waitStored(page, (d, [date, v]) => !d.aiPlans[date].unassigned.includes(v), [TODAY, vid]);
+  const back2 = (await stored(page)).aiPlans[TODAY];
+  check(
+    routesKey(back2.routes) === routesKey(before.routes) && JSON.stringify(back2.pins) === JSON.stringify(before.pins),
+    '操作の行の「元に戻す」（キーボード）：入らなかった訪問から元の担当・順へ戻る',
+  );
+  check((await focusedId(page)) === 'plan-reassign-undo', '戻したあともフォーカスは「元に戻す」に残る');
+  // 入らない訪問が無ければ件数の行は出さない
+  if (back2.unassigned.length === 0) {
+    await page.getByTestId('adopt').click();
+    await dialog(page).waitFor({ timeout: 5000 });
+    const body2 = await page.getByTestId('confirm-body').innerText();
+    check(!/入らない訪問が/.test(body2), '確定の確認：入らない訪問が無ければ件数の行を出さない', body2);
+    await page.keyboard.press('Escape');
+    await dialog(page).waitFor({ state: 'detached' });
+  }
+  // 移したあとに確定したら、元に戻すは押せない（今の案だけ戻って確定した担当と食い違うため。PRD D218）
+  if (!(await reBtn(page).count())) await pick.click();
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  await reList(page).locator(`[data-key="${target.key}"]`).click();
+  await waitStored(page, (d, [date, v, t]) => d.aiPlans[date].pins[v] === t, [TODAY, vid, to]);
+  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '確定の前：移したあとは「元に戻す」を押せる');
+  await page.getByTestId('adopt').click();
+  await dialog(page).waitFor({ timeout: 5000 });
+  await page.getByTestId('confirm-ok').click();
+  await dialog(page).waitFor({ state: 'detached' });
+  await waitStored(page, (d, [date, v, t]) => (d.manualPlans[date]?.[t] ?? []).includes(v), [TODAY, vid, to]);
+  await settle(page);
+  check(
+    (await undoBtn.getAttribute('aria-disabled')) === 'true' &&
+      /戻せません/.test((await undoBtn.getAttribute('title')) ?? ''),
+    '確定したあと：「元に戻す」は押せず、title に戻せない理由',
+    await undoBtn.getAttribute('title'),
+  );
+}
+
 // ---- スマホ（390×844）：一覧と「もう1案作って比べる」が画面に収まる ----
 async function mobile(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
@@ -415,6 +646,21 @@ async function mobile(page) {
   const scrollW = await page.evaluate(() => document.documentElement.scrollWidth);
   check(scrollW <= 390, '390px：横にはみ出さない', scrollW);
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-menu.png') });
+  await page.keyboard.press('Escape');
+  // 担当を変える（PRD D217）：390px は順番の表示。カードを押すと詳細に出て、押して開ける・収まる
+  await page.locator('.route-col:not(.route-col-none) .route-btn').first().click();
+  await reBtn(page).waitFor({ timeout: 5000 });
+  await reBtn(page).scrollIntoViewIfNeeded();
+  const rb = await reBtn(page).boundingBox();
+  check(rb && rb.x >= 0 && rb.x + rb.width <= 390, '390px：「担当を変える」が画面に収まる', rb);
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  await settle(page);
+  const rl = await reList(page).boundingBox();
+  const n = await reList(page).locator('[role="menuitem"]').count();
+  check(rl && rl.x >= 0 && rl.x + rl.width <= 390 && n > 1, '390px：押して開け、一覧が画面の幅に収まる', { rl, n });
+  check((await page.evaluate(() => document.documentElement.scrollWidth)) <= 390, '390px：開いても横にはみ出さない');
+  await page.screenshot({ path: path.join(OUT_DIR, 'mobile-reassign.png') });
   await page.keyboard.press('Escape');
   await page.goto(`${BASE}#/compare`);
   await page.getByTestId('compare-another').waitFor({ timeout: 10000 });
@@ -458,6 +704,7 @@ run(async () => {
     ['unpinned-edit', unpinnedEdit],
     ['compare-more', compareMore],
     ['compare-no-option', compareNoOption],
+    ['reassign-menu', reassignMenu],
     ['mobile', mobile],
   ]) {
     try {
