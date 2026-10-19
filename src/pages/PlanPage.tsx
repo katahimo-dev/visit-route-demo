@@ -1930,9 +1930,9 @@ export default function PlanPage() {
           </span>
         )}
         {pin && (
-          <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
+          <span className="chip chip-pin">
             <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-            固定
+            <Term k="pinned" />
           </span>
         )}
         {hard?.map((h) => (
@@ -2420,11 +2420,17 @@ export default function PlanPage() {
   const noPlanCard = (
     <div className="card">
       <Empty icon={Sparkles}>
-        {runningFor?.date === date
-          ? `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
-          : running && runningFor
-            ? `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
-            : 'この日のAI案はまだありません。'}
+        {runningFor?.date === date ? (
+          `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
+        ) : running && runningFor ? (
+          `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
+        ) : (
+          <>
+            この日の
+            <Term k="aiPlan" />
+            はまだありません。
+          </>
+        )}
       </Empty>
       {!running && (
         <div className="row" style={{ justifyContent: 'center' }}>
@@ -2798,7 +2804,7 @@ export default function PlanPage() {
                 <>
                   <span className="chip chip-ok" data-testid="confirm-state">
                     <CircleCheck size={12} aria-hidden="true" />
-                    確定済み
+                    <Term k="confirmed">確定済み</Term>
                   </span>
                   {/* 確定したら次の確定していない日へ（PRD D224） */}
                   <NextUnconfirmed date={date} onPick={setDate} />
@@ -2806,7 +2812,7 @@ export default function PlanPage() {
               ) : (
                 <span className="chip chip-warn" data-testid="confirm-state">
                   <TriangleAlert size={12} aria-hidden="true" />
-                  {confirmState === 'diff' ? '未確定の変更あり' : '未確定'}
+                  {confirmState === 'diff' ? <Term k="confirmDiff" /> : <Term k="unconfirmed" />}
                 </span>
               )}
               <button
@@ -2949,7 +2955,7 @@ export default function PlanPage() {
       {aiPlan && planIsStale && !running && (
         <div className="plan-band stale-note row" data-testid="plan-stale">
           <WithIcon icon={TriangleAlert} size={16}>
-            この案を作ったあとに、訪問・{terms.staff}・稼働時間・条件が変わりました
+            この案を作ったあとに、訪問・{terms.staff}・稼働時間・<Term k="stale">条件が変わりました</Term>
           </WithIcon>
           <span className="sub" data-testid="plan-stale-with">
             {rebuildWith(scoreRulerName)}
@@ -3010,7 +3016,7 @@ export default function PlanPage() {
       {aiPlan && stale && !autoMade && !planIsStale && (
         <div className="plan-band is-warn row">
           <WithIcon icon={TriangleAlert} size={16}>
-            作ったあとに条件が変わりました
+            作ったあとに<Term k="stale">条件が変わりました</Term>
           </WithIcon>
           <Hint>
             点数はいつも点数の基準のプリセット「{scoreRulerName}
@@ -3458,7 +3464,8 @@ export default function PlanPage() {
                 </span>
               }
             >
-              プリセットごとの案
+              <Term k="preset" />
+              ごとの案
             </SectionTitle>
             {progressView}
             {hasVisits ? presetCardsView : <span className="sub">この日に計算できる訪問がありません</span>}
@@ -3799,6 +3806,8 @@ function VisitList({
   onEdit: (id: string) => void;
   onCancel: (v: Visit) => void;
 }) {
+  /** 「固定」の説明は表の中で最初の1行だけ（PRD D241。2行目からは文字だけ） */
+  const firstPinned = visits.find((id) => visitById.has(id) && notes(id).pinned);
   return (
     <section className="card stack visit-list" data-testid="visit-list">
       <SectionTitle icon={CalendarDays} aside={<span className="sub">担当は今の案のものです</span>}>
@@ -3870,7 +3879,7 @@ function VisitList({
                       {n.pinned && (
                         <span className="chip chip-pin">
                           <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-                          固定
+                          <Term k="pinned" plain={id !== firstPinned} />
                         </span>
                       )}
                       {n.hard?.map((h) => (

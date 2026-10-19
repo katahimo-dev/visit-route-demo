@@ -322,7 +322,7 @@ function PresetSection() {
           </Hint>
         }
       >
-        プリセット（{data.presets.length}/{MAX_PRESETS}）
+        <Term k="preset" />（{data.presets.length}/{MAX_PRESETS}）
       </SectionTitle>
       <fieldset className="score-ruler" data-testid="score-ruler-choice">
         <legend>

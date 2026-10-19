@@ -24,6 +24,7 @@ import { SavePresetForm } from '../pages/planParts';
 import { presetOf, scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 import { BandLive } from './progressBand';
+import { Term } from './Term';
 import './rebuildBand.css';
 
 /** 入力が止まってから数え直すまで（ミリ秒。スライダーを動かす・相性のセルを続けて押す間は数えない。PRD D165） */
@@ -164,7 +165,10 @@ function RebuildBandBody({
               <p id={textId} className="rb-text">
                 <RefreshCw size={16} strokeWidth={2.2} aria-hidden="true" className="rb-icon" />
                 <span>
-                  <strong>条件が変わりました</strong>：影響する日 <strong data-testid="rebuild-days">{n}日</strong>
+                  <strong>
+                    <Term k="stale">条件が変わりました</Term>
+                  </strong>
+                  ：影響する日 <strong data-testid="rebuild-days">{n}日</strong>
                   <span className="rb-parts">
                     （未確定 {summary.unconfirmed.length}日・確定済み {summary.confirmed.length}日）
                   </span>

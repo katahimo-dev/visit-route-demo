@@ -19,7 +19,15 @@ export type GlossaryKey =
   | 'typeUnfit'
   | 'limitUnfit'
   | 'vacancyCount'
-  | 'vacancyEstimate';
+  | 'vacancyEstimate'
+  | 'aiPlan'
+  | 'pinned'
+  | 'confirmed'
+  | 'unconfirmed'
+  | 'confirmDiff'
+  | 'preset'
+  | 'attention'
+  | 'stale';
 
 export type GlossaryEntry = {
   /** 画面に出す言い換えた名前 */
@@ -93,6 +101,39 @@ export const GLOSSARY: Record<GlossaryKey, GlossaryEntry> = {
   vacancyEstimate: {
     label: '目安（約）',
     text: '場所が無いので、訪問の前後の移動を15分ずつと見込んで数えた人数です。場所を入れると移動を含めて数えます。',
+  },
+  // 予定の組み方の言葉（PRD D242。AI案 → 手直し（固定）→ 確定。何に効くか・何が変わらないかを書く）
+  aiPlan: {
+    label: 'AI案',
+    text: 'AI が条件の重みに沿って組んだ割当の案です。手で直せます。確定するまでは決まった予定になりません。',
+  },
+  pinned: {
+    label: '固定',
+    text: '手で担当を決めた訪問です。「固定した訪問は残して、ほかを作り直す」でも担当を変えません。AI に一から作らせると外れます。',
+  },
+  confirmed: {
+    label: '確定',
+    text: 'この割当で決めた予定です。〈staff〉の画面・メール・印刷に使い、AI が案を作り直しても変わりません。',
+  },
+  unconfirmed: {
+    label: '未確定',
+    text: 'まだ確定していない日です。〈staff〉の画面・メール・印刷には今の案を「案」として出します。',
+  },
+  confirmDiff: {
+    label: '未確定の変更あり',
+    text: '確定したあとに今の案を変えた日です。〈staff〉の画面・メール・印刷は、確定し直すまで前の割当のままです。',
+  },
+  preset: {
+    label: 'プリセット',
+    text: '条件の重みと必須に名前を付けた組み方です。選ぶとその重みで案を作ります。点数はいつも「点数の基準」で付けます。',
+  },
+  attention: {
+    label: '要対応',
+    text: '入らない訪問・休みの人に残る訪問・条件が変わった日など、確かめたい日です。毎回数え直します。まとめて確定には入れません。',
+  },
+  stale: {
+    label: '条件が変わった',
+    text: '案を作ったあとに訪問・〈staff〉・勤務時間・条件が変わった日です。作り直すまで今の案は前の条件のままです。確定した割当は変わりません。',
   },
 };
 

@@ -1,5 +1,7 @@
-/* 用語の説明の部品（components/Term。PRD D175）。用語は点線の下線、説明は body の直下に浮かせる（位置は部品が style で決める） */
+/* 用語の説明の部品（components/Term。PRD D175・D240）。用語は文字のまま（下線なし）で後ろに小さな ⓘ、
+   説明は body の直下に浮かせる（位置は部品が style で決める） */
 .term {
+  position: relative;
   display: inline;
   padding: 0;
   margin: 0;
@@ -9,12 +11,38 @@
   color: inherit;
   text-align: inherit;
   cursor: help;
-  text-decoration: underline dotted;
-  text-decoration-color: var(--sub);
-  text-underline-offset: 3px;
 }
-.term:hover {
-  text-decoration-color: var(--ink);
+/* 説明がある目印。文字の高さにそろえ、行の高さを変えない。
+   中の svg も行の中の要素にする（ブロックや flex にすると innerText に改行が入り、まわりの文が切れる） */
+.term-i {
+  position: relative;
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--sub);
+  vertical-align: -0.12em;
+  line-height: 1;
+}
+/* 見出しのアイコンの色（.section-title h2 svg など）に引かれない */
+.term .term-i svg {
+  display: inline-block;
+  vertical-align: top;
+  color: inherit;
+}
+.term:hover .term-i,
+.term:focus-visible .term-i {
+  color: var(--ink);
+}
+/* タッチでは ⓘ のまわり 44px を押せる（見た目は変えない） */
+@media (pointer: coarse) {
+  .term-i::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
 }
 .term:focus-visible {
   outline: 3px solid var(--focus);
@@ -51,8 +79,8 @@
   display: block;
 }
 @media print {
-  .term {
-    text-decoration: none;
+  .term-i {
+    display: none;
   }
   .term-tip {
     display: none !important;

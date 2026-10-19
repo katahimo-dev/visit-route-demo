@@ -24,4 +24,20 @@ describe('glossary', () => {
     expect(glossaryText('dropped', terms)).toContain('どのシッターの予定にも');
     expect(glossaryText('terms', terms)).toContain('シッター・お客様');
   });
+  it('予定の組み方の言葉（PRD D242）：名前と、何に効くか・何が変わらないか', () => {
+    expect(GLOSSARY.confirmed.label).toBe('確定');
+    expect(glossaryText('confirmed', terms)).toContain('シッターの画面・メール・印刷');
+    expect(GLOSSARY.confirmed.text).toContain('変わりません');
+    expect(GLOSSARY.pinned.label).toBe('固定');
+    expect(GLOSSARY.pinned.text).toContain('担当を変えません');
+    expect(GLOSSARY.unconfirmed.label).toBe('未確定');
+    expect(GLOSSARY.confirmDiff.label).toBe('未確定の変更あり');
+    expect(GLOSSARY.aiPlan.label).toBe('AI案');
+    expect(GLOSSARY.preset.label).toBe('プリセット');
+    expect(GLOSSARY.attention.label).toBe('要対応');
+    expect(GLOSSARY.stale.label).toBe('条件が変わった');
+  });
+  it('説明は「です・ます」で終わる', () => {
+    for (const [k, e] of Object.entries(GLOSSARY)) expect(e.text, k).toMatch(/(です|ます|ません)(（[^）]*）)?。$/);
+  });
 });

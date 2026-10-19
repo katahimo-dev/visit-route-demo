@@ -1327,7 +1327,7 @@ export default function MonthPage() {
             <>
               <h2 className="month-aside-title">
                 <ListChecks size={18} aria-hidden="true" />
-                要対応
+                <Term k="attention" />
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
@@ -1522,7 +1522,8 @@ export default function MonthPage() {
         >
           <div className="stack">
             <p>
-              使うプリセット：<strong data-testid="batch-preset">{basePreset?.name ?? 'いまの条件'}</strong>
+              使う
+              <Term k="preset" />：<strong data-testid="batch-preset">{basePreset?.name ?? 'いまの条件'}</strong>
               <span className="sub">（点数の基準も「{scoreRulerName}」）</span>
             </p>
             <fieldset className="stack batch-mode" style={{ gap: 6 }}>
@@ -1758,7 +1759,14 @@ function MonthLegendBody({ bar }: { bar: 'load' | 'staff' | null }) {
               {st === 'confirmed' && <Lock size={9} />}
               {st === 'diff' && <PencilLine size={9} />}
             </span>
-            {STATE_TEXT[st]}
+            {/* 確定済み・未確定の変更ありは説明つき（PRD D242） */}
+            {st === 'confirmed' ? (
+              <Term k="confirmed">{STATE_TEXT[st]}</Term>
+            ) : st === 'diff' ? (
+              <Term k="confirmDiff" />
+            ) : (
+              STATE_TEXT[st]
+            )}
           </span>
         ))}
         <span className="month-legend-item">
