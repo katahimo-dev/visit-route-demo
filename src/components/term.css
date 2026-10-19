@@ -24,6 +24,9 @@
 }
 /* 見出しのアイコンの色（.section-title h2 svg など）に引かれない */
 .term .term-i svg {
+  /* 大きさは文字に合わせる（1em。小さな字・見出しでも釣り合う） */
+  width: 1em;
+  height: 1em;
   display: inline-block;
   vertical-align: top;
   color: inherit;
@@ -32,15 +35,15 @@
 .term:focus-visible .term-i {
   color: var(--ink);
 }
-/* タッチでは ⓘ のまわり 44px を押せる（見た目は変えない） */
+/* タッチでは ⓘ のまわり 24px 角を押せる（WCAG 2.5.8。見た目は変えない）。44px は隣の操作（選ぶ欄・凡例の開け閉め・畳んだ節）に重なったのでやめた。文字の上も同じボタン */
 @media (pointer: coarse) {
   .term-i::after {
     content: '';
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 44px;
-    height: 44px;
+    width: 24px;
+    height: 24px;
     transform: translate(-50%, -50%);
   }
 }

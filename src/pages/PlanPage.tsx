@@ -1898,8 +1898,11 @@ export default function PlanPage() {
     );
   };
 
-  /** 訪問の印（欠勤の人のまま・代行・+N分・固定・必須の違反）と「固定を外す」。順番のカードの中・時間軸の帯の説明で共通 */
-  const tagsOf = (id: string) => {
+  /**
+   * 訪問の印（欠勤の人のまま・代行・+N分・固定・必須の違反）と「固定を外す」。順番のカードの中・時間軸の帯の説明で共通。
+   * pinHint：「固定」に用語の説明を付ける（順番の表示では並びで最初の固定の訪問だけ。押して開く説明は別に数える。PRD D241）
+   */
+  const tagsOf = (id: string, pinHint = true) => {
     const pin = own(pins, id);
     const hard = hardOf.get(id);
     const subFrom = reassignMarks.substitute.get(id);
@@ -1930,9 +1933,9 @@ export default function PlanPage() {
           </span>
         )}
         {pin && (
-          <span className="chip chip-pin">
+          <span className="chip chip-pin" title={pinHint ? undefined : '固定（組み直しても担当を変えない）'}>
             <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-            <Term k="pinned" />
+            <Term k="pinned" plain={!pinHint} />
           </span>
         )}
         {hard?.map((h) => (
@@ -1984,6 +1987,10 @@ export default function PlanPage() {
     );
   };
 
+  /** 順番の表示で最初（入らなかった訪問 → 列の順）の固定の訪問。「固定」の説明はこのカードだけ（PRD D241） */
+  const firstPinnedCard = [...unassigned, ...columns.flatMap((sid) => own(routes, sid) ?? [])].find((id) =>
+    own(pins, id),
+  );
   /** 訪問カード（ドラッグで担当を移す。押すと理由） */
   const card = (id: string) => {
     const pin = own(pins, id);
@@ -2016,7 +2023,7 @@ export default function PlanPage() {
         }
         mark={<TypeMark type={typeOf(data.visitTypes, visitById.get(id)?.typeId)} compact />}
       >
-        {tagsOf(id)}
+        {tagsOf(id, id === firstPinnedCard)}
       </VisitCard>
     );
   };
@@ -2955,7 +2962,10 @@ export default function PlanPage() {
       {aiPlan && planIsStale && !running && (
         <div className="plan-band stale-note row" data-testid="plan-stale">
           <WithIcon icon={TriangleAlert} size={16}>
-            この案を作ったあとに、訪問・{terms.staff}・稼働時間・<Term k="stale">条件が変わりました</Term>
+            {/* flex の中で文が切れないよう1つの span に包む */}
+            <span>
+              この案を作ったあとに、訪問・{terms.staff}・稼働時間・<Term k="stale">条件が変わりました</Term>
+            </span>
           </WithIcon>
           <span className="sub" data-testid="plan-stale-with">
             {rebuildWith(scoreRulerName)}
@@ -3016,7 +3026,9 @@ export default function PlanPage() {
       {aiPlan && stale && !autoMade && !planIsStale && (
         <div className="plan-band is-warn row">
           <WithIcon icon={TriangleAlert} size={16}>
-            作ったあとに<Term k="stale">条件が変わりました</Term>
+            <span>
+              作ったあとに<Term k="stale">条件が変わりました</Term>
+            </span>
           </WithIcon>
           <Hint>
             点数はいつも点数の基準のプリセット「{scoreRulerName}
@@ -3464,8 +3476,10 @@ export default function PlanPage() {
                 </span>
               }
             >
-              <Term k="preset" />
-              ごとの案
+              <span>
+                <Term k="preset" />
+                ごとの案
+              </span>
             </SectionTitle>
             {progressView}
             {hasVisits ? presetCardsView : <span className="sub">この日に計算できる訪問がありません</span>}

@@ -4,7 +4,7 @@
 // 位置は押して出す吹き出し（DetailPopover）と同じ popoverPlace で、画面の端で切れない。Esc で閉じる（ほかの欄の Esc は奪わない：
 // 説明が出ているときだけ取る）。説明の上にマウスを移しても消えない。
 // 見た目（PRD D240・D241。ADR-0037）：点線の下線はやめ、用語の後ろの小さな ⓘ（lucide の Info）を目印にする。
-// ボタンは用語の文字と ⓘ をまとめた1つ（読み上げの名前＝見える用語の文字）。タッチでは ⓘ のまわり 44px を押せる。
+// ボタンは用語の文字と ⓘ をまとめた1つ（読み上げの名前＝見える用語の文字）。タッチでは ⓘ のまわり 24px 角を押せる（文字の上も押せる）。
 // 1画面で同じ語は最初の1か所だけ説明を付け、2か所目からは plain で文字だけにする
 import { Info } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';

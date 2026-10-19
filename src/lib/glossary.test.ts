@@ -29,7 +29,7 @@ describe('glossary', () => {
     expect(glossaryText('confirmed', terms)).toContain('シッターの画面・メール・印刷');
     expect(GLOSSARY.confirmed.text).toContain('変わりません');
     expect(GLOSSARY.pinned.label).toBe('固定');
-    expect(GLOSSARY.pinned.text).toContain('担当を変えません');
+    expect(GLOSSARY.pinned.text).toContain('担当は変わらず');
     expect(GLOSSARY.unconfirmed.label).toBe('未確定');
     expect(GLOSSARY.confirmDiff.label).toBe('未確定の変更あり');
     expect(GLOSSARY.aiPlan.label).toBe('AI案');
