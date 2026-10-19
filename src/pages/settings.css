@@ -227,6 +227,56 @@
   margin: 0;
   line-height: 1.6;
 }
+/* 知らせを閉じたあとのフォーカスの先（Excel の欄。tabIndex=-1 でコードからだけ移る）は枠を見せる */
+.data-excel:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* 名簿の読み込みのあとの知らせ（最終勤務日の入った人。PRD D209）。色は日の画面の注意の帯（.plan-band.is-warn）にそろえる */
+.data-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 12px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: #fbefd6;
+  border: 1.5px solid #ecc97e;
+  color: #7a5208;
+}
+.data-notice-text {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1 1 260px;
+  min-width: 0;
+  line-height: 1.6;
+}
+.data-notice-text svg {
+  flex: none;
+  margin-top: 4px;
+}
+.data-notice-list {
+  margin: 0;
+  padding-left: 1.4em;
+  flex: 1 1 100%;
+  overflow-wrap: break-word;
+}
+.data-notice-list a {
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.data-notice-close {
+  order: 3;
+  margin-left: auto;
+  white-space: nowrap;
+}
+@media print {
+  .data-notice-close {
+    display: none;
+  }
+}
 
 /* 狭い幅 */
 @media (max-width: 600px) {

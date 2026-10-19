@@ -35,9 +35,9 @@ import {
   Undo2,
   UserRoundX,
 } from 'lucide-react';
-import { type DragEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type DragEvent, Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { DayLines } from '../components/dayLines';
@@ -96,11 +96,12 @@ import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
 import { keepLeaveVisits } from '../lib/leaves';
-import { UNASSIGNED_DO } from '../lib/links';
+import { UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { currentRuleKeys, planStale, rulesStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
+import { leavePeople } from '../lib/personLinks';
 import {
   batchDescription,
   compareText,
@@ -237,16 +238,11 @@ export default function PlanPage() {
     slotsOf,
   } = m;
   const terms = data.org.terms;
-  /** 〈利用者さん〉の休み（ADR-0013）のため無しの訪問の〈利用者さん〉（「名前（理由）」） */
-  const leaveNames = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const v of m.leaveVisits) {
-      if (seen.has(v.clientId)) continue;
-      const note = leaveOn(data.clientLeaves, v.clientId, date)?.note;
-      seen.set(v.clientId, `${clientById.get(v.clientId)?.displayName ?? '（不明）'}${note ? `（${note}）` : ''}`);
-    }
-    return [...seen.values()].join('・');
-  }, [m.leaveVisits, data.clientLeaves, date, clientById]);
+  /** 〈利用者さん〉の休み（ADR-0013）のため無しの訪問の〈利用者さん〉（名前から詳細を開く。理由を添える。PRD D208） */
+  const leaveNames = useMemo(
+    () => leavePeople(m.leaveVisits, data.clientLeaves, date, (id) => clientById.get(id)?.displayName),
+    [m.leaveVisits, data.clientLeaves, date, clientById],
+  );
   /** 休みの訪問が確定した割当に入っている（作り直しを促す） */
   const leaveInConfirmed = useMemo(() => {
     const saved = own(data.manualPlans, date);
@@ -467,6 +463,16 @@ export default function PlanPage() {
   };
   const visitLabel = (id: string) =>
     `${visitById.get(id)?.earliestStart ?? ''} ${clientOf(id)?.displayName ?? '（不明）'}`;
+  /** visitLabel と同じ見た目で、〈利用者さん〉の名前から詳細を開く（欠勤の人に残る訪問。PRD D206） */
+  const visitNode = (id: string) => {
+    const c = clientOf(id);
+    return (
+      <>
+        {visitById.get(id)?.earliestStart ?? ''}{' '}
+        {c ? <PersonButton kind="client" id={c.id} name={c.displayName} testId="left-client" /> : '（不明）'}
+      </>
+    );
+  };
 
   // ---- 計算（AI案を作る・固定を残して組み直す）----
   /** 計算できるか（rules を渡すと、その条件で問題を作り直す） */
@@ -2100,15 +2106,20 @@ export default function PlanPage() {
         // どの担当も可にならない訪問は infeasible、候補がいるのに入らない訪問は explain が理由を持つ
         const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
         const reasons = inf?.reasons ?? explained.get(id)?.reasons ?? [];
+        const client = clientOf(id);
         return (
           <div key={id} className="stack" style={{ gap: 2 }}>
             {card(id)}
-            {reasons.map((r) => (
-              <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
-                {r.label}
-                {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
-              </span>
-            ))}
+            {/* 〈利用者さん〉の名前はカード（押すと選ぶ・ドラッグ）の中なので、詳細は外の i から開く（PRD D205） */}
+            <div className="row unplaced-reasons" style={{ flexWrap: 'wrap', gap: 4 }}>
+              {client && <PersonInfo kind="client" id={client.id} name={client.displayName} testId="unplaced-info" />}
+              {reasons.map((r) => (
+                <span key={`${r.ruleId}:${r.label}`} className="chip chip-warn">
+                  {r.label}
+                  {Number.isFinite(r.points) && ` ${pointsText(r.points)}`}
+                </span>
+              ))}
+            </div>
             {problem && reassignMarks.unplaced.has(id) && (
               <CandidateBox
                 problem={problem}
@@ -2723,9 +2734,21 @@ export default function PlanPage() {
       {m.leaveVisits.length > 0 && (
         <div className="plan-band row" data-testid="band-leave">
           <WithIcon icon={BedSingle} size={16}>
-            {terms.client}の休みのため無し {m.leaveVisits.length}件：{leaveNames}
-            {leaveInConfirmed &&
-              '（確定した日です。必要なら案を作り直して確定し直してください。休みの訪問の担当は、休みを消したときのために残します）'}
+            {/* 名前のボタンを並べても折り返すよう、文は1つの要素に入れる（with-icon は横並び） */}
+            <span className="band-text">
+              {terms.client}の休みのため無し {m.leaveVisits.length}件：
+              {leaveNames.map((x, i) => (
+                <Fragment key={x.clientId}>
+                  {i > 0 && '・'}
+                  <PersonButton kind="client" id={x.clientId} name={x.name} testId="leave-name">
+                    {x.name || '（不明）'}
+                  </PersonButton>
+                  {x.note && `（${x.note}）`}
+                </Fragment>
+              ))}
+              {leaveInConfirmed &&
+                '（確定した日です。必要なら案を作り直して確定し直してください。休みの訪問の担当は、休みを消したときのために残します）'}
+            </span>
           </WithIcon>
           <button type="button" className="btn btn-small" onClick={() => setColView('list')}>
             一覧で見る
@@ -2750,19 +2773,47 @@ export default function PlanPage() {
       {overSpan.length > 0 && (
         <div className="plan-band is-warn row" data-testid="band-over-span">
           <WithIcon icon={Timer} size={16}>
-            出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の{data.org.spanLimitHours}時間を超える
-            {terms.staff}：{overSpan.map((x) => `${staffName(x.staffId)} ${hmText(x.span)}`).join('・')}（
-            {aiPlan ? '今の案' : '確定した割当'}からの見込み）
+            <span className="band-text">
+              出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の{data.org.spanLimitHours}時間を超える
+              {terms.staff}：
+              {overSpan.map((x, i) => {
+                const name = staffById.get(x.staffId)?.name ?? '';
+                return (
+                  <Fragment key={x.staffId}>
+                    {i > 0 && '・'}
+                    {/* 1人ぶん（名前・拘束・リンク）は途中で折り返さない */}
+                    <span className="over-span-item">
+                      <PersonButton kind="staff" id={x.staffId} name={name} testId="over-span-name">
+                        {staffName(x.staffId)}
+                      </PersonButton>{' '}
+                      {hmText(x.span)}
+                      {/* 2人以上なら人ごとに稼働の見込みへ（主ボタンは増やさない。PRD D207） */}
+                      {overSpan.length > 1 && (
+                        <Link
+                          to={workloadHref(date.slice(0, 7), x.staffId)}
+                          className="over-span-link"
+                          aria-label={`${staffName(x.staffId)}さんの稼働の見込み`}
+                          data-testid="over-span-link"
+                        >
+                          稼働の見込み
+                        </Link>
+                      )}
+                    </span>
+                  </Fragment>
+                );
+              })}
+              （{aiPlan ? '今の案' : '確定した割当'}からの見込み）
+            </span>
           </WithIcon>
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() =>
-              navigate(`/workload?ym=${date.slice(0, 7)}&staff=${encodeURIComponent(overSpan[0]!.staffId)}`)
-            }
-          >
-            稼働の見込み
-          </button>
+          {overSpan.length === 1 && (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => navigate(workloadHref(date.slice(0, 7), overSpan[0]!.staffId))}
+            >
+              稼働の見込み
+            </button>
+          )}
         </div>
       )}
       {aiPlan && stale && !autoMade && !planIsStale && (
@@ -2860,6 +2911,7 @@ export default function PlanPage() {
                 diff={rDiff}
                 left={left}
                 visitLabel={visitLabel}
+                visitNode={visitNode}
                 staffName={staffName}
                 onReassignAgain={reassignAgain}
                 cancelled={absenceCancelled}
