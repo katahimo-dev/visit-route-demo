@@ -1,5 +1,6 @@
 import { Clock, Coffee, Pencil, RotateCcw, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { SlotEditor } from '../components/parts';
 import { useToast } from '../components/Toast';
@@ -17,6 +18,7 @@ import {
 import { weekday } from '../domain/time';
 import { absenceText } from '../lib/absences';
 import { byName, WEEKDAY_LABELS } from '../lib/common';
+import { suddenHref } from '../lib/links';
 import { useDemoData } from '../store';
 import './schedule.css';
 
@@ -32,7 +34,7 @@ const short = (slots: Slot[]) =>
  */
 export default function AvailabilityPage() {
   const { data, update } = useDemoData();
-  const { date: today, dates } = useDay();
+  const { date: today, dates, setDate } = useDay();
   const terms = data.org.terms;
   const toast = useToast();
   const staff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
@@ -217,6 +219,18 @@ export default function AvailabilityPage() {
               {pickedAbsence.note && `（${pickedAbsence.note}）`}。欠勤の登録・取り消しは予定の画面で
             </p>
           )}
+          {/* その日の「欠勤・キャンセル」の欄をこの人で開く（PRD D203） */}
+          <p>
+            <Link
+              to={suddenHref(picked.date, picked.staffId)}
+              onClick={() => setDate(picked.date)}
+              className="avail-absence-link"
+              data-testid="availability-absence-link"
+            >
+              {pickedAbsence ? 'この日の欠勤を直す・取り消す' : 'この日の欠勤を登録する'}
+              （日の画面の「欠勤・キャンセル」で開く）
+            </Link>
+          </p>
           {retiredWhy && (
             <p className="warn-text" data-testid="availability-retired">
               {retiredWhy}

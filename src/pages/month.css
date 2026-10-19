@@ -396,6 +396,12 @@
 .month-attention-btn.is-absence {
   border-left: 4px solid var(--sub);
 }
+/* 行き先を添える文（PRD D201） */
+.month-attention-go {
+  display: block;
+  color: var(--sub);
+  font-size: 11px;
+}
 .month-attention-date {
   font-weight: 700;
   white-space: nowrap;

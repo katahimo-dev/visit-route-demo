@@ -1,6 +1,7 @@
 import { BookmarkPlus, CalendarSearch, ClipboardList, Copy, MapPin, MessageSquareText, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useDay } from '../app/day';
 import { ConditionsEditor } from '../components/conditions';
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
@@ -220,6 +221,13 @@ export default function VacancyPage() {
   const terms = data.org.terms;
   const toast = useToast();
   const today = jstDate(Date.now());
+  const { setDate } = useDay();
+  const navigate = useNavigate();
+  /** その日の日の画面を開く（右の欄の日ごとの結果から。PRD D204） */
+  const openDay = (d: string) => {
+    setDate(d);
+    navigate('/plan');
+  };
 
   // 条件の欄
   const [typeId, setTypeId] = useState('');
@@ -1058,6 +1066,17 @@ export default function VacancyPage() {
                       {x.staffIds.length}人：{x.staffIds.map((id) => staffName.get(id) ?? '（不明）').join('、')}
                     </span>
                   )}
+                  {/* その日の案を日の画面で（PRD D204。名前の吹き出しは付けない：D124） */}
+                  <button
+                    type="button"
+                    className="link-btn vacancy-day-open"
+                    onClick={() => openDay(x.date)}
+                    aria-label={`${dateText(x.date)}の案を見る（日の画面で開く）`}
+                    data-testid="vacancy-day-open"
+                    data-date={x.date}
+                  >
+                    その日の案を見る
+                  </button>
                 </li>
               ))}
             </ul>
