@@ -8,6 +8,7 @@
   - エラー方針・冪等性の記載
   - ひな形のまま残っているプレースホルダー
   - 未決事項の件数
+  - 肥大化（ファイル・節の大きさ、更新日の行への変更履歴の書き込み）と、分けた詳細ファイルへのリンク切れ
 
 使い方:
   python3 check_design.py docs/design.md [--json]
@@ -42,6 +43,12 @@ TECH_WORDS = [
     "AWS", "GCP", "Azure", "Lambda", "Cloud Run", "Vercel", "Netlify", "Cloudflare", "Supabase", "Firebase",
     "Docker", "Kubernetes", "k8s", "Prisma", "GraphQL", "gRPC", "REST", "HTTPS", "JSON", "SQL",
 ]
+
+# AI が1回で読み切れる目安（バイト）。超えたら詳細を docs/design/ に分ける
+MAX_FILE_BYTES = 120_000
+MAX_SECTION_BYTES = 30_000
+MAX_HEADER_LINE = 200  # 「更新日」などの行。長いのは変更履歴の書き込み（履歴は git に任せる）
+LINK = re.compile(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)")
 
 PLACEHOLDER = re.compile(r"<[^<>\n]{1,30}>|〇〇|△△|□□|TBD|xxx", re.I)
 
@@ -170,7 +177,31 @@ def check(path: Path) -> dict:
     if ph:
         add("WARN", "全体", f"ひな形のプレースホルダーが残っています（行 {', '.join(map(str, ph[:10]))}{' ほか' if len(ph) > 10 else ''}）", "実際の内容に置き換える")
 
-    # 7. 未決事項
+    # 7. 肥大化・分けた詳細ファイル
+    size = len(md.encode("utf-8"))
+    if size > MAX_FILE_BYTES:
+        add("WARN", "全体", f"設計書が {size // 1000}KB あります（目安 {MAX_FILE_BYTES // 1000}KB）", "経緯・古い仕様を消し、大きな節の詳細は docs/design/<名前>.md に分けてリンクする（SKILL.md「設計書を育てる」）")
+
+    def walk(sec):
+        for c in sec.children:
+            yield c
+            yield from walk(c)
+
+    for sec in walk(root):
+        if sec.level == 3:
+            n = len(sec.full_text.encode("utf-8"))
+            if n > MAX_SECTION_BYTES:
+                add("WARN", f"節「{sec.title}」", f"{n // 1000}KB あります（目安 {MAX_SECTION_BYTES // 1000}KB）", "詳細を docs/design/<名前>.md に分け、この節には責務・持つデータ・完了の条件とリンクを残す")
+    for n, line in enumerate(md.splitlines()[:15], 1):
+        if re.match(r"^\s*[-*]\s*(更新日|状態)", line) and len(line) > MAX_HEADER_LINE:
+            add("WARN", "冒頭", f"行 {n} が {len(line)} 文字あります（変更履歴の書き込み）", "日付だけにする。変更の経緯は git のコミットに、判断の理由は ADR に書く")
+    for target in sorted(set(LINK.findall(whole))):
+        if "://" in target:
+            continue
+        if not (path.parent / target).is_file():
+            add("ERROR", "リンク", f"リンク先がありません: {target}", "ファイルを作るかリンクを直す")
+
+    # 8. 未決事項
     open_items = 0
     if found["未決事項"] is not None:
         txt = strip_comments(found["未決事項"].full_text)

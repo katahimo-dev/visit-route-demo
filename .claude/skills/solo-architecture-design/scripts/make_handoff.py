@@ -4,14 +4,18 @@
 設計書の「## コンポーネントと責務」配下の ### 見出し（コンポーネント名）と、
 「## API契約」の表のうち、そのコンポーネントの行・エラー方針・冪等性の記述を抜き出し、
 templates/handoff.md に流し込む。
+コンポーネント節から docs/design/ などの詳細ファイル（相対リンクの .md）にリンクしていれば、
+その中身も担当範囲に含める（設計書が大きくなって詳細を分けた場合）。
 
 使い方:
   python3 make_handoff.py docs/design.md "注文サービス" [-o docs/handoff/order.md]
+  python3 make_handoff.py docs/design.md "pages" --detail pages-week   # リンク先の詳細を絞る（名前の一部。複数可）
   python3 make_handoff.py docs/design.md --list    # コンポーネント一覧を表示
 """
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -24,6 +28,35 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "handoff.md"
 def components(root):
     sec = find(root, "コンポーネント", "component", level=2)
     return sec, ([c for c in sec.children if c.level == 3] if sec else [])
+
+
+LINK = re.compile(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)")
+
+
+MAX_DETAIL_BYTES = 60_000  # 指示書に入れる詳細の目安。超えたら --detail で絞らせる
+
+
+def detail_links(section_text: str) -> list[str]:
+    out = []
+    for target in LINK.findall(section_text):
+        if "://" not in target and target not in out:
+            out.append(target)
+    return out
+
+
+def linked_details(section_text: str, base: Path, only: list[str] | None = None) -> str:
+    """コンポーネント節からリンクした詳細ファイル（設計書と同じ階層以下）の中身を連結する。"""
+    out = []
+    for target in detail_links(section_text):
+        if only and not any(o in target for o in only):
+            continue
+        f = (base / target).resolve()
+        if not f.is_file() or base.resolve() not in f.parents:
+            continue
+        if f.name in ("prd.md",) or "adr" in f.parts or "handoff" in f.parts:
+            continue  # 要件・判断の記録・指示書は詳細として取り込まない
+        out.append(f"\n### 詳細：{target}\n\n" + strip_comments(f.read_text(encoding="utf-8")).strip())
+    return "\n".join(out)
 
 
 def api_part(root, name: str) -> str:
@@ -66,10 +99,12 @@ def main() -> int:
     ap.add_argument("design")
     ap.add_argument("component", nargs="?", help="コンポーネント名（### 見出しの一部でよい）")
     ap.add_argument("-o", "--output", help="出力先。省略時は標準出力")
+    ap.add_argument("--detail", action="append", help="含める詳細ファイル（リンク先の名前の一部。複数指定可）")
     ap.add_argument("--list", action="store_true", help="コンポーネント一覧を表示する")
     args = ap.parse_args()
 
-    root = parse(Path(args.design).read_text(encoding="utf-8"))
+    design = Path(args.design)
+    root = parse(design.read_text(encoding="utf-8"))
     _, comps = components(root)
     if args.list or not args.component:
         if not comps:
@@ -88,12 +123,19 @@ def main() -> int:
         return 1
     comp = hits[0]
 
+    details = linked_details(comp.full_text, design.parent, args.detail)
+    if not args.detail and len(details.encode("utf-8")) > MAX_DETAIL_BYTES:
+        print(f"エラー: リンク先の詳細が {len(details.encode('utf-8')) // 1000}KB あり、1つの指示書には大きすぎます。--detail で担当する詳細を選んでください。候補:")
+        for t in detail_links(comp.full_text):
+            print(f"  - {t}")
+        return 1
+
     bg = find(root, "背景", "目的", level=2)
     ng = find(root, "やらないこと", "スコープ外", level=2)
     text = TEMPLATE.read_text(encoding="utf-8")
     text = (
         text.replace("{{component}}", comp.title)
-        .replace("{{section}}", strip_comments(comp.full_text) or "（記載なし）")
+        .replace("{{section}}", (strip_comments(comp.full_text) + details).strip() or "（記載なし）")
         .replace("{{api}}", api_part(root, comp.title))
         .replace("{{background}}", strip_comments(bg.full_text) if bg else "（記載なし）")
         .replace("{{nongoals}}", strip_comments(ng.full_text) if ng else "（記載なし）")
