@@ -1,16 +1,7 @@
 // 名前から詳細を開く場所を足す（PRD D205〜D209）の純粋関数
 import { describe, expect, it } from 'vitest';
 import type { ClientLeave } from '../contracts/documents';
-import { lastDayChanged, leavePeople, workloadHref } from './personLinks';
-
-describe('workloadHref', () => {
-  it('日付の月と ID で稼働の見込みの URL を作る', () => {
-    expect(workloadHref('2026-10-21', 's1')).toBe('/workload?ym=2026-10&staff=s1');
-  });
-  it('ID は URL の値として符号にする', () => {
-    expect(workloadHref('2026-11-01', 'a b&c')).toBe('/workload?ym=2026-11&staff=a%20b%26c');
-  });
-});
+import { lastDayChanged, leavePeople } from './personLinks';
 
 describe('leavePeople', () => {
   const leaves: ClientLeave[] = [

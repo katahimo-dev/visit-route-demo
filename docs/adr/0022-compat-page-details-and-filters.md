@@ -85,6 +85,6 @@
 - 失うもの：日の画面の帯は文が長くなる（2人以上の稼働の見込みは名前の後ろの小さなリンク）。知らせの帯はデータの画面だけの見た目（色は日の画面の注意の帯にそろえる）
 
 ### 影響
-- pages（`PlanPage`・`absenceParts`（`ReassignBar` に `visitNode`）・`OffboardPanel`・`DataPage`）、lib（`personLinks` の追加：`workloadHref`・`leavePeople`・`lastDayChanged`）、CSS（`plan.css`・`settings.css`）。契約・store・excel・データの版は変えない
+- pages（`PlanPage`・`absenceParts`（`ReassignBar` に `visitNode`）・`OffboardPanel`・`DataPage`）、lib（`personLinks` の追加：`leavePeople`・`lastDayChanged`。稼働の見込みへの URL は PR #48 の `lib/links` の `workloadHref(年月, ID)` を使う）、CSS（`plan.css`・`settings.css`）。契約・store・excel・データの版は変えない
 - 確かめ方：`scripts/e2e-details2.cjs`
 - レビューの反映（bb90a92）：受けられる人の名前は、箱（`candidate-name`）を overflow で切らず、ボタンの中の span で「…」にする（フォーカスの枠を切らない）。候補の札は折り返す。知らせを閉じたあとのフォーカスの先は、見出しを名前にした Excel の欄（`section`・`aria-labelledby`。枠を見せる）。知らせは Excel の種類の切り替え・データの置き換え（控えの読み込み・Excel 全体の読み込み・初期状態に戻す）でも消す

@@ -96,12 +96,12 @@ import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
 import { keepLeaveVisits } from '../lib/leaves';
-import { UNASSIGNED_DO } from '../lib/links';
+import { UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { currentRuleKeys, planStale, rulesStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
-import { leavePeople, workloadHref } from '../lib/personLinks';
+import { leavePeople } from '../lib/personLinks';
 import {
   batchDescription,
   compareText,
@@ -2790,7 +2790,7 @@ export default function PlanPage() {
                       {/* 2人以上なら人ごとに稼働の見込みへ（主ボタンは増やさない。PRD D207） */}
                       {overSpan.length > 1 && (
                         <Link
-                          to={workloadHref(date, x.staffId)}
+                          to={workloadHref(date.slice(0, 7), x.staffId)}
                           className="over-span-link"
                           aria-label={`${staffName(x.staffId)}さんの稼働の見込み`}
                           data-testid="over-span-link"
@@ -2809,7 +2809,7 @@ export default function PlanPage() {
             <button
               type="button"
               className="btn btn-small"
-              onClick={() => navigate(workloadHref(date, overSpan[0]!.staffId))}
+              onClick={() => navigate(workloadHref(date.slice(0, 7), overSpan[0]!.staffId))}
             >
               稼働の見込み
             </button>

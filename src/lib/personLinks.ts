@@ -1,12 +1,7 @@
 // 名前から詳細を開く場所を足す（PRD D205〜D209。ADR-0022 追記）ための純粋関数：
-// 日の画面の休みの帯の〈利用者さん〉、拘束が上限を超える人ごとの稼働の見込みへのリンク、名簿の読み込みで最終勤務日が入った〈スタッフ〉
+// 日の画面の休みの帯の〈利用者さん〉、名簿の読み込みで最終勤務日が入った〈スタッフ〉（稼働の見込みへのリンクは lib/links の workloadHref）
 import type { ClientLeave, Staff } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
-
-/** 稼働の見込みの画面でその人を選んで開く URL（`?ym=` は日付の月、`?staff=` は ID。WorkloadPage が読む） */
-export function workloadHref(date: string, staffId: string): string {
-  return `/workload?ym=${date.slice(0, 7)}&staff=${encodeURIComponent(staffId)}`;
-}
 
 /** 休みのため無しの訪問の〈利用者さん〉1人ぶん（name は空ならデータにいない人。note は休みの理由） */
 export type LeavePerson = { clientId: string; name: string; note: string };
