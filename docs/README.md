@@ -35,7 +35,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [pages-compat.md](design/pages-compat.md) | 相性の表 |
 | [pages-staff.md](design/pages-staff.md) | 〈スタッフ〉・稼働時間・稼働の見込み・スマホ画面 |
 | [pages-rules.md](design/pages-rules.md) | 条件・プリセット・訪問の種類・項目・案の比較 |
-| [pages-data.md](design/pages-data.md) | データ（控え・Excel・初期化）・管理者設定 |
+| [pages-data.md](design/pages-data.md) | データ（控え・直前の状態・Excel・初期化・片づけ・データを守る知らせ）・管理者設定 |
 
 ## ADR 一覧
 
@@ -71,6 +71,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0028](adr/0028-feature-toggles-by-admin.md) | 管理者設定で機能を入り切り |
 | [0029](adr/0029-e2e-playwright-test-runner-ci.md) | e2e を @playwright/test で包み、PR・夜間の CI で回す |
 | [0030](adr/0030-reassign-and-undo-without-drag.md) | 担当替え・戻すをドラッグ以外でも（キーボード・タッチ） |
+| [0032](adr/0032-protect-data.md) | データを守る（1世代の控え・書き出しの知らせ・古い案の片づけ・壊れたデータと別のタブの知らせ） |
 
 ## 文書の保ち方
 

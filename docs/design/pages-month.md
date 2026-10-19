@@ -1,6 +1,6 @@
 # 月の画面と月の印刷
 
-> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）・`ClientLeavesSection.tsx`、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204。
+> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）・`ClientLeavesSection.tsx`、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D228。
 > 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)。
 
 ### 月の画面（`#/month`）
@@ -26,7 +26,7 @@
    - 〈スタッフ〉を選んでいれば「休みを入れる」（`month-off-toggle`。下の「希望休」）
    - 全体なら「混み具合：」と `Term`（`loadCount`）と選ぶ欄 `month-load-type`（数える人：すべて／〈種類〉。名前は aria-labelledby でつなぐ）
    - 「条件が変わった日を作り直す（N日）」（`staleTargets` が0日なら押せず title「条件が変わった日（確定していない日）はありません」）
-   - 説明の `Hint`（マスを押すと日の画面・マスの色と印・赤い枠と赤い点の「要確認」）と凡例 `MonthLegend`
+   - 説明の `Hint`（マスを押すと日の画面・マスの色と印・赤い枠と赤い点の「要対応」・黄の点線の「注意」）と凡例 `MonthLegend`
 5. 本体：カレンダー（`month-grid`）か日ごとの一覧（`month-list`）
 6. 右の欄 `month-aside`：要対応・確定していない日、選んだ人の集計
 
@@ -48,7 +48,8 @@
 | 案あり（未確定） | 淡い緑 |
 | 確定済み | 濃い緑＋鍵（`month-lock`） |
 | 未確定の変更あり | 淡い黄＋鉛筆（`month-diff-mark`） |
-| 手当てが必要（訪問があって案なし・入らない訪問・必須の違反・休みの人に訪問） | 赤い枠＋赤い点（`month-dot`）。色だけに頼らず印の文字も出す |
+| 注意（今日以降で訪問があるのに案なし。`is-caution`） | 黄の細い点線の枠（注意の色。赤にしない。PRD D228）。読み上げ「注意：まだ案が無い」 |
+| 要対応（入らない訪問・必須の違反・休みの人に訪問。`dayStatus` の `needsCare`、今日以降。`is-care`） | 赤い太枠＋赤い点（`month-dot`）。色だけに頼らず印の文字も出す。赤は要対応だけ（PRD D228） |
 
 - 読み上げ（`aria-label`）に状態の文字を入れる。ボタンに `title` は付けず、`data-tip="cell"` で読み方の吹き出し（下）
 - 中身（全体の表示）：
@@ -75,18 +76,19 @@
 
 #### マスの読み方の吹き出し（PRD D176。カレンダーのときだけ）
 
-- `lib/monthGuide.ts`（純粋関数。テストあり）：`cellGuide(input)`＝そのマスに出ている印だけの読み方の行（背景の色・赤い点・件数・種類の帯・休 N（希 N）・欠・▶■・ベッド・最終・入らない・違反・休みの人に・条件が変わった・拘束超・3段の棒（`barRowsText()`）・〈スタッフ〉／〈利用者さん〉の表示の棒・代・変）。`createTipStore`
+- `lib/monthGuide.ts`（純粋関数。テストあり）：`cellGuide(input)`＝そのマスに出ている印だけの読み方の行（背景の色・赤い点（要対応）・黄の点線（注意。`caution`）・件数・種類の帯・休 N（希 N）・欠・▶■・ベッド・最終・入らない・違反・休みの人に・条件が変わった・拘束超・3段の棒（`barRowsText()`）・〈スタッフ〉／〈利用者さん〉の表示の棒・代・変）。`createTipStore`
 - 描いたあと（`useLayoutEffect`）に日付をキーに文（日付・状態の文・読み方の行）を置き場に置く。吹き出しは `useSyncExternalStore` で日付から引く（描画中に DOM を読まない）
 - `MonthCellTip`：表の要素に1回だけ `pointerover`・`pointerout`・`focusin`・`focusout` を付ける。マウスは 300ms 止まったら出し、出ていれば隣のマスへすぐ移す。離れて 120ms で消す。キーボードは `:focus-visible` のときだけで、キーボードで出しているあいだはマウスの出入りを見ない（止まったマウスの上で表が描き直されると、動かしていなくても出入りが起きる）。出しているマスは日付で持ち、描き直しでマスの要素が替わっても閉じない（置く先は日付でいまのマスを引く）。Esc で消す。フォーカスが外れると消える。吹き出しはマウスを受けない（`.is-passive`）。タッチでは出さない
 
 #### 凡例（`MonthLegend`）
 
 - `details`（`month-legend-fold`）。閉じているときは「凡例を見る」（`month-legend-toggle`）と1行の要約（`month-legend-line`。狭い画面は省略記号）、開くと中身（`MonthLegendBody`・`month-legend`）。はじめ畳み、開いたかどうかは保存しない（読み直すと畳む）。印刷では「凡例を見る」を出さない
-- 中身：状態の見本・混み具合（「空き 0人」は `Term`）・`staffSlots` と `dayLoad` の数え方の一言（今の案と確定が違う日はそろえない）
+- 1行の要約：「色＝日の状態・黄の点線＝案なし（注意）・赤い枠と点＝要対応・▶■＝始まる／終わる」
+- 中身：状態の見本（「注意（今日以降で案なし）」「要対応（入らない・違反・休みの人に訪問）」を含む）・混み具合（「空き 0人」は `Term`）・`staffSlots` と `dayLoad` の数え方の一言（今の案と確定が違う日はそろえない）
 
 #### 日ごとの一覧（PRD D189〜D192）
 
-- `lib/monthList.ts`（純粋関数。テストあり）：`MonthLayout`（`calendar`・`list`）・`MONTH_LIST_QUERY`（`(max-width: 600px)`）・`monthLayoutOf(param, narrow)`・`monthListFocusDate(ym, date, today, hasTarget)`（今月で行き先が無いとき最初に巻く日。選んでいる日が今月ならその日、無ければ今日）・`DAY_STATE_TEXT`・`monthListRow(status, today, extra)`（`dayText`・`weekday`・`state`（訪問が無ければ `empty`）・`stateText`・`care`（今日以降の要確認）・`flags`（入らない・必須の違反・休みの人に訪問・条件が変わった・拘束超。赤／注意）・`label`（読み上げ））
+- `lib/monthList.ts`（純粋関数。テストあり）：`MonthLayout`（`calendar`・`list`）・`MONTH_LIST_QUERY`（`(max-width: 600px)`）・`monthLayoutOf(param, narrow)`・`monthListFocusDate(ym, date, today, hasTarget)`（今月で行き先が無いとき最初に巻く日。選んでいる日が今月ならその日、無ければ今日）・`DAY_STATE_TEXT`・`monthListRow(status, today, extra)`（`dayText`・`weekday`・`state`（訪問が無ければ `empty`）・`stateText`・`care`（今日以降の要対応）・`caution`（今日以降で訪問があり案なし。注意）・`flags`（入らない・必須の違反・休みの人に訪問・条件が変わった・拘束超。赤／注意）・`label`（読み上げ））
 - 今月の一覧の上に「今日へ」（`month-list-today`）
 - 一覧 `month-list`（`ul`）。開いたとき `monthListFocusDate` の行へ巻く。行は `scroll-margin` で上の帯・下のタブを避ける
 - 行は `button.month-list-btn`（data-testid `month-list-day`・`data-date`・`data-state`・`data-off`）。押すとマスと同じ（`openDay`、「休みを入れる」のときは `toggleOff`・押せない日は `aria-disabled`）
@@ -146,7 +148,7 @@
 - `monthDates(ym)`・`calendarWeeks(ym)`（日曜はじまりの6週。前後の月を含む）
 - `batchTargets(data, ym, today, mode)`：その月・今日以降・取り消しでない訪問がある・確定した割当が無い、かつ mode が `'empty'` なら今の案が無い日、`'all'` なら全部、`'stale'` なら条件が変わった日
 - `activeVisitsOn`：件数（訪問・種類ごと）・状態・まとめて作る対象は休みの訪問を数えない
-- `dayStatus(data, date, view)`：件数・状態・入らない・欠勤の有無・`absentLeft`（手当てが必要に入る）。点数・条件が変わったかは画面が compile して渡す。`stale` は計算に入れる訪問がある日だけ（`batchTargets` と同じ）
+- `dayStatus(data, date, view)`：件数・状態・入らない・欠勤の有無・`absentLeft`・`needsCare`（要対応＝入らない・必須の違反・`absentLeft`。案なしは入れない。PRD D228）。点数・条件が変わったかは画面が compile して渡す。`stale` は計算に入れる訪問がある日だけ（`batchTargets` と同じ）
 - `applyDayRun(d, date, run)`：今の案と記録を書く（`lib/runs` の `addRun`）
 - `dayMarks`（`requested`・`leaves`）・`staffDay`（`requested`・`bar`）・`clientDay`・`staffMonth`（`requestedDays`・`absenceDays`）・`clientMonth`・`attentionList`（`AttentionKind` に `'absentLeft'`）
 - `monthProgress(data, ym, today, staleOf?, statusOf?)`：その月の今日以降について 訪問の件数・案のある日/訪問のある日・確定した日/訪問のある日・要対応の件数（statusOf は画面が作った日の状態。要対応の数を右の欄とそろえる）。帯が使う

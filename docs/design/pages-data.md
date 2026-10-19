@@ -1,6 +1,6 @@
 # データの画面と管理者設定
 
-> この画面のファイル：`src/pages/DataPage.tsx`・`SettingsPage.tsx`（`settings.css`）、`src/components/FilePick.tsx`（`filePick.css`）・`Tour.tsx`、`src/lib/filePick.ts`・`personLinks.ts`・`features.ts`。関連 ADR：0006・0020・0025 追記・0028。関連 PRD：D191〜D193・D209・D210〜D216。
+> この画面のファイル：`src/pages/DataPage.tsx`・`SettingsPage.tsx`（`settings.css`）、`src/components/FilePick.tsx`（`filePick.css`）・`Tour.tsx`、`src/lib/filePick.ts`・`personLinks.ts`・`features.ts`・`backupReminder.ts`・`tidy.ts`・`dirtyForms.ts`、`src/components/DataNotices.tsx`（`dataNotices.css`）。関連 ADR：0006・0020・0025 追記・0028・0032。関連 PRD：D191〜D193・D209・D210〜D216・D227。
 > Excel の変換は design.md の「excel」、機能の表と判定は design.md の「features」。
 
 ### データ（`#/data`）
@@ -11,6 +11,19 @@
 
 - 「データは**このブラウザの中だけ**に保存し、サーバーには送りません。実在の人の名前・住所などの個人情報は入れないでください。」（〈利用者さん〉の決まりごとの注意書きと同じ文）。保存できなければ「保存できませんでした：…。書き出して保管してください。」
 - 画面での呼び方（`Term` `terms`）：訪問する人・訪問先（各10文字まで）と「変える」。同じ呼び方は使えない。呼び方もデータに保存され、書き出しに入る
+- 容量超過（`QUOTA_MESSAGE`）のときは、保存できなかった文の下に「古い案と記録を片づける」（`data-tidy-go`）。押すと片づけの欄へ巻いてフォーカス（枠が見える）
+
+#### 直前の状態に戻す（PRD D227。ADR-0032）
+
+- 1世代の控えがあるときだけ、注意書きの下に欄（`data-prev-card`・aria-label「直前の状態に戻す」）。文（`data-prev-text`）「10/19 14:03 の『初期状態に戻す』の前の状態に戻せます」（`lib/backupReminder` の `previousText`。日本時間）
+- 控えを残す操作（操作の名前）：初期状態に戻す（「初期状態に戻す」）・控えの読み込み（「控えの読み込み」）・Excel 全体の読み込み（「Excel 全体の読み込み」）・名簿の読み込み（「〈呼び方〉の名簿の追加・更新／総入れ替え」）。確認を出す前に `keepPrevious(reason)` で残し、確認の本文の最後に「いまのデータは控えとして1つだけ残し、この画面の「直前の状態に戻す」で戻せます。」。残せなければ（容量超過）「控えを残せません：容量不足。」を出し、操作は止めない。取り消す・名簿が入らなかったら `cancel()` で前の世代に戻す
+- 「直前の状態に戻す」（`data-prev-restore`）：独自の確認（危険の色。本文「〈文〉。いまのデータは控えと入れ替わり、もう一度「直前の状態に戻す」で戻せます。」）。確定で `restorePrevious()`（いまのデータを「直前の状態に戻す」として控え、控えのデータにする）とトースト「直前の状態に戻しました」。控えが無くなっていた・読めなければトーストで理由
+- 別のタブで控えが変わったら（storage イベント）欄を読み直す
+
+#### 最後に書き出した日（PRD D227）
+
+- 「ファイルに書き出す」の下に「最後に書き出した日：10/12（7日前）」（`data-last-export`。同じ日は「今日」、まだなら「まだ書き出していません」、Excel 全体なら「（Excel 全体）」を添える。`exportAgoText`）
+- 控え（JSON）と Excel 全体の書き出しで更新（名簿だけの書き出しは数えない）。このブラウザの記録（`store/backup.ts` の `backupMemory`）で、データには入れない
 
 #### 控え（バックアップ。JSON）
 
@@ -40,6 +53,19 @@
 - 「初期状態に戻す」：デモの架空の事業所のデータに戻す（独自の確認。危険の色）。取り消すと知らせなし、確定で知らせ
 - 「画面を読み直す」
 
+#### 古い案と記録を片づける（PRD D227。ADR-0032）
+
+- 欄 `section.data-tidy`（`data-tidy-card`・`tabIndex=-1`・`:focus` で枠）。説明「保存の容量が足りなくなったときに使います。選んだ月より前の日の AI案と記録（比較の画面の記録）を消します。確定した割当・訪問・人・条件は消えません。消す前に控えを書き出してください。」
+- 消す範囲（`data-tidy-month`。今月〜12か月前の「〈年〉年〈月〉月より前の AI案と記録」。既定は3か月前。`lib/tidy` の `tidyMonthOptions`）。画面の状態で保存しない
+- 見込み（`data-tidy-preview`）「N日分の AI案 N件・記録 N件（約 NKB 空きます）」（`tidyPreview`。JSON の文字数から）。無ければ「〈範囲〉に消せる AI案・記録はありません」で「古い案と記録を消す」（`data-tidy-run`）は押せない
+- 押すと独自の確認（危険の色。件数・空く見込み・消えないもの・戻せないこと）。確定で `update((d) => tidyOld(d, ym))`（`aiRuns`・`aiPlans` だけ。`manualPlans` は消さない）とトースト。1世代の控えは残さない（容量を空けるため）
+
+#### データを守る知らせ（画面全体。`components/DataNotices.tsx`。PRD D227）
+
+- 壊れたデータの知らせ（`BrokenDataNotice`・`data-broken-notice`。管理者の画面の本文の先頭、作り直しの帯の下）：起動したとき保存していたデータが読めず初期データで開いたら（`useDemoData().broken`）、注意の色の帯「保存していたデータを読めなかったため、初期データで開きました。元のデータはこのブラウザに残しています。…」と「読めなかったデータを書き出す」（`data-broken-download`。`vrdemo:data:broken` の元の文字をそのまま `visit-route-demo-broken-YYYY-MM-DD.json` に。`saveBlob`）と結果（`data-broken-message`）。閉じる（`data-broken-close`・aria-label「読めなかったデータの知らせを閉じる」）でフォーカスは画面の見出し。閉じたことは保存しない（次に読めれば出ない）。印刷で出さない
+- 控えの知らせ（`DataWatch`）：起動したとき1回だけ、確定した日（担当の決まった訪問のある確定した割当）が1日以上あり、最後に書き出した日から14日以上（まだなら常に）、今日まだ知らせていなければトースト「控え（バックアップ）を2週間以上書き出していません。データの画面で書き出せます」（`shouldRemindBackup`。知らせた日を覚え1日1回まで）
+- 別のタブの変更（`DataWatch`）：別のタブでデータが変わり読み直したらトースト「別のタブで変わったので読み直しました」。〈スタッフ〉・〈利用者さん〉の編集の欄に変更があるとき（`lib/dirtyForms` の `useDirtyMark`）は「別のタブで変わりました。保存すると上書きします」（入力はそのまま）
+
 #### ファイル選択（`components/FilePick.tsx`。PRD D192）
 
 - `lib/filePick.ts`（純粋関数。テストあり）：`fileNameText(name)`（「選んだファイル：〈名前〉」・未選択は「ファイルを選んでいません」）、`FILE_PICK_LABEL`（「ファイルを選ぶ」）
@@ -63,4 +89,5 @@
 - [ ] 控えと Excel が同じファイル選択の部品・日本語の「ファイルを選ぶ」と未選択の文・input は見えない形・名前・Tab と枠・Space・確認・同じファイルをもう一度・Excel の誤り・名簿の見出し（`lib/filePick` のテスト・`scripts/e2e-tour.cjs`）
 - [ ] 名簿の読み込みのあとの最終勤務日の知らせ（名前と閲覧の欄へのリンク・閉じるとフォーカスは Excel の欄・種類の切り替え・初期状態に戻す・読み直すと出ない）（`lib/personLinks` のテスト・`scripts/e2e-details2.cjs`）
 - [ ] 「案内をもう一度見る」でツアーが出る・初期状態に戻しても見た印は残る（`scripts/e2e-tour.cjs`）
+- [ ] 初期状態に戻したあと「直前の状態に戻す」で戻る・書き出すと最後に書き出した日が今日になる・片づけで古い記録が消え確定は残る・壊れたデータの知らせと書き出し（`store` と `lib/backupReminder`・`lib/tidy` のテスト・`scripts/e2e-tour.cjs`）
 - [ ] 管理者設定：ひな形の4通りごとにメニュー・下のタブ・パレット・ホーム・画面の中の入口・ルートの移し先、相性を切るときの確認（`scripts/e2e-features.cjs`）
