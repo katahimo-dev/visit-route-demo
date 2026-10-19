@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import type { Terms } from '../contracts/documents';
 import { trapTarget } from '../lib/confirmDialog';
 import { shouldAutoOpenTour, type TourMove, tourCountText, tourMove, tourNextLabel, tourSteps } from '../lib/tour';
+import { useFeatures } from '../lib/useFeature';
 import { tourMemory } from '../store';
 import { IS_MAC } from './CommandPalette';
 import { FOCUSABLE } from './ui';
@@ -43,8 +44,11 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
  * 最初のフォーカスは「次へ」。枚が変わってフォーカスが外れたら（最初の枚で「戻る」が押せなくなったとき）「次へ」へ
  */
 function TourDialog({ terms, onClose }: { terms: Pick<Terms, 'client' | 'staff'>; onClose: () => void }) {
-  const steps = tourSteps(terms, IS_MAC);
-  const [index, setIndex] = useState(0);
+  // 切った機能の枚は出さない（PRD D213）
+  const steps = tourSteps(terms, IS_MAC, useFeatures());
+  const [rawIndex, setIndex] = useState(0);
+  // 開いている間に別のタブで機能を切って枚が減っても、ある枚に収める
+  const index = Math.min(rawIndex, steps.length - 1);
   const wrapRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);

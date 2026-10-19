@@ -95,7 +95,8 @@ async function seedPeople(page) {
 /** ひらがな → カタカナ */
 const toKata = (s) => s.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
 
-const GROUPS = ['予定を組む', '当日の対応', '問い合わせ', '人の情報', 'AI の考え方'];
+// 最後のグループ「管理者」（管理者設定・データ。PRD D210。ADR-0028）
+const GROUPS = ['予定を組む', '当日の対応', '問い合わせ', '人の情報', 'AI の考え方', '管理者'];
 const LABELS = [
   'ホーム',
   '月',
@@ -112,6 +113,7 @@ const LABELS = [
   '条件の重み',
   '訪問の種類',
   '特性の項目',
+  '管理者設定',
   'データ',
 ];
 

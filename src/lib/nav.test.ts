@@ -15,10 +15,10 @@ import {
 
 const terms = { client: '利用者さん', staff: 'スタッフ' };
 const TODAY = '2026-10-21';
-const groups: NavSection[] = menuSections(terms, TODAY);
+const groups: NavSection[] = menuSections(terms, TODAY, {});
 
 describe('menuSections（PRD D178・D179）', () => {
-  it('やりたいことの順に並ぶ：ホーム／予定を組む／当日の対応／問い合わせ／人の情報／AI の考え方／データ', () => {
+  it('やりたいことの順に並ぶ：ホーム／予定を組む／当日の対応／問い合わせ／人の情報／AI の考え方／管理者（管理者設定・データ）', () => {
     expect(groups.map((g) => g.title ?? null)).toEqual([
       null,
       '予定を組む',
@@ -26,7 +26,7 @@ describe('menuSections（PRD D178・D179）', () => {
       '問い合わせ',
       '人の情報',
       'AI の考え方',
-      null,
+      '管理者',
     ]);
     expect(groups.flatMap((g) => g.items.map((i) => i.label))).toEqual([
       'ホーム',
@@ -44,6 +44,7 @@ describe('menuSections（PRD D178・D179）', () => {
       '条件の重み',
       '訪問の種類',
       '特性の項目',
+      '管理者設定',
       'データ',
     ]);
   });
@@ -52,7 +53,7 @@ describe('menuSections（PRD D178・D179）', () => {
     expect(people).toEqual(['/clients', '/compat', '/staff', '/availability', '/workload']);
   });
   it('名前は呼び方から引き、同じ名前の項目が無い', () => {
-    const labels = menuSections({ client: 'お客様', staff: 'シッター' }, TODAY).flatMap((g) =>
+    const labels = menuSections({ client: 'お客様', staff: 'シッター' }, TODAY, {}).flatMap((g) =>
       g.items.map((i) => i.label),
     );
     expect(labels).toContain('お客様一覧');
@@ -107,7 +108,8 @@ describe('navTitle', () => {
   });
   it('比較は「予定を組む・案を比べる」、見出しの無いグループは項目名だけ', () => {
     expect(navTitle(groups, '/compare')).toBe('予定を組む・案を比べる');
-    expect(navTitle(groups, '/data')).toBe('データ');
+    expect(navTitle(groups, '/data')).toBe('管理者・データ');
+    expect(navTitle(groups, '/settings')).toBe('管理者・管理者設定');
     expect(navTitle(groups, '/home')).toBe('ホーム');
   });
   it('メニューに無い画面は null', () => {
