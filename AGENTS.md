@@ -1,7 +1,7 @@
 # AGENTS.md
 
 このリポジトリで作業するAIコーディングエージェント向けのルール。
-要件の正は `docs/prd.md`、設計の正は `docs/design.md`、境界の契約の正は `src/contracts/`（TypeScript の型と Worker のメッセージ）、判断の記録は `docs/adr/`。これらと矛盾する実装をしない。
+文書の索引は `docs/README.md`（読む前にここで該当ファイルを選ぶ）。要件の正は `docs/prd.md`、設計の正は `docs/design.md`（画面の詳細は `docs/design/`）、境界の契約の正は `src/contracts/`（TypeScript の型と Worker のメッセージ）、判断の記録は `docs/adr/`。これらと矛盾する実装をしない。
 
 このリポジトリは `katahimo-dev/visit-route-poc`（PoC本体）の**デモ版**。PoC本体の Firebase・Callable・`orgs/{orgId}` の規約は適用しない（ADR-0001）。
 
@@ -26,7 +26,7 @@ src/
   patterns/    … 定期パターンから訪問を展開する純粋関数（ADR-0012。データは書き換えない）
   pages/ components/ … 画面
 .github/workflows/deploy.yml … test → build → GitHub Pages
-docs/ … prd.md / design.md / adr/ / handoff/
+docs/ … README.md（索引）/ prd.md / design.md / design/（画面の詳細）/ adr/
 ```
 
 ## コマンド

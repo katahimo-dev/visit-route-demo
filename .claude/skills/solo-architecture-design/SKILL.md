@@ -26,9 +26,9 @@ solo-architecture-design/
 │   ├── prd.md / design.md / adr.md / agents.md / handoff.md / openapi.yaml
 ├── scripts/
 │   ├── init_design.py       … プロジェクトに docs/ と AGENTS.md のひな形を作る
-│   ├── check_design.py      … 設計書の不足・縮尺の混在・未決事項を検査する
+│   ├── check_design.py      … 設計書の不足・縮尺の混在・未決事項・肥大化・リンク切れを検査する
 │   ├── check_openapi.py     … OpenAPIの契約の抜け（エラー定義・命名など）を検査する
-│   └── make_handoff.py      … 設計書からコンポーネント別のAI作業指示書を生成する
+│   └── make_handoff.py      … 設計書からコンポーネント別のAI作業指示書を生成する（節からリンクした詳細ファイルも含める）
 └── examples/bookstore/      … オンライン書店の記入例（PRD・設計書・OpenAPI）
 ```
 
@@ -90,6 +90,15 @@ solo-architecture-design/
 ### 6. ユーザーの判断をもらう
 設計案に代替案がある箇所は、選択肢・トレードオフ・推奨を短く示し、ユーザーに決めてもらう。決定と理由は設計書の「代替案とトレードオフ」に記録する。
 
+### 7. 設計書を育てる（肥大化させない）
+機能を足すたびに追記を重ねると、AI が読み切れない大きさになり、古い仕様と新しい仕様が混ざる。次を守る。
+- **書くのは今の仕様だけ。** 変更の経緯（日付・「第N弾」・「以前は〜」・「〜に変えた」）は書かない。経緯は git のコミット、判断の理由は ADR に残す。「更新日」は日付だけ
+- **追加順ではなく、置き場所に統合する。** 機能を足したら、該当するコンポーネント・画面・契約の節を書き直す。上書きされた古い仕様は消す
+- **大きくなったら分ける。** 目安：設計書 120KB・1つの ### 節 30KB（`check_design.py` が警告する）。詳細は `docs/design/<名前>.md` に分け、設計書の節には責務・持つデータ・完了の条件と詳細へのリンクを残す（`make_handoff.py` はリンク先も指示書に含める）
+- **索引を置く。** `docs/README.md` に「何を知りたいときにどのファイルを読むか」を書き、AI が必要な部分だけ読めるようにする
+- 未決事項は決まったら消す（決めた内容は本文か ADR へ）。ADR は「追記」を重ねず、今も有効な決定に統合する
+- 作業指示書（`docs/handoff/`）は実装が終わったら消す（git に残る）。設計の正は設計書だけにする
+
 ## 引き渡しモード（AIエージェントへの作業指示）
 
 コンポーネントごとに **4点セット** を渡す：
@@ -99,7 +108,7 @@ solo-architecture-design/
 4. **完了の条件**：通すべきテスト・受け入れ基準
 
 生成：`python3 <skill>/scripts/make_handoff.py docs/design.md "<コンポーネント名>" -o docs/handoff/<名前>.md`
-（設計書の該当コンポーネント節とAPI節を抜き出し、`templates/handoff.md` の形式で出力する）
+（設計書の該当コンポーネント節（節からリンクした `docs/design/` の詳細ファイルを含む）とAPI節を抜き出し、`templates/handoff.md` の形式で出力する。実装が終わったら指示書は消す）
 
 - 無関係なコード全体や、決まっていない仕様は渡さない。
 - コンポーネントごとにセッション（エージェント）を分け、API契約だけでやりとりさせる（逆コンウェイ戦略）。
@@ -126,7 +135,7 @@ solo-architecture-design/
 ```
 
 ## 出力のしかた
-- 設計書は `docs/design.md`、API契約は `docs/api/`、ADRは `docs/adr/NNNN-タイトル.md`、エージェント向けルールは `AGENTS.md`（Claude Code向けには `CLAUDE.md` から参照させてもよい）。
+- 設計書は `docs/design.md`（大きくなったら詳細は `docs/design/`）、索引は `docs/README.md`、API契約は `docs/api/`、ADRは `docs/adr/NNNN-タイトル.md`、エージェント向けルールは `AGENTS.md`（Claude Code向けには `CLAUDE.md` から参照させてもよい）。
 - 既存ファイルを書き換える前に差分の要点を示す。
 - 不明点は推測で埋めず、最後に「確認したいこと」としてまとめる。
 - 記入例が必要なら `examples/bookstore/` を参照する。
