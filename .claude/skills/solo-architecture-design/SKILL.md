@@ -108,7 +108,7 @@ solo-architecture-design/
 4. **完了の条件**：通すべきテスト・受け入れ基準
 
 生成：`python3 <skill>/scripts/make_handoff.py docs/design.md "<コンポーネント名>" -o docs/handoff/<名前>.md`
-（設計書の該当コンポーネント節（節からリンクした `docs/design/` の詳細ファイルを含む）とAPI節を抜き出し、`templates/handoff.md` の形式で出力する。実装が終わったら指示書は消す）
+（設計書の該当コンポーネント節（節からリンクした `docs/design/` の詳細ファイルを含む）とAPI節を抜き出し、`templates/handoff.md` の形式で出力する。詳細ファイルが多い節は `--detail <名前の一部>` で担当する画面などに絞る。実装が終わったら指示書は消す）
 
 - 無関係なコード全体や、決まっていない仕様は渡さない。
 - コンポーネントごとにセッション（エージェント）を分け、API契約だけでやりとりさせる（逆コンウェイ戦略）。

@@ -9,6 +9,7 @@ templates/handoff.md に流し込む。
 
 使い方:
   python3 make_handoff.py docs/design.md "注文サービス" [-o docs/handoff/order.md]
+  python3 make_handoff.py docs/design.md "pages" --detail pages-week   # リンク先の詳細を絞る（名前の一部。複数可）
   python3 make_handoff.py docs/design.md --list    # コンポーネント一覧を表示
 """
 from __future__ import annotations
@@ -32,13 +33,23 @@ def components(root):
 LINK = re.compile(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)")
 
 
-def linked_details(section_text: str, base: Path) -> str:
-    """コンポーネント節からリンクした詳細ファイル（設計書と同じ階層以下）の中身を連結する。"""
-    out, seen = [], set()
+MAX_DETAIL_BYTES = 60_000  # 指示書に入れる詳細の目安。超えたら --detail で絞らせる
+
+
+def detail_links(section_text: str) -> list[str]:
+    out = []
     for target in LINK.findall(section_text):
-        if "://" in target or target in seen:
+        if "://" not in target and target not in out:
+            out.append(target)
+    return out
+
+
+def linked_details(section_text: str, base: Path, only: list[str] | None = None) -> str:
+    """コンポーネント節からリンクした詳細ファイル（設計書と同じ階層以下）の中身を連結する。"""
+    out = []
+    for target in detail_links(section_text):
+        if only and not any(o in target for o in only):
             continue
-        seen.add(target)
         f = (base / target).resolve()
         if not f.is_file() or base.resolve() not in f.parents:
             continue
@@ -88,6 +99,7 @@ def main() -> int:
     ap.add_argument("design")
     ap.add_argument("component", nargs="?", help="コンポーネント名（### 見出しの一部でよい）")
     ap.add_argument("-o", "--output", help="出力先。省略時は標準出力")
+    ap.add_argument("--detail", action="append", help="含める詳細ファイル（リンク先の名前の一部。複数指定可）")
     ap.add_argument("--list", action="store_true", help="コンポーネント一覧を表示する")
     args = ap.parse_args()
 
@@ -111,12 +123,19 @@ def main() -> int:
         return 1
     comp = hits[0]
 
+    details = linked_details(comp.full_text, design.parent, args.detail)
+    if not args.detail and len(details.encode("utf-8")) > MAX_DETAIL_BYTES:
+        print(f"エラー: リンク先の詳細が {len(details.encode('utf-8')) // 1000}KB あり、1つの指示書には大きすぎます。--detail で担当する詳細を選んでください。候補:")
+        for t in detail_links(comp.full_text):
+            print(f"  - {t}")
+        return 1
+
     bg = find(root, "背景", "目的", level=2)
     ng = find(root, "やらないこと", "スコープ外", level=2)
     text = TEMPLATE.read_text(encoding="utf-8")
     text = (
         text.replace("{{component}}", comp.title)
-        .replace("{{section}}", (strip_comments(comp.full_text) + linked_details(comp.full_text, design.parent)).strip() or "（記載なし）")
+        .replace("{{section}}", (strip_comments(comp.full_text) + details).strip() or "（記載なし）")
         .replace("{{api}}", api_part(root, comp.title))
         .replace("{{background}}", strip_comments(bg.full_text) if bg else "（記載なし）")
         .replace("{{nongoals}}", strip_comments(ng.full_text) if ng else "（記載なし）")
