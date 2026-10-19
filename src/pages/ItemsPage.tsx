@@ -1,6 +1,7 @@
 import { Check, House, type LucideIcon, Pencil, Plus, Tags, Trash2, UserRound, X } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
+import { FieldError, invalidAttrs } from '../components/FieldError';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import {
@@ -341,6 +342,7 @@ function NameInput({
   const [draft, setDraft] = useState<string | null>(null);
   const v = draft ?? value;
   const dup = draft !== null && v.trim() !== '' && taken(v.trim().slice(0, 30));
+  const errId = useId();
   const commit = () => {
     const t = v.trim().slice(0, 30);
     if (t && taken(t)) return; // 重なる名前は確定しない（入力はそのまま残してエラーを出す）
@@ -358,9 +360,11 @@ function NameInput({
         onKeyDown={(e) => {
           if (e.key === 'Enter') commit();
         }}
-        aria-invalid={dup}
+        {...invalidAttrs(dup, errId)}
       />
-      {dup && <span className="error">同じ名前の項目があります</span>}
+      <FieldError as="span" id={errId}>
+        {dup && '同じ名前の項目があります'}
+      </FieldError>
     </>
   );
 }
@@ -391,6 +395,10 @@ function OptionsEditor({
   const d = draft.trim();
   const renameDup = editing !== null && d !== editing && options.includes(d);
   const renameBad = editing !== null && d ? optionNameError(d) : null;
+  const addErrId = useId();
+  const renameErrId = useId();
+  /** 名前の変更の誤り（足す欄の誤りがあれば、そちらを先に出す） */
+  const renameErr = addBad ? null : renameBad;
   return (
     <div className="stack" style={{ gap: 6 }}>
       {options.length === 0 && <span className="sub">選択肢がありません</span>}
@@ -412,6 +420,7 @@ function OptionsEditor({
                 maxLength={30}
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label={`${o}の名前`}
+                {...invalidAttrs(!!renameErr, renameErrId)}
               />
               <IconButton icon={Check} label="名前を決める" type="submit" disabled={!d || renameDup || !!renameBad} />
               <IconButton icon={X} label="やめる" onClick={() => setEditing(null)} />
@@ -448,7 +457,13 @@ function OptionsEditor({
             setAdded('');
           }}
         >
-          <input value={added} maxLength={30} placeholder="選択肢を足す" onChange={(e) => setAdded(e.target.value)} />
+          <input
+            value={added}
+            maxLength={30}
+            placeholder="選択肢を足す"
+            {...invalidAttrs(addDup || !!addBad, addErrId)}
+            onChange={(e) => setAdded(e.target.value)}
+          />
           <button type="submit" className="btn btn-small nowrap" disabled={!a || addDup || !!addBad}>
             <WithIcon icon={Plus} size={14}>
               足す
@@ -456,8 +471,12 @@ function OptionsEditor({
           </button>
         </form>
       )}
-      {addDup && <span className="error">同じ選択肢があります</span>}
-      {(addBad ?? renameBad) && <span className="error">{addBad ?? renameBad}</span>}
+      <FieldError as="span" id={addErrId}>
+        {addDup ? '同じ選択肢があります' : addBad}
+      </FieldError>
+      <FieldError as="span" id={renameErrId}>
+        {renameErr}
+      </FieldError>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
+import { FieldError, invalidAttrs, submitHandler } from '../components/FieldError';
 import { FilePick } from '../components/FilePick';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
@@ -74,6 +75,8 @@ export default function DataPage() {
   useEffect(() => {
     setTerms(data.org.terms);
   }, [data.org.terms]);
+  /** 呼び方の誤りの文の id（入力欄の aria-describedby。PRD D250） */
+  const termsErrId = useId();
   // 2つが同じだと、項目の対象・Excel のシートを区別できない
   const termsSame = terms.client.trim() !== '' && terms.client.trim() === terms.staff.trim();
   const termsOk = terms.client.trim() !== '' && terms.staff.trim() !== '' && !termsSame;
@@ -370,7 +373,7 @@ export default function DataPage() {
       </div>
       {saveError && (
         <div className="card stack">
-          <p className="error">保存できませんでした：{saveError}。書き出して保管してください。</p>
+          <FieldError>保存できませんでした：{saveError}。書き出して保管してください。</FieldError>
           {saveError === QUOTA_MESSAGE && (
             <button
               type="button"
@@ -416,24 +419,38 @@ export default function DataPage() {
           <Term k="terms" testId="term-terms" />
         </SectionTitle>
         <Hint>画面に出る呼び方です（各10文字まで）。呼び方もデータに保存され、書き出しに入ります。</Hint>
-        <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        {/* Enter で「変える」（PRD D251。押せないときは何もしない） */}
+        <form
+          className="row"
+          style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}
+          onSubmit={submitHandler(() => {
+            if (termsOk && termsChanged) saveTerms();
+          })}
+          noValidate
+        >
           <label>
             訪問する人
-            <input value={terms.staff} maxLength={10} onChange={(e) => setTerms({ ...terms, staff: e.target.value })} />
+            <input
+              value={terms.staff}
+              maxLength={10}
+              {...invalidAttrs(termsSame, termsErrId)}
+              onChange={(e) => setTerms({ ...terms, staff: e.target.value })}
+            />
           </label>
           <label>
             訪問先
             <input
               value={terms.client}
               maxLength={10}
+              {...invalidAttrs(termsSame, termsErrId)}
               onChange={(e) => setTerms({ ...terms, client: e.target.value })}
             />
           </label>
-          <button type="button" className="btn" disabled={!termsOk || !termsChanged} onClick={saveTerms}>
+          <button type="submit" className="btn" disabled={!termsOk || !termsChanged}>
             変える
           </button>
-        </div>
-        {termsSame && <p className="error">訪問する人と訪問先に、同じ呼び方は使えません</p>}
+        </form>
+        <FieldError id={termsErrId}>{termsSame && '訪問する人と訪問先に、同じ呼び方は使えません'}</FieldError>
       </div>
 
       <div className="card stack">
@@ -458,7 +475,7 @@ export default function DataPage() {
           onPick={(f) => void load(f)}
           testId="backup-file"
         />
-        {error && <p className="error">{error}</p>}
+        <FieldError>{error}</FieldError>
       </div>
 
       {/* Excel の入出力を切っていれば欄ごと出さない（控え（JSON）は残す。ADR-0028 の excel） */}
@@ -585,11 +602,7 @@ export default function DataPage() {
               </button>
             </section>
           )}
-          {excelError && (
-            <p className="error" style={{ whiteSpace: 'pre-line' }}>
-              {excelError}
-            </p>
-          )}
+          <FieldError style={{ whiteSpace: 'pre-line' }}>{excelError}</FieldError>
           {excelError === STALE_TEXT && (
             <button
               type="button"

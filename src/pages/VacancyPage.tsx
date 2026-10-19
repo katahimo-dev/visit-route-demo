@@ -1,8 +1,9 @@
 import { BookmarkPlus, CalendarSearch, ClipboardList, Copy, MapPin, MessageSquareText, Users, X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ConditionsEditor } from '../components/conditions';
 import { EdgeScroll } from '../components/EdgeScroll';
+import { FieldError, invalidAttrs, RequiredMark } from '../components/FieldError';
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
 import { AddressField } from '../components/placeLookup';
@@ -253,7 +254,13 @@ export default function VacancyPage() {
   const [perWeek, setPerWeek] = useState(1);
   // 欄
   const [picked, setPicked] = useState<VacancyCell | null>(null);
-  const [hold, setHold] = useState<{ name: string; error: string | null } | null>(null);
+  /** 仮押さえの欄（nameBad：誤りが表示名の欄のもの。PRD D250） */
+  const [hold, setHold] = useState<{ name: string; error: string | null; nameBad?: boolean } | null>(null);
+  /** 入力の誤りの文の id（入力欄の aria-describedby。PRD D250） */
+  const durationErrId = useId();
+  const fromErrId = useId();
+  const wishErrId = useId();
+  const holdErrId = useId();
 
   const durationNum = Number(duration);
   const durationOk =
@@ -444,11 +451,15 @@ export default function VacancyPage() {
     if (!hold || !query) return;
     const name = hold.name.trim();
     if (!name) {
-      setHold({ ...hold, error: '表示名を入れてください' });
+      setHold({ ...hold, error: '表示名を入れてください', nameBad: true });
       return;
     }
     if (nameTaken(data.clients, (x) => x.displayName, name)) {
-      setHold({ ...hold, error: `「${name}」と同じ名前の${terms.client}がいます。名前を変えてください` });
+      setHold({
+        ...hold,
+        error: `「${name}」と同じ名前の${terms.client}がいます。名前を変えてください`,
+        nameBad: true,
+      });
       return;
     }
     if (slots.length === 0) return;
@@ -495,7 +506,7 @@ export default function VacancyPage() {
     const patterns: Pattern[] = [];
     for (const r of parsed) {
       if (!r.success) {
-        setHold({ ...hold, error: '定期パターンを作れませんでした。条件を確かめてください' });
+        setHold({ ...hold, error: '定期パターンを作れませんでした。条件を確かめてください', nameBad: false });
         return;
       }
       patterns.push(r.data);
@@ -588,13 +599,19 @@ export default function VacancyPage() {
               max={VACANCY_DURATION_MAX}
               step={5}
               value={duration}
+              {...invalidAttrs(!durationOk, durationErrId)}
               data-testid="vacancy-duration"
               onChange={(e) => setDuration(e.target.value)}
             />
           </label>
           <label>
             希望の開始（から）
-            <select value={wishFrom} onChange={(e) => setWishFrom(e.target.value)} data-testid="wish-from">
+            <select
+              value={wishFrom}
+              {...invalidAttrs(!wishOk, wishErrId)}
+              onChange={(e) => setWishFrom(e.target.value)}
+              data-testid="wish-from"
+            >
               {HALF_HOURS.map((h) => (
                 <option key={h} value={h}>
                   {timeText(h)}
@@ -604,7 +621,12 @@ export default function VacancyPage() {
           </label>
           <label>
             希望の開始（まで）
-            <select value={wishTo} onChange={(e) => setWishTo(e.target.value)} data-testid="wish-to">
+            <select
+              value={wishTo}
+              {...invalidAttrs(!wishOk, wishErrId)}
+              onChange={(e) => setWishTo(e.target.value)}
+              data-testid="wish-to"
+            >
               {HALF_HOURS.map((h) => (
                 <option key={h} value={h}>
                   {timeText(h)}
@@ -624,7 +646,12 @@ export default function VacancyPage() {
           </label>
           <label>
             開始日
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <input
+              type="date"
+              value={from}
+              {...invalidAttrs(!fromOk, fromErrId)}
+              onChange={(e) => setFrom(e.target.value)}
+            />
           </label>
           <label>
             見る週の数
@@ -655,21 +682,11 @@ export default function VacancyPage() {
             ))}
           </fieldset>
         </div>
-        {!durationOk && (
-          <p className="error" role="alert">
-            所要は{VACANCY_DURATION_MIN}〜{VACANCY_DURATION_MAX}分で入れてください
-          </p>
-        )}
-        {!fromOk && (
-          <p className="error" role="alert">
-            開始日を入れてください
-          </p>
-        )}
-        {!wishOk && (
-          <p className="error" role="alert">
-            希望の開始は「から」を「まで」より前にしてください
-          </p>
-        )}
+        <FieldError id={durationErrId}>
+          {!durationOk && `所要は${VACANCY_DURATION_MIN}〜${VACANCY_DURATION_MAX}分で入れてください`}
+        </FieldError>
+        <FieldError id={fromErrId}>{!fromOk && '開始日を入れてください'}</FieldError>
+        <FieldError id={wishErrId}>{!wishOk && '希望の開始は「から」を「まで」より前にしてください'}</FieldError>
         <details className="vacancy-more">
           <summary>
             {terms.staff}の条件
@@ -957,11 +974,9 @@ export default function VacancyPage() {
                   : '：日ごとに、受けられる開始の時間を載せます'}
                 {exactPlace ? '（場所への移動を含む）' : `（目安。移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む）`}
               </p>
-              {noticeDuration === null && (
-                <p className="error" role="alert">
-                  種類を選ぶか、上の「1 いつ・何を」の所要を正しく入れてください
-                </p>
-              )}
+              <FieldError>
+                {noticeDuration === null && '種類を選ぶか、上の「1 いつ・何を」の所要を正しく入れてください'}
+              </FieldError>
               {notice && (
                 <>
                   <output className="inquiry-summary notice-text" data-testid="notice-text">
@@ -1124,25 +1139,33 @@ export default function VacancyPage() {
           narrow
           title={`仮の${terms.client}として押さえる`}
           onClose={() => setHold(null)}
+          onSubmit={register}
           footer={
             <>
-              <button type="button" className="btn btn-primary" onClick={register} data-testid="hold-register">
+              <button type="submit" className="btn btn-primary" data-testid="hold-register">
                 <WithIcon icon={BookmarkPlus}>押さえる</WithIcon>
               </button>
               <button type="button" className="btn" onClick={() => setHold(null)}>
                 <WithIcon icon={X}>閉じる</WithIcon>
               </button>
-              {hold.error && <span className="error">{hold.error}</span>}
+              <FieldError as="span" id={holdErrId}>
+                {hold.error}
+              </FieldError>
             </>
           }
         >
           <label>
-            表示名（必須）
+            <span>
+              表示名
+              <RequiredMark />
+            </span>
             <input
               value={hold.name}
               maxLength={50}
+              required
+              {...invalidAttrs(!!hold.error && !!hold.nameBad, holdErrId)}
               data-testid="hold-name"
-              onChange={(e) => setHold({ ...hold, name: e.target.value, error: null })}
+              onChange={(e) => setHold({ ...hold, name: e.target.value, error: null, nameBad: false })}
             />
           </label>
           <p>次の定期パターン（毎週）で、{dateText(from)}から押さえます。</p>

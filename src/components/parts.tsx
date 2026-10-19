@@ -4,6 +4,7 @@ import { HALF_HOURS, MAX_SLOTS, type Slot, slotsError } from '../domain/availabi
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { colorOf, initialOf } from '../lib/colors';
 import { hasLocation } from '../lib/common';
+import { FieldError } from './FieldError';
 import { PersonButton } from './PersonPopover';
 import { RouteMap } from './RouteMap';
 import './marks.css';
@@ -150,7 +151,7 @@ export function SlotEditor({ value, onChange }: { value: Slot[]; onChange: (v: S
           ＋ 時間帯を追加
         </button>
       )}
-      {error && <p className="error">{error}</p>}
+      <FieldError>{error}</FieldError>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { CalendarClock, Check, Pencil, Plus, Repeat, Trash2, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
+import { enterToSave, FieldError } from '../components/FieldError';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, SectionTitle, WithIcon } from '../components/ui';
 import { TypeDot } from '../components/visitType';
@@ -333,7 +334,7 @@ export function PatternsSection({ client }: { client: Client }) {
       )}
 
       {form && (
-        <fieldset className="pattern-form stack" data-testid="pattern-form">
+        <fieldset className="pattern-form stack" data-testid="pattern-form" onKeyDown={enterToSave(save)}>
           <legend>{form.id ? 'パターンを直す' : 'パターンを追加'}</legend>
           <div className="form-grid">
             <label>
@@ -582,11 +583,7 @@ export function PatternsSection({ client }: { client: Client }) {
               「いつから」より前の訪問と、この回だけ変えた訪問・取り消した訪問は変えません。それ以外の訪問を新しい中身で作り直します。
             </span>
           )}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
+          <FieldError>{error}</FieldError>
           <div className="row">
             <button type="button" className="btn btn-small" onClick={save}>
               <WithIcon icon={Check} size={14}>

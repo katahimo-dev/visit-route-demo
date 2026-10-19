@@ -395,9 +395,8 @@ export default function PlanPage() {
       autoTried.current.clear();
     };
   }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた入力欄を閉じ、前の日のエラーを消す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた欄を閉じ、前の日のエラーを消す（訪問の入力欄は入力を捨てずに引き継ぐ。PRD D251）
   useEffect(() => {
-    setEditing(null);
     setSudden(null);
     setCancelFor(null);
     setContactsOpen(false);
@@ -2896,10 +2895,20 @@ export default function PlanPage() {
       )}
 
       {/* あるときだけの帯（PRD D63）。ドラッグ中には増減しない（移したあとに変わる） */}
-      {m.problemError && <p className="error plan-band">問題を作れませんでした：{m.problemError}</p>}
-      {error && <p className="error plan-band">{error}</p>}
+      {m.problemError && (
+        <p className="error plan-band" role="alert">
+          問題を作れませんでした：{m.problemError}
+        </p>
+      )}
+      {error && (
+        <p className="error plan-band" role="alert">
+          {error}
+        </p>
+      )}
       {aiPlan && (curScore?.error || genScore?.error) && (
-        <p className="error plan-band">採点できません（{curScore?.error ?? genScore?.error}）</p>
+        <p className="error plan-band" role="alert">
+          採点できません（{curScore?.error ?? genScore?.error}）
+        </p>
       )}
       {aiPlan && unassigned.length > 0 && (
         <div className="plan-band is-warn row" data-testid="band-unassigned">

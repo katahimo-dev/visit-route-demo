@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
+import { FieldError, invalidAttrs } from '../components/FieldError';
 import { StaffLegend } from '../components/staffBar';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
@@ -237,11 +238,13 @@ export default function WorkloadPage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') saveFare();
                 }}
-                aria-invalid={!!fareError || undefined}
+                {...invalidAttrs(!!fareError, `${limitId}-fare-error`)}
                 data-testid="work-fare"
               />
               <span>円/km（0 なら交通費を出しません）</span>
-              {fareError && <span className="error">{fareError}</span>}
+              <FieldError as="span" id={`${limitId}-fare-error`}>
+                {fareError}
+              </FieldError>
             </label>
           )}
           {/* 用語の説明（ボタン）は label の中に置かない（PR #42 のレビュー）。入力欄の名前は aria-labelledby でつなぐ */}
@@ -262,11 +265,13 @@ export default function WorkloadPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') saveLimit();
               }}
-              aria-invalid={!!limitError || undefined}
+              {...invalidAttrs(!!limitError, `${limitId}-error`)}
               data-testid="work-limit"
             />
             <span>時間（超える日に注意。0 なら出しません）</span>
-            {limitError && <span className="error">{limitError}</span>}
+            <FieldError as="span" id={`${limitId}-error`}>
+              {limitError}
+            </FieldError>
           </div>
         </div>
         <Hint label="見込みの数え方">

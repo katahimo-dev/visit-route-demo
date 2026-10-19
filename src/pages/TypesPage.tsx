@@ -1,7 +1,8 @@
 import { Layers, Pencil, Plus, Save, ShieldCheck, Timer, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
 import { CondChips, ConditionsEditor } from '../components/conditions';
+import { FieldError, type FormErr, invalidAttrs, RequiredMark } from '../components/FieldError';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, WithIcon } from '../components/ui';
 import { TypeDot } from '../components/visitType';
@@ -35,7 +36,10 @@ export default function TypesPage() {
   const confirmDialog = useConfirm();
   const [form, setForm] = useState<Form | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormErr>(null);
+  const errorId = useId();
+  /** 誤った欄の印（PRD D250） */
+  const bad = (field: string) => invalidAttrs(error?.field === field, errorId);
   const itemById = useMemo(() => new Map(data.items.map((i) => [i.id, i])), [data.items]);
   /** 種類ごとの、使っている訪問・パターンの数 */
   const uses = useMemo(() => {
@@ -66,11 +70,11 @@ export default function TypesPage() {
     setError(null);
     // 同じ名前は保存しない（Excel では種類を名前で引くため。ADR-0006）
     if (nameTaken(data.visitTypes, (x) => x.name, form.name, form.id)) {
-      setError(`「${form.name.trim()}」と同じ名前の種類があります。名前を変えてください`);
+      setError({ text: `「${form.name.trim()}」と同じ名前の種類があります。名前を変えてください`, field: 'name' });
       return;
     }
     if (isNew && full) {
-      setError(`種類は${MAX_VISIT_TYPES}までです`);
+      setError({ text: `種類は${MAX_VISIT_TYPES}までです` });
       return;
     }
     const r = visitTypeSchema.safeParse({
@@ -81,13 +85,15 @@ export default function TypesPage() {
     if (!r.success) {
       const issue = r.error.issues[0];
       const where = issue?.path[0];
-      setError(
-        where === 'name'
-          ? '名前は1〜20字で入れてください'
-          : where === 'durationMinutes'
-            ? '標準の所要は5〜720分で入れてください'
-            : formError(r.error),
-      );
+      setError({
+        text:
+          where === 'name'
+            ? '名前は1〜20字で入れてください'
+            : where === 'durationMinutes'
+              ? '標準の所要は5〜720分で入れてください'
+              : formError(r.error),
+        field: typeof where === 'string' ? where : undefined,
+      });
       return;
     }
     const t = r.data;
@@ -200,32 +206,49 @@ export default function TypesPage() {
           icon={isNew ? Plus : Pencil}
           title={isNew ? '種類を追加' : `種類を編集：${form.name.trim() || '（名前なし）'}`}
           onClose={() => setForm(null)}
+          onSubmit={save}
           footer={
             <>
-              <button type="button" className="btn btn-primary" onClick={save}>
+              <button type="submit" className="btn btn-primary">
                 <WithIcon icon={Save}>保存</WithIcon>
               </button>
               <button type="button" className="btn" onClick={() => setForm(null)}>
                 <WithIcon icon={X}>閉じる</WithIcon>
               </button>
-              {error && <span className="error">{error}</span>}
+              <FieldError as="span" id={errorId}>
+                {error?.text}
+              </FieldError>
             </>
           }
         >
           <div className="form-grid">
             <label>
-              名前（20字まで）
-              <input value={form.name} maxLength={20} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <span>
+                名前（20字まで）
+                <RequiredMark />
+              </span>
+              <input
+                value={form.name}
+                maxLength={20}
+                required
+                {...bad('name')}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </label>
             <label>
-              <WithIcon icon={Timer} size={14}>
-                標準の所要（分）
-              </WithIcon>
+              <span>
+                <WithIcon icon={Timer} size={14}>
+                  標準の所要（分）
+                </WithIcon>
+                <RequiredMark />
+              </span>
               <input
                 type="number"
                 min={5}
                 max={720}
                 value={form.durationMinutes}
+                required
+                {...bad('durationMinutes')}
                 onChange={(e) => setForm({ ...form, durationMinutes: e.target.value })}
               />
             </label>

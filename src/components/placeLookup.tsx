@@ -23,6 +23,7 @@ import { hasLocation } from '../lib/common';
 import { EXTERNAL_NOTICE, type GeoHit, lookupPostalCode, type PostalHit, searchAddress } from '../lib/geocode';
 import { normalizePostalCode } from '../lib/postalCode';
 import { useFeature } from '../lib/useFeature';
+import { FieldError } from './FieldError';
 import { PlacePin } from './parts';
 import { WithIcon } from './ui';
 import './placeLookup.css';
@@ -233,11 +234,9 @@ export function AddressField<T extends Place>({
           </span>
         )}
       </div>
-      {postalError && (
-        <span id={postalErrorId} className="error" data-testid={`${testId}-postal-error`}>
-          郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません）
-        </span>
-      )}
+      <FieldError as="span" id={postalErrorId} testId={`${testId}-postal-error`}>
+        {postalError && '郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません）'}
+      </FieldError>
       {postalHits.length > 0 && (
         <Candidates
           label="ほかの候補（押すと住所を置き換えます）"
