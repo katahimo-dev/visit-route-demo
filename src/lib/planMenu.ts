@@ -163,3 +163,14 @@ export function anotherPlanOptions(
     out.push({ key: 'rules', kind: 'rules', label: '今の条件（重み）で作る' });
   return out;
 }
+
+/**
+ * 「この割当で確定」の確認の本文の先頭に出す件数（PRD D219）。数は日の画面の1行のまとめと同じ今の案の採点
+ * （dropped＝入らない訪問・hardViolations の件数＝必須の違反）。どちらも0なら空
+ */
+export function adoptWarnings(dropped: number, hard: number): string[] {
+  const out: string[] = [];
+  if (dropped > 0) out.push(`入らない訪問が ${dropped}件あります（担当なしのまま確定します）`);
+  if (hard > 0) out.push(`必須の違反が ${hard}件あります（必須の条件に合わないまま確定します）`);
+  return out;
+}

@@ -1,4 +1,5 @@
 import {
+  ArrowRightLeft,
   Ban,
   BedSingle,
   CalendarDays,
@@ -103,6 +104,7 @@ import { currentRuleKeys, planStale, rulesStale } from '../lib/month';
 import { typeOf } from '../lib/patternText';
 import { leavePeople } from '../lib/personLinks';
 import {
+  adoptWarnings,
   batchDescription,
   compareText,
   createText,
@@ -113,18 +115,28 @@ import {
   revertText,
 } from '../lib/planMenu';
 import { planRulesOf } from '../lib/presets';
+import { CURRENT_TEXT, NONE_TEXT, reassignItemText } from '../lib/reassignMenu';
 import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { scoreReason } from '../lib/scoreReason';
 import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
 import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
+import {
+  confirmedKey,
+  type EditSnapshot,
+  type EditState,
+  takeSnapshot,
+  undoBlockReason,
+  undoState,
+} from '../lib/undoEdit';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile } from '../matching';
 import {
   type ContactList,
+  candidatesFor,
   contactsOf,
   leftOf,
   placeVisit,
@@ -1022,42 +1034,89 @@ export default function PlanPage() {
       document.querySelector(`[data-visit="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' }),
     );
   }, [aiPlan, owner]);
+  /**
+   * 手直しの1手前（PRD D218。ADR-0030）：手直し（担当を移す・入らなかった訪問へ・候補の人に入れる・固定を外す）の前の routes・pins。
+   * 画面の状態だけ（保存しない）。戻せるのは直前の1手だけ。今の案がほかの操作で変わった・確定したら戻さない（lib/undoEdit）
+   */
+  const [undoSnap, setUndoSnap] = useState<{ snap: EditSnapshot; visitId: string; from: string | null } | null>(null);
+  /** 今の案の routes・pins（手直しの前の形） */
+  const editState: EditState | null = useMemo(
+    () => (aiPlan ? { routes: aiPlan.routes, pins: aiPlan.pins } : null),
+    [aiPlan],
+  );
+  /** 確定した割当のキー（手直しのあとに確定したら戻さない） */
+  const savedKey = useMemo(() => confirmedKey(own(data.manualPlans, date)), [data.manualPlans, date]);
+  /** 戻せない理由（戻せれば null）。操作の行の title とトーストで共通 */
+  const undoWhy = useMemo(
+    () => undoBlockReason(undoSnap?.snap ?? null, date, editState, savedKey, !!running),
+    [undoSnap, date, editState, savedKey, running],
+  );
+  const undoable = undoWhy === null;
+  /**
+   * 手直しを書く：手直しの前の形を控え（after と同じなら控えない）、after を今の案に書く（after は呼ぶ側で1回だけ計算する）。
+   * 控えたら true
+   */
+  const applyEdit = (p: Problem, visitId: string, after: EditState): boolean => {
+    const snap = editState ? takeSnapshot(date, editState, after, savedKey) : null;
+    setUndoSnap(snap ? { snap, visitId, from: owner.get(visitId) ?? null } : null);
+    update((d) => patchPlan(d, date, p, (plan) => ({ ...withRoutes(p, plan, after.routes), pins: after.pins })));
+    return !!snap;
+  };
+  /**
+   * 「担当を変える ▾」で移したあとのフォーカス（PRD D217）：選んだ項目・ボタンは移した訪問の詳細ごと消える（列が替わる・
+   * 選択が外れる）ので、移した先のカード、無ければ「元に戻す」、それも無ければ移した先の列の見出しへ
+   */
+  const focusAfterMove = (visitId: string, staffId: string | null) => {
+    requestAnimationFrame(() => {
+      const v = CSS.escape(visitId);
+      const target =
+        document.querySelector<HTMLElement>(
+          `.route-item[data-visit="${v}"] .route-btn, .tl-band[data-visit="${v}"] .tl-band-btn`,
+        ) ??
+        document.querySelector<HTMLElement>('[data-testid="plan-reassign-undo"]') ??
+        (staffId ? colHeadOf(staffId) : null);
+      target?.focus();
+    });
+  };
+  /** トーストの「元に戻す」（PRD D218）。トーストは前の描画の関数を持つので、押したときの最新の undoEdit を呼ぶ */
+  const undoRef = useRef<() => void>(() => {});
+  const undoAction = { label: '元に戻す', onClick: () => undoRef.current(), testId: 'plan-reassign-toast-undo' };
   const moveTo = (visitId: string, staffId: string) => {
     if (!problem || !aiPlan || running) return;
     if (owner.get(visitId) === staffId && own(pins, visitId) === staffId) return;
     const p = problem;
-    update((d) =>
-      patchPlan(d, date, p, (plan) => ({
-        ...withRoutes(
-          p,
-          plan,
-          owner.get(visitId) === staffId ? plan.routes : bestInsertion(p, plan.routes, visitId, staffId),
-        ),
-        pins: { ...plan.pins, [visitId]: staffId },
-      })),
-    );
+    const saved = applyEdit(p, visitId, {
+      routes: owner.get(visitId) === staffId ? aiPlan.routes : bestInsertion(p, aiPlan.routes, visitId, staffId),
+      pins: { ...aiPlan.pins, [visitId]: staffId },
+    });
     // 移した訪問を選んでいたら、地図の絞り込みを新しい担当に合わせる
     sel.follow(visitId, staffId);
+    const opts = saved ? { action: undoAction } : undefined;
     if (!allowedFor(visitId, staffId)) {
-      toast(`${staffName(staffId)}さんは必須の条件に合いません（組み直すとこの訪問は入りません）`);
+      toast(`${staffName(staffId)}さんへ移しました。必須の条件に合いません（組み直すとこの訪問は入りません）`, opts);
+    } else {
+      toast(`${staffName(staffId)}さんへ移しました（固定）`, opts);
     }
   };
   /** 未割当へ移す（列から外して「入らなかった訪問」へ。固定は担当の固定なので外す） */
   const unassign = (visitId: string) => {
     if (!problem || !aiPlan || running || !owner.has(visitId)) return;
-    const p = problem;
-    update((d) =>
-      patchPlan(d, date, p, (plan) => {
-        const routes = Object.fromEntries(
-          Object.entries(plan.routes).map(([s, ids]) => [s, ids.filter((x) => x !== visitId)]),
-        );
-        const { [visitId]: _, ...pins } = plan.pins;
-        return { ...withRoutes(p, plan, routes), pins };
-      }),
-    );
+    const { [visitId]: _, ...rest } = aiPlan.pins;
+    const saved = applyEdit(problem, visitId, {
+      routes: Object.fromEntries(
+        Object.entries(aiPlan.routes).map(([s, ids]) => [s, ids.filter((x) => x !== visitId)]),
+      ),
+      pins: rest,
+    });
     sel.follow(visitId, null);
+    toast('入らなかった訪問へ移しました', saved ? { action: undoAction } : undefined);
   };
   const unpin = (visitId: string) => {
+    if (problem && aiPlan) {
+      const { [visitId]: _, ...rest } = aiPlan.pins;
+      applyEdit(problem, visitId, { routes: aiPlan.routes, pins: rest });
+      return;
+    }
     update((d) =>
       patchPlan(d, date, problem, (plan) => {
         const { [visitId]: _, ...rest } = plan.pins;
@@ -1065,6 +1124,30 @@ export default function PlanPage() {
       }),
     );
   };
+  /**
+   * 直前の手直しを1手だけ戻す（routes と固定を控えのとおりに。控えは消す＝2手前へは戻れない）。
+   * 戻せないときは理由をトーストで（トーストの「元に戻す」は押すと閉じるので、黙って消えないように）
+   */
+  const undoEdit = () => {
+    const why = runRef.current ? '計算中です' : undoWhy;
+    if (why !== null || !problem || !undoSnap) {
+      toast(`戻せません：${why ?? '戻せる手直しがありません'}`);
+      return;
+    }
+    const back = undoState(undoSnap.snap);
+    const p = problem;
+    const ae = document.activeElement;
+    const fromToast = !ae || ae === document.body || !!ae.closest('.toast');
+    update((d) => patchPlan(d, date, p, (plan) => ({ ...withRoutes(p, plan, back.routes), pins: back.pins })));
+    sel.follow(undoSnap.visitId, undoSnap.from);
+    setUndoSnap(null);
+    toast('元に戻しました');
+    // トーストのボタンは押すと消えるので、戻した訪問のカードへ（操作の行から押したときはそのまま）
+    if (fromToast) focusAfterMove(undoSnap.visitId, undoSnap.from);
+  };
+  useEffect(() => {
+    undoRef.current = undoEdit;
+  });
 
   /** AI案に戻す（手直しと固定を捨てる） */
   const revert = async () => {
@@ -1094,9 +1177,11 @@ export default function PlanPage() {
   /** この割当で確定（確定したら true） */
   const adopt = async (): Promise<boolean> => {
     if (!aiPlan || !problem) return false;
+    // 入らない訪問・必須の違反があれば、本文の先頭に件数（PRD D219。数は1行のまとめと同じ今の案の採点から）
+    const warns = adoptWarnings(curScore?.value?.dropped ?? 0, curScore?.value?.hardViolations.length ?? 0);
     const ok = await confirmDialog({
       title: 'この割当で確定しますか？',
-      body: `この割当（手直し後）で確定します。各訪問の担当がこのとおりに書き換わり、${terms.staff}の画面にも出ます。\n（計算に入れていない訪問の担当はそのままです）`,
+      body: `${warns.length > 0 ? `${warns.join('\n')}\n\n` : ''}この割当（手直し後）で確定します。各訪問の担当がこのとおりに書き換わり、${terms.staff}の画面にも出ます。\n（計算に入れていない訪問の担当はそのままです）`,
       confirmLabel: '確定する',
     });
     if (!ok) return false;
@@ -1126,6 +1211,8 @@ export default function PlanPage() {
         return (v.staffId ?? null) === next ? v : { ...v, staffId: next };
       }),
     }));
+    // 確定したら手直しの控えは捨てる（戻すと今の案だけが戻り、確定した担当と食い違うため。PRD D218）
+    setUndoSnap(null);
     toast('この割当で確定しました');
     return true;
   };
@@ -1620,14 +1707,12 @@ export default function PlanPage() {
       return;
     if (runRef.current) return;
     const p = problem;
-    update((d) =>
-      patchPlan(d, date, p, (plan) => ({
-        ...withRoutes(p, plan, placeVisit(p, plan.routes, visitId, staffId)),
-        pins: { ...plan.pins, [visitId]: staffId },
-      })),
-    );
+    const saved = applyEdit(p, visitId, {
+      routes: placeVisit(p, aiPlan.routes, visitId, staffId),
+      pins: { ...aiPlan.pins, [visitId]: staffId },
+    });
     sel.follow(visitId, staffId);
-    toast(`${staffName(staffId)}さんに入れました（固定）`);
+    toast(`${staffName(staffId)}さんに入れました（固定）`, saved ? { action: undoAction } : undefined);
   };
 
   // ---- 訪問の取消・前の同じ曜日からコピー ----
@@ -1888,6 +1973,36 @@ export default function PlanPage() {
     );
   };
 
+  /**
+   * 訪問の詳細の「担当を変える ▾」（PRD D217）。順番のカード・時間軸の帯の詳細で共通。
+   * 入らない訪問で「受けられる人」（振り直しの候補）を出しているものは重ねない
+   */
+  const reassignOf = (id: string, ownerId: string | null) => {
+    if (!problem || !aiPlan) return null;
+    if (!ownerId && reassignMarks.unplaced.has(id)) return null;
+    return (
+      <ReassignMenu
+        problem={problem}
+        routes={routes}
+        visitId={id}
+        ownerId={ownerId}
+        pinned={!!own(pins, id)}
+        staffIds={columns}
+        staffName={staffName}
+        staffTerm={terms.staff}
+        busy={running ? '計算中は選べません' : false}
+        onMove={(sid) => {
+          moveTo(id, sid);
+          focusAfterMove(id, sid);
+        }}
+        onNone={() => {
+          unassign(id);
+          focusAfterMove(id, null);
+        }}
+      />
+    );
+  };
+
   /** 訪問カード（ドラッグで担当を移す。押すと理由） */
   const card = (id: string) => {
     const pin = own(pins, id);
@@ -1912,6 +2027,7 @@ export default function PlanPage() {
         detail={
           <>
             {whoOf(id, ownerId)}
+            {reassignOf(id, ownerId)}
             <VisitRules client={clientOf(id)} />
             {routeLinksOf(id, ownerId)}
             <ReasonBox explain={explained.get(id)} />
@@ -1999,6 +2115,7 @@ export default function PlanPage() {
             <TypeMark type={type} compact />
           </div>
           {whoOf(id, sid, false)}
+          {reassignOf(id, sid)}
           {tagsOf(id)}
           <VisitRules client={client} />
           {routeLinksOf(id, sid)}
@@ -2899,6 +3016,19 @@ export default function PlanPage() {
           <WithIcon icon={Plus}>訪問を追加</WithIcon>
         </button>
         <MenuButton label="案を変える" icon={Sparkles} items={menuItems} testId="plan-menu" />
+        {/* 直前の手直しを1手だけ戻す（PRD D218）。戻せないときも押せる所に残し（フォーカスを落とさない）、理由は title */}
+        {aiPlan && (
+          <button
+            type="button"
+            className="btn"
+            aria-disabled={undoable ? undefined : true}
+            title={undoable ? '直前の手直し（担当を移す・固定を外す）を1手だけ戻します' : `戻せません：${undoWhy}`}
+            onClick={() => undoable && undoEdit()}
+            data-testid="plan-reassign-undo"
+          >
+            <WithIcon icon={Undo2}>元に戻す</WithIcon>
+          </button>
+        )}
         {/* 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017。主ボタンにはしない） */}
         {mailOn && (
           <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
@@ -2929,7 +3059,7 @@ export default function PlanPage() {
         {progressView}
         <Hint label="使い方">
           訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
-          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。「案を変える」の「固定した訪問は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
+          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。訪問を押して「担当を変える」から選んでも同じです（キーボード・タッチでも）。直前の手直しは「元に戻す」で1手だけ戻せます。「案を変える」の「固定した訪問は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
           名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
         </Hint>
       </div>
@@ -3775,5 +3905,118 @@ function VisitList({
         </table>
       </div>
     </section>
+  );
+}
+
+/**
+ * 訪問の詳細の「担当を変える ▾」（PRD D217。ADR-0030）：ドラッグと同じ手直しを、押す・キーボード・タッチで。
+ * 候補は「受けられる人」と同じ candidatesFor（列のある人だけ）。押せる人を先に、必須の条件に合わない人は押せず理由を出す。
+ * 今の担当は印を付けて押せない。担当のいる訪問は最後に「入らなかった訪問へ」。選ぶとドラッグと同じ moveTo・unassign
+ */
+function ReassignMenu({
+  problem,
+  routes,
+  visitId,
+  ownerId,
+  pinned,
+  staffIds,
+  staffName,
+  staffTerm,
+  busy,
+  onMove,
+  onNone,
+}: {
+  problem: Problem;
+  routes: Record<string, string[]>;
+  visitId: string;
+  ownerId: string | null;
+  pinned: boolean;
+  /** 列を出している人（ドラッグで落とせる人と同じ） */
+  staffIds: string[];
+  staffName: (id: string) => string;
+  staffTerm: string;
+  /** 押せない理由（計算中）。無ければ false */
+  busy: string | false;
+  onMove: (staffId: string) => void;
+  onNone: () => void;
+}) {
+  /** 候補は一覧を開いているときだけ計算する（「受けられる人」の CandidateBox と同じ。訪問を選ぶ・ドラッグのたびに計算しない） */
+  const [open, setOpen] = useState(false);
+  const list = useMemo(
+    () => (open ? (attempt(() => candidatesFor(problem, routes, visitId)).value ?? []) : []),
+    [open, problem, routes, visitId],
+  );
+  const vi = problem.visits.findIndex((v) => v.id === visitId);
+  if (vi < 0) return null;
+  const shown = new Set(staffIds);
+  const indexOf = (sid: string) => problem.staff.findIndex((s) => s.id === sid);
+  const allowed = (sid: string) => problem.allowed[vi]?.[indexOf(sid)] === true;
+  const others = list.filter((c) => c.staffId !== ownerId && shown.has(c.staffId));
+  const sorted = [...others.filter((c) => allowed(c.staffId)), ...others.filter((c) => !allowed(c.staffId))];
+  const items: MenuItem[] = [
+    ...(ownerId
+      ? [
+          {
+            key: `cur-${ownerId}`,
+            group: '今の担当',
+            testId: 'plan-reassign-current',
+            label: staffName(ownerId),
+            note: pinned ? '固定' : undefined,
+            description: CURRENT_TEXT,
+            current: true,
+            disabled: true,
+            onSelect: () => {},
+          },
+        ]
+      : []),
+    ...sorted.map((c, i): MenuItem => {
+      const t = reassignItemText(c, problem.reasons[vi]?.[indexOf(c.staffId)] ?? [], allowed(c.staffId));
+      return {
+        key: `to-${c.staffId}`,
+        group: i === 0 ? `ほかの${staffTerm}へ移す` : undefined,
+        testId: 'plan-reassign-item',
+        label: staffName(c.staffId),
+        description: t.description,
+        disabled: busy || t.disabled,
+        onSelect: () => onMove(c.staffId),
+      };
+    }),
+    // 担当の無い訪問で移せる人がいなければ、そう書く（一覧を空にしない）
+    ...(!ownerId && open && sorted.length === 0
+      ? [
+          {
+            key: 'empty',
+            testId: 'plan-reassign-empty',
+            label: `移せる${staffTerm}がいません`,
+            disabled: true,
+            onSelect: () => {},
+          },
+        ]
+      : []),
+    ...(ownerId
+      ? [
+          {
+            key: 'none',
+            group: 'そのほか',
+            testId: 'plan-reassign-none',
+            label: '入らなかった訪問へ',
+            description: NONE_TEXT,
+            icon: CircleOff,
+            disabled: busy,
+            onSelect: onNone,
+          },
+        ]
+      : []),
+  ];
+  return (
+    <div className="plan-reassign">
+      <MenuButton
+        label="担当を変える"
+        icon={ArrowRightLeft}
+        items={items}
+        testId="plan-reassign"
+        onOpenChange={setOpen}
+      />
+    </div>
   );
 }

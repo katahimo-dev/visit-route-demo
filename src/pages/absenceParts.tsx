@@ -12,6 +12,7 @@ import { HALF_HOURS, type Slot, slotsText, timeText as t } from '../domain/avail
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { absencesOn, absenceText, baseOf, saveAbsence, withoutAbsencesOn } from '../lib/absences';
 import { attempt, deltaText, r0 } from '../lib/common';
+import { shiftText } from '../lib/reassignMenu';
 import type { AbsenceDraft } from '../lib/sudden';
 import { compile } from '../matching';
 import { candidatesFor, reassign, targetsOf } from '../reassign';
@@ -322,11 +323,6 @@ export function ReassignSummary({
 export function leftReasonText(x: ReassignLeft): string {
   if (x.reason === 'unreachable') return '欠勤明けに間に合わない：振り直していない';
   return '欠勤と重なる：振り直していない';
-}
-
-/** 「〇分ずらせば入る」の文 */
-function shiftText(m: number): string {
-  return m > 0 ? `${m}分遅らせれば入る` : `${-m}分早めれば入る`;
 }
 
 /** 入らない訪問を受けられる人の候補（先頭5人＋「すべて見る」）。押すとその人に入れる（固定） */
