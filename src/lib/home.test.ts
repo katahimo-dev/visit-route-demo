@@ -52,6 +52,7 @@ describe('homeTasks', () => {
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 0,
       data,
+      features: {},
     });
     expect(r.ready).toBe(true);
     expect(r.tasks.map((t) => t.kind)).toEqual(['today']);
@@ -66,6 +67,7 @@ describe('homeTasks', () => {
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 2,
       data,
+      features: {},
     });
     expect(r.ready).toBe(true);
     expect(r.tasks).toHaveLength(1);
@@ -81,6 +83,7 @@ describe('homeTasks', () => {
       months: [{ ym: '2026-10', canExpand: 40 }],
       todayStaff: 0,
       data,
+      features: {},
     });
     expect(r.ready).toBe(false);
     const c = r.tasks.find((t) => t.kind === 'create')!;
@@ -101,6 +104,7 @@ describe('homeTasks', () => {
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 3,
       data,
+      features: {},
     });
     expect(r.ready).toBe(false);
     expect(r.tasks.map((t) => t.kind)).toEqual(['attention', 'today', 'confirm', 'create']);
@@ -143,6 +147,7 @@ describe('homeTasks', () => {
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 0,
       data,
+      features: {},
     });
     const conf = r.tasks.find((t) => t.kind === 'confirm')!;
     expect(progress.unconfirmed).toEqual([TODAY, '2026-10-16', '2026-10-18']);
@@ -159,6 +164,7 @@ describe('homeTasks', () => {
         staff: [{ id: 's1', name: '山田' } as Staff],
         absences: [{ id: 'a1', staffId: 's1', date: '2026-10-20', from: '09:00', to: '12:00', note: '' } as Absence],
       },
+      features: {},
     });
     const att = r.tasks[0]!;
     expect(att).toMatchObject({ kind: 'attention', title: '10月の要対応 2件', to: '/month?ym=2026-10&do=attention' });
@@ -173,6 +179,7 @@ describe('homeTasks', () => {
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 0,
       data,
+      features: {},
     });
     const t = r.tasks.find((x) => x.kind === 'today')!;
     expect(t).toMatchObject({ tone: 'warn', to: '/plan', date: TODAY });
@@ -190,6 +197,7 @@ describe('homeTasks', () => {
       ],
       todayStaff: 2,
       data,
+      features: {},
     });
     expect(r.tasks.map((t) => [t.kind, t.title])).toEqual([
       ['today', '今日 10/28（水）の予定（確定済み）'],

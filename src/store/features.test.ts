@@ -53,6 +53,16 @@ describe('org.features（PRD D216）', () => {
     expect(featuresSchema.parse({ nope: true })).toEqual({});
   });
 
+  it('features が null・配列・オブジェクトでない値でも、読み込み全体を落とさず {}（すべて入）', () => {
+    const d = createDemoData('2026-10-12');
+    for (const bad of [null, [], ['compat'], 'all', 0, true]) {
+      const r = ok(importJson(JSON.stringify({ ...d, org: { ...d.org, features: bad } })));
+      expect(r.org.features, JSON.stringify(bad)).toEqual({});
+      expect(r.clients).toEqual(d.clients);
+      expect(featuresSchema.parse(bad)).toEqual({});
+    }
+  });
+
   it('書き出して読み込むと同じ入り切り', async () => {
     const d = createDemoData('2026-10-12');
     const withF: DemoData = { ...d, org: { ...d.org, features: applyTemplate('laborContract') } };

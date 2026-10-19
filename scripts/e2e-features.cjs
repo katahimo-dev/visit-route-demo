@@ -5,6 +5,9 @@
 // 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
 // 切った機能の URL（`?do=` も）を開くとホームへ移り（replace）、ホームの上に閉じられる知らせと管理者設定へのリンク、
 // スイッチ（押すとすぐ保存・トースト・依存先が切なら押せず理由）、390px で横にはみ出さない、印刷で知らせ・メニューを出さない。
+// 末尾の /・大文字の URL（#/vacancy/・#/Vacancy・#/month/print/）もホームへ移す、390px で空き状況を切ると下のタブ4つが全幅を等分、
+// 稼働の見込み・欠勤・キャンセル・月の印刷・案を比べるを切ると、月の要対応の行・月のボタン・日の画面の拘束の帯と「案を変える ▾」・
+// 稼働時間の右の欄にそこへ移るリンク・ボタンが無い。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-features.cjs
 // 環境変数は scripts/e2e-drag.cjs と同じ（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -487,6 +490,172 @@ async function mobile(page, dlg) {
   await applyTemplate(page, dlg, 'all');
 }
 
+// ---- 切った URL のすり抜け（末尾の /・大文字）と、390px で空き状況を切ったときの下のタブ ----
+async function pathVariants(page, dlg, ctx) {
+  await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
+  await open(page, '/home', '[data-testid="home-tasks"]');
+  await writeFeaturesInOtherTab(ctx, { vacancy: false, monthPrint: false });
+  for (const h of ['/vacancy/', '/Vacancy', '/VACANCY//', '/month/print/', `/Month/Print?ym=${TODAY.slice(0, 7)}`]) {
+    await page.goto('about:blank');
+    await page.goto(`${BASE}#${h}`);
+    await page.locator('h1').filter({ hasText: /\S/ }).first().waitFor({ timeout: 30000 });
+    await page.waitForTimeout(200);
+    const hasNotice = (await page.getByTestId('feature-off-notice').count()) === 1;
+    check(hashOf(page) === '#/home' && hasNotice, `切った機能の ${h} もホームへ移し知らせる`, hashOf(page));
+  }
+  // 390px：空き状況を切ると下のタブは4つで、全幅を等分する
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, '/home', '[data-testid="home-tasks"]');
+  const boxes = await page
+    .getByTestId('bottom-tab')
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => ({ x: r.x, w: r.width })));
+  const vw = await page.evaluate(() => document.documentElement.clientWidth);
+  const total = boxes.reduce((a, b) => a + b.w, 0);
+  check(boxes.length === 4, '390px・空き状況を切る：下のタブは4つ', boxes.length);
+  check(
+    boxes.length === 4 &&
+      Math.abs(boxes[0].x) <= 1 &&
+      Math.abs(boxes[3].x + boxes[3].w - vw) <= 1 &&
+      Math.abs(total - vw) <= 2 &&
+      boxes.every((b) => Math.abs(b.w - vw / 4) <= 1),
+    '390px・空き状況を切る：4つが全幅を等分する',
+    { vw, boxes },
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'tabs-4-mobile.png') });
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await applyTemplate(page, dlg, 'all');
+}
+
+/** 「10/21」の形（月の要対応の日付の文） */
+const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+
+// ---- 切った機能（稼働の見込み・欠勤・キャンセルなど）の画面へ移るリンク・ボタンを、画面の中から出さない ----
+async function deadEnds(page, dlg, ctx) {
+  // 用意（e2e-links の prepare と同じ）：今日より後の日に案を作り、入らない訪問・欠勤の人に残る訪問・拘束の上限超えを作る
+  await open(page, '/plan', '.date-switch select');
+  await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
+  await page.reload();
+  await page.locator('.date-switch select').waitFor({ timeout: 30000 });
+  const options = await page.locator('.date-switch select option').evaluateAll((os) => os.map((o) => o.value));
+  const second = options.find((d) => d > TODAY) ?? '';
+  check(second !== '', '用意：今日より後の日がある', second);
+  const ym = second.slice(0, 7);
+  await page.locator('.date-switch select').selectOption(second);
+  await page.waitForFunction(
+    ({ k, d }) => !!JSON.parse(localStorage.getItem(k) ?? '{}').aiPlans?.[d],
+    { k: STORAGE_KEY, d: second },
+    { timeout: 60000 },
+  );
+  // 別のタブで書く（storage の知らせでこのタブのデータも入れ替わる）
+  const other = await ctx.newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.locator('h1').first().waitFor({ timeout: 30000 });
+  const absent = await other.evaluate(
+    ({ k, d }) => {
+      const data = JSON.parse(localStorage.getItem(k));
+      const plan = data.aiPlans[d];
+      const staffWith = Object.keys(plan.routes).filter((s) => s !== '__none' && plan.routes[s].length > 0);
+      const a = staffWith[0];
+      const vid = plan.routes[a][0];
+      plan.routes[a] = plan.routes[a].slice(1);
+      plan.unassigned = [...(plan.unassigned ?? []), vid];
+      const absentId = staffWith[1];
+      data.absences = [
+        ...data.absences.filter((x) => !(x.staffId === absentId && x.date === d)),
+        { id: `e2e-features-${absentId}`, staffId: absentId, date: d, from: null, to: null, note: '' },
+      ];
+      data.org.spanLimitHours = 1;
+      // 稼働の見込み・欠勤・キャンセル・月の印刷・案を比べるを切る
+      data.org.features = { workload: false, sudden: false, monthPrint: false, compare: false };
+      localStorage.setItem(k, JSON.stringify(data));
+      return absentId;
+    },
+    { k: STORAGE_KEY, d: second },
+  );
+  await other.close();
+  await page.waitForTimeout(300);
+
+  // 月の要対応：休みの人に訪問・拘束の上限の行は、欠勤・キャンセルの欄・稼働の見込みでなく日の画面へ
+  await open(page, `/month?ym=${ym}&do=attention`, '[data-testid="month-attention"]');
+  await page.locator('.month-attention-btn').first().waitFor({ timeout: 30000 });
+  const rows = await page
+    .locator('.month-attention-btn')
+    .evaluateAll((els) => els.map((el) => ({ cls: el.className, to: el.dataset.to ?? '', text: el.textContent })));
+  check(rows.length > 0, '月の要対応の行がある', rows.length);
+  check(
+    rows.every((r) => !r.to.includes('/workload') && !r.to.includes('do=absence')),
+    '月の要対応：切った機能（稼働の見込み・欠勤・キャンセル）への行き先が無い',
+    rows.map((r) => r.to),
+  );
+  for (const kind of ['absentLeft', 'overSpan']) {
+    const r = rows.find((x) => x.cls.includes(`is-${kind}`) && x.text.includes(md(second)));
+    check(
+      !!r && r.to === '/plan' && r.text.includes('（日の画面で開く）'),
+      `月の要対応：${kind} の行は日の画面へ（「（日の画面で開く）」）`,
+      r,
+    );
+  }
+  check((await page.getByTestId('month-workload').count()) === 0, '月：稼働の見込みのボタンを出さない');
+  check((await page.getByTestId('month-print').count()) === 0, '月：印刷のボタンを出さない');
+  const r = rows.find((x) => x.cls.includes('is-overSpan') && x.text.includes(md(second)));
+  if (r) {
+    await page
+      .locator('.month-attention-btn.is-overSpan')
+      .filter({ hasText: md(second) })
+      .first()
+      .click();
+    await page.waitForURL(/#\/plan/, { timeout: 10000 });
+    check(
+      !/workload/.test(hashOf(page)) && !(await page.getByTestId('feature-off-notice').count()),
+      '拘束の上限の行を押すと日の画面',
+      hashOf(page),
+    );
+  }
+
+  // 日の画面：拘束の上限の帯に稼働の見込みへのリンク・ボタンが無い。「案を変える ▾」に比べるが無い
+  await open(page, `/plan?date=${second}`, '.date-switch select');
+  await page.getByTestId('band-over-span').waitFor({ timeout: 60000 });
+  const band = page.getByTestId('band-over-span');
+  check(
+    (await band.getByTestId('over-span-link').count()) === 0 &&
+      (await band.getByRole('button', { name: '稼働の見込み' }).count()) === 0 &&
+      (await band.locator('a[href*="workload"]').count()) === 0,
+    '日の画面：拘束の上限の帯に稼働の見込みへのリンク・ボタンが無い',
+  );
+  await page.getByTestId('plan-menu').click();
+  await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
+  check(
+    (await page.getByTestId('plan-menu-compare').count()) === 0 &&
+      (await page.getByTestId('plan-menu-revert').count()) === 1,
+    '日の画面：「案を変える ▾」に比べるを出さない（戻すは残る）',
+  );
+  await page.keyboard.press('Escape');
+
+  // 稼働時間の右の欄：欠勤・キャンセルの欄へのリンクが無い
+  const data = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
+  const name = data.staff.find((s) => s.id === absent)?.name ?? '';
+  await open(page, '/availability', '.avail-table');
+  const heads = await page.locator('.avail-table thead th').allInnerTexts();
+  const col = heads.findIndex((t) => t.replace(/\s+/g, '').startsWith(md(second)));
+  check(col > 0, '稼働時間の表にその日の列がある', col);
+  await page
+    .locator('.avail-table tbody tr')
+    .filter({ has: page.locator('th.avail-name', { hasText: name }) })
+    .locator('td')
+    .nth(col - 1)
+    .locator('button')
+    .click();
+  await page.locator('.drawer').waitFor({ timeout: 5000 });
+  await page.waitForTimeout(200);
+  check(
+    (await page.getByTestId('availability-absence-link').count()) === 0 &&
+      (await page.locator('.drawer a[href*="do=absence"]').count()) === 0,
+    '稼働時間の右の欄：欠勤・キャンセルの欄へのリンクを出さない',
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'dead-ends-availability.png') });
+  await applyTemplate(page, dlg, 'all');
+}
+
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
@@ -507,6 +676,8 @@ async function mobile(page, dlg) {
     ['switches', switches],
     ['templates', templates],
     ['mobile', mobile],
+    ['path-variants', pathVariants],
+    ['dead-ends', deadEnds],
   ]) {
     try {
       await fn(page, dlg, ctx);

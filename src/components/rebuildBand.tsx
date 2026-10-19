@@ -6,6 +6,7 @@ import { type RefObject, useDeferredValue, useEffect, useId, useMemo, useRef, us
 import { Link } from 'react-router-dom';
 import type { DemoData } from '../contracts/data';
 import { jstDate } from '../domain/time';
+import { isHrefOn } from '../lib/features';
 import {
   customRulesText,
   REBUILD_CLEARED,
@@ -18,6 +19,7 @@ import {
 } from '../lib/rebuildBand';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
+import { useFeatures } from '../lib/useFeature';
 import { SavePresetForm } from '../pages/planParts';
 import { presetOf, scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
@@ -124,6 +126,8 @@ function RebuildBandBody({
 }) {
   const today = jstDate(Date.now());
   const summary = useSummary(data, today);
+  /** ［今日の案をいまの条件で作り直す］を出すか（条件の重みとプリセットを切っていれば出さない。PRD D213） */
+  const todayOn = isHrefOn(useFeatures(), recreateTodayHref(today));
   const action = summary ? rebuildAction(summary, basis) : null;
   const textId = useId();
   const noteId = useId();
@@ -193,9 +197,12 @@ function RebuildBandBody({
                 <span>{customRulesText(basis)}</span>
               </p>
               <span className="rb-actions">
-                <Link to={recreateTodayHref(today)} className="btn btn-small" data-testid="rebuild-today">
-                  今日の案をいまの条件で作り直す
-                </Link>
+                {/* ?do=recreate は条件の重みとプリセット（rules）の入口 */}
+                {todayOn && (
+                  <Link to={recreateTodayHref(today)} className="btn btn-small" data-testid="rebuild-today">
+                    今日の案をいまの条件で作り直す
+                  </Link>
+                )}
                 <SavePresetForm compact />
                 {!action && <LaterButton onLater={onLater} />}
               </span>

@@ -25,6 +25,7 @@ import { HARDABLE, MAX_PRESETS, type Rule } from '../contracts/rules';
 import { minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
 import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel, weightLocked } from '../lib/common';
+import { isHrefOn } from '../lib/features';
 import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
 import { type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
 import { ALLOWED_STAFF_RULE_ID, VISIT_TYPE_RULE_ID } from '../matching';
@@ -297,9 +298,12 @@ export function WeightPanel({
             いまの重み：{current ? current.name : 'プリセットから変えた重み'}
           </span>
           <SavePresetForm compact disabled={running} />
-          <NavLink to="/rules#presets" className="sub">
-            プリセットを編集する
-          </NavLink>
+          {/* 条件の重みとプリセットを切っていれば、その画面へのリンクは出さない（PRD D213） */}
+          {isHrefOn(data.org.features, '/rules#presets') && (
+            <NavLink to="/rules#presets" className="sub">
+              プリセットを編集する
+            </NavLink>
+          )}
         </>
       )}
       <SectionTitle icon={SlidersHorizontal} aside={<Hint>重み1＝移動10分ぶん。0で無効。</Hint>}>

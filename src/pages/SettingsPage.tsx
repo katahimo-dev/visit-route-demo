@@ -1,5 +1,6 @@
 import { CircleCheck, LayoutTemplate, Settings } from 'lucide-react';
 import { useId } from 'react';
+import { flushSync } from 'react-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/ui';
@@ -60,12 +61,28 @@ export default function SettingsPage() {
     toast(`ひな形「${t.label}」を当てました`);
   };
 
-  /** スイッチを押す（すぐ保存。依存先が切なら押せない） */
+  /**
+   * スイッチを押す（すぐ保存。依存先が切なら押せない）。新しい値は update の中で最新の d.org.features から決め、
+   * トーストの文も同じ値から作る（素早く2回押したとき、描画前の古い features で決めて同じ値を2回書かない）。
+   * flushSync で update をその場で済ませ、決めた値を受け取る
+   */
   const toggle = (f: FeatureDef) => {
-    if (f.requires && !isOn(features, f.requires)) return;
-    const on = !isSwitchOn(features, f.id);
-    update((d) => ({ ...d, org: { ...d.org, features: withFeature(d.org.features, f.id, on) } }));
-    toast(`${featureLabel(f.id, terms)}を${on ? '入れました' : '切りました'}`);
+    /** update の中で決めた新しい値（依存先が切で押せなければ null） */
+    const decided: { on: boolean | null } = { on: null };
+    flushSync(() =>
+      update((d) => {
+        const cur = d.org.features;
+        if (f.requires && !isOn(cur, f.requires)) {
+          decided.on = null;
+          return d;
+        }
+        const on = !isSwitchOn(cur, f.id);
+        decided.on = on;
+        return { ...d, org: { ...d.org, features: withFeature(cur, f.id, on) } };
+      }),
+    );
+    if (decided.on === null) return;
+    toast(`${featureLabel(f.id, terms)}を${decided.on ? '入れました' : '切りました'}`);
   };
 
   return (

@@ -141,6 +141,23 @@ describe('featureOfLocation（URL に要る機能）', () => {
     expect(featureOfLocation('/month', '?do=absence')).toBeNull();
     expect(featureOfLocation('/clients', '?id=c1')).toBeNull();
   });
+  it('大文字小文字・末尾の / を区別しない（#/Vacancy・#/vacancy/・#/month/print/ でガードをすり抜けない）', () => {
+    expect(featureOfLocation('/vacancy/', '')).toBe('vacancy');
+    expect(featureOfLocation('/Vacancy', '')).toBe('vacancy');
+    expect(featureOfLocation('/VACANCY//', '')).toBe('vacancy');
+    expect(featureOfLocation('/month/print/', '?ym=2026-10')).toBe('monthPrint');
+    expect(featureOfLocation('/Month/Print', '')).toBe('monthPrint');
+    expect(featureOfLocation('/plan/', `?date=${TODAY}&do=absence`)).toBe('sudden');
+    expect(featureOfLocation('/Plan', '?do=recreate')).toBe('rules');
+    expect(featureOfHref('/Workload/?ym=2026-10')).toBe('workload');
+    expect(featureOfLocation('/', '')).toBeNull();
+    expect(featureOfLocation('/Month/', '')).toBeNull();
+  });
+  it('featureOfHref は # から後を見ない（/rules#presets は rules）', () => {
+    expect(featureOfHref('/rules#presets')).toBe('rules');
+    expect(featureOfHref('/plan?do=absence#x')).toBe('sudden');
+    expect(isHrefOn({ rules: false }, '/rules#presets')).toBe(false);
+  });
   it('isHrefOn：土台はいつも、機能はその入り切りで', () => {
     expect(isHrefOn({ vacancy: false }, '/vacancy')).toBe(false);
     expect(isHrefOn({ vacancy: false }, '/home')).toBe(true);
@@ -185,6 +202,14 @@ describe('ひな形（ADR-0028 の表）', () => {
     expect(matchTemplate({ compat: false })).toBe('custom');
     expect(matchTemplate(withFeature(applyTemplate('basic'), 'mail', true))).toBe('custom');
     expect(matchTemplate(withFeature(applyTemplate('laborContract'), 'fare', false))).toBe('custom');
+  });
+  it('使えるか（依存を見る）で比べる：依存先が切なら、依存する機能のスイッチが入でもひな形と同じ', () => {
+    // 基本（稼働の見込み・空き状況の案内文は切）に、交通費だけ入れても稼働の見込みが切なので使えない＝基本のまま
+    expect(matchTemplate(withFeature(applyTemplate('basic'), 'fare', true))).toBe('basic');
+    // 月次予定・現場共有から空き状況を切ると案内文も使えない。基本との差は残るので custom
+    expect(matchTemplate(withFeature(applyTemplate('monthlyField'), 'vacancy', false))).toBe('custom');
+    // すべてから稼働の見込みを切った（交通費のスイッチは入のまま）ものは、どのひな形とも違う
+    expect(matchTemplate({ workload: false })).toBe('custom');
   });
   it('templateDiff：入る機能・切れる機能（表の順）', () => {
     expect(templateDiff({}, 'all')).toEqual({ on: [], off: [] });
@@ -301,7 +326,7 @@ function st(date: string, x: Partial<DayStatus> = {}): DayStatus {
     ...x,
   };
 }
-const homeInput = (features?: Features) => ({
+const homeInput = (features: Features = {}) => ({
   today: TODAY,
   statuses: [st(TODAY, { state: 'plan', unassigned: 1 }), st('2026-10-22', { state: 'none' })],
   months: [{ ym: '2026-10', canExpand: 3 }],

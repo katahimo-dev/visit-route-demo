@@ -61,8 +61,8 @@ export type HomeInput = {
   /** 今日の担当の人数（数える案＝今の案、無ければ確定した割当で、訪問がある人） */
   todayStaff: number;
   data: Pick<DemoData, 'absences' | 'staff'>;
-  /** 機能の入り切り（切った機能へ向かうカードは出さない。PRD D213。無ければすべて入） */
-  features?: Features;
+  /** 機能の入り切り（切った機能へ向かうカードは出さない。PRD D213。{} ならすべて入） */
+  features: Features;
 };
 
 const ATTENTION_LABEL: Record<AttentionKind, string> = {
@@ -90,7 +90,7 @@ function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfi
  * ready は手当て・やることが1つも無いとき（今日の予定の知らせだけ）
  */
 export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean } {
-  const { today, statuses, months, todayStaff, data, features = {} } = input;
+  const { today, statuses, months, todayStaff, data, features } = input;
   const future = statuses.filter((s) => s.date >= today);
   const inMonth = (ym: string) => future.filter((s) => ymOf(s.date) === ym);
   const attention: HomeTask[] = [];

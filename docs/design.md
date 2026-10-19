@@ -368,6 +368,7 @@ flowchart LR
 - 持つデータ（持ち主）：なし（入り切りは store の `org.features`。書き換えは画面が `update(fn)` で）
 - 提供するAPI：
   - `lib/features.ts`（テストあり）：`FEATURES`（表）、`isOn(features, id)`（依存を見る。依存先が切なら切）、`featureOfLocation(pathname, search)`・`featureOfHref(href)`（URL がどの機能か。土台なら null）、`TEMPLATES`（基本・労務・契約管理・月次予定・現場共有・すべて）・`applyTemplate(id): Features`・`matchTemplate(features): TemplateId | 'custom'`、`templateDiff(features, id)`（入る機能・切れる機能。確認ダイアログの文）、`turnOffImpact(data, id)`（切るときに残る・外れるデータの件数と効き方。D215）、`calcFeaturesOf(features)`（計算に効く入り切り）
+  - 表の `doParams`（その機能の操作の入口 `?do=`）：`sudden` は `/plan?do=absence`。`rules` は `/plan?do=recreate`（今日の案をいまの条件で作り直す）も持つ。`featureOfLocation` はパスを小文字にし末尾の `/` を落としてから比べる
   - `lib/useFeature.ts`：`useFeature(id): boolean`（`useDemoData()` の `org.features` を読むだけ）、`components/Feature.tsx`：`Feature` の部品（id を渡す）（切なら何も出さない）
 - 出し分ける所（URL の直書きをやめ、機能の表から引く）：`lib/nav.ts` の `menuSections(terms, today, features)`（下のタブ・上の帯の名前・パレットの画面は今どおりここから）、`app/App.tsx` のルート（切った機能の URL は `#/home` へ移し、知らせ（トースト）と `#/settings` へのリンク）、`lib/commandPalette.ts` の操作、`lib/home.ts` のカード、`lib/tour.ts` の枚、`lib/links.ts`（切った機能なら null を返し、呼ぶ側はリンクを出さない）、画面の中の欄・ボタン（`Feature` の部品）
 - 画面 `pages/SettingsPage.tsx`（`#/settings`。管理者設定）：ひな形の4つ（今のひな形の印・「当てる」は独自の確認ダイアログで `templateDiff` を出す）、グループごとのスイッチ（role="switch"・名前・説明・依存の注記・切ると隠れるもの）。切るときデータがあれば `turnOffImpact` の確認。主ボタンは置かない（スイッチはその場で保存）。だれでも開ける

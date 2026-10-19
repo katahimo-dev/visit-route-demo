@@ -53,7 +53,7 @@ export type LinkTarget = { to: string; date: string; note: string };
  * 行き先の機能（欠勤・キャンセル・稼働の見込み）を features で切っていれば、その日の日の画面（土台）にする
  * （要対応の行は日付を持つので、行き先を消さずに日の画面へ。PRD D213）
  */
-export function attentionTarget(a: Attention, features: Features = {}): LinkTarget {
+export function attentionTarget(a: Attention, features: Features): LinkTarget {
   const t = attentionTargetAll(a);
   return isHrefOn(features, t.to) ? t : dayTarget(a.date);
 }

@@ -233,22 +233,34 @@ export function isOn(features: Features, id: FeatureId): boolean {
 }
 
 /**
+ * 比べるためのパス：小文字にし、末尾の `/` を落とす（ルーターは大文字小文字・末尾の `/` を区別せずに同じ画面を開くので、
+ * `#/Vacancy`・`#/vacancy/`・`#/month/print/` でガードをすり抜けさせない）。`/` だけならそのまま
+ */
+const normalizePath = (pathname: string): string => pathname.toLowerCase().replace(/\/+$/, '') || '/';
+
+/**
  * その URL（HashRouter の中のパスとクエリ）を開くのに要る機能。土台の画面・操作なら null。
- * パスがその機能の画面か、パスと `?do=` がその機能の入口なら、その機能
+ * パスがその機能の画面か、パスと `?do=` がその機能の入口なら、その機能（パスは normalizePath で比べる）
  */
 export function featureOfLocation(pathname: string, search: string): FeatureId | null {
+  const path = normalizePath(pathname);
   const op = new URLSearchParams(search).get('do');
   for (const f of FEATURES) {
-    if (f.paths.includes(pathname)) return f.id;
-    if (op !== null && f.doParams?.some((d) => d.path === pathname && d.do === op)) return f.id;
+    if (f.paths.includes(path)) return f.id;
+    if (op !== null && f.doParams?.some((d) => d.path === path && d.do === op)) return f.id;
   }
   return null;
 }
 
-/** リンクの URL（`/plan?date=…&do=absence` の形）に要る機能（featureOfLocation をパスとクエリに分けて呼ぶ） */
+/**
+ * リンクの URL（`/plan?date=…&do=absence`・`/rules#presets` の形）に要る機能
+ * （`#` から後を落とし、featureOfLocation をパスとクエリに分けて呼ぶ）
+ */
 export function featureOfHref(href: string): FeatureId | null {
-  const i = href.indexOf('?');
-  return i < 0 ? featureOfLocation(href, '') : featureOfLocation(href.slice(0, i), href.slice(i));
+  const h = href.indexOf('#');
+  const url = h < 0 ? href : href.slice(0, h);
+  const i = url.indexOf('?');
+  return i < 0 ? featureOfLocation(url, '') : featureOfLocation(url.slice(0, i), url.slice(i));
 }
 
 /** その URL へ移れるか（土台か、要る機能が使える） */
@@ -327,11 +339,15 @@ export function applyTemplate(id: TemplateId): Features {
   return Object.fromEntries(FEATURE_IDS.map((f) => [f, on.has(f)])) as Features;
 }
 
-/** 今の入り切り（スイッチの状態）がどのひな形と同じか。どれとも違えば 'custom'（無い ID は入なので {} は「すべて」） */
+/**
+ * 今の入り切りがどのひな形と同じか。どれとも違えば 'custom'（無い ID は入なので {} は「すべて」）。
+ * 使えるか（isOn。依存を見る）で比べる：依存先を切ったとき、スイッチが入のまま残った依存する機能も切れた扱いにする
+ * （見た目が基本と同じなのに「カスタム」にならない。templateDiff と同じ比べ方）
+ */
 export function matchTemplate(features: Features): TemplateId | 'custom' {
   for (const t of TEMPLATES) {
-    const on = new Set(t.on);
-    if (FEATURE_IDS.every((f) => isSwitchOn(features, f) === on.has(f))) return t.id;
+    const next = applyTemplate(t.id);
+    if (FEATURE_IDS.every((f) => isOn(features, f) === isOn(next, f))) return t.id;
   }
   return 'custom';
 }
