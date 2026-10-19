@@ -29,6 +29,9 @@ describe('dayLines（担当ごとの1日。PRD D84）', () => {
     expect(a!.parts[0]!.kind).toBe('travel');
     expect(a!.parts[0]!.end).toBe(9 * 60);
     expect(a!.parts[1]).toMatchObject({ kind: 'visit', start: 9 * 60 });
+    // 訪問の区間と訪問ID（横棒の訪問を押してその訪問を選ぶ）
+    expect(a!.parts.filter((x) => x.kind === 'visit').map((x) => x.visitId)).toEqual(['v1', 'v2', 'v3']);
+    expect(a!.parts.filter((x) => x.kind !== 'visit').every((x) => x.visitId === undefined)).toBe(true);
     const [w] = workStats(p, routes, d.org);
     const homeIn = a!.parts[0]!.end - a!.parts[0]!.start;
     expect(a!.visit).toBeCloseTo(w!.visit, 6);

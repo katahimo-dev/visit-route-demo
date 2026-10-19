@@ -18,7 +18,7 @@ export type DayLine = {
   shift: Span[];
   /** 欠勤の時間（欠勤を差し引く前の稼働時間帯のうち、勤務の時間帯に無い分。休みの淡い灰で塗る） */
   rest: Span[];
-  /** 時間軸の上の区間（自宅からの移動・訪問・移動・待ち。時刻の順） */
+  /** 時間軸の上の区間（自宅からの移動・訪問・移動・待ち。時刻の順。訪問には visitId） */
   parts: RoutePart[];
   /** 分：訪問・移動（自宅からを含む）・待ち */
   visit: number;
@@ -68,6 +68,12 @@ function freeMinutes(shift: readonly Span[], parts: readonly Span[]): number {
   return total;
 }
 
+/** spanParts の訪問の区間に、同じ順の stops の訪問ID を付ける（横棒の訪問を押してその訪問を選ぶため） */
+function withVisitIds(parts: RoutePart[], stops: readonly { visitId: string }[]): RoutePart[] {
+  let k = 0;
+  return parts.map((p) => (p.kind === 'visit' ? { ...p, visitId: stops[k++]?.visitId } : p));
+}
+
 /**
  * 担当ごとの1日（staffIds の順。問題にいない人は勤務なし・件数0）。routes は今の案の列（担当 → 訪問ID）。
  * baseOf はその人の欠勤を差し引く前の稼働時間帯（分。無ければ欠勤の時間を出さない）。欠勤の時間に残った訪問は訪問で出す。
@@ -92,7 +98,7 @@ export function dayLines(
       ...(first && first.travelIn > 0
         ? [{ kind: 'travel' as const, start: first.start - first.travelIn, end: first.start }]
         : []),
-      ...spanParts(stops),
+      ...withVisitIds(spanParts(stops), stops),
     ];
     const of = (kind: RoutePart['kind']) => sum(parts.filter((p) => p.kind === kind));
     return {

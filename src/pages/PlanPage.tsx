@@ -2238,11 +2238,25 @@ export default function PlanPage() {
     [problem, aiPlan, columns, slotsOf],
   );
   const lineRange = useMemo(() => dayLineRange(staffLines), [staffLines]);
-  /** その人の列へ移って列の見出しにフォーカス（一覧のときは担当ごとの表示に切り替えてから。PRD D84） */
-  const goToStaff = (sid: string) => {
+  /**
+   * 担当ごとの1日から（PRD D84。一覧のときは担当ごとの表示に切り替えてから）：その人を選んで（列の見出しを押したときと同じ。
+   * 地図もその人に絞る）列へ移り、列の見出しにフォーカス。visitId があればその訪問を選んで（カードを押したときと同じ。
+   * 選んだままなら外さず、地図をその人に絞り直す）列の中のカードへ移る
+   */
+  const goToStaff = (sid: string, visitId?: string) => {
     if (shownView === 'list') setColView('timeline');
+    if (visitId) {
+      const x = { id: visitId, set: PLAN_SET };
+      if (sel.isPicked(x)) focusOn(sid);
+      else sel.togglePick(x);
+    } else focusOn(sid);
     requestAnimationFrame(() => {
       const col = document.querySelector<HTMLElement>(`.route-col[data-staff="${CSS.escape(sid)}"]`);
+      const card = visitId ? col?.querySelector<HTMLElement>(`[data-visit="${CSS.escape(visitId)}"]`) : null;
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        return;
+      }
       col?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
       colHeadOf(sid)?.focus({ preventScroll: true });
     });

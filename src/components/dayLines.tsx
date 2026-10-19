@@ -1,8 +1,8 @@
 // 日の画面の1行のまとめの下の「担当ごとの1日」（PRD D84）。1人1行の細い横棒で、勤務の中の 訪問・移動・待ちと空き を
 // 稼働の見込み（PRD D77）と同じ色・形で塗り（PRD D85）（components/workBars の PartsBar）、誰が詰まっていて誰が空いているかを見せる。
-// 行を押すとその人の列へ移る（onPick）。数字は title と読み上げ（lib/dayLine の dayLineText）。狭い幅では畳む
+// 行を押すとその人を選んで列へ移る（onPick）。横棒の訪問の所を押すとその訪問を選ぶ（onPick の visitId）。数字は title と読み上げ（lib/dayLine の dayLineText）。狭い幅では畳む
 import './dayLines.css';
-import { useState } from 'react';
+import { type MouseEvent, useState } from 'react';
 import { type DayLine, dayLineText } from '../lib/dayLine';
 import { PersonInfo } from './PersonPopover';
 import { StaffLegend } from './staffBar';
@@ -13,6 +13,15 @@ function ticks(range: { start: number; end: number }): number[] {
   const out: number[] = [];
   for (let h = Math.ceil(range.start / 120) * 2; h * 60 <= range.end; h += 2) out.push(h);
   return out;
+}
+
+/**
+ * 横棒の訪問の区間（PartsBar の data-visit-id）を押したときの訪問ID。
+ * キーボードで押したとき（detail が 0）・訪問の区間の外を押したときは undefined（その人を選ぶ）
+ */
+function visitAt(e: MouseEvent<HTMLElement>): string | undefined {
+  if (e.detail === 0 || !(e.target instanceof Element)) return undefined;
+  return e.target.closest<HTMLElement>('[data-visit-id]')?.dataset.visitId;
 }
 
 export function DayLines({
@@ -29,7 +38,8 @@ export function DayLines({
   range: { start: number; end: number };
   nameOf: (staffId: string) => string;
   colorOf: (staffId: string) => string | undefined;
-  onPick: (staffId: string) => void;
+  /** visitId は横棒の訪問の所を押したとき（その訪問を選ぶ）。無ければその人を選ぶ */
+  onPick: (staffId: string, visitId?: string) => void;
   /** org.terms.staff */
   staffTerm: string;
   /** 狭い幅：畳んで出す（押すと開く） */
@@ -64,8 +74,8 @@ export function DayLines({
               <button
                 type="button"
                 className="daylines-row daylines-btn"
-                onClick={() => onPick(x.staffId)}
-                title={`${text}（押すとこの人の列へ）`}
+                onClick={(e) => onPick(x.staffId, visitAt(e))}
+                title={`${text}（押すとこの人の列へ。訪問の所を押すとその訪問へ）`}
                 aria-label={`${text}（押すとこの人の列へ）`}
                 data-testid="dayline"
                 data-staff={x.staffId}
@@ -87,7 +97,7 @@ export function DayLines({
           states={['visit', 'travel', 'free', 'rest']}
           labels={{ free: '待ち・空き（勤務内）', rest: '休み（欠勤）' }}
         />
-        <span>薄い灰は勤務外。押すとその{staffTerm}の列へ</span>
+        <span>薄い灰は勤務外。押すとその{staffTerm}の列へ、訪問の所を押すとその訪問へ</span>
       </p>
     </div>
   );
