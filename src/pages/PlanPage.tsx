@@ -146,6 +146,7 @@ import {
 } from '../lib/undoEdit';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
+import { createValueStore, type ReadableStore, useValueStore } from '../lib/valueStore';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile, prefKey, withManualPrefs } from '../matching';
 import {
@@ -234,6 +235,24 @@ type UndoSnap = {
   others?: { date: string; before: AiPlan; after: AiPlan }[];
 };
 
+/**
+ * 計算の進み具合のバーと回数（PRD D249）。進み具合は外の入れ物から読み、変わってもここだけ描き直す
+ */
+function PlanProgressText({ store, prefix }: { store: ReadableStore<Progress | null>; prefix: string }) {
+  const progress = useValueStore(store);
+  return (
+    <>
+      <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} />
+      <span className="sub">
+        {prefix}
+        {progress
+          ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点`}`
+          : '準備中…'}
+      </span>
+    </>
+  );
+}
+
 /** 日付の短い表示（2026-10-13 → 10/13） */
 function shortDate(date: string): string {
   const [, m, d] = date.split('-');
@@ -312,7 +331,11 @@ export default function PlanPage() {
   }, [data.manualPlans, date, m.leaveVisits]);
   const toast = useToast();
   const confirmDialog = useConfirm();
-  const [progress, setProgress] = useState<Progress | null>(null);
+  /**
+   * 計算の進み具合（100msごとに変わる）。画面の state に置くと画面全体を描き直すので、外の入れ物に置き、
+   * 読む子の部品（PlanProgressText・AnnealBox の進み具合）だけを描き直す（PRD D249）
+   */
+  const [progressStore] = useState(() => createValueStore<Progress | null>(null));
   /** プリセットのカードの詳細の id の頭（aria-describedby） */
   const cardIdBase = useId();
   const [running, setRunning] = useState<'create' | 'resolve' | 'anneal' | null>(null);
@@ -422,7 +445,7 @@ export default function PlanPage() {
   useEffect(() => {
     setRunning(null);
     setRunningFor(null);
-    setProgress(null);
+    progressStore.set(null);
     setBatch(null);
     return () => {
       generation.current++;
@@ -430,7 +453,8 @@ export default function PlanPage() {
       runRef.current = null;
       autoTried.current.clear();
     };
-  }, []);
+    // progressStore は作り直さない（一度だけ）
+  }, [progressStore]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた欄を閉じ、前の日のエラーを消す（訪問の入力欄は入力を捨てずに引き継ぐ。PRD D251）
   useEffect(() => {
     setSudden(null);
@@ -584,11 +608,11 @@ export default function PlanPage() {
           const best = p.bestRoutes;
           if (!best) {
             // 最良は前の進捗から変わっていない：点数は前のまま
-            setProgress((prev) => ({ iteration: p.iteration, total: p.total, hundred: prev?.hundred ?? null }));
+            progressStore.set((prev) => ({ iteration: p.iteration, total: p.total, hundred: prev?.hundred ?? null }));
             return;
           }
           const hundred = sp && ss ? (attempt(() => toHundred(score(sp, best).total, ss)).value ?? null) : null;
-          setProgress({ iteration: p.iteration, total: p.total, hundred });
+          progressStore.set({ iteration: p.iteration, total: p.total, hundred });
         },
       ),
     );
@@ -599,7 +623,7 @@ export default function PlanPage() {
     runRef.current = started.value;
     setRunning(kind);
     setRunningFor({ date, label });
-    setProgress(null);
+    progressStore.set(null);
     started.value.promise
       .then((result) => {
         if (live()) onDone(result);
@@ -612,7 +636,7 @@ export default function PlanPage() {
         runRef.current = null;
         setRunning(null);
         setRunningFor(null);
-        setProgress(null);
+        progressStore.set(null);
         after?.();
       });
     return true;
@@ -2978,13 +3002,7 @@ export default function PlanPage() {
   /** 計算中の進み具合（操作の行・右の欄で共通） */
   const progressView = running && (
     <div className="plan-progress" data-testid="plan-progress">
-      <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} />
-      <span className="sub">
-        {runningFor ? `${shortDate(runningFor.date)} の案・` : ''}
-        {progress
-          ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点`}`
-          : '準備中…'}
-      </span>
+      <PlanProgressText store={progressStore} prefix={runningFor ? `${shortDate(runningFor.date)} の案・` : ''} />
       {batch && (
         <span className="sub" data-testid="batch-progress">
           <WithIcon icon={LayoutGrid} size={13}>
@@ -3088,7 +3106,7 @@ export default function PlanPage() {
           recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
           disabledWhy={annealDisabled}
           running={running === 'anneal'}
-          progress={running === 'anneal' ? progress : null}
+          progress={progressStore}
           onStart={startAnneal}
           onStop={stopAnneal}
           options={annealOptions}
@@ -3503,7 +3521,7 @@ export default function PlanPage() {
                   recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
                   disabledWhy={annealDisabled}
                   running={running === 'anneal'}
-                  progress={running === 'anneal' ? progress : null}
+                  progress={progressStore}
                   onStart={startAnneal}
                   onStop={stopAnneal}
                   options={annealOptions}

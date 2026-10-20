@@ -160,6 +160,7 @@
 - 本文の後ろに下のタブ（`nav.bottom-tabs`・`aria-label="よく使う画面"`・今の画面は `aria-current="page"`（`isActiveTab`））
 - 画面を移ったら引き出しとコマンドパレットを閉じる（パレットは開いたときの URL の hash の画面のパスを覚え、移った先の画面で開き直していれば閉じない。`keepPaletteOn`）。`matchMedia('(max-width: 860px)')` が外れたら（広い画面へ戻ったら）引き出しを閉じ、フォーカスは左のメニューの今の項目へ
 - window の keydown で `isPaletteShortcut` なら `preventDefault` し、`[aria-modal="true"]` が無ければコマンドパレットを開く（右の欄・確認・ツアーの上では開かない）
+- main の `Guarded` は `Suspense`（`fallback` は `PageLoading`：`.empty.page-loading`・`output`・data-testid `page-loading`・「画面を読み込んでいます…」）の中。`Outlet` の後ろに `PreloadWhenShown`（画面が出て手が空いたら分けたチャンクを先に読む。PRD D248・ADR-0039。`src/app/lazyPages.tsx`）
 - main の `Guarded` の中、`Outlet` の前に、`showsRebuildBand(pathname)` のときだけ `RebuildBand`（[pages-common.md](pages-common.md) の「作り直しの帯」）
 - 今の画面の項目（引き出し）は閉じるだけ（`to === pathname` で `preventDefault`）、今の画面の下のタブは何もしない（`tabClick` が `stay`）。URL のクエリ＝画面の状態を消さない。「今日」のタブは `tabHref` の `/plan?date=今日` へ移り、日の予定の上では `replace`（日の予定が `?date=` を読んで消す）。比較のときの「今日」は別の画面なので移る
 
@@ -229,7 +230,7 @@
 - z-index 1300。480px 以下はボタンを縦に幅いっぱい（確定が上）。印刷では出さない
 - `ConfirmProvider`：`main.tsx` でトーストの内側（Router の内側）に1つ。並びと答え（Promise の resolve）を持ち、外れるとき・画面（`useLocation().pathname`）が変わったときは残りを取り消しで答えて並びを空にする
 - `useConfirm()`：`const ok = await confirmDialog({...})`。Provider の外では例外
-- `app/ErrorBoundary`：状態 `asking` で `ConfirmDialog` を直に出す（Provider・ルーターに頼らない。main.tsx の外側の ErrorBoundary でも出る）。ボタンは［控え（バックアップ）を書き出す］（主ボタン。store の `backup()` のファイルを `lib/download` の `saveBlob` で書き出す。いまのデータは `backupFileName(date)`＝データの画面と同じ名前、壊れて退避したデータは `-broken.json` の別のファイル。結果は `backupNote` の文を `output` で知らせる（保存に失敗していたら「画面で使っていた最新の状態」か「最後に保存できた状態」かと理由を区別する。トーストは Provider の外で出せない。テストあり））・［もう一度表示する］・［データを初期状態に戻す］（`.btn-danger`。確認の本文で先に控えを書き出せることを添える）
+- `app/ErrorBoundary`：分けた画面のチャンクを読めない例外（`isChunkLoadError`）は別の表示（data-testid `chunk-error`。「画面を読み込めませんでした」・［再読み込み］（主ボタン。`reloadPage`）・［もう一度表示する］（`retryFailedChunks`）。初期状態に戻すボタンは出さない。PRD D248・ADR-0039）。ほかは、状態 `asking` で `ConfirmDialog` を直に出す（Provider・ルーターに頼らない。main.tsx の外側の ErrorBoundary でも出る）。ボタンは［控え（バックアップ）を書き出す］（主ボタン。store の `backup()` のファイルを `lib/download` の `saveBlob` で書き出す。いまのデータは `backupFileName(date)`＝データの画面と同じ名前、壊れて退避したデータは `-broken.json` の別のファイル。結果は `backupNote` の文を `output` で知らせる（保存に失敗していたら「画面で使っていた最新の状態」か「最後に保存できた状態」かと理由を区別する。トーストは Provider の外で出せない。テストあり））・［もう一度表示する］・［データを初期状態に戻す］（`.btn-danger`。確認の本文で先に控えを書き出せることを添える）
 
 #### 呼ぶ側の決まり
 
@@ -267,7 +268,7 @@
 | `EmptyNext.tsx` | 空の画面の次の一手 | [pages-common.md](pages-common.md) |
 | `Feature.tsx` | 機能の入り切り | このファイル |
 | `MenuButton.tsx` | キーボードで操作できる `menu`（「案を変える ▾」） | [pages-plan.md](pages-plan.md) |
-| `MapDock.tsx`・`RouteMap.tsx`・`routeView.tsx`・`routeTimeline.tsx` | 地図・担当ごとの順番・時間軸 | [pages-plan.md](pages-plan.md) |
+| `MapDock.tsx`・`RouteMap.tsx`（読み込み中の枠。本体は別のチャンクの `LeafletMap.tsx`。PRD D248）・`routeView.tsx`・`routeTimeline.tsx` | 地図・担当ごとの順番・時間軸 | [pages-plan.md](pages-plan.md) |
 | `dayLines.tsx`・`loadBar.tsx`・`staffBar.tsx`・`clientBar.tsx`・`workBars.tsx`・`glance.tsx`・`barMarks.css` | 時間帯のバー | [pages-bars.md](pages-bars.md) |
 | `PickChips.tsx` | 人のチップ（`bulk`・`detailKind`・`fold`・`actions`）・`QualificationBadges` | [pages-week.md](pages-week.md) |
 | `ClientPicker.tsx`・`ClientFilter.tsx` | 〈利用者さん〉の検索・絞り込み | [pages-clients.md](pages-clients.md) |
