@@ -10,20 +10,8 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  hashOf,
-  stored,
-  failShot,
-  run,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, hashOf, stored, runSteps } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 /** 「10/21」の形（月の要対応の日付の文） */
 const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
@@ -559,10 +547,9 @@ async function vacancy(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'links-vacancy.png') });
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  for (const step of [attention, noPlanDay, workload, availability, vacancy]) {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
@@ -572,16 +559,14 @@ run(async () => {
     // ページの時計を止める（e2e-view と同じ）
     await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
-    const dlg = await answerConfirms(page);
-    try {
-      await step(page, dlg);
-    } catch (e) {
-      check(false, `${step.name}：途中で止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーが無い', errors);
-  await browser.close();
+    return { ctx, page, dlg: await answerConfirms(page) };
+  },
+  call: (fn, s) => fn(s.page, s.dlg),
+  steps: [attention, noPlanDay, workload, availability, vacancy],
+  label: (name) => `${name}：途中で止まった`,
+  after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
+  end: () => check(errors.length === 0, 'ページのエラーが無い', errors),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

@@ -378,15 +378,17 @@ flowchart LR
   - [ ] `npm test`・`npm run typecheck`・`npm run lint`・`npm run e2e`・`npm run e2e:perf`（AGENTS.md のコマンド。ADR-0029）が通る
 
 ### deploy（公開）
-- 責務：main への push で `npm ci → npm test → npm run build → GitHub Pages へ公開`。e2e は別のワークフローで PR・手動・夜間に `npm run e2e → npm run e2e:perf`（夜間は `FAKE_NOW` を月末の日にも替えて3通り。ADR-0029）。公開は e2e を待たない
+- 責務：main への push で `npm ci → npm run lint（biome・競合の印）→ npm test → npm run build → GitHub Pages へ公開`。e2e は別のワークフローで PR・手動・夜間に `npm run e2e → npm run e2e:perf`（夜間は `FAKE_NOW` を月末の日にも替えて3通り。ADR-0029）。公開は e2e を待たない
 - 持つデータ（持ち主）：なし
 - 提供するAPI：なし
 - 依存するもの：GitHub Actions（`actions/upload-pages-artifact`・`actions/deploy-pages`）、e2e は `@playwright/test`（devDependency）と Chromium
-- 配置：`.github/workflows/deploy.yml`、`.github/workflows/e2e.yml`、`vite.config.ts`（`base: './'`）、`playwright.config.ts`・`e2e/`
+- 配置：`.github/workflows/deploy.yml`、`.github/workflows/e2e.yml`、`vite.config.ts`（`base: './'`・vitest の設定）、`playwright.config.ts`・`e2e/`、`scripts/lib/`（e2e の共通の部品・段の型）、`scripts/check-conflict-markers.cjs`
 - 完了の条件：
   - [ ] push から5分以内に Pages の公開URL に反映される
   - [ ] サブパスで再読込しても 404 にならない（HashRouter）。分けたチャンクもサブパスから読める（`base: './'`。PRD D248）
-  - [ ] PR・夜間に e2e のワークフローが走り、報告（HTML）が残る
+  - [ ] PR・夜間に e2e のワークフローが走り、報告（HTML）が残る。落ちたら test-results（trace・動画・スクリーンショット・記録）も残る
+  - [ ] e2e の報告で段（test.step）ごと・確かめ（expect.soft）ごとに合否が見える。押したあとの待ちは画面の状態で待つ（`settle`。固定の待ちは速さの計測・外の遅れ・時間そのものを見る所だけ。PRD D253・ADR-0041）
+  - [ ] `npm test` は負荷のあるときも終了コード0（PRD D254）。競合の印がコミットされたら lint と PR の CI で落ちる（PRD D253）
 
 ## 5. API契約
 

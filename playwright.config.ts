@@ -1,4 +1,4 @@
-// e2e のランナー（@playwright/test。ADR-0029）。scripts/e2e-*.cjs を e2e/legacy.spec.ts から1本ずつ子のプロセスで走らせる。
+// e2e のランナー（@playwright/test。ADR-0029・ADR-0041）。scripts/e2e-*.cjs の段（steps）を e2e/legacy.spec.ts から test.step で回す。
 // サイトは BASE があればそこを使い、無ければ webServer がビルドして vite preview で出す
 import { defineConfig } from '@playwright/test';
 
@@ -26,7 +26,15 @@ export default defineConfig({
   reporter: CI
     ? [['github'], ['html', { open: 'never' }], ['junit', { outputFile: 'test-results/junit.xml' }]]
     : [['list'], ['html', { open: 'never' }]],
-  use: { baseURL: BASE },
+  use: {
+    baseURL: BASE,
+    // 落ちたときだけ trace と動画を残す（スクリプトが開いた文脈にも付く。動画は scripts/lib/env.cjs の hooks.videoDir。ADR-0041）
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
+    // 単独の実行（Playwright の既定 30秒）と同じ。test の中の既定は「時間切れ無し」で、固まった段が次へ進まなくなる
+    actionTimeout: 30 * 1000,
+    navigationTimeout: 30 * 1000,
+  },
   webServer: process.env.BASE
     ? undefined
     : {
@@ -38,6 +46,7 @@ export default defineConfig({
   projects: [
     { name: 'e2e', grepInvert: /@perf/ },
     // 速さの上限を見るものは1本ずつ（ほかと同時に走らせると遅れる）
-    { name: 'perf', grep: /@perf/, workers: 1 },
+    // trace・動画は記録の手間で速さの計測を揺らすので取らない
+    { name: 'perf', grep: /@perf/, workers: 1, use: { trace: 'off', video: 'off' } },
   ],
 });

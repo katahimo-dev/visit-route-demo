@@ -20,9 +20,9 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, failShot, run } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, hashOf, runSteps, settle } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -154,7 +154,7 @@ async function paletteItems(page) {
 async function paletteSearch(page, text) {
   await page.getByTestId('cmdk-open').click();
   await page.getByTestId('cmdk-input').pressSequentially(text, { delay: 20 });
-  await page.waitForTimeout(150);
+  await settle(page, 150);
   const labels = await page.locator('[data-testid="cmdk-option"] .cmdk-option-label').allInnerTexts();
   await page.keyboard.press('Escape');
   await page.getByTestId('cmdk').waitFor({ state: 'detached' });
@@ -166,7 +166,7 @@ async function applyTemplate(page, dlg, id, answer = true) {
   dlg.messages.length = 0;
   dlg.answer = answer;
   await page.locator(`[data-template="${id}"] [data-testid="feature-template-apply"]`).click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   dlg.answer = true;
   return dlg.messages.slice();
 }
@@ -251,7 +251,7 @@ async function switches(page) {
   check(true, 'トースト「空き状況を切りました」');
   check((await vac.getAttribute('aria-checked')) === 'false', '押すと aria-checked が false');
   check(await vac.evaluate((el) => document.activeElement === el), '押したあともフォーカスはスイッチ');
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await storedFeatures(page)).vacancy === false, 'すぐ保存（org.features.vacancy＝false）');
   const notice = page.getByRole('switch', { name: '空き枠の案内文' });
   check(
@@ -262,7 +262,7 @@ async function switches(page) {
   check(reason === '「空き状況」を入れると使えます', '押せない理由', reason);
   // aria-disabled（フォーカスは残す）なので、押すと何もしないことを確かめる
   await notice.click({ force: true });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check((await storedFeatures(page)).vacancyNotice === undefined, '押せないスイッチを押しても書かない');
   check((await page.getByTestId('feature-custom').count()) === 1, 'どのひな形とも違えば「カスタム」');
   check((await page.getByTestId('feature-template-now').count()) === 0, 'カスタムでは「いまの設定」を出さない');
@@ -283,7 +283,7 @@ async function switches(page) {
   const text = await page.getByTestId('feature-off-notice').innerText();
   check(text.includes('この機能は管理者設定で切っています') && text.includes('空き状況'), '知らせの文', text);
   await page.goBack();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check(hashOf(page) === '#/staff', '移すのは replace（戻るで切った URL に戻らない）', hashOf(page));
   await page.goto(`${BASE}#/vacancy`);
   await page.getByTestId('feature-off-notice').waitFor({ timeout: 10000 });
@@ -293,7 +293,7 @@ async function switches(page) {
   await page.goto(`${BASE}#/vacancy`);
   await page.getByTestId('feature-off-notice').waitFor({ timeout: 10000 });
   await page.getByRole('button', { name: '知らせを閉じる' }).click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check((await page.getByTestId('feature-off-notice').count()) === 0, '知らせは閉じられる');
   check(hashOf(page) === '#/home', '閉じても URL はホームのまま', hashOf(page));
 
@@ -353,7 +353,7 @@ async function checkTemplate(page, t) {
     await page.goto('about:blank');
     await page.goto(`${BASE}#${r.hash}`);
     await page.locator('h1').filter({ hasText: /\S/ }).first().waitFor({ timeout: 30000 });
-    await page.waitForTimeout(200);
+    await settle(page, 200);
     const h = hashOf(page);
     const off = !on.includes(r.feature);
     const hasNotice = (await page.getByTestId('feature-off-notice').count()) === 1;
@@ -476,7 +476,7 @@ async function pathVariants(page, dlg, ctx) {
     await page.goto('about:blank');
     await page.goto(`${BASE}#${h}`);
     await page.locator('h1').filter({ hasText: /\S/ }).first().waitFor({ timeout: 30000 });
-    await page.waitForTimeout(200);
+    await settle(page, 200);
     const hasNotice = (await page.getByTestId('feature-off-notice').count()) === 1;
     check(hashOf(page) === '#/home' && hasNotice, `切った機能の ${h} もホームへ移し知らせる`, hashOf(page));
   }
@@ -563,7 +563,7 @@ async function deadEnds(page, dlg, ctx) {
     { k: STORAGE_KEY, d: second },
   );
   await other.close();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
 
   // 月の要対応：休みの人に訪問・拘束の上限の行は、欠勤・キャンセルの欄・稼働の見込みでなく日の画面へ
   await open(page, `/month?ym=${ym}&do=attention`, '[data-testid="month-attention"]');
@@ -609,7 +609,7 @@ async function deadEnds(page, dlg, ctx) {
   // 日の画面：稼働の見込みを切ると拘束の上限の帯ごと出さない（その2。リンク・ボタンも無い）。「案を変える ▾」に比べるが無い
   await open(page, `/plan?date=${second}`, '.date-switch select');
   await page.getByTestId('plan-menu').waitFor({ timeout: 60000 });
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check(
     (await page.getByTestId('band-over-span').count()) === 0 &&
       (await page.getByTestId('over-span-link').count()) === 0 &&
@@ -645,7 +645,7 @@ async function deadEnds(page, dlg, ctx) {
     .locator('button')
     .click();
   await page.locator('.drawer').waitFor({ timeout: 5000 });
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check(
     (await page.getByTestId('availability-absence-link').count()) === 0 &&
       (await page.locator('.drawer a[href*="do=absence"]').count()) === 0,
@@ -682,7 +682,7 @@ async function insideEntries(page, dlg, ctx) {
       { k: STORAGE_KEY, d: TODAY },
       { timeout: 60000 },
     );
-    await page.waitForTimeout(500);
+    await settle(page, 500);
     check((await count('sudden-open')) === (on('sudden') ? 1 : 0), `${label}：日の予定の「欠勤・キャンセルを登録」`);
     check(
       (await page.locator('.absence-btn').count()) > 0 === on('sudden'),
@@ -747,7 +747,7 @@ async function insideEntries(page, dlg, ctx) {
       `/month?ym=${TODAY.slice(0, 7)}&staff=${encodeURIComponent(staff.id)}`,
       '[data-testid="month-focus"]',
     );
-    await page.waitForTimeout(300);
+    await settle(page, 300);
     check((await count('month-off-toggle')) === (on('requestedOff') ? 1 : 0), `${label}：月の「休みを入れる」`);
     check((await count('month-print')) === (on('monthPrint') ? 1 : 0), `${label}：月の印刷のボタン`);
 
@@ -815,7 +815,7 @@ async function keepData(page, dlg, ctx) {
     };
   }, STORAGE_KEY);
   await other.close();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const stored = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
 
   // 〈利用者さん〉：段階・担当できる人の欄が無いまま保存する
@@ -828,7 +828,7 @@ async function keepData(page, dlg, ctx) {
   );
   await page.locator('.drawer').getByRole('button', { name: '保存', exact: true }).click();
   await page.getByTestId('person-view').waitFor({ timeout: 5000 });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   let data = await stored();
   const c = data.clients.find((x) => x.id === ids.client);
   check(c.stage === 'contract', '切ったまま保存しても段階（契約）が残る', c.stage);
@@ -853,7 +853,7 @@ async function keepData(page, dlg, ctx) {
       '切った毎月のパターン：繰り返し方と第何週は読むだけ',
     );
     await page.getByTestId('pattern-form').getByRole('button', { name: '直す', exact: true }).click();
-    await page.waitForTimeout(600);
+    await settle(page, 600);
     data = await stored();
     const mine = data.patterns.filter((p) => p.clientId === ids.client && !ids.others.includes(p.id));
     check(
@@ -862,7 +862,7 @@ async function keepData(page, dlg, ctx) {
       mine.map((p) => [p.repeat, p.monthWeeks]),
     );
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+    await settle(page, 200);
   }
 
   // 〈スタッフ〉：メールアドレスの欄が無いまま保存する
@@ -872,7 +872,7 @@ async function keepData(page, dlg, ctx) {
   check((await page.getByTestId('staff-email').count()) === 0, 'メールを切るとメールアドレスの欄が無い');
   await page.locator('.drawer').getByRole('button', { name: '保存', exact: true }).click();
   await page.getByTestId('person-view').waitFor({ timeout: 5000 });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   data = await stored();
   const s = data.staff.find((x) => x.id === ids.staff);
   check(s.email === 'keep@example.com', '切ったまま保存しても〈スタッフ〉のメールアドレスが残る', s.email);
@@ -937,7 +937,7 @@ async function turnOffCompat(page, dlg, ctx) {
   dlg.messages.length = 0;
   dlg.answer = false;
   await page.getByRole('switch', { name: '相性', exact: true }).click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   dlg.answer = true;
   check(
     dlg.messages.length === 1 &&
@@ -950,7 +950,7 @@ async function turnOffCompat(page, dlg, ctx) {
   dlg.messages.length = 0;
   await page.getByRole('switch', { name: '相性', exact: true }).click();
   await page.locator('.toast').filter({ hasText: '相性を切りました' }).waitFor({ timeout: 5000 });
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await storedFeatures(page)).compat === false, '確認すると切る（org.features.compat＝false）');
   // データの無い機能は確認なしで切れる
   dlg.messages.length = 0;
@@ -1000,22 +1000,16 @@ async function turnOffCompat(page, dlg, ctx) {
   await applyTemplate(page, dlg, 'all');
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
-  const dlg = await answerConfirms(page);
-  await page.goto(`${BASE}#/home`);
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: async () => {
+    const s = await openPage();
+    // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
+    const dlg = await answerConfirms(s.page);
+    await s.page.goto(`${BASE}#/home`);
+    return { ...s, dlg };
+  },
+  call: (fn, s) => fn(s.page, s.dlg, s.ctx),
+  steps: [
     ['all-on', allOn],
     ['switches', switches],
     ['templates', templates],
@@ -1025,15 +1019,9 @@ run(async () => {
     ['inside-entries', insideEntries],
     ['turn-off-compat', turnOffCompat],
     ['keep-data', keepData],
-  ]) {
-    try {
-      await fn(page, dlg, ctx);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native);
-  await b.close();
-  return errors;
+  ],
+  after: ({ dlg }) => check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

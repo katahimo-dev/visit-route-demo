@@ -9,20 +9,19 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_DETAILS で吹き出しが出るまでの上限（既定 100ms。無ければ PERF_MS）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const {
-  launch,
   BASE,
   OUT_DIR,
-  NOW,
   perfMs,
   check,
   withRealClock,
+  pageErrors,
   urlOf,
   isFocused,
-  failShot,
-  run,
+  runSteps,
+  settle,
 } = require('./lib/env.cjs');
+const { sharedPage } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_DETAILS', 100);
 const pop = (page) => page.getByTestId('person-pop');
@@ -32,7 +31,7 @@ async function open(page, hash, ready) {
   await page.goto(`${BASE}#${hash}`);
   await page.reload();
   await page.locator(ready).first().waitFor({ timeout: 30000 });
-  await page.waitForTimeout(500);
+  await settle(page, 500);
 }
 
 /**
@@ -75,7 +74,7 @@ async function rules(page, btn, where, words) {
   await pop(page).waitFor();
   // 閉じるボタン → リンク → 外へ
   for (let i = 0; i < 3; i++) await page.keyboard.press('Tab');
-  await page.waitForTimeout(100);
+  await settle(page, 100);
   check((await pop(page).count()) === 0 && (await isFocused(btn)), `${where}：Tab で外へ出ると閉じてボタンへ戻る`);
 }
 
@@ -86,7 +85,7 @@ async function link(page, btn, where, to) {
   await btn.scrollIntoViewIfNeeded();
   await btn.click();
   await pop(page).getByTestId('person-pop-link').click();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   // 見出しは「〈呼び方〉：〈名前〉」。名前は完全一致、閲覧の欄の data-id は押した人の ID
   const head = (await page.locator('.drawer h2').first().textContent()) ?? '';
   const view = page.getByTestId('person-view');
@@ -147,7 +146,7 @@ async function week(page) {
   await info.click();
   await pop(page).waitFor();
   await chips.getByTestId('person-info').nth(1).click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check(
     (await pop(page).count()) === 1 && (await info.getAttribute('aria-expanded')) === 'false',
     '週：別の i を押すと入れ替わる（同時に1つ）',
@@ -157,7 +156,7 @@ async function week(page) {
   await page.evaluate(() => {
     location.hash = '#/week?by=client';
   });
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check((await pop(page).count()) === 0, '週：見出し（チップ）が消えたら吹き出しを閉じる');
   // 時間軸（〈利用者さん〉で見る）：この週に訪問がある人のチップの横の i（PRD D136。〈スタッフ〉のチップと同じ）
   const cchips = page.getByTestId('week-client-chips');
@@ -192,12 +191,12 @@ async function realDrag(page, src, target) {
   await page.mouse.move(sx, sy);
   await page.mouse.down();
   await page.mouse.move(sx + 6, sy + 6, { steps: 3 });
-  await page.waitForTimeout(150);
+  await settle(page, 150);
   const { x, y } = await target();
   await page.mouse.move(x, y, { steps: 15 });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   await page.mouse.up();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
 }
 
 async function plan(page) {
@@ -226,7 +225,7 @@ async function plan(page) {
   check((await pop(page).textContent()).includes('移動手段'), '日：担当の名前で〈スタッフ〉の詳細');
   // 帯をもう一度押すと選択を外し、詳細（見出し）が消えたら吹き出しも閉じる
   await bandBtn.click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check(
     (await bandBtn.getAttribute('aria-pressed')) === 'false' && (await pop(page).count()) === 0,
     '日：帯をもう一度押すと選択を外し、吹き出しも閉じる',
@@ -265,7 +264,7 @@ async function plan(page) {
   await page.keyboard.press('Escape');
   // 順番の表示：カードの詳細の名前
   await page.getByRole('button', { name: '順番', exact: true }).click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const card = page.locator('.route-grid .route-col[data-staff] .route-btn').first();
   await card.click();
   check((await card.getAttribute('aria-pressed')) === 'true', '日・順番：カードを押すと選ぶ（今どおり）');
@@ -279,7 +278,7 @@ async function plan(page) {
   await page.keyboard.press('Escape');
   // 一覧の表示
   await page.getByRole('button', { name: '一覧', exact: true }).click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const list = page.getByTestId('visit-list');
   const lc = list.locator('[data-testid="person-btn"][data-kind="client"]').first();
   await rules(page, lc, '日・一覧の〈利用者さん〉', ['段階']);
@@ -288,7 +287,7 @@ async function plan(page) {
   // 印刷では i を出さず、名前のボタンはただの文字の見た目
   await open(page, '/plan', '.tl-band[draggable="true"]');
   await page.emulateMedia({ media: 'print' });
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const printed = await page.evaluate(() => ({
     info: [...document.querySelectorAll('.person-info')].filter((e) => getComputedStyle(e).display !== 'none').length,
     deco: [...document.querySelectorAll('.person-btn')].map((e) => getComputedStyle(e).textDecorationLine),
@@ -310,7 +309,7 @@ async function sameButtonAndTwice(page) {
   const title2 = await pop(page).locator('h3').textContent();
   await page.goBack();
   await page.waitForFunction(() => document.querySelector('[data-testid="month-aside-name"]')?.dataset.id === 's1');
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check(
     (await pop(page).count()) === 0 && (await btn.getAttribute('aria-expanded')) === 'false',
     '月：戻るで見出しの人が替わったら吹き出しを閉じる',
@@ -325,7 +324,7 @@ async function sameButtonAndTwice(page) {
   await pop(page).waitFor();
   await lineInfo.scrollIntoViewIfNeeded();
   await lineInfo.click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const expanded = await page.$$eval(`[data-id="${sid}"][aria-expanded="true"]`, (xs) =>
     xs.map((x) => x.dataset.testid),
   );
@@ -359,7 +358,7 @@ async function removed(page) {
     localStorage.setItem(key, JSON.stringify(d));
   }, cid);
   await other.close();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check(
     (await pop(page).count()) === 0 &&
       (await page.locator(`[data-testid="person-btn"][data-id="${cid}"]`).count()) === 0,
@@ -382,41 +381,26 @@ async function speed(page) {
     });
     times.push(Math.round(t));
     await page.keyboard.press('Escape');
+    // 計測の合間（前の回の後始末を次の回に入れない）。計測の条件なので固定の待ちのまま（ADR-0041）
     await page.waitForTimeout(100);
   }
   const med = [...times].sort((a, b) => a - b)[2];
   check(med >= 0 && med <= PERF_MS, `週：i を押してから吹き出しが出るまで（中央値 ${PERF_MS}ms 以下）`, times);
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  for (const [name, fn] of [
+const steps = sharedPage({
+  call: (fn, s) => fn(s.page, s),
+  steps: [
     ['month', month],
     ['week', week],
     ['plan', plan],
     ['same-button-and-twice', sameButtonAndTwice],
     // 速さは時計を止めない別の文脈で測る（scripts/lib/env.cjs の withRealClock）
-    ['speed', () => withRealClock(b, errors, speed)],
+    ['speed', (_page, s) => withRealClock(s.b, pageErrors, speed)],
     // データを書き換えるので最後に
     ['removed', removed],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  await b.close();
-  return errors;
+  ],
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

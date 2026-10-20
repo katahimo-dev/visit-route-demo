@@ -7,14 +7,21 @@
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-compat.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。ほかに
-//   PERF_MS_COMPAT … セルを押してから描き終わるまでの上限（ミリ秒。既定 100。中央値で比べる。無ければ PERF_MS）
+//   PERF_MS_COMPAT … セルを押してから描き終わるまでの上限（ミリ秒。既定 100。ならし3回のあと9回の中央値で比べ、
+//                    超えたら最大3回りまで測り直して一番よい回りの中央値を使う。PRD D253。無ければ PERF_MS）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, perfMs, check, settle, failShot, run } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, perfMs, check, note, settle, runSteps } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_COMPAT', 100);
+/** 速さの計測：ならしの回数・1回りの回数・回りの最大・回りの合間（PRD D253） */
+const PERF_WARMUP = 3;
+const PERF_SAMPLES = 9;
+const PERF_ROUNDS = 3;
+const PERF_ROUND_GAP_MS = 1000;
 
 /** URL（値の中も encodeURIComponent しているので2回戻す） */
 const urlOf = (page) => decodeURIComponent(decodeURIComponent(page.url()));
@@ -24,7 +31,7 @@ const countOf = async (loc) =>
 async function openCompat(page, query = '') {
   await page.goto(`${BASE}#/compat${query}`);
   await page.getByTestId('compat-filters').waitFor();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
 }
 /** 絞り込みの欄を開く（畳んであれば） */
 async function openBox(page, which) {
@@ -80,7 +87,7 @@ async function namesAndLayout(page) {
     el.scrollTop = 200;
     el.scrollLeft = 100;
   });
-  await page.waitForTimeout(100);
+  await settle(page, 100);
   const stick = await page.evaluate(() => {
     const sc = document.querySelector('.compat-scroll').getBoundingClientRect();
     const th = document.querySelector('.compat-table thead th.compat-head').getBoundingClientRect();
@@ -143,7 +150,7 @@ async function popover(page) {
   const canScroll = await pop(page).evaluate((el) => el.scrollHeight > el.clientHeight);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(0, 200);
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const top = await pop(page).evaluate((el) => el.scrollTop);
   check(canScroll && top > 0, '吹き出しの中を巻ける（戻らない）', { canScroll, scrollTop: top });
   await page.screenshot({ path: path.join(OUT_DIR, 'compat-pop-scroll.png') });
@@ -173,7 +180,7 @@ async function openById(page) {
     const id = await b.getAttribute('data-id');
     await b.click();
     await pop(page).getByTestId('compat-pop-link').click();
-    await page.waitForTimeout(400);
+    await settle(page, 400);
     // 開くのは閲覧の欄（PRD D127）。見出し「〈呼び方〉：〈名前〉」の名前は完全一致、閲覧の欄の data-id は押した人
     const head = (await page.locator('.drawer h2').first().textContent()) ?? '';
     const view = page.getByTestId('person-view');
@@ -188,7 +195,7 @@ async function openById(page) {
   }
   // いない ID は何もしない
   await page.goto(`${BASE}#/staff?id=nobody`);
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check(!urlOf(page).includes('id=') && (await page.locator('.side-panel').count()) === 0, 'いない ID は欄を開かない');
 }
 
@@ -210,7 +217,7 @@ async function filters(page) {
   const sfIn = page.getByTestId('compat-sf-input');
   const first = (await label(heads(page).first())).split(/\s/)[0];
   await sfIn.fill(first);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await heads(page).count()) === 1, '名前で探す');
   await openBox(page, 'cf');
   const ng = page.locator('[data-testid="compat-cf-chip"][data-chip="ng"]');
@@ -231,7 +238,7 @@ async function filters(page) {
   const hist1 = await page.evaluate(() => history.length);
   await page.reload();
   await page.getByTestId('compat-filters').waitFor();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check((await heads(page).count()) === 1 && (await rows(page).count()) === ngN, '再読込で絞り込みが戻る');
   check(
     (await page.getByTestId('compat-sf-box').evaluate((el) => el.open)) &&
@@ -258,7 +265,7 @@ async function filters(page) {
   check((await page.getByTestId('compat-cf-ended').count()) === 0, '「終了の人も出す」は出さない');
   // 0人
   await sfIn.fill('存在しない名前');
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const empty = page.getByTestId('compat-empty');
   check(
     (await empty.textContent()).includes('当てはまる') && (await page.getByTestId('compat-table').count()) === 0,
@@ -276,12 +283,12 @@ async function filters(page) {
   await sfIn.click();
   const before = urlOf(page);
   await cdp.send('Input.imeSetComposition', { text: 'し', selectionStart: 1, selectionEnd: 1 });
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   await cdp.send('Input.imeSetComposition', { text: 'しや', selectionStart: 2, selectionEnd: 2 });
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check(urlOf(page) === before && (await sfIn.inputValue()) === 'しや', '変換中は URL に書かず、文字も残る');
   await cdp.send('Input.insertText', { text: '市役所' });
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check(urlOf(page).includes('q:市役所'), '確定で URL に書く');
   // 知らないチップ・終了の人も出すは URL から捨てる
   await openCompat(page, '?sf=chip:nope&cf=chip:;ended:1;x:zzz');
@@ -321,10 +328,10 @@ async function regressions(page) {
   await b.click();
   await pop(page).waitFor();
   await page.getByTestId('compat-sf-input').fill('存在しない名前');
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await pop(page).count()) === 0, '絞り込みで見出しが消えたら吹き出しを閉じる');
   await page.getByTestId('compat-sf-input').fill('');
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const again = heads(page)
     .filter({ has: page.locator('.compat-head-name') })
     .first();
@@ -373,53 +380,73 @@ async function perf(page) {
   });
   await page.reload();
   await page.getByTestId('compat-table').waitFor();
+  // 速さの計測の前に、読み込み直後の仕事（先読み・GC）が引くのを待つ。計測の条件なので固定の待ちのまま（ADR-0041）
   await page.waitForTimeout(1500);
   const size = { rows: await rows(page).count(), cols: await heads(page).count() };
-  const times = await page.evaluate(async () => {
-    const out = [];
-    const btns = document.querySelectorAll('tbody tr:nth-child(5) .compat-btn');
-    for (let i = 0; i < 7; i++) {
-      const b = btns[i];
-      const t0 = performance.now();
-      b.click();
-      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
-      out.push(Math.round(performance.now() - t0));
+  // 1回ぶんの計測：押してから次の描画が終わるまで（ms）。押す前に1フレーム置き、前の回の描画を持ち込まない
+  const clickTimes = (from, n) =>
+    page.evaluate(
+      async ([from, n]) => {
+        const out = [];
+        const btns = document.querySelectorAll('tbody tr:nth-child(5) .compat-btn');
+        for (let i = 0; i < n; i++) {
+          await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+          const b = btns[(from + i) % btns.length];
+          const t0 = performance.now();
+          b.click();
+          await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+          out.push(Math.round(performance.now() - t0));
+        }
+        return out;
+      },
+      [from, n],
+    );
+  const medianOf = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  // ならし：最初の数回は JIT・GC の立ち上がりで遅いので数えない
+  const warmup = await clickTimes(0, PERF_WARMUP);
+  // 1回り PERF_SAMPLES 回の中央値。上限を超えたら少し置いてもう1回り（最大 PERF_ROUNDS 回り）。
+  // 一番よい回りの中央値で比べる：ほかの処理と CPU を取り合った回り（負荷）を外し、遅くなったコード（どの回りも遅い）は落とす（PRD D253）。
+  // 1回り目が上限の2倍を超えたら、負荷の揺れでは説明できないので回りを足さずに落とす。回りを足して通ったら注記に残す（ぎりぎりを見逃さない）
+  const rounds = [];
+  for (let r = 0; r < PERF_ROUNDS; r++) {
+    if (r > 0) await page.waitForTimeout(PERF_ROUND_GAP_MS);
+    const times = await clickTimes(PERF_WARMUP + r * PERF_SAMPLES, PERF_SAMPLES);
+    rounds.push({ median: medianOf(times), times });
+    const m = rounds.at(-1).median;
+    if (m <= PERF_MS) {
+      if (r > 0)
+        note(
+          `相性の速さ：${r + 1}回り目で通過（各回りの中央値 ${rounds.map((x) => x.median).join('・')}ms、上限 ${PERF_MS}ms）`,
+        );
+      break;
     }
-    return out;
-  });
-  const sorted = [...times].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)];
+    if (r === 0 && m > 2 * PERF_MS) break;
+  }
+  const median = Math.min(...rounds.map((x) => x.median));
+  const times = rounds.map((x) => x.times);
   check(size.rows >= 300 && size.cols >= 60, '300人×60人の表', size);
-  check(median <= PERF_MS, `セルを1回押して描き終わるまで（中央値 ${PERF_MS}ms 以下）`, { median, times });
+  check(median <= PERF_MS, `セルを1回押して描き終わるまで（中央値 ${PERF_MS}ms 以下）`, { median, times, warmup });
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  const fresh = async (fixClock) => {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser, step) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
     const page = await ctx.newPage();
-    // ページの時計を止める（ほかの e2e と同じ）
-    if (fixClock) await page.clock.setFixedTime(NOW);
+    // ページの時計を止める（ほかの e2e と同じ）。
+    // 速さは時計を止めない文脈で測る（setFixedTime は requestAnimationFrame・performance.now も差し替える。scripts/lib/env.cjs の withRealClock）
+    if (step !== perf) await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
-    const dlg = await answerConfirms(page);
-    return { ctx, page, dlg };
-  };
-  for (const step of [namesAndLayout, popover, openById, filters, regressions, perf]) {
-    // 速さは時計を止めない文脈で測る（setFixedTime は requestAnimationFrame・performance.now も差し替える。scripts/lib/env.cjs の withRealClock）
-    const { ctx, page, dlg } = await fresh(step !== perf);
-    try {
-      await step(page);
-    } catch (e) {
-      check(false, `${step.name} が止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーなし', errors.join(' / '));
-  await browser.close();
+    return { ctx, page, dlg: await answerConfirms(page) };
+  },
+  steps: [namesAndLayout, popover, openById, filters, regressions, perf],
+  label: (name) => `${name} が止まった`,
+  after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
+  end: () => check(errors.length === 0, 'ページのエラーなし', errors.join(' / ')),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

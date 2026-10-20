@@ -13,9 +13,9 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, failShot, run } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, runSteps, settle } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
 
@@ -141,10 +141,10 @@ async function firstState(page) {
   const panel = page.getByRole('dialog', { name: `${month}月の案をまとめて作る` });
   await panel.waitFor({ timeout: 10000 });
   check(true, 'まとめて作るの欄が開く');
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check(hashOf(page) === `#/month?ym=${YM}`, '月の予定：?ym= の月、?do= は消える', hashOf(page));
   await page.goBack();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check(hashOf(page) === '#/home', '戻るでホームへ（?do= を残さないので欄を繰り返し開かない）', hashOf(page));
 
   // 今日のカード → 日の画面（今日）。案ができる（開いた日の自動作成）
@@ -177,7 +177,7 @@ async function firstState(page) {
     await confCard.click();
     await page.waitForURL(/#\/month/);
     await page.getByTestId('month-unconfirmed').waitFor({ timeout: 10000 });
-    await page.waitForTimeout(300);
+    await settle(page, 300);
     const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
     // 今月の準備の③は進み具合の帯にまとめた（PRD D154）。帯の確定していない日数も同じ
     const band = Number(await page.getByTestId('band-confirm').getAttribute('data-unconfirmed'));
@@ -198,7 +198,7 @@ async function firstState(page) {
   // 確定すると今日のカードは「確定済み」、確定していない日は1日減る
   await page.goto(`${BASE}#/plan`);
   await page.getByTestId('adopt').click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   await open(page, '/home');
   const today3 = (await tasks(page)).find((t) => t.kind === 'today');
   check(!!today3 && /（確定済み）/.test(today3.title), '確定したら今日のカードは「確定済み」', today3);
@@ -357,7 +357,7 @@ async function seedPlans(page) {
       'まとめて確定の確認：最初のフォーカスは取り消し（独自の確認）',
     );
     // 開くときの動きが終わってから撮る
-    await p.waitForTimeout(400);
+    await settle(p, 400);
     await p.screenshot({ path: path.join(OUT_DIR, 'month-confirm-dialog.png') });
     // 取り消すと何も変わらない
     await p.getByTestId('confirm-cancel').click();
@@ -374,7 +374,7 @@ async function seedPlans(page) {
       .filter({ hasText: `${good.length}日を確定しました` })
       .waitFor({ timeout: 5000 });
     check(true, `知らせ「${good.length}日を確定しました」`);
-    await p.waitForTimeout(500);
+    await settle(p, 500);
     const after = await p
       .locator('[data-testid="month-day"]')
       .evaluateAll((els) => Object.fromEntries(els.map((e) => [e.dataset.date, e.dataset.state])));
@@ -479,7 +479,7 @@ async function ready(page) {
   }, STORAGE_KEY);
   await page.reload();
   await page.getByTestId('home-tasks').waitFor();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const list = await tasks(page);
   check(
     (await page.getByTestId('home-ready').isVisible()) &&
@@ -546,21 +546,13 @@ async function mobile(page) {
   await page.emulateMedia({ media: 'screen' });
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
-  const dlg = await answerConfirms(page);
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: async () => {
+    const s = await openPage();
+    // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
+    return { ...s, dlg: await answerConfirms(s.page) };
+  },
+  steps: [
     ['start', start],
     ['first-state', firstState],
     ['seed-plans', seedPlans],
@@ -569,15 +561,9 @@ run(async () => {
     ['ready', ready],
     ['wide', wide],
     ['mobile', mobile],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native);
-  await b.close();
-  return errors;
+  ],
+  after: ({ dlg }) => check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

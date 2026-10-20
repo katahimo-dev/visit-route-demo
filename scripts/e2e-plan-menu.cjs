@@ -16,21 +16,8 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  hashOf,
-  stored,
-  failShot,
-  run,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, settle, hashOf, stored, runSteps } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 /** 保存（少し遅れて書く）が条件を満たすまで待つ（満たさなければ時間切れで続ける） */
 async function waitStored(page, pred, arg, timeout = 5000) {
@@ -38,7 +25,7 @@ async function waitStored(page, pred, arg, timeout = 5000) {
   while (Date.now() < end) {
     const d = await stored(page);
     if (d && pred(d, arg)) return;
-    await page.waitForTimeout(100);
+    await settle(page, 100);
   }
 }
 const dialog = (page) => page.getByTestId('confirm-dialog');
@@ -846,29 +833,22 @@ async function mobile(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  // ブラウザのダイアログ（confirm・alert・prompt）が出たら失敗（PRD D146）
-  const native = [];
-  page.on('dialog', (d) => {
-    if (d.type() === 'beforeunload') {
-      d.accept();
-      return;
-    }
-    native.push(`${d.type()}: ${d.message()}`);
-    d.dismiss();
-  });
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: async () => {
+    const s = await openPage();
+    // ブラウザのダイアログ（confirm・alert・prompt）が出たら失敗（PRD D146）
+    const native = [];
+    s.page.on('dialog', (d) => {
+      if (d.type() === 'beforeunload') {
+        d.accept();
+        return;
+      }
+      native.push(`${d.type()}: ${d.message()}`);
+      d.dismiss();
+    });
+    return { ...s, native };
+  },
+  steps: [
     ['plain', plain],
     ['edited', edited],
     ['unpinned-edit', unpinnedEdit],
@@ -877,15 +857,9 @@ run(async () => {
     ['reassign-menu', reassignMenu],
     ['manual-prefs', manualPrefs],
     ['mobile', mobile],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  check(native.length === 0, 'ブラウザのダイアログを出さない', native);
-  await b.close();
-  return errors;
+  ],
+  after: ({ native }) => check(native.length === 0, 'ブラウザのダイアログを出さない', native),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

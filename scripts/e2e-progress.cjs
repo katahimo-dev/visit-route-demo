@@ -11,21 +11,9 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_PROGRESS で帯が出るまでの上限（既定 3000ms。無ければ PERF_MS）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  perfMs,
-  check,
-  hashOf,
-  failShot,
-  run,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, perfMs, check, hashOf, runSteps, settle } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_PROGRESS', 3000);
 const YM = TODAY.slice(0, 7);
@@ -55,7 +43,7 @@ async function open(page, hash, ready) {
     .waitFor({ timeout: 30000 });
   // ホームには帯が無い
   if (!hash.startsWith('/home')) await bandReady(page);
-  await page.waitForTimeout(300);
+  await settle(page, 300);
 }
 /** 保存したデータを書き換える（ホームはデータを書かないので、ホームで書き換えてから読み直す） */
 async function editData(page, fn, arg) {
@@ -152,7 +140,7 @@ async function monthEntry(page) {
   const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
   check(listed === nums.unconfirmed, '月：帯の確定していない日数＝右の欄の日数', { band: nums.unconfirmed, listed });
   await page.getByTestId('band-attention').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const att = await page.getByTestId('month-attention').locator('li').count();
   check(att === nums.attention, '月：帯の要対応＝右の欄の要対応', { band: nums.attention, listed: att });
   // 見出しの下の要約は月全体で、帯と同じ言葉（訪問・案のある日）を並べない（PR #38 のレビュー）
@@ -198,7 +186,7 @@ async function nextMonth(page) {
   const only = page.getByTestId('batch-expand-only');
   check(await only.isVisible(), '来月：欄に「訪問だけ作る」（今月の準備の①から移した）');
   await only.click();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const v1 = await page.getByTestId('band-visits').innerText();
   check(!/あと/.test(v1) && /\d+件/.test(v1), '訪問だけ作ると帯の訪問が済み（あと N件が消える）', v1);
   check(!(await only.isVisible().catch(() => false)), '作ったあとは「訪問だけ作る」を出さない');
@@ -247,13 +235,13 @@ async function keepRunning(page) {
   // 作っている間は二重に始めない：帯の次の一手（あれば）も ?do=batch も欄を開かない（飛ばさずに確かめる）
   if ((await page.getByTestId('band-next').count()) > 0) {
     await page.getByTestId('band-next').click();
-    await page.waitForTimeout(300);
+    await settle(page, 300);
   }
   await page.evaluate((ym) => {
     location.hash = `#/month?ym=${ym}&do=batch`;
   }, YM);
   await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check(
     (await panel.count()) === 0 && (await page.getByTestId('month-progress').count()) === 1,
     '作っている間は二重に始めない',
@@ -279,7 +267,7 @@ async function dayConfirm(page) {
   await page.goto(`${BASE}#/plan`);
   await page.reload();
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   await bandReady(page);
   const day = page.getByTestId('band-day');
   await page.waitForFunction(() => document.querySelector('[data-testid="band-day"]')?.dataset.state === 'plan', null, {
@@ -363,7 +351,7 @@ async function links(page) {
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
   await page.getByTestId('band-attention').click();
   await page.waitForURL(/#\/month/);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check(
     hashOf(page) === `#/month?ym=${YM}` &&
       (await page.locator('.month-aside-title').first().innerText()).includes('要対応'),
@@ -525,7 +513,7 @@ async function mobile(page) {
     await page.reload();
     await page.locator(ready).waitFor({ timeout: 60000 });
     await bandReady(page);
-    await page.waitForTimeout(300);
+    await settle(page, 300);
     const box = await page.getByTestId('progress-band').evaluate((el) => {
       const r = el.getBoundingClientRect();
       const kids = [...el.querySelectorAll('.pb-month, .pb-item, [data-testid="band-next"]')]
@@ -551,21 +539,13 @@ async function mobile(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
-  const dlg = await answerConfirms(page);
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: async () => {
+    const s = await openPage();
+    // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
+    return { ...s, dlg: await answerConfirms(s.page) };
+  },
+  steps: [
     ['month-entry', monthEntry],
     ['next-month', nextMonth],
     ['keep-running', keepRunning],
@@ -575,15 +555,9 @@ run(async () => {
     ['mobile', mobile],
     ['perf', perf],
     ['empty', empty],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native);
-  await b.close();
-  return errors;
+  ],
+  after: ({ dlg }) => check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

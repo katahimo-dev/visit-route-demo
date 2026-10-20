@@ -17,19 +17,8 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  hashOf,
-  failShot,
-  run,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, hashOf, runSteps } = require('./lib/env.cjs');
+const { sharedPage, openPage, guard } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
 const MONTH = Number(YM.slice(5, 7));
@@ -735,30 +724,24 @@ async function mobile(browser) {
   await ctx.close();
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  // ブラウザのダイアログ（confirm・alert・prompt）が出たら失敗（PRD D146）
-  const native = [];
-  page.on('dialog', (d) => {
-    if (d.type() === 'beforeunload') {
-      d.accept();
-      return;
-    }
-    native.push(`${d.type()}: ${d.message()}`);
-    d.dismiss();
-  });
-  console.log(`今日：${TODAY}（${MONTH}月）`);
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: async () => {
+    const s = await openPage();
+    // ブラウザのダイアログ（confirm・alert・prompt）が出たら失敗（PRD D146）
+    const native = [];
+    s.page.on('dialog', (d) => {
+      if (d.type() === 'beforeunload') {
+        d.accept();
+        return;
+      }
+      native.push(`${d.type()}: ${d.message()}`);
+      d.dismiss();
+    });
+    console.log(`今日：${TODAY}（${MONTH}月）`);
+    return { ...s, native };
+  },
+  call: (fn, s) => fn(s.page, s),
+  steps: [
     ['reason', reason],
     ['term', termMouseKeyboard],
     ['rename', rename],
@@ -767,20 +750,11 @@ run(async () => {
     ['reason-words', reasonWords],
     ['unplaced-words', unplacedWords],
     ['warn-colors', warnColors],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  try {
-    await mobile(b);
-  } catch (e) {
-    check(false, 'mobile', String(e.message || e));
-  }
-  check(native.length === 0, 'ブラウザのダイアログを出さない', native);
-  await b.close();
-  return errors;
+    // 別の文脈で開く（スクリーンショットは撮らない）
+    ['mobile', (_page, s) => guard(() => mobile(s.b), { label: 'mobile' })()],
+  ],
+  after: ({ native }) => check(native.length === 0, 'ブラウザのダイアログを出さない', native),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

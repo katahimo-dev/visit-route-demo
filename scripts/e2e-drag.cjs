@@ -12,7 +12,19 @@
 // 終了コード：全部動けば 0、動かないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, check, withTimeout, run } = require('./lib/env.cjs');
+const {
+  launch,
+  BASE,
+  OUT_DIR,
+  NOW,
+  TODAY,
+  check,
+  withTimeout,
+  watchErrors,
+  runSteps,
+  settle,
+} = require('./lib/env.cjs');
+const { sharedPage } = require('./lib/steps.cjs');
 
 /** 動かし先が見つからないときは、null のまま進まず分かる言葉で止める */
 function need(x, what) {
@@ -33,14 +45,14 @@ async function realDrag(page, src, target, name) {
   await page.mouse.move(sx, sy);
   await page.mouse.down();
   await withTimeout(page.mouse.move(sx + 6, sy + 6, { steps: 3 }), 3000, `${name}：つかみ`);
-  await page.waitForTimeout(150); // 遅らせた再描画が済むまで
+  await settle(page, 150); // 遅らせた再描画が済むまで
   const during = await src.boundingBox().catch(() => null);
   const { x, y } = await target();
   await withTimeout(page.mouse.move(x, y, { steps: 15 }), 3000, `${name}：移動`);
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   await page.screenshot({ path: path.join(OUT_DIR, `dd-${name}-during.png`) });
   await withTimeout(page.mouse.up(), 3000, `${name}：離す`);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   await page.screenshot({ path: path.join(OUT_DIR, `dd-${name}-after.png`) });
   const ev = await page.evaluate(() => window.__ev);
   const moved = during ? Math.round(Math.hypot(during.x - sb.x, during.y - sb.y)) : null;
@@ -81,10 +93,10 @@ async function weekClientDefault(page) {
     report('week-client-max', (await pressedCount()) === 8 && msg.includes('8人まで'), { msg });
   }
   await page.getByTestId('week-client-chips-none').click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const none = (await pressedCount()) === 0 && /client=(&|$)/.test(page.url());
   await page.getByTestId('week-client-chips-reset').click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   report('week-client-none-reset', none && (await pressedCount()) === want && !page.url().includes('client='), {
     url: page.url(),
   });
@@ -97,7 +109,7 @@ async function weekTimeline(page, by) {
   await page.goto(`${BASE}#/week${by === 'client' ? '?by=client' : ''}`);
   await page.reload();
   await page.getByTestId('week-col').first().waitFor();
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   // 〈利用者さん〉で見るときは初期値（この週の先頭8人）を確かめ、「ほかの人を探す」の候補の欄を開いたまま帯をつかむ
   if (by === 'client') await weekClientDefault(page);
   // つかむ帯：つかむ位置に別の要素（開いたままの候補の欄など）が重なっていない最初の帯
@@ -148,7 +160,7 @@ async function weekClients(page) {
   await page.goto(`${BASE}#/week?view=clients`);
   await page.reload();
   await page.getByTestId('week-client-filter').waitFor();
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   // 表は選ばずに、この週に訪問がある人を全員出す（PRD D108。絞り込みは既定のまま）
   await page.getByTestId('week-ccell').first().waitFor();
   const items = page.locator('[data-testid="week-citem"][draggable="true"]');
@@ -192,7 +204,7 @@ async function planMove(page, view, name) {
   await page.locator('.tl-band[draggable="true"], .route-col [draggable="true"]').first().waitFor({ timeout: 30000 });
   if (view === 'order') {
     await page.getByRole('button', { name: '順番', exact: true }).click();
-    await page.waitForTimeout(500);
+    await settle(page, 500);
   }
   const srcSel =
     view === 'order' ? '.route-grid .route-col[data-staff] [draggable="true"]' : '.tl-band[draggable="true"]';
@@ -225,7 +237,7 @@ async function planMove(page, view, name) {
     },
     name,
   );
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const to = await staffOf();
   report(name, r.ev.includes('drop') && to !== from && r.moved === 0, { vid, from, to, ...r });
 }
@@ -244,18 +256,18 @@ async function weekClientsIme(page) {
   for (const text of steps) {
     await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length });
     // 遅らせて書く時間（300ms）より長く待つ。変換中に URL を書くと入力欄が戻され、変換が壊れる
-    await page.waitForTimeout(450);
+    await settle(page, 450);
     during.push({ value: await input.inputValue(), cf: new URL(page.url().replace('#/', '')).searchParams.get('cf') });
   }
   await cdp.send('Input.insertText', { text: '図書' });
-  await page.waitForTimeout(450);
+  await settle(page, 450);
   const value = await input.inputValue();
   const cf = new URL(page.url().replace('#/', '')).searchParams.get('cf') ?? '';
   // URL が外から変わったとき（戻るボタンなど）は入力欄を合わせる
   await page.evaluate(() => {
     location.hash = `#/week?view=clients&cf=${encodeURIComponent(`q:${encodeURIComponent('市')};chip:period`)}`;
   });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const synced = await input.inputValue();
   const okDuring = during.every((d, i) => d.value === steps[i] && (d.cf === null || !d.cf.includes('q:')));
   report(name, okDuring && value === '図書' && decodeURIComponent(cf).includes('図書') && synced === '市', {
@@ -266,56 +278,62 @@ async function weekClientsIme(page) {
   });
 }
 
-run(async () => {
-  const b = await launch();
-  const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(page);
-  // ページの時計を週の途中の日本時間の日中に止める（FAKE_NOW。アプリの「今日」とテストの TODAY をそろえる）
-  await page.clock.setFixedTime(NOW);
-  console.log(`ページの時刻：${NOW.toISOString()}（今日＝${TODAY}）`);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  const step = async (name, fn) => {
-    try {
-      await fn();
-    } catch (e) {
-      report(name, false, String(e.message || e));
-    }
-  };
-  await step('week-staff', () => weekTimeline(page, 'staff'));
-  await step('week-client', () => weekTimeline(page, 'client'));
-  await step('week-clients', () => weekClients(page));
-  await step('week-clients-ime', () => weekClientsIme(page));
-  await step('plan-timeline', async () => {
-    await page.goto(`${BASE}#/plan`);
-    await page.reload();
-    await planMove(page, 'timeline', 'plan-timeline');
-  });
-  await step('plan-order', async () => {
-    await page.goto(`${BASE}#/plan`);
-    await page.reload();
-    await planMove(page, 'order', 'plan-order');
-  });
-  await step('month-day', async () => {
-    await page.goto(`${BASE}#/month`);
-    await page.reload();
-    const days = page.locator('[data-testid="month-day"]:not([data-state="empty"])');
-    await days.first().waitFor();
-    let d = null;
-    for (let i = 0; i < (await days.count()); i++) {
-      if ((await days.nth(i).getAttribute('data-date')) > TODAY) {
-        d = days.nth(i);
-        break;
-      }
-    }
-    await need(d, `${TODAY} より後の月のマス`).click();
-    await page.waitForURL(/#\/plan/);
-    await planMove(page, 'timeline', 'month-day');
-  });
-  await b.close();
-  return errors;
+const steps = sharedPage({
+  open: async () => {
+    const b = await launch();
+    const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
+    // 初回の案内ツアーを見た扱いにする（PRD D193）
+    await skipTour(page);
+    // ページの時計を週の途中の日本時間の日中に止める（FAKE_NOW。アプリの「今日」とテストの TODAY をそろえる）
+    await page.clock.setFixedTime(NOW);
+    console.log(`ページの時刻：${NOW.toISOString()}（今日＝${TODAY}）`);
+    watchErrors(page);
+    return { b, page };
+  },
+  // report と同じ書き方（理由を JSON の文字にする）
+  info: (e) => JSON.stringify(String(e.message || e)),
+  steps: [
+    ['week-staff', (page) => weekTimeline(page, 'staff')],
+    ['week-client', (page) => weekTimeline(page, 'client')],
+    ['week-clients', weekClients],
+    ['week-clients-ime', weekClientsIme],
+    [
+      'plan-timeline',
+      async (page) => {
+        await page.goto(`${BASE}#/plan`);
+        await page.reload();
+        await planMove(page, 'timeline', 'plan-timeline');
+      },
+    ],
+    [
+      'plan-order',
+      async (page) => {
+        await page.goto(`${BASE}#/plan`);
+        await page.reload();
+        await planMove(page, 'order', 'plan-order');
+      },
+    ],
+    [
+      'month-day',
+      async (page) => {
+        await page.goto(`${BASE}#/month`);
+        await page.reload();
+        const days = page.locator('[data-testid="month-day"]:not([data-state="empty"])');
+        await days.first().waitFor();
+        let d = null;
+        for (let i = 0; i < (await days.count()); i++) {
+          if ((await days.nth(i).getAttribute('data-date')) > TODAY) {
+            d = days.nth(i);
+            break;
+          }
+        }
+        await need(d, `${TODAY} より後の月のマス`).click();
+        await page.waitForURL(/#\/plan/);
+        await planMove(page, 'timeline', 'month-day');
+      },
+    ],
+  ],
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

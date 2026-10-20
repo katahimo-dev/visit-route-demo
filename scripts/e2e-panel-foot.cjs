@@ -13,7 +13,8 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, runSteps } = require('./lib/env.cjs');
+const { guard, closeContext, firstLine } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
 
@@ -573,43 +574,48 @@ async function keyboard(browser) {
   await ctx.close();
 }
 
-run(async () => {
-  const b = await launch();
-  for (const [w, vp] of [
-    ['1400', { width: 1400, height: 1000 }],
-    ['390', { width: 390, height: 844 }],
+let b = null;
+/** 幅ごとに1つの文脈を開き、3つの欄を順に確かめる */
+const widthStep = (w, vp) => async () => {
+  console.log(`---- ${w}px ----`);
+  const ctx = await b.newContext({ viewport: vp, ...(w === '390' ? { hasTouch: true, isMobile: true } : {}) });
+  await skipTour(ctx);
+  const page = await ctx.newPage();
+  await page.clock.setFixedTime(NOW);
+  await answerConfirms(page);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => {
+    errors.push(`ブラウザの確認：${d.message()}`);
+    void d.dismiss();
+  });
+  for (const [name, fn] of [
+    ['sudden', suddenSteps],
+    ['staff', staffPanel],
+    ['month', monthBatch],
   ]) {
-    console.log(`---- ${w}px ----`);
-    const ctx = await b.newContext({ viewport: vp, ...(w === '390' ? { hasTouch: true, isMobile: true } : {}) });
-    await skipTour(ctx);
-    const page = await ctx.newPage();
-    await page.clock.setFixedTime(NOW);
-    await answerConfirms(page);
-    const errors = [];
-    page.on('pageerror', (e) => errors.push(String(e)));
-    page.on('dialog', (d) => {
-      errors.push(`ブラウザの確認：${d.message()}`);
-      void d.dismiss();
-    });
-    for (const [name, fn] of [
-      ['sudden', suddenSteps],
-      ['staff', staffPanel],
-      ['month', monthBatch],
-    ]) {
-      try {
-        await fn(page, w);
-      } catch (e) {
-        check(false, `${w}・${name} が最後まで動く`, String(e).split('\n')[0]);
-        await failShot(page, `${w}-${name}`);
-      }
-    }
-    check(errors.length === 0, `${w}・ページのエラー・ブラウザの確認が無い`, errors);
-    await ctx.close();
+    await guard(() => fn(page, w), {
+      label: `${w}・${name} が最後まで動く`,
+      info: firstLine,
+      page: () => page,
+      shot: `${w}-${name}`,
+    })();
   }
-  try {
-    await keyboard(b);
-  } catch (e) {
-    check(false, 'キーボードの確かめが最後まで動く', String(e).split('\n')[0]);
-  }
-  await b.close();
-});
+  check(errors.length === 0, `${w}・ページのエラー・ブラウザの確認が無い`, errors);
+  // 固まったページでも閉じて先へ進む
+  await closeContext(ctx);
+};
+const steps = [
+  [
+    '準備',
+    async () => {
+      b = await launch();
+    },
+  ],
+  ['1400px', widthStep('1400', { width: 1400, height: 1000 })],
+  ['390px', widthStep('390', { width: 390, height: 844 })],
+  ['keyboard', guard(() => keyboard(b), { label: 'キーボードの確かめが最後まで動く', info: firstLine })],
+];
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

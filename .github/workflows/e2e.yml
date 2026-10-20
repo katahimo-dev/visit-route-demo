@@ -43,6 +43,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # 競合の印（<<<<<<<・>>>>>>>）がコミットされていたら先に落とす（PRD D253。npm run lint にも入っている）
+      - name: 競合の印が無い
+        run: node scripts/check-conflict-markers.cjs
       - name: Playwright の版
         id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -77,6 +80,7 @@ jobs:
           name: playwright-report-${{ strategy.job-index }}
           path: reports/*/playwright-report/
           retention-days: 14
+      # test-results（落ちた test の trace.zip・動画・スクリーンショット・記録）は失敗のときに残す（ADR-0041）
       - uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:

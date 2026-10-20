@@ -12,7 +12,20 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, perfMs, check, failShot, run } = require('./lib/env.cjs');
+const {
+  launch,
+  BASE,
+  OUT_DIR,
+  NOW,
+  TODAY,
+  STORAGE_KEY,
+  perfMs,
+  check,
+  watchErrors,
+  runSteps,
+  settle,
+} = require('./lib/env.cjs');
+const { guard, closeContext, firstLine, message } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_VACANCY', 5000);
 
@@ -110,7 +123,7 @@ async function steps(page) {
   // 案内文ははじめ畳み、開くまで計算しない
   check((await page.getByTestId('notice-card').getAttribute('open')) === null, '案内文の欄ははじめ畳む');
   check(/来週・種類の指定なし（60分）/.test(await page.getByTestId('notice-line').textContent()), '案内文の要約の行');
-  await page.waitForTimeout(600);
+  await settle(page, 600);
   check((await page.getByTestId('notice-text').count()) === 0, '畳んでいる間は案内文を計算しない');
   await page.getByTestId('notice-toggle').click();
   await page.getByTestId('notice-text').waitFor({ timeout: 10000 });
@@ -124,10 +137,10 @@ async function steps(page) {
   // 古い案内文を出さない（PR #44 のレビュー）：開く → 畳む → 条件を変える → 開き直すと、前の文は出さず計算し直してから押せる
   const oldText = await page.getByTestId('notice-text').textContent();
   await page.getByTestId('notice-toggle').click();
-  await page.waitForTimeout(100);
+  await settle(page, 100);
   check((await page.getByTestId('notice-text').count()) === 0, '畳んだら古い案内文を捨てる');
   await page.getByTestId('vacancy-duration').fill('120');
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   await page.getByTestId('notice-toggle').click();
   const early = await page.evaluate(() => ({
     text: document.querySelector('[data-testid="notice-text"]')?.textContent ?? null,
@@ -192,7 +205,7 @@ async function steps(page) {
 
 async function marks(page) {
   await openVacancy(page);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const legend = await page
     .getByTestId('vacancy-mark-legend')
     .locator('li')
@@ -251,7 +264,7 @@ async function marks(page) {
   const term = page.getByTestId('term-vacancy-count');
   check((await term.count()) === 1 && /受けられる人数/.test(await term.textContent()), '「受けられる人数」の用語');
   await term.hover();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const tip = await page.locator('[role="tooltip"]:visible').first().textContent();
   check(/いちばん少ない週の人数/.test(tip ?? ''), '用語の説明が出る', tip);
   await page.mouse.move(5, 5);
@@ -264,7 +277,7 @@ const plusDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000)
 // ---- 答えのカード・凡例・指定なし・入力の保持・足りない案を作る（PRD D258・D259）----
 async function answer(page) {
   await openVacancy(page);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const card = page.getByTestId('vacancy-answer');
   const text = await card.innerText();
   check(
@@ -306,7 +319,7 @@ async function answer(page) {
   // 入力はタブの間だけ残る（画面を移って戻る・読み直す。新しいタブは既定）
   await page.getByTestId('vacancy-duration').fill('90');
   await page.getByTestId('wish-days').getByRole('button', { name: '木' }).click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   await page.evaluate(() => {
     location.hash = '#/home';
   });
@@ -385,7 +398,7 @@ async function answer(page) {
 
 async function placeLater(page) {
   await openVacancy(page);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const gridBefore = await gridText(page);
   await page.getByTestId('vacancy-place-toggle').click();
   await page.getByTestId('vacancy-place').waitFor();
@@ -410,7 +423,7 @@ async function placeLater(page) {
   check(!(await visible(page.getByTestId('term-vacancy-estimate'))), '場所があれば「目安」の用語は出さない');
   // 畳んでも入力・ピンは残り、要約の行に場所
   await page.getByTestId('vacancy-place-toggle').click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const line = await page.getByTestId('vacancy-place-line').textContent();
   check(/一番町1-1（移動を含めて数えています）/.test(line), '畳むと要約の行に場所', line);
   check(/への移動を含む/.test(await title3(page)), '畳んでも結果は移動を含むまま');
@@ -429,7 +442,7 @@ async function placeLater(page) {
   await page.getByTestId('hold-open').click();
   await page.getByTestId('hold-name').fill('段階 確認さん');
   await page.getByTestId('hold-register').click();
-  await page.waitForTimeout(600);
+  await settle(page, 600);
   const c = await page.evaluate(
     (k) => JSON.parse(localStorage.getItem(k)).clients.find((x) => x.displayName === '段階 確認さん'),
     STORAGE_KEY,
@@ -440,7 +453,7 @@ async function placeLater(page) {
 async function narrow(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await openVacancy(page);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const scrollW = await page.evaluate(() => document.documentElement.scrollWidth);
   check(scrollW <= 390, '390px：ページが横にはみ出さない（表は表の中で巻く）', scrollW);
   const boxes = await page.evaluate(() =>
@@ -463,39 +476,39 @@ async function narrow(page) {
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
-run(async () => {
-  const b = await launch();
-  const errors = [];
-  for (const [name, fn] of [
+let b = null;
+/** 段ごとに新しい文脈を開く（ブラウザの確認・知らせは出さない。PRD D146） */
+const fresh = (name, fn) => async () => {
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  // 初回の案内ツアーを見た扱いにする（PRD D193）
+  await skipTour(ctx);
+  const page = await ctx.newPage();
+  await page.clock.setFixedTime(NOW);
+  watchErrors(page);
+  page.on('dialog', async (d) => {
+    check(false, 'ブラウザの確認を出さない', d.message());
+    await d.dismiss();
+  });
+  await fakeServices(page);
+  await guard(() => fn(page), { label: name, info: (e) => firstLine(message(e)), page: () => page })();
+  await closeContext(ctx);
+};
+// 段の関数に steps があるので、並びは allSteps と呼ぶ
+const allSteps = [
+  [
+    '準備',
+    async () => {
+      b = await launch();
+    },
+  ],
+  ...[
     ['steps', steps],
     ['marks', marks],
     ['answer', answer],
     ['place-later', placeLater],
     ['narrow', narrow],
-  ]) {
-    const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
-    // 初回の案内ツアーを見た扱いにする（PRD D193）
-    await skipTour(ctx);
-    const page = await ctx.newPage();
-    await page.clock.setFixedTime(NOW);
-    page.on('pageerror', (e) => {
-      errors.push(String(e));
-      console.log('ERR', String(e));
-    });
-    // ブラウザの確認・知らせは出さない（PRD D146）
-    page.on('dialog', async (d) => {
-      check(false, 'ブラウザの確認を出さない', d.message());
-      await d.dismiss();
-    });
-    await fakeServices(page);
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e).split('\n')[0]);
-      await failShot(page, name);
-    }
-    await ctx.close();
-  }
-  await b.close();
-  return errors;
-});
+  ].map(([name, fn]) => [name, fresh(name, fn)]),
+];
+
+module.exports = { steps: allSteps };
+if (require.main === module) runSteps(allSteps);

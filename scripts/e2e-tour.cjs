@@ -22,12 +22,28 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, stored, run } = require('./lib/env.cjs');
+const {
+  launch,
+  BASE,
+  OUT_DIR,
+  NOW,
+  TODAY,
+  STORAGE_KEY,
+  check,
+  hashOf,
+  stored,
+  pageErrors,
+  runSteps,
+  settle,
+  until,
+} = require('./lib/env.cjs');
+const { guard } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
 const TOUR_KEY = 'vrdemo:tour:seen';
 
-const errors = [];
+/** ページのエラー（終わりに失敗に数える。env.cjs の pageErrors） */
+const errors = pageErrors;
 const native = [];
 const tour = (page) => page.getByTestId('tour');
 const visible = (loc) => loc.isVisible().catch(() => false);
@@ -108,7 +124,7 @@ async function tourFirst(b) {
   check(inside, 'ツアー：Tab・Shift+Tab は中で回る');
   // 開いている間は Ctrl+K でパレットを開かない
   await page.keyboard.press('Control+k');
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check((await page.getByTestId('cmdk-wrap').count()) === 0, 'ツアー：開いている間は Ctrl+K で探す画面を開かない');
   // 次へ → 戻る
   await page.getByTestId('tour-next').click();
@@ -192,7 +208,7 @@ async function tourFirst(b) {
   );
   // 読み直しても出ない
   await open(page, '/', '[data-testid="home-tasks"]');
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await tour(page).count()) === 0, '読み直しても出ない（見たことを覚えている）');
   await ctx.close();
 }
@@ -222,7 +238,7 @@ async function tourEscSkip(b) {
   {
     const { ctx, page } = await newPage(b, { human: true });
     await open(page, '/clients?id=c1', '.drawer');
-    await page.waitForTimeout(500);
+    await settle(page, 500);
     const st = await page.evaluate(() => ({
       focusInDrawer: !!document.activeElement?.closest('.drawer'),
       inert: document.getElementById('root').inert,
@@ -234,7 +250,7 @@ async function tourEscSkip(b) {
     );
     check((await seenValue(page)) === null, '?id= で出さなくても見たことにはしない');
     await open(page, `/plan?date=${TODAY}&do=absence`, '.drawer');
-    await page.waitForTimeout(500);
+    await settle(page, 500);
     check((await tour(page).count()) === 0, '?do= のリンクで開くとツアーは出ない');
     await open(page, '/', '[data-testid="tour"]');
     check(true, '次にふつうに開くとツアーが出る');
@@ -245,7 +261,7 @@ async function tourEscSkip(b) {
     const { ctx, page } = await newPage(b, { human: true });
     await page.goto(`${BASE}#/month/print?ym=${YM}`);
     await page.locator('.mprint').first().waitFor({ timeout: 30000 });
-    await page.waitForTimeout(400);
+    await settle(page, 400);
     check((await tour(page).count()) === 0, '月の印刷の画面では出ない');
     await ctx.close();
   }
@@ -291,7 +307,7 @@ async function tourAgain(b) {
   // 「見た」の印があれば自動で出ない（ほかの e2e は skipTour で印を入れる）。データの画面から開ける
   const { ctx, page } = await newPage(b, { human: false });
   await open(page, '/', '[data-testid="home-tasks"]');
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check(
     (await tour(page).count()) === 0,
     '「見た」の印があれば自動で出ない（ほかの e2e は scripts/lib/tourSeen.cjs で印を入れる）',
@@ -321,9 +337,9 @@ async function tourAgain(b) {
   await h.page.getByRole('button', { name: 'デモの初期状態に戻す' }).click();
   await h.page.getByTestId('confirm-ok').click();
   await h.page.locator('.toast').filter({ hasText: '初期状態に戻しました' }).waitFor();
-  await h.page.waitForTimeout(600);
+  await settle(h.page, 600);
   await open(h.page, '/', '[data-testid="home-tasks"]');
-  await h.page.waitForTimeout(500);
+  await settle(h.page, 500);
   check((await tour(h.page).count()) === 0, '初期状態に戻して読み直してもツアーは出ない');
   await h.ctx.close();
 }
@@ -438,7 +454,7 @@ async function filePick(b) {
   const title = await page.getByTestId('confirm-title').innerText();
   check(title.includes('「ひかえ.json」'), '選ぶと確認（ファイル名入り）', title);
   await page.getByTestId('confirm-cancel').click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check(
     (await page.getByTestId('backup-file-name').innerText()) === '選んだファイル：ひかえ.json',
     '選んだファイル名を出す',
@@ -478,7 +494,7 @@ async function filePick(b) {
   await page.screenshot({ path: path.join(OUT_DIR, 'data-file-pick.png'), fullPage: true });
   // 390px：横にはみ出さない
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const sw = await page.evaluate(() => document.documentElement.scrollWidth);
   const bb = await page.locator('[data-testid="backup-file"] label.file-pick-btn').boundingBox();
   check(sw <= 390 && bb.x >= 0 && bb.x + bb.width <= 390, '390px：ファイル選択が収まる', { sw, bb });
@@ -522,21 +538,25 @@ async function monthList(b) {
     };
   };
   const today = rows.filter({ has: page.locator('.month-today') });
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const v1 = await inView(today);
   check(v1.ok, '390px：開くと今日の行が画面に入る（上の帯・下のタブに隠れない）', v1);
   // 「今日へ」：上へ巻いてから押すと、今日の行へ巻いてフォーカス
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   await page.getByTestId('month-list-today').click();
-  await page.waitForTimeout(800);
+  // 巻く動き（smooth）は DOM を変えないので、今日の行が画面に入るまで待つ
+  await until(async () => (await inView(today)).ok, 5000);
   const v2 = await inView(today);
   const focused = await today.evaluate((el) => document.activeElement === el);
   check(v2.ok && focused, '「今日へ」で今日の行へ巻いてフォーカス', { ...v2, focused });
   // 切り替えは操作の欄（月の見出しのカード）より上
-  const lb = await page.getByTestId('month-layout').boundingBox();
-  const hb = await page.locator('.month-head').boundingBox();
-  check(lb.y < hb.y, '切り替えは操作の欄より上', { layout: lb.y, head: hb.y });
+  // 2つの位置は同じ瞬間に測る（巻く動きの途中に別々に測ると、間に巻いた分だけずれる）
+  const pos = await page.evaluate(() => ({
+    layout: document.querySelector('[data-testid="month-layout"]').getBoundingClientRect().y,
+    head: document.querySelector('.month-head').getBoundingClientRect().y,
+  }));
+  check(pos.layout < pos.head, '切り替えは操作の欄より上', pos);
   // 行の読み上げ：日付・件数・状態
   const label = await today.getAttribute('aria-label');
   check(
@@ -590,13 +610,13 @@ async function monthList(b) {
   const offDate = await openRow.getAttribute('data-date');
   await openRow.click();
   const row = page.locator(`[data-testid="month-list-day"][data-date="${offDate}"]`);
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check(
     (await row.getAttribute('data-off')) === 'requested' && (await row.getAttribute('aria-pressed')) === 'true',
     '「休みを入れる」：行を押すと希望休（マスと同じ動き）',
   );
   await row.click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check((await row.getAttribute('data-off')) === 'open', '「休みを入れる」：もう一度押すと外す');
   check(/#\/month/.test(hashOf(page)), '「休みを入れる」の間は日の予定へ移らない');
   // 広い画面：はじめカレンダー、?layout=list で一覧
@@ -663,7 +683,7 @@ async function writeData(page, fn, arg) {
 async function dataProtect(b) {
   const { ctx, page } = await newPage(b, { human: false });
   await open(page, '/data', '[data-testid="tour-again"]');
-  await page.waitForTimeout(600);
+  await settle(page, 600);
   // 控えはまだ無い・最後に書き出した日もまだ
   check((await page.getByTestId('data-prev-card').count()) === 0, '控えが無いうちは「直前の状態に戻す」を出さない');
   check(
@@ -673,7 +693,7 @@ async function dataProtect(b) {
   // いまのデータに印（乱数の種）を付けてから、初期状態に戻す
   await writeData(page, (d) => ({ ...d, seed: 424242 }));
   await page.getByTestId('tour-again').waitFor();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   await page.getByRole('button', { name: 'デモの初期状態に戻す' }).click();
   await page.getByTestId('confirm-dialog').waitFor();
   const body = await page.getByTestId('confirm-body').innerText();
@@ -684,13 +704,13 @@ async function dataProtect(b) {
   );
   // 取り消すと控えは前の世代のまま（無い）
   await page.getByTestId('confirm-cancel').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check((await page.getByTestId('data-prev-card').count()) === 0, '取り消すと控えは残らない（前の世代に戻す）');
   check((await stored(page)).seed === 424242, '取り消すとデータはそのまま');
   await page.getByRole('button', { name: 'デモの初期状態に戻す' }).click();
   await page.getByTestId('confirm-ok').click();
   await page.locator('.toast').filter({ hasText: '初期状態に戻しました' }).waitFor();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await stored(page)).seed !== 424242, '初期状態に戻した（印が消えた）');
   const prevText = await page.getByTestId('data-prev-text').innerText();
   check(
@@ -704,7 +724,7 @@ async function dataProtect(b) {
   check(/前の状態に戻せます/.test(await page.getByTestId('confirm-body').innerText()), '直前の状態に戻す：確認つき');
   await page.getByTestId('confirm-ok').click();
   await page.locator('.toast').filter({ hasText: '直前の状態に戻しました' }).waitFor();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await stored(page)).seed === 424242, '直前の状態に戻すと、初期状態に戻す前のデータになる');
   check(
     /『直前の状態に戻す』の前の状態に戻せます/.test(await page.getByTestId('data-prev-text').innerText()),
@@ -715,7 +735,7 @@ async function dataProtect(b) {
   await page.getByRole('button', { name: 'ファイルに書き出す' }).click();
   const file = await dl;
   check(/\.json$/.test(file.suggestedFilename()), '控えを書き出す（download）', file.suggestedFilename());
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const last = await page.getByTestId('data-last-export').innerText();
   const md = `${Number(TODAY.slice(5, 7))}/${Number(TODAY.slice(8, 10))}`;
   check(last.includes(`${md}（今日）`), '書き出すと最後に書き出した日が今日', last);
@@ -742,7 +762,7 @@ async function dataProtect(b) {
     { old1, old2, recent, r1: fakeRun(old1, 1), r2: fakeRun(old1, 2), r3: fakeRun(old2, 1), r4: fakeRun(recent, 1) },
   );
   await page.getByTestId('data-tidy-card').waitFor();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const sel = await page.getByTestId('data-tidy-month').inputValue();
   check(sel === monthsAgo(3, 1).slice(0, 7), '片づけ：既定は3か月前の月', sel);
   const pv = await page.getByTestId('data-tidy-preview').innerText();
@@ -752,7 +772,7 @@ async function dataProtect(b) {
   check(/記録 3件を消します/.test(await page.getByTestId('confirm-body').innerText()), '片づけ：確認つき');
   await page.getByTestId('confirm-ok').click();
   await page.locator('.toast').filter({ hasText: 'AI案と記録を消しました' }).waitFor();
-  await page.waitForTimeout(600);
+  await settle(page, 600);
   const after = await stored(page);
   check(!after.aiRuns[old1] && !after.aiRuns[old2], '片づけ：選んだ月より前の記録が消える', Object.keys(after.aiRuns));
   check(after.aiRuns[recent]?.length === 1, '片づけ：新しい記録は残る');
@@ -806,13 +826,13 @@ async function brokenData(b) {
   check(text === '{こわれた', '「読めなかったデータを書き出す」は元の文字のまま', text);
   await page.screenshot({ path: path.join(OUT_DIR, 'data-broken.png') });
   await page.getByTestId('data-broken-close').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check((await notice.count()) === 0, '閉じると消える');
   check(await page.evaluate(() => document.activeElement?.tagName === 'H1'), '閉じるとフォーカスは画面の見出し');
   // 退避できたので初期データを書いた：読み直しても知らせは出ない（1回だけ）。元の文字は退避先に残る
   await page.reload();
   await page.locator('h1').waitFor();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await notice.count()) === 0, '退避して初期データを書いたので、読み直すと知らせは出ない（1回だけ）');
   check(
     (await page.evaluate(() => localStorage.getItem('vrdemo:data:broken'))) === '{こわれた',
@@ -844,7 +864,7 @@ async function backupRemind(b) {
   check(true, '控えの知らせ：確定した日があり2週間以上書き出していなければトースト');
   await page.reload();
   await page.locator('h1').waitFor();
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   check(
     (await page.locator('.toast').filter({ hasText: '控え（バックアップ）' }).count()) === 0,
     '控えの知らせ：1日1回まで',
@@ -852,9 +872,15 @@ async function backupRemind(b) {
   await ctx.close();
 }
 
-run(async () => {
-  const b = await launch();
-  for (const [name, fn] of [
+let b = null;
+const steps = [
+  [
+    '準備',
+    async () => {
+      b = await launch();
+    },
+  ],
+  ...[
     ['tour-first', tourFirst],
     ['tour-esc-skip', tourEscSkip],
     ['tour-today', tourToday],
@@ -865,14 +891,9 @@ run(async () => {
     ['data-protect', dataProtect],
     ['broken-data', brokenData],
     ['backup-remind', backupRemind],
-  ]) {
-    try {
-      await fn(b);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-    }
-  }
-  check(native.length === 0, 'ブラウザのダイアログを出さない', native);
-  await b.close();
-  return errors;
-});
+  ].map(([name, fn]) => [name, guard(() => fn(b), { label: name })]),
+  ['後始末', () => check(native.length === 0, 'ブラウザのダイアログを出さない', native)],
+];
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

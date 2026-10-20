@@ -11,7 +11,8 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, check, settle, stored, failShot, run } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, check, settle, stored, runSteps } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 const dialog = (page) => page.getByTestId('confirm-dialog');
 /** いまフォーカスのある要素の data-testid・読み上げ名 */
@@ -130,7 +131,8 @@ async function rules(page) {
   );
   // ボタンのダブルクリック：2回目が背景に当たっても取り消しにしない（開いてすぐ・連続のクリックは無視）
   await btn.dblclick();
-  await settle(page, 400);
+  // 「開いてすぐのクリックは無視」の時間を過ぎるまで待つ（時間そのものを見るので固定の待ち。ADR-0041）
+  await page.waitForTimeout(400);
   check((await dialog(page).count()) === 1, '条件を消す：ダブルクリックでも確認が残る');
   // 背景を押す（開いてから少したったクリック）
   await page.mouse.click(8, 8);
@@ -279,10 +281,9 @@ async function narrow(page) {
   check((await dialog(page).count()) === 0, '390px：取り消すで閉じる');
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  for (const step of [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow]) {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
@@ -299,15 +300,13 @@ run(async () => {
       native.push(`${d.type()}: ${d.message()}`);
       d.dismiss().catch(() => {});
     });
-    try {
-      await step(page);
-    } catch (e) {
-      check(false, `${step.name}：途中で止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, native);
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーが無い', errors);
-  await browser.close();
+    return { ctx, page, native };
+  },
+  steps: [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow],
+  label: (name) => `${name}：途中で止まった`,
+  after: (name, { native }) => check(native.length === 0, `${name}：ブラウザのダイアログを出さない`, native),
+  end: () => check(errors.length === 0, 'ページのエラーが無い', errors),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

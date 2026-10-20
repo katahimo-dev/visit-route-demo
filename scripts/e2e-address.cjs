@@ -17,7 +17,8 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, check, stored, failShot, run } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, check, stored, runSteps, settle } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 const ZIP_ONE = {
   status: 200,
@@ -130,7 +131,7 @@ async function basics(page, fake) {
   const before = await page.getByTestId('client-address').inputValue();
   await page.getByTestId('client-postal').fill('  ９８０ －　０８１１  ');
   await page.getByTestId('client-address').fill(`${before}`);
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check(fake.calls.length === 0, '開いただけ・打っただけでは送らない', fake.calls);
   // 押せない理由は読み上げでも聞こえる
   await page.getByTestId('client-postal').fill('980-08');
@@ -141,7 +142,7 @@ async function basics(page, fake) {
   );
   // aria-disabled のボタンも押せる（押しても送らない）
   await page.getByTestId('client-postal-search').click({ force: true });
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check(fake.calls.length === 0, '7桁でなければ送らない');
   // 2 正規化（空白の多い貼り付け）
   await page.getByTestId('client-postal').fill('  ９８０ －　０８１１  ');
@@ -183,7 +184,7 @@ async function basics(page, fake) {
   check(/38\.27000/.test(await pinText(page, 'client')), 'ピンは消さずに残す');
   // 9 保存で postalCode が入る
   await page.getByRole('button', { name: '保存' }).click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const c1 = (await stored(page)).clients.find((c) => c.id === 'c1');
   check(
     c1.place.postalCode === '9800811' && c1.place.address === '宮城県仙台市青葉区一番町' && c1.place.lat === 38.27,
@@ -243,6 +244,8 @@ async function openVacancyPlace(page) {
 
 /** 5・6：連打・閉じる・途中で書き換え */
 async function races(page, fake) {
+  // この段の固定の待ち（waitForTimeout）は、偽の検索サービスの遅れ（fake.*.delay。Node の側で遅らせる）を待つもの。
+  // ページのタイマーにも DOM にも出ない「古い応答が来ても書かない」を見るので、遅れより長く待つ（ADR-0041）
   await page.goto(`${BASE}#/vacancy`);
   await openVacancyPlace(page);
   const status = page.getByTestId('vacancy-status');
@@ -308,7 +311,7 @@ async function races(page, fake) {
 async function vacancy(page) {
   await page.goto(`${BASE}#/vacancy`);
   await openVacancyPlace(page);
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   // 「計算しています…」が出たら記録する
   await page.evaluate(() => {
     window.__calc = 0;
@@ -325,7 +328,7 @@ async function vacancy(page) {
     '空き状況：注記',
   );
   await page.getByTestId('vacancy-postal').fill('980-0811');
-  await page.waitForTimeout(700);
+  await settle(page, 700);
   check((await calcs()) === 0, '郵便番号を打っても計算し直さない');
   await page.getByTestId('vacancy-postal-search').click();
   await untilValue(page.getByTestId('vacancy-address'), (v) => v === '宮城県仙台市青葉区一番町');
@@ -334,7 +337,7 @@ async function vacancy(page) {
   const gridBefore = await page.getByTestId('vacancy-grid').textContent();
   await page.getByTestId('vacancy-geo-search').click();
   await until(page.getByTestId('vacancy-place').getByTestId('place-pin-text'), /38\.26010/);
-  await page.waitForTimeout(1200);
+  await settle(page, 1200);
   const t1 = await title();
   check(/宮城県仙台市青葉区一番町1-1への移動を含む/.test(t1), 'ピンで見出しが「移動を含む」に切り替わる', t1);
   check(
@@ -345,7 +348,7 @@ async function vacancy(page) {
   // ピンがあるとき住所を打っても計算し直さない。見出しはピンを置いたときの住所のまま
   const n = await calcs();
   await page.getByTestId('vacancy-address').fill('宮城県仙台市青葉区一番町1-1 ビル');
-  await page.waitForTimeout(700);
+  await settle(page, 700);
   check((await calcs()) === n, 'ピンがあるとき住所を打っても計算し直さない');
   check(/一番町1-1への移動を含む/.test(await title()), '見出しはピンを置いたときの住所');
   // 郵便番号から住所を差し替えてもピンは残り、知らせを出す
@@ -362,7 +365,7 @@ async function vacancy(page) {
   await page.getByTestId('hold-open').click();
   await page.getByTestId('hold-name').fill('問い合わせ 確認さん');
   await page.getByTestId('hold-register').click();
-  await page.waitForTimeout(600);
+  await settle(page, 600);
   const c = (await stored(page)).clients.find((x) => x.displayName === '問い合わせ 確認さん');
   check(
     c && c.place.postalCode === '9800811' && c.place.lat === 38.2601,
@@ -376,7 +379,7 @@ async function vacancy(page) {
 async function holdNote(page) {
   await page.goto(`${BASE}#/vacancy`);
   await openVacancyPlace(page);
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   await page.getByTestId('hold-open').click();
   check(
     /場所が空なので、住所・位置はあとで/.test(await page.locator('.side-panel, [role="dialog"]').last().textContent()),
@@ -402,7 +405,7 @@ async function staffHome(page) {
   await page.getByTestId('staff-home-postal-search').click();
   await untilValue(page.getByTestId('staff-home-address'), (v) => v.startsWith('宮城県仙台市青葉区一番町'));
   await page.getByRole('button', { name: '保存' }).click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   const s1 = (await stored(page)).staff.find((s) => s.id === 's1');
   check(
     s1.home.address.startsWith('宮城県仙台市青葉区一番町') && !('postalCode' in s1.home),
@@ -425,10 +428,9 @@ async function staffHome(page) {
   check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：開き直すと郵便番号は空');
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  for (const step of [basics, failures, races, vacancy, holdNote, staffHome]) {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
@@ -438,14 +440,13 @@ run(async () => {
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
     const dlg = await answerConfirms(page);
-    const fake = await fakeServices(page);
-    try {
-      await step(page, fake);
-    } catch (e) {
-      check(false, `${step.name} が止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
+    return { ctx, page, dlg, fake: await fakeServices(page) };
+  },
+  call: (fn, s) => fn(s.page, s.fake),
+  steps: [basics, failures, races, vacancy, holdNote, staffHome],
+  label: (name) => `${name} が止まった`,
+  after: (name, { dlg, fake }) => {
+    check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native);
     // 送り先は2つのサービスだけ
     check(
       fake.calls.every(
@@ -453,10 +454,11 @@ run(async () => {
           u.startsWith('https://zipcloud.ibsnet.co.jp/api/search?zipcode=') ||
           u.startsWith('https://msearch.gsi.go.jp/address-search/AddressSearch?q='),
       ),
-      `${step.name}：送り先は郵便番号検索・国土地理院だけ`,
+      `${name}：送り先は郵便番号検索・国土地理院だけ`,
     );
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーなし', errors.join(' / '));
-  await browser.close();
+  },
+  end: () => check(errors.length === 0, 'ページのエラーなし', errors.join(' / ')),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

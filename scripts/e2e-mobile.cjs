@@ -15,7 +15,8 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, check, isFocused, failShot, run } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, STORAGE_KEY, check, isFocused, runSteps, settle } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const drawer = (page) => page.getByTestId('nav-drawer');
 const menuBtn = (page) => page.getByTestId('menu-btn');
@@ -31,7 +32,7 @@ async function open(page, hash, ready) {
   await page.goto('about:blank');
   await page.goto(`${BASE}#${hash}`);
   await page.locator(ready).first().waitFor({ timeout: 30000 });
-  await page.waitForTimeout(400);
+  await settle(page, 400);
 }
 
 async function header(page) {
@@ -104,7 +105,7 @@ async function drawerOpenClose(page) {
   check(n >= 16 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y), '引き出し：全部のメニューを縦に並べる', {
     n,
   });
-  await page.waitForTimeout(400); // 出てくる動きが終わるまで
+  await settle(page, 400); // 出てくる動きが終わるまで
   const db = await d.boundingBox();
   check(db.x === 0 && db.width < 390, '引き出し：左から出る', db);
   const current = d.locator('[aria-current="page"]');
@@ -118,7 +119,7 @@ async function drawerOpenClose(page) {
   const y0 = await page.evaluate(() => window.scrollY);
   await page.mouse.move(380, 600);
   await page.mouse.wheel(0, 600);
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const y1 = await page.evaluate(() => window.scrollY);
   check(
     y1 === y0 && (await page.evaluate(() => getComputedStyle(document.body).overflow)) === 'hidden',
@@ -195,7 +196,7 @@ async function bottom(page) {
   // 今の画面のタブは何もしない（URL のクエリを消さない）
   await open(page, '/week?view=table', '[data-testid="bottom-tabs"]');
   await t.getByTestId('bottom-tab').filter({ hasText: '週' }).click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check(
     page.url().includes('view=table') && JSON.stringify(await active()) === '["週"]',
     '下のタブ：今の画面のタブは何もしない',
@@ -203,7 +204,7 @@ async function bottom(page) {
   );
   await t.getByTestId('bottom-tab').filter({ hasText: '空き状況' }).click();
   await page.waitForURL(/#\/vacancy/);
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check(JSON.stringify(await active()) === '["空き状況"]', '下のタブ：押すと移る（空き状況）', await active());
   await open(page, '/compare', '[data-testid="bottom-tabs"]');
   check(JSON.stringify(await active()) === '["今日"]', '下のタブ：比較では「今日」');
@@ -212,7 +213,7 @@ async function bottom(page) {
   // 本文の最後がタブに隠れない（いちばん下まで巻いて、本文の下の端がタブより上）
   await open(page, '/data', '[data-testid="bottom-tabs"]');
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const lastBottom = await page.evaluate(() => {
     const els = [...document.querySelectorAll('.app-main > *')];
     return Math.max(...els.map((el) => el.getBoundingClientRect().bottom));
@@ -271,7 +272,7 @@ async function floating(page) {
     const top = card.getBoundingClientRect().top + window.scrollY;
     window.scrollTo(0, Math.max(0, top - window.innerHeight - 40));
   });
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   const fabReal = page.locator('.map-dock-fab');
   await fabReal.waitFor({ timeout: 20000 });
   const fb = await fabReal.boundingBox();
@@ -280,7 +281,7 @@ async function floating(page) {
   await fabReal.click();
   const dockReal = page.locator('section.map-dock');
   await dockReal.waitFor();
-  await page.waitForTimeout(400); // 出てくる動きが終わるまで
+  await settle(page, 400); // 出てくる動きが終わるまで
   const rb = await dockReal.boundingBox();
   check(!overlaps(rb, tb) && rb.y >= 0, '本物の開いた地図（MapDock）が下のタブに重ならない', rb);
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-mapdock.png') });
@@ -298,7 +299,7 @@ async function fabWithToast(page) {
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
   const fab = page.locator('.map-dock-fab');
   await fab.waitFor({ timeout: 20000 });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const fb = await fab.boundingBox();
   check(
     fb.y + fb.height <= tb.y - 8 && fb.x + fb.width <= 390 && fb.y >= 0,
@@ -338,7 +339,7 @@ async function fabWithToast(page) {
   await page.getByTestId('confirm-ok').click();
   const toast = page.locator('.toast');
   await toast.waitFor({ timeout: 10000 });
-  await page.waitForTimeout(400); // 出てくる動きが終わるまで
+  await settle(page, 400); // 出てくる動きが終わるまで
   const tt = await toast.boundingBox();
   const fb2 = await fab.boundingBox();
   check(
@@ -500,7 +501,7 @@ async function narrowClientFilter(page) {
   );
   // チップを1つ押すと数が 1 になる
   await cf.locator('button[aria-pressed="false"]:not([disabled])').first().click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const t1 = await btn.innerText();
   check(
     (await btn.getAttribute('aria-expanded')) === 'true' && ctlOk && /^絞り込み（1）/.test(t1.trim()),
@@ -542,7 +543,7 @@ async function narrowCompare(page) {
 /** 週（PRD D222）：?view= なしは〈スタッフ〉×曜日の表で URL に書かず、今日の列が見える。時間軸を押すと ?view=timeline */
 async function narrowWeek(page) {
   await open(page, '/week', '[data-testid="week-table"]');
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const today = page.locator('[data-testid="week-table"] thead th.is-today');
   const tb = await today.boundingBox();
   const vb = await viewBand(page);
@@ -619,7 +620,7 @@ async function narrowWeek(page) {
       localStorage.setItem(k, JSON.stringify(d));
     }, STORAGE_KEY);
     await open(p2, '/week', '[data-testid="week-table"]');
-    await p2.waitForTimeout(300);
+    await settle(p2, 300);
     const empty = await p2.getByTestId('week-empty').boundingBox();
     const vb2 = await viewBand(p2);
     const y = await p2.evaluate(() => window.scrollY);
@@ -639,7 +640,7 @@ async function narrowWeek(page) {
 /** 空き状況（PRD D221）：表ははじめ 9:00 の列から（曜日の列のすぐ右）。右に続きがある印は端まで巻くと消える */
 async function narrowVacancy(page) {
   await open(page, '/vacancy', '[data-testid="vacancy-grid"]');
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const st = await page.getByTestId('vacancy-grid').evaluate((t) => {
     const box = t.parentElement;
     const corner = t.querySelector('thead th.vacancy-corner').getBoundingClientRect();
@@ -661,7 +662,7 @@ async function narrowVacancy(page) {
   await page.getByTestId('vacancy-grid').evaluate((t) => {
     t.parentElement.scrollLeft = t.parentElement.scrollWidth;
   });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const more = await page
     .getByTestId('vacancy-grid')
     .evaluate((t) => t.parentElement.parentElement.classList.contains('has-more-right'));
@@ -694,7 +695,7 @@ async function print(page) {
   await menuBtn(page).click();
   await drawer(page).waitFor();
   await page.emulateMedia({ media: 'print' });
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const shown = await page.evaluate(() =>
     ['.app-header', '.bottom-tabs', '.nav-drawer-wrap'].map((s) => {
       const el = document.querySelector(s);
@@ -733,19 +734,9 @@ async function wide(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-wide.png') });
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: false });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: () => openPage({ viewport: { width: 390, height: 844 }, context: { hasTouch: false } }),
+  steps: [
     ['header', header],
     ['drawer', drawerOpenClose],
     ['bottom', bottom],
@@ -762,14 +753,8 @@ run(async () => {
     ['narrow-wide', narrowWide],
     ['print', print],
     ['wide', wide],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  await b.close();
-  return errors;
+  ],
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);
