@@ -48,10 +48,7 @@ import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
-import type { DemoData } from '../contracts/data';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
-import type { Problem } from '../contracts/problem';
-import type { Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { jstDate, minutesToHhmm, weekday } from '../domain/time';
@@ -73,7 +70,6 @@ import { clientDot } from '../lib/glance';
 import { attentionTarget, type LinkTarget } from '../lib/links';
 import {
   addMonths,
-  applyDayRun,
   attentionList,
   type BatchMode,
   batchTargets,
@@ -99,6 +95,7 @@ import {
   type TypeCount,
   ymOf,
 } from '../lib/month';
+import { monthBatch } from '../lib/monthBatch';
 import { cellGuide, createTipStore, type TipStore } from '../lib/monthGuide';
 import {
   DAY_STATE_TEXT,
@@ -121,14 +118,12 @@ import {
   requestedOffDates,
   toggleRequestedOff,
 } from '../lib/requestedOff';
-import { planOfRun, problemKey, reusableRun } from '../lib/runs';
 import { staffClientMap } from '../lib/search';
 import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
-import { compile, withManualPrefs } from '../matching';
-import { scorePresetOf, scoreRulesOf } from '../seed';
-import { defaultIterations, runSolve } from '../solver';
+import { useValueStore } from '../lib/valueStore';
+import { scorePresetOf } from '../seed';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
 import './settings.css';
@@ -139,20 +134,9 @@ import { ClientLeavesSection } from './ClientLeavesSection';
  * 日のマスは点数を出さず、状態を背景・枠と印で（凡例あり。読み上げには状態の文字）、種類の積み上げバー・休み欠勤の印・
  * 始まる▶終わる■の印・混み具合バー（vacancy の dayLoad）。「表示」で〈スタッフ〉か〈利用者さん〉を1人選ぶと、日のマスと
  * 右の欄がその人のものになる（?staff= ?client=）。選ばないときの右の欄は要対応。押すとその日の予定の画面へ。
- * 月まとめ作成は、基準のプリセットの重みで1日ずつ Worker で解き、その日の今の案と記録を1回の update で書く
+ * 月まとめ作成は、基準のプリセットの重みで1日ずつ Worker で解き、その日の今の案と記録を1回の update で書く。
+ * 計算は画面の外（lib/monthBatch。ADR-0042）で回し、画面は始める・止める・進み具合を見るだけ（ほかの画面へ移っても続く。PRD D256）
  */
-
-/** 月まとめ作成の進み具合 */
-type Batch = {
-  mode: BatchMode;
-  targets: string[];
-  /** いま作っている日の番号（0から） */
-  index: number;
-  /** 作れた日数 */
-  made: number;
-  iteration: number;
-  total: number;
-};
 
 /** 1日あたりの見込み（秒）。design.md：1日 約3〜5秒 */
 const SEC_MIN = 3;
@@ -220,7 +204,10 @@ export default function MonthPage() {
   /** マスの読み方の文の置き場（日付 → 文。PRD D177） */
   const tipStore = useMemo(() => createTipStore(), []);
   const [mode, setMode] = useState<BatchMode>('empty');
-  const [batch, setBatch] = useState<Batch | null>(null);
+  /** 月まとめ作成の進み具合（画面の外の計算。作っていなければ null。PRD D256） */
+  const batch = useValueStore(monthBatch.run);
+  /** 最後に終わった月まとめ作成（計算できずに止まった理由を出す） */
+  const batchDone = useValueStore(monthBatch.done);
   const [error, setError] = useState<string | null>(null);
   /** 混み具合で数える人（null＝すべての人。種類の ID） */
   const [loadType, setLoadType] = useState<string | null>(null);
@@ -230,25 +217,15 @@ export default function MonthPage() {
   const [offNote, setOffNote] = useState<{ date: string; text: string; warn: boolean } | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
-  const runRef = useRef<{ stop(): void } | null>(null);
-  const stopped = useRef(false);
-  /** 計算の世代。画面を離れると進め、前の世代の結果は捨てる */
-  const generation = useRef(0);
-  /** 作れた日数（画面を離れたときの知らせ） */
-  const madeRef = useRef(0);
-  const runningRef = useRef(false);
-
-  // 画面を離れたら止める（作れた日は残る。いま作っている日は捨てる）
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 画面を離れたときだけ
+  /** 作っているか（確認のあとなど、描く前にも今の値を見る） */
+  const runningNow = () => monthBatch.running();
+  // この画面を開いている間に計算できずに止まったら、理由を出す（ほかの画面で止まったときは知らせ（トースト）だけ）
+  const seenDone = useRef(batchDone);
   useEffect(() => {
-    return () => {
-      generation.current++;
-      runRef.current?.stop();
-      runRef.current = null;
-      if (runningRef.current) toast(`${madeRef.current}日分で止めました`);
-      runningRef.current = false;
-    };
-  }, []);
+    if (batchDone === seenDone.current) return;
+    seenDone.current = batchDone;
+    if (batchDone?.error) setError(batchDone.error);
+  }, [batchDone]);
 
   // ---- 選んでいる日付との同期（PRD D59）----
   // URL の ?ym= で開いた月が選んでいる日付の月と違えば、選んでいる日付をその月に合わせる（その月の1日、今月なら今日）
@@ -538,7 +515,7 @@ export default function MonthPage() {
    * 開かないとき：作っている間・この月に訪問が無い・作っていない訪問も、まだ案の無い日も、確定していない日も無い（知らせを出す）
    */
   const openBatch = () => {
-    if (runningRef.current) return;
+    if (runningNow()) return;
     if (noVisitsWhy) {
       toast(noVisitsWhy);
       return;
@@ -569,7 +546,7 @@ export default function MonthPage() {
    * 作っている間は何もしない。対象が0日なら欄を開かず、知らせて要対応を出す
    */
   const openStale = () => {
-    if (runningRef.current) return;
+    if (runningNow()) return;
     if (staleTargets.length === 0) {
       toast('作り直す日がありません（確定した日・今日より前の日は作り直しません）');
       showAside('attention');
@@ -626,13 +603,13 @@ export default function MonthPage() {
    * （lib/confirmDay）。問題は日の状態を数えたときのもの（計算に入れる訪問は条件の重みに依らない）。作っている間は押せない
    */
   const confirmBulk = async () => {
-    if (runningRef.current || bulk.targets.length === 0) return;
+    if (runningNow() || bulk.targets.length === 0) return;
     const targets = bulk.targets;
     const ok = await confirmDialog({
       ...bulkConfirmDialog(bulk, terms.staff),
       confirmLabel: `${targets.length}日を確定する`,
     });
-    if (!ok || runningRef.current) return;
+    if (!ok || runningNow()) return;
     // 確認のあいだに案が消えた日（別のタブ）は飛ばす
     const ready = targets.flatMap((date) => {
       const p = perDay.get(date)?.problem;
@@ -648,7 +625,7 @@ export default function MonthPage() {
   // ---- 月まとめ作成（③）----
   /** 対象の日を1日ずつ作る。expand は先に定期パターンから訪問を作るか（①） */
   const start = async (m: BatchMode, expand: boolean) => {
-    if (runningRef.current) return;
+    if (runningNow()) return;
     setError(null);
     const first = expand ? expandMonth(dataRef.current, ym, today).data : dataRef.current;
     const targets = batchTargets(first, ym, today, m, staleOf);
@@ -672,125 +649,24 @@ export default function MonthPage() {
       )
         return;
       // 確認のあいだに別の作成が始まっていたら何もしない
-      if (runningRef.current) return;
+      if (runningNow()) return;
     }
-    if (expand) update((d) => expandMonth(d, ym, today).data);
     setPanel(false);
     // 作っている間は希望休を入れない（Worker の計算とデータの書き込みを混ぜない）
     setOffMode(false);
-    const gen = generation.current;
-    const live = () => gen === generation.current;
-    stopped.current = false;
-    madeRef.current = 0;
-    runningRef.current = true;
-    let unassignedDays = 0;
-    setBatch({ mode: m, targets, index: 0, made: 0, iteration: 0, total: 1 });
-
-    const finish = (why?: string) => {
-      runningRef.current = false;
-      runRef.current = null;
-      setBatch(null);
-      const made = madeRef.current;
-      if (why) setError(why);
-      if (stopped.current) toast(`${made}日分で止めました`);
-      else toast(`${made}日分の案を作りました（入らない訪問がある日 ${unassignedDays}日）`);
-    };
-
-    const step = (i: number) => {
-      if (!live()) return;
-      if (i >= targets.length || stopped.current) {
-        finish();
-        return;
-      }
-      const day = targets[i]!;
-      // いちばん新しいデータで（作っている間の編集も入れる）。展開は同じ結果になるので、まだ描画されていなくても同じ訪問になる
-      const latest = expand ? expandMonth(dataRef.current, ym, today).data : dataRef.current;
-      setBatch((b) => (b ? { ...b, index: i, iteration: 0, total: 1 } : b));
-      // 作っている間に確定した・（まだ案の無い日だけで）案ができた日は飛ばす
-      if (own(latest.manualPlans, day) || (m === 'empty' && own(latest.aiPlans, day))) {
-        step(i + 1);
-        return;
-      }
-      // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
-      const rules = scoreRulesOf(latest);
-      const base = attempt(() => compile({ ...latest, rules }, day)).value;
-      if (!base || base.visits.length === 0 || base.staff.length === 0) {
-        step(i + 1);
-        return;
-      }
-      // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
-      const { problem: p, applied: prefPins } = withManualPrefs(base, latest);
-      const key = problemKey(p);
-      // 同じ条件・いまのデータで作った記録があれば計算しない（lib/runs の reusableRun）
-      const saved = attempt(() => reusableRun(own(latest.aiRuns, day) ?? [], p, rules, latest.seed, key)).value;
-      if (saved) {
-        update((d) => {
-          if ((m === 'empty' && own(d.aiPlans, day)) || own(d.manualPlans, day)) return d;
-          return { ...d, aiPlans: { ...d.aiPlans, [day]: planOfRun(saved) } };
-        });
-        madeRef.current++;
-        if (saved.unassigned.length > 0) unassignedDays++;
-        setBatch((b) => (b ? { ...b, made: madeRef.current } : b));
-        // 描画を挟んでから次へ
-        setTimeout(() => step(i + 1), 0);
-        return;
-      }
-      solveDay(p, latest, rules, key, day, m, i, prefPins);
-    };
-
-    const solveDay = (
-      p: Problem,
-      latest: DemoData,
-      rules: Rule[],
-      key: string,
-      day: string,
-      m2: BatchMode,
-      i: number,
-      prefPins: Record<string, string>,
-    ) => {
-      const started = attempt(() =>
-        runSolve(p, { seed: latest.seed, iterations: defaultIterations(p) }, (x) => {
-          if (!live()) return;
-          setBatch((b) => (b ? { ...b, iteration: x.iteration, total: x.total } : b));
-        }),
-      );
-      if (!started.value) {
-        finish(started.error ?? 'AI案を作れませんでした');
-        return;
-      }
-      runRef.current = started.value;
-      started.value.promise
-        .then((result) => {
-          if (!live()) return;
-          update((d) =>
-            applyDayRun(d, day, {
-              rules,
-              result,
-              createdAt: Date.now(),
-              inputKey: key,
-              onlyEmpty: m2 === 'empty',
-              prefPins,
-            }),
-          );
-          madeRef.current++;
-          if (result.unassigned.length > 0) unassignedDays++;
-          setBatch((b) => (b ? { ...b, made: madeRef.current } : b));
-          runRef.current = null;
-          step(i + 1);
-        })
-        .catch((e) => {
-          if (!live()) return;
-          finish(e instanceof Error ? e.message : 'AI案を作れませんでした');
-        });
-    };
-
-    step(0);
+    // 計算は画面の外で続ける（ほかの画面へ移っても止めない。PRD D256。ADR-0042）。二重には始めない
+    monthBatch.start({
+      ym,
+      label: `${monthNo}月`,
+      mode: m,
+      days: targets.map((date) => ({ date, mode: m })),
+      expandYm: expand ? ym : null,
+      today,
+      source: 'month',
+    });
   };
 
-  const stop = () => {
-    stopped.current = true;
-    runRef.current?.stop();
-  };
+  const stop = () => monthBatch.stop();
 
   /** 月を送る：選んでいる日付もその月の1日（今月なら今日）にする（PRD D59） */
   const goMonth = (next: string) => {
@@ -815,7 +691,9 @@ export default function MonthPage() {
     navigate(t.to);
   };
 
-  const current = batch ? batch.targets[batch.index] : undefined;
+  /** いま作っている日（表示している月の日だけ印を付ける。2か月にまたがる作成では2か月目の日も） */
+  const making = batch ? batch.targets[batch.index] : undefined;
+  const current = making && ymOf(making) === ym ? making : undefined;
   /**
    * 日ごとの一覧の行（PRD D189。一覧のときだけ作る）。表示の選択（〈スタッフ〉・〈利用者さん〉）と「休みを入れる」の補足は行の下に出す
    */
@@ -927,31 +805,19 @@ export default function MonthPage() {
 
       <div className="card stack month-head">
         <div className="row month-nav">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="前の月"
-            disabled={running}
-            onClick={() => goMonth(addMonths(ym, -1))}
-          >
+          <button type="button" className="icon-btn" aria-label="前の月" onClick={() => goMonth(addMonths(ym, -1))}>
             <ChevronLeft size={18} aria-hidden="true" />
           </button>
           <h2 className="month-title" data-testid="month-title">
             {ymText(ym)}
           </h2>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="次の月"
-            disabled={running}
-            onClick={() => goMonth(addMonths(ym, 1))}
-          >
+          <button type="button" className="icon-btn" aria-label="次の月" onClick={() => goMonth(addMonths(ym, 1))}>
             <ChevronRight size={18} aria-hidden="true" />
           </button>
           <button
             type="button"
             className="btn btn-small"
-            disabled={running || ym === ymOf(today)}
+            disabled={ym === ymOf(today)}
             onClick={() => goMonth(ymOf(today))}
           >
             今月
@@ -1119,6 +985,7 @@ export default function MonthPage() {
             />
             <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
               <span className="sub" aria-live="polite">
+                {current ? '' : `${batch.label}：`}
                 {current ? `${mdText(current)} の案：` : ''}
                 {batch.index + 1}/{batch.targets.length}日（作れた日 {batch.made}日）
               </span>
@@ -1602,7 +1469,7 @@ export default function MonthPage() {
               </p>
             )}
             <p className="sub">
-              1日ずつ作り、作れた日はすぐに保存します。「止める」で、作っている日はそれまでの最良の案で残し、残りの日はやめます。画面を離れても止まります（作れた日は残ります）。
+              1日ずつ作り、作れた日はすぐに保存します。「止める」で、作っている日はそれまでの最良の案で残し、残りの日はやめます。ほかの画面へ移っても作り続けます（上の帯に進み具合と［止める］）。ページを閉じる・読み直すと止まります（作れた日は残ります）。
             </p>
           </div>
         </SidePanel>

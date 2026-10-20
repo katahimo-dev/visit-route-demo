@@ -1,0 +1,55 @@
+/* 上の帯の月まとめ作成の進み具合（PRD D256。ADR-0042） */
+.batch-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  line-height: 1.25;
+  min-width: 0;
+}
+.batch-band-text {
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.batch-band .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.batch-band-spin {
+  flex: none;
+  color: var(--primary);
+  animation: batch-band-spin 1.2s linear infinite;
+}
+@keyframes batch-band-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .batch-band-spin {
+    animation: none;
+  }
+}
+/* スマホ：帯の下の段に幅いっぱい */
+@media (max-width: 860px) {
+  .batch-band {
+    order: 10;
+    flex: 1 1 100%;
+    margin-right: 0;
+    justify-content: space-between;
+  }
+}
+@media print {
+  .batch-band {
+    display: none;
+  }
+}

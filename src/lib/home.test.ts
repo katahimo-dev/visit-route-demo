@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Absence, Staff } from '../contracts/documents';
-import { HOME_NEXT_MONTH_DAYS, homeDays, homeMonths, homeTasks, monthLabel } from './home';
+import { HOME_NEXT_MONTH_FROM_DAY, homeDays, homeMonths, homeTasks, monthLabel } from './home';
 import { type DayStatus, monthProgress } from './month';
 
 /** 日の状態（既定は訪問3件・確定済み・問題なし） */
@@ -24,14 +24,16 @@ const data = { absences: [] as Absence[], staff: [] as Staff[] };
 const TODAY = '2026-10-14';
 
 describe('homeMonths・homeDays', () => {
-  it('月の半ばは今月だけ', () => {
+  it('14日までは今月だけ', () => {
     expect(homeMonths('2026-10-14')).toEqual(['2026-10']);
+    expect(homeMonths('2026-10-01')).toEqual(['2026-10']);
     expect(homeDays('2026-10-14')).toHaveLength(18);
     expect(homeDays('2026-10-14')[0]).toBe('2026-10-14');
   });
-  it(`今月の残りが${HOME_NEXT_MONTH_DAYS}日以下なら来月も（年をまたぐ）`, () => {
+  it(`${HOME_NEXT_MONTH_FROM_DAY}日以降なら来月も（年をまたぐ）`, () => {
+    expect(homeMonths('2026-10-15')).toEqual(['2026-10', '2026-11']);
     expect(homeMonths('2026-10-25')).toEqual(['2026-10', '2026-11']);
-    expect(homeMonths('2026-10-24')).toEqual(['2026-10']);
+    expect(homeDays('2026-10-15')).toHaveLength(17 + 30);
     expect(homeMonths('2026-12-31')).toEqual(['2026-12', '2027-01']);
     expect(homeMonths('2027-02-22')).toEqual(['2027-02', '2027-03']);
     const days = homeDays('2026-12-31');

@@ -5,6 +5,7 @@
 // 「訪問 N件（あと M件）」と欄の「訪問だけ作る」、日の画面の「この日」（案なし → 未確定 → 確定すると確定済み・確定 +1）、
 // 週は選んでいる日付の月（月をまたぐ週）、訪問の無いデータは「今日以降の訪問はありません」でボタンなし、
 // 案が全部ある月で週・日を開いても帯が速く出る・確定の操作が待たされない、スマホ（390×844）で1行・横にはみ出さない、印刷で出さない。
+// まとめて作るはほかの画面へ移っても続き、上の帯に進み具合と［止める］、戻ると進み具合、知らせから月へ（PRD D256・D257）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-progress.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_PROGRESS で帯が出るまでの上限（既定 3000ms。無ければ PERF_MS）
@@ -190,6 +191,74 @@ async function nextMonth(page) {
   check(!/あと/.test(v1) && /\d+件/.test(v1), '訪問だけ作ると帯の訪問が済み（あと N件が消える）', v1);
   check(!(await only.isVisible().catch(() => false)), '作ったあとは「訪問だけ作る」を出さない');
   await page.keyboard.press('Escape');
+}
+
+// ---- まとめて作るは画面を移っても続く（PRD D256・D257。ADR-0042）：上の帯に進み具合と［止める］、戻ると進み具合、知らせから月へ ----
+async function keepRunning(page) {
+  await clearPlans(page);
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
+  await page.getByTestId('band-next').click();
+  const panel = batchPanel(page, YM);
+  await panel.waitFor({ timeout: 5000 });
+  await panel.getByRole('button', { name: '作り始める' }).click();
+  await page.getByTestId('month-progress').waitFor({ timeout: 10000 });
+  check((await page.getByTestId('batch-band').count()) === 0, '月の予定では上の帯に出さない（画面の中に進み具合）');
+  // 読み直さずにホームへ（HashRouter の中で移る）
+  await page.evaluate(() => {
+    location.hash = '#/home';
+  });
+  const bandText = page.getByTestId('batch-band-text');
+  await bandText.waitFor({ timeout: 10000 });
+  const t0 = await bandText.innerText();
+  check(
+    new RegExp(`^${monthNo(YM)}月の案を作っています \\d+/\\d+日$`).test(t0),
+    'ほかの画面へ移っても作り続け、上の帯に「◯月の案を作っています N/M日」',
+    t0,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'batch-band-home.png') });
+  // 進む（日ごとに保存される）
+  const planned = () =>
+    page.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).aiPlans ?? {}).length, STORAGE_KEY);
+  await page.waitForFunction(
+    (k) => Object.keys(JSON.parse(localStorage.getItem(k)).aiPlans ?? {}).length >= 1,
+    STORAGE_KEY,
+    {
+      timeout: 60000,
+    },
+  );
+  check((await planned()) >= 1, 'ホームにいる間も日ごとに保存される');
+  // 帯の文から月の予定へ戻ると、画面の中に進み具合
+  await bandText.click();
+  await page.waitForURL(/#\/month/);
+  await page.getByTestId('month-progress').waitFor({ timeout: 10000 });
+  check(hashOf(page) === `#/month?ym=${YM}`, '帯の文で月の予定（その月）へ戻ると進み具合が見える', hashOf(page));
+  // 作っている間は二重に始めない：帯の次の一手（あれば）も ?do=batch も欄を開かない（飛ばさずに確かめる）
+  if ((await page.getByTestId('band-next').count()) > 0) {
+    await page.getByTestId('band-next').click();
+    await settle(page, 300);
+  }
+  await page.evaluate((ym) => {
+    location.hash = `#/month?ym=${ym}&do=batch`;
+  }, YM);
+  await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
+  await settle(page, 300);
+  check(
+    (await panel.count()) === 0 && (await page.getByTestId('month-progress').count()) === 1,
+    '作っている間は二重に始めない',
+  );
+  // ほかの画面の帯の［止める］で止め、知らせの［月の予定を見る］で月へ
+  await page.evaluate(() => {
+    location.hash = '#/week';
+  });
+  await page.getByTestId('batch-band-stop').click();
+  const toast = page.locator('.toast').filter({ hasText: /の案を\d+日分作ったところで止めました/ });
+  await toast.waitFor({ timeout: 60000 });
+  check(true, '［止める］で止まり、知らせ（作った日数）');
+  check((await page.getByTestId('batch-band').count()) === 0, '止めたら上の帯は消える');
+  await page.getByTestId('batch-done-open').click();
+  await page.waitForURL(/#\/month/);
+  check(hashOf(page) === `#/month?ym=${YM}`, '知らせの［月の予定を見る］で月の予定へ', hashOf(page));
+  check((await page.getByTestId('month-progress').count()) === 0, '止めたあとは進み具合を出さない');
 }
 
 // ---- 日の画面：この日の状態、確定すると帯の確定が増える ----
@@ -479,6 +548,7 @@ const steps = sharedPage({
   steps: [
     ['month-entry', monthEntry],
     ['next-month', nextMonth],
+    ['keep-running', keepRunning],
     ['day-confirm', dayConfirm],
     ['links', links],
     ['cross-month', crossMonth],

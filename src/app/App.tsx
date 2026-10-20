@@ -38,6 +38,7 @@ import {
   useState,
 } from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { BatchBand, MonthBatchHost } from '../components/batchBand';
 import { CommandPalette, IS_MAC } from '../components/CommandPalette';
 import { BrokenDataNotice, DataWatch } from '../components/DataNotices';
 import { FeatureOffNotice } from '../components/FeatureOffNotice';
@@ -118,6 +119,8 @@ export default function App() {
       <PersonPopoverProvider>
         {/* 控えの知らせ・別のタブの変更の知らせ（PRD D227。トースト） */}
         <DataWatch />
+        {/* 月まとめ作成の計算を画面の外で続ける（PRD D256・D257。ADR-0042）：store につなぎ、終わったら知らせる */}
+        <MonthBatchHost />
         {blocked ? (
           <Navigate to="/home" replace state={{ featureOff: blocked }} />
         ) : (
@@ -304,6 +307,8 @@ function AdminShell() {
         </aside>
         <div className="app-body">
           <header ref={headerRef} className="app-header">
+            {/* 月まとめ作成の進み具合と［止める］（PRD D256。ほかの画面へ移っても続く。月の予定では画面の中に出す） */}
+            <BatchBand />
             {/* スマホだけ：ロゴと今の画面の名前・「メニュー」ボタン（PRD D132。広い画面では出さない） */}
             <div className="m-head-title">
               <span className="brand-mark" aria-hidden="true">
