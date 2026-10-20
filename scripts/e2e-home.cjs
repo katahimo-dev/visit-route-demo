@@ -3,7 +3,7 @@
 // 今日のカードで日の画面（選んでいる日付が今日）、「まとめて作る」のカードで月の画面のまとめて作るの欄が開き ?do= が消える、
 // 月の画面の ?do=attention・?do=unconfirmed で右の欄、案ができたらホームの今日のカードが「未確定」に、
 // いつでもの入口（欠勤・空き状況・探す）、何も無いデータで「今日の準備はできています」、
-// メニューの先頭の「ホーム」（1400px）、スマホ（390×844）で縦に並び横にはみ出さない・下のタブの「ホーム」、印刷で出さない。
+// メニューの先頭の「ホーム」（1400px）、スマホ（390×844）で縦に並び横にはみ出さない・先頭に欠勤・キャンセルの入口（PRD D247）・下のタブの「ホーム」、印刷で出さない。
 // 初期データの案（PRD D225。今日から7日分が月で「案あり」・ホームの確定していない日の数）、月の「問題の無い日をまとめて確定」
 // （PRD D223。N日・確認に日付と残す日・確定済みになりホームの数が減る・欠勤の人に訪問が残る日は外れ確認に日付が出る・
 // 未確定の変更ありの日は外れる・0日なら押せず理由）、
@@ -526,6 +526,18 @@ async function mobile(page) {
       boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
     'スマホ：カードが縦に1列で並び、画面に収まる',
     boxes.map((b) => [Math.round(b.x), Math.round(b.y), Math.round(b.width)]),
+  );
+  const firstCard = await page.locator('.home-task').first().getAttribute('data-testid');
+  const anytimeIds = await page
+    .getByTestId('home-anytime')
+    .locator('a')
+    .evaluateAll((els) => els.map((el) => el.dataset.testid));
+  check(
+    firstCard === 'home-absence' &&
+      (await page.getByTestId('home-absence').count()) === 1 &&
+      !anytimeIds.includes('home-absence'),
+    'スマホ：先頭に「欠勤・キャンセルを登録」（いつでもには重ねて出さない。PRD D247）',
+    { firstCard, anytimeIds },
   );
   const scrollW = await page.evaluate(() => document.documentElement.scrollWidth);
   check(scrollW <= 390, 'スマホ：横にはみ出さない', scrollW);

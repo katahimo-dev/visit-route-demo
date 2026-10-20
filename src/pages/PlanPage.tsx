@@ -86,6 +86,7 @@ import {
   applyReassign,
   baseOf,
   chooseReassign,
+  orderConfirmed,
   removeAbsence,
   revertReassign,
   saveAbsence,
@@ -94,7 +95,7 @@ import {
 import { colorOf } from '../lib/colors';
 import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { confirmDay } from '../lib/confirmDay';
-import { contactCount, dayWordOf } from '../lib/contacts';
+import { type CancelledContact, type ContactRow, contactCount, contactRows, dateWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
 import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
@@ -145,6 +146,7 @@ import {
 } from '../lib/undoEdit';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
+import { createValueStore, type ReadableStore, useValueStore } from '../lib/valueStore';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile, prefKey, withManualPrefs } from '../matching';
 import {
@@ -233,6 +235,24 @@ type UndoSnap = {
   others?: { date: string; before: AiPlan; after: AiPlan }[];
 };
 
+/**
+ * 計算の進み具合のバーと回数（PRD D249）。進み具合は外の入れ物から読み、変わってもここだけ描き直す
+ */
+function PlanProgressText({ store, prefix }: { store: ReadableStore<Progress | null>; prefix: string }) {
+  const progress = useValueStore(store);
+  return (
+    <>
+      <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} />
+      <span className="sub">
+        {prefix}
+        {progress
+          ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点`}`
+          : '準備中…'}
+      </span>
+    </>
+  );
+}
+
 /** 日付の短い表示（2026-10-13 → 10/13） */
 function shortDate(date: string): string {
   const [, m, d] = date.split('-');
@@ -311,7 +331,11 @@ export default function PlanPage() {
   }, [data.manualPlans, date, m.leaveVisits]);
   const toast = useToast();
   const confirmDialog = useConfirm();
-  const [progress, setProgress] = useState<Progress | null>(null);
+  /**
+   * 計算の進み具合（100msごとに変わる）。画面の state に置くと画面全体を描き直すので、外の入れ物に置き、
+   * 読む子の部品（PlanProgressText・AnnealBox の進み具合）だけを描き直す（PRD D249）
+   */
+  const [progressStore] = useState(() => createValueStore<Progress | null>(null));
   /** プリセットのカードの詳細の id の頭（aria-describedby） */
   const cardIdBase = useId();
   const [running, setRunning] = useState<'create' | 'resolve' | 'anneal' | null>(null);
@@ -335,8 +359,17 @@ export default function PlanPage() {
   /** 欄を開く（前に振り直して閉じたときの「差の欄へ移る」を戻す。開き直して欠勤だけ登録したときに差の欄へ飛ばない） */
   const openSudden = (init: SuddenInit) => {
     suddenToBar.current = false;
+    setSuddenCancel(null);
     setSudden(init);
   };
+  /**
+   * 欄で取り消した訪問（5段目の連絡の「中止」。PRD D244）と、取り消したときの確定した割当（無ければ null。
+   * 確定し直した差の「前」）。欄を開き直すと消す
+   */
+  const [suddenCancel, setSuddenCancel] = useState<{
+    cancelled: CancelledContact;
+    prev: Record<string, string[]> | null;
+  } | null>(null);
   /** 取り消しの欄を開いている訪問（PRD D74。null：閉じている）と、当日キャンセルか */
   const [cancelFor, setCancelFor] = useState<Visit | null>(null);
   const [cancelSameDay, setCancelSameDay] = useState(false);
@@ -412,7 +445,7 @@ export default function PlanPage() {
   useEffect(() => {
     setRunning(null);
     setRunningFor(null);
-    setProgress(null);
+    progressStore.set(null);
     setBatch(null);
     return () => {
       generation.current++;
@@ -420,7 +453,8 @@ export default function PlanPage() {
       runRef.current = null;
       autoTried.current.clear();
     };
-  }, []);
+    // progressStore は作り直さない（一度だけ）
+  }, [progressStore]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた欄を閉じ、前の日のエラーを消す（訪問の入力欄は入力を捨てずに引き継ぐ。PRD D251）
   useEffect(() => {
     setSudden(null);
@@ -574,11 +608,11 @@ export default function PlanPage() {
           const best = p.bestRoutes;
           if (!best) {
             // 最良は前の進捗から変わっていない：点数は前のまま
-            setProgress((prev) => ({ iteration: p.iteration, total: p.total, hundred: prev?.hundred ?? null }));
+            progressStore.set((prev) => ({ iteration: p.iteration, total: p.total, hundred: prev?.hundred ?? null }));
             return;
           }
           const hundred = sp && ss ? (attempt(() => toHundred(score(sp, best).total, ss)).value ?? null) : null;
-          setProgress({ iteration: p.iteration, total: p.total, hundred });
+          progressStore.set({ iteration: p.iteration, total: p.total, hundred });
         },
       ),
     );
@@ -589,7 +623,7 @@ export default function PlanPage() {
     runRef.current = started.value;
     setRunning(kind);
     setRunningFor({ date, label });
-    setProgress(null);
+    progressStore.set(null);
     started.value.promise
       .then((result) => {
         if (live()) onDone(result);
@@ -602,7 +636,7 @@ export default function PlanPage() {
         runRef.current = null;
         setRunning(null);
         setRunningFor(null);
-        setProgress(null);
+        progressStore.set(null);
         after?.();
       });
     return true;
@@ -1856,11 +1890,20 @@ export default function PlanPage() {
   /** この端末の mailto の長さの目安（ADR-0017） */
   const mailLimit = useMailLimit();
   const contactWords = {
-    day: dayWordOf(date, jstDate(Date.now())),
+    // 連絡文の日付は「本日」にせず「10月15日（木）」（あとから読まれても分かる。PRD D245）
+    day: dateWordOf(date),
     staffWord: terms.staff,
     staffName,
     clientName: (id: string) => clientById.get(id)?.displayName ?? '（不明）',
     clientAddress: (id: string) => clientById.get(id)?.place.address ?? '',
+    visitMinutes: (id: string) => visitById.get(id)?.durationMinutes ?? null,
+    promised: (id: string) => {
+      const v = visitById.get(id);
+      if (!v) return null;
+      const from = hhmmToMinutes(v.earliestStart);
+      return { from, to: v.windowKind === 'window' ? hhmmToMinutes(v.latestStart) : from };
+    },
+    orgName: data.org.name,
   };
   const saveAbsenceOnly = (absence: Absence) => {
     update((d) => saveAbsence(d, absence));
@@ -2959,13 +3002,7 @@ export default function PlanPage() {
   /** 計算中の進み具合（操作の行・右の欄で共通） */
   const progressView = running && (
     <div className="plan-progress" data-testid="plan-progress">
-      <progress value={progress?.iteration ?? 0} max={progress?.total ?? 1} />
-      <span className="sub">
-        {runningFor ? `${shortDate(runningFor.date)} の案・` : ''}
-        {progress
-          ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回${progress.hundred === null ? '' : `・いまの最良 ${progress.hundred}点`}`
-          : '準備中…'}
-      </span>
+      <PlanProgressText store={progressStore} prefix={runningFor ? `${shortDate(runningFor.date)} の案・` : ''} />
       {batch && (
         <span className="sub" data-testid="batch-progress">
           <WithIcon icon={LayoutGrid} size={13}>
@@ -3016,6 +3053,39 @@ export default function PlanPage() {
       owner: suddenOwner(visitId),
     };
   };
+  /**
+   * 欄からの取り消し：取り消す前の担当（確定した割当があればその担当だけ（無ければ担当なし）、確定が無ければ今の案）・開始と、
+   * そのときの確定した割当を覚えてから取り消す（5段目の連絡の「中止」と、確定し直した差の「前」。PRD D244）
+   */
+  const suddenCancelVisit = (visitId: string, sameDay: boolean) => {
+    const v = visitById.get(visitId);
+    const prev = own(data.manualPlans, date) ?? null;
+    // 確定がある日は、未確定の案から担当を補わない（伝えてあるのは確定した担当）
+    const sid = prev
+      ? (ownerMap(prev).get(visitId) ?? null)
+      : ((aiPlan ? owner : ownerMap(m.savedView.cols)).get(visitId) ?? null);
+    if (v) {
+      const start = explained.get(visitId)?.timing?.start ?? hhmmToMinutes(v.earliestStart);
+      setSuddenCancel({ cancelled: { visitId, clientId: v.clientId, staffId: sid ?? null, start }, prev });
+    }
+    applyCancel(visitId, sameDay);
+  };
+  /**
+   * 5段目の連絡の差（PRD D244）：欠勤は振り直しの差（元の案＝確定した割当、無ければ振り直す前の案 → 今の案＝確定した割当）。
+   * キャンセルは、取り消したときの確定した割当 → 今の案（取り消した訪問は問題に無いので差に出ない）。確定が無かったら中止だけ
+   */
+  const suddenList = useMemo((): ContactList | null => {
+    if (!sudden) return null;
+    if (!suddenCancel) return contacts;
+    const prev = suddenCancel.prev;
+    if (!prev || !problem || !aiPlan) return EMPTY_CONTACTS;
+    // 確定した割当の列は訪問データの並びなので、振り直しの元の案（baseOf）と同じに並べてから時刻を出す（偽の「時刻が変わる」を出さない）
+    const before = orderConfirmed(prev, aiPlan.routes, problem);
+    return attempt(() => contactsOf({ problem, routes: before }, { problem, routes: aiPlan.routes })).value ?? null;
+  }, [sudden, suddenCancel, contacts, problem, aiPlan]);
+  const suddenRows: ContactRow[] | null = suddenList
+    ? contactRows(suddenList, suddenCancel ? [suddenCancel.cancelled] : [], contactWords)
+    : null;
   /** 4段目：今の案の振り直しのまとめと、案A・案B を選ぶ欄（差の欄と同じ部品・同じ操作） */
   const suddenResult =
     aiPlan && reassignInfo ? (
@@ -3036,7 +3106,7 @@ export default function PlanPage() {
           recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
           disabledWhy={annealDisabled}
           running={running === 'anneal'}
-          progress={running === 'anneal' ? progress : null}
+          progress={progressStore}
           onStart={startAnneal}
           onStop={stopAnneal}
           options={annealOptions}
@@ -3451,7 +3521,7 @@ export default function PlanPage() {
                   recommended={(rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert'}
                   disabledWhy={annealDisabled}
                   running={running === 'anneal'}
-                  progress={running === 'anneal' ? progress : null}
+                  progress={progressStore}
                   onStart={startAnneal}
                   onStop={stopAnneal}
                   options={annealOptions}
@@ -3843,9 +3913,20 @@ export default function PlanPage() {
           onReassign={(a, anneal) => registerAndReassign(a, anneal, true)}
           onSaveOnly={saveAbsenceOnly}
           onRemoveAbsence={cancelAbsence}
-          onCancelVisit={applyCancel}
+          onCancelVisit={suddenCancelVisit}
           onAdopt={adopt}
           onRevert={reassignInfo ? revertToBase : undefined}
+          contacts={suddenRows}
+          leftCount={left.length}
+          contactMail={
+            mailOn
+              ? (row) =>
+                  mailTo(staffById.get(row.id)?.email ?? '', contactMailText(data.org, date, row.text), mailLimit)
+              : undefined
+          }
+          onCopied={(ok, what) =>
+            toast(ok ? `${what}をコピーしました` : 'コピーできませんでした。文を選んでコピーしてください')
+          }
           onClose={closeSudden}
           fallbackFocus={() => (sudden.staffId ? colHeadOf(sudden.staffId) : suddenBtnRef.current)}
           returnFocus={() => (suddenToBar.current ? document.getElementById(barId) : null)}

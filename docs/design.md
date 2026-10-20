@@ -357,6 +357,8 @@ flowchart LR
 - 提供するAPI：なし（ルートは [design/pages.md](design/pages.md) の表）
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign・patterns・vacancy・features
 - 配置：`src/pages/`・`src/components/`・画面用の純粋関数は `src/lib/`
+- 読み込みの分け方（PRD D248。ADR-0039）：日の予定・空き状況・案を比べる・相性・月の予定は `src/app/lazyPages.tsx` の `React.lazy` で別のチャンク、地図は `RouteMap`（読み込み中の枠と `Suspense`）が本体 `LeafletMap`（Leaflet と leaflet.css）を `lazy` で読む。Excel（ExcelJS）はデータの画面で押したときの `import('../excel')`。`Suspense` は `AdminShell` の本文に1つ（画面ごとの ErrorBoundary の外。移るときは React Router の transition で前の画面のまま待つ）。分けた画面は URL（hash）で直接開いたら起動と並べてすぐ読み始め、地図を出す画面（日・比較・空き状況）は地図の本体も一緒に読み始める。開いた画面が出たら `PreloadWhenShown` が手の空いたとき（最長2秒）に残りのチャンクを1つずつ読む（1つ読み終わったら、また手が空くのを待つ）。読めないとき：`lib/chunkLoad` が失敗を見分け（`isChunkLoadError`）、`app/ErrorBoundary` は再読み込み（`lib/reloadPage`：保存を書いて 500ms 後に読み直す）と［もう一度表示する］（`retryFailedChunks` で lazy を作り直し、失敗の文の URL に `?retry=N` を付けて読み直す）を出す。地図は `RouteMap` の中の小さな境界で枠に「地図を読み込めませんでした」。`lazy` は `src/lib/lazyComponent.tsx`（読み終わったあとは `React.lazy` を通さず直に描き、先読みが済んだ画面へ移るときに止まらない）。ほかの画面（週・〈利用者さん〉・〈スタッフ〉・データなど）は本体のまま
+- よく変わる値（PRD D249）：AI案の計算の進み具合は画面の state に置かず、`src/lib/valueStore.ts` の入れ物（`useSyncExternalStore`）に置き、バーと回数の部品（`PlanProgressText`・`AnnealProgress`）だけが読む
 - 詳細（画面ごとに分けた。必要な画面のファイルだけ読む）：
   - 共通事項・ルート一覧・メニュー・確認ダイアログ・機能の入り切り（画面側）：[design/pages.md](design/pages.md)
   - 画面共通の部品（右の欄・名前の詳細・用語・ツアー・作り直しの帯・リンク・メール・道順）：[design/pages-common.md](design/pages-common.md)
@@ -383,7 +385,7 @@ flowchart LR
 - 配置：`.github/workflows/deploy.yml`、`.github/workflows/e2e.yml`、`vite.config.ts`（`base: './'`）、`playwright.config.ts`・`e2e/`
 - 完了の条件：
   - [ ] push から5分以内に Pages の公開URL に反映される
-  - [ ] サブパスで再読込しても 404 にならない（HashRouter）
+  - [ ] サブパスで再読込しても 404 にならない（HashRouter）。分けたチャンクもサブパスから読める（`base: './'`。PRD D248）
   - [ ] PR・夜間に e2e のワークフローが走り、報告（HTML）が残る
 
 ## 5. API契約
@@ -550,7 +552,7 @@ ContactList = { staffChanged, timeChanged, staff: { staffId, added, removed, shi
 - 画面側（`lib/absences`）：元の案は `baseOf`（確定した割当は今の案の順・開始の順に並べ、無い訪問は開始がより遅い最初の訪問の前に挟む）。`applyReassign` で今の案（全部固定）にし記録に `reassign`。続けて振り直す（確定した割当が無い）ときは今の案から、`from`・`base*` は最初のもの、`absenceIds` は累積。`revertReassign` は最初の元の案へ（generated・runId も）
 - 案B の流れ：`prepareAnneal` → `runSolve(prep.problem, { seed: data.seed, iterations: defaultIterations(prep.problem), initial: prep.initial })` → `settleAnneal` → `addAnnealRun`（同じ結果なら足さない）→ 差の表（`annealRunOf`）→ `chooseReassign`。作れないとき（欠勤が取り消された・案A が無い・計算中）はボタンを押せなくして理由
 - 欠勤は1人1日1件・30分単位（境は 12:00。欄で丸め、Excel では止める）。振り直しで件数の上限は超えない
-- 連絡文は `lib/contacts`（`staffMessage`・`clientMessages`・`allContactsText`。コピー・印刷だけ）
+- 連絡文は `lib/contacts`（`staffMessage`・`clientMessages`・`allContactsText`・欠勤・キャンセルの欄の5段目の `contactRows`。コピー・メール・印刷だけ。ひな形と載せる範囲は ADR-0038・PRD D245・D246）
 
 ### 定期パターン（`src/contracts/patterns.ts`。ADR-0012・ADR-0013）
 
@@ -795,6 +797,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 条件の重みの画面 | 点数の基準のプリセット（ふだんの考え方）の重みを直す画面。日の重みは「この日だけ試す重み」で、基準が変わったら基準にそろえる | 直した重みがまとめて作る・自動作成・作り直しに効き、データの形を変えない | 0035 |
 | 予定と AI案 | 1画面「予定」 | 訪問の編集と手直しが重なっていた | 0009 |
 | 欠勤と振り直し | 別の記録 `absences`。案A＝空きに入れるだけ、案B＝減点つき焼きなまし。コンポーネント reassign、結果は今の案＋記録 | 他の人が変わらないことを保証でき、手直し・確定・比較がそのまま使える | 0011 |
+| 欠勤・キャンセルの連絡 | 欄の5段目で、確定し直した差と取り消した訪問から1人に1行の連絡文。［連絡した］は欄の中だけ。〈利用者さん〉あては担当の姓と時刻だけ | 確定から連絡まで1つの流れで、契約・データを変えず、個人情報を最小にできる | 0038 |
 | 一月分の予定 | 定期パターンから展開して実体化、種類の条件は常に必須、1日ずつ基準のプリセットで解く | 既存の予定・AI案・Excel が訪問の形のまま動く | 0012 |
 | 空き状況 | 元の案に他の人を変えずに仮の訪問を入れて数える | 移動込みで答えられ案A と同じ判定 | 0012 |
 | 第N曜日・休み・決まりごと・案内文 | パターンに項目を足す、休みは別の記録で派生、固定の4項目、空き状況から純粋関数で文 | 展開・ID をそのまま使え、1か所の判定で外れる | 0013 |
@@ -809,6 +812,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | スマホ・ホーム・確認 | 引き出し＋下のタブ（「今日」は今日の日の予定）、ホームの「今日やること」、`useConfirm` | よく使う画面が1手、次の一手が分かる、扱いが1か所 | 0024〜0026 |
 | 機能の入り切り | 機能ごと（20）を `org.features`、ひな形は一度書き込む、好み・決まりは計算からも外す | 欄まで切れ隠れた条件が残らない。デモなので鍵なし | 0028 |
 | 初期の案・まとめて確定 | 起動で7日分を同期で解く（反復を減らす）、一度も確定していない・要対応に出ない日だけ1度に確定（日の予定と同じ書き方） | 初めから中身が見え決定的。確定の手数が1回になり、要対応の日・確定し直す日は残る | 0031 |
+| 読み込みの分け方 | 重い画面5つと地図を `React.lazy` で分け、画面が出たら残りを先に読む。進み具合は外の入れ物で子だけ描き直す | ホームで地図・重い画面を読まず、移るときは待たせない。ルートの形・URL を変えない | 0039 |
 
 ## 8. 未決事項
 | 項目 | いつ・何をもとに決めるか |

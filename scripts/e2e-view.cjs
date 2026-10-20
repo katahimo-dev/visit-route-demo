@@ -83,6 +83,11 @@ async function clients(page, dlg) {
     '紹介元',
     '—',
   ]);
+  // 地図の本体は別のチャンク（PRD D248）：読み終わるのを待つ
+  await view(page)
+    .locator('.leaflet-container')
+    .waitFor({ timeout: 10000 })
+    .catch(() => {});
   check(
     (await view(page).locator('.leaflet-container').count()) === 1,
     '〈利用者さん〉：位置があれば地図の小さな表示（読むだけ）',

@@ -70,9 +70,37 @@ export function withoutAbsencesOn<T extends Pick<DemoData, 'absences'>>(data: T,
 export type ReassignBase = { routes: Routes; from: ReassignInfo['from']; pins: Record<string, string> };
 
 /**
- * 振り直しの元の案（D28）：その日の確定した割当（manualPlans[date]。担当のいる訪問が1件以上）があればそれ、無ければ今の案。
- * 確定した割当は、各担当の訪問を今の案の列の順に並べ、今の案のその人の列に無い訪問は開始（earliest）の順に、開始がより遅い訪問の前へ挟む。
- * どちらも問題に無い訪問は除く。どちらも無ければ null
+ * 確定した割当（manualPlans[date]。列は訪問データの並び）を、時刻を出せる順に並べ直す：各担当の訪問を今の案（planRoutes）の
+ * 列の順に並べ、今の案のその人の列に無い訪問は開始（earliest）の順に、開始がより遅い訪問の前へ挟む。問題に無い訪問・未割当の列は除く。
+ * 振り直しの元の案（baseOf）と、キャンセルの連絡の差の「前」（PRD D244）で使う（並びの違いで偽の「時刻が変わる」を出さない）
+ */
+export function orderConfirmed(saved: Routes, planRoutes: Routes | null, problem: Problem): Routes {
+  const inProblem = new Map(problem.visits.map((v, i) => [v.id, i]));
+  const earliest = (id: string) => problem.visits[inProblem.get(id)!]!.earliest;
+  const routes: Routes = {};
+  for (const [k, ids] of Object.entries(saved)) {
+    if (k === NONE) continue;
+    const mine = new Set(ids.filter((id) => inProblem.has(id)));
+    // 今の案のその人の列にある訪問は今の案の順に
+    const list = (planRoutes ? (own(planRoutes, k) ?? []) : []).filter((id) => mine.has(id));
+    const inList = new Set(list);
+    // 残りは開始（earliest）の順に、開始がより遅い訪問の前へ挟む
+    const rest = [...mine]
+      .filter((id) => !inList.has(id))
+      .sort((a, b) => earliest(a) - earliest(b) || inProblem.get(a)! - inProblem.get(b)!);
+    for (const id of rest) {
+      const at = list.findIndex((x) => earliest(x) > earliest(id));
+      if (at < 0) list.push(id);
+      else list.splice(at, 0, id);
+    }
+    routes[k] = list;
+  }
+  return routes;
+}
+
+/**
+ * 振り直しの元の案（D28）：その日の確定した割当（manualPlans[date]。担当のいる訪問が1件以上）があればそれ（orderConfirmed で並べる）、
+ * 無ければ今の案。どちらも問題に無い訪問は除く。どちらも無ければ null
  */
 export function baseOf(data: DemoData, date: string, problem: Problem): ReassignBase | null {
   const inProblem = new Map(problem.visits.map((v, i) => [v.id, i]));
@@ -80,28 +108,8 @@ export function baseOf(data: DemoData, date: string, problem: Problem): Reassign
   const plan = own(data.aiPlans, date);
   const hasSaved =
     !!saved && Object.entries(saved).some(([k, ids]) => k !== NONE && ids.some((id) => inProblem.has(id)));
-  if (saved && hasSaved) {
-    const earliest = (id: string) => problem.visits[inProblem.get(id)!]!.earliest;
-    const routes: Routes = {};
-    for (const [k, ids] of Object.entries(saved)) {
-      if (k === NONE) continue;
-      const mine = new Set(ids.filter((id) => inProblem.has(id)));
-      // 今の案のその人の列にある訪問は今の案の順に
-      const list = (plan ? (own(plan.routes, k) ?? []) : []).filter((id) => mine.has(id));
-      const inList = new Set(list);
-      // 残りは開始（earliest）の順に、開始がより遅い訪問の前へ挟む
-      const rest = [...mine]
-        .filter((id) => !inList.has(id))
-        .sort((a, b) => earliest(a) - earliest(b) || inProblem.get(a)! - inProblem.get(b)!);
-      for (const id of rest) {
-        const at = list.findIndex((x) => earliest(x) > earliest(id));
-        if (at < 0) list.push(id);
-        else list.splice(at, 0, id);
-      }
-      routes[k] = list;
-    }
-    return { routes, from: 'confirmed', pins: {} };
-  }
+  if (saved && hasSaved)
+    return { routes: orderConfirmed(saved, plan?.routes ?? null, problem), from: 'confirmed', pins: {} };
   if (!plan) return null;
   const routes: Routes = {};
   for (const [k, ids] of Object.entries(plan.routes)) routes[k] = ids.filter((id) => inProblem.has(id));

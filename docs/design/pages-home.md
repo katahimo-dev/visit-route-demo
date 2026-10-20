@@ -1,6 +1,6 @@
 # ホーム（今日やること）と予定に共通の進み具合の帯
 
-> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）。関連 PRD：D141〜D145（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
+> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）・0038。関連 PRD：D141〜D145・D247（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
 
 ### ホーム（`#/home`。PRD D141〜D145）
 
@@ -11,6 +11,7 @@
 - `HOME_NEXT_MONTH_DAYS`（7）
 - `homeMonths(today)`：今月。今月の残り（今日を含む）が7日以下なら来月も
 - `homeDays(today)`：今日から見る月の末日まで
+- `homeEntries(today, terms, features)`（いつでもの入口）
 - `homeTasks({ today, statuses, months, todayStaff, data })`：カード `HomeTask`＝種類・色（`warn`／`todo`／`info`）・題名・内訳・移る先 `to`・日の予定へ移るときの日付 `date`。`ready` は info だけのとき。切った機能のカードは出さない
 
 | 並び | カード | 移る先 |
@@ -26,6 +27,7 @@
 - `homeTasks` のカードを並べる。カード全体が `Link`（`date` があれば押したときに `setDate`）
 - 何も無ければ「今日の準備はできています」（`ready`）
 - 下に「いつでも」の入口：欠勤・キャンセルを登録（`/plan?date=今日&do=absence`）・空き状況・〈利用者さん〉一覧・〈スタッフ〉一覧
+- 狭い画面（860px 以下。`lib/useMedia` の `NARROW_QUERY`。App のメニューの切り替えと同じ定数）では欠勤・キャンセルの入口を見出しのすぐ下（「次にすること」の上。`home-quick`）に常に置き、「いつでも」から外す（同じ `home-absence`）。見た目はほかの入口と同じカード（`is-entry`。赤い縁は付けない）で、先頭に置くことで目立たせ、アイコンだけ朱（`.is-first`）。切っていれば出さない（PRD D247・ADR-0038）
 - カードは `auto-fill` の格子（390px で1列）
 
 #### 月の予定の `?do=`
@@ -34,7 +36,7 @@
 
 #### 確かめ
 
-`scripts/e2e-home.cjs`：起動・知らない URL・`?id=`、カードの並び、今日のカード → 日の予定（今日）、まとめて作る → 欄が開き `?do=` が消える・戻るで繰り返さない、案ができたら「未確定」・確定したら「確定済み」（案なしから始める所は先に初期データの案を消す）、初期データの案（PRD D225）で初めから今日が「未確定」・確定していない日＝月の未確定の日数、月の「問題の無い日をまとめて確定」で確定していない日が N日減る（PRD D223）、月の予定の `?do=attention|unconfirmed`、いつでもの入口、何も無いデータで「準備はできています」、メニューの先頭、390px で縦1列・下のタブ5つ、印刷。③の日数は帯の確定していない日数で確かめる。
+`scripts/e2e-home.cjs`：起動・知らない URL・`?id=`、カードの並び、今日のカード → 日の予定（今日）、まとめて作る → 欄が開き `?do=` が消える・戻るで繰り返さない、案ができたら「未確定」・確定したら「確定済み」（案なしから始める所は先に初期データの案を消す）、初期データの案（PRD D225）で初めから今日が「未確定」・確定していない日＝月の未確定の日数、月の「問題の無い日をまとめて確定」で確定していない日が N日減る（PRD D223）、月の予定の `?do=attention|unconfirmed`、いつでもの入口、何も無いデータで「準備はできています」、メニューの先頭、390px で縦1列（先頭は欠勤・キャンセルの入口）・下のタブ5つ、印刷。③の日数は帯の確定していない日数で確かめる。
 
 ### 日の状態の共通フック（`lib/useDayStatuses.ts`）
 

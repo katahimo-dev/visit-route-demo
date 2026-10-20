@@ -94,6 +94,14 @@
 .home-ready strong {
   color: var(--ink);
 }
+/* スマホの先頭の欠勤・キャンセルの入口（PRD D247）。見た目はほかの入口と同じで、先頭に置くことで目立たせ、アイコンだけ朱 */
+.home-quick {
+  display: flex;
+}
+.home-task.is-first .home-task-icon {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
 /* 印刷では出さない（ホームは画面で使うだけ。PRD D145） */
 @media print {
   .home-page {
