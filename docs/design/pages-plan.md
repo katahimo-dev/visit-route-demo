@@ -20,12 +20,12 @@
 
 #### 並び（PRD D63）
 
-1. 見出し：［月｜週｜日］（`ViewSwitch`）・日付・状態の印・主ボタン「この割当で確定」
+1. 見出し（`PageHeader`。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）：題名・1行の説明・状態の印・主ボタン「この割当で確定」（確定済みの日は枠のボタンにして主ボタンを置かない。PRD D238）。題名の下に［月｜週｜日］のタブ（`ViewSwitch`。PRD D237）
 2. 進み具合の帯：`ScheduleBand date={date} withDay`（[pages-home.md](pages-home.md)）
-3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`。title「点数の基準：〈名前〉」）・点数の理由（`plan-reason`）・「詳しく」
-4. 担当ごとの1日（`DayLines`。下）
+3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`。title「点数の基準：〈名前〉」）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」
+4. 担当ごとの1日（`DayLines`。下）。開いているときは1行のまとめと1枚のカードにつなげる（`.plan-oneline:has(+ .daylines)` と `.plan-oneline + .daylines` で間と角を消す。印刷では離す。PRD D237）
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
-6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」・「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・表示［時間軸｜順番｜一覧］・「メールで送る」・計算中の進み具合と止める
+6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」は枠、「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・「メールで送る」は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・計算中の進み具合と止める
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
 8. 本体（時間軸か順番か一覧）と地図：1280px 以上で横に並べ（地図は上に貼りつく）、見出しの「地図を畳む」で畳む。狭い画面は `MapDock`
 
@@ -49,7 +49,7 @@
   - 次の一手 `nextStep`（PRD D229。`NEXT_STEP_TEXT`）：移動が長め＝「「移動を短く」で作る」（`shortTravel`）、入らない訪問＝「受けられる人を見る」（`candidates`）、相性△・×・◎の取り逃し＝「相性の表を開く」（`compat`）。ほか（必須の違反・待ち・偏り・ほかの担当の条件）は無し
 - `lib/useDayModel.ts` は `scoreRules`（点数の基準の条件。名前と重みを理由の文に使う）を返す
 - `pages/planParts.tsx` の `ScoreReasonText`：↘ と短い文。読み上げの前置き「点を下げているいちばんの理由：」は sr-only。使う所は日の予定の今の案の帯（`plan-reason`）と比較の画面（`compare-reason`）
-- `planParts.tsx` の `ScoreNextStep`：1行のまとめの下に1行「次の一手：［…］」（`p.score-next`・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「案を変える ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
+- `planParts.tsx` の `ScoreNextStep`：1行のまとめの中、理由のすぐ後ろに「次の一手：［…］」（`span.score-next`。PRD D237・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「案を変える ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
 - 点数の説明（`HundredHint`）は決め方と減点の内訳だけ。内部の費用（「費用 N（内部の値…）」）は出さない（PRD D229）
 - `planParts.tsx` の文：`SCORE_TEXT`（「理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点」）・`rulerText(name)`（「点数はいつも点数の基準のプリセット「〈名前〉」の重みで付けます。プリセットを替えても点数の付け方は変わりません」）
 
@@ -192,6 +192,7 @@
 
 ##### 手直しの記憶（PRD D260〜D262。ADR-0043。`components/prefAsk.tsx`・`lib/manualPrefs`）
 
+- 記憶の帯（`pref-ask`・`pref-bulk`）のボタンはどれも枠（`btn btn-small`。日の予定の塗りは「この割当で確定」だけ。PRD D238）
 - 確認の帯（`pref-ask`。あるときだけの帯の先頭・モーダルにしない）：手で担当を変えた（`moveTo`・`placeCandidate`）訪問を画面の状態 `prefAsk`（日ごと。保存しない）に足し、「次からも 火曜 10:00 の〇〇様は△△さんにしますか？」（`pref-ask-text`。`prefWhenText`。時間の約束に幅があれば「10:00〜10:30」）・［次からもこの人にする］（`pref-ask-yes`）・［今回だけ］（`pref-ask-no`）。2件以上なら「手で変えた N件を、次からもこの担当にしますか？」と1件ずつ「火曜 10:00 〇〇様 → △△さん」。最初の担当に戻した・同じ記憶がすでにある訪問・必須の条件に合わない人へ移した訪問は足さない。出すのはいまもその担当に固定している訪問だけ。日を移る（戻っても出さない）・作る・組み直す・保存してある案にする（`endPrefAsk`）と消える。答えなければ記憶しない
 - ［次からもこの人にする］：`patchManualPrefs` で `manualPrefs` に書き（同じキーは上書き）、前の値を「元に戻す」の控え（`undoSnap.prefs`）に足す。同じキーで今日より後の日にすでに別の人が割り当たっている訪問（`futureAssigned`：今の案、無ければ確定した割当）があれば次の帯、無ければトースト「次からも同じ担当にします（手直しの記憶）」（「元に戻す」付き）
 - 来週以降の帯（`pref-bulk`）：「来週以降のすでに割り当てた N件（10/28・11/4 …）も△△さんに変えますか？」（`pref-bulk-text`。日付は `prefDatesText`。変える先が何人かなら「それぞれの担当」。確定済みの日があれば「うち確定済みの M日は今の案だけ変わり、確定し直しが必要です。」）・［まとめて変える］（`pref-bulk-yes`）・［変えない］（`pref-bulk-no`）。まとめて変えると `applyFutureAssigned`：その日の今の案で `bestInsertion` で差し替えて固定（確定した日でも今の案だけ。確定した割当は変えない＝その日は「未確定の変更あり」）。今の案の無い確定した割当だけの日・その担当が今の案の条件の問題で可でない日は変えず、帯 `pref-bulk-result`「変えられなかった日が N件あります：10/28（水） 〇〇様（その日は担当できない）」（閉じる `pref-bulk-result-close`）。トースト「来週以降の N件を変えました（固定）」（「元に戻す」付き）。変えた日の前後の今の案を控え（`undoSnap.others`）に足す。足す先の控えが戻せなければ（`undoWhy` が null でない）、記憶・まとめて変えた分だけの新しい控え（`snap: null`）にする（`extendUndo`）。記憶だけの控えは作る・組み直すの計算が終わったら捨てる
@@ -226,6 +227,7 @@
 - 横棒の訪問の所をマウス・タッチで押すと（`DayLine.parts` の訪問の区間に visitId を付け、`PartsBar` が data-visit-id に書く。押した要素から引く）その訪問を選び（カードを押したときと同じ `togglePick`。選んだままなら外さず `focusOn` で地図を絞り直す）、その人の列の中のカード（data-visit）へスクロール（一覧のときは時間軸に切り替えてから）。キーボードで押したとき・訪問の外を押したときは人を選ぶ
 - `detailName` で行のボタンの外の右に名前の i
 - 今の案（`aiPlan`）が無い日は出さない。900px 以下・印刷は details 要素で畳む（`collapsed`）。高さの変数 `--header-h` は触らない
+- マウスだけの端末（`screen and (pointer: fine) and (not (any-pointer: coarse))`）では行を詰める（行の上下の余白0・行の高さ 1.25・行の i は 18px。PRD D237）。タッチできる端末（タッチ付きのノート・ペンを含む）と印刷は今のまま（行の i の押せる所 32×24px）。1行のまとめにつなげる量は `--plan-gap`（`.plan-page` の段の間）＋1px。1440×900 で本体の列の見出しと最初の訪問が初期表示に入る
 
 #### 地図と強調（`lib/routeView.ts`。比較の画面と共通）
 

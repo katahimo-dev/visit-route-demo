@@ -1,5 +1,6 @@
 // 手直しの記憶の確認の帯（PRD D261・D262。ADR-0043）。日の画面の「あるときだけの帯」に並べる。モーダルにせず、答えなくても操作は続けられる
 // （答えなければ「今回だけ」＝記憶しない）
+// 帯のボタンは枠（日の予定の塗りは「この割当で確定」の1つだけ。PRD D238・ADR-0036）
 import { History } from 'lucide-react';
 import { WithIcon } from './ui';
 
@@ -41,13 +42,7 @@ export function PrefAskBand({
         </span>
       </WithIcon>
       <span className="row pref-band-actions">
-        <button
-          type="button"
-          className="btn btn-small btn-primary"
-          onClick={onYes}
-          disabled={disabled}
-          data-testid="pref-ask-yes"
-        >
+        <button type="button" className="btn btn-small" onClick={onYes} disabled={disabled} data-testid="pref-ask-yes">
           次からもこの人にする
         </button>
         <button type="button" className="btn btn-small" onClick={onNo} data-testid="pref-ask-no">
@@ -87,13 +82,7 @@ export function PrefBulkBand({
         </span>
       </WithIcon>
       <span className="row pref-band-actions">
-        <button
-          type="button"
-          className="btn btn-small btn-primary"
-          onClick={onYes}
-          disabled={disabled}
-          data-testid="pref-bulk-yes"
-        >
+        <button type="button" className="btn btn-small" onClick={onYes} disabled={disabled} data-testid="pref-bulk-yes">
           まとめて変える
         </button>
         <button type="button" className="btn btn-small" onClick={onNo} data-testid="pref-bulk-no">

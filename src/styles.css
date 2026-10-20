@@ -91,6 +91,7 @@ h3 {
 .grow {
   flex: 1;
 }
+/* ボタンの3段（PRD D238。ADR-0036）：塗り＝主（.btn-primary。1画面に1つ）／枠＝副（.btn）／文字＝ついで（.btn-text） */
 .btn {
   border: 0;
   border-radius: 14px;
@@ -160,6 +161,26 @@ h3 {
   padding: 6px 10px;
   font-size: 0.85rem;
   border-radius: 10px;
+}
+/* 文字だけのボタン（ついで）：枠と地を消し、押せる所の大きさは .btn のまま。
+   文字は灰（--sub。--bg で 5.5）にして枠のボタンより目立たせない。重ねると下線と濃い文字（地の色だけに頼らない） */
+.btn.btn-text {
+  border-color: transparent;
+  background: transparent;
+  color: var(--sub);
+}
+.btn.btn-text:hover:not(:disabled):not([aria-disabled='true']) {
+  border-color: transparent;
+  background: var(--primary-soft);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn.btn-text[aria-disabled='true'],
+.btn.btn-text[aria-disabled='true']:hover {
+  border-color: transparent;
+  background: transparent;
+  color: var(--sub);
 }
 .chip {
   display: inline-flex;
@@ -809,8 +830,8 @@ tbody tr:hover td {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 20px 14px;
+  gap: 12px;
+  padding: 14px 14px 16px;
   background: var(--card);
   border-right: 1px solid var(--line);
 }
@@ -850,7 +871,7 @@ tbody tr:hover td {
 .nav-groups {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 .nav-group {
   display: flex;
@@ -860,17 +881,20 @@ tbody tr:hover td {
 .nav-group-title {
   /* 見出し（h2）だが見た目は小さな札のまま */
   margin: 0;
-  padding: 0 10px 4px;
+  padding: 0 10px 2px;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--sub);
 }
+/* メニューの項目は 34px（1440×900 で最後の項目まで入る。PRD D239）。タッチできる端末では 44px（下の any-pointer: coarse） */
 .nav-link {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px;
+  min-height: 34px;
+  padding: 5px 10px;
+  line-height: 1.4;
   border-radius: 10px;
   text-decoration: none;
   color: var(--ink);
@@ -1125,19 +1149,25 @@ tbody tr:hover td {
 }
 
 /* 共通の部品（components/ui.tsx） */
+/* 画面の見出しの型（PRD D236。ADR-0036）：左にアイコン・題名・1行の説明、右に主ボタン1つ。予定の3画面は題名の下にタブ */
 .page-head {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.page-head-row {
+  display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px 12px;
   flex-wrap: wrap;
 }
 .page-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
   background: var(--primary-soft);
   color: var(--primary-dark);
   flex-shrink: 0;
@@ -1148,50 +1178,58 @@ tbody tr:hover td {
 }
 .page-title h1 {
   margin: 0;
-  font-size: 1.45rem;
+  font-size: 1.4rem;
+  line-height: 1.3;
   letter-spacing: 0.02em;
 }
 .page-lead {
-  margin: 2px 0 0;
+  margin: 0;
+  /* 折り返すときは語の切れ目で、最後の行に1〜2字だけ残さない */
+  word-break: auto-phrase;
+  text-wrap: pretty;
   color: var(--sub);
   font-size: 0.88rem;
-}
-/* 予定の切り替え［月｜週｜日］（components/ViewSwitch.tsx。PRD D59）。今の画面は太字・下線と aria-current */
-.view-switch {
-  display: inline-flex;
-  border: 2px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.view-switch-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 14px;
-  background: var(--card);
-  color: var(--sub);
-  font-size: 0.95rem;
-  text-decoration: none;
-}
-.view-switch-item + .view-switch-item {
-  border-left: 2px solid var(--line);
-}
-.view-switch-item:hover {
-  color: var(--ink);
-}
-.view-switch-item.is-on {
-  background: var(--primary-soft);
-  color: var(--primary-dark);
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
 .page-actions {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+/* 見出しの右のボタンは少し低く（見出しの段を低くする） */
+.page-actions .btn:not(.btn-small) {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+/* 予定の切り替え［月｜週｜日］（components/ViewSwitch.tsx。PRD D59・D237）。題名の下のタブ（リンクのナビ）。
+   今の画面は aria-current と太字・下線（色だけに頼らない） */
+.page-tabs {
+  border-bottom: 1px solid var(--line);
+}
+.view-switch {
+  display: flex;
+  gap: 4px;
+  margin-bottom: -1px;
+}
+.view-switch-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  border-bottom: 3px solid transparent;
+  color: var(--sub);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+.view-switch-item:hover {
+  color: var(--ink);
+  border-bottom-color: var(--line);
+}
+.view-switch-item.is-on {
+  color: var(--primary-dark);
+  font-weight: 700;
+  border-bottom-color: var(--primary);
 }
 .section-title {
   display: flex;
@@ -2005,6 +2043,18 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
 }
 
 /* アイコンだけのボタンの押せる所：タッチの端末では 44px（見た目と並びは変えず、::before で押せる所だけ広げる） */
+/* タッチできる端末（タッチ付きのノート・ペンを含む）：メニューの項目は押せる所 44px、
+   ［月｜週｜日］のタブ（見た目 36px）は ::before で上下に 4px 広げて 44px（PRD D237・D239） */
+@media (any-pointer: coarse) {
+  .nav-link {
+    min-height: 44px;
+  }
+  .view-switch-item::before {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+  }
+}
 @media (pointer: coarse) {
   .icon-btn {
     position: relative;
