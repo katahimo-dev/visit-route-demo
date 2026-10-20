@@ -291,6 +291,7 @@
 - [ ] （D43）案を作ったあとにその日の訪問を直すと「条件が変わった」が出て、作り直すと消える
 - [ ] 「案を変える ▾」の並び・まとまり・説明・押せない理由・キーボード（`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
 - [ ] （D217〜D219）「担当を変える ▾」の項目（role=menuitem・説明・今の担当・入らなかった訪問へ）、キーボードで移すと担当が変わり固定、トーストと操作の行の「元に戻す」で担当と固定が戻る、確定の確認に入らない訪問の件数、390px で押せる（`lib/undoEdit`・`lib/reassignMenu`・`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
+- [ ] （D260〜D262）手直しの記憶：キー・当て方（担当できない日は当てない・固定が先）・上書き・上限・消す・「条件が変わった」にしない・来週以降をまとめて変える（変えられない日）・元に戻す（`matching/manualPrefs`・`lib/manualPrefs`・`store/repair` のテスト・`scripts/e2e-plan-menu.cjs`）
 - [ ] 点数の理由・次の一手・訪問ごとの理由の言葉（入らなかった訪問の札も。符号・「費用」を出さない）（`lib/scoreReason` のテスト・`scripts/e2e-words.cjs`）
 - [ ] `?do=unassigned` で入らなかった訪問へ巻く（`scripts/e2e-links.cjs`）
 - [ ] 名前から開く詳細（列の見出しの i・訪問の詳細・担当ごとの1日・一覧・入らなかった訪問・受けられる人・休みの帯・拘束超えの帯）（`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）
