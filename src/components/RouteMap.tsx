@@ -1,10 +1,12 @@
-// 写した元：katahimo-dev/visit-route-poc @ a46e7db web/src/components/RouteMap.tsx
-import L from 'leaflet';
-import { useEffect, useRef } from 'react';
+import { Component, type ReactNode, Suspense } from 'react';
+import { isChunkLoadError } from '../lib/chunkLoad';
+import { lazyComponent } from '../lib/lazyComponent';
+import { reloadPage } from '../lib/reloadPage';
 
 /**
  * 地図（国土地理院の淡色地図。APIキー不要）。
  * 線は順番どおりに結ぶ。dashed は点線（比較の A）、実線は今の案・比較の B。
+ * 本体（Leaflet）は別のチャンク（LeafletMap）で、地図を出すときに読む（PRD D248。ADR-0039）
  */
 /** highlight は選んだ訪問先（大きく・輪で囲み・前に出す） */
 export type MapPoint = { lat: number; lng: number; label: string; color: string; highlight?: boolean };
@@ -20,99 +22,60 @@ export type MapLine = {
   bold?: boolean;
 };
 
-export function RouteMap({
-  points,
-  lines = [],
-  height = 260,
-  onPick,
-}: {
+export type RouteMapProps = {
   points: MapPoint[];
   lines?: MapLine[];
   height?: number;
   /** 指定すると地図をクリックした位置を返す（位置の訂正用） */
   onPick?: (p: { lat: number; lng: number }) => void;
-}) {
-  const el = useRef<HTMLDivElement>(null);
-  const map = useRef<L.Map | null>(null);
-  const layer = useRef<L.LayerGroup | null>(null);
-  const pickRef = useRef(onPick);
-  pickRef.current = onPick;
+};
 
-  useEffect(() => {
-    if (!el.current || map.current) return;
-    const m = L.map(el.current, { zoomControl: true, attributionControl: true, zoomSnap: 0.25 }).setView(
-      [38.2682, 140.8694],
-      12,
+const LeafletMap = lazyComponent('LeafletMap', () => import('./LeafletMap'));
+
+/**
+ * 地図の本体を読めなかったとき（新しい版の公開・通信の切れ。PRD D248）：画面全体をエラーにせず、
+ * 同じ高さの枠に「地図を読み込めませんでした」と［再読み込み］を出す。ほかの例外は外の ErrorBoundary へ
+ */
+class MapErrorBoundary extends Component<{ height: number; children: ReactNode }, { error: unknown }> {
+  state: { error: unknown } = { error: null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+
+  render() {
+    const { error } = this.state;
+    if (error === null) return this.props.children;
+    // 読み込みの失敗でないもの（地図の不具合）は画面の ErrorBoundary に任せる
+    if (!isChunkLoadError(error)) throw error;
+    return (
+      <div className="map map-loading map-error" style={{ height: this.props.height }} data-testid="map-error">
+        <span>地図を読み込めませんでした</span>
+        <button type="button" className="btn btn-small" onClick={reloadPage}>
+          再読み込み
+        </button>
+      </div>
     );
-    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
-      attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
-      maxZoom: 18,
-    }).addTo(m);
-    m.on('click', (e) => pickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng }));
-    map.current = m;
-    layer.current = L.layerGroup().addTo(m);
-    return () => {
-      m.remove();
-      map.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const m = map.current;
-    const g = layer.current;
-    if (!m || !g) return;
-    g.clearLayers();
-    const hasHighlight = lines.some((l) => l.highlight);
-    // 強調する区間は最後に描いて前に出す（下に白い縁を敷いて目立たせる）
-    const rank = (l: MapLine) => (l.highlight ? 2 : l.bold ? 1 : 0);
-    for (const line of [...lines].sort((a, b) => rank(a) - rank(b))) {
-      if (line.points.length < 2) continue;
-      const latlngs = line.points.map((p) => [p.lat, p.lng] as [number, number]);
-      if (line.highlight) {
-        L.polyline(latlngs, { color: '#fff', weight: 12, opacity: 0.95 }).addTo(g);
-        // 点線の区間（比較の A）は強調しても点線のまま
-        L.polyline(latlngs, {
-          color: line.color,
-          weight: 7,
-          opacity: 1,
-          dashArray: line.dashed ? '12 10' : undefined,
-        }).addTo(g);
-        continue;
-      }
-      if (line.bold) L.polyline(latlngs, { color: '#fff', weight: 10, opacity: hasHighlight ? 0.3 : 0.9 }).addTo(g);
-      L.polyline(latlngs, {
-        color: line.color,
-        weight: line.bold ? 7 : 4,
-        dashArray: line.dashed ? '8 8' : undefined,
-        opacity: hasHighlight ? 0.3 : line.bold ? 1 : 0.9,
-      }).addTo(g);
-    }
-    for (const p of points) {
-      const size = p.highlight ? 40 : 28;
-      L.marker([p.lat, p.lng], {
-        zIndexOffset: p.highlight ? 1000 : 0,
-        icon: L.divIcon({
-          className: '',
-          html: `<div class="dot ${p.highlight ? 'map-pin-hl' : 'dot-sm'}" style="background:${p.color};border:2px solid #fff;box-shadow:0 1px 3px #0003">${escapeHtml(p.label)}</div>`,
-          iconSize: [size, size],
-          iconAnchor: [size / 2, size / 2],
-        }),
-      }).addTo(g);
-    }
-    const all = [...points, ...lines.flatMap((l) => l.points)];
-    if (all.length > 0)
-      m.fitBounds(L.latLngBounds(all.map((p) => [p.lat, p.lng] as [number, number])).pad(0.1), {
-        maxZoom: 15,
-        animate: false,
-      });
-  }, [points, lines]);
-
-  return <div ref={el} className="map" style={{ height }} />;
+  }
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+function RouteMapView(props: RouteMapProps) {
+  const height = props.height ?? 260;
+  return (
+    <MapErrorBoundary height={height}>
+      {/* 読み込み中も同じ高さの枠を出す（地図が出るときに下が跳ねない） */}
+      <Suspense
+        fallback={
+          <output className="map map-loading" style={{ height }} aria-busy="true">
+            地図を読み込んでいます…
+          </output>
+        }
+      >
+        <LeafletMap {...props} />
+      </Suspense>
+    </MapErrorBoundary>
   );
 }
+
+/** 地図（読み込み中は同じ高さの枠）。`RouteMap.preload()` で本体のチャンクを先に読む */
+export const RouteMap = Object.assign(RouteMapView, { preload: LeafletMap.preload });

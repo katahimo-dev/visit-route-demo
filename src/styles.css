@@ -345,6 +345,25 @@ tbody tr:hover td {
   overflow: hidden;
   z-index: 0;
 }
+/* 地図の本体を読んでいる間（同じ高さの枠。PRD D248） */
+.map-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--sub);
+  font-size: 0.9rem;
+}
+/* 地図の本体を読めなかったとき（PRD D248） */
+.map-error {
+  flex-direction: column;
+  gap: 8px;
+}
+/* 分けた画面を読んでいる間（空のときの見た目。高さを取って下のタブなどを跳ねさせない。PRD D248） */
+.page-loading {
+  min-height: 50vh;
+  justify-content: center;
+}
 
 /* スタッフ（スマホ） */
 .staff-shell {

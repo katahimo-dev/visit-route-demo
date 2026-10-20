@@ -28,6 +28,7 @@ import {
 import {
   type MouseEvent,
   type ReactElement,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -64,25 +65,21 @@ import { showsRebuildBand } from '../lib/rebuildBand';
 import { NARROW_QUERY } from '../lib/useMedia';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientsPage from '../pages/ClientsPage';
-import ComparePage from '../pages/ComparePage';
-import CompatPage from '../pages/CompatPage';
 import DataPage from '../pages/DataPage';
 import HomePage from '../pages/HomePage';
 import ItemsPage from '../pages/ItemsPage';
-import MonthPage from '../pages/MonthPage';
 import MonthPrintPage from '../pages/MonthPrintPage';
-import PlanPage from '../pages/PlanPage';
 import RulesPage from '../pages/RulesPage';
 import SettingsPage from '../pages/SettingsPage';
 import StaffPage from '../pages/StaffPage';
 import StaffViewPage from '../pages/StaffViewPage';
 import TypesPage from '../pages/TypesPage';
-import VacancyPage from '../pages/VacancyPage';
 import WeekPage from '../pages/WeekPage';
 import WorkloadPage from '../pages/WorkloadPage';
 import { useDemoData } from '../store';
 import { DayProvider, useDay } from './day';
 import { ErrorBoundary } from './ErrorBoundary';
+import { ComparePage, CompatPage, MonthPage, PageLoading, PlanPage, PreloadWhenShown, VacancyPage } from './lazyPages';
 import { NavDrawer } from './NavDrawer';
 
 /** seed は基準日から14日分 */
@@ -364,27 +361,32 @@ function AdminShell() {
             </div>
           )}
           <main className="app-main">
-            <Guarded
-              element={
-                <>
-                  {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
-                  {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
-                  {/* 保存していたデータを読めず初期データで開いた知らせ（PRD D227）。閉じたらフォーカスは画面の見出しへ */}
-                  <BrokenDataNotice onClose={focusHeading} />
-                  {featureOff && (
-                    <FeatureOffNotice
-                      name={featureLabel(featureOff, terms)}
-                      onClose={() => {
-                        // 知らせを閉じる（URL はそのまま。state だけ消す）。フォーカスは画面の見出しへ
-                        navigate('/home', { replace: true, state: null });
-                        focusHeading();
-                      }}
-                    />
-                  )}
-                  <Outlet />
-                </>
-              }
-            />
+            {/* 分けた画面（PRD D248）を読む間。画面を移るときは前の画面のまま待つ（移動は transition）ので、出るのは最初に開いたときだけ */}
+            <Suspense fallback={<PageLoading />}>
+              <Guarded
+                element={
+                  <>
+                    {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
+                    {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
+                    {/* 保存していたデータを読めず初期データで開いた知らせ（PRD D227）。閉じたらフォーカスは画面の見出しへ */}
+                    <BrokenDataNotice onClose={focusHeading} />
+                    {featureOff && (
+                      <FeatureOffNotice
+                        name={featureLabel(featureOff, terms)}
+                        onClose={() => {
+                          // 知らせを閉じる（URL はそのまま。state だけ消す）。フォーカスは画面の見出しへ
+                          navigate('/home', { replace: true, state: null });
+                          focusHeading();
+                        }}
+                      />
+                    )}
+                    <Outlet />
+                    {/* 画面が出たあと（読み込み中の表示のあいだは数えない）に、分けた画面と地図を先に読む */}
+                    <PreloadWhenShown />
+                  </>
+                }
+              />
+            </Suspense>
           </main>
           {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・今日・空き状況。PRD D134・D144・D232。印刷では出さない） */}
           <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
