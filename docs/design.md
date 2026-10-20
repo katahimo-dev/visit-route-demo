@@ -552,7 +552,7 @@ ContactList = { staffChanged, timeChanged, staff: { staffId, added, removed, shi
 - 画面側（`lib/absences`）：元の案は `baseOf`（確定した割当は今の案の順・開始の順に並べ、無い訪問は開始がより遅い最初の訪問の前に挟む）。`applyReassign` で今の案（全部固定）にし記録に `reassign`。続けて振り直す（確定した割当が無い）ときは今の案から、`from`・`base*` は最初のもの、`absenceIds` は累積。`revertReassign` は最初の元の案へ（generated・runId も）
 - 案B の流れ：`prepareAnneal` → `runSolve(prep.problem, { seed: data.seed, iterations: defaultIterations(prep.problem), initial: prep.initial })` → `settleAnneal` → `addAnnealRun`（同じ結果なら足さない）→ 差の表（`annealRunOf`）→ `chooseReassign`。作れないとき（欠勤が取り消された・案A が無い・計算中）はボタンを押せなくして理由
 - 欠勤は1人1日1件・30分単位（境は 12:00。欄で丸め、Excel では止める）。振り直しで件数の上限は超えない
-- 連絡文は `lib/contacts`（`staffMessage`・`clientMessages`・`allContactsText`。コピー・印刷だけ）
+- 連絡文は `lib/contacts`（`staffMessage`・`clientMessages`・`allContactsText`・欠勤・キャンセルの欄の5段目の `contactRows`。コピー・メール・印刷だけ。ひな形と載せる範囲は ADR-0038・PRD D245・D246）
 
 ### 定期パターン（`src/contracts/patterns.ts`。ADR-0012・ADR-0013）
 
@@ -797,6 +797,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 条件の重みの画面 | 点数の基準のプリセット（ふだんの考え方）の重みを直す画面。日の重みは「この日だけ試す重み」で、基準が変わったら基準にそろえる | 直した重みがまとめて作る・自動作成・作り直しに効き、データの形を変えない | 0035 |
 | 予定と AI案 | 1画面「予定」 | 訪問の編集と手直しが重なっていた | 0009 |
 | 欠勤と振り直し | 別の記録 `absences`。案A＝空きに入れるだけ、案B＝減点つき焼きなまし。コンポーネント reassign、結果は今の案＋記録 | 他の人が変わらないことを保証でき、手直し・確定・比較がそのまま使える | 0011 |
+| 欠勤・キャンセルの連絡 | 欄の5段目で、確定し直した差と取り消した訪問から1人に1行の連絡文。［連絡した］は欄の中だけ。〈利用者さん〉あては担当の姓と時刻だけ | 確定から連絡まで1つの流れで、契約・データを変えず、個人情報を最小にできる | 0038 |
 | 一月分の予定 | 定期パターンから展開して実体化、種類の条件は常に必須、1日ずつ基準のプリセットで解く | 既存の予定・AI案・Excel が訪問の形のまま動く | 0012 |
 | 空き状況 | 元の案に他の人を変えずに仮の訪問を入れて数える | 移動込みで答えられ案A と同じ判定 | 0012 |
 | 第N曜日・休み・決まりごと・案内文 | パターンに項目を足す、休みは別の記録で派生、固定の4項目、空き状況から純粋関数で文 | 展開・ID をそのまま使え、1か所の判定で外れる | 0013 |

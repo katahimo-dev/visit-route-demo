@@ -29,9 +29,9 @@ const absence = (x: Partial<Absence> = {}): Absence => ({
 
 describe('suddenSteps・suddenHeading（段階の名前と見出し）', () => {
   it('〈スタッフ〉の流れ（選ぶ前も同じ）と〈利用者さん〉の流れ（短い名前）', () => {
-    expect(suddenSteps(null)).toEqual(['起きたこと', '休む人', '影響', '確定']);
+    expect(suddenSteps(null)).toEqual(['起きたこと', '休む人', '影響', '確定', '連絡']);
     expect(suddenSteps('staff')).toEqual(suddenSteps(null));
-    expect(suddenSteps('client')).toEqual(['起きたこと', '訪問', '影響', '確定']);
+    expect(suddenSteps('client')).toEqual(['起きたこと', '訪問', '影響', '確定', '連絡']);
   });
   it('見出しは段階の名前と重ねない', () => {
     expect(suddenHeading(null, 1, 'スタッフ')).toBe('何が起きましたか？');
@@ -40,8 +40,10 @@ describe('suddenSteps・suddenHeading（段階の名前と見出し）', () => {
     expect(suddenHeading('staff', 4, 'スタッフ')).toBe('案を選んで確定する');
     expect(suddenHeading('client', 2, 'スタッフ')).toBe('キャンセルの訪問を選ぶ');
     expect(suddenHeading('client', 4, 'スタッフ')).toBe('確定する');
+    expect(suddenHeading('staff', 5, 'スタッフ')).toBe('変更を伝える');
+    expect(suddenHeading('client', 5, 'スタッフ')).toBe('変更を伝える');
     for (const k of ['staff', 'client'] as const)
-      for (const st of [1, 2, 3, 4] as const) expect(suddenSteps(k)).not.toContain(suddenHeading(k, st, 'スタッフ'));
+      for (const st of [1, 2, 3, 4, 5] as const) expect(suddenSteps(k)).not.toContain(suddenHeading(k, st, 'スタッフ'));
   });
 });
 

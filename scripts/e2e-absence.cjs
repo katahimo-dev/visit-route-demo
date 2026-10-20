@@ -1,8 +1,9 @@
 // 急な欠勤・当日キャンセルを目立つ入口から登録して振り直すこと（PRD D167〜D172。ADR-0025 追記・ADR-0011・ADR-0015）を本物のブラウザで確かめる：
 // ホームの「欠勤・キャンセルを登録」で今日の日の予定の「欠勤・キャンセル」の欄が1段目で開き `?do=`・`?date=` が URL から消える、
 // 段階の表示（aria-current="step"）と段階ごとのフォーカス（段階の見出し）、〈スタッフ〉が休む → 人と時間帯 → 影響（入らなくなる訪問 N件）→
-// 登録して振り直す（案A）→ 4段目のまとめと案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→ 確定済み、
-// 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目）、
+// 登録して振り直す（案A）→ 4段目のまとめと案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→
+// 5段目の連絡（人ごとの文・［文をコピー］・メール・［連絡した］の数。PRD D243〜D246）→ 終わる → 確定済み、
+// 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目・5段目で担当に「中止」）、
 // 列の見出しの「欠勤を直す」で同じ欄が2段目で開き、欠勤を取り消せる、戻る、Esc で閉じて入口のボタンへフォーカス、
 // 案の無い日は欠勤だけ登録できる、390px で入口が見え欄が画面に収まる・下のタブは5つのまま、印刷で入口を出さない、ブラウザの確認を出さない。
 //
@@ -54,12 +55,24 @@ const focused = (page) =>
 const currentStep = (page) =>
   page.locator('.sudden-steps [aria-current="step"]').evaluate((el) => el.textContent.replace(/^\d/, '').trim());
 
-/** 段階の表示の4つが1行に並ぶ（上の端が同じ） */
+/** 段階の表示の5つが1行に並ぶ（上の端が同じ） */
 const oneLine = (page) =>
   page
     .locator('.sudden-steps li')
     .evaluateAll(
-      (els) => els.length === 4 && new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size === 1,
+      (els) => els.length === 5 && new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size === 1,
+    );
+/** 5段目の連絡の行（宛先・種類・文） */
+const contactRowsOf = (page) =>
+  panel(page)
+    .getByTestId('sudden-contact')
+    .evaluateAll((els) =>
+      els.map((el) => ({
+        to: el.dataset.to,
+        kinds: el.dataset.kinds,
+        text: el.querySelector('[data-testid="sudden-contact-text"]')?.textContent ?? '',
+        mail: el.querySelector('[data-testid="sudden-contact-mail"]')?.getAttribute('href') ?? null,
+      })),
     );
 /** 今の案が出て計算が終わるまで待つ */
 async function waitPlan(page) {
@@ -107,7 +120,11 @@ async function fromHome(page) {
     '右の欄（role=dialog・aria-modal）',
   );
   const steps = await page.locator('.sudden-steps li').allTextContents();
-  check(steps.length === 4, '段階の表示が4つ', steps);
+  check(
+    steps.length === 5 && steps.at(-1).includes('連絡'),
+    '段階の表示が5つ（起きたこと→休む人→影響→確定→連絡）',
+    steps,
+  );
   check((await currentStep(page)) === '起きたこと', '今の段階（aria-current="step"）', await currentStep(page));
   check(
     (await page.locator('h3.sudden-step-title').textContent()) === '何が起きましたか？',
@@ -214,9 +231,60 @@ async function fromHome(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'step4-staff.png') });
   // 確定（独自の確認ダイアログ。answerConfirms が確定を押す）
   await page.getByTestId('sudden-adopt').click();
-  await panel(page).waitFor({ state: 'detached', timeout: 10000 });
   const d3 = await waitStored(page, (d) => !!d.manualPlans?.[TODAY]);
   check(!!d3.manualPlans[TODAY], '「この割当で確定」で確定した割当を書く');
+  // 5段目：連絡（PRD D243〜D246）
+  await page.locator('[data-testid="sudden-panel"][data-step="5"]').waitFor({ timeout: 10000 });
+  await settle(page, 300);
+  check((await stepOf(page)) === '5', '確定すると5段目（連絡）。欄は閉じない');
+  check((await currentStep(page)) === '連絡', '5段目の段階の名前は「連絡」', await currentStep(page));
+  check((await page.locator('h3.sudden-step-title').textContent()) === '変更を伝える', '5段目の見出し「変更を伝える」');
+  const rows = await contactRowsOf(page);
+  const removed = rows.find((r) => r.to === 'staff' && r.kinds.includes('removed'));
+  check(
+    !!removed &&
+      /^.+さん\n\d+月\d+日（.）の予定の変更です。/.test(removed.text) &&
+      /代わりました|調整中です/.test(removed.text),
+    '5段目：休む人あての文（日付・「〜さんに代わりました」）',
+    removed,
+  );
+  const added = rows.find((r) => r.to === 'staff' && r.kinds.includes('added'));
+  check(!added || added.text.includes('の訪問をお願いします'), '5段目：新しく入る人あての文（お願いします）', added);
+  const client = rows.find((r) => r.to === 'client');
+  check(
+    !client ||
+      (client.text.includes('いつもお世話になっております') &&
+        !/様の訪問/.test(client.text.split('\n').slice(1).join(''))),
+    '5段目：〈利用者さん〉あては敬語で、ほかの〈利用者さん〉の名前を載せない',
+    client,
+  );
+  check(
+    rows.filter((r) => r.to === 'staff').every((r) => r.mail === null || r.mail.startsWith('mailto:')),
+    '5段目：〈スタッフ〉あてのメールは mailto: のリンク',
+    rows.map((r) => r.mail),
+  );
+  const total = rows.length;
+  check(
+    (await page.getByTestId('sudden-contacts-count').textContent()) === `連絡した 0/${total}人`,
+    '5段目：連絡した数（はじめ 0）',
+    await page.getByTestId('sudden-contacts-count').textContent(),
+  );
+  await panel(page).getByTestId('sudden-contact-sent').first().check();
+  check(
+    (await page.getByTestId('sudden-contacts-count').textContent()) === `連絡した 1/${total}人`,
+    '5段目：［連絡した］で数が増える',
+    await page.getByTestId('sudden-contacts-count').textContent(),
+  );
+  await panel(page).getByTestId('sudden-contact-copy').first().click();
+  await page
+    .locator('.toast')
+    .filter({ hasText: /をコピーしました|コピーできませんでした/ })
+    .first()
+    .waitFor({ timeout: 5000 });
+  check(true, '5段目：［文をコピー］で知らせが出る');
+  await page.screenshot({ path: path.join(OUT_DIR, 'step5-staff.png') });
+  await page.getByTestId('sudden-finish').click();
+  await panel(page).waitFor({ state: 'detached', timeout: 10000 });
   await settle(page, 300);
   check(
     (await page.getByTestId('confirm-state').textContent()).includes('確定済み'),
@@ -356,6 +424,21 @@ async function sameDayCancel(page) {
   const v = d.visits.find((x) => x.id === first);
   check(v.cancelled === true && v.cancelKind === 'sameDay', '取り消すと cancelKind=sameDay', v);
   check((await stepOf(page)) === '4', 'キャンセルのあと4段目');
+  // 5段目：取り消した訪問の担当に「中止」（確定済みの日なので「次へ：連絡」、違えば確定してから）
+  const toContacts = page.getByTestId('sudden-to-contacts');
+  if ((await toContacts.count()) > 0) await toContacts.click();
+  else await page.getByTestId('sudden-adopt').click();
+  await page.locator('[data-testid="sudden-panel"][data-step="5"]').waitFor({ timeout: 10000 });
+  const crow = await contactRowsOf(page);
+  const owner = v.staffId ?? null;
+  check(
+    owner === null
+      ? crow.every((r) => !r.kinds.includes('cancelled'))
+      : crow.some((r) => r.to === 'staff' && r.kinds.includes('cancelled') && r.text.includes('中止です')),
+    'キャンセルの5段目：担当に「中止です」（〈利用者さん〉あては作らない）',
+    crow,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'step5-cancel.png') });
   // Esc で閉じ、フォーカスは入口のボタンへ
   await page.keyboard.press('Escape');
   await panel(page).waitFor({ state: 'detached' });

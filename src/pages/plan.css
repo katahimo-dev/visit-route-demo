@@ -1163,6 +1163,54 @@ p.plan-band.error {
   border-radius: 10px;
   background: var(--soft);
 }
+/* 5段目の連絡の一覧（PRD D244）：1人に1枚。上に宛名と種類の印、文、下に［文をコピー］・メール・［連絡した］ */
+.sudden-contacts-count {
+  margin: 0;
+  font-weight: 700;
+}
+.sudden-contacts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sudden-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+}
+.sudden-contact.is-sent {
+  background: none;
+}
+.sudden-contact-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.sudden-contact-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.sudden-contact-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.sudden-contact-sent {
+  margin-left: auto;
+}
 /* 4段目の案A・案B の表は欄の幅に収め、はみ出す分は表だけ横に巻く */
 .sudden-panel .anneal-box {
   overflow-x: auto;
