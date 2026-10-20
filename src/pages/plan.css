@@ -1205,3 +1205,33 @@ p.plan-band.error {
     display: none;
   }
 }
+/* 手直しの記憶の確認の帯（PRD D261・D262。ADR-0043） */
+.pref-band-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 2px;
+  font-size: 0.86rem;
+}
+.pref-band-item {
+  white-space: nowrap;
+}
+.pref-band-actions {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* 手直しの記憶で固定した訪問の印（固定の印と分ける：手直しの固定は橙、記憶は青の点線。ADR-0043） */
+.chip-memo {
+  background: #e3ecf8;
+  color: #2f5486;
+  font-weight: 700;
+  border: 1px dashed #6f93c4;
+}
+.tl-mark.is-memo {
+  color: #2f5486;
+  background: #e3ecf8;
+}
+.pref-note {
+  margin: 0;
+  color: #2f5486;
+}

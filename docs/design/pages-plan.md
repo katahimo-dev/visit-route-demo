@@ -1,6 +1,6 @@
 # 日の予定（予定と AI案）
 
-> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`、`src/components/Toast.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224。
+> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`・`manualPrefs.ts`、`src/components/Toast.tsx`・`prefAsk.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031・0043。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224・D260〜D262。
 > 欠勤・キャンセルの欄と振り直しは [pages-plan-absence.md](pages-plan-absence.md)、バーの塗りは [pages-bars.md](pages-bars.md)。
 
 ### 日の予定（`#/plan`。ADR-0009）
@@ -190,6 +190,16 @@
 - 入口：手直しのトーストの「元に戻す」（`plan-reassign-toast-undo`）と、操作の行の「元に戻す」（`plan-reassign-undo`。戻せないときは aria-disabled と title「戻せません：〈理由〉」。押しても何もしない）
 - トースト（`components/Toast`）：`toast(msg, { action: { label, onClick, testId } })`。ボタン付きは6秒（文だけは2.5秒）、ボタンにフォーカスがある間は消さず、離れたら2.5秒。読み上げの `output` は文だけ（ボタンは外）。全体は押しても下へ抜け、ボタンだけ押せる。押すとトーストを閉じてから呼ぶ
 
+##### 手直しの記憶（PRD D260〜D262。ADR-0043。`components/prefAsk.tsx`・`lib/manualPrefs`）
+
+- 確認の帯（`pref-ask`。あるときだけの帯の先頭・モーダルにしない）：手で担当を変えた（`moveTo`・`placeCandidate`）訪問を画面の状態 `prefAsk`（日ごと。保存しない）に足し、「次からも 火曜 10:00 の〇〇様は△△さんにしますか？」（`pref-ask-text`。`prefWhenText`。時間の約束に幅があれば「10:00〜10:30」）・［次からもこの人にする］（`pref-ask-yes`）・［今回だけ］（`pref-ask-no`）。2件以上なら「手で変えた N件を、次からもこの担当にしますか？」と1件ずつ「火曜 10:00 〇〇様 → △△さん」。最初の担当に戻した・同じ記憶がすでにある訪問・必須の条件に合わない人へ移した訪問は足さない。出すのはいまもその担当に固定している訪問だけ。日を移る（戻っても出さない）・作る・組み直す・保存してある案にする（`endPrefAsk`）と消える。答えなければ記憶しない
+- ［次からもこの人にする］：`patchManualPrefs` で `manualPrefs` に書き（同じキーは上書き）、前の値を「元に戻す」の控え（`undoSnap.prefs`）に足す。同じキーで今日より後の日にすでに別の人が割り当たっている訪問（`futureAssigned`：今の案、無ければ確定した割当）があれば次の帯、無ければトースト「次からも同じ担当にします（手直しの記憶）」（「元に戻す」付き）
+- 来週以降の帯（`pref-bulk`）：「来週以降のすでに割り当てた N件（10/28・11/4 …）も△△さんに変えますか？」（`pref-bulk-text`。日付は `prefDatesText`。変える先が何人かなら「それぞれの担当」。確定済みの日があれば「うち確定済みの M日は今の案だけ変わり、確定し直しが必要です。」）・［まとめて変える］（`pref-bulk-yes`）・［変えない］（`pref-bulk-no`）。まとめて変えると `applyFutureAssigned`：その日の今の案で `bestInsertion` で差し替えて固定（確定した日でも今の案だけ。確定した割当は変えない＝その日は「未確定の変更あり」）。今の案の無い確定した割当だけの日・その担当が今の案の条件の問題で可でない日は変えず、帯 `pref-bulk-result`「変えられなかった日が N件あります：10/28（水） 〇〇様（その日は担当できない）」（閉じる `pref-bulk-result-close`）。トースト「来週以降の N件を変えました（固定）」（「元に戻す」付き）。変えた日の前後の今の案を控え（`undoSnap.others`）に足す。足す先の控えが戻せなければ（`undoWhy` が null でない）、記憶・まとめて変えた分だけの新しい控え（`snap: null`）にする（`extendUndo`）。記憶だけの控えは作る・組み直すの計算が終わったら捨てる
+- 元に戻す（1手）：控えの日の手直し（あれば）・記憶（`undoPrefExtras`）・ほかの日の今の案を一緒に戻す。ほかの日の今の案がそのあと変わっていれば「戻せません：ほかの日の案が変わりました」（`samePlanEdit`）
+- 消す：固定を外す・入らなかった訪問へは、その訪問の記憶が外した担当なら消す（`applyEdit` の `forget`。「元に戻す」で戻る）。「AI が出したままに戻す」は固定と同じ担当の記憶を消す（確認の本文に「固定と同じ担当の手直しの記憶 N件も消します。」）
+- 当てる（作る問題だけ）：`create`（AI案を作る・自動作成・プリセットを順に作る）・`runPreset`（使い回す記録も記憶を当てた問題のキーで探す）・`resolve`（固定のある訪問は飛ばす）・プリセットのカード（`presetKeys` の `solve`）で `withManualPrefs`。当てたものを記録の `prefPins` に。採点・説明の `problem` には当てない
+- 印：今の案の元の記録の `prefPins` のうち、いまもその担当で手直しの固定でない訪問（`remembered`）に、青い点線の「記憶」（`pref-mark`。順番のカードの札・時間軸の帯の印。title と読み上げ「手直しの記憶：前に手で〇〇さんにした（同じ曜日・同じ時間。作り直してもこの担当）」）と、詳細の「担当：」の下に同じ文（`pref-note`）。手直しの固定（橙の「固定」）とは分ける（固定を外すボタンは付けない。記憶を消すのはデータの画面か、手で固定してから外す）
+
 #### 入らなかった訪問
 
 - 入らない訪問の列。理由の札の行 `unplaced-reasons` の先頭に〈利用者さん〉の i（data-testid `unplaced-info`。名前はカードの中なのでカードの外に置く。押してもカードを選ばない）
@@ -285,6 +295,7 @@
 - [ ] （D43）案を作ったあとにその日の訪問を直すと「条件が変わった」が出て、作り直すと消える
 - [ ] 「案を変える ▾」の並び・まとまり・説明・押せない理由・キーボード（`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
 - [ ] （D217〜D219）「担当を変える ▾」の項目（role=menuitem・説明・今の担当・入らなかった訪問へ）、キーボードで移すと担当が変わり固定、トーストと操作の行の「元に戻す」で担当と固定が戻る、確定の確認に入らない訪問の件数、390px で押せる（`lib/undoEdit`・`lib/reassignMenu`・`lib/planMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
+- [ ] （D260〜D262）手直しの記憶：キー・当て方（担当できない日は当てない・固定が先）・上書き・上限・消す・「条件が変わった」にしない・来週以降をまとめて変える（変えられない日）・元に戻す（`matching/manualPrefs`・`lib/manualPrefs`・`store/repair` のテスト・`scripts/e2e-plan-menu.cjs`）
 - [ ] 点数の理由・次の一手・訪問ごとの理由の言葉（入らなかった訪問の札も。符号・「費用」を出さない）（`lib/scoreReason` のテスト・`scripts/e2e-words.cjs`）
 - [ ] `?do=unassigned` で入らなかった訪問へ巻く（`scripts/e2e-links.cjs`）
 - [ ] 名前から開く詳細（列の見出しの i・訪問の詳細・担当ごとの1日・一覧・入らなかった訪問・受けられる人・休みの帯・拘束超えの帯）（`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）

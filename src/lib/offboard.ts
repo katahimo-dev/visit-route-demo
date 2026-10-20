@@ -277,7 +277,14 @@ function renameVisitIds(d: DemoData, map: ReadonlyMap<string, string>): DemoData
       Object.entries(d.aiRuns).map(([k, runs]) => [
         k,
         runs.map((r) =>
-          reassign({ ...r, routes: routes(r.routes), unassigned: list(r.unassigned), pins: pins(r.pins) }),
+          reassign({
+            ...r,
+            routes: routes(r.routes),
+            unassigned: list(r.unassigned),
+            pins: pins(r.pins),
+            // 手直しの記憶で固定した訪問（ADR-0043）も固定と同じく付け替える
+            ...(r.prefPins ? { prefPins: pins(r.prefPins) } : {}),
+          }),
         ),
       ]),
     ),

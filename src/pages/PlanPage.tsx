@@ -12,6 +12,7 @@ import {
   Crown,
   Gauge,
   GitCompareArrows,
+  History,
   Hourglass,
   LayoutGrid,
   ListChecks,
@@ -48,6 +49,7 @@ import { useMailLimit } from '../components/mailParts';
 import { VisitRouteLinks } from '../components/mapsLinks';
 import { PersonButton, PersonInfo } from '../components/PersonPopover';
 import { ClientName } from '../components/parts';
+import { PrefAskBand, PrefBulkBand, PrefBulkResult } from '../components/prefAsk';
 import { ScheduleBand } from '../components/progressBand';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
@@ -58,7 +60,7 @@ import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, Wit
 import { ViewSwitch } from '../components/ViewSwitch';
 import { VisitRules } from '../components/VisitRules';
 import { TypeMark } from '../components/visitType';
-import type { AiPlan, AiRun, DemoData } from '../contracts/data';
+import type { AiPlan, AiRun, DemoData, ManualPref } from '../contracts/data';
 import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
 import type { PlanScore, Problem, RuleAchievement, ScoreScale, SolveResult } from '../contracts/problem';
 import type { Preset, Rule } from '../contracts/rules';
@@ -90,7 +92,7 @@ import {
   withoutAbsencesOn,
 } from '../lib/absences';
 import { colorOf } from '../lib/colors';
-import { attempt, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
+import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { confirmDay } from '../lib/confirmDay';
 import { contactCount, dayWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
@@ -99,6 +101,16 @@ import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
 import { UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
+import {
+  applyFutureAssigned,
+  type FutureAssigned,
+  futureAssigned,
+  patchManualPrefs,
+  prefDatesText,
+  prefWhenText,
+  samePlanEdit,
+  undoPrefExtras,
+} from '../lib/manualPrefs';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { currentRuleKeys, planStale, rulesStale } from '../lib/month';
 import { scrollBehavior } from '../lib/motion';
@@ -134,7 +146,7 @@ import {
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
-import { bestInsertion, compile } from '../matching';
+import { bestInsertion, compile, prefKey, withManualPrefs } from '../matching';
 import {
   type ContactList,
   candidatesFor,
@@ -206,6 +218,20 @@ const PLAN_SET = 'plan';
  * 最良が変わらず Worker が bestRoutes を送らなかった進捗では、前の値のまま
  */
 type Progress = { iteration: number; total: number; hundred: number | null };
+/** 手直しの記憶を聞く1件（PRD D261）：訪問・変えた先・最初に変える前の担当 */
+type PrefAskItem = { visitId: string; staffId: string; from: string | null };
+/**
+ * 「元に戻す」（1手。PRD D218）の控え：日の手直し（snap。無ければ null）に、同じ1手で書いた手直しの記憶（prefs：キーと前の値）と
+ * まとめて変えたほかの日の今の案（others：前と後）を足す（ADR-0043）
+ */
+type UndoSnap = {
+  date: string;
+  snap: EditSnapshot | null;
+  visitId: string | null;
+  from: string | null;
+  prefs?: { key: string; before: ManualPref | null }[];
+  others?: { date: string; before: AiPlan; after: AiPlan }[];
+};
 
 /** 日付の短い表示（2026-10-13 → 10/13） */
 function shortDate(date: string): string {
@@ -427,6 +453,11 @@ export default function PlanPage() {
   const routes = useMemo(() => aiPlan?.routes ?? {}, [aiPlan]);
   const pins = useMemo(() => aiPlan?.pins ?? {}, [aiPlan]);
   const pinCount = Object.keys(pins).length;
+  /** 手直しの記憶（ADR-0043）を引く訪問と記憶（記憶が変わったときだけ作り直す。案のドラッグでは変わらない） */
+  const prefInput = useMemo(
+    () => ({ visits: data.visits, manualPrefs: data.manualPrefs }),
+    [data.visits, data.manualPrefs],
+  );
   const edited =
     !!aiPlan && (pinCount > 0 || JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes));
   /** 固定していない手直しがある（固定を残して組み直すと消える。PR #39 のレビュー） */
@@ -598,8 +629,10 @@ export default function PlanPage() {
     opts: { after?: () => void; onMade?: (plan: AiPlan) => void } = {},
   ): boolean => {
     const auto = mode === 'auto';
-    const p = check(rules, auto);
-    if (!p) return false;
+    const base = check(rules, auto);
+    if (!base) return false;
+    // 手直しの記憶（ADR-0043）：記憶の担当がその日に可なら固定して解く（当てたものは記録の prefPins）
+    const { problem: p, applied: prefPins } = withManualPrefs(base, dataRef.current);
     const forDate = date;
     const rulesSnapshot = rules;
     // 計算に使う問題のキー（記録に残し、同じ問題なら再計算を省く。ADR-0010）
@@ -623,7 +656,9 @@ export default function PlanPage() {
           generated: { routes: result.routes, unassigned: result.unassigned, score: result.score },
           pins: {},
         };
-        const x = { rules: rulesSnapshot, pins: {}, result, createdAt: plan.createdAt, inputKey };
+        const x = { rules: rulesSnapshot, pins: {}, result, createdAt: plan.createdAt, inputKey, prefPins };
+        // 今の案が替わるなら、手直しの記憶の確認・記憶だけの控えは終える（自動作成で今の案があれば替わらない）
+        if (!auto || !own(dataRef.current.aiPlans, forDate)) endPrefAsk(forDate);
         update((d) => {
           const added = addRun(d, forDate, x);
           if (auto && own(d.aiPlans, forDate)) return added;
@@ -734,8 +769,10 @@ export default function PlanPage() {
   const runPreset = async (preset: Preset) => {
     const rules = applyPreset(data.rules, preset);
     // 作れない日（訪問が無いなど）は条件も変えない
-    const target = check(rules);
-    if (!target) return;
+    const checked = check(rules);
+    if (!checked) return;
+    // 記憶（ADR-0043）を当てた問題で探す（記憶が変われば使い回さない）
+    const target = withManualPrefs(checked, data).problem;
     const saved = attempt(() => reusableRun(runs, target, rules, data.seed)).value;
     if (saved) {
       if (isCurrentRun(saved)) {
@@ -758,6 +795,7 @@ export default function PlanPage() {
         rules: applyPreset(d.rules, preset),
         aiPlans: { ...d.aiPlans, [date]: planOfRun(saved) },
       }));
+      endPrefAsk(date);
       sel.reset();
       toast(`保存してある${preset.name}の案を今の案にしました（再計算なし）`);
       return;
@@ -903,16 +941,18 @@ export default function PlanPage() {
           problem && JSON.stringify(rules) === JSON.stringify(compileInput.rules)
             ? problem
             : attempt(() => compile({ ...compileInput, rules }, date)).value;
-        return { rules, problem: p ?? null, key: p ? problemKey(p) : null };
+        // 再計算を省く記録は、手直しの記憶（ADR-0043）を当てた問題で探す。problem（記憶なし）は「条件が変わった」に使う
+        const solve = p ? withManualPrefs(p, prefInput).problem : null;
+        return { rules, problem: p ?? null, solve, key: solve ? problemKey(solve) : null };
       }),
-    [data.presets, compileInput, problem, date],
+    [data.presets, compileInput, problem, date, prefInput],
   );
   const presetCards = useMemo(
     () =>
       data.presets.map((pr, i) => {
         const k = presetKeys[i];
         // いまのデータでそのまま使える記録（押しても再計算しない）を優先する
-        const kp = k?.problem;
+        const kp = k?.solve;
         const kk = k?.key;
         const reusable = k && kp && kk ? attempt(() => reusableRun(runs, kp, k.rules, data.seed, kk)).value : undefined;
         // 無ければ、固定なしで重み・必須がこのプリセットと一致する最新の記録（押すと作り直す＝点が変わりうる）
@@ -988,16 +1028,18 @@ export default function PlanPage() {
     const p = check(rulesOn ? undefined : planRules);
     if (!p || !aiPlan) return;
     const forDate = date;
-    const pinned = attempt(() => compile({ ...data, rules: planRules }, forDate, aiPlan.pins));
-    if (!pinned.value) {
-      setError(pinned.error);
+    const compiled = attempt(() => compile({ ...data, rules: planRules }, forDate, aiPlan.pins));
+    if (!compiled.value) {
+      setError(compiled.error);
       return;
     }
+    // 手直しの記憶（ADR-0043）：固定の無い訪問だけに当てる（固定が先）
+    const { problem: pinned, applied: prefPins } = withManualPrefs(compiled.value, data, aiPlan.pins);
     const rulesSnapshot = planRules;
     const pinsSnapshot = aiPlan.pins;
-    const inputKey = problemKey(pinned.value);
-    run('resolve', pinned.value, `${presetOf(planRules, data.presets)?.name ?? 'いま'}の`, (result) => {
-      const x = { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now(), inputKey };
+    const inputKey = problemKey(pinned);
+    run('resolve', pinned, `${presetOf(planRules, data.presets)?.name ?? 'いま'}の`, (result) => {
+      const x = { rules: rulesSnapshot, pins: pinsSnapshot, result, createdAt: Date.now(), inputKey, prefPins };
       update((d) => {
         const added = addRun(
           patchPlan(d, forDate, p, (plan) => ({
@@ -1011,6 +1053,7 @@ export default function PlanPage() {
         const runId = findRun(added, forDate, x)?.id;
         return patchPlan(added, forDate, null, (plan) => ({ ...plan, runId }));
       });
+      endPrefAsk(forDate);
       if (dateRef.current === forDate) sel.reset();
       toast(result.stopped ? '途中までの最良の案で組み直しました' : '固定を残して組み直しました');
     });
@@ -1041,7 +1084,7 @@ export default function PlanPage() {
    * 手直しの1手前（PRD D218。ADR-0030）：手直し（担当を移す・入らなかった訪問へ・候補の人に入れる・固定を外す）の前の routes・pins。
    * 画面の状態だけ（保存しない）。戻せるのは直前の1手だけ。今の案がほかの操作で変わった・確定したら戻さない（lib/undoEdit）
    */
-  const [undoSnap, setUndoSnap] = useState<{ snap: EditSnapshot; visitId: string; from: string | null } | null>(null);
+  const [undoSnap, setUndoSnap] = useState<UndoSnap | null>(null);
   /** 今の案の routes・pins（手直しの前の形） */
   const editState: EditState | null = useMemo(
     () => (aiPlan ? { routes: aiPlan.routes, pins: aiPlan.pins } : null),
@@ -1050,19 +1093,178 @@ export default function PlanPage() {
   /** 確定した割当のキー（手直しのあとに確定したら戻さない） */
   const savedKey = useMemo(() => confirmedKey(own(data.manualPlans, date)), [data.manualPlans, date]);
   /** 戻せない理由（戻せれば null）。操作の行の title とトーストで共通 */
-  const undoWhy = useMemo(
-    () => undoBlockReason(undoSnap?.snap ?? null, date, editState, savedKey, !!running),
-    [undoSnap, date, editState, savedKey, running],
-  );
+  const undoWhy = useMemo(() => {
+    // 記憶だけ・ほかの日をまとめて変えただけの控え（ADR-0043）は、日の手直しの控えが無くても戻せる
+    const extra = !!undoSnap && ((undoSnap.prefs?.length ?? 0) > 0 || (undoSnap.others?.length ?? 0) > 0);
+    const why =
+      undoSnap?.snap || !extra
+        ? undoBlockReason(undoSnap?.snap ?? null, date, editState, savedKey, !!running)
+        : running
+          ? '計算中です'
+          : undoSnap?.date !== date
+            ? '別の日の手直しです'
+            : null;
+    if (why !== null) return why;
+    // まとめて変えたほかの日の今の案が、そのあとに変わっていたら戻さない
+    if (undoSnap?.others?.some((o) => !samePlanEdit(own(data.aiPlans, o.date), o.after))) {
+      return 'ほかの日の案が変わりました';
+    }
+    return null;
+  }, [undoSnap, date, editState, savedKey, running, data.aiPlans]);
   const undoable = undoWhy === null;
+
+  // ---- 手直しの記憶（PRD D260〜D262。ADR-0043）：手で担当を変えたら、次からもこの人にするかを帯で聞く ----
+  /** 聞いている訪問（この日の手で変えたもの。from は最初に変える前の担当。答えなければ記憶しない＝今回だけ） */
+  const [prefAsk, setPrefAsk] = useState<{ date: string; items: PrefAskItem[] } | null>(null);
+  /** 「次からも」を選んだあとの、来週以降のすでに割り当てた同じキーの訪問 */
+  const [prefBulk, setPrefBulk] = useState<{ date: string; list: FutureAssigned[] } | null>(null);
+  /** まとめて変えられなかった日の知らせ */
+  const [prefBulkNote, setPrefBulkNote] = useState<{ date: string; text: string } | null>(null);
+  // 日を移ったら聞くのをやめる（戻っても前の帯を出さない。最初の担当の判定も持ち越さない）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付が変わったときだけ
+  useEffect(() => {
+    setPrefAsk(null);
+    setPrefBulk(null);
+    setPrefBulkNote(null);
+  }, [date]);
+  /**
+   * 作る・組み直すの計算が終わったら（forDate の日）：聞いている手直しはもう今の案に無いので聞くのをやめ、
+   * 記憶だけの「元に戻す」の控え（日の手直しの控えが無いもの）も捨てる（作り直した案と別に戻すと食い違うため）
+   */
+  const endPrefAsk = (forDate: string) => {
+    setPrefAsk((cur) => (cur?.date === forDate ? null : cur));
+    setPrefBulk((cur) => (cur?.date === forDate ? null : cur));
+    setUndoSnap((u) => (u && !u.snap && u.date === forDate ? null : u));
+  };
+  /**
+   * 記憶・まとめて変えた分を足す先の控え：今の控えが戻せる（undoWhy が null）ならそれに足し、戻せないなら日の手直しの控えを捨てて
+   * 記憶・まとめて変えた分だけの新しい控えにする（「元に戻す」で記憶・来週分が確実に戻る）
+   */
+  const extendUndo = (extra: Pick<UndoSnap, 'prefs' | 'others'>) => {
+    const base: UndoSnap =
+      undoSnap && undoSnap.date === date && undoWhy === null
+        ? undoSnap
+        : { date, snap: null, visitId: null, from: null };
+    setUndoSnap({
+      ...base,
+      ...(extra.prefs ? { prefs: [...(base.prefs ?? []), ...extra.prefs] } : {}),
+      ...(extra.others ? { others: [...(base.others ?? []), ...extra.others] } : {}),
+    });
+  };
+  /**
+   * 手で担当を変えた（staffId）・外した（null）ことを覚える。最初の担当に戻した・記憶と同じ担当にしたなら聞かない
+   */
+  const noteManual = (visitId: string, staffId: string | null) => {
+    const v = visitById.get(visitId);
+    const mem = v ? own(data.manualPrefs, prefKey(v)) : undefined;
+    const before = owner.get(visitId) ?? null;
+    setPrefAsk((cur) => {
+      const items = cur && cur.date === date ? cur.items : [];
+      const prev = items.find((x) => x.visitId === visitId);
+      const from = prev ? prev.from : before;
+      const rest = items.filter((x) => x.visitId !== visitId);
+      const keep = rest.length > 0 ? { date, items: rest } : null;
+      if (staffId === null || staffId === from || mem?.staffId === staffId) return keep;
+      return { date, items: [...rest, { visitId, staffId, from }] };
+    });
+  };
+  /** 帯に出す訪問（いまもその担当に固定しているものだけ。作り直す・固定を外すなどで変わったものは聞かない） */
+  const askItems = useMemo(
+    () => (prefAsk && prefAsk.date === date ? prefAsk.items.filter((x) => own(pins, x.visitId) === x.staffId) : []),
+    [prefAsk, date, pins],
+  );
+  const askRows = askItems.map((x) => {
+    const v = visitById.get(x.visitId);
+    return {
+      visitId: x.visitId,
+      when: v ? prefWhenText(v) : '',
+      client: clientOf(x.visitId)?.displayName ?? '（不明）',
+      staff: staffName(x.staffId),
+    };
+  });
+  /** ［次からもこの人にする］：記憶に書き（「元に戻す」で戻せるよう控えに足す）、来週以降の割当済みがあれば続けて聞く */
+  const rememberAsked = () => {
+    if (askItems.length === 0) return;
+    const set = Object.fromEntries(askItems.map((x) => [x.visitId, x.staffId]));
+    const entries = askItems.flatMap((x) => {
+      const v = visitById.get(x.visitId);
+      if (!v) return [];
+      const key = prefKey(v);
+      return [{ key, before: own(data.manualPrefs, key) ?? null }];
+    });
+    update((d) => patchManualPrefs(d, { set }, Date.now()));
+    extendUndo({ prefs: entries });
+    setPrefAsk(null);
+    setPrefBulkNote(null);
+    const list = futureAssigned(dataRef.current, set, jstDate(Date.now()));
+    if (list.length > 0) {
+      setPrefBulk({ date, list });
+    } else {
+      setPrefBulk(null);
+      toast('次からも同じ担当にします（手直しの記憶）', { action: undoAction });
+    }
+  };
+  /** ［まとめて変える］：来週以降の今の案で担当を差し替えて固定（変えられない日は知らせる）。「元に戻す」で全部戻る */
+  const changeFuture = () => {
+    if (!prefBulk || running) return;
+    const base = dataRef.current;
+    const r = applyFutureAssigned(base, prefBulk.list);
+    update((d) => (d === base ? r.data : applyFutureAssigned(d, prefBulk.list).data));
+    const others = Object.entries(r.before).map(([d, before]) => ({ date: d, before, after: r.data.aiPlans[d]! }));
+    if (others.length > 0) extendUndo({ others });
+    setPrefBulk(null);
+    const failText = r.failed.map((x) => `${dateText(x.date)} ${clientOf(x.visitId)?.displayName ?? ''}様（${x.why}）`);
+    setPrefBulkNote(
+      r.failed.length > 0
+        ? { date, text: `変えられなかった日が ${r.failed.length}件あります：${failText.join('、')}` }
+        : null,
+    );
+    toast(
+      r.changed.length > 0 ? `来週以降の ${r.changed.length}件を変えました（固定）` : '変えられる日がありませんでした',
+      others.length > 0 ? { action: undoAction } : undefined,
+    );
+  };
+  /** 来週以降の帯の文：変える先（1人ならその人、何人かなら「それぞれの担当」） */
+  const bulkTo = [...new Set((prefBulk?.list ?? []).map((x) => x.to))];
+  const bulkStaff = bulkTo.length === 1 ? `${staffName(bulkTo[0]!)}さん` : 'それぞれの担当';
+  /**
+   * 今の案で手直しの記憶で固定した訪問（ADR-0043）：今の案の元の記録の prefPins のうち、いまもその担当で、手直しの固定でないもの。
+   * 訪問ID → 担当ID
+   */
+  const remembered = useMemo(() => {
+    const run = aiPlan?.runId ? runs.find((r) => r.id === aiPlan.runId) : undefined;
+    const out = new Map<string, string>();
+    for (const [vid, sid] of Object.entries(run?.prefPins ?? {})) {
+      if (owner.get(vid) === sid && !own(pins, vid)) out.set(vid, sid);
+    }
+    return out;
+  }, [aiPlan, runs, owner, pins]);
   /**
    * 手直しを書く：手直しの前の形を控え（after と同じなら控えない）、after を今の案に書く（after は呼ぶ側で1回だけ計算する）。
    * 控えたら true
    */
-  const applyEdit = (p: Problem, visitId: string, after: EditState): boolean => {
+  const applyEdit = (p: Problem, visitId: string, after: EditState, forget?: string): boolean => {
     const snap = editState ? takeSnapshot(date, editState, after, savedKey) : null;
-    setUndoSnap(snap ? { snap, visitId, from: owner.get(visitId) ?? null } : null);
-    update((d) => patchPlan(d, date, p, (plan) => ({ ...withRoutes(p, plan, after.routes), pins: after.pins })));
+    // 手で固定を外した（forget＝外した担当）：その訪問のキーの記憶がその担当なら消す（ADR-0043。「元に戻す」で戻す）
+    const v = visitById.get(visitId);
+    const key = v ? prefKey(v) : null;
+    const memBefore = key ? (own(data.manualPrefs, key) ?? null) : null;
+    const forgets = forget !== undefined && key !== null && memBefore?.staffId === forget;
+    setUndoSnap(
+      snap
+        ? {
+            date,
+            snap,
+            visitId,
+            from: owner.get(visitId) ?? null,
+            ...(forgets && key ? { prefs: [{ key, before: memBefore }] } : {}),
+          }
+        : null,
+    );
+    update((d) => {
+      const x = patchPlan(d, date, p, (plan) => ({ ...withRoutes(p, plan, after.routes), pins: after.pins }));
+      return forgets && forget ? patchManualPrefs(x, { clear: { [visitId]: forget } }, 0) : x;
+    });
     return !!snap;
   };
   /**
@@ -1092,6 +1294,9 @@ export default function PlanPage() {
       routes: owner.get(visitId) === staffId ? aiPlan.routes : bestInsertion(p, aiPlan.routes, visitId, staffId),
       pins: { ...aiPlan.pins, [visitId]: staffId },
     });
+    // 次からもこの人にするかを帯で聞く（PRD D261。答えなければ記憶しない）。必須の条件に合わない人へ移したときは聞かない
+    // （記憶しても次の案では当てられない）。聞いていた分は外す
+    noteManual(visitId, allowedFor(visitId, staffId) ? staffId : null);
     // 移した訪問を選んでいたら、地図の絞り込みを新しい担当に合わせる
     sel.follow(visitId, staffId);
     const opts = saved ? { action: undoAction } : undefined;
@@ -1104,20 +1309,25 @@ export default function PlanPage() {
   /** 未割当へ移す（列から外して「入らなかった訪問」へ。固定は担当の固定なので外す） */
   const unassign = (visitId: string) => {
     if (!problem || !aiPlan || running || !owner.has(visitId)) return;
-    const { [visitId]: _, ...rest } = aiPlan.pins;
-    const saved = applyEdit(problem, visitId, {
-      routes: Object.fromEntries(
-        Object.entries(aiPlan.routes).map(([s, ids]) => [s, ids.filter((x) => x !== visitId)]),
-      ),
-      pins: rest,
-    });
+    const { [visitId]: had, ...rest } = aiPlan.pins;
+    const saved = applyEdit(
+      problem,
+      visitId,
+      {
+        routes: Object.fromEntries(
+          Object.entries(aiPlan.routes).map(([s, ids]) => [s, ids.filter((x) => x !== visitId)]),
+        ),
+        pins: rest,
+      },
+      had,
+    );
     sel.follow(visitId, null);
     toast('入らなかった訪問へ移しました', saved ? { action: undoAction } : undefined);
   };
   const unpin = (visitId: string) => {
     if (problem && aiPlan) {
-      const { [visitId]: _, ...rest } = aiPlan.pins;
-      applyEdit(problem, visitId, { routes: aiPlan.routes, pins: rest });
+      const { [visitId]: had, ...rest } = aiPlan.pins;
+      applyEdit(problem, visitId, { routes: aiPlan.routes, pins: rest }, had);
       return;
     }
     update((d) =>
@@ -1133,20 +1343,34 @@ export default function PlanPage() {
    */
   const undoEdit = () => {
     const why = runRef.current ? '計算中です' : undoWhy;
-    if (why !== null || !problem || !undoSnap) {
+    const u = undoSnap;
+    if (why !== null || !problem || !u) {
       toast(`戻せません：${why ?? '戻せる手直しがありません'}`);
       return;
     }
-    const back = undoState(undoSnap.snap);
+    const back = u.snap ? undoState(u.snap) : null;
     const p = problem;
     const ae = document.activeElement;
     const fromToast = !ae || ae === document.body || !!ae.closest('.toast');
-    update((d) => patchPlan(d, date, p, (plan) => ({ ...withRoutes(p, plan, back.routes), pins: back.pins })));
-    sel.follow(undoSnap.visitId, undoSnap.from);
+    // 日の手直し・手直しの記憶・まとめて変えたほかの日（ADR-0043）を1手として戻す
+    update((d) => {
+      const x = back ? patchPlan(d, date, p, (plan) => ({ ...withRoutes(p, plan, back.routes), pins: back.pins })) : d;
+      return undoPrefExtras(x, u);
+    });
+    if (u.visitId) {
+      sel.follow(u.visitId, u.from);
+      // 戻した手直しは聞かない（戻した先を手で選んだのではない）
+      const vid = u.visitId;
+      setPrefAsk((cur) => {
+        const rest = cur?.items.filter((x) => x.visitId !== vid) ?? [];
+        return cur && rest.length > 0 ? { ...cur, items: rest } : null;
+      });
+    }
     setUndoSnap(null);
+    setPrefBulk(null);
     toast('元に戻しました');
     // トーストのボタンは押すと消えるので、戻した訪問のカードへ（操作の行から押したときはそのまま）
-    if (fromToast) focusAfterMove(undoSnap.visitId, undoSnap.from);
+    if (fromToast && u.visitId) focusAfterMove(u.visitId, u.from);
   };
   useEffect(() => {
     undoRef.current = undoEdit;
@@ -1155,23 +1379,34 @@ export default function PlanPage() {
   /** AI案に戻す（手直しと固定を捨てる） */
   const revert = async () => {
     if (!aiPlan) return;
+    // 固定と同じ担当の手直しの記憶（AI案に戻すと消える。ADR-0043）
+    const remain = Object.keys(patchManualPrefs(data, { clear: aiPlan.pins }, 0).manualPrefs).length;
+    const forgetN = Object.keys(data.manualPrefs).length - remain;
     const ok = await confirmDialog({
       title: 'AIが出したままの案に戻しますか？',
-      body: '手直しと固定を捨てて、AIが出したままの案に戻します。',
+      body: `手直しと固定を捨てて、AIが出したままの案に戻します。${forgetN > 0 ? `固定と同じ担当の手直しの記憶 ${forgetN}件も消します。` : ''}`,
       confirmLabel: '捨てて元に戻す',
       tone: 'danger',
     });
     if (!ok) return;
     if (runRef.current) return;
+    const dropped = aiPlan.pins;
     update((d) =>
-      patchPlan(d, date, problem, (plan) => ({
-        ...plan,
-        routes: plan.generated.routes,
-        unassigned: plan.generated.unassigned,
-        score: plan.generated.score,
-        pins: {},
-      })),
+      // 固定を捨てるので、固定と同じ担当の手直しの記憶も消す（ADR-0043）
+      patchManualPrefs(
+        patchPlan(d, date, problem, (plan) => ({
+          ...plan,
+          routes: plan.generated.routes,
+          unassigned: plan.generated.unassigned,
+          score: plan.generated.score,
+          pins: {},
+        })),
+        { clear: dropped },
+        0,
+      ),
     );
+    setPrefAsk(null);
+    setPrefBulk(null);
     sel.reset();
     toast('AI案に戻しました');
   };
@@ -1691,6 +1926,7 @@ export default function PlanPage() {
       routes: placeVisit(p, aiPlan.routes, visitId, staffId),
       pins: { ...aiPlan.pins, [visitId]: staffId },
     });
+    noteManual(visitId, staffId);
     sel.follow(visitId, staffId);
     toast(`${staffName(staffId)}さんに入れました（固定）`, saved ? { action: undoAction } : undefined);
   };
@@ -1897,6 +2133,19 @@ export default function PlanPage() {
     );
   };
 
+  /** 手直しの記憶で固定した訪問の説明（ADR-0043） */
+  const prefNoteText = (sid: string) =>
+    `手直しの記憶：前に手で${staffName(sid)}さんにした（同じ曜日・同じ時間。作り直してもこの担当）`;
+  /** 詳細の「なぜこの担当か」の1行（記憶で固定した訪問だけ） */
+  const prefNoteOf = (id: string) => {
+    const memo = remembered.get(id);
+    return memo ? (
+      <p className="sub pref-note" data-testid="pref-note">
+        {prefNoteText(memo)}
+      </p>
+    ) : null;
+  };
+
   /**
    * 訪問の印（欠勤の人のまま・代行・+N分・固定・必須の違反）と「固定を外す」。順番のカードの中・時間軸の帯の説明で共通。
    * pinHint：「固定」に用語の説明を付ける（順番の表示では並びで最初の固定の訪問だけ。押して開く説明は別に数える。PRD D241）
@@ -1907,7 +2156,8 @@ export default function PlanPage() {
     const subFrom = reassignMarks.substitute.get(id);
     const shift = reassignMarks.shifted.get(id);
     const stay = leftById.get(id);
-    if (!(pin || hard || subFrom || shift !== undefined || stay)) return null;
+    const memo = remembered.get(id);
+    if (!(pin || hard || subFrom || shift !== undefined || stay || memo)) return null;
     return (
       <div className="row visit-tags">
         {stay && (
@@ -1935,6 +2185,13 @@ export default function PlanPage() {
           <span className="chip chip-pin" title={pinHint ? undefined : '固定（組み直しても担当を変えない）'}>
             <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
             <Term k="pinned" plain={!pinHint} />
+          </span>
+        )}
+        {memo && (
+          <span className="chip chip-memo" title={prefNoteText(memo)} data-testid="pref-mark">
+            <History size={12} aria-hidden="true" />
+            記憶
+            <span className="sr-only">（{prefNoteText(memo)}）</span>
           </span>
         )}
         {hard?.map((h) => (
@@ -2014,6 +2271,7 @@ export default function PlanPage() {
         detail={
           <>
             {whoOf(id, ownerId)}
+            {prefNoteOf(id)}
             {reassignOf(id, ownerId)}
             <VisitRules client={clientOf(id)} />
             {routeLinksOf(id, ownerId)}
@@ -2078,6 +2336,8 @@ export default function PlanPage() {
         '固定（組み直しても担当を変えない）',
         <Pin size={11} strokeWidth={2.4} aria-hidden="true" />,
       );
+    const memo = remembered.get(id);
+    if (memo) mark('memo', 'is-memo', prefNoteText(memo), <History size={11} aria-hidden="true" />, 'pref-mark');
     if (client?.tentative) mark('tentative', 'is-tentative', '仮押さえ（本登録の前）', '仮');
     const x = { id, set: PLAN_SET };
     return {
@@ -2102,6 +2362,7 @@ export default function PlanPage() {
             <TypeMark type={type} compact />
           </div>
           {whoOf(id, sid, false)}
+          {prefNoteOf(id)}
           {reassignOf(id, sid)}
           {tagsOf(id)}
           <VisitRules client={client} />
@@ -2917,6 +3178,28 @@ export default function PlanPage() {
         <p className="error plan-band" role="alert">
           {error}
         </p>
+      )}
+      {/* 手直しの記憶の確認（PRD D261・D262。ADR-0043）。モーダルにせず、答えなければ記憶しない */}
+      {aiPlan && (
+        <PrefAskBand rows={askRows} disabled={!!running} onYes={rememberAsked} onNo={() => setPrefAsk(null)} />
+      )}
+      {prefBulk && prefBulk.date === date && (
+        <PrefBulkBand
+          count={prefBulk.list.length}
+          confirmedDays={
+            new Set(
+              prefBulk.list.filter((x) => x.source === 'plan' && !!own(data.manualPlans, x.date)).map((x) => x.date),
+            ).size
+          }
+          dates={prefDatesText(prefBulk.list.map((x) => x.date))}
+          staff={bulkStaff}
+          disabled={!!running}
+          onYes={changeFuture}
+          onNo={() => setPrefBulk(null)}
+        />
+      )}
+      {prefBulkNote && prefBulkNote.date === date && (
+        <PrefBulkResult text={prefBulkNote.text} onClose={() => setPrefBulkNote(null)} />
       )}
       {aiPlan && (curScore?.error || genScore?.error) && (
         <p className="error plan-band" role="alert">

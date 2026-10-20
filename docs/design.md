@@ -145,6 +145,7 @@ flowchart LR
   - 割当・相性・上書き・固定・記録・今の案と記録の `reassign` の `base*`（`absenceIds` は残す）。記録は1日20件まで（古いものから捨てる）
   - プリセット：6つまで・0件なら初期の3種・重みは 0〜5・0.5刻み（`clampWeight`）・必須にできない型の必須は外す。`scorePresetId` が無効なら先頭
   - 欠勤は同じ人・同じ日の最後の1件。種類は20まで
+  - 手直しの記憶（ADR-0043）：いない〈スタッフ〉・〈利用者さん〉（キーの先頭）の記憶を消し、2000件を超えたら `updatedAt` の古い順に消す。記録の `prefPins` は固定と同じ規則
   - パターン：いない〈利用者さん〉のものを除く、無効な `typeId`・`usualStaffId` は null、`weekdays`・`monthWeeks` は重なりなしの昇順（毎週系の `monthWeeks` は `[]`）、`dayTimes` はパターンの曜日だけ・曜日ごと最初の1件・曜日の順
   - 訪問：無効な `typeId`・`pattern` は null（訪問は残す）。取り消していない訪問の `cancelKind` は null
   - `allowedStaffIds`：いない・休止中の人と重なりを除く（空になれば限らない）。active・tentative を段階に合わせる（`stageFlags`）
@@ -197,7 +198,7 @@ flowchart LR
 ### matching（項目・条件 → 費用表）
 - 責務：項目・特性・必要条件・希望・相性・条件を、solver が読む**問題（`Problem`）**に変換する。①可否 ②割当費用（§5「費用の物差し」）③負担の均等の目安 ④移動・待ちの行列と係数。訪問×スタッフごとの**理由**も返す
 - 持つデータ（持ち主）：なし
-- 提供するAPI：`compile(data: CompileInput, date, pins?)`（問題に入る〈スタッフ〉は利用中の人。`pins` の訪問はその担当だけ可＝理由 `pin`「固定（手直し）」）、`matches`・`conditionText`・`scheduleRoute`（時刻の唯一の実装）・`routeCost`・`balancePoints`・`balanceOff`・`totalPoints`・`dropPointsOf`・`fitStart`・`naiveSeqs`、`bestInsertion(problem, routes, visitId, staffId)`（strict で最も安い位置、無ければ開始の順に lenient で入れて違反として見せる）
+- 提供するAPI：`compile(data: CompileInput, date, pins?)`（問題に入る〈スタッフ〉は利用中の人。`pins` の訪問はその担当だけ可＝理由 `pin`「固定（手直し）」）、手直しの記憶（ADR-0043。`matching/manualPrefs.ts`）の `prefKey(visit)`・`requestedPrefPins`・`applyPrefPins(problem, prefPins)`（記憶の担当が可のときだけその担当だけを可に。理由 `manualPref`「手直しの記憶（〈名前〉さんに固定）」／「手直しの記憶：前に手で〈名前〉さんにした」。費用は変えない）・`withManualPrefs(problem, data, pins?)`（固定のある訪問は飛ばす。案を作る問題だけに当て、採点・説明・欠勤の振り直しの問題には当てない）、`matches`・`conditionText`・`scheduleRoute`（時刻の唯一の実装）・`routeCost`・`balancePoints`・`balanceOff`・`totalPoints`・`dropPointsOf`・`fitStart`・`naiveSeqs`、`bestInsertion(problem, routes, visitId, staffId)`（strict で最も安い位置、無ければ開始の順に lenient で入れて違反として見せる）
 - 可否で外す原因（`points` は Infinity）：
   - 必須の条件、相性 ×（重み・必須によらない）
   - 稼働時間帯（`slot`）：欠勤は差し引き、文は `ABSENT_ALL_DAY`「欠勤（終日）」・`ABSENT_NO_HOURS`「欠勤で稼働時間がない」・`ABSENCE_OVERLAP`「欠勤の時間と重なる」。最終勤務日の後は `AFTER_LAST_DAY`「最終勤務日の後」
@@ -426,13 +427,14 @@ PoC本体の documents.ts からログイン・事業所の分離（email・uid�
 - 希望休：終日かつ `note` が `'希望休'`（`REQUESTED_OFF_NOTE`）の欠勤（`isRequestedOff`）
 - `'monthly'` では `everyWeeks` を使わない（1にする）。`'fixed'` の `dayTimes` は `latestStart`＝`earliestStart`
 
-### データ一式・案・記録（`src/contracts/data.ts`。ADR-0004・ADR-0005・ADR-0008・ADR-0010・ADR-0011・ADR-0020・ADR-0028）
+### データ一式・案・記録（`src/contracts/data.ts`。ADR-0004・ADR-0005・ADR-0008・ADR-0010・ADR-0011・ADR-0020・ADR-0028・ADR-0043）
 
-`STORAGE_KEY = 'vrdemo:data:v1'`、`DATA_VERSION = 1`、`MAX_RUNS_PER_DAY = 20`、`ImportError = { code: 'INVALID_ARGUMENT'; message }`。
+`STORAGE_KEY = 'vrdemo:data:v1'`、`DATA_VERSION = 1`、`MAX_RUNS_PER_DAY = 20`、`MAX_MANUAL_PREFS = 2000`、`ImportError = { code: 'INVALID_ARGUMENT'; message }`。
 
 ```ts
 DemoData = { version, baseDate /* seed の基準日 */, seed /* 乱数の種 */, org, items, rules, staff, clients, compat,
   visits, availability, absences /* ≤2000 */, visitTypes /* ≤20 */, patterns /* ≤2000 */, clientLeaves /* ≤2000 */,
+  manualPrefs /* 手直しの記憶：prefKey → { staffId, updatedAt }。≤2000 */,
   manualPlans /* date → staffId|'__none' → 訪問IDの列＝確定した割当 */, aiPlans /* date → AiPlan */,
   aiRuns /* date → AiRun[]（古い順） */, presets /* 1〜6 */, scorePresetId? }
 AiPlan = { date, createdAt, seed, iterations, stopped, rules /* 作ったときの条件 */,
@@ -441,7 +443,9 @@ AiPlan = { date, createdAt, seed, iterations, stopped, rules /* 作ったとき�
 AiRun = { id /* `${date}#${no}@${createdAt}` */, no /* 1から */, date, createdAt, seed, iterations, stopped, rules, pins,
   routes, unassigned, score, label /* プリセット名か「条件を変えた案」。組み直しは「…・固定n件で組み直し」 */,
   presetId /* 最後に作った・使い回したときに重みが一致した最初のプリセット。無ければ null */,
-  inputKey? /* problemKey。無い記録は使い回さない */, reassign?, calcFeatures? /* 切っているものだけ */ }
+  inputKey? /* problemKey。無い記録は使い回さない */, reassign?, calcFeatures? /* 切っているものだけ */,
+  prefPins? /* 手直しの記憶で固定した訪問ID → 担当ID。当てたときだけ */ }
+ManualPref = { staffId, updatedAt /* ms */ }  // キー `clientId|曜日0-6|earliestStart-latestStart|typeId または空`（matching の prefKey）
 ReassignInfo = { method: 'insert' | 'anneal', stayWeight? /* 案B 0〜5 */, insertRoutes? /* 案A の結果 */,
   from: 'confirmed' | 'plan', baseRoutes, basePins /* 確定した割当なら {} */, baseGenerated?, baseRunId?,
   absenceIds /* 取り消されても残し、続けて振り直すと累積 */ }
@@ -454,12 +458,13 @@ RosterImportResult = { data /* migrate 済み */, added /* 行の順。「名前
 - 記録は AI案を作る・組み直すたびに `lib/runs` の `addRun` で1件足す。同じ条件・seed・pins・結果があれば足さず、その記録の `inputKey`・`presetId`・`calcFeatures` を今のものに書き直す
 - `problemKey(problem)`：日付・スタッフ（自宅・稼働時間帯）・訪問・行列・可否・割当費用・待ち・均等を決定的に JSON にし、FNV-1a（32bit、basis を変えて2回）と長さで短くしたもの（理由は入れない）
 - `reusableRun(runs, target, rules, seed, key?)`：固定なし・止めていない・`rules` が同じ（名前・ID・重み・必須）・seed が同じ・`inputKey` が `problemKey(target)` と同じ、の最新
-- 「条件が変わった」（D43・D161。`lib/month`）：`planStale`＝記録の `inputKey` がいまの問題と違う。`rulesStale`＝記録の条件が条件に各プリセットを当てたもののどれとも違う（`presetId` が null ならこの日だけ試す重み（`data.rules`）とも違う）。振り直しの記録は判定しない。`calcFeatures` は見ない
+- 手直しの記憶（D260〜D262。ADR-0043）：案を作る問題だけに `withManualPrefs` で当て、当てたものを記録の `prefPins` に残す（同じ結果の記録を使い回すときも書き直す）。`inputKey` は当てた問題のキー（記憶が変われば使い回さない）
+- 「条件が変わった」（D43・D161。`lib/month`）：`planStale`＝記録の `inputKey` がいまの問題（記録の `prefPins` をそのまま当てる。いまの記憶は見ない）と違う。`rulesStale`＝記録の条件が条件に各プリセットを当てたもののどれとも違う（`presetId` が null ならこの日だけ試す重み（`data.rules`）とも違う）。振り直しの記録は判定しない。`calcFeatures` は見ない
 - 比較の画面は記録を点数の基準の物差し（`scoreRulesOf`）で採点し直す（記録の `score` は使わない）
 
 #### 版と移行
 
-版は1のまま。無いものは zod の既定値・`migrate` で読む：`aiRuns` は `{}`（前の版の `prevAiPlans` は捨てる）、`presets` は `INITIAL_PRESETS`、`scorePresetId` は repair が先頭、`AiPlan.generated` は routes・unassigned・score の写しで `pins` は `{}`、`absences`・`visitTypes`・`patterns`・`clientLeaves` は `[]`（null も）、`ReassignInfo.now` は捨てる、〈利用者さん〉の `stage` は `stageOfLegacy`（`active=false`→終了、仮押さえ→相談受付、ほか利用中）、`org.features` は知らない ID・真偽でない値を捨てオブジェクトでなければ `{}`、`AiRun.calcFeatures` が無ければすべて入。ほかは上の表の（　）。
+版は1のまま。無いものは zod の既定値・`migrate` で読む：`aiRuns` は `{}`（前の版の `prevAiPlans` は捨てる）、`presets` は `INITIAL_PRESETS`、`scorePresetId` は repair が先頭、`AiPlan.generated` は routes・unassigned・score の写しで `pins` は `{}`、`absences`・`visitTypes`・`patterns`・`clientLeaves` は `[]`（null も）、`ReassignInfo.now` は捨てる、〈利用者さん〉の `stage` は `stageOfLegacy`（`active=false`→終了、仮押さえ→相談受付、ほか利用中）、`org.features` は知らない ID・真偽でない値を捨てオブジェクトでなければ `{}`、`AiRun.calcFeatures` が無ければすべて入、`manualPrefs` は `{}`、`AiRun.prefPins` が無ければ記憶なし。ほかは上の表の（　）。
 
 ### 項目・条件・プリセット（`src/contracts/rules.ts`。ADR-0002・ADR-0008・ADR-0010・ADR-0035）
 
