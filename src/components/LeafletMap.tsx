@@ -1,37 +1,14 @@
 // 写した元：katahimo-dev/visit-route-poc @ a46e7db web/src/components/RouteMap.tsx
+import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect, useRef } from 'react';
+import type { MapLine, RouteMapProps } from './RouteMap';
 
 /**
- * 地図（国土地理院の淡色地図。APIキー不要）。
- * 線は順番どおりに結ぶ。dashed は点線（比較の A）、実線は今の案・比較の B。
+ * 地図の本体（Leaflet）。別のチャンクに分けて、地図を出すときだけ読む（PRD D248。ADR-0039）。
+ * 画面からは RouteMap（読み込み中の表示つき）を使う
  */
-/** highlight は選んだ訪問先（大きく・輪で囲み・前に出す） */
-export type MapPoint = { lat: number; lng: number; label: string; color: string; highlight?: boolean };
-/**
- * highlight は選んだ区間（太く・前に出す。dashed なら点線のまま）。区間があるときは、ほかの線を薄くする。
- * bold は目立たせたい区間（欠勤の振り直しで代行に入れた訪問へ来る区間など。ADR-0011）：太く描くだけで、ほかの線は薄くしない
- */
-export type MapLine = {
-  points: { lat: number; lng: number }[];
-  color: string;
-  dashed?: boolean;
-  highlight?: boolean;
-  bold?: boolean;
-};
-
-export function RouteMap({
-  points,
-  lines = [],
-  height = 260,
-  onPick,
-}: {
-  points: MapPoint[];
-  lines?: MapLine[];
-  height?: number;
-  /** 指定すると地図をクリックした位置を返す（位置の訂正用） */
-  onPick?: (p: { lat: number; lng: number }) => void;
-}) {
+export default function LeafletMap({ points, lines = [], height = 260, onPick }: RouteMapProps) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
