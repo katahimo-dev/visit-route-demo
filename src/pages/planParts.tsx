@@ -110,10 +110,10 @@ export function ScoreNextStep({
   }
   if (!action) return null;
   return (
-    <p className="score-next" data-testid="reason-next" data-kind={next.kind}>
+    <span className="score-next" data-testid="reason-next" data-kind={next.kind}>
       <span className="sub">次の一手：</span>
       {action}
-    </p>
+    </span>
   );
 }
 

@@ -3100,9 +3100,10 @@ export default function PlanPage() {
                   {confirmState === 'diff' ? <Term k="confirmDiff" /> : <Term k="unconfirmed" />}
                 </span>
               )}
+              {/* 主ボタン（塗り）は「この割当で確定」だけ。確定済みの日は枠にして主ボタンを置かない（PRD D238） */}
               <button
                 type="button"
-                className="btn btn-primary"
+                className={confirmState === 'same' ? 'btn' : 'btn btn-primary'}
                 disabled={!!running || confirmState === 'same'}
                 onClick={adopt}
                 data-testid="adopt"
@@ -3146,6 +3147,20 @@ export default function PlanPage() {
           </span>
           {/* 点を下げているいちばん大きい理由（PRD D173） */}
           {rulesOn && reasonNow && <ScoreReasonText reason={reasonNow} testId="plan-reason" />}
+          {/* いちばんの理由の次の一手（PRD D229）：移動が長い → 「移動を短く」で作る（「案を変える ▾」の項目と同じ）・入らない → 受けられる人・相性 → 相性の表。
+              理由のすぐ後ろに同じ行で（上の段を詰める。PRD D237） */}
+          {rulesOn && reasonNow && (
+            <ScoreNextStep
+              reason={reasonNow}
+              date={date}
+              compatOn={compatOn}
+              onShortTravel={
+                travelPreset && !busyWhy && presetOf(planRules, data.presets)?.id !== travelPreset.id
+                  ? () => void runPreset(travelPreset)
+                  : undefined
+              }
+            />
+          )}
           <button
             type="button"
             className="link-btn plan-oneline-more"
@@ -3158,20 +3173,6 @@ export default function PlanPage() {
           </button>
         </div>
       )}
-      {/* いちばんの理由の次の一手（PRD D229）：移動が長い → 「移動を短く」で作る（「案を変える ▾」の項目と同じ）・入らない → 受けられる人・相性 → 相性の表 */}
-      {aiPlan && cs && rulesOn && reasonNow && (
-        <ScoreNextStep
-          reason={reasonNow}
-          date={date}
-          compatOn={compatOn}
-          onShortTravel={
-            travelPreset && !busyWhy && presetOf(planRules, data.presets)?.id !== travelPreset.id
-              ? () => void runPreset(travelPreset)
-              : undefined
-          }
-        />
-      )}
-
       {/* 担当ごとの1日（PRD D84）。今の案のある日だけ。狭い幅では畳む */}
       {aiPlan && cs && (
         <DayLines
@@ -3349,7 +3350,7 @@ export default function PlanPage() {
       )}
 
       <div className="plan-toolbar row" data-testid="plan-toolbar">
-        {/* 急な欠勤・当日キャンセルの入口（PRD D167）。スマホでも見つけやすいよう操作の行の先頭。主ボタンにはしない */}
+        {/* 急な欠勤・当日キャンセルの入口（PRD D167）。スマホでも見つけやすいよう操作の行の先頭。主ボタンにはせず枠のボタン（PRD D238） */}
         {suddenOn && (
           <button
             ref={suddenBtnRef}
@@ -3376,7 +3377,7 @@ export default function PlanPage() {
         {aiPlan && (
           <button
             type="button"
-            className="btn"
+            className="btn btn-text"
             aria-disabled={undoable ? undefined : true}
             title={undoable ? '直前の手直し（担当を移す・固定を外す）を1手だけ戻します' : `戻せません：${undoWhy}`}
             onClick={() => undoable && undoEdit()}
@@ -3387,7 +3388,7 @@ export default function PlanPage() {
         )}
         {/* 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017。主ボタンにはしない） */}
         {mailOn && (
-          <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
+          <button type="button" className="btn btn-text" onClick={() => setPanel('mail')} data-testid="day-mail">
             <WithIcon icon={Mail}>メールで送る</WithIcon>
           </button>
         )}
