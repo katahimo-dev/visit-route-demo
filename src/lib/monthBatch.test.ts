@@ -5,7 +5,7 @@ import { addDays } from '../domain/time';
 import { createDemoData } from '../seed';
 import { solve } from '../solver';
 import { own } from './common';
-import { type BatchDone, batchBandText, batchDoneText, createMonthBatch, monthsLabel } from './monthBatch';
+import { type BatchDone, batchBandText, batchDoneText, createMonthBatch, missingDays, monthsLabel } from './monthBatch';
 
 const TODAY = '2026-10-21';
 
@@ -176,5 +176,18 @@ describe('monthBatch（PRD D256・D257。ADR-0042）', () => {
     expect(batchDoneText({ ...done, made: 8, stopped: true })).toBe('11月の案を8日分作ったところで止めました');
     expect(monthsLabel(['2026-10-30', '2026-11-02'])).toBe('10・11月');
     expect(monthsLabel(['2026-11-02'])).toBe('11月');
+  });
+
+  it('足りない案の日（空き状況。PRD D259）：範囲の今日以降で案の無い日、確定した日・今日より前は入れない', () => {
+    const d = noPlans();
+    const range = Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 2));
+    const withVisits = new Set(d.visits.filter((v) => !v.cancelled).map((v) => v.date));
+    const all = missingDays(d, range, TODAY);
+    expect(all.every((x) => x.mode === 'empty' && x.date >= TODAY && withVisits.has(x.date))).toBe(true);
+    expect(all.map((x) => x.date)).toEqual(range.filter((x) => x >= TODAY && withVisits.has(x)));
+    // 確定した日は入れない
+    const first = all[0]!.date;
+    const confirmed = { ...d, manualPlans: { ...d.manualPlans, [first]: {} as DemoData['manualPlans'][string] } };
+    expect(missingDays(confirmed, range, TODAY).map((x) => x.date)).not.toContain(first);
   });
 });

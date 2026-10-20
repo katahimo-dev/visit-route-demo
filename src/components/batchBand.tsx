@@ -18,7 +18,9 @@ export function MonthBatchHost(): ReactNode {
   useLayoutEffect(() => {
     latest.current = data;
   }, [data]);
-  useEffect(() => monthBatch.connect({ get: () => latest.current, update }), [update]);
+  useEffect(() => {
+    return monthBatch.connect({ get: () => latest.current, update });
+  }, [update]);
   const toast = useToast();
   const navigate = useNavigate();
   const done = useValueStore(monthBatch.done);

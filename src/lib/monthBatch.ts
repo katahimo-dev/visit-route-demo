@@ -8,7 +8,7 @@ import { compile } from '../matching';
 import { scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { attempt, own } from './common';
-import { applyDayRun, type BatchMode, expandMonth } from './month';
+import { applyDayRun, type BatchMode, batchTargets, expandMonth, planEdited, planStale, ymOf } from './month';
 import { planOfRun, problemKey, reusableRun } from './runs';
 import { createValueStore, type ReadableStore } from './valueStore';
 
@@ -97,6 +97,25 @@ export function batchBandText(r: BatchRun): string {
 export function monthsLabel(dates: readonly string[]): string {
   const months = [...new Set(dates.map((d) => Number(d.slice(5, 7))))];
   return `${months.join('・')}月`;
+}
+
+/**
+ * 足りない案の日（空き状況の［足りない案を作る］。PRD D259）：dates のうち今日以降で、まだ案の無い日（empty）と
+ * 条件が変わった日（stale。月の予定の「条件が変わった日を作り直す」と同じ決め方）。確定した日・訪問の無い日は入れない。
+ * 手直しのある条件が変わった日は入れない（手直しを捨てるかは月の予定で選ぶ）
+ */
+export function missingDays(data: DemoData, dates: readonly string[], today: string): BatchDay[] {
+  const inRange = new Set(dates.filter((d) => d >= today));
+  const out: BatchDay[] = [];
+  for (const ym of new Set([...inRange].map(ymOf))) {
+    for (const date of batchTargets(data, ym, today, 'empty')) if (inRange.has(date)) out.push({ date, mode: 'empty' });
+    const stale = batchTargets(data, ym, today, 'stale', (d) => inRange.has(d) && planStale(data, data, d));
+    for (const date of stale) {
+      const p = own(data.aiPlans, date);
+      if (p && !planEdited(p)) out.push({ date, mode: 'stale' });
+    }
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
 /** 入れ物を作る（solve は差し替えられる。テストは Worker なしで解く） */

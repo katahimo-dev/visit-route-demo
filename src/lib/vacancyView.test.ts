@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VACANCY_MARGIN_DEFAULT } from '../contracts/vacancy';
 import { GLOSSARY } from './glossary';
-import { cellFace, markLegend, noticeLine, placeLine, whenWhatLine } from './vacancyView';
+import { answerCard, cellFace, markLegend, noticeLine, placeLine, whenWhatLine } from './vacancyView';
 
 describe('cellFace（マスの見た目と読み方）', () => {
   it('○ は人数（目安なら「約」）', () => {
@@ -60,9 +60,9 @@ describe('placeLine（場所の段階の要約）', () => {
 
 describe('noticeLine・whenWhatLine', () => {
   it('案内文の要約', () => {
-    expect(noticeLine('来週', null, 60)).toBe('来週・種類なし（60分）');
+    expect(noticeLine('来週', null, 60)).toBe('来週・種類の指定なし（60分）');
     expect(noticeLine('先4週', '家事', 90)).toBe('先4週・家事（90分）');
-    expect(noticeLine('今週', null, null)).toBe('今週・種類なし（所要を入れてください）');
+    expect(noticeLine('今週', null, null)).toBe('今週・種類の指定なし（所要を入れてください）');
   });
   it('いつ・何をの要約', () => {
     expect(
@@ -78,7 +78,7 @@ describe('noticeLine・whenWhatLine', () => {
         startMd: '10/20',
         weeks: 4,
       }),
-    ).toBe('種類なし・60分・どの曜日でも・9:00〜17:00に始める・週1回・10/20から4週');
+    ).toBe('種類の指定なし・60分・どの曜日でも・9:00〜17:00に始める・週1回・10/20から4週');
     expect(
       whenWhatLine({
         typeName: '家事',
@@ -107,11 +107,13 @@ describe('noticeLine・whenWhatLine', () => {
       startMd: '10/20',
       weeks: 4,
     };
-    expect(whenWhatLine(base)).toBe('種類なし・—・火・—・週1回・10/20から4週');
+    expect(whenWhatLine(base)).toBe('種類の指定なし・—・火・—・週1回・10/20から4週');
     expect(whenWhatLine({ ...base, durationOk: true, duration: '60' })).toBe(
-      '種類なし・60分・火・—・週1回・10/20から4週',
+      '種類の指定なし・60分・火・—・週1回・10/20から4週',
     );
-    expect(whenWhatLine({ ...base, wishOk: true })).toBe('種類なし・—・火・17:00〜9:00に始める・週1回・10/20から4週');
+    expect(whenWhatLine({ ...base, wishOk: true })).toBe(
+      '種類の指定なし・—・火・17:00〜9:00に始める・週1回・10/20から4週',
+    );
   });
 });
 
@@ -119,5 +121,68 @@ describe('用語の説明（空き状況）', () => {
   it('「目安（約）」の説明の分は既定の見込みの分と同じ', () => {
     expect(GLOSSARY.vacancyEstimate.text).toContain(`${VACANCY_MARGIN_DEFAULT}分`);
     expect(GLOSSARY.vacancyCount.label).toBe('受けられる人数');
+  });
+});
+
+describe('answerCard（結果の1枚目の答え。PRD D258）', () => {
+  const T = [600, 630, 660, 690, 720];
+  type Spec = [number, number, number][];
+  /** weekday → 開始時刻ごとの [どの週でも受けられる人数, 受けられる週, 数えた週] */
+  const result = (spec: Record<number, Spec>, exact = true) => ({
+    exact,
+    dates: [],
+    noPlanDates: [],
+    times: T,
+    cells: Object.entries(spec).flatMap(([wd, xs]) =>
+      xs.map(([min, weeksOk, weeksTotal], i) => ({
+        weekday: Number(wd),
+        start: T[i]!,
+        byDate: [],
+        min,
+        weeksOk,
+        weeksTotal,
+      })),
+    ),
+  });
+  const wish = { weekdays: [2, 4], from: '10:00', to: '12:00', perWeek: 2 };
+  const okRow: Spec = [
+    [3, 4, 4],
+    [3, 4, 4],
+    [2, 4, 4],
+    [3, 4, 4],
+    [3, 4, 4],
+  ];
+  const ng: Spec = T.map(() => [0, 0, 4]);
+
+  it('受けられる：曜日と続いた開始の時間と人数の幅', () => {
+    const c = answerCard(result({ 2: okRow, 4: okRow }), wish);
+    expect(c.tone).toBe('ok');
+    expect(c.head).toBe('受けられます');
+    expect(c.body).toBe('火・木 10:00〜12:00 に 2〜3人');
+  });
+
+  it('目安は「約」・同じ人数なら1つ・曜日ごとに違う時間', () => {
+    const two: Spec = [[3, 4, 4], [3, 4, 4], ...ng.slice(2)];
+    const all3: Spec = T.map(() => [3, 4, 4]);
+    const c = answerCard(result({ 2: two, 4: all3 }, false), wish);
+    expect(c.body).toBe('火 10:00〜10:30、木 10:00〜12:00 に 約3人');
+    const all = Object.fromEntries([1, 2, 3, 4, 5, 6, 0].map((wd) => [wd, wd === 6 ? two : all3]));
+    expect(answerCard(result(all), { ...wish, weekdays: [] }).body).toBe(
+      '月・火・水・木・金・日 10:00〜12:00、土 10:00〜10:30 に 3人',
+    );
+  });
+
+  it('週の回数に足りない・受けられない週がある・受けられない・案が無い', () => {
+    const part: Spec = T.map(() => [0, 2, 4]);
+    const unknown: Spec = T.map(() => [0, 0, 0]);
+    const short = answerCard(result({ 2: okRow, 4: ng }), wish);
+    expect(short.tone).toBe('partial');
+    expect(short.head).toBe('週2回には足りません');
+    expect(short.body).toBe('火 10:00〜12:00 に 2〜3人');
+    const p = answerCard(result({ 2: part, 4: ng }), wish);
+    expect(p.head).toBe('受けられない週があります');
+    expect(p.body).toBe('火 は週によって受けられます');
+    expect(answerCard(result({ 2: ng, 4: ng }), wish).tone).toBe('ng');
+    expect(answerCard(result({ 2: unknown, 4: unknown }), wish).tone).toBe('unknown');
   });
 });
