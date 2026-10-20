@@ -42,7 +42,7 @@
 - 見出し（`work-title`）・「表をコピー」（`work-copy`。タブ区切りの表）・要約（`work-summary`）。主ボタンは無し
 - 事業所の設定（`org`）をこの画面で直す：交通費の単価（`work-fare`。0 にすると交通費の列が消える）・拘束の上限（`work-limit`。`Term` `span`＝出勤〜退勤（拘束））
 - 空の画面（`work-empty`。`periodEmptyGuide`。`onOpenDay`）
-- 月の合計の表（`work-totals`。見出しは出勤〜退勤（拘束）・空き時間（待ち）の `Term`）
+- 月の合計の表（`work-totals`。見出しの空き時間（待ち）は `Term`、出勤〜退勤（拘束）は上限の設定に説明があるので文字だけ（PRD D241）。日ごとの表の見出しも文字だけ）
 - 〈スタッフ〉×日の表（`work-grid`）：拘束の時間と横棒 `SpanMini`（長さと上限の線）。マスの中を `button.work-cell-in.work-cell-btn`（`data-date`・title は内訳・aria-label は見えている数字（`spanNum`。上限超えは「!」）を先頭に内訳＋「（日の予定で開く）」。訪問の無いマスはボタンにしない）。上限を超える日は斜線と「!」。表の下の説明（`work-grid-note`）「マスを押すと…。内訳は下の「日ごと」の表で見られます」
 - 狭い画面（PRD D221）：〈スタッフ〉×日の表は `EdgeScroll`（`work-grid-scroll`）。勤務時間（シフト）と同じく箱の中で巻き、見出しの行と名前の列を止め、右の端をぼかす
 - 選んだ人（`work-staff`）の日ごとの表（`work-detail`）：時間軸の横棒 `SpanBar`（`WorkStat.parts`＝`spanParts`。拘束の中を訪問・移動・待ちに塗り分け、上限を超える日は太い橙の枠。行の注意の印と文字）。日付は `link-btn`（`work-day-open`・`data-date`・aria-label「M/D（曜）（日の予定で開く）」）。上限を超えるマスもキーボード・読み上げで分かる。名前の吹き出しは付けない

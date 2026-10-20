@@ -207,7 +207,7 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
  * その日の記録（aiRuns）に残し、「比較」の画面（#/compare）で任意の2つを比べる（ADR-0005）。
  * プリセットごとの案のカードを並べ、「この案にする」で今の案にする。
  * 点数（100点満点）・必須の違反・条件ごとの達成は、いつも点数の基準のプリセットの物差し（ADR-0010。useDayModel の scoreProblem）。
- * プリセットのカード・重みの欄で変わるのは「どう組むか（solver が最小にする費用）」だけ。訪問ごとの理由・ドラッグの可否はいまの条件
+ * プリセットのカード・重みの欄で変わるのは「どう組むか（solver が最小にする費用）」だけ。訪問ごとの理由・ドラッグの可否はこの日だけ試す重み
  */
 
 /** 予定の画面の地図・選択で使うルートの集まりのキー（今の案は1つだけ） */
@@ -492,9 +492,9 @@ export default function PlanPage() {
     () => (scoreProblem && aiPlan ? (attempt(() => achievements(scoreProblem, routes)).value ?? []) : []),
     [scoreProblem, aiPlan, routes],
   );
-  /** AI案を作った条件（重み・必須）と、いまの条件が違うか */
+  /** AI案を作った条件（重み・必須）と、この日だけ試す重みが違うか */
   const stale = !!aiPlan && JSON.stringify(aiPlan.rules) !== JSON.stringify(data.rules);
-  /** いまの条件を書き換えずにプリセットで作った案（自動作成・カードから選んだ。作ったあとに変えたのではない） */
+  /** この日だけ試す重みを書き換えずにプリセットで作った案（自動作成・カードから選んだ。作ったあとに変えたのではない） */
   const madeBy = stale && !!aiPlan && pinCount === 0 ? presetOf(aiPlan.rules, data.presets) : null;
   const autoMade = !!madeBy;
 
@@ -804,9 +804,9 @@ export default function PlanPage() {
     create(rules, 'preset');
   };
 
-  // ---- 設定の画面の帯の［今日の案をいまの条件で作り直す］（?date=…&do=recreate。PRD D166）----
+  // ---- 設定の画面の帯の［今日の案を試す重みで作り直す］（?date=…&do=recreate。PRD D166・D234）----
   // その日を選び、URL から ?date= と ?do= を消し、問題ができたら「AI にもう一度作らせる」（recreate。手直しがあれば今どおり確認）。
-  // その日の自動作成（基準のプリセット）はしない（いまの条件で作るため）
+  // その日の自動作成（基準のプリセット）はしない（この日だけ試す重みで作るため）
   const [params, setParams] = useSearchParams();
   const pendingRecreate = useRef<string | null>(null);
   const doParam = params.get('do');
@@ -986,7 +986,7 @@ export default function PlanPage() {
    */
   const planIsStale = useMemo(() => {
     if (!aiPlan) return false;
-    // 作った条件（重み・必須）がいまの条件にもどのプリセットにも無い（PRD D161。月・ホーム・帯と同じ lib/month の rulesStale）
+    // 作った条件（重み・必須）がこの日だけ試す重みにもどのプリセットにも無い（PRD D161。月・ホーム・帯と同じ lib/month の rulesStale）
     if (rulesStale(data, date, currentRuleKeys(data.rules, data.presets))) return true;
     return planStale(compileInput, data, date, (rules, pins) => {
       if (Object.keys(pins).length > 0) return undefined;
@@ -997,13 +997,13 @@ export default function PlanPage() {
   }, [aiPlan, compileInput, data, date, problem, presetKeys]);
   /**
    * （D43）作り直す：月の「条件が変わった日を作り直す」と同じく点数の基準のプリセットの重みで作る（手直し・固定があれば確認）。古い記録の条件では作らない（作った条件がもう無いときに「条件が変わった」が消えないため。PR #40 のレビュー）。
-   * プリセットが無い（ありえない）ときはいまの条件で作る
+   * プリセットが無い（ありえない）ときはこの日だけ試す重みで作る
    */
   const remakeStale = () => {
-    // 月の作り直しと同じく、いまの条件（data.rules）は書き換えず、基準のプリセットの重みで解くだけ（runPreset はいまの条件を
-    // プリセットの重みに書き換え、いまの条件で作ったほかの日が「条件が変わった」になるため使わない。PR #40 の再レビュー）
-    const base = scorePresetOf(data.presets, data.scorePresetId);
-    void recreate(base ? applyPreset(data.rules, base) : data.rules);
+    // 月の作り直しと同じく、この日だけ試す重み（data.rules）は書き換えず、基準のプリセットの重みで解くだけ（runPreset はこの日だけ試す重みを
+    // プリセットの重みに書き換え、この日だけ試す重みで作ったほかの日が「条件が変わった」になるため使わない。PR #40 の再レビュー）
+    // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
+    void recreate(scoreRulesOf(data));
   };
   /**
    * 固定を残して組み直す（generated は変えない。固定は残す）。固定していない手直し（「入らなかった訪問」へ移した・
@@ -1015,7 +1015,7 @@ export default function PlanPage() {
       unpinned &&
       !(await confirmDialog({
         title: '固定していない手直しを捨てて、作り直しますか？',
-        body: '固定した訪問の担当は残し、ほかを今の条件で組み直します。「入らなかった訪問」へ移した訪問や、固定を外した訪問の手直しは消えます（AI が出したままの案は戻す先として残ります）。',
+        body: '固定した訪問の担当は残し、ほかを試す重みで組み直します。「入らなかった訪問」へ移した訪問や、固定を外した訪問の手直しは消えます（AI が出したままの案は戻す先として残ります）。',
         confirmLabel: '捨てて作り直す',
         tone: 'danger',
       }))
@@ -2121,8 +2121,11 @@ export default function PlanPage() {
     ) : null;
   };
 
-  /** 訪問の印（欠勤の人のまま・代行・+N分・固定・必須の違反）と「固定を外す」。順番のカードの中・時間軸の帯の説明で共通 */
-  const tagsOf = (id: string) => {
+  /**
+   * 訪問の印（欠勤の人のまま・代行・+N分・固定・必須の違反）と「固定を外す」。順番のカードの中・時間軸の帯の説明で共通。
+   * pinHint：「固定」に用語の説明を付ける（順番の表示では並びで最初の固定の訪問だけ。押して開く説明は別に数える。PRD D241）
+   */
+  const tagsOf = (id: string, pinHint = true) => {
     const pin = own(pins, id);
     const hard = hardOf.get(id);
     const subFrom = reassignMarks.substitute.get(id);
@@ -2154,9 +2157,9 @@ export default function PlanPage() {
           </span>
         )}
         {pin && (
-          <span className="chip chip-pin" title="手直しで固定した訪問（組み直しても担当を変えない）">
+          <span className="chip chip-pin" title={pinHint ? undefined : '固定（組み直しても担当を変えない）'}>
             <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-            固定
+            <Term k="pinned" plain={!pinHint} />
           </span>
         )}
         {memo && (
@@ -2215,6 +2218,10 @@ export default function PlanPage() {
     );
   };
 
+  /** 順番の表示で最初（入らなかった訪問 → 列の順）の固定の訪問。「固定」の説明はこのカードだけ（PRD D241） */
+  const firstPinnedCard = [...unassigned, ...columns.flatMap((sid) => own(routes, sid) ?? [])].find((id) =>
+    own(pins, id),
+  );
   /** 訪問カード（ドラッグで担当を移す。押すと理由） */
   const card = (id: string) => {
     const pin = own(pins, id);
@@ -2248,7 +2255,7 @@ export default function PlanPage() {
         }
         mark={<TypeMark type={typeOf(data.visitTypes, visitById.get(id)?.typeId)} compact />}
       >
-        {tagsOf(id)}
+        {tagsOf(id, id === firstPinnedCard)}
       </VisitCard>
     );
   };
@@ -2655,11 +2662,17 @@ export default function PlanPage() {
   const noPlanCard = (
     <div className="card">
       <Empty icon={Sparkles}>
-        {runningFor?.date === date
-          ? `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
-          : running && runningFor
-            ? `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
-            : 'この日のAI案はまだありません。'}
+        {runningFor?.date === date ? (
+          `${shortDate(date)} のAI案を${runningFor.label}条件で作っています…`
+        ) : running && runningFor ? (
+          `${shortDate(runningFor.date)} のAI案を作っています…（終わってから、この日の案を作れます）`
+        ) : (
+          <>
+            この日の
+            <Term k="aiPlan" />
+            はまだありません。
+          </>
+        )}
       </Empty>
       {!running && (
         <div className="row" style={{ justifyContent: 'center' }}>
@@ -2679,7 +2692,7 @@ export default function PlanPage() {
     unpinned,
     busy: busyWhy,
     running: !!running,
-    ruleName: presetOf(planRules, data.presets)?.name ?? '今の重み',
+    ruleName: presetOf(planRules, data.presets)?.name ?? 'プリセットから変えた重み',
     runCount,
   };
   const createT = createText(menuInput);
@@ -3033,7 +3046,7 @@ export default function PlanPage() {
                 <>
                   <span className="chip chip-ok" data-testid="confirm-state">
                     <CircleCheck size={12} aria-hidden="true" />
-                    確定済み
+                    <Term k="confirmed">確定済み</Term>
                   </span>
                   {/* 確定したら次の確定していない日へ（PRD D224） */}
                   <NextUnconfirmed date={date} onPick={setDate} />
@@ -3041,7 +3054,7 @@ export default function PlanPage() {
               ) : (
                 <span className="chip chip-warn" data-testid="confirm-state">
                   <TriangleAlert size={12} aria-hidden="true" />
-                  {confirmState === 'diff' ? '未確定の変更あり' : '未確定'}
+                  {confirmState === 'diff' ? <Term k="confirmDiff" /> : <Term k="unconfirmed" />}
                 </span>
               )}
               <button
@@ -3201,7 +3214,10 @@ export default function PlanPage() {
       {aiPlan && planIsStale && !running && (
         <div className="plan-band stale-note row" data-testid="plan-stale">
           <WithIcon icon={TriangleAlert} size={16}>
-            この案を作ったあとに、訪問・{terms.staff}・稼働時間・条件が変わりました
+            {/* flex の中で文が切れないよう1つの span に包む */}
+            <span>
+              この案を作ったあとに、訪問・{terms.staff}・稼働時間・<Term k="stale">条件が変わりました</Term>
+            </span>
           </WithIcon>
           <span className="sub" data-testid="plan-stale-with">
             {rebuildWith(scoreRulerName)}
@@ -3262,7 +3278,9 @@ export default function PlanPage() {
       {aiPlan && stale && !autoMade && !planIsStale && (
         <div className="plan-band is-warn row">
           <WithIcon icon={TriangleAlert} size={16}>
-            作ったあとに条件が変わりました
+            <span>
+              作ったあとに<Term k="stale">条件が変わりました</Term>
+            </span>
           </WithIcon>
           <Hint>
             点数はいつも点数の基準のプリセット「{scoreRulerName}
@@ -3662,8 +3680,8 @@ export default function PlanPage() {
                     プリセット「{madeBy?.name}」の条件で作った案です
                   </WithIcon>
                   <Hint>
-                    いまの条件とは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
-                    」の重みで付けます。いまの条件で作るには「案を変える」の「AI にもう一度作らせる」を押してください。
+                    この日だけ試す重みとは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
+                    」の重みで付けます。試す重みで作るには「案を変える」の「AI にもう一度作らせる」を押してください。
                   </Hint>
                 </div>
               )}
@@ -3710,7 +3728,10 @@ export default function PlanPage() {
                 </span>
               }
             >
-              プリセットごとの案
+              <span>
+                <Term k="preset" />
+                ごとの案
+              </span>
             </SectionTitle>
             {progressView}
             {hasVisits ? presetCardsView : <span className="sub">この日に計算できる訪問がありません</span>}
@@ -4051,6 +4072,8 @@ function VisitList({
   onEdit: (id: string) => void;
   onCancel: (v: Visit) => void;
 }) {
+  /** 「固定」の説明は表の中で最初の1行だけ（PRD D241。2行目からは文字だけ） */
+  const firstPinned = visits.find((id) => visitById.has(id) && notes(id).pinned);
   return (
     <section className="card stack visit-list" data-testid="visit-list">
       <SectionTitle icon={CalendarDays} aside={<span className="sub">担当は今の案のものです</span>}>
@@ -4122,7 +4145,7 @@ function VisitList({
                       {n.pinned && (
                         <span className="chip chip-pin">
                           <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-                          固定
+                          <Term k="pinned" plain={id !== firstPinned} />
                         </span>
                       )}
                       {n.hard?.map((h) => (

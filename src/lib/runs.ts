@@ -48,7 +48,7 @@ export function addRun(
   const prefField = prefPins ? { prefPins } : {};
   const found = findRun(d, date, x);
   if (found) {
-    // 使い回すときも presetId を今の時点のものに書き直す（プリセットの重みを変えたあとにいまの条件で作り直して同じ案になったとき、
+    // 使い回すときも presetId を今の時点のものに書き直す（プリセットの重みを変えたあとにこの日だけ試す重みで作り直して同じ案になったとき、
     // 古い presetId のままだと「条件が変わった」（lib/month の rulesStale）が消えない。PR #40 の再レビュー）
     // 計算に効く入り切り（ADR-0028）も今のものに書き直す（記録として。「条件が変わった」は入り切りを見ず問題の違いで決める）
     const inputKey = x.inputKey === undefined ? found.inputKey : x.inputKey;
@@ -155,7 +155,7 @@ export function problemKey(p: Problem): string {
  * 計算し直さずに使える記録（プリセットのカードを押したときの再計算を省く。ADR-0010）。その日の記録のうち、次をすべて満たす最新のもの：
  * - 固定なし・途中で止めていない
  * - 作ったときの条件（rules）が同じ（名前・ID・重み・必須まで）・乱数の種が同じ
- * - 計算に使った問題のキー（inputKey）が、いまの条件で作った問題 target のキーと同じ（訪問・スタッフ・稼働時間・移動・相性などがすべて同じ）。
+ * - 計算に使った問題のキー（inputKey）が、この日だけ試す重みで作った問題 target のキーと同じ（訪問・スタッフ・稼働時間・移動・相性などがすべて同じ）。
  *   inputKey が無い古い記録は使わない
  * 同じ入力からは同じ案になる（solver は決定的。反復の回数も問題から決まる）ので、作り直しても同じ案になる。無ければ undefined。
  * 例外：初期データの案（seed/plans。PRD D225・ADR-0031）は反復を10万回までに減らして作るので、画面の既定の反復で作り直すと

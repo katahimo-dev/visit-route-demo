@@ -53,11 +53,11 @@ describe('候補', () => {
     expect(by('action:stale').to).toBe('/month?ym=2026-10&do=stale');
     expect(by('action:vacancy').to).toBe('/vacancy');
   });
-  it('いまの条件がどのプリセットとも違うときだけ「今日の案をいまの条件で作り直す」（?do=recreate）', () => {
+  it('この日だけ試す重みがどのプリセットとも違うときだけ「今日の案を試す重みで作り直す」（?do=recreate）', () => {
     expect(paletteActions(TODAY).some((x) => x.id === 'action:recreate')).toBe(false);
     const r = paletteActions(TODAY, { customRules: true }).find((x) => x.id === 'action:recreate')!;
     expect(r).toMatchObject({
-      label: '今日の案をいまの条件で作り直す',
+      label: '今日の案を試す重みで作り直す',
       to: '/plan?date=2026-10-21&do=recreate',
       date: TODAY,
     });
