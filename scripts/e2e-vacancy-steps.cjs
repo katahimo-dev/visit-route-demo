@@ -365,8 +365,8 @@ async function answer(page) {
     /月の案を作っています \d+\/2日/.test(await page.getByTestId('batch-band-text').innerText()),
     '上の帯に進み具合',
   );
-  // disabled にせず aria-disabled（フォーカスを失わない）。押しても始めない
-  await make.click();
+  // disabled にせず aria-disabled（フォーカスを失わない）。押しても始めない（Playwright は aria-disabled を押さないので直接送る）
+  await make.dispatchEvent('click');
   check(
     (await make.getAttribute('aria-disabled')) === 'true' && /の案を作っています/.test(await make.innerText()),
     '作っている間は押せない（二重に始めない）',
