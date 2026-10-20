@@ -357,7 +357,7 @@ function AdminShell() {
             <DateSwitcher />
           </header>
           {saveError && (
-            <div className="save-error">
+            <div className="save-error" role="alert">
               <TriangleAlert size={16} aria-hidden="true" />
               {saveError} <NavLink to="/data">データを書き出す</NavLink>
             </div>

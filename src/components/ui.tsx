@@ -1,8 +1,18 @@
 import type { LucideIcon } from 'lucide-react';
 import { Info, X } from 'lucide-react';
-import { type ButtonHTMLAttributes, createContext, type ReactNode, useContext, useEffect, useId, useRef } from 'react';
+import {
+  type ButtonHTMLAttributes,
+  createContext,
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { useBodyScrollLock } from './useBodyScrollLock';
+import { submitHandler } from './FieldError';
+import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
 import { usePanelFoot, usePanelToastPlace, useVisualViewportFit } from './usePanelFoot';
 
 /**
@@ -191,6 +201,7 @@ export function SidePanel({
   focusPanel = false,
   headActions,
   focusKey,
+  onSubmit,
 }: {
   icon: LucideIcon;
   title: ReactNode;
@@ -219,14 +230,19 @@ export function SidePanel({
    * 主ボタンを先頭に置く（狭い画面は2つまで横に並べ、3つ以上は主ボタンを1行目に全幅）
    */
   footer?: ReactNode;
+  /**
+   * 入力の欄なら保存（PRD D251）。渡すと内容と帯を1つの `<form noValidate>` で包み、Enter（textarea は除く）と
+   * 帯の type="submit" のボタンで呼ぶ。保存のあと誤りが残れば最初の誤った欄（aria-invalid）へフォーカスを移す
+   */
+  onSubmit?: () => unknown;
 }) {
   const ref = useRef<HTMLElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLElement>(null);
   const footRef = useRef<HTMLElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const hasFoot = !!footer;
-  usePanelFoot(bodyRef, footRef, endRef, hasFoot);
+  usePanelFoot(bodyRef, footRef, endRef, hasFoot, onSubmit ? 'form' : 'div');
   useVisualViewportFit(wrapRef);
   const headRef = useRef<HTMLElement>(null);
   usePanelToastPlace(ref, headRef);
@@ -243,6 +259,14 @@ export function SidePanel({
   useBodyScrollLock();
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
+    // 開いているあいだ裏（body のほかの子：#root・メニューの引き出し）を inert にする（PRD D252。確認ダイアログと同じ
+    // 要素ごとに数えるロック）。後から body の直下に出る吹き出し・確認ダイアログ・知らせ（data-inert-keep）は巻き込まない
+    const releaseInert = inertLock.lock(
+      Array.from(document.body.children).filter(
+        (el): el is HTMLElement =>
+          el instanceof HTMLElement && el !== wrapRef.current && !el.hasAttribute('data-inert-keep'),
+      ),
+    );
     const first = focusPanelRef.current ? null : ref.current?.querySelector<HTMLElement>('input, select, textarea');
     if (first) first.focus();
     else ref.current?.focus();
@@ -277,6 +301,8 @@ export function SidePanel({
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
+      // inert を外してから戻す（inert の中の要素にはフォーカスできない）
+      releaseInert();
       const to = returnRef.current?.();
       if (to) to.focus({ preventScroll: true });
       else if (back?.isConnected) back.focus?.();
@@ -294,6 +320,19 @@ export function SidePanel({
     if (first) first.focus();
     else ref.current?.focus();
   }, [focusKey]);
+  const body = (
+    <>
+      <div className="drawer-content stack">{children}</div>
+      {hasFoot && (
+        <>
+          <footer className="drawer-foot" ref={footRef}>
+            {footer}
+          </footer>
+          <div className="drawer-foot-end" ref={endRef} aria-hidden="true" />
+        </>
+      )}
+    </>
+  );
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
   return createPortal(
     <div className="drawer-wrap" ref={wrapRef}>
@@ -315,17 +354,20 @@ export function SidePanel({
           <IconButton icon={X} label="閉じる" onClick={onClose} />
         </header>
         {/* 巻く領域の中に、内容・帯・番兵（帯が貼り付いているかを見る。高さ0）の順に置く */}
-        <div className="drawer-body" ref={bodyRef}>
-          <div className="drawer-content stack">{children}</div>
-          {hasFoot && (
-            <>
-              <footer className="drawer-foot" ref={footRef}>
-                {footer}
-              </footer>
-              <div className="drawer-foot-end" ref={endRef} aria-hidden="true" />
-            </>
-          )}
-        </div>
+        {onSubmit ? (
+          <form
+            className="drawer-body"
+            ref={bodyRef as RefObject<HTMLFormElement>}
+            onSubmit={submitHandler(onSubmit)}
+            noValidate
+          >
+            {body}
+          </form>
+        ) : (
+          <div className="drawer-body" ref={bodyRef as RefObject<HTMLDivElement>}>
+            {body}
+          </div>
+        )}
       </section>
     </div>,
     document.body,
