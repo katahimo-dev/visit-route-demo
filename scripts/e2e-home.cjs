@@ -161,7 +161,7 @@ async function firstState(page) {
   check(!!today2 && /（未確定）/.test(today2.title), '案ができたら今日のカードは「未確定」', today2);
   const todayText = await page.locator('[data-kind="today"] .sub').innerText();
   check(/^訪問 \d+件・担当 \d+人・入らない \d+件/.test(todayText), '今日の要約：訪問・担当・入らない', todayText);
-  // 今月のカードだけ見る（月末7日以内は来月のカードも並ぶ。PR #38 のレビュー）
+  // 今月のカードだけ見る（15日以降は来月のカードも並ぶ。PR #38 のレビュー。PRD D255）
   const MONTH = Number(YM.slice(5, 7));
   const confTitle = `${MONTH}月の確定していない日`;
   const confDays = async () => {
