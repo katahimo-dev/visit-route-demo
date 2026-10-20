@@ -11,7 +11,7 @@
 
 | 入口 | 開き方 |
 |---|---|
-| 日の予定の操作の行の先頭「欠勤・キャンセルを登録」（`sudden-open`） | 1段目。主ボタンにしない・赤い縁（`.plan-sudden-btn`）。訪問も働く人もいない日は押せない。印刷では出さない |
+| 日の予定の操作の行の先頭「欠勤・キャンセルを登録」（`sudden-open`） | 1段目。主ボタンにしない・枠のボタン（`.plan-sudden-btn` は印刷で隠すためだけ。PRD D238。前は赤い縁）。訪問も働く人もいない日は押せない。印刷では出さない |
 | 列の見出しの「この人の欠勤を登録」「欠勤を直す」 | `openSudden({ kind: 'staff', staffId })`。その人を選んだ2段目（開くたびに差の欄へ移る印 `suddenToBar` を戻す） |
 | `/plan?date=…&do=absence`（ホーム・メニュー・パレットの「欠勤・キャンセルを登録」・月の要対応・勤務時間（シフト）の右の欄） | 1段目（`&staff=` の人がその日に働けば2段目）。`?do=`・`?date=`・`staff` を消す |
 
@@ -42,7 +42,7 @@
 
 - 一覧は1人に1枚（`sudden-contacts` の `sudden-contact`。`data-to`＝`staff|client`・`data-kinds`＝種類）：宛名・種類の印（担当が外れる・新しく入る（`chip-move`）・時刻が変わる（`chip-warn`）・中止、〈利用者さん〉は「〈利用者さん〉あて」）・連絡文（`sudden-contact-text`）・［文をコピー］（`sudden-contact-copy`。`copyText` とトースト）・〈スタッフ〉あての「メール」（`MailButton`・`MailLengthNote`。`sudden-contact-mail`。件名は `contactMailText`）・［連絡した］（`sudden-contact-sent`。印の鍵は宛先と文なので、確定し直して文が変われば消える）
 - 上に説明（欠勤とキャンセルで分ける）と、欠勤の人に残る訪問があれば「欠勤の人に残る訪問 N件（連絡文には入りません。日の予定で確かめてください）」（`sudden-contacts-left`。日の予定が `leftCount` で渡す）、「連絡した N/M人」（`sudden-contacts-count`。`aria-live`）。行が無ければ「連絡が要る変更はありません。」、差を出せなければ「日の予定の「連絡の一覧」で確かめてください」（`sudden-contacts-none`）
-- 帯は「終わる」（`sudden-finish`。主ボタン。差の欄へは移らない）と「戻る」（4段目）
+- 帯は「終わる」（`sudden-finish`。塗り＝欄の主ボタンはこれ1つ。差の欄へは移らない）と「戻る」（4段目。枠）。行の［文をコピー］・メールは枠の小さなボタン、［連絡した］はチェック（ボタンの3段。PRD D238・ADR-0036）
 - 日の予定（`PlanPage`）が作る：
   - 欠勤：差の欄と同じ `contacts`（`contactsOf`。元の案＝確定した割当、無ければ振り直す前の案 → 今の案。確定したあとは今の案＝確定した割当）
   - キャンセル：欄の取り消し（`suddenCancelVisit`）が、取り消す前の担当（確定した割当があればその担当だけ（無ければ担当なし）、確定が無ければ今の案）・開始（今の案の時刻、無ければ約束の開始）と、そのときの確定した割当（`suddenCancel`）を覚えてから `applyCancel`。差は `contactsOf({ problem, routes: orderConfirmed(そのときの確定した割当, 今の案, problem) }, { problem, routes: 今の案 })`（確定した割当の列は訪問データの並びなので、`baseOf` と同じ並べ方にしてから時刻を出す）（取り消した訪問は問題に無いので出ない）。確定が無かった日は中止だけ

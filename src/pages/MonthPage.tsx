@@ -126,7 +126,7 @@ import { staffClientMap } from '../lib/search';
 import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
-import { compile } from '../matching';
+import { compile, withManualPrefs } from '../matching';
 import { scorePresetOf, scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
@@ -713,11 +713,13 @@ export default function MonthPage() {
       }
       // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
       const rules = scoreRulesOf(latest);
-      const p = attempt(() => compile({ ...latest, rules }, day)).value;
-      if (!p || p.visits.length === 0 || p.staff.length === 0) {
+      const base = attempt(() => compile({ ...latest, rules }, day)).value;
+      if (!base || base.visits.length === 0 || base.staff.length === 0) {
         step(i + 1);
         return;
       }
+      // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
+      const { problem: p, applied: prefPins } = withManualPrefs(base, latest);
       const key = problemKey(p);
       // 同じ条件・いまのデータで作った記録があれば計算しない（lib/runs の reusableRun）
       const saved = attempt(() => reusableRun(own(latest.aiRuns, day) ?? [], p, rules, latest.seed, key)).value;
@@ -733,7 +735,7 @@ export default function MonthPage() {
         setTimeout(() => step(i + 1), 0);
         return;
       }
-      solveDay(p, latest, rules, key, day, m, i);
+      solveDay(p, latest, rules, key, day, m, i, prefPins);
     };
 
     const solveDay = (
@@ -744,6 +746,7 @@ export default function MonthPage() {
       day: string,
       m2: BatchMode,
       i: number,
+      prefPins: Record<string, string>,
     ) => {
       const started = attempt(() =>
         runSolve(p, { seed: latest.seed, iterations: defaultIterations(p) }, (x) => {
@@ -760,7 +763,14 @@ export default function MonthPage() {
         .then((result) => {
           if (!live()) return;
           update((d) =>
-            applyDayRun(d, day, { rules, result, createdAt: Date.now(), inputKey: key, onlyEmpty: m2 === 'empty' }),
+            applyDayRun(d, day, {
+              rules,
+              result,
+              createdAt: Date.now(),
+              inputKey: key,
+              onlyEmpty: m2 === 'empty',
+              prefPins,
+            }),
           );
           madeRef.current++;
           if (result.unassigned.length > 0) unassignedDays++;

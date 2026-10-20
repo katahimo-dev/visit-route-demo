@@ -8,7 +8,7 @@ import { WithIcon } from './ui';
 /**
  * guide の見出し・補足・ボタン。まとめて作るは月の画面へのリンク（`?do=batch`。月の画面が1回で URL から消す）、
  * 日の画面は onOpenDay（選んでいる日付を変えて日の画面へ）。primary が false なら主ボタンにしない（同じ画面に進み具合の帯の
- * 主ボタンがあるとき。主ボタンは1画面に多くて2つ）
+ * 主ボタンがあるとき。主ボタンは1画面に1つ。PRD D238）
  */
 export function EmptyNext({
   guide,

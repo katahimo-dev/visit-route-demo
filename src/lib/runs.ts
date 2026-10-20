@@ -31,6 +31,8 @@ export function addRun(
     inputKey?: string;
     label?: string;
     reassign?: ReassignInfo;
+    /** 手直しの記憶で固定した訪問（ADR-0043。matching の withManualPrefs の applied）。空なら書かない */
+    prefPins?: Record<string, string>;
   },
 ): DemoData {
   const runs = own(d.aiRuns, date) ?? [];
@@ -42,21 +44,31 @@ export function addRun(
    */
   const calc = calcFeaturesOf(d.org.features);
   const calcField = Object.keys(calc).length > 0 ? { calcFeatures: calc } : {};
+  const prefPins = x.prefPins && Object.keys(x.prefPins).length > 0 ? x.prefPins : undefined;
+  const prefField = prefPins ? { prefPins } : {};
   const found = findRun(d, date, x);
   if (found) {
     // 使い回すときも presetId を今の時点のものに書き直す（プリセットの重みを変えたあとにこの日だけ試す重みで作り直して同じ案になったとき、
     // 古い presetId のままだと「条件が変わった」（lib/month の rulesStale）が消えない。PR #40 の再レビュー）
     // 計算に効く入り切り（ADR-0028）も今のものに書き直す（記録として。「条件が変わった」は入り切りを見ず問題の違いで決める）
     const inputKey = x.inputKey === undefined ? found.inputKey : x.inputKey;
-    if (found.inputKey === inputKey && found.presetId === presetId && sameCalcFeatures(found.calcFeatures, calc)) {
+    // 記憶で固定した訪問（ADR-0043）も今回のものに書き直す（「条件が変わった」はこの固定で問題を作り直して比べるため）
+    const samePrefs = JSON.stringify(found.prefPins ?? {}) === JSON.stringify(prefPins ?? {});
+    if (
+      found.inputKey === inputKey &&
+      found.presetId === presetId &&
+      sameCalcFeatures(found.calcFeatures, calc) &&
+      samePrefs
+    ) {
       return d;
     }
-    const { calcFeatures: _old, ...rest } = found;
+    const { calcFeatures: _old, prefPins: _oldPrefs, ...rest } = found;
     const patched: AiRun = {
       ...rest,
       presetId,
       ...(inputKey !== undefined ? { inputKey } : {}),
       ...calcField,
+      ...prefField,
     };
     return {
       ...d,
@@ -83,6 +95,7 @@ export function addRun(
     ...(x.inputKey !== undefined ? { inputKey: x.inputKey } : {}),
     ...(x.reassign ? { reassign: x.reassign } : {}),
     ...calcField,
+    ...prefField,
   };
   return { ...d, aiRuns: { ...d.aiRuns, [date]: [...runs, run].slice(-MAX_RUNS_PER_DAY) } };
 }

@@ -40,7 +40,7 @@ import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib
 import { addRun, alignPlan, findRun, planOfRun, problemKey } from '../lib/runs';
 import { type ScoreReason, scoreReason } from '../lib/scoreReason';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
-import { compile, scheduleRoute } from '../matching';
+import { compile, scheduleRoute, withManualPrefs } from '../matching';
 import { applyPreset } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
@@ -279,14 +279,20 @@ export default function ComparePage() {
    * 今ある記録が、いまのデータでも同じ問題か（記録の条件でいまのデータから作った問題のキー＝記録の inputKey。
    * 日の画面のカードと同じ作り方）。違えば同じ条件のプリセットでも別の案になるので除かない（PR #39 のレビュー）
    */
+  /** 手直しの記憶（ADR-0043）を引く訪問と記憶（案の更新では変わらない） */
+  const prefInput = useMemo(
+    () => ({ visits: data.visits, manualPrefs: data.manualPrefs }),
+    [data.visits, data.manualPrefs],
+  );
   const onlyFresh = useMemo(() => {
     if (!onlyRun?.inputKey || Object.keys(onlyRun.pins).length > 0) return false;
     const p =
       problem && JSON.stringify(onlyRun.rules) === JSON.stringify(m.compileInput.rules)
         ? problem
         : attempt(() => compile({ ...m.compileInput, rules: onlyRun.rules }, date)).value;
-    return !!p && problemKey(p) === onlyRun.inputKey;
-  }, [onlyRun, problem, m.compileInput, date]);
+    // 作り直すときと同じく、いまの手直しの記憶（ADR-0043）を当てた問題で比べる
+    return !!p && problemKey(withManualPrefs(p, prefInput).problem) === onlyRun.inputKey;
+  }, [onlyRun, problem, m.compileInput, date, prefInput]);
   const anotherOpts = useMemo(
     () =>
       only
@@ -362,7 +368,9 @@ export default function ComparePage() {
     const rules = preset ? applyPreset(data.rules, preset) : data.rules;
     const name = preset ? `「${preset.name}」` : '試す重み';
     const target = attempt(() => compile({ ...data, rules }, date));
-    const p = target.value;
+    // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
+    const prefed = target.value ? withManualPrefs(target.value, data) : null;
+    const p = prefed?.problem;
     if (!p) {
       setMakeError(target.error ?? '問題を作れませんでした');
       return;
@@ -394,7 +402,7 @@ export default function ComparePage() {
     started.value.promise
       .then((result) => {
         if (!live()) return;
-        const x = { rules, pins: {}, result, createdAt: Date.now(), inputKey };
+        const x = { rules, pins: {}, result, createdAt: Date.now(), inputKey, prefPins: prefed?.applied };
         madeRef.current = { date: forDate, x, before };
         // 記録に足すだけ（今の案・条件は変えない。今の案にするには表の「予定の画面で開く」）
         update((d) => addRun(d, forDate, x));
@@ -586,7 +594,7 @@ export default function ComparePage() {
       <PageHeader
         icon={GitCompareArrows}
         title="案を比べる"
-        lead="選んでいる日の、条件を変えたAI案を2つ選んで比べます（メニューの「案を比べる」か、日の予定の「案を変える」の「2つの案を比べる」から開きます。案が1つならここでもう1案作れます）"
+        lead="選んでいる日の、条件を変えたAI案を2つ選んで比べます（案が1つならここでもう1案作れます）"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
             <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>

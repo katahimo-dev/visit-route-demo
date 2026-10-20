@@ -1,7 +1,33 @@
 # 画面共通の部品
 
-> この部品のファイル：`src/components/ui.tsx`・`FieldError.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`rebuildBand.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/lib/panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`rebuildBand.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0037。関連 PRD：D91〜D101・D122〜D126・D161〜D166・D173〜D177・D193〜D197・D201〜D209・D226・D240〜D242・D250〜D252。
+> この部品のファイル：`src/components/ui.tsx`・`FieldError.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`rebuildBand.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/lib/panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`rebuildBand.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0036・0037。関連 PRD：D91〜D101・D122〜D126・D161〜D166・D173〜D177・D193〜D197・D201〜D209・D226・D236〜D238・D240〜D242・D250〜D252。
 > 画面全体の決まり・メニュー・確認ダイアログ・機能の入り切りは [pages.md](pages.md)。
+
+### 画面の見出しとボタンの3段（ADR-0036。PRD D236〜D238）
+
+#### `components/ui.tsx` の `PageHeader`
+
+- `lead`（`p.page-lead`）は `word-break: auto-phrase`・`text-wrap: pretty` で、390px で折り返しても語の途中で切らず、最後の行に1〜2字だけ残さない
+- `PageHeader({ icon, title, lead?, actions?, nav? })`：`header.page-head` の中に1段目 `.page-head-row`（アイコン `.page-icon` 38px・`.page-title`（h1 と `p.page-lead`）・右の `.page-actions`）、`nav` があれば2段目 `.page-tabs`
+- `lead` は「この画面でやること」の1行（長い説明は `Hint` に畳む）。`actions` は主ボタン（塗り）を1つまでと、その左の状態の印（日の予定の「未確定」など）。主ボタンの無い画面は渡さない（月の予定は進み具合の帯の次の一手が主。PRD D154）
+- 見出しの右のボタンは上下 9px（`.page-actions .btn:not(.btn-small)`）で、見出しの段を低くする
+- 狭い画面では右の `.page-actions` が題名の下へ折り返す（`flex-wrap`。題名は `min-width: 200px`）
+
+#### `components/ViewSwitch.tsx`（予定の［月｜週｜日］。PRD D59・D237）
+
+- 月・週・日の予定の `PageHeader` の `nav` に渡し、題名の下のタブにする。`nav.view-switch`（`aria-label`「予定の表示の切り替え」）の中は `Link`（role=tablist・tab にしない。押すと画面が移るリンクのナビ）
+- 今の画面は `aria-current="page"`・太字・朱の下線 3px（`.view-switch-item.is-on`。色だけに頼らない）。タブの行の下に1px の線（`.page-tabs`）
+
+#### ボタンの3段（`styles.css`）
+
+| 段 | クラス | 見た目 | 使う所 |
+|---|---|---|---|
+| 主 | `.btn.btn-primary` | 濃い朱の塗り・白い文字・下の影 | 1画面に1つ（右の欄は帯の先頭に1つ）。日の予定は「この割当で確定」（確定済みの日は `.btn` にする） |
+| 副 | `.btn` | 白地に枠 | ほかの操作の多く。「欠勤・キャンセルを登録」（アイコンだけ朱。`.plan-sudden-btn svg`）「訪問を追加」「案を変える ▾」 |
+| ついで | `.btn.btn-text` | 枠と地なし・`--sub` の文字（`--bg` で 5.5・`--primary-soft` で 5.2。枠のボタンより目立たせない）。重ねると下線・`--ink` の文字・`--primary-soft` の地（地の色だけに頼らず下線で分かる）。押せないときは `.btn` の薄さ | 戻す・送るなど、無くても流れが進む操作。日の予定の「元に戻す」「メールで送る」 |
+
+- 押せる所の大きさは3段とも同じ（`.btn` の余白のまま）。戻せない操作の `.btn-danger`（赤い枠と文字）は別
+- 1画面に塗りが2つ以上出ない（月の予定は帯の次の一手、空き状況は「要約をコピー」、比較は「もう1案作って比べる」、データは「ファイルに書き出す」、一覧の画面は「〜を追加」）
 
 ### 右の欄（`SidePanel`）と確定のボタンの帯（PRD D194〜D197）
 

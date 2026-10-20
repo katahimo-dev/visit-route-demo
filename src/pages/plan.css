@@ -22,8 +22,10 @@
  * 日の画面の並び（PRD D63）：見出し → 1行のまとめ → あるときだけの帯 → 操作の行 → 本体と地図。
  * ドラッグ中は本体より上の高さを変えない（帯・まとめはドラッグで増減しない。メニューは浮かせて出す）
  */
+/* 段の間。担当ごとの1日を今の案の1行につなげる所（components/dayLines.css）も同じ値を使う */
 .plan-page {
-  gap: 12px;
+  --plan-gap: 10px;
+  gap: var(--plan-gap);
 }
 .plan-oneline {
   display: flex;
@@ -35,6 +37,18 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   font-size: 0.9rem;
+}
+/* 下に担当ごとの1日が続くときは1枚のカードにつなげる（PRD D237。components/dayLines.css） */
+.plan-oneline:has(+ .daylines:not(.is-collapsed)) {
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+@media print {
+  .plan-oneline:has(+ .daylines:not(.is-collapsed)) {
+    border-bottom: 1px solid var(--line);
+    border-radius: 12px;
+  }
 }
 .plan-oneline strong {
   font-size: 1.05rem;
@@ -1035,14 +1049,10 @@ p.plan-band.error {
   font-size: 0.85rem;
 }
 
-/* 「欠勤・キャンセル」の入口と欄（PRD D167〜D170）。入口は主ボタンにしない（朱1色の決まり）が、赤い縁で見つけやすく */
-.plan-sudden-btn {
-  border-color: var(--danger);
-  color: var(--danger);
-  font-weight: 700;
-}
-.plan-sudden-btn:hover:not(:disabled) {
-  background: #fbeceb;
+/* 「欠勤・キャンセル」の入口と欄（PRD D167〜D170）。入口は枠のボタン（主ボタンに見せない。PRD D238）。
+   見つけやすさは操作の行の先頭という位置と、朱のアイコン（色以外にアイコンの形も）で持つ */
+.plan-sudden-btn svg {
+  color: var(--primary);
 }
 @media print {
   .plan-sudden-btn {
@@ -1224,9 +1234,8 @@ p.plan-band.error {
 .reason-line.is-bad .reason-mark {
   color: var(--warn-ink);
 }
-/* いちばんの理由の次の一手（PRD D229）：理由の下に1行 */
+/* いちばんの理由の次の一手（PRD D229）：今の案の1行の中、理由のすぐ後ろ（PRD D237） */
 .score-next {
-  margin: -4px 0 0;
   font-size: 0.85rem;
 }
 .score-next .link-btn,
@@ -1252,4 +1261,34 @@ p.plan-band.error {
   .score-next {
     display: none;
   }
+}
+/* 手直しの記憶の確認の帯（PRD D261・D262。ADR-0043） */
+.pref-band-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 2px;
+  font-size: 0.86rem;
+}
+.pref-band-item {
+  white-space: nowrap;
+}
+.pref-band-actions {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* 手直しの記憶で固定した訪問の印（固定の印と分ける：手直しの固定は橙、記憶は青の点線。ADR-0043） */
+.chip-memo {
+  background: #e3ecf8;
+  color: #2f5486;
+  font-weight: 700;
+  border: 1px dashed #6f93c4;
+}
+.tl-mark.is-memo {
+  color: #2f5486;
+  background: #e3ecf8;
+}
+.pref-note {
+  margin: 0;
+  color: #2f5486;
 }

@@ -9,6 +9,8 @@
 // 訪問の詳細の「担当を変える ▾」（PRD D217〜D219。ADR-0030）：まとまりと項目（role="menuitem"・説明・今の担当・押せない理由・
 // 「入らなかった訪問へ」）、キーボード（Enter で開いて ↓・Enter）で移すと担当が変わり固定、トーストの「元に戻す」で担当・順・固定が戻る、
 // 「入らなかった訪問へ」のあとの確定の確認の本文の先頭に件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
+// 手直しの記憶（PRD D260〜D262。ADR-0043）：手で動かすと帯で聞く（答える前は記憶しない）・次からも→来週の割当済みもまとめて変える・
+// 「元に戻す」で全部戻る・別の週の同じ曜日で作り直すと同じ人と「記憶」の印・データの画面の件数と［すべて消す］。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-plan-menu.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -632,6 +634,174 @@ async function reassignMenu(page) {
   );
 }
 
+// ---- 手直しの記憶（PRD D260〜D262。ADR-0043）：手で動かす→確認で次からも→来週分もまとめて変える→元に戻す、
+// 別の週の同じ曜日で作り直すと同じ人 ----
+const addDaysIso = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const prefKeyOf = (v) =>
+  `${v.clientId}|${new Date(`${v.date}T00:00:00Z`).getUTCDay()}|${v.earliestStart}-${v.latestStart}|${v.typeId ?? ''}`;
+/** その日の訪問の「担当を変える ▾」で押せる人（ID の一覧）。日の予定を開き直して読む */
+async function enabledFor(page, date, vid) {
+  // ?date= は読むと URL から消えるので、ホームを挟んでから開く（読み直さない）
+  await page.goto(`${BASE}#/home`);
+  await page.locator('h1').waitFor();
+  await page.goto(`${BASE}#/plan?date=${date}`);
+  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
+  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
+  await settle(page, 300);
+  await page.locator(`.tl-band[data-visit="${vid}"] .tl-band-btn`).click();
+  await reBtn(page).waitFor({ timeout: 5000 });
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  const shape = await reassignShape(page);
+  await page.keyboard.press('Escape');
+  return shape.items.filter((x) => x.key.startsWith('to-') && !x.disabled).map((x) => x.key.slice(3));
+}
+async function manualPrefs(page) {
+  const NEXT = addDaysIso(TODAY, 7);
+  await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
+  // 来週の同じ曜日の案を作っておく（開くと自動で作る）
+  await page.goto(`${BASE}#/plan?date=${NEXT}`);
+  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
+  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
+  await waitStored(page, (d, date) => !!d.aiPlans[date], NEXT, 60000);
+  await openPlan(page);
+  const d0 = await stored(page);
+  const plan0 = d0.aiPlans[TODAY];
+  const next0 = d0.aiPlans[NEXT];
+  check(!!next0, '記憶：来週の同じ曜日に今の案がある（準備）');
+  // 来週に同じキーの訪問があり、来週も担当のいる訪問を選ぶ
+  const pairs = d0.visits
+    .filter((v) => v.date === TODAY && !v.cancelled && ownerOf(plan0, v.id))
+    .map((v) => ({ v, w: d0.visits.find((x) => x.date === NEXT && !x.cancelled && prefKeyOf(x) === prefKeyOf(v)) }))
+    .filter((x) => x.w && ownerOf(next0, x.w.id));
+  check(pairs.length > 0, '記憶：今日と来週に同じ〈利用者さん〉・曜日・時間の訪問がある（準備）', pairs.length);
+  // 今日も来週も押せる（可の）人で、今の担当でも来週の担当でもない人がいる組を選ぶ
+  let chosen = null;
+  for (const pair of pairs.slice(0, 6)) {
+    const nextOk = await enabledFor(page, NEXT, pair.w.id);
+    const todayOk = await enabledFor(page, TODAY, pair.v.id);
+    const f = ownerOf(plan0, pair.v.id);
+    const n = ownerOf(next0, pair.w.id);
+    const t = todayOk.find((id) => id !== f && id !== n && nextOk.includes(id));
+    if (t) {
+      chosen = { ...pair, to: t };
+      break;
+    }
+  }
+  check(!!chosen, '記憶：移せる人がいる（準備）', pairs.length);
+  check(!!chosen, '記憶：移す人は来週の同じ訪問も担当できる（準備。「担当を変える ▾」で押せる人）');
+  const { v, w, to } = chosen;
+  const from = ownerOf(plan0, v.id);
+  const nextOwner = ownerOf(next0, w.id);
+  const cand = { key: `to-${to}` };
+  // 担当を変える ▾ で、今の担当でも来週の担当でもない押せる人へ移す（enabledFor のあと今日の日の予定が開いている）
+  await page.locator(`.tl-band[data-visit="${v.id}"] .tl-band-btn`).click();
+  if (!(await reBtn(page).count())) await page.locator(`.tl-band[data-visit="${v.id}"] .tl-band-btn`).click();
+  await reBtn(page).waitFor({ timeout: 5000 });
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  await reList(page).locator(`[data-key="${cand.key}"]`).click();
+  await waitStored(page, (d, [date, id, t]) => d.aiPlans[date].pins[id] === t, [TODAY, v.id, to]);
+  await page.getByTestId('pref-ask').waitFor({ timeout: 5000 });
+  const ask = await page.getByTestId('pref-ask-text').innerText();
+  check(
+    /^次からも .曜 .+ の.+様は.+さんにしますか？$/.test(ask),
+    '記憶：手で変えると帯で「次からも…にしますか？」と聞く',
+    ask,
+  );
+  check(
+    Object.keys((await stored(page)).manualPrefs ?? {}).length === 0,
+    '記憶：答える前は記憶しない（既定は今回だけ）',
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'pref-ask.png') });
+  await page.getByTestId('pref-ask-yes').click();
+  await waitStored(page, (d, [k, t]) => d.manualPrefs?.[k]?.staffId === t, [prefKeyOf(v), to]);
+  check(
+    (await stored(page)).manualPrefs?.[prefKeyOf(v)]?.staffId === to,
+    '記憶：「次からもこの人にする」で記憶に書く（〈利用者さん〉・曜日・時間・種類のキー）',
+  );
+  await page.getByTestId('pref-bulk').waitFor({ timeout: 5000 });
+  const bulk = await page.getByTestId('pref-bulk-text').innerText();
+  const nd = `${Number(NEXT.slice(5, 7))}/${Number(NEXT.slice(8, 10))}`;
+  check(
+    /来週以降の.+件（.+）も.+に変えますか？/.test(bulk) && bulk.includes(nd),
+    '記憶：来週以降の割当済みの件数と日付を出して聞く',
+    bulk,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'pref-bulk.png') });
+  await page.getByTestId('pref-bulk-yes').click();
+  await waitStored(page, (d, [date, id]) => !!d.aiPlans[date].pins[id], [NEXT, w.id]);
+  const d1 = await stored(page);
+  const changed = ownerOf(d1.aiPlans[NEXT], w.id) === to && d1.aiPlans[NEXT].pins[w.id] === to;
+  const failedShown = (await page.getByTestId('pref-bulk-result').count()) > 0;
+  check(changed && !failedShown, '記憶：まとめて変えると来週の今の案も同じ人で固定（担当できない日は知らせる）', {
+    owner: ownerOf(d1.aiPlans[NEXT], w.id),
+    to,
+  });
+  // 元に戻す（1手）：今日の手直し・記憶・来週の案が一緒に戻る
+  const undoBtn = page.getByTestId('plan-reassign-undo');
+  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '記憶：まとめて変えたあとも「元に戻す」を押せる');
+  await undoBtn.click();
+  await waitStored(page, (d, k) => !d.manualPrefs?.[k], prefKeyOf(v));
+  const d2 = await stored(page);
+  check(
+    !d2.manualPrefs?.[prefKeyOf(v)] &&
+      ownerOf(d2.aiPlans[TODAY], v.id) === from &&
+      ownerOf(d2.aiPlans[NEXT], w.id) === nextOwner &&
+      !d2.aiPlans[NEXT].pins[w.id],
+    '記憶：「元に戻す」で今日の担当・記憶・来週の案が一緒に戻る',
+  );
+  // もう一度移して記憶だけ書き（来週は変えない）、来週の日で作り直すと同じ人になる
+  await page.locator(`.tl-band[data-visit="${v.id}"] .tl-band-btn`).click();
+  if (!(await reBtn(page).count())) await page.locator(`.tl-band[data-visit="${v.id}"] .tl-band-btn`).click();
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  await reList(page).locator(`[data-key="${cand.key}"]`).click();
+  await page.getByTestId('pref-ask-yes').click();
+  await page.getByTestId('pref-bulk-no').click();
+  await waitStored(page, (d, [k, t]) => d.manualPrefs?.[k]?.staffId === t, [prefKeyOf(v), to]);
+  check(ownerOf((await stored(page)).aiPlans[NEXT], w.id) === nextOwner, '記憶：「変えない」なら来週の案は変えない');
+  await page.goto(`${BASE}#/plan?date=${NEXT}`);
+  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
+  await menuBtn(page).click();
+  await menuList(page).waitFor();
+  await page.getByTestId('plan-menu-create').click();
+  if (await dialog(page).count()) await page.getByTestId('confirm-ok').click();
+  await page
+    .getByTestId('plan-progress')
+    .waitFor({ timeout: 10000 })
+    .catch(() => {});
+  await waitStored(
+    page,
+    (d, [date, id, t]) =>
+      Object.values(d.aiPlans[date].routes).some((ids) => ids.includes(id)) && d.aiPlans[date].routes[t]?.includes(id),
+    [NEXT, w.id, to],
+    60000,
+  );
+  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
+  await settle(page, 300);
+  const d3 = await stored(page);
+  const run = d3.aiRuns[NEXT].find((r) => r.id === d3.aiPlans[NEXT].runId);
+  check(
+    ownerOf(d3.aiPlans[NEXT], w.id) === to && run?.prefPins?.[w.id] === to,
+    '記憶：別の週の同じ曜日で作り直すと同じ人になる（記録の prefPins）',
+    { owner: ownerOf(d3.aiPlans[NEXT], w.id), to, prefPins: run?.prefPins },
+  );
+  check(
+    (await page.locator(`[data-visit="${w.id}"] [data-testid="pref-mark"]`).count()) > 0,
+    '記憶：記憶で固定した訪問に「記憶」の印',
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'pref-mark.png') });
+  // データの画面：件数と［すべて消す］
+  await page.goto(`${BASE}#/data`);
+  await page.getByTestId('data-prefs-count').waitFor();
+  check(/いま 1件 /.test(await page.getByTestId('data-prefs-count').innerText()), 'データの画面：手直しの記憶の件数');
+  await page.getByTestId('data-prefs-clear').click();
+  await page.getByTestId('confirm-ok').click();
+  await waitStored(page, (d) => Object.keys(d.manualPrefs ?? {}).length === 0);
+  check(Object.keys((await stored(page)).manualPrefs).length === 0, 'データの画面：［すべて消す］で記憶が空');
+}
+
 // ---- スマホ（390×844）：一覧と「もう1案作って比べる」が画面に収まる ----
 async function mobile(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
@@ -705,6 +875,7 @@ run(async () => {
     ['compare-more', compareMore],
     ['compare-no-option', compareNoOption],
     ['reassign-menu', reassignMenu],
+    ['manual-prefs', manualPrefs],
     ['mobile', mobile],
   ]) {
     try {
