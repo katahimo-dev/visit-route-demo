@@ -85,6 +85,8 @@ export function migrate(raw: unknown): DemoData | ImportError {
     ...(o.visitTypes === undefined || o.visitTypes === null ? { visitTypes: [] } : {}),
     ...(o.patterns === undefined || o.patterns === null ? { patterns: [] } : {}),
     ...(o.clientLeaves === null ? { clientLeaves: [] } : {}),
+    // 手直しの記憶（ADR-0043）：null は無いのと同じ
+    ...(o.manualPrefs === null ? { manualPrefs: {} } : {}),
   };
   const r = demoDataSchema.safeParse(filled, { error: z.locales.ja().localeError });
   if (!r.success) {

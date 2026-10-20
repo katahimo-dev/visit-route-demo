@@ -1,6 +1,7 @@
 // 手直しの記憶を書く・消す（PRD D260〜D262。ADR-0043）。純粋関数で、画面が store の update(fn) の中で使う
 import { type AiPlan, type DemoData, MAX_MANUAL_PREFS, type ManualPrefs } from '../contracts/data';
 import type { Visit } from '../contracts/documents';
+import { isOnLeave } from '../domain/leaves';
 import { weekday } from '../domain/time';
 import { score } from '../evaluate';
 import { bestInsertion, compile } from '../matching';
@@ -153,7 +154,14 @@ export function applyFutureAssigned(
     for (const x of xs) {
       const j = problem.visits.findIndex((v) => v.id === x.visitId);
       const i = problem.staff.findIndex((s) => s.id === x.to);
-      if (j < 0 || i < 0 || problem.allowed[j]?.[i] !== true) {
+      if (j < 0) {
+        // 計算に入らない訪問：〈利用者さん〉の休み（ADR-0013）か、利用中でない〈利用者さん〉
+        const v = d.visits.find((y) => y.id === x.visitId);
+        const onLeave = !!v && isOnLeave(d.clientLeaves, v);
+        failed.push({ ...x, why: onLeave ? `${d.org.terms.client}の休み` : '計算に入らない訪問' });
+        continue;
+      }
+      if (i < 0 || problem.allowed[j]?.[i] !== true) {
         failed.push({ ...x, why: i < 0 ? 'その日は働かない' : 'その日は担当できない' });
         continue;
       }

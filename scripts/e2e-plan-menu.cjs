@@ -639,6 +639,21 @@ async function reassignMenu(page) {
 const addDaysIso = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const prefKeyOf = (v) =>
   `${v.clientId}|${new Date(`${v.date}T00:00:00Z`).getUTCDay()}|${v.earliestStart}-${v.latestStart}|${v.typeId ?? ''}`;
+/** その日の訪問の「担当を変える ▾」で押せる人（ID の一覧）。日の予定を開き直して読む */
+async function enabledFor(page, date, vid) {
+  await page.goto(`${BASE}#/plan?date=${date}`);
+  await page.reload();
+  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
+  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
+  await settle(page, 300);
+  await page.locator(`.tl-band[data-visit="${vid}"] .tl-band-btn`).click();
+  await reBtn(page).waitFor({ timeout: 5000 });
+  await reBtn(page).click();
+  await reList(page).waitFor();
+  const shape = await reassignShape(page);
+  await page.keyboard.press('Escape');
+  return shape.items.filter((x) => x.key.startsWith('to-') && !x.disabled).map((x) => x.key.slice(3));
+}
 async function manualPrefs(page) {
   const NEXT = addDaysIso(TODAY, 7);
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
@@ -658,20 +673,31 @@ async function manualPrefs(page) {
     .map((v) => ({ v, w: d0.visits.find((x) => x.date === NEXT && !x.cancelled && prefKeyOf(x) === prefKeyOf(v)) }))
     .filter((x) => x.w && ownerOf(next0, x.w.id));
   check(pairs.length > 0, '記憶：今日と来週に同じ〈利用者さん〉・曜日・時間の訪問がある（準備）', pairs.length);
-  const { v, w } = pairs[0];
+  // 今日も来週も押せる（可の）人で、今の担当でも来週の担当でもない人がいる組を選ぶ
+  let chosen = null;
+  for (const pair of pairs.slice(0, 6)) {
+    const nextOk = await enabledFor(page, NEXT, pair.w.id);
+    const todayOk = await enabledFor(page, TODAY, pair.v.id);
+    const f = ownerOf(plan0, pair.v.id);
+    const n = ownerOf(next0, pair.w.id);
+    const t = todayOk.find((id) => id !== f && id !== n && nextOk.includes(id));
+    if (t) {
+      chosen = { ...pair, to: t };
+      break;
+    }
+  }
+  check(!!chosen, '記憶：移せる人がいる（準備）', pairs.length);
+  check(!!chosen, '記憶：移す人は来週の同じ訪問も担当できる（準備。「担当を変える ▾」で押せる人）');
+  const { v, w, to } = chosen;
   const from = ownerOf(plan0, v.id);
   const nextOwner = ownerOf(next0, w.id);
-  // 担当を変える ▾ で、今の担当でも来週の担当でもない押せる人へ移す
+  const cand = { key: `to-${to}` };
+  // 担当を変える ▾ で、今の担当でも来週の担当でもない押せる人へ移す（enabledFor のあと今日の日の予定が開いている）
   await page.locator(`.tl-band[data-visit="${v.id}"] .tl-band-btn`).click();
+  if (!(await reBtn(page).count())) await page.locator(`.tl-band[data-visit="${v.id}"] .tl-band-btn`).click();
   await reBtn(page).waitFor({ timeout: 5000 });
   await reBtn(page).click();
   await reList(page).waitFor();
-  const shape = await reassignShape(page);
-  const cand = shape.items.find(
-    (x) => x.key.startsWith('to-') && !x.disabled && x.key.slice(3) !== from && x.key.slice(3) !== nextOwner,
-  );
-  check(!!cand, '記憶：移せる人がいる（準備）', shape.items);
-  const to = cand.key.slice(3);
   await reList(page).locator(`[data-key="${cand.key}"]`).click();
   await waitStored(page, (d, [date, id, t]) => d.aiPlans[date].pins[id] === t, [TODAY, v.id, to]);
   await page.getByTestId('pref-ask').waitFor({ timeout: 5000 });
@@ -706,7 +732,7 @@ async function manualPrefs(page) {
   const d1 = await stored(page);
   const changed = ownerOf(d1.aiPlans[NEXT], w.id) === to && d1.aiPlans[NEXT].pins[w.id] === to;
   const failedShown = (await page.getByTestId('pref-bulk-result').count()) > 0;
-  check(changed || failedShown, '記憶：まとめて変えると来週の今の案も同じ人で固定（担当できない日は知らせる）', {
+  check(changed && !failedShown, '記憶：まとめて変えると来週の今の案も同じ人で固定（担当できない日は知らせる）', {
     owner: ownerOf(d1.aiPlans[NEXT], w.id),
     to,
   });
@@ -767,7 +793,7 @@ async function manualPrefs(page) {
   // データの画面：件数と［すべて消す］
   await page.goto(`${BASE}#/data`);
   await page.getByTestId('data-prefs-count').waitFor();
-  check(/1件/.test(await page.getByTestId('data-prefs-count').innerText()), 'データの画面：手直しの記憶の件数');
+  check(/いま 1件 /.test(await page.getByTestId('data-prefs-count').innerText()), 'データの画面：手直しの記憶の件数');
   await page.getByTestId('data-prefs-clear').click();
   await page.getByTestId('confirm-ok').click();
   await waitStored(page, (d) => Object.keys(d.manualPrefs ?? {}).length === 0);

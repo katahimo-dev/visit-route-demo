@@ -61,6 +61,7 @@ export function PrefAskBand({
 /** 「来週以降の N件も変えますか？」の帯 */
 export function PrefBulkBand({
   count,
+  confirmedDays,
   dates,
   staff,
   disabled,
@@ -68,6 +69,8 @@ export function PrefBulkBand({
   onNo,
 }: {
   count: number;
+  /** そのうち確定済みの日の数（確定した割当は変えず今の案だけ変わる＝確定し直しが要る） */
+  confirmedDays: number;
   dates: string;
   /** 変える先（1人なら「〇〇さん」、何人かなら「それぞれの担当」） */
   staff: string;
@@ -80,6 +83,7 @@ export function PrefBulkBand({
       <WithIcon icon={History} size={16}>
         <span className="band-text" data-testid="pref-bulk-text">
           来週以降のすでに割り当てた {count}件（{dates}）も{staff}に変えますか？
+          {confirmedDays > 0 && `うち確定済みの ${confirmedDays}日は今の案だけ変わり、確定し直しが必要です。`}
         </span>
       </WithIcon>
       <span className="row pref-band-actions">

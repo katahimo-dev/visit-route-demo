@@ -85,7 +85,7 @@ function repairPresets(presets: Preset[]): Preset[] {
  * - 担当できる人（ADR-0014）：いない・休止中（active=false）の〈スタッフ〉の ID と重なりを除く（全員いなくなれば [] ＝限らない）
  * - 〈利用者さん〉の段階（ADR-0015）：active・tentative を段階に合わせる（lib/clientStage の stageFlags。段階が正）
  * - 取り消しの種類（ADR-0015）：取り消していない訪問の cancelKind は null
- * - 手直しの記憶（ADR-0043）：いない〈スタッフ〉の記憶は消し、MAX_MANUAL_PREFS 件を超える分は updatedAt の古い順に消す。
+ * - 手直しの記憶（ADR-0043）：いない〈スタッフ〉・〈利用者さん〉（キーの先頭）の記憶は消し、MAX_MANUAL_PREFS 件を超える分は updatedAt の古い順に消す。
  *   記録の prefPins（記憶で固定した訪問）は pins と同じ規則
  * 食い違いがなければ同じ中身を返す（書き出し → 読み込みで同じデータ）
  */
@@ -249,11 +249,19 @@ export function repair(d: DemoData): DemoData {
     ]),
   );
 
-  // 手直しの記憶（ADR-0043）：いない人の記憶を消し、件数を上限までに（新しい順に残す）
+  // 手直しの記憶（ADR-0043）：いない人の記憶を消し、件数を上限までに（新しい順に残す）。
+  // 〈利用者さん〉はキーの先頭（`clientId|曜日|…`）。ID に「|」を含んでも、どれかの〈利用者さん〉の ID＋「|」で始まれば残す
   let manualPrefs: ManualPrefs = d.manualPrefs;
   const prefKeys = Object.keys(manualPrefs);
-  if (prefKeys.some((k) => !staffIds.has(manualPrefs[k]!.staffId)) || prefKeys.length > MAX_MANUAL_PREFS) {
-    const alive = prefKeys.filter((k) => staffIds.has(manualPrefs[k]!.staffId));
+  const clientIdList = clients.map((c) => c.id);
+  const clientIdSet = new Set(clientIdList);
+  const clientOk = (k: string) => {
+    const head = k.slice(0, k.indexOf('|'));
+    return clientIdSet.has(head) || clientIdList.some((id) => k.startsWith(`${id}|`));
+  };
+  const live = (k: string) => staffIds.has(manualPrefs[k]!.staffId) && clientOk(k);
+  if (prefKeys.some((k) => !live(k)) || prefKeys.length > MAX_MANUAL_PREFS) {
+    const alive = prefKeys.filter(live);
     const keep = alive
       .sort((a, b) => manualPrefs[b]!.updatedAt - manualPrefs[a]!.updatedAt || (a < b ? -1 : a > b ? 1 : 0))
       .slice(0, MAX_MANUAL_PREFS);

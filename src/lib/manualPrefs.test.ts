@@ -135,6 +135,15 @@ describe('来週以降の割当済みをまとめて変える', () => {
     expect(rc.failed[0]?.why).toBe('確定した割当だけの日');
     expect(rc.data).toBe(conf);
   });
+  it('〈利用者さん〉の休みで計算に入らない日は理由を分ける', () => {
+    const d: DemoData = {
+      ...data(),
+      clientLeaves: [{ id: 'l1', clientId: 'c1', from: NEXT, to: NEXT, note: '' }],
+      aiPlans: { [NEXT]: plan(NEXT, { s1: ['v2'] }) },
+    };
+    const r = applyFutureAssigned(d, futureAssigned(d, { v1: 's2' }, DATE));
+    expect(r.failed.map((x) => x.why)).toEqual(['利用者さんの休み']);
+  });
   it('元に戻す（1手）：記憶とまとめて変えたほかの日を一緒に戻す', () => {
     const d0: DemoData = { ...data(), aiPlans: { [NEXT]: plan(NEXT, { s1: ['v2'] }) } };
     const key = prefKey(visit('v1', 'c1', '09:00', '10:00'));

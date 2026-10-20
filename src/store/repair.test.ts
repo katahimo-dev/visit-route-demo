@@ -645,17 +645,37 @@ describe('手直しの記憶（ADR-0043）', () => {
   it('いない〈スタッフ〉の記憶を消し、2000件を超えたら古い順に消す。書き出し → 読み込みで同じ', () => {
     const d = base();
     const sid = d.staff[0]!.id;
-    const prefs: DemoData['manualPrefs'] = { gone: { staffId: 'nobody', updatedAt: 99999 } };
-    for (let i = 0; i < 2001; i++) prefs[`k${i}`] = { staffId: sid, updatedAt: i };
+    const cid = d.clients[0]!.id;
+    const k = (i: number) => `${cid}|${i}`;
+    const prefs: DemoData['manualPrefs'] = { [`${cid}|gone`]: { staffId: 'nobody', updatedAt: 99999 } };
+    for (let i = 0; i < 2001; i++) prefs[k(i)] = { staffId: sid, updatedAt: i };
     const r = repair({ ...d, manualPrefs: prefs });
     expect(Object.keys(r.manualPrefs)).toHaveLength(2000);
-    expect(r.manualPrefs.gone).toBeUndefined();
-    expect(r.manualPrefs.k0).toBeUndefined();
-    expect(r.manualPrefs.k2000).toEqual({ staffId: sid, updatedAt: 2000 });
+    expect(r.manualPrefs[`${cid}|gone`]).toBeUndefined();
+    expect(r.manualPrefs[k(0)]).toBeUndefined();
+    expect(r.manualPrefs[k(2000)]).toEqual({ staffId: sid, updatedAt: 2000 });
     const back = importJson(JSON.stringify(r));
     expect(isImportError(back)).toBe(false);
     expect((back as DemoData).manualPrefs).toEqual(r.manualPrefs);
     // 直す所が無ければ同じ物
     expect(repair(r).manualPrefs).toBe(r.manualPrefs);
+  });
+  it('いない〈利用者さん〉の記憶を消す・manualPrefs が null なら {}', () => {
+    const d = base();
+    const sid = d.staff[0]!.id;
+    const cid = d.clients[0]!.id;
+    const r = repair({
+      ...d,
+      manualPrefs: {
+        [`${cid}|1|09:00-09:00|`]: { staffId: sid, updatedAt: 1 },
+        'nobody|1|09:00-09:00|': { staffId: sid, updatedAt: 2 },
+      },
+    });
+    expect(Object.keys(r.manualPrefs)).toEqual([`${cid}|1|09:00-09:00|`]);
+    const raw = JSON.parse(JSON.stringify(d));
+    raw.manualPrefs = null;
+    const m = migrate(raw);
+    expect(isImportError(m)).toBe(false);
+    expect((m as DemoData).manualPrefs).toEqual({});
   });
 });

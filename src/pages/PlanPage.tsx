@@ -658,6 +658,8 @@ export default function PlanPage() {
           pins: {},
         };
         const x = { rules: rulesSnapshot, pins: {}, result, createdAt: plan.createdAt, inputKey, prefPins };
+        // 今の案が替わるなら、手直しの記憶の確認・記憶だけの控えは終える（自動作成で今の案があれば替わらない）
+        if (!auto || !own(dataRef.current.aiPlans, forDate)) endPrefAsk(forDate);
         update((d) => {
           const added = addRun(d, forDate, x);
           if (auto && own(d.aiPlans, forDate)) return added;
@@ -794,6 +796,7 @@ export default function PlanPage() {
         rules: applyPreset(d.rules, preset),
         aiPlans: { ...d.aiPlans, [date]: planOfRun(saved) },
       }));
+      endPrefAsk(date);
       sel.reset();
       toast(`保存してある${preset.name}の案を今の案にしました（再計算なし）`);
       return;
@@ -1051,6 +1054,7 @@ export default function PlanPage() {
         const runId = findRun(added, forDate, x)?.id;
         return patchPlan(added, forDate, null, (plan) => ({ ...plan, runId }));
       });
+      endPrefAsk(forDate);
       if (dateRef.current === forDate) sel.reset();
       toast(result.stopped ? '途中までの最良の案で組み直しました' : '固定を残して組み直しました');
     });
@@ -1117,6 +1121,37 @@ export default function PlanPage() {
   const [prefBulk, setPrefBulk] = useState<{ date: string; list: FutureAssigned[] } | null>(null);
   /** まとめて変えられなかった日の知らせ */
   const [prefBulkNote, setPrefBulkNote] = useState<{ date: string; text: string } | null>(null);
+  // 日を移ったら聞くのをやめる（戻っても前の帯を出さない。最初の担当の判定も持ち越さない）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付が変わったときだけ
+  useEffect(() => {
+    setPrefAsk(null);
+    setPrefBulk(null);
+    setPrefBulkNote(null);
+  }, [date]);
+  /**
+   * 作る・組み直すの計算が終わったら（forDate の日）：聞いている手直しはもう今の案に無いので聞くのをやめ、
+   * 記憶だけの「元に戻す」の控え（日の手直しの控えが無いもの）も捨てる（作り直した案と別に戻すと食い違うため）
+   */
+  const endPrefAsk = (forDate: string) => {
+    setPrefAsk((cur) => (cur?.date === forDate ? null : cur));
+    setPrefBulk((cur) => (cur?.date === forDate ? null : cur));
+    setUndoSnap((u) => (u && !u.snap && u.date === forDate ? null : u));
+  };
+  /**
+   * 記憶・まとめて変えた分を足す先の控え：今の控えが戻せる（undoWhy が null）ならそれに足し、戻せないなら日の手直しの控えを捨てて
+   * 記憶・まとめて変えた分だけの新しい控えにする（「元に戻す」で記憶・来週分が確実に戻る）
+   */
+  const extendUndo = (extra: Pick<UndoSnap, 'prefs' | 'others'>) => {
+    const base: UndoSnap =
+      undoSnap && undoSnap.date === date && undoWhy === null
+        ? undoSnap
+        : { date, snap: null, visitId: null, from: null };
+    setUndoSnap({
+      ...base,
+      ...(extra.prefs ? { prefs: [...(base.prefs ?? []), ...extra.prefs] } : {}),
+      ...(extra.others ? { others: [...(base.others ?? []), ...extra.others] } : {}),
+    });
+  };
   /**
    * 手で担当を変えた（staffId）・外した（null）ことを覚える。最初の担当に戻した・記憶と同じ担当にしたなら聞かない
    */
@@ -1159,11 +1194,7 @@ export default function PlanPage() {
       return [{ key, before: own(data.manualPrefs, key) ?? null }];
     });
     update((d) => patchManualPrefs(d, { set }, Date.now()));
-    setUndoSnap((u) =>
-      u && u.date === date
-        ? { ...u, prefs: [...(u.prefs ?? []), ...entries] }
-        : { date, snap: null, visitId: null, from: null, prefs: entries },
-    );
+    extendUndo({ prefs: entries });
     setPrefAsk(null);
     setPrefBulkNote(null);
     const list = futureAssigned(dataRef.current, set, jstDate(Date.now()));
@@ -1181,13 +1212,7 @@ export default function PlanPage() {
     const r = applyFutureAssigned(base, prefBulk.list);
     update((d) => (d === base ? r.data : applyFutureAssigned(d, prefBulk.list).data));
     const others = Object.entries(r.before).map(([d, before]) => ({ date: d, before, after: r.data.aiPlans[d]! }));
-    if (others.length > 0) {
-      setUndoSnap((u) =>
-        u && u.date === date
-          ? { ...u, others: [...(u.others ?? []), ...others] }
-          : { date, snap: null, visitId: null, from: null, others },
-      );
-    }
+    if (others.length > 0) extendUndo({ others });
     setPrefBulk(null);
     const failText = r.failed.map((x) => `${dateText(x.date)} ${clientOf(x.visitId)?.displayName ?? ''}様（${x.why}）`);
     setPrefBulkNote(
@@ -1270,8 +1295,9 @@ export default function PlanPage() {
       routes: owner.get(visitId) === staffId ? aiPlan.routes : bestInsertion(p, aiPlan.routes, visitId, staffId),
       pins: { ...aiPlan.pins, [visitId]: staffId },
     });
-    // 次からもこの人にするかを帯で聞く（PRD D261。答えなければ記憶しない）
-    noteManual(visitId, staffId);
+    // 次からもこの人にするかを帯で聞く（PRD D261。答えなければ記憶しない）。必須の条件に合わない人へ移したときは聞かない
+    // （記憶しても次の案では当てられない）。聞いていた分は外す
+    noteManual(visitId, allowedFor(visitId, staffId) ? staffId : null);
     // 移した訪問を選んでいたら、地図の絞り込みを新しい担当に合わせる
     sel.follow(visitId, staffId);
     const opts = saved ? { action: undoAction } : undefined;
@@ -3153,6 +3179,11 @@ export default function PlanPage() {
       {prefBulk && prefBulk.date === date && (
         <PrefBulkBand
           count={prefBulk.list.length}
+          confirmedDays={
+            new Set(
+              prefBulk.list.filter((x) => x.source === 'plan' && !!own(data.manualPlans, x.date)).map((x) => x.date),
+            ).size
+          }
           dates={prefDatesText(prefBulk.list.map((x) => x.date))}
           staff={bulkStaff}
           disabled={!!running}

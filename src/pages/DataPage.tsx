@@ -198,7 +198,7 @@ export default function DataPage() {
       const counts = `${rt.staff} ${r.staff.length}人・${rt.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
       const ok = await confirmDialog({
         title: `「${file.name}」でデータを置き換えますか？`,
-        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当は消えます。\n${keepNote(canKeepPrevious())}`,
+        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当・手直しの記憶は消えます。\n${keepNote(canKeepPrevious())}`,
         confirmLabel: 'すべて置き換える',
         tone: 'danger',
       });
@@ -492,7 +492,7 @@ export default function DataPage() {
               <>
                 {t.staff}・{t.client}
                 ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。Excel
-                で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当は消えます）。
+                で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当・手直しの記憶は消えます）。
                 書き方はブックの「使い方」のシートにあります。
               </>
             ) : (

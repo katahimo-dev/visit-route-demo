@@ -145,7 +145,7 @@ flowchart LR
   - 割当・相性・上書き・固定・記録・今の案と記録の `reassign` の `base*`（`absenceIds` は残す）。記録は1日20件まで（古いものから捨てる）
   - プリセット：6つまで・0件なら初期の3種・重みは 0〜5・0.5刻み（`clampWeight`）・必須にできない型の必須は外す。`scorePresetId` が無効なら先頭
   - 欠勤は同じ人・同じ日の最後の1件。種類は20まで
-  - 手直しの記憶（ADR-0043）：いない〈スタッフ〉の記憶を消し、2000件を超えたら `updatedAt` の古い順に消す。記録の `prefPins` は固定と同じ規則
+  - 手直しの記憶（ADR-0043）：いない〈スタッフ〉・〈利用者さん〉（キーの先頭）の記憶を消し、2000件を超えたら `updatedAt` の古い順に消す。記録の `prefPins` は固定と同じ規則
   - パターン：いない〈利用者さん〉のものを除く、無効な `typeId`・`usualStaffId` は null、`weekdays`・`monthWeeks` は重なりなしの昇順（毎週系の `monthWeeks` は `[]`）、`dayTimes` はパターンの曜日だけ・曜日ごと最初の1件・曜日の順
   - 訪問：無効な `typeId`・`pattern` は null（訪問は残す）。取り消していない訪問の `cancelKind` は null
   - `allowedStaffIds`：いない・休止中の人と重なりを除く（空になれば限らない）。active・tentative を段階に合わせる（`stageFlags`）

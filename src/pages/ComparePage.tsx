@@ -278,6 +278,11 @@ export default function ComparePage() {
    * 今ある記録が、いまのデータでも同じ問題か（記録の条件でいまのデータから作った問題のキー＝記録の inputKey。
    * 日の画面のカードと同じ作り方）。違えば同じ条件のプリセットでも別の案になるので除かない（PR #39 のレビュー）
    */
+  /** 手直しの記憶（ADR-0043）を引く訪問と記憶（案の更新では変わらない） */
+  const prefInput = useMemo(
+    () => ({ visits: data.visits, manualPrefs: data.manualPrefs }),
+    [data.visits, data.manualPrefs],
+  );
   const onlyFresh = useMemo(() => {
     if (!onlyRun?.inputKey || Object.keys(onlyRun.pins).length > 0) return false;
     const p =
@@ -285,8 +290,8 @@ export default function ComparePage() {
         ? problem
         : attempt(() => compile({ ...m.compileInput, rules: onlyRun.rules }, date)).value;
     // 作り直すときと同じく、いまの手直しの記憶（ADR-0043）を当てた問題で比べる
-    return !!p && problemKey(withManualPrefs(p, data).problem) === onlyRun.inputKey;
-  }, [onlyRun, problem, m.compileInput, date, data]);
+    return !!p && problemKey(withManualPrefs(p, prefInput).problem) === onlyRun.inputKey;
+  }, [onlyRun, problem, m.compileInput, date, prefInput]);
   const anotherOpts = useMemo(
     () =>
       only
