@@ -20,12 +20,12 @@
 
 #### 並び（PRD D63）
 
-1. 見出し：［月｜週｜日］（`ViewSwitch`）・日付・状態の印・主ボタン「この割当で確定」
+1. 見出し（`PageHeader`。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）：題名・1行の説明・状態の印・主ボタン「この割当で確定」（確定済みの日は枠のボタンにして主ボタンを置かない。PRD D238）。題名の下に［月｜週｜日］のタブ（`ViewSwitch`。PRD D237）
 2. 進み具合の帯：`ScheduleBand date={date} withDay`（[pages-home.md](pages-home.md)）
-3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`。title「点数の基準：〈名前〉」）・点数の理由（`plan-reason`）・「詳しく」
-4. 担当ごとの1日（`DayLines`。下）
+3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`。title「点数の基準：〈名前〉」）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」
+4. 担当ごとの1日（`DayLines`。下）。開いているときは1行のまとめと1枚のカードにつなげる（`.plan-oneline:has(+ .daylines)` と `.plan-oneline + .daylines` で間と角を消す。印刷では離す。PRD D237）
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
-6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」・「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・表示［時間軸｜順番｜一覧］・「メールで送る」・計算中の進み具合と止める
+6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」は枠、「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・「メールで送る」は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・計算中の進み具合と止める
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
 8. 本体（時間軸か順番か一覧）と地図：1280px 以上で横に並べ（地図は上に貼りつく）、見出しの「地図を畳む」で畳む。狭い画面は `MapDock`
 
@@ -49,7 +49,7 @@
   - 次の一手 `nextStep`（PRD D229。`NEXT_STEP_TEXT`）：移動が長め＝「「移動を短く」で作る」（`shortTravel`）、入らない訪問＝「受けられる人を見る」（`candidates`）、相性△・×・◎の取り逃し＝「相性の表を開く」（`compat`）。ほか（必須の違反・待ち・偏り・ほかの担当の条件）は無し
 - `lib/useDayModel.ts` は `scoreRules`（点数の基準の条件。名前と重みを理由の文に使う）を返す
 - `pages/planParts.tsx` の `ScoreReasonText`：↘ と短い文。読み上げの前置き「点を下げているいちばんの理由：」は sr-only。使う所は日の予定の今の案の帯（`plan-reason`）と比較の画面（`compare-reason`）
-- `planParts.tsx` の `ScoreNextStep`：1行のまとめの下に1行「次の一手：［…］」（`p.score-next`・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「案を変える ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
+- `planParts.tsx` の `ScoreNextStep`：1行のまとめの中、理由のすぐ後ろに「次の一手：［…］」（`span.score-next`。PRD D237・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「案を変える ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
 - 点数の説明（`HundredHint`）は決め方と減点の内訳だけ。内部の費用（「費用 N（内部の値…）」）は出さない（PRD D229）
 - `planParts.tsx` の文：`SCORE_TEXT`（「理想を100点として、1件あたり理想より余計にかかった分（分換算）だけ減点した点」）・`rulerText(name)`（「点数はいつも点数の基準のプリセット「〈名前〉」の重みで付けます。プリセットを替えても点数の付け方は変わりません」）
 
@@ -216,6 +216,7 @@
 - 横棒の訪問の所をマウス・タッチで押すと（`DayLine.parts` の訪問の区間に visitId を付け、`PartsBar` が data-visit-id に書く。押した要素から引く）その訪問を選び（カードを押したときと同じ `togglePick`。選んだままなら外さず `focusOn` で地図を絞り直す）、その人の列の中のカード（data-visit）へスクロール（一覧のときは時間軸に切り替えてから）。キーボードで押したとき・訪問の外を押したときは人を選ぶ
 - `detailName` で行のボタンの外の右に名前の i
 - 今の案（`aiPlan`）が無い日は出さない。900px 以下・印刷は details 要素で畳む（`collapsed`）。高さの変数 `--header-h` は触らない
+- マウスの端末（`pointer: fine`）では行を詰める（行の上下の余白0・行の高さ 1.25・行の i は 18px。PRD D237）。タッチの端末は今のまま（行の i の押せる所 32×24px）。1440×900 で本体の列の見出しと最初の訪問が初期表示に入る
 
 #### 地図と強調（`lib/routeView.ts`。比較の画面と共通）
 
