@@ -2,6 +2,7 @@
 // 振り直しの差の欄・入らない訪問の受けられる人
 import { CircleOff, GitCompareArrows, ShieldAlert, TriangleAlert, Undo2, UserRoundCheck } from 'lucide-react';
 import { type ReactNode, useId, useMemo, useState } from 'react';
+import { FieldError, invalidAttrs } from '../components/FieldError';
 import { PersonButton } from '../components/PersonPopover';
 import { Hint, WithIcon } from '../components/ui';
 import type { DemoData, ReassignInfo } from '../contracts/data';
@@ -65,6 +66,9 @@ export function AbsenceFields({
   const shift = baseSlots[0];
   const end = baseSlots.at(-1);
   const set = onChange;
+  // 誤り（開始・終了の組み合わせ）は開始と終了の欄に印を付ける（PRD D250）
+  const errorId = useId();
+  const bad = invalidAttrs(!!error && !d.allDay, errorId);
   return (
     <div className="stack" style={{ gap: 10 }}>
       <p className="sub">
@@ -108,7 +112,12 @@ export function AbsenceFields({
           <div className="form-grid">
             <label>
               開始
-              <select value={d.from} onChange={(e) => set({ from: e.target.value })} data-testid="absence-from">
+              <select
+                value={d.from}
+                {...bad}
+                onChange={(e) => set({ from: e.target.value })}
+                data-testid="absence-from"
+              >
                 <option value="">始業から{shift ? `（${t(shift.start)}）` : ''}</option>
                 {HALF_HOURS.map((h) => (
                   <option key={h} value={h}>
@@ -119,7 +128,7 @@ export function AbsenceFields({
             </label>
             <label>
               終了
-              <select value={d.to} onChange={(e) => set({ to: e.target.value })} data-testid="absence-to">
+              <select value={d.to} {...bad} onChange={(e) => set({ to: e.target.value })} data-testid="absence-to">
                 <option value="">終業まで{end ? `（${t(end.end)}）` : ''}</option>
                 {HALF_HOURS.map((h) => (
                   <option key={h} value={h}>
@@ -136,7 +145,9 @@ export function AbsenceFields({
         <span className="field-label">メモ（例：病院の付き添い）</span>
         <input value={d.note} maxLength={100} onChange={(e) => set({ note: e.target.value })} />
       </label>
-      {error && <p className="error">{error}</p>}
+      <FieldError id={errorId} live={false}>
+        {error}
+      </FieldError>
     </div>
   );
 }
