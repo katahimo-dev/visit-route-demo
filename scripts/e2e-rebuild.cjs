@@ -348,7 +348,11 @@ async function rebuild(page) {
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'month-panel.png') });
   await panel.getByRole('button', { name: '作り始める' }).click();
-  await page.locator('.toast').filter({ hasText: '日分の案を作りました' }).first().waitFor({ timeout: 60000 });
+  await page
+    .locator('.toast')
+    .filter({ hasText: /の案を\d+日分作りました/ })
+    .first()
+    .waitFor({ timeout: 60000 });
   await openSettings(page, '/rules');
   await band(page).waitFor({ timeout: 10000 });
   const c = await counts(page);
