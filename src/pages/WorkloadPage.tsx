@@ -306,7 +306,8 @@ export default function WorkloadPage() {
                       訪問
                     </th>
                     <th scope="col" className="num">
-                      <Term k="span" />
+                      {/* 同じ画面の2か所目から説明を付けない（PRD D241。上限の設定に付けている） */}
+                      <Term k="span" plain />
                     </th>
                     <th scope="col">一番長い日</th>
                     <th scope="col" className="num">
@@ -524,7 +525,8 @@ export default function WorkloadPage() {
                       </th>
                       <th scope="col">始め〜終わり</th>
                       <th scope="col" className="num">
-                        <Term k="span" />
+                        {/* 日ごとの表は月の合計の表と同じ語なので文字だけ（PRD D241） */}
+                        <Term k="span" plain />
                       </th>
                       <th scope="col" className="num">
                         訪問
@@ -533,7 +535,7 @@ export default function WorkloadPage() {
                         移動
                       </th>
                       <th scope="col" className="num">
-                        <Term k="wait" />
+                        <Term k="wait" plain />
                       </th>
                       <th scope="col" className="num">
                         距離

@@ -1,5 +1,6 @@
 // 条件を変えたら、その場で影響と「作り直す」を出す帯（PRD D161〜D165。ADR-0025 追記）を本物のブラウザで確かめる：
 // 条件が変わった日が無ければ帯を出さない、条件の重みの画面で点数の基準のプリセットの重みを変えると帯が出る（入力の間は数えない）、
+// 条件の重みの表は点数の基準の重みを直し、この日だけ試す重みも基準にそろう（ADR-0035。PRD D233〜D235）、試す重みがプリセットと違えば案内、
 // 「影響する日 N日（未確定 a日・確定済み b日）」の数が月の画面の要対応の「条件が変わった」と同じ、読み上げ（変わったときだけ）、
 // ［後で］でその画面の間だけ隠れる（フォーカスは見出し・ほかの画面では出る・戻ると出る・データに保存しない）、
 // ［作り直す］で月の画面の「条件が変わった日だけ作り直す」の欄が開き ?do= が消える、作り直すと確定済みの日だけ残り「要対応を見る」、
@@ -19,7 +20,7 @@ const SETTLE = 600;
 const monthNo = (ym) => Number(ym.slice(5, 7));
 const band = (page) => page.getByTestId('rebuild-band');
 const live = (page) => page.getByTestId('rebuild-live');
-/** 影響する日の行・いまの条件の案内の行（1つの帯の中の2行） */
+/** 影響する日の行・試す重みの案内の行（1つの帯の中の2行） */
 const daysRow = (page) => page.getByTestId('rebuild-days-row');
 const customRow = (page) => page.getByTestId('rebuild-custom');
 
@@ -49,6 +50,26 @@ async function planReady(page) {
     null,
     { timeout: 60000 },
   );
+}
+/** この日だけ試す重み（data.rules）を、どのプリセットとも違う重みにする（日の予定の右の欄で変えたのと同じデータ） */
+async function setTrialWeights(page) {
+  await page.evaluate((key) => {
+    const d = JSON.parse(localStorage.getItem(key));
+    const r = d.rules.find((x) => x.type === 'wait');
+    r.weight = r.weight >= 4.5 ? r.weight - 1.5 : r.weight + 1.5;
+    localStorage.setItem(key, JSON.stringify(d));
+  }, STORAGE_KEY);
+  // 開いている画面は前のデータを持っているので読み直す
+  await page.reload();
+  await page.locator('h1').first().waitFor({ timeout: 30000 });
+}
+/** 保存してある点数の基準のプリセットと、この日だけ試す重み */
+async function stored(page) {
+  return page.evaluate((key) => {
+    const d = JSON.parse(localStorage.getItem(key));
+    const basis = d.presets.find((p) => p.id === d.scorePresetId) ?? d.presets[0];
+    return { basis: basis.weights, rules: d.rules.map((r) => ({ type: r.type, weight: r.weight, hard: r.hard })) };
+  }, STORAGE_KEY);
 }
 /** 月の画面の要対応のうち「条件が変わった」の日付 */
 async function staleInMonth(page, ym) {
@@ -120,12 +141,12 @@ async function rules(page) {
     '初期状態のまま標準の重みを変えると帯：影響する日 2日（未確定 1・確定済み 1）',
     c,
   );
-  // いまの条件は古い標準の重みのままなので、どのプリセットとも違い、いまの条件の案内も同じ帯に出る
-  check((await customRow(page).count()) === 1, '標準を変えると、いまの条件（古い標準の重み）の案内も出る');
+  // 基準（標準）を直すと、この日だけ試す重みも新しい標準にそろうので、試す重みの案内は出ない（ADR-0035）
+  check((await customRow(page).count()) === 0, '標準を変えると、試す重みも標準にそろい案内は出ない');
   const text = await daysRow(page).innerText();
   check(
     text.replace(/\s+/g, ' ').includes('条件が変わりました：影響する日 2日（未確定 1日・確定済み 1日）') &&
-      /点数の基準のプリセット「標準」で作り直します（いまの条件で作った案も「標準」の案になります）/.test(text),
+      /点数の基準のプリセット「標準」で作り直します（この日だけ試す重みで作った案も「標準」の案になります）/.test(text),
     '帯の文（基準のプリセットで作り直すと書く）',
     text,
   );
@@ -147,18 +168,34 @@ async function rules(page) {
   await slider.focus();
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft');
   await daysRow(page).waitFor({ timeout: 10000 });
-  // いまの条件の重みを変える：どのプリセットとも違うので案内が出る（プリセットで作った案の日数は変わらない）
-  const main = page.locator('.rules-table input[type="range"]:not([disabled])').first();
+  // 条件の重みの表の重みは点数の基準（標準）の重み：動かすと標準と試す重みの両方が変わり、案内は出ない（ADR-0035）
+  const main = page.getByTestId('narrow-rules').locator('input[type="range"]:not([disabled])').first();
+  const type = await main.evaluate((el) => el.closest('tr')?.querySelector('.chip-type')?.textContent ?? '');
+  const s0 = await stored(page);
   await main.focus();
   await page.keyboard.press('ArrowLeft');
+  await page.waitForTimeout(SETTLE + 300);
+  const s1 = await stored(page);
+  const changed = Object.keys(s1.basis).filter((t) => s1.basis[t].weight !== s0.basis[t].weight);
+  check(
+    changed.length === 1 &&
+      s1.rules.filter((r) => r.type === changed[0]).every((r) => r.weight === s1.basis[changed[0]].weight) &&
+      (await customRow(page).count()) === 0,
+    '条件の重みの表は点数の基準のプリセットの重みを直し、試す重みも同じになる（案内は出ない）',
+    { type, changed, basis: s1.basis[changed[0]], rules: s1.rules },
+  );
+  // この日だけ試す重み（日の予定の右の欄）がどのプリセットとも違えば案内が出る（プリセットで作った案の日数は変わらない）
+  await setTrialWeights(page);
+  await openSettings(page, '/rules');
   await customRow(page).waitFor({ timeout: 5000 });
   const ct = await customRow(page).innerText();
   check(
-    /いまの条件は日の予定の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「標準」で作ります/.test(
+    /この日だけ試す重み（日の予定の右の欄の重み）がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「標準」）で作ります/.test(
       ct,
     ) &&
       (await page.getByTestId('rebuild-today').count()) === 1 &&
-      /プリセットとして保存/.test(ct),
+      /今日の案を試す重みで作り直す/.test(ct) &&
+      /試す重みをプリセットとして保存/.test(ct),
     'いまの条件がプリセットと違えば案内と［今日の案をいまの条件で作り直す］［プリセットとして保存］',
     ct,
   );
@@ -248,7 +285,7 @@ async function later(page) {
   );
   const after = await page.evaluate((k) => localStorage.getItem(k), STORAGE_KEY);
   check(before === after, '［後で］はデータに保存しない');
-  // 同じ画面で条件をまた変えても、この画面の間は隠したまま（いまの条件をプリセットからさらに離す）
+  // 同じ画面で条件をまた変えても、この画面の間は隠したまま（点数の基準の重みをさらに変える）
   const slider = page.locator('.rules-table input[type="range"]:not([disabled])').first();
   await slider.focus();
   await page.keyboard.press('ArrowLeft');
@@ -323,8 +360,10 @@ async function rebuild(page) {
   check(!/do=/.test(hashOf(page)), '［要対応を見る］で月の予定の要対応（?do= は消える）', hashOf(page));
 }
 
-// ---- ［今日の案をいまの条件で作り直す］：日の画面で今日の案をいまの条件で作る ----
+// ---- ［今日の案を試す重みで作り直す］：日の画面で今日の案をこの日だけ試す重みで作る ----
 async function today(page) {
+  // 前の段で基準の重みを直すと試す重みも基準にそろうので、もう一度プリセットと違う試す重みにする（ADR-0035）
+  await setTrialWeights(page);
   await openSettings(page, '/rules');
   await customRow(page).waitFor({ timeout: 10000 });
   const runsBefore = await page.evaluate(

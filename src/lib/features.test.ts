@@ -136,7 +136,7 @@ describe('featureOfLocation（URL に要る機能）', () => {
     expect(featureOfLocation('/items', '')).toBe('rules');
     expect(featureOfLocation('/month/print', '?ym=2026-10')).toBe('monthPrint');
   });
-  it('?do= の入口：欠勤・キャンセルは sudden、今日の案をいまの条件で作り直すは rules', () => {
+  it('?do= の入口：欠勤・キャンセルは sudden、今日の案を試す重みで作り直すは rules', () => {
     expect(featureOfLocation('/plan', `?date=${TODAY}&do=absence`)).toBe('sudden');
     expect(featureOfLocation('/plan', '?do=absence&staff=s1')).toBe('sudden');
     expect(featureOfLocation('/plan', `?date=${TODAY}&do=recreate`)).toBe('rules');
@@ -376,7 +376,7 @@ describe('表の整合（メニュー・パレット・ホーム・ツアー・l
 });
 
 describe('切った機能の入口を出さない（PRD D213）', () => {
-  it('パレット：欠勤・キャンセルを登録・問い合わせに答える・いまの条件で作り直す', () => {
+  it('パレット：欠勤・キャンセルを登録・問い合わせに答える・試す重みで作り直す', () => {
     const ids = (f: Features) => paletteActions(TODAY, { customRules: true, features: f }).map((a) => a.id);
     expect(ids({})).toContain('action:absence');
     expect(ids({ sudden: false })).not.toContain('action:absence');

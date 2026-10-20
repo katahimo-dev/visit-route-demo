@@ -42,6 +42,9 @@ describe('tourSteps', () => {
     expect(s[3]!.where).toBe('メニューの「AI の条件」（条件の重み・相性）');
     expect(tourSteps(terms, false, { compat: false })[3]!.where).toBe('メニューの「AI の条件」（条件の重み）');
     expect(s[3]!.body).toMatch(/^条件の重み・相性を変えると/);
+    // 条件の重みはふだんの考え方（点数の基準）、日の予定で変えるのは「この日だけ試す重み」（ADR-0035）
+    expect(s[3]!.body).toContain('点数の基準');
+    expect(s[3]!.body).toContain('この日だけ試す重み');
     // 相性を切っていれば本文にも出さない
     expect(tourSteps(terms, false, { compat: false })[3]!.body).toMatch(/^条件の重みを変えると/);
     expect(tourSteps(terms, false, { compat: false })[3]!.body).not.toContain('相性');
