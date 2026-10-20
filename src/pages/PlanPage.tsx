@@ -86,6 +86,7 @@ import {
   applyReassign,
   baseOf,
   chooseReassign,
+  orderConfirmed,
   removeAbsence,
   revertReassign,
   saveAbsence,
@@ -94,7 +95,7 @@ import {
 import { colorOf } from '../lib/colors';
 import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { confirmDay } from '../lib/confirmDay';
-import { contactCount, dayWordOf } from '../lib/contacts';
+import { type CancelledContact, type ContactRow, contactCount, contactRows, dateWordOf } from '../lib/contacts';
 import { copyDayVisits } from '../lib/copyDay';
 import { dayLineRange, dayLines } from '../lib/dayLine';
 import { deferredDragStart } from '../lib/dragStart';
@@ -335,8 +336,17 @@ export default function PlanPage() {
   /** 欄を開く（前に振り直して閉じたときの「差の欄へ移る」を戻す。開き直して欠勤だけ登録したときに差の欄へ飛ばない） */
   const openSudden = (init: SuddenInit) => {
     suddenToBar.current = false;
+    setSuddenCancel(null);
     setSudden(init);
   };
+  /**
+   * 欄で取り消した訪問（5段目の連絡の「中止」。PRD D244）と、取り消したときの確定した割当（無ければ null。
+   * 確定し直した差の「前」）。欄を開き直すと消す
+   */
+  const [suddenCancel, setSuddenCancel] = useState<{
+    cancelled: CancelledContact;
+    prev: Record<string, string[]> | null;
+  } | null>(null);
   /** 取り消しの欄を開いている訪問（PRD D74。null：閉じている）と、当日キャンセルか */
   const [cancelFor, setCancelFor] = useState<Visit | null>(null);
   const [cancelSameDay, setCancelSameDay] = useState(false);
@@ -1856,11 +1866,20 @@ export default function PlanPage() {
   /** この端末の mailto の長さの目安（ADR-0017） */
   const mailLimit = useMailLimit();
   const contactWords = {
-    day: dayWordOf(date, jstDate(Date.now())),
+    // 連絡文の日付は「本日」にせず「10月15日（木）」（あとから読まれても分かる。PRD D245）
+    day: dateWordOf(date),
     staffWord: terms.staff,
     staffName,
     clientName: (id: string) => clientById.get(id)?.displayName ?? '（不明）',
     clientAddress: (id: string) => clientById.get(id)?.place.address ?? '',
+    visitMinutes: (id: string) => visitById.get(id)?.durationMinutes ?? null,
+    promised: (id: string) => {
+      const v = visitById.get(id);
+      if (!v) return null;
+      const from = hhmmToMinutes(v.earliestStart);
+      return { from, to: v.windowKind === 'window' ? hhmmToMinutes(v.latestStart) : from };
+    },
+    orgName: data.org.name,
   };
   const saveAbsenceOnly = (absence: Absence) => {
     update((d) => saveAbsence(d, absence));
@@ -3016,6 +3035,39 @@ export default function PlanPage() {
       owner: suddenOwner(visitId),
     };
   };
+  /**
+   * 欄からの取り消し：取り消す前の担当（確定した割当があればその担当だけ（無ければ担当なし）、確定が無ければ今の案）・開始と、
+   * そのときの確定した割当を覚えてから取り消す（5段目の連絡の「中止」と、確定し直した差の「前」。PRD D244）
+   */
+  const suddenCancelVisit = (visitId: string, sameDay: boolean) => {
+    const v = visitById.get(visitId);
+    const prev = own(data.manualPlans, date) ?? null;
+    // 確定がある日は、未確定の案から担当を補わない（伝えてあるのは確定した担当）
+    const sid = prev
+      ? (ownerMap(prev).get(visitId) ?? null)
+      : ((aiPlan ? owner : ownerMap(m.savedView.cols)).get(visitId) ?? null);
+    if (v) {
+      const start = explained.get(visitId)?.timing?.start ?? hhmmToMinutes(v.earliestStart);
+      setSuddenCancel({ cancelled: { visitId, clientId: v.clientId, staffId: sid ?? null, start }, prev });
+    }
+    applyCancel(visitId, sameDay);
+  };
+  /**
+   * 5段目の連絡の差（PRD D244）：欠勤は振り直しの差（元の案＝確定した割当、無ければ振り直す前の案 → 今の案＝確定した割当）。
+   * キャンセルは、取り消したときの確定した割当 → 今の案（取り消した訪問は問題に無いので差に出ない）。確定が無かったら中止だけ
+   */
+  const suddenList = useMemo((): ContactList | null => {
+    if (!sudden) return null;
+    if (!suddenCancel) return contacts;
+    const prev = suddenCancel.prev;
+    if (!prev || !problem || !aiPlan) return EMPTY_CONTACTS;
+    // 確定した割当の列は訪問データの並びなので、振り直しの元の案（baseOf）と同じに並べてから時刻を出す（偽の「時刻が変わる」を出さない）
+    const before = orderConfirmed(prev, aiPlan.routes, problem);
+    return attempt(() => contactsOf({ problem, routes: before }, { problem, routes: aiPlan.routes })).value ?? null;
+  }, [sudden, suddenCancel, contacts, problem, aiPlan]);
+  const suddenRows: ContactRow[] | null = suddenList
+    ? contactRows(suddenList, suddenCancel ? [suddenCancel.cancelled] : [], contactWords)
+    : null;
   /** 4段目：今の案の振り直しのまとめと、案A・案B を選ぶ欄（差の欄と同じ部品・同じ操作） */
   const suddenResult =
     aiPlan && reassignInfo ? (
@@ -3843,9 +3895,20 @@ export default function PlanPage() {
           onReassign={(a, anneal) => registerAndReassign(a, anneal, true)}
           onSaveOnly={saveAbsenceOnly}
           onRemoveAbsence={cancelAbsence}
-          onCancelVisit={applyCancel}
+          onCancelVisit={suddenCancelVisit}
           onAdopt={adopt}
           onRevert={reassignInfo ? revertToBase : undefined}
+          contacts={suddenRows}
+          leftCount={left.length}
+          contactMail={
+            mailOn
+              ? (row) =>
+                  mailTo(staffById.get(row.id)?.email ?? '', contactMailText(data.org, date, row.text), mailLimit)
+              : undefined
+          }
+          onCopied={(ok, what) =>
+            toast(ok ? `${what}をコピーしました` : 'コピーできませんでした。文を選んでコピーしてください')
+          }
           onClose={closeSudden}
           fallbackFocus={() => (sudden.staffId ? colHeadOf(sudden.staffId) : suddenBtnRef.current)}
           returnFocus={() => (suddenToBar.current ? document.getElementById(barId) : null)}

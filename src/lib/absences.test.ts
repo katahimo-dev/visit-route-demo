@@ -4,7 +4,7 @@ import type { AiPlan, DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import { compile } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import { reassign, targetsOf } from '../reassign';
+import { contactsOf, reassign, targetsOf } from '../reassign';
 import {
   absenceError,
   absenceText,
@@ -13,6 +13,7 @@ import {
   applyReassign,
   baseOf,
   chooseReassign,
+  orderConfirmed,
   removeAbsence,
   revertReassign,
   roundToHalfHour,
@@ -100,6 +101,21 @@ describe('元の案（baseOf）', () => {
     const p = compile(d, DATE);
     expect(baseOf(d, DATE, p)).toEqual({ routes: { s1: ['v1'], s2: ['v2'] }, from: 'plan', pins: { v1: 's1' } });
     expect(baseOf(data(), DATE, p)).toBeNull();
+  });
+  it('順だけ違う確定割当（訪問データの並び）→ 今の案：並べ直せば時刻が変わる訪問は 0（PRD D244）', () => {
+    const d: DemoData = { ...data(), aiPlans: { [DATE]: plan({ s1: ['v1', 'v2', 'v3'] }) } };
+    const p = compile(d, DATE);
+    const saved = { s1: ['v3', 'v2', 'v1'] };
+    const routes = orderConfirmed(saved, d.aiPlans[DATE]!.routes, p);
+    expect(routes).toEqual({ s1: ['v1', 'v2', 'v3'] });
+    const list = contactsOf({ problem: p, routes }, { problem: p, routes: d.aiPlans[DATE]!.routes });
+    expect(list.timeChanged).toHaveLength(0);
+    expect(list.staffChanged).toHaveLength(0);
+    // 並べ直さないと、訪問データの並びのまま時刻を出して偽の「時刻が変わる」が出る
+    const raw = contactsOf({ problem: p, routes: saved }, { problem: p, routes: d.aiPlans[DATE]!.routes });
+    expect(raw.timeChanged.length).toBeGreaterThan(0);
+    // 今の案が無くても開始の順に並べる
+    expect(orderConfirmed({ s1: ['v3', 'v1'], __none: ['v2'] }, null, p)).toEqual({ s1: ['v1', 'v3'] });
   });
 });
 
