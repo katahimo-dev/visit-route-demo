@@ -68,9 +68,9 @@ export function rebuildText(s: RebuildSummary): string {
 /** 0日になって帯が消えるときに1度だけ読み上げる文（PRD D164） */
 export const REBUILD_CLEARED = '影響する日は無くなりました';
 
-/** 作り直しに使う条件の文（PRD D163）：点数の基準のプリセットで作り直し、いまの条件で作った案も上書きする */
+/** 作り直しに使う条件の文（PRD D163）：点数の基準のプリセットで作り直し、この日だけ試す重みで作った案も上書きする */
 export function rebuildWith(basis: string): string {
-  return `点数の基準のプリセット「${basis}」で作り直します（いまの条件で作った案も「${basis}」の案になります）`;
+  return `点数の基準のプリセット「${basis}」で作り直します（この日だけ試す重みで作った案も「${basis}」の案になります）`;
 }
 
 /** 帯のボタン（PRD D163） */
@@ -113,12 +113,13 @@ export function rebuildAction(s: RebuildSummary, basis: string): RebuildAction |
 }
 
 /**
- * いまの条件の案内（PRD D166）：条件の重みの画面で、いまの条件（重み・必須）がどのプリセットとも同じでないときに出す文。
- * いまの条件は日の画面の「AI にもう一度作らせる」だけが使い、月のまとめて作る・自動の案・作り直しは基準のプリセットで作る
+ * 試す重みの案内（PRD D166・D234。ADR-0035）：条件の重みの画面で、この日だけ試す重み（data.rules。日の予定の右の欄で変える）が
+ * どのプリセットとも同じでないときに出す文。試す重みは日の画面の「AI にもう一度作らせる」だけが使い、
+ * 月のまとめて作る・自動作成・作り直しは、この画面の重み（点数の基準のプリセット）で作る
  */
 export function customRulesText(basis: string): string {
-  return `いまの条件は日の予定の「AI にもう一度作らせる」で使います。月のまとめて作る・自動の案は「${basis}」で作ります`;
+  return `この日だけ試す重み（日の予定の右の欄の重み）がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「${basis}」）で作ります`;
 }
 
-/** ［今日の案をいまの条件で作り直す］の行き先（日の画面の ?do=recreate。PRD D166） */
+/** ［今日の案を試す重みで作り直す］の行き先（日の画面の ?do=recreate。PRD D166・D234） */
 export const recreateTodayHref = (today: string): string => `/plan?date=${today}&do=recreate`;

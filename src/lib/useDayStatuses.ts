@@ -43,7 +43,7 @@ const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
 
 /**
- * 作った条件（重み・必須）がいまの条件にもプリセットにも当てはまらなければ「条件が変わった」を足す（PRD D161）。
+ * 作った条件（重み・必須）がこの日だけ試す重みにもプリセットにも当てはまらなければ「条件が変わった」を足す（PRD D161）。
  * 覚えの外で決める（プリセットの重みは compile が読まないので、覚えの鍵に入っていない）
  */
 const withRules = (view: DayView, changed: boolean): DayView => (changed ? { ...view, stale: true } : view);
@@ -57,7 +57,7 @@ export type DayStatuses = Map<string, { status: DayStatus; problem: Problem | nu
  * 日付・compile が読むデータ・案で覚える（8人・約17件／日の一月で 500ms 以内）
  */
 export function useDayStatuses(data: DemoData, compileInput: CompileInput, days: readonly string[]): DayStatuses {
-  /** 点数の物差しの条件（いまの条件に基準のプリセットを当てたもの。必須の違反と「条件が変わった」の判定に使う） */
+  /** 点数の物差しの条件（この日だけ試す重みに基準のプリセットを当てたもの。必須の違反と「条件が変わった」の判定に使う） */
   const scoreRules = useMemo(
     () => scoreRulesOf({ rules: data.rules, presets: data.presets, scorePresetId: data.scorePresetId }),
     [data.rules, data.presets, data.scorePresetId],
@@ -72,7 +72,7 @@ export function useDayStatuses(data: DemoData, compileInput: CompileInput, days:
     }
     return out;
   }, [data.visits]);
-  /** いま作れる条件の組（いまの条件と各プリセット。今の案の条件がどれでもなければ「条件が変わった」。PRD D161） */
+  /** いま作れる条件の組（この日だけ試す重みと各プリセット。今の案の条件がどれでもなければ「条件が変わった」。PRD D161） */
   const ruleKeys = useMemo(() => currentRuleKeys(data.rules, data.presets), [data.rules, data.presets]);
   return useMemo(() => {
     const out: DayStatuses = new Map();

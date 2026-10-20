@@ -165,7 +165,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: 'AI案の条件の重み・特性の項目・プリセットを変えられます',
     group: 'AI の条件',
     paths: ['/rules', '/items'],
-    // 「今日の案をいまの条件で作り直す」（lib/rebuildBand の recreateTodayHref）も作り直しの帯の続きなのでこの機能
+    // 「今日の案を試す重みで作り直す」（lib/rebuildBand の recreateTodayHref）も作り直しの帯の続きなのでこの機能
     doParams: [{ path: '/plan', do: 'recreate' }],
     hides: 'メニュー・条件の重みと特性の項目の画面、点数の理由、作り直しの帯（切ると基準のプリセットだけで作る）',
   },

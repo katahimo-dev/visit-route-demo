@@ -48,7 +48,7 @@ export type PlanMenuInput = {
   busy: string | false;
   /** 計算中 */
   running: boolean;
-  /** 今の条件の名前（プリセットと一致すればその名前、違えば「今の重み」） */
+  /** この日だけ試す重み（data.rules）の名前（プリセットと一致すればその名前） */
   ruleName: string;
   /** その日の案の記録の件数 */
   runCount: number;
@@ -62,10 +62,10 @@ export function createText(i: PlanMenuInput): MenuText {
   return i.hasPlan
     ? {
         label: 'AI にもう一度作らせる',
-        description: `今の条件（${i.ruleName}）で作り直します。${discardNote(i.edited)}`,
+        description: `この日だけ試す重み（${i.ruleName}）で作り直します。${discardNote(i.edited)}`,
         disabled: i.busy,
       }
-    : { label: 'AI に案を作らせる', description: `今の条件（${i.ruleName}）で作ります`, disabled: i.busy };
+    : { label: 'AI に案を作らせる', description: `この日だけ試す重み（${i.ruleName}）で作ります`, disabled: i.busy };
 }
 
 /**
@@ -75,8 +75,8 @@ export function createText(i: PlanMenuInput): MenuText {
 export function resolveText(i: PlanMenuInput): MenuText {
   const head =
     i.pinCount > 0
-      ? `固定した ${i.pinCount}件の担当はそのままで、ほかを今の条件で組み直します`
-      : '固定がありません。AI が出したままの案（戻す先）は残して、今の条件で作り直します';
+      ? `固定した ${i.pinCount}件の担当はそのままで、ほかを試す重みで組み直します`
+      : '固定がありません。AI が出したままの案（戻す先）は残して、試す重みで作り直します';
   return {
     label: '固定した訪問は残して、ほかを作り直す',
     description: i.unpinned ? `${head}。固定していない手直しは消えます（確かめてから）` : head,
@@ -147,7 +147,7 @@ const weightsKey = (rs: readonly Rule[]) => JSON.stringify(rs.map((r) => [r.id, 
  * 比較の画面で案が1つだけのとき、2つめの案を作る選択肢。
  * - base：今ある1つの案の条件。AI が出したままの記録（固定なし）なら、その条件と同じプリセットは出さない（同じ問題・同じ種からは同じ案になる）。
  *   手直しを含む今の案・欠勤前の案など、AI が出したままでないときは null（どのプリセットでも別の案になる）
- * - current：今の条件。どのプリセットとも違い、base とも違えば「今の条件（重み）で作る」（作り直し）を最後に足す
+ * - current：今の条件。どのプリセットとも違い、base とも違えば「試す重みで作る」（作り直し）を最後に足す
  * 並びはプリセットの順。空なら作れない（呼ぶ側で理由を出す）
  */
 export function anotherPlanOptions(
@@ -160,7 +160,7 @@ export function anotherPlanOptions(
     .map((p) => ({ key: `preset-${p.id}`, kind: 'preset', presetId: p.id, label: `${p.name}で作る` }));
   const custom = !presets.some((p) => matchesPreset(current, p));
   if (custom && (!base || weightsKey(base) !== weightsKey(current)))
-    out.push({ key: 'rules', kind: 'rules', label: '今の条件（重み）で作る' });
+    out.push({ key: 'rules', kind: 'rules', label: '試す重みで作る' });
   return out;
 }
 

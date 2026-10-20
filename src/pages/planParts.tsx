@@ -32,12 +32,12 @@ import { isHrefOn } from '../lib/features';
 import { unassignedHref } from '../lib/links';
 import { addMonths, monthDates, ymOf } from '../lib/month';
 import { mdText } from '../lib/patternText';
-import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
+import { addPresetError, addPresetFromRules, PRESET_NAME_MAX, trialPresetOf } from '../lib/presets';
 import { reasonFace, type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { ALLOWED_STAFF_RULE_ID, VISIT_TYPE_RULE_ID } from '../matching';
-import { presetOf } from '../seed';
+import { scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 
 /** routes の訪問ごとの説明（未実装なら空） */
@@ -327,9 +327,10 @@ export function CompareTable({
 }
 
 /**
- * 条件の重みの欄（D14）。変えたらすぐ作り直せる。予定の画面の右の欄「条件を調整する」の中に置く（PRD D63。
- * 以前の右側の常設の欄はやめた）。
- * showPresets：いまの重みの名前・「いまの重みをプリセットとして保存」・プリセットの編集へのリンクを出す
+ * この日だけ試す重みの欄（D14・D233。ADR-0035）。変えたらすぐ作り直せる。予定の画面の右の欄「条件を調整する」の中に置く（PRD D63。
+ * 以前の右側の常設の欄はやめた）。試す重み（data.rules）は「AI にもう一度作らせる」だけが使い、まとめて作る・自動作成・作り直しは
+ * 点数の基準（条件の重みの画面）で作る。
+ * showPresets：試す重みの名前・「試す重みをプリセットとして保存」・プリセットの編集へのリンクを出す
  * （プリセットで作る・切り替えるのは、同じ欄の上のプリセットごとの案のカード。ADR-0010）
  */
 export function WeightPanel({
@@ -346,7 +347,9 @@ export function WeightPanel({
   recalcLabel?: string;
 }) {
   const { data, update } = useDemoData();
-  const current = presetOf(data.rules, data.presets);
+  /** 試す重みが当てはまるプリセット（基準を先に見る。ADR-0035） */
+  const current = trialPresetOf(data);
+  const basisName = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '標準';
   return (
     <div className="stack side-panel">
       {showPresets && (
@@ -355,14 +358,14 @@ export function WeightPanel({
             icon={ListChecks}
             aside={
               <Hint>
-                プリセットで作る・切り替えるには、上の「プリセットごとの案」のカードを押します。ここではいまの重みをプリセットとして保存できます。
+                プリセットで作る・切り替えるには、上の「プリセットごとの案」のカードを押します。ここでは試す重みをプリセットとして保存できます。
               </Hint>
             }
           >
             プリセット
           </SectionTitle>
           <span className="sub" data-testid="current-weights">
-            いまの重み：{current ? current.name : 'プリセットから変えた重み'}
+            試す重み：{current ? current.name : 'プリセットから変えた重み'}
           </span>
           <SavePresetForm compact disabled={running} />
           {/* 条件の重みとプリセットを切っていれば、その画面へのリンクは出さない（PRD D213） */}
@@ -373,8 +376,17 @@ export function WeightPanel({
           )}
         </>
       )}
-      <SectionTitle icon={SlidersHorizontal} aside={<Hint>重み1＝移動10分ぶん。0で無効。</Hint>}>
-        条件の重み
+      <SectionTitle
+        icon={SlidersHorizontal}
+        aside={
+          <Hint ariaLabel="この日だけ試す重みの説明">
+            重み1＝移動10分ぶん。0で無効。ここで変えた重みは、この日の「AI にもう一度作らせる」（下の「{recalcLabel}
+            」）だけで使います。月のまとめて作る・開いた日の自動作成・作り直しは、条件の重みの画面の重み（点数の基準「
+            {basisName}」）で作ります。条件の重みの画面で重みを直すと、試す重みも基準に戻ります。
+          </Hint>
+        }
+      >
+        この日だけ試す重み
       </SectionTitle>
       {data.rules.map((r) => (
         <div key={r.id} className={`stack side-rule ${r.weight === 0 && !r.hard ? 'is-dim' : ''}`} style={{ gap: 2 }}>
@@ -407,17 +419,26 @@ export function WeightPanel({
 }
 
 /**
- * 「いまの重みをプリセットとして保存」（D24。ADR-0008）。押すと名前の欄が出て、入れて保存すると最後に足す。
+ * 重みをプリセットとして保存（D24。ADR-0008）。押すと名前の欄が出て、入れて保存すると最後に足す。
+ * from：'trial'＝この日だけ試す重み（日の予定・作り直しの帯）、'basis'＝点数の基準の重み（条件の重みの画面のプリセットの節。ADR-0035）。
  * 6つあれば押せない。compact は予定の画面の右の欄用（小さいボタン）
  */
-export function SavePresetForm({ compact = false, disabled = false }: { compact?: boolean; disabled?: boolean }) {
+export function SavePresetForm({
+  compact = false,
+  disabled = false,
+  from = 'trial',
+}: {
+  compact?: boolean;
+  disabled?: boolean;
+  from?: 'trial' | 'basis';
+}) {
   const { data, update } = useDemoData();
   const [name, setName] = useState<string | null>(null);
   const full = data.presets.length >= MAX_PRESETS;
   const error = name === null ? null : addPresetError(data, name);
   const save = () => {
     if (name === null || error) return;
-    update((d) => addPresetFromRules(d, name));
+    update((d) => addPresetFromRules(d, name, '', from));
     setName(null);
   };
   if (name === null) {
@@ -428,11 +449,15 @@ export function SavePresetForm({ compact = false, disabled = false }: { compact?
         disabled={full || disabled}
         onClick={() => setName('')}
         title={
-          full ? `プリセットは${MAX_PRESETS}つまでです` : 'いまの条件の重み・必須を、新しいプリセットとして足します'
+          full
+            ? `プリセットは${MAX_PRESETS}つまでです`
+            : from === 'basis'
+              ? '点数の基準の重み・必須を写して、新しいプリセットとして足します'
+              : 'この日だけ試す重み・必須を、新しいプリセットとして足します'
         }
       >
         <WithIcon icon={BookmarkPlus} size={14}>
-          いまの重みをプリセットとして保存
+          {from === 'basis' ? '基準の重みを写して保存' : '試す重みをプリセットとして保存'}
         </WithIcon>
       </button>
     );

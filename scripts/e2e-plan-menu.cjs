@@ -132,7 +132,7 @@ async function plain(page) {
     s.items.filter((x) => !x.desc).map((x) => x.key),
   );
   check(
-    !/消えます/.test(item(s, 'create')?.desc ?? '') && /今の条件（標準）/.test(item(s, 'create')?.desc ?? ''),
+    !/消えます/.test(item(s, 'create')?.desc ?? '') && /この日だけ試す重み（標準）/.test(item(s, 'create')?.desc ?? ''),
     '説明：手直しが無いときは「消えます」を書かない・今の条件の名前',
     item(s, 'create')?.desc,
   );
