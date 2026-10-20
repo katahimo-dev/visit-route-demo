@@ -128,6 +128,61 @@ details[open] > summary .vacancy-fold-mark .when-open {
 .vacancy-legend-note {
   margin: 0;
 }
+/* 凡例は1か所（PRD D258）：印・色・数字の読み方をひとまとめ */
+.vacancy-legend-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--soft);
+}
+/* 答えのカード（PRD D258）：結果の1枚目。受けられる＝緑、一部・足りない＝黄、受けられない・数えられない＝灰 */
+.vacancy-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: var(--card);
+}
+.vacancy-answer.is-ok {
+  border-color: var(--ok);
+  background: #eef7f1;
+}
+.vacancy-answer.is-partial {
+  border-color: var(--warn);
+  background: #fdf4e3;
+}
+.vacancy-answer.is-ng,
+.vacancy-answer.is-unknown {
+  border-color: var(--line-strong);
+  background: var(--soft);
+}
+.vacancy-answer-main {
+  margin: 0;
+  font-size: 1.2rem;
+  line-height: 1.45;
+}
+.vacancy-answer.is-ok .vacancy-answer-head {
+  color: var(--ok-ink);
+}
+.vacancy-answer.is-partial .vacancy-answer-head {
+  color: var(--warn-ink);
+}
+.vacancy-answer-body {
+  font-weight: 700;
+}
+.vacancy-answer-note {
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .vacancy-answer-main {
+    font-size: 1.05rem;
+  }
+}
 @media print {
   .vacancy-fold-mark {
     display: none;

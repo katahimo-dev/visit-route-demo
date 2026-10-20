@@ -4,6 +4,7 @@
 // 主ボタンは段階ごとに1つ（4段目の「要約をコピー」だけ）、マスの読み方（凡例・用語の説明・×に「約0」を出さない・読み上げ）、
 // × のマスは薄い灰で赤くしない・色の凡例「0人（受けられない）」（PRD D228）、
 // 案の無い日の注意は1か所、案内文ははじめ畳み開くまで計算しない、仮押さえ、390px で収まる、ブラウザの確認を出さない。
+// 答えのカードが結果の1枚目・凡例は1か所・「指定なし」・入力はタブの間だけ残る・その場で［足りない案を作る（N日）］（PRD D258・D259）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-vacancy-steps.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_VACANCY で結果が出るまでの上限（既定 5000ms。PRD §5。無ければ PERF_MS）
@@ -11,7 +12,7 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, perfMs, check, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, perfMs, check, failShot, run } = require('./lib/env.cjs');
 
 const PERF_MS = perfMs('PERF_MS_VACANCY', 5000);
 
@@ -108,7 +109,7 @@ async function steps(page) {
   check((await primaries(page.locator('.vacancy-page'))) === 1, '画面全体でも見えている主ボタンは1つ');
   // 案内文ははじめ畳み、開くまで計算しない
   check((await page.getByTestId('notice-card').getAttribute('open')) === null, '案内文の欄ははじめ畳む');
-  check(/来週・種類なし（60分）/.test(await page.getByTestId('notice-line').textContent()), '案内文の要約の行');
+  check(/来週・種類の指定なし（60分）/.test(await page.getByTestId('notice-line').textContent()), '案内文の要約の行');
   await page.waitForTimeout(600);
   check((await page.getByTestId('notice-text').count()) === 0, '畳んでいる間は案内文を計算しない');
   await page.getByTestId('notice-toggle').click();
@@ -257,6 +258,131 @@ async function marks(page) {
   check((await page.getByTestId('term-vacancy-estimate').count()) === 1, '場所が無いときは「目安（約）」の用語');
 }
 
+/** YYYY-MM-DD に n 日足す */
+const plusDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+// ---- 答えのカード・凡例・指定なし・入力の保持・足りない案を作る（PRD D258・D259）----
+async function answer(page) {
+  await openVacancy(page);
+  await page.waitForTimeout(500);
+  const card = page.getByTestId('vacancy-answer');
+  const text = await card.innerText();
+  check(
+    /^(受けられます|週\d回には足りません|受けられない週があります|受けられません|案が無く数えられません)/.test(text),
+    '結果の1枚目に答えのカード',
+    text,
+  );
+  const order = await page.evaluate(() => {
+    const box = document.querySelector('[data-testid="vacancy-table-card"]');
+    const a = box.querySelector('[data-testid="vacancy-answer"]');
+    const s = box.querySelector('[data-testid="inquiry-summary"]');
+    const g = box.querySelector('[data-testid="vacancy-grid"]');
+    const F = Node.DOCUMENT_POSITION_FOLLOWING;
+    return !!a && !!s && !!g && (a.compareDocumentPosition(s) & F) !== 0 && (a.compareDocumentPosition(g) & F) !== 0;
+  });
+  check(order, '答えのカードは要約・表より前');
+  if ((await card.getAttribute('data-tone')) === 'ok') {
+    check(/^受けられます：.+ に (約)?\d+(〜\d+)?人/.test(text), '答え：曜日・時間と人数', text);
+  }
+  // 凡例は1か所（印・色・読み方をひとまとめ）
+  const legends = await page.evaluate(() => ({
+    level: document.querySelectorAll('[data-testid="level-legend"]').length,
+    mark: document.querySelectorAll('[data-testid="vacancy-mark-legend"]').length,
+    inBox:
+      !!document.querySelector('[data-testid="vacancy-legend"] [data-testid="level-legend"]') &&
+      !!document.querySelector('[data-testid="vacancy-legend"] [data-testid="vacancy-mark-legend"]'),
+    weeksNote: /行の頭は、希望の時間帯の中で/.test(document.querySelector('.vacancy-page').textContent),
+  }));
+  check(
+    legends.level === 1 && legends.mark === 1 && legends.inBox && !legends.weeksNote,
+    '凡例は1か所（印・色・読み方）',
+    legends,
+  );
+  // 「種類なし」→「指定なし」
+  const first = await page.getByTestId('vacancy-type').locator('option').first().innerText();
+  check(first === '指定なし', '種類を選ばないときは「指定なし」', first);
+  await page.screenshot({ path: path.join(OUT_DIR, 'vacancy-answer-1280.png'), fullPage: true });
+
+  // 入力はタブの間だけ残る（画面を移って戻る・読み直す。新しいタブは既定）
+  await page.getByTestId('vacancy-duration').fill('90');
+  await page.getByTestId('wish-days').getByRole('button', { name: '木' }).click();
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    location.hash = '#/home';
+  });
+  await page.locator('h1').first().waitFor();
+  await page.evaluate(() => {
+    location.hash = '#/vacancy';
+  });
+  await page.getByTestId('vacancy-duration').waitFor();
+  const kept = {
+    duration: await page.getByTestId('vacancy-duration').inputValue(),
+    thu: await page.getByTestId('wish-days').getByRole('button', { name: '木' }).getAttribute('aria-pressed'),
+  };
+  check(kept.duration === '90' && kept.thu === 'true', '画面を移って戻っても入力が残る', kept);
+  const other = await page.context().newPage();
+  await other.clock.setFixedTime(NOW);
+  await other.goto(`${BASE}#/vacancy`);
+  await other.getByTestId('vacancy-duration').waitFor({ timeout: 30000 });
+  check(
+    (await other.getByTestId('vacancy-duration').inputValue()) === '60',
+    '新しいタブ（閉じて開き直す）は既定の入力',
+  );
+  await other.close();
+
+  // その場で足りない案を作る：1週だけ見て、2日の案を消す
+  await page.getByLabel('見る週の数').selectOption('1');
+  // 消す2日は、今日から1週の中で案と訪問のある日から選ぶ（FAKE_NOW の曜日・月末に依らない）
+  const gone = await page.evaluate(
+    ({ key, days }) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      const visitDays = new Set(d.visits.filter((v) => !v.cancelled).map((v) => v.date));
+      return days.filter((x) => d.aiPlans[x] && !d.manualPlans?.[x] && visitDays.has(x)).slice(0, 2);
+    },
+    { key: STORAGE_KEY, days: Array.from({ length: 7 }, (_, i) => plusDays(TODAY, i)) },
+  );
+  check(gone.length === 2, '案を消す2日がある', gone);
+  await page.evaluate(
+    ({ key, gone }) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      for (const x of gone) {
+        delete d.aiPlans[x];
+        delete d.aiRuns[x];
+      }
+      localStorage.setItem(key, JSON.stringify(d));
+    },
+    { key: STORAGE_KEY, gone },
+  );
+  await page.reload();
+  const make = page.getByTestId('vacancy-noplan-make');
+  await make.waitFor({ timeout: 30000 });
+  check((await page.getByTestId('vacancy-duration').inputValue()) === '90', '読み直しても入力が残る（同じタブ）');
+  const label = await make.innerText();
+  check(/足りない案を作る（2日）/.test(label), '［足りない案を作る（N日）］', label);
+  await make.click();
+  await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+  check(
+    /月の案を作っています \d+\/2日/.test(await page.getByTestId('batch-band-text').innerText()),
+    '上の帯に進み具合',
+  );
+  // disabled にせず aria-disabled（フォーカスを失わない）。押しても始めない（Playwright は aria-disabled を押さないので直接送る）
+  await make.dispatchEvent('click');
+  check(
+    (await make.getAttribute('aria-disabled')) === 'true' && /の案を作っています/.test(await make.innerText()),
+    '作っている間は押せない（二重に始めない）',
+    await make.innerText(),
+  );
+  await page
+    .locator('.toast')
+    .filter({ hasText: /月の案を2日分作りました/ })
+    .waitFor({ timeout: 90000 });
+  check(true, '作り終えたら知らせ（◯月の案を2日分作りました）');
+  await page.waitForFunction(() => !document.querySelector('[data-testid="vacancy-noplan-make"]'), null, {
+    timeout: 10000,
+  });
+  check(true, '作ると足りない案のボタンが消える（結果を数え直す）');
+}
+
 async function placeLater(page) {
   await openVacancy(page);
   await page.waitForTimeout(500);
@@ -343,6 +469,7 @@ run(async () => {
   for (const [name, fn] of [
     ['steps', steps],
     ['marks', marks],
+    ['answer', answer],
     ['place-later', placeLater],
     ['narrow', narrow],
   ]) {

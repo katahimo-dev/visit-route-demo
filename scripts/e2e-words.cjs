@@ -358,8 +358,12 @@ async function empties(page) {
   const notes = await page.locator('.vacancy-noplan').count();
   check(notes <= 1, '空き状況：案の無い日の注意は1か所', notes);
   if (notes === 1) {
+    // その場で足りない案を作る（PRD D259。月の予定へ移らない）
     const mk = page.getByTestId('vacancy-noplan-make');
-    check(/do=batch$/.test((await mk.getAttribute('href')) ?? ''), '空き状況：注意から月のまとめて作るへ');
+    check(
+      (await mk.evaluate((e) => e.tagName)) === 'BUTTON' && /足りない案を作る（\d+日）/.test(await mk.innerText()),
+      '空き状況：注意から月のまとめて作るへ',
+    );
   }
 }
 

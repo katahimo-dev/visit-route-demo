@@ -9,17 +9,19 @@ import { isHrefOn } from './features';
 import { type AttentionKind, attentionList, type DayStatus, monthDates, ymOf } from './month';
 import { SUDDEN_DO } from './sudden';
 
-/** 今月の残り（今日を含む）がこの日数以下なら、来月も見る（月末の準備。PRD D142） */
-export const HOME_NEXT_MONTH_DAYS = 7;
+/**
+ * この日（日付の日）以降なら、来月も見る（来月の準備。PRD D142・D255）。月末7日では来月のまとめて作るが遅い（シフトの希望・
+ * 確定の連絡は月の後半に始まる）ので、月の半ばから出す。事業所ごとに変えない（契約に足すほどの差が無い。D255）
+ */
+export const HOME_NEXT_MONTH_FROM_DAY = 15;
 
 /** 月の名前（「10月」） */
 export const monthLabel = (ym: string): string => `${Number(ym.slice(5, 7))}月`;
 
-/** ホームで見る月：今月。今月の残り（今日を含む）が HOME_NEXT_MONTH_DAYS 日以下なら来月も */
+/** ホームで見る月：今月。今日が HOME_NEXT_MONTH_FROM_DAY 日以降なら来月も */
 export function homeMonths(today: string): string[] {
   const ym = ymOf(today);
-  const left = monthDates(ym).filter((d) => d >= today).length;
-  if (left > HOME_NEXT_MONTH_DAYS) return [ym];
+  if (Number(today.slice(8, 10)) < HOME_NEXT_MONTH_FROM_DAY) return [ym];
   return [ym, ymOf(addDays(`${ym}-01`, 31))];
 }
 

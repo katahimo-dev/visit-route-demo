@@ -1,4 +1,14 @@
-import { BookmarkPlus, CalendarSearch, ClipboardList, Copy, MapPin, MessageSquareText, Users, X } from 'lucide-react';
+import {
+  BookmarkPlus,
+  CalendarSearch,
+  ClipboardList,
+  Copy,
+  MapPin,
+  MessageSquareText,
+  Sparkles,
+  Users,
+  X,
+} from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ConditionsEditor } from '../components/conditions';
@@ -20,7 +30,6 @@ import {
   VACANCY_DURATION_MIN,
   VACANCY_MARGIN_DEFAULT,
   VACANCY_STEP_DEFAULT,
-  VACANCY_WEEKS_DEFAULT,
   VACANCY_WEEKS_MAX,
   VACANCY_WEEKS_MIN,
   type VacancyCell,
@@ -34,27 +43,31 @@ import { pinnedAddressAfter, toPlace } from '../lib/addressLookup';
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
-import { batchHref } from '../lib/emptyGuide';
 import { type InquiryDayMark, type InquiryRow, inquiryDayLevel, inquiryRows, vacancyLevel } from '../lib/glance';
 import { dayHref } from '../lib/links';
 import { referrerRecipients, vacancySubject } from '../lib/mail';
 import { buildBccMails } from '../lib/mailto';
 import { ymOf } from '../lib/month';
+import { missingDays, monthBatch, monthsLabel } from '../lib/monthBatch';
 import { mdText, typeOf } from '../lib/patternText';
 import { normalizePostalCode } from '../lib/postalCode';
 import { scrollLeftToShow } from '../lib/scrollEdge';
 import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
+import { loadVacancyInput, saveVacancyInput } from '../lib/vacancyInput';
 import {
+  answerCard,
   cellFace,
   markLegend,
   NARROW_FIRST_START,
+  NO_TYPE_TEXT,
   noticeLine,
   placeLine,
   VACANCY_MARK,
   VACANCY_MARK_TEXT,
   whenWhatLine,
 } from '../lib/vacancyView';
+import { useValueStore } from '../lib/valueStore';
 import { insertAllIntoPlans, weekStart } from '../lib/week';
 import { applyPatterns } from '../patterns';
 import { useDemoData } from '../store';
@@ -125,6 +138,7 @@ const DAY_TEXT: Record<InquiryDayMark, string> = {
  */
 function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {
   if (rows.every((r) => r.days.length === 0)) return null;
+  // 読み方は表の凡例（1か所。PRD D258）
   return (
     <div className="stack" style={{ gap: 4 }}>
       <div className="vacancy-scroll">
@@ -173,11 +187,6 @@ function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {
           </tbody>
         </table>
       </div>
-      <span className="sub">
-        行の頭は、希望の時間帯の中でその曜日に一番良い開始時刻（上の要約と同じ決め方：同じ開始時刻がどの週も受けられれば
-        ○）。 マスはその開始時刻にその日受けられる人数（○ のあとの数字{exact ? '' : '。目安なので「約」'}
-        ）。×＝その日は受けられない、？＝案が無く数えていない。
-      </span>
     </div>
   );
 }
@@ -232,26 +241,22 @@ export default function VacancyPage() {
   const toast = useToast();
   const today = jstDate(Date.now());
 
+  /** 入力はタブの間だけ覚える（sessionStorage。ほかの画面へ移って戻っても残り、閉じれば消える。PRD D258） */
+  const [saved] = useState(() => loadVacancyInput(today, new Set(data.visitTypes.map((t) => t.id))));
   // 条件の欄
-  const [typeId, setTypeId] = useState('');
-  const [duration, setDuration] = useState('60');
-  const [requirements, setRequirements] = useState<Condition[]>([]);
+  const [typeId, setTypeId] = useState(saved.typeId);
+  const [duration, setDuration] = useState(saved.duration);
+  const [requirements, setRequirements] = useState<Condition[]>(saved.requirements);
   // 場所（データには保存しない一時の入力。郵便番号は住所を探すためと、仮押さえで〈利用者さん〉に写すため。PRD D118〜D121）
   // pinnedAddress はピンを置いたときの住所（見出し・試算に使う。住所を打っても置き直すまで変えない。PRD D119）
-  const [place, setPlace] = useState<ClientPlace & { pinnedAddress: string }>({
-    address: '',
-    lat: null,
-    lng: null,
-    postalCode: '',
-    pinnedAddress: '',
-  });
-  const [weeks, setWeeks] = useState(VACANCY_WEEKS_DEFAULT);
-  const [from, setFrom] = useState(today);
+  const [place, setPlace] = useState<ClientPlace & { pinnedAddress: string }>(saved.place);
+  const [weeks, setWeeks] = useState(saved.weeks);
+  const [from, setFrom] = useState(saved.from);
   // 問い合わせの試算
-  const [wishDays, setWishDays] = useState<number[]>([]);
-  const [wishFrom, setWishFrom] = useState('09:00');
-  const [wishTo, setWishTo] = useState('17:00');
-  const [perWeek, setPerWeek] = useState(1);
+  const [wishDays, setWishDays] = useState<number[]>(saved.wishDays);
+  const [wishFrom, setWishFrom] = useState(saved.wishFrom);
+  const [wishTo, setWishTo] = useState(saved.wishTo);
+  const [perWeek, setPerWeek] = useState(saved.perWeek);
   // 欄
   const [picked, setPicked] = useState<VacancyCell | null>(null);
   /** 仮押さえの欄（nameBad：誤りが表示名の欄のもの。PRD D250） */
@@ -346,10 +351,40 @@ export default function VacancyPage() {
   const slots = result && wishOk ? holdSlots(result, wishDays, wishFrom, wishTo, perWeek) : [];
   const vType = typeOf(data.visitTypes, typeId);
 
-  // 空き枠の案内文（PRD D67。ADR-0013）：期間・種類を選ぶ。所要は種類の標準（種類なしは上の条件の所要）、
+  // 空き枠の案内文（PRD D67。ADR-0013）：期間・種類を選ぶ。所要は種類の標準（種類の指定なしは上の条件の所要）、
   // 〈スタッフ〉の条件・場所は上の条件のまま。条件を変えると 300ms 間引いて計算し直す
-  const [noticePeriod, setNoticePeriod] = useState<NoticePeriod>('nextWeek');
-  const [noticeTypeId, setNoticeTypeId] = useState('');
+  const [noticePeriod, setNoticePeriod] = useState<NoticePeriod>(saved.noticePeriod);
+  const [noticeTypeId, setNoticeTypeId] = useState(saved.noticeTypeId);
+  // 入力を覚える（PRD D258）
+  useEffect(() => {
+    saveVacancyInput({
+      typeId,
+      duration,
+      requirements,
+      place,
+      weeks,
+      from,
+      wishDays,
+      wishFrom,
+      wishTo,
+      perWeek,
+      noticePeriod,
+      noticeTypeId,
+    });
+  }, [
+    typeId,
+    duration,
+    requirements,
+    place,
+    weeks,
+    from,
+    wishDays,
+    wishFrom,
+    wishTo,
+    perWeek,
+    noticePeriod,
+    noticeTypeId,
+  ]);
   const noticeType = typeOf(data.visitTypes, noticeTypeId);
   const noticeDuration = noticeType ? noticeType.durationMinutes : durationOk ? durationNum : null;
   const noticeSpan = useMemo(() => noticeRange(noticePeriod, today), [noticePeriod, today]);
@@ -536,6 +571,43 @@ export default function VacancyPage() {
   };
 
   const noPlan = result?.noPlanDates ?? [];
+  /** 答えのカード（PRD D258） */
+  const answer = result && wishOk ? answerCard(result, wish) : null;
+  /** 足りない案の日（範囲の今日以降の、案の無い日・条件が変わった日。PRD D259） */
+  const rangeKey = result ? result.dates.join(',') : '';
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 範囲は日付の並び（rangeKey）で見る
+  const missing = useMemo(() => (result ? missingDays(data, result.dates, today) : []), [data, rangeKey, today]);
+  const staleCount = missing.filter((x) => x.mode === 'stale').length;
+  /** 月まとめ作成の進み具合（作っている間は押せない。PRD D256） */
+  const batchRun = useValueStore(monthBatch.run);
+  const making = batchRun !== null;
+  /** 作っている間のボタンの文（月の予定から始めた作成は「（月の予定）」で分ける） */
+  const makingText = batchRun
+    ? `${batchRun.label}の案を作っています${batchRun.source === 'month' ? '（月の予定）' : '…'}`
+    : '';
+  /** 答えのカード（足りない案を作り終えてボタンが消えたとき、フォーカスをここへ） */
+  const answerRef = useRef<HTMLDivElement>(null);
+  /** ［足りない案を作る］にフォーカスがあるか */
+  const makeFocused = useRef(false);
+  useEffect(() => {
+    if (missing.length > 0 || !makeFocused.current) return;
+    makeFocused.current = false;
+    answerRef.current?.focus({ preventScroll: true });
+  }, [missing.length]);
+  /** 足りない案を、その場で作る（月まとめ作成の仕組み。ほかの画面へ移っても続く。ADR-0042） */
+  const makeMissing = () => {
+    if (missing.length === 0 || making) return;
+    const ok = monthBatch.start({
+      ym: ymOf(missing[0]!.date),
+      label: monthsLabel(missing.map((x) => x.date)),
+      mode: 'empty',
+      days: missing,
+      expandYm: null,
+      today,
+      source: 'vacancy',
+    });
+    if (!ok) toast('ほかの案を作っています。終わってから押してください');
+  };
   // 段階の要約の行（PRD D184・D185）
   const placeSummary = placeLine(
     { address: place.address, pinnedAddress: place.pinnedAddress, hasPin: exactPlace !== null },
@@ -583,7 +655,7 @@ export default function VacancyPage() {
                 if (t) setDuration(String(t.durationMinutes));
               }}
             >
-              <option value="">種類なし</option>
+              <option value="">{NO_TYPE_TEXT}</option>
               {data.visitTypes.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -756,57 +828,113 @@ export default function VacancyPage() {
         <p className="sub vacancy-when-line" data-testid="vacancy-when-line">
           {whenLine}
         </p>
+        {/* 答え（PRD D258）：結果の1枚目のカード。受けられるか・曜日と開始の時間・人数 */}
+        {answer && (
+          // 条件を変えると答えが変わるので読み上げる（role="status"）
+          // biome-ignore lint/a11y/useSemanticElements: 中に段落があるので output ではなく div
+          <div
+            ref={answerRef}
+            tabIndex={-1}
+            role="status"
+            className={`vacancy-answer is-${answer.tone}`}
+            data-testid="vacancy-answer"
+            data-tone={answer.tone}
+          >
+            <p className="vacancy-answer-main">
+              <strong className="vacancy-answer-head">{answer.head}</strong>
+              {answer.body && <span className="vacancy-answer-body">：{answer.body}</span>}
+            </p>
+            <p className="sub vacancy-answer-note">{answer.note}</p>
+          </div>
+        )}
+        {/* 案の無い日・条件が変わった日の注意はここ1か所（PRD D176）。その場で足りない案を作る（PRD D259） */}
+        {(noPlan.length > 0 || missing.length > 0) && (
+          <div className="vacancy-noplan" data-testid="vacancy-noplan">
+            <p>
+              {noPlan.length > 0 ? (
+                <>
+                  案の無い日（{noPlan.length}日：{noPlan.slice(0, NOPLAN_SHOWN).map(mdText).join('・')}
+                  {noPlan.length > NOPLAN_SHOWN ? ` ほか${noPlan.length - NOPLAN_SHOWN}日` : ''}
+                  ）は数えていません（表は「？」、案内文にも載せません）。
+                </>
+              ) : null}
+              {staleCount > 0 ? `条件が変わった日が${staleCount}日あります（作り直すと今の条件で数えます）。` : ''}
+            </p>
+            {missing.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={makeMissing}
+                // 作っている間も押せる見た目を変えるだけ（disabled にするとフォーカスを失う）
+                aria-disabled={making || undefined}
+                onFocus={() => {
+                  makeFocused.current = true;
+                }}
+                onBlur={(e) => {
+                  // 消えるときは blur が来ないことがあるので、ほかへ移ったときだけ下ろす
+                  if (e.relatedTarget) makeFocused.current = false;
+                }}
+                data-testid="vacancy-noplan-make"
+                data-count={missing.length}
+              >
+                <WithIcon icon={Sparkles} size={14}>
+                  {making ? makingText : `足りない案を作る（${missing.length}日）`}
+                </WithIcon>
+              </button>
+            ) : (
+              // 今日より前の日だけ・確定した日だけのときは、月の予定で見る
+              <Link
+                className="btn btn-small btn-text"
+                to={`/month?ym=${ymOf(noPlan[0]!)}`}
+                data-testid="vacancy-noplan-month"
+              >
+                {Number(noPlan[0]!.slice(5, 7))}月の予定を見る
+              </Link>
+            )}
+          </div>
+        )}
         {summary && (
           <>
+            <h3 className="vacancy-sub-title">答える文（下の「要約をコピー」でコピー）</h3>
             <output className="inquiry-summary" data-testid="inquiry-summary">
               {summary}
             </output>
             {result && <InquiryWeeks rows={inquiryRows(result, wish)} exact={result.exact} />}
           </>
         )}
-        {/* 案の無い日の注意はここ1か所（PRD D176。案内文・日付ごとの欄には繰り返さない） */}
-        {noPlan.length > 0 && (
-          <div className="vacancy-noplan" data-testid="vacancy-noplan">
-            <p>
-              案の無い日（{noPlan.length}日：{noPlan.slice(0, NOPLAN_SHOWN).map(mdText).join('・')}
-              {noPlan.length > NOPLAN_SHOWN ? ` ほか${noPlan.length - NOPLAN_SHOWN}日` : ''}
-              ）は数えていません（表は「？」、案内文にも載せません）。
-            </p>
-            <Link className="btn btn-small" to={batchHref(ymOf(noPlan[0]!))} data-testid="vacancy-noplan-make">
-              {Number(noPlan[0]!.slice(5, 7))}月の案を作る
-            </Link>
-          </div>
-        )}
         <h3 className="vacancy-sub-title">曜日・開始時刻ごとの表</h3>
-        <ul className="vacancy-legend" data-testid="vacancy-mark-legend" aria-label="マスの読み方">
-          {markLegend(!!result?.exact).map((x) => (
-            <li key={x.verdict} className="vacancy-legend-item">
-              <span className={`vacancy-legend-face is-${x.verdict}`} aria-hidden="true">
-                <b>{x.mark}</b>
-                {x.sample && <small>{x.sample}</small>}
-              </span>
-              <span>
-                <span className="sr-only">{x.mark}：</span>
-                {x.text}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p className="sub vacancy-legend-note">
-          ○ の数字は
-          <Term k="vacancyCount" testId="term-vacancy-count" />
-          {result?.exact ? (
-            ''
-          ) : (
-            <>
-              （場所が無いので
-              <Term k="vacancyEstimate" testId="term-vacancy-estimate" />）
-            </>
-          )}
-          。マスを押すと日付ごとの人を見られます。
-          {vType && ` 種類「${vType.name}」の担当に必要な条件を満たす人だけを数えます。`}
-        </p>
-        <LevelLegend items={VACANCY_LEGEND} />
+        {/* 凡例はここ1か所（PRD D258）：印（○△×？）・色（人数の段階）・数字の読み方。週ごとのマスも同じ印と色 */}
+        <div className="vacancy-legend-box" data-testid="vacancy-legend">
+          <ul className="vacancy-legend" data-testid="vacancy-mark-legend" aria-label="マスの読み方">
+            {markLegend(!!result?.exact).map((x) => (
+              <li key={x.verdict} className="vacancy-legend-item">
+                <span className={`vacancy-legend-face is-${x.verdict}`} aria-hidden="true">
+                  <b>{x.mark}</b>
+                  {x.sample && <small>{x.sample}</small>}
+                </span>
+                <span>
+                  <span className="sr-only">{x.mark}：</span>
+                  {x.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <LevelLegend items={VACANCY_LEGEND} />
+          <p className="sub vacancy-legend-note">
+            ○ の数字は
+            <Term k="vacancyCount" testId="term-vacancy-count" />
+            {result?.exact ? (
+              ''
+            ) : (
+              <>
+                （場所が無いので
+                <Term k="vacancyEstimate" testId="term-vacancy-estimate" />）
+              </>
+            )}
+            。色はどの週でも受けられる人数の段階です。上の週ごとのマスも同じ印と色で、行の頭はその曜日に一番良い開始時刻です。マスを押すと日付ごとの人を見られます。
+            {vType && ` 種類「${vType.name}」の担当に必要な条件を満たす人だけを数えます。`}
+          </p>
+        </div>
         {result && result.times.length === 0 && <p className="sub">所要が長すぎて、入る時刻がありません</p>}
         {result && result.times.length > 0 && (
           <EdgeScroll className="vacancy-scroll" scrollRef={gridRef}>
@@ -962,7 +1090,9 @@ export default function VacancyPage() {
                     onChange={(e) => setNoticeTypeId(e.target.value)}
                     data-testid="notice-type"
                   >
-                    <option value="">種類なし（所要 {durationOk ? `${durationNum}分` : '—'}）</option>
+                    <option value="">
+                      {NO_TYPE_TEXT}（所要 {durationOk ? `${durationNum}分` : '—'}）
+                    </option>
                     {data.visitTypes.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.name}（{t.durationMinutes}分）
