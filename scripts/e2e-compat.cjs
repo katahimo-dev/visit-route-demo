@@ -13,7 +13,7 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { BASE, OUT_DIR, NOW, perfMs, check, settle, runSteps } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, perfMs, check, note, settle, runSteps } = require('./lib/env.cjs');
 const { pagePerStep } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_COMPAT', 100);
@@ -405,13 +405,22 @@ async function perf(page) {
   // ならし：最初の数回は JIT・GC の立ち上がりで遅いので数えない
   const warmup = await clickTimes(0, PERF_WARMUP);
   // 1回り PERF_SAMPLES 回の中央値。上限を超えたら少し置いてもう1回り（最大 PERF_ROUNDS 回り）。
-  // 一番よい回りの中央値で比べる：ほかの処理と CPU を取り合った回り（負荷）を外し、遅くなったコード（どの回りも遅い）は落とす（PRD D253）
+  // 一番よい回りの中央値で比べる：ほかの処理と CPU を取り合った回り（負荷）を外し、遅くなったコード（どの回りも遅い）は落とす（PRD D253）。
+  // 1回り目が上限の2倍を超えたら、負荷の揺れでは説明できないので回りを足さずに落とす。回りを足して通ったら注記に残す（ぎりぎりを見逃さない）
   const rounds = [];
   for (let r = 0; r < PERF_ROUNDS; r++) {
     if (r > 0) await page.waitForTimeout(PERF_ROUND_GAP_MS);
     const times = await clickTimes(PERF_WARMUP + r * PERF_SAMPLES, PERF_SAMPLES);
     rounds.push({ median: medianOf(times), times });
-    if (rounds.at(-1).median <= PERF_MS) break;
+    const m = rounds.at(-1).median;
+    if (m <= PERF_MS) {
+      if (r > 0)
+        note(
+          `相性の速さ：${r + 1}回り目で通過（各回りの中央値 ${rounds.map((x) => x.median).join('・')}ms、上限 ${PERF_MS}ms）`,
+        );
+      break;
+    }
+    if (r === 0 && m > 2 * PERF_MS) break;
   }
   const median = Math.min(...rounds.map((x) => x.median));
   const times = rounds.map((x) => x.times);

@@ -41,8 +41,9 @@ const { chromium } = loadPlaywright();
  * 包み（e2e/legacy.spec.ts）が差し込むもの。単独の実行では使わない
  *   onCheck(ok, name, info) … 確かめを1つずつ受ける（expect.soft に写す）
  *   videoDir … 文脈の動画の置き場所（あれば newContext・newPage に recordVideo を足す）
+ *   onNote(text) … 報告に残す注記を受ける（test の annotations に足す）
  */
-const hooks = { onCheck: null, videoDir: '' };
+const hooks = { onCheck: null, onNote: null, videoDir: '' };
 
 /** 開いたブラウザ（終わりに closeBrowsers でまとめて閉じる。途中で止まっても残さない） */
 const browsers = new Set();
@@ -56,26 +57,27 @@ function trackTimers() {
   const due = new Map();
   window.__e2eTimers = due;
   const wrap = (name, make) => {
-    let inner = window[name];
-    let outer = make(inner);
-    Object.defineProperty(window, name, {
-      configurable: true,
-      get: () => outer,
-      set: (f) => {
-        inner = f;
-        outer = make(f);
-      },
-    });
+    let outer = null;
+    const set = (inner) => {
+      // 今の window[name] である間だけ数える。page.clock は差し替える前の値（この包み）を自分の心拍・次のタイマーに
+      // 使うので、差し替えられたあとの古い包みは素通しにして、アプリの呼んだタイマーだけを数える
+      const self = make(inner, () => outer === self);
+      outer = self;
+    };
+    set(window[name]);
+    Object.defineProperty(window, name, { configurable: true, get: () => outer, set });
   };
   wrap(
     'setTimeout',
-    (st) =>
+    (st, current) =>
       function (fn, ms, ...args) {
+        // 文字の handler（setTimeout('…')）と、差し替えられたあとの古い包みは数えずにそのまま渡す
+        if (typeof fn !== 'function' || !current()) return st.call(this, fn, ms, ...args);
         const id = st.call(
           this,
           (...a) => {
             due.delete(id);
-            if (typeof fn === 'function') fn(...a);
+            fn.apply(window, a);
           },
           ms,
           ...args,
@@ -106,11 +108,8 @@ function instrument(b) {
     if (process.env.E2E_SETTLE !== 'fixed') await ctx.addInitScript(trackTimers);
     return ctx;
   };
-  b.newPage = async (o) => {
-    const page = await newPage(add(o));
-    if (process.env.E2E_SETTLE !== 'fixed') await page.context().addInitScript(trackTimers);
-    return page;
-  };
+  // Browser.newPage は中で this.newContext（上の包み）を呼ぶので、タイマーの数え・動画はそちらで足される
+  b.newPage = (o) => newPage(add(o));
   return b;
 }
 /** Chromium を開く（CHROMIUM があればその実行ファイル） */
@@ -154,6 +153,12 @@ function check(ok, name, info = '') {
   const text = info === '' ? '' : typeof info === 'string' ? info : JSON.stringify(info);
   console.log(`${ok ? 'OK  ' : 'NG  '} ${name}${text === '' ? '' : `  ${text}`}`);
   hooks.onCheck?.(!!ok, name, text);
+}
+
+/** 報告に残す注記（記録の行と、包みからは test の annotations） */
+function note(text) {
+  console.log(`注記：${text}`);
+  hooks.onNote?.(text);
 }
 
 /** ページのエラー（pageerror）。watchErrors で集め、終わりに失敗に数える */
@@ -205,9 +210,14 @@ function waitQuiet([maxMs, quietMs, horizonMs]) {
       for (const t of due.values()) if (t - now <= horizonMs) return true;
       return false;
     };
+    // 終わりのある CSS の動き（引き出し・知らせ・確認の出入り）が走っている間は落ち着いていない（くり返し続ける動きは見ない）
+    const moving = () =>
+      document
+        .getAnimations()
+        .some((x) => x.playState === 'running' && x.effect?.getTiming().iterations !== Number.POSITIVE_INFINITY);
     const tick = () => {
       const now = performance.now();
-      const quiet = now - last >= quietMs && !busy(now);
+      const quiet = now - last >= quietMs && !busy(now) && !moving();
       if (quiet || now - start >= maxMs) {
         mo.disconnect();
         resolve(quiet);
@@ -227,7 +237,7 @@ function waitQuiet([maxMs, quietMs, horizonMs]) {
 
 /**
  * 押したあとの描き直しを待つ（web-first の待ち。ADR-0041）：2回の描画のあと、DOM の変化が続けて SETTLE_QUIET_MS 無く、
- * 期限の近いタイマー（入力の間引き・保存・吹き出しの出し入れ・作り直しの帯の数え直し）が残っていないこと。
+ * 終わりのある CSS の動きが走っておらず、期限の近いタイマー（入力の間引き・保存・吹き出しの出し入れ・作り直しの帯の数え直し）が残っていないこと。
  * ms は前の固定の待ちの長さ：最長は max(3×ms, 1500ms)。ページが移っている最中なら読み込みを待ってもう1回。
  * Worker の計算（AI案を作る）は待たないので、その所は目印（locator.waitFor・until）で待つ。
  * E2E_SETTLE_LOG=1 なら最長まで待った所を、2 なら1回ずつの待った時間を出す。E2E_SETTLE=fixed なら前の固定の待ち（切り分け用）
@@ -339,6 +349,7 @@ module.exports = {
   perfMs,
   STORAGE_KEY,
   check,
+  note,
   pageErrors,
   watchErrors,
   until,

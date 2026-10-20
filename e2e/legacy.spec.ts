@@ -3,13 +3,14 @@
 // Playwright は @playwright/test と同じもの（playwright-core）なので、スクリプトが開いた文脈にも trace が付く。動画は env.cjs の hooks で足す。
 // steps を出していないスクリプト（段階1の形）は、今までどおり子のプロセスで走らせ、終了コードと `NG  ` の行で決める
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 const require = createRequire(import.meta.url);
-const SCRIPTS_DIR = path.resolve(import.meta.dirname, '../scripts');
+// require.cache の鍵は実際の場所（シンボリックリンクを解いた道）なので、消すときに合うよう実際の場所にそろえる
+const SCRIPTS_DIR = realpathSync(path.resolve(import.meta.dirname, '../scripts'));
 /** 速さの上限を見るスクリプト（perf の project で1本ずつ走らせる） */
 const PERF = new Set(['compat', 'nav', 'progress', 'vacancy-steps', 'details']);
 /** test の時間切れより先に子のプロセスを止める余裕（止めて記録を添付する時間） */
@@ -25,7 +26,11 @@ const files = readdirSync(SCRIPTS_DIR)
 
 type Step = [string, () => Promise<unknown> | unknown];
 type Lib = {
-  hooks: { onCheck: ((ok: boolean, name: string, info: string) => void) | null; videoDir: string };
+  hooks: {
+    onCheck: ((ok: boolean, name: string, info: string) => void) | null;
+    onNote: ((text: string) => void) | null;
+    videoDir: string;
+  };
   pageErrors: string[];
   closeBrowsers: () => Promise<void>;
 };
@@ -78,6 +83,7 @@ async function runInProcess(file: string, name: string, base: string) {
   const { steps } = require(path.join(SCRIPTS_DIR, file)) as { steps: Step[] };
   const lib = require(path.join(SCRIPTS_DIR, 'lib/env.cjs')) as Lib;
   current.lib = lib;
+  lib.hooks.onNote = (text) => testInfo.annotations.push({ type: '注記', description: text });
   lib.hooks.videoDir = videoDir;
   lib.hooks.onCheck = (ok, checkName, info) => {
     const more = info.length > INFO_MAX ? `${info.slice(0, INFO_MAX)}…` : info;
@@ -101,7 +107,10 @@ test.afterEach(async () => {
     await c.lib?.closeBrowsers();
   } finally {
     c.restore();
-    if (c.lib) c.lib.hooks.onCheck = null;
+    if (c.lib) {
+      c.lib.hooks.onCheck = null;
+      c.lib.hooks.onNote = null;
+    }
   }
   const logPath = testInfo.outputPath(`${c.name}.log`);
   mkdirSync(path.dirname(logPath), { recursive: true });

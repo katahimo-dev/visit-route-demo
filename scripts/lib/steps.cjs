@@ -1,7 +1,8 @@
 // e2e の共通：段（steps）の型（ADR-0041。ADR-0029 の段階2）。
 // スクリプトは `module.exports = { steps }`（[段の名前, 関数] の並び）を出し、
 // 単独の実行では `if (require.main === module) runSteps(steps)`、包み（e2e/legacy.spec.ts）では段ごとに test.step で回す。
-// 段の中の失敗（投げた）は、今までの try/catch と同じ文の確かめ（NG）とスクリーンショットにする。準備の段だけは投げたら止める
+// 段の中身（guard の中）で投げたら、今までの try/catch と同じ文の確かめ（NG）とスクリーンショットにして続ける。
+// 準備（ブラウザ・文脈を開く）・段ごとの文脈を開く所・後始末で投げたら、そこで止める（test は落ちる。単独なら終了コード1）
 const { launch, NOW, check, failShot, watchErrors, withTimeout } = require('./env.cjs');
 const { skipTour } = require('./tourSeen.cjs');
 
@@ -16,24 +17,34 @@ const firstLine = (e) => String(e).split('\n')[0];
 /** 投げたときの理由（message） */
 const message = (e) => String(e?.message || e);
 
+/** 段の時間切れの印（guard が返す） */
+const TIMED_OUT = 'timeout';
+const STEP_TIMEOUT_TEXT = `段が ${STEP_LIMIT_MS / 1000}秒で終わらない`;
+
 /**
- * fn を包み、投げたら check(false, label, info(e)) とスクリーンショット（page() があれば <名前>-fail-<shot>.png）にする
+ * fn を包み、投げたら check(false, label, info(e)) とスクリーンショット（page() があれば <名前>-fail-<shot>.png）にする。
+ * 時間切れなら TIMED_OUT を返す（呼ぶ側で文脈を閉じる。固まったページで次の段を走らせない）
  */
 function guard(fn, { label, info = message, page, shot = label }) {
   return async (...args) => {
+    // 時間切れのあとも裏で動き続ける段の失敗は、拾わずに捨てる（test の外の未処理の失敗にしない）
+    const run = Promise.resolve().then(() => fn(...args));
+    run.catch(() => {});
     try {
-      await withTimeout(
-        Promise.resolve().then(() => fn(...args)),
-        STEP_LIMIT_MS,
-        `段が ${STEP_LIMIT_MS / 1000}秒で終わらない`,
-      );
+      await withTimeout(run, STEP_LIMIT_MS, STEP_TIMEOUT_TEXT);
+      return undefined;
     } catch (e) {
       check(false, label, info(e));
+      const timedOut = String(e?.message || e).includes(STEP_TIMEOUT_TEXT);
       const p = page?.();
-      if (p) await withTimeout(failShot(p, shot), 10 * 1000, 'スクリーンショット').catch(() => {});
+      if (p && !timedOut) await withTimeout(failShot(p, shot), 10 * 1000, 'スクリーンショット').catch(() => {});
+      return timedOut ? TIMED_OUT : undefined;
     }
   };
 }
+
+/** 文脈を閉じる（固まったページでも 30秒で先へ） */
+const closeContext = (ctx) => (ctx ? withTimeout(ctx.close(), 30 * 1000, '文脈を閉じる').catch(() => {}) : undefined);
 
 /**
  * ブラウザ・文脈・ページを開く（多くのスクリプトの準備）：初回の案内ツアーを見た扱い（PRD D193）・
@@ -69,7 +80,20 @@ function sharedPage({ open = () => openPage(), steps, after, call = (fn, s) => f
         Object.assign(s, await open());
       },
     ],
-    ...steps.map(([name, fn]) => [name, guard(() => call(fn, s), { label: name, info, page: () => s.page })]),
+    ...steps.map(([name, fn]) => [
+      name,
+      async () => {
+        // 前の段が時間切れなら、固まったページで走らせない（文脈はもう閉じた）
+        if (s.timedOut) {
+          check(false, `${name}：前の段（${s.timedOut}）が時間切れで走らせない`);
+          return;
+        }
+        if ((await guard(() => call(fn, s), { label: name, info, page: () => s.page })()) === TIMED_OUT) {
+          s.timedOut = name;
+          await closeContext(s.ctx);
+        }
+      },
+    ]),
     ...(after ? [['後始末', () => after(s)]] : []),
   ];
 }
@@ -97,12 +121,12 @@ function pagePerStep({ open, steps, label, after, end, call = (fn, s) => fn(s.pa
         const s = await open(b, fn);
         await guard(() => call(fn, s), { label: label(fn.name), info: firstLine, page: () => s.page, shot: fn.name })();
         await after?.(fn.name, s);
-        // 固まったページでも閉じて先へ進む
-        await withTimeout(s.ctx.close(), 30 * 1000, '文脈を閉じる').catch(() => {});
+        // 固まったページでも閉じて先へ進む（次の段は新しい文脈）
+        await closeContext(s.ctx);
       },
     ]),
     ...(end ? [['後始末', end]] : []),
   ];
 }
 
-module.exports = { guard, firstLine, message, openPage, sharedPage, pagePerStep };
+module.exports = { guard, closeContext, firstLine, message, openPage, sharedPage, pagePerStep };

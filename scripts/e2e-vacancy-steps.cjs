@@ -25,7 +25,7 @@ const {
   runSteps,
   settle,
 } = require('./lib/env.cjs');
-const { guard, firstLine, message } = require('./lib/steps.cjs');
+const { guard, closeContext, firstLine, message } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_VACANCY', 5000);
 
@@ -491,7 +491,7 @@ const fresh = (name, fn) => async () => {
   });
   await fakeServices(page);
   await guard(() => fn(page), { label: name, info: (e) => firstLine(message(e)), page: () => page })();
-  await ctx.close();
+  await closeContext(ctx);
 };
 // 段の関数に steps があるので、並びは allSteps と呼ぶ
 const allSteps = [

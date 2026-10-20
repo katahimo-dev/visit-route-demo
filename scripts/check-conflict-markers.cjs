@@ -21,7 +21,8 @@ for (const f of files) {
   }
   // 中に 0 のバイトがあれば中身が文字でない（xlsx・画像など）ので見ない
   if (buf.includes(0)) continue;
-  const lines = buf.toString('utf8').split('\n');
+  // CRLF のファイルも行頭で見られるよう、改行の前の \r も区切りに含める
+  const lines = buf.toString('utf8').split(/\r?\n/);
   lines.forEach((l, i) => {
     if (MARK.test(l)) found.push(`${f}:${i + 1}: ${l.slice(0, 60)}`);
   });

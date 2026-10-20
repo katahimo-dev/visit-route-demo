@@ -14,7 +14,7 @@ const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
 const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, runSteps } = require('./lib/env.cjs');
-const { guard, firstLine } = require('./lib/steps.cjs');
+const { guard, closeContext, firstLine } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
 
@@ -602,7 +602,8 @@ const widthStep = (w, vp) => async () => {
     })();
   }
   check(errors.length === 0, `${w}・ページのエラー・ブラウザの確認が無い`, errors);
-  await ctx.close();
+  // 固まったページでも閉じて先へ進む
+  await closeContext(ctx);
 };
 const steps = [
   [
