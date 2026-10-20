@@ -21,6 +21,7 @@ import { deltaText, r0 } from '../lib/common';
 import { allContactsText, type ContactWords, clientMessages, clock, staffMessage } from '../lib/contacts';
 import { NO_EMAIL } from '../lib/mail';
 import type { BuiltMail } from '../lib/mailto';
+import { type ReadableStore, useValueStore } from '../lib/valueStore';
 import { STAY_WEIGHT_DEFAULT } from '../reassign';
 
 /** 案A・案B の比べる数（元の案との差と点数） */
@@ -37,6 +38,25 @@ export type ReassignOption = {
 /** 担当が変わる訪問のうち、欠勤の人以外の訪問（案B が動かした分） */
 function othersMoved(d: ReassignDiff, absent: ReadonlySet<string>): number {
   return d.moved.filter((m) => m.from !== null && m.to !== null && !absent.has(m.from)).length;
+}
+
+/** 案B の進み具合のバーと回数（外の入れ物から読み、変わってもここだけ描き直す。PRD D249） */
+function AnnealProgress({ store }: { store: ReadableStore<{ iteration: number; total: number } | null> }) {
+  const progress = useValueStore(store);
+  return (
+    <>
+      <progress
+        value={progress?.iteration ?? 0}
+        max={progress?.total ?? 1}
+        style={{ width: '100%' }}
+        aria-label="案B の進み具合"
+      />
+      <span className="sub" data-testid="anneal-progress">
+        案B を作っています：
+        {progress ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回` : '準備中…'}
+      </span>
+    </>
+  );
 }
 
 /**
@@ -65,7 +85,8 @@ export function AnnealBox({
   disabledWhy: string | null;
   /** 案B を計算中 */
   running: boolean;
-  progress: { iteration: number; total: number } | null;
+  /** 計算の進み具合（外の入れ物。変わっても進み具合の部品だけ描き直す。PRD D249） */
+  progress: ReadableStore<{ iteration: number; total: number } | null>;
   onStart: () => void;
   onStop: () => void;
   /** 案A・案B（案B を作ったあと） */
@@ -134,16 +155,7 @@ export function AnnealBox({
       </div>
       {running && (
         <div className="stack" style={{ gap: 2 }} aria-live="polite">
-          <progress
-            value={progress?.iteration ?? 0}
-            max={progress?.total ?? 1}
-            style={{ width: '100%' }}
-            aria-label="案B の進み具合"
-          />
-          <span className="sub" data-testid="anneal-progress">
-            案B を作っています：
-            {progress ? `${progress.iteration.toLocaleString()} / ${progress.total.toLocaleString()} 回` : '準備中…'}
-          </span>
+          <AnnealProgress store={progress} />
         </div>
       )}
       {note && !running && (
