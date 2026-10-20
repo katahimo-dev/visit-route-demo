@@ -126,6 +126,15 @@ export function formError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** 契約の検査（zod）の最初の誤りの欄の名前（path の先頭。欄に印を付ける。PRD D250）。分からなければ undefined */
+export function formErrorField(e: unknown): string | undefined {
+  if (e && typeof e === 'object' && 'issues' in e) {
+    const head = (e as { issues: { path: PropertyKey[] }[] }).issues[0]?.path[0];
+    return typeof head === 'string' ? head : undefined;
+  }
+  return undefined;
+}
+
 /** 例外を投げる関数を、値かエラー文に変える（未実装・データの不整合でも画面を止めない） */
 export function attempt<T>(fn: () => T): { value: T | null; error: string | null } {
   try {

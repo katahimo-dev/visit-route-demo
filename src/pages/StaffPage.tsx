@@ -15,10 +15,11 @@ import {
   UserRoundCog,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
+import { FieldError, type FormErr, invalidAttrs, RequiredMark, toFormErr } from '../components/FieldError';
 import { Check } from '../components/parts';
 import { StaffView } from '../components/personView';
 import { AddressField } from '../components/placeLookup';
@@ -35,7 +36,7 @@ import {
 import { TRAVEL_MODES, type TravelMode } from '../contracts/codes';
 import { type Staff, staffSchema } from '../contracts/documents';
 import { addDays, jstDate } from '../domain/time';
-import { byName, formError, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
+import { byName, hasLocation, nameTaken, newId, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
 import { useDirtyMark } from '../lib/dirtyForms';
 import { normalizeEmail } from '../lib/mailto';
 import { offboardScope } from '../lib/offboard';
@@ -83,7 +84,10 @@ export default function StaffPage() {
   const [isNew, setIsNew] = useState(false);
   /** 新しい人の、開いたときの空の欄（変更があるかの判定に使う） */
   const [openedForm, setOpenedForm] = useState<Staff | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormErr>(null);
+  const errorId = useId();
+  /** 誤った欄の印（PRD D250） */
+  const bad = (field: string) => invalidAttrs(error?.field === field, errorId);
   /** 担当の振り直しの欄を開いている〈スタッフ〉（PRD D71。null：閉じている） */
   const [offboardFor, setOffboardFor] = useState<string | null>(null);
   const today = jstDate(Date.now());
@@ -183,13 +187,16 @@ export default function StaffPage() {
     setError(null);
     // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
     if (nameTaken(data.staff, (x) => x.name, form.name, form.id)) {
-      setError(`「${form.name.trim()}」と同じ名前の${terms.staff}がいます。名前を変えてください`);
+      setError({
+        text: `「${form.name.trim()}」と同じ名前の${terms.staff}がいます。名前を変えてください`,
+        field: 'name',
+      });
       return;
     }
     // メールアドレス（任意。ADR-0017）：全角・前後の空白を直し、形が合わなければ保存しない
     const email = normalizeEmail(form.email);
     if (email === null) {
-      setError('メールアドレスの形ではありません（例 name@example.com）。空でも構いません');
+      setError({ text: 'メールアドレスの形ではありません（例 name@example.com）。空でも構いません', field: 'email' });
       return;
     }
     try {
@@ -246,7 +253,7 @@ export default function StaffPage() {
         toast('保存しました');
       }
     } catch (e) {
-      setError(formError(e));
+      setError(toFormErr(e));
     }
   };
 
@@ -396,6 +403,7 @@ export default function StaffPage() {
               : `${terms.staff}：${viewed?.name.trim() || '（名前なし）'}`
           }
           onClose={closePanel}
+          onSubmit={form ? save : undefined}
           focusKey={form ? 'edit' : 'view'}
           headActions={
             !form &&
@@ -414,13 +422,15 @@ export default function StaffPage() {
           footer={
             form && (
               <>
-                <button type="button" className="btn btn-primary" onClick={save}>
+                <button type="submit" className="btn btn-primary">
                   <WithIcon icon={Save}>保存</WithIcon>
                 </button>
                 <button type="button" className="btn" onClick={cancelEdit} data-testid="edit-cancel">
                   <WithIcon icon={X}>取り消し</WithIcon>
                 </button>
-                {error && <span className="error">{error}</span>}
+                <FieldError as="span" id={errorId} token={error}>
+                  {error?.text}
+                </FieldError>
               </>
             )
           }
@@ -432,10 +442,15 @@ export default function StaffPage() {
               <>
                 <div className="form-grid">
                   <label>
-                    名前
+                    <span>
+                      名前
+                      <RequiredMark />
+                    </span>
                     <input
                       value={form.name}
                       maxLength={50}
+                      required
+                      {...bad('name')}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
                     />
                   </label>
@@ -448,6 +463,7 @@ export default function StaffPage() {
                         maxLength={254}
                         autoComplete="off"
                         placeholder="name@example.com"
+                        {...bad('email')}
                         onChange={(e) => setForm({ ...form, email: e.target.value })}
                         data-testid="staff-email"
                       />
@@ -473,6 +489,7 @@ export default function StaffPage() {
                       type="time"
                       step={1800}
                       value={form.shiftStart}
+                      {...bad('shiftStart')}
                       onChange={(e) => setForm({ ...form, shiftStart: e.target.value })}
                     />
                   </label>
@@ -482,6 +499,7 @@ export default function StaffPage() {
                       type="time"
                       step={1800}
                       value={form.shiftEnd}
+                      {...bad('shiftEnd')}
                       onChange={(e) => setForm({ ...form, shiftEnd: e.target.value })}
                     />
                   </label>
@@ -522,6 +540,7 @@ export default function StaffPage() {
                         <input
                           type="date"
                           value={form.lastDay ?? ''}
+                          {...bad('lastDay')}
                           onChange={(e) => setForm({ ...form, lastDay: e.target.value || null })}
                           data-testid="staff-lastday-input"
                           style={{ width: 'auto' }}
