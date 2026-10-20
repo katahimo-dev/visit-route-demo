@@ -25,7 +25,7 @@
 3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`。title「点数の基準：〈名前〉」）・点数の理由（`plan-reason`）・「詳しく」
 4. 担当ごとの1日（`DayLines`。下）
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
-6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」・「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・表示［時間軸｜順番｜一覧］・「メールで送る」・計算中の進み具合と止める
+6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」・「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・表示［時間軸｜順番｜一覧］・「メールで送る」・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
 8. 本体（時間軸か順番か一覧）と地図：1280px 以上で横に並べ（地図は上に貼りつく）、見出しの「地図を畳む」で畳む。狭い画面は `MapDock`
 
