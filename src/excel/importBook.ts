@@ -1338,6 +1338,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     visitTypes,
     patterns,
     clientLeaves,
+    // 手直しの記憶は Excel のシートに無い（AI案・記録と同じく読み込むと消える。ADR-0043）
+    manualPrefs: {},
     manualPlans: {},
     aiPlans: {},
     aiRuns: {},
