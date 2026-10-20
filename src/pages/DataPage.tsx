@@ -373,7 +373,8 @@ export default function DataPage() {
       </div>
       {saveError && (
         <div className="card stack">
-          <FieldError>保存できませんでした：{saveError}。書き出して保管してください。</FieldError>
+          {/* 画面の上の帯（App の save-error）が読み上げるので、ここは読み上げない */}
+          <FieldError live={false}>保存できませんでした：{saveError}。書き出して保管してください。</FieldError>
           {saveError === QUOTA_MESSAGE && (
             <button
               type="button"
@@ -450,7 +451,9 @@ export default function DataPage() {
             変える
           </button>
         </form>
-        <FieldError id={termsErrId}>{termsSame && '訪問する人と訪問先に、同じ呼び方は使えません'}</FieldError>
+        <FieldError id={termsErrId} live={false}>
+          {termsSame && '訪問する人と訪問先に、同じ呼び方は使えません'}
+        </FieldError>
       </div>
 
       <div className="card stack">

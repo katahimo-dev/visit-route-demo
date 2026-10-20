@@ -428,7 +428,7 @@ export default function StaffPage() {
                 <button type="button" className="btn" onClick={cancelEdit} data-testid="edit-cancel">
                   <WithIcon icon={X}>取り消し</WithIcon>
                 </button>
-                <FieldError as="span" id={errorId}>
+                <FieldError as="span" id={errorId} token={error}>
                   {error?.text}
                 </FieldError>
               </>

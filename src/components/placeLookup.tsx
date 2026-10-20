@@ -234,7 +234,7 @@ export function AddressField<T extends Place>({
           </span>
         )}
       </div>
-      <FieldError as="span" id={postalErrorId} testId={`${testId}-postal-error`}>
+      <FieldError as="span" id={postalErrorId} live={false} testId={`${testId}-postal-error`}>
         {postalError && '郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません）'}
       </FieldError>
       {postalHits.length > 0 && (

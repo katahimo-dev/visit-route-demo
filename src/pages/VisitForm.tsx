@@ -76,19 +76,44 @@ export function VisitForm({
    * 開いたときの訪問（PRD D251）。表示中の日を変えると親から渡る訪問が消える（その日の訪問ではない）ので、
    * 開いたときの ID でデータから引き直し、入力を捨てずに引き継ぐ
    */
-  const [openedId] = useState(() => visit?.id ?? null);
-  const current = visit ?? (openedId ? (data.visits.find((x) => x.id === openedId) ?? null) : null);
+  const [opened] = useState(() => ({
+    id: visit?.id ?? null,
+    /** 開いたときの訪問の日（新しい訪問なら開いたときの表示中の日）。「M/D に移しました」はこれと比べる */
+    date: visit?.date ?? date,
+    /** 開いたときの表示中の日（変わったときだけ「別の日」の知らせを出す） */
+    shownDate: date,
+    /** 開いたときに取り消し済みだったか（取り消した訪問を直すと取り消しを外す。開いた後に取り消されたら保存しない） */
+    cancelled: visit?.cancelled ?? false,
+  }));
+  const current = visit ?? (opened.id ? (data.visits.find((x) => x.id === opened.id) ?? null) : null);
+  /** 開いた後に消された・取り消された（ほかの操作で）。保存すると取り消しが黙って外れるので止める */
+  const gone = opened.id !== null && (!current || (current.cancelled && !opened.cancelled));
   /** 定期パターンから展開した訪問なら、そのパターン（ADR-0012） */
   const pattern = current?.pattern ? (data.patterns.find((p) => p.id === current.pattern?.id) ?? null) : null;
-  // 開いたら最初の欄へ（PRD D251。見える所へ巻くのは親）
+  // 開いたら最初の欄へ（PRD D251。見える所へ巻くのは親）。閉じたら（保存・キャンセル）開いたときの要素、
+  // 無くなっていれば「訪問を追加」のボタンへ戻す（フォーカスがどこかへ移っていれば動かさない）
   useEffect(() => {
+    const back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     rootRef.current?.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true });
+    return () => {
+      const at = document.activeElement;
+      if (at && at !== document.body && at.isConnected) return;
+      const to =
+        back?.isConnected && back !== document.body
+          ? back
+          : document.querySelector<HTMLElement>('[data-visit-add]:not(:disabled)');
+      to?.focus({ preventScroll: true });
+    };
   }, []);
 
   const save = () => {
     setError(null);
-    if (openedId && !current) {
-      setError({ text: 'この訪問は消されています。キャンセルで閉じてください' });
+    if (gone) {
+      setError({
+        text: current
+          ? 'この訪問は開いた後に取り消されました。保存すると取り消しが外れるので保存しません。キャンセルで閉じてください'
+          : 'この訪問は消されています。キャンセルで閉じてください',
+      });
       return;
     }
     const visit = current;
@@ -122,7 +147,7 @@ export function VisitForm({
       onSaved(
         v.pattern?.edited && !visit?.pattern?.edited
           ? '訪問を保存しました（この回だけの変更）'
-          : v.date !== date
+          : v.date !== opened.date
             ? `訪問を保存しました（${mdText(v.date)} に移しました）`
             : '訪問を保存しました',
       );
@@ -139,7 +164,7 @@ export function VisitForm({
 
   return (
     <form ref={rootRef} className="card stack" onSubmit={submitHandler(save)} noValidate data-testid="visit-form">
-      <SectionTitle icon={visit ? Pencil : Plus}>{visit ? '訪問を編集' : '訪問を追加'}</SectionTitle>
+      <SectionTitle icon={opened.id ? Pencil : Plus}>{opened.id ? '訪問を編集' : '訪問を追加'}</SectionTitle>
       {current?.pattern && (
         <p className="sub row" style={{ gap: 6, flexWrap: 'wrap' }} data-testid="visit-pattern-ref">
           <WithIcon icon={Repeat} size={14}>
@@ -155,7 +180,7 @@ export function VisitForm({
           )}
         </p>
       )}
-      {form.date !== date && (
+      {date !== opened.shownDate && form.date !== date && (
         // 表示中の日を変えても入力は引き継ぐ。保存する日が表示中の日と違うことを知らせる（PRD D251）
         <p className="sub row" style={{ gap: 6, flexWrap: 'wrap' }} data-testid="visit-form-other-day">
           <span>
@@ -292,7 +317,9 @@ export function VisitForm({
           />
         </label>
       </div>
-      <FieldError id={errorId}>{error?.text}</FieldError>
+      <FieldError id={errorId} token={error}>
+        {error?.text}
+      </FieldError>
       <div className="row">
         <button type="submit" className="btn btn-primary">
           <WithIcon icon={Check}>保存</WithIcon>

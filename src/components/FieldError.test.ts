@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { FieldError, invalidAttrs, RequiredMark, toFormErr } from './FieldError';
+import { FieldError, focusFirstInvalid, invalidAttrs, RequiredMark, toFormErr } from './FieldError';
 
 /** エラー文の id（テストでは決まった値を渡す） */
 const props = (id: string) => ({ id });
@@ -18,6 +18,11 @@ describe('FieldError（PRD D250）', () => {
       createElement(FieldError, { as: 'span', className: 'plan-band', testId: 'x-error' }, 'だめ'),
     );
     expect(html).toBe('<span class="error plan-band" role="alert" data-testid="x-error">だめ</span>');
+  });
+
+  it('live={false}（打つたびに検査する欄）は role を付けない', () => {
+    const html = renderToStaticMarkup(createElement(FieldError, { ...props('e2'), live: false }, '重なっています'));
+    expect(html).toBe('<p id="e2" class="error">重なっています</p>');
   });
 
   it('文が無い（null・false・空）ときは何も出さない', () => {
@@ -58,5 +63,40 @@ describe('toFormErr', () => {
 
   it('ふつうの例外は欄なし', () => {
     expect(toFormErr(new Error('こわれた'))).toEqual({ text: 'こわれた', field: undefined });
+  });
+});
+
+describe('focusFirstInvalid', () => {
+  /** querySelectorAll だけを持つ偽の入れ物（DOM なしで並びを決める） */
+  const el = (attrs: Record<string, string>) => {
+    const focused = { on: false };
+    return {
+      attrs,
+      focused,
+      id: attrs.id ?? '',
+      getAttribute: (k: string) => attrs[k] ?? null,
+      focus: () => {
+        focused.on = true;
+      },
+    };
+  };
+  const rootOf = (invalid: ReturnType<typeof el>[], alerts: ReturnType<typeof el>[]) =>
+    ({
+      querySelectorAll: (sel: string) => (sel.includes('aria-invalid') ? invalid : alerts),
+    }) as unknown as ParentNode;
+
+  it('保存を止めた誤り（alert の文）を指す欄を、打つたびに検査する欄より先にする', () => {
+    const postal = el({ 'aria-describedby': 'p-err' });
+    const name = el({ 'aria-describedby': 'save-err' });
+    expect(focusFirstInvalid(rootOf([postal, name], [el({ id: 'save-err' })]))).toBe(true);
+    expect([postal.focused.on, name.focused.on]).toEqual([false, true]);
+  });
+
+  it('alert を指す欄が無ければ最初の誤った欄。誤った欄が無ければ false', () => {
+    const a = el({});
+    const b = el({});
+    expect(focusFirstInvalid(rootOf([a, b], []))).toBe(true);
+    expect([a.focused.on, b.focused.on]).toEqual([true, false]);
+    expect(focusFirstInvalid(rootOf([], []))).toBe(false);
   });
 });

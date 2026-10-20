@@ -151,7 +151,7 @@ export function SlotEditor({ value, onChange }: { value: Slot[]; onChange: (v: S
           ＋ 時間帯を追加
         </button>
       )}
-      <FieldError>{error}</FieldError>
+      <FieldError live={false}>{error}</FieldError>
     </div>
   );
 }

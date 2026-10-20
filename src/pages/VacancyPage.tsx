@@ -682,11 +682,15 @@ export default function VacancyPage() {
             ))}
           </fieldset>
         </div>
-        <FieldError id={durationErrId}>
+        <FieldError id={durationErrId} live={false}>
           {!durationOk && `所要は${VACANCY_DURATION_MIN}〜${VACANCY_DURATION_MAX}分で入れてください`}
         </FieldError>
-        <FieldError id={fromErrId}>{!fromOk && '開始日を入れてください'}</FieldError>
-        <FieldError id={wishErrId}>{!wishOk && '希望の開始は「から」を「まで」より前にしてください'}</FieldError>
+        <FieldError id={fromErrId} live={false}>
+          {!fromOk && '開始日を入れてください'}
+        </FieldError>
+        <FieldError id={wishErrId} live={false}>
+          {!wishOk && '希望の開始は「から」を「まで」より前にしてください'}
+        </FieldError>
         <details className="vacancy-more">
           <summary>
             {terms.staff}の条件
@@ -974,7 +978,7 @@ export default function VacancyPage() {
                   : '：日ごとに、受けられる開始の時間を載せます'}
                 {exactPlace ? '（場所への移動を含む）' : `（目安。移動を前後${VACANCY_MARGIN_DEFAULT}分で見込む）`}
               </p>
-              <FieldError>
+              <FieldError live={false}>
                 {noticeDuration === null && '種類を選ぶか、上の「1 いつ・何を」の所要を正しく入れてください'}
               </FieldError>
               {notice && (
@@ -1148,7 +1152,7 @@ export default function VacancyPage() {
               <button type="button" className="btn" onClick={() => setHold(null)}>
                 <WithIcon icon={X}>閉じる</WithIcon>
               </button>
-              <FieldError as="span" id={holdErrId}>
+              <FieldError as="span" id={holdErrId} token={hold.error ? hold : null}>
                 {hold.error}
               </FieldError>
             </>

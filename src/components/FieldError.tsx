@@ -3,7 +3,8 @@ import { formError, formErrorField } from '../lib/common';
 
 /**
  * フォームの共通の決まり（PRD D250〜D252）。
- * - エラー文は FieldError で出す（role="alert" で読み上げる。見た目は今までの .error のまま）
+ * - エラー文は FieldError で出す（見た目は今までの .error のまま）。保存を押したときの誤りは role="alert" で読み上げ、
+ *   打つたびに検査する欄の誤り（live={false}）は alert にせず、欄の aria-describedby で読む
  * - 誤った入力欄には invalidAttrs で aria-invalid="true" と aria-describedby（エラー文の id）を付ける
  * - 必須の欄は見出しに RequiredMark（「必須」の札）を添え、入力欄に required を付ける（フォームは noValidate なので
  *   ブラウザの吹き出しは出さず、読み上げに必須と伝わる。検査は保存の処理が行う）
@@ -19,6 +20,18 @@ export function toFormErr(e: unknown): FormErr {
   return { text: formError(e), field: formErrorField(e) };
 }
 
+/** 誤りの文を作り直す番号（同じ誤りでも保存を押し直したら読み上げ直すため、エラーのオブジェクトごとに振る） */
+const tokenSeq = new WeakMap<object, number>();
+let lastSeq = 0;
+function seqOf(token: object): number {
+  let n = tokenSeq.get(token);
+  if (n === undefined) {
+    n = ++lastSeq;
+    tokenSeq.set(token, n);
+  }
+  return n;
+}
+
 /** エラー文（無ければ何も出さない）。対応する入力欄の aria-describedby に id を渡す */
 export function FieldError({
   id,
@@ -27,6 +40,8 @@ export function FieldError({
   className,
   style,
   testId,
+  live = true,
+  token,
 }: {
   /** 入力欄の aria-describedby から指す id（入力欄と結ばないエラー文は省いてよい） */
   id?: string;
@@ -37,11 +52,25 @@ export function FieldError({
   className?: string;
   style?: CSSProperties;
   testId?: string;
+  /**
+   * 出たときに読み上げる（role="alert"）。打つたびに検査する欄（郵便番号・名前の重なり・下限と上限など）と、
+   * ほかで知らせる誤りは false（欄の aria-describedby で読む。PRD D250）
+   */
+  live?: boolean;
+  /** 保存のたびに作るエラーのオブジェクト。変わったら文を作り直して、同じ文でも読み上げ直す */
+  token?: object | null;
 }) {
   if (children === null || children === undefined || children === false || children === '') return null;
   const Tag = as;
   return (
-    <Tag id={id} className={className ? `error ${className}` : 'error'} role="alert" style={style} data-testid={testId}>
+    <Tag
+      key={token ? seqOf(token) : undefined}
+      id={id}
+      className={className ? `error ${className}` : 'error'}
+      role={live ? 'alert' : undefined}
+      style={style}
+      data-testid={testId}
+    >
       {children}
     </Tag>
   );
@@ -65,9 +94,17 @@ export function RequiredMark() {
   );
 }
 
-/** 中の最初の誤った欄（aria-invalid="true"）へフォーカスを移す。移したら true */
+/**
+ * 中の誤った欄へフォーカスを移す。移したら true。保存を止めた誤り（中の role="alert" の文）を指す欄を先に、
+ * 無ければ最初の aria-invalid="true" の欄（打つたびに検査する欄の誤りなど）
+ */
 export function focusFirstInvalid(root: ParentNode | null | undefined): boolean {
-  const el = root?.querySelector<HTMLElement>('[aria-invalid="true"]');
+  if (!root) return false;
+  const invalid = [...root.querySelectorAll<HTMLElement>('[aria-invalid="true"]')];
+  const alerts = new Set([...root.querySelectorAll<HTMLElement>('[role="alert"][id]')].map((a) => a.id));
+  const el =
+    invalid.find((x) => (x.getAttribute('aria-describedby') ?? '').split(/\s+/).some((id) => alerts.has(id))) ??
+    invalid[0];
   if (!el) return false;
   el.focus();
   return true;

@@ -145,7 +145,9 @@ export function AbsenceFields({
         <span className="field-label">メモ（例：病院の付き添い）</span>
         <input value={d.note} maxLength={100} onChange={(e) => set({ note: e.target.value })} />
       </label>
-      <FieldError id={errorId}>{error}</FieldError>
+      <FieldError id={errorId} live={false}>
+        {error}
+      </FieldError>
     </div>
   );
 }

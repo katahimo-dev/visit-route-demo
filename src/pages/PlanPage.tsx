@@ -3061,7 +3061,13 @@ export default function PlanPage() {
             <WithIcon icon={UserRoundX}>欠勤・キャンセルを登録</WithIcon>
           </button>
         )}
-        <button type="button" className="btn" onClick={() => setEditing('new')} disabled={m.clients.length === 0}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setEditing('new')}
+          disabled={m.clients.length === 0}
+          data-visit-add
+        >
           <WithIcon icon={Plus}>訪問を追加</WithIcon>
         </button>
         <MenuButton label="案を変える" icon={Sparkles} items={menuItems} testId="plan-menu" />

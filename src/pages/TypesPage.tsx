@@ -215,7 +215,7 @@ export default function TypesPage() {
               <button type="button" className="btn" onClick={() => setForm(null)}>
                 <WithIcon icon={X}>閉じる</WithIcon>
               </button>
-              <FieldError as="span" id={errorId}>
+              <FieldError as="span" id={errorId} token={error}>
                 {error?.text}
               </FieldError>
             </>

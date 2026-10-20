@@ -482,11 +482,7 @@ export function SavePresetForm({
           onChange={(e) => setName(e.target.value)}
         />
       </label>
-      {error && name.trim() !== '' && (
-        <span className="error" role="alert">
-          {error}
-        </span>
-      )}
+      {error && name.trim() !== '' && <span className="error">{error}</span>}
       <div className="row" style={{ gap: 4 }}>
         <button type="submit" className="btn btn-small" disabled={!!error || disabled}>
           保存

@@ -39,7 +39,10 @@ export function ClientLeavesSection({
   const { setDate } = useDay();
   const today = jstDate(Date.now());
   const [form, setForm] = useState<Form | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // 誤りはオブジェクトで持つ（同じ文で保存し直しても作り直して読み上げる。PRD D250）
+  const [errorState, setErrorState] = useState<{ text: string } | null>(null);
+  const error = errorState?.text ?? null;
+  const setError = (text: string | null) => setErrorState(text === null ? null : { text });
   const leaves = useMemo(() => leavesOf(data, client.id), [data, client.id]);
   const openDay =
     onOpenDay ??
@@ -213,7 +216,7 @@ export function ClientLeavesSection({
               </ul>
             </div>
           )}
-          <FieldError>{error}</FieldError>
+          <FieldError token={errorState}>{error}</FieldError>
           <div className="row">
             <button type="button" className="btn btn-small" onClick={save} data-testid="leave-save">
               <WithIcon icon={Check} size={14}>

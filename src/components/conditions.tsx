@@ -295,7 +295,9 @@ export function ConditionsEditor({
           );
         })}
       </div>
-      <FieldError>{full && `条件は${MAX_CONDS}件までです。ほかの条件を外してから入れてください。`}</FieldError>
+      <FieldError live={false}>
+        {full && `条件は${MAX_CONDS}件までです。ほかの条件を外してから入れてください。`}
+      </FieldError>
       <span className="sub">
         「問わない」の項目は、どの{who}でもかまいません。{who}
         のその項目が「未確認」（まだ聞き取っていない）なら、条件に合わない扱いにします（念のため避ける）。
@@ -424,7 +426,7 @@ function ItemCondition({
             onChange={(e) => set('lte', e.target.value)}
           />
           <span className="sub">以下</span>
-          <FieldError as="span" id={rangeErrorId}>
+          <FieldError as="span" id={rangeErrorId} live={false}>
             {reversed && '下限が上限より大きいので、誰も満たしません'}
           </FieldError>
         </div>

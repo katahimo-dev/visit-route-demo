@@ -8,7 +8,7 @@
 #### `components/ui.tsx` の `SidePanel`
 
 - 右から出る欄（`narrow` あり）。z-index 1100。フォーカス：開いたら最初の入力欄（`focusPanel`）、Tab が中で回る、閉じたら戻す（`returnFocus` で戻り先を差し替えられる）。`useBodyScrollLock`
-- 裏の inert（PRD D252）：開いたとき body の直下のほかの子（`#root`・メニューの引き出し）を `inertLock`（要素ごとに数えるロック。確認ダイアログ・パレット・ツアーと同じ）で inert にし、閉じるときは inert を外してから戻り先へフォーカスする。`data-inert-keep` の付いた子（知らせの置き場 `.toast-layer`）は外す。後から body の直下に出るもの（確認ダイアログ・用語の説明）はロックの外。名前の詳細（`DetailPopover`）は欄の中に出る。欄の上に欄を重ねたら下の欄も inert（数えるので閉じる順にかかわらず戻る）
+- 裏の inert（PRD D252）：開いたとき body の直下のほかの子（`#root`・メニューの引き出し）を `inertLock`（要素ごとに数えるロック。確認ダイアログ・パレット・ツアーと同じ）で inert にし、閉じるときは inert を外してから戻り先へフォーカスする。`data-inert-keep` の付いた子（知らせの置き場 `.toast-layer`、用語の説明 `TipBubble`（`Term.tsx`。body の直下に hidden で常駐するので、z-index 1150 で欄（1100）の上に出し、欄の中の用語の説明の上にマウスを移しても消えない。PRD D175））は外す。後から body の直下に出るもの（確認ダイアログ）はロックの外。名前の詳細（`DetailPopover`）は欄の中に出る。欄の上に欄を重ねたら下の欄も inert（数えるので閉じる順にかかわらず戻る）
 - `onSubmit`（PRD D251）：渡すと `.drawer-body` を `<form noValidate>` にし（無ければ `div`）、内容と帯を包む。帯の保存は `type="submit"`。送信は `submitHandler`（下の「フォームの共通の決まり」）。閲覧 ⇄ 編集で `form` ⇄ `div` が入れ替わるので、`usePanelFoot` に要素の種類（`bodyKind`）を渡して見張り直す。使う欄：〈利用者さん〉・〈スタッフ〉の編集、種類、仮押さえ、欠勤・キャンセルの2段目（「次へ」）。中に `<form>` を持つ欄（条件の調整のプリセット）には渡さない
 - `headActions`：見出しの右・× の前（`drawer-head-actions`）
 - `focusKey`：開いたまま変わったら、`data-return-focus` の要素、無ければ最初の入力欄、それも無ければ欄へフォーカス
@@ -43,11 +43,14 @@
 
 ### フォームの共通の決まり（PRD D250・D251。`components/FieldError.tsx`）
 
-- `FieldError`（`id`・`as`＝`p`（既定）／`span`・`className`・`style`・`testId`）：文があれば `.error` に `role="alert"` で出し、無ければ（null・false・空）何も出さない。見た目は今までの `.error` のまま。入力の誤り・保存や計算の失敗の文はどれもこれで出す（ページ本体・コード分割中のファイル（`PlanPage.tsx`・`RulesPage.tsx`・`planParts.tsx`・`App.tsx`）は `role="alert"` を足しただけ）。`.error` のクラスでも誤りの文でないもの（振り直しの「対応が必要」の見出し・点数の赤字）はそのまま
+- `FieldError`（`id`・`as`＝`p`（既定）／`span`・`className`・`style`・`testId`・`live`・`token`）：文があれば `.error` で出し、無ければ（null・false・空）何も出さない。見た目は今までの `.error` のまま。入力の誤り・保存や計算の失敗の文はどれもこれで出す（コード分割中の `PlanPage.tsx`・`App.tsx` は `role="alert"` を足しただけ）
+  - `live`（既定 true）：`role="alert"` で出たときに読み上げる。保存を押したときの誤り・計算の失敗だけ。打つたびに検査する欄の誤り（郵便番号・呼び方の重なり・項目と選択肢の名前・条件の下限＞上限と件数・働ける時間帯・欠勤の開始と終了・空き状況の所要・開始日・希望の開始）と、ほかで読み上げる誤り（データの保存の失敗は App の帯）は `live={false}`（欄の `aria-describedby` で読む）。条件の重みの乱数の種・プリセットの名前（打つたびの検査）は元の `.error` のまま
+  - `token`：保存のたびに作るエラーのオブジェクト。変わったら文の要素を作り直し、同じ文でも読み上げ直す（訪問・〈利用者さん〉・〈スタッフ〉・種類・仮押さえ・定期パターン・休み）
+  - `.error` のクラスでも誤りの文でないもの（振り直しの「対応が必要」の見出し・点数の赤字）はそのまま
 - `invalidAttrs(invalid, errorId)`：誤りなら `aria-invalid="true"`・`aria-describedby`（誤りの文の id）を返す。文の id は `useId`
 - `FormErr`（`{ text, field? }`）・`toFormErr(e)`：契約の検査（zod）の誤りは最初の `path` を `field` に（`lib/common.ts` の `formErrorField`）。画面は `error?.field === 'name'` などで欄に印を付ける
 - `RequiredMark`：見出しの横の小さな「必須」の札（`.req-mark`。`aria-hidden`）。入力欄には `required` を付け（フォームは `noValidate` なのでブラウザの吹き出しは出ない）、読み上げに必須と伝える。付けた欄：訪問（日付・〈利用者さん〉・開始時刻・最も遅い開始時刻・所要）、〈利用者さん〉の表示名、〈スタッフ〉の名前、種類の名前・標準の所要、仮押さえの表示名
-- `submitHandler(save)`：`<form onSubmit>` 用。既定の送信を止めて `save` を呼び（Promise も待つ）、次の描画で form の中の最初の `[aria-invalid="true"]` へフォーカス（保存できて閉じた form は何もしない）。Enter の暗黙の送信で保存し、`textarea` は改行のまま
+- `submitHandler(save)`：`<form onSubmit>` 用。既定の送信を止めて `save` を呼び（Promise も待つ）、次の描画で form の中の誤った欄へフォーカス（`focusFirstInvalid`：保存を止めた誤り（中の `role="alert"` の文）を `aria-describedby` で指す欄を先に、無ければ最初の `[aria-invalid="true"]`。保存できて閉じた form は何もしない）。Enter の暗黙の送信で保存し、`textarea` は改行のまま
 - `enterToSave(save)`：大きな form の中の小さなまとまり（〈利用者さん〉の欄の定期パターン・休みの `fieldset`）の `onKeyDown`。入力欄の Enter（変換中は除く）を外の form に渡さず、まとまりの保存を呼ぶ
 - form にした所：訪問の入力（`VisitForm`。開いたら最初の欄へ・日を変えても引き継ぐ）、右の欄の `onSubmit`、呼び方（データの画面）。もともと form：項目の選択肢、プリセットの名前
 

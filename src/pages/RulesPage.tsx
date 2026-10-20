@@ -258,11 +258,7 @@ export default function RulesPage() {
             }}
             onBlur={() => setSeedText(null)}
           />
-          {!seedOk && (
-            <span className="error" role="alert">
-              整数で入れてください
-            </span>
-          )}
+          {!seedOk && <span className="error">整数で入れてください</span>}
         </div>
       </details>
     </div>

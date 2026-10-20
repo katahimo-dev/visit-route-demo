@@ -362,7 +362,7 @@ function NameInput({
         }}
         {...invalidAttrs(dup, errId)}
       />
-      <FieldError as="span" id={errId}>
+      <FieldError as="span" id={errId} live={false}>
         {dup && '同じ名前の項目があります'}
       </FieldError>
     </>
@@ -471,10 +471,10 @@ function OptionsEditor({
           </button>
         </form>
       )}
-      <FieldError as="span" id={addErrId}>
+      <FieldError as="span" id={addErrId} live={false}>
         {addDup ? '同じ選択肢があります' : addBad}
       </FieldError>
-      <FieldError as="span" id={renameErrId}>
+      <FieldError as="span" id={renameErrId} live={false}>
         {renameErr}
       </FieldError>
     </div>
