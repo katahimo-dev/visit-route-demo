@@ -641,8 +641,10 @@ const prefKeyOf = (v) =>
   `${v.clientId}|${new Date(`${v.date}T00:00:00Z`).getUTCDay()}|${v.earliestStart}-${v.latestStart}|${v.typeId ?? ''}`;
 /** その日の訪問の「担当を変える ▾」で押せる人（ID の一覧）。日の予定を開き直して読む */
 async function enabledFor(page, date, vid) {
+  // ?date= は読むと URL から消えるので、ホームを挟んでから開く（読み直さない）
+  await page.goto(`${BASE}#/home`);
+  await page.locator('h1').waitFor();
   await page.goto(`${BASE}#/plan?date=${date}`);
-  await page.reload();
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
   await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
   await settle(page, 300);
