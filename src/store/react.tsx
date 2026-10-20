@@ -44,6 +44,11 @@ export type DemoStore = {
   dismissBroken(): void;
   /** 別のタブの変更で読み直した回数（画面が知らせを出すきっかけ） */
   externalReloads: number;
+  /**
+   * データを丸ごと差し替えた回数（読み込み replace・初期状態に戻す reset・直前の状態に戻す restorePrevious・別のタブの変更の読み直し）。
+   * 作っている途中の計算（月まとめ作成。ADR-0042）が古いデータから作った結果を書かないよう、変わったら止めるきっかけ
+   */
+  replacedCount: number;
   /** 保存の容量が足りず1世代の控えを捨てた回数（画面が知らせを出すきっかけ。ADR-0032） */
   previousDrops: number;
 };
@@ -62,6 +67,8 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
   );
   const [broken, setBroken] = useState(initial.broken);
   const [externalReloads, setExternalReloads] = useState(0);
+  const [replacedCount, setReplacedCount] = useState(0);
+  const replaced = useCallback(() => setReplacedCount((n) => n + 1), []);
   const [previousDrops, setPreviousDrops] = useState(0);
   // 別タブから読み直したデータは、書き戻さない（往復で上書き合戦にしない）
   const skipSave = useRef(true);
@@ -96,6 +103,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       if (isImportError(r)) return;
       skipSave.current = true;
       setData(r);
+      replaced();
       setExternalReloads((n) => n + 1);
     };
     const onUnload = () => flushSave();
@@ -105,14 +113,21 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('pagehide', onUnload);
     };
-  }, [setPrevious]);
+  }, [setPrevious, replaced]);
 
   const update = useCallback((fn: (d: DemoData) => DemoData) => setData((d) => fn(d)), []);
-  const replace = useCallback((d: DemoData) => setData(d), []);
+  const replace = useCallback(
+    (d: DemoData) => {
+      setData(d);
+      replaced();
+    },
+    [replaced],
+  );
   const reset = useCallback(() => {
     setSaveError(null);
     setData(resetStore());
-  }, []);
+    replaced();
+  }, [replaced]);
   const keepPrevious = useCallback(
     (reason: string): PreviousKeep => {
       const k = keepPreviousStore(latest.current, reason);
@@ -134,8 +149,9 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
     if ('error' in r) return r.error;
     setSaveError(null);
     setData(r.data);
+    replaced();
     return null;
-  }, [setPrevious]);
+  }, [setPrevious, replaced]);
   const dismissBroken = useCallback(() => setBroken(false), []);
 
   const value = useMemo(
@@ -152,6 +168,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       brokenKept: initial.brokenKept,
       dismissBroken,
       externalReloads,
+      replacedCount,
       previousDrops,
     }),
     [
@@ -167,6 +184,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       initial.brokenKept,
       dismissBroken,
       externalReloads,
+      replacedCount,
       previousDrops,
     ],
   );

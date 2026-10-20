@@ -268,7 +268,9 @@ const hm = (t: number) => timeText(minutesToHhmm(t));
  * △ の曜日（入らない日付）、どちらも無ければ空きが無い文
  */
 export const inquirySummary: InquirySummary = (result, wish, terms) => {
-  const days = wish.weekdays.length > 0 ? [...new Set(wish.weekdays)].sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6];
+  // 曜日は月曜はじめ（表・答えのカードと同じ並び。PRD D258）
+  const mondayFirst = (a: number, b: number) => ((a + 6) % 7) - ((b + 6) % 7);
+  const days = wish.weekdays.length > 0 ? [...new Set(wish.weekdays)].sort(mondayFirst) : [1, 2, 3, 4, 5, 6, 0];
   const from = hhmmToMinutes(wish.from);
   const to = hhmmToMinutes(wish.to);
   const perWeek = Math.max(1, Math.floor(wish.perWeek));

@@ -332,7 +332,16 @@ async function answer(page) {
 
   // その場で足りない案を作る：1週だけ見て、2日の案を消す
   await page.getByLabel('見る週の数').selectOption('1');
-  const gone = [plusDays(TODAY, 1), plusDays(TODAY, 2)];
+  // 消す2日は、今日から1週の中で案と訪問のある日から選ぶ（FAKE_NOW の曜日・月末に依らない）
+  const gone = await page.evaluate(
+    ({ key, days }) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      const visitDays = new Set(d.visits.filter((v) => !v.cancelled).map((v) => v.date));
+      return days.filter((x) => d.aiPlans[x] && !d.manualPlans?.[x] && visitDays.has(x)).slice(0, 2);
+    },
+    { key: STORAGE_KEY, days: Array.from({ length: 7 }, (_, i) => plusDays(TODAY, i)) },
+  );
+  check(gone.length === 2, '案を消す2日がある', gone);
   await page.evaluate(
     ({ key, gone }) => {
       const d = JSON.parse(localStorage.getItem(key));
@@ -356,7 +365,13 @@ async function answer(page) {
     /月の案を作っています \d+\/2日/.test(await page.getByTestId('batch-band-text').innerText()),
     '上の帯に進み具合',
   );
-  check(await make.isDisabled(), '作っている間は押せない（二重に始めない）');
+  // disabled にせず aria-disabled（フォーカスを失わない）。押しても始めない
+  await make.click();
+  check(
+    (await make.getAttribute('aria-disabled')) === 'true' && /の案を作っています/.test(await make.innerText()),
+    '作っている間は押せない（二重に始めない）',
+    await make.innerText(),
+  );
   await page
     .locator('.toast')
     .filter({ hasText: /月の案を2日分作りました/ })

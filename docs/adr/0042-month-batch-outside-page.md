@@ -1,6 +1,6 @@
 # ADR-0042：月のまとめて作るの計算を画面の外（モジュールの入れ物）で回す
 
-- 状態：採用（2026-10-21）
+- 状態：採用（2026-10-20）
 - 関連：PRD D256・D257・D259、ADR-0012（月まとめ作成は1日ずつ）、ADR-0039（よく変わる値を外の入れ物に置く。`lib/valueStore`）
 
 ## 背景
@@ -18,17 +18,18 @@
 ## 決定
 案C。
 
-- `lib/monthBatch.ts`：`createMonthBatch(solve)` が入れ物を作る（アプリでは `monthBatch` の1つ）。`start(job)`（作っている間・つながっていない・日が無いときは始めず false）・`stop()`・`running()`・`connect(host)`（外すと作っている計算を捨てる）。`run`（進み具合。作っていなければ null）・`done`（終わるたびの知らせ）。1日ずつ作る中身は `MonthPage` から写したまま（基準のプリセットの重み・手直しの記憶 `withManualPrefs` と `prefPins`（ADR-0043）・使い回せる記録・`applyDayRun`）
+- `lib/monthBatch.ts`：`createMonthBatch(solve)` が入れ物を作る（アプリでは `monthBatch` の1つ）。`start(job)`（作っている間・つながっていない・日が無いときは始めず false）・`stop()`・`abort()`・`running()`・`connect(host)`（外すと作っている計算を捨てる）。`run`（進み具合。作っていなければ null）・`done`（終わるたびの知らせ）。1日ずつ作る中身は `MonthPage` から写したまま（基準のプリセットの重み・手直しの記憶 `withManualPrefs` と `prefPins`（ADR-0043）・使い回せる記録・`applyDayRun`）
 - 日ごとの作り方（`BatchDay`：`empty`／`all`／`stale`）を受ける。月の予定は欄の選んだ作り方のまま、空き状況は案の無い日を `empty`、条件が変わった日を `stale`（`missingDays`）
 - `components/batchBand.tsx`：`MonthBatchHost`（App の直下。描いたデータを計算に読ませ、終わったらトースト［月の予定を見る］）と `BatchBand`（上の帯の進み具合と［止める］。月の予定では画面の中に出すので出さない）
+- データを丸ごと差し替える操作（JSON・Excel の読み込み `replace`・初期状態に戻す `reset`・直前の状態に戻す `restorePrevious`・別のタブの変更の読み直し）では、古いデータから作った結果を新しいデータに書かないよう、作っている計算を捨てる。store が差し替えた回数 `replacedCount` を持ち、`MonthBatchHost` が変わったのを見て `monthBatch.abort()`（作っている日の結果は書かない。知らせ「データを差し替えたので、〈M〉月の案づくりを止めました（N日分は作りました）」）
 - 書き込みは日ごとに `update`（今と同じ）。ページを閉じる・読み直すと JavaScript ごと止まる（作れた日は残る。再開しない）
 
 ## 理由とトレードオフ
 - 得るもの：ほかの画面へ移っても止まらない。進み具合は外の入れ物なので、100ms ごとの進みで App 全体を描き直さない（読む部品だけ。ADR-0039 と同じ考え）。月の予定と空き状況が同じ入口を呼べ、二重に始めない決まりが1か所になる。計算を Worker なしで差し替えてテストできる
-- 失うもの：計算が画面の外にあるので、作っている間に別の画面で同じ日を直すと、日ごとの書き込みと混ざりうる（「まだ案の無い日だけ」は書く直前に案があれば今の案を変えない。「作り直す」は書いた案が上書きする。今までも画面の中の編集と同じだった）。日の予定の自動作成と同時に Worker が2つ動くことがある（CPU を分け合うだけで、結果は変わらない）。案B より React の外に状態が1つ増える
+- 失うもの：計算が画面の外にあるので、作っている間に別の画面で同じ日を直せる。そのときは書く直前にその日の今の案が作り始めから変わっていれば（日の予定の手直し・作り直し）、記録だけ足して今の案は変えない（「まだ案の無い日だけ」と同じ扱い。作った案は記録から選べる）。そのぶん、作っている間に手直しした日は作り直されず、「作った日数」には数える。日の予定の自動作成と同時に Worker が2つ動くことがある（CPU を分け合うだけで、結果は変わらない）。案B より React の外に状態が1つ増える
 - 案A は待つ間に何もできないまま。案B は進みのたびに Provider の下を描き直すので、進み具合だけを読む部品に分ける手間が案C と同じだけ要る
 
 ## 影響
-- `src/pages/MonthPage.tsx`（計算の流れを外へ。月を送るボタンは作っている間も押せる。欄の注記「ほかの画面へ移っても作り続けます」）、`src/pages/VacancyPage.tsx`（［足りない案を作る（N日）］）、`src/app/App.tsx`（`MonthBatchHost`・`BatchBand`）、`docs/design/pages-month.md`・`pages-vacancy.md`、design.md §5 の ABORTED と冪等性の行
+- `src/store/react.tsx`（`replacedCount`）、`src/pages/MonthPage.tsx`（計算の流れを外へ。月を送るボタンは作っている間も押せる。欄の注記「ほかの画面へ移っても作り続けます」）、`src/pages/VacancyPage.tsx`（［足りない案を作る（N日）］）、`src/app/App.tsx`（`MonthBatchHost`・`BatchBand`）、`docs/design/pages-month.md`・`pages-vacancy.md`、design.md §5 の ABORTED と冪等性の行
 - 計算の中身（規則・記憶）を直すときは `lib/monthBatch.ts` の `step` を直す（`MonthPage` には残っていない）
 - 見直す条件：再開（閉じても続きから）を求める声が出たとき、ほかの長い計算（まとめて地図に置く・比較）も画面の外へ出すとき（同じ入れ物の形にそろえる）

@@ -152,7 +152,7 @@ flowchart LR
 - 案内ツアー：`store/tour.ts` の `tourMemory`（`seen()`・`markSeen()`。値 `'1'`。`createTourMemory(getStorage)`）。DemoData の外（update・版・書き出し・reset の対象外）。保存できなければ開いている間だけ
 - 1世代の控え（PRD D227。ADR-0032）：`keepPrevious(data, reason, at)` は置き換える前のデータを `vrdemo:data:prev` に書く（次に残すと上書き）。書けなければ前の世代を消して1回だけ試し直し、それでもだめなら残さず `{ kept: false, why: '控えを残せません：容量不足' }`（操作は止めない）。`cancel()` で前の世代に戻す（確認を取り消したとき）。画面は確認で OK になってから残す（確認の本文は見込みの `canKeepPrevious()`：保存が使えない・最後の保存が容量超過なら「容量不足」）。`previousInfo()`・`readPrevious()`（`importJson` を通す）・`samePreviousInfo(a, b)`（同じなら react の state を替えない）。`swapPrevious(now)` は控えを読み、いまのデータを「直前の状態に戻す」として控えてから控えのデータを返す（もう一度戻せる）。いまのデータを控えに残せなければ戻さず（控えは元のまま）「いまのデータを控えに残せないため戻せません：容量不足」。react の `restorePrevious()` はこれを使う。本体の保存（`writeNow`）が容量超過なら控えを捨ててもう1回書き（いまのデータが先）、捨てたら `previousDrops` を1つ増やす（画面がトースト「容量が足りないため、直前の状態の控えを消しました」）
 - 最後に書き出した日・控えの知らせ：`store/backup.ts` の `backupMemory`（`lastExport()`・`markExported(kind, date)`・`lastReminded()`・`markReminded(date)`。`createBackupMemory(getStorage)`）。ツアーと同じく DemoData の外。知らせるかは `lib/backupReminder` の `shouldRemindBackup`（純粋関数）
-- 別のタブの変更：`storage` イベントで `vrdemo:data:v1` が変われば読み直し（書き戻さない）、`externalReloads` を1つ増やす（画面が知らせを出す）。控えのキーが変われば `previous` を読み直す
+- 別のタブの変更：`storage` イベントで `vrdemo:data:v1` が変われば読み直し（書き戻さない）、`externalReloads` を1つ増やす（画面が知らせを出す）。データを丸ごと差し替えたら（`replace`・`reset`・`restorePrevious`・別のタブの読み直し）`replacedCount` を1つ増やす（作っている月まとめ作成を止めるきっかけ。ADR-0042）。控えのキーが変われば `previous` を読み直す
 - 依存するもの：seed（`seed/plans` の `createInitialData` も）、patterns、zod
 - 配置：`src/store/`
 - 完了の条件：
@@ -306,7 +306,7 @@ flowchart LR
   - 正確（`place` に緯度・経度がある。住所だけなら目安）：仮の〈利用者さん〉・訪問（幅 `dayStart`〜`dayEnd`）を足して日ごとに1回 compile し、開始時刻ごとに earliest・latest をその時刻にして `fitsOf` の人を数える
   - 目安：元の案を lenient で時刻にし、[開始 − `marginMinutes`, 終了＋`marginMinutes`) が稼働時間帯に収まり訪問と重ならない人
   - `verdictOf`：`weeksTotal` 0 は `unknown`、全日1人以上は `ok`（○）、一部は `partial`（△）、ほかは `ng`（×）
-- `inquirySummary`：希望の曜日（無ければ全部。日〜土）・時間帯の ○ の開始を曜日ごとに連続した範囲にまとめ、○ の曜日が週の回数以上なら「火・木の 10:00〜11:30 なら、〈開始日〉から週2回で対応できます」、足りなければ ○ と △（入らない日付）の曜日、どちらも無ければ「ご希望の曜日・時間帯では、いまは空きがありません」
+- `inquirySummary`：希望の曜日（無ければ全部。月曜はじめで月〜日。表・答えのカードと同じ並び）・時間帯の ○ の開始を曜日ごとに連続した範囲にまとめ、○ の曜日が週の回数以上なら「火・木の 10:00〜11:30 なら、〈開始日〉から週2回で対応できます」、足りなければ ○ と △（入らない日付）の曜日、どちらも無ければ「ご希望の曜日・時間帯では、いまは空きがありません」
 - `dayLoad`：0:00〜24:00 の30分ごとに `working`（稼働時間帯が重なる人）と `free`（そのうち訪問の [開始 − 来る移動, 終了) に少しも重ならない人）。`typeId` の必要条件を満たす人だけ。訪問があって案が無い日は null
 - `vacancyNotice`：`'dates'` は日ごとに1人以上が受けられる開始の範囲（「・10/20（火） 14:00〜15:00、16:30」。`notBefore` より前は載せない）、`'weekly'` は月〜日の ○ の範囲（「・火 14:00〜15:00」。案のある週が足りなければ「（4週中2週の予定で確認）」）。1行目「〈事業所名〉です。」、最後に目安である旨。空なら「いまはご案内できる空きがありません」
 - 依存するもの：contracts、matching、reassign（`fitsOf`）、domain、lib/absences（`baseOf`）

@@ -63,9 +63,13 @@ const session = (): SessionLike | null => {
 
 /**
  * 覚えた入力（無い・読めなければ既定）。項目ごとに確かめ、読めない項目だけ既定にする。
- * 開始日が今日より前なら今日にする（前の日に開いたタブを使い続けたとき）
+ * 開始日が今日より前なら今日にする（前の日に開いたタブを使い続けたとき）。typeIds を渡すと、無くなった種類（消した種類）は捨てる
  */
-export function loadVacancyInput(today: string, store: SessionLike | null = session()): VacancyInput {
+export function loadVacancyInput(
+  today: string,
+  typeIds: ReadonlySet<string> | null = null,
+  store: SessionLike | null = session(),
+): VacancyInput {
   const base = defaultVacancyInput(today);
   let raw: unknown;
   try {
@@ -84,6 +88,10 @@ export function loadVacancyInput(today: string, store: SessionLike | null = sess
   }
   const v = out as VacancyInput;
   if (/^\d{4}-\d{2}-\d{2}$/.test(v.from) && v.from < today) v.from = today;
+  if (typeIds) {
+    if (v.typeId !== '' && !typeIds.has(v.typeId)) v.typeId = '';
+    if (v.noticeTypeId !== '' && !typeIds.has(v.noticeTypeId)) v.noticeTypeId = '';
+  }
   return v;
 }
 

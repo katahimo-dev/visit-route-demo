@@ -244,12 +244,20 @@ async function keepRunning(page) {
   await page.waitForURL(/#\/month/);
   await page.getByTestId('month-progress').waitFor({ timeout: 10000 });
   check(hashOf(page) === `#/month?ym=${YM}`, '帯の文で月の予定（その月）へ戻ると進み具合が見える', hashOf(page));
-  // 作っている間は二重に始めない（帯の次の一手を押しても欄を開かない）
+  // 作っている間は二重に始めない：帯の次の一手（あれば）も ?do=batch も欄を開かない（飛ばさずに確かめる）
   if ((await page.getByTestId('band-next').count()) > 0) {
     await page.getByTestId('band-next').click();
     await page.waitForTimeout(300);
-    check((await panel.count()) === 0, '作っている間は二重に始めない');
   }
+  await page.evaluate((ym) => {
+    location.hash = `#/month?ym=${ym}&do=batch`;
+  }, YM);
+  await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
+  await page.waitForTimeout(300);
+  check(
+    (await panel.count()) === 0 && (await page.getByTestId('month-progress').count()) === 1,
+    '作っている間は二重に始めない',
+  );
   // ほかの画面の帯の［止める］で止め、知らせの［月の予定を見る］で月へ
   await page.evaluate(() => {
     location.hash = '#/week';

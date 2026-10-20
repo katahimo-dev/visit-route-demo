@@ -15,6 +15,9 @@ import { createValueStore, type ReadableStore } from './valueStore';
 /** 作る日（日ごとの作り方。empty＝まだ案の無い日だけとして作る：作っている間に案ができた日は飛ばし、今の案は変えない） */
 export type BatchDay = { date: string; mode: BatchMode };
 
+/** 始めた画面 */
+export type BatchSource = 'month' | 'vacancy';
+
 /** 始めるときに渡すもの */
 export type BatchJob = {
   /** 「月の予定を見る」で開く月（YYYY-MM） */
@@ -24,6 +27,8 @@ export type BatchJob = {
   /** 欄で選んだ作り方（月の予定の進み具合の表示用） */
   mode: BatchMode;
   days: readonly BatchDay[];
+  /** 始めた画面（月の予定・空き状況。ほかの画面のボタンの文を分ける） */
+  source: BatchSource;
   /** 先に定期パターンから訪問を作る月（expandMonth。作らなければ null） */
   expandYm: string | null;
   today: string;
@@ -34,6 +39,7 @@ export type BatchRun = {
   ym: string;
   label: string;
   mode: BatchMode;
+  source: BatchSource;
   /** 作る日の日付（順に） */
   targets: string[];
   /** いま作っている日の番号（0から） */
@@ -55,6 +61,8 @@ export type BatchDone = {
   stopped: boolean;
   /** 計算できずに止まった理由（無ければ null） */
   error: string | null;
+  /** データを丸ごと差し替えたので止めた（abort。古いデータから作った結果は書かない） */
+  aborted: boolean;
 };
 
 /** データの持ち主（App が store の data と update をつなぐ） */
@@ -75,6 +83,10 @@ export type MonthBatch = {
   start(job: BatchJob): boolean;
   /** 止める（作っている日はそれまでの最良の案で残し、残りの日はやめる） */
   stop(): void;
+  /**
+   * すぐ捨てる（データを丸ごと差し替えたとき。作っている日の結果は書かない）。作っていれば止めた知らせ（aborted）を出す
+   */
+  abort(): void;
   /** 作っているか */
   running(): boolean;
   /** データの持ち主をつなぐ。外すと（ページを閉じる・App を外す）作っている計算を捨てる */
@@ -83,6 +95,7 @@ export type MonthBatch = {
 
 /** 終わった知らせの文（「11月の案を22日分作りました」） */
 export function batchDoneText(d: BatchDone): string {
+  if (d.aborted) return `データを差し替えたので、${d.label}の案づくりを止めました（${d.made}日分は作りました）`;
   if (d.error) return `${d.label}の案を${d.made}日分作ったところで止まりました（${d.error}）`;
   if (d.stopped) return `${d.label}の案を${d.made}日分作ったところで止めました`;
   return `${d.label}の案を${d.made}日分作りました${d.unassignedDays > 0 ? `（入らない訪問がある日 ${d.unassignedDays}日）` : ''}`;
@@ -128,7 +141,8 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
   let current: { stop(): void } | null = null;
   let stopped = false;
 
-  const abort = () => {
+  /** 作っている計算を捨てる（結果は書かない） */
+  const drop = () => {
     generation++;
     current?.stop();
     current = null;
@@ -147,13 +161,23 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     let made = 0;
     let unassignedDays = 0;
     if (ym) h.update((d) => expandMonth(d, ym, today).data);
-    run.set({ ym: job.ym, label: job.label, mode: job.mode, targets, index: 0, made: 0, iteration: 0, total: 1 });
+    run.set({
+      ym: job.ym,
+      label: job.label,
+      mode: job.mode,
+      source: job.source,
+      targets,
+      index: 0,
+      made: 0,
+      iteration: 0,
+      total: 1,
+    });
     const patch = (p: Partial<BatchRun>) => run.set((b) => (b ? { ...b, ...p } : b));
 
     const finish = (why?: string) => {
       current = null;
       run.set(null);
-      done.set({ ym: job.ym, label: job.label, made, unassignedDays, stopped, error: why ?? null });
+      done.set({ ym: job.ym, label: job.label, made, unassignedDays, stopped, error: why ?? null, aborted: false });
     };
 
     // ---- 1日ずつ作る（計算の中身は月の予定の画面から写したまま。どの規則で作るかは変えない）----
@@ -172,6 +196,11 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         step(i + 1);
         return;
       }
+      // 作り始めたときのその日の今の案。書く直前に変わっていれば（作っている間に日の予定で手直し・作り直し）、記録だけ足して今の案は変えない
+      const before = own(latest.aiPlans, day);
+      /** その日の今の案を変えないか（まだ案の無い日だけ・作っている間に今の案が変わった・確定した） */
+      const keep = (d: DemoData) =>
+        (m === 'empty' && !!own(d.aiPlans, day)) || own(d.aiPlans, day) !== before || !!own(d.manualPlans, day);
       // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
       const rules = scoreRulesOf(latest);
       const base = attempt(() => compile({ ...latest, rules }, day)).value;
@@ -185,10 +214,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       // 同じ条件・いまのデータで作った記録があれば計算しない（lib/runs の reusableRun）
       const saved = attempt(() => reusableRun(own(latest.aiRuns, day) ?? [], p, rules, latest.seed, key)).value;
       if (saved) {
-        h.update((d) => {
-          if ((m === 'empty' && own(d.aiPlans, day)) || own(d.manualPlans, day)) return d;
-          return { ...d, aiPlans: { ...d.aiPlans, [day]: planOfRun(saved) } };
-        });
+        h.update((d) => (keep(d) ? d : { ...d, aiPlans: { ...d.aiPlans, [day]: planOfRun(saved) } }));
         made++;
         if (saved.unassigned.length > 0) unassignedDays++;
         patch({ made });
@@ -196,7 +222,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         setTimeout(() => step(i + 1), 0);
         return;
       }
-      solveDay(p, latest, rules, key, day, m, i, prefPins);
+      solveDay(p, latest, rules, key, day, keep, i, prefPins);
     };
 
     const solveDay = (
@@ -205,7 +231,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       rules: Rule[],
       key: string,
       day: string,
-      m2: BatchMode,
+      keep: (d: DemoData) => boolean,
       i: number,
       prefPins: Record<string, string>,
     ) => {
@@ -229,7 +255,8 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
               result,
               createdAt: Date.now(),
               inputKey: key,
-              onlyEmpty: m2 === 'empty',
+              // 今の案を変えないとき（applyDayRun の onlyEmpty と同じ扱い：記録だけ足す）
+              onlyEmpty: keep(d),
               prefPins,
             }),
           );
@@ -259,12 +286,26 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       current?.stop();
     },
     running: () => run.get() !== null,
+    abort: () => {
+      const r = run.get();
+      if (r === null) return;
+      drop();
+      done.set({
+        ym: r.ym,
+        label: r.label,
+        made: r.made,
+        unassignedDays: 0,
+        stopped: true,
+        error: null,
+        aborted: true,
+      });
+    },
     connect: (h) => {
       host = h;
       return () => {
         if (host !== h) return;
         host = null;
-        abort();
+        drop();
       };
     },
   };

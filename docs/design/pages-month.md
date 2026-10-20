@@ -139,14 +139,19 @@
 - 二重には始めない：`monthBatch.start` は作っている間 false を返す。帯の次の一手・`?do=batch`・`?do=stale` も作っている間は欄を開かない
 - ほかの画面へ移っても止まらない。上の帯（`AdminShell` の header）に `BatchBand`：くるくるの印・「〈M〉月の案を作っています N/M日」（`batch-band-text`。`/month?ym=` へのリンク）・［止める］（`batch-band-stop`）。月の予定の画面では出さない（画面の中の `month-progress`）。狭い画面では帯の下の段に幅いっぱい。印刷では出さない
 - ページを閉じる・読み直すと止まる（作れた日は残る。再開しない。`MonthBatchHost` が外れると `connect` の後始末で計算を捨てる）
+- データを丸ごと差し替えたら（読み込み・初期状態に戻す・直前の状態に戻す・別のタブの変更。store の `replacedCount`）`MonthBatchHost` が `monthBatch.abort()`：作っている日の結果は書かず、知らせ「データを差し替えたので、〈M〉月の案づくりを止めました（N日分は作りました）」
+- 書く直前にその日の今の案が作り始めから変わっていれば（作っている間に日の予定で手直し・作り直し）、記録だけ足して今の案は変えない（「まだ案の無い日だけ」と同じ扱い）
+- 上の帯の［止める］は押すと「止めています…」（`aria-disabled`。二度押ししない）。帯が消えたときフォーカスが帯の中にあれば本文の見出し（無ければ本文）へ
+- 終わった知らせは1回だけ（描き直し・付け直しで二度出さない）
+- いま作っている日の印は、2か月にまたがる作成でも表示している月の日なら付ける
 - 終わったら知らせ（`MonthBatchHost` がどの画面でも出す。`batchDoneText`）「〈M〉月の案をN日分作りました」（入らない訪問がある日があれば「（入らない訪問がある日 M日）」）と［月の予定を見る］（`batch-done-open`。`/month?ym=`）。止めたら「〈M〉月の案をN日分作ったところで止めました」、計算できなければ「…止まりました（理由）」（この画面を開いていれば理由を `error` にも出す）
 - 「まだ案の無い日だけ」でもう一度押しても記録は増えない。まとめて作った日を開くと、基準のプリセットのカードが今の案
 - 欄の注記「1日ずつ作り、作れた日はすぐに保存します。「止める」で、作っている日はそれまでの最良の案で残し、残りの日はやめます。ほかの画面へ移っても作り続けます（上の帯に進み具合と［止める］）。ページを閉じる・読み直すと止まります（作れた日は残ります）」
 
 #### `lib/monthBatch.ts`（計算の入れ物。テストあり。ADR-0042）
 
-- `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・作れた日数・反復。作っていなければ null）・`done`（`BatchDone`＝月・名前・作れた日数・入らない訪問がある日・止めたか・理由。終わるたびに新しい物）・`start(job)`・`stop()`・`running()`・`connect(host)`。アプリでは `monthBatch` の1つ。値は `lib/valueStore`（`useValueStore` で読む部品だけ描き直す）
-- `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], expandYm, today }`。日ごとの作り方（`empty` は作っている間に案ができた日を飛ばし、書く直前に案があれば今の案を変えない）
+- `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・作れた日数・反復。作っていなければ null）・`done`（`BatchDone`＝月・名前・作れた日数・入らない訪問がある日・止めたか・理由。終わるたびに新しい物）・`start(job)`・`stop()`・`abort()`（すぐ捨てて止めた知らせ）・`running()`・`connect(host)`。アプリでは `monthBatch` の1つ。値は `lib/valueStore`（`useValueStore` で読む部品だけ描き直す）
+- `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], source: 'month' | 'vacancy', expandYm, today }`。日ごとの作り方（`empty` は作っている間に案ができた日を飛ばし、書く直前に案があれば今の案を変えない）
 - 1日の作り方は画面にあったときのまま（基準のプリセットの重みで compile・手直しの記憶を当てる `withManualPrefs`（ADR-0043。当てたものは `applyDayRun` の `prefPins` で記録に書く）・使い回せる記録・`applyDayRun`）。月の予定のまとめて作る・空き状況の［足りない案を作る］のどちらも同じ。規則・記憶を直すときはここを直す
 - `missingDays(data, dates, today)`：空き状況の［足りない案を作る］の日（範囲の今日以降の、案の無い日＝`empty` と、条件が変わった日＝`stale`。確定した日・手直しのある条件が変わった日は入れない。PRD D259）
 - `batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）

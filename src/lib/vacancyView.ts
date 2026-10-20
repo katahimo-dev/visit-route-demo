@@ -157,7 +157,15 @@ export function answerCard(result: VacancyResult, wish: Omit<InquiryWish, 'start
     result.cells.filter((c) => c.weekday === wd && c.start >= lo && c.start <= hi).sort((a, b) => a.start - b.start);
   const all = days.flatMap(cellsOf);
   const about = result.exact ? '' : '約';
-  if (all.length === 0 || all.every((c) => verdictOf(c) === 'unknown')) {
+  if (all.length === 0) {
+    return {
+      tone: 'ng',
+      head: '受けられません',
+      body: '希望の時間帯に始められる時刻がありません',
+      note: '所要が長いか、希望の開始の時間帯が短すぎます。所要・時間帯を直してください。',
+    };
+  }
+  if (all.every((c) => verdictOf(c) === 'unknown')) {
     return {
       tone: 'unknown',
       head: '案が無く数えられません',
@@ -165,6 +173,15 @@ export function answerCard(result: VacancyResult, wish: Omit<InquiryWish, 'start
       note: '希望の曜日・時間帯の日に案がありません。下の［足りない案を作る］で作ると数えます。',
     };
   }
+  // 案が無く数えていない（？）曜日。混ざるときは補いに添える（数えた曜日だけの答えなので）
+  const unknownDays = days.filter((wd) => {
+    const cs = cellsOf(wd);
+    return cs.length > 0 && cs.every((c) => verdictOf(c) === 'unknown');
+  });
+  const withUnknown = (note: string) =>
+    unknownDays.length === 0
+      ? note
+      : `${note}${unknownDays.map((wd) => WEEKDAY_LABELS[wd]).join('・')}は案が無く数えていません（［足りない案を作る］）。`;
   const people: number[] = [];
   const ok = days.flatMap((wd) => {
     const ranges: string[] = [];
@@ -203,14 +220,18 @@ export function answerCard(result: VacancyResult, wish: Omit<InquiryWish, 'start
         tone: 'ok',
         head: '受けられます',
         body,
-        note: `時刻は開始の時刻、人数はどの週でも受けられる人数${about ? '（場所が無いので目安）' : ''}です。`,
+        note: withUnknown(
+          `時刻は開始の時刻、人数はどの週でも受けられる人数${about ? '（場所が無いので目安）' : ''}です。`,
+        ),
       };
     }
     return {
       tone: 'partial',
       head: `週${perWeek}回には足りません`,
       body,
-      note: `どの週も受けられるのは週${ok.length}回分です。曜日・時間帯を広げるか、下の表の △ を見てください。`,
+      note: withUnknown(
+        `どの週も受けられるのは週${ok.length}回分です。曜日・時間帯を広げるか、下の表の △ を見てください。`,
+      ),
     };
   }
   const partial = days.filter((wd) => cellsOf(wd).some((c) => verdictOf(c) === 'partial'));
@@ -219,13 +240,15 @@ export function answerCard(result: VacancyResult, wish: Omit<InquiryWish, 'start
       tone: 'partial',
       head: '受けられない週があります',
       body: `${partial.map((wd) => WEEKDAY_LABELS[wd]).join('・')} は週によって受けられます`,
-      note: 'どの週も受けられる開始の時刻はありません。下の表の △ を押すと、受けられない日付が分かります。',
+      note: withUnknown(
+        'どの週も受けられる開始の時刻はありません。下の表の △ を押すと、受けられない日付が分かります。',
+      ),
     };
   }
   return {
     tone: 'ng',
     head: '受けられません',
     body: null,
-    note: 'ご希望の曜日・時間帯では、いまは空きがありません。曜日・時間帯を広げてみてください。',
+    note: withUnknown('ご希望の曜日・時間帯では、いまは空きがありません。曜日・時間帯を広げてみてください。'),
   };
 }

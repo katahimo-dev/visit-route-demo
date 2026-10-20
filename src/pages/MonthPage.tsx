@@ -662,6 +662,7 @@ export default function MonthPage() {
       days: targets.map((date) => ({ date, mode: m })),
       expandYm: expand ? ym : null,
       today,
+      source: 'month',
     });
   };
 
@@ -690,8 +691,9 @@ export default function MonthPage() {
     navigate(t.to);
   };
 
-  /** いま作っている日（表示している月の日だけ印を付ける） */
-  const current = batch && batch.ym === ym ? batch.targets[batch.index] : undefined;
+  /** いま作っている日（表示している月の日だけ印を付ける。2か月にまたがる作成では2か月目の日も） */
+  const making = batch ? batch.targets[batch.index] : undefined;
+  const current = making && ymOf(making) === ym ? making : undefined;
   /**
    * 日ごとの一覧の行（PRD D189。一覧のときだけ作る）。表示の選択（〈スタッフ〉・〈利用者さん〉）と「休みを入れる」の補足は行の下に出す
    */
@@ -983,7 +985,7 @@ export default function MonthPage() {
             />
             <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
               <span className="sub" aria-live="polite">
-                {batch.ym === ym ? '' : `${batch.label}：`}
+                {current ? '' : `${batch.label}：`}
                 {current ? `${mdText(current)} の案：` : ''}
                 {batch.index + 1}/{batch.targets.length}日（作れた日 {batch.made}日）
               </span>

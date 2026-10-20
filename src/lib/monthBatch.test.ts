@@ -7,7 +7,9 @@ import { createDemoData, scoreRulesOf } from '../seed';
 import { solve } from '../solver';
 import { own } from './common';
 import { patchManualPrefs } from './manualPrefs';
+import { applyDayRun } from './month';
 import { type BatchDone, batchBandText, batchDoneText, createMonthBatch, missingDays, monthsLabel } from './monthBatch';
+import { problemKey } from './runs';
 
 const TODAY = '2026-10-21';
 
@@ -78,6 +80,7 @@ describe('monthBatch（PRD D256・D257。ADR-0042）', () => {
     days: days.map((date) => ({ date, mode: 'empty' as const })),
     expandYm: null,
     today: TODAY,
+    source: 'month' as const,
   };
 
   it('つながっていなければ始めない', () => {
@@ -168,9 +171,18 @@ describe('monthBatch（PRD D256・D257。ADR-0042）', () => {
       made: 7,
       iteration: 0,
       total: 1,
+      source: 'month' as const,
     };
     expect(batchBandText(run)).toBe('11月の案を作っています 8/22日');
-    const done: BatchDone = { ym: '2026-11', label: '11月', made: 22, unassignedDays: 0, stopped: false, error: null };
+    const done: BatchDone = {
+      ym: '2026-11',
+      label: '11月',
+      made: 22,
+      unassignedDays: 0,
+      stopped: false,
+      error: null,
+      aborted: false,
+    };
     expect(batchDoneText(done)).toBe('11月の案を22日分作りました');
     expect(batchDoneText({ ...done, unassignedDays: 2 })).toBe(
       '11月の案を22日分作りました（入らない訪問がある日 2日）',
@@ -215,4 +227,81 @@ describe('monthBatch（PRD D256・D257。ADR-0042）', () => {
     const route = Object.entries(own(h.data().aiPlans, TODAY)!.routes).find(([, ids]) => ids.includes(v.id));
     expect(route?.[0]).toBe(who);
   });
+
+  it('データを丸ごと差し替えたら捨てる（abort）：作っている日の結果は書かず、止めた知らせ', async () => {
+    const s = fakeSolve();
+    const b = createMonthBatch(s.fn);
+    const h = hostOf(noPlans());
+    b.connect(h.host);
+    b.start(job);
+    s.calls[0]!.resolve();
+    await tick();
+    expect(h.writes()).toBe(1);
+    b.abort();
+    expect(b.run.get()).toBeNull();
+    const done = b.done.get()!;
+    expect(done).toMatchObject({ made: 1, aborted: true, stopped: true });
+    expect(batchDoneText(done)).toBe('データを差し替えたので、10月の案づくりを止めました（1日分は作りました）');
+    await finishAll(s.calls, 1);
+    expect(h.writes()).toBe(1);
+    expect(b.running()).toBe(false);
+    // 作っていなければ何もしない
+    b.abort();
+    expect(b.done.get()).toBe(done);
+  });
+
+  it('作り直しの間にその日の今の案が変わったら（日の予定の手直し）、記録だけ足して今の案は変えない', async () => {
+    const s = fakeSolve();
+    const b = createMonthBatch(s.fn);
+    // 記録は消す（使い回さずに解く）
+    const d0 = { ...made(noPlans(), TODAY), aiRuns: {} };
+    const h = hostOf(d0);
+    b.connect(h.host);
+    b.start({ ...job, mode: 'all', days: [{ date: TODAY, mode: 'all' }] });
+    const edited = { ...own(h.data().aiPlans, TODAY)!, pins: { x: 'y' } };
+    h.host.update((d) => ({ ...d, aiPlans: { ...d.aiPlans, [TODAY]: edited } }));
+    s.calls[0]!.resolve();
+    await tick();
+    expect(own(h.data().aiPlans, TODAY)).toBe(edited);
+    expect(own(h.data().aiRuns, TODAY)).toHaveLength(1);
+    expect(b.done.get()).toMatchObject({ made: 1 });
+  });
+
+  it('作り直しの間に変わらなければ今の案を書き換える', async () => {
+    const s = fakeSolve();
+    const b = createMonthBatch(s.fn);
+    const d0 = { ...made(noPlans(), TODAY), aiRuns: {} };
+    const before = own(d0.aiPlans, TODAY);
+    const h = hostOf(d0);
+    b.connect(h.host);
+    b.start({ ...job, mode: 'all', days: [{ date: TODAY, mode: 'all' }] });
+    // 使い回せる記録があれば計算しないので、Worker を呼ぶかどうかに依らず終わるまで進める
+    await finishAll(s.calls);
+    await tick();
+    expect(b.running()).toBe(false);
+    expect(own(h.data().aiPlans, TODAY)).not.toBe(before);
+  });
+
+  it('足りない案の日：条件が変わった日は stale、手直しのある条件が変わった日は入れない', () => {
+    const d0 = made(noPlans(), TODAY);
+    const v = d0.visits.find((x) => x.date === TODAY && !x.cancelled)!;
+    // 案を作ったあとに訪問の所要を変える＝条件が変わった
+    const changed = {
+      ...d0,
+      visits: d0.visits.map((x) => (x.id === v.id ? { ...x, durationMinutes: x.durationMinutes + 30 } : x)),
+    };
+    const range = [TODAY];
+    expect(missingDays(changed, range, TODAY)).toEqual([{ date: TODAY, mode: 'stale' }]);
+    const plan = own(changed.aiPlans, TODAY)!;
+    const edited = { ...changed, aiPlans: { ...changed.aiPlans, [TODAY]: { ...plan, pins: { [v.id]: 'someone' } } } };
+    expect(missingDays(edited, range, TODAY)).toEqual([]);
+  });
 });
+
+/** その日の案を基準の重みで作って書いたデータ */
+function made(d: DemoData, date: string): DemoData {
+  const rules = scoreRulesOf(d);
+  const p = compile({ ...d, rules }, date);
+  const result = solve(p, { seed: 1, iterations: 2000 });
+  return applyDayRun(d, date, { rules, result, createdAt: 1, inputKey: problemKey(p), onlyEmpty: false });
+}

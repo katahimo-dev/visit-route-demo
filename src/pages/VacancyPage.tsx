@@ -242,7 +242,7 @@ export default function VacancyPage() {
   const today = jstDate(Date.now());
 
   /** 入力はタブの間だけ覚える（sessionStorage。ほかの画面へ移って戻っても残り、閉じれば消える。PRD D258） */
-  const [saved] = useState(() => loadVacancyInput(today));
+  const [saved] = useState(() => loadVacancyInput(today, new Set(data.visitTypes.map((t) => t.id))));
   // 条件の欄
   const [typeId, setTypeId] = useState(saved.typeId);
   const [duration, setDuration] = useState(saved.duration);
@@ -579,10 +579,24 @@ export default function VacancyPage() {
   const missing = useMemo(() => (result ? missingDays(data, result.dates, today) : []), [data, rangeKey, today]);
   const staleCount = missing.filter((x) => x.mode === 'stale').length;
   /** 月まとめ作成の進み具合（作っている間は押せない。PRD D256） */
-  const making = useValueStore(monthBatch.run) !== null;
+  const batchRun = useValueStore(monthBatch.run);
+  const making = batchRun !== null;
+  /** 作っている間のボタンの文（月の予定から始めた作成は「（月の予定）」で分ける） */
+  const makingText = batchRun
+    ? `${batchRun.label}の案を作っています${batchRun.source === 'month' ? '（月の予定）' : '…'}`
+    : '';
+  /** 答えのカード（足りない案を作り終えてボタンが消えたとき、フォーカスをここへ） */
+  const answerRef = useRef<HTMLDivElement>(null);
+  /** ［足りない案を作る］にフォーカスがあるか */
+  const makeFocused = useRef(false);
+  useEffect(() => {
+    if (missing.length > 0 || !makeFocused.current) return;
+    makeFocused.current = false;
+    answerRef.current?.focus({ preventScroll: true });
+  }, [missing.length]);
   /** 足りない案を、その場で作る（月まとめ作成の仕組み。ほかの画面へ移っても続く。ADR-0042） */
   const makeMissing = () => {
-    if (missing.length === 0) return;
+    if (missing.length === 0 || making) return;
     const ok = monthBatch.start({
       ym: ymOf(missing[0]!.date),
       label: monthsLabel(missing.map((x) => x.date)),
@@ -590,6 +604,7 @@ export default function VacancyPage() {
       days: missing,
       expandYm: null,
       today,
+      source: 'vacancy',
     });
     if (!ok) toast('ほかの案を作っています。終わってから押してください');
   };
@@ -815,7 +830,16 @@ export default function VacancyPage() {
         </p>
         {/* 答え（PRD D258）：結果の1枚目のカード。受けられるか・曜日と開始の時間・人数 */}
         {answer && (
-          <div className={`vacancy-answer is-${answer.tone}`} data-testid="vacancy-answer" data-tone={answer.tone}>
+          // 条件を変えると答えが変わるので読み上げる（role="status"）
+          // biome-ignore lint/a11y/useSemanticElements: 中に段落があるので output ではなく div
+          <div
+            ref={answerRef}
+            tabIndex={-1}
+            role="status"
+            className={`vacancy-answer is-${answer.tone}`}
+            data-testid="vacancy-answer"
+            data-tone={answer.tone}
+          >
             <p className="vacancy-answer-main">
               <strong className="vacancy-answer-head">{answer.head}</strong>
               {answer.body && <span className="vacancy-answer-body">：{answer.body}</span>}
@@ -841,12 +865,20 @@ export default function VacancyPage() {
                 type="button"
                 className="btn btn-small"
                 onClick={makeMissing}
-                disabled={making}
+                // 作っている間も押せる見た目を変えるだけ（disabled にするとフォーカスを失う）
+                aria-disabled={making || undefined}
+                onFocus={() => {
+                  makeFocused.current = true;
+                }}
+                onBlur={(e) => {
+                  // 消えるときは blur が来ないことがあるので、ほかへ移ったときだけ下ろす
+                  if (e.relatedTarget) makeFocused.current = false;
+                }}
                 data-testid="vacancy-noplan-make"
                 data-count={missing.length}
               >
                 <WithIcon icon={Sparkles} size={14}>
-                  {making ? '案を作っています…' : `足りない案を作る（${missing.length}日）`}
+                  {making ? makingText : `足りない案を作る（${missing.length}日）`}
                 </WithIcon>
               </button>
             ) : (

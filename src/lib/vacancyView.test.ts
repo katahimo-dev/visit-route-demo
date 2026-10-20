@@ -184,5 +184,23 @@ describe('answerCard（結果の1枚目の答え。PRD D258）', () => {
     expect(p.body).toBe('火 は週によって受けられます');
     expect(answerCard(result({ 2: ng, 4: ng }), wish).tone).toBe('ng');
     expect(answerCard(result({ 2: unknown, 4: unknown }), wish).tone).toBe('unknown');
+    // 案の無い曜日が混ざるときは補いに添える
+    const mixed = answerCard(result({ 2: okRow, 4: unknown }), { ...wish, perWeek: 1 });
+    expect(mixed.tone).toBe('ok');
+    expect(mixed.note).toContain('木は案が無く数えていません（［足りない案を作る］）');
+  });
+
+  it('始められる時刻が無い：受けられません', () => {
+    const none = { ...result({}), times: [] };
+    const c = answerCard(none, wish);
+    expect(c.tone).toBe('ng');
+    expect(`${c.head}：${c.body}`).toBe('受けられません：希望の時間帯に始められる時刻がありません');
+  });
+
+  it('曜日は月曜はじめ（日曜は最後）', () => {
+    const all3: Spec = T.map(() => [3, 4, 4]);
+    expect(answerCard(result({ 0: all3, 1: all3 }), { ...wish, weekdays: [0, 1], perWeek: 1 }).body).toMatch(
+      /^月・日 /,
+    );
   });
 });
