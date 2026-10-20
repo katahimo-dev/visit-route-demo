@@ -21,6 +21,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { EmptyNext } from '../components/EmptyNext';
+import { FieldError } from '../components/FieldError';
 import { MapDock } from '../components/MapDock';
 import { RouteMap } from '../components/RouteMap';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
@@ -592,7 +593,7 @@ export default function ComparePage() {
           </NavLink>
         }
       />
-      {m.problemError && <p className="error">問題を作れませんでした：{m.problemError}</p>}
+      <FieldError>{m.problemError && `問題を作れませんでした：${m.problemError}`}</FieldError>
 
       <div className="card stack">
         <SectionTitle
@@ -839,7 +840,7 @@ export default function ComparePage() {
                 </button>
               </span>
             )}
-            {makeError && <p className="error">{makeError}</p>}
+            <FieldError>{makeError}</FieldError>
           </div>
         )}
       </div>

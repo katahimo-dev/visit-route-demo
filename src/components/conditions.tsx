@@ -12,11 +12,12 @@ import {
   Trash2,
   User,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { Condition, Item, ItemTarget, Op, Traits, TraitValue } from '../contracts/rules';
 import { attempt, ITEM_KIND_LABELS } from '../lib/common';
 import { conditionText } from '../matching';
 import { useDemoData } from '../store/react';
+import { FieldError, invalidAttrs } from './FieldError';
 import { Check } from './parts';
 import { IconButton, WithIcon } from './ui';
 
@@ -294,7 +295,9 @@ export function ConditionsEditor({
           );
         })}
       </div>
-      {full && <p className="error">条件は{MAX_CONDS}件までです。ほかの条件を外してから入れてください。</p>}
+      <FieldError live={false}>
+        {full && `条件は${MAX_CONDS}件までです。ほかの条件を外してから入れてください。`}
+      </FieldError>
       <span className="sub">
         「問わない」の項目は、どの{who}でもかまいません。{who}
         のその項目が「未確認」（まだ聞き取っていない）なら、条件に合わない扱いにします（念のため避ける）。
@@ -336,6 +339,8 @@ function ItemCondition({
   onChange: (next: Condition[]) => void;
 }) {
   const first = conds[0];
+  /** 数の範囲の誤り（下限＞上限）の文の id */
+  const rangeErrorId = useId();
   switch (item.kind) {
     case 'flag':
       return (
@@ -400,6 +405,7 @@ function ItemCondition({
       };
       const lo = bound('gte');
       const hi = bound('lte');
+      const reversed = lo !== '' && hi !== '' && lo > hi;
       return (
         <div className="row num-range">
           <input
@@ -407,6 +413,7 @@ function ItemCondition({
             value={bound('gte')}
             placeholder="下限"
             aria-label={`${item.name}の下限`}
+            {...invalidAttrs(reversed, rangeErrorId)}
             onChange={(e) => set('gte', e.target.value)}
           />
           <span className="sub">以上</span>
@@ -415,12 +422,13 @@ function ItemCondition({
             value={bound('lte')}
             placeholder="上限"
             aria-label={`${item.name}の上限`}
+            {...invalidAttrs(reversed, rangeErrorId)}
             onChange={(e) => set('lte', e.target.value)}
           />
           <span className="sub">以下</span>
-          {lo !== '' && hi !== '' && lo > hi && (
-            <span className="error">下限が上限より大きいので、誰も満たしません</span>
-          )}
+          <FieldError as="span" id={rangeErrorId} live={false}>
+            {reversed && '下限が上限より大きいので、誰も満たしません'}
+          </FieldError>
         </div>
       );
     }

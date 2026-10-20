@@ -56,7 +56,8 @@
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1060;
+  /* 右の欄（1100）の中の用語の説明も欄の上に出す。知らせ（1200）・確認ダイアログより後ろ（PRD D175・D252） */
+  z-index: 1150;
   width: max-content;
   max-width: min(300px, calc(100vw - 16px));
   overflow-y: auto;
