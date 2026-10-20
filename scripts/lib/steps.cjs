@@ -2,8 +2,14 @@
 // スクリプトは `module.exports = { steps }`（[段の名前, 関数] の並び）を出し、
 // 単独の実行では `if (require.main === module) runSteps(steps)`、包み（e2e/legacy.spec.ts）では段ごとに test.step で回す。
 // 段の中の失敗（投げた）は、今までの try/catch と同じ文の確かめ（NG）とスクリーンショットにする。準備の段だけは投げたら止める
-const { launch, NOW, check, failShot, watchErrors } = require('./env.cjs');
+const { launch, NOW, check, failShot, watchErrors, withTimeout } = require('./env.cjs');
 const { skipTour } = require('./tourSeen.cjs');
+
+/**
+ * 1つの段の上限（ミリ秒。E2E_STEP_TIMEOUT_MS で変える）。ページが固まると Playwright の待ちが自分の時間切れでも
+ * 戻らないことがあった（e2e-links・CI と同じ設定で1回）。段を時間切れの NG にして次の段へ進む
+ */
+const STEP_LIMIT_MS = Number(process.env.E2E_STEP_TIMEOUT_MS || 3 * 60 * 1000);
 
 /** 投げたときの理由（1行目だけ） */
 const firstLine = (e) => String(e).split('\n')[0];
@@ -16,11 +22,15 @@ const message = (e) => String(e?.message || e);
 function guard(fn, { label, info = message, page, shot = label }) {
   return async (...args) => {
     try {
-      await fn(...args);
+      await withTimeout(
+        Promise.resolve().then(() => fn(...args)),
+        STEP_LIMIT_MS,
+        `段が ${STEP_LIMIT_MS / 1000}秒で終わらない`,
+      );
     } catch (e) {
       check(false, label, info(e));
       const p = page?.();
-      if (p) await failShot(p, shot);
+      if (p) await withTimeout(failShot(p, shot), 10 * 1000, 'スクリーンショット').catch(() => {});
     }
   };
 }
@@ -87,7 +97,8 @@ function pagePerStep({ open, steps, label, after, end, call = (fn, s) => fn(s.pa
         const s = await open(b, fn);
         await guard(() => call(fn, s), { label: label(fn.name), info: firstLine, page: () => s.page, shot: fn.name })();
         await after?.(fn.name, s);
-        await s.ctx.close();
+        // 固まったページでも閉じて先へ進む
+        await withTimeout(s.ctx.close(), 30 * 1000, '文脈を閉じる').catch(() => {});
       },
     ]),
     ...(end ? [['後始末', end]] : []),

@@ -30,7 +30,7 @@ ADR-0029 の段階1は、スクリプト1本を1つの test にして子のプ�
 - 段の型（`scripts/lib/steps.cjs`）：スクリプトは `module.exports = { steps }` を出し、末尾に `if (require.main === module) runSteps(steps)`。型は3つ
   - `sharedPage({ open, steps, after, call })`：1つのページを段で使い回す（多くのスクリプト）。準備（`openPage`：文脈・ツアーを見た扱い・時計・ページのエラー）→ 段 → 後始末
   - `pagePerStep({ open, steps, label, after, end })`：段ごとに新しい文脈（段の名前は関数の名前）
-  - `guard(fn, { label, info, page, shot })`：段の中で投げたら、今までの try/catch と同じ文の確かめ（NG）とスクリーンショット。続きの段は走る（準備だけは投げたら止める）
+  - `guard(fn, { label, info, page, shot })`：段の中で投げたら、今までの try/catch と同じ文の確かめ（NG）とスクリーンショット。続きの段は走る（準備だけは投げたら止める）。1つの段は最長3分（`E2E_STEP_TIMEOUT_MS`）。CI と同じ設定（負荷あり）で1回、ページが固まり Playwright の待ちが自分の時間切れ（30秒）でも戻らず、test が10分で止まった（e2e-links の attention。単独・繰り返し12回では出ない）ため、段を時間切れの NG にして次へ進む
 - 包み（`e2e/legacy.spec.ts`）：test ごとに `scripts/` の読み込みを消して読み直し（数え・状態を持ち越さない）、段を `test.step` で回す。`check` は `hooks.onCheck` から `expect.soft(ok, 名前  情報)` に写す。ページのエラーも expect.soft。console の出力は記録（`<名前>.log`）に移して添付し、落ちたら `-fail-` のスクリーンショットも添付。`steps` を出していないスクリプト（段階1の形）は今までどおり子のプロセスで走らせる
 - trace・動画：`use` に `trace: 'retain-on-failure'`・`video: 'retain-on-failure'`。スクリプトの Playwright は @playwright/test と同じもの（playwright-core）なので、スクリプトが開いた文脈にも trace が付く。動画は `launch` が `newContext`・`newPage` に `recordVideo` を足す（`hooks.videoDir`）。project `perf` は記録の手間で計測が揺れるので両方とも取らない。`actionTimeout`・`navigationTimeout` は単独の実行と同じ 30秒（test の中の既定は「無し」で、固まった段が次へ進まない）。CI は落ちたとき `test-results/`（trace.zip・動画・スクリーンショット・記録）を成果物に残す（前から）
 - 待ち（`settle(page, ms)`）：2回の描画のあと、DOM の変化が 50ms 続けて無く、期限が 1秒以内のタイマーが残っていないこと（最長 max(3×ms, 1500ms)）。タイマーはページに入れる包み（`trackTimers`。`page.clock` があとから差し替えても通る getter・setter）で数える。入力の間引き（300ms）・保存（300ms）・吹き出しの出し入れ・作り直しの帯の数え直し（600ms）・空き状況の計算の間引きを待てる。ページが移っている最中なら読み込みを待ってもう1回。裏のタブでは描画が来ないので 100ms で先へ。固定の `waitForTimeout` は全部 `settle` に寄せた（約190か所）。固定のまま残したのは
@@ -62,4 +62,4 @@ ADR-0029 の段階1は、スクリプト1本を1つの test にして子のプ�
 
 ## 影響
 - AGENTS.md の e2e の節、design.md §4 deploy、PRD D253・D254
-- 見直す条件：`E2E_SETTLE_LOG=1` で「最長まで待っても落ち着かない」所が増えたら、その所は目印の待ちに替える。trace で e2e が長くなりすぎたら `on-first-retry` に替える。段階3（spec に書き直し・fixture）でスクリプトと段の型を消す
+- 見直す条件：e2e-links のページが固まる件がまた出たら、trace を取って画面の側（日の予定へ移るところ）を調べる。`E2E_SETTLE_LOG=1` で「最長まで待っても落ち着かない」所が増えたら、その所は目印の待ちに替える。trace で e2e が長くなりすぎたら `on-first-retry` に替える。段階3（spec に書き直し・fixture）でスクリプトと段の型を消す
