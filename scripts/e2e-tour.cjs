@@ -551,9 +551,12 @@ async function monthList(b) {
   const focused = await today.evaluate((el) => document.activeElement === el);
   check(v2.ok && focused, '「今日へ」で今日の行へ巻いてフォーカス', { ...v2, focused });
   // 切り替えは操作の欄（月の見出しのカード）より上
-  const lb = await page.getByTestId('month-layout').boundingBox();
-  const hb = await page.locator('.month-head').boundingBox();
-  check(lb.y < hb.y, '切り替えは操作の欄より上', { layout: lb.y, head: hb.y });
+  // 2つの位置は同じ瞬間に測る（巻く動きの途中に別々に測ると、間に巻いた分だけずれる）
+  const pos = await page.evaluate(() => ({
+    layout: document.querySelector('[data-testid="month-layout"]').getBoundingClientRect().y,
+    head: document.querySelector('.month-head').getBoundingClientRect().y,
+  }));
+  check(pos.layout < pos.head, '切り替えは操作の欄より上', pos);
   // 行の読み上げ：日付・件数・状態
   const label = await today.getAttribute('aria-label');
   check(
