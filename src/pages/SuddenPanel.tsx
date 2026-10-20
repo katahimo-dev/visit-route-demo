@@ -61,6 +61,9 @@ const KIND_CHIP: Record<ContactKind, string> = {
   client: 'chip',
 };
 
+/** ［連絡した］の印の鍵（宛先と文。文が変われば別の行として扱う） */
+const sentKey = (r: ContactRow) => `${r.key}\n${r.text}`;
+
 /** 済んだこと（4段目の見出し） */
 type Done = { kind: 'staff'; text: string } | { kind: 'client'; text: string; sameDay: boolean };
 
@@ -86,6 +89,7 @@ export function SuddenPanel({
   onAdopt,
   onRevert,
   contacts,
+  leftCount = 0,
   contactMail,
   onCopied,
   onClose,
@@ -126,6 +130,8 @@ export function SuddenPanel({
    * 5段目の連絡の一覧（前の確定した割当 → 新しい割当の差と、取り消した訪問から。PRD D244）。差を出せなければ null
    */
   contacts: ContactRow[] | null;
+  /** 欠勤の人に残る訪問の数（振り直していない。5段目の上に注意を出す。連絡文には入らない） */
+  leftCount?: number;
   /** 〈スタッフ〉あてのメール（PRD D94）。メールアドレスが無ければ null。メールを切っていれば渡さない（ボタンを出さない） */
   contactMail?: (row: ContactRow) => BuiltMail | null;
   /** 文をコピーしたあと（ok：できたか・what：何の文か） */
@@ -143,7 +149,10 @@ export function SuddenPanel({
   const [sameDay, setSameDay] = useState(true);
   const [done, setDone] = useState<Done | null>(null);
   const [busy, setBusy] = useState(false);
-  /** 5段目で［連絡した］に印を付けた行（その場の状態だけ。データに残さない。ADR-0038） */
+  /**
+   * 5段目で［連絡した］に印を付けた行（その場の状態だけ。データに残さない。ADR-0038）。鍵は宛先と文（sentKey）なので、
+   * 確定し直して文が変わった行の印は消える
+   */
   const [sent, setSent] = useState<ReadonlySet<string>>(() => new Set());
 
   const av = staffId ? slotsOf.get(staffId) : undefined;
@@ -619,16 +628,26 @@ export function SuddenPanel({
     );
   } else if (step === 5 && done) {
     const rows = contacts ?? [];
-    const sentCount = rows.filter((r) => sent.has(r.key)).length;
+    const sentCount = rows.filter((r) => sent.has(sentKey(r))).length;
     body = (
       <>
         {stepHeading(suddenHeading(done.kind, 5, terms.staff))}
         <p className="sub">
-          確定する前の割当（無ければ振り直す前の案）と、新しい割当の差から作っています。文はコピーするか、メールアプリで開いて送ります（このアプリからは送りません）。
+          {done.kind === 'staff'
+            ? '振り直す前の割当（確定した割当、無ければ振り直す前の案）と、新しい割当の差から作っています。'
+            : `取り消した訪問の担当への中止の連絡と、取り消す前の確定した割当との差から作っています（キャンセルした${terms.client}あては作りません）。`}
+          文はコピーするか、メールアプリで開いて送ります（このアプリからは送りません）。
         </p>
+        {leftCount > 0 && (
+          <p className="warn-text" role="note" data-testid="sudden-contacts-left">
+            欠勤の人に残る訪問 {leftCount}件（連絡文には入りません。日の予定で確かめてください）
+          </p>
+        )}
         {contacts === null ? (
           <p className="sub" data-testid="sudden-contacts-none">
-            差を出せませんでした。日の予定の「連絡の一覧」で確かめてください
+            {done.kind === 'staff'
+              ? '振り直しの差を出せませんでした。日の予定の「連絡の一覧」で確かめてください'
+              : '差を出せませんでした。取り消した訪問の担当へは、日の予定で担当を確かめて連絡してください'}
           </p>
         ) : rows.length === 0 ? (
           <p data-testid="sudden-contacts-none">連絡が要る変更はありません。</p>
@@ -643,7 +662,7 @@ export function SuddenPanel({
                 return (
                   <li
                     key={r.key}
-                    className={`sudden-contact${sent.has(r.key) ? ' is-sent' : ''}`}
+                    className={`sudden-contact${sent.has(sentKey(r)) ? ' is-sent' : ''}`}
                     data-testid="sudden-contact"
                     data-to={r.to}
                     data-kinds={r.kinds.join(' ')}
@@ -690,8 +709,8 @@ export function SuddenPanel({
                       <label className="check sudden-contact-sent">
                         <input
                           type="checkbox"
-                          checked={sent.has(r.key)}
-                          onChange={(e) => toggleSent(r.key, e.target.checked)}
+                          checked={sent.has(sentKey(r))}
+                          onChange={(e) => toggleSent(sentKey(r), e.target.checked)}
                           style={{ width: 'auto' }}
                           aria-label={`${r.name}に連絡した`}
                           data-testid="sudden-contact-sent"

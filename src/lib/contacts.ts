@@ -20,6 +20,11 @@ export type ContactWords = {
   visitMinutes?: (visitId: string) => number | null;
   /** 事業所名（〈利用者さん〉あての名乗り。空なら名乗りを省く） */
   orgName?: string;
+  /**
+   * 訪問の約束の開始（0時からの分。from＝早・to＝遅。時刻の指定なら同じ）。〈利用者さん〉あては見込みの時刻でなく
+   * 約束の開始でどの訪問かを書く（D245）。無ければ元の案の開始
+   */
+  promised?: (visitId: string) => { from: number; to: number } | null;
 };
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
@@ -30,14 +35,14 @@ export function dateWordOf(date: string): string {
   return `${m}月${d}日（${WEEK[weekday(date)]}）`;
 }
 
-/** その日が今日なら「本日」、それ以外は「10月15日（木）」（画面の見出し用） */
-export function dayWordOf(date: string, today: string): string {
-  return date === today ? '本日' : dateWordOf(date);
-}
-
 /** 分 → 「9:00」（24時間・時の0は付けない。D245） */
 export function clock(minutes: number | null): string {
   return minutes === null ? '' : minutesToHhmm(minutes).replace(/^0(\d)/, '$1');
+}
+
+/** 約束の開始の書き方（「9:00」・幅があれば「9:00〜9:30の間」。D245） */
+export function promisedText(p: { from: number; to: number }): string {
+  return p.to > p.from ? `${clock(p.from)}〜${clock(p.to)}の間` : clock(p.from);
 }
 
 /** 名前の姓（空白の前。〈利用者さん〉あてには担当の姓だけを載せる。D246） */
@@ -81,20 +86,20 @@ export function staffMessage(c: StaffContact, w: ContactWords, cancelled: readon
       text:
         x.toStaffId === null
           ? `${head}、代わりの${w.staffWord}を調整中です。伺わなくて大丈夫です。`
-          : `${head}${w.staffName(x.toStaffId)}さんに代わりました。伺わなくて大丈夫です。`,
+          : `${head}、${w.staffName(x.toStaffId)}さんに代わりました。伺わなくて大丈夫です。`,
     });
   }
   for (const x of c.shifted) {
     lines.push({
       at: x.fromStart ?? 0,
-      text: `・${clock(x.fromStart)} ${w.clientName(x.clientId)}様の訪問は、開始が ${clock(x.toStart)} に変わりました。`,
+      text: `・${clock(x.fromStart)} ${w.clientName(x.clientId)}様の訪問は、開始が${clock(x.toStart)}に変わりました。`,
     });
   }
   for (const x of cancelled) {
     if (x.staffId !== c.staffId) continue;
     lines.push({
       at: x.start ?? 0,
-      text: `・${clock(x.start)} ${w.clientName(x.clientId)}様の訪問は中止です（キャンセル）。伺わなくて大丈夫です。`,
+      text: `・${clock(x.start)} ${w.clientName(x.clientId)}様の訪問は、中止です（キャンセル）。伺わなくて大丈夫です。`,
     });
   }
   // 同じ時刻は 新しく入る → 外れる → 時刻 → 中止 の順（sort は安定）
@@ -102,17 +107,21 @@ export function staffMessage(c: StaffContact, w: ContactWords, cancelled: readon
   return [`${w.staffName(c.staffId)}さん`, `${w.day}の予定の変更です。`, ...lines.map((l) => l.text)].join('\n');
 }
 
-/** 訪問先1件への連絡の1行（敬語。担当は姓だけ・前の担当と代わる理由は書かない。D245・D246） */
+/**
+ * 訪問先1件への連絡の1行（敬語。D245・D246）。どの訪問かは約束の開始（「9:00」「9:00〜9:30の間」）で書き、
+ * 新しい開始は見込みなので「ごろ」。担当は姓だけ・前の担当と代わる理由は書かない
+ */
 function clientLine(x: ContactVisit, w: ContactWords): string {
-  const at = `・${clock(x.fromStart ?? x.toStart)}からの訪問は`;
+  const p = w.promised?.(x.visitId) ?? null;
+  const at = `・${p ? promisedText(p) : clock(x.fromStart ?? x.toStart)}の訪問は`;
   if (x.fromStaffId !== x.toStaffId) {
     if (x.toStaffId === null) return `${at}、担当の調整がついておりません。あらためてご連絡いたします。`;
     const who = familyName(w.staffName(x.toStaffId));
     return timeMoved(x)
-      ? `${at}、担当が${who}に代わり、開始が ${clock(x.toStart)} になります。`
+      ? `${at}、担当が${who}に代わり、開始は${clock(x.toStart)}ごろになります。`
       : `${at}、担当が${who}に代わります。`;
   }
-  return `${at}、開始が ${clock(x.toStart)} に変わります（担当は変わりません）。`;
+  return `${at}、開始が${clock(x.toStart)}ごろに変わります（担当は変わりません）。`;
 }
 
 /** 訪問先ごとの連絡文（担当が変わる訪問・開始が変わる訪問。訪問先の初めの訪問の順。敬語。D245） */
@@ -177,7 +186,8 @@ export type ContactRow = {
 /**
  * 差（前の確定した割当 → 新しい割当。contactsOf）と取り消した訪問から、連絡の一覧を作る。
  * 並びは スタッフ（差の一覧の順、続けて中止だけの人）→ 〈利用者さん〉。取り消した訪問は差から除き「中止」として担当にだけ伝える
- * （キャンセルした〈利用者さん〉には連絡しない）。担当の無い取り消しは誰にも伝えない
+ * （キャンセルした〈利用者さん〉には連絡しない）。担当の無い取り消しは誰にも伝えない。
+ * 今の時刻は見ない（過ぎた時刻の行も除かない。いまの時刻は扱わない：PRD D27）
  */
 export function contactRows(list: ContactList, cancelled: readonly CancelledContact[], w: ContactWords): ContactRow[] {
   const gone = new Set(cancelled.map((x) => x.visitId));

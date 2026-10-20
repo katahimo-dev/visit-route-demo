@@ -84,6 +84,7 @@ import {
   applyReassign,
   baseOf,
   chooseReassign,
+  orderConfirmed,
   removeAbsence,
   revertReassign,
   saveAbsence,
@@ -1637,6 +1638,12 @@ export default function PlanPage() {
     clientName: (id: string) => clientById.get(id)?.displayName ?? '（不明）',
     clientAddress: (id: string) => clientById.get(id)?.place.address ?? '',
     visitMinutes: (id: string) => visitById.get(id)?.durationMinutes ?? null,
+    promised: (id: string) => {
+      const v = visitById.get(id);
+      if (!v) return null;
+      const from = hhmmToMinutes(v.earliestStart);
+      return { from, to: v.windowKind === 'window' ? hhmmToMinutes(v.latestStart) : from };
+    },
     orgName: data.org.name,
   };
   const saveAbsenceOnly = (absence: Absence) => {
@@ -2768,14 +2775,16 @@ export default function PlanPage() {
     };
   };
   /**
-   * 欄からの取り消し：取り消す前の担当（確定した割当、無ければ今の案）・開始と、そのときの確定した割当を覚えてから取り消す
-   * （5段目の連絡の「中止」と、確定し直した差の「前」。PRD D244）
+   * 欄からの取り消し：取り消す前の担当（確定した割当があればその担当だけ（無ければ担当なし）、確定が無ければ今の案）・開始と、
+   * そのときの確定した割当を覚えてから取り消す（5段目の連絡の「中止」と、確定し直した差の「前」。PRD D244）
    */
   const suddenCancelVisit = (visitId: string, sameDay: boolean) => {
     const v = visitById.get(visitId);
     const prev = own(data.manualPlans, date) ?? null;
-    const sid =
-      (prev ? ownerMap(prev).get(visitId) : undefined) ?? (aiPlan ? owner : ownerMap(m.savedView.cols)).get(visitId);
+    // 確定がある日は、未確定の案から担当を補わない（伝えてあるのは確定した担当）
+    const sid = prev
+      ? (ownerMap(prev).get(visitId) ?? null)
+      : ((aiPlan ? owner : ownerMap(m.savedView.cols)).get(visitId) ?? null);
     if (v) {
       const start = explained.get(visitId)?.timing?.start ?? hhmmToMinutes(v.earliestStart);
       setSuddenCancel({ cancelled: { visitId, clientId: v.clientId, staffId: sid ?? null, start }, prev });
@@ -2791,7 +2800,9 @@ export default function PlanPage() {
     if (!suddenCancel) return contacts;
     const prev = suddenCancel.prev;
     if (!prev || !problem || !aiPlan) return EMPTY_CONTACTS;
-    return attempt(() => contactsOf({ problem, routes: prev }, { problem, routes: aiPlan.routes })).value ?? null;
+    // 確定した割当の列は訪問データの並びなので、振り直しの元の案（baseOf）と同じに並べてから時刻を出す（偽の「時刻が変わる」を出さない）
+    const before = orderConfirmed(prev, aiPlan.routes, problem);
+    return attempt(() => contactsOf({ problem, routes: before }, { problem, routes: aiPlan.routes })).value ?? null;
   }, [sudden, suddenCancel, contacts, problem, aiPlan]);
   const suddenRows: ContactRow[] | null = suddenList
     ? contactRows(suddenList, suddenCancel ? [suddenCancel.cancelled] : [], contactWords)
@@ -3604,6 +3615,7 @@ export default function PlanPage() {
           onAdopt={adopt}
           onRevert={reassignInfo ? revertToBase : undefined}
           contacts={suddenRows}
+          leftCount={left.length}
           contactMail={
             mailOn
               ? (row) =>

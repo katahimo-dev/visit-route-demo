@@ -11,7 +11,7 @@
 - `HOME_NEXT_MONTH_DAYS`（7）
 - `homeMonths(today)`：今月。今月の残り（今日を含む）が7日以下なら来月も
 - `homeDays(today)`：今日から見る月の末日まで
-- `HOME_TOP_ABSENCE_QUERY`（`(max-width: 860px)`。欠勤・キャンセルの入口を先頭に置く幅）・`homeEntries(today, terms, features)`（いつでもの入口）
+- `homeEntries(today, terms, features)`（いつでもの入口）
 - `homeTasks({ today, statuses, months, todayStaff, data })`：カード `HomeTask`＝種類・色（`warn`／`todo`／`info`）・題名・内訳・移る先 `to`・日の予定へ移るときの日付 `date`。`ready` は info だけのとき。切った機能のカードは出さない
 
 | 並び | カード | 移る先 |
@@ -27,7 +27,7 @@
 - `homeTasks` のカードを並べる。カード全体が `Link`（`date` があれば押したときに `setDate`）
 - 何も無ければ「今日の準備はできています」（`ready`）
 - 下に「いつでも」の入口：欠勤・キャンセルを登録（`/plan?date=今日&do=absence`）・空き状況・〈利用者さん〉一覧・〈スタッフ〉一覧
-- 狭い画面（860px 以下。`HOME_TOP_ABSENCE_QUERY`）では欠勤・キャンセルの入口を見出しのすぐ下（「次にすること」の上。`home-quick`）に常に置き、「いつでも」から外す（同じ `home-absence`。赤い縁 `.is-sudden`。PRD D247・ADR-0038）。切っていれば出さない
+- 狭い画面（860px 以下。`lib/useMedia` の `NARROW_QUERY`。App のメニューの切り替えと同じ定数）では欠勤・キャンセルの入口を見出しのすぐ下（「次にすること」の上。`home-quick`）に常に置き、「いつでも」から外す（同じ `home-absence`）。見た目はほかの入口と同じカード（`is-entry`。赤い縁は付けない）で、先頭に置くことで目立たせ、アイコンだけ朱（`.is-first`）。切っていれば出さない（PRD D247・ADR-0038）
 - カードは `auto-fill` の格子（390px で1列）
 
 #### 月の予定の `?do=`

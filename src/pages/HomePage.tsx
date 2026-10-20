@@ -19,7 +19,6 @@ import { PageHeader } from '../components/ui';
 import { jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import {
-  HOME_TOP_ABSENCE_QUERY,
   type HomeEntryKey,
   type HomeTask,
   type HomeTaskKind,
@@ -31,7 +30,7 @@ import {
 import { dayPlanOf, expandMonth } from '../lib/month';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
-import { useMedia } from '../lib/useMedia';
+import { NARROW_QUERY, useMedia } from '../lib/useMedia';
 import { useDemoData } from '../store';
 import './home.css';
 
@@ -76,7 +75,7 @@ export default function HomePage() {
   }, [days, perDay, months, data, today]);
   const entries = useMemo(() => homeEntries(today, terms, data.org.features), [today, terms, data.org.features]);
   // スマホでは欠勤・キャンセルを先頭へ（当日の朝に開いてすぐ押せる。切った機能なら出さない）
-  const narrow = useMedia(HOME_TOP_ABSENCE_QUERY);
+  const narrow = useMedia(NARROW_QUERY);
   const topEntry = narrow ? entries.find((e) => e.key === 'absence') : undefined;
   const anytime = topEntry ? entries.filter((e) => e !== topEntry) : entries;
 
@@ -104,7 +103,7 @@ export default function HomePage() {
             detail={topEntry.detail}
             onPick={() => pickDate(topEntry.date)}
             testId={`home-${topEntry.key}`}
-            urgent
+            first
           />
         </div>
       )}
@@ -184,7 +183,7 @@ function EntryCard({
   detail,
   onPick,
   testId,
-  urgent = false,
+  first = false,
 }: {
   to: string;
   icon: LucideIcon;
@@ -192,13 +191,13 @@ function EntryCard({
   detail: string;
   onPick?: () => void;
   testId: string;
-  /** 先頭に置く当日の入口（欠勤・キャンセル。赤い縁） */
-  urgent?: boolean;
+  /** 先頭に置く当日の入口（欠勤・キャンセル。アイコンだけ朱） */
+  first?: boolean;
 }) {
   return (
     <Link
       to={to}
-      className={`card home-task is-entry${urgent ? ' is-sudden' : ''}`}
+      className={`card home-task is-entry${first ? ' is-first' : ''}`}
       onClick={onPick}
       data-testid={testId}
     >

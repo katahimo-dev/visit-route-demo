@@ -61,6 +61,7 @@ import {
   tabLabel,
 } from '../lib/nav';
 import { showsRebuildBand } from '../lib/rebuildBand';
+import { NARROW_QUERY } from '../lib/useMedia';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientsPage from '../pages/ClientsPage';
 import ComparePage from '../pages/ComparePage';
@@ -201,9 +202,6 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
   settings: Settings,
   data: Database,
 };
-
-/** スマホのメニューに切り替わる幅（styles.css の @media (max-width: 860px) と同じ。PRD D132） */
-const NARROW_QUERY = '(max-width: 860px)';
 
 function AdminShell() {
   const { data, saveError } = useDemoData();

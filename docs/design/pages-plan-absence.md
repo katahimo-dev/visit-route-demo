@@ -40,12 +40,12 @@
 
 #### 5段目の連絡（PRD D243〜D246。ADR-0038）
 
-- 一覧は1人に1枚（`sudden-contacts` の `sudden-contact`。`data-to`＝`staff|client`・`data-kinds`＝種類）：宛名・種類の印（担当が外れる・新しく入る（`chip-move`）・時刻が変わる（`chip-warn`）・中止、〈利用者さん〉は「〈利用者さん〉あて」）・連絡文（`sudden-contact-text`）・［文をコピー］（`sudden-contact-copy`。`copyText` とトースト）・〈スタッフ〉あての「メール」（`MailButton`・`MailLengthNote`。`sudden-contact-mail`。件名は `contactMailText`）・［連絡した］（`sudden-contact-sent`）
-- 上に「連絡した N/M人」（`sudden-contacts-count`。`aria-live`）。行が無ければ「連絡が要る変更はありません。」、差を出せなければ「日の予定の「連絡の一覧」で確かめてください」（`sudden-contacts-none`）
+- 一覧は1人に1枚（`sudden-contacts` の `sudden-contact`。`data-to`＝`staff|client`・`data-kinds`＝種類）：宛名・種類の印（担当が外れる・新しく入る（`chip-move`）・時刻が変わる（`chip-warn`）・中止、〈利用者さん〉は「〈利用者さん〉あて」）・連絡文（`sudden-contact-text`）・［文をコピー］（`sudden-contact-copy`。`copyText` とトースト）・〈スタッフ〉あての「メール」（`MailButton`・`MailLengthNote`。`sudden-contact-mail`。件名は `contactMailText`）・［連絡した］（`sudden-contact-sent`。印の鍵は宛先と文なので、確定し直して文が変われば消える）
+- 上に説明（欠勤とキャンセルで分ける）と、欠勤の人に残る訪問があれば「欠勤の人に残る訪問 N件（連絡文には入りません。日の予定で確かめてください）」（`sudden-contacts-left`。日の予定が `leftCount` で渡す）、「連絡した N/M人」（`sudden-contacts-count`。`aria-live`）。行が無ければ「連絡が要る変更はありません。」、差を出せなければ「日の予定の「連絡の一覧」で確かめてください」（`sudden-contacts-none`）
 - 帯は「終わる」（`sudden-finish`。主ボタン。差の欄へは移らない）と「戻る」（4段目）
 - 日の予定（`PlanPage`）が作る：
   - 欠勤：差の欄と同じ `contacts`（`contactsOf`。元の案＝確定した割当、無ければ振り直す前の案 → 今の案。確定したあとは今の案＝確定した割当）
-  - キャンセル：欄の取り消し（`suddenCancelVisit`）が、取り消す前の担当（確定した割当、無ければ今の案）・開始（今の案の時刻、無ければ約束の開始）と、そのときの確定した割当（`suddenCancel`）を覚えてから `applyCancel`。差は `contactsOf({ problem, routes: そのときの確定した割当 }, { problem, routes: 今の案 })`（取り消した訪問は問題に無いので出ない）。確定が無かった日は中止だけ
+  - キャンセル：欄の取り消し（`suddenCancelVisit`）が、取り消す前の担当（確定した割当があればその担当だけ（無ければ担当なし）、確定が無ければ今の案）・開始（今の案の時刻、無ければ約束の開始）と、そのときの確定した割当（`suddenCancel`）を覚えてから `applyCancel`。差は `contactsOf({ problem, routes: orderConfirmed(そのときの確定した割当, 今の案, problem) }, { problem, routes: 今の案 })`（確定した割当の列は訪問データの並びなので、`baseOf` と同じ並べ方にしてから時刻を出す）（取り消した訪問は問題に無いので出ない）。確定が無かった日は中止だけ
   - 行は `contactRows(差, 取り消した訪問, contactWords)`。欄を開き直すと `suddenCancel` を消す
 
 #### 2段目の欠勤の入力（`AbsenceFields`）
@@ -187,18 +187,18 @@
 
 ひな形と載せる範囲は PRD D245・D246（ADR-0038）。差の欄の連絡の一覧と5段目で同じ。
 
-- `dateWordOf(date)`：「10月15日（木）」。`dayWordOf(date, today)`：当日は「本日」（画面の見出し用。連絡文には使わない）。`clock`：「9:00」。`familyName`：空白の前（〈利用者さん〉あての担当の名前）
-- `staffMessage(c, w, cancelled?)`（丁寧語の短文）：「〈名前〉さん／10月21日（水）の予定の変更です。／・14:00 天文台ほしみ様の訪問をお願いします（住所・60分）。／・10:00 青葉様の訪問は佐藤 一郎さんに代わりました。伺わなくて大丈夫です。（入らないなら「、代わりの〈スタッフ〉を調整中です。」）／・11:00 青葉様の訪問は、開始が 11:20 に変わりました。／・8:30 若林様の訪問は中止です（キャンセル）。伺わなくて大丈夫です。」。行は元の時刻の順。住所・所要は「お願いします」の行だけ
-- `clientMessages`（訪問先ごと。敬語）：「〈表示名〉様／いつもお世話になっております。〈事業所名〉です。／10月21日（水）の訪問について、変更をお知らせいたします。／・14:00からの訪問は、担当が佐藤に代わります。（時刻も変われば「代わり、開始が 14:20 になります。」）／・15:00からの訪問は、開始が 15:20 に変わります（担当は変わりません）。／・16:00からの訪問は、担当の調整がついておりません。あらためてご連絡いたします。／ご迷惑をおかけして申し訳ございません。どうぞよろしくお願いいたします。」。前の担当・住所・代わる理由は書かない
+- `dateWordOf(date)`：「10月15日（木）」（連絡文は「本日」と書かない）。`clock`：「9:00」。`promisedText`：約束の開始（「9:00」「9:00〜9:30の間」）。`familyName`：空白の前（〈利用者さん〉あての担当の名前）
+- `staffMessage(c, w, cancelled?)`（丁寧語の短文）：「〈名前〉さん／10月21日（水）の予定の変更です。／・14:00 天文台ほしみ様の訪問をお願いします（住所・60分）。／・10:00 青葉様の訪問は、佐藤 一郎さんに代わりました。伺わなくて大丈夫です。（入らないなら「、代わりの〈スタッフ〉を調整中です。」）／・11:00 青葉様の訪問は、開始が11:20に変わりました。／・8:30 若林様の訪問は、中止です（キャンセル）。伺わなくて大丈夫です。」。行は元の時刻の順。住所・所要は「お願いします」の行だけ
+- `clientMessages`（訪問先ごと。敬語）：「〈表示名〉様／いつもお世話になっております。〈事業所名〉です。／10月21日（水）の訪問について、変更をお知らせいたします。／・14:00の訪問は、担当が佐藤に代わります。（時刻も変われば「代わり、開始は14:20ごろになります。」）／・14:50〜15:10の間の訪問は、開始が15:20ごろに変わります（担当は変わりません）。／・16:00の訪問は、担当の調整がついておりません。あらためてご連絡いたします。／ご迷惑をおかけして申し訳ございません。どうぞよろしくお願いいたします。」。どの訪問かは約束の開始（`promised`）で書く。前の担当・住所・代わる理由は書かない
 - `allContactsText`
-- `contactRows(list, cancelled, w)`：5段目の行（`ContactRow`＝鍵・宛先・ID・宛名・種類・文）。〈スタッフ〉（差の一覧の順、続けて中止だけの人）→〈利用者さん〉。取り消した訪問は差から除き、担当にだけ「中止」。担当の無い取り消しは行なし。`CONTACT_KIND_LABEL`
+- `contactRows(list, cancelled, w)`：5段目の行（`ContactRow`＝鍵・宛先・ID・宛名・種類・文）。〈スタッフ〉（差の一覧の順、続けて中止だけの人）→〈利用者さん〉。取り消した訪問は差から除き、担当にだけ「中止」。担当の無い取り消しは行なし。今の時刻は見ず、過ぎた時刻の行も除かない。`CONTACT_KIND_LABEL`
 
 ### `lib/absences.ts`（画面の純粋関数。テストあり）
 
 - `absencesOn(data, date)`
 - `saveAbsence(d, absence)`：同じ人・同じ日の欠勤はその1件を置き換える
 - `removeAbsence(d, id)`：今の案は変えない
-- `baseOf(data, date, problem)`：元の案と、その種類。無ければ null
+- `baseOf(data, date, problem)`：元の案と、その種類。無ければ null。確定した割当の並べ方は `orderConfirmed(saved, planRoutes, problem)`（今の案の列の順、無い訪問は開始の順に挟む。キャンセルの連絡の差でも使う）
 - `applyReassign(d, date, x)`・`revertReassign(d, date, problem)`
 - `chooseReassign`・`addAnnealRun`・`annealRunOf`
 
