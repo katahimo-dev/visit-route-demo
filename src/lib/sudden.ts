@@ -7,21 +7,22 @@ import { absenceError, absenceText } from './absences';
 
 /** 何が起きたか：〈スタッフ〉が休む／〈利用者さん〉がキャンセル */
 export type SuddenKind = 'staff' | 'client';
-/** 段階（1：何が起きたか 2：人・訪問を選ぶ 3：影響の確認と振り直し 4：選んで確定） */
-export type SuddenStep = 1 | 2 | 3 | 4;
+/** 段階（1：何が起きたか 2：人・訪問を選ぶ 3：影響の確認と振り直し 4：選んで確定 5：連絡。PRD D243） */
+export type SuddenStep = 1 | 2 | 3 | 4 | 5;
 
 /** URL の `?do=` で欄を開く値（ホームの「急な欠勤・キャンセルを登録」。PRD D172） */
 export const SUDDEN_DO = 'absence';
 
 /** 段階の短い名前（欄の上の1行の段階の表示。種類を選ぶ前は〈スタッフ〉の流れの名前で出す） */
-export function suddenSteps(kind: SuddenKind | null): [string, string, string, string] {
-  if (kind === 'client') return ['起きたこと', '訪問', '影響', '確定'];
-  return ['起きたこと', '休む人', '影響', '確定'];
+export function suddenSteps(kind: SuddenKind | null): [string, string, string, string, string] {
+  if (kind === 'client') return ['起きたこと', '訪問', '影響', '確定', '連絡'];
+  return ['起きたこと', '休む人', '影響', '確定', '連絡'];
 }
 
 /** 段階の見出し（h3。段階の表示の短い名前と重ねず、その段階ですることを書く） */
 export function suddenHeading(kind: SuddenKind | null, step: SuddenStep, staffWord: string): string {
   if (step === 1) return '何が起きましたか？';
+  if (step === 5) return '変更を伝える';
   if (kind === 'client')
     return step === 2 ? 'キャンセルの訪問を選ぶ' : step === 3 ? '影響を確かめて取り消す' : '確定する';
   return step === 2 ? `休む${staffWord}と時間帯を選ぶ` : step === 3 ? '影響を確かめて振り直す' : '案を選んで確定する';

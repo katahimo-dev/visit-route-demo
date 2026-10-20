@@ -1,6 +1,7 @@
 // 「欠勤・キャンセル」の欄（PRD D167〜D172。ADR-0025 追記・ADR-0011・ADR-0015）：日の画面の入口・列の見出しの「急な欠勤」・
-// ホームのカードから開く、段階のある右の欄。1 何が起きたか → 2 人（時間帯）・訪問を選ぶ → 3 影響の確認と振り直し → 4 選んで確定。
-// 振り直しの計算は足さない（見込みは previewOf、振り直し・案B・確定・元に戻すは日の画面の今の操作を呼ぶ）
+// ホームのカードから開く、段階のある右の欄。1 何が起きたか → 2 人（時間帯）・訪問を選ぶ → 3 影響の確認と振り直し → 4 選んで確定
+// → 5 連絡（PRD D243〜D246。ADR-0038）。振り直しの計算は足さない（見込みは previewOf、振り直し・案B・確定・元に戻すは日の画面の
+// 今の操作を呼ぶ。連絡の一覧は日の画面が lib/contacts の contactRows で作って渡す）
 import {
   Ban,
   CalendarX2,
@@ -8,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  ClipboardCopy,
   Send,
   Trash2,
   Undo2,
@@ -16,11 +18,16 @@ import {
   X,
 } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
+import { MailButton, MailLengthNote } from '../components/mailParts';
 import { SidePanel, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import type { Absence, Terms } from '../contracts/documents';
 import type { Slot } from '../domain/availability';
+import { copyText } from '../lib/clipboard';
 import { newId } from '../lib/common';
+import { CONTACT_KIND_LABEL, type ContactKind, type ContactRow } from '../lib/contacts';
+import { NO_EMAIL } from '../lib/mail';
+import type { BuiltMail } from '../lib/mailto';
 import {
   type AbsenceDraft,
   absenceOfDraft,
@@ -44,6 +51,15 @@ import { AbsenceFields, AbsenceTargets, previewOf } from './absenceParts';
 
 /** 欄を開くときの初め（列の見出しからは〈スタッフ〉と人を決めて2段目から） */
 export type SuddenInit = { kind?: SuddenKind; staffId?: string };
+
+/** 種類の印の色（担当が外れる・中止は灰、新しく入るは移る色、時刻は注意の色） */
+const KIND_CHIP: Record<ContactKind, string> = {
+  removed: 'chip',
+  added: 'chip chip-move',
+  shifted: 'chip chip-warn',
+  cancelled: 'chip',
+  client: 'chip',
+};
 
 /** 済んだこと（4段目の見出し） */
 type Done = { kind: 'staff'; text: string } | { kind: 'client'; text: string; sameDay: boolean };
@@ -69,6 +85,9 @@ export function SuddenPanel({
   onCancelVisit,
   onAdopt,
   onRevert,
+  contacts,
+  contactMail,
+  onCopied,
   onClose,
   fallbackFocus,
   returnFocus,
@@ -103,6 +122,14 @@ export function SuddenPanel({
   onAdopt: () => Promise<boolean>;
   /** 元の案に戻す（確認ダイアログで取り消したら false）。振り直していなければ undefined */
   onRevert?: () => Promise<boolean>;
+  /**
+   * 5段目の連絡の一覧（前の確定した割当 → 新しい割当の差と、取り消した訪問から。PRD D244）。差を出せなければ null
+   */
+  contacts: ContactRow[] | null;
+  /** 〈スタッフ〉あてのメール（PRD D94）。メールアドレスが無ければ null。メールを切っていれば渡さない（ボタンを出さない） */
+  contactMail?: (row: ContactRow) => BuiltMail | null;
+  /** 文をコピーしたあと（ok：できたか・what：何の文か） */
+  onCopied: (ok: boolean, what: string) => void;
   /** 閉じる（toBar：日の画面の差の欄へ移る） */
   onClose: (toBar: boolean) => void;
   fallbackFocus?: () => HTMLElement | null;
@@ -116,6 +143,8 @@ export function SuddenPanel({
   const [sameDay, setSameDay] = useState(true);
   const [done, setDone] = useState<Done | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 5段目で［連絡した］に印を付けた行（その場の状態だけ。データに残さない。ADR-0038） */
+  const [sent, setSent] = useState<ReadonlySet<string>>(() => new Set());
 
   const av = staffId ? slotsOf.get(staffId) : undefined;
   const existing = av?.absence ?? null;
@@ -177,7 +206,18 @@ export function SuddenPanel({
     setDone({ kind: 'client', text: `${info.client} ${info.window}`, sameDay });
     go(4);
   };
-  const close = () => onClose(done?.kind === 'staff');
+  // 5段目（連絡）まで進んだら差の欄へは移らない（確定まで済んでいる）
+  const close = () => onClose(done?.kind === 'staff' && step < 5);
+  const copyRow = (r: ContactRow) => {
+    void copyText(r.text).then((ok) => onCopied(ok, `${r.name}への文`));
+  };
+  const toggleSent = (key: string, on: boolean) =>
+    setSent((cur) => {
+      const next = new Set(cur);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
 
   const stepHeading = (text: string) => (
     <h3 className="sudden-step-title" tabIndex={-1} data-return-focus>
@@ -547,12 +587,17 @@ export function SuddenPanel({
             title={running ? '計算中は押せません' : undefined}
             onClick={() =>
               void guarded(async () => {
-                if (await onAdopt()) onClose(false);
+                if (await onAdopt()) go(5);
               })
             }
             data-testid="sudden-adopt"
           >
             <WithIcon icon={CircleCheck}>この割当で確定</WithIcon>
+          </button>
+        )}
+        {!canAdopt && (
+          <button type="button" className="btn btn-primary" onClick={() => go(5)} data-testid="sudden-to-contacts">
+            <WithIcon icon={ChevronRight}>次へ：連絡</WithIcon>
           </button>
         )}
         {done.kind === 'staff' && onRevert && (
@@ -576,6 +621,104 @@ export function SuddenPanel({
           </button>
         )}
         {closeBtn}
+      </>
+    );
+  } else if (step === 5 && done) {
+    const rows = contacts ?? [];
+    const sentCount = rows.filter((r) => sent.has(r.key)).length;
+    body = (
+      <>
+        {stepHeading(suddenHeading(done.kind, 5, terms.staff))}
+        <p className="sub">
+          確定する前の割当（無ければ振り直す前の案）と、新しい割当の差から作っています。文はコピーするか、メールアプリで開いて送ります（このアプリからは送りません）。
+        </p>
+        {contacts === null ? (
+          <p className="sub" data-testid="sudden-contacts-none">
+            差を出せませんでした。日の予定の「連絡の一覧」で確かめてください
+          </p>
+        ) : rows.length === 0 ? (
+          <p data-testid="sudden-contacts-none">連絡が要る変更はありません。</p>
+        ) : (
+          <>
+            <p className="sudden-contacts-count" aria-live="polite" data-testid="sudden-contacts-count">
+              連絡した {sentCount}/{rows.length}人
+            </p>
+            <ul className="sudden-contacts" data-testid="sudden-contacts">
+              {rows.map((r) => {
+                const mail = r.to === 'staff' && contactMail ? contactMail(r) : null;
+                return (
+                  <li
+                    key={r.key}
+                    className={`sudden-contact${sent.has(r.key) ? ' is-sent' : ''}`}
+                    data-testid="sudden-contact"
+                    data-to={r.to}
+                    data-kinds={r.kinds.join(' ')}
+                  >
+                    <div className="sudden-contact-head">
+                      <strong>{r.name}</strong>
+                      {r.to === 'client' ? (
+                        <span className="chip">{terms.client}あて</span>
+                      ) : (
+                        r.kinds.map((k) => (
+                          <span key={k} className={KIND_CHIP[k]}>
+                            {CONTACT_KIND_LABEL[k]}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <pre className="sudden-contact-text" data-testid="sudden-contact-text">
+                      {r.text}
+                    </pre>
+                    <div className="sudden-contact-acts">
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => copyRow(r)}
+                        aria-label={`${r.name}への文をコピー`}
+                        data-testid="sudden-contact-copy"
+                      >
+                        <WithIcon icon={ClipboardCopy} size={14}>
+                          文をコピー
+                        </WithIcon>
+                      </button>
+                      {r.to === 'staff' && contactMail && (
+                        <>
+                          <MailButton
+                            mail={mail}
+                            label="メール"
+                            why={NO_EMAIL}
+                            srLabel={`${r.name}へのメールを作る`}
+                            testId="sudden-contact-mail"
+                          />
+                          <MailLengthNote mail={mail} />
+                        </>
+                      )}
+                      <label className="check sudden-contact-sent">
+                        <input
+                          type="checkbox"
+                          checked={sent.has(r.key)}
+                          onChange={(e) => toggleSent(r.key, e.target.checked)}
+                          style={{ width: 'auto' }}
+                          aria-label={`${r.name}に連絡した`}
+                          data-testid="sudden-contact-sent"
+                        />
+                        連絡した
+                      </label>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </>
+    );
+    footer = (
+      <>
+        <button type="button" className="btn btn-primary" onClick={() => onClose(false)} data-testid="sudden-finish">
+          <WithIcon icon={Check}>終わる</WithIcon>
+        </button>
+        {back(4)}
       </>
     );
   }
