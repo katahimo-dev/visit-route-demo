@@ -38,6 +38,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
 import { useConfirm } from '../components/ConfirmDialog';
+import { FieldError } from '../components/FieldError';
 import { ClientDots } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
@@ -1119,11 +1120,7 @@ export default function MonthPage() {
             </div>
           </div>
         )}
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
+        <FieldError>{error}</FieldError>
       </div>
 
       <div className="month-body">

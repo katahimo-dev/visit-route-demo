@@ -243,6 +243,21 @@ label {
   color: var(--danger);
   font-size: 0.9rem;
 }
+/* 必須の欄の札（PRD D250）。見出しの文字の横に小さく。読み上げは入力欄の required に任せる */
+.req-mark {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  color: var(--danger);
+  background: var(--card);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.5;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
 .toast {
   position: fixed;
   left: 50%;

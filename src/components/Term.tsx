@@ -77,6 +77,8 @@ export function TipBubble({
       ref={ref}
       id={id}
       role="tooltip"
+      // 右の欄の inert（PRD D252）に巻き込まない（欄の中の用語の説明の上にマウスを移しても消えない。PRD D175）
+      data-inert-keep
       className={`term-tip ${className}`}
       hidden={!open}
       data-testid={testId}

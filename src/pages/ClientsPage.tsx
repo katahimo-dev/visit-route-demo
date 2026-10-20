@@ -24,6 +24,7 @@ import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { useConfirm } from '../components/ConfirmDialog';
 import { CondChips, ConditionsEditor, TraitChips, TraitsEditor } from '../components/conditions';
+import { FieldError, type FormErr, invalidAttrs, RequiredMark, toFormErr } from '../components/FieldError';
 import { PickChips } from '../components/PickChips';
 import { Check, TentativeMark } from '../components/parts';
 import { ClientView } from '../components/personView';
@@ -45,7 +46,7 @@ import { jstDate, weekday } from '../domain/time';
 import { activeFilterCount, EMPTY_FILTER, filterClients, filterFacts, resolveStaffId } from '../lib/clientFilter';
 import { isBeforeActive, STAGE_LABELS, stageChoices, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
-import { byDisplayName, byName, formError, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
+import { byDisplayName, byName, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
 import { useDirtyMark } from '../lib/dirtyForms';
 import { normalizeEmail } from '../lib/mailto';
 import { keepStorePlace } from '../lib/placeAll';
@@ -105,7 +106,10 @@ export default function ClientsPage() {
   /** 欄を開いたときの場所（保存のとき、まとめて置いた位置を欄の古い値で消さないため。ADR-0016） */
   const [openedPlace, setOpenedPlace] = useState<Client['place'] | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormErr>(null);
+  const errorId = useId();
+  /** 誤った欄の印（PRD D250。郵便番号の欄は住所の入力が自分で印を付ける） */
+  const bad = (field: string) => invalidAttrs(error?.field === field, errorId);
   /** 担当できる人を限る（PRD D68。入れたら1人以上選ぶ） */
   const [limit, setLimit] = useState(false);
   /** 欄を開いたときの「担当できる人を限る」と、新しい人の空の欄（変更があるかの判定に使う） */
@@ -251,24 +255,32 @@ export default function ClientsPage() {
         ? form.allowedStaffIds.filter((id) => staff.some((s) => s.id === id && s.active))
         : [];
     if (limit && allowed.length === 0) {
-      setError(`担当できる${terms.staff}を1人以上選ぶか、「担当できる人を限る」を外してください`);
+      setError({ text: `担当できる${terms.staff}を1人以上選ぶか、「担当できる人を限る」を外してください` });
       return;
     }
     // 郵便番号はハイフン・全角を受けて7桁に直す（ADR-0016）。直せなければ保存しない
     const postalCode = normalizePostalCode(form.place.postalCode);
     if (postalCode === null) {
-      setError('郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません。空でも構いません）');
+      setError({
+        text: '郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません。空でも構いません）',
+      });
       return;
     }
     // 紹介元のメールアドレス（任意。ADR-0017）：全角・前後の空白を直し、形が合わなければ保存しない
     const referrerEmail = normalizeEmail(form.referrer.email);
     if (referrerEmail === null) {
-      setError('紹介元のメールアドレスの形ではありません（例 name@example.com）。空でも構いません');
+      setError({
+        text: '紹介元のメールアドレスの形ではありません（例 name@example.com）。空でも構いません',
+        field: 'referrer',
+      });
       return;
     }
     // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
     if (nameTaken(data.clients, (x) => x.displayName, form.displayName, form.id)) {
-      setError(`「${form.displayName.trim()}」と同じ名前の${terms.client}がいます。名前を変えてください`);
+      setError({
+        text: `「${form.displayName.trim()}」と同じ名前の${terms.client}がいます。名前を変えてください`,
+        field: 'displayName',
+      });
       return;
     }
     try {
@@ -310,7 +322,7 @@ export default function ClientsPage() {
           : '保存しました',
       );
     } catch (e) {
-      setError(formError(e));
+      setError(toFormErr(e));
     }
   };
 
@@ -532,6 +544,7 @@ export default function ClientsPage() {
               : `${terms.client}：${viewed?.displayName.trim() || '（名前なし）'}`
           }
           onClose={closePanel}
+          onSubmit={form ? save : undefined}
           focusKey={form ? 'edit' : 'view'}
           headActions={
             !form &&
@@ -550,13 +563,15 @@ export default function ClientsPage() {
           footer={
             form && (
               <>
-                <button type="button" className="btn btn-primary" onClick={save}>
+                <button type="submit" className="btn btn-primary">
                   <WithIcon icon={Save}>保存</WithIcon>
                 </button>
                 <button type="button" className="btn" onClick={cancelEdit} data-testid="edit-cancel">
                   <WithIcon icon={X}>取り消し</WithIcon>
                 </button>
-                {error && <span className="error">{error}</span>}
+                <FieldError as="span" id={errorId} token={error}>
+                  {error?.text}
+                </FieldError>
               </>
             )
           }
@@ -592,10 +607,15 @@ export default function ClientsPage() {
                 )}
                 <div className="form-grid">
                   <label>
-                    表示名
+                    <span>
+                      表示名
+                      <RequiredMark />
+                    </span>
                     <input
                       value={form.displayName}
                       maxLength={50}
+                      required
+                      {...bad('displayName')}
                       onChange={(e) => setForm({ ...form, displayName: e.target.value })}
                     />
                   </label>
@@ -715,6 +735,7 @@ export default function ClientsPage() {
                           maxLength={254}
                           autoComplete="off"
                           placeholder="name@example.com"
+                          {...bad('referrer')}
                           onChange={(e) => setForm({ ...form, referrer: { ...form.referrer, email: e.target.value } })}
                           data-testid="client-referrer-email"
                         />

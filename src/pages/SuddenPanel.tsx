@@ -286,13 +286,7 @@ export function SuddenPanel({
     );
     footer = (
       <>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={!staffId || !!error}
-          onClick={() => go(3)}
-          data-testid="sudden-next"
-        >
+        <button type="submit" className="btn btn-primary" disabled={!staffId || !!error} data-testid="sudden-next">
           <WithIcon icon={ChevronRight}>次へ：影響を見る</WithIcon>
         </button>
         {back(1)}
@@ -590,6 +584,14 @@ export function SuddenPanel({
       fallbackFocus={fallbackFocus}
       returnFocus={returnFocus}
       footer={footer}
+      // 2段目（欠勤の入力）は form にして、メモの Enter・「次へ」で進む（PRD D251）
+      onSubmit={
+        step === 2 && kind === 'staff'
+          ? () => {
+              if (staffId && !error) go(3);
+            }
+          : undefined
+      }
     >
       <div className="stack sudden-panel" style={{ gap: 12 }} data-testid="sudden-panel" data-step={step}>
         <ol className="sudden-steps" aria-label="段階">
