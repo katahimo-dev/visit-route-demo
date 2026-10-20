@@ -12,7 +12,8 @@
 // 終了コード：全部動けば 0、動かないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, check, withTimeout, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, check, withTimeout, watchErrors, runSteps } = require('./lib/env.cjs');
+const { sharedPage } = require('./lib/steps.cjs');
 
 /** 動かし先が見つからないときは、null のまま進まず分かる言葉で止める */
 function need(x, what) {
@@ -266,56 +267,62 @@ async function weekClientsIme(page) {
   });
 }
 
-run(async () => {
-  const b = await launch();
-  const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(page);
-  // ページの時計を週の途中の日本時間の日中に止める（FAKE_NOW。アプリの「今日」とテストの TODAY をそろえる）
-  await page.clock.setFixedTime(NOW);
-  console.log(`ページの時刻：${NOW.toISOString()}（今日＝${TODAY}）`);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  const step = async (name, fn) => {
-    try {
-      await fn();
-    } catch (e) {
-      report(name, false, String(e.message || e));
-    }
-  };
-  await step('week-staff', () => weekTimeline(page, 'staff'));
-  await step('week-client', () => weekTimeline(page, 'client'));
-  await step('week-clients', () => weekClients(page));
-  await step('week-clients-ime', () => weekClientsIme(page));
-  await step('plan-timeline', async () => {
-    await page.goto(`${BASE}#/plan`);
-    await page.reload();
-    await planMove(page, 'timeline', 'plan-timeline');
-  });
-  await step('plan-order', async () => {
-    await page.goto(`${BASE}#/plan`);
-    await page.reload();
-    await planMove(page, 'order', 'plan-order');
-  });
-  await step('month-day', async () => {
-    await page.goto(`${BASE}#/month`);
-    await page.reload();
-    const days = page.locator('[data-testid="month-day"]:not([data-state="empty"])');
-    await days.first().waitFor();
-    let d = null;
-    for (let i = 0; i < (await days.count()); i++) {
-      if ((await days.nth(i).getAttribute('data-date')) > TODAY) {
-        d = days.nth(i);
-        break;
-      }
-    }
-    await need(d, `${TODAY} より後の月のマス`).click();
-    await page.waitForURL(/#\/plan/);
-    await planMove(page, 'timeline', 'month-day');
-  });
-  await b.close();
-  return errors;
+const steps = sharedPage({
+  open: async () => {
+    const b = await launch();
+    const page = await b.newPage({ viewport: { width: 1400, height: 1000 } });
+    // 初回の案内ツアーを見た扱いにする（PRD D193）
+    await skipTour(page);
+    // ページの時計を週の途中の日本時間の日中に止める（FAKE_NOW。アプリの「今日」とテストの TODAY をそろえる）
+    await page.clock.setFixedTime(NOW);
+    console.log(`ページの時刻：${NOW.toISOString()}（今日＝${TODAY}）`);
+    watchErrors(page);
+    return { b, page };
+  },
+  // report と同じ書き方（理由を JSON の文字にする）
+  info: (e) => JSON.stringify(String(e.message || e)),
+  steps: [
+    ['week-staff', (page) => weekTimeline(page, 'staff')],
+    ['week-client', (page) => weekTimeline(page, 'client')],
+    ['week-clients', weekClients],
+    ['week-clients-ime', weekClientsIme],
+    [
+      'plan-timeline',
+      async (page) => {
+        await page.goto(`${BASE}#/plan`);
+        await page.reload();
+        await planMove(page, 'timeline', 'plan-timeline');
+      },
+    ],
+    [
+      'plan-order',
+      async (page) => {
+        await page.goto(`${BASE}#/plan`);
+        await page.reload();
+        await planMove(page, 'order', 'plan-order');
+      },
+    ],
+    [
+      'month-day',
+      async (page) => {
+        await page.goto(`${BASE}#/month`);
+        await page.reload();
+        const days = page.locator('[data-testid="month-day"]:not([data-state="empty"])');
+        await days.first().waitFor();
+        let d = null;
+        for (let i = 0; i < (await days.count()); i++) {
+          if ((await days.nth(i).getAttribute('data-date')) > TODAY) {
+            d = days.nth(i);
+            break;
+          }
+        }
+        await need(d, `${TODAY} より後の月のマス`).click();
+        await page.waitForURL(/#\/plan/);
+        await planMove(page, 'timeline', 'month-day');
+      },
+    ],
+  ],
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

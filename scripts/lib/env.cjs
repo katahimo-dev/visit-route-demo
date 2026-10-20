@@ -1,6 +1,7 @@
 // e2e の共通：Playwright の読み込み・環境変数・ページの時計・結果の数え方・終わり方。
 // scripts/e2e-*.cjs が require する。単独で `node scripts/e2e-xxx.cjs` でも、
-// @playwright/test の包み（e2e/legacy.spec.ts）から子のプロセスで呼んでも同じに動く。
+// @playwright/test の包み（e2e/legacy.spec.ts）から同じプロセスで段（steps）を呼んでも同じに動く（ADR-0041）。
+// 包みからは hooks で、確かめの写し先（expect.soft）・動画の置き場所を差し込む。
 //
 // 環境変数：
 //   PLAYWRIGHT … Playwright のモジュールの場所（既定：require('playwright')、無ければ /opt/node22/lib/node_modules/playwright）
@@ -11,13 +12,14 @@
 //                次の水曜（今日が水曜なら今日）の日本時間 12:00。アプリは「今日」を日本時間で決め、今日より前の訪問は動かせないので、
 //                週の途中に止めて今週に今日より後の日を残す（日曜に実行すると今週に動かし先が無くなるため）
 //   PERF_MS_<名前> … 速さの上限（ミリ秒）。スクリプトごとに既定が違う。無ければ PERF_MS を使う（前からの名前）
+//   E2E_SCRIPT … スクリプトの名前（e2e-home など）。包みが同じプロセスで読むときに渡す（既定：走らせたファイルの名前）
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { skipTour } = require('./tourSeen.cjs');
 
 /** 走らせたスクリプトの名前（e2e-home など） */
-const SCRIPT = path.basename(require.main?.filename ?? 'e2e', '.cjs');
+const SCRIPT = process.env.E2E_SCRIPT || path.basename(require.main?.filename ?? 'e2e', '.cjs');
 /** 失敗のスクリーンショットの頭に付ける短い名前（home など） */
 const NAME = SCRIPT.replace(/^e2e-/, '');
 
@@ -34,8 +36,38 @@ function loadPlaywright() {
 }
 
 const { chromium } = loadPlaywright();
+
+/**
+ * 包み（e2e/legacy.spec.ts）が差し込むもの。単独の実行では使わない
+ *   onCheck(ok, name, info) … 確かめを1つずつ受ける（expect.soft に写す）
+ *   videoDir … 文脈の動画の置き場所（あれば newContext・newPage に recordVideo を足す）
+ */
+const hooks = { onCheck: null, videoDir: '' };
+
+/** 開いたブラウザ（終わりに closeBrowsers でまとめて閉じる。途中で止まっても残さない） */
+const browsers = new Set();
+/** 動画の置き場所があれば、文脈を開くときに recordVideo を足す */
+function withVideo(b) {
+  if (!hooks.videoDir) return b;
+  const add = (o = {}) => (o.recordVideo ? o : { ...o, recordVideo: { dir: hooks.videoDir } });
+  const newContext = b.newContext.bind(b);
+  const newPage = b.newPage.bind(b);
+  b.newContext = (o) => newContext(add(o));
+  b.newPage = (o) => newPage(add(o));
+  return b;
+}
 /** Chromium を開く（CHROMIUM があればその実行ファイル） */
-const launch = () => chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+async function launch() {
+  const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+  browsers.add(b);
+  b.on('disconnected', () => browsers.delete(b));
+  return withVideo(b);
+}
+/** 開いたままのブラウザを全部閉じる */
+async function closeBrowsers() {
+  await Promise.all([...browsers].map((b) => b.close().catch(() => {})));
+  browsers.clear();
+}
 
 const BASE = process.env.BASE || 'http://localhost:4183/';
 const OUT_DIR = process.env.OUT_DIR || path.join(os.tmpdir(), SCRIPT);
@@ -59,13 +91,71 @@ const perfMs = (name, def) => Number(process.env[name] || process.env.PERF_MS ||
 const STORAGE_KEY = 'vrdemo:data:v1';
 
 let fails = 0;
-/** 1つの確かめの結果を `OK  ` か `NG  ` の行で出す（包みはこの頭で通らないものを数える） */
+/** 1つの確かめの結果を `OK  ` か `NG  ` の行で出す。包みからは hooks.onCheck にも渡す（expect.soft） */
 function check(ok, name, info = '') {
   if (!ok) fails++;
-  console.log(
-    `${ok ? 'OK  ' : 'NG  '} ${name}${info === '' ? '' : `  ${typeof info === 'string' ? info : JSON.stringify(info)}`}`,
-  );
+  const text = info === '' ? '' : typeof info === 'string' ? info : JSON.stringify(info);
+  console.log(`${ok ? 'OK  ' : 'NG  '} ${name}${text === '' ? '' : `  ${text}`}`);
+  hooks.onCheck?.(!!ok, name, text);
 }
+
+/** ページのエラー（pageerror）。watchErrors で集め、終わりに失敗に数える */
+const pageErrors = [];
+/** ページのエラーを pageErrors に集める（log なら `ERR` の行も出す） */
+function watchErrors(page, { log = true } = {}) {
+  page.on('pageerror', (e) => {
+    pageErrors.push(String(e));
+    if (log) console.log('ERR', String(e));
+  });
+  return pageErrors;
+}
+
+/**
+ * fn() が真になるまで待って、最後の値を返す（web-first の待ち。固定の waitForTimeout の代わり）。
+ * ms を過ぎたら最後の値をそのまま返す（偽のまま。check で NG になる）。投げたら偽として待ち続ける
+ */
+async function until(fn, ms = 5000, every = 50) {
+  const end = Date.now() + ms;
+  for (;;) {
+    let v;
+    try {
+      v = await fn();
+    } catch {
+      v = undefined;
+    }
+    if (v || Date.now() >= end) return v;
+    await new Promise((r) => setTimeout(r, every));
+  }
+}
+
+/**
+ * 画面が落ち着くまで待つ：2回の描画と、DOM の変化が quietMs 続けて無いこと（最長 ms）。
+ * 押したあとの描き直しの待ち（固定の settle の代わり）。タイマーで遅れて変わるもの（Worker の計算・
+ * 遅らせた保存・CSS の動き）は待てないので、その所は目印（until・locator.waitFor）で待つ
+ */
+const idle = (page, ms = 2000, quietMs = 60) =>
+  page
+    .evaluate(
+      ([ms, quietMs]) =>
+        new Promise((resolve) => {
+          const end = performance.now() + ms;
+          let last = performance.now();
+          const mo = new MutationObserver(() => {
+            last = performance.now();
+          });
+          mo.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+          const tick = () => {
+            const now = performance.now();
+            if (now - last >= quietMs || now >= end) {
+              mo.disconnect();
+              resolve();
+            } else setTimeout(tick, 20);
+          };
+          requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(tick, 0)));
+        }),
+      [ms, quietMs],
+    )
+    .catch(() => {});
 
 const withTimeout = (p, ms, what) =>
   Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`固まった：${what}`)), ms))]);
@@ -98,7 +188,7 @@ const failShot = (page, step) =>
   page.screenshot({ path: path.join(OUT_DIR, `${NAME}-fail-${step}.png`) }).catch(() => {});
 
 /** 結果をまとめて終える。通らないものかページのエラー（errors）があれば終了コード 1 */
-function finish(errors = []) {
+function finish(errors = pageErrors) {
   console.log(`スクリーンショット：${OUT_DIR}`);
   const ng = fails + errors.length;
   console.log(ng === 0 ? '全部通った' : `${fails} 件が通らない・ページのエラー ${errors.length} 件`);
@@ -116,12 +206,30 @@ function run(main) {
   );
 }
 
+/**
+ * 段（[名前, 関数] の並び）を順に走らせて finish する（単独の実行。`if (require.main === module) runSteps(steps)`）。
+ * 段が投げたら（準備の失敗など）1 で終える。包みは同じ段を test.step で回す
+ */
+async function runSteps(steps) {
+  try {
+    for (const [, fn] of steps) await fn();
+  } catch (e) {
+    console.error(e);
+    await closeBrowsers();
+    process.exit(1);
+  }
+  await closeBrowsers();
+  finish(pageErrors);
+}
+
 module.exports = {
   SCRIPT,
   NAME,
   loadPlaywright,
   chromium,
+  hooks,
   launch,
+  closeBrowsers,
   BASE,
   OUT_DIR,
   JST,
@@ -131,6 +239,10 @@ module.exports = {
   perfMs,
   STORAGE_KEY,
   check,
+  pageErrors,
+  watchErrors,
+  until,
+  idle,
   withTimeout,
   settle,
   hashOf,
@@ -141,4 +253,5 @@ module.exports = {
   failShot,
   finish,
   run,
+  runSteps,
 };

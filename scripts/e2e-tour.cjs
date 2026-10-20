@@ -22,12 +22,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, stored, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, stored, pageErrors, runSteps } = require('./lib/env.cjs');
+const { guard } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
 const TOUR_KEY = 'vrdemo:tour:seen';
 
-const errors = [];
+/** ページのエラー（終わりに失敗に数える。env.cjs の pageErrors） */
+const errors = pageErrors;
 const native = [];
 const tour = (page) => page.getByTestId('tour');
 const visible = (loc) => loc.isVisible().catch(() => false);
@@ -852,9 +854,15 @@ async function backupRemind(b) {
   await ctx.close();
 }
 
-run(async () => {
-  const b = await launch();
-  for (const [name, fn] of [
+let b = null;
+const steps = [
+  [
+    '準備',
+    async () => {
+      b = await launch();
+    },
+  ],
+  ...[
     ['tour-first', tourFirst],
     ['tour-esc-skip', tourEscSkip],
     ['tour-today', tourToday],
@@ -865,14 +873,9 @@ run(async () => {
     ['data-protect', dataProtect],
     ['broken-data', brokenData],
     ['backup-remind', backupRemind],
-  ]) {
-    try {
-      await fn(b);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-    }
-  }
-  check(native.length === 0, 'ブラウザのダイアログを出さない', native);
-  await b.close();
-  return errors;
-});
+  ].map(([name, fn]) => [name, guard(() => fn(b), { label: name })]),
+  ['後始末', () => check(native.length === 0, 'ブラウザのダイアログを出さない', native)],
+];
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

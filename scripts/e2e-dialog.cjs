@@ -11,7 +11,8 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, check, settle, stored, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, check, settle, stored, failShot, runSteps } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 const dialog = (page) => page.getByTestId('confirm-dialog');
 /** いまフォーカスのある要素の data-testid・読み上げ名 */
@@ -279,17 +280,14 @@ async function narrow(page) {
   check((await dialog(page).count()) === 0, '390px：取り消すで閉じる');
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  for (const step of [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow]) {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
     // 地図のタイルは外へ取りに行かない
-    await ctx.route(/cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org/, (r) =>
-      r.fulfill({ status: 204, body: '' }),
-    );
+    await ctx.route(/cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org/, (r) => r.fulfill({ status: 204, body: '' }));
     const page = await ctx.newPage();
     await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
@@ -299,15 +297,13 @@ run(async () => {
       native.push(`${d.type()}: ${d.message()}`);
       d.dismiss().catch(() => {});
     });
-    try {
-      await step(page);
-    } catch (e) {
-      check(false, `${step.name}：途中で止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, native);
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーが無い', errors);
-  await browser.close();
+    return { ctx, page, native };
+  },
+  steps: [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow],
+  label: (name) => `${name}：途中で止まった`,
+  after: (name, { native }) => check(native.length === 0, `${name}：ブラウザのダイアログを出さない`, native),
+  end: () => check(errors.length === 0, 'ページのエラーが無い', errors),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

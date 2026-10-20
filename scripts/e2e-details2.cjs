@@ -24,8 +24,9 @@ const {
   urlOf,
   stored,
   failShot,
-  run,
+  runSteps,
 } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 /** 最終勤務日に入れる日（今日の30日後） */
 const LAST_DAY = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 30 * 86400000).toISOString().slice(0, 10);
@@ -633,10 +634,9 @@ async function rosterReset(page) {
   check((await notice.count()) === 0, '知らせ：「初期状態に戻す」で消える');
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  for (const step of [day, overOne, roster, rosterReset]) {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
@@ -646,16 +646,13 @@ run(async () => {
     // ページの時計を止める（e2e-details と同じ）
     await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
-    const dlg = await answerConfirms(page);
-    try {
-      await step(page);
-    } catch (e) {
-      check(false, `${step.name}：途中で止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーが無い', errors);
-  await browser.close();
+    return { ctx, page, dlg: await answerConfirms(page) };
+  },
+  steps: [day, overOne, roster, rosterReset],
+  label: (name) => `${name}：途中で止まった`,
+  after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
+  end: () => check(errors.length === 0, 'ページのエラーが無い', errors),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

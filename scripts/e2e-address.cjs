@@ -17,7 +17,8 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, check, stored, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, check, stored, failShot, runSteps } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 const ZIP_ONE = {
   status: 200,
@@ -425,10 +426,9 @@ async function staffHome(page) {
   check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：開き直すと郵便番号は空');
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  for (const step of [basics, failures, races, vacancy, holdNote, staffHome]) {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
@@ -438,14 +438,13 @@ run(async () => {
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
     const dlg = await answerConfirms(page);
-    const fake = await fakeServices(page);
-    try {
-      await step(page, fake);
-    } catch (e) {
-      check(false, `${step.name} が止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
+    return { ctx, page, dlg, fake: await fakeServices(page) };
+  },
+  call: (fn, s) => fn(s.page, s.fake),
+  steps: [basics, failures, races, vacancy, holdNote, staffHome],
+  label: (name) => `${name} が止まった`,
+  after: (name, { dlg, fake }) => {
+    check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native);
     // 送り先は2つのサービスだけ
     check(
       fake.calls.every(
@@ -453,10 +452,11 @@ run(async () => {
           u.startsWith('https://zipcloud.ibsnet.co.jp/api/search?zipcode=') ||
           u.startsWith('https://msearch.gsi.go.jp/address-search/AddressSearch?q='),
       ),
-      `${step.name}：送り先は郵便番号検索・国土地理院だけ`,
+      `${name}：送り先は郵便番号検索・国土地理院だけ`,
     );
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーなし', errors.join(' / '));
-  await browser.close();
+  },
+  end: () => check(errors.length === 0, 'ページのエラーなし', errors.join(' / ')),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

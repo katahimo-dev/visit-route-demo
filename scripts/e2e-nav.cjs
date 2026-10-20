@@ -25,8 +25,9 @@ const {
   hashOf,
   isFocused,
   failShot,
-  run,
+  runSteps,
 } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_NAV', 100);
 
@@ -693,20 +694,14 @@ async function perf(page) {
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  const dlg = await answerConfirms(page);
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: async () => {
+    const s = await openPage();
+    // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
+    return { ...s, dlg: await answerConfirms(s.page) };
+  },
+  call: (fn, s) => fn(s.page, s),
+  steps: [
     ['menu', menu],
     ['keyboard', keyboard],
     ['people', people],
@@ -714,16 +709,10 @@ run(async () => {
     ['mobile', mobile],
     ['print', print],
     // 速さは時計を止めない別の文脈で測る（scripts/lib/env.cjs の withRealClock）
-    ['perf', () => withRealClock(b, errors, perf)],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native);
-  await b.close();
-  return errors;
+    ['perf', (_page, s) => withRealClock(s.b, pageErrors, perf)],
+  ],
+  after: ({ dlg }) => check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

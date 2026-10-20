@@ -21,8 +21,9 @@ const {
   urlOf,
   isFocused,
   failShot,
-  run,
+  runSteps,
 } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_DETAILS', 100);
 const pop = (page) => page.getByTestId('person-pop');
@@ -388,35 +389,19 @@ async function speed(page) {
   check(med >= 0 && med <= PERF_MS, `週：i を押してから吹き出しが出るまで（中央値 ${PERF_MS}ms 以下）`, times);
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  for (const [name, fn] of [
+const steps = sharedPage({
+  call: (fn, s) => fn(s.page, s),
+  steps: [
     ['month', month],
     ['week', week],
     ['plan', plan],
     ['same-button-and-twice', sameButtonAndTwice],
     // 速さは時計を止めない別の文脈で測る（scripts/lib/env.cjs の withRealClock）
-    ['speed', () => withRealClock(b, errors, speed)],
+    ['speed', (_page, s) => withRealClock(s.b, pageErrors, speed)],
     // データを書き換えるので最後に
     ['removed', removed],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  await b.close();
-  return errors;
+  ],
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

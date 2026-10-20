@@ -15,7 +15,8 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, check, isFocused, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, check, isFocused, failShot, runSteps } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const drawer = (page) => page.getByTestId('nav-drawer');
 const menuBtn = (page) => page.getByTestId('menu-btn');
@@ -733,19 +734,9 @@ async function wide(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-wide.png') });
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: false });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: () => openPage({ viewport: { width: 390, height: 844 }, context: { hasTouch: false } }),
+  steps: [
     ['header', header],
     ['drawer', drawerOpenClose],
     ['bottom', bottom],
@@ -762,14 +753,8 @@ run(async () => {
     ['narrow-wide', narrowWide],
     ['print', print],
     ['wide', wide],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  await b.close();
-  return errors;
+  ],
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

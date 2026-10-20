@@ -9,7 +9,8 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, urlOf, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, urlOf, failShot, runSteps } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const addDays = (d, n) => {
   const t = new Date(`${d}T00:00:00Z`);
@@ -359,19 +360,8 @@ async function nextWeek(page) {
   );
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  for (const [name, fn] of [
+const steps = sharedPage({
+  steps: [
     ['views', views],
     ['handoff', handoff],
     ['handoff-staff', handoffViaStaff],
@@ -381,14 +371,8 @@ run(async () => {
     // データを書き換えるので後ろに
     ['next-week', nextWeek],
     ['search', search],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  await b.close();
-  return errors;
+  ],
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

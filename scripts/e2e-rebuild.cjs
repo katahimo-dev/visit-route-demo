@@ -12,7 +12,8 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, failShot, runSteps } = require('./lib/env.cjs');
+const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 /** 帯が数え直すまでの待ち（components/rebuildBand の SETTLE_MS） */
 const SETTLE = 600;
@@ -456,21 +457,13 @@ async function mobile(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
-run(async () => {
-  const b = await launch();
-  const ctx = await b.newContext({ viewport: { width: 1400, height: 1000 } });
-  // 初回の案内ツアーを見た扱いにする（PRD D193）
-  await skipTour(ctx);
-  const page = await ctx.newPage();
-  await page.clock.setFixedTime(NOW);
-  const errors = [];
-  page.on('pageerror', (e) => {
-    errors.push(String(e));
-    console.log('ERR', String(e));
-  });
-  // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
-  const dlg = await answerConfirms(page);
-  for (const [name, fn] of [
+const steps = sharedPage({
+  open: async () => {
+    const s = await openPage();
+    // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
+    return { ...s, dlg: await answerConfirms(s.page) };
+  },
+  steps: [
     ['prepare', prepare],
     ['rules', rules],
     ['same-as-month', sameAsMonth],
@@ -479,15 +472,9 @@ run(async () => {
     ['rebuild', rebuild],
     ['today', today],
     ['day-remake', dayRemake],
-  ]) {
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e));
-      await failShot(page, name);
-    }
-  }
-  check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native);
-  await b.close();
-  return errors;
+  ],
+  after: ({ dlg }) => check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

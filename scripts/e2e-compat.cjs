@@ -12,7 +12,8 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, perfMs, check, settle, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, perfMs, check, settle, failShot, runSteps } = require('./lib/env.cjs');
+const { pagePerStep } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_COMPAT', 100);
 
@@ -393,33 +394,25 @@ async function perf(page) {
   check(median <= PERF_MS, `セルを1回押して描き終わるまで（中央値 ${PERF_MS}ms 以下）`, { median, times });
 }
 
-run(async () => {
-  const browser = await launch();
-  const errors = [];
-  const fresh = async (fixClock) => {
+const errors = [];
+const steps = pagePerStep({
+  open: async (browser, step) => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
     const page = await ctx.newPage();
-    // ページの時計を止める（ほかの e2e と同じ）
-    if (fixClock) await page.clock.setFixedTime(NOW);
+    // ページの時計を止める（ほかの e2e と同じ）。
+    // 速さは時計を止めない文脈で測る（setFixedTime は requestAnimationFrame・performance.now も差し替える。scripts/lib/env.cjs の withRealClock）
+    if (step !== perf) await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
-    const dlg = await answerConfirms(page);
-    return { ctx, page, dlg };
-  };
-  for (const step of [namesAndLayout, popover, openById, filters, regressions, perf]) {
-    // 速さは時計を止めない文脈で測る（setFixedTime は requestAnimationFrame・performance.now も差し替える。scripts/lib/env.cjs の withRealClock）
-    const { ctx, page, dlg } = await fresh(step !== perf);
-    try {
-      await step(page);
-    } catch (e) {
-      check(false, `${step.name} が止まった`, String(e).split('\n')[0]);
-      await failShot(page, step.name);
-    }
-    check(dlg.native.length === 0, `${step.name}：ブラウザのダイアログを出さない`, dlg.native);
-    await ctx.close();
-  }
-  check(errors.length === 0, 'ページのエラーなし', errors.join(' / '));
-  await browser.close();
+    return { ctx, page, dlg: await answerConfirms(page) };
+  },
+  steps: [namesAndLayout, popover, openById, filters, regressions, perf],
+  label: (name) => `${name} が止まった`,
+  after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
+  end: () => check(errors.length === 0, 'ページのエラーなし', errors.join(' / ')),
 });
+
+module.exports = { steps };
+if (require.main === module) runSteps(steps);

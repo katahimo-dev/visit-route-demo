@@ -11,7 +11,8 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, perfMs, check, failShot, run } = require('./lib/env.cjs');
+const { launch, BASE, OUT_DIR, NOW, STORAGE_KEY, perfMs, check, watchErrors, runSteps } = require('./lib/env.cjs');
+const { guard, firstLine, message } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_VACANCY', 5000);
 
@@ -337,38 +338,38 @@ async function narrow(page) {
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
-run(async () => {
-  const b = await launch();
-  const errors = [];
-  for (const [name, fn] of [
+let b = null;
+/** 段ごとに新しい文脈を開く（ブラウザの確認・知らせは出さない。PRD D146） */
+const fresh = (name, fn) => async () => {
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  // 初回の案内ツアーを見た扱いにする（PRD D193）
+  await skipTour(ctx);
+  const page = await ctx.newPage();
+  await page.clock.setFixedTime(NOW);
+  watchErrors(page);
+  page.on('dialog', async (d) => {
+    check(false, 'ブラウザの確認を出さない', d.message());
+    await d.dismiss();
+  });
+  await fakeServices(page);
+  await guard(() => fn(page), { label: name, info: (e) => firstLine(message(e)), page: () => page })();
+  await ctx.close();
+};
+// 段の関数に steps があるので、並びは allSteps と呼ぶ
+const allSteps = [
+  [
+    '準備',
+    async () => {
+      b = await launch();
+    },
+  ],
+  ...[
     ['steps', steps],
     ['marks', marks],
     ['place-later', placeLater],
     ['narrow', narrow],
-  ]) {
-    const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
-    // 初回の案内ツアーを見た扱いにする（PRD D193）
-    await skipTour(ctx);
-    const page = await ctx.newPage();
-    await page.clock.setFixedTime(NOW);
-    page.on('pageerror', (e) => {
-      errors.push(String(e));
-      console.log('ERR', String(e));
-    });
-    // ブラウザの確認・知らせは出さない（PRD D146）
-    page.on('dialog', async (d) => {
-      check(false, 'ブラウザの確認を出さない', d.message());
-      await d.dismiss();
-    });
-    await fakeServices(page);
-    try {
-      await fn(page);
-    } catch (e) {
-      check(false, name, String(e.message || e).split('\n')[0]);
-      await failShot(page, name);
-    }
-    await ctx.close();
-  }
-  await b.close();
-  return errors;
-});
+  ].map(([name, fn]) => [name, fresh(name, fn)]),
+];
+
+module.exports = { steps: allSteps };
+if (require.main === module) runSteps(allSteps);
