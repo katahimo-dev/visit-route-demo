@@ -1,6 +1,6 @@
 # 月の予定と月の印刷
 
-> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）・`ClientLeavesSection.tsx`、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228。
+> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）・`ClientLeavesSection.tsx`、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`・`monthBatch.ts`（計算の入れ物）、`src/components/batchBand.tsx`（上の帯の進み具合）。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032・0042。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228・D256・D257。
 > 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)。
 
 ### 月の予定（`#/month`）
@@ -116,7 +116,7 @@
 | `attention`・`unconfirmed` | 全体の表示にして右の欄へ移りフォーカス |
 | `stale` | `openStale()`：作っている間は何もしない。`staleTargets` が0日なら知らせて右の欄の要対応、あれば `mode='stale'` で欄を開く |
 
-#### まとめて作る（PRD D41・D153・D154・D163）
+#### まとめて作る（PRD D41・D153・D154・D163・D256・D257）
 
 欄（`SidePanel`）の中身：
 
@@ -127,18 +127,29 @@
 - 「訪問だけ作る（N件。案は作らない）」（`batch-expand-only`・`expandOnly`。作れる訪問があるときだけ。`applyPatterns` で展開するだけ）
 - 主ボタン「作り始める」（帯 `footer` の先頭）。その月の訪問が0件なら「定期パターンが無いか、この月の訪問がありません」で押せない
 
-「作り始める」（`start(mode, expand)`）の流れ：
+「作り始める」（`start(mode, expand)`）の流れ：画面は対象の日を出し、手直しのある日の確認をしてから `lib/monthBatch` の `monthBatch.start(job)` を呼ぶだけ。計算は画面の外の入れ物で続く（ADR-0042）
 
-1. その月の今日以降に `applyPatterns` で展開（1回の `update`）。stale のときは展開しない（`start('stale', false)`）
-2. `lib/month` の `batchTargets` で対象の日を出す
+1. `lib/month` の `batchTargets` で対象の日を出す（展開したあとのデータで）
+2. 入れ物が、その月の今日以降に `applyPatterns` で展開（1回の `update`。`expandYm`）。stale のときは展開しない（`start('stale', false)`）
 3. 1日ずつ、その日のデータに基準のプリセットの重みを当てた条件（`applyPreset`）で compile し、Worker（`runSolve`。種はデータの種、反復は `defaultIterations`）で解き、その日の今の案（routes・generated＝結果、pins＝{}、rules＝使った条件、runId）と記録（`addRun`。名前はプリセットの名前、`inputKey` 付き）を1回の `update` で書く（`applyDayRun`）。作っている間に確定した日・（まだ案の無い日だけで）案ができた日は飛ばし、今の案は変えず記録だけ足す
 
 - 「確定していない日をすべて作り直す」「条件が変わった日だけ」で手直し・固定のある日があれば「手直しのある N日の手直しを捨てます」と確認
 - 進み具合「11/14 の案：5/22日」（日付と日数、`progress` 要素）と「止める」（今の日はそれまでの最良で残し `stopped`、残りはやめる）
-- 計算中は他の計算（日の予定の自動作成・プリセット）を始めない（Worker は1つ。`runningRef`）
-- 画面を離れると止まる（作れた日は残る。離れる前の確認は出さない）
-- 終わったら知らせ「N日分の案を作りました（入らない訪問がある日 M日）」
+- 作っている間は、この画面のほかの書き込み（まとめて確定・希望休・条件が変わった日を作り直す）を押せない（`monthBatch.run` が null でない間）。月を送るボタンは押せる（いま作っている日の印は作っている月だけ。ほかの月を見ているときは進み具合の文の頭に「〈M〉月：」）
+- 二重には始めない：`monthBatch.start` は作っている間 false を返す。帯の次の一手・`?do=batch`・`?do=stale` も作っている間は欄を開かない
+- ほかの画面へ移っても止まらない。上の帯（`AdminShell` の header）に `BatchBand`：くるくるの印・「〈M〉月の案を作っています N/M日」（`batch-band-text`。`/month?ym=` へのリンク）・［止める］（`batch-band-stop`）。月の予定の画面では出さない（画面の中の `month-progress`）。狭い画面では帯の下の段に幅いっぱい。印刷では出さない
+- ページを閉じる・読み直すと止まる（作れた日は残る。再開しない。`MonthBatchHost` が外れると `connect` の後始末で計算を捨てる）
+- 終わったら知らせ（`MonthBatchHost` がどの画面でも出す。`batchDoneText`）「〈M〉月の案をN日分作りました」（入らない訪問がある日があれば「（入らない訪問がある日 M日）」）と［月の予定を見る］（`batch-done-open`。`/month?ym=`）。止めたら「〈M〉月の案をN日分作ったところで止めました」、計算できなければ「…止まりました（理由）」（この画面を開いていれば理由を `error` にも出す）
 - 「まだ案の無い日だけ」でもう一度押しても記録は増えない。まとめて作った日を開くと、基準のプリセットのカードが今の案
+- 欄の注記「1日ずつ作り、作れた日はすぐに保存します。「止める」で、作っている日はそれまでの最良の案で残し、残りの日はやめます。ほかの画面へ移っても作り続けます（上の帯に進み具合と［止める］）。ページを閉じる・読み直すと止まります（作れた日は残ります）」
+
+#### `lib/monthBatch.ts`（計算の入れ物。テストあり。ADR-0042）
+
+- `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・作れた日数・反復。作っていなければ null）・`done`（`BatchDone`＝月・名前・作れた日数・入らない訪問がある日・止めたか・理由。終わるたびに新しい物）・`start(job)`・`stop()`・`running()`・`connect(host)`。アプリでは `monthBatch` の1つ。値は `lib/valueStore`（`useValueStore` で読む部品だけ描き直す）
+- `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], expandYm, today }`。日ごとの作り方（`empty` は作っている間に案ができた日を飛ばし、書く直前に案があれば今の案を変えない）
+- 1日の作り方は画面にあったときのまま（基準のプリセットの重みで compile・使い回せる記録・`applyDayRun`）。規則・記憶を直すときはここを直す
+- `missingDays(data, dates, today)`：空き状況の［足りない案を作る］の日（範囲の今日以降の、案の無い日＝`empty` と、条件が変わった日＝`stale`。確定した日・手直しのある条件が変わった日は入れない。PRD D259）
+- `batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）
 
 #### 希望休（PRD D69。ADR-0014）
 
@@ -177,6 +188,7 @@
 ### 完了の条件
 
 - [ ] （ADR-0012）翌月を開き「まとめて作る」→ 進み具合が出て、終わると日のマスに件数・状態が出る。止めるとそこまでの日は残る。確定した日・今日より前の日は作られない。もう一度作っても「まだ案の無い日だけ」なら記録は増えない
+- [ ] まとめて作っている間にほかの画面へ移っても作り続け、上の帯に進み具合と［止める］が出る。月の予定へ戻ると進み具合が見え、終わると知らせ［月の予定を見る］。読み直すと止まる（作れた日は残る）。`lib/monthBatch` のテストが通る
 - [ ] 日のマスを押すとその日の「日の予定」が開き、まとめて作った案が今の案（基準のプリセットのカードが今の案）になっている
 - [ ] （D43）案を作ったあとにその日の訪問を直すと、月と日の予定に「条件が変わった」が出て、作り直すと消える
 - [ ] （ADR-0014）〈スタッフ〉を選び「休みを入れる」で勤務日のマスを続けて押すと希望休が付き、もう一度押すと外れる。勤務の無い日・今日より前の日は押せない。訪問のある日に入れると注意とリンクが出て、日のマスに「休みの人に N」、要対応に出る（案は変わらない）。全体の表示の「休 N」に数が入る

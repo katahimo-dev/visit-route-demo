@@ -1,6 +1,6 @@
 # ホーム（今日やること）と予定に共通の進み具合の帯
 
-> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）。関連 PRD：D141〜D145（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
+> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）。関連 PRD：D141〜D145・D255（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
 
 ### ホーム（`#/home`。PRD D141〜D145）
 
@@ -8,8 +8,8 @@
 
 #### `lib/home.ts`（純粋関数。テストあり）
 
-- `HOME_NEXT_MONTH_DAYS`（7）
-- `homeMonths(today)`：今月。今月の残り（今日を含む）が7日以下なら来月も
+- `HOME_NEXT_MONTH_FROM_DAY`（15。PRD D255。事業所の設定にはしない）
+- `homeMonths(today)`：今月。今日が15日以降なら来月も
 - `homeDays(today)`：今日から見る月の末日まで
 - `homeTasks({ today, statuses, months, todayStaff, data })`：カード `HomeTask`＝種類・色（`warn`／`todo`／`info`）・題名・内訳・移る先 `to`・日の予定へ移るときの日付 `date`。`ready` は info だけのとき。切った機能のカードは出さない
 
@@ -86,4 +86,4 @@
 
 #### 確かめ
 
-`scripts/e2e-progress.cjs`：月の帯・見出しにまとめて作るのボタンが無い・入口が1つ・主ボタン・帯から欄（URL は変えない）・右の欄と同じ日数／来月：あと N件・欄の「訪問だけ作る」／日：この日 未確定 → 確定で確定済み・確定 +1・確定の操作が待たされない／月・週・日とホームで同じ数／週・日の帯の数字から月の予定の欄（`?do=` が消える）／週は選んでいる日付の月／390px で1行・はみ出さない・印刷で出さない／案が全部ある月でも `PERF_MS_PROGRESS` 以内／済んだ「案 ✓」から開いても既定は「まだ案の無い日だけ」／数字のリンクの aria-label・空で置く読み上げの領域／Ctrl+クリックは新しいタブ／訪問の無い月はボタンなし／月末（`FAKE_NOW=2026-10-28`・`2026-10-31`）でも通る。
+`scripts/e2e-progress.cjs`：月の帯・見出しにまとめて作るのボタンが無い・入口が1つ・主ボタン・帯から欄（URL は変えない）・右の欄と同じ日数／来月：あと N件・欄の「訪問だけ作る」／日：この日 未確定 → 確定で確定済み・確定 +1・確定の操作が待たされない／月・週・日とホームで同じ数／週・日の帯の数字から月の予定の欄（`?do=` が消える）／週は選んでいる日付の月／390px で1行・はみ出さない・印刷で出さない／案が全部ある月でも `PERF_MS_PROGRESS` 以内／済んだ「案 ✓」から開いても既定は「まだ案の無い日だけ」／数字のリンクの aria-label・空で置く読み上げの領域／Ctrl+クリックは新しいタブ／訪問の無い月はボタンなし／まとめて作るはほかの画面へ移っても続く（上の帯の「〈M〉月の案を作っています N/M日」・日ごとに保存・帯の文で月へ戻ると進み具合・二重に始めない・帯の［止める］・知らせの［月の予定を見る］。PRD D256・D257）／月末（`FAKE_NOW=2026-10-28`・`2026-10-31`）でも通る。
