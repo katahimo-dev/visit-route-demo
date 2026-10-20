@@ -23,7 +23,7 @@
  * ドラッグ中は本体より上の高さを変えない（帯・まとめはドラッグで増減しない。メニューは浮かせて出す）
  */
 .plan-page {
-  gap: 12px;
+  gap: 10px;
 }
 .plan-oneline {
   display: flex;
@@ -35,6 +35,18 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   font-size: 0.9rem;
+}
+/* 下に担当ごとの1日が続くときは1枚のカードにつなげる（PRD D237。components/dayLines.css） */
+.plan-oneline:has(+ .daylines:not(.is-collapsed)) {
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+@media print {
+  .plan-oneline:has(+ .daylines:not(.is-collapsed)) {
+    border-bottom: 1px solid var(--line);
+    border-radius: 12px;
+  }
 }
 .plan-oneline strong {
   font-size: 1.05rem;
@@ -1036,14 +1048,7 @@ p.plan-band.error {
 }
 
 /* 「欠勤・キャンセル」の入口と欄（PRD D167〜D170）。入口は主ボタンにしない（朱1色の決まり）が、赤い縁で見つけやすく */
-.plan-sudden-btn {
-  border-color: var(--danger);
-  color: var(--danger);
-  font-weight: 700;
-}
-.plan-sudden-btn:hover:not(:disabled) {
-  background: #fbeceb;
-}
+/* 欠勤・キャンセルの入口は枠のボタン（主ボタンに見せない。PRD D238。前は赤い縁） */
 @media print {
   .plan-sudden-btn {
     display: none;
@@ -1176,9 +1181,8 @@ p.plan-band.error {
 .reason-line.is-bad .reason-mark {
   color: var(--warn-ink);
 }
-/* いちばんの理由の次の一手（PRD D229）：理由の下に1行 */
+/* いちばんの理由の次の一手（PRD D229）：今の案の1行の中、理由のすぐ後ろ（PRD D237） */
 .score-next {
-  margin: -4px 0 0;
   font-size: 0.85rem;
 }
 .score-next .link-btn,

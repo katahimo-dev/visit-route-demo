@@ -6,7 +6,8 @@ import { useBodyScrollLock } from './useBodyScrollLock';
 import { usePanelFoot, usePanelToastPlace, useVisualViewportFit } from './usePanelFoot';
 
 /**
- * 画面の見出し：アイコン＋題名＋ひとこと。右に主ボタンなどを置く
+ * 画面の見出しの型（PRD D236。ADR-0036）：左にアイコン＋題名＋1行の説明、右に主ボタン（塗り）を1つ。
+ * 予定の3画面は題名の下に［月｜週｜日］のタブ（リンクのナビ。今の画面は aria-current）。
  * 長い説明は Hint に入れて、ふだんは畳んでおく
  */
 export function PageHeader({
@@ -18,22 +19,26 @@ export function PageHeader({
 }: {
   icon: LucideIcon;
   title: ReactNode;
+  /** 1行の説明（この画面でやること） */
   lead?: ReactNode;
+  /** 右に置く主ボタン（塗りは1つだけ）と状態の印 */
   actions?: ReactNode;
-  /** 見出しの左に置く切り替え（予定の［月｜週｜日］。PRD D59） */
+  /** 題名の下に置くタブ（予定の［月｜週｜日］。PRD D59・D237） */
   nav?: ReactNode;
 }) {
   return (
-    <header className="page-head">
-      {nav}
-      <span className="page-icon" aria-hidden="true">
-        <Icon size={22} strokeWidth={2.2} />
-      </span>
-      <div className="page-title">
-        <h1>{title}</h1>
-        {lead && <p className="page-lead">{lead}</p>}
+    <header className={`page-head${nav ? ' has-tabs' : ''}`}>
+      <div className="page-head-row">
+        <span className="page-icon" aria-hidden="true">
+          <Icon size={20} strokeWidth={2.2} />
+        </span>
+        <div className="page-title">
+          <h1>{title}</h1>
+          {lead && <p className="page-lead">{lead}</p>}
+        </div>
+        {actions && <div className="page-actions">{actions}</div>}
       </div>
-      {actions && <div className="page-actions">{actions}</div>}
+      {nav && <div className="page-tabs">{nav}</div>}
     </header>
   );
 }

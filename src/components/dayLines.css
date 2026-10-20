@@ -123,3 +123,38 @@
     padding-right: 0;
   }
 }
+/* マウスの端末では行を詰める（日の予定の上の段を低くし、本体の最初の行を初期表示に入れる。PRD D237）。タッチの端末は今のまま */
+@media (pointer: fine) {
+  .daylines {
+    padding: 4px 14px 6px;
+  }
+  .daylines-btn {
+    padding: 0 4px;
+    line-height: 1.25;
+  }
+  .daylines-list {
+    gap: 0;
+  }
+  .daylines-item > .person-info {
+    width: 18px;
+    height: 18px;
+  }
+  .daylines-body.has-info > .daylines-head {
+    margin-right: 20px;
+  }
+  .daylines-body.has-info .daylines-item:not(:has(.person-info)) {
+    padding-right: 20px;
+  }
+}
+/* 今の案の1行（日の予定の .plan-oneline）のすぐ下では、1枚のカードにつなげる（PRD D237） */
+.plan-oneline + .daylines:not(.is-collapsed) {
+  margin-top: -11px;
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+@media print {
+  .plan-oneline + .daylines:not(.is-collapsed) {
+    margin-top: 0;
+  }
+}
