@@ -14,20 +14,7 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  JST,
-  NOW,
-  STORAGE_KEY,
-  check,
-  settle,
-  urlOf,
-  stored,
-  failShot,
-  runSteps,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, JST, NOW, STORAGE_KEY, check, settle, urlOf, stored, runSteps } = require('./lib/env.cjs');
 const { pagePerStep } = require('./lib/steps.cjs');
 
 const panel = (page) => page.locator('.drawer');

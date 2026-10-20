@@ -10,20 +10,7 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  hashOf,
-  stored,
-  failShot,
-  runSteps,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, hashOf, stored, runSteps } = require('./lib/env.cjs');
 const { pagePerStep } = require('./lib/steps.cjs');
 
 /** 「10/21」の形（月の要対応の日付の文） */

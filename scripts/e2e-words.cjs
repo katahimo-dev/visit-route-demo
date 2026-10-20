@@ -17,19 +17,7 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  hashOf,
-  failShot,
-  runSteps,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, hashOf, runSteps } = require('./lib/env.cjs');
 const { sharedPage, openPage, guard } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
@@ -734,22 +722,19 @@ async function mobile(browser) {
 
 const steps = sharedPage({
   open: async () => {
-    const s = await (async () => {
-      const s = await openPage();
-      // ブラウザのダイアログ（confirm・alert・prompt）が出たら失敗（PRD D146）
-      const native = [];
-      s.page.on('dialog', (d) => {
-        if (d.type() === 'beforeunload') {
-          d.accept();
-          return;
-        }
-        native.push(`${d.type()}: ${d.message()}`);
-        d.dismiss();
-      });
-      return { ...s, native };
-    })();
+    const s = await openPage();
+    // ブラウザのダイアログ（confirm・alert・prompt）が出たら失敗（PRD D146）
+    const native = [];
+    s.page.on('dialog', (d) => {
+      if (d.type() === 'beforeunload') {
+        d.accept();
+        return;
+      }
+      native.push(`${d.type()}: ${d.message()}`);
+      d.dismiss();
+    });
     console.log(`今日：${TODAY}（${MONTH}月）`);
-    return s;
+    return { ...s, native };
   },
   call: (fn, s) => fn(s.page, s),
   steps: [
@@ -762,11 +747,7 @@ const steps = sharedPage({
     ['unplaced-words', unplacedWords],
     ['warn-colors', warnColors],
     // 別の文脈で開く（スクリーンショットは撮らない）
-    [
-      'mobile',
-      (_page, s) =>
-        guard(() => mobile(s.b), { label: 'mobile' })(),
-    ],
+    ['mobile', (_page, s) => guard(() => mobile(s.b), { label: 'mobile' })()],
   ],
   after: ({ native }) => check(native.length === 0, 'ブラウザのダイアログを出さない', native),
 });

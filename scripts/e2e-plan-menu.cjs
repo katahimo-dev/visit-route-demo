@@ -16,21 +16,7 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  hashOf,
-  stored,
-  failShot,
-  runSteps,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, settle, hashOf, stored, runSteps } = require('./lib/env.cjs');
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 /** 保存（少し遅れて書く）が条件を満たすまで待つ（満たさなければ時間切れで続ける） */
@@ -39,7 +25,7 @@ async function waitStored(page, pred, arg, timeout = 5000) {
   while (Date.now() < end) {
     const d = await stored(page);
     if (d && pred(d, arg)) return;
-    await page.waitForTimeout(100);
+    await settle(page, 100);
   }
 }
 const dialog = (page) => page.getByTestId('confirm-dialog');

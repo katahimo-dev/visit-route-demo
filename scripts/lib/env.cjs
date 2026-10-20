@@ -46,14 +46,71 @@ const hooks = { onCheck: null, videoDir: '' };
 
 /** 開いたブラウザ（終わりに closeBrowsers でまとめて閉じる。途中で止まっても残さない） */
 const browsers = new Set();
-/** 動画の置き場所があれば、文脈を開くときに recordVideo を足す */
-function withVideo(b) {
-  if (!hooks.videoDir) return b;
-  const add = (o = {}) => (o.recordVideo ? o : { ...o, recordVideo: { dir: hooks.videoDir } });
+/**
+ * ページの中のタイマー（setTimeout）を期限つきで数える。settle が「描き直し・遅らせた処理（入力の間引き・保存・
+ * 吹き出しの出し入れ）が終わった」を待つのに使う。page.clock はあとから window.setTimeout を差し替えるので、
+ * 差し替えを受け取る形（getter・setter）にして、アプリが呼ぶ setTimeout をいつもこの包みに通す
+ */
+function trackTimers() {
+  /** id → 期限（performance.now） */
+  const due = new Map();
+  window.__e2eTimers = due;
+  const wrap = (name, make) => {
+    let inner = window[name];
+    let outer = make(inner);
+    Object.defineProperty(window, name, {
+      configurable: true,
+      get: () => outer,
+      set: (f) => {
+        inner = f;
+        outer = make(f);
+      },
+    });
+  };
+  wrap(
+    'setTimeout',
+    (st) =>
+      function (fn, ms, ...args) {
+        const id = st.call(
+          this,
+          (...a) => {
+            due.delete(id);
+            if (typeof fn === 'function') fn(...a);
+          },
+          ms,
+          ...args,
+        );
+        due.set(id, performance.now() + (Number(ms) || 0));
+        return id;
+      },
+  );
+  wrap(
+    'clearTimeout',
+    (ct) =>
+      function (id) {
+        due.delete(id);
+        return ct.call(this, id);
+      },
+  );
+}
+
+/**
+ * 文脈を開くときに、タイマーの数え（trackTimers）と、動画の置き場所があれば recordVideo を足す
+ */
+function instrument(b) {
+  const add = (o = {}) => (hooks.videoDir && !o.recordVideo ? { ...o, recordVideo: { dir: hooks.videoDir } } : o);
   const newContext = b.newContext.bind(b);
   const newPage = b.newPage.bind(b);
-  b.newContext = (o) => newContext(add(o));
-  b.newPage = (o) => newPage(add(o));
+  b.newContext = async (o) => {
+    const ctx = await newContext(add(o));
+    await ctx.addInitScript(trackTimers);
+    return ctx;
+  };
+  b.newPage = async (o) => {
+    const page = await newPage(add(o));
+    await page.context().addInitScript(trackTimers);
+    return page;
+  };
   return b;
 }
 /** Chromium を開く（CHROMIUM があればその実行ファイル） */
@@ -61,7 +118,7 @@ async function launch() {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   browsers.add(b);
   b.on('disconnected', () => browsers.delete(b));
-  return withVideo(b);
+  return instrument(b);
 }
 /** 開いたままのブラウザを全部閉じる */
 async function closeBrowsers() {
@@ -128,39 +185,78 @@ async function until(fn, ms = 5000, every = 50) {
   }
 }
 
+/** settle が待つタイマーの期限の先（これより先に来るタイマー＝知らせを消す・先読みなどは待たない） */
+const SETTLE_HORIZON_MS = 1000;
+/** DOM が変わらないまま続けば落ち着いたとみる長さ */
+const SETTLE_QUIET_MS = 50;
+
+/** ページの中で、落ち着くまで待つ（最長 maxMs）。待てたら true */
+function waitQuiet([maxMs, quietMs, horizonMs]) {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    let last = start;
+    const mo = new MutationObserver(() => {
+      last = performance.now();
+    });
+    mo.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    const busy = (now) => {
+      const due = window.__e2eTimers;
+      if (!due) return false;
+      for (const t of due.values()) if (t - now <= horizonMs) return true;
+      return false;
+    };
+    const tick = () => {
+      const now = performance.now();
+      const quiet = now - last >= quietMs && !busy(now);
+      if (quiet || now - start >= maxMs) {
+        mo.disconnect();
+        resolve(quiet);
+      } else setTimeout(tick, 20);
+    };
+    // 2回の描画を待つ。裏のタブ（別のタブを開いたあと）では描画が来ないので 100ms で先へ進む
+    let started = false;
+    const go = () => {
+      if (started) return;
+      started = true;
+      setTimeout(tick, 0);
+    };
+    requestAnimationFrame(() => requestAnimationFrame(go));
+    setTimeout(go, 100);
+  });
+}
+
 /**
- * 画面が落ち着くまで待つ：2回の描画と、DOM の変化が quietMs 続けて無いこと（最長 ms）。
- * 押したあとの描き直しの待ち（固定の settle の代わり）。タイマーで遅れて変わるもの（Worker の計算・
- * 遅らせた保存・CSS の動き）は待てないので、その所は目印（until・locator.waitFor）で待つ
+ * 押したあとの描き直しを待つ（web-first の待ち。ADR-0041）：2回の描画のあと、DOM の変化が続けて SETTLE_QUIET_MS 無く、
+ * 期限の近いタイマー（入力の間引き・保存・吹き出しの出し入れ・作り直しの帯の数え直し）が残っていないこと。
+ * ms は前の固定の待ちの長さ：最長は max(3×ms, 1500ms)。ページが移っている最中なら読み込みを待ってもう1回。
+ * Worker の計算（AI案を作る）は待たないので、その所は目印（locator.waitFor・until）で待つ。
+ * E2E_SETTLE_LOG=1 なら最長まで待った所を出す（固定の待ちのままがよい所を探す）
  */
-const idle = (page, ms = 2000, quietMs = 60) =>
-  page
-    .evaluate(
-      ([ms, quietMs]) =>
-        new Promise((resolve) => {
-          const end = performance.now() + ms;
-          let last = performance.now();
-          const mo = new MutationObserver(() => {
-            last = performance.now();
-          });
-          mo.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-          const tick = () => {
-            const now = performance.now();
-            if (now - last >= quietMs || now >= end) {
-              mo.disconnect();
-              resolve();
-            } else setTimeout(tick, 20);
-          };
-          requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(tick, 0)));
-        }),
-      [ms, quietMs],
-    )
-    .catch(() => {});
+async function settle(page, ms = 250) {
+  const maxMs = Math.max(3 * ms, 1500);
+  for (let i = 0; i < 2; i++) {
+    try {
+      // ページの中のタイマーが止められていても（ダイアログ・裏のタブ）、こちらの時計で最長＋2秒で先へ進む
+      const ok = await withTimeout(
+        page.evaluate(waitQuiet, [maxMs, SETTLE_QUIET_MS, SETTLE_HORIZON_MS]),
+        maxMs + 2000,
+        'settle',
+      ).catch((e) => {
+        if (String(e).includes('固まった：settle')) return false;
+        throw e;
+      });
+      if (!ok && process.env.E2E_SETTLE_LOG) console.log(`（settle ${ms}ms：${maxMs}ms 待っても落ち着かない）`);
+      return;
+    } catch {
+      // 移っている最中（文脈が消えた）：読み込みを待ってもう1回
+      await page.waitForLoadState('load').catch(() => {});
+    }
+  }
+  await page.waitForTimeout(ms).catch(() => {});
+}
 
 const withTimeout = (p, ms, what) =>
   Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`固まった：${what}`)), ms))]);
-/** 押したあとの描き直しを待つ */
-const settle = (page, ms = 250) => page.waitForTimeout(ms);
 const hashOf = (page) => decodeURIComponent(new URL(page.url()).hash);
 const urlOf = (page) => decodeURIComponent(page.url());
 const isFocused = (loc) => loc.evaluate((el) => document.activeElement === el);
@@ -242,7 +338,6 @@ module.exports = {
   pageErrors,
   watchErrors,
   until,
-  idle,
   withTimeout,
   settle,
   hashOf,

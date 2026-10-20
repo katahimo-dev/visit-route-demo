@@ -12,20 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  urlOf,
-  stored,
-  failShot,
-  runSteps,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, urlOf, stored, runSteps } = require('./lib/env.cjs');
 const { pagePerStep } = require('./lib/steps.cjs');
 
 /** 最終勤務日に入れる日（今日の30日後） */
@@ -37,7 +24,7 @@ async function waitStored(page, pred, timeout = 5000) {
   while (Date.now() < end) {
     const d = await stored(page);
     if (d && pred(d)) return d;
-    await page.waitForTimeout(100);
+    await settle(page, 100);
   }
   return stored(page);
 }

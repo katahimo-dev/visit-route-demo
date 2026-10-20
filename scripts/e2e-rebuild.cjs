@@ -10,9 +10,8 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, hashOf, failShot, runSteps } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, hashOf, runSteps, settle } = require('./lib/env.cjs');
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 /** 帯が数え直すまでの待ち（components/rebuildBand の SETTLE_MS） */
@@ -38,7 +37,7 @@ async function openSettings(page, hash) {
   await page.goto(`${BASE}#${hash}`);
   await page.locator('h1').first().waitFor({ timeout: 30000 });
   await page.locator('[data-testid="rebuild-live"][data-ready="1"]').waitFor({ state: 'attached', timeout: 30000 });
-  await page.waitForTimeout(300);
+  await settle(page, 300);
 }
 /** 日の画面で今の案ができる（自動作成）まで待つ */
 async function planReady(page) {
@@ -77,7 +76,7 @@ async function staleInMonth(page, ym) {
   await page.goto(`${BASE}#/month?ym=${ym}`);
   await page.locator('[data-testid="progress-band"][data-ym]').waitFor({ timeout: 30000 });
   await page.getByTestId('band-attention').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const list = page.getByTestId('month-attention');
   if ((await list.count()) === 0) return 0;
   return list.locator('li').filter({ hasText: '条件が変わった' }).count();
@@ -104,7 +103,7 @@ async function prepare(page) {
   SECOND = options.find((d) => d > TODAY) ?? '';
   await page.locator('.date-switch select').selectOption(SECOND);
   await page.waitForFunction((d) => document.querySelector('.date-switch select')?.value === d, SECOND);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   await planReady(page);
   await page.waitForFunction(() => !document.querySelector('[data-testid="adopt"]')?.disabled, null, {
     timeout: 60000,
@@ -133,6 +132,7 @@ async function rules(page) {
   const slider = preset.locator('input[type="range"]:not([disabled])').last();
   await slider.focus();
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowLeft');
+  // 数え直しの間引き（600ms）の途中を見るので、固定の短い待ち（settle は間引きが終わるまで待ってしまう。ADR-0041）
   await page.waitForTimeout(100);
   check((await daysRow(page).count()) === 0, '動かしている間（止まってから少しのあいだ）は数え直さない');
   await daysRow(page).waitFor({ timeout: 10000 });
@@ -175,7 +175,7 @@ async function rules(page) {
   const s0 = await stored(page);
   await main.focus();
   await page.keyboard.press('ArrowLeft');
-  await page.waitForTimeout(SETTLE + 300);
+  await settle(page, SETTLE + 300);
   const s1 = await stored(page);
   const changed = Object.keys(s1.basis).filter((t) => s1.basis[t].weight !== s0.basis[t].weight);
   check(
@@ -200,7 +200,7 @@ async function rules(page) {
     'いまの条件がプリセットと違えば案内と［今日の案をいまの条件で作り直す］［プリセットとして保存］',
     ct,
   );
-  await page.waitForTimeout(SETTLE + 300);
+  await settle(page, SETTLE + 300);
   check(
     (await counts(page)).days === 2 &&
       (await band(page).count()) === 1 &&
@@ -226,7 +226,7 @@ async function rules(page) {
   check(order, '帯は画面の上（見出しより前）');
   // 下へ巻いて設定を変えていても見える（広い画面では上の帯のすぐ下に貼り付く）
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const pos = await band(page).evaluate((el) => {
     const r = el.getBoundingClientRect();
     const h = document.querySelector('.app-header').getBoundingClientRect();
@@ -250,9 +250,9 @@ async function rules(page) {
     prev.focus({ preventScroll: true });
     window.scrollTo(0, document.documentElement.scrollHeight);
   });
-  await page.waitForTimeout(100);
+  await settle(page, 100);
   await page.keyboard.press('Tab');
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const hid = await page.evaluate(() => {
     const t = document.activeElement.getBoundingClientRect();
     const b = document.querySelector('[data-testid="rebuild-band"]').getBoundingClientRect();
@@ -290,7 +290,7 @@ async function later(page) {
   const slider = page.locator('.rules-table input[type="range"]:not([disabled])').first();
   await slider.focus();
   await page.keyboard.press('ArrowLeft');
-  await page.waitForTimeout(1200);
+  await settle(page, 1200);
   check((await band(page).count()) === 0, '同じ画面の間は隠したまま');
   check((await live(page).innerText()) === '', '隠したあとは読み上げない');
   // ほかの設定の画面では出る（相性・〈スタッフ〉）
@@ -427,12 +427,12 @@ async function dayRemake(page) {
     { key: STORAGE_KEY, d: TODAY, id: id0 },
     { timeout: 60000 },
   );
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check((await page.getByTestId('plan-stale').count()) === 0, '作り直すと日の予定の作り直すの帯が消える');
   const after = await page.evaluate((key) => JSON.stringify(JSON.parse(localStorage.getItem(key)).rules), STORAGE_KEY);
   check(after === rulesBefore, '日の予定の［作り直す］はいまの条件を書き換えない');
   await openSettings(page, '/rules');
-  await page.waitForTimeout(SETTLE + 300);
+  await settle(page, SETTLE + 300);
   const c = await counts(page);
   check(c.unconfirmed === 0, '作り直した日は「条件が変わった」から消え、ほかの日も増えない', c);
 }

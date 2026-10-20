@@ -29,7 +29,12 @@ function guard(fn, { label, info = message, page, shot = label }) {
  * ブラウザ・文脈・ページを開く（多くのスクリプトの準備）：初回の案内ツアーを見た扱い（PRD D193）・
  * ページの時計を NOW に止める・ページのエラーを集める（env.cjs の pageErrors）
  */
-async function openPage({ viewport = { width: 1400, height: 1000 }, context = {}, clock = true, logErrors = true } = {}) {
+async function openPage({
+  viewport = { width: 1400, height: 1000 },
+  context = {},
+  clock = true,
+  logErrors = true,
+} = {}) {
   const b = await launch();
   const ctx = await b.newContext({ viewport, ...context });
   await skipTour(ctx);

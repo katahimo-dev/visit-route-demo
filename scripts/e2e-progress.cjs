@@ -10,21 +10,8 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_PROGRESS で帯が出るまでの上限（既定 3000ms。無ければ PERF_MS）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  perfMs,
-  check,
-  hashOf,
-  failShot,
-  runSteps,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, perfMs, check, hashOf, runSteps, settle } = require('./lib/env.cjs');
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_PROGRESS', 3000);
@@ -55,7 +42,7 @@ async function open(page, hash, ready) {
     .waitFor({ timeout: 30000 });
   // ホームには帯が無い
   if (!hash.startsWith('/home')) await bandReady(page);
-  await page.waitForTimeout(300);
+  await settle(page, 300);
 }
 /** 保存したデータを書き換える（ホームはデータを書かないので、ホームで書き換えてから読み直す） */
 async function editData(page, fn, arg) {
@@ -152,7 +139,7 @@ async function monthEntry(page) {
   const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
   check(listed === nums.unconfirmed, '月：帯の確定していない日数＝右の欄の日数', { band: nums.unconfirmed, listed });
   await page.getByTestId('band-attention').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const att = await page.getByTestId('month-attention').locator('li').count();
   check(att === nums.attention, '月：帯の要対応＝右の欄の要対応', { band: nums.attention, listed: att });
   // 見出しの下の要約は月全体で、帯と同じ言葉（訪問・案のある日）を並べない（PR #38 のレビュー）
@@ -198,7 +185,7 @@ async function nextMonth(page) {
   const only = page.getByTestId('batch-expand-only');
   check(await only.isVisible(), '来月：欄に「訪問だけ作る」（今月の準備の①から移した）');
   await only.click();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   const v1 = await page.getByTestId('band-visits').innerText();
   check(!/あと/.test(v1) && /\d+件/.test(v1), '訪問だけ作ると帯の訪問が済み（あと N件が消える）', v1);
   check(!(await only.isVisible().catch(() => false)), '作ったあとは「訪問だけ作る」を出さない');
@@ -211,7 +198,7 @@ async function dayConfirm(page) {
   await page.goto(`${BASE}#/plan`);
   await page.reload();
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   await bandReady(page);
   const day = page.getByTestId('band-day');
   await page.waitForFunction(() => document.querySelector('[data-testid="band-day"]')?.dataset.state === 'plan', null, {
@@ -295,7 +282,7 @@ async function links(page) {
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
   await page.getByTestId('band-attention').click();
   await page.waitForURL(/#\/month/);
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   check(
     hashOf(page) === `#/month?ym=${YM}` &&
       (await page.locator('.month-aside-title').first().innerText()).includes('要対応'),
@@ -457,7 +444,7 @@ async function mobile(page) {
     await page.reload();
     await page.locator(ready).waitFor({ timeout: 60000 });
     await bandReady(page);
-    await page.waitForTimeout(300);
+    await settle(page, 300);
     const box = await page.getByTestId('progress-band').evaluate((el) => {
       const r = el.getBoundingClientRect();
       const kids = [...el.querySelectorAll('.pb-month, .pb-item, [data-testid="band-next"]')]

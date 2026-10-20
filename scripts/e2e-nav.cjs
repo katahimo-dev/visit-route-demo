@@ -10,22 +10,20 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_NAV で1文字打って描き終わるまでの上限（既定 100ms。無ければ PERF_MS）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
 const {
-  launch,
   BASE,
   OUT_DIR,
-  NOW,
   TODAY,
   STORAGE_KEY,
   perfMs,
   check,
   withRealClock,
+  pageErrors,
   hashOf,
   isFocused,
-  failShot,
   runSteps,
+  settle,
 } = require('./lib/env.cjs');
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
@@ -58,7 +56,7 @@ async function listed(page) {
 async function type(page, text) {
   await input(page).fill('');
   await input(page).pressSequentially(text, { delay: 20 });
-  await page.waitForTimeout(100);
+  await settle(page, 100);
 }
 /** seed の人（〈利用者さん〉の先頭・〈スタッフ〉の先頭） */
 async function seedPeople(page) {
@@ -266,7 +264,7 @@ async function keyboard(page) {
     });
   });
   await page.keyboard.press('Control+k');
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check((await palette(page).count()) === 0, '右の欄が開いているあいだは Ctrl+K で開かない');
   check((await page.evaluate(() => window.__ctrlK)) === true, '開かないときも Ctrl+K の既定の動きは止める');
   await page.keyboard.press('Escape');
@@ -285,7 +283,7 @@ async function keyboard(page) {
   );
   await page.keyboard.press('Enter');
   await page.waitForURL(/#\/month/);
-  await page.waitForTimeout(600);
+  await settle(page, 600);
   check(!hashOf(page).includes('do='), '月の予定へ移り ?do= は月の予定が消す', hashOf(page));
   // 呼び方のよみで画面を引く
   await open(page, '/home');
@@ -327,7 +325,7 @@ async function keyboard(page) {
   for (let i = 0; i < ri; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.waitForURL(/#\/plan/);
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   check(!hashOf(page).includes('do='), '日の予定へ移り ?do=recreate は日の予定が消す', hashOf(page));
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
@@ -455,10 +453,10 @@ async function focus(page) {
   await palette(page).waitFor();
   const lst = page.getByTestId('cmdk-list');
   await page.keyboard.press('ArrowUp'); // 末尾へ
-  await page.waitForTimeout(100);
+  await settle(page, 100);
   const bottom = await lst.evaluate((el) => el.scrollTop);
   await page.keyboard.press('ArrowDown'); // 先頭へ回る
-  await page.waitForTimeout(100);
+  await settle(page, 100);
   check(
     bottom > 0 && (await lst.evaluate((el) => el.scrollTop)) === 0,
     '↓ で末尾から先頭へ回ると一番上まで巻く',
@@ -469,7 +467,7 @@ async function focus(page) {
   const firstScreen = all.findIndex((o) => o.kind === 'screen');
   await page.keyboard.press('ArrowUp');
   for (let i = all.length - 1; i > firstScreen; i--) await page.keyboard.press('ArrowUp');
-  await page.waitForTimeout(100);
+  await settle(page, 100);
   const vis = await lst.evaluate((el) => {
     const t = el.querySelector('[data-kind="screen"] .cmdk-group-title');
     const sel = el.querySelector('[aria-selected="true"]');
@@ -531,7 +529,7 @@ async function mobile(page) {
   check(sw <= 390, '390px：ページが横にはみ出さない', sw);
   await btn.click();
   await palette(page).waitFor();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const pb = await palette(page).boundingBox();
   check(pb.x >= 0 && pb.x + pb.width <= 390 && pb.y + pb.height <= 844, '390px：パレットが画面に収まる', pb);
   check(await isFocused(input(page)), '390px：開くと入力欄へフォーカス');
@@ -580,7 +578,7 @@ async function todayTab(page) {
   const pickOther = async () => {
     const other = (await sel.locator('option').evaluateAll((os) => os.map((o) => o.value))).find((v) => v !== TODAY);
     await sel.selectOption(other);
-    await page.waitForTimeout(150);
+    await settle(page, 150);
     return other;
   };
   await open(page, '/week');
@@ -603,7 +601,7 @@ async function todayTab(page) {
       timeout: 10000,
     },
   );
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check(
     hashOf(page) === '#/plan' && (await page.evaluate(() => history.length)) === len,
     '「今日」のタブ：日の予定を開いていても今日を選び直す（URL は #/plan のまま・履歴を増やさない）',
@@ -663,6 +661,7 @@ async function perf(page) {
   }, STORAGE_KEY);
   await page.reload();
   await page.locator('h1').waitFor();
+  // 速さの計測の前に、読み込み直後の仕事が引くのを待つ。計測の条件なので固定の待ちのまま（ADR-0041）
   await page.waitForTimeout(800);
   await page.keyboard.press('Control+k');
   await palette(page).waitFor();

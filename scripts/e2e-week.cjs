@@ -8,9 +8,8 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, urlOf, failShot, runSteps } = require('./lib/env.cjs');
-const { sharedPage, openPage } = require('./lib/steps.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, urlOf, runSteps, settle } = require('./lib/env.cjs');
+const { sharedPage } = require('./lib/steps.cjs');
 
 const addDays = (d, n) => {
   const t = new Date(`${d}T00:00:00Z`);
@@ -31,12 +30,12 @@ async function open(page, hash) {
   await page.goto(`${BASE}#${hash}`);
   await page.reload();
   await page.getByTestId('week-grid').or(page.getByTestId('week-client-filter')).first().waitFor({ timeout: 30000 });
-  await page.waitForTimeout(500);
+  await settle(page, 500);
 }
 async function expandChips(page) {
   const more = page.getByTestId('week-client-chips-more');
   if ((await more.count()) > 0 && (await more.getAttribute('aria-expanded')) === 'false') await more.click();
-  await page.waitForTimeout(100);
+  await settle(page, 100);
 }
 
 /** 表示の切り替えは1つ（PRD D188）：4つの表示・古い URL で同じ表示・押すと今までのクエリで書く・390px で2段まで */
@@ -93,7 +92,7 @@ async function views(page) {
       .or(page.getByTestId('week-table'))
       .first()
       .waitFor({ timeout: 30000 });
-    await page.waitForTimeout(300);
+    await settle(page, 300);
     const pressed = await pressedView(page);
     const shown = await shownView(page);
     check(JSON.stringify(pressed) === JSON.stringify([want]) && shown === want, `古い URL ${hash} → ${want}`, {
@@ -111,7 +110,7 @@ async function views(page) {
   };
   for (const id of ['by-client', 'tab-table', 'tab-clients', 'by-staff']) {
     await page.getByTestId(id).click();
-    await page.waitForTimeout(400);
+    await settle(page, 400);
     const u = urlOf(page);
     check(
       want[id](u) &&
@@ -129,11 +128,11 @@ async function views(page) {
   const before = urlOf(page);
   const len = await page.evaluate(() => history.length);
   await page.getByTestId('by-staff').click();
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   check(urlOf(page) === before && (await page.evaluate(() => history.length)) === len, '今の表示を押しても何もしない');
   // 戻るで1つ前の表示（表）に戻る
   await page.goBack();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check((await shownView(page)) === 'tab-clients', '戻るで1つ前の表示に戻る');
   await page.screenshot({ path: path.join(OUT_DIR, 'week-views-1400.png') });
 
@@ -165,7 +164,7 @@ async function views(page) {
 async function handoff(page) {
   await open(page, '/week?view=clients&by=client');
   await page.getByTestId('by-client').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check(
     !urlOf(page).includes('client=') && (await pressedIds(page)).length === 8,
     '表（絞り込みなし）→時間軸：先頭8人・URL に書かない',
@@ -173,7 +172,7 @@ async function handoff(page) {
   );
   await page.getByTestId('tab-clients').click();
   await page.getByTestId('week-client-filter-input').fill('館');
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   const rows = await page
     .getByTestId('week-client-table')
     .locator('tbody tr')
@@ -181,7 +180,7 @@ async function handoff(page) {
       els.map((e) => e.querySelector('[data-client]')?.dataset.client ?? e.dataset.client).filter(Boolean),
     );
   await page.getByTestId('by-client').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const m = urlOf(page).match(/client=([^&]*)/);
   const written = m ? m[1].split(',') : [];
   const pressed = await pressedIds(page);
@@ -199,9 +198,9 @@ async function handoffViaStaff(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await open(page, '/week?view=clients');
   await page.getByTestId('week-client-filter-input').fill('館');
-  await page.waitForTimeout(800);
+  await settle(page, 800);
   await page.getByTestId('by-staff').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const m = urlOf(page).match(/client=([^&]*)/);
   const written = m ? m[1].split(',') : [];
   check(
@@ -210,7 +209,7 @@ async function handoffViaStaff(page) {
     urlOf(page),
   );
   await page.getByTestId('by-client').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const pressed = await pressedIds(page);
   check(
     JSON.stringify([...pressed].sort()) === JSON.stringify([...written].sort()),
@@ -240,7 +239,7 @@ async function search(page) {
   await page.getByTestId('week-client-search').locator('summary').click();
   await page.getByTestId('week-client-picker-input').fill('ほか てすと');
   await page.getByTestId('week-client-picker-option').filter({ hasText: 'ほか テスト' }).click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   await expandChips(page);
   const ids = await allIds(page);
   check(
@@ -258,16 +257,16 @@ async function back(page) {
   await expandChips(page);
   const first = await pressedIds(page);
   await chipsOf(page).first().click(); // 1人外す（URL に書く）
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   const after = await pressedIds(page);
   await chipsOf(page).first().click(); // 戻す（8人＝初期値なので URL から消える）
-  await page.waitForTimeout(200);
+  await settle(page, 200);
   await chipsOf(page).nth(8).click(); // 9人目：上限の文
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   const msg = await page.getByTestId('week-client-chips-message').innerText();
   check(msg.includes('8人まで') && (await pressedIds(page)).length === 8, '9人目は選ばずに上限の文', msg);
   await page.goBack();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   check(
     JSON.stringify(await pressedIds(page)) === JSON.stringify(after) &&
       (await page.getByTestId('week-client-chips-message').innerText()) === '',
@@ -303,7 +302,7 @@ async function fold(page, w, h) {
     { shown: shown.length, n, rows },
   );
   await more.click();
-  await page.waitForTimeout(150);
+  await settle(page, 150);
   const all = await allIds(page);
   check(
     all.length === shown.length + n && (await more.innerText()) === '畳む',
@@ -311,15 +310,15 @@ async function fold(page, w, h) {
     all.length,
   );
   await page.getByLabel('次の週').click();
-  await page.waitForTimeout(400);
+  await settle(page, 400);
   await page.getByTestId('tab-clients').click();
   await page.getByTestId('by-client').click();
-  await page.waitForTimeout(300);
+  await settle(page, 300);
   check((await more.getAttribute('aria-expanded')) === 'true', `${w}px：開いた状態は週を送っても表と行き来しても残る`);
   const gridTop = () => page.getByTestId('week-grid').evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
   const grid = { y: await gridTop() };
   await more.click();
-  await page.waitForTimeout(150);
+  await settle(page, 150);
   const grid2 = { y: await gridTop() };
   console.log(
     `  ${w}px：時間軸の上端（ページの上から） ${Math.round(grid2.y)}px（開いたとき ${Math.round(grid.y)}px・画面の高さ ${h}px）`,
@@ -347,7 +346,7 @@ async function nextWeek(page) {
   );
   await open(page, '/week?by=client');
   await page.getByLabel('次の週').click();
-  await page.waitForTimeout(500);
+  await settle(page, 500);
   await expandChips(page);
   const ids = await allIds(page);
   const pressed = await pressedIds(page);

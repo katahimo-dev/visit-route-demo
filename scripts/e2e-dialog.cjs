@@ -11,7 +11,7 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
-const { launch, BASE, OUT_DIR, NOW, check, settle, stored, failShot, runSteps } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, NOW, check, settle, stored, runSteps } = require('./lib/env.cjs');
 const { pagePerStep } = require('./lib/steps.cjs');
 
 const dialog = (page) => page.getByTestId('confirm-dialog');
@@ -131,7 +131,8 @@ async function rules(page) {
   );
   // ボタンのダブルクリック：2回目が背景に当たっても取り消しにしない（開いてすぐ・連続のクリックは無視）
   await btn.dblclick();
-  await settle(page, 400);
+  // 「開いてすぐのクリックは無視」の時間を過ぎるまで待つ（時間そのものを見るので固定の待ち。ADR-0041）
+  await page.waitForTimeout(400);
   check((await dialog(page).count()) === 1, '条件を消す：ダブルクリックでも確認が残る');
   // 背景を押す（開いてから少したったクリック）
   await page.mouse.click(8, 8);
@@ -287,7 +288,9 @@ const steps = pagePerStep({
     // 初回の案内ツアーを見た扱いにする（PRD D193）
     await skipTour(ctx);
     // 地図のタイルは外へ取りに行かない
-    await ctx.route(/cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org/, (r) => r.fulfill({ status: 204, body: '' }));
+    await ctx.route(/cyberjapandata\.gsi\.go\.jp|tile\.openstreetmap\.org/, (r) =>
+      r.fulfill({ status: 204, body: '' }),
+    );
     const page = await ctx.newPage();
     await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));

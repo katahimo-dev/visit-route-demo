@@ -11,22 +11,8 @@
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
-const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const {
-  launch,
-  BASE,
-  OUT_DIR,
-  NOW,
-  TODAY,
-  STORAGE_KEY,
-  check,
-  settle,
-  hashOf,
-  stored,
-  failShot,
-  runSteps,
-} = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, settle, hashOf, stored, runSteps } = require('./lib/env.cjs');
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 /** 案の無い日を作るのに使う、今日の次の日 */
@@ -40,7 +26,7 @@ async function waitStored(page, pred, timeout = 5000) {
   while (Date.now() < end) {
     const d = await stored(page);
     if (d && pred(d)) return d;
-    await page.waitForTimeout(100);
+    await settle(page, 100);
   }
   return stored(page);
 }
@@ -494,8 +480,9 @@ async function noPlanDay(page) {
     },
     [STORAGE_KEY, NEXT],
   );
+  // about:blank を挟んで開き直す（同じ文書で ?do= へ移してから読み直すと、読み直す前にアプリが ?do= を消すことがある。ADR-0029）
+  await page.goto('about:blank');
   await page.goto(`${BASE}#/plan?date=${NEXT}&do=absence`);
-  await page.reload();
   await panel(page).waitFor({ timeout: 20000 });
   check((await page.locator('.date-switch select').inputValue()) === NEXT, '?date= の日を選んで開く');
   await page.getByTestId('sudden-kind-staff').click();
