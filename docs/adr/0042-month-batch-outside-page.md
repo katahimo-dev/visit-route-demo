@@ -18,7 +18,7 @@
 ## 決定
 案C。
 
-- `lib/monthBatch.ts`：`createMonthBatch(solve)` が入れ物を作る（アプリでは `monthBatch` の1つ）。`start(job)`（作っている間・つながっていない・日が無いときは始めず false）・`stop()`・`running()`・`connect(host)`（外すと作っている計算を捨てる）。`run`（進み具合。作っていなければ null）・`done`（終わるたびの知らせ）。1日ずつ作る中身は `MonthPage` から写したまま（基準のプリセットの重み・使い回せる記録・`applyDayRun`）
+- `lib/monthBatch.ts`：`createMonthBatch(solve)` が入れ物を作る（アプリでは `monthBatch` の1つ）。`start(job)`（作っている間・つながっていない・日が無いときは始めず false）・`stop()`・`running()`・`connect(host)`（外すと作っている計算を捨てる）。`run`（進み具合。作っていなければ null）・`done`（終わるたびの知らせ）。1日ずつ作る中身は `MonthPage` から写したまま（基準のプリセットの重み・手直しの記憶 `withManualPrefs` と `prefPins`（ADR-0043）・使い回せる記録・`applyDayRun`）
 - 日ごとの作り方（`BatchDay`：`empty`／`all`／`stale`）を受ける。月の予定は欄の選んだ作り方のまま、空き状況は案の無い日を `empty`、条件が変わった日を `stale`（`missingDays`）
 - `components/batchBand.tsx`：`MonthBatchHost`（App の直下。描いたデータを計算に読ませ、終わったらトースト［月の予定を見る］）と `BatchBand`（上の帯の進み具合と［止める］。月の予定では画面の中に出すので出さない）
 - 書き込みは日ごとに `update`（今と同じ）。ページを閉じる・読み直すと JavaScript ごと止まる（作れた日は残る。再開しない）

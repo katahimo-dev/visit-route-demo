@@ -4,7 +4,7 @@
 import type { DemoData } from '../contracts/data';
 import type { Problem, SolveOptions, SolveResult } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
-import { compile } from '../matching';
+import { compile, withManualPrefs } from '../matching';
 import { scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { attempt, own } from './common';
@@ -174,11 +174,13 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       }
       // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
       const rules = scoreRulesOf(latest);
-      const p = attempt(() => compile({ ...latest, rules }, day)).value;
-      if (!p || p.visits.length === 0 || p.staff.length === 0) {
+      const base = attempt(() => compile({ ...latest, rules }, day)).value;
+      if (!base || base.visits.length === 0 || base.staff.length === 0) {
         step(i + 1);
         return;
       }
+      // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
+      const { problem: p, applied: prefPins } = withManualPrefs(base, latest);
       const key = problemKey(p);
       // 同じ条件・いまのデータで作った記録があれば計算しない（lib/runs の reusableRun）
       const saved = attempt(() => reusableRun(own(latest.aiRuns, day) ?? [], p, rules, latest.seed, key)).value;
@@ -194,7 +196,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         setTimeout(() => step(i + 1), 0);
         return;
       }
-      solveDay(p, latest, rules, key, day, m, i);
+      solveDay(p, latest, rules, key, day, m, i, prefPins);
     };
 
     const solveDay = (
@@ -205,6 +207,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       day: string,
       m2: BatchMode,
       i: number,
+      prefPins: Record<string, string>,
     ) => {
       const started = attempt(() =>
         solve(p, { seed: latest.seed, iterations: defaultIterations(p) }, (x) => {
@@ -221,7 +224,14 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         .then((result) => {
           if (!live()) return;
           h.update((d) =>
-            applyDayRun(d, day, { rules, result, createdAt: Date.now(), inputKey: key, onlyEmpty: m2 === 'empty' }),
+            applyDayRun(d, day, {
+              rules,
+              result,
+              createdAt: Date.now(),
+              inputKey: key,
+              onlyEmpty: m2 === 'empty',
+              prefPins,
+            }),
           );
           made++;
           if (result.unassigned.length > 0) unassignedDays++;

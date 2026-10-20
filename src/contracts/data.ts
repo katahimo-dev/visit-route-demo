@@ -134,8 +134,25 @@ export const aiRunSchema = z.object({
   reassign: reassignInfoSchema.optional(),
   /** 作ったときの計算に効く機能の入り切り（ADR-0028）。切っているものだけを書き、無ければすべて入。記録として書くだけで「条件が変わった」には使わない（入り切りで問題が変われば lib/month の planStale（inputKey）で分かる） */
   calcFeatures: calcFeaturesSchema.optional(),
+  /**
+   * 作ったときに手直しの記憶（manualPrefs。ADR-0043）で固定した訪問（訪問ID → 担当ID）。当てたものだけを書き、無ければ書かない。
+   * 「条件が変わった」（lib/month の planStale）はこの固定のまま問題を作り直して比べる（記憶が変わっても「条件が変わった」にしない）
+   */
+  prefPins: z.record(z.string(), z.string()).optional(),
 });
 export type AiRun = z.infer<typeof aiRunSchema>;
+
+/** 手直しの記憶の上限（超えたら updatedAt の古い順に消す。store の repair。ADR-0043） */
+export const MAX_MANUAL_PREFS = 2000;
+
+/**
+ * 手直しの記憶の1件（PRD D260〜D262。ADR-0043）：手で担当を変えた訪問のキー（matching/manualPrefs の prefKey）→ そのときの担当。
+ * 同じキーは上書き（最新だけ）。updatedAt は書いた時刻（ms）
+ */
+export const manualPrefSchema = z.object({ staffId: idSchema, updatedAt: z.number() });
+export type ManualPref = z.infer<typeof manualPrefSchema>;
+/** キー（`clientId|曜日0-6|earliestStart-latestStart|typeId または空`）→ 記憶 */
+export type ManualPrefs = Record<string, ManualPref>;
 
 /** データ一式（store だけが書く。design.md §4） */
 export const demoDataSchema = z.object({
@@ -160,6 +177,11 @@ export const demoDataSchema = z.object({
   patterns: z.array(patternSchema).max(2000).default([]),
   /** 〈利用者さん〉の休み（ADR-0013）。無い古いデータは []（版は1のまま） */
   clientLeaves: z.array(clientLeaveSchema).max(2000).default([]),
+  /**
+   * 手直しの記憶（PRD D260〜D262。ADR-0043）：同じ〈利用者さん〉・曜日・時間（・種類）の訪問は、次に作る案でその担当に固定する。
+   * 無い古いデータは {}（版は1のまま）。件数（MAX_MANUAL_PREFS）・いない人は store の repair で直す
+   */
+  manualPrefs: z.record(z.string().max(250), manualPrefSchema).default({}),
   /** date → 手作業案 */
   manualPlans: z.record(z.string(), manualRoutesSchema),
   /** date → 最新のAI案 */

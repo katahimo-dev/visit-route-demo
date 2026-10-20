@@ -2,6 +2,7 @@ import { BedSingle, Check, Pencil, Plus, Trash2, TriangleAlert, X } from 'lucide
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { enterToSave, FieldError } from '../components/FieldError';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, SectionTitle, WithIcon } from '../components/ui';
 import { type Client, type ClientLeave, clientLeaveSchema } from '../contracts/documents';
@@ -38,7 +39,10 @@ export function ClientLeavesSection({
   const { setDate } = useDay();
   const today = jstDate(Date.now());
   const [form, setForm] = useState<Form | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // 誤りはオブジェクトで持つ（同じ文で保存し直しても作り直して読み上げる。PRD D250）
+  const [errorState, setErrorState] = useState<{ text: string } | null>(null);
+  const error = errorState?.text ?? null;
+  const setError = (text: string | null) => setErrorState(text === null ? null : { text });
   const leaves = useMemo(() => leavesOf(data, client.id), [data, client.id]);
   const openDay =
     onOpenDay ??
@@ -158,7 +162,7 @@ export function ClientLeavesSection({
       )}
 
       {form && (
-        <fieldset className="leave-form stack" data-testid="leave-form">
+        <fieldset className="leave-form stack" data-testid="leave-form" onKeyDown={enterToSave(save)}>
           <legend>{form.id ? '休みを直す' : '休みを入れる'}</legend>
           <div className="form-grid">
             <label>
@@ -212,11 +216,7 @@ export function ClientLeavesSection({
               </ul>
             </div>
           )}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
+          <FieldError token={errorState}>{error}</FieldError>
           <div className="row">
             <button type="button" className="btn btn-small" onClick={save} data-testid="leave-save">
               <WithIcon icon={Check} size={14}>

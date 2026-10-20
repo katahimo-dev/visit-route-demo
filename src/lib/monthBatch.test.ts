@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { Problem, SolveResult } from '../contracts/problem';
 import { addDays } from '../domain/time';
-import { createDemoData } from '../seed';
+import { compile, withManualPrefs } from '../matching';
+import { createDemoData, scoreRulesOf } from '../seed';
 import { solve } from '../solver';
 import { own } from './common';
+import { patchManualPrefs } from './manualPrefs';
 import { type BatchDone, batchBandText, batchDoneText, createMonthBatch, missingDays, monthsLabel } from './monthBatch';
 
 const TODAY = '2026-10-21';
@@ -189,5 +191,28 @@ describe('monthBatch（PRD D256・D257。ADR-0042）', () => {
     const first = all[0]!.date;
     const confirmed = { ...d, manualPlans: { ...d.manualPlans, [first]: {} as DemoData['manualPlans'][string] } };
     expect(missingDays(confirmed, range, TODAY).map((x) => x.date)).not.toContain(first);
+  });
+
+  it('手直しの記憶（ADR-0043）を当てて作り、記録に prefPins を書く', async () => {
+    const s = fakeSolve();
+    const b = createMonthBatch(s.fn);
+    const d0 = noPlans();
+    const v = d0.visits.find((x) => x.date === TODAY && !x.cancelled)!;
+    // その訪問をいま担当できる人のうち、最後の人を記憶にする
+    const base = compile({ ...d0, rules: scoreRulesOf(d0) }, TODAY);
+    const vi = base.visits.findIndex((x) => x.id === v.id);
+    const who = base.staff.filter((_, k) => base.allowed[vi]![k]).at(-1)!.id;
+    const d = patchManualPrefs(d0, { set: { [v.id]: who } }, 1);
+    const expected = withManualPrefs(compile({ ...d, rules: scoreRulesOf(d) }, TODAY), d).applied;
+    expect(expected[v.id]).toBe(who);
+    const h = hostOf(d);
+    b.connect(h.host);
+    b.start({ ...job, days: [{ date: TODAY, mode: 'empty' }] });
+    s.calls[0]!.resolve();
+    await tick();
+    const runs = own(h.data().aiRuns, TODAY)!;
+    expect(runs.at(-1)!.prefPins).toEqual(expected);
+    const route = Object.entries(own(h.data().aiPlans, TODAY)!.routes).find(([, ids]) => ids.includes(v.id));
+    expect(route?.[0]).toBe(who);
   });
 });

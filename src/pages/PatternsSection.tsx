@@ -1,6 +1,7 @@
 import { CalendarClock, Check, Pencil, Plus, Repeat, Trash2, X } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
+import { enterToSave, FieldError } from '../components/FieldError';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, SectionTitle, WithIcon } from '../components/ui';
 import { TypeDot } from '../components/visitType';
@@ -116,7 +117,10 @@ export function PatternsSection({ client }: { client: Client }) {
   const monthlyOffId = useId();
   /** 曜日ごとの時刻のパターンで patternMonthly が切：曜日・曜日ごとの時刻は読むだけ（データを変えない） */
   const daysLocked = !monthlyOn && !!form?.perDay;
-  const [error, setError] = useState<string | null>(null);
+  // 誤りはオブジェクトで持つ（同じ文で保存し直しても作り直して読み上げる。PRD D250）
+  const [errorState, setErrorState] = useState<{ text: string } | null>(null);
+  const error = errorState?.text ?? null;
+  const setError = (text: string | null) => setErrorState(text === null ? null : { text });
   const patterns = useMemo(() => data.patterns.filter((p) => p.clientId === client.id), [data.patterns, client.id]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
   const staffName = (id: string | null) => (id ? (data.staff.find((s) => s.id === id)?.name ?? '（不明）') : null);
@@ -333,7 +337,7 @@ export function PatternsSection({ client }: { client: Client }) {
       )}
 
       {form && (
-        <fieldset className="pattern-form stack" data-testid="pattern-form">
+        <fieldset className="pattern-form stack" data-testid="pattern-form" onKeyDown={enterToSave(save)}>
           <legend>{form.id ? 'パターンを直す' : 'パターンを追加'}</legend>
           <div className="form-grid">
             <label>
@@ -582,11 +586,7 @@ export function PatternsSection({ client }: { client: Client }) {
               「いつから」より前の訪問と、この回だけ変えた訪問・取り消した訪問は変えません。それ以外の訪問を新しい中身で作り直します。
             </span>
           )}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
+          <FieldError token={errorState}>{error}</FieldError>
           <div className="row">
             <button type="button" className="btn btn-small" onClick={save}>
               <WithIcon icon={Check} size={14}>

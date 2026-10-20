@@ -147,7 +147,7 @@
 
 - `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・作れた日数・反復。作っていなければ null）・`done`（`BatchDone`＝月・名前・作れた日数・入らない訪問がある日・止めたか・理由。終わるたびに新しい物）・`start(job)`・`stop()`・`running()`・`connect(host)`。アプリでは `monthBatch` の1つ。値は `lib/valueStore`（`useValueStore` で読む部品だけ描き直す）
 - `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], expandYm, today }`。日ごとの作り方（`empty` は作っている間に案ができた日を飛ばし、書く直前に案があれば今の案を変えない）
-- 1日の作り方は画面にあったときのまま（基準のプリセットの重みで compile・使い回せる記録・`applyDayRun`）。規則・記憶を直すときはここを直す
+- 1日の作り方は画面にあったときのまま（基準のプリセットの重みで compile・手直しの記憶を当てる `withManualPrefs`（ADR-0043。当てたものは `applyDayRun` の `prefPins` で記録に書く）・使い回せる記録・`applyDayRun`）。月の予定のまとめて作る・空き状況の［足りない案を作る］のどちらも同じ。規則・記憶を直すときはここを直す
 - `missingDays(data, dates, today)`：空き状況の［足りない案を作る］の日（範囲の今日以降の、案の無い日＝`empty` と、条件が変わった日＝`stale`。確定した日・手直しのある条件が変わった日は入れない。PRD D259）
 - `batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）
 

@@ -1,13 +1,41 @@
 # 画面共通の部品
 
-> この部品のファイル：`src/components/ui.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`rebuildBand.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/lib/panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`rebuildBand.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0037。関連 PRD：D91〜D101・D122〜D126・D161〜D166・D173〜D177・D193〜D197・D201〜D209・D226・D240〜D242。
+> この部品のファイル：`src/components/ui.tsx`・`FieldError.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`rebuildBand.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/lib/panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`rebuildBand.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0036・0037。関連 PRD：D91〜D101・D122〜D126・D161〜D166・D173〜D177・D193〜D197・D201〜D209・D226・D236〜D238・D240〜D242・D250〜D252。
 > 画面全体の決まり・メニュー・確認ダイアログ・機能の入り切りは [pages.md](pages.md)。
+
+### 画面の見出しとボタンの3段（ADR-0036。PRD D236〜D238）
+
+#### `components/ui.tsx` の `PageHeader`
+
+- `lead`（`p.page-lead`）は `word-break: auto-phrase`・`text-wrap: pretty` で、390px で折り返しても語の途中で切らず、最後の行に1〜2字だけ残さない
+- `PageHeader({ icon, title, lead?, actions?, nav? })`：`header.page-head` の中に1段目 `.page-head-row`（アイコン `.page-icon` 38px・`.page-title`（h1 と `p.page-lead`）・右の `.page-actions`）、`nav` があれば2段目 `.page-tabs`
+- `lead` は「この画面でやること」の1行（長い説明は `Hint` に畳む）。`actions` は主ボタン（塗り）を1つまでと、その左の状態の印（日の予定の「未確定」など）。主ボタンの無い画面は渡さない（月の予定は進み具合の帯の次の一手が主。PRD D154）
+- 見出しの右のボタンは上下 9px（`.page-actions .btn:not(.btn-small)`）で、見出しの段を低くする
+- 狭い画面では右の `.page-actions` が題名の下へ折り返す（`flex-wrap`。題名は `min-width: 200px`）
+
+#### `components/ViewSwitch.tsx`（予定の［月｜週｜日］。PRD D59・D237）
+
+- 月・週・日の予定の `PageHeader` の `nav` に渡し、題名の下のタブにする。`nav.view-switch`（`aria-label`「予定の表示の切り替え」）の中は `Link`（role=tablist・tab にしない。押すと画面が移るリンクのナビ）
+- 今の画面は `aria-current="page"`・太字・朱の下線 3px（`.view-switch-item.is-on`。色だけに頼らない）。タブの行の下に1px の線（`.page-tabs`）
+
+#### ボタンの3段（`styles.css`）
+
+| 段 | クラス | 見た目 | 使う所 |
+|---|---|---|---|
+| 主 | `.btn.btn-primary` | 濃い朱の塗り・白い文字・下の影 | 1画面に1つ（右の欄は帯の先頭に1つ）。日の予定は「この割当で確定」（確定済みの日は `.btn` にする） |
+| 副 | `.btn` | 白地に枠 | ほかの操作の多く。「欠勤・キャンセルを登録」（アイコンだけ朱。`.plan-sudden-btn svg`）「訪問を追加」「案を変える ▾」 |
+| ついで | `.btn.btn-text` | 枠と地なし・`--sub` の文字（`--bg` で 5.5・`--primary-soft` で 5.2。枠のボタンより目立たせない）。重ねると下線・`--ink` の文字・`--primary-soft` の地（地の色だけに頼らず下線で分かる）。押せないときは `.btn` の薄さ | 戻す・送るなど、無くても流れが進む操作。日の予定の「元に戻す」「メールで送る」 |
+
+- 押せる所の大きさは3段とも同じ（`.btn` の余白のまま）。戻せない操作の `.btn-danger`（赤い枠と文字）は別
+- 1画面に塗りが2つ以上出ない（月の予定は帯の次の一手、空き状況は「要約をコピー」、比較は「もう1案作って比べる」、データは「ファイルに書き出す」、一覧の画面は「〜を追加」）
 
 ### 右の欄（`SidePanel`）と確定のボタンの帯（PRD D194〜D197）
 
 #### `components/ui.tsx` の `SidePanel`
 
 - 右から出る欄（`narrow` あり）。z-index 1100。フォーカス：開いたら最初の入力欄（`focusPanel`）、Tab が中で回る、閉じたら戻す（`returnFocus` で戻り先を差し替えられる）。`useBodyScrollLock`
+- 裏の inert（PRD D252）：開いたとき body の直下のほかの子（`#root`・メニューの引き出し）を `inertLock`（要素ごとに数えるロック。確認ダイアログ・パレット・ツアーと同じ）で inert にし、閉じるときは inert を外してから戻り先へフォーカスする。`data-inert-keep` の付いた子（知らせの置き場 `.toast-layer`、用語の説明 `TipBubble`（`Term.tsx`。body の直下に hidden で常駐するので、z-index 1150 で欄（1100）の上に出し、欄の中の用語の説明の上にマウスを移しても消えない。PRD D175））は外す。後から body の直下に出るもの（確認ダイアログ）はロックの外。名前の詳細（`DetailPopover`）は欄の中に出る。欄の上に欄を重ねたら下の欄も inert（数えるので閉じる順にかかわらず戻る）
+- `onSubmit`（PRD D251）：渡すと `.drawer-body` を `<form noValidate>` にし（無ければ `div`）、内容と帯を包む。帯の保存は `type="submit"`。送信は `submitHandler`（下の「フォームの共通の決まり」）。閲覧 ⇄ 編集で `form` ⇄ `div` が入れ替わるので、`usePanelFoot` に要素の種類（`bodyKind`）を渡して見張り直す。使う欄：〈利用者さん〉・〈スタッフ〉の編集、種類、仮押さえ、欠勤・キャンセルの2段目（「次へ」）。中に `<form>` を持つ欄（条件の調整のプリセット）には渡さない
 - `headActions`：見出しの右・× の前（`drawer-head-actions`）
 - `focusKey`：開いたまま変わったら、`data-return-focus` の要素、無ければ最初の入力欄、それも無ければ欄へフォーカス
 - 中の形：見出し（`.drawer-head`。巻く領域の外）＋ `.drawer-body`（巻く領域。`ref`）＞ `.drawer-content.stack`（内容）・`footer.drawer-foot`（`footer` があるときだけ）・`.drawer-foot-end`（番兵。高さ0・`aria-hidden`）
@@ -15,7 +43,7 @@
 
 #### `components/usePanelFoot.ts`
 
-- `usePanelFoot(body, foot, end, hasFoot)`：IntersectionObserver（root は巻く領域・下を 1px 広げる）で番兵が見えていなければ帯の `data-stuck="true"`、見えていれば `"false"`。ResizeObserver で帯の高さを巻く領域の `--drawer-foot-h` に入れる
+- `usePanelFoot(body, foot, end, hasFoot, bodyKind?)`：`bodyKind` が変わっても見張り直す。IntersectionObserver（root は巻く領域・下を 1px 広げる）で番兵が見えていなければ帯の `data-stuck="true"`、見えていれば `"false"`。ResizeObserver で帯の高さを巻く領域の `--drawer-foot-h` に入れる
 - `useVisualViewportFit(wrap)`：visualViewport の resize・scroll で `panelFit` の結果を `.drawer-wrap` の `top`・`height`（`bottom: auto`）と html の `--drawer-top` に当て、null なら外す
 - `usePanelToastPlace(drawer, head)`：ResizeObserver・resize で見出しの高さ・欄の幅を html の `--drawer-head-h`・`--drawer-w` に、`toastPlace` の結果を `data-drawer-toast` に書く
 
@@ -37,7 +65,20 @@
 
 - 地図の浮かせた表示：`components/MapDock.tsx`（画面の外の地図を右下に浮かせる）。位置は `--map-dock-left`・`--map-dock-top`
 - `components/floating.ts`（`FLOATING_EVENT`・`useFloatingEdge(name)`）：知らせ（トースト）は欠勤の振り直しの帯・地図より上に出す（`--reassign-dock-top`・`--map-dock-top`）
-- `components/Toast.tsx`：z-index 1200。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・6秒・フォーカスがある間は消さない）。今は日の予定の手直しの「元に戻す」だけ（[pages-plan.md](pages-plan.md)。PRD D218）
+- `components/Toast.tsx`：z-index 1200。body の直下の `div.toast-layer[data-inert-keep]` に出す（右の欄の inert に巻き込まれず、欄が開いていても読み上げ・「元に戻す」を押せる。確認ダイアログ・パレット・ツアーの間は今までどおり inert）。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・6秒・フォーカスがある間は消さない）。今は日の予定の手直しの「元に戻す」だけ（[pages-plan.md](pages-plan.md)。PRD D218）
+
+### フォームの共通の決まり（PRD D250・D251。`components/FieldError.tsx`）
+
+- `FieldError`（`id`・`as`＝`p`（既定）／`span`・`className`・`style`・`testId`・`live`・`token`）：文があれば `.error` で出し、無ければ（null・false・空）何も出さない。見た目は今までの `.error` のまま。入力の誤り・保存や計算の失敗の文はどれもこれで出す（コード分割中の `PlanPage.tsx`・`App.tsx` は `role="alert"` を足しただけ）
+  - `live`（既定 true）：`role="alert"` で出たときに読み上げる。保存を押したときの誤り・計算の失敗だけ。打つたびに検査する欄の誤り（郵便番号・呼び方の重なり・項目と選択肢の名前・条件の下限＞上限と件数・働ける時間帯・欠勤の開始と終了・空き状況の所要・開始日・希望の開始）と、ほかで読み上げる誤り（データの保存の失敗は App の帯）は `live={false}`（欄の `aria-describedby` で読む）。条件の重みの乱数の種・プリセットの名前（打つたびの検査）は元の `.error` のまま
+  - `token`：保存のたびに作るエラーのオブジェクト。変わったら文の要素を作り直し、同じ文でも読み上げ直す（訪問・〈利用者さん〉・〈スタッフ〉・種類・仮押さえ・定期パターン・休み）
+  - `.error` のクラスでも誤りの文でないもの（振り直しの「対応が必要」の見出し・点数の赤字）はそのまま
+- `invalidAttrs(invalid, errorId)`：誤りなら `aria-invalid="true"`・`aria-describedby`（誤りの文の id）を返す。文の id は `useId`
+- `FormErr`（`{ text, field? }`）・`toFormErr(e)`：契約の検査（zod）の誤りは最初の `path` を `field` に（`lib/common.ts` の `formErrorField`）。画面は `error?.field === 'name'` などで欄に印を付ける
+- `RequiredMark`：見出しの横の小さな「必須」の札（`.req-mark`。`aria-hidden`）。入力欄には `required` を付け（フォームは `noValidate` なのでブラウザの吹き出しは出ない）、読み上げに必須と伝える。付けた欄：訪問（日付・〈利用者さん〉・開始時刻・最も遅い開始時刻・所要）、〈利用者さん〉の表示名、〈スタッフ〉の名前、種類の名前・標準の所要、仮押さえの表示名
+- `submitHandler(save)`：`<form onSubmit>` 用。既定の送信を止めて `save` を呼び（Promise も待つ）、次の描画で form の中の誤った欄へフォーカス（`focusFirstInvalid`：保存を止めた誤り（中の `role="alert"` の文）を `aria-describedby` で指す欄を先に、無ければ最初の `[aria-invalid="true"]`。保存できて閉じた form は何もしない）。Enter の暗黙の送信で保存し、`textarea` は改行のまま
+- `enterToSave(save)`：大きな form の中の小さなまとまり（〈利用者さん〉の欄の定期パターン・休みの `fieldset`）の `onKeyDown`。入力欄の Enter（変換中は除く）を外の form に渡さず、まとまりの保存を呼ぶ
+- form にした所：訪問の入力（`VisitForm`。開いたら最初の欄へ・日を変えても引き継ぐ）、右の欄の `onSubmit`、呼び方（データの画面）。もともと form：項目の選択肢、プリセットの名前
 
 ### 名前から開く詳細（ADR-0022 追記。PRD D122〜D126・D205〜D209）
 

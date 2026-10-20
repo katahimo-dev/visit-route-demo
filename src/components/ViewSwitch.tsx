@@ -20,7 +20,8 @@ export function viewPath(view: ScheduleView, date: string): string {
 }
 
 /**
- * 予定の共通の切り替え［月｜週｜日］（PRD D59。design.md §4 pages「動線の整理」）。
+ * 予定の共通の切り替え［月｜週｜日］（PRD D59・D237。design.md §4 pages「動線の整理」）。
+ * 見出しの題名の下のタブ（PageHeader の nav。role=tablist ではなくリンクのナビ）。
  * 今の画面は aria-current と太字・下線（色だけに頼らない）。押すと選んでいる日付（useDay）で移る
  */
 export function ViewSwitch({ current }: { current: ScheduleView }) {

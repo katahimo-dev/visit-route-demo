@@ -14,7 +14,10 @@ export function usePanelFoot(
   foot: RefObject<HTMLElement | null>,
   end: RefObject<HTMLElement | null>,
   hasFoot: boolean,
+  /** 巻く領域の要素が入れ替わったら変える値（入力の欄の form ⇄ 閲覧の div。PRD D251） */
+  bodyKind?: string,
 ): void {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: bodyKind は要素の入れ替わりを知るためだけに見る
   useEffect(() => {
     const b = body.current;
     const f = foot.current;
@@ -45,7 +48,7 @@ export function usePanelFoot(
       for (const off of offs) off();
       delete f.dataset.stuck;
     };
-  }, [body, foot, end, hasFoot]);
+  }, [body, foot, end, hasFoot, bodyKind]);
 }
 
 /**
