@@ -19,6 +19,7 @@ import { PageHeader } from '../components/ui';
 import { jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
 import {
+  HOME_TOP_ABSENCE_QUERY,
   type HomeEntryKey,
   type HomeTask,
   type HomeTaskKind,
@@ -30,6 +31,7 @@ import {
 import { dayPlanOf, expandMonth } from '../lib/month';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
+import { useMedia } from '../lib/useMedia';
 import { useDemoData } from '../store';
 import './home.css';
 
@@ -50,6 +52,7 @@ const ENTRY_ICON: Record<HomeEntryKey, LucideIcon> = {
 /**
  * ホーム「今日やること」（PRD D141〜D145。ADR-0025）：起動したときの画面。今の状態から次の一手をカードで並べ
  * （lib/home の homeTasks）、押すとその操作のある画面へ移る。下に、いつでも使う入口（欠勤・問い合わせ・探す）。
+ * 狭い画面（スマホ）では欠勤・キャンセルの入口を「いつでも」から外し、ホームの先頭に常に置く（PRD D247）。
  * 日の状態は月の画面と同じ数え方（lib/useDayStatuses）。データは書き換えない
  */
 export default function HomePage() {
@@ -72,6 +75,10 @@ export default function HomePage() {
     return homeTasks({ today, statuses, months, todayStaff, data, features: data.org.features });
   }, [days, perDay, months, data, today]);
   const entries = useMemo(() => homeEntries(today, terms, data.org.features), [today, terms, data.org.features]);
+  // スマホでは欠勤・キャンセルを先頭へ（当日の朝に開いてすぐ押せる。切った機能なら出さない）
+  const narrow = useMedia(HOME_TOP_ABSENCE_QUERY);
+  const topEntry = narrow ? entries.find((e) => e.key === 'absence') : undefined;
+  const anytime = topEntry ? entries.filter((e) => e !== topEntry) : entries;
 
   const nextId = useId();
   const anytimeId = useId();
@@ -87,6 +94,20 @@ export default function HomePage() {
         title="ホーム"
         lead={`今日やること：${dateText(today)}の状態から、次にすることを並べています`}
       />
+
+      {topEntry && (
+        <div className="home-quick" data-testid="home-quick">
+          <EntryCard
+            to={topEntry.to}
+            icon={ENTRY_ICON[topEntry.key]}
+            title={topEntry.title}
+            detail={topEntry.detail}
+            onPick={() => pickDate(topEntry.date)}
+            testId={`home-${topEntry.key}`}
+            urgent
+          />
+        </div>
+      )}
 
       <section className="stack" aria-labelledby={nextId} style={{ gap: 10 }}>
         <h2 id={nextId} className="home-section-title">
@@ -113,7 +134,7 @@ export default function HomePage() {
         </h2>
         {/* 切った機能の入口（欠勤・キャンセル・問い合わせ）は出さない（PRD D213。並びと文は lib/home の homeEntries） */}
         <ul className="home-tasks home-anytime" data-testid="home-anytime">
-          {entries.map((e) => (
+          {anytime.map((e) => (
             <li key={e.key}>
               <EntryCard
                 to={e.to}
@@ -163,6 +184,7 @@ function EntryCard({
   detail,
   onPick,
   testId,
+  urgent = false,
 }: {
   to: string;
   icon: LucideIcon;
@@ -170,9 +192,16 @@ function EntryCard({
   detail: string;
   onPick?: () => void;
   testId: string;
+  /** 先頭に置く当日の入口（欠勤・キャンセル。赤い縁） */
+  urgent?: boolean;
 }) {
   return (
-    <Link to={to} className="card home-task is-entry" onClick={onPick} data-testid={testId}>
+    <Link
+      to={to}
+      className={`card home-task is-entry${urgent ? ' is-sudden' : ''}`}
+      onClick={onPick}
+      data-testid={testId}
+    >
       <span className="home-task-icon" aria-hidden="true">
         <Icon size={20} strokeWidth={2.2} />
       </span>

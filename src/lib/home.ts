@@ -204,6 +204,12 @@ export type HomeEntryKey = 'absence' | 'vacancy' | 'clients' | 'staff';
 export type HomeEntry = { key: HomeEntryKey; to: string; title: string; detail: string; date?: string };
 
 /**
+ * 欠勤・キャンセルの入口をホームの先頭に置く幅（PRD D247。狭い画面＝左のメニューが無く下のタブだけの幅。
+ * styles.css の @media (max-width: 860px)・App の NARROW_QUERY と同じ）
+ */
+export const HOME_TOP_ABSENCE_QUERY = '(max-width: 860px)';
+
+/**
  * いつでも使う入口（PRD D144）：欠勤・キャンセル・問い合わせ（空き状況）・〈利用者さん〉を探す・〈スタッフ〉を探す。
  * 呼び方は terms。切った機能の入口（欠勤・キャンセル・問い合わせ）は出さない（PRD D213）
  */
@@ -213,7 +219,7 @@ export function homeEntries(today: string, terms: Pick<Terms, 'client' | 'staff'
       key: 'absence',
       to: `/plan?date=${today}&do=${SUDDEN_DO}`,
       title: '欠勤・キャンセルを登録',
-      detail: '今日の予定で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定',
+      detail: '今日の予定で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定・連絡',
       date: today,
     },
     {

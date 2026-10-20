@@ -94,6 +94,17 @@
 .home-ready strong {
   color: var(--ink);
 }
+/* スマホの先頭の欠勤・キャンセルの入口（PRD D247）。日の予定の入口と同じ赤い縁（主ボタンにはしない） */
+.home-quick {
+  display: flex;
+}
+.home-task.is-sudden {
+  border-left-color: var(--danger);
+}
+.home-task.is-sudden .home-task-icon {
+  background: #fbe4e0;
+  color: var(--danger);
+}
 /* 印刷では出さない（ホームは画面で使うだけ。PRD D145） */
 @media print {
   .home-page {
