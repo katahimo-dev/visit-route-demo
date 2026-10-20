@@ -234,6 +234,7 @@ function waitQuiet([maxMs, quietMs, horizonMs]) {
  */
 async function settle(page, ms = 250) {
   const maxMs = Math.max(3 * ms, 1500);
+  const t0 = Date.now();
   for (let i = 0; i < 2; i++) {
     try {
       // ページの中のタイマーが止められていても（ダイアログ・裏のタブ）、こちらの時計で最長＋2秒で先へ進む
@@ -246,6 +247,7 @@ async function settle(page, ms = 250) {
         throw e;
       });
       if (!ok && process.env.E2E_SETTLE_LOG) console.log(`（settle ${ms}ms：${maxMs}ms 待っても落ち着かない）`);
+      if (process.env.E2E_SETTLE_LOG === '2') console.log(`（settle ${ms}ms → ${Date.now() - t0}ms）`);
       return;
     } catch {
       // 移っている最中（文脈が消えた）：読み込みを待ってもう1回

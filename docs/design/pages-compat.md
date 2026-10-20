@@ -53,7 +53,7 @@ URL は既定のままなら消し、`replace` で書く。知らないチップ
 
 #### 確かめ
 
-`scripts/e2e-compat.cjs`：名前・吹き出しの開閉とフォーカス・中を巻く・絞り込みと URL の復元・`?id=`・回帰・300人×60人の速さ（`PERF_MS_COMPAT` 既定 100ms）。`scripts/e2e-words.cjs`：セルの記号の意味。
+`scripts/e2e-compat.cjs`：名前・吹き出しの開閉とフォーカス・中を巻く・絞り込みと URL の復元・`?id=`・回帰・300人×60人の速さ（`PERF_MS_COMPAT` 既定 100ms。ならし3回のあと9回の中央値、超えたら最大3回りまで測り直し一番よい回りで比べる。PRD D253）。`scripts/e2e-words.cjs`：セルの記号の意味。
 
 #### 完了の条件
 

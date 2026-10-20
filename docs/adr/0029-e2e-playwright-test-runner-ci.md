@@ -36,7 +36,7 @@
   - 子のプロセスは test の時間切れの30秒前に Chromium ごと止め（SIGTERM → SIGKILL）、記録はいつも添付する
 - CI：`.github/workflows/e2e.yml` を PR・手動・夜間（03:00 日本時間）に走らせる。ビルドと `vite preview` はジョブで1回だけ行い、`BASE` を渡して `npm run e2e` のあと `npm run e2e:perf`（webServer は使わない）。夜間は `FAKE_NOW` を次の水曜・`2026-10-28T12:00+09:00`・`2026-10-31T12:00+09:00` の3通りで走らせる（月末）。報告（HTML）はいつも、test-results は失敗のときに残す。公開（`deploy.yml`）はまだ e2e を待たない
 - 「Playwright を npm の依存に入れない」は、この決定で置き換える
-- 段階2（このあと）：スクリプトの中を `test.step` と `expect.soft` に移し、確かめの1つずつを報告に出す（名前はそのまま）
+- 段階2（ADR-0041 で実施）：スクリプトが段（steps）を出し、包みが `test.step` で回して確かめの1つずつを `expect.soft` で報告に出す（名前はそのまま）。固定の待ちは画面の状態の待ち（`settle`）に
 - 段階3（このあと）：spec として書き直し、fixture（文脈・ツアーを見た扱い・確認ダイアログ・時計）にまとめる。`scripts/e2e-*.cjs` を消すのはここ
 
 ### 前のスクリプトと test の名前の対応
