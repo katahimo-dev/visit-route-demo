@@ -162,15 +162,19 @@ h3 {
   font-size: 0.85rem;
   border-radius: 10px;
 }
-/* 文字だけのボタン（ついで）：枠と地を消し、押せる所の大きさは .btn のまま */
+/* 文字だけのボタン（ついで）：枠と地を消し、押せる所の大きさは .btn のまま。
+   文字は灰（--sub。--bg で 5.5）にして枠のボタンより目立たせない。重ねると下線と濃い文字（地の色だけに頼らない） */
 .btn.btn-text {
   border-color: transparent;
   background: transparent;
-  color: var(--primary-dark);
+  color: var(--sub);
 }
-.btn.btn-text:hover:not(:disabled) {
+.btn.btn-text:hover:not(:disabled):not([aria-disabled='true']) {
   border-color: transparent;
-  background: var(--soft);
+  background: var(--primary-soft);
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .btn.btn-text[aria-disabled='true'],
 .btn.btn-text[aria-disabled='true']:hover {
@@ -868,11 +872,12 @@ tbody tr:hover td {
   letter-spacing: 0.08em;
   color: var(--sub);
 }
-/* メニューの項目は 34px 前後（1440×900 で最後の項目まで入る。PRD D239）。タッチの端末では 44px（下の pointer: coarse） */
+/* メニューの項目は 34px（1440×900 で最後の項目まで入る。PRD D239）。タッチできる端末では 44px（下の any-pointer: coarse） */
 .nav-link {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 34px;
   padding: 5px 10px;
   line-height: 1.4;
   border-radius: 10px;
@@ -1164,6 +1169,9 @@ tbody tr:hover td {
 }
 .page-lead {
   margin: 0;
+  /* 折り返すときは語の切れ目で、最後の行に1〜2字だけ残さない */
+  word-break: auto-phrase;
+  text-wrap: pretty;
   color: var(--sub);
   font-size: 0.88rem;
 }
@@ -1189,6 +1197,7 @@ tbody tr:hover td {
   margin-bottom: -1px;
 }
 .view-switch-item {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -2019,12 +2028,19 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
 }
 
 /* アイコンだけのボタンの押せる所：タッチの端末では 44px（見た目と並びは変えず、::before で押せる所だけ広げる） */
-@media (pointer: coarse) {
-  /* メニューの項目は押せる所 44px（広い画面の詰めた間隔はマウスのときだけ。PRD D239） */
+/* タッチできる端末（タッチ付きのノート・ペンを含む）：メニューの項目は押せる所 44px、
+   ［月｜週｜日］のタブ（見た目 36px）は ::before で上下に 4px 広げて 44px（PRD D237・D239） */
+@media (any-pointer: coarse) {
   .nav-link {
     min-height: 44px;
-    box-sizing: border-box;
   }
+  .view-switch-item::before {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+  }
+}
+@media (pointer: coarse) {
   .icon-btn {
     position: relative;
   }
