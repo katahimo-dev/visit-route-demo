@@ -1,11 +1,11 @@
 # 日の予定：欠勤・キャンセルと振り直し
 
-> この画面のファイル：`src/pages/SuddenPanel.tsx`・`absenceParts.tsx`（`AbsenceFields`・`AbsenceTargets`・`ReassignBar`・`ReassignSummary`・`CandidateBox`・`previewOf`）・`reassignParts.tsx`（`AnnealBox`・`ContactPanel`・`ContactButton`・`ReassignDock`）・`PlanPage.tsx`・`plan.css`、`src/lib/sudden.ts`・`absences.ts`・`contacts.ts`・`clipboard.ts`・`runs.ts`。関連 ADR：0011（追記を含む）・0015 追記・0025 追記。関連 PRD：D26〜D35・D167〜D172。
+> この画面のファイル：`src/pages/SuddenPanel.tsx`・`absenceParts.tsx`（`AbsenceFields`・`AbsenceTargets`・`ReassignBar`・`ReassignSummary`・`CandidateBox`・`previewOf`）・`reassignParts.tsx`（`AnnealBox`・`ContactPanel`・`ContactButton`・`ReassignDock`）・`PlanPage.tsx`・`plan.css`、`src/lib/sudden.ts`・`absences.ts`・`contacts.ts`・`clipboard.ts`・`runs.ts`。関連 ADR：0011（追記を含む）・0015 追記・0025 追記・0038。関連 PRD：D26〜D35・D167〜D172・D243〜D246。
 > 日の予定の全体は [pages-plan.md](pages-plan.md)。計算（`reassign`・`targetsOf`・`prepareAnneal`・`settleAnneal`）は design.md の「reassign」。
 
-### 「欠勤・キャンセル」の欄（PRD D167〜D172）
+### 「欠勤・キャンセル」の欄（PRD D167〜D172・D243〜D246）
 
-急な欠勤（遅刻・早退を含む）と当日キャンセルを1つの欄で段階に分けて扱う。
+急な欠勤（遅刻・早退を含む）と当日キャンセルを1つの欄で段階に分けて扱う（起きたこと→人→影響→確定→連絡の5段。ADR-0038）。
 
 #### 入口
 
@@ -20,22 +20,33 @@
 #### `pages/SuddenPanel.tsx`
 
 - `SuddenPanel`：`SidePanel` の narrow（見出し「欠勤・キャンセル」・data-testid `sudden-panel`）。`init`＝`{ kind?, staffId? }`（人があれば2段目から）
-- 段階・何が起きたか・人・欠勤の入力・訪問・取り消しの種類・済んだことは欄の中の状態
+- 段階・何が起きたか・人・欠勤の入力・訪問・取り消しの種類・済んだこと・5段目の［連絡した］の印は欄の中の状態（［連絡した］はデータに残さない。ADR-0038）
 - 段階の表示は `ol.sudden-steps`（aria-label「段階」。今の段階に `aria-current="step"`）。段階の見出し（`h3`・`data-return-focus`）へ `focusKey` でフォーカス
-- 戻る（`sudden-back`）・閉じる（`sudden-close`）。Esc で閉じると入口へフォーカス。閉じる `onClose(toBar)`：閉じたあと、振り直していれば差の欄へ（`returnFocus` と `goToBar`）
-- 振り直し・欠勤だけ登録・欠勤の取り消し・取り消し・確定・元に戻すは日の予定の関数を受けて呼ぶだけ。4段目の振り直しの結果（まとめ `ReassignSummary` と `AnnealBox`）は日の予定が `result` で渡す
+- 戻る（`sudden-back`）・閉じる（`sudden-close`）。Esc で閉じると入口へフォーカス。閉じる `onClose(toBar)`：閉じたあと、振り直していれば差の欄へ（`returnFocus` と `goToBar`）。5段目からは差の欄へ移らない
+- 振り直し・欠勤だけ登録・欠勤の取り消し・取り消し・確定・元に戻すは日の予定の関数を受けて呼ぶだけ。4段目の振り直しの結果（まとめ `ReassignSummary` と `AnnealBox`）は日の予定が `result` で、5段目の連絡の一覧は `contacts`（`ContactRow[]`。差を出せなければ null）で、〈スタッフ〉あてのメールは `contactMail`（メールを切っていれば渡さない）で渡す
 - 確定のボタンは欄の下の帯（`footer`）。600px 以下は幅いっぱい、4段目の表は欄の中で横に巻く
-- `plan.css`：`.plan-sudden-btn`（入口）・`.sudden-steps`（段階の表示）・`.sudden-choice`（1段目の選択肢）・`.sudden-option`（3段目の案）
+- `plan.css`：`.plan-sudden-btn`（入口）・`.sudden-steps`（段階の表示）・`.sudden-choice`（1段目の選択肢）・`.sudden-option`（3段目の案）・`.sudden-contacts`・`.sudden-contact`（5段目の1人1枚）
 
 #### 段階
 
 | 段階 | 〈スタッフ〉が休む（kind `staff`） | 〈利用者さん〉のキャンセル（kind `client`） |
 |---|---|---|
-| 短い名前（`suddenSteps`） | 起きたこと・休む人・影響・確定 | 起きたこと・訪問・影響・確定 |
+| 短い名前（`suddenSteps`） | 起きたこと・休む人・影響・確定・連絡 | 起きたこと・訪問・影響・確定・連絡 |
 | 1 見出し「何が起きましたか？」 | `sudden-kind-staff`（「急な欠勤・遅刻・早退。休む人の訪問を、ほかの人へ振り直します」） | `sudden-kind-client` |
 | 2 | 「休む〈スタッフ〉と時間帯を選ぶ」：人（`sudden-staff`）と `AbsenceFields`。人を選ぶまで「次へ」（`sudden-next`）を押せない。時間帯の誤りは理由を出して押せない。既にある欠勤は `sudden-existing` | 「キャンセルの訪問を選ぶ」：訪問（`sudden-visit`）と当日キャンセルか（`sudden-same-day`。既定は当日キャンセル） |
 | 3 | 「影響を確かめて振り直す」：見込み（`absence-preview`・`sudden-impact`）と振り直しのボタン | 「影響を確かめて取り消す」：`cancelImpact` の文（`sudden-cancel-impact`）と「当日キャンセルとして取り消す」／「取り消す」（`sudden-cancel-ok`） |
-| 4 | 「案を選んで確定する」：済んだこと（`sudden-done`「〈欠勤〉を登録して振り直しました」）・`ReassignSummary`・`AnnealBox`・`confirmNote`（`sudden-confirm-note`）・「この割当で確定」（`sudden-adopt`。独自の確認）・「元の案に戻す」（`sudden-revert`）・「日の予定で差を見る」（`sudden-to-bar`） | 「確定する」：済んだこと（「〈訪問〉 を当日キャンセルとして取り消しました」）・確定 |
+| 4 | 「案を選んで確定する」：済んだこと（`sudden-done`「〈欠勤〉を登録して振り直しました」）・`ReassignSummary`・`AnnealBox`・`confirmNote`（`sudden-confirm-note`）・「この割当で確定」（`sudden-adopt`。独自の確認。確定したら5段目へ）・確定し直すものが無ければ「次へ：連絡」（`sudden-to-contacts`）・「元の案に戻す」（`sudden-revert`）・「日の予定で差を見る」（`sudden-to-bar`） | 「確定する」：済んだこと（「〈訪問〉 を当日キャンセルとして取り消しました」）・確定（確定したら5段目へ）・「次へ：連絡」 |
+| 5 見出し「変更を伝える」 | 連絡の一覧（下の「5段目の連絡」）。振り直しの差から | 連絡の一覧。取り消した訪問の担当に「中止」と、取り消したときの確定した割当との差から |
+
+#### 5段目の連絡（PRD D243〜D246。ADR-0038）
+
+- 一覧は1人に1枚（`sudden-contacts` の `sudden-contact`。`data-to`＝`staff|client`・`data-kinds`＝種類）：宛名・種類の印（担当が外れる・新しく入る（`chip-move`）・時刻が変わる（`chip-warn`）・中止、〈利用者さん〉は「〈利用者さん〉あて」）・連絡文（`sudden-contact-text`）・［文をコピー］（`sudden-contact-copy`。`copyText` とトースト）・〈スタッフ〉あての「メール」（`MailButton`・`MailLengthNote`。`sudden-contact-mail`。件名は `contactMailText`）・［連絡した］（`sudden-contact-sent`。印の鍵は宛先と文なので、確定し直して文が変われば消える）
+- 上に説明（欠勤とキャンセルで分ける）と、欠勤の人に残る訪問があれば「欠勤の人に残る訪問 N件（連絡文には入りません。日の予定で確かめてください）」（`sudden-contacts-left`。日の予定が `leftCount` で渡す）、「連絡した N/M人」（`sudden-contacts-count`。`aria-live`）。行が無ければ「連絡が要る変更はありません。」、差を出せなければ「日の予定の「連絡の一覧」で確かめてください」（`sudden-contacts-none`）
+- 帯は「終わる」（`sudden-finish`。塗り＝欄の主ボタンはこれ1つ。差の欄へは移らない）と「戻る」（4段目。枠）。行の［文をコピー］・メールは枠の小さなボタン、［連絡した］はチェック（ボタンの3段。PRD D238・ADR-0036）
+- 日の予定（`PlanPage`）が作る：
+  - 欠勤：差の欄と同じ `contacts`（`contactsOf`。元の案＝確定した割当、無ければ振り直す前の案 → 今の案。確定したあとは今の案＝確定した割当）
+  - キャンセル：欄の取り消し（`suddenCancelVisit`）が、取り消す前の担当（確定した割当があればその担当だけ（無ければ担当なし）、確定が無ければ今の案）・開始（今の案の時刻、無ければ約束の開始）と、そのときの確定した割当（`suddenCancel`）を覚えてから `applyCancel`。差は `contactsOf({ problem, routes: orderConfirmed(そのときの確定した割当, 今の案, problem) }, { problem, routes: 今の案 })`（確定した割当の列は訪問データの並びなので、`baseOf` と同じ並べ方にしてから時刻を出す）（取り消した訪問は問題に無いので出ない）。確定が無かった日は中止だけ
+  - 行は `contactRows(差, 取り消した訪問, contactWords)`。欄を開き直すと `suddenCancel` を消す
 
 #### 2段目の欠勤の入力（`AbsenceFields`）
 
@@ -74,12 +85,13 @@
 - `staffChoices(staff, slotsOf, visitCount)`・`visitChoices(visits, clientName, window, ownerName)`（時刻の順。「9:00〜10:00 名前（担当：担当の名前さん／担当なし）」）
 - `impactText(targets)`・`reassignBlocked(...)`
 - `cancelImpact({ owner, sameDay, clientWord, hasPlan })`：担当が決まっていなければ「この訪問はまだ担当が決まっていません。ほかの訪問は変わりません」、案が無ければ「この日はまだ案がありません。案を作るときはこの訪問を除いて作ります」、ふつうの取り消しは「ふつうの取り消しは回数に数えません」
+- `suddenHeading(kind, 5, …)`：「変更を伝える」
 - `confirmNote(confirmState)`：null「この日はまだ案がありません」・same「今の案は確定した割当と同じです（確定済み）」・diff「今の案は確定した割当と違います。「この割当で確定」で確定し直してください」・none「まだ確定していません。「この割当で確定」で確定します」
 - `absenceSummary(name, absence, slots)`
 
 #### 確かめ
 
-`scripts/e2e-absence.cjs`：ホームのカードから今日の日の予定で1段目が開き `?do=`・`?date=` が消える・段階の表示（aria-current）と見出しへのフォーカス・人を選ぶまで次へが押せない・時間帯の誤り・影響（入らなくなる訪問 N件）・戻る・案A で4段目・案B を作って選ぶ・確定（独自の確認）で確定済み・当日キャンセル（既定・影響の文・cancelKind）・Esc で入口へフォーカス・列の見出しの「欠勤を直す」から2段目・欠勤の取り消し・案の無い日は欠勤だけ・390px で入口と欄が収まり下のタブは5つ・印刷で入口を出さない。
+`scripts/e2e-absence.cjs`：ホームのカードから今日の日の予定で1段目が開き `?do=`・`?date=` が消える・段階の表示（aria-current）と見出しへのフォーカス・人を選ぶまで次へが押せない・時間帯の誤り・影響（入らなくなる訪問 N件）・戻る・案A で4段目・案B を作って選ぶ・確定（独自の確認）で5段目（連絡。段階の名前・見出し・休む人あての文・新しく入る人あての文・〈利用者さん〉あては敬語でほかの人の名前なし・メールは mailto:・［連絡した］で「連絡した 1/N人」・［文をコピー］の知らせ）→「終わる」で確定済み・当日キャンセル（既定・影響の文・cancelKind・5段目で担当に「中止です」）・Esc で入口へフォーカス・列の見出しの「欠勤を直す」から2段目・欠勤の取り消し・案の無い日は欠勤だけ・390px で入口と欄が収まり下のタブは5つ・印刷で入口を出さない。
 
 ### 振り直し（案A。ADR-0011。PRD D26〜D32）
 
@@ -167,23 +179,26 @@
   2. 時刻だけ変わる〈利用者さん〉（件数。〈利用者さん〉あての連絡文にも「開始が〜に変わります（担当は〜さんのままです）」として入る）
   3. 仕事が増える・減る〈スタッフ〉（増える・外れる・時刻が変わるの件数と、時刻・行き先（住所））
 - 連絡文（〈スタッフ〉あて・N人／〈利用者さん〉あて・N件）：1件ずつ「コピー」、主ボタン「すべての連絡文をコピー」、「印刷」。〈スタッフ〉あての「コピー」の横に `MailButton`（`staffMail(staffId, text)`）
-- 呼び方は `org.terms`（連絡文の敬称「様」「さん」は固定）
+- 呼び方は `org.terms`（連絡文の敬称「様」「さん」は固定）。日付は `dateWordOf`（「10月21日（水）」。「本日」と書かない）、所要は訪問の `durationMinutes`、名乗りは `org.name`
 - コピーは `lib/clipboard` の `copyText`：`navigator.clipboard`（使えなければ textarea を選んで `execCommand('copy')`）、結果をトースト
 - 印刷（`@media print`）はこの欄だけを出す（`.contact-sheet`。帯 `.drawer-foot` は出さない）
 
 #### `lib/contacts.ts`（純粋関数。テストあり）
 
-- `dayWordOf(date, today)`：当日は「本日」、ほかは「10月15日（木）」
-- `staffMessage`：「〈名前〉さん／本日の予定の変更です。／・本日 14:00 天文台ほしみ様（住所）の訪問を追加でお願いします。／・本日 10:00 青葉様の訪問は、ほかの〈スタッフ〉が伺います（伺わなくて大丈夫です）。／・本日 11:00 青葉様の訪問の開始が 11:20 に変わります。」。行は元の時刻の順
-- `clientMessages`（訪問先ごと）：「〈表示名〉様／・本日 14:00 の訪問は、担当が 山田さんから 佐藤さんに代わります（、開始が 14:20 になります）。」「・本日 15:00 の訪問の開始が 15:20 に変わります（担当は 佐藤さんのままです）。」「・本日 16:00 の訪問は、担当の調整がつかず、あらためてご連絡します。」
+ひな形と載せる範囲は PRD D245・D246（ADR-0038）。差の欄の連絡の一覧と5段目で同じ。
+
+- `dateWordOf(date)`：「10月15日（木）」（連絡文は「本日」と書かない）。`clock`：「9:00」。`promisedText`：約束の開始（「9:00」「9:00〜9:30の間」）。`familyName`：空白の前（〈利用者さん〉あての担当の名前）
+- `staffMessage(c, w, cancelled?)`（丁寧語の短文）：「〈名前〉さん／10月21日（水）の予定の変更です。／・14:00 天文台ほしみ様の訪問をお願いします（住所・60分）。／・10:00 青葉様の訪問は、佐藤 一郎さんに代わりました。伺わなくて大丈夫です。（入らないなら「、代わりの〈スタッフ〉を調整中です。」）／・11:00 青葉様の訪問は、開始が11:20に変わりました。／・8:30 若林様の訪問は、中止です（キャンセル）。伺わなくて大丈夫です。」。行は元の時刻の順。住所・所要は「お願いします」の行だけ
+- `clientMessages`（訪問先ごと。敬語）：「〈表示名〉様／いつもお世話になっております。〈事業所名〉です。／10月21日（水）の訪問について、変更をお知らせいたします。／・14:00の訪問は、担当が佐藤に代わります。（時刻も変われば「代わり、開始は14:20ごろになります。」）／・14:50〜15:10の間の訪問は、開始が15:20ごろに変わります（担当は変わりません）。／・16:00の訪問は、担当の調整がついておりません。あらためてご連絡いたします。／ご迷惑をおかけして申し訳ございません。どうぞよろしくお願いいたします。」。どの訪問かは約束の開始（`promised`）で書く。前の担当・住所・代わる理由は書かない
 - `allContactsText`
+- `contactRows(list, cancelled, w)`：5段目の行（`ContactRow`＝鍵・宛先・ID・宛名・種類・文）。〈スタッフ〉（差の一覧の順、続けて中止だけの人）→〈利用者さん〉。取り消した訪問は差から除き、担当にだけ「中止」。担当の無い取り消しは行なし。今の時刻は見ず、過ぎた時刻の行も除かない。`CONTACT_KIND_LABEL`
 
 ### `lib/absences.ts`（画面の純粋関数。テストあり）
 
 - `absencesOn(data, date)`
 - `saveAbsence(d, absence)`：同じ人・同じ日の欠勤はその1件を置き換える
 - `removeAbsence(d, id)`：今の案は変えない
-- `baseOf(data, date, problem)`：元の案と、その種類。無ければ null
+- `baseOf(data, date, problem)`：元の案と、その種類。無ければ null。確定した割当の並べ方は `orderConfirmed(saved, planRoutes, problem)`（今の案の列の順、無い訪問は開始の順に挟む。キャンセルの連絡の差でも使う）
 - `applyReassign(d, date, x)`・`revertReassign(d, date, problem)`
 - `chooseReassign`・`addAnnealRun`・`annealRunOf`
 
@@ -211,4 +226,5 @@
 - [ ] 案B を作ると記録に1件足り、再読込しても差の表に案B が出る。表で 案A／案B を行き来できる（記録は増えない）
 - [ ] 差の欄の「連絡の一覧」で (1)〜(3) と連絡文が出て、コピー（1件・すべて）でクリップボードに入る。印刷の見た目は一覧だけ
 - [ ] 比較の画面で 欠勤前／案A／案B を選んで比べられる（欠勤前は1つ）
+- [ ] 欠勤・キャンセルの欄で確定すると5段目（連絡）に、休む人・新しく入る人・〈利用者さん〉あての文と［文をコピー］・メール・［連絡した］が出る。キャンセルでは担当に「中止です」（390px で欄の中が横にはみ出さない）
 - [ ] `lib/absences`・`lib/runs`（同じ人・同じ日の置き換え・元の案の並べ方・戻す・`chooseReassign`・`addAnnealRun`・`annealRunOf`）・`lib/contacts`・`lib/clipboard`（失敗の経路）・`lib/sudden` のテストが通る
