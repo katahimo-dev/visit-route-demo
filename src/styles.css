@@ -318,6 +318,11 @@ tbody tr:hover td {
   color: var(--sub);
   font-size: 0.9rem;
 }
+/* 地図の本体を読めなかったとき（PRD D248） */
+.map-error {
+  flex-direction: column;
+  gap: 8px;
+}
 /* 分けた画面を読んでいる間（空のときの見た目。高さを取って下のタブなどを跳ねさせない。PRD D248） */
 .page-loading {
   min-height: 50vh;

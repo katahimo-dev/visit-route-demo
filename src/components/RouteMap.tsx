@@ -1,5 +1,7 @@
-import { Suspense } from 'react';
+import { Component, type ReactNode, Suspense } from 'react';
+import { isChunkLoadError } from '../lib/chunkLoad';
 import { lazyComponent } from '../lib/lazyComponent';
+import { reloadPage } from '../lib/reloadPage';
 
 /**
  * 地図（国土地理院の淡色地図。APIキー不要）。
@@ -28,20 +30,50 @@ export type RouteMapProps = {
   onPick?: (p: { lat: number; lng: number }) => void;
 };
 
-const LeafletMap = lazyComponent(() => import('./LeafletMap'));
+const LeafletMap = lazyComponent('LeafletMap', () => import('./LeafletMap'));
+
+/**
+ * 地図の本体を読めなかったとき（新しい版の公開・通信の切れ。PRD D248）：画面全体をエラーにせず、
+ * 同じ高さの枠に「地図を読み込めませんでした」と［再読み込み］を出す。ほかの例外は外の ErrorBoundary へ
+ */
+class MapErrorBoundary extends Component<{ height: number; children: ReactNode }, { error: unknown }> {
+  state: { error: unknown } = { error: null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+
+  render() {
+    const { error } = this.state;
+    if (error === null) return this.props.children;
+    // 読み込みの失敗でないもの（地図の不具合）は画面の ErrorBoundary に任せる
+    if (!isChunkLoadError(error)) throw error;
+    return (
+      <div className="map map-loading map-error" style={{ height: this.props.height }} data-testid="map-error">
+        <span>地図を読み込めませんでした</span>
+        <button type="button" className="btn btn-small" onClick={reloadPage}>
+          再読み込み
+        </button>
+      </div>
+    );
+  }
+}
 
 function RouteMapView(props: RouteMapProps) {
+  const height = props.height ?? 260;
   return (
-    // 読み込み中も同じ高さの枠を出す（地図が出るときに下が跳ねない）
-    <Suspense
-      fallback={
-        <output className="map map-loading" style={{ height: props.height ?? 260 }} aria-busy="true">
-          地図を読み込んでいます…
-        </output>
-      }
-    >
-      <LeafletMap {...props} />
-    </Suspense>
+    <MapErrorBoundary height={height}>
+      {/* 読み込み中も同じ高さの枠を出す（地図が出るときに下が跳ねない） */}
+      <Suspense
+        fallback={
+          <output className="map map-loading" style={{ height }} aria-busy="true">
+            地図を読み込んでいます…
+          </output>
+        }
+      >
+        <LeafletMap {...props} />
+      </Suspense>
+    </MapErrorBoundary>
   );
 }
 
