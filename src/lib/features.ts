@@ -66,7 +66,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '月の予定を紙のカレンダーの代わりに印刷できます',
     group: '予定',
     paths: ['/month/print'],
-    hides: '月の印刷のボタン、月の印刷の画面',
+    hides: '月の予定の「その他 ▾」の印刷、月の印刷の画面',
   },
   {
     id: 'compare',
@@ -74,7 +74,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '同じ日の2つの案を並べて、点数と違いを比べられます',
     group: '予定',
     paths: ['/compare'],
-    hides: 'メニューの「案を比べる」、比較の画面、「案を変える ▾」の比べる・戻す',
+    hides: '比較の画面（パレット・「案を変える ▾」の比べる・戻す）',
   },
   {
     id: 'sudden',
@@ -108,7 +108,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '{staff}と{client}の相性（◎〜×）を AI案に効かせます',
     group: 'AI の条件',
     paths: ['/compat'],
-    hides: 'メニュー・相性の画面、閲覧の欄の相性、条件の「相性」',
+    hides: '設定の「相性」のタブ・相性の画面、閲覧の欄の相性、条件の「相性」',
   },
   {
     id: 'allowedStaff',
@@ -148,7 +148,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '{staff}ごとの月の稼働・拘束の見込みを見ます',
     group: '人',
     paths: ['/workload'],
-    hides: 'メニュー・勤務の見込みの画面、拘束の上限の帯、行き止まりから移るリンク',
+    hides: '勤務の見込みの画面（勤務時間（シフト）・月の予定から開く入口）、拘束の上限の帯、行き止まりから移るリンク',
   },
   {
     id: 'fare',
@@ -167,7 +167,8 @@ export const FEATURES: readonly FeatureDef[] = [
     paths: ['/rules', '/items'],
     // 「今日の案を試す重みで作り直す」（lib/rebuildBand の recreateTodayHref）も作り直しの帯の続きなのでこの機能
     doParams: [{ path: '/plan', do: 'recreate' }],
-    hides: 'メニュー・条件の重みと特性の項目の画面、点数の理由、作り直しの帯（切ると基準のプリセットだけで作る）',
+    hides:
+      '設定の「条件の重み」「特性の項目」のタブと画面、点数の理由、作り直しの帯（切ると基準のプリセットだけで作る）',
   },
   {
     id: 'mail',
@@ -327,7 +328,7 @@ export const TEMPLATES: readonly TemplateDef[] = [
 /** ひな形の1つ */
 export const templateDef = (id: TemplateId): TemplateDef => TEMPLATES.find((t) => t.id === id)!;
 
-/** ひな形を当てたときの入り切り（全20の ID を明示して書く。業種とは連動しない） */
+/** ひな形を適用したときの入り切り（全20の ID を明示して書く。業種とは連動しない） */
 export function applyTemplate(id: TemplateId): Features {
   const on = new Set(templateDef(id).on);
   return Object.fromEntries(FEATURE_IDS.map((f) => [f, on.has(f)])) as Features;
@@ -346,7 +347,7 @@ export function matchTemplate(features: Features): TemplateId | 'custom' {
   return 'custom';
 }
 
-/** ひな形を当てると入る機能・切れる機能（使えるか（isOn）で比べる。確認ダイアログの文。並びは表の順） */
+/** ひな形を適用すると入る機能・切れる機能（使えるか（isOn）で比べる。確認ダイアログの文。並びは表の順） */
 export function templateDiff(features: Features, id: TemplateId): { on: FeatureId[]; off: FeatureId[] } {
   const next = applyTemplate(id);
   return {

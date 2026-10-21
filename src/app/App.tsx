@@ -50,16 +50,20 @@ import { hashPathname, isPaletteShortcut, keepPaletteOn } from '../lib/commandPa
 import { dateText } from '../lib/common';
 import { featureLabel, featureOfLocation, isFeatureOffState, isOn } from '../lib/features';
 import {
+  activeNavPath,
   bottomTabs,
   isActiveNav,
-  isActiveTab,
+  isScheduleView,
+  isSettingsPath,
+  type LastViews,
   type MenuItem,
   menuSections,
   type NavIcon,
   type NavSection,
   navTitleParts,
+  screenSections,
+  showsDateSwitch,
   tabClick,
-  tabHref,
   tabLabel,
 } from '../lib/nav';
 import { showsRebuildBand } from '../lib/rebuildBand';
@@ -179,7 +183,7 @@ function Guarded({ element }: { element: ReactElement }) {
   );
 }
 
-/** 左のメニュー（PRD D178・D179。並びは lib/nav の menuSections） */
+/** 左のメニュー（PRD D273〜D275。並びは lib/nav の menuSections） */
 type NavItem = MenuItem;
 
 /** メニューの項目のアイコン */
@@ -203,8 +207,23 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
   data: Database,
 };
 
+/**
+ * メニューの「予定」「設定」で開く、最後に開いた表示・タブ（PRD D273・D275）。開いている間だけ覚える
+ * （画面の状態なので保存しない。AdminShell の外の画面（印刷・〈スタッフ〉のスマホ画面）から戻っても残るよう、モジュールに置く）
+ */
+const lastViews: LastViews = {};
+
+/** 今の画面が予定の表示・設定のタブなら覚える（同じ値を何度書いても同じ） */
+function rememberView(pathname: string): LastViews {
+  if (isScheduleView(pathname)) lastViews.schedule = activeNavPath(pathname);
+  if (isSettingsPath(pathname)) lastViews.settings = pathname;
+  return { ...lastViews };
+}
+
 function AdminShell() {
   const { data, saveError } = useDemoData();
+  /** 選んでいる日付（日付の選択を出さない画面でも覚えたまま。外枠の data-date で読める。PRD D267） */
+  const { date: pickedDate } = useDay();
   const terms = data.org.terms;
   const features = data.org.features;
   const location = useLocation();
@@ -279,8 +298,17 @@ function AdminShell() {
   // メニューの並び（PRD D178〜D180・D230〜D232。ADR-0027・0034）：ホーム／予定／当日・問い合わせ／人／AI の条件／設定。
   // ルートの URL は変えない。当日・問い合わせの「欠勤・キャンセルを登録」は今日の日の予定の欄を開く操作（今の画面の印は付けない）
   const today = jstDate(Date.now());
-  // 切った機能の項目は出さない（PRD D213）。下のタブ・上の帯の名前・パレットの画面もここから引く
-  const groups = useMemo(() => menuSections(terms, today, features), [terms, today, features]);
+  // 「予定」「設定」は最後に開いた表示・タブを開く（PRD D273・D275）
+  const last = rememberView(pathname);
+  const lastSchedule = last.schedule;
+  const lastSettings = last.settings;
+  // 切った機能の項目は出さない（PRD D213）。下のタブもここから引く
+  const groups = useMemo(
+    () => menuSections(terms, today, features, { schedule: lastSchedule, settings: lastSettings }),
+    [terms, today, features, lastSchedule, lastSettings],
+  );
+  // 画面の一覧（メニューから外した画面も1つずつ）：上の帯の名前・パレットの画面（PRD D273・D275）
+  const screens = useMemo(() => screenSections(terms, features), [terms, features]);
   const brand = (
     <div className="brand">
       <span className="brand-mark" aria-hidden="true">
@@ -296,11 +324,11 @@ function AdminShell() {
     </div>
   );
   /** 上の帯の今の画面の名前（スマホ。PRD D132・D179。見出し・項目名） */
-  const screenName = navTitleParts(groups, pathname);
+  const screenName = navTitleParts(screens, pathname);
   return (
     // 初回の案内ツアー（PRD D192・D193）：まだ見ていなければ起動したときに中央のカードで出す。データの画面からもう一度開ける
     <TourProvider terms={terms}>
-      <div className="app-shell">
+      <div className="app-shell" data-date={pickedDate}>
         <aside ref={sideNavRef} className="side-nav">
           {brand}
           <NavGroups groups={groups} pathname={pathname} />
@@ -309,7 +337,7 @@ function AdminShell() {
           <header ref={headerRef} className="app-header">
             {/* 月まとめ作成の進み具合と［止める］（PRD D256。ほかの画面へ移っても続く。月の予定では画面の中に出す） */}
             <BatchBand />
-            {/* スマホだけ：ロゴと今の画面の名前・「メニュー」ボタン（PRD D132。広い画面では出さない） */}
+            {/* スマホだけ：ロゴと今の画面の名前（PRD D132。広い画面では出さない。「メニュー」は下のタブ。PRD D274） */}
             <div className="m-head-title">
               <span className="brand-mark" aria-hidden="true">
                 <RouteIcon size={18} strokeWidth={2.4} />
@@ -344,20 +372,8 @@ function AdminShell() {
                 <kbd>{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
               </span>
             </button>
-            <button
-              ref={menuBtnRef}
-              type="button"
-              className="btn btn-small m-menu-btn"
-              aria-haspopup="dialog"
-              aria-expanded={menuOpen}
-              aria-controls={menuOpen ? drawerId : undefined}
-              onClick={() => setMenuOpen(true)}
-              data-testid="menu-btn"
-            >
-              <Menu size={18} aria-hidden="true" />
-              メニュー
-            </button>
-            <DateSwitcher />
+            {/* 日付の選択は日付で中身が変わる画面だけ（PRD D267） */}
+            {showsDateSwitch(pathname) && <DateSwitcher />}
           </header>
           {saveError && (
             <div className="save-error" role="alert">
@@ -393,20 +409,18 @@ function AdminShell() {
               />
             </Suspense>
           </main>
-          {/* スマホだけ：よく使う5つのタブ（ホーム・月・週・今日・空き状況。PRD D134・D144・D232。印刷では出さない） */}
+          {/* スマホだけ：よく使うタブ（ホーム・予定・欠勤・空き状況）と「メニュー」（PRD D274。印刷では出さない） */}
           <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
             {bottomTabs(groups).map((item) => {
-              const { to, icon } = item;
+              const { key, to, icon } = item;
               const Icon = NAV_ICONS[icon];
-              // 比較はタブに無いので「今日」（PRD D134・D180・D232）
-              const on = isActiveTab(to, pathname);
-              // 「今日」は今日の日の予定（?date=今日）。日の予定を開いていても今日を選ぶ（履歴は増やさない）
-              const click = tabClick(to, pathname);
+              // 「予定」は月・週・日の予定と比較で印（PRD D273）。欠勤は操作なので印を付けない
+              const on = isActiveNav(item, pathname);
+              const click = tabClick(item, pathname);
               return (
                 <Link
-                  key={to}
-                  to={tabHref(to, today)}
-                  replace={click === 'replace'}
+                  key={key}
+                  to={to}
                   className={on ? 'bottom-tab active' : 'bottom-tab'}
                   aria-current={on ? 'page' : undefined}
                   onClick={(e) => {
@@ -414,15 +428,30 @@ function AdminShell() {
                     if (click === 'stay') e.preventDefault();
                   }}
                   data-testid="bottom-tab"
+                  data-tab={key}
                 >
                   <Icon size={20} strokeWidth={2.1} aria-hidden="true" />
                   <span>{tabLabel(item)}</span>
                 </Link>
               );
             })}
+            {/* 「メニュー」：全部の画面の引き出し（PRD D133・D274。上の帯から下のタブの最後へ移した） */}
+            <button
+              ref={menuBtnRef}
+              type="button"
+              className="bottom-tab m-menu-btn"
+              aria-haspopup="dialog"
+              aria-expanded={menuOpen}
+              aria-controls={menuOpen ? drawerId : undefined}
+              onClick={() => setMenuOpen(true)}
+              data-testid="menu-btn"
+            >
+              <Menu size={20} strokeWidth={2.1} aria-hidden="true" />
+              <span>メニュー</span>
+            </button>
           </nav>
         </div>
-        {paletteOpen && <CommandPalette sections={groups} terms={terms} onClose={() => setPaletteFor(null)} />}
+        {paletteOpen && <CommandPalette sections={screens} terms={terms} onClose={() => setPaletteFor(null)} />}
         {menuOpen && (
           <NavDrawer
             id={drawerId}
@@ -440,9 +469,9 @@ function AdminShell() {
             <NavGroups
               groups={groups}
               pathname={pathname}
-              onPick={(e, to) => {
+              onPick={(e, item) => {
                 // 今の画面の項目は閉じるだけ（移り直して URL のクエリ＝画面の状態を消さない）
-                if (to === pathname) e.preventDefault();
+                if (tabClick(item, pathname) === 'stay') e.preventDefault();
                 setMenuOpen(false);
               }}
             />
@@ -462,24 +491,25 @@ function NavGroups({
   groups: readonly NavSection<NavItem>[];
   pathname: string;
   /** 項目を押したとき（引き出しを閉じる。今の画面なら移らない） */
-  onPick?: (e: MouseEvent<HTMLAnchorElement>, to: string) => void;
+  onPick?: (e: MouseEvent<HTMLAnchorElement>, item: NavItem) => void;
 }) {
   return (
     <nav className="nav-groups" aria-label="画面の一覧">
       {groups.map((g) => (
-        <div key={g.items[0]!.to} className="nav-group">
+        <div key={g.items[0]!.key} className="nav-group">
           {g.title && <h2 className="nav-group-title">{g.title}</h2>}
-          {g.items.map(({ to, label, icon }) => {
+          {g.items.map((item) => {
+            const { key, to, label, icon } = item;
             const Icon = NAV_ICONS[icon];
-            // 今の画面の印（比較は「案を比べる」。操作の項目（欠勤・キャンセル）には付けない。PRD D180）
-            const on = isActiveNav(to, pathname);
+            // 今の画面の印（「予定」は月・週・日の予定と比較、「設定」は設定のタブ。操作の項目（欠勤・キャンセル）には付けない。PRD D273・D275）
+            const on = isActiveNav(item, pathname);
             return (
               <Link
-                key={to}
+                key={key}
                 to={to}
                 className={on ? 'nav-link active' : 'nav-link'}
                 aria-current={on ? 'page' : undefined}
-                onClick={(e) => onPick?.(e, to)}
+                onClick={(e) => onPick?.(e, item)}
                 data-testid="nav-link"
               >
                 <Icon size={18} strokeWidth={2.1} aria-hidden="true" />

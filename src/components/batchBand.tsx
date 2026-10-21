@@ -1,7 +1,11 @@
 import { Loader2, Square } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { batchBandText, batchDoneText, monthBatch } from '../lib/monthBatch';
+import { useDay } from '../app/day';
+import { addDays, weekday } from '../domain/time';
+import { isDate } from '../lib/isDate';
+import { monthShown } from '../lib/month';
+import { batchBandText, batchDoneText, batchHref, monthBatch } from '../lib/monthBatch';
 import { useValueStore } from '../lib/valueStore';
 import { useDemoData } from '../store';
 import { useToast } from './Toast';
@@ -32,17 +36,47 @@ export function MonthBatchHost(): ReactNode {
   const toast = useToast();
   const navigate = useNavigate();
   const done = useValueStore(monthBatch.done);
+  /** 今いる画面（終わった知らせを出すときに読む。描くたびに書き直す） */
+  const { pathname, search } = useLocation();
+  const { date } = useDay();
+  const viewing = useRef({ pathname, search, date });
+  viewing.current = { pathname, search, date };
   /** 知らせた終わり（描き直し・付け直しで同じ知らせを二度出さない。つないだときにあった古い知らせも出さない） */
   const shown = useRef(done);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 終わった知らせが変わったときだけ
   useEffect(() => {
     if (!done || done === shown.current) return;
     shown.current = done;
-    toast(batchDoneText(done), {
-      action: { label: '月の予定を見る', onClick: () => navigate(`/month?ym=${done.ym}`), testId: 'batch-done-open' },
-    });
+    // 行き先が今いる画面と同じ（その月の月の予定・その週の週の予定を見ている）ならボタンを出さない（PRD D268・D280）
+    const here = viewing.current;
+    const week = done.source === 'week' && done.weekStart !== null;
+    const same = week
+      ? here.pathname === '/week' && weekShown(here.search, here.date) === done.weekStart
+      : here.pathname === '/month' && monthShown(here.search, here.date) === done.ym;
+    toast(
+      batchDoneText(done),
+      same
+        ? undefined
+        : {
+            action: {
+              label: week ? '週の予定を見る' : '月の予定を見る',
+              onClick: () => navigate(batchHref(done)),
+              testId: 'batch-done-open',
+            },
+          },
+    );
   }, [done]);
   return null;
+}
+
+/**
+ * 週の予定が見せている週の始まり（月曜。`?d=` が日付ならその日、無ければ選んでいる日付の週。WeekPage と lib/week の weekStart と
+ * 同じ決め方。lib/week は重いのでここでは読まない）
+ */
+function weekShown(search: string, date: string): string {
+  const d = new URLSearchParams(search).get('d') ?? '';
+  const at = isDate(d) ? d : date;
+  return addDays(at, -((weekday(at) + 6) % 7));
 }
 
 /** 帯が消えたあとのフォーカスの行き先（本文の見出し、無ければ本文） */
@@ -56,7 +90,7 @@ function focusMain() {
 
 /**
  * 上の帯の進み具合（PRD D256）：「11月の案を作っています 8/22日」と［止める］。月の予定の画面では画面の中に出すので出さない。
- * 文は月の予定へのリンク（その月を開く）。［止める］は押すと「止めています…」で二度押しを防ぎ、帯が消えたとき
+ * 文は月の予定へのリンク（その月を開く。週の予定から始めたならその週の週の予定。PRD D280）。［止める］は押すと「止めています…」で二度押しを防ぎ、帯が消えたとき
  * フォーカスが帯の中にあれば本文の見出しへ移す（フォーカスを失わない）
  */
 export function BatchBand(): ReactNode {
@@ -78,7 +112,7 @@ export function BatchBand(): ReactNode {
   return (
     <section
       className="batch-band"
-      aria-label="月まとめ作成の進み具合"
+      aria-label={run.source === 'week' ? `${run.label}の案づくりの進み具合` : '月まとめ作成の進み具合'}
       data-testid="batch-band"
       onFocus={() => {
         focusInside.current = true;
@@ -89,7 +123,7 @@ export function BatchBand(): ReactNode {
       }}
     >
       <Loader2 size={16} className="batch-band-spin" aria-hidden="true" />
-      <Link to={`/month?ym=${run.ym}`} className="batch-band-text" data-testid="batch-band-text">
+      <Link to={batchHref(run)} className="batch-band-text" data-testid="batch-band-text">
         {batchBandText(run)}
       </Link>
       <button

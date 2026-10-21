@@ -6,11 +6,17 @@ import { useScrollEdge } from '../lib/useScrollEdge';
 
 export function EdgeScroll({
   className = 'table-scroll',
+  edgeClass,
+  testId,
   scrollRef,
   children,
 }: {
   /** 巻く箱のクラス（既定 table-scroll） */
   className?: string;
+  /** 外の枠に足すクラス（例 is-tl：日の予定の時間軸は広い画面でも右の端に影を出す。PRD D269） */
+  edgeClass?: string;
+  /** 巻く箱の data-testid */
+  testId?: string;
   /** 巻く箱を外から使う（はじめの巻き位置など） */
   scrollRef?: RefObject<HTMLDivElement | null>;
   children: ReactNode;
@@ -19,8 +25,8 @@ export function EdgeScroll({
   const ref = scrollRef ?? own;
   const more = useScrollEdge(ref);
   return (
-    <div className={`scroll-edge${more ? ' has-more-right' : ''}`}>
-      <div ref={ref} className={className}>
+    <div className={`scroll-edge${edgeClass ? ` ${edgeClass}` : ''}${more ? ' has-more-right' : ''}`}>
+      <div ref={ref} className={className} data-testid={testId}>
         {children}
       </div>
     </div>

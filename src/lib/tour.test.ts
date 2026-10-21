@@ -1,54 +1,66 @@
 import { describe, expect, it } from 'vitest';
-import { shouldAutoOpenTour, TOUR_TODAY_LABEL, tourCountText, tourMove, tourNextLabel, tourSteps } from './tour';
+import {
+  shouldAutoOpenTour,
+  TOUR_START_CHOICES,
+  TOUR_START_NOTE,
+  TOUR_START_QUESTION,
+  TOUR_TODAY_LABEL,
+  tourCountText,
+  tourMove,
+  tourNextLabel,
+  tourSteps,
+} from './tour';
 
 const terms = { staff: 'スタッフ', client: '利用者さん' };
 
-describe('tourSteps', () => {
-  it('6枚：ホーム → 予定 → 欠勤・キャンセル → 条件 → 探す → 3段（PRD D226）', () => {
-    const s = tourSteps(terms, false);
-    expect(s.map((x) => x.key)).toEqual(['home', 'plan', 'absence', 'rules', 'search', 'flow']);
+describe('tourSteps（PRD D277）', () => {
+  it('3枚：ホーム → 予定で作って確定 → 欠勤・キャンセル（条件の重み・探すの枚は無い）', () => {
+    const s = tourSteps(terms);
+    expect(s.map((x) => x.key)).toEqual(['home', 'plan', 'absence']);
     for (const x of s) {
       expect(x.title).not.toBe('');
       expect(x.body).not.toBe('');
       expect(x.where).not.toBe('');
     }
+    expect(JSON.stringify(s)).not.toContain('Ctrl+K');
+    expect(JSON.stringify(s)).not.toContain('条件の重み');
   });
-  it('呼び方とキーの印を入れる', () => {
-    const s = tourSteps({ staff: 'ヘルパー', client: 'お客様' }, false);
+  it('呼び方を入れる（直書きしない）', () => {
+    const s = tourSteps({ staff: 'ヘルパー', client: 'お客様' });
     expect(s[2]!.body).toContain('ヘルパーの急な欠勤');
     expect(s[2]!.body).toContain('お客様の当日キャンセル');
-    expect(s[4]!.title).toBe('Ctrl+K で探せます');
-    expect(tourSteps(terms, true)[4]!.title).toBe('⌘K で探せます');
-    expect(s[5]!.points!.join('')).toContain('ヘルパーの画面');
-    // 呼び方を直書きしない
+    expect(s[1]!.points!.join('')).toContain('ヘルパーの画面');
     expect(JSON.stringify(s)).not.toContain('利用者さん');
-    expect(JSON.stringify(tourSteps(terms, false))).not.toContain('ヘルパー');
+    expect(JSON.stringify(tourSteps(terms))).not.toContain('ヘルパー');
   });
-  it('最後の枚は3段（AI案 → 手直し（固定）→ 確定）を順に並べる', () => {
-    const last = tourSteps(terms, false).at(-1)!;
-    expect(last.key).toBe('flow');
-    expect(last.title).toContain('AI案 → 手直し → 確定');
-    expect(last.points).toHaveLength(3);
-    expect(last.points![0]).toMatch(/^AI案：/);
-    expect(last.points![1]).toMatch(/^手直し（固定）：/);
-    expect(last.points![2]).toMatch(/^確定：/);
-    expect(last.body).toContain('今日の予定を開いて');
+  it('予定の枚は3段（AI案 → 手直し（固定）→ 確定）を順に並べ、［月｜週｜日］で切り替えると書く', () => {
+    const plan = tourSteps(terms)[1]!;
+    expect(plan.key).toBe('plan');
+    expect(plan.title).toBe('予定で案を作って確定します');
+    expect(plan.body).toContain('［月｜週｜日］');
+    expect(plan.points).toHaveLength(3);
+    expect(plan.points![0]).toMatch(/^AI案：/);
+    expect(plan.points![1]).toMatch(/^手直し（固定）：/);
+    expect(plan.points![2]).toMatch(/^確定：/);
   });
-  it('場所の文はメニューの名前（予定・当日・問い合わせ・AI の条件。ADR-0034）', () => {
-    const s = tourSteps(terms, false);
+  it('場所の文はメニュー・下のタブの名前（予定・欠勤。ADR-0045）', () => {
+    const s = tourSteps(terms);
     expect(s[0]!.title).toContain('今日やること');
-    expect(s[1]!.where).toBe('メニューの「予定」（月の予定・週の予定・日の予定・案を比べる）');
-    expect(s[2]!.where).toBe('メニューの「当日・問い合わせ」の「欠勤・キャンセルを登録」');
-    expect(s[3]!.where).toBe('メニューの「AI の条件」（条件の重み・相性）');
-    expect(tourSteps(terms, false, { compat: false })[3]!.where).toBe('メニューの「AI の条件」（条件の重み）');
-    expect(s[3]!.body).toMatch(/^条件の重み・相性を変えると/);
-    // 条件の重みはふだんの考え方（点数の基準）、日の予定で変えるのは「この日だけ試す重み」（ADR-0035）
-    expect(s[3]!.body).toContain('点数の基準');
-    expect(s[3]!.body).toContain('この日だけ試す重み');
-    // 相性を切っていれば本文にも出さない
-    expect(tourSteps(terms, false, { compat: false })[3]!.body).toMatch(/^条件の重みを変えると/);
-    expect(tourSteps(terms, false, { compat: false })[3]!.body).not.toContain('相性');
-    expect(s[5]!.where).toContain('「日の予定」');
+    expect(s[1]!.where).toBe('メニューの「予定」（スマホは下のタブの「予定」）');
+    expect(s[2]!.where).toBe('メニューの「欠勤・キャンセルを登録」（スマホは下のタブの「欠勤」）');
+  });
+  it('欠勤・キャンセルを切ると2枚（PRD D213）', () => {
+    expect(tourSteps(terms, { sudden: false }).map((x) => x.key)).toEqual(['home', 'plan']);
+  });
+});
+
+describe('「どこまで使うか」の選択肢（PRD D276）', () => {
+  it('基本 → すべての2つ。名前と説明', () => {
+    expect(TOUR_START_CHOICES.map((c) => c.id)).toEqual(['basic', 'all']);
+    expect(TOUR_START_CHOICES.map((c) => c.label)).toEqual(['基本', 'すべて']);
+    for (const c of TOUR_START_CHOICES) expect(c.description).not.toBe('');
+    expect(TOUR_START_QUESTION).toBe('どこまで使いますか');
+    expect(TOUR_START_NOTE).toContain('管理者設定');
   });
 });
 
@@ -69,10 +81,10 @@ describe('tourMove', () => {
     expect(tourMove(0, 0, 'next')).toBeNull();
   });
   it('ボタンの文と何枚目か', () => {
-    expect(tourNextLabel(0, 6)).toBe('次へ');
-    expect(tourNextLabel(5, 6)).toBe('閉じる');
+    expect(tourNextLabel(0, 3)).toBe('次へ');
+    expect(tourNextLabel(2, 3)).toBe('閉じる');
     expect(TOUR_TODAY_LABEL).toBe('今日の予定を開く');
-    expect(tourCountText(1, 6)).toBe('2 / 6');
+    expect(tourCountText(1, 3)).toBe('2 / 3');
   });
 });
 

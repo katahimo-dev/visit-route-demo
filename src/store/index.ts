@@ -1,11 +1,13 @@
 // 入口（実装は store 担当）。画面はここだけを import する
 import { z } from 'zod';
 import { DATA_VERSION, type DemoData, demoDataSchema, type ImportError, STORAGE_KEY } from '../contracts/data';
+import type { Features } from '../contracts/features';
 import { addDays, jstDate } from '../domain/time';
 import { applyPatterns } from '../patterns';
 import { DEMO_DAYS, daysFrom, initialPresets } from '../seed';
 import { createInitialData } from '../seed/plans';
 import { repair } from './repair';
+import { startFeatures } from './start';
 
 /** 壊れた JSON の退避先 */
 export const BROKEN_KEY = 'vrdemo:data:broken';
@@ -206,17 +208,19 @@ function keepBroken(ls: Storage, text: string): boolean {
 
 /**
  * 読み込む。broken：保存していたデータが読めず、元の文字を BROKEN_KEY に退避して初期データで開いた（PRD D227。画面が知らせる）。
- * brokenKept：元の文字を退避できた（できなければ画面は「今すぐ書き出してください」と知らせる。元の文字は開いている間 brokenText で書き出せる）
+ * brokenKept：元の文字を退避できた（できなければ画面は「今すぐ書き出してください」と知らせる。元の文字は開いている間 brokenText で書き出せる）。
+ * fresh：保存データが無く、初めて開いた（初期データを作った）。初めての入り切りは「基本」のひな形（startFeatures。PRD D276）。
+ * 保存データがある人（features が無い古いデータも）・読めなかったときは今までどおり（無い ID は入）
  */
-export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept: boolean } {
+export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept: boolean; fresh: boolean } {
   const ls = storage();
   const todayDate = today();
   const text = ls?.getItem(STORAGE_KEY) ?? null;
   if (text === null) {
-    const d = createInitialData(todayDate);
+    const d = createInitialData(todayDate, startFeatures());
     writeNow(d);
     current = d;
-    return { data: d, broken: false, brokenKept: false };
+    return { data: d, broken: false, brokenKept: false, fresh: true };
   }
   const r = importJson(text);
   if (isImportError(r)) {
@@ -228,12 +232,12 @@ export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept:
     // 退避できなかったときは元の文字を残す（上書きすると壊れたデータが消える。brokenText が本体のキーから返す）
     if (brokenKept) writeNow(d);
     current = d;
-    return { data: d, broken: true, brokenKept };
+    return { data: d, broken: true, brokenKept, fresh: false };
   }
   const extended = extendDays(r, todayDate);
   if (extended !== r) writeNow(extended);
   current = extended;
-  return { data: extended, broken: false, brokenKept: false };
+  return { data: extended, broken: false, brokenKept: false, fresh: false };
 }
 
 export function load(): DemoData {
@@ -452,11 +456,15 @@ export function readPrevious(): DemoData | ImportError | null {
   return text === null ? null : importJson(text);
 }
 
-export function reset(): DemoData {
+/**
+ * 初期状態に戻す。機能の入り切り（事業所の設定）は features（既定は今のデータの入り切り）のまま残す（PRD D216・D276。データだけを初期に戻す）。
+ * 今のデータが無い（読み込みが例外で落ちた例外の画面から戻す）ときはすべて入（{}）：今まで全部入りだった人を「基本」にしない
+ */
+export function reset(features: Features = current?.org.features ?? {}): DemoData {
   if (timer) clearTimeout(timer);
   timer = null;
   pending = null;
-  const d = createInitialData(today());
+  const d = createInitialData(today(), features);
   writeNow(d);
   current = d;
   return d;
@@ -465,4 +473,5 @@ export function reset(): DemoData {
 export { BACKUP_LAST_KEY, BACKUP_REMINDED_KEY, backupMemory, type ExportKind, type LastExport } from './backup';
 export { DemoDataProvider, useDemoData } from './react';
 export { repair } from './repair';
+export { FEATURES_START_ALL, FEATURES_START_KEY, startFeatures } from './start';
 export { TOUR_SEEN_KEY, tourMemory } from './tour';

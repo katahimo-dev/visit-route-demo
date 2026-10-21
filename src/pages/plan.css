@@ -60,7 +60,11 @@
 }
 .plan-oneline-score strong {
   font-size: 1.25rem;
-  color: var(--primary-dark);
+  color: var(--ink);
+}
+/* 入らない・必須の違反があるときだけ要対応の色（PRD D266・D228）。点が低いだけでは赤にしない */
+.plan-oneline-score.is-alert strong {
+  color: var(--danger);
 }
 .plan-oneline-score .chip {
   margin-left: 4px;
@@ -1163,6 +1167,59 @@ p.plan-band.error {
   border-radius: 10px;
   background: var(--soft);
 }
+/* おすすめの案（主ボタンで作る方。PRD D264）：太い縁で示す（色だけに頼らず札「おすすめ」も付ける） */
+.sudden-option.is-recommended {
+  border: 2px solid var(--primary);
+  background: var(--card);
+}
+.sudden-recommend {
+  margin: 0;
+  font-weight: 700;
+}
+/* ほかのやり方（控えめな文字のボタン。PRD D264） */
+.sudden-alt {
+  align-items: center;
+}
+.sudden-alt .btn {
+  padding: 6px 8px;
+  font-size: 0.9rem;
+}
+/* 4段目：誰のどの訪問が誰へ移るか（PRD D265）。390px でも1行ずつ折り返して見える */
+.reassign-moves {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.reassign-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 0.92rem;
+}
+.reassign-move-visit {
+  font-weight: 700;
+}
+.reassign-move-who {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.reassign-move.is-unplaced {
+  border-color: var(--danger);
+}
+.reassign-move.is-unplaced .reassign-move-who {
+  color: var(--danger);
+  font-weight: 700;
+}
 /* 5段目の連絡の一覧（PRD D244）：1人に1枚。上に宛名と種類の印、文、下に［文をコピー］・メール・［連絡した］ */
 .sudden-contacts-count {
   margin: 0;
@@ -1291,4 +1348,15 @@ p.plan-band.error {
 .pref-note {
   margin: 0;
   color: #2f5486;
+}
+/* 案B の「変更を減らす」は「詳しく」に畳む（PRD D265） */
+.anneal-more > summary {
+  cursor: pointer;
+  color: var(--sub);
+  font-size: 0.88rem;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.anneal-more[open] > summary {
+  margin-bottom: 4px;
 }

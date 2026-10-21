@@ -100,9 +100,17 @@ async function link(page, btn, where, to) {
   );
 }
 
+/** 月の予定の表示の選択を出す（「その他 ▾」の「表示を選ぶ」。PRD D278） */
+async function openMonthPickers(page) {
+  await open(page, '/month', '[data-testid="month-more"]');
+  await page.getByTestId('month-more').click();
+  await page.getByTestId('month-more-pickers').click();
+  await page.getByTestId('month-focus').waitFor();
+}
+
 async function month(page) {
   // 〈スタッフ〉を選んだ右の欄
-  await open(page, '/month', '[data-testid="month-focus"]');
+  await openMonthPickers(page);
   const sid = await page.getByTestId('month-focus').locator('option[value^="staff:"]').first().getAttribute('value');
   await page.getByTestId('month-focus').selectOption(sid);
   const btn = page.getByTestId('month-aside-name');
@@ -112,7 +120,7 @@ async function month(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'month-staff.png') });
   await link(page, btn, '月・〈スタッフ〉', '#/staff');
   // 〈利用者さん〉を選んだ右の欄（?client=）
-  await open(page, '/month', '[data-testid="month-focus"]');
+  await openMonthPickers(page);
   await page.getByTestId('month-focus').selectOption('client');
   await page.getByTestId('month-client-picker-shortcut-period').click();
   await page.getByTestId('month-client-picker-option').first().click();

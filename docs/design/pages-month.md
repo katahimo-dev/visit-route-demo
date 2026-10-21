@@ -19,14 +19,17 @@
 1. 見出し：［月｜週｜日］・`lead`「定期パターンから訪問を作り、一月分の案をまとめて作ります」
 2. 進み具合の帯 `ProgressBand`（見出しの下。次の一手は主ボタン、`onOp` で欄を画面の中で開く。「まとめて作る」の入口は帯の1か所）
 3. 見せ方の切り替え `month-layout`（`fieldset.segmented`・`aria-label="月の見せ方"`・`aria-pressed`・ボタンの `data-layout`）。印刷では出さない
-4. 操作の欄 `month-head`：
-   - 月の送り（「前の月」「次の月」の `icon-btn`）・見出し `month-title`・「今月」（今月なら押せない）・「印刷」（`month-print`。選んでいる〈スタッフ〉があれば `&staff=`。`monthPrint` が入のとき）・「勤務の見込み」（`month-workload`。`/workload?ym=`。`workload` が入のとき）。作っている間は月を送れない
+4. 操作の欄 `month-head`（PRD D278。ADR-0045）：
+   - 月の送り（「前の月」「次の月」の `icon-btn`）・見出し `month-title`・「今月」（今月なら押せない）・「その他 ▾」（`MenuButton`・`month-more`）。作っている間は月を送れない
+   - 「その他 ▾」の項目：「表示を選ぶ（〈スタッフ〉・〈利用者さん〉・混み具合）」（`month-more-pickers`。開いていれば「表示の選択をたたむ」、選んでいる間・休みの入力中は押せず理由「表示を「全体」・混み具合を「すべて」に戻すと、たためます」）・「印刷」（`month-print`。選んでいる〈スタッフ〉があれば `&staff=`。`monthPrint` が入のとき）・「勤務の見込み」（`month-workload`。`/workload?ym=`。`workload` が入のとき）・「条件が変わった日を作り直す（N日）」（`month-stale`。0日・作っている間は押せず理由）・「マスの見方の説明」（`month-more-help`。開いていれば「…を閉じる」）。印刷・勤務の見込みには1行の説明
    - 要約 `month-summary`：「月全体：入らない N件（・当日キャンセル N件）」（月全体。今日より前の日も数える。帯と同じ言葉の「訪問」「案のある日」は出さない）
-   - 表示の選択 `month-focus`（「表示」：全体／〈スタッフ〉（optgroup）／〈利用者さん〉（名前・よみで探す））。〈利用者さん〉なら `ClientPicker`（1人。`month-client-picker`。近道：この月・〈スタッフ〉が担当する人・最近選んだ人・仮押さえの人（`tentativeShortcut`））
-   - 〈スタッフ〉を選んでいれば「休みを入れる」（`month-off-toggle`。下の「希望休」）
-   - 全体なら「混み具合：」と `Term`（`loadCount`）と選ぶ欄 `month-load-type`（数える人：すべて／〈種類〉。名前は aria-labelledby でつなぐ）
-   - 「条件が変わった日を作り直す（N日）」（`staleTargets` が0日なら押せず title「条件が変わった日（確定していない日）はありません」）
-   - 説明の `Hint`（マスを押すと日の予定・マスの色と印・赤い枠と赤い点の「要対応」・黄の点線の「注意」）と凡例 `MonthLegend`
+   - 表示の選択の段 `month-pickers`（「表示を選ぶ」で開くか、〈スタッフ〉・〈利用者さん〉・混み具合を選んでいる間・休みの入力中に出す。「表示を選ぶ」で開いたら `month-focus` へフォーカス。段の中で選び直したら（全体に戻しても）出したまま。保存しない）：
+     - 表示の選択 `month-focus`（「表示」：全体／〈スタッフ〉（optgroup）／〈利用者さん〉（名前・よみで探す））。〈利用者さん〉なら `ClientPicker`（1人。`month-client-picker`。近道：この月・〈スタッフ〉が担当する人・最近選んだ人・仮押さえの人（`tentativeShortcut`））
+     - 〈スタッフ〉を選んでいれば「休みを入れる」（`month-off-toggle`。下の「希望休」）
+     - 全体なら「混み具合：」と `Term`（`loadCount`）と選ぶ欄 `month-load-type`（数える人：すべて／〈種類〉。名前は aria-labelledby でつなぐ）
+   - 訪問の無い月は「定期パターンが無いか、この月の訪問がありません」の1行
+   - マスの見方の説明 `month-help`（「マスの見方の説明」で開き、フォーカスを移す。マスを押すと日の予定・マスの色と印・赤い枠と赤い点の「要対応」・黄の点線の「注意」・混み具合のバー。「説明を閉じる」）
+   - 凡例 `MonthLegend`（今の場所のまま。下の「凡例」）
 5. 本体：カレンダー（`month-grid`）か日ごとの一覧（`month-list`）
 6. 右の欄 `month-aside`：要対応・確定していない日、選んだ人の集計
 
@@ -50,12 +53,13 @@
 | 未確定の変更あり | 淡い黄＋鉛筆（`month-diff-mark`） |
 | 注意（今日以降で訪問があるのに案なし。`is-caution`） | 黄の細い点線の枠（注意の色。赤にしない。PRD D228）。読み上げ「注意：まだ案が無い」 |
 | 要対応（入らない訪問・必須の違反・休みの人に訪問。`dayStatus` の `needsCare`、今日以降。`is-care`） | 赤い太枠＋赤い点（`month-dot`）。色だけに頼らず印の文字も出す。赤は要対応だけ（PRD D228） |
+| 未作成（訪問の無い今日以降の日で、定期パターンからまだ作っていない訪問がある。PRD D282） | 白のまま、右上に点線の枠の「未作成」（`month-unmade`。件数の代わり）。ボタンに `data-unmade`（件数。`data-state` は `empty` のまま）。読み上げ「未作成（定期パターンからまだ作っていない訪問 N件）」。注意の色にしない。訪問があって一部だけ未作成の日は印 `month-marks` に点線の「ほか未作成」（`month-unmade-part`・ボタンに `data-unmade-part`・読み上げ「ほかに…N件」） |
 
 - 読み上げ（`aria-label`）に状態の文字を入れる。ボタンに `title` は付けず、`data-tip="cell"` で読み方の吹き出し（下）
 - 中身（全体の表示）：
   - 件数（取り消し・休みの訪問を除く。`month-count`）
   - 種類ごとの件数の積み上げバー（種類の色。`title` に内訳）
-  - 印 `month-marks`（`lib/month` の `dayMarks`）：「休 N」（勤務の無い人＋希望休の人。希望休がいれば紫。title「休む〈スタッフ〉 N人（内訳）」）・「欠 名前」（希望休でない欠勤だけ。title に名前）・その日に始まる（▶）・終わる（■）定期パターンのある〈利用者さん〉・〈利用者さん〉の休み（ベッドのアイコンと、1人なら名前の頭・2人以上なら人数。title・読み上げに名前。`dayMarks.leaves`）・「最終 名前」（最終勤務日。title「最終勤務日（翌日から勤務なし）：…」）
+  - 印 `month-marks`（`lib/month` の `dayMarks`）：「休 N」（勤務の無い人＋希望休の人。希望休がいれば紫。title「休む〈スタッフ〉 N人（内訳）」）・「欠 名前」（希望休でない欠勤だけ。title に名前。`month-absent`。欠勤の手当てが済んだ日（確定済みで手当ての要らない日）は「（済）」を足し `data-done`、地の色（赤くしない）、title・読み上げに「（対応済み）」。PRD D281）・その日に始まる（▶）・終わる（■）定期パターンのある〈利用者さん〉・〈利用者さん〉の休み（ベッドのアイコンと、1人なら名前の頭・2人以上なら人数。title・読み上げに名前。`dayMarks.leaves`）・「最終 名前」（最終勤務日。title「最終勤務日（翌日から勤務なし）：…」）
   - 旗 `month-flags`：入らない N件・必須の違反・「休みの人に N」（赤。`month-absent-left`）・「条件が変わった」（`month-stale`）・「拘束超 N」（`month-over-span`）
   - 混み具合バー `month-load`（`LoadBar`。案の無い日は出さない）
 - 始まる・終わるの印の決め方：始まるは基準日（`baseDate`＝データの最初の日）より後に始まり、前日にその〈利用者さん〉のどのパターンの期間でもないもの。終わるは翌日にその〈利用者さん〉のどのパターンの期間でもないもの（初期データの全パターンが基準日に始まるのと、「以降すべて」で分けたパターンの継ぎ目を印にしない）
@@ -76,7 +80,7 @@
 
 #### マスの読み方の吹き出し（PRD D176。カレンダーのときだけ）
 
-- `lib/monthGuide.ts`（純粋関数。テストあり）：`cellGuide(input)`＝そのマスに出ている印だけの読み方の行（背景の色・赤い点（要対応）・黄の点線（注意。`caution`）・件数・種類の帯・休 N（希 N）・欠・▶■・ベッド・最終・入らない・違反・休みの人に・条件が変わった・拘束超・3段の棒（`barRowsText()`）・〈スタッフ〉／〈利用者さん〉の表示の棒・代・変）。`createTipStore`
+- `lib/monthGuide.ts`（純粋関数。テストあり）：`cellGuide(input)`＝そのマスに出ている印だけの読み方の行（背景の色・未作成（`unmade`）・赤い点（要対応）・黄の点線（注意。`caution`）・件数・種類の帯・休 N（希 N）・欠・▶■・ベッド・最終・入らない・違反・休みの人に・条件が変わった・拘束超・3段の棒（`barRowsText()`）・〈スタッフ〉／〈利用者さん〉の表示の棒・代・変）。`createTipStore`
 - 描いたあと（`useLayoutEffect`）に日付をキーに文（日付・状態の文・読み方の行）を置き場に置く。吹き出しは `useSyncExternalStore` で日付から引く（描画中に DOM を読まない）
 - `MonthCellTip`：表の要素に1回だけ `pointerover`・`pointerout`・`focusin`・`focusout` を付ける。マウスは 300ms 止まったら出し、出ていれば隣のマスへすぐ移す。離れて 120ms で消す。キーボードは `:focus-visible` のときだけで、キーボードで出しているあいだはマウスの出入りを見ない（止まったマウスの上で表が描き直されると、動かしていなくても出入りが起きる）。出しているマスは日付で持ち、描き直しでマスの要素が替わっても閉じない（置く先は日付でいまのマスを引く）。Esc で消す。フォーカスが外れると消える。吹き出しはマウスを受けない（`.is-passive`）。タッチでは出さない
 
@@ -88,7 +92,7 @@
 
 #### 日ごとの一覧（PRD D189〜D192）
 
-- `lib/monthList.ts`（純粋関数。テストあり）：`MonthLayout`（`calendar`・`list`）・`MONTH_LIST_QUERY`（`(max-width: 600px)`）・`monthLayoutOf(param, narrow)`・`monthListFocusDate(ym, date, today, hasTarget)`（今月で行き先が無いとき最初に巻く日。選んでいる日が今月ならその日、無ければ今日）・`DAY_STATE_TEXT`・`monthListRow(status, today, extra)`（`dayText`・`weekday`・`state`（訪問が無ければ `empty`）・`stateText`・`care`（今日以降の要対応）・`caution`（今日以降で訪問があり案なし。注意）・`flags`（入らない・必須の違反・休みの人に訪問・条件が変わった・拘束超。赤／注意）・`label`（読み上げ））
+- `lib/monthList.ts`（純粋関数。テストあり）：`MonthLayout`（`calendar`・`list`）・`MONTH_LIST_QUERY`（`(max-width: 600px)`）・`monthLayoutOf(param, narrow)`・`monthListFocusDate(ym, date, today, hasTarget)`（今月で行き先が無いとき最初に巻く日。選んでいる日が今月ならその日、無ければ今日）・`DAY_STATE_TEXT`・`monthListRow(status, today, extra, { unmade, absenceDone })`（`dayText`・`weekday`・`state`（訪問が無ければ `empty`）・`stateText`（訪問の無い今日以降の未作成の日は「未作成」。PRD D282）・`unmade`・`care`（今日以降の要対応）・`caution`（今日以降で訪問があり案なし。注意）・`flags`（入らない・必須の違反・休みの人に訪問・条件が変わった・拘束超。赤／注意。欠勤の手当てが済んだ日は「欠勤あり（対応済み）」、訪問があって一部だけ未作成の日は「ほか未作成 N件」を情報 `info`（地の色）。PRD D281・D282）・`label`（読み上げ））
 - 今月の一覧の上に「今日へ」（`month-list-today`）
 - 一覧 `month-list`（`ul`）。開いたとき `monthListFocusDate` の行へ巻く。行は `scroll-margin` で上の帯・下のタブを避ける
 - 行は `button.month-list-btn`（data-testid `month-list-day`・`data-date`・`data-state`・`data-off`）。押すとマスと同じ（`openDay`、「休みを入れる」のときは `toggleOff`・押せない日は `aria-disabled`）
@@ -104,7 +108,8 @@
   - 押すと独自の確認（`bulkConfirmDialog`）：見出し「問題の無い N日を確定しますか？」、本文に日付（`datesText`：「10/22（水）・10/23（木）… 計 N日」。7日を超えたら先頭6日と「…」）・担当が書き換わる旨・「問題のある M日は残します（要対応で確認）：日付」・「前に確定した割当と違う M日も残します（日の予定で確定し直します）。」・「案の無い M日も残します。」、ボタン「N日を確定する」
   - 確定すると1回の `update` で、日ごとに `confirmDay(d, date, problem)`（日の予定の「この割当で確定」と同じ書き方。問題は日の状態を数えたときのもの）。確認のあいだに案が消えた日は飛ばす。知らせ「N日を確定しました」。フォーカスは右の欄へ（ボタンは0日になって押せなくなる）
 - 確定していない日の一覧 `month-unconfirmed`：行は `openDay`（その日の「日の予定」）
-- 要対応 `month-attention`（`attentionList`）：入らない訪問・休みの人に訪問 N件（`absentLeft`）・欠勤（希望休でない欠勤だけ）・条件が変わった・「拘束が N時間を超える 名前」（overSpan）。無ければ「今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日はありません。」
+- 要対応 `month-attention`（`attentionList`）：入らない訪問・休みの人に訪問 N件（`absentLeft`）・欠勤（希望休でない欠勤だけ。手当てが済んだ日を除く。PRD D281）・条件が変わった・「拘束が N時間を超える 名前」（overSpan）。行は `data-date`・`data-kind`。無ければ「今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日（確定済みで手当ての要らない日を除く）はありません。」
+- 欠勤あり（対応済み）`month-handled`（PRD D281。`handledAbsences`）：要対応の下に見出し「欠勤あり（対応済み）」と日付・「欠勤 名前（確定済み）」の行（`data-date`。押すとその日の日の予定）。地の色で縁の色を付けない（要対応・注意にしない）。手当てが済んだ日＝`absenceHandled`（確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い）
 - 要対応の行は `attentionTarget` の行き先へ（`openTarget`＝選んでいる日付をその日にしてから `navigate(to)`）。行は1つのボタンのまま、2つ目の span の下に `.month-attention-go`（行き先の文「（〜で開く）」）。`data-to` に行き先
 - `Attention` の `staffIds?`（overSpan のときだけ。拘束が上限を超える人の id。`names` と同じ順）
 
@@ -130,7 +135,7 @@
 「作り始める」（`start(mode, expand)`）の流れ：画面は対象の日を出し、手直しのある日の確認をしてから `lib/monthBatch` の `monthBatch.start(job)` を呼ぶだけ。計算は画面の外の入れ物で続く（ADR-0042）
 
 1. `lib/month` の `batchTargets` で対象の日を出す（展開したあとのデータで）
-2. 入れ物が、その月の今日以降に `applyPatterns` で展開（1回の `update`。`expandYm`）。stale のときは展開しない（`start('stale', false)`）
+2. 入れ物が、その月の今日以降に `applyPatterns` で展開（1回の `update`。`expand`＝その月の1日〜末日。`expandRange`）。stale のときは展開しない（`start('stale', false)`）
 3. 1日ずつ、その日のデータに基準のプリセットの重みを当てた条件（`applyPreset`）で compile し、Worker（`runSolve`。種はデータの種、反復は `defaultIterations`）で解き、その日の今の案（routes・generated＝結果、pins＝{}、rules＝使った条件、runId）と記録（`addRun`。名前はプリセットの名前、`inputKey` 付き）を1回の `update` で書く（`applyDayRun`）。作っている間に確定した日・（まだ案の無い日だけで）案ができた日は飛ばし、今の案は変えず記録だけ足す
 
 - 「確定していない日をすべて作り直す」「条件が変わった日だけ」で手直し・固定のある日があれば「手直しのある N日の手直しを捨てます」と確認
@@ -144,17 +149,19 @@
 - 上の帯の［止める］は押すと「止めています…」（`aria-disabled`。二度押ししない）。帯が消えたときフォーカスが帯の中にあれば本文の見出し（無ければ本文）へ
 - 終わった知らせは1回だけ（描き直し・付け直しで二度出さない）
 - いま作っている日の印は、2か月にまたがる作成でも表示している月の日なら付ける
-- 終わったら知らせ（`MonthBatchHost` がどの画面でも出す。`batchDoneText`）「〈M〉月の案をN日分作りました」（入らない訪問がある日があれば「（入らない訪問がある日 M日）」）と［月の予定を見る］（`batch-done-open`。`/month?ym=`）。止めたら「〈M〉月の案をN日分作ったところで止めました」、計算できなければ「…止まりました（理由）」（この画面を開いていれば理由を `error` にも出す）
+- 終わったら知らせ（`MonthBatchHost` がどの画面でも出す。`batchDoneText`）「〈M〉月の案をN日分作りました」（入らない訪問がある日があれば「（入らない訪問がある日 M日）」）と［月の予定を見る］（`batch-done-open`。`/month?ym=`。週の予定から始めたら［週の予定を見る］で `/week?d=`。その月の月の予定・その週の週の予定を見ていれば出さない）。止めたら「〈M〉月の案をN日分作ったところで止めました」、計算できなければ「…止まりました（理由）」（この画面を開いていれば理由を `error` にも出す）
 - 「まだ案の無い日だけ」でもう一度押しても記録は増えない。まとめて作った日を開くと、基準のプリセットのカードが今の案
 - 欄の注記「1日ずつ作り、作れた日はすぐに保存します。「止める」で、作っている日はそれまでの最良の案で残し、残りの日はやめます。ほかの画面へ移っても作り続けます（上の帯に進み具合と［止める］）。ページを閉じる・読み直すと止まります（作れた日は残ります）」
 
 #### `lib/monthBatch.ts`（計算の入れ物。テストあり。ADR-0042）
 
 - `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・作れた日数・反復。作っていなければ null）・`done`（`BatchDone`＝月・名前・作れた日数・入らない訪問がある日・止めたか・理由。終わるたびに新しい物）・`start(job)`・`stop()`・`abort()`（すぐ捨てて止めた知らせ）・`running()`・`connect(host)`。アプリでは `monthBatch` の1つ。値は `lib/valueStore`（`useValueStore` で読む部品だけ描き直す）
-- `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], source: 'month' | 'vacancy', expandYm, today }`。日ごとの作り方（`empty` は作っている間に案ができた日を飛ばし、書く直前に案があれば今の案を変えない）
+- `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], source: 'month' | 'vacancy' | 'week', weekStart?, expand: { from, to } | null, today }`（`expand` は先に定期パターンから訪問を作る範囲。月の予定はその月、週の予定はその週（PRD D280）。`weekStart` は週の予定から始めたときの週の始まりで、`run`・`done` にも写す）。日ごとの作り方（`empty` は作っている間に案ができた日を飛ばし、書く直前に案があれば今の案を変えない）
 - 1日の作り方は画面にあったときのまま（基準のプリセットの重みで compile・手直しの記憶を当てる `withManualPrefs`（ADR-0043。当てたものは `applyDayRun` の `prefPins` で記録に書く）・使い回せる記録・`applyDayRun`）。月の予定のまとめて作る・空き状況の［足りない案を作る］のどちらも同じ。規則・記憶を直すときはここを直す
 - `missingDays(data, dates, today)`：空き状況の［足りない案を作る］の日（範囲の今日以降の、案の無い日＝`empty` と、条件が変わった日＝`stale`。確定した日・手直しのある条件が変わった日は入れない。PRD D259）
-- `batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）
+- `canMakeDay(data, date)`：その日の案を作れるか（1日の作り方と同じ決め方。点数の基準の条件で compile して計算に入る訪問と〈スタッフ〉がいる）。週の予定は作れない日を作る日に数えない
+- `weekBatchDays(data, dates, today)`：週の予定の「この週の案を作る」の日（週の今日以降で、訪問を作ったあとのデータで訪問があって案も確定した割当も無い日。`batchTargets` の `empty` を週に絞る。月をまたぐ週は2つの月から。PRD D280）
+- `batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）・`weekLabel`（「11/2〜11/8の週」）・`batchHref`（上の帯の文と知らせのボタンの行き先：週の予定から始めたら `/week?d=〈週の始まり〉`、ほかは `/month?ym=`）
 
 #### 希望休（PRD D69。ADR-0014）
 

@@ -1,5 +1,6 @@
 // ホーム「今日やること」（PRD D141〜D145。ADR-0025）を本物のブラウザで確かめる：
-// 起動（#/・知らない URL）でホームへ、ほかの画面の URL（?id= など）はそのまま、カードの並び（要対応 → 今日 → 確定していない日 → 案を作る）、
+// 起動（#/・知らない URL）でホームへ、ほかの画面の URL（?id= など）はそのまま、カードの並び（作業の順。PRD D263：要対応 →
+// 月ごとに案を作る → 確定していない日（今月 → 来月）→ 今日）・先頭の「まずこれ」・同じ月の「案の無い日 N日」は作るカードだけ、
 // 今日のカードで日の画面（選んでいる日付が今日）、「まとめて作る」のカードで月の画面のまとめて作るの欄が開き ?do= が消える、
 // 月の画面の ?do=attention・?do=unconfirmed で右の欄、案ができたらホームの今日のカードが「未確定」に、
 // いつでもの入口（欠勤・空き状況・探す）、何も無いデータで「今日の準備はできています」、
@@ -19,7 +20,17 @@ const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const YM = TODAY.slice(0, 7);
 
-const RANK = { attention: 0, today: 1, confirm: 2, create: 3 };
+/** 並びの順（PRD D263）：要対応 → 月ごとに（作る → 確認）→ 今日。月は題名の「N月」から（今月 → 来月） */
+const RANK = { attention: 0, create: 1, confirm: 2, today: 9 };
+/** カードの並びの鍵：要対応は先頭、今日は最後、そのほかは 月 → 作る・確認 の順（年をまたぐ月は今月より後に数える） */
+function orderKey(t, ym = YM) {
+  if (t.kind === 'attention') return 0;
+  if (t.kind === 'today') return 1e6;
+  const m = Number(/(\d+)月/.exec(t.title)?.[1] ?? 0);
+  const base = Number(ym.slice(5, 7));
+  const rel = (m - base + 12) % 12;
+  return 10 + rel * 10 + RANK[t.kind];
+}
 /** d から n 日後（YYYY-MM-DD） */
 function addDays(d, n) {
   const t = new Date(`${d}T00:00:00Z`);
@@ -67,6 +78,48 @@ async function tasks(page) {
   );
 }
 
+/**
+ * 先頭の「まずこれ」（PRD D263）：先頭の1枚だけが幅いっぱい・主ボタンの塗りで札「まずこれ」。ほかのカードは今のまま。
+ * 同じ月の「案の無い日 N日」は作るカードにだけ書く
+ */
+async function checkLead(page, list) {
+  const lead = await page.locator('[data-testid="home-task"][data-lead]').evaluateAll((els) =>
+    els.map((el) => {
+      const li = el.closest('li').getBoundingClientRect();
+      const ul = el.closest('ul').getBoundingClientRect();
+      return {
+        first: el.closest('li') === el.closest('ul').firstElementChild,
+        full: Math.abs(li.width - ul.width) <= 2,
+        badge: el.querySelector('[data-testid="home-lead"]')?.textContent,
+        warn: el.dataset.tone === 'warn',
+        warnBadge: el.querySelector('[data-testid="home-lead-warn"]')?.textContent ?? null,
+        bg: getComputedStyle(el).backgroundColor,
+      };
+    }),
+  );
+  const want = list[0] && list[0].tone !== 'info' ? 1 : 0;
+  check(
+    lead.length === want && lead.every((x) => x.first && x.full && x.badge === 'まずこれ'),
+    '先頭の1枚だけ「まずこれ」（幅いっぱい・札）。知らせだけなら出さない',
+    lead,
+  );
+  check(
+    lead.every((x) => (x.warn ? x.warnBadge === '要対応' : x.warnBadge === null)),
+    '「まずこれ」が要対応なら要対応の印（札「要対応」）を残す',
+    lead,
+  );
+  const months = [...new Set(list.map((t) => /^(\d+)月/.exec(t.title)?.[1]).filter(Boolean))];
+  const dup = [];
+  for (const m of months) {
+    const same = await page
+      .locator('[data-testid="home-task"]')
+      .filter({ has: page.locator('strong', { hasText: new RegExp(`^${m}月`) }) })
+      .evaluateAll((els) => els.filter((el) => /案の無い日 \d+日/.test(el.textContent)).map((el) => el.dataset.kind));
+    if (same.length > 1) dup.push({ m, same });
+  }
+  check(dup.length === 0, '同じ月の「案の無い日 N日」は作るカードにだけ書く（PRD D263）', dup);
+}
+
 async function start(page) {
   await open(page, '/');
   check(hashOf(page) === '#/home', '起動（#/）でホームへ', hashOf(page));
@@ -108,12 +161,13 @@ async function firstState(page) {
   await open(page, '/home');
   await clearPlans(page);
   const list = await tasks(page);
-  const ranks = list.map((t) => RANK[t.kind]);
+  const keys = list.map((t) => orderKey(t));
   check(
-    ranks.every((r, i) => i === 0 || ranks[i - 1] <= r),
-    '並び：要対応 → 今日 → 確定していない日 → 案を作る',
+    keys.every((k, i) => i === 0 || keys[i - 1] <= k),
+    '並び：要対応 → 月ごとに案を作る → 確定していない日（今月 → 来月）→ 今日（PRD D263）',
     list,
   );
+  await checkLead(page, list);
   const today = list.find((t) => t.kind === 'today');
   check(
     !!today && today.tone === 'warn' && /案がまだありません/.test(today.title),
@@ -157,6 +211,7 @@ async function firstState(page) {
   // 案ができたらホームの今日のカードは「未確定」。確定していない日は案の無い日も含めて数える（月の③と同じ。PR #36 のレビュー）
   await open(page, '/home');
   const list2 = await tasks(page);
+  await checkLead(page, list2);
   const today2 = list2.find((t) => t.kind === 'today');
   check(!!today2 && /（未確定）/.test(today2.title), '案ができたら今日のカードは「未確定」', today2);
   const todayText = await page.locator('[data-kind="today"] .sub').innerText();
@@ -202,7 +257,20 @@ async function firstState(page) {
   await open(page, '/home');
   const today3 = (await tasks(page)).find((t) => t.kind === 'today');
   check(!!today3 && /（確定済み）/.test(today3.title), '確定したら今日のカードは「確定済み」', today3);
-  check((await confDays()) === n2 - 1, '確定したら確定していない日は1日減る', await confDays());
+  // 残りが案の無い日だけなら、確定していない日のカードは出さず、作るカードの「案の無い日 N日」に数える（PRD D263）
+  const after = await confDays();
+  const createCard = (
+    await page
+      .locator('[data-kind="create"]')
+      .filter({ hasText: `${MONTH}月の案` })
+      .allInnerTexts()
+  )[0];
+  const noPlanLeft = Number(/案の無い日 (\d+)日/.exec(createCard ?? '')?.[1] ?? 0);
+  check(
+    after === n2 - 1 || (after === 0 && noPlanLeft === n2 - 1),
+    '確定したら確定していない日は1日減る（残りが案の無い日だけなら作るカードで数える）',
+    { after, noPlanLeft, n2 },
+  );
   check(
     (await page.getByTestId('home-anytime').locator('a').count()) === 4,
     'いつでもの入口が4つ（固定の data-testid）',
@@ -309,6 +377,13 @@ async function seedPlans(page) {
     );
     await other.close();
     const good = inMonth.filter((d) => d !== bad && d !== changed);
+
+    // 要対応がある：先頭は要対応のカードで「まずこれ」と札「要対応」（PRD D263）
+    await open(p, '/home');
+    await p.locator('[data-kind="attention"]').first().waitFor({ timeout: 30000 });
+    const withAttention = await tasks(p);
+    check(withAttention[0]?.kind === 'attention', '要対応があれば先頭は要対応のカード', withAttention[0]);
+    await checkLead(p, withAttention);
 
     // 月の右の欄の「確定していない日」：問題の無い日をまとめて確定（N日）
     await open(p, `/month?ym=${SYM}&do=unconfirmed`, '[data-testid="month-unconfirmed"]');
@@ -421,6 +496,124 @@ async function seedPlans(page) {
   }
 }
 
+/** ホームのその月の「要対応 N件」（カードが無ければ 0） */
+async function homeAttention(page, ym) {
+  await open(page, '/home');
+  const title = `${Number(ym.slice(5, 7))}月の要対応`;
+  const t = (await tasks(page)).find((x) => x.kind === 'attention' && x.title.startsWith(title));
+  const m = t && /要対応 (\d+)件/.exec(t.title);
+  return m ? Number(m[1]) : 0;
+}
+/** 月の予定の要対応の欄（行の日付と種類・帯の要対応の数・欠勤あり（対応済み）の日・その日のマス） */
+async function monthAttention(page, ym, date) {
+  await open(page, `/month?ym=${ym}&layout=calendar&do=attention`, '[data-testid="month-aside"]');
+  await page.getByTestId('progress-band').locator('[data-testid="band-attention"]').waitFor({ timeout: 30000 });
+  await settle(page, 300);
+  const rows = await page
+    .locator('[data-testid="month-attention"] .month-attention-btn')
+    .evaluateAll((els) => els.map((e) => `${e.dataset.date}:${e.dataset.kind}`));
+  const handled = await page
+    .locator('[data-testid="month-handled"] .month-attention-btn')
+    .evaluateAll((els) => els.map((e) => e.dataset.date));
+  const band = Number(await page.getByTestId('band-attention').getAttribute('data-count'));
+  const cell = page.locator(`[data-testid="month-day"][data-date="${date}"]`);
+  return {
+    rows,
+    handled,
+    band,
+    state: await cell.getAttribute('data-state'),
+    care: await cell.evaluate((el) => el.closest('td').classList.contains('is-care')),
+    done: (await cell.locator('[data-testid="month-absent"][data-done]').count()) === 1,
+  };
+}
+
+/**
+ * 欠勤があっても確定済みで手当ての要らない日は要対応に数えない（PRD D281。ADR-0046）：欠勤のある案の日を、別のタブで
+ * 「欠勤あり・未確定」→「欠勤あり・確定済み（入らない訪問・必須の違反・休みの人に残る訪問なし）」にして、ホーム・進み具合の帯・
+ * 月の要対応の欄の数が同じで、確定すると1件減り、「欠勤あり（対応済み）」として残ることを確かめる
+ */
+async function handledAbsence(page) {
+  await reset(page);
+  await open(page, '/home');
+  // 初期データの案の日（今日の次の日）。担当の無い〈スタッフ〉の欠勤にする（休みの人に残る訪問を作らない）。
+  // 記録（runId）を外して「条件が変わった」にしない（実際の振り直しの案も記録の判定をしない）
+  const day = SEED_DAYS[1];
+  const ym = day.slice(0, 7);
+  const setup = await page.evaluate(
+    ({ k, d }) => {
+      const data = JSON.parse(localStorage.getItem(k));
+      const plan = data.aiPlans[d];
+      if (!plan) return { ok: false, why: '案が無い' };
+      const busy = new Set(Object.entries(plan.routes).flatMap(([s, ids]) => (ids.length > 0 ? [s] : [])));
+      const free = data.staff.find((s) => !busy.has(s.id));
+      const unassigned = (plan.routes.__none ?? []).length;
+      if (!free) return { ok: false, why: '担当の無い人がいない' };
+      // その日に勤務がある人の欠勤にする（勤務の上書き。マスの「欠」は勤務のある人の欠勤に出す）
+      data.availability = [
+        ...data.availability.filter((a) => !(a.staffId === free.id && a.date === d)),
+        { staffId: free.id, date: d, slots: [{ start: '09:00', end: '17:00' }] },
+      ];
+      data.absences = [
+        ...data.absences,
+        { id: 'e2e-handled', staffId: free.id, date: d, from: null, to: null, note: '' },
+      ];
+      delete data.aiPlans[d].runId;
+      localStorage.setItem(k, JSON.stringify(data));
+      return { ok: true, unassigned, name: free.name };
+    },
+    { k: STORAGE_KEY, d: day },
+  );
+  check(
+    setup.ok && setup.unassigned === 0,
+    '要対応の数え方：前提（案のある日に担当の無い人の欠勤・入らない訪問なし）',
+    setup,
+  );
+  const before = await monthAttention(page, ym, day);
+  const homeBefore = await homeAttention(page, ym);
+  check(
+    before.rows.includes(`${day}:absence`) && before.state === 'plan' && !before.care && before.handled.length === 0,
+    '確定していない欠勤の日は要対応（欠勤）に出る',
+    before,
+  );
+  check(
+    before.band === before.rows.length && homeBefore === before.rows.length,
+    'ホーム・進み具合の帯・月の要対応の欄が同じ数（確定する前）',
+    { home: homeBefore, band: before.band, rows: before.rows.length },
+  );
+  // 別のタブで確定する（今の案のとおりの確定した割当＝「確定済み」）
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.evaluate(
+    ({ k, d }) => {
+      const data = JSON.parse(localStorage.getItem(k));
+      data.manualPlans[d] = JSON.parse(JSON.stringify(data.aiPlans[d].routes));
+      localStorage.setItem(k, JSON.stringify(data));
+    },
+    { k: STORAGE_KEY, d: day },
+  );
+  await other.close();
+  const after = await monthAttention(page, ym, day);
+  const homeAfter = await homeAttention(page, ym);
+  check(
+    after.state === 'confirmed' &&
+      !after.rows.includes(`${day}:absence`) &&
+      after.rows.length === before.rows.length - 1,
+    '確定済みで手当ての要らない欠勤の日は要対応に数えない（1件減る）',
+    { before: before.rows, after: after.rows },
+  );
+  check(
+    after.band === after.rows.length && homeAfter === after.rows.length,
+    'ホーム・進み具合の帯・月の要対応の欄が同じ数（確定したあと）',
+    { home: homeAfter, band: after.band, rows: after.rows.length },
+  );
+  check(
+    after.handled.includes(day) && after.done && !after.care,
+    '「欠勤あり（対応済み）」として右の欄に残り、マスの「欠」に「（済）」（赤くしない）',
+    after,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'month-handled-absence.png') });
+}
+
 async function monthDo(page) {
   await open(page, `/month?ym=${YM}&do=attention`, '[data-testid="month-aside"]');
   await waitText(page.locator('.month-aside-title'), '要対応');
@@ -510,8 +703,8 @@ async function mobile(page) {
   check((await page.getByTestId('screen-name').innerText()) === 'ホーム', 'スマホ：上の帯の名前「ホーム」');
   const labels = await page.getByTestId('bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(labels) === JSON.stringify(['ホーム', '月', '週', '今日', '空き状況']),
-    'スマホ：下のタブの先頭に「ホーム」',
+    JSON.stringify(labels) === JSON.stringify(['ホーム', '予定', '欠勤', '空き状況']),
+    'スマホ：下のタブの先頭に「ホーム」（ホーム・予定・欠勤・空き状況とメニュー。PRD D274）',
     labels,
   );
   const active = await page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts();
@@ -556,6 +749,7 @@ const steps = sharedPage({
     ['start', start],
     ['first-state', firstState],
     ['seed-plans', seedPlans],
+    ['handled-absence', handledAbsence],
     ['month-do', monthDo],
     ['anytime', anytime],
     ['ready', ready],

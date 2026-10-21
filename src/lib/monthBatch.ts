@@ -4,19 +4,23 @@
 import type { DemoData } from '../contracts/data';
 import type { Problem, SolveOptions, SolveResult } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
-import { compile, withManualPrefs } from '../matching';
+import { addDays } from '../domain/time';
+import { type CompileInput, compile, withManualPrefs } from '../matching';
 import { scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { attempt, own } from './common';
-import { applyDayRun, type BatchMode, batchTargets, expandMonth, planEdited, planStale, ymOf } from './month';
+import { applyDayRun, type BatchMode, batchTargets, expandRange, planEdited, planStale, ymOf } from './month';
 import { planOfRun, problemKey, reusableRun } from './runs';
 import { createValueStore, type ReadableStore } from './valueStore';
 
 /** 作る日（日ごとの作り方。empty＝まだ案の無い日だけとして作る：作っている間に案ができた日は飛ばし、今の案は変えない） */
 export type BatchDay = { date: string; mode: BatchMode };
 
-/** 始めた画面 */
-export type BatchSource = 'month' | 'vacancy';
+/** 始めた画面（月の予定・空き状況・週の予定） */
+export type BatchSource = 'month' | 'vacancy' | 'week';
+
+/** 定期パターンから訪問を作る範囲（両端を含む。今日より前は作らない） */
+export type ExpandRange = { from: string; to: string };
 
 /** 始めるときに渡すもの */
 export type BatchJob = {
@@ -27,10 +31,12 @@ export type BatchJob = {
   /** 欄で選んだ作り方（月の予定の進み具合の表示用） */
   mode: BatchMode;
   days: readonly BatchDay[];
-  /** 始めた画面（月の予定・空き状況。ほかの画面のボタンの文を分ける） */
+  /** 始めた画面（月の予定・空き状況・週の予定。ほかの画面のボタンの文・知らせの行き先を分ける） */
   source: BatchSource;
-  /** 先に定期パターンから訪問を作る月（expandMonth。作らなければ null） */
-  expandYm: string | null;
+  /** 週の予定から始めたときの週の始まり（月曜。知らせ・上の帯の行き先 `/week?d=`。ほかは null） */
+  weekStart?: string | null;
+  /** 先に定期パターンから訪問を作る範囲（月の予定はその月、週の予定はその週。expandRange。作らなければ null） */
+  expand: ExpandRange | null;
   today: string;
 };
 
@@ -40,6 +46,8 @@ export type BatchRun = {
   label: string;
   mode: BatchMode;
   source: BatchSource;
+  /** 週の予定から始めたときの週の始まり（ほかは null） */
+  weekStart: string | null;
   /** 作る日の日付（順に） */
   targets: string[];
   /** いま作っている日の番号（0から） */
@@ -54,6 +62,9 @@ export type BatchRun = {
 export type BatchDone = {
   ym: string;
   label: string;
+  source: BatchSource;
+  /** 週の予定から始めたときの週の始まり（ほかは null） */
+  weekStart: string | null;
   made: number;
   /** 入らない訪問がある日の数 */
   unassignedDays: number;
@@ -131,6 +142,45 @@ export function missingDays(data: DemoData, dates: readonly string[], today: str
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
+/**
+ * 週の予定の「この週の案を作る」で作る日（PRD D280）：dates（週の7日）のうち今日以降で、訪問があって（data は定期パターンから
+ * 展開したあとのもの）まだ案も確定した割当も無い日。月の予定の「まだ案の無い日だけ」（batchTargets の empty）を週に絞ったもの
+ */
+export function weekBatchDays(
+  data: Parameters<typeof batchTargets>[0],
+  dates: readonly string[],
+  today: string,
+): BatchDay[] {
+  const inRange = new Set(dates.filter((d) => d >= today));
+  const out: BatchDay[] = [];
+  for (const ym of new Set([...inRange].map(ymOf)))
+    for (const date of batchTargets(data, ym, today, 'empty')) if (inRange.has(date)) out.push({ date, mode: 'empty' });
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/**
+ * その日の案を作れるか（1日ずつ作るときに飛ばさない日か）：点数の基準の条件で compile でき、計算に入る訪問と〈スタッフ〉がいる。
+ * 月まとめ作成の1日の作り方（step）と同じ決め方。週の予定は作れない日を「作る日」に数えない（PRD D280）
+ */
+export function canMakeDay(
+  data: CompileInput & Pick<DemoData, 'presets'> & { scorePresetId?: string },
+  date: string,
+): boolean {
+  const base = attempt(() => compile({ ...data, rules: scoreRulesOf(data) }, date)).value;
+  return !!base && base.visits.length > 0 && base.staff.length > 0;
+}
+
+/** 週の呼び名（「11/2〜11/8の週」。上の帯・知らせの文の月の名前の代わり） */
+export function weekLabel(start: string): string {
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  return `${md(start)}〜${md(addDays(start, 6))}の週`;
+}
+
+/** 進み具合の帯の文・知らせのボタンの行き先（週の予定から始めたならその週、ほかは月の予定のその月） */
+export function batchHref(x: Pick<BatchRun, 'ym' | 'source' | 'weekStart'>): string {
+  return x.source === 'week' && x.weekStart ? `/week?d=${x.weekStart}` : `/month?ym=${x.ym}`;
+}
+
 /** 入れ物を作る（solve は差し替えられる。テストは Worker なしで解く） */
 export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
   const run = createValueStore<BatchRun | null>(null);
@@ -155,17 +205,19 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     const gen = ++generation;
     const live = () => gen === generation;
     const targets = job.days.map((x) => x.date);
-    const ym = job.expandYm;
+    const ex = job.expand;
+    const weekStart = job.weekStart ?? null;
     const today = job.today;
     stopped = false;
     let made = 0;
     let unassignedDays = 0;
-    if (ym) h.update((d) => expandMonth(d, ym, today).data);
+    if (ex) h.update((d) => expandRange(d, ex.from, ex.to, today).data);
     run.set({
       ym: job.ym,
       label: job.label,
       mode: job.mode,
       source: job.source,
+      weekStart,
       targets,
       index: 0,
       made: 0,
@@ -177,7 +229,17 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     const finish = (why?: string) => {
       current = null;
       run.set(null);
-      done.set({ ym: job.ym, label: job.label, made, unassignedDays, stopped, error: why ?? null, aborted: false });
+      done.set({
+        ym: job.ym,
+        label: job.label,
+        source: job.source,
+        weekStart,
+        made,
+        unassignedDays,
+        stopped,
+        error: why ?? null,
+        aborted: false,
+      });
     };
 
     // ---- 1日ずつ作る（計算の中身は月の予定の画面から写したまま。どの規則で作るかは変えない）----
@@ -189,7 +251,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       }
       const { date: day, mode: m } = job.days[i]!;
       // いちばん新しいデータで（作っている間の編集も入れる）。展開は同じ結果になるので、まだ描画されていなくても同じ訪問になる
-      const latest = ym ? expandMonth(h.get(), ym, today).data : h.get();
+      const latest = ex ? expandRange(h.get(), ex.from, ex.to, today).data : h.get();
       patch({ index: i, iteration: 0, total: 1 });
       // 作っている間に確定した・（まだ案の無い日だけで）案ができた日は飛ばす
       if (own(latest.manualPlans, day) || (m === 'empty' && own(latest.aiPlans, day))) {
@@ -293,6 +355,8 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       done.set({
         ym: r.ym,
         label: r.label,
+        source: r.source,
+        weekStart: r.weekStart,
         made: r.made,
         unassignedDays: 0,
         stopped: true,

@@ -6,6 +6,13 @@ import type { CSSProperties, DragEvent, ReactNode } from 'react';
 import { minutesToHhmm } from '../domain/time';
 import { r0 } from '../lib/common';
 import { backgroundOf, boxOf, hourMarks, type LegSpan, type Span, TL_PX_PER_MIN, timeRange } from '../lib/timeline';
+import { EdgeScroll } from './EdgeScroll';
+
+/**
+ * 列の最小の幅（px。PRD D269）：1366px の画面で多くの列が入るよう詰める（前は 150px）。名前は折り返して切らない
+ * （routeTimeline.css の .tl-head）
+ */
+export const TL_COL_MIN_PX = 128;
 
 /** 時間軸の帯1つ（訪問） */
 export type TimelineBand = {
@@ -78,8 +85,12 @@ export function RouteTimeline({
   const height = (range.end - range.start) * px;
   const marks = hourMarks(range);
   return (
-    <div className="tl-scroll" data-testid="route-timeline">
-      <div className="tl-grid" style={{ gridTemplateColumns: `44px repeat(${columns.length}, minmax(150px, 1fr))` }}>
+    // 横に巻ける間は右の端に影（EdgeScroll。広い画面でも出す。PRD D269）。列は名前が切れない幅まで詰める
+    <EdgeScroll className="tl-scroll" edgeClass="is-tl" testId="route-timeline">
+      <div
+        className="tl-grid"
+        style={{ gridTemplateColumns: `44px repeat(${columns.length}, minmax(${TL_COL_MIN_PX}px, 1fr))` }}
+      >
         <div className="tl-corner" aria-hidden="true" />
         <div className="tl-gutter" style={{ height }} aria-hidden="true">
           {marks.map((m) => (
@@ -140,7 +151,7 @@ export function RouteTimeline({
           </div>
         ))}
       </div>
-    </div>
+    </EdgeScroll>
   );
 }
 
