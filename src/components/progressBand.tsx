@@ -78,6 +78,7 @@ export const ProgressBand = memo(function ProgressBand({
   model,
   day,
   primary = false,
+  hideBatch = false,
   onOp,
 }: {
   ym: string;
@@ -85,6 +86,11 @@ export const ProgressBand = memo(function ProgressBand({
   day?: BandDay;
   /** 次の一手を主ボタンにする（月の画面。週・日は画面の主ボタンと重ねない） */
   primary?: boolean;
+  /**
+   * 次の一手が「まとめて作る」のときにボタンを出さない（週の予定で、見出しの主ボタンが「この週の案を作る」の間。
+   * 作る入口を1つにする。PRD D280）。数字のリンクは残す
+   */
+  hideBatch?: boolean;
   onOp?: (op: BandOp) => void;
 }) {
   const month = monthLabel(ym);
@@ -136,7 +142,7 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${visitsDone ? ' is-done' : ''}`}
-            title={`今日以降の訪問 ${p.visits}件${canExpand > 0 ? `。定期パターンからまだ作っていない訪問 ${canExpand}件` : ''}。押すと月の予定の「まとめて作る」の欄を開きます`}
+            title={`今日以降の訪問 ${p.visits}件${canExpand > 0 ? `。定期パターンからまだ作っていない訪問（未作成）${canExpand}件` : ''}。押すと月の予定の「まとめて作る」の欄を開きます`}
             aria-label={`訪問 ${visitsText(p.visits, canExpand)}${done(visitsDone)}。まとめて作るを開く`}
             data-testid="band-visits"
           >
@@ -206,7 +212,7 @@ export const ProgressBand = memo(function ProgressBand({
         </span>
       )}
       <span className="pb-next">
-        {next.kind === 'done' || next.kind === 'empty' ? (
+        {hideBatch && next.kind === 'batch' ? null : next.kind === 'done' || next.kind === 'empty' ? (
           <span
             className={`pb-status${next.kind === 'done' ? ' is-done' : ''}`}
             data-testid="band-next"
@@ -330,21 +336,40 @@ function useBandModel(data: DemoData, ym: string, today: string, extraDate?: str
 }
 
 /** 数える中身（データが来てから描く） */
-function ScheduleBandBody({ data, date, withDay }: { data: DemoData; date: string; withDay: boolean }) {
+function ScheduleBandBody({
+  data,
+  date,
+  withDay,
+  hideBatch,
+}: {
+  data: DemoData;
+  date: string;
+  withDay: boolean;
+  hideBatch: boolean;
+}) {
   const today = jstDate(Date.now());
   const ym = bandMonth(date);
   const { model, day } = useBandModel(data, ym, today, withDay ? date : undefined);
-  return <ProgressBand ym={ym} model={model} day={withDay ? { date, status: day } : undefined} />;
+  return <ProgressBand ym={ym} model={model} day={withDay ? { date, status: day } : undefined} hideBatch={hideBatch} />;
 }
 
 /**
  * 週・日の画面の帯（PRD D151）。選んでいる日付の月を数える。計算は useDeferredValue で描画の後へ回し
  * （開いたとき・手直しのたびに画面の描画を待たせない）、最初の描画の間は「数えています」
  */
-export function ScheduleBand({ date, withDay = false }: { date: string; withDay?: boolean }) {
+export function ScheduleBand({
+  date,
+  withDay = false,
+  hideBatch = false,
+}: {
+  date: string;
+  withDay?: boolean;
+  /** 次の一手の「まとめて作る」を出さない（ProgressBand の hideBatch） */
+  hideBatch?: boolean;
+}) {
   const { data } = useDemoData();
   const deferred = useDeferredValue<DemoData | null>(data, null);
   const deferredDate = useDeferredValue(date);
   if (!deferred) return <ProgressBand ym={bandMonth(date)} model={null} />;
-  return <ScheduleBandBody data={deferred} date={deferredDate} withDay={withDay} />;
+  return <ScheduleBandBody data={deferred} date={deferredDate} withDay={withDay} hideBatch={hideBatch} />;
 }

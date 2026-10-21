@@ -77,7 +77,16 @@ export function calendarWeeks(ym: string): string[][] {
  * 足す訪問が無ければ同じデータを返す。added は足した訪問の件数
  */
 export function expandMonth(d: DemoData, ym: string, today: string): { data: DemoData; added: number } {
-  const c = expandMonthVisits(d, ym, today);
+  const days = monthDates(ym);
+  return expandRange(d, days[0]!, days.at(-1)!, today);
+}
+
+/**
+ * from〜to（両端を含む）の今日以降に、定期パターンから訪問を展開する（expandMonth の範囲を選べる形。週の予定の「この週の案を作る」。
+ * PRD D280）。足す訪問が無ければ同じデータを返す
+ */
+export function expandRange(d: DemoData, from: string, to: string, today: string): { data: DemoData; added: number } {
+  const c = expandRangeVisits(d, from, to, today);
   if (c.added === 0) return { data: d, added: 0 };
   return { data: { ...d, visits: c.visits }, added: c.added };
 }
@@ -90,10 +99,24 @@ export function expandMonthVisits(
   d: Pick<DemoData, 'patterns' | 'visits' | 'clients'>,
   ym: string,
   today: string,
-): { visits: DemoData['visits']; added: number } {
+): { visits: DemoData['visits']; added: number; addedByDate: ReadonlyMap<string, number> } {
   const days = monthDates(ym);
-  const c = applyPatterns(d, { from: days[0]!, to: days.at(-1)! }, today);
-  return { visits: c.visits, added: c.added.length };
+  return expandRangeVisits(d, days[0]!, days.at(-1)!, today);
+}
+
+/**
+ * from〜to の expandMonthVisits。addedByDate は日ごとの足す訪問の件数（「未作成」の日。PRD D282。足す訪問の無い日は入れない）
+ */
+export function expandRangeVisits(
+  d: Pick<DemoData, 'patterns' | 'visits' | 'clients'>,
+  from: string,
+  to: string,
+  today: string,
+): { visits: DemoData['visits']; added: number; addedByDate: ReadonlyMap<string, number> } {
+  const c = applyPatterns(d, { from, to }, today);
+  const addedByDate = new Map<string, number>();
+  for (const a of c.added) addedByDate.set(a.date, (addedByDate.get(a.date) ?? 0) + 1);
+  return { visits: c.visits, added: c.added.length, addedByDate };
 }
 
 /** その日の取り消しでなく、〈利用者さん〉の休み（ADR-0013）でもない訪問 */
@@ -776,9 +799,41 @@ export type Attention = {
 const KIND_ORDER: Record<AttentionKind, number> = { unassigned: 0, absentLeft: 1, stale: 2, overSpan: 3, absence: 4 };
 
 /**
- * 選ばないときの右の欄の「要対応」（D55）：今日以降の日の、入らない訪問がある・欠勤の人に訪問が残る・条件が変わった・
+ * 欠勤の手当てが済んだ日か（PRD D281。ADR-0046）：確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い。
+ * 欠勤を登録して振り直し、確定まで済んだ日は、欠勤があっても要対応に数えない（情報「欠勤あり（対応済み）」として残す）
+ */
+export function absenceHandled(s: Pick<DayStatus, 'state' | 'unassigned' | 'hard' | 'absentLeft'>): boolean {
+  return s.state === 'confirmed' && s.unassigned === 0 && s.hard === 0 && s.absentLeft === 0;
+}
+
+/** その日の欠勤の人（希望休は除く。同じ人の欠勤が2件でも1人） */
+function absentStaffIds(data: Pick<DemoData, 'absences'>, date: string): string[] {
+  return [...new Set(data.absences.filter((a) => a.date === date && !isRequestedOff(a)).map((a) => a.staffId))];
+}
+
+/** 欠勤あり（対応済み）の日（PRD D281）：今日以降の、欠勤（希望休を除く）があって手当てが済んだ日と欠勤の人の名前（日付の順） */
+export type HandledAbsence = { date: string; names: string[] };
+export function handledAbsences(
+  data: Pick<DemoData, 'absences' | 'staff'>,
+  statuses: readonly DayStatus[],
+  today: string,
+): HandledAbsence[] {
+  const nameOf = new Map(data.staff.map((s) => [s.id, s.name]));
+  const out: HandledAbsence[] = [];
+  for (const s of statuses) {
+    if (s.date < today || !s.absence || !absenceHandled(s)) continue;
+    const ids = absentStaffIds(data, s.date);
+    if (ids.length > 0) out.push({ date: s.date, names: ids.map((id) => nameOf.get(id) ?? '').filter(Boolean) });
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/**
+ * 選ばないときの右の欄の「要対応」（D55・D281）：今日以降の日の、入らない訪問がある・欠勤の人に訪問が残る・条件が変わった・
  * 拘束が上限を超える（ADR-0015）・欠勤のある日（日付の順、同じ日は 入らない → 欠勤の人に残る → 条件が変わった → 拘束 → 欠勤）。
- * 希望休（ADR-0014）は前もって入れる休みなので、それだけでは要対応にしない（訪問が残っていれば「欠勤の人に残る」で出る）
+ * 希望休（ADR-0014）は前もって入れる休みなので、それだけでは要対応にしない（訪問が残っていれば「欠勤の人に残る」で出る）。
+ * 欠勤があっても手当てが済んだ日（absenceHandled：確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い）は
+ * 欠勤を数えない（ADR-0046。ホーム・進み具合の帯・月の要対応はこの1つで数えるので同じ数になる）
  */
 export function attentionList(
   data: Pick<DemoData, 'absences' | 'staff'>,
@@ -801,11 +856,9 @@ export function attentionList(
         names: s.overSpan.map((id) => nameOf.get(id) ?? '').filter(Boolean),
         staffIds: [...s.overSpan],
       });
-    if (s.absence) {
+    if (s.absence && !absenceHandled(s)) {
       // 同じ人の欠勤が2件（時間帯が2つ・続けて振り直した）でも1人と数える。希望休は数えない
-      const ids = [
-        ...new Set(data.absences.filter((a) => a.date === s.date && !isRequestedOff(a)).map((a) => a.staffId)),
-      ];
+      const ids = absentStaffIds(data, s.date);
       const names = ids.map((id) => nameOf.get(id) ?? '');
       if (ids.length > 0)
         out.push({ date: s.date, kind: 'absence', count: names.length, names: names.filter(Boolean) });

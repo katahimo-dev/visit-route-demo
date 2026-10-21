@@ -86,7 +86,9 @@ import {
   dayMarks,
   dayPlanOf,
   expandMonth,
+  expandMonthVisits,
   firstDayOf,
+  handledAbsences,
   isYm,
   monthDates,
   monthProgress,
@@ -482,6 +484,22 @@ export default function MonthPage() {
     () => attentionList(data, days.map((d) => statuses.get(d)!).filter(Boolean), today),
     [data, days, statuses, today],
   );
+  /** 欠勤あり（対応済み）の日（PRD D281。要対応に数えず、情報として右の欄・マス・一覧に残す） */
+  const handled = useMemo(
+    () => handledAbsences(data, days.map((d) => statuses.get(d)!).filter(Boolean), today),
+    [data, days, statuses, today],
+  );
+  const handledDates = useMemo(() => new Set(handled.map((h) => h.date)), [handled]);
+  /**
+   * 定期パターンからまだ作っていない訪問の日ごとの件数（「未作成」の日。PRD D282）。読むのは定期パターン・訪問・〈利用者さん〉だけ
+   */
+  const { patterns: allPatterns, visits: allVisits, clients: allClients } = data;
+  /** 定期パターンから作る訪問（月の今日以降。下の preview と未作成の日はこの1回の展開から作る） */
+  const expandedMonth = useMemo(
+    () => expandMonthVisits({ patterns: allPatterns, visits: allVisits, clients: allClients }, ym, today),
+    [allPatterns, allVisits, allClients, ym, today],
+  );
+  const unmadeByDate = expandedMonth.addedByDate;
 
   /** 今月の準備（PRD D59。進み具合の帯に出す。D151）。日の状態は上で compile・採点したものを使う（要対応の欄と同じ数え方） */
   const progress = useMemo(
@@ -515,7 +533,13 @@ export default function MonthPage() {
   }, [days, statuses, visitsByDate]);
 
   /** 先に定期パターンから展開したときのデータ（対象の日数の見込み） */
-  const preview = useMemo(() => expandMonth(data, ym, today), [data, ym, today]);
+  const preview = useMemo(
+    () =>
+      expandedMonth.added === 0
+        ? { data, added: 0 }
+        : { data: { ...data, visits: expandedMonth.visits }, added: expandedMonth.added },
+    [data, expandedMonth],
+  );
   /** その月の今日以降の訪問（展開したあと） */
   const futureVisits = useMemo(
     () => preview.data.visits.filter((v) => !v.cancelled && ymOf(v.date) === ym && v.date >= today).length,
@@ -682,7 +706,7 @@ export default function MonthPage() {
       label: `${monthNo}月`,
       mode: m,
       days: targets.map((date) => ({ date, mode: m })),
-      expandYm: expand ? ym : null,
+      expand: expand ? { from: days[0]!, to: days.at(-1)! } : null,
       today,
       source: 'month',
     });
@@ -756,10 +780,27 @@ export default function MonthPage() {
       }
       const off = offStaffId ? offDayState(data, offStaffId, d, today) : undefined;
       if (off) extra.push(OFF_STATE_TEXT[off]);
-      out.push({ row: monthListRow(s, today, extra), extra, off });
+      out.push({
+        row: monthListRow(s, today, extra, { unmade: unmadeByDate.get(d) ?? 0, absenceDone: handledDates.has(d) }),
+        extra,
+        off,
+      });
     }
     return out;
-  }, [layout, days, statuses, staffDays, clientDays, focus.kind, staffById, offStaffId, data, today]);
+  }, [
+    layout,
+    days,
+    statuses,
+    staffDays,
+    clientDays,
+    focus.kind,
+    staffById,
+    offStaffId,
+    data,
+    today,
+    unmadeByDate,
+    handledDates,
+  ]);
   /** 日ごとの一覧（最初に見せる日へ巻く。PRD D189） */
   const listRef = useRef<HTMLUListElement>(null);
   /** その日の行を見える所へ（上の帯は scroll-margin で避ける）。focus なら行へフォーカス */
@@ -1178,6 +1219,8 @@ export default function MonthPage() {
                             clientTerm={terms.client}
                             staffTerm={terms.staff}
                             offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
+                            unmade={unmadeByDate.get(d) ?? 0}
+                            absenceDone={handledDates.has(d)}
                             onOpen={openDay}
                             onToggleOff={toggleOff}
                           />
@@ -1267,7 +1310,7 @@ export default function MonthPage() {
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
-                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日はありません。
+                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日（確定済みで手当ての要らない日を除く）はありません。
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
@@ -1280,6 +1323,8 @@ export default function MonthPage() {
                           className={`month-attention-btn is-${a.kind}`}
                           onClick={() => openTarget(t)}
                           data-to={t.to}
+                          data-date={a.date}
+                          data-kind={a.kind}
                         >
                           <span className="month-attention-date">
                             {mdText(a.date)}（{WEEKDAY_LABELS[weekday(a.date)]}）
@@ -1319,6 +1364,34 @@ export default function MonthPage() {
                     );
                   })}
                 </ul>
+              )}
+              {/* 欠勤あり（対応済み）（PRD D281）：確定済みで手当ての要らない日。要対応に数えず、情報として残す */}
+              {handled.length > 0 && (
+                <div className="month-handled" data-testid="month-handled">
+                  <h3 className="month-handled-title">欠勤あり（対応済み）</h3>
+                  <ul className="month-attention">
+                    {handled.map((h) => (
+                      <li key={h.date}>
+                        <button
+                          type="button"
+                          className="month-attention-btn is-handled"
+                          onClick={() => openDay(h.date)}
+                          data-date={h.date}
+                          title="確定済みで手当ての要らない日です。押すとその日の「日の予定」を開きます"
+                        >
+                          <span className="month-attention-date">
+                            {mdText(h.date)}（{WEEKDAY_LABELS[weekday(h.date)]}）
+                          </span>
+                          <span>
+                            <WithIcon icon={UserX} size={14}>
+                              欠勤 {h.names.map(shortName).join('・')}（確定済み）
+                            </WithIcon>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </>
           )}
@@ -1791,6 +1864,10 @@ type CellProps = {
   staffTerm: string;
   /** 「休みを入れる」のときのその日の扱い（PRD D69。それ以外は undefined＝押すと日の画面へ） */
   offState: OffDayState | undefined;
+  /** 定期パターンからまだ作っていない訪問の件数（PRD D282。訪問の無い今日以降の日は「未作成」） */
+  unmade: number;
+  /** 欠勤の手当てが済んだ日（PRD D281。「欠」の印に「済」） */
+  absenceDone: boolean;
   onOpen: (date: string) => void;
   onToggleOff: (date: string) => void;
 };
@@ -1827,11 +1904,17 @@ const DayCell = memo(function DayCell(props: CellProps) {
   // 赤は要対応だけ（PRD D228）。今日以降で訪問があるのに案の無い日は注意（黄の点線）
   const care = s.needsCare && !past;
   const caution = !care && !past && s.count > 0 && s.state === 'none';
+  /** 未作成の日（訪問が本当に0件の日と分ける。PRD D282） */
+  const unmade = s.count === 0 && !past ? props.unmade : 0;
+  /** 訪問はあるが、ほかに定期パターンからまだ作っていない訪問がある日（週の見出しの「N件・ほか未作成」と同じ。PRD D282） */
+  const unmadePart = s.count > 0 && !past ? props.unmade : 0;
   const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));
   const parts: string[] = [longDate(d)];
   const body: ReactNode[] = [];
 
   if (s.count > 0) parts.push(`訪問 ${s.count}件`, STATE_TEXT[s.state]);
+  if (unmadePart > 0) parts.push(`ほかに定期パターンからまだ作っていない訪問 ${unmadePart}件`);
+  else if (unmade > 0) parts.push(`未作成（定期パターンからまだ作っていない訪問 ${unmade}件）`);
   else parts.push('訪問なし');
   if (care) parts.push('要対応');
   if (caution) parts.push('注意：まだ案が無い');
@@ -1900,7 +1983,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
       .filter(Boolean)
       .join('／');
     if (resting > 0) parts.push(`休む${staffTerm} ${resting}人（${restDetail}）`);
-    if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}`);
+    if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}${props.absenceDone ? '（対応済み）' : ''}`);
     if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
     if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
     if (mk.leaves.length > 0) parts.push(`${clientTerm}の休み ${mk.leaves.join('・')}`);
@@ -1922,9 +2005,20 @@ const DayCell = memo(function DayCell(props: CellProps) {
             {mk.requested.length > 0 && `（希${mk.requested.length}）`}
           </span>
         )}
+        {unmadePart > 0 && (
+          <span className="month-mark is-unmade" data-testid="month-unmade-part">
+            ほか未作成
+          </span>
+        )}
         {mk.absent.length > 0 && (
-          <span className="month-mark is-absent" title={`欠勤：${mk.absent.join('・')}`}>
+          <span
+            className={`month-mark is-absent${props.absenceDone ? ' is-done' : ''}`}
+            title={`欠勤${props.absenceDone ? '（対応済み：確定済みで手当ての要らない日）' : ''}：${mk.absent.join('・')}`}
+            data-testid="month-absent"
+            data-done={props.absenceDone || undefined}
+          >
             欠 {namesShort(mk.absent)}
+            {props.absenceDone && '（済）'}
           </span>
         )}
         {mk.starts.length > 0 && (
@@ -2109,6 +2203,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
     resting: restingAll,
     requested: mk.requested.length,
     absent: mk.absent.length > 0,
+    absentDone: props.absenceDone,
+    unmade: unmade > 0,
+    unmadePart: focus === 'all' && unmadePart > 0,
     starts: mk.starts.length > 0,
     ends: mk.ends.length > 0,
     leaves: mk.leaves.length > 0,
@@ -2153,6 +2250,8 @@ const DayCell = memo(function DayCell(props: CellProps) {
         data-testid="month-day"
         data-date={d}
         data-state={s.count > 0 ? s.state : 'empty'}
+        data-unmade={unmade > 0 ? unmade : undefined}
+        data-unmade-part={unmadePart > 0 ? unmadePart : undefined}
         data-off={offState}
         aria-label={label}
         aria-pressed={offState ? offState === 'requested' : undefined}
@@ -2177,6 +2276,11 @@ const DayCell = memo(function DayCell(props: CellProps) {
           )}
           {care && <span className="month-dot" aria-hidden="true" />}
           {s.count > 0 && focus === 'all' && <span className="month-count">{s.count}件</span>}
+          {unmade > 0 && (
+            <span className="month-unmade" data-testid="month-unmade">
+              未作成
+            </span>
+          )}
         </span>
         {body}
       </button>

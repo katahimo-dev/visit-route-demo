@@ -162,7 +162,8 @@ describe('homeTasks', () => {
   it('要対応が2日以上なら月の画面の要対応へ。欠勤（希望休は除く）も数える', () => {
     const r = homeTasks({
       today: TODAY,
-      statuses: [st(TODAY, { stale: true }), st('2026-10-20', { absence: true })],
+      // 欠勤の日はまだ確定していない（確定済みで手当ての要らない日になれば数えない。PRD D281）
+      statuses: [st(TODAY, { stale: true }), st('2026-10-20', { absence: true, state: 'plan' })],
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 1,
       data: {
@@ -175,6 +176,21 @@ describe('homeTasks', () => {
     expect(att).toMatchObject({ kind: 'attention', title: '10月の要対応 2件', to: '/month?ym=2026-10&do=attention' });
     expect(att.date).toBeUndefined();
     expect(att.detail).toBe('条件が変わった日 1日・欠勤がある日 1日');
+  });
+
+  it('欠勤があっても確定済みで手当ての要らない日は要対応に数えない（PRD D281。月の要対応・帯と同じ attentionList）', () => {
+    const r = homeTasks({
+      today: TODAY,
+      statuses: [st('2026-10-20', { absence: true })],
+      months: [{ ym: '2026-10', canExpand: 0 }],
+      todayStaff: 1,
+      data: {
+        staff: [{ id: 's1', name: '山田' } as Staff],
+        absences: [{ id: 'a1', staffId: 's1', date: '2026-10-20', from: '09:00', to: '12:00', note: '' } as Absence],
+      },
+      features: {},
+    });
+    expect(r.tasks.some((t) => t.kind === 'attention')).toBe(false);
   });
 
   it('今日の案が無い：今日のカードを warn にして日の画面へ', () => {

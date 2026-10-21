@@ -8,6 +8,7 @@ import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import { applyPatterns } from '../patterns';
 import { createDemoData, scoreRulesOf } from '../seed';
 import {
+  absenceHandled,
   addMonths,
   applyDayRun,
   attentionList,
@@ -22,7 +23,10 @@ import {
   dayStatus,
   expandMonth,
   expandMonthVisits,
+  expandRange,
+  expandRangeVisits,
   firstDayOf,
+  handledAbsences,
   isYm,
   monthDates,
   monthProgress,
@@ -362,7 +366,23 @@ describe('月の訪問の展開（expandMonth）', () => {
     );
     expect(only.added).toBe(full.added);
     expect(only.visits).toEqual(full.data.visits);
-    expect(expandMonthVisits(full.data, '2026-12', '2026-12-10')).toEqual({ visits: full.data.visits, added: 0 });
+    expect(expandMonthVisits(full.data, '2026-12', '2026-12-10')).toMatchObject({
+      visits: full.data.visits,
+      added: 0,
+    });
+  });
+  it('expandRange：範囲（月をまたぐ週）の今日以降だけ作り、日ごとの件数（未作成。PRD D282）は足した件数の合計', () => {
+    const d0 = createDemoData('2026-10-16');
+    const from = '2026-12-28';
+    const to = '2027-01-03';
+    const r = expandRangeVisits(d0, from, to, '2026-12-30');
+    expect(r.added).toBeGreaterThan(0);
+    expect([...r.addedByDate.keys()].every((x) => x >= '2026-12-30' && x <= to)).toBe(true);
+    expect([...r.addedByDate.values()].reduce((m, n) => m + n, 0)).toBe(r.added);
+    const ex = expandRange(d0, from, to, '2026-12-30');
+    expect(ex.added).toBe(r.added);
+    expect(ex.data.visits.filter((v) => v.date > to && !d0.visits.includes(v))).toHaveLength(0);
+    expect(expandRange(ex.data, from, to, '2026-12-30').data).toBe(ex.data);
   });
 });
 
@@ -624,6 +644,45 @@ describe('要対応（attentionList）', () => {
       { date: '2026-10-21', kind: 'unassigned', count: 2, names: [] },
       { date: '2026-10-21', kind: 'stale', count: 1, names: [] },
     ]);
+  });
+
+  it('欠勤があっても確定済みで手当ての要らない日は要対応に数えず、欠勤あり（対応済み）に出す（PRD D281）', () => {
+    const d = selData();
+    const data = {
+      ...d,
+      absences: [
+        { id: 'ab', staffId: 's2', date: '2026-10-20', from: null, to: null, note: '' },
+        { id: 'ab2', staffId: 's2', date: '2026-10-21', from: null, to: null, note: '' },
+        { id: 'ab3', staffId: 's2', date: '2026-10-22', from: null, to: null, note: '' },
+        { id: 'ab4', staffId: 's2', date: '2026-10-23', from: null, to: null, note: '' },
+      ],
+    };
+    const days = [
+      // 確定済みで問題なし → 数えない
+      st('2026-10-20', { absence: true, state: 'confirmed' }),
+      // 確定済みでも入らない訪問が残る → 入らない・欠勤の両方を数える
+      st('2026-10-21', { absence: true, state: 'confirmed', unassigned: 1, needsCare: true }),
+      // 振り直したが確定していない → 欠勤を数える
+      st('2026-10-22', { absence: true, state: 'plan' }),
+      // 確定済みでも休みの人に訪問が残る → 数える
+      st('2026-10-23', { absence: true, state: 'confirmed', absentLeft: 1, needsCare: true }),
+    ];
+    const list = attentionList(data, days, '2026-10-12');
+    expect(list.map((a) => [a.date, a.kind])).toEqual([
+      ['2026-10-21', 'unassigned'],
+      ['2026-10-21', 'absence'],
+      ['2026-10-22', 'absence'],
+      ['2026-10-23', 'absentLeft'],
+      ['2026-10-23', 'absence'],
+    ]);
+    expect(absenceHandled(days[0]!)).toBe(true);
+    expect(absenceHandled(days[1]!)).toBe(false);
+    expect(absenceHandled({ ...days[0]!, hard: 1 })).toBe(false);
+    expect(handledAbsences(data, days, '2026-10-12')).toEqual([{ date: '2026-10-20', names: ['泉 二郎'] }]);
+    // 今日より前・希望休だけの日は出さない
+    expect(handledAbsences(data, days, '2026-10-21')).toEqual([]);
+    const requested = { ...data, absences: [{ ...data.absences[0]!, note: '希望休' }] };
+    expect(handledAbsences(requested, days, '2026-10-12')).toEqual([]);
   });
 
   it('同じ人のその日の欠勤が2件（時間帯が2つ）でも、欠勤の人数は1人・名前は1回', () => {

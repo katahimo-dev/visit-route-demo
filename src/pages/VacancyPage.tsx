@@ -583,7 +583,7 @@ export default function VacancyPage() {
   const making = batchRun !== null;
   /** 作っている間のボタンの文（月の予定から始めた作成は「（月の予定）」で分ける） */
   const makingText = batchRun
-    ? `${batchRun.label}の案を作っています${batchRun.source === 'month' ? '（月の予定）' : '…'}`
+    ? `${batchRun.label}の案を作っています${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' ? '（週の予定）' : '…'}`
     : '';
   /** 答えのカード（足りない案を作り終えてボタンが消えたとき、フォーカスをここへ） */
   const answerRef = useRef<HTMLDivElement>(null);
@@ -602,7 +602,7 @@ export default function VacancyPage() {
       label: monthsLabel(missing.map((x) => x.date)),
       mode: 'empty',
       days: missing,
-      expandYm: null,
+      expand: null,
       today,
       source: 'vacancy',
     });
