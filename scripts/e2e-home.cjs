@@ -528,7 +528,7 @@ async function monthAttention(page, ym, date) {
 }
 
 /**
- * 欠勤を振り直して確定まで済んだ日は要対応に数えない（PRD D281。ADR-0046）：欠勤のある案の日を、別のタブで
+ * 欠勤があっても確定済みで手当ての要らない日は要対応に数えない（PRD D281。ADR-0046）：欠勤のある案の日を、別のタブで
  * 「欠勤あり・未確定」→「欠勤あり・確定済み（入らない訪問・必須の違反・休みの人に残る訪問なし）」にして、ホーム・進み具合の帯・
  * 月の要対応の欄の数が同じで、確定すると1件減り、「欠勤あり（対応済み）」として残ることを確かめる
  */
@@ -598,7 +598,7 @@ async function handledAbsence(page) {
     after.state === 'confirmed' &&
       !after.rows.includes(`${day}:absence`) &&
       after.rows.length === before.rows.length - 1,
-    '振り直して確定まで済んだ欠勤の日は要対応に数えない（1件減る）',
+    '確定済みで手当ての要らない欠勤の日は要対応に数えない（1件減る）',
     { before: before.rows, after: after.rows },
   );
   check(

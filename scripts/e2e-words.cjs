@@ -279,18 +279,13 @@ async function empties(page) {
   await we.waitFor({ timeout: 10000 });
   const wt = await we.innerText();
   check(/この週(は案がありません|には訪問がありません|の訪問はまだ作っていません)/.test(wt), '週：なぜ空か', wt);
-  // その場で作る（PRD D280）：月の予定へ移らない［この週の案を作る］（月の「まとめて作る」へのリンクは出さない）
-  const make = we.getByTestId('empty-next-make');
+  // 作る入口は見出しの主ボタンの1つ（PRD D280）：空の画面には作るボタンを置かず（月の「まとめて作る」へのリンクも無い）、
+  // 見出しの［この週の案を作る］を文で指して日の予定のボタンだけ。進み具合の帯の「まとめて作る」も出さない
+  const weBtns = await we.locator('.btn').evaluateAll((els) => els.map((e) => e.dataset.testid));
   check(
-    (await make.count()) === 1 &&
-      (await make.innerText()).includes('この週の案を作る') &&
-      (await we.getByTestId('empty-next-batch').count()) === 0,
-    '週：［この週の案を作る］（月の予定のまとめて作るへは移らない）',
-    { make: await make.count(), batch: await we.getByTestId('empty-next-batch').count() },
-  );
-  check(
-    (await we.locator('.btn-primary').count()) === 0,
-    '週：空の画面のボタンは主ボタンにしない（主ボタンは見出しの1つ）',
+    JSON.stringify(weBtns) === JSON.stringify(['empty-next-day']) && /見出しの［この週の案を作る］/.test(wt),
+    '週：空の画面のボタンは日の予定だけで、作るは見出しの主ボタンを文で指す',
+    { weBtns, wt },
   );
   check(
     (await page.locator('.btn-primary').count()) === 1 &&
@@ -298,8 +293,13 @@ async function empties(page) {
     '週：主ボタンは見出しの「この週の案を作る」の1つ',
     await page.locator('.btn-primary').allInnerTexts(),
   );
+  await page.getByTestId('progress-band').getByTestId('band-attention').waitFor({ timeout: 30000 });
+  check(
+    (await page.locator('[data-testid="band-next"][data-kind="batch"]').count()) === 0,
+    '週：主ボタンが「作る」の間は、進み具合の帯に「まとめて作る」を出さない（作る入口を1つに）',
+  );
   await page.screenshot({ path: path.join(OUT_DIR, 'week-empty.png') });
-  await make.click();
+  await page.getByTestId('week-next-btn').click();
   await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
   check(hashOf(page).startsWith('#/week'), '週の［この週の案を作る］：週の予定にとどまる', hashOf(page));
   check(
@@ -339,8 +339,9 @@ async function empties(page) {
     { ft, heads },
   );
   check(
-    (await page.getByTestId('week-empty').getByTestId('empty-next-make').count()) === 1,
-    '週：未作成の週の空の画面に［この週の案を作る］',
+    (await page.getByTestId('week-empty').getByTestId('empty-next-make').count()) === 0 &&
+      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make',
+    '週：未作成の週は見出しの主ボタンが「この週の案を作る」（空の画面に作るボタンは置かない）',
   );
   // 稼働の見込み：来年の月（案が無い）
   const nextYm = `${Number(YM.slice(0, 4)) + 1}${YM.slice(4)}`;
