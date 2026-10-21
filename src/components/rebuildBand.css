@@ -52,6 +52,53 @@
   white-space: nowrap;
 }
 
+/* 何が変わったか（PRD D267〜D269）：はじめ畳む。開いても帯が画面を覆わないよう一覧は高さを限って中を巻く */
+.rb-changes {
+  border-top: 1px solid #ecc97e;
+  padding-top: 4px;
+  margin: 0;
+}
+.rb-changes + .rb-row {
+  border-top: 1px solid #ecc97e;
+  padding-top: 6px;
+}
+.rb-none {
+  font-size: 0.85rem;
+}
+.rb-toggle {
+  padding-left: 0;
+}
+.rb-since {
+  margin: 2px 0 4px;
+  font-size: 0.8rem;
+}
+.rb-change-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.rb-change {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 3px 0;
+}
+.rb-change + .rb-change {
+  border-top: 1px dashed #ecc97e;
+}
+.rb-change-text {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rb-change .btn {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 /* 広い画面：下へ巻いて設定を変えていても見えるよう、上の帯の下に貼り付ける（［後で］で隠せる） */
 @media (min-width: 861px) {
   .rebuild-band {
