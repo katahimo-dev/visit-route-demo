@@ -5,19 +5,23 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import type { Terms } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { trapTarget } from '../lib/confirmDialog';
+import { applyTemplate, matchTemplate } from '../lib/features';
 import { dayHref } from '../lib/links';
 import {
   shouldAutoOpenTour,
+  TOUR_START_CHOICES,
+  TOUR_START_NOTE,
+  TOUR_START_QUESTION,
   TOUR_TODAY_LABEL,
   type TourMove,
+  type TourStartChoice,
   tourCountText,
   tourMove,
   tourNextLabel,
   tourSteps,
 } from '../lib/tour';
 import { useFeatures } from '../lib/useFeature';
-import { tourMemory } from '../store';
-import { IS_MAC } from './CommandPalette';
+import { tourMemory, useDemoData } from '../store';
 import { FOCUSABLE } from './ui';
 import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
 import './tour.css';
@@ -33,9 +37,16 @@ export const useTour = () => useContext(Ctx);
  */
 export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' | 'staff'>; children: ReactNode }) {
   const { search } = useLocation();
+  const { startedFresh } = useDemoData();
   // 起動したときの URL で決める（?id=・?do= のリンクで開いたときは出さない。PRD D192）
   const [open, setOpen] = useState(() => shouldAutoOpenTour(tourMemory.seen(), search));
-  const openTour = useCallback(() => setOpen(true), []);
+  // 初めて開いた（保存データが無かった）ときに自動で開いたツアーだけ、1枚目で「どこまで使うか」を聞く（PRD D276）。
+  // 「案内をもう一度見る」では聞かない（機能の入り切りは管理者設定で）
+  const [ask, setAsk] = useState(() => open && startedFresh);
+  const openTour = useCallback(() => {
+    setAsk(false);
+    setOpen(true);
+  }, []);
   const close = useCallback(() => {
     tourMemory.markSeen();
     setOpen(false);
@@ -49,7 +60,7 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
   return (
     <Ctx.Provider value={openTour}>
       {children}
-      {open && <TourDialog terms={terms} onClose={close} onToday={openToday} />}
+      {open && <TourDialog terms={terms} ask={ask} onClose={close} onToday={openToday} />}
     </Ctx.Provider>
   );
 }
@@ -63,15 +74,19 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
  */
 function TourDialog({
   terms,
+  ask,
   onClose,
   onToday,
 }: {
   terms: Pick<Terms, 'client' | 'staff'>;
+  /** 1枚目で「どこまで使うか」を聞く（初めて開いたときだけ。PRD D276） */
+  ask: boolean;
   onClose: () => void;
   onToday: () => void;
 }) {
+  const features = useFeatures();
   // 切った機能の枚は出さない（PRD D213）
-  const steps = tourSteps(terms, IS_MAC, useFeatures());
+  const steps = tourSteps(terms, features);
   const [rawIndex, setIndex] = useState(0);
   // 開いている間に別のタブで機能を切って枚が減っても、ある枚に収める
   const index = Math.min(rawIndex, steps.length - 1);
@@ -180,6 +195,7 @@ function TourDialog({
             {step.where}
           </p>
         </div>
+        {ask && index === 0 && <StartChoice current={matchTemplate(features)} />}
         <ol className="tour-dots" aria-hidden="true">
           {steps.map((s, i) => (
             <li key={s.key} className={i === index ? 'is-on' : undefined} />
@@ -230,5 +246,44 @@ function TourDialog({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * 1枚目の「どこまで使いますか」（PRD D276）：基本／すべて の2つ。選ぶとすぐその入り切りで初期データを作り直す
+ * （初めて開いたばかりで、まだ何も入れていないため。案の記録の機能（相性・担当を限る）と食い違って「条件が変わった」にしない）。
+ * 今の入り切りがどちらとも違えば（別のタブで直した）どちらも選んでいない。読み上げは radiogroup と、選んだ名前
+ */
+function StartChoice({ current }: { current: string }) {
+  const { reset } = useDemoData();
+  const name = useId();
+  const titleId = useId();
+  const pick = (c: TourStartChoice) => {
+    if (current === c.id) return;
+    reset(applyTemplate(c.id));
+  };
+  return (
+    <fieldset className="tour-choice" aria-labelledby={titleId} data-testid="tour-start">
+      <legend id={titleId} className="tour-choice-title">
+        {TOUR_START_QUESTION}
+      </legend>
+      {TOUR_START_CHOICES.map((c) => (
+        <label key={c.id} className={`tour-choice-item${current === c.id ? ' is-on' : ''}`}>
+          <input
+            type="radio"
+            name={name}
+            value={c.id}
+            checked={current === c.id}
+            onChange={() => pick(c)}
+            data-testid={`tour-start-${c.id}`}
+          />
+          <span>
+            <strong>{c.label}</strong>
+            <span className="tour-choice-desc">{c.description}</span>
+          </span>
+        </label>
+      ))}
+      <p className="tour-choice-note">{TOUR_START_NOTE}</p>
+    </fieldset>
   );
 }
