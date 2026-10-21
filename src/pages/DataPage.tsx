@@ -42,6 +42,7 @@ import {
   useDemoData,
 } from '../store';
 import './settings.css';
+import { SettingsTabs } from '../components/SettingsTabs';
 
 /** ファイル名の日付（日本時間） */
 const today = () => jstDate(Date.now());
@@ -307,7 +308,7 @@ export default function DataPage() {
   const doReset = async () => {
     const ok = await confirmDialog({
       title: 'データを初期状態に戻しますか？',
-      body: `データをデモの初期状態に戻します。いまの変更はすべて消えます。\n${keepNote(canKeepPrevious())}`,
+      body: `データをデモの初期状態に戻します。いまの変更はすべて消えます（機能の入り切り（管理者設定）はそのままです）。\n${keepNote(canKeepPrevious())}`,
       confirmLabel: '消して初期状態に戻す',
       tone: 'danger',
     });
@@ -374,6 +375,7 @@ export default function DataPage() {
   return (
     <div className="stack" style={{ maxWidth: 720 }}>
       <PageHeader
+        nav={<SettingsTabs />}
         icon={Database}
         title="データ"
         lead={`書き出し・読み込み（控え（バックアップ）${excelOn ? '・Excel' : ''}）・初期状態に戻す・使い方の案内`}
@@ -701,7 +703,7 @@ export default function DataPage() {
       <div className="card stack">
         <SectionTitle icon={CircleHelp}>使い方の案内</SectionTitle>
         <Hint>
-          初めて開いたときに出る短い案内（5枚）を、もう一度見られます。案内を見たかどうかはこのブラウザに覚え、データには入れません（書き出し・初期状態に戻すでは変わりません）。
+          初めて開いたときに出る短い案内（3枚）を、もう一度見られます。案内を見たかどうかはこのブラウザに覚え、データには入れません（書き出し・初期状態に戻すでは変わりません）。
         </Hint>
         <button
           type="button"
@@ -717,7 +719,7 @@ export default function DataPage() {
       <div className="card stack">
         <SectionTitle icon={RotateCcw}>初期状態に戻す</SectionTitle>
         <Hint>
-          デモの架空の事業所のデータに戻します。いまの変更はすべて消えます（使い方の案内を見たかどうかはそのままです）。
+          デモの架空の事業所のデータに戻します。いまの変更はすべて消えます（機能の入り切り（管理者設定）と、使い方の案内を見たかどうかはそのままです）。
         </Hint>
         <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={doReset}>
           <WithIcon icon={RotateCcw}>デモの初期状態に戻す</WithIcon>

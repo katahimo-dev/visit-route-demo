@@ -3,6 +3,7 @@
 // 書き方は月の「まとめて作る」と同じ（lib/month の applyDayRun：記録を1件足し、今の案にする）。
 // 同じ日付なら同じデータ（乱数はデータの種、止めるのは反復回数。Date.now を使わない）
 import type { DemoData } from '../contracts/data';
+import type { Features } from '../contracts/features';
 import { addDays } from '../domain/time';
 import { attempt } from '../lib/common';
 import { applyDayRun } from '../lib/month';
@@ -45,7 +46,12 @@ export function withSeedPlans(data: DemoData, today: string, days: number = SEED
   return out;
 }
 
-/** 起動したときの初期データ：seed の訪問・人・決まり（createDemoData）に、今日から7日分の案を入れたもの */
-export function createInitialData(today: string): DemoData {
-  return withSeedPlans(createDemoData(today), today);
+/**
+ * 起動したときの初期データ：seed の訪問・人・決まり（createDemoData）に、今日から7日分の案を入れたもの。
+ * features は機能の入り切り（既定はすべて入の {}）。案を作る前に入れる（計算に効く機能（相性・担当を限る）が案の記録と食い違って
+ * 「条件が変わった」にならないように。PRD D276）
+ */
+export function createInitialData(today: string, features: Features = {}): DemoData {
+  const d = createDemoData(today);
+  return withSeedPlans({ ...d, org: { ...d.org, features } }, today);
 }

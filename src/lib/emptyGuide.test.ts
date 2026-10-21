@@ -80,3 +80,31 @@ describe('compareEmptyGuide', () => {
     expect(batchHref('2026-11')).toBe('/month?ym=2026-11&do=batch');
   });
 });
+
+describe('periodEmptyGuide：その場で作る（週の予定。PRD D280・D282）', () => {
+  const here = { ...base, makeHere: { canExpand: 0 } };
+  it('訪問はあるのに案が無い：作るボタンは置かず見出しの主ボタンを文で指し、日の予定だけ', () => {
+    const g = periodEmptyGuide({ ...here, visitDays: ['2026-10-19', '2026-10-22'] });
+    expect(g?.title).toBe('この週は案がありません');
+    expect(g?.why).toContain('見出しの［この週の案を作る］で、この週の今日以降のまだ案の無い日だけ');
+    expect(g?.actions).toEqual([
+      { kind: 'day', date: '2026-10-22', label: '10/22の案を日の予定で作る', primary: true },
+    ]);
+  });
+  it('訪問が無く、定期パターンから作れる：「未作成」と見出しの主ボタンへの文・日の予定', () => {
+    const g = periodEmptyGuide({ ...base, makeHere: { canExpand: 12 } });
+    expect(g?.title).toBe('この週の訪問はまだ作っていません（未作成）');
+    expect(g?.why).toContain('12件');
+    expect(g?.why).toContain('見出しの［この週の案を作る］');
+    expect(g?.actions).toEqual([{ kind: 'day', date: '2026-10-21', label: '日の予定で訪問を足す', primary: true }]);
+  });
+  it('訪問も作れる訪問も無い：「訪問がありません」と日の予定だけ', () => {
+    const g = periodEmptyGuide(here);
+    expect(g?.title).toBe('この週には訪問がありません');
+    expect(g?.actions).toEqual([{ kind: 'day', date: '2026-10-21', label: '日の予定で訪問を足す', primary: true }]);
+  });
+  it('過ぎた週：日の予定だけ', () => {
+    const g = periodEmptyGuide({ ...here, today: '2026-11-01', visitDays: ['2026-10-20'] });
+    expect(g?.actions).toEqual([{ kind: 'day', date: '2026-10-20', label: '10/20を日の予定で開く', primary: true }]);
+  });
+});

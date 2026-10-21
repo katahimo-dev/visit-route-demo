@@ -1,12 +1,12 @@
 import { CircleCheck, LayoutTemplate, Settings } from 'lucide-react';
 import { useId } from 'react';
 import { flushSync } from 'react-dom';
-import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/ui';
 import type { Terms } from '../contracts/documents';
 import type { FeatureId, Features } from '../contracts/features';
+import { jstDate } from '../domain/time';
 import {
   applyTemplate,
   FEATURE_GROUPS,
@@ -26,17 +26,19 @@ import {
 } from '../lib/features';
 import { useDemoData } from '../store';
 import '../components/features.css';
+import { SettingsTabs } from '../components/SettingsTabs';
 
 /**
  * 管理者設定（`#/settings`。PRD D210〜D212。ADR-0028）：機能の入り切り。だれでも開ける（ログイン・鍵なし）。
- * 上にひな形の4つ（今と同じひな形に「いまの設定」の印。どれとも違えば見出しの横に「カスタム」）。「当てる」は独自の確認ダイアログで
+ * 上にひな形の4つ（今と同じひな形に「いまの設定」の印。どれとも違えば見出しの横に「カスタム」）。「適用」は独自の確認ダイアログで
  * 入る機能・切れる機能を出してから書く。下にグループごとのスイッチ（押すとすぐ保存。主ボタンは置かない）。
  * 書くのは store の update(fn) だけ。切った機能のデータは消さない。呼び方は org.terms
  */
 export default function SettingsPage() {
   const { data, update } = useDemoData();
   /** 今日（休み・希望休・欠勤は今日以降に掛かるものだけを数える。turnOffImpact） */
-  const { date: today } = useDay();
+  // 切るときの影響は今日から数える（この画面には日付の選択を出さないので、見えない選択日付は使わない。PRD D267）
+  const today = jstDate(Date.now());
   const features = data.org.features;
   const terms = data.org.terms;
   const toast = useToast();
@@ -46,7 +48,7 @@ export default function SettingsPage() {
 
   const names = (ids: readonly FeatureId[]) => ids.map((id) => featureLabel(id, terms)).join('、');
 
-  /** ひな形を当てる（確認で入る機能・切れる機能を出す。PRD D212） */
+  /** ひな形を適用する（確認で入る機能・切れる機能を出す。PRD D212） */
   const apply = async (t: TemplateDef) => {
     const diff = templateDiff(features, t.id);
     // 切れる機能に入っているデータの件数と効き方（PRD D215。turnOffImpact）
@@ -58,14 +60,14 @@ export default function SettingsPage() {
       '切った機能のデータは消えません。あとから1つずつ入り切りできます。',
     ].join('\n');
     const ok = await confirmDialog({
-      title: `ひな形「${t.label}」を当てますか？`,
+      title: `ひな形「${t.label}」を適用しますか？`,
       body,
-      confirmLabel: '当てる',
+      confirmLabel: '適用',
     });
     if (!ok) return;
     const next = applyTemplate(t.id);
     update((d) => ({ ...d, org: { ...d.org, features: next } }));
-    toast(`ひな形「${t.label}」を当てました`);
+    toast(`ひな形「${t.label}」を適用しました`);
   };
 
   /**
@@ -110,6 +112,7 @@ export default function SettingsPage() {
   return (
     <div className="stack settings-page" style={{ maxWidth: 880 }}>
       <PageHeader
+        nav={<SettingsTabs />}
         icon={Settings}
         title="管理者設定"
         lead="使う機能だけを入れると、メニューと画面がすっきりします。切った機能のデータは消えません"
@@ -125,7 +128,7 @@ export default function SettingsPage() {
             </span>
           )}
         </h2>
-        <p className="sub">よく使う組み合わせを一度に当てます。当てたあとも、下のスイッチで1つずつ直せます。</p>
+        <p className="sub">よく使う組み合わせを一度に適用します。適用したあとも、下のスイッチで1つずつ直せます。</p>
         <ul className="feature-templates">
           {TEMPLATES.map((t) => {
             const now = current === t.id;
@@ -150,10 +153,10 @@ export default function SettingsPage() {
                   type="button"
                   className="btn btn-small"
                   onClick={() => void apply(t)}
-                  aria-label={`ひな形「${t.label}」を当てる`}
+                  aria-label={`ひな形「${t.label}」を適用する`}
                   data-testid="feature-template-apply"
                 >
-                  当てる
+                  適用
                 </button>
               </li>
             );

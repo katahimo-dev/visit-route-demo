@@ -1,11 +1,11 @@
 // 急な欠勤・当日キャンセルを目立つ入口から登録して振り直すこと（PRD D167〜D172。ADR-0025 追記・ADR-0011・ADR-0015）を本物のブラウザで確かめる：
 // ホームの「欠勤・キャンセルを登録」で今日の日の予定の「欠勤・キャンセル」の欄が1段目で開き `?do=`・`?date=` が URL から消える、
 // 段階の表示（aria-current="step"）と段階ごとのフォーカス（段階の見出し）、〈スタッフ〉が休む → 人と時間帯 → 影響（入らなくなる訪問 N件）→
-// 登録して振り直す（案A）→ 4段目のまとめと案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→
+// 主ボタンは「登録して振り直す（おすすめ）」の1つ・ほかのやり方は文字のボタン（PRD D264）→ 案A で振り直す → 4段目のまとめ・担当が移る訪問の一覧（PRD D265）と案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→
 // 5段目の連絡（人ごとの文・［文をコピー］・メール・［連絡した］の数。PRD D243〜D246）→ 終わる → 確定済み、
 // 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目・5段目で担当に「中止」）、
 // 列の見出しの「欠勤を直す」で同じ欄が2段目で開き、欠勤を取り消せる、戻る、Esc で閉じて入口のボタンへフォーカス、
-// 案の無い日は欠勤だけ登録できる、390px で入口が見え欄が画面に収まる・下のタブは5つのまま、印刷で入口を出さない、ブラウザの確認を出さない。
+// 案の無い日は欠勤だけ登録できる、390px で入口が見え欄が画面に収まる・下のタブは5つ（ホーム・予定・欠勤・空き状況・メニュー。PRD D274）、印刷で入口を出さない、ブラウザの確認を出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-absence.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -19,6 +19,8 @@ const { sharedPage, openPage } = require('./lib/steps.cjs');
 const NEXT = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
 /** 開くと自動で案を作る日（今日の2日後）。初期データでは案があるので、runningDay の用意で案と記録を消す（PRD D225） */
 const DAY2 = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 2 * 86400000).toISOString().slice(0, 10);
+/** 案A で入らない見込みの日を作る日（初期データの案がある日。PRD D225） */
+const DAY3 = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 3 * 86400000).toISOString().slice(0, 10);
 
 /** 保存（少し遅れて書く）が条件を満たすまで待つ（満たさなければ時間切れで続ける） */
 async function waitStored(page, pred, timeout = 5000) {
@@ -159,16 +161,34 @@ async function fromHome(page) {
     (await page.locator('.sudden-option').first().textContent()).includes('欠勤明けの移動で開始が遅れることがあります'),
     '案A の説明に「残りの訪問は欠勤明けの移動で開始が遅れることがあります」',
   );
-  const recommended = await panel(page).locator('.chip-primary', { hasText: 'おすすめ' }).count();
-  const primary = await page.locator('.drawer-foot .btn-primary').getAttribute('data-testid');
+  // 主ボタンは「登録して振り直す（おすすめ）」の1つ。おすすめが案B（案A で入らない見込み）なら sudden-anneal、
+  // 無ければ sudden-reassign。もう一方と「欠勤だけ登録」は控えめな文字のボタン（PRD D264）
+  const recommendB = await page.getByTestId('anneal-suggest').evaluate((el) => el.classList.contains('is-recommended'));
+  const primaries = await page.locator('.drawer .btn-primary').evaluateAll((els) => els.map((e) => e.dataset.testid));
+  const primaryText = await page.locator('.drawer-foot .btn-primary').textContent();
+  const alt = await page
+    .getByTestId('sudden-alt')
+    .locator('button')
+    .evaluateAll((els) => els.map((e) => ({ id: e.dataset.testid, text: e.classList.contains('btn-text') })));
   check(
-    recommended > 0
-      ? primary === 'sudden-anneal' &&
-          (await page.getByTestId('sudden-anneal').textContent()).includes('おすすめ') &&
-          (await page.getByTestId('sudden-reassign').isVisible())
-      : primary === 'sudden-reassign',
-    'おすすめがあれば主ボタンは「登録して案B も作る（おすすめ）」で案A は2番目、無ければ案A が主ボタン',
-    { recommended, primary },
+    primaries.length === 1 &&
+      primaries[0] === (recommendB ? 'sudden-anneal' : 'sudden-reassign') &&
+      primaryText.includes('登録して振り直す（おすすめ）'),
+    '影響：主ボタンは「登録して振り直す（おすすめ）」の1つ（案B がおすすめなら案B も作る）',
+    { recommendB, primaries, primaryText },
+  );
+  check(
+    alt.length === 2 &&
+      alt.every((x) => x.text) &&
+      alt.some((x) => x.id === (recommendB ? 'sudden-reassign' : 'sudden-anneal')) &&
+      alt.some((x) => x.id === 'sudden-save-only'),
+    '影響：ほかのやり方（もう一方の案・欠勤だけ登録）は文字のボタン',
+    alt,
+  );
+  check(
+    (await panel(page).locator('.sudden-option.is-recommended').count()) === 1 &&
+      (await panel(page).locator('.sudden-option.is-recommended .chip-primary', { hasText: 'おすすめ' }).count()) === 1,
+    '影響：おすすめの案の説明カードに縁と札「おすすめ」',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'step3-staff.png') });
   // 戻る → 2段目（選んだ人はそのまま）→ もう一度次へ
@@ -180,7 +200,7 @@ async function fromHome(page) {
   );
   await page.getByTestId('sudden-next').click();
   await settle(page, 400);
-  check(!(await page.getByTestId('sudden-reassign').isDisabled()), '「登録して振り直す（案A）」が押せる');
+  check(!(await page.getByTestId('sudden-reassign').isDisabled()), '「案A で振り直す」が押せる');
   await page.getByTestId('sudden-reassign').click();
   await page.getByTestId('sudden-done').waitFor({ timeout: 10000 });
   await page.getByTestId('sudden-result').waitFor({ timeout: 10000 });
@@ -188,6 +208,22 @@ async function fromHome(page) {
   check(
     await page.getByTestId('sudden-summary').isVisible(),
     '4段目：振り直しのまとめ（変わる人・振り直し・入らない）',
+  );
+  // 誰のどの訪問が誰へ移るか（PRD D265）：〈利用者さん〉の名前・時刻と、元の担当 → 新しい担当（入らない訪問は「入らない」）
+  const moves = await panel(page)
+    .getByTestId('reassign-move')
+    .evaluateAll((els) => els.map((el) => el.innerText.replace(/\s+/g, ' ')));
+  check(
+    moves.length > 0 && moves.every((t) => /^\d{1,2}:\d{2} \S.* (\S.*さん から \S.*さん|入らない)/.test(t)),
+    '4段目：担当が変わる訪問の一覧（時刻・名前・元の担当 → 新しい担当）',
+    moves,
+  );
+  const more = panel(page).getByTestId('anneal-more');
+  check(
+    (await more.count()) === 1 &&
+      !(await more.evaluate((el) => el.open)) &&
+      !(await panel(page).locator('.anneal-weight input[type="range"]').isVisible()),
+    '4段目：「変更を減らす」のスライダーは「詳しく」の中に畳む',
   );
   const d1 = await waitStored(page, (d) => !!d.aiPlans?.[TODAY]?.reassign);
   check(
@@ -360,8 +396,8 @@ async function runningDay(page) {
     check(
       (await page.getByTestId('sudden-no-plan').textContent()) === '案を作っています。終わると振り直せます' &&
         (await page.getByTestId('sudden-save-only').isDisabled()) &&
-        (await page.getByTestId('sudden-reassign').isDisabled()),
-      '計算中：「案を作っています。終わると振り直せます」・欠勤だけ登録も振り直しも押せない',
+        (await page.getByTestId('sudden-reassign').count()) === 0,
+      '計算中：「案を作っています。終わると振り直せます」・欠勤だけ登録は押せず、振り直しのボタンは出さない',
     );
   } else {
     check(true, '計算中の確かめ：開いたときには計算が終わっていた（飛ばす）');
@@ -499,7 +535,14 @@ async function noPlanDay(page) {
   await page.getByTestId('sudden-next').click();
   await settle(page, 400);
   check(await page.getByTestId('sudden-no-plan').isVisible(), '案の無い日：「欠勤だけ登録できます」');
-  check(await page.getByTestId('sudden-reassign').isDisabled(), '案の無い日：振り直しは押せない');
+  const primaries = await page.locator('.drawer .btn-primary').evaluateAll((els) => els.map((e) => e.dataset.testid));
+  check(
+    (await page.getByTestId('sudden-reassign').count()) === 0 &&
+      (await page.getByTestId('sudden-anneal').count()) === 0 &&
+      JSON.stringify(primaries) === '["sudden-save-only"]',
+    '案の無い日：押せない振り直しのボタンは出さず、「欠勤だけ登録」が主ボタン（主ボタンは1つ。PRD D264）',
+    primaries,
+  );
   await page.getByTestId('sudden-save-only').click();
   await panel(page).waitFor({ state: 'detached' });
   const d = await waitStored(page, (x) => x.absences.some((a) => a.staffId === v && a.date === NEXT));
@@ -509,14 +552,73 @@ async function noPlanDay(page) {
   );
 }
 
+/**
+ * 案A で入らない見込みの日（PRD D264）：休む人の訪問の〈利用者さん〉の担当をその人だけに限ると、ほかの人へ移せず案A で
+ * 入らない。そのときおすすめは案B で、主ボタン「登録して振り直す（おすすめ）」は案B も作るボタン（sudden-anneal）、
+ * 「案A だけで振り直す」は文字のボタン
+ */
+async function recommendB(page) {
+  await page.goto(`${BASE}#/home`);
+  const staffId = await page.evaluate(
+    ([k, day]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      const routes = d.aiPlans[day]?.routes ?? {};
+      const [sid, ids] = Object.entries(routes).sort((a, b) => b[1].length - a[1].length)[0] ?? [];
+      if (!sid) return '';
+      const clients = new Set(d.visits.filter((v) => ids.includes(v.id)).map((v) => v.clientId));
+      d.clients = d.clients.map((c) => (clients.has(c.id) ? { ...c, allowedStaffIds: [sid] } : c));
+      localStorage.setItem(k, JSON.stringify(d));
+      return sid;
+    },
+    [STORAGE_KEY, DAY3],
+  );
+  check(!!staffId, `${DAY3} に初期データの案がある`, staffId);
+  if (!staffId) return;
+  await page.goto('about:blank');
+  await page.goto(`${BASE}#/plan?date=${DAY3}&do=absence`);
+  await panel(page).waitFor({ timeout: 20000 });
+  await page.getByTestId('sudden-kind-staff').click();
+  await page.getByTestId('sudden-staff').selectOption(staffId);
+  await page.getByTestId('sudden-next').click();
+  await page.getByTestId('absence-preview').waitFor({ timeout: 30000 });
+  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
+  await settle(page, 400);
+  const st = {
+    recommended: await page.getByTestId('anneal-suggest').evaluate((el) => el.classList.contains('is-recommended')),
+    primaries: await page.locator('.drawer .btn-primary').evaluateAll((els) => els.map((e) => e.dataset.testid)),
+    primaryText: await page.locator('.drawer-foot .btn-primary').textContent(),
+    alt: await page
+      .getByTestId('sudden-alt')
+      .locator('button')
+      .evaluateAll((els) => els.map((e) => [e.dataset.testid, e.classList.contains('btn-text'), e.textContent])),
+    note: await page.getByTestId('sudden-recommend').textContent(),
+  };
+  check(
+    st.recommended &&
+      JSON.stringify(st.primaries) === '["sudden-anneal"]' &&
+      st.primaryText.includes('登録して振り直す（おすすめ）') &&
+      st.alt.some(([id, text, label]) => id === 'sudden-reassign' && text && label.includes('案A だけ')) &&
+      /案B も作って比べます/.test(st.note),
+    '案A で入らない見込み：おすすめは案B で、主ボタンは案B も作る（sudden-anneal）・案A だけは文字のボタン',
+    st,
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'step3-recommend-b.png') });
+  await page.keyboard.press('Escape');
+  await panel(page).waitFor({ state: 'detached' });
+}
+
 // ---- 390px・印刷 ----
 async function mobile(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPlan(page);
   const b = await page.getByTestId('sudden-open').boundingBox();
   check(b && b.x >= 0 && b.x + b.width <= 390, '390px：入口のボタンが画面に収まる', b);
-  const tabs = await page.getByTestId('bottom-tabs').locator('a').allTextContents();
-  check(tabs.length === 5, '390px：下のタブは5つのまま（欠勤は入れない）', tabs);
+  const tabs = await page.getByTestId('bottom-tabs').locator('.bottom-tab').allTextContents();
+  check(
+    JSON.stringify(tabs.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '欠勤', '空き状況', 'メニュー']),
+    '390px：下のタブは5つ（欠勤のタブがある。PRD D274）',
+    tabs,
+  );
   await page.getByTestId('sudden-open').click();
   await panel(page).waitFor();
   await page.getByTestId('sudden-kind-staff').click();
@@ -527,7 +629,7 @@ async function mobile(page) {
   check(await oneLine(page), '390px：段階の表示は1行（今の段階だけ名前）');
   const dr = await page.locator('.drawer').boundingBox();
   check(dr && dr.x >= 0 && dr.x + dr.width <= 390, '390px：欄が画面に収まる', dr);
-  const foot = await page.getByTestId('sudden-reassign').boundingBox();
+  const foot = await page.locator('.drawer-foot .btn-primary').boundingBox();
   check(
     foot && foot.x >= 0 && foot.x + foot.width <= 390 && foot.y + foot.height <= 844,
     '390px：主ボタンが画面の中',
@@ -537,6 +639,22 @@ async function mobile(page) {
   const cw = await page.evaluate(() => document.querySelector('.drawer-body').clientWidth);
   check(sw <= cw, '390px：欄の中が横にはみ出さない', { sw, cw });
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-step3.png') });
+  // 4段目：担当が変わる訪問の一覧が 390px でも欄に収まって見える（PRD D265）
+  if (!(await page.locator('.drawer-foot .btn-primary').isDisabled())) {
+    await page.locator('.drawer-foot .btn-primary').click();
+    await page.locator('[data-testid="sudden-panel"][data-step="4"]').waitFor({ timeout: 60000 });
+    const list = panel(page).getByTestId('reassign-moves');
+    await list.waitFor({ timeout: 30000 }).catch(() => {});
+    const lb = await list.boundingBox();
+    const sw4 = await page.evaluate(() => document.querySelector('.drawer-body').scrollWidth);
+    const cw4 = await page.evaluate(() => document.querySelector('.drawer-body').clientWidth);
+    check(
+      !!lb && lb.x >= 0 && lb.x + lb.width <= 390 && sw4 <= cw4,
+      '390px：4段目の担当が変わる訪問の一覧が欄に収まる',
+      { lb, sw4, cw4 },
+    );
+    await page.screenshot({ path: path.join(OUT_DIR, 'mobile-step4.png') });
+  }
   await page.keyboard.press('Escape');
   await panel(page).waitFor({ state: 'detached' });
   await page.setViewportSize({ width: 1400, height: 1000 });
@@ -601,6 +719,7 @@ const steps = sharedPage({
     ['running-day', runningDay],
     ['from-header', (page) => (best ? fromHeader(page, best) : check(false, 'from-header：前の段が通らない'))],
     ['no-plan', noPlanDay],
+    ['recommend-b', recommendB],
     ['mobile', mobile],
     ['header-label', headerLabel],
   ],
