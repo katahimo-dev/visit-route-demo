@@ -1,7 +1,9 @@
 import {
   CalendarClock,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Lock,
   Mail,
   Move,
   RefreshCw,
@@ -14,6 +16,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -52,9 +55,12 @@ import {
 } from '../lib/clientFilter';
 import { colorOf } from '../lib/colors';
 import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { bulkConfirmDialog, bulkConfirmTargets, confirmDay } from '../lib/confirmDay';
 import { deferredDragStart } from '../lib/dragStart';
 import { periodEmptyGuide } from '../lib/emptyGuide';
 import { isDate } from '../lib/isDate';
+import { attentionList, expandRange, expandRangeVisits, ymOf } from '../lib/month';
+import { monthBatch, weekBatchDays, weekLabel } from '../lib/monthBatch';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
 import { scrollLeftToShow } from '../lib/scrollEdge';
@@ -66,8 +72,10 @@ import {
   timelineSelection,
 } from '../lib/timelineClients';
 import { useDayModel } from '../lib/useDayModel';
+import { useDayStatuses } from '../lib/useDayStatuses';
 import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
+import { useValueStore } from '../lib/valueStore';
 import {
   allowedStaffOf,
   type Band,
@@ -96,6 +104,7 @@ import {
   weekDates,
   weekDay,
 } from '../lib/week';
+import { weekDayCountText, weekDayUnmadeNote, weekNext } from '../lib/weekPrep';
 import { isTimeline, WEEK_VIEWS, type WeekView, weekViewLabel, weekViewOf, weekViewParams } from '../lib/weekView';
 import { WeekMailPanel } from './mailPanels';
 import './week.css';
@@ -261,6 +270,98 @@ export default function WeekPage() {
   );
   const days: WeekDay[] = useMemo(() => dates.map((d) => weekDay(dayInput, d)), [dayInput, dates]);
   const dayOf = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
+
+  // ---- この週の準備（PRD D280・D282。ADR-0046）：作る → 確定 → 済み の主ボタン1つと、日の見出しの「未作成」 ----
+  const end = dates[6]!;
+  /** 週の今日以降の日（作る・確定するのはこの日だけ。月をまたぐ週も1度に） */
+  const futureDates = useMemo(() => dates.filter((d) => d >= today), [dates, today]);
+  // 定期パターンからまだ作っていない訪問（週の範囲。読むのは定期パターン・訪問・〈利用者さん〉だけなので、それで覚える）
+  const { patterns, visits: allVisits, clients: allClients } = data;
+  const expanded = useMemo(
+    () => expandRangeVisits({ patterns, visits: allVisits, clients: allClients }, start, end, today),
+    [patterns, allVisits, allClients, start, end, today],
+  );
+  /** 日の状態（月の予定・ホームと同じ数え方。lib/useDayStatuses） */
+  const weekStatuses = useDayStatuses(data, compileInput, futureDates);
+  const weekPrep = useMemo(() => {
+    const statusOf = (d: string) => weekStatuses.get(d)?.status;
+    const list = futureDates.flatMap((d) => statusOf(d) ?? []);
+    const unconfirmed = list.filter((x) => x.count > 0 && x.state !== 'confirmed').map((x) => x.date);
+    const bulk = bulkConfirmTargets(unconfirmed, statusOf, attentionList(data, list, today));
+    const makeDays = weekBatchDays({ ...data, visits: expanded.visits }, dates, today);
+    const futureDays = futureDates.filter((d) => (statusOf(d)?.count ?? 0) > 0 || expanded.addedByDate.has(d)).length;
+    return { bulk, makeDays, futureDays };
+  }, [weekStatuses, futureDates, data, today, expanded, dates]);
+  /** 案づくり（月まとめと同じ入れ物。ADR-0042）：この週を作っているか、ほかを作っているか */
+  const batchRun = useValueStore(monthBatch.run);
+  const running = batchRun ? (batchRun.source === 'week' && batchRun.weekStart === start ? 'this' : 'other') : null;
+  const next = weekNext({
+    futureDays: weekPrep.futureDays,
+    canExpand: expanded.added,
+    makeDays: weekPrep.makeDays.length,
+    bulk: weekPrep.bulk,
+    running,
+  });
+  /** 確定の確認のあいだに変わったデータを読む */
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  /** 主ボタンの場所（押したあとボタンが状態の文に替わったら、ここへフォーカスを戻す） */
+  const nextRef = useRef<HTMLDivElement>(null);
+  /** 押せない理由の文の id（主ボタンの aria-describedby） */
+  const whyId = useId();
+  /**
+   * この週の案を作る（PRD D280）：月まとめと同じ仕組み（lib/monthBatch。画面の外で1日ずつ）で、範囲をこの週の今日以降に絞る。
+   * 先に定期パターンからこの週の訪問を作り、まだ案の無い日だけを作る。作っている間も週の予定にとどまり、上の帯に進み具合
+   */
+  const makeWeek = () => {
+    if (monthBatch.running()) {
+      toast('ほかの案を作っています。終わってから押してください');
+      return;
+    }
+    const ex = expandRange(dataRef.current, start, end, today);
+    const targets = weekBatchDays(ex.data, dates, today);
+    if (targets.length === 0) {
+      if (ex.added > 0) {
+        update((d) => expandRange(d, start, end, today).data);
+        toast(`この週の訪問を${ex.added}件作りました`);
+      }
+      return;
+    }
+    const ok = monthBatch.start({
+      ym: ymOf(targets[0]!.date),
+      label: weekLabel(start),
+      mode: 'empty',
+      days: targets,
+      expand: ex.added > 0 ? { from: start, to: end } : null,
+      today,
+      source: 'week',
+      weekStart: start,
+    });
+    if (!ok) toast('ほかの案を作っています。終わってから押してください');
+  };
+  /**
+   * この週の問題の無い日をまとめて確定（PRD D280）：月の「問題の無い日をまとめて確定」（D223）と同じ決まり・同じ確認の型で、
+   * 範囲をこの週の今日以降にする。1回の update で日ごとに「この割当で確定」と同じ書き方（lib/confirmDay）
+   */
+  const confirmWeek = async () => {
+    const bulk = weekPrep.bulk;
+    if (monthBatch.running() || bulk.targets.length === 0) return;
+    const ok = await confirmDialog({
+      ...bulkConfirmDialog(bulk, terms.staff),
+      confirmLabel: `${bulk.targets.length}日を確定する`,
+    });
+    if (!ok || monthBatch.running()) return;
+    // 確認のあいだに案が消えた日（別のタブ）は飛ばす
+    const ready = bulk.targets.flatMap((d) => {
+      const p = weekStatuses.get(d)?.problem;
+      return p && own(dataRef.current.aiPlans, d) ? [{ date: d, p }] : [];
+    });
+    if (ready.length === 0) return;
+    update((d) => ready.reduce((out, x) => (own(out.aiPlans, x.date) ? confirmDay(out, x.date, x.p) : out), d));
+    toast(`${ready.length}日を確定しました`);
+    // 押したボタンは状態の文に替わるので、フォーカスは主ボタンの場所へ（body に落とさない）
+    requestAnimationFrame(() => nextRef.current?.focus({ preventScroll: true }));
+  };
   const table = useMemo(() => (tab === 'table' ? staffWeekTable(compileInput, days) : null), [tab, compileInput, days]);
   const qualItem = useMemo(() => qualificationItem(data.items), [data.items]);
   const badgesOf = useMemo(
@@ -638,6 +739,8 @@ export default function WeekPage() {
     today,
     visitDays: days.filter((d) => d.bands.some((b) => !b.leave)).map((d) => d.date),
     planDays: days.filter((d) => d.source !== null).map((d) => d.date),
+    // その場で作る（PRD D280）：月の予定へ移らず、この週の［この週の案を作る］と同じ動き
+    makeHere: { canExpand: expanded.added },
   });
   const nothingPicked = by === 'client' ? timelineClients.length === 0 : staffSel?.length === 0;
 
@@ -647,7 +750,45 @@ export default function WeekPage() {
         nav={<ViewSwitch current="week" />}
         icon={CalendarClock}
         title="週の予定"
-        lead={`日時をドラッグでずらし、${terms.staff}の偏りを見ます`}
+        lead={`この週の案を作って確定し、日時をドラッグでずらして${terms.staff}の偏りを見ます`}
+        actions={
+          next.kind === 'none' ? undefined : (
+            <div className="week-next" ref={nextRef} tabIndex={-1} data-testid="week-next" data-kind={next.kind}>
+              {next.kind === 'make' || next.kind === 'making' || next.kind === 'confirm' ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  aria-disabled={next.kind === 'making' || next.why !== null || undefined}
+                  aria-describedby={next.why ? whyId : undefined}
+                  onClick={() => {
+                    if (next.kind === 'making' || next.why !== null) return;
+                    if (next.kind === 'make') makeWeek();
+                    else void confirmWeek();
+                  }}
+                  data-testid="week-next-btn"
+                >
+                  <WithIcon icon={next.kind === 'confirm' ? Lock : Sparkles}>
+                    <span className="week-next-long">{next.label}</span>
+                    <span className="week-next-short">{next.short}</span>
+                  </WithIcon>
+                </button>
+              ) : (
+                <span
+                  className={`week-next-status${next.kind === 'done' ? ' is-done' : ''}`}
+                  data-testid="week-next-status"
+                >
+                  {next.kind === 'done' && <Check size={14} strokeWidth={3} aria-hidden="true" />}
+                  {next.label}
+                </span>
+              )}
+              {next.why && (
+                <span className="sub week-next-why" id={whyId} data-testid={whyId}>
+                  {next.why}
+                </span>
+              )}
+            </div>
+          )
+        }
       />
       {/* 進み具合の帯（PRD D151。選んでいる日付＝週の中の日の月） */}
       <ScheduleBand date={anchor} />
@@ -900,6 +1041,8 @@ export default function WeekPage() {
             guide={emptyGuide}
             icon={CalendarClock}
             onOpenDay={openDay}
+            onMake={makeWeek}
+            makeWhy={next.kind === 'make' ? next.why : 'この週の案を作っています。終わるまでお待ちください'}
             primary={false}
             compact
             testId="week-empty"
@@ -922,18 +1065,25 @@ export default function WeekPage() {
             <div className="week-corner" />
             {days.map((day) => {
               const wd = weekday(day.date);
+              /** 定期パターンからまだ作っていない訪問（未作成。PRD D282） */
+              const unmade = expanded.addedByDate.get(day.date) ?? 0;
               return (
                 <button
                   key={day.date}
                   type="button"
                   className={`week-day-head${day.date === today ? ' is-today' : ''}${wd === 0 ? ' is-sun' : wd === 6 ? ' is-sat' : ''}`}
                   onClick={() => openDay(day.date)}
-                  aria-label={`${dateText(day.date)}の予定を開く`}
+                  aria-label={`${dateText(day.date)}の予定を開く（${weekDayCountText({ count: liveCount(day), unexpanded: unmade, noPlan: day.source === null })}）`}
                   data-testid="week-day-head"
                 >
                   <strong>{dateText(day.date)}</strong>
-                  <span className="sub">
-                    {liveCount(day)}件{day.source === null && liveCount(day) > 0 ? '・案なし' : ''}
+                  <span
+                    className={`sub${liveCount(day) === 0 && unmade > 0 ? ' week-day-unmade' : ''}`}
+                    title={weekDayUnmadeNote(unmade) || undefined}
+                    data-testid="week-day-count"
+                    data-unmade={unmade}
+                  >
+                    {weekDayCountText({ count: liveCount(day), unexpanded: unmade, noPlan: day.source === null })}
                   </span>
                 </button>
               );
@@ -1095,7 +1245,16 @@ export default function WeekPage() {
                     <th scope="row">日ごとの合計</th>
                     {table.days.map((d) => (
                       <td key={d.date}>
-                        {d.noPlan ? (
+                        {d.visits === 0 && (expanded.addedByDate.get(d.date) ?? 0) > 0 ? (
+                          // 定期パターンからまだ作っていない日（PRD D282）：0件・案なしと分ける
+                          <span
+                            className="sub week-day-unmade"
+                            title={weekDayUnmadeNote(expanded.addedByDate.get(d.date) ?? 0)}
+                            data-testid="week-table-unmade"
+                          >
+                            未作成
+                          </span>
+                        ) : d.noPlan ? (
                           <span className="sub">{d.visits > 0 ? `案なし（訪問 ${d.visits}件）` : '案なし'}</span>
                         ) : (
                           <>

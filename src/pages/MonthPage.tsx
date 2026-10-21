@@ -682,7 +682,7 @@ export default function MonthPage() {
       label: `${monthNo}月`,
       mode: m,
       days: targets.map((date) => ({ date, mode: m })),
-      expandYm: expand ? ym : null,
+      expand: expand ? { from: days[0]!, to: days.at(-1)! } : null,
       today,
       source: 'month',
     });

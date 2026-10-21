@@ -5,10 +5,11 @@
 import { ymOf } from './month';
 import { mdText } from './patternText';
 
-/** 次の一手のボタン：月の画面のまとめて作る（ym の月）か、日の画面（date の日） */
+/** 次の一手のボタン：月の画面のまとめて作る（ym の月）か、日の画面（date の日）か、その場で期間の案を作る（週の予定。PRD D280） */
 export type EmptyAction = { label: string; primary: boolean } & (
   | { kind: 'batch'; ym: string }
   | { kind: 'day'; date: string }
+  | { kind: 'make' }
 );
 
 export type EmptyGuide = {
@@ -36,6 +37,11 @@ export type PeriodInput = {
   visitDays: readonly string[];
   /** 今の案か確定した割当がある日 */
   planDays: readonly string[];
+  /**
+   * その場で作る（週の予定の「この週の案を作る」。PRD D280・D282）。canExpand は期間の今日以降の、定期パターンからまだ作っていない
+   * 訪問の件数。渡すと、まとめて作るを月の画面へのリンクでなくその場で作るボタンにし、訪問の無い期間でも未作成なら「未作成」と書く
+   */
+  makeHere?: { canExpand: number };
 };
 
 /**
@@ -46,9 +52,10 @@ export type PeriodInput = {
  *   ［日の画面で訪問を足す］
  */
 export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
-  const { period, dates, today, visitDays, planDays } = input;
+  const { period, dates, today, visitDays, planDays, makeHere } = input;
   if (planDays.length > 0 || dates.length === 0) return null;
   const firstFuture = dates.find((d) => d >= today) ?? null;
+  if (makeHere) return makeHereGuide(input, makeHere.canExpand, firstFuture);
   if (visitDays.length === 0) {
     const at = firstFuture ?? dates[0]!;
     return {
@@ -94,6 +101,41 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
       })),
       { kind: 'day', date: first, label: `${mdText(first)}の案を日の予定で作る`, primary: false },
     ],
+  };
+}
+
+/** その場で作る期間（週の予定）の空の画面（PRD D280・D282）。過ぎた期間は日の画面だけ（作るのは今日以降の日） */
+function makeHereGuide(input: PeriodInput, canExpand: number, firstFuture: string | null): EmptyGuide {
+  const { period, dates, today, visitDays } = input;
+  const make = { kind: 'make' as const, label: `${period}の案を作る`, primary: true };
+  const future = visitDays.filter((d) => d >= today);
+  if (visitDays.length === 0) {
+    const at = firstFuture ?? dates[0]!;
+    const day = { kind: 'day' as const, date: at, label: '日の予定で訪問を足す', primary: false };
+    if (canExpand > 0)
+      return {
+        title: `${period}の訪問はまだ作っていません（未作成）`,
+        why: `定期パターンからまだ訪問を作っていません（${canExpand}件）。［${period}の案を作る］で、${period}の今日以降の訪問と案を作ります。`,
+        actions: [make, day],
+      };
+    return {
+      title: `${period}には訪問がありません`,
+      why: '定期パターンを足すか、日の予定で訪問を足すと、ここに出ます。',
+      actions: [{ ...day, primary: true }],
+    };
+  }
+  if (future.length === 0 && canExpand === 0) {
+    return {
+      title: `${period}は案がありません`,
+      why: `訪問のある ${visitDays.length}日はもう過ぎています（案を作るのは今日以降の日です）。日の予定で1日ずつ作れます。`,
+      actions: [{ kind: 'day', date: visitDays[0]!, label: `${mdText(visitDays[0]!)}を日の予定で開く`, primary: true }],
+    };
+  }
+  const first = future[0] ?? firstFuture ?? dates[0]!;
+  return {
+    title: `${period}は案がありません`,
+    why: `訪問のある ${visitDays.length}日に、まだ案（割当）がありません。${canExpand > 0 ? `ほかに定期パターンからまだ作っていない訪問が ${canExpand}件あります（未作成）。` : ''}［${period}の案を作る］で、${period}の今日以降のまだ案の無い日だけを作ります${canExpand > 0 ? '（未作成の訪問も先に作ります）' : ''}。`,
+    actions: [make, { kind: 'day', date: first, label: `${mdText(first)}の案を日の予定で作る`, primary: false }],
   };
 }
 
