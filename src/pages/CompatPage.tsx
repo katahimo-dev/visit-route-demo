@@ -201,8 +201,9 @@ export default function CompatPage() {
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff: data.staff,
+        visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, data.staff],
+    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, data.staff],
   );
   /**
    * 相性のチップの判定に使う相性の写し（PRD D116）。絞り込みを変えたときの相性に止め、セルを押しても行を消さない
@@ -347,6 +348,7 @@ export default function CompatPage() {
             terms={filterTerms}
             periodLabel={periodLabel}
             defaults={EMPTY_FILTER}
+            visitTypes={data.visitTypes}
             extraChips={extraChips}
             hideEnded
             testId="compat-cf"

@@ -16,6 +16,7 @@ import {
   filterClients,
   filterFacts,
   matchArea,
+  matchTypes,
   NO_AREA,
   resolveStaffId,
   sameFilter,
@@ -23,8 +24,10 @@ import {
   toggleChip,
   toggleCity,
   toggleTown,
+  toggleType,
   townChips,
   townKey,
+  typeChips,
   WEEK_TABLE_FILTER,
 } from './clientFilter';
 import { weekDates, weekDay } from './week';
@@ -343,5 +346,65 @@ describe('activeFilterCount（PRD D220。畳んだ「絞り込み（N）」）',
     };
     expect(activeFilterCount(s)).toBe(1 + 2 + 1 + 2 + 1 + 1);
     expect(activeFilterCount(WEEK_TABLE_FILTER)).toBe(1);
+  });
+});
+
+describe('訪問の種類での絞り込み（PRD D285。複数ならどれか）', () => {
+  const types = [
+    { id: 't1', name: 'リハビリ' },
+    { id: 't2', name: '入浴' },
+    { id: 't3', name: '看護' },
+  ];
+  const F = facts({
+    typeIds: new Set(['t1', 't2', 't3']),
+    typeClientIds: new Map([
+      ['t1', new Set(['a'])],
+      ['t2', new Set(['a', 'c'])],
+      ['t3', new Set<string>()],
+    ]),
+  });
+  it('押した種類の訪問が期間にある人に絞る。複数はどれか（OR）。ほかの絞り込みとは AND', () => {
+    expect(ids(filterClients(people, f({ types: ['t1'] }), F, ''))).toEqual(['a']);
+    expect(ids(filterClients(people, f({ types: ['t1', 't2'] }), F, ''))).toEqual(['a', 'c']);
+    expect(ids(filterClients(people, f({ types: ['t2'], chips: ['unassigned'] }), F, ''))).toEqual(['c']);
+  });
+  it('押していない・消えた種類だけ・facts に種類が無いときは絞らない', () => {
+    expect(matchTypes(people[1], f(), F)).toBe(true);
+    expect(matchTypes(people[1], f({ types: ['gone'] }), F)).toBe(true);
+    expect(matchTypes(people[1], f({ types: ['t1'] }), facts())).toBe(true);
+  });
+  it('人数は種類のほかの絞り込みをかけた数（0人は押せない印）。押している種類でも人数は変わらない', () => {
+    expect(typeChips(people, f(), F, '', types).map((x) => x.count)).toEqual([1, 2, 0]);
+    expect(typeChips(people, f({ types: ['t1'] }), F, '', types).map((x) => x.count)).toEqual([1, 2, 0]);
+    expect(typeChips(people, f({ chips: ['unassigned'] }), F, '', types).map((x) => x.count)).toEqual([0, 1, 0]);
+  });
+  it('付け外し（並びは種類の順）', () => {
+    const on = toggleType(toggleType(f(), 't2', types), 't1', types);
+    expect(on.types).toEqual(['t1', 't2']);
+    expect(toggleType(on, 't1', types).types).toEqual(['t2']);
+  });
+  it('URL：type: に書いて戻る。無い古い URL は種類なし。数にも入る', () => {
+    const s = f({ types: ['t1', 't2'], chips: ['period'] });
+    expect(encodeFilter(s)).toBe('chip:period;type:t1,t2');
+    expect(decodeFilter(encodeFilter(s), WEEK_TABLE_FILTER).types).toEqual(['t1', 't2']);
+    expect(decodeFilter('chip:period', WEEK_TABLE_FILTER).types).toBeUndefined();
+    expect(sameFilter(f({ types: [] }), EMPTY_FILTER)).toBe(true);
+    expect(activeFilterCount(s)).toBe(3);
+  });
+  it('filterFacts：期間の（取り消しでない）訪問の種類から作る。visitTypes を渡さなければ作らない', () => {
+    const data = makeData({
+      clients: [client('c1', 0, 0), client('c2', 0, 0), client('c3', 0, 0)],
+      visits: [
+        visit('v1', 'c1', '09:00', '10:00', { typeId: 't1' }),
+        visit('v2', 'c2', '09:00', '10:00', { typeId: 't2' }),
+        visit('v3', 'c3', '09:00', '10:00', { typeId: 't1', cancelled: true }),
+      ],
+    });
+    const days = weekDates(DATE).map((d) => weekDay(data, d));
+    const input = { days, visits: data.visits, clients: data.clients, patterns: [], clientLeaves: [], staff: [] };
+    const fx = filterFacts({ ...input, visitTypes: [{ id: 't1' }, { id: 't2' }] });
+    expect([...(fx.typeClientIds?.get('t1') ?? [])]).toEqual(['c1']);
+    expect([...(fx.typeClientIds?.get('t2') ?? [])]).toEqual(['c2']);
+    expect(filterFacts(input).typeClientIds).toBeUndefined();
   });
 });

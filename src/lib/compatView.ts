@@ -274,7 +274,7 @@ export function staffFilterSummary(state: StaffFilterState, shown: number, total
 
 /** 〈利用者さん〉の行の欄の要約（例「利用者さん 2人／20人・地区1・チップ1」）。地区は選んだ市区と町名の数 */
 export function clientFilterSummary(
-  state: Pick<ClientFilterState, 'query' | 'cities' | 'towns' | 'chips' | 'extra'>,
+  state: Pick<ClientFilterState, 'query' | 'cities' | 'towns' | 'chips' | 'types' | 'extra'>,
   shown: number,
   total: number,
   clientTerm: string,
@@ -283,7 +283,7 @@ export function clientFilterSummary(
   if (state.query.trim() !== '') parts.push(`名前「${state.query.trim()}」`);
   const area = state.cities.length + state.towns.length;
   if (area > 0) parts.push(`地区${area}`);
-  const chips = state.chips.length + (state.extra?.length ?? 0);
+  const chips = state.chips.length + (state.types?.length ?? 0) + (state.extra?.length ?? 0);
   if (chips > 0) parts.push(`チップ${chips}`);
   return `${clientTerm} ${countText(shown, total)}・${parts.length > 0 ? parts.join('・') : '絞り込みなし'}`;
 }
