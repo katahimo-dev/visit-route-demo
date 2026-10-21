@@ -1,7 +1,7 @@
 // 機能の入り切り その1（PRD D210〜D213・D216。ADR-0028）を本物のブラウザで確かめる：
 // すべて入（初期データ）でメニューの最後に「管理者」（管理者設定・データ）、管理者設定の画面（見出し・説明・ひな形の4つ・
 // 「いまの設定」とカスタムの印・20のスイッチの role=switch・aria-checked・名前・説明）。
-// ひな形の4通り（基本・月次予定・現場共有・すべては管理者設定で当てる（独自の確認ダイアログに入る機能・切れる機能、取り消すと変わらない）、
+// ひな形の4通り（基本・月次予定・現場共有・すべては管理者設定で適用する（独自の確認ダイアログに入る機能・切れる機能、取り消すと変わらない）、
 // 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
 // 切った機能の URL（`?do=` も）を開くとホームへ移り（replace）、ホームの上に閉じられる知らせと管理者設定へのリンク、
 // スイッチ（押すとすぐ保存・トースト・依存先が切なら押せず理由）、390px で横にはみ出さない、印刷で知らせ・メニューを出さない。
@@ -160,7 +160,7 @@ async function paletteSearch(page, text) {
   await page.getByTestId('cmdk').waitFor({ state: 'detached' });
   return labels;
 }
-/** 管理者設定でひな形を当てる（確認に答える） */
+/** 管理者設定でひな形を適用する（確認に答える） */
 async function applyTemplate(page, dlg, id, answer = true) {
   await open(page, '/settings', '[data-testid="feature-templates"]');
   dlg.messages.length = 0;
@@ -397,7 +397,11 @@ async function templates(page, dlg, ctx) {
   const before = await storedFeatures(page);
   // 取り消すと変わらない
   const msg0 = await applyTemplate(page, dlg, 'basic', false);
-  check(msg0.length === 1 && msg0[0].includes('ひな形「基本」を当てますか？'), '当てる前に独自の確認（見出し）', msg0);
+  check(
+    msg0.length === 1 && msg0[0].includes('ひな形「基本」を適用しますか？'),
+    '適用する前に独自の確認（見出し）',
+    msg0,
+  );
   check(
     msg0[0]?.includes('入る機能：なし') && msg0[0]?.includes('切れる機能：') && msg0[0]?.includes('案を比べる'),
     '確認の本文に入る機能・切れる機能の名前',
@@ -405,9 +409,9 @@ async function templates(page, dlg, ctx) {
   );
   check(same(await storedFeatures(page), before), '取り消すと入り切りは変わらない', await storedFeatures(page));
 
-  // 基本（管理者設定で当てる）
+  // 基本（管理者設定で適用する）
   await applyTemplate(page, dlg, 'basic');
-  await page.locator('.toast').filter({ hasText: 'ひな形「基本」を当てました' }).waitFor({ timeout: 5000 });
+  await page.locator('.toast').filter({ hasText: 'ひな形「基本」を適用しました' }).waitFor({ timeout: 5000 });
   check(same(await storedFeatures(page), asFeatures(TEMPLATE_ON.basic)), '基本：全20の ID を明示して書く');
   await checkTemplate(page, 'basic');
   await page.screenshot({ path: path.join(OUT_DIR, 'settings-basic.png'), fullPage: true });
@@ -416,7 +420,7 @@ async function templates(page, dlg, ctx) {
   await writeFeaturesInOtherTab(ctx, asFeatures(TEMPLATE_ON.laborContract));
   await checkTemplate(page, 'laborContract');
 
-  // 月次予定・現場共有（管理者設定で当てる。確認に入る機能・切れる機能）
+  // 月次予定・現場共有（管理者設定で適用する。確認に入る機能・切れる機能）
   const msg = await applyTemplate(page, dlg, 'monthlyField');
   check(
     msg[0]?.includes('入る機能：') &&
@@ -462,7 +466,7 @@ async function mobile(page, dlg) {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await open(page, '/settings', '[data-testid="feature-templates"]');
   await page.emulateMedia({ media: 'print' });
-  check(!(await page.getByTestId('feature-template-apply').first().isVisible()), '印刷：ひな形の「当てる」を出さない');
+  check(!(await page.getByTestId('feature-template-apply').first().isVisible()), '印刷：ひな形の「適用」を出さない');
   await page.emulateMedia({ media: 'screen' });
   await applyTemplate(page, dlg, 'all');
 }
