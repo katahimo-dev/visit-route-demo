@@ -42,6 +42,7 @@ import {
   useDemoData,
 } from '../store';
 import './settings.css';
+import { SettingsTabs } from '../components/SettingsTabs';
 
 /** ファイル名の日付（日本時間） */
 const today = () => jstDate(Date.now());
@@ -374,6 +375,7 @@ export default function DataPage() {
   return (
     <div className="stack" style={{ maxWidth: 720 }}>
       <PageHeader
+        nav={<SettingsTabs />}
         icon={Database}
         title="データ"
         lead={`書き出し・読み込み（控え（バックアップ）${excelOn ? '・Excel' : ''}）・初期状態に戻す・使い方の案内`}

@@ -1023,9 +1023,8 @@ tbody tr:hover td {
   min-width: 0;
   max-width: 1440px;
 }
-/* スマホの上の帯の部品（ロゴと画面の名前・「メニュー」ボタン）と下のタブは、広い画面では出さない（PRD D132・D134） */
+/* スマホの上の帯の部品（ロゴと画面の名前）と下のタブ（「メニュー」を含む）は、広い画面では出さない（PRD D132・D134・D274） */
 .m-head-title,
-.m-menu-btn,
 .bottom-tabs {
   display: none;
 }
@@ -1040,7 +1039,7 @@ tbody tr:hover td {
   .side-nav {
     display: none;
   }
-  /* 上の帯：左にロゴと今の画面の名前、右に「メニュー」と日付の切り替え。狭ければ日付の切り替えを2段目へ */
+  /* 上の帯：左にロゴと今の画面の名前、右に「探す」と日付の切り替え。狭ければ日付の切り替えを2段目へ（「メニュー」は下のタブ。PRD D274） */
   /* 横向きの iPhone の切り欠き・上の帯の下の余白は safe-area で避ける（index.html の viewport-fit=cover） */
   .app-header {
     min-height: 0;
@@ -1101,12 +1100,6 @@ tbody tr:hover td {
       font-size: 0.94rem;
     }
   }
-  .m-menu-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-  }
   .app-header .date-switch {
     margin-left: auto;
   }
@@ -1115,8 +1108,8 @@ tbody tr:hover td {
     padding: 16px max(14px, env(safe-area-inset-right, 0px)) calc(40px + var(--bottom-tabs-h))
       max(14px, env(safe-area-inset-left, 0px));
   }
-  /* 下のタブ：ホーム・月・週・日・空き状況（iPhone のホームバーは safe-area で避ける）。
-     タブの数（空き状況を切ると4つ。ADR-0028）に合わせて全幅を等分する */
+  /* 下のタブ：ホーム・予定・欠勤・空き状況・メニュー（iPhone のホームバーは safe-area で避ける。PRD D274）。
+     タブの数（欠勤・空き状況を切ると減る。ADR-0028）に合わせて全幅を等分する */
   .bottom-tabs {
     position: fixed;
     left: 0;
@@ -1141,6 +1134,19 @@ tbody tr:hover td {
     text-decoration: none;
     color: var(--sub);
     font-size: 0.78rem;
+  }
+  /* 「メニュー」はボタン（引き出しを開く）。見た目はほかのタブと同じ */
+  button.bottom-tab {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .bottom-tab:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: -3px;
   }
   .bottom-tab.active {
     color: var(--primary-dark);
@@ -1302,6 +1308,21 @@ tbody tr:hover td {
   color: var(--primary-dark);
   font-weight: 700;
   border-bottom-color: var(--primary);
+}
+/* 設定のタブ（components/SettingsTabs.tsx。PRD D275）：6つで狭い画面に入りきらなければ横に巻く（ページははみ出さない） */
+.settings-tabs {
+  position: relative;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.settings-tabs .view-switch-item {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .settings-tabs .view-switch-item {
+    padding: 5px 10px;
+  }
 }
 .section-title {
   display: flex;

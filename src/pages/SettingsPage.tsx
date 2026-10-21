@@ -26,6 +26,7 @@ import {
 } from '../lib/features';
 import { useDemoData } from '../store';
 import '../components/features.css';
+import { SettingsTabs } from '../components/SettingsTabs';
 
 /**
  * 管理者設定（`#/settings`。PRD D210〜D212。ADR-0028）：機能の入り切り。だれでも開ける（ログイン・鍵なし）。
@@ -111,6 +112,7 @@ export default function SettingsPage() {
   return (
     <div className="stack settings-page" style={{ maxWidth: 880 }}>
       <PageHeader
+        nav={<SettingsTabs />}
         icon={Settings}
         title="管理者設定"
         lead="使う機能だけを入れると、メニューと画面がすっきりします。切った機能のデータは消えません"

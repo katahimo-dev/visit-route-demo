@@ -38,7 +38,7 @@ export function CommandPalette({
   terms,
   onClose,
 }: {
-  /** メニューの並び（画面の候補。メニューと同じ名前・同じ順） */
+  /** 画面の一覧（画面の候補。lib/nav の screenSections。メニューから外した画面も1つずつ。PRD D273・D275） */
   sections: readonly NavSection<MenuItem>[];
   terms: Pick<Terms, 'client' | 'staff'>;
   onClose: () => void;
@@ -64,7 +64,7 @@ export function CommandPalette({
   // 候補（人の名前は比べる形にそろえておき、打つたびにそろえ直さない。300人×60人でも打つたびは絞り込むだけ）
   // この日だけ試す重みがどのプリセットとも違えば「今日の案を試す重みで作り直す」も出す（PRD D166・D182・D234）
   const customRules = useMemo(() => presetOf(data.rules, data.presets) === null, [data.rules, data.presets]);
-  // 切った機能の操作は出さない（PRD D213。画面はメニューと同じ sections から引くので、切った画面はもう無い）
+  // 切った機能の操作は出さない（PRD D213。画面は screenSections から引くので、切った画面はもう無い）
   const features = data.org.features;
   const actions = useMemo(() => paletteActions(today, { customRules, features }), [today, customRules, features]);
   const screens = useMemo(() => paletteScreens(sections, terms), [sections, terms]);
