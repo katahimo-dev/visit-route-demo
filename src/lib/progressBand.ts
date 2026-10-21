@@ -63,7 +63,10 @@ export const bandMonth = (date: string): string => ymOf(date);
 /** 帯の数字・ボタンから移る先（月の画面の欄。PRD D153） */
 export const bandHref = (ym: string, op: BandOp): string => `/month?ym=${ym}&do=${op}`;
 
-/** 訪問の欄の文：作っていない訪問があれば「あと N件」 */
+/**
+ * 訪問の欄の文：定期パターンからまだ作っていない訪問があれば「未作成 N件」（PRD D282。週の見出し・月のマスの「未作成」と同じ言葉。
+ * 前は「あと N件」）
+ */
 export function visitsText(visits: number, canExpand: number): string {
-  return canExpand > 0 ? `${visits}件（あと${canExpand}件）` : `${visits}件`;
+  return canExpand > 0 ? `${visits}件（未作成 ${canExpand}件）` : `${visits}件`;
 }

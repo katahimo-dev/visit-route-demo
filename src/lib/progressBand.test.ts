@@ -75,6 +75,6 @@ describe('bandMonth・bandHref・visitsText', () => {
   });
   it('訪問の件数：作っていない訪問があれば「あと N件」', () => {
     expect(visitsText(12, 0)).toBe('12件');
-    expect(visitsText(12, 30)).toBe('12件（あと30件）');
+    expect(visitsText(12, 30)).toBe('12件（未作成 30件）');
   });
 });

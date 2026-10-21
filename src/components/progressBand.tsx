@@ -136,7 +136,7 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${visitsDone ? ' is-done' : ''}`}
-            title={`今日以降の訪問 ${p.visits}件${canExpand > 0 ? `。定期パターンからまだ作っていない訪問 ${canExpand}件` : ''}。押すと月の予定の「まとめて作る」の欄を開きます`}
+            title={`今日以降の訪問 ${p.visits}件${canExpand > 0 ? `。定期パターンからまだ作っていない訪問（未作成）${canExpand}件` : ''}。押すと月の予定の「まとめて作る」の欄を開きます`}
             aria-label={`訪問 ${visitsText(p.visits, canExpand)}${done(visitsDone)}。まとめて作るを開く`}
             data-testid="band-visits"
           >
