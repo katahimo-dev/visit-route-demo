@@ -145,7 +145,7 @@ export function noPlanText(running: boolean): string {
     : 'この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）';
 }
 
-/** 案B を勧めるか（案のある日で、案A では入らない見込みがある）。勧めるときは主ボタンを「登録して案B も作る（おすすめ）」にする */
+/** 案B を勧めるか（案のある日で、案A では入らない見込みがある）。勧めるときは主ボタン「登録して振り直す（おすすめ）」で案B も作る（PRD D264） */
 export function recommendAnneal(i: { hasBase: boolean; unplacedA: number }): boolean {
   return i.hasBase && i.unplacedA > 0;
 }

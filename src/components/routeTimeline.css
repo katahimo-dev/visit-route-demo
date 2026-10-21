@@ -295,3 +295,48 @@
   background: rgba(201, 74, 58, 0.12);
   color: var(--danger);
 }
+/* 列の見出しの名前は切らずに折り返す（名前の区切りの空白で。件数の札は入らなければ次の行へ。PRD D269） */
+.tl-head .spread {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 4px 6px;
+}
+.tl-head .col-head.ellipsis {
+  flex: 0 1 auto;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  text-align: left;
+}
+.tl-head .col-head-name {
+  min-width: 0;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+/* 右に続きの列がある間は、右の端に影（広い画面でも。端まで巻くと消す。PRD D269） */
+.scroll-edge.is-tl::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 32px;
+  background: linear-gradient(to right, rgba(60, 40, 30, 0), rgba(60, 40, 30, 0.14));
+  border-radius: 0 12px 12px 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+  z-index: 5;
+}
+.scroll-edge.is-tl.has-more-right::after {
+  opacity: 1;
+}
+@media print {
+  .scroll-edge.is-tl::after {
+    display: none;
+  }
+}
+.tl-head .spread > .chip {
+  margin-left: auto;
+}

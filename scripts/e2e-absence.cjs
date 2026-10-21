@@ -1,7 +1,7 @@
 // 急な欠勤・当日キャンセルを目立つ入口から登録して振り直すこと（PRD D167〜D172。ADR-0025 追記・ADR-0011・ADR-0015）を本物のブラウザで確かめる：
 // ホームの「欠勤・キャンセルを登録」で今日の日の予定の「欠勤・キャンセル」の欄が1段目で開き `?do=`・`?date=` が URL から消える、
 // 段階の表示（aria-current="step"）と段階ごとのフォーカス（段階の見出し）、〈スタッフ〉が休む → 人と時間帯 → 影響（入らなくなる訪問 N件）→
-// 登録して振り直す（案A）→ 4段目のまとめと案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→
+// 主ボタンは「登録して振り直す（おすすめ）」の1つ・ほかのやり方は文字のボタン（PRD D264）→ 案A で振り直す → 4段目のまとめ・担当が移る訪問の一覧（PRD D265）と案A・案B（案B を作って今の案にする）→ この割当で確定（独自の確認ダイアログ）→
 // 5段目の連絡（人ごとの文・［文をコピー］・メール・［連絡した］の数。PRD D243〜D246）→ 終わる → 確定済み、
 // 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目・5段目で担当に「中止」）、
 // 列の見出しの「欠勤を直す」で同じ欄が2段目で開き、欠勤を取り消せる、戻る、Esc で閉じて入口のボタンへフォーカス、
@@ -159,16 +159,34 @@ async function fromHome(page) {
     (await page.locator('.sudden-option').first().textContent()).includes('欠勤明けの移動で開始が遅れることがあります'),
     '案A の説明に「残りの訪問は欠勤明けの移動で開始が遅れることがあります」',
   );
-  const recommended = await panel(page).locator('.chip-primary', { hasText: 'おすすめ' }).count();
-  const primary = await page.locator('.drawer-foot .btn-primary').getAttribute('data-testid');
+  // 主ボタンは「登録して振り直す（おすすめ）」の1つ。おすすめが案B（案A で入らない見込み）なら sudden-anneal、
+  // 無ければ sudden-reassign。もう一方と「欠勤だけ登録」は控えめな文字のボタン（PRD D264）
+  const recommendB = await page.getByTestId('anneal-suggest').evaluate((el) => el.classList.contains('is-recommended'));
+  const primaries = await page.locator('.drawer .btn-primary').evaluateAll((els) => els.map((e) => e.dataset.testid));
+  const primaryText = await page.locator('.drawer-foot .btn-primary').textContent();
+  const alt = await page
+    .getByTestId('sudden-alt')
+    .locator('button')
+    .evaluateAll((els) => els.map((e) => ({ id: e.dataset.testid, text: e.classList.contains('btn-text') })));
   check(
-    recommended > 0
-      ? primary === 'sudden-anneal' &&
-          (await page.getByTestId('sudden-anneal').textContent()).includes('おすすめ') &&
-          (await page.getByTestId('sudden-reassign').isVisible())
-      : primary === 'sudden-reassign',
-    'おすすめがあれば主ボタンは「登録して案B も作る（おすすめ）」で案A は2番目、無ければ案A が主ボタン',
-    { recommended, primary },
+    primaries.length === 1 &&
+      primaries[0] === (recommendB ? 'sudden-anneal' : 'sudden-reassign') &&
+      primaryText.includes('登録して振り直す（おすすめ）'),
+    '影響：主ボタンは「登録して振り直す（おすすめ）」の1つ（案B がおすすめなら案B も作る）',
+    { recommendB, primaries, primaryText },
+  );
+  check(
+    alt.length === 2 &&
+      alt.every((x) => x.text) &&
+      alt.some((x) => x.id === (recommendB ? 'sudden-reassign' : 'sudden-anneal')) &&
+      alt.some((x) => x.id === 'sudden-save-only'),
+    '影響：ほかのやり方（もう一方の案・欠勤だけ登録）は文字のボタン',
+    alt,
+  );
+  check(
+    (await panel(page).locator('.sudden-option.is-recommended').count()) === 1 &&
+      (await panel(page).locator('.sudden-option.is-recommended .chip-primary', { hasText: 'おすすめ' }).count()) === 1,
+    '影響：おすすめの案の説明カードに縁と札「おすすめ」',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'step3-staff.png') });
   // 戻る → 2段目（選んだ人はそのまま）→ もう一度次へ
@@ -180,7 +198,7 @@ async function fromHome(page) {
   );
   await page.getByTestId('sudden-next').click();
   await settle(page, 400);
-  check(!(await page.getByTestId('sudden-reassign').isDisabled()), '「登録して振り直す（案A）」が押せる');
+  check(!(await page.getByTestId('sudden-reassign').isDisabled()), '「案A で振り直す」が押せる');
   await page.getByTestId('sudden-reassign').click();
   await page.getByTestId('sudden-done').waitFor({ timeout: 10000 });
   await page.getByTestId('sudden-result').waitFor({ timeout: 10000 });
@@ -188,6 +206,22 @@ async function fromHome(page) {
   check(
     await page.getByTestId('sudden-summary').isVisible(),
     '4段目：振り直しのまとめ（変わる人・振り直し・入らない）',
+  );
+  // 誰のどの訪問が誰へ移るか（PRD D265）：〈利用者さん〉の名前・時刻と、元の担当 → 新しい担当（入らない訪問は「入らない」）
+  const moves = await panel(page)
+    .getByTestId('reassign-move')
+    .evaluateAll((els) => els.map((el) => el.innerText.replace(/\s+/g, ' ')));
+  check(
+    moves.length > 0 && moves.every((t) => /^\d{1,2}:\d{2} \S.* (\S.*さん から \S.*さん|入らない)/.test(t)),
+    '4段目：担当が変わる訪問の一覧（時刻・名前・元の担当 → 新しい担当）',
+    moves,
+  );
+  const more = panel(page).getByTestId('anneal-more');
+  check(
+    (await more.count()) === 1 &&
+      !(await more.evaluate((el) => el.open)) &&
+      !(await panel(page).locator('.anneal-weight input[type="range"]').isVisible()),
+    '4段目：「変更を減らす」のスライダーは「詳しく」の中に畳む',
   );
   const d1 = await waitStored(page, (d) => !!d.aiPlans?.[TODAY]?.reassign);
   check(
@@ -527,7 +561,7 @@ async function mobile(page) {
   check(await oneLine(page), '390px：段階の表示は1行（今の段階だけ名前）');
   const dr = await page.locator('.drawer').boundingBox();
   check(dr && dr.x >= 0 && dr.x + dr.width <= 390, '390px：欄が画面に収まる', dr);
-  const foot = await page.getByTestId('sudden-reassign').boundingBox();
+  const foot = await page.locator('.drawer-foot .btn-primary').boundingBox();
   check(
     foot && foot.x >= 0 && foot.x + foot.width <= 390 && foot.y + foot.height <= 844,
     '390px：主ボタンが画面の中',
@@ -537,6 +571,22 @@ async function mobile(page) {
   const cw = await page.evaluate(() => document.querySelector('.drawer-body').clientWidth);
   check(sw <= cw, '390px：欄の中が横にはみ出さない', { sw, cw });
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-step3.png') });
+  // 4段目：担当が変わる訪問の一覧が 390px でも欄に収まって見える（PRD D265）
+  if (!(await page.locator('.drawer-foot .btn-primary').isDisabled())) {
+    await page.locator('.drawer-foot .btn-primary').click();
+    await page.locator('[data-testid="sudden-panel"][data-step="4"]').waitFor({ timeout: 60000 });
+    const list = panel(page).getByTestId('reassign-moves');
+    await list.waitFor({ timeout: 30000 }).catch(() => {});
+    const lb = await list.boundingBox();
+    const sw4 = await page.evaluate(() => document.querySelector('.drawer-body').scrollWidth);
+    const cw4 = await page.evaluate(() => document.querySelector('.drawer-body').clientWidth);
+    check(
+      !!lb && lb.x >= 0 && lb.x + lb.width <= 390 && sw4 <= cw4,
+      '390px：4段目の担当が変わる訪問の一覧が欄に収まる',
+      { lb, sw4, cw4 },
+    );
+    await page.screenshot({ path: path.join(OUT_DIR, 'mobile-step4.png') });
+  }
   await page.keyboard.press('Escape');
   await panel(page).waitFor({ state: 'detached' });
   await page.setViewportSize({ width: 1400, height: 1000 });
