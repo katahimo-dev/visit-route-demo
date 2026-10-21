@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { type DemoData, STORAGE_KEY } from '../contracts/data';
+import type { Features } from '../contracts/features';
 import {
   flushSave,
   importJson,
@@ -24,8 +25,8 @@ export type DemoStore = {
   update(fn: (d: DemoData) => DemoData): void;
   /** 読み込んだデータで置き換える */
   replace(d: DemoData): void;
-  /** 初期状態に戻す */
-  reset(): void;
+  /** 初期状態に戻す（機能の入り切りは features、既定は今のまま。PRD D216・D276） */
+  reset(features?: Features): void;
   /** 保存に失敗したときの利用者向けの文言（容量超過など）。なければ null */
   saveError: string | null;
   /**
@@ -42,6 +43,8 @@ export type DemoStore = {
   /** 読めなかった元の文字を退避できたか（できなければ知らせは「今すぐ書き出してください」） */
   brokenKept: boolean;
   dismissBroken(): void;
+  /** 起動したとき保存データが無く、初めて開いたか（初回の案内ツアーで「どこまで使うか」を聞く。PRD D276） */
+  startedFresh: boolean;
   /** 別のタブの変更で読み直した回数（画面が知らせを出すきっかけ） */
   externalReloads: number;
   /**
@@ -123,11 +126,14 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
     },
     [replaced],
   );
-  const reset = useCallback(() => {
-    setSaveError(null);
-    setData(resetStore());
-    replaced();
-  }, [replaced]);
+  const reset = useCallback(
+    (features?: Features) => {
+      setSaveError(null);
+      setData(resetStore(features ?? latest.current.org.features));
+      replaced();
+    },
+    [replaced],
+  );
   const keepPrevious = useCallback(
     (reason: string): PreviousKeep => {
       const k = keepPreviousStore(latest.current, reason);
@@ -167,6 +173,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       broken,
       brokenKept: initial.brokenKept,
       dismissBroken,
+      startedFresh: initial.fresh,
       externalReloads,
       replacedCount,
       previousDrops,
@@ -183,6 +190,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       broken,
       initial.brokenKept,
       dismissBroken,
+      initial.fresh,
       externalReloads,
       replacedCount,
       previousDrops,

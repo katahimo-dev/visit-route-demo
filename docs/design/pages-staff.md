@@ -30,6 +30,7 @@
 ### 勤務時間（シフト）（`#/availability`）
 
 - 〈スタッフ〉×日の稼働時間帯。セルの時間帯の文は上書き・基本のまま。保存は `availability-save`
+- 見出しの右に「勤務の見込み」（枠のボタンの `Link`・`avail-workload`・`/workload?ym=選んでいる日付の月`。`workload` が入のとき。主ボタンにしない。PRD D275）
 - 欠勤のある日のセルに「欠勤」の印（「欠勤（終日）」「欠勤 9:00〜12:00」。メモは title。`avail-absence`）
 - 右の欄（勤務時間（シフト）の欄）：同じ欠勤の文と、`Link`（`availability-absence-link`。`suddenHref(日付, 人)`。`setDate` しない）。その日に働く日（`availabilityOf` の slots があり `retiredWhy` が無い＝`pickedWorks`）だけ出す。欠勤があれば「この日の欠勤を直す・取り消す」、無ければ「この日の欠勤を登録する」＋「（日の予定の「欠勤・キャンセル」で開く）」。休みの日・最終勤務日の後（`availability-retired`）は出さない。知らない人・その日に働かない人の `staff=` は日の予定で1段目
 - 欠勤・キャンセルを切ると、凡例に登録の場所を出さない
@@ -37,7 +38,7 @@
 
 ### 勤務の見込み（`#/workload?ym=&staff=`。ADR-0015）
 
-- 入口：メニューの「勤務の見込み」・月の予定の見出しの「勤務の見込み」・日の予定の拘束超えの帯・月の要対応（`workloadHref`）
+- 入口（メニューには出さない。PRD D275）：勤務時間（シフト）の見出しの「勤務の見込み」・月の予定の「その他 ▾」の「勤務の見込み」・日の予定の拘束超えの帯・月の要対応（`workloadHref`）・パレット。メニュー・下のタブの今の画面の印は「勤務時間（シフト）」
 - `lib/workload` の `workMonth`・`workTotals`・`workloadTsv`
 - 見出し（`work-title`）・「表をコピー」（`work-copy`。タブ区切りの表）・要約（`work-summary`）。主ボタンは無し
 - 事業所の設定（`org`）をこの画面で直す：交通費の単価（`work-fare`。0 にすると交通費の列が消える）・拘束の上限（`work-limit`。`Term` `span`＝出勤〜退勤（拘束））

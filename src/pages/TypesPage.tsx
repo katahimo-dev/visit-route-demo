@@ -11,6 +11,7 @@ import { CLIENT_COLORS } from '../lib/colors';
 import { formError, nameTaken, newId } from '../lib/common';
 import { useDemoData } from '../store';
 import './settings.css';
+import { SettingsTabs } from '../components/SettingsTabs';
 
 /**
  * 訪問の種類（ADR-0012。PRD D36）：一覧・足す・直す・消す。
@@ -130,6 +131,7 @@ export default function TypesPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<SettingsTabs />}
         icon={Layers}
         title="訪問の種類"
         lead={`訪問の種類（介護・リハビリなど）と、担当する${terms.staff}に必要な条件を決めます`}

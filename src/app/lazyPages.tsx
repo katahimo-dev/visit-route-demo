@@ -32,7 +32,7 @@ if (typeof window !== 'undefined') {
   if (WITH_MAP.has(path)) RouteMap.preload().catch(() => {});
 }
 
-/** 先読みの順（よく使う順。下のタブの「今日」・月・空き状況、地図、比較・相性） */
+/** 先読みの順（よく使う順。下のタブの「予定」で開く日・月、空き状況、地図、比較・相性） */
 const PRELOAD_ORDER: { preload: () => Promise<unknown> }[] = [
   PlanPage,
   MonthPage,

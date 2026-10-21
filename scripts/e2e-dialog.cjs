@@ -242,6 +242,11 @@ async function dataReset(page) {
   await page.getByRole('button', { name: 'デモの初期状態に戻す' }).click();
   const a = await shape(page, '初期状態に戻す');
   check(/いまの変更はすべて消えます/.test(a.body), '初期状態に戻す：本文（aria-describedby）', a.body);
+  check(
+    /機能の入り切り（管理者設定）はそのまま/.test(a.body),
+    '初期状態に戻す：本文に「機能の入り切り（管理者設定）はそのまま」（PRD D216）',
+    a.body,
+  );
   await page.getByTestId('confirm-cancel').click();
   await settle(page);
   check((await page.locator('.toast').count()) === 0, '初期状態に戻す：取り消すと何もしない（知らせも出ない）');

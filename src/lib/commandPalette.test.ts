@@ -16,7 +16,7 @@ import {
   TERM_READINGS,
   termReading,
 } from './commandPalette';
-import { menuSections } from './nav';
+import { screenSections } from './nav';
 
 const terms = { client: '利用者さん', staff: 'スタッフ' };
 const TODAY = '2026-10-21';
@@ -31,7 +31,7 @@ const staff = [
 ];
 const items = [
   ...paletteActions(TODAY),
-  ...paletteScreens(menuSections(terms, TODAY, {}), terms),
+  ...paletteScreens(screenSections(terms, {}), terms),
   ...palettePeople(clients, staff, terms),
 ];
 const labels = (q: string) => filterPalette(items, q).flat.map((i) => i.label);
@@ -63,12 +63,12 @@ describe('候補', () => {
     });
   });
   it('画面の候補は呼び方のよみでも引ける（既定の呼び方）', () => {
-    const scr = paletteScreens(menuSections(terms, TODAY, {}), terms);
+    const scr = paletteScreens(screenSections(terms, {}), terms);
     const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
     expect(hit('りようしゃ')).toEqual(['/clients']);
     expect(hit('すたっふ')).toEqual(['/staff']);
     const sitter = { client: 'お客様', staff: 'シッター' };
-    const scr2 = paletteScreens(menuSections(sitter, TODAY, {}), sitter);
+    const scr2 = paletteScreens(screenSections(sitter, {}), sitter);
     expect(filterPalette(scr2, 'おきゃく').flat.map((i) => i.to)).toEqual(['/clients']);
     expect(filterPalette(scr2, 'しったー').flat.map((i) => i.to)).toEqual(['/staff']);
   });
@@ -85,7 +85,7 @@ describe('候補', () => {
     expect(next).toMatchObject({ label: '1月の案をまとめて作る', to: '/month?ym=2027-01&do=batch' });
   });
   it('画面はメニューと同じ名前・同じ順で、操作の項目（欠勤・キャンセル）は入れない', () => {
-    const s = paletteScreens(menuSections(terms, TODAY, {}), terms);
+    const s = paletteScreens(screenSections(terms, {}), terms);
     expect(s.map((x) => x.label)).toEqual([
       'ホーム',
       '月の予定',
@@ -109,7 +109,7 @@ describe('候補', () => {
     expect(s.find((x) => x.to === '/plan')!.hint).toBe('予定');
   });
   it('名前を変えた画面は前の名前でも引ける（月間・週間・日の画面・稼働時間・稼働の見込み。PRD D230）', () => {
-    const scr = paletteScreens(menuSections(terms, TODAY, {}), terms);
+    const scr = paletteScreens(screenSections(terms, {}), terms);
     const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
     expect(hit('月間')).toEqual(['/month']);
     expect(hit('げっかん')).toEqual(['/month']);
@@ -120,6 +120,15 @@ describe('候補', () => {
     expect(hit('稼働の見込み')).toEqual(['/workload']);
     expect(hit('かどう')).toEqual(['/availability', '/workload']);
     expect(hit('こうつうひ')).toEqual(['/workload']);
+  });
+  it('メニューから外した画面も1つずつ引ける。「よてい」で月・週・日の予定、「せってい」で設定のタブ（PRD D273・D275）', () => {
+    const scr = paletteScreens(screenSections(terms, {}), terms);
+    const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
+    expect(hit('よてい')).toEqual(expect.arrayContaining(['/month', '/week', '/plan']));
+    expect(hit('せってい')).toEqual(['/rules', '/compat', '/types', '/items', '/settings', '/data']);
+    expect(hit('きんむのみこみ')).toEqual(['/workload']);
+    expect(hit('あんをくらべる')).toEqual(['/compare']);
+    expect(paletteActions(TODAY).find((x) => x.id === 'action:today')!.label).toBe('日の予定（今日）を開く');
   });
   it('操作の補足は画面の名前（日の予定・月の予定）。欠勤・キャンセルを登録は「当日の対応」でも引ける', () => {
     const acts = paletteActions(TODAY);

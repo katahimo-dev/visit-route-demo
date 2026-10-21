@@ -1,4 +1,4 @@
-import { Clock, Coffee, Pencil, RotateCcw, Save } from 'lucide-react';
+import { Clock, Coffee, Pencil, RotateCcw, Save, Timer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDay } from '../app/day';
@@ -39,6 +39,7 @@ export default function AvailabilityPage() {
   const { date: today, dates } = useDay();
   /** 欠勤・キャンセル（ADR-0028 の sudden）：切なら凡例で登録の場所（予定の画面）を案内しない（欠勤の印は事実なので出す） */
   const suddenOn = useFeature('sudden');
+  const workloadOn = useFeature('workload');
   const terms = data.org.terms;
   const toast = useToast();
   const staff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
@@ -95,7 +96,19 @@ export default function AvailabilityPage() {
 
   return (
     <div className="stack">
-      <PageHeader icon={Clock} title="勤務時間（シフト）" lead={`${terms.staff}ごとの働ける時間`} />
+      <PageHeader
+        icon={Clock}
+        title="勤務時間（シフト）"
+        lead={`${terms.staff}ごとの働ける時間`}
+        actions={
+          // 勤務の見込みはメニューから外し、ここ（と月の予定の「その他 ▾」）から開く（PRD D275。主ボタンにしない）
+          workloadOn && (
+            <Link className="btn" to={`/workload?ym=${today.slice(0, 7)}`} data-testid="avail-workload">
+              <WithIcon icon={Timer}>勤務の見込み</WithIcon>
+            </Link>
+          )
+        }
+      />
       <div className="card stack">
         <div className="avail-legend">
           <span>

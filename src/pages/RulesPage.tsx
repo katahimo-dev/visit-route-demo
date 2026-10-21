@@ -39,6 +39,7 @@ import { scorePresetOf, scoreRulesOf } from '../seed';
 import { useDemoData } from '../store';
 import { SavePresetForm, SCORE_TEXT } from './planParts';
 import './settings.css';
+import { SettingsTabs } from '../components/SettingsTabs';
 import { narrowRole } from '../lib/narrowRoles';
 
 /** 条件の種類ごとのアイコン（必要条件=盾、希望=ハート／いいね など） */
@@ -121,6 +122,7 @@ export default function RulesPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<SettingsTabs />}
         icon={SlidersHorizontal}
         title="条件の重み"
         lead="ふだんの考え方（点数の基準）の重み。月のまとめて作る・自動作成・作り直しはこの重みで作ります"

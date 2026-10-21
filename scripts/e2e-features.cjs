@@ -1,8 +1,8 @@
 // 機能の入り切り その1（PRD D210〜D213・D216。ADR-0028）を本物のブラウザで確かめる：
-// すべて入（初期データ）でメニューの最後に「管理者」（管理者設定・データ）、管理者設定の画面（見出し・説明・ひな形の4つ・
+// すべて入（初期データ。e2e は初回もすべて入に固定。PRD D276）でメニューの最後に「設定」（タブに管理者設定・データ）、管理者設定の画面（見出し・説明・ひな形の4つ・
 // 「いまの設定」とカスタムの印・20のスイッチの role=switch・aria-checked・名前・説明）。
 // ひな形の4通り（基本・月次予定・現場共有・すべては管理者設定で適用する（独自の確認ダイアログに入る機能・切れる機能、取り消すと変わらない）、
-// 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
+// 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目（8項目のまま）・設定のタブ・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
 // 切った機能の URL（`?do=` も）を開くとホームへ移り（replace）、ホームの上に閉じられる知らせと管理者設定へのリンク、
 // スイッチ（押すとすぐ保存・トースト・依存先が切なら押せず理由）、390px で横にはみ出さない、印刷で知らせ・メニューを出さない。
 // 末尾の /・大文字の URL（#/vacancy/・#/Vacancy・#/month/print/）もホームへ移す、390px で空き状況を切ると下のタブ4つが全幅を等分、
@@ -75,14 +75,24 @@ const TEMPLATE_LABEL = {
 };
 const asFeatures = (on) => Object.fromEntries(FEATURE_IDS.map((id) => [id, on.includes(id)]));
 
-/** すべて入のメニュー（今の16＋管理者設定。5つのグループの並び。ADR-0034） */
-const ALL_LABELS = [
+/** メニュー（8項目。ひな形で変わらない。PRD D275。ADR-0045） */
+const MENU = [
+  'ホーム',
+  '予定',
+  '欠勤・キャンセルを登録',
+  '空き状況',
+  '利用者さん一覧',
+  'スタッフ一覧',
+  '勤務時間（シフト）',
+  '設定',
+];
+/** すべて入の画面の一覧（パレットの画面。メニューから外した画面も1つずつ。PRD D273・D275） */
+const ALL_SCREENS = [
   'ホーム',
   '月の予定',
   '週の予定',
   '日の予定',
   '案を比べる',
-  '欠勤・キャンセルを登録',
   '空き状況',
   '利用者さん一覧',
   'スタッフ一覧',
@@ -95,14 +105,27 @@ const ALL_LABELS = [
   '管理者設定',
   'データ',
 ];
-/** ひな形ごとの、メニューに出ない項目 */
+/** ひな形ごとの、パレットの画面に出ない画面 */
 const HIDDEN = {
   basic: ['案を比べる', '勤務の見込み', '条件の重み', '特性の項目'],
   laborContract: ['案を比べる', '条件の重み', '特性の項目'],
   monthlyField: ['案を比べる', '勤務の見込み', '条件の重み', '特性の項目'],
   all: [],
 };
-const menuFor = (t) => ALL_LABELS.filter((l) => !HIDDEN[t].includes(l));
+const screensFor = (t) => ALL_SCREENS.filter((l) => !HIDDEN[t].includes(l));
+/** 設定のタブ（ひな形ごと。条件の重み・特性の項目は rules を切ると出さない） */
+const SETTINGS_TABS = ['条件の重み', '相性', '訪問の種類', '特性の項目', '管理者設定', 'データ'];
+const settingsTabsFor = (t) => SETTINGS_TABS.filter((l) => !HIDDEN[t].includes(l));
+/** メニューは空き状況・欠勤を切ると減る */
+const menuFor = (on) =>
+  MENU.filter(
+    (l) => (l !== '空き状況' || on.includes('vacancy')) && (l !== '欠勤・キャンセルを登録' || on.includes('sudden')),
+  );
+/** 下のタブ（ホーム・予定・欠勤・空き状況。「メニュー」はボタン。PRD D274） */
+const tabsFor = (on) =>
+  ['ホーム', '予定', '欠勤', '空き状況'].filter(
+    (l) => (l !== '空き状況' || on.includes('vacancy')) && (l !== '欠勤' || on.includes('sudden')),
+  );
 
 /** 切った機能の URL（ひな形ごとに、ホームへ移るもの・移らないもの） */
 const ROUTES = [
@@ -191,11 +214,17 @@ async function allOn(page) {
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
-  check(m.titles.at(-1) === '設定', 'すべて入：メニューの最後のグループは「設定」', m.titles);
-  check(same(m.labels, ALL_LABELS), 'すべて入：今の16に管理者設定が足されるだけ', m.labels);
-  check(same(await storedFeatures(page), {}), '初期データの入り切りは {}', await storedFeatures(page));
+  check(m.labels.at(-1) === '設定', 'すべて入：メニューの最後は「設定」', m.labels);
+  check(same(m.labels, MENU), 'すべて入：メニューは8項目', m.labels);
+  check(
+    same(await storedFeatures(page), {}),
+    '初期データの入り切りは {}（e2e は初回もすべて入に固定）',
+    await storedFeatures(page),
+  );
 
-  await page.locator('.side-nav').getByRole('link', { name: '管理者設定' }).click();
+  await page.locator('.side-nav').getByRole('link', { name: '設定' }).click();
+  await page.getByTestId('settings-tabs').waitFor();
+  await page.getByTestId('settings-tabs').getByRole('link', { name: '管理者設定' }).click();
   await page.waitForURL(/#\/settings/);
   await page.getByTestId('feature-templates').waitFor();
   check((await page.locator('h1').innerText()) === '管理者設定', '管理者設定：見出し');
@@ -204,8 +233,9 @@ async function allOn(page) {
     '管理者設定：説明の文',
   );
   check(
-    (await page.locator('.side-nav [aria-current="page"]').innerText()) === '管理者設定',
-    '管理者設定：メニューの今の画面の印',
+    (await page.locator('.side-nav [aria-current="page"]').innerText()) === '設定' &&
+      (await page.getByTestId('settings-tabs').locator('[aria-current="page"]').innerText()).trim() === '管理者設定',
+    '管理者設定：メニューの今の画面の印は「設定」、設定のタブは「管理者設定」',
   );
   const tmpl = await page.getByTestId('feature-template').evaluateAll((els) => els.map((el) => el.dataset.template));
   check(same(tmpl, ['basic', 'laborContract', 'monthlyField', 'all']), 'ひな形の4つの並び', tmpl);
@@ -314,22 +344,11 @@ async function checkTemplate(page, t) {
   const label = TEMPLATE_LABEL[t];
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
-  check(same(m.labels, menuFor(t)), `${label}：メニューの項目`, m.labels);
+  check(same(m.labels, menuFor(on)), `${label}：メニューの項目（8項目のまま）`, m.labels);
   const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
-  check(
-    same(tabs, on.includes('vacancy') ? ['ホーム', '月', '週', '今日', '空き状況'] : ['ホーム', '月', '週', '今日']),
-    `${label}：下のタブ`,
-    tabs,
-  );
+  check(same(tabs, tabsFor(on)), `${label}：下のタブ`, tabs);
   const pal = await paletteItems(page);
-  check(
-    same(
-      pal.screens,
-      menuFor(t).filter((l) => l !== '欠勤・キャンセルを登録'),
-    ),
-    `${label}：パレットの画面`,
-    pal.screens,
-  );
+  check(same(pal.screens, screensFor(t)), `${label}：パレットの画面`, pal.screens);
   check(
     pal.actions.includes('欠勤・キャンセルを登録') === on.includes('sudden') &&
       pal.actions.includes('問い合わせに答える') === on.includes('vacancy'),
@@ -371,6 +390,8 @@ async function checkTemplate(page, t) {
       .evaluateAll((els) => els.map((el) => el.dataset.template)),
   );
   check(same(s, [t]), `${label}：管理者設定の「いまの設定」`, s);
+  const stabs = (await page.getByTestId('settings-tabs').locator('a').allInnerTexts()).map((x) => x.trim());
+  check(same(stabs, settingsTabsFor(t)), `${label}：設定のタブ`, stabs);
   // スイッチの並びはグループ順（メニューのグループにそろえる。ADR-0034）なので、行の data-feature で ID に引き当てる
   const byId = Object.fromEntries(
     await page
@@ -452,11 +473,11 @@ async function mobile(page, dlg) {
   await page.getByTestId('feature-off-notice').waitFor({ timeout: 10000 });
   const w2 = await page.evaluate(() => document.documentElement.scrollWidth);
   check(w2 <= 390, '390px：ホームの知らせが横にはみ出さない', w2);
-  const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
-  check(tabs.length === 5, '390px：基本は下のタブ5つ', tabs);
+  const tabs = await page.getByTestId('bottom-tabs').locator('.bottom-tab').allInnerTexts();
+  check(tabs.length === 5, '390px：基本は下のタブ5つ（ホーム・予定・欠勤・空き状況・メニュー）', tabs);
   await page.getByTestId('menu-btn').click();
   const drawer = await page.locator('.nav-drawer .nav-link').allInnerTexts();
-  check(same(drawer, menuFor('basic')), '390px：引き出しもメニューと同じ項目', drawer);
+  check(same(drawer, menuFor(TEMPLATE_ON.basic)), '390px：引き出しもメニューと同じ項目', drawer);
   await page.keyboard.press('Escape');
   await page.screenshot({ path: path.join(OUT_DIR, 'notice-mobile.png'), fullPage: true });
   await page.emulateMedia({ media: 'print' });
@@ -484,11 +505,12 @@ async function pathVariants(page, dlg, ctx) {
     const hasNotice = (await page.getByTestId('feature-off-notice').count()) === 1;
     check(hashOf(page) === '#/home' && hasNotice, `切った機能の ${h} もホームへ移し知らせる`, hashOf(page));
   }
-  // 390px：空き状況を切ると下のタブは4つで、全幅を等分する
+  // 390px：空き状況を切ると下のタブは4つ（ホーム・予定・欠勤・メニュー）で、全幅を等分する
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, '/home', '[data-testid="home-tasks"]');
   const boxes = await page
-    .getByTestId('bottom-tab')
+    .getByTestId('bottom-tabs')
+    .locator('.bottom-tab')
     .evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => ({ x: r.x, w: r.width })));
   const vw = await page.evaluate(() => document.documentElement.clientWidth);
   const total = boxes.reduce((a, b) => a + b.w, 0);
@@ -512,7 +534,7 @@ async function pathVariants(page, dlg, ctx) {
     !m.titles.includes('当日・問い合わせ') &&
       !m.labels.includes('欠勤・キャンセルを登録') &&
       !m.labels.includes('空き状況') &&
-      same(m.titles, ['予定', '人', 'AI の条件', '設定']),
+      same(m.titles, ['人']),
     '欠勤・キャンセルと空き状況を切ると「当日・問い合わせ」は見出しごと出さない',
     m.titles,
   );
@@ -593,8 +615,11 @@ async function deadEnds(page, dlg, ctx) {
     (await page.getByTestId('month-absent-left').count()) > 0,
     '月：希望休のまとめ入力を切っても「休みの人に N」の印は出す（欠勤の人に残る訪問の事実）',
   );
-  check((await page.getByTestId('month-workload').count()) === 0, '月：勤務の見込みのボタンを出さない');
-  check((await page.getByTestId('month-print').count()) === 0, '月：印刷のボタンを出さない');
+  await page.getByTestId('month-more').click();
+  await page.getByTestId('month-more-list').waitFor();
+  check((await page.getByTestId('month-workload').count()) === 0, '月：「その他 ▾」に勤務の見込みを出さない');
+  check((await page.getByTestId('month-print').count()) === 0, '月：「その他 ▾」に印刷を出さない');
+  await page.keyboard.press('Escape');
   const r = rows.find((x) => x.cls.includes('is-overSpan') && x.text.includes(md(second)));
   if (r) {
     await page
@@ -692,7 +717,11 @@ async function insideEntries(page, dlg, ctx) {
       (await page.locator('.absence-btn').count()) > 0 === on('sudden'),
       `${label}：列の見出しの「この人の欠勤を登録」`,
     );
-    check((await count('day-mail')) === (on('mail') ? 1 : 0), `${label}：日の予定の「メールで送る」`);
+    // メールで送るは操作の行の「その他 ▾」の中（PRD D279）
+    await page.getByTestId('plan-more').click();
+    await page.getByTestId('plan-more-list').waitFor({ timeout: 5000 });
+    check((await count('day-mail')) === (on('mail') ? 1 : 0), `${label}：日の予定の「その他 ▾」の「メールで送る」`);
+    await page.keyboard.press('Escape');
     if (!on('rules')) check((await count('plan-reason')) === 0, `${label}：点数の横の理由を出さない`);
     await page.getByTestId('plan-menu').click();
     await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
@@ -753,7 +782,11 @@ async function insideEntries(page, dlg, ctx) {
     );
     await settle(page, 300);
     check((await count('month-off-toggle')) === (on('requestedOff') ? 1 : 0), `${label}：月の「休みを入れる」`);
-    check((await count('month-print')) === (on('monthPrint') ? 1 : 0), `${label}：月の印刷のボタン`);
+    // 印刷は「その他 ▾」の中（PRD D278）
+    await page.getByTestId('month-more').click();
+    await page.getByTestId('month-more-list').waitFor({ timeout: 5000 });
+    check((await count('month-print')) === (on('monthPrint') ? 1 : 0), `${label}：月の「その他 ▾」の印刷`);
+    await page.keyboard.press('Escape');
 
     // 空き状況の案内文
     if (on('vacancy')) {
