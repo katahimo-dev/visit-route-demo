@@ -12,6 +12,7 @@ import {
   isImportError,
   load,
   loadWithStatus,
+  rememberCurrent,
   reset,
   startFeatures,
 } from './index';
@@ -89,6 +90,9 @@ describe('org.features（PRD D216）', () => {
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).org.features).toEqual({ sudden: false });
     // 入り切りを渡せばその入り切りで作り直す（初回の案内の「どこまで使うか」）
     expect(reset({}).org.features).toEqual({});
+    // 今のデータが無い（読み込みの例外の画面から戻す）ときはすべて入（基本にしない）
+    rememberCurrent(null);
+    expect(reset().org.features).toEqual({});
   });
 });
 

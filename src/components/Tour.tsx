@@ -2,6 +2,7 @@ import { Compass } from 'lucide-react';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
+import type { DemoData } from '../contracts/data';
 import type { Terms } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { trapTarget } from '../lib/confirmDialog';
@@ -37,7 +38,7 @@ export const useTour = () => useContext(Ctx);
  */
 export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' | 'staff'>; children: ReactNode }) {
   const { search } = useLocation();
-  const { startedFresh } = useDemoData();
+  const { startedFresh, data, reset, update } = useDemoData();
   // 起動したときの URL で決める（?id=・?do= のリンクで開いたときは出さない。PRD D192）
   const [open, setOpen] = useState(() => shouldAutoOpenTour(tourMemory.seen(), search));
   // 初めて開いた（保存データが無かった）ときに自動で開いたツアーだけ、1枚目で「どこまで使うか」を聞く（PRD D276）。
@@ -51,6 +52,30 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
     tourMemory.markSeen();
     setOpen(false);
   }, []);
+  /**
+   * 起動したまま手の入っていないデータ（初期データか、ここで作り直したデータ）。別のタブの変更・画面での変更があれば違う物になる。
+   * 「どこまで使うか」は、手が入っていなければ初期データを作り直し（案の記録の入り切りもそろう）、入っていれば入り切りだけ書き換える
+   * （作り直して別のタブの変更を消さない。PRD D276）
+   */
+  const pristine = useRef<DemoData | null>(startedFresh ? data : null);
+  const awaitReset = useRef(false);
+  useEffect(() => {
+    if (!awaitReset.current) return;
+    awaitReset.current = false;
+    pristine.current = data;
+  }, [data]);
+  const choose = useCallback(
+    (id: TourStartChoice['id']) => {
+      const features = applyTemplate(id);
+      if (pristine.current !== null && pristine.current === data) {
+        awaitReset.current = true;
+        reset(features);
+      } else {
+        update((d) => ({ ...d, org: { ...d.org, features } }));
+      }
+    },
+    [data, reset, update],
+  );
   const navigate = useNavigate();
   /** 最後の枚の「今日の予定を開く」：閉じて今日の日の画面へ（PRD D226） */
   const openToday = useCallback(() => {
@@ -60,7 +85,7 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
   return (
     <Ctx.Provider value={openTour}>
       {children}
-      {open && <TourDialog terms={terms} ask={ask} onClose={close} onToday={openToday} />}
+      {open && <TourDialog terms={terms} ask={ask} onChoose={choose} onClose={close} onToday={openToday} />}
     </Ctx.Provider>
   );
 }
@@ -75,16 +100,28 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
 function TourDialog({
   terms,
   ask,
+  onChoose,
   onClose,
   onToday,
 }: {
   terms: Pick<Terms, 'client' | 'staff'>;
   /** 1枚目で「どこまで使うか」を聞く（初めて開いたときだけ。PRD D276） */
   ask: boolean;
+  /** 1枚目の選択を当てる（1枚目を離れるとき＝次へ・とばす・Esc） */
+  onChoose: (id: TourStartChoice['id']) => void;
   onClose: () => void;
   onToday: () => void;
 }) {
   const features = useFeatures();
+  const now = matchTemplate(features);
+  /** 1枚目で選んでいるもの（矢印で選び直すたびには当てず、1枚目を離れるときに当てる。PRD D276） */
+  const [choice, setChoice] = useState<TourStartChoice['id'] | null>(now === 'basic' || now === 'all' ? now : null);
+  const applyChoice = () => {
+    if (ask && choice !== null && choice !== matchTemplate(features)) onChoose(choice);
+  };
+  const applyRef = useRef(applyChoice);
+  applyRef.current = applyChoice;
+  const indexRef = useRef(0);
   // 切った機能の枚は出さない（PRD D213）
   const steps = tourSteps(terms, features);
   const [rawIndex, setIndex] = useState(0);
@@ -96,7 +133,11 @@ function TourDialog({
   /** 最後の枚の主ボタン「今日の予定を開く」（最後の枚に入ったらここへフォーカス。PRD D226） */
   const todayRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  closeRef.current = () => {
+    // Esc（とばすと同じ）で閉じるときも、1枚目で選んだものを当てる
+    if (indexRef.current === 0) applyRef.current();
+    onClose();
+  };
   const titleId = useId();
   const bodyId = useId();
   useBodyScrollLock();
@@ -118,7 +159,15 @@ function TourDialog({
       }
       if (e.key !== 'Tab' || !boxRef.current) return;
       e.stopPropagation();
-      const list = [...boxRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      // ラジオは選んでいる方だけ Tab で止まる（標準の radio group と同じ。切り替えは矢印）
+      const box = boxRef.current;
+      const list = [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (el) =>
+          !(el instanceof HTMLInputElement) ||
+          el.type !== 'radio' ||
+          el.checked ||
+          !box.querySelector(`input[type="radio"][name="${CSS.escape(el.name)}"]:checked`),
+      );
       const at = document.activeElement;
       const to = trapTarget(list.length, at instanceof HTMLElement ? list.indexOf(at) : -1, e.shiftKey);
       if (to === null) return;
@@ -147,7 +196,9 @@ function TourDialog({
   useEffect(() => {
     if (index === steps.length - 1) tourMemory.markSeen();
   }, [index, steps.length]);
+  indexRef.current = index;
   const go = (move: TourMove) => {
+    if (index === 0) applyChoice();
     const to = tourMove(index, steps.length, move);
     if (to === null) onClose();
     else setIndex(to);
@@ -195,7 +246,7 @@ function TourDialog({
             {step.where}
           </p>
         </div>
-        {ask && index === 0 && <StartChoice current={matchTemplate(features)} />}
+        {ask && index === 0 && <StartChoice current={choice} onPick={setChoice} />}
         <ol className="tour-dots" aria-hidden="true">
           {steps.map((s, i) => (
             <li key={s.key} className={i === index ? 'is-on' : undefined} />
@@ -250,18 +301,18 @@ function TourDialog({
 }
 
 /**
- * 1枚目の「どこまで使いますか」（PRD D276）：基本／すべて の2つ。選ぶとすぐその入り切りで初期データを作り直す
- * （初めて開いたばかりで、まだ何も入れていないため。案の記録の機能（相性・担当を限る）と食い違って「条件が変わった」にしない）。
- * 今の入り切りがどちらとも違えば（別のタブで直した）どちらも選んでいない。読み上げは radiogroup と、選んだ名前
+ * 1枚目の「どこまで使いますか」（PRD D276）：基本／すべて の2つ（ネイティブのラジオ。Tab は選んだ方だけ、矢印で選び直す）。
+ * 選んでもすぐには当てず、1枚目を離れるとき（次へ・とばす・Esc）に当てる（TourDialog の applyChoice）
  */
-function StartChoice({ current }: { current: string }) {
-  const { reset } = useDemoData();
+function StartChoice({
+  current,
+  onPick,
+}: {
+  current: TourStartChoice['id'] | null;
+  onPick: (id: TourStartChoice['id']) => void;
+}) {
   const name = useId();
   const titleId = useId();
-  const pick = (c: TourStartChoice) => {
-    if (current === c.id) return;
-    reset(applyTemplate(c.id));
-  };
   return (
     <fieldset className="tour-choice" aria-labelledby={titleId} data-testid="tour-start">
       <legend id={titleId} className="tour-choice-title">
@@ -274,7 +325,7 @@ function StartChoice({ current }: { current: string }) {
             name={name}
             value={c.id}
             checked={current === c.id}
-            onChange={() => pick(c)}
+            onChange={() => onPick(c.id)}
             data-testid={`tour-start-${c.id}`}
           />
           <span>

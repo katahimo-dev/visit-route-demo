@@ -457,10 +457,10 @@ export function readPrevious(): DemoData | ImportError | null {
 }
 
 /**
- * 初期状態に戻す。機能の入り切り（事業所の設定）は features（既定は今のデータの入り切り、無ければ初めてのときと同じ）のまま残す
- * （PRD D216・D276。データだけを初期に戻す）
+ * 初期状態に戻す。機能の入り切り（事業所の設定）は features（既定は今のデータの入り切り）のまま残す（PRD D216・D276。データだけを初期に戻す）。
+ * 今のデータが無い（読み込みが例外で落ちた例外の画面から戻す）ときはすべて入（{}）：今まで全部入りだった人を「基本」にしない
  */
-export function reset(features: Features = current?.org.features ?? startFeatures()): DemoData {
+export function reset(features: Features = current?.org.features ?? {}): DemoData {
   if (timer) clearTimeout(timer);
   timer = null;
   pending = null;

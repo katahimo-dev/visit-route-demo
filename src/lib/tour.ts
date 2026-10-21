@@ -71,7 +71,8 @@ export const TOUR_START_CHOICES: readonly TourStartChoice[] = [
 /** 選択肢の見出し */
 export const TOUR_START_QUESTION = 'どこまで使いますか';
 /** 選択肢の下の注記 */
-export const TOUR_START_NOTE = 'あとから「設定」の「管理者設定」で、機能を1つずつ入り切りできます。';
+export const TOUR_START_NOTE =
+  '「次へ」で決まります。あとから「設定」の「管理者設定」で、機能を1つずつ入り切りできます。';
 
 /** 押したボタン（Esc は skip と同じ） */
 export type TourMove = 'next' | 'back' | 'skip';

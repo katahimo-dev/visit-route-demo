@@ -66,7 +66,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '月の予定を紙のカレンダーの代わりに印刷できます',
     group: '予定',
     paths: ['/month/print'],
-    hides: '月の印刷のボタン、月の印刷の画面',
+    hides: '月の予定の「その他 ▾」の印刷、月の印刷の画面',
   },
   {
     id: 'compare',

@@ -224,8 +224,11 @@ export default function MonthPage() {
   const focusSelectRef = useRef<HTMLSelectElement>(null);
   const helpRef = useRef<HTMLDivElement>(null);
   // 「表示を選ぶ」で開いたら最初の欄へ、「マスの見方の説明」で開いたら説明へフォーカス（メニューのボタンへ戻ったあと）
+  /** 「表示を選ぶ」で開いたときだけ欄へフォーカスする（段の中で選び直して出したままにするときは動かさない） */
+  const focusPickers = useRef(false);
   useEffect(() => {
-    if (pickersOpen) focusSelectRef.current?.focus();
+    if (pickersOpen && focusPickers.current) focusSelectRef.current?.focus();
+    focusPickers.current = false;
   }, [pickersOpen]);
   useEffect(() => {
     if (helpOpen) helpRef.current?.focus();
@@ -308,6 +311,8 @@ export default function MonthPage() {
     );
   };
   const pickFocus = (value: string) => {
+    // 段の中で選び直しても段は出したまま（全体に戻しても消してフォーカスを落とさない。PRD D278）
+    setPickersOpen(true);
     setClientMode(value === 'client');
     if (value === 'client') {
       // 〈利用者さん〉は検索欄で選ぶ。〈スタッフ〉の選択は外し、全体の表示のまま待つ
@@ -788,7 +793,7 @@ export default function MonthPage() {
 
   // 「その他 ▾」（PRD D278）：月送り・今月と主ボタン（進み具合の帯）のほかの、ときどき使う操作をたたむ
   /** 表示の選択（〈スタッフ〉・〈利用者さん〉・混み具合）を選んでいる間・休みの入力中は、たたまずに出す（何を見ているかを隠さない） */
-  const pickersForced = focus.kind !== 'all' || loadType !== null || offMode;
+  const pickersForced = focus.kind !== 'all' || clientMode || loadType !== null || offMode;
   const pickersShown = pickersOpen || pickersForced;
   const moreItems: MoreItem[] = [
     {
@@ -796,7 +801,10 @@ export default function MonthPage() {
       label: pickersShown ? '表示の選択をたたむ' : `表示を選ぶ（${terms.staff}・${terms.client}・混み具合）`,
       icon: SlidersHorizontal,
       disabled: pickersShown && pickersForced ? '表示を「全体」・混み具合を「すべて」に戻すと、たためます' : false,
-      onSelect: () => setPickersOpen(!pickersShown),
+      onSelect: () => {
+        focusPickers.current = !pickersShown;
+        setPickersOpen(!pickersShown);
+      },
       testId: 'month-more-pickers',
     },
     ...(printOn
@@ -967,7 +975,10 @@ export default function MonthPage() {
                 <select
                   aria-labelledby={`${loadTypeId}-label ${loadTypeId}-term`}
                   value={loadType ?? ''}
-                  onChange={(e) => setLoadType(e.target.value === '' ? null : e.target.value)}
+                  onChange={(e) => {
+                    setPickersOpen(true);
+                    setLoadType(e.target.value === '' ? null : e.target.value);
+                  }}
                   data-testid="month-load-type"
                 >
                   <option value="">すべて</option>
