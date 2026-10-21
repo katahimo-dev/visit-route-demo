@@ -1,7 +1,10 @@
 // 区切り8b（PRD D189〜D193。ADR-0025 追記）を本物のブラウザで確かめる：
-// 初回の案内ツアー（初めて開くと中央のカード・role="dialog"・aria-modal・見出しと本文・1 / 6・最初のフォーカスは「次へ」・
+// 初回の案内ツアー（初めて開くと中央のカード・role="dialog"・aria-modal・見出しと本文・1 / 3・最初のフォーカスは「次へ」・
 // 裏の inert とスクロールのロック・「戻る」は最初の枚で押せずフォーカスを「次へ」へ・Tab と Shift+Tab が中で回る・
-// 開いている間は Ctrl+K でパレットを開かない・最後の枚は3段（AI案 → 手直し（固定）→ 確定）の説明と主ボタン「今日の予定を開く」・「閉じる」（とばすは出さない。PRD D226）・
+// 開いている間は Ctrl+K でパレットを開かない・3枚（ホーム・予定・欠勤。PRD D277）・予定の枚は3段（AI案 → 手直し（固定）→ 確定）の説明・
+// 最後の枚は主ボタン「今日の予定を開く」・「閉じる」（とばすは出さない。PRD D226）・
+// 初めて開くと機能は「基本」で、1枚目に「どこまで使いますか」（基本／すべて）・「すべて」を選ぶとその入り切りで初期データを作り直し
+// 「条件が変わった」にならない・「基本」に戻せる・もう一度見るでは聞かない（PRD D276）・
 // 「閉じる」で閉じて見たことを localStorage（DemoData と別のキー）に覚える・「今日の予定を開く」で閉じて今日の日の画面へ・
 // 最後の枚まで進んだら覚える・読み直しても出ない・Esc と「とばす」でも覚える・?id=・?do= のリンクでは出さない（見たことにもしない）・データの画面の「案内をもう一度見る」で開き閉じるとフォーカスがボタンへ・
 // 初期状態に戻しても見たことは残る・「見た」の印（scripts/lib/tourSeen.cjs）があれば自動で出ない・月の印刷の画面では出ない・
@@ -21,6 +24,7 @@
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const fs = require('node:fs');
 const path = require('node:path');
+const { startAll } = require('./lib/startFeatures.cjs');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const {
   launch,
@@ -52,10 +56,14 @@ const focusInTour = (page) => page.evaluate(() => !!document.activeElement?.clos
 const activeTestId = (page) => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '');
 const seenValue = (page) => page.evaluate((k) => localStorage.getItem(k), TOUR_KEY);
 
-/** 新しいブラウザの文脈（localStorage は空）。human なら「見た」の印を入れない（人が初めて開いたとき）。そうでなければ skipTour */
-async function newPage(b, { human, width = 1400, height = 1000 }) {
+/**
+ * 新しいブラウザの文脈（localStorage は空）。human なら「見た」の印を入れない（人が初めて開いたとき。機能は「基本」で始まる。
+ * start: 'all' なら初回の入り切りだけ「すべて」に固定）。そうでなければ skipTour（初回の入り切りも「すべて」）
+ */
+async function newPage(b, { human, width = 1400, height = 1000, start }) {
   const ctx = await b.newContext({ viewport: { width, height } });
   if (!human) await skipTour(ctx);
+  else if (start === 'all') await startAll(ctx);
   const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
   page.on('pageerror', (e) => {
@@ -96,7 +104,7 @@ async function tourFirst(b) {
     attrs,
   );
   check(/#\/home/.test(hashOf(page)), 'ツアー：裏はホーム', hashOf(page));
-  check((await page.getByTestId('tour-count').innerText()).includes('1 / 6'), 'ツアー：1 / 6');
+  check((await page.getByTestId('tour-count').innerText()).includes('1 / 3'), 'ツアー：1 / 3');
   check((await activeTestId(page)) === 'tour-next', 'ツアー：最初のフォーカスは「次へ」');
   check(await page.getByTestId('tour-back').isDisabled(), 'ツアー：最初の枚は「戻る」を押せない');
   const lock = await page.evaluate(() => ({
@@ -128,41 +136,44 @@ async function tourFirst(b) {
   check((await page.getByTestId('cmdk-wrap').count()) === 0, 'ツアー：開いている間は Ctrl+K で探す画面を開かない');
   // 次へ → 戻る
   await page.getByTestId('tour-next').click();
-  check((await page.getByTestId('tour-count').innerText()).includes('2 / 6'), 'ツアー：次へで 2 / 6');
+  check((await page.getByTestId('tour-count').innerText()).includes('2 / 3'), 'ツアー：次へで 2 / 3');
   check((await tour(page).getAttribute('data-step')) === 'plan', 'ツアー：2枚目は予定（月・週・日）');
+  check((await page.getByTestId('tour-start').count()) === 0, 'ツアー：「どこまで使いますか」は1枚目だけ');
   await page.getByTestId('tour-back').click();
-  check((await page.getByTestId('tour-count').innerText()).includes('1 / 6'), 'ツアー：戻るで 1 / 6');
+  check((await page.getByTestId('tour-count').innerText()).includes('1 / 3'), 'ツアー：戻るで 1 / 3');
   check(
     (await activeTestId(page)) === 'tour-next',
     'ツアー：最初の枚へ戻って「戻る」が押せなくなるとフォーカスは「次へ」',
   );
   const keys = [];
-  let searchTitle = '';
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 2; i++) {
     keys.push(await tour(page).getAttribute('data-step'));
-    if (i === 4) {
-      searchTitle = await page.getByTestId('tour-title').innerText();
-      check((await seenValue(page)) === null, 'ツアー：途中（5枚目まで）は覚えない');
+    if (i === 1) {
+      check((await seenValue(page)) === null, 'ツアー：途中（2枚目まで）は覚えない');
+      // 予定の枚：3段の説明（PRD D226）と［月｜週｜日］の切り替え
+      const points = await page.getByTestId('tour-points').locator('li').allInnerTexts();
+      check(
+        (await page.getByTestId('tour-title').innerText()) === '予定で案を作って確定します' &&
+          (await page.getByTestId('tour-body').innerText()).includes('［月｜週｜日］') &&
+          points.length === 3 &&
+          /^AI案：/.test(points[0]) &&
+          /^手直し（固定）：/.test(points[1]) &&
+          /^確定：/.test(points[2]),
+        'ツアー：予定の枚は［月｜週｜日］と3段（AI案 → 手直し（固定）→ 確定）の説明',
+        points,
+      );
+      const body = await tour(page).evaluate(
+        (el) => document.getElementById(el.getAttribute('aria-describedby'))?.textContent ?? '',
+      );
+      check(/AI案：/.test(body) && /確定：/.test(body), 'ツアー：予定の枚の説明（aria-describedby）に3段も入る', body);
     }
     await page.getByTestId('tour-next').click();
   }
   keys.push(await tour(page).getAttribute('data-step'));
   check(
-    JSON.stringify(keys) === JSON.stringify(['home', 'plan', 'absence', 'rules', 'search', 'flow']),
-    'ツアー：6枚（ホーム・予定・欠勤・キャンセル・条件・探す・3段）',
+    JSON.stringify(keys) === JSON.stringify(['home', 'plan', 'absence']),
+    'ツアー：3枚（ホーム・予定・欠勤・キャンセル）。条件・探す（Ctrl+K）の枚は無い',
     keys,
-  );
-  check(searchTitle.includes('Ctrl+K'), 'ツアー：5枚目は Ctrl+K で探せる', searchTitle);
-  // 最後の枚：3段の説明と「今日の予定を開く」（PRD D226）
-  const points = await page.getByTestId('tour-points').locator('li').allInnerTexts();
-  check(
-    (await page.getByTestId('tour-title').innerText()).includes('AI案 → 手直し → 確定') &&
-      points.length === 3 &&
-      /^AI案：/.test(points[0]) &&
-      /^手直し（固定）：/.test(points[1]) &&
-      /^確定：/.test(points[2]),
-    'ツアー：最後の枚は3段（AI案 → 手直し（固定）→ 確定）の説明',
-    points,
   );
   const lastBtns = await page.locator('[data-testid="tour"] .tour-actions button').evaluateAll((els) =>
     els.map((e) => ({
@@ -184,10 +195,6 @@ async function tourFirst(b) {
     'ツアー：最後の枚に入るとフォーカスは主ボタン「今日の予定を開く」',
     await activeTestId(page),
   );
-  const body = await tour(page).evaluate(
-    (el) => document.getElementById(el.getAttribute('aria-describedby'))?.textContent ?? '',
-  );
-  check(/AI案：/.test(body) && /確定：/.test(body), 'ツアー：最後の枚の説明（aria-describedby）に3段も入る', body);
   check((await seenValue(page)) === '1', 'ツアー：最後の枚まで進んだら閉じる前でも見たことを覚える');
   await page.screenshot({ path: path.join(OUT_DIR, 'tour-last.png') });
   await page.getByTestId('tour-next').click();
@@ -211,6 +218,108 @@ async function tourFirst(b) {
   await settle(page, 500);
   check((await tour(page).count()) === 0, '読み直しても出ない（見たことを覚えている）');
   await ctx.close();
+}
+
+// 初めて開いたときの機能の入り切り（PRD D276。ADR-0045）：保存データが無ければ「基本」で始め、1枚目で「どこまで使いますか」。
+// 「すべて」を選ぶとその入り切りで初期データを作り直し（案の記録の入り切りもそろい「条件が変わった」にならない）、「基本」に戻せる
+async function tourStart(b) {
+  const { ctx, page } = await newPage(b, { human: true });
+  await open(page, '/', '[data-testid="tour"]');
+  const data = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
+  const calcOf = (d) =>
+    Object.values(d?.aiRuns ?? {}).flatMap((runs) => runs.map((r) => JSON.stringify(r.calcFeatures ?? {})));
+  let d = await data();
+  const f0 = d?.org?.features ?? {};
+  check(
+    f0.rules === false && f0.compare === false && f0.workload === false && f0.sudden === true && f0.compat === true,
+    '初めて開くと機能は「基本」（条件の重み・案を比べる・勤務の見込みは切）',
+    f0,
+  );
+  check(
+    calcOf(d).length > 0 && calcOf(d).every((x) => x === '{"allowedStaff":false}'),
+    '初めて開いたときの案は「基本」の入り切りで作る（記録の calcFeatures がそろう）',
+    calcOf(d).slice(0, 3),
+  );
+  const start = page.getByTestId('tour-start');
+  check(await start.isVisible(), '1枚目に「どこまで使いますか」を出す');
+  check(
+    (await start.locator('legend').innerText()).includes('どこまで使いますか') &&
+      (await page.getByTestId('tour-start-basic').isChecked()) &&
+      !(await page.getByTestId('tour-start-all').isChecked()) &&
+      (await start.innerText()).includes('管理者設定'),
+    '「どこまで使いますか」：基本を選んだ状態・すべて・管理者設定の注記',
+  );
+  check((await activeTestId(page)) === 'tour-next', '「どこまで使いますか」があっても最初のフォーカスは「次へ」');
+  await page.screenshot({ path: path.join(OUT_DIR, 'tour-start.png') });
+  // 「すべて」を選ぶ
+  await page.getByTestId('tour-start-all').check();
+  await until(async () => (await data())?.org?.features?.rules === true, 10000);
+  d = await data();
+  const f1 = d?.org?.features ?? {};
+  check(
+    Object.values(f1).length === 20 && Object.values(f1).every((v) => v === true),
+    '「すべて」を選ぶと、すべての機能を入れる',
+    f1,
+  );
+  check(
+    calcOf(d).length > 0 && calcOf(d).every((x) => x === '{}'),
+    '「すべて」を選ぶと初期データを作り直し、案の記録も「すべて」の入り切り（条件が変わったにしない）',
+    calcOf(d).slice(0, 3),
+  );
+  check(
+    (await page.getByTestId('tour-start-all').isChecked()) && (await tour(page).isVisible()),
+    '選んだあともツアーは開いたまま・「すべて」を選んだ状態',
+  );
+  // 「基本」に戻す
+  await page.getByTestId('tour-start-basic').check();
+  await until(async () => (await data())?.org?.features?.rules === false, 10000);
+  check((await data())?.org?.features?.compare === false, '「基本」に戻せる');
+  await page.getByTestId('tour-start-all').check();
+  await until(async () => (await data())?.org?.features?.rules === true, 10000);
+  await page.getByTestId('tour-skip').click();
+  await tour(page).waitFor({ state: 'detached' });
+  // 要対応（条件が変わった）が出ていない
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-aside"]');
+  await settle(page, 800);
+  const stale = await page
+    .locator('[data-testid="month-attention"]')
+    .allInnerTexts()
+    .then((x) => x.join(' '));
+  check(
+    !stale.includes('条件が変わった'),
+    '「すべて」を選んだあと、月の要対応に「条件が変わった」が出ない',
+    stale.slice(0, 200),
+  );
+  // 読み直しても入り切りは残り、ツアーは出ない
+  await open(page, '/settings', '[data-testid="settings-tabs"]');
+  await settle(page, 400);
+  const tabs = await page.getByTestId('settings-tabs').locator('a').allInnerTexts();
+  check(
+    tabs.length === 6 && (await tour(page).count()) === 0,
+    '読み直しても「すべて」のまま（設定のタブ6つ）・ツアーは出ない',
+    tabs,
+  );
+  await ctx.close();
+  // 保存データがある人：features の無い古いデータは今までどおりすべて入（1問も出さない）
+  const h = await newPage(b, { human: true });
+  await open(h.page, '/', '[data-testid="tour"]');
+  await h.page.evaluate((k) => {
+    const x = JSON.parse(localStorage.getItem(k));
+    delete x.org.features;
+    localStorage.setItem(k, JSON.stringify(x));
+  }, STORAGE_KEY);
+  await open(h.page, '/', '[data-testid="tour"]');
+  check(
+    (await h.page.getByTestId('tour-start').count()) === 0,
+    '保存データがある人（初めてでない）には「どこまで使いますか」を出さない',
+  );
+  await h.page.getByTestId('tour-skip').click();
+  await open(h.page, '/settings', '[data-testid="settings-tabs"]');
+  check(
+    (await h.page.getByTestId('settings-tabs').locator('a').count()) === 6,
+    'features の無い保存データは今までどおりすべて入（設定のタブ6つ）',
+  );
+  await h.ctx.close();
 }
 
 async function tourEscSkip(b) {
@@ -256,9 +365,9 @@ async function tourEscSkip(b) {
     check(true, '次にふつうに開くとツアーが出る');
     await ctx.close();
   }
-  // 月の印刷の画面（メニューの外）では出ない
+  // 月の印刷の画面（メニューの外）では出ない（初回は「基本」で月の印刷を切っているので、初回の入り切りを「すべて」にして開く）
   {
-    const { ctx, page } = await newPage(b, { human: true });
+    const { ctx, page } = await newPage(b, { human: true, start: 'all' });
     await page.goto(`${BASE}#/month/print?ym=${YM}`);
     await page.locator('.mprint').first().waitFor({ timeout: 30000 });
     await settle(page, 400);
@@ -271,8 +380,11 @@ async function tourEscSkip(b) {
 async function tourToday(b) {
   const { ctx, page } = await newPage(b, { human: true });
   await open(page, '/month', '[data-testid="tour"]');
-  for (let i = 0; i < 5; i++) await page.getByTestId('tour-next').click();
-  check((await tour(page).getAttribute('data-step')) === 'flow', '「今日の予定を開く」：最後の枚まで進む');
+  for (let i = 0; i < 2; i++) await page.getByTestId('tour-next').click();
+  check(
+    (await tour(page).getAttribute('data-step')) === 'absence',
+    '「今日の予定を開く」：最後の枚（欠勤・キャンセル）まで進む',
+  );
   // フォーカスは「今日の予定を開く」にあるので、Enter で押せる
   check((await activeTestId(page)) === 'tour-today', '「今日の予定を開く」：最後の枚ではフォーカスがこのボタン');
   await page.keyboard.press('Enter');
@@ -317,8 +429,12 @@ async function tourAgain(b) {
   await btn.click();
   await tour(page).waitFor();
   check(
-    (await page.getByTestId('tour-count').innerText()).includes('1 / 6'),
+    (await page.getByTestId('tour-count').innerText()).includes('1 / 3'),
     'データの「案内をもう一度見る」で1枚目から開く',
+  );
+  check(
+    (await page.getByTestId('tour-start').count()) === 0,
+    '「案内をもう一度見る」では「どこまで使いますか」を出さない',
   );
   await page.keyboard.press('Escape');
   await tour(page).waitFor({ state: 'detached' });
@@ -347,7 +463,7 @@ async function tourAgain(b) {
 async function tourMobilePrint(b) {
   const { ctx, page } = await newPage(b, { human: true, width: 390, height: 844 });
   await open(page, '/', '[data-testid="tour"]');
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 3; i++) {
     const box = await tour(page).boundingBox();
     const btns = await page
       .locator('[data-testid="tour"] button')
@@ -366,8 +482,8 @@ async function tourMobilePrint(b) {
       { box, sw },
     );
     if (i === 0) await page.screenshot({ path: path.join(OUT_DIR, 'tour-390.png') });
-    if (i === 5) await page.screenshot({ path: path.join(OUT_DIR, 'tour-last-390.png') });
-    if (i < 5) await page.getByTestId('tour-next').click();
+    if (i === 2) await page.screenshot({ path: path.join(OUT_DIR, 'tour-last-390.png') });
+    if (i < 2) await page.getByTestId('tour-next').click();
   }
   await page.emulateMedia({ media: 'print' });
   check(!(await visible(tour(page))), '印刷ではツアーを出さない');
@@ -591,6 +707,10 @@ async function monthList(b) {
   let found = false;
   for (const ym of [YM, nextYm]) {
     await open(page, `/month?ym=${ym}`, '[data-testid="month-list"]');
+    // 表示の選択は「その他 ▾」の「表示を選ぶ」で開く（PRD D278）
+    await page.getByTestId('month-more').click();
+    await page.getByTestId('month-more-pickers').click();
+    await page.getByTestId('month-focus').waitFor();
     const staffOpts = await page
       .locator('[data-testid="month-focus"] option')
       .evaluateAll((els) => els.map((e) => e.value).filter((v) => v.startsWith('staff:')));
@@ -882,6 +1002,7 @@ const steps = [
   ],
   ...[
     ['tour-first', tourFirst],
+    ['tour-start', tourStart],
     ['tour-esc-skip', tourEscSkip],
     ['tour-today', tourToday],
     ['tour-again', tourAgain],

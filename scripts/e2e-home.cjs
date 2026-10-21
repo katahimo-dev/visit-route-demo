@@ -585,8 +585,8 @@ async function mobile(page) {
   check((await page.getByTestId('screen-name').innerText()) === 'ホーム', 'スマホ：上の帯の名前「ホーム」');
   const labels = await page.getByTestId('bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(labels) === JSON.stringify(['ホーム', '月', '週', '今日', '空き状況']),
-    'スマホ：下のタブの先頭に「ホーム」',
+    JSON.stringify(labels) === JSON.stringify(['ホーム', '予定', '欠勤', '空き状況']),
+    'スマホ：下のタブの先頭に「ホーム」（ホーム・予定・欠勤・空き状況とメニュー。PRD D274）',
     labels,
   );
   const active = await page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts();

@@ -11,6 +11,9 @@
 // 「入らなかった訪問へ」のあとの確定の確認の本文の先頭に件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
 // 手直しの記憶（PRD D260〜D262。ADR-0043）：手で動かすと帯で聞く（答える前は記憶しない）・次からも→来週の割当済みもまとめて変える・
 // 「元に戻す」で全部戻る・別の週の同じ曜日で作り直すと同じ人と「記憶」の印・データの画面の件数と［すべて消す］。
+// 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定は訪問を追加・メールで送る・使い方をたたむ（キーボードで開いて訪問の入力・
+// 閉じるとフォーカスは「その他」・使い方は下に開いてフォーカス）、月の予定は表示を選ぶ・印刷・勤務の見込み・作り直す・マスの見方の説明を
+// たたむ（作り直す日が無ければ押せず理由・表示の選択は開くと欄へフォーカス・〈スタッフ〉を選んでいる間はたためない）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-plan-menu.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -833,6 +836,126 @@ async function mobile(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
+// ---- 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定と月の予定 ----
+async function moreMenus(page) {
+  const focusedId = () => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '');
+  await openPlan(page);
+  // 日の予定：見せるのは欠勤・キャンセルを登録・案を変える ▾・元に戻す・表示・その他 ▾
+  const shown = await page
+    .getByTestId('plan-toolbar')
+    .locator('button:visible')
+    .evaluateAll((els) => els.map((el) => el.textContent.trim()));
+  check(
+    shown.includes('欠勤・キャンセルを登録') &&
+      shown.includes('案を変える') &&
+      shown.includes('元に戻す') &&
+      shown.includes('その他') &&
+      !shown.includes('訪問を追加') &&
+      !shown.includes('メールで送る') &&
+      !shown.includes('使い方'),
+    '日の予定：操作の行は 欠勤・案を変える ▾・元に戻す・表示・その他 ▾（訪問を追加・メールで送る・使い方はたたむ）',
+    shown,
+  );
+  check(
+    (await page.locator('.btn-primary:visible').count()) === 1,
+    '日の予定：主ボタンは見出しの「この割当で確定」の1つ',
+  );
+  const more = page.getByTestId('plan-more');
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await page.getByTestId('plan-more-list').waitFor();
+  const items = await page.getByTestId('plan-more-list').locator('[role="menuitem"] .menu-item-label').allInnerTexts();
+  check(
+    JSON.stringify(items) === JSON.stringify(['訪問を追加', 'メールで送る', '使い方']),
+    '日の予定の「その他 ▾」：訪問を追加・メールで送る・使い方',
+    items,
+  );
+  check((await focusedId()) === 'plan-visit-add', '「その他 ▾」を Enter で開くとフォーカスは先頭の項目');
+  await page.keyboard.press('Enter');
+  const form = page.locator('.plan-form');
+  await form.waitFor();
+  check(
+    await form.evaluate((el) => el.contains(document.activeElement)),
+    '「訪問を追加」で訪問の入力が開き、最初の欄へフォーカス',
+  );
+  await form.getByRole('button', { name: 'キャンセル' }).click();
+  await form.waitFor({ state: 'detached' });
+  check((await focusedId()) === 'plan-more', '訪問の入力を閉じるとフォーカスは「その他」へ戻る', await focusedId());
+  // 使い方：操作の行の下に開き、フォーカスを移す
+  await more.click();
+  await page.getByTestId('plan-more-help').click();
+  const help = page.getByTestId('plan-help');
+  await help.waitFor();
+  check(
+    (await focusedId()) === 'plan-help' && (await help.innerText()).includes('固定'),
+    '「使い方」で操作の行の下に説明が開き、フォーカスが移る',
+  );
+  await help.getByRole('button', { name: '使い方を閉じる' }).click();
+  await help.waitFor({ state: 'detached' });
+  check(true, '「使い方を閉じる」で閉じる');
+
+  // 月の予定：月送り・今月・その他 ▾ だけ（印刷・勤務の見込み・作り直し・表示の選択・説明はたたむ）
+  await page.goto(`${BASE}#/month`);
+  await page.reload();
+  await page.getByTestId('month-more').waitFor({ timeout: 30000 });
+  await settle(page, 300);
+  const head = await page
+    .locator('.month-head button:visible, .month-head select:visible')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? el.textContent.trim()));
+  check(
+    head.includes('前の月') &&
+      head.includes('次の月') &&
+      head.includes('今月') &&
+      head.includes('その他') &&
+      !head.some((x) => /印刷|勤務の見込み|条件が変わった日|全体/.test(x)) &&
+      (await page.getByTestId('month-focus').count()) === 0,
+    '月の予定：操作の行は月送り・今月・その他 ▾（表示の選択・印刷・勤務の見込み・作り直しはたたむ）',
+    head,
+  );
+  await page.getByTestId('month-more').click();
+  const mItems = await page
+    .getByTestId('month-more-list')
+    .locator('[role="menuitem"] .menu-item-label')
+    .allInnerTexts();
+  check(
+    mItems.length === 5 &&
+      /^表示を選ぶ/.test(mItems[0]) &&
+      mItems[1] === '印刷' &&
+      mItems[2] === '勤務の見込み' &&
+      /^条件が変わった日を作り直す（\d+日）$/.test(mItems[3]) &&
+      mItems[4] === 'マスの見方の説明',
+    '月の予定の「その他 ▾」：表示を選ぶ・印刷・勤務の見込み・作り直す・マスの見方の説明',
+    mItems,
+  );
+  const stale = page.getByTestId('month-stale');
+  if (/（0日）/.test(mItems[3])) {
+    check(
+      (await stale.getAttribute('aria-disabled')) === 'true' &&
+        /条件が変わった日/.test((await stale.getAttribute('title')) ?? ''),
+      '「その他 ▾」：作り直す日が無ければ押せず理由',
+    );
+  }
+  await page.getByTestId('month-more-help').click();
+  await page.getByTestId('month-help').waitFor();
+  check((await focusedId()) === 'month-help', '「マスの見方の説明」で説明が開き、フォーカスが移る');
+  await page.getByTestId('month-more').click();
+  await page.getByTestId('month-more-pickers').click();
+  await page.getByTestId('month-focus').waitFor();
+  check((await focusedId()) === 'month-focus', '「表示を選ぶ」で表示の選択が開き、フォーカスは表示の欄');
+  const sid = await page.getByTestId('month-focus').locator('option[value^="staff:"]').first().getAttribute('value');
+  await page.getByTestId('month-focus').selectOption(sid);
+  await settle(page, 300);
+  await page.getByTestId('month-more').click();
+  const pk = page.getByTestId('month-more-pickers');
+  check(
+    (await pk.innerText()).includes('表示の選択をたたむ') && (await pk.getAttribute('aria-disabled')) === 'true',
+    '〈スタッフ〉を選んでいる間は表示の選択をたためない（押せず理由）',
+    await pk.getAttribute('title'),
+  );
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: path.join(OUT_DIR, 'month-more.png') });
+}
+
 const steps = sharedPage({
   open: async () => {
     const s = await openPage();
@@ -856,6 +979,7 @@ const steps = sharedPage({
     ['compare-no-option', compareNoOption],
     ['reassign-menu', reassignMenu],
     ['manual-prefs', manualPrefs],
+    ['more-menus', moreMenus],
     ['mobile', mobile],
   ],
   after: ({ native }) => check(native.length === 0, 'ブラウザのダイアログを出さない', native),
