@@ -36,6 +36,12 @@ export function isYm(ym: string): boolean {
 /** 日付（YYYY-MM-DD）の月（YYYY-MM） */
 export const ymOf = (date: string): string => date.slice(0, 7);
 
+/** 月の予定が見せている月（`?ym=` が正しければその月、無ければ選んでいる日付の月。MonthPage と同じ決め方） */
+export function monthShown(search: string, date: string): string {
+  const raw = new URLSearchParams(search).get('ym') ?? '';
+  return isYm(raw) ? raw : ymOf(date);
+}
+
 /** 月を n か月ずらす */
 export function addMonths(ym: string, n: number): string {
   const [y, m] = ym.split('-').map(Number);

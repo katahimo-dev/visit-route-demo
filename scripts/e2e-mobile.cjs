@@ -670,6 +670,44 @@ async function narrowVacancy(page) {
   check((await pageWidth(page)) <= 390, '空き状況：横にはみ出さない');
 }
 
+/**
+ * 相性・勤務時間（シフト）（PRD D272。ADR-0033）：ページは横にはみ出さず、表は横巻きの枠の中。名前の列を詰めて
+ * （折り返す）〈スタッフ〉・日付の列が4つ以上見え、列の見出しの名前が枠の中で切れずに読める。上の帯の名前も切れない
+ */
+async function narrowGrids(page) {
+  for (const [h, table, min] of [
+    ['/compat', 'compat-table', 4],
+    ['/availability', null, 5],
+  ]) {
+    await open(page, h, table ? `[data-testid="${table}"]` : '.avail-table');
+    await settle(page, 300);
+    const st = await page.evaluate(
+      (sel) => {
+        const t = document.querySelector(sel);
+        const box = t.closest('.table-scroll').getBoundingClientRect();
+        const name = t.querySelector('thead th.avail-name').getBoundingClientRect();
+        const heads = [...t.querySelectorAll('thead th:not(.avail-name)')].map((th) => th.getBoundingClientRect());
+        const whole = heads.filter((r) => r.left >= name.right - 1 && r.right <= box.right + 1).length;
+        const screen = document.querySelector('[data-testid="screen-name"]');
+        const parts = [screen, ...document.querySelectorAll('.m-screen-group, .m-screen-item')];
+        return {
+          page: document.documentElement.scrollWidth,
+          nameWidth: Math.round(name.width),
+          whole,
+          titleClipped: parts.some((el) => el && el.scrollWidth > el.clientWidth + 1),
+        };
+      },
+      table ? `[data-testid="${table}"]` : '.avail-table',
+    );
+    check(
+      st.page <= 390 && st.whole >= min && st.nameWidth <= 130 && !st.titleClipped,
+      `${h}：横にはみ出さず、名前の列を詰めて列が${min}つ以上見える・上の帯の名前が切れない（PRD D272）`,
+      st,
+    );
+    await page.screenshot({ path: path.join(OUT_DIR, `narrow-grid${h.replace('/', '-')}.png`) });
+  }
+}
+
 /** 広い画面（1400px）では表のまま（カードにしない・絞り込みを畳まない・週は時間軸） */
 async function narrowWide(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
@@ -750,6 +788,7 @@ const steps = sharedPage({
     ['compare-narrow', narrowCompare],
     ['week-narrow-default', narrowWeek],
     ['vacancy-narrow-start', narrowVacancy],
+    ['grids-narrow', narrowGrids],
     ['narrow-wide', narrowWide],
     ['print', print],
     ['wide', wide],

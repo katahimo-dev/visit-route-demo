@@ -659,6 +659,34 @@ async function warnColors(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'week-noplan.png'), fullPage: false });
 }
 
+/**
+ * 日の予定の点数の色（PRD D266・D228）：入らない・必須の違反が無ければ点数を赤（要対応）・朱にしない（点が低いだけでは
+ * 注意どまり）。あれば要対応の色
+ */
+async function scoreColor(page) {
+  await resetData(page);
+  await openPlan(page);
+  const read = () =>
+    page.getByTestId('plan-summary').evaluate((el) => {
+      const t = el.innerText;
+      const sc = el.querySelector('[data-testid="plan-score"]');
+      return {
+        dropped: Number(/入らない\D*(\d+)/.exec(t)?.[1] ?? -1),
+        hard: Number(/必須の違反\D*(\d+)/.exec(t)?.[1] ?? -1),
+        alert: sc.classList.contains('is-alert'),
+        color: getComputedStyle(sc.querySelector('strong')).color,
+      };
+    });
+  const st = await read();
+  check(st.dropped >= 0 && st.hard >= 0, '点数の色：入らない・必須の違反の数が読める', st);
+  const bad = st.dropped > 0 || st.hard > 0;
+  check(
+    st.alert === bad && (bad ? st.color === DANGER_RGB : st.color !== DANGER_RGB && st.color !== 'rgb(156, 66, 50)'),
+    bad ? '点数の色：入らない・違反があれば要対応の色' : '点数の色：入らない0・違反0なら赤・朱にしない（PRD D266）',
+    st,
+  );
+}
+
 // ---- タッチ・390px・印刷 ----
 async function mobile(browser) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -750,6 +778,7 @@ const steps = sharedPage({
     ['reason-words', reasonWords],
     ['unplaced-words', unplacedWords],
     ['warn-colors', warnColors],
+    ['score-color', scoreColor],
     // 別の文脈で開く（スクリーンショットは撮らない）
     ['mobile', (_page, s) => guard(() => mobile(s.b), { label: 'mobile' })()],
   ],

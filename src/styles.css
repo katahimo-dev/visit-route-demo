@@ -282,8 +282,9 @@ label {
   /* 文だけの知らせなので、重なった下の入力欄・ボタンを押せるようにする（ボタン付きの知らせはボタンだけ押せる） */
   pointer-events: none;
 }
-/* ボタン付きの知らせ（手直しの「元に戻す」。PRD D218） */
+/* ボタン付きの知らせ（手直しの「元に戻す」。PRD D218）。重ねている間は消さないので、箱（文の幅だけ）はマウスを受ける（PRD D268） */
 .toast.has-action {
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -937,6 +938,43 @@ tbody tr:hover td {
 .nav-link.active svg {
   color: var(--primary);
 }
+/* 低い画面（高さ 860px 以下。1366×768 など）では左のメニューをさらに詰め、最後の項目（データ）まで巻かずに見せる（PRD D270）。
+   タッチできる端末は下の any-pointer: coarse で押せる所 44px のまま */
+@media (min-width: 861px) and (max-height: 860px) {
+  .side-nav {
+    gap: 8px;
+    padding: 10px 12px 10px;
+  }
+  .side-nav .brand-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+  .nav-groups {
+    gap: 4px;
+  }
+  .nav-group {
+    gap: 0;
+  }
+  .nav-group-title {
+    padding-bottom: 0;
+    font-size: 0.68rem;
+  }
+  .nav-link {
+    min-height: 30px;
+    padding: 3px 10px;
+    font-size: 0.92rem;
+    line-height: 1.3;
+  }
+}
+/* 左のメニューに続きがある（下に巻ける）間は下の端に影（巻き切ると消える。背景の local と scroll の重ね。PRD D270） */
+.side-nav {
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--card) 70%) 0 100% / 100% 40px no-repeat local,
+    radial-gradient(farthest-side at 50% 100%, rgba(60, 40, 30, 0.22), rgba(60, 40, 30, 0)) 0 100% / 100% 16px
+    no-repeat scroll,
+    var(--card);
+}
 .app-body {
   min-width: 0;
   display: flex;
@@ -1049,6 +1087,19 @@ tbody tr:hover td {
     font-size: 0.78rem;
     font-weight: 700;
     color: var(--sub);
+  }
+  /* 400px 以下は名前の場所を少し広げる（「勤務時間（シフト）」も切らない。PRD D179・D272） */
+  @media (max-width: 400px) {
+    .m-head-title {
+      gap: 6px;
+    }
+    .m-head-title .brand-mark {
+      width: 28px;
+      height: 28px;
+    }
+    .m-screen-item {
+      font-size: 0.94rem;
+    }
   }
   .m-menu-btn {
     display: inline-flex;

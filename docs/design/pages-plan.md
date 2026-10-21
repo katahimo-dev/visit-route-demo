@@ -1,6 +1,6 @@
 # 日の予定（予定と AI案）
 
-> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`・`manualPrefs.ts`、`src/components/Toast.tsx`・`prefAsk.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031・0043。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224・D260〜D262。
+> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`・`manualPrefs.ts`、`src/components/Toast.tsx`・`prefAsk.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031・0043・0044。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224・D260〜D262・D266・D269。
 > 欠勤・キャンセルの欄と振り直しは [pages-plan-absence.md](pages-plan-absence.md)、バーの塗りは [pages-bars.md](pages-bars.md)。
 
 ### 日の予定（`#/plan`。ADR-0009）
@@ -22,7 +22,7 @@
 
 1. 見出し（`PageHeader`。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）：題名・1行の説明・状態の印・主ボタン「この割当で確定」（確定済みの日は枠のボタンにして主ボタンを置かない。PRD D238）。題名の下に［月｜週｜日］のタブ（`ViewSwitch`。PRD D237）
 2. 進み具合の帯：`ScheduleBand date={date} withDay`（[pages-home.md](pages-home.md)）
-3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`。title「点数の基準：〈名前〉」）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」
+3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`・`plan-score`。title「点数の基準：〈名前〉」。点数の文字は地の色で、入らない・必須の違反があるときだけ `.is-alert` で要対応の赤。PRD D266）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」
 4. 担当ごとの1日（`DayLines`。下）。開いているときは1行のまとめと1枚のカードにつなげる（`.plan-oneline:has(+ .daylines)` と `.plan-oneline + .daylines` で間と角を消す。印刷では離す。PRD D237）
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
 6. 操作の行（`plan-toolbar`）：「欠勤・キャンセルを登録」（`sudden-open`）・「訪問を追加」・「案を変える ▾」は枠、「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）・「メールで送る」は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）
@@ -127,6 +127,7 @@
 ##### 時間軸（PRD D58。`components/routeTimeline.tsx`）
 
 - 担当ごとの列を時刻の位置で描く。時刻は今の案の lenient の `scheduleRoute`
+- 列の最小幅 `TL_COL_MIN_PX`（128px）。見出しの名前（`.col-head-name`）は空白で折り返して切らず、件数の札は入らなければ次の行。箱は `EdgeScroll`（`edgeClass="is-tl"`・`route-timeline`）で、右に続きの列がある間は広い画面でも端に影（印刷では出さない。PRD D269）
 - 1分＝一定の高さ（`lib/timeline` の `TL_PX_PER_MIN`＝1.1px）、`TL_START` 07:00〜`TL_END` 20:00（稼働時間帯・訪問がはみ出せば広げる）
 - 列の背景は稼働時間帯（`slotsOf`。欠勤を差し引いたもの）の外を灰、欠勤の時間を斜線と「欠勤」
 - 帯は押すと理由（`VisitCard` と同じ選択・地図の強調）。印（固定・代行・+N分・違反の赤い枠・仮・資格✗）は小さなアイコンと `title`

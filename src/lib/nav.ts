@@ -43,6 +43,16 @@ export function activeTabPath(pathname: string): string {
   return activeNavPath(pathname);
 }
 
+/**
+ * 上の帯の日付の選択を出す画面（PRD D267）：選んでいる日付で中身が変わる画面だけ。日・週・月の予定・案を比べる・勤務の見込み
+ * （日付の月）・勤務時間（シフト）（今日の列の印）。ほかの画面（ホーム・空き状況・一覧・相性・条件・設定・データ）では出さない
+ * （日付は覚えたまま。〈利用者さん〉一覧・相性の絞り込みの週は、選んでいる日付の週のまま「N/D からの週」と書く）
+ */
+export const DATE_PAGES: readonly string[] = ['/plan', '/week', '/month', '/compare', '/workload', '/availability'];
+
+/** 上の帯に日付の選択を出すか（古い #/schedule は日の予定） */
+export const showsDateSwitch = (pathname: string): boolean => DATE_PAGES.includes(activeNavPath(pathname));
+
 /** その下のタブが今の画面か */
 export const isActiveTab = (to: string, pathname: string): boolean => activeTabPath(pathname) === to;
 

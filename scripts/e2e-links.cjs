@@ -518,8 +518,14 @@ async function vacancy(page) {
     await btn.getAttribute('href'),
   );
   check((await page.locator('.drawer .btn-primary').count()) === 0, '右の欄に主ボタンを足さない');
-  // Ctrl+クリックで新しいタブ（元のタブは空き状況のまま・右の欄も開いたまま）
-  const before = await page.locator('.date-switch select').inputValue();
+  // Ctrl+クリックで新しいタブ（元のタブは空き状況のまま・右の欄も開いたまま）。空き状況には日付の選択を出さないので
+  // （PRD D267）、選んでいる日付は外枠の data-date で読む
+  const shellDate = () => page.locator('.app-shell').getAttribute('data-date');
+  check(
+    (await page.locator('.app-header .date-switch').count()) === 0,
+    '空き状況：上の帯に日付の選択を出さない（PRD D267）',
+  );
+  const before = await shellDate();
   const [tab] = await Promise.all([
     page.context().waitForEvent('page', { timeout: 10000 }),
     btn.click({ modifiers: ['Control'] }),
@@ -538,7 +544,7 @@ async function vacancy(page) {
   check(
     /#\/vacancy/.test(page.url()) &&
       (await page.getByTestId('vacancy-dates').count()) === 1 &&
-      (await page.locator('.date-switch select').inputValue()) === before,
+      (await shellDate()) === before,
     'Ctrl+クリック：元のタブは空き状況のまま（右の欄も開いたまま・日付も変わらない）',
   );
   // ふつうに押すと同じタブで移る
