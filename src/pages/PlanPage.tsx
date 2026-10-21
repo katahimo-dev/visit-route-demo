@@ -14,6 +14,7 @@ import {
   GitCompareArrows,
   History,
   Hourglass,
+  Info,
   LayoutGrid,
   ListChecks,
   Mail,
@@ -347,6 +348,12 @@ export default function PlanPage() {
   const { focusStaff, focusOn } = sel;
   /** 開いている訪問の入力欄（null：閉じている、'new'：足す、それ以外：直す訪問の ID） */
   const [editing, setEditing] = useState<string | null>(null);
+  /** 「その他 ▾」の「使い方」で開いた説明（PRD D279。保存しない） */
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (helpOpen) helpRef.current?.focus();
+  }, [helpOpen]);
   /**
    * 「欠勤・キャンセル」の欄（PRD D167〜D172。null：閉じている）。日の画面の入口・ホーム（`?do=absence`）からは1段目、
    * 列の見出しの「この人の欠勤を登録」「欠勤を直す」からはその人を選んだ2段目で開く
@@ -3129,6 +3136,29 @@ export default function PlanPage() {
   /** 地図を出すか（1280px 以上で畳んだときだけ出さない。狭い画面は今どおり下に置き、画面の外なら MapDock） */
   const mapShown = !wideMap || mapOpen;
 
+  /** 操作の行の「その他 ▾」（PRD D279）：訪問を追加・メールで送る・使い方（ときどき使う操作） */
+  const moreItems: MenuItem[] = [
+    {
+      key: 'add',
+      label: '訪問を追加',
+      icon: Plus,
+      disabled: m.clients.length === 0 ? `${terms.client}がいません` : false,
+      onSelect: () => setEditing('new'),
+      testId: 'plan-visit-add',
+    },
+    // 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017）
+    ...(mailOn
+      ? [{ key: 'mail', label: 'メールで送る', icon: Mail, onSelect: () => setPanel('mail'), testId: 'day-mail' }]
+      : []),
+    {
+      key: 'help',
+      label: helpOpen ? '使い方を閉じる' : '使い方',
+      icon: Info,
+      onSelect: () => setHelpOpen(!helpOpen),
+      testId: 'plan-more-help',
+    },
+  ];
+
   return (
     <div className="plan-page stack">
       <PageHeader
@@ -3422,15 +3452,6 @@ export default function PlanPage() {
             <WithIcon icon={UserRoundX}>欠勤・キャンセルを登録</WithIcon>
           </button>
         )}
-        <button
-          type="button"
-          className="btn"
-          onClick={() => setEditing('new')}
-          disabled={m.clients.length === 0}
-          data-visit-add
-        >
-          <WithIcon icon={Plus}>訪問を追加</WithIcon>
-        </button>
         <MenuButton label="案を変える" icon={Sparkles} items={menuItems} testId="plan-menu" />
         {/* 直前の手直しを1手だけ戻す（PRD D218）。戻せないときも押せる所に残し（フォーカスを落とさない）、理由は title */}
         {aiPlan && (
@@ -3443,12 +3464,6 @@ export default function PlanPage() {
             data-testid="plan-reassign-undo"
           >
             <WithIcon icon={Undo2}>元に戻す</WithIcon>
-          </button>
-        )}
-        {/* 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017。主ボタンにはしない） */}
-        {mailOn && (
-          <button type="button" className="btn btn-text" onClick={() => setPanel('mail')} data-testid="day-mail">
-            <WithIcon icon={Mail}>メールで送る</WithIcon>
           </button>
         )}
         {(visits.length > 0 || m.leaveVisits.length > 0) && (
@@ -3473,12 +3488,21 @@ export default function PlanPage() {
           </fieldset>
         )}
         {progressView}
-        <Hint label="使い方">
+        {/* 訪問を追加・メールで送る・使い方は「その他 ▾」にたたむ（PRD D279） */}
+        <MenuButton label="その他" items={moreItems} testId="plan-more" className="plan-more" />
+      </div>
+      {helpOpen && (
+        <div ref={helpRef} className="hint-body plan-help" tabIndex={-1} data-testid="plan-help">
           訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
           の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。訪問を押して「担当を変える」から選んでも同じです（キーボード・タッチでも）。直前の手直しは「元に戻す」で1手だけ戻せます。「案を変える」の「固定した訪問は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
           名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
-        </Hint>
-      </div>
+          <div>
+            <button type="button" className="btn btn-small btn-text" onClick={() => setHelpOpen(false)}>
+              使い方を閉じる
+            </button>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div ref={formRef} className="plan-form">
@@ -3500,7 +3524,7 @@ export default function PlanPage() {
       ) : visits.length === 0 ? (
         <div className="card">
           <Empty icon={CalendarDays}>
-            この日の訪問はまだありません（「訪問を追加」か、「案を変える」の「前の同じ曜日からコピー」）
+            この日の訪問はまだありません（「その他」の「訪問を追加」か、「案を変える」の「前の同じ曜日からコピー」）
           </Empty>
         </div>
       ) : (

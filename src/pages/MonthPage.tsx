@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  Info,
   Layers,
   LayoutGrid,
   List,
@@ -14,6 +15,7 @@ import {
   Printer,
   RefreshCw,
   Repeat,
+  SlidersHorizontal,
   Sparkles,
   Square,
   Timer,
@@ -41,12 +43,13 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { FieldError } from '../components/FieldError';
 import { ClientDots } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
+import { MenuButton, type MenuItem as MoreItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
 import { type BandModel, ProgressBand } from '../components/progressBand';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
-import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
+import { PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
 import { slotsText, timeText } from '../domain/availability';
@@ -213,6 +216,20 @@ export default function MonthPage() {
   const [loadType, setLoadType] = useState<string | null>(null);
   /** 「休みを入れる」（希望休のまとめ入力。PRD D69）：〈スタッフ〉を選んでいるときだけ。日のマスを押すと希望休を付け外し */
   const [offMode, setOffMode] = useState(false);
+  /** 「その他 ▾」の「表示を選ぶ」で開いた表示の選択の段（PRD D278。保存しない） */
+  const [pickersOpen, setPickersOpen] = useState(false);
+  /** 「その他 ▾」の「マスの見方」で開いた説明（PRD D278。保存しない） */
+  const [helpOpen, setHelpOpen] = useState(false);
+  /** 表示の選択の段の最初の欄（開いたらここへフォーカス） */
+  const focusSelectRef = useRef<HTMLSelectElement>(null);
+  const helpRef = useRef<HTMLDivElement>(null);
+  // 「表示を選ぶ」で開いたら最初の欄へ、「マスの見方の説明」で開いたら説明へフォーカス（メニューのボタンへ戻ったあと）
+  useEffect(() => {
+    if (pickersOpen) focusSelectRef.current?.focus();
+  }, [pickersOpen]);
+  useEffect(() => {
+    if (helpOpen) helpRef.current?.focus();
+  }, [helpOpen]);
   /** 最後に付け外しした結果（読み上げ） */
   const [offNote, setOffNote] = useState<{ date: string; text: string; warn: boolean } | null>(null);
   const dataRef = useRef(data);
@@ -769,6 +786,67 @@ export default function MonthPage() {
         ? (activeClients.find((c) => c.id === focus.id)?.displayName ?? '')
         : '';
 
+  // 「その他 ▾」（PRD D278）：月送り・今月と主ボタン（進み具合の帯）のほかの、ときどき使う操作をたたむ
+  /** 表示の選択（〈スタッフ〉・〈利用者さん〉・混み具合）を選んでいる間・休みの入力中は、たたまずに出す（何を見ているかを隠さない） */
+  const pickersForced = focus.kind !== 'all' || loadType !== null || offMode;
+  const pickersShown = pickersOpen || pickersForced;
+  const moreItems: MoreItem[] = [
+    {
+      key: 'pickers',
+      label: pickersShown ? '表示の選択をたたむ' : `表示を選ぶ（${terms.staff}・${terms.client}・混み具合）`,
+      icon: SlidersHorizontal,
+      disabled: pickersShown && pickersForced ? '表示を「全体」・混み具合を「すべて」に戻すと、たためます' : false,
+      onSelect: () => setPickersOpen(!pickersShown),
+      testId: 'month-more-pickers',
+    },
+    ...(printOn
+      ? [
+          {
+            key: 'print',
+            label: '印刷',
+            icon: Printer,
+            description: '紙のカレンダーの代わりに、この月の予定をA4横で印刷します',
+            onSelect: () =>
+              navigate(
+                `/month/print?ym=${ym}${focus.kind === 'staff' ? `&staff=${encodeURIComponent(focus.id)}` : ''}`,
+              ),
+            testId: 'month-print',
+          },
+        ]
+      : []),
+    ...(workloadOn
+      ? [
+          {
+            key: 'workload',
+            label: '勤務の見込み',
+            icon: Timer,
+            description: '予定から、この月の出勤〜退勤（拘束）・移動・空き時間（待ち）と交通費を見込みます',
+            onSelect: () => navigate(`/workload?ym=${ym}`),
+            testId: 'month-workload',
+          },
+        ]
+      : []),
+    {
+      key: 'stale',
+      label: `条件が変わった日を作り直す（${staleTargets.length}日）`,
+      icon: RefreshCw,
+      disabled: running
+        ? '案を作っている間は押せません'
+        : staleTargets.length === 0
+          ? '条件が変わった日（確定していない日）はありません'
+          : false,
+      onSelect: () => void start('stale', false),
+      testId: 'month-stale',
+    },
+    {
+      key: 'help',
+      label: helpOpen ? 'マスの見方の説明を閉じる' : 'マスの見方の説明',
+      icon: Info,
+      onSelect: () => setHelpOpen(!helpOpen),
+      testId: 'month-more-help',
+    },
+  ];
+
   return (
     <div className="stack">
       <PageHeader
@@ -822,121 +900,90 @@ export default function MonthPage() {
           >
             今月
           </button>
-          {printOn && (
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() =>
-                navigate(
-                  `/month/print?ym=${ym}${focus.kind === 'staff' ? `&staff=${encodeURIComponent(focus.id)}` : ''}`,
-                )
-              }
-              title="紙のカレンダーの代わりに、この月の予定をA4横で印刷します"
-              data-testid="month-print"
-            >
-              <WithIcon icon={Printer} size={14}>
-                印刷
-              </WithIcon>
-            </button>
-          )}
-          {workloadOn && (
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => navigate(`/workload?ym=${ym}`)}
-              title="予定から、この月の出勤〜退勤（拘束）・移動・空き時間（待ち）の時間と交通費を見込みます"
-              data-testid="month-workload"
-            >
-              <WithIcon icon={Timer} size={14}>
-                勤務の見込み
-              </WithIcon>
-            </button>
-          )}
+          {/* 月送り・今月のほかは「その他 ▾」にたたむ（PRD D278。主ボタンは進み具合の帯の1つ） */}
+          <MenuButton label="その他" items={moreItems} testId="month-more" className="month-more" />
           <span className="month-summary sub" data-testid="month-summary">
             月全体：入らない {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>
         </div>
-        <div className="row month-pickers">
-          <label className="month-picker">
-            <span>表示</span>
-            <select value={focusValue} onChange={(e) => pickFocus(e.target.value)} data-testid="month-focus">
-              <option value="all">全体</option>
-              <optgroup label={terms.staff}>
-                {activeStaff.map((s) => (
-                  <option key={s.id} value={`staff:${s.id}`}>
-                    {s.name}
-                  </option>
-                ))}
-              </optgroup>
-              <option value="client">{terms.client}（名前・よみで探す）</option>
-            </select>
-          </label>
-          {focusValue === 'client' && (
-            <ClientPicker
-              clients={activeClients}
-              selected={focus.kind === 'client' ? [focus.id] : []}
-              onChange={(ids) => patchParams({ staff: null, client: ids[0] ?? null })}
-              label={`表示する${terms.client}`}
-              period={{ label: 'この月', clientIds: monthClientIds }}
-              byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
-              tentativeShortcut
-              testId="month-client-picker"
-            />
-          )}
-          {requestedOn && focus.kind === 'staff' && (
-            <button
-              type="button"
-              className={`btn btn-small month-off-toggle${offMode ? ' is-on' : ''}`}
-              aria-pressed={offMode}
-              disabled={running}
-              onClick={() => {
-                setOffNote(null);
-                setOffMode((x) => !x);
-              }}
-              data-testid="month-off-toggle"
-            >
-              <WithIcon icon={CalendarOff} size={14}>
-                {offMode ? '休みの入力を終わる' : '休みを入れる'}
-              </WithIcon>
-            </button>
-          )}
-          {focus.kind === 'all' && (
-            // 用語の説明（ボタン）は label の中に置かない（入力欄の名前が用語のボタンへ移るため。PR #42 のレビュー）。
-            // 選ぶ欄の名前は aria-labelledby で「混み具合：」と用語をつなぐ
-            <div className="month-picker">
-              <span>
-                <span id={`${loadTypeId}-label`}>混み具合：</span>
-                <Term k="loadCount" testId="term-load-count" id={`${loadTypeId}-term`} />
-              </span>
+        {pickersShown && (
+          <div className="row month-pickers" data-testid="month-pickers">
+            <label className="month-picker">
+              <span>表示</span>
               <select
-                aria-labelledby={`${loadTypeId}-label ${loadTypeId}-term`}
-                value={loadType ?? ''}
-                onChange={(e) => setLoadType(e.target.value === '' ? null : e.target.value)}
-                data-testid="month-load-type"
+                ref={focusSelectRef}
+                value={focusValue}
+                onChange={(e) => pickFocus(e.target.value)}
+                data-testid="month-focus"
               >
-                <option value="">すべて</option>
-                {data.visitTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}（担当できる人）
-                  </option>
-                ))}
+                <option value="all">全体</option>
+                <optgroup label={terms.staff}>
+                  {activeStaff.map((s) => (
+                    <option key={s.id} value={`staff:${s.id}`}>
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <option value="client">{terms.client}（名前・よみで探す）</option>
               </select>
-            </div>
-          )}
-        </div>
-        <div className="row month-tools">
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={running || staleTargets.length === 0}
-            onClick={() => start('stale', false)}
-            title={staleTargets.length === 0 ? '条件が変わった日（確定していない日）はありません' : ''}
-          >
-            <WithIcon icon={RefreshCw} size={14}>
-              条件が変わった日を作り直す（{staleTargets.length}日）
-            </WithIcon>
-          </button>
-          <Hint>
+            </label>
+            {focusValue === 'client' && (
+              <ClientPicker
+                clients={activeClients}
+                selected={focus.kind === 'client' ? [focus.id] : []}
+                onChange={(ids) => patchParams({ staff: null, client: ids[0] ?? null })}
+                label={`表示する${terms.client}`}
+                period={{ label: 'この月', clientIds: monthClientIds }}
+                byStaff={{ staffLabel: terms.staff, staff: activeStaff, clientIdsOf: clientsOfStaff }}
+                tentativeShortcut
+                testId="month-client-picker"
+              />
+            )}
+            {requestedOn && focus.kind === 'staff' && (
+              <button
+                type="button"
+                className={`btn btn-small month-off-toggle${offMode ? ' is-on' : ''}`}
+                aria-pressed={offMode}
+                disabled={running}
+                onClick={() => {
+                  setOffNote(null);
+                  setOffMode((x) => !x);
+                }}
+                data-testid="month-off-toggle"
+              >
+                <WithIcon icon={CalendarOff} size={14}>
+                  {offMode ? '休みの入力を終わる' : '休みを入れる'}
+                </WithIcon>
+              </button>
+            )}
+            {focus.kind === 'all' && (
+              // 用語の説明（ボタン）は label の中に置かない（入力欄の名前が用語のボタンへ移るため。PR #42 のレビュー）。
+              // 選ぶ欄の名前は aria-labelledby で「混み具合：」と用語をつなぐ
+              <div className="month-picker">
+                <span>
+                  <span id={`${loadTypeId}-label`}>混み具合：</span>
+                  <Term k="loadCount" testId="term-load-count" id={`${loadTypeId}-term`} />
+                </span>
+                <select
+                  aria-labelledby={`${loadTypeId}-label ${loadTypeId}-term`}
+                  value={loadType ?? ''}
+                  onChange={(e) => setLoadType(e.target.value === '' ? null : e.target.value)}
+                  data-testid="month-load-type"
+                >
+                  <option value="">すべて</option>
+                  {data.visitTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}（担当できる人）
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+        {noVisitsWhy && <p className="sub">{noVisitsWhy}</p>}
+        {helpOpen && (
+          <div ref={helpRef} className="hint-body month-help" tabIndex={-1} data-testid="month-help">
             日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要対応」）は、入らない訪問がある・必須の違反がある・休みの人に訪問が残る日です（必須の違反は点数の基準のプリセット「
             {scoreRulerName}
             」の条件で見ます）。黄の点線の枠の日（「注意」）は、今日以降で訪問があるのにまだ案が無い日です（まとめて作るか日の予定で作ります）。「条件が変わった」は、案を作ったあとに訪問・
@@ -946,9 +993,13 @@ export default function MonthPage() {
             {terms.staff}
             の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。{edgeLabel('early')}・{edgeLabel('late')}
             に働く人がいる日は、段の端に「◀」「▶」の印を出します（マウスを乗せると時刻）。
-          </Hint>
-          {noVisitsWhy && <span className="sub">{noVisitsWhy}</span>}
-        </div>
+            <div>
+              <button type="button" className="btn btn-small btn-text" onClick={() => setHelpOpen(false)}>
+                説明を閉じる
+              </button>
+            </div>
+          </div>
+        )}
         {offStaffId !== null && (
           <div className="month-off-bar" data-testid="month-off-bar">
             <p>

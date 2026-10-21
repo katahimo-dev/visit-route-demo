@@ -101,7 +101,8 @@ export function VisitForm({
       const to =
         back?.isConnected && back !== document.body
           ? back
-          : document.querySelector<HTMLElement>('[data-visit-add]:not(:disabled)');
+          : // 「訪問を追加」は日の予定の「その他 ▾」の中（PRD D279）。閉じた一覧には無いので「その他」のボタンへ
+            document.querySelector<HTMLElement>('[data-testid="plan-more"]');
       to?.focus({ preventScroll: true });
     };
   }, []);
