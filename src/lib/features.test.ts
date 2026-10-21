@@ -190,7 +190,7 @@ describe('ひな形（ADR-0028 の表）', () => {
     ]);
     for (const t of TEMPLATES) expect(t.description).not.toBe('');
   });
-  it.each(TEMPLATE_IDS)('%s を当てると表どおりの入り切り（全20の ID を明示）で、matchTemplate がそれを返す', (id) => {
+  it.each(TEMPLATE_IDS)('%s を適用すると表どおりの入り切り（全20の ID を明示）で、matchTemplate がそれを返す', (id) => {
     const f = applyTemplate(id);
     expect(Object.keys(f).sort()).toEqual([...FEATURE_IDS].sort());
     const on = FEATURE_IDS.filter((x) => f[x]);

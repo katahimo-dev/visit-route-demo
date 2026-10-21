@@ -328,7 +328,7 @@ export const TEMPLATES: readonly TemplateDef[] = [
 /** ひな形の1つ */
 export const templateDef = (id: TemplateId): TemplateDef => TEMPLATES.find((t) => t.id === id)!;
 
-/** ひな形を当てたときの入り切り（全20の ID を明示して書く。業種とは連動しない） */
+/** ひな形を適用したときの入り切り（全20の ID を明示して書く。業種とは連動しない） */
 export function applyTemplate(id: TemplateId): Features {
   const on = new Set(templateDef(id).on);
   return Object.fromEntries(FEATURE_IDS.map((f) => [f, on.has(f)])) as Features;
@@ -347,7 +347,7 @@ export function matchTemplate(features: Features): TemplateId | 'custom' {
   return 'custom';
 }
 
-/** ひな形を当てると入る機能・切れる機能（使えるか（isOn）で比べる。確認ダイアログの文。並びは表の順） */
+/** ひな形を適用すると入る機能・切れる機能（使えるか（isOn）で比べる。確認ダイアログの文。並びは表の順） */
 export function templateDiff(features: Features, id: TemplateId): { on: FeatureId[]; off: FeatureId[] } {
   const next = applyTemplate(id);
   return {
