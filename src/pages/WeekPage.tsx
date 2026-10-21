@@ -60,7 +60,7 @@ import { deferredDragStart } from '../lib/dragStart';
 import { periodEmptyGuide } from '../lib/emptyGuide';
 import { isDate } from '../lib/isDate';
 import { attentionList, expandRange, expandRangeVisits, ymOf } from '../lib/month';
-import { monthBatch, weekBatchDays, weekLabel } from '../lib/monthBatch';
+import { canMakeDay, monthBatch, weekBatchDays, weekLabel } from '../lib/monthBatch';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
 import { scrollLeftToShow } from '../lib/scrollEdge';
@@ -281,6 +281,15 @@ export default function WeekPage() {
     () => expandRangeVisits({ patterns, visits: allVisits, clients: allClients }, start, end, today),
     [patterns, allVisits, allClients, start, end, today],
   );
+  /**
+   * 作れない日（計算に入る訪問か〈スタッフ〉がいない。月まとめも飛ばす日）。作る日に数えず、確定のあと日の予定で確かめる
+   * （数えると作っても残り、主ボタンが「作る」のまま進まない）。compile が読むものと定期パターンから作った訪問で覚える
+   */
+  const { presets, scorePresetId } = data;
+  const unmakeable = useMemo(() => {
+    const input = { ...compileInput, visits: expanded.visits, presets, scorePresetId };
+    return new Set(futureDates.filter((d) => !canMakeDay(input, d)));
+  }, [compileInput, expanded, presets, scorePresetId, futureDates]);
   /** 日の状態（月の予定・ホームと同じ数え方。lib/useDayStatuses） */
   const weekStatuses = useDayStatuses(data, compileInput, futureDates);
   const weekPrep = useMemo(() => {
@@ -288,10 +297,12 @@ export default function WeekPage() {
     const list = futureDates.flatMap((d) => statusOf(d) ?? []);
     const unconfirmed = list.filter((x) => x.count > 0 && x.state !== 'confirmed').map((x) => x.date);
     const bulk = bulkConfirmTargets(unconfirmed, statusOf, attentionList(data, list, today));
-    const makeDays = weekBatchDays({ ...data, visits: expanded.visits }, dates, today);
+    const makeDays = weekBatchDays({ ...data, visits: expanded.visits }, dates, today).filter(
+      (x) => !unmakeable.has(x.date),
+    );
     const futureDays = futureDates.filter((d) => (statusOf(d)?.count ?? 0) > 0 || expanded.addedByDate.has(d)).length;
     return { bulk, makeDays, futureDays };
-  }, [weekStatuses, futureDates, data, today, expanded, dates]);
+  }, [weekStatuses, futureDates, data, today, expanded, dates, unmakeable]);
   /** 案づくり（月まとめと同じ入れ物。ADR-0042）：この週を作っているか、ほかを作っているか */
   const batchRun = useValueStore(monthBatch.run);
   const running = batchRun ? (batchRun.source === 'week' && batchRun.weekStart === start ? 'this' : 'other') : null;
@@ -319,7 +330,7 @@ export default function WeekPage() {
       return;
     }
     const ex = expandRange(dataRef.current, start, end, today);
-    const targets = weekBatchDays(ex.data, dates, today);
+    const targets = weekBatchDays(ex.data, dates, today).filter((x) => canMakeDay(ex.data, x.date));
     if (targets.length === 0) {
       if (ex.added > 0) {
         update((d) => expandRange(d, start, end, today).data);
@@ -739,7 +750,7 @@ export default function WeekPage() {
     today,
     visitDays: days.filter((d) => d.bands.some((b) => !b.leave)).map((d) => d.date),
     planDays: days.filter((d) => d.source !== null).map((d) => d.date),
-    // その場で作る（PRD D280）：月の予定へ移らず、この週の［この週の案を作る］と同じ動き
+    // その場で作る（PRD D280）：作るのは見出しの主ボタンだけ。空の画面は文で指し、日の予定のボタンだけを置く
     makeHere: { canExpand: expanded.added },
   });
   const nothingPicked = by === 'client' ? timelineClients.length === 0 : staffSel?.length === 0;
@@ -782,7 +793,7 @@ export default function WeekPage() {
                 </span>
               )}
               {next.why && (
-                <span className="sub week-next-why" id={whyId} data-testid={whyId}>
+                <span className="sub week-next-why" id={whyId} data-testid="week-next-why">
                   {next.why}
                 </span>
               )}
@@ -791,7 +802,8 @@ export default function WeekPage() {
         }
       />
       {/* 進み具合の帯（PRD D151。選んでいる日付＝週の中の日の月） */}
-      <ScheduleBand date={anchor} />
+      {/* 見出しの主ボタンが「この週の案を作る」の間は、帯の「まとめて作る」を出さない（作る入口を1つに。PRD D280） */}
+      <ScheduleBand date={anchor} hideBatch={next.kind === 'make' || next.kind === 'making'} />
 
       <div className="card stack week-head">
         <div className="row week-nav">
@@ -1041,8 +1053,6 @@ export default function WeekPage() {
             guide={emptyGuide}
             icon={CalendarClock}
             onOpenDay={openDay}
-            onMake={makeWeek}
-            makeWhy={next.kind === 'make' ? next.why : 'この週の案を作っています。終わるまでお待ちください'}
             primary={false}
             compact
             testId="week-empty"

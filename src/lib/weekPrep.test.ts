@@ -44,6 +44,13 @@ describe('weekNext（週の主ボタン。PRD D280）', () => {
     expect(r.why).toMatch(/要対応/);
     expect(weekNext({ ...base, bulk: bulk({ changed: ['2026-10-23'] }) }).why).toMatch(/確定し直します/);
   });
+  it('作れない日（担当できる人がいない など）だけ残る：作るに進まず、確定のあと日の予定で確かめる理由', () => {
+    // 作れない日は makeDays に数えない（画面が除く）ので、案の無い日として残る
+    expect(weekNext({ ...base, bulk: bulk({ targets: ['2026-10-22'], noPlan: ['2026-10-23'] }) }).kind).toBe('confirm');
+    const r = weekNext({ ...base, bulk: bulk({ noPlan: ['2026-10-23'] }) });
+    expect(r).toMatchObject({ kind: 'rest', label: '確定していない 1日は日の予定で' });
+    expect(r.why).toMatch(/案を作れない日/);
+  });
   it('今日以降に訪問も未作成も無い週はボタンなし', () => {
     expect(weekNext({ ...base, futureDays: 0 }).kind).toBe('none');
     // 未作成があれば作れる

@@ -5,7 +5,7 @@ import type { DemoData } from '../contracts/data';
 import type { Problem, SolveOptions, SolveResult } from '../contracts/problem';
 import type { Rule } from '../contracts/rules';
 import { addDays } from '../domain/time';
-import { compile, withManualPrefs } from '../matching';
+import { type CompileInput, compile, withManualPrefs } from '../matching';
 import { scoreRulesOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import { attempt, own } from './common';
@@ -33,7 +33,7 @@ export type BatchJob = {
   days: readonly BatchDay[];
   /** 始めた画面（月の予定・空き状況・週の予定。ほかの画面のボタンの文・知らせの行き先を分ける） */
   source: BatchSource;
-  /** 週の予定から始めたときの週の始まり（日曜。知らせ・上の帯の行き先 `/week?d=`。ほかは null） */
+  /** 週の予定から始めたときの週の始まり（月曜。知らせ・上の帯の行き先 `/week?d=`。ほかは null） */
   weekStart?: string | null;
   /** 先に定期パターンから訪問を作る範囲（月の予定はその月、週の予定はその週。expandRange。作らなければ null） */
   expand: ExpandRange | null;
@@ -156,6 +156,18 @@ export function weekBatchDays(
   for (const ym of new Set([...inRange].map(ymOf)))
     for (const date of batchTargets(data, ym, today, 'empty')) if (inRange.has(date)) out.push({ date, mode: 'empty' });
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/**
+ * その日の案を作れるか（1日ずつ作るときに飛ばさない日か）：点数の基準の条件で compile でき、計算に入る訪問と〈スタッフ〉がいる。
+ * 月まとめ作成の1日の作り方（step）と同じ決め方。週の予定は作れない日を「作る日」に数えない（PRD D280）
+ */
+export function canMakeDay(
+  data: CompileInput & Pick<DemoData, 'presets'> & { scorePresetId?: string },
+  date: string,
+): boolean {
+  const base = attempt(() => compile({ ...data, rules: scoreRulesOf(data) }, date)).value;
+  return !!base && base.visits.length > 0 && base.staff.length > 0;
 }
 
 /** 週の呼び名（「11/2〜11/8の週」。上の帯・知らせの文の月の名前の代わり） */

@@ -263,6 +263,18 @@
   color: var(--danger);
   font-weight: 700;
 }
+/* 欠勤の手当てが済んだ日（確定済みで手当ての要らない日。PRD D281）：情報なので赤くしない */
+.month-mark.is-absent.is-done {
+  color: var(--sub);
+  font-weight: 400;
+}
+/* 訪問はあるが、ほかに未作成の訪問がある日（PRD D282）：点線の枠の小さな印（注意の色にしない） */
+.month-mark.is-unmade {
+  padding: 0 3px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  font-size: 11px;
+}
 .month-load {
   margin-top: auto;
   width: 100%;

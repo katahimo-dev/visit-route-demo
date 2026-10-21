@@ -162,7 +162,7 @@ describe('homeTasks', () => {
   it('要対応が2日以上なら月の画面の要対応へ。欠勤（希望休は除く）も数える', () => {
     const r = homeTasks({
       today: TODAY,
-      // 欠勤の日はまだ確定していない（振り直して確定まで済めば数えない。PRD D281）
+      // 欠勤の日はまだ確定していない（確定済みで手当ての要らない日になれば数えない。PRD D281）
       statuses: [st(TODAY, { stale: true }), st('2026-10-20', { absence: true, state: 'plan' })],
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 1,
@@ -178,7 +178,7 @@ describe('homeTasks', () => {
     expect(att.detail).toBe('条件が変わった日 1日・欠勤がある日 1日');
   });
 
-  it('欠勤を振り直して確定まで済んだ日は要対応に数えない（PRD D281。月の要対応・帯と同じ attentionList）', () => {
+  it('欠勤があっても確定済みで手当ての要らない日は要対応に数えない（PRD D281。月の要対応・帯と同じ attentionList）', () => {
     const r = homeTasks({
       today: TODAY,
       statuses: [st('2026-10-20', { absence: true })],

@@ -14,8 +14,6 @@ export function EmptyNext({
   guide,
   icon: Icon,
   onOpenDay,
-  onMake,
-  makeWhy = null,
   primary = true,
   compact = false,
   testId,
@@ -23,10 +21,6 @@ export function EmptyNext({
   guide: EmptyGuide;
   icon: LucideIcon;
   onOpenDay: (date: string) => void;
-  /** その場で作る（kind が make のボタン。週の予定の「この週の案を作る」。PRD D280） */
-  onMake?: () => void;
-  /** その場で作るを押せない理由（作っている間など。押せるなら null） */
-  makeWhy?: string | null;
   primary?: boolean;
   /** 横1行の帯にする（下に表・時間軸が続く画面。高さを取らない） */
   compact?: boolean;
@@ -42,22 +36,6 @@ export function EmptyNext({
       <div className="empty-next-actions">
         {guide.actions.map((a) => {
           const cls = `btn${compact ? ' btn-small' : ''}${primary && a.primary ? ' btn-primary' : ''}`;
-          if (a.kind === 'make')
-            return (
-              <button
-                key="make"
-                type="button"
-                className={cls}
-                aria-disabled={makeWhy !== null || undefined}
-                title={makeWhy ?? undefined}
-                onClick={() => {
-                  if (makeWhy === null) onMake?.();
-                }}
-                data-testid="empty-next-make"
-              >
-                <WithIcon icon={Sparkles}>{a.label}</WithIcon>
-              </button>
-            );
           return a.kind === 'batch' ? (
             <Link key={`b-${a.ym}`} className={cls} to={batchHref(a.ym)} data-testid="empty-next-batch">
               <WithIcon icon={Sparkles}>{a.label}</WithIcon>

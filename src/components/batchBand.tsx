@@ -112,7 +112,7 @@ export function BatchBand(): ReactNode {
   return (
     <section
       className="batch-band"
-      aria-label="月まとめ作成の進み具合"
+      aria-label={run.source === 'week' ? `${run.label}の案づくりの進み具合` : '月まとめ作成の進み具合'}
       data-testid="batch-band"
       onFocus={() => {
         focusInside.current = true;

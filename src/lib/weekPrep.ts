@@ -24,7 +24,10 @@ export type WeekNextInput = {
   futureDays: number;
   /** 週の今日以降の、定期パターンからまだ作っていない訪問の件数 */
   canExpand: number;
-  /** 作る日の数（訪問を作ったあとの、まだ案も確定した割当も無い日。lib/monthBatch の weekBatchDays） */
+  /**
+   * 作る日の数（訪問を作ったあとの、まだ案も確定した割当も無い日。lib/monthBatch の weekBatchDays）。
+   * 計算に入る訪問か〈スタッフ〉がいなくて作れない日（月まとめも飛ばす日）は入れない（作っても残り、主ボタンが進まないため）
+   */
   makeDays: number;
   /** 週の今日以降の確定していない日の振り分け（lib/confirmDay の bulkConfirmTargets。月の予定と同じ決まり） */
   bulk: BulkConfirm;
@@ -46,7 +49,8 @@ export function weekMakeLabel(makeDays: number, canExpand: number): string {
  * 2. 今日以降に訪問も未作成の訪問も無い → ボタンなし
  * 3. 未作成の訪問・まだ案の無い日がある → この週の案を作る（ほかを作っている間は押せず理由）
  * 4. 問題の無い未確定の日がある → この週の問題の無い日をまとめて確定（作っている間は押せず理由）
- * 5. 確定していない日が残る（問題のある日・前に確定した割当と違う日）→ ボタンなし（日の予定で確かめて確定）
+ * 5. 確定していない日が残る（問題のある日・前に確定した割当と違う日・案を作れない日（担当できる人がいない など。作る日に数えない））
+ *    → ボタンなし（日の予定で確かめて確定）
  * 6. 何も残っていない → 済み
  */
 export function weekNext(x: WeekNextInput): WeekNext {
@@ -76,7 +80,7 @@ export function weekNext(x: WeekNextInput): WeekNext {
         ? '問題のある日は要対応で確かめてから、日の予定で確定します'
         : x.bulk.changed.length > 0
           ? '前に確定した割当と違う日は、日の予定で確定し直します'
-          : '案の無い日は、先に案を作ります';
+          : '案を作れない日（担当できる人がいない など）は、日の予定で確かめます';
     return { kind: 'rest', label: `確定していない ${rest}日は日の予定で`, short: `残り ${rest}日`, why };
   }
   return { kind: 'done', label: 'この週は確定済みです', short: '済み', why: null };

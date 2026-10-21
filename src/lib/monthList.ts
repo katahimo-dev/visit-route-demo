@@ -91,7 +91,9 @@ export function monthListRow(
   if (s.absentLeft > 0) flags.push({ text: `休みの人に訪問 ${s.absentLeft}件`, tone: 'red' });
   if (s.stale) flags.push({ text: '条件が変わった', tone: 'warn' });
   if (s.overSpan.length > 0) flags.push({ text: `拘束超 ${s.overSpan.length}人`, tone: 'warn' });
-  // 欠勤を振り直して確定まで済んだ日（PRD D281）：要対応でなく情報として残す（希望休だけの日は書かない）
+  // 欠勤があっても確定済みで手当ての要らない日（PRD D281）：要対応でなく情報として残す（希望休だけの日は書かない）
+  // 訪問はあるが、ほかに定期パターンからまだ作っていない訪問がある日（週の見出しの「N件・ほか未作成」と同じ。PRD D282）
+  if (s.count > 0 && unmade > 0 && !isPast) flags.push({ text: `ほか未作成 ${unmade}件`, tone: 'info' });
   if (opts.absenceDone) flags.push({ text: '欠勤あり（対応済み）', tone: 'info' });
   const notMade = s.count === 0 && unmade > 0 && !isPast ? unmade : 0;
   const stateText = s.count > 0 ? DAY_STATE_TEXT[s.state] : notMade > 0 ? '未作成' : '訪問なし';

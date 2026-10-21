@@ -112,6 +112,12 @@ describe('monthListRow：未作成・欠勤あり（対応済み）（PRD D281�
       '案なし',
     );
   });
+  it('訪問があって、ほかに未作成の訪問もある日は情報の印「ほか未作成 N件」（週の「N件・ほか未作成」と同じ）', () => {
+    const r = monthListRow(status({ date: '2026-10-25', count: 3, state: 'plan' }), '2026-10-21', [], { unmade: 2 });
+    expect(r.flags).toEqual([{ text: 'ほか未作成 2件', tone: 'info' }]);
+    expect(r.unmade).toBe(0);
+    expect(monthListRow(status({ date: '2026-10-20', count: 3 }), '2026-10-21', [], { unmade: 2 }).flags).toEqual([]);
+  });
   it('欠勤の手当てが済んだ日は情報の印（要対応にしない）', () => {
     const r = monthListRow(
       status({ date: '2026-10-25', count: 3, state: 'confirmed', absence: true }),
