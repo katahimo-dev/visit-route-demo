@@ -3,8 +3,9 @@
 // 裏の inert とスクロールのロック・「戻る」は最初の枚で押せずフォーカスを「次へ」へ・Tab と Shift+Tab が中で回る・
 // 開いている間は Ctrl+K でパレットを開かない・3枚（ホーム・予定・欠勤。PRD D277）・予定の枚は3段（AI案 → 手直し（固定）→ 確定）の説明・
 // 最後の枚は主ボタン「今日の予定を開く」・「閉じる」（とばすは出さない。PRD D226）・
-// 初めて開くと機能は「基本」で、1枚目に「どこまで使いますか」（基本／すべて）・「すべて」を選ぶとその入り切りで初期データを作り直し
-// 「条件が変わった」にならない・「基本」に戻せる・もう一度見るでは聞かない（PRD D276）・
+// 初めて開くと機能は「基本」で、1枚目に「どこまで使いますか」（基本／すべて。Tab は選んだ方だけ・矢印で選び直しても当てない）・
+// 「すべて」を選んで「次へ」（とばすでも）でその入り切りで初期データを作り直し「条件が変わった」にならない・「基本」に戻せる・
+// 別のタブで変わっていたら入り切りだけ書き換える・もう一度見るでは聞かない（PRD D276）・
 // 「閉じる」で閉じて見たことを localStorage（DemoData と別のキー）に覚える・「今日の予定を開く」で閉じて今日の日の画面へ・
 // 最後の枚まで進んだら覚える・読み直しても出ない・Esc と「とばす」でも覚える・?id=・?do= のリンクでは出さない（見たことにもしない）・データの画面の「案内をもう一度見る」で開き閉じるとフォーカスがボタンへ・
 // 初期状態に戻しても見たことは残る・「見た」の印（scripts/lib/tourSeen.cjs）があれば自動で出ない・月の印刷の画面では出ない・
@@ -251,33 +252,59 @@ async function tourStart(b) {
   );
   check((await activeTestId(page)) === 'tour-next', '「どこまで使いますか」があっても最初のフォーカスは「次へ」');
   await page.screenshot({ path: path.join(OUT_DIR, 'tour-start.png') });
-  // 「すべて」を選ぶ
-  await page.getByTestId('tour-start-all').check();
+  // ラジオは標準の radio group：Tab は選んでいる方だけ、矢印で選び直す。選び直しただけでは当てない（1枚目を離れるときに当てる）
+  const stops = [];
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('Tab');
+    stops.push(await activeTestId(page));
+  }
+  check(
+    stops.includes('tour-start-basic') && !stops.includes('tour-start-all'),
+    '「どこまで使いますか」：Tab は選んでいる方（基本）だけに止まる',
+    stops,
+  );
+  await page.getByTestId('tour-start-basic').focus();
+  await page.keyboard.press('ArrowDown');
+  check(
+    (await page.getByTestId('tour-start-all').isChecked()) && (await activeTestId(page)) === 'tour-start-all',
+    '「どこまで使いますか」：矢印で「すべて」へ選び直す',
+  );
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowDown');
+  await settle(page, 300);
+  check((await data())?.org?.features?.rules === false, '矢印で選び直しただけでは当てない（データはそのまま）');
+  // 「次へ」で当てる
+  await page.getByTestId('tour-next').click();
   await until(async () => (await data())?.org?.features?.rules === true, 10000);
   d = await data();
   const f1 = d?.org?.features ?? {};
   check(
     Object.values(f1).length === 20 && Object.values(f1).every((v) => v === true),
-    '「すべて」を選ぶと、すべての機能を入れる',
+    '「すべて」を選んで「次へ」で、すべての機能を入れる',
     f1,
   );
   check(
     calcOf(d).length > 0 && calcOf(d).every((x) => x === '{}'),
-    '「すべて」を選ぶと初期データを作り直し、案の記録も「すべて」の入り切り（条件が変わったにしない）',
+    '「すべて」を当てると初期データを作り直し、案の記録も「すべて」の入り切り（条件が変わったにしない）',
     calcOf(d).slice(0, 3),
   );
-  check(
-    (await page.getByTestId('tour-start-all').isChecked()) && (await tour(page).isVisible()),
-    '選んだあともツアーは開いたまま・「すべて」を選んだ状態',
-  );
-  // 「基本」に戻す
+  // 戻って「基本」に戻せる
+  await page.getByTestId('tour-back').click();
+  check(await page.getByTestId('tour-start-all').isChecked(), '戻ると「すべて」を選んだ状態');
   await page.getByTestId('tour-start-basic').check();
+  await page.getByTestId('tour-next').click();
   await until(async () => (await data())?.org?.features?.rules === false, 10000);
   check((await data())?.org?.features?.compare === false, '「基本」に戻せる');
+  await page.getByTestId('tour-back').click();
   await page.getByTestId('tour-start-all').check();
-  await until(async () => (await data())?.org?.features?.rules === true, 10000);
+  // 「とばす」でも当てる
   await page.getByTestId('tour-skip').click();
   await tour(page).waitFor({ state: 'detached' });
+  await until(async () => (await data())?.org?.features?.rules === true, 10000);
+  check(
+    calcOf(await data()).every((x) => x === '{}'),
+    '「とばす」でも選んだもの（すべて）を当てる',
+  );
   // 要対応（条件が変わった）が出ていない
   await open(page, `/month?ym=${YM}`, '[data-testid="month-aside"]');
   await settle(page, 800);
@@ -300,6 +327,31 @@ async function tourStart(b) {
     tabs,
   );
   await ctx.close();
+  // 起動したあと別のタブでデータが変わっていたら、作り直さずに入り切りだけ書き換える（別のタブの変更を消さない）
+  {
+    const o = await newPage(b, { human: true });
+    await open(o.page, '/', '[data-testid="tour"]');
+    const other = await o.ctx.newPage();
+    await other.goto(`${BASE}#/data`);
+    await other.locator('h1').first().waitFor({ timeout: 30000 });
+    await other.evaluate((k) => {
+      const x = JSON.parse(localStorage.getItem(k));
+      x.org.name = 'e2e 別のタブで変えた事業所';
+      localStorage.setItem(k, JSON.stringify(x));
+    }, STORAGE_KEY);
+    await other.close();
+    await settle(o.page, 500);
+    await o.page.getByTestId('tour-start-all').check();
+    await o.page.getByTestId('tour-next').click();
+    const od = () => o.page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
+    await until(async () => (await od())?.org?.features?.rules === true, 10000);
+    check(
+      (await od())?.org?.name === 'e2e 別のタブで変えた事業所',
+      '別のタブで変わったあとに「すべて」を当てても作り直さず、別のタブの変更は残る（入り切りだけ書き換える）',
+      (await od())?.org?.name,
+    );
+    await o.ctx.close();
+  }
   // 保存データがある人：features の無い古いデータは今までどおりすべて入（1問も出さない）
   const h = await newPage(b, { human: true });
   await open(h.page, '/', '[data-testid="tour"]');

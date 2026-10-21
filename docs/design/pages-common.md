@@ -150,7 +150,7 @@
   - `useTour()`：開く関数（データの画面の「案内をもう一度見る」`tour-again`）
   - `TourDialog`：body の直下の中央のカード `role="dialog"`・`aria-modal`・`aria-labelledby`・`aria-describedby`。`inertLock`・`useBodyScrollLock`・捕捉の段で Esc（とばすと同じ）と Tab（`trapTarget`）。Ctrl+K を開かない。最初のフォーカスは「次へ」、枚が変わってフォーカスが外れたら「次へ」へ、閉じたら開く前の要素へ。見出しと本文は `aria-live="polite"`。z-index 1250（トーストより前・確認ダイアログより後ろ）。印刷では出さない
   - 本文 `tour-body` は文と、`points` があれば番号付きの一覧 `tour-points`（aria-describedby は両方を含む）
-  - `StartChoice`（1枚目の場所の下）：`fieldset.tour-choice`（`legend`「どこまで使いますか」・data-testid `tour-start`）にラジオ2つ（`tour-start-basic`・`tour-start-all`。名前と1行の説明。今の入り切りが `matchTemplate` で基本・すべてのどちらかならそれを選んだ状態）と注記「あとから「設定」の「管理者設定」で、機能を1つずつ入り切りできます。」。選ぶと store の `reset(applyTemplate(id))`（その入り切りで初期データを作り直す。案の記録の入り切りとそろう）
+  - `StartChoice`（1枚目の場所の下）：`fieldset.tour-choice`（`legend`「どこまで使いますか」・data-testid `tour-start`）にラジオ2つ（`tour-start-basic`・`tour-start-all`。名前と1行の説明。今の入り切りが `matchTemplate` で基本・すべてのどちらかならそれを選んだ状態）と注記「あとから「設定」の「管理者設定」で、機能を1つずつ入り切りできます。」。ネイティブのラジオ（Tab は選んでいる方だけ・矢印で選び直す。カードの Tab の閉じ込めも選んでいないラジオを飛ばす）。選んでもすぐには当てず、1枚目を離れるとき（次へ・とばす・Esc）に `TourProvider` の `choose(id)` で当てる：起動してから（または前に当ててから）データが変わっていなければ store の `reset(applyTemplate(id))`（その入り切りで初期データを作り直す。案の記録の入り切りとそろう）、変わっていれば `update` で `org.features` だけ書き換える（別のタブの変更を消さない）
   - 最後の枚：「次へ」は「閉じる」（主ボタンにしない）、その右に主ボタン「今日の予定を開く」（`tour-today`）。「とばす」は出さない。最後の枚に入るとフォーカスは「今日の予定を開く」
   - data-testid：`tour`（`data-step`）・`tour-count`・`tour-title`・`tour-body`・`tour-points`・`tour-next`・`tour-back`・`tour-skip`・`tour-today`
 - e2e は文脈を作ったらすぐ `scripts/lib/tourSeen.cjs` の `skipTour(ctx)` を呼ぶ（e2e-tour は除く）。`skipTour` は既定で `scripts/lib/startFeatures.cjs` の `startAll` も呼び、初めて開いたときの入り切りを「すべて」にする（初回の「基本」を確かめるときは `skipTour(ctx, { start: 'basic' })`）

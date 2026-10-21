@@ -894,7 +894,32 @@ async function moreMenus(page) {
   await help.waitFor({ state: 'detached' });
   check(true, '「使い方を閉じる」で閉じる');
 
-  // 月の予定：月送り・今月・その他 ▾ だけ（印刷・勤務の見込み・作り直し・表示の選択・説明はたたむ）
+  // 〈利用者さん〉が0人なら「訪問を追加」は押せず理由
+  await page.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.clients = [];
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await page.goto(`${BASE}#/plan`);
+  await page.reload();
+  await page.getByTestId('plan-more').waitFor({ timeout: 30000 });
+  await settle(page, 300);
+  await page.getByTestId('plan-more').click();
+  const add = page.getByTestId('plan-visit-add');
+  check(
+    (await add.getAttribute('aria-disabled')) === 'true' && /いません/.test((await add.getAttribute('title')) ?? ''),
+    '「その他 ▾」：〈利用者さん〉が0人なら「訪問を追加」は押せず理由',
+    await add.getAttribute('title'),
+  );
+  // aria-disabled（フォーカスは残す）なので、押しても何もしないことを確かめる
+  await add.click({ force: true });
+  await settle(page, 200);
+  check((await page.locator('.plan-form').count()) === 0, '押せない「訪問を追加」を押しても入力は開かない');
+  await page.keyboard.press('Escape');
+
+  // 月の予定：月送り・今月・その他 ▾ だけ（印刷・勤務の見込み・作り直し・表示の選択・説明はたたむ）。
+  // 初期データに戻し、条件が変わった日が0日の状態で開く
+  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
   await page.goto(`${BASE}#/month`);
   await page.reload();
   await page.getByTestId('month-more').waitFor({ timeout: 30000 });
@@ -922,19 +947,18 @@ async function moreMenus(page) {
       /^表示を選ぶ/.test(mItems[0]) &&
       mItems[1] === '印刷' &&
       mItems[2] === '勤務の見込み' &&
-      /^条件が変わった日を作り直す（\d+日）$/.test(mItems[3]) &&
+      mItems[3] === '条件が変わった日を作り直す（0日）' &&
       mItems[4] === 'マスの見方の説明',
     '月の予定の「その他 ▾」：表示を選ぶ・印刷・勤務の見込み・作り直す・マスの見方の説明',
     mItems,
   );
   const stale = page.getByTestId('month-stale');
-  if (/（0日）/.test(mItems[3])) {
-    check(
-      (await stale.getAttribute('aria-disabled')) === 'true' &&
-        /条件が変わった日/.test((await stale.getAttribute('title')) ?? ''),
-      '「その他 ▾」：作り直す日が無ければ押せず理由',
-    );
-  }
+  check(
+    (await stale.getAttribute('aria-disabled')) === 'true' &&
+      /条件が変わった日（確定していない日）はありません/.test((await stale.getAttribute('title')) ?? ''),
+    '「その他 ▾」：作り直す日が0日なら押せず理由',
+    await stale.getAttribute('title'),
+  );
   await page.getByTestId('month-more-help').click();
   await page.getByTestId('month-help').waitFor();
   check((await focusedId()) === 'month-help', '「マスの見方の説明」で説明が開き、フォーカスが移る');
@@ -954,6 +978,36 @@ async function moreMenus(page) {
   );
   await page.keyboard.press('Escape');
   await page.screenshot({ path: path.join(OUT_DIR, 'month-more.png') });
+  // ?staff= で開いて（段はたたまず出ている）、段の中で〈利用者さん〉・全体へ選び直しても段は出したまま・フォーカスは欄のまま（PRD D278）
+  await page.goto(`${BASE}#/month?staff=${encodeURIComponent(sid.slice('staff:'.length))}`);
+  await page.reload();
+  const focusSel = page.getByTestId('month-focus');
+  await focusSel.waitFor({ timeout: 30000 });
+  await settle(page, 300);
+  await focusSel.focus();
+  await focusSel.selectOption('client');
+  await settle(page, 300);
+  check(
+    (await page.getByTestId('month-pickers').count()) === 1 && (await focusedId()) === 'month-focus',
+    '?staff= から〈利用者さん〉へ選び直しても段は出したまま・フォーカスは表示の欄（BODY に落とさない）',
+    await focusedId(),
+  );
+  await focusSel.selectOption('all');
+  await settle(page, 300);
+  check(
+    (await page.getByTestId('month-pickers').count()) === 1 && (await focusedId()) === 'month-focus',
+    '全体へ選び直しても段は出したまま・フォーカスは表示の欄',
+    await focusedId(),
+  );
+  await page.getByTestId('month-more').click();
+  const pk2 = page.getByTestId('month-more-pickers');
+  check(
+    (await pk2.innerText()).includes('表示の選択をたたむ') && (await pk2.getAttribute('aria-disabled')) === null,
+    '全体に戻したら「表示の選択をたたむ」でたためる',
+  );
+  await pk2.click();
+  await settle(page, 200);
+  check((await page.getByTestId('month-pickers').count()) === 0, '「表示の選択をたたむ」で段をたたむ');
 }
 
 const steps = sharedPage({
