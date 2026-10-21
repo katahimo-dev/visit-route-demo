@@ -135,8 +135,9 @@ export default function ClientsPage() {
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff,
+        visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, staff],
+    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
   );
   const shown = useMemo(
     () => filterClients(clients, filter, facts, resolveStaffId(filter, activeStaff, facts, clients)),
@@ -413,6 +414,7 @@ export default function ClientsPage() {
             terms={{ client: terms.client, staff: terms.staff }}
             periodLabel={periodLabel}
             defaults={EMPTY_FILTER}
+            visitTypes={data.visitTypes}
             testId="clients-cf"
           />
           <span className="sub">

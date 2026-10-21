@@ -359,12 +359,88 @@ async function nextWeek(page) {
   );
 }
 
+/** 表の絞り込みに「訪問の種類」（PRD D263）：種類ごとのチップ（人数つき）→押すとその種類の訪問がある人に絞る（URL の ?cf= に type:）→再読み込み・戻るで戻る */
+async function visitType(page) {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await open(page, '/week?view=clients');
+  const filter = page.getByTestId('week-client-filter');
+  const chips = filter.getByTestId('week-client-filter-type');
+  const n = await chips.count();
+  const countOf = async (loc) =>
+    Number(((await loc.locator('.client-filter-count').textContent()) ?? '').replace(/\D/g, ''));
+  const shownCount = async () =>
+    Number(
+      (((await page.getByTestId('week-client-filter-count').textContent()) ?? '').split('／')[0] ?? '').replace(
+        /\D/g,
+        '',
+      ),
+    );
+  const before = await shownCount();
+  check(n > 0, '表の絞り込みに「訪問の種類」のチップが出る', { n });
+  let target = null;
+  for (let i = 0; i < n && !target; i++) {
+    const c = chips.nth(i);
+    if ((await c.getAttribute('aria-disabled')) === null && (await countOf(c)) < before) target = c;
+  }
+  target ??= chips.first();
+  const label = (await target.textContent()) ?? '';
+  const want = await countOf(target);
+  await target.click();
+  await settle(page, 500);
+  const after = await shownCount();
+  check(
+    (await target.getAttribute('aria-pressed')) === 'true' &&
+      after === want &&
+      /type:/.test(decodeURIComponent(urlOf(page))),
+    '種類のチップを押すと、その種類の訪問がある人（チップの人数）に絞られ、URL に書く',
+    { label, want, before, after },
+  );
+  // 押した種類の人数が表の行の数と合う
+  const rows = await page.getByTestId('week-client-table').locator('tbody tr').count();
+  check(rows >= after && after > 0, '表の行も絞られる', { rows, after });
+  await page.reload();
+  await settle(page, 800);
+  check(
+    (await filter
+      .getByTestId('week-client-filter-type')
+      .filter({ hasText: label.replace(/\d+人?$/, '') })
+      .first()
+      .getAttribute('aria-pressed')) === 'true' && (await shownCount()) === after,
+    '再読み込みしても種類の絞り込みが残る',
+    { after },
+  );
+  // 種類で絞ったまま時間軸へ移ると、絞った人の先頭8人を引き継ぐ（PRD D139。時間軸の〈利用者さん〉の選び方は表から引き継ぐ）
+  await page.getByTestId('by-client').click();
+  await settle(page, 300);
+  const m = urlOf(page).match(/client=([^&]*)/);
+  const written = m ? m[1].split(',') : [];
+  check(
+    written.length === Math.min(8, after) &&
+      JSON.stringify([...written].sort()) === JSON.stringify([...(await pressedIds(page))].sort()),
+    '種類で絞ったまま時間軸へ移ると、その種類の人の先頭8人を引き継ぐ',
+    { written, after },
+  );
+  await open(page, '/week?view=clients');
+  await page.getByTestId('week-client-filter-type').first().click();
+  await settle(page, 300);
+  await page.getByTestId('week-client-filter-reset').click();
+  await settle(page, 400);
+  check(
+    (await shownCount()) === before && !/type:/.test(decodeURIComponent(urlOf(page))),
+    '「絞り込みを戻す」で種類も戻る',
+    {
+      before,
+    },
+  );
+}
+
 const steps = sharedPage({
   steps: [
     ['views', views],
     ['handoff', handoff],
     ['handoff-staff', handoffViaStaff],
     ['back', back],
+    ['visit-type', visitType],
     ['fold-1400', (p) => fold(p, 1400, 1000)],
     ['fold-390', (p) => fold(p, 390, 844)],
     // データを書き換えるので後ろに

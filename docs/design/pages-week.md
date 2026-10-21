@@ -1,6 +1,6 @@
 # 週の予定
 
-> この画面のファイル：`src/pages/WeekPage.tsx`（`week.css`）・`mailPanels.tsx`（`WeekMailPanel`）、`src/components/PickChips.tsx`・`clientBar.tsx`・`staffBar.tsx`、`src/lib/week.ts`・`weekView.ts`・`timelineClients.ts`・`fold.ts`・`clientFilter.ts`。関連 ADR：0012 追記・0013・0014・0021・0024 追記・0025 追記。関連 PRD：D49〜D51・D56〜D57・D62・D65・D75・D83・D93・D108・D136〜D140・D175・D188・D221・D222・D228。ADR-0033。
+> この画面のファイル：`src/pages/WeekPage.tsx`（`week.css`）・`mailPanels.tsx`（`WeekMailPanel`）、`src/components/PickChips.tsx`・`clientBar.tsx`・`staffBar.tsx`、`src/lib/week.ts`・`weekView.ts`・`timelineClients.ts`・`fold.ts`・`clientFilter.ts`。関連 ADR：0012 追記・0013・0014・0021・0024 追記・0025 追記。関連 PRD：D49〜D51・D56〜D57・D62・D65・D75・D83・D93・D108・D263・D136〜D140・D175・D188・D221・D222・D228。ADR-0033。
 > 3段のバーと〈利用者さん〉の帯の塗りは [pages-bars.md](pages-bars.md)、絞り込みの欄 `ClientFilter` は [pages-clients.md](pages-clients.md)。
 
 ### 週の予定（`#/week`）
@@ -75,7 +75,7 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 
 #### 〈利用者さん〉×曜日（PRD D56・D83・D108）
 
-- 表の上に `ClientFilter`（状態は `?cf=`。既定 `WEEK_TABLE_FILTER`（chips＝period）。既定のままなら消す。`replace`）
+- 表の上に `ClientFilter`（状態は `?cf=`。既定 `WEEK_TABLE_FILTER`（chips＝period）。既定のままなら消す。`replace`）。「訪問の種類」のチップ（PRD D263。`visitTypes={data.visitTypes}`、`?cf=` に `type:`）で、この週にその種類の訪問がある人に絞れる。種類で絞ったまま時間軸へ移るときの `?client=` の引き継ぎ（D139）は絞った人にそのまま効く（時間軸の `ClientPicker` に種類の絞り込みは足さない）
 - 行は `filterClients` の結果を `clientWeekTable` に渡す（0人なら空で「当てはまる〈利用者さん〉がいません」）。`filterFacts(..., showEndedInPeriod: true)` で、この週に訪問がある人は終了でも出す。行の名前は `PersonButton`
 - マス（`components/clientBar` の `ClientDayBar`）：3段の帯の上に訪問を種類の色で置き（`placeOnRows`）、その下に時刻の順の短い文字（担当の名字・休・取消・当日取消・入らない・案なし・代）
 - 訪問の帯（段の最初の切れ端）はボタン（`week-citem`。押すと日の予定・Enter で動かす・ドラッグ。取り消し・休み・今日より前は動かさない）。段をまたぐ訪問の続きの切れ端は aria-hidden。段に掛からない訪問は端の「◀」「▶」のボタン
@@ -132,7 +132,7 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 - [ ] 動かしたあと「〈日〉の案に空き時間で入れる」で、その日の今の案に入り、他の人の訪問の開始は変わらない
 - [ ] 〈スタッフ〉×曜日の表に件数・稼働時間・移動・種類ごとの件数・週の合計・平均との差が出る
 - [ ] （ADR-0014）担当できる人を限った〈利用者さん〉の訪問をドラッグすると「入れる人」はその人たちだけ
-- [ ] （ADR-0021）〈利用者さん〉×曜日の表を開くと、この週に訪問がある人が全員出る。地区・チップで減らせ、`?cf=` で開き直しても同じ。この週に訪問がある終了の人は表に出る
+- [ ] （ADR-0021）〈利用者さん〉×曜日の表を開くと、この週に訪問がある人が全員出る。地区・チップで減らせ、`?cf=` で開き直しても同じ。この週に訪問がある終了の人は表に出る。「訪問の種類」のチップで種類の訪問がある人に絞れる
 - [ ] （ADR-0024 追記）`#/week?by=client` を開くと、この週に訪問がある人がチップで並び（表と同じ順）、先頭8人が選ばれ、URL に `?client=` が無い。押すと付け外しでき、9人目は選ばずに上限の文。「全部外す」で「選んでいません」、「先頭8人に戻す」で URL から消える。週を送るとその週の先頭8人。「ほかの人を探す」でこの週に訪問の無い人を選ぶとチップの後ろに出る。表で絞り込んで時間軸へ移るとその先頭8人、絞り込まずに移ると初期値。チップの欄は選んでいる人と2行ぶんで「あと N人」
 - [ ] （PRD D222）390px で `#/week` を開くと〈スタッフ〉×曜日の表で、URL に `?view=` が無く、今日の列が画面に見える（案の無い週は案内が見え、縦に巻かない）。時間軸を押すと `?view=timeline` を書く
 - [ ] `lib/week`（週の日付・重なりの並び・この回だけ・以降すべて・空き時間に入れる・表の合計と平均との差・`clientWeekTable`）・`lib/weekView`・`lib/timelineClients`・`lib/fold` のテストが通る

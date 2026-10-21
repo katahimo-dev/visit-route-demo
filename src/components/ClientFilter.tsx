@@ -27,7 +27,9 @@ import {
   toggleCity,
   toggleExtra,
   toggleTown,
+  toggleType,
   townChips,
+  typeChips,
 } from '../lib/clientFilter';
 import { useFeature } from '../lib/useFeature';
 import './clientFilter.css';
@@ -45,6 +47,11 @@ export type ClientFilterProps = {
   terms: { client: string; staff: string };
   /** 期間の呼び方（例「この週」） */
   periodLabel: string;
+  /**
+   * 訪問の種類（data.visitTypes。PRD D263）。渡して1件以上あれば、絞り込みの上に「訪問の種類」のチップ（どれか）を出す。
+   * 判定は facts.typeClientIds（filterFacts に visitTypes を渡す）
+   */
+  visitTypes?: readonly { id: string; name: string }[];
   /** 「絞り込みを戻す」で戻す状態（この画面の既定） */
   defaults: ClientFilterState;
   /**
@@ -75,6 +82,7 @@ export function ClientFilter({
   terms,
   periodLabel,
   defaults,
+  visitTypes = [],
   extraChips = [],
   hideEnded = false,
   testId = 'client-filter',
@@ -147,6 +155,10 @@ export function ClientFilter({
   );
   /** select の「（N人）」：その〈スタッフ〉で押したら何人になるか（チップの人数と同じ数え方） */
   const staffCount = useMemo(() => staffCounts(clients, state, facts, staff), [clients, state, facts, staff]);
+  const types = useMemo(
+    () => typeChips(clients, state, facts, staffId, visitTypes),
+    [clients, state, facts, staffId, visitTypes],
+  );
   const extraKeys = useMemo(() => extraChips.map((x) => x.key), [extraChips]);
   const extraCount = useMemo(
     () => extraCounts(clients, state, facts, staffId, extraKeys),
@@ -319,6 +331,41 @@ export function ClientFilter({
           {chips.map((a) => areaChip(a, state.towns.includes(a.key), () => change(toggleTown(state, a.key)), 'town'))}
         </fieldset>
       ))}
+      {visitTypes.length > 0 && (
+        <fieldset className="pick-chips client-filter-row" data-testid={`${testId}-types`}>
+          <legend className="pick-chips-legend">訪問の種類（どれか）</legend>
+          {types.map((x) => {
+            const on = (state.types ?? []).includes(x.id);
+            const empty = !on && x.count === 0;
+            return (
+              <button
+                key={x.id}
+                type="button"
+                className={`pick-chip client-filter-chip${on ? ' is-on' : ''}${empty ? ' is-empty' : ''}`}
+                aria-pressed={on}
+                aria-disabled={empty || undefined}
+                title={
+                  empty
+                    ? `${x.name}：${periodLabel}にその訪問がある人はいません（0人）`
+                    : `${periodLabel}に「${x.name}」の訪問がある人`
+                }
+                onClick={() => !empty && change(toggleType(state, x.id, visitTypes))}
+                data-testid={`${testId}-type`}
+                data-key={x.id}
+              >
+                <span className="pick-chip-check" aria-hidden="true">
+                  {on ? '✓' : ''}
+                </span>
+                {x.name}
+                <span className="client-filter-count">
+                  {x.count}
+                  <span className="sr-only">人</span>
+                </span>
+              </button>
+            );
+          })}
+        </fieldset>
+      )}
       <fieldset className="pick-chips client-filter-row" data-testid={`${testId}-chips`}>
         <legend className="pick-chips-legend">絞り込み（すべてに当てはまる人）</legend>
         {FILTER_CHIPS.filter((chip) => !hiddenChip(chip) || state.chips.includes(chip)).map((chip) =>

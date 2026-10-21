@@ -1,6 +1,6 @@
 # 〈利用者さん〉の画面と、閲覧の欄・住所の入力・絞り込み（共通部品）
 
-> この画面のファイル：`src/pages/ClientsPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/viewMode.ts`・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0023・0026。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D118〜D121・D127〜D131・D220。
+> この画面のファイル：`src/pages/ClientsPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/viewMode.ts`・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0023・0026。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D263・D118〜D121・D127〜D131・D220。
 > 〈スタッフ〉の画面は [pages-staff.md](pages-staff.md)（閲覧の欄の仕組みはこのファイルと共通）。
 
 ### 〈利用者さん〉一覧（`#/clients`）
@@ -158,18 +158,19 @@
 
 #### `lib/clientFilter.ts`（純粋関数。テストあり）
 
-- `ClientFilterState`：query・cities・towns（`townKey(city, town)`）・chips・staffId・showEnded・`extra?`（画面ごとに足すチップのうち押しているもの）
+- `ClientFilterState`：query・cities・towns（`townKey(city, town)`）・chips・staffId・showEnded・`types?`（押している訪問の種類の id。PRD D263。複数はどれか＝OR）・`extra?`（画面ごとに足すチップのうち押しているもの）
 - 既定：`EMPTY_FILTER`（〈利用者さん〉の画面・相性）・`WEEK_TABLE_FILTER`（chips＝period。週の表）
-- `filterFacts({ days, visits, clients, patterns, clientLeaves, staff })`：週の `weekDay` の帯から、期間に訪問がある人・担当が決まっていない訪問（担当 null・休みでない帯）がある人・〈スタッフ〉が担当する人（帯の担当＋いつもの担当。`staffClientMap`）、期間にかかる休み・パターンのある人・働ける〈スタッフ〉（利用中で最終勤務日が無いか期間の終わり以降）・終了でも出す人 `endedShownIds`（`showEndedInPeriod` のとき期間に訪問がある人）。`extraTests?`（キー → 判定。無いキーは絞らない）
-- `chipMatches`・`matchArea`・`filterClients`（AND。終了の人は showEnded のときだけ。渡した順のまま）・`chipCounts`（押したら何人か）・`cityChips`・`townChips`（地区のほかの絞り込みをかけた人数。住所なしは最後）・`toggleChip`・`toggleCity`（外すと町名も外す）・`toggleTown`・`staffCounts`（〈スタッフ〉ごとの「その人で押したら何人か」）・`resolveStaffId`（今の絞り込みで数えた `staffCounts` で `defaultStaffOf`）・`endedVisible`・`extraCounts`・`toggleExtra`・`sameFilter`・`chipLabel`・`chipHelp`
-- `activeFilterCount(state)`（PRD D220）：効いている絞り込みの数＝検索の文字（空白だけでなければ1）＋市区＋町名＋チップ＋足すチップ（`extra`）＋「終了の人も出す」（入なら1）。〈利用者さん〉一覧の畳んだ「絞り込み（N）」の N
-- `encodeFilter`・`decodeFilter(raw, fallback, extraKeys)`：`?cf=` には `extra` を押しているときだけ `x:k1,k2`（並びはそろえる）。`extraKeys` に無い値は捨てる（週・〈利用者さん〉の画面は渡さない）
+- `filterFacts({ days, visits, clients, patterns, clientLeaves, staff, visitTypes? })`：週の `weekDay` の帯から、期間に訪問がある人・担当が決まっていない訪問（担当 null・休みでない帯）がある人・〈スタッフ〉が担当する人（帯の担当＋いつもの担当。`staffClientMap`）、期間にかかる休み・パターンのある人・働ける〈スタッフ〉（利用中で最終勤務日が無いか期間の終わり以降）・終了でも出す人 `endedShownIds`（`showEndedInPeriod` のとき期間に訪問がある人）。`extraTests?`（キー → 判定。無いキーは絞らない）。`visitTypes`（`data.visitTypes`）を渡すと `typeClientIds`（種類の id → 期間に、その種類の取り消しでない訪問〔帯のある訪問〕がある人）と `typeIds` を作る（渡さなければ作らず、種類で絞らない）
+- `chipMatches`・`matchArea`・`filterClients`（AND。終了の人は showEnded のときだけ。渡した順のまま）・`chipCounts`（押したら何人か）・`cityChips`・`townChips`（地区のほかの絞り込みをかけた人数。住所なしは最後）・`toggleChip`・`toggleCity`（外すと町名も外す）・`toggleTown`・`staffCounts`（〈スタッフ〉ごとの「その人で押したら何人か」）・`resolveStaffId`（今の絞り込みで数えた `staffCounts` で `defaultStaffOf`）・`endedVisible`・`extraCounts`・`toggleExtra`・`matchTypes`（押した種類のどれかの訪問が期間にある人。消えた種類の id・`typeIds` の無い facts は無いものとして全員）・`typeChips`（種類ごとの人数＝種類を除いたほかの絞り込みをかけた、その種類の人）・`toggleType`（並びは `visitTypes` の順）・`sameFilter`・`chipLabel`・`chipHelp`
+- `activeFilterCount(state)`（PRD D220）：効いている絞り込みの数＝検索の文字（空白だけでなければ1）＋市区＋町名＋チップ＋押している訪問の種類（`types`）＋足すチップ（`extra`）＋「終了の人も出す」（入なら1）。〈利用者さん〉一覧の畳んだ「絞り込み（N）」の N
+- `encodeFilter`・`decodeFilter(raw, fallback, extraKeys)`：`?cf=` には `types` を押しているときだけ `type:t1,t2`（古い URL は種類なし）、`extra` を押しているときだけ `x:k1,k2`（並びはそろえる）。`extraKeys` に無い値は捨てる（週・〈利用者さん〉の画面は渡さない）
 
 #### `components/ClientFilter.tsx`
 
 - 検索欄：Esc で文字を消す。文字はこの部品の中にも持ち、変換中（`compositionstart`〜`compositionend`）は呼ぶ側へ渡さず確定で渡す。ふつうの入力は 300ms 待って渡す（週は `replace` で URL へ）。呼ぶ側の値が外から変わったら入力欄を合わせる。チップなどを押したときは入力欄の文字もいっしょに渡す
 - 「終了の人も出す」（`hideEnded` で出さない）・件数「N人／M人」・「絞り込みを戻す」（既定と違うときだけ）
 - 地区の1段目（市区）と選んだ市区ごとの2段目（町名）
+- 訪問の種類（`visitTypes` を渡し1件以上のとき。地区の下・「絞り込み」の上の別の欄「訪問の種類（どれか）」。`testId-type`・`data-key`＝種類の id）：種類ごとのチップ（人数つき・0人は `aria-disabled`）。ADR-0021 追記。訪問の種類の機能の入り切りは無い（`features` に無い）ので、種類が0件のときだけ出さない
 - 絞り込みのチップ：「〈スタッフ〉が担当する人」を押すと〈スタッフ〉の select（人数は「その人で押したら何人か」。このチップは0人でも押せる）。`extraChips`（チップ「絞り込み」の後ろに並べる。判定は `facts.extraTests`、人数は `extraCounts`）
 - チップ・地区は `aria-pressed` のボタンで人数を読み上げ、0人で押していないものは `aria-disabled`（薄く、押しても何もしない）
 - 状態は呼ぶ側が持つ
@@ -200,6 +201,7 @@
 - [ ] （ADR-0014）担当できる人を2人に限ると、AI案・振り直しでその2人以外に入らず、理由に「担当を限る：… ✗」が出る
 - [ ] （ADR-0015）段階を「終了」にすると予定・AI案に入らず、一覧は「終了の人も出す」のときだけ出す。仮押さえは「相談受付」で入り、「本登録にする」で利用中になる
 - [ ] （ADR-0021）一覧を地区・チップ・検索で絞れる
+- [ ] （PRD D263）「訪問の種類」のチップ（例「リハビリ」）で、この週にその種類の訪問がある人に絞れる。複数押せばどれか
 - [ ] （ADR-0023）一覧の「開く」・`?id=` で閲覧の欄が開き、入力欄が無い。「編集する」で編集の欄になり、保存・取り消しで閲覧に戻る。変更があるまま取り消す・閉じる・別の人を開くと確認が出る。「追加」はすぐ編集の欄（`scripts/e2e-view.cjs`）
 - [ ] （ADR-0016 追記）`scripts/e2e-address.cjs` が通る：開いた・打っただけでは送らず送るのは zipcode・q だけ、郵便番号の正規化、候補と元に戻す、見つからない・つながらない・時間切れで知らせてデータを変えない、連打で1回・途中で閉じたら書かない・途中の書き換えで古い応答を捨てる、〈利用者さん〉の data-testid と保存
 - [ ] `lib/leaves`・`lib/patternText`・`lib/area`・`lib/clientFilter`・`lib/search`・`lib/viewMode`・`lib/addressLookup`・`lib/postalCode`・`lib/geocode`（偽物）・`lib/clientStage` のテストが通る
