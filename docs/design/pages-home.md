@@ -1,6 +1,6 @@
 # ホーム（今日やること）と予定に共通の進み具合の帯
 
-> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）・0038。関連 PRD：D141〜D145・D247・D255（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
+> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）・0038・0044。関連 PRD：D141〜D145・D247・D255・D263（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
 
 ### ホーム（`#/home`。PRD D141〜D145）
 
@@ -14,17 +14,20 @@
 - `homeEntries(today, terms, features)`（いつでもの入口）
 - `homeTasks({ today, statuses, months, todayStaff, data })`：カード `HomeTask`＝種類・色（`warn`／`todo`／`info`）・題名・内訳・移る先 `to`・日の予定へ移るときの日付 `date`。`ready` は info だけのとき。切った機能のカードは出さない
 
+並びは作業の順（PRD D263。ADR-0044）：要対応（全部の月）→ 月ごとに「案を作る → 確定していない日」（今月 → 来月）→ 今日。
+
 | 並び | カード | 移る先 |
 |---|---|---|
 | 1 | 要対応（月ごと。`attentionList`） | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=attention` |
-| 2 | 今日の予定 | `/plan`（今日） |
-| 3 | 確定していない日（月ごと。訪問があって確定済みでない日。案の無い日も含み、`monthProgress` の `unconfirmed` と同じ日・同じ並び） | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=unconfirmed` |
-| 4 | 案を作る（月ごと。`expandMonth` の added か案の無い日） | `/month?ym=…&do=batch` |
+| 2 | 案を作る（月ごと。`expandMonth` の added か案の無い日。内訳に「案の無い日 N日」） | `/month?ym=…&do=batch` |
+| 3 | 確定していない日（2 と同じ月のすぐ後。訪問があって確定済みでない日。案の無い日も含み、`monthProgress` の `unconfirmed` と同じ日・同じ並び）。同じ月に作るカードがあれば内訳の案の無い日は「ほかは案の無い日（先に作る）」（日数は書かない）、案の無い日だけならこのカードは出さない | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=unconfirmed` |
+| 4 | 今日の予定 | `/plan`（今日） |
 
 #### `pages/HomePage.tsx`（`home.css`）
 
 - 日の状態：`lib/useDayModel` の `useCompileInput(data)`（compile が読むデータだけ。今日の問題は compile しない。`useDayModel` も中で使う）と `useDayStatuses`
 - `homeTasks` のカードを並べる。カード全体が `Link`（`date` があれば押したときに `setDate`）
+- 先頭の1枚（知らせだけ（`info`）でなければ）は「まずこれ」（PRD D263）：`li.is-lead` で格子の幅いっぱい（`grid-column: 1 / -1`）、カードは `.is-lead`（主ボタンの塗り `--primary`・白い文字・下の影。ホームの主ボタンはこの1つ）、題名の上に札「まずこれ」（`home-lead`。読み上げも題名の前）、`data-lead`。ほかのカードは今のまま
 - 何も無ければ「今日の準備はできています」（`ready`）
 - 下に「いつでも」の入口：欠勤・キャンセルを登録（`/plan?date=今日&do=absence`）・空き状況・〈利用者さん〉一覧・〈スタッフ〉一覧
 - 狭い画面（860px 以下。`lib/useMedia` の `NARROW_QUERY`。App のメニューの切り替えと同じ定数）では欠勤・キャンセルの入口を見出しのすぐ下（「次にすること」の上。`home-quick`）に常に置き、「いつでも」から外す（同じ `home-absence`）。見た目はほかの入口と同じカード（`is-entry`。赤い縁は付けない）で、先頭に置くことで目立たせ、アイコンだけ朱（`.is-first`）。切っていれば出さない（PRD D247・ADR-0038）
@@ -36,7 +39,7 @@
 
 #### 確かめ
 
-`scripts/e2e-home.cjs`：起動・知らない URL・`?id=`、カードの並び、今日のカード → 日の予定（今日）、まとめて作る → 欄が開き `?do=` が消える・戻るで繰り返さない、案ができたら「未確定」・確定したら「確定済み」（案なしから始める所は先に初期データの案を消す）、初期データの案（PRD D225）で初めから今日が「未確定」・確定していない日＝月の未確定の日数、月の「問題の無い日をまとめて確定」で確定していない日が N日減る（PRD D223）、月の予定の `?do=attention|unconfirmed`、いつでもの入口、何も無いデータで「準備はできています」、メニューの先頭、390px で縦1列（先頭は欠勤・キャンセルの入口）・下のタブ5つ、印刷。③の日数は帯の確定していない日数で確かめる。
+`scripts/e2e-home.cjs`：起動・知らない URL・`?id=`、カードの並び（作業の順）・先頭の「まずこれ」（幅いっぱい・札・知らせだけなら出さない）・同じ月の「案の無い日 N日」は作るカードだけ、今日のカード → 日の予定（今日）、まとめて作る → 欄が開き `?do=` が消える・戻るで繰り返さない、案ができたら「未確定」・確定したら「確定済み」・確定していない日が1日減る（残りが案の無い日だけなら作るカードの日数で数える）（案なしから始める所は先に初期データの案を消す）、初期データの案（PRD D225）で初めから今日が「未確定」・確定していない日＝月の未確定の日数、月の「問題の無い日をまとめて確定」で確定していない日が N日減る（PRD D223）、月の予定の `?do=attention|unconfirmed`、いつでもの入口、何も無いデータで「準備はできています」、メニューの先頭、390px で縦1列（先頭は欠勤・キャンセルの入口）・下のタブ5つ、印刷。③の日数は帯の確定していない日数で確かめる。
 
 ### 日の状態の共通フック（`lib/useDayStatuses.ts`）
 
