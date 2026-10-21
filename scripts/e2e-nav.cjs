@@ -501,7 +501,7 @@ async function mobile(page) {
   }
   // 名前が切れない（見出し・項目名をそれぞれひとまとまりで折り返す）
   const clipped = [];
-  for (const h of ['/clients', '/rules', '/workload', '/compare']) {
+  for (const h of ['/clients', '/rules', '/workload', '/compare', '/availability', '/compat']) {
     await open(page, h);
     const c = await page.evaluate(() =>
       [...document.querySelectorAll('[data-testid="screen-name"], .m-screen-group, .m-screen-item')].some(
@@ -693,6 +693,97 @@ async function perf(page) {
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
 
+/**
+ * 1366×768（PRD D267・D269・D270）：左のメニューは最後の項目（データ）まで巻かずに見える、上の帯の日付の選択は日付で
+ * 中身が変わる画面だけ（ほかの画面でも選んでいる日付は覚えたまま）、日の予定の時間軸の列の名前が切れず、右に続きの列が
+ * あれば端に影
+ */
+async function screen1366(page) {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await open(page, '/home');
+  const side = await page.evaluate(() => {
+    const nav = document.querySelector('.side-nav');
+    const links = [...nav.querySelectorAll('.nav-link')];
+    const last = links.at(-1).getBoundingClientRect();
+    return {
+      last: links.at(-1).textContent.trim(),
+      bottom: Math.round(last.bottom),
+      vh: window.innerHeight,
+      fits: nav.scrollHeight <= nav.clientHeight + 1,
+    };
+  });
+  check(side.fits && side.bottom <= side.vh, '1366×768：左のメニューの最後の項目まで巻かずに見える（PRD D270）', side);
+  const shown = [];
+  const hidden = [];
+  for (const h of ['/plan', '/week', '/month', '/compare', '/workload', '/availability']) {
+    await open(page, h);
+    if ((await page.locator('.app-header .date-switch').count()) !== 1) shown.push(h);
+  }
+  for (const h of [
+    '/home',
+    '/vacancy',
+    '/clients',
+    '/staff',
+    '/compat',
+    '/rules',
+    '/types',
+    '/items',
+    '/settings',
+    '/data',
+  ]) {
+    await open(page, h);
+    if ((await page.locator('.app-header .date-switch').count()) !== 0) hidden.push(h);
+  }
+  check(
+    shown.length === 0 && hidden.length === 0,
+    '上の帯の日付の選択は日・週・月・比較・勤務の見込み・勤務時間（シフト）だけ（PRD D267）',
+    { 出ない: shown, 出る: hidden },
+  );
+  // 日付を選んでから日付の無い画面へ移り、戻っても同じ日付
+  await open(page, '/plan', '.date-switch select');
+  const options = await page.locator('.date-switch select option').evaluateAll((os) => os.map((o) => o.value));
+  const pick = options[Math.min(2, options.length - 1)];
+  await page.locator('.date-switch select').selectOption(pick);
+  await page.evaluate(() => {
+    location.hash = '#/clients';
+  });
+  await page.locator('h1').filter({ hasText: /一覧/ }).first().waitFor();
+  await settle(page, 200);
+  const kept = await page.locator('.app-shell').getAttribute('data-date');
+  await page.evaluate(() => {
+    location.hash = '#/plan';
+  });
+  await page.locator('.date-switch select').waitFor();
+  check(
+    kept === pick && (await page.locator('.date-switch select').inputValue()) === pick,
+    '日付の無い画面へ移っても選んでいる日付はそのまま',
+    { pick, kept },
+  );
+  // 日の予定の時間軸（今日）：列の名前を切らず、右に続きの列があれば端に影（PRD D269）
+  await open(page, '/plan', '[data-testid="route-timeline"]');
+  await page.locator('.tl-head .col-head-name').first().waitFor({ timeout: 60000 });
+  await settle(page, 300);
+  const tl = await page.evaluate(() => {
+    const box = document.querySelector('[data-testid="route-timeline"]');
+    const names = [...document.querySelectorAll('.tl-head .col-head-name')].map((el) => {
+      const col = el.closest('.route-col').getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      return { text: el.textContent, clip: el.scrollWidth > el.clientWidth + 1 || r.right > col.right + 1 };
+    });
+    return {
+      clipped: names.filter((n) => n.clip).map((n) => n.text),
+      count: names.length,
+      more: box.scrollWidth > box.clientWidth + 1,
+      edge: box.parentElement.classList.contains('has-more-right'),
+      shadow: getComputedStyle(box.parentElement, '::after').opacity,
+    };
+  });
+  check(tl.count > 0 && tl.clipped.length === 0, '日の予定の時間軸：列の名前が切れない（PRD D269）', tl);
+  check(!tl.more || (tl.edge && tl.shadow === '1'), '日の予定の時間軸：右に続きの列があれば端に影（PRD D269）', tl);
+  await page.screenshot({ path: path.join(OUT_DIR, 'plan-1366.png') });
+  await page.setViewportSize({ width: 1400, height: 1000 });
+}
+
 const steps = sharedPage({
   open: async () => {
     const s = await openPage();
@@ -707,6 +798,7 @@ const steps = sharedPage({
     ['focus', focus],
     ['mobile', mobile],
     ['print', print],
+    ['screen-1366', screen1366],
     // 速さは時計を止めない別の文脈で測る（scripts/lib/env.cjs の withRealClock）
     ['perf', (_page, s) => withRealClock(s.b, pageErrors, perf)],
   ],

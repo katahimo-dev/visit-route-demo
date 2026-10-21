@@ -403,8 +403,46 @@ export function SuddenPanel({
   } else if (step === 3 && kind === 'staff' && absence) {
     const impact = preview ? impactText(preview.targets) : null;
     const hasBase = !!preview && preview.baseFrom !== null;
-    /** 案B を勧めるときは、主ボタンを「登録して案B も作る（おすすめ）」にし、案A を2番目にする */
+    /**
+     * 主ボタンは「登録して振り直す（おすすめ）」の1つ（PRD D264。ADR-0044）。案A で入らない見込みなら、おすすめは
+     * 案B も作るほう（sudden-anneal）、無ければ案A（sudden-reassign）。もう一方と「欠勤だけ登録」は控えめな文字のボタン
+     */
     const recommended = !!preview && recommendAnneal({ hasBase, unplacedA: preview.unplacedA });
+    const disabledWhy = blocked ?? undefined;
+    const reassignBtn = (anneal: boolean, primary: boolean) => (
+      <button
+        type="button"
+        className={primary ? 'btn btn-primary' : 'btn btn-text'}
+        disabled={!!blocked || busy}
+        title={disabledWhy}
+        onClick={() => void reassignNow(anneal)}
+        data-testid={anneal ? 'sudden-anneal' : 'sudden-reassign'}
+      >
+        {primary ? (
+          <WithIcon icon={Send}>登録して振り直す（おすすめ）</WithIcon>
+        ) : anneal ? (
+          '登録して、案B も作る'
+        ) : (
+          '案A だけで振り直す'
+        )}
+      </button>
+    );
+    const saveOnly = (
+      <button
+        type="button"
+        // 振り直しの元の案が無い日（案の無い日・計算中・見込みを出せない）は振り直せないので、欠勤だけ登録を主ボタンにする
+        // （押せない振り直しのボタンは出さない。主ボタンは1つ。PRD D264）
+        className={hasBase ? 'btn btn-text' : 'btn btn-primary'}
+        disabled={!!error || busy || running}
+        title={
+          running ? '計算中は押せません（作り終えた案で休む人に訪問が残らないよう、終わってから登録します）' : undefined
+        }
+        onClick={() => onSaveOnly(withId(absence))}
+        data-testid="sudden-save-only"
+      >
+        欠勤だけ登録（振り直さない）
+      </button>
+    );
     body = (
       <>
         {stepHeading(suddenHeading('staff', 3, terms.staff))}
@@ -431,8 +469,17 @@ export function SuddenPanel({
           )}
           {hasBase && preview && (
             <div className="stack sudden-options" style={{ gap: 8 }}>
-              <div className="sudden-option">
-                <strong>空き時間に入れる（案A）</strong>
+              <p className="sudden-recommend" data-testid="sudden-recommend">
+                おすすめ：
+                {recommended
+                  ? '案A では入らない見込みなので、登録して案A を作ったあと、案B も作って比べます'
+                  : '登録して、空き時間に入れます（案A）'}
+              </p>
+              <div className={`sudden-option${recommended ? '' : ' is-recommended'}`}>
+                <strong className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                  空き時間に入れる（案A）
+                  {!recommended && <span className="chip chip-primary">おすすめ</span>}
+                </strong>
                 <span className="sub">
                   ほかの人の担当・順番・時刻は変えず、空き時間に入れます（{staffName(absence.staffId)}
                   さんの残りの訪問は、欠勤明けの移動で開始が遅れることがあります）。
@@ -444,74 +491,33 @@ export function SuddenPanel({
                   （元の案：{preview.baseFrom === 'confirmed' ? '確定した割当' : '今の案'}）
                 </span>
               </div>
-              <div className="sudden-option" data-testid="anneal-suggest">
+              <div className={`sudden-option${recommended ? ' is-recommended' : ''}`} data-testid="anneal-suggest">
                 <strong className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                   少し動かしてよい（案B）
-                  {preview.unplacedA > 0 && <span className="chip chip-primary">おすすめ</span>}
+                  {recommended && <span className="chip chip-primary">おすすめ</span>}
                 </strong>
                 <span className="sub">
                   案A を作ったあと、ほかの人の訪問も少し動かして入れる案を AI が作ります（少し時間がかかります）。案A
                   と比べて選べます
                 </span>
-                {!recommended && (
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    style={{ alignSelf: 'flex-start' }}
-                    disabled={!!blocked || busy}
-                    title={blocked ?? undefined}
-                    onClick={() => void reassignNow(true)}
-                    data-testid="sudden-anneal"
-                  >
-                    登録して、案B も作る
-                  </button>
-                )}
               </div>
             </div>
           )}
           {blocked && hasBase && <p className="sub">押せません：{blocked}</p>}
+          {/* ほかのやり方（控えめな文字のボタン。PRD D264）。振り直せない日は出さない（欠勤だけ登録が主ボタン） */}
+          {hasBase && (
+            <div className="row sudden-alt" style={{ gap: 4, flexWrap: 'wrap' }} data-testid="sudden-alt">
+              <span className="sub">ほかのやり方：</span>
+              {reassignBtn(!recommended, false)}
+              {saveOnly}
+            </div>
+          )}
         </div>
       </>
     );
-    const annealPrimary = recommended && (
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={!!blocked || busy}
-        title={blocked ?? undefined}
-        onClick={() => void reassignNow(true)}
-        data-testid="sudden-anneal"
-      >
-        <WithIcon icon={Send}>登録して案B も作る（おすすめ）</WithIcon>
-      </button>
-    );
     footer = (
       <>
-        {annealPrimary}
-        <button
-          type="button"
-          className={recommended ? 'btn' : 'btn btn-primary'}
-          disabled={!!blocked || busy}
-          title={blocked ?? undefined}
-          onClick={() => void reassignNow(false)}
-          data-testid="sudden-reassign"
-        >
-          <WithIcon icon={recommended ? UserRoundCheck : Send}>登録して振り直す（案A）</WithIcon>
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={!!error || busy || running}
-          title={
-            running
-              ? '計算中は押せません（作り終えた案で休む人に訪問が残らないよう、終わってから登録します）'
-              : undefined
-          }
-          onClick={() => onSaveOnly(withId(absence))}
-          data-testid="sudden-save-only"
-        >
-          欠勤だけ登録
-        </button>
+        {hasBase ? reassignBtn(recommended, true) : saveOnly}
         {existing && (
           <button
             type="button"

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Absence } from '../contracts/documents';
+import type { ReassignDiff } from '../contracts/reassign';
 import {
   absenceOfDraft,
   absenceSummary,
@@ -10,6 +11,7 @@ import {
   impactText,
   noPlanText,
   reassignBlocked,
+  reassignMoveRows,
   recommendAnneal,
   staffChoices,
   suddenHeading,
@@ -187,5 +189,51 @@ describe('confirmNote・absenceSummary', () => {
   });
   it('欠勤の短い文', () => {
     expect(absenceSummary('青木', { from: null, to: null }, [])).toBe('青木さん 欠勤（終日）');
+  });
+});
+
+describe('reassignMoveRows（PRD D265）', () => {
+  const label: Record<string, string> = {
+    v1: '10:00 天文台',
+    v2: '09:30 交通局',
+    v3: '13:30 文学館',
+    v4: '11:00 図書館',
+  };
+  const visitLabel = (id: string) => label[id] ?? id;
+  const diff = (x: Partial<ReassignDiff>): ReassignDiff => ({
+    moved: [],
+    shifted: [],
+    unplaced: [],
+    changedStaff: [],
+    travelDelta: 0,
+    ...x,
+  });
+  it('担当が変わる訪問と入らない訪問を、訪問の文（受けられる時間帯の初め）の順に並べる', () => {
+    const rows = reassignMoveRows(
+      diff({
+        moved: [
+          { visitId: 'v3', from: 's1', to: 's2' },
+          { visitId: 'v1', from: 's1', to: 's3' },
+        ],
+        unplaced: ['v2'],
+      }),
+      visitLabel,
+    );
+    expect(rows.map((r) => r.visitId)).toEqual(['v2', 'v1', 'v3']);
+    expect(rows[0]).toEqual({ visitId: 'v2', from: null, to: null });
+  });
+  it('moved と unplaced の両方にある訪問は1行（moved の元の担当を使う）', () => {
+    const rows = reassignMoveRows(
+      diff({ moved: [{ visitId: 'v1', from: 's1', to: null }], unplaced: ['v1'] }),
+      visitLabel,
+    );
+    expect(rows).toEqual([{ visitId: 'v1', from: 's1', to: null }]);
+  });
+  it('入らなかった訪問から入れた（from が null）', () => {
+    const rows = reassignMoveRows(diff({ moved: [{ visitId: 'v4', from: null, to: 's2' }] }), visitLabel);
+    expect(rows).toEqual([{ visitId: 'v4', from: null, to: 's2' }]);
+  });
+  it('無ければ空', () => {
+    expect(reassignMoveRows(diff({}), visitLabel)).toEqual([]);
   });
 });

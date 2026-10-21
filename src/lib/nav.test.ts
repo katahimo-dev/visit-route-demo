@@ -11,6 +11,7 @@ import {
   type NavSection,
   navTitle,
   navTitleParts,
+  showsDateSwitch,
   tabClick,
   tabHref,
   tabLabel,
@@ -166,5 +167,25 @@ describe('下のタブの「今日」（PRD D232）', () => {
     // 比較から「今日」は日の予定へ移る（別の画面）
     expect(tabClick('/plan', '/compare')).toBe('go');
     expect(tabClick('/week', '/plan')).toBe('go');
+  });
+});
+
+describe('showsDateSwitch（PRD D267）', () => {
+  it('日付で中身が変わる画面だけ日付の選択を出す', () => {
+    for (const p of ['/plan', '/schedule', '/week', '/month', '/compare', '/workload', '/availability'])
+      expect(showsDateSwitch(p)).toBe(true);
+    for (const p of [
+      '/home',
+      '/vacancy',
+      '/clients',
+      '/staff',
+      '/compat',
+      '/rules',
+      '/types',
+      '/items',
+      '/settings',
+      '/data',
+    ])
+      expect(showsDateSwitch(p)).toBe(false);
   });
 });

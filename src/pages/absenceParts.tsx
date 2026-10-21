@@ -1,6 +1,14 @@
 // 予定の画面の急な欠勤（ADR-0011。PRD D26〜D32）：欠勤の入力欄と見込み（「欠勤・キャンセル」の欄で使う。PRD D169）・
 // 振り直しの差の欄・入らない訪問の受けられる人
-import { CircleOff, GitCompareArrows, ShieldAlert, TriangleAlert, Undo2, UserRoundCheck } from 'lucide-react';
+import {
+  ArrowRight,
+  CircleOff,
+  GitCompareArrows,
+  ShieldAlert,
+  TriangleAlert,
+  Undo2,
+  UserRoundCheck,
+} from 'lucide-react';
 import { type ReactNode, useId, useMemo, useState } from 'react';
 import { FieldError, invalidAttrs } from '../components/FieldError';
 import { PersonButton } from '../components/PersonPopover';
@@ -14,7 +22,7 @@ import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { absencesOn, absenceText, baseOf, saveAbsence, withoutAbsencesOn } from '../lib/absences';
 import { attempt, deltaText, r0 } from '../lib/common';
 import { shiftText } from '../lib/reassignMenu';
-import type { AbsenceDraft } from '../lib/sudden';
+import { type AbsenceDraft, reassignMoveRows } from '../lib/sudden';
 import { compile } from '../matching';
 import { candidatesFor, reassign, targetsOf } from '../reassign';
 
@@ -327,6 +335,53 @@ export function ReassignSummary({
       {left > 0 && <span className="chip chip-red">欠勤の人のまま {left}件</span>}
       <span className="chip">移動 {deltaText(r0(diff.travelDelta), '分') || '±0分'}</span>
     </div>
+  );
+}
+
+/**
+ * 「欠勤・キャンセル」の欄の4段目：誰のどの訪問が誰へ移るか（PRD D265。ADR-0044）。〈利用者さん〉の名前・時刻
+ * （visitLabel）と、元の担当 → 新しい担当。入らない訪問は「入らない」。確定の前に結果を見て安心できるように
+ */
+export function ReassignMoves({
+  diff,
+  visitLabel,
+  staffName,
+}: {
+  diff: ReassignDiff;
+  visitLabel: (id: string) => string;
+  staffName: (id: string) => string;
+}) {
+  const rows = reassignMoveRows(diff, visitLabel);
+  if (rows.length === 0) return <p className="sub">担当が変わる訪問はありません</p>;
+  const who = (id: string | null) => (id === null ? '入らなかった訪問' : `${staffName(id)}さん`);
+  return (
+    <ul className="reassign-moves" aria-label="担当が変わる訪問" data-testid="reassign-moves">
+      {rows.map((r) => (
+        <li
+          key={r.visitId}
+          className={`reassign-move${r.to === null ? ' is-unplaced' : ''}`}
+          data-testid="reassign-move"
+          data-to={r.to ?? ''}
+        >
+          <span className="reassign-move-visit">{visitLabel(r.visitId)}</span>
+          <span className="reassign-move-who">
+            {r.to === null ? (
+              <>
+                <CircleOff size={14} aria-hidden="true" />
+                {r.from === null ? '入らない' : `入らない（${who(r.from)}から外れる）`}
+              </>
+            ) : (
+              <>
+                {who(r.from)}
+                <ArrowRight size={14} aria-hidden="true" />
+                <span className="sr-only">から</span>
+                <strong>{who(r.to)}</strong>
+              </>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

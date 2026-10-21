@@ -168,7 +168,7 @@ import { applyPreset, matchesPreset, presetOf, scorePresetOf, scoreRulesOf } fro
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
-import { CandidateBox, leftReasonText, ReassignBar, ReassignSummary } from './absenceParts';
+import { CandidateBox, leftReasonText, ReassignBar, ReassignMoves, ReassignSummary } from './absenceParts';
 import { DayMailPanel } from './mailPanels';
 import {
   AchievementList,
@@ -2444,7 +2444,7 @@ export default function PlanPage() {
             }}
           >
             <span className="staff-dot" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
-            {staffName(sid)}
+            <span className="col-head-name">{staffName(sid)}</span>
             <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
           </button>
           <span className="chip">{ids.length}件</span>
@@ -3095,6 +3095,8 @@ export default function PlanPage() {
           {reassignInfo.method === 'anneal' ? '案B（少し動かした案）' : '案A（空き時間に入れた案）'}
         </strong>
         {rDiff && <ReassignSummary diff={rDiff} left={left.length} testId="sudden-summary" />}
+        {/* 誰のどの訪問が誰へ移るか（PRD D265）：確定の前に結果を見る */}
+        {rDiff && <ReassignMoves diff={rDiff} visitLabel={visitLabel} staffName={staffName} />}
         {rDiff && rDiff.unplaced.length > 0 && (
           <p className="sub">
             入らない訪問は、下の案B を作るか、日の予定の「入らなかった訪問」の「受けられる人」から入れられます
@@ -3189,7 +3191,12 @@ export default function PlanPage() {
           <span>
             <Term k="travel" /> <strong>{r0(cs.travelMinutes)}</strong>分
           </span>
-          <span className="plan-oneline-score" title={`点数の基準：${scoreRulerName}`}>
+          {/* 点数の色（PRD D266）：入らない・必須の違反があるときだけ要対応の色。無ければ点が低くても赤にしない（D228） */}
+          <span
+            className={`plan-oneline-score${cs.dropped > 0 || hardCount > 0 ? ' is-alert' : ''}`}
+            title={`点数の基準：${scoreRulerName}`}
+            data-testid="plan-score"
+          >
             <strong data-testid="plan-total">{hundredNow ?? '—'}</strong>点
             {hardCount > 0 && (
               <span className="chip chip-warn" title={HARD_NOTE}>

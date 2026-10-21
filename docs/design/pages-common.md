@@ -65,7 +65,7 @@
 
 - 地図の浮かせた表示：`components/MapDock.tsx`（画面の外の地図を右下に浮かせる）。位置は `--map-dock-left`・`--map-dock-top`
 - `components/floating.ts`（`FLOATING_EVENT`・`useFloatingEdge(name)`）：知らせ（トースト）は欠勤の振り直しの帯・地図より上に出す（`--reassign-dock-top`・`--map-dock-top`）
-- `components/Toast.tsx`：z-index 1200。body の直下の `div.toast-layer[data-inert-keep]` に出す（右の欄の inert に巻き込まれず、欄が開いていても読み上げ・「元に戻す」を押せる。確認ダイアログ・パレット・ツアーの間は今までどおり inert）。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・6秒・フォーカスがある間は消さない）。今は日の予定の手直しの「元に戻す」だけ（[pages-plan.md](pages-plan.md)。PRD D218）
+- `components/Toast.tsx`：z-index 1200。body の直下の `div.toast-layer[data-inert-keep]` に出す（右の欄の inert に巻き込まれず、欄が開いていても読み上げ・「元に戻す」を押せる。確認ダイアログ・パレット・ツアーの間は今までどおり inert）。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・`toastMs`＝6秒から文の長さ（1字 120ms）で延ばし10秒まで・フォーカスがある間・マウスを重ねている間は消さず、両方が外れたら2.5秒で消す。ボタン付きの箱（文の幅だけ）はマウスを受ける（`pointer-events: auto`）。PRD D268）。使う所は日の予定の手直しの「元に戻す」（[pages-plan.md](pages-plan.md)。PRD D218）と月のまとめて作るの終わりの［月の予定を見る］（`components/batchBand` の `MonthBatchHost`。その月の月の予定を見ているとき（`lib/month` の `monthShown(search, date)`。テストあり）はボタンを付けない。PRD D268）
 
 ### フォームの共通の決まり（PRD D250・D251。`components/FieldError.tsx`）
 

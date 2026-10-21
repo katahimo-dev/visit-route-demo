@@ -26,6 +26,7 @@ import {
   isYm,
   monthDates,
   monthProgress,
+  monthShown,
   planRunOf,
   planStale,
   ruleSetKey,
@@ -792,5 +793,15 @@ describe('入り切りで計算が変わった日だけ「条件が変わった�
     expect(planRunOf(d, a)!.calcFeatures).toEqual({ compat: false });
     // novData の相性は計算に効く（相性の表がある）なら問題が変わる。どちらでも rulesStale は入り切りを見ない
     expect(rulesStale(d, a, keysOf(d))).toBe(false);
+  });
+});
+
+describe('monthShown（PRD D268）', () => {
+  it('?ym= が正しければその月、無い・正しくなければ選んでいる日付の月', () => {
+    expect(monthShown('?ym=2026-11', '2026-10-21')).toBe('2026-11');
+    expect(monthShown('?ym=2026-11&do=batch', '2026-10-21')).toBe('2026-11');
+    expect(monthShown('', '2026-10-21')).toBe('2026-10');
+    expect(monthShown('?ym=2026-13', '2026-10-21')).toBe('2026-10');
+    expect(monthShown('?ym=abc', '2026-10-21')).toBe('2026-10');
   });
 });

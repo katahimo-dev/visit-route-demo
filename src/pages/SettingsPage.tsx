@@ -1,12 +1,12 @@
 import { CircleCheck, LayoutTemplate, Settings } from 'lucide-react';
 import { useId } from 'react';
 import { flushSync } from 'react-dom';
-import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/ui';
 import type { Terms } from '../contracts/documents';
 import type { FeatureId, Features } from '../contracts/features';
+import { jstDate } from '../domain/time';
 import {
   applyTemplate,
   FEATURE_GROUPS,
@@ -36,7 +36,8 @@ import '../components/features.css';
 export default function SettingsPage() {
   const { data, update } = useDemoData();
   /** 今日（休み・希望休・欠勤は今日以降に掛かるものだけを数える。turnOffImpact） */
-  const { date: today } = useDay();
+  // 切るときの影響は今日から数える（この画面には日付の選択を出さないので、見えない選択日付は使わない。PRD D267）
+  const today = jstDate(Date.now());
   const features = data.org.features;
   const terms = data.org.terms;
   const toast = useToast();
