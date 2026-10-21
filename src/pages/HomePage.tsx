@@ -49,8 +49,8 @@ const ENTRY_ICON: Record<HomeEntryKey, LucideIcon> = {
 };
 
 /**
- * ホーム「今日やること」（PRD D141〜D145。ADR-0025）：起動したときの画面。今の状態から次の一手をカードで並べ
- * （lib/home の homeTasks）、押すとその操作のある画面へ移る。下に、いつでも使う入口（欠勤・問い合わせ・探す）。
+ * ホーム「今日やること」（PRD D141〜D145・D263。ADR-0025・0044）：起動したときの画面。今の状態から次の一手を作業の順に
+ * カードで並べ（lib/home の homeTasks）、先頭の1枚を「まずこれ」と大きく見せる。押すとその操作のある画面へ移る。下に、いつでも使う入口（欠勤・問い合わせ・探す）。
  * 狭い画面（スマホ）では欠勤・キャンセルの入口を「いつでも」から外し、ホームの先頭に常に置く（PRD D247）。
  * 日の状態は月の画面と同じ数え方（lib/useDayStatuses）。データは書き換えない
  */
@@ -119,11 +119,15 @@ export default function HomePage() {
           </p>
         )}
         <ul className="home-tasks" data-testid="home-tasks">
-          {tasks.map((t) => (
-            <li key={`${t.kind}-${t.title}`}>
-              <TaskCard task={t} onPick={() => pickDate(t.date)} />
-            </li>
-          ))}
+          {tasks.map((t, i) => {
+            // 先頭の1枚は「まずこれ」（幅いっぱい・主ボタンの塗り。PRD D263）。知らせだけ（準備ができている）なら強めない
+            const lead = i === 0 && t.tone !== 'info';
+            return (
+              <li key={`${t.kind}-${t.title}`} className={lead ? 'is-lead' : undefined}>
+                <TaskCard task={t} lead={lead} onPick={() => pickDate(t.date)} />
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -151,22 +155,31 @@ export default function HomePage() {
   );
 }
 
-/** 次の一手のカード（全体が1つのリンク） */
-function TaskCard({ task: t, onPick }: { task: HomeTask; onPick: () => void }) {
+/**
+ * 次の一手のカード（全体が1つのリンク）。lead は先頭の「まずこれ」（主ボタンの塗りで幅いっぱい。ホームの主ボタンはこの1つ。
+ * PRD D263）。「まずこれ」は見える札で、読み上げでも題名の前に読む
+ */
+function TaskCard({ task: t, lead, onPick }: { task: HomeTask; lead: boolean; onPick: () => void }) {
   const Icon = KIND_ICON[t.kind];
   return (
     <Link
       to={t.to}
-      className={`card home-task is-${t.tone}`}
+      className={`card home-task is-${t.tone}${lead ? ' is-lead' : ''}`}
       onClick={onPick}
       data-testid="home-task"
       data-kind={t.kind}
       data-tone={t.tone}
+      data-lead={lead || undefined}
     >
       <span className="home-task-icon" aria-hidden="true">
-        <Icon size={20} strokeWidth={2.2} />
+        <Icon size={lead ? 24 : 20} strokeWidth={2.2} />
       </span>
       <span className="home-task-text">
+        {lead && (
+          <span className="home-lead-badge" data-testid="home-lead">
+            まずこれ
+          </span>
+        )}
         <strong>{t.title}</strong>
         {t.detail && <span className="sub">{t.detail}</span>}
       </span>

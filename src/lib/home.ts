@@ -1,4 +1,4 @@
-// ホーム（見出しの下に「今日やること」。PRD D141〜D145・D230。ADR-0025・0034。design.md §4 pages「ホーム」）の決まり。
+// ホーム（見出しの下に「今日やること」。PRD D141〜D145・D230・D263。ADR-0025・0034・0044。design.md §4 pages「ホーム」）の決まり。
 // 今の状態（日の状態・定期パターンから作れる訪問の件数）から次の一手を並べる純粋関数。データは書き換えない
 import type { DemoData } from '../contracts/data';
 import type { Terms } from '../contracts/documents';
@@ -84,11 +84,14 @@ function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfi
 }
 
 /**
- * 次の一手のカード（PRD D141〜D143）。並びは 要対応（月ごと）→ 今日の予定 → 確定していない日（月ごと）→ 案を作る（月ごと）。
+ * 次の一手のカード（PRD D141〜D143・D263）。並びは作業の順：要対応（月ごと。手当てが要るので最優先）→ 月ごとに
+ * 「案を作る → 確定していない日を確認」（今月 → 来月）→ 今日の予定。先頭の1枚を画面で「まずこれ」と大きく見せる（HomePage）。
  * - 要対応：lib/month の attentionList（月の画面の要対応と同じ件数）
- * - 今日の予定：訪問の件数・担当の人数・入らない訪問の件数。案が無い・入らない・欠勤の人に残る・必須の違反があれば warn
- * - 確定していない日：訪問があって「確定済み」でない日（案の無い日・未確定の変更ありを含む。lib/month の monthProgress の unconfirmed と同じ）
  * - 案を作る：定期パターンから作れる訪問がある、または訪問があって案の無い日がある月（月の「まとめて作る」へ）
+ * - 確定していない日：訪問があって「確定済み」でない日（案の無い日・未確定の変更ありを含む。lib/month の monthProgress の
+ *   unconfirmed と同じ日数）。同じ月に「案を作る」があれば、案の無い日の日数はそちらにだけ書き（同じことを2枚に書かない）、
+ *   確定していない日が案の無い日だけならこのカードは出さない（作るのが先。作ればこのカードになる）
+ * - 今日の予定：訪問の件数・担当の人数・入らない訪問の件数。案が無い・入らない・欠勤の人に残る・必須の違反があれば warn
  * ready は手当て・やることが1つも無いとき（今日の予定の知らせだけ）
  */
 export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean } {
@@ -96,8 +99,8 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
   const future = statuses.filter((s) => s.date >= today);
   const inMonth = (ym: string) => future.filter((s) => ymOf(s.date) === ym);
   const attention: HomeTask[] = [];
-  const confirm: HomeTask[] = [];
-  const create: HomeTask[] = [];
+  /** 月ごとの「案を作る → 確定していない日を確認」（今月 → 来月の順） */
+  const work: HomeTask[] = [];
   for (const { ym, canExpand } of months) {
     const days = inMonth(ym);
     const m = monthLabel(ym);
@@ -120,17 +123,35 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
         ),
       });
     }
-    // 確定していない日（訪問があって「確定済み」でない日。案の無い日も含む＝月の「今月の準備」の③・右の欄と同じ日・同じ並び）
+    // 案を作る（訪問を作る・案の無い日）
     const withVisits = days.filter((s) => s.count > 0);
+    const noPlan = withVisits.filter((s) => s.state === 'none').length;
+    const creates = canExpand > 0 || noPlan > 0;
+    if (creates) {
+      const what = [
+        canExpand > 0 ? `定期パターンからまだ作っていない訪問 ${canExpand}件` : '',
+        noPlan > 0 ? `案の無い日 ${noPlan}日` : '',
+      ].filter(Boolean);
+      work.push({
+        kind: 'create',
+        tone: 'todo',
+        title: `${m}の案をまとめて作る`,
+        detail: what.join('・'),
+        to: `/month?ym=${ym}&do=batch`,
+      });
+    }
+    // 確定していない日（訪問があって「確定済み」でない日。案の無い日も含む＝月の「今月の準備」の③・右の欄と同じ日・同じ並び）
     const unconfirmed = withVisits.filter((s) => s.state !== 'confirmed');
-    if (unconfirmed.length > 0) {
-      const n = (state: DayStatus['state']) => unconfirmed.filter((s) => s.state === state).length;
+    const n = (state: DayStatus['state']) => unconfirmed.filter((s) => s.state === state).length;
+    // 案の無い日だけで、同じ月に「案を作る」があれば出さない（作るのが先。PRD D263）
+    if (unconfirmed.length > 0 && !(creates && n('none') === unconfirmed.length)) {
       const parts = [
         n('plan') > 0 ? `未確定 ${n('plan')}日` : '',
         n('diff') > 0 ? `未確定の変更あり ${n('diff')}日` : '',
-        n('none') > 0 ? `案の無い日 ${n('none')}日` : '',
+        // 案の無い日の日数は「案を作る」のカードにだけ書く（同じことを2枚に書かない。PRD D263）
+        n('none') > 0 ? (creates ? 'ほかは案の無い日（先に作る）' : `案の無い日 ${n('none')}日`) : '',
       ].filter(Boolean);
-      confirm.push({
+      work.push({
         kind: 'confirm',
         tone: 'todo',
         title: `${m}の確定していない日 ${unconfirmed.length}日を確認`,
@@ -142,32 +163,16 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
         ),
       });
     }
-    // 案を作る（訪問を作る・案の無い日）
-    const noPlan = withVisits.filter((s) => s.state === 'none').length;
-    if (canExpand > 0 || noPlan > 0) {
-      const what = [
-        canExpand > 0 ? `定期パターンからまだ作っていない訪問 ${canExpand}件` : '',
-        noPlan > 0 ? `案の無い日 ${noPlan}日` : '',
-      ].filter(Boolean);
-      create.push({
-        kind: 'create',
-        tone: 'todo',
-        title: `${m}の案をまとめて作る`,
-        detail: what.join('・'),
-        to: `/month?ym=${ym}&do=batch`,
-      });
-    }
   }
   // 切った機能へ向かうカードは出さない（今のカードはどれも土台の画面へ向かうが、表から引いて守る。PRD D213）
   const tasks = [
     ...attention,
+    ...work,
     todayTask(
       today,
       future.find((s) => s.date === today),
       todayStaff,
     ),
-    ...confirm,
-    ...create,
   ].filter((t) => isHrefOn(features, t.to));
   return { tasks, ready: tasks.every((t) => t.tone === 'info') };
 }

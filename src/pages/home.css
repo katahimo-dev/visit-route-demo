@@ -83,6 +83,49 @@
   background: #e3f2e8;
   color: var(--ok-ink);
 }
+/* 先頭の「まずこれ」（PRD D263。ADR-0044）：幅いっぱい・主ボタンの塗り（ホームの主ボタンはこの1つ）。ほかのカードは今のまま */
+.home-tasks > li.is-lead {
+  grid-column: 1 / -1;
+}
+.home-task.is-lead {
+  padding: 18px 22px;
+  gap: 16px;
+  background: var(--primary);
+  border: 2px solid var(--primary);
+  border-left-width: 2px;
+  color: #fff;
+  box-shadow: 0 4px 0 var(--primary-dark);
+}
+.home-task.is-lead:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-dark);
+  box-shadow: 0 4px 0 var(--primary-dark), 0 10px 24px rgba(80, 50, 30, 0.12);
+}
+.home-task.is-lead:focus-visible {
+  outline-offset: 4px;
+}
+.home-task.is-lead .home-task-icon {
+  width: 46px;
+  height: 46px;
+  background: #fff;
+  color: var(--primary-dark);
+}
+.home-task.is-lead .home-task-text strong {
+  font-size: 1.2rem;
+}
+.home-task.is-lead .home-task-text .sub,
+.home-task.is-lead .home-task-go {
+  color: #fff;
+}
+.home-lead-badge {
+  align-self: flex-start;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--primary-dark);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
 .home-ready {
   margin: 0;
   display: flex;
