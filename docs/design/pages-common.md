@@ -33,7 +33,7 @@
 
 #### `components/ui.tsx` の `SidePanel`
 
-- 右から出る欄（`narrow` あり）。z-index 1100。広い画面（601px 以上。PRD D283）は高さを内容に合わせる：`.drawer-wrap` に余白 12px・`align-items: flex-start`、`.drawer` は `height: auto; max-height: 100%`・角丸 12px・全周の影・`overflow: hidden`、`.drawer-body` は `flex: 0 1 auto`。短い欄は内容の高さで上に寄り、長い欄は画面の高さまでで `.drawer-body` が巻き、帯は欄の下に貼り付く。狭い画面（600px 以下）は今のまま画面いっぱい。フォーカス：開いたら最初の入力欄（`focusPanel`）、Tab が中で回る、閉じたら戻す（`returnFocus` で戻り先を差し替えられる）。`useBodyScrollLock`
+- 右から出る欄（`narrow` あり）。z-index 1100。広い画面（601px 以上。PRD D284）は高さを内容に合わせる：`.drawer-wrap` に余白 12px・`align-items: flex-start`、`.drawer` は `height: auto; max-height: 100%`・角丸 12px・全周の影・`overflow: hidden`、`.drawer-body` は `flex: 0 1 auto`。短い欄は内容の高さで上に寄り、長い欄は画面の高さまでで `.drawer-body` が巻き、帯は欄の下に貼り付く。狭い画面（600px 以下）は今のまま画面いっぱい。フォーカス：開いたら最初の入力欄（`focusPanel`）、Tab が中で回る、閉じたら戻す（`returnFocus` で戻り先を差し替えられる）。`useBodyScrollLock`
 - 裏の inert（PRD D252）：開いたとき body の直下のほかの子（`#root`・メニューの引き出し）を `inertLock`（要素ごとに数えるロック。確認ダイアログ・パレット・ツアーと同じ）で inert にし、閉じるときは inert を外してから戻り先へフォーカスする。`data-inert-keep` の付いた子（知らせの置き場 `.toast-layer`、用語の説明 `TipBubble`（`Term.tsx`。body の直下に hidden で常駐するので、z-index 1150 で欄（1100）の上に出し、欄の中の用語の説明の上にマウスを移しても消えない。PRD D175））は外す。後から body の直下に出るもの（確認ダイアログ）はロックの外。名前の詳細（`DetailPopover`）は欄の中に出る。欄の上に欄を重ねたら下の欄も inert（数えるので閉じる順にかかわらず戻る）
 - `onSubmit`（PRD D251）：渡すと `.drawer-body` を `<form noValidate>` にし（無ければ `div`）、内容と帯を包む。帯の保存は `type="submit"`。送信は `submitHandler`（下の「フォームの共通の決まり」）。閲覧 ⇄ 編集で `form` ⇄ `div` が入れ替わるので、`usePanelFoot` に要素の種類（`bodyKind`）を渡して見張り直す。使う欄：〈利用者さん〉・〈スタッフ〉の編集、種類、仮押さえ、欠勤・キャンセルの2段目（「次へ」）。中に `<form>` を持つ欄（条件の調整のプリセット）には渡さない
 - `headActions`：見出しの右・× の前（`drawer-head-actions`）
