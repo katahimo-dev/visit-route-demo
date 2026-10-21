@@ -7,8 +7,16 @@ export type ToastOptions = { action?: ToastAction };
 
 /** 文だけの知らせを出しておく時間 */
 const TOAST_MS = 2500;
-/** ボタン付きの知らせを出しておく時間（押す間を残す。フォーカスがボタンにある間は消さない） */
+/** ボタン付きの知らせを出しておく時間（押す間を残す。フォーカスがボタンにある間・マウスを重ねている間は消さない） */
 const ACTION_TOAST_MS = 6000;
+/** ボタン付きの知らせの最長（長い文は1字 120ms で読む間を足し、ここで止める。PRD D268） */
+const ACTION_TOAST_MAX_MS = 10000;
+
+/** 知らせを出しておく時間（PRD D268）：文だけは短く、ボタン付きは読み上げと押す間を残す（長い文ほど長く、上限あり） */
+export function toastMs(msg: string, withAction: boolean): number {
+  if (!withAction) return TOAST_MS;
+  return Math.min(ACTION_TOAST_MAX_MS, Math.max(ACTION_TOAST_MS, [...msg].length * 120));
+}
 
 /** 画面下に短く出す知らせ */
 const Ctx = createContext<(msg: string, opts?: ToastOptions) => void>(() => {});
@@ -30,7 +38,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const show = useCallback(
     (msg: string, opts?: ToastOptions) => {
       setToast({ msg, action: opts?.action });
-      hideAfter(opts?.action ? ACTION_TOAST_MS : TOAST_MS);
+      hideAfter(toastMs(msg, !!opts?.action));
     },
     [hideAfter],
   );
@@ -48,7 +56,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           {toast &&
             (action ? (
               // 読み上げは文だけ（ボタンの名前を知らせに混ぜない）。ボタンだけ押せる（ほかは下の画面を押せるまま）
-              <div className="toast has-action">
+              // マウスを重ねている間は消さない（離したら文だけの時間で消す。フォーカスと同じ。PRD D268）
+              // biome-ignore lint/a11y/noStaticElementInteractions: 重ねている間だけ時間を止める（操作ではない）
+              <div className="toast has-action" onMouseEnter={stop} onMouseLeave={() => hideAfter(TOAST_MS)}>
                 <output className="toast-text">{toast.msg}</output>
                 <button
                   type="button"

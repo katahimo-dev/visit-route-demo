@@ -58,6 +58,7 @@ import {
   type NavIcon,
   type NavSection,
   navTitleParts,
+  showsDateSwitch,
   tabClick,
   tabHref,
   tabLabel,
@@ -205,6 +206,8 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
 
 function AdminShell() {
   const { data, saveError } = useDemoData();
+  /** 選んでいる日付（日付の選択を出さない画面でも覚えたまま。外枠の data-date で読める。PRD D267） */
+  const { date: pickedDate } = useDay();
   const terms = data.org.terms;
   const features = data.org.features;
   const location = useLocation();
@@ -300,7 +303,7 @@ function AdminShell() {
   return (
     // 初回の案内ツアー（PRD D192・D193）：まだ見ていなければ起動したときに中央のカードで出す。データの画面からもう一度開ける
     <TourProvider terms={terms}>
-      <div className="app-shell">
+      <div className="app-shell" data-date={pickedDate}>
         <aside ref={sideNavRef} className="side-nav">
           {brand}
           <NavGroups groups={groups} pathname={pathname} />
@@ -357,7 +360,8 @@ function AdminShell() {
               <Menu size={18} aria-hidden="true" />
               メニュー
             </button>
-            <DateSwitcher />
+            {/* 日付の選択は日付で中身が変わる画面だけ（PRD D267） */}
+            {showsDateSwitch(pathname) && <DateSwitcher />}
           </header>
           {saveError && (
             <div className="save-error" role="alert">

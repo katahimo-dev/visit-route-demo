@@ -71,6 +71,57 @@ async function shape(page, where) {
   return a;
 }
 
+// ---- 条件の名前（PRD D271）：ふだんは文字・［名前を変える］で入力欄・Enter で決める・Esc で取り消す、必須の条件を消す確認の本文 ----
+async function ruleNames(page) {
+  await open(page, '/rules', 'table');
+  const r0 = (await stored(page)).rules[0];
+  const row = page.locator('.rules-table tbody > tr').first();
+  check(
+    (await row.locator('input:not([type="range"]):not([type="checkbox"])').count()) === 0 &&
+      (await row.getByTestId('rule-name').textContent()) === r0.label,
+    '条件の名前：ふだんは文字（入力欄にしない）',
+  );
+  await row.getByTestId('rule-rename').click();
+  const input = row.getByTestId('rule-name-input');
+  await input.waitFor();
+  check(
+    (await input.evaluate((el) => el === document.activeElement)) && (await input.inputValue()) === r0.label,
+    '［名前を変える］で入力欄（今の名前・フォーカス）',
+  );
+  await input.fill('取り消す名前');
+  await page.keyboard.press('Escape');
+  await settle(page);
+  check(
+    (await stored(page)).rules[0].label === r0.label && (await row.getByTestId('rule-name').textContent()) === r0.label,
+    '条件の名前：Esc で取り消すと変わらない',
+  );
+  check(
+    (await page.evaluate(() => document.activeElement?.dataset.testid)) === 'rule-rename',
+    '条件の名前：閉じたらフォーカスは［名前を変える］',
+  );
+  await row.getByTestId('rule-rename').click();
+  await row.getByTestId('rule-name-input').fill('新しい名前');
+  await page.keyboard.press('Enter');
+  await settle(page);
+  check(
+    (await stored(page)).rules[0].label === '新しい名前' &&
+      (await row.getByTestId('rule-name').textContent()) === '新しい名前',
+    '条件の名前：Enter で決めると保存して文字に戻る',
+  );
+  // 必須の条件を消す：確認の本文で「守らなければ担当にしない」が無くなることを伝える。取り消すと消えない
+  const hardRow = page
+    .locator('.rules-table tbody > tr')
+    .filter({ has: page.locator('.hard-toggle.is-on') })
+    .first();
+  const n = (await stored(page)).rules.length;
+  await hardRow.getByRole('button', { name: /を消す$/ }).click();
+  const a = await shape(page, '必須の条件を消す');
+  check(/必須の条件です。.*守らなければ担当にしない/.test(a.body), '必須の条件を消す：確認の本文', a.body);
+  await page.getByTestId('confirm-cancel').click();
+  await settle(page);
+  check((await stored(page)).rules.length === n, '必須の条件を消す：取り消すと消えない');
+}
+
 // ---- 条件を消す（#/rules）：Esc・取り消す・背景は何もしない、確定で消える、フォーカスの戻り、Tab が中で回る ----
 async function rules(page) {
   await open(page, '/rules', 'table');
@@ -302,7 +353,7 @@ const steps = pagePerStep({
     });
     return { ctx, page, native };
   },
-  steps: [rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow],
+  steps: [ruleNames, rules, backWhileAsking, dataReset, adopt, staffDiscard, narrow],
   label: (name) => `${name}：途中で止まった`,
   after: (name, { native }) => check(native.length === 0, `${name}：ブラウザのダイアログを出さない`, native),
   end: () => check(errors.length === 0, 'ページのエラーが無い', errors),

@@ -259,6 +259,21 @@ async function keepRunning(page) {
   await page.waitForURL(/#\/month/);
   check(hashOf(page) === `#/month?ym=${YM}`, '知らせの［月の予定を見る］で月の予定へ', hashOf(page));
   check((await page.getByTestId('month-progress').count()) === 0, '止めたあとは進み具合を出さない');
+  // その月の月の予定を見ている間に終わったら、知らせに［月の予定を見る］を出さない（行き先が今の画面。PRD D268）
+  if ((await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch') {
+    await page.getByTestId('band-next').click();
+    await panel.waitFor({ timeout: 5000 });
+    await panel.getByRole('button', { name: '作り始める' }).click();
+    const progress = page.getByTestId('month-progress');
+    await progress.waitFor({ timeout: 10000 });
+    await progress.getByRole('button', { name: /止める/ }).click();
+    const toast2 = page.locator('.toast').filter({ hasText: /の案を\d+日分作ったところで止めました/ });
+    await toast2.waitFor({ timeout: 60000 });
+    check(
+      (await page.getByTestId('batch-done-open').count()) === 0,
+      'その月の月の予定にいるときの知らせには［月の予定を見る］を出さない（PRD D268）',
+    );
+  }
 }
 
 // ---- 日の画面：この日の状態、確定すると帯の確定が増える ----

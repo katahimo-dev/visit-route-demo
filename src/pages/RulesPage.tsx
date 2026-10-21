@@ -5,6 +5,7 @@ import {
   Hourglass,
   LayoutGrid,
   type LucideIcon,
+  Pencil,
   Plus,
   Repeat,
   RotateCcw,
@@ -99,7 +100,18 @@ export default function RulesPage() {
     update((d) => addRule(d, rule, DEFAULTS[addType]));
   };
   const remove = async (r: Rule) => {
-    if (!(await confirmDialog({ title: `条件「${r.label}」を消しますか？`, confirmLabel: '消す', tone: 'danger' })))
+    // 必須の条件は、消すと「守らなければ担当にしない」が無くなることを本文で伝える（PRD D271）
+    const hard = HARDABLE.has(r.type) && shownRules.find((x) => x.id === r.id)?.hard === true;
+    if (
+      !(await confirmDialog({
+        title: `条件「${r.label}」を消しますか？`,
+        body: hard
+          ? '必須の条件です。消すと「守らなければ担当にしない」決まりが無くなり、合わない人にも担当が入ることがあります。'
+          : undefined,
+        confirmLabel: '消す',
+        tone: 'danger',
+      }))
+    )
       return;
     update((d) => ({ ...d, rules: d.rules.filter((x) => x.id !== r.id) }));
   };
@@ -156,7 +168,7 @@ export default function RulesPage() {
                   return (
                     <tr {...narrowRole.row} key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
                       <td {...narrowRole.cell} style={{ minWidth: 160 }} className="narrow-title" data-label="名前">
-                        <LabelInput
+                        <RuleName
                           value={r.label}
                           onChange={(label) => setLabel(r.id, label)}
                           fallback={ruleTypeLabel(r.type, terms)}
@@ -266,25 +278,71 @@ export default function RulesPage() {
 }
 
 /**
- * 条件の名前の入力。空の名前は保存しない（契約は1文字以上。空のまま保存されると、次に開いたとき
- * データ全体が読めずに初期状態へ戻ってしまう）。空のまま離れたら型の名前に戻す
+ * 条件の名前（PRD D271）：ふだんは文字で出し、［名前を変える］で入力欄にする（誤って書き換えない）。Enter・欄を離れると
+ * 決め、Esc で取り消す。空の名前は保存しない（契約は1文字以上。空のまま保存されると、次に開いたときデータ全体が読めずに
+ * 初期状態へ戻ってしまう）。空のまま決めたら型の名前に戻す
  */
-function LabelInput({ value, onChange, fallback }: { value: string; onChange: (v: string) => void; fallback: string }) {
+function RuleName({ value, onChange, fallback }: { value: string; onChange: (v: string) => void; fallback: string }) {
   const [draft, setDraft] = useState<string | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  /** 閉じたあと（Esc・Enter）に来る blur で、もう一度決めない */
+  const closing = useRef(false);
+  /** 入力をやめる。キーで閉じたら［名前を変える］へフォーカスを戻す（描き直したあと。欄を離れたときは移った先のまま） */
+  const close = (focusBack: boolean) => {
+    closing.current = true;
+    setDraft(null);
+    if (focusBack) requestAnimationFrame(() => btnRef.current?.focus());
+  };
+  const commit = (focusBack: boolean) => {
+    if (draft === null || closing.current) return;
+    const t = draft.trim();
+    onChange(t ? t.slice(0, 40) : fallback);
+    close(focusBack);
+  };
+  if (draft === null)
+    return (
+      <span className="rule-name">
+        <strong className="rule-name-text" data-testid="rule-name">
+          {value}
+        </strong>
+        <button
+          ref={btnRef}
+          type="button"
+          className="btn btn-text btn-small rule-rename"
+          onClick={() => {
+            closing.current = false;
+            setDraft(value);
+          }}
+          aria-label={`条件「${value}」の名前を変える`}
+          data-testid="rule-rename"
+        >
+          <WithIcon icon={Pencil} size={14}>
+            名前を変える
+          </WithIcon>
+        </button>
+      </span>
+    );
   return (
     <input
-      value={draft ?? value}
+      // biome-ignore lint/a11y/noAutofocus: ［名前を変える］を押した直後に打てるよう、出した入力欄へ移す
+      autoFocus
+      value={draft}
       maxLength={40}
       aria-label="条件の名前"
-      onChange={(e) => {
-        const t = e.target.value;
-        setDraft(t);
-        if (t.trim()) onChange(t.slice(0, 40));
+      data-testid="rule-name-input"
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit(true);
+        } else if (e.key === 'Escape') {
+          // 右の欄などの Esc に渡さない
+          e.preventDefault();
+          e.stopPropagation();
+          close(true);
+        }
       }}
-      onBlur={() => {
-        if (draft !== null && !draft.trim()) onChange(fallback);
-        setDraft(null);
-      }}
+      onBlur={() => commit(false)}
     />
   );
 }

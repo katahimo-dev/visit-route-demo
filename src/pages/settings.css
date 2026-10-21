@@ -700,3 +700,44 @@ fieldset.weekday-toggles {
 .data-last-export {
   margin: 0;
 }
+/* 条件の名前（PRD D271）：ふだんは文字で、［名前を変える］で入力欄 */
+.rule-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+.rule-name-text {
+  overflow-wrap: anywhere;
+}
+.rule-rename {
+  padding: 4px 6px;
+}
+/* 狭い画面（600px 以下）の相性・勤務時間（シフト）の表（PRD D272。ADR-0033）：名前の列を詰めて折り返し、
+   〈スタッフ〉・日付の列が多く見えるようにする（表は今どおり横巻きの枠の中。右に続きがあれば端をぼかす） */
+@media (max-width: 600px) {
+  .compat-table .avail-name,
+  .avail-table .avail-name {
+    white-space: normal;
+    width: 7em;
+    min-width: 7em;
+    max-width: 7em;
+    line-height: 1.25;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+  .compat-client-btn {
+    gap: 4px;
+    padding-right: 2px;
+  }
+  .compat-client-btn .dot {
+    display: none;
+  }
+  .compat-client-btn .ellipsis {
+    white-space: normal;
+    overflow: visible;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+}

@@ -1,6 +1,8 @@
 import { Loader2, Square } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useDay } from '../app/day';
+import { isYm, ymOf } from '../lib/month';
 import { batchBandText, batchDoneText, monthBatch } from '../lib/monthBatch';
 import { useValueStore } from '../lib/valueStore';
 import { useDemoData } from '../store';
@@ -32,17 +34,40 @@ export function MonthBatchHost(): ReactNode {
   const toast = useToast();
   const navigate = useNavigate();
   const done = useValueStore(monthBatch.done);
+  /** 今いる画面（終わった知らせを出すときに読む。描くたびに書き直す） */
+  const { pathname, search } = useLocation();
+  const { date } = useDay();
+  const viewing = useRef({ pathname, search, date });
+  viewing.current = { pathname, search, date };
   /** 知らせた終わり（描き直し・付け直しで同じ知らせを二度出さない。つないだときにあった古い知らせも出さない） */
   const shown = useRef(done);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 終わった知らせが変わったときだけ
   useEffect(() => {
     if (!done || done === shown.current) return;
     shown.current = done;
-    toast(batchDoneText(done), {
-      action: { label: '月の予定を見る', onClick: () => navigate(`/month?ym=${done.ym}`), testId: 'batch-done-open' },
-    });
+    // 行き先が今いる画面と同じ（その月の月の予定を見ている）なら［月の予定を見る］を出さない（PRD D268）
+    const here = viewing.current;
+    const same = here.pathname === '/month' && monthShown(here.search, here.date) === done.ym;
+    toast(
+      batchDoneText(done),
+      same
+        ? undefined
+        : {
+            action: {
+              label: '月の予定を見る',
+              onClick: () => navigate(`/month?ym=${done.ym}`),
+              testId: 'batch-done-open',
+            },
+          },
+    );
   }, [done]);
   return null;
+}
+
+/** 月の予定が見せている月（`?ym=` が正しければその月、無ければ選んでいる日付の月。MonthPage と同じ決め方） */
+export function monthShown(search: string, date: string): string {
+  const raw = new URLSearchParams(search).get('ym') ?? '';
+  return isYm(raw) ? raw : ymOf(date);
 }
 
 /** 帯が消えたあとのフォーカスの行き先（本文の見出し、無ければ本文） */
