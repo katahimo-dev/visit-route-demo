@@ -43,7 +43,6 @@ import {
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
 import './settings.css';
-import { SettingsTabs } from '../components/SettingsTabs';
 
 /** 凡例（◎○△×の意味。色は表のセルと同じ） */
 const LEGEND: { mark: string; cls: string; text: string }[] = [
@@ -303,12 +302,7 @@ export default function CompatPage() {
 
   return (
     <div className="stack">
-      <PageHeader
-        nav={<SettingsTabs />}
-        icon={HeartHandshake}
-        title="相性"
-        lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります"
-      />
+      <PageHeader icon={HeartHandshake} title="相性" lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります" />
       <div className="compat-filters" data-testid="compat-filters">
         <details
           className="card compat-filter"

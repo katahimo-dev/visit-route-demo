@@ -39,7 +39,7 @@
 | `#/settings` | `pages/SettingsPage.tsx` | 管理者設定（機能の入り切り。だれでも開ける） | [pages-data.md](pages-data.md) |
 | `*`（`#/` を含む） | （`Navigate`） | `/home` へ（replace） | — |
 
-ルートの URL は変えない（古いリンクを壊さない）。メニューは「予定」（`#/month`・`#/week`・`#/plan`・`#/compare`）と「設定」（`#/rules`・`#/compat`・`#/types`・`#/items`・`#/settings`・`#/data`。見出しの下の設定のタブで切り替える）にまとめ、`#/workload` は勤務時間（シフト）・月の予定の中から開く（PRD D273・D275）。
+ルートの URL は変えない（古いリンクを壊さない）。メニューは「予定」（`#/month`・`#/week`・`#/plan`・`#/compare`）と「設定」（`#/types`・`#/items`・`#/rules`・`#/settings`・`#/data`。見出しの下の設定のタブで切り替える）にまとめ、相性 `#/compat` はメニューの「人」に置き（PRD D283。ADR-0047）、`#/workload` は勤務時間（シフト）・月の予定の中から開く（PRD D273・D275）。
 
 ### 画面別ファイルの索引
 
@@ -137,10 +137,10 @@
 | （なし） | ホーム（`home`・`/home`。short「ホーム」）・予定（`schedule`・`scheduleHref(last.schedule)`＝最後に開いた `/month`・`/week`・`/plan`、無ければ `/plan`。short「予定」。`match`＝`SCHEDULE_PATHS`：月・週・日・比較） |
 | 当日・問い合わせ | 欠勤・キャンセルを登録（`absence`・`absenceHref(today)`＝`/plan?date=今日&do=absence`。short「欠勤」）・空き状況（`vacancy`・`/vacancy`。short「空き状況」） |
 | 人 | `${terms.client}一覧`（`/clients`）・`${terms.staff}一覧`（`/staff`）・勤務時間（シフト）（`/availability`。`match` に `/workload` も） |
-| （なし） | 設定（`settings`・`settingsHref(features, last.settings)`＝最後に開いた設定のタブ、無ければ先頭のタブ。`match`＝切っていない設定のタブ） |
+| （なし） | 設定（`settings`・`settingsHref(features, last.settings)`＝最後に開いた設定のタブ、無ければ先頭の訪問の種類。`match`＝切っていない設定のタブ） |
 
 - `screenSections(terms, features)`：画面の一覧（上の帯の名前・パレットの画面。メニューから外した画面も1つずつ）。（なし）ホーム／予定（`SCHEDULE_GROUP`）月の予定・週の予定・日の予定・案を比べる／当日・問い合わせ 空き状況／人 〈利用者さん〉一覧・〈スタッフ〉一覧・勤務時間（シフト）・勤務の見込み／設定 条件の重み・相性・訪問の種類・特性の項目・管理者設定・データ。切った機能の画面は出さない
-- `SETTINGS_TABS`・`settingsTabs(features)`：設定のタブの並び（条件の重み `/rules`・相性 `/compat`・訪問の種類 `/types`・特性の項目 `/items`・管理者設定 `/settings`・データ `/data`）。切った機能のタブは出さない。`isSettingsPath(pathname)`
+- `SETTINGS_TABS`・`settingsTabs(features)`：設定のタブの並び（訪問の種類 `/types`・特性の項目 `/items`・条件の重み `/rules`・管理者設定 `/settings`・データ `/data`）。切った機能のタブは出さない。`isSettingsPath(pathname)`
 - `SCHEDULE_VIEWS`（`/month`・`/week`・`/plan`）・`isScheduleView(pathname)`（古い `#/schedule` も）・`SCHEDULE_DEFAULT`（`/plan`）・`scheduleHref(last)`（比較は覚えない）
 - `isNavAction(to)`：クエリを持つ＝操作の項目（欠勤・キャンセル）
 - `activeNavPath(pathname)`：`#/schedule` は `/plan`
@@ -189,7 +189,7 @@
 - 月・週・日の見出しの題名の下に［月｜週｜日］のタブ（リンクのナビ。今の画面を `aria-current`。PRD D237。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）。押すと選んでいる日付（`useDay`）で移る：月は `?ym=` にその日の月、週は `?d=` にその日、日はその日
 - 月・週で日付を変えたら（マス・帯・日の見出しを押す、週・月を送る）選んでいる日付も合わせる（月を送ったときはその月の1日、ただし今月なら今日）
 - 各画面の `lead`：月「定期パターンから訪問を作り、一月分の案をまとめて作ります」、週「日時をドラッグでずらし、〈スタッフ〉の偏りを見ます」、日「その日の欠勤・手直しをして、割当を確定します」
-- 設定のタブ（PRD D275）：条件の重み・相性・訪問の種類・特性の項目・管理者設定・データの見出しの題名の下（`PageHeader` の `nav`）に、`settingsTabs(features)` のタブ（`nav.view-switch.settings-tabs`・`aria-label="設定の切り替え"`・data-testid `settings-tabs`・各タブ `data-tab`。今の画面を `aria-current`。見た目は［月｜週｜日］と同じ）。狭い画面では横に巻き（`overflow-x: auto`・折り返さない）、画面を開いたら今のタブを真ん中へ巻く（ページは縦に巻かない）
+- 設定のタブ（PRD D275・D283）：訪問の種類・特性の項目・条件の重み・管理者設定・データの見出しの題名の下（`PageHeader` の `nav`）に、`settingsTabs(features)` のタブ（`nav.view-switch.settings-tabs`・`aria-label="設定の切り替え"`・data-testid `settings-tabs`・各タブ `data-tab`。今の画面を `aria-current`。見た目は［月｜週｜日］と同じ）。狭い画面では横に巻き（`overflow-x: auto`・折り返さない）、画面を開いたら今のタブを真ん中へ巻く（ページは縦に巻かない）
 
 ### コマンドパレット（ADR-0027。PRD D180〜D183）
 
@@ -308,7 +308,7 @@
 - [ ] 色は役割の変数から引き、文字は 4.5・枠とフォーカスの輪は 3 以上の比。フォーカスの輪は `--focus` の 3px。動きを減らす設定で動きが止まり、タッチの端末でアイコンのボタンの押せる所が 44px（`lib/motion` のテスト）
 - [ ] （ADR-0024・0045）390×844 で左のメニューが出ず、上の帯に今の画面の名前（〈利用者さん〉一覧と〈スタッフ〉一覧を見分けられる）・「探す」・日付の切り替えが出て横に巻かない。下のタブ（ホーム・予定・欠勤・空き状況・メニュー）の「メニュー」で左から見出し付きの引き出しが開き、画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」に戻る。開いているあいだ裏は巻かず、Tab は中で回る。下のタブで移れ、今の画面（月・週・日・比較は「予定」）が `aria-current`。地図・欠勤の振り直しの帯・トーストがタブに重ならない。印刷に出ない。1400px の見た目（左のメニュー・上の帯 72px）は変わらない（`lib/nav` のテスト・`scripts/e2e-mobile.cjs`）
 - [ ] （ADR-0026）画面のどの確認もブラウザの確認でなく、画面の中央にアプリの見た目のダイアログで出る（見出しの問い・本文・動詞のボタン、消す・捨てるは赤）。最初のフォーカスは取り消し、Tab は中で回り、Esc・背景・取り消すでは何も変わらず、確定で進み、閉じたら押したボタンへ戻る。右の欄の上の Esc は確認だけを閉じる。390px で収まり、印刷では出ない（`scripts/e2e-dialog.cjs`）
-- [ ] （ADR-0027・0045）メニューが ホーム・予定／当日・問い合わせ／人／設定 の8項目で、「予定」は月・週・日・比較、「設定」は設定のタブで印が付き、最後に開いた表示・タブを開く。「〈利用者さん〉一覧」「〈スタッフ〉一覧」と見分けられ、画面の見出しが上の帯・パレットの名前と同じ。Ctrl+K（上の帯の「探す・移動」）で開き、打って↑↓・Enter で画面・操作・人の閲覧の欄へ移り、Esc でフォーカスが戻る（`scripts/e2e-nav.cjs`）
+- [ ] （ADR-0027・0045）メニューが ホーム・予定／当日・問い合わせ／人（相性を含む）／設定 の9項目で、「予定」は月・週・日・比較、「設定」は設定のタブで印が付き、最後に開いた表示・タブを開く。「〈利用者さん〉一覧」「〈スタッフ〉一覧」と見分けられ、画面の見出しが上の帯・パレットの名前と同じ。Ctrl+K（上の帯の「探す・移動」）で開き、打って↑↓・Enter で画面・操作・人の閲覧の欄へ移り、Esc でフォーカスが戻る（`scripts/e2e-nav.cjs`）
 - [ ] （ADR-0022 追記）月・週・日の名前から詳細の吹き出しが開き、Esc・外を押す・もう一度押す・Tab で閉じてボタンへ戻る。同時に1つ、見出しが消えたら閉じる。リンクで各画面の閲覧の欄が開く。印刷では i を出さない（`lib/personPopover` のテスト・`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）
 - [ ] （PRD D220〜D222）390×844 で条件の重み・特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧・比較が横に巻かず、行がカードになる。条件の重みのスライダーと必須が画面の中。〈利用者さん〉一覧の絞り込みが「絞り込み（N）」に畳まれる。比較の主ボタンがタブに隠れない。週は今日の列が見え、空き状況の表は 9:00 から（`lib/scrollEdge`・`lib/weekView`・`lib/clientFilter` のテスト・`scripts/e2e-mobile.cjs`）
 - [ ] 右の欄の確定のボタンの帯：短い欄は帯が内容のすぐ下・区切りなし、長い欄は欄の下に貼り付き、内容が隠れている間だけ区切り。390px の並び・タブに隠れない・キーボード（`lib/panelFit` のテスト・`scripts/e2e-panel-foot.cjs`）

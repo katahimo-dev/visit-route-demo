@@ -108,8 +108,8 @@ async function drawerOpenClose(page) {
   const boxes = [];
   for (let i = 0; i < n; i++) boxes.push(await links.nth(i).boundingBox());
   check(
-    n === 8 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
-    '引き出し：全部のメニュー（8項目）を縦に並べる',
+    n === 9 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
+    '引き出し：全部のメニュー（9項目）を縦に並べる',
     {
       n,
     },

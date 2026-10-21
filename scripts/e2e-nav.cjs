@@ -1,5 +1,5 @@
 // メニューの用途ごとの並びとコマンドパレット（PRD D178〜D183・D273〜D275。ADR-0027・0045）を本物のブラウザで確かめる：
-// メニュー（8項目の並び・名前（〈利用者さん〉一覧・〈スタッフ〉一覧）・同じ名前が無い・aria-current（月・週・日・比較は「予定」、
+// メニュー（9項目の並び・名前（〈利用者さん〉一覧・〈スタッフ〉一覧）・同じ名前が無い・aria-current（月・週・日・比較は「予定」、
 // 設定のタブは「設定」、勤務の見込みは「勤務時間（シフト）」、欠勤・キャンセルは印を付けず今日の日の画面の欄を開く）・
 // 「予定」「設定」は最後に開いた表示・タブ・設定のタブ・メニューから外した画面の入口・画面の見出しが画面の名前とそろう）、
 // コマンドパレット（Ctrl+K で開く・role=dialog・aria-modal・combobox と listbox（aria-activedescendant）・裏の inert とスクロールのロック・
@@ -71,7 +71,7 @@ async function seedPeople(page) {
 /** ひらがな → カタカナ */
 const toKata = (s) => s.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
 
-// メニューの8項目（PRD D273〜D275。ADR-0045）：見出しのあるグループは当日・問い合わせ／人の2つ（ホーム・予定と設定は見出しなし）
+// メニューの9項目（PRD D273〜D275。ADR-0045・0047：相性は「人」）：見出しのあるグループは当日・問い合わせ／人の2つ（ホーム・予定と設定は見出しなし）
 const GROUPS = ['当日・問い合わせ', '人'];
 const LABELS = [
   'ホーム',
@@ -80,6 +80,7 @@ const LABELS = [
   '空き状況',
   '利用者さん一覧',
   'スタッフ一覧',
+  '相性',
   '勤務時間（シフト）',
   '設定',
 ];
@@ -94,10 +95,9 @@ const HEADINGS = [
 ];
 /** 設定のタブ（PRD D275）：URL と見出し */
 const SETTINGS = [
-  ['/rules', '条件の重み'],
-  ['/compat', '相性'],
   ['/types', '訪問の種類'],
   ['/items', '特性の項目'],
+  ['/rules', '条件の重み'],
   ['/settings', '管理者設定'],
   ['/data', 'データ'],
 ];
@@ -113,7 +113,7 @@ async function menu(page) {
     titles,
   );
   const labels = (await side.getByTestId('nav-link').allInnerTexts()).map((t) => t.trim());
-  check(JSON.stringify(labels) === JSON.stringify(LABELS), 'メニュー：8項目の並びと名前（予定・設定は1項目）', labels);
+  check(JSON.stringify(labels) === JSON.stringify(LABELS), 'メニュー：9項目の並びと名前（予定・設定は1項目）', labels);
   check(new Set(labels).size === labels.length, 'メニュー：同じ名前の項目が無い（「一覧・編集」が2つ並ばない）');
   const current = async () => (await side.locator('[aria-current="page"]').allInnerTexts()).map((t) => t.trim());
   const link = (name) => side.getByTestId('nav-link').filter({ hasText: new RegExp(`^${name}$`) });
@@ -170,19 +170,24 @@ async function menu(page) {
     const tabs = page.getByTestId('settings-tabs');
     const on = await tabs.locator('[aria-current="page"]').allInnerTexts();
     check(
-      (await tabs.locator('a').count()) === 6 && on.length === 1 && on[0].trim() === h1,
-      `設定のタブ ${hash}：6つのタブで今のタブに aria-current`,
+      (await tabs.locator('a').count()) === 5 && on.length === 1 && on[0].trim() === h1,
+      `設定のタブ ${hash}：5つのタブで今のタブに aria-current`,
       on,
     );
   }
-  await page.getByTestId('settings-tabs').locator('a').filter({ hasText: '相性' }).click();
-  await page.locator('h1').filter({ hasText: '相性' }).waitFor();
-  check(hashOf(page) === '#/compat', '設定のタブを押すと前の URL の画面（#/compat）', hashOf(page));
+  // 相性は設定のタブに無い：「人」の項目（ADR-0047）。設定のタブは出さず、メニューは「相性」に印
+  await open(page, '/compat');
+  check(JSON.stringify(await current()) === '["相性"]', 'aria-current：#/compat は「相性」（設定ではない）');
+  check((await page.getByTestId('settings-tabs').count()) === 0, '相性の画面に設定のタブを出さない');
+  await open(page, '/types');
+  await page.getByTestId('settings-tabs').locator('a').filter({ hasText: '条件の重み' }).click();
+  await page.locator('h1').filter({ hasText: '条件の重み' }).waitFor();
+  check(hashOf(page) === '#/rules', '設定のタブを押すと前の URL の画面（#/rules）', hashOf(page));
   await link('ホーム').click();
   await page.locator('h1').filter({ hasText: 'ホーム' }).waitFor();
   check(
-    (await link('設定').getAttribute('href')) === '#/compat',
-    '「設定」は最後に開いたタブ（相性）',
+    (await link('設定').getAttribute('href')) === '#/rules',
+    '「設定」は最後に開いたタブ（条件の重み）',
     await link('設定').getAttribute('href'),
   );
   await open(page, '/clients');
@@ -193,6 +198,13 @@ async function menu(page) {
   );
   await open(page, '/staff');
   check((await page.locator('h1').innerText()).trim() === 'スタッフ一覧', '〈スタッフ〉の見出しは「スタッフ一覧」');
+  // 相性の表への文字ボタン（一覧の見出しの近く。ADR-0047）
+  for (const h of ['/clients', '/staff']) {
+    await open(page, h, '[data-testid="to-compat"]');
+    await page.getByTestId('to-compat').click();
+    await page.getByTestId('compat-table').waitFor();
+    check(hashOf(page) === '#/compat', `${h} の「相性の表」で相性の画面へ`, hashOf(page));
+  }
   // メニューから外した画面の入口が残る（PRD D275）：勤務の見込みは勤務時間（シフト）と月の予定の「その他 ▾」、案を比べるは日の予定の「案を変える ▾」
   await open(page, '/availability', '[data-testid="avail-workload"]');
   await page.getByTestId('avail-workload').click();
@@ -294,7 +306,7 @@ async function keyboard(page) {
   );
   const st = await screensOf('せってい');
   check(
-    ['条件の重み', '相性', '訪問の種類', '特性の項目', '管理者設定', 'データ'].every((x) => st.includes(x)),
+    ['訪問の種類', '特性の項目', '条件の重み', '管理者設定', 'データ'].every((x) => st.includes(x)),
     'パレット：「せってい」で設定のタブの画面を1つずつ引ける',
     st,
   );

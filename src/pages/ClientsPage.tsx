@@ -5,6 +5,7 @@ import {
   ChevronDown,
   DoorOpen,
   Eye,
+  HeartHandshake,
   House,
   ListFilter,
   MapPin,
@@ -19,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -368,17 +369,24 @@ export default function ClientsPage() {
         title={`${terms.client}一覧`}
         lead={`${terms.client}の住所・特性・条件を決めます`}
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={async () => {
-              if (!(await okToDiscard('switch', `新しい${terms.client}`))) return;
-              setViewId(null);
-              openForm(blank(clients.length), true);
-            }}
-          >
-            <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
-          </button>
+          <>
+            {compatOn && (
+              <Link to="/compat" className="btn btn-text" data-testid="to-compat">
+                <WithIcon icon={HeartHandshake}>相性の表</WithIcon>
+              </Link>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!(await okToDiscard('switch', `新しい${terms.client}`))) return;
+                setViewId(null);
+                openForm(blank(clients.length), true);
+              }}
+            >
+              <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
+            </button>
+          </>
         }
       />
 
