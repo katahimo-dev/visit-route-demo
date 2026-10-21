@@ -21,8 +21,8 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 
 - ［月｜週｜日］・`lead`「この週の案を作って確定し、日時をドラッグでずらして〈スタッフ〉の偏りを見ます」・見出しの右に週の主ボタン（下の「この週の準備」）・週の前後の送り・「今週」
 - 表示の切り替え `week-views`（見出しの行。下）
-- 進み具合の帯 `ScheduleBand date={anchor}`（週は選んでいる日付の月。次の一手は普通のボタン（月のまとめて作るへ）。[pages-home.md](pages-home.md)）
-- 空の画面（`week-empty`。時間軸の上に横1行の帯 `compact`。主ボタンにしない（主ボタンは見出しの1つ））：`periodEmptyGuide` に `makeHere: { canExpand }`（案が無い・未作成・訪問が無い。［この週の案を作る］（`empty-next-make`）は見出しの主ボタンと同じ動きで、月の予定へ移らない。作っている間・ほかを作っている間は `aria-disabled` と title に理由。日の予定のボタン。案ができたら出さない）
+- 進み具合の帯 `ScheduleBand date={anchor} hideBatch`（週は選んでいる日付の月。次の一手は普通のボタン。週の主ボタンが「作る」「作っています」の間は次の一手の「まとめて作る」を出さない（`hideBatch`。作る入口を1つに）。[pages-home.md](pages-home.md)）
+- 空の画面（`week-empty`。時間軸の上に横1行の帯 `compact`。主ボタンにしない（主ボタンは見出しの1つ））：`periodEmptyGuide` に `makeHere: { canExpand }`（案が無い・未作成・訪問が無い。作るボタンは置かず、文で見出しの［この週の案を作る］を指す。ボタンは日の予定だけ。案ができたら出さない）
 
 #### この週の準備（PRD D280・D282。ADR-0046）
 
@@ -33,9 +33,9 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
   4. 問題の無い未確定の日がある →「この週の問題の無い日をまとめて確定（N日）」（`confirm`）
   5. 問題のある日・前に確定した割当と違う日だけ残る →「確定していない N日は日の予定で」（`rest`。ボタンなし。下に理由）
   6. 何も残っていない →「この週は確定済みです」（`done`。✓）
-  - ほかの案を作っている間（月の予定・空き状況から）は 3・4 を押せず（`aria-disabled`）、下に理由 `week-next-why`（`aria-describedby`）
+  - ほかの案を作っている間（月の予定・空き状況から）は 3・4 を押せず（`aria-disabled`）、下に理由（data-testid `week-next-why`。id は `useId` で `aria-describedby`）
   - 600px 以下は短い文（作るは同じ・確定は「この週をまとめて確定（N日）」）。印刷では出さない
-- 数え方：週の今日以降の日を `useDayStatuses`（月の予定・ホームと同じ）で数え、確定していない日を `bulkConfirmTargets(unconfirmed, statusOf, attentionList(…))`（月の D223 と同じ決まり）に通す。未作成は `expandRangeVisits(定期パターン・訪問・〈利用者さん〉, 週の月曜, 日曜, 今日)`（定期パターン・訪問・〈利用者さん〉と週で覚える）。作る日は `weekBatchDays({ ...data, visits: 作ったあとの訪問 }, 週の日, 今日)`
+- 数え方：週の今日以降の日を `useDayStatuses`（月の予定・ホームと同じ）で数え、確定していない日を `bulkConfirmTargets(unconfirmed, statusOf, attentionList(…))`（月の D223 と同じ決まり）に通す。未作成は `expandRangeVisits(定期パターン・訪問・〈利用者さん〉, 週の月曜, 日曜, 今日)`（定期パターン・訪問・〈利用者さん〉と週で覚える）。作る日は `weekBatchDays({ ...data, visits: 作ったあとの訪問 }, 週の日, 今日)` から作れない日（`lib/monthBatch` の `canMakeDay`：点数の基準の条件で compile して計算に入る訪問か〈スタッフ〉がいない。月まとめも飛ばす日）を除いたもの。作れない日は確定していない日に残り、5 の理由「案を作れない日（担当できる人がいない など）は、日の予定で確かめます」
 - 作る（`makeWeek`）：ほかを作っている間は知らせだけ。`expandRange` で週の訪問を作ったデータから作る日を出し、`monthBatch.start({ ym: 最初の日の月, label: weekLabel(月曜), mode: 'empty', days, expand: 未作成があれば { from: 月曜, to: 日曜 }, source: 'week', weekStart: 月曜 })`（月まとめと同じ入れ物。ADR-0042）。作る日が無く未作成だけなら `update` で訪問だけ作り「この週の訪問を N件作りました」。作っている間も週の予定にとどまり、上の帯 `BatchBand` に「〈M/D〉〜〈M/D〉の週の案を作っています N/M日」（リンクはその週の週の予定）と［止める］。終わった知らせ「〈M/D〉〜〈M/D〉の週の案を N日分作りました」（その週の週の予定を見ていれば［週の予定を見る］を出さない）
 - 確定（`confirmWeek`）：作っている間は何もしない。独自の確認 `bulkConfirmDialog`（月と同じ見出し・日付・残す日）、ボタン「N日を確定する」。1回の `update` で日ごとに `confirmDay`（確認のあいだに案が消えた日は飛ばす）。知らせ「N日を確定しました」。フォーカスは `week-next`（`tabIndex=-1`。ボタンが状態の文に替わっても body に落とさない）
 - 月をまたぐ週も1度に作る・確定する（2つの月の日）。月の予定の「まとめて作る」（月の範囲）は今のまま

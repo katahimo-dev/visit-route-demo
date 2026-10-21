@@ -18,7 +18,7 @@
 
 | 並び | カード | 移る先 |
 |---|---|---|
-| 1 | 要対応（月ごと。`attentionList`。欠勤は振り直して確定まで済んだ日を数えない＝月の要対応・帯と同じ数。PRD D281） | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=attention` |
+| 1 | 要対応（月ごと。`attentionList`。欠勤は確定済みで手当ての要らない日を数えない＝月の要対応・帯と同じ数。PRD D281） | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=attention` |
 | 2 | 案を作る（月ごと。`expandMonth` の added か案の無い日。内訳に「案の無い日 N日」） | `/month?ym=…&do=batch` |
 | 3 | 確定していない日（2 と同じ月のすぐ後。訪問があって確定済みでない日。案の無い日も含み、`monthProgress` の `unconfirmed` と同じ日・同じ並び）。同じ月に作るカードがあれば内訳の案の無い日は「ほかは案の無い日（先に作る）」（日数は書かない）、案の無い日だけならこのカードは出さない | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=unconfirmed` |
 | 4 | 今日の予定 | `/plan`（今日） |
@@ -67,7 +67,7 @@
 
 #### `components/progressBand.tsx`（`progressBand.css`）
 
-- `ProgressBand({ ym, model, day?, primary?, onOp? })`：見た目だけ
+- `ProgressBand({ ym, model, day?, primary?, hideBatch?, onOp? })`：見た目だけ（`hideBatch` は次の一手が「まとめて作る」のときボタンを出さない）
   - `model` は `BandModel`＝`monthProgress`・作れる訪問の件数・まだ案の無い日だけの対象の日数・手当てが要る要対応の件数。null の間は同じ高さで「数えています…」
   - 数字は4つの `Link`：訪問・案 → `do=batch`、確定 → `do=unconfirmed`、要対応 → `do=attention`。`onOp` があれば移らずにそれを呼ぶ（修飾キー（Ctrl・⌘・Shift・Alt）と左以外のボタンでは横取りしない。Ctrl+クリックは新しいタブ）
   - 右に次の一手（`Link` のボタン。`primary` なら主ボタン。済み・訪問なしは文だけ。訪問の無い月はボタンなし）
@@ -86,7 +86,7 @@
 | 画面 | 置き方 |
 |---|---|
 | 月（`pages/MonthPage`） | 見出しの下に `ProgressBand`（自分で数えた `progress`・`preview`・`attention` から作る）。次の一手は主ボタン、`onOp` で欄を画面の中で開く（URL は変えない）。「まとめて作る」の入口は帯の1か所。詳しくは [pages-month.md](pages-month.md) |
-| 週（`pages/WeekPage`） | `ScheduleBand date={anchor}`。週は選んでいる日付の月。週の範囲の作る・確定は見出しの主ボタン（[pages-week.md](pages-week.md)。PRD D280） |
+| 週（`pages/WeekPage`） | `ScheduleBand date={anchor} hideBatch`。週は選んでいる日付の月。週の範囲の作る・確定は見出しの主ボタンで、それが「作る」の間は帯の「まとめて作る」を出さない（`hideBatch`。[pages-week.md](pages-week.md)。PRD D280） |
 | 日（`pages/PlanPage`） | `ScheduleBand date={date} withDay`。「この割当で確定」は日の予定の見出し（帯は状態を見せるだけ） |
 
 #### 確かめ
