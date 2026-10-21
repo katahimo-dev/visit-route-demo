@@ -278,28 +278,44 @@ async function empties(page) {
   const we = page.getByTestId('week-empty');
   await we.waitFor({ timeout: 10000 });
   const wt = await we.innerText();
-  check(/この週(は案がありません|には訪問がありません)/.test(wt), '週：なぜ空か', wt);
-  const batch = we.getByTestId('empty-next-batch').first();
-  const nb = await we.getByTestId('empty-next-batch').count();
-  const bl = nb > 0 ? await batch.innerText() : '';
+  check(/この週(は案がありません|には訪問がありません|の訪問はまだ作っていません)/.test(wt), '週：なぜ空か', wt);
+  // その場で作る（PRD D280）：月の予定へ移らない［この週の案を作る］（月の「まとめて作る」へのリンクは出さない）
+  const make = we.getByTestId('empty-next-make');
   check(
-    nb >= 1 && /\d+月の(案をまとめて|訪問と案を)作る/.test(bl),
-    '週：［〈M月〉の案をまとめて作る］（月のまとめて作る。月をまたぐ週は月ごと）',
-    {
-      nb,
-      bl,
-    },
+    (await make.count()) === 1 &&
+      (await make.innerText()).includes('この週の案を作る') &&
+      (await we.getByTestId('empty-next-batch').count()) === 0,
+    '週：［この週の案を作る］（月の予定のまとめて作るへは移らない）',
+    { make: await make.count(), batch: await we.getByTestId('empty-next-batch').count() },
   );
-  check((await we.locator('.btn-primary').count()) === 0, '週：主ボタンにしない（進み具合の帯の主ボタンと重ねない）');
-  const href = await batch.getAttribute('href');
-  check(/#\/month\?ym=\d{4}-\d{2}&do=batch$/.test(href ?? ''), '週：行き先は月の予定の ?do=batch', href);
+  check(
+    (await we.locator('.btn-primary').count()) === 0,
+    '週：空の画面のボタンは主ボタンにしない（主ボタンは見出しの1つ）',
+  );
+  check(
+    (await page.locator('.btn-primary').count()) === 1 &&
+      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make',
+    '週：主ボタンは見出しの「この週の案を作る」の1つ',
+    await page.locator('.btn-primary').allInnerTexts(),
+  );
   await page.screenshot({ path: path.join(OUT_DIR, 'week-empty.png') });
-  await batch.click();
-  const panel = page.getByRole('dialog', { name: /月の案をまとめて作る/ });
-  await panel.waitFor({ timeout: 10000 });
-  check(true, '週の［この週の案を作る］で月の予定のまとめて作るの欄が開く');
-  check(/^#\/month\?ym=\d{4}-\d{2}$/.test(hashOf(page)), '月の予定：?do= は消える', hashOf(page));
-  await page.keyboard.press('Escape');
+  await make.click();
+  await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+  check(hashOf(page).startsWith('#/week'), '週の［この週の案を作る］：週の予定にとどまる', hashOf(page));
+  check(
+    /\d+\/\d+〜\d+\/\d+の週の案を作っています/.test(await page.getByTestId('batch-band-text').innerText()) &&
+      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'making',
+    '週：作っている間は上の帯に週の進み具合、見出しは「作っています」',
+    await page.getByTestId('batch-band-text').innerText(),
+  );
+  // 時間を取らないよう止め、作った案を消して空の週に戻す（続く確かめは案の無い週から）
+  await page.getByTestId('batch-band-stop').click();
+  await page.getByTestId('batch-band').waitFor({ state: 'detached', timeout: 60000 });
+  // 止めた日の案が保存されてから消す（保存より先に消すと、あとの保存で案が戻る）
+  await page.waitForFunction((k) => Object.keys(JSON.parse(localStorage.getItem(k)).aiPlans).length > 0, STORAGE_KEY, {
+    timeout: 10000,
+  });
+  await clearPlans(page);
   // 週：日の画面のボタンでその日の日の画面
   await open(page, `/week?d=${TODAY}`, '[data-testid="week-empty"]');
   const day = page.getByTestId('week-empty').getByTestId('empty-next-day');
@@ -315,7 +331,17 @@ async function empties(page) {
   const far = addDays(TODAY, 7 * 30);
   await open(page, `/week?d=${far}`, '[data-testid="week-empty"]');
   const ft = await page.getByTestId('week-empty').innerText();
-  check(/この週には訪問がありません/.test(ft), '週：訪問の無い週は「訪問がありません」', ft);
+  // 定期パターンからまだ作っていない週（PRD D282）：「0件」でなく「未作成」と出し、［この週の案を作る］へ
+  const heads = await page.getByTestId('week-day-count').allInnerTexts();
+  check(
+    /この週の訪問はまだ作っていません（未作成）/.test(ft) && heads.length === 7 && heads.some((t) => t === '未作成'),
+    '週：まだ作っていない先の週は「未作成」（日の見出しも0件と出さない）',
+    { ft, heads },
+  );
+  check(
+    (await page.getByTestId('week-empty').getByTestId('empty-next-make').count()) === 1,
+    '週：未作成の週の空の画面に［この週の案を作る］',
+  );
   // 稼働の見込み：来年の月（案が無い）
   const nextYm = `${Number(YM.slice(0, 4)) + 1}${YM.slice(4)}`;
   await open(page, `/workload?ym=${nextYm}`, '[data-testid="work-empty"]');
@@ -758,8 +784,13 @@ async function mobile(browser) {
   check(inside, '390px：週の空の帯の文とボタンが帯と画面に入る');
   await page.getByTestId('week-empty').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-week-empty.png') });
+  const emptyBtn = page.getByTestId('week-empty').locator('.btn').first();
+  check(
+    (await emptyBtn.count()) === 1 && (await emptyBtn.isVisible()),
+    '画面では空の画面のボタンが見える（印刷の確かめの前提）',
+  );
   await page.emulateMedia({ media: 'print' });
-  check(!(await page.getByTestId('empty-next-batch').first().isVisible()), '印刷：空の画面のボタンを出さない');
+  check(!(await emptyBtn.isVisible()), '印刷：空の画面のボタンを出さない');
   await page.emulateMedia({ media: 'screen' });
   await ctx.close();
 }
