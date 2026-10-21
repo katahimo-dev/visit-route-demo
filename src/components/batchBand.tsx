@@ -2,7 +2,7 @@ import { Loader2, Square } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
-import { isYm, ymOf } from '../lib/month';
+import { monthShown } from '../lib/month';
 import { batchBandText, batchDoneText, monthBatch } from '../lib/monthBatch';
 import { useValueStore } from '../lib/valueStore';
 import { useDemoData } from '../store';
@@ -62,12 +62,6 @@ export function MonthBatchHost(): ReactNode {
     );
   }, [done]);
   return null;
-}
-
-/** 月の予定が見せている月（`?ym=` が正しければその月、無ければ選んでいる日付の月。MonthPage と同じ決め方） */
-export function monthShown(search: string, date: string): string {
-  const raw = new URLSearchParams(search).get('ym') ?? '';
-  return isYm(raw) ? raw : ymOf(date);
 }
 
 /** 帯が消えたあとのフォーカスの行き先（本文の見出し、無ければ本文） */

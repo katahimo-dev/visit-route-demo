@@ -35,8 +35,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     },
     [stop],
   );
+  /** ボタン付きの知らせにマウスを重ねている・ボタンにフォーカスがある（どちらかの間は消さない。PRD D268） */
+  const hovering = useRef(false);
+  const focused = useRef(false);
+  /** 重ねる・フォーカスのどちらも外れたときだけ、文だけの時間で消す */
+  const release = useCallback(() => {
+    if (!hovering.current && !focused.current) hideAfter(TOAST_MS);
+  }, [hideAfter]);
   const show = useCallback(
     (msg: string, opts?: ToastOptions) => {
+      hovering.current = false;
+      focused.current = false;
       setToast({ msg, action: opts?.action });
       hideAfter(toastMs(msg, !!opts?.action));
     },
@@ -55,17 +64,33 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         <div className="toast-layer" data-inert-keep>
           {toast &&
             (action ? (
-              // 読み上げは文だけ（ボタンの名前を知らせに混ぜない）。ボタンだけ押せる（ほかは下の画面を押せるまま）
-              // マウスを重ねている間は消さない（離したら文だけの時間で消す。フォーカスと同じ。PRD D268）
+              // 読み上げは文だけ（ボタンの名前を知らせに混ぜない）。知らせの箱（文の幅だけ）はマウスを受ける（重ねて止めるため）
+              // マウスを重ねている間・ボタンにフォーカスがある間は消さない（両方が外れたら文だけの時間で消す。PRD D268）
               // biome-ignore lint/a11y/noStaticElementInteractions: 重ねている間だけ時間を止める（操作ではない）
-              <div className="toast has-action" onMouseEnter={stop} onMouseLeave={() => hideAfter(TOAST_MS)}>
+              <div
+                className="toast has-action"
+                onMouseEnter={() => {
+                  hovering.current = true;
+                  stop();
+                }}
+                onMouseLeave={() => {
+                  hovering.current = false;
+                  release();
+                }}
+              >
                 <output className="toast-text">{toast.msg}</output>
                 <button
                   type="button"
                   className="toast-action"
                   data-testid={action.testId}
-                  onFocus={stop}
-                  onBlur={() => hideAfter(TOAST_MS)}
+                  onFocus={() => {
+                    focused.current = true;
+                    stop();
+                  }}
+                  onBlur={() => {
+                    focused.current = false;
+                    release();
+                  }}
                   onClick={() => {
                     stop();
                     setToast(null);

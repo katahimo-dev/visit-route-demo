@@ -430,8 +430,9 @@ export function SuddenPanel({
     const saveOnly = (
       <button
         type="button"
-        // 案の無い日は振り直せないので、欠勤だけ登録を枠のボタンにする（主ボタンは押せないまま理由を出す）
-        className={preview && !hasBase ? 'btn' : 'btn btn-text'}
+        // 振り直しの元の案が無い日（案の無い日・計算中・見込みを出せない）は振り直せないので、欠勤だけ登録を主ボタンにする
+        // （押せない振り直しのボタンは出さない。主ボタンは1つ。PRD D264）
+        className={hasBase ? 'btn btn-text' : 'btn btn-primary'}
         disabled={!!error || busy || running}
         title={
           running ? '計算中は押せません（作り終えた案で休む人に訪問が残らないよう、終わってから登録します）' : undefined
@@ -503,18 +504,20 @@ export function SuddenPanel({
             </div>
           )}
           {blocked && hasBase && <p className="sub">押せません：{blocked}</p>}
-          {/* ほかのやり方（控えめな文字のボタン。PRD D264） */}
-          <div className="row sudden-alt" style={{ gap: 4, flexWrap: 'wrap' }} data-testid="sudden-alt">
-            <span className="sub">ほかのやり方：</span>
-            {reassignBtn(!recommended, false)}
-            {saveOnly}
-          </div>
+          {/* ほかのやり方（控えめな文字のボタン。PRD D264）。振り直せない日は出さない（欠勤だけ登録が主ボタン） */}
+          {hasBase && (
+            <div className="row sudden-alt" style={{ gap: 4, flexWrap: 'wrap' }} data-testid="sudden-alt">
+              <span className="sub">ほかのやり方：</span>
+              {reassignBtn(!recommended, false)}
+              {saveOnly}
+            </div>
+          )}
         </div>
       </>
     );
     footer = (
       <>
-        {reassignBtn(recommended, true)}
+        {hasBase ? reassignBtn(recommended, true) : saveOnly}
         {existing && (
           <button
             type="button"

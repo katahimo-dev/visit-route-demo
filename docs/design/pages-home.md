@@ -27,7 +27,7 @@
 
 - 日の状態：`lib/useDayModel` の `useCompileInput(data)`（compile が読むデータだけ。今日の問題は compile しない。`useDayModel` も中で使う）と `useDayStatuses`
 - `homeTasks` のカードを並べる。カード全体が `Link`（`date` があれば押したときに `setDate`）
-- 先頭の1枚（知らせだけ（`info`）でなければ）は「まずこれ」（PRD D263）：`li.is-lead` で格子の幅いっぱい（`grid-column: 1 / -1`）、カードは `.is-lead`（主ボタンの塗り `--primary`・白い文字・下の影。ホームの主ボタンはこの1つ）、題名の上に札「まずこれ」（`home-lead`。読み上げも題名の前）、`data-lead`。ほかのカードは今のまま
+- 先頭の1枚（知らせだけ（`info`）でなければ）は「まずこれ」（PRD D263）：`li.is-lead` で格子の幅いっぱい（`grid-column: 1 / -1`）、カードは `.is-lead`（主ボタンの塗り `--primary`・白い文字・下の影。ホームの主ボタンはこの1つ）、題名の上に札「まずこれ」（`home-lead`。読み上げも題名の前）、`data-lead`。先頭が要対応（`is-warn`）なら左の縁を要対応の赤で太くし、札「要対応」（`home-lead-warn`）も添える。ほかのカードは今のまま
 - 何も無ければ「今日の準備はできています」（`ready`）
 - 下に「いつでも」の入口：欠勤・キャンセルを登録（`/plan?date=今日&do=absence`）・空き状況・〈利用者さん〉一覧・〈スタッフ〉一覧
 - 狭い画面（860px 以下。`lib/useMedia` の `NARROW_QUERY`。App のメニューの切り替えと同じ定数）では欠勤・キャンセルの入口を見出しのすぐ下（「次にすること」の上。`home-quick`）に常に置き、「いつでも」から外す（同じ `home-absence`）。見た目はほかの入口と同じカード（`is-entry`。赤い縁は付けない）で、先頭に置くことで目立たせ、アイコンだけ朱（`.is-first`）。切っていれば出さない（PRD D247・ADR-0038）

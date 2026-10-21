@@ -91,6 +91,8 @@ async function checkLead(page, list) {
         first: el.closest('li') === el.closest('ul').firstElementChild,
         full: Math.abs(li.width - ul.width) <= 2,
         badge: el.querySelector('[data-testid="home-lead"]')?.textContent,
+        warn: el.dataset.tone === 'warn',
+        warnBadge: el.querySelector('[data-testid="home-lead-warn"]')?.textContent ?? null,
         bg: getComputedStyle(el).backgroundColor,
       };
     }),
@@ -99,6 +101,11 @@ async function checkLead(page, list) {
   check(
     lead.length === want && lead.every((x) => x.first && x.full && x.badge === 'まずこれ'),
     '先頭の1枚だけ「まずこれ」（幅いっぱい・札）。知らせだけなら出さない',
+    lead,
+  );
+  check(
+    lead.every((x) => (x.warn ? x.warnBadge === '要対応' : x.warnBadge === null)),
+    '「まずこれ」が要対応なら要対応の印（札「要対応」）を残す',
     lead,
   );
   const months = [...new Set(list.map((t) => /^(\d+)月/.exec(t.title)?.[1]).filter(Boolean))];
@@ -370,6 +377,13 @@ async function seedPlans(page) {
     );
     await other.close();
     const good = inMonth.filter((d) => d !== bad && d !== changed);
+
+    // 要対応がある：先頭は要対応のカードで「まずこれ」と札「要対応」（PRD D263）
+    await open(p, '/home');
+    await p.locator('[data-kind="attention"]').first().waitFor({ timeout: 30000 });
+    const withAttention = await tasks(p);
+    check(withAttention[0]?.kind === 'attention', '要対応があれば先頭は要対応のカード', withAttention[0]);
+    await checkLead(p, withAttention);
 
     // 月の右の欄の「確定していない日」：問題の無い日をまとめて確定（N日）
     await open(p, `/month?ym=${SYM}&do=unconfirmed`, '[data-testid="month-unconfirmed"]');

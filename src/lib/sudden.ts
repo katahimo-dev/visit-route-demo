@@ -1,7 +1,7 @@
 // 「欠勤・キャンセル」の欄（PRD D167〜D172。ADR-0025 追記・ADR-0011・ADR-0015）の段階・選択肢・文を決める純粋関数。
 // 計算（振り直し）は足さない：見込みは absenceParts の previewOf（targetsOf と案A）、振り直しは日の画面の今の仕組みを呼ぶだけ。データは書き換えない
 import type { Absence } from '../contracts/documents';
-import type { ReassignTarget } from '../contracts/reassign';
+import type { ReassignDiff, ReassignTarget } from '../contracts/reassign';
 import { type Slot, slotsText } from '../domain/availability';
 import { absenceError, absenceText } from './absences';
 
@@ -182,4 +182,18 @@ export function confirmNote(state: 'none' | 'same' | 'diff' | null): string {
 /** 欠勤の短い文（段階の見出し・知らせ）：「〇〇さん 欠勤（終日）」 */
 export function absenceSummary(name: string, a: Pick<Absence, 'from' | 'to'>, slots: Slot[]): string {
   return `${name}さん ${absenceText(a, slots)}`;
+}
+
+/** 担当が移る訪問の1行（ReassignMoves） */
+export type ReassignMoveRow = { visitId: string; from: string | null; to: string | null };
+
+/**
+ * 担当が移る訪問の一覧の行（純粋関数）：担当が変わった訪問と入らなくなった訪問を、訪問の文（時刻から始まる）の順に。
+ * 同じ訪問は1行
+ */
+export function reassignMoveRows(diff: ReassignDiff, visitLabel: (id: string) => string): ReassignMoveRow[] {
+  const rows = new Map<string, ReassignMoveRow>();
+  for (const m of diff.moved) rows.set(m.visitId, { visitId: m.visitId, from: m.from, to: m.to });
+  for (const id of diff.unplaced) if (!rows.has(id)) rows.set(id, { visitId: id, from: null, to: null });
+  return [...rows.values()].sort((a, b) => visitLabel(a.visitId).localeCompare(visitLabel(b.visitId), 'ja'));
 }

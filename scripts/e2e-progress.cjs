@@ -260,7 +260,10 @@ async function keepRunning(page) {
   check(hashOf(page) === `#/month?ym=${YM}`, '知らせの［月の予定を見る］で月の予定へ', hashOf(page));
   check((await page.getByTestId('month-progress').count()) === 0, '止めたあとは進み具合を出さない');
   // その月の月の予定を見ている間に終わったら、知らせに［月の予定を見る］を出さない（行き先が今の画面。PRD D268）
-  if ((await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch') {
+  // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）
+  const kind = await page.getByTestId('band-next').getAttribute('data-kind');
+  check(kind === 'batch', '止めたあと：次の一手は「まとめて作る」（D268 を確かめる用意）', kind);
+  if (kind === 'batch') {
     await page.getByTestId('band-next').click();
     await panel.waitFor({ timeout: 5000 });
     await panel.getByRole('button', { name: '作り始める' }).click();
@@ -386,7 +389,10 @@ async function links(page) {
     { hash: hashOf(page), listed, band: n.unconfirmed },
   );
   await open(page, '/plan', '[data-testid="band-day"]');
-  if ((await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch') {
+  // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）
+  const kind = await page.getByTestId('band-next').getAttribute('data-kind');
+  check(kind === 'batch', '止めたあと：次の一手は「まとめて作る」（D268 を確かめる用意）', kind);
+  if (kind === 'batch') {
     await page.getByTestId('band-next').click();
     await page.waitForURL(/#\/month/);
     await batchPanel(page, YM).waitFor({ timeout: 10000 });

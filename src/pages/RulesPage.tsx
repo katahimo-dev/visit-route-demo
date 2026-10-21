@@ -296,7 +296,9 @@ function RuleName({ value, onChange, fallback }: { value: string; onChange: (v: 
   const commit = (focusBack: boolean) => {
     if (draft === null || closing.current) return;
     const t = draft.trim();
-    onChange(t ? t.slice(0, 40) : fallback);
+    const next = t ? t.slice(0, 40) : fallback;
+    // 名前が変わっていなければ書かない
+    if (next !== value) onChange(next);
     close(focusBack);
   };
   if (draft === null)
@@ -332,6 +334,8 @@ function RuleName({ value, onChange, fallback }: { value: string; onChange: (v: 
       data-testid="rule-name-input"
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
+        // 変換中の Enter（確定）・Esc（取り消し）は変換のもの（ほかの部品と同じ）
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         if (e.key === 'Enter') {
           e.preventDefault();
           commit(true);

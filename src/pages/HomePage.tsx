@@ -176,8 +176,16 @@ function TaskCard({ task: t, lead, onPick }: { task: HomeTask; lead: boolean; on
       </span>
       <span className="home-task-text">
         {lead && (
-          <span className="home-lead-badge" data-testid="home-lead">
-            まずこれ
+          <span className="home-lead-badges">
+            <span className="home-lead-badge" data-testid="home-lead">
+              まずこれ
+            </span>
+            {/* 要対応が先頭のときは要対応の印（赤）を残す（塗りの中でも色と文字で分かる） */}
+            {t.tone === 'warn' && (
+              <span className="home-lead-badge is-warn" data-testid="home-lead-warn">
+                要対応
+              </span>
+            )}
           </span>
         )}
         <strong>{t.title}</strong>

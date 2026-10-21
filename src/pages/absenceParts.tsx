@@ -22,7 +22,7 @@ import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { absencesOn, absenceText, baseOf, saveAbsence, withoutAbsencesOn } from '../lib/absences';
 import { attempt, deltaText, r0 } from '../lib/common';
 import { shiftText } from '../lib/reassignMenu';
-import type { AbsenceDraft } from '../lib/sudden';
+import { type AbsenceDraft, reassignMoveRows } from '../lib/sudden';
 import { compile } from '../matching';
 import { candidatesFor, reassign, targetsOf } from '../reassign';
 
@@ -336,20 +336,6 @@ export function ReassignSummary({
       <span className="chip">移動 {deltaText(r0(diff.travelDelta), '分') || '±0分'}</span>
     </div>
   );
-}
-
-/** 担当が移る訪問の1行（ReassignMoves） */
-export type ReassignMoveRow = { visitId: string; from: string | null; to: string | null };
-
-/**
- * 担当が移る訪問の一覧の行（純粋関数）：担当が変わった訪問と入らなくなった訪問を、訪問の文（時刻から始まる）の順に。
- * 同じ訪問は1行
- */
-export function reassignMoveRows(diff: ReassignDiff, visitLabel: (id: string) => string): ReassignMoveRow[] {
-  const rows = new Map<string, ReassignMoveRow>();
-  for (const m of diff.moved) rows.set(m.visitId, { visitId: m.visitId, from: m.from, to: m.to });
-  for (const id of diff.unplaced) if (!rows.has(id)) rows.set(id, { visitId: id, from: null, to: null });
-  return [...rows.values()].sort((a, b) => visitLabel(a.visitId).localeCompare(visitLabel(b.visitId), 'ja'));
 }
 
 /**

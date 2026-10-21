@@ -101,6 +101,15 @@ async function ruleNames(page) {
   );
   await row.getByTestId('rule-rename').click();
   await row.getByTestId('rule-name-input').fill('新しい名前');
+  // 変換中の Enter（かなの確定）では決めない（入力欄のまま・保存しない）
+  await row.getByTestId('rule-name-input').evaluate((el) => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true }));
+  });
+  await settle(page);
+  check(
+    (await row.getByTestId('rule-name-input').count()) === 1 && (await stored(page)).rules[0].label === r0.label,
+    '条件の名前：変換中の Enter では決めない',
+  );
   await page.keyboard.press('Enter');
   await settle(page);
   check(

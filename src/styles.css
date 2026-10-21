@@ -282,8 +282,9 @@ label {
   /* 文だけの知らせなので、重なった下の入力欄・ボタンを押せるようにする（ボタン付きの知らせはボタンだけ押せる） */
   pointer-events: none;
 }
-/* ボタン付きの知らせ（手直しの「元に戻す」。PRD D218） */
+/* ボタン付きの知らせ（手直しの「元に戻す」。PRD D218）。重ねている間は消さないので、箱（文の幅だけ）はマウスを受ける（PRD D268） */
 .toast.has-action {
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 12px;

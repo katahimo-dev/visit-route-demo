@@ -117,6 +117,11 @@
 .home-task.is-lead .home-task-go {
   color: #fff;
 }
+.home-lead-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .home-lead-badge {
   align-self: flex-start;
   padding: 1px 10px;
@@ -125,6 +130,18 @@
   color: var(--primary-dark);
   font-size: 0.78rem;
   font-weight: 700;
+}
+/* 先頭が要対応（手当てが要る）のとき：左の縁を要対応の赤で太く、アイコンと札「要対応」も赤（PRD D263・D228） */
+.home-task.is-lead.is-warn {
+  border-left: 10px solid var(--danger);
+}
+.home-task.is-lead.is-warn .home-task-icon {
+  color: var(--danger);
+}
+.home-lead-badge.is-warn {
+  background: #fbe4e0;
+  color: var(--danger);
+  border: 1px solid var(--danger);
 }
 .home-ready {
   margin: 0;

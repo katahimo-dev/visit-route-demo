@@ -1,6 +1,6 @@
 # 日の予定：欠勤・キャンセルと振り直し
 
-> この画面のファイル：`src/pages/SuddenPanel.tsx`・`absenceParts.tsx`（`AbsenceFields`・`AbsenceTargets`・`ReassignBar`・`ReassignSummary`・`ReassignMoves`・`reassignMoveRows`・`CandidateBox`・`previewOf`）・`reassignParts.tsx`（`AnnealBox`・`ContactPanel`・`ContactButton`・`ReassignDock`）・`PlanPage.tsx`・`plan.css`、`src/lib/sudden.ts`・`absences.ts`・`contacts.ts`・`clipboard.ts`・`runs.ts`。関連 ADR：0011（追記を含む）・0015 追記・0025 追記・0038・0044。関連 PRD：D26〜D35・D167〜D172・D243〜D246・D264・D265。
+> この画面のファイル：`src/pages/SuddenPanel.tsx`・`absenceParts.tsx`（`AbsenceFields`・`AbsenceTargets`・`ReassignBar`・`ReassignSummary`・`ReassignMoves`・`CandidateBox`・`previewOf`）・`reassignParts.tsx`（`AnnealBox`・`ContactPanel`・`ContactButton`・`ReassignDock`）・`PlanPage.tsx`・`plan.css`、`src/lib/sudden.ts`・`absences.ts`・`contacts.ts`・`clipboard.ts`・`runs.ts`。関連 ADR：0011（追記を含む）・0015 追記・0025 追記・0038・0044。関連 PRD：D26〜D35・D167〜D172・D243〜D246・D264・D265。
 > 日の予定の全体は [pages-plan.md](pages-plan.md)。計算（`reassign`・`targetsOf`・`prepareAnneal`・`settleAnneal`）は design.md の「reassign」。
 
 ### 「欠勤・キャンセル」の欄（PRD D167〜D172・D243〜D246）
@@ -64,7 +64,8 @@
 - 上に「おすすめ：…」の1行（`sudden-recommend`）。おすすめの案の説明カード（`.sudden-option.is-recommended`）に縁と札「おすすめ」（PRD D264）
 - ボタン（主ボタンは1つ。PRD D264・ADR-0044）：
   - 帯の主ボタン「登録して振り直す（おすすめ）」：勧めるとき（案A で入らない見込み）は `sudden-anneal`（押すと「登録して振り直す」と同じに案A を今の案にし、続けて案B を作り始める）、勧めないときは `sudden-reassign`（案A）
-  - 本文の「ほかのやり方」（`sudden-alt`。文字のボタン `.btn-text`）：もう一方の案（「案A だけで振り直す」`sudden-reassign`／「登録して、案B も作る」`sudden-anneal`）と「欠勤だけ登録（振り直さない）」（`sudden-save-only`。計算中は押せない。案の無い日は枠のボタン）
+  - 本文の「ほかのやり方」（`sudden-alt`。文字のボタン `.btn-text`）：もう一方の案（「案A だけで振り直す」`sudden-reassign`／「登録して、案B も作る」`sudden-anneal`）と「欠勤だけ登録（振り直さない）」（`sudden-save-only`。計算中は押せない）
+  - 振り直しの元の案が無い（`hasBase` が false：案の無い日・計算中・見込みを出せない）ときは、振り直しのボタン（`sudden-reassign`・`sudden-anneal`）と「ほかのやり方」を出さず、帯の主ボタンを「欠勤だけ登録（振り直さない）」にする（主ボタンは1つ）
   - 帯：既存の欠勤なら「欠勤を取り消す」（`sudden-remove`）・「戻る」
 - 押せない理由（`reassignBlocked({ error, running, hasPreview, hasBase })`）：「計算中は押せません（終わるまで待ってください）」・「見込みを出せませんでした」・「この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）」
 - 案の無い日（`sudden-no-plan`。`noPlanText(running)`）：計算中は「案を作っています。終わると振り直せます」、ほかは欠勤だけ登録できる
@@ -124,7 +125,7 @@
 
 - 見出し「（案A：空き時間に入れた案）／（案B：少し動かした案）」。案B なら注記を「ほかの人の訪問も少し動かしています」に
 - まとめ（`ReassignSummary`。4段目でも使う）：「変わる人 N人・振り直し N件・入らない N件・（あれば）欠勤の人のまま N件・移動 +N分」、「元の案：確定した割当／今の案」
-- 担当が移る訪問（`ReassignMoves`。欄の4段目だけ。PRD D265）：`reassignMoveRows(diff, visitLabel)` で `moved` と `unplaced` を1訪問1行・訪問の文（時刻から）の順に。行は「10:00 〈利用者さん〉」と「〇〇さん → △△さん」（読み上げは「から」）、入らない訪問は「入らない（〇〇さんから外れる）」（赤い縁）。無ければ「担当が変わる訪問はありません」。`reassign-moves`・`reassign-move`（`data-to`）
+- 担当が移る訪問（`ReassignMoves`。欄の4段目だけ。PRD D265）：`reassignMoveRows(diff, visitLabel)` （`lib/sudden`。テストあり）で `moved` と `unplaced` を1訪問1行・訪問の文の順に（文は `visitLabel`＝受けられる時間帯の初め（`earliestStart`）と名前なので、並びも行の時刻も時間帯の初め。振り直したあとの開始時刻ではない）。行は「10:00 〈利用者さん〉」と「〇〇さん → △△さん」（読み上げは「から」）、入らない訪問は「入らない（〇〇さんから外れる）」（赤い縁）。無ければ「担当が変わる訪問はありません」。`reassign-moves`・`reassign-move`（`data-to`）
 - 入らない訪問の理由：「入らない訪問（N件）：ほかの人の空き時間に入らない」と一覧・案B か「受けられる人」へ
 - 欠勤の人に残る訪問（`leftOf`。今の案に targetsOf を当てたもの。手直しで戻した等）の理由（`leftReasonText`）と「対応が必要」・「もう一度振り直す」。〈利用者さん〉の名前は `PersonButton`（`visitNode`。data-testid `left-client`）
 - 「元の案に戻す」（`revertReassign`）：確認を出し、routes・pins を元の案（`baseRoutes`・`basePins`）に、generated・runId を振り直す前のもの（`baseGenerated`・`baseRunId`。無い古いデータは generated＝元の案・runId なし）に戻し、`reassign` を外す。続けて振り直したあとも最初の元の案へ
