@@ -7,8 +7,18 @@ import { createDemoData, scoreRulesOf } from '../seed';
 import { solve } from '../solver';
 import { own } from './common';
 import { patchManualPrefs } from './manualPrefs';
-import { applyDayRun } from './month';
-import { type BatchDone, batchBandText, batchDoneText, createMonthBatch, missingDays, monthsLabel } from './monthBatch';
+import { applyDayRun, expandRange } from './month';
+import {
+  type BatchDone,
+  batchBandText,
+  batchDoneText,
+  batchHref,
+  createMonthBatch,
+  missingDays,
+  monthsLabel,
+  weekBatchDays,
+  weekLabel,
+} from './monthBatch';
 import { problemKey } from './runs';
 
 const TODAY = '2026-10-21';
@@ -78,7 +88,7 @@ describe('monthBatch（PRD D256・D257。ADR-0042）', () => {
     label: '10月',
     mode: 'empty' as const,
     days: days.map((date) => ({ date, mode: 'empty' as const })),
-    expandYm: null,
+    expand: null,
     today: TODAY,
     source: 'month' as const,
   };
@@ -172,11 +182,14 @@ describe('monthBatch（PRD D256・D257。ADR-0042）', () => {
       iteration: 0,
       total: 1,
       source: 'month' as const,
+      weekStart: null,
     };
     expect(batchBandText(run)).toBe('11月の案を作っています 8/22日');
     const done: BatchDone = {
       ym: '2026-11',
       label: '11月',
+      source: 'month',
+      weekStart: null,
       made: 22,
       unassignedDays: 0,
       stopped: false,
@@ -305,3 +318,54 @@ function made(d: DemoData, date: string): DemoData {
   const result = solve(p, { seed: 1, iterations: 2000 });
   return applyDayRun(d, date, { rules, result, createdAt: 1, inputKey: problemKey(p), onlyEmpty: false });
 }
+
+describe('週の範囲で作る（PRD D280。ADR-0046）', () => {
+  const today = '2026-10-28';
+  /** 月をまたぐ週（10/27〜11/2。日曜はじまりでなくても範囲として扱える） */
+  const across = Array.from({ length: 7 }, (_, i) => addDays('2026-10-27', i));
+
+  it('作る日：月をまたぐ週は2つの月から。今日より前・案のある日・確定した日は入れない', () => {
+    const d = { ...createDemoData(today), aiPlans: {}, aiRuns: {} };
+    const ex = expandRange(d, across[0]!, across[6]!, today).data;
+    const t = weekBatchDays(ex, across, today).map((x) => x.date);
+    expect(t.some((x) => x.startsWith('2026-10'))).toBe(true);
+    expect(t.some((x) => x.startsWith('2026-11'))).toBe(true);
+    expect(t.every((x) => x >= today && x <= across[6]!)).toBe(true);
+    const first = t[0]!;
+    const confirmed = { ...ex, manualPlans: { ...ex.manualPlans, [first]: {} } };
+    expect(weekBatchDays(confirmed, across, today).map((x) => x.date)).not.toContain(first);
+    expect(weekLabel('2026-11-01')).toBe('11/1〜11/7の週');
+  });
+
+  it('先に週の範囲だけ訪問を作り（週の外は作らない）、週の案の無い日を作る。知らせと行き先は週', async () => {
+    const base = { ...createDemoData(today), aiPlans: {}, aiRuns: {} };
+    // 週の後半（10/30 以降）と週の外の訪問を消して「未作成」にする
+    const cut = { ...base, visits: base.visits.filter((v) => v.date < '2026-10-30') };
+    const ex = expandRange(cut, across[0]!, across[6]!, today);
+    expect(ex.added).toBeGreaterThan(0);
+    const targets = weekBatchDays(ex.data, across, today);
+    const s = fakeSolve();
+    const b = createMonthBatch(s.fn);
+    const h = hostOf(cut);
+    b.connect(h.host);
+    const ok = b.start({
+      ym: '2026-10',
+      label: weekLabel(across[0]!),
+      mode: 'empty',
+      days: targets,
+      expand: { from: across[0]!, to: across[6]! },
+      today,
+      source: 'week',
+      weekStart: across[0]!,
+    });
+    expect(ok).toBe(true);
+    expect(h.data().visits.some((v) => v.date >= '2026-10-30' && v.date <= across[6]!)).toBe(true);
+    expect(h.data().visits.some((v) => v.date > across[6]!)).toBe(false);
+    expect(b.run.get()).toMatchObject({ source: 'week', weekStart: across[0], label: '10/27〜11/2の週' });
+    await finishAll(s.calls);
+    expect(b.done.get()).toMatchObject({ source: 'week', weekStart: across[0], made: targets.length });
+    for (const t of targets) expect(own(h.data().aiPlans, t.date)).toBeTruthy();
+    expect(batchHref({ ym: '2026-10', source: 'week', weekStart: across[0]! })).toBe(`/week?d=${across[0]}`);
+    expect(batchHref({ ym: '2026-11', source: 'month', weekStart: null })).toBe('/month?ym=2026-11');
+  });
+});

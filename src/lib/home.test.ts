@@ -93,7 +93,7 @@ describe('homeTasks', () => {
     expect(c.detail).toBe('定期パターンからまだ作っていない訪問 40件');
   });
 
-  it('一部済み：要対応 → 今日 → 確定していない日 → 案を作る の順', () => {
+  it('一部済み：要対応 → 案を作る → 確定していない日 → 今日 の順（作業の順。PRD D263）', () => {
     const r = homeTasks({
       today: TODAY,
       statuses: [
@@ -109,8 +109,8 @@ describe('homeTasks', () => {
       features: {},
     });
     expect(r.ready).toBe(false);
-    expect(r.tasks.map((t) => t.kind)).toEqual(['attention', 'today', 'confirm', 'create']);
-    const [att, today, conf, create] = r.tasks;
+    expect(r.tasks.map((t) => t.kind)).toEqual(['attention', 'create', 'confirm', 'today']);
+    const [att, create, conf, today] = r.tasks;
     // 要対応は1日だけなので日の画面へ
     expect(att).toMatchObject({
       title: '10月の要対応 1件',
@@ -123,7 +123,10 @@ describe('homeTasks', () => {
     expect(today!.detail).toBe('訪問 3件・担当 3人・入らない 1件');
     // 確定していない日は今日から17日までの4日（案の無い日も含む＝月の③と同じ。月の画面の右の欄へ）
     expect(conf).toMatchObject({ title: '10月の確定していない日 4日を確認', to: '/month?ym=2026-10&do=unconfirmed' });
-    expect(conf!.detail).toBe('未確定 1日・未確定の変更あり 1日・案の無い日 2日。見直して「この割当で確定」');
+    // 案の無い日の日数は「案を作る」のカードにだけ書く（PRD D263）
+    expect(conf!.detail).toBe(
+      '未確定 1日・未確定の変更あり 1日・ほかは案の無い日（先に作る）。見直して「この割当で確定」',
+    );
     expect(create).toMatchObject({ detail: '案の無い日 2日', to: '/month?ym=2026-10&do=batch' });
   });
 
@@ -159,7 +162,8 @@ describe('homeTasks', () => {
   it('要対応が2日以上なら月の画面の要対応へ。欠勤（希望休は除く）も数える', () => {
     const r = homeTasks({
       today: TODAY,
-      statuses: [st(TODAY, { stale: true }), st('2026-10-20', { absence: true })],
+      // 欠勤の日はまだ確定していない（確定済みで手当ての要らない日になれば数えない。PRD D281）
+      statuses: [st(TODAY, { stale: true }), st('2026-10-20', { absence: true, state: 'plan' })],
       months: [{ ym: '2026-10', canExpand: 0 }],
       todayStaff: 1,
       data: {
@@ -172,6 +176,21 @@ describe('homeTasks', () => {
     expect(att).toMatchObject({ kind: 'attention', title: '10月の要対応 2件', to: '/month?ym=2026-10&do=attention' });
     expect(att.date).toBeUndefined();
     expect(att.detail).toBe('条件が変わった日 1日・欠勤がある日 1日');
+  });
+
+  it('欠勤があっても確定済みで手当ての要らない日は要対応に数えない（PRD D281。月の要対応・帯と同じ attentionList）', () => {
+    const r = homeTasks({
+      today: TODAY,
+      statuses: [st('2026-10-20', { absence: true })],
+      months: [{ ym: '2026-10', canExpand: 0 }],
+      todayStaff: 1,
+      data: {
+        staff: [{ id: 's1', name: '山田' } as Staff],
+        absences: [{ id: 'a1', staffId: 's1', date: '2026-10-20', from: '09:00', to: '12:00', note: '' } as Absence],
+      },
+      features: {},
+    });
+    expect(r.tasks.some((t) => t.kind === 'attention')).toBe(false);
   });
 
   it('今日の案が無い：今日のカードを warn にして日の画面へ', () => {
@@ -202,8 +221,50 @@ describe('homeTasks', () => {
       features: {},
     });
     expect(r.tasks.map((t) => [t.kind, t.title])).toEqual([
-      ['today', '今日 10/28（水）の予定（確定済み）'],
       ['create', '11月の案をまとめて作る'],
+      ['today', '今日 10/28（水）の予定（確定済み）'],
     ]);
+  });
+
+  it('同じ月では作る → 確認、今月 → 来月。案の無い日だけの確認のカードは、作るカードがあれば出さない（PRD D263）', () => {
+    const today = '2026-10-20';
+    const r = homeTasks({
+      today,
+      statuses: [
+        st(today, { state: 'plan' }),
+        st('2026-10-21', { state: 'none' }),
+        st('2026-11-02', { state: 'none' }),
+        st('2026-11-03', { state: 'none' }),
+      ],
+      months: [
+        { ym: '2026-10', canExpand: 0 },
+        { ym: '2026-11', canExpand: 50 },
+      ],
+      todayStaff: 2,
+      data,
+      features: {},
+    });
+    expect(r.tasks.map((t) => [t.kind, t.title])).toEqual([
+      ['create', '10月の案をまとめて作る'],
+      ['confirm', '10月の確定していない日 2日を確認'],
+      ['create', '11月の案をまとめて作る'],
+      ['today', '今日 10/20（火）の予定（未確定）'],
+    ]);
+    // 「案の無い日 N日」は作るカードにだけ
+    expect(r.tasks.filter((t) => t.detail.includes('案の無い日 1日')).map((t) => t.kind)).toEqual(['create']);
+    expect(r.tasks[2]!.detail).toBe('定期パターンからまだ作っていない訪問 50件・案の無い日 2日');
+  });
+
+  it('作るカードが無い月（作れる訪問なし・案の無い日なし）は確認のカードがそのまま', () => {
+    const r = homeTasks({
+      today: TODAY,
+      statuses: [st(TODAY, { state: 'plan' }), st('2026-10-15', { state: 'plan' })],
+      months: [{ ym: '2026-10', canExpand: 0 }],
+      todayStaff: 2,
+      data,
+      features: {},
+    });
+    expect(r.tasks.map((t) => t.kind)).toEqual(['confirm', 'today']);
+    expect(r.tasks[0]!.detail).toBe('未確定 2日。見直して「この割当で確定」');
   });
 });

@@ -349,7 +349,7 @@ describe('activeFilterCount（PRD D220。畳んだ「絞り込み（N）」）',
   });
 });
 
-describe('訪問の種類での絞り込み（PRD D263。複数ならどれか）', () => {
+describe('訪問の種類での絞り込み（PRD D285。複数ならどれか）', () => {
   const types = [
     { id: 't1', name: 'リハビリ' },
     { id: 't2', name: '入浴' },

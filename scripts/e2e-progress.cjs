@@ -2,7 +2,7 @@
 // 月・週・日の上に同じ帯（data-ym・数字が3画面で同じ・ホームの確定していない日とも同じ）、月の画面の「まとめて作る」の入口は帯の1か所
 // （見出しのボタン・今月の準備は無い。帯の次の一手が主ボタン）、帯の数字・ボタンで月の画面の欄が開き ?do= が消える
 // （週・日から：まとめて作る・確定していない日・要対応。月の画面の中では URL を変えずに開く）、作っていない訪問がある月は
-// 「訪問 N件（あと M件）」と欄の「訪問だけ作る」、日の画面の「この日」（案なし → 未確定 → 確定すると確定済み・確定 +1）、
+// 「訪問 N件（未作成 M件）」と欄の「訪問だけ作る」、日の画面の「この日」（案なし → 未確定 → 確定すると確定済み・確定 +1）、
 // 週は選んでいる日付の月（月をまたぐ週）、訪問の無いデータは「今日以降の訪問はありません」でボタンなし、
 // 案が全部ある月で週・日を開いても帯が速く出る・確定の操作が待たされない、スマホ（390×844）で1行・横にはみ出さない、印刷で出さない。
 // まとめて作るはほかの画面へ移っても続き、上の帯に進み具合と［止める］、戻ると進み具合、知らせから月へ（PRD D256・D257）。
@@ -75,7 +75,7 @@ async function bandNumbers(page) {
  * どれも無ければ開かずに知らせ（月末で今日しか残っていないときなど。PRD D153）
  */
 async function expectBatch(page, n, name) {
-  const opens = n.unconfirmed > 0 || n.planned < n.days || /あと/.test(n.visits);
+  const opens = n.unconfirmed > 0 || n.planned < n.days || /未作成/.test(n.visits);
   if (opens) {
     await batchPanel(page, YM).waitFor({ timeout: 10000 });
     check(true, `${name}：まとめて作るの欄が開く`);
@@ -171,12 +171,19 @@ async function monthEntry(page) {
   await popup.close();
 }
 
-// ---- 来月：作っていない訪問があれば「あと N件」、欄の「訪問だけ作る」 ----
+// ---- 来月：作っていない訪問があれば「未作成 N件」（PRD D282。前は「あと N件」）、欄の「訪問だけ作る」 ----
 async function nextMonth(page) {
   await open(page, `/month?ym=${NEXT_YM}`, '[data-testid="month-grid"]');
   const v0 = await page.getByTestId('band-visits').innerText();
-  const more = /あと(\d+)件/.exec(v0);
-  check(!!more, '来月：定期パターンから作っていない訪問「あと N件」', v0);
+  const more = /未作成 (\d+)件/.exec(v0);
+  check(!!more, '来月：定期パターンから作っていない訪問「未作成 N件」', v0);
+  // 月のマス（PRD D282）：訪問の無い今日以降の日のうち、未作成の日に「未作成」の印（本当に0件の日と分ける）
+  const unmadeCells = await page.locator('[data-testid="month-day"][data-unmade]').count();
+  check(
+    unmadeCells > 0 && (await page.getByTestId('month-unmade').count()) === unmadeCells,
+    '来月：まだ作っていない日のマスに「未作成」',
+    unmadeCells,
+  );
   check(
     (await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch',
     '来月：次の一手は「まとめて作る」',
@@ -188,7 +195,11 @@ async function nextMonth(page) {
   await only.click();
   await settle(page, 500);
   const v1 = await page.getByTestId('band-visits').innerText();
-  check(!/あと/.test(v1) && /\d+件/.test(v1), '訪問だけ作ると帯の訪問が済み（あと N件が消える）', v1);
+  check(!/未作成/.test(v1) && /\d+件/.test(v1), '訪問だけ作ると帯の訪問が済み（未作成 N件が消える）', v1);
+  check(
+    (await page.locator('[data-testid="month-day"][data-unmade]').count()) === 0,
+    '訪問だけ作るとマスの「未作成」が消える',
+  );
   check(!(await only.isVisible().catch(() => false)), '作ったあとは「訪問だけ作る」を出さない');
   await page.keyboard.press('Escape');
 }
@@ -259,6 +270,24 @@ async function keepRunning(page) {
   await page.waitForURL(/#\/month/);
   check(hashOf(page) === `#/month?ym=${YM}`, '知らせの［月の予定を見る］で月の予定へ', hashOf(page));
   check((await page.getByTestId('month-progress').count()) === 0, '止めたあとは進み具合を出さない');
+  // その月の月の予定を見ている間に終わったら、知らせに［月の予定を見る］を出さない（行き先が今の画面。PRD D268）
+  // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）
+  const kind = await page.getByTestId('band-next').getAttribute('data-kind');
+  check(kind === 'batch', '止めたあと：次の一手は「まとめて作る」（D268 を確かめる用意）', kind);
+  if (kind === 'batch') {
+    await page.getByTestId('band-next').click();
+    await panel.waitFor({ timeout: 5000 });
+    await panel.getByRole('button', { name: '作り始める' }).click();
+    const progress = page.getByTestId('month-progress');
+    await progress.waitFor({ timeout: 10000 });
+    await progress.getByRole('button', { name: /止める/ }).click();
+    const toast2 = page.locator('.toast').filter({ hasText: /の案を\d+日分作ったところで止めました/ });
+    await toast2.waitFor({ timeout: 60000 });
+    check(
+      (await page.getByTestId('batch-done-open').count()) === 0,
+      'その月の月の予定にいるときの知らせには［月の予定を見る］を出さない（PRD D268）',
+    );
+  }
 }
 
 // ---- 日の画面：この日の状態、確定すると帯の確定が増える ----
@@ -371,7 +400,10 @@ async function links(page) {
     { hash: hashOf(page), listed, band: n.unconfirmed },
   );
   await open(page, '/plan', '[data-testid="band-day"]');
-  if ((await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch') {
+  // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）
+  const kind = await page.getByTestId('band-next').getAttribute('data-kind');
+  check(kind === 'batch', '止めたあと：次の一手は「まとめて作る」（D268 を確かめる用意）', kind);
+  if (kind === 'batch') {
     await page.getByTestId('band-next').click();
     await page.waitForURL(/#\/month/);
     await batchPanel(page, YM).waitFor({ timeout: 10000 });
@@ -523,7 +555,11 @@ async function mobile(page) {
         h: Math.round(r.height),
         right: Math.round(r.right),
         overflow: el.scrollWidth > el.clientWidth + 1,
-        rows: new Set(kids.map((k) => Math.round(k.top + k.height / 2) >> 3)).size,
+        // 行の数：縦の中心が前の行の中心から8px以上離れたら次の行（ページの巻いた位置で8px刻みの境をまたいで2行と数えない）
+        rows: kids
+          .map((k) => k.top + k.height / 2)
+          .sort((a, b) => a - b)
+          .reduce((m, c, i, all) => (i > 0 && c - all[i - 1] >= 8 ? m + 1 : m), 1),
         tops: kids.map((k) => Math.round(k.top)),
       };
     });

@@ -48,7 +48,7 @@ export type ClientFilterProps = {
   /** 期間の呼び方（例「この週」） */
   periodLabel: string;
   /**
-   * 訪問の種類（data.visitTypes。PRD D263）。渡して1件以上あれば、絞り込みの上に「訪問の種類」のチップ（どれか）を出す。
+   * 訪問の種類（data.visitTypes。PRD D285）。渡して1件以上あれば、絞り込みの上に「訪問の種類」のチップ（どれか）を出す。
    * 判定は facts.typeClientIds（filterFacts に visitTypes を渡す）
    */
   visitTypes?: readonly { id: string; name: string }[];

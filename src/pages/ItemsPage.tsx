@@ -16,6 +16,7 @@ import {
 import { ITEM_KIND_LABELS, nameTaken, newId, optionNameError } from '../lib/common';
 import { useDemoData } from '../store';
 import './settings.css';
+import { SettingsTabs } from '../components/SettingsTabs';
 import { narrowRole } from '../lib/narrowRoles';
 
 /**
@@ -79,6 +80,7 @@ export default function ItemsPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<SettingsTabs />}
         icon={Tags}
         title="特性の項目"
         lead={`${terms.staff}や${terms.client}の特性（資格・ペットなど）を決めます`}

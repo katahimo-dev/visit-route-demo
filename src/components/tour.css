@@ -125,3 +125,51 @@
     display: none !important;
   }
 }
+/* 1枚目の「どこまで使いますか」（PRD D276）：基本／すべて の2つ。選んだ方は縁と地の色に加えラジオの印で示す */
+.tour-choice {
+  margin: 0;
+  padding: 10px 12px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tour-choice-title {
+  padding: 0 4px;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.tour-choice-item {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  color: var(--ink);
+  font-size: 0.95rem;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.5;
+}
+.tour-choice-item input {
+  width: auto;
+  margin: 4px 0 0;
+  padding: 0;
+  flex: none;
+}
+.tour-choice-item.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.tour-choice-desc {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.tour-choice-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--sub);
+}

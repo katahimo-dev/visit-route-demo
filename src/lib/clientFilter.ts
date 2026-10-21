@@ -34,7 +34,7 @@ export type ClientFilterState = {
   /** 終了の人も出す（既定 false） */
   showEnded: boolean;
   /**
-   * 押している訪問の種類（VisitType.id。PRD D263）。この期間にそのどれかの種類の訪問がある人に絞る（OR）。
+   * 押している訪問の種類（VisitType.id。PRD D285）。この期間にそのどれかの種類の訪問がある人に絞る（OR）。
    * 無い・空なら種類で絞らない。チップ「この期間に訪問がある人」などとは AND
    */
   types?: readonly string[];

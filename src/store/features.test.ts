@@ -4,7 +4,18 @@ import { type DemoData, STORAGE_KEY } from '../contracts/data';
 import { featuresSchema } from '../contracts/features';
 import { applyTemplate } from '../lib/features';
 import { createDemoData } from '../seed';
-import { exportJson, importJson, isImportError, load, reset } from './index';
+import {
+  exportJson,
+  FEATURES_START_ALL,
+  FEATURES_START_KEY,
+  importJson,
+  isImportError,
+  load,
+  loadWithStatus,
+  rememberCurrent,
+  reset,
+  startFeatures,
+} from './index';
 
 /** 環境は node なので localStorage の簡単なモック */
 function mockStorage() {
@@ -71,11 +82,46 @@ describe('org.features（PRD D216）', () => {
     expect(r).toEqual(withF);
   });
 
-  it('保存して読み直しても同じ。初期状態に戻すと {}', () => {
+  it('保存して読み直しても同じ。初期状態に戻しても入り切りは残す（PRD D216・D276）', () => {
     const d = createDemoData('2026-10-12');
     mem.set(STORAGE_KEY, JSON.stringify({ ...d, org: { ...d.org, features: { sudden: false } } }));
     expect(load().org.features).toEqual({ sudden: false });
+    expect(reset().org.features).toEqual({ sudden: false });
+    expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).org.features).toEqual({ sudden: false });
+    // 入り切りを渡せばその入り切りで作り直す（初回の案内の「どこまで使うか」）
+    expect(reset({}).org.features).toEqual({});
+    // 今のデータが無い（読み込みの例外の画面から戻す）ときはすべて入（基本にしない）
+    rememberCurrent(null);
     expect(reset().org.features).toEqual({});
-    expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).org.features).toEqual({});
+  });
+});
+
+describe('初めて開いたときの入り切り（PRD D276）', () => {
+  it('保存データが無ければ基本のひな形で始め、fresh', () => {
+    const r = loadWithStatus();
+    expect(r.fresh).toBe(true);
+    expect(r.data.org.features).toEqual(applyTemplate('basic'));
+    // 案の記録の計算に効く入り切りも基本（読み直して「条件が変わった」にしない）
+    for (const runs of Object.values(r.data.aiRuns))
+      for (const run of runs) expect(run.calcFeatures).toEqual({ allowedStaff: false });
+    expect(loadWithStatus().fresh).toBe(false);
+  });
+  it('印「all」があれば、すべて入（{}。今までの初期データと同じ）', () => {
+    mem.set(FEATURES_START_KEY, FEATURES_START_ALL);
+    expect(loadWithStatus().data.org.features).toEqual({});
+    expect(startFeatures(() => ({ getItem: () => 'basic' }))).toEqual(applyTemplate('basic'));
+    expect(
+      startFeatures(() => {
+        throw new Error('使えない');
+      }),
+    ).toEqual(applyTemplate('basic'));
+  });
+  it('保存データがある人は今までどおり（features の無い古いデータはすべて入）', () => {
+    const d = createDemoData('2026-10-12');
+    const { features: _drop, ...oldOrg } = d.org;
+    mem.set(STORAGE_KEY, JSON.stringify({ ...d, org: oldOrg }));
+    const r = loadWithStatus();
+    expect(r.fresh).toBe(false);
+    expect(r.data.org.features).toEqual({});
   });
 });

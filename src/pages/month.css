@@ -263,6 +263,18 @@
   color: var(--danger);
   font-weight: 700;
 }
+/* 欠勤の手当てが済んだ日（確定済みで手当ての要らない日。PRD D281）：情報なので赤くしない */
+.month-mark.is-absent.is-done {
+  color: var(--sub);
+  font-weight: 400;
+}
+/* 訪問はあるが、ほかに未作成の訪問がある日（PRD D282）：点線の枠の小さな印（注意の色にしない） */
+.month-mark.is-unmade {
+  padding: 0 3px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  font-size: 11px;
+}
 .month-load {
   margin-top: auto;
   width: 100%;
@@ -422,6 +434,28 @@
 }
 .month-attention-btn.is-absence {
   border-left: 4px solid var(--sub);
+}
+/* 欠勤あり（対応済み）（PRD D281）：要対応の下に情報として。色の縁を付けず地の色 */
+.month-handled {
+  margin-top: 12px;
+}
+.month-handled-title {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  color: var(--sub);
+}
+.month-attention-btn.is-handled {
+  background: transparent;
+  color: var(--sub);
+}
+/* 未作成の日（PRD D282）：訪問が本当に0件の日と分ける。注意の色にはしない（まだ作っていないだけ） */
+.month-unmade {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  color: var(--sub);
+  font-size: 11px;
 }
 /* 行き先を添える文（PRD D201） */
 .month-attention-go {

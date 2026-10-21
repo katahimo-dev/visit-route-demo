@@ -19,6 +19,12 @@ export type CellGuideInput = {
   resting: number;
   requested: number;
   absent: boolean;
+  /** 欠勤の手当てが済んだ日（PRD D281。「（済）」） */
+  absentDone?: boolean;
+  /** 定期パターンからまだ作っていない日（PRD D282。「未作成」） */
+  unmade?: boolean;
+  /** 訪問はあるが、ほかに定期パターンからまだ作っていない訪問がある（「ほか未作成」） */
+  unmadePart?: boolean;
   starts: boolean;
   ends: boolean;
   leaves: boolean;
@@ -44,6 +50,10 @@ export type CellGuideInput = {
 export function cellGuide(x: CellGuideInput): string[] {
   const out: string[] = [];
   if (x.stateText) out.push(`背景の色＝日の状態（${x.stateText}）`);
+  else if (x.unmade)
+    out.push(
+      '「未作成」＝定期パターンからまだ訪問を作っていない日（まとめて作る・週の予定の「この週の案を作る」で作る）',
+    );
   else out.push('白い背景＝訪問の無い日');
   if (x.care) out.push('赤い点・赤い枠＝要対応（入らない訪問・必須の違反・休みの人に訪問）');
   if (x.caution) out.push('黄の点線の枠＝注意（訪問があるのにまだ案が無い。まとめて作るか日の予定で作る）');
@@ -52,7 +62,11 @@ export function cellGuide(x: CellGuideInput): string[] {
     if (x.types) out.push('色の帯＝訪問の種類ごとの件数');
     if (x.resting > 0)
       out.push(`「休 N」＝休む${x.staffTerm}の人数${x.requested > 0 ? '（「（希 N）」はそのうち希望休の人数）' : ''}`);
-    if (x.absent) out.push(`「欠」＝欠勤の${x.staffTerm}`);
+    if (x.unmadePart) out.push('「ほか未作成」＝この日には、定期パターンからまだ作っていない訪問もある');
+    if (x.absent)
+      out.push(
+        `「欠」＝欠勤の${x.staffTerm}${x.absentDone ? '（「（済）」は確定済みで手当ての要らない日。要対応には数えない）' : ''}`,
+      );
     if (x.starts || x.ends) out.push(`▶＝この日から始まる${x.staffTerm}・■＝この日で終わる${x.staffTerm}`);
     if (x.leaves) out.push(`ベッドの印＝${x.clientTerm}の休み（訪問は無し）`);
     if (x.lastDays) out.push(`「最終」＝最終勤務日の${x.staffTerm}`);

@@ -359,7 +359,402 @@ async function nextWeek(page) {
   );
 }
 
-/** 表の絞り込みに「訪問の種類」（PRD D263）：種類ごとのチップ（人数つき）→押すとその種類の訪問がある人に絞る（URL の ?cf= に type:）→再読み込み・戻るで戻る */
+// ---- この週の案を作る・確定（PRD D280・D282。ADR-0046）：月をまたぐ週で、未作成 → 作る → 確定 → 済み ----
+const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+const dayLabel = (d) => `${md(d)}（${WD[new Date(`${d}T00:00:00Z`).getUTCDay()]}）`;
+/**
+ * 今日以降の日が2つの月にまたがる週（今週から順に探す。どの FAKE_NOW でも月の変わり目は5週以内にある）。
+ * later は後ろの月の日（今日以降）
+ */
+const CROSS = (() => {
+  for (let w = 0; w < 7; w++) {
+    const start = addDays(monday(TODAY), 7 * w);
+    const dates = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+    const future = dates.filter((d) => d >= TODAY);
+    const months = [...new Set(future.map((d) => d.slice(0, 7)))];
+    if (months.length === 2) return { start, dates, future, later: future.filter((d) => d.slice(0, 7) === months[1]) };
+  }
+  return null;
+})();
+/** 日の見出しの件数の文と未作成の件数（日付の順） */
+const headsOf = (page) =>
+  page
+    .getByTestId('week-day-count')
+    .evaluateAll((els) => els.map((e) => ({ text: e.innerText, unmade: Number(e.dataset.unmade) })));
+const nextKind = (page) => page.getByTestId('week-next').getAttribute('data-kind');
+const stored = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
+
+async function weekUnmade(page) {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  check(!!CROSS, '月をまたぐ週がある（作る・確定を2つの月で確かめる前提）', TODAY);
+  if (!CROSS) return;
+  // 案を全部消し、後ろの月の日の定期パターンの訪問を消して「未作成」にする（前の月の日は訪問あり・案なし）
+  await page.goto(`${BASE}#/week?d=${CROSS.start}`);
+  const removed = await page.evaluate(
+    ([k, later]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      d.aiPlans = {};
+      d.aiRuns = {};
+      d.manualPlans = {};
+      const before = d.visits.length;
+      d.visits = d.visits.filter((v) => !(v.pattern && later.includes(v.date)));
+      localStorage.setItem(k, JSON.stringify(d));
+      return before - d.visits.length;
+    },
+    [STORAGE_KEY, CROSS.later],
+  );
+  await open(page, `/week?d=${CROSS.start}`);
+  await page.getByTestId('week-next').waitFor({ timeout: 30000 });
+  const heads = await headsOf(page);
+  const at = (d) => heads[CROSS.dates.indexOf(d)];
+  const laterHeads = CROSS.later.map(at);
+  check(
+    laterHeads.some((h) => h.text === '未作成' && h.unmade > 0) &&
+      laterHeads.every((h) => h.text !== '0件' || h.unmade === 0),
+    '未作成の日は「0件」でなく「未作成」（PRD D282）',
+    { removed, laterHeads },
+  );
+  const firstFuture = CROSS.future.filter((d) => !CROSS.later.includes(d)).map(at);
+  check(
+    firstFuture.every((h) => /^\d+件・案なし$|^0件$/.test(h.text)),
+    '訪問のある日は「N件・案なし」、本当に訪問の無い日は「0件」',
+    firstFuture,
+  );
+  // 主ボタンは見出しの「この週の案を作る（N日）」の1つ。N＝今日以降の、訪問がある日と未作成の日
+  const want = CROSS.future.map(at).filter((h) => h.text !== '0件').length;
+  const label = await page.getByTestId('week-next-btn').innerText();
+  check(
+    (await nextKind(page)) === 'make' && label.includes(`この週の案を作る（${want}日）`),
+    '週の主ボタン：この週の案を作る（N日）',
+    { label, want },
+  );
+  // 作る入口は見出しの主ボタンの1つ：進み具合の帯に「まとめて作る」を出さない（数字のリンクは残る）
+  await page.getByTestId('progress-band').getByTestId('band-attention').waitFor({ timeout: 30000 });
+  check(
+    (await page.locator('[data-testid="band-next"][data-kind="batch"]').count()) === 0 &&
+      (await page.getByTestId('band-visits').count()) === 1,
+    '主ボタンが「作る」の間は、進み具合の帯に「まとめて作る」を出さない',
+  );
+  check(
+    (await page.locator('.btn-primary').count()) === 1,
+    '週の予定の主ボタンは1つ',
+    await page.locator('.btn-primary').allInnerTexts(),
+  );
+  // 月のマスでも、未作成の日と本当に0件の日を分ける
+  const ym2 = CROSS.later[0].slice(0, 7);
+  await page.goto(`${BASE}#/month?ym=${ym2}&layout=calendar`);
+  await page.locator('[data-testid="month-day"]').first().waitFor({ timeout: 30000 });
+  await settle(page, 300);
+  const cells = await page
+    .locator('[data-testid="month-day"]')
+    .evaluateAll((els) => Object.fromEntries(els.map((e) => [e.dataset.date, e.dataset.unmade ?? null])));
+  check(
+    CROSS.later.some((d) => Number(cells[d]) > 0) && (await page.getByTestId('month-unmade').count()) > 0,
+    '月のマスでも未作成の日に「未作成」',
+    CROSS.later.map((d) => `${d}:${cells[d]}`),
+  );
+  // 390px：主ボタンが画面の中に入り、横にはみ出さない
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, `/week?d=${CROSS.start}&view=timeline`);
+  const box = await page.getByTestId('week-next-btn').boundingBox();
+  const sw = await page.evaluate(() => document.documentElement.scrollWidth);
+  check(box && box.x >= 0 && box.x + box.width <= 390 && sw <= 390, '390px：週の主ボタンが画面に入る', { box, sw });
+  await page.screenshot({ path: path.join(OUT_DIR, 'week-make-390.png') });
+  await page.setViewportSize({ width: 1400, height: 1000 });
+}
+
+async function weekMake(page) {
+  if (!CROSS) return check(false, 'week-make：月をまたぐ週が無い');
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await open(page, `/week?d=${CROSS.start}`);
+  await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
+  const want = Number(/（(\d+)日）/.exec(await page.getByTestId('week-next-btn').innerText())?.[1] ?? 0);
+  await page.getByTestId('week-next-btn').click();
+  await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+  const bandText = await page.getByTestId('batch-band-text').innerText();
+  check(
+    bandText.startsWith(`${md(CROSS.start)}〜${md(CROSS.dates[6])}の週の案を作っています`) &&
+      (await page.getByTestId('batch-band-text').getAttribute('href')) === `#/week?d=${CROSS.start}`,
+    '作っている間は上の帯に週の進み具合（行き先はその週の週の予定）',
+    bandText,
+  );
+  check(urlOf(page).includes(`#/week?d=${CROSS.start}`), '作っている間も週の予定にとどまる', urlOf(page));
+  check(
+    (await nextKind(page)) === 'making' &&
+      (await page.getByTestId('week-next-btn').getAttribute('aria-disabled')) === 'true',
+    '作っている間の主ボタンは「この週の案を作っています…」で押せない',
+  );
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="week-next"]')?.dataset.kind !== 'making',
+    null,
+    {
+      timeout: 150000,
+    },
+  );
+  const toast = page.locator('.toast').filter({ hasText: /の週の案を\d+日分作りました/ });
+  await toast.first().waitFor({ timeout: 10000 });
+  const tt = await toast.first().innerText();
+  check(
+    tt.includes(`${md(CROSS.start)}〜${md(CROSS.dates[6])}の週の案を${want}日分作りました`) &&
+      (await toast.first().getByTestId('batch-done-open').count()) === 0,
+    '作り終えた知らせ（その週を見ているので［週の予定を見る］は出さない）',
+    { tt, want },
+  );
+  await settle(page, 500);
+  const heads = await headsOf(page);
+  const future = CROSS.future.map((d) => heads[CROSS.dates.indexOf(d)]);
+  check(
+    future.every((h) => !/未作成|案なし/.test(h.text)),
+    '作ると今日以降の日の「未作成」「案なし」が消える',
+    future,
+  );
+  const d = await stored(page);
+  const months = [...new Set(CROSS.future.filter((x) => d.aiPlans[x]).map((x) => x.slice(0, 7)))];
+  check(
+    months.length === 2 && CROSS.dates.filter((x) => x < TODAY).every((x) => !d.aiPlans[x]),
+    '週の作るは2つの月の日に案を作り、今日より前の日は作らない',
+    { months, plans: Object.keys(d.aiPlans).sort() },
+  );
+  check(
+    Object.keys(d.aiPlans).every((x) => x >= CROSS.start && x <= CROSS.dates[6]),
+    '週の外の日は作らない（月のまとめて作るとの違い）',
+    Object.keys(d.aiPlans).sort(),
+  );
+}
+
+async function weekConfirm(page) {
+  if (!CROSS) return check(false, 'week-confirm：月をまたぐ週が無い');
+  await open(page, `/week?d=${CROSS.start}`);
+  await page.getByTestId('week-next').waitFor({ timeout: 30000 });
+  await page
+    .waitForFunction(() => document.querySelector('[data-testid="week-next"]')?.dataset.kind === 'confirm', null, {
+      timeout: 30000,
+    })
+    .catch(() => {});
+  const label = await page.getByTestId('week-next').innerText();
+  const k = Number(/まとめて確定（(\d+)日）/.exec(label)?.[1] ?? 0);
+  check(
+    (await nextKind(page)) === 'confirm' && k > 0,
+    '作り終えたら主ボタンは「この週の問題の無い日をまとめて確定（N日）」',
+    label,
+  );
+  await page.getByTestId('week-next-btn').click();
+  const dlg = page.getByTestId('confirm-dialog');
+  await dlg.waitFor({ timeout: 5000 });
+  const title = await page.getByTestId('confirm-title').innerText();
+  const body = await page.getByTestId('confirm-body').innerText();
+  const listed = CROSS.future.filter((x) => body.includes(dayLabel(x)));
+  check(
+    title === `問題の無い ${k}日を確定しますか？` && body.includes(`計 ${k}日`) && listed.length === k,
+    '確認：月のまとめて確定と同じ型（見出し・日付・計 N日）で、範囲はこの週',
+    { title, body },
+  );
+  check(new Set(listed.map((x) => x.slice(0, 7))).size === 2, '確認：2つの月の日をまとめて確定する', listed);
+  check(
+    (await page.evaluate(() => document.activeElement?.dataset.testid)) === 'confirm-cancel',
+    '確認：最初のフォーカスは取り消し',
+  );
+  await page.getByTestId('confirm-cancel').click();
+  await dlg.waitFor({ state: 'detached' });
+  check(Object.keys((await stored(page)).manualPlans).length === 0, '取り消すと何も確定しない');
+  await page.getByTestId('week-next-btn').click();
+  await dlg.waitFor({ timeout: 5000 });
+  await page.getByTestId('confirm-ok').click();
+  await page
+    .locator('.toast')
+    .filter({ hasText: `${k}日を確定しました` })
+    .first()
+    .waitFor({ timeout: 5000 });
+  await settle(page, 500);
+  const d = await stored(page);
+  check(
+    listed.every((x) => !!d.manualPlans[x]) && Object.keys(d.manualPlans).length === k,
+    '確定した日の割当を書く（この週の日だけ）',
+    Object.keys(d.manualPlans).sort(),
+  );
+  const kind = await nextKind(page);
+  check(
+    kind === 'done' || kind === 'rest',
+    '確定したあとは「済み」（残る日があれば日の予定で）。主ボタンは無くなる',
+    kind,
+  );
+  check(
+    (await page.evaluate(() => document.activeElement?.dataset.testid)) === 'week-next',
+    '確定したあと、フォーカスは主ボタンの場所（body に落とさない）',
+    await page.evaluate(() => document.activeElement?.dataset.testid ?? document.activeElement?.tagName),
+  );
+  await page.screenshot({ path: path.join(OUT_DIR, 'week-confirmed.png') });
+}
+
+/** 月をまたぐ週の次の週（後ろの月の中の週。今日以降の7日） */
+const W2 = CROSS ? addDays(CROSS.start, 7) : null;
+/**
+ * week-busy で月の予定のまとめて作るを動かす月（W2 の次の月。W2 の週には触れない）と、その月の後ろのほうの週
+ * （まとめて作るは日付の順に作るので、確かめる前にこの週の日へ届かないよう月の後ろの週にする）
+ */
+const YM3 = W2
+  ? (() => {
+      const [y, m] = W2.slice(0, 7).split('-').map(Number);
+      return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    })()
+  : null;
+const W3 = YM3 ? monday(`${YM3}-22`) : null;
+const W2_LABEL = W2 ? `${md(W2)}〜${md(addDays(W2, 6))}の週` : '';
+/**
+ * 計算（Worker のスクリプト）の読み込みを止めておく（作成を1日目のまま続けるため。速い端末では確かめる前に作り終わる）。
+ * 返す関数で通す
+ */
+async function holdWorker(page) {
+  let release = () => {};
+  const held = new Promise((r) => {
+    release = r;
+  });
+  const hold = async (route) => {
+    await held;
+    await route.continue().catch(() => {});
+  };
+  await page.route('**/worker-*.js', hold);
+  return async () => {
+    release();
+    await page.unroute('**/worker-*.js', hold).catch(() => {});
+  };
+}
+/** 上の帯（作っている間）が消えるまで待つ */
+const bandGone = (page, timeout = 60000) => page.getByTestId('batch-band').waitFor({ state: 'detached', timeout });
+
+/** 月の予定でまとめて作っている間に同じ月の週を開く：週の主ボタンは押せず、理由を見える文で（PRD D280） */
+async function weekBusy(page) {
+  if (!YM3) return check(false, 'week-busy：月をまたぐ週が無い');
+  const ym = YM3;
+  await page.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.aiPlans = {};
+    d.aiRuns = {};
+    d.manualPlans = {};
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await page.goto(`${BASE}#/month?ym=${ym}&layout=calendar`);
+  await page.reload();
+  await page.getByTestId('band-next').waitFor({ timeout: 30000 });
+  check(
+    (await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch',
+    '月の予定：次の一手は「まとめて作る」（前提）',
+  );
+  // 計算の読み込みを止めておき、月の作成が1日目のまま続くようにする
+  const release = await holdWorker(page);
+  try {
+    await page.getByTestId('band-next').click();
+    const panel = page.getByRole('dialog', { name: `${Number(ym.slice(5, 7))}月の案をまとめて作る` });
+    await panel.waitFor({ timeout: 10000 });
+    await panel.getByRole('button', { name: '作り始める' }).click();
+    await page.getByTestId('month-progress').waitFor({ timeout: 10000 });
+    // 読み直さずに同じ月の週の予定へ（作り続けている）
+    await page.evaluate((w) => {
+      location.hash = `#/week?d=${w}`;
+    }, W3);
+    await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
+    await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+    const btn = page.getByTestId('week-next-btn');
+    const why = page.getByTestId('week-next-why');
+    check(
+      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make' &&
+        (await btn.getAttribute('aria-disabled')) === 'true' &&
+        (await why.count()) === 1 &&
+        /ほかの案を作っています/.test(await why.innerText()) &&
+        (await btn.getAttribute('aria-describedby')) === (await why.getAttribute('id')),
+      '月の予定でまとめて作っている間は、週の主ボタンは押せず理由（aria-describedby）',
+      { why: await why.innerText().catch(() => '') },
+    );
+    // aria-disabled のボタンを押す（Playwright は押せない扱いにするので、押したときの出来事だけを起こす）
+    await btn.dispatchEvent('click');
+    await settle(page, 300);
+    check(
+      (await page.getByTestId('week-next').getAttribute('data-kind')) !== 'making' &&
+        (await page.locator('.toast').filter({ hasText: 'の週の案を' }).count()) === 0,
+      '押せない主ボタンを押しても週の作るは始まらない',
+    );
+    // 後始末：月の作成を止める
+    await page.getByTestId('batch-band-stop').click();
+  } finally {
+    // 計算の読み込みを通す（落ちても次の段を止めない）。止めた日は計算が読み込まれてから終わる
+    await release();
+  }
+  await bandGone(page);
+}
+
+/** 週の作るを上の帯の［止める］で止める：作った日は残り、主ボタンは「作る」に戻る */
+async function weekStop(page) {
+  if (!W2) return check(false, 'week-stop：月をまたぐ週が無い');
+  await open(page, `/week?d=${W2}`);
+  await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
+  const n0 = Number(/（(\d+)日）/.exec(await page.getByTestId('week-next-btn').innerText())?.[1] ?? 0);
+  check(
+    (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make' && n0 >= 2,
+    '止める前：この週の案を作る（2日以上）',
+    n0,
+  );
+  // 1日目を作っている間に止める（計算の読み込みを止めておく）
+  const release = await holdWorker(page);
+  try {
+    await page.getByTestId('week-next-btn').click();
+    await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+    check(
+      (await page.getByTestId('batch-band').getAttribute('aria-label')) === `${W2_LABEL}の案づくりの進み具合`,
+      '上の帯の名前は週の文言',
+      await page.getByTestId('batch-band').getAttribute('aria-label'),
+    );
+    await page.getByTestId('batch-band-stop').click();
+  } finally {
+    await release();
+  }
+  await bandGone(page);
+  const toast = page.locator('.toast').filter({ hasText: `${W2_LABEL}の案を` });
+  await toast.first().waitFor({ timeout: 10000 });
+  const tt = await toast.first().innerText();
+  await page.waitForFunction(() => document.querySelector('[data-testid="week-next"]')?.dataset.kind === 'make', null, {
+    timeout: 10000,
+  });
+  const n1 = Number(/（(\d+)日）/.exec(await page.getByTestId('week-next-btn').innerText())?.[1] ?? 0);
+  check(
+    /作ったところで止めました/.test(tt) && n1 > 0 && n1 < n0,
+    '［止める］で止まり、作った日は残り、主ボタンは残りの日の「作る」に戻る',
+    { tt, n0, n1 },
+  );
+}
+
+/** 別の週を見ている間に週の作るが終わる：知らせに［週の予定を見る］、押すとその週 */
+async function weekDoneElsewhere(page) {
+  if (!W2) return check(false, 'week-done-elsewhere：月をまたぐ週が無い');
+  await open(page, `/week?d=${W2}`);
+  await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
+  await page.getByTestId('week-next-btn').click();
+  await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+  // 読み直さずに別の週へ（作り続けている）
+  await page.evaluate((w) => {
+    location.hash = `#/week?d=${w}`;
+  }, CROSS.start);
+  await page
+    .getByTestId('week-title')
+    .filter({ hasText: md(CROSS.start) })
+    .waitFor({ timeout: 10000 });
+  const toast = page
+    .locator('.toast')
+    .filter({ hasText: `${W2_LABEL}の案を` })
+    .filter({ hasText: '作りました' });
+  await toast.first().waitFor({ timeout: 150000 });
+  const open2 = toast.first().getByTestId('batch-done-open');
+  check(
+    (await open2.count()) === 1 && (await open2.innerText()).includes('週の予定を見る'),
+    '別の週を見ている間に終わると、知らせに［週の予定を見る］',
+    await toast.first().innerText(),
+  );
+  await open2.click();
+  await page.waitForFunction((w) => location.hash === `#/week?d=${w}`, W2, { timeout: 10000 });
+  check(urlOf(page).includes(`#/week?d=${W2}`), '［週の予定を見る］で作った週の週の予定へ', urlOf(page));
+}
+
+/** 表の絞り込みに「訪問の種類」（PRD D285）：種類ごとのチップ（人数つき）→押すとその種類の訪問がある人に絞る（URL の ?cf= に type:）→再読み込み・戻るで戻る */
 async function visitType(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await open(page, '/week?view=clients');
@@ -446,6 +841,13 @@ const steps = sharedPage({
     // データを書き換えるので後ろに
     ['next-week', nextWeek],
     ['search', search],
+    // この週の案を作る・確定（PRD D280・D282）。データを書き換えるので最後に
+    ['week-unmade', weekUnmade],
+    ['week-make', weekMake],
+    ['week-confirm', weekConfirm],
+    ['week-busy', weekBusy],
+    ['week-stop', weekStop],
+    ['week-done-elsewhere', weekDoneElsewhere],
   ],
 });
 

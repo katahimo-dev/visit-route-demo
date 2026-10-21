@@ -457,3 +457,65 @@ label.week-who {
     background: var(--card);
   }
 }
+
+/* 週の主ボタン（PRD D280。ADR-0046）：作る → 確定 → 済み の1つ。押せない理由は下に見える文で */
+.week-next {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 100%;
+}
+.week-next:focus {
+  outline: none;
+}
+.week-next:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.week-next-why {
+  font-size: 0.8rem;
+  text-align: right;
+  max-width: 22em;
+}
+.week-next-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--sub);
+}
+.week-next-status.is-done {
+  color: var(--ok-ink);
+  font-weight: 700;
+}
+.week-next-short {
+  display: none;
+}
+/* 日の見出しの「未作成」（PRD D282）：0件と分ける。注意の色にはしない（まだ作っていないだけ） */
+.week-day-unmade {
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+@media (max-width: 600px) {
+  .week-next {
+    align-items: stretch;
+    width: 100%;
+  }
+  .week-next-why {
+    text-align: left;
+  }
+  .week-next-long {
+    display: none;
+  }
+  .week-next-short {
+    display: inline;
+  }
+}
+@media print {
+  .week-next {
+    display: none;
+  }
+}
