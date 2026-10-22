@@ -54,8 +54,10 @@ export type MonthListRow = {
   stateText: string;
   /** 定期パターンからまだ作っていない訪問の件数（今日以降の、訪問の無い日だけ。PRD D282） */
   unmade: number;
-  /** 要対応（赤い枠と点。今日より前の日は付けない。マスと同じ。PRD D228） */
+  /** 要対応（赤い枠。今日より前の日は付けない。マスと同じ。PRD D228） */
   care: boolean;
+  /** 要対応の札「要対応 N」の N（要対応の一覧の行の数。0＝札なし。マスと同じ。PRD D295） */
+  attention: number;
   /** 注意（黄の点線。今日以降で訪問があるのに案が無い。マスと同じ） */
   caution: boolean;
   /**
@@ -77,9 +79,10 @@ export function monthListRow(
   s: DayStatus,
   today: string,
   extra: readonly string[] = [],
-  opts: { unmade?: number; absenceDone?: boolean } = {},
+  opts: { unmade?: number; absenceDone?: boolean; attention?: number } = {},
 ): MonthListRow {
   const unmade = opts.unmade ?? 0;
+  const attention = s.date < today ? 0 : (opts.attention ?? 0);
   const d = s.date;
   const wd = weekday(d);
   const isPast = d < today;
@@ -103,7 +106,7 @@ export function monthListRow(
     ...(s.count > 0 ? [`訪問 ${s.count}件`] : []),
     stateText,
     ...(notMade > 0 ? [`定期パターンからまだ作っていない訪問 ${notMade}件`] : []),
-    ...(care ? ['要対応'] : []),
+    ...(care || attention > 0 ? [attention > 0 ? `要対応 ${attention}` : '要対応'] : []),
     ...(caution ? ['注意：まだ案が無い'] : []),
     ...flags.map((f) => f.text),
     ...extra,
@@ -119,6 +122,7 @@ export function monthListRow(
     stateText,
     unmade: notMade,
     care,
+    attention,
     caution,
     flags,
     label,

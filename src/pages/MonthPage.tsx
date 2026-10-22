@@ -112,6 +112,7 @@ import {
   monthListFocusDate,
   monthListRow,
 } from '../lib/monthList';
+import { attentionCountByDate, showRestMark, usualRestByWeekday } from '../lib/monthRest';
 import { scrollBehavior } from '../lib/motion';
 import { mdText } from '../lib/patternText';
 import { type BandOp, urgentCount } from '../lib/progressBand';
@@ -484,6 +485,21 @@ export default function MonthPage() {
     () => attentionList(data, days.map((d) => statuses.get(d)!).filter(Boolean), today),
     [data, days, statuses, today],
   );
+  /** 日ごとの要対応の札「要対応 N」の N（右の欄の行と同じ数え方。PRD D295） */
+  const attentionByDate = useMemo(() => attentionCountByDate(attention), [attention]);
+  /** 曜日ごとの「ふだん」の休みの人数（同じ月の同じ曜日の最頻値。「休 N」はこれより多い日だけ出す。PRD D295） */
+  const usualRest = useMemo(
+    () =>
+      usualRestByWeekday(
+        days
+          .filter((d) => ymOf(d) === ym)
+          .map((d) => {
+            const m = marks.get(d);
+            return { date: d, resting: m ? m.off.length + m.requested.length : 0 };
+          }),
+      ),
+    [days, ym, marks],
+  );
   /** 欠勤あり（対応済み）の日（PRD D281。要対応に数えず、情報として右の欄・マス・一覧に残す） */
   const handled = useMemo(
     () => handledAbsences(data, days.map((d) => statuses.get(d)!).filter(Boolean), today),
@@ -781,7 +797,11 @@ export default function MonthPage() {
       const off = offStaffId ? offDayState(data, offStaffId, d, today) : undefined;
       if (off) extra.push(OFF_STATE_TEXT[off]);
       out.push({
-        row: monthListRow(s, today, extra, { unmade: unmadeByDate.get(d) ?? 0, absenceDone: handledDates.has(d) }),
+        row: monthListRow(s, today, extra, {
+          unmade: unmadeByDate.get(d) ?? 0,
+          absenceDone: handledDates.has(d),
+          attention: attentionByDate.get(d) ?? 0,
+        }),
         extra,
         off,
       });
@@ -800,6 +820,7 @@ export default function MonthPage() {
     today,
     unmadeByDate,
     handledDates,
+    attentionByDate,
   ]);
   /** 日ごとの一覧（最初に見せる日へ巻く。PRD D189） */
   const listRef = useRef<HTMLUListElement>(null);
@@ -1036,7 +1057,9 @@ export default function MonthPage() {
         {noVisitsWhy && <p className="sub">{noVisitsWhy}</p>}
         {helpOpen && (
           <div ref={helpRef} className="hint-body month-help" tabIndex={-1} data-testid="month-help">
-            日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠と赤い点の日（「要対応」）は、入らない訪問がある・必須の違反がある・休みの人に訪問が残る日です（必須の違反は点数の基準のプリセット「
+            日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠の日や「要対応
+            N」の札の日（N
+            は右の「要対応」の欄の行の数）は、入らない訪問がある・必須の違反がある・休みの人に訪問が残る日です（必須の違反は点数の基準のプリセット「
             {scoreRulerName}
             」の条件で見ます）。黄の点線の枠の日（「注意」）は、今日以降で訪問があるのにまだ案が無い日です（まとめて作るか日の予定で作ります）。「条件が変わった」は、案を作ったあとに訪問・
             {terms.staff}
@@ -1162,7 +1185,13 @@ export default function MonthPage() {
                       </span>
                       <span className="month-list-count">{r.count > 0 ? `${r.count}件` : ''}</span>
                       <span className="month-list-flags">
-                        {r.care && <span className="month-dot" aria-hidden="true" />}
+                        {r.attention > 0 ? (
+                          <span className="month-attn" data-testid="month-attn">
+                            要対応 {r.attention}
+                          </span>
+                        ) : (
+                          r.care && <span className="month-dot" aria-hidden="true" />
+                        )}
                         {r.flags.map((f) => (
                           <span key={f.text} className={`month-flag is-${f.tone}`}>
                             {f.text}
@@ -1221,6 +1250,8 @@ export default function MonthPage() {
                             offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
                             unmade={unmadeByDate.get(d) ?? 0}
                             absenceDone={handledDates.has(d)}
+                            attention={attentionByDate.get(d) ?? 0}
+                            usualRest={usualRest[weekday(d)] ?? 0}
                             onOpen={openDay}
                             onToggleOff={toggleOff}
                           />
@@ -1747,7 +1778,7 @@ function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
           <span className="is-opened">凡例を閉じる</span>
         </span>
         <span className="sub month-legend-line">
-          色＝日の状態・黄の点線＝案なし（注意）・赤い枠と点＝要対応・▶■＝始まる／終わる
+          色＝日の状態・黄の点線＝案なし（注意）・赤い枠と「要対応 N」の札＝要対応・▶■＝始まる／終わる
           {bar === 'load' ? '・棒＝30分ごとの空き' : bar === 'staff' ? '・棒＝その人の時間帯' : ''}
           。マスにマウスを乗せるかフォーカスすると、そのマスの読み方が出ます
         </span>
@@ -1787,6 +1818,12 @@ function MonthLegendBody({ bar }: { bar: 'load' | 'staff' | null }) {
             <span className="month-dot" />
           </span>
           要対応（入らない・違反・休みの人に訪問）
+        </span>
+        <span className="month-legend-item">
+          <span className="month-attn" aria-hidden="true">
+            要対応 N
+          </span>
+          要対応の件数（右の欄の行の数）
         </span>
         <span className="month-legend-item">▶ 始まる・■ 終わる</span>
       </span>
@@ -1868,6 +1905,10 @@ type CellProps = {
   unmade: number;
   /** 欠勤の手当てが済んだ日（PRD D281。「欠」の印に「済」） */
   absenceDone: boolean;
+  /** 要対応の札「要対応 N」の N（0＝札なし。今日より前の日は出さない。PRD D295） */
+  attention: number;
+  /** 同じ月の同じ曜日の「ふだん」の休みの人数（「休 N」はこれより多い日だけ出す。PRD D295） */
+  usualRest: number;
   onOpen: (date: string) => void;
   onToggleOff: (date: string) => void;
 };
@@ -1904,6 +1945,8 @@ const DayCell = memo(function DayCell(props: CellProps) {
   // 赤は要対応だけ（PRD D228）。今日以降で訪問があるのに案の無い日は注意（黄の点線）
   const care = s.needsCare && !past;
   const caution = !care && !past && s.count > 0 && s.state === 'none';
+  /** 要対応の札の N（要対応の一覧の行の数。今日より前の日は出さない） */
+  const attn = past ? 0 : props.attention;
   /** 未作成の日（訪問が本当に0件の日と分ける。PRD D282） */
   const unmade = s.count === 0 && !past ? props.unmade : 0;
   /** 訪問はあるが、ほかに定期パターンからまだ作っていない訪問がある日（週の見出しの「N件・ほか未作成」と同じ。PRD D282） */
@@ -1916,7 +1959,8 @@ const DayCell = memo(function DayCell(props: CellProps) {
   if (unmadePart > 0) parts.push(`ほかに定期パターンからまだ作っていない訪問 ${unmadePart}件`);
   else if (unmade > 0) parts.push(`未作成（定期パターンからまだ作っていない訪問 ${unmade}件）`);
   else parts.push('訪問なし');
-  if (care) parts.push('要対応');
+  if (attn > 0) parts.push(`要対応 ${attn}`);
+  else if (care) parts.push('要対応');
   if (caution) parts.push('注意：まだ案が無い');
   if (s.unassigned > 0) parts.push(`入らない ${s.unassigned}件`);
   if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
@@ -1982,6 +2026,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
     ]
       .filter(Boolean)
       .join('／');
+    // 見た目の「休 N」はふだんより多い日だけ（PRD D295）。読み上げ・吹き出しの文には人数を今までどおり残す
+    const restShown = showRestMark({
+      resting,
+      requested: mk.requested.length,
+      usual: props.usualRest,
+      past,
+    });
     if (resting > 0) parts.push(`休む${staffTerm} ${resting}人（${restDetail}）`);
     if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}${props.absenceDone ? '（対応済み）' : ''}`);
     if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
@@ -1994,7 +2045,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     body.push(
       <TypeStack key="types" types={mk.types} typeById={typeById} />,
       <span key="marks" className="month-marks">
-        {resting > 0 && (
+        {restShown && (
           <span
             className={`month-mark${mk.requested.length > 0 ? ' is-requested' : ''}`}
             title={`休む${staffTerm} ${resting}人（${restDetail}）`}
@@ -2198,9 +2249,11 @@ const DayCell = memo(function DayCell(props: CellProps) {
     count: s.count,
     stateText: s.count > 0 ? STATE_TEXT[s.state] : null,
     care,
+    attention: attn,
     caution,
     types: focus === 'all' && mk.types.length > 0,
     resting: restingAll,
+    restShown: showRestMark({ resting: restingAll, requested: mk.requested.length, usual: props.usualRest, past }),
     requested: mk.requested.length,
     absent: mk.absent.length > 0,
     absentDone: props.absenceDone,
@@ -2274,7 +2327,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
           {s.count > 0 && s.state === 'diff' && (
             <PencilLine size={12} className="month-diff-icon" aria-hidden="true" data-testid="month-diff-mark" />
           )}
-          {care && <span className="month-dot" aria-hidden="true" />}
+          {attn > 0 ? (
+            <span className="month-attn" data-testid="month-attn">
+              要対応 {attn}
+            </span>
+          ) : (
+            care && <span className="month-dot" aria-hidden="true" />
+          )}
           {s.count > 0 && focus === 'all' && <span className="month-count">{s.count}件</span>}
           {unmade > 0 && (
             <span className="month-unmade" data-testid="month-unmade">

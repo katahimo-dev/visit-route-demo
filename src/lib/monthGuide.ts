@@ -9,8 +9,12 @@ export type CellGuideInput = {
   count: number;
   /** 日の状態の文（案なし・案あり・確定済み・未確定の変更あり）。訪問が無ければ null */
   stateText: string | null;
-  /** 要対応（赤い点・赤い枠） */
+  /** 要対応（赤い枠。「要対応 N」の札が無い日は赤い点も） */
   care: boolean;
+  /** 要対応の札の N（要対応の一覧の行の数。PRD D295。0・省略＝札なし） */
+  attention?: number;
+  /** 「休 N」をマスに出しているか（PRD D295。ふだんより多い日だけ。省略＝出している） */
+  restShown?: boolean;
   /** 注意（黄の点線の枠。今日以降で案なし） */
   caution?: boolean;
   /** 種類ごとの積み上げの帯があるか */
@@ -55,12 +59,17 @@ export function cellGuide(x: CellGuideInput): string[] {
       '「未作成」＝定期パターンからまだ訪問を作っていない日（まとめて作る・週の予定の「この週の案を作る」で作る）',
     );
   else out.push('白い背景＝訪問の無い日');
-  if (x.care) out.push('赤い点・赤い枠＝要対応（入らない訪問・必須の違反・休みの人に訪問）');
+  if (x.care)
+    out.push(`${x.attention ? '赤い枠' : '赤い点・赤い枠'}＝要対応（入らない訪問・必須の違反・休みの人に訪問）`);
+  if (x.attention)
+    out.push(
+      '赤い「要対応 N」の札＝要対応の件数（右の「要対応」の欄の行の数。入らない・休みの人に・条件が変わった・拘束超・欠勤）',
+    );
   if (x.caution) out.push('黄の点線の枠＝注意（訪問があるのにまだ案が無い。まとめて作るか日の予定で作る）');
   if (x.focus === 'all') {
     if (x.count > 0) out.push('右上の「N件」＝この日の訪問の件数');
     if (x.types) out.push('色の帯＝訪問の種類ごとの件数');
-    if (x.resting > 0)
+    if (x.resting > 0 && x.restShown !== false)
       out.push(`「休 N」＝休む${x.staffTerm}の人数${x.requested > 0 ? '（「（希 N）」はそのうち希望休の人数）' : ''}`);
     if (x.unmadePart) out.push('「ほか未作成」＝この日には、定期パターンからまだ作っていない訪問もある');
     if (x.absent)
