@@ -8,8 +8,8 @@ import { jstDate } from '../domain/time';
 import { dateText, newId } from '../lib/common';
 import { appHistory } from '../lib/history';
 import { createValueStore, useValueStore } from '../lib/valueStore';
-import { keyMove, movedText, moveLabel, neighborStaff, type VisitMove, visitKeyOf } from '../lib/visitKeys';
-import { cancelVisitOp, SCOPE_LABELS, type VisitScope } from '../lib/visitOps';
+import { issuesAt, keyMove, movedText, moveLabel, nextStaffFor, type VisitMove, visitKeyOf } from '../lib/visitKeys';
+import { cancelVisitOp, SCOPE_LABELS, toldDaysChanged, type VisitScope } from '../lib/visitOps';
 import { findVisit } from '../patterns';
 import { useDemoData } from '../store';
 import { useConfirm } from './ConfirmDialog';
@@ -73,6 +73,14 @@ export function useVisitKeys(opts: {
       },
       visitId: string,
     ): boolean => {
+      // Alt+↓：繰り返しの回の範囲の帯が出ていれば、その先頭のボタンへ（帯は画面の下に浮いていてフォーカスの順が遠い）
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowDown') {
+        const first = document.querySelector<HTMLElement>('[data-testid="key-scope-following"]');
+        if (!first) return false;
+        e.preventDefault();
+        first.focus();
+        return true;
+      }
       const k = visitKeyOf(e);
       if (!k) return false;
       const o = optsRef.current;
@@ -89,10 +97,8 @@ export function useVisitKeys(opts: {
       const today = jstDate(Date.now());
       const clientName = d.clients.find((c) => c.id === v.clientId)?.displayName ?? '（不明）';
       const staffName = (id: string) => d.staff.find((s) => s.id === id)?.name ?? '（不明）';
-      const fail = (why: string) => {
-        announceMove(`動かせません：${why}`);
-        toast(`動かせません：${why}`);
-      };
+      // できない理由は知らせ（トーストは output なので読み上げも1回）
+      const fail = (why: string) => toast(`動かせません：${why}`);
       if (k.kind === 'cancel') {
         if (v.cancelled) return true;
         if (v.date < today) {
@@ -117,12 +123,13 @@ export function useVisitKeys(opts: {
       }
       let move: VisitMove;
       if (k.kind === 'staff') {
-        const next = neighborStaff(o.staffOrder(visitId), v.staffId, k.step);
-        if (!next) {
-          fail(k.step > 0 ? 'これより右に担当の列はありません' : 'これより左に担当の列はありません');
+        // その向きに順に見て、この訪問を担当できる最初の人（できない人は飛ばす）
+        const next = nextStaffFor(d, visitId, o.staffOrder(visitId), k.step);
+        if ('why' in next) {
+          fail(next.why);
           return true;
         }
-        move = { kind: 'staff', staffId: next };
+        move = { kind: 'staff', staffId: next.staffId };
       } else move = k;
       const r = keyMove(d, visitId, move, today);
       if (!r.ok) {
@@ -149,7 +156,12 @@ export function useVisitKeys(opts: {
         scope: 'once',
         clientName,
       });
-      announceMove(`動かしました：${movedText(r, clientName, staffName)}`);
+      // 動かした先で要対応（担当が休みの日へ移した・条件に合わないなど）なら、読み上げに添えて知らせる
+      const care = issuesAt(after, r.visitId, r.date);
+      announceMove(
+        `動かしました：${movedText(r, clientName, staffName)}${care.length > 0 ? `。要対応：${care.join('・')}` : ''}${r.repeating ? '。Alt+↓ で範囲（これ以降・すべて）を選べます' : ''}`,
+      );
+      if (care.length > 0) toast(`動かした先で要対応です：${care.join('・')}`);
       o.onMoved?.({ visitId: r.visitId, date: r.date });
       return true;
     },
@@ -164,11 +176,14 @@ export function useVisitKeys(opts: {
  */
 export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date: string }) => void }) {
   const { data, update, undo } = useDemoData();
+  const latest = useRef(data);
+  latest.current = data;
   const note = useValueStore(lastMove);
   const said = useValueStore(announceStore);
   const toast = useToast();
   const shown = !!note && note.repeating && note.scope === 'once' && data === note.after;
-  const rescope = (scope: VisitScope) => {
+  const confirm = useConfirm();
+  const rescope = async (scope: VisitScope) => {
     if (!note) return;
     const today = jstDate(Date.now());
     // この回だけ動かす前のデータ・訪問の ID（この回だけなら ID は変わらない）で、範囲つきに当て直す
@@ -180,7 +195,19 @@ export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date
       toast(`「${SCOPE_LABELS[scope]}」にはできません：${r2.why}`);
       return;
     }
-    if (appHistory.peek()?.after !== data) {
+    // 確定（伝えた）した日の訪問も変わるなら確かめる（訪問の詳細の欄・週のドラッグと同じ文）
+    const fixed = toldDaysChanged(note.before, r2.data, today);
+    if (
+      fixed.length > 0 &&
+      !(await confirm({
+        title: '確定した日の訪問も変えますか？',
+        body: `確定した日（${fixed.map((x) => dateText(x)).join('・')}）の訪問も変わります。その日は「未連絡の変更あり」になり、連絡の一覧に出ます。`,
+        confirmLabel: '変える',
+      }))
+    )
+      return;
+    // 確かめている間に別の変更が入ったら選び直さない
+    if (appHistory.peek()?.after !== latest.current) {
       toast('あとから別の変更があったので、範囲を選び直せません');
       lastMove.set(null);
       return;
@@ -200,7 +227,16 @@ export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date
         {said?.text ?? ''}
       </output>
       {shown && note && (
-        <section className="key-move-band" aria-label="動かす範囲" data-testid="key-move-band">
+        <section
+          className="key-move-band"
+          aria-label="動かす範囲"
+          data-testid="key-move-band"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            backToBand(note.visitId);
+          }}
+        >
           <WithIcon icon={Repeat} size={15}>
             <span>
               繰り返しの回を<strong>この回だけ</strong>動かしました（{note.label}）
@@ -209,12 +245,17 @@ export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date
           <button
             type="button"
             className="btn btn-small"
-            onClick={() => rescope('following')}
+            onClick={() => void rescope('following')}
             data-testid="key-scope-following"
           >
             これ以降も
           </button>
-          <button type="button" className="btn btn-small" onClick={() => rescope('all')} data-testid="key-scope-all">
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => void rescope('all')}
+            data-testid="key-scope-all"
+          >
             すべての回も
           </button>
           <button
@@ -231,4 +272,14 @@ export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date
       )}
     </>
   );
+}
+
+/** 動かした訪問の帯（日の予定の時間軸・週の予定）へフォーカスを戻す */
+function backToBand(visitId: string) {
+  const v = CSS.escape(visitId);
+  document
+    .querySelector<HTMLElement>(
+      `.tl-band[data-visit="${v}"] .tl-band-btn, [data-testid="week-band"][data-visit="${v}"]`,
+    )
+    ?.focus();
 }

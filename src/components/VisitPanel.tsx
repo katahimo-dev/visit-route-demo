@@ -29,7 +29,7 @@ import { useDay } from '../app/day';
 import type { DemoData } from '../contracts/data';
 import type { Visit } from '../contracts/documents';
 import { jstDate } from '../domain/time';
-import { dateText, newId, own } from '../lib/common';
+import { dateText, newId } from '../lib/common';
 import { confirmLeave } from '../lib/leaveGuard';
 import { directionsHref, HOME_LABEL } from '../lib/mapsLink';
 import { typeOf } from '../lib/patternText';
@@ -44,6 +44,7 @@ import {
   SCOPE_LABELS,
   scopeTexts,
   staffChoices,
+  toldDaysChanged,
   uncancelVisitOp,
   type VisitDraft,
   type VisitScope,
@@ -274,7 +275,7 @@ function VisitPanel({
     }
     // これ以降・すべてで確定した日の訪問も変わるなら確かめる（週のドラッグと同じ）
     if (scope !== 'once' && !isNew) {
-      const fixed = r.dates.filter((x) => !!own(data.snapshots, x));
+      const fixed = toldDaysChanged(data, r.data, today);
       if (
         fixed.length > 0 &&
         !(await confirm({
@@ -550,13 +551,15 @@ function VisitPanel({
               aria-expanded={act === 'cancel'}
               disabled={!info.editable}
               title={!info.editable ? '今日より前の訪問は変えられません' : undefined}
-              onClick={() => setAct(act === 'cancel' ? null : 'cancel')}
+              // 取り消した回は押すとそのまま取り消しをやめる（「取り消しをやめる」を2つ並べない）
+              onClick={() => (cancelled ? doUncancel() : setAct(act === 'cancel' ? null : 'cancel'))}
               data-testid="vp-big-cancel"
             >
               {cancelled ? <Undo2 size={22} aria-hidden="true" /> : <Ban size={22} aria-hidden="true" />}
               {cancelled ? '取り消しをやめる' : '取り消す'}
             </button>
-            {routeHref ? (
+            {/* 道順のリンク（ADR-0028 の mapsLink）を切っていれば出さない（3つに詰める） */}
+            {!mapsOn ? null : routeHref ? (
               <a
                 className="btn vp-big-btn"
                 href={routeHref}
@@ -850,7 +853,7 @@ function VisitPanel({
           {error?.text}
         </FieldError>
 
-        {v && info?.editable && (!narrow || act === 'cancel') && (
+        {v && info?.editable && (!narrow || (act === 'cancel' && !cancelled)) && (
           <section className="vp-section vp-cancel" aria-label="取り消し" data-testid="vp-cancel-area">
             {cancelled ? (
               <button type="button" className="btn" onClick={doUncancel} data-testid="vp-uncancel">

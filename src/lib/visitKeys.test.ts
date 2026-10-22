@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { addDays } from '../domain/time';
 import { findVisit, visitsOn } from '../patterns';
 import { createDemoData } from '../seed';
-import { keyMove, movedText, moveLabel, neighborStaff, visitKeyOf } from './visitKeys';
+import { issuesAt, keyMove, movedText, moveLabel, nextStaffFor, visitKeyOf } from './visitKeys';
+import { draftOf, staffChoices, toldDaysChanged } from './visitOps';
 
 const TODAY = '2026-10-21';
 const data = createDemoData(TODAY);
@@ -29,13 +30,27 @@ describe('キーの読み替え（PRD D333）', () => {
     expect(visitKeyOf({ ...key('z'), ctrlKey: true })).toBeNull();
     expect(visitKeyOf(key(' '))).toBeNull();
   });
-  it('隣の担当：端で止まる・担当なしから → は先頭', () => {
-    expect(neighborStaff(['a', 'b', 'c'], 'b', 1)).toBe('c');
-    expect(neighborStaff(['a', 'b', 'c'], 'b', -1)).toBe('a');
-    expect(neighborStaff(['a', 'b', 'c'], 'c', 1)).toBeNull();
-    expect(neighborStaff(['a', 'b', 'c'], null, 1)).toBe('a');
-    expect(neighborStaff(['a', 'b', 'c'], null, -1)).toBeNull();
-    expect(neighborStaff([], 'a', 1)).toBeNull();
+  it('隣の担当（Shift+←→）：その向きに順に見て、担当できる最初の人。担当できない人は飛ばし、いなければ理由', () => {
+    const order = data.staff.filter((x) => x.active).map((x) => x.id);
+    const c = staffChoices(data, rep.id, draftOf(rep));
+    const ok = new Set(c.choices.filter((x) => !x.disabled && !x.current).map((x) => x.staffId));
+    const r = nextStaffFor(data, rep.id, order, 1);
+    const at = rep.staffId ? order.indexOf(rep.staffId) : -1;
+    const want = order.slice(at + 1).find((id) => ok.has(id));
+    if (want) expect(r).toEqual({ staffId: want });
+    else expect('why' in r).toBe(true);
+    // 間に担当できない人（並びに無い ID・休み）を挟んでも飛ばす
+    if (want) {
+      const withGap = [...order.slice(0, at + 1), 'nobody', ...order.slice(at + 1)];
+      expect(nextStaffFor(data, rep.id, withGap, 1)).toEqual({ staffId: want });
+    }
+    // 担当できる人がいなければ理由
+    expect(nextStaffFor(data, rep.id, [rep.staffId ?? 'x', 'nobody'], 1)).toMatchObject({
+      why: expect.stringContaining('担当できる人がいません'),
+    });
+    expect(nextStaffFor(data, rep.id, [rep.staffId ?? 'x'], 1)).toMatchObject({
+      why: expect.stringContaining('担当の列はありません'),
+    });
   });
 });
 
@@ -85,6 +100,34 @@ describe('キーで動かす（PRD D333）', () => {
     const cancelled = { ...data, visits: data.visits.map((v) => (v.id === rep.id ? { ...v, cancelled: true } : v)) };
     const saved = findVisit(cancelled, rep.id);
     if (saved?.cancelled) expect(keyMove(cancelled, rep.id, { kind: 'time', minutes: 15 }, TODAY).ok).toBe(false);
+  });
+  it('これ以降で変わる確定（伝えた）した日を、計算した回でも見つける（範囲を選び直す帯・欄の確かめ）', () => {
+    const next = addDays(TODAY, 7);
+    const told = { ...data, snapshots: { ...data.snapshots, [next]: { at: 0, visits: [] } as never } };
+    const once = keyMove(told, rep.id, { kind: 'time', minutes: 15 }, TODAY);
+    const all = keyMove(told, rep.id, { kind: 'time', minutes: 15 }, TODAY, 'following', {
+      visit: 'v-n',
+      patterns: ['pt-x', 'pt-y'],
+    });
+    expect(once.ok && toldDaysChanged(told, once.data, TODAY)).toEqual([]);
+    expect(all.ok && toldDaysChanged(told, all.data, TODAY)).toEqual([next]);
+  });
+  it('変わった日を返す（確定した日の確かめに使う）', () => {
+    const r = keyMove(data, rep.id, { kind: 'day', days: 1 }, TODAY);
+    expect(r.ok && [...r.dates].sort()).toEqual([TODAY, addDays(TODAY, 1)]);
+  });
+  it('動かした先の要対応：担当が休みの日へ移すと出る', () => {
+    if (!rep.staffId) return;
+    const next = addDays(TODAY, 1);
+    const off = {
+      ...data,
+      absences: [...data.absences, { id: 'ab-k', staffId: rep.staffId, date: next, from: null, to: null, note: '' }],
+    };
+    const r = keyMove(off, rep.id, { kind: 'day', days: 1 }, TODAY);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(issuesAt(r.data, r.visitId, r.date).length).toBeGreaterThan(0);
+    expect(issuesAt(data, rep.id, TODAY).length).toBe(0);
   });
   it('日をまたぐ時刻にはしない', () => {
     const late = { ...rep, earliestStart: '23:50', latestStart: '23:50', durationMinutes: 5 };

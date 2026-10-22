@@ -107,13 +107,39 @@ async function dateSend(page) {
   // スワイプ（右から左＝次の日、左から右＝前の日）
   const box = await page.getByTestId('day-list').boundingBox();
   const y = box.y + 30;
-  const swipe = async (from, to) => {
-    await page.mouse.move(from, y);
-    await page.mouse.down();
-    await page.mouse.move((from + to) / 2, y, { steps: 3 });
-    await page.mouse.move(to, y, { steps: 3 });
-    await page.mouse.up();
-  };
+  // タッチのスワイプ（pointerType="touch" の pointer の出来事。スワイプはタッチ・ペンだけで、マウスでなぞっても日を送らない）
+  const swipe = (from, to) =>
+    page.evaluate(
+      ([from, to, y]) => {
+        const el = document.elementFromPoint(from, y);
+        const fire = (type, x) =>
+          el.dispatchEvent(
+            new PointerEvent(type, {
+              bubbles: true,
+              pointerType: 'touch',
+              isPrimary: true,
+              button: 0,
+              clientX: x,
+              clientY: y,
+            }),
+          );
+        fire('pointerdown', from);
+        fire('pointermove', (from + to) / 2);
+        fire('pointermove', to);
+        fire('pointerup', to);
+      },
+      [from, to, y],
+    );
+  // マウスでなぞっても日を送らない
+  await page.mouse.move(box.x + box.width - 30, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 30, y, { steps: 6 });
+  await page.mouse.up();
+  await settle(page, 300);
+  check(
+    (await dateValue(page)) === d1 && (await panel(page).count()) === 0,
+    'マウスでなぞっても日を送らない・欄も開かない',
+  );
   await swipe(box.x + box.width - 30, box.x + 30);
   await until(async () => (await dateValue(page)) !== d1, 5000).catch(() => {});
   const d2 = await dateValue(page);
@@ -209,7 +235,11 @@ async function sheet(page) {
     (await page.getByTestId('vp-big-cancel').innerText()).includes('取り消しをやめる'),
     '取り消した回は「取り消しをやめる」',
   );
-  await page.getByTestId('vp-uncancel').click();
+  check(
+    (await page.getByTestId('vp-uncancel').count()) === 0,
+    '取り消した回の「取り消しをやめる」は1つだけ（大きなボタン）',
+  );
+  await page.getByTestId('vp-big-cancel').click();
   const un = await waitStored(page, (d) => !visitOf(d, vid)?.cancelled);
   check(un, '取り消しをやめる');
   // 日の予定で見る（今その日の日の予定なら閉じる）
@@ -404,6 +434,14 @@ async function keyboard(page) {
     '繰り返しの回は範囲の小さな帯（これ以降も・すべての回も）',
   );
   await shot(page, 'keyboard-after-1400');
+  check(/Alt\+↓ で範囲/.test(status ?? ''), '繰り返しの回は読み上げに範囲の帯への近道（Alt+↓）', status);
+  await page.keyboard.press('Alt+ArrowDown');
+  check(
+    (await page.evaluate(() => document.activeElement?.dataset.testid)) === 'key-scope-following',
+    'Alt+↓ で範囲の帯の先頭のボタンへ',
+  );
+  await page.keyboard.press('Escape');
+  check(await band().evaluate((el) => document.activeElement === el), '帯の中の Esc で動かした訪問の帯へ戻る');
   // これ以降も：範囲つきで当て直す（1手のまま）
   const patternsBefore = (await stored(page)).patterns.length;
   await page.getByTestId('key-scope-following').click();
@@ -422,28 +460,35 @@ async function keyboard(page) {
     (d) => visitsKey(d) === visitsKey(before) && d.patterns.length === patternsBefore,
   );
   check(back1, 'Ctrl+Z 1回で「これ以降」の前（この回だけ動かす前）に戻る');
-  // Shift+→ で隣の担当の列
+  // Shift+→ で右の、この訪問を担当できる最初の人の列（担当できない人は飛ばす）
   await band().focus();
   if (nextCol) {
+    const right = await page.evaluate(
+      (s) => {
+        const cols = [...document.querySelectorAll('.tl-col[data-staff]')].map((c) => c.dataset.staff);
+        return cols.slice(cols.indexOf(s) + 1);
+      },
+      await band().evaluate((el) => el.closest('.tl-col').dataset.staff),
+    );
     await page.keyboard.press('Shift+ArrowRight');
     const moved = await waitStored(page, (d) => {
       const v = visitOf(d, vid);
-      return !!v && v.staffId === nextCol && v.pinned;
+      return !!v && right.includes(v.staffId) && v.pinned;
     });
-    const why = await page.getByTestId('key-move-status').textContent();
-    check(
-      moved || /動かせません/.test(why ?? ''),
-      'Shift+→ で隣の担当の列（担当にしてピン。できなければ理由を読み上げ）',
+    const why = await page.locator('.toast').filter({ hasText: '動かせません' }).count();
+    check(moved || why > 0, 'Shift+→ で右の担当できる人の列（担当にしてピン。いなければ理由の知らせ）', {
+      right,
       why,
-    );
+    });
     if (moved) {
       await settle(page, 300);
+      const to = visitOf(await stored(page), vid).staffId;
       check(
         await band().evaluate(
           (el, s) => document.activeElement === el && el.closest('.tl-col').dataset.staff === s,
-          nextCol,
+          to,
         ),
-        'Shift+→ のあともフォーカスは帯（隣の列）',
+        'Shift+→ のあともフォーカスは帯（移った列）',
       );
       check(
         /担当を.+さんへ/.test((await page.getByTestId('undo-btn').getAttribute('title')) ?? ''),
@@ -514,6 +559,92 @@ async function keyboard(page) {
   check(await w.evaluate((el) => document.activeElement === el).catch(() => false), '週：動かしたあともフォーカスは帯');
   await page.keyboard.press(`${MOD}+z`);
   check(await waitStored(page, (d) => visitsKey(d) === visitsKey(wBefore)), '週：Ctrl+Z で戻る');
+}
+
+// ---- 1400px：範囲を選び直す帯で、確定（伝えた）した日も変わるなら確かめる ----
+async function rescopeConfirm(page) {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await freshPlan(page);
+  // 来週の同じ曜日を確定（伝えた）にする
+  const next = addDays(TODAY, 7);
+  await page.locator('.date-switch select').selectOption(next);
+  await page.getByTestId('adopt').waitFor({ timeout: 30000 });
+  await page.getByTestId('adopt').click();
+  // 要対応があるときだけ確認が出る
+  if (
+    await page
+      .getByTestId('confirm-dialog')
+      .waitFor({ timeout: 3000 })
+      .then(() => true)
+      .catch(() => false)
+  )
+    await page.getByTestId('confirm-ok').click();
+  const told = await waitStored(page, (d) => !!d.snapshots?.[next]);
+  if (!told) return check(false, '来週の同じ曜日を確定（確定の確かめの前提）');
+  await page.locator('.date-switch select').selectOption(TODAY);
+  await page.locator('.tl-band .tl-band-btn').first().waitFor({ timeout: 30000 });
+  await settle(page, 300);
+  const vid = await page.evaluate(() => document.querySelector('.tl-band[data-visit*="_"]')?.dataset.visit ?? null);
+  if (!vid) return check(false, '繰り返しの回の帯がある（確定の確かめ）');
+  await page.locator(`.tl-band[data-visit="${vid}"] .tl-band-btn`).focus();
+  await page.keyboard.press('ArrowDown');
+  const shown = await page
+    .getByTestId('key-move-band')
+    .waitFor({ timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown)
+    return check(false, '↓ で範囲の帯が出る（確定の確かめの前提）', {
+      vid,
+      status: await page.getByTestId('key-move-status').textContent(),
+      toast: await page.locator('.toast').allInnerTexts(),
+    });
+  const p0 = (await stored(page)).patterns.length;
+  await page.getByTestId('key-scope-following').click();
+  await page.getByTestId('confirm-dialog').waitFor({ timeout: 5000 });
+  check(
+    /確定した日の訪問も変えますか/.test(await page.getByTestId('confirm-title').innerText()),
+    '「これ以降も」：確定した日も変わるなら確かめる（欄・週のドラッグと同じ文）',
+  );
+  await page.getByTestId('confirm-cancel').click();
+  await settle(page, 300);
+  check(
+    (await stored(page)).patterns.length === p0 && (await page.getByTestId('key-move-band').count()) === 1,
+    '確かめで取り消すと範囲を変えない（この回だけのまま・帯は残る）',
+  );
+  await page.getByTestId('key-scope-following').click();
+  await page.getByTestId('confirm-dialog').waitFor({ timeout: 5000 });
+  await page.getByTestId('confirm-ok').click();
+  check(await waitStored(page, (d) => d.patterns.length > p0), '確かめで「変える」を押すと、これ以降も動かす');
+}
+
+// ---- 390px：道順のリンクを切ると道順のボタンを出さない・外を押すと閉じる ----
+async function mapsOff(page) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await freshPlan(page);
+  await page.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.org.features = { ...d.org.features, mapsLink: false };
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await page.reload();
+  await page.getByTestId('day-list').waitFor({ timeout: 60000 });
+  await rows(page).first().click();
+  await panel(page).waitFor();
+  const big = await page
+    .getByTestId('vp-big')
+    .locator('button, a')
+    .evaluateAll((els) => els.map((e) => e.textContent.trim()));
+  check(
+    JSON.stringify(big) === JSON.stringify(['担当を替える', '取り消す', '日の予定で見る']) &&
+      (await page.getByTestId('vp-big-route').count()) === 0,
+    '道順のリンクを切ると「道順」のボタンを出さない（3つに詰める）',
+    big,
+  );
+  // 下から出る欄の外（上の幕）を押すと閉じる
+  await page.mouse.click(195, 20);
+  await panel(page).waitFor({ state: 'detached', timeout: 5000 });
+  check(true, '下から出る欄は外を押すと閉じる');
 }
 
 // ---- 1400px：パレットで担当の名前・担当なし ----
@@ -621,7 +752,9 @@ const steps = sharedPage({
     ['multi', multi],
     ['tabs', tabs],
     ['keep-proposal', keepProposal],
+    ['maps-off', mapsOff],
     ['keyboard', keyboard],
+    ['rescope-confirm', rescopeConfirm],
     ['palette', palette],
     ['keep-range', keepRange],
   ],

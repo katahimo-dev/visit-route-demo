@@ -106,6 +106,7 @@ import { UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { issueBreakdown } from '../lib/month';
+import { type DayInputs, dayInputsOf, proposalDayFresh } from '../lib/monthBatch';
 import { scrollBehavior } from '../lib/motion';
 import { typeOf } from '../lib/patternText';
 import { leavePeople } from '../lib/personLinks';
@@ -202,8 +203,11 @@ type Proposal = {
   routes: Record<string, string[]>;
   /** 組み始めたときの訪問（変わっていれば当てない） */
   visits: readonly Visit[];
-  /** 組み始めたときの欠勤（変わっていれば当てない） */
-  absences: DemoData['absences'];
+  /**
+   * 組み始めたときのその日の問題の入力（欠勤・希望休・稼働時間の上書き・〈利用者さん〉の休みはその日の分、人・条件・種類・相性・
+   * 繰り返しは参照。範囲の提案と同じ lib/monthBatch の dayInputsOf）。画面を移っても提案を残すので、変わっていれば当てない
+   */
+  inputs: DayInputs;
   stopped: boolean;
 };
 
@@ -579,14 +583,14 @@ export default function PlanPage() {
     const forDate = date;
     const label = preset?.name ?? scoreRulerName;
     const startVisits = m.allVisits;
-    const startAbsences = data.absences;
+    const startInputs = dayInputsOf(dataRef.current, forDate);
     run('create', p, `${label}の`, (result) => {
       setProposal({
         date: forDate,
         label,
         routes: result.routes,
         visits: startVisits,
-        absences: startAbsences,
+        inputs: startInputs,
         stopped: result.stopped,
       });
       if (dateRef.current === forDate) toast(result.stopped ? '途中までの最良で提案を出しました' : '提案を出しました');
@@ -595,11 +599,9 @@ export default function PlanPage() {
   /** 提案の差（今の担当 → 提案）と点数 */
   const proposalView = useMemo(() => {
     if (!proposal || proposal.date !== date || !problem) return null;
-    // 提案を出したあとに訪問か欠勤が変わったら古い（欠勤は稼働時間を変えるので、出したときの問題と違う）
-    const same =
-      proposal.absences === data.absences &&
-      proposal.visits.length === m.allVisits.length &&
-      proposal.visits.every((v, i) => v === m.allVisits[i]);
+    // 提案を出したあとに訪問か、その日の問題の入力（欠勤・稼働時間・人・条件など）が変わったら古い
+    // 範囲の提案と同じ判定（訪問・その日の問題の入力が同じ・伝えていない。lib/monthBatch の proposalDayFresh）
+    const same = proposalDayFresh(data, { date, visits: proposal.visits, inputs: proposal.inputs });
     const diffv = attempt(() => reassignDiff({ problem, routes }, { problem, routes: proposal.routes }))
       .value as ReassignDiff | null;
     const hundredOf = (r: Record<string, string[]>) =>
@@ -607,7 +609,7 @@ export default function PlanPage() {
         ? (attempt(() => toHundred(score(scoreProblem, r).total, scoreScale)).value ?? null)
         : null;
     return { stale: !same, diff: diffv, before: hundredOf(routes), after: hundredOf(proposal.routes) };
-  }, [proposal, date, problem, routes, m.allVisits, data.absences, scoreProblem, scoreScale]);
+  }, [proposal, date, problem, routes, data, scoreProblem, scoreScale]);
   /** 提案を当てる（訪問に担当・開始を書く。ピンはそのまま。「元に戻す」で戻せる） */
   const applyProposal = () => {
     if (!proposal || !problem || !proposalView || running) return;

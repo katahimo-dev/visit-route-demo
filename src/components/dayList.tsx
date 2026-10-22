@@ -73,6 +73,8 @@ export function DayList({
     timer: ReturnType<typeof setTimeout> | null;
     long: boolean;
     moved: boolean;
+    /** マウスか（スワイプはタッチ・ペンだけ。マウスで文字をなぞったときに日を送らない） */
+    mouse: boolean;
   } | null>(null);
   const clearTimer = () => {
     const p = press.current;
@@ -89,6 +91,7 @@ export function DayList({
       timer: null,
       long: false,
       moved: false,
+      mouse: e.pointerType === 'mouse',
     } as NonNullable<typeof press.current>;
     if (row?.selectable) {
       p.timer = setTimeout(() => {
@@ -114,11 +117,15 @@ export function DayList({
     if (!p) return;
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
-    if (Math.abs(dx) >= SWIPE_X && Math.abs(dy) <= SWIPE_Y) {
+    if (!p.mouse && Math.abs(dx) >= SWIPE_X && Math.abs(dy) <= SWIPE_Y) {
       p.moved = true;
       if (dx < 0) onNext?.();
       else onPrev?.();
     }
+    // 続く click（同じ行）は印を読むので、そのあとで消す（行の外で離したときに古い印を残さない）
+    setTimeout(() => {
+      if (press.current === p) press.current = null;
+    }, 0);
   };
   /** 行を押した（長押し・スワイプのあとの click は捨てる） */
   const onRowClick = (row: DayListRow) => {
@@ -195,7 +202,7 @@ export function DayList({
                   className={[
                     'day-row',
                     issue ? 'is-issue' : '',
-                    r.staffName === '' ? 'is-unassigned' : '',
+                    r.staffName === '' && !state ? 'is-unassigned' : '',
                     state ? 'is-off' : '',
                     on ? 'is-multi' : '',
                   ].join(' ')}

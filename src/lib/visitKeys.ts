@@ -4,9 +4,10 @@
 // データは書き換えない（書くのは画面の update(fn, 手の名前)。全体の「元に戻す」で1手戻る）
 import type { DemoData } from '../contracts/data';
 import { addDays, hhmmToMinutes, minutesToHhmm } from '../domain/time';
-import { findVisit } from '../patterns';
+import { findVisit, visitsOn } from '../patterns';
 import { dateText } from './common';
-import { applyVisitEdit, draftOf, SCOPE_LABELS, type VisitScope } from './visitOps';
+import { dayProblemOf, routesOf, visitIssues } from './dayPlan';
+import { applyVisitEdit, draftOf, SCOPE_LABELS, staffChoices, type VisitScope } from './visitOps';
 
 /** 1回のキーで動かす時刻の幅（分） */
 export const KEY_STEP_MINUTES = 15;
@@ -56,17 +57,6 @@ export function visitKeyOf(e: {
   }
 }
 
-/**
- * 隣の担当（並び order の中で今の担当の次・前。端では止まる＝null）。担当なしなら → は先頭、← は null。
- * 今の担当が並びに無ければ先頭（→）か null（←）
- */
-export function neighborStaff(order: readonly string[], current: string | null, step: 1 | -1): string | null {
-  if (order.length === 0) return null;
-  const i = current === null ? -1 : order.indexOf(current);
-  if (i < 0) return step === 1 ? order[0]! : null;
-  return order[i + step] ?? null;
-}
-
 /** 手の名前（全体の「元に戻す」の title・知らせ） */
 export function moveLabel(m: VisitMove, staffName: (id: string) => string): string {
   if (m.kind === 'time') return `訪問を${Math.abs(m.minutes)}分${m.minutes > 0 ? '後' : '前'}へ`;
@@ -85,6 +75,8 @@ export type KeyMoveResult =
       staffId: string | null;
       /** 繰り返しの回か（範囲を選び直せる） */
       repeating: boolean;
+      /** 変わった日（確定した日が入っていれば確かめる） */
+      dates: string[];
     }
   | { ok: false; why: string };
 
@@ -130,7 +122,51 @@ export function keyMove(
     start: after.earliestStart,
     staffId: after.staffId,
     repeating: !!v.pattern,
+    dates: r.dates,
   };
+}
+
+/**
+ * Shift+←→ の行き先（並び order の中で、今の担当からその向きに順に見て、その訪問を担当できる最初の人）。
+ * 担当できるかは訪問の詳細の欄と同じ候補（staffChoices。その日に働く人で、必須の条件に合う人）。いなければ理由
+ */
+export function nextStaffFor(
+  d: DemoData,
+  visitId: string,
+  order: readonly string[],
+  step: 1 | -1,
+): { staffId: string } | { why: string } {
+  const v = findVisit(d, visitId);
+  const side = step > 0 ? '右' : '左';
+  if (!v) return { why: 'この訪問は見つかりません' };
+  const c = staffChoices(d, visitId, draftOf(v));
+  const byId = new Map(c.choices.map((x) => [x.staffId, x]));
+  let at = v.staffId === null ? -1 : order.indexOf(v.staffId);
+  if (at < 0 && step < 0) return { why: `これより${side}に担当の列はありません` };
+  let skipped = 0;
+  for (;;) {
+    at += step;
+    const sid = order[at];
+    if (sid === undefined) break;
+    const x = byId.get(sid);
+    if (x && !x.disabled && !x.current) return { staffId: sid };
+    skipped++;
+  }
+  return {
+    why:
+      skipped > 0
+        ? `これより${side}に、この訪問を担当できる人がいません（その日に働かない・必須の条件に合わない）`
+        : `これより${side}に担当の列はありません`,
+  };
+}
+
+/** 動かした先の要対応（日の予定と同じ訪問ごとの検査。担当が休みの日へ移したときなど）。無ければ空 */
+export function issuesAt(d: DemoData, visitId: string, date: string): string[] {
+  const visits = visitsOn(d, date);
+  if (!visits.some((x) => x.id === visitId)) return [];
+  const p = dayProblemOf(d, date);
+  if (!p) return [];
+  return (visitIssues(p, routesOf(p, visits), visits).get(visitId) ?? []).map((x) => x.label);
 }
 
 /** 動かした先の読み上げの文（「図書館 ふみさん：10/28（水） 09:15・担当 消防さん（この回だけ）」） */

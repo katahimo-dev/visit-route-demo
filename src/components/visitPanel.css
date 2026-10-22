@@ -88,6 +88,9 @@
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+.vp-big > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 .visit-panel .vp-big-btn {
   min-height: 64px;
   display: flex;

@@ -324,7 +324,8 @@ export function SidePanel({
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
   return createPortal(
     <div className={`drawer-wrap${sheet ? ' has-sheet' : ''}`} ref={wrapRef}>
-      <div className="drawer-backdrop" aria-hidden="true" />
+      {/* 下から出る欄（スマホ）は外（上の幕）を押すと閉じる（キーボードは Esc・×）。右の欄は今のまま閉じない */}
+      <div className="drawer-backdrop" aria-hidden="true" onClick={sheet ? onClose : undefined} />
       <section
         ref={ref}
         className={`drawer ${narrow ? 'is-narrow' : ''}${sheet ? ' is-sheet' : ''}`}

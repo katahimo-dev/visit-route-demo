@@ -371,3 +371,37 @@ describe('週の範囲で組む（PRD D280。ADR-0046）', () => {
     expect(batchHref({ ym: '2026-10', source: 'day', weekStart: across[0]! })).toBe(`/week?d=${across[0]}`);
   });
 });
+
+describe('日の予定のその場の提案の古さ（PRD D335。画面を移っても残すので、作ったときの入力と比べる）', () => {
+  it('稼働時間の上書き・〈利用者さん〉の休み・人・相性・条件・種類が変われば当てない（訪問だけ・欠勤だけでない）', () => {
+    const base = createDemoData(TODAY);
+    const day = { date: TODAY, visits: visitsOn(base, TODAY), inputs: dayInputsOf(base, TODAY) };
+    expect(proposalDayFresh(base, day)).toBe(true);
+    const sid = base.staff.find((x) => x.active)!.id;
+    const changed: DemoData[] = [
+      { ...base, availability: [...base.availability, { staffId: sid, date: TODAY, slots: [] } as never] },
+      { ...base, staff: base.staff.map((x) => ({ ...x })) },
+      { ...base, clients: base.clients.map((x) => ({ ...x })) },
+      { ...base, compat: { ...base.compat } },
+      { ...base, rules: [...base.rules] },
+      { ...base, visitTypes: [...base.visitTypes] },
+      {
+        ...base,
+        clientLeaves: [
+          ...base.clientLeaves,
+          { id: 'l-x', clientId: base.clients[0]!.id, from: TODAY, to: TODAY, note: '' },
+        ],
+      },
+    ];
+    for (const d of changed) expect(proposalDayFresh(d, day)).toBe(false);
+    // ほかの日の欠勤では古くしない
+    const other = {
+      ...base,
+      absences: [
+        ...base.absences,
+        { id: 'ab-o', staffId: sid, date: addDays(TODAY, 3), from: null, to: null, note: '' },
+      ],
+    };
+    expect(proposalDayFresh(other, day)).toBe(true);
+  });
+});

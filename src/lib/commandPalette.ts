@@ -326,6 +326,50 @@ export function paletteDate(term: string, today: string): string | null {
   return cands.reduce((a, b) => (far(b) < far(a) ? b : a));
 }
 
+/** 訪問の語：日付・「担当なし」・「要対応」・名前の語（比べる形） */
+export type VisitQuery = { date: string | null; unassigned: boolean; care: boolean; names: string[] };
+
+/**
+ * 打った語を訪問の語に分ける。日付の語は最初の1つを使い、2つ目からは捨てる（名前にしない）。
+ * 「あす」「きょう」などのかなの日付の語しか無ければ、名前（「あすか」の打ちかけ）として読む
+ */
+export function parseVisitQuery(query: string, today: string): VisitQuery {
+  const raw = query.split(/[\s　]+/).filter((x) => x !== '');
+  let date: string | null = null;
+  let dateWord: string | null = null;
+  let unassigned = false;
+  let care = false;
+  const names: string[] = [];
+  for (const r of raw) {
+    const d = paletteDate(r, today);
+    const n = normalizeKana(r);
+    if (d) {
+      if (date === null) {
+        date = d;
+        dateWord = r;
+      }
+    } else if (UNASSIGNED_WORDS.includes(n)) unassigned = true;
+    else if (ATTENTION_WORDS.includes(n)) care = true;
+    else if (n) names.push(n);
+  }
+  if (names.length === 0 && !unassigned && !care && dateWord && /^[ぁ-ん]+$/.test(normalizeKana(dateWord))) {
+    names.push(normalizeKana(dateWord));
+    date = null;
+  }
+  return { date, unassigned, care, names };
+}
+
+/**
+ * 「要対応」で引くときに検査する日（打った語に「要対応」が無ければ空）：日付の語があればその日、無ければ今日から
+ * PALETTE_ATTENTION_DAYS 日先まで（画面は1日ずつ間を空けて検査し、結果を順に出す）
+ */
+export function paletteAttentionDays(query: string, today: string): string[] {
+  const q = parseVisitQuery(query, today);
+  if (!q.care) return [];
+  if (q.date !== null) return [q.date];
+  return Array.from({ length: PALETTE_ATTENTION_DAYS + 1 }, (_, i) => addDays(today, i));
+}
+
 /** 訪問の候補をいくつまで出すか */
 export const PALETTE_VISITS_LIMIT = 6;
 
@@ -346,27 +390,7 @@ export function paletteVisits(
   limit: number = PALETTE_VISITS_LIMIT,
   attention?: (v: Visit) => boolean,
 ): PaletteItem[] {
-  const raw = query.split(/[\s　]+/).filter((x) => x !== '');
-  let date: string | null = null;
-  let dateWord: string | null = null;
-  let unassigned = false;
-  let care = false;
-  const names: string[] = [];
-  for (const r of raw) {
-    const d: string | null = date === null ? paletteDate(r, today) : null;
-    const n = normalizeKana(r);
-    if (d) {
-      date = d;
-      dateWord = r;
-    } else if (UNASSIGNED_WORDS.includes(n)) unassigned = true;
-    else if (ATTENTION_WORDS.includes(n)) care = true;
-    else if (n) names.push(n);
-  }
-  // 「あす」「きょう」などのかなの日付の語しか名前が無ければ、名前（「あすか」の打ちかけ）として読む
-  if (names.length === 0 && !unassigned && !care && dateWord && /^[ぁ-ん]+$/.test(normalizeKana(dateWord))) {
-    names.push(normalizeKana(dateWord));
-    date = null;
-  }
+  const { date, unassigned, care, names } = parseVisitQuery(query, today);
   if (names.length === 0 && !unassigned && !care) return [];
   const clientName = new Map(
     people.filter((c) => c.kind === 'client').map((c) => [c.id.slice('client:'.length), c.label] as const),

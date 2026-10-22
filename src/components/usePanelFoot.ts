@@ -117,6 +117,8 @@ export function usePanelToastPlace(drawer: RefObject<HTMLElement | null>, head: 
     ro?.observe(h);
     ro?.observe(d);
     window.addEventListener('resize', apply);
+    // 下から出る欄は出てくる動き（transform）のあいだ位置がずれるので、動きが終わったら測り直す
+    d.addEventListener('animationend', apply);
     // キーボードで見えている所が変わると欄が動く（大きさは変わらないこともある）ので、描いたあとに測り直す
     const vv = typeof window === 'undefined' ? null : window.visualViewport;
     const later = () => requestAnimationFrame(apply);
@@ -125,6 +127,7 @@ export function usePanelToastPlace(drawer: RefObject<HTMLElement | null>, head: 
     return () => {
       ro?.disconnect();
       window.removeEventListener('resize', apply);
+      d.removeEventListener('animationend', apply);
       vv?.removeEventListener('resize', later);
       vv?.removeEventListener('scroll', later);
       root.style.removeProperty('--drawer-head-h');

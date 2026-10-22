@@ -774,6 +774,15 @@ async function weekDoneElsewhere(page) {
   await open2.click();
   await page.waitForFunction((w) => location.hash === `#/week?d=${w}`, W2, { timeout: 10000 });
   check(urlOf(page).includes(`#/week?d=${W2}`), '［週の予定を見る］で作った週の週の予定へ', urlOf(page));
+  // hash が変わってから週の予定を描き終わるまで（移るのは transition なので、遅い機械では前の画面がしばらく残る）を目印で待つ
+  await page
+    .getByTestId('week-title')
+    .filter({ hasText: md(W2) })
+    .waitFor({ timeout: 15000 })
+    .catch(() => {});
+  await rangeBand(page)
+    .waitFor({ timeout: 10000 })
+    .catch(() => {});
   check((await rangeBand(page).count()) === 1, '移った先で提案の帯が見える');
 }
 

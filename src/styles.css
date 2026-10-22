@@ -1109,8 +1109,8 @@ tbody tr:hover td {
     padding: 16px max(14px, env(safe-area-inset-right, 0px)) calc(40px + var(--bottom-tabs-h))
       max(14px, env(safe-area-inset-left, 0px));
   }
-  /* 下のタブ：ホーム・予定・欠勤・空き状況・メニュー（iPhone のホームバーは safe-area で避ける。PRD D274）。
-     タブの数（欠勤・空き状況を切ると減る。ADR-0028）に合わせて全幅を等分する */
+  /* 下のタブ：ホーム・予定・欠勤・探す・メニュー（iPhone のホームバーは safe-area で避ける。PRD D336）。
+     タブの数（欠勤を切ると減る。ADR-0028）に合わせて全幅を等分する */
   .bottom-tabs {
     position: fixed;
     left: 0;
