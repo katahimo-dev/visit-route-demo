@@ -1,0 +1,73 @@
+/* 〈スタッフ〉の印（PRD D298。ADR-0050）。〈利用者さん〉の丸（.dot）と見分けるため角の丸い四角にする */
+.staff-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 28%;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  vertical-align: middle;
+  user-select: none;
+  /* 明るい色の上でも白い字が読めるように薄い影 */
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.25);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.staff-mark::before {
+  content: attr(data-text);
+}
+.staff-mark-xs {
+  width: 16px;
+  height: 16px;
+  font-size: 0.6rem;
+}
+.staff-mark-sm {
+  width: 20px;
+  height: 20px;
+  font-size: 0.7rem;
+}
+.staff-mark-md {
+  width: 28px;
+  height: 28px;
+  font-size: 0.85rem;
+}
+.staff-mark-lg {
+  width: 44px;
+  height: 44px;
+  font-size: 1.15rem;
+}
+/* 2文字のときは字を小さくして枠に収める */
+.staff-mark-xs.is-two {
+  font-size: 0.45rem;
+}
+.staff-mark-sm.is-two {
+  font-size: 0.55rem;
+}
+.staff-mark-md.is-two {
+  font-size: 0.7rem;
+}
+.staff-mark-lg.is-two {
+  font-size: 0.95rem;
+}
+/* 印と名前を横に並べる（名前は省略できるように min-width: 0） */
+.with-staff-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+/* 〈スタッフ〉の編集の欄：アイコンの入力と、その場の見本（PRD D299） */
+.staff-icon-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.staff-icon-field input {
+  width: 8em;
+}

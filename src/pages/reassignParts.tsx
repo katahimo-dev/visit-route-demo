@@ -13,6 +13,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 're
 import { FLOATING_EVENT, useFloatingEdge } from '../components/floating';
 import { MailButton, MailLengthNote } from '../components/mailParts';
 import { WeightSlider } from '../components/parts';
+import { StaffMarkById } from '../components/StaffMark';
 import { Hint, SidePanel, WithIcon } from '../components/ui';
 import type { Terms } from '../contracts/documents';
 import type { ContactList, ContactVisit, ReassignDiff } from '../contracts/reassign';
@@ -308,7 +309,12 @@ export function ContactPanel({
                   <tr key={x.visitId}>
                     <td className="nowrap">{x.at}</td>
                     <td>{words.clientName(x.clientId)}様</td>
-                    <td>{words.staffName(x.staffId)}</td>
+                    <td>
+                      <span className="with-staff-mark">
+                        <StaffMarkById id={x.staffId} size="xs" />
+                        {words.staffName(x.staffId)}
+                      </span>
+                    </td>
                     <td>{x.reason}</td>
                   </tr>
                 ))}
@@ -341,8 +347,23 @@ export function ContactPanel({
                         <td className="nowrap">{timeChange(x)}</td>
                         <td>{words.clientName(x.clientId)}様</td>
                         <td>
-                          {x.fromStaffId ? words.staffName(x.fromStaffId) : '（なし）'} →{' '}
-                          {x.toStaffId ? words.staffName(x.toStaffId) : <strong>入らない（調整中）</strong>}
+                          {x.fromStaffId ? (
+                            <span className="with-staff-mark">
+                              <StaffMarkById id={x.fromStaffId} size="xs" />
+                              {words.staffName(x.fromStaffId)}
+                            </span>
+                          ) : (
+                            '（なし）'
+                          )}{' '}
+                          →{' '}
+                          {x.toStaffId ? (
+                            <span className="with-staff-mark">
+                              <StaffMarkById id={x.toStaffId} size="xs" />
+                              {words.staffName(x.toStaffId)}
+                            </span>
+                          ) : (
+                            <strong>入らない（調整中）</strong>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -370,7 +391,14 @@ export function ContactPanel({
                       <tr key={x.visitId}>
                         <td className="nowrap">{timeChange(x)}</td>
                         <td>{words.clientName(x.clientId)}様</td>
-                        <td>{x.toStaffId ? words.staffName(x.toStaffId) : ''}</td>
+                        <td>
+                          {x.toStaffId && (
+                            <span className="with-staff-mark">
+                              <StaffMarkById id={x.toStaffId} size="xs" />
+                              {words.staffName(x.toStaffId)}
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -384,7 +412,10 @@ export function ContactPanel({
               <ul className="contact-staff">
                 {list.staff.map((c) => (
                   <li key={c.staffId}>
-                    <strong>{words.staffName(c.staffId)}</strong>
+                    <strong className="with-staff-mark">
+                      <StaffMarkById id={c.staffId} size="xs" />
+                      {words.staffName(c.staffId)}
+                    </strong>
                     {c.added.length > 0 && <span className="chip chip-move">増える {c.added.length}件</span>}
                     {c.removed.length > 0 && <span className="chip">外れる {c.removed.length}件</span>}
                     {c.shifted.length > 0 && <span className="chip chip-warn">時刻が変わる {c.shifted.length}件</span>}

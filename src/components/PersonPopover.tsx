@@ -8,6 +8,7 @@ import { createPersonPopoverStore, type PersonKind, type PersonPopoverStore } fr
 import { useDemoData } from '../store';
 import { DetailPopover } from './DetailPopover';
 import { ClientDetail, StaffDetail } from './personDetail';
+import { StaffMark } from './StaffMark';
 import './personPopover.css';
 
 const StoreContext = createContext<PersonPopoverStore | null>(null);
@@ -40,7 +41,16 @@ function PersonPopoverHost({ store }: { store: PersonPopoverStore }) {
       key={opened.anchorId}
       id={popId}
       anchorId={opened.anchorId}
-      title={staff ? staff.name : client?.displayName}
+      title={
+        staff ? (
+          <span className="with-staff-mark">
+            <StaffMark staff={staff} size="md" />
+            {staff.name}
+          </span>
+        ) : (
+          client?.displayName
+        )
+      }
       titleId={`${popId}-title`}
       onClose={store.close}
       testId="person-pop"

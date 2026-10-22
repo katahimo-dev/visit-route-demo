@@ -55,6 +55,7 @@ import { ScheduleBand } from '../components/progressBand';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
+import { StaffMark, StaffMarkById } from '../components/StaffMark';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
@@ -2174,8 +2175,9 @@ export default function PlanPage() {
           </span>
         )}
         {s && (
-          <span>
+          <span className="with-staff-mark">
             担当：
+            <StaffMark staff={s} size="xs" />
             <PersonButton kind="staff" id={s.id} name={s.name} />
           </span>
         )}
@@ -2450,7 +2452,7 @@ export default function PlanPage() {
               focusOn(focusStaff === sid ? null : sid);
             }}
           >
-            <span className="staff-dot" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
+            <StaffMark staff={s} size="sm" />
             <span className="col-head-name">{staffName(sid)}</span>
             <MapPin size={13} className="col-focus-icon" aria-hidden="true" />
           </button>
@@ -2652,7 +2654,7 @@ export default function PlanPage() {
       ownerName={(id) => {
         if (!aiPlan) return null;
         const o = owner.get(id);
-        return o ? { id: o, name: staffName(o), known: staffById.has(o), color: colorOfStaff.get(o) } : null;
+        return o ? { id: o, name: staffName(o), known: staffById.has(o) } : null;
       }}
       notes={(id) => ({
         outside: !!problem && !problem.visits.some((v) => v.id === id),
@@ -3268,7 +3270,6 @@ export default function PlanPage() {
           lines={staffLines}
           range={lineRange}
           nameOf={staffName}
-          colorOf={(sid) => colorOfStaff.get(sid)}
           onPick={goToStaff}
           staffTerm={terms.staff}
           collapsed={narrowOrPrint}
@@ -3653,7 +3654,6 @@ export default function PlanPage() {
                   <StaffLegend
                     staffIds={columns.filter((sid) => (own(routes, sid)?.length ?? 0) > 0)}
                     staffName={staffName}
-                    colorOfStaff={colorOfStaff}
                     focusStaff={focusStaff}
                     onFocus={focusOn}
                     extra={<span className="nowrap legend-item">「家」＝自宅</span>}
@@ -3842,14 +3842,7 @@ export default function PlanPage() {
                   <AchievementList list={curAch} rules={data.rules} terms={terms} />
                 </div>
               )}
-              {scoreProblem && (
-                <BalanceChips
-                  problem={scoreProblem}
-                  routes={routes}
-                  staffName={staffName}
-                  colorOfStaff={colorOfStaff}
-                />
-              )}
+              {scoreProblem && <BalanceChips problem={scoreProblem} routes={routes} staffName={staffName} />}
             </div>
           ) : (
             <Empty icon={Gauge}>今の案はまだありません</Empty>
@@ -4122,17 +4115,15 @@ function PlanSummary({
   );
 }
 
-/** スタッフごとの件数と目安の帯（帯の外は色、必須の上限を超えたら赤）。名前は色の丸 */
+/** スタッフごとの件数と目安の帯（帯の外は色、必須の上限を超えたら赤）。名前の前は〈スタッフ〉の印（StaffMark） */
 function BalanceChips({
   problem,
   routes,
   staffName,
-  colorOfStaff,
 }: {
   problem: Problem;
   routes: Record<string, string[]>;
   staffName: (id: string) => string;
-  colorOfStaff: Map<string, string>;
 }) {
   const b = problem.balance;
   const rows = problem.staff
@@ -4163,7 +4154,7 @@ function BalanceChips({
         return (
           <div key={id} className="balance-row" title={b ? `目安 ${band}件` : ''}>
             <span className="balance-name ellipsis">
-              <span className="staff-dot" style={{ background: colorOfStaff.get(id) }} aria-hidden="true" />
+              <StaffMarkById id={id} size="xs" />
               {staffName(id)}
             </span>
             <div
@@ -4219,7 +4210,7 @@ function VisitList({
   clientById: Map<string, Client>;
   /** 今の案での担当（AI案が無い・入らなかったときは null） */
   /** known：〈スタッフ〉がデータにいる（いなければ名前をボタンにしない） */
-  ownerName: (id: string) => { id: string; name: string; known: boolean; color: string | undefined } | null;
+  ownerName: (id: string) => { id: string; name: string; known: boolean } | null;
   notes: (id: string) => VisitNotes;
   clientLabel: string;
   /** 訪問の種類（ADR-0012。種類なしは null） */
@@ -4288,7 +4279,7 @@ function VisitList({
                   <td className="nowrap">
                     {o ? (
                       <span className="row" style={{ gap: 6 }}>
-                        <span className="staff-dot" style={{ background: o.color }} aria-hidden="true" />
+                        <StaffMarkById id={o.id} size="xs" />
                         <PersonButton kind="staff" id={o.id} name={o.known ? o.name : ''}>
                           {o.name}
                         </PersonButton>

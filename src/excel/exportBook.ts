@@ -35,6 +35,7 @@ import {
   reqHeader,
   STAFF_COLS,
   STAFF_EMAIL_COL,
+  STAFF_ICON_COL,
   STAFF_LAST_DAY_COL,
   TYPE_COLS,
   traitHeader,
@@ -203,7 +204,7 @@ function howtoLines(data: DemoData, names: { staff: string; client: string }): s
     `・${FIXED_SHEETS.items}：${t.staff}・${t.client}の特性の項目。種類は「${ITEM_KINDS.map((k) => itemKindLabels[k]).join('」「')}」。選択肢は「、」か改行で区切ります（選択肢の名前に「、」と改行、「${EMPTY_MULTI}」は使えません）。`,
     `・${FIXED_SHEETS.rules}：AI案を作るときの条件（重み 0〜5、0.5刻み。必須は ○）。ここの重み・必須は「この日だけ試す重み」（日の予定の「AI にもう一度作らせる」だけで使う重み）です。ふだんの重み（月のまとめて作る・自動作成・作り直しと点数に使う重み）は、${FIXED_SHEETS.presets}のシートの「点数の基準」に ○ を付けた行です。`,
     `・${FIXED_SHEETS.presets}：条件のプリセット（1〜6行）。「重み：〈条件の種類〉」の列に重み（0〜5、0.5刻み。空は0）、「必須」の列に必須にする条件の種類を「、」区切りで書きます。「点数の基準」の列は、ふだんの考え方（月のまとめて作る・自動作成・作り直しに使い、画面の点数（100点満点）も付ける）のプリセットに ○ を1つだけ付けます（無印なら先頭のプリセット）。このシートが無いブックを読み込むと、いまのプリセットのままです。`,
-    `・${names.staff}：${t.staff}の一覧。勤務する曜日は「月火水木金」のように書きます。「${STAFF_LAST_DAY_COL}」は退職・担当替えの最後の勤務日（空ならなし。翌日からは勤務なし）です。「${STAFF_EMAIL_COL}」は任意で、予定をメールアプリで開くときの宛先です。`,
+    `・${names.staff}：${t.staff}の一覧。勤務する曜日は「月火水木金」のように書きます。「${STAFF_LAST_DAY_COL}」は退職・担当替えの最後の勤務日（空ならなし。翌日からは勤務なし）です。「${STAFF_EMAIL_COL}」は任意で、予定をメールアプリで開くときの宛先です。「${STAFF_ICON_COL}」は任意の1〜2文字（絵文字も可）で、画面の印の中に出します（空なら苗字の最初の1文字）。`,
     `・${names.client}：${t.client}の一覧。色は 1〜8 の番号です。「${CLIENT_POSTAL_COL}」は7桁の数字（任意。ハイフンは有っても無くても構いません）で、緯度・経度が空の人は、読み込んだあとに${t.client}の画面の「まとめて地図に置く」で住所（無ければ郵便番号）から位置を入れられます（押したときだけ外部の検索サービスへ送ります）。いつもの担当は${t.staff}の名前で書きます。担当できる人は、担当を限るときだけ${t.staff}の名前を「、」で区切って書きます（空なら限りません。社内の決まりで、限った人以外は担当になりません）。入り方・鍵・駐車場・注意は訪問先の決まりごと（各200文字まで）で、${t.staff}の画面に出ます。「${CLIENT_STAGE_COLS.stage}」は「${Object.values(STAGE_LABELS).join('」「')}」のどれかで、予定・AI案に入るのは「利用中」と、利用中の前で「仮押さえ」に ○ がある人だけです（「${CLIENT_STAGE_COLS.stage}」が空なら「利用中」「仮押さえ」の列から決めます。「${CLIENT_STAGE_COLS.stage}」を書いたときは段階を優先し、「利用中」「仮押さえ」の列が食い違っていても段階に合わせて読みます）。「${CLIENT_STAGE_COLS.referrer}」「${CLIENT_STAGE_COLS.referrerContact}」「${CLIENT_STAGE_COLS.referrerNote}」は紹介してくれた所です。「${CLIENT_STAGE_COLS.referrerEmail}」は任意で、空き枠の案内文をメールアプリで一斉（BCC）に送るときの宛先です。`,
     `・${FIXED_SHEETS.compat}：行が${t.client}、列が${t.staff}です。◎・○・△・× か空で書きます（× は担当にしません）。`,
     `・${FIXED_SHEETS.availability}：その日だけの稼働時間。時間帯は「9:00-12:00、13:00-18:00」のように30分単位で書き、休みは「${DAY_OFF}」と書きます。`,
@@ -344,7 +345,7 @@ function personItemCols(base: number, own: Item[], other: Item[]) {
 function staffTable(data: DemoData, name: string): TableSpec {
   const staffItems = data.items.filter((i) => i.target === 'staff');
   const clientItems = data.items.filter((i) => i.target === 'client');
-  const staffBase = [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL, STAFF_EMAIL_COL];
+  const staffBase = [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL, STAFF_EMAIL_COL, STAFF_ICON_COL];
   const sp = personItemCols(staffBase.length, staffItems, clientItems);
   return {
     name,
@@ -363,9 +364,12 @@ function staffTable(data: DemoData, name: string): TableSpec {
       s.lastDay ?? '',
       // メールアドレス（ADR-0017）
       s.email,
+      // アイコン（ADR-0050）
+      s.icon,
       ...sp.cells(s),
     ]),
-    textCols: [1, 4, 5, 6, 11],
+    // 文字列の書式：ID・曜日・勤務の開始と終了・最終勤務日・アイコン（数字や日付に化けないように。ADR-0050）。メールアドレスは付けない（前から）
+    textCols: [1, 4, 5, 6, staffBase.indexOf(STAFF_LAST_DAY_COL) + 1, staffBase.indexOf(STAFF_ICON_COL) + 1],
     lists: [{ col: 3, values: Object.values(travelModeLabels) }, { col: 7, values: [YES] }, ...sp.lists],
     freezeCols: 2,
   };

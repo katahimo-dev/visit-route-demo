@@ -12,6 +12,7 @@ import {
 import { type ReactNode, useId, useMemo, useState } from 'react';
 import { FieldError, invalidAttrs } from '../components/FieldError';
 import { PersonButton } from '../components/PersonPopover';
+import { StaffMarkById } from '../components/StaffMark';
 import { Hint, WithIcon } from '../components/ui';
 import type { DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence, Visit } from '../contracts/documents';
@@ -446,7 +447,8 @@ export function CandidateBox({
               <div className="spread" style={{ gap: 6 }}>
                 {/* 名前から詳細（「この人に入れる」とは別のボタン。PRD D206） */}
                 {/* 長い名前は「…」で切り、フォーカスの枠は切らない（箱は overflow を隠さない） */}
-                <strong className="candidate-name">
+                <strong className="candidate-name with-staff-mark">
+                  <StaffMarkById id={c.staffId} size="xs" />
                   <PersonButton kind="staff" id={c.staffId} name={staffName(c.staffId)} testId="candidate-name">
                     <span className="ellipsis">{staffName(c.staffId)}</span>
                   </PersonButton>

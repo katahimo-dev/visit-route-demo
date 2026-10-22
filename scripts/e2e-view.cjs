@@ -7,6 +7,7 @@
 // 相性・担当の名前（PRD D198〜D200）：〈スタッフ〉の閲覧の欄にいつもの担当・相性の記号ごとの〈利用者さん〉の名前（人数・利用中だけ・
 // 13人目から「あと N人」）、名前で詳細の吹き出し（欄の中に出す・Tab は吹き出しの中を進み端で閉じて名前へ・Esc は吹き出しだけ閉じる・欄を巻いて名前が隠れたら閉じる）、リンクで相手の閲覧の欄、
 // 〈利用者さん〉の担当できる人・いつもの担当も名前から。
+// 〈スタッフ〉のアイコン（PRD D299）：編集で「訪」を保存すると一覧・日の予定の印が「訪」、3文字は保存しない、空に戻すと苗字の最初の1文字。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-view.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -704,6 +705,66 @@ async function rowClick(page) {
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
+/**
+ * 〈スタッフ〉のアイコン（PRD D298・D299。ADR-0050）：編集の欄で「訪」を入れて保存すると一覧・日の予定の列の見出しの印が「訪」、
+ * 3文字は保存しない（誤りの欄）、空に戻すと苗字の最初の1文字。印の文字は data-text（CSS で描く）
+ */
+async function staffIcon(page) {
+  const markText = (loc) => loc.first().getAttribute('data-text');
+  const listMark = (page) => page.locator('.people-table [data-staff-mark="s1"]');
+  await open(page, '/staff', '.people-table tbody tr');
+  check((await markText(listMark(page))) === '市', '〈スタッフ〉の印：既定は苗字の最初の1文字（一覧）');
+  await page.getByRole('button', { name: '市役所 まち子を開く' }).click();
+  await view(page).waitFor({ timeout: 5000 });
+  check(
+    (await markText(view(page).locator('[data-staff-mark="s1"]'))) === '市',
+    '〈スタッフ〉の印：閲覧の欄にも印を出す',
+  );
+  await page.getByTestId('view-edit').click();
+  await settle(page);
+  const icon = page.getByTestId('staff-icon');
+  check((await icon.getAttribute('placeholder')) === '市', '〈スタッフ〉の印：空のアイコンの欄は既定の文字を薄く出す');
+  // 3文字は保存しない
+  await icon.fill('訪問者');
+  await page.getByRole('button', { name: '保存' }).click();
+  await settle(page, 400);
+  check(
+    (await icon.getAttribute('aria-invalid')) === 'true' &&
+      (await view(page).count()) === 0 &&
+      ((await stored(page))?.staff.find((s) => s.id === 's1')?.icon ?? '') === '',
+    '〈スタッフ〉の印：2文字を超えるアイコンは誤りで保存しない',
+  );
+  await icon.fill('訪');
+  check(
+    (await markText(panel(page).locator('.staff-icon-field .staff-mark'))) === '訪',
+    '〈スタッフ〉の印：編集の欄の見本がその場で変わる',
+  );
+  await page.getByRole('button', { name: '保存' }).click();
+  await settle(page, 600);
+  check(
+    (await stored(page)).staff.find((s) => s.id === 's1').icon === '訪' && (await markText(listMark(page))) === '訪',
+    '〈スタッフ〉の印：「訪」を保存すると一覧の印が「訪」',
+  );
+  await panel(page).getByRole('button', { name: '閉じる' }).click();
+  await open(page, '/plan', '.route-col');
+  const head = page.locator('.col-head [data-staff-mark="s1"]');
+  check(
+    (await head.count()) > 0 && (await markText(head)) === '訪',
+    '〈スタッフ〉の印：日の予定の列の見出しの印も「訪」',
+  );
+  // 空に戻すと苗字の最初の1文字
+  await open(page, '/staff?id=s1', '[data-testid="person-view"]');
+  await page.getByTestId('view-edit').click();
+  await settle(page);
+  await page.getByTestId('staff-icon').fill('');
+  await page.getByRole('button', { name: '保存' }).click();
+  await settle(page, 600);
+  check(
+    (await stored(page)).staff.find((s) => s.id === 's1').icon === '' && (await markText(listMark(page))) === '市',
+    '〈スタッフ〉の印：アイコンを空に戻すと苗字の最初の1文字',
+  );
+}
+
 const errors = [];
 const steps = pagePerStep({
   open: async (browser) => {
@@ -719,7 +780,7 @@ const steps = pagePerStep({
     return { ctx, page, dlg: await dialogs(page) };
   },
   call: (fn, s) => fn(s.page, s.dlg),
-  steps: [clients, clientsMore, seeded, staff, staffMore, links, names, rowClick],
+  steps: [clients, clientsMore, seeded, staff, staffMore, links, names, rowClick, staffIcon],
   label: (name) => `${name}：途中で止まった`,
   after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
   end: () => check(errors.length === 0, 'ページのエラーが無い', errors),

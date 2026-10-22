@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { SlotEditor } from '../components/parts';
+import { StaffMark } from '../components/StaffMark';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
 import type { Availability } from '../contracts/documents';
@@ -150,7 +151,12 @@ export default function AvailabilityPage() {
             <tbody>
               {staff.map((s) => (
                 <tr key={s.id}>
-                  <th className="avail-name">{s.name}</th>
+                  <th className="avail-name">
+                    <span className="with-staff-mark">
+                      <StaffMark staff={s} size="sm" />
+                      {s.name}
+                    </span>
+                  </th>
                   {dates.map((d) => {
                     const o = overrides.get(`${s.id}_${d}`);
                     const ab = absences.get(`${s.id}_${d}`);

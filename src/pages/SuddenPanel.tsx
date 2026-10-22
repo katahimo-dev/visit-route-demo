@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { MailButton, MailLengthNote } from '../components/mailParts';
+import { StaffMarkById } from '../components/StaffMark';
 import { SidePanel, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import type { Absence, Terms } from '../contracts/documents';
@@ -674,6 +675,7 @@ export function SuddenPanel({
                     data-kinds={r.kinds.join(' ')}
                   >
                     <div className="sudden-contact-head">
+                      {r.to === 'staff' && <StaffMarkById id={r.id} size="xs" />}
                       <strong>{r.name}</strong>
                       {r.to === 'client' ? (
                         <span className="chip">{terms.client}あて</span>

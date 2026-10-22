@@ -9,8 +9,10 @@ import './pickChips.css';
 export type PickPerson = {
   id: string;
   name: string;
-  /** 名前の横の色の印（〈スタッフ〉の色・〈利用者さん〉の色） */
+  /** 名前の横の色の丸（〈利用者さん〉の色）。mark があればそちらを出す */
   color?: string;
+  /** 名前の横の印（〈スタッフ〉は StaffMark。PRD D298） */
+  mark?: ReactNode;
   /** 名前の横の短いバッジ（資格。title に正式名） */
   badges?: { short: string; name: string }[];
 };
@@ -135,7 +137,8 @@ export function PickChips({
             <span className="pick-chip-check" aria-hidden="true">
               {pressed ? '✓' : ''}
             </span>
-            {p.color && <span className="pick-chip-color" style={{ background: p.color }} aria-hidden="true" />}
+            {p.mark ??
+              (p.color && <span className="pick-chip-color" style={{ background: p.color }} aria-hidden="true" />)}
             <span className="pick-chip-name">{p.name}</span>
             {p.badges?.map((b) => (
               <abbr key={b.name} className="pick-badge" title={b.name}>

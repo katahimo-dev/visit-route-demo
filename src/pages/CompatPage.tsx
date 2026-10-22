@@ -8,6 +8,7 @@ import { EdgeScroll } from '../components/EdgeScroll';
 import { TentativeMark } from '../components/parts';
 import { ClientDetail, StaffDetail } from '../components/personDetail';
 import { StaffFilter } from '../components/StaffFilter';
+import { StaffMark } from '../components/StaffMark';
 import { Empty, Hint, PageHeader } from '../components/ui';
 import type { Client, Staff } from '../contracts/documents';
 import { COMPAT_LABELS, COMPAT_LEVELS, type Compat, type CompatLevel } from '../contracts/rules';
@@ -24,7 +25,7 @@ import {
   sameFilter,
 } from '../lib/clientFilter';
 import { colorOf, initialOf } from '../lib/colors';
-import { byDisplayName, byName, staffColor, WEEKDAY_LABELS } from '../lib/common';
+import { byDisplayName, byName, WEEKDAY_LABELS } from '../lib/common';
 import {
   COMPAT_CHIPS,
   clientFilterSummary,
@@ -151,9 +152,6 @@ export default function CompatPage() {
   const clients = useMemo(() => data.clients.filter((c) => c.active).sort(byDisplayName), [data.clients]);
   const clientIds = useMemo(() => clients.map((c) => c.id), [clients]);
   const staff = useMemo(() => data.staff.filter((s) => s.active).sort(byName), [data.staff]);
-  const allStaff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
-  // 色は休止中も含めた並びで決める（予定・AI案の画面と同じ色にする）
-  const colorOfStaff = useMemo(() => new Map(allStaff.map((s, i) => [s.id, staffColor(i)])), [allStaff]);
 
   // ---- 列（〈スタッフ〉）の絞り込み（?sf=）----
   const defs = useMemo(() => staffChipDefs(data.items), [data.items]);
@@ -440,9 +438,7 @@ export default function CompatPage() {
                         data-testid="compat-head-btn"
                         data-id={s.id}
                       >
-                        <span className="dot dot-sm" style={{ background: colorOfStaff.get(s.id) ?? staffColor(0) }}>
-                          {initialOf(s.name)}
-                        </span>
+                        <StaffMark staff={s} size="md" />
                         <span className="compat-head-name" aria-hidden="true">
                           {nameLines(s.name).map((line, i) => (
                             // biome-ignore lint/suspicious/noArrayIndexKey: 同じ文字の行が並ぶこともある

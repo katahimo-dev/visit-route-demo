@@ -11,7 +11,6 @@ import {
   MapPin,
   Pencil,
   Plus,
-  Repeat,
   Route,
   Save,
   ShieldCheck,
@@ -30,6 +29,7 @@ import { PickChips } from '../components/PickChips';
 import { Check, TentativeMark } from '../components/parts';
 import { ClientView } from '../components/personView';
 import { ClientPlaceEditor } from '../components/placeLookup';
+import { StaffMarkById } from '../components/StaffMark';
 import { useToast } from '../components/Toast';
 import {
   Hint,
@@ -535,9 +535,10 @@ export default function ClientsPage() {
                 </td>
                 <td {...narrowRole.cell} className="nowrap" data-label="いつもの担当">
                   {c.usualStaffId && (
-                    <WithIcon icon={Repeat} size={14}>
+                    <span className="with-staff-mark">
+                      <StaffMarkById id={c.usualStaffId} size="xs" />
                       {staffName(c.usualStaffId)}
-                    </WithIcon>
+                    </span>
                   )}
                   {allowedOn && c.allowedStaffIds.length > 0 && (
                     <span
@@ -817,7 +818,9 @@ export default function ClientsPage() {
                     {limit && (
                       <PickChips
                         label={`担当できる${terms.staff}（押して選ぶ・外す）`}
-                        people={staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }))}
+                        people={staff
+                          .filter((s) => s.active)
+                          .map((s) => ({ id: s.id, name: s.name, mark: <StaffMarkById id={s.id} size="xs" /> }))}
                         selected={form.allowedStaffIds}
                         // 全員を選ぶと PickChips は null を返す（全員の ID にする）
                         onChange={(next) =>

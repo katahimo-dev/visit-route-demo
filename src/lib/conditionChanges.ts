@@ -148,6 +148,7 @@ const STAFF_FIELDS: [keyof DemoData['staff'][number] | (keyof DemoData['staff'][
   ['requirements', '必要条件'],
   ['preferences', '希望'],
   ['email', 'メールアドレス'],
+  ['icon', 'アイコン'],
 ];
 const CLIENT_FIELDS: [keyof DemoData['clients'][number] | (keyof DemoData['clients'][number])[], string][] = [
   ['displayName', '名前'],

@@ -34,6 +34,7 @@ import { LoadRowsSample } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { ScheduleBand } from '../components/progressBand';
+import { StaffMark } from '../components/StaffMark';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -892,7 +893,7 @@ export default function WeekPage() {
               people={activeStaff.map((s) => ({
                 id: s.id,
                 name: s.name,
-                color: colorOfStaff.get(s.id),
+                mark: <StaffMark staff={s} size="xs" />,
                 badges: badgesOf.get(s.id),
               }))}
               selected={staffSel}
@@ -1197,9 +1198,12 @@ export default function WeekPage() {
                     <tr key={r.staffId}>
                       <th scope="row">
                         {/* 名前を押すと詳細の吹き出し（PRD D123） */}
-                        <PersonButton kind="staff" id={r.staffId} name={staffById.get(r.staffId)?.name ?? ''}>
-                          {staffName(r.staffId)}
-                        </PersonButton>
+                        <span className="with-staff-mark">
+                          <StaffMark staff={staffById.get(r.staffId)} size="sm" />
+                          <PersonButton kind="staff" id={r.staffId} name={staffById.get(r.staffId)?.name ?? ''}>
+                            {staffName(r.staffId)}
+                          </PersonButton>
+                        </span>
                         <QualificationBadges badges={badgesOf.get(r.staffId) ?? []} />
                       </th>
                       {r.cells.map((c) => {

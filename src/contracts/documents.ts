@@ -35,6 +35,40 @@ export const emailSchema = z
   .refine((s) => s === '' || EMAIL_PATTERN.test(s), 'メールアドレスの形ではありません（例 name@example.com）');
 
 /**
+ * 〈スタッフ〉のアイコン（PRD D299。ADR-0050）：印（StaffMark）の中に出す1〜2文字（絵文字も可）。'' は未設定（既定＝苗字の最初の1文字）。
+ * 文字の数は見た目の1文字（書記素。結合した絵文字も1文字）で数える。画像は持たない（localStorage を圧迫するため）
+ */
+export const STAFF_ICON_MAX = 2;
+let segmenter: Intl.Segmenter | null | undefined;
+/** 書記素の区切り（1つを使い回す。Intl.Segmenter が無ければ null） */
+export function graphemeSegmenter(): Intl.Segmenter | null {
+  if (segmenter === undefined)
+    segmenter =
+      typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter('ja', { granularity: 'grapheme' }) : null;
+  return segmenter;
+}
+/** 見た目の文字の数（書記素。Intl.Segmenter が無ければコードポイントの数） */
+export function graphemeCount(s: string): number {
+  if (s.length <= 1) return s.length;
+  const seg = graphemeSegmenter();
+  if (!seg) return Array.from(s).length;
+  let n = 0;
+  for (const _ of seg.segment(s)) n++;
+  return n;
+}
+/** アイコンのコード単位（UTF-16）の上限。結合した絵文字2つでも収まる長さ */
+export const STAFF_ICON_MAX_UNITS = 32;
+/**
+ * 読み込みの検査は形だけ（文字列・前後の空白なし・32コード単位まで）。見た目で2文字までの検査は Intl.Segmenter に頼るので、
+ * 入れる所（画面の lib/staffMark の staffIconError・Excel の readStaffIcon）で行い、保存データの読み込みでは見ない
+ * （Segmenter の無い環境・数え方の違いで、保存データ全体が読めなくならないように）
+ */
+export const staffIconSchema = z
+  .string()
+  .max(STAFF_ICON_MAX_UNITS)
+  .refine((s) => s === s.trim(), 'アイコンの前後に空白は入れられません');
+
+/**
  * 〈利用者さん〉の場所（PRD D86。ADR-0016）：場所に郵便番号を足したもの。郵便番号は空か7桁の数字（ハイフンなし）。
  * 入力のハイフン・全角数字は画面・Excel が lib/geocode の normalizePostalCode で直してから入れる。無い古いデータは ''
  */
@@ -94,6 +128,8 @@ export const staffSchema = z.object({
   lastDay: dateSchema.nullable().default(null),
   /** メールアドレス（任意。PRD D91。ADR-0017）。予定をメールアプリで開くときの宛先。無い古いデータは '' */
   email: emailSchema.default(''),
+  /** 印（StaffMark）の中の1〜2文字（PRD D299。ADR-0050）。'' は未設定（苗字の最初の1文字）。無い古いデータは '' */
+  icon: staffIconSchema.default(''),
 });
 export type Staff = z.infer<typeof staffSchema>;
 

@@ -1252,6 +1252,52 @@ describe('最終勤務日・段階・紹介元・当日キャンセル・拘束�
   });
 });
 
+describe('〈スタッフ〉のアイコンの列（PRD D299。ADR-0050）', () => {
+  it('〈スタッフ〉のシートは最終勤務日・アイコンの列が文字列の書式で、メールアドレスの列は前のまま付けない', async () => {
+    const d = base();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const ws = sheet(wb, personSheetNames(d.org.terms).staff);
+    const fmt = (h: string) => ws.getRow(2).getCell(col(ws, h)).numFmt;
+    expect(fmt('アイコン')).toBe('@');
+    expect(fmt('最終勤務日')).toBe('@');
+    expect(fmt('ID')).toBe('@');
+    expect(fmt('メールアドレス')).not.toBe('@');
+  });
+
+  it('書き出し → 読み込み で同じに戻り、列の無い古いブックは未設定。2文字を超えれば行付きで止める', async () => {
+    const d = base();
+    d.staff[0] = { ...d.staff[0]!, icon: '訪' };
+    d.staff[1] = { ...d.staff[1]!, icon: '🌸' };
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r.staff.map((s) => s.icon)).toEqual(d.staff.map((s) => s.icon));
+    const names = personSheetNames(d.org.terms);
+    const old = ok(
+      await editAndImport(d, (wb) => {
+        const sws = sheet(wb, names.staff);
+        sws.spliceColumns(col(sws, 'アイコン'), 1);
+      }),
+    );
+    expect(old.staff.every((s) => s.icon === '')).toBe(true);
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const sws = sheet(wb, names.staff);
+        sws.getCell(3, col(sws, 'アイコン')).value = '訪問者';
+      }),
+    );
+    expect(msg).toContain('3行目・『アイコン』');
+    // 32コード単位を超える値も行付きで止める（引用はサロゲートの途中で切らない）
+    const long = fail(
+      await editAndImport(d, (wb) => {
+        const sws = sheet(wb, names.staff);
+        sws.getCell(2, col(sws, 'アイコン')).value = '𠮷'.repeat(30);
+      }),
+    );
+    expect(long).toContain('2行目・『アイコン』');
+    expect(long).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+});
+
 describe('メールアドレスの列（PRD D91。ADR-0017）', () => {
   it('〈スタッフ〉と紹介元のメールアドレスが 書き出し → 読み込み で同じに戻る', async () => {
     const d = base();

@@ -97,6 +97,7 @@ describe('warningsOf', () => {
     preferences: [],
     lastDay: null,
     email: '',
+    icon: '',
   };
   const slots = [
     { start: '09:00', end: '12:00' },

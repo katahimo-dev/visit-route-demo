@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { MAPS_SR_TAIL, MapsLink, VisitRouteLinks } from '../components/mapsLinks';
 import { type MapPoint, RouteMap } from '../components/RouteMap';
+import { StaffMark } from '../components/StaffMark';
 import { Empty, WithIcon } from '../components/ui';
 import { VisitRules } from '../components/VisitRules';
 import { timesOf } from '../domain/scheduleModel';
@@ -107,7 +108,8 @@ export default function StaffViewPage() {
               </span>
             </div>
             <div className="sv-meta sub">
-              <span>
+              <span className="with-staff-mark">
+                <StaffMark staff={me} size="sm" />
                 {me.name}さん・{dateText(date)}
               </span>
               {source === 'ai' && (

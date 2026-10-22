@@ -38,6 +38,7 @@ import {
   StaffTravelRow,
 } from './personDetail';
 import { RouteMap } from './RouteMap';
+import { StaffMark } from './StaffMark';
 import { SectionTitle } from './ui';
 import { VISIT_RULE_FIELDS } from './VisitRules';
 import './personView.css';
@@ -54,6 +55,11 @@ export function StaffView({ staff: s, data }: { staff: Staff; data: DemoData }) 
   const compatOn = isOn(data.org.features, 'compat');
   return (
     <div className="person-view stack" data-testid="person-view" data-kind="staff" data-id={s.id}>
+      {/* 〈スタッフ〉の印（PRD D298・D299）。アイコンが無ければ苗字の最初の1文字 */}
+      <div className="with-staff-mark" data-testid="view-staff-mark">
+        <StaffMark staff={s} size="lg" />
+        <span className="sub">{s.icon ? `アイコン「${s.icon}」` : 'アイコンは未設定（苗字の最初の1文字）'}</span>
+      </div>
       <SectionTitle icon={UserRound}>基本</SectionTitle>
       <dl>
         <DlRow term="状態" value={s.active ? '利用中' : '休止中'} />
