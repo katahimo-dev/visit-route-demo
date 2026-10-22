@@ -68,7 +68,9 @@ import {
   TYPE_COLS,
   traitHeader,
   VISIT_PATTERN_COLS,
+  VISIT_PIN_COL,
   VISIT_SAME_DAY_COL,
+  VISIT_START_COL,
   VISIT_TYPE_COL,
   visitBaseCols,
   visitCols,
@@ -869,7 +871,6 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const address = r.optional(C.address, 200);
       const lat = r.num(C.lat, { min: -90, max: 90 });
       const lng = r.num(C.lng, { min: -180, max: 180 });
-      const usualStaffId = staffId(r, C.usualStaff, false);
       // 担当できる人（ADR-0014）：列が無い古いブック・空は限らない。いない名前は止める
       const allowedStaffIds: string[] = [];
       let allowedOk = true;
@@ -907,7 +908,6 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         typeof color === 'number' &&
         lat !== undefined &&
         lng !== undefined &&
-        usualStaffId !== undefined &&
         allowedOk
       ) {
         clients.push({
@@ -919,7 +919,6 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           color: color - 1,
           active,
           ...p,
-          usualStaffId,
           tentative,
           entryNote,
           keyNote,
@@ -1265,6 +1264,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const sameDay = r.yes(VISIT_SAME_DAY_COL);
       if (sameDay && !cancelled) r.err(VISIT_SAME_DAY_COL, `「${vc.cancelled}」に ○ の無い訪問には付けられません`);
       const note = r.optional(vc.note, 200);
+      // 組んだ開始・ピン（版2。ADR-0053）：列が無いブックは開始（早）の順・ピンなし
+      const start = r.text(VISIT_START_COL) === '' ? null : r.time(VISIT_START_COL);
+      const pinned = r.yes(VISIT_PIN_COL);
       // 種類・定期パターン（ADR-0012）。シートが無い古いブックは空
       const tid = hasTypes ? typeId(r, vc.type) : null;
       const pattern = hasPatterns ? visitPattern(r, vc) : null;
@@ -1279,6 +1281,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         latestStart &&
         typeof duration === 'number' &&
         sid !== undefined &&
+        start !== undefined &&
         tid !== undefined &&
         pattern !== undefined
       ) {
@@ -1291,6 +1294,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           latestStart,
           durationMinutes: duration,
           staffId: sid,
+          start: sid === null ? null : start,
+          pinned: sid !== null && pinned,
           cancelled,
           note,
           typeId: tid,
@@ -1361,11 +1366,9 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
     visitTypes,
     patterns,
     clientLeaves,
-    // 手直しの記憶は Excel のシートに無い（AI案・記録と同じく読み込むと消える。ADR-0043）
-    manualPrefs: {},
-    manualPlans: {},
-    aiPlans: {},
-    aiRuns: {},
+    // 伝えた内容・振り直しの情報は Excel のシートに無い。今のものを残す（変わった所は「未連絡の変更」になる。ADR-0053）
+    snapshots: base.snapshots,
+    reassigns: base.reassigns,
     presets,
     scorePresetId,
   };

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { AiPlan, DemoData } from '../contracts/data';
+import type { DemoData } from '../contracts/data';
 import { addDays, hhmmToMinutes } from '../domain/time';
 import { compile } from '../matching';
-import { applyPatterns } from '../patterns';
 import { createDemoData } from '../seed';
 import { dayLoad } from '../vacancy';
+import { dayRoutes, writeRoutes } from './dayPlan';
 import { dayPlanOf, staffDay } from './month';
 import {
   busyParts,
@@ -115,7 +115,7 @@ describe('staffSlots', () => {
     expect(left.filter((x) => x.state === 'visit')).toHaveLength(2);
   });
 
-  it('案の無い日（planned: false）は勤務内を「案なし」にし、空きにしない。休み・勤務外はそのまま', () => {
+  it('計算できない日（planned: false）は勤務内を「分からない」にし、空きにしない。休み・勤務外はそのまま', () => {
     const slots = staffSlots({
       shift: [span('09:00', '12:00')],
       base: [span('09:00', '13:00')],
@@ -127,7 +127,7 @@ describe('staffSlots', () => {
     expect(at(slots, '12:00')).toBe('rest');
     expect(at(slots, '13:00')).toBe('outside');
     expect(slots.some((x) => x.state === 'free')).toBe(false);
-    expect(staffSlotSummary(slots)).toBe('案なし 9:00〜12:00・休み 12:00〜13:00');
+    expect(staffSlotSummary(slots)).toBe('分からない 9:00〜12:00・休み 12:00〜13:00');
   });
 
   it('spansOf：HH:mm の時間帯を分に', () => {
@@ -187,13 +187,10 @@ describe('文', () => {
   });
 });
 
-/** seed を2週に広げ、各日に素朴な確定した割当（訪問を順に担当へ回す）を入れたデータ */
+/** seed の2週の各日に、素朴な担当（訪問を順に担当へ回す）を訪問に書いたデータ（版2：担当は訪問に持つ） */
 function seeded(): { data: DemoData; from: string } {
   const today = '2026-10-13';
-  const d0 = createDemoData(today);
-  const ch = applyPatterns(d0, { from: today, to: addDays(today, 13) }, today);
-  const data: DemoData = { ...d0, patterns: ch.patterns, visits: ch.visits };
-  const manualPlans: DemoData['manualPlans'] = {};
+  let data = createDemoData(today);
   for (let i = 0; i < 14; i++) {
     const date = addDays(today, i);
     const p = compile(data, date);
@@ -204,9 +201,9 @@ function seeded(): { data: DemoData; from: string } {
       const sid = working[k % working.length]!;
       routes[sid] = [...(routes[sid] ?? []), v.id];
     });
-    manualPlans[date] = routes;
+    data = writeRoutes(data, date, p, routes, { pins: {} });
   }
-  return { data: { ...data, manualPlans }, from: today };
+  return { data, from: today };
 }
 
 describe('ほかの数え方と食い違わない', () => {
@@ -217,7 +214,7 @@ describe('ほかの数え方と食い違わない', () => {
       const date = addDays(from, i);
       const load = dayLoad(data, date, { typeId: null });
       if (!load) continue;
-      const p = compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date);
+      const p = compile(data, date);
       const day = dayPlanOf(data, date, p);
       const bars = p.staff.filter((s) => s.slots.length > 0).map((s) => staffDay(data, day, s.id).bar);
       load.forEach((x, k) => {
@@ -243,7 +240,7 @@ describe('ほかの数え方と食い違わない', () => {
       const load = dayLoad(data, date, { typeId: null });
       if (!load) continue;
       expect(load).toHaveLength(48);
-      const p = compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date);
+      const p = compile(data, date);
       const day = dayPlanOf(data, date, p);
       const bars = p.staff.filter((s) => s.slots.length > 0).map((s) => staffDay(data, day, s.id).bar);
       load.forEach((x, k) => {
@@ -260,59 +257,20 @@ describe('ほかの数え方と食い違わない', () => {
     expect(late).toBeGreaterThan(0);
   });
 
-  it('今の案と確定が違う日は合わない：混み具合は確定を先に、〈スタッフ〉の表示は今の案を先に数える（そろえない）', () => {
-    const { data: d0, from } = seeded();
-    const date = addDays(from, 1);
-    const p = compile({ ...d0, visits: d0.visits.filter((v) => v.date === date) }, date);
-    // 今の案：全部の訪問を最初の働く人に寄せる（確定した割当は順に回したもの）
-    const first = p.staff.find((s) => s.slots.length > 0)!.id;
-    const routes = { [first]: p.visits.map((v) => v.id) };
-    const plan: AiPlan = {
-      date,
-      createdAt: 1,
-      seed: 1,
-      iterations: 1,
-      routes,
-      unassigned: [],
-      score: 0,
-      stopped: false,
-      rules: [],
-      generated: { routes, unassigned: [], score: 0 },
-      pins: {},
-    };
-    const data: DemoData = { ...d0, aiPlans: { [date]: plan } };
-    const load = dayLoad(data, date, { typeId: null })!;
-    const freeOf = (dd: DemoData) => {
-      const day = dayPlanOf(dd, date, p);
-      const bars = p.staff.filter((s) => s.slots.length > 0).map((s) => staffDay(dd, day, s.id).bar);
-      return load.map((_, k) => bars.filter((b) => b[k]!.state === 'free').length);
-    };
-    // 〈スタッフ〉の表示（今の案）は混み具合（確定）と食い違う
-    expect(freeOf(data)).not.toEqual(load.map((x) => x.free));
-    // 確定だけのデータ（今の案を外す）で数えれば混み具合と一致する
-    expect(freeOf({ ...data, aiPlans: {} })).toEqual(load.map((x) => x.free));
-  });
-
-  it('訪問の無い勤務日は空の案として「空き」（案なしにしない。dayLoad と同じ）', () => {
+  it('訪問の無い勤務日は「空き」（dayLoad と同じ）', () => {
     const { data, from } = seeded();
     const date = addDays(from, 1);
-    const empty: DemoData = {
-      ...data,
-      visits: data.visits.filter((v) => v.date !== date),
-      manualPlans: {},
-      aiPlans: {},
-    };
-    const p = compile({ ...empty, visits: [] }, date);
+    const empty: DemoData = { ...data, visits: [], patterns: [] };
+    const p = compile(empty, date);
     const sid = p.staff.find((s) => s.slots.length > 0)!.id;
     const x = staffDay(empty, dayPlanOf(empty, date), sid);
-    expect(x.noPlan).toBe(false);
     expect(x.bar.some((y) => y.state === 'free')).toBe(true);
     expect(x.bar.some((y) => y.state === 'noplan')).toBe(false);
     const load = dayLoad(empty, date, { typeId: null })!;
     expect(load.some((y) => y.free > 0)).toBe(true);
   });
 
-  it('週の表のマスのバーは月の staffDay と同じ（数える案は今の案、無ければ確定した割当）', () => {
+  it('週の表のマスのバーは月の staffDay と同じ（訪問の担当）', () => {
     const { data, from } = seeded();
     const days = weekDates(from).map((date) => weekDay(data, date));
     const t = staffWeekTable(data, days);
@@ -324,8 +282,8 @@ describe('ほかの数え方と食い違わない', () => {
 
   it('稼働の見込みの内訳の合計は 訪問・移動・待ち の分と拘束に一致する', () => {
     const { data, from } = seeded();
-    const p = compile({ ...data, visits: data.visits.filter((v) => v.date === from) }, from);
-    const stats = workStats(p, data.manualPlans[from]!, data.org, true);
+    const p = compile(data, from);
+    const stats = workStats(p, dayRoutes(data, from, p), data.org);
     expect(stats.length).toBeGreaterThan(0);
     for (const s of stats) {
       const sum = (k: string) => s.parts.filter((x) => x.kind === k).reduce((acc, x) => acc + x.end - x.start, 0);

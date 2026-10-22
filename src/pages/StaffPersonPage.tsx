@@ -672,7 +672,7 @@ function StaffPageBody({
                   {work.overDays > 0 && <DlRow term="上限を超える日" value={`${work.overDays}日`} />}
                 </dl>
               ) : (
-                <span className="sub">この期間に担当する訪問はありません（案のある日だけ数えます）。</span>
+                <span className="sub">この期間に担当する訪問はありません。</span>
               )}
               {workloadTo && (
                 <Link to={workloadTo} className="btn btn-small btn-text" data-testid="to-workload">

@@ -1,122 +1,71 @@
 import { describe, expect, it } from 'vitest';
-import { type AiPlan, type DemoData, MAX_RUNS_PER_DAY } from '../contracts/data';
+import type { DemoData } from '../contracts/data';
 import { MAX_VISIT_TYPES, type Pattern, type VisitType } from '../contracts/documents';
 import { compile } from '../matching';
 import { createDemoData } from '../seed';
+import { withSeedPlans } from '../seed/plans';
 import { importJson, isImportError, migrate } from './index';
 import { repair } from './repair';
 
 const DAY = '2026-10-12';
-const base = () => createDemoData(DAY);
+/** 初期データ（版2：7日分の担当を書いた回が保存した訪問） */
+const BASE = withSeedPlans(createDemoData(DAY), DAY, 3);
+const base = () => structuredClone(BASE);
 const visitsOn = (d: DemoData, date: string) => d.visits.filter((v) => v.date === date).map((v) => v.id);
 
-const plan = (routes: Record<string, string[]>, unassigned: string[], pins: Record<string, string> = {}): AiPlan => ({
-  date: DAY,
-  createdAt: 1,
-  seed: 1,
-  iterations: 10,
-  routes,
-  unassigned,
-  score: 0,
-  stopped: false,
-  rules: [],
-  generated: { routes, unassigned, score: 0 },
-  pins,
-});
-
-describe('repair（契約は通るが中身が食い違うデータ）', () => {
+describe('repair（契約は通るが中身が食い違うデータ。版2）', () => {
   it('食い違いのない初期データは変えない', () => {
     const d = base();
     expect(repair(d)).toEqual(d);
   });
 
-  it('いないスタッフ・訪問を指す手作業案は、その列・その訪問を除く（未割当の列は残す）', () => {
-    const d = base();
-    const [a = '', b = '', c = ''] = visitsOn(d, DAY);
-    const other = visitsOn(d, '2026-10-13')[0] ?? '';
-    const r = repair({
-      ...d,
-      manualPlans: { [DAY]: { s1: [a, 'v-none', other, a], ghost: [b], __none: [c, a] } },
-    });
-    expect(r.manualPlans[DAY]).toEqual({ s1: [a], __none: [c] });
-  });
-
-  it('AI案：いないスタッフの列の訪問は未割当へ、いない訪問は除く、固定はいる訪問・スタッフだけ', () => {
-    const d = base();
-    const [a = '', b = '', c = ''] = visitsOn(d, DAY);
-    const p = plan({ s1: [a, 'v-none'], ghost: [b] }, [c, 'v-none2', a], { [a]: 's1', [b]: 'ghost', 'v-none': 's1' });
-    const run = {
-      id: `${DAY}#1`,
-      no: 1,
-      date: DAY,
-      createdAt: 1,
-      label: '標準',
-      presetId: 'standard',
-      seed: 1,
-      iterations: 10,
-      rules: [],
-      pins: p.pins,
-      routes: p.routes,
-      unassigned: p.unassigned,
-      score: 0,
-      stopped: false,
-    };
-    const r = repair({ ...d, aiPlans: { [DAY]: p }, aiRuns: { [DAY]: [run, { ...run, label: '重複' }] } });
-    const x = r.aiPlans[DAY]!;
-    expect(x.routes).toEqual({ s1: [a] });
-    expect(x.unassigned).toEqual([c, b]);
-    expect(x.generated.routes).toEqual({ s1: [a] });
-    expect(x.generated.unassigned).toEqual([c, b]);
-    expect(x.pins).toEqual({ [a]: 's1' });
-    // 記録も同じに直し、ID の重複は最初の1件
-    expect(r.aiRuns[DAY]).toHaveLength(1);
-    expect(r.aiRuns[DAY]![0]).toMatchObject({
-      label: '標準',
-      routes: { s1: [a] },
-      unassigned: [c, b],
-      pins: { [a]: 's1' },
-    });
-  });
-
-  it('記録は1日 MAX_RUNS_PER_DAY 件まで（古いものから捨てる）', () => {
-    const d = base();
-    const runs = Array.from({ length: MAX_RUNS_PER_DAY + 5 }, (_, i) => ({
-      id: `${DAY}#${i + 1}@${i}`,
-      no: i + 1,
-      date: DAY,
-      createdAt: i,
-      label: '標準',
-      presetId: 'standard',
-      seed: 1,
-      iterations: 10,
-      rules: [],
-      pins: {},
-      routes: {},
-      unassigned: [],
-      score: 0,
-      stopped: false,
-    }));
-    const r = repair({ ...d, aiRuns: { [DAY]: runs } });
-    expect(r.aiRuns[DAY]).toHaveLength(MAX_RUNS_PER_DAY);
-    expect(r.aiRuns[DAY]![0]!.no).toBe(6);
-  });
-
-  it('いないスタッフを指す担当・いつもの担当は null、相性・稼働時間帯の上書きのいない人の分は消す', () => {
+  it('いないスタッフを指す担当は null（ピンも外す）、相性・稼働時間帯の上書きのいない人の分は消す', () => {
     const d = base();
     const v0 = d.visits[0]!;
     const c0 = d.clients[0]!;
     const r = repair({
       ...d,
-      visits: d.visits.map((v) => (v.id === v0.id ? { ...v, staffId: 'ghost' } : v)),
-      clients: d.clients.map((c) => (c.id === c0.id ? { ...c, usualStaffId: 'ghost' } : c)),
+      visits: d.visits.map((v) => (v.id === v0.id ? { ...v, staffId: 'ghost', pinned: true } : v)),
       compat: { ...d.compat, ghostClient: { s1: 2 }, [c0.id]: { ...d.compat[c0.id], ghost: -2 } },
       availability: [...d.availability, { staffId: 'ghost', date: DAY, slots: [] }],
     });
-    expect(r.visits.find((v) => v.id === v0.id)!.staffId).toBeNull();
-    expect(r.clients.find((c) => c.id === c0.id)!.usualStaffId).toBeNull();
+    expect(r.visits.find((v) => v.id === v0.id)).toMatchObject({ staffId: null, pinned: false });
     expect(r.compat.ghostClient).toBeUndefined();
     expect(r.compat[c0.id]).toEqual(d.compat[c0.id] ?? {});
     expect(r.availability).toEqual(d.availability);
+  });
+
+  it('伝えた内容：日付をキーにそろえ、重複は最初の1件、いない人の担当は null', () => {
+    const d = base();
+    const [a = '', b = ''] = visitsOn(d, DAY);
+    const r = repair({
+      ...d,
+      snapshots: {
+        [DAY]: {
+          date: '2026-01-01',
+          at: 1,
+          visits: [
+            { id: a, clientId: 'c1', staffId: 's1', start: '09:00' },
+            { id: a, clientId: 'c1', staffId: 's2', start: '10:00' },
+            { id: b, clientId: 'c2', staffId: 'ghost', start: '11:00' },
+          ],
+        },
+      },
+    });
+    expect(r.snapshots[DAY]).toEqual({
+      date: DAY,
+      at: 1,
+      visits: [
+        { id: a, clientId: 'c1', staffId: 's1', start: '09:00' },
+        { id: b, clientId: 'c2', staffId: null, start: '11:00' },
+      ],
+    });
+  });
+
+  it('条件の重み・必須はいつも点数の基準のプリセットにそろえる（重みは1組）', () => {
+    const d = base();
+    const tried = { ...d, rules: d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r)) };
+    expect(repair(tried).rules).toEqual(d.rules);
   });
 
   it('同じ ID の重複は最初の1件、同じ人・同じ日の上書きは最後の1件', () => {
@@ -158,12 +107,13 @@ describe('repair（契約は通るが中身が食い違うデータ）', () => {
 
   it('読み込み（migrate・importJson）で直す', () => {
     const d = base();
-    const bad = { ...d, manualPlans: { ...d.manualPlans, [DAY]: { ghost: ['v-none'] } } };
+    const v0 = d.visits[0]!;
+    const bad = { ...d, visits: d.visits.map((v) => (v.id === v0.id ? { ...v, staffId: 'ghost' } : v)) };
     const r = migrate(JSON.parse(JSON.stringify(bad)));
     expect(isImportError(r)).toBe(false);
-    expect((r as DemoData).manualPlans[DAY]).toEqual({});
+    expect((r as DemoData).visits[0]!.staffId).toBeNull();
     const r2 = importJson(JSON.stringify(bad));
-    expect((r2 as DemoData).manualPlans[DAY]).toEqual({});
+    expect((r2 as DemoData).visits[0]!.staffId).toBeNull();
   });
 });
 
@@ -175,16 +125,6 @@ describe('欠勤と振り直し（ADR-0011）', () => {
     from,
     to,
     note: '',
-  });
-  it('absences の無い古いデータは [] で読める', () => {
-    const d = base();
-    const { absences: _a, ...old } = JSON.parse(JSON.stringify(d));
-    const r = migrate(old);
-    expect(isImportError(r)).toBe(false);
-    expect((r as DemoData).absences).toEqual([]);
-    const nulled = migrate({ ...old, absences: null });
-    expect(isImportError(nulled)).toBe(false);
-    expect((nulled as DemoData).absences).toEqual([]);
   });
   it('いない人の欠勤は消え、ID の重複は最初の1件、同じ人・同じ日は最後の1件', () => {
     const d = base();
@@ -200,69 +140,38 @@ describe('欠勤と振り直し（ADR-0011）', () => {
     });
     expect(r.absences).toEqual([ab('a3', s, DAY, '12:00', null)]);
   });
-  it('今の案・記録の reassign の baseRoutes・basePins・insertRoutes は routes・pins と同じ規則で直す（absenceIds はそのまま。古いデータの now は捨てる）', () => {
+  it('振り直しの情報の baseRoutes・basePins・insertRoutes は、いない人の列・重複を除く（absenceIds はそのまま）', () => {
     const d = base();
     const [a = '', b = ''] = visitsOn(d, DAY);
     const info = {
       method: 'insert' as const,
-      from: 'plan' as const,
-      baseRoutes: { s1: [a, 'v-none', a], ghost: [b] },
+      baseRoutes: { s1: [a, a], ghost: [b] },
       basePins: { [a]: 's1', [b]: 'ghost' },
-      insertRoutes: { s1: [a, 'v-none'], ghost: [b] },
+      insertRoutes: { s1: [a], ghost: [b] },
       absenceIds: ['消えた欠勤'],
     };
-    // 古いデータ（いまの時刻 now が残っている）も読め、now は捨てる
-    const p = { ...plan({ s1: [a] }, []), reassign: { ...info, now: '10:30' } };
-    const r = repair({ ...d, aiPlans: { [DAY]: p } });
-    expect(r.aiPlans[DAY]!.reassign).toEqual({
+    const r = repair({ ...d, reassigns: { [DAY]: info } });
+    expect(r.reassigns[DAY]).toEqual({
       ...info,
       baseRoutes: { s1: [a] },
       basePins: { [a]: 's1' },
       insertRoutes: { s1: [a] },
     });
-    // 案B（method: 'anneal'・stayWeight）も読める
-    const pb = { ...plan({ s1: [a] }, []), reassign: { ...info, method: 'anneal' as const, stayWeight: 3 } };
-    expect(repair({ ...d, aiPlans: { [DAY]: pb } }).aiPlans[DAY]!.reassign).toMatchObject({
+    const anneal = { ...info, method: 'anneal' as const, stayWeight: 3 };
+    expect(repair({ ...d, reassigns: { [DAY]: anneal } }).reassigns[DAY]).toMatchObject({
       method: 'anneal',
       stayWeight: 3,
     });
   });
-  it('欠勤・AiPlan.reassign・AiRun.reassign を含むデータが 書き出し → 読み込み で同じに戻る', () => {
+  it('欠勤・振り直しの情報・伝えた内容を含むデータが 書き出し → 読み込み で同じに戻る', () => {
     const d = base();
     const [a = ''] = visitsOn(d, DAY);
     const s = d.staff[0]!.id;
-    const info = {
-      method: 'insert' as const,
-      from: 'confirmed' as const,
-      baseRoutes: { [s]: [a] },
-      basePins: {},
-      baseGenerated: { routes: { [s]: [a] }, unassigned: [], score: 3 },
-      baseRunId: `${DAY}#1@1`,
-      absenceIds: ['a1'],
-    };
-    const routes = { [s]: [a] };
-    const run = {
-      id: `${DAY}#1@1`,
-      no: 1,
-      date: DAY,
-      createdAt: 1,
-      label: '欠勤の振り直し',
-      presetId: null,
-      seed: 1,
-      iterations: 0,
-      rules: [],
-      pins: { [a]: s },
-      routes,
-      unassigned: [],
-      score: 0,
-      stopped: false,
-      reassign: info,
-    };
     const x: DemoData = {
       ...d,
       absences: [ab('a1', s, DAY, '09:00', '12:00')],
-      aiPlans: { [DAY]: { ...plan(routes, [], { [a]: s }), reassign: info } },
-      aiRuns: { [DAY]: [run] },
+      reassigns: { [DAY]: { method: 'insert', baseRoutes: { [s]: [a] }, basePins: {}, absenceIds: ['a1'] } },
+      snapshots: { [DAY]: { date: DAY, at: 5, visits: [{ id: a, clientId: 'c1', staffId: s, start: '09:00' }] } },
     };
     expect(importJson(JSON.stringify(x))).toEqual(repair(x));
     expect(importJson(JSON.stringify(x))).toEqual(x);
@@ -276,14 +185,14 @@ describe('欠勤と振り直し（ADR-0011）', () => {
 });
 
 describe('訪問の種類・定期パターン（ADR-0012）', () => {
-  // seed は種類・パターンを持つ（ADR-0012）。ここでは種類・パターンの無いデータ（seed の利用者さんのパターンの訪問だけ）から始める
+  // seed は種類・パターンを持つ（ADR-0012）。ここでは種類・パターンの無いデータ（保存した回を単発にしたもの）から始める
   const base = (): DemoData => {
-    const d = createDemoData(DAY);
+    const d = structuredClone(BASE);
     return {
       ...d,
       visitTypes: [],
       patterns: [],
-      visits: d.visits.filter((v) => v.pattern?.id === v.clientId).map((v) => ({ ...v, typeId: null, pattern: null })),
+      visits: d.visits.map((v) => ({ ...v, typeId: null, pattern: null })),
     };
   };
   const vt = (id: string, name = id): VisitType => ({
@@ -312,30 +221,6 @@ describe('訪問の種類・定期パターン（ADR-0012）', () => {
     usualStaffId: null,
     note: '',
     ...over,
-  });
-
-  it('visitTypes・patterns・訪問の typeId・pattern の無い古いデータは [] と null で読める（版は1のまま）', () => {
-    const d = base();
-    const { visitTypes: _t, patterns: _p, ...old } = JSON.parse(JSON.stringify(d));
-    old.visits = old.visits.map(({ typeId: _ti, pattern: _pa, ...v }: Record<string, unknown>) => v);
-    const r = migrate(old);
-    expect(isImportError(r)).toBe(false);
-    const x = r as DemoData;
-    expect(x.version).toBe(1);
-    expect(x.visitTypes).toEqual([]);
-    expect(x.patterns).toEqual([]);
-    expect(x.visits.length).toBe(d.visits.length);
-    expect(x.visits.every((v) => v.typeId === null && v.pattern === null)).toBe(true);
-    expect(x).toEqual(d);
-  });
-
-  it('visitTypes・patterns が null の古いデータも [] で読める', () => {
-    const d = base();
-    const r = migrate({ ...JSON.parse(JSON.stringify(d)), visitTypes: null, patterns: null });
-    expect(isImportError(r)).toBe(false);
-    expect((r as DemoData).visitTypes).toEqual([]);
-    expect((r as DemoData).patterns).toEqual([]);
-    expect(r).toEqual(d);
   });
 
   it('種類：ID の重複は最初の1件、20を超える分は後ろを捨てる', () => {
@@ -401,7 +286,7 @@ describe('訪問の種類・定期パターン（ADR-0012）', () => {
     expect(isImportError(bad(pt('p', c, { from: DAY, to: DAY })))).toBe(false);
   });
 
-  it('種類・パターン・展開した訪問を含むデータが 書き出し → 読み込み で同じに戻る', () => {
+  it('種類・パターン・保存した回を含むデータが 書き出し → 読み込み で同じに戻る', () => {
     const d = base();
     const c = d.clients[0]!.id;
     const s = d.staff[0]!.id;
@@ -437,18 +322,6 @@ describe('訪問の種類・定期パターン（ADR-0012）', () => {
 });
 
 describe('〈利用者さん〉の仮押さえ（ADR-0012 追記。段階3）', () => {
-  it('tentative の無い古いデータは false で読める（版は1のまま）', () => {
-    const d = base();
-    const old = JSON.parse(JSON.stringify(d));
-    old.clients = old.clients.map(({ tentative: _t, ...c }: Record<string, unknown>) => c);
-    const r = migrate(old);
-    expect(isImportError(r)).toBe(false);
-    const x = r as DemoData;
-    expect(x.version).toBe(1);
-    expect(x.clients.every((c) => c.tentative === false)).toBe(true);
-    expect(x).toEqual(d);
-  });
-
   it('repair は仮押さえを変えず、書き出し → 読み込み で同じに戻る', () => {
     const d = base();
     // 仮押さえは利用中の前の段階だけ（ADR-0015）
@@ -472,17 +345,6 @@ describe('〈利用者さん〉の仮押さえ（ADR-0012 追記。段階3）', 
 });
 
 describe('〈利用者さん〉のよみ（PRD D61）', () => {
-  it('kana の無い古いデータは空で読める（版は1のまま）', () => {
-    const d = base();
-    const old = JSON.parse(JSON.stringify(d));
-    old.clients = old.clients.map(({ kana: _k, ...c }: Record<string, unknown>) => c);
-    const r = migrate(old);
-    expect(isImportError(r)).toBe(false);
-    const x = r as DemoData;
-    expect(x.version).toBe(1);
-    expect(x.clients.every((c) => c.kana === '')).toBe(true);
-  });
-
   it('よみが 書き出し → 読み込み で同じに戻る', () => {
     const d = base();
     const x: DemoData = { ...d, clients: d.clients.map((c, i) => ({ ...c, kana: `よみ${i}` })) };
@@ -502,33 +364,6 @@ describe('〈利用者さん〉のよみ（PRD D61）', () => {
 
 describe('第N曜日・曜日ごとの時刻・〈利用者さん〉の休み・決まりごと（ADR-0013）', () => {
   const pattern = (d: DemoData, over: Partial<Pattern> = {}): Pattern => ({ ...d.patterns[0]!, ...over });
-
-  it('clientLeaves・パターンの repeat・monthWeeks・dayTimes・決まりごとの無い古いデータが読める（版は1のまま）', () => {
-    const d = base();
-    const { clientLeaves: _l, ...old } = JSON.parse(JSON.stringify(d));
-    old.patterns = old.patterns.map(({ repeat: _r, monthWeeks: _m, dayTimes: _t, ...p }: Record<string, unknown>) => p);
-    old.clients = old.clients.map(
-      ({ entryNote: _a, keyNote: _b, parkingNote: _c, cautionNote: _e, ...c }: Record<string, unknown>) => c,
-    );
-    const r = migrate(old);
-    expect(isImportError(r)).toBe(false);
-    const x = r as DemoData;
-    expect(x.version).toBe(1);
-    expect(x.clientLeaves).toEqual([]);
-    expect(x.patterns.every((p) => p.repeat === 'weekly' && p.monthWeeks.length === 0 && p.dayTimes.length === 0)).toBe(
-      true,
-    );
-    expect(x.clients.every((c) => c.entryNote === '' && c.cautionNote === '')).toBe(true);
-    // 初期データの決まりごとの例は古いデータには無いので、その分だけ違う
-    const strip = (y: DemoData) => ({
-      ...y,
-      clients: y.clients.map((c) => ({ ...c, entryNote: '', keyNote: '', parkingNote: '', cautionNote: '' })),
-    });
-    expect(x).toEqual(strip(d));
-    // null の clientLeaves も [] で読む
-    const n = migrate({ ...JSON.parse(JSON.stringify(d)), clientLeaves: null });
-    expect((n as DemoData).clientLeaves).toEqual([]);
-  });
 
   it('repair：いない〈利用者さん〉の休みと ID の重複を除く。monthWeeks は小さい順（毎週系なら []）、dayTimes は曜日にあるものだけ・曜日の順', () => {
     const d = base();
@@ -597,16 +432,6 @@ describe('第N曜日・曜日ごとの時刻・〈利用者さん〉の休み・
 });
 
 describe('担当できる人を限る（ADR-0014）', () => {
-  it('allowedStaffIds の無い古いデータは [] で読める（版は1のまま）', () => {
-    const d = base();
-    const old = JSON.parse(JSON.stringify(d));
-    old.clients = old.clients.map(({ allowedStaffIds: _a, ...c }: Record<string, unknown>) => c);
-    const r = migrate(old);
-    expect(isImportError(r)).toBe(false);
-    expect((r as DemoData).clients.every((c) => c.allowedStaffIds.length === 0)).toBe(true);
-    expect(r).toEqual(d);
-  });
-
   it('repair：いない人・休止中の人と重なりを除く。全員いなくなれば []（限らない）。食い違いが無ければ同じ物', () => {
     const d = base();
     const [s1, s2, s3] = d.staff.map((s) => s.id);
@@ -632,50 +457,5 @@ describe('担当できる人を限る（ADR-0014）', () => {
     const bad = JSON.parse(JSON.stringify(d));
     bad.clients[0].allowedStaffIds = Array.from({ length: 51 }, (_, i) => `s${i}`);
     expect(isImportError(importJson(JSON.stringify(bad)))).toBe(true);
-  });
-});
-
-describe('手直しの記憶（ADR-0043）', () => {
-  it('無い古いデータは {}（版は1のまま）', () => {
-    const { manualPrefs: _, ...old } = base();
-    const r = migrate(JSON.parse(JSON.stringify(old)));
-    expect(isImportError(r)).toBe(false);
-    expect((r as DemoData).manualPrefs).toEqual({});
-  });
-  it('いない〈スタッフ〉の記憶を消し、2000件を超えたら古い順に消す。書き出し → 読み込みで同じ', () => {
-    const d = base();
-    const sid = d.staff[0]!.id;
-    const cid = d.clients[0]!.id;
-    const k = (i: number) => `${cid}|${i}`;
-    const prefs: DemoData['manualPrefs'] = { [`${cid}|gone`]: { staffId: 'nobody', updatedAt: 99999 } };
-    for (let i = 0; i < 2001; i++) prefs[k(i)] = { staffId: sid, updatedAt: i };
-    const r = repair({ ...d, manualPrefs: prefs });
-    expect(Object.keys(r.manualPrefs)).toHaveLength(2000);
-    expect(r.manualPrefs[`${cid}|gone`]).toBeUndefined();
-    expect(r.manualPrefs[k(0)]).toBeUndefined();
-    expect(r.manualPrefs[k(2000)]).toEqual({ staffId: sid, updatedAt: 2000 });
-    const back = importJson(JSON.stringify(r));
-    expect(isImportError(back)).toBe(false);
-    expect((back as DemoData).manualPrefs).toEqual(r.manualPrefs);
-    // 直す所が無ければ同じ物
-    expect(repair(r).manualPrefs).toBe(r.manualPrefs);
-  });
-  it('いない〈利用者さん〉の記憶を消す・manualPrefs が null なら {}', () => {
-    const d = base();
-    const sid = d.staff[0]!.id;
-    const cid = d.clients[0]!.id;
-    const r = repair({
-      ...d,
-      manualPrefs: {
-        [`${cid}|1|09:00-09:00|`]: { staffId: sid, updatedAt: 1 },
-        'nobody|1|09:00-09:00|': { staffId: sid, updatedAt: 2 },
-      },
-    });
-    expect(Object.keys(r.manualPrefs)).toEqual([`${cid}|1|09:00-09:00|`]);
-    const raw = JSON.parse(JSON.stringify(d));
-    raw.manualPrefs = null;
-    const m = migrate(raw);
-    expect(isImportError(m)).toBe(false);
-    expect((m as DemoData).manualPrefs).toEqual({});
   });
 });

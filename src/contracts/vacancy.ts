@@ -67,7 +67,7 @@ export type VacancyResult = {
   exact: boolean;
   /** 対象の日 */
   dates: string[];
-  /** 案が無く数えなかった日 */
+  /** その日の問題を作れず数えなかった日（データの食い違いなど。ふつうは空） */
   noPlanDates: string[];
   /** 開始時刻の列（分） */
   times: number[];
@@ -88,7 +88,7 @@ export type DayLoadFilter = { typeId: string | null };
 export type VacancyOf = (data: DemoData, query: VacancyQuery, range: VacancyRange) => VacancyResult;
 export type VerdictOf = (cell: VacancyCell) => Verdict;
 export type InquirySummary = (result: VacancyResult, wish: InquiryWish, terms: Terms) => string;
-/** 0:00〜24:00 の30分ごと（開始の順。PRD D82 で 07:00〜20:00 から広げた）。案の無い日は null（D54。dayFreeness を置き換え） */
+/** 0:00〜24:00 の30分ごと（開始の順。PRD D82）。その日の問題を作れなければ null（D54） */
 export type DayLoadFn = (data: DemoData, date: string, filter: DayLoadFilter) => DayLoadSlot[] | null;
 
 /** 空き枠の案内文の形（ADR-0013）：'dates'＝日付ごと（1人以上の時刻）、'weekly'＝曜日ごと（どの週も受けられる時刻） */

@@ -62,9 +62,9 @@ function knownOf(problem: Problem, col: string[]): number[] {
  * その日の元の案の列（欠勤の baseOf と同じ選び方：確定した割当があればそれ、無ければ今の案）。
  * 問題に訪問が無い日（realVisits＝0）は空の案。訪問があって案も確定も無ければ null
  */
-function planOf(data: DemoData, date: string, problem: Problem, realVisits: number): Routes | null {
+function planOf(data: DemoData, date: string, problem: Problem, realVisits: number): Routes {
   if (realVisits === 0) return {};
-  return baseOf(data, date, problem)?.routes ?? null;
+  return baseOf(data, date, problem).routes;
 }
 
 /** 担当に必要な条件（種類の必要条件と query.requirements）をすべて満たすか。項目の無い・相手側でない条件は無視する（compile と同じ） */
@@ -108,15 +108,6 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
   const vType = query.typeId === null ? undefined : data.visitTypes.find((t) => t.id === query.typeId);
   const conds = [...(vType?.requirements ?? []), ...query.requirements];
   const eligible = new Set(data.staff.filter((s) => meetsAll(conds, items, s.traits)).map((s) => s.id));
-  // 日ごとの訪問（compile に渡すデータを小さくする）
-  const visitsByDate = new Map<string, Visit[]>();
-  const wanted = new Set(dates);
-  for (const v of data.visits) {
-    if (!wanted.has(v.date)) continue;
-    const list = visitsByDate.get(v.date);
-    if (list) list.push(v);
-    else visitsByDate.set(v.date, [v]);
-  }
   const inquiryClient: Client | null =
     query.place === null
       ? null
@@ -131,7 +122,6 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
           traits: {},
           requirements: query.requirements,
           preferences: [],
-          usualStaffId: null,
           tentative: false,
           entryNote: '',
           keyNote: '',
@@ -147,8 +137,7 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
   /** 日付 → 開始時刻ごとの人（times の順） */
   const counted = new Map<string, string[][]>();
   for (const date of dates) {
-    const dayVisits = visitsByDate.get(date) ?? [];
-    let dayData: DemoData = { ...data, clients, visits: dayVisits };
+    let dayData: DemoData = { ...data, clients };
     if (inquiryClient && times.length > 0) {
       const inquiry: Visit = {
         id: INQUIRY_VISIT_ID,
@@ -159,22 +148,26 @@ export const vacancyOf: VacancyOf = (data, query, range) => {
         latestStart: minutesToHhmm(times.at(-1)!),
         durationMinutes: duration,
         staffId: null,
+        start: null,
+        pinned: false,
         cancelled: false,
         note: '',
         typeId: vType?.id ?? null,
         pattern: null,
         cancelKind: null,
       };
-      dayData = { ...dayData, visits: [...dayVisits, inquiry] };
+      dayData = { ...dayData, visits: [...data.visits, inquiry] };
     }
-    const problem = compile(dayData, date);
-    const vi = problem.visits.findIndex((v) => v.id === INQUIRY_VISIT_ID);
-    const realVisits = problem.visits.length - (vi >= 0 ? 1 : 0);
-    const routes = planOf(dayData, date, problem, realVisits);
-    if (routes === null) {
+    let problem: Problem;
+    try {
+      problem = compile(dayData, date);
+    } catch {
       noPlanDates.push(date);
       continue;
     }
+    const vi = problem.visits.findIndex((v) => v.id === INQUIRY_VISIT_ID);
+    const realVisits = problem.visits.length - (vi >= 0 ? 1 : 0);
+    const routes = planOf(dayData, date, problem, realVisits);
     const perTime = exact
       ? exactOn(problem, routes, vi, times, eligible)
       : estimateOn(problem, routes, times, duration, query.marginMinutes, eligible);
@@ -340,15 +333,18 @@ export const inquirySummary: InquirySummary = (result, wish, terms) => {
 
 /**
  * 日の混み具合（D54。design.md §4 vacancy）：0:00〜24:00 の30分ごと（PRD D82。3段に出すのは 8〜20時で、外は端の印）に、working＝その30分に稼働時間帯（欠勤を除く）が
- * 重なる人、free＝そのうち元の案（確定した割当、無ければ今の案）の訪問の [開始 − 来る移動, 終了) と重ならない人。
+ * 重なる人、free＝そのうち今の担当の並びの訪問の [開始 − 来る移動, 終了) と重ならない人。
  * filter.typeId があれば、その種類の必要条件を満たす人だけを数える（いない種類は種類なし）。
- * 訪問がある日に案が無ければ null（訪問の無い日は空の案として数える）
+ * その日の問題を作れなければ null
  */
 export const dayLoad: DayLoadFn = (data, date, filter) => {
-  // compile はその日の訪問しか読まないので、その日の訪問だけを渡す
-  const problem = compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date);
+  let problem: Problem;
+  try {
+    problem = compile(data, date);
+  } catch {
+    return null;
+  }
   const routes = planOf(data, date, problem, problem.visits.length);
-  if (routes === null) return null;
   const items = new Map(data.items.map((it) => [it.id, it]));
   const vType = filter.typeId === null ? undefined : data.visitTypes.find((t) => t.id === filter.typeId);
   const conds = vType?.requirements ?? [];

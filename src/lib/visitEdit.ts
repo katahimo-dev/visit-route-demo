@@ -8,15 +8,24 @@ export type VisitFields = Pick<
 >;
 
 /**
- * 保存する訪問。直すとき（visit あり）は ID・パターンを引き継ぎ、取り消しは外す。
- * 日付を変えたら手作業の担当（staffId）を外す（前の日の確定した割当の担当なので。週間の moveOnce と同じ）。
- * パターンの訪問で、日付・時刻・所要・種類・取り消しを変えたら「この回だけの変更」（メモ・〈利用者さん〉は数えない）
+ * 保存する訪問。直すとき（visit あり）は ID・パターン・担当・ピンを引き継ぎ、取り消しは外す（版2：担当は訪問が持つ）。
+ * 日付・時刻を変えたら組んだ開始（start）は外す（呼ぶ側がその日の開始を書き直す）。
+ * パターンの訪問で、日付・時刻・所要・種類・取り消し・メモを変えたら「この回だけの変更」（〈利用者さん〉は数えない）
  */
 export function savedVisit(visit: Visit | null, f: VisitFields, newVisitId: string): Visit {
+  const timeSame =
+    !!visit &&
+    visit.date === f.date &&
+    visit.earliestStart === f.earliestStart &&
+    visit.latestStart === f.latestStart &&
+    visit.durationMinutes === f.durationMinutes &&
+    visit.windowKind === f.windowKind;
   const base = {
     ...f,
     id: visit?.id ?? newVisitId,
-    staffId: visit && visit.date === f.date ? visit.staffId : null,
+    staffId: visit?.staffId ?? null,
+    start: timeSame ? (visit?.start ?? null) : null,
+    pinned: visit?.pinned ?? false,
     cancelled: false,
     cancelKind: null,
   };
@@ -29,6 +38,7 @@ export function savedVisit(visit: Visit | null, f: VisitFields, newVisitId: stri
       base.latestStart !== visit.latestStart ||
       base.durationMinutes !== visit.durationMinutes ||
       base.typeId !== (visit.typeId ?? null) ||
+      base.note !== visit.note ||
       base.cancelled !== visit.cancelled);
   return { ...base, pattern: ref ? { ...ref, edited: ref.edited || changed } : null };
 }

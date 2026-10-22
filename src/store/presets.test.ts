@@ -8,15 +8,7 @@ import { repair } from './repair';
 
 const base = () => createDemoData('2026-10-12');
 
-describe('プリセットの移行（版は1のまま）', () => {
-  it('presets が無い古い保存データは、初期の3つで補って読める', () => {
-    const { presets: _, ...old } = base();
-    const r = importJson(JSON.stringify(old));
-    if (isImportError(r)) throw new Error(r.message);
-    expect(r.version).toBe(1);
-    expect(r.presets).toEqual(INITIAL_PRESETS);
-  });
-
+describe('プリセットの読み込み', () => {
   it('weights に無い型は 重み0・必須でない で補う', () => {
     const d = base();
     const { wait: _, ...weights } = d.presets[0]!.weights;
@@ -81,15 +73,6 @@ describe('プリセットの repair', () => {
   it('食い違いのないプリセットは同じもの（参照も変えない）', () => {
     const d = base();
     expect(repair(d).presets[0]).toBe(d.presets[0]);
-  });
-});
-
-describe('presets が null の保存データ', () => {
-  it('初期の3つで補う', () => {
-    const d = base();
-    const r = importJson(JSON.stringify({ ...d, presets: null }));
-    if (isImportError(r)) throw new Error(r.message);
-    expect(r.presets).toEqual(INITIAL_PRESETS);
   });
 });
 

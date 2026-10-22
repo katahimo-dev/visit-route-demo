@@ -30,18 +30,15 @@ describe('行き先の URL（PRD D201〜D204）', () => {
 });
 
 describe('月の要対応の行き先（attentionTarget。PRD D201）', () => {
-  it('入らない訪問は日の画面の「入らなかった訪問」', () => {
-    expect(attentionTarget(at('unassigned', { count: 2 }), {})).toEqual({
+  it('担当なしのある要対応は日の画面の「担当なしの訪問」', () => {
+    expect(attentionTarget(at('care', { count: 2, names: ['担当なし 2'] }), {})).toEqual({
       to: '/plan?date=2026-10-21&do=unassigned',
       date: D,
-      note: '（日の予定の「入らなかった訪問」で開く）',
+      note: '（日の予定の「担当なしの訪問」で開く）',
     });
   });
-  it('休みの人に訪問が残るは、その日の「欠勤・キャンセル」の欄（1段目）', () => {
-    const t = attentionTarget(at('absentLeft'), {});
-    expect(t.to).toBe('/plan?date=2026-10-21&do=absence');
-    expect(t.date).toBe(D);
-    expect(t.note).toBe('（日の予定の「欠勤・キャンセル」で開く）');
+  it('担当なしの無い要対応（担当が休みなど）は日の画面', () => {
+    expect(attentionTarget(at('care', { names: ['担当が休み 1'] }), {}).to).toBe('/plan');
   });
   it('拘束が上限を超えるは、稼働の見込みをその月・先頭の人で', () => {
     const t = attentionTarget(
@@ -58,9 +55,7 @@ describe('月の要対応の行き先（attentionTarget。PRD D201）', () => {
       '/workload?ym=2026-10&staff=s1',
     );
   });
-  it('そのほか（条件が変わった・欠勤がある）は今のまま日の画面', () => {
-    for (const k of ['stale', 'absence'] as const) {
-      expect(attentionTarget(at(k), {})).toEqual({ to: '/plan', date: D, note: '（日の予定で開く）' });
-    }
+  it('未連絡の変更は日の画面', () => {
+    expect(attentionTarget(at('changed'), {})).toEqual({ to: '/plan', date: D, note: '（日の予定で開く）' });
   });
 });

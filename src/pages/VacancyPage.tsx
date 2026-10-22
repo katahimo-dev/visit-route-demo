@@ -69,7 +69,7 @@ import {
 } from '../lib/vacancyView';
 import { useValueStore } from '../lib/valueStore';
 import { insertAllIntoPlans, weekStart } from '../lib/week';
-import { applyPatterns } from '../patterns';
+import { visitsIn } from '../patterns';
 import { useDemoData } from '../store';
 import { inquirySummary, vacancyNotice, vacancyOf, verdictOf } from '../vacancy';
 import './settings.css';
@@ -119,7 +119,7 @@ const VACANCY_LEGEND: [string, string][] = [
   ['two', '2人'],
   ['three', '3人'],
   ['many', '4人以上'],
-  ['unknown', '案なし'],
+  ['unknown', '数えられない'],
 ];
 
 /** 案の無い日の注意に並べる日付の数（それより多ければ「ほか N日」） */
@@ -129,7 +129,7 @@ const DAY_MARK: Record<InquiryDayMark, string> = { ok: '○', ng: '×', unknown:
 const DAY_TEXT: Record<InquiryDayMark, string> = {
   ok: '受けられる',
   ng: '受けられない',
-  unknown: '案が無く数えていない',
+  unknown: '数えられない日',
 };
 
 /**
@@ -191,10 +191,8 @@ function InquiryWeeks({ rows, exact }: { rows: InquiryRow[]; exact: boolean }) {
   );
 }
 
-/** 展開済みの範囲の最後の日（いまある訪問の最後の日。無ければ今日）。PatternsSection と同じ決め方 */
-function lastVisitDate(visits: { date: string }[], today: string): string {
-  return visits.reduce((m, v) => (v.date > m ? v.date : m), today);
-}
+/** 仮押さえで担当を入れる日数（今日から。それより後の回は繰り返しの担当で出る） */
+const HOLD_DAYS = 28;
 
 /** 案内文の期間（ADR-0013）：今週＝今日〜その週の日曜（月曜はじまり）、来週＝次の月曜〜日曜、先4週＝今日から4週 */
 type NoticePeriod = 'thisWeek' | 'nextWeek' | 'fourWeeks';
@@ -481,7 +479,10 @@ export default function VacancyPage() {
     toast((await copyText(summary)) ? '要約をコピーしました' : 'コピーできませんでした。文を選んでコピーしてください');
   };
 
-  /** 仮押さえ：〈利用者さん〉（仮）と定期パターンを1回の update で入れ、展開済みの範囲に applyPatterns */
+  /**
+   * 仮押さえ：〈利用者さん〉（仮）と繰り返しを1回の update で入れ、今日から4週の回を空き時間に入れて（lib/week の insertAllIntoPlans）、
+   * いちばん多く入った人を繰り返しの担当にする（版2。それより後の回はその担当で出る）
+   */
   const register = () => {
     if (!hold || !query) return;
     const name = hold.name.trim();
@@ -510,7 +511,6 @@ export default function VacancyPage() {
       traits: {},
       requirements,
       preferences: [],
-      usualStaffId: null,
       tentative: true,
       entryNote: '',
       keyNote: '',
@@ -546,44 +546,58 @@ export default function VacancyPage() {
       }
       patterns.push(r.data);
     }
-    // 足した訪問は、今の案がある日なら空き時間に入れて固定する（lib/week の insertIntoPlan。入らない日は知らせる）
-    const createdAt = Date.now();
+    // 今日から4週の回を空き時間に入れてピン（lib/week の insertIntoPlan。入らない日は知らせる）。いちばん多く入った人を繰り返しの担当に
     const build = (d: typeof data) => {
       const clients = [...d.clients, client];
-      const c = applyPatterns(
-        { patterns, visits: d.visits, clients },
-        { from: today, to: lastVisitDate(d.visits, today) },
-        today,
-      );
-      const next = { ...d, clients, patterns: [...d.patterns, ...patterns], visits: c.visits };
-      return { added: c.added.length, ...insertAllIntoPlans(next, c.added, createdAt) };
+      const next = { ...d, clients, patterns: [...d.patterns, ...patterns] };
+      const ids = new Set(patterns.map((p) => p.id));
+      const added = visitsIn(next, { from: today, to: addDays(today, HOLD_DAYS - 1) })
+        .filter((v) => v.pattern && ids.has(v.pattern.id))
+        .map((v) => ({ visitId: v.id, date: v.date }));
+      const r = insertAllIntoPlans(next, added);
+      const count = new Map<string, Map<string, number>>();
+      for (const v of r.data.visits) {
+        if (!v.pattern || !ids.has(v.pattern.id) || !v.staffId) continue;
+        const m = count.get(v.pattern.id) ?? new Map<string, number>();
+        m.set(v.staffId, (m.get(v.staffId) ?? 0) + 1);
+        count.set(v.pattern.id, m);
+      }
+      const best = (pid: string) => {
+        const m = count.get(pid);
+        if (!m) return null;
+        return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
+      };
+      const out = {
+        ...r.data,
+        patterns: r.data.patterns.map((p) => (ids.has(p.id) ? { ...p, usualStaffId: best(p.id) } : p)),
+      };
+      return { added: added.length, ...r, data: out };
     };
     // 知らせの件数はいまのデータで数える（update の中の関数はあとで呼ばれることがある）
     const r = build(data);
     update((d) => build(d).data);
     setHold(null);
-    const into = r.inserted > 0 ? `・今の案に ${r.inserted}件入れました` : '';
+    const into = r.inserted > 0 ? `・担当を ${r.inserted}件入れました` : '';
     const miss =
       r.failedDates.length > 0
         ? `。${r.failedDates.length}日（${r.failedDates.map(mdText).join('・')}）は空き時間に入りません`
         : '';
-    toast(`仮押さえしました（${name}・訪問 ${r.added}件${into}）${miss}`);
+    toast(`仮押さえしました（${name}・4週の訪問 ${r.added}件${into}）${miss}`);
   };
 
   const noPlan = result?.noPlanDates ?? [];
   /** 答えのカード（PRD D258） */
   const answer = result && wishOk ? answerCard(result, wish) : null;
-  /** 足りない案の日（範囲の今日以降の、案の無い日・条件が変わった日。PRD D259） */
+  /** 担当の足りない日（範囲の今日以降の、担当なしの訪問がある・伝えていない日。PRD D259） */
   const rangeKey = result ? result.dates.join(',') : '';
   // biome-ignore lint/correctness/useExhaustiveDependencies: 範囲は日付の並び（rangeKey）で見る
   const missing = useMemo(() => (result ? missingDays(data, result.dates, today) : []), [data, rangeKey, today]);
-  const staleCount = missing.filter((x) => x.mode === 'stale').length;
   /** 月まとめ作成の進み具合（作っている間は押せない。PRD D256） */
   const batchRun = useValueStore(monthBatch.run);
   const making = batchRun !== null;
   /** 作っている間のボタンの文（月の予定から始めた作成は「（月の予定）」で分ける） */
   const makingText = batchRun
-    ? `${batchRun.label}の案を作っています${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' ? '（週の予定）' : '…'}`
+    ? `${batchRun.label}の担当を組んでいます${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' ? '（週の予定）' : '…'}`
     : '';
   /** 答えのカード（足りない案を作り終えてボタンが消えたとき、フォーカスをここへ） */
   const answerRef = useRef<HTMLDivElement>(null);
@@ -594,19 +608,18 @@ export default function VacancyPage() {
     makeFocused.current = false;
     answerRef.current?.focus({ preventScroll: true });
   }, [missing.length]);
-  /** 足りない案を、その場で作る（月まとめ作成の仕組み。ほかの画面へ移っても続く。ADR-0042） */
+  /** 担当の足りない日を、その場で AI で組む（月の「担当を AI で組む」の仕組み。ほかの画面へ移っても続く。ADR-0042） */
   const makeMissing = () => {
     if (missing.length === 0 || making) return;
     const ok = monthBatch.start({
       ym: ymOf(missing[0]!.date),
       label: monthsLabel(missing.map((x) => x.date)),
-      mode: 'empty',
+      mode: 'care',
       days: missing,
-      expand: null,
       today,
       source: 'vacancy',
     });
-    if (!ok) toast('ほかの案を作っています。終わってから押してください');
+    if (!ok) toast('ほかの担当を組んでいます。終わってから押してください');
   };
   // 段階の要約の行（PRD D184・D185）
   const placeSummary = placeLine(
@@ -847,18 +860,20 @@ export default function VacancyPage() {
             <p className="sub vacancy-answer-note">{answer.note}</p>
           </div>
         )}
-        {/* 案の無い日・条件が変わった日の注意はここ1か所（PRD D176）。その場で足りない案を作る（PRD D259） */}
+        {/* 数えなかった日・担当なしの訪問がある日の注意はここ1か所（PRD D176）。その場で担当を組む（PRD D259） */}
         {(noPlan.length > 0 || missing.length > 0) && (
           <div className="vacancy-noplan" data-testid="vacancy-noplan">
             <p>
               {noPlan.length > 0 ? (
                 <>
-                  案の無い日（{noPlan.length}日：{noPlan.slice(0, NOPLAN_SHOWN).map(mdText).join('・')}
+                  計算できなかった日（{noPlan.length}日：{noPlan.slice(0, NOPLAN_SHOWN).map(mdText).join('・')}
                   {noPlan.length > NOPLAN_SHOWN ? ` ほか${noPlan.length - NOPLAN_SHOWN}日` : ''}
                   ）は数えていません（表は「？」、案内文にも載せません）。
                 </>
               ) : null}
-              {staleCount > 0 ? `条件が変わった日が${staleCount}日あります（作り直すと今の条件で数えます）。` : ''}
+              {missing.length > 0
+                ? `担当なしの訪問がある日が${missing.length}日あります（担当を組むと、空きが減ることがあります）。`
+                : ''}
             </p>
             {missing.length > 0 ? (
               <button
@@ -878,7 +893,7 @@ export default function VacancyPage() {
                 data-count={missing.length}
               >
                 <WithIcon icon={Sparkles} size={14}>
-                  {making ? makingText : `足りない案を作る（${missing.length}日）`}
+                  {making ? makingText : `担当なしを AI で組む（${missing.length}日）`}
                 </WithIcon>
               </button>
             ) : (
@@ -941,7 +956,7 @@ export default function VacancyPage() {
             <table className="vacancy-grid" data-testid="vacancy-grid">
               <caption className="sr-only">
                 曜日と開始時刻ごとの、受けられる{terms.staff}の人数（○ どの週も受けられる・△ 受けられない週がある・×
-                受けられない・？ 案が無く数えていない）
+                受けられない・？ 数えられない日）
               </caption>
               <thead>
                 <tr>
@@ -1118,7 +1133,7 @@ export default function VacancyPage() {
                   </output>
                   {notice.noPlan.length > 0 && (
                     <p className="sub" data-testid="notice-noplan">
-                      案の無い日（{notice.noPlan.length}日）は載せていません（上の表の注意）。
+                      計算できなかった日（{notice.noPlan.length}日）は載せていません（上の表の注意）。
                     </p>
                   )}
                   <div className="row">
@@ -1233,7 +1248,7 @@ export default function VacancyPage() {
             </span>
           </p>
           {picked.byDate.length === 0 ? (
-            <p className="sub">案のある日がありません</p>
+            <p className="sub">数えられる日がありません</p>
           ) : (
             <ul className="vacancy-dates" data-testid="vacancy-dates">
               {picked.byDate.map((x) => (
@@ -1251,18 +1266,18 @@ export default function VacancyPage() {
                   <Link
                     to={dayHref(x.date)}
                     className="vacancy-day-open"
-                    aria-label={`その日の案を見る（${dateText(x.date)}・日の予定で開く）`}
+                    aria-label={`その日の予定を見る（${dateText(x.date)}・日の予定で開く）`}
                     data-testid="vacancy-day-open"
                     data-date={x.date}
                   >
-                    その日の案を見る
+                    その日の予定を見る
                   </Link>
                 </li>
               ))}
             </ul>
           )}
           {noPlan.some((d) => weekday(d) === picked.weekday) && (
-            <p className="sub">案の無い日は数えていません（表の上の注意）。</p>
+            <p className="sub">計算できなかった日は数えていません（表の上の注意）。</p>
           )}
         </SidePanel>
       )}
@@ -1318,7 +1333,7 @@ export default function VacancyPage() {
           </ul>
           <Hint>
             「仮」の印の{terms.client}
-            として登録し、いまある訪問の最後の日まで訪問を作ります。今の案がある日は、ほかの人の予定を変えずに空き時間へ入れます。入らない日は知らせるので、日の予定で入れてください。
+            として登録し、繰り返しを足します。先4週の回は、ほかの人の予定を変えずに空き時間へ入れます。入らない回は担当なしになるので、日の予定で入れてください。
             あとで{terms.client}の画面で「本登録にする」か「仮押さえを取り消す」を選べます。
             {exactPlace
               ? ''

@@ -58,6 +58,7 @@ import { formatPostalCode, normalizePostalCode } from '../lib/postalCode';
 import { cancelTentative as cancelTentativeData, confirmedDatesOf } from '../lib/tentative';
 import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
+import { usualStaffOf } from '../lib/usualStaff';
 import { isDirty, orDash } from '../lib/viewMode';
 import { useDemoData } from '../store';
 import { ClientLeavesSection } from './ClientLeavesSection';
@@ -78,7 +79,7 @@ const SECTIONS = {
   place: ['place'],
   traits: ['traits'],
   rules: ['entryNote', 'keyNote', 'parkingNote', 'cautionNote'],
-  staffing: ['usualStaffId', 'allowedStaffIds'],
+  staffing: ['allowedStaffIds'],
   conds: ['requirements', 'preferences'],
 } as const satisfies Record<string, readonly (keyof Client)[]>;
 type SecKey = keyof typeof SECTIONS;
@@ -105,7 +106,6 @@ const blank = (nextColor: number): Client => ({
   traits: {},
   requirements: [],
   preferences: [],
-  usualStaffId: null,
   tentative: false,
   entryNote: '',
   keyNote: '',
@@ -428,12 +428,11 @@ function ClientPageBody({
   };
   /** 仮押さえを取り消す（D47）：確認のうえ、その人の繰り返し・訪問・〈利用者さん〉を消して一覧へ */
   const cancelTentative = async (c: Client) => {
-    const n = data.visits.filter((v) => v.clientId === c.id).length;
     const fixed = confirmedDatesOf(data, c.id).length;
     const ok = await confirmDialog({
       title: `仮押さえの${c.displayName}を取り消しますか？`,
-      body: `繰り返しと訪問 ${n}件を消し、${terms.client}も消します。${
-        fixed > 0 ? `確定した日（${fixed}日）の割当からも外します。` : ''
+      body: `繰り返しとすべての訪問を消し、${terms.client}も消します。${
+        fixed > 0 ? `確定した日（${fixed}日）の訪問は「未連絡の変更」（外れる）になります。` : ''
       }`,
       confirmLabel: '仮押さえを取り消す',
       cancelLabel: '残しておく',
@@ -444,7 +443,7 @@ function ClientPageBody({
     discardAll();
     update((d) => cancelTentativeData(d, c.id, today));
     navigate('/clients');
-    toast(`仮押さえを取り消しました（訪問 ${n}件）`);
+    toast('仮押さえを取り消しました');
   };
 
   // ---- 予定のカレンダー（URL の cal・d） ----
@@ -570,7 +569,7 @@ function ClientPageBody({
       <dl>
         <DlRow
           term="段階"
-          value={`${STAGE_LABELS[c.stage]}${c.tentative ? '（枠を仮押さえ。予定・AI案に入ります）' : ''}`}
+          value={`${STAGE_LABELS[c.stage]}${c.tentative ? '（枠を仮押さえ。予定・AI の提案に入ります）' : ''}`}
         />
         {stageOn && (
           <>
@@ -588,7 +587,7 @@ function ClientPageBody({
             <strong>仮押さえの{terms.client}です</strong>
           </span>
           <span className="sub">
-            問い合わせの試算から仮に押さえています（段階「{STAGE_LABELS[saved.stage]}」。予定・AI案に入ります）。
+            問い合わせの試算から仮に押さえています（段階「{STAGE_LABELS[saved.stage]}」。予定・AI の提案に入ります）。
             決まったら本登録（利用中）に、断られたら取り消してください。
           </span>
           <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -634,7 +633,7 @@ function ClientPageBody({
         </label>
         {isBeforeActive(form.stage) && (
           <Check checked={form.tentative} onChange={(on) => setForm(withStage(form, form.stage, on))}>
-            枠を仮押さえする（予定・AI案に入れる）
+            枠を仮押さえする（予定・AI の提案に入れる）
           </Check>
         )}
         {stageOn && (
@@ -754,24 +753,9 @@ function ClientPageBody({
   );
   const staffingFields = form && edit && (
     <>
-      <div className="form-grid">
-        <label>
-          いつもの担当
-          <select
-            value={form.usualStaffId ?? ''}
-            onChange={(e) => setForm({ ...form, usualStaffId: e.target.value || null })}
-            data-testid="client-usual"
-          >
-            <option value="">なし</option>
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.active ? '' : '（休止中）'}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <p className="sub" data-testid="client-usual-note">
+        いつもの担当は繰り返しの担当です（予定のタブの繰り返しの「直す」で替えます）。
+      </p>
       {allowedOn && (
         <>
           <Hint label="担当できる人（社内の決まり）">
@@ -785,9 +769,10 @@ function ClientPageBody({
             checked={edit.limit}
             onChange={(on) => {
               setLimit(on);
-              // 入れたときに誰も選んでいなければ、いつもの担当を最初に選んでおく
-              if (on && form.allowedStaffIds.length === 0 && activeStaff.some((s) => s.id === form.usualStaffId))
-                setForm({ ...form, allowedStaffIds: form.usualStaffId ? [form.usualStaffId] : [] });
+              // 入れたときに誰も選んでいなければ、いつもの担当（繰り返しの担当）を最初に選んでおく
+              const usual = usualStaffOf(data.patterns, form.id, jstDate(Date.now()));
+              if (on && form.allowedStaffIds.length === 0 && usual && activeStaff.some((s) => s.id === usual))
+                setForm({ ...form, allowedStaffIds: [usual] });
             }}
           >
             担当できる人を限る
@@ -858,6 +843,8 @@ function ClientPageBody({
     errorId,
   });
 
+  /** いつもの担当（繰り返しの担当。版2） */
+  const usualId = usualStaffOf(data.patterns, c.id, jstDate(Date.now()));
   const stateChips = (
     <span className="person-state" data-testid="person-state">
       <span className={`chip stage-chip is-${c.stage}`} data-testid="client-stage">
@@ -869,10 +856,10 @@ function ClientPageBody({
           休み中
         </span>
       )}
-      {c.usualStaffId && (
+      {usualId && (
         <span className="with-staff-mark sub">
-          <StaffMarkById id={c.usualStaffId} size="xs" />
-          いつもの担当 {staffName(c.usualStaffId)}
+          <StaffMarkById id={usualId} size="xs" />
+          いつもの担当 {staffName(usualId)}
         </span>
       )}
     </span>

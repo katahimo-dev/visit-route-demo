@@ -55,13 +55,12 @@ describe('希望休の判定と付け外し', () => {
     expect(offDayState(o, 's1', DATE, DATE)).toBe('noShift');
   });
 
-  it('続けて押すと入れる → 外す。押せない日は変えない。今の案・確定した割当は変えない', () => {
-    const plan = { s1: ['v1'] };
-    let d = data({ manualPlans: { [DATE]: plan } });
+  it('続けて押すと入れる → 外す。押せない日は変えない。訪問の担当は変えない', () => {
+    let d = data({ visits: [visit('v1', 'c1', '10:00', '11:00', { staffId: 's1' })] });
     const a = toggleRequestedOff(d, 's1', DATE, DATE, 'x1');
     expect(a.result).toBe('added');
     expect(a.data.absences).toEqual([off('x1', 's1', DATE)]);
-    expect(a.data.manualPlans).toEqual(d.manualPlans);
+    expect(a.data.visits).toBe(d.visits);
     d = a.data;
     const b = toggleRequestedOff(d, 's1', TUE, DATE, 'x2').data;
     expect(requestedOffDates(b, 's1', '2026-10')).toEqual([DATE, TUE]);
@@ -87,12 +86,13 @@ describe('休みの人に残る訪問（absentLeftOf）と月の印', () => {
     expect(absentLeftOf(compile(early, DATE), { s1: ['v1'] })).toBe(1);
   });
 
-  it('dayStatus：残る訪問があれば手当てが必要。案の無い日は数えない', () => {
-    const d = data({ absences: [off('a1', 's1', DATE)], manualPlans: { [DATE]: { s1: ['v1'] } } });
-    const s = dayStatus(d, DATE, { absentLeft: 1 });
-    expect(s.absentLeft).toBe(1);
+  it('dayStatus：休みの人に担当のある訪問は「担当が休み」の要対応（版2。訪問ごとの検査）', () => {
+    const staffed = [visit('v1', 'c1', '10:00', '11:00', { staffId: 's1' })];
+    const d = data({ absences: [off('a1', 's1', DATE)], visits: staffed });
+    const s = dayStatus(d, DATE);
+    expect(s.issues.get('v1')?.map((x) => x.kind)).toEqual(['off']);
     expect(s.needsCare).toBe(true);
-    expect(dayStatus(data(), DATE, { absentLeft: 1 }).absentLeft).toBe(0);
+    expect(dayStatus(data({ visits: staffed }), DATE).needsCare).toBe(false);
   });
 
   it('dayMarks：希望休の人は requested に（欠勤 absent には入れない）', () => {
@@ -104,18 +104,17 @@ describe('休みの人に残る訪問（absentLeftOf）と月の印', () => {
   });
 
   it('要対応：希望休だけの日は出さない。休みの人に訪問が残る日は出す', () => {
-    const d = data({ absences: [off('a1', 's1', DATE), off('a2', 's2', TUE, { note: '通院' })] });
-    const st = (date: string, absentLeft: number) => ({ ...dayStatus(d, date), absentLeft });
-    const list = attentionList(d, [st(DATE, 0), st(TUE, 0)], DATE);
-    expect(list.map((a) => [a.date, a.kind])).toEqual([[TUE, 'absence']]);
-    const left = attentionList(d, [st(DATE, 2)], DATE);
-    expect(left.map((a) => [a.kind, a.count])).toEqual([['absentLeft', 2]]);
+    const d = data({ absences: [off('a1', 's1', DATE), off('a2', 's2', TUE, { note: '通院' })], visits: [] });
+    expect(attentionList(d, [dayStatus(d, DATE), dayStatus(d, TUE)], DATE)).toEqual([]);
+    const left = { ...d, visits: [visit('v1', 'c1', '10:00', '11:00', { staffId: 's1' })] };
+    const list = attentionList(left, [dayStatus(left, DATE)], DATE);
+    expect(list.map((a) => [a.kind, a.count, a.names])).toEqual([['care', 1, ['担当が休み 1']]]);
   });
 
   it('staffDay・staffMonth：希望休は requested、月の希望休の日数（欠勤と分ける）', () => {
     const d = data({
       absences: [off('a1', 's1', DATE), off('a2', 's1', TUE, { note: '通院', from: '15:00' })],
-      manualPlans: { [DATE]: { s1: ['v1'] } },
+      visits: [visit('v1', 'c1', '10:00', '11:00', { staffId: 's1' })],
     });
     const day = staffDay(d, dayPlanOf(d, DATE), 's1');
     expect(day.requested).toBe(true);

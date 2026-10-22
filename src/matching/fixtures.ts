@@ -50,7 +50,6 @@ export function client(id: string, lat: number, lng: number, over: Partial<Clien
     traits: {},
     requirements: [],
     preferences: [],
-    usualStaffId: null,
     tentative: false,
     entryNote: '',
     keyNote: '',
@@ -79,6 +78,8 @@ export function visit(
     latestStart: latest,
     durationMinutes: 60,
     staffId: null,
+    start: null,
+    pinned: false,
     cancelled: false,
     note: '',
     typeId: null,
@@ -90,7 +91,7 @@ export function visit(
 
 export function makeData(over: Partial<DemoData> = {}): DemoData {
   return {
-    version: 1,
+    version: 2,
     baseDate: DATE,
     seed: 1,
     org: {
@@ -112,10 +113,8 @@ export function makeData(over: Partial<DemoData> = {}): DemoData {
     clientLeaves: [],
     visitTypes: [],
     patterns: [],
-    manualPrefs: {},
-    manualPlans: {},
-    aiPlans: {},
-    aiRuns: {},
+    snapshots: {},
+    reassigns: {},
     presets: [],
     ...over,
   };
@@ -151,4 +150,19 @@ export function randomData(nStaff: number, nVisits: number, seed: number, rules:
     });
   });
   return makeData({ staff: st, clients: cl, visits: vs, rules });
+}
+
+/** 問題の中身の比べ方（テスト用。計算に効くところだけを文字にする。版1の lib/runs の problemKey の代わり） */
+export function problemKey(p: import('../contracts/problem').Problem): string {
+  return JSON.stringify([
+    p.date,
+    p.staff.map((s) => [s.id, s.point, s.slots.map((t) => [t.start, t.end])]),
+    p.visits.map((v) => [v.id, v.clientId, v.point, v.earliest, v.latest, v.duration]),
+    p.travel,
+    p.meters,
+    p.allowed,
+    p.assignCost,
+    p.waitPerMinute,
+    p.balance ? [p.balance.perVisit, p.balance.lo, p.balance.hi, p.balance.cap] : null,
+  ]);
 }

@@ -29,43 +29,42 @@ export function tidyMonthOptions(today: string): { options: string[]; initial: s
 }
 
 export type TidyPreview = {
-  /** 消す記録（aiRuns）の件数 */
-  runs: number;
-  /** 消す今の案（aiPlans）の件数（確定した日の案は数えない） */
-  plans: number;
-  /** 残す今の案（確定した日の案）の件数 */
-  keptPlans: number;
-  /** 案か記録のある日の数 */
+  /** 消す保存した訪問（変えた回・単発の訪問）の件数 */
+  visits: number;
+  /** 消す伝えた内容（確定）の日数 */
+  snapshots: number;
+  /** 訪問か伝えた内容のある日の数 */
   days: number;
   /** 空く見込み（JSON の文字数） */
   chars: number;
 };
 
-type TidyData = Pick<DemoData, 'aiRuns' | 'aiPlans' | 'manualPlans'>;
+type TidyData = Pick<DemoData, 'visits' | 'snapshots' | 'reassigns'>;
 
 const before = (date: string, ym: string) => date < `${ym}-01`;
-/** 今の案を消す日か（選んだ月より前で、確定していない日） */
-const dropPlan = (data: TidyData, date: string, ym: string) => before(date, ym) && !(date in data.manualPlans);
 
-/** beforeYm の月より前の日の案と記録の件数・空く見込み（確定した日の案は残すので数えない） */
+/**
+ * beforeYm の月より前の日の、保存した訪問（変えた回・単発の訪問）・伝えた内容・振り直しの情報の件数と空く見込み（版2）。
+ * 繰り返しの回は見るときに計算するので、消すと元の繰り返しのとおりに戻る（担当・取り消し・この回だけの変更は消える）
+ */
 export function tidyPreview(data: TidyData, beforeYm: string): TidyPreview {
-  const out: TidyPreview = { runs: 0, plans: 0, keptPlans: 0, days: 0, chars: 0 };
+  const out: TidyPreview = { visits: 0, snapshots: 0, days: 0, chars: 0 };
   const days = new Set<string>();
-  for (const [date, runs] of Object.entries(data.aiRuns)) {
-    if (!before(date, beforeYm) || runs.length === 0) continue;
-    out.runs += runs.length;
-    out.chars += JSON.stringify(runs).length + date.length + 4;
+  for (const v of data.visits) {
+    if (!before(v.date, beforeYm)) continue;
+    out.visits++;
+    out.chars += JSON.stringify(v).length + 1;
+    days.add(v.date);
+  }
+  for (const [date, s] of Object.entries(data.snapshots)) {
+    if (!before(date, beforeYm)) continue;
+    out.snapshots++;
+    out.chars += JSON.stringify(s).length + date.length + 4;
     days.add(date);
   }
-  for (const [date, plan] of Object.entries(data.aiPlans)) {
+  for (const [date, r] of Object.entries(data.reassigns)) {
     if (!before(date, beforeYm)) continue;
-    if (!dropPlan(data, date, beforeYm)) {
-      out.keptPlans++;
-      continue;
-    }
-    out.plans++;
-    out.chars += JSON.stringify(plan).length + date.length + 4;
-    days.add(date);
+    out.chars += JSON.stringify(r).length + date.length + 4;
   }
   out.days = days.size;
   return out;
@@ -76,10 +75,16 @@ export function sizeText(chars: number): string {
   return chars < 1024 ? '1KB 未満' : `約 ${Math.round(chars / 1024)}KB`;
 }
 
-/** beforeYm の月より前の日の AI案と記録を消したデータ（確定した日の案は残す。消すものが無ければ同じもの） */
+/** beforeYm の月より前の日の保存した訪問・伝えた内容・振り直しの情報を消したデータ（消すものが無ければ同じもの） */
 export function tidyOld<T extends TidyData>(data: T, beforeYm: string): T {
-  const runs = Object.entries(data.aiRuns).filter(([date]) => !before(date, beforeYm));
-  const plans = Object.entries(data.aiPlans).filter(([date]) => !dropPlan(data, date, beforeYm));
-  if (runs.length === Object.keys(data.aiRuns).length && plans.length === Object.keys(data.aiPlans).length) return data;
-  return { ...data, aiRuns: Object.fromEntries(runs), aiPlans: Object.fromEntries(plans) };
+  const visits = data.visits.filter((v) => !before(v.date, beforeYm));
+  const snapshots = Object.entries(data.snapshots).filter(([date]) => !before(date, beforeYm));
+  const reassigns = Object.entries(data.reassigns).filter(([date]) => !before(date, beforeYm));
+  if (
+    visits.length === data.visits.length &&
+    snapshots.length === Object.keys(data.snapshots).length &&
+    reassigns.length === Object.keys(data.reassigns).length
+  )
+    return data;
+  return { ...data, visits, snapshots: Object.fromEntries(snapshots), reassigns: Object.fromEntries(reassigns) };
 }

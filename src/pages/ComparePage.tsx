@@ -1,8 +1,8 @@
 import {
   CalendarDays,
   Car,
+  Check,
   CircleOff,
-  ExternalLink,
   Gauge,
   GitCompareArrows,
   History,
@@ -19,7 +19,6 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
-import { useConfirm } from '../components/ConfirmDialog';
 import { EmptyNext } from '../components/EmptyNext';
 import { FieldError } from '../components/FieldError';
 import { MapDock } from '../components/MapDock';
@@ -28,39 +27,45 @@ import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { StaffMarkById } from '../components/StaffMark';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
-import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
-import type { AiPlan, AiRun } from '../contracts/data';
-import type { Reason, SolveResult, VisitExplain } from '../contracts/problem';
+import { Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
+import type { Visit } from '../contracts/documents';
+import type { Reason, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
-import { jstDate } from '../domain/time';
 import { achievements, diff, hundredBreakdown, ruleLowerBounds, score, toHundred } from '../evaluate';
-import { attempt, dateText, deltaText, formError, own, pointsText, r0 } from '../lib/common';
+import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
+import { pinsOf, routesOf, unassignedOf, writeRoutes } from '../lib/dayPlan';
 import { compareEmptyGuide } from '../lib/emptyGuide';
-import { anotherPlanOptions } from '../lib/planMenu';
+import { narrowRole } from '../lib/narrowRoles';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
-import { addRun, alignPlan, findRun, planOfRun, problemKey } from '../lib/runs';
 import { type ScoreReason, scoreReason } from '../lib/scoreReason';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
-import { compile, scheduleRoute, withManualPrefs } from '../matching';
+import { compile, scheduleRoute } from '../matching';
 import { applyPreset } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
-import { narrowRole } from '../lib/narrowRoles';
 import { CompareTable, explainMap, ReasonBox, RefMark, rulerText, SCORE_TEXT, ScoreReasonText } from './planParts';
 
 /**
- * 比較（D19・D22・ADR-0005）：その日のAI案の記録（作るたびに条件と結果を残したもの）と「今の案」から、
- * 任意の2つを A・B に選んで比べる。条件の差・合計と条件ごと・担当ごとの順番・地図（A 点線、B 実線）。
- * 採点（点数・必須の違反・条件ごとの達成/違反）は A・B とも、点数の基準のプリセットの同じ物差し（evaluate.score。ADR-0010）。
- * 訪問ごとの理由はこの日だけ試す重み。AI案を作る・手直しは「予定」の画面（#/plan）
+ * 提案を比べる（D19・D22・ADR-0005。版2は ADR-0053）：その日の「今の担当」と、この画面で作った提案（プリセットごと。保存しない）
+ * から、任意の2つを A・B に選んで比べる。条件の差・合計と条件ごと・担当ごとの順番・地図（A 点線、B 実線）。
+ * 提案は「当てる」で訪問の担当・開始に書く（ピンの訪問はそのまま）。採点は A・B とも点数の基準の物差し（ADR-0010）
  */
 
 type Side = 'a' | 'b';
-/** 比べる候補：記録1件か、今の案（予定の画面の手直し後） */
-type Choice = { id: string; title: string; rules: Rule[]; routes: Record<string, string[]>; unassigned: string[] };
+/** 比べる候補：今の担当・欠勤前（振り直す前の担当）・この画面で作った提案 */
+type Choice = {
+  id: string;
+  title: string;
+  kind: 'current' | 'before' | 'proposal';
+  rules: Rule[];
+  routes: Record<string, string[]>;
+  unassigned: string[];
+  /** 提案を作ったときのその日の訪問（変わったら当てられない） */
+  visits?: readonly Visit[];
+  stopped?: boolean;
+};
 const CURRENT = 'current';
-/** 欠勤前（振り直しの元の案。ADR-0011）の候補の id の頭。`before:<記録の id>`・`before:current`（今の案の元の案） */
-const BEFORE = 'before:';
+const BEFORE = 'before';
 
 /** 条件の重みの短い表示（例「重み3」「必須」「無効」） */
 function weightText(r: Rule | undefined): string {
@@ -89,91 +94,68 @@ export default function ComparePage() {
   } = m;
   const terms = data.org.terms;
   const toast = useToast();
-  const confirmDialog = useConfirm();
   const navigate = useNavigate();
-  /** 予定の画面の「比較の画面で見る」（A＝欠勤前、B＝今の案。ADR-0011） */
+  /** 日の予定の「比較の画面で見る」（A＝欠勤前、B＝今の担当。ADR-0011） */
   const asked = (useLocation().state ?? null) as { a?: string; b?: string } | null;
   const [sel, setSel] = useState<{ a: string | null; b: string | null }>({ a: null, b: null });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら選んだ案を外す（選んだ訪問・区間は useRouteSelection が外す）
+  /** この画面で作った提案（保存しない。日付を変えると捨てる） */
+  const [proposals, setProposals] = useState<{ date: string; list: Choice[] }>({ date, list: [] });
+  const made = proposals.date === date ? proposals.list : [];
+  // 日付を変えたら選んだ案・作った提案を外す（選んだ訪問・区間は useRouteSelection が外す）
   useEffect(() => {
     setSel({ a: null, b: null });
+    setProposals({ date, list: [] });
   }, [date]);
   /** 地図で見る担当・強調する区間・選んだ訪問（予定の画面と共通。集まりのキーは 'a'・'b'） */
   const rs = useRouteSelection(date, (set, id) => (set === 'a' ? ownerA : ownerB).get(id));
   /** ページの中の地図のカード（画面の外なら右下に浮かせる） */
   const mapCardRef = useRef<HTMLDivElement>(null);
 
-  const runs: AiRun[] = useMemo(() => own(data.aiRuns, date) ?? [], [data.aiRuns, date]);
-  /** 今の案（予定の画面と同じく、取り消した・足した訪問に合わせて整える） */
-  const aiPlan: AiPlan | undefined = useMemo(() => {
-    const p = own(data.aiPlans, date);
-    return p && problem ? alignPlan(problem, p) : p;
-  }, [data.aiPlans, date, problem]);
+  const reassign = own(data.reassigns, date) ?? null;
   const choices: Choice[] = useMemo(() => {
-    const ids = new Set(problem?.visits.map((v) => v.id) ?? []);
-    /** 欠勤前の案（元の案）。いまの問題で採点するので、欠勤の人の訪問は必須の違反として出る */
-    const before = (id: string, title: string, rules: Rule[], routes: Record<string, string[]>): Choice => {
-      const placed = new Set(Object.values(routes).flat());
-      return { id, title, rules, routes, unassigned: [...ids].filter((v) => !placed.has(v)) };
-    };
+    if (!problem) return [];
     const out: Choice[] = [];
-    /** 同じ元の案の欠勤前は1つだけ出す（案A・案B の記録は同じ元の案を持つ。ADR-0011 追記） */
-    const shownBefore = new Set<string>();
-    for (const r of runs) {
-      const baseKey = r.reassign ? JSON.stringify(r.reassign.baseRoutes) : null;
-      if (r.reassign && baseKey && !shownBefore.has(baseKey)) {
-        shownBefore.add(baseKey);
-        out.push(before(`${BEFORE}${r.id}`, `欠勤前（#${r.no}の元の案）`, r.rules, r.reassign.baseRoutes));
-      }
-      out.push({ id: r.id, title: `#${r.no} ${r.label}`, rules: r.rules, routes: r.routes, unassigned: r.unassigned });
-    }
-    // 今の案が振り直しで、その記録が無い（消した）ときも欠勤前を出す
-    if (
-      aiPlan?.reassign &&
-      !runs.some((r) => r.id === aiPlan.runId && r.reassign) &&
-      !shownBefore.has(JSON.stringify(aiPlan.reassign.baseRoutes))
-    ) {
-      out.push(before(`${BEFORE}${CURRENT}`, '欠勤前（今の案の元の案）', aiPlan.rules, aiPlan.reassign.baseRoutes));
-    }
-    // 今の案は、どの記録とも違う（手直しした）ときだけ候補に出す
-    const key = (r: Record<string, string[]>) => JSON.stringify(r);
-    if (aiPlan && !runs.some((r) => key(r.routes) === key(aiPlan.routes))) {
+    const ids = problem.visits.map((v) => v.id);
+    if (reassign) {
+      const placed = new Set(Object.values(reassign.baseRoutes).flat());
       out.push({
-        id: CURRENT,
-        title: '今の案（日の予定）',
-        rules: aiPlan.rules,
-        routes: aiPlan.routes,
-        unassigned: aiPlan.unassigned,
+        id: BEFORE,
+        title: '欠勤前（振り直す前の担当）',
+        kind: 'before',
+        rules: data.rules,
+        routes: reassign.baseRoutes,
+        unassigned: ids.filter((v) => !placed.has(v)),
       });
     }
-    return out;
-  }, [runs, aiPlan, problem]);
+    const routes = routesOf(problem, m.allVisits);
+    out.push({
+      id: CURRENT,
+      title: '今の担当',
+      kind: 'current',
+      rules: data.rules,
+      routes,
+      unassigned: unassignedOf(problem, routes),
+    });
+    return [...out, ...made];
+  }, [problem, m.allVisits, reassign, data.rules, made]);
   const byId = (id: string | null) => choices.find((c) => c.id === id);
-  // 予定の画面から「比較の画面で見る」で来たら、A＝今の案の欠勤前、B＝今の案（記録と同じなら記録）
+  // 日の予定から「比較の画面で見る」で来たら、A＝欠勤前、B＝今の担当
   // biome-ignore lint/correctness/useExhaustiveDependencies: 来たときに1回だけ合わせる
   useEffect(() => {
-    if (asked?.a !== 'before' || !aiPlan?.reassign) return;
-    // 今の案の元の案と同じ欠勤前（同じ元の案の欠勤前は1つだけ出す）
-    const baseKey = JSON.stringify(aiPlan.reassign.baseRoutes);
-    const a =
-      choices.find((c) => c.id.startsWith(BEFORE) && JSON.stringify(c.routes) === baseKey)?.id ?? `${BEFORE}${CURRENT}`;
-    const key = JSON.stringify(aiPlan.routes);
-    const b = choices.some((c) => c.id === CURRENT)
-      ? CURRENT
-      : (choices.find((c) => !c.id.startsWith(BEFORE) && JSON.stringify(c.routes) === key)?.id ?? null);
-    setSel({ a, b });
+    if (asked?.a !== 'before' || !reassign) return;
+    setSel({ a: BEFORE, b: CURRENT });
   }, [asked]);
-  // 既定：A＝最初の記録、B＝A 以外の最後の記録（無ければ今の案）
-  const A = byId(sel.a) ?? choices[0];
+  // 既定：A＝今の担当、B＝最後に作った提案（無ければ欠勤前）
+  const A = byId(sel.a) ?? byId(CURRENT);
   const others = choices.filter((c) => c.id !== A?.id);
-  const B = byId(sel.b) ?? others.filter((c) => c.id !== CURRENT).at(-1) ?? others.at(-1);
+  const B = byId(sel.b) ?? others.at(-1);
   /** A・B を選ぶ。もう一方と同じ案を選んだら入れ替える（同じ案どうしを比べない） */
   const pick = (side: Side, id: string) => {
     const other = side === 'a' ? B : A;
     const mine = side === 'a' ? A : B;
     if (mine?.id === id) return;
     if (other?.id === id) setSel(side === 'a' ? { a: id, b: mine?.id ?? null } : { a: mine?.id ?? null, b: id });
-    else setSel((s) => ({ ...s, [side]: id }));
+    else setSel((s) => ({ a: s.a ?? A?.id ?? null, b: s.b ?? B?.id ?? null, [side]: id }));
     // 比べる案が変わると選んだ訪問・区間の持ち主も変わるので外す
     rs.reset();
   };
@@ -209,7 +191,9 @@ export default function ComparePage() {
     () => (scoreProblem && A && B ? attempt(() => diff(scoreProblem, aRoutes, bRoutes)) : null),
     [scoreProblem, A, B, aRoutes, bRoutes],
   );
-  const stale = (c: Choice | undefined) => !!c && JSON.stringify(c.rules) !== JSON.stringify(data.rules);
+  /** 提案を作ったあとに訪問が変わったか（変わったら当てられない） */
+  const stale = (c: Choice) =>
+    !!c.visits && (c.visits.length !== m.allVisits.length || c.visits.some((v, i) => v !== m.allVisits[i]));
 
   const staffName = (id: string) => staffById.get(id)?.name ?? '（不明）';
   const clientOf = (visitId: string) => {
@@ -219,107 +203,36 @@ export default function ComparePage() {
   const visitLabel = (id: string) =>
     `${visitById.get(id)?.earliestStart ?? ''} ${clientOf(id)?.displayName ?? '（不明）'}`;
 
-  // ---- 記録の操作 ----
-  const openRun = async (r: AiRun) => {
-    if (
-      aiPlan &&
-      (Object.keys(aiPlan.pins).length > 0 ||
-        JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes)) &&
-      !(await confirmDialog({
-        title: `手直しを捨てて、#${r.no} を今の案にしますか？`,
-        body: '日の予定の手直しとピンを捨てて、この案を今の案にします。',
-        confirmLabel: '捨てて今の案にする',
-        tone: 'danger',
-      }))
-    )
+  // ---- 提案の操作（保存しない。決定2）----
+  /** 提案を当てる：訪問の担当・開始に書く（ピンの訪問はそのまま） */
+  const applyChoice = (c: Choice) => {
+    if (!problem || c.kind !== 'proposal') return;
+    if (stale(c)) {
+      toast('提案を作ったあとに訪問が変わりました。もう一度作ってください');
       return;
-    update((d) => ({ ...d, aiPlans: { ...d.aiPlans, [date]: planOfRun(r) } }));
-    toast(`#${r.no} を今の案にしました`);
-    navigate('/plan');
+    }
+    const p = problem;
+    update((d) => writeRoutes(d, date, p, c.routes));
+    setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));
+    setSel({ a: null, b: null });
+    rs.reset();
+    toast(`${c.title}を当てました。日の予定の「元に戻す」は使えないので、戻すときは今の担当として比べ直してください`);
   };
-  const applyRules = async (r: AiRun) => {
-    const ok = await confirmDialog({
-      title: `この日だけの重みを #${r.no} と同じにしますか？`,
-      body: `日の予定で使う重みと必須を、#${r.no} を作ったときと同じにします。ふだん使う重みは変えません。`,
-      confirmLabel: '重みを同じにする',
-    });
-    if (!ok) return;
-    const saved = new Map(r.rules.map((x) => [x.id, x]));
-    update((d) => ({
-      ...d,
-      rules: d.rules.map((x) => {
-        const s = saved.get(x.id);
-        return s ? { ...x, weight: s.weight, hard: s.hard } : x;
-      }),
-    }));
-    toast(`この日だけの重みを #${r.no} と同じにしました`);
-  };
-  const removeRun = async (r: AiRun) => {
-    if (
-      !(await confirmDialog({
-        title: `#${r.no}「${r.label}」の案を消しますか？`,
-        confirmLabel: '消す',
-        tone: 'danger',
-      }))
-    )
-      return;
-    update((d) => ({
-      ...d,
-      aiRuns: { ...d.aiRuns, [date]: (own(d.aiRuns, date) ?? []).filter((x) => x.id !== r.id) },
-    }));
-    // 消した記録を選んでいたら既定に戻す（既定の A・B も変わりうるので、選んだ訪問・区間も外す）
-    setSel((s) => ({ a: s.a === r.id ? null : s.a, b: s.b === r.id ? null : s.b }));
+  const removeChoice = (c: Choice) => {
+    setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));
+    setSel((s) => ({ a: s.a === c.id ? null : s.a, b: s.b === c.id ? null : s.b }));
     rs.reset();
   };
 
-  // ---- もう1案作って比べる（PRD D159）：案が1つだけのとき、別のプリセットか今の条件で2つめの案を作り、記録に足して A・B に並べる ----
-  /** 今ある1つの案（案が1つだけのとき） */
-  const only = choices.length === 1 ? choices[0] : undefined;
-  const onlyRun = only ? runs.find((r) => r.id === only.id) : undefined;
-  /**
-   * 今ある記録が、いまのデータでも同じ問題か（記録の条件でいまのデータから作った問題のキー＝記録の inputKey。
-   * 日の画面のカードと同じ作り方）。違えば同じ条件のプリセットでも別の案になるので除かない（PR #39 のレビュー）
-   */
-  /** 手直しの記憶（ADR-0043）を引く訪問と記憶（案の更新では変わらない） */
-  const prefInput = useMemo(
-    () => ({ visits: data.visits, manualPrefs: data.manualPrefs }),
-    [data.visits, data.manualPrefs],
-  );
-  const onlyFresh = useMemo(() => {
-    if (!onlyRun?.inputKey || Object.keys(onlyRun.pins).length > 0) return false;
-    const p =
-      problem && JSON.stringify(onlyRun.rules) === JSON.stringify(m.compileInput.rules)
-        ? problem
-        : attempt(() => compile({ ...m.compileInput, rules: onlyRun.rules }, date)).value;
-    // 作り直すときと同じく、いまの手直しの記憶（ADR-0043）を当てた問題で比べる
-    return !!p && problemKey(withManualPrefs(p, prefInput).problem) === onlyRun.inputKey;
-  }, [onlyRun, problem, m.compileInput, date, prefInput]);
-  const anotherOpts = useMemo(
-    () =>
-      only
-        ? anotherPlanOptions(
-            data.presets,
-            // AI が出したままの記録で、いまのデータでも同じ問題なら、同じ条件のプリセットは出さない（同じ案になる）
-            onlyRun && onlyFresh ? onlyRun.rules : null,
-            data.rules,
-          )
-        : [],
-    [only, onlyRun, onlyFresh, data.presets, data.rules],
-  );
-  const [anotherKey, setAnotherKey] = useState('');
-  const another = anotherOpts.find((o) => o.key === anotherKey) ?? anotherOpts[0];
-  /** 作っている案（名前・進み具合）。null は作っていない */
+  // ---- 提案を作る（PRD D159）：プリセット（考え方）を選び、ピンの訪問はそのままで AI で組む ----
+  const [presetId, setPresetId] = useState('');
+  const preset = data.presets.find((p) => p.id === presetId) ?? data.presets[0];
+  /** 作っている提案（名前・進み具合）。null は作っていない */
   const [making, setMaking] = useState<{ date: string; name: string; iteration: number; total: number } | null>(null);
   const [makeError, setMakeError] = useState<string | null>(null);
   const makeRef = useRef<{ stop(): void } | null>(null);
   /** 計算の世代。画面を離れると進め、前の世代の結果は捨てる（日の画面と同じ） */
   const makeGen = useRef(0);
-  /** 作り終えて記録に足した案（記録に出たら A＝今ある案、B＝作った案にする） */
-  const madeRef = useRef<{
-    date: string;
-    x: { rules: Rule[]; pins: Record<string, string>; result: SolveResult };
-    before: string | null;
-  } | null>(null);
   useEffect(
     () => () => {
       makeGen.current++;
@@ -328,50 +241,25 @@ export default function ComparePage() {
     },
     [],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら前の日の知らせを消し、作っている計算は止めて捨てる（進み具合と「止める」が見えなくなるため。PR #39 のレビュー）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら前の日の知らせを消し、作っている計算は止めて捨てる
   useEffect(() => {
     setMakeError(null);
-    setAnotherKey('');
     if (makeRef.current) {
       makeGen.current++;
       makeRef.current.stop();
       makeRef.current = null;
       setMaking(null);
-      toast('日付を変えたので、作っていた案をやめました');
+      toast('日付を変えたので、作っていた提案をやめました');
     }
   }, [date]);
-  // 作った案が記録に出たら A・B に並べる
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 記録が変わったときだけ
-  useEffect(() => {
-    const made = madeRef.current;
-    if (!made || made.date !== date) return;
-    const found = findRun(data, date, made.x);
-    if (!found) return;
-    madeRef.current = null;
-    if (found.id === made.before) {
-      toast('今ある案と同じ案になりました（比べる2つめにはなりません）');
-      return;
-    }
-    const a = made.before && choices.some((c) => c.id === made.before) ? made.before : null;
-    setSel({ a, b: found.id });
-    rs.reset();
-    toast(
-      made.x.result.stopped
-        ? `途中で止めた #${found.no}「${found.label}」を足しました。A と B に並べています`
-        : `#${found.no}「${found.label}」を作りました。A と B に並べています`,
-    );
-  }, [runs]);
-  const makeAnother = () => {
-    if (!another || makeRef.current) return;
+  const makeProposal = () => {
+    if (!preset || makeRef.current) return;
     setMakeError(null);
-    const preset = another.kind === 'preset' ? data.presets.find((p) => p.id === another.presetId) : undefined;
-    if (another.kind === 'preset' && !preset) return;
-    const rules = preset ? applyPreset(data.rules, preset) : data.rules;
-    const name = preset ? `「${preset.name}」` : 'この日だけの重み';
-    const target = attempt(() => compile({ ...data, rules }, date));
-    // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
-    const prefed = target.value ? withManualPrefs(target.value, data) : null;
-    const p = prefed?.problem;
+    const rules = applyPreset(data.rules, preset);
+    const name = `「${preset.name}」`;
+    const pins = pinsOf(m.allVisits);
+    const target = attempt(() => compile({ ...data, rules }, date, Object.keys(pins).length > 0 ? pins : undefined));
+    const p = target.value;
     if (!p) {
       setMakeError(target.error ?? '問題を作れませんでした');
       return;
@@ -385,31 +273,43 @@ export default function ComparePage() {
       return;
     }
     const forDate = date;
-    const before = only?.id ?? null;
+    const startVisits = m.allVisits;
     const gen = makeGen.current;
     const live = () => gen === makeGen.current;
     const started = attempt(() =>
       runSolve(p, { seed: data.seed, iterations: defaultIterations(p) }, (x) => {
-        if (live()) setMaking((m) => (m ? { ...m, iteration: x.iteration, total: x.total } : m));
+        if (live()) setMaking((v) => (v ? { ...v, iteration: x.iteration, total: x.total } : v));
       }),
     );
     if (!started.value) {
-      setMakeError(started.error ?? 'AI案を作れませんでした');
+      setMakeError(started.error ?? '提案を作れませんでした');
       return;
     }
     makeRef.current = started.value;
     setMaking({ date: forDate, name, iteration: 0, total: 0 });
-    const inputKey = problemKey(p);
     started.value.promise
       .then((result) => {
         if (!live()) return;
-        const x = { rules, pins: {}, result, createdAt: Date.now(), inputKey, prefPins: prefed?.applied };
-        madeRef.current = { date: forDate, x, before };
-        // 記録に足すだけ（今の案・条件は変えない。今の案にするには表の「予定の画面で開く」）
-        update((d) => addRun(d, forDate, x));
+        const id = newId('pr');
+        const c: Choice = {
+          id,
+          title: `${name}の提案`,
+          kind: 'proposal',
+          rules,
+          routes: result.routes,
+          unassigned: result.unassigned,
+          visits: startVisits,
+          stopped: result.stopped,
+        };
+        setProposals((x) => ({ date: forDate, list: x.date === forDate ? [...x.list, c] : [c] }));
+        setSel({ a: CURRENT, b: id });
+        rs.reset();
+        toast(
+          result.stopped ? `途中までの最良で${c.title}を作りました` : `${c.title}を作りました。A と B に並べています`,
+        );
       })
       .catch((e) => {
-        if (live()) setMakeError(`AI案を作れませんでした（${formError(e)}）`);
+        if (live()) setMakeError(`提案を作れませんでした（${formError(e)}）`);
       })
       .finally(() => {
         if (!live()) return;
@@ -417,11 +317,11 @@ export default function ComparePage() {
         setMaking(null);
       });
   };
-  /** 作れないときの理由（選択肢が無い・訪問が無い） */
-  const anotherWhy = !problem
+  /** 作れないときの理由 */
+  const makeWhy = !problem
     ? 'この日に計算できる訪問がありません'
-    : anotherOpts.length === 0
-      ? `どの考え方（プリセット）で作っても、今ある案と同じ条件になります。日の予定の「案を変える」の「条件を調整する」で重みを変えてから作ってください`
+    : data.presets.length === 0
+      ? '考え方（プリセット）がありません。条件の画面で作ってください'
       : null;
 
   // ---- 条件の差 ----
@@ -459,7 +359,7 @@ export default function ComparePage() {
   const movedLabel = (visitId: string, staffId: string, side: Side): string | null => {
     const other = side === 'a' ? ownerB.get(visitId) : ownerA.get(visitId);
     if (other === staffId) return null;
-    const name = other ? staffName(other) : '未割当';
+    const name = other ? staffName(other) : '担当なし';
     return side === 'a' ? `→ Bでは ${name}` : `← Aでは ${name}`;
   };
 
@@ -594,8 +494,8 @@ export default function ComparePage() {
     <div className="stack" style={{ minWidth: 0 }}>
       <PageHeader
         icon={GitCompareArrows}
-        title="案を比べる"
-        lead="その日に作った AI案を2つ選んで比べます。案が1つなら、ここでもう1案作れます"
+        title="提案を比べる"
+        lead="今の担当と、考え方（プリセット）ごとに作った提案を2つ選んで比べます。提案は保存しません。よければ「当てる」"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
             <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>
@@ -614,24 +514,20 @@ export default function ComparePage() {
               </span>
               <Hint>
                 <ul className="hint-list">
-                  <li>日の予定で AI案を作るたびに、ここに残ります。</li>
+                  <li>提案はこの画面にいるあいだだけ残ります（保存しません。日付を変えると消えます）。</li>
                   <li>{rulerText(scoreRulerName)}。</li>
-                  <li>点数は、{SCORE_TEXT}です。高いほど良い案です。</li>
+                  <li>点数は、{SCORE_TEXT}です。高いほど良い組み方です。</li>
                 </ul>
               </Hint>
             </span>
           }
         >
-          この日に作った案（{runs.length}件）
+          比べる担当（{choices.length}件）
         </SectionTitle>
         {choices.length === 0 ? (
           // 空の画面（PRD D176）：なぜ空かと次の一手（日の画面で作る・月のまとめて作る）
           <EmptyNext
-            guide={compareEmptyGuide({
-              date,
-              today: jstDate(Date.now()),
-              visits: problem?.visits.length ?? visits.length,
-            })}
+            guide={compareEmptyGuide({ date })}
             icon={History}
             onOpenDay={(d) => {
               setDate(d);
@@ -651,8 +547,8 @@ export default function ComparePage() {
                   <th {...narrowRole.columnheader} className="ab-col">
                     B
                   </th>
-                  <th {...narrowRole.columnheader}>案</th>
-                  <th {...narrowRole.columnheader}>作った時刻</th>
+                  <th {...narrowRole.columnheader}>担当</th>
+                  <th {...narrowRole.columnheader}>種類</th>
                   <th {...narrowRole.columnheader} className="num">
                     合計点
                   </th>
@@ -667,7 +563,6 @@ export default function ComparePage() {
               </thead>
               <tbody {...narrowRole.rowgroup}>
                 {choices.map((c) => {
-                  const run = runs.find((r) => r.id === c.id);
                   const sc = scores.get(c.id)?.value ?? null;
                   return (
                     <tr
@@ -699,32 +594,21 @@ export default function ComparePage() {
                           <span>B</span>
                         </label>
                       </td>
-                      <td {...narrowRole.cell} className="narrow-title" data-label="案">
+                      <td {...narrowRole.cell} className="narrow-title" data-label="担当">
                         {c.title}
-                        {run?.reassign && (
-                          <span className="chip chip-move" style={{ marginLeft: 6 }}>
-                            {run.reassign.method === 'anneal' ? '欠勤の振り直し（案B）' : '欠勤の振り直し（案A）'}
+                        {c.stopped && <span className="sub">（途中で止めた提案）</span>}
+                        {stale(c) && (
+                          <span className="chip chip-warn" style={{ marginLeft: 6 }} data-testid="compare-stale">
+                            訪問が変わりました
                           </span>
                         )}
-                        {c.id.startsWith(BEFORE) && (
-                          <span className="chip" style={{ marginLeft: 6 }}>
-                            欠勤前
-                          </span>
-                        )}
-                        {run?.stopped && <span className="sub">（途中で止めた案）</span>}
                       </td>
-                      <td {...narrowRole.cell} className="nowrap sub" data-label="作った時刻">
-                        {run
-                          ? new Date(run.createdAt).toLocaleString('ja-JP', {
-                              timeZone: 'Asia/Tokyo',
-                              month: 'numeric',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : c.id.startsWith(BEFORE)
+                      <td {...narrowRole.cell} className="nowrap sub" data-label="種類">
+                        {c.kind === 'current'
+                          ? '保存している担当'
+                          : c.kind === 'before'
                             ? '振り直す前'
-                            : '手直しを含む'}
+                            : '提案（保存しない）'}
                       </td>
                       <td className="num" data-label="合計点">
                         {sc && scale ? `${toHundred(sc.total, scale)}点` : '—'}
@@ -742,23 +626,24 @@ export default function ComparePage() {
                         {sc ? `${sc.dropped}件` : '—'}
                       </td>
                       <td {...narrowRole.cell} className="nowrap narrow-act">
-                        {run && (
+                        {c.kind === 'proposal' && (
                           <div className="actions">
-                            <IconButton
-                              icon={ExternalLink}
-                              label={`${c.title} を日の予定で開く`}
-                              onClick={() => openRun(run)}
-                            />
-                            <IconButton
-                              icon={SlidersHorizontal}
-                              label={`この日だけの重みを ${c.title} と同じにする`}
-                              onClick={() => applyRules(run)}
-                            />
+                            <button
+                              type="button"
+                              className="btn btn-small btn-primary"
+                              aria-disabled={stale(c) || undefined}
+                              onClick={() => applyChoice(c)}
+                              data-testid="compare-apply"
+                            >
+                              <WithIcon icon={Check} size={14}>
+                                当てる
+                              </WithIcon>
+                            </button>
                             <IconButton
                               icon={Trash2}
                               label={`${c.title} を消す`}
                               tone="danger"
-                              onClick={() => removeRun(run)}
+                              onClick={() => removeChoice(c)}
                             />
                           </div>
                         )}
@@ -770,44 +655,29 @@ export default function ComparePage() {
             </table>
           </div>
         )}
-        {/* 乱数の種はふだん見ないので表に出さず「詳細設定」に畳む（PRD D229。条件の画面の詳細設定と同じ扱い） */}
-        {runs.length > 0 && (
-          <details className="compare-advanced" data-testid="compare-advanced">
-            <summary className="sub">詳細設定（記録ごとの乱数の種）</summary>
-            <ul className="sub compare-advanced-list">
-              {runs.map((r) => (
-                <li key={r.id}>
-                  {choices.find((c) => c.id === r.id)?.title ?? r.id}：乱数の種 {r.seed}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-        {(choices.length === 1 || (making && making.date === date)) && (
+        {problem && (
           <div className="compare-another stack" data-testid="compare-another">
             {choices.length === 1 && (
-              <Empty icon={GitCompareArrows}>
-                比べるには案が2つ要ります。今の案はそのままで、別の考え方でもう1案作って並べられます。
-              </Empty>
+              <p className="sub">比べるには2つ要ります。考え方を選んで提案を作ると、今の担当と並べられます。</p>
             )}
-            {anotherWhy ? (
+            {makeWhy ? (
               <p className="sub" data-testid="compare-another-why">
-                {anotherWhy}
+                {makeWhy}
               </p>
             ) : (
-              another && (
+              preset && (
                 <div className="compare-another-row">
                   <label className="compare-another-pick">
                     <span className="sub">考え方</span>
                     <select
-                      value={another.key}
-                      onChange={(e) => setAnotherKey(e.target.value)}
+                      value={preset.id}
+                      onChange={(e) => setPresetId(e.target.value)}
                       disabled={!!making}
                       data-testid="compare-another-select"
                     >
-                      {anotherOpts.map((o) => (
-                        <option key={o.key} value={o.key}>
-                          {o.label}
+                      {data.presets.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          「{o.name}」
                         </option>
                       ))}
                     </select>
@@ -816,10 +686,10 @@ export default function ComparePage() {
                     type="button"
                     className="btn btn-primary"
                     disabled={!!making}
-                    onClick={makeAnother}
+                    onClick={makeProposal}
                     data-testid="compare-another-make"
                   >
-                    <WithIcon icon={Sparkles}>もう1案作って比べる</WithIcon>
+                    <WithIcon icon={Sparkles}>提案を作って比べる</WithIcon>
                   </button>
                 </div>
               )
@@ -833,7 +703,7 @@ export default function ComparePage() {
                 <progress
                   value={making.iteration}
                   max={making.total || 1}
-                  aria-label={`${making.name}の案の進み具合`}
+                  aria-label={`${making.name}の提案の進み具合`}
                 />
                 <span className="sub" aria-hidden="true">
                   {making.total > 0
@@ -880,14 +750,7 @@ export default function ComparePage() {
                 </tbody>
               </table>
             </div>
-            {(stale(A) || stale(B)) && (
-              <div className="sub row">
-                <WithIcon icon={TriangleAlert} size={14}>
-                  この日だけの重みと違う重みで作った案があります
-                </WithIcon>
-                <Hint>下の点数は、A・B とも「{scoreRulerName}」の重みで付けています。</Hint>
-              </div>
-            )}
+            <p className="sub">下の点数は、A・B とも「{scoreRulerName}」の重みで付けています。</p>
           </div>
 
           <div className="card stack">

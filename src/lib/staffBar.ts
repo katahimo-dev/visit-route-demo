@@ -40,7 +40,7 @@ export const STAFF_SLOT_LABEL: Record<StaffSlotState, string> = {
   visit: '訪問',
   travel: '移動',
   free: '空き',
-  noplan: '案なし',
+  noplan: '分からない',
   rest: '休み',
   outside: '勤務外',
 };

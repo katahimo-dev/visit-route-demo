@@ -7,7 +7,7 @@ import { absenceError, absenceText } from './absences';
 
 /** 何が起きたか：〈スタッフ〉が休む／〈利用者さん〉がキャンセル */
 export type SuddenKind = 'staff' | 'client';
-/** 段階（1：何が起きたか 2：人・訪問を選ぶ 3：影響の確認と振り直し 4：選んで確定 5：連絡。PRD D243） */
+/** 段階（1：何が起きたか 2：人・訪問を選ぶ 3：影響の確認と振り直し 4：案を選ぶ 5：連絡して確定。PRD D243・ADR-0053） */
 export type SuddenStep = 1 | 2 | 3 | 4 | 5;
 
 /** URL の `?do=` で欄を開く値（ホームの「急な欠勤・キャンセルを登録」。PRD D172） */
@@ -15,17 +15,17 @@ export const SUDDEN_DO = 'absence';
 
 /** 段階の短い名前（欄の上の1行の段階の表示。種類を選ぶ前は〈スタッフ〉の流れの名前で出す） */
 export function suddenSteps(kind: SuddenKind | null): [string, string, string, string, string] {
-  if (kind === 'client') return ['起きたこと', '訪問', '影響', '確定', '連絡'];
-  return ['起きたこと', '休む人', '影響', '確定', '連絡'];
+  if (kind === 'client') return ['起きたこと', '訪問', '影響', '確認', '連絡・確定'];
+  return ['起きたこと', '休む人', '影響', '選ぶ', '連絡・確定'];
 }
 
 /** 段階の見出し（h3。段階の表示の短い名前と重ねず、その段階ですることを書く） */
 export function suddenHeading(kind: SuddenKind | null, step: SuddenStep, staffWord: string): string {
   if (step === 1) return '何が起きましたか？';
-  if (step === 5) return '変更を伝える';
+  if (step === 5) return '変更を伝えて確定する';
   if (kind === 'client')
-    return step === 2 ? 'キャンセルの訪問を選ぶ' : step === 3 ? '影響を確かめて取り消す' : '確定する';
-  return step === 2 ? `休む${staffWord}と時間帯を選ぶ` : step === 3 ? '影響を確かめて振り直す' : '案を選んで確定する';
+    return step === 2 ? 'キャンセルの訪問を選ぶ' : step === 3 ? '影響を確かめて取り消す' : '取り消した結果を確かめる';
+  return step === 2 ? `休む${staffWord}と時間帯を選ぶ` : step === 3 ? '影響を確かめて振り直す' : '振り直し方を選ぶ';
 }
 
 /** 欠勤の欄の入力（終日／時間帯・開始・終了（空＝始業から・終業まで）・メモ） */
@@ -131,21 +131,20 @@ export function reassignBlocked(i: {
   if (i.error) return i.error;
   if (i.running) return '計算中は押せません（終わるまで待ってください）';
   if (!i.hasPreview) return '見込みを出せませんでした';
-  if (!i.hasBase) return 'この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）';
+  if (!i.hasBase) return 'この日はまだ担当のある訪問がありません。欠勤だけ登録できます';
   return null;
 }
 
 /**
- * 案の無い日の3段目の文。計算中（自動作成で案を作っている）なら、終わると振り直せると書く
- * （そのあいだは「欠勤だけ登録」も押せない。登録すると、作り終えた案で休む人に訪問が残るため）
+ * 担当のある訪問が無い日の3段目の文。計算中（AI で組んでいる）なら、終わると振り直せると書く
  */
 export function noPlanText(running: boolean): string {
   return running
-    ? '案を作っています。終わると振り直せます'
-    : 'この日はまだ案がありません。欠勤だけ登録できます（案を作るときは欠勤を除いて作ります）';
+    ? '担当を組んでいます。終わると振り直せます'
+    : 'この日はまだ担当のある訪問がありません。欠勤だけ登録できます';
 }
 
-/** 案B を勧めるか（案のある日で、案A では入らない見込みがある）。勧めるときは主ボタン「登録して振り直す（おすすめ）」で案B も作る（PRD D264） */
+/** 案B を勧めるか（担当のある日で、案A では入らない見込みがある）。勧めるときは主ボタン「登録して振り直す（おすすめ）」で案B も作る（PRD D264） */
 export function recommendAnneal(i: { hasBase: boolean; unplacedA: number }): boolean {
   return i.hasBase && i.unplacedA > 0;
 }
@@ -162,7 +161,6 @@ export function cancelImpact(i: {
       ? `担当の${i.owner}さんの予定からこの訪問が外れ、その時間が空きます。ほかの訪問の担当・順番・時刻は変えません`
       : 'この訪問はまだ担当が決まっていません。ほかの訪問は変わりません',
   ];
-  if (!i.hasPlan) out.push('この日はまだ案がありません。案を作るときはこの訪問を除いて作ります');
   out.push(
     i.sameDay
       ? `当日キャンセルは、月の予定と${i.clientWord}ごとの月の集計に回数が出ます（請求はしません）`
@@ -171,12 +169,12 @@ export function cancelImpact(i: {
   return out;
 }
 
-/** 4段目の確定の文（確定の状態：none＝確定した割当なし・same＝確定済みと同じ・diff＝違う・null＝案なし） */
-export function confirmNote(state: 'none' | 'same' | 'diff' | null): string {
-  if (state === null) return 'この日はまだ案がありません';
-  if (state === 'same') return '今の案は確定した割当と同じです（確定済み）';
-  if (state === 'diff') return '今の案は確定した割当と違います。「この割当で確定」で確定し直してください';
-  return 'まだ確定していません。「この割当で確定」で確定します';
+/** 4段目の確定の文（伝えた状態：none＝まだ伝えていない・told＝伝えた・changed＝伝えたあとに変わった） */
+export function confirmNote(state: 'none' | 'told' | 'changed'): string {
+  if (state === 'told') return '今の担当は伝えた内容と同じです（確定済み）';
+  if (state === 'changed')
+    return '伝えたあとに変わった訪問があります（未連絡の変更）。連絡してから「確定」を押してください';
+  return 'まだ確定していません。連絡したら「確定」を押してください';
 }
 
 /** 欠勤の短い文（段階の見出し・知らせ）：「〇〇さん 欠勤（終日）」 */

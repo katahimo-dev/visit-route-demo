@@ -1,33 +1,15 @@
 // 稼働の見込み（PRD D72。ADR-0015）
 import { describe, expect, it } from 'vitest';
-import type { AiPlan, DemoData } from '../contracts/data';
+import type { DemoData } from '../contracts/data';
 import { compile } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import {
-  fareOf,
-  hmText,
-  isOverSpan,
-  workDayOf,
-  workloadTsv,
-  workMonth,
-  workRoutesOf,
-  workStats,
-  workTotals,
-} from './workload';
+import { fareOf, hmText, isOverSpan, workDayOf, workloadTsv, workMonth, workStats, workTotals } from './workload';
 
-const plan = (routes: Record<string, string[]>, date = DATE): AiPlan => ({
-  date,
-  createdAt: 1,
-  seed: 1,
-  iterations: 1,
-  routes,
-  unassigned: [],
-  score: 0,
-  stopped: false,
-  rules: [],
-  generated: { routes, unassigned: [], score: 0 },
-  pins: {},
-});
+/** 訪問に担当を書く（版2。ADR-0053：担当は訪問に持つ） */
+const assign = (d: DemoData, routes: Record<string, string[]>): DemoData => {
+  const owner = new Map(Object.entries(routes).flatMap(([sid, ids]) => ids.map((id) => [id, sid] as const)));
+  return { ...d, visits: d.visits.map((v) => (owner.has(v.id) ? { ...v, staffId: owner.get(v.id)! } : v)) };
+};
 
 function data(over: Partial<DemoData> = {}): DemoData {
   return makeData({
@@ -103,28 +85,25 @@ describe('稼働の見込み（workStats）', () => {
   });
 });
 
-describe('数える案（workRoutesOf・workDayOf）', () => {
-  it('確定した割当に担当があればそれ、無ければ今の案、どちらも無ければ null', () => {
-    const d = data({ aiPlans: { [DATE]: plan({ s1: ['v1', 'v2'], s2: ['v3'] }) } });
-    const p = compile(d, DATE);
-    expect(workRoutesOf(d, DATE, p)?.source).toBe('plan');
-    const c = { ...d, manualPlans: { [DATE]: { s2: ['v1'], __none: ['v2', 'v3'] } } };
-    expect(workRoutesOf(c, DATE, p)?.source).toBe('confirmed');
-    // 確定した割当が未割当だけなら今の案
-    const e = { ...d, manualPlans: { [DATE]: { __none: ['v1', 'v2', 'v3'] } } };
-    expect(workRoutesOf(e, DATE, p)?.source).toBe('plan');
-    expect(workRoutesOf(data(), DATE, p)).toBeNull();
-    const day = workDayOf(c, DATE);
-    expect(day.source).toBe('confirmed');
-    expect(day.stats.map((x) => [x.staffId, x.count])).toEqual([['s2', 1]]);
+describe('その日の見込み（workDayOf。担当は訪問の担当）', () => {
+  it('担当のある訪問を数え、確定した日は confirmed、訪問が無ければ null', () => {
+    const d = assign(data(), { s1: ['v1', 'v2'], s2: ['v3'] });
+    expect(workDayOf(d, DATE).source).toBe('plan');
+    const told = { ...d, snapshots: { [DATE]: { date: DATE, at: 1, visits: [] } } };
+    expect(workDayOf(told, DATE).source).toBe('confirmed');
+    expect(workDayOf(d, DATE).stats.map((x) => [x.staffId, x.count])).toEqual([
+      ['s1', 2],
+      ['s2', 1],
+    ]);
+    expect(workDayOf(data({ visits: [] }), DATE).source).toBeNull();
   });
 
   it('月の合計と、表のコピー（タブ区切り。交通費は単価が 0 なら出さない）', () => {
     const next = '2026-10-13';
-    const d = data({
-      visits: [...data().visits, visit('w1', 'c1', '09:00', '09:00', { windowKind: 'fixed', date: next })],
-      aiPlans: { [DATE]: plan({ s1: ['v1', 'v2', 'v3'] }), [next]: plan({ s1: ['w1'] }, next) },
-    });
+    const d = assign(
+      data({ visits: [...data().visits, visit('w1', 'c1', '09:00', '09:00', { windowKind: 'fixed', date: next })] }),
+      { s1: ['v1', 'v2', 'v3', 'w1'] },
+    );
     const days = workMonth(d, '2026-10');
     expect(days).toHaveLength(31);
     const t = workTotals(days).get('s1')!;

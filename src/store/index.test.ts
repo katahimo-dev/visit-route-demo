@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type DemoData, STORAGE_KEY } from '../contracts/data';
-import type { Pattern } from '../contracts/documents';
 import { createDemoData } from '../seed';
-import { CONDITIONS_BASE_KEY } from './conditions';
 import {
   BROKEN_KEY,
   backup,
@@ -10,7 +8,6 @@ import {
   canKeepPrevious,
   currentData,
   exportJson,
-  extendDays,
   flushSave,
   importJson,
   isImportError,
@@ -18,6 +15,7 @@ import {
   load,
   loadWithStatus,
   migrate,
+  OUTDATED_MESSAGE,
   PREV_INFO_KEY,
   PREV_KEY,
   previousInfo,
@@ -85,50 +83,36 @@ describe('書き出し・読み込み', () => {
   });
 });
 
-describe('AI案の手直し（ADR-0004）の移行', () => {
-  // 読み込みで、いない訪問を指す案は直す（repair）ので、その日の本当の訪問IDを使う
-  const [v1 = '', v2 = ''] = createDemoData('2026-10-12')
-    .visits.filter((v) => v.date === '2026-10-12')
-    .map((v) => v.id);
-  const old = {
-    date: '2026-10-12',
-    createdAt: 1,
-    seed: 1,
-    iterations: 100,
-    routes: { s1: [v1], s2: [] },
-    unassigned: [v2],
-    score: 123,
-    stopped: false,
-    rules: [],
-  };
-  it('generated・pins が無い保存データは、generated＝routes の写し・pins＝{} で補って読める（版は上げない）', () => {
-    const d = { ...createDemoData('2026-10-12'), aiPlans: { '2026-10-12': old }, prevAiPlans: { '2026-10-12': old } };
-    const r = migrate(JSON.parse(JSON.stringify(d))) as DemoData;
-    expect(isImportError(r)).toBe(false);
-    expect(r.version).toBe(1);
-    const plan = r.aiPlans['2026-10-12']!;
-    expect(plan.generated).toEqual({ routes: { s1: [v1], s2: [] }, unassigned: [v2], score: 123 });
-    expect(plan.pins).toEqual({});
-    // 前の版の prevAiPlans は捨て、記録（aiRuns）は {} で補う
-    expect('prevAiPlans' in r).toBe(false);
-    expect(r.aiRuns).toEqual({});
+describe('版1のデータ（ADR-0053。移行しない）', () => {
+  /** 版1の形の保存データ（案・記録・確定した割当を持つ） */
+  const v1 = () => ({
+    ...createDemoData('2026-10-12'),
+    version: 1,
+    aiPlans: {},
+    aiRuns: {},
+    manualPlans: {},
+    org: { ...createDemoData('2026-10-12').org, features: { compat: false } },
   });
-  it('generated・pins があればそのまま', () => {
-    const plan = { ...old, generated: { routes: { s1: [] }, unassigned: [], score: 1 }, pins: { [v1]: 's1' } };
-    const d = { ...createDemoData('2026-10-12'), aiPlans: { '2026-10-12': plan } };
-    const r = migrate(JSON.parse(JSON.stringify(d))) as DemoData;
-    expect(r.aiPlans['2026-10-12']).toEqual(plan);
+  it('読み込み（JSON）は「データの形が変わった」の ImportError', () => {
+    expect(err(importJson(JSON.stringify(v1()))).message).toBe(OUTDATED_MESSAGE);
+  });
+  it('起動のとき：退避して初期データ（版2）で始め、outdated。機能の入り切りだけ引き継ぐ', () => {
+    mem.set(STORAGE_KEY, JSON.stringify(v1()));
+    const r = loadWithStatus();
+    expect(r).toMatchObject({ broken: true, outdated: true });
+    expect(r.data.version).toBe(2);
+    expect(r.data.org.features).toEqual({ compat: false });
+    expect(mem.get(BROKEN_KEY)).toContain('"version":1');
   });
 });
 
 describe('load・save', () => {
   it('無ければ初期データを作って保存する', () => {
     const d = load();
-    expect(d.version).toBe(1);
-    expect(d.visits.length).toBeGreaterThan(0);
+    expect(d.version).toBe(2);
     expect(mem.has(STORAGE_KEY)).toBe(true);
-    // 今日から7日分の案を入れる（PRD D225）
-    expect(Object.keys(d.aiPlans)).toHaveLength(7);
+    // 今日から7日分の担当を訪問に書く（PRD D225。ADR-0053）
+    expect(new Set(d.visits.filter((v) => v.staffId !== null).map((v) => v.date)).size).toBe(7);
   });
 
   it('壊れた JSON は退避して初期データを返す', () => {
@@ -145,19 +129,6 @@ describe('load・save', () => {
     const r = loadWithStatus();
     expect(r.broken).toBe(true);
     expect(r.data.staff).toHaveLength(8);
-  });
-
-  it('データが無い・読めないで初期データから始めると、古い条件の変更の控えを消す（PRD D290）。読めたときは残す', () => {
-    const base = JSON.stringify({ at: 1, data: {} });
-    mem.set(CONDITIONS_BASE_KEY, base);
-    expect(loadWithStatus().fresh).toBe(true);
-    expect(mem.has(CONDITIONS_BASE_KEY)).toBe(false);
-    mem.set(CONDITIONS_BASE_KEY, base);
-    expect(loadWithStatus().fresh).toBe(false);
-    expect(mem.get(CONDITIONS_BASE_KEY)).toBe(base);
-    mem.set(STORAGE_KEY, '{こわれた');
-    expect(loadWithStatus().broken).toBe(true);
-    expect(mem.has(CONDITIONS_BASE_KEY)).toBe(false);
   });
 
   it('読めないデータの退避が容量超過なら控えを捨ててもう1回。それでもだめなら brokenKept＝false、元の文字は brokenText で取れる', () => {
@@ -191,13 +162,13 @@ describe('load・save', () => {
   it('壊れた JSON のときは作った初期データを書き、読み直しても退避と計算を繰り返さない', () => {
     mem.set(STORAGE_KEY, '{こわれた');
     const d = load();
-    // 作った初期データ（7日分の案を含む）が書かれている
+    // 作った初期データ（7日分の担当を含む）が書かれている
     expect(JSON.parse(mem.get(STORAGE_KEY) ?? '{}')).toEqual(JSON.parse(JSON.stringify(d)));
     // 読み直すと書いたデータを読み、退避は1回のまま（同じ値で上書きしない）
     mem.set(BROKEN_KEY, '退避は1回');
     const again = load();
     expect(mem.get(BROKEN_KEY)).toBe('退避は1回');
-    expect(again.aiPlans).toEqual(JSON.parse(JSON.stringify(d.aiPlans)));
+    expect(again.visits).toEqual(JSON.parse(JSON.stringify(d.visits)));
   });
 
   it('壊れた JSON を退避できなければ、元の文字を上書きしない', () => {
@@ -223,7 +194,7 @@ describe('load・save', () => {
     vi.advanceTimersByTime(300);
     vi.useRealTimers();
     expect(flushed).toHaveBeenCalledTimes(1);
-    expect(flushed).toHaveBeenCalledWith(null, false, false);
+    expect(flushed).toHaveBeenCalledWith(null, false);
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(42);
   });
 
@@ -234,7 +205,7 @@ describe('load・save', () => {
     const onError = vi.fn();
     save(createDemoData('2026-10-12'), onError);
     flushSave();
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('保存容量'), false, false);
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('保存容量'), false);
   });
 
   it('reset は初期データで置き換える', () => {
@@ -311,61 +282,6 @@ describe('控え（backup。例外の画面）', () => {
     expect(b.files.map((f) => f.kind)).toEqual(['current', 'broken']);
     expect(seedOf(b.files[0]?.text)).toBe(d.seed);
     expect(b.files[1]?.text).toBe('{こわれた');
-  });
-});
-
-describe('extendDays', () => {
-  it('今日以降の訪問があれば何もしない', () => {
-    const d = createDemoData('2026-10-12');
-    expect(extendDays(d, '2026-10-20')).toBe(d);
-  });
-  it('今日以降の訪問が無ければ14日分足し、既存の日は変えない', () => {
-    const d = createDemoData('2026-10-12');
-    const e = extendDays(d, '2026-11-20');
-    expect(e.visits.filter((v) => v.date < '2026-11-20')).toEqual(d.visits);
-    expect(e.visits.some((v) => v.date === '2026-11-20')).toBe(true);
-    expect(e.manualPlans['2026-10-12']).toEqual(d.manualPlans['2026-10-12']);
-  });
-  it('パターンのあるデータで今日以降の訪問が無いとき、起動するとパターンから訪問が足される', () => {
-    const d = createDemoData('2026-10-12');
-    const client = d.clients.find((c) => c.active)!;
-    const pattern: Pattern = {
-      id: 'p1',
-      clientId: client.id,
-      typeId: null,
-      weekdays: [1, 4], // 月・木
-      everyWeeks: 1,
-      repeat: 'weekly',
-      monthWeeks: [],
-      dayTimes: [],
-      windowKind: 'fixed',
-      earliestStart: '10:00',
-      latestStart: '10:00',
-      durationMinutes: 60,
-      from: '2026-10-01',
-      to: null,
-      usualStaffId: null,
-      note: '',
-    };
-    // seed のパターン（ADR-0012）を p1 だけにする（seed の訪問はパターンから外す）
-    const withPattern: DemoData = { ...d, patterns: [pattern], visits: d.visits.map((v) => ({ ...v, pattern: null })) };
-    mem.set(STORAGE_KEY, JSON.stringify(withPattern));
-    // 今日＝2026-11-20（金）。今日〜12/3 の月・木
-    vi.useFakeTimers({ now: Date.parse('2026-11-20T09:00:00+09:00'), toFake: ['Date'] });
-    let loaded: DemoData;
-    try {
-      loaded = load();
-    } finally {
-      vi.useRealTimers();
-    }
-    expect(loaded.visits.filter((v) => v.date < '2026-11-20')).toEqual(withPattern.visits);
-    const added = loaded.visits.filter((v) => v.date >= '2026-11-20');
-    expect(added.map((v) => v.id)).toEqual(['2026-11-23_p1', '2026-11-26_p1', '2026-11-30_p1', '2026-12-03_p1']);
-    expect(added.every((v) => v.pattern?.id === 'p1' && v.clientId === client.id)).toBe(true);
-    // 保存もされる
-    expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).visits).toEqual(loaded.visits);
-    // パターンがあれば seed の daysFrom は使わない
-    expect(extendDays(withPattern, '2026-11-20').visits).toEqual(loaded.visits);
   });
 });
 
@@ -461,28 +377,9 @@ describe('1世代の控え（PRD D227。ADR-0032）', () => {
     save({ ...d, seed: 8 }, onError);
     flushSave();
     // 控えを捨てたことを返す（画面が知らせる）
-    expect(onError).toHaveBeenCalledWith(null, true, false);
+    expect(onError).toHaveBeenCalledWith(null, true);
     expect(previousInfo()).toBeNull();
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(8);
-  });
-
-  it('本体の保存が容量超過なら、条件の変更の控えを先に捨てて書く（1世代の控えは残す。PRD D290）', () => {
-    const d = createDemoData('2026-10-12');
-    keepPrevious(d, '初期状態に戻す', at);
-    mem.set(CONDITIONS_BASE_KEY, JSON.stringify({ at: 1, data: {} }));
-    const ls = globalThis.localStorage as Storage;
-    const orig = ls.setItem;
-    ls.setItem = (key: string, value: string) => {
-      if (key === STORAGE_KEY && mem.has(CONDITIONS_BASE_KEY)) throw new DOMException('full', 'QuotaExceededError');
-      orig(key, value);
-    };
-    const onError = vi.fn();
-    save({ ...d, seed: 9 }, onError);
-    flushSave();
-    expect(onError).toHaveBeenCalledWith(null, false, true);
-    expect(mem.has(CONDITIONS_BASE_KEY)).toBe(false);
-    expect(previousInfo()).not.toBeNull();
-    expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(9);
   });
 
   it('直前の状態に戻す：いまのデータを控えに残し、控えのデータを返す（もう一度戻せる）', () => {
@@ -540,7 +437,7 @@ describe('1世代の控え（PRD D227。ADR-0032）', () => {
   });
 
   it('容量超過の文は、画面にある片づけの操作を指す', () => {
-    expect(QUOTA_MESSAGE).toContain('古い案と記録を片づける');
+    expect(QUOTA_MESSAGE).toContain('古い訪問を片づける');
     expect(QUOTA_MESSAGE).not.toContain('古い日の予定を消して');
   });
 });

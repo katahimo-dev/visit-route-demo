@@ -46,13 +46,13 @@ import {
   WEEK_TABLE_FILTER,
 } from '../lib/clientFilter';
 import { colorOf } from '../lib/colors';
-import { dateText, own } from '../lib/common';
+import { dateText } from '../lib/common';
 import { bulkConfirmDialog, bulkConfirmTargets, confirmDay } from '../lib/confirmDay';
 import { deferredDragStart } from '../lib/dragStart';
 import { periodEmptyGuide } from '../lib/emptyGuide';
 import { isDate } from '../lib/isDate';
-import { attentionList, expandRange, expandRangeVisits, ymOf } from '../lib/month';
-import { canMakeDay, monthBatch, weekBatchDays, weekLabel } from '../lib/monthBatch';
+import { attentionList, ymOf } from '../lib/month';
+import { monthBatch, weekLabel } from '../lib/monthBatch';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
 import { scrollLeftToShow } from '../lib/scrollEdge';
@@ -92,8 +92,9 @@ import {
   weekDates,
   weekDay,
 } from '../lib/week';
-import { weekDayCountText, weekDayUnmadeNote, weekNext } from '../lib/weekPrep';
+import { weekDayCountText, weekNext } from '../lib/weekPrep';
 import { isTimeline, WEEK_VIEWS, type WeekView, weekViewLabel, weekViewOf, weekViewParams } from '../lib/weekView';
+import { findVisit, visitsOn } from '../patterns';
 import { WeekMailPanel } from './mailPanels';
 import './week.css';
 
@@ -254,52 +255,39 @@ export default function WeekPage() {
   });
 
   const activeStaff = useMemo(() => staff.filter((s) => s.active), [staff]);
-  const visitById = useMemo(() => new Map(data.visits.map((v) => [v.id, v])), [data.visits]);
-  const dayInput = useMemo(
-    () => ({ ...compileInput, aiPlans: data.aiPlans, manualPlans: data.manualPlans }),
-    [compileInput, data.aiPlans, data.manualPlans],
-  );
-  const days: WeekDay[] = useMemo(() => dates.map((d) => weekDay(dayInput, d)), [dayInput, dates]);
+  const days: WeekDay[] = useMemo(() => dates.map((d) => weekDay(compileInput, d)), [compileInput, dates]);
   const dayOf = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
-
-  // ---- この週の準備（PRD D280・D282。ADR-0046）：作る → 確定 → 済み の主ボタン1つと、日の見出しの「未作成」 ----
-  const end = dates[6]!;
-  /** 週の今日以降の日（作る・確定するのはこの日だけ。月をまたぐ週も1度に） */
-  const futureDates = useMemo(() => dates.filter((d) => d >= today), [dates, today]);
-  // 定期パターンからまだ作っていない訪問（週の範囲。読むのは定期パターン・訪問・〈利用者さん〉だけなので、それで覚える）
-  const { patterns, visits: allVisits, clients: allClients } = data;
-  const expanded = useMemo(
-    () => expandRangeVisits({ patterns, visits: allVisits, clients: allClients }, start, end, today),
-    [patterns, allVisits, allClients, start, end, today],
+  /** この週の訪問（計算した繰り返しの回も。版2。ADR-0053） */
+  const visitById = useMemo(
+    () => new Map(dates.flatMap((d) => visitsOn(data, d)).map((v) => [v.id, v])),
+    [data, dates],
   );
-  /**
-   * 作れない日（計算に入る訪問か〈スタッフ〉がいない。月まとめも飛ばす日）。作る日に数えず、確定のあと日の予定で確かめる
-   * （数えると作っても残り、主ボタンが「作る」のまま進まない）。compile が読むものと定期パターンから作った訪問で覚える
-   */
-  const { presets, scorePresetId } = data;
-  const unmakeable = useMemo(() => {
-    const input = { ...compileInput, visits: expanded.visits, presets, scorePresetId };
-    return new Set(futureDates.filter((d) => !canMakeDay(input, d)));
-  }, [compileInput, expanded, presets, scorePresetId, futureDates]);
+
+  // ---- この週の準備（PRD D280・D282。ADR-0046・ADR-0053）：担当なしを組む → 確定 → 済み の主ボタン1つ ----
+  /** 週の今日以降の日（組む・確定するのはこの日だけ。月をまたぐ週も1度に） */
+  const futureDates = useMemo(() => dates.filter((d) => d >= today), [dates, today]);
+  /** この画面で組んだ日（組んでも担当なしが残る日を、また組む日に数えない。画面を離れると忘れる） */
+  const [tried, setTried] = useState<ReadonlySet<string>>(new Set());
   /** 日の状態（月の予定・ホームと同じ数え方。lib/useDayStatuses） */
   const weekStatuses = useDayStatuses(data, compileInput, futureDates);
   const weekPrep = useMemo(() => {
     const statusOf = (d: string) => weekStatuses.get(d)?.status;
     const list = futureDates.flatMap((d) => statusOf(d) ?? []);
-    const unconfirmed = list.filter((x) => x.count > 0 && x.state !== 'confirmed').map((x) => x.date);
+    const unconfirmed = list.filter((x) => x.count > 0 && x.state !== 'told').map((x) => x.date);
     const bulk = bulkConfirmTargets(unconfirmed, statusOf, attentionList(data, list, today));
-    const makeDays = weekBatchDays({ ...data, visits: expanded.visits }, dates, today).filter(
-      (x) => !unmakeable.has(x.date),
-    );
-    const futureDays = futureDates.filter((d) => (statusOf(d)?.count ?? 0) > 0 || expanded.addedByDate.has(d)).length;
+    const makeDays = list
+      .filter(
+        (x) => x.state === 'none' && x.unassigned > 0 && !tried.has(x.date) && !!weekStatuses.get(x.date)?.problem,
+      )
+      .map((x) => ({ date: x.date, mode: 'care' as const }));
+    const futureDays = list.filter((x) => x.count > 0).length;
     return { bulk, makeDays, futureDays };
-  }, [weekStatuses, futureDates, data, today, expanded, dates, unmakeable]);
-  /** 案づくり（月まとめと同じ入れ物。ADR-0042）：この週を作っているか、ほかを作っているか */
+  }, [weekStatuses, futureDates, data, today, tried]);
+  /** 担当を組む計算（月の予定と同じ入れ物。ADR-0042）：この週を組んでいるか、ほかを組んでいるか */
   const batchRun = useValueStore(monthBatch.run);
   const running = batchRun ? (batchRun.source === 'week' && batchRun.weekStart === start ? 'this' : 'other') : null;
   const next = weekNext({
     futureDays: weekPrep.futureDays,
-    canExpand: expanded.added,
     makeDays: weekPrep.makeDays.length,
     bulk: weekPrep.bulk,
     running,
@@ -312,38 +300,31 @@ export default function WeekPage() {
   /** 押せない理由の文の id（主ボタンの aria-describedby） */
   const whyId = useId();
   /**
-   * この週の案を作る（PRD D280）：月まとめと同じ仕組み（lib/monthBatch。画面の外で1日ずつ）で、範囲をこの週の今日以降に絞る。
-   * 先に定期パターンからこの週の訪問を作り、まだ案の無い日だけを作る。作っている間も週の予定にとどまり、上の帯に進み具合
+   * この週の担当なしを AI で組む（PRD D280）：月の予定と同じ仕組み（lib/monthBatch。画面の外で1日ずつ）で、
+   * この週の今日以降の、伝えていない担当なしのある日を組む。組んでいる間も週の予定にとどまり、上の帯に進み具合
    */
   const makeWeek = () => {
     if (monthBatch.running()) {
-      toast('ほかの案を作っています。終わってから押してください');
+      toast('ほかの担当を組んでいます。終わってから押してください');
       return;
     }
-    const ex = expandRange(dataRef.current, start, end, today);
-    const targets = weekBatchDays(ex.data, dates, today).filter((x) => canMakeDay(ex.data, x.date));
-    if (targets.length === 0) {
-      if (ex.added > 0) {
-        update((d) => expandRange(d, start, end, today).data);
-        toast(`この週の訪問を${ex.added}件作りました`);
-      }
-      return;
-    }
+    const targets = weekPrep.makeDays;
+    if (targets.length === 0) return;
     const ok = monthBatch.start({
       ym: ymOf(targets[0]!.date),
       label: weekLabel(start),
-      mode: 'empty',
+      mode: 'care',
       days: targets,
-      expand: ex.added > 0 ? { from: start, to: end } : null,
       today,
       source: 'week',
       weekStart: start,
     });
-    if (!ok) toast('ほかの案を作っています。終わってから押してください');
+    if (!ok) toast('ほかの担当を組んでいます。終わってから押してください');
+    else setTried((t) => new Set([...t, ...targets.map((x) => x.date)]));
   };
   /**
    * この週の問題の無い日をまとめて確定（PRD D280）：月の「問題の無い日をまとめて確定」（D223）と同じ決まり・同じ確認の型で、
-   * 範囲をこの週の今日以降にする。1回の update で日ごとに「この割当で確定」と同じ書き方（lib/confirmDay）
+   * 範囲をこの週の今日以降にする。1回の update で日ごとに「確定（伝えた）」と同じ書き方（lib/confirmDay）
    */
   const confirmWeek = async () => {
     const bulk = weekPrep.bulk;
@@ -353,13 +334,13 @@ export default function WeekPage() {
       confirmLabel: `${bulk.targets.length}日を確定する`,
     });
     if (!ok || monthBatch.running()) return;
-    // 確認のあいだに案が消えた日（別のタブ）は飛ばす
     const ready = bulk.targets.flatMap((d) => {
       const p = weekStatuses.get(d)?.problem;
-      return p && own(dataRef.current.aiPlans, d) ? [{ date: d, p }] : [];
+      return p ? [{ date: d, p }] : [];
     });
     if (ready.length === 0) return;
-    update((d) => ready.reduce((out, x) => (own(out.aiPlans, x.date) ? confirmDay(out, x.date, x.p) : out), d));
+    const at = Date.now();
+    update((d) => ready.reduce((out, x) => confirmDay(out, x.date, x.p, at), d));
     toast(`${ready.length}日を確定しました`);
     // 押したボタンは状態の文に替わるので、フォーカスは主ボタンの場所へ（body に落とさない）
     requestAnimationFrame(() => nextRef.current?.focus({ preventScroll: true }));
@@ -378,7 +359,6 @@ export default function WeekPage() {
     () =>
       filterFacts({
         days,
-        visits: data.visits,
         clients,
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
@@ -387,7 +367,7 @@ export default function WeekPage() {
         showEndedInPeriod: true,
         visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
+    [days, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
   );
   /** この週に（取り消しでない）訪問がある〈利用者さん〉（検索欄の近道「この週に訪問がある人」） */
   const weekClientIds = facts.periodIds;
@@ -474,7 +454,7 @@ export default function WeekPage() {
     return new Set(v ? allowedStaffOf(dayOf.get(v.date)?.problem ?? null, dragId) : []);
   }, [dragId, visitById, dayOf]);
   /** 「入れる人 N人」の memo（訪問・日・時刻ごと。データが変われば作り直す） */
-  const fitCache = useMemo(() => ({ input: dayInput, memo: new Map<string, number | null>() }), [dayInput]);
+  const fitCache = useMemo(() => ({ input: compileInput, memo: new Map<string, number | null>() }), [compileInput]);
   const fitCount = (visitId: string, d: string, s: number): number | null => {
     const key = `${visitId}|${d}|${s}`;
     if (!fitCache.memo.has(key)) fitCache.memo.set(key, fitCountAt(fitCache.input, visitId, d, s));
@@ -542,7 +522,7 @@ export default function WeekPage() {
     setDate(d);
     navigate('/plan', visitId ? { state: { visitId } } : undefined);
   };
-  const staffName = (id: string | null) => (id ? (staffById.get(id)?.name ?? '（不明）') : '未割当');
+  const staffName = (id: string | null) => (id ? (staffById.get(id)?.name ?? '（不明）') : '担当なし');
   /** 〈利用者さん〉の帯の下の担当の呼び方（名字。重なればフルネーム。印刷と同じ）と、読み上げのフルネーム（PRD D83） */
   const labels = useMemo(() => staffLabels(staff), [staff]);
   const markNames = {
@@ -568,7 +548,7 @@ export default function WeekPage() {
         ? { draft: { date: d, earliestStart: minutesToHhmm(s), latestStart: minutesToHhmm(s + width) } }
         : {}),
       onSaved: (r) => {
-        if (r.moved && !r.staffSet && own(dataRef.current.aiPlans, r.date)) {
+        if (r.moved && !r.staffSet && !findVisit(dataRef.current, r.visitId)?.staffId) {
           setNotice({ date: r.date, visitId: r.visitId, label: r.label, error: null });
         }
       },
@@ -663,17 +643,16 @@ export default function WeekPage() {
   /** 新しい日の今の案に空き時間で入れる（入る人がいなければ知らせに理由を出す） */
   const insert = () => {
     if (!notice) return;
-    const createdAt = Date.now();
-    const r = insertIntoPlan(data, notice.date, notice.visitId, createdAt);
+    const r = insertIntoPlan(data, notice.date, notice.visitId);
     if (!r.staffId) {
       setNotice({
         ...notice,
-        error: '空き時間に入りません。その日を作り直すか、日の予定で手で入れてください',
+        error: '空き時間に入りません。日の予定の「AI で組む」か、手で担当を選んでください',
       });
       return;
     }
-    update((d) => insertIntoPlan(d, notice.date, notice.visitId, createdAt).data);
-    toast(`${md(notice.date)} の案に入れました（担当：${staffName(r.staffId)}）`);
+    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data);
+    toast(`${md(notice.date)} の空き時間に入れました（担当：${staffName(r.staffId)}）`);
     setNotice(null);
   };
 
@@ -690,9 +669,6 @@ export default function WeekPage() {
     dates,
     today,
     visitDays: days.filter((d) => d.bands.some((b) => !b.leave)).map((d) => d.date),
-    planDays: days.filter((d) => d.source !== null).map((d) => d.date),
-    // その場で作る（PRD D280）：作るのは見出しの主ボタンだけ。空の画面は文で指し、日の予定のボタンだけを置く
-    makeHere: { canExpand: expanded.added },
   });
   const nothingPicked = by === 'client' ? timelineClients.length === 0 : staffSel?.length === 0;
 
@@ -702,7 +678,7 @@ export default function WeekPage() {
         nav={<ViewSwitch current="week" />}
         icon={CalendarClock}
         title="週の予定"
-        lead={`この週の案を作って確定し、日時をドラッグでずらして${terms.staff}の偏りを見ます`}
+        lead={`この週の担当なしを AI で組んで確定し、日時をドラッグでずらして${terms.staff}の偏りを見ます`}
         actions={
           next.kind === 'none' ? undefined : (
             <div className="week-next" ref={nextRef} tabIndex={-1} data-testid="week-next" data-kind={next.kind}>
@@ -790,12 +766,8 @@ export default function WeekPage() {
                 </span>
               ))}
               <span className="row week-legend-item">
-                <span className="week-legend-dash is-noplan" aria-hidden="true" />
-                案なし（担当未定・注意）
-              </span>
-              <span className="row week-legend-item">
                 <span className="week-legend-dash is-unassigned" aria-hidden="true" />
-                入らない（要対応）
+                担当なし（要対応）
               </span>
               <span className="row week-legend-item">
                 <span className="week-legend-unfit" aria-hidden="true">
@@ -972,7 +944,7 @@ export default function WeekPage() {
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span>
               <WithIcon icon={TriangleAlert} size={16}>
-                {notice.label} へ動かしました。{md(notice.date)} の案は条件が変わりました
+                {notice.label} へ動かしました。担当なしです
               </WithIcon>
             </span>
             <button type="button" className="icon-btn" aria-label="知らせを閉じる" onClick={() => setNotice(null)}>
@@ -982,10 +954,10 @@ export default function WeekPage() {
           {notice.error && <p className="warn-text">{notice.error}</p>}
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-primary" onClick={insert} disabled={!!notice.error}>
-              <WithIcon icon={Sparkles}>{md(notice.date)} の案に空き時間で入れる</WithIcon>
+              <WithIcon icon={Sparkles}>{md(notice.date)} の空き時間に入れる</WithIcon>
             </button>
             <button type="button" className="btn" onClick={() => openDay(notice.date)}>
-              <WithIcon icon={RefreshCw}>その日を作り直す</WithIcon>
+              <WithIcon icon={RefreshCw}>その日を開く</WithIcon>
             </button>
           </div>
         </output>
@@ -1020,25 +992,25 @@ export default function WeekPage() {
             <div className="week-corner" />
             {days.map((day) => {
               const wd = weekday(day.date);
-              /** 定期パターンからまだ作っていない訪問（未作成。PRD D282） */
-              const unmade = expanded.addedByDate.get(day.date) ?? 0;
+              /** 担当なしの訪問（PRD D282。版2） */
+              const unassigned = day.bands.filter((b) => !b.leave && b.staffId === null).length;
+              const countText = weekDayCountText({ count: liveCount(day), unassigned });
               return (
                 <button
                   key={day.date}
                   type="button"
                   className={`week-day-head${day.date === today ? ' is-today' : ''}${wd === 0 ? ' is-sun' : wd === 6 ? ' is-sat' : ''}`}
                   onClick={() => openDay(day.date)}
-                  aria-label={`${dateText(day.date)}の予定を開く（${weekDayCountText({ count: liveCount(day), unexpanded: unmade, noPlan: day.source === null })}）`}
+                  aria-label={`${dateText(day.date)}の予定を開く（${countText}）`}
                   data-testid="week-day-head"
                 >
                   <strong>{dateText(day.date)}</strong>
                   <span
-                    className={`sub${liveCount(day) === 0 && unmade > 0 ? ' week-day-unmade' : ''}`}
-                    title={weekDayUnmadeNote(unmade) || undefined}
+                    className={`sub${unassigned > 0 ? ' week-day-unmade' : ''}`}
                     data-testid="week-day-count"
-                    data-unmade={unmade}
+                    data-unassigned={unassigned}
                   >
-                    {weekDayCountText({ count: liveCount(day), unexpanded: unmade, noPlan: day.source === null })}
+                    {countText}
                   </span>
                 </button>
               );
@@ -1062,9 +1034,8 @@ export default function WeekPage() {
                 visitById={visitById}
                 bandLabel={(b) => {
                   const v = visitById.get(b.visitId);
-                  // 担当の無い帯：その日に案が無ければ「案なし」（注意）、案があるのに入らなければ「入らない」（要対応。PRD D228）
-                  const none = b.source === 'visit' ? '案なし' : '入らない';
-                  return { client: clientName(v), staff: b.staffId === null ? none : staffName(b.staffId) };
+                  // 担当の無い帯は「担当なし」（要対応。PRD D228）
+                  return { client: clientName(v), staff: b.staffId === null ? '担当なし' : staffName(b.staffId) };
                 }}
                 typeColor={(v) => {
                   const t = typeOf(data.visitTypes, v?.typeId);
@@ -1147,27 +1118,20 @@ export default function WeekPage() {
                         const typesText = c.types
                           .map((t) => `${typeOf(data.visitTypes, t.typeId)?.name ?? '種類なし'} ${t.count}件`)
                           .join('・');
-                        const dayVisits = table.days.find((x) => x.date === c.date)?.visits ?? 0;
                         // 終日休みの人に訪問が残った日は件数も出す（休みの人に N の気づき）
                         const offText = c.count > 0 ? `休み（訪問 ${c.count}件）` : '休み';
-                        // 訪問があるのに案の無い日は数字を出さず「案なし」（その日の訪問の件数は title・読み上げに）
                         const detail = c.off
                           ? offText
-                          : c.noPlan
-                            ? `案なし（その日の訪問 ${dayVisits}件）`
-                            : [
-                                `訪問 ${c.count}件`,
-                                `稼働 ${c.hours}時間`,
-                                `移動 ${c.travel}分`,
-                                ...(typesText ? [typesText] : []),
-                              ].join('・');
+                          : [
+                              `訪問 ${c.count}件`,
+                              `稼働 ${c.hours}時間`,
+                              `移動 ${c.travel}分`,
+                              ...(typesText ? [typesText] : []),
+                            ].join('・');
                         return (
                           <td
                             key={c.date}
-                            className={[
-                              c.off ? 'is-off' : c.noPlan ? 'is-noplan' : '',
-                              c.date < today ? 'is-past' : '',
-                            ].join(' ')}
+                            className={[c.off ? 'is-off' : '', c.date < today ? 'is-past' : ''].join(' ')}
                             data-testid="week-cell"
                             title={`${staffName(r.staffId)}さん ${dateText(c.date)}：${detail}`}
                           >
@@ -1176,8 +1140,6 @@ export default function WeekPage() {
                               {c.off ? (
                                 // 訪問の無い休みは、バーに重ねた「休み」（PRD D85）と二重にしないよう文字は読み上げだけ
                                 <span className={c.count > 0 ? 'week-cell-count' : 'sr-only'}>{offText}</span>
-                              ) : c.noPlan ? (
-                                <span className="sub">案なし</span>
                               ) : (
                                 <span className="week-cell-count">{c.count}件</span>
                               )}
@@ -1202,23 +1164,8 @@ export default function WeekPage() {
                     <th scope="row">日ごとの合計</th>
                     {table.days.map((d) => (
                       <td key={d.date}>
-                        {d.visits === 0 && (expanded.addedByDate.get(d.date) ?? 0) > 0 ? (
-                          // 定期パターンからまだ作っていない日（PRD D282）：0件・案なしと分ける
-                          <span
-                            className="sub week-day-unmade"
-                            title={weekDayUnmadeNote(expanded.addedByDate.get(d.date) ?? 0)}
-                            data-testid="week-table-unmade"
-                          >
-                            未作成
-                          </span>
-                        ) : d.noPlan ? (
-                          <span className="sub">{d.visits > 0 ? `案なし（訪問 ${d.visits}件）` : '案なし'}</span>
-                        ) : (
-                          <>
-                            <strong>{d.count}件</strong>
-                            <span className="sub">移動 {d.travel}分</span>
-                          </>
-                        )}
+                        <strong>{d.count}件</strong>
+                        <span className="sub">移動 {d.travel}分</span>
                       </td>
                     ))}
                     <td className="week-total">
@@ -1230,7 +1177,7 @@ export default function WeekPage() {
               </table>
             </EdgeScroll>
             <p className="sub">
-              マスのバーは、その人の30分ごとの状態（訪問・移動・空き・休み・勤務外）です。案の無い日は「案なし」と出します。
+              マスのバーは、その人の30分ごとの状態（訪問・移動・空き・休み・勤務外）です。
               マスにマウスを乗せると、働ける時間・移動・種類ごとの時間が出ます。スマホでは週の合計の列を見てください。
               平均との差が30%を超える人を目立たせます。
             </p>
@@ -1294,11 +1241,10 @@ export default function WeekPage() {
                             >
                               <ClientDayBar
                                 items={cell.items}
-                                noPlan={cell.noPlan}
                                 timeText={(it) => `${hm(it.start)}〜${hm(it.end)}`}
                                 markOf={(it) => {
                                   const type = typeOf(data.visitTypes, it.typeId);
-                                  const mk = clientItemMark(it, cell.noPlan, markNames);
+                                  const mk = clientItemMark(it, markNames);
                                   // 担当が条件に合わない印（資格✗・限✗）も帯の下の文字に出す（赤い枠の色だけにしない）
                                   const unfit = it.cancelled
                                     ? []
@@ -1311,7 +1257,7 @@ export default function WeekPage() {
                                 }}
                                 renderItem={(it, place) => {
                                   const type = typeOf(data.visitTypes, it.typeId);
-                                  const mk = clientItemMark(it, cell.noPlan, markNames);
+                                  const mk = clientItemMark(it, markNames);
                                   // 〈利用者さん〉の休み（ADR-0013）・取り消しの訪問は動かさない
                                   const movable = canMoveVisit(it.date, today) && !it.leave && !it.cancelled;
                                   const marks = it.cancelled
@@ -1456,7 +1402,7 @@ function DayColumn({
             key={b.visitId}
             type="button"
             draggable={movable}
-            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? (b.source === 'visit' ? ' is-noplan' : ' is-unassigned') : ''}${bad ? ' is-unfit' : ''}`}
+            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
             style={{
               top: top(b.start),
               height: h,

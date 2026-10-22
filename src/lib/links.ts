@@ -64,10 +64,10 @@ const dayTarget = (date: string): LinkTarget => ({ to: '/plan', date, note: '（
 /** すべて入のときの行き先 */
 function attentionTargetAll(a: Attention): LinkTarget {
   switch (a.kind) {
-    case 'unassigned':
-      return { to: unassignedHref(a.date), date: a.date, note: '（日の予定の「入らなかった訪問」で開く）' };
-    case 'absentLeft':
-      return { to: suddenHref(a.date), date: a.date, note: '（日の予定の「欠勤・キャンセル」で開く）' };
+    case 'care':
+      return a.names.some((x) => x.startsWith('担当なし'))
+        ? { to: unassignedHref(a.date), date: a.date, note: '（日の予定の「担当なしの訪問」で開く）' }
+        : dayTarget(a.date);
     case 'overSpan':
       return { to: workloadHref(ymOf(a.date), a.staffIds?.[0]), date: a.date, note: '（勤務の見込みで開く）' };
     default:

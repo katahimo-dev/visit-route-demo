@@ -25,17 +25,16 @@ describe('glossary', () => {
     expect(glossaryText('terms', terms)).toContain('シッター・お客様');
   });
   it('予定の組み方の言葉（PRD D242）：名前と、何に効くか・何が変わらないか', () => {
-    expect(GLOSSARY.confirmed.label).toBe('確定');
-    expect(glossaryText('confirmed', terms)).toContain('シッターの画面・メール・印刷');
-    expect(GLOSSARY.confirmed.text).toContain('変わりません');
+    expect(GLOSSARY.confirmed.label).toBe('確定（伝えた）');
+    expect(glossaryText('confirmed', terms)).toContain('シッターに伝えた内容');
+    expect(GLOSSARY.confirmed.text).toContain('未連絡の変更');
     expect(GLOSSARY.pinned.label).toBe('ピン');
     expect(GLOSSARY.pinned.text).toContain('担当は変わりません');
     expect(GLOSSARY.unconfirmed.label).toBe('未確定');
-    expect(GLOSSARY.confirmDiff.label).toBe('未確定の変更あり');
-    expect(GLOSSARY.aiPlan.label).toBe('AI案');
+    expect(GLOSSARY.confirmDiff.label).toBe('未連絡の変更あり');
+    expect(GLOSSARY.proposal.label).toBe('提案（AI）');
     expect(GLOSSARY.preset.label).toBe('プリセット');
     expect(GLOSSARY.attention.label).toBe('要対応');
-    expect(GLOSSARY.stale.label).toBe('条件が変わった');
   });
   it('画面の文はふつうの言葉（PRD D307）：点数の付け方は「点数」の説明に寄せ、内部の言葉を使わない', () => {
     expect(GLOSSARY.score.label).toBe('点数');

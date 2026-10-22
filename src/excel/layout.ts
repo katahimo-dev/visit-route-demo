@@ -49,7 +49,6 @@ export const CLIENT_COLS = {
   address: '住所',
   lat: '緯度',
   lng: '経度',
-  usualStaff: 'いつもの担当',
   note: 'メモ',
 } as const;
 /**
@@ -69,7 +68,7 @@ export const CLIENT_KANA_COL = 'よみ';
 export const CLIENT_RULE_COLS = { entry: '入り方', key: '鍵', parking: '駐車場', caution: '注意' } as const;
 /**
  * 〈利用者さん〉の「担当できる人」（PRD D68。ADR-0014）：〈スタッフ〉の名前を「、」か改行で区切る。空＝限らない。
- * 書き出しは「いつもの担当」の次に置く。古いブックには無いので必須の列にしない（無ければ限らない）
+ * 書き出しは「経度」の次に置く。必須の列にしない（無ければ限らない）
  */
 export const CLIENT_ALLOWED_COL = '担当できる人';
 /**
@@ -90,8 +89,8 @@ export const CLIENT_STAGE_COLS = {
   referrerEmail: '紹介元のメールアドレス',
 } as const;
 /**
- * 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「住所」の前に「郵便番号」、「いつもの担当」の次に
- * 「担当できる人」、「メモ」の次に決まりごと、最後に段階と紹介元）
+ * 書き出す〈利用者さん〉の固定の列（「表示名」の次に「よみ」、「利用中」の次に「仮押さえ」、「住所」の前に「郵便番号」、「経度」の次に
+ * 「担当できる人」、「メモ」の次に決まりごと、最後に段階と紹介元）。版2：いつもの担当の列は無い（繰り返しのシートの担当。ADR-0053）
  */
 export const clientExportCols = (): string[] => {
   const base: string[] = Object.values(CLIENT_COLS);
@@ -101,7 +100,7 @@ export const clientExportCols = (): string[] => {
   const withKanaOnly = [...withTentative.slice(0, k), CLIENT_KANA_COL, ...withTentative.slice(k)];
   const a = withKanaOnly.indexOf(CLIENT_COLS.address);
   const withKana = [...withKanaOnly.slice(0, a), CLIENT_POSTAL_COL, ...withKanaOnly.slice(a)];
-  const u = withKana.indexOf(CLIENT_COLS.usualStaff) + 1;
+  const u = withKana.indexOf(CLIENT_COLS.lng) + 1;
   const withAllowed = [...withKana.slice(0, u), CLIENT_ALLOWED_COL, ...withKana.slice(u)];
   const n = withAllowed.indexOf(CLIENT_COLS.note) + 1;
   return [
@@ -142,7 +141,7 @@ export const patternCols = (t: Terms) => ({
   duration: '所要（分）',
   from: '開始日',
   to: '終了日',
-  usualStaff: 'いつもの担当',
+  usualStaff: '担当',
   note: 'メモ',
 });
 /** 定期パターンの列のうち、ADR-0013 で足した任意の列（無い古いブックは毎週系・曜日ごとの時刻なし） */
@@ -175,14 +174,18 @@ export const visitCols = (t: Terms) => ({
   edited: VISIT_PATTERN_COLS.edited,
   note: 'メモ',
 });
-/** 訪問の「当日キャンセル」（○。PRD D74。ADR-0015）。書き出しは最後の列。古いブックには無いので必須にしない（無ければふつうの取り消し） */
+/** 訪問の「当日キャンセル」（○。PRD D74。ADR-0015）。必須にしない（無ければふつうの取り消し） */
 export const VISIT_SAME_DAY_COL = '当日キャンセル';
+/** 訪問の「組んだ開始」（版2。ADR-0053）。担当の訪問の回る順。必須にしない（無ければ開始（早）で並べる） */
+export const VISIT_START_COL = '組んだ開始';
+/** 訪問の「ピン」（○。版2。ADR-0053）。AI で組み直しても担当を変えない。必須にしない（無ければピンなし） */
+export const VISIT_PIN_COL = 'ピン';
 /** 稼働の見込み（PRD D72。ADR-0015）のシート。書き出すだけで、読み込みでは見ない（予定から計算し直せるため） */
 export const WORKLOAD_SHEET = '稼働の見込み';
 export const WORKLOAD_COLS = [
   '日付',
   '名前',
-  '案の元',
+  '確定',
   '訪問の件数',
   '最初の訪問の開始',
   '最後の訪問の終わり',

@@ -4,8 +4,8 @@
 import type { DemoData } from '../contracts/data';
 import type { ClientLeave, Visit } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
-import { NONE } from '../domain/scheduleModel';
-import { own } from './common';
+import { addDays } from '../domain/time';
+import { visitsIn, visitsOn } from '../patterns';
 
 /** その〈利用者さん〉の休み（開始日の順。同じなら終了日の順） */
 export function leavesOf(data: Pick<DemoData, 'clientLeaves'>, clientId: string): ClientLeave[] {
@@ -30,22 +30,25 @@ export function removeLeave(d: DemoData, id: string): DemoData {
 
 /** 休みの期間の、その〈利用者さん〉の取り消しでない訪問（日付・開始（早）の順） */
 export function leaveVisits(
-  data: Pick<DemoData, 'visits'>,
+  data: Pick<DemoData, 'visits' | 'patterns' | 'clients'>,
   leave: Pick<ClientLeave, 'clientId' | 'from' | 'to'>,
 ): Visit[] {
-  return data.visits
-    .filter((v) => v.clientId === leave.clientId && !v.cancelled && leave.from <= v.date && v.date <= leave.to)
+  // 長すぎる期間（入力の途中など）は1年分まで見る
+  const to = leave.to < addDays(leave.from, 366) ? leave.to : addDays(leave.from, 366);
+  if (leave.from > to) return [];
+  return visitsIn(data, { from: leave.from, to })
+    .filter((v) => v.clientId === leave.clientId && !v.cancelled)
     .sort((a, b) => a.date.localeCompare(b.date) || a.earliestStart.localeCompare(b.earliestStart));
 }
 
 /** その日の休みのため無しの訪問と、その休み（取り消しを除く。開始（早）の順） */
 export function leaveVisitsOn(
-  data: Pick<DemoData, 'visits' | 'clientLeaves'>,
+  data: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves'>,
   date: string,
 ): { visit: Visit; leave: ClientLeave }[] {
   const out: { visit: Visit; leave: ClientLeave }[] = [];
-  for (const v of data.visits) {
-    if (v.date !== date || v.cancelled) continue;
+  for (const v of visitsOn(data, date)) {
+    if (v.cancelled) continue;
     const l = leaveOn(data.clientLeaves, v.clientId, date);
     if (l) out.push({ visit: v, leave: l });
   }
@@ -53,48 +56,20 @@ export function leaveVisitsOn(
 }
 
 /**
- * 休みと重なる確定した日（日付の順）：休みの期間で、確定した割当（manualPlans。未割当の列は除く）に
- * その〈利用者さん〉の取り消しでない訪問がある日。休みを入れる・直す前の注意に使う（案は作り直さない）
+ * 休みと重なる確定した日（日付の順）：休みの期間で、伝えた内容（snapshots）にその〈利用者さん〉の担当の決まった訪問がある日。
+ * 休みを入れる・直す前の注意に使う（休みの訪問は「未連絡の変更」の「外れる」になる）
  */
 export function leaveConfirmedDates(
-  data: Pick<DemoData, 'visits' | 'manualPlans'>,
+  data: Pick<DemoData, 'snapshots'>,
   leave: Pick<ClientLeave, 'clientId' | 'from' | 'to'>,
 ): string[] {
-  const byDate = new Map<string, Set<string>>();
-  for (const v of leaveVisits(data, leave)) {
-    const ids = byDate.get(v.date) ?? new Set<string>();
-    ids.add(v.id);
-    byDate.set(v.date, ids);
-  }
-  const out: string[] = [];
-  for (const [date, ids] of byDate) {
-    const saved = own(data.manualPlans, date);
-    if (!saved) continue;
-    const hit = Object.entries(saved).some(([k, list]) => k !== NONE && list.some((id) => ids.has(id)));
-    if (hit) out.push(date);
-  }
-  return out.sort();
-}
-
-/**
- * 確定するときの確定した割当の列に、その日の休みの訪問を確定済みの持ち主（前の確定した割当の担当）のまま残す（ADR-0013）。
- * 休みを消したときに元の確定に戻るようにする（休みの訪問の手作業の担当 staffId も変えない）。
- * 前の確定した割当に無い休みの訪問は足さない（未割当にもしない）。列の順は今の列の後ろ
- */
-export function keepLeaveVisits(
-  cols: Record<string, string[]>,
-  leaveVisitIds: readonly string[],
-  before: Record<string, string[]> | undefined,
-): Record<string, string[]> {
-  if (!before || leaveVisitIds.length === 0) return cols;
-  const owner = new Map<string, string>();
-  for (const [k, list] of Object.entries(before)) for (const id of list) owner.set(id, k);
-  const out: Record<string, string[]> = { ...cols };
-  for (const id of leaveVisitIds) {
-    const k = owner.get(id);
-    if (k === undefined || k === NONE) continue;
-    const list = own(out, k) ?? [];
-    if (!list.includes(id)) out[k] = [...list, id];
-  }
-  return out;
+  return Object.values(data.snapshots)
+    .filter(
+      (s) =>
+        leave.from <= s.date &&
+        s.date <= leave.to &&
+        s.visits.some((v) => v.clientId === leave.clientId && v.staffId !== null),
+    )
+    .map((s) => s.date)
+    .sort();
 }

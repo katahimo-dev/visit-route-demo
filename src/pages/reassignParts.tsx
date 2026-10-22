@@ -178,12 +178,12 @@ export function AnnealBox({
         <table className="anneal-table" data-testid="anneal-table">
           <thead>
             <tr>
-              <th scope="col">元の案との差</th>
+              <th scope="col">振り直す前との差</th>
               {options.map((o) => (
                 <th key={o.key} scope="col">
                   {o.title}
-                  {o.current && <span className="chip chip-ok anneal-current">今の案</span>}
-                  {o.key === 'anneal' && stopped && <span className="sub">（途中で止めた案）</span>}
+                  {o.current && <span className="chip chip-ok anneal-current">当てている</span>}
+                  {o.key === 'anneal' && stopped && <span className="sub">（途中で止めた）</span>}
                 </th>
               ))}
             </tr>
@@ -207,7 +207,7 @@ export function AnnealBox({
                     disabled={o.current || running}
                     onClick={() => onChoose(o.key)}
                   >
-                    {o.current ? '今の案です' : `${o.title}を今の案にする`}
+                    {o.current ? '当てています' : `${o.title}を当てる`}
                   </button>
                 </td>
               ))}
@@ -288,7 +288,7 @@ export function ContactPanel({
     >
       <div className="stack contact-sheet" data-testid="contact-sheet">
         <p className="sub">
-          元の案と今の案の差から作っています（確定の前でも見られます）。連絡文はコピーするだけで、送信はしません。
+          振り直す前と今の担当の差から作っています（確定の前でも見られます）。連絡文はコピーするだけで、送信はしません。
         </p>
         {left.length > 0 && (
           <section className="stack contact-section left-box" style={{ gap: 4 }} data-testid="contact-left">

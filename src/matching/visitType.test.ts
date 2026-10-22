@@ -1,8 +1,7 @@
 // 訪問の種類の必要条件・パターンのいつもの担当（ADR-0012）
 import { describe, expect, it } from 'vitest';
 import type { Pattern, VisitType } from '../contracts/documents';
-import { problemKey } from '../lib/runs';
-import { client, DATE, makeData, randomData, rule, staff, visit } from './fixtures';
+import { client, DATE, makeData, problemKey, randomData, rule, staff, visit } from './fixtures';
 import { compile, VISIT_TYPE_RULE_ID } from './index';
 
 const REHAB: VisitType = {
@@ -43,7 +42,7 @@ function twoStaff(over: Parameters<typeof makeData>[0] = {}) {
       staff('s1', 38.26, 140.87, { traits: { license: ['看護師'] } }),
       staff('s2', 38.27, 140.88, { traits: { license: ['なし'] } }),
     ],
-    clients: [client('c1', 38.265, 140.875, { usualStaffId: 's1' })],
+    clients: [client('c1', 38.265, 140.875)],
     visits: [visit('v1', 'c1', '10:00', '11:00', { typeId: 'rehab' })],
     visitTypes: [REHAB],
     ...over,
@@ -85,7 +84,6 @@ describe('訪問の種類の必要条件（常に必須）', () => {
     const withTypes = {
       ...plain,
       visitTypes: [REHAB],
-      patterns: [pattern('p1')],
       visits: plain.visits.map((v, i) => ({ ...v, typeId: i % 2 === 0 ? null : 'ghost' })),
     };
     const p = compile(withTypes, DATE);
@@ -94,28 +92,23 @@ describe('訪問の種類の必要条件（常に必須）', () => {
   });
 });
 
-describe('いつもの担当（継続）', () => {
+describe('いつもの担当（継続。版2は繰り返しの担当。ADR-0053）', () => {
   const cont = [rule('cont', 'continuity', 2)];
+  /** 繰り返しから計算した回（保存した訪問は無し） */
   const data = (usualStaffId: string | null) =>
-    twoStaff({
-      rules: cont,
-      visitTypes: [],
-      patterns: [pattern('p1', { usualStaffId })],
-      visits: [visit('v1', 'c1', '10:00', '11:00', { pattern: { id: 'p1', date: DATE, edited: false } })],
-    });
-  it('パターンにいつもの担当があればその人を使う', () => {
+    twoStaff({ rules: cont, visitTypes: [], patterns: [pattern('p1', { usualStaffId })], visits: [] });
+  it('繰り返しに担当があればその人を使う', () => {
     const p = compile(data('s2'), DATE);
+    expect(p.visits.map((v) => v.id)).toEqual([`${DATE}_p1`]);
     expect(p.reasons[0]![1]).toContainEqual({ ruleId: 'cont', label: 'いつもの担当', points: 0 });
     expect(p.reasons[0]![0]).toContainEqual({ ruleId: 'cont', label: 'いつもの担当でない', points: 20 });
   });
-  it('パターンに無ければ利用者さんのいつもの担当', () => {
+  it('繰り返しに担当が無ければ継続の点は付かない', () => {
     const p = compile(data(null), DATE);
-    expect(p.reasons[0]![0]).toContainEqual({ ruleId: 'cont', label: 'いつもの担当', points: 0 });
+    expect(p.reasons[0]![0].some((r) => r.ruleId === 'cont')).toBe(false);
   });
-  it('元のパターンが無い訪問は利用者さんのいつもの担当', () => {
-    const d = data('s2');
-    d.patterns = [];
-    const p = compile(d, DATE);
-    expect(p.reasons[0]![0]).toContainEqual({ ruleId: 'cont', label: 'いつもの担当', points: 0 });
+  it('繰り返しの無い訪問は継続の点が付かない', () => {
+    const p = compile(twoStaff({ rules: cont, visitTypes: [], visits: [visit('v1', 'c1', '10:00', '11:00')] }), DATE);
+    expect(p.reasons[0]![0].some((r) => r.ruleId === 'cont')).toBe(false);
   });
 });

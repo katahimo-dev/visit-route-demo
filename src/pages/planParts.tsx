@@ -9,35 +9,29 @@ import {
   Clock,
   Gauge,
   Hourglass,
-  ListChecks,
   MapPin,
-  RefreshCw,
   ShieldAlert,
-  SlidersHorizontal,
   TrendingDown,
 } from 'lucide-react';
 import { type ReactNode, useDeferredValue, useMemo, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
-import { WeightSlider } from '../components/parts';
-import { Hint, SectionTitle, WithIcon } from '../components/ui';
+import { Link } from 'react-router-dom';
+import { Hint, WithIcon } from '../components/ui';
 import type { DemoData } from '../contracts/data';
 import type { Terms } from '../contracts/documents';
 import type { HundredPart, PlanScore, Problem, RuleAchievement, ScoreScale, VisitExplain } from '../contracts/problem';
-import { HARDABLE, MAX_PRESETS, type Rule } from '../contracts/rules';
+import { MAX_PRESETS, type Rule } from '../contracts/rules';
 import { jstDate, minutesToHhmm } from '../domain/time';
 import { BALANCE_RULE_KEY, explain, toHundred } from '../evaluate';
-import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel, weightLocked } from '../lib/common';
+import { attempt, deltaText, pointsText, r0, r1, ruleTypeLabel } from '../lib/common';
 import { nextUnconfirmed } from '../lib/confirmDay';
-import { isHrefOn } from '../lib/features';
 import { unassignedHref } from '../lib/links';
 import { addMonths, monthDates, ymOf } from '../lib/month';
 import { mdText } from '../lib/patternText';
-import { addPresetError, addPresetFromRules, PRESET_NAME_MAX, trialPresetOf } from '../lib/presets';
+import { addPresetError, addPresetFromRules, PRESET_NAME_MAX } from '../lib/presets';
 import { reasonFace, type ScoreReason, scoreReasonLabel } from '../lib/scoreReason';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { ALLOWED_STAFF_RULE_ID, VISIT_TYPE_RULE_ID } from '../matching';
-import { scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 
 /** routes の訪問ごとの説明（未実装なら空） */
@@ -125,7 +119,7 @@ export const rulerText = (name: string) =>
   `点数はいつも「${name}」の重みで付けます。条件を変えても、点の付け方は変わりません`;
 
 /** 必須を守っていない案（手作業案・手直しで必須の条件に合わない担当にした案）の点の印の説明（ADR-0007） */
-export const HARD_NOTE = '必須を守れていない案の点は、ほかの案と比べられません。参考の点です';
+export const HARD_NOTE = '必須を守れていない組み方の点は、ほかと比べられません。参考の点です';
 
 /** 必須の違反がある案の点に付ける「参考」の印と説明 */
 export function RefMark({ hard }: { hard: number }) {
@@ -157,7 +151,7 @@ export function HundredHint({
   return (
     <Hint label="点数の決め方">
       <ul className="hint-list">
-        <li>{SCORE_TEXT}です。高いほど良い案です。</li>
+        <li>{SCORE_TEXT}です。高いほど良い組み方です。</li>
         <li>訪問1件あたり10分余計にかかると、90点です。</li>
         <li>理想は、どの訪問もいちばん条件の合う担当で、移動がいちばん短く、空き時間（待ち）が0の割当です。</li>
         <li>{rulerText(rulerName)}。</li>
@@ -324,102 +318,8 @@ export function CompareTable({
 }
 
 /**
- * この日だけ試す重みの欄（D14・D233。ADR-0035）。変えたらすぐ作り直せる。予定の画面の右の欄「条件を調整する」の中に置く（PRD D63。
- * 以前の右側の常設の欄はやめた）。試す重み（data.rules）は「AI にもう一度作らせる」だけが使い、まとめて作る・自動作成・作り直しは
- * 点数の基準（条件の重みの画面）で作る。
- * showPresets：試す重みの名前・「試す重みをプリセットとして保存」・プリセットの編集へのリンクを出す
- * （プリセットで作る・切り替えるのは、同じ欄の上のプリセットごとの案のカード。ADR-0010）
- */
-export function WeightPanel({
-  running,
-  onRecalc,
-  showPresets = false,
-  canRun,
-  recalcLabel = '再計算',
-}: {
-  running: boolean;
-  onRecalc: () => void;
-  showPresets?: boolean;
-  canRun: boolean;
-  recalcLabel?: string;
-}) {
-  const { data, update } = useDemoData();
-  /** 試す重みが当てはまるプリセット（基準を先に見る。ADR-0035） */
-  const current = trialPresetOf(data);
-  const basisName = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '標準';
-  return (
-    <div className="stack side-panel">
-      {showPresets && (
-        <>
-          <SectionTitle
-            icon={ListChecks}
-            aside={
-              <Hint>
-                プリセットで作るには、上のカードを押します。ここでは、今の重みをプリセットとして保存できます。
-              </Hint>
-            }
-          >
-            プリセット
-          </SectionTitle>
-          <span className="sub" data-testid="current-weights">
-            今の重み：{current ? current.name : '手で変えた重み'}
-          </span>
-          <SavePresetForm compact disabled={running} />
-          {/* 条件の重みとプリセットを切っていれば、その画面へのリンクは出さない（PRD D213） */}
-          {isHrefOn(data.org.features, '/rules#presets') && (
-            <NavLink to="/rules#presets" className="sub">
-              プリセットを編集する
-            </NavLink>
-          )}
-        </>
-      )}
-      <SectionTitle
-        icon={SlidersHorizontal}
-        aside={
-          <Hint ariaLabel="この日だけの重みの説明">
-            <ul className="hint-list">
-              <li>重み1は、移動10分ぶんです。0にすると使いません。</li>
-              <li>ここで変えた重みは、この日の「{recalcLabel}」だけで使います。</li>
-              <li>月のまとめて作る・作り直しは「{basisName}」の重みで作ります。</li>
-            </ul>
-          </Hint>
-        }
-      >
-        この日だけの重み
-      </SectionTitle>
-      {data.rules.map((r) => (
-        <div key={r.id} className={`stack side-rule ${r.weight === 0 && !r.hard ? 'is-dim' : ''}`} style={{ gap: 2 }}>
-          <span className="side-rule-label">
-            {r.label}
-            {r.hard && HARDABLE.has(r.type) && (
-              <span className="chip chip-primary">
-                <ShieldAlert size={12} aria-hidden="true" />
-                必須
-              </span>
-            )}
-          </span>
-          <WeightSlider
-            label={r.label}
-            value={r.weight}
-            disabled={weightLocked(r) || running}
-            onChange={(w) =>
-              update((d) => ({ ...d, rules: d.rules.map((x) => (x.id === r.id ? { ...x, weight: w } : x)) }))
-            }
-          />
-        </div>
-      ))}
-      <button type="button" className="btn btn-small" disabled={running || !canRun} onClick={onRecalc}>
-        <WithIcon icon={RefreshCw} size={14}>
-          {recalcLabel}
-        </WithIcon>
-      </button>
-    </div>
-  );
-}
-
-/**
  * 重みをプリセットとして保存（D24。ADR-0008）。押すと名前の欄が出て、入れて保存すると最後に足す。
- * from：'trial'＝この日だけ試す重み（日の予定・作り直しの帯）、'basis'＝点数の基準の重み（条件の重みの画面のプリセットの節。ADR-0035）。
+ * from：'basis'＝点数の基準の重み（条件の重みの画面のプリセットの節。ADR-0035）。'trial' は版1の「この日だけ試す重み」の名残で、版2は data.rules が基準と同じ。
  * 6つあれば押せない。compact は予定の画面の右の欄用（小さいボタン）
  */
 export function SavePresetForm({
@@ -577,7 +477,7 @@ function NextUnconfirmedBody({ data, date, onPick }: { data: DemoData; date: str
       nextUnconfirmed(
         days.filter((d) => {
           const s = perDay.get(d)?.status;
-          return !!s && s.count > 0 && s.state !== 'confirmed';
+          return !!s && s.count > 0 && s.state !== 'told';
         }),
         date,
       ),

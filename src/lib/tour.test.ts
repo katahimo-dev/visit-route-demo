@@ -29,19 +29,19 @@ describe('tourSteps（PRD D277）', () => {
     const s = tourSteps({ staff: 'ヘルパー', client: 'お客様' });
     expect(s[2]!.body).toContain('ヘルパーの急な欠勤');
     expect(s[2]!.body).toContain('お客様の当日キャンセル');
-    expect(s[1]!.points!.join('')).toContain('ヘルパーの画面');
+    expect(s[1]!.points!.join('')).toContain('ヘルパーに伝えたら');
     expect(JSON.stringify(s)).not.toContain('利用者さん');
     expect(JSON.stringify(tourSteps(terms))).not.toContain('ヘルパー');
   });
-  it('予定の枚は3段（AI案 → 手直し（ピン）→ 確定）を順に並べ、［月｜週｜日］で切り替えると書く', () => {
+  it('予定の枚は3段（提案（AI）→ ピン → 確定（伝えた））を順に並べ、［月｜週｜日］で切り替えると書く', () => {
     const plan = tourSteps(terms)[1]!;
     expect(plan.key).toBe('plan');
-    expect(plan.title).toBe('予定で案を作って確定します');
+    expect(plan.title).toBe('予定で担当を組んで確定します');
     expect(plan.body).toContain('［月｜週｜日］');
     expect(plan.points).toHaveLength(3);
-    expect(plan.points![0]).toMatch(/^AI案：/);
-    expect(plan.points![1]).toMatch(/^手直し（ピン）：/);
-    expect(plan.points![2]).toMatch(/^確定：/);
+    expect(plan.points![0]).toMatch(/^提案（AI）：/);
+    expect(plan.points![1]).toMatch(/^ピン：/);
+    expect(plan.points![2]).toMatch(/^確定（伝えた）：/);
   });
   it('場所の文はメニュー・下のタブの名前（予定・欠勤。ADR-0045）', () => {
     const s = tourSteps(terms);

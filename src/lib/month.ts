@@ -1,27 +1,36 @@
-// 月間カレンダー・月まとめ作成（ADR-0012 段階1。design.md §4 pages「月単位の予定」）の画面の純粋関数。
-// データは書き換えず、新しい DemoData を返す（書くのは画面の update(fn)）
-import type { AiPlan, AiRun, DemoData } from '../contracts/data';
+// 月間カレンダー（ADR-0012。design.md §4 pages「月単位の予定」）の画面の純粋関数。版2（ADR-0053）：日の状態は
+// 訪問ごとの「担当あり／担当なし／要対応」と、日ごとの「まだ伝えていない／伝えた／未連絡の変更あり」の2軸。
+// データは書き換えない（書くのは画面の update(fn)）
+import type { DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
-import type { Problem, SolveResult, StopTiming } from '../contracts/problem';
+import type { Problem, StopTiming } from '../contracts/problem';
 import type { Routes } from '../contracts/reassign';
-import { HARDABLE, type Preset, type Rule } from '../contracts/rules';
 import { afterLastDay, availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
-import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
-import { applyPrefPins, type CompileInput, compile, scheduleRoute } from '../matching';
-import { applyPatterns } from '../patterns';
-import { applyPreset } from '../seed/presets';
-import { attempt, own } from './common';
+import { type CompileInput, scheduleRoute } from '../matching';
+import { visitsOn } from '../patterns';
+import { own } from './common';
+import {
+  activeDayVisits,
+  changeCount,
+  dayProblemOf,
+  dayRoutes,
+  type ToldState,
+  toldChanges,
+  toldStateOf,
+  type VisitIssue,
+  visitIssues,
+} from './dayPlan';
 import { isRequestedOff } from './requestedOff';
-import { addRun, findRun, problemKey } from './runs';
 import { busyParts, type StaffSlot, spansOf, staffSlots } from './staffBar';
+import { workStats } from './workload';
 
-/** 月まとめ作成の対象：まだ案の無い日だけ／確定していない日をすべて／条件が変わった日 */
-export type BatchMode = 'empty' | 'all' | 'stale';
+/** 担当を AI で組む日（月・週の「担当を AI で組む」）：要対応のある日だけ／伝えていない日すべて */
+export type BatchMode = 'care' | 'all';
 
-/** 日の状態：案なし／案あり／確定済み／未確定の変更あり */
-export type DayState = 'none' | 'plan' | 'confirmed' | 'diff';
+/** 日の状態：まだ伝えていない／伝えた（確定）／伝えたあとに変わった（未連絡の変更あり） */
+export type DayState = ToldState;
 
 const YM = /^(\d{4})-(\d{2})$/;
 
@@ -72,347 +81,114 @@ export function calendarWeeks(ym: string): string[][] {
   return Array.from({ length: 6 }, (_, w) => Array.from({ length: 7 }, (_, i) => addDays(start, w * 7 + i)));
 }
 
-/**
- * その月の今日以降に、定期パターンから訪問を展開する（patterns の applyPatterns。無い ID だけ足す）。
- * 足す訪問が無ければ同じデータを返す。added は足した訪問の件数
- */
-export function expandMonth(d: DemoData, ym: string, today: string): { data: DemoData; added: number } {
-  const days = monthDates(ym);
-  return expandRange(d, days[0]!, days.at(-1)!, today);
+/** その日の取り消しでなく、〈利用者さん〉の休み（ADR-0013）でもない訪問（計算した回を含む） */
+export function activeVisitsOn(data: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves'>, date: string) {
+  return activeDayVisits(data, date);
 }
-
-/**
- * from〜to（両端を含む）の今日以降に、定期パターンから訪問を展開する（expandMonth の範囲を選べる形。週の予定の「この週の案を作る」。
- * PRD D280）。足す訪問が無ければ同じデータを返す
- */
-export function expandRange(d: DemoData, from: string, to: string, today: string): { data: DemoData; added: number } {
-  const c = expandRangeVisits(d, from, to, today);
-  if (c.added === 0) return { data: d, added: 0 };
-  return { data: { ...d, visits: c.visits }, added: c.added };
-}
-
-/**
- * expandMonth の訪問だけ（読むのは定期パターン・訪問・〈利用者さん〉だけ。案・確定した割当が変わっても結果は同じなので、
- * 画面はこの3つと月・今日で覚えておける。進み具合の帯。PR #38 のレビュー）。足す訪問が無ければ同じ訪問の配列を返す
- */
-export function expandMonthVisits(
-  d: Pick<DemoData, 'patterns' | 'visits' | 'clients'>,
-  ym: string,
-  today: string,
-): { visits: DemoData['visits']; added: number; addedByDate: ReadonlyMap<string, number> } {
-  const days = monthDates(ym);
-  return expandRangeVisits(d, days[0]!, days.at(-1)!, today);
-}
-
-/**
- * from〜to の expandMonthVisits。addedByDate は日ごとの足す訪問の件数（「未作成」の日。PRD D282。足す訪問の無い日は入れない）
- */
-export function expandRangeVisits(
-  d: Pick<DemoData, 'patterns' | 'visits' | 'clients'>,
-  from: string,
-  to: string,
-  today: string,
-): { visits: DemoData['visits']; added: number; addedByDate: ReadonlyMap<string, number> } {
-  const c = applyPatterns(d, { from, to }, today);
-  const addedByDate = new Map<string, number>();
-  for (const a of c.added) addedByDate.set(a.date, (addedByDate.get(a.date) ?? 0) + 1);
-  return { visits: c.visits, added: c.added.length, addedByDate };
-}
-
-/** その日の取り消しでなく、〈利用者さん〉の休み（ADR-0013）でもない訪問 */
-export function activeVisitsOn(data: Pick<DemoData, 'visits' | 'clientLeaves'>, date: string) {
-  return data.visits.filter((v) => v.date === date && !v.cancelled && !isOnLeave(data.clientLeaves, v));
-}
-
-/** 今の案に手直し・固定があるか */
-export function planEdited(plan: AiPlan): boolean {
-  return Object.keys(plan.pins).length > 0 || JSON.stringify(plan.routes) !== JSON.stringify(plan.generated.routes);
-}
-
-/** 今の案の元の記録（runId で引く。無ければ undefined） */
-export function planRunOf(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string): AiRun | undefined {
-  const plan = own(data.aiPlans, date);
-  if (!plan?.runId) return undefined;
-  return (own(data.aiRuns, date) ?? []).find((r) => r.id === plan.runId);
-}
-
-/**
- * （D43）今の案の元の記録を作ったあとに、その日の問題が変わったか：記録の inputKey と、
- * いまのデータに記録の条件（と固定）を当てた問題のキーが違えば true。
- * 記録が無い・inputKey が無い古い記録・欠勤の振り直しの記録は判定しない（false）。
- * 記録の prefPins（手直しの記憶で固定した訪問。ADR-0043）は記録のまま当てる（いまの記憶は見ない）。
- * problemOf を渡すと、その条件の問題をそこから引く（画面が作った問題を使い回して compile を省く）
- */
-export function planStale(
-  input: CompileInput,
-  data: Pick<DemoData, 'aiPlans' | 'aiRuns'>,
-  date: string,
-  problemOf?: (rules: Rule[], pins: Record<string, string>) => Problem | null | undefined,
-): boolean {
-  const run = planRunOf(data, date);
-  if (!run || run.reassign || run.inputKey === undefined) return false;
-  try {
-    const p =
-      problemOf?.(run.rules, run.pins) ??
-      compile({ ...input, rules: run.rules }, date, Object.keys(run.pins).length > 0 ? run.pins : undefined);
-    // 手直しの記憶（ADR-0043）は作ったときに当てた固定（prefPins）のまま当てる（記憶が変わっても「条件が変わった」にしない）
-    return problemKey(applyPrefPins(p, run.prefPins).problem) !== run.inputKey;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * 条件の組のキー（PRD D161）：条件の ID・型・重み・必須（必須にできない型は必須にしない）。名前は計算に効かないので入れない
- */
-export function ruleSetKey(rules: readonly Rule[]): string {
-  return JSON.stringify(rules.map((r) => [r.id, r.type, r.weight, HARDABLE.has(r.type) && r.hard]));
-}
-
-/** いまある条件の組のキー（PRD D161） */
-export type RuleKeys = {
-  /** この日だけ試す重みに各プリセットを当てたもの */
-  presets: ReadonlySet<string>;
-  /** この日だけ試す重み（条件の重みの画面の重み）そのもの */
-  current: string;
-};
-
-/** いまある条件の組のキー（PRD D161）：この日だけ試す重みに各プリセットを当てたもの、この日だけ試す重みそのもの */
-export function currentRuleKeys(rules: readonly Rule[], presets: readonly Preset[]): RuleKeys {
-  return {
-    presets: new Set(presets.map((p) => ruleSetKey(applyPreset([...rules], p)))),
-    current: ruleSetKey(rules),
-  };
-}
-
-/**
- * （D43・D161）今の案の元の記録を作った条件（重み・必須）が、いまはもう無いか：
- * - プリセットの重みで作った案（記録の presetId がある＝作ったときにどれかのプリセットと重みが一致した。自動作成・月のまとめて作る・
- *   プリセットのカード）は、この日だけ試す重みに各プリセットを当てたもののどれとも違えば変わった。この日だけ試す重みが古い重みのままでも、
- *   プリセットの重みを変えれば変わったになる（初期状態で標準の重みを変えたとき）
- * - この日だけ試す重みで作った案（presetId が null＝どのプリセットとも一致しなかった）は、それに加えてこの日だけ試す重みとも違えば変わった
- * 作り直しは点数の基準のプリセットで作るので、作り直した案は必ず当てはまる（true が残り続けない）。点数の基準を切り替えただけでは
- * 変わらない（前の基準のプリセットもまだある）。名前は計算に効かないので見ない。記録が無い・欠勤の振り直しの記録は判定しない（false）
- * 機能の入り切り（ADR-0028。PRD D214）は見ない：入り切りで AI案の問題が変わった日は planStale（inputKey）で変わったになる
- * （記録の calcFeatures は記録として書くだけ。使い回し（reusableRun）で同じ記録を返しても変わったが残り続けない）
- */
-export function rulesStale(data: Pick<DemoData, 'aiPlans' | 'aiRuns'>, date: string, keys: RuleKeys): boolean {
-  const run = planRunOf(data, date);
-  if (!run || run.reassign) return false;
-  const key = ruleSetKey(run.rules);
-  if (keys.presets.has(key)) return false;
-  return run.presetId !== null || key !== keys.current;
-}
-
-/**
- * 月まとめ作成の対象の日（日付の順）：その月・今日以降・取り消しでない訪問がある・確定した割当（manualPlans）が無い日のうち、
- * mode が 'empty' なら今の案が無い日、'all' なら全部、'stale' なら条件が変わった日（planStale）。
- * staleOf を渡すと条件が変わったかをそれで決める（画面で計算済みのもの）
- */
-export function batchTargets(
-  data: CompileInput & Pick<DemoData, 'aiPlans' | 'aiRuns' | 'manualPlans'>,
-  ym: string,
-  today: string,
-  mode: BatchMode,
-  staleOf: (date: string) => boolean = (date) => planStale(data, data, date),
-): string[] {
-  const withVisits = new Set(
-    data.visits
-      .filter((v) => !v.cancelled && ymOf(v.date) === ym && !isOnLeave(data.clientLeaves, v))
-      .map((v) => v.date),
-  );
-  return monthDates(ym).filter((date) => {
-    if (date < today || !withVisits.has(date) || own(data.manualPlans, date)) return false;
-    if (mode === 'empty') return !own(data.aiPlans, date);
-    if (mode === 'stale') return !!own(data.aiPlans, date) && staleOf(date);
-    return true;
-  });
-}
-
-/** 画面が compile・採点して渡すもの（点数・必須の違反・条件が変わったか・計算に入れる訪問） */
-export type DayView = {
-  /** 点数（100点満点。点数の基準の物差し）。案が無い・採点できなければ null */
-  hundred?: number | null;
-  /** 必須の違反の件数 */
-  hard?: number;
-  /** （D43）条件が変わった */
-  stale?: boolean;
-  /** 計算に入れる訪問の ID（問題の訪問）。無ければ取り消しでない訪問 */
-  visitIds?: readonly string[];
-  /** 欠勤（希望休も）の時間と重なる・最終勤務日の後（ADR-0015）なのに、その人に残っている訪問の数（数える案で。ADR-0014） */
-  absentLeft?: number;
-  /** 拘束が上限を超える〈スタッフ〉の ID（ADR-0015。月のマスの数える案＝今の案、無ければ確定した割当で） */
-  overSpan?: readonly string[];
-};
 
 export type DayStatus = {
   date: string;
-  /** 訪問の件数（取り消しを除く） */
+  /** 訪問の件数（取り消し・休みを除く） */
   count: number;
+  /** 伝えた状態 */
   state: DayState;
-  /** 今の案で入らない訪問の件数（案が無ければ 0） */
+  /** 担当なしの訪問の件数 */
   unassigned: number;
+  /** 要対応の訪問（担当なしを含む。訪問ID → 検査の結果） */
+  issues: ReadonlyMap<string, VisitIssue[]>;
+  /** 要対応の訪問の件数 */
+  care: number;
+  /** 未連絡の変更の件数（伝えたあとに担当・開始が変わった訪問。伝えていない日は 0） */
+  changes: number;
   /** その日に欠勤がある（希望休も） */
   absence: boolean;
-  /** 欠勤（希望休も）の人に残っている訪問の数（ADR-0014。画面が数えて渡す） */
-  absentLeft: number;
-  /** 拘束が上限を超える〈スタッフ〉の ID（ADR-0015。注意だけで、手当てが必要には数えない） */
+  /** 拘束が上限を超える〈スタッフ〉の ID（ADR-0015。注意だけで、要対応には数えない） */
   overSpan: readonly string[];
-  hundred: number | null;
-  hard: number;
-  stale: boolean;
-  /**
-   * 要対応（赤。PRD D228）：入らない訪問がある・必須の違反がある・欠勤の人に訪問が残る。
-   * 訪問があって案の無い日は注意（黄）で、ここには入れない（画面が count と state から決める）
-   */
+  /** 要対応（赤）：要対応の訪問がある */
   needsCare: boolean;
 };
 
 /**
- * 日のマスの状態。確定は予定の画面の「確定済み」と同じ判定（計算に入れる訪問の担当が、確定した割当と今の案で同じ）。
- * 確定した割当だけあって今の案が無い日は「確定済み」
+ * 日の状態（problem を渡すとそれを使う。無ければその日の問題を作る）。要対応は訪問ごとの検査（lib/dayPlan の visitIssues）、
+ * 伝えた状態は伝えた内容と今の担当・開始の比べ（toldChanges）
  */
 export function dayStatus(
-  data: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'absences' | 'clientLeaves'>,
+  data: CompileInput & Pick<DemoData, 'snapshots'>,
   date: string,
-  view: DayView = {},
+  problem?: Problem | null,
 ): DayStatus {
-  const visits = activeVisitsOn(data, date);
-  const ids = view.visitIds ?? visits.map((v) => v.id);
-  const plan = own(data.aiPlans, date);
-  const saved = own(data.manualPlans, date);
-  const ownerOf = (routes: Record<string, string[]>) => {
-    const m = new Map<string, string>();
-    for (const [s, list] of Object.entries(routes)) if (s !== NONE) for (const id of list) m.set(id, s);
-    return m;
-  };
-  let state: DayState = 'none';
-  let unassigned = 0;
-  if (plan && ids.length > 0) {
-    const ai = ownerOf(plan.routes);
-    unassigned = ids.filter((id) => !ai.has(id)).length;
-    if (!saved) state = 'plan';
-    else {
-      const m = ownerOf(saved);
-      state = ids.every((id) => (ai.get(id) ?? null) === (m.get(id) ?? null)) ? 'confirmed' : 'diff';
-    }
-  } else if (saved && ids.length > 0) {
-    state = 'confirmed';
+  const p = problem !== undefined ? problem : dayProblemOf(data, date);
+  const visits = visitsOn(data, date);
+  const count = p ? p.visits.length : activeDayVisits(data, date).length;
+  const absence = data.absences.some((a) => a.date === date);
+  if (!p) {
+    return {
+      date,
+      count,
+      state: own(data.snapshots, date) ? 'told' : 'none',
+      unassigned: 0,
+      issues: new Map(),
+      care: 0,
+      changes: 0,
+      absence,
+      overSpan: [],
+      needsCare: false,
+    };
   }
-  const hard = plan ? (view.hard ?? 0) : 0;
-  const absentLeft = state === 'none' ? 0 : (view.absentLeft ?? 0);
+  const routes = dayRoutes(data, date, p);
+  const issues = visitIssues(p, routes, visits);
+  const changes = toldChanges(data, date, p, routes);
+  let unassigned = 0;
+  for (const list of issues.values()) if (list.some((x) => x.kind === 'unassigned')) unassigned++;
+  const overSpan = workStats(p, routes, data.org)
+    .filter((x) => x.over)
+    .map((x) => x.staffId);
   return {
     date,
-    count: visits.length,
-    state,
+    count,
+    state: toldStateOf(data, date, changes),
     unassigned,
-    absence: data.absences.some((a) => a.date === date),
-    absentLeft,
-    overSpan: view.overSpan ?? [],
-    hundred: plan ? (view.hundred ?? null) : null,
-    hard,
-    // 計算に入れる訪問が無い日（取り消し・休みだけ）は作り直す対象にならないので数えない（batchTargets と同じ。PR #40 のレビュー）
-    stale: !!plan && visits.length > 0 && !!view.stale,
-    needsCare: visits.length > 0 && (unassigned > 0 || hard > 0 || absentLeft > 0),
+    issues,
+    care: issues.size,
+    changes: changeCount(changes),
+    absence,
+    overSpan,
+    needsCare: issues.size > 0,
   };
 }
 
 /**
- * 月まとめ作成で作った案を書く：記録に1件足し（lib/runs の addRun。同じ記録があれば足さない）、今の案
- * （routes・generated＝結果、pins＝{}、rules、runId）にする。onlyEmpty（「まだ案の無い日だけ」）のときに、
- * その日の今の案がすでにあれば今の案は変えず記録だけ足す。確定した割当がある日も今の案は変えない
+ * 担当を AI で組む日（日付の順）：その月・今日以降・計算に入れる訪問がある・伝えていない日のうち、
+ * mode が 'care' なら要対応の訪問がある日（statusOf で引く）、'all' なら全部
  */
-export function applyDayRun(
-  d: DemoData,
-  date: string,
-  run: {
-    rules: Rule[];
-    result: SolveResult;
-    createdAt: number;
-    inputKey: string;
-    onlyEmpty: boolean;
-    /** 手直しの記憶で固定した訪問（ADR-0043） */
-    prefPins?: Record<string, string>;
-  },
-): DemoData {
-  const x = {
-    rules: run.rules,
-    pins: {},
-    result: run.result,
-    createdAt: run.createdAt,
-    inputKey: run.inputKey,
-    prefPins: run.prefPins,
-  };
-  const added = addRun(d, date, x);
-  if ((run.onlyEmpty && own(d.aiPlans, date)) || own(d.manualPlans, date)) return added;
-  const r = run.result;
-  const plan: AiPlan = {
-    date,
-    createdAt: run.createdAt,
-    seed: r.seed,
-    iterations: r.iterations,
-    routes: r.routes,
-    unassigned: r.unassigned,
-    score: r.score,
-    stopped: r.stopped,
-    rules: run.rules,
-    generated: { routes: r.routes, unassigned: r.unassigned, score: r.score },
-    pins: {},
-    runId: findRun(added, date, x)?.id,
-  };
-  return { ...added, aiPlans: { ...added.aiPlans, [date]: plan } };
+export function batchTargets(
+  data: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves' | 'snapshots'>,
+  dates: readonly string[],
+  today: string,
+  mode: BatchMode,
+  statusOf: (date: string) => DayStatus | undefined,
+): string[] {
+  return dates.filter((date) => {
+    if (date < today || own(data.snapshots, date)) return false;
+    if (activeDayVisits(data, date).length === 0) return false;
+    if (mode === 'care') return (statusOf(date)?.care ?? 0) > 0;
+    return true;
+  });
 }
 
-// ---- 月間の改定（PRD D53〜D55。design.md §4 pages「月間・週間の改定（2026-10-17）」）----
-
-type MonthInput = CompileInput & Pick<DemoData, 'aiPlans' | 'manualPlans'>;
-
-/** その日の数える案（今の案、無ければ確定した割当）。D55 */
+/** その日の担当の並び（月・週の集計） */
 export type DayPlan = {
   date: string;
   /** いまのデータの問題（作れなければ null） */
   problem: Problem | null;
-  /** 数える案の元。どちらも無ければ null（案なし） */
-  source: 'plan' | 'confirmed' | null;
-  /** 担当 → 訪問ID の列（問題にある訪問だけ。未割当の列は除く） */
+  /** 担当 → 訪問ID の列（問題にある訪問だけ） */
   routes: Routes;
 };
 
-/**
- * その日の数える案：今の案があればその列（問題に無い訪問を除いた順のまま）、無ければ確定した割当
- * （担当ごとに訪問の開始（早）の順）。problem を渡すとそれを使う（無ければその日の訪問だけで compile）
- */
-export function dayPlanOf(data: MonthInput, date: string, problem?: Problem | null): DayPlan {
-  const p =
-    problem !== undefined
-      ? problem
-      : attempt(() => compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date)).value;
-  const ids = new Map(p?.visits.map((v, i) => [v.id, i]) ?? []);
-  const keep = (r: Record<string, string[]>) => {
-    const out: Routes = {};
-    for (const [k, list] of Object.entries(r)) {
-      if (k === NONE) continue;
-      const xs = list.filter((id) => ids.has(id));
-      if (xs.length > 0) out[k] = xs;
-    }
-    return out;
-  };
-  const plan = own(data.aiPlans, date);
-  if (plan) return { date, problem: p, source: 'plan', routes: keep(plan.routes) };
-  const saved = own(data.manualPlans, date);
-  if (saved && p) {
-    const routes = keep(saved);
-    const order = (id: string) => [p.visits[ids.get(id)!]!.earliest, ids.get(id)!] as const;
-    for (const k of Object.keys(routes)) {
-      routes[k] = [...routes[k]!].sort((a, b) => {
-        const x = order(a);
-        const y = order(b);
-        return x[0] - y[0] || x[1] - y[1];
-      });
-    }
-    if (Object.keys(routes).length > 0) return { date, problem: p, source: 'confirmed', routes };
-  }
-  return { date, problem: p, source: null, routes: {} };
+/** その日の担当の並び（problem を渡すとそれを使う） */
+export function dayPlanOf(data: CompileInput, date: string, problem?: Problem | null): DayPlan {
+  const p = problem !== undefined ? problem : dayProblemOf(data, date);
+  return { date, problem: p, routes: p ? dayRoutes(data, date, p) : {} };
 }
 
 /** 種類ごとの件数（typeId が null＝種類なし） */
@@ -513,8 +289,8 @@ export function dayMarks(
     ends: namesOf((p) => p.to === date && !covered(p.clientId, after)),
     leaves: [
       ...new Set(
-        data.visits
-          .filter((v) => v.date === date && !v.cancelled && isOnLeave(data.clientLeaves, v))
+        visitsOn(data, date)
+          .filter((v) => !v.cancelled && isOnLeave(data.clientLeaves, v))
           .flatMap((v) => clientName.get(v.clientId) ?? []),
       ),
     ],
@@ -535,8 +311,6 @@ export type StaffDay = {
   requested: boolean;
   /** 最終勤務日の後（ADR-0015） */
   retired: boolean;
-  /** 数える案が無い（訪問がある日だけ true。訪問の無い日は空の案として数える＝vacancy の dayLoad と同じ） */
-  noPlan: boolean;
   /** 担当の件数 */
   count: number;
   /**
@@ -550,12 +324,12 @@ export type StaffDay = {
   minutes: number;
   types: TypeCount[];
   /**
-   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。0:00〜24:00 の48マス。3段に出すのは 8〜20時で外は端の印。PRD D82）。数える案が無い日（noPlan）は勤務内を「案なし」にする
+   * 30分ごとの状態（PRD D75。lib/staffBar の staffSlots。0:00〜24:00 の48マス。3段に出すのは 8〜20時で外は端の印。PRD D82）
    */
   bar: StaffSlot[];
 };
 
-/** 選んだ〈スタッフ〉のその日（数えるのは今の案、無ければ確定した割当） */
+/** 選んだ〈スタッフ〉のその日（数えるのはその日の担当の並び） */
 export function staffDay(data: CompileInput, day: DayPlan, staffId: string): StaffDay {
   const { date, problem: p } = day;
   const s = data.staff.find((x) => x.id === staffId);
@@ -565,7 +339,7 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
   const slots = absences.length > 0 ? withoutAbsences(base, absences) : base;
   const list = own(day.routes, staffId) ?? [];
   const counts = new Map<string | null, number>();
-  const visitById = new Map(data.visits.filter((v) => v.date === date).map((v) => [v.id, v]));
+  const visitById = new Map(visitsOn(data, date).map((v) => [v.id, v]));
   for (const id of list) {
     const t = visitById.get(id)?.typeId ?? null;
     counts.set(t, (counts.get(t) ?? 0) + 1);
@@ -587,9 +361,6 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     const mine = si >= 0 ? slotMinutes(p.staff[si]!.slots) : 0;
     if (mine > 0 && total > 0) target = ((p.visits.length - p.infeasible.length) * mine) / total;
   }
-  // 問題が作れなかった日（p＝null）は、取り消し・休みでない訪問の件数で見る（週の noPlanOf と同じ）
-  const hasVisits = p ? p.visits.length > 0 : activeVisitsOn(data, date).length > 0;
-  const noPlan = hasVisits && day.source === null;
   return {
     date,
     slots,
@@ -597,7 +368,6 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
     absence: absences.at(-1) ?? null,
     requested: absences.length > 0 && absences.every(isRequestedOff),
     retired: !!s && afterLastDay(s, date),
-    noPlan,
     count: list.length,
     target,
     travel: Math.round(travel),
@@ -607,7 +377,7 @@ export function staffDay(data: CompileInput, day: DayPlan, staffId: string): Sta
       shift: spansOf(slots),
       base: spansOf(base),
       busy: busyParts(stops),
-      planned: !noPlan,
+      planned: true,
     }),
   };
 }
@@ -671,9 +441,9 @@ export type ClientVisitMark = {
   /** 開始（0時からの分）。案の時刻（lenient）、案に無ければ訪問の開始（早） */
   start: number;
   typeId: string | null;
-  /** 担当（null＝案なし・入らない・取り消し） */
+  /** 担当（null＝担当なし・取り消し・休み） */
   staffId: string | null;
-  /** いつもの担当（パターンのいつもの担当、無ければ〈利用者さん〉のいつもの担当）でない担当（「代」） */
+  /** 繰り返しの担当（いつもの担当）でない担当（「代」） */
   substitute: boolean;
   /** この回だけ変えた（パターンの訪問） */
   edited: boolean;
@@ -682,17 +452,16 @@ export type ClientVisitMark = {
   sameDay: boolean;
   /** 〈利用者さん〉の休み（ADR-0013）のため無し（取り消しでない訪問だけ。計算に入らない） */
   leave: boolean;
-  /** 案があるのに担当がいない（入らない） */
+  /** 担当なし */
   unassigned: boolean;
 };
 
-export type ClientDay = { date: string; noPlan: boolean; visits: ClientVisitMark[] };
+export type ClientDay = { date: string; visits: ClientVisitMark[] };
 
 /** 選んだ〈利用者さん〉のその日の訪問（取り消しも含む。開始の順） */
 export function clientDay(data: CompileInput, day: DayPlan, clientId: string): ClientDay {
   const { date, problem: p } = day;
-  const mine = data.visits.filter((v) => v.date === date && v.clientId === clientId);
-  const client = data.clients.find((c) => c.id === clientId);
+  const mine = visitsOn(data, date).filter((v) => v.clientId === clientId);
   const patternById = new Map(data.patterns.map((x) => [x.id, x]));
   const placed = new Map<string, { staffId: string; start: number }>();
   if (p && mine.length > 0) {
@@ -712,7 +481,7 @@ export function clientDay(data: CompileInput, day: DayPlan, clientId: string): C
       const leave = !v.cancelled && isOnLeave(data.clientLeaves, v);
       const at = v.cancelled || leave ? undefined : placed.get(v.id);
       const pattern = v.pattern ? patternById.get(v.pattern.id) : undefined;
-      const usual = pattern?.usualStaffId ?? client?.usualStaffId ?? null;
+      const usual = pattern?.usualStaffId ?? null;
       const staffId = at?.staffId ?? null;
       return {
         visitId: v.id,
@@ -724,12 +493,11 @@ export function clientDay(data: CompileInput, day: DayPlan, clientId: string): C
         cancelled: v.cancelled,
         sameDay: v.cancelled && v.cancelKind === 'sameDay',
         leave,
-        unassigned: !v.cancelled && !leave && staffId === null && day.source !== null,
+        unassigned: !v.cancelled && !leave && staffId === null,
       };
     })
     .sort((a, b) => a.start - b.start || a.visitId.localeCompare(b.visitId));
-  const active = visits.some((v) => !v.cancelled && !v.leave);
-  return { date, noPlan: active && day.source === null, visits };
+  return { date, visits };
 }
 
 /** 選んだ〈利用者さん〉の月の集計（D55） */
@@ -746,7 +514,7 @@ export type ClientMonth = {
   leave: number;
   /** いつもの担当でない回 */
   substitute: number;
-  /** 担当した人の内訳（多い順。staffId が null＝案なし・入らない） */
+  /** 担当した人の内訳（多い順。staffId が null＝担当なし） */
   byStaff: { staffId: string | null; count: number }[];
 };
 
@@ -783,69 +551,44 @@ export function clientMonth(data: CompileInput, days: readonly DayPlan[], client
   return out;
 }
 
-/** 要対応の種類：入らない訪問がある・欠勤の人に訪問が残る（ADR-0014）・条件が変わった・拘束が上限を超える（ADR-0015）・欠勤がある（希望休だけの日は除く） */
-export type AttentionKind = 'unassigned' | 'hard' | 'absentLeft' | 'stale' | 'overSpan' | 'absence';
+/** 要対応の種類：要対応の訪問がある・未連絡の変更がある・拘束が上限を超える（ADR-0015） */
+export type AttentionKind = 'care' | 'changed' | 'overSpan';
 export type Attention = {
   date: string;
   kind: AttentionKind;
-  /** 入らない訪問の件数／必須の違反の件数／欠勤の人に残る訪問の件数／欠勤の人数（条件が変わったは 1） */
+  /** 要対応の訪問の件数／未連絡の変更の件数／拘束が上限を超える人数 */
   count: number;
-  /** 欠勤の人の名前（kind が absence のとき）・拘束が上限を超える人の名前（overSpan のとき） */
+  /** 拘束が上限を超える人の名前（overSpan のとき）・要対応の内訳（care のとき。「担当なし 2」など） */
   names: string[];
   /** 拘束が上限を超える人の id（overSpan のときだけ。稼働の見込みでその人を選んで開く。PRD D201） */
   staffIds?: string[];
 };
 
-const KIND_ORDER: Record<AttentionKind, number> = {
-  unassigned: 0,
-  hard: 1,
-  absentLeft: 2,
-  stale: 3,
-  overSpan: 4,
-  absence: 5,
-};
+const KIND_ORDER: Record<AttentionKind, number> = { care: 0, changed: 1, overSpan: 2 };
 
-/**
- * 欠勤の手当てが済んだ日か（PRD D281。ADR-0046）：確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い。
- * 欠勤を登録して振り直し、確定まで済んだ日は、欠勤があっても要対応に数えない（情報「欠勤あり（対応済み）」として残す）
- */
-export function absenceHandled(s: Pick<DayStatus, 'state' | 'unassigned' | 'hard' | 'absentLeft'>): boolean {
-  return s.state === 'confirmed' && s.unassigned === 0 && s.hard === 0 && s.absentLeft === 0;
-}
-
-/** その日の欠勤の人（希望休は除く。同じ人の欠勤が2件でも1人） */
-function absentStaffIds(data: Pick<DemoData, 'absences'>, date: string): string[] {
-  return [...new Set(data.absences.filter((a) => a.date === date && !isRequestedOff(a)).map((a) => a.staffId))];
-}
-
-/** 欠勤あり（対応済み）の日（PRD D281）：今日以降の、欠勤（希望休を除く）があって手当てが済んだ日と欠勤の人の名前（日付の順） */
-export type HandledAbsence = { date: string; names: string[] };
-export function handledAbsences(
-  data: Pick<DemoData, 'absences' | 'staff'>,
-  statuses: readonly DayStatus[],
-  today: string,
-): HandledAbsence[] {
-  const nameOf = new Map(data.staff.map((s) => [s.id, s.name]));
-  const out: HandledAbsence[] = [];
-  for (const s of statuses) {
-    if (s.date < today || !s.absence || !absenceHandled(s)) continue;
-    const ids = absentStaffIds(data, s.date);
-    if (ids.length > 0) out.push({ date: s.date, names: ids.map((id) => nameOf.get(id) ?? '').filter(Boolean) });
+/** 要対応の内訳（「担当なし 2」「担当が休み 1」。検査の種類の順） */
+export function issueBreakdown(issues: ReadonlyMap<string, readonly VisitIssue[]>): string[] {
+  const order: VisitIssue['kind'][] = ['unassigned', 'off', 'notAllowed', 'late'];
+  const label: Record<VisitIssue['kind'], string> = {
+    unassigned: '担当なし',
+    off: '担当が休み',
+    notAllowed: '条件に合わない',
+    late: '時間に間に合わない',
+  };
+  const count = new Map<VisitIssue['kind'], number>();
+  for (const list of issues.values()) {
+    const first = order.find((k) => list.some((x) => x.kind === k));
+    if (first) count.set(first, (count.get(first) ?? 0) + 1);
   }
-  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return order.filter((k) => count.has(k)).map((k) => `${label[k]} ${count.get(k)}`);
 }
 
 /**
- * 選ばないときの右の欄の「要対応」（D55・D281・D295）：今日以降の日の、入らない訪問がある・必須の違反がある・欠勤の人に訪問が残る・
- * 条件が変わった・拘束が上限を超える（ADR-0015）・欠勤のある日（日付の順、同じ日は 入らない → 必須の違反 → 欠勤の人に残る →
- * 条件が変わった → 拘束 → 欠勤）。マスの赤（needsCare：入らない・必須の違反・休みの人に残る）はどれも行になるので、
- * マスの札「要対応 N」と右の欄の行とホーム・進み具合の帯の数がそろう。
- * 希望休（ADR-0014）は前もって入れる休みなので、それだけでは要対応にしない（訪問が残っていれば「欠勤の人に残る」で出る）。
- * 欠勤があっても手当てが済んだ日（absenceHandled：確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い）は
- * 欠勤を数えない（ADR-0046。ホーム・進み具合の帯・月の要対応はこの1つで数えるので同じ数になる）
+ * 要対応の一覧（今日以降の日。日付の順、同じ日は 要対応の訪問 → 未連絡の変更 → 拘束）。
+ * マスの赤（needsCare）はどれも行になるので、マスの札とホーム・進み具合の帯の数がそろう
  */
 export function attentionList(
-  data: Pick<DemoData, 'absences' | 'staff'>,
+  data: Pick<DemoData, 'staff'>,
   statuses: readonly DayStatus[],
   today: string,
 ): Attention[] {
@@ -853,10 +596,8 @@ export function attentionList(
   const out: Attention[] = [];
   for (const s of statuses) {
     if (s.date < today) continue;
-    if (s.unassigned > 0) out.push({ date: s.date, kind: 'unassigned', count: s.unassigned, names: [] });
-    if (s.hard > 0) out.push({ date: s.date, kind: 'hard', count: s.hard, names: [] });
-    if (s.absentLeft > 0) out.push({ date: s.date, kind: 'absentLeft', count: s.absentLeft, names: [] });
-    if (s.stale) out.push({ date: s.date, kind: 'stale', count: 1, names: [] });
+    if (s.care > 0) out.push({ date: s.date, kind: 'care', count: s.care, names: issueBreakdown(s.issues) });
+    if (s.changes > 0) out.push({ date: s.date, kind: 'changed', count: s.changes, names: [] });
     // 拘束が上限を超える（ADR-0015）
     if (s.overSpan.length > 0)
       out.push({
@@ -866,59 +607,47 @@ export function attentionList(
         names: s.overSpan.map((id) => nameOf.get(id) ?? '').filter(Boolean),
         staffIds: [...s.overSpan],
       });
-    if (s.absence && !absenceHandled(s)) {
-      // 同じ人の欠勤が2件（時間帯が2つ・続けて振り直した）でも1人と数える。希望休は数えない
-      const ids = absentStaffIds(data, s.date);
-      const names = ids.map((id) => nameOf.get(id) ?? '');
-      if (ids.length > 0)
-        out.push({ date: s.date, kind: 'absence', count: names.length, names: names.filter(Boolean) });
-    }
   }
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : KIND_ORDER[a.kind] - KIND_ORDER[b.kind]));
 }
 
-// ---- 今月の準備（PRD D59。D151 から進み具合の帯（月・週・日）に出す。design.md §4 pages「動線の整理」「進み具合の帯」）----
+// ---- 今月の準備（進み具合の帯。design.md §4 pages「進み具合の帯」）----
 
 /** 月の「今月の準備」の進み具合（その月の今日以降の日について） */
 export type MonthProgress = {
-  /** ① 訪問の件数（取り消しを除く） */
+  /** ① 訪問の件数（取り消し・休みを除く） */
   visits: number;
   /** 訪問のある日の数（②③の分母） */
   days: number;
-  /** ② 案のある日の数（今の案か確定した割当がある日） */
+  /** ② 担当が全部入った日の数（要対応の訪問が無い日） */
   planned: number;
-  /** ③ 確定した日の数（「確定済み」の日。「未確定の変更あり」は数えない） */
+  /** ③ 伝えた日の数（未連絡の変更の無い日） */
   confirmed: number;
-  /** 確定していない日（訪問があって「確定済み」でない日。日付の順） */
+  /** 伝えていない・未連絡の変更のある日（訪問のある日。日付の順） */
   unconfirmed: string[];
   /** 要対応の件数（attentionList の件数） */
   attention: number;
 };
 
-/**
- * 今月の準備：その月の今日以降について、①訪問の件数 ②案のある日/訪問のある日 ③確定した日/訪問のある日・要対応の件数。
- * staleOf を渡すと条件が変わったかをそれで決める（無ければ「条件が変わった」は数えない）。
- * statusOf を渡すと日の状態をそれから引く（画面が compile・採点して作ったもの。無ければ dayStatus で作る）
- */
+/** 今月の準備：その月の今日以降について。statusOf は日の状態（画面が作ったもの。無ければ dayStatus で作る） */
 export function monthProgress(
-  data: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'absences' | 'staff' | 'clientLeaves'>,
+  data: CompileInput & Pick<DemoData, 'snapshots'>,
   ym: string,
   today: string,
-  staleOf?: (date: string) => boolean,
   statusOf?: (date: string) => DayStatus | undefined,
 ): MonthProgress {
   const statuses: DayStatus[] = [];
   for (const date of monthDates(ym)) {
     if (date < today) continue;
-    statuses.push(statusOf?.(date) ?? dayStatus(data, date, { stale: staleOf?.(date) ?? false }));
+    statuses.push(statusOf?.(date) ?? dayStatus(data, date));
   }
   const withVisits = statuses.filter((s) => s.count > 0);
   return {
     visits: withVisits.reduce((m, s) => m + s.count, 0),
     days: withVisits.length,
-    planned: withVisits.filter((s) => s.state !== 'none').length,
-    confirmed: withVisits.filter((s) => s.state === 'confirmed').length,
-    unconfirmed: withVisits.filter((s) => s.state !== 'confirmed').map((s) => s.date),
+    planned: withVisits.filter((s) => s.care === 0).length,
+    confirmed: withVisits.filter((s) => s.state === 'told').length,
+    unconfirmed: withVisits.filter((s) => s.state !== 'told').map((s) => s.date),
     attention: attentionList(data, statuses, today).length,
   };
 }

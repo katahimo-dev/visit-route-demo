@@ -114,7 +114,8 @@ export function SuddenPanel({
   running: boolean;
   /** 今の案がある */
   hasPlan: boolean;
-  confirmState: 'none' | 'same' | 'diff' | null;
+  /** 伝えた状態（none＝まだ伝えていない・told＝伝えた・changed＝伝えたあとに変わった） */
+  confirmState: 'none' | 'told' | 'changed';
   /** 4段目の振り直しの結果（まとめ・案A と案B を選ぶ欄）。今の案に振り直しが出るまでは null */
   result: ReactNode;
   /** 登録して振り直す（anneal：続けて案B も作る）。振り直せたら true */
@@ -123,7 +124,7 @@ export function SuddenPanel({
   /** 欠勤を取り消す（確認ダイアログで取り消したら false） */
   onRemoveAbsence: (absence: Absence) => Promise<boolean>;
   onCancelVisit: (visitId: string, sameDay: boolean) => void;
-  /** この割当で確定（確認ダイアログで取り消したら false） */
+  /** 確定（伝えた。確認ダイアログで取り消したら false） */
   onAdopt: () => Promise<boolean>;
   /** 元の案に戻す（確認ダイアログで取り消したら false）。振り直していなければ undefined */
   onRevert?: () => Promise<boolean>;
@@ -172,7 +173,7 @@ export function SuddenPanel({
     error,
     running,
     hasPreview: !!preview,
-    hasBase: preview?.baseFrom !== null,
+    hasBase: preview?.hasBase ?? false,
   });
   const names = suddenSteps(kind);
   const pickStaff = (id: string) => {
@@ -276,7 +277,7 @@ export function SuddenPanel({
             <CalendarX2 size={22} aria-hidden="true" />
             <span className="sudden-choice-text">
               <strong>{terms.client}がキャンセル</strong>
-              <span className="sub">当日キャンセル。その訪問を取り消し、今の案から外します</span>
+              <span className="sub">当日キャンセル。その訪問を取り消し、担当から外します</span>
             </span>
             <ChevronRight size={18} aria-hidden="true" />
           </button>
@@ -403,7 +404,7 @@ export function SuddenPanel({
     );
   } else if (step === 3 && kind === 'staff' && absence) {
     const impact = preview ? impactText(preview.targets) : null;
-    const hasBase = !!preview && preview.baseFrom !== null;
+    const hasBase = !!preview && preview.hasBase;
     /**
      * 主ボタンは「登録して振り直す（おすすめ）」の1つ（PRD D264。ADR-0044）。案A で入らない見込みなら、おすすめは
      * 案B も作るほう（sudden-anneal）、無ければ案A（sudden-reassign）。もう一方と「欠勤だけ登録」は控えめな文字のボタン
@@ -487,7 +488,6 @@ export function SuddenPanel({
                     : preview.targets.length > 0
                       ? 'すべて入る見込みです'
                       : ''}
-                  （元の案：{preview.baseFrom === 'confirmed' ? '確定した割当' : '今の案'}）
                 </span>
               </div>
               <div className={`sudden-option${recommended ? ' is-recommended' : ''}`} data-testid="anneal-suggest">
@@ -564,7 +564,6 @@ export function SuddenPanel({
       </>
     );
   } else if (step === 4 && done) {
-    const canAdopt = hasPlan && confirmState !== 'same';
     body = (
       <>
         {stepHeading(suddenHeading(done.kind, 4, terms.staff))}
@@ -580,34 +579,13 @@ export function SuddenPanel({
               振り直しを出しています…
             </p>
           ))}
-        <p className="sub" data-testid="sudden-confirm-note">
-          {confirmNote(hasPlan ? confirmState : null)}
-        </p>
       </>
     );
     footer = (
       <>
-        {canAdopt && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={running || busy}
-            title={running ? '計算中は押せません' : undefined}
-            onClick={() =>
-              void guarded(async () => {
-                if (await onAdopt()) go(5);
-              })
-            }
-            data-testid="sudden-adopt"
-          >
-            <WithIcon icon={CircleCheck}>この割当で確定</WithIcon>
-          </button>
-        )}
-        {!canAdopt && (
-          <button type="button" className="btn btn-primary" onClick={() => go(5)} data-testid="sudden-to-contacts">
-            <WithIcon icon={ChevronRight}>次へ：連絡</WithIcon>
-          </button>
-        )}
+        <button type="button" className="btn btn-primary" onClick={() => go(5)} data-testid="sudden-to-contacts">
+          <WithIcon icon={ChevronRight}>次へ：連絡</WithIcon>
+        </button>
         {done.kind === 'staff' && onRevert && (
           <button
             type="button"
@@ -620,7 +598,7 @@ export function SuddenPanel({
             }
             data-testid="sudden-revert"
           >
-            <WithIcon icon={Undo2}>元の案に戻す</WithIcon>
+            <WithIcon icon={Undo2}>振り直す前に戻す</WithIcon>
           </button>
         )}
         {done.kind === 'staff' && (
@@ -642,6 +620,9 @@ export function SuddenPanel({
             ? '振り直す前と後で担当が変わった人への連絡です。'
             : `取り消した訪問の担当への連絡です。キャンセルした${terms.client}あては作りません。`}
           文はコピーするか、メールアプリで開いて送ります。
+        </p>
+        <p className="sub" data-testid="sudden-confirm-note">
+          {confirmNote(confirmState)}
         </p>
         {leftCount > 0 && (
           <p className="warn-text" role="note" data-testid="sudden-contacts-left">
@@ -732,10 +713,34 @@ export function SuddenPanel({
         )}
       </>
     );
+    const canAdopt = hasPlan && confirmState !== 'told';
     footer = (
       <>
-        <button type="button" className="btn btn-primary" onClick={() => onClose(false)} data-testid="sudden-finish">
-          <WithIcon icon={Check}>終わる</WithIcon>
+        {canAdopt && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={running || busy}
+            title={
+              running ? '計算中は押せません' : '連絡が済んだら押します（今の担当と時刻を伝えた内容として残します）'
+            }
+            onClick={() =>
+              void guarded(async () => {
+                if (await onAdopt()) onClose(false);
+              })
+            }
+            data-testid="sudden-adopt"
+          >
+            <WithIcon icon={CircleCheck}>連絡したので確定</WithIcon>
+          </button>
+        )}
+        <button
+          type="button"
+          className={canAdopt ? 'btn' : 'btn btn-primary'}
+          onClick={() => onClose(false)}
+          data-testid="sudden-finish"
+        >
+          <WithIcon icon={Check}>{canAdopt ? 'あとで確定する' : '終わる'}</WithIcon>
         </button>
         {back(4)}
       </>

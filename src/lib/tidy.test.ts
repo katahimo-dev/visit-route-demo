@@ -1,28 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
+import { visit } from '../matching/fixtures';
 import { createDemoData } from '../seed';
 import { addMonths, sizeText, tidyMonthLabel, tidyMonthOptions, tidyOld, tidyPreview } from './tidy';
 
-/** 日付ごとに中身を持つだけの案と記録（形は見ない） */
-const fake = (date: string) => ({ date, routes: { s1: ['v1'] } }) as unknown as DemoData['aiPlans'][string];
-const run = (date: string, no: number) =>
-  ({ id: `${date}#${no}`, no, date }) as unknown as DemoData['aiRuns'][string][number];
-
+/** 古い日の保存した訪問・伝えた内容・振り直しの情報を持つデータ（版2） */
 function withOld(): DemoData {
   const d = createDemoData('2026-10-12');
+  const snap = (date: string) => ({
+    date,
+    at: 1,
+    visits: [{ id: 'v1', clientId: 'c1', staffId: 's1', start: '09:00' }],
+  });
   return {
     ...d,
-    aiPlans: { '2026-06-30': fake('2026-06-30'), '2026-07-01': fake('2026-07-01'), '2026-10-12': fake('2026-10-12') },
-    aiRuns: {
-      '2026-06-10': [run('2026-06-10', 1), run('2026-06-10', 2)],
-      '2026-06-30': [run('2026-06-30', 1)],
-      '2026-07-15': [run('2026-07-15', 1)],
+    visits: [
+      visit('o1', 'c1', '09:00', '09:00', { date: '2026-06-10' }),
+      visit('o2', 'c1', '09:00', '09:00', { date: '2026-06-30' }),
+      visit('n1', 'c1', '09:00', '09:00', { date: '2026-07-15' }),
+    ],
+    snapshots: { '2026-06-30': snap('2026-06-30'), '2026-07-01': snap('2026-07-01') },
+    reassigns: {
+      '2026-06-30': { method: 'insert', baseRoutes: {}, basePins: {}, absenceIds: [] },
     },
-    manualPlans: { '2026-06-30': { s1: ['v1'] } },
   };
 }
 
-describe('古い案と記録の片づけ（PRD D227。ADR-0032）', () => {
+describe('古い訪問の片づけ（PRD D227。ADR-0032・ADR-0053）', () => {
   it('選べる月は今月から12か月前まで（新しい順）、既定は3か月前', () => {
     const { options, initial } = tidyMonthOptions('2026-10-21');
     expect(options[0]).toBe('2026-10');
@@ -36,32 +40,21 @@ describe('古い案と記録の片づけ（PRD D227。ADR-0032）', () => {
     expect(addMonths('2026-11', 2)).toBe('2027-01');
     expect(addMonths('2026-01', -12)).toBe('2025-01');
   });
-  it('選んだ月より前の日の案と記録を数え、空く見込み（JSON の文字数）を出す', () => {
+  it('選んだ月より前の日の保存した訪問と伝えた内容を数え、空く見込み（JSON の文字数）を出す', () => {
     const d = withOld();
     const p = tidyPreview(d, '2026-07');
-    // 2026-06-30 は確定した日なので案は残す（記録だけ数える）
-    expect(p).toMatchObject({ runs: 3, plans: 0, keptPlans: 1, days: 2 });
-    expect(p.chars).toBeGreaterThan(JSON.stringify(d.aiRuns['2026-06-10']).length);
-    expect(tidyPreview(d, '2025-12')).toEqual({ runs: 0, plans: 0, keptPlans: 0, days: 0, chars: 0 });
+    expect(p).toMatchObject({ visits: 2, snapshots: 1, days: 2 });
+    expect(p.chars).toBeGreaterThan(0);
+    expect(tidyPreview(d, '2025-12')).toEqual({ visits: 0, snapshots: 0, days: 0, chars: 0 });
   });
-  it('消すのは aiRuns・aiPlans だけ。確定した割当・訪問・人は残す', () => {
+  it('消すのは古い保存した訪問・伝えた内容・振り直しの情報だけ。繰り返し・人は残す', () => {
     const d = withOld();
     const t = tidyOld(d, '2026-07');
-    expect(Object.keys(t.aiPlans).sort()).toEqual(['2026-06-30', '2026-07-01', '2026-10-12']);
-    expect(Object.keys(t.aiRuns)).toEqual(['2026-07-15']);
-    expect(t.manualPlans).toBe(d.manualPlans);
-    expect(t.visits).toBe(d.visits);
+    expect(t.visits.map((v) => v.id)).toEqual(['n1']);
+    expect(Object.keys(t.snapshots)).toEqual(['2026-07-01']);
+    expect(t.reassigns).toEqual({});
+    expect(t.patterns).toBe(d.patterns);
     expect(t.staff).toBe(d.staff);
-  });
-  it('確定した日の案は残り、確定していない古い日の案は消える', () => {
-    const base = withOld();
-    const d: DemoData = { ...base, aiPlans: { ...base.aiPlans, '2026-05-01': fake('2026-05-01') } };
-    const p = tidyPreview(d, '2026-07');
-    expect(p).toMatchObject({ plans: 1, keptPlans: 1 });
-    const t = tidyOld(d, '2026-07');
-    expect(t.aiPlans['2026-06-30']).toBe(d.aiPlans['2026-06-30']);
-    expect(t.aiPlans['2026-05-01']).toBeUndefined();
-    expect(t.aiRuns['2026-06-30']).toBeUndefined();
   });
   it('消すものが無ければ同じもの', () => {
     const d = withOld();

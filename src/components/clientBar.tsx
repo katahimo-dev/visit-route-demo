@@ -1,7 +1,7 @@
 // 週間の〈利用者さん〉×曜日のマスの3段の帯（PRD D83。区切りは lib/barRows＝混み具合バー・〈スタッフ〉の3段バーと同じ）。
 // 訪問をその時刻の位置に種類の色で置き、下に担当の短い名前などを時刻の順に小さく出す。
 // 印は形と文字で分ける（色だけにしない）：休み＝淡い灰の無地＋「休」、取り消し＝白抜きの枠＋「取消」「当日取消」、
-// 案なし＝種類の色を淡くした地に種類の色の破線の枠＋「案なし」、入らない＝白地に赤い太枠＋「入らない」、いつもの担当でない＝「代」。
+// 担当なし＝白地に赤い太枠＋「担当なし」、いつもの担当でない＝「代」。
 // 1段＝1時間ずつ4ブロック（隙間は帯の下の地にだけ描き、短い帯を割らない。PRD D85）。
 // 訪問の帯（段の最初の切れ端）と、段に掛からない訪問の端の「◀」「▶」は、画面が渡すボタン（押す・Enter・ドラッグ）
 import './barMarks.css';
@@ -20,13 +20,11 @@ export type ClientBarPlace = { style: CSSProperties; className: string; edge: Ba
 
 export function ClientDayBar({
   items,
-  noPlan,
   markOf,
   timeText,
   renderItem,
 }: {
   items: readonly ClientWeekItem[];
-  noPlan: boolean;
   markOf: (it: ClientWeekItem) => ClientBarMark;
   /** 「9:00〜10:00」 */
   timeText: (it: ClientWeekItem) => string;
@@ -63,11 +61,10 @@ export function ClientDayBar({
     if (xs.length > 0) return <EdgeMark side={side} title={edgeTitle(side, xs)} />;
     return <RowEdge hour={hour} />;
   };
-  // 帯の下の短い文字：時刻の順。案なしのマスは「案なし」を1回だけ
-  const names = items.flatMap((it) => {
+  // 帯の下の短い文字：時刻の順
+  const names = items.map((it) => {
     const mk = marks.get(it.visitId)!;
-    if (mk.kind === 'noplan' && noPlan) return [];
-    return [{ id: it.visitId, kind: mk.kind, short: mk.short, sub: !!it.substitute }];
+    return { id: it.visitId, kind: mk.kind, short: mk.short, sub: !!it.substitute };
   });
   return (
     <span className="cbar">
@@ -108,9 +105,8 @@ export function ClientDayBar({
           </span>
         ))}
       </span>
-      {(names.length > 0 || noPlan) && (
+      {names.length > 0 && (
         <span className="cbar-names" aria-hidden="true">
-          {noPlan && <span className="cbar-name is-noplan">案なし</span>}
           {names.map((n) => (
             <span key={n.id} className={`cbar-name is-${n.kind}`}>
               {n.short}
@@ -127,8 +123,7 @@ export function ClientDayBar({
 export function ClientBarLegend({ clientTerm }: { clientTerm: string }) {
   const items: [ClientItemKind, string][] = [
     ['visit', '訪問（種類の色。下に担当）'],
-    ['unassigned', '入らない'],
-    ['noplan', '案なし'],
+    ['unassigned', '担当なし'],
     ['leave', `休（${clientTerm}の休み）`],
     ['cancelled', '取消'],
     ['sameDay', '当日取消'],

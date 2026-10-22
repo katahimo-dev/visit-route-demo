@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { demoDataSchema } from '../contracts/data';
 import { addDays, weekday } from '../domain/time';
 import { compile } from '../matching';
+import { visitsIn } from '../patterns';
 import { visitsOf } from './generate';
 import {
   applyPreset,
   createDemoData,
-  daysFrom,
   INITIAL_PRESETS as PRESETS,
   presetOf,
   REHAB_SEEDS,
@@ -14,6 +14,8 @@ import {
 } from './index';
 
 const TODAY = '2026-10-12';
+/** 14日分の訪問（版2：繰り返しの回は計算する） */
+const twoWeeks = (d: ReturnType<typeof createDemoData>, from = TODAY) => visitsIn(d, { from, to: addDays(from, 13) });
 
 describe('createDemoData', () => {
   it('同じ日付なら同じデータ', () => {
@@ -39,25 +41,25 @@ describe('createDemoData', () => {
     expect(d.compat.c12?.s7).toBe(-2);
   });
 
-  it('14日分の訪問がある', () => {
+  it('14日分の訪問がある（繰り返しの回は保存しない。版2）', () => {
     const d = createDemoData(TODAY);
-    const dates = new Set(d.visits.map((v) => v.date));
+    expect(d.visits).toEqual([]);
+    const dates = new Set(twoWeeks(d).map((v) => v.date));
     for (let i = 0; i < 14; i++) expect(dates.has(addDays(TODAY, i))).toBe(true);
     expect(dates.size).toBe(14);
   });
 
-  it('手作業の割当は入れない（ADR-0005）', () => {
+  it('伝えた内容・欠勤は入れない（ADR-0005・ADR-0011）', () => {
     const d = createDemoData(TODAY);
-    expect(d.manualPlans).toEqual({});
-    // 初期データに欠勤は入らない（ADR-0011）
+    expect(d.snapshots).toEqual({});
     expect(d.absences).toEqual([]);
-    expect(d.visits.every((v) => v.staffId === null)).toBe(true);
-    expect(d.aiRuns).toEqual({});
   });
 
-  it('いつもの担当は入る（内部の手作業らしい割当で最も多い人）', () => {
+  it('繰り返しの担当は入る（内部の手作業らしい割当で最も多い人）。計算した回はその人が担当', () => {
     const d = createDemoData(TODAY);
-    expect(d.clients.some((c) => c.usualStaffId !== null)).toBe(true);
+    expect(d.patterns.some((p) => p.usualStaffId !== null)).toBe(true);
+    const v = twoWeeks(d).find((x) => x.pattern !== null)!;
+    expect(v.staffId).toBe(d.patterns.find((p) => p.id === v.pattern!.id)!.usualStaffId);
   });
 });
 
@@ -89,13 +91,15 @@ describe('種類と定期パターン（ADR-0012）', () => {
     expect(pts).toHaveLength(2);
   });
 
-  it('利用者さんごとのパターン（ID＝利用者さんID）から、いまの seed と同じ訪問（ID・日付・時刻・所要・順）になる', () => {
+  it('利用者さんごとのパターン（ID＝利用者さんID）から、いまの seed と同じ訪問（ID・日付・時刻・所要）になる', () => {
     for (const today of [TODAY, '2027-03-01', '2026-12-27']) {
       const d = createDemoData(today);
       const clientIds = new Set(d.clients.map((c) => c.id));
       const expected = Array.from({ length: 14 }, (_, i) => visitsOf(addDays(today, i), clientIds)).flat();
-      const fromClients = d.visits.filter((v) => v.pattern?.id === v.clientId);
-      expect(fromClients.map(pick)).toEqual(expected.map(pick));
+      const fromClients = twoWeeks(d, today).filter((v) => v.pattern?.id === v.clientId);
+      // 日の中の並びは開始の順（版2の visitsOn）なので、ID の順で比べる
+      const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      expect(fromClients.map(pick).sort(byId)).toEqual(expected.map(pick).sort(byId));
       for (const v of fromClients) {
         expect(v.pattern).toEqual({ id: v.clientId, date: v.date, edited: false });
         const target = d.clients.find((c) => c.id === v.clientId)?.traits.target;
@@ -110,14 +114,15 @@ describe('種類と定期パターン（ADR-0012）', () => {
     expect(REHAB_SEEDS).toHaveLength(2);
     for (const r of REHAB_SEEDS) {
       expect(d.clients.find((c) => c.id === r.clientId)?.traits.target).toBe('高齢');
-      const rehab = d.visits.filter((v) => v.pattern?.id === rehabPatternId(r.clientId));
+      const all = twoWeeks(d);
+      const rehab = all.filter((v) => v.pattern?.id === rehabPatternId(r.clientId));
       expect(rehab).toHaveLength(2);
       for (const v of rehab) {
         expect(v.typeId).toBe('rehab');
         expect(v.durationMinutes).toBe(40);
         expect(weekday(v.date)).toBe(r.weekday);
         const toMin = (h: string) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3));
-        const usual = d.visits.find((u) => u.date === v.date && u.id === `${v.date}_${r.clientId}`);
+        const usual = all.find((u) => u.date === v.date && u.id === `${v.date}_${r.clientId}`);
         if (usual) {
           const a = toMin(usual.earliestStart);
           const b = toMin(v.earliestStart);
@@ -134,7 +139,7 @@ describe('種類と定期パターン（ADR-0012）', () => {
       const p = compile(d, date);
       const withoutTypes = compile({ ...d, visitTypes: [] }, date);
       p.visits.forEach((v, j) => {
-        const isRehab = d.visits.find((x) => x.id === v.id)?.typeId === 'rehab';
+        const isRehab = twoWeeks(d).find((x) => x.id === v.id)?.typeId === 'rehab';
         p.staff.forEach((s, k) => {
           const pt = (d.staff.find((x) => x.id === s.id)?.traits.qualification as string[]).includes('理学療法士');
           const want = withoutTypes.allowed[j]![k]! && (!isRehab || pt);
@@ -142,24 +147,6 @@ describe('種類と定期パターン（ADR-0012）', () => {
         });
       });
     }
-  });
-});
-
-describe('daysFrom', () => {
-  it('既存の日は変えず、足りない日だけ足す', () => {
-    const d = createDemoData(TODAY);
-    const e = daysFrom(d, addDays(TODAY, 7), 14);
-    expect(e.visits.filter((v) => v.date < addDays(TODAY, 14))).toEqual(d.visits);
-    expect(new Set(e.visits.map((v) => v.date)).size).toBe(21);
-    expect(e.visits.every((v) => v.staffId === null)).toBe(true);
-    expect(() => demoDataSchema.parse(e)).not.toThrow();
-  });
-  it('パターンの無い古いデータでは、今までどおりの訪問（種類・パターンなし、リハビリなし）', () => {
-    const d = { ...createDemoData(TODAY), visits: [], availability: [], visitTypes: [], patterns: [] };
-    const e = daysFrom(d, TODAY, 14);
-    const clientIds = new Set(d.clients.map((c) => c.id));
-    const expected = Array.from({ length: 14 }, (_, i) => visitsOf(addDays(TODAY, i), clientIds)).flat();
-    expect(e.visits).toEqual(expected);
   });
 });
 

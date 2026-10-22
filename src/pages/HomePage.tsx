@@ -30,7 +30,7 @@ import {
   homeMonths,
   homeTasks,
 } from '../lib/home';
-import { dayPlanOf, expandMonth } from '../lib/month';
+import { dayPlanOf } from '../lib/month';
 import { useCompileInput } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { COMPACT_QUERY, NARROW_QUERY, useMedia } from '../lib/useMedia';
@@ -67,10 +67,7 @@ export default function HomePage() {
   const terms = data.org.terms;
   const days = useMemo(() => homeDays(today), [today]);
   const perDay = useDayStatuses(data, compileInput, days);
-  const months = useMemo(
-    () => homeMonths(today).map((ym) => ({ ym, canExpand: expandMonth(data, ym, today).added })),
-    [data, today],
-  );
+  const months = useMemo(() => homeMonths(today).map((ym) => ({ ym })), [today]);
   const { tasks, ready } = useMemo(() => {
     const statuses = days.flatMap((d) => perDay.get(d)?.status ?? []);
     const todayPlan = dayPlanOf(data, today, perDay.get(today)?.problem ?? null);
@@ -98,8 +95,7 @@ export default function HomePage() {
     const btn = e.currentTarget;
     openVisit({ visitId, returnFocus: () => (btn.isConnected ? btn : null) });
   };
-  const rowText = (r: VisitRow) =>
-    r.mark === 'unassigned' ? '担当なし（入らない）' : r.mark === 'noplan' ? '案なし' : staffName(r.staffId ?? '');
+  const rowText = (r: VisitRow) => (r.mark === 'unassigned' ? '担当なし' : staffName(r.staffId ?? ''));
   /** 日の画面へ移るものは、移る前に選んでいる日付をその日にする */
   const pickDate = (d?: string) => {
     if (d) setDate(d);

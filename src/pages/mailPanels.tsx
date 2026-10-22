@@ -65,7 +65,7 @@ export function DayMailPanel({ data, date, onClose }: { data: DemoData; date: st
     >
       <div className="stack" data-testid="day-mail-panel">
         {day.source === null ? (
-          <p data-testid="day-mail-source">この日は確定した割当も今の案もありません。案を作ってから送ってください。</p>
+          <p data-testid="day-mail-source">この日は計算できる訪問がありません。</p>
         ) : (
           <>
             <p data-testid="day-mail-source">
@@ -148,7 +148,7 @@ export function WeekMailPanel({
     >
       <div className="stack" data-testid="week-mail-panel">
         <p>
-          日ごとに、確定した割当があればそれ、無ければ今の案（本文に「案」と書きます）の担当で、曜日ごとの訪問（時刻・
+          日ごとに、今の担当（確定していない日は本文に「未確定」と書きます）で、曜日ごとの訪問（時刻・
           {terms.client}）を本文に入れます。住所・決まりごと・鍵の情報は入れません（日の予定のメールで送れます）。
         </p>
         <MailNotice>

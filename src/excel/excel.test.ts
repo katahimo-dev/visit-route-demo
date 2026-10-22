@@ -2,7 +2,9 @@ import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
 import type { DemoData, ImportError, RosterImportResult, RosterKind, RosterMode } from '../contracts/data';
 import type { Condition, Item } from '../contracts/rules';
+import { visitsOn } from '../patterns';
 import { createDemoData } from '../seed';
+import { withSeedPlans } from '../seed/plans';
 import { isImportError, migrate } from '../store';
 import { MAX_FILE_BYTES, MAX_ROWS, prim } from './importBook';
 import {
@@ -26,9 +28,11 @@ import {
   traitToCell,
 } from './text';
 
-/** seed のデータ（種類・定期パターン入り。ADR-0012） */
-const base = (): DemoData => createDemoData('2026-10-13');
-const withoutPlans = (d: DemoData): DemoData => ({ ...d, manualPlans: {}, aiPlans: {}, aiRuns: {} });
+/** seed のデータ（種類・定期パターン入り。ADR-0012。7日分の担当を書いた回が保存した訪問になる。版2） */
+const BASE = withSeedPlans(createDemoData('2026-10-13'), '2026-10-13', 7);
+const base = (): DemoData => structuredClone(BASE);
+/** 読み込みで消えるもの（版2は無い。伝えた内容は base から引き継ぐ） */
+const withoutPlans = (d: DemoData): DemoData => d;
 
 async function toBuffer(d: DemoData): Promise<ArrayBuffer> {
   return (await exportWorkbook(d)).arrayBuffer();
@@ -64,21 +68,20 @@ function sheet(wb: ExcelJS.Workbook, name: string): ExcelJS.Worksheet {
 }
 
 describe('書き出し → 読み込み', () => {
-  it('seed のデータは、案を除いて同じデータに戻る（ID・並び順も）', async () => {
+  it('seed のデータは同じデータに戻る（ID・並び順も）', async () => {
     const d = base();
     const r = ok(await importWorkbook(await toBuffer(d), d));
-    expect(r).toEqual(withoutPlans(d));
+    expect(r).toEqual(d);
     expect(r.staff.map((s) => s.id)).toEqual(d.staff.map((s) => s.id));
     expect(r.visits.map((v) => v.id)).toEqual(d.visits.map((v) => v.id));
   });
 
-  it('案（手作業の割当・AI案・記録）は消え、版・基準日は base から引き継ぐ', async () => {
+  it('伝えた内容（確定）・振り直しの情報・版・基準日は base から引き継ぐ（ブックには書かない）', async () => {
     const d = base();
-    const withPlans: DemoData = { ...d, manualPlans: { [d.baseDate]: { __none: [] } } };
-    const r = ok(await importWorkbook(await toBuffer(withPlans), withPlans));
-    expect(r.manualPlans).toEqual({});
-    expect(r.aiPlans).toEqual({});
-    expect(r.aiRuns).toEqual({});
+    const told: DemoData = { ...d, snapshots: { [d.baseDate]: { date: d.baseDate, at: 1, visits: [] } } };
+    expect(ok(await importWorkbook(await toBuffer(told), d)).snapshots).toEqual({});
+    const r = ok(await importWorkbook(await toBuffer(d), told));
+    expect(r.snapshots).toEqual(told.snapshots);
     expect(r.version).toBe(d.version);
     expect(r.baseDate).toBe(d.baseDate);
   });
@@ -190,11 +193,11 @@ describe('行を足す・消す', () => {
         row.getCell(col(ws, '勤務終了')).value = '17:30';
         row.getCell(col(ws, '利用中')).value = '○';
         row.getCell(col(ws, '特性：性別')).value = '男性';
-        // 消した人の名前を参照するところは消しておく（いつもの担当・相性の列・稼働時間・訪問の担当）
-        const clws = sheet(wb, names.client);
-        const usualCol = col(clws, 'いつもの担当');
-        for (let n = 2; n <= clws.rowCount; n++) {
-          if (clws.getRow(n).getCell(usualCol).value === removed?.name) clws.getRow(n).getCell(usualCol).value = null;
+        // 消した人の名前を参照するところは消しておく（繰り返しの担当・相性の列・稼働時間・訪問の担当）
+        const pws = sheet(wb, '定期パターン');
+        const usualCol = col(pws, '担当');
+        for (let n = 2; n <= pws.rowCount; n++) {
+          if (pws.getRow(n).getCell(usualCol).value === removed?.name) pws.getRow(n).getCell(usualCol).value = null;
         }
         const cws = sheet(wb, '相性');
         for (let c = 2; c <= cws.columnCount; c++) {
@@ -837,7 +840,7 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
         const pws = sheet(wb, '定期パターン');
         pws.getRow(2).getCell(col(pws, '種類')).value = 'ない種類';
         pws.getRow(3).getCell(col(pws, d.org.terms.client)).value = 'いない人';
-        pws.getRow(4).getCell(col(pws, 'いつもの担当')).value = 'いない担当';
+        pws.getRow(4).getCell(col(pws, '担当')).value = 'いない担当';
         const vws = sheet(wb, '訪問');
         vws.getRow(2).getCell(col(vws, '定期パターン')).value = 'no-such';
       }),
@@ -848,7 +851,7 @@ describe('種類・定期パターンのシート（ADR-0012）', () => {
       'シート『定期パターン』の 2行目・『種類』：「ない種類」という種類は、シート『種類』にありません',
     );
     expect(msg).toContain(`シート『定期パターン』の 3行目・『${d.org.terms.client}』：「いない人」という`);
-    expect(msg).toContain('シート『定期パターン』の 4行目・『いつもの担当』：「いない担当」という');
+    expect(msg).toContain('シート『定期パターン』の 4行目・『担当』：「いない担当」という');
     // パターンのシートで止まるので、訪問のシートは次の読み込みで出る
     const msg2 = fail(
       await editAndImport(d, (wb) => {
@@ -1120,12 +1123,12 @@ describe('〈利用者さん〉の担当できる人の列（ADR-0014）', () =>
           : c,
     ),
   });
-  it('担当できる人が 書き出し → 読み込み で同じに戻る（列は「いつもの担当」の次、名前を「、」で区切る）', async () => {
+  it('担当できる人が 書き出し → 読み込み で同じに戻る（列は「経度」の次、名前を「、」で区切る）', async () => {
     const d = withLimit(base());
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(await toBuffer(d));
     const ws = sheet(wb, personSheetNames(d.org.terms).client);
-    expect(col(ws, '担当できる人')).toBe(col(ws, 'いつもの担当') + 1);
+    expect(col(ws, '担当できる人')).toBe(col(ws, '経度') + 1);
     expect(ws.getRow(2).getCell(col(ws, '担当できる人')).value).toBe(`${d.staff[1]!.name}、${d.staff[0]!.name}`);
     const r = ok(await importWorkbook(await toBuffer(d), d));
     expect(r.clients.map((c) => c.allowedStaffIds)).toEqual(d.clients.map((c) => c.allowedStaffIds));
@@ -1234,21 +1237,25 @@ describe('最終勤務日・段階・紹介元・当日キャンセル・拘束�
     expect(sameDay).toContain('2行目・『当日キャンセル』');
   });
 
-  it('「稼働の見込み」のシートは案のある日の〈スタッフ〉ごとの行（読み込みでは見ない）', async () => {
+  it('「稼働の見込み」のシートは担当を組んだ日の〈スタッフ〉ごとの行（読み込みでは見ない）', async () => {
     const d = base();
     const day = d.baseDate;
-    const ids = d.visits.filter((v) => v.date === day && !v.cancelled).map((v) => v.id);
-    const withPlan: DemoData = { ...d, manualPlans: { [day]: { s1: ids.slice(0, 3), __none: ids.slice(3) } } };
+    const on = visitsOn(d, day).filter((v) => !v.cancelled);
+    const withPlan: DemoData = {
+      ...d,
+      visits: on.map((v, i) => (i < 3 ? { ...v, staffId: 's1' } : { ...v, staffId: null, start: null, pinned: false })),
+      snapshots: { [day]: { date: day, at: 1, visits: [] } },
+    };
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(await toBuffer(withPlan));
     const ws = sheet(wb, '稼働の見込み');
     expect(ws.getRow(1).getCell(1).value).toBe('日付');
     expect(ws.getRow(2).getCell(1).value).toBe(day);
-    expect(ws.getRow(2).getCell(3).value).toBe('確定した割当');
+    expect(ws.getRow(2).getCell(3).value).toBe('○');
     expect(ws.getRow(2).getCell(4).value).toBe(3);
     expect(ws.getRow(3).getCell(1).value).toBeNull();
     const r = ok(await importWorkbook(await toBuffer(withPlan), d));
-    expect(r).toEqual(withoutPlans(d));
+    expect(r).toEqual({ ...withPlan, snapshots: d.snapshots });
   });
 });
 
@@ -1470,7 +1477,6 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
         row.getCell(col(ws, '表示名')).value = '新しい 花子';
         row.getCell(col(ws, '色（1〜8）')).value = 3;
         row.getCell(col(ws, '段階')).value = '利用中';
-        row.getCell(col(ws, 'いつもの担当')).value = d.staff[1]?.name ?? '';
       }),
     );
     expect(r.added).toEqual(['新しい 花子']);
@@ -1480,7 +1486,6 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     expect(c?.color).toBe(2);
     expect(c?.stage).toBe('active');
     expect(c?.active).toBe(true);
-    expect(c?.usualStaffId).toBe(d.staff[1]?.id);
     expect(d.clients.some((x) => x.id === c?.id)).toBe(false);
     expect(r.data.clients.slice(0, -1)).toEqual(d.clients);
   });
@@ -1565,12 +1570,8 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     const d = base();
     const msg = rfail(
       await editRoster(d, 'client', (ws) => {
-        ws.getRow(2).getCell(col(ws, 'いつもの担当')).value = '存在しない人';
         ws.getRow(3).getCell(col(ws, '担当できる人')).value = `${d.staff[0]?.name}、だれか`;
       }),
-    );
-    expect(msg).toContain(
-      'シート『利用者さん』の 2行目・『いつもの担当』：「存在しない人」というスタッフは、いまのデータにいません',
     );
     expect(msg).toContain('シート『利用者さん』の 3行目・『担当できる人』：「だれか」');
     const msg2 = rfail(
@@ -1649,9 +1650,8 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     expect(rosterSummary(rc, 'client', d.org.terms)).toContain(
       `終了にする 2人（${c1.displayName}・${c2.displayName}）`,
     );
-    // 案・記録・確定した割当・訪問・パターン・相性は残る（その人を指すものも）
-    expect(rc.data.manualPlans).toEqual(d.manualPlans);
-    expect(rc.data.aiPlans).toEqual(d.aiPlans);
+    // 伝えた内容・訪問・パターン・相性は残る（その人を指すものも）
+    expect(rc.data.snapshots).toEqual(d.snapshots);
     expect(rc.data.visits).toEqual(d.visits);
     expect(rc.data.patterns).toEqual(d.patterns);
     expect(rc.data.compat).toEqual(d.compat);
@@ -1669,8 +1669,7 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     expect(rs.retired).toEqual([s1.name, s2.name]);
     expect(rs.data.staff.find((s) => s.id === s1.id)?.active).toBe(false);
     expect(rs.data.staff).toHaveLength(d.staff.length);
-    expect(rs.data.manualPlans).toEqual(d.manualPlans);
-    expect(rs.data.aiPlans).toEqual(d.aiPlans);
+    expect(rs.data.snapshots).toEqual(d.snapshots);
     expect(rs.data.visits).toEqual(d.visits);
     expect(rosterSummary(rs, 'staff', d.org.terms)).toContain('休止にする 2人');
 

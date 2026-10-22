@@ -1,15 +1,14 @@
-// 予定の画面の急な欠勤（ADR-0011）：欠勤の保存・取り消し、振り直しの元の案、振り直した結果の書き込み・元に戻す。
+// 予定の画面の急な欠勤（ADR-0011・ADR-0053）：欠勤の保存・取り消し、振り直しの元の案、振り直した結果を訪問に書く・元に戻す。
 // どれも純粋関数（データを書き換えず新しい DemoData を返す。画面は update(fn) の中で呼ぶ）
-import type { AiPlan, AiRun, DemoData, ReassignInfo } from '../contracts/data';
+import type { DemoData, ReassignInfo } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
-import type { Problem, SolveResult } from '../contracts/problem';
+import type { Problem } from '../contracts/problem';
 import { type ReassignResult, type Routes, STAY_WEIGHT_DEFAULT } from '../contracts/reassign';
 import { END_AFTER_START_ERROR, HALF_HOUR_ERROR, isHalfHour, timeText } from '../domain/availability';
-import { NONE } from '../domain/scheduleModel';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
-import { score } from '../evaluate';
+import { visitsOn } from '../patterns';
 import { own } from './common';
-import { addRun, findRun } from './runs';
+import { ownerOf, pinsOf, routesOf, writeRoutes } from './dayPlan';
 
 /** その日の欠勤（データの順） */
 export function absencesOn(data: Pick<DemoData, 'absences'>, date: string): Absence[] {
@@ -28,7 +27,7 @@ export function saveAbsence(d: DemoData, absence: Absence): DemoData {
   return { ...d, absences: rest.map((a) => (a === d.absences[at] ? absence : a)) };
 }
 
-/** 欠勤を取り消す。今の案は変えない（差の欄の「元の案に戻す」で戻す。D31） */
+/** 欠勤を取り消す。担当は変えない（差の欄の「振り直す前に戻す」で戻す。D31） */
 export function removeAbsence(d: DemoData, id: string): DemoData {
   return { ...d, absences: d.absences.filter((a) => a.id !== id) };
 }
@@ -66,55 +65,17 @@ export function withoutAbsencesOn<T extends Pick<DemoData, 'absences'>>(data: T,
   return { ...data, absences: data.absences.filter((a) => a.date !== date) };
 }
 
-/** 振り直しの元の案 */
-export type ReassignBase = { routes: Routes; from: ReassignInfo['from']; pins: Record<string, string> };
+/** 振り直しの元の案（今の担当の並びとピン） */
+export type ReassignBase = { routes: Routes; pins: Record<string, string> };
 
 /**
- * 確定した割当（manualPlans[date]。列は訪問データの並び）を、時刻を出せる順に並べ直す：各担当の訪問を今の案（planRoutes）の
- * 列の順に並べ、今の案のその人の列に無い訪問は開始（earliest）の順に、開始がより遅い訪問の前へ挟む。問題に無い訪問・未割当の列は除く。
- * 振り直しの元の案（baseOf）と、キャンセルの連絡の差の「前」（PRD D244）で使う（並びの違いで偽の「時刻が変わる」を出さない）
+ * 振り直しの元の案（D28）：その日の担当の並び（版2：訪問の担当と開始の並び）とピン。問題に無い訪問は除く
  */
-export function orderConfirmed(saved: Routes, planRoutes: Routes | null, problem: Problem): Routes {
-  const inProblem = new Map(problem.visits.map((v, i) => [v.id, i]));
-  const earliest = (id: string) => problem.visits[inProblem.get(id)!]!.earliest;
-  const routes: Routes = {};
-  for (const [k, ids] of Object.entries(saved)) {
-    if (k === NONE) continue;
-    const mine = new Set(ids.filter((id) => inProblem.has(id)));
-    // 今の案のその人の列にある訪問は今の案の順に
-    const list = (planRoutes ? (own(planRoutes, k) ?? []) : []).filter((id) => mine.has(id));
-    const inList = new Set(list);
-    // 残りは開始（earliest）の順に、開始がより遅い訪問の前へ挟む
-    const rest = [...mine]
-      .filter((id) => !inList.has(id))
-      .sort((a, b) => earliest(a) - earliest(b) || inProblem.get(a)! - inProblem.get(b)!);
-    for (const id of rest) {
-      const at = list.findIndex((x) => earliest(x) > earliest(id));
-      if (at < 0) list.push(id);
-      else list.splice(at, 0, id);
-    }
-    routes[k] = list;
-  }
-  return routes;
-}
-
-/**
- * 振り直しの元の案（D28）：その日の確定した割当（manualPlans[date]。担当のいる訪問が1件以上）があればそれ（orderConfirmed で並べる）、
- * 無ければ今の案。どちらも問題に無い訪問は除く。どちらも無ければ null
- */
-export function baseOf(data: DemoData, date: string, problem: Problem): ReassignBase | null {
-  const inProblem = new Map(problem.visits.map((v, i) => [v.id, i]));
-  const saved = own(data.manualPlans, date);
-  const plan = own(data.aiPlans, date);
-  const hasSaved =
-    !!saved && Object.entries(saved).some(([k, ids]) => k !== NONE && ids.some((id) => inProblem.has(id)));
-  if (saved && hasSaved)
-    return { routes: orderConfirmed(saved, plan?.routes ?? null, problem), from: 'confirmed', pins: {} };
-  if (!plan) return null;
-  const routes: Routes = {};
-  for (const [k, ids] of Object.entries(plan.routes)) routes[k] = ids.filter((id) => inProblem.has(id));
-  const pins = Object.fromEntries(Object.entries(plan.pins).filter(([id]) => inProblem.has(id)));
-  return { routes, from: 'plan', pins };
+export function baseOf(data: DemoData, date: string, problem: Problem): ReassignBase {
+  const visits = visitsOn(data, date);
+  const inProblem = new Set(problem.visits.map((v) => v.id));
+  const pins = Object.fromEntries(Object.entries(pinsOf(visits)).filter(([id]) => inProblem.has(id)));
+  return { routes: routesOf(problem, visits), pins };
 }
 
 /** 振り直しの情報から案B の重みを外す（案A にするとき） */
@@ -123,28 +84,35 @@ function withoutAnneal(info: ReassignInfo): ReassignInfo {
   return rest;
 }
 
+/** 振り直したあとのピン：元のピン（担当が同じもの）と、担当が変わった訪問 */
+function pinsAfter(base: ReassignBase, routes: Routes): Record<string, string> {
+  const before = ownerOf(base.routes);
+  const after = ownerOf(routes);
+  const out: Record<string, string> = {};
+  for (const [id, sid] of Object.entries(base.pins)) if (after.get(id) === sid) out[id] = sid;
+  for (const [id, sid] of after) if (before.get(id) !== sid) out[id] = sid;
+  return out;
+}
+
+/** 振り直しの結果を訪問に書き、振り直しの情報を残す */
+function writeReassign(d: DemoData, date: string, problem: Problem, routes: Routes, info: ReassignInfo): DemoData {
+  const base: ReassignBase = { routes: info.baseRoutes, pins: info.basePins };
+  const written = writeRoutes(d, date, problem, routes, { pins: pinsAfter(base, routes) });
+  return { ...written, reassigns: { ...written.reassigns, [date]: info } };
+}
+
 /**
- * 振り直した結果を今の案にし、記録に「欠勤の振り直し」として1件足す（D30）。
- * routes・generated＝結果、pins＝結果の pins（担当のいるすべての訪問）、reassign＝元の案の情報
- * （元の案・その固定・振り直す前の今の案の generated と runId）。
- * 元の案が今の案で、今の案がすでに振り直しの案なら（続けて振り直す）、元の案の情報は最初のものを引き継ぎ、
- * absenceIds は累積する（差・「元の案に戻す」は最初の元の案に対して）。元の案が確定した割当なら新しく作る。
- * problem は振り直しに使った問題（いまの条件。費用の score を付ける）。createdAt は呼ぶ側が渡す（純粋関数のまま）
+ * 振り直した結果（案A）を訪問に書き、振り直しの情報を残す（D30。版2：提案を当てる）。
+ * その日がすでに振り直しのあとなら（続けて振り直す）、元の案の情報は最初のものを引き継ぎ、absenceIds は累積する
+ * （差・「振り直す前に戻す」は最初の元の案に対して）。ピンは元のピン（担当が同じもの）と担当が変わった訪問。
+ * problem は振り直しに使った問題（いまの条件）
  */
 export function applyReassign(
   d: DemoData,
   date: string,
-  x: {
-    problem: Problem;
-    result: ReassignResult;
-    base: ReassignBase;
-    absenceIds: string[];
-    label: string;
-    createdAt: number;
-  },
+  x: { problem: Problem; result: ReassignResult; base: ReassignBase; absenceIds: string[] },
 ): DemoData {
-  const prev = own(d.aiPlans, date);
-  const chained = x.base.from === 'plan' ? prev?.reassign : undefined;
+  const chained = own(d.reassigns, date);
   const info: ReassignInfo = chained
     ? {
         ...withoutAnneal(chained),
@@ -155,204 +123,42 @@ export function applyReassign(
     : {
         method: 'insert',
         insertRoutes: x.result.routes,
-        from: x.base.from,
         baseRoutes: x.base.routes,
         basePins: x.base.pins,
-        ...(prev ? { baseGenerated: prev.generated } : {}),
-        ...(prev?.runId ? { baseRunId: prev.runId } : {}),
         absenceIds: x.absenceIds,
       };
-  return writeReassign(d, date, {
-    problem: x.problem,
-    routes: x.result.routes,
-    unassigned: x.result.unassigned,
-    pins: x.result.pins,
-    info,
-    seed: d.seed,
-    iterations: 0,
-    stopped: false,
-    label: x.label,
-    createdAt: x.createdAt,
-  });
-}
-
-type ReassignWrite = {
-  problem: Problem;
-  routes: Routes;
-  unassigned: string[];
-  pins: Record<string, string>;
-  info: ReassignInfo;
-  seed: number;
-  iterations: number;
-  stopped: boolean;
-  label: string;
-  createdAt: number;
-};
-
-/** 振り直しの結果の記録（addRun に渡す形）と、いまの問題での費用 */
-function reassignRun(d: DemoData, x: ReassignWrite) {
-  const total = score(x.problem, x.routes).total;
-  const solved: SolveResult = {
-    routes: x.routes,
-    unassigned: x.unassigned,
-    score: total,
-    seed: x.seed,
-    iterations: x.iterations,
-    stopped: x.stopped,
-  };
-  const run = {
-    rules: d.rules,
-    pins: x.pins,
-    result: solved,
-    createdAt: x.createdAt,
-    label: x.label,
-    reassign: x.info,
-  };
-  return { run, total };
-}
-
-/** 振り直しの結果を今の案にし、記録に1件足す（applyReassign・chooseReassign で共通） */
-function writeReassign(d: DemoData, date: string, x: ReassignWrite): DemoData {
-  const { run, total } = reassignRun(d, x);
-  const added = addRun(d, date, run);
-  const plan: AiPlan = {
-    date,
-    createdAt: x.createdAt,
-    seed: x.seed,
-    iterations: x.iterations,
-    routes: x.routes,
-    unassigned: x.unassigned,
-    score: total,
-    stopped: x.stopped,
-    rules: d.rules,
-    generated: { routes: x.routes, unassigned: x.unassigned, score: total },
-    pins: x.pins,
-    runId: findRun(added, date, run)?.id,
-    reassign: x.info,
-  };
-  return { ...added, aiPlans: { ...added.aiPlans, [date]: plan } };
+  return writeReassign(d, date, x.problem, x.result.routes, info);
 }
 
 /**
- * 案A・案B のどちらかを今の案にする（PRD D34。ADR-0011 追記）。今の案が振り直しの結果のときだけ（無ければそのまま）。
- * 元の案の情報（baseRoutes・basePins・baseGenerated・baseRunId・absenceIds・insertRoutes）は引き継ぎ、
- * method（案B なら stayWeight も）を変える。記録に1件足す（同じ結果の記録があれば足さずにそれを指す）。
- * 全訪問を固定（result.pins）。problem はいまの条件の問題（費用の score を付ける。stay を入れない問題）
+ * 案A・案B のどちらかを当てる（PRD D34。ADR-0011 追記）。その日が振り直しのあとのときだけ（無ければそのまま）。
+ * 元の案の情報は引き継ぎ、method（案B なら stayWeight も）を変える
  */
 export function chooseReassign(
   d: DemoData,
   date: string,
-  x: {
-    problem: Problem;
-    result: ReassignResult;
-    method: ReassignInfo['method'];
-    stayWeight?: number;
-    seed: number;
-    iterations: number;
-    stopped: boolean;
-    label: string;
-    createdAt: number;
-  },
+  x: { problem: Problem; result: ReassignResult; method: ReassignInfo['method']; stayWeight?: number },
 ): DemoData {
-  const prev = own(d.aiPlans, date)?.reassign;
+  const prev = own(d.reassigns, date);
   if (!prev) return d;
   const info: ReassignInfo =
     x.method === 'anneal'
       ? { ...prev, method: 'anneal', stayWeight: x.stayWeight ?? STAY_WEIGHT_DEFAULT }
       : { ...withoutAnneal(prev), method: 'insert' };
-  return writeReassign(d, date, {
-    problem: x.problem,
-    routes: x.result.routes,
-    unassigned: x.result.unassigned,
-    pins: x.result.pins,
-    info,
-    seed: x.seed,
-    iterations: x.iterations,
-    stopped: x.stopped,
-    label: x.label,
-    createdAt: x.createdAt,
-  });
-}
-
-/** 記録の振り直しの情報が、同じ振り直し（元の案・欠勤・案A が同じ）のものか */
-function sameReassign(a: ReassignInfo, b: ReassignInfo): boolean {
-  const key = (x: ReassignInfo) => JSON.stringify([x.baseRoutes, x.absenceIds, x.insertRoutes ?? null]);
-  return key(a) === key(b);
+  return writeReassign(d, date, x.problem, x.result.routes, info);
 }
 
 /**
- * 作り終えた案B を記録に1件足す（今の案は変えない。PRD D34。ADR-0011 追記）。選ばなくても再読込で消えず、
- * 比較の画面で見られ、差の表（annealRunOf）で選び直せる。今の案が振り直しの結果のときだけ（無ければそのまま）。
- * 記録の reassign は今の案の振り直しの情報に method: 'anneal'・stayWeight を付けたもの。同じ結果・同じ重みの記録があれば足さない。
- * basis（案B を作り始めたときの振り直しの情報）と今の案の振り直し（元の案・欠勤・案A）が違えば足さない（計算中に振り直し直した）
- */
-export function addAnnealRun(
-  d: DemoData,
-  date: string,
-  x: {
-    basis: ReassignInfo;
-    problem: Problem;
-    result: ReassignResult;
-    stayWeight: number;
-    seed: number;
-    iterations: number;
-    stopped: boolean;
-    label: string;
-    createdAt: number;
-  },
-): DemoData {
-  const prev = own(d.aiPlans, date)?.reassign;
-  if (!prev || !sameReassign(prev, x.basis)) return d;
-  const info: ReassignInfo = { ...prev, method: 'anneal', stayWeight: x.stayWeight };
-  const { run } = reassignRun(d, {
-    problem: x.problem,
-    routes: x.result.routes,
-    unassigned: x.result.unassigned,
-    pins: x.result.pins,
-    info,
-    seed: x.seed,
-    iterations: x.iterations,
-    stopped: x.stopped,
-    label: x.label,
-    createdAt: x.createdAt,
-  });
-  return addRun(d, date, run);
-}
-
-/** 今の振り直し（info）の、いちばん新しい案B の記録（無ければ undefined） */
-export function annealRunOf(d: Pick<DemoData, 'aiRuns'>, date: string, info: ReassignInfo): AiRun | undefined {
-  const runs = own(d.aiRuns, date) ?? [];
-  for (let i = runs.length - 1; i >= 0; i--) {
-    const r = runs[i]!;
-    if (r.reassign?.method === 'anneal' && sameReassign(r.reassign, info)) return r;
-  }
-  return undefined;
-}
-
-/**
- * 元の案に戻す（D31）：routes・pins を元の案（baseRoutes・basePins）に、generated・runId を振り直す前のもの
- * （baseGenerated・baseRunId。無ければ generated＝元の案、runId は外す）にし、reassign を外す。
- * 続けて振り直したときも最初の元の案へ戻す。今の案が振り直しでなければそのまま
+ * 振り直す前に戻す（D31）：担当の並び・ピンを元の案（baseRoutes・basePins）に戻し、振り直しの情報を消す。
+ * 続けて振り直したときも最初の元の案へ戻す。その日が振り直しのあとでなければそのまま
  */
 export function revertReassign(d: DemoData, date: string, problem: Problem): DemoData {
-  const plan = own(d.aiPlans, date);
-  if (!plan?.reassign) return d;
+  const info = own(d.reassigns, date);
+  if (!info) return d;
   const ids = new Set(problem.visits.map((v) => v.id));
   const routes: Routes = {};
-  for (const [k, list] of Object.entries(plan.reassign.baseRoutes)) routes[k] = list.filter((id) => ids.has(id));
-  const placed = new Set(Object.values(routes).flat());
-  const unassigned = problem.visits.map((v) => v.id).filter((id) => !placed.has(id));
-  const total = score(problem, routes).total;
-  const info = plan.reassign;
-  const { reassign: _r, runId: _id, ...rest } = plan;
-  const next: AiPlan = {
-    ...rest,
-    routes,
-    unassigned,
-    score: total,
-    generated: info.baseGenerated ?? { routes, unassigned, score: total },
-    pins: info.basePins,
-    ...(info.baseRunId ? { runId: info.baseRunId } : {}),
-  };
-  return { ...d, aiPlans: { ...d.aiPlans, [date]: next } };
+  for (const [k, list] of Object.entries(info.baseRoutes)) routes[k] = list.filter((id) => ids.has(id));
+  const written = writeRoutes(d, date, problem, routes, { pins: info.basePins });
+  const { [date]: _gone, ...reassigns } = written.reassigns;
+  return { ...written, reassigns };
 }

@@ -24,7 +24,6 @@ import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
 import { useLeaveGuard } from '../components/useLeaveGuard';
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
-import { jstDate } from '../domain/time';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
 import {
   addRule,
@@ -44,7 +43,6 @@ import {
   confirmedText,
   confirmTitle,
   draftChanges,
-  draftStaleDays,
   editDraft,
   leaveDialog,
   pruneDraft,
@@ -86,7 +84,7 @@ const DEFAULTS: Record<RuleType, { weight: number; hard: boolean }> = {
 /**
  * 条件（ルール）の一覧。ClassClassify の Setup にならい、重み 0〜5（0.5刻み、0 で半透明＝無効）と必須の切り替え。
  * この画面の重み・必須は点数の基準のプリセット（ふだんの考え方）のもの（ADR-0035。PRD D233）：確定すると基準のプリセットの
- * その型を直し、この日だけ試す重み（data.rules）も基準にそろえる。月のまとめて作る・自動作成・作り直しはこの重みで作る。
+ * その型を直し、条件（data.rules）も基準にそろえる。AI で組む・点数・検査はこの重みで計算する（版2：重みは1組）。
  * 表の重み・必須は動かしても保存せず、画面の中の下書きに置く（PRD D286。ADR-0048）。保存済みと違う行は注意の色と「変更あり 3→4」、
  * 「変更を確定（N件）」で確認（変わる重みと影響する日）のあとまとめて書く。「取り消す」で捨てる。下書きのまま画面を離れるときは確かめる
  */
@@ -161,11 +159,10 @@ export default function RulesPage() {
     const list = changes;
     const values = draft;
     if (list.length === 0) return;
-    const name = basis?.name ?? 'この日だけの重み';
-    const stale = draftStaleDays(applyDraft(data, values), jstDate(Date.now()));
+    const name = basis?.name ?? '点数の基準';
     const ok = await confirmDialog({
       title: confirmTitle(list.length),
-      body: confirmBody(list, name, stale),
+      body: confirmBody(list, name),
       confirmLabel: '確定する',
       cancelLabel: '編集を続ける',
     });
@@ -212,7 +209,7 @@ export default function RulesPage() {
         nav={<SettingsTabs />}
         icon={SlidersHorizontal}
         title="条件の重み"
-        lead="ふだん使う重みを決めます。月のまとめて作る・作り直しは、この重みで作ります"
+        lead="ふだん使う重みを決めます。AI で組む・点数・要対応の検査に、この重みを使います"
       />
       <div className="card stack">
         <Hint label="点のしくみ">
@@ -223,7 +220,7 @@ export default function RulesPage() {
             </li>
             <li>重み0の条件は使いません。</li>
             <li>「必須」にした条件は、守れない人を担当にしません。約束の時間と働ける時間は、いつも必須です。</li>
-            <li>画面の点数は、{SCORE_TEXT}です。高いほど良い案です。</li>
+            <li>画面の点数は、{SCORE_TEXT}です。高いほど良い組み方です。</li>
           </ul>
         </Hint>
         <p className="sub" data-testid="rules-basis">
@@ -233,7 +230,8 @@ export default function RulesPage() {
           」の重みです。基準は下のプリセットの節で替えられます。同じ種類の条件は同じ重みになります。
         </p>
         <p className="sub" data-testid="rules-trial-note">
-          {'日の予定で変えた「この日だけの重み」は、ここで直すと基準の重みに戻ります。'}
+          重みを変えても今の担当は変わりません。日の予定の「AI
+          で組む」で、この重みの提案（点の差つき）を出して当てられます。
         </p>
         {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と必須が1行目、種類・重みは見出し付きの行、消すは右下） */}
         <div className="table-scroll">
@@ -363,7 +361,8 @@ export default function RulesPage() {
         </summary>
         <p className="sub">
           <Term k="seed" testId="term-seed" />
-          ：AI案は同じデータ・同じ種からは同じ案になります。種を変えると、別の探し方で案を作ります。ふだんは変えなくてかまいません。
+          ：AI
+          は同じデータ・同じ種からは同じ提案を出します。種を変えると、別の探し方で組みます。ふだんは変えなくてかまいません。
         </p>
         <div className="row">
           <input
@@ -498,7 +497,7 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
   const terms = data.org.terms;
   const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
-  /** この日だけ試す重みが当てはまるプリセット（基準を先に見る） */
+  /** 条件の重みが当てはまるプリセット（基準を先に見る。版2ではいつも基準） */
   const current = trialPresetOf(data);
   /** 点数の基準のプリセット（ADR-0010） */
   const ruler = scorePresetOf(data.presets, data.scorePresetId);
@@ -533,7 +532,7 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
       ruler?.id === p.id && next ? `\n点数の基準は「${next.name}」に移り、点数が変わります。${dropNote}` : '';
     const ok = await confirmDialog({
       title: `プリセット「${p.name}」を消しますか？`,
-      body: `作った案は残ります。${moved}`,
+      body: `今の担当はそのままです。${moved}`,
       confirmLabel: '消す',
       tone: 'danger',
     });
@@ -559,8 +558,8 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
         aside={
           <Hint>
             <ul className="hint-list">
-              <li>日の予定で、プリセットごとに案を作って比べられます。</li>
-              <li>点数の基準に選んだプリセットで、月のまとめて作る・作り直しをします。</li>
+              <li>日の予定で、プリセットを当ててみて提案を比べられます（比べた提案は保存しません）。</li>
+              <li>点数の基準に選んだプリセットの重みで、AI で組みます。</li>
               <li>{MAX_PRESETS}つまで作れます。変えるとすぐ保存します。</li>
             </ul>
           </Hint>
@@ -576,7 +575,7 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
           <Hint ariaLabel="点数の基準の説明">
             <ul className="hint-list">
               <li>ここで選んだプリセットが、ふだん使う重みです。</li>
-              <li>月のまとめて作る・作り直し・点数に、この重みを使います。</li>
+              <li>AI で組む・点数・要対応の検査に、この重みを使います。</li>
               <li>上の表で直すのは、このプリセットの重みです。</li>
             </ul>
           </Hint>

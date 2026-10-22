@@ -84,10 +84,8 @@ describe('staffClientMap', () => {
         ['s2', undefined],
         ['s1', 'c1'],
       ],
-      [
-        { id: 'c3', usualStaffId: 's2' },
-        { id: 'c4', usualStaffId: null },
-      ],
+      [{ id: 'c3' }, { id: 'c4' }],
+      new Map([['c3', 's2']]),
     );
     expect([...(m.get('s1') ?? [])]).toEqual(['c1', 'c2']);
     expect([...(m.get('s2') ?? [])]).toEqual(['c3']);

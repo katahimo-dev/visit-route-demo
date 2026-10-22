@@ -1,5 +1,5 @@
 // 予定（月・週・日）に共通の進み具合の帯（PRD D151〜D155。ADR-0025 追記）。
-// 見ている月の今日以降について「訪問・案を作った日・確定した日・要対応」と次の一手のボタンを1つ。
+// 見ている月の今日以降について「訪問・担当が全部入った日・確定した日・要対応」と次の一手のボタンを1つ。
 // 数え方は月の画面の「今月の準備」・ホームと同じ（lib/useDayStatuses と lib/month の monthProgress・attentionList）。データは書き換えない
 import { Check, CircleAlert, Lock, type LucideIcon, Repeat, Sparkles } from 'lucide-react';
 import { type MouseEvent, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,7 +13,6 @@ import {
   batchTargets,
   type DayState,
   type DayStatus,
-  expandMonthVisits,
   type MonthProgress,
   monthDates,
   monthProgress,
@@ -37,9 +36,7 @@ import './progressBand.css';
 export type BandModel = {
   ym: string;
   progress: MonthProgress;
-  /** 定期パターンからまだ作っていない訪問の件数 */
-  canExpand: number;
-  /** 訪問を作ったあとの「まだ案の無い日だけ」の対象の日数 */
+  /** 担当なしの訪問がある日の数（担当を AI で組む日） */
   emptyTargets: number;
   /** 要対応のうち手当てが要る件数 */
   urgent: number;
@@ -57,16 +54,15 @@ const NEXT_ICON: Record<BandNextKind, LucideIcon> = {
 };
 
 const DAY_STATE: Record<DayState, string> = {
-  none: '案なし',
-  plan: '未確定',
-  diff: '未確定の変更あり',
-  confirmed: '確定済み',
+  none: 'まだ伝えていない',
+  changed: '未連絡の変更あり',
+  told: '確定済み',
 };
 
 const PART_LABEL: Record<PrepPart['kind'], string> = {
   confirmed: '確定済み',
-  planned: '案あり（未確定）',
-  none: '案なし',
+  planned: '担当あり（未確定）',
+  none: '要対応あり',
 };
 
 /**
@@ -113,17 +109,17 @@ export const ProgressBand = memo(function ProgressBand({
       </section>
     );
   }
-  const { progress: p, canExpand } = model;
+  const { progress: p } = model;
   const next = bandNext(model);
   const NextIcon = NEXT_ICON[next.kind];
   const unconfirmed = p.unconfirmed.length;
-  const visitsDone = p.visits > 0 && canExpand === 0;
+  const visitsDone = p.visits > 0 && model.emptyTargets === 0;
   const planDone = p.days > 0 && p.planned === p.days;
   const confirmDone = p.days > 0 && p.confirmed === p.days;
   const parts = prepParts(p);
   const dayState = day?.status ? (day.status.count === 0 ? '訪問なし' : DAY_STATE[day.status.state]) : null;
-  /** 案があって確定していない日（日の画面の「この割当で確定」で確定する。PRD D155） */
-  const dayOpen = !!day?.status && day.status.count > 0 && (day.status.state === 'plan' || day.status.state === 'diff');
+  /** 確定していない日（日の画面の「確定」で確定する。PRD D155） */
+  const dayOpen = !!day?.status && day.status.count > 0 && day.status.state !== 'told';
   const done = (x: boolean) => (x ? '（済）' : '');
   return (
     <section
@@ -142,12 +138,12 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${visitsDone ? ' is-done' : ''}`}
-            title={`今日以降の訪問 ${p.visits}件${canExpand > 0 ? `。定期パターンからまだ作っていない訪問（未作成）${canExpand}件` : ''}。押すと月の予定の「まとめて作る」の欄を開きます`}
-            aria-label={`訪問 ${visitsText(p.visits, canExpand)}${done(visitsDone)}。まとめて作るを開く`}
+            title={`今日以降の訪問 ${p.visits}件。押すと月の予定の「担当を AI で組む」の欄を開きます`}
+            aria-label={`訪問 ${visitsText(p.visits)}${done(visitsDone)}。担当を AI で組むを開く`}
             data-testid="band-visits"
           >
             {visitsDone && <DoneMark />}
-            訪問 <strong>{visitsText(p.visits, canExpand)}</strong>
+            訪問 <strong>{visitsText(p.visits)}</strong>
           </Link>
         </li>
         <li>
@@ -155,13 +151,13 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${planDone ? ' is-done' : ''}`}
-            title={`案を作った日 ${p.planned}/${p.days}日（訪問のある日のうち）。押すと月の予定の「まとめて作る」の欄を開きます`}
+            title={`担当が全部入った日（要対応の無い日） ${p.planned}/${p.days}日（訪問のある日のうち）。押すと月の予定の「担当を AI で組む」の欄を開きます`}
             data-testid="band-plans"
             data-planned={p.planned}
             data-days={p.days}
-            aria-label={`案を作った日 ${p.planned}/${p.days}日${done(planDone)}。まとめて作るを開く`}
+            aria-label={`担当が全部入った日 ${p.planned}/${p.days}日${done(planDone)}。担当を AI で組むを開く`}
           >
-            {planDone && <DoneMark />}案
+            {planDone && <DoneMark />}担当
             <strong>
               {p.planned}/{p.days}
             </strong>
@@ -208,7 +204,7 @@ export const ProgressBand = memo(function ProgressBand({
       {day && dayState && (
         <span className={`pb-day${dayOpen ? ' is-open' : ''}`} data-testid="band-day" data-state={day.status?.state}>
           この日 <strong>{dayState}</strong>
-          {dayOpen && <span className="sub pb-long">（「この割当で確定」で確定）</span>}
+          {dayOpen && <span className="sub pb-long">（伝えたら「確定」）</span>}
         </span>
       )}
       <span className="pb-next">
@@ -245,7 +241,7 @@ export const ProgressBand = memo(function ProgressBand({
       </span>
       {/* 読み上げ：数え直して変わったときだけ（最初は空の要素を置き、後から中身を入れる） */}
       <BandLive
-        text={`${month}：案 ${p.planned}/${p.days}日・確定 ${p.confirmed}/${p.days}日・要対応 ${p.attention}件。次は${next.label}`}
+        text={`${month}：担当 ${p.planned}/${p.days}日・確定 ${p.confirmed}/${p.days}日・要対応 ${p.attention}件。次は${next.label}`}
       />
       {p.days > 0 && (
         <span
@@ -275,8 +271,8 @@ function DoneMark() {
 }
 
 /**
- * 帯の読み上げの領域（aria-live）。最初は空のまま置き、描いた後に数えた結果が変わったとき（確定した・案を作ったなど）だけ中身を入れる
- * （開いたとき・画面を移ったときには読み上げない）。作り直しの帯（components/rebuildBand。PRD D164）も使う
+ * 帯の読み上げの領域（aria-live）。最初は空のまま置き、描いた後に数えた結果が変わったとき（確定した・担当を組んだなど）だけ中身を入れる
+ * （開いたとき・画面を移ったときには読み上げない）
  */
 export function BandLive({
   text,
@@ -285,7 +281,7 @@ export function BandLive({
 }: {
   text: string;
   testId?: string;
-  /** e2e が読む data-* 属性（作り直しの帯の日数など） */
+  /** e2e が読む data-* 属性 */
   data?: Record<`data-${string}`, string | number>;
 }) {
   const [said, setSaid] = useState('');
@@ -304,33 +300,29 @@ export function BandLive({
 }
 
 /**
- * 帯に出すものを数える（週・日の画面）。月の画面と同じ数え方：その月の今日以降の日を useDayStatuses で compile・採点し、
- * monthProgress・attentionList・定期パターンから作れる訪問・まとめて作るの対象。
+ * 帯に出すものを数える（週・日の画面）。月の画面と同じ数え方：その月の今日以降の日を useDayStatuses で compile・検査し、
+ * monthProgress・attentionList・担当なしの訪問がある日。
  * extraDate（日の画面で選んでいる日）が今日より前でも、その日の状態だけは数える（進み具合には入れない）
  */
 function useBandModel(data: DemoData, ym: string, today: string, extraDate?: string) {
   const compileInput = useCompileInput(data);
   const days = useMemo(() => monthDates(ym).filter((d) => d >= today || d === extraDate), [ym, today, extraDate]);
   const perDay = useDayStatuses(data, compileInput, days);
-  // 定期パターンからの展開は、定期パターン・訪問・〈利用者さん〉と月で覚える（案の手直し・確定のたびに月全体を展開し直さない）
-  const { patterns, visits, clients } = data;
-  const expanded = useMemo(
-    () => expandMonthVisits({ patterns, visits, clients }, ym, today),
-    [patterns, visits, clients, ym, today],
-  );
   const model = useMemo((): BandModel => {
     const statusOf = (d: string) => perDay.get(d)?.status;
-    const progress = monthProgress(data, ym, today, undefined, statusOf);
+    const progress = monthProgress(data, ym, today, statusOf);
     const statuses = days.flatMap((d) => (d >= today ? (statusOf(d) ?? []) : []));
-    const staleOf = (d: string) => statusOf(d)?.stale ?? false;
+    const unassignedOf = (d: string) => {
+      const s = statusOf(d);
+      return s && s.unassigned > 0 ? s : undefined;
+    };
     return {
       ym,
       progress,
-      canExpand: expanded.added,
-      emptyTargets: batchTargets({ ...data, visits: expanded.visits }, ym, today, 'empty', staleOf).length,
+      emptyTargets: batchTargets(data, monthDates(ym), today, 'care', unassignedOf).length,
       urgent: urgentCount(attentionList(data, statuses, today)),
     };
-  }, [data, ym, today, days, perDay, expanded]);
+  }, [data, ym, today, days, perDay]);
   const day = extraDate ? (perDay.get(extraDate)?.status ?? null) : null;
   return { model, day };
 }

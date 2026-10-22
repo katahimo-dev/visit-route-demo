@@ -179,39 +179,28 @@
   background: #fff;
   color: #fff;
 }
-/* 状態：案なし＝白・点線、案あり＝淡い緑、確定済み＝濃い緑＋鍵、未確定の変更あり＝淡い黄。
-   赤は要対応だけ（入らない・必須の違反・休みの人に訪問＝赤い太枠＋赤い点）。今日以降の案なしは注意（黄の細い点線。PRD D228） */
+/* 状態（版2。ADR-0053）：まだ伝えていない＝淡い緑、確定済み＝濃い緑＋鍵、未連絡の変更あり＝淡い黄＋鉛筆。
+   赤は要対応だけ（担当なし・担当が休み・条件に合わない・時間に間に合わない＝赤い太枠＋赤い点。PRD D228） */
 .month-swatch.is-state-none,
 .month-cell.is-state-none .month-cell-btn {
-  background: #fff;
-  border-style: dashed;
-  border-color: #cdbfb4;
-}
-.month-swatch.is-state-plan,
-.month-cell.is-state-plan .month-cell-btn {
   background: #eef7f0;
   border-color: #cfe6d6;
 }
-.month-swatch.is-state-confirmed {
+.month-swatch.is-state-told {
   background: #4f9a6c;
   border-color: #3f8a5c;
 }
-.month-cell.is-state-confirmed .month-cell-btn {
+.month-cell.is-state-told .month-cell-btn {
   background: #dcefe2;
   border-color: #4f9a6c;
 }
-.month-swatch.is-state-diff {
+.month-swatch.is-state-changed {
   color: #8a6a12;
 }
-.month-swatch.is-state-diff,
-.month-cell.is-state-diff .month-cell-btn {
+.month-swatch.is-state-changed,
+.month-cell.is-state-changed .month-cell-btn {
   background: #fdf4d8;
   border-color: #ecd48f;
-}
-.month-swatch.is-caution,
-.month-cell.is-caution:not(.is-making) .month-cell-btn {
-  background: #fffaf0;
-  border: 1.5px dashed var(--warn-line);
 }
 .month-swatch.is-care,
 .month-cell.is-care .month-cell-btn {
@@ -656,26 +645,21 @@
   display: none;
 }
 /* 状態の色はマスと同じ */
-.month-list-btn.is-state-empty,
-.month-list-btn.is-state-none {
+.month-list-btn.is-state-empty {
   border-style: dashed;
   border-color: #cdbfb4;
 }
-.month-list-btn.is-state-plan {
+.month-list-btn.is-state-none {
   background: #eef7f0;
   border-color: #cfe6d6;
 }
-.month-list-btn.is-state-confirmed {
+.month-list-btn.is-state-told {
   background: #dcefe2;
   border-color: #4f9a6c;
 }
-.month-list-btn.is-state-diff {
+.month-list-btn.is-state-changed {
   background: #fdf4d8;
   border-color: #ecd48f;
-}
-.month-list-btn.is-caution {
-  background: #fffaf0;
-  border: 1.5px dashed var(--warn-line);
 }
 .month-list-btn.is-care {
   border: 2.5px solid var(--danger);

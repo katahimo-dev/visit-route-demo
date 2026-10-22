@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Pattern } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import { client, DATE, ITEMS, makeData, randomData, rule, staff, visit } from './fixtures';
 import { compile, conditionText, matches, routeCost, scheduleRoute } from './index';
@@ -86,11 +87,29 @@ describe('compile：可否と割当費用', () => {
     const ph = compile(twoStaff({ rules: [rule('cp', 'compatibility', 1, true)], compat: { c1: { s2: -1 } } }), DATE);
     expect(ph.allowed[0]).toEqual([true, false]);
   });
-  it('いつもの担当でない＝重み×10、hard なら外す', () => {
-    const p = compile(twoStaff({ rules: [rule('co', 'continuity', 2)] }, { usualStaffId: 's2' }), DATE);
+  it('いつもの担当でない＝重み×10、hard なら外す（いつもの担当は繰り返しの担当。版2）', () => {
+    const pat: Pattern = {
+      id: 'p1',
+      clientId: 'c1',
+      typeId: null,
+      weekdays: [1],
+      everyWeeks: 1,
+      repeat: 'weekly',
+      monthWeeks: [],
+      dayTimes: [],
+      windowKind: 'window',
+      earliestStart: '10:00',
+      latestStart: '11:00',
+      durationMinutes: 60,
+      from: DATE,
+      to: null,
+      usualStaffId: 's2',
+      note: '',
+    };
+    const p = compile(twoStaff({ rules: [rule('co', 'continuity', 2)], visits: [], patterns: [pat] }), DATE);
     expect(p.assignCost[0]).toEqual([20, 0]);
     expect(p.reasons[0]![1]![0]!.label).toBe('いつもの担当');
-    const ph = compile(twoStaff({ rules: [rule('co', 'continuity', 0, true)] }, { usualStaffId: 's2' }), DATE);
+    const ph = compile(twoStaff({ rules: [rule('co', 'continuity', 0, true)], visits: [], patterns: [pat] }), DATE);
     expect(ph.allowed[0]).toEqual([false, true]);
   });
   it('同じ型の条件が複数あれば各々で数える', () => {

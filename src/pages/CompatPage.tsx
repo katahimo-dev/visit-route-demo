@@ -164,7 +164,7 @@ export default function CompatPage() {
   // ---- 行（〈利用者さん〉）の絞り込み（?cf=。期間は選んでいる日を含む週）----
   const { date } = useDay();
   const dates = useMemo(() => weekDates(date), [date]);
-  // 週の帯は、相性のセルを押すたびに作り直さない（チップの判定に使うのは帯の担当・訪問の有無だけ）
+  // 週の帯は、相性のセルを押すたびに作り直さない（チップの判定に使うのは帯の担当・訪問の有無だけ。担当は訪問にある）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 相性（compat）が変わっただけでは作り直さない
   const days = useMemo(
     () => dates.map((d) => weekDay(data, d)),
@@ -181,8 +181,6 @@ export default function CompatPage() {
       data.visitTypes,
       data.patterns,
       data.clientLeaves,
-      data.aiPlans,
-      data.manualPlans,
     ],
   );
   const cfParam = paramOf(params, 'cf');
@@ -195,14 +193,13 @@ export default function CompatPage() {
     () =>
       filterFacts({
         days,
-        visits: data.visits,
         clients,
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff: data.staff,
         visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, data.staff],
+    [days, clients, data.patterns, data.clientLeaves, data.visitTypes, data.staff],
   );
   /**
    * 相性のチップの判定に使う相性の写し（PRD D116）。絞り込みを変えたときの相性に止め、セルを押しても行を消さない

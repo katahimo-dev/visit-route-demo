@@ -30,8 +30,8 @@ import { candidatesFor, reassign, targetsOf } from '../reassign';
 /** 見込み（振り直す訪問）：入力のたびに targetsOf を呼ぶ */
 export type AbsencePreview = {
   targets: ReassignTarget[];
-  /** 振り直しの元の案（無ければ null＝振り直せない） */
-  baseFrom: ReassignInfo['from'] | null;
+  /** 振り直しの元の案に担当のある訪問があるか（無ければ振り直せない） */
+  hasBase: boolean;
   /** 案A（空き時間に入れるだけ）で入らない見込みの件数（案B を勧める。2回目） */
   unplacedA: number;
 };
@@ -42,13 +42,14 @@ export function previewOf(data: DemoData, date: string, absence: Absence): Absen
     const d = saveAbsence(data, absence);
     const p = compile(d, date);
     const base = baseOf(d, date, p);
-    if (!base) return { targets: [], baseFrom: null, unplacedA: 0 };
+    if (Object.values(base.routes).every((ids) => ids.length === 0))
+      return { targets: [], hasBase: false, unplacedA: 0 };
     const absent = [...new Set(absencesOn(d, date).map((a) => a.staffId))];
     const plan = { problem: compile(withoutAbsencesOn(d, date), date), routes: base.routes };
     const targets = targetsOf(p, plan, absent);
     // 案A の見込み（決定的で速い）。入らない訪問があれば案B を勧める
     const unplacedA = reassign(p, base.routes, targets).unplaced.length;
-    return { targets, baseFrom: base.from, unplacedA };
+    return { targets, hasBase: true, unplacedA };
   }).value;
 }
 
@@ -242,7 +243,7 @@ export function ReassignBar({
           {extraActions}
           <button type="button" className="btn btn-small" disabled={running} onClick={onRevert}>
             <WithIcon icon={Undo2} size={14}>
-              元の案に戻す
+              振り直す前に戻す
             </WithIcon>
           </button>
           {onCompare && (
@@ -305,18 +306,17 @@ export function ReassignBar({
         </div>
       )}
       <span className="sub">
-        元の案：{info.from === 'confirmed' ? '確定した割当' : '今の案'}
         {info.method === 'anneal'
-          ? `。案B（変更を減らす ${info.stayWeight ?? ''}）では、ほかの人の訪問も少し動かしています（薄い列は変わらない人）`
-          : '。振り直しでは、ほかの人の担当・順番・時刻は変えていません（「受けられる人」から入れた分・手直しは除く。薄い列は変わらない人）'}
+          ? `案B（変更を減らす ${info.stayWeight ?? ''}）では、ほかの人の訪問も少し動かしています（薄い列は変わらない人）`
+          : '振り直しでは、ほかの人の担当・順番・時刻は変えていません（「受けられる人」から入れた分・手直しは除く。薄い列は変わらない人）'}
         <Hint>
-          振り直した訪問に「代行」、開始が変わった訪問に「+N分」が付きます。振り直したあとは、全部の訪問にピンが付きます。入らない訪問は「受けられる人」から入れられます。
+          振り直した訪問に「代行」、開始が変わった訪問に「+N分」が付きます。担当が変わった訪問にはピンが付きます。担当なしの訪問は「受けられる人」から入れられます。
         </Hint>
       </span>
       {cancelled && (
         <span className="warn-text row" style={{ gap: 4 }}>
           <TriangleAlert size={14} aria-hidden="true" />
-          欠勤は取り消されています。元の案に戻せます
+          欠勤は取り消されています。振り直す前に戻せます
         </span>
       )}
       {children}

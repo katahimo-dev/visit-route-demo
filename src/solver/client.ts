@@ -3,7 +3,7 @@ import type { Problem, SolveOptions, SolveResult, WorkerRequest, WorkerResponse 
 /** 上限の時間（ms）。これを過ぎたら stop して途中の案を採る */
 const TIME_LIMIT_MS = 30_000;
 /** 利用者に見せるエラーの文言（内部の文言は出さない） */
-const ERROR_MESSAGE = 'AI案を作れませんでした。もう一度お試しください。';
+const ERROR_MESSAGE = 'AI で組めませんでした。もう一度お試しください。';
 
 let counter = 0;
 

@@ -7,7 +7,7 @@ import { addDays, hhmmToMinutes, weekday } from '../domain/time';
 import { own, WEEKDAY_LABELS } from './common';
 import { addMonths, ymOf } from './month';
 import { mdText } from './patternText';
-import { assignmentOf, clientVisitsIn, staffVisitsIn } from './visitOps';
+import { clientVisitsIn, staffVisitsIn } from './visitOps';
 import { weekDates, weekStart } from './week';
 
 // ---- ルートとタブ ----
@@ -93,12 +93,12 @@ export function calTitle(view: CalView, anchor: string): string {
 }
 
 /** カレンダーの回の様子 */
-export type CalState = 'assigned' | 'unassigned' | 'noplan' | 'cancelled' | 'sameDay' | 'leave';
+export type CalState = 'assigned' | 'unassigned' | 'cancelled' | 'sameDay' | 'leave';
 
 /** カレンダーの回1つ */
 export type CalItem = {
   visit: Visit;
-  /** その日の担当（今の案、無ければ確定した割当） */
+  /** 担当（訪問の担当） */
   staffId: string | null;
   pinned: boolean;
   state: CalState;
@@ -109,9 +109,9 @@ export type CalItem = {
   end: number;
 };
 
-/** 回の様子：取り消し → 休み → 担当あり → 担当なし（案はある）→ 案なし */
-function calItemOf(d: Pick<DemoData, 'aiPlans' | 'manualPlans' | 'clientLeaves'>, v: Visit): CalItem {
-  const a = assignmentOf(d, v.id, v.date);
+/** 回の様子：取り消し → 休み → 担当あり → 担当なし */
+function calItemOf(d: Pick<DemoData, 'clientLeaves'>, v: Visit): CalItem {
+  const a = { staffId: v.staffId, pinned: v.pinned };
   const start = hhmmToMinutes(v.earliestStart);
   const state: CalState = v.cancelled
     ? v.cancelKind === 'sameDay'
@@ -121,9 +121,7 @@ function calItemOf(d: Pick<DemoData, 'aiPlans' | 'manualPlans' | 'clientLeaves'>
       ? 'leave'
       : a.staffId
         ? 'assigned'
-        : a.source
-          ? 'unassigned'
-          : 'noplan';
+        : 'unassigned';
   return {
     visit: v,
     staffId: v.cancelled ? null : a.staffId,
@@ -137,7 +135,7 @@ function calItemOf(d: Pick<DemoData, 'aiPlans' | 'manualPlans' | 'clientLeaves'>
 
 /** 〈利用者さん〉のその期間の回（取り消しも。日付・開始の順） */
 export function clientCalItems(
-  d: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'clientLeaves'>,
+  d: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves'>,
   clientId: string,
   from: string,
   to: string,
@@ -147,7 +145,7 @@ export function clientCalItems(
 
 /** 〈スタッフ〉が担当しているその期間の回（取り消しは出さない。日付・開始の順） */
 export function staffCalItems(
-  d: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'clientLeaves'>,
+  d: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves'>,
   staffId: string,
   from: string,
   to: string,
@@ -170,18 +168,10 @@ export function itemsByDate(items: readonly CalItem[]): Map<string, CalItem[]> {
 export const CAL_STATE_TEXT: Record<CalState, string> = {
   assigned: '',
   unassigned: '担当なし',
-  noplan: '案なし',
   cancelled: '取り消し',
   sameDay: '当日キャンセル',
   leave: '休みのため無し',
 };
-
-/** 訪問を作ってある最後の日（無ければ null）。この日より後はまだ作っていない（月の予定で作る） */
-export function lastMadeDate(visits: readonly Pick<Visit, 'date'>[]): string | null {
-  let m: string | null = null;
-  for (const v of visits) if (m === null || v.date > m) m = v.date;
-  return m;
-}
 
 /**
  * 〈スタッフ〉のその期間の欠勤・希望休（日付の順）。希望休は note が「希望休」の終日の欠勤（lib/requestedOff）
@@ -201,8 +191,8 @@ export function slotOf(a: number, b: number, fallback = 60, step = 15): { start:
   return { start: Math.min(a, b), duration: Math.abs(b - a) + step };
 }
 
-/** 確定した割当のある日か（カレンダーの日の見出しの印） */
-export const confirmedOn = (d: Pick<DemoData, 'manualPlans'>, date: string): boolean => !!own(d.manualPlans, date);
+/** 確定した（伝えた）日か（カレンダーの日の見出しの印） */
+export const confirmedOn = (d: Pick<DemoData, 'snapshots'>, date: string): boolean => !!own(d.snapshots, date);
 
 /** 〈利用者さん〉から見た〈スタッフ〉の相性（記号ごと。数えるのは渡した〈スタッフ〉。並びは渡した順） */
 export function clientStaffGroups<S extends { id: string }>(

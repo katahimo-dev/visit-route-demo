@@ -3,8 +3,6 @@ import { MAX_PRESETS } from '../contracts/rules';
 import { naivePlan, normalize, score, toHundred } from '../evaluate';
 import { compile } from '../matching';
 import { applyPreset, createDemoData, INITIAL_PRESETS, presetOf, scorePresetOf, scoreRulesOf } from '../seed';
-import { withSeedPlans } from '../seed/plans';
-import { batchTargets, currentRuleKeys, planRunOf, rulesStale } from './month';
 import {
   addPresetError,
   addPresetFromRules,
@@ -79,7 +77,7 @@ describe('点数の基準（ADR-0010）', () => {
 
   it('点数の物差しは、プリセットのカードで条件の重みを変えても変わらない。基準を替えると変わる', () => {
     const d = base();
-    const date = d.visits[0]!.date;
+    const date = d.baseDate;
     const ruler = (x: typeof d) => {
       const p = compile({ ...x, rules: scoreRulesOf(x) }, date);
       const routes = naivePlan(p);
@@ -179,23 +177,6 @@ describe('条件の重みの画面＝点数の基準の重みを直す画面（A
     expect(fromBasis.presets.at(-1)!.weights).toEqual(d0.presets[0]!.weights);
     const fromTrial = addPresetFromRules(trial, '試し');
     expect(fromTrial.presets.at(-1)!.weights.wait.weight).toBe(4.5);
-  });
-
-  it('自動作成（初期データの案）は直した基準の重みで作り、作った日は月の「条件が変わった日だけ作り直す」の対象になる', () => {
-    const d0 = base();
-    const date = d0.visits[0]!.date;
-    const before = withSeedPlans(d0, date, 1);
-    expect(waitOf(planRunOf(before, date)!.rules)).toBe(3);
-    // 重みを直したあとに作れば、その重みで作る
-    const edited = setBasisWeight(d0, 'wait', { weight: 1 });
-    const made = withSeedPlans(edited, date, 1);
-    expect(waitOf(planRunOf(made, date)!.rules)).toBe(1);
-    expect(planRunOf(made, date)!.presetId).toBe('standard');
-    // 古い重みで作った案は、重みを直すと「条件が変わった」になり、月の作り直しの対象になる
-    const after = setBasisWeight(before, 'wait', { weight: 1 });
-    const keys = currentRuleKeys(after.rules, after.presets);
-    expect(rulesStale(after, date, keys)).toBe(true);
-    expect(batchTargets(after, date.slice(0, 7), date, 'stale', (x) => rulesStale(after, x, keys))).toContain(date);
   });
 });
 

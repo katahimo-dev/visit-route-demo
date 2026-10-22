@@ -16,9 +16,8 @@ const base: CellGuideInput = {
   lastDays: false,
   loadBar: null,
   unassigned: false,
-  hard: false,
-  absentLeft: false,
-  stale: false,
+  issues: false,
+  changed: false,
   overSpan: false,
   staffTerm: 'スタッフ',
   clientTerm: '利用者さん',
@@ -32,70 +31,59 @@ describe('cellGuide', () => {
     const lines = cellGuide({
       ...base,
       count: 12,
-      stateText: '案あり',
+      stateText: 'まだ伝えていない',
       types: true,
       resting: 2,
       requested: 1,
       loadBar: 'load',
     });
-    expect(lines[0]).toBe('背景の色＝日の状態（案あり）');
+    expect(lines[0]).toBe('背景の色＝日の状態（まだ伝えていない）');
     expect(lines).toContain('右上の「N件」＝この日の訪問の件数');
     expect(lines).toContain('「休 N」＝休むスタッフの人数・「（希 N）」＝そのうち希望休の人数');
     expect(lines.some((l) => l.startsWith('下の3段の棒＝30分ごとの空きの人数') && l.includes('8〜12時'))).toBe(true);
     expect(lines.some((l) => l.includes('欠勤'))).toBe(false);
   });
-  it('希望休が無ければ希の説明は書かない。案の無い日は棒が無い理由', () => {
-    const lines = cellGuide({
-      ...base,
-      count: 3,
-      stateText: '案なし',
-      care: false,
-      caution: true,
-      resting: 1,
-      loadBar: 'noPlan',
-    });
+  it('希望休が無ければ希の説明は書かない。数えられない日は棒が無い理由', () => {
+    const lines = cellGuide({ ...base, count: 3, stateText: 'まだ伝えていない', resting: 1, loadBar: 'noPlan' });
     expect(lines).toContain('「休 N」＝休むスタッフの人数');
-    expect(lines).toContain('棒が無い＝案が無いので空きを数えていない');
-    // 案の無い日は注意（黄）。赤は要対応だけ（PRD D228）
-    expect(lines).toContain('黄の点線の枠＝注意（訪問があるのにまだ案が無い。まとめて作るか日の予定で作る）');
+    expect(lines).toContain('棒が無い＝この日は空きを数えられない');
     expect(lines.some((l) => l.startsWith('赤い点'))).toBe(false);
-    const red = cellGuide({ ...base, count: 3, stateText: '案あり', care: true, unassigned: true });
-    expect(red).toContain('赤い点・赤い枠＝要対応（入らない訪問・守れない条件・休みの人に訪問）');
+    const red = cellGuide({ ...base, count: 3, stateText: 'まだ伝えていない', care: true, unassigned: true });
+    expect(red).toContain('赤い点・赤い枠＝要対応（担当なし・担当が休み・条件に合わない・時間に間に合わない）');
   });
   it('要対応の札（N）があるときは赤い点を言わず、札の読み方を足す。休 N を出していないときは書かない（PRD D295）', () => {
     const lines = cellGuide({
       ...base,
       count: 3,
-      stateText: '案あり',
+      stateText: 'まだ伝えていない',
       care: true,
       attention: 2,
       resting: 2,
       restShown: false,
     });
-    expect(lines).toContain('赤い枠＝要対応（入らない訪問・守れない条件・休みの人に訪問）');
+    expect(lines).toContain('赤い枠＝要対応（担当なし・担当が休み・条件に合わない・時間に間に合わない）');
     expect(lines.some((l) => l.startsWith('赤い「要対応 N」の札'))).toBe(true);
     expect(lines.some((l) => l.startsWith('「休 N」'))).toBe(false);
-    const shown = cellGuide({ ...base, count: 3, stateText: '案あり', resting: 2, restShown: true });
+    const shown = cellGuide({ ...base, count: 3, stateText: 'まだ伝えていない', resting: 2, restShown: true });
     expect(shown).toContain('「休 N」＝休むスタッフの人数');
   });
-  it('手当ての印（入らない・違反・休みの人に・条件が変わった・拘束超）', () => {
+  it('手当ての印（担当なし・担当の問題・未連絡・拘束超）', () => {
     const lines = cellGuide({
       ...base,
       count: 3,
-      stateText: '案あり',
+      stateText: 'まだ伝えていない',
       unassigned: true,
-      hard: true,
-      absentLeft: true,
-      stale: true,
+      issues: true,
+      changed: true,
       overSpan: true,
     });
-    expect(lines.filter((l) => /^「(入らない|違反|休みの人に|条件が変わった|拘束超)/.test(l))).toHaveLength(5);
+    expect(lines.filter((l) => /^「(担当なし|担当が休み|未連絡|拘束超)/.test(l))).toHaveLength(4);
   });
   it('〈スタッフ〉・〈利用者さん〉の表示：全体の印（件数・休 N）は書かず、その表示の棒・印', () => {
-    const staff = cellGuide({ ...base, focus: 'staff', count: 3, stateText: '案あり', resting: 2 });
+    const staff = cellGuide({ ...base, focus: 'staff', count: 3, stateText: 'まだ伝えていない', resting: 2 });
     expect(staff.some((l) => l.startsWith('棒＝この人の時間帯ごとの状態'))).toBe(true);
     expect(staff.some((l) => l.startsWith('「休 N」'))).toBe(false);
-    const client = cellGuide({ ...base, focus: 'client', count: 3, stateText: '案あり', substitute: true });
+    const client = cellGuide({ ...base, focus: 'client', count: 3, stateText: 'まだ伝えていない', substitute: true });
     expect(client).toContain('時刻と名前＝この利用者さんの訪問の時刻と担当');
     expect(client).toContain('「代」＝いつもの担当でない');
     expect(client.some((l) => l.startsWith('「変」'))).toBe(false);

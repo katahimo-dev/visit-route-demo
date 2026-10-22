@@ -46,24 +46,15 @@ describe('候補', () => {
     expect(by('action:absence').to).toBe('/plan?date=2026-10-21&do=absence');
     expect(by('action:absence').date).toBe(TODAY);
     expect(by('action:today')).toMatchObject({ to: '/plan', date: TODAY });
-    expect(by('action:batch')).toMatchObject({ label: '10月の案をまとめて作る', to: '/month?ym=2026-10&do=batch' });
+    expect(by('action:batch')).toMatchObject({ label: '10月の担当を AI で組む', to: '/month?ym=2026-10&do=batch' });
     expect(by('action:batch-next')).toMatchObject({
-      label: '11月の案をまとめて作る',
+      label: '11月の担当を AI で組む',
       to: '/month?ym=2026-11&do=batch',
     });
     expect(by('action:attention').to).toBe('/month?ym=2026-10&do=attention');
     expect(by('action:unconfirmed').to).toBe('/month?ym=2026-10&do=unconfirmed');
-    expect(by('action:stale').to).toBe('/month?ym=2026-10&do=stale');
+    expect(a.some((x) => x.id === 'action:stale')).toBe(false);
     expect(by('action:vacancy').to).toBe('/vacancy');
-  });
-  it('この日だけ試す重みがどのプリセットとも違うときだけ「今日の案を日の予定の重みで作り直す」（?do=recreate）', () => {
-    expect(paletteActions(TODAY).some((x) => x.id === 'action:recreate')).toBe(false);
-    const r = paletteActions(TODAY, { customRules: true }).find((x) => x.id === 'action:recreate')!;
-    expect(r).toMatchObject({
-      label: '今日の案を日の予定の重みで作り直す',
-      to: '/plan?date=2026-10-21&do=recreate',
-      date: TODAY,
-    });
   });
   it('画面の候補は呼び方のよみでも引ける（既定の呼び方）', () => {
     const scr = paletteScreens(screenSections(terms, {}), terms);
@@ -85,7 +76,7 @@ describe('候補', () => {
   });
   it('12月の来月は翌年の1月', () => {
     const next = paletteActions('2026-12-30').find((x) => x.id === 'action:batch-next')!;
-    expect(next).toMatchObject({ label: '1月の案をまとめて作る', to: '/month?ym=2027-01&do=batch' });
+    expect(next).toMatchObject({ label: '1月の担当を AI で組む', to: '/month?ym=2027-01&do=batch' });
   });
   it('画面はメニューと同じ名前・同じ順で、操作の項目（欠勤・キャンセル）は入れない', () => {
     const s = paletteScreens(screenSections(terms, {}), terms);
@@ -94,7 +85,7 @@ describe('候補', () => {
       '月の予定',
       '週の予定',
       '日の予定',
-      '案を比べる',
+      '提案を比べる',
       '空き状況',
       '利用者さん一覧',
       'スタッフ一覧',
@@ -193,7 +184,7 @@ describe('filterPalette（PRD D182）', () => {
   it('種類の中は先頭が一致するものを前に（同じ組は渡した順）', () => {
     // 別名（読み・言い換え）でも引ける
     const r = filterPalette(items, 'ひかく');
-    expect(r.flat.map((i) => i.label)).toEqual(['案を比べる']);
+    expect(r.flat.map((i) => i.label)).toEqual(['提案を比べる']);
     const s = filterPalette(
       [
         paletteItem({ id: 'a', kind: 'client', label: '北 ながい', hint: '', to: '/a', words: ['きた ながい'] }),
@@ -308,6 +299,8 @@ describe('訪問の候補（PRD D304）', () => {
     latestStart: start,
     durationMinutes: 60,
     staffId: null,
+    start: null,
+    pinned: false,
     cancelled,
     note: '',
     typeId: null,

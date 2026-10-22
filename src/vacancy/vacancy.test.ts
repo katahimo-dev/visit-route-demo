@@ -7,9 +7,9 @@ import type { Routes } from '../contracts/reassign';
 import type { VacancyQuery } from '../contracts/vacancy';
 import { addDays, hhmmToMinutes, minutesToHhmm, weekday } from '../domain/time';
 import { baseOf } from '../lib/absences';
+import { writeRoutes } from '../lib/dayPlan';
 import { compile, naiveSeqs, scheduleRoute } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import { applyPatterns } from '../patterns';
 import { placeVisit } from '../reassign';
 import { createDemoData } from '../seed';
 import {
@@ -51,19 +51,18 @@ const staffOn = (c: VacancyCell, date: string) => c.byDate.find((x) => x.date ==
 
 /**
  * s1（女性・看護師。8:00〜18:00、月〜金）。月曜 2回：どちらも 9:00〜12:00 は訪問で詰まり、2回目の月曜だけ 14:00〜17:00 も詰まる。
- * 確定した割当（manualPlans）を元の案にする
+ * 訪問の担当（版2。担当は訪問に持つ）を元の案にする
  */
 function small(over: Partial<DemoData> = {}): DemoData {
   const visits = [
     fixedOn('a1', 'c1', MON1, '09:00', 180),
     fixedOn('b1', 'c1', MON2, '09:00', 180),
     fixedOn('b2', 'c2', MON2, '14:00', 180),
-  ];
+  ].map((v) => ({ ...v, staffId: 's1' }));
   return makeData({
     staff: [staff('s1', 38.26, 140.87, { traits: { gender: '女性', license: ['看護師'] } })],
     clients: [client('c1', 38.261, 140.871), client('c2', 38.262, 140.871)],
     visits,
-    manualPlans: { [MON1]: { s1: ['a1'] }, [MON2]: { s1: ['b1', 'b2'] } },
     ...over,
   });
 }
@@ -184,41 +183,15 @@ describe('vacancyOf：担当できる人', () => {
 });
 
 describe('vacancyOf：元の案', () => {
-  it('訪問があって案も確定も無い日は数えず noPlanDates に出る。訪問の無い日は空の案として数える', () => {
+  it('担当なしの訪問はだれの時間も埋めない（その日も数える。版2は担当なしでも日を数える）', () => {
     const d = small();
     const x: DemoData = { ...d, visits: [...d.visits, fixedOn('w1', 'c1', WED1, '10:00')] };
     for (const place of [PLACE, null]) {
       const r = vacancyOf(x, query({ place }), { from: MON1, weeks: 1 });
-      expect(r.noPlanDates).toEqual([WED1]);
-      const c = cellOf(r, 3, '13:00');
-      expect(c.weeksTotal).toBe(0);
-      expect(c.byDate).toEqual([]);
-      expect(verdictOf(c)).toBe('unknown');
-      // 木曜は訪問が無い：空の案
+      expect(r.noPlanDates).toEqual([]);
+      expect(cellOf(r, 3, '10:00')).toMatchObject({ weeksTotal: 1, weeksOk: 1 });
       expect(cellOf(r, 4, '13:00')).toMatchObject({ weeksTotal: 1, weeksOk: 1 });
     }
-  });
-
-  it('確定した割当が無ければ今の案（aiPlans）を元の案にする', () => {
-    const d = small({ manualPlans: {} });
-    const plan = (date: string, routes: Routes) => ({
-      date,
-      createdAt: 0,
-      seed: 1,
-      iterations: 1,
-      routes,
-      unassigned: [],
-      score: 0,
-      stopped: false,
-      rules: [],
-      generated: { routes, unassigned: [], score: 0 },
-      pins: {},
-    });
-    const x: DemoData = { ...d, aiPlans: { [MON1]: plan(MON1, { s1: ['a1'] }) } };
-    const r = vacancyOf(x, query(), { from: MON1, weeks: 2 });
-    expect(r.noPlanDates).toEqual([MON2]);
-    expect(verdictOf(cellOf(r, 1, '10:00'))).toBe('ng');
-    expect(verdictOf(cellOf(r, 1, '15:00'))).toBe('ok');
   });
 });
 
@@ -389,9 +362,9 @@ describe('dayLoad', () => {
     expect(at(dayLoad(d2, MON1, { typeId: 'rehab' }), '08:00')).toEqual({ start: m('08:00'), working: 0, free: 0 });
   });
 
-  it('訪問があって案の無い日は null', () => {
-    const d = small({ manualPlans: {} });
-    expect(dayLoad(d, MON1, { typeId: null })).toBeNull();
+  it('担当なしの訪問は空きを減らさない', () => {
+    const d = small({ visits: small().visits.map((v) => ({ ...v, staffId: null })) });
+    expect(at(dayLoad(d, MON1, { typeId: null }), '10:00')).toEqual({ start: m('10:00'), working: 1, free: 1 });
   });
 
   it('欠勤の時間は働く人に入らない', () => {
@@ -402,22 +375,18 @@ describe('dayLoad', () => {
   });
 });
 
-/** seed を4週に広げ、各日に素朴な案を確定した割当として入れたデータ */
+/** seed の4週の各日に、素朴な担当を訪問に書いたデータ（版2） */
 function seededMonth(): { data: DemoData; from: string } {
   const today = '2026-10-13';
-  const d0 = createDemoData(today);
-  const end = addDays(today, 27);
-  const ch = applyPatterns(d0, { from: today, to: end }, today);
-  let data: DemoData = { ...d0, patterns: ch.patterns, visits: ch.visits };
-  const manualPlans: DemoData['manualPlans'] = {};
+  let data: DemoData = createDemoData(today);
   for (let i = 0; i < 28; i++) {
     const date = addDays(today, i);
     const p = compile(data, date);
     if (p.visits.length === 0) continue;
     const seqs = naiveSeqs(p);
-    manualPlans[date] = Object.fromEntries(p.staff.map((s, k) => [s.id, seqs[k]!.map((v) => p.visits[v]!.id)]));
+    const routes = Object.fromEntries(p.staff.map((s, k) => [s.id, seqs[k]!.map((v) => p.visits[v]!.id)]));
+    data = writeRoutes(data, date, p, routes, { pins: {} });
   }
-  data = { ...data, manualPlans };
   return { data, from: today };
 }
 
@@ -569,16 +538,16 @@ describe('vacancyNotice（空き枠の案内文。ADR-0013）', () => {
     expect(lines.at(-1)).toContain('新しい利用者さんのご相談');
   });
 
-  it('日付ごと：期間の外の日・案の無い日は入れない。途切れた範囲は「、」で分ける', () => {
+  it('日付ごと：期間の外の日は入れない。担当なしの訪問は時間を埋めない。途切れた範囲は「、」で分ける', () => {
     const extra = fixedOn('a2', 'c2', MON1, '14:00', 60);
-    const noPlan = fixedOn('w1', 'c1', WED1, '10:00', 60);
-    const d = small({ visits: [...small().visits, extra, noPlan], manualPlans: { [MON1]: { s1: ['a1', 'a2'] } } });
+    const unassigned = fixedOn('w1', 'c1', WED1, '10:00', 60);
+    const d = small({ visits: [...small().visits, { ...extra, staffId: 's1' }, unassigned] });
     const r = vacancyOf(d, query({ place: null }), { from: MON1, weeks: 1 });
-    expect(r.noPlanDates).toEqual([WED1]);
+    expect(r.noPlanDates).toEqual([]);
     const text = vacancyNotice(r, input({ period: { from: MON1, to: addDays(MON1, 2) } }));
     expect(text).toContain('・10/12（月） 12:30、15:30〜16:30');
     expect(text).toContain('・10/13（火）');
-    expect(text).not.toContain('・10/14');
+    expect(text).toContain('・10/14（水） 8:30〜16:30');
     expect(text).not.toContain('・10/15');
   });
 
@@ -604,18 +573,6 @@ describe('vacancyNotice（空き枠の案内文。ADR-0013）', () => {
     expect(text).toContain('・10/12（月） 14:30〜16:30');
     // ほかの日は変わらない
     expect(text).toContain('・10/13（火） 8:30〜16:30');
-  });
-
-  it('曜日ごと：案のある週がその曜日の週の数より少なければ「〇週中〇週」と書き添える', () => {
-    // 2回目の火曜に案の無い訪問を足す → 火曜は2週中1週だけ数える
-    const noPlan = fixedOn('t2', 'c1', addDays(MON2, 1), '10:00', 60);
-    const r = vacancyOf(small({ visits: [...small().visits, noPlan] }), query({ place: null }), {
-      from: MON1,
-      weeks: 2,
-    });
-    const text = vacancyNotice(r, input({ mode: 'weekly', period: { from: MON1, to: addDays(MON1, 13) } }));
-    expect(text).toContain('・火 8:30〜16:30（2週中1週の予定で確認）');
-    expect(text).toContain('・水 8:30〜16:30\n');
   });
 
   it('空きが無ければその旨の文', () => {

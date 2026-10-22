@@ -1,5 +1,5 @@
 // ホーム（見出しの下に「今日やること」。PRD D141〜D145・D230・D263。ADR-0025・0034・0044。design.md §4 pages「ホーム」）の決まり。
-// 今の状態（日の状態・定期パターンから作れる訪問の件数）から次の一手を並べる純粋関数。データは書き換えない
+// 今の状態（日の状態）から次の一手を並べる純粋関数。データは書き換えない
 import type { DemoData } from '../contracts/data';
 import type { Terms } from '../contracts/documents';
 import type { Features } from '../contracts/features';
@@ -33,13 +33,9 @@ export function homeDays(today: string): string[] {
 }
 
 /** 見る月ごとの入力 */
-export type HomeMonth = {
-  ym: string;
-  /** 定期パターンから作れる訪問の件数（lib/month の expandMonth の added） */
-  canExpand: number;
-};
+export type HomeMonth = { ym: string };
 
-/** カードの種類：要対応・今日の予定・確定していない日・案を作る */
+/** カードの種類：要対応・今日の予定・確定していない日・担当を AI で組む */
 export type HomeTaskKind = 'attention' | 'today' | 'confirm' | 'create';
 
 /**
@@ -60,7 +56,7 @@ export type HomeInput = {
   /** 今日以降の日の状態（homeDays の日。月の画面と同じ数え方。lib/useDayStatuses） */
   statuses: readonly DayStatus[];
   months: readonly HomeMonth[];
-  /** 今日の担当の人数（数える案＝今の案、無ければ確定した割当で、訪問がある人） */
+  /** 今日の担当の人数（訪問がある人） */
   todayStaff: number;
   data: Pick<DemoData, 'absences' | 'staff'>;
   /** 機能の入り切り（切った機能へ向かうカードは出さない。PRD D213。{} ならすべて入） */
@@ -68,14 +64,11 @@ export type HomeInput = {
 };
 
 const ATTENTION_LABEL: Record<AttentionKind, string> = {
-  unassigned: '入らない訪問がある日',
-  hard: '守れない条件がある日',
-  absentLeft: '欠勤の人に訪問が残る日',
-  stale: '条件が変わった日',
+  care: '要対応の訪問がある日',
+  changed: '未連絡の変更がある日',
   overSpan: '出勤〜退勤（拘束）が上限を超える日',
-  absence: '欠勤がある日',
 };
-const ATTENTION_ORDER: AttentionKind[] = ['unassigned', 'hard', 'absentLeft', 'stale', 'overSpan', 'absence'];
+const ATTENTION_ORDER: AttentionKind[] = ['care', 'changed', 'overSpan'];
 
 /** 1日だけなら日の画面、2日以上なら月の画面（do は月の画面で行う操作。PRD D143） */
 function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfirmed'): Pick<HomeTask, 'to' | 'date'> {
@@ -85,14 +78,12 @@ function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfi
 }
 
 /**
- * 次の一手のカード（PRD D141〜D143・D263）。並びは作業の順：要対応（月ごと。手当てが要るので最優先）→ 月ごとに
- * 「案を作る → 確定していない日を確認」（今月 → 来月）→ 今日の予定。先頭の1枚を画面で「まずこれ」と大きく見せる（HomePage）。
+ * 次の一手のカード（PRD D141〜D143・D263）。並びは作業の順：要対応（月ごと）→ 月ごとに「担当を AI で組む → 確定していない日を確認」
+ * （今月 → 来月）→ 今日の予定。先頭の1枚を画面で「まずこれ」と大きく見せる（HomePage）。
  * - 要対応：lib/month の attentionList（月の画面の要対応と同じ件数）
- * - 案を作る：定期パターンから作れる訪問がある、または訪問があって案の無い日がある月（月の「まとめて作る」へ）
- * - 確定していない日：訪問があって「確定済み」でない日（案の無い日・未確定の変更ありを含む。lib/month の monthProgress の
- *   unconfirmed と同じ日数）。同じ月に「案を作る」があれば、案の無い日の日数はそちらにだけ書き（同じことを2枚に書かない）、
- *   確定していない日が案の無い日だけならこのカードは出さない（作るのが先。作ればこのカードになる）
- * - 今日の予定：訪問の件数・担当の人数・入らない訪問の件数。案が無い・入らない・欠勤の人に残る・必須の違反があれば warn
+ * - 担当を AI で組む：担当なしの訪問がある日が2日以上ある月（月の「担当を AI で組む」へ）
+ * - 確定していない日：訪問があって伝えていない・未連絡の変更のある日（lib/month の monthProgress の unconfirmed と同じ日数）
+ * - 今日の予定：訪問の件数・担当の人数・要対応の件数。要対応があれば warn
  * ready は手当て・やることが1つも無いとき（今日の予定の知らせだけ）
  */
 export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean } {
@@ -100,12 +91,10 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
   const future = statuses.filter((s) => s.date >= today);
   const inMonth = (ym: string) => future.filter((s) => ymOf(s.date) === ym);
   const attention: HomeTask[] = [];
-  /** 月ごとの「案を作る → 確定していない日を確認」（今月 → 来月の順） */
   const work: HomeTask[] = [];
-  for (const { ym, canExpand } of months) {
+  for (const { ym } of months) {
     const days = inMonth(ym);
     const m = monthLabel(ym);
-    // 要対応
     const items = attentionList(data, days, today);
     if (items.length > 0) {
       const parts = ATTENTION_ORDER.flatMap((k) => {
@@ -124,39 +113,30 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
         ),
       });
     }
-    // 案を作る（訪問を作る・案の無い日）
     const withVisits = days.filter((s) => s.count > 0);
-    const noPlan = withVisits.filter((s) => s.state === 'none').length;
-    const creates = canExpand > 0 || noPlan > 0;
-    if (creates) {
-      const what = [
-        canExpand > 0 ? `定期パターンからまだ作っていない訪問 ${canExpand}件` : '',
-        noPlan > 0 ? `案の無い日 ${noPlan}日` : '',
-      ].filter(Boolean);
+    const unassignedDays = withVisits.filter((s) => s.unassigned > 0 && s.state === 'none');
+    if (unassignedDays.length >= 2) {
       work.push({
         kind: 'create',
         tone: 'todo',
-        title: `${m}の案をまとめて作る`,
-        detail: what.join('・'),
+        title: `${m}の担当を AI で組む`,
+        detail: `担当なしの訪問がある日 ${unassignedDays.length}日`,
         to: `/month?ym=${ym}&do=batch`,
       });
     }
-    // 確定していない日（訪問があって「確定済み」でない日。案の無い日も含む＝月の「今月の準備」の③・右の欄と同じ日・同じ並び）
-    const unconfirmed = withVisits.filter((s) => s.state !== 'confirmed');
+    // 確定していない日（訪問があって伝えていない・未連絡の変更のある日）
+    const unconfirmed = withVisits.filter((s) => s.state !== 'told');
     const n = (state: DayStatus['state']) => unconfirmed.filter((s) => s.state === state).length;
-    // 案の無い日だけで、同じ月に「案を作る」があれば出さない（作るのが先。PRD D263）
-    if (unconfirmed.length > 0 && !(creates && n('none') === unconfirmed.length)) {
+    if (unconfirmed.length > 0) {
       const parts = [
-        n('plan') > 0 ? `未確定 ${n('plan')}日` : '',
-        n('diff') > 0 ? `未確定の変更あり ${n('diff')}日` : '',
-        // 案の無い日の日数は「案を作る」のカードにだけ書く（同じことを2枚に書かない。PRD D263）
-        n('none') > 0 ? (creates ? 'ほかは案の無い日（先に作る）' : `案の無い日 ${n('none')}日`) : '',
+        n('none') > 0 ? `まだ伝えていない ${n('none')}日` : '',
+        n('changed') > 0 ? `未連絡の変更あり ${n('changed')}日` : '',
       ].filter(Boolean);
       work.push({
         kind: 'confirm',
         tone: 'todo',
         title: `${m}の確定していない日 ${unconfirmed.length}日を確認`,
-        detail: `${parts.join('・')}。見直して「この割当で確定」`,
+        detail: `${parts.join('・')}。見直して伝えたら「確定」`,
         ...target(
           unconfirmed.map((s) => s.date),
           ym,
@@ -165,7 +145,7 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
       });
     }
   }
-  // 切った機能へ向かうカードは出さない（今のカードはどれも土台の画面へ向かうが、表から引いて守る。PRD D213）
+  // 切った機能へ向かうカードは出さない（PRD D213）
   const tasks = [
     ...attention,
     ...work,
@@ -184,24 +164,13 @@ function todayTask(today: string, s: DayStatus | undefined, staff: number): Home
   const when = `今日 ${dateText(today)}`;
   if (!s || s.count === 0)
     return { ...base, tone: 'info', title: `${when}の訪問はありません`, detail: '日の予定で訪問を足せます' };
-  if (s.state === 'none')
-    return {
-      ...base,
-      tone: 'warn',
-      title: `${when}の案がまだありません`,
-      detail: `訪問 ${s.count}件。日の予定を開くと案を作ります`,
-    };
-  const issues = [
-    s.absentLeft > 0 ? `欠勤の人に残る ${s.absentLeft}件` : '',
-    s.hard > 0 ? `守れない条件 ${s.hard}件` : '',
-  ].filter(Boolean);
-  const warn = s.unassigned > 0 || s.absentLeft > 0 || s.hard > 0;
-  const state = s.state === 'confirmed' ? '確定済み' : s.state === 'diff' ? '未確定の変更あり' : '未確定';
+  const warn = s.care > 0;
+  const state = s.state === 'told' ? '確定済み' : s.state === 'changed' ? '未連絡の変更あり' : 'まだ伝えていない';
   return {
     ...base,
     tone: warn ? 'warn' : 'info',
     title: `${when}の予定（${state}）`,
-    detail: [`訪問 ${s.count}件`, `担当 ${staff}人`, `入らない ${s.unassigned}件`, ...issues].join('・'),
+    detail: [`訪問 ${s.count}件`, `担当 ${staff}人`, `要対応 ${s.care}件`].join('・'),
   };
 }
 

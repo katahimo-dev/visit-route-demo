@@ -9,18 +9,18 @@ import type { DemoData } from '../contracts/data';
 import { type Client, type Pattern, patternSchema } from '../contracts/documents';
 import type { PatternChange } from '../contracts/patterns';
 import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
-import { byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { byName, newId, WEEKDAY_LABELS } from '../lib/common';
 import { EVERY_WEEKS_LABELS, mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
 import { useFeature } from '../lib/useFeature';
 import { endPatternOp } from '../lib/visitOps';
-import { applyPatterns, removePattern, splitPattern } from '../patterns';
+import { removePattern, splitPattern } from '../patterns';
 import { useDemoData } from '../store';
 
 /**
  * 〈利用者さん〉の画面の予定のタブの「繰り返し」（定期パターン。ADR-0012・0052。PRD D37・D38・D308）：一覧と 足す・直す・終わらせる・消す。
  * どれも「直す（足す・終わらせる）→ 保存」の形で、保存を押すまでデータを変えない（取り消しで捨てる）。
- * 足すと展開済みの範囲（今日から、いまある訪問の最後の日まで）に展開し、直すときは「いつから」で分けて（splitPattern）、
- * 終わらせるときは最後の日より後の回を消し（visitOps の endPatternOp）、消すときは今日以降の訪問を除く（removePattern）。
+ * 回は見るときに計算する（版2。ADR-0053）。直すときは「いつから」で分け（splitPattern。その日からの、担当を組んだ回は繰り返しのとおりに戻る）、
+ * 終わらせるときは最後の日より後の回を無くし（visitOps の endPatternOp）、消すときは繰り返しごと消す（removePattern）。
  * 直す・終わらせる・消すは件数と確定した日を確認してから入れる。行を押すとその回をカレンダーで強調する（onSelect）
  */
 
@@ -94,15 +94,12 @@ const formOf = (p: Pattern | null, today: string, defaultDuration: number): Form
         note: '',
       };
 
-/** 変わる訪問のうち、確定した割当がある日の数 */
-function confirmedDays(d: DemoData, c: PatternChange): number {
-  const days = new Set([...c.removed, ...c.added].map((x) => x.date));
-  return [...days].filter((x) => own(d.manualPlans, x)).length;
-}
-
-/** 展開済みの範囲の最後の日（いまある訪問の最後の日。無ければ今日） */
-function lastVisitDate(d: DemoData, today: string): string {
-  return d.visits.reduce((m, v) => (v.date > m ? v.date : m), today);
+/** 確定した（伝えた）日のうち、since 以降でその繰り返しの回がある日の数（変えると「未連絡の変更」になる） */
+function confirmedDays(d: DemoData, patternId: string, since: string, c?: PatternChange): number {
+  const removed = new Set(c?.removed.map((x) => x.date) ?? []);
+  return Object.values(d.snapshots).filter(
+    (s) => s.date >= since && (removed.has(s.date) || s.visits.some((x) => x.id === `${s.date}_${patternId}`)),
+  ).length;
 }
 
 export function PatternsSection({
@@ -160,7 +157,6 @@ export function PatternsSection({
   const patterns = useMemo(() => data.patterns.filter((p) => p.clientId === client.id), [data.patterns, client.id]);
   const staff = useMemo(() => [...data.staff].sort(byName), [data.staff]);
   const staffName = (id: string | null) => (id ? (data.staff.find((s) => s.id === id)?.name ?? '（不明）') : null);
-  const usualOfClient = staffName(client.usualStaffId);
 
   /** 入力を確かめてパターンの中身にする（だめなら理由の文） */
   const parse = (f: Form, from: string): Pattern | string => {
@@ -221,21 +217,19 @@ export function PatternsSection({
     if (!form) return;
     setError(null);
     if (!form.id) {
-      // 足す：展開済みの範囲（今日から、いまある訪問の最後の日まで）に、このパターンだけを展開する
+      // 足す：回は見るときに計算するので、繰り返しを足すだけ（版2）
       const p = parse(form, form.from);
       if (typeof p === 'string') {
         setError(p);
         return;
       }
-      const range = { from: today, to: lastVisitDate(data, today) };
-      const count = applyPatterns({ patterns: [p], visits: data.visits, clients: data.clients }, range, today).added
-        .length;
-      update((d) => {
-        const c = applyPatterns({ patterns: [p], visits: d.visits, clients: d.clients }, range, today);
-        return { ...d, patterns: [...d.patterns, p], visits: c.visits };
-      });
+      update((d) => ({ ...d, patterns: [...d.patterns, p] }));
       open(null);
-      toast(`繰り返しを足しました（訪問 ${count}件）`);
+      toast(
+        p.usualStaffId
+          ? `繰り返しを足しました（担当：${staffName(p.usualStaffId)}）`
+          : '繰り返しを足しました（担当なし。日の予定・月の予定で AI で組めます）',
+      );
       return;
     }
     // 直す：「いつから」で分けて、その日以降の（この回だけの変更でない）訪問を作り直す
@@ -253,14 +247,15 @@ export function PatternsSection({
     const { id: _, from: __, ...next } = p;
     const nid = newId('pt');
     const c = splitPattern(data, original.id, next, form.since, today, nid);
-    const m = confirmedDays(data, c);
+    const m = confirmedDays(data, original.id, form.since > today ? form.since : today, c);
     const ok = await confirmDialog({
       title: `繰り返しを${mdText(form.since)}から変えますか？`,
       body:
-        `作り直す訪問は ${c.removed.length}件（新しく ${c.added.length}件を作ります）。` +
-        (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります（その日の確定した割当は見直しが要ります）。` : '') +
+        `${mdText(form.since)}からの回は新しい繰り返しのとおりになります（担当は繰り返しの担当）。` +
+        (c.removed.length > 0 ? `\n担当を組んだ回 ${c.removed.length}件も繰り返しのとおりに戻ります。` : '') +
+        (m > 0 ? `\n確定した日 ${m}日の訪問は「未連絡の変更」になります。` : '') +
         '\nこの回だけ変えた訪問・取り消した訪問はそのままです。',
-      confirmLabel: '訪問を作り直して変える',
+      confirmLabel: '変える',
     });
     if (!ok) return;
     update((d) => {
@@ -268,17 +263,18 @@ export function PatternsSection({
       return { ...d, patterns: x.patterns, visits: x.visits };
     });
     open(null);
-    toast(`繰り返しを直しました（作り直した訪問 ${c.added.length}件）`);
+    toast('繰り返しを直しました');
   };
 
   const remove = async (p: Pattern) => {
     const c = removePattern(data, p.id, today);
-    const m = confirmedDays(data, c);
+    const m = confirmedDays(data, p.id, today, c);
     const ok = await confirmDialog({
       title: 'この繰り返しを消しますか？',
       body:
-        `今日以降の訪問 ${c.removed.length}件を消します（今日より前の訪問・この回だけ変えた訪問は単発の訪問として残します）。` +
-        (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります。` : ''),
+        '今日からの回を消します（今日より前の回は残し、昨日で終わらせます。今日より前に始まっていない繰り返しはまるごと消えます。この回だけ変えた回は単発の訪問として残します）。' +
+        (m > 0 ? `\n確定した日 ${m}日の訪問は「未連絡の変更」になります。` : '') +
+        '\nやめるだけなら「終わらせる」を使います。',
       confirmLabel: '訪問ごと消す',
       tone: 'danger',
     });
@@ -289,7 +285,7 @@ export function PatternsSection({
     });
     if (form?.id === p.id) open(null);
     if (selected === p.id) onSelect?.(null);
-    toast(`繰り返しを消しました（訪問 ${c.removed.length}件）`);
+    toast('繰り返しを消しました');
   };
 
   /** 終わらせる：最後の日より後の回を消し、終了日を入れる（確認してから） */
@@ -304,15 +300,15 @@ export function PatternsSection({
     const ok = await confirmDialog({
       title: `繰り返しを${mdText(ending.last)}で終わらせますか？`,
       body:
-        `${mdText(ending.last)}より後の訪問 ${r.removed}件を消します。` +
-        (r.confirmedDays > 0 ? `\nそのうち確定した日 ${r.confirmedDays}日の訪問があります。` : '') +
+        `${mdText(ending.last)}より後の回は無くなります${r.removed > 0 ? `（担当を組んだ回 ${r.removed}件も消します）` : ''}。` +
+        (r.confirmedDays > 0 ? `\n確定した日 ${r.confirmedDays}日の訪問は「未連絡の変更」になります。` : '') +
         '\nこの回だけ変えた訪問・取り消した訪問はそのままです。',
       confirmLabel: '終わらせる',
     });
     if (!ok) return;
     update((d) => endPatternOp(d, ending.id, ending.last, today).data);
     setEnding(null);
-    toast(`繰り返しを${mdText(ending.last)}で終わらせました（消した訪問 ${r.removed}件）`);
+    toast(`繰り返しを${mdText(ending.last)}で終わらせました`);
   };
 
   const toggleDay = (w: number) => {
@@ -637,13 +633,13 @@ export function PatternsSection({
               <input type="date" value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} />
             </label>
             <label>
-              いつもの担当
-              <select value={form.usualStaffId} onChange={(e) => setForm({ ...form, usualStaffId: e.target.value })}>
-                <option value="">
-                  {usualOfClient
-                    ? `${terms.client}のいつもの担当（${usualOfClient}）`
-                    : `${terms.client}のいつもの担当`}
-                </option>
+              担当（いつもの担当）
+              <select
+                value={form.usualStaffId}
+                onChange={(e) => setForm({ ...form, usualStaffId: e.target.value })}
+                data-testid="pattern-staff"
+              >
+                <option value="">担当なし（AI で組む）</option>
                 {staff.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}

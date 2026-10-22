@@ -1,5 +1,6 @@
 // 素朴な案（solver の初期解の候補）と、AI案がそれより悪くならないこと（ADR-0007。レビュー H1・H2）
 import { afterAll, describe, expect, it } from 'vitest';
+import { addDays } from '../domain/time';
 import { compile } from '../matching';
 import { client, DATE, makeData, randomData, rule, staff, visit } from '../matching/fixtures';
 import { applyPreset, createDemoData, INITIAL_PRESETS } from '../seed';
@@ -91,7 +92,7 @@ describe('AI案は素朴な案より悪くならない（初期解の候補に�
   // 14日ぶんを1つの test で回すと、負荷のあるときに同期の計算が60秒を超え、vitest の worker の連絡（onTaskUpdate）が
   // 時間切れになる（終了コード1）。日ごとの test に分け、1つの同期の塊を短くする（PRD D254）
   const demo = createDemoData('2026-10-12');
-  const dates = [...new Set(demo.visits.map((v) => v.date))].sort();
+  const dates = Array.from({ length: 14 }, (_, i) => addDays('2026-10-12', i));
   /** プリセット名 → 平日・土日の点 */
   const ranges = new Map<string, { weekday: number[]; weekend: number[] }>();
 

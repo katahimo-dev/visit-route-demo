@@ -22,8 +22,7 @@ import { useDemoData } from '../store';
 
 /** 持ち方の文 */
 const ROLE_TEXT: Record<OffboardRole, string> = {
-  usual: 'いつもの担当',
-  pattern: '定期パターンの担当',
+  pattern: '繰り返しの担当',
   allowed: '担当できる人',
 };
 
@@ -32,7 +31,7 @@ const NOBODY = '';
 
 /**
  * 退職・担当替えの一括振り直し（PRD D71。ADR-0015）：最終勤務日のある〈スタッフ〉について、〈利用者さん〉ごとに代わりの人を選び、
- * 「まとめて適用」で いつもの担当・定期パターンの担当・担当できる人 を置き換える。訪問の案は作り直さない（一覧と日へのリンクだけ）
+ * 「まとめて適用」で 繰り返しの担当・保存した回の担当・担当できる人 を置き換える（版2。ADR-0053）
  */
 export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: () => void }) {
   const { data, update } = useDemoData();
@@ -94,24 +93,22 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
     };
     const preview = applyOffboardWith(data, staffId, picked, from, today, nextPid);
     const body = `${scope.clients.length}人の${terms.client}の担当を、${mdText(from)}から選んだ${terms.staff}に移します（それより前の日はそのまま）。${
-      nobody.length > 0 ? `${nobody.join('・')}は「だれにもしない」なので、いつもの担当が無くなります。` : ''
+      nobody.length > 0 ? `${nobody.join('・')}は「だれにもしない」なので、担当なしになります。` : ''
     }${
       unlimited.length > 0
         ? `${unlimited.join('・')}は担当できる人がいなくなり、担当を限らなくなります（だれでも担当できます）。`
         : ''
     }${
       preview.renamed > 0
-        ? `定期パターンは${mdText(from)}で分け、その日からの訪問 ${preview.renamed}件を新しいパターンの回に付け替えます（担当・時刻・メモと、確定した割当・今の案はそのまま）。`
+        ? `繰り返しは${mdText(from)}で分け、この回だけ変えた ${preview.renamed}件は新しい繰り返しの回にします（時刻・メモはそのまま）。`
         : ''
-    }訪問の案（担当）は作り直しません。`;
-    const ok = await confirmDialog({ title: 'いつもの担当を置き換えますか？', body, confirmLabel: '担当を置き換える' });
+    }${mdText(from)}からの訪問の担当も選んだ人になります（入らない回は要対応に出ます）。`;
+    const ok = await confirmDialog({ title: '担当を置き換えますか？', body, confirmLabel: '担当を置き換える' });
     if (!ok) return;
     // 確認と同じパターン ID で当てる
     let k = 0;
     update((d) => applyOffboard(d, staffId, picked, from, today, () => pids[k++] ?? newId('pt')));
-    toast(
-      `${scope.clients.length}人の担当を置き換えました。訪問の案は月の予定の「条件が変わった日を作り直す」か、日の予定で直してください`,
-    );
+    toast(`${scope.clients.length}人の担当を置き換えました。入らない回は月の予定の要対応で確かめてください`);
   };
 
   return (
@@ -154,13 +151,13 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
               </li>
               <li>
                 {mdText(scope.from)}
-                からのいつもの担当と定期パターンの担当が、選んだ人に替わります。それより前の日はそのままです。
+                からの繰り返しの担当と訪問の担当が、選んだ人に替わります。それより前の日はそのままです。
               </li>
               <li>
                 候補は、{mdText(scope.from)}からの{OFFBOARD_SAMPLE_DAYS}
                 日の訪問に、ほかの人の予定を変えずに入れられる回の多い順です。
               </li>
-              <li>案は自動では作り直しません。</li>
+              <li>入らない回は要対応に出ます。日の予定・月の予定の「AI で組む」で組み直せます。</li>
             </ul>
           </Hint>
 
@@ -241,13 +238,13 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
           </SectionTitle>
           {byDate.length === 0 ? (
             <p className="sub" data-testid="offboard-no-visits">
-              確定した割当・今の案に、{name}さんの担当の訪問はありません。
+              {name}さんの担当の訪問はありません。
             </p>
           ) : (
             <>
               <p className="sub">
                 この訪問は{mdText(addDays(scope.lastDay, 1))}
-                から「休みの人に残る訪問」になり、案のある日は「条件が変わった」になります。月の予定の「条件が変わった日を作り直す」か、日の予定で直してください。
+                から「担当が休み」の要対応になります。「まとめて適用」で担当を替えるか、日の予定で直してください。
               </p>
               <button
                 type="button"

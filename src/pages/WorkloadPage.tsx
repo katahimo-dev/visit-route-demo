@@ -65,9 +65,8 @@ export default function WorkloadPage() {
       dates,
       today,
       visitDays: dates.filter((d) => activeVisitsOn(data, d).length > 0),
-      planDays: days.filter((d) => d.source !== null).map((d) => d.date),
     });
-  }, [ym, today, data, days]);
+  }, [ym, today, data]);
 
   // ---- 選んだ人の日ごと ----
   const sid = params.get('staff');
@@ -220,7 +219,7 @@ export default function WorkloadPage() {
             </WithIcon>
           </button>
           <span className="sub" data-testid="work-summary">
-            案のある日 {planDays}日・{terms.staff} {rows.length}人
+            訪問のある日 {planDays}日・{terms.staff} {rows.length}人
             {overDays > 0 ? `・出勤〜退勤（拘束）が上限を超える ${overDays}日（のべ）` : ''}
           </span>
         </div>
@@ -277,10 +276,10 @@ export default function WorkloadPage() {
         </div>
         <Hint label="見込みの数え方">
           <ul className="hint-list">
-            <li>数えるのは、その日の確定した割当です。無ければ今の案です。</li>
+            <li>数えるのは、その日の今の担当です。</li>
             <li>出勤〜退勤（拘束）に、自宅との行き帰りは入れません。距離と交通費には入れます。</li>
             <li>移動の時間と距離は、直線距離からの見積もりです。</li>
-            <li>出勤〜退勤（拘束）の上限は、注意を出すだけです。AI案の条件には入りません。</li>
+            <li>出勤〜退勤（拘束）の上限は、注意を出すだけです。AI の条件には入りません。</li>
             <li>予定からの見込みで、実績ではありません。</li>
           </ul>
         </Hint>
@@ -292,7 +291,7 @@ export default function WorkloadPage() {
           {emptyGuide ? (
             <EmptyNext guide={emptyGuide} icon={Timer} onOpenDay={openDay} />
           ) : (
-            <p className="sub">この月には、見込める予定（訪問のある案）がありません。</p>
+            <p className="sub">この月には、見込める予定（計算できる訪問）がありません。</p>
           )}
         </div>
       ) : (
@@ -558,7 +557,7 @@ export default function WorkloadPage() {
                           交通費
                         </th>
                       )}
-                      <th scope="col">案の元</th>
+                      <th scope="col">確定</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -600,7 +599,7 @@ export default function WorkloadPage() {
                         <td className="num">{hmText(stat.wait)}</td>
                         <td className="num">{kmOf(stat.meters)}km</td>
                         {fareOn && <td className="num">{stat.fareYen.toLocaleString()}円</td>}
-                        <td className="sub">{day.source === 'confirmed' ? '確定' : '今の案'}</td>
+                        <td className="sub">{day.source === 'confirmed' ? '確定' : '未確定'}</td>
                       </tr>
                     ))}
                   </tbody>

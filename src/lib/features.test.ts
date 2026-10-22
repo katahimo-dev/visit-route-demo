@@ -5,7 +5,6 @@ import { createDemoData } from '../seed';
 import { paletteActions } from './commandPalette';
 import {
   applyTemplate,
-  calcFeaturesOf,
   FEATURE_GROUPS,
   FEATURES,
   featureDef,
@@ -17,7 +16,6 @@ import {
   isHrefOn,
   isOn,
   matchTemplate,
-  sameCalcFeatures,
   TEMPLATE_IDS,
   TEMPLATES,
   type TemplateId,
@@ -29,7 +27,6 @@ import { homeEntries, homeTasks } from './home';
 import { attentionTarget, dayHref, linkIfOn, suddenHref, unassignedHref, workloadHref } from './links';
 import type { Attention, DayStatus } from './month';
 import { bottomTabs, menuSections, screenSections, settingsTabs } from './nav';
-import { recreateTodayHref } from './rebuildBand';
 import { tourSteps } from './tour';
 
 const terms = { client: '利用者さん', staff: 'スタッフ' };
@@ -100,7 +97,7 @@ describe('機能の表（ADR-0028 の機能の一覧）', () => {
     expect(featureLabel('clientLeave', terms)).toBe('利用者さんの休み');
     expect(featureLabel('clientLeave', { client: 'お客様', staff: 'シッター' })).toBe('お客様の休み');
     expect(fillTerms('{staff}と{client}', { client: 'お客様', staff: 'シッター' })).toBe('シッターとお客様');
-    expect(featureDef('compare').label).toBe('案を比べる');
+    expect(featureDef('compare').label).toBe('提案を比べる');
   });
 });
 
@@ -136,12 +133,10 @@ describe('featureOfLocation（URL に要る機能）', () => {
     expect(featureOfLocation('/items', '')).toBe('rules');
     expect(featureOfLocation('/month/print', '?ym=2026-10')).toBe('monthPrint');
   });
-  it('?do= の入口：欠勤・キャンセルは sudden、今日の案を日の予定の重みで作り直すは rules', () => {
+  it('?do= の入口：欠勤・キャンセルは sudden', () => {
     expect(featureOfLocation('/plan', `?date=${TODAY}&do=absence`)).toBe('sudden');
     expect(featureOfLocation('/plan', '?do=absence&staff=s1')).toBe('sudden');
-    expect(featureOfLocation('/plan', `?date=${TODAY}&do=recreate`)).toBe('rules');
     expect(featureOfHref(suddenHref(TODAY, 's1'))).toBe('sudden');
-    expect(featureOfHref(recreateTodayHref(TODAY))).toBe('rules');
   });
   it('土台の画面・土台の操作は null', () => {
     for (const p of BASE_PATHS) expect(featureOfLocation(p, '')).toBeNull();
@@ -157,7 +152,6 @@ describe('featureOfLocation（URL に要る機能）', () => {
     expect(featureOfLocation('/month/print/', '?ym=2026-10')).toBe('monthPrint');
     expect(featureOfLocation('/Month/Print', '')).toBe('monthPrint');
     expect(featureOfLocation('/plan/', `?date=${TODAY}&do=absence`)).toBe('sudden');
-    expect(featureOfLocation('/Plan', '?do=recreate')).toBe('rules');
     expect(featureOfHref('/Workload/?ym=2026-10')).toBe('workload');
     expect(featureOfLocation('/', '')).toBeNull();
     expect(featureOfLocation('/Month/', '')).toBeNull();
@@ -324,22 +318,30 @@ function st(date: string, x: Partial<DayStatus> = {}): DayStatus {
   return {
     date,
     count: 3,
-    state: 'confirmed',
+    state: 'told',
     unassigned: 0,
+    issues: new Map(),
+    care: 0,
+    changes: 0,
     absence: false,
-    absentLeft: 0,
     overSpan: [],
-    hundred: null,
-    hard: 0,
-    stale: false,
     needsCare: false,
     ...x,
   };
 }
 const homeInput = (features: Features = {}) => ({
   today: TODAY,
-  statuses: [st(TODAY, { state: 'plan', unassigned: 1 }), st('2026-10-22', { state: 'none' })],
-  months: [{ ym: '2026-10', canExpand: 3 }],
+  statuses: [
+    st(TODAY, {
+      state: 'none',
+      unassigned: 1,
+      care: 1,
+      needsCare: true,
+      issues: new Map([['v1', [{ kind: 'unassigned' as const, label: '担当なし' }]]]),
+    }),
+    st('2026-10-22', { state: 'none' }),
+  ],
+  months: [{ ym: '2026-10' }],
   todayStaff: 2,
   data: { absences: [] as Absence[], staff: [] as Staff[] },
   features,
@@ -351,7 +353,7 @@ describe('表の整合（メニュー・パレット・ホーム・ツアー・l
     for (const g of screenSections(terms, {})) for (const i of g.items) expect(belongs(i.to), i.to).toBe(true);
   });
   it('パレットの操作', () => {
-    for (const a of paletteActions(TODAY, { customRules: true })) expect(belongs(a.to), a.to).toBe(true);
+    for (const a of paletteActions(TODAY)) expect(belongs(a.to), a.to).toBe(true);
   });
   it('ホームのカードといつでもの入口', () => {
     const r = homeTasks(homeInput());
@@ -375,13 +377,12 @@ describe('表の整合（メニュー・パレット・ホーム・ツアー・l
 });
 
 describe('切った機能の入口を出さない（PRD D213）', () => {
-  it('パレット：欠勤・キャンセルを登録・問い合わせに答える・試す重みで作り直す', () => {
-    const ids = (f: Features) => paletteActions(TODAY, { customRules: true, features: f }).map((a) => a.id);
+  it('パレット：欠勤・キャンセルを登録・問い合わせに答える', () => {
+    const ids = (f: Features) => paletteActions(TODAY, { features: f }).map((a) => a.id);
     expect(ids({})).toContain('action:absence');
     expect(ids({ sudden: false })).not.toContain('action:absence');
     expect(ids({ vacancy: false })).not.toContain('action:vacancy');
-    expect(ids({ rules: false })).not.toContain('action:recreate');
-    expect(ids(applyTemplate('basic'))).toEqual(ids({}).filter((x) => x !== 'action:recreate'));
+    expect(ids(applyTemplate('basic'))).toEqual(ids({}));
   });
   it('ホーム：いつでもの入口（欠勤・キャンセル・問い合わせ）', () => {
     expect(homeEntries(TODAY, terms, {}).map((e) => e.key)).toEqual(['absence', 'vacancy', 'clients', 'staff']);
@@ -409,24 +410,11 @@ describe('切った機能の入口を出さない（PRD D213）', () => {
     const at = (kind: Attention['kind']): Attention => ({ date: TODAY, kind, count: 1, names: [], staffIds: ['s1'] });
     const day = { to: '/plan', date: TODAY, note: '（日の予定で開く）' };
     expect(attentionTarget(at('overSpan'), { workload: false })).toEqual(day);
-    expect(attentionTarget(at('absentLeft'), { sudden: false })).toEqual(day);
+    expect(attentionTarget(at('changed'), { sudden: false })).toEqual(day);
     expect(attentionTarget(at('overSpan'), {}).to).toBe('/workload?ym=2026-10&staff=s1');
-    expect(attentionTarget(at('unassigned'), applyTemplate('basic')).to).toBe(unassignedHref(TODAY));
-  });
-});
-
-describe('計算に効く入り切り（calcFeaturesOf・sameCalcFeatures。ADR-0028）', () => {
-  it('切っている相性・担当を限るだけを書く。すべて入・ほかの機能だけ切ったときは {}', () => {
-    expect(calcFeaturesOf({})).toEqual({});
-    expect(calcFeaturesOf({ mail: false, clientLeave: false })).toEqual({});
-    expect(calcFeaturesOf({ compat: false, allowedStaff: true })).toEqual({ compat: false });
-    expect(calcFeaturesOf(applyTemplate('basic'))).toEqual({ allowedStaff: false });
-  });
-  it('無い（古い記録）はすべて入と同じ', () => {
-    expect(sameCalcFeatures(undefined, {})).toBe(true);
-    expect(sameCalcFeatures(undefined, { compat: true, allowedStaff: true })).toBe(true);
-    expect(sameCalcFeatures(undefined, { compat: false })).toBe(false);
-    expect(sameCalcFeatures({ allowedStaff: false }, { allowedStaff: false })).toBe(true);
+    expect(attentionTarget({ ...at('care'), names: ['担当なし 1'] }, applyTemplate('basic')).to).toBe(
+      unassignedHref(TODAY),
+    );
   });
 });
 
@@ -493,11 +481,11 @@ describe('turnOffImpact（切るときに残る・外れるデータ。PRD D215�
     expect(turnOffImpact(data, 'clientLeave', '2026-11-11')).toBeNull();
     expect(turnOffImpact(data, 'sudden', '2026-11-08')).toBeNull();
   });
-  it('空き状況は仮押さえの〈利用者さん〉の件数で「AI案に入り続けます」', () => {
+  it('空き状況は仮押さえの〈利用者さん〉の件数で「予定に入り続けます」', () => {
     const held = { ...data, clients: data.clients.map((c, i) => (i < 2 ? { ...c, tentative: true } : c)) };
     expect(turnOffImpact(held, 'vacancy', TODAY_I)).toEqual({
       count: 2,
-      text: `仮押さえ 2人（${d.org.terms.client}）は残り、AI案に入り続けます`,
+      text: `仮押さえ 2人（${d.org.terms.client}）は残り、予定に入り続けます`,
     });
     expect(turnOffImpact(data, 'vacancy', TODAY_I)).toBeNull();
   });
@@ -509,7 +497,7 @@ describe('turnOffImpact（切るときに残る・外れるデータ。PRD D215�
     expect(turnOffImpact(renamed, 'allowedStaff', TODAY_I)?.text).toBe('担当を限る 2人（お客様）は計算から外れます');
     expect(turnOffImpact(renamed, 'clientLeave', TODAY_I)?.text).toBe('お客様の休み 2件は残り、計算に効き続けます');
     const held = { ...renamed, clients: renamed.clients.map((c, i) => (i === 0 ? { ...c, tentative: true } : c)) };
-    expect(turnOffImpact(held, 'vacancy', TODAY_I)?.text).toBe('仮押さえ 1人（お客様）は残り、AI案に入り続けます');
+    expect(turnOffImpact(held, 'vacancy', TODAY_I)?.text).toBe('仮押さえ 1人（お客様）は残り、予定に入り続けます');
     const off = { ...renamed, staff: renamed.staff.map((x, i) => (i === 0 ? { ...x, lastDay: '2026-12-01' } : x)) };
     expect(turnOffImpact(off, 'offboard', TODAY_I)?.text).toBe('最終勤務日 1人（シッター）は残り、計算に効き続けます');
   });
