@@ -553,6 +553,93 @@ async function vacancy(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'links-vacancy.png') });
 }
 
+// ---- D295 月のマスの要対応の札「要対応 N」と、「休 N」の絞り ----
+async function monthBadge(page) {
+  await prepare(page);
+  await open(page, `/month?ym=${YM2}&do=attention`, '[data-testid="month-attention"]');
+  const rows = await page
+    .locator('.month-attention-btn')
+    .filter({ hasText: md(SECOND) })
+    .count();
+  check(rows >= 2, '札：用意した日に要対応の行が2つ以上（入らない・休みの人に・拘束超）', rows);
+  const cell = page.locator(`[data-testid="month-day"][data-date="${SECOND}"]`);
+  const badge = cell.getByTestId('month-attn');
+  check((await badge.count()) === 1, '札：要対応のある日のマスに「要対応 N」の札が1つ', await badge.count());
+  check(
+    (await badge.innerText()).replace(/\s+/g, ' ') === `要対応 ${rows}`,
+    '札：N は要対応の欄の行の数と同じ',
+    await badge.innerText(),
+  );
+  check((await cell.locator('.month-dot').count()) === 0, '札：札のあるマスに赤い点は重ねない');
+  check(((await cell.getAttribute('aria-label')) ?? '').includes(`要対応 ${rows}`), '札：読み上げに「要対応 N」');
+  const col = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+  check(/^rgb\(/.test(col) && col !== 'rgba(0, 0, 0, 0)', '札：赤い地の札（文字つき）', col);
+  // 要対応の無い日（今日以降）には札を出さない
+  const others = await page
+    .locator('[data-testid="month-day"]')
+    .evaluateAll(
+      (els, d) =>
+        els.filter((e) => e.getAttribute('data-date') !== d && e.querySelector('[data-testid="month-attn"]')).length,
+      SECOND,
+    );
+  const listed = await page.locator('.month-attention-btn').evaluateAll((els) => els.length);
+  check(others <= listed, '札：札のあるマスは要対応の欄に行のある日だけ', { others, listed });
+  // マスの読み方の吹き出し
+  await cell.hover();
+  const tip = page.getByTestId('month-cell-tip');
+  await tip.waitFor({ state: 'visible', timeout: 3000 });
+  check(/「要対応 N」の札/.test(await tip.innerText()), '札：マスの読み方に札の説明');
+  await page.mouse.move(5, 5);
+  await page.screenshot({ path: path.join(OUT_DIR, 'month-badge.png') });
+  // 狭い画面の一覧にも同じ札
+  await page.setViewportSize({ width: 390, height: 800 });
+  await open(page, `/month?ym=${YM2}&layout=list`, '[data-testid="month-list"]');
+  const lb = page.locator(`[data-testid="month-list-day"][data-date="${SECOND}"]`).getByTestId('month-attn');
+  check(
+    (await lb.count()) === 1 && (await lb.innerText()).trim() === `要対応 ${rows}`,
+    '札：一覧にも同じ形で出す',
+    await lb.count(),
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  // 休 N：ふだん（同じ月の同じ曜日の最頻値）より多い日だけ。希望休（希）・過去の日は今までどおり
+  await open(page, `/month?ym=${YM2}`, '[data-testid="month-grid"]');
+  const cells = await page.locator('[data-testid="month-day"]').evaluateAll((els) =>
+    els.map((e) => {
+      const m = /休む\S+ (\d+)人/.exec(e.getAttribute('aria-label') ?? '');
+      const mark = e.querySelector('[data-testid="month-resting"]');
+      return {
+        date: e.getAttribute('data-date'),
+        n: m ? Number(m[1]) : 0,
+        shown: !!mark,
+        req: /（希\d+）/.test(mark?.textContent ?? ''),
+        past: e.closest('td')?.classList.contains('is-past') ?? false,
+      };
+    }),
+  );
+  const wd = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
+  const usual = [0, 1, 2, 3, 4, 5, 6].map((w) => {
+    const f = new Map();
+    for (const c of cells.filter((x) => wd(x.date) === w)) f.set(c.n, (f.get(c.n) ?? 0) + 1);
+    let best = 0;
+    let bc = 0;
+    for (const [n, k] of f) if (k > bc || (k === bc && n < best)) [best, bc] = [n, k];
+    return best;
+  });
+  const bad = cells.filter((c) => c.n > 0 && !c.past && !c.req && c.shown !== c.n > usual[wd(c.date)]);
+  check(
+    cells.some((c) => c.n > 0),
+    '休：休む人のいる日がある（初期データ）',
+    cells.length,
+  );
+  check(bad.length === 0, '休：「休 N」はふだんより多い日だけ（読み上げの人数から数えた最頻値と一致）', {
+    usual,
+    bad: bad.slice(0, 3),
+  });
+  const hidden = cells.filter((c) => c.n > 0 && !c.shown);
+  check(hidden.length > 0, '休：ふだんと同じ日は「休 N」を出さない（読み上げには残る）', hidden.length);
+}
+
 const errors = [];
 const steps = pagePerStep({
   open: async (browser) => {
@@ -568,7 +655,7 @@ const steps = pagePerStep({
     return { ctx, page, dlg: await answerConfirms(page) };
   },
   call: (fn, s) => fn(s.page, s.dlg),
-  steps: [attention, noPlanDay, workload, availability, vacancy],
+  steps: [attention, noPlanDay, workload, availability, vacancy, monthBadge],
   label: (name) => `${name}：途中で止まった`,
   after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
   end: () => check(errors.length === 0, 'ページのエラーが無い', errors),

@@ -625,7 +625,11 @@ async function warnColors(page) {
   await resetData(page);
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   const line = await page.locator('.month-legend-line').innerText();
-  check(/黄の点線＝案なし（注意）/.test(line) && /赤い枠と点＝要対応/.test(line), '月：凡例の要約に注意と要対応', line);
+  check(
+    /黄の点線＝案なし（注意）/.test(line) && /赤い枠と「要対応 N」の札＝要対応/.test(line),
+    '月：凡例の要約に注意と要対応',
+    line,
+  );
   const cells = await page.locator('.month-cell.is-state-none').evaluateAll(
     (els, today) =>
       els
