@@ -1360,3 +1360,17 @@ p.plan-band.error {
 .anneal-more[open] > summary {
   margin-bottom: 4px;
 }
+/* 差の欄の「担当が変わった訪問を見る」（PRD D296）。はじめ畳み、開くと4段目と同じ一覧 */
+.reassign-moves-box > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.reassign-moves-box[open] > summary {
+  margin-bottom: 6px;
+}
+@media print {
+  .reassign-moves-box > summary {
+    display: none;
+  }
+}

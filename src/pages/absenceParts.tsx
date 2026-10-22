@@ -222,6 +222,8 @@ export function ReassignBar({
   children?: ReactNode;
 }) {
   const titleId = useId();
+  /** 担当が変わった訪問の件数（一覧を畳んだ見出しに出す） */
+  const moveCount = diff ? reassignMoveRows(diff, visitLabel).length : 0;
   return (
     <section
       id={id}
@@ -252,6 +254,13 @@ export function ReassignBar({
         </span>
       </div>
       {diff && <ReassignSummary diff={diff} left={left.length} />}
+      {/* 担当が変わった訪問の一覧（PRD D296）。案を比べるを切っていても、どう割り当てたかをこの欄で確かめられる */}
+      {diff && moveCount > 0 && (
+        <details className="reassign-moves-box" data-testid="reassign-bar-moves">
+          <summary>担当が変わった訪問を見る（{moveCount}件）</summary>
+          <ReassignMoves diff={diff} visitLabel={visitLabel} staffName={staffName} />
+        </details>
+      )}
       {diff && diff.unplaced.length > 0 && (
         <div className="stack left-box left-box-warn" style={{ gap: 4 }} data-testid="unplaced-why">
           <strong className="row warn-text" style={{ gap: 4 }}>

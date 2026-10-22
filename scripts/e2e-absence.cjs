@@ -339,6 +339,22 @@ async function reopenFocus(page, best) {
   await panel(page).waitFor({ state: 'detached' });
   await settle(page, 600);
   check((await focused(page)) === 'reassign-bar', '振り直して閉じると差の欄へ', await focused(page));
+  // 差の欄の「担当が変わった訪問を見る（N件）」（PRD D296）：はじめ畳み、開くと4段目と同じ一覧で件数がそろう
+  const movesBox = page.getByTestId('reassign-bar-moves');
+  if ((await movesBox.count()) > 0) {
+    const summaryText = await movesBox.locator('summary').innerText();
+    const closed = !(await movesBox.evaluate((el) => el.open));
+    await movesBox.locator('summary').click();
+    const rows = await movesBox.getByTestId('reassign-move').count();
+    check(
+      closed && rows > 0 && summaryText.includes(`（${rows}件）`),
+      '差の欄：「担当が変わった訪問を見る（N件）」ははじめ畳み、開くと N 行',
+      { summaryText, rows },
+    );
+    await movesBox.locator('summary').click();
+  } else {
+    check(false, '差の欄：「担当が変わった訪問を見る」がある（振り直しで担当が変わった訪問がある）');
+  }
   await page.getByTestId('sudden-open').click();
   await panel(page).waitFor();
   await page.getByTestId('sudden-kind-staff').click();
