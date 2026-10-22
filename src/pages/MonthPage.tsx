@@ -20,7 +20,6 @@ import {
   Sparkles,
   Square,
   Timer,
-  UserRound,
   UserX,
   X,
 } from 'lucide-react';
@@ -46,7 +45,9 @@ import { ClientDots } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
 import { MenuButton, type MenuItem as MoreItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
+import { ClientDot } from '../components/parts';
 import { type BandModel, ProgressBand } from '../components/progressBand';
+import { StaffMark } from '../components/StaffMark';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
@@ -1435,7 +1436,7 @@ export default function MonthPage() {
           {focus.kind === 'staff' && staffSum && (
             <>
               <h2 className="month-aside-title">
-                <UserRound size={18} aria-hidden="true" />
+                <StaffMark staff={staffById.get(focus.id)} size="md" />
                 {/* 名前を押すと詳細の吹き出し（PRD D122・D123） */}
                 <span>
                   <PersonButton kind="staff" id={focus.id} name={focusName} testId="month-aside-name" />
@@ -1489,7 +1490,7 @@ export default function MonthPage() {
           {focus.kind === 'client' && clientSum && (
             <>
               <h2 className="month-aside-title">
-                <UserRound size={18} aria-hidden="true" />
+                <ClientDot client={activeClients.find((c) => c.id === focus.id)} hidden />
                 <span>
                   <PersonButton kind="client" id={focus.id} name={focusName} testId="month-aside-name" />・{monthNo}月
                 </span>
@@ -1528,7 +1529,10 @@ export default function MonthPage() {
                         {x.staffId === null ? (
                           '案なし・入らない'
                         ) : (
-                          <PersonButton kind="staff" id={x.staffId} name={staffById.get(x.staffId)?.name ?? ''} />
+                          <span className="with-staff-mark">
+                            <StaffMark staff={staffById.get(x.staffId)} size="xs" />
+                            <PersonButton kind="staff" id={x.staffId} name={staffById.get(x.staffId)?.name ?? ''} />
+                          </span>
                         )}
                       </span>
                       <span>{x.count}回</span>

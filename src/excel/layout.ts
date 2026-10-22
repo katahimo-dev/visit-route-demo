@@ -39,6 +39,8 @@ export const STAFF_COLS = {
 export const STAFF_LAST_DAY_COL = '最終勤務日';
 /** 〈スタッフ〉の「メールアドレス」（PRD D91。ADR-0017）。書き出しは「最終勤務日」の次。古いブックには無いので必須にしない（無ければ空） */
 export const STAFF_EMAIL_COL = 'メールアドレス';
+/** 〈スタッフ〉の「アイコン」（PRD D299。ADR-0050）。書き出しは「メールアドレス」の次。古いブックには無いので必須にしない（無ければ未設定） */
+export const STAFF_ICON_COL = 'アイコン';
 export const CLIENT_COLS = {
   id: 'ID',
   name: '表示名',

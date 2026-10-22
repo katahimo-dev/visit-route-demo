@@ -46,10 +46,11 @@ fieldset.pick-chips {
   font-weight: 700;
 }
 .pick-chip-color {
+  /* 〈利用者さん〉の色は丸（〈スタッフ〉の印 StaffMark の角の丸い四角と形で見分ける。PRD D298） */
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: 50%;
 }
 /* ドラッグ中に担当できる人：緑の枠と「担当できる」の札。
    チップの幅・行の数を変えない（変えるとチップの下の時間軸がずれ、つかんだ帯が指の下から動く）。

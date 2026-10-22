@@ -5,6 +5,7 @@ import { useDay } from '../app/day';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { FieldError, invalidAttrs } from '../components/FieldError';
+import { StaffMark } from '../components/StaffMark';
 import { StaffLegend } from '../components/staffBar';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
@@ -341,15 +342,18 @@ export default function WorkloadPage() {
                     return (
                       <tr key={s.id}>
                         <th scope="row" className="work-name">
-                          <button
-                            type="button"
-                            className="link-btn"
-                            aria-pressed={picked?.id === s.id}
-                            onClick={() => patch({ staff: s.id })}
-                            title="押すと下の日ごとの表に出します"
-                          >
-                            {s.name}
-                          </button>
+                          <span className="with-staff-mark">
+                            <StaffMark staff={s} size="sm" />
+                            <button
+                              type="button"
+                              className="link-btn"
+                              aria-pressed={picked?.id === s.id}
+                              onClick={() => patch({ staff: s.id })}
+                              title="押すと下の日ごとの表に出します"
+                            >
+                              {s.name}
+                            </button>
+                          </span>
                         </th>
                         <td className="num">{t.days}日</td>
                         <td className="num">{t.count}件</td>
@@ -436,7 +440,10 @@ export default function WorkloadPage() {
                   {rows.map((s) => (
                     <tr key={s.id}>
                       <th scope="row" className="work-grid-name">
-                        {s.name}
+                        <span className="with-staff-mark">
+                          <StaffMark staff={s} size="xs" />
+                          {s.name}
+                        </span>
                       </th>
                       {days.map((d) => {
                         const x = d.stats.find((y) => y.staffId === s.id);

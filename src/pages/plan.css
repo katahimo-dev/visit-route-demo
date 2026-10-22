@@ -249,14 +249,7 @@ p.plan-band.error {
   scroll-margin-top: calc(var(--header-h) + 8px);
 }
 
-/* 色の丸・列の見出し */
-.staff-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
+/* 列の見出し（〈スタッフ〉の印は components/staffMark.css） */
 .col-head {
   display: inline-flex;
   align-items: center;
@@ -798,7 +791,7 @@ p.plan-band.error {
   /* 「入らなかった訪問」へ移る近道で、上の帯に隠れない */
   scroll-margin-top: calc(var(--header-h) + 8px);
 }
-.route-col.is-unchanged .staff-dot {
+.route-col.is-unchanged .staff-mark {
   opacity: 0.4;
 }
 .reassign-bar {

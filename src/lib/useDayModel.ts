@@ -9,7 +9,8 @@ import { normalize } from '../evaluate';
 import { type CompileInput, compile } from '../matching';
 import { applyPreset, scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
-import { attempt, byDisplayName, byName, staffColor } from './common';
+import { attempt, byDisplayName, byName } from './common';
+import { staffColorMap } from './staffMark';
 
 /**
  * その日の画面で共通に使う形（予定・AI案・スタッフの画面）。
@@ -24,7 +25,8 @@ export function useDayModel(date: string) {
   const clients = useMemo(() => [...data.clients].sort(byDisplayName), [data.clients]);
   const staffById = useMemo(() => new Map<string, Staff>(staff.map((s) => [s.id, s])), [staff]);
   const clientById = useMemo(() => new Map<string, Client>(clients.map((c) => [c.id, c])), [clients]);
-  const colorOfStaff = useMemo(() => new Map(staff.map((s, i) => [s.id, staffColor(i)])), [staff]);
+  /** 〈スタッフ〉の色（印 StaffMark・地図の線・時間軸の帯で同じ。lib/staffMark） */
+  const colorOfStaff = useMemo(() => staffColorMap(data.staff), [data.staff]);
   const allVisits = useMemo(() => data.visits.filter((v) => v.date === date), [data.visits, date]);
   /** 計算に入れる候補の訪問（取り消し・〈利用者さん〉の休み（ADR-0013）の訪問を除く） */
   const visits = useMemo(

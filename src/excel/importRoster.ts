@@ -18,6 +18,7 @@ import {
   readEmail,
   readPerson,
   readPostal,
+  readStaffIcon,
   Sheet,
   sheetMsg,
   uniqueName,
@@ -32,6 +33,7 @@ import {
   CLIENT_TENTATIVE_COL,
   STAFF_COLS,
   STAFF_EMAIL_COL,
+  STAFF_ICON_COL,
   STAFF_LAST_DAY_COL,
 } from './layout';
 import { lookup, parseWorkDays, personSheetNames, splitList, travelModeLabels } from './text';
@@ -132,7 +134,7 @@ export async function importRoster(
   if (!sheet.require([nameCol])) return errors.toError();
   const fixed =
     kind === 'staff'
-      ? [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL, STAFF_EMAIL_COL]
+      ? [...Object.values(STAFF_COLS), STAFF_LAST_DAY_COL, STAFF_EMAIL_COL, STAFF_ICON_COL]
       : [
           ...Object.values(CLIENT_COLS),
           CLIENT_TENTATIVE_COL,
@@ -257,6 +259,8 @@ export async function importRoster(
         cur?.lastDay ?? null,
       );
       const email = pick(STAFF_EMAIL_COL, () => readEmail(r, STAFF_EMAIL_COL) ?? '', cur?.email ?? '');
+      // アイコン（ADR-0050）：列が無ければ今の値のまま
+      const icon = pick(STAFF_ICON_COL, () => readStaffIcon(r, STAFF_ICON_COL) ?? '', cur?.icon ?? '');
       const p = mergePerson(r, cols, cur);
       const person: Staff = {
         ...(cur ?? {}),
@@ -271,6 +275,7 @@ export async function importRoster(
         ...p,
         lastDay,
         email,
+        icon,
       };
       out.push({ row: r, person, cur });
     }

@@ -33,6 +33,7 @@ export function staff(id: string, lat: number, lng: number, over: Partial<Staff>
     preferences: [],
     lastDay: null,
     email: '',
+    icon: '',
     ...over,
   };
 }

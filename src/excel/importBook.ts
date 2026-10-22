@@ -7,10 +7,12 @@ import {
   type Availability,
   type Client,
   type ClientLeave,
+  graphemeCount,
   MAX_VISIT_TYPES,
   type Org,
   type Pattern,
   SPAN_LIMIT_DEFAULT_HOURS,
+  STAFF_ICON_MAX,
   type Staff,
   stageOfLegacy,
   type Visit,
@@ -59,6 +61,7 @@ import {
   reqHeader,
   STAFF_COLS,
   STAFF_EMAIL_COL,
+  STAFF_ICON_COL,
   STAFF_LAST_DAY_COL,
   TRAIT_PREFIX,
   TYPE_COLS,
@@ -164,6 +167,16 @@ export function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
 /**
  * メールアドレスの列（ADR-0017）：空・列が無いなら ''。全角・前後の空白・「mailto:」は直し、形が合わなければ行付きで止めて null
  */
+/** 〈スタッフ〉のアイコンの列（ADR-0050）：列が無い古いブック・空は ''。前後の空白は落とす。2文字を超えれば行付きで止めて null */
+export function readStaffIcon(r: Row, h: string): string | null {
+  const t = r.text(h).trim();
+  if (graphemeCount(t) > STAFF_ICON_MAX) {
+    r.err(h, `アイコンは${STAFF_ICON_MAX}文字までです（いま「${t.slice(0, 20)}」）`);
+    return null;
+  }
+  return t;
+}
+
 export function readEmail(r: Row, h: string): string | null {
   const t = r.text(h);
   const e = normalizeEmail(t);
@@ -743,6 +756,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       ...Object.values(STAFF_COLS),
       STAFF_LAST_DAY_COL,
       STAFF_EMAIL_COL,
+      STAFF_ICON_COL,
     ]);
     const ids = new Map<string, number>();
     const seen = new Map<string, number>();
@@ -770,9 +784,12 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
       const lastDay = r.text(STAFF_LAST_DAY_COL) === '' ? null : r.date(STAFF_LAST_DAY_COL);
       // メールアドレス（ADR-0017）：列が無い古いブック・空は ''。全角は直し、形の合わない値は止める
       const email = readEmail(r, STAFF_EMAIL_COL);
+      // アイコン（ADR-0050）：列が無い古いブック・空は ''。前後の空白は落とし、2文字を超えれば止める
+      const icon = readStaffIcon(r, STAFF_ICON_COL);
       const p = readPerson(r, cols);
       if (
         email !== null &&
+        icon !== null &&
         name !== null &&
         travelMode &&
         workDays &&
@@ -794,6 +811,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           ...p,
           lastDay,
           email,
+          icon,
         });
       }
     }

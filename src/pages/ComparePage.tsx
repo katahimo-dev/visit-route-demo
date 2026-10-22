@@ -25,6 +25,7 @@ import { FieldError } from '../components/FieldError';
 import { MapDock } from '../components/MapDock';
 import { RouteMap } from '../components/RouteMap';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
+import { StaffMarkById } from '../components/StaffMark';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
@@ -972,7 +973,7 @@ export default function ComparePage() {
                       title={rs.focusStaff === id ? '地図を全員に戻す' : '地図でこの人のルートだけを見る'}
                     >
                       <strong className="col-head">
-                        <span className="staff-dot" style={{ background: colorOfStaff.get(id) }} aria-hidden="true" />
+                        <StaffMarkById id={id} size="sm" />
                         {staffName(id)}
                       </strong>
                       <span className="sub">
@@ -1030,7 +1031,6 @@ export default function ComparePage() {
             <StaffLegend
               staffIds={staffIds}
               staffName={staffName}
-              colorOfStaff={colorOfStaff}
               focusStaff={rs.focusStaff}
               onFocus={rs.focusOn}
               extra={

@@ -16,9 +16,7 @@ import './marks.css';
 export function ClientName({ client, detail = false }: { client: Client | undefined; detail?: boolean }) {
   return (
     <div className="visit-name">
-      <span className="dot dot-sm" style={{ background: colorOf(client?.color ?? 0) }}>
-        {initialOf(client?.displayName ?? '?')}
-      </span>
+      <ClientDot client={client} />
       {detail && client ? (
         <PersonButton kind="client" id={client.id} name={client.displayName}>
           <span className="ellipsis">{client.displayName}</span>
@@ -28,6 +26,22 @@ export function ClientName({ client, detail = false }: { client: Client | undefi
       )}
       {client?.tentative && <TentativeMark />}
     </div>
+  );
+}
+
+/**
+ * 〈利用者さん〉の印：その人の色の丸に名前の最初の1文字（〈スタッフ〉の印 StaffMark は角の丸い四角。PRD D298）。
+ * hidden のとき読み上げない（新しく置く所。ClientName は今までどおり読み上げに残す）
+ */
+export function ClientDot({ client, hidden = false }: { client: Client | undefined; hidden?: boolean }) {
+  return (
+    <span
+      className="dot dot-sm"
+      style={{ background: colorOf(client?.color ?? 0) }}
+      aria-hidden={hidden ? 'true' : undefined}
+    >
+      {initialOf(client?.displayName ?? '?')}
+    </span>
   );
 }
 

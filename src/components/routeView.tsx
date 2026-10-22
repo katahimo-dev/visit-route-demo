@@ -6,6 +6,7 @@ import type { StopTiming } from '../contracts/problem';
 import { minutesToHhmm } from '../domain/time';
 import { r0 } from '../lib/common';
 import { ClientName } from './parts';
+import { StaffMarkById } from './StaffMark';
 import { WithIcon } from './ui';
 
 /**
@@ -148,18 +149,16 @@ export function VisitCard({
   );
 }
 
-/** 地図の下の凡例：担当を押すとその人だけを地図に出す（もう一度で全員）。extra は「家」や A・B の線の説明 */
+/** 地図の下の凡例：担当を押すとその人だけを地図に出す（もう一度で全員）。印（StaffMark）は地図の線と同じ色。extra は「家」や A・B の線の説明 */
 export function StaffLegend({
   staffIds,
   staffName,
-  colorOfStaff,
   focusStaff,
   onFocus,
   extra,
 }: {
   staffIds: string[];
   staffName: (id: string) => string;
-  colorOfStaff: Map<string, string>;
   focusStaff: string | null;
   onFocus: (id: string | null) => void;
   extra?: ReactNode;
@@ -174,7 +173,7 @@ export function StaffLegend({
           aria-pressed={focusStaff === sid}
           onClick={() => onFocus(focusStaff === sid ? null : sid)}
         >
-          <span className="legend-line" style={{ background: colorOfStaff.get(sid) }} aria-hidden="true" />
+          <StaffMarkById id={sid} size="xs" />
           {staffName(sid)}
         </button>
       ))}

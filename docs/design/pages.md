@@ -71,6 +71,18 @@
 - 画面の見出しは `PageHeader`（左に題名と `lead`＝「この画面でやること」の1行、右に主ボタン1つ。予定の3画面は題名の下に［月｜週｜日］のタブ。PRD D236）、節は `SectionTitle`（`SectionLevelProvider` で h2／h3）
 - 狭い画面の境目：860px 以下でスマホのメニュー（左のメニューを隠す・下のタブ）。600px 以下で帯・欄のボタンを詰める
 
+### 〈スタッフ〉の印（PRD D298・D299。ADR-0050。`components/StaffMark.tsx`・`staffMark.css`・`lib/staffMark.ts`）
+
+- 〈スタッフ〉が名前つきで出る所は `StaffMark`（`staff` を渡す）か `StaffMarkById`（id を渡す）を名前の前に置く。自前の色の点・`UserRound` のアイコン・〈利用者さん〉の `.dot` を〈スタッフ〉に使わない
+- 形：角の丸い四角（`border-radius: 28%`）。〈利用者さん〉は丸（`.dot`・週のチップの色も丸）で、形で見分ける
+- 色：`staffColorMap(data.staff)`＝全員（休止中も）を名前の順（`byName`）に並べた位置の `staffColor`。地図の線・時間軸の帯の縁・列の上の線（`useDayModel` の `colorOfStaff`）も同じ関数から引く。〈スタッフ〉のデータに色の欄は無い（名前を変えると並びが変わり色も変わる）
+- 文字：`staffMarkText`＝`icon`（1〜2文字）があればそれ、無ければ `surnameInitial`（名前を空白（全角も）で区切った先頭の語の最初の1文字。書記素で切る）。2文字は字を小さくする（`.is-two`）
+- 大きさ：`xs` 16px（細い行・チップ・表の中・凡例・パレット）・`sm` 20px（列の見出し・表の行の見出し・比較）・`md` 28px（一覧・相性の列・吹き出しの見出し・月の見出し）・`lg` 44px（閲覧の欄・編集の見本）
+- 読み上げ・文字：`aria-hidden`。文字は `::before { content: attr(data-text) }` で描き、DOM の文字にしない（周りの `textContent`・コピー・e2e の文字の確かめを変えない）。e2e は `[data-staff-mark="〈ID〉"]` の `data-text` を見る
+- 名前は必ず文字で出す（色だけに頼らない）。並べるときは `.with-staff-mark`（inline-flex・gap 6px・min-width 0）
+- 置かない所：select の選択肢、文の中に名前を並べる所（空き状況の「N人：…」・拘束の上限の文・トースト・確認の文）、週の時間軸の帯（色の縁と文字の名前だけ）
+- 印刷：`print-color-adjust: exact` で色を残す
+
 ### 狭い画面の表（PRD D220〜D222。ADR-0033。`styles.css` の末尾）
 
 - 境目は今までの 600px（`lib/useMedia` の `COMPACT_QUERY`＝`lib/monthList` の `MONTH_LIST_QUERY`＝CSS の `@media (max-width: 600px)`）。新しい境目は作らない。広い画面の見た目は変えない
@@ -281,7 +293,8 @@
 | `VisitRules.tsx` | 訪問先の決まりごとの表示 | [pages-clients.md](pages-clients.md) |
 | `mailParts.tsx`・`mapsLinks.tsx` | メール・道順のリンク | [pages-common.md](pages-common.md) |
 | `FilePick.tsx` | ファイル選択 | [pages-data.md](pages-data.md) |
-| `parts.tsx` | `ClientName` など | — |
+| `parts.tsx` | `ClientName`・`ClientDot`（〈利用者さん〉の丸）など | — |
+| `StaffMark.tsx` | 〈スタッフ〉の印 `StaffMark`・`StaffMarkById` | このファイル（〈スタッフ〉の印） |
 
 #### `lib/`（画面用の純粋関数。テストあり）
 
@@ -300,6 +313,7 @@
 | `presets.ts` | プリセット | [pages-rules.md](pages-rules.md) |
 | `filePick.ts` | ファイル選択 | [pages-data.md](pages-data.md) |
 | `useMedia.ts`・`scrollEdge.ts`・`useScrollEdge.ts` | 狭い画面の判定（`COMPACT_QUERY`）・横に巻く表の端と巻き位置 | このファイル（狭い画面の表） |
+| `staffMark.ts` | 〈スタッフ〉の印の色（`staffColorMap`）・文字（`staffMarkText`・`surnameInitial`）・アイコンの検査（`staffIconError`） | このファイル（〈スタッフ〉の印） |
 | `isDate.ts`・`common.ts`・`colors.ts`・`motion.ts`・`download.ts` | 小さな共通（動きを減らす設定・ファイルの保存） | — |
 
 ### 完了の条件（共通）

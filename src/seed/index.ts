@@ -40,6 +40,7 @@ function initialStaff(): Staff[] {
     preferences: s.preferences,
     lastDay: null,
     email: STAFF_EMAIL_SEEDS[s.id] ?? '',
+    icon: '',
   }));
 }
 

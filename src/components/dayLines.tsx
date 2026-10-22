@@ -5,6 +5,7 @@ import './dayLines.css';
 import { type MouseEvent, useState } from 'react';
 import { type DayLine, dayLineText } from '../lib/dayLine';
 import { PersonInfo } from './PersonPopover';
+import { StaffMarkById } from './StaffMark';
 import { StaffLegend } from './staffBar';
 import { PartsBar } from './workBars';
 
@@ -28,7 +29,6 @@ export function DayLines({
   lines,
   range,
   nameOf,
-  colorOf,
   onPick,
   staffTerm,
   collapsed,
@@ -37,7 +37,6 @@ export function DayLines({
   lines: readonly DayLine[];
   range: { start: number; end: number };
   nameOf: (staffId: string) => string;
-  colorOf: (staffId: string) => string | undefined;
   /** visitId は横棒の訪問の所を押したとき（その訪問を選ぶ）。無ければその人を選ぶ */
   onPick: (staffId: string, visitId?: string) => void;
   /** org.terms.staff */
@@ -81,7 +80,7 @@ export function DayLines({
                 data-staff={x.staffId}
               >
                 <span className="daylines-name ellipsis">
-                  <span className="staff-dot" style={{ background: colorOf(x.staffId) }} aria-hidden="true" />
+                  <StaffMarkById id={x.staffId} size="xs" />
                   {nameOf(x.staffId)}
                 </span>
                 <PartsBar parts={x.parts} shift={x.shift} rest={x.rest} range={range} className="daylines-bar" />

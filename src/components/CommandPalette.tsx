@@ -21,6 +21,7 @@ import { confirmLeave } from '../lib/leaveGuard';
 import type { MenuItem, NavSection } from '../lib/nav';
 import { presetOf } from '../seed';
 import { useDemoData } from '../store';
+import { StaffMarkById } from './StaffMark';
 import { FOCUSABLE } from './ui';
 import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
 import './commandPalette.css';
@@ -219,6 +220,8 @@ export function CommandPalette({
                       data-kind={it.kind}
                       data-to={it.to}
                     >
+                      {/* 〈スタッフ〉は印を添える（PRD D298。飾りなので読み上げない） */}
+                      {it.kind === 'staff' && <StaffMarkById id={it.id.slice('staff:'.length)} size="xs" />}
                       <span className="cmdk-option-label">{it.label}</span>
                       {it.hint && <span className="cmdk-option-hint">{it.hint}</span>}
                       {i === at && <CornerDownLeft size={14} className="cmdk-option-enter" aria-hidden="true" />}

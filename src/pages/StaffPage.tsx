@@ -24,6 +24,7 @@ import { FieldError, type FormErr, invalidAttrs, RequiredMark, toFormErr } from 
 import { Check } from '../components/parts';
 import { StaffView } from '../components/personView';
 import { AddressField } from '../components/placeLookup';
+import { StaffMark } from '../components/StaffMark';
 import { useToast } from '../components/Toast';
 import {
   Hint,
@@ -42,6 +43,7 @@ import { useDirtyMark } from '../lib/dirtyForms';
 import { normalizeEmail } from '../lib/mailto';
 import { offboardScope } from '../lib/offboard';
 import { mdText } from '../lib/patternText';
+import { staffColorMap, staffIconError, surnameInitial } from '../lib/staffMark';
 import { useFeature } from '../lib/useFeature';
 import { type DiscardWhen, discardDialog, isDirty } from '../lib/viewMode';
 import { useDemoData } from '../store';
@@ -66,6 +68,7 @@ const blank = (): Staff => ({
   preferences: [],
   lastDay: null,
   email: '',
+  icon: '',
 });
 
 export default function StaffPage() {
@@ -182,6 +185,18 @@ export default function StaffPage() {
     );
   }, [openId]);
 
+  /** 編集中の印の見本の色（保存したあとの名前の並びで決まる色。lib/staffMark） */
+  const previewColor = useMemo(
+    () =>
+      form
+        ? staffColorMap([
+            ...data.staff.filter((x) => x.id !== form.id),
+            { ...form, name: form.name.trim() || form.name },
+          ]).get(form.id)
+        : undefined,
+    [form, data.staff],
+  );
+
   /** 閲覧の欄の人（編集していないとき。データから消えたら欄を出さない） */
   const viewed = !form && viewId !== null ? data.staff.find((x) => x.id === viewId) : undefined;
 
@@ -202,8 +217,15 @@ export default function StaffPage() {
       setError({ text: 'メールアドレスの形ではありません（例 name@example.com）。空でも構いません', field: 'email' });
       return;
     }
+    // アイコン（任意。ADR-0050）：前後の空白は落とし、2文字を超えれば保存しない
+    const icon = form.icon.trim();
+    const iconErr = staffIconError(icon);
+    if (iconErr) {
+      setError({ text: iconErr, field: 'icon' });
+      return;
+    }
     try {
-      const s = staffSchema.parse({ ...form, email });
+      const s = staffSchema.parse({ ...form, email, icon });
       // 休止にするとき、〈利用者さん〉の「担当できる人」から外す（ADR-0014。repair と同じ扱いを保存の時点で）
       const limited = s.active ? [] : data.clients.filter((c) => c.allowedStaffIds.includes(s.id));
       // 担当を限るを切っていれば、見えない欄の話になるので確認を出さない（外すのは今どおり。入れ直しても戻らない）
@@ -363,9 +385,10 @@ export default function StaffPage() {
                 }}
               >
                 <td {...narrowRole.cell} className="person-name narrow-title" data-label="名前">
-                  <WithIcon icon={UserRound} size={15}>
+                  <span className="with-staff-mark">
+                    <StaffMark staff={s} size="md" />
                     {s.name}
-                  </WithIcon>
+                  </span>
                 </td>
                 <td {...narrowRole.cell} className="nowrap" data-label="勤務">
                   <WithIcon icon={Clock} size={14}>
@@ -481,6 +504,23 @@ export default function StaffPage() {
                       {...bad('name')}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
                     />
+                  </label>
+                  {/* アイコン（任意の1〜2文字。PRD D299。ADR-0050）。空なら苗字の最初の1文字を薄く出す */}
+                  <label>
+                    アイコン（1〜2文字・任意）
+                    <span className="staff-icon-field">
+                      <StaffMark staff={form} size="lg" color={previewColor} />
+                      <input
+                        value={form.icon}
+                        maxLength={32}
+                        autoComplete="off"
+                        placeholder={surnameInitial(form.name)}
+                        {...bad('icon')}
+                        onChange={(e) => setForm({ ...form, icon: e.target.value })}
+                        data-testid="staff-icon"
+                      />
+                    </span>
+                    <span className="sub">印の中に出す文字（絵文字も可）。空なら苗字の最初の1文字</span>
                   </label>
                   {mailOn && (
                     <label>
