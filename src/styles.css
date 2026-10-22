@@ -2449,3 +2449,11 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
     display: none;
   }
 }
+
+/* 一覧の行を押して閲覧の欄を開く（PRD D297）。押せることが分かるよう、指のカーソルと重ねたときの地の色 */
+.row-open {
+  cursor: pointer;
+}
+.row-open:hover > td {
+  background: #fbf3ec;
+}

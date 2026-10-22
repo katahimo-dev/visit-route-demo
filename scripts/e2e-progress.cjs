@@ -54,6 +54,27 @@ async function editData(page, fn, arg) {
   await page.reload();
   await page.locator('h1').waitFor();
 }
+/**
+ * 今日より後の今月の案のある日を1日だけ案なしにする（次の一手が「まとめて作る」になる形を作る。
+ * 月末に近い日は初期データの案（今日から7日分。PRD D225）とまとめて作るで今月が埋まることがあるため）
+ */
+async function dropLaterPlan(page) {
+  await editData(
+    page,
+    ({ key, today, ym }) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      const later = Object.keys(d.aiPlans)
+        .filter((x) => x > today && x.startsWith(ym))
+        .sort();
+      const last = later.at(-1);
+      if (last) {
+        delete d.aiPlans[last];
+        localStorage.setItem(key, JSON.stringify(d));
+      }
+    },
+    { key: STORAGE_KEY, today: TODAY, ym: YM },
+  );
+}
 /** 帯の数字 */
 async function bandNumbers(page) {
   return page.getByTestId('progress-band').evaluate((el) => {
@@ -271,8 +292,14 @@ async function keepRunning(page) {
   check(hashOf(page) === `#/month?ym=${YM}`, '知らせの［月の予定を見る］で月の予定へ', hashOf(page));
   check((await page.getByTestId('month-progress').count()) === 0, '止めたあとは進み具合を出さない');
   // その月の月の予定を見ている間に終わったら、知らせに［月の予定を見る］を出さない（行き先が今の画面。PRD D268）
-  // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）
-  const kind = await page.getByTestId('band-next').getAttribute('data-kind');
+  // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）。
+  // 止める前に残りを作り終えることがある（月末に近い日・速い機械）ので、そのときは今日より後の案を1日消して作る
+  let kind = await page.getByTestId('band-next').getAttribute('data-kind');
+  if (kind !== 'batch') {
+    await dropLaterPlan(page);
+    await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
+    kind = await page.getByTestId('band-next').getAttribute('data-kind');
+  }
   check(kind === 'batch', '止めたあと：次の一手は「まとめて作る」（D268 を確かめる用意）', kind);
   if (kind === 'batch') {
     await page.getByTestId('band-next').click();
@@ -399,23 +426,8 @@ async function links(page) {
     '日の帯の「確定」→ 月の予定の確定していない日（同じ日数）',
     { hash: hashOf(page), listed, band: n.unconfirmed },
   );
-  // 月末に近い日は、止めたあとでも今月の案の無い日が残らないことがある（初期データの案は今日から7日分。PRD D225）。
-  // 今日より後の今月の案のある日を1日だけ案なしにして、次の一手が「まとめて作る」になる形を作る
-  await editData(
-    page,
-    ({ key, today, ym }) => {
-      const d = JSON.parse(localStorage.getItem(key));
-      const later = Object.keys(d.aiPlans)
-        .filter((x) => x > today && x.startsWith(ym))
-        .sort();
-      const last = later.at(-1);
-      if (last) {
-        delete d.aiPlans[last];
-        localStorage.setItem(key, JSON.stringify(d));
-      }
-    },
-    { key: STORAGE_KEY, today: TODAY, ym: YM },
-  );
+  // 月末に近い日は、止めたあとでも今月の案の無い日が残らないことがある（初期データの案は今日から7日分。PRD D225）
+  await dropLaterPlan(page);
   await open(page, '/plan', '[data-testid="band-day"]');
   // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）
   const kind = await page.getByTestId('band-next').getAttribute('data-kind');

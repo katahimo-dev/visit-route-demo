@@ -125,7 +125,7 @@
 
 - 見出し「（案A：空き時間に入れた案）／（案B：少し動かした案）」。案B なら注記を「ほかの人の訪問も少し動かしています」に
 - まとめ（`ReassignSummary`。4段目でも使う）：「変わる人 N人・振り直し N件・入らない N件・（あれば）欠勤の人のまま N件・移動 +N分」、「元の案：確定した割当／今の案」
-- 担当が移る訪問（`ReassignMoves`。欄の4段目だけ。PRD D265）：`reassignMoveRows(diff, visitLabel)` （`lib/sudden`。テストあり）で `moved` と `unplaced` を1訪問1行・訪問の文の順に（文は `visitLabel`＝受けられる時間帯の初め（`earliestStart`）と名前なので、並びも行の時刻も時間帯の初め。振り直したあとの開始時刻ではない）。行は「10:00 〈利用者さん〉」と「〇〇さん → △△さん」（読み上げは「から」）、入らない訪問は「入らない（〇〇さんから外れる）」（赤い縁）。無ければ「担当が変わる訪問はありません」。`reassign-moves`・`reassign-move`（`data-to`）
+- 担当が移る訪問（`ReassignMoves`。欄の4段目と、差の欄の畳んだ「担当が変わった訪問を見る（N件）」（`reassign-bar-moves`。1件以上のときだけ。案を比べるを切っていても出す。PRD D296）。PRD D265）：`reassignMoveRows(diff, visitLabel)` （`lib/sudden`。テストあり）で `moved` と `unplaced` を1訪問1行・訪問の文の順に（文は `visitLabel`＝受けられる時間帯の初め（`earliestStart`）と名前なので、並びも行の時刻も時間帯の初め。振り直したあとの開始時刻ではない）。行は「10:00 〈利用者さん〉」と「〇〇さん → △△さん」（読み上げは「から」）、入らない訪問は「入らない（〇〇さんから外れる）」（赤い縁）。無ければ「担当が変わる訪問はありません」。`reassign-moves`・`reassign-move`（`data-to`）
 - 入らない訪問の理由：「入らない訪問（N件）：ほかの人の空き時間に入らない」と一覧・案B か「受けられる人」へ
 - 欠勤の人に残る訪問（`leftOf`。今の案に targetsOf を当てたもの。手直しで戻した等）の理由（`leftReasonText`）と「対応が必要」・「もう一度振り直す」。〈利用者さん〉の名前は `PersonButton`（`visitNode`。data-testid `left-client`）
 - 「元の案に戻す」（`revertReassign`）：確認を出し、routes・pins を元の案（`baseRoutes`・`basePins`）に、generated・runId を振り直す前のもの（`baseGenerated`・`baseRunId`。無い古いデータは generated＝元の案・runId なし）に戻し、`reassign` を外す。続けて振り直したあとも最初の元の案へ

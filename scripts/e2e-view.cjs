@@ -663,6 +663,47 @@ async function staffMore(page, dlg) {
   check(s1.email !== 'more@example.com', '〈スタッフ〉：捨てた変更は保存しない');
 }
 
+/** 一覧の行を押して閲覧の欄を開く（PRD D297）：名前の文字・特性の欄を押しても開き、1400px と 390px で同じ */
+async function rowClick(page) {
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page, '/clients', '[data-testid="client-row"]');
+    const row = page.getByTestId('client-row').filter({ hasText: '図書館 ふみ' }).first();
+    const cursor = await row.evaluate((el) => getComputedStyle(el).cursor);
+    await row.getByText('図書館 ふみ', { exact: true }).first().click();
+    await view(page).waitFor({ timeout: 5000 });
+    check(
+      cursor === 'pointer' && (await panel(page).textContent()).includes('図書館 ふみ'),
+      `〈利用者さん〉・${width}px：行の名前を押すと閲覧の欄（指のカーソル）`,
+      cursor,
+    );
+    await page.keyboard.press('Escape');
+    await view(page).waitFor({ state: 'detached', timeout: 5000 });
+    const back = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
+    check(back === '図書館 ふみを開く', `〈利用者さん〉・${width}px：閉じるとフォーカスはその行の「開く」`, back);
+    // ドラッグで文字を選んだときは開かない（名前の文字の上を左から右へ）
+    const box = await row.getByText('図書館 ふみ', { exact: true }).first().boundingBox();
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await settle(page, 300);
+    check((await panel(page).count()) === 0, `〈利用者さん〉・${width}px：名前の文字をドラッグで選んでも開かない`);
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await open(page, '/staff', '[data-testid="staff-row"]');
+    const srow = page.getByTestId('staff-row').filter({ hasText: '市役所 まち子' }).first();
+    await srow.locator('td').nth(2).click();
+    await view(page).waitFor({ timeout: 5000 });
+    check(
+      (await panel(page).textContent()).includes('市役所 まち子'),
+      `〈スタッフ〉・${width}px：行の特性の欄を押すと閲覧の欄`,
+    );
+    await page.keyboard.press('Escape');
+    await view(page).waitFor({ state: 'detached', timeout: 5000 });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+}
+
 const errors = [];
 const steps = pagePerStep({
   open: async (browser) => {
@@ -678,7 +719,7 @@ const steps = pagePerStep({
     return { ctx, page, dlg: await dialogs(page) };
   },
   call: (fn, s) => fn(s.page, s.dlg),
-  steps: [clients, clientsMore, seeded, staff, staffMore, links, names],
+  steps: [clients, clientsMore, seeded, staff, staffMore, links, names, rowClick],
   label: (name) => `${name}：途中で止まった`,
   after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
   end: () => check(errors.length === 0, 'ページのエラーが無い', errors),
