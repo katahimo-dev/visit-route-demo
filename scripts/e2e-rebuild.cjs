@@ -419,9 +419,26 @@ async function draft(page, { dlg }) {
   await openSettings(page, '/rules');
   await nudge(page);
   const radios = page.getByTestId('score-ruler-choice').locator('input[type="radio"]');
-  await radios.nth(1).check();
+  // 下書きがあれば、捨てることを確かめてから替える（黙って捨てない）。断れば基準も下書きもそのまま
+  dlg.answer = false;
+  const mBasis = dlg.messages.length;
+  await radios.nth(1).click();
+  await until(() => dlg.messages.length > mBasis);
   await settle(page, 300);
-  check((await draftBar(page).count()) === 0, '点数の基準を替えると下書きを捨てる');
+  check(
+    (dlg.messages[mBasis] ?? '').startsWith('点数の基準を「') &&
+      (await draftBar(page).count()) === 1 &&
+      (await radios.first().isChecked()),
+    '下書きのまま基準を替えると確認。断れば基準も下書きもそのまま',
+    dlg.messages[mBasis],
+  );
+  dlg.answer = true;
+  await radios.nth(1).click();
+  await settle(page, 300);
+  check(
+    (await draftBar(page).count()) === 0 && (await radios.nth(1).isChecked()),
+    '点数の基準を替えると下書きを捨てる',
+  );
   await radios.first().check();
   await settle(page, SETTLE + 300);
   check(await same0(), '基準を戻すと元の重み');
@@ -922,6 +939,98 @@ function changeSteps() {
     await daysRow(page).waitFor({ state: 'detached', timeout: 15000 });
   }
 
+  // 足した・消したものは一覧に出すが［戻す］を出さない（PRD D291）。中身の変更（重み）だけ戻せる
+  async function addRemove(page, { dlg }) {
+    await openSettings(page, '/staff');
+    const before = await waitWeight(page);
+    await otherTab(
+      page,
+      ({ k, b, keys, at }) => {
+        const d = JSON.parse(localStorage.getItem(k));
+        const base = JSON.stringify({ at, data: Object.fromEntries(keys.map((x) => [x, d[x]])) });
+        const basis = d.presets.find((p) => p.id === d.scorePresetId) ?? d.presets[0];
+        basis.weights.wait.weight = basis.weights.wait.weight >= 4 ? 1 : basis.weights.wait.weight + 1;
+        for (const r of d.rules) if (r.type === 'wait') r.weight = basis.weights.wait.weight;
+        d.staff.push({ ...d.staff[0], id: 's-e2e-add', name: 'E2E追加', email: '' });
+        localStorage.setItem(k, JSON.stringify(d));
+        localStorage.setItem(b, base);
+      },
+      { k: STORAGE_KEY, b: BASE_KEY, keys: CONDITION_KEYS, at: await page.evaluate(() => Date.now()) },
+    );
+    await daysRow(page).waitFor({ timeout: 15000 });
+    const list = await openList(page);
+    const added = items(page).filter({ hasText: 'E2E追加さんを追加' });
+    const weight = items(page).filter({ hasText: '条件の重み' });
+    check(
+      list.length === 2 &&
+        (await added.count()) === 1 &&
+        (await added.getByTestId('rebuild-change-revert').count()) === 0 &&
+        (await weight.getByTestId('rebuild-change-revert').count()) === 1,
+      '変更内容：足した人は一覧に出すが［戻す］を出さない（重みは戻せる）',
+      list,
+    );
+    const note = page.getByTestId('rebuild-no-revert');
+    check(
+      (await note.count()) === 1 && (await note.innerText()).includes('各画面で直してください'),
+      '変更内容：戻せないものがあれば「各画面で直してください」の短い文',
+    );
+    check(
+      (await page.getByTestId('rebuild-revert-all').count()) === 0,
+      '変更内容：戻せるものが1件なら［すべて戻す］は出さない',
+    );
+    dlg.answer = true;
+    dlg.messages.length = 0;
+    await weight.getByTestId('rebuild-change-revert').click();
+    await settle(page, SETTLE + 300);
+    check(
+      (await waitWeight(page)) === before &&
+        (await page.evaluate(
+          (k) => JSON.parse(localStorage.getItem(k)).staff.some((s) => s.id === 's-e2e-add'),
+          STORAGE_KEY,
+        )),
+      '変更内容：重みだけ戻り、足した人は残る',
+      dlg.messages,
+    );
+    // 後片づけ：帯の無い画面（ホーム）へ移ってから、別のタブで足した人を消す → 影響する日が0日になり控えが消える（App の殻が数える）
+    await page.goto(`${BASE}#/home`);
+    await page.getByTestId('home-tasks').waitFor({ timeout: 30000 });
+    await otherTab(
+      page,
+      ({ k }) => {
+        const d = JSON.parse(localStorage.getItem(k));
+        d.staff = d.staff.filter((s) => s.id !== 's-e2e-add');
+        localStorage.setItem(k, JSON.stringify(d));
+      },
+      { k: STORAGE_KEY },
+    );
+    check(
+      !!(await until(async () => (await baseOf(page)) === null, 15000)),
+      '変更内容：帯の無い画面でも、0日になれば控えを消す',
+    );
+  }
+
+  // 帯の無い画面（ホーム）で控えが届いても、影響する日が0日なら消す（月で作り直して0日になったときと同じ。PRD D290）
+  async function sweep(page) {
+    await page.goto(`${BASE}#/home`);
+    await page.getByTestId('home-tasks').waitFor({ timeout: 30000 });
+    await otherTab(
+      page,
+      ({ k, b, keys, at }) => {
+        const d = JSON.parse(localStorage.getItem(k));
+        // 条件でない所（乱数の種）だけ変えて、データの知らせも届ける（控えより後に止まったデータを数える）
+        d.seed = (d.seed ?? 0) + 1;
+        const base = JSON.stringify({ at, data: Object.fromEntries(keys.map((x) => [x, d[x]])) });
+        localStorage.setItem(k, JSON.stringify(d));
+        localStorage.setItem(b, base);
+      },
+      { k: STORAGE_KEY, b: BASE_KEY, keys: CONDITION_KEYS, at: await page.evaluate(() => Date.now()) },
+    );
+    check(
+      !!(await until(async () => (await baseOf(page)) === null, 15000)),
+      '変更内容：帯の無い画面でも、影響する日が0日なら控えを消す（後の変更と混ざらない）',
+    );
+  }
+
   const list = sharedPage({
     open: async () => {
       const s = await openPage();
@@ -933,6 +1042,8 @@ function changeSteps() {
       ['changes-features', features],
       ['changes-revert-all', revertAll],
       ['changes-no-base', noBase],
+      ['changes-add-remove', addRemove],
+      ['changes-sweep', sweep],
     ],
     after: ({ dlg }) => check(dlg.native.length === 0, '変更内容：ブラウザのダイアログを出さない', dlg.native),
   });

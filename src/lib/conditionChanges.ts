@@ -1,6 +1,8 @@
 // 作り直しの帯の「何が変わったか」と「戻す」（PRD D290〜D292。ADR-0049）。
 // 条件の変更の控え（store の conditionsBase：最後に影響する日が0日だった時点の条件）と今の条件を比べ、人が読める一覧にする。
 // 控えが無いときは、今の案の記録の重み（AiRun.rules）と点数の基準のプリセットの重みだけ比べられる（madeWeightsChange）。
+// 戻せるのは中身の書き換え（重み・相性・機能・勤務時間・人の属性など）だけ。足した・消したもの（人・定期パターン・特性の項目・
+// 訪問の種類・プリセット・条件）と特性の項目の直しは一覧に出すが戻さない（ほかのデータが指しているので、各画面で直す。PRD D291）。
 // ここは純粋関数（データは書き換えない。戻すは新しい DemoData を返し、画面が store の update(fn) で書く）
 import type { DemoData } from '../contracts/data';
 import type { Terms } from '../contracts/documents';
@@ -9,7 +11,7 @@ import {
   COMPAT_LABELS,
   type CompatLevel,
   HARDABLE,
-  MAX_PRESETS,
+  type Item,
   type Preset,
   RULE_TYPES,
   type Rule,
@@ -21,7 +23,7 @@ import { repair } from '../store/repair';
 import { own, ruleTypeLabel } from './common';
 import { featureLabel, isSwitchOn } from './features';
 import { planRunOf } from './month';
-import { patchPreset, removePreset, setScorePreset } from './presets';
+import { patchPreset, setScorePreset } from './presets';
 
 /** 比べる条件の部分（store の Conditions と同じ形。lib から store の型を引かないよう写す） */
 export type ConditionParts = Pick<
@@ -66,9 +68,12 @@ export type ConditionChange = {
   head: string;
   /** どう変わったか（例「待ち 3→2」「山田さんの勤務時間」） */
   text: string;
-  /** 戻した新しいデータ（戻せないときは同じデータ） */
-  revert: (d: DemoData) => DemoData;
+  /** 戻した新しいデータ。null は戻さない変更（足した・消したもの・特性の項目の直し。各画面で直す。PRD D291） */
+  revert: ((d: DemoData) => DemoData) | null;
 };
+
+/** 戻せる変更か */
+export const canRevert = (c: ConditionChange): boolean => c.revert !== null;
 
 /** 一覧の1行の文（「条件の重み：待ち 3→2」） */
 export const changeLine = (c: ConditionChange): string => `${c.head}：${c.text}`;
@@ -218,7 +223,7 @@ export function conditionChanges(base: ConditionParts, now: ConditionParts): Con
       kind: 'preset',
       head: 'プリセット',
       text: `「${n.name}」を追加`,
-      revert: (d) => removePreset(d, n.id),
+      revert: null,
     });
   }
   for (const b of p.removed) {
@@ -227,39 +232,26 @@ export function conditionChanges(base: ConditionParts, now: ConditionParts): Con
       kind: 'preset',
       head: 'プリセット',
       text: `「${b.name}」を消した`,
-      revert: (d) =>
-        d.presets.length >= MAX_PRESETS || d.presets.some((x) => x.id === b.id)
-          ? d
-          : { ...d, presets: revertById(d.presets, base.presets, b.id) },
+      revert: null,
     });
   }
 
-  // 条件（足す・消す・名前）
+  // 条件（足す・消すは戻さない。名前は戻せる）
   const r = byId(base.rules, now.rules);
-  const ruleTexts = [
-    ...r.added.map((x) => `「${x.label}」を追加`),
-    ...r.removed.map((x) => `「${x.label}」を消した`),
-    ...r.changed
-      .filter(([b, n]) => b.label !== n.label || b.type !== n.type)
-      .map(([b, n]) => `「${b.label}」→「${n.label}」`),
-  ];
-  if (ruleTexts.length > 0) {
+  const ruleAdds = [...r.added.map((x) => `「${x.label}」を追加`), ...r.removed.map((x) => `「${x.label}」を消した`)];
+  if (ruleAdds.length > 0) {
+    out.push({ key: 'rules:add', kind: 'rules', head: '条件', text: listText(ruleAdds), revert: null });
+  }
+  const renamed = r.changed.filter(([b, n]) => b.label !== n.label);
+  if (renamed.length > 0) {
+    const was = new Map(renamed.map(([b]) => [b.id, b.label]));
     out.push({
       key: 'rules',
       kind: 'rules',
       head: '条件',
-      text: listText(ruleTexts),
-      // 並び・名前・型は控えに。残っている条件の重み・必須は今のまま（重みは「条件の重み」「この日だけ試す重み」で戻す）
-      revert: (d) => {
-        const cur = new Map(d.rules.map((x) => [x.id, x]));
-        return {
-          ...d,
-          rules: base.rules.map((x): Rule => {
-            const c = cur.get(x.id);
-            return c ? { ...x, weight: c.weight, hard: c.hard } : x;
-          }),
-        };
-      },
+      text: listText(renamed.map(([b, n]) => `「${b.label}」→「${n.label}」`)),
+      // 名前だけ控えに（重み・必須は「条件の重み」「この日だけ試す重み」で戻す）
+      revert: (d) => ({ ...d, rules: d.rules.map((x) => (was.has(x.id) ? { ...x, label: was.get(x.id)! } : x)) }),
     });
   }
   // この日だけ試す重み（基準にそろっていれば基準の重みの違いと同じなので出さない。ADR-0035）
@@ -330,22 +322,24 @@ export function conditionChanges(base: ConditionParts, now: ConditionParts): Con
       kind: 'items',
       head: '特性の項目',
       text: itemTexts.length > 0 ? listText(itemTexts) : '並び',
-      revert: (d) => ({ ...d, items: base.items }),
+      // 項目の直し（選択肢の名前など）は人の特性の値も書き換えるので、項目だけ戻すと値が合わなくなる。戻さない
+      revert: null,
     });
   }
   const vt = byId(base.visitTypes, now.visitTypes);
-  const typeTexts = [
-    ...vt.added.map((x) => `${x.name}を追加`),
-    ...vt.removed.map((x) => `${x.name}を消した`),
-    ...vt.changed.map(([, n]) => `${n.name}を直した`),
-  ];
-  if (typeTexts.length > 0) {
+  const typeAdds = [...vt.added.map((x) => `${x.name}を追加`), ...vt.removed.map((x) => `${x.name}を消した`)];
+  if (typeAdds.length > 0) {
+    out.push({ key: 'visitTypes:add', kind: 'visitTypes', head: '訪問の種類', text: listText(typeAdds), revert: null });
+  }
+  if (vt.changed.length > 0) {
+    const ids = vt.changed.map(([b]) => b.id);
     out.push({
       key: 'visitTypes',
       kind: 'visitTypes',
       head: '訪問の種類',
-      text: listText(typeTexts),
-      revert: (d) => ({ ...d, visitTypes: base.visitTypes }),
+      text: listText(vt.changed.map(([, n]) => `${n.name}を直した`)),
+      // 直した種類だけ控えの中身に（足した・消した種類はそのまま）
+      revert: (d) => ({ ...d, visitTypes: revertIds(d.visitTypes, base.visitTypes, ids) }),
     });
   }
 
@@ -378,43 +372,30 @@ export function conditionChanges(base: ConditionParts, now: ConditionParts): Con
     });
   }
 
-  // 人（1人ずつ）
+  // 人（1人ずつ。足した・消した人は戻さない）
   const st = byId(base.staff, now.staff);
-  for (const n of st.added)
-    out.push(
-      personChange('staff', n.id, terms.staff, `${san(n.name)}を追加`, (d) => revertById(d.staff, base.staff, n.id)),
-    );
-  for (const b of st.removed)
-    out.push(
-      personChange('staff', b.id, terms.staff, `${san(b.name)}を消した`, (d) => revertById(d.staff, base.staff, b.id)),
-    );
+  for (const n of st.added) out.push(personChange('staff', n.id, terms.staff, `${san(n.name)}を追加`, null));
+  for (const b of st.removed) out.push(personChange('staff', b.id, terms.staff, `${san(b.name)}を消した`, null));
   for (const [b, n] of st.changed) {
     const f = fieldNames(b, n, STAFF_FIELDS);
     out.push(
-      personChange('staff', n.id, terms.staff, `${san(n.name)}の${f.join('・') || '設定'}`, (d) =>
-        revertById(d.staff, base.staff, n.id),
-      ),
+      personChange('staff', n.id, terms.staff, `${san(n.name)}の${f.join('・') || '設定'}`, (d) => ({
+        ...d,
+        staff: d.staff.map((x) => (x.id === b.id ? { ...b, traits: fitTraits(b.traits, d.items, 'staff') } : x)),
+      })),
     );
   }
   const cl = byId(base.clients, now.clients);
-  for (const n of cl.added)
-    out.push(
-      personChange('client', n.id, terms.client, `${san(n.displayName)}を追加`, (d) =>
-        revertById(d.clients, base.clients, n.id),
-      ),
-    );
+  for (const n of cl.added) out.push(personChange('client', n.id, terms.client, `${san(n.displayName)}を追加`, null));
   for (const b of cl.removed)
-    out.push(
-      personChange('client', b.id, terms.client, `${san(b.displayName)}を消した`, (d) =>
-        revertById(d.clients, base.clients, b.id),
-      ),
-    );
+    out.push(personChange('client', b.id, terms.client, `${san(b.displayName)}を消した`, null));
   for (const [b, n] of cl.changed) {
     const f = fieldNames(b, n, CLIENT_FIELDS);
     out.push(
-      personChange('client', n.id, terms.client, `${san(n.displayName)}の${f.join('・') || '設定'}`, (d) =>
-        revertById(d.clients, base.clients, n.id),
-      ),
+      personChange('client', n.id, terms.client, `${san(n.displayName)}の${f.join('・') || '設定'}`, (d) => ({
+        ...d,
+        clients: d.clients.map((x) => (x.id === b.id ? { ...b, traits: fitTraits(b.traits, d.items, 'client') } : x)),
+      })),
     );
   }
 
@@ -445,15 +426,10 @@ export function conditionChanges(base: ConditionParts, now: ConditionParts): Con
       }),
     });
   }
-  // 〈利用者さん〉の休み・定期パターン（〈利用者さん〉ごと）
-  for (const [key, head] of [
-    ['clientLeaves', `${terms.client}の休み`],
-    ['patterns', '定期パターン'],
-  ] as const) {
+  // 〈利用者さん〉の休み（〈利用者さん〉ごと。ほかから指されないので、足した・消した休みも戻せる）
+  {
+    const d0 = byId(base.clientLeaves, now.clientLeaves);
     const ids = new Set<string>();
-    const bl = base[key] as { id: string; clientId: string }[];
-    const nl = now[key] as { id: string; clientId: string }[];
-    const d0 = byId(bl, nl);
     for (const x of [...d0.added, ...d0.removed]) ids.add(x.clientId);
     for (const [b, n] of d0.changed) {
       ids.add(b.clientId);
@@ -461,21 +437,84 @@ export function conditionChanges(base: ConditionParts, now: ConditionParts): Con
     }
     for (const cid of [...ids].sort()) {
       out.push({
-        key: `${key}:${cid}`,
-        kind: key,
-        head,
+        key: `clientLeaves:${cid}`,
+        kind: 'clientLeaves',
+        head: `${terms.client}の休み`,
         text: san(clientName(cid)),
         revert: (d) => ({
           ...d,
-          [key]: [
-            ...(d[key] as { clientId: string }[]).filter((x) => x.clientId !== cid),
-            ...bl.filter((x) => x.clientId === cid),
+          clientLeaves: [
+            ...d.clientLeaves.filter((x) => x.clientId !== cid),
+            ...base.clientLeaves.filter((x) => x.clientId === cid),
           ],
         }),
       });
     }
   }
+  // 定期パターン（〈利用者さん〉ごと）：足した・消したパターンは戻さない（訪問が指している）。直したパターンは戻せる
+  {
+    const d0 = byId(base.patterns, now.patterns);
+    const adds = new Set<string>();
+    for (const x of [...d0.added, ...d0.removed]) adds.add(x.clientId);
+    for (const cid of [...adds].sort()) {
+      out.push({
+        key: `patterns:add:${cid}`,
+        kind: 'patterns',
+        head: '定期パターン',
+        text: `${san(clientName(cid))}（追加・削除）`,
+        revert: null,
+      });
+    }
+    const byClient = new Map<string, string[]>();
+    for (const [b] of d0.changed) byClient.set(b.clientId, [...(byClient.get(b.clientId) ?? []), b.id]);
+    for (const cid of [...byClient.keys()].sort()) {
+      const ids = byClient.get(cid)!;
+      out.push({
+        key: `patterns:${cid}`,
+        kind: 'patterns',
+        head: '定期パターン',
+        text: san(clientName(cid)),
+        revert: (d) => ({ ...d, patterns: revertIds(d.patterns, base.patterns, ids) }),
+      });
+    }
+  }
   return out;
+}
+
+/** 今もある id だけ控えの中身に戻す（足した・消したものは触らない） */
+function revertIds<T extends { id: string }>(now: readonly T[], base: readonly T[], ids: readonly string[]): T[] {
+  const was = new Map(base.filter((x) => ids.includes(x.id)).map((x) => [x.id, x]));
+  return now.map((x) => was.get(x.id) ?? x);
+}
+
+/**
+ * 戻した人の特性の値を今の項目に合わせる：消えた項目・相手の違う項目の値は捨て、選択肢から消えた値は外す（PRD D291。
+ * 人の属性を戻しても、消えた項目・選択肢を指す値を残さない。repair は特性の値を直さない）
+ */
+export function fitTraits<T extends Record<string, unknown>>(
+  traits: T,
+  items: readonly Item[],
+  target: Item['target'],
+): T {
+  const known = new Map(items.filter((i) => i.target === target).map((i) => [i.id, i]));
+  const out: Record<string, unknown> = {};
+  let changed = false;
+  for (const [id, v] of Object.entries(traits)) {
+    const item = known.get(id);
+    if (!item) {
+      changed = true;
+      continue;
+    }
+    let next = v;
+    if (item.kind === 'choice' && typeof v === 'string' && !item.options.includes(v)) next = null;
+    if (item.kind === 'multi' && Array.isArray(v)) {
+      const kept = v.filter((x) => item.options.includes(x));
+      if (kept.length !== v.length) next = kept;
+    }
+    if (next !== v) changed = true;
+    out[id] = next;
+  }
+  return changed ? (out as T) : traits;
 }
 
 function personChange(
@@ -483,30 +522,22 @@ function personChange(
   id: string,
   head: string,
   text: string,
-  list: (d: DemoData) => DemoData['staff'] | DemoData['clients'],
+  revert: ConditionChange['revert'],
 ): ConditionChange {
-  return {
-    key: `${kind}:${id}`,
-    kind,
-    head,
-    text,
-    revert: (d) =>
-      kind === 'staff'
-        ? { ...d, staff: list(d) as DemoData['staff'] }
-        : { ...d, clients: list(d) as DemoData['clients'] },
-  };
+  return { key: `${kind}:${id}`, kind, head, text, revert };
 }
 
-/** 変更を戻す（戻したあと、いない人・種類を指す所を repair で直す） */
-export const applyRevert = (d: DemoData, c: ConditionChange): DemoData => repair(c.revert(d));
+/** 変更を戻す（戻したあと、いない人・種類を指す所を repair で直す）。戻さない変更なら同じデータ */
+export const applyRevert = (d: DemoData, c: ConditionChange): DemoData => (c.revert ? repair(c.revert(d)) : d);
 
 /**
- * すべて戻す（PRD D291）：控えの条件そのものに戻す（重みの違いの記録（made）は控えに重みの違いが無いときだけ足して戻す）
+ * すべて戻す（PRD D291）：戻せる変更だけを並びの順に戻す（足した・消したものは戻さない）。changes は控えと今の違いの一覧
+ * （作ったときの重みの違い made を含めてよい）
  */
-export function revertAll(d: DemoData, base: ConditionParts | null, made: ConditionChange | null): DemoData {
-  let next: DemoData = base ? { ...d, ...base } : d;
-  if (made) next = made.revert(next);
-  return repair(next);
+export function revertAll(d: DemoData, changes: readonly ConditionChange[]): DemoData {
+  let next = d;
+  for (const c of changes) if (c.revert) next = c.revert(next);
+  return next === d ? d : repair(next);
 }
 
 /**
@@ -574,7 +605,11 @@ export const NO_MORE_TEXT =
   '記録した変更はありません。残りは記録より前の変更です（作り直すか、日の予定で確かめてください）';
 /** 一覧の上の文 */
 export const sinceText = (at: number): string => `${baseAtText(at)} からの変更`;
-/** 戻すの確認の本文 */
-export function revertBody(cs: readonly ConditionChange[]): string {
-  return `${cs.map((c) => `・${changeLine(c)}`).join('\n')}\nを変える前に戻します。足したものは消え、消したものは戻ります。`;
+/** 戻さない変更（足した・消したもの）があるときの一覧の下の短い文（PRD D291） */
+export const NO_REVERT_TEXT = '足した・消したものは戻せません。各画面で直してください';
+
+/** 戻すの確認の本文（cs は戻す変更。skipped は一覧にあって戻さない変更の件数（すべて戻すのとき）） */
+export function revertBody(cs: readonly ConditionChange[], skipped = 0): string {
+  const head = `${cs.map((c) => `・${changeLine(c)}`).join('\n')}\nを変える前に戻します。`;
+  return skipped > 0 ? `${head}\n足した・消したものなど ${skipped}件は戻しません（各画面で直してください）。` : head;
 }

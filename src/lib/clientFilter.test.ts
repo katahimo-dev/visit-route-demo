@@ -15,6 +15,7 @@ import {
   type FilterFacts,
   filterClients,
   filterFacts,
+  knownTypes,
   matchArea,
   matchTypes,
   NO_AREA,
@@ -406,5 +407,18 @@ describe('訪問の種類での絞り込み（PRD D285。複数ならどれか�
     expect([...(fx.typeClientIds?.get('t1') ?? [])]).toEqual(['c1']);
     expect([...(fx.typeClientIds?.get('t2') ?? [])]).toEqual(['c2']);
     expect(filterFacts(input).typeClientIds).toBeUndefined();
+  });
+});
+
+describe('knownTypes（URL に残った消えた種類）', () => {
+  it('今ある種類だけ残し、残らなければ types を消す。数・既定との比較も今ある種類で', () => {
+    const types = [{ id: 't1' }];
+    const s = decodeFilter('type:t1,gone', EMPTY_FILTER);
+    expect(activeFilterCount(s)).toBe(2);
+    expect(knownTypes(s, types).types).toEqual(['t1']);
+    expect(activeFilterCount(knownTypes(s, types))).toBe(1);
+    const only = decodeFilter('type:gone', EMPTY_FILTER);
+    expect(sameFilter(knownTypes(only, types), EMPTY_FILTER)).toBe(true);
+    expect(knownTypes(EMPTY_FILTER, types)).toBe(EMPTY_FILTER);
   });
 });

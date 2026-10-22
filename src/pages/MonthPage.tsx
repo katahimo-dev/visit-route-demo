@@ -15,6 +15,7 @@ import {
   Printer,
   RefreshCw,
   Repeat,
+  ShieldAlert,
   SlidersHorizontal,
   Sparkles,
   Square,
@@ -1341,7 +1342,7 @@ export default function MonthPage() {
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
-                  今日以降で、入らない訪問・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日（確定済みで手当ての要らない日を除く）はありません。
+                  今日以降で、入らない訪問・必須の違反・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日（確定済みで手当ての要らない日を除く）はありません。
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
@@ -1364,6 +1365,11 @@ export default function MonthPage() {
                             {a.kind === 'unassigned' && (
                               <WithIcon icon={CircleAlert} size={14}>
                                 入らない訪問 {a.count}件
+                              </WithIcon>
+                            )}
+                            {a.kind === 'hard' && (
+                              <WithIcon icon={ShieldAlert} size={14}>
+                                必須の違反 {a.count}件
                               </WithIcon>
                             )}
                             {a.kind === 'absentLeft' && (

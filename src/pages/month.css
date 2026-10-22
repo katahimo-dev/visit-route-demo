@@ -439,7 +439,8 @@
 .month-attention-btn:hover {
   border-color: var(--primary);
 }
-.month-attention-btn.is-unassigned {
+.month-attention-btn.is-unassigned,
+.month-attention-btn.is-hard {
   border-left: 4px solid var(--danger);
 }
 .month-attention-btn.is-stale {

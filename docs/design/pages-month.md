@@ -52,7 +52,7 @@
 | 確定済み | 濃い緑＋鍵（`month-lock`） |
 | 未確定の変更あり | 淡い黄＋鉛筆（`month-diff-mark`） |
 | 注意（今日以降で訪問があるのに案なし。`is-caution`） | 黄の細い点線の枠（注意の色。赤にしない。PRD D228）。読み上げ「注意：まだ案が無い」 |
-| 要対応（入らない訪問・必須の違反・休みの人に訪問。`dayStatus` の `needsCare`、今日以降。`is-care`） | 赤い太枠＋日付の横の赤い札「要対応 N」（`month-attn`。N は右の欄の行の数＝`lib/monthRest` の `attentionCountByDate(attentionList)`。今日以降。日ごとの一覧にも同じ札。要対応の欄に行が無い日（必須の違反だけ）は札の代わりに赤い点 `month-dot`）。色だけに頼らず文字も出す。赤は要対応だけ（PRD D228・D295） |
+| 要対応（入らない訪問・必須の違反・休みの人に訪問。`dayStatus` の `needsCare`、今日以降。`is-care`） | 赤い太枠＋日付の横の赤い札「要対応 N」（`month-attn`。N は右の欄の行の数＝`lib/monthRest` の `attentionCountByDate(attentionList)`。今日以降。日ごとの一覧にも同じ札。必須の違反も要対応の行（`kind: 'hard'`「必須の違反 N件」、日の予定へ）なので、赤い枠の日にはいつも札が出る。赤い点 `month-dot` は札が無いときの控えで、ふだんは出ない）。色だけに頼らず文字も出す。赤は要対応だけ（PRD D228・D295） |
 | 未作成（訪問の無い今日以降の日で、定期パターンからまだ作っていない訪問がある。PRD D282） | 白のまま、右上に点線の枠の「未作成」（`month-unmade`。件数の代わり）。ボタンに `data-unmade`（件数。`data-state` は `empty` のまま）。読み上げ「未作成（定期パターンからまだ作っていない訪問 N件）」。注意の色にしない。訪問があって一部だけ未作成の日は印 `month-marks` に点線の「ほか未作成」（`month-unmade-part`・ボタンに `data-unmade-part`・読み上げ「ほかに…N件」） |
 
 - 読み上げ（`aria-label`）に状態の文字を入れる。ボタンに `title` は付けず、`data-tip="cell"` で読み方の吹き出し（下）

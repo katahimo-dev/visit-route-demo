@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type DemoData, STORAGE_KEY } from '../contracts/data';
 import type { Pattern } from '../contracts/documents';
 import { createDemoData } from '../seed';
+import { CONDITIONS_BASE_KEY } from './conditions';
 import {
   BROKEN_KEY,
   backup,
@@ -146,6 +147,19 @@ describe('load・save', () => {
     expect(r.data.staff).toHaveLength(8);
   });
 
+  it('データが無い・読めないで初期データから始めると、古い条件の変更の控えを消す（PRD D290）。読めたときは残す', () => {
+    const base = JSON.stringify({ at: 1, data: {} });
+    mem.set(CONDITIONS_BASE_KEY, base);
+    expect(loadWithStatus().fresh).toBe(true);
+    expect(mem.has(CONDITIONS_BASE_KEY)).toBe(false);
+    mem.set(CONDITIONS_BASE_KEY, base);
+    expect(loadWithStatus().fresh).toBe(false);
+    expect(mem.get(CONDITIONS_BASE_KEY)).toBe(base);
+    mem.set(STORAGE_KEY, '{こわれた');
+    expect(loadWithStatus().broken).toBe(true);
+    expect(mem.has(CONDITIONS_BASE_KEY)).toBe(false);
+  });
+
   it('読めないデータの退避が容量超過なら控えを捨ててもう1回。それでもだめなら brokenKept＝false、元の文字は brokenText で取れる', () => {
     mem.set(PREV_KEY, '{}');
     mem.set(PREV_INFO_KEY, '{}');
@@ -209,7 +223,7 @@ describe('load・save', () => {
     vi.advanceTimersByTime(300);
     vi.useRealTimers();
     expect(flushed).toHaveBeenCalledTimes(1);
-    expect(flushed).toHaveBeenCalledWith(null, false);
+    expect(flushed).toHaveBeenCalledWith(null, false, false);
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(42);
   });
 
@@ -220,7 +234,7 @@ describe('load・save', () => {
     const onError = vi.fn();
     save(createDemoData('2026-10-12'), onError);
     flushSave();
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('保存容量'), false);
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('保存容量'), false, false);
   });
 
   it('reset は初期データで置き換える', () => {
@@ -447,9 +461,28 @@ describe('1世代の控え（PRD D227。ADR-0032）', () => {
     save({ ...d, seed: 8 }, onError);
     flushSave();
     // 控えを捨てたことを返す（画面が知らせる）
-    expect(onError).toHaveBeenCalledWith(null, true);
+    expect(onError).toHaveBeenCalledWith(null, true, false);
     expect(previousInfo()).toBeNull();
     expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(8);
+  });
+
+  it('本体の保存が容量超過なら、条件の変更の控えを先に捨てて書く（1世代の控えは残す。PRD D290）', () => {
+    const d = createDemoData('2026-10-12');
+    keepPrevious(d, '初期状態に戻す', at);
+    mem.set(CONDITIONS_BASE_KEY, JSON.stringify({ at: 1, data: {} }));
+    const ls = globalThis.localStorage as Storage;
+    const orig = ls.setItem;
+    ls.setItem = (key: string, value: string) => {
+      if (key === STORAGE_KEY && mem.has(CONDITIONS_BASE_KEY)) throw new DOMException('full', 'QuotaExceededError');
+      orig(key, value);
+    };
+    const onError = vi.fn();
+    save({ ...d, seed: 9 }, onError);
+    flushSave();
+    expect(onError).toHaveBeenCalledWith(null, false, true);
+    expect(mem.has(CONDITIONS_BASE_KEY)).toBe(false);
+    expect(previousInfo()).not.toBeNull();
+    expect((JSON.parse(mem.get(STORAGE_KEY) ?? '{}') as DemoData).seed).toBe(9);
   });
 
   it('直前の状態に戻す：いまのデータを控えに残し、控えのデータを返す（もう一度戻せる）', () => {

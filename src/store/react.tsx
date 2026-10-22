@@ -88,7 +88,10 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
   const skipSave = useRef(true);
   const latest = useRef(data);
   latest.current = data;
-  const [conditionsBase, setConditionsBaseState] = useState<ConditionsBase | null>(() => conditionsMemory.read());
+  // 初期データで始めたとき（保存データが無い・読めなかった）は控え無しで始める（loadWithStatus が消している。PRD D290）
+  const [conditionsBase, setConditionsBaseState] = useState<ConditionsBase | null>(() =>
+    initial.fresh || initial.broken ? null : conditionsMemory.read(),
+  );
   const baseRef = useRef(conditionsBase);
   /** 最後に描いたデータ（控えは、この前と今を比べて取る） */
   const committed = useRef(data);
@@ -129,15 +132,17 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       skipSave.current = false;
       return;
     }
-    save(data, (message, dropped) => {
+    save(data, (message, dropped, droppedBase) => {
       setSaveError(message);
+      // 容量が足りず条件の変更の控えを捨てたら、画面の控えも忘れる（本体の保存が先。PRD D290）
+      if (droppedBase) setBase(null);
       // 容量が足りず控えを捨てたときだけ、控えの欄を消して知らせる（ADR-0032）
       if (dropped) {
         setPrevious(null);
         setPreviousDrops((n) => n + 1);
       }
     });
-  }, [data, setPrevious]);
+  }, [data, setPrevious, setBase]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {

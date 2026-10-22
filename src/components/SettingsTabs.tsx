@@ -1,21 +1,20 @@
-import { Database, HeartHandshake, Layers, type LucideIcon, Settings, SlidersHorizontal, Tags } from 'lucide-react';
+import { Database, Layers, type LucideIcon, Settings, SlidersHorizontal, Tags } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { settingsTabs } from '../lib/nav';
 import { useFeatures } from '../lib/useFeature';
 
-/** タブのアイコン（メニューの前の項目と同じ） */
+/** タブのアイコン（メニューの前の項目と同じ。並びは lib/nav の SETTINGS_TABS と同じ） */
 const ICONS: Record<string, LucideIcon> = {
-  '/rules': SlidersHorizontal,
-  '/compat': HeartHandshake,
   '/types': Layers,
   '/items': Tags,
+  '/rules': SlidersHorizontal,
   '/settings': Settings,
   '/data': Database,
 };
 
 /**
- * 設定のタブ（PRD D275。ADR-0045）：条件の重み・相性・訪問の種類・特性の項目・管理者設定・データ。
+ * 設定のタブ（PRD D275。ADR-0045）：訪問の種類・特性の項目・条件の重み・管理者設定・データ（相性は「人」の画面）。
  * メニューは「設定」1項目にし、画面の見出しの下のこのタブで切り替える（予定の［月｜週｜日］と同じ形。リンクのナビで、
  * 今の画面は aria-current と太字・下線）。URL は前のまま（`#/rules` など）。切った機能のタブは出さない
  */

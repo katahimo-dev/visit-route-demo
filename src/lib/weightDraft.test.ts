@@ -4,6 +4,7 @@ import type { Rule } from '../contracts/rules';
 import { createDemoData, scorePresetOf, scoreRulesOf } from '../seed';
 import { withSeedPlans } from '../seed/plans';
 import { leaveTarget } from './leaveGuard';
+import { setBasisWeight } from './presets';
 import {
   applyDraft,
   changeText,
@@ -38,7 +39,8 @@ describe('下書きの差分（PRD D286）', () => {
 
   it('直すと下書きに入り、保存済みと同じ値に戻すと外れる。条件の無い型は直さない', () => {
     const d1 = editDraft({}, saved, 'wait', { weight: 4 });
-    expect(d1).toEqual({ wait: { weight: 4, hard: false } });
+    // 触った欄だけ持つ
+    expect(d1).toEqual({ wait: { weight: 4 } });
     expect(editDraft(d1, saved, 'wait', { weight: 3 })).toEqual({});
     const none: WeightDraft = {};
     expect(editDraft(none, saved, 'balance', { weight: 1 })).toBe(none);
@@ -59,12 +61,29 @@ describe('下書きの差分（PRD D286）', () => {
   });
 
   it('条件を消して型が無くなった・保存済みと同じになった型は外す。変わらなければ同じオブジェクト', () => {
-    const draft: WeightDraft = { wait: { weight: 4, hard: false }, continuity: { weight: 5, hard: false } };
+    const draft: WeightDraft = { wait: { weight: 4 }, continuity: { weight: 5 } };
     expect(pruneDraft(draft, saved)).toBe(draft);
-    expect(pruneDraft(draft, savedWeights([rules[0]!]))).toEqual({ wait: { weight: 4, hard: false } });
+    expect(pruneDraft(draft, savedWeights([rules[0]!]))).toEqual({ wait: { weight: 4 } });
     expect(pruneDraft(draft, savedWeights([rule('a', 'wait', 4), rule('b', 'continuity', 2)]))).toEqual({
-      continuity: { weight: 5, hard: false },
+      continuity: { weight: 5 },
     });
+  });
+
+  it('下書きは触った欄だけを保存済みに重ねる：別のタブで変わった必須を確定で上書きしない', () => {
+    const d = createDemoData(TODAY);
+    const saved0 = savedWeights(scoreRulesOf(d));
+    const t = 'continuity' as const;
+    const w = saved0[t]!.weight === 5 ? 4 : saved0[t]!.weight + 1;
+    const draft = editDraft({}, saved0, t, { weight: w });
+    // 別のタブで必須にした
+    const other = setBasisWeight(d, t, { hard: !saved0[t]!.hard });
+    const next = applyDraft(other, draft);
+    const p = scorePresetOf(next.presets, next.scorePresetId)!;
+    expect(p.weights[t]).toEqual({ weight: w, hard: !saved0[t]!.hard });
+    // 表にも保存済みの必須で出す
+    const shown = withDraft(scoreRulesOf(other), draft).find((r) => r.type === t)!;
+    expect(shown.hard).toBe(!saved0[t]!.hard);
+    expect(shown.weight).toBe(w);
   });
 
   it('重みの文：0 は「使わない」、重みを使わない必須は「必須」、バランスの必須は重みも', () => {

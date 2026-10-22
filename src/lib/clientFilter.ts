@@ -488,6 +488,19 @@ export function decodeFilter(
   return out;
 }
 
+/**
+ * 今ある訪問の種類だけで絞る（URL・画面の状態に残った、消えた種類の id を外す。押している種類が残らなければ types を消す）。
+ * 効いている絞り込みの数・既定と同じかの判定・URL の書き直しは、これを通した状態で行う
+ */
+export function knownTypes(state: ClientFilterState, visitTypes: readonly { id: string }[]): ClientFilterState {
+  if (!state.types || state.types.length === 0) return state;
+  const ids = new Set(visitTypes.map((t) => t.id));
+  const kept = state.types.filter((id) => ids.has(id));
+  if (kept.length === state.types.length) return state;
+  const { types: _drop, ...rest } = state;
+  return kept.length > 0 ? { ...rest, types: kept } : rest;
+}
+
 /** 同じ絞り込みか（URL に書く形で比べる） */
 export const sameFilter = (a: ClientFilterState, b: ClientFilterState): boolean => encodeFilter(a) === encodeFilter(b);
 

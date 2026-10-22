@@ -8,14 +8,15 @@ import { Link } from 'react-router-dom';
 import type { DemoData } from '../contracts/data';
 import { jstDate } from '../domain/time';
 import {
-  applyRevert,
   type ConditionChange,
+  canRevert,
   changeLine,
   changesToggleText,
   conditionChanges,
   madeWeightsChange,
   NO_MORE_TEXT,
   NO_RECORD_TEXT,
+  NO_REVERT_TEXT,
   revertAll,
   revertBody,
   sinceText,
@@ -68,18 +69,40 @@ export function RebuildBand({ rules = false }: { rules?: boolean }) {
   return useFeature('rules') ? <RebuildBandOn rules={rules} /> : null;
 }
 
-function RebuildBandOn({ rules }: { rules: boolean }) {
-  const { data, conditionsBase, clearConditionsBase } = useDemoData();
+/**
+ * 条件の変更の控えを、影響する日が0日になったら消す（PRD D290）。App の殻にいつも置く（帯の無い画面・条件の重みとプリセットを
+ * 切っているときも、月の予定で作り直して0日になったら消す）。控えが無い間は何も数えない。数えるのは入力が止まってから
+ * （useSettled）、画面を描いた後（useDeferredValue）で、日ごとの計算は月の予定・帯と同じ覚え（lib/useDayStatuses）を使う
+ */
+export function ConditionsBaseSweep() {
+  const { conditionsBase } = useDemoData();
+  return conditionsBase ? <SweepOn at={conditionsBase.at} /> : null;
+}
+
+function SweepOn({ at }: { at: number }) {
+  const { data, clearConditionsBase } = useDemoData();
   const settled = useSettled(data, SETTLE_MS);
   const deferred = useDeferredValue<DemoData | null>(settled, null);
   /** 入力が止まった時刻（控えより後に止まったデータを数えたときだけ控えを消す） */
   // biome-ignore lint/correctness/useExhaustiveDependencies: settled が替わった時刻を覚える
   const settledAt = useMemo(() => Date.now(), [settled]);
   /**
-   * 0日を数えて控えを消してよいか（PRD D290）：数えたデータが今のデータで、控えを取った後に止まったデータであること。
+   * 0日を数えて控えを消してよいか：数えたデータが今のデータで、控えを取った後に止まったデータであること。
    * 別のタブが控えとデータを書くと控えが先に届くので、届く前のデータの0日で消さない
    */
-  const current = deferred === data && settledAt >= (conditionsBase?.at ?? 0);
+  const current = deferred === data && settledAt >= at;
+  const summary = useSummary(current ? deferred : null, jstDate(Date.now()));
+  const zero = current && summary !== null && summary.days.length === 0;
+  useEffect(() => {
+    if (zero) clearConditionsBase();
+  }, [zero, clearConditionsBase]);
+  return null;
+}
+
+function RebuildBandOn({ rules }: { rules: boolean }) {
+  const { data } = useDemoData();
+  const settled = useSettled(data, SETTLE_MS);
+  const deferred = useDeferredValue<DemoData | null>(settled, null);
   const [later, setLater] = useState(false);
   const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '試す重み';
   // 案内は入力のたびに数えても軽い（重み・必須の比べだけ）
@@ -88,9 +111,6 @@ function RebuildBandOn({ rules }: { rules: boolean }) {
     <RebuildBandBody
       data={deferred}
       live={data}
-      current={current}
-      hasBase={conditionsBase !== null}
-      onCleared={clearConditionsBase}
       basis={basis}
       custom={custom}
       later={later}
@@ -150,9 +170,6 @@ const EMPTY = {
 function RebuildBandBody({
   data,
   live,
-  current,
-  hasBase,
-  onCleared,
   basis,
   custom,
   later,
@@ -161,9 +178,6 @@ function RebuildBandBody({
   data: DemoData | null;
   /** 今のデータ（変更内容はこちらで比べる。戻すとすぐ一覧から消える） */
   live: DemoData;
-  current: boolean;
-  hasBase: boolean;
-  onCleared: () => void;
   basis: string;
   custom: boolean;
   later: boolean;
@@ -171,11 +185,7 @@ function RebuildBandBody({
 }) {
   const today = jstDate(Date.now());
   const summary = useSummary(data, today);
-  // 影響する日が0日（今のデータを数えた）なら条件の変更の控えを消す（次の変更でまた取る。PRD D290）
-  const zero = current && summary !== null && summary.days.length === 0;
-  useEffect(() => {
-    if (zero && hasBase) onCleared();
-  }, [zero, hasBase, onCleared]);
+  // 影響する日が0日になったときの条件の変更の控えの片づけは App の殻の ConditionsBaseSweep（帯の無い画面でも消す。PRD D290）
   /** 重みの違いで「条件が変わった」日（控えが無いときの作ったときの重みの違い。PRD D292） */
   const ruleDays = useMemo(() => {
     if (!data || !summary) return [];
@@ -300,6 +310,11 @@ function ConditionChanges({ data, ruleDays }: { data: DemoData; ruleDays: readon
   const hasWeights = changes.some((c) => c.kind === 'weights' || c.kind === 'trial' || c.kind === 'scorePreset');
   const made = useMemo(() => (hasWeights ? null : madeWeightsChange(data, ruleDays)), [hasWeights, data, ruleDays]);
   const items = made ? [...changes, made] : changes;
+  /** 戻せる変更（足した・消したものは一覧に出すが戻さない。PRD D291） */
+  const revertible = items.filter(canRevert);
+  /** 戻すときは最新の控えとデータから作り直す（確認の間に別のタブで変わっても、今の違いを戻す） */
+  const latest = useRef({ base, ruleDays });
+  latest.current = { base, ruleDays };
   /** 戻したあとのフォーカス（一覧のボタンが消えるので、開閉のボタン、無ければ画面の見出しへ） */
   const [refocus, setRefocus] = useState(0);
   useEffect(() => {
@@ -317,13 +332,24 @@ function ConditionChanges({ data, ruleDays }: { data: DemoData; ruleDays: readon
     const first = cs[0];
     if (!first) return;
     const ok = await confirmDialog({
-      title: all ? '変更をすべて戻しますか？' : `「${first.head}」を戻しますか？`,
-      body: revertBody(cs),
+      title: all ? '戻せる変更をすべて戻しますか？' : `「${first.head}」を戻しますか？`,
+      body: revertBody(cs, all ? items.length - cs.length : 0),
       confirmLabel: all ? 'すべて戻す' : '戻す',
     });
     if (!ok) return;
-    // 戻したこと自体は変更として控えない（keepBase）
-    update((d) => (all ? revertAll(d, base?.data ?? null, made) : applyRevert(d, first)), { keepBase: true });
+    const keys = new Set(cs.map((c) => c.key));
+    // 戻したこと自体は変更として控えない（keepBase）。最新の控えと今のデータの違いから、確認に出した変更（キー）だけ戻す
+    update(
+      (d) => {
+        const { base: b, ruleDays: days } = latest.current;
+        const now = b ? conditionChanges(b.data, d) : [];
+        const w = now.some((c) => c.kind === 'weights' || c.kind === 'trial' || c.kind === 'scorePreset');
+        const m = w ? null : madeWeightsChange(d, days);
+        const pick = [...now, ...(m ? [m] : [])].filter((c) => keys.has(c.key));
+        return revertAll(d, pick);
+      },
+      { keepBase: true },
+    );
     toast(all ? '変更をすべて戻しました' : `${first.head}を戻しました`);
     setRefocus((n) => n + 1);
   };
@@ -358,26 +384,34 @@ function ConditionChanges({ data, ruleDays }: { data: DemoData; ruleDays: readon
                   <span className="rb-change-text">
                     <strong>{c.head}</strong>：{c.text}
                   </span>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    aria-label={`${changeLine(c)}を戻す`}
-                    onClick={() => void revert([c], false)}
-                    data-testid="rebuild-change-revert"
-                  >
-                    <span className="with-icon">
-                      <Undo2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                      戻す
-                    </span>
-                  </button>
+                  {canRevert(c) && (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      aria-label={`${changeLine(c)}を戻す`}
+                      onClick={() => void revert([c], false)}
+                      data-testid="rebuild-change-revert"
+                    >
+                      <span className="with-icon">
+                        <Undo2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                        戻す
+                      </span>
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
-            {items.length > 1 && (
+            {/* 足した・消したものは［戻す］を出さない（ほかのデータが指している。PRD D291） */}
+            {revertible.length < items.length && (
+              <p className="sub rb-no-revert" data-testid="rebuild-no-revert">
+                {NO_REVERT_TEXT}
+              </p>
+            )}
+            {revertible.length > 1 && (
               <button
                 type="button"
                 className="btn btn-small rb-revert-all"
-                onClick={() => void revert(items, true)}
+                onClick={() => void revert(revertible, true)}
                 data-testid="rebuild-revert-all"
               >
                 すべて戻す

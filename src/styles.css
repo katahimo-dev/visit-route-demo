@@ -1974,11 +1974,16 @@ a.icon-btn:hover {
     box-sizing: border-box;
   }
   .drawer {
+    /* 幅は wrap の内側（左右の余白 12px を除く）まで。100vw のままだと 601〜664px で余白ぶん（24px）はみ出す */
+    width: min(640px, 100%);
     height: auto;
     max-height: 100%;
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 10px 40px rgba(40, 25, 15, 0.25);
+  }
+  .drawer.is-narrow {
+    width: min(440px, 100%);
   }
   .drawer-body {
     /* 内容が短いときは内容の高さ。巻くときだけ max-height（欄の残り）まで */

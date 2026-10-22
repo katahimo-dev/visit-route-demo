@@ -3,6 +3,7 @@
 // ここは下書きの差分・確定の中身・影響する日を数える純粋関数。データを書き換えるのは画面の update(fn) だけ
 import type { DemoData } from '../contracts/data';
 import { HARDABLE, type Rule, type RuleType } from '../contracts/rules';
+import { scoreRulesOf } from '../seed/presets';
 import { own, weightLocked } from './common';
 import { currentRuleKeys, rulesStale } from './month';
 import { setBasisWeight } from './presets';
@@ -10,8 +11,13 @@ import { rebuildDays } from './rebuildBand';
 
 /** 型ごとの重み・必須（必須にできない型は hard を false にそろえる） */
 export type WeightValue = { weight: number; hard: boolean };
-/** 下書き：保存済みと違う型だけを持つ（同じ値に戻したら消す） */
-export type WeightDraft = Partial<Record<RuleType, WeightValue>>;
+/** 型ごとの保存済みの値 */
+export type SavedWeights = Partial<Record<RuleType, WeightValue>>;
+/**
+ * 下書き：型ごとに、触った欄（重み・必須）のうち保存済みと違うものだけを持つ（同じ値に戻したら消す）。
+ * 当てるときは保存済みに重ねる（触っていない欄は、別のタブで変わってもその値を使う。確定で上書きしない）
+ */
+export type WeightDraft = Partial<Record<RuleType, Partial<WeightValue>>>;
 
 const norm = (type: RuleType, v: WeightValue): WeightValue => ({
   weight: v.weight,
@@ -20,51 +26,70 @@ const norm = (type: RuleType, v: WeightValue): WeightValue => ({
 const same = (a: WeightValue, b: WeightValue) => a.weight === b.weight && a.hard === b.hard;
 
 /** 表に出す条件（基準のプリセットを当てたもの）から、型ごとの保存済みの値（型の最初の条件。同じ型は同じ重み） */
-export function savedWeights(rules: readonly Rule[]): WeightDraft {
-  const out: WeightDraft = {};
+export function savedWeights(rules: readonly Rule[]): SavedWeights {
+  const out: SavedWeights = {};
   for (const r of rules) if (!out[r.type]) out[r.type] = norm(r.type, r);
   return out;
 }
 
-/** 下書きを直す：保存済みの値と同じになった型は下書きから外す。その型の条件が無ければ何もしない */
+/** 保存済みに下書きの欄を重ねた値 */
+const over = (type: RuleType, base: WeightValue, part: Partial<WeightValue> | undefined): WeightValue =>
+  norm(type, { ...base, ...part });
+
+/** 保存済みと違う欄だけ残す（無ければ null） */
+function diffPart(type: RuleType, base: WeightValue, part: Partial<WeightValue>): Partial<WeightValue> | null {
+  const v = over(type, base, part);
+  const out: Partial<WeightValue> = {};
+  if (part.weight !== undefined && v.weight !== base.weight) out.weight = v.weight;
+  if (part.hard !== undefined && v.hard !== base.hard) out.hard = v.hard;
+  return out.weight === undefined && out.hard === undefined ? null : out;
+}
+
+/** 下書きを直す：触った欄を足し、保存済みの値と同じになった欄・型は下書きから外す。その型の条件が無ければ何もしない */
 export function editDraft(
   draft: WeightDraft,
-  saved: WeightDraft,
+  saved: SavedWeights,
   type: RuleType,
   patch: Partial<WeightValue>,
 ): WeightDraft {
   const base = saved[type];
   if (!base) return draft;
-  const next = norm(type, { ...(draft[type] ?? base), ...patch });
+  const next = diffPart(type, base, { ...draft[type], ...patch });
   const out = { ...draft };
-  if (same(next, base)) delete out[type];
-  else out[type] = next;
+  if (next) out[type] = next;
+  else delete out[type];
   return out;
 }
 
 /**
- * 下書きを今のデータに合わせる：条件を消してその型の条件が無くなった型・保存済みと同じ値になった型（プリセットの節で同じ値にした等）は外す。
- * 変わらなければ同じオブジェクトを返す（画面の state を書き直さない）
+ * 下書きを今のデータに合わせる：条件を消してその型の条件が無くなった型・保存済みと同じ値になった欄（プリセットの節で同じ値にした・
+ * 別のタブで同じ値にした等）は外す。変わらなければ同じオブジェクトを返す（画面の state を書き直さない）
  */
-export function pruneDraft(draft: WeightDraft, saved: WeightDraft): WeightDraft {
+export function pruneDraft(draft: WeightDraft, saved: SavedWeights): WeightDraft {
   let changed = false;
   const out: WeightDraft = {};
-  for (const [t, v] of Object.entries(draft) as [RuleType, WeightValue][]) {
+  for (const [t, v] of Object.entries(draft) as [RuleType, Partial<WeightValue>][]) {
     const base = saved[t];
-    if (!base || same(base, v)) {
+    const next = base ? diffPart(t, base, v) : null;
+    if (!next) {
       changed = true;
       continue;
     }
-    out[t] = v;
+    if (next.weight !== v.weight || next.hard !== v.hard) changed = true;
+    out[t] = next;
   }
   return changed ? out : draft;
 }
 
-/** 表に出す条件に下書きを当てる（型ごと。同じ型の条件はどれも下書きの値） */
+/** 表に出す条件に下書きを当てる（型ごと。同じ型の条件はどれも保存済みに下書きの欄を重ねた値） */
 export function withDraft(rules: readonly Rule[], draft: WeightDraft): Rule[] {
+  const saved = savedWeights(rules);
   return rules.map((r) => {
-    const v = draft[r.type];
-    return v ? { ...r, weight: v.weight, hard: v.hard } : r;
+    const part = draft[r.type];
+    const base = saved[r.type];
+    if (!part || !base) return r;
+    const v = over(r.type, base, part);
+    return { ...r, weight: v.weight, hard: v.hard };
   });
 }
 
@@ -82,9 +107,11 @@ export function draftChanges(rules: readonly Rule[], draft: WeightDraft): Weight
   const saved = savedWeights(rules);
   const out: WeightChange[] = [];
   for (const r of rules) {
-    const after = draft[r.type];
+    const part = draft[r.type];
     const before = saved[r.type];
-    if (!after || !before || same(after, before)) continue;
+    if (!part || !before) continue;
+    const after = over(r.type, before, part);
+    if (same(after, before)) continue;
     const hit = out.find((c) => c.type === r.type);
     if (hit) hit.labels.push(r.label);
     else out.push({ type: r.type, labels: [r.label], before, after });
@@ -103,10 +130,19 @@ export function weightText(type: RuleType, v: WeightValue): string {
 export const changeText = (c: Pick<WeightChange, 'type' | 'before' | 'after'>): string =>
   `${weightText(c.type, c.before)}→${weightText(c.type, c.after)}`;
 
-/** 確定：下書きの型ごとに点数の基準のプリセットを直す（試す重みも基準にそろう。ADR-0035 の setBasisWeight） */
+/**
+ * 確定：下書きの型ごとに点数の基準のプリセットを直す（試す重みも基準にそろう。ADR-0035 の setBasisWeight）。
+ * 書くのは触った欄だけで、ほかの欄は d の保存済みの値のまま（別のタブで変わった必須などを上書きしない）
+ */
 export function applyDraft(d: DemoData, draft: WeightDraft): DemoData {
+  const saved = savedWeights(scoreRulesOf(d));
   let out = d;
-  for (const [t, v] of Object.entries(draft) as [RuleType, WeightValue][]) out = setBasisWeight(out, t, v);
+  for (const [t, part] of Object.entries(draft) as [RuleType, Partial<WeightValue>][]) {
+    const base = saved[t];
+    if (!base) continue;
+    const v = over(t, base, part);
+    if (!same(v, base)) out = setBasisWeight(out, t, v);
+  }
   return out;
 }
 

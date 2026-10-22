@@ -44,7 +44,14 @@ import { VISIT_RULE_FIELDS } from '../components/VisitRules';
 import { type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
 import { jstDate, weekday } from '../domain/time';
-import { activeFilterCount, EMPTY_FILTER, filterClients, filterFacts, resolveStaffId } from '../lib/clientFilter';
+import {
+  activeFilterCount,
+  EMPTY_FILTER,
+  filterClients,
+  filterFacts,
+  knownTypes,
+  resolveStaffId,
+} from '../lib/clientFilter';
 import { isBeforeActive, STAGE_LABELS, stageChoices, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
@@ -151,7 +158,8 @@ export default function ClientsPage() {
   const narrow = useMedia(COMPACT_QUERY);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterBodyId = useId();
-  const filterCount = activeFilterCount(filter);
+  // 消えた種類を押したままでも数えない（今ある種類で絞る）
+  const filterCount = activeFilterCount(knownTypes(filter, data.visitTypes));
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const periodLabel = `${md(dates[0]!)}（${WEEKDAY_LABELS[weekday(dates[0]!)]}）からの週`;
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');

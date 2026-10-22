@@ -61,11 +61,13 @@ describe('conditionChanges（PRD D290）', () => {
     const added = { ...d, presets: [...d.presets, { ...other, id: 'p-x', name: '足した' }] };
     const c2 = conditionChanges(d, added);
     expect(c2.map(changeLine)).toEqual(['プリセット：「足した」を追加']);
-    expect(applyRevert(added, c2[0]!).presets.map((p) => p.id)).toEqual(d.presets.map((p) => p.id));
+    // 足した・消したものは一覧に出すが戻さない（PRD D291）
+    expect(c2[0]!.revert).toBeNull();
+    expect(applyRevert(added, c2[0]!)).toBe(added);
     const removed = { ...d, presets: d.presets.filter((p) => p.id !== other.id) };
     const c3 = conditionChanges(d, removed);
     expect(c3.map(changeLine)).toEqual([`プリセット：「${other.name}」を消した`]);
-    expect(applyRevert(removed, c3[0]!).presets.map((p) => p.id)).toEqual(d.presets.map((p) => p.id));
+    expect(c3[0]!.revert).toBeNull();
   });
 
   it('機能の入り切り：「相性を切」。戻すと入り切りだけ戻る', () => {
@@ -107,14 +109,69 @@ describe('conditionChanges（PRD D290）', () => {
     const added: DemoData = { ...d, staff: [...d.staff, { ...s, id: 's-new', name: '新人' }] };
     const ca = conditionChanges(d, added);
     expect(ca.map(changeLine)).toEqual([`${d.org.terms.staff}：新人さんを追加`]);
-    expect(applyRevert(added, ca[0]!).staff).toHaveLength(d.staff.length);
+    expect(ca[0]!.revert).toBeNull();
+    expect(applyRevert(added, ca[0]!)).toBe(added);
     const removed: DemoData = { ...d, staff: d.staff.slice(1) };
     const cr = conditionChanges(d, removed);
     expect(cr.map(changeLine)).toEqual([`${d.org.terms.staff}：${s.name}さんを消した`]);
-    expect(applyRevert(removed, cr[0]!).staff.map((x) => x.id)).toEqual(d.staff.map((x) => x.id));
+    expect(cr[0]!.revert).toBeNull();
   });
 
-  it('〈利用者さん〉・訪問の種類・特性の項目・勤務時間（シフト）。すべて戻すと控えの条件', () => {
+  it('人の属性を戻すと、消えた項目・選択肢を指す特性の値は残さない。いない人を指すいつもの担当は repair で空', () => {
+    const d = base();
+    const multi = { id: 'i-m', name: '資格', target: 'staff' as const, kind: 'multi' as const, options: ['A', 'B'] };
+    const gone = { id: 'i-g', name: '消す', target: 'staff' as const, kind: 'flag' as const, options: [] };
+    const d0: DemoData = { ...d, items: [...d.items, multi, gone] };
+    const s = d0.staff[0]!;
+    const before: DemoData = {
+      ...d0,
+      staff: [{ ...s, traits: { ...s.traits, 'i-m': ['A', 'B'], 'i-g': true } }, ...d0.staff.slice(1)],
+    };
+    // 今：特性の値を直し、項目「消す」を消し、資格の選択肢 B を消した
+    const now: DemoData = {
+      ...before,
+      items: [...d.items, { ...multi, options: ['A'] }],
+      staff: [{ ...s, traits: { ...s.traits, 'i-m': [] }, shiftEnd: '15:00' }, ...d0.staff.slice(1)],
+    };
+    const c = conditionChanges(before, now).find((x) => x.kind === 'staff')!;
+    const back = applyRevert(now, c);
+    expect(back.staff[0]!.shiftEnd).toBe(s.shiftEnd);
+    expect(back.staff[0]!.traits['i-m']).toEqual(['A']);
+    expect('i-g' in back.staff[0]!.traits).toBe(false);
+    // いつもの担当：控えの担当がもういなければ空
+    const cl = d.clients[0]!;
+    const gone2 = d.staff[1]!;
+    const b2: DemoData = { ...d, clients: [{ ...cl, usualStaffId: gone2.id }, ...d.clients.slice(1)] };
+    const n2: DemoData = {
+      ...b2,
+      staff: d.staff.filter((x) => x.id !== gone2.id),
+      clients: [{ ...cl, usualStaffId: null, note: 'x' }, ...d.clients.slice(1)],
+    };
+    const c2 = conditionChanges(b2, n2).find((x) => x.kind === 'client')!;
+    const back2 = applyRevert(n2, c2);
+    expect(back2.clients[0]!.usualStaffId).toBeNull();
+    expect(back2.clients[0]!.note).toBe(cl.note);
+  });
+
+  it('定期パターン：足した・消したものは戻さず、直したものだけ戻せる', () => {
+    const d = base();
+    const p = d.patterns[0]!;
+    const n: DemoData = {
+      ...d,
+      patterns: [
+        { ...p, durationMinutes: p.durationMinutes === 60 ? 45 : 60 },
+        ...d.patterns.slice(1),
+        { ...p, id: 'p-new' },
+      ],
+    };
+    const cs = conditionChanges(d, n).filter((c) => c.kind === 'patterns');
+    expect(cs.map((c) => c.revert === null)).toEqual([true, false]);
+    const back = applyRevert(n, cs[1]!);
+    expect(back.patterns[0]).toEqual(p);
+    expect(back.patterns.some((x) => x.id === 'p-new')).toBe(true);
+  });
+
+  it('〈利用者さん〉・訪問の種類・特性の項目・勤務時間（シフト）。すべて戻すは戻せるものだけ', () => {
     const d = base();
     const c = d.clients[0]!;
     const s = d.staff[0]!;
@@ -133,7 +190,9 @@ describe('conditionChanges（PRD D290）', () => {
     expect(ls).toContain('訪問の種類：リハビリを追加');
     expect(ls).toContain(`${d.org.terms.client}：${c.displayName}さんのいつもの担当`);
     expect(ls).toContain(`勤務時間（シフト）：${s.name}さん（10/22）`);
-    expect(conditionChanges(d, revertAll(n, d, null))).toEqual([]);
+    // 足した種類・特性の項目の直しは残り、〈利用者さん〉・勤務時間は戻る
+    const left = conditionChanges(d, revertAll(n, conditionChanges(d, n))).map(changeLine);
+    expect(left).toEqual([`特性の項目：「${d.items[0]!.name}2」を直した`, '訪問の種類：リハビリを追加']);
   });
 
   it('〈利用者さん〉の休み・定期パターンは〈利用者さん〉ごと', () => {
@@ -212,7 +271,7 @@ describe('madeWeightsChange（PRD D292）', () => {
     const d = setBasisWeight(withRun(d0, '2026-10-22', d0.rules), 'wait', { weight: 4 });
     const c = madeWeightsChange(d, ['2026-10-22']);
     expect(c && changeLine(c)).toBe('作ったときの重み：空き時間（待ち） 3、今：4');
-    const back = c!.revert(d);
+    const back = c!.revert!(d);
     expect(basisOf(back).weights.wait.weight).toBe(3);
     expect(back.rules.find((r) => r.type === 'wait')?.weight).toBe(3);
     expect(madeWeightsChange(back, ['2026-10-22'])).toBeNull();
@@ -243,6 +302,9 @@ describe('そのほか', () => {
     expect(baseAtText(Date.UTC(2026, 9, 20, 15, 5))).toBe('10/21 0:05');
     const d = base();
     const n = setBasisWeight(d, 'wait', { weight: 1 });
-    expect(revertBody(conditionChanges(d, n))).toMatch(/^・条件の重み：空き時間（待ち） 3→1\nを変える前に戻します/);
+    expect(revertBody(conditionChanges(d, n))).toBe('・条件の重み：空き時間（待ち） 3→1\nを変える前に戻します。');
+    expect(revertBody(conditionChanges(d, n), 2)).toMatch(
+      /足した・消したものなど 2件は戻しません（各画面で直してください）。$/,
+    );
   });
 });

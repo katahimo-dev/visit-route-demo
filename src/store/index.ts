@@ -6,6 +6,7 @@ import { addDays, jstDate } from '../domain/time';
 import { applyPatterns } from '../patterns';
 import { DEMO_DAYS, daysFrom, initialPresets } from '../seed';
 import { createInitialData } from '../seed/plans';
+import { CONDITIONS_BASE_KEY, conditionsMemory } from './conditions';
 import { repair } from './repair';
 import { startFeatures } from './start';
 
@@ -151,10 +152,25 @@ function dropPrevious(ls: Storage): void {
 }
 
 /**
- * 書いた結果。message：失敗したら利用者向けの文言（成功は null）。
- * droppedPrevious：容量が足りず1世代の控えを捨てた（画面は控えの欄を消して知らせる。ADR-0032）
+ * 条件の変更の控え（PRD D290。conditions.ts）を消す（容量を空ける）。保存してあったか。
+ * 本体の保存のほうが先なので、容量超過では1世代の控えより先にこちらを捨てる
  */
-export type WriteResult = { message: string | null; droppedPrevious: boolean };
+function dropConditions(ls: Storage): boolean {
+  try {
+    if (ls.getItem(CONDITIONS_BASE_KEY) === null) return false;
+  } catch {
+    return false;
+  }
+  conditionsMemory.clear();
+  return true;
+}
+
+/**
+ * 書いた結果。message：失敗したら利用者向けの文言（成功は null）。
+ * droppedPrevious：容量が足りず1世代の控えを捨てた（画面は控えの欄を消して知らせる。ADR-0032）。
+ * droppedConditions：容量が足りず条件の変更の控えを捨てた（画面は控えを忘れる。PRD D290）
+ */
+export type WriteResult = { message: string | null; droppedPrevious: boolean; droppedConditions?: boolean };
 
 /** 即時に書く。結果の文言は lastSaveError にも残す */
 function writeNow(data: DemoData): WriteResult {
@@ -164,10 +180,16 @@ function writeNow(data: DemoData): WriteResult {
 }
 
 /**
- * 書いてみる。容量超過なら1世代の控えを捨ててもう1回だけ書く（いまのデータを残すほうが先。ADR-0032）
+ * 書いてみる。容量超過なら条件の変更の控え（PRD D290）を捨ててもう1回、まだ足りなければ1世代の控えを捨ててもう1回だけ書く
+ * （いまのデータを残すほうが先。ADR-0032）
  */
 function tryWrite(data: DemoData): WriteResult {
-  const fail = (message: string, droppedPrevious = false): WriteResult => ({ message, droppedPrevious });
+  let droppedConditions = false;
+  const fail = (message: string, droppedPrevious = false): WriteResult => ({
+    message,
+    droppedPrevious,
+    droppedConditions,
+  });
   const ls = storage();
   if (!ls) return fail('保存できませんでした（このブラウザでは保存が使えません）。データを書き出してください');
   const text = JSON.stringify(data);
@@ -176,11 +198,20 @@ function tryWrite(data: DemoData): WriteResult {
     return { message: null, droppedPrevious: false };
   } catch (e) {
     if (!isQuota(e)) return fail('保存できませんでした。データを書き出してください');
+    if (dropConditions(ls)) {
+      droppedConditions = true;
+      try {
+        ls.setItem(STORAGE_KEY, text);
+        return { message: null, droppedPrevious: false, droppedConditions };
+      } catch (e1) {
+        if (!isQuota(e1)) return fail('保存できませんでした。データを書き出してください');
+      }
+    }
     if (ls.getItem(PREV_KEY) === null) return fail(QUOTA_MESSAGE);
     dropPrevious(ls);
     try {
       ls.setItem(STORAGE_KEY, text);
-      return { message: null, droppedPrevious: true };
+      return { message: null, droppedPrevious: true, droppedConditions };
     } catch (e2) {
       return fail(isQuota(e2) ? QUOTA_MESSAGE : '保存できませんでした。データを書き出してください', true);
     }
@@ -217,6 +248,8 @@ export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept:
   const todayDate = today();
   const text = ls?.getItem(STORAGE_KEY) ?? null;
   if (text === null) {
+    // 初期データで始めるので、前に残った条件の変更の控えは比べる元が違う（PRD D290）。消して控え無しで始める
+    conditionsMemory.clear();
     const d = createInitialData(todayDate, startFeatures());
     writeNow(d);
     current = d;
@@ -225,6 +258,8 @@ export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept:
   const r = importJson(text);
   if (isImportError(r)) {
     brokenOriginal = text;
+    // 初期データで開くので、条件の変更の控えも消す（PRD D290。読めなかったデータの控えと初期データを比べない）
+    conditionsMemory.clear();
     // 退避が容量超過なら1世代の控えを捨ててもう1回（keepBroken）。退避できなくても続ける
     const brokenKept = ls ? keepBroken(ls, text) : false;
     const d = createInitialData(todayDate);
@@ -264,7 +299,9 @@ export function brokenText(): string | null {
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;
-let pending: { data: DemoData; onError?: (message: string | null, droppedPrevious: boolean) => void } | null = null;
+/** 保存の結果を受け取る（成功は message が null。droppedPrevious・droppedConditions は容量のために捨てた控え） */
+export type SaveCallback = (message: string | null, droppedPrevious: boolean, droppedConditions: boolean) => void;
+let pending: { data: DemoData; onError?: SaveCallback } | null = null;
 
 /** 待っている保存をすぐ書く（ページを閉じる前・テスト用） */
 export function flushSave(): void {
@@ -275,14 +312,14 @@ export function flushSave(): void {
   if (!p) return;
   // onError が無くても書く（p.onError?.(writeNow(...)) だと onError の無いときに書かない）
   const r = writeNow(p.data);
-  p.onError?.(r.message, r.droppedPrevious);
+  p.onError?.(r.message, r.droppedPrevious, r.droppedConditions === true);
 }
 
 /**
  * 300ms 間引きで保存（その間の呼び出しは最後の値だけ書く）。
  * 結果は onError に渡す（成功は null、容量超過などは利用者向けの文言。droppedPrevious：容量のために1世代の控えを捨てた）
  */
-export function save(data: DemoData, onError?: (message: string | null, droppedPrevious: boolean) => void): void {
+export function save(data: DemoData, onError?: SaveCallback): void {
   current = data;
   pending = { data, onError };
   if (timer) return;

@@ -20,8 +20,8 @@ export type BandNext = {
   short: string;
 };
 
-/** 手当てが要る要対応（入らない訪問・欠勤の人に残る訪問・条件が変わった）。拘束が上限を超える・欠勤がある日は見るだけ */
-const URGENT: readonly AttentionKind[] = ['unassigned', 'absentLeft', 'stale'];
+/** 手当てが要る要対応（入らない訪問・必須の違反・欠勤の人に残る訪問・条件が変わった）。拘束が上限を超える・欠勤がある日は見るだけ */
+const URGENT: readonly AttentionKind[] = ['unassigned', 'hard', 'absentLeft', 'stale'];
 
 /** 要対応のうち手当てが要る件数 */
 export function urgentCount(list: readonly Pick<Attention, 'kind'>[]): number {

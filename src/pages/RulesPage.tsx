@@ -121,6 +121,9 @@ export default function RulesPage() {
     values: {},
   });
   const basisId = basis?.id ?? null;
+  /** 最新の基準（確認を待つ間に別のタブで替わったかを見る） */
+  const basisRef = useRef(basisId);
+  basisRef.current = basisId;
   const draft = useMemo(
     () => (rawDraft.basisId === basisId ? pruneDraft(rawDraft.values, saved) : NO_DRAFT),
     [rawDraft, basisId, saved],
@@ -167,7 +170,12 @@ export default function RulesPage() {
       cancelLabel: '編集を続ける',
     });
     if (!ok) return;
-    update((d) => applyDraft(d, values));
+    // 確認の間に別のタブで点数の基準が替わったら書かない（下書きは前の基準の重み。替わった基準では捨てられる）
+    if (basisRef.current !== basisId) {
+      toast('点数の基準が替わったので、重みの変更は確定しませんでした');
+      return;
+    }
+    update((d) => (scorePresetOf(d.presets, d.scorePresetId)?.id === basisId ? applyDraft(d, values) : d));
     setRawDraft({ basisId, values: {} });
     setFocusHead((n) => n + 1);
     toast(confirmedText(list.length, name));
@@ -342,7 +350,7 @@ export default function RulesPage() {
         <Hint label="この種類の説明">{ruleTypeHelp(addType, terms)}</Hint>
       </div>
 
-      <PresetSection onReset={() => setRawDraft({ basisId, values: {} })} />
+      <PresetSection draftCount={changes.length} onReset={() => setRawDraft({ basisId, values: {} })} />
 
       {/* 乱数の種はふだん使わないので「詳細設定」に畳む（PRD D174。開いたかどうかは保存しない） */}
       <details className="card seed-card rules-advanced" data-testid="rules-advanced">
@@ -481,7 +489,7 @@ function RuleName({ value, onChange, fallback }: { value: string; onChange: (v: 
  * 条件のプリセット（D20・D24・D235。ADR-0008・ADR-0035）。名前・一言・型ごとの重み・必須を変えるとすぐ保存。
  * 消す（最後の1つは消せない）・基準の重みを写して保存（6つまで）・初期値に戻す
  */
-function PresetSection({ onReset }: { onReset: () => void }) {
+function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: () => void }) {
   const { shownTypes } = useShownTypes();
   const { data, update } = useDemoData();
   const confirmDialog = useConfirm();
@@ -497,6 +505,23 @@ function PresetSection({ onReset }: { onReset: () => void }) {
     if (location.hash === '#presets') ref.current?.scrollIntoView({ block: 'start' });
   }, [location.hash]);
   const set = (id: string, patch: Partial<Omit<Preset, 'id'>>) => update((d) => patchPreset(d, id, patch));
+  /** 確定していない重みの変更を捨てることの断り（基準を替える・基準のプリセットを消すとき） */
+  const dropNote = draftCount > 0 ? `\n確定していない重みの変更（${draftCount}件）は捨てます。` : '';
+  /** 点数の基準を替える。重みの下書きがあれば、捨てることを確かめてから（黙って捨てない。PRD D286） */
+  const choose = async (p: Preset) => {
+    if (ruler?.id === p.id) return;
+    if (draftCount > 0) {
+      const ok = await confirmDialog({
+        title: `点数の基準を「${p.name}」に替えますか？`,
+        body: `確定していない重みの変更（${draftCount}件）は捨てます。`,
+        confirmLabel: '捨てて替える',
+        cancelLabel: '編集を続ける',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    update((d) => setScorePreset(d, p.id));
+  };
   const setWeight = (p: Preset, t: RuleType, w: Partial<{ weight: number; hard: boolean }>) =>
     set(p.id, { weights: { ...p.weights, [t]: { ...p.weights[t], ...w } } });
   const remove = async (p: Preset) => {
@@ -504,7 +529,7 @@ function PresetSection({ onReset }: { onReset: () => void }) {
     const next = data.presets.find((x) => x.id !== p.id);
     const moved =
       ruler?.id === p.id && next
-        ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。この日だけ試す重みも基準に戻ります。`
+        ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。この日だけ試す重みも基準に戻ります。${dropNote}`
         : '';
     const ok = await confirmDialog({
       title: `プリセット「${p.name}」を消しますか？`,
@@ -518,7 +543,7 @@ function PresetSection({ onReset }: { onReset: () => void }) {
   const reset = async () => {
     const ok = await confirmDialog({
       title: 'プリセットを初期の3つに戻しますか？',
-      body: '初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。この日だけ試す重みも基準に戻ります。',
+      body: `初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。この日だけ試す重みも基準に戻ります。${dropNote}`,
       confirmLabel: '初期の3つに戻す',
       tone: 'danger',
     });
@@ -557,7 +582,7 @@ function PresetSection({ onReset }: { onReset: () => void }) {
                 name="score-preset"
                 value={p.id}
                 checked={ruler?.id === p.id}
-                onChange={() => update((d) => setScorePreset(d, p.id))}
+                onChange={() => void choose(p)}
               />
               {p.name}
             </label>

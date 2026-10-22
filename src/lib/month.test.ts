@@ -39,6 +39,7 @@ import {
   staffMonth,
   ymOf,
 } from './month';
+import { attentionCountByDate } from './monthRest';
 import { addPresetFromRules, patchPreset, setScorePreset } from './presets';
 import { problemKey } from './runs';
 
@@ -683,6 +684,21 @@ describe('要対応（attentionList）', () => {
     expect(handledAbsences(data, days, '2026-10-21')).toEqual([]);
     const requested = { ...data, absences: [{ ...data.absences[0]!, note: '希望休' }] };
     expect(handledAbsences(requested, days, '2026-10-12')).toEqual([]);
+  });
+
+  it('必須の違反も行にする（マスの赤と札「要対応 N」と右の欄がそろう。PRD D295）', () => {
+    const d = selData();
+    const list = attentionList(
+      d,
+      [st('2026-10-20', { hard: 2, stale: true, needsCare: true }), st('2026-10-21', { hard: 1, needsCare: true })],
+      '2026-10-12',
+    );
+    expect(list.map((a) => [a.date, a.kind, a.count])).toEqual([
+      ['2026-10-20', 'hard', 2],
+      ['2026-10-20', 'stale', 1],
+      ['2026-10-21', 'hard', 1],
+    ]);
+    expect(attentionCountByDate(list).get('2026-10-20')).toBe(2);
   });
 
   it('同じ人のその日の欠勤が2件（時間帯が2つ）でも、欠勤の人数は1人・名前は1回', () => {

@@ -7,6 +7,7 @@ import type { Terms } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { trapTarget } from '../lib/confirmDialog';
 import { applyTemplate, matchTemplate } from '../lib/features';
+import { confirmLeave } from '../lib/leaveGuard';
 import { dayHref } from '../lib/links';
 import {
   shouldAutoOpenTour,
@@ -80,7 +81,10 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
   /** 最後の枚の「今日の予定を開く」：閉じて今日の日の画面へ（PRD D226） */
   const openToday = useCallback(() => {
     close();
-    navigate(dayHref(jstDate(Date.now())));
+    // 下書きのある画面（条件の重み）から移るときは確かめる（断れば留まる。PRD D286）
+    void confirmLeave().then((ok) => {
+      if (ok) navigate(dayHref(jstDate(Date.now())));
+    });
   }, [close, navigate]);
   return (
     <Ctx.Provider value={openTour}>

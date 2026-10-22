@@ -19,6 +19,7 @@ import {
   encodeFilter,
   filterClients,
   filterFacts,
+  knownTypes,
   resolveStaffId,
   sameFilter,
 } from '../lib/clientFilter';
@@ -187,10 +188,10 @@ export default function CompatPage() {
     ],
   );
   const cfParam = paramOf(params, 'cf');
-  // この画面は休止中の人を出さないので「終了の人も出す」はいつも外す
+  // この画面は休止中の人を出さないので「終了の人も出す」はいつも外す。URL に残った消えた種類の id は外す（URL も書き直す）
   const clientFilter = useMemo(
-    () => ({ ...decodeFilter(cfParam, EMPTY_FILTER, COMPAT_CHIPS), showEnded: false }),
-    [cfParam],
+    () => knownTypes({ ...decodeFilter(cfParam, EMPTY_FILTER, COMPAT_CHIPS), showEnded: false }, data.visitTypes),
+    [cfParam, data.visitTypes],
   );
   const baseFacts = useMemo(
     () =>
