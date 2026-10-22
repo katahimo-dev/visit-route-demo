@@ -5,7 +5,7 @@
 
 ### 〈利用者さん〉一覧（`#/clients`）
 
-- 見出し「〈利用者さん〉一覧」。見出しの右に「相性の表」（文字のボタン）と主ボタン「〈利用者さん〉を追加」（`client-add`。`#/clients/new` へのリンク）
+- 見出し「〈利用者さん〉一覧」。題名の下に人のタブ（`PeopleTabs`。[pages.md](pages.md)。PRD D326）。見出しの右に主ボタン「〈利用者さん〉を追加」（`client-add`。`#/clients/new` へのリンク）
 - 一覧の上に `ClientFilter`（`clients-filter`。画面の状態。URL に残さない。既定 `EMPTY_FILTER`）。期間は選んでいる日（`useDay`）を含む週（月〜日）で、`weekDay` を7日分作って `filterFacts` に渡す。終了の人は「終了の人も出す」のときだけ出す
 - 狭い画面（600px 以下。PRD D220）：絞り込みの欄の中身（`ClientFilter` と段階の説明）を「絞り込み（N）」のボタン（`narrow-filter-toggle`。`aria-expanded`・`aria-controls`）の下に畳み、横に「N人を表示」（`narrow-filter-count`）。N は `activeFilterCount`（下）。はじめは畳み、開いたかは画面の中だけ。広い画面ではボタンを出さずいつも開いたまま
 - 一覧の上に「位置の無い〈利用者さん〉」のカード（下の「まとめて地図に置く」）。置けなかった人の「編集」はその人の画面の住所の節（`#/clients/:id?tab=basic&edit=place`。開いたら URL の `edit` を消し、節の無いタブ（予定）で開いたら節のタブへ移す）

@@ -22,11 +22,11 @@
 #### 並び（PRD D63）
 
 1. 見出し（`PageHeader`。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）：題名・1行の説明・状態の印・主ボタン「この割当で確定」（確定済みの日は枠のボタンにして主ボタンを置かない。PRD D238）。題名の下に［月｜週｜日］のタブ（`ViewSwitch`。PRD D237）
-2. 進み具合の帯：`ScheduleBand date={date} withDay`（[pages-home.md](pages-home.md)）
+2. 進み具合の帯は出さない（月の予定だけ。PRD D332）。日の状態は見出しの状態の印と下の1行のまとめ
 3. 1行のまとめ：訪問 N件・入らない N・守れない条件 N・移動 N分・点数 N点（`plan-oneline-score`・`plan-score`。点数に用語の説明「点数」（`Term k="score"`。PRD D307）。title「「〈名前〉」の重みで付けた点数」。点数の文字は地の色で、入らない・必須の違反があるときだけ `.is-alert` で要対応の赤。PRD D266）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」
 4. 担当ごとの1日（`DayLines`。下）。開いているときは1行のまとめと1枚のカードにつなげる（`.plan-oneline:has(+ .daylines)` と `.plan-oneline + .daylines` で間と角を消す。印刷では離す。PRD D237）
-5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
-6. 見出しの右：状態・「予定をメールで送る」（`day-mail`。枠。`mail` が入のとき。PRD D306）・主ボタン「この割当で確定」。操作の行（`plan-toolbar`。PRD D279）：「欠勤・キャンセルを登録」（`sudden-open`）・「案を変える ▾」は枠、「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・「その他 ▾」（`MenuButton`・`plan-more`：「訪問を追加」（`plan-visit-add`。〈利用者さん〉がいなければ押せず理由）・「使い方」（`plan-more-help`。開いていれば「使い方を閉じる」））・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）。「使い方」は操作の行の下に説明 `plan-help` を開きフォーカスを移す（「使い方を閉じる」）
+5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・提案の帯（日のその場の提案 `data-kind="day"` と範囲の提案 `data-kind="range"`。[pages-common.md](pages-common.md) の「予定の共通の部品」）・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
+6. 見出しの右：状態・「予定をメールで送る」（`day-mail`。枠。`mail` が入のとき。PRD D306）・主ボタン「この割当で確定」。操作の行（`ScheduleToolbar zoom="day"`・`plan-toolbar`。日・週・月で同じ並び。PRD D327）：「欠勤・キャンセルを登録」（`sudden-open`）・「AI で組む ▾」は枠、「元に戻す」「やり直す」（`undo-btn`・`redo-btn`。全体の履歴。PRD D329）は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・「その他 ▾」（`MenuButton`・`plan-more`：「訪問を追加」（`plan-visit-add`。〈利用者さん〉がいなければ押せず理由）・「使い方」（`plan-more-help`。開いていれば「使い方を閉じる」））・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）。「使い方」は操作の行の下に説明 `plan-help` を開きフォーカスを移す（「使い方を閉じる」）
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
 8. 本体（時間軸か順番か一覧）と、その下に全幅の地図（`plan-map`。1280px 以上は高さ 600px、狭い画面は 420px。比較の画面と同じ形。PRD D300）。地図が画面の外にあるあいだは `MapDock` で右下に浮かせ、〈スタッフ〉・区間・訪問を選ぶと開く
 
@@ -50,16 +50,16 @@
   - 次の一手 `nextStep`（PRD D229。`NEXT_STEP_TEXT`）：移動が長め＝「「移動を短く」で組む」（`shortTravel`）、入らない訪問＝「受けられる人を見る」（`candidates`）、相性△・×・◎の取り逃し＝「相性の表を開く」（`compat`）。ほか（必須の違反・待ち・偏り・ほかの担当の条件）は無し
 - `lib/useDayModel.ts` は `scoreRules`（点数の基準の条件。名前と重みを理由の文に使う）を返す
 - `pages/planParts.tsx` の `ScoreReasonText`：↘ と短い文。読み上げの前置き「点を下げているいちばんの理由：」は sr-only。使う所は日の予定の今の案の帯（`plan-reason`）と比較の画面（`compare-reason`）
-- `planParts.tsx` の `ScoreNextStep`：1行のまとめの中、理由のすぐ後ろに「次の一手：［…］」（`span.score-next`。PRD D237・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「案を変える ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
+- `planParts.tsx` の `ScoreNextStep`：1行のまとめの中、理由のすぐ後ろに「次の一手：［…］」（`span.score-next`。PRD D237・data-testid `reason-next`・`data-kind`、操作は `reason-next-action`）。`shortTravel` は「AI で組む ▾」の「移動を短く」と同じ（プリセット ID `travel` か名前「移動を短く」。無い・今の案がそれ・計算中なら出さない）、`candidates` は `unassignedHref(date)`（「入らなかった訪問」の列へ巻く）、`compat` は `#/compat`（`compat` を切っていれば出さない）。印刷では出さない
 - 点数の説明（`HundredHint`）は決め方と減点の内訳だけ。内部の費用（「費用 N（内部の値…）」）は出さない（PRD D229）
 - `planParts.tsx` の文（PRD D307）：`SCORE_TEXT`（「理想の割当を100点として、訪問1件あたり余計にかかった分だけ引いた点」）・`rulerText(name)`（「点数はいつも「〈名前〉」の重みで付けます。条件を変えても、点の付け方は変わりません」）・`HARD_NOTE`（「必須を守れていない案の点は、ほかの案と比べられません。参考の点です」）。「点数の決め方」（`HundredHint`）は `hint-list` の箇条書き（下がった点は「下がった点：移動 −N点・…」）
 
 #### 「AI で組む ▾」と提案（PRD D315・D317・D318。ADR-0053）
 
-- 操作の行の `MenuButton`（`plan-menu`）。項目：AI で組む（〈点数の基準の名前〉）（`plan-menu-create`。ピンがあれば説明に「ピンの N件はそのままで…」）／「〈プリセット名〉」で組む（`plan-menu-preset`。点数の基準のほかのプリセット。条件の重みを切ると出さない）／プリセットの提案を比べる（`plan-menu-compare`。比較の画面へ。提案を比べるを切ると出さない）／ピンをすべて外す（N件）（`plan-menu-unpin`。ピンが無ければ押せず理由）。計算中・訪問が無いときは AI で組む・プリセットを押せず理由
+- 操作の行の `MenuButton`（`plan-menu`）。項目：「AI で組む（範囲）」のまとまり＝この日（M/D）を組む（`ai-scope-day`。その場の提案）・この週を組む（`ai-scope-week`）・この月を組む（`ai-scope-month`。月の予定の欄へ。範囲の項目は日・週・月で同じ `useScopeItems`。PRD D328）／「〈プリセット名〉」で組む（`plan-menu-preset`。点数の基準のほかのプリセット。条件の重みを切ると出さない）／2つの提案を比べる（`plan-menu-compare`。比較の画面へ。提案を比べるを切ると出さない。メニュー・パレットからは開かない。PRD D331）／ピンをすべて外す（N件）（`plan-menu-unpin`。ピンが無ければ押せず理由）。計算中・訪問が無いときはこの日・プリセットを押せず理由
 - 提案（`propose(preset?)`）：点数の基準の重み（プリセットなら `applyPreset` を当てた重み）で compile し、ピンを `pins` に渡して `runSolve`。結果は画面の状態（`proposal = { date, label, routes, visits, stopped }`）で、保存しない
-- 提案の帯（`proposal-band`）：担当が変わる件数（`proposal-moved`）・時刻が変わる件数（`proposal-shifted`）・点（今 → 提案。`proposal-score`）と「当てる」（`proposal-apply`）・「やめる」（`proposal-discard`）。担当が変わる訪問の一覧（`proposal-moves`）。提案を出したあとに訪問が変われば「古い」（`proposal-stale`）で、当てると知らせて捨てる
-- 当てる：`writeRoutes(d, date, problem, routes)` で訪問に担当と開始を書く（ピンはそのまま）。トースト「提案を当てました」と「元に戻す」
+- 提案の帯（`ProposalBand kind="day"`。`proposal-band`）：担当が変わる件数（`proposal-moved`）・時刻が変わる件数（`proposal-shifted`）・点（今 → 提案。`proposal-score`）と「当てる」（`proposal-apply`）・「捨てる」（`proposal-discard`）。担当が変わる訪問の一覧（`proposal-moves`）。提案を出したあとに訪問が変われば「古い」（`proposal-stale`）で、当てると知らせて捨てる
+- 当てる：`writeRoutes(d, date, problem, routes)` で訪問に担当と開始を書く（ピンはそのまま。手の名前「AI の提案を当てる（名前）」）。トースト「提案を当てました」と全体の「元に戻す」（`toast-undo`）
 - 日の予定を開いても自動では作らない（担当なしの訪問は要対応で見える）
 
 #### 右の欄（`SidePanel`）
@@ -114,7 +114,7 @@
 
 ドラッグと同じ手直しを、押す・キーボード・タッチで。訪問の詳細（時間軸の帯の `tl-detail`・順番のカードの詳細。900px 以下・390px は順番の表示なのでカードの詳細）の「担当：」の下に置く。
 
-- 部品は `components/MenuButton`（「案を変える ▾」と同じ作法：role="menu"・role="menuitem"・まとまりは role="group"＋aria-label・説明は aria-describedby・押せない項目もフォーカスは移り理由を出す・キーボード（開くと先頭・↑↓・Home・End・Esc・Tab））。ボタン `plan-reassign`（アイコン ArrowRightLeft・「担当を変える ▾」）・一覧 `plan-reassign-list`
+- 部品は `components/MenuButton`（「AI で組む ▾」と同じ作法：role="menu"・role="menuitem"・まとまりは role="group"＋aria-label・説明は aria-describedby・押せない項目もフォーカスは移り理由を出す・キーボード（開くと先頭・↑↓・Home・End・Esc・Tab））。ボタン `plan-reassign`（アイコン ArrowRightLeft・「担当を変える ▾」）・一覧 `plan-reassign-list`
 - 項目（data-key・data-testid）：
 
 | まとまり | 項目 | 押すと |
@@ -128,12 +128,12 @@
 - 押せない理由（`problem.allowed` が false の人）：「必須の条件に合いません（〈必須で外れる理由の名前〉・…）」。計算中はどの項目も「計算中は選べません」
 - 担当の無い訪問（入らなかった訪問のカード）にも出す（今の担当・「入らなかった訪問へ」は無し）。欠勤の振り直しで「受けられる人」（`CandidateBox`）を出している訪問には出さない
 - 一覧は浮かせて出す（`menu-list`。画面の右からはみ出せば左へずらす）。390px でも収まる
-- 選んだあとのフォーカス（`focusAfterMove`）：詳細ごとボタンが消える（列が替わる・入らなかった訪問へ移る）ので、移した先の訪問の帯・カード（`.tl-band-btn`・`.route-btn`）へ。無ければ操作の行の「元に戻す」、それも無ければ移した先の列の見出し。body に落とさない
+- 選んだあとのフォーカス（`focusAfterMove`）：詳細ごとボタンが消える（列が替わる・入らなかった訪問へ移る）ので、移した先の訪問の帯・カード（`.tl-band-btn`・`.route-btn`）へ。無ければ操作の行の「元に戻す」（`undo-btn`）、それも無ければ移した先の列の見出し。body に落とさない
 
-##### 1手戻す（PRD D218）
+##### 戻す（全体の履歴。PRD D329。ADR-0054）
 
-- 手直し（担当を移す・担当なしにする・受けられる人に入れる・ピンを外す）と提案を当てる・振り直しを当てるは、書く前の `visits`・`reassigns` を画面だけに控える（`undoSnap`。保存しない）。戻せるのは直前の1手だけ
-- 操作の行の「元に戻す」（`plan-reassign-undo`。戻せないときも押せる所に残し `aria-disabled` と title に理由）とトーストの「元に戻す」（`plan-reassign-toast-undo`）。別の日の手直し・あとでほかの操作で訪問が変わったときは戻さず理由（「ほかの操作で予定が変わりました」）
+- 手直し（担当を移す・担当なしにする・受けられる人に入れる・ピンを外す）・提案を当てる・振り直し・確定は、どれも store の `update(fn, 手の名前)` の1手（「担当を替える」「担当なしにする」「受けられる人に入れる」「ピンを外す」「AI の提案を当てる（…）」「欠勤を登録」「欠勤の振り直し」「案A を当てる」「確定（伝えた）」など）。戻すのは全体の「元に戻す」（操作の行の `undo-btn`・トーストの `toast-undo`・Ctrl+Z）で、50手まで。別の日の手も戻る（日付を問わない）
+- 複数選択（Shift・Ctrl＋クリック）は時間軸の帯と順番のカード。下に `SelectionBar`（[pages-common.md](pages-common.md)）
 - 手で担当を替えた訪問は自動でピン（PRD D319）。「次からもこの人に」の記憶は無い（ADR-0053。繰り返しの担当を直す）
 
 #### 入らなかった訪問
@@ -218,6 +218,7 @@
 #### 完了の条件
 
 - [ ] 「AI で組む」→ 10秒以内に提案の帯（変わる件数・点）が出て、当てるまで訪問は変わらない。「当てる」で訪問に担当が入り「元に戻す」で1手戻る（`scripts/e2e-plan-menu.cjs`）
+- [ ] 日・週・月で同じ操作の行・「AI で組む ▾」の範囲と提案の帯・全体の元に戻す（Ctrl+Z／やり直し・入力欄の中では効かない）・複数選択の帯（`scripts/e2e-schedule-v4.cjs`）
 - [ ] 訪問の一覧は表示の「一覧」で出る。訪問を押すと理由と「担当を変える ▾」が出る。担当の列の最後に「自宅まで N分」があり、押すと地図でその区間が強調される。`#/schedule` は `#/plan` へ移る
 - [ ] 訪問を取り消すと今の案の列・点からその訪問が消え、足すと「入らなかった訪問」に出る。すべて取り消すと今の案の欄・列は出ず「この割当で確定」も押せない（`alignPlan` のテスト）
 - [ ] 担当の列の見出しの下にその日の稼働時間帯と「この日だけ変更」が出る。訪問を「入らなかった訪問」（ドラッグ中は0件でも出る）へドラッグすると未割当になり固定が外れる

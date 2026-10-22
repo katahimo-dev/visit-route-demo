@@ -1,0 +1,117 @@
+/* 予定（日・週・月）に共通の部品（PRD D327・D328・D330。ADR-0054）：操作の行・提案の帯・複数選択の帯 */
+
+/* 操作の行（日・週・月で同じ並び） */
+.schedule-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.schedule-toolbar .segmented {
+  align-self: center;
+}
+@media print {
+  .schedule-toolbar {
+    display: none;
+  }
+}
+
+/* あるときだけの帯（日の予定の .plan-band と同じ見た目。週・月でも使う） */
+.schedule-band {
+  margin: 0;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  border: 1.5px solid #f2c4b9;
+}
+.schedule-band .band-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.schedule-band .with-icon:has(> .band-text) > svg {
+  flex: none;
+}
+.schedule-band .reassign-moves-box > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.schedule-band .reassign-moves-box[open] > summary {
+  margin-bottom: 6px;
+}
+.range-days {
+  margin: 0;
+  padding-left: 1.2em;
+  display: grid;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+.range-days .link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--primary-dark);
+  cursor: pointer;
+  text-decoration: underline;
+}
+@media print {
+  .schedule-band.proposal-band {
+    display: none;
+  }
+}
+
+/* 複数選択の帯（画面の下に貼り付く。スマホは下のタブの上） */
+.selection-bar {
+  position: sticky;
+  /* 地図の浮かせたボタン（右下）と重ならないよう、その上に出す */
+  bottom: calc(76px + var(--bottom-tabs-h, 0px));
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 2px solid var(--primary);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 16%);
+}
+.selection-shift {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+@media print {
+  .selection-bar {
+    display: none;
+  }
+}
+
+/* 選んだ訪問の帯（日・週の時間軸。色だけに頼らず太い縁と印） */
+.is-multi {
+  outline: 3px solid var(--primary-dark);
+  outline-offset: 1px;
+}
+
+/* 狭い画面（600px 以下）：操作の行を詰める（最初の画面に訪問が見えるように。スマホの作り直しは5段目） */
+@media (max-width: 600px) {
+  .schedule-toolbar {
+    gap: 6px;
+  }
+  .schedule-toolbar > .btn,
+  .schedule-toolbar .menu-wrap > .btn {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    min-height: 36px;
+  }
+  .selection-bar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+}

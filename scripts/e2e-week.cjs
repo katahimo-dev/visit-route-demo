@@ -396,6 +396,19 @@ const unassignAll = (k) => {
   localStorage.setItem(k, JSON.stringify(d));
 };
 
+/** 「AI で組む ▾」の「この週」の項目（開いて返す。閉じるのは呼ぶ側） */
+async function scopeWeekItem(page) {
+  await page.getByTestId('plan-menu').click();
+  await page.getByTestId('plan-menu-list').waitFor();
+  return page.getByTestId('ai-scope-week');
+}
+/** 「AI で組む ▾」の「この週」で組み始める（ADR-0054。週の主ボタンは確定だけ） */
+async function startWeek(page) {
+  const item = await scopeWeekItem(page);
+  await item.click();
+}
+const rangeBand = (page) => page.locator('[data-testid="proposal-band"][data-kind="range"]');
+
 async function weekPrep(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
   check(!!CROSS, '月をまたぐ週がある（組む・確定を2つの月で確かめる前提）', TODAY);
@@ -413,24 +426,26 @@ async function weekPrep(page) {
     '訪問のある日は「N件・担当なしM」、訪問の無い日は「0件」',
     future,
   );
-  // 主ボタンは見出しの「この週の担当なしを AI で組む（N日）」の1つ。N＝今日以降の、担当なしの訪問がある日
-  const want = future.filter((h) => /担当なし/.test(h.text)).length;
-  const label = await page.getByTestId('week-next-btn').innerText();
+  // 組むのは操作の行の「AI で組む ▾」の「この週」（日・週・月で同じ入口。ADR-0054）。週の主ボタンは確定だけ
   check(
-    (await nextKind(page)) === 'make' && label.includes(`この週の担当なしを AI で組む（${want}日）`),
-    '週の主ボタン：この週の担当なしを AI で組む（N日）',
-    { label, want },
+    ['rest', 'none', 'done'].includes(await nextKind(page)) && (await page.getByTestId('week-next-btn').count()) === 0,
+    '担当なしの日しか無ければ、週の主ボタン（確定）は出さない（組むボタンも無い）',
+    await nextKind(page),
   );
-  // 組む入口は見出しの主ボタンの1つ：進み具合の帯に「担当を AI で組む」を出さない（数字のリンクは残る）
-  await page.getByTestId('progress-band').getByTestId('band-attention').waitFor({ timeout: 30000 });
+  const item = await scopeWeekItem(page);
+  const itemText = await item.innerText();
   check(
-    (await page.locator('[data-testid="band-next"][data-kind="batch"]').count()) === 0 &&
-      (await page.getByTestId('band-visits').count()) === 1,
-    '主ボタンが「組む」の間は、進み具合の帯に「担当を AI で組む」を出さない',
+    (await item.getAttribute('aria-disabled')) !== 'true' &&
+      itemText.startsWith(`この週（${md(CROSS.start)}〜${md(CROSS.dates[6])}）を組む`),
+    '「AI で組む ▾」に「この週（M/D〜M/D）を組む」',
+    itemText,
   );
+  await page.keyboard.press('Escape');
+  check((await page.getByTestId('progress-band').count()) === 0, '週は進み具合の帯を出さない（月だけ）');
+  check((await page.getByTestId('week-status').count()) === 1, '週は1行の状態');
   check(
-    (await page.locator('.btn-primary').count()) === 1,
-    '週の予定の主ボタンは1つ',
+    (await page.locator('.btn-primary').count()) <= 1,
+    '週の予定の主ボタンは1つまで',
     await page.locator('.btn-primary').allInnerTexts(),
   );
   // 月のマスでも担当なしの日に「担当なし N」
@@ -448,12 +463,12 @@ async function weekPrep(page) {
     '月のマスでも担当なしの日に「担当なし N」',
     CROSS.later.map((d) => `${d}:${flagged.includes(d)}`),
   );
-  // 390px：主ボタンが画面の中に入り、横にはみ出さない
+  // 390px：操作の行が画面の中に入り、横にはみ出さない
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, `/week?d=${CROSS.start}&view=timeline`);
-  const box = await page.getByTestId('week-next-btn').boundingBox();
+  const box = await page.getByTestId('schedule-toolbar').boundingBox();
   const sw = await page.evaluate(() => document.documentElement.scrollWidth);
-  check(box && box.x >= 0 && box.x + box.width <= 390 && sw <= 390, '390px：週の主ボタンが画面に入る', { box, sw });
+  check(box && box.x >= 0 && box.x + box.width <= 390 && sw <= 390, '390px：週の操作の行が画面に入る', { box, sw });
   await page.screenshot({ path: path.join(OUT_DIR, 'week-make-390.png') });
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
@@ -462,9 +477,9 @@ async function weekMake(page) {
   if (!CROSS) return check(false, 'week-make：月をまたぐ週が無い');
   await page.setViewportSize({ width: 1400, height: 1000 });
   await open(page, `/week?d=${CROSS.start}`);
-  await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
-  const want = Number(/（(\d+)日）/.exec(await page.getByTestId('week-next-btn').innerText())?.[1] ?? 0);
-  await page.getByTestId('week-next-btn').click();
+  await page.getByTestId('week-next').waitFor({ timeout: 30000 });
+  const want = (await headsOf(page)).filter((h, i) => CROSS.dates[i] >= TODAY && /担当なし/.test(h.text)).length;
+  await startWeek(page);
   await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
   const bandText = await page.getByTestId('batch-band-text').innerText();
   check(
@@ -486,15 +501,25 @@ async function weekMake(page) {
       timeout: 150000,
     },
   );
-  const toast = page.locator('.toast').filter({ hasText: /の週の担当を\d+日分組みました/ });
+  const toast = page.locator('.toast').filter({ hasText: /の週の提案を出しました/ });
   await toast.first().waitFor({ timeout: 10000 });
   const tt = await toast.first().innerText();
   check(
-    tt.includes(`${md(CROSS.start)}〜${md(CROSS.dates[6])}の週の担当を${want}日分組みました`) &&
+    tt.includes(`${md(CROSS.start)}〜${md(CROSS.dates[6])}の週の提案を出しました`) &&
       (await toast.first().getByTestId('batch-done-open').count()) === 0,
-    '組み終えた知らせ（その週を見ているので［週の予定を見る］は出さない）',
+    '組み終えた知らせ（提案の帯が見えるので［週の予定を見る］は出さない）',
     { tt, want },
   );
+  // 提案（範囲）：当てるまで訪問は変わらない → 当てる
+  await rangeBand(page).waitFor({ timeout: 10000 });
+  const before = await stored(page);
+  check(
+    before.visits.every((v) => !v.staffId),
+    '提案を出しただけでは訪問は変わらない',
+  );
+  check(Number(await rangeBand(page).getByTestId('proposal-moved').innerText()) > 0, '提案の帯：担当が変わる件数');
+  await rangeBand(page).getByTestId('proposal-apply').click();
+  await rangeBand(page).waitFor({ state: 'detached', timeout: 10000 });
   await settle(page, 500);
   const heads = await headsOf(page);
   const future = CROSS.future.map((d) => heads[CROSS.dates.indexOf(d)]);
@@ -639,26 +664,23 @@ async function weekBusy(page) {
     await page.evaluate((w) => {
       location.hash = `#/week?d=${w}`;
     }, W3);
-    await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
+    await page.getByTestId('schedule-toolbar').waitFor({ timeout: 30000 });
     await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
-    const btn = page.getByTestId('week-next-btn');
-    const why = page.getByTestId('week-next-why');
+    const item = await scopeWeekItem(page);
+    const itemText = await item.innerText();
     check(
-      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make' &&
-        (await btn.getAttribute('aria-disabled')) === 'true' &&
-        (await why.count()) === 1 &&
-        /ほかの担当を組んでいます/.test(await why.innerText()) &&
-        (await btn.getAttribute('aria-describedby')) === (await why.getAttribute('id')),
-      '月の予定で担当を組んでいる間は、週の主ボタンは押せず理由（aria-describedby）',
-      { why: await why.innerText().catch(() => '') },
+      (await item.getAttribute('aria-disabled')) === 'true' && /ほかの担当を組んでいます/.test(itemText),
+      '月の予定で担当を組んでいる間は、「AI で組む ▾」の「この週」は押せず理由',
+      itemText,
     );
-    // aria-disabled のボタンを押す（Playwright は押せない扱いにするので、押したときの出来事だけを起こす）
-    await btn.dispatchEvent('click');
+    // 押せない項目は押しても何もしない
+    await item.click({ force: true });
     await settle(page, 300);
+    await page.keyboard.press('Escape');
     check(
       (await page.getByTestId('week-next').getAttribute('data-kind')) !== 'making' &&
-        (await page.locator('.toast').filter({ hasText: 'の週の担当を' }).count()) === 0,
-      '押せない主ボタンを押しても週の組むは始まらない',
+        (await page.locator('.toast').filter({ hasText: 'の週の' }).count()) === 0,
+      '押せない「この週」を押しても週の組むは始まらない',
     );
     // 後始末：月の作成を止める
     await page.getByTestId('batch-band-stop').click();
@@ -673,17 +695,13 @@ async function weekBusy(page) {
 async function weekStop(page) {
   if (!W2) return check(false, 'week-stop：月をまたぐ週が無い');
   await open(page, `/week?d=${W2}`);
-  await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
-  const n0 = Number(/（(\d+)日）/.exec(await page.getByTestId('week-next-btn').innerText())?.[1] ?? 0);
-  check(
-    (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make' && n0 >= 2,
-    '止める前：この週の担当なしを AI で組む（2日以上）',
-    n0,
-  );
+  await page.getByTestId('week-next').waitFor({ timeout: 30000 });
+  const n0 = (await headsOf(page)).filter((h) => /^\d+件/.test(h.text) && !/^0件$/.test(h.text)).length;
+  check(n0 >= 2, '止める前：この週に訪問のある日が2日以上', n0);
   // 1日目を作っている間に止める（計算の読み込みを止めておく）
   const release = await holdWorker(page);
   try {
-    await page.getByTestId('week-next-btn').click();
+    await startWeek(page);
     await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
     check(
       (await page.getByTestId('batch-band').getAttribute('aria-label')) === `${W2_LABEL}の担当を組む進み具合`,
@@ -698,23 +716,24 @@ async function weekStop(page) {
   const toast = page.locator('.toast').filter({ hasText: `${W2_LABEL}の担当を` });
   await toast.first().waitFor({ timeout: 10000 });
   const tt = await toast.first().innerText();
-  await page.waitForFunction(() => document.querySelector('[data-testid="week-next"]')?.dataset.kind === 'make', null, {
-    timeout: 10000,
-  });
-  const n1 = Number(/（(\d+)日）/.exec(await page.getByTestId('week-next-btn').innerText())?.[1] ?? 0);
+  await rangeBand(page).waitFor({ timeout: 10000 });
+  const bt = await rangeBand(page).innerText();
+  const n1 = Number(/・(\d+)日分）/.exec(bt)?.[1] ?? 0);
   check(
-    /組んだところで止めました/.test(tt) && n1 > 0 && n1 < n0,
-    '［止める］で止まり、組んだ日は残り、主ボタンは残りの日の「組む」に戻る',
-    { tt, n0, n1 },
+    /組んだところで止めました/.test(tt) && /途中までの最良/.test(bt) && n1 > 0 && n1 < n0,
+    '［止める］で止まり、そこまでの日の提案（途中までの最良）が出る',
+    { tt, bt, n0, n1 },
   );
+  await rangeBand(page).getByTestId('proposal-discard').click();
+  await rangeBand(page).waitFor({ state: 'detached' });
 }
 
 /** 別の週を見ている間に週の作るが終わる：知らせに［週の予定を見る］、押すとその週 */
 async function weekDoneElsewhere(page) {
   if (!W2) return check(false, 'week-done-elsewhere：月をまたぐ週が無い');
   await open(page, `/week?d=${W2}`);
-  await page.getByTestId('week-next-btn').waitFor({ timeout: 30000 });
-  await page.getByTestId('week-next-btn').click();
+  await page.getByTestId('week-next').waitFor({ timeout: 30000 });
+  await startWeek(page);
   await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
   // 読み直さずに別の週へ（作り続けている）
   await page.evaluate((w) => {
@@ -724,20 +743,38 @@ async function weekDoneElsewhere(page) {
     .getByTestId('week-title')
     .filter({ hasText: md(CROSS.start) })
     .waitFor({ timeout: 10000 });
-  const toast = page
-    .locator('.toast')
-    .filter({ hasText: `${W2_LABEL}の担当を` })
-    .filter({ hasText: '組みました' });
+  const toast = page.locator('.toast').filter({ hasText: `${W2_LABEL}の提案を出しました` });
   await toast.first().waitFor({ timeout: 150000 });
-  const open2 = toast.first().getByTestId('batch-done-open');
+  // 提案の帯は日・週・月の予定のどこにも出るので、別の週を見ていても帯で見られる（［週の予定を見る］は出さない）
+  check(
+    (await toast.first().getByTestId('batch-done-open').count()) === 0,
+    '別の週を見ている間に終わっても、提案の帯が見えるので知らせにボタンは出さない',
+    await toast.first().innerText(),
+  );
+  await rangeBand(page).waitFor({ timeout: 10000 });
+  check((await rangeBand(page).innerText()).includes(W2_LABEL), '別の週の画面にも組んだ週の提案の帯', W2_LABEL);
+  // ホームでは帯が見えないので、終わった知らせに［週の予定を見る］（次の組む）
+  await rangeBand(page).getByTestId('proposal-discard').click();
+  await page.goto(`${BASE}#/home`);
+  await page.locator('h1').waitFor();
+  await open(page, `/week?d=${W2}`);
+  await startWeek(page);
+  await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+  await page.evaluate(() => {
+    location.hash = '#/home';
+  });
+  const toast2 = page.locator('.toast').filter({ hasText: `${W2_LABEL}の提案を出しました` });
+  await toast2.first().waitFor({ timeout: 150000 });
+  const open2 = toast2.first().getByTestId('batch-done-open');
   check(
     (await open2.count()) === 1 && (await open2.innerText()).includes('週の予定を見る'),
-    '別の週を見ている間に終わると、知らせに［週の予定を見る］',
-    await toast.first().innerText(),
+    '予定でない画面にいる間に終わると、知らせに［週の予定を見る］',
+    await toast2.first().innerText(),
   );
   await open2.click();
   await page.waitForFunction((w) => location.hash === `#/week?d=${w}`, W2, { timeout: 10000 });
   check(urlOf(page).includes(`#/week?d=${W2}`), '［週の予定を見る］で作った週の週の予定へ', urlOf(page));
+  check((await rangeBand(page).count()) === 1, '移った先で提案の帯が見える');
 }
 
 /** 表の絞り込みに「訪問の種類」（PRD D285）：種類ごとのチップ（人数つき）→押すとその種類の訪問がある人に絞る（URL の ?cf= に type:）→再読み込み・戻るで戻る */

@@ -75,25 +75,14 @@ const TEMPLATE_LABEL = {
 };
 const asFeatures = (on) => Object.fromEntries(FEATURE_IDS.map((id) => [id, on.includes(id)]));
 
-/** メニュー（9項目。相性の機能を切ると減る。PRD D275。ADR-0045・0047） */
-const MENU = [
-  'ホーム',
-  '予定',
-  '欠勤・キャンセルを登録',
-  '空き状況',
-  '利用者さん一覧',
-  'スタッフ一覧',
-  '相性',
-  '勤務時間（シフト）',
-  '設定',
-];
+/** メニュー（6項目。相性は人のタブ。PRD D326。ADR-0054） */
+const MENU = ['ホーム', '予定', '欠勤・キャンセル', '空き状況', '人', '設定'];
 /** すべて入の画面の一覧（パレットの画面。メニューから外した画面も1つずつ。PRD D273・D275） */
 const ALL_SCREENS = [
   'ホーム',
   '月の予定',
   '週の予定',
   '日の予定',
-  '提案を比べる',
   '空き状況',
   '利用者さん一覧',
   'スタッフ一覧',
@@ -108,9 +97,9 @@ const ALL_SCREENS = [
 ];
 /** ひな形ごとの、パレットの画面に出ない画面 */
 const HIDDEN = {
-  basic: ['提案を比べる', '勤務の見込み', '条件の重み', '特性の項目'],
-  laborContract: ['提案を比べる', '条件の重み', '特性の項目'],
-  monthlyField: ['提案を比べる', '勤務の見込み', '条件の重み', '特性の項目'],
+  basic: ['勤務の見込み', '条件の重み', '特性の項目'],
+  laborContract: ['条件の重み', '特性の項目'],
+  monthlyField: ['勤務の見込み', '条件の重み', '特性の項目'],
   all: [],
 };
 const screensFor = (t) => ALL_SCREENS.filter((l) => !HIDDEN[t].includes(l));
@@ -120,10 +109,7 @@ const settingsTabsFor = (t) => SETTINGS_TABS.filter((l) => !HIDDEN[t].includes(l
 /** メニューは空き状況・欠勤を切ると減る */
 const menuFor = (on) =>
   MENU.filter(
-    (l) =>
-      (l !== '空き状況' || on.includes('vacancy')) &&
-      (l !== '欠勤・キャンセルを登録' || on.includes('sudden')) &&
-      (l !== '相性' || on.includes('compat')),
+    (l) => (l !== '空き状況' || on.includes('vacancy')) && (l !== '欠勤・キャンセル' || on.includes('sudden')),
   );
 /** 下のタブ（ホーム・予定・欠勤・空き状況。「メニュー」はボタン。PRD D274） */
 const tabsFor = (on) =>
@@ -219,7 +205,7 @@ async function allOn(page) {
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
   check(m.labels.at(-1) === '設定', 'すべて入：メニューの最後は「設定」', m.labels);
-  check(same(m.labels, MENU), 'すべて入：メニューは9項目', m.labels);
+  check(same(m.labels, MENU), 'すべて入：メニューは6項目', m.labels);
   check(
     same(await storedFeatures(page), {}),
     '初期データの入り切りは {}（e2e は初回もすべて入に固定）',
@@ -304,8 +290,8 @@ async function switches(page) {
   check(!tabs.includes('空き状況'), '下のタブから空き状況が消える（DOM）', tabs);
   const m = await menu(page);
   check(
-    m.titles.includes('当日・問い合わせ') && !m.labels.includes('空き状況'),
-    '空き状況を切っても「当日・問い合わせ」は欠勤・キャンセルを登録が残るので出す',
+    m.labels.includes('欠勤・キャンセル') && !m.labels.includes('空き状況'),
+    '空き状況を切るとメニューから空き状況だけ消える（欠勤・キャンセルは残る）',
     m,
   );
 
@@ -348,7 +334,11 @@ async function checkTemplate(page, t) {
   const label = TEMPLATE_LABEL[t];
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
-  check(same(m.labels, menuFor(on)), `${label}：メニューの項目（相性の機能の入り切りだけで変わる）`, m.labels);
+  check(
+    same(m.labels, menuFor(on)),
+    `${label}：メニューの項目（欠勤・キャンセル・空き状況の入り切りだけで変わる）`,
+    m.labels,
+  );
   const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
   check(same(tabs, tabsFor(on)), `${label}：下のタブ`, tabs);
   const pal = await paletteItems(page);
@@ -535,12 +525,9 @@ async function pathVariants(page, dlg, ctx) {
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
   check(
-    !m.titles.includes('当日・問い合わせ') &&
-      !m.labels.includes('欠勤・キャンセルを登録') &&
-      !m.labels.includes('空き状況') &&
-      same(m.titles, ['人']),
-    '欠勤・キャンセルと空き状況を切ると「当日・問い合わせ」は見出しごと出さない',
-    m.titles,
+    same(m.labels, ['ホーム', '予定', '人', '設定']) && m.titles.length === 0,
+    '欠勤・キャンセルと空き状況を切るとメニューは4項目（見出しは無い）',
+    m,
   );
   await applyTemplate(page, dlg, 'all');
 }
@@ -650,7 +637,7 @@ async function deadEnds(page, dlg, ctx) {
   await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
   check(
     (await page.getByTestId('plan-menu-compare').count()) === 0 &&
-      (await page.getByTestId('plan-menu-create').count()) === 1,
+      (await page.getByTestId('ai-scope-day').count()) === 1,
     '日の予定：「AI で組む ▾」に比べるを出さない（組むは残る）',
   );
   await page.keyboard.press('Escape');
@@ -719,7 +706,7 @@ async function insideEntries(page, dlg, ctx) {
     if (!on('rules')) check((await count('plan-reason')) === 0, `${label}：点数の横の理由を出さない`);
     await page.getByTestId('plan-menu').click();
     await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
-    check((await count('plan-menu-create')) === 1, `${label}：「AI で組む」`);
+    check((await count('ai-scope-day')) === 1, `${label}：「AI で組む」`);
     const presets = await count('plan-menu-preset');
     // 点数の基準のほかのプリセットを当ててみる（条件の重みを切ると出さない）
     check(presets === (on('rules') ? data.presets.length - 1 : 0), `${label}：プリセットの数`, presets);
@@ -947,7 +934,7 @@ async function proposeAndApply(page, date) {
   await open(page, `/plan?date=${date}`, '.date-switch select');
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
   await page.getByTestId('plan-menu').click();
-  await page.getByTestId('plan-menu-create').click();
+  await page.getByTestId('ai-scope-day').click();
   await page.getByTestId('proposal-apply').waitFor({ timeout: 90000 });
   await page.getByTestId('proposal-apply').click();
   await page.getByTestId('proposal-band').waitFor({ state: 'detached', timeout: 10000 });

@@ -5,6 +5,7 @@ import { useDay } from '../app/day';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { FieldError, invalidAttrs } from '../components/FieldError';
+import { PeopleTabs } from '../components/SettingsTabs';
 import { StaffMark } from '../components/StaffMark';
 import { StaffLegend } from '../components/staffBar';
 import { Term } from '../components/Term';
@@ -162,6 +163,7 @@ export default function WorkloadPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<PeopleTabs />}
         icon={Timer}
         title="勤務の見込み"
         lead={`予定から見込んだ、${terms.staff}ごとの出勤〜退勤（拘束）・移動・空き時間（待ち）の時間${fareFeature ? 'と交通費' : ''}です。実績ではありません`}

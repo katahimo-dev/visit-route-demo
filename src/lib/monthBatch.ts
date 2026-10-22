@@ -1,12 +1,16 @@
-// 「担当を AI で組む」（月・週・空き状況。PRD D256・D257。ADR-0042・ADR-0053）の計算を画面の外で回す。
+// 「AI で組む」の日・週・月の範囲（PRD D256・D257・D328。ADR-0042・ADR-0053・ADR-0054）の計算を画面の外で回す。
 // 画面は始める・止めるだけを頼み、計算はモジュールの入れ物で続ける（ほかの画面へ移っても止めない）。
-// 1日ずつ AI で組み、その日の訪問が組み始めたときのままなら担当・開始を訪問に書く（store の update(fn)。ピンの訪問は動かさない）。
-// 終わったら「元に戻す」（組む前の訪問に戻す1手）を知らせに付ける。ページを閉じる・読み直すと止まる（再開はしない）
+// 1日ずつ AI で組み、終わったら提案（日ごとの担当・時刻の変更）を出す。訪問には書かない。「当てる」（apply）で、
+// 組み始めたときのままの日だけ担当・開始を1回の update で訪問に書く（ピンの訪問は動かさない。全体の「元に戻す」で1手戻せる）。
+// 提案はその場だけ（保存しない）。ページを閉じる・読み直すと止まる（再開はしない）
 import type { DemoData } from '../contracts/data';
+import type { Visit } from '../contracts/documents';
 import type { Problem, SolveOptions, SolveResult } from '../contracts/problem';
+import type { ReassignDiff } from '../contracts/reassign';
 import { addDays } from '../domain/time';
 import type { CompileInput } from '../matching';
 import { visitsOn } from '../patterns';
+import { reassignDiff } from '../reassign';
 import { defaultIterations, runSolve } from '../solver';
 import { own } from './common';
 import { activeDayVisits, dayProblemOf, pinsOf, routesOf, unassignedOf, writeRoutes } from './dayPlan';
@@ -16,8 +20,8 @@ import { createValueStore, type ReadableStore } from './valueStore';
 /** 組む日（日ごとの選び方：care＝要対応のある日、all＝伝えていない日すべて） */
 export type BatchDay = { date: string; mode: BatchMode };
 
-/** 始めた画面（月の予定・空き状況・週の予定） */
-export type BatchSource = 'month' | 'vacancy' | 'week';
+/** 範囲（月・週・日）か始めた画面（空き状況）。知らせ・帯の行き先と文を分ける */
+export type BatchSource = 'month' | 'vacancy' | 'week' | 'day';
 
 /** 始めるときに渡すもの */
 export type BatchJob = {
@@ -34,6 +38,81 @@ export type BatchJob = {
   weekStart?: string | null;
   today: string;
 };
+
+/** 提案の1日（組み始めたときの訪問と、組んだ担当の並び・今との差） */
+export type ProposalDay = {
+  date: string;
+  problem: Problem;
+  /** 組み始めたときのその日の訪問（今と違えば当てない） */
+  visits: readonly Visit[];
+  /** 提案の担当の並び */
+  routes: Record<string, string[]>;
+  /** 組み始めたときの担当 → 提案の差（担当が変わる・時刻が変わる） */
+  diff: ReassignDiff | null;
+  /** 提案でも担当なしの訪問の数 */
+  unassigned: number;
+};
+
+/** 日・週・月の範囲の提案（その場だけ。保存しない） */
+export type BatchProposal = {
+  /** 出すたびに新しい番号（画面がフォーカス・知らせを出し分ける） */
+  id: number;
+  ym: string;
+  label: string;
+  source: BatchSource;
+  weekStart: string | null;
+  days: ProposalDay[];
+  /** ［止める］で途中まで */
+  stopped: boolean;
+};
+
+/** 提案の数（担当が変わる・時刻が変わる訪問の合計と、変わる日・担当なしの残る日） */
+export function proposalCounts(p: Pick<BatchProposal, 'days'>): {
+  days: number;
+  moved: number;
+  shifted: number;
+  changedDays: number;
+  unassignedDays: number;
+} {
+  let moved = 0;
+  let shifted = 0;
+  let changedDays = 0;
+  let unassignedDays = 0;
+  for (const d of p.days) {
+    const m = d.diff?.moved.length ?? 0;
+    const s = d.diff?.shifted.length ?? 0;
+    moved += m;
+    shifted += s;
+    if (m + s > 0) changedDays++;
+    if (d.unassigned > 0) unassignedDays++;
+  }
+  return { days: p.days.length, moved, shifted, changedDays, unassignedDays };
+}
+
+/** その日を当ててよいか（組み始めたときの訪問のまま・伝えていない） */
+export function proposalDayFresh(d: DemoData, day: ProposalDay): boolean {
+  const now = visitsOn(d, day.date);
+  return now.length === day.visits.length && now.every((v, k) => v === day.visits[k]) && !own(d.snapshots, day.date);
+}
+
+/** 提案を当てる（純粋関数）：組み始めたときのままの日だけ訪問に書く。当てた日・当てなかった日 */
+export function applyProposal(
+  d: DemoData,
+  p: Pick<BatchProposal, 'days'>,
+): { data: DemoData; applied: string[]; skipped: string[] } {
+  let out = d;
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  for (const day of p.days) {
+    if (!proposalDayFresh(d, day)) {
+      skipped.push(day.date);
+      continue;
+    }
+    out = writeRoutes(out, day.date, day.problem, day.routes);
+    applied.push(day.date);
+  }
+  return { data: out, applied, skipped };
+}
 
 /** 作っている間の進み具合（作っていなければ null） */
 export type BatchRun = {
@@ -67,16 +146,14 @@ export type BatchDone = {
   stopped: boolean;
   /** 計算できずに止まった理由（無ければ null） */
   error: string | null;
-  /** データを丸ごと差し替えたので止めた（abort。古いデータから作った結果は書かない） */
+  /** データを丸ごと差し替えたので止めた（abort。古いデータから作った結果は捨てる） */
   aborted: boolean;
-  /**
-   * 元に戻す（組む前の訪問に戻す1手）。組んだあとに訪問が変わっていれば null を返す（戻さない）。何も書かなかったら null
-   */
-  undo: ((d: DemoData) => DemoData | null) | null;
+  /** 出した提案（変わる訪問の数。提案が無ければ null） */
+  proposal: { moved: number; shifted: number } | null;
 };
 
 /** データの持ち主（App が store の data と update をつなぐ） */
-export type BatchHost = { get(): DemoData; update(fn: (d: DemoData) => DemoData): void };
+export type BatchHost = { get(): DemoData; update(fn: (d: DemoData) => DemoData, label?: string): void };
 
 type Solve = (
   problem: Problem,
@@ -89,6 +166,12 @@ export type MonthBatch = {
   run: ReadableStore<BatchRun | null>;
   /** 最後に終わった知らせ */
   done: ReadableStore<BatchDone | null>;
+  /** 今の提案（無ければ null。当てる・捨てる・新しく組み始めると消える） */
+  proposal: ReadableStore<BatchProposal | null>;
+  /** 提案を当てる（1回の update。当てた日・当てなかった日。提案が無ければ null） */
+  apply(): { applied: string[]; skipped: string[] } | null;
+  /** 提案を捨てる */
+  discard(): void;
   /** 始める。作っている間・つながっていない・作る日が無いときは始めず false（二重に始めない） */
   start(job: BatchJob): boolean;
   /** 止める（作っている日はそれまでの最良の案で残し、残りの日はやめる） */
@@ -103,12 +186,14 @@ export type MonthBatch = {
   connect(host: BatchHost): () => void;
 };
 
-/** 終わった知らせの文（「11月の担当を22日分組みました」） */
+/** 終わった知らせの文（「11月の提案を出しました（22日分・担当が変わる 30件）」） */
 export function batchDoneText(d: BatchDone): string {
-  if (d.aborted) return `データを差し替えたので、${d.label}の担当を組むのを止めました（${d.made}日分は組みました）`;
+  if (d.aborted) return `データを差し替えたので、${d.label}の担当を組むのを止めました（提案は捨てました）`;
+  const counts = d.proposal ? `・担当が変わる ${d.proposal.moved}件・時刻が変わる ${d.proposal.shifted}件` : '';
   if (d.error) return `${d.label}の担当を${d.made}日分組んだところで止まりました（${d.error}）`;
-  if (d.stopped) return `${d.label}の担当を${d.made}日分組んだところで止めました`;
-  return `${d.label}の担当を${d.made}日分組みました${d.unassignedDays > 0 ? `（担当なしの訪問がある日 ${d.unassignedDays}日）` : ''}`;
+  if (d.stopped) return `${d.label}の担当を${d.made}日分組んだところで止めました（${d.made}日分の提案${counts}）`;
+  if (d.made === 0) return `${d.label}に組める日がありませんでした`;
+  return `${d.label}の提案を出しました（${d.made}日分${counts}）。見て「当てる」と担当が変わります`;
 }
 
 /** 上の帯の文（「11月の担当を組んでいます 8/22日」） */
@@ -158,28 +243,35 @@ export function canMakeDay(data: CompileInput, date: string): boolean {
   return !!base && base.visits.length > 0 && base.staff.length > 0;
 }
 
+/** 日の呼び名（「10/28」。範囲が1日のとき） */
+export function dayLabel(date: string): string {
+  return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+}
+
 /** 週の呼び名（「11/2〜11/8の週」。上の帯・知らせの文の月の名前の代わり） */
 export function weekLabel(start: string): string {
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   return `${md(start)}〜${md(addDays(start, 6))}の週`;
 }
 
-/** 進み具合の帯の文・知らせのボタンの行き先（週の予定から始めたならその週、ほかは月の予定のその月） */
+/** 進み具合の帯の文・知らせのボタンの行き先（週の予定から始めたならその週、日ならその日の週、ほかは月の予定のその月） */
 export function batchHref(x: Pick<BatchRun, 'ym' | 'source' | 'weekStart'>): string {
-  return x.source === 'week' && x.weekStart ? `/week?d=${x.weekStart}` : `/month?ym=${x.ym}`;
+  return (x.source === 'week' || x.source === 'day') && x.weekStart ? `/week?d=${x.weekStart}` : `/month?ym=${x.ym}`;
 }
 
 /** 入れ物を作る（solve は差し替えられる。テストは Worker なしで解く） */
 export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
   const run = createValueStore<BatchRun | null>(null);
   const done = createValueStore<BatchDone | null>(null);
+  const proposal = createValueStore<BatchProposal | null>(null);
+  let proposalId = 0;
   let host: BatchHost | null = null;
   /** 計算の世代。つなぎ直す（外す）と進め、前の世代の結果は捨てる */
   let generation = 0;
   let current: { stop(): void } | null = null;
   let stopped = false;
 
-  /** 作っている計算を捨てる（結果は書かない） */
+  /** 作っている計算を捨てる（結果は出さない） */
   const drop = () => {
     generation++;
     current?.stop();
@@ -195,11 +287,11 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     const targets = job.days.map((x) => x.date);
     const weekStart = job.weekStart ?? null;
     stopped = false;
+    // 新しく組み始めたら前の提案は捨てる（提案は1つだけ）
+    proposal.set(null);
     let made = 0;
     let unassignedDays = 0;
-    /** 組む前の訪問（元に戻す）と、最後に書いた訪問（あとから変わっていれば戻さない） */
-    let beforeVisits: DemoData['visits'] | null = null;
-    let lastVisits: DemoData['visits'] | null = null;
+    const days: ProposalDay[] = [];
     run.set({
       ym: job.ym,
       label: job.label,
@@ -217,8 +309,17 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     const finish = (why?: string) => {
       current = null;
       run.set(null);
-      const before = beforeVisits;
-      const after = lastVisits;
+      const counts = proposalCounts({ days });
+      if (days.length > 0)
+        proposal.set({
+          id: ++proposalId,
+          ym: job.ym,
+          label: job.label,
+          source: job.source,
+          weekStart,
+          days: [...days],
+          stopped,
+        });
       done.set({
         ym: job.ym,
         label: job.label,
@@ -229,7 +330,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         stopped,
         error: why ?? null,
         aborted: false,
-        undo: before && after ? (d) => (d.visits === after ? { ...d, visits: before } : null) : null,
+        proposal: days.length > 0 ? { moved: counts.moved, shifted: counts.shifted } : null,
       });
     };
 
@@ -270,22 +371,23 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       started.promise
         .then((result) => {
           if (!live()) return;
-          // 組んでいる間にその日の訪問が変わった（日の予定で直した）・確定した日は書かない（組んだ日に数えない）
-          const writable = (d: DemoData) => {
-            const now = visitsOn(d, day);
-            return now.length === visits.length && now.every((v, k) => v === visits[k]) && !own(d.snapshots, day);
-          };
-          if (writable(h.get())) {
-            h.update((d) => {
-              if (!writable(d)) return d;
-              if (beforeVisits === null) beforeVisits = d.visits;
-              const out = writeRoutes(d, day, p, result.routes);
-              lastVisits = out.visits;
-              return out;
-            });
-            made++;
-            if (result.unassigned.length > 0) unassignedDays++;
+          const before = routesOf(p, visits);
+          let diff: ReassignDiff | null = null;
+          try {
+            diff = reassignDiff({ problem: p, routes: before }, { problem: p, routes: result.routes });
+          } catch {
+            diff = null;
           }
+          days.push({
+            date: day,
+            problem: p,
+            visits,
+            routes: result.routes,
+            diff,
+            unassigned: result.unassigned.length,
+          });
+          made++;
+          if (result.unassigned.length > 0) unassignedDays++;
           patch({ made });
           current = null;
           step(i + 1);
@@ -303,7 +405,25 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
   return {
     run,
     done,
+    proposal,
     start,
+    apply: () => {
+      const p = proposal.get();
+      if (!p || !host || run.get() !== null) return null;
+      let result: { applied: string[]; skipped: string[] } = { applied: [], skipped: [] };
+      const h = host;
+      // 当てるかどうかを今のデータで決めてから、1回の update で書く（全体の「元に戻す」の1手）
+      const r = applyProposal(h.get(), p);
+      result = { applied: r.applied, skipped: r.skipped };
+      if (r.applied.length > 0)
+        h.update(
+          (d) => applyProposal(d, { days: p.days.filter((x) => r.applied.includes(x.date)) }).data,
+          `AI の提案を当てる（${p.label}）`,
+        );
+      proposal.set(null);
+      return result;
+    },
+    discard: () => proposal.set(null),
     stop: () => {
       if (run.get() === null) return;
       stopped = true;
@@ -311,6 +431,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     },
     running: () => run.get() !== null,
     abort: () => {
+      proposal.set(null);
       const r = run.get();
       if (r === null) return;
       drop();
@@ -324,7 +445,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         stopped: true,
         error: null,
         aborted: true,
-        undo: null,
+        proposal: null,
       });
     },
     connect: (h) => {

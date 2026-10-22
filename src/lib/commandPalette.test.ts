@@ -85,7 +85,6 @@ describe('候補', () => {
       '月の予定',
       '週の予定',
       '日の予定',
-      '提案を比べる',
       '空き状況',
       '利用者さん一覧',
       'スタッフ一覧',
@@ -121,7 +120,8 @@ describe('候補', () => {
     expect(hit('よてい')).toEqual(expect.arrayContaining(['/month', '/week', '/plan']));
     expect(hit('せってい')).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
     expect(hit('きんむのみこみ')).toEqual(['/workload']);
-    expect(hit('あんをくらべる')).toEqual(['/compare']);
+    // 案を比べるは日の予定の「AI で組む ▾」から開く（パレットには出さない。PRD D331）
+    expect(hit('あんをくらべる')).toEqual([]);
     expect(paletteActions(TODAY).find((x) => x.id === 'action:today')!.label).toBe('日の予定（今日）を開く');
   });
   it('操作の補足は画面の名前（日の予定・月の予定）。欠勤・キャンセルを登録は「当日の対応」でも引ける', () => {
@@ -183,8 +183,8 @@ describe('filterPalette（PRD D182）', () => {
   });
   it('種類の中は先頭が一致するものを前に（同じ組は渡した順）', () => {
     // 別名（読み・言い換え）でも引ける
-    const r = filterPalette(items, 'ひかく');
-    expect(r.flat.map((i) => i.label)).toEqual(['提案を比べる']);
+    const r = filterPalette(items, 'げっかん');
+    expect(r.flat.map((i) => i.label)).toEqual(['月の予定']);
     const s = filterPalette(
       [
         paletteItem({ id: 'a', kind: 'client', label: '北 ながい', hint: '', to: '/a', words: ['きた ながい'] }),

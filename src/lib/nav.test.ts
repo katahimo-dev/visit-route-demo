@@ -6,12 +6,15 @@ import {
   bottomTabs,
   isActiveNav,
   isNavAction,
+  isPeoplePath,
   isScheduleView,
   isSettingsPath,
   type MenuItem,
   menuSections,
   navTitle,
   navTitleParts,
+  peopleHref,
+  peopleTabs,
   SCHEDULE_DEFAULT,
   scheduleHref,
   screenSections,
@@ -28,28 +31,34 @@ const screens = screenSections(terms, {});
 /** key でメニューの項目を引く */
 const item = (key: string, g = groups): MenuItem => g.flatMap((x) => x.items).find((i) => i.key === key)!;
 
-describe('menuSections（PRD D273〜D275。ADR-0045）', () => {
-  it('よく使う9項目：ホーム・予定／当日・問い合わせ／人（相性を含む）／設定', () => {
-    expect(groups.map((g) => g.title ?? null)).toEqual([null, '当日・問い合わせ', '人', null]);
+describe('menuSections（PRD D326。ADR-0054）', () => {
+  it('見出しの無い6項目：ホーム・予定・欠勤・空き状況・人・設定', () => {
+    expect(groups.map((g) => g.title ?? null)).toEqual([null]);
     expect(groups.flatMap((g) => g.items.map((i) => i.label))).toEqual([
       'ホーム',
       '予定',
-      '欠勤・キャンセルを登録',
+      '欠勤・キャンセル',
       '空き状況',
-      '利用者さん一覧',
-      'スタッフ一覧',
-      '相性',
-      '勤務時間（シフト）',
+      '人',
       '設定',
     ]);
   });
-  it('名前は呼び方から引き、同じ名前の項目が無い', () => {
+  it('同じ名前の項目が無い', () => {
     const labels = menuSections({ client: 'お客様', staff: 'シッター' }, TODAY, {}).flatMap((g) =>
       g.items.map((i) => i.label),
     );
-    expect(labels).toContain('お客様一覧');
-    expect(labels).toContain('シッター一覧');
     expect(new Set(labels).size).toBe(labels.length);
+  });
+  it('「人」は最後に開いた人のタブ（無ければ〈利用者さん〉。勤務の見込みは勤務時間（シフト））', () => {
+    expect(item('people').to).toBe('/clients');
+    expect(item('people', menuSections(terms, TODAY, {}, { people: '/compat' })).to).toBe('/compat');
+    expect(peopleHref({}, '/workload')).toBe('/availability');
+    expect(peopleHref({ compat: false }, '/compat')).toBe('/clients');
+    expect(peopleTabs(terms, {}).map((t) => t.label)).toEqual(['利用者さん', 'スタッフ', '相性', '勤務時間（シフト）']);
+    expect(peopleTabs(terms, { compat: false }).map((t) => t.to)).toEqual(['/clients', '/staff', '/availability']);
+    for (const p of ['/clients', '/staff', '/compat', '/availability', '/workload', '/clients/c1', '/staff/s1'])
+      expect(isPeoplePath(p)).toBe(true);
+    expect(isPeoplePath('/plan')).toBe(false);
   });
   it('欠勤・キャンセルを登録は今日の日の予定の欄を開く操作（URL は今のまま）', () => {
     const tos = groups.flatMap((g) => g.items.map((i) => i.to));
@@ -92,9 +101,8 @@ describe('isActiveNav（今の画面の印。PRD D273・D275）', () => {
     for (const p of ['/types', '/items', '/rules', '/settings', '/data'])
       expect(isActiveNav(item('settings'), p)).toBe(true);
     expect(isActiveNav(item('settings'), '/compat')).toBe(false);
-    expect(isActiveNav(item('compat'), '/compat')).toBe(true);
-    expect(isActiveNav(item('availability'), '/workload')).toBe(true);
-    expect(isActiveNav(item('availability'), '/availability')).toBe(true);
+    for (const p of ['/clients', '/staff', '/compat', '/availability', '/workload'])
+      expect(isActiveNav(item('people'), p)).toBe(true);
   });
   it('操作の項目は今の画面にしない', () => {
     expect(isActiveNav(item('absence'), '/plan')).toBe(false);
@@ -106,7 +114,8 @@ describe('isActiveNav（今の画面の印。PRD D273・D275）', () => {
   it('〈利用者さん〉・〈スタッフ〉の画面は一覧の項目に当てる（PRD D308）', () => {
     expect(activeNavPath('/clients/c1')).toBe('/clients');
     expect(activeNavPath('/staff/new')).toBe('/staff');
-    expect(isActiveNav(item('clients'), '/clients/c1')).toBe(true);
+    expect(isActiveNav(item('people'), '/clients/c1')).toBe(true);
+    expect(isActiveNav(item('people'), '/staff/s1')).toBe(true);
     expect(activeNavPath('/staff-view/s1')).toBe('/staff-view/s1');
   });
 });
@@ -118,7 +127,7 @@ describe('navTitle（上の帯の名前。画面の一覧から引く）', () =>
     expect(navTitle(screens, '/availability')).toBe('人・勤務時間（シフト）');
     expect(navTitle(screens, '/compat')).toBe('人・相性');
     expect(navTitle(screens, '/workload')).toBe('人・勤務の見込み');
-    expect(navTitle(screens, '/vacancy')).toBe('当日・問い合わせ・空き状況');
+    expect(navTitle(screens, '/vacancy')).toBe('空き状況');
   });
   it('予定は項目名だけ（「日の予定」にそろえる。PRD D230・D273）', () => {
     expect(navTitle(screens, '/plan')).toBe('日の予定');
@@ -148,7 +157,7 @@ describe('navTitle（上の帯の名前。画面の一覧から引く）', () =>
 describe('bottomTabs（PRD D274）', () => {
   it('ホーム・予定・欠勤・空き状況の順に引き、短い名前で出す（5つ目の「メニュー」は画面のボタン）', () => {
     expect(bottomTabs(groups).map(tabLabel)).toEqual(['ホーム', '予定', '欠勤', '空き状況']);
-    expect(bottomTabs(groups).map((i) => i.label)).toEqual(['ホーム', '予定', '欠勤・キャンセルを登録', '空き状況']);
+    expect(bottomTabs(groups).map((i) => i.label)).toEqual(['ホーム', '予定', '欠勤・キャンセル', '空き状況']);
   });
   it('メニューに無い項目は出さない', () => {
     expect(bottomTabs([{ items: [{ key: 'vacancy', to: '/vacancy', label: '空き状況' }] }]).map((i) => i.to)).toEqual([
@@ -174,9 +183,10 @@ describe('tabClick（下のタブ・メニューを押したとき）', () => {
     expect(tabClick(item('schedule', g), '/month')).toBe('stay');
     // 欠勤は操作なので、日の予定の上でも移る（欄を開く）
     expect(tabClick(item('absence'), '/plan')).toBe('go');
-    // 人の画面から一覧の項目を押すと一覧へ移る
-    expect(tabClick(item('clients'), '/clients/c1')).toBe('go');
-    expect(tabClick(item('clients'), '/clients')).toBe('stay');
+    // 人の画面から「人」を押すと一覧（覚えたタブ）へ移る
+    expect(tabClick(item('people'), '/clients/c1')).toBe('go');
+    expect(tabClick(item('people'), '/clients')).toBe('stay');
+    expect(tabClick(item('people'), '/staff')).toBe('go');
   });
 });
 

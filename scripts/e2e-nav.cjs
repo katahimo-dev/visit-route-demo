@@ -1,5 +1,5 @@
 // メニューの用途ごとの並びとコマンドパレット（PRD D178〜D183・D273〜D275。ADR-0027・0045）を本物のブラウザで確かめる：
-// メニュー（9項目の並び・名前（〈利用者さん〉一覧・〈スタッフ〉一覧）・同じ名前が無い・aria-current（月・週・日・比較は「予定」、
+// メニュー（6項目の並び（人のタブ・ADR-0054）・同じ名前が無い・aria-current（月・週・日・比較は「予定」、
 // 設定のタブは「設定」、勤務の見込みは「勤務時間（シフト）」、欠勤・キャンセルは印を付けず今日の日の画面の欄を開く）・
 // 「予定」「設定」は最後に開いた表示・タブ・設定のタブ・メニューから外した画面の入口・画面の見出しが画面の名前とそろう）、
 // コマンドパレット（Ctrl+K で開く・role=dialog・aria-modal・combobox と listbox（aria-activedescendant）・裏の inert とスクロールのロック・
@@ -71,19 +71,9 @@ async function seedPeople(page) {
 /** ひらがな → カタカナ */
 const toKata = (s) => s.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
 
-// メニューの9項目（PRD D273〜D275。ADR-0045・0047：相性は「人」）：見出しのあるグループは当日・問い合わせ／人の2つ（ホーム・予定と設定は見出しなし）
-const GROUPS = ['当日・問い合わせ', '人'];
-const LABELS = [
-  'ホーム',
-  '予定',
-  '欠勤・キャンセルを登録',
-  '空き状況',
-  '利用者さん一覧',
-  'スタッフ一覧',
-  '相性',
-  '勤務時間（シフト）',
-  '設定',
-];
+// メニューの6項目（PRD D326。ADR-0054）：見出しは無い。人は〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）のタブ
+const GROUPS = [];
+const LABELS = ['ホーム', '予定', '欠勤・キャンセル', '空き状況', '人', '設定'];
 /** 画面の見出し（h1）は上の帯・パレットの画面の名前と同じ（PRD D179・D230） */
 const HEADINGS = [
   ['/home', 'ホーム'],
@@ -107,13 +97,13 @@ async function menu(page) {
   await open(page, '/home');
   const side = page.locator('.side-nav');
   const titles = await side.locator('h2.nav-group-title').allInnerTexts();
-  check(
-    JSON.stringify(titles) === JSON.stringify(GROUPS),
-    'メニュー：グループの見出し（h2）は当日・問い合わせ・人',
-    titles,
-  );
+  check(JSON.stringify(titles) === JSON.stringify(GROUPS), 'メニュー：グループの見出しは無い（6項目）', titles);
   const labels = (await side.getByTestId('nav-link').allInnerTexts()).map((t) => t.trim());
-  check(JSON.stringify(labels) === JSON.stringify(LABELS), 'メニュー：9項目の並びと名前（予定・設定は1項目）', labels);
+  check(
+    JSON.stringify(labels) === JSON.stringify(LABELS),
+    'メニュー：6項目の並びと名前（予定・人・設定は1項目）',
+    labels,
+  );
   check(new Set(labels).size === labels.length, 'メニュー：同じ名前の項目が無い（「一覧・編集」が2つ並ばない）');
   const current = async () => (await side.locator('[aria-current="page"]').allInnerTexts()).map((t) => t.trim());
   const link = (name) => side.getByTestId('nav-link').filter({ hasText: new RegExp(`^${name}$`) });
@@ -133,9 +123,11 @@ async function menu(page) {
     await open(page, hash);
     check((await page.locator('h1').innerText()).trim() === h1, `見出しは画面の名前「${h1}」`);
   }
+  check(JSON.stringify(await current()) === '["人"]', 'aria-current：勤務の見込みは「人」');
   check(
-    JSON.stringify(await current()) === '["勤務時間（シフト）"]',
-    'aria-current：勤務の見込みは「勤務時間（シフト）」',
+    (await page.getByTestId('people-tabs').locator('[aria-current="page"]').getAttribute('data-tab')) ===
+      'availability',
+    '勤務の見込みの人のタブは勤務時間（シフト）に印',
   );
   // 予定は最後に開いた表示を開く（既定は日の予定。PRD D273）。ページを読み直すと既定に戻る
   await open(page, '/home');
@@ -175,9 +167,9 @@ async function menu(page) {
       on,
     );
   }
-  // 相性は設定のタブに無い：「人」の項目（ADR-0047）。設定のタブは出さず、メニューは「相性」に印
+  // 相性は設定のタブに無い：「人」のタブ（ADR-0047・ADR-0054）。設定のタブは出さず、メニューは「人」に印
   await open(page, '/compat');
-  check(JSON.stringify(await current()) === '["相性"]', 'aria-current：#/compat は「相性」（設定ではない）');
+  check(JSON.stringify(await current()) === '["人"]', 'aria-current：#/compat は「人」（設定ではない）');
   check((await page.getByTestId('settings-tabs').count()) === 0, '相性の画面に設定のタブを出さない');
   await open(page, '/types');
   await page.getByTestId('settings-tabs').locator('a').filter({ hasText: '条件の重み' }).click();
@@ -191,20 +183,25 @@ async function menu(page) {
     await link('設定').getAttribute('href'),
   );
   await open(page, '/clients');
-  check(JSON.stringify(await current()) === '["利用者さん一覧"]', 'aria-current：〈利用者さん〉一覧');
+  check(JSON.stringify(await current()) === '["人"]', 'aria-current：〈利用者さん〉一覧は「人」');
   check(
     (await page.locator('h1').innerText()).trim() === '利用者さん一覧',
     '〈利用者さん〉の見出しは「利用者さん一覧」',
   );
   await open(page, '/staff');
   check((await page.locator('h1').innerText()).trim() === 'スタッフ一覧', '〈スタッフ〉の見出しは「スタッフ一覧」');
-  // 相性の表への文字ボタン（一覧の見出しの近く。ADR-0047）
+  // 相性へは人のタブで（一覧の見出しの「相性の表」の文字ボタンは無くした。ADR-0054）
   for (const h of ['/clients', '/staff']) {
-    await open(page, h, '[data-testid="to-compat"]');
-    await page.getByTestId('to-compat').click();
+    await open(page, h, '[data-testid="people-tabs"]');
+    check((await page.getByTestId('to-compat').count()) === 0, `${h}：「相性の表」の文字ボタンは無い`);
+    await page.getByTestId('people-tabs').locator('[data-tab="compat"]').click();
     await page.getByTestId('compat-table').waitFor();
-    check(hashOf(page) === '#/compat', `${h} の「相性の表」で相性の画面へ`, hashOf(page));
+    check(hashOf(page) === '#/compat', `${h} の人のタブ「相性」で相性の画面へ`, hashOf(page));
   }
+  // 「人」は最後に開いた人のタブ（相性）を開く
+  await link('ホーム').click();
+  await page.locator('h1').filter({ hasText: 'ホーム' }).waitFor();
+  check((await link('人').getAttribute('href')) === '#/compat', '「人」は最後に開いた人のタブ（相性）');
   // メニューから外した画面の入口が残る（PRD D275）：勤務の見込みは勤務時間（シフト）と月の予定の「その他 ▾」、提案を比べるは日の予定の「AI で組む ▾」
   await open(page, '/availability', '[data-testid="avail-workload"]');
   await page.getByTestId('avail-workload').click();
@@ -218,13 +215,13 @@ async function menu(page) {
   await open(page, '/plan', '[data-testid="plan-menu"]');
   await page.getByTestId('plan-menu').click();
   check(
-    (await page.getByTestId('plan-menu-list').getByText('プリセットの提案を比べる').count()) === 1,
-    '日の予定の「AI で組む ▾」に「プリセットの提案を比べる」（比較の入口）',
+    (await page.getByTestId('plan-menu-list').getByText('2つの提案を比べる').count()) === 1,
+    '日の予定の「AI で組む ▾」に「2つの提案を比べる」（比較の入口。メニュー・パレットには無い）',
   );
   await page.keyboard.press('Escape');
   // 欠勤・キャンセル：今日の日の画面で欄が開き、?do=・?date= は消える
   await open(page, '/week');
-  await side.getByTestId('nav-link').filter({ hasText: '欠勤・キャンセルを登録' }).click();
+  await side.getByTestId('nav-link').filter({ hasText: '欠勤・キャンセル' }).click();
   await page.getByTestId('sudden-panel').waitFor({ timeout: 15000 });
   const h = hashOf(page);
   check(

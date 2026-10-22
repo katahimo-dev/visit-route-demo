@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { type DemoData, STORAGE_KEY } from '../contracts/data';
 import type { Features } from '../contracts/features';
+import { appHistory } from '../lib/history';
 import {
   flushSave,
   importJson,
@@ -21,8 +22,15 @@ import {
 
 export type DemoStore = {
   data: DemoData;
-  /** データを書き換える唯一の方法（不変更新。fn は新しい DemoData を返す） */
-  update(fn: (d: DemoData) => DemoData): void;
+  /**
+   * データを書き換える唯一の方法（不変更新。fn は新しい DemoData を返す）。変わったら全体の「元に戻す」の履歴に1手積む
+   * （同じ描画の中の続けての update は1手にまとめる。label は手の名前。PRD D329。ADR-0054）
+   */
+  update(fn: (d: DemoData) => DemoData, label?: string): void;
+  /** 1手戻す（全体の履歴。戻した手の名前、戻せなければ null） */
+  undo(): string | null;
+  /** 1手やり直す（やり直した手の名前、無ければ null） */
+  redo(): string | null;
   /** 読み込んだデータで置き換える */
   replace(d: DemoData): void;
   /** 初期状態に戻す（機能の入り切りは features、既定は今のまま。PRD D216・D276） */
@@ -106,6 +114,8 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
       const r = importJson(e.newValue);
       if (isImportError(r)) return;
       skipSave.current = true;
+      // 別のタブの変更で読み直したら、履歴は捨てる（古いデータへ戻さない）
+      appHistory.clear();
       setData(r);
       replaced();
       setExternalReloads((n) => n + 1);
@@ -119,11 +129,37 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
     };
   }, [setPrevious, replaced]);
 
-  const update = useCallback((fn: (d: DemoData) => DemoData) => {
-    setData((d) => fn(d));
+  // ---- 全体の「元に戻す」の履歴（PRD D329。ADR-0054）----
+  // update の1回を1手として積む（更新の関数の中で前後を積む。StrictMode で関数が2回呼ばれても、同じ update の印 token で1手）。
+  // 戻す・やり直す・丸ごと差し替えは update を通らないので積まない
+  // 開いたときの履歴は空（前のページの手は持ち越さない）
+  useEffect(() => () => appHistory.clear(), []);
+
+  const update = useCallback((fn: (d: DemoData) => DemoData, label?: string) => {
+    const token = {};
+    setData((d) => {
+      const n = fn(d);
+      appHistory.record(d, n, label, token);
+      return n;
+    });
   }, []);
-  /** 丸ごと差し替える */
-  const swapIn = useCallback((d: DemoData) => setData(d), []);
+  const undo = useCallback((): string | null => {
+    const r = appHistory.undo(latest.current);
+    if (!r) return null;
+    setData(r.data);
+    return r.label;
+  }, []);
+  const redo = useCallback((): string | null => {
+    const r = appHistory.redo(latest.current);
+    if (!r) return null;
+    setData(r.data);
+    return r.label;
+  }, []);
+  /** 丸ごと差し替える（履歴は捨てる。差し替えの前のデータへは「直前の状態に戻す」で戻る） */
+  const swapIn = useCallback((d: DemoData) => {
+    appHistory.clear();
+    setData(d);
+  }, []);
   const replace = useCallback(
     (d: DemoData) => {
       swapIn(d);
@@ -169,6 +205,8 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
     () => ({
       data,
       update,
+      undo,
+      redo,
       replace,
       reset,
       saveError,
@@ -187,6 +225,8 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
     [
       data,
       update,
+      undo,
+      redo,
       replace,
       reset,
       saveError,

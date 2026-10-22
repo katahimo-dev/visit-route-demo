@@ -448,13 +448,23 @@ async function toldContacts(page) {
   await waitStored(page, (d) => !!d.reassigns?.[TODAY] && d.absences.length === before.absences.length + 1);
   await page.keyboard.press('Escape');
   await panel(page).waitFor({ state: 'detached' });
-  await page.getByTestId('plan-reassign-undo').click();
+  // 欠勤の登録と振り直しは別の手（全体の元に戻す。PRD D329）：1回目で振り直す前（欠勤は残る）、2回目で欠勤も戻る
+  await page.getByTestId('undo-btn').click();
+  const mid = await waitStored(page, (d) => !d.reassigns?.[TODAY] && d.absences.length === before.absences.length + 1);
+  check(
+    !mid.reassigns?.[TODAY] &&
+      mid.absences.length === before.absences.length + 1 &&
+      JSON.stringify(mid.visits) === JSON.stringify(before.visits),
+    '「登録して振り直す」のあとの「元に戻す」1回で振り直す前の担当に戻る（欠勤は残る）',
+    { absences: mid.absences.length, reassign: !!mid.reassigns?.[TODAY] },
+  );
+  await page.getByTestId('undo-btn').click();
   const back = await waitStored(page, (d) => !d.reassigns?.[TODAY] && d.absences.length === before.absences.length);
   check(
     !back.reassigns?.[TODAY] &&
       back.absences.length === before.absences.length &&
       JSON.stringify(back.visits) === JSON.stringify(before.visits),
-    '「登録して振り直す」のあとの「元に戻す」で、欠勤・振り直し・担当が登録する前に戻る',
+    'もう1回の「元に戻す」で欠勤も登録する前に戻る',
     { absences: back.absences.length, reassign: !!back.reassigns?.[TODAY] },
   );
 }

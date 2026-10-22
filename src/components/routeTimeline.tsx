@@ -28,6 +28,10 @@ export type TimelineBand = {
   picked: boolean;
   dragging: boolean;
   onPick: () => void;
+  /** 複数選択で選んでいる（PRD D330） */
+  multi?: boolean;
+  /** Shift・Ctrl（⌘）＋クリック・Shift／Ctrl＋Enter で選ぶ・外す（無ければ複数選択はしない） */
+  onMulti?: () => void;
   drag?: { draggable: boolean; onDragStart: (e: DragEvent) => void; onDragEnd: () => void };
   /** 帯の中の小さな印（アイコン。それぞれ title と読み上げの文を持つ） */
   marks?: ReactNode;
@@ -219,6 +223,7 @@ function Band({
           b.tone ? `is-${b.tone}` : '',
           b.picked ? 'is-picked' : '',
           b.dragging ? 'is-dragging' : '',
+          b.multi ? 'is-multi' : '',
         ].join(' ')}
         style={{ ...box, background: b.color ?? undefined }}
         data-visit={b.visitId}
@@ -231,13 +236,21 @@ function Band({
           tabIndex={0}
           className="tl-band-btn"
           aria-pressed={b.picked}
-          aria-label={`${time} ${b.name}${b.note ? `（${b.note}）` : ''}`}
-          title={`${time} ${b.name}${b.note ? `\n${b.note}` : ''}\n押すと理由を見られます。ドラッグで別の担当へ移せます`}
-          onClick={b.onPick}
+          aria-label={`${time} ${b.name}${b.note ? `（${b.note}）` : ''}${b.multi ? '（選択中）' : ''}`}
+          title={`${time} ${b.name}${b.note ? `\n${b.note}` : ''}\n押すと理由を見られます。ドラッグで別の担当へ移せます${b.onMulti ? '。Shift・Ctrl＋クリックで複数選べます' : ''}`}
+          onClick={(ev) => {
+            if (b.onMulti && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) {
+              ev.preventDefault();
+              b.onMulti();
+              return;
+            }
+            b.onPick();
+          }}
           onKeyDown={(ev) => {
             if (ev.key === 'Enter' || ev.key === ' ') {
               ev.preventDefault();
-              b.onPick();
+              if (b.onMulti && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) b.onMulti();
+              else b.onPick();
             }
           }}
         >

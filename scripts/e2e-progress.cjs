@@ -1,10 +1,10 @@
-// 予定（月・週・日）に共通の進み具合の帯（PRD D151〜D155。ADR-0025 追記・ADR-0053）を本物のブラウザで確かめる：
-// 月・週・日の上に同じ帯（data-ym・数字が3画面で同じ・ホームの確定していない日とも同じ）、月の画面の「担当を AI で組む」の入口は帯の1か所
-// （見出しのボタン・今月の準備は無い。帯の次の一手が主ボタン）、帯の数字・ボタンで月の画面の欄が開き ?do= が消える
-// （週・日から：担当を AI で組む・確定していない日・要対応。月の画面の中では URL を変えずに開く）、来月も担当なしの日が多ければ「担当を AI で組む」、
-// 日の画面の「この日」（まだ伝えていない → 確定すると確定済み・確定 +1）、
-// 週は選んでいる日付の月（月をまたぐ週）、訪問の無いデータは「今日以降の訪問はありません」でボタンなし、
-// 担当が入った月で週・日を開いても帯が速く出る・確定の操作が待たされない、スマホ（390×844）で1行・横にはみ出さない、印刷で出さない。
+// 月の予定の進み具合の帯（PRD D151〜D155・D332。ADR-0025 追記・ADR-0053・ADR-0054。週・日には出さない）を本物のブラウザで確かめる：
+// 月の帯（data-ym・数字がホームの確定していない日と同じ）、月の画面の「担当を AI で組む」の主ボタンは帯の1か所
+// （見出しのボタン・今月の準備は無い。帯の次の一手が主ボタン）、帯の数字・ボタンで月の画面の欄が開く（URL を変えない）、
+// 週・日・ホームからの `?do=`（担当を AI で組む・確定していない日・要対応）で月の画面の欄が開き ?do= が消える、来月も担当なしの日が多ければ「担当を AI で組む」、
+// 日の予定で確定すると状態の印が確定済み・月の帯の確定 +1、週・日に進み具合の帯は無い（週は1行の状態）、
+// 「AI で組む ▾」の「この月」は選んでいる日付の月（月をまたぐ週）、訪問の無いデータは「今日以降の訪問はありません」でボタンなし、
+// 週・日の操作の行が速く出る・確定の操作が待たされない、スマホ（390×844）で月の帯が1行・横にはみ出さない、印刷で出さない。
 // 担当を AI で組むはほかの画面へ移っても続き、上の帯に進み具合と［止める］、戻ると進み具合、知らせから月へ（PRD D256・D257）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-progress.cjs
@@ -41,8 +41,8 @@ async function open(page, hash, ready) {
     .locator(ready ?? 'h1')
     .first()
     .waitFor({ timeout: 30000 });
-  // ホームには帯が無い
-  if (!hash.startsWith('/home')) await bandReady(page);
+  // 帯は月の予定だけ（PRD D332）
+  if (hash.startsWith('/month')) await bandReady(page);
   await settle(page, 300);
 }
 /** 保存したデータを書き換える（ホームはデータを書かないので、ホームで書き換えてから読み直す） */
@@ -240,13 +240,15 @@ async function keepRunning(page) {
     t0,
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'batch-band-home.png') });
-  // 進む（日ごとに保存される）
-  await page.waitForFunction(
-    ({ k, m }) => JSON.parse(localStorage.getItem(k)).visits.some((v) => v.date.startsWith(m) && v.staffId),
-    { k: STORAGE_KEY, m: YM },
-    { timeout: 60000 },
-  );
-  check((await assignedIn(page, YM)) >= 1, 'ホームにいる間も日ごとに保存される（訪問に担当を書く）');
+  // 進む（日ごとに提案にたまる。当てるまで訪問は書かない。ADR-0054）
+  const progressed = await page
+    .waitForFunction((t) => (document.querySelector('[data-testid="batch-band-text"]')?.textContent ?? t) !== t, t0, {
+      timeout: 60000,
+    })
+    .then(() => true)
+    .catch(() => false);
+  check(progressed, 'ホームにいる間も組み続ける（上の帯の日数が進む）');
+  check((await assignedIn(page, YM)) === 0, '組んでいる間は訪問に書かない（提案にためる）');
   // 帯の文から月の予定へ戻ると、画面の中に進み具合
   await bandText.click();
   await page.waitForURL(/#\/month/);
@@ -266,9 +268,9 @@ async function keepRunning(page) {
     (await panel.count()) === 0 && (await page.getByTestId('month-progress').count()) === 1,
     '作っている間は二重に始めない',
   );
-  // ほかの画面の帯の［止める］で止め、知らせの［月の予定を見る］で月へ
+  // ほかの画面（予定でない画面）の帯の［止める］で止め、知らせの［月の予定を見る］で月へ
   await page.evaluate(() => {
-    location.hash = '#/week';
+    location.hash = '#/home';
   });
   await page.getByTestId('batch-band-stop').click();
   const toast = page.locator('.toast').filter({ hasText: /の担当を\d+日分組んだところで止めました/ });
@@ -279,6 +281,17 @@ async function keepRunning(page) {
   await page.waitForURL(/#\/month/);
   check(hashOf(page) === `#/month?ym=${YM}`, '知らせの［月の予定を見る］で月の予定へ', hashOf(page));
   check((await page.getByTestId('month-progress').count()) === 0, '止めたあとは進み具合を出さない');
+  const stoppedBand = await page
+    .locator('[data-testid="proposal-band"][data-kind="range"]')
+    .waitFor({ timeout: 10000 })
+    .then(() => true)
+    .catch(() => false);
+  check(
+    stoppedBand,
+    '止めたあと：そこまでの日の提案の帯が月の予定に出る（当てるまで変わらない）',
+    await toast.innerText().catch(() => ''),
+  );
+  check((await assignedIn(page, YM)) === 0, '止めても当てるまで訪問は変わらない');
   // その月の月の予定を見ている間に終わったら、知らせに［月の予定を見る］を出さない（行き先が今の画面。PRD D268）
   // 止めたあとはまだ担当なしの日が残るので、次の一手は「担当を AI で組む」（無ければ確かめられないので NG）。
   // 止める前に残りを組み終えることがある（月末に近い日・速い機械）ので、そのときは繰り返しの担当を外して作る
@@ -305,143 +318,119 @@ async function keepRunning(page) {
   }
 }
 
-// ---- 日の画面：この日の状態、確定すると帯の確定が増える ----
+// ---- 日の画面：確定すると状態の印が確定済み・月の帯の確定が増える（週・日に帯は無い。PRD D332） ----
 async function dayConfirm(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
+  const n0 = await bandNumbers(page);
+  check(n0.ym === YM && n0.days >= 1, '月の帯は今月を数える', n0);
   await page.goto(`${BASE}#/plan`);
   await page.reload();
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
   await settle(page, 800);
-  await bandReady(page);
-  const day = page.getByTestId('band-day');
-  await page.waitForFunction(() => document.querySelector('[data-testid="band-day"]')?.dataset.state === 'none', null, {
-    timeout: 10000,
-  });
+  check((await page.getByTestId('progress-band').count()) === 0, '日：進み具合の帯は出さない（月だけ）');
   check(
-    /まだ伝えていない/.test(await day.innerText()) && /伝えたら「確定」/.test(await day.innerText()),
-    '日：帯に「この日 まだ伝えていない」と確定の仕方',
-    await day.innerText(),
+    /まだ伝えていない/.test(await page.getByTestId('confirm-state').innerText()),
+    '日：状態の印「まだ伝えていない」',
   );
-  const n0 = await bandNumbers(page);
-  check(n0.ym === YM && n0.days >= 1, '日：帯は今月を数える', n0);
-  await page.screenshot({ path: path.join(OUT_DIR, 'day-band.png') });
   const t0 = Date.now();
   await page.getByTestId('adopt').click();
   await page.waitForFunction(() =>
     /確定済み/.test(document.querySelector('[data-testid="confirm-state"]')?.textContent ?? ''),
   );
   const confirmMs = Date.now() - t0;
-  await page.waitForFunction(() => document.querySelector('[data-testid="band-day"]')?.dataset.state === 'told', null, {
-    timeout: 10000,
-  });
+  check(confirmMs < 1500, '日：確定の操作が待たされない', `${confirmMs}ms`);
+  await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
+  check(
+    (await page.getByTestId('progress-band').count()) === 0 && (await page.getByTestId('week-status').count()) === 1,
+    '週：進み具合の帯は無く、1行の状態',
+  );
+  check(
+    /確定済み [1-9]/.test(await page.getByTestId('week-status').innerText()),
+    '週の1行の状態に確定済みの日',
+    await page.getByTestId('week-status').innerText(),
+  );
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   const n1 = await bandNumbers(page);
   check(
     n1.confirmed === n0.confirmed + 1 && n1.unconfirmed === n0.unconfirmed - 1,
-    '日：確定すると帯の確定 +1・確定していない日 −1',
-    {
-      before: n0,
-      after: n1,
-    },
+    '日で確定すると月の帯の確定 +1・確定していない日 −1',
+    { before: n0, after: n1 },
   );
-  check(/確定済み/.test(await day.innerText()), '日：帯の「この日」が確定済み', await day.innerText());
-  check(confirmMs < 1500, '日：確定の操作が帯の計算で待たされない', `${confirmMs}ms`);
-  // 3画面とホームで同じ数
-  await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
-  const w = await bandNumbers(page);
-  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
-  const m = await bandNumbers(page);
-  const pick = (x) => [x.ym, x.planned, x.days, x.confirmed, x.unconfirmed, x.attention];
-  check(
-    JSON.stringify(pick(w)) === JSON.stringify(pick(n1)) && JSON.stringify(pick(m)) === JSON.stringify(pick(n1)),
-    '月・週・日の帯は同じ月の同じ数',
-    { day: pick(n1), week: pick(w), month: pick(m) },
-  );
-  // 次の一手は3画面で同じ
-  check(w.next === n1.next && m.next === n1.next, '月・週・日の帯の次の一手は同じ', {
-    day: n1.next,
-    week: w.next,
-    month: m.next,
-  });
   await open(page, '/home', '[data-testid="home-tasks"]');
   const card = page.locator('[data-kind="confirm"] strong').filter({ hasText: `${monthNo(YM)}月の確定していない日` });
   const title = (await card.count()) > 0 ? await card.innerText() : '';
   const homeN = Number(/(\d+)日を確認/.exec(title)?.[1] ?? 0);
-  check(homeN === n1.unconfirmed, 'ホームの確定していない日＝帯の確定していない日', {
+  check(homeN === n1.unconfirmed, 'ホームの確定していない日＝月の帯の確定していない日', {
     home: homeN,
     band: n1.unconfirmed,
   });
 }
 
-// ---- 週・日の帯から月の画面の欄へ（?do=） ----
+// ---- 週・日・ホームから月の画面の欄へ（?do=。進み具合の帯は月だけになったので、行き先のリンク・「AI で組む ▾」から） ----
 async function links(page) {
-  await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
-  const nw = await bandNumbers(page);
-  check(
-    !/btn-primary/.test((await page.getByTestId('band-next').getAttribute('class')) ?? ''),
-    '週：帯のボタンは主ボタンにしない（画面の主ボタンと重ねない）',
-  );
-  await page.screenshot({ path: path.join(OUT_DIR, 'week-band.png') });
-  await page.getByTestId('band-plans').click();
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
+  const n = await bandNumbers(page);
+  for (const [op, want] of [
+    ['attention', '要対応'],
+    ['unconfirmed', '確定していない日'],
+  ]) {
+    await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
+    await page.evaluate(
+      ([ym, o]) => {
+        location.hash = `#/month?ym=${ym}&do=${o}`;
+      },
+      [YM, op],
+    );
+    await page.locator('.month-aside-title').filter({ hasText: want }).first().waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
+    check(hashOf(page) === `#/month?ym=${YM}`, `週から ?do=${op} → 月の予定の${want}、?do= は消える`, hashOf(page));
+  }
+  const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
+  check(listed === n.unconfirmed, '月の予定の確定していない日＝帯の日数', { listed, band: n.unconfirmed });
+  // 担当なしの日を作る（繰り返しの担当を外す）と、日の予定の「AI で組む ▾」の「この月」で月の予定の欄
+  await dropLaterPlan(page);
+  await open(page, '/plan', '[data-testid="confirm-state"]');
+  await page.getByTestId('plan-menu').click();
+  await page.getByTestId('ai-scope-month').click();
   await page.waitForURL(/#\/month/);
-  await expectBatch(page, nw, '週の帯の「担当」→ 月の予定');
-  check(hashOf(page) === `#/month?ym=${YM}`, '週の帯の「担当」→ 月の予定、?do= は消える', hashOf(page));
-  await page.keyboard.press('Escape');
-
-  await open(page, `/week?d=${TODAY}`, '[data-testid="week-title"]');
-  await page.getByTestId('band-attention').click();
-  await page.waitForURL(/#\/month/);
-  await settle(page, 500);
+  await batchPanel(page, YM).waitFor({ timeout: 10000 });
+  await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
   check(
-    hashOf(page) === `#/month?ym=${YM}` &&
-      (await page.locator('.month-aside-title').first().innerText()).includes('要対応'),
-    '週の帯の「要対応」→ 月の予定の要対応',
+    hashOf(page) === `#/month?ym=${YM}`,
+    '日の「AI で組む ▾」の「この月」→ 月の予定の欄（?do= は消える）',
     hashOf(page),
   );
-
-  await open(page, '/plan', '[data-testid="band-day"]');
-  const n = await bandNumbers(page);
-  await page.getByTestId('band-confirm').click();
-  await page.waitForURL(/#\/month/);
-  await page.locator('.month-aside-title').filter({ hasText: '確定していない日' }).waitFor({ timeout: 10000 });
-  const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
+  await page.keyboard.press('Escape');
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   check(
-    hashOf(page) === `#/month?ym=${YM}` && listed === n.unconfirmed,
-    '日の帯の「確定」→ 月の予定の確定していない日（同じ日数）',
-    { hash: hashOf(page), listed, band: n.unconfirmed },
+    (await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch',
+    '担当なしの日が多い：月の帯の次の一手は「担当を AI で組む」',
   );
-  // 担当なしの日を作る（繰り返しの担当を外す）と、次の一手は「担当を AI で組む」
-  await dropLaterPlan(page);
-  await open(page, '/plan', '[data-testid="band-day"]');
-  const kind = await page.getByTestId('band-next').getAttribute('data-kind');
-  check(kind === 'batch', '担当なしの日が多い：日の帯の次の一手は「担当を AI で組む」', kind);
-  if (kind === 'batch') {
-    await page.getByTestId('band-next').click();
-    await page.waitForURL(/#\/month/);
-    await batchPanel(page, YM).waitFor({ timeout: 10000 });
-    check(true, '日の帯の次の一手「担当を AI で組む」→ 月の予定の欄');
-    await page.keyboard.press('Escape');
-  }
 }
 
-// ---- 週は選んでいる日付の月（月をまたぐ週） ----
+// ---- 「AI で組む ▾」の「この月」は選んでいる日付の月（月をまたぐ週） ----
 async function crossMonth(page) {
   const last = lastDayOf(YM);
   const first = `${NEXT_YM}-01`;
+  const monthItem = async () => {
+    await page.getByTestId('plan-menu').click();
+    const t = (await page.getByTestId('ai-scope-month').innerText()).split('\n')[0];
+    await page.keyboard.press('Escape');
+    return t;
+  };
   await open(page, `/week?d=${last}`, '[data-testid="week-title"]');
-  const a = await page.getByTestId('progress-band').getAttribute('data-ym');
+  const a = await monthItem();
   await open(page, `/week?d=${first}`, '[data-testid="week-title"]');
-  const b = await page.getByTestId('progress-band').getAttribute('data-ym');
-  check(a === YM && b === NEXT_YM, '週：帯は選んでいる日付の月（月末の日なら今月、1日なら来月）', {
-    last: a,
-    first: b,
-  });
+  const b = await monthItem();
   check(
-    (await page.getByTestId('progress-band').locator('.pb-month').innerText()) === `${monthNo(NEXT_YM)}月`,
-    '週：帯の先頭に数えている月の名前',
+    a === `この月（${monthNo(YM)}月）を組む` && b === `この月（${monthNo(NEXT_YM)}月）を組む`,
+    '週：「この月」は選んでいる日付の月（月末の日なら今月、1日なら来月）',
+    { last: a, first: b },
   );
 }
 
-// ---- 担当が入った月：週・日の帯が速く出る（版2：日の割当は訪問から毎回計算する） ----
+// ---- 週・日の操作の行が速く出る（版2：日の割当は訪問から毎回計算する） ----
 async function perf(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
   for (const [hash, ready] of [
@@ -454,10 +443,9 @@ async function perf(page) {
     const t0 = Date.now();
     await page.goto(`${BASE}#${hash}`);
     await page.locator(ready).waitFor({ timeout: 30000 });
-    const head = Date.now() - t0;
-    await bandReady(page, 30000);
-    const band = Date.now() - t0;
-    check(band < PERF_MS, `${hash}：帯が ${PERF_MS}ms 以内に出る`, { head, band });
+    await page.getByTestId('schedule-toolbar').waitFor({ timeout: 30000 });
+    const bar = Date.now() - t0;
+    check(bar < PERF_MS, `${hash}：操作の行が ${PERF_MS}ms 以内に出る`, { bar });
   }
   // 帯の「担当」から開くと、既定は「要対応のある日だけ」（組み直しは利用者が選んだときだけ。PR #38 のレビュー）
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
@@ -503,8 +491,6 @@ async function mobile(page) {
   for (const [hash, ready, name] of [
     // 390px の月ははじめ日ごとの一覧（PRD D189）。カレンダーと一覧のどちらでもある切り替えを待つ
     [`/month?ym=${YM}`, '[data-testid="month-layout"]', 'month'],
-    [`/week?d=${TODAY}`, '[data-testid="week-title"]', 'week'],
-    ['/plan', '[data-testid="confirm-state"]', 'day'],
   ]) {
     await page.goto(`${BASE}#${hash}`);
     await page.reload();

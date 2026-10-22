@@ -386,9 +386,15 @@ async function answer(page) {
   );
   await page
     .locator('.toast')
-    .filter({ hasText: new RegExp(`月の担当を${n}日分組みました`) })
+    .filter({ hasText: new RegExp(`月の提案を出しました（${n}日分`) })
     .waitFor({ timeout: 90000 });
-  check(true, '組み終えたら知らせ（◯月の担当を N日分組みました）');
+  check(true, '組み終えたら知らせ（◯月の提案を出しました（N日分…））');
+  // 提案の帯（日・週・月の予定と同じ形。PRD D328）：当てると担当が入る
+  const band = page.locator('[data-testid="proposal-band"][data-kind="range"]');
+  await band.waitFor({ timeout: 10000 });
+  check(true, '空き状況にも提案の帯が出る');
+  await band.getByTestId('proposal-apply').click();
+  await band.waitFor({ state: 'detached', timeout: 10000 });
   const left = await page
     .getByTestId('vacancy-noplan-make')
     .getAttribute('data-count', { timeout: 5000 })

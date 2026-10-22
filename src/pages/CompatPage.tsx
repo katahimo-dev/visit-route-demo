@@ -7,6 +7,7 @@ import { DetailPopover } from '../components/DetailPopover';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { TentativeMark } from '../components/parts';
 import { ClientDetail, StaffDetail } from '../components/personDetail';
+import { PeopleTabs } from '../components/SettingsTabs';
 import { StaffFilter } from '../components/StaffFilter';
 import { StaffMark } from '../components/StaffMark';
 import { Empty, Hint, PageHeader } from '../components/ui';
@@ -299,7 +300,12 @@ export default function CompatPage() {
 
   return (
     <div className="stack">
-      <PageHeader icon={HeartHandshake} title="相性" lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります" />
+      <PageHeader
+        nav={<PeopleTabs />}
+        icon={HeartHandshake}
+        title="相性"
+        lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります"
+      />
       <div className="compat-filters" data-testid="compat-filters">
         <details
           className="card compat-filter"

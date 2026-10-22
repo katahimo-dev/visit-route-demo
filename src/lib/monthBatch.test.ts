@@ -12,8 +12,10 @@ import {
   batchHref,
   canMakeDay,
   createMonthBatch,
+  dayLabel,
   missingDays,
   monthsLabel,
+  proposalCounts,
   weekBatchDays,
   weekLabel,
 } from './monthBatch';
@@ -96,7 +98,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.run.get()).toBeNull();
   });
 
-  it('日ごとに update で訪問に書き、終わったら知らせる。組んでいる間は二重に始めない。元に戻せる', async () => {
+  it('日ごとに組んで提案にし（訪問には書かない）、終わったら知らせる。組んでいる間は二重に始めない。当てると1回の update', async () => {
     const s = fakeSolve();
     const b = createMonthBatch(s.fn);
     const start = unassigned();
@@ -108,21 +110,29 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.run.get()).toMatchObject({ ym: '2026-10', label: '10月', targets: days, index: 0, made: 0 });
     s.calls[0]!.resolve();
     await tick();
-    expect(staffed(h.data(), days[0]!)).toBeGreaterThan(0);
-    expect(staffed(h.data(), days[1]!)).toBe(0);
+    expect(staffed(h.data(), days[0]!)).toBe(0);
     expect(b.run.get()).toMatchObject({ index: 1, made: 1 });
-    expect(h.writes()).toBe(1);
+    expect(h.writes()).toBe(0);
+    expect(b.proposal.get()).toBeNull();
     await finishAll(s.calls, 1);
     expect(b.run.get()).toBeNull();
-    expect(h.writes()).toBe(2);
+    expect(h.writes()).toBe(0);
     const done = b.done.get()!;
     expect(done).toMatchObject({ ym: '2026-10', made: 2, stopped: false, error: null });
+    expect(done.proposal!.moved).toBeGreaterThan(0);
+    const prop = b.proposal.get()!;
+    expect(prop.days.map((x) => x.date)).toEqual(days);
+    expect(proposalCounts(prop).moved).toBe(done.proposal!.moved);
+    // 当てる：1回の update で両方の日に書く
+    expect(b.apply()).toEqual({ applied: days, skipped: [] });
+    expect(h.writes()).toBe(1);
+    expect(h.data()).not.toBe(start);
+    expect(staffed(h.data(), days[0]!)).toBeGreaterThan(0);
     expect(staffed(h.data(), days[1]!)).toBeGreaterThan(0);
     // AI が組んだ担当にはピンを付けない
     expect(visitsOn(h.data(), days[0]!).every((v) => !v.pinned)).toBe(true);
-    // 元に戻す：組む前の訪問に戻る。あとで訪問が変わっていれば戻さない
-    expect(done.undo!(h.data())!.visits).toBe(start.visits);
-    expect(done.undo!({ ...h.data(), visits: [] })).toBeNull();
+    expect(b.proposal.get()).toBeNull();
+    expect(b.apply()).toBeNull();
     expect(b.running()).toBe(false);
   });
 
@@ -139,7 +149,11 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(s.calls[0]!.stopped).toBe(true);
     expect(b.run.get()).toBeNull();
     expect(b.done.get()).toMatchObject({ made: 1, stopped: true });
-    expect(staffed(h.data(), days[1]!)).toBe(0);
+    expect(b.proposal.get()).toMatchObject({ stopped: true });
+    expect(b.proposal.get()!.days).toHaveLength(1);
+    b.discard();
+    expect(b.proposal.get()).toBeNull();
+    expect(h.writes()).toBe(0);
   });
 
   it('外す（ページを閉じる・App を外す）と計算を捨て、結果を書かない', async () => {
@@ -155,7 +169,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.done.get()).toBeNull();
   });
 
-  it('組んでいる間にその日の訪問が変わった（日の予定で直した）・確定した日は書かない（組んだ日に数えない）', async () => {
+  it('組んだあとにその日の訪問が変わった（日の予定で直した）・確定した日は当てない', async () => {
     const s = fakeSolve();
     const b = createMonthBatch(s.fn);
     const h = hostOf(unassigned());
@@ -167,7 +181,10 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     s.calls[0]!.resolve();
     await tick();
     expect(h.data()).toBe(edited);
-    expect(b.done.get()).toMatchObject({ made: 0 });
+    expect(b.done.get()).toMatchObject({ made: 1 });
+    expect(b.apply()).toEqual({ applied: [], skipped: [TODAY] });
+    expect(h.data()).toBe(edited);
+    expect(h.writes()).toBe(1);
   });
 
   it('組む前に確定した日は飛ばす', async () => {
@@ -179,7 +196,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     b.start(job);
     await finishAll(s.calls);
     expect(s.calls).toHaveLength(1);
-    expect(staffed(h.data(), days[1]!)).toBe(0);
+    expect(b.proposal.get()!.days.map((x) => x.date)).toEqual([days[0]]);
   });
 
   it('文', () => {
@@ -206,16 +223,19 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
       stopped: false,
       error: null,
       aborted: false,
-      undo: null,
+      proposal: { moved: 30, shifted: 4 },
     };
-    expect(batchDoneText(done)).toBe('11月の担当を22日分組みました');
-    expect(batchDoneText({ ...done, unassignedDays: 2 })).toBe(
-      '11月の担当を22日分組みました（担当なしの訪問がある日 2日）',
+    expect(batchDoneText(done)).toBe(
+      '11月の提案を出しました（22日分・担当が変わる 30件・時刻が変わる 4件）。見て「当てる」と担当が変わります',
     );
-    expect(batchDoneText({ ...done, made: 8, stopped: true })).toBe('11月の担当を8日分組んだところで止めました');
+    expect(batchDoneText({ ...done, made: 8, stopped: true })).toBe(
+      '11月の担当を8日分組んだところで止めました（8日分の提案・担当が変わる 30件・時刻が変わる 4件）',
+    );
+    expect(batchDoneText({ ...done, made: 0, proposal: null })).toBe('11月に組める日がありませんでした');
     expect(batchDoneText({ ...done, made: 1, aborted: true })).toBe(
-      'データを差し替えたので、11月の担当を組むのを止めました（1日分は組みました）',
+      'データを差し替えたので、11月の担当を組むのを止めました（提案は捨てました）',
     );
+    expect(dayLabel('2026-11-03')).toBe('11/3');
     expect(monthsLabel(['2026-10-30', '2026-11-02'])).toBe('10・11月');
     expect(monthsLabel(['2026-11-02'])).toBe('11月');
   });
@@ -242,13 +262,13 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     b.start(job);
     s.calls[0]!.resolve();
     await tick();
-    expect(h.writes()).toBe(1);
     b.abort();
     expect(b.run.get()).toBeNull();
     const done = b.done.get()!;
     expect(done).toMatchObject({ made: 1, aborted: true, stopped: true });
+    expect(b.proposal.get()).toBeNull();
     await finishAll(s.calls, 1);
-    expect(h.writes()).toBe(1);
+    expect(h.writes()).toBe(0);
     expect(b.running()).toBe(false);
     b.abort();
     expect(b.done.get()).toBe(done);
@@ -293,5 +313,6 @@ describe('週の範囲で組む（PRD D280。ADR-0046）', () => {
     expect(b.done.get()).toMatchObject({ source: 'week', weekStart: across[0], made: targets.length });
     expect(batchHref({ ym: '2026-10', source: 'week', weekStart: across[0]! })).toBe(`/week?d=${across[0]}`);
     expect(batchHref({ ym: '2026-11', source: 'month', weekStart: null })).toBe('/month?ym=2026-11');
+    expect(batchHref({ ym: '2026-10', source: 'day', weekStart: across[0]! })).toBe(`/week?d=${across[0]}`);
   });
 });

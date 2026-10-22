@@ -28,13 +28,13 @@ import { StaffMarkById } from '../components/StaffMark';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, Stat, WithIcon } from '../components/ui';
+import { useUndoAction } from '../components/undo';
 import type { Visit } from '../contracts/documents';
 import type { Reason, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
 import { achievements, diff, hundredBreakdown, ruleLowerBounds, score, toHundred } from '../evaluate';
 import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { pinsOf, routesOf, unassignedOf, writeRoutes } from '../lib/dayPlan';
-import { dayUndo, undoDay, undoOf } from '../lib/dayUndo';
 import { compareEmptyGuide } from '../lib/emptyGuide';
 import { narrowRole } from '../lib/narrowRoles';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
@@ -205,6 +205,7 @@ export default function ComparePage() {
   const visitLabel = (id: string) =>
     `${visitById.get(id)?.earliestStart ?? ''} ${clientOf(id)?.displayName ?? '（不明）'}`;
 
+  const undoAction = useUndoAction();
   // ---- 提案の操作（保存しない。決定2）----
   /** 提案を当てる：訪問の担当・開始に書く（ピンの訪問はそのまま） */
   const applyChoice = (c: Choice) => {
@@ -214,11 +215,10 @@ export default function ComparePage() {
       return;
     }
     const p = problem;
-    // 日の予定と同じ控え（lib/dayUndo）：トーストと日の予定の「元に戻す」で1手戻せる
+    // 全体の「元に戻す」の1手（トーストと Ctrl+Z・予定の操作の行の「元に戻す」。PRD D329）
     const before = data;
     const next = writeRoutes(before, date, p, c.routes);
-    if (next !== before) dayUndo.set(undoOf(date, before, next));
-    update((d) => (d === before ? next : writeRoutes(d, date, p, c.routes)));
+    if (next !== before) update((d) => (d === before ? next : writeRoutes(d, date, p, c.routes)), `${c.title}を当てる`);
     setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));
     setSel({ a: null, b: null });
     rs.reset();
@@ -226,19 +226,7 @@ export default function ComparePage() {
       toast(`${c.title}は今の担当と同じです`);
       return;
     }
-    toast(`${c.title}を当てました`, {
-      action: {
-        label: '元に戻す',
-        testId: 'compare-undo',
-        onClick: () => {
-          const u = dayUndo.get();
-          if (!u) return;
-          update((d) => undoDay(d, u));
-          dayUndo.set(null);
-          toast('元に戻しました');
-        },
-      },
-    });
+    toast(`${c.title}を当てました`, { action: undoAction });
   };
   const removeChoice = (c: Choice) => {
     setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));

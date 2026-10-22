@@ -419,10 +419,7 @@ async function patterns(page, dlg) {
   // 入力があるまま離れようとすると確かめる（断れば留まる）
   dlg.answer = false;
   dlg.messages.length = 0;
-  await page
-    .locator('.side-nav')
-    .getByRole('link', { name: /スタッフ一覧/ })
-    .click();
+  await page.locator('.side-nav').getByRole('link', { name: 'ホーム' }).click();
   await settle(page);
   check(
     dlg.messages.length === 1 && hashOf(page).startsWith('#/clients/c1') && (await form.count()) === 1,

@@ -9,7 +9,7 @@ export const REASON_MIN_POINTS = 0.5;
 
 /**
  * 次の一手（PRD D229）：いちばんの理由の下に1行で出す操作。
- * shortTravel＝「移動を短く」のプリセットで作る（「案を変える ▾」の項目と同じ）、candidates＝入らなかった訪問の「受けられる人」を見る、
+ * shortTravel＝「移動を短く」のプリセットで作る（「AI で組む ▾」の項目と同じ）、candidates＝入らなかった訪問の「受けられる人」を見る、
  * compat＝相性の表を開く
  */
 export type NextStep = { kind: 'shortTravel' | 'candidates' | 'compat'; text: string };

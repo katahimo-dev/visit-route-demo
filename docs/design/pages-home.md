@@ -77,7 +77,6 @@
   - 600px 以下は1行（訪問・この日・「日」「件」を省き、ボタンは短い文）
   - 読み上げ：数字のリンクに aria-label（「担当が全部入った日 x/y日（済）。担当を AI で組むを開く」など）、✓ に sr-only の「済」、手当てが要る要対応に「要手当て」
 - `BandLive`：aria-live。最初は空で置き、数え直して文が変わったときだけ中身を入れる
-- `ScheduleBand({ date, withDay? })`：週・日の帯。`useDeferredValue(data, null)` で描画の後に数える
   - `useCompileInput`・`useDayStatuses`（その月の今日以降の日と、日の予定で選んでいる日）・`monthProgress`（statusOf）・`attentionList`・担当なしの訪問がある日の数
   - 数字とボタンは月の予定の欄へ移る（`?do=` は月の予定が消す）
   - 速く出す（e2e の上限 `PERF_MS_PROGRESS` 既定 3000ms）
@@ -86,9 +85,8 @@
 
 | 画面 | 置き方 |
 |---|---|
-| 月（`pages/MonthPage`） | 見出しの下に `ProgressBand`（自分で数えた `progress`・`preview`・`attention` から作る）。次の一手は主ボタン、`onOp` で欄を画面の中で開く（URL は変えない）。「担当を AI で組む」の入口は帯の1か所。詳しくは [pages-month.md](pages-month.md) |
-| 週（`pages/WeekPage`） | `ScheduleBand date={anchor} hideBatch`。週は選んでいる日付の月。週の範囲の作る・確定は見出しの主ボタンで、それが「作る」の間は帯の「担当を AI で組む」を出さない（`hideBatch`。[pages-week.md](pages-week.md)。PRD D280） |
-| 日（`pages/PlanPage`） | `ScheduleBand date={date} withDay`。「確定（伝えた）」は日の予定の見出し（帯は状態を見せるだけ） |
+| 月（`pages/MonthPage`） | 見出しの下に `ProgressBand`（自分で数えた `progress`・`preview`・`attention` から作る）。次の一手は主ボタン、`onOp` で欄を画面の中で開く（URL は変えない）。「担当を AI で組む」の入口は帯と操作の行の「AI で組む ▾」の「この月」。詳しくは [pages-month.md](pages-month.md) |
+| 週・日 | 出さない（PRD D332。ADR-0054）。週は1行の状態 `week-status`、日は見出しの状態の印と今の担当の1行。「担当を AI で組む」は操作の行の「AI で組む ▾」の範囲（[pages-common.md](pages-common.md)） |
 
 #### 確かめ
 

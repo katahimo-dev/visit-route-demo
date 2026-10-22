@@ -44,6 +44,7 @@ import { PersonButton } from './PersonPopover';
 import { StaffMark } from './StaffMark';
 import { useToast } from './Toast';
 import { SidePanel, WithIcon } from './ui';
+import { useUndoAction } from './undo';
 import { VisitRules } from './VisitRules';
 import { TypeDot, TypeMark } from './visitType';
 import './visitPanel.css';
@@ -202,19 +203,8 @@ function VisitPanel({
   /** 閉じたあとのフォーカス（開いた帯へ。無ければ開く前の要素） */
   const returnFocus = () => req.returnFocus?.(savedRef.current ?? visitId) ?? null;
 
-  /** 保存の前の形に戻す（トーストの「元に戻す」。あとから別の変更があれば戻さない） */
-  const undoTo = (before: DemoData, after: DemoData) => ({
-    label: '元に戻す',
-    testId: 'vp-toast-undo',
-    onClick: () => {
-      if (latest.current !== after) {
-        toast('戻せません：あとから別の変更がありました');
-        return;
-      }
-      update((d) => (d === after ? before : d));
-      toast('元に戻しました');
-    },
-  });
+  /** トーストの「元に戻す」（全体の履歴を1手戻す。PRD D329） */
+  const undoAction = useUndoAction();
 
   /** 別のタブ・別の操作で開いた訪問が変わっていれば、その文（保存・取り消しを止める） */
   const changedElsewhere = (): string | null => {
@@ -226,14 +216,14 @@ function VisitPanel({
   };
   /**
    * 書く（書く前のデータが今のデータのときだけ。確認を待つ間などに別の変更が入っていれば書かずに null を返し、呼ぶ側が誤りを出す）。
-   * 書いたら「元に戻す」の操作を返す
+   * 書いたら「元に戻す」の操作を返す。label は全体の履歴の手の名前
    */
-  const write = (next: DemoData) => {
+  const write = (next: DemoData, label: string) => {
     const before = data;
     if (latest.current !== before) return null;
-    update((d) => (d === before ? next : d));
+    update((d) => (d === before ? next : d), label);
     if (visitId) baseRef.current = findVisit(next, visitId);
-    return undoTo(before, next);
+    return undoAction;
   };
   const STALE = '開いている間にデータが変わりました。閉じて開き直してください';
 
@@ -277,7 +267,7 @@ function VisitPanel({
       )
         return;
     }
-    const action = write(r.data);
+    const action = write(r.data, isNew ? '訪問を追加' : '訪問を保存');
     if (!action) {
       setError({ text: STALE });
       return;
@@ -313,14 +303,14 @@ function VisitPanel({
   };
   const doCancel = (sameDay: boolean) => {
     if (!v || blocked()) return;
-    const action = write(cancelVisitOp(data, v.id, sameDay));
+    const action = write(cancelVisitOp(data, v.id, sameDay), sameDay ? '当日キャンセル' : '訪問を取り消す');
     if (!action) return setError({ text: STALE });
     toast(sameDay ? '当日キャンセルとして取り消しました' : '取り消しました', { action });
     req.onSaved?.({ visitId: v.id, date: v.date, moved: false, staffSet: false, isNew: false, label: '' });
   };
   const doUncancel = () => {
     if (!v || blocked()) return;
-    const action = write(uncancelVisitOp(data, v.id));
+    const action = write(uncancelVisitOp(data, v.id), '取り消しをやめる');
     if (!action) return setError({ text: STALE });
     toast('取り消しをやめました', { action });
     req.onSaved?.({ visitId: v.id, date: v.date, moved: false, staffSet: false, isNew: false, label: '' });
@@ -329,7 +319,7 @@ function VisitPanel({
     if (!v || blocked()) return;
     const next = restoreOccurrenceOp(data, v.id, today);
     if (next === data) return;
-    const action = write(next);
+    const action = write(next, 'この回の変更を戻す');
     if (!action) return setError({ text: STALE });
     const after = findVisit(next, v.id);
     if (after) setDraft(draftOf(after));

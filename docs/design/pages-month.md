@@ -17,12 +17,13 @@
 
 #### 並び
 
-1. 見出し：［月｜週｜日］・`lead`「定期パターンから訪問を作り、一月分の案をまとめて作ります」
-2. 進み具合の帯 `ProgressBand`（見出しの下。次の一手は主ボタン、`onOp` で欄を画面の中で開く。「担当を AI で組む」の入口は帯の1か所）
-3. 見せ方の切り替え `month-layout`（`fieldset.segmented`・`aria-label="月の見せ方"`・`aria-pressed`・ボタンの `data-layout`）。印刷では出さない
-4. 操作の欄 `month-head`（PRD D278。ADR-0045）：
-   - 月の送り（「前の月」「次の月」の `icon-btn`）・見出し `month-title`・「今月」（今月なら押せない）・「その他 ▾」（`MenuButton`・`month-more`）。作っている間は月を送れない
-   - 「その他 ▾」の項目：「表示を選ぶ（〈スタッフ〉・〈利用者さん〉・混み具合）」（`month-more-pickers`。開いていれば「表示の選択をたたむ」、選んでいる間・休みの入力中は押せず理由「表示を「全体」・混み具合を「すべて」に戻すと、たためます」）・「印刷」（`month-print`。選んでいる〈スタッフ〉があれば `&staff=`。`monthPrint` が入のとき）・「勤務の見込み」（`month-workload`。`/workload?ym=`。`workload` が入のとき）・「マスの見方の説明」（`month-more-help`。開いていれば「…を閉じる」）。印刷・勤務の見込みには1行の説明
+1. 見出し：［月｜週｜日］・`lead`「一月の担当を見て、担当なしの日を AI でまとめて組み、確定します」
+2. 進み具合の帯 `ProgressBand`（見出しの下。予定の3画面で月だけ。PRD D332。次の一手は主ボタン、`onOp` で欄を画面の中で開く）
+3. 操作の行（`ScheduleToolbar zoom="month"`。日・週・月で同じ並び。PRD D327。[pages-common.md](pages-common.md) の「予定の共通の部品」）：欠勤・キャンセルを登録（`sudden-open`。選んでいる日（今日より前なら今日）の日の予定で欄を開くリンク）・「AI で組む ▾」（範囲：この日・この週・この月（＝下の欄を開く `onMonth`））・元に戻す・やり直す・見せ方の切り替え `month-layout`（`fieldset.segmented`・`aria-label="月の見せ方"`・`aria-pressed`・ボタンの `data-layout`。印刷では出さない）・「その他 ▾」（`MenuButton`・`month-more`）
+4. 範囲の提案の帯（`RangeProposalBand`）
+5. 操作の欄 `month-head`（PRD D278。ADR-0045）：
+   - 月の送り（「前の月」「次の月」の `icon-btn`）・見出し `month-title`・「今月」（今月なら押せない）。作っている間は月を送れない
+   - 操作の行の「その他 ▾」の項目：「表示を選ぶ（〈スタッフ〉・〈利用者さん〉・混み具合）」（`month-more-pickers`。開いていれば「表示の選択をたたむ」、選んでいる間・休みの入力中は押せず理由「表示を「全体」・混み具合を「すべて」に戻すと、たためます」）・「印刷」（`month-print`。選んでいる〈スタッフ〉があれば `&staff=`。`monthPrint` が入のとき）・「勤務の見込み」（`month-workload`。`/workload?ym=`。`workload` が入のとき）・「マスの見方の説明」（`month-more-help`。開いていれば「…を閉じる」）。印刷・勤務の見込みには1行の説明
    - 要約 `month-summary`：「月全体：入らない N件（・当日キャンセル N件）」（月全体。今日より前の日も数える。帯と同じ言葉の「訪問」「案のある日」は出さない）
    - 表示の選択の段 `month-pickers`（「表示を選ぶ」で開くか、〈スタッフ〉・〈利用者さん〉・混み具合を選んでいる間・休みの入力中に出す。「表示を選ぶ」で開いたら `month-focus` へフォーカス。段の中で選び直したら（全体に戻しても）出したまま。保存しない）：
      - 表示の選択 `month-focus`（「表示」：全体／〈スタッフ〉（optgroup）／〈利用者さん〉（名前・よみで探す））。〈利用者さん〉なら `ClientPicker`（1人。`month-client-picker`。近道：この月・〈スタッフ〉が担当する人・最近選んだ人・仮押さえの人（`tentativeShortcut`））
@@ -117,7 +118,7 @@
 | `batch` | `openBatch()`（帯と共通）：組んでいる間は何もしない。この月に訪問が無ければ知らせ。`targetsOf('care')`・`targetsOf('all')` のどれかがあれば、既定をいつも「まだ案の無い日だけ」（0日でも）にして欄を開く（済んだ数字から作り直しへ進まない。作り直しは欄で利用者が選ぶ）。どれも無ければ知らせ |
 | `attention`・`unconfirmed` | 全体の表示にして右の欄へ移りフォーカス |
 
-#### 担当を AI で組む（PRD D320・D153・D154・D256・D257。ADR-0053）
+#### 担当を AI で組む（PRD D328・D153・D154・D256・D257。ADR-0053・ADR-0054）
 
 欄（`SidePanel`。名前「N月の担当を AI で組む」）の中身：
 
@@ -125,24 +126,27 @@
 - 対象（ラジオ）：「要対応のある日だけ（N日）」（`batch-mode-care`。初期値）／「伝えていない日をすべて組み直す（N日）」（`batch-mode-all`）
 - 対象の日数と見込みの時間（`batch-count`）。0日なら理由
 - 注記「ピンの訪問はそのままで、ほかの訪問の担当と時刻を組みます。今日より前の日・確定した日は組みません」
-- 主ボタン「組み始める」（帯 `footer` の先頭）。「すべて組み直す」は独自の確認のあと
+- 注記「1日ずつ組み、終わったら提案（担当・時刻の変わる訪問）を出します。見て「当てる」と担当が変わります（「元に戻す」で戻せます）…」
+- 主ボタン「組み始める」（帯 `footer` の先頭）。確認は出さない（提案なので当てるまで変わらない）
+- 入口：進み具合の帯の次の一手・`?do=batch`・「AI で組む ▾」の「この月」（日・週の予定からは `?do=batch` で開く）
 
-「組み始める」（`start(mode)`）：画面は `lib/month` の `batchTargets(data, dates, today, mode, statusOf)` で対象の日を出し、`monthBatch.start(job)` を呼ぶだけ。入れ物が1日ずつ、点数の基準の重みで compile（ピンを渡す）し、Worker（`runSolve`）で解いて `writeRoutes` で訪問に書く（1日ごとに `update`）
+「組み始める」（`start(mode)`）：画面は `lib/month` の `batchTargets(data, dates, today, mode, statusOf)` で対象の日を出し、`monthBatch.start(job)` を呼ぶだけ。入れ物が1日ずつ、点数の基準の重みで compile（ピンを渡す）し、Worker（`runSolve`）で解いて日ごとの提案（組み始めたときの訪問・担当の並び・差）にする。訪問には書かない
 
-- 進み具合「11/14：5/22日」と「止める」（今の日はそれまでの最良で書き、残りはやめる）
+- 進み具合「11/14：5/22日」と「止める」（今の日はそれまでの最良で提案に入れ、残りはやめる）
 - 組んでいる間は、この画面のほかの書き込み（まとめて確定・希望休）を押せない（`monthBatch.run` が null でない間）
 - 二重には始めない：`monthBatch.start` は組んでいる間 false を返す。帯の次の一手・`?do=batch` も組んでいる間は欄を開かない
 - ほかの画面へ移っても止まらない。上の帯に `BatchBand`：「〈M〉月の担当を組んでいます N/M日」（`batch-band-text`。行き先は月の予定）と［止める］
-- ページを閉じる・読み直すと止まる（組めた日は残る）。データを丸ごと差し替えたら止める（`abort`。古いデータから組んだ結果は書かない）
-- 書く直前にその日の訪問が組み始めから変わっていれば書かない
-- 終わったら知らせ（`batchDoneText`）「〈M〉月の担当を N日分組みました」（担当なしの訪問が残る日があれば「（担当なしの訪問がある日 N日）」）と「元に戻す」（`BatchDone.undo`：組む前の訪問へ。あとで訪問が変わっていれば戻さない）。その月の月の予定にいれば［月の予定を見る］は出さない（PRD D268）
+- ページを閉じる・読み直すと止まる（提案は消える）。データを丸ごと差し替えたら止めて提案を捨てる（`abort`）
+- 終わったら知らせ（`batchDoneText`）「〈M〉月の提案を出しました（N日分・担当が変わる N件・時刻が変わる N件）。見て「当てる」と担当が変わります」と、範囲の提案の帯（`RangeProposalBand`。日・週・月の予定と空き状況）。帯の見える画面にいれば［月の予定を見る］は出さない（PRD D268）
+- 当てる（`monthBatch.apply()`）：今のデータで、その日の訪問が組み始めと同じ・伝えていない日だけを1回の update（手の名前「AI の提案を当てる（〈M〉月）」）で `writeRoutes`。変わった日は当てず「変わった N日は当てません」。全体の「元に戻す」で1手戻る
 
 #### `lib/monthBatch.ts`（計算の入れ物。テストあり。ADR-0042・ADR-0053）
 
-- `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・組めた日数・反復。組んでいなければ null）・`done`（`BatchDone`＝`{ ym, label, source, weekStart, made, unassignedDays, stopped, error, aborted, undo }`）・`start`・`stop`・`abort`・`running`・`connect`
-- `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], source: 'month' | 'vacancy' | 'week', weekStart?, today }`
+- `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・組めた日数・反復。組んでいなければ null）・`done`（`BatchDone`＝`{ ym, label, source, weekStart, made, unassignedDays, stopped, error, aborted, proposal }`。`proposal` は変わる件数 `{ moved, shifted }`）・`proposal`（`BatchProposal`＝`{ id, ym, label, source, weekStart, days: ProposalDay[], stopped }`。`ProposalDay`＝`{ date, problem, visits, routes, diff, unassigned }`）・`start`（前の提案は捨てる）・`apply`・`discard`・`stop`・`abort`・`running`・`connect`（`BatchHost`＝`{ get, update(fn, label?) }`）
+- `proposalCounts(p)`・`proposalDayFresh(data, day)`・`applyProposal(data, p)`（純粋関数：組み始めたときのままの日だけ `writeRoutes`。当てた日・当てなかった日）
+- `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], source: 'month' | 'vacancy' | 'week' | 'day', weekStart?, today }`
 - `missingDays(data, dates, today)`：空き状況の［担当なしを AI で組む］の日（範囲の今日以降の、伝えていない、担当なしの訪問がある日）
-- `canMakeDay(data, date)`・`weekBatchDays(data, dates, today)`・`batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）・`weekLabel`（「11/2〜11/8の週」）・`batchHref`
+- `canMakeDay(data, date)`・`weekBatchDays(data, dates, today)`・`batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）・`weekLabel`（「11/2〜11/8の週」）・`dayLabel`（「10/28」）・`batchHref`（週・日の範囲は週の予定、ほかは月の予定）
 
 #### 希望休（PRD D69。ADR-0014）
 
@@ -177,8 +181,8 @@
 
 ### 完了の条件
 
-- [ ] 翌月を開き「N月の担当を AI で組む」→ 進み具合が出て、終わると日のマスの担当なしが減る。止めるとそこまでの日は残る。確定した日・今日より前の日は組まれない（`scripts/e2e-progress.cjs`）
-- [ ] 担当を AI で組んでいる間にほかの画面へ移っても組み続け、上の帯に進み具合と［止める］が出る。月の予定へ戻ると進み具合が見え、終わると知らせ［月の予定を見る］。読み直すと止まる（組めた日は残る）。`lib/monthBatch` のテストが通る
+- [ ] 翌月を開き「N月の担当を AI で組む」→ 進み具合が出て、終わると提案の帯が出る。「当てる」で日のマスの担当なしが減る。止めるとそこまでの日の提案。確定した日・今日より前の日は組まれない（`scripts/e2e-progress.cjs`）
+- [ ] 担当を AI で組んでいる間にほかの画面へ移っても組み続け、上の帯に進み具合と［止める］が出る。月の予定へ戻ると進み具合が見え、終わると知らせと提案の帯（帯の見えない画面では［月の予定を見る］）。読み直すと止まる（提案は消える）。`lib/monthBatch` のテストが通る
 - [ ] 日のマスを押すとその日の「日の予定」が開き、組んだ担当が出ている
 - [ ] （ADR-0014）〈スタッフ〉を選び「休みを入れる」で勤務日のマスを続けて押すと希望休が付き、もう一度押すと外れる。勤務の無い日・今日より前の日は押せない。訪問のある日に入れると注意とリンクが出て、担当が休みの訪問として要対応に出る（担当は変わらない）。全体の表示の「休 N」に数が入る
 - [ ] （ADR-0014）「印刷」で `#/month/print` が開き、A4横の1か月の表（〈スタッフ〉で絞れる）が出る。印刷（PDF）にナビ・操作の帯は出ず、週の途中で改ページしない

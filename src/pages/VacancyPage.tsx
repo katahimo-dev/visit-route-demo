@@ -17,6 +17,7 @@ import { FieldError, invalidAttrs, RequiredMark } from '../components/FieldError
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
 import { AddressField } from '../components/placeLookup';
+import { RangeProposalBand } from '../components/scheduleParts';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -597,7 +598,7 @@ export default function VacancyPage() {
   const making = batchRun !== null;
   /** 作っている間のボタンの文（月の予定から始めた作成は「（月の予定）」で分ける） */
   const makingText = batchRun
-    ? `${batchRun.label}の担当を組んでいます${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' ? '（週の予定）' : '…'}`
+    ? `${batchRun.label}の担当を組んでいます${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' || batchRun.source === 'day' ? '（週の予定）' : '…'}`
     : '';
   /** 答えのカード（足りない案を作り終えてボタンが消えたとき、フォーカスをここへ） */
   const answerRef = useRef<HTMLDivElement>(null);
@@ -908,6 +909,8 @@ export default function VacancyPage() {
             )}
           </div>
         )}
+        {/* 組んだ提案（日・週・月の予定と同じ帯。当てると担当が変わり、空きの数え直しに入る。PRD D328） */}
+        <RangeProposalBand />
         {summary && (
           <>
             <h3 className="vacancy-sub-title">答える文（下の「要約をコピー」でコピー）</h3>

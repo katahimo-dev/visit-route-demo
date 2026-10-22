@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { SlotEditor } from '../components/parts';
+import { PeopleTabs } from '../components/SettingsTabs';
 import { StaffMark } from '../components/StaffMark';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -98,6 +99,7 @@ export default function AvailabilityPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<PeopleTabs />}
         icon={Clock}
         title="勤務時間（シフト）"
         lead={`${terms.staff}ごとの働ける時間`}
