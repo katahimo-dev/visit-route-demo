@@ -110,7 +110,7 @@ export default function DataPage() {
     keep: PreviousKeep;
   } | null>(null);
   /**
-   * 名簿の読み込みで最終勤務日が入った〈スタッフ〉の知らせ（PRD D209）。名前と閲覧の欄へのリンクを出す。
+   * 名簿の読み込みで最終勤務日が入った〈スタッフ〉の知らせ（PRD D209）。名前とその人の画面へのリンクを出す。
    * 画面の中の状態で保存しない（閉じる・次の読み込み・画面を移るで消える）
    */
   const [lastDayNotice, setLastDayNotice] = useState<LastDayPerson[] | null>(null);
@@ -604,7 +604,7 @@ export default function DataPage() {
               <ul className="data-notice-list">
                 {lastDayNotice.map((x) => (
                   <li key={x.id}>
-                    <Link to={`/staff?id=${encodeURIComponent(x.id)}`} data-testid="lastday-link">
+                    <Link to={`/staff/${encodeURIComponent(x.id)}`} data-testid="lastday-link">
                       {x.name}
                     </Link>
                     （最終勤務日 {x.lastDay}）

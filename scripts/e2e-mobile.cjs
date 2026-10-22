@@ -398,7 +398,10 @@ async function wideWhileOpen(page) {
 
 /** 右の欄（SidePanel）と引き出しが重なっても、最後の1つが閉じるまで裏を巻かない（useBodyScrollLock） */
 async function lockWithPanel(page) {
-  await open(page, '/staff?id=s1', '.drawer');
+  // 右の欄は訪問の詳細の欄（〈利用者さん〉の画面の予定の回から開く）
+  await open(page, '/clients/c1', '[data-testid="pcal-visit"]');
+  await page.getByTestId('pcal-visit').first().click();
+  await page.locator('.drawer').waitFor();
   const lock = () =>
     page.evaluate(() => [document.documentElement.style.overflow, document.body.style.overflow].join(','));
   const a = await lock();
@@ -409,7 +412,7 @@ async function lockWithPanel(page) {
   await page.getByTestId('nav-drawer-backdrop').click({ position: { x: 370, y: 400 } });
   await drawer(page).waitFor({ state: 'detached' });
   const c = await lock();
-  await page.locator('.drawer').getByRole('button', { name: '閉じる' }).click();
+  await page.locator('.drawer').getByRole('button', { name: '閉じる' }).first().click();
   await page.locator('.drawer').waitFor({ state: 'detached' });
   const d = await lock();
   check(

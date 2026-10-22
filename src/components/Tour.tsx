@@ -38,10 +38,10 @@ export const useTour = () => useContext(Ctx);
  * 閉じたら（とばす・Esc・はじめる）・最後の枚まで進んだら、見たことを覚える（store/tour）
  */
 export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' | 'staff'>; children: ReactNode }) {
-  const { search } = useLocation();
+  const { search, pathname } = useLocation();
   const { startedFresh, data, reset, update } = useDemoData();
   // 起動したときの URL で決める（?id=・?do= のリンクで開いたときは出さない。PRD D192）
-  const [open, setOpen] = useState(() => shouldAutoOpenTour(tourMemory.seen(), search));
+  const [open, setOpen] = useState(() => shouldAutoOpenTour(tourMemory.seen(), search, pathname));
   // 初めて開いた（保存データが無かった）ときに自動で開いたツアーだけ、1枚目で「どこまで使うか」を聞く（PRD D276）。
   // 「案内をもう一度見る」では聞かない（機能の入り切りは管理者設定で）
   const [ask, setAsk] = useState(() => open && startedFresh);

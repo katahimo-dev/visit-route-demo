@@ -3,7 +3,7 @@
 // 画面の中央に独自のダイアログが出て、ブラウザのネイティブのダイアログは出ない（page.on('dialog') が呼ばれたら失敗）。
 // role=alertdialog・aria-modal・見出しと本文の aria-labelledby/describedby、最初のフォーカスは取り消し、Tab・Shift+Tab は中で回る、
 // 裏（#root）は inert・巻かない。Esc・取り消す・背景を押すでは何も変わらず、確定で処理が進む。閉じたら押したボタンへフォーカスが戻る。
-// 右の欄（SidePanel）の上に出たとき、Esc は確認だけを閉じる（欄は閉じない）。ダブルクリックの2回目で取り消しにならない。
+// 節を直しているときに出たとき、Esc は確認だけを閉じる（節は直したまま）。ダブルクリックの2回目で取り消しにならない。
 // 確認中に「戻る」で別の画面へ移ると、確認が閉じてデータは変わらない。390px で画面に収まる。印刷では出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-dialog.cjs
@@ -280,43 +280,41 @@ async function adopt(page) {
   check(/確定済み/.test((await state()) ?? ''), 'この割当で確定：確定で「確定済み」', await state());
 }
 
-// ---- 〈スタッフ〉の変更を捨てる（右の欄の上に出る）：Esc は確認だけを閉じる、捨てて閉じる ----
+// ---- 〈スタッフ〉の変更を捨てる（その人の画面の節。PRD D308）：Esc は確認だけを閉じる、捨てて取り消す ----
 async function staffDiscard(page) {
-  await open(page, '/staff?id=s1', '[data-testid="view-edit"]');
-  await page.getByTestId('view-edit').click();
-  const email = page.locator('.drawer').locator('input[type="email"]').first();
+  await open(page, '/staff/s1?tab=basic', '[data-testid="person-sec"]');
+  const basic = page.locator('[data-testid="person-sec"][data-section="basic"]');
+  await basic.getByTestId('sec-edit').click();
+  const email = basic.locator('input[type="email"]').first();
   await email.waitFor();
   await email.fill('dialog@example.com');
-  // 欄の Esc → 確認
-  await page.keyboard.press('Escape');
+  // 節の Esc → 確認
+  await email.press('Escape');
   const a = await shape(page, '変更を捨てる');
-  check(a.title === '変更を捨てて、欄を閉じますか？', '変更を捨てる：見出し', a.title);
+  check(a.title === '変更を捨てますか？', '変更を捨てる：見出し', a.title);
   check(
     (await page.getByTestId('confirm-cancel').textContent()) === '編集を続ける',
     '変更を捨てる：取り消しは「編集を続ける」',
   );
-  // 確認の Esc は欄に渡さない（欄は開いたまま・入力はそのまま）
+  // 確認の Esc は節に渡さない（節は直したまま・入力はそのまま）
   await page.keyboard.press('Escape');
   await settle(page);
   check(
     (await dialog(page).count()) === 0 &&
-      (await page.locator('.drawer').count()) === 1 &&
+      (await basic.getByTestId('sec-save').count()) === 1 &&
       (await email.inputValue()) === 'dialog@example.com',
     '変更を捨てる：確認の Esc は確認だけを閉じ、編集が続く',
   );
-  // × → 捨てて閉じる
-  await page.locator('.drawer').getByRole('button', { name: '閉じる' }).first().click();
+  // 取り消し → 捨てる
+  await basic.getByTestId('sec-cancel').click();
   await dialog(page).waitFor();
-  check(
-    (await page.getByTestId('confirm-ok').textContent()) === '捨てて閉じる',
-    '変更を捨てる：確定は「捨てて閉じる」',
-  );
+  check((await page.getByTestId('confirm-ok').textContent()) === '捨てる', '変更を捨てる：確定は「捨てる」');
   await page.getByTestId('confirm-ok').click();
   await settle(page, 400);
   const s1 = (await stored(page)).staff.find((s) => s.id === 's1');
   check(
-    (await page.locator('.drawer').count()) === 0 && s1.email !== 'dialog@example.com',
-    '変更を捨てる：確定で欄が閉じ、保存しない',
+    (await basic.getByTestId('sec-save').count()) === 0 && s1.email !== 'dialog@example.com',
+    '変更を捨てる：確定で読むだけに戻り、保存しない',
   );
 }
 

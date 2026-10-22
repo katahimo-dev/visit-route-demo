@@ -1,6 +1,6 @@
 # 月の予定と月の印刷
 
-> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）・`ClientLeavesSection.tsx`、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`・`monthBatch.ts`（計算の入れ物）、`src/components/batchBand.tsx`（上の帯の進み具合）。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032・0042。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228・D256・D257。
+> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`・`monthBatch.ts`（計算の入れ物）、`src/components/batchBand.tsx`（上の帯の進み具合）。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032・0042。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228・D256・D257・D313。
 > 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)。
 
 ### 月の予定（`#/month`）
@@ -75,7 +75,7 @@
   - 右の欄の集計 `month-staff-sum`：最終勤務日（`month-staff-lastday`）・「希望休 N日」「欠勤 N日」（`absenceDays` は希望休を除く）など
 - 〈利用者さん〉を選んだとき：
   - マスに訪問ごとの時刻・種類の色の点・担当（`month-cvisits`。「代」＝いつもの担当でない・「変」＝この回だけ変更・当日キャンセル）。休みの訪問は薄く「休み」
-  - 右の欄の集計 `month-client-sum`：回数・「休みのため無し N回」・「うち当日キャンセル」（`month-client-sameday`）・`ClientDots`（`clientDay`）・「担当した人」（`PersonButton`）・休み（`ClientLeavesSection`）
+  - 右の欄は見出しの名前と、〈利用者さん〉の画面の予定（その月の月の見せ方）へのリンク「〈名前〉の予定（M月）を開く」（`month-client-open`。`/clients/:id?cal=month&d=YYYY-MM-01`）だけ。回・集計・休みは人の画面で見て直す（PRD D313。ADR-0052）
 - 右の欄の見出しの名前は `PersonButton`
 
 #### マスの読み方の吹き出し（PRD D176。カレンダーのときだけ）
@@ -112,10 +112,6 @@
 - 欠勤あり（対応済み）`month-handled`（PRD D281。`handledAbsences`）：要対応の下に見出し「欠勤あり（対応済み）」と日付・「欠勤 名前（確定済み）」の行（`data-date`。押すとその日の日の予定）。地の色で縁の色を付けない（要対応・注意にしない）。手当てが済んだ日＝`absenceHandled`（確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い）
 - 要対応の行は `attentionTarget` の行き先へ（`openTarget`＝選んでいる日付をその日にしてから `navigate(to)`）。行は1つのボタンのまま、2つ目の span の下に `.month-attention-go`（行き先の文「（〜で開く）」）。`data-to` に行き先
 - `Attention` の `staffIds?`（overSpan のときだけ。拘束が上限を超える人の id。`names` と同じ順）
-
-#### 〈利用者さん〉を選んだときの回（PRD D304）
-
-- 右の欄の「日ごと」の下に「この月の回」（`month-client-visits`）：`lib/visitOps` の `clientVisitsIn`（取り消しも。日付・開始の順）の行 `month-client-visit`（「10/28（水） 14:30」と担当・「担当なし」・取り消し・当日キャンセル・「変」）。押すと訪問の詳細の欄（閉じるとフォーカスは行）。印刷で出さない
 
 #### `?do=`（1回だけ。行ったら URL から消す）
 

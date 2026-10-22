@@ -1,15 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import { Info, X } from 'lucide-react';
-import {
-  type ButtonHTMLAttributes,
-  createContext,
-  type ReactNode,
-  type RefObject,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-} from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, type RefObject, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { submitHandler } from './FieldError';
 import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
@@ -53,13 +44,6 @@ export function PageHeader({
   );
 }
 
-/**
- * SectionTitle の見出しの段（既定 h2）。欄（SidePanel）の見出しが h2 の中に置くときは 3 にする
- * （〈スタッフ〉・〈利用者さん〉の閲覧と編集の欄。PRD D128）
- */
-const SectionLevel = createContext<2 | 3>(2);
-export const SectionLevelProvider = SectionLevel.Provider;
-
 /** カードの見出し：小さなアイコン＋題名。右に補足や操作 */
 export function SectionTitle({
   icon: Icon,
@@ -70,13 +54,12 @@ export function SectionTitle({
   children: ReactNode;
   aside?: ReactNode;
 }) {
-  const H = useContext(SectionLevel) === 3 ? 'h3' : 'h2';
   return (
     <div className="section-title">
-      <H>
+      <h2>
         {Icon && <Icon size={18} strokeWidth={2.2} aria-hidden="true" />}
         {children}
-      </H>
+      </h2>
       {aside && <div className="section-aside">{aside}</div>}
     </div>
   );
@@ -204,17 +187,14 @@ export function SidePanel({
   fallbackFocus,
   returnFocus,
   focusPanel = false,
-  headActions,
   focusKey,
   onSubmit,
 }: {
   icon: LucideIcon;
   title: ReactNode;
-  /** 見出しの右（× の前）に置く操作（閲覧の欄の「編集する」。PRD D128） */
-  headActions?: ReactNode;
   /**
-   * 欄を開いたまま中身が入れ替わったとき（閲覧 ⇄ 編集。PRD D128）に変える値。変わったら、`data-return-focus` の付いた
-   * 要素（閲覧の「編集する」）、無ければ最初の入力欄、それも無ければ欄そのものにフォーカスを移す
+   * 欄を開いたまま中身が入れ替わったとき（欠勤・キャンセルの段階など）に変える値。変わったら、`data-return-focus` の付いた
+   * 要素（段階の見出し）、無ければ最初の入力欄、それも無ければ欄そのものにフォーカスを移す
    */
   focusKey?: string;
   /**
@@ -355,7 +335,6 @@ export function SidePanel({
             <Icon size={18} strokeWidth={2.2} aria-hidden="true" />
             {title}
           </h2>
-          {headActions && <div className="drawer-head-actions">{headActions}</div>}
           <IconButton icon={X} label="閉じる" onClick={onClose} />
         </header>
         {/* 巻く領域の中に、内容・帯・番兵（帯が貼り付いているかを見る。高さ0）の順に置く */}

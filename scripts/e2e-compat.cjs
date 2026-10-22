@@ -1,6 +1,6 @@
 // 相性の画面（PRD D113〜D117。ADR-0022）を本物のブラウザで確かめる：
 // 列の見出しの名前が全部出る／吹き出しの開閉・キーボード・フォーカスの戻り・Tab で外へ出ると閉じる・中を巻ける・画面の端で切れない／
-// 〈スタッフ〉・〈利用者さん〉の画面で開く（?id=）／列（?sf=）と行（?cf=）の絞り込みと再読込での復元・履歴を増やさない・
+// 〈スタッフ〉・〈利用者さん〉の画面で開く（#/staff/:id・#/clients/:id）／列（?sf=）と行（?cf=）の絞り込みと再読込での復元・履歴を増やさない・
 // 日本語の変換（IME）／0人の表示と「絞り込みを戻す」／最初に表の行が10行以上見える／
 // 回帰：相性のチップを押したままセルを押しても行が消えない（「表を並べ直す」で並べ直す）、絞り込みで見出しが消えたら吹き出しを閉じる／
 // 性能：〈利用者さん〉300人×〈スタッフ〉60人で、セルを1回押してから描き終わるまでの時間（目安 100ms 以下）。
@@ -181,22 +181,23 @@ async function openById(page) {
     await b.click();
     await pop(page).getByTestId('compat-pop-link').click();
     await settle(page, 400);
-    // 開くのは閲覧の欄（PRD D127）。見出し「〈呼び方〉：〈名前〉」の名前は完全一致、閲覧の欄の data-id は押した人
-    const head = (await page.locator('.drawer h2').first().textContent()) ?? '';
+    // 開くのはその人の画面（`#/clients/:id`。PRD D308）。見出し（h1）の名前は完全一致、画面の data-id は押した人
+    const head = ((await page.locator('h1').first().textContent()) ?? '').trim();
     const view = page.getByTestId('person-view');
-    const opened =
-      head.slice(head.indexOf('：') + 1) === name &&
-      (await view.count()) === 1 &&
-      (await view.getAttribute('data-id')) === id;
+    const opened = head === name && (await view.count()) === 1 && (await view.getAttribute('data-id')) === id;
     check(
-      urlOf(page).includes(to) && !urlOf(page).includes('id=') && opened,
-      `${kind}：?id= で ${name} の閲覧の欄が開き、URL から id を消す`,
+      urlOf(page).includes(`${to}/${id}`) && !urlOf(page).includes('id=') && opened,
+      `${kind}：吹き出しのリンクで ${name} の画面（${to}/:id）が開く`,
+      { head, url: urlOf(page) },
     );
   }
   // いない ID は何もしない
   await page.goto(`${BASE}#/staff?id=nobody`);
   await settle(page, 300);
-  check(!urlOf(page).includes('id=') && (await page.locator('.side-panel').count()) === 0, 'いない ID は欄を開かない');
+  check(
+    !urlOf(page).includes('id=') && (await page.getByTestId('person-view').count()) === 0,
+    'いない ID は人の画面を開かない（URL から id を消す）',
+  );
 }
 
 async function filters(page) {

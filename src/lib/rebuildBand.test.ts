@@ -32,9 +32,29 @@ function st(date: string, state: DayState = 'plan', stale = true): DayStatus {
 
 describe('showsRebuildBand', () => {
   it('設定の画面だけ（予定・ホーム・データには出さない）', () => {
-    for (const p of ['/rules', '/compat', '/availability', '/types', '/items', '/staff', '/clients'])
+    for (const p of [
+      '/rules',
+      '/compat',
+      '/availability',
+      '/types',
+      '/items',
+      '/staff',
+      '/clients',
+      '/clients/c1',
+      '/staff/s1',
+    ])
       expect(showsRebuildBand(p)).toBe(true);
-    for (const p of ['/home', '/month', '/week', '/plan', '/compare', '/data', '/vacancy', '/workload'])
+    for (const p of [
+      '/home',
+      '/month',
+      '/week',
+      '/plan',
+      '/compare',
+      '/data',
+      '/vacancy',
+      '/workload',
+      '/staff-view/s1',
+    ])
       expect(showsRebuildBand(p)).toBe(false);
   });
 });

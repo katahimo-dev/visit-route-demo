@@ -103,6 +103,12 @@ describe('isActiveNav（今の画面の印。PRD D273・D275）', () => {
     expect(activeNavPath('/schedule')).toBe('/plan');
     expect(activeNavPath('/week')).toBe('/week');
   });
+  it('〈利用者さん〉・〈スタッフ〉の画面は一覧の項目に当てる（PRD D308）', () => {
+    expect(activeNavPath('/clients/c1')).toBe('/clients');
+    expect(activeNavPath('/staff/new')).toBe('/staff');
+    expect(isActiveNav(item('clients'), '/clients/c1')).toBe(true);
+    expect(activeNavPath('/staff-view/s1')).toBe('/staff-view/s1');
+  });
 });
 
 describe('navTitle（上の帯の名前。画面の一覧から引く）', () => {
@@ -168,6 +174,9 @@ describe('tabClick（下のタブ・メニューを押したとき）', () => {
     expect(tabClick(item('schedule', g), '/month')).toBe('stay');
     // 欠勤は操作なので、日の予定の上でも移る（欄を開く）
     expect(tabClick(item('absence'), '/plan')).toBe('go');
+    // 人の画面から一覧の項目を押すと一覧へ移る
+    expect(tabClick(item('clients'), '/clients/c1')).toBe('go');
+    expect(tabClick(item('clients'), '/clients')).toBe('stay');
   });
 });
 

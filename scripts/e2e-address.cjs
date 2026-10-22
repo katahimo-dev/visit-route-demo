@@ -101,12 +101,14 @@ async function untilValue(loc, pred, timeout = 5000) {
   return loc.inputValue();
 }
 
-/** ?id= で閲覧の欄を開き、「編集する」で編集の欄にする（PRD D127・D128） */
+/** その人の画面の住所の節を直す形で開く（`?tab=basic&edit=place`。PRD D308） */
 async function openClient(page, id = 'c1') {
-  await page.goto(`${BASE}#/clients?id=${id}`);
-  await page.getByTestId('view-edit').click();
+  await page.goto('about:blank');
+  await page.goto(`${BASE}#/clients/${id}?tab=basic&edit=place`);
   await page.getByTestId('client-place').waitFor();
 }
+/** 直している節の「取り消し」（変更があれば確認に「捨てる」で答える） */
+const cancelSection = (page) => page.getByTestId('sec-cancel').click();
 
 /** 1・2・3・9：送るもの・正規化・候補・元に戻す・〈利用者さん〉の回帰 */
 async function basics(page, fake) {
@@ -229,7 +231,7 @@ async function failures(page, fake) {
       (await pinText(page, 'client')) === pin0,
     '失敗してもデータ（住所・位置）は変えない',
   );
-  await page.getByRole('button', { name: '閉じる' }).last().click();
+  await cancelSection(page);
   const c2 = (await stored(page)).clients.find((c) => c.id === 'c2');
   check(c2.place.address === addr0, '失敗しても store は変えない');
 }
@@ -291,17 +293,17 @@ async function races(page, fake) {
   fake.zip.delay = 0;
   fake.gsi.delay = 0;
 
-  // 5 探している途中に欄を閉じたら書かない
+  // 5 探している途中に節を取り消したら書かない
   fake.zip.delay = 800;
   await openClient(page, 'c3');
   const addr0 = await page.getByTestId('client-address').inputValue();
   await page.getByTestId('client-postal').fill('9800811');
   await page.getByTestId('client-postal-search').click();
   await page.waitForTimeout(100);
-  await page.getByRole('button', { name: '閉じる' }).last().click();
+  await cancelSection(page);
   await page.waitForTimeout(1100);
   const c3 = (await stored(page)).clients.find((c) => c.id === 'c3');
-  check(c3.place.address === addr0 && c3.place.postalCode !== '9800811', '探している途中に閉じたら書かない');
+  check(c3.place.address === addr0 && c3.place.postalCode !== '9800811', '探している途中に取り消したら書かない');
   await openClient(page, 'c3');
   check((await page.getByTestId('client-address').inputValue()) === addr0, '開き直しても古い応答は入らない');
   fake.zip.delay = 0;
@@ -394,8 +396,9 @@ async function holdNote(page) {
 
 /** 8：〈スタッフ〉の自宅 */
 async function staffHome(page) {
-  await page.goto(`${BASE}#/staff?id=s1`);
-  await page.getByTestId('view-edit').click();
+  await page.goto('about:blank');
+  await page.goto(`${BASE}#/staff/s1?tab=basic`);
+  await page.locator('[data-testid="person-sec"][data-section="home"]').getByTestId('sec-edit').click();
   await page.getByTestId('staff-home-place').waitFor();
   check(
     /保存しません/.test(await page.getByTestId('staff-home-place').textContent()),
@@ -412,18 +415,19 @@ async function staffHome(page) {
     '自宅：住所は保存し、郵便番号は保存しない',
     s1.home,
   );
-  // 保存すると閲覧の欄に戻る（PRD D129）。閲覧には郵便番号を出さず、編集し直すと郵便番号は空
+  // 保存すると読むだけに戻る（PRD D308）。郵便番号は出さず、直し直すと郵便番号は空
+  const home = page.locator('[data-testid="person-sec"][data-section="home"]');
   check(
-    (await page.getByTestId('person-view').count()) === 1 &&
-      !/980-?0811/.test(await page.getByTestId('person-view').textContent()),
-    '自宅：保存すると閲覧の欄に戻り、郵便番号は出ない',
+    (await home.getByTestId('staff-home-place').count()) === 0 && !/980-?0811/.test(await home.textContent()),
+    '自宅：保存すると読むだけに戻り、郵便番号は出ない',
   );
-  await page.getByTestId('view-edit').click();
+  await home.getByTestId('sec-edit').click();
   await page.getByTestId('staff-home-place').waitFor();
-  check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：編集し直すと郵便番号は空');
-  await page.getByRole('button', { name: '閉じる' }).last().click();
-  await page.goto(`${BASE}#/staff?id=s1`);
-  await page.getByTestId('view-edit').click();
+  check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：直し直すと郵便番号は空');
+  await cancelSection(page);
+  await page.goto('about:blank');
+  await page.goto(`${BASE}#/staff/s1?tab=basic`);
+  await home.getByTestId('sec-edit').click();
   await page.getByTestId('staff-home-place').waitFor();
   check((await page.getByTestId('staff-home-postal').inputValue()) === '', '自宅：開き直すと郵便番号は空');
 }

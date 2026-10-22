@@ -1,13 +1,14 @@
-// 〈スタッフ〉・〈利用者さん〉の画面の閲覧の欄（PRD D127〜D131。ADR-0023）を本物のブラウザで確かめる：
-// 一覧・`?id=`・相性の吹き出しのリンクで閲覧の欄が開き入力欄が無い（中身・地図・節の見出しは h3）／「編集する」で編集の欄（主ボタンにしない）／
-// 保存・取り消しで閲覧に戻りフォーカスは「編集する」／変更があるまま取り消す・×・Esc・別の人の `?id=` で確認が出て、断れば編集が続く／
-// 変更が無い・同じ人の `?id=`・特性を未確認に戻しただけ・担当できる人を限るを入れて外しただけなら確認しない／変更があるときだけ beforeunload／
-// 「追加」はすぐ編集の欄／「まとめて地図に置く」の「編集」は編集の欄／定期パターン・休みは閲覧では読むだけ（これからの休みと終わった休みの件数）／
-// 最終勤務日の振り直しの欄は今どおり。
-// 相性・担当の名前（PRD D198〜D200）：〈スタッフ〉の閲覧の欄にいつもの担当・相性の記号ごとの〈利用者さん〉の名前（人数・利用中だけ・
-// 13人目から「あと N人」）、名前で詳細の吹き出し（欄の中に出す・Tab は吹き出しの中を進み端で閉じて名前へ・Esc は吹き出しだけ閉じる・欄を巻いて名前が隠れたら閉じる）、リンクで相手の閲覧の欄、
-// 〈利用者さん〉の担当できる人・いつもの担当も名前から。
-// 〈スタッフ〉のアイコン（PRD D299）：編集で「訪」を保存すると一覧・日の予定の印が「訪」、3文字は保存しない、空に戻すと苗字の最初の1文字。
+// 〈スタッフ〉・〈利用者さん〉の画面（全画面。PRD D308〜D312。ADR-0052）の節を本物のブラウザで確かめる：
+// 一覧の「開く」・`?id=`（その人の画面へ移る）・相性の吹き出しのリンクでその人の画面が開き、節は読むだけ（入力欄・主ボタンが無い。中身・地図・節の見出しは h2）／
+// 節の「直す」で入力欄（最初の入力欄へフォーカス・主ボタンは「保存」）、保存・取り消しで読むだけに戻りフォーカスは「直す」／
+// 変更があるまま取り消す・Esc・タブを替える・メニューで移る・別の人の URL で確認が出て、断れば編集が続く／
+// 変更が無い・特性を未確認に戻しただけ・担当できる人を限るを入れて外しただけなら確認しない／変更があるときだけ beforeunload／
+// 「追加」は新しい人の画面（基本の節が開いた形。何も入れずに取り消すと確認なしで一覧へ）／「まとめて地図に置く」の「編集」は住所の節を開く／
+// 予定のタブの休みはこれからの休み・休みのタブは終わった休みも／最終勤務日を入れて保存すると担当の振り直しの欄。
+// 相性・担当の名前（PRD D198〜D200）：〈スタッフ〉の相性のタブにいつもの担当・相性の記号ごとの〈利用者さん〉の名前（人数・利用中だけ・
+// 13人目から「あと N人」）、名前で詳細の吹き出し（Tab は吹き出しの中を進み端で閉じて名前へ・Esc は吹き出しだけ閉じる）、リンクで相手の画面、
+// 〈利用者さん〉の担当できる人・いつもの担当も名前から。一覧の行を押すとその人の画面（1280px・390px。文字をドラッグで選んでも移らない）。
+// 〈スタッフ〉のアイコン（PRD D299）：「訪」を保存すると一覧・日の予定の印が「訪」、3文字は保存しない、空に戻すと苗字の最初の1文字。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-view.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -15,319 +16,525 @@
 const path = require('node:path');
 const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { BASE, OUT_DIR, JST, NOW, STORAGE_KEY, check, settle, urlOf, stored, runSteps } = require('./lib/env.cjs');
+const {
+  BASE,
+  OUT_DIR,
+  JST,
+  NOW,
+  STORAGE_KEY,
+  check,
+  settle,
+  urlOf,
+  hashOf,
+  stored,
+  runSteps,
+} = require('./lib/env.cjs');
 const { pagePerStep } = require('./lib/steps.cjs');
 
-const panel = (page) => page.locator('.drawer');
+/** その人の画面（全画面）の外枠 */
 const view = (page) => page.getByTestId('person-view');
-/** 欄の中の入力欄の数 */
-const inputs = (page) => panel(page).locator('input, select, textarea').count();
-
-/** 確認（独自の確認ダイアログ。PRD D146）の受け方を決め、出た文（見出しと本文）を記録する */
-const dialogs = (page) => answerConfirms(page);
+const sec = (page, name) => page.locator(`[data-testid="person-sec"][data-section="${name}"]`);
+/** 節の中の入力欄の数（直していなければ 0） */
+const secInputs = (page) => page.locator('[data-testid="person-sec"]').locator('input, select, textarea').count();
+const tab = (page, key) => page.getByTestId('person-tabs').locator(`[data-tab="${key}"]`);
+const activeTestId = (page) => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '');
+const beforeUnloadBlocked = (page) =>
+  page.evaluate(() => {
+    const e = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+const goHash = (page, hash) =>
+  page.evaluate((h) => {
+    location.hash = h;
+  }, hash);
 
 async function open(page, hash, ready) {
-  // 同じ文書の中で hash を移してから読み直すと、読み直す前に `?id=` が処理されて URL から消えることがあるので、
-  // about:blank を挟んで開く（e2e-home と同じ）
+  // 同じ文書の中で hash を移してから読み直すと、読み直す前に `?id=` が処理されることがあるので、about:blank を挟んで開く
   await page.goto('about:blank');
   await page.goto(`${BASE}#${hash}`);
   await page.locator(ready).first().waitFor({ timeout: 30000 });
   await settle(page, 400);
 }
+async function goTab(page, key) {
+  await tab(page, key).click();
+  await settle(page, 300);
+}
+async function editSec(page, name) {
+  await sec(page, name).getByTestId('sec-edit').click();
+  await settle(page);
+}
 
-/** 閲覧の欄が開いていて、入力欄が無く、「編集する」が主ボタンでない */
-async function isView(page, where, words = []) {
+/** 読むだけ：節に入力欄・主ボタンが無い（中身の語も） */
+async function isReading(page, where, words = []) {
   await view(page).waitFor({ timeout: 5000 });
-  const n = await inputs(page);
-  const edit = panel(page).getByTestId('view-edit');
-  const cls = (await edit.getAttribute('class')) ?? '';
+  const n = await secInputs(page);
   const text = (await view(page).textContent()) ?? '';
-  check(n === 0, `${where}：閲覧の欄に入力欄が無い`, n);
-  check((await edit.count()) === 1 && !cls.includes('btn-primary'), `${where}：右上に「編集する」（主ボタンでない）`);
+  check(n === 0, `${where}：節に入力欄が無い（読むだけ）`, n);
   check(
     words.every((w) => text.includes(w)),
-    `${where}：閲覧の中身`,
+    `${where}：中身`,
     words.filter((w) => !text.includes(w)),
   );
-  check((await panel(page).locator('.btn-primary').count()) === 0, `${where}：閲覧の欄に主ボタンが無い`);
+  check((await page.locator('[data-testid="person-sec"] .btn-primary').count()) === 0, `${where}：節に主ボタンが無い`);
 }
 
 async function clients(page, dlg) {
   await open(page, '/clients', '[data-testid="client-row"]');
-  // 一覧の行の「開く」で閲覧
-  await page.getByRole('button', { name: '図書館 ふみを開く' }).click();
-  await isView(page, '〈利用者さん〉・一覧', [
+  await page.getByRole('link', { name: '図書館 ふみを開く' }).click();
+  await view(page).waitFor();
+  await settle(page, 400);
+  check(
+    hashOf(page) === '#/clients/c1' && (await view(page).getAttribute('data-id')) === 'c1',
+    '〈利用者さん〉：一覧の「開く」でその人の画面（#/clients/c1）',
+    hashOf(page),
+  );
+  check(
+    (await page.locator('h1').first().textContent()).includes('図書館 ふみ') &&
+      (await tab(page, 'schedule').getAttribute('aria-current')) === 'page',
+    '〈利用者さん〉：見出しに名前、タブの先頭の「予定」を開く',
+  );
+  await goTab(page, 'basic');
+  check(urlOf(page).includes('tab=basic'), '〈利用者さん〉：タブは URL の ?tab=', urlOf(page));
+  await isReading(page, '〈利用者さん〉・基本情報', [
     '段階',
     '住所',
     '地図の位置',
     '特性',
-    '必要条件',
-    '希望',
-    '担当できる人',
-    'いつもの担当',
     '訪問先の決まりごと',
-    '定期パターン',
-    '休み',
     '紹介元',
     '—',
   ]);
-  // 地図の本体は別のチャンク（PRD D248）：読み終わるのを待つ
-  await view(page)
+  check(
+    (await page.locator('[data-testid="person-sec"] .section-title h2').count()) >= 5,
+    '〈利用者さん〉：節の見出しは h2（画面の見出しは h1）',
+  );
+  await sec(page, 'place')
     .locator('.leaflet-container')
     .waitFor({ timeout: 10000 })
     .catch(() => {});
   check(
-    (await view(page).locator('.leaflet-container').count()) === 1,
-    '〈利用者さん〉：位置があれば地図の小さな表示（読むだけ）',
+    (await sec(page, 'place').locator('.leaflet-container').count()) === 1,
+    '〈利用者さん〉：位置があれば住所の節に地図の小さな表示',
   );
-  // 定期パターン・休みは読むだけ（足す・直す・消すのボタンを出さない）
-  check(
-    (await panel(page).getByTestId('patterns-section').count()) === 0 &&
-      (await panel(page)
-        .getByRole('button', { name: /パターンを追加|パターンを直す|パターンを消す|休みを入れる/ })
-        .count()) === 0,
-    '〈利用者さん〉：閲覧では定期パターン・休みを書き換えるボタンが無い',
-  );
-  check(
-    (await page.getByTestId('view-patterns').locator('li').count()) > 0,
-    '〈利用者さん〉：定期パターンを読むだけで並べる',
-  );
-  await page.screenshot({ path: path.join(OUT_DIR, 'client-view.png') });
+  await page.screenshot({ path: path.join(OUT_DIR, 'client-basic.png') });
+  await goTab(page, 'staffing');
+  await isReading(page, '〈利用者さん〉・担当・相性', ['必要条件', '希望', '担当できる人', 'いつもの担当', '相性']);
+  await goTab(page, 'leaves');
+  check((await page.getByTestId('leaves-section').count()) === 1, '〈利用者さん〉：休みのタブに休みの節');
+  await goTab(page, 'basic');
 
-  // 「編集する」で編集の欄（最初の入力欄へフォーカス）
-  await page.getByTestId('view-edit').click();
-  await settle(page);
-  check((await inputs(page)) > 5 && (await view(page).count()) === 0, '〈利用者さん〉：「編集する」で編集の欄になる');
+  // 「直す」で入力欄（最初の入力欄へフォーカス・主ボタンは「保存」）
+  await editSec(page, 'basic');
+  check(
+    (await sec(page, 'basic').locator('input').count()) >= 3 &&
+      (await sec(page, 'stage').locator('input, select').count()) === 0,
+    '〈利用者さん〉：「直す」でその節だけ入力欄になる',
+  );
   check(
     await page.evaluate(() => document.activeElement?.tagName === 'INPUT'),
-    '〈利用者さん〉：編集の欄にしたら入力欄へフォーカス',
+    '〈利用者さん〉：直すと入力欄へフォーカス',
   );
   check(
-    (await panel(page).getByTestId('patterns-section').count()) === 1,
-    '〈利用者さん〉：編集では定期パターンの節を出す',
+    ((await sec(page, 'basic').getByTestId('sec-save').getAttribute('class')) ?? '').includes('btn-primary'),
+    '〈利用者さん〉：直している節の「保存」が主ボタン',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'client-edit.png') });
 
-  // 変更なしの取り消し：確認なしで閲覧に戻る
+  // 変更なしの取り消し：確認なしで読むだけに戻り、フォーカスは「直す」
   dlg.messages.length = 0;
-  await page.getByTestId('edit-cancel').click();
+  await sec(page, 'basic').getByTestId('sec-cancel').click();
   await settle(page);
   check(
-    dlg.messages.length === 0 && (await view(page).count()) === 1,
-    '〈利用者さん〉：変更なしの取り消しは確認なしで閲覧に戻る',
+    dlg.messages.length === 0 && (await secInputs(page)) === 0 && (await activeTestId(page)) === 'sec-edit',
+    '〈利用者さん〉：変更なしの取り消しは確認なしで読むだけに戻り、フォーカスは「直す」',
   );
 
-  // 変更ありの取り消し：確認が出る。断れば編集のまま、受ければ捨てて閲覧に戻る
-  await page.getByTestId('view-edit').click();
-  const memo = panel(page).locator('label', { hasText: 'メモ' }).first().locator('input');
-  await memo.fill('閲覧の確認のメモ');
+  // 変更ありの取り消し：確認が出る。断れば編集のまま、受ければ捨てる
+  await editSec(page, 'basic');
+  const memo = sec(page, 'basic').locator('label', { hasText: 'メモ' }).locator('input');
+  await memo.fill('節の確認のメモ');
   dlg.answer = false;
-  await page.getByTestId('edit-cancel').click();
+  await sec(page, 'basic').getByTestId('sec-cancel').click();
   await settle(page);
   check(
     dlg.messages.length === 1 &&
-      /閲覧に戻りますか/.test(dlg.messages[0]) &&
-      (await memo.inputValue()) === '閲覧の確認のメモ',
+      /変更を捨てますか/.test(dlg.messages[0]) &&
+      (await memo.inputValue()) === '節の確認のメモ',
     '〈利用者さん〉：変更ありの取り消しは確認が出て、断れば編集のまま',
     dlg.messages,
   );
-  dlg.answer = true;
-  await page.getByTestId('edit-cancel').click();
-  await settle(page);
-  const c1a = (await stored(page)).clients.find((c) => c.id === 'c1');
-  check(
-    (await view(page).count()) === 1 && c1a.note !== '閲覧の確認のメモ',
-    '〈利用者さん〉：受ければ変更を捨てて閲覧に戻る',
-  );
-
-  // 保存で閲覧に戻り、閲覧に保存した中身が出る
-  await page.getByTestId('view-edit').click();
-  await panel(page).locator('label', { hasText: 'メモ' }).first().locator('input').fill('保存した閲覧のメモ');
+  // Esc も取り消しと同じ（確認）
   dlg.messages.length = 0;
-  await page.getByRole('button', { name: '保存' }).click();
+  await memo.press('Escape');
+  await settle(page);
+  check(
+    dlg.messages.length === 1 && (await memo.inputValue()) === '節の確認のメモ',
+    '〈利用者さん〉：変更ありで Esc を押すと確認が出て、断れば編集のまま',
+    dlg.messages,
+  );
+  // タブを替える・メニューで移る：確認が出て、断れば留まる
+  dlg.messages.length = 0;
+  await tab(page, 'schedule').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 1 &&
+      /タブを替えますか/.test(dlg.messages[0]) &&
+      urlOf(page).includes('tab=basic') &&
+      (await memo.inputValue()) === '節の確認のメモ',
+    '〈利用者さん〉：変更があるままタブを替えると確認が出て、断れば留まる',
+    dlg.messages,
+  );
+  dlg.messages.length = 0;
+  await page
+    .locator('.side-nav')
+    .getByRole('link', { name: /スタッフ一覧/ })
+    .click();
+  await settle(page);
+  check(
+    dlg.messages.length === 1 && /移りますか/.test(dlg.messages[0]) && hashOf(page).startsWith('#/clients/c1'),
+    '〈利用者さん〉：変更があるままメニューで移ると確認が出て、断れば留まる',
+    dlg.messages,
+  );
+  check(
+    await beforeUnloadBlocked(page),
+    '〈利用者さん〉：変更があるとき、再読込・タブを閉じる前に確認する（beforeunload）',
+  );
+  // 別の人の URL：確認が出て、断れば元の人に戻る・受ければその人
+  dlg.messages.length = 0;
+  await goHash(page, '#/clients/c2');
+  await settle(page, 500);
+  check(
+    dlg.messages.length === 1 &&
+      /動物公園 やぎおを開きますか/.test(dlg.messages[0]) &&
+      hashOf(page).startsWith('#/clients/c1') &&
+      (await memo.inputValue()) === '節の確認のメモ',
+    '〈利用者さん〉：変更があるまま別の人の URL になると確認が出て、断れば元の人の編集のまま',
+    { m: dlg.messages, h: hashOf(page) },
+  );
+  dlg.answer = true;
+  dlg.messages.length = 0;
+  await goHash(page, '#/clients/c2');
+  await settle(page, 500);
+  check(
+    dlg.messages.length === 1 && (await view(page).getAttribute('data-id')) === 'c2',
+    '〈利用者さん〉：受ければ別の人の画面になる',
+  );
+  check(
+    (await stored(page)).clients.find((c) => c.id === 'c1').note !== '節の確認のメモ',
+    '〈利用者さん〉：捨てた変更は保存しない',
+  );
+  check(!(await beforeUnloadBlocked(page)), '〈利用者さん〉：変更が無ければ beforeunload で止めない');
+
+  // 保存で読むだけに戻り、保存した中身が出る（ほかの節の項目は変えない）
+  await open(page, '/clients/c1?tab=basic', '[data-testid="person-sec"]');
+  await editSec(page, 'basic');
+  await sec(page, 'basic').locator('label', { hasText: 'メモ' }).locator('input').fill('保存した節のメモ');
+  dlg.messages.length = 0;
+  await sec(page, 'basic').getByTestId('sec-save').click();
   await settle(page, 600);
   const c1b = (await stored(page)).clients.find((c) => c.id === 'c1');
   check(
-    (await view(page).count()) === 1 &&
-      (await view(page).textContent()).includes('保存した閲覧のメモ') &&
-      c1b.note === '保存した閲覧のメモ' &&
-      dlg.messages.length === 0,
-    '〈利用者さん〉：保存すると閲覧に戻り、保存した中身が出る',
+    (await secInputs(page)) === 0 &&
+      (await sec(page, 'basic').textContent()).includes('保存した節のメモ') &&
+      c1b.note === '保存した節のメモ' &&
+      dlg.messages.length === 0 &&
+      (await activeTestId(page)) === 'sec-edit',
+    '〈利用者さん〉：保存すると読むだけに戻り、保存した中身が出る（フォーカスは「直す」）',
   );
 
-  // 変更ありで閉じる（Esc・×）：確認が出る
-  await page.getByTestId('view-edit').click();
-  await panel(page).locator('label', { hasText: 'メモ' }).first().locator('input').fill('閉じる前のメモ');
-  dlg.answer = false;
+  // ?id=（古いリンク）：その人の画面へ移る
+  await open(page, '/clients?id=c2', '[data-testid="person-view"]');
+  check(
+    hashOf(page) === '#/clients/c2' && (await view(page).getAttribute('data-id')) === 'c2',
+    '〈利用者さん〉：?id= はその人の画面（#/clients/c2）へ移る',
+    hashOf(page),
+  );
+
+  // 「追加」は新しい人の画面（基本の節が開いた形）。何も入れずに取り消すと確認なしで一覧へ
+  await open(page, '/clients', '[data-testid="client-row"]');
+  await page.getByTestId('client-add').click();
+  await settle(page, 400);
+  check(
+    hashOf(page) === '#/clients/new' &&
+      (await sec(page, 'new').locator('input').count()) > 2 &&
+      (await page.locator('h1').first().textContent()).includes('を追加'),
+    '〈利用者さん〉：「追加」は新しい人の画面で、基本の節が開いている',
+  );
   dlg.messages.length = 0;
-  await page.keyboard.press('Escape');
+  await sec(page, 'new').getByTestId('sec-cancel').click();
   await settle(page);
   check(
-    dlg.messages.length === 1 && /欄を閉じますか/.test(dlg.messages[0]) && (await panel(page).count()) === 1,
-    '〈利用者さん〉：変更ありで Esc を押すと確認が出て、断れば欄が残る',
+    hashOf(page) === '#/clients' && dlg.messages.length === 0,
+    '〈利用者さん〉：何も入れない追加の取り消しは確認なしで一覧へ',
   );
-  dlg.answer = true;
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
-  await settle(page);
-  check((await panel(page).count()) === 0, '〈利用者さん〉：× で確認を受けると欄を閉じる');
-
-  // ?id= で閲覧（URL から id を消す）
-  await page.goto(`${BASE}#/clients?id=c2`);
-  await settle(page, 500);
-  await isView(page, '〈利用者さん〉・?id=');
-  check(!urlOf(page).includes('id='), '〈利用者さん〉：?id= で開いたら URL から id を消す');
+  await page.getByTestId('client-add').click();
+  await sec(page, 'new').locator('label', { hasText: '表示名' }).locator('input').fill('節 たしかめ');
+  await sec(page, 'new').getByTestId('sec-save').click();
+  await settle(page, 600);
+  const made = (await stored(page)).clients.find((c) => c.displayName === '節 たしかめ');
   check(
-    (await panel(page).locator('h2').first().textContent()).includes('動物公園 やぎお'),
-    '〈利用者さん〉：?id= の人の閲覧の欄',
+    !!made &&
+      hashOf(page).startsWith(`#/clients/${made.id}`) &&
+      (await page.locator('h1').first().textContent()).includes('節 たしかめ'),
+    '〈利用者さん〉：追加して保存すると、その人の画面（基本情報）になる',
+    hashOf(page),
   );
+}
 
-  // 編集中に変更があるまま別の人を ?id= で開く：確認が出る（受ければその人の閲覧）
-  await page.getByTestId('view-edit').click();
-  await panel(page).locator('label', { hasText: 'メモ' }).first().locator('input').fill('別の人を開く前');
+/** 〈利用者さん〉：特性を戻す／担当を限るを入れて外すだけなら確認なし */
+async function clientsMore(page, dlg) {
+  await open(page, '/clients/c1?tab=basic', '[data-testid="person-sec"]');
+  await editSec(page, 'traits');
+  // 1つ目の項目（ペットあり：なし）を「あり」にしてから「なし」に戻す
+  const seg = sec(page, 'traits').locator('fieldset.segmented').first();
+  await seg.getByRole('button', { name: 'あり', exact: true }).click();
+  await seg.getByRole('button', { name: 'なし', exact: true }).click();
   dlg.messages.length = 0;
-  dlg.answer = false;
-  await page.evaluate(() => {
-    location.hash = '#/clients?id=c1';
-  });
-  await settle(page, 500);
+  await sec(page, 'traits').getByTestId('sec-cancel').click();
+  await settle(page);
   check(
-    dlg.messages.length === 1 && /図書館 ふみを開きますか/.test(dlg.messages[0]) && (await view(page).count()) === 0,
-    '〈利用者さん〉：変更があるまま別の人を開くと確認が出て、断れば編集のまま',
+    dlg.messages.length === 0 && (await secInputs(page)) === 0,
+    '〈利用者さん〉：特性を選んでから元の値に戻しただけなら、確認なしで取り消せる',
+    dlg.messages,
+  );
+  await goTab(page, 'staffing');
+  await editSec(page, 'staffing');
+  const lim = sec(page, 'staffing').getByLabel('担当できる人を限る');
+  await lim.check();
+  await lim.uncheck();
+  dlg.messages.length = 0;
+  await sec(page, 'staffing').getByTestId('sec-cancel').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 0 && (await secInputs(page)) === 0,
+    '〈利用者さん〉：担当できる人を限るを入れてすぐ外しただけなら、確認なしで戻る',
+    dlg.messages,
+  );
+  // 別の節を直すと、変更が無ければそのまま替わる・あれば確かめる
+  await editSec(page, 'staffing');
+  await sec(page, 'staffing').getByTestId('client-usual').selectOption({ index: 1 });
+  dlg.answer = false;
+  dlg.messages.length = 0;
+  await sec(page, 'conds').getByTestId('sec-edit').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 1 &&
+      /ほかの節を直しますか/.test(dlg.messages[0]) &&
+      (await sec(page, 'staffing').locator('select').count()) > 0,
+    '〈利用者さん〉：変更があるまま別の節を直すと確認が出て、断れば今の節のまま',
     dlg.messages,
   );
   dlg.answer = true;
-  await page.evaluate(() => {
-    location.hash = '#/clients?id=c1';
-  });
+  await sec(page, 'conds').getByTestId('sec-edit').click();
+  await settle(page);
+  check(
+    (await sec(page, 'staffing').locator('select').count()) === 0 &&
+      (await sec(page, 'conds').getByTestId('sec-save').count()) === 1,
+    '〈利用者さん〉：受ければ前の節を捨てて、押した節を直す',
+  );
+}
+
+/** 休みの見え方・「まとめて地図に置く」の「編集」は住所の節を開く */
+async function seeded(page) {
+  await open(page, '/clients', '[data-testid="client-row"]');
+  const today = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
+  const shift = (n) => new Date(NOW.getTime() + JST + n * 86400000).toISOString().slice(0, 10);
+  const leaves = [
+    { id: 'lv-past', clientId: 'c1', from: shift(-20), to: shift(-15), note: '終わった入院' },
+    { id: 'lv-now', clientId: 'c1', from: shift(-1), to: today, note: '' },
+    { id: 'lv-next', clientId: 'c1', from: shift(10), to: shift(12), note: 'ショートステイ' },
+  ];
+  await page.evaluate(
+    ([k, ls]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      d.clientLeaves = [...d.clientLeaves.filter((l) => l.clientId !== 'c1'), ...ls];
+      d.clients = d.clients.map((c) =>
+        c.id === 'c2' ? { ...c, place: { address: '', lat: null, lng: null, postalCode: '' } } : c,
+      );
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    [STORAGE_KEY, leaves],
+  );
+  await page.reload();
+  await page.locator('[data-testid="client-row"]').first().waitFor();
+  await settle(page, 400);
+  await page.getByRole('link', { name: '図書館 ふみを開く' }).click();
+  await page.getByTestId('schedule-leaves').waitFor();
+  const items = await page.getByTestId('schedule-leaves').locator('li').allTextContents();
+  check(
+    items.length === 2 && items[0].includes('理由なし') && items[1].includes('ショートステイ'),
+    '〈利用者さん〉：予定のタブの休みはこれからの休み（今日を含む・開始日の順）',
+    items,
+  );
+  check(
+    (await page.getByTestId('person-state').textContent()).includes('休み中'),
+    '〈利用者さん〉：休みの間は見出しに「休み中」',
+  );
+  await page.getByTestId('to-leaves').click();
+  await page.getByTestId('leaves-section').waitFor();
+  const rows = await page.getByTestId('leave-row').allTextContents();
+  check(
+    rows.length === 3 && rows.some((r) => r.includes('終わった休み')),
+    '〈利用者さん〉：休みのタブは終わった休みも（印つき）',
+    rows,
+  );
+  // 位置も住所も無い人の「編集」（まとめて地図に置く）は、その人の画面の住所の節を開く
+  await open(page, '/clients', '[data-testid="client-row"]');
+  await page
+    .getByTestId('place-all-skipped')
+    .getByRole('button', { name: /動物公園 やぎお/ })
+    .click();
   await settle(page, 500);
   check(
-    (await view(page).count()) === 1 && (await panel(page).locator('h2').first().textContent()).includes('図書館 ふみ'),
-    '〈利用者さん〉：受ければ別の人の閲覧の欄になる',
+    hashOf(page).startsWith('#/clients/c2') &&
+      !urlOf(page).includes('edit=') &&
+      (await sec(page, 'place').locator('input').count()) > 0,
+    '〈利用者さん〉：「まとめて地図に置く」の「編集」はその人の画面の住所の節を開く（URL の edit は消す）',
+    urlOf(page),
   );
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
-
-  // 「追加」はすぐ編集の欄。何も入れずに取り消すと確認なしで閉じる
-  await page.getByRole('button', { name: /を追加$/ }).click();
+  await sec(page, 'place').getByTestId('sec-cancel').click();
   await settle(page);
   check(
-    (await view(page).count()) === 0 &&
-      (await inputs(page)) > 5 &&
-      (await panel(page).locator('h2').first().textContent()).includes('を追加'),
-    '〈利用者さん〉：「追加」はすぐ編集の欄で開く',
-  );
-  dlg.messages.length = 0;
-  await page.getByTestId('edit-cancel').click();
-  await settle(page);
-  check(
-    (await panel(page).count()) === 0 && dlg.messages.length === 0,
-    '〈利用者さん〉：何も入れない追加の取り消しは確認なしで閉じる',
-  );
-  // 名前を入れて保存すると、その人の閲覧の欄
-  await page.getByRole('button', { name: /を追加$/ }).click();
-  await panel(page).locator('label', { hasText: '表示名' }).locator('input').fill('閲覧 たしかめ');
-  await page.getByRole('button', { name: '保存' }).click();
-  await settle(page);
-  check(
-    (await view(page).count()) === 1 &&
-      (await panel(page).locator('h2').first().textContent()).includes('閲覧 たしかめ'),
-    '〈利用者さん〉：追加して保存すると、その人の閲覧の欄になる',
+    (await sec(page, 'place').textContent()).includes('住所なし'),
+    '〈利用者さん〉：住所が無ければ地区は「住所なし」',
   );
 }
 
 async function staff(page, dlg) {
   await open(page, '/staff', '.people-table tbody tr');
-  await page.getByRole('button', { name: '市役所 まち子を開く' }).click();
-  await isView(page, '〈スタッフ〉・一覧', [
-    '特性',
-    '稼働時間',
-    '自宅',
-    '最終勤務日',
-    'メールアドレス',
-    '移動手段',
-    '相性',
-  ]);
-  await page.screenshot({ path: path.join(OUT_DIR, 'staff-view.png') });
-  await page.getByTestId('view-edit').click();
-  await settle(page);
-  check((await inputs(page)) > 5 && (await view(page).count()) === 0, '〈スタッフ〉：「編集する」で編集の欄になる');
-  // 変更なしの取り消し
+  await page.getByRole('link', { name: '市役所 まち子を開く' }).click();
+  await view(page).waitFor();
+  await settle(page, 400);
+  check(hashOf(page) === '#/staff/s1', '〈スタッフ〉：一覧の「開く」でその人の画面（#/staff/s1）', hashOf(page));
+  await goTab(page, 'basic');
+  await isReading(page, '〈スタッフ〉・基本情報', ['特性', '自宅', '最終勤務日', 'メールアドレス', '移動手段']);
+  await goTab(page, 'hours');
+  await isReading(page, '〈スタッフ〉・勤務時間', ['稼働時間']);
+  await goTab(page, 'compat');
+  await isReading(page, '〈スタッフ〉・相性', ['相性', 'いつもの担当の']);
+  await goTab(page, 'basic');
+  await page.screenshot({ path: path.join(OUT_DIR, 'staff-basic.png') });
+  await editSec(page, 'basic');
+  check((await sec(page, 'basic').locator('input').count()) > 2, '〈スタッフ〉：「直す」で入力欄になる');
   dlg.messages.length = 0;
-  await page.getByTestId('edit-cancel').click();
+  await sec(page, 'basic').getByTestId('sec-cancel').click();
   await settle(page);
-  check(
-    dlg.messages.length === 0 && (await view(page).count()) === 1,
-    '〈スタッフ〉：変更なしの取り消しは確認なしで閲覧に戻る',
-  );
-  // 変更ありの取り消し
-  await page.getByTestId('view-edit').click();
+  check(dlg.messages.length === 0 && (await secInputs(page)) === 0, '〈スタッフ〉：変更なしの取り消しは確認なし');
+  await editSec(page, 'basic');
   await page.getByTestId('staff-email').fill('view-check@example.com');
   dlg.answer = false;
-  await page.getByTestId('edit-cancel').click();
+  await sec(page, 'basic').getByTestId('sec-cancel').click();
   await settle(page);
   check(
-    dlg.messages.length === 1 && /閲覧に戻りますか/.test(dlg.messages[0]),
+    dlg.messages.length === 1 && /変更を捨てますか/.test(dlg.messages[0]),
     '〈スタッフ〉：変更ありの取り消しは確認が出る',
   );
   dlg.answer = true;
-  // 保存で閲覧に戻る
-  await page.getByRole('button', { name: '保存' }).click();
+  await sec(page, 'basic').getByTestId('sec-save').click();
   await settle(page, 600);
   const s1 = (await stored(page)).staff.find((s) => s.id === 's1');
   check(
-    (await view(page).count()) === 1 &&
-      (await view(page).textContent()).includes('view-check@example.com') &&
+    (await secInputs(page)) === 0 &&
+      (await sec(page, 'basic').textContent()).includes('view-check@example.com') &&
       s1.email === 'view-check@example.com',
-    '〈スタッフ〉：保存すると閲覧に戻り、保存した中身が出る',
+    '〈スタッフ〉：保存すると読むだけに戻り、保存した中身が出る',
   );
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
   // ?id=
-  await page.goto(`${BASE}#/staff?id=s2`);
-  await settle(page, 500);
-  await isView(page, '〈スタッフ〉・?id=');
-  check(!urlOf(page).includes('id='), '〈スタッフ〉：?id= で開いたら URL から id を消す');
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
+  await open(page, '/staff?id=s2', '[data-testid="person-view"]');
+  check(hashOf(page) === '#/staff/s2', '〈スタッフ〉：?id= はその人の画面へ移る', hashOf(page));
   // 追加
-  await page.getByRole('button', { name: /を追加$/ }).click();
+  await open(page, '/staff', '.people-table tbody tr');
+  await page.getByTestId('staff-add').click();
   await settle(page);
   check(
-    (await view(page).count()) === 0 && (await panel(page).locator('h2').first().textContent()).includes('を追加'),
-    '〈スタッフ〉：「追加」はすぐ編集の欄で開く',
+    hashOf(page) === '#/staff/new' && (await page.locator('h1').first().textContent()).includes('を追加'),
+    '〈スタッフ〉：「追加」は新しい人の画面',
   );
-  await page.getByTestId('edit-cancel').click();
-  // 最終勤務日を入れて保存すると、今までどおり担当の振り直しの欄（閲覧に戻らない）
-  await page.getByRole('button', { name: '市役所 まち子を開く' }).click();
-  await page.getByTestId('view-edit').click();
+  await sec(page, 'new').getByTestId('sec-cancel').click();
+  await settle(page);
+  check(hashOf(page) === '#/staff', '〈スタッフ〉：何も入れない追加の取り消しは一覧へ');
+  // 最終勤務日を入れて保存すると、担当の振り直しの欄
+  await open(page, '/staff/s1?tab=basic', '[data-testid="person-sec"]');
+  await editSec(page, 'lastDay');
   const d = new Date(NOW.getTime() + JST + 7 * 86400000).toISOString().slice(0, 10);
   await page.getByTestId('staff-lastday-input').fill(d);
-  await page.getByRole('button', { name: '保存' }).click();
+  await sec(page, 'lastDay').getByTestId('sec-save').click();
   await settle(page, 500);
-  const head = (await panel(page).locator('h2').first().textContent()) ?? '';
-  check(
-    (await view(page).count()) === 0 && /振り直し/.test(head),
-    '〈スタッフ〉：最終勤務日を入れて保存すると、今までどおり担当の振り直しの欄が開く',
-    head,
-  );
+  const head =
+    (await page
+      .locator('.drawer h2')
+      .first()
+      .textContent()
+      .catch(() => '')) ?? '';
+  check(/振り直し/.test(head), '〈スタッフ〉：最終勤務日を入れて保存すると、担当の振り直しの欄が開く', head);
 }
 
-/** 相性の画面の吹き出しのリンクで閲覧の欄 */
+/** 〈スタッフ〉：変更があるときの Esc・別の人の URL（断る・受ける） */
+async function staffMore(page, dlg) {
+  await open(page, '/staff/s1?tab=basic', '[data-testid="person-sec"]');
+  await editSec(page, 'basic');
+  const email = page.getByTestId('staff-email');
+  await email.fill('more@example.com');
+  dlg.answer = false;
+  dlg.messages.length = 0;
+  await email.press('Escape');
+  await settle(page);
+  check(
+    dlg.messages.length === 1 && (await email.inputValue()) === 'more@example.com',
+    '〈スタッフ〉：変更ありで Esc を押すと確認が出て、断れば編集が続く',
+    dlg.messages,
+  );
+  const s2 = (await stored(page)).staff.find((s) => s.id === 's2');
+  dlg.messages.length = 0;
+  await goHash(page, '#/staff/s2');
+  await settle(page, 500);
+  check(
+    dlg.messages.length === 1 &&
+      dlg.messages[0].includes(`${s2.name}を開きますか`) &&
+      (await email.inputValue()) === 'more@example.com' &&
+      hashOf(page).startsWith('#/staff/s1'),
+    '〈スタッフ〉：変更があるまま別の人の URL になると確認が出て、断れば編集のまま',
+    dlg.messages,
+  );
+  dlg.answer = true;
+  await goHash(page, '#/staff/s2');
+  await settle(page, 500);
+  check(
+    (await view(page).getAttribute('data-id')) === 's2' &&
+      (await page.locator('h1').first().textContent()).includes(s2.name),
+    '〈スタッフ〉：受ければ別の人の画面になる',
+  );
+  const s1 = (await stored(page)).staff.find((s) => s.id === 's1');
+  check(s1.email !== 'more@example.com', '〈スタッフ〉：捨てた変更は保存しない');
+}
+
+/** 相性の画面の吹き出しのリンクでその人の画面 */
 async function links(page) {
   await open(page, '/compat', '[data-testid="compat-head-btn"]');
   await page.getByTestId('compat-head-btn').first().click();
   await page.getByTestId('compat-pop-link').click();
   await settle(page, 500);
-  await isView(page, '相性の吹き出しのリンク（〈スタッフ〉）');
+  check(
+    hashOf(page).startsWith('#/staff/') && (await view(page).getAttribute('data-kind')) === 'staff',
+    '相性の吹き出しのリンク（〈スタッフ〉）でその人の画面',
+    hashOf(page),
+  );
   await open(page, '/compat', '[data-testid="compat-client-btn"]');
   await page.getByTestId('compat-client-btn').first().click();
   await page.getByTestId('compat-pop-link').click();
   await settle(page, 500);
-  await isView(page, '相性の吹き出しのリンク（〈利用者さん〉）');
+  check(
+    hashOf(page).startsWith('#/clients/') && (await view(page).getAttribute('data-kind')) === 'client',
+    '相性の吹き出しのリンク（〈利用者さん〉）でその人の画面',
+    hashOf(page),
+  );
 }
 
-/** 相性・担当の名前から詳細の吹き出し・相手の閲覧の欄（PRD D198〜D200） */
+/** 相性・担当の名前から詳細の吹き出し・相手の画面（PRD D198〜D200） */
 async function names(page) {
   await open(page, '/staff', '.people-table tbody tr');
-  // s1 を全員と ◎ にし、1人を休止中・1人を s1 のいつもの担当にする（13人目からの「あと N人」と利用中だけを確かめる）
-  // 別のタブで書く（storage の知らせでこのタブのデータも入れ替わり、読み直すときに古いデータで上書きしない）
+  // s1 を全員と ◎ にし、1人を休止中・1人を s1 のいつもの担当にする（別のタブで書く）
   const other = await page.context().newPage();
   await other.goto(`${BASE}#/data`);
   await other.evaluate((k) => {
@@ -344,8 +551,8 @@ async function names(page) {
   const data = await stored(page);
   const active = data.clients.filter((c) => c.active);
   const usual = active.filter((c) => c.usualStaffId === 's1');
-  await open(page, '/staff?id=s1', '[data-testid="person-view"]');
-  const great = panel(page).getByTestId('view-compat-great');
+  await open(page, '/staff/s1?tab=compat', '[data-testid="view-compat-great"]');
+  const great = page.getByTestId('view-compat-great');
   const btns = great.getByTestId('person-btn');
   check(
     (await great.textContent()).includes(`${active.length}人`) && (await btns.count()) === Math.min(12, active.length),
@@ -356,7 +563,7 @@ async function names(page) {
     !(await great.textContent()).includes(data.clients[0].displayName),
     '〈スタッフ〉：休止中の〈利用者さん〉は並べない',
   );
-  const more = panel(page).getByTestId('view-compat-great-more');
+  const more = page.getByTestId('view-compat-great-more');
   check(
     (await more.textContent()) === `あと ${active.length - 12}人`,
     '〈スタッフ〉：「あと N人」',
@@ -365,76 +572,61 @@ async function names(page) {
   await more.click();
   check(
     (await btns.count()) === active.length && (await more.getAttribute('aria-expanded')) === 'true',
-    '〈スタッフ〉：「あと N人」で全員・もう一度で畳む',
+    '〈スタッフ〉：「あと N人」で全員',
   );
-  const usualNames = await panel(page).getByTestId('view-usual-clients').getByTestId('person-btn').allTextContents();
+  const usualNames = await page.getByTestId('view-usual-clients').getByTestId('person-btn').allTextContents();
   check(
     usualNames.length === usual.length && usual.every((c) => usualNames.includes(c.displayName)),
     '〈スタッフ〉：いつもの担当の〈利用者さん〉の名前',
     usualNames,
   );
-  check((await panel(page).getByTestId('view-compat-ng').textContent()) === '—', '〈スタッフ〉：居ない記号は「—」');
-  // 名前で詳細の吹き出し。Tab は吹き出しの中、Esc は吹き出しだけ閉じる
+  check((await page.getByTestId('view-compat-ng').textContent()) === '—', '〈スタッフ〉：居ない記号は「—」');
+  // 名前で詳細の吹き出し。Tab は吹き出しの中、端から出ると閉じて名前へ、Esc は吹き出しだけ閉じる
   const first = btns.first();
   const firstId = await first.getAttribute('data-id');
   await first.click();
   const pop = page.getByTestId('person-pop');
   await pop.waitFor({ timeout: 3000 });
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
   check(
-    await page.evaluate(() => !!document.querySelector('[aria-modal="true"] [data-testid="person-pop"]')),
-    '欄の中の吹き出し：欄（aria-modal）の中に出す',
+    await page.evaluate(() => !!document.activeElement?.closest('[data-testid="person-pop"]')),
+    '名前の吹き出し：Tab でフォーカスが吹き出しの中を進む',
   );
-  await page.keyboard.press('Tab');
-  await page.keyboard.press('Tab');
-  const inPop = await page.evaluate(() => !!document.activeElement?.closest('[data-testid="person-pop"]'));
-  check(inPop, '欄の中の吹き出し：Tab でフォーカスが吹き出しの中を進む（欄の閉じ込めに取られない）');
-  // 吹き出しの端から Tab で出ると閉じて名前へ戻る（欄の先頭へ飛ばない）
   await page.keyboard.press('Tab');
   await settle(page);
   check(
     (await pop.count()) === 0 &&
       (await page.evaluate(() => document.activeElement?.getAttribute('data-id'))) === firstId,
-    '欄の中の吹き出し：端から Tab で出ると閉じ、フォーカスは名前へ戻る',
+    '名前の吹き出し：端から Tab で出ると閉じ、フォーカスは名前へ戻る',
   );
-  // 欄を巻いて名前が見えなくなったら閉じる
-  await first.click();
-  await pop.waitFor({ timeout: 3000 });
-  await panel(page)
-    .locator('.drawer-body')
-    .evaluate((el) => {
-      el.scrollTop = 0;
-    });
-  await settle(page);
-  check((await pop.count()) === 0, '欄の中の吹き出し：欄を巻いて名前が見えなくなったら閉じる');
-  await first.scrollIntoViewIfNeeded();
   await first.click();
   await pop.waitFor({ timeout: 3000 });
   await page.keyboard.press('Escape');
   await settle(page);
   check(
-    (await pop.count()) === 0 &&
-      (await panel(page).count()) === 1 &&
-      (await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))) === 'person-btn',
-    '欄の中の吹き出し：Esc は吹き出しだけ閉じ、フォーカスは名前へ戻る',
+    (await pop.count()) === 0 && (await activeTestId(page)) === 'person-btn',
+    '名前の吹き出し：Esc は吹き出しだけ閉じ、フォーカスは名前へ戻る',
   );
   await first.click();
   await page.getByTestId('person-pop-link').click();
   await settle(page, 500);
   check(
-    urlOf(page).includes('#/clients') && (await view(page).getAttribute('data-id')) === firstId,
-    '吹き出しのリンクで〈利用者さん〉の閲覧の欄',
+    hashOf(page) === `#/clients/${firstId}` && (await view(page).getAttribute('data-id')) === firstId,
+    '吹き出しのリンクで〈利用者さん〉の画面',
     urlOf(page),
   );
   // 〈利用者さん〉の担当できる人・いつもの担当も名前から
   const c = data.clients.find((x) => x.id === firstId);
-  const usualStaff = panel(page).getByTestId('view-usual-staff').getByTestId('person-btn');
+  await goTab(page, 'staffing');
+  const usualStaff = page.getByTestId('view-usual-staff').getByTestId('person-btn');
   if (c.usualStaffId) {
     await usualStaff.click();
     await page.getByTestId('person-pop-link').click();
     await settle(page, 500);
     check(
-      (await view(page).getAttribute('data-id')) === c.usualStaffId && urlOf(page).includes('#/staff'),
-      '〈利用者さん〉：いつもの担当の名前から〈スタッフ〉の閲覧の欄',
+      (await view(page).getAttribute('data-id')) === c.usualStaffId && hashOf(page).startsWith('#/staff/'),
+      '〈利用者さん〉：いつもの担当の名前から〈スタッフ〉の画面',
     );
   } else {
     check((await usualStaff.count()) === 0, '〈利用者さん〉：いつもの担当が無ければ名前のボタンは無い');
@@ -442,325 +634,93 @@ async function names(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'names.png') });
 }
 
-/** 編集の欄のメモの入力（〈利用者さん〉） */
-const memoInput = (page) => panel(page).locator('label', { hasText: 'メモ' }).first().locator('input');
-const headText = async (page) => (await panel(page).locator('h2').first().textContent()) ?? '';
-const goHash = (page, hash) =>
-  page.evaluate((h) => {
-    location.hash = h;
-  }, hash);
-
-/** 〈利用者さん〉：同じ人の ?id= で編集が続く・特性を戻す／担当を限るを入れて外すだけなら確認なし・保存後のフォーカス・節の見出し */
-async function clientsMore(page, dlg) {
-  await open(page, '/clients', '[data-testid="client-row"]');
-  await page.getByRole('button', { name: '図書館 ふみを開く' }).click();
-  await view(page).waitFor();
-  check(
-    (await panel(page).locator('.section-title h3').count()) > 3 &&
-      (await panel(page).locator('.section-title h2').count()) === 0,
-    '〈利用者さん〉：閲覧の欄の節の見出しは h3',
-  );
-  await page.getByTestId('view-edit').click();
-  check(
-    (await panel(page).locator('.section-title h3').count()) > 3 &&
-      (await panel(page).locator('.section-title h2').count()) === 0,
-    '〈利用者さん〉：編集の欄の節の見出しも h3（定期パターン・休みの節を含む）',
-  );
-  // 同じ人の ?id=：確認なしで編集が続く
-  await memoInput(page).fill('同じ人の id');
-  dlg.messages.length = 0;
-  await goHash(page, '#/clients?id=c1');
-  await settle(page, 500);
-  check(
-    dlg.messages.length === 0 &&
-      (await view(page).count()) === 0 &&
-      (await memoInput(page).inputValue()) === '同じ人の id',
-    '〈利用者さん〉：編集中に同じ人の ?id= が来ても、確認なしで編集が続く',
-  );
-  check(!urlOf(page).includes('id='), '〈利用者さん〉：そのときも URL から id を消す');
-  // 変更があるときの再読込の確認（beforeunload）
-  const blocked = await page.evaluate(() => {
-    const e = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(e);
-    return e.defaultPrevented;
-  });
-  check(blocked, '〈利用者さん〉：変更があるとき、再読込・タブを閉じる前に確認する（beforeunload）');
-  dlg.answer = true;
-  await page.getByTestId('edit-cancel').click();
-  await settle(page);
-  const free = await page.evaluate(() => {
-    const e = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(e);
-    return e.defaultPrevented;
-  });
-  check(!free, '〈利用者さん〉：変更が無ければ beforeunload で止めない');
-  check(
-    await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'view-edit'),
-    '〈利用者さん〉：取り消して閲覧に戻ると、フォーカスは「編集する」',
-  );
-  // 「担当できる人を限る」を入れてすぐ外すだけなら変更なし
-  await page.getByTestId('view-edit').click();
-  const lim = panel(page).getByLabel('担当できる人を限る');
-  await lim.check();
-  await lim.uncheck();
-  dlg.messages.length = 0;
-  await page.getByTestId('edit-cancel').click();
-  await settle(page);
-  check(
-    dlg.messages.length === 0 && (await view(page).count()) === 1,
-    '〈利用者さん〉：担当できる人を限るを入れてすぐ外しただけなら、確認なしで閲覧に戻る',
-    dlg.messages,
-  );
-  // 保存したらフォーカスは「編集する」
-  await page.getByTestId('view-edit').click();
-  await memoInput(page).fill('保存のフォーカス');
-  await page.getByRole('button', { name: '保存' }).click();
-  await settle(page, 600);
-  check(
-    (await view(page).count()) === 1 &&
-      (await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'view-edit')),
-    '〈利用者さん〉：保存して閲覧に戻ると、フォーカスは「編集する」',
-  );
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
-  // 追加で特性を選んでから未確認に戻すだけなら変更なし
-  await page.getByRole('button', { name: /を追加$/ }).click();
-  const seg = panel(page).locator('fieldset.segmented').first();
-  await seg.getByRole('button', { name: 'あり' }).click();
-  await seg.getByRole('button', { name: '未確認' }).click();
-  dlg.messages.length = 0;
-  await page.getByTestId('edit-cancel').click();
-  await settle(page);
-  check(
-    dlg.messages.length === 0 && (await panel(page).count()) === 0,
-    '〈利用者さん〉：特性を選んでから未確認に戻しただけなら、確認なしで取り消せる',
-    dlg.messages,
-  );
-}
-
-/** 閲覧の休みの一覧と終わった休みの件数・「まとめて地図に置く」の「編集」は編集の欄 */
-async function seeded(page) {
-  await open(page, '/clients', '[data-testid="client-row"]');
-  const today = new Date(NOW.getTime() + JST).toISOString().slice(0, 10);
-  const shift = (n) => new Date(NOW.getTime() + JST + n * 86400000).toISOString().slice(0, 10);
-  const leaves = [
-    { id: 'lv-past', clientId: 'c1', from: shift(-20), to: shift(-15), note: '終わった入院' },
-    { id: 'lv-now', clientId: 'c1', from: shift(-1), to: today, note: '' },
-    { id: 'lv-next', clientId: 'c1', from: shift(10), to: shift(12), note: 'ショートステイ' },
-  ];
-  // c1 に休みを入れ、c2 の位置と住所を消してから開き直す
-  await page.evaluate(
-    ([k, ls]) => {
-      const d = JSON.parse(localStorage.getItem(k));
-      d.clientLeaves = [...d.clientLeaves.filter((l) => l.clientId !== 'c1'), ...ls];
-      d.clients = d.clients.map((c) =>
-        c.id === 'c2' ? { ...c, place: { address: '', lat: null, lng: null, postalCode: '' } } : c,
-      );
-      localStorage.setItem(k, JSON.stringify(d));
-    },
-    [STORAGE_KEY, leaves],
-  );
-  await page.reload();
-
-  await page.locator('[data-testid="client-row"]').first().waitFor();
-  await settle(page, 400);
-  await page.getByRole('button', { name: '図書館 ふみを開く' }).click();
-  await view(page).waitFor();
-  const items = await page.getByTestId('view-leaves').locator('li').allTextContents();
-  const text = await view(page).textContent();
-  check(
-    items.length === 2 &&
-      items[0].includes('理由なし') &&
-      items[1].includes('ショートステイ') &&
-      !text.includes('終わった入院') &&
-      text.includes('終わった休み 1件'),
-    '〈利用者さん〉：閲覧の休みはこれからの休み（今日を含む・開始日の順）と、終わった休みの件数',
-    items,
-  );
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
-  // 位置も住所も無い人の「編集」（まとめて地図に置く）は、閲覧を挟まず編集の欄
-  await page
-    .getByTestId('place-all-skipped')
-    .getByRole('button', { name: /動物公園 やぎお/ })
-    .click();
-  await settle(page);
-  check(
-    (await view(page).count()) === 0 &&
-      (await inputs(page)) > 5 &&
-      (await headText(page)).includes('を編集：動物公園 やぎお'),
-    '〈利用者さん〉：「まとめて地図に置く」の「編集」は編集の欄で開く',
-  );
-  await page.getByTestId('edit-cancel').click();
-  await settle(page);
-  check((await view(page).count()) === 1, '〈利用者さん〉：そこから取り消すと、その人の閲覧の欄');
-  check((await view(page).textContent()).includes('住所なし'), '〈利用者さん〉：住所が無ければ地区は「住所なし」');
-}
-
-/** 〈スタッフ〉：変更があるときの ×・Esc・?id=（別の人・同じ人）、取り消しを断ると編集が続く */
-async function staffMore(page, dlg) {
-  await open(page, '/staff', '.people-table tbody tr');
-  await page.getByRole('button', { name: '市役所 まち子を開く' }).click();
-  await page.getByTestId('view-edit').click();
-  const email = page.getByTestId('staff-email');
-  await email.fill('more@example.com');
-  // 取り消しを断ると編集が続く
-  dlg.answer = false;
-  dlg.messages.length = 0;
-  await page.getByTestId('edit-cancel').click();
-  await settle(page);
-  check(
-    dlg.messages.length === 1 && (await email.inputValue()) === 'more@example.com' && (await view(page).count()) === 0,
-    '〈スタッフ〉：変更ありの取り消しを断ると、編集が続く',
-  );
-  // ×
-  dlg.messages.length = 0;
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
-  await settle(page);
-  check(
-    dlg.messages.length === 1 &&
-      /欄を閉じますか/.test(dlg.messages[0]) &&
-      (await email.inputValue()) === 'more@example.com',
-    '〈スタッフ〉：変更ありで × を押すと確認が出て、断れば編集が続く',
-    dlg.messages,
-  );
-  // Esc
-  dlg.messages.length = 0;
-  await page.keyboard.press('Escape');
-  await settle(page);
-  check(
-    dlg.messages.length === 1 && /欄を閉じますか/.test(dlg.messages[0]) && (await panel(page).count()) === 1,
-    '〈スタッフ〉：変更ありで Esc を押すと確認が出て、断れば欄が残る',
-  );
-  // 同じ人の ?id=：確認なしで編集が続く
-  dlg.messages.length = 0;
-  await goHash(page, '#/staff?id=s1');
-  await settle(page, 500);
-  check(
-    dlg.messages.length === 0 && (await email.inputValue()) === 'more@example.com',
-    '〈スタッフ〉：編集中に同じ人の ?id= が来ても、確認なしで編集が続く',
-  );
-  // 別の人の ?id=：確認が出る。断れば編集のまま、受ければその人の閲覧
-  const s2 = (await stored(page)).staff.find((s) => s.id === 's2');
-  await goHash(page, '#/staff?id=s2');
-  await settle(page, 500);
-  check(
-    dlg.messages.length === 1 &&
-      dlg.messages[0].includes(`${s2.name}を開きますか`) &&
-      (await email.inputValue()) === 'more@example.com',
-    '〈スタッフ〉：変更があるまま別の人を ?id= で開くと確認が出て、断れば編集のまま',
-    dlg.messages,
-  );
-  dlg.answer = true;
-  await goHash(page, '#/staff?id=s2');
-  await settle(page, 500);
-  const head = await headText(page);
-  check(
-    (await view(page).count()) === 1 &&
-      head.slice(head.indexOf('：') + 1) === s2.name &&
-      (await view(page).getAttribute('data-id')) === 's2',
-    '〈スタッフ〉：受ければ別の人の閲覧の欄になる',
-    head,
-  );
-  const s1 = (await stored(page)).staff.find((s) => s.id === 's1');
-  check(s1.email !== 'more@example.com', '〈スタッフ〉：捨てた変更は保存しない');
-}
-
-/** 一覧の行を押して閲覧の欄を開く（PRD D297）：名前の文字・特性の欄を押しても開き、1400px と 390px で同じ */
+/** 一覧の行を押すとその人の画面（PRD D308）：名前の文字・特性の欄を押しても移り、1280px と 390px で同じ */
 async function rowClick(page) {
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await open(page, '/clients', '[data-testid="client-row"]');
     const row = page.getByTestId('client-row').filter({ hasText: '図書館 ふみ' }).first();
     const cursor = await row.evaluate((el) => getComputedStyle(el).cursor);
-    await row.getByText('図書館 ふみ', { exact: true }).first().click();
-    await view(page).waitFor({ timeout: 5000 });
-    check(
-      cursor === 'pointer' && (await panel(page).textContent()).includes('図書館 ふみ'),
-      `〈利用者さん〉・${width}px：行の名前を押すと閲覧の欄（指のカーソル）`,
-      cursor,
-    );
-    await page.keyboard.press('Escape');
-    await view(page).waitFor({ state: 'detached', timeout: 5000 });
-    const back = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
-    check(back === '図書館 ふみを開く', `〈利用者さん〉・${width}px：閉じるとフォーカスはその行の「開く」`, back);
-    // ドラッグで文字を選んだときは開かない（名前の文字の上を左から右へ）
+    // ドラッグで文字を選んだときは移らない（名前の文字の上を左から右へ）
     const box = await row.getByText('図書館 ふみ', { exact: true }).first().boundingBox();
     await page.mouse.move(box.x + 2, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 });
     await page.mouse.up();
     await settle(page, 300);
-    check((await panel(page).count()) === 0, `〈利用者さん〉・${width}px：名前の文字をドラッグで選んでも開かない`);
+    check(
+      hashOf(page) === '#/clients',
+      `〈利用者さん〉・${width}px：名前の文字をドラッグで選んでも移らない`,
+      hashOf(page),
+    );
     await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await row.getByText('図書館 ふみ', { exact: true }).first().click();
+    await view(page).waitFor({ timeout: 5000 });
+    check(
+      cursor === 'pointer' && hashOf(page) === '#/clients/c1',
+      `〈利用者さん〉・${width}px：行の名前を押すとその人の画面（指のカーソル）`,
+      cursor,
+    );
+    await page.goBack();
+    await page.getByTestId('client-row').first().waitFor();
+    check(hashOf(page) === '#/clients', `〈利用者さん〉・${width}px：戻ると一覧`);
     await open(page, '/staff', '[data-testid="staff-row"]');
     const srow = page.getByTestId('staff-row').filter({ hasText: '市役所 まち子' }).first();
     await srow.locator('td').nth(2).click();
     await view(page).waitFor({ timeout: 5000 });
-    check(
-      (await panel(page).textContent()).includes('市役所 まち子'),
-      `〈スタッフ〉・${width}px：行の特性の欄を押すと閲覧の欄`,
-    );
-    await page.keyboard.press('Escape');
-    await view(page).waitFor({ state: 'detached', timeout: 5000 });
+    check(hashOf(page) === '#/staff/s1', `〈スタッフ〉・${width}px：行の特性の欄を押すとその人の画面`);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
 /**
- * 〈スタッフ〉のアイコン（PRD D298・D299。ADR-0050）：編集の欄で「訪」を入れて保存すると一覧・日の予定の列の見出しの印が「訪」、
+ * 〈スタッフ〉のアイコン（PRD D298・D299。ADR-0050）：基本の節で「訪」を入れて保存すると一覧・日の予定の列の見出しの印が「訪」、
  * 3文字は保存しない（誤りの欄）、空に戻すと苗字の最初の1文字。印の文字は data-text（CSS で描く）
  */
 async function staffIcon(page) {
   const markText = (loc) => loc.first().getAttribute('data-text');
-  const listMark = (page) => page.locator('.people-table [data-staff-mark="s1"]');
+  const listMark = (p) => p.locator('.people-table [data-staff-mark="s1"]');
   await open(page, '/staff', '.people-table tbody tr');
   check((await markText(listMark(page))) === '市', '〈スタッフ〉の印：既定は苗字の最初の1文字（一覧）');
-  await page.getByRole('button', { name: '市役所 まち子を開く' }).click();
-  await view(page).waitFor({ timeout: 5000 });
+  await open(page, '/staff/s1?tab=basic', '[data-testid="person-sec"]');
   check(
-    (await markText(view(page).locator('[data-staff-mark="s1"]'))) === '市',
-    '〈スタッフ〉の印：閲覧の欄にも印を出す',
+    (await markText(sec(page, 'basic').locator('[data-staff-mark="s1"]'))) === '市',
+    '〈スタッフ〉の印：基本の節にも印を出す',
   );
-  await page.getByTestId('view-edit').click();
-  await settle(page);
+  await editSec(page, 'basic');
   const icon = page.getByTestId('staff-icon');
   check((await icon.getAttribute('placeholder')) === '市', '〈スタッフ〉の印：空のアイコンの欄は既定の文字を薄く出す');
-  // 3文字は保存しない
   await icon.fill('訪問者');
-  await page.getByRole('button', { name: '保存' }).click();
+  await sec(page, 'basic').getByTestId('sec-save').click();
   await settle(page, 400);
   check(
     (await icon.getAttribute('aria-invalid')) === 'true' &&
-      (await view(page).count()) === 0 &&
       ((await stored(page))?.staff.find((s) => s.id === 's1')?.icon ?? '') === '',
     '〈スタッフ〉の印：2文字を超えるアイコンは誤りで保存しない',
   );
   await icon.fill('訪');
   check(
-    (await markText(panel(page).locator('.staff-icon-field .staff-mark'))) === '訪',
-    '〈スタッフ〉の印：編集の欄の見本がその場で変わる',
+    (await markText(sec(page, 'basic').locator('.staff-icon-field .staff-mark'))) === '訪',
+    '〈スタッフ〉の印：入力の見本がその場で変わる',
   );
-  await page.getByRole('button', { name: '保存' }).click();
+  await sec(page, 'basic').getByTestId('sec-save').click();
   await settle(page, 600);
-  check(
-    (await stored(page)).staff.find((s) => s.id === 's1').icon === '訪' && (await markText(listMark(page))) === '訪',
-    '〈スタッフ〉の印：「訪」を保存すると一覧の印が「訪」',
-  );
-  await panel(page).getByRole('button', { name: '閉じる' }).click();
+  check((await stored(page)).staff.find((s) => s.id === 's1').icon === '訪', '〈スタッフ〉の印：「訪」を保存する');
+  await open(page, '/staff', '.people-table tbody tr');
+  check((await markText(listMark(page))) === '訪', '〈スタッフ〉の印：一覧の印が「訪」');
   await open(page, '/plan', '.route-col');
   const head = page.locator('.col-head [data-staff-mark="s1"]');
   check(
     (await head.count()) > 0 && (await markText(head)) === '訪',
     '〈スタッフ〉の印：日の予定の列の見出しの印も「訪」',
   );
-  // 空に戻すと苗字の最初の1文字
-  await open(page, '/staff?id=s1', '[data-testid="person-view"]');
-  await page.getByTestId('view-edit').click();
-  await settle(page);
+  await open(page, '/staff/s1?tab=basic', '[data-testid="person-sec"]');
+  await editSec(page, 'basic');
   await page.getByTestId('staff-icon').fill('');
-  await page.getByRole('button', { name: '保存' }).click();
+  await sec(page, 'basic').getByTestId('sec-save').click();
   await settle(page, 600);
   check(
-    (await stored(page)).staff.find((s) => s.id === 's1').icon === '' && (await markText(listMark(page))) === '市',
+    (await stored(page)).staff.find((s) => s.id === 's1').icon === '',
     '〈スタッフ〉の印：アイコンを空に戻すと苗字の最初の1文字',
   );
 }
@@ -774,10 +734,9 @@ const steps = pagePerStep({
     // 地図のタイルは外へ取りに行かない
     await ctx.route(/cyberjapandata\.gsi\.go\.jp/, (r) => r.fulfill({ status: 204, body: '' }));
     const page = await ctx.newPage();
-    // ページの時計を止める（e2e-details と同じ）
     await page.clock.setFixedTime(NOW);
     page.on('pageerror', (e) => errors.push(String(e)));
-    return { ctx, page, dlg: await dialogs(page) };
+    return { ctx, page, dlg: await answerConfirms(page) };
   },
   call: (fn, s) => fn(s.page, s.dlg),
   steps: [clients, clientsMore, seeded, staff, staffMore, links, names, rowClick, staffIcon],

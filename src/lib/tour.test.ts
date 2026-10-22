@@ -98,6 +98,9 @@ describe('shouldAutoOpenTour', () => {
     expect(shouldAutoOpenTour(false, '?id=c1')).toBe(false);
     expect(shouldAutoOpenTour(false, '?date=2026-10-21&do=absence')).toBe(false);
     expect(shouldAutoOpenTour(false, '?do=batch')).toBe(false);
+    // 人の画面へのリンク（PRD D308）
+    expect(shouldAutoOpenTour(false, '', '/clients/c1')).toBe(false);
+    expect(shouldAutoOpenTour(false, '', '/clients')).toBe(true);
     expect(shouldAutoOpenTour(true, '?id=c1')).toBe(false);
   });
 });

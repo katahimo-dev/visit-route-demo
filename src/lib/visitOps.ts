@@ -703,3 +703,55 @@ export function clientVisitsIn(d: Pick<DemoData, 'visits'>, clientId: string, fr
 
 /** 手直しの記憶のキー（画面がこの層の越しに使う） */
 export const visitKey = prefKey;
+
+/**
+ * 〈スタッフ〉が担当している、その期間の訪問（その日の今の案、無ければ確定した割当の、その人の列。日付・開始の順）。
+ * 〈スタッフ〉の画面の予定のカレンダー（PRD D309）
+ */
+export function staffVisitsIn(
+  d: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans'>,
+  staffId: string,
+  from: string,
+  to: string,
+): Visit[] {
+  const ids = new Set<string>();
+  const dates = new Set<string>();
+  for (const v of d.visits) if (v.date >= from && v.date <= to) dates.add(v.date);
+  for (const date of dates) {
+    const plan = own(d.aiPlans, date);
+    const cols = plan ? plan.routes : own(d.manualPlans, date);
+    for (const id of (cols && own(cols, staffId)) ?? []) ids.add(id);
+  }
+  return d.visits
+    .filter((v) => ids.has(v.id) && !v.cancelled)
+    .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.earliestStart < b.earliestStart ? -1 : 1));
+}
+
+/** 繰り返しを終わらせた結果（消す回の数と、確定した割当のある日の数） */
+export type EndPatternResult = { data: DemoData; removed: number; confirmedDays: number };
+
+/**
+ * 繰り返しを last の日で終わらせる（PRD D308）：終了日を last にし（今の終了日のほうが早ければそのまま）、last より後で今日以降の、
+ * この回だけ変えていない・取り消していない回を消す（この回だけ変えた・取り消した回と、今日より前の回は残す。splitPattern と同じ扱い）。
+ * last が開始日より前なら開始日にそろえる
+ */
+export function endPatternOp(d: DemoData, patternId: string, last: string, today: string): EndPatternResult {
+  const p = d.patterns.find((x) => x.id === patternId);
+  if (!p) return { data: d, removed: 0, confirmedDays: 0 };
+  const end = last < p.from ? p.from : last;
+  const to = p.to !== null && p.to < end ? p.to : end;
+  const edited = (v: Visit) => v.cancelled || (v.pattern?.edited ?? false);
+  const gone = d.visits.filter((v) => v.pattern?.id === patternId && v.date > to && v.date >= today && !edited(v));
+  const goneIds = new Set(gone.map((v) => v.id));
+  const days = new Set(gone.map((v) => v.date));
+  const confirmedDays = [...days].filter((x) => own(d.manualPlans, x)).length;
+  return {
+    data: {
+      ...d,
+      patterns: d.patterns.map((x) => (x.id === patternId ? { ...x, to } : x)),
+      visits: goneIds.size > 0 ? d.visits.filter((v) => !goneIds.has(v.id)) : d.visits,
+    },
+    removed: gone.length,
+    confirmedDays,
+  };
+}

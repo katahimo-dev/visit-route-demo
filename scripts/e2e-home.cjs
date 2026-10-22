@@ -1,5 +1,5 @@
 // ホーム「今日やること」（PRD D141〜D145。ADR-0025）を本物のブラウザで確かめる：
-// 起動（#/・知らない URL）でホームへ、ほかの画面の URL（?id= など）はそのまま、カードの並び（作業の順。PRD D263：要対応 →
+// 起動（#/・知らない URL）でホームへ、ほかの画面の URL（人の画面など）はそのまま、カードの並び（作業の順。PRD D263：要対応 →
 // 月ごとに案を作る → 確定していない日（今月 → 来月）→ 今日）・先頭の「まずこれ」・同じ月の「案の無い日 N日」は作るカードだけ、
 // 今日のカードで日の画面（選んでいる日付が今日）、「まとめて作る」のカードで月の画面のまとめて作るの欄が開き ?do= が消える、
 // 月の画面の ?do=attention・?do=unconfirmed で右の欄、案ができたらホームの今日のカードが「未確定」に、
@@ -130,8 +130,8 @@ async function start(page) {
   );
   await open(page, '/nowhere');
   check(hashOf(page) === '#/home', '知らない URL もホームへ', hashOf(page));
-  await open(page, '/staff?id=s1', '[data-testid="person-view"]');
-  check(hashOf(page).startsWith('#/staff'), 'ほかの画面の URL（?id=）はそのまま（閲覧の欄が開く）', hashOf(page));
+  await open(page, '/staff/s1', '[data-testid="person-view"]');
+  check(hashOf(page).startsWith('#/staff/s1'), 'ほかの画面の URL（人の画面）はそのまま', hashOf(page));
   await open(page, '/schedule', '.app-header');
   check(hashOf(page).startsWith('#/plan'), '古い #/schedule は今までどおり日の予定へ', hashOf(page));
 }

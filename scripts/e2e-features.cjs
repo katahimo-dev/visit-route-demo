@@ -10,7 +10,7 @@
 // 稼働時間の右の欄にそこへ移るリンク・ボタンが無い。
 // その2（PRD D211・D213〜D215）：ひな形の4通りごとに画面の中の入口（日の画面の欠勤・キャンセル・メール・条件を調整する・
 // プリセットの数・点数の理由、〈利用者さん〉の欄の段階の選択・紹介元・担当できる人・休み・決まりごと・住所の検索・絞り込みのチップ、
-// 閲覧の欄の紹介元・決まりごと、〈スタッフ〉の欄のメールアドレス・最終勤務日、月の「休みを入れる」・印刷、空き状況の案内文、
+// 〈利用者さん〉の画面の紹介元・決まりごと・休みのタブ、〈スタッフ〉の画面のメールアドレス・最終勤務日、月の「休みを入れる」・印刷、空き状況の案内文、
 // データの Excel、稼働の見込みの交通費の単価）。相性を切るときの独自の確認（件数と効き方。取り消すと変わらない）と、
 // 切ったあとの月の要対応の「条件が変わった」、相性×の組が切ると担当に入ること（別のタブで×を書き、日の画面で作り直す）。
 // レビューの反映：希望休のまとめ入力を切っても月の「休みの人に N」は出す、欠勤・キャンセルを切ると稼働時間の凡例で登録の場所を出さない、
@@ -733,20 +733,21 @@ async function insideEntries(page, dlg, ctx) {
     check((await count('plan-menu-compare')) === (on('compare') ? 1 : 0), `${label}：「2つの案を比べる」`);
     await page.keyboard.press('Escape');
 
-    // 〈利用者さん〉：閲覧の欄と編集の欄
+    // 〈利用者さん〉：その人の画面の節（PRD D308）
     const client = data.clients.find((c) => c.referrer.name) ?? data.clients[0];
-    await open(page, `/clients?id=${encodeURIComponent(client.id)}`, '[data-testid="person-view"]');
+    const cid = encodeURIComponent(client.id);
+    const csec = (name) => page.locator(`[data-testid="person-sec"][data-section="${name}"]`);
+    await open(page, `/clients/${cid}`, '[data-testid="person-view"]');
+    check((await count('schedule-leaves')) === 1, `${label}：予定のタブの休み（事実なので残す）`);
+    check(
+      (await page.getByTestId('person-tabs').locator('[data-tab="leaves"]').count()) === (on('clientLeave') ? 1 : 0),
+      `${label}：休みのタブ`,
+    );
+    await open(page, `/clients/${cid}?tab=basic`, '[data-testid="person-sec"]');
     const viewText = await page.getByTestId('person-view').innerText();
-    check(viewText.includes('紹介元') === on('clientStage'), `${label}：閲覧の欄の紹介元`);
-    check(viewText.includes('訪問先の決まりごと') === on('visitNotes'), `${label}：閲覧の欄の決まりごと`);
-    check(viewText.includes('担当できる人') === on('allowedStaff'), `${label}：閲覧の欄の担当できる人`);
-    check(viewText.includes('休み'), `${label}：閲覧の欄の休み（事実なので残す）`);
-    const chips = await page
-      .getByTestId('clients-cf-chip')
-      .evaluateAll((els) => els.map((el) => el.dataset.chip).filter(Boolean));
-    check(chips.includes('leave') === on('clientLeave'), `${label}：絞り込みのチップ「休み」`, chips);
-    check(chips.includes('limited') === on('allowedStaff'), `${label}：絞り込みのチップ「担当を限る」`, chips);
-    await page.getByTestId('view-edit').click();
+    check(viewText.includes('紹介元') === on('clientStage'), `${label}：基本情報の紹介元`);
+    check(viewText.includes('訪問先の決まりごと') === on('visitNotes'), `${label}：基本情報の決まりごと`);
+    await csec('stage').getByTestId('sec-edit').click();
     await page.getByTestId('client-stage-select').waitFor({ timeout: 5000 });
     const stages = await page.getByTestId('client-stage-select').locator('option').allInnerTexts();
     check(
@@ -755,25 +756,54 @@ async function insideEntries(page, dlg, ctx) {
       stages,
     );
     check((await count('client-referrer-name')) === (on('clientStage') ? 1 : 0), `${label}：紹介元の欄`);
-    const panelText = await page.locator('.drawer').innerText();
-    check(panelText.includes('担当できる人（社内の決まり）') === on('allowedStaff'), `${label}：担当できる人の欄`);
-    check((await count('leaves-section')) === (on('clientLeave') ? 1 : 0), `${label}：休みの欄`);
-    check((await count('visit-rules-form')) === (on('visitNotes') ? 1 : 0), `${label}：決まりごとの欄`);
+    await csec('stage').getByTestId('sec-cancel').click();
+    if (on('visitNotes')) {
+      await csec('rules').getByTestId('sec-edit').click();
+      check((await count('visit-rules-form')) === 1, `${label}：決まりごとの欄`);
+      await csec('rules').getByTestId('sec-cancel').click();
+    } else check((await csec('rules').count()) === 0, `${label}：決まりごとの節が無い`);
+    await csec('place').getByTestId('sec-edit').click();
+    await page.getByTestId('client-postal').waitFor({ timeout: 5000 });
     check((await count('client-postal-search')) === (on('geocode') ? 1 : 0), `${label}：住所を探す`);
     check((await count('client-postal')) === 1, `${label}：郵便番号の欄は残る`);
-    await page.keyboard.press('Escape');
+    await csec('place').getByTestId('sec-cancel').click();
+    await open(page, `/clients/${cid}?tab=staffing`, '[data-testid="person-sec"]');
+    check(
+      (await page.getByTestId('person-view').innerText()).includes('担当できる人') === on('allowedStaff'),
+      `${label}：担当の節の担当できる人`,
+    );
+    await csec('staffing').getByTestId('sec-edit').click();
+    check(
+      (await csec('staffing').getByText('担当できる人を限る').count()) === (on('allowedStaff') ? 1 : 0),
+      `${label}：担当できる人の欄`,
+    );
+    await csec('staffing').getByTestId('sec-cancel').click();
+    if (on('clientLeave')) {
+      await open(page, `/clients/${cid}?tab=leaves`, '[data-testid="person-view"]');
+      check((await count('leaves-section')) === 1, `${label}：休みの欄`);
+    }
+    await open(page, '/clients', '[data-testid="client-row"]');
+    const chips = await page
+      .getByTestId('clients-cf-chip')
+      .evaluateAll((els) => els.map((el) => el.dataset.chip).filter(Boolean));
+    check(chips.includes('leave') === on('clientLeave'), `${label}：絞り込みのチップ「休み」`, chips);
+    check(chips.includes('limited') === on('allowedStaff'), `${label}：絞り込みのチップ「担当を限る」`, chips);
 
-    // 〈スタッフ〉：編集の欄
+    // 〈スタッフ〉：その人の画面の節
     const staff = data.staff[0];
-    await open(page, `/staff?id=${encodeURIComponent(staff.id)}`, '[data-testid="person-view"]');
+    const sid = encodeURIComponent(staff.id);
+    await open(page, `/staff/${sid}?tab=basic`, '[data-testid="person-sec"]');
     const staffView = await page.getByTestId('person-view').innerText();
-    check(staffView.includes('メールアドレス') === on('mail'), `${label}：〈スタッフ〉の閲覧の欄のメールアドレス`);
-    check(staffView.includes('◎ 選ばれやすい') === on('compat'), `${label}：〈スタッフ〉の閲覧の欄の相性`);
-    await page.getByTestId('view-edit').click();
-    await page.locator('.drawer input').first().waitFor({ timeout: 5000 });
+    check(staffView.includes('メールアドレス') === on('mail'), `${label}：〈スタッフ〉の基本情報のメールアドレス`);
+    check((await csec('lastDay').count()) === (on('offboard') ? 1 : 0), `${label}：最終勤務日の節`);
+    await csec('basic').getByTestId('sec-edit').click();
     check((await count('staff-email')) === (on('mail') ? 1 : 0), `${label}：〈スタッフ〉のメールアドレスの欄`);
-    check((await count('staff-lastday-input')) === (on('offboard') ? 1 : 0), `${label}：最終勤務日の欄`);
-    await page.keyboard.press('Escape');
+    await csec('basic').getByTestId('sec-cancel').click();
+    await open(page, `/staff/${sid}?tab=compat`, '[data-testid="person-sec"]');
+    check(
+      (await page.getByTestId('person-view').innerText()).includes('◎ 選ばれやすい') === on('compat'),
+      `${label}：〈スタッフ〉の相性`,
+    );
 
     // 月：〈スタッフ〉を選ぶと「休みを入れる」
     await open(
@@ -856,29 +886,33 @@ async function keepData(page, dlg, ctx) {
   await settle(page, 300);
   const stored = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
 
-  // 〈利用者さん〉：段階・担当できる人の欄が無いまま保存する
-  await open(page, `/clients?id=${encodeURIComponent(ids.client)}`, '[data-testid="person-view"]');
-  await page.getByTestId('view-edit').click();
+  // 〈利用者さん〉：段階・担当できる人の欄が無いまま保存する（節ごとに保存）
+  const sec = (name) => page.locator(`[data-testid="person-sec"][data-section="${name}"]`);
+  await open(page, `/clients/${encodeURIComponent(ids.client)}?tab=basic`, '[data-testid="person-sec"]');
+  await sec('stage').getByTestId('sec-edit').click();
   await page.getByTestId('client-stage-select').waitFor({ timeout: 5000 });
   check(
     (await page.getByTestId('client-stage-select').inputValue()) === 'contract',
     '段階・紹介元を切っても、契約の人の選択は今の段階のまま',
   );
-  await page.locator('.drawer').getByRole('button', { name: '保存', exact: true }).click();
-  await page.getByTestId('person-view').waitFor({ timeout: 5000 });
+  await sec('stage').getByTestId('sec-save').click();
+  await sec('stage').getByTestId('sec-edit').waitFor({ timeout: 5000 });
+  await open(page, `/clients/${encodeURIComponent(ids.client)}?tab=staffing`, '[data-testid="person-sec"]');
+  await sec('staffing').getByTestId('sec-edit').click();
+  await sec('staffing').getByTestId('sec-save').click();
+  await sec('staffing').getByTestId('sec-edit').waitFor({ timeout: 5000 });
   await settle(page, 300);
   let data = await stored();
   const c = data.clients.find((x) => x.id === ids.client);
   check(c.stage === 'contract', '切ったまま保存しても段階（契約）が残る', c.stage);
   check(same(c.allowedStaffIds, [ids.staff]), '切ったまま保存しても担当できる人が残る', c.allowedStaffIds);
 
-  // 毎月のパターン：曜日ごと・第N週を切ったまま直す
+  // 毎月のパターン：曜日ごと・第N週を切ったまま直す（予定のタブの繰り返し）
   if (ids.pattern) {
-    await page.getByTestId('view-edit').click();
-    await page.getByTestId('client-stage-select').waitFor({ timeout: 5000 });
+    await open(page, `/clients/${encodeURIComponent(ids.client)}`, '[data-testid="patterns-section"]');
     await page
-      .getByRole('button', { name: /のパターンを直す$/ })
-      .first()
+      .locator(`[data-testid="pattern-row"][data-pattern="${ids.pattern}"]`)
+      .getByTestId('pattern-edit')
       .click();
     await page.getByTestId('pattern-form').waitFor({ timeout: 5000 });
     check(
@@ -890,7 +924,7 @@ async function keepData(page, dlg, ctx) {
         (await page.getByTestId('pattern-month-weeks').locator('button').first().isDisabled()),
       '切った毎月のパターン：繰り返し方と第何週は読むだけ',
     );
-    await page.getByTestId('pattern-form').getByRole('button', { name: '直す', exact: true }).click();
+    await page.getByTestId('pattern-save').click();
     await settle(page, 600);
     data = await stored();
     const mine = data.patterns.filter((p) => p.clientId === ids.client && !ids.others.includes(p.id));
@@ -899,17 +933,15 @@ async function keepData(page, dlg, ctx) {
       '切ったまま直しても毎月のパターンの repeat・monthWeeks が残る',
       mine.map((p) => [p.repeat, p.monthWeeks]),
     );
-    await page.keyboard.press('Escape');
-    await settle(page, 200);
   }
 
   // 〈スタッフ〉：メールアドレスの欄が無いまま保存する
-  await open(page, `/staff?id=${encodeURIComponent(ids.staff)}`, '[data-testid="person-view"]');
-  await page.getByTestId('view-edit').click();
-  await page.locator('.drawer input').first().waitFor({ timeout: 5000 });
+  await open(page, `/staff/${encodeURIComponent(ids.staff)}?tab=basic`, '[data-testid="person-sec"]');
+  await sec('basic').getByTestId('sec-edit').click();
+  await sec('basic').locator('input').first().waitFor({ timeout: 5000 });
   check((await page.getByTestId('staff-email').count()) === 0, 'メールを切るとメールアドレスの欄が無い');
-  await page.locator('.drawer').getByRole('button', { name: '保存', exact: true }).click();
-  await page.getByTestId('person-view').waitFor({ timeout: 5000 });
+  await sec('basic').getByTestId('sec-save').click();
+  await sec('basic').getByTestId('sec-edit').waitFor({ timeout: 5000 });
   await settle(page, 300);
   data = await stored();
   const s = data.staff.find((x) => x.id === ids.staff);

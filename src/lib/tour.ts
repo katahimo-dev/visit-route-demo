@@ -99,11 +99,13 @@ export const tourCountText = (index: number, count: number): string => `${index 
 
 /**
  * 起動したときに自動で開くか：まだ見ていない（とばしていない）ときだけ。
- * URL に `?id=`（閲覧の欄）か `?do=`（操作の欄）があるリンクで開いたときは開かない（裏で右の欄が開きフォーカスが移るため。
+ * URL に `?id=`（人の画面へ移る）か `?do=`（操作の欄）があるリンク、人の画面のリンクで開いたときは開かない（裏で右の欄が開きフォーカスが移るため。
  * 見たことにはしないので、次にふつうに開いたときに出る）。search は HashRouter の location.search
  */
-export function shouldAutoOpenTour(seen: boolean, search: string): boolean {
+export function shouldAutoOpenTour(seen: boolean, search: string, pathname = '/'): boolean {
   if (seen) return false;
+  // 〈利用者さん〉・〈スタッフ〉の画面（`/clients/:id`。PRD D308）へのリンクで開いたときも出さない（`?id=` と同じ）
+  if (/^\/(clients|staff)\/[^/]+$/.test(pathname)) return false;
   const q = new URLSearchParams(search);
   return !q.has('id') && !q.has('do');
 }

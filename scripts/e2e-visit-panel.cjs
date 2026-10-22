@@ -1,7 +1,7 @@
 // 訪問の詳細の欄（VisitPanel。PRD D301〜D304。ADR-0051）を本物のブラウザで確かめる：
 // 日の予定の時間軸の帯から開く（詳細の「詳細・変更」）・Esc で閉じてフォーカスは帯、日時と担当を同時に変えて保存（この回だけ。
 // 担当は今の案で固定・フォーカスは開いた帯・トーストの「元に戻す」で戻る）、繰り返しの回の範囲（この回だけ／これ以降／すべて）、
-// 取り消しと取り消しをやめる（当日キャンセル）、週の予定の帯・月の予定で〈利用者さん〉を選んだときの回・日の予定の一覧の行から開いても
+// 取り消しと取り消しをやめる（当日キャンセル）、週の予定の帯・月の予定で〈利用者さん〉を選んだときのリンクの先の回・日の予定の一覧の行から開いても
 // 同じ欄、新しい訪問（日の予定の「その他 ▾」・ホームのいつでも・コマンドパレットの操作）、ホームの今日の訪問から開く、
 // コマンドパレットで「名前 日付」から開く（画面は移らない）、390px（見る・取り消す・担当替えができ、日時の変更・追加は出さない・
 // 横にはみ出さない）、印刷で出さない。
@@ -264,13 +264,14 @@ async function sameEverywhere(page) {
     (await page.evaluate(() => document.activeElement?.dataset.visit ?? '')) === s.v.id,
     '閉じるとフォーカスは週の帯',
   );
-  // 月の予定で〈利用者さん〉を選んだときの回
-  await open(page, `/month?ym=${s.v.date.slice(0, 7)}&client=${s.v.clientId}`, '[data-testid="month-client-visits"]');
-  await page.locator(`[data-testid="month-client-visit"][data-visit="${s.v.id}"]`).click();
+  // 月の予定で〈利用者さん〉を選んだときは〈利用者さん〉の画面の予定（月）へのリンク。そのカレンダーの回から同じ欄（PRD D311）
+  await open(page, `/month?ym=${s.v.date.slice(0, 7)}&client=${s.v.clientId}`, '[data-testid="month-client-open"]');
+  await page.getByTestId('month-client-open').click();
+  await page.locator(`[data-testid="pcal-visit"][data-visit="${s.v.id}"]`).click();
   await panel(page).waitFor();
   check(
     (await panel(page).getAttribute('data-visit')) === s.v.id,
-    '月の予定で〈利用者さん〉を選んだときの回から同じ欄',
+    '月の予定で〈利用者さん〉を選んだときのリンクの先（その人の予定の月）の回から同じ欄',
   );
   await page.keyboard.press('Escape');
   await closed(page);

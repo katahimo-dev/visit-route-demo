@@ -31,9 +31,9 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [pages-month.md](design/pages-month.md) | 月の予定・まとめて作る・まとめて確定・希望休・印刷 |
 | [pages-week.md](design/pages-week.md) | 週の予定 |
 | [pages-vacancy.md](design/pages-vacancy.md) | 空き状況・問い合わせの試算・案内文 |
-| [pages-clients.md](design/pages-clients.md) | 〈利用者さん〉の一覧・閲覧・編集・住所の入力・絞り込み |
+| [pages-clients.md](design/pages-clients.md) | 〈利用者さん〉の一覧・〈利用者さん〉と〈スタッフ〉の画面（タブ・予定のカレンダー・節）・住所の入力・絞り込み |
 | [pages-compat.md](design/pages-compat.md) | 相性の表 |
-| [pages-staff.md](design/pages-staff.md) | 〈スタッフ〉・勤務時間（シフト）・勤務の見込み・スマホ画面 |
+| [pages-staff.md](design/pages-staff.md) | 〈スタッフ〉の一覧と画面・勤務時間（シフト）・勤務の見込み・スマホ画面 |
 | [pages-rules.md](design/pages-rules.md) | 条件・プリセット・訪問の種類・項目・案の比較 |
 | [pages-data.md](design/pages-data.md) | データ（控え・直前の状態・Excel・初期化・片づけ・データを守る知らせ）・管理者設定 |
 
@@ -63,7 +63,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0020](adr/0020-roster-excel-import-export.md) | Excel の名簿で足す・直す |
 | [0021](adr/0021-client-filter-area.md) | 〈利用者さん〉の絞り込みと地区 |
 | [0022](adr/0022-compat-page-details-and-filters.md) | 詳細の吹き出しと列・行の絞り込み |
-| [0023](adr/0023-view-mode-before-edit.md) | 編集の前に閲覧の欄で開く |
+| [0023](adr/0023-view-mode-before-edit.md) | 編集の前に閲覧の欄で開く（廃止。ADR-0052 で置き換え） |
 | [0024](adr/0024-mobile-nav-and-week-client-default.md) | スマホのメニュー・週の時間軸の初期値 |
 | [0025](adr/0025-task-first-navigation-home.md) | やりたいことから入る導線・ホーム |
 | [0026](adr/0026-custom-confirm-dialog.md) | 独自の確認ダイアログ |
@@ -91,6 +91,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0049](adr/0049-condition-changes-and-revert.md) | 作り直しの帯に「何が変わったか」と「戻す」：最後に影響する日が0日だった時点の条件を DemoData の外に1つ控えて今と比べる（控えが無ければ作ったときの重みだけ） |
 | [0050](adr/0050-staff-mark-and-icon.md) | 〈スタッフ〉の印を1つの部品 StaffMark（その人の色の角の丸い四角に1〜2文字。〈利用者さん〉は丸）にそろえ、任意のアイコン `Staff.icon`（1〜2文字・既定は苗字の最初の1文字）を足す |
 | [0051](adr/0051-visit-panel-and-ux-stages.md) | 訪問の確認・編集の見直しを5段で進める（ユーザーの決めた5つ＋ホーム・パレット）。1段目は訪問の詳細の欄 `VisitPanel` を1つにし、日時・担当・取り消し・範囲（この回だけ／これ以降／すべて）を `lib/visitOps` 越しに扱う |
+| [0052](adr/0052-person-page-schedule-and-sections.md) | 〈利用者さん〉・〈スタッフ〉の画面を全画面（`#/clients/:id`・`#/staff/:id`）にし、タブ（先頭は予定）・予定のカレンダー（回から訪問の詳細の欄・空き枠から足す・ドラッグで動かす・繰り返しの強調）・節ごとの「直す → 保存」にする（ADR-0023 の閲覧・編集のモードを置き換え） |
 
 ## 文書の保ち方
 

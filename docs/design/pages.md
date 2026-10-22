@@ -26,9 +26,11 @@
 | `#/week` | `pages/WeekPage.tsx` | 週の予定（時間軸・〈スタッフ〉×曜日・〈利用者さん〉×曜日・ドラッグ）。`?d=`・`?view=`・`?by=`・`?staff=`・`?client=`・`?cf=` | [pages-week.md](pages-week.md) |
 | `#/compare` | `pages/ComparePage.tsx` | 案を比べる（AI案の記録どうし） | [pages-rules.md](pages-rules.md) |
 | `#/vacancy` | `pages/VacancyPage.tsx` | 空き状況と問い合わせの試算・仮押さえ・案内文 | [pages-vacancy.md](pages-vacancy.md) |
-| `#/clients` | `pages/ClientsPage.tsx` | 〈利用者さん〉一覧・閲覧・編集。`?id=` | [pages-clients.md](pages-clients.md) |
+| `#/clients` | `pages/ClientsPage.tsx` | 〈利用者さん〉一覧。行・「開く」で人の画面へ。`?id=` は人の画面へ移る | [pages-clients.md](pages-clients.md) |
+| `#/clients/:id` | `pages/ClientPage.tsx` | 〈利用者さん〉の画面（全画面）：タブ［予定｜基本情報｜担当・相性｜休み］（`?tab=`）・予定のカレンダー（`?cal=`・`?d=`）・節の「直す → 保存」（`?edit=` で節を開いて消す）。`new` は新しい人 | [pages-clients.md](pages-clients.md) |
 | `#/compat` | `pages/CompatPage.tsx` | 相性の表（訪問先×〈スタッフ〉）。`?sf=`・`?cf=` | [pages-compat.md](pages-compat.md) |
-| `#/staff` | `pages/StaffPage.tsx` | 〈スタッフ〉一覧・閲覧・編集・最終勤務日。`?id=` | [pages-staff.md](pages-staff.md) |
+| `#/staff` | `pages/StaffPage.tsx` | 〈スタッフ〉一覧・最終勤務日のある人の振り直し。`?id=` は人の画面へ移る | [pages-staff.md](pages-staff.md) |
+| `#/staff/:staffId` | `pages/StaffPersonPage.tsx` | 〈スタッフ〉の画面（全画面）：タブ［予定｜基本情報｜勤務時間｜相性］・担当している訪問のカレンダー・欠勤と希望休・勤務の見込みの要約・節。`new` は新しい人 | [pages-staff.md](pages-staff.md) |
 | `#/availability` | `pages/AvailabilityPage.tsx` | 勤務時間（シフト）（〈スタッフ〉×日の稼働時間帯） | [pages-staff.md](pages-staff.md) |
 | `#/workload` | `pages/WorkloadPage.tsx` | 勤務の見込み（拘束・移動・待ち・交通費）。`?ym=`・`?staff=` | [pages-staff.md](pages-staff.md) |
 | `#/staff-view/:staffId` | `pages/StaffViewPage.tsx` | 〈スタッフ〉のスマホ画面（今日の順番。見本）。`AdminShell` の外（`Guarded`） | [pages-staff.md](pages-staff.md) |
@@ -53,8 +55,8 @@
 | [pages-week.md](pages-week.md) | 週：表示の切り替え・時間軸・ドラッグ・〈スタッフ〉×曜日・〈利用者さん〉×曜日・時間軸の〈利用者さん〉の初期値・週の予定のメール |
 | [pages-bars.md](pages-bars.md) | 時間帯のバー（3段・30分）と一目で分かる表示：`barRows`・`staffBar`・`loadBar`・`barMarks.css`・`glance`・`dayLine`・`workBars`・`clientBar` |
 | [pages-vacancy.md](pages-vacancy.md) | 空き状況：4つの段階・表・試算・仮押さえ・案内文・紹介元へのメール |
-| [pages-clients.md](pages-clients.md) | 〈利用者さん〉：一覧と絞り込み（`ClientFilter`・`area`）・閲覧と編集（`viewMode` 共通）・定期パターン・休み・決まりごと・担当できる人・段階と仮押さえ・住所の入力（`AddressField`）・まとめて地図に置く・`ClientPicker`・訪問の欄 |
-| [pages-staff.md](pages-staff.md) | 〈スタッフ〉：一覧・閲覧と編集・最終勤務日と担当の振り直し・自宅・勤務時間（シフト）・勤務の見込み・スマホ画面（見本） |
+| [pages-clients.md](pages-clients.md) | 〈利用者さん〉：一覧と絞り込み（`ClientFilter`・`area`）・人の画面（〈スタッフ〉と共通の殻・タブ・節・予定のカレンダー `PersonCalendar`）・繰り返し・休み・決まりごと・担当できる人・段階と仮押さえ・住所の入力（`AddressField`）・まとめて地図に置く・`ClientPicker`・訪問の欄 |
+| [pages-staff.md](pages-staff.md) | 〈スタッフ〉：一覧・人の画面（予定・基本情報・勤務時間・相性）・最終勤務日と担当の振り直し・自宅・勤務時間（シフト）・勤務の見込み・スマホ画面（見本） |
 | [pages-compat.md](pages-compat.md) | 相性の画面：表・絞り込み（`StaffFilter`・相性のチップ）・吹き出し |
 | [pages-rules.md](pages-rules.md) | 条件の重みとプリセット・点数の基準・特性と条件の入力・訪問の種類・特性の項目・比較の画面 |
 | [pages-data.md](pages-data.md) | データの画面（控え・Excel・名簿・最終勤務日の知らせ・ファイル選択）・管理者設定 |
@@ -78,7 +80,7 @@
 - 形：角の丸い四角（`border-radius: 28%`）。〈利用者さん〉は丸（`.dot`・週のチップの色も丸）で、形で見分ける
 - 色：`staffColorMap(data.staff)`＝全員（休止中も）を名前の順（`byName`）に並べた位置の `staffColor`。地図の線・時間軸の帯の縁・列の上の線（`useDayModel` の `colorOfStaff`）も同じ関数から引く。〈スタッフ〉のデータに色の欄は無い（名前を変えると並びが変わり色も変わる）
 - 文字：`staffMarkText`＝`icon`（1〜2文字）があればそれ、無ければ `surnameInitial`（名前を空白（全角も）で区切った先頭の語の最初の1文字。書記素で切る）。2文字は字を小さくする（`.is-two`）
-- 大きさ：`xs` 16px（細い行・チップ・表の中・凡例・パレット）・`sm` 20px（列の見出し・表の行の見出し・比較）・`md` 28px（一覧・相性の列・吹き出しの見出し・月の見出し）・`lg` 44px（閲覧の欄・編集の見本）
+- 大きさ：`xs` 16px（細い行・チップ・表の中・凡例・パレット）・`sm` 20px（列の見出し・表の行の見出し・比較）・`md` 28px（一覧・相性の列・吹き出しの見出し・月の見出し）・`lg` 44px（〈スタッフ〉の画面の基本の節・アイコンの入力の見本）
 - 読み上げ・文字：`aria-hidden`。文字は `::before { content: attr(data-text) }` で描き、DOM の文字にしない（周りの `textContent`・コピー・e2e の文字の確かめを変えない）。e2e は `[data-staff-mark="〈ID〉"]` の `data-text` を見る
 - 名前は必ず文字で出す（色だけに頼らない）。並べるときは `.with-staff-mark`（inline-flex・gap 6px・min-width 0）
 - 置かない所：select の選択肢、文の中に名前を並べる所（空き状況の「N人：…」・拘束の上限の文・トースト・確認の文）、週の時間軸の帯（色の縁と文字の名前だけ）
@@ -211,7 +213,7 @@
 - `PaletteItem`：`id`・`kind`（`action|screen|client|staff|visit`）・`label`・`hint`・`to`・`date?`・`visitId?`・`op?`（`'visit-add'`）・`keys`（`lib/search` の `normalizeKana` でそろえた名前・よみ・別名）。`paletteItem` で作る
 - `paletteActions(today)`：欠勤・キャンセルを登録・日の予定（今日）を開く・今月／来月の案をまとめて作る（`?do=batch`）・要対応（`attention`）・確定していない日（`unconfirmed`）・条件が変わった日を作り直す（`stale`）・訪問を追加（`op: 'visit-add'`）・問い合わせに答える。`{ customRules }` なら「今日の案を試す重みで作り直す」（`recreateTodayHref`）も。切った機能の操作は出さない
 - `paletteScreens(sections, terms)`：sections は `screenSections`（メニューから外した画面も1つずつ。PRD D273・D275）。操作でない項目。補足はグループの見出し（グループの見出しも語に入るので「設定」「予定」で各画面を引ける）。読み・言い換え `SCREEN_WORDS`、〈利用者さん〉一覧・〈スタッフ〉一覧には呼び方のよみ `TERM_READINGS`（既定の呼び方の漢字だけ）
-- `palettePeople(clients, staff, terms)`：`/clients?id=`・`/staff?id=`。段階・休止中を補足に
+- `palettePeople(clients, staff, terms)`：`/clients/:id`・`/staff/:id`（人の画面）。段階・休止中を補足に
 - `filterPalette(items, query, limit=8)`：語に分けて AND、種類の順・先頭一致を前に、人は種類ごと limit まで（`rest`）。空なら操作と画面だけ
 - 訪問（PRD D304。ADR-0051）：`visitIndex(visits)`（〈利用者さん〉ごとに日付・開始の順）・`paletteDate(term, today)`（「10/28」「10月28日」「2026-10-28」「今日」「明日」「あさって」。年の無い日付は去年・今年・来年のうち今日に近い方）・`paletteVisits(query, clients, index, today, describe, limit=6)`（日付の語と名前の語に分け、名前の語が〈利用者さん〉の名前・よみに含まれる人（20人まで）の、日付があればその日の回（取り消しも）、無ければ今日以降の近い回。名前の語が無ければ出さない。かなの日付の語（「あす」など）しか無ければ名前として読む）。種類の見出しは「訪問」で、`filterPalette` の結果の後ろに足す
 - `paletteTerms`・`moveActive`（端で回る）・`isPaletteShortcut(e, isMac)`（mac は ⌘K、ほかは Ctrl+K。Shift・Alt・変換中は違う）・`isMacPlatform`・`paletteKindLabel`・`hashPathname(hash)`・`keepPaletteOn(openFor, pathname)`
@@ -277,7 +279,7 @@
 | `usePanelFoot.ts`・`useBodyScrollLock.ts`・`floating.ts` | 欄の帯・ロック・浮かせた部品の位置 | [pages-common.md](pages-common.md)（ロックはこのファイル） |
 | `ConfirmDialog.tsx`・`CommandPalette.tsx`・`Tour.tsx`・`Term.tsx`・`Toast.tsx` | 画面横断の重なる部品 | 確認ダイアログ・パレットはこのファイル、ほかは [pages-common.md](pages-common.md) |
 | `DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx` | 名前から開く詳細 | [pages-common.md](pages-common.md) |
-| `personView.tsx` | 閲覧の欄 `StaffView`・`ClientView` | [pages-clients.md](pages-clients.md) |
+| `personPage.tsx`・`PersonCalendar.tsx`・`personView.tsx` | 人の画面のタブ・節（`EditSection`）・予定のカレンダー・読むときの名前の並び（`PersonNames`・`StaffClientRows`・`ClientCompatRows`） | [pages-clients.md](pages-clients.md) |
 | `ViewSwitch.tsx` | ［月｜週｜日］ | このファイル |
 | `EdgeScroll.tsx` | 横に巻く格子の表の箱（右に続きがある印 `has-more-right`） | このファイル（狭い画面の表） |
 | `progressBand.tsx` | `ProgressBand`・`ScheduleBand`・`BandLive` | [pages-home.md](pages-home.md) |
@@ -310,7 +312,7 @@
 | `week.ts`・`weekView.ts`・`timelineClients.ts`・`fold.ts` | 週 | [pages-week.md](pages-week.md) |
 | `barRows.ts`・`staffBar.ts`・`glance.ts`・`dayLine.ts` | 時間帯のバー | [pages-bars.md](pages-bars.md) |
 | `vacancyView.ts` | 空き状況 | [pages-vacancy.md](pages-vacancy.md) |
-| `clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`・`viewMode.ts`・`personLinks.ts` | 〈利用者さん〉・閲覧の欄・住所 | [pages-clients.md](pages-clients.md) |
+| `clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`・`viewMode.ts`・`personPage.ts`・`personLinks.ts` | 〈利用者さん〉・人の画面・住所 | [pages-clients.md](pages-clients.md) |
 | `offboard.ts`・`workload.ts` | 〈スタッフ〉 | [pages-staff.md](pages-staff.md) |
 | `compatView.ts` | 相性 | [pages-compat.md](pages-compat.md) |
 | `presets.ts` | プリセット | [pages-rules.md](pages-rules.md) |
@@ -325,8 +327,8 @@
 - [ ] 色は役割の変数から引き、文字は 4.5・枠とフォーカスの輪は 3 以上の比。フォーカスの輪は `--focus` の 3px。動きを減らす設定で動きが止まり、タッチの端末でアイコンのボタンの押せる所が 44px（`lib/motion` のテスト）
 - [ ] （ADR-0024・0045）390×844 で左のメニューが出ず、上の帯に今の画面の名前（〈利用者さん〉一覧と〈スタッフ〉一覧を見分けられる）・「探す」・日付の切り替えが出て横に巻かない。下のタブ（ホーム・予定・欠勤・空き状況・メニュー）の「メニュー」で左から見出し付きの引き出しが開き、画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」に戻る。開いているあいだ裏は巻かず、Tab は中で回る。下のタブで移れ、今の画面（月・週・日・比較は「予定」）が `aria-current`。地図・欠勤の振り直しの帯・トーストがタブに重ならない。印刷に出ない。1400px の見た目（左のメニュー・上の帯 72px）は変わらない（`lib/nav` のテスト・`scripts/e2e-mobile.cjs`）
 - [ ] （ADR-0026）画面のどの確認もブラウザの確認でなく、画面の中央にアプリの見た目のダイアログで出る（見出しの問い・本文・動詞のボタン、消す・捨てるは赤）。最初のフォーカスは取り消し、Tab は中で回り、Esc・背景・取り消すでは何も変わらず、確定で進み、閉じたら押したボタンへ戻る。右の欄の上の Esc は確認だけを閉じる。390px で収まり、印刷では出ない（`scripts/e2e-dialog.cjs`）
-- [ ] （ADR-0027・0045）メニューが ホーム・予定／当日・問い合わせ／人（相性を含む）／設定 の9項目で、「予定」は月・週・日・比較、「設定」は設定のタブで印が付き、最後に開いた表示・タブを開く。「〈利用者さん〉一覧」「〈スタッフ〉一覧」と見分けられ、画面の見出しが上の帯・パレットの名前と同じ。Ctrl+K（上の帯の「探す・移動」）で開き、打って↑↓・Enter で画面・操作・人の閲覧の欄へ移り、Esc でフォーカスが戻る（`scripts/e2e-nav.cjs`）
-- [ ] （ADR-0022 追記）月・週・日の名前から詳細の吹き出しが開き、Esc・外を押す・もう一度押す・Tab で閉じてボタンへ戻る。同時に1つ、見出しが消えたら閉じる。リンクで各画面の閲覧の欄が開く。印刷では i を出さない（`lib/personPopover` のテスト・`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）
+- [ ] （ADR-0027・0045）メニューが ホーム・予定／当日・問い合わせ／人（相性を含む）／設定 の9項目で、「予定」は月・週・日・比較、「設定」は設定のタブで印が付き、最後に開いた表示・タブを開く。「〈利用者さん〉一覧」「〈スタッフ〉一覧」と見分けられ、画面の見出しが上の帯・パレットの名前と同じ。Ctrl+K（上の帯の「探す・移動」）で開き、打って↑↓・Enter で画面・操作・人の画面へ移り、Esc でフォーカスが戻る（`scripts/e2e-nav.cjs`）
+- [ ] （ADR-0022 追記）月・週・日の名前から詳細の吹き出しが開き、Esc・外を押す・もう一度押す・Tab で閉じてボタンへ戻る。同時に1つ、見出しが消えたら閉じる。リンクでその人の画面が開く。印刷では i を出さない（`lib/personPopover` のテスト・`scripts/e2e-details.cjs`・`scripts/e2e-details2.cjs`）
 - [ ] （PRD D220〜D222）390×844 で条件の重み・特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧・比較が横に巻かず、行がカードになる。条件の重みのスライダーと必須が画面の中。〈利用者さん〉一覧の絞り込みが「絞り込み（N）」に畳まれる。比較の主ボタンがタブに隠れない。週は今日の列が見え、空き状況の表は 9:00 から（`lib/scrollEdge`・`lib/weekView`・`lib/clientFilter` のテスト・`scripts/e2e-mobile.cjs`）
 - [ ] 右の欄の確定のボタンの帯：短い欄は帯が内容のすぐ下・区切りなし、長い欄は欄の下に貼り付き、内容が隠れている間だけ区切り。390px の並び・タブに隠れない・キーボード（`lib/panelFit` のテスト・`scripts/e2e-panel-foot.cjs`）
 - [ ] 用語の説明・空の画面・ツアー（`lib/glossary`・`lib/emptyGuide`・`lib/tour`・`src/store/tour.test.ts` のテスト・`scripts/e2e-words.cjs`・`scripts/e2e-tour.cjs`）

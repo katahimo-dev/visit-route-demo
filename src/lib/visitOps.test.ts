@@ -11,12 +11,14 @@ import {
   clientVisitsIn,
   dayVisitRows,
   draftOf,
+  endPatternOp,
   newDraft,
   occurrenceChanges,
   restoreOccurrenceOp,
   scopeTexts,
   staffChoices,
   staffPickError,
+  staffVisitsIn,
   timeChanged,
   unassignedVisits,
   uncancelVisitOp,
@@ -509,5 +511,49 @@ describe('レビューの直し（PR #78）', () => {
     );
     if (!r.ok) throw new Error(r.error);
     expect(find(r.data, id).clientId).toBe('c1');
+  });
+});
+
+describe('staffVisitsIn（〈スタッフ〉の画面の予定。PRD D309）', () => {
+  it('その日の今の案（無ければ確定した割当）でその人の列にある訪問だけ。取り消しは出さない', () => {
+    const d0 = data();
+    const a = '2026-10-19_p1';
+    const b = '2026-10-26_p1';
+    const d = {
+      ...d0,
+      aiPlans: { '2026-10-19': planOf('2026-10-19', { s1: [a] }) },
+      manualPlans: { '2026-10-26': { s1: [b] } },
+    };
+    expect(staffVisitsIn(d, 's1', '2026-10-12', '2026-10-31').map((v) => v.id)).toEqual([a, b]);
+    expect(staffVisitsIn(d, 's2', '2026-10-12', '2026-10-31')).toEqual([]);
+    const cancelled = cancelVisitOp(d, a, false);
+    expect(staffVisitsIn(cancelled, 's1', '2026-10-12', '2026-10-31').map((v) => v.id)).toEqual([b]);
+    // 期間の外は数えない
+    expect(staffVisitsIn(d, 's1', '2026-10-20', '2026-10-25')).toEqual([]);
+  });
+});
+
+describe('endPatternOp（繰り返しを終わらせる。PRD D308）', () => {
+  it('最後の日より後の今日以降の回を消し、終了日を入れる。この回だけ変えた・取り消した回は残す', () => {
+    const d0 = data();
+    const edited = cancelVisitOp(d0, '2026-10-26_p1', false);
+    const r = endPatternOp(edited, 'p1', '2026-10-19', DATE);
+    expect(r.data.patterns[0]!.to).toBe('2026-10-19');
+    expect(r.removed).toBe(0);
+    expect(r.data.visits.map((v) => v.id).sort()).toEqual(['2026-10-12_p1', '2026-10-19_p1', '2026-10-26_p1']);
+    const r2 = endPatternOp(d0, 'p1', '2026-10-12', DATE);
+    expect(r2.removed).toBe(2);
+    expect(r2.data.visits.map((v) => v.id)).toEqual(['2026-10-12_p1']);
+  });
+  it('今日より前の回は消さない・確定した日を数える・開始日より前なら開始日・今の終了日のほうが早ければそのまま', () => {
+    const d0 = { ...data(), manualPlans: { '2026-10-26': { s1: ['2026-10-26_p1'] } } };
+    const r = endPatternOp(d0, 'p1', '2026-10-01', '2026-10-20');
+    expect(r.data.patterns[0]!.to).toBe(DATE);
+    expect(r.removed).toBe(1);
+    expect(r.confirmedDays).toBe(1);
+    expect(r.data.visits.some((v) => v.id === '2026-10-19_p1')).toBe(true);
+    const short = data([pattern('p1', [1], { to: '2026-10-19' })]);
+    expect(endPatternOp(short, 'p1', '2026-10-26', DATE).data.patterns[0]!.to).toBe('2026-10-19');
+    expect(endPatternOp(d0, 'none', DATE, DATE).data).toBe(d0);
   });
 });

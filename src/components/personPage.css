@@ -1,0 +1,137 @@
+/* 〈利用者さん〉・〈スタッフ〉の全画面（PRD D308〜D312。ADR-0052） */
+.person-page {
+  min-width: 0;
+}
+.person-state {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+/* タブ：狭い画面では横に巻く（ページははみ出さない） */
+.person-tabs {
+  position: relative;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.person-tabs .view-switch-item {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.person-tabs .view-switch-item.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  .person-tabs .view-switch-item {
+    padding: 5px 10px;
+  }
+}
+
+/* 予定のタブ：左に繰り返し・休み（〈スタッフ〉は欠勤・勤務の見込み）、右にカレンダー */
+.person-schedule {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.person-schedule-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.person-schedule-main {
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .person-schedule {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 節：広い画面は2列に並べる */
+.person-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.person-sec.is-editing {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.person-sec dl {
+  margin: 0;
+}
+.person-sec-foot {
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.person-list {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.person-list li + li {
+  margin-top: 4px;
+}
+
+/* 繰り返しの行（押すとカレンダーで強調） */
+.pattern-row.is-selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.pattern-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pattern-pick:disabled {
+  cursor: default;
+}
+.pattern-pick:focus-visible {
+  outline: 3px solid var(--focus);
+}
+
+@media print {
+  .person-tabs,
+  .person-sec .section-aside,
+  [data-testid='person-back'] {
+    display: none !important;
+  }
+  .person-schedule {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pattern-row {
+  flex-wrap: wrap;
+}
+.pattern-row > .pattern-form {
+  flex-basis: 100%;
+}
+/* 予定のタブの左の小さな見出し・節の中の小見出し */
+.person-subhead {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.person-subhead .with-icon {
+  display: inline-flex;
+  white-space: normal;
+}
+/* 狭い画面は日ごとのリストを先に（繰り返し・休みは下） */
+@media (max-width: 600px) {
+  .person-schedule-main {
+    order: -1;
+  }
+}

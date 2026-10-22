@@ -186,7 +186,7 @@ export function confirmBody(changes: readonly WeightChange[], basis: string, sta
 /** 確定のあとの知らせ */
 export const confirmedText = (n: number, basis: string): string => `「${basis}」の重みを確定しました（${n}件）`;
 
-/** 画面を離れるときの確認（〈スタッフ〉の編集の欄の「変更を捨てる」と同じ形。lib/viewMode の discardDialog） */
+/** 画面を離れるときの確認（〈スタッフ〉・〈利用者さん〉の画面の「変更を捨てる」と同じ形。components/personPage の discardChanges） */
 export function leaveDialog(n: number) {
   return {
     title: '重みの変更を捨てて、画面を移りますか？',

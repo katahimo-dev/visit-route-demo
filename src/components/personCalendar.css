@@ -1,0 +1,293 @@
+/* 〈利用者さん〉・〈スタッフ〉の画面の予定のカレンダー（PRD D309・D310。ADR-0052） */
+.pcal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.pcal-tools {
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.pcal-nav {
+  gap: 4px;
+  align-items: center;
+}
+.pcal-title {
+  min-width: 11em;
+  text-align: center;
+}
+.pcal-views {
+  align-self: center;
+}
+.pcal-legend,
+.pcal-howto,
+.pcal-hl-note {
+  margin: 0;
+}
+.pcal-chip {
+  font-size: 0.7rem;
+  padding: 0 6px;
+}
+
+/* 回（週の時間軸・月のマス・日ごとのリストで共通） */
+.pcal-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 5px;
+  border: 2px solid rgba(59, 47, 42, 0.22);
+  border-radius: 6px;
+  background: #f1e8e1;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+.pcal-item[draggable='true'] {
+  cursor: grab;
+}
+.pcal-item:hover,
+.pcal-item:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 0;
+  z-index: 3;
+}
+.pcal-item-time,
+.pcal-item-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcal-item-time {
+  font-weight: 700;
+}
+.pcal-item-mark {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--warn);
+  color: #fff;
+  font-size: 0.65rem;
+}
+/* 担当の無い回：入らない（案があるのに入らない）は要対応の赤、案なしは注意の黄の点線（PRD D228） */
+.pcal-item.is-unassigned {
+  border-color: var(--danger);
+  background: #fbeceb;
+}
+.pcal-item.is-noplan {
+  border-style: dashed;
+  border-color: var(--warn-line);
+  background: #fffaf0;
+}
+/* 取り消し・休みは白抜き（押すと欄で取り消しをやめる） */
+.pcal-item.is-cancelled,
+.pcal-item.is-sameDay,
+.pcal-item.is-leave {
+  border-style: dashed;
+  background: #fff;
+  color: var(--sub);
+}
+.pcal-item.is-cancelled .pcal-item-time,
+.pcal-item.is-sameDay .pcal-item-time {
+  text-decoration: line-through;
+}
+/* 選んだ繰り返しの回を目立たせ、ほかを薄く */
+.pcal-item.is-hl {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+  background: #fde7e1;
+}
+.pcal-item.is-dim {
+  opacity: 0.45;
+}
+
+/* 週（時間軸） */
+.pcal-week {
+  display: grid;
+  grid-template-columns: 44px repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.pcal-week-head {
+  min-width: 0;
+  font-size: 0.8rem;
+}
+.pcal-day-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.pcal-day-date.is-today {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+.pcal-gutter {
+  position: relative;
+}
+.pcal-hour {
+  position: absolute;
+  right: 2px;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  color: var(--sub);
+}
+.pcal-col {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background-color: #fff;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--line) 0,
+    var(--line) 1px,
+    transparent 1px,
+    transparent 48px
+  );
+  touch-action: pan-y;
+}
+.pcal-col.is-past {
+  background-color: var(--soft);
+}
+.pcal-col.can-add {
+  cursor: copy;
+}
+.pcal-col .pcal-item {
+  position: absolute;
+  z-index: 1;
+}
+.pcal-drop,
+.pcal-ghost {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  z-index: 2;
+  padding: 0 4px;
+  border: 2px dashed var(--primary);
+  border-radius: 6px;
+  background: rgba(253, 231, 225, 0.8);
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+
+/* 月（マス） */
+.pcal-month {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pcal-month-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.pcal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.pcal-cell.is-out {
+  opacity: 0.55;
+}
+.pcal-cell.is-past {
+  background: var(--soft);
+}
+.pcal-cell.is-today {
+  border: 2px solid var(--primary);
+}
+.pcal-cell.is-drop {
+  outline: 2px dashed var(--primary);
+}
+.pcal-cell-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+  font-size: 0.75rem;
+}
+.pcal-cell-day {
+  font-weight: 700;
+}
+.pcal-cell-add {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--sub);
+  cursor: pointer;
+}
+.pcal-cell-add:focus-visible,
+.pcal-cell-add:hover {
+  outline: 3px solid var(--focus);
+}
+.pcal-cell-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pcal-item.is-compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  column-gap: 4px;
+  width: 100%;
+}
+
+/* 狭い画面：日ごとのリスト */
+.pcal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pcal-list-day {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.pcal-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pcal.is-list .pcal-item {
+  font-size: 0.85rem;
+  padding: 6px 8px;
+}
+
+@media print {
+  .pcal-tools,
+  .pcal-howto,
+  .pcal-cell-add {
+    display: none !important;
+  }
+}

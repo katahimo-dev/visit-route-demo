@@ -1,28 +1,50 @@
-# 〈スタッフ〉の画面・勤務時間（シフト）・勤務の見込み・スマホ画面
+# 〈スタッフ〉の一覧と画面・勤務時間（シフト）・勤務の見込み・スマホ画面
 
-> この画面のファイル：`src/pages/StaffPage.tsx`・`OffboardPanel.tsx`・`AvailabilityPage.tsx`・`WorkloadPage.tsx`（`workload.css`）・`StaffViewPage.tsx`、`src/components/workBars.tsx`・`mapsLinks.tsx`・`personView.tsx`・`placeLookup.tsx`、`src/lib/offboard.ts`・`workload.ts`・`links.ts`・`viewMode.ts`。関連 ADR：0011・0014・0015・0016 追記・0017・0018・0023。関連 PRD：D16・D68・D75〜D77・D91〜D101・D118〜D121・D127〜D131・D201〜D209・D220・D221。
-> 閲覧の欄と編集の欄の仕組み（`viewMode`・`personView`）は [pages-clients.md](pages-clients.md)。
+> この画面のファイル：`src/pages/StaffPage.tsx`・`StaffPersonPage.tsx`・`OffboardPanel.tsx`・`AvailabilityPage.tsx`・`WorkloadPage.tsx`（`workload.css`）・`StaffViewPage.tsx`、`src/components/workBars.tsx`・`mapsLinks.tsx`・`personPage.tsx`・`PersonCalendar.tsx`・`personView.tsx`・`placeLookup.tsx`、`src/lib/offboard.ts`・`workload.ts`・`links.ts`・`personPage.ts`・`visitOps.ts`・`viewMode.ts`。関連 ADR：0011・0014・0015・0016 追記・0017・0018・0050・0052。関連 PRD：D16・D68・D75〜D77・D91〜D101・D118〜D121・D201〜D209・D220・D221・D298・D299・D308〜D312。
+> 画面の殻（ルート・見出し・タブ・節・変更の確認）と予定のカレンダーは [pages-clients.md](pages-clients.md) と共通。
 
 ### 〈スタッフ〉一覧（`#/staff`）
 
-- 見出し「〈スタッフ〉一覧」。名前の前は〈スタッフ〉の印（`StaffMark` の md。[pages.md](pages.md) の「〈スタッフ〉の印」）。一覧の行はどこを押しても閲覧の欄（`data-testid="staff-row"`。行の中のボタン・リンク・文字の選択は除く。PRD D297）。行の右端の「〈名前〉を開く」（`Eye`）も閲覧の欄。`?id=` も閲覧の欄。「追加」はすぐ編集の欄
+- 見出し「〈スタッフ〉一覧」。右に「相性の表」と主ボタン「〈スタッフ〉を追加」（`staff-add`。`#/staff/new` へのリンク）。名前の前は〈スタッフ〉の印（`StaffMark` の md。[pages.md](pages.md) の「〈スタッフ〉の印」）
+- 一覧の行（`staff-row`）はどこを押してもその人の画面（`#/staff/:id`。行の中のボタン・リンク・文字の選択は除く。PRD D308）。右端の「〈名前〉を開く」（`Eye`・`staff-open`）とスマホ画面へのリンク。`?id=` はその人の画面へ移る
 - 一覧の上に「最終勤務日のある〈スタッフ〉」のカード（`leaving-card`。振り直しが残っているか。「担当の振り直しを開く」`leaving-open`）
 - 一覧の状態に「最終 M/D」（`staff-lastday`）
-- 狭い画面（600px 以下。PRD D220）：一覧の表（`narrow-staff`）は1人を1枚のカードに（[pages.md](pages.md) の「狭い画面の表」）。1行目に名前と状態（休止中・最終 M/D）、続けて「勤務」・「特性」・「〈利用者さん〉に求めること」・「自宅の位置」、開く・スマホ画面は右下。外の枠のカードは消してカードを本文の上に並べる。列は隠さない
-- 閲覧の欄（`StaffView`）と編集の欄の動きは [pages-clients.md](pages-clients.md) の「閲覧の欄と編集の欄」。閲覧には相性・担当の名前（いつもの担当と記号ごとの〈利用者さん〉・人数・利用中だけ・「あと N人」・名前の吹き出し）
+- 狭い画面（600px 以下。PRD D220）：一覧の表（`narrow-staff`）は1人を1枚のカードに（[pages.md](pages.md) の「狭い画面の表」）。1行目に名前と状態（休止中・最終 M/D）、続けて「勤務」・「特性」・「〈利用者さん〉に求めること」・「自宅の位置」、開く・スマホ画面は右下
 
-#### 編集の欄の中身
+### 〈スタッフ〉の画面（`#/staff/:staffId`。`pages/StaffPersonPage`。PRD D308〜D312。ADR-0052）
 
-- 名前・特性・条件・稼働時間帯など
-- 「アイコン（1〜2文字・任意）」（`staff-icon`。PRD D299。ADR-0050）：左にその場の見本（`StaffMark` の lg。色は保存したあとの名前の並びの色）、空のときは `placeholder` に苗字の最初の1文字。保存のときに前後の空白を落とし、見た目で2文字を超えれば `FieldError`（欄は `icon`）で保存しない。閲覧の欄の先頭にも印と「アイコン「…」」／「アイコンは未設定（苗字の最初の1文字）」（`view-staff-mark`）
-- 「メールアドレス（任意）」（`staff-email`）：保存のときに `normalizeEmail` で直し、直せなければ保存しない
-- 自宅：`AddressField`（testId `staff-home`）。郵便番号は部品の中だけで持ち保存しない（見出し「郵便番号（任意。住所を探すためだけで、保存しません）」。開き直すと空に戻る）。`key={form.id}`
-- 「最終勤務日」（`staff-lastday-input`）
-- 休止にして保存するとき、その人を限った〈利用者さん〉（担当できる人）があれば確認（名前と、全員いなくなる人は「だれでも担当できるようになります」）を出し、同じ `update` で外す
+- 見出しは印（md）と名前、状態（`person-state`：利用中／休止中・「最終 M/D」（`staff-lastday`）・ふだんの勤務「月火水木金 08:00〜18:00」）、右に「〈名前〉さんの画面で見る」（`to-staff-view`。スマホ画面）と一覧へ戻る
+- タブ［予定｜基本情報｜勤務時間｜相性］（相性を切れば「担当」）
+
+#### 予定のタブ
+
+- 左：
+  - この期間の勤務の見込み（`staff-work`）：見ている期間（週は7日、月はその月）の `workDayOf` を `workTotals` で合わせ、訪問の件数（日数）・拘束（いちばん長い日）・移動・上限を超える日。案のある日だけ数える（無ければその旨）。「勤務の見込みで詳しく見る」（`to-workload`。`workloadHref(その月, その人)`。`workload` を切れば出さない）
+  - 欠勤・希望休（これから60日。`staff-absences`。`staffAbsencesIn`）：日付と「希望休」／「欠勤 9:00〜12:00」とメモ。登録の場所の説明と「今日の欠勤を登録する」（`to-sudden`。`suddenHref(今日, その人)`。`sudden` を切れば出さない）
+  - 最終勤務日があれば「担当の振り直しを開く」（`leaving-open`。`OffboardPanel`）
+- 右：`PersonCalendar`（`kind="staff"`。担当している訪問。足す・動かすは出さない）。`dayNote` は欠勤（希望休なら「希望休」、ほかは「欠勤」。メモは title）・`availabilityOf` で時間帯の無い日は「勤務なし」
+
+#### 基本情報のタブ（節）
+
+- 基本（`basic`：名前（`staff-name`）・アイコン（`staff-icon`。PRD D299。ADR-0050。左にその場の見本（`StaffMark` の lg。色は保存したあとの名前の並びの色）、空のときは `placeholder` に苗字の最初の1文字。保存のときに前後の空白を落とし、見た目で2文字を超えれば保存しない）・メールアドレス（`mail` が入のとき。`staff-email`。`normalizeEmail`）・移動手段・利用中（外すと休止）。読むときは印と「アイコン「…」」／「アイコンは未設定（苗字の最初の1文字）」（`view-staff-mark`）・状態・メール・移動手段）
+- 自宅（`home`：`AddressField`（testId `staff-home`）。郵便番号は部品の中だけで持ち保存しない（「郵便番号（任意。住所を探すためだけで、保存しません）」。直し直すと空））
+- 特性（`traits`）・〈利用者さん〉に求めること（`conds`）
+- 最終勤務日（`lastDay`。`offboard` が入のとき。`staff-lastday-input`・「最終勤務日を消す」・「M/D から勤務なし」）
+- 新しい人（`#/staff/new`）は「基本」の節（`new`）に基本と勤務の入力をまとめて開く
+- 保存の検査：同じ名前は保存しない・メール・アイコン・`staffSchema`。休止にして保存するとき、その人を限った〈利用者さん〉（担当できる人）があれば確認（名前と、全員いなくなる人は「だれでも担当できるようになります」）を出し、同じ `update` で外す。最終勤務日を入れた・変えたら、保存のあとに振り直すものがあれば担当の振り直しの欄（下）を開く
+
+#### 勤務時間のタブ
+
+- ふだんの勤務（`hours`：勤務する曜日・勤務開始（`staff-shift-start`）・勤務終了（`staff-shift-end`）。読むときは `StaffHoursRow`（曜日ごと））
+- 日ごとに変えた勤務（これから。読むだけ。`overrides`）と「勤務時間（シフト）で直す」（`to-availability`）
+
+#### 相性のタブ
+
+- 相性・担当（読むだけ）：`StaffClientRows`（いつもの担当の〈利用者さん〉（`view-usual-clients`）と記号ごとの利用中の〈利用者さん〉の人数と名前（`view-compat-great` など。12人を超えたら「あと N人」（`…-more`。`aria-expanded`）。名前は押すと詳細の吹き出し）。相性を切ればいつもの担当だけ）と「相性の表で直す」（相性の画面をその人の名前で絞って開く `?sf=`）
 
 ### 最終勤務日と担当の振り直し（ADR-0015）
 
-- 保存して振り直すものがあれば欄を閉じて「担当の振り直し」の欄（`pages/OffboardPanel.tsx`・`offboard-panel`）を開く（`lib/offboard` の `offboardScope`・`applyOffboard`）
+- 最終勤務日を保存して振り直すものがあれば（〈スタッフ〉の画面）、または一覧の「最終勤務日のある〈スタッフ〉」・〈スタッフ〉の画面の予定のタブの「担当の振り直しを開く」で、「担当の振り直し」の欄（`pages/OffboardPanel.tsx`・`offboard-panel`）を開く（`lib/offboard` の `offboardScope`・`applyOffboard`）
 - 〈利用者さん〉ごと（`offboard-clients`・`offboard-client`）：行の見出しの〈利用者さん〉の名前は `PersonButton`（`offboard-client-name`。select の option には置かない。欄の中の吹き出し・Esc）。代わりの候補（入れる回・受け持ち。`offboard-choice`）。無ければ `offboard-no-clients`
 - 翌日以降にその人が担当している訪問（`offboard-visits`。日ごとの件数と日の予定へのボタン）。無ければ `offboard-no-visits`
 - 欄の主ボタンは「まとめて適用」（`offboard-apply`。1つ）：いつもの担当・パターンの担当・担当できる人を置き換える。訪問の案は作り直さない
@@ -65,5 +87,5 @@
 - [ ] （ADR-0014）休止にすると、限った〈利用者さん〉の確認が出て外れる
 - [ ] （ADR-0015）`#/workload` で月の合計・〈スタッフ〉×日の拘束の横棒・選んだ人の日ごとの時間軸の横棒が出る。単価を 0 にすると交通費の列が消え、上限を下げると超える日に斜線と「!」・月に「拘束超」・要対応・日の予定の帯が出る。「表をコピー」でタブ区切りの表
 - [ ] 勤務時間（シフト）の画面の欠勤のある日のセルに「欠勤」の印が出る。右の欄のリンクで日の予定の欠勤・キャンセルの欄（その人の2段目）が開く（`scripts/e2e-links.cjs`）
-- [ ] （ADR-0023）閲覧の欄・編集の欄（`scripts/e2e-view.cjs`）。自宅の郵便番号を保存しない（`scripts/e2e-address.cjs`）
+- [ ] （ADR-0052）〈スタッフ〉の画面の節（`scripts/e2e-view.cjs`）・予定のタブ（担当の回・欠勤・勤務の見込み。`scripts/e2e-person-page.cjs`）。自宅の郵便番号を保存しない（`scripts/e2e-address.cjs`）
 - [ ] `lib/workload`・`lib/offboard` のテストが通る
