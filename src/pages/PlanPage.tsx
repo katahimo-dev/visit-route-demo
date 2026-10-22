@@ -24,13 +24,10 @@ import {
   Scale,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Square,
   Timer,
   TriangleAlert,
-  Undo2,
   UserRoundX,
-  X,
 } from 'lucide-react';
 import { type DragEvent, Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -44,14 +41,22 @@ import { useMailLimit } from '../components/mailParts';
 import { VisitRouteLinks } from '../components/mapsLinks';
 import { PersonButton, PersonInfo } from '../components/PersonPopover';
 import { ClientName } from '../components/parts';
-import { ScheduleBand } from '../components/progressBand';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { StaffMark, StaffMarkById } from '../components/StaffMark';
+import {
+  ProposalBand,
+  RangeProposalBand,
+  ScheduleToolbar,
+  SelectionBar,
+  useScopeItems,
+  useVisitSelection,
+} from '../components/scheduleParts';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
+import { useHistoryOps, useUndoAction } from '../components/undo';
 import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
 import { VisitRules } from '../components/VisitRules';
@@ -77,7 +82,7 @@ import {
   withoutAbsencesOn,
 } from '../lib/absences';
 import { colorOf } from '../lib/colors';
-import { attempt, deltaText, formError, own, pointsText, r0 } from '../lib/common';
+import { attempt, formError, own, pointsText, r0 } from '../lib/common';
 import { confirmDay } from '../lib/confirmDay';
 import { type CancelledContact, type ContactRow, clock, contactCount, contactRows, dateWordOf } from '../lib/contacts';
 import { dayLineRange, dayLines } from '../lib/dayLine';
@@ -92,8 +97,8 @@ import {
   visitIssues,
   writeRoutes,
 } from '../lib/dayPlan';
-import { dayUndo, undoDay, undoOf } from '../lib/dayUndo';
 import { deferredDragStart } from '../lib/dragStart';
+import { appHistory } from '../lib/history';
 import { isDate } from '../lib/isDate';
 import { UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
@@ -156,6 +161,9 @@ import {
   type ReassignOption,
 } from './reassignParts';
 import { type SuddenInit, SuddenPanel } from './SuddenPanel';
+
+/** 振り直しの手の名前（「振り直す前に戻す」は直前の手がこの日のこれのときだけ全体の「元に戻す」で戻す） */
+const REASSIGN_LABEL = '欠勤の振り直し';
 
 /** 連絡の一覧が出せない（差を出せない）ときでも、欠勤の人に残る訪問だけで開くための空の一覧 */
 const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: [] };
@@ -355,6 +363,8 @@ export default function PlanPage() {
   scoreRef.current = { problem: scoreProblem, scale: scoreScale };
   /** AI の提案（その場だけ。日付を変えたら捨てる） */
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  /** 複数選択（Shift・Ctrl＋クリック。日付を変えたら外す。PRD D330） */
+  const multi = useVisitSelection(date);
 
   // 画面を離れたら Worker を止める（止めた結果は保存しない）
   useEffect(() => {
@@ -581,7 +591,7 @@ export default function PlanPage() {
     }
     const p = problem;
     const r = proposal.routes;
-    writeWith(null, (d) => writeRoutes(d, date, p, r));
+    writeWith(`AI の提案を当てる（${proposal.label}）`, (d) => writeRoutes(d, date, p, r));
     setProposal(null);
     sel.reset();
     toast('提案を当てました', { action: undoAction });
@@ -683,38 +693,23 @@ export default function PlanPage() {
     );
   }, [hasPlan, owner]);
   /**
-   * 手直しの1手前（PRD D218。ADR-0030）：書く前の訪問。画面の状態だけ（保存しない）。戻せるのは直前の1手だけ。
-   * 書いたあとに訪問がほかの操作で変わったら戻さない
+   * 書く：fn で書いたデータにする（全体の「元に戻す」の1手。label は手の名前。PRD D329）。変わらなければ false
    */
-  const undoSnap = useValueStore(dayUndo);
-  const setUndoSnap = dayUndo.set;
-  /** 戻せない理由（戻せれば null）。操作の行の title とトーストで共通 */
-  const undoWhy = useMemo(() => {
-    if (running) return '計算中です';
-    if (!undoSnap) return '戻せる手直しがありません';
-    if (undoSnap.date !== date) return '別の日の手直しです';
-    if (data.visits !== undoSnap.after) return 'ほかの操作で予定が変わりました';
-    return null;
-  }, [undoSnap, date, running, data.visits]);
-  const undoable = undoWhy === null;
-  /**
-   * 書く：書く前の訪問を控え（「元に戻す」）、fn で書いたデータにする。visitId は動かした訪問（戻したあとの選び直し）
-   */
-  const writeWith = (visitId: string | null, fn: (d: DemoData) => DemoData) => {
+  const writeWith = (label: string, fn: (d: DemoData) => DemoData) => {
     const before = dataRef.current;
     const next = fn(before);
     if (next === before) return false;
-    setUndoSnap(undoOf(date, before, next, visitId, visitId ? (owner.get(visitId) ?? null) : null));
-    update((d) => (d === before ? next : fn(d)));
+    update((d) => (d === before ? next : fn(d)), label);
     return true;
   };
   /** 担当の並びとピンを訪問に書く（手直し） */
   const writeDay = (
     p: Problem,
-    visitId: string,
+    _visitId: string,
     nextRoutes: Record<string, string[]>,
     nextPins: Record<string, string>,
-  ) => writeWith(visitId, (d) => writeRoutes(d, date, p, nextRoutes, { pins: nextPins }));
+    label = '担当を替える',
+  ) => writeWith(label, (d) => writeRoutes(d, date, p, nextRoutes, { pins: nextPins }));
   /**
    * 「担当を変える ▾」で移したあとのフォーカス（PRD D217）：選んだ項目・ボタンは移した訪問の詳細ごと消える（列が替わる・
    * 選択が外れる）ので、移した先のカード、無ければ「元に戻す」、それも無ければ移した先の列の見出しへ
@@ -726,7 +721,7 @@ export default function PlanPage() {
         document.querySelector<HTMLElement>(
           `.route-item[data-visit="${v}"] .route-btn, .tl-band[data-visit="${v}"] .tl-band-btn`,
         ) ??
-        document.querySelector<HTMLElement>('[data-testid="plan-reassign-undo"]') ??
+        document.querySelector<HTMLElement>('[data-testid="undo-btn"]') ??
         (staffId ? colHeadOf(staffId) : null);
       target?.focus();
     });
@@ -763,13 +758,28 @@ export default function PlanPage() {
       </WithIcon>
     </button>
   );
-  /** トーストの「元に戻す」（PRD D218）。トーストは前の描画の関数を持つので、押したときの最新の undoEdit を呼ぶ */
-  const undoRef = useRef<() => void>(() => {});
-  const undoAction = { label: '元に戻す', onClick: () => undoRef.current(), testId: 'plan-reassign-toast-undo' };
+  /** トーストの「元に戻す」（全体の履歴を1手戻す。PRD D218・D329） */
+  const undoAction = useUndoAction();
+  const historyOps = useHistoryOps();
+  /**
+   * 手直しのトーストの「元に戻す」：全体の履歴を1手戻し、トーストから押したら（ボタンが消えるので）戻した訪問の帯・カードへフォーカス
+   * （from は戻したあとの担当。PRD D217）
+   */
+  const undoMove = (visitId: string, from: string | null) => ({
+    ...undoAction,
+    onClick: () => {
+      const ae = document.activeElement;
+      const fromToast = !ae || ae === document.body || !!ae.closest('.toast');
+      historyOps.undo();
+      sel.follow(visitId, from);
+      if (fromToast) focusAfterMove(visitId, from);
+    },
+  });
   const moveTo = (visitId: string, staffId: string) => {
     if (!problem || !hasPlan || running) return;
     if (owner.get(visitId) === staffId && own(pins, visitId) === staffId) return;
     const p = problem;
+    const prev = owner.get(visitId) ?? null;
     const saved = writeDay(
       p,
       visitId,
@@ -778,7 +788,7 @@ export default function PlanPage() {
     );
     // 移した訪問を選んでいたら、地図の絞り込みを新しい担当に合わせる
     sel.follow(visitId, staffId);
-    const opts = saved ? { action: undoAction } : undefined;
+    const opts = saved ? { action: undoMove(visitId, prev) } : undefined;
     if (!allowedFor(visitId, staffId)) {
       toast(`${staffName(staffId)}さんへ移しました。必須の条件に合わないので、要対応に出ます`, opts);
     } else {
@@ -789,19 +799,21 @@ export default function PlanPage() {
   const unassign = (visitId: string) => {
     if (!problem || !hasPlan || running || !owner.has(visitId)) return;
     const { [visitId]: _had, ...rest } = pins;
+    const prev = owner.get(visitId) ?? null;
     const saved = writeDay(
       problem,
       visitId,
       Object.fromEntries(Object.entries(routes).map(([s, ids]) => [s, ids.filter((x) => x !== visitId)])),
       rest,
+      '担当なしにする',
     );
     sel.follow(visitId, null);
-    toast('担当なしにしました', saved ? { action: undoAction } : undefined);
+    toast('担当なしにしました', saved ? { action: undoMove(visitId, prev) } : undefined);
   };
   const unpin = (visitId: string) => {
     if (!problem) return;
     const { [visitId]: _had, ...rest } = pins;
-    writeDay(problem, visitId, routes, rest);
+    writeDay(problem, visitId, routes, rest, 'ピンを外す');
   };
   /** すべてのピンを外す（AI で組み直すと担当が変わりうる） */
   const unpinAll = async () => {
@@ -813,33 +825,9 @@ export default function PlanPage() {
     });
     if (!ok) return;
     const p = problem;
-    writeWith(null, (d) => writeRoutes(d, date, p, routes, { pins: {} }));
+    writeWith('ピンをすべて外す', (d) => writeRoutes(d, date, p, routes, { pins: {} }));
     toast('ピンを外しました', { action: undoAction });
   };
-  /**
-   * 直前の手直しを1手だけ戻す（書く前の訪問・振り直しの情報に。控えは消す＝2手前へは戻れない）。
-   * 戻せないときは理由をトーストで（トーストの「元に戻す」は押すと閉じるので、黙って消えないように）
-   */
-  const undoEdit = () => {
-    const why = runRef.current ? '計算中です' : undoWhy;
-    const u = undoSnap;
-    if (why !== null || !u) {
-      toast(`戻せません：${why ?? '戻せる手直しがありません'}`);
-      return;
-    }
-    const ae = document.activeElement;
-    const fromToast = !ae || ae === document.body || !!ae.closest('.toast');
-    update((d) => undoDay(d, u));
-    if (u.visitId) sel.follow(u.visitId, u.from);
-    setUndoSnap(null);
-    toast('元に戻しました');
-    // トーストのボタンは押すと消えるので、戻した訪問のカードへ（操作の行から押したときはそのまま）
-    if (fromToast && u.visitId) focusAfterMove(u.visitId, u.from);
-  };
-  useEffect(() => {
-    undoRef.current = undoEdit;
-  });
-
   // ---- 確定＝〈スタッフ〉に伝えた内容（ADR-0053）----
   /** 伝えた内容と今の違い（未連絡の変更。伝えていない日は null） */
   const told = useMemo(
@@ -876,10 +864,11 @@ export default function PlanPage() {
     if (runRef.current) return false;
     const p = hasPlan ? problem : null;
     const at = Date.now();
-    update((d) =>
-      p ? confirmDay(d, date, p, at) : { ...d, snapshots: { ...d.snapshots, [date]: { date, at, visits: [] } } },
+    update(
+      (d) =>
+        p ? confirmDay(d, date, p, at) : { ...d, snapshots: { ...d.snapshots, [date]: { date, at, visits: [] } } },
+      '確定（伝えた）',
     );
-    setUndoSnap(null);
     setToldOpen(false);
     toast('確定しました（伝えた内容を残しました）');
     return true;
@@ -953,13 +942,18 @@ export default function PlanPage() {
     }
     const r = result.value;
     setAnnealResult(null);
-    writeWith(null, (d) =>
-      applyReassign(saveAbsence(d, absence), date, {
-        problem: p,
-        result: r,
-        base: d === data ? base : baseOf(saveAbsence(d, absence), date, p),
-        absenceIds: used.map((a) => a.id),
-      }),
+    // 欠勤の登録と振り直しは別の手（「元に戻す」1回で振り直す前に戻り、欠勤は残る。PRD D329）
+    const registered = saveAbsence(data, absence);
+    update((d) => (d === data ? registered : saveAbsence(d, absence)), '欠勤を登録');
+    update(
+      (d) =>
+        applyReassign(d, date, {
+          problem: p,
+          result: r,
+          base: d === registered ? base : baseOf(d, date, p),
+          absenceIds: used.map((a) => a.id),
+        }),
+      REASSIGN_LABEL,
     );
     if (!stay) setSudden(null);
     sel.reset();
@@ -1134,7 +1128,7 @@ export default function PlanPage() {
     if (key === 'anneal') {
       if (!anneal) return;
       const b = anneal;
-      writeWith(null, (d) =>
+      writeWith('案B を当てる', (d) =>
         chooseReassign(d, date, { problem: p, result: b.result, method: 'anneal', stayWeight: b.weight }),
       );
       toast('案B（少し動かした案）を当てました', { action: undoAction });
@@ -1151,7 +1145,7 @@ export default function PlanPage() {
         unassigned: p.visits.map((v) => v.id).filter((id) => !placed.has(id)),
         pins: pinsA,
       };
-      writeWith(null, (d) => chooseReassign(d, date, { problem: p, result: resultA, method: 'insert' }));
+      writeWith('案A を当てる', (d) => chooseReassign(d, date, { problem: p, result: resultA, method: 'insert' }));
       toast('案A（空き時間に入れた案）を当てました', { action: undoAction });
     }
     sel.reset();
@@ -1222,7 +1216,7 @@ export default function PlanPage() {
     orgName: data.org.name,
   };
   const saveAbsenceOnly = (absence: Absence) => {
-    update((d) => saveAbsence(d, absence));
+    update((d) => saveAbsence(d, absence), '欠勤を登録');
     setSudden(null);
     toast('欠勤を登録しました（担当はそのままです。休む人の訪問は要対応に出ます）');
   };
@@ -1235,31 +1229,53 @@ export default function PlanPage() {
       tone: 'danger',
     });
     if (!ok) return false;
-    update((d) => removeAbsence(d, absence.id));
+    update((d) => removeAbsence(d, absence.id), '欠勤を取り消す');
     setSudden(null);
-    toast(
-      reassignInfo
-        ? '欠勤を取り消しました。担当を戻すには「振り直す前に戻す」を押してください'
-        : '欠勤を取り消しました',
-    );
+    // 担当は変えない。振り直したあとなら「振り直す前に戻す」で担当を戻せる（「元に戻す」だと欠勤が戻ってしまう。PR #81 のレビュー）
+    if (reassignInfo)
+      toast('欠勤を取り消しました。担当を戻すには「振り直す前に戻す」を押してください', {
+        action: { label: '振り直す前に戻す', onClick: () => void revertRef.current(), testId: 'toast-revert' },
+      });
+    else toast('欠勤を取り消しました');
     return true;
   };
+  /**
+   * 振り直す前に戻す（PRD D31・D329）：直前の手が振り直し（欠勤の登録とは別の手）なら、全体の「元に戻す」で1手戻す（欠勤は残る）。
+   * あとにほかの操作をしていたら、確かめてから振り直す前の担当・ピンに戻す（あとで足した訪問は今のまま。これも履歴の1手）
+   */
   const revertToBase = async (): Promise<boolean> => {
-    if (!problem || !reassignInfo) return false;
-    const ok = await confirmDialog({
-      title: '振り直す前の担当に戻しますか？',
-      body: '振り直す前の担当とピンに戻します。',
-      confirmLabel: '振り直す前に戻す',
-    });
-    if (!ok) return false;
-    if (runRef.current) return false;
-    const p = problem;
-    writeWith(null, (d) => revertReassign(d, date, p));
+    if (!problem || !reassignInfo || runRef.current) return false;
+    // 近道：直前の手がこの日の「欠勤の振り直し」で、その手の前にこの日の振り直しが無く、手のあとに何も変わっていないときだけ
+    // 全体の「元に戻す」で1手戻す（別の日の振り直し・案A/案B の切り替えのあとで誤って戻さない。PR #81 のレビュー）
+    const last = appHistory.peek();
+    if (
+      last &&
+      last.label === REASSIGN_LABEL &&
+      last.after === dataRef.current &&
+      !!own(last.after.reassigns, date) &&
+      !own(last.before.reassigns, date)
+    ) {
+      historyOps.undo();
+    } else {
+      const ok = await confirmDialog({
+        title: '振り直す前の担当に戻しますか？',
+        body: '振り直したあとの手直しも含めて、振り直す前の担当とピンに戻します（あとで足した訪問は今のまま）。「元に戻す」で戻せます。',
+        confirmLabel: '振り直す前に戻す',
+      });
+      if (!ok || runRef.current) return false;
+      const p = problem;
+      writeWith('振り直す前に戻す', (d) => revertReassign(d, date, p));
+      toast('振り直す前に戻しました', { action: undoAction });
+    }
     setAnnealResult(null);
     sel.reset();
-    toast('振り直す前に戻しました', { action: undoAction });
     return true;
   };
+  /** トーストの「振り直す前に戻す」は前の描画の関数を持つので、押したときの最新の revertToBase を呼ぶ */
+  const revertRef = useRef<() => Promise<boolean>>(async () => false);
+  useEffect(() => {
+    revertRef.current = revertToBase;
+  });
   /**
    * 担当なしの訪問を候補の人に入れる（ピン。時刻は変えない。間に合わなければ要対応の赤い枠）。
    * その人の既存の訪問の開始が遅れるときは確認を出す
@@ -1278,9 +1294,15 @@ export default function PlanPage() {
       return;
     if (runRef.current) return;
     const p = problem;
-    const saved = writeDay(p, visitId, placeVisit(p, routes, visitId, staffId), { ...pins, [visitId]: staffId });
+    const saved = writeDay(
+      p,
+      visitId,
+      placeVisit(p, routes, visitId, staffId),
+      { ...pins, [visitId]: staffId },
+      '受けられる人に入れる',
+    );
     sel.follow(visitId, staffId);
-    toast(`${staffName(staffId)}さんに入れました`, saved ? { action: undoAction } : undefined);
+    toast(`${staffName(staffId)}さんに入れました`, saved ? { action: undoMove(visitId, null) } : undefined);
   };
 
   // ---- 訪問の取消 ----
@@ -1302,7 +1324,7 @@ export default function PlanPage() {
   const applyCancel = (visitId: string, sameDay: boolean) => {
     const v = m.allVisits.find((x) => x.id === visitId && !x.cancelled);
     if (!v) return;
-    writeWith(visitId, (d) => cancelVisitOp(d, visitId, sameDay));
+    writeWith(sameDay ? '当日キャンセル' : '訪問を取り消す', (d) => cancelVisitOp(d, visitId, sameDay));
     toast(sameDay ? '当日キャンセルとして取り消しました' : '取り消しました', { action: undoAction });
   };
   /** 拘束が上限を超える人（稼働の見込み。PRD D72。ADR-0015）。今の担当の並びで見る */
@@ -1573,6 +1595,8 @@ export default function PlanPage() {
         onLeg={() => sel.toggleLeg(x)}
         picked={sel.isPicked(x)}
         onPick={() => sel.togglePick(x)}
+        multi={multi.has(id)}
+        onMulti={() => multi.toggle(id)}
         tone={hard ? 'red' : pin ? 'pinned' : null}
         drag={dragProps(id)}
         dragging={dragging === id}
@@ -1659,6 +1683,8 @@ export default function PlanPage() {
       picked: sel.isPicked(x),
       dragging: dragging === id,
       onPick: () => sel.togglePick(x),
+      multi: multi.has(id),
+      onMulti: () => multi.toggle(id),
       drag: dragProps(id),
       marks: icons.length > 0 ? icons : undefined,
       note: notes.join('・') || undefined,
@@ -1972,6 +1998,7 @@ export default function PlanPage() {
   }, [date, problem, unassigned.length, noneAsked]);
 
   const busyWhy = running ? '計算中は選べません' : !problem ? 'この日に計算できる訪問がありません' : false;
+  const scopeItems = useScopeItems({ zoom: 'day', date, onDay: () => propose(), dayBusy: busyWhy });
   /** 点数の基準のプリセットの ID（当ててみるのは、ほかのプリセット） */
   const basePresetId = scorePresetOf(data.presets, data.scorePresetId)?.id;
   /**
@@ -1979,19 +2006,8 @@ export default function PlanPage() {
    * 重みは書き換えない）・提案を比べる・ピンをすべて外す。提案は「当てる」まで訪問を変えない
    */
   const menuItems: MenuItem[] = [
-    {
-      key: 'create',
-      group: 'AI で組む（提案を出す）',
-      testId: 'plan-menu-create',
-      label: `AI で組む（${scoreRulerName}）`,
-      description:
-        pinCount > 0
-          ? `ピンの ${pinCount}件はそのままで、ほかの担当・順番の提案を出します（当てるまで担当は変わりません）`
-          : '担当・順番の提案を出します（当てるまで担当は変わりません）',
-      icon: Sparkles,
-      disabled: busyWhy,
-      onSelect: () => propose(),
-    },
+    // 範囲（この日／この週／この月。日・週・月の予定で同じ。PRD D328）。この日はその場の提案（点の差も出す）
+    ...scopeItems,
     ...(rulesOn
       ? data.presets
           .filter((pr) => pr.id !== basePresetId)
@@ -2015,8 +2031,8 @@ export default function PlanPage() {
             key: 'compare',
             group: '比べる',
             testId: 'plan-menu-compare',
-            label: 'プリセットの提案を比べる',
-            description: '考え方ごとの提案をその場で作って並べます（保存しません）',
+            label: '2つの提案を比べる',
+            description: '今の担当と、考え方（プリセット）ごとの提案を2つ選んで並べます（保存しません）',
             icon: GitCompareArrows,
             onSelect: () => navigate('/compare'),
           },
@@ -2246,8 +2262,7 @@ export default function PlanPage() {
           )
         }
       />
-      {/* 進み具合の帯（PRD D151・D155。この日の確定の状態も出す） */}
-      <ScheduleBand date={date} withDay />
+      {/* 進み具合の帯は月の予定だけ（PRD D332）。日は見出しの状態の印と「今の担当」の1行 */}
       {m.clients.length === 0 && (
         <div className="card">
           <p className="sub">先に{terms.client}を登録してください。</p>
@@ -2335,60 +2350,38 @@ export default function PlanPage() {
           採点できません（{curScore.error}）
         </p>
       )}
-      {/* AI の提案（その場だけ。ADR-0053）：担当・時刻の変更と点の差。「当てる」で訪問に書く */}
+      {/* AI の提案（その場だけ。ADR-0053）：担当・時刻の変更と点の差。「当てる」で訪問に書く（日・週・月で同じ帯。PRD D328） */}
       {proposal && proposal.date === date && proposalView && (
-        <div className="plan-band proposal-band stack" data-testid="proposal-band">
-          <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-            <WithIcon icon={Sparkles} size={16}>
-              <span className="band-text">
-                <strong>提案（{proposal.label}）</strong>：担当が変わる{' '}
-                <strong data-testid="proposal-moved">{proposalView.diff?.moved.length ?? 0}</strong>件・時刻が変わる{' '}
-                <strong data-testid="proposal-shifted">{proposalView.diff?.shifted.length ?? 0}</strong>件
-                {proposalView.before !== null && proposalView.after !== null && (
-                  <>
-                    ・点 {proposalView.before}→<strong data-testid="proposal-score">{proposalView.after}</strong>（
-                    {deltaText(proposalView.after - proposalView.before, '点')}）
-                  </>
-                )}
-                {proposal.stopped ? '（途中までの最良）' : ''}
-                {pinCount > 0 ? `。ピンの ${pinCount}件はそのまま` : ''}
-              </span>
-            </WithIcon>
-            <button
-              type="button"
-              className="btn btn-primary btn-small"
-              disabled={!!running || proposalView.stale}
-              onClick={applyProposal}
-              data-testid="proposal-apply"
-            >
-              <WithIcon icon={CircleCheck} size={14}>
-                当てる
-              </WithIcon>
-            </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => setProposal(null)}
-              data-testid="proposal-discard"
-            >
-              <WithIcon icon={X} size={14}>
-                捨てる
-              </WithIcon>
-            </button>
-          </div>
-          {proposalView.stale && (
-            <span className="sub warn-text" data-testid="proposal-stale">
-              提案を出したあとに訪問が変わりました。もう一度 AI で組んでください
-            </span>
-          )}
-          {proposalView.diff && proposalView.diff.moved.length > 0 && (
-            <details className="reassign-moves-box" data-testid="proposal-moves">
-              <summary>担当が変わる訪問を見る（{proposalView.diff.moved.length}件）</summary>
+        <ProposalBand
+          kind="day"
+          title={`提案（${proposal.label}）`}
+          moved={proposalView.diff?.moved.length ?? 0}
+          shifted={proposalView.diff?.shifted.length ?? 0}
+          score={
+            proposalView.before !== null && proposalView.after !== null
+              ? { before: proposalView.before, after: proposalView.after }
+              : null
+          }
+          note={
+            <>
+              {proposal.stopped ? '（途中までの最良）' : ''}
+              {pinCount > 0 ? `。ピンの ${pinCount}件はそのまま` : ''}
+            </>
+          }
+          stale={proposalView.stale ? '提案を出したあとに訪問が変わりました。もう一度 AI で組んでください' : null}
+          applyDisabled={!!running || proposalView.stale}
+          onApply={applyProposal}
+          onDiscard={() => setProposal(null)}
+          detailsLabel={`担当が変わる訪問を見る（${proposalView.diff?.moved.length ?? 0}件）`}
+          details={
+            proposalView.diff && proposalView.diff.moved.length > 0 ? (
               <ReassignMoves diff={proposalView.diff} visitLabel={visitLabel} staffName={staffName} />
-            </details>
-          )}
-        </div>
+            ) : undefined
+          }
+        />
       )}
+      {/* 週・月の範囲で組んだ提案（日・週・月の予定で同じもの） */}
+      <RangeProposalBand />
       {hasPlan && careCount > 0 && (
         <div className="plan-band is-warn row" data-testid="band-care">
           <WithIcon icon={TriangleAlert} size={16}>
@@ -2492,34 +2485,23 @@ export default function PlanPage() {
           )}
         </div>
       )}
-      <div className="plan-toolbar row" data-testid="plan-toolbar">
-        {/* 急な欠勤・当日キャンセルの入口（PRD D167）。スマホでも見つけやすいよう操作の行の先頭。主ボタンにはせず枠のボタン（PRD D238） */}
-        {suddenOn && (
-          <button
-            ref={suddenBtnRef}
-            type="button"
-            className="btn plan-sudden-btn"
-            onClick={() => openSudden({})}
-            disabled={visits.length === 0 && suddenStaff.length === 0}
-            data-testid="sudden-open"
-          >
-            <WithIcon icon={UserRoundX}>欠勤・キャンセルを登録</WithIcon>
-          </button>
-        )}
-        <MenuButton label="AI で組む" icon={Sparkles} items={menuItems} testId="plan-menu" />
-        {/* 直前の手直しを1手だけ戻す（PRD D218）。戻せないときも押せる所に残し（フォーカスを落とさない）、理由は title */}
-        {hasPlan && (
-          <button
-            type="button"
-            className="btn btn-text"
-            aria-disabled={undoable ? undefined : true}
-            title={undoable ? '直前の手直しを1つだけ戻します' : `戻せません：${undoWhy}`}
-            onClick={() => undoable && undoEdit()}
-            data-testid="plan-reassign-undo"
-          >
-            <WithIcon icon={Undo2}>元に戻す</WithIcon>
-          </button>
-        )}
+      {/* 操作の行（日・週・月で同じ並び。PRD D327）：欠勤・キャンセルを登録／AI で組む ▾／元に戻す・やり直す／表示／その他 ▾ */}
+      <ScheduleToolbar
+        zoom="day"
+        className="plan-toolbar"
+        absence={
+          suddenOn
+            ? {
+                onClick: () => openSudden({}),
+                disabled: visits.length === 0 && suddenStaff.length === 0,
+                ref: suddenBtnRef,
+              }
+            : null
+        }
+        aiItems={menuItems}
+        moreItems={moreItems}
+        after={progressView}
+      >
         {(visits.length > 0 || m.leaveVisits.length > 0) && (
           <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
             {(
@@ -2541,10 +2523,7 @@ export default function PlanPage() {
             ))}
           </fieldset>
         )}
-        {progressView}
-        {/* 訪問を追加・使い方は「その他 ▾」にたたむ（PRD D279） */}
-        <MenuButton label="その他" items={moreItems} testId="plan-more" className="plan-more" />
-      </div>
+      </ScheduleToolbar>
       {helpOpen && (
         <div ref={helpRef} className="hint-body plan-help" tabIndex={-1} data-testid="plan-help">
           <ul className="plan-help-list">
@@ -2555,7 +2534,13 @@ export default function PlanPage() {
               で組み直しても担当を変えません）。
             </li>
             <li>「担当なしの訪問」へ移すと、担当なしに戻ります。</li>
-            <li>直前の1回だけ、「元に戻す」で戻せます。</li>
+            <li>
+              「元に戻す」（Ctrl+Z）で1手ずつ戻せます（50手まで）。「やり直す」（Ctrl+Shift+Z）で戻した手をやり直せます。
+            </li>
+            <li>
+              Shift か Ctrl
+              を押しながら訪問を押すと、複数を選べます。下に出る帯で、まとめて担当を替える・時刻をずらす・取り消すができます。
+            </li>
             <li>
               「AI
               で組む」は、ピンの付いた訪問はそのままで、ほかの担当・順番の提案を出します。提案を見て「当てる」と担当が変わります。
@@ -2902,6 +2887,8 @@ export default function PlanPage() {
           returnFocus={() => (suddenToBar.current ? document.getElementById(barId) : null)}
         />
       )}
+      {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
+      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />
     </div>
   );
 }

@@ -47,7 +47,7 @@ describe('tourSteps（PRD D277）', () => {
     const s = tourSteps(terms);
     expect(s[0]!.title).toContain('今日やること');
     expect(s[1]!.where).toBe('メニューの「予定」（スマホは下のタブの「予定」）');
-    expect(s[2]!.where).toBe('メニューの「欠勤・キャンセルを登録」（スマホは下のタブの「欠勤」）');
+    expect(s[2]!.where).toBe('メニューの「欠勤・キャンセル」（スマホは下のタブの「欠勤」）');
   });
   it('欠勤・キャンセルを切ると2枚（PRD D213）', () => {
     expect(tourSteps(terms, { sudden: false }).map((x) => x.key)).toEqual(['home', 'plan']);

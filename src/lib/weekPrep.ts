@@ -1,12 +1,13 @@
-// 週の予定の準備（PRD D280・D282。ADR-0046・ADR-0053）の純粋関数：見出しの主ボタン（この週の担当を AI で組む → この週の問題の無い日を
-// まとめて確定 → 済み）を状態から1つ決める決まりと、日の見出しの件数の文。データは書き換えない。画面は pages/WeekPage.tsx
+// 週の予定の準備（PRD D280・D282・D328。ADR-0046・ADR-0053・ADR-0054）の純粋関数：見出しの主ボタン（この週の問題の無い日を
+// まとめて確定 → 済み）を状態から1つ決める決まりと、日の見出しの件数の文。担当を AI で組むのは操作の行の「AI で組む ▾」の「この週」
+// （日・週・月で同じ入口）。データは書き換えない。画面は pages/WeekPage.tsx
 import type { BulkConfirm } from './confirmDay';
 
 /**
- * 週の主ボタンの状態：組む／組んでいる（この週）／確定する／残りは日の予定で（ボタンなし）／済み（ボタンなし）／
+ * 週の主ボタンの状態：組んでいる（この週の提案を作っている）／確定する／残りは日の予定で（ボタンなし）／済み（ボタンなし）／
  * 今日以降に訪問が無い（ボタンなし）
  */
-export type WeekNextKind = 'make' | 'making' | 'confirm' | 'rest' | 'done' | 'none';
+export type WeekNextKind = 'making' | 'confirm' | 'rest' | 'done' | 'none';
 
 export type WeekNext = {
   kind: WeekNextKind;
@@ -21,10 +22,6 @@ export type WeekNext = {
 export type WeekNextInput = {
   /** 週の今日以降で訪問がある日の数 */
   futureDays: number;
-  /**
-   * 組む日の数（伝えていない、担当なしの訪問がある日。この画面でまだ組んでいない日。組めない日は入れない）
-   */
-  makeDays: number;
   /** 週の今日以降の確定していない日の振り分け（lib/confirmDay の bulkConfirmTargets。月の予定と同じ決まり） */
   bulk: BulkConfirm;
   /** 担当を組む計算（lib/monthBatch）：この週を組んでいる／ほかを組んでいる／組んでいない */
@@ -34,17 +31,13 @@ export type WeekNextInput = {
 /** 確定のボタンの文（月の「問題の無い日をまとめて確定（N日）」の範囲を週にしたもの） */
 export const weekConfirmLabel = (n: number): string => `この週の問題の無い日をまとめて確定（${n}日）`;
 
-/** 組むボタンの文 */
-export const weekMakeLabel = (makeDays: number): string => `この週の担当なしを AI で組む（${makeDays}日）`;
-
 /**
- * 週の主ボタン（PRD D280）。仕事の順（担当を組む → 確定 → 済み）で最初に残っているもの：
+ * 週の主ボタン（PRD D280・D328）。仕事の順（確定 → 済み）で最初に残っているもの。担当を組むのは「AI で組む ▾」の「この週」：
  * 1. この週を組んでいる → 「この週の担当を組んでいます…」（押せない。進み具合は上の帯）
  * 2. 今日以降に訪問が無い → ボタンなし
- * 3. 担当なしの訪問がある日（まだ組んでいない）→ この週の担当なしを AI で組む（ほかを組んでいる間は押せず理由）
- * 4. 問題の無い伝えていない日がある → この週の問題の無い日をまとめて確定（組んでいる間は押せず理由）
- * 5. 確定していない日が残る（要対応の日・未連絡の変更のある日）→ ボタンなし（日の予定で確かめて確定）
- * 6. 何も残っていない → 済み
+ * 3. 問題の無い伝えていない日がある → この週の問題の無い日をまとめて確定（組んでいる間は押せず理由）
+ * 4. 確定していない日が残る（要対応の日・未連絡の変更のある日）→ ボタンなし（日の予定で確かめて確定）
+ * 5. 何も残っていない → 済み
  */
 export function weekNext(x: WeekNextInput): WeekNext {
   const busy = x.running === 'other' ? 'ほかの担当を組んでいます。終わってから押せます' : null;
@@ -52,8 +45,6 @@ export function weekNext(x: WeekNextInput): WeekNext {
     return { kind: 'making', label: 'この週の担当を組んでいます…', short: '組んでいます…', why: null };
   if (x.futureDays === 0)
     return { kind: 'none', label: 'この週の今日以降に訪問はありません', short: '訪問なし', why: null };
-  if (x.makeDays > 0)
-    return { kind: 'make', label: weekMakeLabel(x.makeDays), short: weekMakeLabel(x.makeDays), why: busy };
   if (x.bulk.targets.length > 0)
     return {
       kind: 'confirm',

@@ -64,7 +64,7 @@
 
 - 地図の浮かせた表示：`components/MapDock.tsx`（画面の外の地図を右下に浮かせる）。位置は `--map-dock-left`・`--map-dock-top`
 - `components/floating.ts`（`FLOATING_EVENT`・`useFloatingEdge(name)`）：知らせ（トースト）は欠勤の振り直しの帯・地図より上に出す（`--reassign-dock-top`・`--map-dock-top`）
-- `components/Toast.tsx`：z-index 1200。body の直下の `div.toast-layer[data-inert-keep]` に出す（右の欄の inert に巻き込まれず、欄が開いていても読み上げ・「元に戻す」を押せる。確認ダイアログ・パレット・ツアーの間は今までどおり inert）。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・`toastMs`＝6秒から文の長さ（1字 120ms）で延ばし10秒まで・フォーカスがある間・マウスを重ねている間は消さず、両方が外れたら2.5秒で消す。ボタン付きの箱（文の幅だけ）はマウスを受ける（`pointer-events: auto`）。PRD D268）。使う所は日の予定の手直しの「元に戻す」（[pages-plan.md](pages-plan.md)。PRD D218）と月のまとめて作るの終わりの［月の予定を見る］（`components/batchBand` の `MonthBatchHost`。その月の月の予定を見ているとき（`lib/month` の `monthShown(search, date)`。テストあり）はボタンを付けない。PRD D268）
+- `components/Toast.tsx`：z-index 1200。body の直下の `div.toast-layer[data-inert-keep]` に出す（右の欄の inert に巻き込まれず、欄が開いていても読み上げ・「元に戻す」を押せる。確認ダイアログ・パレット・ツアーの間は今までどおり inert）。`toast(msg)` は文だけ（`output.toast`・2.5秒・押しても下へ抜ける）。`toast(msg, { action })` はボタン1つ付き（`.toast.has-action`。文は中の `output`・ボタンだけ押せる・`toastMs`＝6秒から文の長さ（1字 120ms）で延ばし10秒まで・フォーカスがある間・マウスを重ねている間は消さず、両方が外れたら2.5秒で消す。ボタン付きの箱（文の幅だけ）はマウスを受ける（`pointer-events: auto`）。PRD D268）。使う所は全体の「元に戻す」（`components/undo` の `useUndoAction`。data-testid `toast-undo`。戻したあとは「やり直す」 `toast-redo`。PRD D329）と、範囲の AI で組むの終わりの［月の予定を見る］／［週の予定を見る］（`components/batchBand` の `MonthBatchHost`。提案を出したときに日・週・月の予定か（空き状況から始めたなら）空き状況にいれば、提案の帯が見えるのでボタンを付けない。提案が無いときは、その月の月の予定・その週の週の予定を見ていれば付けない（`lib/month` の `monthShown(search, date)`。テストあり）。PRD D268・D328）
 
 ### フォームの共通の決まり（PRD D250・D251。`components/FieldError.tsx`）
 
@@ -79,6 +79,24 @@
 - `enterToSave(save)`：小さな入力のまとまり（〈利用者さん〉の画面の繰り返し・終わらせる・休みの `fieldset`）の `onKeyDown`。入力欄の Enter（変換中は除く）を外の form に渡さず、まとまりの保存を呼ぶ
 - form にした所：右の欄の `onSubmit`（訪問の詳細の欄も）、人の画面の節（`EditSection`）、呼び方（データの画面）。もともと form：項目の選択肢、プリセットの名前
 
+### 予定の共通の部品（`components/scheduleParts.tsx`・`scheduleParts.css`・`components/undo.tsx`。PRD D327〜D332。ADR-0054）
+
+日・週・月の予定は「拡大率」として、同じ見出しの型（`PageHeader`＋［月｜週｜日］）と次の部品を並べる。本体（日の時間軸・順番・一覧、週の時間軸・表、月のカレンダー・日ごとの一覧）は各画面に残す。
+
+- `ScheduleToolbar`（`div.row.schedule-toolbar`・data-testid `schedule-toolbar`・`data-zoom`＝`day|week|month`。印刷では出さない。600px 以下は文字を小さく詰める）：並びは ①欠勤・キャンセルを登録（`sudden-open`。日は欄を開くボタン、週・月は `absenceHref(その日。今日より前なら今日)` へのリンク。`sudden` を切れば出さない）②「AI で組む ▾」（`MenuButton`・`plan-menu`）③「元に戻す」「やり直す」（`UndoButtons`）④表示の切り替え（日：時間軸・順番・一覧、月：カレンダー・日ごとの一覧（`month-layout`）。children）⑤「その他 ▾」（`plan-more`・`week-more`・`month-more`。項目が無ければ出さない）⑥計算の進み具合（日。after）
+- `useScopeItems({ zoom, date, onDay?, dayBusy?, onMonth? })`：「AI で組む ▾」の先頭のまとまり「AI で組む（範囲）」（`group`）の3項目。この日（M/D）を組む `ai-scope-day`（今日より前・伝えた日・組める訪問が無い日は押せず理由。日の予定は `onDay`＝その場の提案、週・月は範囲の計算を1日で）・この週（M/D〜M/D）を組む `ai-scope-week`（`weekBatchDays`：今日以降の伝えていない、訪問のある日。0日なら押せず理由）・この月（N月）を組む `ai-scope-month`（月の予定は `onMonth`＝欄「N月の担当を AI で組む」を開く、ほかは `/month?ym=…&do=batch`）。範囲の計算中は押せず「ほかの担当を組んでいます。終わってから押せます」。説明は「ピンの訪問はそのままで、担当・順番の提案を出します（当てるまで担当は変わりません）」
+- `ProposalBand`（`section.plan-band.schedule-band.proposal-band`・`aria-label="AI の提案"`・data-testid `proposal-band`・`data-kind`＝`day`（日の予定のその場の提案）／`range`（範囲の提案））：「提案（名前）：担当が変わる N件（`proposal-moved`）・時刻が変わる M件（`proposal-shifted`）・点 a→b（`proposal-score`。日だけ）」と［当てる］（主ボタン・`proposal-apply`）［捨てる］（`proposal-discard`）、古いときの文（`proposal-stale`）、差の一覧（`details.reassign-moves-box`・`proposal-moves`）
+- `RangeProposalBand`：`lib/monthBatch` の `proposal`（範囲の提案。1つだけ）を日・週・月の予定と空き状況に出す。題は「提案（11月・22日分）」、日ごとの差の一覧（`proposal-days`。日付 `proposal-day` を押すとその日の日の予定）。当てると `monthBatch.apply()`（組み始めたときのままの日だけ1回の update。変わった日は当てず、件数を知らせる）
+- 複数選択（PRD D330）：`useVisitSelection(key)`（日付・週の始まりが変わったら外す。Esc で外す（入力欄の中・右の欄・モーダルの間は除く））。日の時間軸の帯（`RouteTimeline` の `multi`・`onMulti`）・順番のカード（`VisitCard` の `multi`・`onMulti`）・週の時間軸の帯（`DayColumn` の `isMulti`・`onMulti`。今日より前・休みの帯は選ばない）で、Shift・Ctrl（mac は ⌘）＋クリック、帯にフォーカスして Shift／Ctrl＋Enter で選ぶ・外す。選んだ帯は `.is-multi`（太い縁）と読み上げの「（選択中）」
+- `SelectionBar`（`section.selection-bar`・`aria-label="選んだ訪問"`・data-testid `selection-bar`。画面の下に貼り付く `position: sticky`（スマホは下のタブの上）。印刷では出さない）：「N件を選択」（`selection-count`）・［担当を替える ▾］（`selection-assign`。利用中の〈スタッフ〉。項目 `selection-staff`）・時刻をずらす −30・−15・+15・+30（`selection-shift`・`data-minutes`）・［取り消す］（`selection-cancel`。独自の確認）・［選択を外す］（`selection-clear`）。どれも「この回だけ」で `lib/multiEdit`（`assignMany`・`shiftMany`・`cancelMany`）を1回の update（手の名前は「担当を替えました」など）。結果は `multiResultText`（「3件の担当を替えました（1件はできませんでした：その日は働かない）」）
+- `UndoButtons`（`components/undo`）：「元に戻す」（`undo-btn`。戻せる手が無ければ `aria-disabled`。title は「「手の名前」を戻します（Ctrl+Z）」）・「やり直す」（`redo-btn`。やり直せる手があるときだけ）。読むのは `lib/history` の `appHistory.state`。押すと store の `undo()`・`redo()` とトースト
+- 進み具合の帯（`components/progressBand` の `ProgressBand`）は月の予定だけ。週は1行の状態（`week-status`）、日は見出しの状態の印（`confirm-state`）と「今の担当」の1行（`plan-summary`）
+
+#### `lib/history.ts`・`lib/multiEdit.ts`（純粋関数。テストあり）
+
+- `createHistory(max=50)`：`record(before, after, label?, token?, group?)`（同じなら積まない。同じ token の手は置き換えて2つ積まない。同じ group の続きは直前の手に足す。積むとやり直しは消える）・`peek()`（直前の手）・`undo(current)`・`redo(current)`（戻した先のデータと手の名前）・`clear()`・`state`（`{ undo, redo, undoCount, redoCount }`。知らせは microtask で後へ回す）。`appHistory` はアプリで1つ。`historyKey(e, isMac)`・`isTextTarget(target)`・`historyKeysOn(pathname)`（`/staff-view/:id`・`/month/print` では効かせない）
+- `assignMany(data, ids, staffId, today)`・`shiftMany(data, ids, minutes, today)`・`cancelMany(data, ids, today)`：消えた・取り消した・今日より前の訪問は理由つきで外す。担当は `assignOnDays`（その日に担当できない人は当てない）、時刻は `applyVisitEdit` の「この回だけ」（時間の約束の幅はそのまま）。`selectionText(n)`・`multiResultText(what, r)`
+
 ### 訪問の詳細の欄（`components/VisitPanel.tsx`・`visitPanel.css`。PRD D301〜D305。ADR-0051）
 
 - `VisitPanelProvider` を App の殻（`DayProvider`・`PersonPopoverProvider` の中、ルートの外）に1つ置き、`useOpenVisit()(req)` でどの画面・コマンドパレットからでも開く（画面を移っても欄は残る）。`req`：`visitId`（見る・直す）か `newVisit: { date, clientId?, start? }`（新規）、`draft?`（はじめの入力の差し替え。週・人の画面のカレンダーのドラッグの落とした日時、空き枠の所要）、`onSaved?`（`{ visitId, date, moved, staffSet, isNew, label }`）、`returnFocus?(visitId)`（閉じたあとのフォーカス。保存で作り直した回は新しい ID）
@@ -86,7 +104,7 @@
 - 帯：保存 `vp-save`（主ボタン。新規は「追加」）・閉じる `vp-close`。見るだけ（今日より前・取り消し済み・スマホ幅の新規）は閉じるだけ
 - 日時を変えて候補が変わり、選んでいた人（担当なしも）が選べなくなったら「変えない」に戻す
 - 開いたときの訪問を控え、保存・取り消しの前にデータの訪問と違えば（別のタブ・別の操作）「この訪問は別の操作で変わりました」で止める。書く前のデータが今のデータでなければ書かない（確認を待つ間に変わったとき）
-- 保存：`applyVisitEdit` → これ以降・すべてで確定した日も変わるなら独自の確認 → `update` → トースト（範囲・当てられなかった回の件数）と「元に戻す」（`vp-toast-undo`。殻が今のデータを追い、書いたあとのデータのままなら書く前に戻す）
+- 保存：`applyVisitEdit` → これ以降・すべてで確定した日も変わるなら独自の確認 → `update(fn, '訪問を保存')`（新規は「訪問を追加」、取り消しは「訪問を取り消す」「当日キャンセル」など） → トースト（範囲・当てられなかった回の件数）と全体の「元に戻す」（`toast-undo`。PRD D329）
 - スマホ幅（`COMPACT_QUERY`。600px 以下）：日時 `vp-time`・範囲 `vp-scope`・「繰り返しのとおりに戻す」を出さず、新規は文 `vp-narrow-new` だけ
 - 閉じたときに戻り先が消えていれば画面の見出し（`.app-main h1`）へ
 - 印刷：`.drawer-wrap:has(.visit-panel)` を出さない

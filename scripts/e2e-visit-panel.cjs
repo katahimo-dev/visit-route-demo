@@ -172,7 +172,7 @@ async function timeAndStaff(page) {
   );
   check(back === id, '保存のあとフォーカスは開いた帯', back);
   // トーストの「元に戻す」
-  await page.getByTestId('vp-toast-undo').click();
+  await page.getByTestId('toast-undo').click();
   const undone =
     (await dataWhen(page, (x) => findIn(x, id)?.earliestStart === before.earliestStart)).visits.find(
       (v) => v.id === id,

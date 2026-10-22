@@ -76,6 +76,8 @@ export function VisitCard({
   onLeg,
   picked,
   onPick,
+  multi = false,
+  onMulti,
   tone,
   drag,
   dragging = false,
@@ -94,6 +96,10 @@ export function VisitCard({
   onLeg: () => void;
   picked: boolean;
   onPick: () => void;
+  /** 複数選択で選んでいる（PRD D330） */
+  multi?: boolean;
+  /** Shift・Ctrl（⌘）＋クリック・Shift／Ctrl＋Enter で選ぶ・外す */
+  onMulti?: () => void;
   tone?: 'red' | 'pinned' | 'moved' | null;
   drag?: DragProps;
   dragging?: boolean;
@@ -115,6 +121,7 @@ export function VisitCard({
           picked ? 'is-picked' : '',
           dragging ? 'is-dragging' : '',
           drag ? '' : 'is-static',
+          multi ? 'is-multi' : '',
         ].join(' ')}
         data-visit={visitId}
         {...drag}
@@ -126,11 +133,20 @@ export function VisitCard({
           tabIndex={0}
           className="route-btn plain-btn"
           aria-pressed={picked}
-          onClick={onPick}
+          aria-description={multi ? '選択中' : undefined}
+          onClick={(ev) => {
+            if (onMulti && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) {
+              ev.preventDefault();
+              onMulti();
+              return;
+            }
+            onPick();
+          }}
           onKeyDown={(ev) => {
             if (ev.key === 'Enter' || ev.key === ' ') {
               ev.preventDefault();
-              onPick();
+              if (onMulti && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) onMulti();
+              else onPick();
             }
           }}
           title={drag ? '押すと理由を見られます。ドラッグで別の担当へ移せます' : '押すと理由を見られます'}

@@ -48,12 +48,18 @@ export function MonthBatchHost(): ReactNode {
   useEffect(() => {
     if (!done || done === shown.current) return;
     shown.current = done;
-    // 行き先が今いる画面と同じ（その月の月の予定・その週の週の予定を見ている）ならボタンを出さない（PRD D268・D280）
+    // 提案の帯は日・週・月の予定と空き状況に出るので、そこにいればボタンを出さない（PRD D268・D328）。
+    // 提案が無い（止めた・組めなかった）ときは、行き先が今いる画面と同じならボタンを出さない
     const here = viewing.current;
-    const week = done.source === 'week' && done.weekStart !== null;
-    const same = week
-      ? here.pathname === '/week' && weekShown(here.search, here.date) === done.weekStart
-      : here.pathname === '/month' && monthShown(here.search, here.date) === done.ym;
+    const week = (done.source === 'week' || done.source === 'day') && done.weekStart !== null;
+    const bandShown =
+      ['/plan', '/week', '/month'].includes(here.pathname) ||
+      (done.source === 'vacancy' && here.pathname === '/vacancy');
+    const same =
+      (done.proposal !== null && bandShown) ||
+      (week
+        ? here.pathname === '/week' && weekShown(here.search, here.date) === done.weekStart
+        : here.pathname === '/month' && monthShown(here.search, here.date) === done.ym);
     toast(
       batchDoneText(done),
       same

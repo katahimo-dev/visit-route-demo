@@ -5,6 +5,7 @@ import { useDay } from '../app/day';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { FieldError, invalidAttrs } from '../components/FieldError';
+import { PeopleTabs } from '../components/SettingsTabs';
 import { StaffMark } from '../components/StaffMark';
 import { StaffLegend } from '../components/staffBar';
 import { Term } from '../components/Term';
@@ -136,12 +137,12 @@ export default function WorkloadPage() {
       : null;
   const saveFare = () => {
     if (fareError || fareNum === org.fareYenPerKm) return;
-    update((d) => ({ ...d, org: { ...d.org, fareYenPerKm: fareNum } }));
+    update((d) => ({ ...d, org: { ...d.org, fareYenPerKm: fareNum } }), '交通費の単価');
     toast(fareNum > 0 ? `交通費の単価を ${fareNum}円/km にしました` : '交通費を出さないようにしました');
   };
   const saveLimit = () => {
     if (limitError || limitNum === org.spanLimitHours) return;
-    update((d) => ({ ...d, org: { ...d.org, spanLimitHours: limitNum } }));
+    update((d) => ({ ...d, org: { ...d.org, spanLimitHours: limitNum } }), '拘束の上限');
     toast(
       limitNum > 0
         ? `出勤〜退勤（拘束）の上限を ${limitNum}時間 にしました`
@@ -162,6 +163,7 @@ export default function WorkloadPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<PeopleTabs />}
         icon={Timer}
         title="勤務の見込み"
         lead={`予定から見込んだ、${terms.staff}ごとの出勤〜退勤（拘束）・移動・空き時間（待ち）の時間${fareFeature ? 'と交通費' : ''}です。実績ではありません`}

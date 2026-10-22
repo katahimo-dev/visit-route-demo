@@ -20,10 +20,17 @@ import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { LoadRowsSample } from '../components/loadBar';
+import type { MenuItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
-import { ScheduleBand } from '../components/progressBand';
 import { StaffMark } from '../components/StaffMark';
+import {
+  RangeProposalBand,
+  ScheduleToolbar,
+  SelectionBar,
+  useScopeItems,
+  useVisitSelection,
+} from '../components/scheduleParts';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, WithIcon } from '../components/ui';
@@ -51,8 +58,8 @@ import { bulkConfirmDialog, bulkConfirmTargets, confirmDay } from '../lib/confir
 import { deferredDragStart } from '../lib/dragStart';
 import { periodEmptyGuide } from '../lib/emptyGuide';
 import { isDate } from '../lib/isDate';
-import { attentionList, ymOf } from '../lib/month';
-import { monthBatch, weekLabel } from '../lib/monthBatch';
+import { attentionList } from '../lib/month';
+import { monthBatch } from '../lib/monthBatch';
 import { staffLabels } from '../lib/monthPrint';
 import { typeOf } from '../lib/patternText';
 import { scrollLeftToShow } from '../lib/scrollEdge';
@@ -177,6 +184,10 @@ export default function WeekPage() {
   /** 訪問の詳細の欄（PRD D301。帯を押す・落とすと開く。週の移動の欄はこの欄にした） */
   const openVisitPanel = useOpenVisit();
   const [notice, setNotice] = useState<Notice | null>(null);
+  /** 欠勤・キャンセルの入口（ADR-0028 の sudden） */
+  const suddenOn = useFeature('sudden');
+  /** 複数選択（Shift・Ctrl＋クリック。週を送ったら外す。PRD D330） */
+  const multi = useVisitSelection(start);
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
   const [mailOpen, setMailOpen] = useState(false);
   const mailOn = useFeature('mail');
@@ -266,8 +277,6 @@ export default function WeekPage() {
   // ---- この週の準備（PRD D280・D282。ADR-0046・ADR-0053）：担当なしを組む → 確定 → 済み の主ボタン1つ ----
   /** 週の今日以降の日（組む・確定するのはこの日だけ。月をまたぐ週も1度に） */
   const futureDates = useMemo(() => dates.filter((d) => d >= today), [dates, today]);
-  /** この画面で組んだ日（組んでも担当なしが残る日を、また組む日に数えない。画面を離れると忘れる） */
-  const [tried, setTried] = useState<ReadonlySet<string>>(new Set());
   /** 日の状態（月の予定・ホームと同じ数え方。lib/useDayStatuses） */
   const weekStatuses = useDayStatuses(data, compileInput, futureDates);
   const weekPrep = useMemo(() => {
@@ -275,20 +284,19 @@ export default function WeekPage() {
     const list = futureDates.flatMap((d) => statusOf(d) ?? []);
     const unconfirmed = list.filter((x) => x.count > 0 && x.state !== 'told').map((x) => x.date);
     const bulk = bulkConfirmTargets(unconfirmed, statusOf, attentionList(data, list, today));
-    const makeDays = list
-      .filter(
-        (x) => x.state === 'none' && x.unassigned > 0 && !tried.has(x.date) && !!weekStatuses.get(x.date)?.problem,
-      )
-      .map((x) => ({ date: x.date, mode: 'care' as const }));
     const futureDays = list.filter((x) => x.count > 0).length;
-    return { bulk, makeDays, futureDays };
-  }, [weekStatuses, futureDates, data, today, tried]);
+    // 1行の状態（PRD D332）：今日以降の訪問のある日の確定の状態と要対応の数
+    const told = list.filter((x) => x.count > 0 && x.state === 'told').length;
+    const changed = list.filter((x) => x.count > 0 && x.state === 'changed').length;
+    const notYet = list.filter((x) => x.count > 0 && x.state === 'none').length;
+    const care = list.reduce((n, x) => n + x.care, 0);
+    return { bulk, futureDays, line: { told, changed, notYet, care } };
+  }, [weekStatuses, futureDates, data, today]);
   /** 担当を組む計算（月の予定と同じ入れ物。ADR-0042）：この週を組んでいるか、ほかを組んでいるか */
   const batchRun = useValueStore(monthBatch.run);
   const running = batchRun ? (batchRun.source === 'week' && batchRun.weekStart === start ? 'this' : 'other') : null;
   const next = weekNext({
     futureDays: weekPrep.futureDays,
-    makeDays: weekPrep.makeDays.length,
     bulk: weekPrep.bulk,
     running,
   });
@@ -299,38 +307,6 @@ export default function WeekPage() {
   const nextRef = useRef<HTMLDivElement>(null);
   /** 押せない理由の文の id（主ボタンの aria-describedby） */
   const whyId = useId();
-  /**
-   * この週の担当なしを AI で組む（PRD D280）：月の予定と同じ仕組み（lib/monthBatch。画面の外で1日ずつ）で、
-   * この週の今日以降の、伝えていない担当なしのある日を組む。組んでいる間も週の予定にとどまり、上の帯に進み具合
-   */
-  const makeWeek = () => {
-    if (monthBatch.running()) {
-      toast('ほかの担当を組んでいます。終わってから押してください');
-      return;
-    }
-    const targets = weekPrep.makeDays;
-    if (targets.length === 0) return;
-    const ok = monthBatch.start({
-      ym: ymOf(targets[0]!.date),
-      label: weekLabel(start),
-      mode: 'care',
-      days: targets,
-      today,
-      source: 'week',
-      weekStart: start,
-    });
-    if (!ok) toast('ほかの担当を組んでいます。終わってから押してください');
-    else startedDays.current = targets.map((x) => x.date);
-  };
-  /** この週で組み始めた日（終わったら、組んだ日だけを tried に入れる。止めた日の残りはまた組める） */
-  const startedDays = useRef<string[] | null>(null);
-  const batchDone = useValueStore(monthBatch.done);
-  useEffect(() => {
-    const days = startedDays.current;
-    if (!batchDone || !days || batchDone.source !== 'week' || batchDone.weekStart !== start) return;
-    startedDays.current = null;
-    setTried((t) => new Set([...t, ...days.slice(0, batchDone.made)]));
-  }, [batchDone, start]);
   /**
    * この週の問題の無い日をまとめて確定（PRD D280）：月の「問題の無い日をまとめて確定」（D223）と同じ決まり・同じ確認の型で、
    * 範囲をこの週の今日以降にする。1回の update で日ごとに「確定（伝えた）」と同じ書き方（lib/confirmDay）
@@ -349,7 +325,7 @@ export default function WeekPage() {
     });
     if (ready.length === 0) return;
     const at = Date.now();
-    update((d) => ready.reduce((out, x) => confirmDay(out, x.date, x.p, at), d));
+    update((d) => ready.reduce((out, x) => confirmDay(out, x.date, x.p, at), d), `${ready.length}日をまとめて確定`);
     toast(`${ready.length}日を確定しました`);
     // 押したボタンは状態の文に替わるので、フォーカスは主ボタンの場所へ（body に落とさない）
     requestAnimationFrame(() => nextRef.current?.focus({ preventScroll: true }));
@@ -660,7 +636,7 @@ export default function WeekPage() {
       });
       return;
     }
-    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data);
+    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data, '空き時間に入れる');
     toast(`${md(notice.date)} の空き時間に入れました（担当：${staffName(r.staffId)}）`);
     setNotice(null);
   };
@@ -681,17 +657,32 @@ export default function WeekPage() {
   });
   const nothingPicked = by === 'client' ? timelineClients.length === 0 : staffSel?.length === 0;
 
+  // ---- 操作の行（日・週・月で同じ。PRD D327）----
+  const scopeItems = useScopeItems({ zoom: 'week', date: anchor });
+  /** その他 ▾：週の予定をメールで送る（表の上のボタンと同じ） */
+  const moreItems: MenuItem[] = mailOn
+    ? [
+        {
+          key: 'mail',
+          label: '週の予定をメールで送る',
+          icon: Mail,
+          onSelect: () => setMailOpen(true),
+          testId: 'week-more-mail',
+        },
+      ]
+    : [];
+
   return (
     <div className="stack week-page">
       <PageHeader
         nav={<ViewSwitch current="week" />}
         icon={CalendarClock}
         title="週の予定"
-        lead={`この週の担当なしを AI で組んで確定し、日時をドラッグでずらして${terms.staff}の偏りを見ます`}
+        lead={`この週の担当を見て、日時をドラッグでずらし、${terms.staff}に伝えたら確定します`}
         actions={
           next.kind === 'none' ? undefined : (
             <div className="week-next" ref={nextRef} tabIndex={-1} data-testid="week-next" data-kind={next.kind}>
-              {next.kind === 'make' || next.kind === 'making' || next.kind === 'confirm' ? (
+              {next.kind === 'making' || next.kind === 'confirm' ? (
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -699,8 +690,7 @@ export default function WeekPage() {
                   aria-describedby={next.why ? whyId : undefined}
                   onClick={() => {
                     if (next.kind === 'making' || next.why !== null) return;
-                    if (next.kind === 'make') makeWeek();
-                    else void confirmWeek();
+                    void confirmWeek();
                   }}
                   data-testid="week-next-btn"
                 >
@@ -727,9 +717,22 @@ export default function WeekPage() {
           )
         }
       />
-      {/* 進み具合の帯（PRD D151。選んでいる日付＝週の中の日の月） */}
-      {/* 見出しの主ボタンが「この週の案を作る」の間は、帯の「まとめて作る」を出さない（作る入口を1つに。PRD D280） */}
-      <ScheduleBand date={anchor} hideBatch={next.kind === 'make' || next.kind === 'making'} />
+      {/* 1行の状態（PRD D332。進み具合の帯は月の予定だけ） */}
+      {weekPrep.futureDays > 0 && (
+        <p className="week-status sub" data-testid="week-status">
+          この週の今日以降：確定済み {weekPrep.line.told}日・まだ伝えていない {weekPrep.line.notYet}日
+          {weekPrep.line.changed > 0 ? `・未連絡の変更 ${weekPrep.line.changed}日` : ''}・要対応 {weekPrep.line.care}件
+        </p>
+      )}
+      {/* 操作の行（日・週・月で同じ並び。PRD D327） */}
+      <ScheduleToolbar
+        zoom="week"
+        absence={suddenOn ? { date: anchor } : null}
+        aiItems={scopeItems}
+        moreItems={moreItems}
+      />
+      {/* 範囲の提案（日・週・月で同じ帯。PRD D328） */}
+      <RangeProposalBand />
 
       <div className="card stack week-head">
         <div className="row week-nav">
@@ -1059,6 +1062,8 @@ export default function WeekPage() {
                 }}
                 unfit={(b) => unfitMarks(day.problem, b.visitId, b.staffId)}
                 onOpen={(b) => openMove(b.visitId)}
+                isMulti={multi.has}
+                onMulti={(b) => multi.toggle(b.visitId)}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
                 onDragOver={(e) => onDragOver(e, day.date)}
@@ -1323,6 +1328,8 @@ export default function WeekPage() {
       )}
 
       {mailOpen && mailOn && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
+      {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
+      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} />
     </div>
   );
 }
@@ -1341,6 +1348,8 @@ function DayColumn({
   edgeColor,
   unfit,
   onOpen,
+  isMulti,
+  onMulti,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -1363,6 +1372,9 @@ function DayColumn({
   /** 担当が種類の必要条件（資格✗）・担当を限る決まり（限✗。ADR-0014）で可でない */
   unfit: (b: Band) => UnfitMark[];
   onOpen: (b: Band) => void;
+  /** 複数選択で選んでいるか・選ぶ（Shift・Ctrl＋クリック、Shift／Ctrl＋Enter。PRD D330） */
+  isMulti: (visitId: string) => boolean;
+  onMulti: (b: Band) => void;
   onDragStart: (e: DragEvent<HTMLElement>, visitId: string) => void;
   onDragEnd: () => void;
   onDragOver: (e: DragEvent<HTMLElement>) => void;
@@ -1411,7 +1423,7 @@ function DayColumn({
             key={b.visitId}
             type="button"
             draggable={movable}
-            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}`}
+            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}${isMulti(b.visitId) ? ' is-multi' : ''}`}
             style={{
               top: top(b.start),
               height: h,
@@ -1421,8 +1433,23 @@ function DayColumn({
               borderColor: !bad && b.staffId !== null && edge ? edge : undefined,
             }}
             title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${marks.map((m) => `（${m.short}：${m.why}）`).join('')}`}
-            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}（押すと訪問の詳細）`}
-            onClick={() => onOpen(b)}
+            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}${isMulti(b.visitId) ? '（選択中）' : ''}（押すと訪問の詳細）`}
+            aria-pressed={isMulti(b.visitId) || undefined}
+            onClick={(e) => {
+              // Shift・Ctrl（⌘）＋クリックは複数選択（休みの訪問・今日より前は選ばない）
+              if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                if (movable) onMulti(b);
+                return;
+              }
+              onOpen(b);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                if (movable) onMulti(b);
+              }
+            }}
             onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}
             onDragEnd={onDragEnd}
             data-testid="week-band"

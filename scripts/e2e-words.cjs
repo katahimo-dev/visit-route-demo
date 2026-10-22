@@ -290,11 +290,8 @@ async function empties(page) {
     '週：訪問が無ければ見出しは「この週の今日以降に訪問はありません」（組むボタンなし）',
     await page.locator('.btn-primary').allInnerTexts(),
   );
-  await page.getByTestId('progress-band').waitFor({ timeout: 30000 });
-  check(
-    (await page.locator('[data-testid="band-next"][data-kind="batch"]').count()) === 0,
-    '週：訪問が無ければ進み具合の帯に「担当を AI で組む」を出さない',
-  );
+  // 週は進み具合の帯を出さない（月だけ。PRD D332）
+  check((await page.getByTestId('progress-band').count()) === 0, '週：進み具合の帯は出さない（月だけ）');
   await page.screenshot({ path: path.join(OUT_DIR, 'week-empty.png') });
   // 週：日の画面のボタンでその日の日の画面
   const day = we.getByTestId('empty-next-day');

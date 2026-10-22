@@ -1,10 +1,11 @@
-import { ChevronDown, Eye, HeartHandshake, House, ListFilter, MapPin, Plus, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Eye, House, ListFilter, MapPin, Plus, ShieldCheck } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { CondChips, TraitChips } from '../components/conditions';
 import { TentativeMark } from '../components/parts';
+import { PeopleTabs } from '../components/SettingsTabs';
 import { StaffMarkById } from '../components/StaffMark';
 import { useToast } from '../components/Toast';
 import { PageHeader, WithIcon } from '../components/ui';
@@ -43,7 +44,6 @@ export default function ClientsPage() {
   // 機能の入り切り（ADR-0028）：切った機能の入力の欄・表示を出さない（データは消さず、保存しても今の値を残す）
   const stageOn = useFeature('clientStage');
   const allowedOn = useFeature('allowedStaff');
-  const compatOn = useFeature('compat');
   const geocodeOn = useFeature('geocode');
   const terms = data.org.terms;
   const clients = useMemo(() => [...data.clients].sort(byDisplayName), [data.clients]);
@@ -127,20 +127,14 @@ export default function ClientsPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<PeopleTabs />}
         icon={House}
         title={`${terms.client}一覧`}
         lead={`${terms.client}の住所・特性・条件を決めます`}
         actions={
-          <>
-            {compatOn && (
-              <Link to="/compat" className="btn btn-text" data-testid="to-compat">
-                <WithIcon icon={HeartHandshake}>相性の表</WithIcon>
-              </Link>
-            )}
-            <Link to="/clients/new" className="btn btn-primary" data-testid="client-add">
-              <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
-            </Link>
-          </>
+          <Link to="/clients/new" className="btn btn-primary" data-testid="client-add">
+            <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
+          </Link>
         }
       />
 

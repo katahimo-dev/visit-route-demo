@@ -18,27 +18,29 @@
 
 URL を書くときは履歴を増やさない `replace`（表示の切り替えは除く）。
 
-#### 見出しと並び
+#### 見出しと並び（PRD D327・D332。ADR-0054）
 
-- ［月｜週｜日］・`lead`「この週の担当なしを AI で組んで確定し、日時をドラッグでずらして〈スタッフ〉の偏りを見ます」・見出しの右に週の主ボタン（下の「この週の準備」）・週の前後の送り・「今週」
-- 表示の切り替え `week-views`（見出しの行。下）
-- 進み具合の帯 `ScheduleBand date={anchor} hideBatch`（週は選んでいる日付の月。次の一手は普通のボタン。週の主ボタンが「組む」「組んでいます」の間は次の一手の「担当を AI で組む」を出さない（`hideBatch`。組む入口を1つに）。[pages-home.md](pages-home.md)）
+- ［月｜週｜日］・`lead`「この週の担当を見て、日時をドラッグでずらし、〈スタッフ〉に伝えたら確定します」・見出しの右に週の主ボタン（下の「この週の準備」）
+- 1行の状態（`week-status`。今日以降に訪問がある週だけ）：「この週の今日以降：確定済み N日・まだ伝えていない N日・未連絡の変更 N日（あるときだけ）・要対応 N件」。進み具合の帯は出さない（月の予定だけ）
+- 操作の行（`ScheduleToolbar zoom="week"`。日・週・月で同じ並び。[pages-common.md](pages-common.md) の「予定の共通の部品」）：欠勤・キャンセルを登録（`sudden-open`。選んでいる日（今日より前なら今日）の日の予定で欄を開くリンク）・「AI で組む ▾」（範囲：この日・この週・この月）・元に戻す・やり直す・「その他 ▾」（`week-more`：週の予定をメールで送る `week-more-mail`。`mail` を切れば「その他」ごと出さない）
+- 範囲の提案の帯（`RangeProposalBand`）
+- 週の前後の送り・「今週」・表示の切り替え `week-views`（週のカードの1行目。下）
 - 空の画面（`week-empty`。時間軸の上に横1行の帯 `compact`。主ボタンにしない（主ボタンは見出しの1つ））：`periodEmptyGuide({ period: 'この週', dates, today, visitDays })`（この週に訪問が1日も無いとき「この週には訪問がありません」。ボタンは日の予定で訪問を足すだけ）
+- 複数選択の帯（`SelectionBar`。時間軸の帯を Shift・Ctrl＋クリック／Shift・Ctrl＋Enter。週を送ると外す）
 
-#### この週の準備（PRD D280・D320。ADR-0046・ADR-0053）
+#### この週の準備（PRD D280・D328。ADR-0046・ADR-0054）
 
 - 見出しの主ボタン `week-next`（`data-kind`）を状態で1つ。決まりは `lib/weekPrep.ts` の `weekNext`（純粋関数。テストあり）：
   1. この週を組んでいる（`monthBatch.run` の `source==='week'` かつ `weekStart` がこの週）→「この週の担当を組んでいます…」（`making`。主ボタンの見た目のまま `aria-disabled`）
   2. 今日以降に訪問が無い →「この週の今日以降に訪問はありません」（`none`。ボタンなし）
-  3. まだ伝えていない日で担当なしの訪問がある（この画面で組んだ日を除く）→「この週の担当なしを AI で組む（N日）」（`make`。`weekMakeLabel`）
-  4. 問題の無い伝えていない日がある →「この週の問題の無い日をまとめて確定（N日）」（`confirm`）
-  5. 問題のある日・未連絡の変更のある日だけ残る →「確定していない N日は日の予定で」（`rest`。ボタンなし。下に理由）
-  6. 何も残っていない →「この週は確定済みです」（`done`。✓）
-  - ほかの担当を組んでいる間（月の予定・空き状況から）は 3・4 を押せず（`aria-disabled`）、下に理由「ほかの担当を組んでいます。終わってから押せます」（data-testid `week-next-why`。id は `useId` で `aria-describedby`）
+  3. 問題の無い伝えていない日がある →「この週の問題の無い日をまとめて確定（N日）」（`confirm`）
+  4. 問題のある日・未連絡の変更のある日だけ残る →「確定していない N日は日の予定で」（`rest`。ボタンなし。下に理由）
+  5. 何も残っていない →「この週は確定済みです」（`done`。✓）
+  - ほかの担当を組んでいる間（月の予定・空き状況から）は 3 を押せず（`aria-disabled`）、下に理由「担当を組んでいる間は確定できません。終わってから押せます」（data-testid `week-next-why`。id は `useId` で `aria-describedby`）
   - 600px 以下は短い文（確定は「この週をまとめて確定（N日）」）。印刷では出さない
+- 担当を組むのは「AI で組む ▾」の「この週」（`useScopeItems`：`weekBatchDays`＝今日以降の伝えていない、訪問のある日を `monthBatch.start({ …, mode: 'all', source: 'week', weekStart })`）。終わると範囲の提案の帯で「当てる」
 - 数え方：週の今日以降の日を `useDayStatuses`（月の予定・ホームと同じ）で数え、確定していない日を `bulkConfirmTargets(unconfirmed, statusOf, attentionList(…))`（月の D223 と同じ決まり）に通す
-- 組む（`makeWeek`）：ほかを組んでいる間は知らせだけ。`monthBatch.start({ ym: 最初の日の月, label: weekLabel(月曜), mode: 'care', days, today, source: 'week', weekStart })`。終わった知らせ（`batchDone`）で、組めた日（`made` 日）だけを「組んだ日」（`tried`）に入れ、同じ画面ではもう一度数えない（止めた日の残りはまた組める）
-- 確定（`confirmWeek`）：組んでいる間は何もしない。独自の確認 `bulkConfirmDialog`（月と同じ見出し・日付・残す日）。1回の `update` で日ごとに `confirmDay`
+- 確定（`confirmWeek`）：組んでいる間は何もしない。独自の確認 `bulkConfirmDialog`（月と同じ見出し・日付・残す日）。1回の `update`（手の名前「N日をまとめて確定」）で日ごとに `confirmDay`
 - 月をまたぐ週も1度に組む・確定する（2つの月の日）
 
 #### 日の見出しの件数

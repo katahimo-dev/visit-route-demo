@@ -1,4 +1,4 @@
-// メニューの決まり（PRD D132〜D135・D178〜D180・D230〜D232・D273〜D276。ADR-0034・0045。design.md §4 app）。
+// メニューの決まり（PRD D132〜D135・D178〜D180・D230〜D232・D326。ADR-0034・0045・0054。design.md §4 app）。
 // 左のメニュー・スマホの引き出し・下のタブ（menuSections）と、上の帯の画面の名前・コマンドパレットの画面（screenSections）で、
 // 並びと今の画面をどれと見るかを1か所で決める
 import type { Terms } from '../contracts/documents';
@@ -43,6 +43,42 @@ export const isSettingsPath = (pathname: string): boolean => SETTINGS_TABS.some(
 export const settingsTabs = (features: Features): { to: string; label: string }[] =>
   SETTINGS_TABS.filter((t) => isHrefOn(features, t.to));
 
+/**
+ * 人のタブ（並び。PRD D326。ADR-0054）。メニューは「人」1項目で、一覧の画面の上のタブで切り替える（設定のタブと同じ形）。
+ * 勤務の見込みは勤務時間（シフト）の続き（タブは勤務時間（シフト）に印）
+ */
+export const PEOPLE_TABS: readonly { to: string; label: 'client' | 'staff' | string; match?: readonly string[] }[] = [
+  { to: '/clients', label: 'client' },
+  { to: '/staff', label: 'staff' },
+  { to: '/compat', label: '相性' },
+  { to: '/availability', label: '勤務時間（シフト）', match: ['/availability', '/workload'] },
+];
+/** 人のタブの画面（一覧・相性・勤務時間（シフト）・勤務の見込み。〈利用者さん〉・〈スタッフ〉の画面も一覧に当てる） */
+export const PEOPLE_PATHS: readonly string[] = ['/clients', '/staff', '/compat', '/availability', '/workload'];
+/** 人のタブの画面か */
+export const isPeoplePath = (pathname: string): boolean => PEOPLE_PATHS.includes(activeNavPath(pathname));
+
+/** 切っていない人のタブ（名前は呼び方から。〈利用者さん〉・〈スタッフ〉は「一覧」を付けない） */
+export const peopleTabs = (
+  terms: Pick<Terms, 'client' | 'staff'>,
+  features: Features,
+): { to: string; label: string; match: readonly string[] }[] =>
+  PEOPLE_TABS.filter((t) => isHrefOn(features, t.to)).map((t) => ({
+    to: t.to,
+    label: t.label === 'client' ? terms.client : t.label === 'staff' ? terms.staff : t.label,
+    match: t.match ?? [t.to],
+  }));
+
+/**
+ * メニューの「人」で開くタブ：最後に開いた人のタブ（切っていなければ。勤務の見込みは勤務時間（シフト））、無ければ〈利用者さん〉
+ */
+export function peopleHref(features: Features, last?: string | null): string {
+  const tabs = PEOPLE_TABS.filter((t) => isHrefOn(features, t.to));
+  const at = last === '/workload' ? '/availability' : last;
+  if (at && tabs.some((t) => t.to === at)) return at;
+  return tabs[0]?.to ?? '/clients';
+}
+
 /** 下のタブに並べる項目の key（ホーム・予定・欠勤・空き状況。5つ目は「メニュー」のボタン。PRD D274） */
 export const BOTTOM_TABS: readonly string[] = ['home', 'schedule', 'absence', 'vacancy'];
 
@@ -85,6 +121,9 @@ export function navTitle(groups: readonly NavSection[], pathname: string): strin
   return parts.group ? `${parts.group}・${parts.item}` : parts.item;
 }
 
+/** 画面の一覧（パレット）に出さない画面の名前（上の帯。案を比べるは日の予定の「AI で組む ▾」から開く。PRD D331） */
+const EXTRA_TITLES: Record<string, string> = { '/compare': '提案を比べる' };
+
 /**
  * navTitle の見出しと項目名を分けたもの（狭い画面で入りきらないとき、項目名をまとめて次の行へ送るため。PRD D179）
  */
@@ -96,7 +135,8 @@ export function navTitleParts(
     const item = g.items.find((i) => isActiveNav(i, pathname));
     if (item) return { group: g.title && g.title !== SCHEDULE_GROUP ? g.title : null, item: item.label };
   }
-  return null;
+  const extra = EXTRA_TITLES[activeNavPath(pathname)];
+  return extra ? { group: null, item: extra } : null;
 }
 
 /** 下のタブの項目：メニューから BOTTOM_TABS の順に引く（メニューに無い項目は出さない。PRD D274） */
@@ -127,6 +167,7 @@ export type NavIcon =
   | 'absence'
   | 'vacancy'
   | 'clients'
+  | 'people'
   | 'compat'
   | 'staff'
   | 'hours'
@@ -142,8 +183,8 @@ export type MenuItem = NavEntry & { key: string; icon: NavIcon };
 /** 欠勤・キャンセルの欄を今日の日の予定で開く URL（ホームのカードと同じ。PRD D172） */
 export const absenceHref = (today: string): string => `/plan?date=${today}&do=${SUDDEN_DO}`;
 
-/** メニューの「予定」「設定」で開く画面（最後に開いた表示・タブ。無ければ既定。PRD D273・D275） */
-export type LastViews = { schedule?: string | null; settings?: string | null };
+/** メニューの「予定」「設定」「人」で開く画面（最後に開いた表示・タブ。無ければ既定。PRD D273・D275・D326） */
+export type LastViews = { schedule?: string | null; settings?: string | null; people?: string | null };
 
 /**
  * メニューの「設定」で開くタブ：最後に開いた設定のタブ（切っていなければ）、無ければ先頭のタブ
@@ -160,83 +201,58 @@ export const scheduleHref = (last?: string | null): string =>
   last && SCHEDULE_VIEWS.includes(last) ? last : SCHEDULE_DEFAULT;
 
 /**
- * メニューの並び（PRD D273〜D275。ADR-0045。D178・D232 の並びを置き換え）：よく使う画面だけの9項目
- * （見出しなし）ホーム・予定／当日・問い合わせ（欠勤・キャンセルを登録・空き状況）／人（〈利用者さん〉一覧・〈スタッフ〉一覧・
- * 相性・勤務時間（シフト））／（見出しなし）設定。
+ * メニューの並び（PRD D326。ADR-0054。D273〜D275 の9項目を置き換え）：見出しの無い6項目
+ * ホーム・予定・欠勤・空き状況・人・設定。
  * 「予定」は月・週・日の予定と比較を受け持ち（今の画面の印）、押すと最後に開いた表示（既定は日の予定）。切り替えは画面の上の［月｜週｜日］。
+ * 「欠勤」は今日の日の予定で欠勤・キャンセルの欄を開く操作（今の画面の印は付けない）。
+ * 「人」は〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）（と勤務の見込み）を受け持ち、押すと最後に開いた人のタブ（既定は〈利用者さん〉）。
  * 「設定」は訪問の種類・特性の項目・条件の重み・管理者設定・データを受け持ち、押すと最後に開いたタブ。
- * 勤務の見込みは勤務時間（シフト）の続き（印は勤務時間（シフト））で、勤務時間（シフト）・月の予定の「その他 ▾」から開く。
- * 案を比べるは日の予定の「案を変える ▾」から開く。メニューから外した画面もパレット（screenSections）からは引ける。
- * 下のタブに出す項目は短い名前（short）も持つ。呼び方は terms から引く。URL は変えない。today は欠勤・キャンセルの欄を開く日。
- * features で切った機能の項目は出さない（lib/features の表から引く）。項目の無くなったグループは見出しごと出さない
+ * 案を比べるは日の予定の「AI で組む ▾」から開く（メニュー・パレットには出さない）。
+ * 下のタブに出す項目は短い名前（short）も持つ。today は欠勤・キャンセルの欄を開く日。
+ * features で切った機能の項目は出さない（lib/features の表から引く）
  */
 export function menuSections(
-  terms: Pick<Terms, 'client' | 'staff'>,
+  _terms: Pick<Terms, 'client' | 'staff'>,
   today: string,
   features: Features,
   last: LastViews = {},
 ): NavSection<MenuItem>[] {
-  const all: NavSection<MenuItem>[] = [
+  const items: MenuItem[] = [
+    { key: 'home', to: '/home', label: 'ホーム', short: 'ホーム', icon: 'home' },
     {
-      items: [
-        { key: 'home', to: '/home', label: 'ホーム', short: 'ホーム', icon: 'home' },
-        {
-          key: 'schedule',
-          to: scheduleHref(last.schedule),
-          label: '予定',
-          short: '予定',
-          icon: 'day',
-          match: SCHEDULE_PATHS,
-        },
-      ],
+      key: 'schedule',
+      to: scheduleHref(last.schedule),
+      label: '予定',
+      short: '予定',
+      icon: 'day',
+      match: SCHEDULE_PATHS,
     },
+    { key: 'absence', to: absenceHref(today), label: '欠勤・キャンセル', short: '欠勤', icon: 'absence' },
+    { key: 'vacancy', to: '/vacancy', label: '空き状況', short: '空き状況', icon: 'vacancy' },
     {
-      title: '当日・問い合わせ',
-      items: [
-        { key: 'absence', to: absenceHref(today), label: '欠勤・キャンセルを登録', short: '欠勤', icon: 'absence' },
-        { key: 'vacancy', to: '/vacancy', label: '空き状況', short: '空き状況', icon: 'vacancy' },
-      ],
+      key: 'people',
+      to: peopleHref(features, last.people),
+      label: '人',
+      icon: 'people',
+      match: PEOPLE_PATHS,
     },
+    // 設定：訪問の種類・特性の項目・条件の重み・管理者設定（PRD D210。だれでも開ける）・データを1つにまとめる（タブ。PRD D275）
     {
-      title: '人',
-      items: [
-        { key: 'clients', to: '/clients', label: `${terms.client}一覧`, icon: 'clients' },
-        { key: 'staff', to: '/staff', label: `${terms.staff}一覧`, icon: 'staff' },
-        // 相性は〈利用者さん〉と〈スタッフ〉の関係で更新も多いので、設定でなく「人」に置く（ADR-0047）
-        { key: 'compat', to: '/compat', label: '相性', icon: 'compat' },
-        {
-          key: 'availability',
-          to: '/availability',
-          label: '勤務時間（シフト）',
-          icon: 'hours',
-          // 勤務の見込みは勤務時間（シフト）の続き（メニューから外した。PRD D275）
-          match: ['/availability', '/workload'],
-        },
-      ],
-    },
-    // 設定：条件の重み・相性・訪問の種類・特性の項目・管理者設定（PRD D210。だれでも開ける）・データを1つにまとめる（タブ。PRD D275）
-    {
-      items: [
-        {
-          key: 'settings',
-          to: settingsHref(features, last.settings),
-          label: '設定',
-          icon: 'settings',
-          match: settingsTabs(features).map((t) => t.to),
-        },
-      ],
+      key: 'settings',
+      to: settingsHref(features, last.settings),
+      label: '設定',
+      icon: 'settings',
+      match: settingsTabs(features).map((t) => t.to),
     },
   ];
-  return all.flatMap((g) => {
-    const items = g.items.filter((i) => isHrefOn(features, i.to));
-    return items.length > 0 ? [{ ...g, items }] : [];
-  });
+  const on = items.filter((i) => isHrefOn(features, i.to));
+  return on.length > 0 ? [{ items: on }] : [];
 }
 
 /**
- * 画面の一覧（PRD D182・D230・D273・D275）：コマンドパレットの「画面」と上の帯の画面の名前はここから引く。
- * メニューから外した画面（月・週・日の予定・案を比べる・勤務の見込み・設定のタブ）も1つずつ持つ。
- * ホーム／予定（月の予定・週の予定・日の予定・案を比べる）／当日・問い合わせ（空き状況）／人（〈利用者さん〉一覧・〈スタッフ〉一覧・
+ * 画面の一覧（PRD D182・D230・D273・D275・D331）：コマンドパレットの「画面」と上の帯の画面の名前はここから引く（案を比べるは出さない）。
+ * メニューでタブにまとめた画面（月・週・日の予定・人のタブ・勤務の見込み・設定のタブ）も1つずつ持つ。
+ * ホーム／予定（月の予定・週の予定・日の予定）／空き状況／人（〈利用者さん〉一覧・〈スタッフ〉一覧・
  * 相性・勤務時間（シフト）・勤務の見込み）／設定（訪問の種類・特性の項目・条件の重み・管理者設定・データ）。
  * 項目名は画面の見出しと同じ。切った機能の画面は出さない
  */
@@ -249,10 +265,9 @@ export function screenSections(terms: Pick<Terms, 'client' | 'staff'>, features:
         { key: 'month', to: '/month', label: '月の予定', icon: 'month' },
         { key: 'week', to: '/week', label: '週の予定', icon: 'week' },
         { key: 'day', to: '/plan', label: '日の予定', icon: 'day' },
-        { key: 'compare', to: '/compare', label: '提案を比べる', icon: 'compare' },
       ],
     },
-    { title: '当日・問い合わせ', items: [{ key: 'vacancy', to: '/vacancy', label: '空き状況', icon: 'vacancy' }] },
+    { items: [{ key: 'vacancy', to: '/vacancy', label: '空き状況', icon: 'vacancy' }] },
     {
       title: '人',
       items: [

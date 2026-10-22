@@ -89,8 +89,8 @@ async function drawerOpenClose(page) {
   );
   check(
     (await page.evaluate(() => document.getElementById('root').inert)) &&
-      (await d.locator('h2.nav-group-title').count()) === 2,
-    '引き出し：後ろの画面は inert・グループの見出しは h2',
+      (await d.locator('h2.nav-group-title').count()) === 0,
+    '引き出し：後ろの画面は inert・グループの見出しは無い（6項目。PRD D326）',
   );
   check(
     (await btn.getAttribute('aria-expanded')) === 'true' &&
@@ -98,18 +98,14 @@ async function drawerOpenClose(page) {
     'ボタン：aria-expanded=true・aria-controls が引き出しを指す',
   );
   const titles = await d.locator('.nav-group-title').allInnerTexts();
-  check(
-    JSON.stringify(titles) === JSON.stringify(['当日・問い合わせ', '人']),
-    '引き出し：グループの見出し付き（当日・問い合わせ・人）',
-    titles,
-  );
+  check(titles.length === 0, '引き出し：見出しの無い1つの並び', titles);
   const links = d.locator('.nav-link');
   const n = await links.count();
   const boxes = [];
   for (let i = 0; i < n; i++) boxes.push(await links.nth(i).boundingBox());
   check(
-    n === 9 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
-    '引き出し：全部のメニュー（9項目）を縦に並べる',
+    n === 6 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
+    '引き出し：全部のメニュー（6項目）を縦に並べる',
     {
       n,
     },
@@ -167,11 +163,11 @@ async function drawerOpenClose(page) {
   // 画面を選ぶ
   await btn.click();
   await d.waitFor();
-  await d.locator('.nav-link', { hasText: 'スタッフ一覧' }).click();
+  await d.locator('.nav-link', { hasText: '人' }).click();
   await d.waitFor({ state: 'detached' });
-  await page.waitForURL(/#\/staff/);
+  await page.waitForURL(/#\/clients/);
   check(
-    (await isFocused(btn)) && /・スタッフ一覧$/.test(await page.getByTestId('screen-name').innerText()),
+    (await isFocused(btn)) && /・利用者さん一覧$/.test(await page.getByTestId('screen-name').innerText()),
     '画面を選ぶと移って閉じ、フォーカスが「メニュー」へ',
   );
   // 今の画面を選んでも閉じるだけ（URL のクエリ＝画面の状態を消さない）
@@ -838,9 +834,10 @@ async function wide(page) {
   const nav = await page.locator('.side-nav').boundingBox();
   check(nav.width === 232 && nav.height === 1000, '広い画面：左のメニューは今のまま（幅232px・縦いっぱい）', nav);
   check(
-    (await page.locator('.side-nav .nav-group-title').count()) === 2 &&
+    (await page.locator('.side-nav .nav-group-title').count()) === 0 &&
+      (await page.locator('.side-nav [data-testid="nav-link"]').count()) === 6 &&
       (await page.locator('.app-header').boundingBox()).height === 72,
-    '広い画面：見出し付きのメニュー・上の帯の高さ 72px',
+    '広い画面：6項目のメニュー・上の帯の高さ 72px',
   );
   const pad = await page.evaluate(() => getComputedStyle(document.querySelector('.app-main')).paddingBottom);
   check(pad === '48px', '広い画面：本文の下の余白は今のまま', pad);

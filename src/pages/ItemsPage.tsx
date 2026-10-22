@@ -126,14 +126,17 @@ function ItemTable({
   const confirmDialog = useConfirm();
   const items = data.items.filter((i) => i.target === target);
   const setItem = (id: string, patch: Partial<Item>) =>
-    update((d) => ({ ...d, items: d.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
+    update((d) => ({ ...d, items: d.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) }), '項目を直す');
 
   const add = () => {
     // 同じ対象の中で重ならない名前（Excel では対象ごとに名前で項目を引く。ADR-0006）
     let no = items.length + 1;
     while (items.some((i) => i.name === `新しい項目${no}`)) no++;
     const name = `新しい項目${no}`;
-    update((d) => ({ ...d, items: [...d.items, { id: newId('i'), name, target, kind: 'flag', options: [] }] }));
+    update(
+      (d) => ({ ...d, items: [...d.items, { id: newId('i'), name, target, kind: 'flag', options: [] }] }),
+      '項目を足す',
+    );
   };
   const remove = async (item: Item) => {
     const refs = refsOf(data, item);
@@ -153,7 +156,7 @@ function ItemTable({
         return rest;
       });
       return { ...next, items: next.items.filter((i) => i.id !== item.id) };
-    });
+    }, '項目を消す');
   };
   const changeKind = async (item: Item, kind: ItemKind) => {
     const n = valueCount(data, item);
@@ -180,7 +183,7 @@ function ItemTable({
           i.id === item.id ? { ...i, kind, options: hasOptions(kind) ? i.options : [] } : i,
         ),
       };
-    });
+    }, '項目の形を変える');
   };
   const renameOption = (item: Item, from: string, to: string) =>
     update((d) => {
@@ -196,7 +199,7 @@ function ItemTable({
           i.id === item.id ? { ...i, options: i.options.map((o) => (o === from ? to : o)) } : i,
         ),
       };
-    });
+    }, '選択肢の名前を変える');
   const removeOption = async (item: Item, opt: string) => {
     const n = optionCount(data, item, opt);
     if (
@@ -230,7 +233,7 @@ function ItemTable({
         ...next,
         items: next.items.map((i) => (i.id === item.id ? { ...i, options: i.options.filter((o) => o !== opt) } : i)),
       };
-    });
+    }, '選択肢を消す');
   };
 
   return (

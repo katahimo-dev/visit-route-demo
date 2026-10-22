@@ -1,34 +1,13 @@
-// 予定（月・週・日）に共通の進み具合の帯（PRD D151〜D155。ADR-0025 追記）。
+// 月の予定の進み具合の帯（PRD D151〜D155・D332。ADR-0025 追記。週・日は1行の状態にした。ADR-0054）。
 // 見ている月の今日以降について「訪問・担当が全部入った日・確定した日・要対応」と次の一手のボタンを1つ。
 // 数え方は月の画面の「今月の準備」・ホームと同じ（lib/useDayStatuses と lib/month の monthProgress・attentionList）。データは書き換えない
 import { Check, CircleAlert, Lock, type LucideIcon, Repeat, Sparkles } from 'lucide-react';
-import { type MouseEvent, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent, memo, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { DemoData } from '../contracts/data';
-import { jstDate } from '../domain/time';
 import { type PrepPart, prepParts } from '../lib/glance';
 import { monthLabel } from '../lib/home';
-import {
-  attentionList,
-  batchTargets,
-  type DayState,
-  type DayStatus,
-  type MonthProgress,
-  monthDates,
-  monthProgress,
-} from '../lib/month';
-import {
-  type BandNextKind,
-  type BandOp,
-  bandHref,
-  bandMonth,
-  bandNext,
-  urgentCount,
-  visitsText,
-} from '../lib/progressBand';
-import { useCompileInput } from '../lib/useDayModel';
-import { useDayStatuses } from '../lib/useDayStatuses';
-import { useDemoData } from '../store';
+import type { MonthProgress } from '../lib/month';
+import { type BandNextKind, type BandOp, bandHref, bandNext, visitsText } from '../lib/progressBand';
 import './glance.css';
 import './progressBand.css';
 
@@ -42,21 +21,12 @@ export type BandModel = {
   urgent: number;
 };
 
-/** 日の画面で選んでいる日の状態（帯の「この日」） */
-export type BandDay = { date: string; status: DayStatus | null };
-
 const NEXT_ICON: Record<BandNextKind, LucideIcon> = {
   batch: Sparkles,
   attention: CircleAlert,
   unconfirmed: Lock,
   done: Check,
   empty: Check,
-};
-
-const DAY_STATE: Record<DayState, string> = {
-  none: 'まだ伝えていない',
-  changed: '未連絡の変更あり',
-  told: '確定済み',
 };
 
 const PART_LABEL: Record<PrepPart['kind'], string> = {
@@ -72,21 +42,13 @@ const PART_LABEL: Record<PrepPart['kind'], string> = {
 export const ProgressBand = memo(function ProgressBand({
   ym,
   model,
-  day,
   primary = false,
-  hideBatch = false,
   onOp,
 }: {
   ym: string;
   model: BandModel | null;
-  day?: BandDay;
-  /** 次の一手を主ボタンにする（月の画面。週・日は画面の主ボタンと重ねない） */
+  /** 次の一手を主ボタンにする（月の画面） */
   primary?: boolean;
-  /**
-   * 次の一手が「まとめて作る」のときにボタンを出さない（週の予定で、見出しの主ボタンが「この週の案を作る」の間。
-   * 作る入口を1つにする。PRD D280）。数字のリンクは残す
-   */
-  hideBatch?: boolean;
   onOp?: (op: BandOp) => void;
 }) {
   const month = monthLabel(ym);
@@ -117,9 +79,6 @@ export const ProgressBand = memo(function ProgressBand({
   const planDone = p.days > 0 && p.planned === p.days;
   const confirmDone = p.days > 0 && p.confirmed === p.days;
   const parts = prepParts(p);
-  const dayState = day?.status ? (day.status.count === 0 ? '訪問なし' : DAY_STATE[day.status.state]) : null;
-  /** 確定していない日（日の画面の「確定」で確定する。PRD D155） */
-  const dayOpen = !!day?.status && day.status.count > 0 && day.status.state !== 'told';
   const done = (x: boolean) => (x ? '（済）' : '');
   return (
     <section
@@ -201,14 +160,8 @@ export const ProgressBand = memo(function ProgressBand({
           </Link>
         </li>
       </ul>
-      {day && dayState && (
-        <span className={`pb-day${dayOpen ? ' is-open' : ''}`} data-testid="band-day" data-state={day.status?.state}>
-          この日 <strong>{dayState}</strong>
-          {dayOpen && <span className="sub pb-long">（伝えたら「確定」）</span>}
-        </span>
-      )}
       <span className="pb-next">
-        {hideBatch && next.kind === 'batch' ? null : next.kind === 'done' || next.kind === 'empty' ? (
+        {next.kind === 'done' || next.kind === 'empty' ? (
           <span
             className={`pb-status${next.kind === 'done' ? ' is-done' : ''}`}
             data-testid="band-next"
@@ -297,71 +250,4 @@ export function BandLive({
       {said}
     </span>
   );
-}
-
-/**
- * 帯に出すものを数える（週・日の画面）。月の画面と同じ数え方：その月の今日以降の日を useDayStatuses で compile・検査し、
- * monthProgress・attentionList・担当なしの訪問がある日。
- * extraDate（日の画面で選んでいる日）が今日より前でも、その日の状態だけは数える（進み具合には入れない）
- */
-function useBandModel(data: DemoData, ym: string, today: string, extraDate?: string) {
-  const compileInput = useCompileInput(data);
-  const days = useMemo(() => monthDates(ym).filter((d) => d >= today || d === extraDate), [ym, today, extraDate]);
-  const perDay = useDayStatuses(data, compileInput, days);
-  const model = useMemo((): BandModel => {
-    const statusOf = (d: string) => perDay.get(d)?.status;
-    const progress = monthProgress(data, ym, today, statusOf);
-    const statuses = days.flatMap((d) => (d >= today ? (statusOf(d) ?? []) : []));
-    const unassignedOf = (d: string) => {
-      const s = statusOf(d);
-      return s && s.unassigned > 0 ? s : undefined;
-    };
-    return {
-      ym,
-      progress,
-      emptyTargets: batchTargets(data, monthDates(ym), today, 'care', unassignedOf).length,
-      urgent: urgentCount(attentionList(data, statuses, today)),
-    };
-  }, [data, ym, today, days, perDay]);
-  const day = extraDate ? (perDay.get(extraDate)?.status ?? null) : null;
-  return { model, day };
-}
-
-/** 数える中身（データが来てから描く） */
-function ScheduleBandBody({
-  data,
-  date,
-  withDay,
-  hideBatch,
-}: {
-  data: DemoData;
-  date: string;
-  withDay: boolean;
-  hideBatch: boolean;
-}) {
-  const today = jstDate(Date.now());
-  const ym = bandMonth(date);
-  const { model, day } = useBandModel(data, ym, today, withDay ? date : undefined);
-  return <ProgressBand ym={ym} model={model} day={withDay ? { date, status: day } : undefined} hideBatch={hideBatch} />;
-}
-
-/**
- * 週・日の画面の帯（PRD D151）。選んでいる日付の月を数える。計算は useDeferredValue で描画の後へ回し
- * （開いたとき・手直しのたびに画面の描画を待たせない）、最初の描画の間は「数えています」
- */
-export function ScheduleBand({
-  date,
-  withDay = false,
-  hideBatch = false,
-}: {
-  date: string;
-  withDay?: boolean;
-  /** 次の一手の「まとめて作る」を出さない（ProgressBand の hideBatch） */
-  hideBatch?: boolean;
-}) {
-  const { data } = useDemoData();
-  const deferred = useDeferredValue<DemoData | null>(data, null);
-  const deferredDate = useDeferredValue(date);
-  if (!deferred) return <ProgressBand ym={bandMonth(date)} model={null} />;
-  return <ScheduleBandBody data={deferred} date={deferredDate} withDay={withDay} hideBatch={hideBatch} />;
 }

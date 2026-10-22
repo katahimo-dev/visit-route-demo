@@ -23,6 +23,7 @@ import {
   Timer,
   TriangleAlert,
   UserRound,
+  Users,
   UserX,
 } from 'lucide-react';
 import {
@@ -44,6 +45,7 @@ import { BrokenDataNotice, DataWatch } from '../components/DataNotices';
 import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { TourProvider } from '../components/Tour';
+import { HistoryKeys } from '../components/undo';
 import { VisitPanelProvider } from '../components/VisitPanel';
 import { addDays, jstDate } from '../domain/time';
 import { hashPathname, isPaletteShortcut, keepPaletteOn } from '../lib/commandPalette';
@@ -53,6 +55,7 @@ import {
   activeNavPath,
   bottomTabs,
   isActiveNav,
+  isPeoplePath,
   isScheduleView,
   isSettingsPath,
   type LastViews,
@@ -124,6 +127,8 @@ export default function App() {
       <PersonPopoverProvider>
         {/* 控えの知らせ・別のタブの変更の知らせ（PRD D227。トースト） */}
         <DataWatch />
+        {/* 全体の「元に戻す・やり直す」のキー（Ctrl+Z・Ctrl+Shift+Z。PRD D329。ADR-0054） */}
+        <HistoryKeys />
         {/* 月まとめ作成の計算を画面の外で続ける（PRD D256・D257。ADR-0042）：store につなぎ、終わったら知らせる */}
         <MonthBatchHost />
         {/* 訪問の詳細の欄（PRD D301〜D304。ADR-0051）：どの画面・コマンドパレットからでも開ける。欄は画面全体で1つ */}
@@ -205,6 +210,7 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
   absence: UserX,
   vacancy: CalendarSearch,
   clients: House,
+  people: Users,
   compat: HeartHandshake,
   staff: UserRound,
   hours: Clock,
@@ -222,10 +228,11 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
  */
 const lastViews: LastViews = {};
 
-/** 今の画面が予定の表示・設定のタブなら覚える（同じ値を何度書いても同じ） */
+/** 今の画面が予定の表示・設定のタブ・人のタブなら覚える（同じ値を何度書いても同じ） */
 function rememberView(pathname: string): LastViews {
   if (isScheduleView(pathname)) lastViews.schedule = activeNavPath(pathname);
   if (isSettingsPath(pathname)) lastViews.settings = pathname;
+  if (isPeoplePath(pathname)) lastViews.people = activeNavPath(pathname);
   return { ...lastViews };
 }
 
@@ -311,10 +318,11 @@ function AdminShell() {
   const last = rememberView(pathname);
   const lastSchedule = last.schedule;
   const lastSettings = last.settings;
+  const lastPeople = last.people;
   // 切った機能の項目は出さない（PRD D213）。下のタブもここから引く
   const groups = useMemo(
-    () => menuSections(terms, today, features, { schedule: lastSchedule, settings: lastSettings }),
-    [terms, today, features, lastSchedule, lastSettings],
+    () => menuSections(terms, today, features, { schedule: lastSchedule, settings: lastSettings, people: lastPeople }),
+    [terms, today, features, lastSchedule, lastSettings, lastPeople],
   );
   // 画面の一覧（メニューから外した画面も1つずつ）：上の帯の名前・パレットの画面（PRD D273・D275）
   const screens = useMemo(() => screenSections(terms, features), [terms, features]);

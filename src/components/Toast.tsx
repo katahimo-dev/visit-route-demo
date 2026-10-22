@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-/** 知らせに添えるボタン（日の画面の手直しの「元に戻す」。PRD D218） */
+/** 知らせに添えるボタン（全体の「元に戻す」。PRD D329） */
 export type ToastAction = { label: string; onClick: () => void; testId?: string };
 export type ToastOptions = { action?: ToastAction };
 

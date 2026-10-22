@@ -187,10 +187,7 @@ async function clients(page, dlg) {
     dlg.messages,
   );
   dlg.messages.length = 0;
-  await page
-    .locator('.side-nav')
-    .getByRole('link', { name: /スタッフ一覧/ })
-    .click();
+  await page.locator('.side-nav').getByRole('link', { name: 'ホーム' }).click();
   await settle(page);
   check(
     dlg.messages.length === 1 && /移りますか/.test(dlg.messages[0]) && hashOf(page).startsWith('#/clients/c1'),

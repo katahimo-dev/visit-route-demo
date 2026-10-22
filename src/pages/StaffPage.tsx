@@ -1,7 +1,8 @@
-import { CalendarX, Clock, Eye, HeartHandshake, MapPin, Plus, Smartphone, UserRound, UserRoundCog } from 'lucide-react';
+import { CalendarX, Clock, Eye, MapPin, Plus, Smartphone, UserRound, UserRoundCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { CondChips, TraitChips } from '../components/conditions';
+import { PeopleTabs } from '../components/SettingsTabs';
 import { StaffMark } from '../components/StaffMark';
 import { useToast } from '../components/Toast';
 import { PageHeader, WithIcon } from '../components/ui';
@@ -27,7 +28,6 @@ export default function StaffPage() {
   const terms = data.org.terms;
   // 機能の入り切り（ADR-0028）：退職・担当替えを切れば振り直しの欄を出さない（最終勤務日の値は事実なので一覧の「最終」の印は残す）
   const offboardOn = useFeature('offboard');
-  const compatOn = useFeature('compat');
   /** 担当の振り直しの欄を開いている〈スタッフ〉（PRD D71。null：閉じている） */
   const [offboardFor, setOffboardFor] = useState<string | null>(null);
   const today = jstDate(Date.now());
@@ -77,20 +77,14 @@ export default function StaffPage() {
   return (
     <div className="stack">
       <PageHeader
+        nav={<PeopleTabs />}
         icon={UserRound}
         title={`${terms.staff}一覧`}
         lead={`${terms.staff}の勤務・特性・条件を決めます`}
         actions={
-          <>
-            {compatOn && (
-              <Link to="/compat" className="btn btn-text" data-testid="to-compat">
-                <WithIcon icon={HeartHandshake}>相性の表</WithIcon>
-              </Link>
-            )}
-            <Link to="/staff/new" className="btn btn-primary" data-testid="staff-add">
-              <WithIcon icon={Plus}>{terms.staff}を追加</WithIcon>
-            </Link>
-          </>
+          <Link to="/staff/new" className="btn btn-primary" data-testid="staff-add">
+            <WithIcon icon={Plus}>{terms.staff}を追加</WithIcon>
+          </Link>
         }
       />
 

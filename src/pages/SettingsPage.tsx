@@ -66,7 +66,7 @@ export default function SettingsPage() {
     });
     if (!ok) return;
     const next = applyTemplate(t.id);
-    update((d) => ({ ...d, org: { ...d.org, features: next } }));
+    update((d) => ({ ...d, org: { ...d.org, features: next } }), 'ひな形を当てる');
     toast(`ひな形「${t.label}」を適用しました`);
   };
 
@@ -103,7 +103,7 @@ export default function SettingsPage() {
         const on = forced ?? !isSwitchOn(cur, f.id);
         decided.on = on;
         return { ...d, org: { ...d.org, features: withFeature(cur, f.id, on) } };
-      }),
+      }, '機能の入り切り'),
     );
     if (decided.on === null) return;
     toast(`${featureLabel(f.id, terms)}を${decided.on ? '入れました' : '切りました'}`);

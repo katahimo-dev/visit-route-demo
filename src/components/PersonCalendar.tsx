@@ -234,7 +234,7 @@ export function PersonCalendar({
       setNotice({ ...notice, error: '空き時間に入りません。日の予定で手で入れるか、AI で組んでください' });
       return;
     }
-    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data);
+    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data, '空き時間に入れる');
     toast(`${mdText(notice.date)} の空き時間に入れました（担当：${staffById.get(r.staffId)?.name ?? ''}）`);
     setNotice(null);
   };

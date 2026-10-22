@@ -94,7 +94,7 @@ export function ClientLeavesSection({
     }
     const leave: ClientLeave = r.data;
     const n = leaveVisits(data, leave).length;
-    update((d) => saveLeave(d, leave));
+    update((d) => saveLeave(d, leave), '休みを保存');
     openForm(null);
     toast(
       `休みを${form.id ? '直しました' : '入れました'}（${mdText(leave.from)}〜${mdText(leave.to)}・訪問 ${n}件は無しになります）`,
@@ -109,7 +109,7 @@ export function ClientLeavesSection({
       tone: 'danger',
     });
     if (!ok) return;
-    update((d) => removeLeave(d, l.id));
+    update((d) => removeLeave(d, l.id), '休みを消す');
     if (form?.id === l.id) openForm(null);
     toast(`休みを消しました（${mdText(l.from)}〜${mdText(l.to)}の訪問は元に戻ります）`);
   };

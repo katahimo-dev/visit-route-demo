@@ -11,12 +11,14 @@ import {
 } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useConfirm } from '../components/ConfirmDialog';
 import { ConditionsEditor } from '../components/conditions';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { FieldError, invalidAttrs, RequiredMark } from '../components/FieldError';
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
 import { AddressField } from '../components/placeLookup';
+import { confirmDropProposal, RangeProposalBand } from '../components/scheduleParts';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -237,6 +239,7 @@ export default function VacancyPage() {
   /** 段階・紹介元（ADR-0028 の clientStage）：切なら紹介元の名前・メールアドレスの一覧と BCC のメールを出さない（データは残す） */
   const stageOn = useFeature('clientStage');
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const today = jstDate(Date.now());
 
   /** 入力はタブの間だけ覚える（sessionStorage。ほかの画面へ移って戻っても残り、閉じれば消える。PRD D258） */
@@ -575,7 +578,7 @@ export default function VacancyPage() {
     };
     // 知らせの件数はいまのデータで数える（update の中の関数はあとで呼ばれることがある）
     const r = build(data);
-    update((d) => build(d).data);
+    update((d) => build(d).data, '仮押さえ');
     setHold(null);
     const into = r.inserted > 0 ? `・担当を ${r.inserted}件入れました` : '';
     const miss =
@@ -597,7 +600,7 @@ export default function VacancyPage() {
   const making = batchRun !== null;
   /** 作っている間のボタンの文（月の予定から始めた作成は「（月の予定）」で分ける） */
   const makingText = batchRun
-    ? `${batchRun.label}の担当を組んでいます${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' ? '（週の予定）' : '…'}`
+    ? `${batchRun.label}の担当を組んでいます${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' || batchRun.source === 'day' ? '（週の予定）' : '…'}`
     : '';
   /** 答えのカード（足りない案を作り終えてボタンが消えたとき、フォーカスをここへ） */
   const answerRef = useRef<HTMLDivElement>(null);
@@ -609,8 +612,10 @@ export default function VacancyPage() {
     answerRef.current?.focus({ preventScroll: true });
   }, [missing.length]);
   /** 担当の足りない日を、その場で AI で組む（月の「担当を AI で組む」の仕組み。ほかの画面へ移っても続く。ADR-0042） */
-  const makeMissing = () => {
+  const makeMissing = async () => {
     if (missing.length === 0 || making) return;
+    // 当てていない提案があれば、捨ててよいか確かめる（提案は1つだけ）
+    if (!(await confirmDropProposal(confirmDialog)) || monthBatch.running()) return;
     const ok = monthBatch.start({
       ym: ymOf(missing[0]!.date),
       label: monthsLabel(missing.map((x) => x.date)),
@@ -879,7 +884,7 @@ export default function VacancyPage() {
               <button
                 type="button"
                 className="btn btn-small"
-                onClick={makeMissing}
+                onClick={() => void makeMissing()}
                 // 作っている間も押せる見た目を変えるだけ（disabled にするとフォーカスを失う）
                 aria-disabled={making || undefined}
                 onFocus={() => {
@@ -908,6 +913,8 @@ export default function VacancyPage() {
             )}
           </div>
         )}
+        {/* 組んだ提案（日・週・月の予定と同じ帯。当てると担当が変わり、空きの数え直しに入る。PRD D328） */}
+        <RangeProposalBand />
         {summary && (
           <>
             <h3 className="vacancy-sub-title">答える文（下の「要約をコピー」でコピー）</h3>

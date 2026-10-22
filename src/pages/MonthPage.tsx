@@ -39,11 +39,12 @@ import { ClientPicker } from '../components/ClientPicker';
 import { useConfirm } from '../components/ConfirmDialog';
 import { FieldError } from '../components/FieldError';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
-import { MenuButton, type MenuItem as MoreItem } from '../components/MenuButton';
+import type { MenuItem as MoreItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
 import { ClientDot } from '../components/parts';
 import { type BandModel, ProgressBand } from '../components/progressBand';
 import { StaffMark } from '../components/StaffMark';
+import { confirmDropProposal, RangeProposalBand, ScheduleToolbar, useScopeItems } from '../components/scheduleParts';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
@@ -438,7 +439,7 @@ export default function MonthPage() {
       const res = toggleRequestedOff(dataRef.current, offStaffId, d, today, id);
       if (res.result === 'unchanged') return;
       dataRef.current = res.data;
-      update((x) => toggleRequestedOff(x, offStaffId, d, today, id).data);
+      update((x) => toggleRequestedOff(x, offStaffId, d, today, id).data, '希望休');
       const name = staffById.get(offStaffId)?.name ?? '';
       const n = staffDaysRef.current.get(d)?.count ?? 0;
       if (res.result === 'added') {
@@ -601,14 +602,14 @@ export default function MonthPage() {
     });
     if (ready.length === 0) return;
     const at = Date.now();
-    update((d) => ready.reduce((out, x) => confirmDay(out, x.date, x.p, at), d));
+    update((d) => ready.reduce((out, x) => confirmDay(out, x.date, x.p, at), d), `${ready.length}日をまとめて確定`);
     toast(`${ready.length}日を確定しました`);
     // 押したボタンは0日になって押せなくなるので、フォーカスは右の欄へ（確定していない日の一覧の先頭から読める）
     requestAnimationFrame(() => asideRef.current?.focus({ preventScroll: true }));
   };
 
   // ---- 担当を AI で組む（月まとめ。ADR-0012・ADR-0053）----
-  /** 対象の日を1日ずつ組む（ピンの訪問はそのまま。終わったら「元に戻す」で組む前に戻せる） */
+  /** 対象の日を1日ずつ組む（ピンの訪問はそのまま。終わったら提案の帯。当てるまで訪問は変わらない。PRD D328） */
   const start = async (m: BatchMode) => {
     if (runningNow()) return;
     setError(null);
@@ -617,15 +618,8 @@ export default function MonthPage() {
       setError('対象の日がありません（今日より前の日・確定した日は組みません）');
       return;
     }
-    if (m === 'all') {
-      const ok = await confirmDialog({
-        title: `伝えていない ${targets.length}日の担当を組み直しますか？`,
-        body: 'ピンの訪問はそのままで、ほかの訪問の担当と時刻を AI で組み直します。終わったあと「元に戻す」で組む前に戻せます。',
-        confirmLabel: '組み直す',
-      });
-      // 確認のあいだに別の計算が始まっていたら何もしない
-      if (!ok || runningNow()) return;
-    }
+    // 当てていない提案があれば、捨ててよいか確かめる（提案は1つだけ）
+    if (!(await confirmDropProposal(confirmDialog)) || runningNow()) return;
     setPanel(false);
     // 組んでいる間は希望休を入れない（Worker の計算とデータの書き込みを混ぜない）
     setOffMode(false);
@@ -799,6 +793,8 @@ export default function MonthPage() {
     },
   ];
 
+  const scopeItems = useScopeItems({ zoom: 'month', date, onMonth: openBatch });
+
   return (
     <div className="stack">
       <PageHeader
@@ -810,28 +806,33 @@ export default function MonthPage() {
 
       {/* 進み具合の帯（PRD D151〜D155）。「まとめて作る」の入口はここの1か所（D154。見出しのボタン・今月の準備の①〜③をまとめた） */}
       <ProgressBand ym={ym} model={band} primary onOp={onBandOp} />
-      {/* カレンダーと日ごとの一覧の切り替え（PRD D189。600px 以下ははじめ一覧。URL の ?layout=。操作の欄より上） */}
-      <fieldset className="segmented seg-sm month-layout" aria-label="月の見せ方" data-testid="month-layout">
-        {(
-          [
-            ['calendar', 'カレンダー', LayoutGrid],
-            ['list', '日ごとの一覧', List],
-          ] as const
-        ).map(([k, label, Icon]) => (
-          <button
-            key={k}
-            type="button"
-            className={layout === k ? 'is-on' : undefined}
-            aria-pressed={layout === k}
-            onClick={() => pickLayout(k)}
-            data-layout={k}
-          >
-            <WithIcon icon={Icon} size={14}>
-              {label}
-            </WithIcon>
-          </button>
-        ))}
-      </fieldset>
+      {/* 操作の行（日・週・月で同じ並び。PRD D327）。月送り・今月のほかのときどき使う操作は「その他 ▾」（PRD D278） */}
+      <ScheduleToolbar zoom="month" absence={suddenOn ? { date } : null} aiItems={scopeItems} moreItems={moreItems}>
+        {/* カレンダーと日ごとの一覧の切り替え（PRD D189。600px 以下ははじめ一覧。URL の ?layout=。操作の欄より上） */}
+        <fieldset className="segmented seg-sm month-layout" aria-label="月の見せ方" data-testid="month-layout">
+          {(
+            [
+              ['calendar', 'カレンダー', LayoutGrid],
+              ['list', '日ごとの一覧', List],
+            ] as const
+          ).map(([k, label, Icon]) => (
+            <button
+              key={k}
+              type="button"
+              className={layout === k ? 'is-on' : undefined}
+              aria-pressed={layout === k}
+              onClick={() => pickLayout(k)}
+              data-layout={k}
+            >
+              <WithIcon icon={Icon} size={14}>
+                {label}
+              </WithIcon>
+            </button>
+          ))}
+        </fieldset>
+      </ScheduleToolbar>
+      {/* 範囲の提案（日・週・月で同じ帯。PRD D328） */}
+      <RangeProposalBand />
 
       <div className="card stack month-head">
         <div className="row month-nav">
@@ -852,8 +853,6 @@ export default function MonthPage() {
           >
             今月
           </button>
-          {/* 月送り・今月のほかは「その他 ▾」にたたむ（PRD D278。主ボタンは進み具合の帯の1つ） */}
-          <MenuButton label="その他" items={moreItems} testId="month-more" className="month-more" />
           <span className="month-summary sub" data-testid="month-summary">
             月全体：担当なし {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>
@@ -1420,7 +1419,7 @@ export default function MonthPage() {
               ピンの訪問はそのままで、ほかの訪問の担当と時刻を組みます。今日より前の日・確定した日は組みません。
             </p>
             <p className="sub">
-              1日ずつ組み、組めた日はすぐに保存します。ほかの画面へ移っても組み続けます。「止める」かページを閉じると止まり、組めた日は残ります。終わったら「元に戻す」で組む前に戻せます。
+              1日ずつ組み、終わったら提案（担当・時刻の変わる訪問）を出します。見て「当てる」と担当が変わります（「元に戻す」で戻せます）。ほかの画面へ移っても組み続けます。「止める」と、そこまでの提案を出します。
             </p>
           </div>
         </SidePanel>

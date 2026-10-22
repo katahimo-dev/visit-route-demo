@@ -135,7 +135,7 @@ export default function RulesPage() {
   const changes = useMemo(() => draftChanges(savedRules, draft), [savedRules, draft]);
   const changeOf = (type: RuleType) => changes.find((c) => c.type === type);
   const setLabel = (id: string, label: string) =>
-    update((d) => ({ ...d, rules: d.rules.map((r) => (r.id === id ? { ...r, label } : r)) }));
+    update((d) => ({ ...d, rules: d.rules.map((r) => (r.id === id ? { ...r, label } : r)) }), '条件の名前');
   const setWeight = (type: RuleType, patch: Partial<{ weight: number; hard: boolean }>) =>
     setRawDraft({ basisId, values: editDraft(draft, saved, type, patch) });
   /** 確定・取り消しのあと、押したボタンが消えるのでフォーカスを画面の見出しへ（確認が閉じて裏の inert が外れてから） */
@@ -172,7 +172,10 @@ export default function RulesPage() {
       toast('点数の基準が替わったので、重みの変更は確定しませんでした');
       return;
     }
-    update((d) => (scorePresetOf(d.presets, d.scorePresetId)?.id === basisId ? applyDraft(d, values) : d));
+    update(
+      (d) => (scorePresetOf(d.presets, d.scorePresetId)?.id === basisId ? applyDraft(d, values) : d),
+      '条件の重みを確定',
+    );
     setRawDraft({ basisId, values: {} });
     setFocusHead((n) => n + 1);
     toast(confirmedText(list.length, name));
@@ -182,7 +185,7 @@ export default function RulesPage() {
   const add = () => {
     // 足す条件の重み・必須は、押した時点のデータで決める（試す重みが当てはまるプリセット、無ければ基準のその型。lib/presets の addRule）
     const rule = { id: newId('r'), type: addType, label: ruleTypeLabel(addType, terms) };
-    update((d) => addRule(d, rule, DEFAULTS[addType]));
+    update((d) => addRule(d, rule, DEFAULTS[addType]), '条件を足す');
   };
   const remove = async (r: Rule) => {
     // 必須の条件は、消すと「守らなければ担当にしない」が無くなることを本文で伝える（PRD D271）
@@ -198,9 +201,16 @@ export default function RulesPage() {
       }))
     )
       return;
-    update((d) => ({ ...d, rules: d.rules.filter((x) => x.id !== r.id) }));
+    update((d) => ({ ...d, rules: d.rules.filter((x) => x.id !== r.id) }), '条件を消す');
   };
   const seedValue = seedText ?? String(data.seed);
+  /** 打った乱数の種を書く（整数でなければ書かない） */
+  const commitSeed = () => {
+    const t = seedText;
+    if (t === null || !/^-?\d+$/.test(t.trim()) || !Number.isSafeInteger(Number(t))) return;
+    const n = Number(t);
+    update((d) => (d.seed === n ? d : { ...d, seed: n }), '乱数の種');
+  };
   const seedOk = /^-?\d+$/.test(seedValue.trim()) && Number.isSafeInteger(Number(seedValue));
 
   return (
@@ -370,14 +380,15 @@ export default function RulesPage() {
             inputMode="numeric"
             value={seedValue}
             aria-label="乱数の種"
-            onChange={(e) => {
-              const t = e.target.value;
-              setSeedText(t);
-              if (/^-?\d+$/.test(t.trim()) && Number.isSafeInteger(Number(t))) {
-                update((d) => ({ ...d, seed: Number(t) }));
-              }
+            onChange={(e) => setSeedText(e.target.value)}
+            // 書くのは確定したとき（離れる・Enter）の1回だけ（全体の「元に戻す」の1手。打つたびに積まない。PRD D329）
+            onBlur={() => {
+              commitSeed();
+              setSeedText(null);
             }}
-            onBlur={() => setSeedText(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitSeed();
+            }}
           />
           {!seedOk && <span className="error">整数で入れてください</span>}
         </div>
@@ -521,7 +532,7 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
       });
       if (!ok) return;
     }
-    update((d) => setScorePreset(d, p.id));
+    update((d) => setScorePreset(d, p.id), '点数の基準のプリセット');
   };
   const setWeight = (p: Preset, t: RuleType, w: Partial<{ weight: number; hard: boolean }>) =>
     set(p.id, { weights: { ...p.weights, [t]: { ...p.weights[t], ...w } } });
@@ -537,7 +548,7 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
       tone: 'danger',
     });
     if (!ok) return;
-    update((d) => removePreset(d, p.id));
+    update((d) => removePreset(d, p.id), 'プリセットを消す');
   };
   const reset = async () => {
     const ok = await confirmDialog({
@@ -547,7 +558,7 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
       tone: 'danger',
     });
     if (!ok) return;
-    update(resetPresets);
+    update(resetPresets, 'プリセットを初めに戻す');
     // 初期の3つに戻したら、表の重みの下書きも捨てる（戻した重みと比べる下書きは意味が変わるので）
     onReset();
   };

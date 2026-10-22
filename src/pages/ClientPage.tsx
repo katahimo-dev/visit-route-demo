@@ -416,7 +416,7 @@ function ClientPageBody({
             if (p.clientId === c.id && (p.to === null || p.to >= today))
               out = endPatternOp(out, p.id, addDays(today, -1), today).data;
         return out;
-      });
+      }, '利用者の保存');
       setEdit(null);
       toast(
         c.stage === 'ended' && saved?.stage !== 'ended'
@@ -452,7 +452,7 @@ function ClientPageBody({
     if (!ok) return;
     onLeave();
     discardAll();
-    update((d) => cancelTentativeData(d, c.id, today));
+    update((d) => cancelTentativeData(d, c.id, today), '仮押さえを取り消す');
     navigate('/clients');
     toast('仮押さえを取り消しました');
   };
