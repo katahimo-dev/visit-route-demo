@@ -2,7 +2,7 @@
 // 担当ごとの列を時刻の位置で描く（縦＝07:00〜20:00。はみ出せば広げる）。列の見出し・ドラッグの受け口・印は予定の画面から受け取る
 import './routeTimeline.css';
 import { Car, House } from 'lucide-react';
-import type { CSSProperties, DragEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent, KeyboardEvent, ReactNode } from 'react';
 import { minutesToHhmm } from '../domain/time';
 import { r0 } from '../lib/common';
 import { backgroundOf, boxOf, hourMarks, type LegSpan, type Span, TL_PX_PER_MIN, timeRange } from '../lib/timeline';
@@ -32,6 +32,8 @@ export type TimelineBand = {
   multi?: boolean;
   /** Shift・Ctrl（⌘）＋クリック・Shift／Ctrl＋Enter で選ぶ・外す（無ければ複数選択はしない） */
   onMulti?: () => void;
+  /** キーボードで動かす（↑↓・←→・Shift+←→・Enter・Delete。PRD D333）。受けたら true（帯の既定の動きをしない） */
+  onKey?: (ev: KeyboardEvent<HTMLElement>) => boolean;
   drag?: { draggable: boolean; onDragStart: (e: DragEvent) => void; onDragEnd: () => void };
   /** 帯の中の小さな印（アイコン。それぞれ title と読み上げの文を持つ） */
   marks?: ReactNode;
@@ -237,7 +239,7 @@ function Band({
           className="tl-band-btn"
           aria-pressed={b.picked}
           aria-label={`${time} ${b.name}${b.note ? `（${b.note}）` : ''}${b.multi ? '（選択中）' : ''}`}
-          title={`${time} ${b.name}${b.note ? `\n${b.note}` : ''}\n押すと理由を見られます。ドラッグで別の担当へ移せます${b.onMulti ? '。Shift・Ctrl＋クリックで複数選べます' : ''}`}
+          title={`${time} ${b.name}${b.note ? `\n${b.note}` : ''}\n押すと理由を見られます。ドラッグで別の担当へ移せます${b.onMulti ? '。Shift・Ctrl＋クリックで複数選べます' : ''}${b.onKey ? '。↑↓で15分・←→で1日・Shift+←→で隣の担当・Enterで詳細・Deleteで取り消し' : ''}`}
           onClick={(ev) => {
             if (b.onMulti && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) {
               ev.preventDefault();
@@ -246,7 +248,11 @@ function Band({
             }
             b.onPick();
           }}
+          aria-keyshortcuts={
+            b.onKey ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Enter Delete' : undefined
+          }
           onKeyDown={(ev) => {
+            if (b.onKey?.(ev)) return;
             if (ev.key === 'Enter' || ev.key === ' ') {
               ev.preventDefault();
               if (b.onMulti && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) b.onMulti();

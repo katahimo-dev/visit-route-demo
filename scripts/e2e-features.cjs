@@ -5,7 +5,7 @@
 // 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目（相性の機能の入り切りだけで変わる）・設定のタブ・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
 // 切った機能の URL（`?do=` も）を開くとホームへ移り（replace）、ホームの上に閉じられる知らせと管理者設定へのリンク、
 // スイッチ（押すとすぐ保存・トースト・依存先が切なら押せず理由）、390px で横にはみ出さない、印刷で知らせ・メニューを出さない。
-// 末尾の /・大文字の URL（#/vacancy/・#/Vacancy・#/month/print/）もホームへ移す、390px で空き状況を切ると下のタブ4つが全幅を等分、
+// 末尾の /・大文字の URL（#/vacancy/・#/Vacancy・#/month/print/）もホームへ移す、390px で空き状況を切っても下のタブ5つが全幅を等分、
 // 稼働の見込み・欠勤・キャンセル・月の印刷・提案を比べるを切ると、月の要対応の行・月のボタン・日の画面の拘束の帯と「AI で組む ▾」・
 // 稼働時間の右の欄にそこへ移るリンク・ボタンが無い。
 // その2（PRD D211・D213〜D215）：ひな形の4通りごとに画面の中の入口（日の画面の欠勤・キャンセル・メール・条件を調整する・
@@ -111,11 +111,8 @@ const menuFor = (on) =>
   MENU.filter(
     (l) => (l !== '空き状況' || on.includes('vacancy')) && (l !== '欠勤・キャンセル' || on.includes('sudden')),
   );
-/** 下のタブ（ホーム・予定・欠勤・空き状況。「メニュー」はボタン。PRD D274） */
-const tabsFor = (on) =>
-  ['ホーム', '予定', '欠勤', '空き状況'].filter(
-    (l) => (l !== '空き状況' || on.includes('vacancy')) && (l !== '欠勤' || on.includes('sudden')),
-  );
+/** 下のタブ（ホーム・予定・欠勤。「探す」「メニュー」はボタン。空き状況は下のタブに無い。PRD D336） */
+const tabsFor = (on) => ['ホーム', '予定', '欠勤'].filter((l) => l !== '欠勤' || on.includes('sudden'));
 
 /** 切った機能の URL（ひな形ごとに、ホームへ移るもの・移らないもの） */
 const ROUTES = [
@@ -468,7 +465,7 @@ async function mobile(page, dlg) {
   const w2 = await page.evaluate(() => document.documentElement.scrollWidth);
   check(w2 <= 390, '390px：ホームの知らせが横にはみ出さない', w2);
   const tabs = await page.getByTestId('bottom-tabs').locator('.bottom-tab').allInnerTexts();
-  check(tabs.length === 5, '390px：基本は下のタブ5つ（ホーム・予定・欠勤・空き状況・メニュー）', tabs);
+  check(tabs.length === 5, '390px：基本は下のタブ5つ（ホーム・予定・欠勤・探す・メニュー）', tabs);
   await page.getByTestId('menu-btn').click();
   const drawer = await page.locator('.nav-drawer .nav-link').allInnerTexts();
   check(same(drawer, menuFor(TEMPLATE_ON.basic)), '390px：引き出しもメニューと同じ項目', drawer);
@@ -499,7 +496,7 @@ async function pathVariants(page, dlg, ctx) {
     const hasNotice = (await page.getByTestId('feature-off-notice').count()) === 1;
     check(hashOf(page) === '#/home' && hasNotice, `切った機能の ${h} もホームへ移し知らせる`, hashOf(page));
   }
-  // 390px：空き状況を切ると下のタブは4つ（ホーム・予定・欠勤・メニュー）で、全幅を等分する
+  // 390px：空き状況を切っても下のタブは5つ（ホーム・予定・欠勤・探す・メニュー。空き状況は元から下のタブに無い。PRD D336）で、全幅を等分する
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, '/home', '[data-testid="home-tasks"]');
   const boxes = await page
@@ -508,14 +505,14 @@ async function pathVariants(page, dlg, ctx) {
     .evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => ({ x: r.x, w: r.width })));
   const vw = await page.evaluate(() => document.documentElement.clientWidth);
   const total = boxes.reduce((a, b) => a + b.w, 0);
-  check(boxes.length === 4, '390px・空き状況を切る：下のタブは4つ', boxes.length);
+  check(boxes.length === 5, '390px・空き状況を切る：下のタブは5つ', boxes.length);
   check(
-    boxes.length === 4 &&
+    boxes.length === 5 &&
       Math.abs(boxes[0].x) <= 1 &&
-      Math.abs(boxes[3].x + boxes[3].w - vw) <= 1 &&
+      Math.abs(boxes[4].x + boxes[4].w - vw) <= 1 &&
       Math.abs(total - vw) <= 2 &&
-      boxes.every((b) => Math.abs(b.w - vw / 4) <= 1),
-    '390px・空き状況を切る：4つが全幅を等分する',
+      boxes.every((b) => Math.abs(b.w - vw / 5) <= 1),
+    '390px・空き状況を切る：5つが全幅を等分する',
     { vw, boxes },
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'tabs-4-mobile.png') });

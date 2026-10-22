@@ -189,9 +189,12 @@ export function SidePanel({
   focusPanel = false,
   focusKey,
   onSubmit,
+  sheet = false,
 }: {
   icon: LucideIcon;
   title: ReactNode;
+  /** スマホ（600px 以下）で下から出す欄（ボトムシート。訪問の詳細の欄。PRD D334）。広い画面は今の右の欄 */
+  sheet?: boolean;
   /**
    * 欄を開いたまま中身が入れ替わったとき（欠勤・キャンセルの段階など）に変える値。変わったら、`data-return-focus` の付いた
    * 要素（段階の見出し）、無ければ最初の入力欄、それも無ければ欄そのものにフォーカスを移す
@@ -320,11 +323,12 @@ export function SidePanel({
   );
   // 画面の入れ物（動きの transform）の中だと位置がずれるので、body の直下に出す
   return createPortal(
-    <div className="drawer-wrap" ref={wrapRef}>
-      <div className="drawer-backdrop" aria-hidden="true" />
+    <div className={`drawer-wrap${sheet ? ' has-sheet' : ''}`} ref={wrapRef}>
+      {/* 下から出る欄（スマホ）は外（上の幕）を押すと閉じる（キーボードは Esc・×）。右の欄は今のまま閉じない */}
+      <div className="drawer-backdrop" aria-hidden="true" onClick={sheet ? onClose : undefined} />
       <section
         ref={ref}
-        className={`drawer ${narrow ? 'is-narrow' : ''}`}
+        className={`drawer ${narrow ? 'is-narrow' : ''}${sheet ? ' is-sheet' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

@@ -1,9 +1,9 @@
 import { CornerDownLeft, Search, X } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
-import type { Terms } from '../contracts/documents';
+import type { Terms, Visit } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import {
   filterPalette,
@@ -12,6 +12,7 @@ import {
   moveActive,
   type PaletteItem,
   paletteActions,
+  paletteAttentionDays,
   paletteKindLabel,
   palettePeople,
   paletteScreens,
@@ -20,8 +21,10 @@ import {
   visitIndex,
 } from '../lib/commandPalette';
 import { trapTarget } from '../lib/confirmDialog';
+import { dayProblemOf, routesOf, visitIssues } from '../lib/dayPlan';
 import { confirmLeave } from '../lib/leaveGuard';
 import type { MenuItem, NavSection } from '../lib/nav';
+import { visitsOn } from '../patterns';
 import { useDemoData } from '../store';
 import { StaffMarkById } from './StaffMark';
 import { FOCUSABLE } from './ui';
@@ -83,18 +86,62 @@ export function CommandPalette({
         : null,
     [typedAny, data.visits, data.patterns, data.clients, today],
   );
+  /**
+   * 「要対応」の語で引くときの訪問ごとの検査（PRD D337。日の予定と同じ visitIssues）。打った語に「要対応」があるときだけ、
+   * 検査する日（paletteAttentionDays）を1日ずつ間を空けて計算し（描画を止めない）、終わった日から候補に出す。
+   * 日ごとに覚え、データが変わったら捨てる
+   */
+  const careDays = useMemo(() => paletteAttentionDays(query, today), [query, today]);
+  const careMemo = useMemo(() => {
+    void data;
+    return new Map<string, Set<string>>();
+  }, [data]);
+  const [careTick, setCareTick] = useState(0);
+  const carePending = careDays.some((d) => !careMemo.has(d));
+  useEffect(() => {
+    const todo = careDays.filter((d) => !careMemo.has(d));
+    if (todo.length === 0) return;
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const step = (i: number) => {
+      if (stop || i >= todo.length) return;
+      const date = todo[i]!;
+      if (!careMemo.has(date)) {
+        const visits = visitsOn(data, date);
+        const p = visits.some((x) => !x.cancelled) ? dayProblemOf(data, date) : null;
+        careMemo.set(date, new Set(p ? visitIssues(p, routesOf(p, visits), visits).keys() : []));
+        setCareTick((n) => n + 1);
+      }
+      timer = setTimeout(() => step(i + 1), 0);
+    };
+    timer = setTimeout(() => step(0), 0);
+    return () => {
+      stop = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [careDays, careMemo, data]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 検査が1日進む（careTick）たびに候補を作り直す
+  const careOf = useCallback((v: Visit): boolean => careMemo.get(v.date)?.has(v.id) ?? false, [careMemo, careTick]);
   const result = useMemo(() => {
     if (!vIndex) return base;
     const staffName = new Map(data.staff.map((s) => [s.id, s.name]));
-    const visits = paletteVisits(query, people, vIndex, today, (v) => {
-      if (v.cancelled) return v.cancelKind === 'sameDay' ? '当日キャンセル' : '取り消し';
-      const sid = v.staffId;
-      return sid ? (staffName.get(sid) ?? '') : '担当なし';
-    });
+    const visits = paletteVisits(
+      query,
+      people,
+      vIndex,
+      today,
+      (v) => {
+        if (v.cancelled) return v.cancelKind === 'sameDay' ? '当日キャンセル' : '取り消し';
+        const sid = v.staffId;
+        return sid ? (staffName.get(sid) ?? '') : '担当なし';
+      },
+      undefined,
+      careOf,
+    );
     if (visits.length === 0) return base;
     const groups = [...base.groups, { kind: 'visit' as const, items: visits, rest: 0 }];
     return { groups, flat: groups.flatMap((g) => g.items) };
-  }, [base, vIndex, query, people, today, data]);
+  }, [base, vIndex, query, people, today, data, careOf]);
   const flat = result.flat;
   const at = flat.length === 0 ? -1 : Math.min(active, flat.length - 1);
   const optionId = (i: number) => `${listId}-o${i}`;
@@ -132,7 +179,11 @@ export function CommandPalette({
       window.removeEventListener('keydown', onKey, true);
       releaseInert();
       // 開く前の要素が消えていたら（吹き出しの中から開いて、吹き出しが閉じたなど）上の帯の「探す」へ
-      const to = back?.isConnected ? back : document.querySelector<HTMLElement>('[data-testid="cmdk-open"]');
+      // 開く前の要素が消えていたら、見えている「探す」（広い画面は上の帯、狭い画面は下のタブ）へ
+      const opener = [
+        ...document.querySelectorAll<HTMLElement>('[data-testid="cmdk-open"], [data-testid="bottom-search"]'),
+      ].find((el) => el.offsetParent !== null);
+      const to = back?.isConnected ? back : opener;
       to?.focus({ preventScroll: true });
     };
   }, []);
@@ -180,7 +231,13 @@ export function CommandPalette({
     setActive(0);
     setTyped(true);
   };
-  const status = !typed ? '' : flat.length === 0 ? '見つかりません' : `${flat.length}件`;
+  const status = !typed
+    ? ''
+    : carePending
+      ? `要対応の訪問を調べています（${flat.length}件）`
+      : flat.length === 0
+        ? '見つかりません'
+        : `${flat.length}件`;
 
   let index = -1;
   return createPortal(
@@ -251,6 +308,7 @@ export function CommandPalette({
                       data-testid="cmdk-option"
                       data-kind={it.kind}
                       data-to={it.to}
+                      data-visit={it.visitId}
                     >
                       {/* 〈スタッフ〉は印を添える（PRD D298。飾りなので読み上げない） */}
                       {it.kind === 'staff' && <StaffMarkById id={it.id.slice('staff:'.length)} size="xs" />}
@@ -270,10 +328,15 @@ export function CommandPalette({
             );
           })}
         </div>
-        {flat.length === 0 && (
+        {carePending && (
+          <p className="cmdk-empty" data-testid="cmdk-care-pending">
+            要対応の訪問を調べています…（見つかった日から出します）
+          </p>
+        )}
+        {flat.length === 0 && !carePending && (
           <p className="cmdk-empty" data-testid="cmdk-empty">
             見つかりません。画面の名前・操作・{terms.client}のよみ・{terms.staff}の名前・訪問（「名前
-            10/28」）で探せます
+            10/28」「担当なし」「要対応」）で探せます
           </p>
         )}
         <p className="cmdk-foot" aria-hidden="true">

@@ -205,6 +205,9 @@ async function day(page) {
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await openPlan(page);
+  // 390px の既定は日ごとのリスト（ADR-0055）。入らなかった訪問のカードは「その他 ▾」の「表示」で順番にして見る
+  await page.getByTestId('plan-more').click();
+  await page.getByTestId('plan-view-order').click();
   await page.locator('.route-col-none .candidate-box button', { hasText: '受けられる人' }).first().click();
   await page.getByTestId('candidate-list').waitFor({ timeout: 10000 });
   const list = page.getByTestId('candidate-list');

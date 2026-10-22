@@ -81,3 +81,30 @@
     display: none !important;
   }
 }
+
+/* スマホの大きな4つのボタン（PRD D334）：2×2 で、指で押しやすい高さ */
+.vp-big {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.vp-big > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.visit-panel .vp-big-btn {
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.visit-panel .vp-big-btn svg {
+  color: var(--primary-dark);
+}
+.vp-big-btn.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}

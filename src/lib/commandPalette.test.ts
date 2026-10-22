@@ -342,6 +342,48 @@ describe('訪問の候補（PRD D304）', () => {
     const idx = visitIndex([v('z1', 'c9', '2026-10-25', '09:00')]);
     expect(paletteVisits('あす', more, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['z1']);
   });
+  it('担当の名前で、その人が担当の回（PRD D337）', () => {
+    const staffed = (id: string, clientId: string, date: string, start: string, staffId: string | null) => ({
+      ...v(id, clientId, date, start),
+      staffId,
+    });
+    const idx = visitIndex([
+      staffed('s-a', 'c1', '2026-10-22', '09:00', 's1'),
+      staffed('s-b', 'c2', '2026-10-22', '10:00', null),
+      staffed('s-c', 'c2', '2026-10-23', '11:00', 's1'),
+    ]);
+    // 「長町」は〈利用者さん〉の長町 みどり（訪問なし）と〈スタッフ〉の長町 小太郎の両方に当たる
+    expect(paletteVisits('長町 明日', people, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['s-a']);
+    expect(paletteVisits('小太郎', people, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['s-a', 's-c']);
+    const one = paletteVisits('長町 明日', people, idx, TODAY, describeV)[0]!;
+    expect(one.label).toBe('図書館 ふみ 10/22（木） 09:00');
+  });
+  it('「担当なし」「要対応」の語（PRD D337）', () => {
+    const staffed = (id: string, date: string, staffId: string | null, cancelled = false) => ({
+      ...v(id, 'c2', date, '09:00', cancelled),
+      staffId,
+    });
+    const idx = visitIndex([
+      staffed('u1', '2026-10-22', null),
+      staffed('u2', '2026-10-23', 's1'),
+      staffed('u3', '2026-10-24', null, true),
+      staffed('u4', '2026-10-20', null),
+    ]);
+    expect(paletteVisits('担当なし', people, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['u1']);
+    expect(paletteVisits('たんとうなし 10/20', people, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['u4']);
+    expect(paletteVisits('やぎお 担当なし', people, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['u1']);
+    // 要対応：検査（attention）で当たる回。渡さなければ担当なしと同じ
+    expect(paletteVisits('要対応', people, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['u1']);
+    expect(
+      paletteVisits('ようたいおう', people, idx, TODAY, describeV, undefined, (x) => x.id === 'u2').map(
+        (x) => x.visitId,
+      ),
+    ).toEqual(['u2']);
+    // 要対応は日付が無ければ今日から31日先まで
+    const far = visitIndex([staffed('f1', '2026-12-30', null)]);
+    expect(paletteVisits('要対応', people, far, TODAY, describeV)).toEqual([]);
+    expect(paletteVisits('担当なし', people, far, TODAY, describeV).map((x) => x.visitId)).toEqual(['f1']);
+  });
   it('訪問を追加の操作', () => {
     expect(paletteActions(TODAY).find((x) => x.id === 'action:visit-add')).toMatchObject({ op: 'visit-add' });
   });

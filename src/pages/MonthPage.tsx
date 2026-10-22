@@ -825,7 +825,7 @@ export default function MonthPage() {
               data-layout={k}
             >
               <WithIcon icon={Icon} size={14}>
-                {label}
+                <span className="tb-label">{label}</span>
               </WithIcon>
             </button>
           ))}

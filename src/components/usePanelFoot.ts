@@ -105,17 +105,33 @@ export function usePanelToastPlace(drawer: RefObject<HTMLElement | null>, head: 
     const apply = () => {
       root.style.setProperty('--drawer-head-h', `${h.offsetHeight}px`);
       root.style.setProperty('--drawer-w', `${d.offsetWidth}px`);
-      root.dataset.drawerToast = toastPlace(window.innerWidth, d.offsetWidth);
+      // 下から出る欄（スマホ。PRD D334）は、知らせを欄の上（欄の外）に出す。欄の上端から画面の下端までを --drawer-sheet-bottom に
+      const sheet = d.classList.contains('is-sheet') && window.matchMedia('(max-width: 600px)').matches;
+      if (sheet)
+        root.style.setProperty('--drawer-sheet-bottom', `${window.innerHeight - d.getBoundingClientRect().top + 8}px`);
+      else root.style.removeProperty('--drawer-sheet-bottom');
+      root.dataset.drawerToast = sheet ? 'sheet' : toastPlace(window.innerWidth, d.offsetWidth);
     };
     apply();
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply);
     ro?.observe(h);
     ro?.observe(d);
     window.addEventListener('resize', apply);
+    // 下から出る欄は出てくる動き（transform）のあいだ位置がずれるので、動きが終わったら測り直す
+    d.addEventListener('animationend', apply);
+    // キーボードで見えている所が変わると欄が動く（大きさは変わらないこともある）ので、描いたあとに測り直す
+    const vv = typeof window === 'undefined' ? null : window.visualViewport;
+    const later = () => requestAnimationFrame(apply);
+    vv?.addEventListener('resize', later);
+    vv?.addEventListener('scroll', later);
     return () => {
       ro?.disconnect();
       window.removeEventListener('resize', apply);
+      d.removeEventListener('animationend', apply);
+      vv?.removeEventListener('resize', later);
+      vv?.removeEventListener('scroll', later);
       root.style.removeProperty('--drawer-head-h');
+      root.style.removeProperty('--drawer-sheet-bottom');
       root.style.removeProperty('--drawer-w');
       delete root.dataset.drawerToast;
     };

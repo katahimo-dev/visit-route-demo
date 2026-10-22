@@ -110,9 +110,10 @@ export function dayInputsOf(d: DemoData, date: string): DayInputs {
 
 /**
  * その日を当ててよいか（日の予定の提案と同じ判定：組み始めたときの訪問のまま・その日の問題の入力（欠勤・希望休・稼働時間・人・
- * 休み・条件）が同じ・伝えていない）。入力が変われば休みの人に当たるなどするので当てない
+ * 休み・条件）が同じ・伝えていない）。入力が変われば休みの人に当たるなどするので当てない。日の予定のその場の提案（画面の外に
+ * 残す。PRD D335）も同じ判定
  */
-export function proposalDayFresh(d: DemoData, day: ProposalDay): boolean {
+export function proposalDayFresh(d: DemoData, day: Pick<ProposalDay, 'date' | 'visits' | 'inputs'>): boolean {
   const now = visitsOn(d, day.date);
   if (now.length !== day.visits.length || !now.every((v, k) => v === day.visits[k])) return false;
   if (own(d.snapshots, day.date)) return false;

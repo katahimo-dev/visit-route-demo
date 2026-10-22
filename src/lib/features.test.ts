@@ -291,13 +291,8 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
     expect(screens({ compat: false })).not.toContain('相性');
     expect(screens({})).toContain('相性');
   });
-  it('下のタブは欠勤・キャンセル・空き状況を切ると減る', () => {
-    expect(bottomTabs(menuSections(terms, TODAY, {})).map((t) => t.key)).toEqual([
-      'home',
-      'schedule',
-      'absence',
-      'vacancy',
-    ]);
+  it('下のタブは欠勤・キャンセルを切ると減る（空き状況は下のタブに出さない。PRD D336）', () => {
+    expect(bottomTabs(menuSections(terms, TODAY, {})).map((t) => t.key)).toEqual(['home', 'schedule', 'absence']);
     expect(bottomTabs(menuSections(terms, TODAY, { vacancy: false })).map((t) => t.key)).toEqual([
       'home',
       'schedule',

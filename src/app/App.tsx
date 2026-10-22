@@ -354,7 +354,7 @@ function AdminShell() {
           <header ref={headerRef} className="app-header">
             {/* 月まとめ作成の進み具合と［止める］（PRD D256。ほかの画面へ移っても続く。月の予定では画面の中に出す） */}
             <BatchBand />
-            {/* スマホだけ：ロゴと今の画面の名前（PRD D132。広い画面では出さない。「メニュー」は下のタブ。PRD D274） */}
+            {/* スマホだけ：ロゴと今の画面の名前（PRD D132。広い画面では出さない。「メニュー」は下のタブ。PRD D336） */}
             <div className="m-head-title">
               <span className="brand-mark" aria-hidden="true">
                 <RouteIcon size={18} strokeWidth={2.4} />
@@ -424,7 +424,7 @@ function AdminShell() {
               />
             </Suspense>
           </main>
-          {/* スマホだけ：よく使うタブ（ホーム・予定・欠勤・空き状況）と「メニュー」（PRD D274。印刷では出さない） */}
+          {/* スマホだけ：よく使うタブ（ホーム・予定・欠勤）と「探す」「メニュー」（PRD D336。印刷では出さない） */}
           <nav className="bottom-tabs" aria-label="よく使う画面" data-testid="bottom-tabs">
             {bottomTabs(groups).map((item) => {
               const { key, to, icon } = item;
@@ -450,7 +450,20 @@ function AdminShell() {
                 </Link>
               );
             })}
-            {/* 「メニュー」：全部の画面の引き出し（PRD D133・D274。上の帯から下のタブの最後へ移した） */}
+            {/* 「探す」：コマンドパレットを開く（PRD D336。上の帯から下のタブへ移した。空き状況はメニューと探すから） */}
+            <button
+              type="button"
+              className="bottom-tab"
+              aria-haspopup="dialog"
+              aria-expanded={paletteOpen}
+              onClick={openPalette}
+              data-testid="bottom-search"
+              data-tab="search"
+            >
+              <Search size={20} strokeWidth={2.1} aria-hidden="true" />
+              <span>探す</span>
+            </button>
+            {/* 「メニュー」：全部の画面の引き出し（PRD D133・D336。上の帯から下のタブの最後へ移した） */}
             <button
               ref={menuBtnRef}
               type="button"

@@ -684,3 +684,20 @@ export function endPatternOp(d: DemoData, patternId: string, last: string, today
     confirmedDays,
   };
 }
+
+/** 日の訪問の見比べる形（ID・日時・所要・種類・担当・取り消し） */
+const dayKey = (vs: readonly Visit[]) =>
+  JSON.stringify(
+    vs.map((v) => [v.id, v.earliestStart, v.latestStart, v.durationMinutes, v.typeId, v.staffId, v.cancelled]),
+  );
+
+/**
+ * 変える前と後で訪問が変わる、確定（伝えた）した今日以降の日（日付の順）。繰り返しの回は見るときに計算するので、
+ * 「これ以降」「すべて」で繰り返しを分けたときは保存した回だけでなく計算した回でも比べる（訪問の詳細の欄・範囲を選び直す帯の確かめ）
+ */
+export function toldDaysChanged(before: DemoData, after: DemoData, today: string): string[] {
+  return Object.keys(before.snapshots)
+    .filter((d) => d >= today)
+    .sort()
+    .filter((d) => dayKey(visitsOn(before, d)) !== dayKey(visitsOn(after, d)));
+}

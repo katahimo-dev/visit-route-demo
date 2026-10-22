@@ -5,10 +5,10 @@
 // コマンドパレット（Ctrl+K で開く・role=dialog・aria-modal・combobox と listbox（aria-activedescendant）・裏の inert とスクロールのロック・
 // 打つと絞り込む・↑↓（端で回る）・Enter で移る・操作（欠勤・キャンセル）・人の名前（よみ・カタカナ）でその人の画面・Esc とフォーカスの戻り・
 // 背景で閉じる・Tab が中で回る・Ctrl+K で閉じる・入力欄の中の Ctrl+K（入れた文字はそのまま・閉じたら入力欄へ）・右の欄が開いているときは開かない）、
-// 390px（上の帯のボタンから開ける・収まる・上の帯の名前・引き出しの並び・下のタブ（ホーム・予定・欠勤・空き状況・メニュー））、印刷で出さない、300人×60人で打つたびの速さ。
+// 390px（上の帯のボタンから開ける・収まる・上の帯の名前・引き出しの並び・下のタブ（ホーム・予定・欠勤・探す・メニュー）。「探す」は下のタブ）、印刷で出さない、300人×60人で打つたびの速さ。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-nav.cjs
-// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_NAV で1文字打って描き終わるまでの上限（既定 100ms。無ければ PERF_MS）
+// 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_NAV で1文字打って描き終わるまでの上限（既定 100ms。無ければ PERF_MS）、PERF_MS_NAV_CARE で「要対応」を打ったときにいちばん長く止まる時間の上限（既定 300ms）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
@@ -29,6 +29,8 @@ const {
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const PERF_MS = perfMs('PERF_MS_NAV', 100);
+/** 「要対応」を打ったとき、いちばん長く画面が止まる時間の上限（検査は1日ずつ間を空ける。PRD D337） */
+const PERF_MS_CARE = perfMs('PERF_MS_NAV_CARE', 300);
 
 const palette = (page) => page.getByTestId('cmdk');
 const input = (page) => page.getByTestId('cmdk-input');
@@ -617,19 +619,15 @@ async function mobile(page) {
     '390px：設定のタブの上の帯の名前「設定・データ」',
   );
   await open(page, '/clients');
-  const btn = page.getByTestId('cmdk-open');
+  check(!(await page.getByTestId('cmdk-open').isVisible()), '390px：上の帯に「探す」は出さない（下のタブ。PRD D336）');
+  const btn = page.getByTestId('bottom-search');
   const bb = await btn.boundingBox();
-  const nb = await page.getByTestId('screen-name').boundingBox();
-  check(
-    bb && bb.x >= 0 && bb.x + bb.width <= 390 && bb.y < 80 && bb.y < nb.y + nb.height,
-    '390px：「探す」のボタンが上の帯の1段目（画面の名前の隣）に収まる',
-    { bb, nb },
-  );
-  check(
-    (await btn.innerText()).trim() === '探す',
-    '390px：ボタンは「探す」（キーの印を出さない）',
-    await btn.innerText(),
-  );
+  const tb = await page.getByTestId('bottom-tabs').boundingBox();
+  check(bb && tb && bb.x >= 0 && bb.x + bb.width <= 390 && bb.y >= tb.y, '390px：「探す」は下のタブ（4つ目）に収まる', {
+    bb,
+    tb,
+  });
+  check((await btn.innerText()).trim() === '探す', '390px：下のタブの「探す」', await btn.innerText());
   const sw = await page.evaluate(() => document.documentElement.scrollWidth);
   check(sw <= 390, '390px：ページが横にはみ出さない', sw);
   await btn.click();
@@ -658,8 +656,8 @@ async function mobile(page) {
   await page.keyboard.press('Escape');
   const tabs = await page.getByTestId('bottom-tabs').locator('.bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(tabs.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '欠勤', '空き状況', 'メニュー']),
-    '390px：下のタブは ホーム・予定・欠勤・空き状況・メニュー（PRD D274）',
+    JSON.stringify(tabs.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '欠勤', '探す', 'メニュー']),
+    '390px：下のタブは ホーム・予定・欠勤・探す・メニュー（PRD D336）',
     tabs,
   );
   await open(page, '/compare');
@@ -673,7 +671,7 @@ async function mobile(page) {
 }
 
 /**
- * 下のタブの「予定」「欠勤」（PRD D273・D274）：「予定」は月・週・日の予定で印、押すと最後に開いた表示（既定は日の予定）・
+ * 下のタブの「予定」「欠勤」（PRD D273・D336）：「予定」は月・週・日の予定で印、押すと最後に開いた表示（既定は日の予定）・
  * 今の表示では何もしない。「欠勤」は今日の日の予定で欠勤・キャンセルの欄を開く（印は付けない）
  */
 async function scheduleTab(page) {
@@ -793,6 +791,34 @@ async function perf(page) {
   const rest = await page.getByTestId('cmdk-rest').allInnerTexts();
   check(n > 0 && n <= 8 * 2 + 30, '300人×60人：人は種類ごとに8人まで', { n, rest });
   check(median <= PERF_MS, `300人×60人：1文字打って描き終わるまで（中央値 ${PERF_MS}ms 以下）`, { median, times });
+  // 「要対応」：31日分の検査を1日ずつ間を空けて進め、画面を止めない（いちばん長い止まりを long task で測る）
+  const care = await page.evaluate(async () => {
+    const longs = [];
+    const obs = new PerformanceObserver((l) => {
+      for (const e of l.getEntries()) longs.push(Math.round(e.duration));
+    });
+    obs.observe({ type: 'longtask', buffered: false });
+    const el = document.querySelector('[data-testid="cmdk-input"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    const t0 = performance.now();
+    setter.call(el, '要対応');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    // 調べ終わる（「調べています」が消える）まで待つ（上限 60秒）
+    for (let i = 0; i < 600; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      if (!document.querySelector('[data-testid="cmdk-care-pending"]')) break;
+    }
+    const total = Math.round(performance.now() - t0);
+    obs.disconnect();
+    return {
+      max: Math.max(0, ...longs),
+      total,
+      n: longs.length,
+      done: !document.querySelector('[data-testid="cmdk-care-pending"]'),
+    };
+  });
+  check(care.done, '300人×60人：「要対応」の検査が終わる', care);
+  check(care.max <= PERF_MS_CARE, `300人×60人：「要対応」を打っても画面が止まるのは1回 ${PERF_MS_CARE}ms 以下`, care);
   await page.keyboard.press('Escape');
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
