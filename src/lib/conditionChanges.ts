@@ -1,4 +1,4 @@
-// 作り直しの帯の「何が変わったか」と「戻す」（PRD D267〜D269。ADR-0044）。
+// 作り直しの帯の「何が変わったか」と「戻す」（PRD D290〜D292。ADR-0049）。
 // 条件の変更の控え（store の conditionsBase：最後に影響する日が0日だった時点の条件）と今の条件を比べ、人が読める一覧にする。
 // 控えが無いときは、今の案の記録の重み（AiRun.rules）と点数の基準のプリセットの重みだけ比べられる（madeWeightsChange）。
 // ここは純粋関数（データは書き換えない。戻すは新しい DemoData を返し、画面が store の update(fn) で書く）
@@ -173,7 +173,7 @@ export function baseAtText(at: number): string {
 }
 
 /**
- * 控え（base）と今（now）の条件の違い（PRD D267）。並び：重み・プリセット → 条件 → 機能・事業所 → 項目・種類・相性 → 人 → 勤務時間・休み・定期パターン。
+ * 控え（base）と今（now）の条件の違い（PRD D290）。並び：重み・プリセット → 条件 → 機能・事業所 → 項目・種類・相性 → 人 → 勤務時間・休み・定期パターン。
  * 名前は今の名前（消した人は控えの名前）、呼び方は今の org.terms
  */
 export function conditionChanges(base: ConditionParts, now: ConditionParts): ConditionChange[] {
@@ -501,7 +501,7 @@ function personChange(
 export const applyRevert = (d: DemoData, c: ConditionChange): DemoData => repair(c.revert(d));
 
 /**
- * すべて戻す（PRD D268）：控えの条件そのものに戻す（重みの違いの記録（made）は控えに重みの違いが無いときだけ足して戻す）
+ * すべて戻す（PRD D291）：控えの条件そのものに戻す（重みの違いの記録（made）は控えに重みの違いが無いときだけ足して戻す）
  */
 export function revertAll(d: DemoData, base: ConditionParts | null, made: ConditionChange | null): DemoData {
   let next: DemoData = base ? { ...d, ...base } : d;
@@ -510,7 +510,7 @@ export function revertAll(d: DemoData, base: ConditionParts | null, made: Condit
 }
 
 /**
- * 控えが無いとき（または控えに重みの違いが無いとき）の、作ったときの重みの違い（PRD D269）：
+ * 控えが無いとき（または控えに重みの違いが無いとき）の、作ったときの重みの違い（PRD D292）：
  * 重みの違いで「条件が変わった」日（lib/month の rulesStale）の今の案の記録の重み（AiRun.rules。型ごとに最初の条件）と、
  * 点数の基準のプリセットの重みを比べる。日によって記録の重みが違えば、いちばん多い組を出す。違いが無ければ null。
  * 戻すは、点数の基準のプリセットの重みを作ったときの値にする（試す重みも基準にそろう。ADR-0035）
@@ -565,9 +565,9 @@ export function madeWeightsChange(
   };
 }
 
-/** 一覧の見出し（はじめ畳む。PRD D267） */
+/** 一覧の見出し（はじめ畳む。PRD D290） */
 export const changesToggleText = (n: number): string => `変更内容を見る（${n}件）`;
-/** 記録が無いときの文（PRD D269） */
+/** 記録が無いときの文（PRD D292） */
 export const NO_RECORD_TEXT = '何が変わったかの記録がありません（作り直すか、日の予定で確かめてください）';
 /** 控えはあるが一覧が空のとき（戻したあとも影響する日が残る：控えを取る前の変更） */
 export const NO_MORE_TEXT =

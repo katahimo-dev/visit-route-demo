@@ -27,7 +27,7 @@ const fake = () => {
 };
 const d = createDemoData('2026-10-21');
 
-describe('条件の変更の控え（PRD D267。ADR-0044）', () => {
+describe('条件の変更の控え（PRD D290。ADR-0049）', () => {
   it('条件の部分だけを持つ（訪問・案・記録・確定した割当・欠勤は入れない）', () => {
     const c = conditionsOf(d) as Record<string, unknown>;
     expect(Object.keys(c).sort()).toEqual(

@@ -19,7 +19,7 @@ const base = () => createDemoData(TODAY);
 const basisOf = (d: DemoData) => scorePresetOf(d.presets, d.scorePresetId)!;
 const lines = (b: DemoData, n: DemoData) => conditionChanges(b, n).map(changeLine);
 
-describe('conditionChanges（PRD D267）', () => {
+describe('conditionChanges（PRD D290）', () => {
   it('同じなら空', () => {
     const d = base();
     expect(conditionChanges(d, d)).toEqual([]);
@@ -166,7 +166,7 @@ describe('conditionChanges（PRD D267）', () => {
   });
 });
 
-describe('madeWeightsChange（PRD D269）', () => {
+describe('madeWeightsChange（PRD D292）', () => {
   const withRun = (d: DemoData, date: string, rules: DemoData['rules']): DemoData => {
     const run: AiRun = {
       id: `run-${date}`,

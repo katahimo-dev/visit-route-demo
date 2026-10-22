@@ -1,7 +1,7 @@
 // 条件を変えたら、その場で影響と「作り直す」を出す帯（PRD D161〜D166。ADR-0025 追記）。
 // 設定の画面（条件の重み・相性・稼働時間・訪問の種類・特性の項目・〈スタッフ〉・〈利用者さん〉）の上に出す。
 // 数え方は月の画面の要対応・進み具合の帯の「条件が変わった日」と同じ（lib/useDayStatuses）。
-// 何が変わったか（条件の変更の控えと今の違い）と「戻す」も出す（PRD D267〜D269。ADR-0044）。データは store の update(fn) でだけ書く
+// 何が変わったか（条件の変更の控えと今の違い）と「戻す」も出す（PRD D290〜D292。ADR-0049）。データは store の update(fn) でだけ書く
 import { RefreshCw, SlidersHorizontal, Undo2 } from 'lucide-react';
 import { type RefObject, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -72,8 +72,14 @@ function RebuildBandOn({ rules }: { rules: boolean }) {
   const { data, conditionsBase, clearConditionsBase } = useDemoData();
   const settled = useSettled(data, SETTLE_MS);
   const deferred = useDeferredValue<DemoData | null>(settled, null);
-  /** 数えたデータが今のデータか（0日を数えて控えを消すのは、今のデータを数えたときだけ。PRD D267） */
-  const current = deferred === data;
+  /** 入力が止まった時刻（控えより後に止まったデータを数えたときだけ控えを消す） */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: settled が替わった時刻を覚える
+  const settledAt = useMemo(() => Date.now(), [settled]);
+  /**
+   * 0日を数えて控えを消してよいか（PRD D290）：数えたデータが今のデータで、控えを取った後に止まったデータであること。
+   * 別のタブが控えとデータを書くと控えが先に届くので、届く前のデータの0日で消さない
+   */
+  const current = deferred === data && settledAt >= (conditionsBase?.at ?? 0);
   const [later, setLater] = useState(false);
   const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '試す重み';
   // 案内は入力のたびに数えても軽い（重み・必須の比べだけ）
@@ -165,12 +171,12 @@ function RebuildBandBody({
 }) {
   const today = jstDate(Date.now());
   const summary = useSummary(data, today);
-  // 影響する日が0日（今のデータを数えた）なら条件の変更の控えを消す（次の変更でまた取る。PRD D267）
+  // 影響する日が0日（今のデータを数えた）なら条件の変更の控えを消す（次の変更でまた取る。PRD D290）
   const zero = current && summary !== null && summary.days.length === 0;
   useEffect(() => {
     if (zero && hasBase) onCleared();
   }, [zero, hasBase, onCleared]);
-  /** 重みの違いで「条件が変わった」日（控えが無いときの作ったときの重みの違い。PRD D269） */
+  /** 重みの違いで「条件が変わった」日（控えが無いときの作ったときの重みの違い。PRD D292） */
   const ruleDays = useMemo(() => {
     if (!data || !summary) return [];
     const keys = currentRuleKeys(data.rules, data.presets);
@@ -280,7 +286,7 @@ function RebuildBandBody({
 }
 
 /**
- * 何が変わったか（PRD D267〜D269）：条件の変更の控えと今の違いの一覧（はじめ畳む）と、項目ごとの［戻す］・［すべて戻す］。
+ * 何が変わったか（PRD D290〜D292）：条件の変更の控えと今の違いの一覧（はじめ畳む）と、項目ごとの［戻す］・［すべて戻す］。
  * 控えが無ければ、作ったときの重みと点数の基準の重みの違いだけ。それも無ければ記録が無いと書く
  */
 function ConditionChanges({ data, ruleDays }: { data: DemoData; ruleDays: readonly string[] }) {

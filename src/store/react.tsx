@@ -24,7 +24,7 @@ export type DemoStore = {
   data: DemoData;
   /**
    * データを書き換える唯一の方法（不変更新。fn は新しい DemoData を返す）。
-   * 条件の変更の控え（conditionsBase）が無く条件の部分が変わったら、変わる前の条件を控える（PRD D267）。
+   * 条件の変更の控え（conditionsBase）が無く条件の部分が変わったら、変わる前の条件を控える（PRD D290）。
    * keepBase：控えを取らない（作り直しの帯の「戻す」。戻したこと自体を変更として控えない）
    */
   update(fn: (d: DemoData) => DemoData, opts?: { keepBase?: boolean }): void;
@@ -60,7 +60,7 @@ export type DemoStore = {
   /** 保存の容量が足りず1世代の控えを捨てた回数（画面が知らせを出すきっかけ。ADR-0032） */
   previousDrops: number;
   /**
-   * 条件の変更の控え（PRD D267。ADR-0044）：最後に影響する日が0日だった時点の条件（DemoData とは別のキー）。無ければ null。
+   * 条件の変更の控え（PRD D290。ADR-0049）：最後に影響する日が0日だった時点の条件（DemoData とは別のキー）。無ければ null。
    * update で条件が変わったときに取り、作り直しの帯が0日を数えたら clearConditionsBase で消す。読み込み・初期状態に戻す・直前の状態に戻すで消す
    */
   conditionsBase: ConditionsBase | null;
@@ -177,7 +177,7 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
     },
     [mark],
   );
-  /** 丸ごと差し替える：控えを消す（比べる元が違う。PRD D267） */
+  /** 丸ごと差し替える：控えを消す（比べる元が違う。PRD D290） */
   const swapIn = useCallback(
     (d: DemoData) => {
       clearConditionsBase();

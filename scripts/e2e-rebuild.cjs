@@ -480,5 +480,260 @@ const steps = sharedPage({
   after: ({ dlg }) => check(dlg.native.length === 0, 'ブラウザのダイアログを出さない', dlg.native),
 });
 
+// 何が変わったかと「戻す」（PRD D290〜D292）の段は末尾の changeSteps（前の段と別のページ・初期データから）
+steps.push(...changeSteps());
+
 module.exports = { steps };
 if (require.main === module) runSteps(steps);
+
+// ---- 何が変わったかと「戻す」（PRD D290〜D292。ADR-0049）----
+// 前の段とは別のページで、初期データ（今日から7日分の案）から始める。重みは条件の重みの画面の操作に頼らず、別のタブで localStorage を書き換える
+function changeSteps() {
+  /** 条件の変更の控えのキー（store/conditions の CONDITIONS_BASE_KEY） */
+  const BASE_KEY = 'vrdemo:conditions:base';
+  const CONDITION_KEYS = [
+    'org',
+    'items',
+    'rules',
+    'presets',
+    'scorePresetId',
+    'staff',
+    'clients',
+    'compat',
+    'availability',
+    'visitTypes',
+    'patterns',
+    'clientLeaves',
+  ];
+  const toggle = (page) => page.getByTestId('rebuild-changes-toggle');
+  const items = (page) => page.getByTestId('rebuild-change');
+  const baseOf = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), BASE_KEY);
+  const firstStaff = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k)).staff[0], STORAGE_KEY);
+  const waitWeight = (page) =>
+    page.evaluate((k) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      return (d.presets.find((p) => p.id === d.scorePresetId) ?? d.presets[0]).weights.wait.weight;
+    }, STORAGE_KEY);
+  /** 別のタブで書き換える（開いている画面は storage の知らせで読み直す） */
+  async function otherTab(page, fn, arg) {
+    const other = await page.context().newPage();
+    await other.goto(`${BASE}#/data`);
+    await other.locator('h1').first().waitFor({ timeout: 30000 });
+    await other.evaluate(fn, arg);
+    await other.close();
+    await settle(page, SETTLE + 300);
+  }
+  /** 一覧を開いて、行の文を返す */
+  async function openList(page) {
+    await toggle(page).waitFor({ timeout: 15000 });
+    if ((await toggle(page).getAttribute('aria-expanded')) !== 'true') await toggle(page).click();
+    await items(page).first().waitFor({ timeout: 5000 });
+    return (await items(page).allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim());
+  }
+
+  async function fresh(page) {
+    await page.goto(`${BASE}#/home`);
+    await page.evaluate(
+      ({ k, b }) => {
+        localStorage.removeItem(k);
+        localStorage.removeItem(b);
+      },
+      { k: STORAGE_KEY, b: BASE_KEY },
+    );
+    await page.reload();
+    await page.getByTestId('home-tasks').waitFor({ timeout: 30000 });
+    await openSettings(page, '/rules');
+    check((await band(page).count()) === 0, '変更内容：初期データでは帯を出さない');
+    check((await baseOf(page)) === null, '変更内容：はじめは控えが無い');
+  }
+
+  // 管理者設定で相性を切ると控えを取り、帯に「機能：相性を切」。戻すと元に戻り帯が消え、控えも消える
+  async function features(page, { dlg }) {
+    await page.goto(`${BASE}#/settings`);
+    await page.locator('[data-testid="feature-templates"]').first().waitFor({ timeout: 30000 });
+    dlg.answer = true;
+    await page.getByRole('switch', { name: '相性', exact: true }).click();
+    await page.locator('.toast').filter({ hasText: '相性を切りました' }).waitFor({ timeout: 5000 });
+    await settle(page, 500);
+    const b = await baseOf(page);
+    check(
+      !!b && typeof b.at === 'number' && b.data?.org?.features?.compat !== false && b.data.visits === undefined,
+      '変更内容：update で条件が変わると、変わる前の条件を DemoData と別のキーに控える（訪問は入れない）',
+      b && { at: b.at, features: b.data?.org?.features },
+    );
+    await openSettings(page, '/staff');
+    await daysRow(page).waitFor({ timeout: 15000 });
+    check(
+      (await toggle(page).getAttribute('aria-expanded')) === 'false' &&
+        /^変更内容を見る（1件）$/.test((await toggle(page).innerText()).trim()) &&
+        (await items(page).count()) === 0,
+      '変更内容：はじめ畳んで「変更内容を見る（1件）」',
+      await toggle(page).innerText(),
+    );
+    const list = await openList(page);
+    check(list.length === 1 && list[0].startsWith('機能：相性を切'), '変更内容：開くと「機能：相性を切」', list);
+    check((await toggle(page).getAttribute('aria-expanded')) === 'true', '変更内容：開くと aria-expanded');
+    dlg.messages.length = 0;
+    dlg.answer = false;
+    await page.getByTestId('rebuild-change-revert').first().click();
+    await settle(page, 400);
+    check(
+      dlg.messages.length === 1 &&
+        /「機能」を戻しますか？/.test(dlg.messages[0]) &&
+        /機能：相性を切/.test(dlg.messages[0]),
+      '変更内容：戻す前に独自の確認（何が戻るか）',
+      dlg.messages,
+    );
+    check(
+      (await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).org.features.compat, STORAGE_KEY)) === false,
+      '変更内容：確認を取り消すと戻さない',
+    );
+    dlg.answer = true;
+    await page.getByTestId('rebuild-change-revert').first().click();
+    await daysRow(page).waitFor({ state: 'detached', timeout: 15000 });
+    await settle(page, 300);
+    check(
+      (await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).org.features.compat, STORAGE_KEY)) !== false,
+      '変更内容：戻すと相性が入に戻る',
+    );
+    check((await band(page).count()) === 0, '変更内容：戻すと影響する日が0日になり帯が消える');
+    check((await baseOf(page)) === null, '変更内容：0日を数えたら控えを消す');
+    check(
+      (await live(page).innerText()) === '影響する日は無くなりました',
+      '変更内容：戻したあと「影響する日は無くなりました」',
+      await live(page).innerText(),
+    );
+  }
+
+  // 控えがあるとき（別のタブで重みと〈スタッフ〉の勤務時間を変えた）：2件の一覧と「すべて戻す」
+  async function revertAll(page, { dlg }) {
+    await openSettings(page, '/rules');
+    const before = await waitWeight(page);
+    const staffBefore = await firstStaff(page);
+    await otherTab(
+      page,
+      ({ k, b, keys, at }) => {
+        const d = JSON.parse(localStorage.getItem(k));
+        const base = JSON.stringify({ at, data: Object.fromEntries(keys.map((x) => [x, d[x]])) });
+        const basis = d.presets.find((p) => p.id === d.scorePresetId) ?? d.presets[0];
+        basis.weights.wait.weight = basis.weights.wait.weight >= 4 ? 1 : basis.weights.wait.weight + 1;
+        for (const r of d.rules) if (r.type === 'wait') r.weight = basis.weights.wait.weight;
+        d.staff[0].shiftEnd = d.staff[0].shiftEnd === '15:00' ? '14:00' : '15:00';
+        // データを書いてから控え（ページの時計は止めてあり、控えが先に届くと時刻で前後を見分けられない）。控えの時刻は開いている画面の時計
+        localStorage.setItem(k, JSON.stringify(d));
+        localStorage.setItem(b, base);
+      },
+      { k: STORAGE_KEY, b: BASE_KEY, keys: CONDITION_KEYS, at: await page.evaluate(() => Date.now()) },
+    );
+    await daysRow(page).waitFor({ timeout: 15000 });
+    const after = await waitWeight(page);
+    const list = await openList(page);
+    check(
+      list.length === 2 &&
+        list.some((x) => x.startsWith(`条件の重み：空き時間（待ち） ${before}→${after}`)) &&
+        list.some((x) => x.includes(`${staffBefore.name}さんの勤務時間`)),
+      '変更内容：控えと今の違い（条件の重み 前→今・〈スタッフ〉の勤務時間）',
+      list,
+    );
+    check(/からの変更/.test(await page.getByTestId('rebuild-changes').innerText()), '変更内容：いつからの変更かを書く');
+    await page.screenshot({ path: path.join(OUT_DIR, 'changes-open.png') });
+    dlg.messages.length = 0;
+    await page.getByTestId('rebuild-revert-all').click();
+    await daysRow(page).waitFor({ state: 'detached', timeout: 15000 });
+    check(
+      dlg.messages.length === 1 &&
+        /変更をすべて戻しますか？/.test(dlg.messages[0]) &&
+        /条件の重み/.test(dlg.messages[0]),
+      '変更内容：すべて戻すの確認に戻るものを出す',
+      dlg.messages,
+    );
+    const staffNow = await firstStaff(page);
+    const now = await waitWeight(page);
+    check(now === before && staffNow.shiftEnd === staffBefore.shiftEnd, '変更内容：すべて戻すと重みも勤務時間も戻る', {
+      before,
+      now,
+      shift: staffNow.shiftEnd,
+    });
+    await settle(page, 300);
+    check((await baseOf(page)) === null && (await band(page).count()) === 0, '変更内容：帯と控えが消える');
+  }
+
+  // 控えが無いとき：作ったときの重みと点数の基準の重みの違いだけ出し、戻せる。それも無ければ記録が無いと書く
+  async function noBase(page) {
+    await openSettings(page, '/rules');
+    const before = await waitWeight(page);
+    await otherTab(
+      page,
+      ({ k, b }) => {
+        localStorage.removeItem(b);
+        const d = JSON.parse(localStorage.getItem(k));
+        const basis = d.presets.find((p) => p.id === d.scorePresetId) ?? d.presets[0];
+        basis.weights.wait.weight = basis.weights.wait.weight >= 4 ? 1 : basis.weights.wait.weight + 1;
+        for (const r of d.rules) if (r.type === 'wait') r.weight = basis.weights.wait.weight;
+        localStorage.setItem(k, JSON.stringify(d));
+      },
+      { k: STORAGE_KEY, b: BASE_KEY },
+    );
+    await daysRow(page).waitFor({ timeout: 15000 });
+    const after = await waitWeight(page);
+    const list = await openList(page);
+    check(
+      list.length === 1 && list[0].startsWith(`作ったときの重み：空き時間（待ち） ${before}、今：${after}`),
+      '変更内容：控えが無いときは作ったときの重みと今の重み',
+      list,
+    );
+    await page.getByTestId('rebuild-change-revert').click();
+    await daysRow(page).waitFor({ state: 'detached', timeout: 15000 });
+    await settle(page, 300);
+    check((await waitWeight(page)) === before, '変更内容：戻すと基準の重みが作ったときの重みに戻る');
+    check((await baseOf(page)) === null, '変更内容：戻したこと自体は控えない');
+    // 重み以外（〈スタッフ〉の勤務時間）を控えなしで変えると、記録が無いと書く
+    const staffBefore = await firstStaff(page);
+    await otherTab(
+      page,
+      ({ k }) => {
+        const d = JSON.parse(localStorage.getItem(k));
+        d.staff[0].shiftEnd = d.staff[0].shiftEnd === '15:00' ? '14:00' : '15:00';
+        localStorage.setItem(k, JSON.stringify(d));
+      },
+      { k: STORAGE_KEY },
+    );
+    await daysRow(page).waitFor({ timeout: 15000 });
+    const none = page.getByTestId('rebuild-changes-none');
+    const noneText = (await none.count()) > 0 ? await none.innerText() : null;
+    check(
+      !!noneText &&
+        noneText.includes('何が変わったかの記録がありません（作り直すか、日の予定で確かめてください）') &&
+        (await toggle(page).count()) === 0,
+      '変更内容：記録が無ければ正直に書く（一覧と戻すは出さない）',
+      noneText,
+    );
+    // 後片づけ（別のタブで元に戻す）
+    await otherTab(
+      page,
+      ({ k, s }) => {
+        const d = JSON.parse(localStorage.getItem(k));
+        d.staff[0] = s;
+        localStorage.setItem(k, JSON.stringify(d));
+      },
+      { k: STORAGE_KEY, s: staffBefore },
+    );
+    await daysRow(page).waitFor({ state: 'detached', timeout: 15000 });
+  }
+
+  const list = sharedPage({
+    open: async () => {
+      const s = await openPage();
+      return { ...s, dlg: await answerConfirms(s.page) };
+    },
+    call: (fn, s) => fn(s.page, s),
+    steps: [
+      ['changes-fresh', fresh],
+      ['changes-features', features],
+      ['changes-revert-all', revertAll],
+      ['changes-no-base', noBase],
+    ],
+    after: ({ dlg }) => check(dlg.native.length === 0, '変更内容：ブラウザのダイアログを出さない', dlg.native),
+  });
+  return list.map(([name, fn]) => [`変更内容・${name}`, fn]);
+}
