@@ -13,7 +13,7 @@ import {
   dayLabel,
   nextUnconfirmed,
 } from './confirmDay';
-import { changedVisitIds, dayProblemOf, dayRoutes, toldChanges } from './dayPlan';
+import { dayProblemOf, dayRoutes, toldChanges } from './dayPlan';
 import { type DayStatus, dayStatus } from './month';
 
 const TODAY = '2026-10-21';
@@ -32,9 +32,10 @@ describe('confirmDay（確定＝伝えた内容。版2。ADR-0053）', () => {
     for (const [sid, ids] of Object.entries(routes))
       for (const id of ids) expect(snap.visits.find((x) => x.id === id)?.staffId).toBe(sid);
     expect(out.visits).toBe(base.visits);
-    expect(Object.keys(out.snapshots)).toEqual([DAY]);
+    // ほかの日（初期データの過去の伝えた日）は変えない
+    expect(Object.keys(out.snapshots).sort()).toEqual([...Object.keys(base.snapshots), DAY].sort());
     expect(dayStatus(out, DAY).state).toBe('told');
-    expect(base.snapshots).toEqual({});
+    expect(base.snapshots[DAY]).toBeUndefined();
   });
 
   it('伝えたあとに担当を替えると「未連絡の変更」（替えた訪問だけ。外れる人・入る人の連絡）', () => {
@@ -45,7 +46,6 @@ describe('confirmDay（確定＝伝えた内容。版2。ADR-0053）', () => {
     const p = problemOf(changed);
     const c = toldChanges(changed, DAY, p, dayRoutes(changed, DAY, p))!;
     expect(c.staffChanged.map((x) => [x.visitId, x.fromStaffId, x.toStaffId])).toEqual([[v.id, v.staffId, other]]);
-    expect(changedVisitIds(c).has(v.id)).toBe(true);
     const s = dayStatus(changed, DAY);
     expect(s.state).toBe('changed');
     expect(s.changes).toBeGreaterThanOrEqual(1);

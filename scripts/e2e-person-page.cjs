@@ -675,8 +675,12 @@ async function narrow(page) {
   const tabsBox = await page.getByTestId('person-tabs').evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
   check(tabsBox.cw <= 390, '390px：タブは画面の中（入りきらなければ横に巻く）', tabsBox);
   await shot(page, 'narrow-client');
-  const item = cal(page).locator('[data-testid="pcal-visit"]').first();
-  if ((await item.count()) > 0) {
+  // 今日以降の回（今日より前の回は見るだけ。初期データの繰り返しは前の月から）
+  const ix = await cal(page)
+    .locator('[data-testid="pcal-visit"]')
+    .evaluateAll((els, today) => els.findIndex((e) => (e.getAttribute('data-date') ?? '') >= today), TODAY);
+  const item = cal(page).locator('[data-testid="pcal-visit"]').nth(Math.max(ix, 0));
+  if (ix >= 0) {
     await item.click();
     await panel(page).waitFor();
     check(

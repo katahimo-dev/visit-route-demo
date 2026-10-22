@@ -8,7 +8,6 @@ import {
   addPresetFromRules,
   addRule,
   patchPreset,
-  planRulesOf,
   removePreset,
   resetPresets,
   setBasisWeight,
@@ -101,23 +100,6 @@ describe('点数の基準（ADR-0010）', () => {
   });
 });
 
-describe('AI案を作る条件（planRulesOf。ADR-0028。PRD D214）', () => {
-  it('条件の重みとプリセットが入ならいまの条件、切なら点数の基準のプリセットの重みを当てたもの（月まとめ作成と同じ）', () => {
-    const d0 = base();
-    // いまの条件をプリセットと違う重みにする
-    const d = { ...d0, rules: d0.rules.map((r, i) => (i === 0 ? { ...r, weight: r.weight + 7 } : r)) };
-    expect(planRulesOf(d, true)).toBe(d.rules);
-    const off = planRulesOf(d, false);
-    expect(off).toEqual(scoreRulesOf(d));
-    expect(off).not.toEqual(d.rules);
-    expect(presetOf(off, d.presets)?.id).toBe(scorePresetOf(d.presets, d.scorePresetId)!.id);
-    // 基準を切り替えると、その基準のプリセットで作る
-    const other = d.presets.find((p) => p.id !== scorePresetOf(d.presets, d.scorePresetId)!.id)!;
-    const d2 = setScorePreset(d, other.id);
-    expect(planRulesOf(d2, false)).toEqual(applyPreset(d.rules, other));
-  });
-});
-
 describe('条件の重みの画面＝点数の基準の重みを直す画面（ADR-0035。PRD D233〜D235）', () => {
   const waitOf = (rules: { type: string; weight: number }[]) => rules.find((r) => r.type === 'wait')!.weight;
 
@@ -135,11 +117,9 @@ describe('条件の重みの画面＝点数の基準の重みを直す画面（A
     expect(h.rules.find((r) => r.type === 'clientPreference')!.hard).toBe(true);
   });
 
-  it('直した重みが、月のまとめて作る・作り直し（scoreRulesOf）と日の「AI にもう一度作らせる」の既定（planRulesOf）に効く', () => {
+  it('直した重みが、AI で組むときの重み（scoreRulesOf）に効く', () => {
     const d = setBasisWeight(base(), 'wait', { weight: 1 });
     expect(waitOf(scoreRulesOf(d))).toBe(1);
-    expect(waitOf(planRulesOf(d, true))).toBe(1);
-    expect(waitOf(planRulesOf(d, false))).toBe(1);
   });
 
   it('基準を直すと、試していた重み（どのプリセットとも違う）も基準に戻る', () => {

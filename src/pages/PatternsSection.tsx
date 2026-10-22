@@ -237,6 +237,10 @@ export function PatternsSection({
       setError('「いつから変えますか」に日付を入れてください');
       return;
     }
+    if (form.since < today) {
+      setError('「いつから変えますか」は今日以降にしてください（今日より前の回は変えません）');
+      return;
+    }
     const original = data.patterns.find((x) => x.id === form.id);
     if (!original) return;
     const p = parse(form, form.since <= original.from ? original.from : form.since);
@@ -616,7 +620,12 @@ export function PatternsSection({
                 <WithIcon icon={CalendarClock} size={14}>
                   いつから変えますか
                 </WithIcon>
-                <input type="date" value={form.since} onChange={(e) => setForm({ ...form, since: e.target.value })} />
+                <input
+                  type="date"
+                  min={today}
+                  value={form.since}
+                  onChange={(e) => setForm({ ...form, since: e.target.value })}
+                />
               </label>
             ) : (
               <label>

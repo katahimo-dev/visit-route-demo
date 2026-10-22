@@ -272,6 +272,19 @@ async function proposal(page) {
 async function compare(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
   await openPlan(page);
+  // 今日の担当のある訪問1件を担当なしにしておく（提案はそれに担当を入れるので、当てると訪問が変わる）
+  await editData(
+    page,
+    ({ key, date }) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      const v = d.visits.find((x) => x.date === date && !x.cancelled && x.staffId);
+      v.staffId = null;
+      v.pinned = false;
+      localStorage.setItem(key, JSON.stringify(d));
+    },
+    { key: STORAGE_KEY, date: TODAY },
+  );
+  await openPlan(page);
   const before = visitsKey(await stored(page));
   await menuBtn(page).click();
   await menuList(page).waitFor();
@@ -290,6 +303,17 @@ async function compare(page) {
   check(n1 === n0 + 1, '「提案を作って比べる」で提案が1つ増え、当てるボタンが出る', { n0, n1 });
   check(visitsKey(await stored(page)) === before, '比較の提案は保存しない（訪問は変わらない）');
   await page.screenshot({ path: path.join(OUT_DIR, 'compare-proposal.png') });
+  // 当てる → トーストの「元に戻す」で当てる前に戻る（日の予定と同じ控え。PR #80 のレビュー）
+  await page.getByTestId('compare-apply').last().click();
+  await page.getByTestId('compare-undo').waitFor({ timeout: 5000 });
+  await waitStored(page, (d, b) => JSON.stringify(d.visits) !== b, before);
+  const applied = visitsKey(await stored(page));
+  await page.getByTestId('compare-undo').click();
+  await waitStored(page, (d, b) => JSON.stringify(d.visits) === b, before);
+  check(
+    applied !== before && visitsKey(await stored(page)) === before,
+    '比較の画面で当てると訪問が変わり、トーストの「元に戻す」で1手戻せる',
+  );
 }
 
 // ---- 担当を変える ▾・元に戻す・確定の確認の件数（PRD D217〜D219。ADR-0030） ----

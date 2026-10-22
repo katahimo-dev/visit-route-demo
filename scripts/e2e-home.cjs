@@ -40,8 +40,8 @@ function addDays(d, n) {
 /** 初期データに案が入る日（今日から7日。PRD D225） */
 const SEED_DAYS = Array.from({ length: 7 }, (_, i) => addDays(TODAY, i));
 /**
- * 初期データの案・まとめて確定を確かめる月：今月に初期データの案の日が3日以上あれば今月、無ければ（月末）翌月
- * （月末の日は今月の案の日が今日だけになり、問題のある日・未確定の変更ありの日・確定する日を作れないため）
+ * 初期データの担当・まとめて確定を確かめる月：今月に初期データで組んだ日が3日以上あれば今月、無ければ（月末）翌月
+ * （月末の日は今月の組んだ日が今日だけになり、問題のある日・未連絡の変更のある日・確定する日を作れないため）
  */
 const SYM = SEED_DAYS.filter((d) => d.slice(0, 7) === YM).length >= 3 ? YM : SEED_DAYS[6].slice(0, 7);
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
@@ -315,12 +315,13 @@ async function seedPlans(page) {
       inMonth.map((d) => `${d}:${states[d]}`),
     );
     const stored = await p.evaluate(
-      ({ k, days }) => {
+      ({ k, days, today }) => {
         const d = JSON.parse(localStorage.getItem(k));
         const saved = d.visits.filter((v) => days.includes(v.date) && !v.cancelled);
         return {
           version: d.version,
-          snapshots: Object.keys(d.snapshots).length,
+          snapshots: Object.keys(d.snapshots).filter((x) => x >= today).length,
+          past: Object.keys(d.snapshots).filter((x) => x < today).length,
           saved: saved.length,
           assigned: saved.filter((v) => v.staffId).length,
           usual: d.patterns.filter((x) => x.usualStaffId).length,
@@ -328,16 +329,17 @@ async function seedPlans(page) {
           old: ['aiPlans', 'manualPlans', 'aiRuns'].filter((x) => x in d),
         };
       },
-      { k: STORAGE_KEY, days: SEED_DAYS },
+      { k: STORAGE_KEY, days: SEED_DAYS, today: TODAY },
     );
     check(
       stored.version === 2 &&
         stored.snapshots === 0 &&
+        stored.past > 0 &&
         stored.old.length === 0 &&
         stored.saved > 0 &&
         stored.assigned >= stored.saved * 0.8 &&
         stored.usual >= stored.patterns * 0.5,
-      '初期データ（版2）：今日から7日は組んだ担当を保存し（変わった回だけ）、繰り返しは繰り返しの担当を持つ（確定はしない）',
+      '初期データ（版2）：今日から7日は組んだ担当を保存し（変わった回だけ）、繰り返しは繰り返しの担当を持つ。過去の日は伝えた状態・今日からは伝えていない',
       stored,
     );
     await p.screenshot({ path: path.join(OUT_DIR, 'month-first-run-1440.png'), fullPage: true });
@@ -428,8 +430,10 @@ async function seedPlans(page) {
       await p.getByTestId('confirm-cancel').click();
       await dlg.waitFor({ state: 'detached' });
       check(
-        (await p.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).snapshots).length, STORAGE_KEY)) ===
-          (changed ? 1 : 0),
+        (await p.evaluate(
+          ({ k, today }) => Object.keys(JSON.parse(localStorage.getItem(k)).snapshots).filter((x) => x >= today).length,
+          { k: STORAGE_KEY, today: TODAY },
+        )) === (changed ? 1 : 0),
         'まとめて確定の確認を取り消すと何も確定しない',
       );
       await btn.click();

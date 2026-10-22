@@ -155,7 +155,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.done.get()).toBeNull();
   });
 
-  it('組んでいる間にその日の訪問が変わった（日の予定で直した）・確定した日は書かない', async () => {
+  it('組んでいる間にその日の訪問が変わった（日の予定で直した）・確定した日は書かない（組んだ日に数えない）', async () => {
     const s = fakeSolve();
     const b = createMonthBatch(s.fn);
     const h = hostOf(unassigned());
@@ -167,7 +167,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     s.calls[0]!.resolve();
     await tick();
     expect(h.data()).toBe(edited);
-    expect(b.done.get()).toMatchObject({ made: 1 });
+    expect(b.done.get()).toMatchObject({ made: 0 });
   });
 
   it('組む前に確定した日は飛ばす', async () => {

@@ -34,6 +34,7 @@ import { HARDABLE, type Rule } from '../contracts/rules';
 import { achievements, diff, hundredBreakdown, ruleLowerBounds, score, toHundred } from '../evaluate';
 import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { pinsOf, routesOf, unassignedOf, writeRoutes } from '../lib/dayPlan';
+import { dayUndo, undoDay, undoOf } from '../lib/dayUndo';
 import { compareEmptyGuide } from '../lib/emptyGuide';
 import { narrowRole } from '../lib/narrowRoles';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
@@ -213,11 +214,31 @@ export default function ComparePage() {
       return;
     }
     const p = problem;
-    update((d) => writeRoutes(d, date, p, c.routes));
+    // 日の予定と同じ控え（lib/dayUndo）：トーストと日の予定の「元に戻す」で1手戻せる
+    const before = data;
+    const next = writeRoutes(before, date, p, c.routes);
+    if (next !== before) dayUndo.set(undoOf(date, before, next));
+    update((d) => (d === before ? next : writeRoutes(d, date, p, c.routes)));
     setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));
     setSel({ a: null, b: null });
     rs.reset();
-    toast(`${c.title}を当てました。日の予定の「元に戻す」は使えないので、戻すときは今の担当として比べ直してください`);
+    if (next === before) {
+      toast(`${c.title}は今の担当と同じです`);
+      return;
+    }
+    toast(`${c.title}を当てました`, {
+      action: {
+        label: '元に戻す',
+        testId: 'compare-undo',
+        onClick: () => {
+          const u = dayUndo.get();
+          if (!u) return;
+          update((d) => undoDay(d, u));
+          dayUndo.set(null);
+          toast('元に戻しました');
+        },
+      },
+    });
   };
   const removeChoice = (c: Choice) => {
     setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));

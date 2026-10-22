@@ -7,7 +7,7 @@ import { type Pattern, type Visit, type VisitType, visitSchema } from '../contra
 import { isOnLeave } from '../domain/leaves';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
 import { bestInsertion, compile } from '../matching';
-import { findVisit, putVisits, timesOn, visitsIn, visitsOn } from '../patterns';
+import { findVisit, keepsOccurrence, putVisits, timesOn, visitsIn, visitsOn } from '../patterns';
 import { attempt, formError, formErrorField, WEEKDAY_LABELS } from './common';
 import { dayProblemOf, pinsOf, routesOf, settleDay, unassignedOf, writeRoutes } from './dayPlan';
 import { isDate } from './isDate';
@@ -76,19 +76,6 @@ const normalized = (f: VisitDraft): VisitDraft =>
 
 // ---- 読む ----
 
-/** 訪問の担当とピン（版2：訪問が持つ） */
-export type Assignment = { staffId: string | null; pinned: boolean };
-
-/** 訪問の担当（訪問が無ければ担当なし） */
-export function assignmentOf(
-  d: Pick<DemoData, 'visits' | 'patterns' | 'clients'>,
-  visitId: string,
-  _date?: string,
-): Assignment {
-  const v = findVisit(d, visitId);
-  return v && !v.cancelled ? { staffId: v.staffId, pinned: v.pinned } : { staffId: null, pinned: false };
-}
-
 /** パターンのその回の元の形（日付は元の日） */
 function occurrenceOf(p: Pattern, date: string): VisitDraft & { date: string } {
   const t = timesOn(p, weekday(date));
@@ -131,7 +118,8 @@ export type VisitInfo = {
   pattern: Pattern | null;
   /** 「月〜金 14:30（10/22から）」（繰り返しの回だけ） */
   patternText: string | null;
-  assignment: Assignment;
+  /** 担当とピン（取り消した訪問は担当なし） */
+  assignment: { staffId: string | null; pinned: boolean };
   /** 繰り返しの担当（いつもの担当。単発の訪問は null） */
   usualStaffId: string | null;
   /** この回の変更（occurrenceChanges） */
@@ -678,8 +666,10 @@ export function endPatternOp(d: DemoData, patternId: string, last: string, today
   const floor = p.from > yesterday ? p.from : yesterday;
   const end = last < floor ? floor : last;
   const to = p.to !== null && p.to < end ? p.to : end;
-  const edited = (v: Visit) => v.cancelled || (v.pattern?.edited ?? false);
-  const gone = d.visits.filter((v) => v.pattern?.id === patternId && v.date > to && v.date >= today && !edited(v));
+  // この回だけ変えた・取り消した回とピンの回は残す（removePattern と同じ）
+  const gone = d.visits.filter(
+    (v) => v.pattern?.id === patternId && v.date > to && v.date >= today && !keepsOccurrence(v),
+  );
   const goneIds = new Set(gone.map((v) => v.id));
   const confirmedDays = Object.values(d.snapshots).filter(
     (s) => s.date > to && s.date >= today && s.visits.some((x) => x.id === `${s.date}_${patternId}`),

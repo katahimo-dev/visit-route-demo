@@ -270,18 +270,22 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       started.promise
         .then((result) => {
           if (!live()) return;
-          h.update((d) => {
-            // 組んでいる間にその日の訪問が変わった（日の予定で直した）・確定した日は書かない
+          // 組んでいる間にその日の訪問が変わった（日の予定で直した）・確定した日は書かない（組んだ日に数えない）
+          const writable = (d: DemoData) => {
             const now = visitsOn(d, day);
-            const same = now.length === visits.length && now.every((v, k) => v === visits[k]);
-            if (!same || own(d.snapshots, day)) return d;
-            if (beforeVisits === null) beforeVisits = d.visits;
-            const out = writeRoutes(d, day, p, result.routes);
-            lastVisits = out.visits;
-            return out;
-          });
-          made++;
-          if (result.unassigned.length > 0) unassignedDays++;
+            return now.length === visits.length && now.every((v, k) => v === visits[k]) && !own(d.snapshots, day);
+          };
+          if (writable(h.get())) {
+            h.update((d) => {
+              if (!writable(d)) return d;
+              if (beforeVisits === null) beforeVisits = d.visits;
+              const out = writeRoutes(d, day, p, result.routes);
+              lastVisits = out.visits;
+              return out;
+            });
+            made++;
+            if (result.unassigned.length > 0) unassignedDays++;
+          }
           patch({ made });
           current = null;
           step(i + 1);

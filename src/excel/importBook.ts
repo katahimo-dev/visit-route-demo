@@ -106,6 +106,8 @@ import {
   YES,
 } from './text';
 
+/** 版1のブックの、繰り返しの担当の列の見出し（版2は「担当」） */
+const LEGACY_PATTERN_STAFF_COL = 'いつもの担当';
 /** まとめて返すエラーの数の上限 */
 const MAX_ERRORS = 10;
 /** 読み込むファイルの大きさの上限（バイト） */
@@ -1111,7 +1113,12 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
   const patternIds = new Set<string>();
   if (patternWs) {
     const sheet = new Sheet(FIXED_SHEETS.patterns, patternWs, errors);
-    const pc = patternCols(terms);
+    const pc0 = patternCols(terms);
+    // 版1のブックは繰り返しの担当の列が「いつもの担当」（ADR-0053）。あればそれを担当の列として読む
+    const pc =
+      !sheet.has(pc0.usualStaff) && sheet.has(LEGACY_PATTERN_STAFF_COL)
+        ? { ...pc0, usualStaff: LEGACY_PATTERN_STAFF_COL }
+        : pc0;
     if (sheet.require(Object.values(pc))) {
       const rows = sheet.rows();
       if (rows.length > MAX_PATTERNS)

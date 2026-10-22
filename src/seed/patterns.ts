@@ -1,6 +1,6 @@
 // 初期の訪問の種類と定期パターン（ADR-0012。design.md §4 seed）。
 // 利用者さんごとに定期パターン1つ（ID は利用者さんの ID と同じ）＋高齢の利用者さん2人のリハビリ。
-// 訪問は patterns の applyPatterns で展開する（ID は `${日付}_${パターンID}`）
+// 回は保存せず、patterns の visitsOn で見るときに計算する（ID は `${日付}_${パターンID}`。ADR-0053）
 import type { Pattern, VisitType } from '../contracts/documents';
 import { restWeekdayOf } from './generate';
 import { CLIENT_SEEDS, ITEM_ID } from './people';

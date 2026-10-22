@@ -171,7 +171,7 @@ flowchart LR
 - 持つデータ（持ち主）：なし
 - 提供するAPI：`createDemoData(today)`（繰り返しと繰り返しの担当。担当を組んだ訪問は入れない）、`seed/plans` の `createInitialData(today, features = {})`（`createDemoData` に機能の入り切りを入れてから `withSeedPlans`。store が起動・初期化で使う）・`withSeedPlans(data, today, days = SEED_PLAN_DAYS)`（7日）・`SEED_ITERATIONS`（100000）、`daysFrom`（`typeId`・`pattern` は null、リハビリは作らない）、`seedPatterns`、`withUsualStaff(patterns, owners, staff)`、`INITIAL_PRESETS`・`applyPreset(rules, preset)`・`presetOf(rules, presets)`・`scorePresetOf(presets, id)`（無ければ先頭）・`scoreRulesOf(data)`（条件に点数の基準のプリセットを当てたもの。0件なら条件そのもの）
 - 初期データ：
-  - 確定（伝えた内容）は入れない（`snapshots` は `{}`）
+  - 繰り返しは前の月の1日（`seedPatternStart`）から。前の月の1日〜昨日は伝えた内容を入れる（`withPastTold`：その日の取り消していない訪問の繰り返しの担当を写す。開始は null＝時刻の違いを数えない。確定の時刻はその日の18:00（日本時間））。今日からは伝えていない
   - 繰り返しの担当（`withUsualStaff`）：内部で作った割当でその〈利用者さん〉を多く担当した順に、繰り返しの曜日すべてに勤務があり、同じ人のほかの回と30分（`USUAL_GAP_MINUTES`）より近く重ならない人。いなければ null（担当なし）
   - 担当（`createInitialData`。PRD D322）：今日から7日分、点数の基準のプリセット（`standard`）の重みを当てた条件で compile し、`solve`（種はデータの `seed`、反復は `min(defaultIterations, SEED_ITERATIONS)`。1日 約40ms・7日で 約0.3秒）で解いて、`lib/dayPlan` の `writeRoutes`（ピンなし）で訪問に書く（変わった回だけ保存した回になる）。作れない日は飛ばす
   - 呼び方は「スタッフ」（`domain/terms.ts` の care の既定「ヘルパー」は写したまま）
@@ -185,7 +185,7 @@ flowchart LR
 - 配置：`src/seed/`
 - 完了の条件：
   - [ ] 同じ日付で同じデータ。繰り返しの担当は重ならない人（テスト）
-  - [ ] `createInitialData`：今日から7日分の訪問に担当が入り、伝えた内容は無い、同じ日付で同じ担当（テスト）
+  - [ ] `createInitialData`：今日から7日分の訪問に担当が入り、過去（前の月の1日〜昨日）は確定済み・今日からは伝えた内容が無い、同じ日付で同じ担当（テスト）
   - [ ] 性別希望・NG・種類・繰り返し・訪問の ID が上のとおり、プリセットは §5 の3種（テスト）
 
 ### domain（PoC本体から写した純粋関数）

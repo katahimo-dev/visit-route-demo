@@ -32,9 +32,10 @@ import { useToast } from '../components/Toast';
 import { Hint, PageHeader, WithIcon } from '../components/ui';
 import { useLeaveGuard } from '../components/useLeaveGuard';
 import { VISIT_RULE_FIELDS } from '../components/VisitRules';
+import type { DemoData } from '../contracts/data';
 import { type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
-import { jstDate } from '../domain/time';
+import { addDays, jstDate } from '../domain/time';
 import { EMPTY_FILTER, encodeFilter } from '../lib/clientFilter';
 import { isBeforeActive, STAGE_LABELS, stageChoices, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
@@ -60,6 +61,7 @@ import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { usualStaffOf } from '../lib/usualStaff';
 import { isDirty, orDash } from '../lib/viewMode';
+import { endPatternOp } from '../lib/visitOps';
 import { useDemoData } from '../store';
 import { ClientLeavesSection } from './ClientLeavesSection';
 import { PatternsSection } from './PatternsSection';
@@ -400,12 +402,21 @@ function ClientPageBody({
           base.tentative,
         ),
       );
-      update((d) => ({
-        ...d,
-        clients: d.clients.some((x) => x.id === c.id)
-          ? d.clients.map((x) => (x.id === c.id ? c : x))
-          : [...d.clients, c],
-      }));
+      const ending = c.stage === 'ended' && !!saved && saved.stage !== 'ended';
+      update((d) => {
+        let out: DemoData = {
+          ...d,
+          clients: d.clients.some((x) => x.id === c.id)
+            ? d.clients.map((x) => (x.id === c.id ? c : x))
+            : [...d.clients, c],
+        };
+        // 終了にしたら続いている繰り返しを昨日で終わらせる（今日より前の回は人の画面・月の予定に残す。ADR-0053）
+        if (ending)
+          for (const p of out.patterns)
+            if (p.clientId === c.id && (p.to === null || p.to >= today))
+              out = endPatternOp(out, p.id, addDays(today, -1), today).data;
+        return out;
+      });
       setEdit(null);
       toast(
         c.stage === 'ended' && saved?.stage !== 'ended'

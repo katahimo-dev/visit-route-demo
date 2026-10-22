@@ -67,6 +67,14 @@ function initialClients(): Client[] {
   }));
 }
 
+/** 初期データの繰り返しの開始日：today の前の月の1日 */
+export function seedPatternStart(today: string): string {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const [py, pm] = m === 1 ? [y - 1, 12] : [y, m - 1];
+  return `${py}-${String(pm).padStart(2, '0')}-01`;
+}
+
 /** today（YYYY-MM-DD）から14日分。同じ日付なら同じデータ */
 export function createDemoData(today: string): DemoData {
   const staff = initialStaff();
@@ -94,7 +102,8 @@ export function createDemoData(today: string): DemoData {
     absences: [],
     clientLeaves: [],
     visitTypes: INITIAL_VISIT_TYPES.map((t) => ({ ...t, requirements: t.requirements.map((c) => ({ ...c })) })),
-    patterns: seedPatterns(today),
+    // 繰り返しは前の月の初めから（月の予定で過去の日の混み具合も見られるように。初期データの過去の日は伝えた状態。seed/plans）
+    patterns: seedPatterns(seedPatternStart(today)),
     snapshots: {},
     reassigns: {},
     presets: initialPresets(),

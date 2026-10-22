@@ -119,8 +119,10 @@ function livePatterns(data: PatternInput): Pattern[] {
   }
   let out = byClients.get(data.clients);
   if (!out) {
+    // 利用中の〈利用者さん〉の繰り返しと、利用中でない人の終わった繰り返し（終了にしたとき昨日で終わらせる。過去の回を消さない）
     const active = new Set(data.clients.filter((c) => c.active).map((c) => c.id));
-    out = data.patterns.filter((p) => active.has(p.clientId));
+    const known = new Set(data.clients.map((c) => c.id));
+    out = data.patterns.filter((p) => active.has(p.clientId) || (p.to !== null && known.has(p.clientId)));
     byClients.set(data.clients, out);
   }
   return out;
@@ -208,11 +210,18 @@ export function putVisits(visits: readonly Visit[], put: readonly Visit[]): Visi
 const isEdited = (v: Visit) => v.cancelled || (v.pattern?.edited ?? false);
 
 /**
+ * 繰り返しを直す・終わらせるときに残す保存した回か：この回だけ変えた・取り消した回と、ピンの回（手で替えた担当を消さない）
+ */
+export const keepsOccurrence = (v: Visit): boolean => isEdited(v) || v.pinned;
+
+/**
  * パターンを「いつから」（since）で分けて直す（「これ以降」）。契約の SplitPattern を参照
  */
-export const splitPattern: SplitPattern = (data, patternId, next, since, today, newId) => {
+export const splitPattern: SplitPattern = (data, patternId, next, sinceIn, today, newId) => {
   const original = data.patterns.find((p) => p.id === patternId);
   if (!original) return { patterns: data.patterns, visits: data.visits, removed: [] };
+  // 今日より前の回は変えない（since が過去なら今日から分ける。過去の日に同じ訪問を2件にしない）
+  const since = maxDate(sinceIn, today);
 
   let patterns: Pattern[];
   let rebuilt: Pattern;
@@ -230,7 +239,7 @@ export const splitPattern: SplitPattern = (data, patternId, next, since, today, 
       else patterns.push(p);
     }
   }
-  const start = maxDate(since, today);
+  const start = since;
   const removed: { visitId: string; date: string }[] = [];
   const visits: Visit[] = [];
   for (const v of data.visits) {
@@ -238,8 +247,13 @@ export const splitPattern: SplitPattern = (data, patternId, next, since, today, 
       visits.push(v);
       continue;
     }
-    if (!isEdited(v)) {
+    if (!keepsOccurrence(v)) {
       removed.push({ visitId: v.id, date: v.date });
+      continue;
+    }
+    // ピンだけの回（時刻などは繰り返しのまま）は新しい繰り返しの回にして、担当とピンを残す（開始は組み直す）
+    if (!isEdited(v) && v.date === v.pattern.date && occursOn(rebuilt, v.pattern.date)) {
+      visits.push({ ...visitOf(rebuilt, v.pattern.date), staffId: v.staffId, pinned: true, note: v.note });
       continue;
     }
     // この回だけ変えた回は残し、新しいパターンの回にする（同じ ID なら変えない）
@@ -266,7 +280,7 @@ export const removePattern: RemovePattern = (data, patternId, today) => {
   for (const v of data.visits) {
     if (v.pattern?.id !== patternId || (keep && v.pattern.date < today)) {
       visits.push(v);
-    } else if (!isEdited(v)) {
+    } else if (!keepsOccurrence(v)) {
       removed.push({ visitId: v.id, date: v.date });
     } else {
       visits.push({ ...v, pattern: null });

@@ -11,7 +11,7 @@ import { leaveOn } from '../domain/leaves';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
 import { score } from '../evaluate';
 import { type CompileInput, compile, scheduleRoute } from '../matching';
-import { putVisits, visitsOn } from '../patterns';
+import { parsePatternVisitId, putVisits, visitsOn } from '../patterns';
 import { attempt, own } from './common';
 
 /** その日の訪問（保存した回＋繰り返しから計算した回。取り消し・休みも含む。開始の順） */
@@ -114,10 +114,13 @@ export function writeRoutes(
 ): DemoData {
   const at = startsOf(problem, routes);
   const inProblem = new Set(problem.visits.map((v) => v.id));
+  const shown = new Set(problem.staff.map((s) => s.id));
   const put: Visit[] = [];
   for (const v of visitsOn(data, date)) {
     if (!inProblem.has(v.id)) continue;
     const x = at.get(v.id);
+    // 列に入らない人（休止中など）の訪問は、並びに無くても担当を消さない（要対応「担当が休止中」で見せる）
+    if (!x && v.staffId !== null && !shown.has(v.staffId)) continue;
     const staffId = x?.staffId ?? null;
     const start = x ? clockOf(x.start) : null;
     const pinned = staffId === null ? false : opts.pins ? opts.pins[v.id] === staffId : v.pinned;
@@ -310,16 +313,50 @@ export function placedOf(problem: Problem, routes: Routes): Map<string, Placed> 
 export function toldChanges(
   data: Pick<DemoData, 'snapshots' | 'staff'>,
   date: string,
-  problem: Problem,
+  problem: Problem | null,
   routes: Routes,
 ): ContactList | null {
   const snap = own(data.snapshots, date);
   if (!snap) return null;
+  // 訪問が全部取り消し・休みになった日（問題が無い）も、伝えた訪問は「外れる」として出す
+  const now = problem ? placedOf(problem, routes) : new Map<string, Placed>();
   return contactsBetween(
-    placedOfSnapshot(snap),
-    placedOf(problem, routes),
+    alignTold(placedOfSnapshot(snap), now),
+    now,
     data.staff.map((s) => s.id),
   );
+}
+
+/**
+ * 伝えた内容の訪問 ID を今の ID に合わせる。繰り返しを「これ以降」で分ける・最終勤務日で受け持ちを移すと、計算した回の ID
+ * （`${元の日}_${パターンID}`）が変わる。伝えた ID が今に無ければ、同じ〈利用者さん〉・同じ元の日の、伝えた内容に無い今の回に読み替える
+ */
+function alignTold(before: Map<string, Placed>, now: ReadonlyMap<string, Placed>): Map<string, Placed> {
+  const keyOf = (id: string, clientId: string) => {
+    const p = parsePatternVisitId(id);
+    return p ? `${clientId}|${p.date}` : null;
+  };
+  const free = new Map<string, string[]>();
+  for (const [id, x] of now) {
+    if (before.has(id)) continue;
+    const k = keyOf(id, x.clientId);
+    if (!k) continue;
+    const list = free.get(k);
+    if (list) list.push(id);
+    else free.set(k, [id]);
+  }
+  if (free.size === 0) return before;
+  const out = new Map<string, Placed>();
+  for (const [id, x] of before) {
+    if (now.has(id)) {
+      out.set(id, x);
+      continue;
+    }
+    const k = keyOf(id, x.clientId);
+    const to = k ? free.get(k)?.shift() : undefined;
+    out.set(to ?? id, x);
+  }
+  return out;
 }
 
 /** 連絡の一覧の件数（担当が変わる訪問＋開始が変わる訪問） */
@@ -329,9 +366,4 @@ export const changeCount = (c: ContactList | null): number => (c ? c.staffChange
 export function toldStateOf(data: Pick<DemoData, 'snapshots'>, date: string, changes: ContactList | null): ToldState {
   if (!own(data.snapshots, date)) return 'none';
   return changeCount(changes) > 0 ? 'changed' : 'told';
-}
-
-/** 未連絡の変更のある訪問の ID */
-export function changedVisitIds(c: ContactList | null): Set<string> {
-  return new Set([...(c?.staffChanged ?? []), ...(c?.timeChanged ?? [])].map((x) => x.visitId));
 }

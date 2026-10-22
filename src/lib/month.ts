@@ -122,14 +122,16 @@ export function dayStatus(
   const count = p ? p.visits.length : activeDayVisits(data, date).length;
   const absence = data.absences.some((a) => a.date === date);
   if (!p) {
+    // 伝えた日の訪問を全部取り消した（休みになった）ときも、伝えた訪問は「外れる」の未連絡の変更
+    const gone = toldChanges(data, date, null, {});
     return {
       date,
       count,
-      state: own(data.snapshots, date) ? 'told' : 'none',
+      state: toldStateOf(data, date, gone),
       unassigned: 0,
       issues: new Map(),
       care: 0,
-      changes: 0,
+      changes: changeCount(gone),
       absence,
       overSpan: [],
       needsCare: false,

@@ -144,7 +144,6 @@ export function applyDraft(d: DemoData, draft: WeightDraft): DemoData {
   return out;
 }
 
-/** 確定したら「条件が変わった」になる日（今日以降・案と取り消しでない訪問のある日。確定した割当の有無で分ける） */
 /** 確認の見出し（PRD D286） */
 export const confirmTitle = (n: number): string => `重みの変更（${n}件）を確定しますか？`;
 

@@ -5,7 +5,6 @@ import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import { findVisit, putVisits, visitsIn } from '../patterns';
 import {
   applyVisitEdit,
-  assignmentOf,
   assignOnDays,
   cancelVisitOp,
   clientVisitsIn,
@@ -96,13 +95,6 @@ describe('visitInfo・occurrenceChanges', () => {
   });
   it('今日より前の訪問は見るだけ', () => {
     expect(visitInfo(data(), '2026-10-12_p1', '2026-10-13')!.editable).toBe(false);
-  });
-  it('担当は訪問の担当（計算した回は繰り返しの担当）', () => {
-    const id = '2026-10-19_p1';
-    expect(assignmentOf(data(), id)).toEqual({ staffId: null, pinned: false });
-    const usual = data([pattern('p1', [1], { usualStaffId: 's1' })]);
-    expect(assignmentOf(usual, id)).toEqual({ staffId: 's1', pinned: false });
-    expect(assignmentOf(put(usual, id, { staffId: 's2', pinned: true }), id)).toEqual({ staffId: 's2', pinned: true });
   });
 });
 
@@ -441,7 +433,7 @@ describe('レビューの直し（PR #78）', () => {
     const pid = series[0]!.pattern!.id;
     expect(series.every((x) => x.pattern!.id === pid)).toBe(true);
     expect(r.data.patterns.find((p) => p.id === pid)!.usualStaffId).toBe('s2');
-    expect(series.map((x) => assignmentOf(r.data, x.id).staffId)).toEqual(['s2', 's2']);
+    expect(series.map((x) => x.staffId)).toEqual(['s2', 's2']);
   });
   it('今ある訪問の〈利用者さん〉は変えない', () => {
     const d = data();

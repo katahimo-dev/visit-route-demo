@@ -92,6 +92,7 @@ import {
   visitIssues,
   writeRoutes,
 } from '../lib/dayPlan';
+import { dayUndo, undoDay, undoOf } from '../lib/dayUndo';
 import { deferredDragStart } from '../lib/dragStart';
 import { isDate } from '../lib/isDate';
 import { UNASSIGNED_DO, workloadHref } from '../lib/links';
@@ -181,13 +182,6 @@ type Progress = { iteration: number; total: number; hundred: number | null };
  * 「元に戻す」（1手。PRD D218）の控え：書く前の訪問（と振り直しの情報）と、書いたあとの訪問。
  * 書いたあとに別の操作で訪問が変わっていれば戻さない
  */
-type UndoSnap = {
-  date: string;
-  before: Pick<DemoData, 'visits' | 'reassigns'>;
-  after: DemoData['visits'];
-  visitId: string | null;
-  from: string | null;
-};
 
 /** AI の提案（その場だけ。保存しない。ADR-0053） */
 type Proposal = {
@@ -198,6 +192,8 @@ type Proposal = {
   routes: Record<string, string[]>;
   /** 組み始めたときの訪問（変わっていれば当てない） */
   visits: readonly Visit[];
+  /** 組み始めたときの欠勤（変わっていれば当てない） */
+  absences: DemoData['absences'];
   stopped: boolean;
 };
 
@@ -546,15 +542,27 @@ export default function PlanPage() {
     const forDate = date;
     const label = preset?.name ?? scoreRulerName;
     const startVisits = m.allVisits;
+    const startAbsences = data.absences;
     run('create', p, `${label}の`, (result) => {
-      setProposal({ date: forDate, label, routes: result.routes, visits: startVisits, stopped: result.stopped });
+      setProposal({
+        date: forDate,
+        label,
+        routes: result.routes,
+        visits: startVisits,
+        absences: startAbsences,
+        stopped: result.stopped,
+      });
       if (dateRef.current === forDate) toast(result.stopped ? '途中までの最良で提案を出しました' : '提案を出しました');
     });
   };
   /** 提案の差（今の担当 → 提案）と点数 */
   const proposalView = useMemo(() => {
     if (!proposal || proposal.date !== date || !problem) return null;
-    const same = proposal.visits.length === m.allVisits.length && proposal.visits.every((v, i) => v === m.allVisits[i]);
+    // 提案を出したあとに訪問か欠勤が変わったら古い（欠勤は稼働時間を変えるので、出したときの問題と違う）
+    const same =
+      proposal.absences === data.absences &&
+      proposal.visits.length === m.allVisits.length &&
+      proposal.visits.every((v, i) => v === m.allVisits[i]);
     const diffv = attempt(() => reassignDiff({ problem, routes }, { problem, routes: proposal.routes }))
       .value as ReassignDiff | null;
     const hundredOf = (r: Record<string, string[]>) =>
@@ -562,7 +570,7 @@ export default function PlanPage() {
         ? (attempt(() => toHundred(score(scoreProblem, r).total, scoreScale)).value ?? null)
         : null;
     return { stale: !same, diff: diffv, before: hundredOf(routes), after: hundredOf(proposal.routes) };
-  }, [proposal, date, problem, routes, m.allVisits, scoreProblem, scoreScale]);
+  }, [proposal, date, problem, routes, m.allVisits, data.absences, scoreProblem, scoreScale]);
   /** 提案を当てる（訪問に担当・開始を書く。ピンはそのまま。「元に戻す」で戻せる） */
   const applyProposal = () => {
     if (!proposal || !problem || !proposalView || running) return;
@@ -678,7 +686,8 @@ export default function PlanPage() {
    * 手直しの1手前（PRD D218。ADR-0030）：書く前の訪問。画面の状態だけ（保存しない）。戻せるのは直前の1手だけ。
    * 書いたあとに訪問がほかの操作で変わったら戻さない
    */
-  const [undoSnap, setUndoSnap] = useState<UndoSnap | null>(null);
+  const undoSnap = useValueStore(dayUndo);
+  const setUndoSnap = dayUndo.set;
   /** 戻せない理由（戻せれば null）。操作の行の title とトーストで共通 */
   const undoWhy = useMemo(() => {
     if (running) return '計算中です';
@@ -695,13 +704,7 @@ export default function PlanPage() {
     const before = dataRef.current;
     const next = fn(before);
     if (next === before) return false;
-    setUndoSnap({
-      date,
-      before: { visits: before.visits, reassigns: before.reassigns },
-      after: next.visits,
-      visitId,
-      from: visitId ? (owner.get(visitId) ?? null) : null,
-    });
+    setUndoSnap(undoOf(date, before, next, visitId, visitId ? (owner.get(visitId) ?? null) : null));
     update((d) => (d === before ? next : fn(d)));
     return true;
   };
@@ -826,7 +829,7 @@ export default function PlanPage() {
     }
     const ae = document.activeElement;
     const fromToast = !ae || ae === document.body || !!ae.closest('.toast');
-    update((d) => (d.visits === u.after ? { ...d, visits: u.before.visits, reassigns: u.before.reassigns } : d));
+    update((d) => undoDay(d, u));
     if (u.visitId) sel.follow(u.visitId, u.from);
     setUndoSnap(null);
     toast('元に戻しました');
@@ -840,7 +843,9 @@ export default function PlanPage() {
   // ---- 確定＝〈スタッフ〉に伝えた内容（ADR-0053）----
   /** 伝えた内容と今の違い（未連絡の変更。伝えていない日は null） */
   const told = useMemo(
-    () => (problem && hasPlan ? (attempt(() => toldChanges(data, date, problem, routes)).value ?? null) : null),
+    () =>
+      attempt(() => toldChanges(data, date, problem && hasPlan ? problem : null, problem && hasPlan ? routes : {}))
+        .value ?? null,
     [data, date, problem, hasPlan, routes],
   );
   /** 伝えた状態：none＝まだ伝えていない・told＝伝えた・changed＝伝えたあとに変わった */
@@ -858,8 +863,9 @@ export default function PlanPage() {
   const [toldOpen, setToldOpen] = useState(false);
   /** 確定する（伝えた内容を残す。確定したら true） */
   const adopt = async (): Promise<boolean> => {
-    if (!hasPlan || !problem) return false;
-    const care = issues.size;
+    // 伝えた日の訪問を全部取り消した日も、「外れる」を伝えたら確定し直せる（伝えた訪問は無し）
+    if ((!hasPlan || !problem) && toldState !== 'changed') return false;
+    const care = hasPlan ? issues.size : 0;
     const ok = await confirmDialog({
       title:
         toldState === 'changed' ? '変更を伝えたので、確定し直しますか？' : 'この担当と時刻を伝えたので、確定しますか？',
@@ -868,8 +874,11 @@ export default function PlanPage() {
     });
     if (!ok) return false;
     if (runRef.current) return false;
-    const p = problem;
-    update((d) => confirmDay(d, date, p, Date.now()));
+    const p = hasPlan ? problem : null;
+    const at = Date.now();
+    update((d) =>
+      p ? confirmDay(d, date, p, at) : { ...d, snapshots: { ...d.snapshots, [date]: { date, at, visits: [] } } },
+    );
     setUndoSnap(null);
     setToldOpen(false);
     toast('確定しました（伝えた内容を残しました）');
@@ -2103,11 +2112,14 @@ export default function PlanPage() {
    */
   const suddenList = useMemo((): ContactList | null => {
     if (!sudden) return null;
+    // 伝えた日は、伝えた内容 → 今の差（欠勤の振り直しのほか、手で変えた訪問も。「連絡したので確定」で伝えたことにするもの）。
+    // 取り消した訪問は「中止」として別に出すので、差からは外す
+    if (told) return suddenCancel ? withoutVisit(told, suddenCancel.cancelled.visitId) : told;
     if (!suddenCancel) return contacts;
     const b = suddenCancel.before;
     if (!b || !problem) return EMPTY_CONTACTS;
     return attempt(() => contactsOf({ problem, routes: b.routes }, { problem, routes })).value ?? null;
-  }, [sudden, suddenCancel, contacts, problem, routes]);
+  }, [sudden, suddenCancel, contacts, problem, routes, told]);
   const suddenRows: ContactRow[] | null = suddenList
     ? contactRows(suddenList, suddenCancel ? [suddenCancel.cancelled] : [], contactWords)
     : null;
@@ -2183,7 +2195,7 @@ export default function PlanPage() {
         title="日の予定"
         lead="その日の担当を見て直し、〈スタッフ〉に伝えたら確定します"
         actions={
-          hasPlan && (
+          (hasPlan || toldState === 'changed') && (
             <>
               {toldState === 'told' ? (
                 <>
@@ -2391,7 +2403,7 @@ export default function PlanPage() {
           )}
         </div>
       )}
-      {hasPlan && toldState === 'changed' && (
+      {toldState === 'changed' && (
         <div className="plan-band row" data-testid="band-told">
           <WithIcon icon={MessageSquareText} size={16}>
             伝えたあとに変わった訪問 {toldCount}件（未連絡の変更）
@@ -3346,4 +3358,21 @@ function ReassignMenu({
       />
     </div>
   );
+}
+
+/** 連絡の一覧から1件の訪問を外す（取り消した訪問は「中止」として別に出す） */
+function withoutVisit(c: ContactList, visitId: string): ContactList {
+  const keep = (x: { visitId: string }) => x.visitId !== visitId;
+  return {
+    staffChanged: c.staffChanged.filter(keep),
+    timeChanged: c.timeChanged.filter(keep),
+    staff: c.staff
+      .map((x) => ({
+        ...x,
+        added: x.added.filter(keep),
+        removed: x.removed.filter(keep),
+        shifted: x.shifted.filter(keep),
+      }))
+      .filter((x) => x.added.length + x.removed.length + x.shifted.length > 0),
+  };
 }

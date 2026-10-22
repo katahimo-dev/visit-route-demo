@@ -3,7 +3,7 @@ import { demoDataSchema } from '../contracts/data';
 import { addDays } from '../domain/time';
 import { dayStatus } from '../lib/month';
 import { visitsOn } from '../patterns';
-import { createDemoData } from './index';
+import { createDemoData, seedPatternStart } from './index';
 import { createInitialData, SEED_PLAN_DAYS, withSeedPlans } from './plans';
 
 const TODAY = '2026-10-21';
@@ -28,10 +28,24 @@ describe('createInitialData（PRD D225。版2）', () => {
     expect(createInitialData(TODAY)).toEqual(data);
   });
 
-  it('訪問のほかは createDemoData と同じ（伝えた内容は入れない）', () => {
+  it('訪問・伝えた内容のほかは createDemoData と同じ', () => {
     const base = createDemoData(TODAY);
-    expect({ ...data, visits: [] }).toEqual(base);
-    expect(data.snapshots).toEqual({});
+    expect({ ...data, visits: [], snapshots: {} }).toEqual(base);
+  });
+
+  it('繰り返しは前の月の初めから。過去の日（前の月の1日〜昨日）は伝えた状態で、今日からは伝えていない', () => {
+    expect(seedPatternStart(TODAY)).toBe('2026-09-01');
+    expect(seedPatternStart('2027-01-05')).toBe('2026-12-01');
+    expect(data.patterns.every((p) => p.from === '2026-09-01')).toBe(true);
+    const told = Object.keys(data.snapshots).sort();
+    expect(told[0]).toBe('2026-09-01');
+    expect(told.at(-1)).toBe(addDays(TODAY, -1));
+    expect(told.every((d) => d < TODAY)).toBe(true);
+    for (const d of ['2026-09-01', '2026-10-01', addDays(TODAY, -1)]) {
+      const s = dayStatus(data, d);
+      expect(s.count).toBeGreaterThan(0);
+      expect(s.state).toBe('told');
+    }
   });
 
   it('契約（demoDataSchema）を通る', () => {

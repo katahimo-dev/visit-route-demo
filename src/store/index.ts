@@ -435,12 +435,24 @@ export function previousInfo(): PreviousInfo | null {
   const ls = storage();
   if (!ls) return null;
   try {
-    if (ls.getItem(PREV_KEY) === null) return null;
+    const prev = ls.getItem(PREV_KEY);
+    if (prev === null) return null;
+    // 版1の控えは戻せない（移行は作らない。ADR-0053）ので「直前の状態に戻す」を出さない
+    if (isOutdatedText(prev)) return null;
     const raw = JSON.parse(ls.getItem(PREV_INFO_KEY) ?? 'null') as Partial<PreviousInfo> | null;
     if (!raw || typeof raw.at !== 'number' || !Number.isFinite(raw.at) || typeof raw.reason !== 'string') return null;
     return { at: raw.at, reason: raw.reason };
   } catch {
     return null;
+  }
+}
+
+/** 控えの文字が前の版（版1）のデータか（読めなければ false） */
+function isOutdatedText(text: string): boolean {
+  try {
+    return isOutdated(JSON.parse(text));
+  } catch {
+    return false;
   }
 }
 

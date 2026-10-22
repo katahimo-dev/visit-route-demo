@@ -385,6 +385,80 @@ async function reopenFocus(page, best) {
   await panel(page).waitFor({ state: 'detached' });
 }
 
+// ---- 伝えた日の5段目：手で変えた訪問も連絡の一覧に出る（PR #80 のレビュー）。欠勤の振り直しも「元に戻す」で欠勤ごと戻る ----
+async function toldContacts(page) {
+  await page.goto(`${BASE}#/home`);
+  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
+  await openPlan(page);
+  // 確定（伝えた）
+  await page.getByTestId('adopt').click();
+  await waitStored(page, (d) => !!d.snapshots?.[TODAY]);
+  // 別のタブで、伝えた訪問の1件を手で別の人に替える（ピン）
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/data`);
+  const moved = await other.evaluate(
+    ([k, day]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      const v = d.visits.find((x) => x.date === day && !x.cancelled && x.staffId);
+      const to = d.staff.find((s) => s.active && s.id !== v.staffId);
+      v.staffId = to.id;
+      v.pinned = true;
+      localStorage.setItem(k, JSON.stringify(d));
+      return { id: v.id, name: to.name };
+    },
+    [STORAGE_KEY, TODAY],
+  );
+  await other.close();
+  await openPlan(page);
+  // キャンセルを別の訪問で登録 → 5段目の連絡の一覧に、手で替えた人あての行も出る
+  await page.getByTestId('sudden-open').click();
+  await panel(page).waitFor();
+  await page.getByTestId('sudden-kind-client').click();
+  const pick = await page
+    .getByTestId('sudden-visit')
+    .evaluate((sel, skip) => [...sel.options].find((o) => o.value && o.value !== skip)?.value ?? '', moved.id);
+  await page.getByTestId('sudden-visit').selectOption(pick);
+  await page.getByTestId('sudden-next').click();
+  await page.getByTestId('sudden-cancel-ok').click();
+  await page.getByTestId('sudden-done').waitFor();
+  await page.getByTestId('sudden-to-contacts').click();
+  await page.locator('[data-testid="sudden-panel"][data-step="5"]').waitFor({ timeout: 10000 });
+  const rows = await contactRowsOf(page);
+  check(
+    rows.some((r) => r.to === 'staff' && r.text.startsWith(moved.name) && r.kinds.includes('added')),
+    '伝えた日の5段目：手で替えた訪問も連絡の一覧に出る（「連絡したので確定」で伝えたことにするもの）',
+    rows.map((r) => [r.kinds, r.text.split('\n')[0]]),
+  );
+  await page.keyboard.press('Escape');
+  await panel(page).waitFor({ state: 'detached' });
+
+  // 欠勤を登録して振り直す → 「元に戻す」で欠勤も振り直しも戻る
+  await page.goto(`${BASE}#/home`);
+  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
+  await openPlan(page);
+  const before = await stored(page);
+  await page.getByTestId('sudden-open').click();
+  await panel(page).waitFor();
+  await page.getByTestId('sudden-kind-staff').click();
+  const best = await busiestStaff(page);
+  await page.getByTestId('sudden-staff').selectOption(best.value);
+  await page.getByTestId('sudden-next').click();
+  await page.getByTestId('sudden-reassign').click();
+  await page.getByTestId('sudden-done').waitFor({ timeout: 10000 });
+  await waitStored(page, (d) => !!d.reassigns?.[TODAY] && d.absences.length === before.absences.length + 1);
+  await page.keyboard.press('Escape');
+  await panel(page).waitFor({ state: 'detached' });
+  await page.getByTestId('plan-reassign-undo').click();
+  const back = await waitStored(page, (d) => !d.reassigns?.[TODAY] && d.absences.length === before.absences.length);
+  check(
+    !back.reassigns?.[TODAY] &&
+      back.absences.length === before.absences.length &&
+      JSON.stringify(back.visits) === JSON.stringify(before.visits),
+    '「登録して振り直す」のあとの「元に戻す」で、欠勤・振り直し・担当が登録する前に戻る',
+    { absences: back.absences.length, reassign: !!back.reassigns?.[TODAY] },
+  );
+}
+
 // ---- 当日キャンセル ----
 async function sameDayCancel(page) {
   await openPlan(page);
@@ -700,6 +774,7 @@ const steps = sharedPage({
     ['recommend-b', recommendB],
     ['mobile', mobile],
     ['header-label', headerLabel],
+    ['told-contacts', toldContacts],
   ],
   after: ({ st }) => {
     check(

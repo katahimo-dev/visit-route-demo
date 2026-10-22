@@ -158,7 +158,23 @@ export function revertReassign(d: DemoData, date: string, problem: Problem): Dem
   const ids = new Set(problem.visits.map((v) => v.id));
   const routes: Routes = {};
   for (const [k, list] of Object.entries(info.baseRoutes)) routes[k] = list.filter((id) => ids.has(id));
-  const written = writeRoutes(d, date, problem, routes, { pins: info.basePins });
+  // 振り直す前に無かった訪問（あとで足した・担当を当てた訪問）は今の担当・ピンのまま残す（開始の順に足す）
+  const inBase = new Set(Object.values(info.baseRoutes).flat());
+  const visits = visitsOn(d, date);
+  const pins: Record<string, string> = { ...info.basePins };
+  const extra: { id: string; staffId: string }[] = [];
+  for (const v of visits) {
+    if (!ids.has(v.id) || inBase.has(v.id) || !v.staffId) continue;
+    extra.push({ id: v.id, staffId: v.staffId });
+    if (v.pinned) pins[v.id] = v.staffId;
+  }
+  if (extra.length > 0) {
+    const atOf = new Map(visits.map((v) => [v.id, hhmmToMinutes(v.start ?? v.earliestStart)]));
+    const touched = new Set(extra.map((x) => x.staffId));
+    for (const x of extra) routes[x.staffId] = [...(routes[x.staffId] ?? []), x.id];
+    for (const k of touched) routes[k] = [...routes[k]!].sort((a, b) => (atOf.get(a) ?? 0) - (atOf.get(b) ?? 0));
+  }
+  const written = writeRoutes(d, date, problem, routes, { pins });
   const { [date]: _gone, ...reassigns } = written.reassigns;
   return { ...written, reassigns };
 }

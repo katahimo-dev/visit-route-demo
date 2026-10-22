@@ -59,8 +59,8 @@ function knownOf(problem: Problem, col: string[]): number[] {
 }
 
 /**
- * その日の元の案の列（欠勤の baseOf と同じ選び方：確定した割当があればそれ、無ければ今の案）。
- * 問題に訪問が無い日（realVisits＝0）は空の案。訪問があって案も確定も無ければ null
+ * その日の担当の列（欠勤の baseOf と同じ：その日の訪問の担当。版2。ADR-0053）。
+ * 問題に訪問が無い日（realVisits＝0）は空の列
  */
 function planOf(data: DemoData, date: string, problem: Problem, realVisits: number): Routes {
   if (realVisits === 0) return {};

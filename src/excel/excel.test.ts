@@ -1828,3 +1828,16 @@ describe('名簿のブック（PRD D103〜D107。ADR-0020）', () => {
     expect(rfail(await importRoster(buf, d, 'client', 'merge'))).toContain('シート『利用者さん』がありません');
   });
 });
+
+describe('版1のブック（ADR-0053）', () => {
+  it('繰り返しの担当の列が「いつもの担当」（版1の見出し）でも、繰り返しの担当として読む', async () => {
+    const d = base();
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const ws = wb.worksheets.find((w) => w.getRow(1).values?.toString().includes('曜日ごとの時刻'))!;
+        ws.getRow(1).getCell(col(ws, '担当')).value = 'いつもの担当';
+      }),
+    );
+    expect(r.patterns.map((p) => p.usualStaffId)).toEqual(d.patterns.map((p) => p.usualStaffId));
+  });
+});

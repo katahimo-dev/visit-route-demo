@@ -6,8 +6,9 @@ import type { DemoData } from '../contracts/data';
 import type { Features } from '../contracts/features';
 import { addDays } from '../domain/time';
 import { dayProblemOf, writeRoutes } from '../lib/dayPlan';
+import { visitsOn } from '../patterns';
 import { defaultIterations, solve } from '../solver';
-import { createDemoData } from './index';
+import { createDemoData, seedPatternStart } from './index';
 
 /** 担当を入れる日数（今日から） */
 export const SEED_PLAN_DAYS = 7;
@@ -41,5 +42,24 @@ export function withSeedPlans(data: DemoData, today: string, days: number = SEED
  */
 export function createInitialData(today: string, features: Features = {}): DemoData {
   const d = createDemoData(today);
-  return withSeedPlans({ ...d, org: { ...d.org, features } }, today);
+  return withPastTold(withSeedPlans({ ...d, org: { ...d.org, features } }, today), today);
+}
+
+/**
+ * 繰り返しの開始日（前の月の1日）から昨日までを「伝えた」状態にする（過去の予定は済んだもの。月の予定で混み具合を見られる）。
+ * 担当は繰り返しの担当（重ならない人を選んである）のまま、伝えた内容に今の担当を写す（開始は書かない＝時刻の違いを数えない）。
+ * 確定した時刻はその日の18:00（日本時間）。計算しないので起動を待たせない
+ */
+export function withPastTold(data: DemoData, today: string): DemoData {
+  const snapshots = { ...data.snapshots };
+  for (let date = seedPatternStart(today); date < today; date = addDays(date, 1)) {
+    const visits = visitsOn(data, date).filter((v) => !v.cancelled);
+    if (visits.length === 0) continue;
+    snapshots[date] = {
+      date,
+      at: Date.parse(`${date}T18:00:00+09:00`),
+      visits: visits.map((v) => ({ id: v.id, clientId: v.clientId, staffId: v.staffId, start: null })),
+    };
+  }
+  return { ...data, snapshots };
 }
