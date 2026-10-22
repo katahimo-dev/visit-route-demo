@@ -45,6 +45,7 @@ describe('控えの知らせ（PRD D227）', () => {
   it('確定した日は、担当の決まった訪問がある日だけ数える', () => {
     expect(
       confirmedDayCount({
+        baseDate: '2026-10-01',
         snapshots: {
           '2026-10-12': {
             date: '2026-10-12',
@@ -73,5 +74,17 @@ describe('直前の状態の文（PRD D227）', () => {
     const at = Date.parse('2026-10-19T14:03:00+09:00');
     expect(jstStamp(at)).toBe('10/19 14:03');
     expect(previousText({ at, reason: '初期状態に戻す' })).toBe('10/19 14:03 の『初期状態に戻す』の前の状態に戻せます');
+  });
+  it('初期データの過去の伝えた日（基準日より前）は数えない', () => {
+    const v = [{ id: 'v1', clientId: 'c1', staffId: 's1', start: '09:00' }];
+    expect(
+      confirmedDayCount({
+        baseDate: '2026-10-20',
+        snapshots: {
+          '2026-10-19': { date: '2026-10-19', at: 1, visits: v },
+          '2026-10-20': { date: '2026-10-20', at: 1, visits: v },
+        },
+      }),
+    ).toBe(1);
   });
 });

@@ -23,10 +23,14 @@ export function exportAgoText(last: string | null, today: string): string {
   return `${md}（${n <= 0 ? '今日' : `${n}日前`}）`;
 }
 
-/** 確定した日の数（伝えた内容に1件でも担当の決まった訪問がある日） */
-export function confirmedDayCount(data: Pick<DemoData, 'snapshots'>): number {
+/**
+ * 確定した日の数（伝えた内容に1件でも担当の決まった訪問がある日）。初期データが入れた過去の伝えた日（基準日より前。
+ * seed の withPastTold）は数えない（初期データのまま開いただけで控えの知らせを出さない）
+ */
+export function confirmedDayCount(data: Pick<DemoData, 'snapshots' | 'baseDate'>): number {
   let n = 0;
-  for (const s of Object.values(data.snapshots)) if (s.visits.some((v) => v.staffId !== null)) n++;
+  for (const s of Object.values(data.snapshots))
+    if (s.date >= data.baseDate && s.visits.some((v) => v.staffId !== null)) n++;
   return n;
 }
 
