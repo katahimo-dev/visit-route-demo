@@ -382,8 +382,27 @@ async function palette(page) {
 async function narrow(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await freshPlan(page);
-  const card = page.locator('.route-item[data-visit] .route-btn').first();
-  const id = await card.evaluate((el) => el.closest('.route-item').dataset.visit);
+  const first = page.locator('.route-item[data-visit] .route-btn').first();
+  const id = await first.evaluate((el) => el.closest('.route-item').dataset.visit);
+  const card = page.locator(`.route-item[data-visit="${id}"] .route-btn`);
+  // この回だけ変えた回にしておく（390px では「繰り返しのとおりに戻す」を出さない）
+  const edited = await page.evaluate(
+    ([k, vid]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      const v = d.visits.find((x) => x.id === vid);
+      if (!v.pattern) return false;
+      v.durationMinutes += 5;
+      v.pattern.edited = true;
+      localStorage.setItem(k, JSON.stringify(d));
+      return true;
+    },
+    [STORAGE_KEY, id],
+  );
+  if (edited) {
+    await page.reload();
+    await page.getByTestId('confirm-state').waitFor({ state: 'attached', timeout: 60000 });
+    await settle(page, 400);
+  }
   await card.scrollIntoViewIfNeeded();
   await card.click();
   await page.getByTestId('visit-open').first().click();
@@ -392,6 +411,11 @@ async function narrow(page) {
   const p = panel(page);
   check((await p.getAttribute('data-visit')) === id, '390px：カードから欄が開く');
   check((await p.getByTestId('vp-time').count()) === 0, '390px：日時の変更は出さない');
+  if (edited)
+    check(
+      (await p.getByTestId('vp-changes').count()) === 1 && (await p.getByTestId('vp-restore').count()) === 0,
+      '390px：この回の変更は見えるが「繰り返しのとおりに戻す」は出さない',
+    );
   check(
     (await p.getByTestId('vp-staff').count()) === 1 && (await p.getByTestId('vp-cancel').count()) === 1,
     '390px：担当替え・取り消しはできる',
@@ -424,6 +448,54 @@ async function narrow(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
+/** 日付を変えて候補が変わると、選んでいた担当は「変えない」に戻る（前の日の候補で当てない。PR #78 のレビュー） */
+async function pickReset(page) {
+  await freshPlan(page);
+  await openFromBand(page);
+  const p = panel(page);
+  const choice = p.locator('[data-testid="vp-staff-choice"]:not(.is-off)').first();
+  await choice.waitFor();
+  await choice.locator('input').check();
+  // 今の案の無い先の日へ（候補は目安で、選べない）
+  await p.getByTestId('vp-date').fill(addDays(TODAY, 40));
+  await until(async () => (await p.getByTestId('vp-staff-noplan').count()) === 1);
+  const kept = await until(() => p.getByTestId('vp-staff-keep').isChecked());
+  check(kept, '日付を変えて選んでいた担当が選べなくなると「変えない」に戻る');
+  await page.keyboard.press('Escape');
+  await closed(page);
+}
+
+/** 開いている間に別のタブで同じ訪問が変わったら、古い入力で上書きしない */
+async function otherTab(page) {
+  await freshPlan(page);
+  const id = await openFromBand(page);
+  const p = panel(page);
+  await p.getByTestId('vp-note').fill('欄のメモ');
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/home`);
+  await other.evaluate(
+    ([k, vid]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      d.visits.find((v) => v.id === vid).note = '別のタブのメモ';
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    [STORAGE_KEY, id],
+  );
+  await other.close();
+  await settle(page, 600);
+  await page.getByTestId('vp-save').click();
+  await settle(page, 300);
+  const err = await p
+    .locator('[role="alert"]')
+    .innerText()
+    .catch(() => '');
+  check(/別の操作で変わりました/.test(err), '別のタブで変わった訪問は保存せず理由を出す', err);
+  const v = await visitOf(page, id);
+  check(v.note === '別のタブのメモ', '別のタブの変更を上書きしない', v.note);
+  await page.keyboard.press('Escape');
+  await closed(page);
+}
+
 async function print(page) {
   await freshPlan(page);
   await openFromBand(page);
@@ -451,6 +523,8 @@ const steps = sharedPage({
     ['新しい訪問', addNew],
     ['ホームから開く', home],
     ['コマンドパレットから開く', palette],
+    ['日付を変えると選んでいた担当を戻す', pickReset],
+    ['別のタブの変更を上書きしない', otherTab],
     ['390px', narrow],
     ['印刷', print],
   ],

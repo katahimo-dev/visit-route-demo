@@ -72,7 +72,7 @@
   font-size: 0.8rem;
   overflow-wrap: anywhere;
 }
-.btn.tone-danger {
+.visit-panel .btn.tone-danger {
   color: var(--danger);
 }
 /* 印刷では欄を出さない（PRD D301） */

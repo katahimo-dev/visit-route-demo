@@ -1,8 +1,9 @@
-// 日の画面の「担当を変える ▾」（PRD D217。ADR-0030）の項目の文。純粋関数。
+// 日の画面の「担当を変える ▾」（PRD D217。ADR-0030）と訪問の詳細の欄（ADR-0051）の担当の候補と項目の文。純粋関数。
 // 中身は「受けられる人」と同じ候補（reassign の candidatesFor）と、matching の理由（problem.reasons）だけを使う（新しい採点は足さない）
-import type { Reason } from '../contracts/problem';
+import type { Problem, Reason } from '../contracts/problem';
 import type { ReassignCandidate } from '../contracts/reassign';
-import { r0 } from './common';
+import { candidatesFor } from '../reassign';
+import { attempt, r0 } from './common';
 
 /** 項目の1行の説明と、押せないときの理由（MenuItem の description・disabled） */
 export type ReassignItemText = { description: string; disabled: string | false };
@@ -51,3 +52,54 @@ export function reassignItemText(c: ReassignCandidate, reasons: Reason[], allowe
 export const CURRENT_TEXT = '今の担当です';
 /** 「入らなかった訪問へ」の説明（固定も外れる） */
 export const NONE_TEXT = '担当なしにします（ピンも外れます）';
+
+/** 担当の候補の1人（「担当を変える ▾」と訪問の詳細の欄で同じ判定。ADR-0030・ADR-0051） */
+export type ReassignChoice = {
+  staffId: string;
+  /** 移動 +N分・時間の約束 ✓✗・相性・いつもの担当など（reassignItemText） */
+  description: string;
+  /** 選べない理由（必須の条件に合わない） */
+  disabled: string | false;
+  /** 空き時間に入る */
+  fits: boolean;
+  /** 今の担当 */
+  current: boolean;
+};
+
+/**
+ * 担当の候補（「担当を変える ▾」と訪問の詳細の欄の1つの判定）：reassign の candidatesFor（routes はこの訪問を除いても除かなくてもよい）の
+ * うち shown の人と今の担当を、problem.allowed で選べる人を先に、選べない人は理由（必須の条件）つきで後ろに。訪問が問題に無ければ空
+ */
+export function reassignChoices(
+  problem: Problem,
+  routes: Record<string, string[]>,
+  visitId: string,
+  ownerId: string | null,
+  shown: (staffId: string) => boolean,
+): ReassignChoice[] {
+  const vi = problem.visits.findIndex((v) => v.id === visitId);
+  if (vi < 0) return [];
+  const list = attempt(() => candidatesFor(problem, routes, visitId)).value ?? [];
+  const indexOf = (sid: string) => problem.staff.findIndex((s) => s.id === sid);
+  const choices = list
+    .filter((c) => c.staffId === ownerId || shown(c.staffId))
+    .map((c): ReassignChoice => {
+      const si = indexOf(c.staffId);
+      const t = reassignItemText(c, problem.reasons[vi]?.[si] ?? [], problem.allowed[vi]?.[si] === true);
+      return {
+        staffId: c.staffId,
+        description: t.description,
+        disabled: t.disabled,
+        fits: c.fits,
+        current: c.staffId === ownerId,
+      };
+    });
+  return [...choices.filter((c) => !c.disabled), ...choices.filter((c) => c.disabled)];
+}
+
+/** その日に働く人（稼働時間帯がある・今の列に訪問がある）。訪問の詳細の欄の候補の人（日の予定の列の人と同じ考え方） */
+export function workingStaff(problem: Problem, routes: Record<string, string[]>): Set<string> {
+  const out = new Set(problem.staff.filter((s) => s.slots.length > 0).map((s) => s.id));
+  for (const [sid, ids] of Object.entries(routes)) if (ids.length > 0) out.add(sid);
+  return out;
+}

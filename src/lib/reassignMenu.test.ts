@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Reason } from '../contracts/problem';
 import type { ReassignCandidate } from '../contracts/reassign';
-import { reassignItemText, shiftText } from './reassignMenu';
+import { compile } from '../matching';
+import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
+import { reassignChoices, reassignItemText, shiftText, workingStaff } from './reassignMenu';
 
 const INF = Number.POSITIVE_INFINITY;
 const cand = (over: Partial<ReassignCandidate> = {}): ReassignCandidate => ({
@@ -70,5 +72,28 @@ describe('reassignItemText（担当を変える ▾ の項目の説明）', () =
     expect(t.disabled).toBe('必須の条件に合いません（種類（入浴）：資格 ✗・相性×）');
     expect(t.description).toContain('相性×');
     expect(reassignItemText(cand(), [], false).disabled).toBe('必須の条件に合いません');
+  });
+});
+
+describe('reassignChoices（担当を変える ▾ と訪問の詳細の欄の1つの判定。ADR-0051）', () => {
+  const d = makeData({
+    staff: [staff('s1', 38.26, 140.87), staff('s2', 38.27, 140.86), staff('s3', 38.27, 140.86, { workDays: [0] })],
+    clients: [client('c1', 38.27, 140.88)],
+    visits: [visit('v1', 'c1', '09:00', '09:00', { windowKind: 'fixed' })],
+  });
+  const problem = compile(d, DATE);
+  it('出す人と今の担当を、選べる人を先に並べ、今の担当に印', () => {
+    const routes = { s1: ['v1'] };
+    const working = workingStaff(problem, routes);
+    expect([...working].sort()).toEqual(['s1', 's2']);
+    const list = reassignChoices(problem, routes, 'v1', 's1', (sid) => working.has(sid));
+    expect(list.map((c) => [c.staffId, c.current])).toEqual([
+      ['s1', true],
+      ['s2', false],
+    ]);
+    expect(list[1]!.description).toMatch(/時間の約束/);
+  });
+  it('問題に無い訪問は空', () => {
+    expect(reassignChoices(problem, {}, 'nope', null, () => true)).toEqual([]);
   });
 });

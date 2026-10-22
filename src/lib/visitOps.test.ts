@@ -6,6 +6,7 @@ import { applyPatterns } from '../patterns';
 import {
   applyVisitEdit,
   assignmentOf,
+  assignOnDays,
   cancelVisitOp,
   clientVisitsIn,
   dayVisitRows,
@@ -15,6 +16,7 @@ import {
   restoreOccurrenceOp,
   scopeTexts,
   staffChoices,
+  staffPickError,
   timeChanged,
   unassignedVisits,
   uncancelVisitOp,
@@ -186,7 +188,7 @@ describe('applyVisitEdit：この回だけ', () => {
     // この回だけは記憶に書かない
     expect(r.data.manualPrefs).toEqual({});
   });
-  it('今の案の無い日は担当を当てられない（failed）', () => {
+  it('今の案の無い日は担当を選べない（誤り）', () => {
     const d = data();
     const id = '2026-10-19_p1';
     const r = applyVisitEdit(
@@ -196,7 +198,7 @@ describe('applyVisitEdit：この回だけ', () => {
       IDS,
       NOW,
     );
-    expect(r.ok && r.failed.map((x) => x.why)).toEqual(['今の案が無い日']);
+    expect(!r.ok && r.error).toMatch(/今の案が無い/);
   });
   it('担当なし（この回だけ）：列から外して固定も外す', () => {
     const d0 = data();
@@ -301,7 +303,7 @@ describe('applyVisitEdit：これ以降・すべて', () => {
     const t = scopeTexts(d, '2026-10-19_p1', DATE)!;
     expect(t.following).toBe('10/19 以降の月曜の回');
     expect(t.otherDays).toBe(true);
-    expect(t.keptDates).toEqual(['2026-10-26']);
+    expect(t.keptDates).toEqual({ following: ['2026-10-26'], all: ['2026-10-26'] });
     expect(scopeTexts(makeData({ visits: [visit('v1', 'c1', '09:00', '09:00')] }), 'v1', DATE)).toBeNull();
   });
 });
@@ -393,5 +395,119 @@ describe('一覧', () => {
     expect(rows.rows.map((r) => [r.visit.id, r.mark])).toEqual([[a, 'unassigned']]);
     expect(rows.rest).toBe(1);
     expect(clientVisitsIn(d, 'c1', '2026-10-19', '2026-10-19').map((v) => v.id)).toEqual(['v2', a]);
+  });
+});
+
+describe('レビューの直し（PR #78）', () => {
+  const plans = (d: DemoData, dates: string[]) => ({
+    ...d,
+    aiPlans: Object.fromEntries(dates.map((x) => [x, planOf(x, {})])),
+  });
+  it('日付を変えたあと、その日に働かない人は選べない（前の日の候補で当てない）', () => {
+    const d0 = data();
+    const id = '2026-10-19_p1';
+    const d = plans(d0, ['2026-10-19', '2026-10-24']);
+    const draft = { ...draftOf(find(d, id)), date: '2026-10-24' }; // 土曜は s1・s2 とも働かない
+    expect(staffPickError(d, id, draft, 's2')).toMatch(/候補にいません|選べません/);
+    const r = applyVisitEdit(d, { visitId: id, draft, staff: 's2', scope: 'once' }, DATE, IDS, NOW);
+    expect(r.ok).toBe(false);
+    // 担当なしも、日付を変えたら今の担当がいないので選べない
+    expect(staffPickError(d, id, draft, null)).not.toBeNull();
+    expect(staffPickError(d, id, draft, undefined)).toBeNull();
+  });
+  it('force でも、その日に問題にいない人は当てない', () => {
+    const d = plans(data(), ['2026-10-19']);
+    const r = assignOnDays(d, [{ visitId: '2026-10-19_p1', date: '2026-10-19' }], 'nobody', new Set(['2026-10-19_p1']));
+    expect(r.failed.map((x) => x.why)).toEqual(['その日は働かない']);
+  });
+  it('この回だけ日付を変えた回で「これ以降」：欄の日付をそのまま使い、後の回も同じだけずらす', () => {
+    const d = data();
+    const id = '2026-10-19_p1';
+    const once = applyVisitEdit(
+      d,
+      { visitId: id, draft: { ...draftOf(find(d, id)), date: '2026-10-20' }, scope: 'once' },
+      DATE,
+      IDS,
+      NOW,
+    );
+    if (!once.ok) throw new Error(once.error);
+    const v = find(once.data, id);
+    const r = applyVisitEdit(
+      once.data,
+      { visitId: id, draft: { ...draftOf(v), earliestStart: '10:00' }, scope: 'following' },
+      DATE,
+      IDS,
+      NOW,
+    );
+    if (!r.ok) throw new Error(r.error);
+    expect(find(r.data, r.visitId)).toMatchObject({ date: '2026-10-20', earliestStart: '10:00' });
+    const later = r.data.visits
+      .filter((x) => x.date > '2026-10-20' && !x.cancelled)
+      .map((x) => `${x.date} ${x.earliestStart}`);
+    expect(later).toEqual(['2026-10-27 10:00']);
+  });
+  it('「これ以降」でメモだけ変えたら、この回だけのメモにする（繰り返しは分けない）', () => {
+    const d = data();
+    const id = '2026-10-19_p1';
+    const r = applyVisitEdit(
+      d,
+      { visitId: id, draft: { ...draftOf(find(d, id)), note: '鍵は管理人' }, scope: 'following' },
+      DATE,
+      IDS,
+      NOW,
+    );
+    if (!r.ok) throw new Error(r.error);
+    expect(find(r.data, id).note).toBe('鍵は管理人');
+    expect(r.data.patterns).toEqual(d.patterns);
+  });
+  it('「すべて」はこの回だけ変えた回を起点にせず、範囲の繰り返しは動かした回のパターン', () => {
+    const d0 = data();
+    // 最初の回（10/12）をこの回だけ変える
+    const e = applyVisitEdit(
+      d0,
+      {
+        visitId: '2026-10-12_p1',
+        draft: { ...draftOf(find(d0, '2026-10-12_p1')), earliestStart: '08:00' },
+        scope: 'once',
+      },
+      DATE,
+      IDS,
+      NOW,
+    );
+    if (!e.ok) throw new Error(e.error);
+    const d = {
+      ...e.data,
+      aiPlans: { '2026-10-19': planOf('2026-10-19', {}), '2026-10-26': planOf('2026-10-26', {}) },
+    };
+    const v = find(d, '2026-10-26_p1');
+    expect(scopeTexts(d, v.id, DATE)!.keptDates.all).toEqual(['2026-10-12']);
+    const r = applyVisitEdit(
+      d,
+      { visitId: v.id, draft: { ...draftOf(v), earliestStart: '11:00' }, staff: 's2', scope: 'all' },
+      DATE,
+      IDS,
+      NOW,
+    );
+    if (!r.ok) throw new Error(r.error);
+    expect(find(r.data, '2026-10-12_p1').earliestStart).toBe('08:00');
+    const series = r.data.visits.filter((x) => x.date >= '2026-10-19' && !x.cancelled);
+    expect(series.map((x) => x.earliestStart)).toEqual(['11:00', '11:00']);
+    const pid = series[0]!.pattern!.id;
+    expect(series.every((x) => x.pattern!.id === pid)).toBe(true);
+    expect(r.data.patterns.find((p) => p.id === pid)!.usualStaffId).toBe('s2');
+    expect(series.map((x) => assignmentOf(r.data, x.id, x.date).staffId)).toEqual(['s2', 's2']);
+  });
+  it('今ある訪問の〈利用者さん〉は変えない', () => {
+    const d = data();
+    const id = '2026-10-19_p1';
+    const r = applyVisitEdit(
+      d,
+      { visitId: id, draft: { ...draftOf(find(d, id)), clientId: 'zz', note: 'x' }, scope: 'once' },
+      DATE,
+      IDS,
+      NOW,
+    );
+    if (!r.ok) throw new Error(r.error);
+    expect(find(r.data, id).clientId).toBe('c1');
   });
 });

@@ -338,6 +338,17 @@ describe('訪問の候補（PRD D304）', () => {
     const it0 = paletteVisits('ふみ 10/28', people, index, TODAY, describeV)[0]!;
     expect(it0).toMatchObject({ kind: 'visit', label: '図書館 ふみ 10/28（水） 09:00', hint: '担当なし' });
   });
+  it('年の無い日付は今日に近い方の年、かなの日付の語しか無ければ名前として読む', () => {
+    expect(paletteDate('12/28', '2027-01-03')).toBe('2026-12-28');
+    expect(paletteDate('1/5', '2026-12-20')).toBe('2027-01-05');
+    const more = palettePeople(
+      [{ id: 'c9', displayName: '明日香 さち', kana: 'あすか さち', stage: 'active' }],
+      [],
+      terms,
+    );
+    const idx = visitIndex([v('z1', 'c9', '2026-10-25', '09:00')]);
+    expect(paletteVisits('あす', more, idx, TODAY, describeV).map((x) => x.visitId)).toEqual(['z1']);
+  });
   it('訪問を追加の操作', () => {
     expect(paletteActions(TODAY).find((x) => x.id === 'action:visit-add')).toMatchObject({ op: 'visit-add' });
   });

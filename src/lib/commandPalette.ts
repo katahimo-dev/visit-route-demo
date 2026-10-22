@@ -302,11 +302,19 @@ export function paletteDate(term: string, today: string): string | null {
   const d = Number(iso ? iso[3] : md?.[2]);
   if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
   const pad = (n: number) => String(n).padStart(2, '0');
-  let date = `${y}-${pad(m)}-${pad(d)}`;
-  // 年を書かない日付は、半年より前なら来年（12月に「1/5」）
-  if (!iso && date < addDays(today, -183)) date = `${y + 1}-${pad(m)}-${pad(d)}`;
-  const back = new Date(`${date}T00:00:00Z`);
-  return Number.isNaN(back.getTime()) || back.toISOString().slice(0, 10) !== date ? null : date;
+  const valid = (x: string) => {
+    const back = new Date(`${x}T00:00:00Z`);
+    return !Number.isNaN(back.getTime()) && back.toISOString().slice(0, 10) === x;
+  };
+  if (iso) {
+    const date = `${y}-${pad(m)}-${pad(d)}`;
+    return valid(date) ? date : null;
+  }
+  // 年を書かない日付は、去年・今年・来年のうち今日に近い方（12月に「1/5」は来年、1月に「12/28」は去年）
+  const far = (x: string) => Math.abs(Date.parse(`${x}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`));
+  const cands = [y - 1, y, y + 1].map((yy) => `${yy}-${pad(m)}-${pad(d)}`).filter(valid);
+  if (cands.length === 0) return null;
+  return cands.reduce((a, b) => (far(b) < far(a) ? b : a));
 }
 
 /** 訪問の候補をいくつまで出すか */
@@ -327,14 +335,22 @@ export function paletteVisits(
 ): PaletteItem[] {
   const raw = query.split(/[\s　]+/).filter((x) => x !== '');
   let date: string | null = null;
+  let dateWord: string | null = null;
   const names: string[] = [];
   for (const r of raw) {
     const d: string | null = date === null ? paletteDate(r, today) : null;
-    if (d) date = d;
-    else {
+    if (d) {
+      date = d;
+      dateWord = r;
+    } else {
       const n = normalizeKana(r);
       if (n) names.push(n);
     }
+  }
+  // 「あす」「きょう」などのかなの日付の語しか名前が無ければ、名前（「あすか」の打ちかけ）として読む
+  if (names.length === 0 && dateWord && /^[ぁ-ん]+$/.test(normalizeKana(dateWord))) {
+    names.push(normalizeKana(dateWord));
+    date = null;
   }
   if (names.length === 0) return [];
   const hit = clients.filter((c) => c.kind === 'client' && names.every((t) => c.keys.some((k) => k.includes(t))));
