@@ -1,5 +1,5 @@
-// 〈スタッフ〉・〈利用者さん〉の詳細の中身（PRD D114・D115・D122・D127。ADR-0022・0023）。相性の画面と、予定（月・週・日）の名前の吹き出しで共通。
-// 行（dt・dd）の部品は、〈スタッフ〉・〈利用者さん〉の画面の閲覧の欄（components/personView）でも使う。
+// 〈スタッフ〉・〈利用者さん〉の詳細の中身（PRD D114・D115・D122・D308。ADR-0022・0052）。相性の画面と、予定（月・週・日）の名前の吹き出しで共通。
+// 行（dt・dd）の部品は、〈スタッフ〉・〈利用者さん〉の画面の節（読むとき）でも使う。
 // 中身は吹き出しを開いたときだけ作る（データから引いて数えるのは開いた1人ぶん）
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -37,7 +37,7 @@ export function StaffDetail({
         {s.lastDay && <StaffLastDayRow staff={s} />}
         <StaffCompatRows staff={s} data={data} countsTestId={countsTestId} />
       </dl>
-      <Link className="detail-popover-link" to={`/staff?id=${encodeURIComponent(s.id)}`} data-testid={linkTestId}>
+      <Link className="detail-popover-link" to={`/staff/${encodeURIComponent(s.id)}`} data-testid={linkTestId}>
         {terms.staff}の画面で開く
       </Link>
     </>
@@ -63,7 +63,7 @@ export function ClientDetail({
         <CondRows requirements={c.requirements} preferences={c.preferences} data={data} />
         <ClientStaffRows client={c} data={data} />
       </dl>
-      <Link className="detail-popover-link" to={`/clients?id=${encodeURIComponent(c.id)}`} data-testid={linkTestId}>
+      <Link className="detail-popover-link" to={`/clients/${encodeURIComponent(c.id)}`} data-testid={linkTestId}>
         {terms.client}の画面で開く
       </Link>
     </>
@@ -214,7 +214,7 @@ export function ClientAreaRow({ client: c }: { client: Client }) {
 
 /**
  * 〈利用者さん〉の担当できる人（限らなければ「限らない」）・いつもの担当（休止中なら添える）。
- * names を渡すと、名前を文字でつながずにその部品で並べる（閲覧の欄で名前から詳細を開く。PRD D199）
+ * names を渡すと、名前を文字でつながずにその部品で並べる（人の画面で名前から詳細を開く。PRD D199）
  */
 export function ClientStaffRows({
   client: c,

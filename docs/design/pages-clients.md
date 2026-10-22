@@ -1,115 +1,117 @@
-# 〈利用者さん〉の画面と、閲覧の欄・住所の入力・絞り込み（共通部品）
+# 〈利用者さん〉の一覧と、〈利用者さん〉・〈スタッフ〉の画面・住所の入力・絞り込み（共通部品）
 
-> この画面のファイル：`src/pages/ClientsPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/viewMode.ts`・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0023・0026。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D285・D118〜D121・D127〜D131・D220。
-> 〈スタッフ〉の画面は [pages-staff.md](pages-staff.md)（閲覧の欄の仕組みはこのファイルと共通）。
+> この画面のファイル：`src/pages/ClientsPage.tsx`・`ClientPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personPage.tsx`（`personPage.css`）・`PersonCalendar.tsx`（`personCalendar.css`）・`personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/personPage.ts`・`viewMode.ts`・`visitOps.ts`（`staffVisitsIn`・`endPatternOp`）・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0026・0051・0052。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D285・D118〜D121・D220・D308〜D313。
+> 〈スタッフ〉の画面の中身は [pages-staff.md](pages-staff.md)（画面の殻・タブ・節・予定のカレンダーはこのファイルと共通）。訪問の詳細の欄は [pages-common.md](pages-common.md)。
 
 ### 〈利用者さん〉一覧（`#/clients`）
 
-- 見出し「〈利用者さん〉一覧」
-- 一覧の上に `ClientFilter`（`clients-filter`。画面の状態。URL に残さない。既定 `EMPTY_FILTER`）。期間は選んでいる日（`useDay`）を含む週（月〜日）で、`weekDay` を7日分作って `filterFacts` に渡す。終了の人は「終了の人も出す」のときだけ出す（終了にして保存すると、そのことを知らせる）
-- 狭い画面（600px 以下。PRD D220）：絞り込みの欄の中身（`ClientFilter` と段階の説明）を「絞り込み（N）」のボタン（`narrow-filter-toggle`。`aria-expanded`・`aria-controls`）の下に畳み、横に「N人を表示」（`narrow-filter-count`）。N は `activeFilterCount`（下）。はじめは畳み、開いたかは画面の中だけ（URL・データに書かない）。広い画面ではボタンを出さずいつも開いたまま
-- 一覧の上に「位置の無い〈利用者さん〉」のカード（下の「まとめて地図に置く」）
-- 一覧の行（`client-row`）：状態に段階（`client-stage`）・「いつもの担当」の列に担当できる人の印「限 山田、佐藤」（`client-limit`。title に全員の名前）・「仮」の印。行の操作は「〈名前〉を開く」（lucide の `Eye`）で閲覧の欄
-- 狭い画面（PRD D220）：一覧の表（`narrow-clients`）は1人を1枚のカードに（[pages.md](pages.md) の「狭い画面の表」）。1行目に名前（よみ・住所）と状態（段階・仮）、続けて「位置」・「特性」・「〈スタッフ〉に求めること」・「いつもの担当」（限の印も）、開くは右下。外の枠のカードは消す。列は隠さない
-- 「追加」はすぐ編集の欄（何も入れずに取り消すと確認なしで閉じる）
-- `?id=` は閲覧の欄（下）
+- 見出し「〈利用者さん〉一覧」。見出しの右に「相性の表」（文字のボタン）と主ボタン「〈利用者さん〉を追加」（`client-add`。`#/clients/new` へのリンク）
+- 一覧の上に `ClientFilter`（`clients-filter`。画面の状態。URL に残さない。既定 `EMPTY_FILTER`）。期間は選んでいる日（`useDay`）を含む週（月〜日）で、`weekDay` を7日分作って `filterFacts` に渡す。終了の人は「終了の人も出す」のときだけ出す
+- 狭い画面（600px 以下。PRD D220）：絞り込みの欄の中身（`ClientFilter` と段階の説明）を「絞り込み（N）」のボタン（`narrow-filter-toggle`。`aria-expanded`・`aria-controls`）の下に畳み、横に「N人を表示」（`narrow-filter-count`）。N は `activeFilterCount`（下）。はじめは畳み、開いたかは画面の中だけ。広い画面ではボタンを出さずいつも開いたまま
+- 一覧の上に「位置の無い〈利用者さん〉」のカード（下の「まとめて地図に置く」）。置けなかった人の「編集」はその人の画面の住所の節（`#/clients/:id?tab=basic&edit=place`。開いたら URL の `edit` を消し、節の無いタブ（予定）で開いたら節のタブへ移す）
+- 一覧の行（`client-row`）：状態に段階（`client-stage`）・「いつもの担当」の列に担当できる人の印「限 山田、佐藤」（`client-limit`。title に全員の名前）・「仮」の印。右端は「〈名前〉を開く」（lucide の `Eye`。`client-open`。その人の画面へのリンク）
+- 行のどこを押してもその人の画面へ移る（`lib/rowOpen` の `shouldOpenRow`：行の中のボタン・リンク・入力欄・文字の選択・二度押しの2回目は除く。`.row-open` で指のカーソルと地の色。PRD D308）
+- 狭い画面（PRD D220）：一覧の表（`narrow-clients`）は1人を1枚のカードに（[pages.md](pages.md) の「狭い画面の表」）。1行目に名前（よみ・住所）と状態（段階・仮）、続けて「位置」・「特性」・「〈スタッフ〉に求めること」・「いつもの担当」（限の印も）、開くは右下
+- `?id=`（古いリンク・ブックマーク）：その人がいればその人の画面へ `replace` で移る。いなければ URL から消すだけ
 
-### 閲覧の欄と編集の欄（〈スタッフ〉・〈利用者さん〉共通。ADR-0023。PRD D127〜D131）
+### 〈利用者さん〉・〈スタッフ〉の画面の殻（PRD D308。ADR-0052）
 
-#### 画面の状態（`pages/StaffPage`・`pages/ClientsPage`）
+#### ルートと状態
 
-- `viewId`（閲覧している人）と `form`（編集の入力）を持つ。欄（`SidePanel`）は1つで、`form` があれば編集、無ければ `viewId` の人の閲覧（データにいなければ出さない）
-- 欄の中の `SectionTitle` は `SectionLevelProvider` で h3
+- `#/clients/:id`（`pages/ClientPage`）・`#/staff/:staffId`（`pages/StaffPersonPage`）。`new` は新しい人。メニューの印・上の帯の名前・作り直しの帯は一覧と同じ（`lib/nav` の `activeNavPath` が `/clients/:id` を `/clients` に当てる。`tabClick` は一覧の項目を押すと一覧へ移る）。初回の案内ツアーはこの URL で開いたときは出さない（`lib/tour` の `shouldAutoOpenTour`）
+- 外側の部品が「URL の人」と「開いている人」を分けて持つ。URL の人が替わったら（パレット・吹き出し・hash の書き換え）、変更があれば確かめ（確認は画面の移動で待っている確認を取り消す処理のあとに出す）、断れば元の人の URL（クエリも）へ `replace` で戻す。中身は開いている人の ID を key にして作り直す。App の `Guarded` の ErrorBoundary の key は `/clients/:id` にそろえる（人が替わっても画面を作り直さない）
+- いない人の URL は一覧へ `replace`（`state.missing`）し、一覧で「その〈利用者さん〉は見つかりません（消されたか、URL が違います）」と知らせる
+- 外枠 `person-view`（`data-kind`＝client／staff・`data-id`。新しい人は空）。`.person-view` の dl の並び（`personView.css`）を使う
 
-#### 開き方
+#### 見出しとタブ
 
-- 一覧の行（どこを押しても。行の中のボタン・リンク・文字の選択は除く。`lib/rowOpen` の `shouldOpenRow`。`.row-open`。PRD D297）・「開く」・`?id=`・名前の吹き出しのリンク・コマンドパレットの人 → 閲覧の欄
-- `?id=` で開いたら URL から `id` を消す（`replace`）。いない ID は何もしない。編集中の同じ人なら確認なしで編集を続ける。別の人なら（変更があれば）確認し、断れば編集が続く
-- 「まとめて地図に置く」で置けなかった人の「編集」（`PlaceAllPanel` の `onEdit`）は編集で開く
+- `PageHeader`：題名は名前（〈利用者さん〉は色の丸、〈スタッフ〉は `StaffMark`）。1行の説明の所に状態（`person-state`：〈利用者さん〉は段階・仮押さえ・休み中・いつもの担当、〈スタッフ〉は利用中／休止中・最終勤務日・ふだんの勤務）。右に一覧へ戻る文字のボタン（`person-back`）、〈スタッフ〉は本人のスマホ画面へのリンク（`to-staff-view`）
+- タブ（`components/personPage` の `PersonTabs`。`person-tabs`。設定のタブと同じリンクのナビ `.view-switch`。今のタブは `aria-current`。`data-tab`）：〈利用者さん〉は［予定（`schedule`）｜基本情報（`basic`）｜担当・相性（`staffing`。相性を切れば「担当」）｜休み（`leaves`。休みの機能を切れば出さない）］、〈スタッフ〉は［予定｜基本情報｜勤務時間（`hours`）｜相性（`compat`。相性を切れば「担当」）］。URL の `?tab=`（先頭の予定は書かない。`lib/personPage` の `tabOf`・`tabSearch`。替えるときは `replace`・節の `edit` を消す）。変更があるまま押すと確かめる。替えると決めたら直している節・繰り返し・休みの入力を捨てる。新しい人は予定・担当などのタブを押せない（`aria-disabled` と title「保存してから見られます」）。狭い画面では横に巻き、今のタブを見える所へ
+- 印刷ではタブ・節の「直す」・一覧へ戻る・繰り返しと休みの操作・予定のタブの左のリンクを出さない
 
-#### 閲覧の欄（`components/personView.tsx`）
+#### 節（`EditSection`。PRD D311）
 
-- `StaffView`・`ClientView`：節（`SectionTitle`）ごとに dl で並べる（行の部品は `components/personDetail.tsx`。[pages-common.md](pages-common.md)）。入力欄・即時に書くボタンは置かない。data-testid `person-view`（`data-kind`）
-- 〈利用者さん〉の位置があれば `RouteMap`（1点・`onPick` なし・高さ 180）
-- 定期パターンは読むだけ：`patternWhenText`・種類・所要・`periodText`・いつもの担当の一覧（`view-patterns`。いつもの担当が休止中なら「（休止中）」を添える）
-- 休みは読むだけ：`splitLeaves` のこれからの休み（`view-leaves`）と終わった件数
-- 地区は住所が無ければ「住所なし」、住所はあるが取り出せなければ「—」（吹き出しも同じ）
-- 右上（`headActions`）に「編集する」（`btn btn-edit`。主ボタンにしない。data-testid `view-edit`。`data-return-focus`）。押すと `form` に保存した中身の写しを入れる
+- `card person-sec`（`person-sec`・`data-section`）：見出し h2（アイコン＋名前）。読むときは中身（dl・地図など）と右上に「直す」（`sec-edit`。枠のボタン。aria-label「〈節の名前〉を直す」）、直すときは `<form noValidate>`（`sec-form`）に入力欄と「保存」（`sec-save`。主ボタン。直せる節は同時に1つなので画面に1つ）・「取り消し」（`sec-cancel`）・誤りの文（`FieldError`）。Enter で保存（`submitHandler`）、Esc で取り消し
+- 直すと最初の入力欄へ、保存・取り消しのあとは「直す」へフォーカス
+- 誤りの文の id は画面が持ち（`useId`）、`EditSection` の `errorId` と入力欄の `aria-describedby` を同じにする
+- 画面は `edit = { key, form, opened }`（〈利用者さん〉は担当できる人を限るかも）を1つ持つ。`SECTIONS`（節 → 保存する項目）で、変更があるかは `pickFields` の項目だけを `lib/viewMode` の `isDirty` で比べ、保存は保存した中身に `mergeFields` でその項目だけ重ねる（ほかの節の項目・まとめて置いた位置を古い入力で上書きしない）。検査（郵便番号・メール・同じ名前・アイコン）も直している節の項目だけ（ほかの節の古い値で保存を止めない）。新しい人は `key: 'new'` で全部の項目
+- 変更の確認（`components/personPage` の `useAskDiscard`・`discardChanges`）：取り消し・Esc は「変更を捨てますか？」（確定「捨てる」）、別の節は「変更を捨てて、ほかの節を直しますか？」、タブは「変更を捨てて、タブを替えますか？」、別の人は「変更を捨てて、〈名前〉を開きますか？」、メニュー・リンク・パレットで移るときは `useLeaveGuard`（「変更を捨てて移りますか？」「捨てて移る」。確定すると `onLeave` で入力を捨ててから移る。行き先は止めた時点で持ち、確認の間にリンクが外れた（名前の吹き出しが閉じた）ら行き先へ `navigate`）。訪問の詳細の欄の「日の予定で見る」・休みの注意の「…の予定を開く」も移る前に `confirmLeave`。取り消し側はどれも「編集を続ける」・危険の色。再読込・タブを閉じるは `beforeunload`（変更があるときだけ）。繰り返し・休みの入力の変更も数える（`onDirty`）。別のタブの変更の知らせ（D227）にも変更ありを知らせる
+- 〈利用者さん〉の担当できる人は、比べる前に保存のときと同じ値（限らなければ空・限るなら利用中の人だけ）にそろえる。特性は `cleanTraits` で未入力を取り除いて比べる
 
-#### 編集の欄
+#### 予定のタブの形
 
-- 下の帯（`footer`）に「保存」（主ボタン）と「取り消し」（data-testid `edit-cancel`）
-- 保存したら `form` を消して閲覧に戻る（〈スタッフ〉で振り直すものがあれば閉じて `OffboardPanel`）。取り消しは閲覧へ（新しい人なら閉じる）。閲覧に戻ったらフォーカスは「編集する」（`focusKey`）
-- ×・Esc は欄を閉じる
-- 変更があるまま 取り消し・閉じる・別の人（`?id=`）は `isDirty` と `discardDialog` で独自の確認ダイアログ（`okToDiscard` は Promise を返す）。欄はモーダルなので「追加」などの後ろのボタンは編集中に押せない（コードでは念のため同じ確認を通す）
-- 〈利用者さん〉の担当できる人は、比べる前に保存のときと同じ値（限らなければ空・限るなら利用中の人だけ）にそろえる（入れてすぐ外しただけなら変更なし）。特性を未確認に戻しただけも変更なし
-- 変更があるときだけ `beforeunload` を付ける（再読込・タブを閉じるとき。ブラウザの確認のまま。戻る・画面の移動では出せない）
-- 仮押さえの2つのボタン・`PatternsSection`・`ClientLeavesSection` は編集の中だけ
+- `person-schedule`：左に `person-schedule-side`（360px まで）、右に `person-schedule-main`（カード）。1100px 以下は縦に並べ、600px 以下は右（日ごとのリスト）を先に
+
+### 予定のカレンダー（`components/PersonCalendar.tsx`。PRD D309・D310・D312）
+
+- 引数：`kind`（client／staff）・`personId`・`view`（week／month）・`anchor`（基準の日）・`onChange`（見せ方・期間を変えた）・`highlight`（強調する繰り返しの ID）・`dayNote`（日の見出しに添える印）。画面は `cal`（month のときだけ）・`d`（今日でないときだけ）を URL に `replace` で書く
+- 回：`lib/personPage` の `clientCalItems`（`visitOps.clientVisitsIn`。取り消しも）・`staffCalItems`（`visitOps.staffVisitsIn`：その日の今の案、無ければ確定した割当でその人の列にある訪問。取り消しは出さない）。担当は `assignmentOf`。様子（`CalState`）は 取り消し（`cancelled`・`sameDay`）→ 休みのため無し（`leave`）→ 担当あり（`assigned`）→ 案はあるが入らない（`unassigned`。赤）→ 案なし（`noplan`。黄の点線）。時刻は訪問の開始（早）〜＋所要
+- 回のボタン（`pcal-visit`・`data-visit`・`data-date`・`data-state`・`data-pattern`）：時刻・種類の色の点・固定の印・「変」（この回だけ変えた）、〈利用者さん〉の画面は担当の `StaffMark` と苗字（無ければ様子の文）、〈スタッフ〉の画面は〈利用者さん〉の名前。aria-label は「10/28（水） 09:00〜10:00 〈名前〉（種類・この回だけ変更・固定）（押すと訪問の詳細）」。押す・Enter で `useOpenVisit()`（閉じたらフォーカスはその回）
+- 強調：`highlight` の繰り返しの回は `is-hl`、ほかは `is-dim`。回のボタンに `aria-pressed`。上に「選んだ繰り返しの回：この期間に N回」（`pcal-hl-note`）
+- 道具の行（`pcal-tools`）：前／次（`pcal-prev`・`pcal-next`。週は7日・月は1か月）・見出し（`pcal-title`。「10/26（月）〜11/1（日）」「2026年10月」。aria-live）・今日・［週｜月］（`pcal-view`・`data-view`）・〈利用者さん〉の広い画面は「訪問を足す」（`pcal-add`。期間の今日以降の最初の日の 09:00・60分）
+- 週（`data-layout="week"`）：見出しの行（日付・今日の印・`dayNote`・作ってある最後の日より後は「未作成」）と、左の時刻の目盛り（7:00〜20:00）、日ごとの列（`pcal-col`。1分 0.8px・1時間ごとの線。重なる回は `laneLayout` で横に並べる）。今日より前の列は薄い地
+- 月（`data-layout="month"`）：月曜はじまりの週（`monthWeeksMon`）のマス（`pcal-cell`。日付・`dayNote`・回のボタン）。〈利用者さん〉の広い画面は今日以降のマスに「＋」（`pcal-cell-add`。その日の 09:00・60分）
+- 足す（〈利用者さん〉の広い画面・今日以降の列）：列の空いている所で押すと押した枠（15分刻みに切り捨て）・所要60分。縦にドラッグすると影（`pcal-ghost`）を出し、枠をまたいだら押した枠と離した枠を両方含む長さ（上へ動かしても押した枠を含む。同じ枠の中で動いただけなら押しただけと同じ。`slotOf`）で `useOpenVisit({ newVisit: { date, clientId, start }, draft: { durationMinutes } })`。回の上で押したときは足さない
+- 動かす（〈利用者さん〉の広い画面・今日以降の取り消しでない・休みでない回）：HTML のドラッグ（週の予定と同じ。つかんだ位置の差を保つ・15分に丸める・落とす所に影）。週は落とした日時、月は落としたマスの日で同じ時刻を `draft`（日付・開始（早）・開始（遅）は幅を保つ）に入れて欄を開く。範囲（この回だけ／これ以降／すべて）は欄で選ぶ。今日より前の日・7:00〜20:00 の外は動かさず知らせる。同じ日時なら何もしない。保存で日時が変わり担当を選ばず、新しい日に今の案があれば、カレンダーの上に「〈日〉の案に空き時間で入れる」の知らせ（`pcal-notice`・`pcal-insert`。`lib/week` の `insertIntoPlan`。入らなければ理由。週の予定と同じ）
+- 下に1行の説明（足し方・動かし方）と、作ってある最後の日より後を見ているときは「M/D より後の訪問はまだ作っていません（「月の予定」で作ります）」（`pcal-unmade`）
+- 狭い画面（600px 以下。`data-layout="list"`）：日ごとのリスト（`pcal-list`・`pcal-day`）。週は7日（訪問の無い日は「訪問なし」）、月はその月の訪問のある日と今日。足す・動かすは出さない
+- 印刷：道具の行のボタン・説明・マスの「＋」・知らせを出さない（期間の見出しは出す）
+
+### 〈利用者さん〉の画面の中身
+
+#### 予定のタブ
+
+- 左：繰り返し（`PatternsSection`。下）と休み（`schedule-leaves`。これからの休みを読むだけ。休みの機能を切っても出す。「休みを入れる・直す」は休みのタブへ）。狭い画面では繰り返しは読むだけで「繰り返しを足す・直すのは広い画面でできます」
+- 右：`PersonCalendar`（`kind="client"`。`dayNote` はその日に休みなら「休み」）
+
+#### 基本情報のタブ（節）
+
+- 基本（`basic`：表示名・よみ（`client-kana`）・メモ・色）
+- 段階と紹介元（`stage`：段階（`client-stage-select`）・枠を仮押さえする・紹介元（`client-referrer-name`）・連絡先・メールアドレス（任意。`client-referrer-email`。`normalizeEmail`）・メモ。`clientStage` を切れば「段階」だけで、段階は「利用中／終了」の2つ（ほかの段階の人はそのまま））。読むときに仮押さえの人は `tentative-box`：「本登録にする」（段階を利用中に）・「仮押さえを取り消す」（確認のうえ `lib/tentative` の `cancelTentative` でその人の繰り返し・訪問・〈利用者さん〉を消し、一覧へ）
+- 住所（`place`：`ClientPlaceEditor`。読むときは郵便番号・住所・地区・地図の位置と、位置があれば `RouteMap`（1点・高さ 180））
+- 特性（`traits`：`TraitsEditor`）
+- 訪問先の決まりごと（`rules`。`visitNotes` が入のとき：入り方・鍵・駐車場・注意の4つ（各200字。`visit-rules-form`）。注意書き「実在の人の名前・住所などの個人情報は入れないでください。」）。表示は `components/VisitRules.tsx`（〈スタッフ〉のスマホ画面・日の予定の帯の詳細・訪問の詳細の欄）
+- 新しい人（`#/clients/new`）は「基本」の節（`new`）に基本と段階の入力をまとめて開き、「住所・特性・担当・繰り返し・休みは、保存してから入れられます」。保存するとその人の画面の基本情報へ（`replace`）、取り消すと一覧へ（何も入れていなければ確かめない）
+- 保存の検査：郵便番号は `normalizePostalCode`（直せなければ保存しない）・紹介元のメール・同じ名前は保存しない（Excel で名前で引くため）・`clientSchema`。段階に合わせて予定の対象・仮押さえを `withStage` で決める。終了にしたら「一覧の「終了の人も出す」で出ます」と知らせる
+
+#### 担当・相性のタブ
+
+- 担当（`staffing`：いつもの担当（`client-usual`）と、`allowedStaff` が入なら「担当できる人を限る」と利用中の〈スタッフ〉のチップ（`PickChips`・`client-allowed`・`bulk={false}`）。入れたときに誰も選んでいなければいつもの担当を選んでおく。限るのに1人も選ばなければ保存しない。保存のとき休止中の人は外す。読むときは `ClientStaffRows`（名前は `PersonNames`：押すと詳細の吹き出し。`view-allowed-staff`・`view-usual-staff`））
+- 〈スタッフ〉に求めること（`conds`：必要条件・希望の `ConditionsEditor`。読むときは `CondRows` と条件のチップ）
+- 相性（読むだけ。`compat` が入のとき）：`ClientCompatRows`（記号ごとの利用中の〈スタッフ〉の人数と名前。`view-compat-*`）と「相性の表で直す」（相性の画面をその人の名前で絞って開く `?cf=`）
+
+#### 休みのタブ（`pages/ClientLeavesSection.tsx`。ADR-0013。PRD D65）
+
+- 休みの一覧（期間・理由・その期間の訪問 N件・確定した日の数・終わった休みは「（終わった休み）」）と「休みを入れる」（`leave-add`）・行の「直す」（`leave-edit`）
+- 入力（`leave-form`）：開始日（`leave-from`）・終了日（`leave-to`。初期値は今日〜今日）・理由（`leave-note`。100字まで）と「保存」（`leave-save`）・「取り消し」（`leave-cancel`）・直すときは「この休みを消す」（`leave-remove`。確認してから消す。元に戻るだけ）
+- 入れる・直す前に、休みと重なる確定した日（`leaveConfirmedDates`）があれば「確定した日（10/20・10/27）に〈名前〉の訪問があります。その日の「日の予定」で案を作り直してください」とその日へのリンクを出す（確認ではなく注意。保存はできる）
+- 休みの訪問は AI案・まとめて作る・空き状況から外れる。日・週・月での見せ方は各画面のファイル。〈スタッフ〉のスマホ画面は休みの訪問を出さない
+
+#### 繰り返し（`pages/PatternsSection.tsx`。ADR-0012・0013。PRD D37・D64・D310）
+
+- 見出し「繰り返し」と「繰り返しを足す」（`pattern-add`）。説明は箇条書き（押すとカレンダーで目立たせる・足すと作ってある最後の日まで作る・その先は月の予定）
+- 一覧の行（`pattern-row`・`data-pattern`）：押せる文（`pattern-pick`。`aria-pressed`。種類・`patternWhenText`・所要・`periodText`・いつもの担当）と「直す」（`pattern-edit`）・「終わらせる」（`pattern-end`）
+- 直す・足すの入力（`pattern-form`）：種類（選ぶと所要の初期値）・繰り返し（毎週／隔週／3週ごと／4週ごと／毎月（第N週）。`pattern-repeat`）・曜日（`pattern-weekdays`）・第何週（`pattern-month-weeks`）・時間の決め方・開始（早・遅）・曜日ごとの時刻（`pattern-per-day`・`pattern-daytimes`）・所要・開始日／いつから変えますか・終了日・いつもの担当・メモ。「保存」（`pattern-save`）・「取り消し」（`pattern-cancel`）・直すときは「この繰り返しを消す」（`pattern-remove`）
+- 足す：`applyPatterns` で今日から作ってある最後の日まで作る。直す：`splitPattern`（作り直す N件・確定した日 M日を確かめる）。消す：`removePattern`（今日以降の N件を確かめる）
+- 終わらせる（`pattern-end-form`）：最後の日（`pattern-end-last`。初期値は今日。終わっていればその終了日、まだ始まっていなければ開始日で、そのときは「開始日の回も要らないときは「直す」の「この繰り返しを消す」で消します」（`pattern-end-before`））と「保存」（`pattern-end-save`）。`visitOps` の `endPatternOp`（終了日を入れ、最後の日より後で今日以降の、この回だけ変えていない・取り消していない回を消す。確定した日の数）を確かめてから入れる
+- 毎月のパターンは `patternMonthly` を切っても `repeat` と `monthWeeks` を残し、読むだけと注記（`pattern-monthly-off`）
+- 入力の変更（開いたときとの違い。終わらせるは最後の日を変えたとき）を `onDirty` で画面へ知らせる
+
+#### `lib/personPage.ts`（純粋関数。テストあり）
+
+`personPathKind`・`tabOf`・`tabSearch`・`pickFields`・`mergeFields`・`calViewOf`・`monthWeeksMon`・`calDates`・`shiftAnchor`・`calTitle`・`clientCalItems`・`staffCalItems`・`itemsByDate`・`lastMadeDate`・`staffAbsencesIn`・`slotOf`・`clientStaffGroups`（〈利用者さん〉から見た相性の記号ごとの〈スタッフ〉）
 
 #### `lib/viewMode.ts`（純粋関数。テストあり）
 
-- `isDirty(form, base, extra)`：編集の入力と比べる元（既存の人は保存した中身、新しい人は開いたときの空の欄）を JSON で比べる。`traits` は `cleanTraits`（null・空の文字・空の配列のキーを消す）で未入力を取り除いてから比べる。元が無ければ変更あり。`extra` は欄の外の入力が変わったか
-- `discardDialog(when, term, name, next)`：`view`＝閲覧に戻る・`close`＝欄を閉じる・`switch`＝別の人を開く の確認ダイアログの頼み（見出し・本文・確定「捨てて〜」（危険の色）・取り消し「編集を続ける」）。呼び方は `org.terms`
-- `orDash`（空なら「—」）・`splitLeaves(leaves, today)`（これからの休み（今日を含む・開始日の順）と終わった件数）
-
-#### `components/ui.tsx` の `SidePanel` に足したもの
-
-`headActions`・`focusKey`（[pages-common.md](pages-common.md) の「右の欄」）。
-
-#### 確かめ
-
-`scripts/e2e-view.cjs`：一覧の「開く」・`?id=`・相性の吹き出しのリンクで閲覧の欄が開き入力欄が無い・中身の項目・地図・節の見出しが h3・「編集する」で編集の欄（主ボタンにしない）・保存と取り消しで閲覧に戻りフォーカスは「編集する」・変更があるまま取り消す・×・Esc・別の人の `?id=` で確認が出て、断れば編集が続く・変更が無ければ・同じ人の `?id=`・特性を未確認に戻しただけ・担当できる人を限るを入れて外しただけなら確認しない・変更があるときだけ beforeunload・「追加」はすぐ編集・「まとめて地図に置く」の「編集」は編集の欄・定期パターンと休みは閲覧では読むだけ・相性・担当の名前。
-
-### 〈利用者さん〉の編集の欄の中身
-
-#### 基本
-
-- 表示名・よみ（`client-kana`。`clientSchema` の `kana: z.string().max(50).default('')`。ひらがな。古いデータは ''。Excel の〈利用者さん〉シートに「よみ」（任意の列））・住所（`ClientPlaceEditor`。下）・特性・条件（`components/conditions.tsx`）・いつもの担当・メモ
-- 「メールアドレス（任意）」：保存のときに `normalizeEmail` で直し、直せなければ保存しない
-
-#### 段階と紹介元（ADR-0015）
-
-- 節「段階と紹介元」（`client-stage-form`）：段階（`client-stage-select`）・枠を仮押さえする・紹介元（`client-referrer-name`）・紹介元のメールアドレス（任意。`client-referrer-email`。`normalizeEmail`）・連絡先・メモ
-- 段階を「終了」にすると予定・AI案に入らない。利用中の前の段階は「枠を仮押さえする」のときだけ予定に入る
-- 仮押さえ（`tentative-box`）：「本登録にする」（段階を利用中、`tentative: false`）・「仮押さえを取り消す」（確認のうえ、その人のパターンを `removePattern` で消し〈利用者さん〉を消す）。空き状況の仮押さえは「相談受付」で入る
-- `clientStage` が切なら段階は「利用中／終了」の2つで選ばせ、ほかの段階の人はそのまま（今の段階の名前を出す）
-
-#### 担当できる人（ADR-0014。PRD D68）
-
-- 節「担当できる人（社内の決まり）」（`client-allowed`）：「担当できる人を限る」のチェックと、利用中の〈スタッフ〉のチップ（`PickChips`。`bulk={false}` で「全員・全解除」を出さない）
-- 入れたときに誰も選んでいなければいつもの担当を選んでおく。限るのに1人も選ばなければ保存しない（理由を出す）。保存のとき休止中の人は外す
-- 〈スタッフ〉を休止にして保存するときの確認は [pages-staff.md](pages-staff.md)
-
-#### 訪問先の決まりごと（ADR-0013。PRD D66）
-
-- 節「訪問先の決まりごと」（`visit-rules-form`）：入り方・鍵・駐車場・注意の4つの入力（各200字）。注意書き「実在の人の名前・住所などの個人情報は入れないでください。」（データの画面と同じ文）
-- 表示は `components/VisitRules.tsx`（空の項目は出さない。どれも空なら何も出さない）。置く所：〈スタッフ〉のスマホ画面の各訪問の下、日の予定の時間軸の帯・順番のカードを押したときの詳細
-
-#### 定期パターン（`pages/PatternsSection.tsx`。ADR-0012・0013。PRD D37・D64）
-
-- 一覧：種類の色・曜日・間隔・時刻・所要・期間・いつもの担当。一覧の文は `lib/patternText` の `patternWhenText`（「毎月 第3・第4 木 10:00」「月 9:30・木 15:00」）
-- 欄：
-  - 種類（選ぶと所要の初期値が種類の標準の所要）
-  - 曜日（日〜土のトグル。1つ以上）
-  - 繰り返し：毎週／隔週／3週ごと／4週ごと／毎月（第N週）。毎月を選ぶと「第1〜第5」のトグル（1つ以上。第5は「第5（ある月だけ）」）
-  - 時間の決め方（ちょうど／幅）と開始（早・遅）。「曜日ごとに時刻を変える」を入れると、選んだ曜日ごとに開始（早・遅）の行（空の行は共通の時刻）
-  - 所要・開始日（初期値：今日）・終了日（空＝続く）・いつもの担当（空＝〈利用者さん〉のいつもの担当）・メモ
-- 足すと、展開済みの範囲（今日から、いまある訪問の最後の日まで）に `applyPatterns` で展開する
-- 直すときは「いつから変えますか」（初期値：今日）を出し、`splitPattern` の結果（作り直す訪問 N件、そのうち確定した日 M日の訪問）を確認してから入れる
-- 消すときも `removePattern` の結果の件数を確認する
-- 毎月のパターンは `patternMonthly` を切っても `repeat` と `monthWeeks` を残し、読むだけと注記
-
-#### 休み（`pages/ClientLeavesSection.tsx`。ADR-0013。PRD D65）
-
-- 置く所：〈利用者さん〉の編集の欄の「定期パターン」の下と、月の予定で〈利用者さん〉を選んだときの右の欄
-- 休みの一覧（期間・理由・その期間の訪問 N件）と 足す・直す・消す（開始日・終了日（初期値：今日〜今日）・理由（100字まで））
-- 足す・直す前に、休みと重なる確定した日（`leaveConfirmedDates`）があれば「確定した日（10/20・10/27）に〈名前〉の訪問があります。その日の「日の予定」で案を作り直してください」とその日へのリンクを欄に出す（確認ではなく注意。保存はできる）
-- 消すときは確認しない（元に戻るだけ。訪問は増えない）
-- 休みの訪問は AI案・まとめて作る・空き状況から外れる。日・週・月での見せ方は各画面のファイル。〈スタッフ〉のスマホ画面は休みの訪問を今の案・確定した割当にあっても出さない
+`isDirty(form, base, extra)`（JSON で比べる。`traits` は `cleanTraits` で未入力を取り除く。元が無ければ変更あり）・`orDash`（空なら「—」）
 
 #### `lib/leaves.ts`（画面の純粋関数。テストあり）
 
 `leavesOf(data, clientId)`（開始の順）・`saveLeave(d, leave)`（同じ ID は置き換え）・`removeLeave(d, id)`・`leaveVisitsOn(data, date)`（その日の休みの訪問と休み）・`leaveConfirmedDates(data, leave)`（休みの期間で、確定した割当にその〈利用者さん〉の訪問がある日）・`leaveVisits(data, leave)`（休みの期間のその〈利用者さん〉の取り消しでない訪問）・`keepLeaveVisits(cols, leaveVisitIds, before)`（確定するとき、休みの訪問を前の確定した担当のまま残す）
+
+#### 確かめ
+
+`scripts/e2e-view.cjs`（節の形・変更の確認・`?id=`・追加・吹き出しの名前・行を押す・アイコン）と `scripts/e2e-person-page.cjs`（タブ・予定のカレンダー・欄・空き枠から足す・ドラッグで動かす・繰り返し・休み・〈スタッフ〉の画面・390px・印刷）。
 
 ### 住所の入力（ADR-0016。PRD D86〜D90・D118〜D121）
 
@@ -137,14 +139,14 @@
 - ピンがある状態で郵便番号から住所を差し替えたら、ピンは残し、知らせに「位置は前のままです。『住所から置き直す』を押してください」を足す
 - 郵便番号のエラーと押せない理由は aria-describedby で結ぶ（読み上げ用の文字は .sr-only）。郵便番号の欄は16文字まで（空白の多い貼り付けも7桁に直す）
 - 見つからない・つながらない・時間切れは知らせてデータを変えない
-- `ClientPlaceEditor`：`place.postalCode` を持たせた〈利用者さん〉用（`key={form.id}`）
-- 使う所：〈利用者さん〉の編集（`ClientPlaceEditor`）・空き状況の場所（[pages-vacancy.md](pages-vacancy.md)）・〈スタッフ〉の自宅（[pages-staff.md](pages-staff.md)）
+- `ClientPlaceEditor`：`place.postalCode` を持たせた〈利用者さん〉用（住所の節を直すたびに作り直す）
+- 使う所：〈利用者さん〉の画面の住所の節（`ClientPlaceEditor`）・空き状況の場所（[pages-vacancy.md](pages-vacancy.md)）・〈スタッフ〉の自宅（[pages-staff.md](pages-staff.md)）
 
 #### まとめて地図に置く（`lib/placeAll.ts`・`pages/PlaceAllPanel.tsx`）
 
 - 一覧の上の「位置の無い〈利用者さん〉」のカード：ふつうのボタン「まとめて地図に置く」・注記・進み具合・「止める」・結果。画面を離れたら止める
 - `placeAllTargets(clients)`（対象・住所も郵便番号もない人）、`placeAll(targets, opts)`（1人ずつ順に・呼ぶたびに間隔をあける・止める・1人ごとに結果を返す）、`withFoundPlace(data, id, place)`（位置の無いときだけ書く update 用の純粋関数）
-- 置けなかった人の「編集」は編集の欄で開く
+- 置けなかった人の「編集」はその人の画面の住所の節を開く（`?tab=basic&edit=place`）
 
 ### 絞り込み（ADR-0021。PRD D108〜D112）
 
@@ -202,6 +204,7 @@
 - [ ] （ADR-0015）段階を「終了」にすると予定・AI案に入らず、一覧は「終了の人も出す」のときだけ出す。仮押さえは「相談受付」で入り、「本登録にする」で利用中になる
 - [ ] （ADR-0021）一覧を地区・チップ・検索で絞れる
 - [ ] （PRD D285）「訪問の種類」のチップ（例「リハビリ」）で、この週にその種類の訪問がある人に絞れる。複数押せばどれか
-- [ ] （ADR-0023）一覧の「開く」・`?id=` で閲覧の欄が開き、入力欄が無い。「編集する」で編集の欄になり、保存・取り消しで閲覧に戻る。変更があるまま取り消す・閉じる・別の人を開くと確認が出る。「追加」はすぐ編集の欄（`scripts/e2e-view.cjs`）
+- [ ] （ADR-0052）一覧の行・「開く」・`?id=` でその人の画面（`#/clients/:id`）が開き、節は読むだけ。「直す」でその節だけ入力欄になり、保存・取り消しで戻る。変更があるまま取り消す・タブを替える・別の人を開く・画面を移ると確認が出る。「追加」は新しい人の画面（`scripts/e2e-view.cjs`）
+- [ ] （ADR-0052）予定のタブのカレンダーで回を押すと訪問の詳細の欄、空き枠を縦にドラッグすると所要の長さで新しい訪問、回をドラッグすると範囲を選んで動かせる。繰り返しを足す・直す・終わらせる（`scripts/e2e-person-page.cjs`）
 - [ ] （ADR-0016 追記）`scripts/e2e-address.cjs` が通る：開いた・打っただけでは送らず送るのは zipcode・q だけ、郵便番号の正規化、候補と元に戻す、見つからない・つながらない・時間切れで知らせてデータを変えない、連打で1回・途中で閉じたら書かない・途中の書き換えで古い応答を捨てる、〈利用者さん〉の data-testid と保存
-- [ ] `lib/leaves`・`lib/patternText`・`lib/area`・`lib/clientFilter`・`lib/search`・`lib/viewMode`・`lib/addressLookup`・`lib/postalCode`・`lib/geocode`（偽物）・`lib/clientStage` のテストが通る
+- [ ] `lib/leaves`・`lib/patternText`・`lib/area`・`lib/clientFilter`・`lib/search`・`lib/viewMode`・`lib/personPage`・`lib/visitOps`・`lib/addressLookup`・`lib/postalCode`・`lib/geocode`（偽物）・`lib/clientStage` のテストが通る

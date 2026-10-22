@@ -1,4 +1,4 @@
-/* 〈スタッフ〉・〈利用者さん〉の画面の閲覧の欄（PRD D127〜D131。ADR-0023）。並びは吹き出し（detailPopover.css）と同じ形 */
+/* 〈スタッフ〉・〈利用者さん〉の画面の節の読むときの並び（PRD D308・D311。ADR-0052）。並びは吹き出し（detailPopover.css）と同じ形 */
 .person-view dl {
   display: grid;
   grid-template-columns: minmax(7em, auto) 1fr;

@@ -37,7 +37,7 @@ URL は既定のままなら消し、`replace` で書く。知らないチップ
 #### 吹き出し
 
 - 列の見出し・行の名前はボタン（`aria-haspopup="dialog"`・`aria-expanded`・`aria-controls`）で、押すと `DetailPopover`（自分の state で出す。開くのは1つだけ、`{ kind, id }` で持つ。もう一度押すと閉じる）
-- 中身は `StaffDetail`・`ClientDetail`（data-testid `compat-pop-link`・`compat-pop-counts`）。リンクで閲覧の欄
+- 中身は `StaffDetail`・`ClientDetail`（data-testid `compat-pop-link`・`compat-pop-counts`）。リンクでその人の画面（`#/staff/:id`・`#/clients/:id`）
 - 絞り込みで見出しが消えたら閉じる
 
 #### `lib/compatView.ts`（純粋関数。テストあり）

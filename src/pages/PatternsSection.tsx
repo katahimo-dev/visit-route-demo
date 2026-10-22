@@ -1,9 +1,9 @@
-import { CalendarClock, Check, Pencil, Plus, Repeat, Trash2, X } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { CalendarClock, CalendarX2, Check, Pencil, Plus, Repeat, Trash2, X } from 'lucide-react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useConfirm } from '../components/ConfirmDialog';
 import { enterToSave, FieldError } from '../components/FieldError';
 import { useToast } from '../components/Toast';
-import { Hint, IconButton, SectionTitle, WithIcon } from '../components/ui';
+import { Hint, SectionTitle, WithIcon } from '../components/ui';
 import { TypeDot } from '../components/visitType';
 import type { DemoData } from '../contracts/data';
 import { type Client, type Pattern, patternSchema } from '../contracts/documents';
@@ -12,13 +12,16 @@ import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
 import { byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { EVERY_WEEKS_LABELS, mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
 import { useFeature } from '../lib/useFeature';
+import { endPatternOp } from '../lib/visitOps';
 import { applyPatterns, removePattern, splitPattern } from '../patterns';
 import { useDemoData } from '../store';
 
 /**
- * 〈利用者さん〉の欄の中の「定期パターン」の節（ADR-0012。PRD D37・D38）：一覧と 足す・直す・消す。
+ * 〈利用者さん〉の画面の予定のタブの「繰り返し」（定期パターン。ADR-0012・0052。PRD D37・D38・D308）：一覧と 足す・直す・終わらせる・消す。
+ * どれも「直す（足す・終わらせる）→ 保存」の形で、保存を押すまでデータを変えない（取り消しで捨てる）。
  * 足すと展開済みの範囲（今日から、いまある訪問の最後の日まで）に展開し、直すときは「いつから」で分けて（splitPattern）、
- * 消すときは今日以降の訪問を除く（removePattern）。どちらも件数と確定した日を確認してから入れる
+ * 終わらせるときは最後の日より後の回を消し（visitOps の endPatternOp）、消すときは今日以降の訪問を除く（removePattern）。
+ * 直す・終わらせる・消すは件数と確定した日を確認してから入れる。行を押すとその回をカレンダーで強調する（onSelect）
  */
 
 type Form = {
@@ -102,13 +105,46 @@ function lastVisitDate(d: DemoData, today: string): string {
   return d.visits.reduce((m, v) => (v.date > m ? v.date : m), today);
 }
 
-export function PatternsSection({ client }: { client: Client }) {
+export function PatternsSection({
+  client,
+  selected = null,
+  onSelect,
+  onDirty,
+  readOnly = false,
+}: {
+  client: Client;
+  /** カレンダーで強調している繰り返し */
+  selected?: string | null;
+  /** 行を押したとき（同じ行をもう一度押すと null） */
+  onSelect?: (id: string | null) => void;
+  /** 入力中の変更の有無（画面を離れる前の確認に使う） */
+  onDirty?: (dirty: boolean) => void;
+  /** 読むだけ（狭い画面。足す・直す・終わらせるを出さない） */
+  readOnly?: boolean;
+}) {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
   const confirmDialog = useConfirm();
   const today = jstDate(Date.now());
   const [form, setForm] = useState<Form | null>(null);
+  /** 開いたときの入力（変更があるかの判定） */
+  const [opened, setOpened] = useState<Form | null>(null);
+  /** 終わらせる繰り返しと最後の日（null：閉じている） */
+  const [ending, setEnding] = useState<{ id: string; last: string; opened: string } | null>(null);
+  const open = (f: Form | null) => {
+    setError(null);
+    setEnding(null);
+    setForm(f);
+    setOpened(f);
+  };
+  const dirty =
+    (form !== null && JSON.stringify(form) !== JSON.stringify(opened)) ||
+    (ending !== null && ending.last !== ending.opened);
+  useEffect(() => {
+    onDirty?.(dirty);
+  }, [dirty, onDirty]);
+  useEffect(() => () => onDirty?.(false), [onDirty]);
   /**
    * 毎月の第N週・曜日ごとの時刻（ADR-0028 の patternMonthly）。切なら選べない。今の値がそれなら欄は読むだけで出す
    * （パターンは事実なので、訪問は今どおり作られる）
@@ -198,8 +234,8 @@ export function PatternsSection({ client }: { client: Client }) {
         const c = applyPatterns({ patterns: [p], visits: d.visits, clients: d.clients }, range, today);
         return { ...d, patterns: [...d.patterns, p], visits: c.visits };
       });
-      setForm(null);
-      toast(`定期パターンを足しました（訪問 ${count}件）`);
+      open(null);
+      toast(`繰り返しを足しました（訪問 ${count}件）`);
       return;
     }
     // 直す：「いつから」で分けて、その日以降の（この回だけの変更でない）訪問を作り直す
@@ -219,7 +255,7 @@ export function PatternsSection({ client }: { client: Client }) {
     const c = splitPattern(data, original.id, next, form.since, today, nid);
     const m = confirmedDays(data, c);
     const ok = await confirmDialog({
-      title: `定期パターンを${mdText(form.since)}から変えますか？`,
+      title: `繰り返しを${mdText(form.since)}から変えますか？`,
       body:
         `作り直す訪問は ${c.removed.length}件（新しく ${c.added.length}件を作ります）。` +
         (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります（その日の確定した割当は見直しが要ります）。` : '') +
@@ -231,15 +267,15 @@ export function PatternsSection({ client }: { client: Client }) {
       const x = splitPattern(d, original.id, next, form.since, today, nid);
       return { ...d, patterns: x.patterns, visits: x.visits };
     });
-    setForm(null);
-    toast(`定期パターンを直しました（作り直した訪問 ${c.added.length}件）`);
+    open(null);
+    toast(`繰り返しを直しました（作り直した訪問 ${c.added.length}件）`);
   };
 
   const remove = async (p: Pattern) => {
     const c = removePattern(data, p.id, today);
     const m = confirmedDays(data, c);
     const ok = await confirmDialog({
-      title: 'この定期パターンを消しますか？',
+      title: 'この繰り返しを消しますか？',
       body:
         `今日以降の訪問 ${c.removed.length}件を消します（今日より前の訪問・この回だけ変えた訪問は単発の訪問として残します）。` +
         (m > 0 ? `\nそのうち確定した日 ${m}日の訪問があります。` : ''),
@@ -251,8 +287,32 @@ export function PatternsSection({ client }: { client: Client }) {
       const x = removePattern(d, p.id, today);
       return { ...d, patterns: x.patterns, visits: x.visits };
     });
-    if (form?.id === p.id) setForm(null);
-    toast(`定期パターンを消しました（訪問 ${c.removed.length}件）`);
+    if (form?.id === p.id) open(null);
+    if (selected === p.id) onSelect?.(null);
+    toast(`繰り返しを消しました（訪問 ${c.removed.length}件）`);
+  };
+
+  /** 終わらせる：最後の日より後の回を消し、終了日を入れる（確認してから） */
+  const end = async () => {
+    if (!ending) return;
+    setError(null);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ending.last)) {
+      setError('最後の日を入れてください');
+      return;
+    }
+    const r = endPatternOp(data, ending.id, ending.last, today);
+    const ok = await confirmDialog({
+      title: `繰り返しを${mdText(ending.last)}で終わらせますか？`,
+      body:
+        `${mdText(ending.last)}より後の訪問 ${r.removed}件を消します。` +
+        (r.confirmedDays > 0 ? `\nそのうち確定した日 ${r.confirmedDays}日の訪問があります。` : '') +
+        '\nこの回だけ変えた訪問・取り消した訪問はそのままです。',
+      confirmLabel: '終わらせる',
+    });
+    if (!ok) return;
+    update((d) => endPatternOp(d, ending.id, ending.last, today).data);
+    setEnding(null);
+    toast(`繰り返しを${mdText(ending.last)}で終わらせました（消した訪問 ${r.removed}件）`);
   };
 
   const toggleDay = (w: number) => {
@@ -268,38 +328,52 @@ export function PatternsSection({ client }: { client: Client }) {
       <SectionTitle
         icon={Repeat}
         aside={
-          !form && (
+          !form &&
+          !readOnly && (
             <button
               type="button"
               className="btn btn-small"
-              onClick={() => {
-                setError(null);
-                setForm(formOf(null, today, 60));
-              }}
+              onClick={() => open(formOf(null, today, 60))}
+              data-testid="pattern-add"
             >
               <WithIcon icon={Plus} size={14}>
-                パターンを追加
+                繰り返しを足す
               </WithIcon>
             </button>
           )
         }
       >
-        定期パターン
+        繰り返し
       </SectionTitle>
       <Hint>
-        決まった曜日・時刻の訪問です。足すと、今日からいまある訪問の最後の日まで、訪問を作ります。その先の月は「月の予定」で作ります。
-        {!client.active && ` この${terms.client}は休止中なので、訪問は作りません。`}
+        <ul className="hint-list">
+          <li>決まった曜日・時刻の訪問です。押すと、その回をカレンダーで目立たせます。</li>
+          <li>足すと、今日から作ってある最後の日まで訪問を作ります。その先の月は「月の予定」で作ります。</li>
+          {!client.active && <li>この{terms.client}は利用中でないので、訪問は作りません。</li>}
+        </ul>
       </Hint>
       {patterns.length === 0 ? (
-        <span className="sub">定期パターンはありません</span>
+        <span className="sub">繰り返しはありません</span>
       ) : (
         <ul className="pattern-list">
           {patterns.map((p) => {
             const t = typeOf(data.visitTypes, p.typeId);
             const usual = staffName(p.usualStaffId);
             return (
-              <li key={p.id} className="pattern-row" data-testid="pattern-row">
-                <span className="row" style={{ gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
+              <li
+                key={p.id}
+                className={`pattern-row${selected === p.id ? ' is-selected' : ''}`}
+                data-testid="pattern-row"
+                data-pattern={p.id}
+              >
+                <button
+                  type="button"
+                  className="pattern-pick row"
+                  aria-pressed={selected === p.id}
+                  onClick={() => onSelect?.(selected === p.id ? null : p.id)}
+                  disabled={!onSelect}
+                  data-testid="pattern-pick"
+                >
                   {t ? (
                     <span className="type-mark" title={`種類：${t.name}`}>
                       <TypeDot type={t} />
@@ -313,23 +387,87 @@ export function PatternsSection({ client }: { client: Client }) {
                     {p.durationMinutes}分・{periodText(p)}
                     {usual ? `・いつもの担当 ${usual}` : ''}
                   </span>
-                </span>
-                <span className="actions">
-                  <IconButton
-                    icon={Pencil}
-                    label={`${patternWhenText(p)}のパターンを直す`}
-                    onClick={() => {
-                      setError(null);
-                      setForm(formOf(p, today, p.durationMinutes));
-                    }}
-                  />
-                  <IconButton
-                    icon={Trash2}
-                    tone="danger"
-                    label={`${patternWhenText(p)}のパターンを消す`}
-                    onClick={() => remove(p)}
-                  />
-                </span>
+                </button>
+                {!readOnly && (
+                  <span className="actions">
+                    <button
+                      type="button"
+                      className="btn btn-small btn-text"
+                      aria-label={`${patternWhenText(p)}の繰り返しを直す`}
+                      onClick={() => open(formOf(p, today, p.durationMinutes))}
+                      data-testid="pattern-edit"
+                    >
+                      <WithIcon icon={Pencil} size={14}>
+                        直す
+                      </WithIcon>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-small btn-text"
+                      aria-label={`${patternWhenText(p)}の繰り返しを終わらせる`}
+                      onClick={() => {
+                        open(null);
+                        // 既定の最後の日：終わっていればその日、まだ始まっていなければ開始日、ほかは今日
+                        const last = p.to !== null && p.to < today ? p.to : p.from > today ? p.from : today;
+                        setEnding({ id: p.id, last, opened: last });
+                      }}
+                      data-testid="pattern-end"
+                    >
+                      <WithIcon icon={CalendarX2} size={14}>
+                        終わらせる
+                      </WithIcon>
+                    </button>
+                  </span>
+                )}
+                {ending?.id === p.id && (
+                  <fieldset className="pattern-form stack" data-testid="pattern-end-form" onKeyDown={enterToSave(end)}>
+                    <legend>繰り返しを終わらせる</legend>
+                    <label>
+                      最後の日
+                      <input
+                        type="date"
+                        value={ending.last}
+                        min={p.from}
+                        onChange={(e) => setEnding({ ...ending, last: e.target.value })}
+                        data-testid="pattern-end-last"
+                      />
+                    </label>
+                    <span className="sub">
+                      この日より後の回を消します（この回だけ変えた回・取り消した回は残します）。
+                    </span>
+                    {p.from > today && (
+                      <span className="sub" data-testid="pattern-end-before">
+                        まだ始まっていない繰り返しです（{mdText(p.from)}
+                        から）。開始日の回も要らないときは、「直す」の「この繰り返しを消す」で消します。
+                      </span>
+                    )}
+                    <FieldError token={errorState}>{error}</FieldError>
+                    <div className="row">
+                      <button
+                        type="button"
+                        className="btn btn-small btn-primary"
+                        onClick={end}
+                        data-testid="pattern-end-save"
+                      >
+                        <WithIcon icon={Check} size={14}>
+                          保存
+                        </WithIcon>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => {
+                          setEnding(null);
+                          setError(null);
+                        }}
+                      >
+                        <WithIcon icon={X} size={14}>
+                          取り消し
+                        </WithIcon>
+                      </button>
+                    </div>
+                  </fieldset>
+                )}
               </li>
             );
           })}
@@ -338,7 +476,7 @@ export function PatternsSection({ client }: { client: Client }) {
 
       {form && (
         <fieldset className="pattern-form stack" data-testid="pattern-form" onKeyDown={enterToSave(save)}>
-          <legend>{form.id ? 'パターンを直す' : 'パターンを追加'}</legend>
+          <legend>{form.id ? '繰り返しを直す' : '繰り返しを足す'}</legend>
           <div className="form-grid">
             <label>
               種類
@@ -587,24 +725,32 @@ export function PatternsSection({ client }: { client: Client }) {
             </span>
           )}
           <FieldError token={errorState}>{error}</FieldError>
-          <div className="row">
-            <button type="button" className="btn btn-small" onClick={save}>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-small btn-primary" onClick={save} data-testid="pattern-save">
               <WithIcon icon={Check} size={14}>
-                {form.id ? '直す' : '足す'}
+                保存
               </WithIcon>
             </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => {
-                setForm(null);
-                setError(null);
-              }}
-            >
+            <button type="button" className="btn btn-small" onClick={() => open(null)} data-testid="pattern-cancel">
               <WithIcon icon={X} size={14}>
-                やめる
+                取り消し
               </WithIcon>
             </button>
+            {form.id && (
+              <button
+                type="button"
+                className="btn btn-small btn-danger"
+                onClick={() => {
+                  const p = data.patterns.find((x) => x.id === form.id);
+                  if (p) void remove(p);
+                }}
+                data-testid="pattern-remove"
+              >
+                <WithIcon icon={Trash2} size={14}>
+                  この繰り返しを消す
+                </WithIcon>
+              </button>
+            )}
           </div>
         </fieldset>
       )}

@@ -1,5 +1,5 @@
 // コマンドパレット（Ctrl+K。PRD D181〜D183。ADR-0027）の中身と絞り込みを決める純粋関数。
-// 行き先は今ある URL だけ（画面・`?do=` の入口・`?id=` の閲覧の欄）。データは書き換えない
+// 行き先は今ある URL だけ（画面・`?do=` の入口・人の画面）。データは書き換えない
 import type { Client, Staff, Terms, Visit } from '../contracts/documents';
 import type { Features } from '../contracts/features';
 import { addDays } from '../domain/time';
@@ -243,7 +243,7 @@ export function paletteActions(
 
 /**
  * 人の候補：〈利用者さん〉（名前・よみ。利用中でなければ段階を添える）と〈スタッフ〉（名前。よみは持たない）。
- * 選ぶと一覧の画面の閲覧の欄（`?id=`。PRD D127）
+ * 選ぶとその人の画面（`#/clients/:id`・`#/staff/:id`。PRD D308）
  */
 export function palettePeople(
   clients: readonly Pick<Client, 'id' | 'displayName' | 'kana' | 'stage'>[],
@@ -257,7 +257,7 @@ export function palettePeople(
         kind: 'client',
         label: c.displayName,
         hint: [c.kana, c.stage === 'active' ? '' : STAGE_LABELS[c.stage]].filter(Boolean).join('・'),
-        to: `/clients?id=${encodeURIComponent(c.id)}`,
+        to: `/clients/${encodeURIComponent(c.id)}`,
         words: [c.kana],
       }),
     ),
@@ -267,7 +267,7 @@ export function palettePeople(
         kind: 'staff',
         label: s.name,
         hint: s.active ? terms.staff : `${terms.staff}・休止中`,
-        to: `/staff?id=${encodeURIComponent(s.id)}`,
+        to: `/staff/${encodeURIComponent(s.id)}`,
       }),
     ),
   ];

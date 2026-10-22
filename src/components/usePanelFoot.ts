@@ -7,14 +7,14 @@ import { panelFit, toastPlace } from '../lib/panelFit';
  * - 貼り付いているか：帯のすぐ後ろの番兵（高さ0）が巻く領域に見えていなければ、内容が帯の下に隠れている。
  *   帯の `data-stuck` に "true"／"false" を書き、区切り（背景・上の線・影）はそのときだけ CSS で出す
  * - 帯の高さ：巻く領域の `--drawer-foot-h` に入れ、`scroll-padding-bottom` に使う（Tab で入った入力欄が帯の裏に隠れない）
- * 帯が無い欄（閲覧）では何もしない。data-stuck は React が持たない属性なので、描き直しでも消えない
+ * 帯が無い欄では何もしない。data-stuck は React が持たない属性なので、描き直しでも消えない
  */
 export function usePanelFoot(
   body: RefObject<HTMLElement | null>,
   foot: RefObject<HTMLElement | null>,
   end: RefObject<HTMLElement | null>,
   hasFoot: boolean,
-  /** 巻く領域の要素が入れ替わったら変える値（入力の欄の form ⇄ 閲覧の div。PRD D251） */
+  /** 巻く領域の要素が入れ替わったら変える値（入力の欄の form ⇄ div。PRD D251） */
   bodyKind?: string,
 ): void {
   // biome-ignore lint/correctness/useExhaustiveDependencies: bodyKind は要素の入れ替わりを知るためだけに見る

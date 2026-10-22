@@ -7,7 +7,7 @@
 // 「すべて」を選んで「次へ」（とばすでも）でその入り切りで初期データを作り直し「条件が変わった」にならない・「基本」に戻せる・
 // 別のタブで変わっていたら入り切りだけ書き換える・もう一度見るでは聞かない（PRD D276）・
 // 「閉じる」で閉じて見たことを localStorage（DemoData と別のキー）に覚える・「今日の予定を開く」で閉じて今日の日の画面へ・
-// 最後の枚まで進んだら覚える・読み直しても出ない・Esc と「とばす」でも覚える・?id=・?do= のリンクでは出さない（見たことにもしない）・データの画面の「案内をもう一度見る」で開き閉じるとフォーカスがボタンへ・
+// 最後の枚まで進んだら覚える・読み直しても出ない・Esc と「とばす」でも覚える・?id=・?do=・人の画面（#/clients/:id）のリンクでは出さない（見たことにもしない）・データの画面の「案内をもう一度見る」で開き閉じるとフォーカスがボタンへ・
 // 初期状態に戻しても見たことは残る・「見た」の印（scripts/lib/tourSeen.cjs）があれば自動で出ない・月の印刷の画面では出ない・
 // 390px で収まる・印刷で出さない）、
 // データの画面のファイル選択（すべて同じ部品・日本語のボタン「ファイルを選ぶ」と未選択の文・ブラウザ標準の input は見えない・
@@ -395,20 +395,18 @@ async function tourEscSkip(b) {
     check((await seenValue(page)) === '1', '「とばす」で閉じ、見たことを覚える');
     await ctx.close();
   }
-  // ?id=・?do= のリンクで開いたときは出ない（裏の右の欄にフォーカスが移るため）。次にふつうに開くと出る
+  // ?id=・?do= のリンク、人の画面（#/clients/:id）のリンクで開いたときは出ない。次にふつうに開くと出る
   {
     const { ctx, page } = await newPage(b, { human: true });
-    await open(page, '/clients?id=c1', '.drawer');
+    await open(page, '/clients?id=c1', '[data-testid="person-view"]');
     await settle(page, 500);
-    const st = await page.evaluate(() => ({
-      focusInDrawer: !!document.activeElement?.closest('.drawer'),
-      inert: document.getElementById('root').inert,
-    }));
     check(
-      (await tour(page).count()) === 0 && st.focusInDrawer,
-      '?id= のリンクで開くとツアーは出ず、右の欄にフォーカス',
-      st,
+      (await tour(page).count()) === 0 && (await page.getByTestId('person-view').getAttribute('data-id')) === 'c1',
+      '?id= のリンクで開くとツアーは出ず、その人の画面',
     );
+    await open(page, '/staff/s1', '[data-testid="person-view"]');
+    await settle(page, 500);
+    check((await tour(page).count()) === 0, '人の画面（#/staff/:id）のリンクで開くとツアーは出ない');
     check((await seenValue(page)) === null, '?id= で出さなくても見たことにはしない');
     await open(page, `/plan?date=${TODAY}&do=absence`, '.drawer');
     await settle(page, 500);

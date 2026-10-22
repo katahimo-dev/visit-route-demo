@@ -3,7 +3,7 @@
 // 設定のタブは「設定」、勤務の見込みは「勤務時間（シフト）」、欠勤・キャンセルは印を付けず今日の日の画面の欄を開く）・
 // 「予定」「設定」は最後に開いた表示・タブ・設定のタブ・メニューから外した画面の入口・画面の見出しが画面の名前とそろう）、
 // コマンドパレット（Ctrl+K で開く・role=dialog・aria-modal・combobox と listbox（aria-activedescendant）・裏の inert とスクロールのロック・
-// 打つと絞り込む・↑↓（端で回る）・Enter で移る・操作（欠勤・キャンセル）・人の名前（よみ・カタカナ）で閲覧の欄・Esc とフォーカスの戻り・
+// 打つと絞り込む・↑↓（端で回る）・Enter で移る・操作（欠勤・キャンセル）・人の名前（よみ・カタカナ）でその人の画面・Esc とフォーカスの戻り・
 // 背景で閉じる・Tab が中で回る・Ctrl+K で閉じる・入力欄の中の Ctrl+K（入れた文字はそのまま・閉じたら入力欄へ）・右の欄が開いているときは開かない）、
 // 390px（上の帯のボタンから開ける・収まる・上の帯の名前・引き出しの並び・下のタブ（ホーム・予定・欠勤・空き状況・メニュー））、印刷で出さない、300人×60人で打つたびの速さ。
 //
@@ -445,7 +445,7 @@ async function keyboard(page) {
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
 
-// ---- 人の名前で閲覧の欄 ----
+// ---- 人の名前でその人の画面 ----
 async function people(page) {
   await open(page, '/home');
   const p = await seedPeople(page);
@@ -467,16 +467,15 @@ async function people(page) {
   const view = page.locator('[data-testid="person-view"][data-kind="client"]');
   await view.waitFor({ timeout: 10000 });
   check(
-    (await view.getAttribute('data-id')) === p.client.id && !hashOf(page).includes('id='),
-    '〈利用者さん〉を選ぶと一覧の閲覧の欄が開く（?id= は消える）',
+    (await view.getAttribute('data-id')) === p.client.id && hashOf(page) === `#/clients/${p.client.id}`,
+    '〈利用者さん〉を選ぶとその人の画面（#/clients/:id）が開く',
     hashOf(page),
   );
   check(
-    await page.evaluate(() => !!document.activeElement?.closest('.drawer')),
-    '閲覧の欄が開いたらフォーカスは欄の中',
+    await page.evaluate(() => document.activeElement !== document.body && document.activeElement !== null),
+    'その人の画面へ移ってもフォーカスを body に落とさない',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'nav-person.png') });
-  await page.keyboard.press('Escape');
   // 〈スタッフ〉は名前で（マウスで押す）
   await page.getByTestId('cmdk-open').click();
   await palette(page).waitFor();
@@ -491,8 +490,10 @@ async function people(page) {
   await page.waitForURL(/#\/staff/);
   const sv = page.locator('[data-testid="person-view"][data-kind="staff"]');
   await sv.waitFor({ timeout: 10000 });
-  check((await sv.getAttribute('data-id')) === p.staff.id, '〈スタッフ〉を押すと閲覧の欄が開く');
-  await page.keyboard.press('Escape');
+  check(
+    (await sv.getAttribute('data-id')) === p.staff.id && hashOf(page) === `#/staff/${p.staff.id}`,
+    '〈スタッフ〉を押すとその人の画面（#/staff/:id）が開く',
+  );
 }
 
 // ---- Esc とフォーカスの戻り・背景・Tab・入力欄の中の Ctrl+K ----

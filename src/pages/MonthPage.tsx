@@ -36,12 +36,11 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientPicker } from '../components/ClientPicker';
 import { useConfirm } from '../components/ConfirmDialog';
 import { FieldError } from '../components/FieldError';
-import { ClientDots } from '../components/glance';
 import { LoadBar, LoadLegend, LoadRowsSample, loadSummary, TypeStack } from '../components/loadBar';
 import { MenuButton, type MenuItem as MoreItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
@@ -53,7 +52,6 @@ import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
-import { useOpenVisit } from '../components/VisitPanel';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
 import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
@@ -69,10 +67,9 @@ import {
   withEdges,
 } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
-import { attempt, byDisplayName, byName, dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { bulkConfirmDialog, bulkConfirmLabel, bulkConfirmTargets, bulkConfirmWhy, confirmDay } from '../lib/confirmDay';
 import { isOn } from '../lib/features';
-import { clientDot } from '../lib/glance';
 import { attentionTarget, type LinkTarget } from '../lib/links';
 import {
   addMonths,
@@ -82,7 +79,6 @@ import {
   type ClientDay,
   calendarWeeks,
   clientDay,
-  clientMonth,
   type DayMarks,
   type DayPlan,
   type DayStatus,
@@ -132,12 +128,10 @@ import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { useValueStore } from '../lib/valueStore';
-import { assignmentOf, clientVisitsIn } from '../lib/visitOps';
 import { scorePresetOf } from '../seed';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
 import './settings.css';
-import { ClientLeavesSection } from './ClientLeavesSection';
 
 /**
  * 月間カレンダーと月まとめ作成（ADR-0012。PRD D39〜D43・D53〜D55。design.md §4 pages「月単位の予定」「月間・週間の改定」）。
@@ -479,10 +473,6 @@ export default function MonthPage() {
   const monthPlans = useMemo(() => days.map((d) => dayPlans.get(d)!), [days, dayPlans]);
   const staffSum = useMemo(
     () => (focus.kind === 'staff' ? staffMonth(compileInput, monthPlans, focus.id) : null),
-    [focus, compileInput, monthPlans],
-  );
-  const clientSum = useMemo(
-    () => (focus.kind === 'client' ? clientMonth(compileInput, monthPlans, focus.id) : null),
     [focus, compileInput, monthPlans],
   );
   const attention = useMemo(
@@ -850,13 +840,6 @@ export default function MonthPage() {
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
   /** 選んだ〈利用者さん〉（休みの欄。ADR-0013） */
   const focusClient = focus.kind === 'client' ? data.clients.find((c) => c.id === focus.id) : undefined;
-  /** 訪問の詳細の欄（PRD D304：〈利用者さん〉を選んだときの回から開く） */
-  const openVisit = useOpenVisit();
-  /** 選んだ〈利用者さん〉のこの月の回（取り消しも） */
-  const focusVisits = useMemo(
-    () => (focusClient && days.length > 0 ? clientVisitsIn(data, focusClient.id, days[0]!, days.at(-1)!) : []),
-    [data, focusClient, days],
-  );
   const focusName =
     focus.kind === 'staff'
       ? (staffById.get(focus.id)?.name ?? '')
@@ -1505,7 +1488,7 @@ export default function MonthPage() {
               <p className="sub">数えるのはその日の今の案（無ければ確定した割当）です。</p>
             </>
           )}
-          {focus.kind === 'client' && clientSum && (
+          {focus.kind === 'client' && focusClient && (
             <>
               <h2 className="month-aside-title">
                 <ClientDot client={activeClients.find((c) => c.id === focus.id)} hidden />
@@ -1513,93 +1496,17 @@ export default function MonthPage() {
                   <PersonButton kind="client" id={focus.id} name={focusName} testId="month-aside-name" />・{monthNo}月
                 </span>
               </h2>
-              <dl className="month-facts" data-testid="month-client-sum">
-                <dt>予定の回数</dt>
-                <dd>{clientSum.planned}回</dd>
-                <dt>この回だけ変更</dt>
-                <dd>{clientSum.edited}回</dd>
-                <dt>取り消し</dt>
-                <dd>{clientSum.cancelled}回</dd>
-                <dt>うち当日キャンセル</dt>
-                <dd data-testid="month-client-sameday">{clientSum.sameDay}回</dd>
-                <dt>休みのため無し</dt>
-                <dd>{clientSum.leave}回</dd>
-                <dt>いつもの担当でない</dt>
-                <dd>{clientSum.substitute}回</dd>
-              </dl>
-              <h3 className="month-aside-sub">日ごと</h3>
-              <ClientDots
-                weeks={weeks}
-                ym={ym}
-                dotOf={(d) => {
-                  const day = clientDays.get(d);
-                  return day ? clientDot(day) : 'none';
-                }}
-              />
-              <h3 className="month-aside-sub">この月の回</h3>
-              {focusVisits.length === 0 ? (
-                <p className="sub">この月の訪問はありません。</p>
-              ) : (
-                <ul className="month-visits" data-testid="month-client-visits">
-                  {focusVisits.map((v) => {
-                    const sid = assignmentOf(data, v.id, v.date).staffId;
-                    return (
-                      <li key={v.id}>
-                        <button
-                          type="button"
-                          className="month-visit-btn"
-                          onClick={(e) => {
-                            const btn = e.currentTarget;
-                            openVisit({ visitId: v.id, returnFocus: () => (btn.isConnected ? btn : null) });
-                          }}
-                          data-testid="month-client-visit"
-                          data-visit={v.id}
-                        >
-                          <span className="month-visit-when">
-                            {dateText(v.date)} {v.earliestStart}
-                          </span>
-                          <span className="sub">
-                            {v.cancelled
-                              ? v.cancelKind === 'sameDay'
-                                ? '当日キャンセル'
-                                : '取り消し'
-                              : sid
-                                ? (staffById.get(sid)?.name ?? '')
-                                : '担当なし'}
-                            {v.pattern?.edited && !v.cancelled ? '・変' : ''}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <h3 className="month-aside-sub">担当した人</h3>
-              {clientSum.byStaff.length === 0 ? (
-                <p className="sub">この月の訪問はありません。</p>
-              ) : (
-                <ul className="month-bystaff">
-                  {clientSum.byStaff.map((x) => (
-                    <li key={x.staffId ?? '__none'}>
-                      <span>
-                        {x.staffId === null ? (
-                          '案なし・入らない'
-                        ) : (
-                          <span className="with-staff-mark">
-                            <StaffMark staff={staffById.get(x.staffId)} size="xs" />
-                            <PersonButton kind="staff" id={x.staffId} name={staffById.get(x.staffId)?.name ?? ''} />
-                          </span>
-                        )}
-                      </span>
-                      <span>{x.count}回</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="sub">
-                「代」はいつもの担当でない日、「変」はこの回だけ変えた回、「休み」は休みのため無しの回です。数えるのはその日の今の案（無ければ確定した割当）です。
-              </p>
-              {focusClient && <ClientLeavesSection client={focusClient} onOpenDay={openDay} compact />}
+              {/* 回・休み・集計は〈利用者さん〉の画面の予定（月）で見て直す（PRD D311。重ねて持たない） */}
+              <p className="sub">マスの印は、この{terms.client}の訪問のある日です。</p>
+              <Link
+                className="btn btn-small"
+                to={`/clients/${encodeURIComponent(focusClient.id)}?cal=month&d=${ym}-01`}
+                data-testid="month-client-open"
+              >
+                <WithIcon icon={CalendarRange} size={14}>
+                  {focusClient.displayName}の予定（{monthNo}月）を開く
+                </WithIcon>
+              </Link>
             </>
           )}
         </aside>

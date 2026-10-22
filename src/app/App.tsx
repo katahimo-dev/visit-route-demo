@@ -70,6 +70,7 @@ import {
 import { showsRebuildBand } from '../lib/rebuildBand';
 import { NARROW_QUERY } from '../lib/useMedia';
 import AvailabilityPage from '../pages/AvailabilityPage';
+import ClientPage from '../pages/ClientPage';
 import ClientsPage from '../pages/ClientsPage';
 import DataPage from '../pages/DataPage';
 import HomePage from '../pages/HomePage';
@@ -78,6 +79,7 @@ import MonthPrintPage from '../pages/MonthPrintPage';
 import RulesPage from '../pages/RulesPage';
 import SettingsPage from '../pages/SettingsPage';
 import StaffPage from '../pages/StaffPage';
+import StaffPersonPage from '../pages/StaffPersonPage';
 import StaffViewPage from '../pages/StaffViewPage';
 import TypesPage from '../pages/TypesPage';
 import WeekPage from '../pages/WeekPage';
@@ -151,7 +153,10 @@ export default function App() {
                 <Route path="/types" element={<TypesPage />} />
                 <Route path="/compat" element={<CompatPage />} />
                 <Route path="/staff" element={<StaffPage />} />
+                {/* 〈スタッフ〉・〈利用者さん〉の画面（全画面。PRD D308。ADR-0052）。new は新しい人 */}
+                <Route path="/staff/:staffId" element={<StaffPersonPage />} />
                 <Route path="/clients" element={<ClientsPage />} />
+                <Route path="/clients/:id" element={<ClientPage />} />
                 <Route path="/availability" element={<AvailabilityPage />} />
                 <Route path="/data" element={<DataPage />} />
                 {/* 管理者設定（PRD D210。ADR-0028）：機能の入り切り。だれでも開ける・切れない */}
@@ -180,8 +185,10 @@ function focusHeading() {
 function Guarded({ element }: { element: ReactElement }) {
   const { reset } = useDemoData();
   const { pathname } = useLocation();
+  // 〈利用者さん〉・〈スタッフ〉の画面は人が替わっても同じ画面（作り直さない。変更があるまま別の人へ移るときに確かめるため。PRD D308）
+  const page = pathname.replace(/^\/(clients|staff)\/[^/]+$/, '/$1/:id');
   return (
-    <ErrorBoundary key={pathname} onReset={reset}>
+    <ErrorBoundary key={page} onReset={reset}>
       {element}
     </ErrorBoundary>
   );

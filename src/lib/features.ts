@@ -108,7 +108,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '{staff}と{client}の相性（◎〜×）を AI案に効かせます',
     group: 'AI の条件',
     paths: ['/compat'],
-    hides: '設定の「相性」のタブ・相性の画面、閲覧の欄の相性、条件の「相性」',
+    hides: '設定の「相性」のタブ・相性の画面、〈スタッフ〉・〈利用者さん〉の画面の相性、条件の「相性」',
   },
   {
     id: 'allowedStaff',

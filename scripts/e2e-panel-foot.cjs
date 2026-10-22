@@ -3,9 +3,9 @@
 // PRD D284。狭い画面は欄が画面いっぱいで、帯は欄の下端より上）、中身が長い欄は帯が欄の下に貼り付き
 // 巻いても見え、内容が帯の下に隠れている間だけ区切り（data-stuck="true"）・巻き終えると区切りを消す、
 // 帯の下に隠れた入力欄へ Tab で入ると帯の上まで巻く（scroll-padding-bottom）、Tab が中で回る・Esc で閉じて戻る、
-// 帯の無い欄（閲覧）、390px：2つまでは横に並べ主ボタンが先、3つ以上は主ボタンを1行目に全幅・残りは2つずつ、
+// 390px：2つまでは横に並べ主ボタンが先、3つ以上は主ボタンを1行目に全幅・残りは2つずつ、
 // 下のタブ・safe-area に隠れない、キーボード（visualViewport が縮む）が出ても帯が見える、印刷（連絡の一覧）で帯を出さない。
-// 代表の欄：欠勤・キャンセル（1〜4段目・キャンセルの3段目）、〈スタッフ〉の閲覧と編集、月の「まとめて作る」、日の差の欄の「連絡の一覧」。
+// 代表の欄：欠勤・キャンセル（1〜4段目・キャンセルの3段目）、訪問の詳細の欄（〈利用者さん〉の画面の予定の回から）、月の「まとめて作る」、日の差の欄の「連絡の一覧」。
 // 1400×1000 と 390×844 の両方で見る。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-panel-foot.cjs
@@ -367,16 +367,25 @@ const toastBox = (page) =>
     };
   });
 
+/** 別のタブでデータを書き換えて、文だけの知らせ「別のタブで変わったので読み直しました」を出す（欄は開いたまま） */
+async function otherTabToast(page) {
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.org.name = `${d.org.name} `;
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await other.close();
+  await page.locator('.toast').filter({ hasText: '別のタブで' }).waitFor({ timeout: 5000 });
+}
+
 /**
- * 欄を開いたまま知らせを出す（〈スタッフ〉の編集で保存 →「保存しました」→ すぐ「編集する」）：
- * 390px は見出しに重ならず、重なった下の入力欄を押せる。1400px は欄をまたがない（PR #46 のレビュー）
+ * 欄を開いたまま知らせを出す（訪問の詳細の欄を開いたまま、別のタブの変更の知らせ。文だけ）：
+ * 390px は見出しに重ならず、知らせの下（欄の中）を押せる。1400px は欄をまたがない（PR #46 のレビュー）
  */
 async function toastWhileOpen(page, w) {
-  await drawer(page).getByTestId('view-edit').click();
-  await settle(page, 200);
-  await page.locator('.drawer-foot .btn-primary').click();
-  await page.locator('.toast').waitFor({ timeout: 3000 });
-  await drawer(page).getByTestId('view-edit').click();
+  await otherTabToast(page);
   await settle(page, 250);
   const t = await toastBox(page);
   check(!!t, `${w}・欄を開いたまま知らせが出る`);
@@ -399,17 +408,7 @@ async function toastWhileOpen(page, w) {
       },
       { x, y },
     );
-    await page.mouse.click(x, y);
-    await settle(page, 150);
-    const focus = await page.evaluate(() => ({
-      tag: document.activeElement?.tagName ?? '',
-      inDrawer: !!document.activeElement?.closest('.drawer-content'),
-    }));
-    check(
-      under.inDrawer && focus.inDrawer && ['INPUT', 'SELECT', 'TEXTAREA'].includes(focus.tag),
-      `${w}・知らせが出ていても下の入力欄を押せる`,
-      { under, focus },
-    );
+    check(under.inDrawer, `${w}・知らせが出ていても、押した所は下の欄の中に届く`, under);
     await shot(page, `${w}-toast`);
   } else {
     check(t.right <= t.drawerLeft, `${w}・知らせが欄をまたがない（欄の外に出る）`, t);
@@ -417,39 +416,33 @@ async function toastWhileOpen(page, w) {
     await shot(page, `${w}-toast`);
   }
   await page.locator('.toast').waitFor({ state: 'detached', timeout: 4000 });
-  await page.getByTestId('edit-cancel').click();
-  await settle(page, 200);
 }
 
-// ---- 〈スタッフ〉の閲覧（帯なし）と編集（長い） ----
-async function staffPanel(page, w) {
-  await open(page, '/staff?id=s1', '.drawer');
-  await page.getByTestId('person-view').waitFor();
-  const v = await metrics(page);
-  check(v && v.foot === null, `${w}・〈スタッフ〉の閲覧：帯が無い`);
-  check(
-    v && v.body.bottom === v.drawer.bottom,
-    `${w}・〈スタッフ〉の閲覧：巻く領域が欄の下まで`,
-    v && { body: v.body.bottom, drawer: v.drawer.bottom },
+// ---- 訪問の詳細の欄（長い。〈利用者さん〉の画面の予定の回から開く。PRD D309） ----
+async function visitPanel(page, w) {
+  await page.goto(`${BASE}#/home`);
+  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
+  await open(page, '/clients/c1', '[data-testid="pcal-visit"]');
+  const item = page.locator(`[data-testid="pcal-visit"]:not([data-state="cancelled"]):not([data-state="sameDay"])`);
+  const ids = await item.evaluateAll(
+    (els, today) => els.filter((e) => e.dataset.date >= today).map((e) => e.dataset.visit),
+    TODAY,
   );
-  await shot(page, `${w}-staff-view`);
-  await drawer(page).getByTestId('view-edit').click();
+  await page.locator(`[data-testid="pcal-visit"][data-visit="${ids[0]}"]`).click();
+  await page.getByTestId('visit-panel').waitFor();
   await settle(page, 400);
-  check(
-    await page.evaluate(() => document.activeElement?.tagName === 'INPUT'),
-    `${w}・〈スタッフ〉の編集：最初の入力欄にフォーカス`,
-  );
-  await expectLong(page, `${w}・〈スタッフ〉の編集`);
-  if (w === '390') await expectMobileRow(page, `${w}・〈スタッフ〉の編集（ボタン2つ）`);
-  await shot(page, `${w}-staff-edit`);
+  await expectLong(page, `${w}・訪問の詳細の欄`);
+  if (w === '390') await expectMobileRow(page, `${w}・訪問の詳細の欄（ボタン2つ）`);
+  await shot(page, `${w}-visit-panel`);
   // 帯の下に隠れた入力欄へ Tab で入ると、帯の上まで巻く（scroll-padding-bottom）
   const hidden = await page.evaluate(() => {
     const body = document.querySelector('.drawer-body');
     const foot = document.querySelector('.drawer-foot');
     body.scrollTop = 0;
     const ft = foot.getBoundingClientRect().top;
+    // 選んでいないラジオボタンは Tab で入らない（同じ組の選んだもの1つだけ）ので除く
     const list = [...body.querySelectorAll('input:not([type="hidden"]), select, textarea')].filter(
-      (el) => el.offsetParent !== null && !foot.contains(el),
+      (el) => el.offsetParent !== null && !foot.contains(el) && !(el.type === 'radio' && !el.checked),
     );
     // 帯より下にある入力欄を1つ選び、その上端がちょうど帯の裏に来るまで巻く
     const i = list.findIndex((el, k) => k > 0 && el.getBoundingClientRect().top > ft);
@@ -479,9 +472,10 @@ async function staffPanel(page, w) {
       };
     });
     check(r.target && r.bottom <= r.footTop, `${w}・Tab で入った入力欄が帯に隠れない`, r);
-  } else {
+  } else if (w === '1400') {
     check(false, `${w}・帯の下に隠れた入力欄がある（確かめの前提）`);
   }
+  // 390px の訪問の詳細の欄は日時の入力が無く（D305）、帯の下に隠れる入力欄が無いので確かめない（1400px で確かめる）
   // Tab は欄の中で回る：帯の最後のボタンから Tab で欄の先頭へ
   await page.locator('.drawer-foot .btn').last().focus();
   await page.keyboard.press('Tab');
@@ -499,9 +493,6 @@ async function staffPanel(page, w) {
     (await page.evaluate(() => getComputedStyle(document.documentElement).overflow)) === 'hidden',
     `${w}・欄が開いている間は裏の画面を巻かない`,
   );
-  await page.getByTestId('edit-cancel').click();
-  await settle(page, 300);
-  check((await metrics(page))?.foot === null, `${w}・取り消しで閲覧に戻ると帯が消える`);
   await toastWhileOpen(page, w);
   await page.keyboard.press('Escape');
   await drawer(page).waitFor({ state: 'detached' });
@@ -551,8 +542,16 @@ async function keyboard(browser) {
   await page.clock.setFixedTime(NOW);
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await open(page, '/staff?id=s1', '.drawer');
-  await drawer(page).getByTestId('view-edit').click();
+  await open(page, '/clients/c1', '[data-testid="pcal-visit"]');
+  const ids = await page
+    .locator('[data-testid="pcal-visit"]')
+    .evaluateAll(
+      (els, today) =>
+        els.filter((e) => e.dataset.date >= today && e.dataset.state !== 'cancelled').map((e) => e.dataset.visit),
+      TODAY,
+    );
+  await page.locator(`[data-testid="pcal-visit"][data-visit="${ids[0]}"]`).click();
+  await page.getByTestId('visit-panel').waitFor();
   await settle(page, 300);
   await page.evaluate(() => window.__setViewport(500, 0));
   await settle(page, 300);
@@ -572,9 +571,8 @@ async function keyboard(browser) {
     '390・見えている所がずれたら欄もそこへ合わせる',
     m?.drawer,
   );
-  // 知らせも見えている所に合わせる（保存 →「保存しました」。欄は閲覧に戻る）
-  await page.locator('.drawer-foot .btn-primary').click();
-  await page.locator('.toast').waitFor({ timeout: 3000 });
+  // 知らせも見えている所に合わせる（別のタブの変更の知らせ。欄は開いたまま）
+  await otherTabToast(page);
   await settle(page, 250);
   const t = await toastBox(page);
   check(
@@ -583,8 +581,6 @@ async function keyboard(browser) {
     t,
   );
   await page.locator('.toast').waitFor({ state: 'detached', timeout: 4000 });
-  await drawer(page).getByTestId('view-edit').click();
-  await settle(page, 200);
   await page.evaluate(() => window.__setViewport(window.innerHeight, 0));
   await settle(page, 300);
   m = await metrics(page);
@@ -614,7 +610,7 @@ const widthStep = (w, vp) => async () => {
   });
   for (const [name, fn] of [
     ['sudden', suddenSteps],
-    ['staff', staffPanel],
+    ['visit', visitPanel],
     ['month', monthBatch],
   ]) {
     await guard(() => fn(page, w), {

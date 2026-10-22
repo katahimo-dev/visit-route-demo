@@ -17,8 +17,9 @@ export const REBUILD_PATHS: readonly string[] = [
   '/clients',
 ];
 
-/** その画面に帯を出すか */
-export const showsRebuildBand = (pathname: string): boolean => REBUILD_PATHS.includes(pathname);
+/** その画面に帯を出すか（〈利用者さん〉・〈スタッフ〉の画面 `/clients/:id`・`/staff/:id` は一覧と同じ） */
+export const showsRebuildBand = (pathname: string): boolean =>
+  REBUILD_PATHS.includes(pathname.replace(/^\/(clients|staff)\/[^/]+$/, '/$1'));
 
 /** 数える日：今日以降で今の案のある日（日付の順。案の無い日は「条件が変わった」にならない） */
 export function rebuildDays(aiPlans: Record<string, unknown>, today: string): string[] {

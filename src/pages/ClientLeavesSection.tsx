@@ -1,22 +1,24 @@
 import { BedSingle, Check, Pencil, Plus, Trash2, TriangleAlert, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { useConfirm } from '../components/ConfirmDialog';
 import { enterToSave, FieldError } from '../components/FieldError';
 import { useToast } from '../components/Toast';
-import { Hint, IconButton, SectionTitle, WithIcon } from '../components/ui';
+import { Hint, SectionTitle, WithIcon } from '../components/ui';
 import { type Client, type ClientLeave, clientLeaveSchema } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { dateText, newId } from '../lib/common';
+import { confirmLeave } from '../lib/leaveGuard';
 import { leaveConfirmedDates, leavesOf, leaveVisits, removeLeave, saveLeave } from '../lib/leaves';
 import { mdText } from '../lib/patternText';
 import { useDemoData } from '../store';
 
 /**
- * 〈利用者さん〉の休み（入院・ショートステイなど。PRD D65。ADR-0013）：一覧と 足す・直す・消す。
- * 〈利用者さん〉の欄と、月間で〈利用者さん〉を選んだときの右の欄に置く。
+ * 〈利用者さん〉の休み（入院・ショートステイなど。PRD D65・D308。ADR-0013・0052）：一覧と 入れる・直す・消す。
+ * 〈利用者さん〉の画面の「休み」のタブに置く。どれも「直す（入れる）→ 保存」の形で、保存を押すまでデータを変えない。
  * 休みの期間の訪問は消さず「休みのため無し」と扱う（計算から外れる）。休みと重なる確定した日があれば注意を出す
- * （確認ではなく注意。案は作り直さない）。消すと元に戻るだけなので確認しない
+ * （確認ではなく注意。案は作り直さない）。消すのは直す欄の「この休みを消す」（確認してから。元に戻るだけ）
  */
 
 type Form = { id: string | null; from: string; to: string; note: string };
@@ -24,21 +26,34 @@ type Form = { id: string | null; from: string; to: string; note: string };
 export function ClientLeavesSection({
   client,
   onOpenDay,
-  compact = false,
+  onDirty,
 }: {
   client: Client;
   /** 確定した日へのリンクを押したとき（無ければ選んでいる日付を変えて予定の画面へ） */
   onOpenDay?: (date: string) => void;
-  /** 月間の右の欄（説明を短く） */
-  compact?: boolean;
+  /** 入力中の変更の有無（画面を離れる前の確認に使う） */
+  onDirty?: (dirty: boolean) => void;
 }) {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const navigate = useNavigate();
   const { setDate } = useDay();
   const today = jstDate(Date.now());
-  const [form, setForm] = useState<Form | null>(null);
+  const [form, setFormState] = useState<Form | null>(null);
+  /** 開いたときの入力（変更があるかの判定） */
+  const [opened, setOpened] = useState<Form | null>(null);
+  const openForm = (f: Form | null) => {
+    setFormState(f);
+    setOpened(f);
+  };
+  const setForm = (f: Form) => setFormState(f);
+  const dirty = form !== null && JSON.stringify(form) !== JSON.stringify(opened);
+  useEffect(() => {
+    onDirty?.(dirty);
+  }, [dirty, onDirty]);
+  useEffect(() => () => onDirty?.(false), [onDirty]);
   // 誤りはオブジェクトで持つ（同じ文で保存し直しても作り直して読み上げる。PRD D250）
   const [errorState, setErrorState] = useState<{ text: string } | null>(null);
   const error = errorState?.text ?? null;
@@ -46,7 +61,9 @@ export function ClientLeavesSection({
   const leaves = useMemo(() => leavesOf(data, client.id), [data, client.id]);
   const openDay =
     onOpenDay ??
-    ((d: string) => {
+    (async (d: string) => {
+      // 下書きのある画面（入力中の休み）から移るときは確かめる（断れば移らない）
+      if (!(await confirmLeave())) return;
       setDate(d);
       navigate('/plan');
     });
@@ -78,15 +95,22 @@ export function ClientLeavesSection({
     const leave: ClientLeave = r.data;
     const n = leaveVisits(data, leave).length;
     update((d) => saveLeave(d, leave));
-    setForm(null);
+    openForm(null);
     toast(
       `休みを${form.id ? '直しました' : '入れました'}（${mdText(leave.from)}〜${mdText(leave.to)}・訪問 ${n}件は無しになります）`,
     );
   };
 
-  const remove = (l: ClientLeave) => {
+  const remove = async (l: ClientLeave) => {
+    const ok = await confirmDialog({
+      title: `${mdText(l.from)}〜${mdText(l.to)}の休みを消しますか？`,
+      body: 'この間の訪問は元に戻ります（案は作り直しません）。',
+      confirmLabel: '休みを消す',
+      tone: 'danger',
+    });
+    if (!ok) return;
     update((d) => removeLeave(d, l.id));
-    if (form?.id === l.id) setForm(null);
+    if (form?.id === l.id) openForm(null);
     toast(`休みを消しました（${mdText(l.from)}〜${mdText(l.to)}の訪問は元に戻ります）`);
   };
 
@@ -102,7 +126,7 @@ export function ClientLeavesSection({
               data-testid="leave-add"
               onClick={() => {
                 setError(null);
-                setForm({ id: null, from: today, to: today, note: '' });
+                openForm({ id: null, from: today, to: today, note: '' });
               }}
             >
               <WithIcon icon={Plus} size={14}>
@@ -112,11 +136,14 @@ export function ClientLeavesSection({
           )
         }
       >
-        {compact ? '休み' : '休み（入院・ショートステイなど）'}
+        休み（入院・ショートステイなど）
       </SectionTitle>
-      {!compact && (
-        <Hint>休みの間の訪問は消さずに「休みのため無し」にし、案に入れません。休みを消すと元に戻ります。</Hint>
-      )}
+      <Hint>
+        <ul className="hint-list">
+          <li>休みの間の訪問は消さずに「休みのため無し」にし、案に入れません。</li>
+          <li>休みを消すと元に戻ります。</li>
+        </ul>
+      </Hint>
       {leaves.length === 0 ? (
         <span className="sub">休みはありません</span>
       ) : (
@@ -138,20 +165,20 @@ export function ClientLeavesSection({
                   </span>
                 </span>
                 <span className="actions">
-                  <IconButton
-                    icon={Pencil}
-                    label={`${mdText(l.from)}〜${mdText(l.to)}の休みを直す`}
+                  <button
+                    type="button"
+                    className="btn btn-small btn-text"
+                    aria-label={`${mdText(l.from)}〜${mdText(l.to)}の休みを直す`}
                     onClick={() => {
                       setError(null);
-                      setForm({ id: l.id, from: l.from, to: l.to, note: l.note });
+                      openForm({ id: l.id, from: l.from, to: l.to, note: l.note });
                     }}
-                  />
-                  <IconButton
-                    icon={Trash2}
-                    tone="danger"
-                    label={`${mdText(l.from)}〜${mdText(l.to)}の休みを消す`}
-                    onClick={() => remove(l)}
-                  />
+                    data-testid="leave-edit"
+                  >
+                    <WithIcon icon={Pencil} size={14}>
+                      直す
+                    </WithIcon>
+                  </button>
                 </span>
               </li>
             );
@@ -215,30 +242,45 @@ export function ClientLeavesSection({
             </div>
           )}
           <FieldError token={errorState}>{error}</FieldError>
-          <div className="row">
-            <button type="button" className="btn btn-small" onClick={save} data-testid="leave-save">
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-small btn-primary" onClick={save} data-testid="leave-save">
               <WithIcon icon={Check} size={14}>
-                {form.id ? '直す' : '入れる'}
+                保存
               </WithIcon>
             </button>
             <button
               type="button"
               className="btn btn-small"
               onClick={() => {
-                setForm(null);
+                openForm(null);
                 setError(null);
               }}
+              data-testid="leave-cancel"
             >
               <WithIcon icon={X} size={14}>
-                やめる
+                取り消し
               </WithIcon>
             </button>
+            {form.id && (
+              <button
+                type="button"
+                className="btn btn-small btn-danger"
+                onClick={() => {
+                  const l = leaves.find((x) => x.id === form.id);
+                  if (l) void remove(l);
+                }}
+                data-testid="leave-remove"
+              >
+                <WithIcon icon={Trash2} size={14}>
+                  この休みを消す
+                </WithIcon>
+              </button>
+            )}
           </div>
-          {!compact && (
-            <span className="sub">
-              {terms.client}の休みは、訪問を別の日に振り替えません。振り替えるときは、日の予定で訪問を足してください。
-            </span>
-          )}
+          <span className="sub">
+            {terms.client}
+            の休みは、訪問を別の日に振り替えません。振り替えるときは、予定のカレンダーで訪問を足してください。
+          </span>
         </fieldset>
       )}
     </div>

@@ -1,8 +1,8 @@
 // 名前から詳細を開く場所を足した所（PRD D205〜D209。ADR-0022 追記）を本物のブラウザで確かめる：
 // 日の画面の「入らなかった訪問」の〈利用者さん〉の i（カードの外・ボタンの入れ子にしない）／「受けられる人」の候補の名前（「この人に入れる」とは別）／
 // 欠勤の人に残る訪問の〈利用者さん〉の名前／拘束が上限を超える帯の名前（2人以上なら名前ごとの稼働の見込みのリンク、1人なら今までのボタン）／
-// 〈利用者さん〉の休みの帯の名前／担当の振り直しの欄の〈利用者さん〉の名前／データの画面の名簿の読み込みのあとの最終勤務日の知らせ（名前と閲覧の欄へのリンク・閉じる）。
-// それぞれ、名前を押すと吹き出しが出て、リンクで閲覧の欄へ移る。印刷で i と稼働の見込みのリンクを出さない・390px で横にはみ出さない。
+// 〈利用者さん〉の休みの帯の名前／担当の振り直しの欄の〈利用者さん〉の名前／データの画面の名簿の読み込みのあとの最終勤務日の知らせ（名前とその人の画面へのリンク・閉じる）。
+// それぞれ、名前を押すと吹き出しが出て、リンクでその人の画面へ移る。印刷で i と稼働の見込みのリンクを出さない・390px で横にはみ出さない。
 // 入らない訪問・欠勤・休み・上限を超える拘束・最終勤務日のデータは、別のタブで localStorage を書き換えて作る（e2e-view の names() と同じ）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-details2.cjs
@@ -59,7 +59,7 @@ async function mutate(page, fn, arg) {
 }
 
 /**
- * 名前のボタン（または i）を押すと吹き出しが出て、そのリンクで閲覧の欄へ移る。
+ * 名前のボタン（または i）を押すと吹き出しが出て、そのリンクでその人の画面（`#/staff/:id`・`#/clients/:id`）へ移る。
  * to は `#/staff` か `#/clients`。戻ったあとの確認は呼ぶ側で
  */
 async function openAndLink(page, btn, where, to) {
@@ -80,8 +80,10 @@ async function openAndLink(page, btn, where, to) {
     .waitFor({ timeout: 5000 })
     .catch(() => {});
   check(
-    urlOf(page).includes(to) && (await view(page).count()) === 1 && (await view(page).getAttribute('data-id')) === id,
-    `${where}：リンクで ${name} の閲覧の欄が開く`,
+    urlOf(page).includes(`${to}/${encodeURIComponent(id)}`) &&
+      (await view(page).count()) === 1 &&
+      (await view(page).getAttribute('data-id')) === id,
+    `${where}：リンクで ${name} の画面が開く`,
     urlOf(page),
   );
 }
@@ -374,7 +376,7 @@ async function overOne(page) {
   );
 }
 
-// ---- データの画面：名簿の読み込みのあとの最終勤務日の知らせ → 閲覧の欄 → 担当の振り直しの欄の名前 ----
+// ---- データの画面：名簿の読み込みのあとの最終勤務日の知らせ → その人の画面 → 担当の振り直しの欄の名前 ----
 async function roster(page) {
   await page.goto(`${BASE}#/data`);
   await page.reload();
@@ -431,9 +433,9 @@ async function roster(page) {
     got.lastDay === LAST_DAY &&
       got.n === 1 &&
       got.name === s.name &&
-      got.href.endsWith(`#/staff?id=${encodeURIComponent(sid)}`) &&
+      got.href.endsWith(`#/staff/${encodeURIComponent(sid)}`) &&
       got.text.includes(`最終勤務日 ${LAST_DAY}`),
-    '知らせ：最終勤務日の入った人の名前と閲覧の欄へのリンク',
+    '知らせ：最終勤務日の入った人の名前とその人の画面へのリンク',
     got,
   );
   const toast = await page
@@ -498,7 +500,7 @@ async function roster(page) {
   check((await notice.count()) === 0, '知らせ：Excel の種類を切り替えると消える');
   await page.getByTestId('excel-kind').locator('button').nth(2).click();
   await settle(page);
-  // もう一度読み込んで（同じ日なので変更なし）知らせが出ないこと → 外してから読み込み直して、リンクで閲覧の欄
+  // もう一度読み込んで（同じ日なので変更なし）知らせが出ないこと → 外してから読み込み直して、リンクでその人の画面
   await mutate(
     page,
     (d, id) => {
@@ -532,18 +534,12 @@ async function roster(page) {
   await notice.getByTestId('lastday-link').click();
   await settle(page, 600);
   check(
-    urlOf(page).includes('#/staff') && (await view(page).getAttribute('data-id')) === sid,
-    '知らせ：リンクでその人の閲覧の欄',
+    urlOf(page).includes(`#/staff/${encodeURIComponent(sid)}`) && (await view(page).getAttribute('data-id')) === sid,
+    '知らせ：リンクでその人の画面',
     urlOf(page),
   );
 
-  // D208：担当の振り直しの欄の〈利用者さん〉の名前
-  await page
-    .locator('.drawer')
-    .getByRole('button', { name: /閉じる/ })
-    .first()
-    .click();
-  await settle(page, 400);
+  // D208：担当の振り直しの欄の〈利用者さん〉の名前（その人の画面の予定のタブの「担当の振り直しを開く」から）
   await page.getByTestId('leaving-open').first().click();
   const rows = page.getByTestId('offboard-clients');
   await rows.waitFor({ timeout: 10000 });
@@ -570,8 +566,8 @@ async function roster(page) {
   await pop(page).getByTestId('person-pop-link').click();
   await settle(page, 600);
   check(
-    urlOf(page).includes('#/clients') && (await view(page).getAttribute('data-id')) === cid,
-    '担当の振り直し：リンクで〈利用者さん〉の閲覧の欄',
+    urlOf(page).includes(`#/clients/${encodeURIComponent(cid)}`) && (await view(page).getAttribute('data-id')) === cid,
+    '担当の振り直し：リンクで〈利用者さん〉の画面',
     urlOf(page),
   );
 }

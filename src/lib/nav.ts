@@ -49,9 +49,14 @@ export const BOTTOM_TABS: readonly string[] = ['home', 'schedule', 'absence', 'v
 /** 操作の項目か（URL にクエリを持つ。例：当日・問い合わせの「欠勤・キャンセルを登録」＝ `/plan?date=…&do=absence`。PRD D180・D231） */
 export const isNavAction = (to: string): boolean => to.includes('?');
 
-/** 今の画面に当たる URL のパス。古いリンクの #/schedule は日の予定 */
+/**
+ * 今の画面に当たる URL のパス。古いリンクの #/schedule は日の予定。〈利用者さん〉・〈スタッフ〉の画面（`/clients/:id`・`/staff/:id`。
+ * PRD D308）は一覧の項目に当てる
+ */
 export function activeNavPath(pathname: string): string {
   if (pathname === '/schedule') return '/plan';
+  const person = /^\/(clients|staff)\/[^/]+$/.exec(pathname);
+  if (person) return `/${person[1]}`;
   return pathname;
 }
 
@@ -108,7 +113,8 @@ export const tabLabel = (item: NavEntry): string => item.short ?? item.label;
  * 消さない。PRD D133・D134）。ほかは移る（'go'。比較から「予定」は覚えた表示へ移る）
  */
 export function tabClick(item: NavEntry, pathname: string): 'stay' | 'go' {
-  return !isNavAction(item.to) && item.to === activeNavPath(pathname) ? 'stay' : 'go';
+  // 人の画面（`/clients/:id`）から一覧の項目を押したら一覧へ移る（同じ画面ではない）
+  return !isNavAction(item.to) && item.to === (pathname === '/schedule' ? '/plan' : pathname) ? 'stay' : 'go';
 }
 
 /** メニューの項目のアイコンの名前（アイコンの部品は App で引く。純粋関数に React を持ち込まない） */

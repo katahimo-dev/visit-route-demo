@@ -17,6 +17,7 @@ import type { DemoData } from '../contracts/data';
 import type { Visit } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { dateText, newId, own } from '../lib/common';
+import { confirmLeave } from '../lib/leaveGuard';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { typeOf } from '../lib/patternText';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
@@ -337,7 +338,9 @@ function VisitPanel({
   /** 日の予定でその日を開く（今その日の日の予定にいるなら出さない） */
   const dayDate = v?.date ?? draft.date;
   const showDayLink = !isNew && !(pathname === '/plan' && shownDate === dayDate);
-  const openDay = () => {
+  const openDay = async () => {
+    // 下書きのある画面（人の画面の節・条件の重み）から移るときは確かめる（断れば移らない）
+    if (!(await confirmLeave())) return;
     onClose();
     setDate(dayDate);
     navigate('/plan', v ? { state: { visitId: v.id } } : undefined);

@@ -1,4 +1,4 @@
-// 一覧の行を押して閲覧の欄を開く（PRD D297）
+// 一覧の行を押してその人の画面を開く（PRD D308）
 import { describe, expect, it } from 'vitest';
 import { shouldOpenRow } from './rowOpen';
 

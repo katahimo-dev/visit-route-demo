@@ -140,11 +140,11 @@ describe('候補', () => {
     expect(acts.find((x) => x.id === 'action:batch')!.hint).toBe('月の予定');
     expect(filterPalette(acts, '当日の対応').flat.map((i) => i.id)).toEqual(['action:absence']);
   });
-  it('人は ?id= で閲覧の欄へ。利用中でなければ段階、休止中の〈スタッフ〉はそう添える', () => {
+  it('人はその人の画面（/clients/:id・/staff/:id）へ。利用中でなければ段階、休止中の〈スタッフ〉はそう添える', () => {
     const p = palettePeople(clients, staff, terms);
-    expect(p.find((x) => x.id === 'client:c1')).toMatchObject({ to: '/clients?id=c1', hint: 'としょかん ふみ' });
+    expect(p.find((x) => x.id === 'client:c1')).toMatchObject({ to: '/clients/c1', hint: 'としょかん ふみ' });
     expect(p.find((x) => x.id === 'client:c3')!.hint).toBe('ながまち みどり・終了');
-    expect(p.find((x) => x.id === 'staff:s1')).toMatchObject({ to: '/staff?id=s1', hint: 'スタッフ' });
+    expect(p.find((x) => x.id === 'staff:s1')).toMatchObject({ to: '/staff/s1', hint: 'スタッフ' });
     expect(p.find((x) => x.id === 'staff:s2')!.hint).toBe('スタッフ・休止中');
   });
   it('語は比べる形にそろえて持つ（重ねない・空を入れない）', () => {

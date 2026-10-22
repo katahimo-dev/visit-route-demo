@@ -218,7 +218,7 @@ export function staffCompatCounts(
   return out;
 }
 
-/** 〈スタッフ〉1人の閲覧の欄に名前を並べる〈利用者さん〉（PRD D198）：いつもの担当と、相性の記号ごと（◎・○・△・×）。並びは clients のまま */
+/** 〈スタッフ〉の画面の相性のタブに名前を並べる〈利用者さん〉（PRD D198）：いつもの担当と、相性の記号ごと（◎・○・△・×）。並びは clients のまま */
 export function staffClientGroups<C extends Pick<Client, 'id' | 'usualStaffId'>>(
   compat: Compat,
   staffId: string,

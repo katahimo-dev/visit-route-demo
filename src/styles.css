@@ -1897,22 +1897,6 @@ a.icon-btn:hover {
   gap: 8px;
   font-size: 1.1rem;
 }
-/* 欄の右上の操作（閲覧の欄の「編集する」。PRD D128）（主ボタンにしない。普通のボタンで、枠の色で目立たせる） */
-.drawer-head-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-left: auto;
-}
-.btn.btn-edit {
-  padding: 8px 14px;
-  font-size: 0.95rem;
-  border-color: var(--ink);
-}
-.btn.btn-edit:hover:not(:disabled) {
-  border-color: var(--ink);
-  background: var(--soft);
-}
 /*
  * 巻く領域。中は 内容（.drawer-content）→ 確定のボタンの帯（.drawer-foot）→ 番兵（高さ0）の順（PRD D194〜D197。ADR-0025 追記）。
  * 中身が短いと帯は内容のすぐ下に来て、下の余白は巻く領域の残り（欄の背景）になる。長いと帯は欄の下に貼り付く（sticky）。
@@ -2450,7 +2434,7 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
   }
 }
 
-/* 一覧の行を押して閲覧の欄を開く（PRD D297）。押せることが分かるよう、指のカーソルと重ねたときの地の色 */
+/* 一覧の行を押してその人の画面を開く（PRD D308）。押せることが分かるよう、指のカーソルと重ねたときの地の色 */
 .row-open {
   cursor: pointer;
 }

@@ -18,7 +18,9 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    # ubuntu-latest は Ubuntu 26.04 になり、Playwright 1.56 は依存とブラウザを入れられない（ubuntu26.04 は未対応）。
+    # Playwright が対応するまで 24.04 に固定する
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
