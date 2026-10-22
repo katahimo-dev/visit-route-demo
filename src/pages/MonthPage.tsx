@@ -2031,7 +2031,6 @@ const DayCell = memo(function DayCell(props: CellProps) {
       resting,
       requested: mk.requested.length,
       usual: props.usualRest,
-      past,
     });
     if (resting > 0) parts.push(`休む${staffTerm} ${resting}人（${restDetail}）`);
     if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}${props.absenceDone ? '（対応済み）' : ''}`);
@@ -2253,7 +2252,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
     caution,
     types: focus === 'all' && mk.types.length > 0,
     resting: restingAll,
-    restShown: showRestMark({ resting: restingAll, requested: mk.requested.length, usual: props.usualRest, past }),
+    restShown: showRestMark({ resting: restingAll, requested: mk.requested.length, usual: props.usualRest }),
     requested: mk.requested.length,
     absent: mk.absent.length > 0,
     absentDone: props.absenceDone,

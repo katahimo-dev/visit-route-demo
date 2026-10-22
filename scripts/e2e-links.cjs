@@ -613,7 +613,6 @@ async function monthBadge(page) {
         n: m ? Number(m[1]) : 0,
         shown: !!mark,
         req: /（希\d+）/.test(mark?.textContent ?? ''),
-        past: e.closest('td')?.classList.contains('is-past') ?? false,
       };
     }),
   );
@@ -626,7 +625,7 @@ async function monthBadge(page) {
     for (const [n, k] of f) if (k > bc || (k === bc && n < best)) [best, bc] = [n, k];
     return best;
   });
-  const bad = cells.filter((c) => c.n > 0 && !c.past && !c.req && c.shown !== c.n > usual[wd(c.date)]);
+  const bad = cells.filter((c) => c.n > 0 && !c.req && c.shown !== c.n > usual[wd(c.date)]);
   check(
     cells.some((c) => c.n > 0),
     '休：休む人のいる日がある（初期データ）',

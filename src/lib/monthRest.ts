@@ -28,11 +28,11 @@ export function usualRestByWeekday(days: readonly { date: string; resting: numbe
 }
 
 /**
- * マスに「休 N」を出すか。ふだんより多い日だけ。希望休のある日（「（希 N）」の理由の文字）と過去の日は今までどおり出す
+ * マスに「休 N」を出すか。ふだんより多い日だけ。希望休のある日（「（希 N）」の理由の文字）は今までどおり出す。過去の日にも同じ決め方を使う
  */
-export function showRestMark(x: { resting: number; requested: number; usual: number; past: boolean }): boolean {
+export function showRestMark(x: { resting: number; requested: number; usual: number }): boolean {
   if (x.resting <= 0) return false;
-  return x.past || x.requested > 0 || x.resting > x.usual;
+  return x.requested > 0 || x.resting > x.usual;
 }
 
 /** 日ごとの要対応の件数（要対応の一覧 attentionList の行の数。右の欄の行と同じ数え方） */

@@ -35,7 +35,7 @@ describe('usualRestByWeekday', () => {
 });
 
 describe('showRestMark', () => {
-  const b = { resting: 2, requested: 0, usual: 2, past: false };
+  const b = { resting: 2, requested: 0, usual: 2 };
   it('ふだんと同じか少ない日は出さない・多い日は出す', () => {
     expect(showRestMark(b)).toBe(false);
     expect(showRestMark({ ...b, resting: 1 })).toBe(false);
@@ -44,9 +44,8 @@ describe('showRestMark', () => {
   it('休みが無い日は出さない', () => {
     expect(showRestMark({ ...b, resting: 0, usual: 0 })).toBe(false);
   });
-  it('希望休のある日・過去の日は今までどおり出す', () => {
+  it('希望休のある日は今までどおり出す', () => {
     expect(showRestMark({ ...b, requested: 1 })).toBe(true);
-    expect(showRestMark({ ...b, past: true })).toBe(true);
   });
 });
 
