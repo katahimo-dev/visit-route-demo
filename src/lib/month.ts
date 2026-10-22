@@ -4,7 +4,7 @@
 import type { DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
 import type { Problem, StopTiming } from '../contracts/problem';
-import type { Routes } from '../contracts/reassign';
+import type { ContactList, Routes } from '../contracts/reassign';
 import { afterLastDay, availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
@@ -100,6 +100,8 @@ export type DayStatus = {
   care: number;
   /** 未連絡の変更の件数（伝えたあとに担当・開始が変わった訪問。伝えていない日は 0） */
   changes: number;
+  /** 伝えた内容との違い（訪問ごとの未連絡の変更の印に使う。伝えていない日は null） */
+  told?: ContactList | null;
   /** その日に欠勤がある（希望休も） */
   absence: boolean;
   /** 拘束が上限を超える〈スタッフ〉の ID（ADR-0015。注意だけで、要対応には数えない） */
@@ -132,6 +134,7 @@ export function dayStatus(
       issues: new Map(),
       care: 0,
       changes: changeCount(gone),
+      told: gone,
       absence,
       overSpan: [],
       needsCare: false,
@@ -153,6 +156,7 @@ export function dayStatus(
     issues,
     care: issues.size,
     changes: changeCount(changes),
+    told: changes,
     absence,
     overSpan,
     needsCare: issues.size > 0,

@@ -93,6 +93,8 @@ export type VisitPanelRequest = {
   newVisit?: { date: string; clientId?: string; start?: string };
   /** はじめの入力を差し替える（週のドラッグで落とした日時） */
   draft?: Partial<VisitDraft>;
+  /** はじめに選んでおく担当（週の〈スタッフ〉×曜日の表へ落とした人。候補に無い・選べなければ「変えない」） */
+  staff?: string;
   /** 保存・取り消しのあと（開いた画面の知らせ。週の「空き時間に入れる」など） */
   onSaved?: (r: VisitSaved) => void;
   /** 保存・閉じたあとのフォーカス先（開いた帯。無ければ開く前の要素） */
@@ -173,7 +175,7 @@ function VisitPanel({
       : newDraft(data, req.newVisit?.date ?? today, req.newVisit?.clientId, req.newVisit?.start);
     return { ...base, ...req.draft };
   });
-  const [pick, setPick] = useState<string>(KEEP);
+  const [pick, setPick] = useState<string>(req.staff ?? KEEP);
   const [scope, setScope] = useState<VisitScope>('once');
   /** スマホの下から出る欄で開いている操作（大きな4つのボタンの「担当を替える」「取り消す」。PRD D334） */
   const [act, setAct] = useState<'staff' | 'cancel' | null>(null);

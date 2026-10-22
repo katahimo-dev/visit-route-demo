@@ -1,5 +1,5 @@
-// 訪問の帯をキーボードで動かす（PRD D333。ADR-0055）の画面の部品：帯の keydown を受けるフック useVisitKeys と、
-// 動かした先の読み上げ・繰り返しの回の範囲を選び直す小さな帯 KeyMoveBand（日の予定・週の予定に置く）。
+// 訪問の帯をキーボードで動かす（PRD D333・D340。ADR-0055・ADR-0056）の画面の部品：帯の keydown を受けるフック useVisitKeys と、
+// 動かした先の読み上げ・繰り返しの回の範囲を選び直す小さな帯 KeyMoveBand（日の予定・週の予定・月の予定・人の予定表に置く）。
 // どの操作も store の update を1回（手の名前つき）で、全体の「元に戻す」で1手戻る
 import { Repeat, X } from 'lucide-react';
 import { useCallback, useRef } from 'react';
@@ -49,6 +49,8 @@ export function announceMove(text: string) {
  */
 export function useVisitKeys(opts: {
   staffOrder: (visitId: string) => readonly string[];
+  /** 日時を動かす（↑↓←→）か。〈スタッフ〉の画面など動かさない所は false（Shift+←→・Enter・Delete だけ） */
+  move?: boolean;
   onOpen?: (visitId: string) => void;
   onMoved?: (r: { visitId: string; date: string }) => void;
   onCancelled?: (visitId: string) => void;
@@ -84,6 +86,7 @@ export function useVisitKeys(opts: {
       const k = visitKeyOf(e);
       if (!k) return false;
       const o = optsRef.current;
+      if (o.move === false && (k.kind === 'time' || k.kind === 'day')) return false;
       if (k.kind === 'open') {
         if (!o.onOpen) return false;
         e.preventDefault();
@@ -274,12 +277,32 @@ export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date
   );
 }
 
-/** 動かした訪問の帯（日の予定の時間軸・週の予定）へフォーカスを戻す */
-function backToBand(visitId: string) {
+/** 訪問の帯・行の要素（日の予定の時間軸は帯の中のボタン、ほかは共通の部品の data-visit-item）。見えているものを先に */
+export function visitItemOf(visitId: string): HTMLElement | null {
   const v = CSS.escape(visitId);
-  document
-    .querySelector<HTMLElement>(
-      `.tl-band[data-visit="${v}"] .tl-band-btn, [data-testid="week-band"][data-visit="${v}"]`,
-    )
-    ?.focus();
+  const all = document.querySelectorAll<HTMLElement>(
+    `.tl-band[data-visit="${v}"] .tl-band-btn, [data-visit-item][data-visit="${v}"]`,
+  );
+  for (const el of all) if (el.getClientRects().length > 0) return el;
+  return all[0] ?? null;
+}
+
+/** 動かした訪問の帯へフォーカスを戻す（日付・週・月を移ったときは描き終わるまで待つ） */
+export function focusVisitItem(visitId: string) {
+  let n = 0;
+  const tick = () => {
+    const el = visitItemOf(visitId);
+    if (el) {
+      el.focus({ preventScroll: true });
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      return;
+    }
+    if (++n < 30) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/** 動かした訪問の帯へフォーカスを戻す（範囲の帯の Esc） */
+function backToBand(visitId: string) {
+  visitItemOf(visitId)?.focus();
 }

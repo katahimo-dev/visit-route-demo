@@ -3,15 +3,15 @@ import {
   CalendarRange,
   ChevronLeft,
   ChevronRight,
-  Pin,
   Plus,
   Sparkles,
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { type DragEvent, type PointerEvent, type ReactNode, useMemo, useRef, useState } from 'react';
+import { type PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { Visit } from '../contracts/documents';
 import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
+import { colorOf } from '../lib/colors';
 import { dateText } from '../lib/common';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
@@ -29,21 +29,26 @@ import {
   staffCalItems,
 } from '../lib/personPage';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
-import {
-  canMoveVisit,
-  DAY_END,
-  DAY_START,
-  inDayRange,
-  insertIntoPlan,
-  laneLayout,
-  snapMinutes,
-  weekDates,
-} from '../lib/week';
+import { canSelectVisit } from '../lib/visitSelect';
+import { canMoveVisit, DAY_END, DAY_START, insertIntoPlan, laneLayout, snapMinutes, weekDates } from '../lib/week';
 import { useDemoData } from '../store';
 import { StaffMark } from './StaffMark';
+import { SelectionBar } from './scheduleParts';
 import { useToast } from './Toast';
 import { WithIcon } from './ui';
+import { UndoButtons } from './undo';
 import { useOpenVisit } from './VisitPanel';
+import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from './visitKeys';
+import {
+  DropShadow,
+  SelectToggle,
+  useVisitDrag,
+  useVisitItem,
+  useVisitLooks,
+  useVisitSelection,
+  VisitMarks,
+  VisitRow,
+} from './visitParts';
 import { TypeDot } from './visitType';
 import './personCalendar.css';
 
@@ -136,10 +141,7 @@ export function PersonCalendar({
   const stateClass = (it: CalItem) => ` is-${it.state}`;
 
   // ---- 開く ----
-  const focusBack = (visitId: string | null) =>
-    visitId
-      ? document.querySelector<HTMLElement>(`[data-testid="pcal-visit"][data-visit="${CSS.escape(visitId)}"]`)
-      : null;
+  const focusBack = (visitId: string | null) => (visitId ? visitItemOf(visitId) : null);
   const open = (v: Visit) => openVisit({ visitId: v.id, returnFocus: focusBack });
   /** 新しい訪問の欄（この〈利用者さん〉を入れて） */
   const openNew = (date: string, start: number, duration: number) =>
@@ -151,40 +153,14 @@ export function PersonCalendar({
   /** 道具の行の「訪問を足す」（キーボードでも足せる）：期間の中の今日以降の最初の日の 09:00 */
   const addDate = dates.find((d) => d >= today) ?? null;
 
-  // ---- 回を動かす（HTML のドラッグ。週の予定と同じ） ----
-  const grab = useRef<{ visitId: string; offset: number } | null>(null);
-  const [hover, setHover] = useState<{ date: string; start: number; minutes: number } | null>(null);
+  // ---- 回を動かす（HTML のドラッグ。どの画面も同じ判定 lib/visitDrop。PRD D341） ----
   const visitById = useMemo(() => new Map(items.map((it) => [it.visit.id, it.visit])), [items]);
   const movable = (it: CalItem) =>
     editable && canMoveVisit(it.visit.date, today) && !it.visit.cancelled && it.state !== 'leave';
-  const onDragStart = (e: DragEvent<HTMLElement>, it: CalItem) => {
-    e.dataTransfer.setData('text/plain', it.visit.id);
-    e.dataTransfer.effectAllowed = 'move';
-    grab.current = { visitId: it.visit.id, offset: e.clientY - e.currentTarget.getBoundingClientRect().top };
-  };
-  const endDrag = () => {
-    grab.current = null;
-    setHover(null);
-  };
-  const dropStart = (e: DragEvent<HTMLElement>): number | null => {
-    const g = grab.current;
-    if (!g) return null;
-    const top = e.currentTarget.getBoundingClientRect().top;
-    return snapMinutes(DAY_START + (e.clientY - top - g.offset) / PX_PER_MIN);
-  };
   /** 落とした日時で欄を開く（範囲は欄で選ぶ） */
   const moveTo = (visitId: string, date: string, start: number) => {
     const v = visitById.get(visitId);
     if (!v) return;
-    if (!canMoveVisit(date, today)) {
-      toast('今日より前の日へは動かせません');
-      return;
-    }
-    if (!inDayRange(start, v.durationMinutes)) {
-      toast(`${hm(DAY_START)}〜${hm(DAY_END)} の中に置いてください`);
-      return;
-    }
-    if (date === v.date && start === hhmmToMinutes(v.earliestStart)) return;
     const width = hhmmToMinutes(v.latestStart) - hhmmToMinutes(v.earliestStart);
     setNotice(null);
     openVisit({
@@ -196,35 +172,57 @@ export function PersonCalendar({
       },
     });
   };
-  const onColDragOver = (e: DragEvent<HTMLElement>, date: string) => {
-    if (!grab.current || !canMoveVisit(date, today)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const s = dropStart(e);
-    const v = visitById.get(grab.current.visitId);
-    if (s !== null && (hover?.date !== date || hover.start !== s))
-      setHover({ date, start: s, minutes: v?.durationMinutes ?? 60 });
-  };
-  const onColDrop = (e: DragEvent<HTMLElement>, date: string) => {
-    e.preventDefault();
-    const s = dropStart(e);
-    const g = grab.current;
-    endDrag();
-    if (g && s !== null) moveTo(g.visitId, date, s);
-  };
-  const onCellDragOver = (e: DragEvent<HTMLElement>, date: string) => {
-    if (!grab.current || !canMoveVisit(date, today)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (hover?.date !== date) setHover({ date, start: 0, minutes: 0 });
-  };
-  const onCellDrop = (e: DragEvent<HTMLElement>, date: string) => {
-    e.preventDefault();
-    const g = grab.current;
-    endDrag();
-    const v = g ? visitById.get(g.visitId) : undefined;
-    if (g && v) moveTo(g.visitId, date, hhmmToMinutes(v.earliestStart));
-  };
+  const drag = useVisitDrag({ today, fit: true, onDrop: (visitId, v) => moveTo(visitId, v.date, v.start) });
+  /** 時間軸の列の落とし先（落とした位置の15分刻みの開始） */
+  const colTarget = (date: string) =>
+    drag.target(`w|${date}`, (e) => ({
+      date,
+      start: snapMinutes(
+        DAY_START + (e.clientY - e.currentTarget.getBoundingClientRect().top - drag.offset()) / PX_PER_MIN,
+      ),
+    }));
+
+  // ---- 選ぶ・キーで動かす（日・週・月と同じ。PRD D340） ----
+  /** 選んだ回（期間・見せ方・人が変わったら外す） */
+  const multi = useVisitSelection(`${kind}|${personId}|${view}|${anchor}`);
+  /** スマホの選ぶ形（長押しか「選ぶ」） */
+  const [selecting, setSelecting] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 期間・見せ方を変えたら選ぶ形を抜ける
+  useEffect(() => {
+    setSelecting(false);
+  }, [view, anchor, personId]);
+  const activeStaffIds = useMemo(() => data.staff.filter((s) => s.active).map((s) => s.id), [data.staff]);
+  /**
+   * キー：↑↓ 15分・←→ 1日（期間の外へ出たらその期間へ）・Shift+←→ 隣の担当・Enter 欄・Delete 取り消し。
+   * 日時を動かすのは〈利用者さん〉の広い画面だけ（〈スタッフ〉の画面は担当替え・取り消しだけ）
+   */
+  const visitKeys = useVisitKeys({
+    staffOrder: () => activeStaffIds,
+    move: editable,
+    onOpen: (id) => {
+      const v = visitById.get(id);
+      if (v) open(v);
+    },
+    onMoved: (r) => {
+      if (!dates.includes(r.date)) onChange({ view, anchor: r.date });
+      focusVisitItem(r.visitId);
+    },
+    onCancelled: () =>
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus()),
+  });
+  const itemProps = useVisitItem({
+    selection: multi,
+    onOpen: (id) => {
+      const v = visitById.get(id);
+      if (v) open(v);
+    },
+    keys: narrow ? null : visitKeys,
+    selecting,
+    longPress: narrow ? { onSelecting: setSelecting } : null,
+  });
+  /** 回の見た目（日・週・月と同じ判定。lib/visitLook） */
+  const lookOf = useVisitLooks(dates);
+  const selectable = (it: CalItem) => canSelectVisit(it.visit, it.state === 'leave', today);
 
   /** 新しい日の担当の空き時間に入れる（入る人がいなければ知らせに理由） */
   const insert = () => {
@@ -308,42 +306,91 @@ export function PersonCalendar({
     const t = typeOf(data.visitTypes, v.typeId);
     return t ? <TypeDot type={t} size={8} /> : null;
   };
-  const itemButton = (it: CalItem, style?: React.CSSProperties, compact = false) => (
-    <button
-      key={it.visit.id}
-      type="button"
-      className={`pcal-item${compact ? ' is-compact' : ''}${stateClass(it)}${hlClass(it)}`}
-      style={style}
-      draggable={movable(it)}
-      onDragStart={(e) => (movable(it) ? onDragStart(e, it) : e.preventDefault())}
-      onDragEnd={endDrag}
-      onClick={() => open(it.visit)}
-      title={itemLabel(it).replace('（押すと訪問の詳細）', '')}
-      aria-label={itemLabel(it)}
-      aria-pressed={highlight ? it.visit.pattern?.id === highlight : undefined}
-      data-testid="pcal-visit"
-      data-visit={it.visit.id}
-      data-date={it.visit.date}
-      data-state={it.state}
-      data-pattern={it.visit.pattern?.id ?? ''}
-    >
-      <span className="pcal-item-time">
-        {typeDot(it.visit)}
-        {it.visit.earliestStart}
-        {it.pinned && <Pin size={10} aria-hidden="true" />}
-        {it.edited && <span className="pcal-item-mark">変</span>}
-      </span>
-      <span className="pcal-item-who">
-        {isClient && staffMark(it)}
-        {shortWho(it)}
-      </span>
-    </button>
-  );
+  const itemButton = (it: CalItem, style?: React.CSSProperties, compact = false) => {
+    const look = lookOf(it.visit.id);
+    const on = multi.has(it.visit.id);
+    return (
+      <button
+        key={it.visit.id}
+        type="button"
+        className={`pcal-item${compact ? ' is-compact' : ''}${stateClass(it)}${hlClass(it)}${look?.tone === 'issue' ? ' is-issue' : ''}${on ? ' is-multi' : ''}`}
+        style={style}
+        {...drag.source(it.visit.id, movable(it))}
+        {...itemProps(it.visit.id, { selectable: selectable(it), movable: !narrow, selected: on })}
+        title={`${itemLabel(it).replace('（押すと訪問の詳細）', '')}${look?.text ? `（${look.text}）` : ''}`}
+        aria-label={`${itemLabel(it).replace('（押すと訪問の詳細）', '')}${look?.text ? `・${look.text}` : ''}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
+        data-testid="pcal-visit"
+        data-visit={it.visit.id}
+        data-date={it.visit.date}
+        data-state={it.state}
+        data-pattern={it.visit.pattern?.id ?? ''}
+        data-marks={look?.kinds ?? ''}
+      >
+        <span className="pcal-item-time">
+          {typeDot(it.visit)}
+          {it.visit.earliestStart}
+          <VisitMarks look={look} size={10} />
+        </span>
+        <span className="pcal-item-who">
+          {isClient && staffMark(it)}
+          {shortWho(it)}
+        </span>
+      </button>
+    );
+  };
+  /** 2段目（狭い画面）の日ごとのリストの行（日の予定のスマホの日ごとのリストと同じ VisitRow） */
+  const itemRow = (it: CalItem) => {
+    const look = lookOf(it.visit.id);
+    const on = multi.has(it.visit.id);
+    const t = typeOf(data.visitTypes, it.visit.typeId);
+    const s = it.staffId ? staffById.get(it.staffId) : undefined;
+    return (
+      <VisitRow
+        row={{
+          visitId: it.visit.id,
+          time: `${it.visit.earliestStart.replace(/^0/, '')}〜${hm(it.end).replace(/^0/, '')}`,
+          title: isClient ? (t?.name ?? '訪問') : (clientById.get(it.visit.clientId)?.displayName ?? '（不明）'),
+          staff: isClient ? (s ?? null) : null,
+          staffName: isClient && it.state === 'assigned' ? (s?.name ?? '（不明）') : '',
+          state:
+            it.state === 'cancelled' || it.state === 'sameDay' || it.state === 'leave'
+              ? CAL_STATE_TEXT[it.state]
+              : null,
+          look,
+          color: t ? colorOf(t.color) : null,
+          hideStaff: !isClient,
+        }}
+        selecting={selecting}
+        selected={on}
+        testId="pcal-visit"
+        extraClass={`pcal-row${stateClass(it)}${hlClass(it)}`}
+        props={{
+          ...itemProps(it.visit.id, { selectable: selectable(it), movable: false, selected: on }),
+          'data-date': it.visit.date,
+          'data-state': it.state,
+          'data-pattern': it.visit.pattern?.id ?? '',
+        }}
+      />
+    );
+  };
   const dayHead = (d: string) => (
     <span className="pcal-day-head">
       <span className={`pcal-day-date${d === today ? ' is-today' : ''}`}>{dateText(d)}</span>
       {dayNote?.(d)}
     </span>
+  );
+
+  /** 選んだ回の帯と、キーで動かした先の読み上げ・繰り返しの回の範囲の帯（日・週・月と同じ） */
+  const tail = (
+    <>
+      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} shift={editable} />
+      <KeyMoveBand
+        onMoved={(r) => {
+          if (!dates.includes(r.date)) onChange({ view, anchor: r.date });
+          focusVisitItem(r.visitId);
+        }}
+      />
+    </>
   );
 
   // ---- 道具の行 ----
@@ -406,6 +453,19 @@ export function PersonCalendar({
           </WithIcon>
         </button>
       )}
+      {/* キー・選んだ訪問の操作は全体の元に戻すの1手（日・週・月の操作の行と同じボタン） */}
+      {!narrow && <UndoButtons redoShown={false} />}
+      {narrow && (
+        <SelectToggle
+          selecting={selecting}
+          onChange={(on) => {
+            setSelecting(on);
+            if (!on) multi.clear();
+          }}
+          testId="pcal-select"
+          disabled={!items.some(selectable)}
+        />
+      )}
       {aside}
     </div>
   );
@@ -444,13 +504,18 @@ export function PersonCalendar({
                   {list.length === 0 ? (
                     <span className="sub">訪問なし</span>
                   ) : (
-                    <div className="pcal-list-items">{list.map((it) => itemButton(it, undefined, true))}</div>
+                    <ul className="vrow-list pcal-list-items">
+                      {list.map((it) => (
+                        <li key={it.visit.id}>{itemRow(it)}</li>
+                      ))}
+                    </ul>
                   )}
                 </li>
               );
             })}
         </ul>
         {view === 'month' && items.length === 0 && <p className="sub">この月の訪問はありません。</p>}
+        {tail}
       </div>
     );
   }
@@ -468,15 +533,13 @@ export function PersonCalendar({
               {week.map((d) => {
                 const list = byDate.get(d) ?? [];
                 const out = ymOf(d) !== ym;
-                const drop = hover?.date === d;
+                const hov = drag.hover?.key === `m|${d}` ? drag.hover : null;
                 return (
                   <section
                     key={d}
                     aria-label={`${dateText(d)}の訪問`}
-                    className={`pcal-cell${out ? ' is-out' : ''}${d === today ? ' is-today' : ''}${d < today ? ' is-past' : ''}${drop ? ' is-drop' : ''}`}
-                    onDragOver={(e) => onCellDragOver(e, d)}
-                    onDragLeave={() => hover?.date === d && setHover(null)}
-                    onDrop={(e) => onCellDrop(e, d)}
+                    className={`pcal-cell${out ? ' is-out' : ''}${d === today ? ' is-today' : ''}${d < today ? ' is-past' : ''}${hov?.verdict.ok ? ' is-drop' : ''}`}
+                    {...drag.target(`m|${d}`, () => ({ date: d, start: null }))}
                     data-testid="pcal-cell"
                     data-date={d}
                   >
@@ -497,12 +560,14 @@ export function PersonCalendar({
                       )}
                     </span>
                     <span className="pcal-cell-items">{list.map((it) => itemButton(it, undefined, true))}</span>
+                    {hov && <DropShadow hover={hov} className="pcal-cdrop" time={false} />}
                   </section>
                 );
               })}
             </div>
           ))}
         </div>
+        {tail}
       </div>
     );
   }
@@ -537,8 +602,7 @@ export function PersonCalendar({
               className={`pcal-col${d < today ? ' is-past' : ''}${editable && d >= today ? ' can-add' : ''}`}
               style={{ height }}
               aria-label={`${dateText(d)}の訪問`}
-              onDragOver={(e) => onColDragOver(e, d)}
-              onDrop={(e) => onColDrop(e, d)}
+              {...colTarget(d)}
               onPointerDown={(e) => onPointerDown(e, d)}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -546,14 +610,15 @@ export function PersonCalendar({
               data-testid="pcal-col"
               data-date={d}
             >
-              {hover?.date === d && (
-                <div
+              {drag.hover?.key === `w|${d}` && (
+                <DropShadow
+                  hover={drag.hover}
                   className="pcal-drop"
-                  style={{ top: top(hover.start), height: Math.max(24, hover.minutes * PX_PER_MIN) }}
-                  aria-hidden="true"
-                >
-                  {hm(hover.start)}
-                </div>
+                  style={{
+                    top: top(drag.hover.verdict.ok ? drag.hover.verdict.start : (drag.hover.target.start ?? DAY_START)),
+                    height: Math.max(24, (visitById.get(drag.dragId ?? '')?.durationMinutes ?? 60) * PX_PER_MIN),
+                  }}
+                />
               )}
               {ghost?.date === d && (
                 <div
@@ -586,6 +651,7 @@ export function PersonCalendar({
           ? `印は担当の${terms.staff}（その日の今の担当）。「変」はこの回だけ変えた回です。`
           : `この人が担当する訪問（その日の今の担当）。「変」はこの回だけ変えた回です。`}
       </p>
+      {tail}
     </div>
   );
 }

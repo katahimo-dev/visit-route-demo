@@ -72,12 +72,23 @@
 .pcal-item-time {
   font-weight: 700;
 }
-.pcal-item-mark {
-  padding: 0 3px;
-  border-radius: 4px;
-  background: var(--warn);
-  color: #fff;
-  font-size: 0.65rem;
+.pcal-item .vmark {
+  min-width: 13px;
+  height: 13px;
+  font-size: 0.58rem;
+}
+.pcal-item.is-issue {
+  border-color: var(--danger);
+}
+.pcal-cell {
+  position: relative;
+}
+.pcal-cdrop {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  padding: 2px;
 }
 /* 担当の無い回：入らない（案があるのに入らない）は要対応の赤、案なしは注意の黄の点線（PRD D228） */
 .pcal-item.is-unassigned {
@@ -275,13 +286,15 @@
   background: #fff;
 }
 .pcal-list-items {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  margin: 0 -8px -6px;
+  border-top: 1px solid var(--line);
 }
-.pcal.is-list .pcal-item {
-  font-size: 0.85rem;
-  padding: 6px 8px;
+/* 2段目の行（共通の VisitRow）：選んだ繰り返しの回を目立たせ、ほかを薄く */
+.pcal-row.is-hl {
+  background: #fde7e1;
+}
+.pcal-row.is-dim {
+  opacity: 0.45;
 }
 
 /* 印刷：期間の見出しは残し、道具のボタン・説明・マスの「＋」を出さない */

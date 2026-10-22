@@ -1,6 +1,6 @@
 # 〈利用者さん〉の一覧と、〈利用者さん〉・〈スタッフ〉の画面・住所の入力・絞り込み（共通部品）
 
-> この画面のファイル：`src/pages/ClientsPage.tsx`・`ClientPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personPage.tsx`（`personPage.css`）・`PersonCalendar.tsx`（`personCalendar.css`）・`personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/personPage.ts`・`viewMode.ts`・`visitOps.ts`（`staffVisitsIn`・`endPatternOp`）・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0026・0051・0052。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D285・D118〜D121・D220・D308〜D313。
+> この画面のファイル：`src/pages/ClientsPage.tsx`・`ClientPage.tsx`・`PatternsSection.tsx`・`ClientLeavesSection.tsx`・`PlaceAllPanel.tsx`、`src/components/personPage.tsx`（`personPage.css`）・`PersonCalendar.tsx`（`personCalendar.css`）・`personView.tsx`（`personView.css`）・`placeLookup.tsx`（`placeLookup.css`）・`ClientFilter.tsx`・`ClientPicker.tsx`・`VisitRules.tsx`・`PickChips.tsx`、`src/lib/personPage.ts`・`viewMode.ts`・`visitOps.ts`（`staffVisitsIn`・`endPatternOp`）・`clientFilter.ts`・`area.ts`・`search.ts`・`leaves.ts`・`patternText.ts`・`tentative.ts`・`clientStage.ts`・`addressLookup.ts`・`geocode.ts`・`postalCode.ts`・`placeAll.ts`。関連 ADR：0012・0013・0014・0015・0016（追記を含む）・0017・0021・0026・0051・0052・0056。関連 PRD：D36〜D40・D47・D60〜D62・D64〜D66・D68・D86〜D92・D108〜D112・D285・D118〜D121・D220・D308〜D313・D339〜D341。
 > 〈スタッフ〉の画面の中身は [pages-staff.md](pages-staff.md)（画面の殻・タブ・節・予定のカレンダーはこのファイルと共通）。訪問の詳細の欄は [pages-common.md](pages-common.md)。
 
 ### 〈利用者さん〉一覧（`#/clients`）
@@ -42,19 +42,21 @@
 
 - `person-schedule`：左に `person-schedule-side`（360px まで）、右に `person-schedule-main`（カード）。1100px 以下は縦に並べ、600px 以下は右（日ごとのリスト）を先に
 
-### 予定のカレンダー（`components/PersonCalendar.tsx`。PRD D309・D310・D312）
+### 予定のカレンダー（`components/PersonCalendar.tsx`。PRD D309・D310・D312・D339〜D341。ADR-0056）
 
 - 引数：`kind`（client／staff）・`personId`・`view`（week／month）・`anchor`（基準の日）・`onChange`（見せ方・期間を変えた）・`highlight`（強調する繰り返しの ID）・`dayNote`（日の見出しに添える印）。画面は `cal`（month のときだけ）・`d`（今日でないときだけ）を URL に `replace` で書く
 - 回：`lib/personPage` の `clientCalItems`（`visitOps.clientVisitsIn`。取り消しも）・`staffCalItems`（`visitOps.staffVisitsIn`：その日の今の案、無ければ確定した割当でその人の列にある訪問。取り消しは出さない）。担当は `assignmentOf`。様子（`CalState`）は 取り消し（`cancelled`・`sameDay`）→ 休みのため無し（`leave`）→ 担当あり（`assigned`）→ 案はあるが入らない（`unassigned`。赤）→ 案なし（`noplan`。黄の点線）。時刻は訪問の開始（早）〜＋所要
-- 回のボタン（`pcal-visit`・`data-visit`・`data-date`・`data-state`・`data-pattern`）：時刻・種類の色の点・固定の印・「変」（この回だけ変えた）、〈利用者さん〉の画面は担当の `StaffMark` と苗字（無ければ様子の文）、〈スタッフ〉の画面は〈利用者さん〉の名前。aria-label は「10/28（水） 09:00〜10:00 〈名前〉（種類・この回だけ変更・固定）（押すと訪問の詳細）」。押す・Enter で `useOpenVisit()`（閉じたらフォーカスはその回）
-- 強調：`highlight` の繰り返しの回は `is-hl`、ほかは `is-dim`。回のボタンに `aria-pressed`。上に「選んだ繰り返しの回：この期間に N回」（`pcal-hl-note`）
+- 回のボタン（`pcal-visit`・`data-visit`・`data-date`・`data-state`・`data-pattern`・`data-marks`）：時刻・種類の色の点・印（共通の判定 `useVisitLooks`・`VisitMarks`：要対応・資格✗／限✗・未連絡の変更・ピン・「変」（この回だけ変えた）・仮押さえ。PRD D339）、〈利用者さん〉の画面は担当の `StaffMark` と苗字（無ければ様子の文）、〈スタッフ〉の画面は〈利用者さん〉の名前。aria-label は「10/28（水） 09:00〜10:00 〈名前〉（種類・…）・印の説明（選択中）（押すと訪問の詳細）」。押す・Enter で `useOpenVisit()`（閉じたらフォーカスはその回）
+- 強調：`highlight` の繰り返しの回は `is-hl`、ほかは `is-dim`（色と「薄く」。`aria-pressed` は強調でなく選択を表す）。上に「選んだ繰り返しの回：この期間に N回」（`pcal-hl-note`）
 - 道具の行（`pcal-tools`）：前／次（`pcal-prev`・`pcal-next`。週は7日・月は1か月）・見出し（`pcal-title`。「10/26（月）〜11/1（日）」「2026年10月」。aria-live）・今日・［週｜月］（`pcal-view`・`data-view`）・〈利用者さん〉の広い画面は「訪問を足す」（`pcal-add`。期間の今日以降の最初の日の 09:00・60分）
 - 週（`data-layout="week"`）：見出しの行（日付・今日の印・`dayNote`・作ってある最後の日より後は「未作成」）と、左の時刻の目盛り（7:00〜20:00）、日ごとの列（`pcal-col`。1分 0.8px・1時間ごとの線。重なる回は `laneLayout` で横に並べる）。今日より前の列は薄い地
 - 月（`data-layout="month"`）：月曜はじまりの週（`monthWeeksMon`）のマス（`pcal-cell`。日付・`dayNote`・回のボタン）。〈利用者さん〉の広い画面は今日以降のマスに「＋」（`pcal-cell-add`。その日の 09:00・60分）
 - 足す（〈利用者さん〉の広い画面・今日以降の列）：列の空いている所で押すと押した枠（15分刻みに切り捨て）・所要60分。縦にドラッグすると影（`pcal-ghost`）を出し、枠をまたいだら押した枠と離した枠を両方含む長さ（上へ動かしても押した枠を含む。同じ枠の中で動いただけなら押しただけと同じ。`slotOf`）で `useOpenVisit({ newVisit: { date, clientId, start }, draft: { durationMinutes } })`。回の上で押したときは足さない
-- 動かす（〈利用者さん〉の広い画面・今日以降の取り消しでない・休みでない回）：HTML のドラッグ（週の予定と同じ。つかんだ位置の差を保つ・15分に丸める・落とす所に影）。週は落とした日時、月は落としたマスの日で同じ時刻を `draft`（日付・開始（早）・開始（遅）は幅を保つ）に入れて欄を開く。範囲（この回だけ／これ以降／すべて）は欄で選ぶ。今日より前の日・7:00〜20:00 の外は動かさず知らせる。同じ日時なら何もしない。保存で日時が変わり担当を選ばず、新しい日に今の案があれば、カレンダーの上に「〈日〉の案に空き時間で入れる」の知らせ（`pcal-notice`・`pcal-insert`。`lib/week` の `insertIntoPlan`。入らなければ理由。週の予定と同じ）
+- 選ぶ（PRD D340）：`useVisitSelection(`${kind}|${personId}|${view}|${anchor}`)`（人・見せ方・期間が変わったら外す）。回を Shift・Ctrl＋クリック／Shift・Ctrl＋Enter で選ぶ・外す（今日より前・取り消し・休みは選ばない）。選んだ回は画面の下の `SelectionBar`（〈スタッフ〉の画面は `shift={false}`＝時刻をずらすを出さない）。広い画面は道具の行に全体の「元に戻す」（`UndoButtons`。`undo-btn`。キー・選んだ回の操作の1手を戻す）。狭い画面（600px 以下）は長押しか道具の行の「選ぶ」（`pcal-select`。`SelectToggle`。選べる回が無ければ押せない）で選ぶ形に入り、押すと選ぶ・外す（期間・見せ方・人を変えたら抜ける）
+- キー（広い画面。PRD D333・D340。[pages-common.md](pages-common.md) の「訪問の帯をキーで動かす」）：回にフォーカスして ↑↓ 15分・←→ 1日（期間の外へ出たらその期間へ `onChange`）・Shift+←→ 隣の担当（利用中の〈スタッフ〉の順）・Enter は欄・Delete は取り消し（確認）。動かしたあとフォーカスは動かした回（`focusVisitItem`）、繰り返しの回は小さな帯で範囲（`KeyMoveBand`）。〈スタッフ〉の画面は日時を動かさない（`useVisitKeys` の `move: false`。↑↓←→ を読まず、Shift+←→・Enter・Delete だけ）
+- 動かす（〈利用者さん〉の広い画面・今日以降の取り消しでない・休みでない回）：HTML のドラッグ（共通の `useVisitDrag`・`dropVerdict`。つかんだ位置の差を保つ・15分に丸める・落とす所に影 `DropShadow`。置けない（今日より前の日・7:00〜20:00 の外など）は灰の斜線と理由で落とせず、入らないは赤い点線で落とせる。PRD D341）。週は落とした日時、月は落としたマスの日で同じ時刻を `draft`（日付・開始（早）・開始（遅）は幅を保つ）に入れて欄を開く。範囲（この回だけ／これ以降／すべて）は欄で選ぶ。同じ日時なら何もしない。保存で日時が変わり担当を選ばず、新しい日に今の案があれば、カレンダーの上に「〈日〉の案に空き時間で入れる」の知らせ（`pcal-notice`・`pcal-insert`。`lib/week` の `insertIntoPlan`。入らなければ理由。週の予定と同じ）
 - 下に1行の説明（足し方・動かし方）と、作ってある最後の日より後を見ているときは「M/D より後の訪問はまだ作っていません（「月の予定」で作ります）」（`pcal-unmade`）
-- 狭い画面（600px 以下。`data-layout="list"`）：日ごとのリスト（`pcal-list`・`pcal-day`）。週は7日（訪問の無い日は「訪問なし」）、月はその月の訪問のある日と今日。足す・動かすは出さない
+- 狭い画面（600px 以下。`data-layout="list"`）：日ごとのリスト（`pcal-list`・`pcal-day`）。週は7日（訪問の無い日は「訪問なし」）、月はその月の訪問のある日と今日。2段目の行は日の予定のスマホの日ごとのリストと同じ共通の `VisitRow`（`ul.vrow-list` の `li` の中。data-testid `pcal-visit`・`data-marks`。〈利用者さん〉の画面は種類名と担当、〈スタッフ〉の画面は〈利用者さん〉の名前だけ（担当は出さない）。[pages-common.md](pages-common.md) の「1行1訪問の行」）。足す・動かす・キーで動かすは出さず、見る・取り消す・担当替えは下から出る欄で（D334）
 - 印刷：道具の行のボタン・説明・マスの「＋」・知らせを出さない（期間の見出しは出す）
 
 ### 〈利用者さん〉の画面の中身
@@ -111,7 +113,7 @@
 
 #### 確かめ
 
-`scripts/e2e-view.cjs`（節の形・変更の確認・`?id=`・追加・吹き出しの名前・行を押す・アイコン）と `scripts/e2e-person-page.cjs`（タブ・予定のカレンダー・欄・空き枠から足す・ドラッグで動かす・繰り返し・休み・〈スタッフ〉の画面・390px・印刷）。
+`scripts/e2e-view.cjs`（節の形・変更の確認・`?id=`・追加・吹き出しの名前・行を押す・アイコン）と `scripts/e2e-person-page.cjs`（タブ・予定のカレンダー・欄・空き枠から足す・ドラッグで動かす・繰り返し・休み・〈スタッフ〉の画面・390px・印刷）・`scripts/e2e-shared-parts.cjs`（人の予定表の複数選択・キー・〈スタッフ〉の画面は日時を動かさない・帯の見た目・ドラッグの落とし先の判定・390px の2段目の行）。
 
 ### 住所の入力（ADR-0016。PRD D86〜D90・D118〜D121）
 
@@ -205,6 +207,7 @@
 - [ ] （ADR-0021）一覧を地区・チップ・検索で絞れる
 - [ ] （PRD D285）「訪問の種類」のチップ（例「リハビリ」）で、この週にその種類の訪問がある人に絞れる。複数押せばどれか
 - [ ] （ADR-0052）一覧の行・「開く」・`?id=` でその人の画面（`#/clients/:id`）が開き、節は読むだけ。「直す」でその節だけ入力欄になり、保存・取り消しで戻る。変更があるまま取り消す・タブを替える・別の人を開く・画面を移ると確認が出る。「追加」は新しい人の画面（`scripts/e2e-view.cjs`）
+- [ ] （ADR-0056）人の予定表の回を Ctrl＋クリックで選べ（下に選んだ訪問の帯）、↓ で15分後へ動く（Ctrl+Z で戻る）。〈スタッフ〉の画面は ↓ で動かず、帯に時刻をずらすが無い。印は日・週・月と同じ。390px は「選ぶ」・長押しで選べ、2段目の行は日ごとのリストと同じ形（`scripts/e2e-shared-parts.cjs`）
 - [ ] （ADR-0052）予定のタブのカレンダーで回を押すと訪問の詳細の欄、空き枠を縦にドラッグすると所要の長さで新しい訪問、回をドラッグすると範囲を選んで動かせる。繰り返しを足す・直す・終わらせる（`scripts/e2e-person-page.cjs`）
 - [ ] （ADR-0016 追記）`scripts/e2e-address.cjs` が通る：開いた・打っただけでは送らず送るのは zipcode・q だけ、郵便番号の正規化、候補と元に戻す、見つからない・つながらない・時間切れで知らせてデータを変えない、連打で1回・途中で閉じたら書かない・途中の書き換えで古い応答を捨てる、〈利用者さん〉の data-testid と保存
 - [ ] `lib/leaves`・`lib/patternText`・`lib/area`・`lib/clientFilter`・`lib/search`・`lib/viewMode`・`lib/personPage`・`lib/visitOps`・`lib/addressLookup`・`lib/postalCode`・`lib/geocode`（偽物）・`lib/clientStage` のテストが通る

@@ -1,6 +1,6 @@
 # 日の予定（予定と AI の提案）
 
-> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`dayPlan.ts`・`reassignMenu.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`、`src/components/Toast.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031・0044・0053。関連 PRD：D16〜D18・D20・D21・D23〜D25・D58・D63・D84・D91〜D101・D157・D158・D173〜D174・D201〜D209・D217〜D219・D224・D266・D269・D314〜D319・D323。
+> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`dayPlan.ts`・`reassignMenu.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`、`src/components/Toast.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031・0044・0053・0056。関連 PRD：D16〜D18・D20・D21・D23〜D25・D58・D63・D84・D91〜D101・D157・D158・D173〜D174・D201〜D209・D217〜D219・D224・D266・D269・D314〜D319・D323・D339〜D341。
 > 版2（ADR-0053）：担当は訪問に持ち（`Visit.staffId`・`start`・`pinned`）、その日の割当は `lib/dayPlan` の `dayRoutes`。この節で「今の案」とあるのはその日の訪問の担当のこと
 > 欠勤・キャンセルの欄と振り直しは [pages-plan-absence.md](pages-plan-absence.md)、バーの塗りは [pages-bars.md](pages-bars.md)。
 
@@ -73,7 +73,7 @@
 
 ##### スマホの日ごとのリスト（600px 以下。PRD D334。`components/dayList.tsx`。[pages-common.md](pages-common.md) の「スマホの日ごとのリスト」）
 
-- その日の訪問（取り消し・休みの回も）を今の担当の開始の順に1行ずつ。行を押すと訪問の詳細の欄（下から出る欄）、長押し・「選ぶ」で複数選択（`SelectionBar` は下から出る置き場所）、左右にスワイプで前・次の日（上の帯の日付の切り替えと同じ並び）。日付を変えると選ぶ形を抜ける
+- その日の訪問（取り消し・休みの回も）を今の担当の開始の順に1行ずつ。行は共通の `VisitRow`（印は共通の判定 `dayLooks`。PRD D339・D340）。行を押すと訪問の詳細の欄（下から出る欄）、長押し・「選ぶ」で複数選択（`SelectionBar` は下から出る置き場所）、左右にスワイプで前・次の日（上の帯の日付の切り替えと同じ並び）。日付を変えると選ぶ形を抜ける
 - 600px 以下の見出し：説明（`page-lead`）とアイコンを出さず題名を小さく、「予定をメールで送る」はアイコン（名前は読み上げ）。1行のまとめは訪問・入らない・点数・詳しくだけ（守れない条件・移動・理由・次の一手は「詳しく」の欄で）。担当ごとの1日は出さない。「担当なしを見る」（帯）は最初の担当なしの行へ巻く
 - 390×844 で操作の行が1段で、最初の画面に訪問が見える
 
@@ -85,7 +85,7 @@
 - 列の最小幅 `TL_COL_MIN_PX`（128px）。見出しの名前（`.col-head-name`）は空白で折り返して切らず、件数の札は入らなければ次の行。箱は `EdgeScroll`（`edgeClass="is-tl"`・`route-timeline`）で、右に続きの列がある間は広い画面でも端に影（印刷では出さない。PRD D269）
 - 1分＝一定の高さ（`lib/timeline` の `TL_PX_PER_MIN`＝1.1px）、`TL_START` 07:00〜`TL_END` 20:00（稼働時間帯・訪問がはみ出せば広げる）
 - 列の背景は稼働時間帯（`slotsOf`。欠勤を差し引いたもの）の外を灰、欠勤の時間を斜線と「欠勤」
-- 帯は押すと理由（`VisitCard` と同じ選択・地図の強調）。印（固定・代行・+N分・違反の赤い枠・仮・資格✗）は小さなアイコンと `title`
+- 帯は押すと理由（`VisitCard` と同じ選択・地図の強調）。印のうち要対応・資格✗／限✗・未連絡の変更・ピン・この回だけ変更・仮押さえは共通の判定（`dayLooks`・`lib/visitLook`。週・月・人の予定表と同じ。PRD D339。[pages-common.md](pages-common.md) の「訪問の帯の共通の部品」）で、小さなアイコンと `title`（帯に `data-marks`。限✗も出る。今日より前の日は要対応・資格✗／限✗を出さない）。代行・+N分・違反の赤い枠はこの画面の印
 - 移動は前の帯の終わりから細い線と「移動 N分」（押すと区間を地図で強調）、待ちは点線の枠。「自宅まで N分」は列の最後の帯の下
 - ドラッグは順番の表示と同じ担当の移し方（`bestInsertion`・固定）。ドラッグ中は落とす列の、その訪問の earliest〜latest の位置に影（その人に入れたときの strict の可否で緑／赤。可否で外れる人は予告）
 
@@ -141,7 +141,7 @@
 ##### 戻す（全体の履歴。PRD D329。ADR-0054）
 
 - 手直し（担当を移す・担当なしにする・受けられる人に入れる・ピンを外す）・提案を当てる・振り直し・確定は、どれも store の `update(fn, 手の名前)` の1手（「担当を替える」「担当なしにする」「受けられる人に入れる」「ピンを外す」「AI の提案を当てる（…）」「欠勤を登録」「欠勤の振り直し」「案A を当てる」「確定（伝えた）」など）。戻すのは全体の「元に戻す」（操作の行の `undo-btn`・トーストの `toast-undo`・Ctrl+Z）で、50手まで。別の日の手も戻る（日付を問わない）
-- 複数選択（Shift・Ctrl＋クリック）は時間軸の帯と順番のカード。下に `SelectionBar`（[pages-common.md](pages-common.md)）
+- 複数選択（Shift・Ctrl＋クリック）は時間軸の帯と順番のカード（`useVisitSelection` は共通の部品。PRD D330・D340）。下に `SelectionBar`（[pages-common.md](pages-common.md)）
 - 手で担当を替えた訪問は自動でピン（PRD D319）。「次からもこの人に」の記憶は無い（ADR-0053。繰り返しの担当を直す）
 
 #### 入らなかった訪問
@@ -197,7 +197,7 @@
 #### 種類・仮・決まりごとの表示
 
 - 訪問のカード・一覧に種類の色の印と名前（`components/visitType.tsx`。`title`・読み上げにも）。種類の必要条件で外れる理由は理由の欄に出る（matching）
-- 仮押さえの〈利用者さん〉の訪問に「仮」の印
+- 仮押さえの〈利用者さん〉の訪問に「仮」の印（共通の判定の印。PRD D339）
 - 時間軸の帯・順番のカードを押したときの詳細に訪問先の決まりごと（`components/VisitRules.tsx`）と道順のリンク
 - 訪問の詳細の名前は `PersonButton`：時間軸は見出しの〈利用者さん〉の名前と「担当：」、順番は `visit-who` の「〈利用者さん〉：」「担当：」。一覧の〈利用者さん〉と担当の名前も
 

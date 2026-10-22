@@ -21,11 +21,14 @@ export type ClientBarPlace = { style: CSSProperties; className: string; edge: Ba
 export function ClientDayBar({
   items,
   markOf,
+  marksOf,
   timeText,
   renderItem,
 }: {
   items: readonly ClientWeekItem[];
   markOf: (it: ClientWeekItem) => ClientBarMark;
+  /** 担当の名前のあとに置く帯の印（共通の VisitMarks。要対応・未連絡の変更・ピンなど） */
+  marksOf?: (it: ClientWeekItem) => ReactNode;
   /** 「9:00〜10:00」 */
   timeText: (it: ClientWeekItem) => string;
   renderItem: (it: ClientWeekItem, place: ClientBarPlace) => ReactNode;
@@ -64,7 +67,7 @@ export function ClientDayBar({
   // 帯の下の短い文字：時刻の順
   const names = items.map((it) => {
     const mk = marks.get(it.visitId)!;
-    return { id: it.visitId, kind: mk.kind, short: mk.short, sub: !!it.substitute };
+    return { id: it.visitId, kind: mk.kind, short: mk.short, sub: !!it.substitute, item: it };
   });
   return (
     <span className="cbar">
@@ -111,6 +114,7 @@ export function ClientDayBar({
             <span key={n.id} className={`cbar-name is-${n.kind}`}>
               {n.short}
               {n.sub && <span className="cbar-sub">代</span>}
+              {marksOf && n.item && marksOf(n.item)}
             </span>
           ))}
         </span>

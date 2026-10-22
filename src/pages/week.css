@@ -170,7 +170,15 @@ label.week-who {
   background-image: none;
 }
 .week-band-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-weight: 700;
+}
+.week-band-marks .vmark {
+  min-width: 13px;
+  height: 13px;
+  font-size: 0.58rem;
 }
 .week-band-client,
 .week-band-staff {
@@ -220,6 +228,74 @@ label.week-who {
 }
 .week-table td[data-testid='week-cell'] .load-bar {
   gap: 2px;
+}
+/* マスの訪問（選ぶ・キーで動かす・ドラッグ。PRD D340） */
+.week-table td.week-cell {
+  position: relative;
+}
+.week-table td.week-cell.is-drop {
+  background: var(--primary-soft);
+}
+.week-tchips {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.week-tchip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 22px;
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.72rem;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.week-tchip:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+.week-tchip.is-issue {
+  border-color: var(--danger);
+  background: #fff4f2;
+}
+.week-tchip.is-multi {
+  background: var(--primary-soft);
+}
+.week-tchip-time {
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.week-tchip-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.week-tdrop {
+  position: absolute;
+  inset: 2px;
+  display: flex;
+  align-items: flex-end;
+  padding: 2px;
+}
+@media print {
+  .week-tchips {
+    display: none;
+  }
 }
 /* 今日より前の日は薄く（月のマスの is-past と同じ） */
 .week-table td.is-past {
@@ -374,9 +450,9 @@ label.week-who {
 }
 .week-cdrop {
   display: block;
+  margin-top: 2px;
+  padding: 1px 2px;
   font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--primary-dark);
 }
 .week-clients {
   table-layout: fixed;

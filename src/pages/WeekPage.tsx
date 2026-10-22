@@ -10,17 +10,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import {
-  type DragEvent,
-  type KeyboardEvent,
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
@@ -34,19 +24,23 @@ import type { MenuItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { StaffMark } from '../components/StaffMark';
-import {
-  RangeProposalBand,
-  ScheduleToolbar,
-  SelectionBar,
-  useScopeItems,
-  useVisitSelection,
-} from '../components/scheduleParts';
+import { RangeProposalBand, ScheduleToolbar, SelectionBar, useScopeItems } from '../components/scheduleParts';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
-import { KeyMoveBand, useVisitKeys } from '../components/visitKeys';
+import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
+import {
+  DropShadow,
+  SelectToggle,
+  useVisitDrag,
+  useVisitItem,
+  useVisitLooks,
+  useVisitSelection,
+  type VisitDrag,
+  VisitMarks,
+} from '../components/visitParts';
 import { TypeDot } from '../components/visitType';
 import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
@@ -66,7 +60,6 @@ import {
 import { colorOf } from '../lib/colors';
 import { dateText } from '../lib/common';
 import { bulkConfirmDialog, bulkConfirmTargets, confirmDay } from '../lib/confirmDay';
-import { deferredDragStart } from '../lib/dragStart';
 import { periodEmptyGuide } from '../lib/emptyGuide';
 import { isDate } from '../lib/isDate';
 import { attentionList } from '../lib/month';
@@ -86,6 +79,8 @@ import { useDayStatuses } from '../lib/useDayStatuses';
 import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { useValueStore } from '../lib/valueStore';
+import { staffWhyOf } from '../lib/visitDrop';
+import type { VisitLook } from '../lib/visitLook';
 import {
   allowedStaffOf,
   type Band,
@@ -94,8 +89,6 @@ import {
   clientWeekTable,
   DAY_END,
   DAY_START,
-  fitCountAt,
-  inDayRange,
   insertIntoPlan,
   laneLayout,
   qualificationBadges,
@@ -104,8 +97,6 @@ import {
   snapMinutes,
   staffWeekTable,
   staffWithQualification,
-  type UnfitMark,
-  unfitMarks,
   type WeekDay,
   weekDates,
   weekDay,
@@ -199,20 +190,15 @@ export default function WeekPage() {
   const suddenOn = useFeature('sudden');
   /** 複数選択（Shift・Ctrl＋クリック。週を送ったら外す。PRD D330） */
   const multi = useVisitSelection(start);
+  /** スマホ（600px 以下）の選ぶ形（長押しか「選ぶ」。押すと選ぶ・外す。週を送ったら抜ける。PRD D340） */
+  const [selecting, setSelecting] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 週を送ったら選ぶ形を抜ける
+  useEffect(() => {
+    setSelecting(false);
+  }, [start]);
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
   const [mailOpen, setMailOpen] = useState(false);
   const mailOn = useFeature('mail');
-  const [hover, setHover] = useState<{ date: string; start: number } | null>(null);
-  /** つかんでいる訪問（チップの強調・「入れる人」に使う） */
-  const [dragId, setDragId] = useState<string | null>(null);
-  /** つかんだ帯と、帯の上端からつかんだ位置までの高さ（px）。表のマスからつかんだときは offset を使わない */
-  const grab = useRef<{ visitId: string; offset: number } | null>(null);
-  /**
-   * dragId の更新は dragstart の後へ遅らせる（予定の画面と同じ。src/lib/dragStart.ts）。
-   * dragstart の中で再描画すると「担当できる」の印・行が足されて帯が指の下からずれ、
-   * Chrome がドラッグをすぐ終わらせる（本物のマウス操作で、週の帯が動かせなくなっていた）
-   */
-  const dragStart = useRef(deferredDragStart()).current;
 
   // ---- 選んでいる日付との同期（PRD D59）----
   // URL の ?d= で開いた日が選んでいる日付と違えば、選んでいる日付をその日にする
@@ -342,6 +328,21 @@ export default function WeekPage() {
     requestAnimationFrame(() => nextRef.current?.focus({ preventScroll: true }));
   };
   const table = useMemo(() => (tab === 'table' ? staffWeekTable(compileInput, days) : null), [tab, compileInput, days]);
+  /** 〈スタッフ〉×曜日の表のマスの訪問（担当・日ごと。時刻の順。表で選ぶ・キーで動かす・ドラッグする。PRD D340） */
+  const bandsOf = useMemo(() => {
+    const out = new Map<string, Band[]>();
+    if (tab !== 'table') return out;
+    for (const d of days)
+      for (const b of d.bands) {
+        if (b.staffId === null || b.leave) continue;
+        const k = `${b.staffId}|${b.date}`;
+        const list = out.get(k);
+        if (list) list.push(b);
+        else out.set(k, [b]);
+      }
+    for (const list of out.values()) list.sort((a, b) => a.start - b.start);
+    return out;
+  }, [tab, days]);
   const qualItem = useMemo(() => qualificationItem(data.items), [data.items]);
   const badgesOf = useMemo(
     () => new Map(activeStaff.map((s) => [s.id, qualificationBadges(data.items, s)])),
@@ -442,22 +443,6 @@ export default function WeekPage() {
     [tab, data, days, filteredClients],
   );
 
-  // ---- ドラッグ中の予告（D57） ----
-  /** つかんでいる訪問を担当できる人（その訪問の日の問題の可否） */
-  const allowedNow = useMemo(() => {
-    if (!dragId) return null;
-    const v = visitById.get(dragId);
-    return new Set(v ? allowedStaffOf(dayOf.get(v.date)?.problem ?? null, dragId) : []);
-  }, [dragId, visitById, dayOf]);
-  /** 「入れる人 N人」の memo（訪問・日・時刻ごと。データが変われば作り直す） */
-  const fitCache = useMemo(() => ({ input: compileInput, memo: new Map<string, number | null>() }), [compileInput]);
-  const fitCount = (visitId: string, d: string, s: number): number | null => {
-    const key = `${visitId}|${d}|${s}`;
-    if (!fitCache.memo.has(key)) fitCache.memo.set(key, fitCountAt(fitCache.input, visitId, d, s));
-    return fitCache.memo.get(key) ?? null;
-  };
-  const hoverFit = dragId && hover ? fitCount(dragId, hover.date, hover.start) : null;
-
   const go = (next: Record<string, string | null>, replace = false) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(next)) {
@@ -527,20 +512,6 @@ export default function WeekPage() {
   };
   const clientName = (v: Visit | undefined) => clientById.get(v?.clientId ?? '')?.displayName ?? '（不明）';
 
-  /** 週の帯にフォーカスを戻す（キーで動かしたあと。週を移ったときは描き終わるまで待つ） */
-  const focusWeekBand = (visitId: string) => {
-    let n = 0;
-    const tick = () => {
-      const el = document.querySelector<HTMLElement>(`[data-testid="week-band"][data-visit="${CSS.escape(visitId)}"]`);
-      if (el) {
-        el.focus({ preventScroll: true });
-        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        return;
-      }
-      if (++n < 30) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  };
   /**
    * 週の時間軸の帯のキーボード（PRD D333）：↑↓ 15分・←→ 1日（週の外へ出たらその週へ）・Shift+←→ 隣の担当（利用中の〈スタッフ〉の順）・
    * Enter で欄（ボタンの既定）・Delete で取り消し（確認）。どれも全体の「元に戻す」の1手
@@ -549,7 +520,7 @@ export default function WeekPage() {
     staffOrder: () => activeStaff.map((s) => s.id),
     onMoved: (r) => {
       if (!dates.includes(r.date)) goWeek(r.date);
-      focusWeekBand(r.visitId);
+      focusVisitItem(r.visitId);
     },
     onCancelled: () =>
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus()),
@@ -560,7 +531,7 @@ export default function WeekPage() {
    * 訪問の詳細の欄を開く。d・s が今の日時と違えば（ドラッグで落とした先）、その日時を入れた形で開き、保存のときに範囲
    * （この回だけ／これ以降／すべて）を選ぶ。保存で日時が変わり、担当を選ばず、新しい日に今の案があれば「空き時間に入れる」の知らせ
    */
-  const openMove = (visitId: string, d?: string, s?: number) => {
+  const openMove = (visitId: string, d?: string, s?: number, staffId?: string | null) => {
     const v = visitById.get(visitId);
     if (!v) return;
     setNotice(null);
@@ -568,6 +539,7 @@ export default function WeekPage() {
     const width = hhmmToMinutes(v.latestStart) - hhmmToMinutes(v.earliestStart);
     openVisitPanel({
       visitId,
+      ...(staffId ? { staff: staffId } : {}),
       ...(changed
         ? { draft: { date: d, earliestStart: minutesToHhmm(s), latestStart: minutesToHhmm(s + width) } }
         : {}),
@@ -576,94 +548,37 @@ export default function WeekPage() {
           setNotice({ date: r.date, visitId: r.visitId, label: r.label, error: null });
         }
       },
-      returnFocus: (vid) =>
-        vid
-          ? document.querySelector<HTMLElement>(
-              `[data-testid="week-band"][data-visit="${CSS.escape(vid)}"], [data-testid="week-citem"][data-visit="${CSS.escape(vid)}"]`,
-            )
-          : null,
+      returnFocus: (vid) => (vid ? visitItemOf(vid) : null),
     });
   };
-  const onDragStart = (e: DragEvent<HTMLElement>, visitId: string) => {
-    e.dataTransfer.setData('text/plain', visitId);
-    e.dataTransfer.effectAllowed = 'move';
-    grab.current = { visitId, offset: e.clientY - e.currentTarget.getBoundingClientRect().top };
-    dragStart.start(() => setDragId(visitId));
-  };
-  const dropStart = (e: DragEvent<HTMLElement>): number | null => {
-    const g = grab.current;
-    if (!g) return null;
-    const top = e.currentTarget.getBoundingClientRect().top;
-    return snapMinutes(DAY_START + (e.clientY - top - g.offset) / PX_PER_MIN);
-  };
-  const onDragOver = (e: DragEvent<HTMLElement>, d: string) => {
-    // 今日より前の日には落とせない（preventDefault しない）
-    if (!grab.current || !canMoveVisit(d, today)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const s = dropStart(e);
-    if (s !== null && (hover?.date !== d || hover.start !== s)) setHover({ date: d, start: s });
-  };
-  const onDrop = (e: DragEvent<HTMLElement>, d: string) => {
-    e.preventDefault();
-    const s = dropStart(e);
-    const g = grab.current;
-    grab.current = null;
-    dragStart.end();
-    setHover(null);
-    setDragId(null);
-    if (!g || s === null) return;
-    const v = visitById.get(g.visitId);
-    if (!v || !canMoveVisit(v.date, today)) return;
-    if (!canMoveVisit(d, today)) {
-      toast('今日より前の日へは動かせません');
-      return;
-    }
-    // 範囲外は戻す（何もしない）
-    if (!inDayRange(s, v.durationMinutes)) {
-      toast(`${hm(DAY_START)}〜${hm(DAY_END)} の中に置いてください`);
-      return;
-    }
-    if (d === v.date && s === hhmmToMinutes(v.earliestStart)) return;
-    openMove(g.visitId, d, s);
-  };
-  const onDragEnd = () => {
-    grab.current = null;
-    dragStart.end();
-    setHover(null);
-    setDragId(null);
-  };
-
-  // ---- 〈利用者さん〉×曜日の表のドラッグ（別の日のマスへ。時刻はそのまま） ----
-  /** その行（〈利用者さん〉）のその日のマスへ落とせるか */
-  const canDropCell = (clientId: string, d: string): boolean => {
-    const v = grab.current ? visitById.get(grab.current.visitId) : undefined;
-    return !!v && v.clientId === clientId && v.date !== d && canMoveVisit(d, today);
-  };
-  const onCellDragOver = (e: DragEvent<HTMLElement>, clientId: string, d: string) => {
-    if (!canDropCell(clientId, d)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const v = visitById.get(grab.current!.visitId)!;
-    const s = hhmmToMinutes(v.earliestStart);
-    if (hover?.date !== d || hover.start !== s) setHover({ date: d, start: s });
-  };
-  const onCellDrop = (e: DragEvent<HTMLElement>, clientId: string, d: string) => {
-    e.preventDefault();
-    const ok = canDropCell(clientId, d);
-    const g = grab.current;
-    grab.current = null;
-    dragStart.end();
-    setHover(null);
-    setDragId(null);
-    if (!g) return;
-    if (!ok) {
-      if (!canMoveVisit(d, today)) toast('今日より前の日へは動かせません');
-      return;
-    }
-    const v = visitById.get(g.visitId)!;
-    openMove(g.visitId, d, hhmmToMinutes(v.earliestStart));
-  };
+  /**
+   * ドラッグ（PRD D341。どの画面も同じ判定 lib/visitDrop）：時間軸は別の日・時刻、〈利用者さん〉×曜日の表は同じ行の別の日（時刻はそのまま）、
+   * 〈スタッフ〉×曜日の表は別の人・日（時刻はそのまま）。落とすと落とした日時・担当を入れた訪問の詳細の欄（範囲は欄で選ぶ）
+   */
+  const drag = useVisitDrag({
+    today,
+    fit: true,
+    staffWhy: (visitId, d, sid) => staffWhyOf(dataRef.current, visitId, d, sid),
+    onDrop: (visitId, v) => openMove(visitId, v.date, v.start, v.staffId),
+  });
+  const dragId = drag.dragId;
+  // ---- ドラッグ中の予告（D57） ----
+  /** つかんでいる訪問を担当できる人（その訪問の日の問題の可否） */
+  const allowedNow = useMemo(() => {
+    if (!dragId) return null;
+    const v = visitById.get(dragId);
+    return new Set(v ? allowedStaffOf(dayOf.get(v.date)?.problem ?? null, dragId) : []);
+  }, [dragId, visitById, dayOf]);
+  /** 訪問の見た目（日・月・人の予定表と同じ判定。lib/visitLook） */
+  const lookOf = useVisitLooks(dates);
+  /** 帯・マスの訪問の押し方（Shift／Ctrl＋クリック・Enter で選ぶ、押すと欄、キーで動かす。PRD D340） */
+  const itemProps = useVisitItem({
+    selection: multi,
+    onOpen: (id) => openMove(id),
+    keys: narrow ? null : visitKeys,
+    selecting,
+    longPress: narrow ? { onSelecting: setSelecting } : null,
+  });
   /** 新しい日の今の案に空き時間で入れる（入る人がいなければ知らせに理由を出す） */
   const insert = () => {
     if (!notice) return;
@@ -1079,9 +994,7 @@ export default function WeekPage() {
                 day={day}
                 today={today}
                 show={showBand}
-                hover={hover?.date === day.date ? hover.start : null}
-                hoverFit={hover?.date === day.date ? hoverFit : null}
-                hoverMinutes={grab.current ? (visitById.get(grab.current.visitId)?.durationMinutes ?? 60) : 60}
+                drag={drag}
                 visitById={visitById}
                 bandLabel={(b) => {
                   const v = visitById.get(b.visitId);
@@ -1099,15 +1012,9 @@ export default function WeekPage() {
                   }
                   return b.staffId ? (colorOfStaff.get(b.staffId) ?? null) : null;
                 }}
-                unfit={(b) => unfitMarks(day.problem, b.visitId, b.staffId)}
-                onOpen={(b) => openMove(b.visitId)}
+                lookOf={lookOf}
                 isMulti={multi.has}
-                onMulti={(b) => multi.toggle(b.visitId)}
-                onKey={(e, b) => visitKeys(e, b.visitId)}
-                onDragStart={onDragStart}
-                onDragEnd={onDragEnd}
-                onDragOver={(e) => onDragOver(e, day.date)}
-                onDrop={(e) => onDrop(e, day.date)}
+                itemProps={itemProps}
               />
             ))}
           </div>
@@ -1131,6 +1038,7 @@ export default function WeekPage() {
               </div>
             )}
             <div className="week-table-legend" data-testid="week-legend">
+              {narrow && <SelectToggle selecting={selecting} onChange={setSelecting} testId="week-select" />}
               <span className="row week-table-legend-rows">
                 <LoadRowsSample />
                 <span className="sub">
@@ -1182,14 +1090,57 @@ export default function WeekPage() {
                               `移動 ${c.travel}分`,
                               ...(typesText ? [typesText] : []),
                             ].join('・');
+                        const key = `s|${r.staffId}|${c.date}`;
+                        const hov = drag.hover?.key === key ? drag.hover : null;
+                        const chips = bandsOf.get(`${r.staffId}|${c.date}`) ?? [];
                         return (
                           <td
                             key={c.date}
-                            className={[c.off ? 'is-off' : '', c.date < today ? 'is-past' : ''].join(' ')}
+                            className={[
+                              'week-cell',
+                              c.off ? 'is-off' : '',
+                              c.date < today ? 'is-past' : '',
+                              hov?.verdict.ok ? 'is-drop' : '',
+                            ].join(' ')}
+                            {...drag.target(key, () => ({ date: c.date, start: null, staffId: r.staffId }))}
                             data-testid="week-cell"
+                            data-date={c.date}
+                            data-staff={r.staffId}
                             title={`${staffName(r.staffId)}さん ${dateText(c.date)}：${detail}`}
                           >
                             <StaffBar slots={c.bar} testId="week-bar" />
+                            {chips.length > 0 && (
+                              <span className="week-tchips">
+                                {chips.map((b) => {
+                                  const v = visitById.get(b.visitId);
+                                  const look = lookOf(b.visitId);
+                                  const on = multi.has(b.visitId);
+                                  const movable = canMoveVisit(b.date, today) && !b.leave;
+                                  const t = typeOf(data.visitTypes, v?.typeId);
+                                  const name = clientName(v);
+                                  return (
+                                    <button
+                                      key={b.visitId}
+                                      type="button"
+                                      className={`week-tchip${look?.tone === 'issue' ? ' is-issue' : ''}${on ? ' is-multi' : ''}`}
+                                      style={t ? { borderLeftColor: colorOf(t.color) } : undefined}
+                                      {...drag.source(b.visitId, movable && !narrow)}
+                                      {...itemProps(b.visitId, { selectable: movable, movable, selected: on })}
+                                      aria-label={`${hm(b.start)} ${name}${look?.text ? `・${look.text}` : ''}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
+                                      title={`${hm(b.start)}〜${hm(b.end)} ${name}${look?.text ? `（${look.text}）` : ''}`}
+                                      data-testid="week-tvisit"
+                                      data-visit={b.visitId}
+                                      data-marks={look?.kinds ?? ''}
+                                    >
+                                      <span className="week-tchip-time">{hm(b.start)}</span>
+                                      <span className="week-tchip-name">{name}</span>
+                                      <VisitMarks look={look} size={10} />
+                                    </button>
+                                  );
+                                })}
+                              </span>
+                            )}
+                            {hov && <DropShadow hover={hov} className="week-tdrop" time={false} />}
                             <span className="week-cell-foot">
                               {c.off ? (
                                 // 訪問の無い休みは、バーに重ねた「休み」（PRD D85）と二重にしないよう文字は読み上げだけ
@@ -1241,6 +1192,7 @@ export default function WeekPage() {
         clientRows && (
           <div className="card week-card">
             <div className="week-table-legend" data-testid="week-client-legend">
+              {narrow && <SelectToggle selecting={selecting} onChange={setSelecting} testId="week-select" />}
               <span className="row week-table-legend-rows">
                 <LoadRowsSample />
                 <span className="sub">
@@ -1280,15 +1232,13 @@ export default function WeekPage() {
                           </span>
                         </th>
                         {r.cells.map((cell) => {
-                          const hovered =
-                            !!dragId && hover?.date === cell.date && visitById.get(dragId)?.clientId === r.clientId;
+                          const key = `c|${r.clientId}|${cell.date}`;
+                          const hov = drag.hover?.key === key ? drag.hover : null;
                           return (
                             <td
                               key={cell.date}
-                              className={`week-ccell${cell.date < today ? ' is-past' : ''}${hovered ? ' is-drop' : ''}`}
-                              onDragOver={(e) => onCellDragOver(e, r.clientId, cell.date)}
-                              onDragLeave={() => hovered && setHover(null)}
-                              onDrop={(e) => onCellDrop(e, r.clientId, cell.date)}
+                              className={`week-ccell${cell.date < today ? ' is-past' : ''}${hov?.verdict.ok ? ' is-drop' : ''}`}
+                              {...drag.target(key, () => ({ date: cell.date, start: null, clientId: r.clientId }))}
                               data-date={cell.date}
                               data-client={r.clientId}
                               data-testid="week-ccell"
@@ -1298,51 +1248,40 @@ export default function WeekPage() {
                                 timeText={(it) => `${hm(it.start)}〜${hm(it.end)}`}
                                 markOf={(it) => {
                                   const type = typeOf(data.visitTypes, it.typeId);
-                                  const mk = clientItemMark(it, markNames);
-                                  // 担当が条件に合わない印（資格✗・限✗）も帯の下の文字に出す（赤い枠の色だけにしない）
-                                  const unfit = it.cancelled
-                                    ? []
-                                    : unfitMarks(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
                                   return {
-                                    ...mk,
-                                    short: [mk.short, ...unfit.map((m) => m.short)].join(' '),
+                                    ...clientItemMark(it, markNames),
                                     color: type ? colorOf(type.color) : NO_TYPE_COLOR,
                                   };
                                 }}
+                                // 帯の印（要対応・資格✗／限✗・未連絡の変更・ピンなど）は担当の名前のあとに、どの画面とも同じ形で
+                                marksOf={(it) => <VisitMarks look={lookOf(it.visitId)} size={10} />}
                                 renderItem={(it, place) => {
                                   const type = typeOf(data.visitTypes, it.typeId);
                                   const mk = clientItemMark(it, markNames);
                                   // 〈利用者さん〉の休み（ADR-0013）・取り消しの訪問は動かさない
                                   const movable = canMoveVisit(it.date, today) && !it.leave && !it.cancelled;
-                                  const marks = it.cancelled
-                                    ? []
-                                    : unfitMarks(dayOf.get(it.date)?.problem ?? null, it.visitId, it.staffId);
-                                  const text = `${hm(it.start)}〜${hm(it.end)} ${type ? `${type.name}・` : ''}${mk.text}${marks.map((m) => `・${m.short}`).join('')}`;
+                                  const look = lookOf(it.visitId);
+                                  const on = multi.has(it.visitId);
+                                  const text = `${hm(it.start)}〜${hm(it.end)} ${type ? `${type.name}・` : ''}${mk.text}${look?.text ? `・${look.text}` : ''}`;
                                   return (
                                     <button
                                       type="button"
-                                      draggable={movable}
-                                      className={`${place.className}${marks.length > 0 ? ' is-unfit' : ''}`}
+                                      className={`${place.className}${look?.tone === 'issue' ? ' is-unfit' : ''}${on ? ' is-multi' : ''}`}
                                       style={place.style}
-                                      onClick={() => openMove(it.visitId)}
-                                      onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
-                                      onDragEnd={onDragEnd}
-                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}（押すと訪問の詳細）`}
-                                      title={[text, ...marks.map((m) => `${m.short}：${m.why}`)].join('／')}
+                                      {...drag.source(it.visitId, movable && !narrow)}
+                                      {...itemProps(it.visitId, { selectable: movable, movable, selected: on })}
+                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
+                                      title={text}
                                       data-testid="week-citem"
                                       data-visit={it.visitId}
+                                      data-marks={look?.kinds ?? ''}
                                     >
                                       {place.edge === 'early' ? '◀' : place.edge === 'late' ? '▶' : null}
                                     </button>
                                   );
                                 }}
                               />
-                              {hovered && dragId && (
-                                <span className="week-cdrop" data-testid="week-cdrop">
-                                  ここへ（{hm(hover!.start)}）・
-                                  {hoverFit === null ? '入れる人 —' : `入れる人 ${hoverFit}人`}
-                                </span>
-                              )}
+                              {hov && <DropShadow hover={hov} className="week-cdrop" testId="week-cdrop" />}
                             </td>
                           );
                         })}
@@ -1374,7 +1313,7 @@ export default function WeekPage() {
       <KeyMoveBand
         onMoved={(r) => {
           if (!dates.includes(r.date)) goWeek(r.date);
-          focusWeekBand(r.visitId);
+          focusVisitItem(r.visitId);
         }}
       />
     </div>
@@ -1386,94 +1325,82 @@ function DayColumn({
   day,
   today,
   show,
-  hover,
-  hoverFit,
-  hoverMinutes,
+  drag,
   visitById,
   bandLabel,
   typeColor,
   edgeColor,
-  unfit,
-  onOpen,
+  lookOf,
   isMulti,
-  onMulti,
-  onKey,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDrop,
+  itemProps,
 }: {
   day: WeekDay;
   /** 今日（今日より前の帯はドラッグできない） */
   today: string;
   /** 出す帯（選んだ人の帯だけ） */
   show: (b: Band) => boolean;
-  hover: number | null;
-  /** 落とす先に入れる人の数（null＝数えられない） */
-  hoverFit: number | null;
-  hoverMinutes: number;
+  /** ドラッグ（共通の判定。lib/visitDrop） */
+  drag: VisitDrag;
   visitById: Map<string, Visit>;
   bandLabel: (b: Band) => { client: string; staff: string };
   typeColor: (v: Visit | undefined) => string | null;
   /** 帯の縁の色（担当・〈利用者さん〉の色） */
   edgeColor: (b: Band) => string | null;
-  /** 担当が種類の必要条件（資格✗）・担当を限る決まり（限✗。ADR-0014）で可でない */
-  unfit: (b: Band) => UnfitMark[];
-  onOpen: (b: Band) => void;
-  /** 複数選択で選んでいるか・選ぶ（Shift・Ctrl＋クリック、Shift／Ctrl＋Enter。PRD D330） */
+  /** 帯の見た目（要対応・資格✗／限✗・未連絡の変更・ピンなど。lib/visitLook） */
+  lookOf: (visitId: string) => VisitLook | undefined;
+  /** 複数選択で選んでいるか（Shift・Ctrl＋クリック、Shift／Ctrl＋Enter。PRD D330） */
   isMulti: (visitId: string) => boolean;
-  onMulti: (b: Band) => void;
-  /** キーボードで動かす（PRD D333）。受けたら true */
-  onKey: (e: KeyboardEvent<HTMLElement>, b: Band) => boolean;
-  onDragStart: (e: DragEvent<HTMLElement>, visitId: string) => void;
-  onDragEnd: () => void;
-  onDragOver: (e: DragEvent<HTMLElement>) => void;
-  onDrop: (e: DragEvent<HTMLElement>) => void;
+  /** 押し方（選ぶ・開く・キーで動かす。components/visitParts の useVisitItem） */
+  itemProps: ReturnType<typeof useVisitItem>;
 }) {
   const bands = day.bands.filter(show);
   const lanes = laneLayout(bands.map((b) => ({ id: b.visitId, start: b.start, end: b.end })));
   const top = (m: number) => (Math.min(Math.max(m, DAY_START), DAY_END) - DAY_START) * PX_PER_MIN;
+  const key = `t|${day.date}`;
+  const hov = drag.hover?.key === key ? drag.hover : null;
+  const minutes = drag.dragId ? (visitById.get(drag.dragId)?.durationMinutes ?? 60) : 60;
+  const hovStart = hov ? (hov.verdict.ok ? hov.verdict.start : (hov.target.start ?? DAY_START)) : 0;
   return (
     <section
       className="week-col"
       style={{ height: (DAY_END - DAY_START) * PX_PER_MIN }}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
+      {...drag.target(key, (e) => ({
+        date: day.date,
+        start: snapMinutes(
+          DAY_START + (e.clientY - e.currentTarget.getBoundingClientRect().top - drag.offset()) / PX_PER_MIN,
+        ),
+      }))}
       aria-label={`${dateText(day.date)}の訪問`}
       data-date={day.date}
       data-testid="week-col"
     >
-      {hover !== null && (
-        <div
+      {hov && (
+        <DropShadow
+          hover={hov}
           className="week-drop"
-          style={{ top: top(hover), height: Math.max(32, hoverMinutes * PX_PER_MIN) }}
-          aria-hidden="true"
-        >
-          {hm(hover)}
-          <span className="week-drop-fit" data-testid="week-drop-fit">
-            {hoverFit === null ? '入れる人 —' : `入れる人 ${hoverFit}人`}
-          </span>
-        </div>
+          testId="week-drop"
+          style={{ top: top(hovStart), height: Math.max(32, minutes * PX_PER_MIN) }}
+        />
       )}
       {bands.map((b) => {
         const v = visitById.get(b.visitId);
         const l = lanes.get(b.visitId) ?? { lane: 0, lanes: 1 };
         const edge = edgeColor(b);
-        const marks = unfit(b);
-        const bad = marks.length > 0;
+        const look = lookOf(b.visitId);
+        const bad = look?.tone === 'issue' || look?.tone === 'unassigned';
         const { client } = bandLabel(b);
         // 〈利用者さん〉の休み（ADR-0013）の訪問は薄く「休み」と出し、動かさない
         const staff = b.leave ? '休みのため無し' : bandLabel(b).staff;
         const color = b.leave ? null : typeColor(v);
         const h = Math.max(18, (Math.min(b.end, DAY_END) - Math.max(b.start, DAY_START)) * PX_PER_MIN);
-        // 今日より前の訪問は動かさない（ドラッグ・Enter を止める）
+        // 今日より前の訪問は動かさない（ドラッグ・キー・選ぶを止める）
         const movable = canMoveVisit(b.date, today) && !b.leave;
+        const on = isMulti(b.visitId);
         return (
           <button
             key={b.visitId}
             type="button"
-            draggable={movable}
-            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? ' is-unassigned' : ''}${bad ? ' is-unfit' : ''}${isMulti(b.visitId) ? ' is-multi' : ''}`}
+            className={`week-band${b.leave ? ' is-leave' : b.staffId === null ? ' is-unassigned' : ''}${bad && b.staffId !== null ? ' is-unfit' : ''}${on ? ' is-multi' : ''}`}
             style={{
               top: top(b.start),
               height: h,
@@ -1482,41 +1409,20 @@ function DayColumn({
               background: color ?? undefined,
               borderColor: !bad && b.staffId !== null && edge ? edge : undefined,
             }}
-            title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${marks.map((m) => `（${m.short}：${m.why}）`).join('')}`}
-            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}${isMulti(b.visitId) ? '（選択中）' : ''}（押すと訪問の詳細）`}
-            aria-pressed={isMulti(b.visitId) || undefined}
-            onClick={(e) => {
-              // Shift・Ctrl（⌘）＋クリックは複数選択（休みの訪問・今日より前は選ばない）
-              if (e.shiftKey || e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                if (movable) onMulti(b);
-                return;
-              }
-              onOpen(b);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                if (movable) onMulti(b);
-                return;
-              }
-              if (movable) onKey(e, b);
-            }}
-            onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}
-            onDragEnd={onDragEnd}
+            title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${look?.text ? `（${look.text}）` : ''}`}
+            aria-label={`${hm(b.start)} ${client}・${staff}${look?.text ? `・${look.text}` : ''}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
+            {...drag.source(b.visitId, movable)}
+            {...itemProps(b.visitId, { selectable: movable, movable, selected: on })}
             data-testid="week-band"
             data-visit={b.visitId}
+            data-marks={look?.kinds ?? ''}
           >
-            <span className="week-band-time">{hm(b.start)}</span>
-            <span className="week-band-client">{client}</span>
-            <span className="week-band-staff">
-              {marks.map((m) => (
-                <span key={m.short} className="week-band-unfit">
-                  {m.short}
-                </span>
-              ))}
-              {staff}
+            <span className="week-band-time">
+              {hm(b.start)}
+              <VisitMarks look={look} size={10} className="week-band-marks" />
             </span>
+            <span className="week-band-client">{client}</span>
+            <span className="week-band-staff">{staff}</span>
           </button>
         );
       })}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays } from '../domain/time';
 import { findVisit, visitsOn } from '../patterns';
 import { createDemoData } from '../seed';
-import { issuesAt, keyMove, movedText, moveLabel, nextStaffFor, visitKeyOf } from './visitKeys';
+import { cellKeyOf, issuesAt, keyMove, movedText, moveLabel, nextStaffFor, visitKeyOf } from './visitKeys';
 import { draftOf, staffChoices, toldDaysChanged } from './visitOps';
 
 const TODAY = '2026-10-21';
@@ -155,5 +155,39 @@ describe('キーで動かす（PRD D333）', () => {
     expect(movedText({ date: '2026-10-28', start: '09:15', staffId: null, repeating: false }, 'A', name)).toBe(
       'Aさん：10/28（水） 09:15・担当なし',
     );
+  });
+});
+
+describe('月のマスのキーの読み替え（PRD D340）', () => {
+  const cell = (
+    k: string,
+    o: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {},
+  ) => cellKeyOf({ ...key(k), ...o });
+  it('←→ は前・次の日、↑↓ は前・次の週', () => {
+    expect(cell('ArrowLeft')).toEqual({ kind: 'go', days: -1 });
+    expect(cell('ArrowRight')).toEqual({ kind: 'go', days: 1 });
+    expect(cell('ArrowUp')).toEqual({ kind: 'go', days: -7 });
+    expect(cell('ArrowDown')).toEqual({ kind: 'go', days: 7 });
+  });
+  it('Enter はその日の回の一覧を開く', () => {
+    expect(cell('Enter')).toEqual({ kind: 'open' });
+  });
+  it('Shift／Ctrl／⌘＋Enter はその日をまとめて選ぶ', () => {
+    expect(cell('Enter', { shiftKey: true })).toEqual({ kind: 'select' });
+    expect(cell('Enter', { ctrlKey: true })).toEqual({ kind: 'select' });
+    expect(cell('Enter', { metaKey: true })).toEqual({ kind: 'select' });
+  });
+  it('Alt つきは読まない（Alt＋Enter・Alt＋矢印・Shift＋Alt＋Enter）', () => {
+    expect(cell('Enter', { altKey: true })).toBeNull();
+    expect(cell('ArrowLeft', { altKey: true })).toBeNull();
+    expect(cell('Enter', { altKey: true, shiftKey: true })).toBeNull();
+  });
+  it('Shift・Ctrl・⌘ つきの矢印・ほかのキーは読まない', () => {
+    expect(cell('ArrowLeft', { shiftKey: true })).toBeNull();
+    expect(cell('ArrowDown', { shiftKey: true })).toBeNull();
+    expect(cell('ArrowRight', { ctrlKey: true })).toBeNull();
+    expect(cell('ArrowUp', { metaKey: true })).toBeNull();
+    expect(cell('Delete')).toBeNull();
+    expect(cell(' ')).toBeNull();
   });
 });
