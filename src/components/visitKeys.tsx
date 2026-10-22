@@ -287,7 +287,10 @@ export function visitItemOf(visitId: string): HTMLElement | null {
   return all[0] ?? null;
 }
 
-/** 動かした訪問の帯へフォーカスを戻す（日付・週・月を移ったときは描き終わるまで待つ） */
+/**
+ * 動かした訪問の帯へフォーカスを戻す（日付・週・月を移ったときは描き終わるまで待つ）。担当を替えて今の表示から外れた
+ * （〈スタッフ〉の画面・〈スタッフ〉で絞った表示）ときは、取り消しと同じく「元に戻す」へ（body に落とさない）
+ */
 export function focusVisitItem(visitId: string) {
   let n = 0;
   const tick = () => {
@@ -298,6 +301,7 @@ export function focusVisitItem(visitId: string) {
       return;
     }
     if (++n < 30) requestAnimationFrame(tick);
+    else document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus();
   };
   requestAnimationFrame(tick);
 }

@@ -752,7 +752,10 @@ export default function MonthPage() {
     else multi.toggleMany(selectableOf(d));
   };
   const onCellKey = useCallback((e: ReactKeyboardEvent, d: string) => cellKeyRef.current(e, d), []);
-  const onCellMulti = useCallback((d: string) => multi.toggleMany(selectableOf(d)), [multi.toggleMany, selectableOf]);
+  // マス（DayCell は memo）へ渡す関数は ref を通して変えない（データが変わるたびに全部のマスを描き直さない）
+  const cellMultiRef = useRef<(d: string) => void>(() => {});
+  cellMultiRef.current = (d) => multi.toggleMany(selectableOf(d));
+  const onCellMulti = useCallback((d: string) => cellMultiRef.current(d), []);
   /** マスごとの選んだ件数 */
   const selectedByDate = useMemo(() => {
     const on = new Set(multi.ids);

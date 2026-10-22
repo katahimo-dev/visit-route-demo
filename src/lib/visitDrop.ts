@@ -64,7 +64,7 @@ export function dropVerdict(
   const same = t.date === v.date && start === hhmmToMinutes(v.earliestStart) && !staffChanges;
   const warn = same
     ? null
-    : staffChanges && t.staffId !== null && opts.staffWhy
+    : t.staffId && opts.staffWhy
       ? opts.staffWhy
       : opts.fit === 0
         ? '入れる人がいません（落とすと要対応に出ます）'
@@ -92,6 +92,7 @@ export function dropShadowText(v: DropVerdict, opts: { fit?: number | null; time
   if (opts.time !== false) parts.push(`ここへ（${hm(v.start)}）`);
   if (v.warn) parts.push(`入らない：${v.warn}`);
   else if (opts.fit !== undefined) parts.push(opts.fit === null ? '入れる人 —' : `入れる人 ${opts.fit}人`);
+  else if (!v.same) parts.push('入る');
   if (v.told.length > 0) parts.push('確定した日（変えると未連絡の変更）');
   if (v.repeating && !v.same) parts.push('繰り返しの回（範囲は欄で選ぶ）');
   return parts.join('・');

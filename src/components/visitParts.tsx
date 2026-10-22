@@ -417,6 +417,8 @@ export function useVisitDrag(opts: {
    */
   const later = useRef(deferredDragStart()).current;
   const fits = useMemo(() => ({ input: compileInput, memo: new Map<string, number | null>() }), [compileInput]);
+  /** 担当できない理由の覚え（訪問・日・人ごと。データが変われば作り直す。dragover は止めていても何度も来る） */
+  const whys = useMemo(() => ({ data, memo: new Map<string, string | null>() }), [data]);
   const fitOf = (visitId: string, date: string, start: number): number | null => {
     const k = `${visitId}|${date}|${start}`;
     if (!fits.memo.has(k)) fits.memo.set(k, fitCountAt(fits.input, visitId, date, start));
@@ -434,8 +436,13 @@ export function useVisitDrag(opts: {
     const first = dropVerdict(d, visitId, t, o.today);
     if (!first.ok || first.same) return { verdict: first, fit: undefined };
     const fit = o.fit && t.staffId === undefined ? fitOf(visitId, t.date, first.start) : undefined;
-    const staffWhy =
-      t.staffId && o.staffWhy && first.staffId !== undefined ? o.staffWhy(visitId, t.date, t.staffId) : null;
+    // 担当の行・列へ落とすときは、担当が変わらなくても（同じ人の別の日へ）その日にその人が担当できるかを見る
+    let staffWhy: string | null = null;
+    if (t.staffId && o.staffWhy) {
+      const k = `${visitId}|${t.date}|${t.staffId}`;
+      if (!whys.memo.has(k)) whys.memo.set(k, o.staffWhy(visitId, t.date, t.staffId));
+      staffWhy = whys.memo.get(k) ?? null;
+    }
     return { verdict: dropVerdict(d, visitId, t, o.today, { fit, staffWhy }), fit };
   };
   return {
@@ -464,7 +471,11 @@ export function useVisitDrag(opts: {
         const g = grab.current;
         if (!g) return;
         const t = at(e);
-        if (!t) return;
+        if (!t) {
+          // 落とし先でない所（月の外のマス・見出しなど）の上では、前のマスの影を残さない
+          if (hoverRef.current?.key === key) put(null);
+          return;
+        }
         const { verdict, fit } = judge(g.visitId, t);
         if (verdict.ok) {
           e.preventDefault();

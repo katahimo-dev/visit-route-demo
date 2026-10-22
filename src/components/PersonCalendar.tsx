@@ -316,7 +316,7 @@ export function PersonCalendar({
         className={`pcal-item${compact ? ' is-compact' : ''}${stateClass(it)}${hlClass(it)}${look?.tone === 'issue' ? ' is-issue' : ''}${on ? ' is-multi' : ''}`}
         style={style}
         {...drag.source(it.visit.id, movable(it))}
-        {...itemProps(it.visit.id, { selectable: selectable(it), movable: !narrow, selected: on })}
+        {...itemProps(it.visit.id, { selectable: selectable(it), movable: !narrow && selectable(it), selected: on })}
         title={`${itemLabel(it).replace('（押すと訪問の詳細）', '')}${look?.text ? `（${look.text}）` : ''}`}
         aria-label={`${itemLabel(it).replace('（押すと訪問の詳細）', '')}${look?.text ? `・${look.text}` : ''}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
         data-testid="pcal-visit"

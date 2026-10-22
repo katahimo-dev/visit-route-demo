@@ -105,6 +105,13 @@ describe('落とし先の判定 dropVerdict（PRD D341。ADR-0056）', () => {
     const time = ok(dropVerdict(data, rep.id, { date: TODAY, start: START + 15 }, TODAY, { staffWhy: '理由' }));
     expect(time.warn).toBeNull();
   });
+  it('warn：同じ担当の行の別の日・時刻へ落とすときも、その人が担当できない理由を出す', () => {
+    const same = ok(
+      dropVerdict(data, rep.id, { date: TODAY, start: START + 15, staffId: rep.staffId }, TODAY, { staffWhy: '理由' }),
+    );
+    expect(same.staffId).toBeUndefined();
+    expect(same.warn).toBe('理由');
+  });
   it('warn：fit=0 なら「入れる人がいません」。fit が 1 以上・null・省略なら null', () => {
     const t = { date: TODAY, start: START + 15 };
     expect(ok(dropVerdict(data, rep.id, t, TODAY, { fit: 0 })).warn).toBe(
@@ -150,7 +157,9 @@ describe('影の文 dropShadowText・色 dropTone', () => {
   it('「ここへ（09:15）」と入れる人の数', () => {
     expect(dropShadowText(v(), { fit: 3 })).toBe('ここへ（09:15）・入れる人 3人');
     expect(dropShadowText(v(), { fit: null })).toBe('ここへ（09:15）・入れる人 —');
-    expect(dropShadowText(v())).toBe('ここへ（09:15）');
+    // 数えない落とし先（〈スタッフ〉×曜日の表など）でも、入るなら「入る」と出す（影の文を空にしない）
+    expect(dropShadowText(v())).toBe('ここへ（09:15）・入る');
+    expect(dropShadowText(v(), { time: false })).toBe('入る');
   });
   it('time:false なら「ここへ」を出さない', () => {
     expect(dropShadowText(v(), { fit: 2, time: false })).toBe('入れる人 2人');

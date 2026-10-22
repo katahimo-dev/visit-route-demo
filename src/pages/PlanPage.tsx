@@ -1726,7 +1726,7 @@ export default function PlanPage() {
     const look = looks.get(id);
     for (const lm of look?.marks ?? [])
       mark(
-        lm.kind,
+        `${lm.kind}-${lm.short}`,
         lm.tone === 'red' ? 'is-red' : lm.tone === 'warn' ? 'is-warn' : lm.tone === 'pin' ? 'is-pin' : 'is-tentative',
         lm.title,
         lm.kind === 'issue' ? (
@@ -1752,7 +1752,9 @@ export default function PlanPage() {
       end,
       name: client?.displayName ?? '（不明）',
       color: type ? colorOf(type.color) : null,
-      tone: look?.tone === 'issue' || hard ? 'red' : pin ? 'pinned' : null,
+      // 今日より前の日は要対応の赤にしない（印と同じ。月・ホームと同じ決まり）
+      tone: look?.tone === 'issue' || (hard && date >= jstDate(Date.now())) ? 'red' : pin ? 'pinned' : null,
+      kinds: look?.kinds ?? '',
       picked: sel.isPicked(x),
       dragging: dragging === id,
       onPick: () => sel.togglePick(x),
