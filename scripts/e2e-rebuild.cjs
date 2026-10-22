@@ -5,13 +5,16 @@
 // ［後で］でその画面の間だけ隠れる（フォーカスは見出し・ほかの画面では出る・戻ると出る・データに保存しない）、
 // ［作り直す］で月の画面の「条件が変わった日だけ作り直す」の欄が開き ?do= が消える、作り直すと確定済みの日だけ残り「要対応を見る」、
 // 390px で収まる、印刷で出さない、ブラウザの確認を出さない。
+// 条件の重みの表の下書き（PRD D286。ADR-0048）：動かしても保存しない・変わった行の色と「変更あり 3→2.5」・確定の帯（主ボタンは1つ・
+// 巻いても見える）・取り消す・確定の確認（変わる重み・作り方・影響する日の数＝確定後の帯の数）・確定で保存とトースト・
+// 下書きのまま画面を離れる（メニューのリンク・パレット）と確認・断れば留まる・再読込は beforeunload・基準を替えると下書きを捨てる。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-rebuild.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
 // 終了コード：全部通れば 0、通らないものがあれば 1。ページのエラー（pageerror）も失敗に数える
 const path = require('node:path');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
-const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, hashOf, runSteps, settle } = require('./lib/env.cjs');
+const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, hashOf, runSteps, settle, until } = require('./lib/env.cjs');
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 /** 帯が数え直すまでの待ち（components/rebuildBand の SETTLE_MS） */
@@ -71,6 +74,27 @@ async function stored(page) {
     return { basis: basis.weights, rules: d.rules.map((r) => ({ type: r.type, weight: r.weight, hard: r.hard })) };
   }, STORAGE_KEY);
 }
+/** 条件の重みの表の下書き（PRD D286）：確定の帯・行の印 */
+const draftBar = (page) => page.getByTestId('rules-draft-bar');
+const mainSlider = (page) => page.getByTestId('narrow-rules').locator('input[type="range"]:not([disabled])').first();
+/** メニューの「ホーム」のリンク */
+const homeLink = (page) => page.locator('.side-nav a[href="#/home"]').first();
+/** 表の1つ目のスライダーを1段動かす（0 なら上げる）。前後の値 */
+async function nudge(page) {
+  const slider = mainSlider(page);
+  const before = Number(await slider.inputValue());
+  await slider.focus();
+  await page.keyboard.press(before > 0 ? 'ArrowLeft' : 'ArrowRight');
+  await draftBar(page).waitFor({ timeout: 5000 });
+  return { before, after: Number(await slider.inputValue()) };
+}
+/** 「変更を確定」を押し（確認は answerConfirms が答える）、帯が消えるまで待つ */
+async function confirmDraft(page) {
+  await page.getByTestId('rules-draft-confirm').click();
+  await draftBar(page).waitFor({ state: 'detached', timeout: 10000 });
+  await settle(page, 300);
+}
+
 /** 月の画面の要対応のうち「条件が変わった」の日付 */
 async function staleInMonth(page, ym) {
   await page.goto(`${BASE}#/month?ym=${ym}`);
@@ -175,6 +199,10 @@ async function rules(page) {
   const s0 = await stored(page);
   await main.focus();
   await page.keyboard.press('ArrowLeft');
+  // 表の重みは下書き（PRD D286）：確定するまで保存しない
+  await draftBar(page).waitFor({ timeout: 5000 });
+  check(JSON.stringify(await stored(page)) === JSON.stringify(s0), '表のスライダーを動かしただけでは保存しない');
+  await confirmDraft(page);
   await settle(page, SETTLE + 300);
   const s1 = await stored(page);
   const changed = Object.keys(s1.basis).filter((t) => s1.basis[t].weight !== s0.basis[t].weight);
@@ -261,6 +289,175 @@ async function rules(page) {
   check(hid.tag === 'INPUT' && hid.input >= hid.band, 'Tab で入った入力欄が帯の下に隠れない', hid);
 }
 
+// ---- 条件の重みの表の下書き（PRD D286。ADR-0048）：動かしても保存しない → 色と印・確定の帯 → 取り消す・確認・離れるときの確認 → 確定 ----
+async function draft(page, { dlg }) {
+  await openSettings(page, '/rules');
+  const s0 = await stored(page);
+  const same0 = async () => JSON.stringify(await stored(page)) === JSON.stringify(s0);
+  const primaries = () => page.locator('.app-main .btn-primary:visible').count();
+  check(
+    (await draftBar(page).count()) === 0 && (await primaries()) === 1,
+    '下書きが無ければ確定の帯は出さない（主ボタンは「条件を足す」の1つ）',
+  );
+  const row = mainSlider(page).locator('xpath=ancestor::tr[1]');
+  const v = await nudge(page);
+  // 保存しない・作り直しの帯も出ない
+  await settle(page, SETTLE + 300);
+  check(await same0(), '動かしても保存しない（下書き）');
+  check(
+    (await band(page).count()) === 0,
+    '下書きの間は作り直しの帯を出さない（保存した値で数える）',
+    await counts(page),
+  );
+  // 行の色と印（色だけに頼らず文字でも）
+  const mark = await row.getByTestId('rules-draft-mark').innerText();
+  const look = await row.evaluate((el) => ({
+    cls: el.className,
+    shadow: getComputedStyle(el.querySelector('td')).boxShadow,
+    bg: getComputedStyle(el.querySelector('td')).backgroundColor,
+  }));
+  check(
+    /is-draft/.test(look.cls) &&
+      look.shadow !== 'none' &&
+      look.bg !== 'rgba(0, 0, 0, 0)' &&
+      mark === `変更あり ${v.before}→${v.after}`,
+    '保存済みと違う行は左に注意の帯・淡い地と「変更あり 前→後」',
+    { ...look, mark, v },
+  );
+  const confirmBtn = page.getByTestId('rules-draft-confirm');
+  check(
+    (await confirmBtn.innerText()) === '変更を確定（1件）' &&
+      /btn-primary/.test((await confirmBtn.getAttribute('class')) ?? '') &&
+      (await primaries()) === 1,
+    '確定の帯：「変更を確定（1件）」が主ボタン（画面に1つ。「条件を足す」は枠になる）',
+    await primaries(),
+  );
+  check(
+    /btn-text/.test((await page.getByTestId('rules-draft-discard').getAttribute('class')) ?? ''),
+    '「取り消す」は文字のボタン',
+  );
+  // 下へ巻いても上へ巻いても帯が画面の中（下に貼り付く）
+  for (const where of ['bottom', 'top']) {
+    await page.evaluate((w) => window.scrollTo(0, w === 'bottom' ? document.documentElement.scrollHeight : 0), where);
+    await settle(page, 200);
+    const box = await draftBar(page).boundingBox();
+    const vh = page.viewportSize().height;
+    check(!!box && box.y >= 0 && box.y + box.height <= vh + 1, `確定の帯は巻いても見える（${where}）`, { box, vh });
+  }
+  // 取り消す：下書きを捨てる（保存しない・スライダーが戻る・フォーカスは見出し）
+  await page.getByTestId('rules-draft-discard').click();
+  await draftBar(page).waitFor({ state: 'detached', timeout: 5000 });
+  await settle(page, 200);
+  check(
+    Number(await mainSlider(page).inputValue()) === v.before &&
+      (await same0()) &&
+      (await page.getByTestId('rules-draft-mark').count()) === 0,
+    '「取り消す」で下書きを捨てる（値が戻り、保存しない）',
+  );
+  check(
+    await page.evaluate(() => document.activeElement === document.querySelector('.app-main h1')),
+    '取り消したあとのフォーカスは画面の見出し',
+  );
+  // 確定の確認：取り消すと何も変わらない。本文に変わる重み・作り方・影響する日
+  await nudge(page);
+  dlg.answer = false;
+  const m0 = dlg.messages.length;
+  await confirmBtn.click();
+  await until(() => dlg.messages.length > m0);
+  await settle(page, 300);
+  const msg = dlg.messages[m0] ?? '';
+  const nums = /（未確定 (\d+)日・確定済み (\d+)日）/.exec(msg);
+  check(
+    msg.startsWith('重みの変更（1件）を確定しますか？') &&
+      msg.includes(`${v.before}→${v.after}`) &&
+      msg.includes('点数の基準のプリセット「標準」の重みになります') &&
+      msg.includes('月のまとめて作る・開いた日の自動作成・作り直しはこの重みで作り') &&
+      msg.includes('作り直しの帯と月の予定の要対応に出ます') &&
+      msg.includes('確定済みの日は作り直しません') &&
+      !!nums,
+    '確定の確認：変わる条件と重み（前→後）・基準のプリセットになる・作り方・影響する日・確定済みは作り直さない',
+    msg,
+  );
+  check((await draftBar(page).count()) === 1 && (await same0()), '確認を取り消すと下書きのまま（保存しない）');
+  // 下書きのまま画面を離れる：メニューのリンク → 確認（断れば留まる）
+  const m1 = dlg.messages.length;
+  await homeLink(page).click();
+  await until(() => dlg.messages.length > m1);
+  await settle(page, 300);
+  check(
+    (dlg.messages[m1] ?? '').startsWith('重みの変更を捨てて、画面を移りますか？') &&
+      hashOf(page).startsWith('#/rules') &&
+      (await draftBar(page).count()) === 1,
+    '下書きのままメニューで移ると確認。断れば留まり下書きも残る',
+    { msg: dlg.messages[m1], hash: hashOf(page) },
+  );
+  // コマンドパレットで移るときも
+  const m2 = dlg.messages.length;
+  await page.keyboard.press('Control+k');
+  await page.getByTestId('cmdk-input').fill('ホーム');
+  await settle(page, 200);
+  await page.keyboard.press('Enter');
+  await until(() => dlg.messages.length > m2);
+  await settle(page, 300);
+  check(
+    (dlg.messages[m2] ?? '').startsWith('重みの変更を捨てて') && hashOf(page).startsWith('#/rules'),
+    'コマンドパレットで移るときも確認。断れば留まる',
+    { msg: dlg.messages[m2], hash: hashOf(page) },
+  );
+  // 再読込は beforeunload（ブラウザの確認。answerConfirms が受ける）。読み直すと下書きは消え、保存はしない
+  let unload = 0;
+  const onDialog = (d) => {
+    if (d.type() === 'beforeunload') unload++;
+  };
+  page.on('dialog', onDialog);
+  await page.reload();
+  await page.locator('h1').first().waitFor({ timeout: 30000 });
+  page.off('dialog', onDialog);
+  check(unload === 1, '下書きのまま再読込すると beforeunload の確認', unload);
+  check((await draftBar(page).count()) === 0 && (await same0()), '読み直すと下書きは消え、保存もしない');
+  // 点数の基準を替えると下書きを捨てる
+  await openSettings(page, '/rules');
+  await nudge(page);
+  const radios = page.getByTestId('score-ruler-choice').locator('input[type="radio"]');
+  await radios.nth(1).check();
+  await settle(page, 300);
+  check((await draftBar(page).count()) === 0, '点数の基準を替えると下書きを捨てる');
+  await radios.first().check();
+  await settle(page, SETTLE + 300);
+  check(await same0(), '基準を戻すと元の重み');
+  // 確定：確認で確定 → 保存・トースト・帯の数は確認の本文の数と同じ
+  await nudge(page);
+  dlg.answer = true;
+  await confirmDraft(page);
+  const t = await page.locator('.toast').filter({ hasText: '重みを確定しました' }).first().innerText();
+  check(!(await same0()) && /「標準」の重みを確定しました（1件）/.test(t), '確定すると保存し、トースト', t);
+  await daysRow(page).waitFor({ timeout: 10000 });
+  const c = await counts(page);
+  check(
+    !!nums && c.unconfirmed === Number(nums[1]) && c.confirmed === Number(nums[2]),
+    '確認に出した影響する日の数＝確定後の作り直しの帯の数',
+    { c, dialog: nums?.[0] },
+  );
+  // 元の重みに戻して確定する（後の段のため）
+  const back = mainSlider(page);
+  await back.focus();
+  await page.keyboard.press(v.before > v.after ? 'ArrowRight' : 'ArrowLeft');
+  await draftBar(page).waitFor({ timeout: 5000 });
+  await confirmDraft(page);
+  check(await same0(), '元の重みに戻して確定できる');
+  // 下書きが無ければメニューで移っても確認しない
+  const m3 = dlg.messages.length;
+  await homeLink(page).click();
+  await page.waitForFunction(() => location.hash.startsWith('#/home'), null, { timeout: 10000 });
+  check(dlg.messages.length === m3, '下書きが無ければ確認せずに移る');
+  // 下書きのまま移るを「捨てて移る」で確定すると移り、保存しない
+  await openSettings(page, '/rules');
+  await nudge(page);
+  await homeLink(page).click();
+  await page.waitForFunction(() => location.hash.startsWith('#/home'), null, { timeout: 10000 });
+  check(await same0(), '確認で「捨てて移る」と移り、下書きは保存しない');
+}
+
 // ---- 月の要対応と同じ数 ----
 let BAND_DAYS = 0;
 async function sameAsMonth(page) {
@@ -286,10 +483,11 @@ async function later(page) {
   );
   const after = await page.evaluate((k) => localStorage.getItem(k), STORAGE_KEY);
   check(before === after, '［後で］はデータに保存しない');
-  // 同じ画面で条件をまた変えても、この画面の間は隠したまま（点数の基準の重みをさらに変える）
+  // 同じ画面で条件をまた変えても、この画面の間は隠したまま（点数の基準の重みをさらに変えて確定する）
   const slider = page.locator('.rules-table input[type="range"]:not([disabled])').first();
   await slider.focus();
   await page.keyboard.press('ArrowLeft');
+  await confirmDraft(page);
   await settle(page, 1200);
   check((await band(page).count()) === 0, '同じ画面の間は隠したまま');
   check((await live(page).innerText()) === '', '隠したあとは読み上げない');
@@ -467,8 +665,11 @@ const steps = sharedPage({
     // 確認は独自のダイアログで受ける（ネイティブのダイアログが出たら失敗。PRD D146）
     return { ...s, dlg: await answerConfirms(s.page) };
   },
+  // 段に page と文脈（確認の答え dlg）を渡す
+  call: (fn, s) => fn(s.page, s),
   steps: [
     ['prepare', prepare],
+    ['draft', draft],
     ['rules', rules],
     ['same-as-month', sameAsMonth],
     ['later', later],
