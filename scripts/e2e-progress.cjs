@@ -399,6 +399,23 @@ async function links(page) {
     '日の帯の「確定」→ 月の予定の確定していない日（同じ日数）',
     { hash: hashOf(page), listed, band: n.unconfirmed },
   );
+  // 月末に近い日は、止めたあとでも今月の案の無い日が残らないことがある（初期データの案は今日から7日分。PRD D225）。
+  // 今日より後の今月の案のある日を1日だけ案なしにして、次の一手が「まとめて作る」になる形を作る
+  await editData(
+    page,
+    ({ key, today, ym }) => {
+      const d = JSON.parse(localStorage.getItem(key));
+      const later = Object.keys(d.aiPlans)
+        .filter((x) => x > today && x.startsWith(ym))
+        .sort();
+      const last = later.at(-1);
+      if (last) {
+        delete d.aiPlans[last];
+        localStorage.setItem(key, JSON.stringify(d));
+      }
+    },
+    { key: STORAGE_KEY, today: TODAY, ym: YM },
+  );
   await open(page, '/plan', '[data-testid="band-day"]');
   // 止めたあとはまだ案の無い日が残るので、次の一手は「まとめて作る」（無ければ確かめられないので NG）
   const kind = await page.getByTestId('band-next').getAttribute('data-kind');
