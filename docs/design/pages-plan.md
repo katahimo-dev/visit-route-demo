@@ -1,6 +1,6 @@
 # 日の予定（予定と AI案）
 
-> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`VisitForm.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`・`manualPrefs.ts`、`src/components/Toast.tsx`・`prefAsk.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031・0043・0044。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224・D260〜D262・D266・D269。
+> この画面のファイル：`src/pages/PlanPage.tsx`・`planParts.tsx`・`mailPanels.tsx`（`DayMailPanel`）・`plan.css`、`src/components/routeView.tsx`・`routeTimeline.tsx`・`MapDock.tsx`・`MenuButton.tsx`・`dayLines.tsx`・`visitType.tsx`・`VisitRules.tsx`・`mapsLinks.tsx`、`src/lib/useDayModel.ts`・`runs.ts`・`planMenu.ts`・`reassignMenu.ts`・`undoEdit.ts`・`scoreReason.ts`・`routeView.ts`・`timeline.ts`・`dayLine.ts`・`confirmDay.ts`・`manualPrefs.ts`、`src/components/Toast.tsx`・`prefAsk.tsx`。関連 ADR：0004・0007〜0010・0012・0013・0015・0018・0025・0028・0030・0031・0043・0044。関連 PRD：D16〜D25・D43・D52・D58・D63・D84・D91〜D101・D156〜D160・D161〜D166・D173〜D174・D201〜D209・D217〜D219・D224・D260〜D262・D266・D269。
 > 欠勤・キャンセルの欄と振り直しは [pages-plan-absence.md](pages-plan-absence.md)、バーの塗りは [pages-bars.md](pages-bars.md)。
 
 ### 日の予定（`#/plan`。ADR-0009）
@@ -242,15 +242,15 @@
 - 休み（`band-leave`。ADR-0013）：「〈利用者さん〉の休みのため無し N件：」と名前（`leave-name`。`lib/personLinks` の `leavePeople(visits, leaves, date, nameOf)` で並べ、理由を添える）。確定した日なら「（確定した日です。必要なら案を作り直して確定し直してください。休みの訪問の担当は、休みを消したときのために残します）」。「一覧で見る」。文は `band-text` の1つの要素に入れる（`with-icon` の横並びの中で折り返す）
 - 拘束超え（`band-over-span`。ADR-0015。`workload` が入のとき）：今の案、無ければ確定した割当で、出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の `org.spanLimitHours` 時間を超える人。名前（`over-span-name`）と拘束の時間。1人ぶんは `over-span-item` で途中で折り返さない。1人なら帯のボタン「勤務の見込み」、2人以上なら帯のボタンをやめ人ごとのリンク `over-span-link`「勤務の見込み」（`workloadHref(年月, ID)`。aria-label「〈名前〉さんの勤務の見込み」）。印刷ではリンクを出さない
 
-#### 訪問の欄（`pages/VisitForm.tsx`）と取り消し
+#### 訪問の詳細の欄（`components/VisitPanel.tsx`。PRD D301〜D305。ADR-0051）と取り消し
 
-- 「その他 ▾」の「訪問を追加」・一覧の「編集」で開く。種類の選択（新しい訪問は種類を選ぶと所要の初期値が種類の標準の所要）。日付を変えられる（パターンの訪問も単発の訪問も）
-- `<form noValidate>`（PRD D251）：開いたら最初の欄（日付）へフォーカス（巻くのは PlanPage）、Enter で保存、誤りは `FieldError` と欄の `aria-invalid`（遅い開始時刻・契約の検査の欄）で、保存したら最初の誤った欄へ。必須の欄に「必須」の札（[pages-common.md](pages-common.md) の「フォームの共通の決まり」）
-- 日の予定の日を変えても欄を閉じない（PlanPage の日付の effect で `editing` を消さない）。欄は開いたときの訪問 ID・日・表示中の日・取り消し済みかを覚え、親から渡る訪問が無くなっても（別の日）データから引き直して保存する。見出し（追加／編集）も開いたときの ID で決める。開いた後に消された・取り消された訪問は保存せず知らせる（保存すると取り消しが黙って外れるため。開いたときから取り消し済みの訪問は今までどおり保存で取り消しを外す）
-- 表示中の日が開いたときから変わり、入力の日付が表示中の日と違えば「この入力は M/D の訪問です（表示中の日は M/D）」と「M/D にする」を出す（`visit-form-other-day`）。保存の知らせの「M/D に移しました」は、開いたときの訪問の日（新しい訪問は開いたときの表示中の日）と比べる
-- 閉じたら（保存・キャンセル）、フォーカスを失っていれば開いたときの要素（一覧の「編集」など）、無くなっていれば「その他」（`plan-more`）へ戻す
-- パターンから展開した訪問には「定期パターン（月・木 10:00）の〈元の日〉の回」。日付・時刻・所要・種類・取り消しを変えて保存すると `pattern.edited` を true にする（「この回だけの変更」と出す）
-- 取り消しは欄（ふつう／当日キャンセル）で選ぶ（`applyCancel(visitId, sameDay)`。欠勤・キャンセルの欄と共通）。取り消すと今の案の列・点からその訪問が消え、足すと「入らなかった訪問」に出る
+- 欄そのものは [pages-common.md](pages-common.md) の「訪問の詳細の欄」。日の予定からは次の所で開く（`useOpenVisit`）
+  - 時間軸の帯・順番のカード・入らなかった訪問のカードを押して出る詳細の先頭の「詳細・変更」（`visit-open`。詳細の理由・「担当を変える ▾」・決まりごと・道順は今のまま）
+  - 一覧の行の「開く」（`visit-row-open`。鉛筆の「編集」を置き換え。休みのため無しの行も）。行の「取り消す」（欄の取り消しの種類の選択）は今のまま
+  - 「その他 ▾」の「訪問を追加」（`plan-visit-add`）：その日を入れた新規の形。〈利用者さん〉が0人・スマホ幅（600px 以下）なら押せず理由
+- 閉じたあとのフォーカス：開いた訪問の帯（`.tl-band .tl-band-btn`）・カード（`.route-btn`）・一覧の「開く」の順に探し（保存で作り直した回・足した訪問は新しい ID）、無ければ開く前の要素、新規で何も無ければ「その他」（`plan-more`）
+- 欄で担当を替えると、その日の今の案で `bestInsertion` の位置に入れて固定する（「担当を変える ▾」と同じ置き方。手直しの記憶の帯は出さない。戻すのは欄のトーストの「元に戻す」）。日時を変えた日は今までどおり「条件が変わった」
+- 取り消しは欄（ふつう／当日キャンセル）と一覧の行の「取り消す」（`applyCancel(visitId, sameDay)`。欠勤・キャンセルの欄と共通）。取り消すと今の案の列・点からその訪問が消え、足すと「入らなかった訪問」に出る
 - 前の同じ曜日からコピー：1週前の同じ曜日の訪問（と確定した割当）をこの日に写す（訪問が無い日だけ。`lib/copyDay`）
 
 #### 種類・仮・決まりごとの表示

@@ -1,4 +1,4 @@
-// 訪問を足す・直す欄（pages/VisitForm）の保存する中身を決める純粋関数（ADR-0012）。検証（visitSchema）は呼ぶ側
+// 訪問の詳細の欄（components/VisitPanel。lib/visitOps の「この回だけ」）の保存する中身を決める純粋関数（ADR-0012・ADR-0051）。検証（visitSchema）は呼ぶ側
 import type { Visit } from '../contracts/documents';
 
 /** 欄で決める訪問の中身 */

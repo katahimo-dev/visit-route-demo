@@ -53,6 +53,7 @@ import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
+import { useOpenVisit } from '../components/VisitPanel';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
 import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
@@ -68,7 +69,7 @@ import {
   withEdges,
 } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
-import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { attempt, byDisplayName, byName, dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { bulkConfirmDialog, bulkConfirmLabel, bulkConfirmTargets, bulkConfirmWhy, confirmDay } from '../lib/confirmDay';
 import { isOn } from '../lib/features';
 import { clientDot } from '../lib/glance';
@@ -131,6 +132,7 @@ import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { useValueStore } from '../lib/valueStore';
+import { assignmentOf, clientVisitsIn } from '../lib/visitOps';
 import { scorePresetOf } from '../seed';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
@@ -848,6 +850,13 @@ export default function MonthPage() {
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
   /** 選んだ〈利用者さん〉（休みの欄。ADR-0013） */
   const focusClient = focus.kind === 'client' ? data.clients.find((c) => c.id === focus.id) : undefined;
+  /** 訪問の詳細の欄（PRD D304：〈利用者さん〉を選んだときの回から開く） */
+  const openVisit = useOpenVisit();
+  /** 選んだ〈利用者さん〉のこの月の回（取り消しも） */
+  const focusVisits = useMemo(
+    () => (focusClient && days.length > 0 ? clientVisitsIn(data, focusClient.id, days[0]!, days.at(-1)!) : []),
+    [data, focusClient, days],
+  );
   const focusName =
     focus.kind === 'staff'
       ? (staffById.get(focus.id)?.name ?? '')
@@ -1518,6 +1527,44 @@ export default function MonthPage() {
                   return day ? clientDot(day) : 'none';
                 }}
               />
+              <h3 className="month-aside-sub">この月の回</h3>
+              {focusVisits.length === 0 ? (
+                <p className="sub">この月の訪問はありません。</p>
+              ) : (
+                <ul className="month-visits" data-testid="month-client-visits">
+                  {focusVisits.map((v) => {
+                    const sid = assignmentOf(data, v.id, v.date).staffId;
+                    return (
+                      <li key={v.id}>
+                        <button
+                          type="button"
+                          className="month-visit-btn"
+                          onClick={(e) => {
+                            const btn = e.currentTarget;
+                            openVisit({ visitId: v.id, returnFocus: () => (btn.isConnected ? btn : null) });
+                          }}
+                          data-testid="month-client-visit"
+                          data-visit={v.id}
+                        >
+                          <span className="month-visit-when">
+                            {dateText(v.date)} {v.earliestStart}
+                          </span>
+                          <span className="sub">
+                            {v.cancelled
+                              ? v.cancelKind === 'sameDay'
+                                ? '当日キャンセル'
+                                : '取り消し'
+                              : sid
+                                ? (staffById.get(sid)?.name ?? '')
+                                : '担当なし'}
+                            {v.pattern?.edited && !v.cancelled ? '・変' : ''}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               <h3 className="month-aside-sub">担当した人</h3>
               {clientSum.byStaff.length === 0 ? (
                 <p className="sub">この月の訪問はありません。</p>

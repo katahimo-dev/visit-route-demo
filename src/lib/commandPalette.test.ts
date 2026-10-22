@@ -9,12 +9,15 @@ import {
   moveActive,
   PALETTE_PEOPLE_LIMIT,
   paletteActions,
+  paletteDate,
   paletteItem,
   palettePeople,
   paletteScreens,
   paletteTerms,
+  paletteVisits,
   TERM_READINGS,
   termReading,
+  visitIndex,
 } from './commandPalette';
 import { screenSections } from './nav';
 
@@ -291,5 +294,51 @@ describe('画面を移ったときのパレット（hashPathname・keepPaletteOn
     // 画面を移ってすぐ（描画の前）に Ctrl+K で開いた：あとから来た「画面を移った」で閉じない
     expect(keepPaletteOn('/workload', '/workload')).toBe('/workload');
     expect(keepPaletteOn(null, '/workload')).toBeNull();
+  });
+});
+
+describe('訪問の候補（PRD D304）', () => {
+  const people = palettePeople(clients, staff, terms);
+  const v = (id: string, clientId: string, date: string, start: string, cancelled = false) => ({
+    id,
+    date,
+    clientId,
+    windowKind: 'fixed' as const,
+    earliestStart: start,
+    latestStart: start,
+    durationMinutes: 60,
+    staffId: null,
+    cancelled,
+    note: '',
+    typeId: null,
+    pattern: null,
+    cancelKind: null,
+  });
+  const index = visitIndex([
+    v('a1', 'c2', '2026-10-20', '09:00'),
+    v('a2', 'c2', '2026-10-28', '10:00'),
+    v('a3', 'c2', '2026-10-22', '11:00', true),
+    v('a4', 'c2', '2026-10-23', '08:00'),
+    v('b1', 'c1', '2026-10-28', '09:00'),
+  ]);
+  const describeV = () => '担当なし';
+  it('日付の語', () => {
+    expect(paletteDate('10/28', TODAY)).toBe('2026-10-28');
+    expect(paletteDate('１０月２８日', TODAY)).toBe('2026-10-28');
+    expect(paletteDate('明日', TODAY)).toBe('2026-10-22');
+    expect(paletteDate('きょう', TODAY)).toBe(TODAY);
+    expect(paletteDate('1/5', TODAY)).toBe('2027-01-05');
+    expect(paletteDate('2/30', TODAY)).toBeNull();
+    expect(paletteDate('やぎお', TODAY)).toBeNull();
+  });
+  it('名前と日付でその日の回、名前だけなら今日以降の近い回（取り消しを除く）', () => {
+    expect(paletteVisits('やぎお 10/28', people, index, TODAY, describeV).map((x) => x.visitId)).toEqual(['a2']);
+    expect(paletteVisits('やぎお', people, index, TODAY, describeV).map((x) => x.visitId)).toEqual(['a4', 'a2']);
+    expect(paletteVisits('10/28', people, index, TODAY, describeV)).toEqual([]);
+    const it0 = paletteVisits('ふみ 10/28', people, index, TODAY, describeV)[0]!;
+    expect(it0).toMatchObject({ kind: 'visit', label: '図書館 ふみ 10/28（水） 09:00', hint: '担当なし' });
+  });
+  it('訪問を追加の操作', () => {
+    expect(paletteActions(TODAY).find((x) => x.id === 'action:visit-add')).toMatchObject({ op: 'visit-add' });
   });
 });

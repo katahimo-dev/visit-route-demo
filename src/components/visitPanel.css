@@ -1,0 +1,83 @@
+/* 訪問の詳細の欄（PRD D301〜D304。components/VisitPanel） */
+.visit-panel {
+  gap: 12px;
+}
+.vp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.05rem;
+}
+.vp-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 6px 0;
+}
+.vp-facts dt {
+  color: var(--muted, #7a6e64);
+  font-size: 0.85rem;
+}
+.vp-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vp-section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 0;
+  min-width: 0;
+}
+.vp-section > legend {
+  font-weight: 700;
+  padding: 0 4px;
+}
+.vp-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.visit-panel .vp-choice {
+  display: flex;
+  flex-direction: row;
+  color: var(--ink);
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.visit-panel .vp-choice input {
+  width: auto;
+  margin-top: 3px;
+}
+.vp-choice.is-off {
+  opacity: 0.55;
+  cursor: default;
+}
+.vp-choice-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.vp-choice-name {
+  font-weight: 600;
+}
+.vp-choice-desc {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.btn.tone-danger {
+  color: var(--danger);
+}
+/* 印刷では欄を出さない（PRD D301） */
+@media print {
+  .drawer-wrap:has(.visit-panel) {
+    display: none !important;
+  }
+}

@@ -5,23 +5,12 @@ import {
   ChevronRight,
   Lock,
   Mail,
-  Move,
   RefreshCw,
   Sparkles,
   TriangleAlert,
   X,
 } from 'lucide-react';
-import {
-  type DragEvent,
-  type KeyboardEvent,
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { type DragEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
@@ -37,8 +26,9 @@ import { ScheduleBand } from '../components/progressBand';
 import { StaffMark } from '../components/StaffMark';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
-import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
+import { Hint, PageHeader, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
+import { useOpenVisit } from '../components/VisitPanel';
 import { TypeDot } from '../components/visitType';
 import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
@@ -56,7 +46,7 @@ import {
   WEEK_TABLE_FILTER,
 } from '../lib/clientFilter';
 import { colorOf } from '../lib/colors';
-import { dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { dateText, own } from '../lib/common';
 import { bulkConfirmDialog, bulkConfirmTargets, confirmDay } from '../lib/confirmDay';
 import { deferredDragStart } from '../lib/dragStart';
 import { periodEmptyGuide } from '../lib/emptyGuide';
@@ -81,9 +71,7 @@ import { useValueStore } from '../lib/valueStore';
 import {
   allowedStaffOf,
   type Band,
-  type ClientWeekItem,
   canMoveVisit,
-  changedDates,
   clientItemMark,
   clientWeekTable,
   DAY_END,
@@ -92,8 +80,6 @@ import {
   inDayRange,
   insertIntoPlan,
   laneLayout,
-  moveFollowing,
-  moveOnce,
   qualificationBadges,
   qualificationItem,
   SNAP_MINUTES,
@@ -138,7 +124,6 @@ const VIEW_TEST_ID: Record<WeekView, string> = {
 /** 1分あたりの高さ（px） */
 const PX_PER_MIN = 0.8;
 const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 + 1 }, (_, i) => DAY_START + i * 60);
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const hm = (m: number) => timeText(minutesToHhmm(m));
 /** 日の見出しの件数：休み（ADR-0013）のため無しの訪問を除く */
@@ -152,7 +137,6 @@ const paramOf = (params: URLSearchParams, key: string): string | null =>
 const selectionOf = (raw: string | null): string[] | null => (raw === null ? null : raw.split(',').filter(Boolean));
 
 /** 動かす欄の中身 */
-type MoveDraft = { visitId: string; date: string; start: number; mode: 'once' | 'following' };
 /** 動かしたあとの知らせ（新しい日に今の案があるとき） */
 type Notice = { date: string; visitId: string; label: string; error: string | null };
 
@@ -189,7 +173,8 @@ export default function WeekPage() {
     () => knownTypes(decodeFilter(cfParam, WEEK_TABLE_FILTER), data.visitTypes),
     [cfParam, data.visitTypes],
   );
-  const [draft, setDraft] = useState<MoveDraft | null>(null);
+  /** 訪問の詳細の欄（PRD D301。帯を押す・落とすと開く。週の移動の欄はこの欄にした） */
+  const openVisitPanel = useOpenVisit();
   const [notice, setNotice] = useState<Notice | null>(null);
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
   const [mailOpen, setMailOpen] = useState(false);
@@ -566,24 +551,34 @@ export default function WeekPage() {
   };
   const clientName = (v: Visit | undefined) => clientById.get(v?.clientId ?? '')?.displayName ?? '（不明）';
 
-  // ---- 動かす ----
-  const openMove = (visitId: string, d: string, s: number) => {
+  // ---- 動かす（訪問の詳細の欄。PRD D301）----
+  /**
+   * 訪問の詳細の欄を開く。d・s が今の日時と違えば（ドラッグで落とした先）、その日時を入れた形で開き、保存のときに範囲
+   * （この回だけ／これ以降／すべて）を選ぶ。保存で日時が変わり、担当を選ばず、新しい日に今の案があれば「空き時間に入れる」の知らせ
+   */
+  const openMove = (visitId: string, d?: string, s?: number) => {
     const v = visitById.get(visitId);
     if (!v) return;
     setNotice(null);
-    setDraft({ visitId, date: d, start: s, mode: 'once' });
-  };
-  const onBandKey = (e: KeyboardEvent, b: Band) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const v = visitById.get(b.visitId);
-    if (!v) return;
-    // 今日より前の訪問は動かさない
-    if (!canMoveVisit(v.date, today)) {
-      toast('今日より前の訪問は動かせません');
-      return;
-    }
-    openMove(b.visitId, v.date, hhmmToMinutes(v.earliestStart));
+    const changed = d !== undefined && s !== undefined && (d !== v.date || s !== hhmmToMinutes(v.earliestStart));
+    const width = hhmmToMinutes(v.latestStart) - hhmmToMinutes(v.earliestStart);
+    openVisitPanel({
+      visitId,
+      ...(changed
+        ? { draft: { date: d, earliestStart: minutesToHhmm(s), latestStart: minutesToHhmm(s + width) } }
+        : {}),
+      onSaved: (r) => {
+        if (r.moved && !r.staffSet && own(dataRef.current.aiPlans, r.date)) {
+          setNotice({ date: r.date, visitId: r.visitId, label: r.label, error: null });
+        }
+      },
+      returnFocus: (vid) =>
+        vid
+          ? document.querySelector<HTMLElement>(
+              `[data-testid="week-band"][data-visit="${CSS.escape(vid)}"], [data-testid="week-citem"][data-visit="${CSS.escape(vid)}"]`,
+            )
+          : null,
+    });
   };
   const onDragStart = (e: DragEvent<HTMLElement>, visitId: string) => {
     e.dataTransfer.setData('text/plain', visitId);
@@ -665,67 +660,6 @@ export default function WeekPage() {
     const v = visitById.get(g.visitId)!;
     openMove(g.visitId, d, hhmmToMinutes(v.earliestStart));
   };
-  const onItemKey = (e: KeyboardEvent, it: ClientWeekItem) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const v = visitById.get(it.visitId);
-    if (!v) return;
-    if (!canMoveVisit(v.date, today)) {
-      toast('今日より前の訪問は動かせません');
-      return;
-    }
-    openMove(it.visitId, v.date, hhmmToMinutes(v.earliestStart));
-  };
-
-  const moving = draft ? visitById.get(draft.visitId) : undefined;
-  const movingPattern = moving?.pattern ? data.patterns.find((p) => p.id === moving.pattern!.id) : undefined;
-  const origDate = moving?.pattern?.date ?? moving?.date ?? '';
-  const timeOptions = useMemo(() => {
-    const dur = moving?.durationMinutes ?? 0;
-    const out: number[] = [];
-    for (let t = DAY_START; t + dur <= DAY_END; t += SNAP_MINUTES) out.push(t);
-    return out;
-  }, [moving]);
-
-  const submitMove = async () => {
-    if (!draft || !moving) return;
-    if (!DATE_RE.test(draft.date)) return;
-    if (!canMoveVisit(moving.date, today) || !canMoveVisit(draft.date, today)) {
-      toast('今日より前の日へは動かせません');
-      return;
-    }
-    const label = `${clientName(moving)} ${md(draft.date)} ${hm(draft.start)}`;
-    let movedId: string | null = draft.visitId;
-    if (draft.mode === 'following' && movingPattern) {
-      const ids: [string, string] = [newId('pt'), newId('pt')];
-      const preview = moveFollowing(data, draft.visitId, draft.date, draft.start, today, ids);
-      if (!preview) {
-        toast('この日へは「以降すべて」で動かせません（毎月の第N週が合いません）。「この回だけ」で動かしてください');
-        return;
-      }
-      const fixed = changedDates(preview.change).filter((d) => !!own(data.manualPlans, d));
-      if (
-        fixed.length > 0 &&
-        !(await confirmDialog({
-          title: '確定した日の訪問も動かしますか？',
-          body: `確定した日（${fixed.map(md).join('・')}）の訪問も変わります（確定した割当は変えません）。`,
-          confirmLabel: '動かす',
-        }))
-      )
-        return;
-      update((d) => moveFollowing(d, draft.visitId, draft.date, draft.start, today, ids)?.data ?? d);
-      movedId = preview.movedVisitId;
-    } else {
-      update((d) => moveOnce(d, draft.visitId, draft.date, draft.start, today));
-    }
-    setDraft(null);
-    if (movedId && own(data.aiPlans, draft.date)) {
-      setNotice({ date: draft.date, visitId: movedId, label, error: null });
-    } else {
-      toast(`動かしました（${label}）`);
-    }
-  };
-
   /** 新しい日の今の案に空き時間で入れる（入る人がいなければ知らせに理由を出す） */
   const insert = () => {
     if (!notice) return;
@@ -878,11 +812,10 @@ export default function WeekPage() {
             </span>
             <Hint>
               帯の中の色は種類、縁の色は{by === 'staff' ? `担当の${terms.staff}` : terms.client}
-              です。帯は、その日の今の案（無ければ確定した割当、どちらも無ければ訪問の開始（早））の時刻です。帯を押すとその日の「日の予定」を開きます。
+              です。帯は、その日の今の案（無ければ確定した割当、どちらも無ければ訪問の開始（早））の時刻です。帯を押すと訪問の詳細の欄が開き、日時・担当・取り消しを変えられます（「日の予定で見る」でその日の予定へ）。
               帯をドラッグして別の日・時刻へ動かせます（{SNAP_MINUTES}
               分刻み）。つかんでいる間は、担当できる人のチップを強調し、落とす先に空き時間に入れられる人の数（入れる人
-              N人）を出します。キーボードでは帯で Enter
-              を押すと、日付と時刻を選んで動かせます。定期パターンの訪問は「この回だけ」か「以降すべて」を選べます。
+              N人）を出します。落とすと訪問の詳細の欄がその日時で開き、保存で動かします。定期パターンの訪問は「この回だけ」「これ以降」「すべて」を選べます。
             </Hint>
           </div>
         )}
@@ -1141,8 +1074,7 @@ export default function WeekPage() {
                   return b.staffId ? (colorOfStaff.get(b.staffId) ?? null) : null;
                 }}
                 unfit={(b) => unfitMarks(day.problem, b.visitId, b.staffId)}
-                onOpen={(b) => openDay(b.date, b.visitId)}
-                onKey={onBandKey}
+                onOpen={(b) => openMove(b.visitId)}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
                 onDragOver={(e) => onDragOver(e, day.date)}
@@ -1388,12 +1320,10 @@ export default function WeekPage() {
                                       draggable={movable}
                                       className={`${place.className}${marks.length > 0 ? ' is-unfit' : ''}`}
                                       style={place.style}
-                                      onClick={() => openDay(it.date, it.visitId)}
-                                      // 今日より前の訪問は onItemKey が「動かせません」を出す（時間軸の帯とそろえる）。休み・取り消しは何もしない
-                                      onKeyDown={(e) => (it.leave || it.cancelled ? undefined : onItemKey(e, it))}
+                                      onClick={() => openMove(it.visitId)}
                                       onDragStart={(e) => (movable ? onDragStart(e, it.visitId) : e.preventDefault())}
                                       onDragEnd={onDragEnd}
-                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}（押すと日の予定${movable ? '、Enter で日時を動かす' : ''}）`}
+                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}（押すと訪問の詳細）`}
                                       title={[text, ...marks.map((m) => `${m.short}：${m.why}`)].join('／')}
                                       data-testid="week-citem"
                                       data-visit={it.visitId}
@@ -1427,110 +1357,12 @@ export default function WeekPage() {
               絞り込んだ{terms.client}
               の訪問です（人数の上限はありません。最初はこの週に訪問がある人を全員出します）。マスの帯は訪問の時刻の位置（3段。帯の長さが訪問の時間）で、下に担当の名字などを時刻の順に出します。時刻・種類・担当は、パソコンでは帯にマウスを乗せると出て、読み上げでは帯ごとに読みます。
               帯を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません。取り消し・休みの訪問は動かせません）。
-              キーボードでは訪問で Enter を押すと、日付と時刻を選んで動かせます。
+              訪問を押すと訪問の詳細の欄が開き、日時・担当・取り消しを変えられます（キーボードでも Enter で開きます）。
             </p>
           </div>
         )
       )}
 
-      {draft && moving && (
-        <SidePanel
-          icon={Move}
-          title="訪問を動かす"
-          narrow
-          onClose={() => setDraft(null)}
-          footer={
-            <>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={submitMove}
-                disabled={!DATE_RE.test(draft.date) || !canMoveVisit(draft.date, today)}
-                data-testid="move-submit"
-              >
-                <WithIcon icon={Move}>動かす</WithIcon>
-              </button>
-              <button type="button" className="btn" onClick={() => setDraft(null)}>
-                やめる
-              </button>
-            </>
-          }
-        >
-          <p data-testid="move-summary">
-            <strong>{clientName(moving)}</strong> {md(moving.date)}（{WEEKDAY_LABELS[weekday(moving.date)]}）{' '}
-            {timeText(moving.earliestStart)} →{' '}
-            {DATE_RE.test(draft.date) ? `${md(draft.date)}（${WEEKDAY_LABELS[weekday(draft.date)]}）` : '？'}{' '}
-            {hm(draft.start)}
-          </p>
-          <div className="form-grid">
-            <label>
-              日付
-              <input
-                type="date"
-                value={draft.date}
-                min={today}
-                onChange={(e) => setDraft({ ...draft, date: e.target.value })}
-                data-testid="move-date"
-              />
-            </label>
-            <label>
-              開始
-              <select
-                value={draft.start}
-                onChange={(e) => setDraft({ ...draft, start: Number(e.target.value) })}
-                data-testid="move-start"
-              >
-                {timeOptions.map((t) => (
-                  <option key={t} value={t}>
-                    {hm(t)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {DATE_RE.test(draft.date) && !canMoveVisit(draft.date, today) && (
-            <p className="warn-text" data-testid="move-past">
-              今日より前の日へは動かせません
-            </p>
-          )}
-          {movingPattern ? (
-            <fieldset className="stack" style={{ gap: 6 }}>
-              <legend>定期パターンの訪問です</legend>
-              <label className="check">
-                <input
-                  type="radio"
-                  name="move-mode"
-                  checked={draft.mode === 'once'}
-                  onChange={() => setDraft({ ...draft, mode: 'once' })}
-                  style={{ width: 'auto' }}
-                />
-                この回だけ
-              </label>
-              <label className="check">
-                <input
-                  type="radio"
-                  name="move-mode"
-                  checked={draft.mode === 'following'}
-                  onChange={() => setDraft({ ...draft, mode: 'following' })}
-                  style={{ width: 'auto' }}
-                  data-testid="move-following"
-                />
-                以降すべて（{md(origDate)} 以降の{WEEKDAY_LABELS[weekday(origDate)]}曜の回を
-                {DATE_RE.test(draft.date) ? `${WEEKDAY_LABELS[weekday(draft.date)]}曜 ` : ''}
-                {hm(draft.start)} に）
-              </label>
-              {draft.mode === 'following' && movingPattern.weekdays.length > 1 && (
-                <p className="sub">ほかの曜日の回は時刻を変えません。</p>
-              )}
-            </fieldset>
-          ) : (
-            <p className="sub">単発の訪問です。この訪問だけを動かします。</p>
-          )}
-          <p className="sub">
-            動かした訪問が出入りする日の案は「条件が変わった」になります。新しい日に案があれば、動かしたあとに空き時間に入れるか作り直すかを選べます。
-          </p>
-        </SidePanel>
-      )}
       {mailOpen && mailOn && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
     </div>
   );
@@ -1550,7 +1382,6 @@ function DayColumn({
   edgeColor,
   unfit,
   onOpen,
-  onKey,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -1573,7 +1404,6 @@ function DayColumn({
   /** 担当が種類の必要条件（資格✗）・担当を限る決まり（限✗。ADR-0014）で可でない */
   unfit: (b: Band) => UnfitMark[];
   onOpen: (b: Band) => void;
-  onKey: (e: KeyboardEvent, b: Band) => void;
   onDragStart: (e: DragEvent<HTMLElement>, visitId: string) => void;
   onDragEnd: () => void;
   onDragOver: (e: DragEvent<HTMLElement>) => void;
@@ -1632,9 +1462,8 @@ function DayColumn({
               borderColor: !bad && b.staffId !== null && edge ? edge : undefined,
             }}
             title={`${hm(b.start)}〜${hm(b.end)} ${client}・${staff}${marks.map((m) => `（${m.short}：${m.why}）`).join('')}`}
-            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}（押すと日の予定${movable ? '、Enter で日時を動かす' : ''}）`}
+            aria-label={`${hm(b.start)} ${client}・${staff}${marks.map((m) => `・${m.short}`).join('')}（押すと訪問の詳細）`}
             onClick={() => onOpen(b)}
-            onKeyDown={(e) => (b.leave ? undefined : onKey(e, b))}
             onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}
             onDragEnd={onDragEnd}
             data-testid="week-band"

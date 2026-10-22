@@ -113,6 +113,10 @@
 - 要対応の行は `attentionTarget` の行き先へ（`openTarget`＝選んでいる日付をその日にしてから `navigate(to)`）。行は1つのボタンのまま、2つ目の span の下に `.month-attention-go`（行き先の文「（〜で開く）」）。`data-to` に行き先
 - `Attention` の `staffIds?`（overSpan のときだけ。拘束が上限を超える人の id。`names` と同じ順）
 
+#### 〈利用者さん〉を選んだときの回（PRD D304）
+
+- 右の欄の「日ごと」の下に「この月の回」（`month-client-visits`）：`lib/visitOps` の `clientVisitsIn`（取り消しも。日付・開始の順）の行 `month-client-visit`（「10/28（水） 14:30」と担当・「担当なし」・取り消し・当日キャンセル・「変」）。押すと訪問の詳細の欄（閉じるとフォーカスは行）。印刷で出さない
+
 #### `?do=`（1回だけ。行ったら URL から消す）
 
 | `?do=` | 動き |

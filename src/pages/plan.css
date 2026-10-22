@@ -218,10 +218,6 @@ p.plan-band.error {
 .plan-body {
   min-width: 0;
 }
-.plan-form {
-  scroll-margin-top: calc(var(--header-h) + 8px);
-}
-
 /* 列の見出し（〈スタッフ〉の印は components/staffMark.css） */
 .col-head {
   display: inline-flex;

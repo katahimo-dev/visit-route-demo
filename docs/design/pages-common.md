@@ -78,7 +78,23 @@
 - `RequiredMark`：見出しの横の小さな「必須」の札（`.req-mark`。`aria-hidden`）。入力欄には `required` を付け（フォームは `noValidate` なのでブラウザの吹き出しは出ない）、読み上げに必須と伝える。付けた欄：訪問（日付・〈利用者さん〉・開始時刻・最も遅い開始時刻・所要）、〈利用者さん〉の表示名、〈スタッフ〉の名前、種類の名前・標準の所要、仮押さえの表示名
 - `submitHandler(save)`：`<form onSubmit>` 用。既定の送信を止めて `save` を呼び（Promise も待つ）、次の描画で form の中の誤った欄へフォーカス（`focusFirstInvalid`：保存を止めた誤り（中の `role="alert"` の文）を `aria-describedby` で指す欄を先に、無ければ最初の `[aria-invalid="true"]`。保存できて閉じた form は何もしない）。Enter の暗黙の送信で保存し、`textarea` は改行のまま
 - `enterToSave(save)`：大きな form の中の小さなまとまり（〈利用者さん〉の欄の定期パターン・休みの `fieldset`）の `onKeyDown`。入力欄の Enter（変換中は除く）を外の form に渡さず、まとまりの保存を呼ぶ
-- form にした所：訪問の入力（`VisitForm`。開いたら最初の欄へ・日を変えても引き継ぐ）、右の欄の `onSubmit`、呼び方（データの画面）。もともと form：項目の選択肢、プリセットの名前
+- form にした所：右の欄の `onSubmit`（訪問の詳細の欄も）、呼び方（データの画面）。もともと form：項目の選択肢、プリセットの名前
+
+### 訪問の詳細の欄（`components/VisitPanel.tsx`・`visitPanel.css`。PRD D301〜D305。ADR-0051）
+
+- `VisitPanelProvider` を App の殻（`DayProvider`・`PersonPopoverProvider` の中、ルートの外）に1つ置き、`useOpenVisit()(req)` でどの画面・コマンドパレットからでも開く（画面を移っても欄は残る）。`req`：`visitId`（見る・直す）か `newVisit: { date, clientId?, start? }`（新規）、`draft?`（はじめの入力の差し替え。週のドラッグの落とした日時）、`onSaved?`（`{ visitId, date, moved, staffSet, isNew, label }`）、`returnFocus?(visitId)`（閉じたあとのフォーカス。保存で作り直した回は新しい ID）
+- `SidePanel`（`narrow`・`onSubmit`）。中身 `visit-panel`（`data-visit`・`data-new`）：内容 `vp-summary`（〈利用者さん〉 `vp-client-name`・種類・取り消し `vp-cancelled`・休み、日時 `vp-when`・所要・種類・担当 `vp-staff-now`（`StaffMark`・固定・いつもの担当・確定した割当）・繰り返し `vp-pattern`・この回の変更 `vp-changes` と「繰り返しのとおりに戻す」 `vp-restore`・メモ、日の予定以外から開いたら「日の予定で見る」 `vp-open-day`）、日時 `vp-time`（新規は〈利用者さん〉 `vp-client` も。種類 `vp-type`・日付 `vp-date`・時間の約束 `vp-window`・開始 `vp-start`（幅を保ってずらす）・遅い開始 `vp-latest`・所要 `vp-duration`・メモ `vp-note`）、担当 `vp-staff`（「変えない」`vp-staff-keep`・候補 `vp-staff-choice`（`data-staff`。選べない人は `is-off` と理由）・「担当なし」`vp-staff-none`。候補は `useDeferredValue` の入力で `staffChoices`）、範囲 `vp-scope`（繰り返しの回だけ。`vp-scope-once|following|all`。範囲の文とそのままにする回 `vp-scope-note`）、誤り `FieldError`、取り消し `vp-cancel-area`（`vp-cancel`・`vp-cancel-sameday`・`vp-uncancel`。欄は開いたまま）、決まりごと・道順（`vp-route`）
+- 帯：保存 `vp-save`（主ボタン。新規は「追加」）・閉じる `vp-close`。見るだけ（今日より前・取り消し済み・スマホ幅の新規）は閉じるだけ
+- 保存：`applyVisitEdit` → これ以降・すべてで確定した日も変わるなら独自の確認 → `update` → トースト（範囲・当てられなかった回の件数）と「元に戻す」（`vp-toast-undo`。殻が今のデータを追い、書いたあとのデータのままなら書く前に戻す）
+- スマホ幅（`COMPACT_QUERY`。600px 以下）：日時 `vp-time`・範囲 `vp-scope` を出さず、新規は文 `vp-narrow-new` だけ
+- 印刷：`.drawer-wrap:has(.visit-panel)` を出さない
+
+#### `lib/visitOps.ts`（純粋関数。テストあり）
+
+- 欄がデータを読む・書く薄い層（段3でデータの形を変えるときはここを差し替える）。書いたデータは呼ぶ側が `update` で当てる。今日・時刻・新しい ID は引数
+- 読む：`draftOf`・`newDraft`・`timeChanged`・`assignmentOf`（今の案、無ければ確定した割当）・`visitInfo`（繰り返しの文・この回の変更・いつもの担当・休み・変えられるか）・`occurrenceChanges`・`scopeTexts`（「M/D 以降の〈曜日〉曜の回」・ほかの曜日の有無・そのままにする回）・`staffChoices(data, visitId, draft)`（欄の日時でその日の問題（今の案の条件・この訪問を除く固定）を作り、reassign の `candidatesFor` と `reassignItemText`。その日に働く人と今の担当、選べる人を先に）
+- 書く：`applyVisitEdit(data, { visitId, draft, staff, scope }, today, ids, now)`（新規・この回だけ＝`savedVisit`・これ以降＝`moveFollowing`（over で所要・種類・時間の約束・幅・いつもの担当）・すべて＝今日以降で最初の同じ曜日の回から。担当は `assignOnDays`（その日の今の案で `bestInsertion`・固定。担当なしは外す）、これ以降・すべては範囲の回と手直しの記憶にも）・`cancelVisitOp`・`uncancelVisitOp`（ほかに変えた所が無ければ edited も外す）・`restoreOccurrenceOp`
+- 一覧：`unassignedVisits(data, from, to)`（今の案で入らない訪問）・`dayVisitRows(data, date, nowHm, limit)`（担当なし → 案なし → これからの近い順）・`clientVisitsIn(data, clientId, from, to)`
 
 ### 名前から開く詳細（ADR-0022 追記。PRD D122〜D126・D205〜D209）
 
