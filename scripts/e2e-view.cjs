@@ -679,6 +679,17 @@ async function rowClick(page) {
     );
     await page.keyboard.press('Escape');
     await view(page).waitFor({ state: 'detached', timeout: 5000 });
+    const back = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
+    check(back === '図書館 ふみを開く', `〈利用者さん〉・${width}px：閉じるとフォーカスはその行の「開く」`, back);
+    // ドラッグで文字を選んだときは開かない（名前の文字の上を左から右へ）
+    const box = await row.getByText('図書館 ふみ', { exact: true }).first().boundingBox();
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await settle(page, 300);
+    check((await panel(page).count()) === 0, `〈利用者さん〉・${width}px：名前の文字をドラッグで選んでも開かない`);
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
     await open(page, '/staff', '[data-testid="staff-row"]');
     const srow = page.getByTestId('staff-row').filter({ hasText: '市役所 まち子' }).first();
     await srow.locator('td').nth(2).click();

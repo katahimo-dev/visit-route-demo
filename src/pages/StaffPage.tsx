@@ -350,8 +350,16 @@ export default function StaffPage() {
                 className="row-open"
                 // 行のどこを押しても閲覧の欄を開く（PRD D297。ボタン・リンク・文字の選択は除く。キーボードは右端の「開く」）
                 onClick={(e) => {
-                  if (shouldOpenRow(e.target as Element, e.currentTarget, window.getSelection()?.toString() ?? ''))
-                    openView(s);
+                  const ok = shouldOpenRow({
+                    target: e.target as Element,
+                    row: e.currentTarget,
+                    selection: window.getSelection()?.toString() ?? '',
+                    detail: e.detail,
+                  });
+                  if (!ok) return;
+                  // 閉じたときフォーカスがこの行の「開く」へ戻るよう、先にそこへ移す（欄は開いた時点のフォーカスへ戻す）
+                  e.currentTarget.querySelector<HTMLElement>('.narrow-act button')?.focus({ preventScroll: true });
+                  openView(s);
                 }}
               >
                 <td {...narrowRole.cell} className="person-name narrow-title" data-label="名前">
