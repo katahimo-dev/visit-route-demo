@@ -1962,6 +1962,29 @@ a.icon-btn:hover {
  * 狭い画面（欄が画面いっぱい）：主ボタンを先頭に、2つまでは横に同じ幅で並べ、3つ以上は主ボタンを1行目に全幅・残りは2つずつ。
  * ボタンでないもの（入力の誤り・注記）は1行を使う
  */
+/*
+ * 広い画面（601px 以上）：欄の高さは内容に合わせる（PRD D253）。上に寄せ、内容が短ければ欄も短く（下の角も丸め、影でカードに見せる）、
+ * 長ければ画面の高さまでで中（.drawer-body）を巻き、帯は欄の下に貼り付く（D195）。wrap の height（キーボード用。狭い画面だけ入る）は
+ * そのまま効くので、max-height は wrap（inset: 0）の高さから余白を引いた値
+ */
+@media (min-width: 601px) {
+  .drawer-wrap {
+    align-items: flex-start;
+    padding: 12px;
+    box-sizing: border-box;
+  }
+  .drawer {
+    height: auto;
+    max-height: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(40, 25, 15, 0.25);
+  }
+  .drawer-body {
+    /* 内容が短いときは内容の高さ。巻くときだけ max-height（欄の残り）まで */
+    flex: 0 1 auto;
+  }
+}
 @media (max-width: 600px) {
   /* 見出し・内容・帯の左右の端をそろえる（16px。横向きの切り欠きは safe-area で避ける） */
   .drawer-head {

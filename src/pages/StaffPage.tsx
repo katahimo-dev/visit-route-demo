@@ -3,6 +3,7 @@ import {
   CalendarX,
   Clock,
   Eye,
+  HeartHandshake,
   Home,
   MapPin,
   Pencil,
@@ -72,6 +73,7 @@ export default function StaffPage() {
   // 機能の入り切り（ADR-0028）：退職・担当替えを切れば最終勤務日の欄・振り直しの欄、メールを切ればメールアドレスの欄を出さない
   // （最終勤務日の値は事実なので計算に効き、一覧の「最終」の印も残す）
   const offboardOn = useFeature('offboard');
+  const compatOn = useFeature('compat');
   const mailOn = useFeature('mail');
   /** 担当を限る（ADR-0028 の allowedStaff）：切なら休止の確認で「担当できる人」に触れない（外すデータの書き換えは今どおり） */
   const allowedStaffOn = useFeature('allowedStaff');
@@ -264,17 +266,24 @@ export default function StaffPage() {
         title={`${terms.staff}一覧`}
         lead={`${terms.staff}の勤務・特性・条件を決めます`}
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={async () => {
-              if (!(await okToDiscard('switch', `新しい${terms.staff}`))) return;
-              setViewId(null);
-              openForm(blank(), true);
-            }}
-          >
-            <WithIcon icon={Plus}>{terms.staff}を追加</WithIcon>
-          </button>
+          <>
+            {compatOn && (
+              <Link to="/compat" className="btn btn-text" data-testid="to-compat">
+                <WithIcon icon={HeartHandshake}>相性の表</WithIcon>
+              </Link>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!(await okToDiscard('switch', `新しい${terms.staff}`))) return;
+                setViewId(null);
+                openForm(blank(), true);
+              }}
+            >
+              <WithIcon icon={Plus}>{terms.staff}を追加</WithIcon>
+            </button>
+          </>
         }
       />
 

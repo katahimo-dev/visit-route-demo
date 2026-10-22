@@ -43,7 +43,6 @@ import {
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
 import './settings.css';
-import { SettingsTabs } from '../components/SettingsTabs';
 
 /** 凡例（◎○△×の意味。色は表のセルと同じ） */
 const LEGEND: { mark: string; cls: string; text: string }[] = [
@@ -202,8 +201,9 @@ export default function CompatPage() {
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff: data.staff,
+        visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, data.staff],
+    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, data.staff],
   );
   /**
    * 相性のチップの判定に使う相性の写し（PRD D116）。絞り込みを変えたときの相性に止め、セルを押しても行を消さない
@@ -303,12 +303,7 @@ export default function CompatPage() {
 
   return (
     <div className="stack">
-      <PageHeader
-        nav={<SettingsTabs />}
-        icon={HeartHandshake}
-        title="相性"
-        lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります"
-      />
+      <PageHeader icon={HeartHandshake} title="相性" lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります" />
       <div className="compat-filters" data-testid="compat-filters">
         <details
           className="card compat-filter"
@@ -353,6 +348,7 @@ export default function CompatPage() {
             terms={filterTerms}
             periodLabel={periodLabel}
             defaults={EMPTY_FILTER}
+            visitTypes={data.visitTypes}
             extraChips={extraChips}
             hideEnded
             testId="compat-cf"

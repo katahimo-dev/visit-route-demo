@@ -108,8 +108,8 @@ async function drawerOpenClose(page) {
   const boxes = [];
   for (let i = 0; i < n; i++) boxes.push(await links.nth(i).boundingBox());
   check(
-    n === 8 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
-    '引き出し：全部のメニュー（8項目）を縦に並べる',
+    n === 9 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
+    '引き出し：全部のメニュー（9項目）を縦に並べる',
     {
       n,
     },
@@ -461,6 +461,41 @@ async function narrowRules(page) {
     lines,
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'narrow-rules.png') });
+  // 重みの下書き（PRD D286）：動かすと確定の帯が下のタブのすぐ上に出て、2つのボタンが画面の中・巻いても見える。取り消すと消える
+  const range = page.getByTestId('narrow-rules').locator('input[type="range"]:not([disabled])').first();
+  if ((await range.count()) > 0) {
+    const v0 = Number(await range.inputValue());
+    await range.focus();
+    await page.keyboard.press(v0 > 0 ? 'ArrowLeft' : 'ArrowRight');
+    const bar = page.getByTestId('rules-draft-bar');
+    await bar.waitFor({ timeout: 5000 });
+    for (const where of ['top', 'bottom']) {
+      await page.evaluate((w) => window.scrollTo(0, w === 'bottom' ? document.documentElement.scrollHeight : 0), where);
+      await settle(page, 200);
+      const box = await page.evaluate(() => {
+        const r = (el) => el.getBoundingClientRect();
+        const b = r(document.querySelector('[data-testid="rules-draft-bar"]'));
+        const tabs = r(document.querySelector('.bottom-tabs'));
+        const btns = [...document.querySelectorAll('[data-testid="rules-draft-bar"] .btn')].map(r);
+        return {
+          top: Math.round(b.top),
+          bottom: Math.round(b.bottom),
+          tabs: Math.round(tabs.top),
+          right: Math.max(...btns.map((x) => x.right)),
+          rows: new Set(btns.map((x) => Math.round(x.top))).size,
+        };
+      });
+      check(
+        box.top >= 0 && box.bottom <= box.tabs + 1 && box.right <= 390 && box.rows === 1,
+        `条件の重み：下書きの確定の帯が下のタブの上で、ボタンは1行で画面の中（${where}。PRD D286）`,
+        box,
+      );
+    }
+    await page.screenshot({ path: path.join(OUT_DIR, 'narrow-rules-draft.png') });
+    await page.getByTestId('rules-draft-discard').click();
+    await bar.waitFor({ state: 'detached', timeout: 5000 });
+    check(Number(await range.inputValue()) === v0, '条件の重み：取り消すと下書きが消える（390px）');
+  }
 }
 
 /** 一覧の表（特性の項目・〈スタッフ〉一覧・〈利用者さん〉一覧）：行がカードで横にはみ出さない（PRD D220） */

@@ -394,8 +394,9 @@ export default function WeekPage() {
         staff,
         // この週に訪問がある人は終了でも表に出す（その訪問をドラッグできるように。PRD D111）
         showEndedInPeriod: true,
+        visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, staff],
+    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
   );
   /** この週に（取り消しでない）訪問がある〈利用者さん〉（検索欄の近道「この週に訪問がある人」） */
   const weekClientIds = facts.periodIds;
@@ -996,6 +997,7 @@ export default function WeekPage() {
             terms={{ client: terms.client, staff: terms.staff }}
             periodLabel="この週"
             defaults={WEEK_TABLE_FILTER}
+            visitTypes={data.visitTypes}
             testId="week-client-filter"
           />
         )}

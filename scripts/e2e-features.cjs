@@ -2,7 +2,7 @@
 // すべて入（初期データ。e2e は初回もすべて入に固定。PRD D276）でメニューの最後に「設定」（タブに管理者設定・データ）、管理者設定の画面（見出し・説明・ひな形の4つ・
 // 「いまの設定」とカスタムの印・20のスイッチの role=switch・aria-checked・名前・説明）。
 // ひな形の4通り（基本・月次予定・現場共有・すべては管理者設定で適用する（独自の確認ダイアログに入る機能・切れる機能、取り消すと変わらない）、
-// 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目（8項目のまま）・設定のタブ・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
+// 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目（相性の機能の入り切りだけで変わる）・設定のタブ・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
 // 切った機能の URL（`?do=` も）を開くとホームへ移り（replace）、ホームの上に閉じられる知らせと管理者設定へのリンク、
 // スイッチ（押すとすぐ保存・トースト・依存先が切なら押せず理由）、390px で横にはみ出さない、印刷で知らせ・メニューを出さない。
 // 末尾の /・大文字の URL（#/vacancy/・#/Vacancy・#/month/print/）もホームへ移す、390px で空き状況を切ると下のタブ4つが全幅を等分、
@@ -75,7 +75,7 @@ const TEMPLATE_LABEL = {
 };
 const asFeatures = (on) => Object.fromEntries(FEATURE_IDS.map((id) => [id, on.includes(id)]));
 
-/** メニュー（8項目。ひな形で変わらない。PRD D275。ADR-0045） */
+/** メニュー（9項目。相性の機能を切ると減る。PRD D275。ADR-0045・0047） */
 const MENU = [
   'ホーム',
   '予定',
@@ -83,6 +83,7 @@ const MENU = [
   '空き状況',
   '利用者さん一覧',
   'スタッフ一覧',
+  '相性',
   '勤務時間（シフト）',
   '設定',
 ];
@@ -96,12 +97,12 @@ const ALL_SCREENS = [
   '空き状況',
   '利用者さん一覧',
   'スタッフ一覧',
+  '相性',
   '勤務時間（シフト）',
   '勤務の見込み',
-  '条件の重み',
-  '相性',
   '訪問の種類',
   '特性の項目',
+  '条件の重み',
   '管理者設定',
   'データ',
 ];
@@ -114,12 +115,15 @@ const HIDDEN = {
 };
 const screensFor = (t) => ALL_SCREENS.filter((l) => !HIDDEN[t].includes(l));
 /** 設定のタブ（ひな形ごと。条件の重み・特性の項目は rules を切ると出さない） */
-const SETTINGS_TABS = ['条件の重み', '相性', '訪問の種類', '特性の項目', '管理者設定', 'データ'];
+const SETTINGS_TABS = ['訪問の種類', '特性の項目', '条件の重み', '管理者設定', 'データ'];
 const settingsTabsFor = (t) => SETTINGS_TABS.filter((l) => !HIDDEN[t].includes(l));
 /** メニューは空き状況・欠勤を切ると減る */
 const menuFor = (on) =>
   MENU.filter(
-    (l) => (l !== '空き状況' || on.includes('vacancy')) && (l !== '欠勤・キャンセルを登録' || on.includes('sudden')),
+    (l) =>
+      (l !== '空き状況' || on.includes('vacancy')) &&
+      (l !== '欠勤・キャンセルを登録' || on.includes('sudden')) &&
+      (l !== '相性' || on.includes('compat')),
   );
 /** 下のタブ（ホーム・予定・欠勤・空き状況。「メニュー」はボタン。PRD D274） */
 const tabsFor = (on) =>
@@ -215,7 +219,7 @@ async function allOn(page) {
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
   check(m.labels.at(-1) === '設定', 'すべて入：メニューの最後は「設定」', m.labels);
-  check(same(m.labels, MENU), 'すべて入：メニューは8項目', m.labels);
+  check(same(m.labels, MENU), 'すべて入：メニューは9項目', m.labels);
   check(
     same(await storedFeatures(page), {}),
     '初期データの入り切りは {}（e2e は初回もすべて入に固定）',
@@ -344,7 +348,7 @@ async function checkTemplate(page, t) {
   const label = TEMPLATE_LABEL[t];
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
-  check(same(m.labels, menuFor(on)), `${label}：メニューの項目（8項目のまま）`, m.labels);
+  check(same(m.labels, menuFor(on)), `${label}：メニューの項目（相性の機能の入り切りだけで変わる）`, m.labels);
   const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
   check(same(tabs, tabsFor(on)), `${label}：下のタブ`, tabs);
   const pal = await paletteItems(page);

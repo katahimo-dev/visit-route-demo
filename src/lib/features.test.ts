@@ -254,11 +254,11 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
   const labels = (f: Features) => menuSections(terms, TODAY, f).flatMap((g) => g.items.map((i) => i.label));
   const titles = (f: Features) => menuSections(terms, TODAY, f).map((g) => g.title ?? null);
   const screens = (f: Features) => screenSections(terms, f).flatMap((g) => g.items.map((i) => i.label));
-  it('すべて：8項目（{} と同じ）', () => {
+  it('すべて：9項目（{} と同じ）', () => {
     expect(labels(applyTemplate('all'))).toEqual(labels({}));
-    expect(labels({})).toHaveLength(8);
+    expect(labels({})).toHaveLength(9);
   });
-  it('基本も8項目（メニューから外した画面は設定のタブ・画面の中の入口へ）。画面の一覧は案を比べる・勤務の見込み・条件の重み・特性の項目が無い', () => {
+  it('基本も9項目（メニューから外した画面は設定のタブ・画面の中の入口へ）。画面の一覧は案を比べる・勤務の見込み・条件の重み・特性の項目が無い', () => {
     expect(labels(applyTemplate('basic'))).toEqual(labels({}));
     expect(screens(applyTemplate('basic'))).toEqual([
       'ホーム',
@@ -268,8 +268,8 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
       '空き状況',
       '利用者さん一覧',
       'スタッフ一覧',
-      '勤務時間（シフト）',
       '相性',
+      '勤務時間（シフト）',
       '訪問の種類',
       '管理者設定',
       'データ',
@@ -290,10 +290,15 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
     expect(titles({ sudden: false, vacancy: false })).toEqual([null, '人', null]);
     expect(titles(applyTemplate('basic'))).toEqual([null, '当日・問い合わせ', '人', null]);
   });
-  it('「設定」のタブは切った機能を出さない（基本は相性から）', () => {
-    expect(settingsTabs({}).map((t) => t.to)).toEqual(['/rules', '/compat', '/types', '/items', '/settings', '/data']);
-    expect(settingsTabs(applyTemplate('basic')).map((t) => t.to)).toEqual(['/compat', '/types', '/settings', '/data']);
-    expect(settingsTabs({ rules: false, compat: false }).map((t) => t.to)).toEqual(['/types', '/settings', '/data']);
+  it('「設定」のタブは切った機能を出さない（基本は条件の重み・特性の項目が無い）', () => {
+    expect(settingsTabs({}).map((t) => t.to)).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
+    expect(settingsTabs(applyTemplate('basic')).map((t) => t.to)).toEqual(['/types', '/settings', '/data']);
+    expect(settingsTabs({ rules: false }).map((t) => t.to)).toEqual(['/types', '/settings', '/data']);
+  });
+  it('相性を切ると「人」の相性が消える（設定のタブには元からない）', () => {
+    expect(labels({ compat: false })).not.toContain('相性');
+    expect(labels({})).toContain('相性');
+    expect(screens({ compat: false })).not.toContain('相性');
   });
   it('下のタブは欠勤・キャンセル・空き状況を切ると減る', () => {
     expect(bottomTabs(menuSections(terms, TODAY, {})).map((t) => t.key)).toEqual([

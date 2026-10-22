@@ -95,12 +95,12 @@ describe('候補', () => {
       '空き状況',
       '利用者さん一覧',
       'スタッフ一覧',
+      '相性',
       '勤務時間（シフト）',
       '勤務の見込み',
-      '条件の重み',
-      '相性',
       '訪問の種類',
       '特性の項目',
+      '条件の重み',
       '管理者設定',
       'データ',
     ]);
@@ -125,7 +125,7 @@ describe('候補', () => {
     const scr = paletteScreens(screenSections(terms, {}), terms);
     const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
     expect(hit('よてい')).toEqual(expect.arrayContaining(['/month', '/week', '/plan']));
-    expect(hit('せってい')).toEqual(['/rules', '/compat', '/types', '/items', '/settings', '/data']);
+    expect(hit('せってい')).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
     expect(hit('きんむのみこみ')).toEqual(['/workload']);
     expect(hit('あんをくらべる')).toEqual(['/compare']);
     expect(paletteActions(TODAY).find((x) => x.id === 'action:today')!.label).toBe('日の予定（今日）を開く');
