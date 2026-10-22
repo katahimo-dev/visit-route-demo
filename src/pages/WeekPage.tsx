@@ -173,7 +173,7 @@ export default function WeekPage() {
     () => knownTypes(decodeFilter(cfParam, WEEK_TABLE_FILTER), data.visitTypes),
     [cfParam, data.visitTypes],
   );
-  /** 訪問の詳細の欄（PRD D300。帯を押す・落とすと開く。週の移動の欄はこの欄にした） */
+  /** 訪問の詳細の欄（PRD D301。帯を押す・落とすと開く。週の移動の欄はこの欄にした） */
   const openVisitPanel = useOpenVisit();
   const [notice, setNotice] = useState<Notice | null>(null);
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
@@ -551,7 +551,7 @@ export default function WeekPage() {
   };
   const clientName = (v: Visit | undefined) => clientById.get(v?.clientId ?? '')?.displayName ?? '（不明）';
 
-  // ---- 動かす（訪問の詳細の欄。PRD D300）----
+  // ---- 動かす（訪問の詳細の欄。PRD D301）----
   /**
    * 訪問の詳細の欄を開く。d・s が今の日時と違えば（ドラッグで落とした先）、その日時を入れた形で開き、保存のときに範囲
    * （この回だけ／これ以降／すべて）を選ぶ。保存で日時が変わり、担当を選ばず、新しい日に今の案があれば「空き時間に入れる」の知らせ

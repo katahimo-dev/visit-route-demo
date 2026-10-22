@@ -27,7 +27,7 @@
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
 6. 操作の行（`plan-toolbar`。PRD D279）：「欠勤・キャンセルを登録」（`sudden-open`）・「案を変える ▾」は枠、「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・「その他 ▾」（`MenuButton`・`plan-more`：「訪問を追加」（`plan-visit-add`。〈利用者さん〉がいなければ押せず理由）・「メールで送る」（`day-mail`。`mail` が入のとき）・「使い方」（`plan-more-help`。開いていれば「使い方を閉じる」））・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）。「使い方」は操作の行の下に説明 `plan-help` を開きフォーカスを移す（「使い方を閉じる」）
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
-8. 本体（時間軸か順番か一覧）と地図：1280px 以上で横に並べ（地図は上に貼りつく）、見出しの「地図を畳む」で畳む。狭い画面は `MapDock`
+8. 本体（時間軸か順番か一覧）と、その下に全幅の地図（`plan-map`。1280px 以上は高さ 600px、狭い画面は 420px。比較の画面と同じ形。PRD D300）。地図が画面の外にあるあいだは `MapDock` で右下に浮かせ、〈スタッフ〉・区間・訪問を選ぶと開く
 
 #### 状態の印と確定
 
@@ -242,7 +242,7 @@
 - 休み（`band-leave`。ADR-0013）：「〈利用者さん〉の休みのため無し N件：」と名前（`leave-name`。`lib/personLinks` の `leavePeople(visits, leaves, date, nameOf)` で並べ、理由を添える）。確定した日なら「（確定した日です。必要なら案を作り直して確定し直してください。休みの訪問の担当は、休みを消したときのために残します）」。「一覧で見る」。文は `band-text` の1つの要素に入れる（`with-icon` の横並びの中で折り返す）
 - 拘束超え（`band-over-span`。ADR-0015。`workload` が入のとき）：今の案、無ければ確定した割当で、出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の `org.spanLimitHours` 時間を超える人。名前（`over-span-name`）と拘束の時間。1人ぶんは `over-span-item` で途中で折り返さない。1人なら帯のボタン「勤務の見込み」、2人以上なら帯のボタンをやめ人ごとのリンク `over-span-link`「勤務の見込み」（`workloadHref(年月, ID)`。aria-label「〈名前〉さんの勤務の見込み」）。印刷ではリンクを出さない
 
-#### 訪問の詳細の欄（`components/VisitPanel.tsx`。PRD D300〜D304。ADR-0051）と取り消し
+#### 訪問の詳細の欄（`components/VisitPanel.tsx`。PRD D301〜D305。ADR-0051）と取り消し
 
 - 欄そのものは [pages-common.md](pages-common.md) の「訪問の詳細の欄」。日の予定からは次の所で開く（`useOpenVisit`）
   - 時間軸の帯・順番のカード・入らなかった訪問のカードを押して出る詳細の先頭の「詳細・変更」（`visit-open`。詳細の理由・「担当を変える ▾」・決まりごと・道順は今のまま）

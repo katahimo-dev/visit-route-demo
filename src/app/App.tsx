@@ -126,7 +126,7 @@ export default function App() {
         <DataWatch />
         {/* 月まとめ作成の計算を画面の外で続ける（PRD D256・D257。ADR-0042）：store につなぎ、終わったら知らせる */}
         <MonthBatchHost />
-        {/* 訪問の詳細の欄（PRD D300〜D303。ADR-0051）：どの画面・コマンドパレットからでも開ける。欄は画面全体で1つ */}
+        {/* 訪問の詳細の欄（PRD D301〜D304。ADR-0051）：どの画面・コマンドパレットからでも開ける。欄は画面全体で1つ */}
         <VisitPanelProvider>
           {blocked ? (
             <Navigate to="/home" replace state={{ featureOff: blocked }} />

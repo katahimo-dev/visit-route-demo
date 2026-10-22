@@ -1,4 +1,4 @@
-// 訪問の詳細の欄（pages/VisitPanel。PRD D300〜D303。ADR-0051）がデータを読む・書く薄い層。どれも純粋関数で、DemoData を書き換えない。
+// 訪問の詳細の欄（pages/VisitPanel。PRD D301〜D304。ADR-0051）がデータを読む・書く薄い層。どれも純粋関数で、DemoData を書き換えない。
 // 画面はこの層の越しにだけ訪問・繰り返し・担当に触る（段3でデータの形を変えたとき、画面を書き直さずにここを差し替える）。
 // 書いたデータは呼ぶ側が store の update(fn) で当てる。今日・時刻（now）・新しい ID は引数で受ける（乱数・Date.now を使わない）
 import type { AiPlan, DemoData } from '../contracts/data';
@@ -23,7 +23,7 @@ import { canMoveVisit, changedDates, moveFollowing } from './week';
 
 // ---- 範囲（この回だけ／これ以降／すべて）----
 
-/** 繰り返しの回を変えるときの範囲（週のドラッグの「この回だけ／これ以降」と同じ言葉。PRD D301） */
+/** 繰り返しの回を変えるときの範囲（週のドラッグの「この回だけ／これ以降」と同じ言葉。PRD D302） */
 export type VisitScope = 'once' | 'following' | 'all';
 export const SCOPE_LABELS: Record<VisitScope, string> = { once: 'この回だけ', following: 'これ以降', all: 'すべて' };
 
@@ -277,7 +277,7 @@ function dayProblem(
 
 /**
  * 欄の日時（変えていればその日時）で、担当の候補を出す（「担当を変える ▾」と同じ判定：reassign の candidatesFor と
- * matching の理由。PRD D302）。その日に働く人（稼働時間帯のある人）と今の担当だけ。選べる人を先に、選べない人は理由つきで後ろ
+ * matching の理由。PRD D303）。その日に働く人（稼働時間帯のある人）と今の担当だけ。選べる人を先に、選べない人は理由つきで後ろ
  */
 export function staffChoices(d: DemoData, visitId: string | null, draft: VisitDraft): StaffChoices {
   const empty = (why: string, hasPlan = false): StaffChoices => ({
@@ -442,7 +442,7 @@ const daysBetween = (a: string, b: string) =>
   Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
 /**
- * 訪問を保存する（PRD D300〜D302）。
+ * 訪問を保存する（PRD D301〜D303）。
  * - 新しい訪問：単発の訪問を足す（ids.visit）。担当を選んでいればその日の今の案で当てる
  * - この回だけ（単発の訪問も）：lib/visitEdit の savedVisit（日付を変えたら手作業の担当を外す・繰り返しの回は「この回だけ変えた」）
  * - これ以降：週のドラッグの「以降すべて」と同じ lib/week の moveFollowing（同じ曜日の回を新しい曜日・時刻・所要・種類にした
@@ -619,7 +619,7 @@ export function restoreOccurrenceOp(d: DemoData, visitId: string, today: string)
 
 // ---- 一覧（欄を開く入口） ----
 
-/** 今の案で入らない訪問（今日〜until。日付・開始の順）。ホームの要対応から欄を開く（PRD D303） */
+/** 今の案で入らない訪問（今日〜until。日付・開始の順）。ホームの要対応から欄を開く（PRD D304） */
 export function unassignedVisits(
   d: Pick<DemoData, 'visits' | 'aiPlans' | 'clientLeaves'>,
   today: string,
@@ -648,7 +648,7 @@ export type VisitRow = {
 };
 
 /**
- * その日の訪問の行（ホームの今日の訪問。PRD D303）：取り消し・休みを除き、担当なし → 案なし → これからの近い順 → 済んだ時刻の順。
+ * その日の訪問の行（ホームの今日の訪問。PRD D304）：取り消し・休みを除き、担当なし → 案なし → これからの近い順 → 済んだ時刻の順。
  * limit 件まで、残りは rest に数だけ
  */
 export function dayVisitRows(
@@ -677,7 +677,7 @@ export function dayVisitRows(
   return { rows: rows.slice(0, limit), rest: Math.max(0, rows.length - limit) };
 }
 
-/** 〈利用者さん〉の、その期間の訪問（取り消しも。日付・開始の順）。月の予定で〈利用者さん〉を選んだときの回（PRD D303） */
+/** 〈利用者さん〉の、その期間の訪問（取り消しも。日付・開始の順）。月の予定で〈利用者さん〉を選んだときの回（PRD D304） */
 export function clientVisitsIn(d: Pick<DemoData, 'visits'>, clientId: string, from: string, to: string): Visit[] {
   return d.visits
     .filter((v) => v.clientId === clientId && v.date >= from && v.date <= to)

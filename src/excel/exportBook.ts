@@ -368,7 +368,8 @@ function staffTable(data: DemoData, name: string): TableSpec {
       s.icon,
       ...sp.cells(s),
     ]),
-    textCols: [1, 4, 5, 6, 11, 12],
+    // 文字列の書式：ID・曜日・勤務の開始と終了・最終勤務日・アイコン（数字や日付に化けないように。ADR-0050）。メールアドレスは付けない（前から）
+    textCols: [1, 4, 5, 6, staffBase.indexOf(STAFF_LAST_DAY_COL) + 1, staffBase.indexOf(STAFF_ICON_COL) + 1],
     lists: [{ col: 3, values: Object.values(travelModeLabels) }, { col: 7, values: [YES] }, ...sp.lists],
     freezeCols: 2,
   };

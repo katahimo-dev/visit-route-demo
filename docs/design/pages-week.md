@@ -79,7 +79,7 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 - 帯を別の日の列・時刻へドラッグ（15分刻みに丸める（`SNAP_MINUTES`）。範囲外は戻し「07:00〜20:00 の中に置いてください」）。取り消し・休み・今日より前は動かさない（`canMoveVisit`）
 - ドラッグの始まりは `deferredDragStart`（つかんでから DOM を変えない）
 - ドラッグ中は、その訪問を担当できる人（可否。compile の allowed。`allowedStaffOf`）の名前のチップを強調し（チップの畳みは測り直さない）、落とす先の列に「入れる人 N人」（落とす日・時刻にした問題で reassign の `fitsOf` の人数。15分刻みのマスごとに memo。`fitCountAt`）
-- 帯を押す（Enter も）と訪問の詳細の欄（`components/VisitPanel.tsx`。[pages-common.md](pages-common.md)。PRD D300〜D303）。今日より前の訪問は見るだけ
+- 帯を押す（Enter も）と訪問の詳細の欄（`components/VisitPanel.tsx`。[pages-common.md](pages-common.md)。PRD D301〜D304）。今日より前の訪問は見るだけ
 - 離すと同じ欄が落とした日付・開始（幅は保つ）を入れた形で開き、繰り返しの回なら範囲（この回だけ（初期値）／これ以降／すべて）を選んで「保存」（週の移動の欄はこの欄にした）
   - この回だけ：`lib/visitEdit` の `savedVisit`（日付が変われば手作業の担当を外し `pattern.edited` を true）
   - これ以降・すべて：`lib/week` の `moveFollowing`（元の日以降の同じ曜日の回を新しい曜日・時刻に分ける。すべては今日以降で最初の回から）。確定した日が含まれれば確認

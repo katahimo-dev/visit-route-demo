@@ -86,7 +86,7 @@ export default function HomePage() {
   const nextId = useId();
   const anytimeId = useId();
   const visitsId = useId();
-  // 訪問の詳細の欄（PRD D303）：今日の訪問・これからの入らない訪問から1件ずつ開く。スマホの幅では「訪問を追加」を出さない
+  // 訪問の詳細の欄（PRD D304）：今日の訪問・これからの入らない訪問から1件ずつ開く。スマホの幅では「訪問を追加」を出さない
   const openVisit = useOpenVisit();
   const compact = useMedia(COMPACT_QUERY);
   const nowHm = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(11, 16);

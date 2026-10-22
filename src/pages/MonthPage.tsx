@@ -850,7 +850,7 @@ export default function MonthPage() {
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
   /** 選んだ〈利用者さん〉（休みの欄。ADR-0013） */
   const focusClient = focus.kind === 'client' ? data.clients.find((c) => c.id === focus.id) : undefined;
-  /** 訪問の詳細の欄（PRD D303：〈利用者さん〉を選んだときの回から開く） */
+  /** 訪問の詳細の欄（PRD D304：〈利用者さん〉を選んだときの回から開く） */
   const openVisit = useOpenVisit();
   /** 選んだ〈利用者さん〉のこの月の回（取り消しも） */
   const focusVisits = useMemo(

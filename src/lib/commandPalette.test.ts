@@ -297,7 +297,7 @@ describe('画面を移ったときのパレット（hashPathname・keepPaletteOn
   });
 });
 
-describe('訪問の候補（PRD D303）', () => {
+describe('訪問の候補（PRD D304）', () => {
   const people = palettePeople(clients, staff, terms);
   const v = (id: string, clientId: string, date: string, start: string, cancelled = false) => ({
     id,

@@ -1,4 +1,4 @@
-/* 訪問の詳細の欄（PRD D300〜D303。components/VisitPanel） */
+/* 訪問の詳細の欄（PRD D301〜D304。components/VisitPanel） */
 .visit-panel {
   gap: 12px;
 }
@@ -75,7 +75,7 @@
 .btn.tone-danger {
   color: var(--danger);
 }
-/* 印刷では欄を出さない（PRD D300） */
+/* 印刷では欄を出さない（PRD D301） */
 @media print {
   .drawer-wrap:has(.visit-panel) {
     display: none !important;

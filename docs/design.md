@@ -141,7 +141,7 @@ flowchart LR
 - 責務：`DemoData` の読み込み・保存・検査（zod）・版の移行・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す、置き換える前の1世代の控え（ADR-0032）。画面へは `useDemoData()`（`data`・`update(fn)`・`replace(d)`・`reset(features?)`・`saveError`・`keepPrevious(reason)`・`restorePrevious()`・`previous`・`broken`・`brokenKept`・`dismissBroken()`・`startedFresh`・`externalReloads`・`previousDrops`）。書き換えは update・replace・reset・restorePrevious だけ
 - 持つデータ（持ち主）：`DemoData`（キー `vrdemo:data:v1` の1つの JSON）、読めなかった元の文字（`vrdemo:data:broken`）、1世代の控え（`vrdemo:data:prev`＝置き換える前の `DemoData` の JSON、`vrdemo:data:prev:info`＝`{ at, reason }`（時刻 ms・操作の名前））、案内ツアーを見たか（キー `vrdemo:tour:seen`）、初めて開いたときの入り切りの印（キー `vrdemo:features:start`。`all` だけ意味を持つ。PRD D276）、最後に書き出した日（`vrdemo:backup:last`＝`{ date: 'YYYY-MM-DD', kind: 'json' | 'excel' }`）と控えの知らせを出した日（`vrdemo:backup:reminded`＝'YYYY-MM-DD'）、条件の変更の控え（`vrdemo:conditions:base`＝`{ at, data }`。data は条件の部分。PRD D290。ADR-0049）。`vrdemo:data:v1` 以外はブラウザごとの記録で、DemoData の外（版・書き出し・読み込み・初期状態に戻すの対象外。`src/contracts/` に足さない）
 - 提供するAPI：`load()`・`loadWithStatus()`（無ければ seed の `createInitialData(今日, startFeatures())` で作り `fresh: true`（初めて開いた。入り切りは基本のひな形、印 `all` があればすべて入の `{}`。PRD D276）。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データで `broken: true`（退避が容量超過なら1世代の控えを捨ててもう1回。退避できたら初期データを書き、読み直すたびに作り直さない。それでも退避できなければ元の文字を残して `brokenKept: false`）。読めたら `extendDays`）、`brokenText()`（退避した元の文字。退避できていなければ開いたときに覚えた元の文字、それも無ければ本体のキーの読めない文字）、`save(data, onResult)`（300ms 間引き。`flushSave()`。結果は `(message, droppedPrevious)`：容量のために控えを捨てたか）、`reset(features)`（`createInitialData(今日, features)`。features の既定は今のデータの入り切り＝入り切りは残す。今のデータが無い（読み込みの例外から戻す）ときはすべて入の `{}`。PRD D216）、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
-- 〈スタッフ〉のアイコン `icon`（PRD D299。ADR-0050）も `DemoData` の中で store が持つ。検査は zod（見た目で2文字まで・前後の空白なし。無い古いデータは ''。形の合わない値は読み込みを止める＝メールアドレスと同じ）。ほかを指さないので repair は触らない。画像は持たない（localStorage を圧迫するため）
+- 〈スタッフ〉のアイコン `icon`（PRD D299。ADR-0050）も `DemoData` の中で store が持つ。検査は zod では形だけ（前後の空白なし・32コード単位まで。無い古いデータは ''。形の合わない値は読み込みを止める＝メールアドレスと同じ）。見た目で2文字までは入れる所（画面・Excel）で見る（`Intl.Segmenter` の無い環境で保存データ全体が読めなくならないように）。ほかを指さないので repair は触らない。画像は持たない（localStorage を圧迫するため）
 - repair（いない物を指す参照を除き、ID の重複は最初の1件）：
   - 割当・相性・上書き・固定・記録・今の案と記録の `reassign` の `base*`（`absenceIds` は残す）。記録は1日20件まで（古いものから捨てる）
   - プリセット：6つまで・0件なら初期の3種・重みは 0〜5・0.5刻み（`clampWeight`）・必須にできない型の必須は外す。`scorePresetId` が無効なら先頭
@@ -360,7 +360,7 @@ flowchart LR
 - 提供するAPI：なし（ルートは [design/pages.md](design/pages.md) の表）
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign・patterns・vacancy・features
 - 配置：`src/pages/`・`src/components/`・画面用の純粋関数は `src/lib/`
-- 訪問の詳細の欄（PRD D300〜D304。ADR-0051）：1件の訪問を見る・直す欄は `components/VisitPanel` の1つで、App の殻に置き、どの画面・コマンドパレットからも `useOpenVisit` で開く。欄はデータに `lib/visitOps`（純粋関数）越しにだけ触る（データの形を変えるときはここを差し替える）
+- 訪問の詳細の欄（PRD D301〜D305。ADR-0051）：1件の訪問を見る・直す欄は `components/VisitPanel` の1つで、App の殻に置き、どの画面・コマンドパレットからも `useOpenVisit` で開く。欄はデータに `lib/visitOps`（純粋関数）越しにだけ触る（データの形を変えるときはここを差し替える）
 - 読み込みの分け方（PRD D248。ADR-0039）：日の予定・空き状況・案を比べる・相性・月の予定は `src/app/lazyPages.tsx` の `React.lazy` で別のチャンク、地図は `RouteMap`（読み込み中の枠と `Suspense`）が本体 `LeafletMap`（Leaflet と leaflet.css）を `lazy` で読む。Excel（ExcelJS）はデータの画面で押したときの `import('../excel')`。`Suspense` は `AdminShell` の本文に1つ（画面ごとの ErrorBoundary の外。移るときは React Router の transition で前の画面のまま待つ）。分けた画面は URL（hash）で直接開いたら起動と並べてすぐ読み始め、地図を出す画面（日・比較・空き状況）は地図の本体も一緒に読み始める。開いた画面が出たら `PreloadWhenShown` が手の空いたとき（最長2秒）に残りのチャンクを1つずつ読む（1つ読み終わったら、また手が空くのを待つ）。読めないとき：`lib/chunkLoad` が失敗を見分け（`isChunkLoadError`）、`app/ErrorBoundary` は再読み込み（`lib/reloadPage`：保存を書いて 500ms 後に読み直す）と［もう一度表示する］（`retryFailedChunks` で lazy を作り直し、失敗の文の URL に `?retry=N` を付けて読み直す）を出す。地図は `RouteMap` の中の小さな境界で枠に「地図を読み込めませんでした」。`lazy` は `src/lib/lazyComponent.tsx`（読み終わったあとは `React.lazy` を通さず直に描き、先読みが済んだ画面へ移るときに止まらない）。ほかの画面（週・〈利用者さん〉・〈スタッフ〉・データなど）は本体のまま
 - よく変わる値（PRD D249）：AI案の計算の進み具合は画面の state に置かず、`src/lib/valueStore.ts` の入れ物（`useSyncExternalStore`）に置き、バーと回数の部品（`PlanProgressText`・`AnnealProgress`）だけが読む
 - 詳細（画面ごとに分けた。必要な画面のファイルだけ読む）：
@@ -419,7 +419,7 @@ PoC本体の documents.ts からログイン・事業所の分離（email・uid�
 | 型 | フィールド |
 |---|---|
 | `Org` | `name` 1〜100・`industry`（`sitter`/`care`/`nursing`/`other`）・`terms`・`fareYenPerKm` 0〜1000（0＝交通費なし）・`spanLimitHours` 0〜24・0.5刻み（10。0＝注意しない）・`features`（`{}`） |
-| `Staff` | `id`・`name` 1〜50・`home`・`travelMode`（`DRIVE`/`BICYCLE`/`WALK`/`TRANSIT`）・`workDays`（0=日〜6=土）・`shiftStart`・`shiftEnd`・`active`・`traits`・`requirements`・`preferences`（訪問先の特性に対して。各20まで）・`lastDay`（最終勤務日。翌日から勤務なし。null）・`email`（''）・`icon`（印の中の1〜2文字。見た目の文字（書記素）で数え、絵文字も可。前後の空白なし。''＝未設定で苗字の最初の1文字。無い古いデータは ''。版は上げない。ADR-0050） |
+| `Staff` | `id`・`name` 1〜50・`home`・`travelMode`（`DRIVE`/`BICYCLE`/`WALK`/`TRANSIT`）・`workDays`（0=日〜6=土）・`shiftStart`・`shiftEnd`・`active`・`traits`・`requirements`・`preferences`（訪問先の特性に対して。各20まで）・`lastDay`（最終勤務日。翌日から勤務なし。null）・`email`（''）・`icon`（印の中の1〜2文字。絵文字も可。''＝未設定で苗字の最初の1文字。無い古いデータは ''。版は上げない。schema は形だけ＝前後の空白なし・32コード単位まで。見た目で2文字まで（書記素）は画面の `staffIconError` と Excel の `readStaffIcon` で見る。ADR-0050） |
 | `Client` | `id`・`displayName` 1〜50・`kana` ≤50（''）・`place`（＋`postalCode` 空か7桁。''）・`note` ≤500・`color` 0〜7・`active`・`traits`・`requirements`・`preferences`・`usualStaffId`・`tentative`（仮押さえ。false）・`entryNote`・`keyNote`・`parkingNote`・`cautionNote`（各 ≤200。''）・`allowedStaffIds` ≤50（`[]`＝限らない）・`stage`・`referrer`（`name` ≤50・`contact` ≤100・`note` ≤200・`email`。空＝`EMPTY_REFERRER`） |
 | `VisitType` | `id`・`name` 1〜20・`color` 0〜7・`durationMinutes` 5〜720（新しい訪問・パターンの初期値だけ）・`requirements` ≤20（常に必須）・`note` ≤200。20まで（`MAX_VISIT_TYPES`） |
 | `Pattern` | `id`・`clientId`・`typeId`（null＝問わない）・`weekdays` 1〜7個・`everyWeeks` 1〜4・`repeat`（`'weekly'`/`'monthly'`。`'weekly'`）・`monthWeeks` 1〜5（`[]`）・`dayTimes`（曜日・開始（早）・開始（遅）。7まで。`[]`）・`windowKind`・`earliestStart`・`latestStart`・`durationMinutes`・`from`・`to`（null＝続く）・`usualStaffId`（null＝〈利用者さん〉の）・`note` |
@@ -705,7 +705,7 @@ BICYCLE_NOTE = '自転車の経路が出ないときは、Google マップで徒
 | 項目 | ID・対象・名前・種類（あり/なし／選択肢から1つ／複数／数値）・選択肢 |
 | 条件 | ID・名前・種類・重み・必須（重み・必須は `data.rules`＝この日だけ試す重み。ふだんの重みはプリセットのシートの点数の基準の行。使い方のシートにも書く。ADR-0035） |
 | プリセット | ID・名前・一言・重み：〈型〉…（空は0）・必須（型の名前）・点数の基準（○ は1行。無印なら先頭。ふだんの重み＝条件の重みの画面の重み）。1〜6行（いまのまま） |
-| 〈スタッフ〉 | ID・名前・移動手段・勤務する曜日・勤務開始・勤務終了・利用中・住所・緯度・経度・最終勤務日・メールアドレス・アイコン（任意の1〜2文字。列が無い古いブックは未設定・名簿の読み込みで列が無ければ今の値のまま。ADR-0050）・特性：…・必要条件：…・希望：… |
+| 〈スタッフ〉 | ID・名前・移動手段・勤務する曜日・勤務開始・勤務終了・利用中・住所・緯度・経度・最終勤務日・メールアドレス・アイコン（任意の1〜2文字・文字列の書式。列が無い古いブックは未設定・名簿の読み込みで列が無ければ今の値のまま。2文字・32コード単位を超えれば行付きで止める。ADR-0050）・特性：…・必要条件：…・希望：… |
 | 〈利用者さん〉 | ID・表示名・よみ（50字）・色（1〜8）・利用中・仮押さえ・郵便番号（文字列）・住所・緯度・経度・いつもの担当・担当できる人（名前を「、」か改行で。限らない）・メモ・入り方・鍵・駐車場・注意・段階（空なら利用中・仮押さえから）・紹介元・紹介元の連絡先・紹介元のメモ・紹介元のメールアドレス・特性：…・必要条件：…・希望：… |
 | 相性 | 行＝〈利用者さん〉、列＝〈スタッフ〉。◎○△×・空 |
 | 稼働時間 | 〈スタッフ〉・日付・時間帯（例 9:00-12:00、13:00-18:00。「休み」） |

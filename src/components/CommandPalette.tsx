@@ -77,7 +77,7 @@ export function CommandPalette({
   const people = useMemo(() => palettePeople(data.clients, data.staff, terms), [data.clients, data.staff, terms]);
   const items = useMemo(() => [...actions, ...screens, ...people], [actions, screens, people]);
   const base = useMemo(() => filterPalette(items, query), [items, query]);
-  // 訪問の候補（PRD D303）：〈利用者さん〉の名前・よみ＋日付。索引は打ってから作り（開いただけでは作らない）、開いている間は使い回す
+  // 訪問の候補（PRD D304）：〈利用者さん〉の名前・よみ＋日付。索引は打ってから作り（開いただけでは作らない）、開いている間は使い回す
   const typedAny = query.trim() !== '';
   const vIndex = useMemo(() => (typedAny ? visitIndex(data.visits) : null), [typedAny, data.visits]);
   const result = useMemo(() => {
@@ -155,7 +155,7 @@ export function CommandPalette({
   const pick = async (it: PaletteItem | undefined) => {
     if (!it) return;
     onClose();
-    // 訪問・「訪問を追加」は画面を移らずに、今の画面の上で訪問の詳細の欄を開く（PRD D303）
+    // 訪問・「訪問を追加」は画面を移らずに、今の画面の上で訪問の詳細の欄を開く（PRD D304）
     if (it.visitId) {
       openVisit({ visitId: it.visitId });
       return;

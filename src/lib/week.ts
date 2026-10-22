@@ -219,7 +219,7 @@ export function moveOnce(d: DemoData, visitId: string, date: string, start: numb
 }
 
 /**
- * 「これ以降」で動かす曜日の新しいパターンに、時刻のほかに変えるもの（訪問の詳細の欄。PRD D300）。
+ * 「これ以降」で動かす曜日の新しいパターンに、時刻のほかに変えるもの（訪問の詳細の欄。PRD D301）。
  * width は開始（早）〜開始（遅）の幅（分。無ければ元の曜日の幅を保つ）。usualStaffId はいつもの担当
  */
 export type FollowingOver = Partial<Pick<Pattern, 'durationMinutes' | 'typeId' | 'windowKind' | 'usualStaffId'>> & {
@@ -261,7 +261,7 @@ function expandSkipping(
  * 残した edited・取り消しの回の元の日（max(since, 今日) 以降）には新しいパターンの回を作らない（splitPattern と同じ規則）。
  * 毎月のパターン（ADR-0013）は、第N（monthWeeks）を「新しい日の第N − 元の日の第N」だけずらす（例：第3木曜を翌日の第4金曜へ
  * 動かすと第3・第4 → 第4・第5）。1〜5 に収まらないものは捨て、空になれば「以降すべて」は断る（null。「この回だけ」を勧める）。
- * over を渡すと、動かす曜日の新しいパターンの所要・種類・時間の約束・いつもの担当・時刻の幅も変える（訪問の詳細の欄。PRD D300）。
+ * over を渡すと、動かす曜日の新しいパターンの所要・種類・時間の約束・いつもの担当・時刻の幅も変える（訪問の詳細の欄。PRD D301）。
  * パターンの訪問でない・パターンが無い・訪問の日か新しい日が今日より前・動かした回が新しい日にできない組み合わせなら null（データを変えない）
  */
 export function moveFollowing(

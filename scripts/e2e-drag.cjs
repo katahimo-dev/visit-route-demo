@@ -148,7 +148,7 @@ async function weekTimeline(page, by) {
     },
     name,
   );
-  // 落とすと訪問の詳細の欄が落とした日時で開く（PRD D300。週の移動の欄はこの欄にした）
+  // 落とすと訪問の詳細の欄が落とした日時で開く（PRD D301。週の移動の欄はこの欄にした）
   const summary = await page
     .getByTestId('visit-panel')
     .getByTestId('vp-date')
@@ -194,7 +194,7 @@ async function weekClients(page) {
     },
     name,
   );
-  // 落とすと訪問の詳細の欄が落とした日時で開く（PRD D300。週の移動の欄はこの欄にした）
+  // 落とすと訪問の詳細の欄が落とした日時で開く（PRD D301。週の移動の欄はこの欄にした）
   const summary = await page
     .getByTestId('visit-panel')
     .getByTestId('vp-date')

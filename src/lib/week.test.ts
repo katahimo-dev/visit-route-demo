@@ -207,7 +207,7 @@ describe('moveFollowing（以降すべて）', () => {
     expect(r.data.patterns.map((p) => p.id)).toEqual(['p1', 'np1', 'np2']);
   });
 
-  it('over：動かした曜日の新しいパターンの所要・種類・幅・いつもの担当も変える（訪問の詳細の欄。PRD D300）', () => {
+  it('over：動かした曜日の新しいパターンの所要・種類・幅・いつもの担当も変える（訪問の詳細の欄。PRD D301）', () => {
     const d = withPatterns([pattern('p1', [1, 3])]);
     const r = moveFollowing(d, '2026-10-19_p1', '2026-10-19', 10 * 60, DATE, ['np1', 'np2'], {
       durationMinutes: 90,

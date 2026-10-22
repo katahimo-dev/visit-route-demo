@@ -11,7 +11,7 @@ import { absenceHref, isNavAction, type MenuItem, type NavSection } from './nav'
 import { recreateTodayHref } from './rebuildBand';
 import { normalizeKana } from './search';
 
-/** 候補の種類（出す順）：操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉 → 訪問（PRD D303） */
+/** 候補の種類（出す順）：操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉 → 訪問（PRD D304） */
 export type PaletteKind = 'action' | 'screen' | 'client' | 'staff' | 'visit';
 export const PALETTE_KINDS: readonly PaletteKind[] = ['action', 'screen', 'client', 'staff', 'visit'];
 
@@ -30,7 +30,7 @@ export type PaletteItem = {
   date?: string;
   /** 比べる形（normalizeKana）にそろえた語：名前・よみ・別名。先頭が名前 */
   keys: readonly string[];
-  /** 選ぶと画面を移らずに訪問の詳細の欄を開く（訪問の候補。PRD D303） */
+  /** 選ぶと画面を移らずに訪問の詳細の欄を開く（訪問の候補。PRD D304） */
   visitId?: string;
   /** 選ぶと画面を移らずに行う操作（'visit-add'＝訪問の詳細の欄の新規） */
   op?: 'visit-add';
@@ -313,7 +313,7 @@ export function paletteDate(term: string, today: string): string | null {
 export const PALETTE_VISITS_LIMIT = 6;
 
 /**
- * 訪問の候補（PRD D303）：打った語を日付の語と名前の語に分け、名前の語がすべて〈利用者さん〉の名前・よみに含まれる人の訪問。
+ * 訪問の候補（PRD D304）：打った語を日付の語と名前の語に分け、名前の語がすべて〈利用者さん〉の名前・よみに含まれる人の訪問。
  * 日付があればその日の回（取り消しも）、無ければ今日以降の近い回（取り消しを除く）。名前の語が無ければ出さない。
  * clients は palettePeople の〈利用者さん〉の候補（語をそろえ済み）。describe は補足（担当・取り消し）
  */

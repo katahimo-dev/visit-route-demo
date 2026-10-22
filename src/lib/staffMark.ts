@@ -2,7 +2,7 @@
 // 色は〈スタッフ〉を名前の順（byName）に並べた位置から staffColor で引く（地図の線・時間軸の帯・列の見出しと同じ色）。
 // 〈スタッフ〉のデータには色の欄が無い（〈利用者さん〉の color とは別）ので、どの画面も必ずここを通して同じ色にする
 import type { Staff } from '../contracts/documents';
-import { graphemeCount, graphemeSegmenter, STAFF_ICON_MAX } from '../contracts/documents';
+import { graphemeCount, graphemeSegmenter, STAFF_ICON_MAX, STAFF_ICON_MAX_UNITS } from '../contracts/documents';
 import { byName, staffColor } from './common';
 
 /** 名前の先頭の見た目の1文字（書記素。絵文字・結合文字も1文字） */
@@ -27,7 +27,10 @@ export function staffMarkText(s: Pick<Staff, 'name'> & { icon?: string }): strin
 
 /** アイコンの入力の誤り（無ければ null）。前後の空白は保存の前に落とすので数えない */
 export function staffIconError(icon: string): string | null {
-  return graphemeCount(icon.trim()) > STAFF_ICON_MAX ? `アイコンは${STAFF_ICON_MAX}文字までにしてください` : null;
+  const t = icon.trim();
+  return t.length > STAFF_ICON_MAX_UNITS || graphemeCount(t) > STAFF_ICON_MAX
+    ? `アイコンは${STAFF_ICON_MAX}文字までにしてください`
+    : null;
 }
 
 const cache = new WeakMap<readonly Staff[], Map<string, string>>();

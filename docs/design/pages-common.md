@@ -80,7 +80,7 @@
 - `enterToSave(save)`：大きな form の中の小さなまとまり（〈利用者さん〉の欄の定期パターン・休みの `fieldset`）の `onKeyDown`。入力欄の Enter（変換中は除く）を外の form に渡さず、まとまりの保存を呼ぶ
 - form にした所：右の欄の `onSubmit`（訪問の詳細の欄も）、呼び方（データの画面）。もともと form：項目の選択肢、プリセットの名前
 
-### 訪問の詳細の欄（`components/VisitPanel.tsx`・`visitPanel.css`。PRD D300〜D304。ADR-0051）
+### 訪問の詳細の欄（`components/VisitPanel.tsx`・`visitPanel.css`。PRD D301〜D305。ADR-0051）
 
 - `VisitPanelProvider` を App の殻（`DayProvider`・`PersonPopoverProvider` の中、ルートの外）に1つ置き、`useOpenVisit()(req)` でどの画面・コマンドパレットからでも開く（画面を移っても欄は残る）。`req`：`visitId`（見る・直す）か `newVisit: { date, clientId?, start? }`（新規）、`draft?`（はじめの入力の差し替え。週のドラッグの落とした日時）、`onSaved?`（`{ visitId, date, moved, staffSet, isNew, label }`）、`returnFocus?(visitId)`（閉じたあとのフォーカス。保存で作り直した回は新しい ID）
 - `SidePanel`（`narrow`・`onSubmit`）。中身 `visit-panel`（`data-visit`・`data-new`）：内容 `vp-summary`（〈利用者さん〉 `vp-client-name`・種類・取り消し `vp-cancelled`・休み、日時 `vp-when`・所要・種類・担当 `vp-staff-now`（`StaffMark`・固定・いつもの担当・確定した割当）・繰り返し `vp-pattern`・この回の変更 `vp-changes` と「繰り返しのとおりに戻す」 `vp-restore`・メモ、日の予定以外から開いたら「日の予定で見る」 `vp-open-day`）、日時 `vp-time`（新規は〈利用者さん〉 `vp-client` も。種類 `vp-type`・日付 `vp-date`・時間の約束 `vp-window`・開始 `vp-start`（幅を保ってずらす）・遅い開始 `vp-latest`・所要 `vp-duration`・メモ `vp-note`）、担当 `vp-staff`（「変えない」`vp-staff-keep`・候補 `vp-staff-choice`（`data-staff`。選べない人は `is-off` と理由）・「担当なし」`vp-staff-none`。候補は `useDeferredValue` の入力で `staffChoices`）、範囲 `vp-scope`（繰り返しの回だけ。`vp-scope-once|following|all`。範囲の文とそのままにする回 `vp-scope-note`）、誤り `FieldError`、取り消し `vp-cancel-area`（`vp-cancel`・`vp-cancel-sameday`・`vp-uncancel`。欄は開いたまま）、決まりごと・道順（`vp-route`）

@@ -872,7 +872,7 @@ async function moreMenus(page) {
   );
   check((await focusedId()) === 'plan-visit-add', '「その他 ▾」を Enter で開くとフォーカスは先頭の項目');
   await page.keyboard.press('Enter');
-  // 訪問の詳細の欄の新規の形（PRD D300）
+  // 訪問の詳細の欄の新規の形（PRD D301）
   const form = page.getByTestId('visit-panel');
   await form.waitFor();
   check(
