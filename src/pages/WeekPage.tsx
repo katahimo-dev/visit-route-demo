@@ -10,7 +10,17 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { type DragEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  type DragEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
@@ -36,6 +46,7 @@ import { useToast } from '../components/Toast';
 import { Hint, PageHeader, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
+import { KeyMoveBand, useVisitKeys } from '../components/visitKeys';
 import { TypeDot } from '../components/visitType';
 import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
@@ -515,6 +526,34 @@ export default function WeekPage() {
     full: (id: string) => staffName(id),
   };
   const clientName = (v: Visit | undefined) => clientById.get(v?.clientId ?? '')?.displayName ?? '（不明）';
+
+  /** 週の帯にフォーカスを戻す（キーで動かしたあと。週を移ったときは描き終わるまで待つ） */
+  const focusWeekBand = (visitId: string) => {
+    let n = 0;
+    const tick = () => {
+      const el = document.querySelector<HTMLElement>(`[data-testid="week-band"][data-visit="${CSS.escape(visitId)}"]`);
+      if (el) {
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        return;
+      }
+      if (++n < 30) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  /**
+   * 週の時間軸の帯のキーボード（PRD D333）：↑↓ 15分・←→ 1日（週の外へ出たらその週へ）・Shift+←→ 隣の担当（利用中の〈スタッフ〉の順）・
+   * Enter で欄（ボタンの既定）・Delete で取り消し（確認）。どれも全体の「元に戻す」の1手
+   */
+  const visitKeys = useVisitKeys({
+    staffOrder: () => activeStaff.map((s) => s.id),
+    onMoved: (r) => {
+      if (!dates.includes(r.date)) goWeek(r.date);
+      focusWeekBand(r.visitId);
+    },
+    onCancelled: () =>
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus()),
+  });
 
   // ---- 動かす（訪問の詳細の欄。PRD D301）----
   /**
@@ -1064,6 +1103,7 @@ export default function WeekPage() {
                 onOpen={(b) => openMove(b.visitId)}
                 isMulti={multi.has}
                 onMulti={(b) => multi.toggle(b.visitId)}
+                onKey={(e, b) => visitKeys(e, b.visitId)}
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
                 onDragOver={(e) => onDragOver(e, day.date)}
@@ -1330,6 +1370,13 @@ export default function WeekPage() {
       {mailOpen && mailOn && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
       <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} />
+      {/* キーで動かした先の読み上げと、繰り返しの回の範囲を選び直す小さな帯（PRD D333） */}
+      <KeyMoveBand
+        onMoved={(r) => {
+          if (!dates.includes(r.date)) goWeek(r.date);
+          focusWeekBand(r.visitId);
+        }}
+      />
     </div>
   );
 }
@@ -1350,6 +1397,7 @@ function DayColumn({
   onOpen,
   isMulti,
   onMulti,
+  onKey,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -1375,6 +1423,8 @@ function DayColumn({
   /** 複数選択で選んでいるか・選ぶ（Shift・Ctrl＋クリック、Shift／Ctrl＋Enter。PRD D330） */
   isMulti: (visitId: string) => boolean;
   onMulti: (b: Band) => void;
+  /** キーボードで動かす（PRD D333）。受けたら true */
+  onKey: (e: KeyboardEvent<HTMLElement>, b: Band) => boolean;
   onDragStart: (e: DragEvent<HTMLElement>, visitId: string) => void;
   onDragEnd: () => void;
   onDragOver: (e: DragEvent<HTMLElement>) => void;
@@ -1448,7 +1498,9 @@ function DayColumn({
               if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 if (movable) onMulti(b);
+                return;
               }
+              if (movable) onKey(e, b);
             }}
             onDragStart={(e) => (movable ? onDragStart(e, b.visitId) : e.preventDefault())}
             onDragEnd={onDragEnd}

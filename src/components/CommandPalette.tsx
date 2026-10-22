@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
-import type { Terms } from '../contracts/documents';
+import type { Terms, Visit } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import {
   filterPalette,
@@ -20,8 +20,10 @@ import {
   visitIndex,
 } from '../lib/commandPalette';
 import { trapTarget } from '../lib/confirmDialog';
+import { dayProblemOf, routesOf, visitIssues } from '../lib/dayPlan';
 import { confirmLeave } from '../lib/leaveGuard';
 import type { MenuItem, NavSection } from '../lib/nav';
+import { visitsOn } from '../patterns';
 import { useDemoData } from '../store';
 import { StaffMarkById } from './StaffMark';
 import { FOCUSABLE } from './ui';
@@ -83,18 +85,43 @@ export function CommandPalette({
         : null,
     [typedAny, data.visits, data.patterns, data.clients, today],
   );
+  /**
+   * 「要対応」の語で引くときの訪問ごとの検査（PRD D337。日の予定と同じ visitIssues）。日付ごとに覚え、データが変わったら捨てる。
+   * 打った語に「要対応」があるときだけ、当たる候補の日だけ計算する
+   */
+  const careOf = useMemo(() => {
+    const memo = new Map<string, Set<string>>();
+    return (v: Visit): boolean => {
+      let ids = memo.get(v.date);
+      if (!ids) {
+        const visits = visitsOn(data, v.date);
+        const p = visits.some((x) => !x.cancelled) ? dayProblemOf(data, v.date) : null;
+        ids = new Set(p ? visitIssues(p, routesOf(p, visits), visits).keys() : []);
+        memo.set(v.date, ids);
+      }
+      return ids.has(v.id);
+    };
+  }, [data]);
   const result = useMemo(() => {
     if (!vIndex) return base;
     const staffName = new Map(data.staff.map((s) => [s.id, s.name]));
-    const visits = paletteVisits(query, people, vIndex, today, (v) => {
-      if (v.cancelled) return v.cancelKind === 'sameDay' ? '当日キャンセル' : '取り消し';
-      const sid = v.staffId;
-      return sid ? (staffName.get(sid) ?? '') : '担当なし';
-    });
+    const visits = paletteVisits(
+      query,
+      people,
+      vIndex,
+      today,
+      (v) => {
+        if (v.cancelled) return v.cancelKind === 'sameDay' ? '当日キャンセル' : '取り消し';
+        const sid = v.staffId;
+        return sid ? (staffName.get(sid) ?? '') : '担当なし';
+      },
+      undefined,
+      careOf,
+    );
     if (visits.length === 0) return base;
     const groups = [...base.groups, { kind: 'visit' as const, items: visits, rest: 0 }];
     return { groups, flat: groups.flatMap((g) => g.items) };
-  }, [base, vIndex, query, people, today, data]);
+  }, [base, vIndex, query, people, today, data, careOf]);
   const flat = result.flat;
   const at = flat.length === 0 ? -1 : Math.min(active, flat.length - 1);
   const optionId = (i: number) => `${listId}-o${i}`;
@@ -251,6 +278,7 @@ export function CommandPalette({
                       data-testid="cmdk-option"
                       data-kind={it.kind}
                       data-to={it.to}
+                      data-visit={it.visitId}
                     >
                       {/* 〈スタッフ〉は印を添える（PRD D298。飾りなので読み上げない） */}
                       {it.kind === 'staff' && <StaffMarkById id={it.id.slice('staff:'.length)} size="xs" />}

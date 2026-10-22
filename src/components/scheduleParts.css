@@ -115,3 +115,112 @@
     gap: 6px;
   }
 }
+
+/*
+ * スマホ（600px 以下。PRD D334）：操作の行は1段（アイコン中心。文字は読み上げだけに残す）。表示の切り替えは「その他 ▾」へ。
+ * 複数選択の帯は訪問の詳細の欄と同じ下から出る置き場所（下のタブのすぐ上・全幅）
+ */
+@media (max-width: 600px) {
+  .schedule-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .schedule-toolbar .tb-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .schedule-toolbar > .btn,
+  .schedule-toolbar .menu-wrap > .btn {
+    flex: none;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .schedule-toolbar .plan-more {
+    margin-left: auto;
+  }
+  .selection-bar.is-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--bottom-tabs-h);
+    z-index: 960;
+    border-radius: 16px 16px 0 0;
+    border-width: 2px 0 0;
+    padding: 12px max(14px, env(safe-area-inset-right, 0px)) 12px max(14px, env(safe-area-inset-left, 0px));
+    box-shadow: 0 -8px 24px rgb(0 0 0 / 18%);
+  }
+  /* 1段目：「N件を選択」と「選択を外す」、2段目：担当を替える・取り消す（同じ幅） */
+  .selection-bar.is-sheet > strong {
+    order: 0;
+    flex: 1 1 auto;
+  }
+  .selection-bar.is-sheet > .btn-text {
+    order: 1;
+    flex: none !important;
+    min-height: 36px !important;
+  }
+  .selection-bar.is-sheet > .menu-wrap,
+  .selection-bar.is-sheet > .btn:not(.btn-text) {
+    order: 2;
+    flex: 1 1 40% !important;
+  }
+  .selection-bar.is-sheet > .btn,
+  .selection-bar.is-sheet > .menu-wrap {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+  .selection-bar.is-sheet > .menu-wrap > .btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+    white-space: nowrap;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .selection-bar.is-sheet > .btn {
+    white-space: nowrap;
+    justify-content: center;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  /* 帯の裏に最後の行が隠れないよう本文の下を空ける */
+  body:has(.selection-bar.is-sheet) .app-main {
+    padding-bottom: calc(40px + var(--bottom-tabs-h) + 120px);
+  }
+}
+
+/* キーで繰り返しの回を動かした直後の範囲の帯（PRD D333。モーダルにしない小さな帯。帯にフォーカスしたまま見えるよう画面の下に浮かせる） */
+.key-move-band {
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + var(--bottom-tabs-h, 0px));
+  transform: translateX(-50%);
+  z-index: 45;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 16%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: #fff8e6;
+  border: 1.5px solid var(--warn-line);
+  font-size: 0.9rem;
+}
+.key-move-band > .with-icon {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+@media print {
+  .key-move-band {
+    display: none;
+  }
+}

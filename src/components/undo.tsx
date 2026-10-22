@@ -89,7 +89,9 @@ export function UndoButtons({ redoShown = true }: { redoShown?: boolean }) {
         onClick={() => h.undo !== null && undo()}
         data-testid="undo-btn"
       >
-        <WithIcon icon={Undo2}>元に戻す</WithIcon>
+        <WithIcon icon={Undo2}>
+          <span className="tb-label">元に戻す</span>
+        </WithIcon>
       </button>
       {redoShown && h.redo !== null && (
         <button
@@ -100,7 +102,9 @@ export function UndoButtons({ redoShown = true }: { redoShown?: boolean }) {
           onClick={redo}
           data-testid="redo-btn"
         >
-          <WithIcon icon={Redo2}>やり直す</WithIcon>
+          <WithIcon icon={Redo2}>
+            <span className="tb-label">やり直す</span>
+          </WithIcon>
         </button>
       )}
     </>

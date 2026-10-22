@@ -28,7 +28,7 @@
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・提案の帯（日のその場の提案 `data-kind="day"` と範囲の提案 `data-kind="range"`。[pages-common.md](pages-common.md) の「予定の共通の部品」）・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
 6. 見出しの右：状態・「予定をメールで送る」（`day-mail`。枠。`mail` が入のとき。PRD D306）・主ボタン「この割当で確定」。操作の行（`ScheduleToolbar zoom="day"`・`plan-toolbar`。日・週・月で同じ並び。PRD D327）：「欠勤・キャンセルを登録」（`sudden-open`）・「AI で組む ▾」は枠、「元に戻す」「やり直す」（`undo-btn`・`redo-btn`。全体の履歴。PRD D329）は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・「その他 ▾」（`MenuButton`・`plan-more`：「訪問を追加」（`plan-visit-add`。〈利用者さん〉がいなければ押せず理由）・「使い方」（`plan-more-help`。開いていれば「使い方を閉じる」））・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）。「使い方」は操作の行の下に説明 `plan-help` を開きフォーカスを移す（「使い方を閉じる」）
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
-8. 本体（時間軸か順番か一覧）と、その下に全幅の地図（`plan-map`。1280px 以上は高さ 600px、狭い画面は 420px。比較の画面と同じ形。PRD D300）。地図が画面の外にあるあいだは `MapDock` で右下に浮かせ、〈スタッフ〉・区間・訪問を選ぶと開く
+8. 本体（時間軸か順番か一覧。600px 以下は日ごとのリストが既定）と、その下に全幅の地図（`plan-map`。1280px 以上は高さ 600px、狭い画面は 420px。比較の画面と同じ形。PRD D300）。地図が画面の外にあるあいだは `MapDock` で右下に浮かせ、〈スタッフ〉・区間・訪問を選ぶと開く
 
 #### 状態の印と確定（PRD D316。ADR-0053）
 
@@ -57,7 +57,7 @@
 #### 「AI で組む ▾」と提案（PRD D315・D317・D318。ADR-0053）
 
 - 操作の行の `MenuButton`（`plan-menu`）。項目：「AI で組む（範囲）」のまとまり＝この日（M/D）を組む（`ai-scope-day`。その場の提案）・この週を組む（`ai-scope-week`）・この月を組む（`ai-scope-month`。月の予定の欄へ。範囲の項目は日・週・月で同じ `useScopeItems`。PRD D328）／「〈プリセット名〉」で組む（`plan-menu-preset`。点数の基準のほかのプリセット。条件の重みを切ると出さない）／2つの提案を比べる（`plan-menu-compare`。比較の画面へ。提案を比べるを切ると出さない。メニュー・パレットからは開かない。PRD D331）／ピンをすべて外す（N件）（`plan-menu-unpin`。ピンが無ければ押せず理由）。計算中・訪問が無いときはこの日・プリセットを押せず理由
-- 提案（`propose(preset?)`）：点数の基準の重み（プリセットなら `applyPreset` を当てた重み）で compile し、ピンを `pins` に渡して `runSolve`。結果は画面の状態（`proposal = { date, label, routes, visits, stopped }`）で、保存しない
+- 提案（`propose(preset?)`）：点数の基準の重み（プリセットなら `applyPreset` を当てた重み）で compile し、ピンを `pins` に渡して `runSolve`。結果は PlanPage の外の入れ物 `dayProposalStore`（`{ date, label, routes, visits, absences, stopped }`。1つだけ・保存しない・読み直すと消える）。画面を移っても・日付を変えても捨てず、帯はその日（`proposal.date`）の日の予定に出す（PRD D335）
 - 提案の帯（`ProposalBand kind="day"`。`proposal-band`）：担当が変わる件数（`proposal-moved`）・時刻が変わる件数（`proposal-shifted`）・点（今 → 提案。`proposal-score`）と「当てる」（`proposal-apply`）・「捨てる」（`proposal-discard`）。担当が変わる訪問の一覧（`proposal-moves`）。提案を出したあとに訪問が変われば「古い」（`proposal-stale`）で、当てると知らせて捨てる
 - 当てる：`writeRoutes(d, date, problem, routes)` で訪問に担当と開始を書く（ピンはそのまま。手の名前「AI の提案を当てる（名前）」）。トースト「提案を当てました」と全体の「元に戻す」（`toast-undo`）
 - 日の予定を開いても自動では作らない（担当なしの訪問は要対応で見える）
@@ -69,9 +69,17 @@
 
 #### 表示の切り替え［時間軸｜順番｜一覧］
 
-選択は localStorage でなく画面の状態（初期値：時間軸）。印刷・狭い幅（900px 以下）では順番に切り替える。
+選択は localStorage でなく画面の状態（初期値：時間軸）。印刷・狭い幅（900px 以下）では順番に切り替える。600px 以下は別の画面の状態（初期値：日ごとのリスト）で、切り替えのボタンを出さず「その他 ▾」の「表示」のまとまり（日ごとのリストで見る `plan-view-day`・順番で見る `plan-view-order`・一覧で見る `plan-view-list`。今の表示に印）で選ぶ（PRD D334）
+
+##### スマホの日ごとのリスト（600px 以下。PRD D334。`components/dayList.tsx`。[pages-common.md](pages-common.md) の「スマホの日ごとのリスト」）
+
+- その日の訪問（取り消し・休みの回も）を今の担当の開始の順に1行ずつ。行を押すと訪問の詳細の欄（下から出る欄）、長押し・「選ぶ」で複数選択（`SelectionBar` は下から出る置き場所）、左右にスワイプで前・次の日（上の帯の日付の切り替えと同じ並び）。日付を変えると選ぶ形を抜ける
+- 600px 以下の見出し：説明（`page-lead`）とアイコンを出さず題名を小さく、「予定をメールで送る」はアイコン（名前は読み上げ）。1行のまとめは訪問・入らない・点数・詳しくだけ（守れない条件・移動・理由・次の一手は「詳しく」の欄で）。担当ごとの1日は出さない。「担当なしを見る」（帯）は最初の担当なしの行へ巻く
+- 390×844 で操作の行が1段で、最初の画面に訪問が見える
 
 ##### 時間軸（PRD D58。`components/routeTimeline.tsx`）
+
+- キーボード（PRD D333。[pages-common.md](pages-common.md) の「訪問の帯をキーで動かす」）：帯にフォーカスして ↑↓ 15分・←→ 1日（その日の日の予定へ移りフォーカスは動かした帯）・Shift+←→ 隣の担当の列（列の順）・Enter で訪問の詳細の欄・Delete で取り消し（確認）。Space は今までどおり帯の詳細、Shift+Enter は複数選択。帯の `aria-keyshortcuts` と title にキーの説明
 
 - 担当ごとの列を時刻の位置で描く。時刻は今の案の lenient の `scheduleRoute`
 - 列の最小幅 `TL_COL_MIN_PX`（128px）。見出しの名前（`.col-head-name`）は空白で折り返して切らず、件数の札は入らなければ次の行。箱は `EdgeScroll`（`edgeClass="is-tl"`・`route-timeline`）で、右に続きの列がある間は広い画面でも端に影（印刷では出さない。PRD D269）
@@ -228,6 +236,7 @@
 - [ ] 手直しで必須の条件に合わない担当にすると赤い枠と違反の印が出る
 - [ ] 入らない訪問の「受けられる人」から「この人に入れる」を押すとその人の列に入り固定になる。後ろの訪問が遅れるときだけ確認が出る
 - [ ] 「AI で組む ▾」の並び・まとまり・説明・押せない理由・キーボード（`scripts/e2e-plan-menu.cjs`）
+- [ ] （ADR-0055）390px は日ごとのリスト（日付送り・スワイプ・下から出る欄の4つのボタン・日時の変更が出ない・長押しと「選ぶ」の複数選択）、1400px は帯の ↑↓←→・Shift+←→・Enter・Delete が全体の元に戻すの1手、提案が画面を移っても残る（`lib/visitKeys` のテスト・`scripts/e2e-mobile-v5.cjs`）
 - [ ] （D217〜D219）「担当を変える ▾」の項目（role=menuitem・説明・今の担当・担当なしにする）、キーボードで移すと担当が変わりピン、トーストと操作の行の「元に戻す」で担当とピンが戻る、確定の確認に要対応の件数、390px で押せる（`lib/reassignMenu` のテスト・`scripts/e2e-plan-menu.cjs`）
 - [ ] 点数の理由・次の一手・訪問ごとの理由の言葉（入らなかった訪問の札も。符号・「費用」を出さない）（`lib/scoreReason` のテスト・`scripts/e2e-words.cjs`）
 - [ ] `?do=unassigned` で入らなかった訪問へ巻く（`scripts/e2e-links.cjs`）

@@ -391,7 +391,11 @@ async function toastWhileOpen(page, w) {
   check(!!t, `${w}・欄を開いたまま知らせが出る`);
   if (!t) return;
   check(t.pointer === 'none', `${w}・知らせは押せない（下を押せる）`, t.pointer);
-  if (w === '390') {
+  if (w === '390' && (await page.locator('.drawer.is-sheet').count()) > 0) {
+    // 下から出る欄（訪問の詳細の欄。ADR-0055）：知らせは欄の上（欄の外）に出し、欄に重ねない
+    check(t.bottom <= t.drawerTop && t.top >= 0, `${w}・知らせは下から出る欄の上に出る（欄に重ならない）`, t);
+    await shot(page, `${w}-toast-sheet`);
+  } else if (w === '390') {
     check(t.top >= t.headBottom, `${w}・知らせが欄の見出しに重ならない`, t);
     // 知らせの真ん中を押すと、下の入力欄（またはその label）に届く
     await drawer(page)
@@ -430,6 +434,8 @@ async function visitPanel(page, w) {
   );
   await page.locator(`[data-testid="pcal-visit"][data-visit="${ids[0]}"]`).click();
   await page.getByTestId('visit-panel').waitFor();
+  // 390px は下から出る欄（ADR-0055）。「担当を替える」で候補と保存の帯を出す（長い欄になる）
+  if (w === '390') await page.getByTestId('vp-big-staff').click();
   await settle(page, 400);
   await expectLong(page, `${w}・訪問の詳細の欄`);
   if (w === '390') await expectMobileRow(page, `${w}・訪問の詳細の欄（ボタン2つ）`);
@@ -475,7 +481,7 @@ async function visitPanel(page, w) {
   } else if (w === '1400') {
     check(false, `${w}・帯の下に隠れた入力欄がある（確かめの前提）`);
   }
-  // 390px の訪問の詳細の欄は日時の入力が無く（D305）、帯の下に隠れる入力欄が無いので確かめない（1400px で確かめる）
+  // 390px の訪問の詳細の欄は日時の入力が無く（D334）、帯の下に隠れる入力欄が無いので確かめない（1400px で確かめる）
   // Tab は欄の中で回る：帯の最後のボタンから Tab で欄の先頭へ
   await page.locator('.drawer-foot .btn').last().focus();
   await page.keyboard.press('Tab');
@@ -566,8 +572,9 @@ async function keyboard(browser) {
   await page.evaluate(() => window.__setViewport(500, 120));
   await settle(page, 300);
   m = await metrics(page);
+  // 訪問の詳細の欄は下から出る欄（ADR-0055）：見えている所の下端に付き、上端より下
   check(
-    m && Math.abs(m.drawer.top - 120) <= 1 && Math.abs(m.drawer.bottom - 620) <= 1,
+    m && m.drawer.top >= 119 && Math.abs(m.drawer.bottom - 620) <= 1,
     '390・見えている所がずれたら欄もそこへ合わせる',
     m?.drawer,
   );
@@ -576,8 +583,8 @@ async function keyboard(browser) {
   await settle(page, 250);
   const t = await toastBox(page);
   check(
-    !!t && Math.abs(t.drawerTop - 120) <= 1 && t.top >= t.headBottom && t.top >= 120,
-    '390・見えている所がずれたら知らせも欄の見出しの下に合わせる',
+    !!t && t.top >= 120 && t.bottom <= t.drawerTop,
+    '390・見えている所がずれたら知らせも見えている所の中・下から出る欄の上に合わせる',
     t,
   );
   await page.locator('.toast').waitFor({ state: 'detached', timeout: 4000 });
@@ -585,8 +592,8 @@ async function keyboard(browser) {
   await settle(page, 300);
   m = await metrics(page);
   check(
-    m && m.drawer.top === 0 && m.drawer.bottom === m.innerHeight,
-    '390・キーボードが閉じたら欄は画面の高さに戻る',
+    m && m.drawer.top >= 0 && m.drawer.bottom === m.innerHeight,
+    '390・キーボードが閉じたら欄は画面の下端に戻る',
     m?.drawer,
   );
   check(errors.length === 0, '390・キーボード：ページのエラーが無い', errors);

@@ -5,7 +5,7 @@
 // コマンドパレット（Ctrl+K で開く・role=dialog・aria-modal・combobox と listbox（aria-activedescendant）・裏の inert とスクロールのロック・
 // 打つと絞り込む・↑↓（端で回る）・Enter で移る・操作（欠勤・キャンセル）・人の名前（よみ・カタカナ）でその人の画面・Esc とフォーカスの戻り・
 // 背景で閉じる・Tab が中で回る・Ctrl+K で閉じる・入力欄の中の Ctrl+K（入れた文字はそのまま・閉じたら入力欄へ）・右の欄が開いているときは開かない）、
-// 390px（上の帯のボタンから開ける・収まる・上の帯の名前・引き出しの並び・下のタブ（ホーム・予定・欠勤・空き状況・メニュー））、印刷で出さない、300人×60人で打つたびの速さ。
+// 390px（上の帯のボタンから開ける・収まる・上の帯の名前・引き出しの並び・下のタブ（ホーム・予定・欠勤・探す・メニュー）。「探す」は下のタブ）、印刷で出さない、300人×60人で打つたびの速さ。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-nav.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_NAV で1文字打って描き終わるまでの上限（既定 100ms。無ければ PERF_MS）
@@ -617,19 +617,15 @@ async function mobile(page) {
     '390px：設定のタブの上の帯の名前「設定・データ」',
   );
   await open(page, '/clients');
-  const btn = page.getByTestId('cmdk-open');
+  check(!(await page.getByTestId('cmdk-open').isVisible()), '390px：上の帯に「探す」は出さない（下のタブ。PRD D336）');
+  const btn = page.getByTestId('bottom-search');
   const bb = await btn.boundingBox();
-  const nb = await page.getByTestId('screen-name').boundingBox();
-  check(
-    bb && bb.x >= 0 && bb.x + bb.width <= 390 && bb.y < 80 && bb.y < nb.y + nb.height,
-    '390px：「探す」のボタンが上の帯の1段目（画面の名前の隣）に収まる',
-    { bb, nb },
-  );
-  check(
-    (await btn.innerText()).trim() === '探す',
-    '390px：ボタンは「探す」（キーの印を出さない）',
-    await btn.innerText(),
-  );
+  const tb = await page.getByTestId('bottom-tabs').boundingBox();
+  check(bb && tb && bb.x >= 0 && bb.x + bb.width <= 390 && bb.y >= tb.y, '390px：「探す」は下のタブ（4つ目）に収まる', {
+    bb,
+    tb,
+  });
+  check((await btn.innerText()).trim() === '探す', '390px：下のタブの「探す」', await btn.innerText());
   const sw = await page.evaluate(() => document.documentElement.scrollWidth);
   check(sw <= 390, '390px：ページが横にはみ出さない', sw);
   await btn.click();
@@ -658,8 +654,8 @@ async function mobile(page) {
   await page.keyboard.press('Escape');
   const tabs = await page.getByTestId('bottom-tabs').locator('.bottom-tab').allInnerTexts();
   check(
-    JSON.stringify(tabs.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '欠勤', '空き状況', 'メニュー']),
-    '390px：下のタブは ホーム・予定・欠勤・空き状況・メニュー（PRD D274）',
+    JSON.stringify(tabs.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '欠勤', '探す', 'メニュー']),
+    '390px：下のタブは ホーム・予定・欠勤・探す・メニュー（PRD D336）',
     tabs,
   );
   await open(page, '/compare');
@@ -673,7 +669,7 @@ async function mobile(page) {
 }
 
 /**
- * 下のタブの「予定」「欠勤」（PRD D273・D274）：「予定」は月・週・日の予定で印、押すと最後に開いた表示（既定は日の予定）・
+ * 下のタブの「予定」「欠勤」（PRD D273・D336）：「予定」は月・週・日の予定で印、押すと最後に開いた表示（既定は日の予定）・
  * 今の表示では何もしない。「欠勤」は今日の日の予定で欠勤・キャンセルの欄を開く（印は付けない）
  */
 async function scheduleTab(page) {

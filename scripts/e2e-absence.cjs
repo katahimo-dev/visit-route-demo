@@ -5,7 +5,7 @@
 // 5段目の連絡（人ごとの文・［文をコピー］・メール・［連絡した］の数。PRD D243〜D246）→ 終わる → 確定済み、
 // 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目・5段目で担当に「中止」）、
 // 列の見出しの「欠勤を直す」で同じ欄が2段目で開き、欠勤を取り消せる、戻る、Esc で閉じて入口のボタンへフォーカス、
-// 訪問の無い日は欠勤だけ登録できる、390px で入口が見え欄が画面に収まる・下のタブは5つ（ホーム・予定・欠勤・空き状況・メニュー。PRD D274）、印刷で入口を出さない、ブラウザの確認を出さない。
+// 訪問の無い日は欠勤だけ登録できる、390px で入口が見え欄が画面に収まる・下のタブは5つ（ホーム・予定・欠勤・探す・メニュー。PRD D336）、印刷で入口を出さない、ブラウザの確認を出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-absence.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -678,8 +678,8 @@ async function mobile(page) {
   check(b && b.x >= 0 && b.x + b.width <= 390, '390px：入口のボタンが画面に収まる', b);
   const tabs = await page.getByTestId('bottom-tabs').locator('.bottom-tab').allTextContents();
   check(
-    JSON.stringify(tabs.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '欠勤', '空き状況', 'メニュー']),
-    '390px：下のタブは5つ（欠勤のタブがある。PRD D274）',
+    JSON.stringify(tabs.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '欠勤', '探す', 'メニュー']),
+    '390px：下のタブは5つ（欠勤のタブがある。PRD D336）',
     tabs,
   );
   await page.getByTestId('sudden-open').click();
@@ -753,6 +753,12 @@ async function headerLabel(page) {
   ]) {
     await page.setViewportSize({ width: w, height: h });
     await openPlan(page);
+    // 390px の既定は日ごとのリスト（ADR-0055）。列の見出しは「その他 ▾」の「表示」で順番にして見る
+    if (w <= 600) {
+      await page.getByTestId('plan-more').click();
+      await page.getByTestId('plan-view-order').click();
+      await page.locator('.absence-btn').first().waitFor();
+    }
     const got = await measure();
     check(
       got.length > 0 && got.every((x) => x.lines >= 1 && x.lines <= max && x.fits),

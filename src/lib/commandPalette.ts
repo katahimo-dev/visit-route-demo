@@ -249,8 +249,14 @@ export function palettePeople(
   ];
 }
 
-/** 〈利用者さん〉ごとの訪問（日付・開始の順）。打ってから引くための索引（パレットを開いている間 memo） */
-export type VisitIndex = ReadonlyMap<string, readonly Visit[]>;
+/**
+ * 訪問の索引（打ってから引く。パレットを開いている間 memo）：〈利用者さん〉ごと・担当の〈スタッフ〉ごと・全部（どれも日付・開始の順）
+ */
+export type VisitIndex = {
+  byClient: ReadonlyMap<string, readonly Visit[]>;
+  byStaff: ReadonlyMap<string, readonly Visit[]>;
+  all: readonly Visit[];
+};
 
 /** 索引に入れる期間（今日の前後。繰り返しの回は見るときに計算するので、期間を区切る。版2） */
 export const PALETTE_VISIT_DAYS_BEFORE = 31;
@@ -264,17 +270,32 @@ export function paletteVisitList(data: Pick<DemoData, 'visits' | 'patterns' | 'c
   });
 }
 
+const visitKey = (v: Visit) => `${v.date} ${v.earliestStart}`;
+const byTime = (a: Visit, b: Visit) => (visitKey(a) < visitKey(b) ? -1 : visitKey(a) > visitKey(b) ? 1 : 0);
+
 export function visitIndex(visits: readonly Visit[]): VisitIndex {
-  const m = new Map<string, Visit[]>();
-  for (const v of visits) {
-    const list = m.get(v.clientId);
+  const byClient = new Map<string, Visit[]>();
+  const byStaff = new Map<string, Visit[]>();
+  const put = (m: Map<string, Visit[]>, k: string, v: Visit) => {
+    const list = m.get(k);
     if (list) list.push(v);
-    else m.set(v.clientId, [v]);
+    else m.set(k, [v]);
+  };
+  const all = [...visits].sort(byTime);
+  for (const v of all) {
+    put(byClient, v.clientId, v);
+    if (v.staffId) put(byStaff, v.staffId, v);
   }
-  const key = (v: Visit) => `${v.date} ${v.earliestStart}`;
-  for (const list of m.values()) list.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
-  return m;
+  return { byClient, byStaff, all };
 }
+
+/** 「担当なし」の語（比べる形） */
+const UNASSIGNED_WORDS = ['担当なし', '担当無し', 'たんとうなし', '未割当'].map(normalizeKana);
+/** 「要対応」の語（比べる形） */
+const ATTENTION_WORDS = ['要対応', 'ようたいおう'].map(normalizeKana);
+
+/** 要対応を探すときに、日付の語が無ければ今日から何日先まで見るか（1日ずつ検査するので、索引の期間より短く区切る） */
+export const PALETTE_ATTENTION_DAYS = 31;
 
 /** 日付の語（「10/28」「10月28日」「2026-10-28」「今日・きょう」「明日・あした」「あさって」）を日付に。日付でなければ null */
 export function paletteDate(term: string, today: string): string | null {
@@ -309,61 +330,83 @@ export function paletteDate(term: string, today: string): string | null {
 export const PALETTE_VISITS_LIMIT = 6;
 
 /**
- * 訪問の候補（PRD D304）：打った語を日付の語と名前の語に分け、名前の語がすべて〈利用者さん〉の名前・よみに含まれる人の訪問。
- * 日付があればその日の回（取り消しも）、無ければ今日以降の近い回（取り消しを除く）。名前の語が無ければ出さない。
- * clients は palettePeople の〈利用者さん〉の候補（語をそろえ済み）。describe は補足（担当・取り消し）
+ * 訪問の候補（PRD D304・D337）：打った語を日付の語・「担当なし」「要対応」の語・名前の語に分ける。
+ * 名前の語がすべて〈利用者さん〉の名前・よみに含まれる人の訪問と、すべて〈スタッフ〉の名前・よみに含まれる人が担当の訪問（「消防 明日」）。
+ * 名前の語が無く「担当なし」「要対応」の語があれば、全部の訪問から。日付があればその日の回（取り消しも）、無ければ今日以降の近い回
+ * （取り消しを除く）。「担当なし」は担当の無い回、「要対応」は attention（訪問ごとの検査。無ければ担当なしと同じ）で当たる回
+ * （日付が無ければ今日から PALETTE_ATTENTION_DAYS 日先まで）。名前の語も「担当なし」「要対応」の語も無ければ出さない。
+ * people は palettePeople の候補（語をそろえ済み）。describe は補足（担当・取り消し）
  */
 export function paletteVisits(
   query: string,
-  clients: readonly PaletteItem[],
+  people: readonly PaletteItem[],
   index: VisitIndex,
   today: string,
   describe: (v: Visit) => string,
   limit: number = PALETTE_VISITS_LIMIT,
+  attention?: (v: Visit) => boolean,
 ): PaletteItem[] {
   const raw = query.split(/[\s　]+/).filter((x) => x !== '');
   let date: string | null = null;
   let dateWord: string | null = null;
+  let unassigned = false;
+  let care = false;
   const names: string[] = [];
   for (const r of raw) {
     const d: string | null = date === null ? paletteDate(r, today) : null;
+    const n = normalizeKana(r);
     if (d) {
       date = d;
       dateWord = r;
-    } else {
-      const n = normalizeKana(r);
-      if (n) names.push(n);
-    }
+    } else if (UNASSIGNED_WORDS.includes(n)) unassigned = true;
+    else if (ATTENTION_WORDS.includes(n)) care = true;
+    else if (n) names.push(n);
   }
   // 「あす」「きょう」などのかなの日付の語しか名前が無ければ、名前（「あすか」の打ちかけ）として読む
-  if (names.length === 0 && dateWord && /^[ぁ-ん]+$/.test(normalizeKana(dateWord))) {
+  if (names.length === 0 && !unassigned && !care && dateWord && /^[ぁ-ん]+$/.test(normalizeKana(dateWord))) {
     names.push(normalizeKana(dateWord));
     date = null;
   }
-  if (names.length === 0) return [];
-  const hit = clients.filter((c) => c.kind === 'client' && names.every((t) => c.keys.some((k) => k.includes(t))));
-  const found: { v: Visit; name: string }[] = [];
-  for (const c of hit.slice(0, 20)) {
-    const list = index.get(c.id.slice('client:'.length)) ?? [];
+  if (names.length === 0 && !unassigned && !care) return [];
+  const clientName = new Map(
+    people.filter((c) => c.kind === 'client').map((c) => [c.id.slice('client:'.length), c.label] as const),
+  );
+  /** 調べる訪問の並び（それぞれ日付・開始の順） */
+  const lists: (readonly Visit[])[] = [];
+  if (names.length === 0) lists.push(index.all);
+  else {
+    const hit = (kind: 'client' | 'staff') =>
+      people.filter((c) => c.kind === kind && names.every((t) => c.keys.some((k) => k.includes(t)))).slice(0, 20);
+    for (const c of hit('client')) lists.push(index.byClient.get(c.id.slice('client:'.length)) ?? []);
+    for (const s of hit('staff')) lists.push(index.byStaff.get(s.id.slice('staff:'.length)) ?? []);
+  }
+  const until = date === null && care ? addDays(today, PALETTE_ATTENTION_DAYS) : null;
+  const isCare = attention ?? ((v: Visit) => v.staffId === null);
+  const found = new Map<string, Visit>();
+  for (const list of lists) {
     let n = 0;
     for (const v of list) {
       if (date !== null ? v.date !== date : v.date < today || v.cancelled) continue;
-      found.push({ v, name: c.label });
+      if (until !== null && v.date > until) break;
+      if (unassigned && (v.cancelled || v.staffId !== null)) continue;
+      if (care && (v.cancelled || !isCare(v))) continue;
+      if (!found.has(v.id)) found.set(v.id, v);
       n++;
       if (date === null && n >= limit) break;
     }
   }
-  const key = (x: { v: Visit }) => `${x.v.date} ${x.v.earliestStart}`;
-  found.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
-  return found.slice(0, limit).map(({ v, name }) => ({
-    id: `visit:${v.id}`,
-    kind: 'visit' as const,
-    label: `${name} ${dateText(v.date)} ${v.earliestStart}`,
-    hint: describe(v),
-    to: '',
-    keys: [],
-    visitId: v.id,
-  }));
+  return [...found.values()]
+    .sort(byTime)
+    .slice(0, limit)
+    .map((v) => ({
+      id: `visit:${v.id}`,
+      kind: 'visit' as const,
+      label: `${clientName.get(v.clientId) ?? '（不明）'} ${dateText(v.date)} ${v.earliestStart}`,
+      hint: describe(v),
+      to: '',
+      keys: [],
+      visitId: v.id,
+    }));
 }
 
 /** 絞り込んだ結果：種類ごとのまとまり（空のまとまりは出さない）と、上から順の並び（矢印で動く順） */

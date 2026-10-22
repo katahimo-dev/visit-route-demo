@@ -1344,3 +1344,45 @@ p.plan-band.error {
   flex-direction: column;
   gap: 4px;
 }
+
+/* 理由と次の一手（広い画面は1行の続き） */
+.plan-oneline-why {
+  display: contents;
+}
+/*
+ * スマホ（600px 以下。PRD D334）：最初の画面に訪問が見えるよう、見出しの説明・アイコンを出さず、今の担当の1行は
+ * 訪問・入らない・点数・詳しくだけ（ほかは「詳しく」の欄で見る）
+ */
+@media (max-width: 600px) {
+  .plan-page .page-lead,
+  .plan-page .page-icon {
+    display: none;
+  }
+  .plan-page .page-title {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .plan-page .page-title h1 {
+    font-size: 1.15rem;
+  }
+  .plan-page .page-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .plan-page .page-actions .btn {
+    white-space: nowrap;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .plan-page .page-actions .chip {
+    white-space: nowrap;
+  }
+  .plan-oneline {
+    gap: 2px 12px;
+    padding: 6px 12px;
+  }
+  .plan-oneline .m-hide,
+  .plan-oneline-why {
+    display: none;
+  }
+}

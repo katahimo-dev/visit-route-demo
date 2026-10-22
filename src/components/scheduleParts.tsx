@@ -32,6 +32,7 @@ import {
 } from '../lib/monthBatch';
 import { assignMany, cancelMany, multiResultText, selectionText, shiftMany } from '../lib/multiEdit';
 import { absenceHref } from '../lib/nav';
+import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { useValueStore } from '../lib/valueStore';
 import { weekDates } from '../lib/week';
 import { findVisit } from '../patterns';
@@ -106,7 +107,9 @@ export function ScheduleToolbar({
             disabled={absence.disabled}
             data-testid="sudden-open"
           >
-            <WithIcon icon={UserRoundX}>欠勤・キャンセルを登録</WithIcon>
+            <WithIcon icon={UserRoundX}>
+              <span className="tb-label">欠勤・キャンセルを登録</span>
+            </WithIcon>
           </button>
         ) : (
           <Link
@@ -114,10 +117,17 @@ export function ScheduleToolbar({
             className="btn plan-sudden-btn"
             data-testid="sudden-open"
           >
-            <WithIcon icon={UserRoundX}>欠勤・キャンセルを登録</WithIcon>
+            <WithIcon icon={UserRoundX}>
+              <span className="tb-label">欠勤・キャンセルを登録</span>
+            </WithIcon>
           </Link>
         ))}
-      <MenuButton label="AI で組む" icon={Sparkles} items={aiItems} testId="plan-menu" />
+      <MenuButton
+        label={<span className="tb-label">AI で組む</span>}
+        icon={Sparkles}
+        items={aiItems}
+        testId="plan-menu"
+      />
       <UndoButtons />
       {children}
       {moreItems.length > 0 && (
@@ -437,6 +447,8 @@ export function SelectionBar({
   const toast = useToast();
   const confirmDialog = useConfirm();
   const today = jstDate(Date.now());
+  /** スマホ（600px 以下）は下から出る欄の置き場所に、時刻をずらすは出さない（スマホでは動かさない。ADR-0051 の決定5） */
+  const compact = useMedia(COMPACT_QUERY);
   const live = ids.filter((id) => {
     const v = findVisit(data, id);
     return !!v && dates.includes(v.date);
@@ -461,32 +473,38 @@ export function SelectionBar({
     testId: 'selection-staff',
   }));
   return (
-    <section className="selection-bar" aria-label="選んだ訪問" data-testid="selection-bar">
+    <section
+      className={`selection-bar${compact ? ' is-sheet' : ''}`}
+      aria-label="選んだ訪問"
+      data-testid="selection-bar"
+    >
       <strong data-testid="selection-count">{selectionText(live.length)}</strong>
       <MenuButton label="担当を替える" icon={UserRoundCog} items={staffItems} testId="selection-assign" />
-      <fieldset className="row selection-shift" aria-label="時刻をずらす">
-        <span className="sub">
-          <WithIcon icon={Clock} size={14}>
-            時刻をずらす
-          </WithIcon>
-        </span>
-        {SHIFTS.map((m) => (
-          <button
-            key={m}
-            type="button"
-            className="btn btn-small"
-            onClick={() =>
-              run(`時刻を${m > 0 ? '+' : '−'}${Math.abs(m)}分ずらしました`, (d) => shiftMany(d, live, m, today))
-            }
-            data-testid="selection-shift"
-            data-minutes={m}
-            aria-label={`${m > 0 ? '+' : '−'}${Math.abs(m)}分ずらす`}
-          >
-            {m > 0 ? '+' : '−'}
-            {Math.abs(m)}分
-          </button>
-        ))}
-      </fieldset>
+      {!compact && (
+        <fieldset className="row selection-shift" aria-label="時刻をずらす">
+          <span className="sub">
+            <WithIcon icon={Clock} size={14}>
+              時刻をずらす
+            </WithIcon>
+          </span>
+          {SHIFTS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              className="btn btn-small"
+              onClick={() =>
+                run(`時刻を${m > 0 ? '+' : '−'}${Math.abs(m)}分ずらしました`, (d) => shiftMany(d, live, m, today))
+              }
+              data-testid="selection-shift"
+              data-minutes={m}
+              aria-label={`${m > 0 ? '+' : '−'}${Math.abs(m)}分ずらす`}
+            >
+              {m > 0 ? '+' : '−'}
+              {Math.abs(m)}分
+            </button>
+          ))}
+        </fieldset>
+      )}
       <button
         type="button"
         className="btn btn-small"

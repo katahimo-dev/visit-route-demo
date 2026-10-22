@@ -695,7 +695,8 @@ async function mobile(browser) {
   const sw = await page.evaluate(() => document.documentElement.scrollWidth);
   check(sw <= 390, '390px：日の予定が横にはみ出さない（点数の理由を足しても）', sw);
   const r = await page.getByTestId('plan-reason').boundingBox();
-  check(r && r.x >= 0 && r.x + r.width <= 390, '390px：点数の理由が画面に収まる', r);
+  // 600px 以下は1行のまとめに理由を出さず「詳しく」で見る（ADR-0055）。出ていれば画面に収まる
+  check(r === null || (r.x >= 0 && r.x + r.width <= 390), '390px：点数の理由は出さないか、出せば画面に収まる', r);
   const term = page.locator('[data-testid="plan-summary"] [data-term="dropped"]');
   const { loc: tip } = await tipOf(page, term);
   await term.tap();

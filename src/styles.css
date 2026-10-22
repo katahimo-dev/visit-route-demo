@@ -1053,7 +1053,8 @@ tbody tr:hover td {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 1 1 150px;
+    /* 名前の幅だけ取り、日付の切り替えが入れば同じ段に置く（入らなければ2段目へ。PRD D334） */
+    flex: 1 1 auto;
     min-width: 0;
   }
   .m-head-title .brand-mark {
@@ -1749,6 +1750,17 @@ label.check input {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+/* スマホ（600px 以下）では読み上げだけに残す文字（アイコンのボタンの名前。PRD D334） */
+@media (max-width: 600px) {
+  .m-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
 .trait-chips {
   display: flex;
   flex-wrap: wrap;
@@ -2012,6 +2024,11 @@ a.icon-btn:hover {
 html[data-drawer-toast="top"] body:has(.drawer-wrap) .toast {
   top: calc(var(--drawer-top, 0px) + var(--drawer-head-h, 61px) + 8px);
   bottom: auto;
+}
+/* 下から出る欄（スマホ。PRD D334）：知らせは欄の上（欄の外）に出し、欄に重ねない */
+html[data-drawer-toast="sheet"] body:has(.drawer-wrap) .toast {
+  top: auto;
+  bottom: var(--drawer-sheet-bottom, 96px);
 }
 html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
   left: calc((100vw - var(--drawer-w, 640px)) / 2);
@@ -2449,4 +2466,46 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+/*
+ * 下から出る欄（ボトムシート。訪問の詳細の欄。PRD D334）：スマホ（600px 以下）は画面の下に寄せ、高さは内容に合わせる
+ * （上は画面の 88% まで。上の角を丸める）。広い画面は今の右の欄
+ */
+@media (max-width: 600px) {
+  .drawer-wrap.has-sheet {
+    align-items: flex-end;
+  }
+  .drawer.is-sheet {
+    height: auto;
+    max-height: 88%;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 40px rgba(40, 25, 15, 0.25);
+    animation: sheet-in 0.2s ease-out;
+  }
+  .drawer.is-sheet .drawer-body {
+    flex: 0 1 auto;
+  }
+  .drawer.is-sheet .drawer-head {
+    position: relative;
+    padding-top: 18px;
+  }
+  /* つまみ（飾り） */
+  .drawer.is-sheet .drawer-head::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 40px;
+    height: 4px;
+    margin-left: -20px;
+    border-radius: 2px;
+    background: var(--line-strong);
+    opacity: 0.5;
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(32px);
+    opacity: 0;
+  }
 }

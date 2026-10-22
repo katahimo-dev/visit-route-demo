@@ -1,4 +1,17 @@
-import { Ban, CalendarDays, Check, ClipboardList, Pin, Plus, Repeat, RotateCcw, Undo2, X } from 'lucide-react';
+import {
+  Ban,
+  CalendarDays,
+  Check,
+  ClipboardList,
+  Navigation,
+  Pin,
+  Plus,
+  Repeat,
+  RotateCcw,
+  Undo2,
+  UserRoundCog,
+  X,
+} from 'lucide-react';
 import {
   createContext,
   type ReactNode,
@@ -18,8 +31,9 @@ import type { Visit } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { dateText, newId, own } from '../lib/common';
 import { confirmLeave } from '../lib/leaveGuard';
-import { HOME_LABEL } from '../lib/mapsLink';
+import { directionsHref, HOME_LABEL } from '../lib/mapsLink';
 import { typeOf } from '../lib/patternText';
+import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import {
   applyVisitEdit,
@@ -39,13 +53,13 @@ import { findVisit, visitsOn } from '../patterns';
 import { useDemoData } from '../store';
 import { useConfirm } from './ConfirmDialog';
 import { FieldError, invalidAttrs, RequiredMark } from './FieldError';
-import { VisitRouteLinks } from './mapsLinks';
+import { MAPS_TITLE, VisitRouteLinks } from './mapsLinks';
 import { PersonButton } from './PersonPopover';
 import { StaffMark } from './StaffMark';
 import { useToast } from './Toast';
 import { SidePanel, WithIcon } from './ui';
 import { useUndoAction } from './undo';
-import { VisitRules } from './VisitRules';
+import { hasVisitRules, VisitRules } from './VisitRules';
 import { TypeDot, TypeMark } from './visitType';
 import './visitPanel.css';
 
@@ -53,7 +67,8 @@ import './visitPanel.css';
  * 訪問の詳細の欄（PRD D301〜D304。ADR-0051）：どの画面から開いても同じ右の欄（スマホ幅は下から出る今の右の欄の形）。
  * 見る（〈利用者さん〉・日時・所要・種類・担当・繰り返し・この回の変更・決まりごと・道順）、日時と担当を同時に変える、取り消す・取り消しをやめる、
  * 新しい訪問を足す。繰り返しの回は保存のときに範囲（この回だけ／これ以降／すべて）を選ぶ。データは lib/visitOps 越しに読み書きし、
- * 書くのは store の update だけ。狭い画面（600px 以下）は見る・取り消す・担当を替えるだけ（日時の変更・追加は出さない。ADR-0051 の決定5）
+ * 書くのは store の update だけ。狭い画面（600px 以下）は下から出る欄（ボトムシート）で、見る・取り消す・担当を替えるだけ
+ * （大きな4つのボタン：担当を替える・取り消す・道順・日の予定で見る。日時の変更・範囲・追加は出さない。ADR-0051 の決定5・ADR-0055）
  */
 
 /** 保存したことを開いた画面へ知らせる中身 */
@@ -159,6 +174,9 @@ function VisitPanel({
   });
   const [pick, setPick] = useState<string>(KEEP);
   const [scope, setScope] = useState<VisitScope>('once');
+  /** スマホの下から出る欄で開いている操作（大きな4つのボタンの「担当を替える」「取り消す」。PRD D334） */
+  const [act, setAct] = useState<'staff' | 'cancel' | null>(null);
+  const mapsOn = useFeature('mapsLink');
   const [error, setError] = useState<{ text: string; field?: keyof VisitDraft } | null>(null);
   const errorId = useId();
   const bad = (k: keyof VisitDraft) => invalidAttrs(error?.field === k, errorId);
@@ -350,6 +368,16 @@ function VisitPanel({
     return { staff: s, from: prevClient ? prevClient.place : s.home, fromName: prevClient?.displayName ?? HOME_LABEL };
   }, [v, info, staffById, data]);
 
+  /** スマホの「道順」：前の場所（前の訪問先・自宅）から。担当が無ければ今いる場所から（Google マップ。ADR-0018） */
+  const routeHref = useMemo(() => {
+    if (!v || !client || !mapsOn) return null;
+    const mode = route?.staff.travelMode ?? 'DRIVE';
+    return (
+      (route?.from ? directionsHref({ origin: route.from, destination: client.place, mode }) : null) ??
+      directionsHref({ origin: null, destination: client.place, mode })
+    );
+  }, [v, client, route, mapsOn]);
+
   const title = isNew ? '訪問を追加' : '訪問の詳細';
   const type = typeOf(data.visitTypes, v?.typeId ?? draft.typeId);
   const owner = info?.assignment.staffId ?? null;
@@ -357,21 +385,22 @@ function VisitPanel({
   const windowShown = (x: Pick<Visit, 'windowKind' | 'earliestStart' | 'latestStart'>) =>
     x.windowKind === 'window' ? `${x.earliestStart}〜${x.latestStart} の間に開始` : x.earliestStart;
 
-  const footer =
-    editable && !newBlocked ? (
-      <>
-        <button type="submit" className="btn btn-primary" data-testid="vp-save">
-          <WithIcon icon={isNew ? Plus : Check}>{isNew ? '追加' : '保存'}</WithIcon>
-        </button>
-        <button type="button" className="btn" onClick={onClose} data-testid="vp-close">
-          <WithIcon icon={X}>閉じる</WithIcon>
-        </button>
-      </>
-    ) : (
+  /** スマホは「担当を替える」を開いたときだけ保存（ほかは閉じるだけ） */
+  const saveShown = editable && !newBlocked && (!narrow || act === 'staff');
+  const footer = saveShown ? (
+    <>
+      <button type="submit" className="btn btn-primary" data-testid="vp-save">
+        <WithIcon icon={isNew ? Plus : Check}>{isNew ? '追加' : '保存'}</WithIcon>
+      </button>
       <button type="button" className="btn" onClick={onClose} data-testid="vp-close">
         <WithIcon icon={X}>閉じる</WithIcon>
       </button>
-    );
+    </>
+  ) : (
+    <button type="button" className="btn" onClick={onClose} data-testid="vp-close">
+      <WithIcon icon={X}>閉じる</WithIcon>
+    </button>
+  );
 
   return (
     <SidePanel
@@ -380,6 +409,7 @@ function VisitPanel({
       narrow
       onClose={onClose}
       onSubmit={save}
+      sheet={narrow}
       returnFocus={returnFocus}
       fallbackFocus={headingOfPage}
       focusPanel={!isNew}
@@ -489,7 +519,7 @@ function VisitPanel({
               )}
             </dl>
             {!info.editable && <p className="sub">今日より前の訪問なので、見るだけです。</p>}
-            {showDayLink && (
+            {showDayLink && !narrow && (
               <button type="button" className="btn btn-small" onClick={openDay} data-testid="vp-open-day">
                 <WithIcon icon={CalendarDays} size={14}>
                   日の予定で見る（{dateText(v.date)}）
@@ -497,6 +527,70 @@ function VisitPanel({
               </button>
             )}
           </section>
+        )}
+
+        {/* スマホの大きな4つのボタン（PRD D334）：担当を替える・取り消す・道順・日の予定で見る */}
+        {narrow && v && info && (
+          <div className="vp-big" data-testid="vp-big">
+            <button
+              type="button"
+              className={`btn vp-big-btn${act === 'staff' ? ' is-on' : ''}`}
+              aria-expanded={act === 'staff'}
+              disabled={!editable}
+              title={!editable ? (cancelled ? '取り消した訪問です' : '今日より前の訪問は変えられません') : undefined}
+              onClick={() => setAct(act === 'staff' ? null : 'staff')}
+              data-testid="vp-big-staff"
+            >
+              <UserRoundCog size={22} aria-hidden="true" />
+              担当を替える
+            </button>
+            <button
+              type="button"
+              className={`btn vp-big-btn${act === 'cancel' ? ' is-on' : ''}`}
+              aria-expanded={act === 'cancel'}
+              disabled={!info.editable}
+              title={!info.editable ? '今日より前の訪問は変えられません' : undefined}
+              onClick={() => setAct(act === 'cancel' ? null : 'cancel')}
+              data-testid="vp-big-cancel"
+            >
+              {cancelled ? <Undo2 size={22} aria-hidden="true" /> : <Ban size={22} aria-hidden="true" />}
+              {cancelled ? '取り消しをやめる' : '取り消す'}
+            </button>
+            {routeHref ? (
+              <a
+                className="btn vp-big-btn"
+                href={routeHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={MAPS_TITLE}
+                aria-label={`道順（${client?.displayName ?? ''}さんへ。Google マップ・新しいタブ）`}
+                data-testid="vp-big-route"
+              >
+                <Navigation size={22} aria-hidden="true" />
+                道順
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="btn vp-big-btn"
+                disabled
+                title="場所（住所・地図の位置）が未登録のため、道順はありません"
+                data-testid="vp-big-route"
+              >
+                <Navigation size={22} aria-hidden="true" />
+                道順
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn vp-big-btn"
+              onClick={showDayLink ? openDay : onClose}
+              data-testid="vp-big-day"
+            >
+              <CalendarDays size={22} aria-hidden="true" />
+              日の予定で見る
+            </button>
+          </div>
         )}
 
         {timeOn && !newBlocked && (
@@ -652,7 +746,7 @@ function VisitPanel({
           </fieldset>
         )}
 
-        {editable && !newBlocked && choices && (
+        {editable && !newBlocked && choices && (!narrow || act === 'staff') && (
           <fieldset className="vp-section" data-testid="vp-staff">
             <legend>
               {isNew ? '担当' : '担当を替える'}
@@ -756,7 +850,7 @@ function VisitPanel({
           {error?.text}
         </FieldError>
 
-        {v && info?.editable && (
+        {v && info?.editable && (!narrow || act === 'cancel') && (
           <section className="vp-section vp-cancel" aria-label="取り消し" data-testid="vp-cancel-area">
             {cancelled ? (
               <button type="button" className="btn" onClick={doUncancel} data-testid="vp-uncancel">
@@ -786,10 +880,10 @@ function VisitPanel({
           </section>
         )}
 
-        {v && client && (
+        {v && client && (!narrow || hasVisitRules(client)) && (
           <section className="vp-section" aria-label="決まりごと・道順">
             <VisitRules client={client} />
-            {route && (
+            {route && !narrow && (
               <VisitRouteLinks
                 to={client.place}
                 toName={client.displayName}

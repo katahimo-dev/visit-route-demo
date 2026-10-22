@@ -492,7 +492,10 @@ async function mobile(page) {
   check(scrollW <= 390, '390px：横にはみ出さない', scrollW);
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-menu.png') });
   await page.keyboard.press('Escape');
-  // 担当を変える（PRD D217）：390px は順番の表示。カードを押すと詳細に出て、押して開ける・収まる
+  // 担当を変える（PRD D217）：390px の既定は日ごとのリスト（ADR-0055）。「その他 ▾」の「表示」で順番にすると、
+  // カードを押すと詳細に出て、押して開ける・収まる
+  await page.getByTestId('plan-more').click();
+  await page.getByTestId('plan-view-order').click();
   await page.locator('.route-col:not(.route-col-none) .route-btn').first().click();
   await reBtn(page).waitFor({ timeout: 5000 });
   await reBtn(page).scrollIntoViewIfNeeded();

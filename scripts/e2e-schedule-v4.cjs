@@ -490,6 +490,9 @@ async function narrow(page) {
     await shot(page, `${hash.slice(1)}-390`);
   }
   await openView(page, '/plan');
+  // 390px の既定は日ごとのリスト（ADR-0055）。順番のカードは「その他 ▾」の「表示」から
+  await page.getByTestId('plan-more').click();
+  await page.getByTestId('plan-view-order').click();
   const cards = page.locator('.route-item .route-btn');
   await cards.first().waitFor({ timeout: 30000 });
   await cards.nth(0).click({ modifiers: ['Shift'] });

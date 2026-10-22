@@ -680,6 +680,8 @@ async function narrow(page) {
   if (ix >= 0) {
     await item.click();
     await panel(page).waitFor();
+    // 390px の欄は下から出る欄で、取り消しは大きな「取り消す」のボタンから（ADR-0055）
+    await panel(page).getByTestId('vp-big-cancel').click();
     check(
       (await panel(page).getByTestId('vp-time').count()) === 0 &&
         (await panel(page).getByTestId('vp-cancel-area').count()) === 1,

@@ -145,6 +145,10 @@
   flex-shrink: 0;
 }
 @media (max-width: 860px) {
+  /* 狭い画面の「探す」は下のタブ（PRD D336）。上の帯には出さない */
+  .app-header .cmdk-open {
+    display: none;
+  }
   .cmdk-open-more,
   .cmdk-open-kbd,
   .cmdk-foot {

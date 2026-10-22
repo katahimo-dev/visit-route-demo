@@ -154,15 +154,16 @@ describe('navTitle（上の帯の名前。画面の一覧から引く）', () =>
   });
 });
 
-describe('bottomTabs（PRD D274）', () => {
-  it('ホーム・予定・欠勤・空き状況の順に引き、短い名前で出す（5つ目の「メニュー」は画面のボタン）', () => {
-    expect(bottomTabs(groups).map(tabLabel)).toEqual(['ホーム', '予定', '欠勤', '空き状況']);
-    expect(bottomTabs(groups).map((i) => i.label)).toEqual(['ホーム', '予定', '欠勤・キャンセル', '空き状況']);
+describe('bottomTabs（PRD D336）', () => {
+  it('ホーム・予定・欠勤の順に引き、短い名前で出す（4つ目の「探す」・5つ目の「メニュー」は画面のボタン。空き状況は出さない）', () => {
+    expect(bottomTabs(groups).map(tabLabel)).toEqual(['ホーム', '予定', '欠勤']);
+    expect(bottomTabs(groups).map((i) => i.label)).toEqual(['ホーム', '予定', '欠勤・キャンセル']);
   });
   it('メニューに無い項目は出さない', () => {
-    expect(bottomTabs([{ items: [{ key: 'vacancy', to: '/vacancy', label: '空き状況' }] }]).map((i) => i.to)).toEqual([
-      '/vacancy',
+    expect(bottomTabs([{ items: [{ key: 'home', to: '/home', label: 'ホーム' }] }]).map((i) => i.to)).toEqual([
+      '/home',
     ]);
+    expect(bottomTabs([{ items: [{ key: 'vacancy', to: '/vacancy', label: '空き状況' }] }])).toEqual([]);
   });
   it('短い名前が無ければメニューの名前', () => {
     expect(tabLabel({ to: '/x', label: '名前' })).toBe('名前');

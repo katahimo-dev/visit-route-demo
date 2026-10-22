@@ -79,8 +79,8 @@ export function peopleHref(features: Features, last?: string | null): string {
   return tabs[0]?.to ?? '/clients';
 }
 
-/** 下のタブに並べる項目の key（ホーム・予定・欠勤・空き状況。5つ目は「メニュー」のボタン。PRD D274） */
-export const BOTTOM_TABS: readonly string[] = ['home', 'schedule', 'absence', 'vacancy'];
+/** 下のタブに並べる項目の key（ホーム・予定・欠勤。4つ目は「探す」（コマンドパレット）、5つ目は「メニュー」のボタン。PRD D336） */
+export const BOTTOM_TABS: readonly string[] = ['home', 'schedule', 'absence'];
 
 /** 操作の項目か（URL にクエリを持つ。例：当日・問い合わせの「欠勤・キャンセルを登録」＝ `/plan?date=…&do=absence`。PRD D180・D231） */
 export const isNavAction = (to: string): boolean => to.includes('?');
@@ -139,18 +139,18 @@ export function navTitleParts(
   return extra ? { group: null, item: extra } : null;
 }
 
-/** 下のタブの項目：メニューから BOTTOM_TABS の順に引く（メニューに無い項目は出さない。PRD D274） */
+/** 下のタブの項目：メニューから BOTTOM_TABS の順に引く（メニューに無い項目は出さない。PRD D336） */
 export function bottomTabs<T extends NavEntry & { key: string }>(groups: readonly NavSection<T>[]): T[] {
   const all = groups.flatMap((g) => g.items);
   return BOTTOM_TABS.flatMap((key) => all.find((i) => i.key === key) ?? []);
 }
 
-/** 下のタブの名前：短い名前（ホーム・予定・欠勤・空き状況）。無ければメニューの名前（PRD D274） */
+/** 下のタブの名前：短い名前（ホーム・予定・欠勤）。無ければメニューの名前（PRD D336） */
 export const tabLabel = (item: NavEntry): string => item.short ?? item.label;
 
 /**
  * 下のタブ・メニューの項目を押したとき：今開いている画面そのものなら何もしない（'stay'。押し直して URL のクエリ＝画面の状態を
- * 消さない。PRD D133・D134）。ほかは移る（'go'。比較から「予定」は覚えた表示へ移る）
+ * 消さない。PRD D133・D336）。ほかは移る（'go'。比較から「予定」は覚えた表示へ移る）
  */
 export function tabClick(item: NavEntry, pathname: string): 'stay' | 'go' {
   // 人の画面（`/clients/:id`）から一覧の項目を押したら一覧へ移る（同じ画面ではない）

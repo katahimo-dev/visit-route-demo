@@ -420,9 +420,11 @@ async function palette(page) {
 async function narrow(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await freshPlan(page);
-  const first = page.locator('.route-item[data-visit] .route-btn').first();
-  const id = await first.evaluate((el) => el.closest('.route-item').dataset.visit);
-  const card = page.locator(`.route-item[data-visit="${id}"] .route-btn`);
+  // 390px の既定は日ごとのリスト（ADR-0055）。行を押すと下から出る欄
+  const first = page.locator('[data-testid="day-row"][data-visit]').first();
+  await first.waitFor({ timeout: 30000 });
+  const id = await first.getAttribute('data-visit');
+  const card = page.locator(`[data-testid="day-row"][data-visit="${id}"]`);
   // この回だけ変えた回にしておく（390px では「繰り返しのとおりに戻す」を出さない）
   const edited = await page.evaluate(
     ([k, vid]) => {
@@ -443,21 +445,21 @@ async function narrow(page) {
   }
   await card.scrollIntoViewIfNeeded();
   await card.click();
-  await page.getByTestId('visit-open').first().click();
   await panel(page).waitFor();
   await settle(page, 300);
   const p = panel(page);
-  check((await p.getAttribute('data-visit')) === id, '390px：カードから欄が開く');
+  check((await p.getAttribute('data-visit')) === id, '390px：日ごとのリストの行から欄が開く');
   check((await p.getByTestId('vp-time').count()) === 0, '390px：日時の変更は出さない');
   if (edited)
     check(
       (await p.getByTestId('vp-changes').count()) === 1 && (await p.getByTestId('vp-restore').count()) === 0,
       '390px：この回の変更は見えるが「繰り返しのとおりに戻す」は出さない',
     );
-  check(
-    (await p.getByTestId('vp-staff').count()) === 1 && (await p.getByTestId('vp-cancel').count()) === 1,
-    '390px：担当替え・取り消しはできる',
-  );
+  // 担当替え・取り消しは大きな4つのボタンから（ADR-0055）
+  await p.getByTestId('vp-big-cancel').click();
+  check((await p.getByTestId('vp-cancel').count()) === 1, '390px：取り消しはできる（「取り消す」のボタンから）');
+  await p.getByTestId('vp-big-staff').click();
+  check((await p.getByTestId('vp-staff').count()) === 1, '390px：担当替えはできる（「担当を替える」のボタンから）');
   check(
     (await page.evaluate(() => document.documentElement.scrollWidth)) <= 390 &&
       (await page.locator('.drawer').evaluate((el) => el.scrollWidth <= el.clientWidth + 1)),

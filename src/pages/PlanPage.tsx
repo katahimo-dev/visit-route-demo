@@ -35,6 +35,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { useDay } from '../app/day';
 import { useConfirm } from '../components/ConfirmDialog';
 import { DayLines } from '../components/dayLines';
+import { DayList, type DayListRow } from '../components/dayList';
 import { MapDock } from '../components/MapDock';
 import { MenuButton, type MenuItem } from '../components/MenuButton';
 import { useMailLimit } from '../components/mailParts';
@@ -60,6 +61,7 @@ import { useHistoryOps, useUndoAction } from '../components/undo';
 import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
 import { VisitRules } from '../components/VisitRules';
+import { KeyMoveBand, useVisitKeys } from '../components/visitKeys';
 import { TypeMark } from '../components/visitType';
 import type { DemoData } from '../contracts/data';
 import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
@@ -68,7 +70,7 @@ import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
 import { leaveOn } from '../domain/leaves';
 import { NONE, timeOrder, windowText } from '../domain/scheduleModel';
-import { hhmmToMinutes } from '../domain/time';
+import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
 import { achievements, BALANCE_RULE_KEY, hundredBreakdown, ruleLowerBounds, score, toHundred } from '../evaluate';
 import {
   absencesOn,
@@ -82,7 +84,7 @@ import {
   withoutAbsencesOn,
 } from '../lib/absences';
 import { colorOf } from '../lib/colors';
-import { attempt, formError, own, pointsText, r0 } from '../lib/common';
+import { attempt, dateText, formError, own, pointsText, r0 } from '../lib/common';
 import { confirmDay } from '../lib/confirmDay';
 import { type CancelledContact, type ContactRow, clock, contactCount, contactRows, dateWordOf } from '../lib/contacts';
 import { dayLineRange, dayLines } from '../lib/dayLine';
@@ -206,6 +208,12 @@ type Proposal = {
 };
 
 /**
+ * 日の予定のその場の提案（PRD D328・D335。ADR-0055）。画面を移っても、ほかの日を見ても消さない（その日に戻れば帯が出る）。
+ * 画面の状態だけで保存しない（読み直すと消える）。提案は1つだけ（新しく組むと置き換える）。出したあとに訪問が変われば「当てない」
+ */
+const dayProposalStore = createValueStore<Proposal | null>(null);
+
+/**
  * 計算の進み具合のバーと回数（PRD D249）。進み具合は外の入れ物から読み、変わってもここだけ描き直す
  */
 function PlanProgressText({ store, prefix }: { store: ReadableStore<Progress | null>; prefix: string }) {
@@ -241,7 +249,7 @@ function routesOfIds(problem: Problem, r: Record<string, string[]>): Record<stri
 }
 
 export default function PlanPage() {
-  const { date, setDate } = useDay();
+  const { date, setDate, dates } = useDay();
   const m = useDayModel(date);
   /** 切った機能（案を比べる・稼働の見込み）の画面へ移るボタン・リンクは出さない（PRD D213。ADR-0028） */
   const compareOn = useFeature('compare');
@@ -338,7 +346,22 @@ export default function PlanPage() {
   const [colView, setColView] = useState<'timeline' | 'order' | 'list'>('timeline');
   /** 狭い幅（900px 以下）・印刷では時間軸の代わりに順番にする（一覧はそのまま） */
   const narrowOrPrint = useNarrowOrPrint();
-  const shownView = narrowOrPrint && colView === 'timeline' ? 'order' : colView;
+  /**
+   * スマホ（600px 以下）の表示（PRD D334）：日ごとのリスト（既定）・順番・一覧。「その他 ▾」の「表示」で選ぶ（操作の行を1段にする）
+   */
+  const [mView, setMView] = useState<'day' | 'order' | 'list'>('day');
+  const shownView: 'timeline' | 'order' | 'list' | 'day' = compact
+    ? mView
+    : narrowOrPrint && colView === 'timeline'
+      ? 'order'
+      : colView;
+  /** 表示を替える（スマホは時間軸の代わりに順番） */
+  const setView = (v: 'timeline' | 'order' | 'list') => {
+    if (compact) setMView(v === 'timeline' ? 'order' : v);
+    else setColView(v);
+  };
+  /** スマホの日ごとのリストの「選ぶ」（長押しでも入る。日付を変えたら抜ける） */
+  const [selecting, setSelecting] = useState(false);
   /** 右の欄（PRD D63）：'detail'＝詳しく、'mail'＝予定をメールで送る */
   const [panel, setPanel] = useState<'detail' | 'mail' | null>(null);
   /** 地図は本体の下に全幅で大きく置く（PRD D300）。広い画面は地図を高くする */
@@ -361,10 +384,15 @@ export default function PlanPage() {
   /** いちばん新しい点数の物差し（計算中の「いまの最良 N点」を基準の物差しで付け直す。ADR-0010） */
   const scoreRef = useRef({ problem: scoreProblem, scale: scoreScale });
   scoreRef.current = { problem: scoreProblem, scale: scoreScale };
-  /** AI の提案（その場だけ。日付を変えたら捨てる） */
-  const [proposal, setProposal] = useState<Proposal | null>(null);
+  /** AI の提案（その場だけ。画面を移っても・日付を変えても残し、その日だけ帯に出す。PRD D335） */
+  const proposal = useValueStore(dayProposalStore);
+  const setProposal = dayProposalStore.set;
   /** 複数選択（Shift・Ctrl＋クリック。日付を変えたら外す。PRD D330） */
   const multi = useVisitSelection(date);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたらスマホの「選ぶ」を抜ける（選んだ訪問は useVisitSelection が外す）
+  useEffect(() => {
+    setSelecting(false);
+  }, [date]);
 
   // 画面を離れたら Worker を止める（止めた結果は保存しない）
   useEffect(() => {
@@ -378,7 +406,7 @@ export default function PlanPage() {
     };
     // progressStore は作り直さない（一度だけ）
   }, [progressStore]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた欄を閉じ、前の日のエラー・提案を消す
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた欄を閉じ、前の日のエラーを消す（提案は残す。PRD D335）
   useEffect(() => {
     setSudden(null);
     setCancelFor(null);
@@ -386,7 +414,6 @@ export default function PlanPage() {
     setToldOpen(false);
     setPanel(null);
     setError(null);
-    setProposal(null);
     // 前の日に「案B も作る」を押して、まだ始まっていなければやめる（別の日で始めない）
     pendingAnneal.current = null;
   }, [date]);
@@ -737,13 +764,41 @@ export default function PlanPage() {
         const v = vid ? CSS.escape(vid) : null;
         const el = v
           ? document.querySelector<HTMLElement>(
-              `.tl-band[data-visit="${v}"] .tl-band-btn, .route-item[data-visit="${v}"] .route-btn, [data-testid="visit-row-open"][data-visit="${v}"]`,
+              `.tl-band[data-visit="${v}"] .tl-band-btn, .route-item[data-visit="${v}"] .route-btn, [data-testid="visit-row-open"][data-visit="${v}"], .day-row[data-visit="${v}"]`,
             )
           : null;
         // 「その他 ▾」から足したときは、閉じた一覧の項目の代わりに「その他」のボタンへ
         return el ?? (id ? null : document.querySelector<HTMLElement>('[data-testid="plan-more"]'));
       },
     });
+  /** 時間軸の帯にフォーカスを戻す（キーで動かしたあと。日付を移ったときは描き終わるまで待つ） */
+  const focusBand = (visitId: string) => {
+    let n = 0;
+    const tick = () => {
+      const el = document.querySelector<HTMLElement>(`.tl-band[data-visit="${CSS.escape(visitId)}"] .tl-band-btn`);
+      if (el) {
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        return;
+      }
+      if (++n < 30) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  /**
+   * 時間軸の帯のキーボード（PRD D333）：↑↓ 15分・←→ 1日（その日の予定へ移る）・Shift+←→ 隣の担当の列（列の順）・Enter で欄・
+   * Delete で取り消し（確認）。どれも全体の「元に戻す」の1手。動かしたらフォーカスは動かした帯、取り消したら「元に戻す」
+   */
+  const visitKeys = useVisitKeys({
+    staffOrder: () => columns,
+    onOpen: (id) => openVisit(id),
+    onMoved: (r) => {
+      if (r.date !== date) setDate(r.date);
+      focusBand(r.visitId);
+    },
+    onCancelled: () =>
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus()),
+  });
   /** 帯・カードの詳細の「詳細・変更」（訪問の詳細の欄を開く） */
   const openOf = (id: string) => (
     <button
@@ -1685,6 +1740,7 @@ export default function PlanPage() {
       onPick: () => sel.togglePick(x),
       multi: multi.has(id),
       onMulti: () => multi.toggle(id),
+      onKey: (ev) => visitKeys(ev, id),
       drag: dragProps(id),
       marks: icons.length > 0 ? icons : undefined,
       note: notes.join('・') || undefined,
@@ -1952,6 +2008,71 @@ export default function PlanPage() {
       onCancel={cancelVisit}
     />
   );
+  /**
+   * スマホの日ごとのリスト（PRD D334）の行：その日の訪問（取り消し・休みの回も）を時刻の順に。時刻は今の担当の開始（無ければ開始の早い方）。
+   * 印は要対応（訪問ごとの検査）・未連絡の変更・ピン
+   */
+  const dayRows = useMemo((): DayListRow[] => {
+    if (!compact) return [];
+    const startOf = (v: Visit) => explained.get(v.id)?.timing?.start ?? hhmmToMinutes(v.earliestStart);
+    const hm = (x: number) => minutesToHhmm(Math.round(x)).replace(/^0/, '');
+    return [...m.allVisits]
+      .sort((a, b) => startOf(a) - startOf(b) || a.id.localeCompare(b.id))
+      .map((v) => {
+        const sid = owner.get(v.id) ?? (v.cancelled ? v.staffId : null);
+        const sName = sid ? (staffById.get(sid)?.name ?? '（不明）') : '';
+        const s = sid ? (staffById.get(sid) ?? null) : null;
+        const leave = !v.cancelled && m.leaveVisits.includes(v);
+        const start = startOf(v);
+        const type = typeOf(data.visitTypes, v.typeId);
+        return {
+          visitId: v.id,
+          time: `${hm(start)}〜${hm(start + v.durationMinutes)}`,
+          clientName: clientById.get(v.clientId)?.displayName ?? '（不明）',
+          staff: s,
+          staffName: sName,
+          issues: (issues.get(v.id) ?? []).map((x) => x.label),
+          told: toldMarks.get(v.id) ?? null,
+          pinned: !!own(pins, v.id),
+          cancelled: v.cancelled ? (v.cancelKind === 'sameDay' ? 'sameDay' : 'normal') : null,
+          leave: leave ? (leaveOn(data.clientLeaves, v.clientId, v.date)?.note ?? '') : null,
+          color: type ? colorOf(type.color) : null,
+          selectable: !v.cancelled && !leave && date >= jstDate(Date.now()),
+        };
+      });
+  }, [
+    compact,
+    m.allVisits,
+    m.leaveVisits,
+    explained,
+    owner,
+    staffById,
+    clientById,
+    issues,
+    toldMarks,
+    pins,
+    data,
+    date,
+  ]);
+  const dateIndex = dates.indexOf(date);
+  const prevDate = dateIndex > 0 ? dates[dateIndex - 1] : undefined;
+  const nextDate = dateIndex >= 0 ? dates[dateIndex + 1] : undefined;
+  const dayList = (
+    <DayList
+      dateLabel={dateText(date)}
+      rows={dayRows}
+      onOpen={(id) => openVisit(id)}
+      selecting={selecting}
+      onSelecting={(on) => {
+        setSelecting(on);
+        if (!on) multi.clear();
+      }}
+      isSelected={multi.has}
+      onToggle={multi.toggle}
+      onPrev={prevDate ? () => setDate(prevDate) : null}
+      onNext={nextDate ? () => setDate(nextDate) : null}
+    />
+  );
   /** 担当ごとの1日（PRD D84）：今の担当の並びから。列と同じ人・同じ順 */
   const staffLines = useMemo(
     () =>
@@ -1965,7 +2086,7 @@ export default function PlanPage() {
    * 選んだままなら外さず、地図をその人に絞り直す）列の中のカードへ移る
    */
   const goToStaff = (sid: string, visitId?: string) => {
-    if (shownView === 'list') setColView('timeline');
+    if (shownView === 'list' || shownView === 'day') setView('timeline');
     if (visitId) {
       const x = { id: visitId, set: PLAN_SET };
       if (sel.isPicked(x)) focusOn(sid);
@@ -1984,7 +2105,16 @@ export default function PlanPage() {
   };
   /** 担当なしの訪問の列へ移る（帯の近道。一覧のときは担当ごとの表示に切り替えてから） */
   const goToNone = () => {
-    if (shownView === 'list') setColView('timeline');
+    // スマホの日ごとのリストは、最初の担当なしの行へ巻く
+    if (shownView === 'day') {
+      requestAnimationFrame(() =>
+        document
+          .querySelector('.day-row.is-unassigned')
+          ?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }),
+      );
+      return;
+    }
+    if (shownView === 'list') setView('timeline');
     requestAnimationFrame(() =>
       document.getElementById(noneColId)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }),
     );
@@ -2194,8 +2324,28 @@ export default function PlanPage() {
       onSelect: () => openVisit(null),
       testId: 'plan-visit-add',
     },
+    // スマホは表示の切り替えを「その他 ▾」に入れる（操作の行を1段にする。PRD D334）
+    ...(compact
+      ? (
+          [
+            ['day', '日ごとのリスト'],
+            ['order', '順番'],
+            ['list', '一覧'],
+          ] as const
+        ).map(
+          ([k, text], i): MenuItem => ({
+            key: `view-${k}`,
+            group: i === 0 ? '表示' : undefined,
+            label: `${text}で見る`,
+            current: mView === k,
+            onSelect: () => setMView(k),
+            testId: `plan-view-${k}`,
+          }),
+        )
+      : []),
     {
       key: 'help',
+      group: compact ? 'そのほか' : undefined,
       label: helpOpen ? '使い方を閉じる' : '使い方',
       icon: Info,
       onSelect: () => setHelpOpen(!helpOpen),
@@ -2242,7 +2392,9 @@ export default function PlanPage() {
               {/* 担当ごとの予定をメールアプリで開く（PRD D92・D306。ADR-0017）。毎日送るので見出しの主ボタンの隣に枠のボタンで置く */}
               {mailOn && (
                 <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
-                  <WithIcon icon={Mail}>予定をメールで送る</WithIcon>
+                  <WithIcon icon={Mail}>
+                    <span className="m-sr">予定をメールで送る</span>
+                  </WithIcon>
                 </button>
               )}
               {/* 主ボタン（塗り）は「確定」だけ。確定済みの日は枠にして主ボタンを置かない（PRD D238） */}
@@ -2278,10 +2430,10 @@ export default function PlanPage() {
           <span className={cs.dropped > 0 ? 'warn-text' : ''}>
             <Term k="dropped" /> <strong>{cs.dropped}</strong>
           </span>
-          <span className={hardCount > 0 ? 'error' : ''}>
+          <span className={`m-hide${hardCount > 0 ? ' error' : ''}`}>
             <Term k="hard" /> <strong>{hardCount}</strong>
           </span>
-          <span>
+          <span className="m-hide">
             <Term k="travel" /> <strong>{r0(cs.travelMinutes)}</strong>分
           </span>
           {/* 点数の色（PRD D266）：入らない・必須の違反があるときだけ要対応の色。無ければ点が低くても赤にしない（D228） */}
@@ -2298,17 +2450,19 @@ export default function PlanPage() {
             )}
           </span>
           {/* 点を下げているいちばん大きい理由（PRD D173） */}
-          {rulesOn && reasonNow && <ScoreReasonText reason={reasonNow} testId="plan-reason" />}
-          {/* いちばんの理由の次の一手（PRD D229）：移動が長い → 「移動を短く」で組む（提案）・担当なし → 受けられる人・相性 → 相性の表。
+          <span className="plan-oneline-why">
+            {rulesOn && reasonNow && <ScoreReasonText reason={reasonNow} testId="plan-reason" />}
+            {/* いちばんの理由の次の一手（PRD D229）：移動が長い → 「移動を短く」で組む（提案）・担当なし → 受けられる人・相性 → 相性の表。
               理由のすぐ後ろに同じ行で（上の段を詰める。PRD D237） */}
-          {rulesOn && reasonNow && (
-            <ScoreNextStep
-              reason={reasonNow}
-              date={date}
-              compatOn={compatOn}
-              onShortTravel={travelPreset && !busyWhy ? () => propose(travelPreset) : undefined}
-            />
-          )}
+            {rulesOn && reasonNow && (
+              <ScoreNextStep
+                reason={reasonNow}
+                date={date}
+                compatOn={compatOn}
+                onShortTravel={travelPreset && !busyWhy ? () => propose(travelPreset) : undefined}
+              />
+            )}
+          </span>
           <button
             type="button"
             className="link-btn plan-oneline-more"
@@ -2322,7 +2476,7 @@ export default function PlanPage() {
         </div>
       )}
       {/* 担当ごとの1日（PRD D84）。訪問のある日だけ。狭い幅では畳む */}
-      {hasPlan && cs && (
+      {hasPlan && cs && !compact && (
         <DayLines
           lines={staffLines}
           range={lineRange}
@@ -2434,7 +2588,7 @@ export default function PlanPage() {
               ))}
             </span>
           </WithIcon>
-          <button type="button" className="btn btn-small" onClick={() => setColView('list')}>
+          <button type="button" className="btn btn-small" onClick={() => setView('list')}>
             一覧で見る
           </button>
         </div>
@@ -2502,7 +2656,7 @@ export default function PlanPage() {
         moreItems={moreItems}
         after={progressView}
       >
-        {(visits.length > 0 || m.leaveVisits.length > 0) && (
+        {!compact && (visits.length > 0 || m.leaveVisits.length > 0) && (
           <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
             {(
               [
@@ -2524,6 +2678,13 @@ export default function PlanPage() {
           </fieldset>
         )}
       </ScheduleToolbar>
+      {/* キーで動かした先の読み上げと、繰り返しの回の範囲を選び直す小さな帯（PRD D333） */}
+      <KeyMoveBand
+        onMoved={(r) => {
+          if (r.date !== date) setDate(r.date);
+          focusBand(r.visitId);
+        }}
+      />
       {helpOpen && (
         <div ref={helpRef} className="hint-body plan-help" tabIndex={-1} data-testid="plan-help">
           <ul className="plan-help-list">
@@ -2565,9 +2726,9 @@ export default function PlanPage() {
         </div>
       )}
 
-      {visits.length === 0 && m.leaveVisits.length > 0 ? (
+      {shownView !== 'day' && visits.length === 0 && m.leaveVisits.length > 0 ? (
         visitList
-      ) : visits.length === 0 ? (
+      ) : shownView !== 'day' && visits.length === 0 ? (
         <div className="card">
           <Empty icon={CalendarDays}>
             この日の訪問はまだありません。「その他」の「訪問を追加」で足せます。繰り返しは{terms.client}
@@ -2611,6 +2772,8 @@ export default function PlanPage() {
             )}
             {shownView === 'list' ? (
               visitList
+            ) : shownView === 'day' ? (
+              dayList
             ) : !hasVisits ? null : (
               <div className="card stack plan-view" data-testid="plan-view">
                 {shownView === 'timeline' ? (
