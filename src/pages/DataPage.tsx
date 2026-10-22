@@ -6,7 +6,6 @@ import {
   Download,
   Eraser,
   FileSpreadsheet,
-  History,
   RotateCcw,
   Save,
   Tags,
@@ -58,10 +57,6 @@ const keepNote = (k: { kept: boolean; why: string | null }): string =>
 
 /** 操作のあとの知らせに添える文：見込みに反して控えを残せなかったら理由（操作は止めない） */
 const keptSuffix = (k: PreviousKeep): string => (k.kept ? '' : `（${k.why ?? '控えを残せません'}）`);
-
-/** 片づけの確認の本文：確定した日の今の案は残す（記録だけ消す。PRD D227） */
-const keptPlansText = (n: number): string =>
-  n > 0 ? `確定した日の AI案 ${n}件は残します（その日の記録だけ消します）。` : '';
 
 /** データ：書き出し・読み込み（控えの JSON・Excel）・初期状態に戻す（D2・D3・D23） */
 /** 画面を開いたあとに新しい版が公開されて、Excel の部品を読めなかったとき */
@@ -202,7 +197,7 @@ export default function DataPage() {
       const counts = `${rt.staff} ${r.staff.length}人・${rt.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
       const ok = await confirmDialog({
         title: `「${file.name}」でデータを置き換えますか？`,
-        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。作った案と確定した割当も消えます。\n${keepNote(canKeepPrevious())}`,
+        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。訪問の担当と確定（伝えた内容）も消えます。\n${keepNote(canKeepPrevious())}`,
         confirmLabel: 'すべて置き換える',
         tone: 'danger',
       });
@@ -250,7 +245,7 @@ export default function DataPage() {
       ...(warning ? [warning, ''] : []),
       `「${file.name}」の${term}の名簿を読み込みます（${how}）。`,
       rosterSummary(r, kind, terms),
-      '作った案・確定した割当・訪問はそのままです。',
+      '訪問の担当・確定（伝えた内容）・訪問はそのままです。',
       keepNote(canKeepPrevious()),
     ].join('\n');
     const ok = await confirmDialog({
@@ -339,37 +334,24 @@ export default function DataPage() {
     toast('直前の状態に戻しました');
   };
 
-  /** 手直しの記憶の件数と、すべて消す（ADR-0043。作った案・固定は変えない） */
-  const prefCount = Object.keys(data.manualPrefs).length;
-  const clearPrefs = async () => {
-    const ok = await confirmDialog({
-      title: '手直しの記憶をすべて消しますか？',
-      body: `覚えている ${prefCount}件を消します。作った案とピンはそのままです。`,
-      confirmLabel: 'すべて消す',
-      tone: 'danger',
-    });
-    if (!ok) return;
-    update((d) => ({ ...d, manualPrefs: {} }));
-    toast('手直しの記憶を消しました');
-  };
-  /** 古い案と記録の片づけ（PRD D227。ADR-0032）。選んだ月より前の日の AI案・記録だけ消す */
+  /** 古い訪問の片づけ（PRD D227。ADR-0032・ADR-0053）。選んだ月より前の日の保存した訪問・伝えた内容だけ消す */
   const tidyChoice = useMemo(() => tidyMonthOptions(today()), []);
   const [tidyYm, setTidyYm] = useState(tidyChoice.initial);
   const tidy = useMemo(() => tidyPreview(data, tidyYm), [data, tidyYm]);
   const tidyCard = useRef<HTMLElement>(null);
   const tidyTitleId = useId();
   const doTidy = async () => {
-    if (tidy.runs + tidy.plans === 0) return;
+    if (tidy.visits + tidy.snapshots === 0) return;
     const ok = await confirmDialog({
-      title: `${tidyMonthLabel(tidyYm)}の AI案と記録を消しますか？`,
-      body: `${tidy.days}日分の AI案 ${tidy.plans}件と記録 ${tidy.runs}件を消します（${sizeText(tidy.chars)}空きます）。${keptPlansText(tidy.keptPlans)}確定した割当・訪問・人・条件は消えません。消した案と記録は戻せません（容量を空けるため、直前の状態の控えも残しません）。`,
+      title: `${tidyMonthLabel(tidyYm)}の訪問の記録を消しますか？`,
+      body: `${tidy.days}日分の、担当を組んだ・変えた訪問 ${tidy.visits}件と確定した内容 ${tidy.snapshots}日分を消します（${sizeText(tidy.chars)}空きます）。繰り返しの回は繰り返しのとおりに戻り（担当・取り消しは消えます）、単発の訪問は消えます。人・繰り返し・条件は消えません。消したものは戻せません（容量を空けるため、直前の状態の控えも残しません）。`,
       confirmLabel: '消す',
       tone: 'danger',
     });
     if (!ok) return;
     const ym = tidyYm;
     update((d) => tidyOld(d, ym));
-    toast(`${tidyMonthLabel(ym)}の AI案と記録を消しました`);
+    toast(`${tidyMonthLabel(ym)}の訪問の記録を消しました`);
   };
 
   return (
@@ -402,7 +384,7 @@ export default function DataPage() {
               }}
               data-testid="data-tidy-go"
             >
-              <WithIcon icon={Eraser}>古い案と記録を片づける</WithIcon>
+              <WithIcon icon={Eraser}>古い訪問を片づける</WithIcon>
             </button>
           )}
         </div>
@@ -478,7 +460,7 @@ export default function DataPage() {
         </SectionTitle>
         <Hint>
           <ul className="hint-list">
-            <li>作った案や確定した割当も含めて、データ一式を1つのファイル（JSON）にします。</li>
+            <li>訪問の担当や確定（伝えた内容）も含めて、データ一式を1つのファイル（JSON）にします。</li>
             <li>別の端末や人へ渡すときや、控えに使います。</li>
             <li>
               「ファイルを選ぶ」で書き出したファイルを選ぶと、いまのデータと置き換えます。置き換える前に確かめます。
@@ -518,14 +500,14 @@ export default function DataPage() {
               <>
                 {t.staff}・{t.client}
                 ・項目・条件・相性・勤務時間・訪問を、シートごとの一覧（Excel）にします。Excel
-                で直して読み込むと、いまのデータがその内容に置き換わります。作った案と確定した割当は消えます。
+                で直して読み込むと、いまのデータがその内容に置き換わります。訪問の担当と確定（伝えた内容）は消えます。
                 書き方は、ブックの「使い方」のシートにあります。
               </>
             ) : (
               <>
                 {`${rosterTerm}の一覧（シート1枚）だけを書き出し・読み込みます。列は全体のブックの「${rosterTerm}」シートと同じで、全体のブックも名簿として読めます。`}
                 {
-                  '読み込むと、ID か名前で同じ人を探して直し、いない人は足します。作った案・確定した割当・訪問は消えません。'
+                  '読み込むと、ID か名前で同じ人を探して直し、いない人は足します。訪問の担当・確定（伝えた内容）・訪問は消えません。'
                 }
               </>
             )}
@@ -648,57 +630,35 @@ export default function DataPage() {
         data-testid="data-tidy-card"
       >
         <SectionTitle icon={Eraser}>
-          <span id={tidyTitleId}>古い案と記録を片づける</span>
+          <span id={tidyTitleId}>古い訪問を片づける</span>
         </SectionTitle>
         <Hint>
-          保存の容量が足りなくなったときに使います。選んだ月より前の日の、作った案を消します。確定した日の案と割当・訪問・人・条件は消えません。消す前に控えを書き出してください。
+          保存の容量が足りなくなったときに使います。選んだ月より前の日の、担当を組んだ・変えた訪問と確定した内容を消します。人・繰り返し・条件は消えません。消す前に控えを書き出してください。
         </Hint>
         <label className="data-tidy-month">
           消す範囲
           <select value={tidyYm} onChange={(e) => setTidyYm(e.target.value)} data-testid="data-tidy-month">
             {tidyChoice.options.map((ym) => (
               <option key={ym} value={ym}>
-                {tidyMonthLabel(ym)}の AI案と記録
+                {tidyMonthLabel(ym)}の訪問
               </option>
             ))}
           </select>
         </label>
         <p className="sub" data-testid="data-tidy-preview">
-          {tidy.runs + tidy.plans === 0
-            ? `${tidyMonthLabel(tidyYm)}に消せる AI案・記録はありません`
-            : `${tidy.days}日分の AI案 ${tidy.plans}件・記録 ${tidy.runs}件（${sizeText(tidy.chars)}空きます）${tidy.keptPlans > 0 ? `。確定した日の AI案 ${tidy.keptPlans}件は残します` : ''}`}
+          {tidy.visits + tidy.snapshots === 0
+            ? `${tidyMonthLabel(tidyYm)}に消せる訪問の記録はありません`
+            : `${tidy.days}日分の訪問 ${tidy.visits}件・確定した内容 ${tidy.snapshots}日分（${sizeText(tidy.chars)}空きます）`}
         </p>
         <button
           type="button"
           className="btn"
           style={{ alignSelf: 'flex-start' }}
-          disabled={tidy.runs + tidy.plans === 0}
+          disabled={tidy.visits + tidy.snapshots === 0}
           onClick={() => void doTidy()}
           data-testid="data-tidy-run"
         >
-          <WithIcon icon={Eraser}>古い案と記録を消す</WithIcon>
-        </button>
-      </section>
-
-      {/* 手直しの記憶（PRD D260〜D262。ADR-0043）：件数と［すべて消す］だけ */}
-      <section className="card stack" aria-label="手直しの記憶" data-testid="data-prefs-card">
-        <SectionTitle icon={History}>手直しの記憶</SectionTitle>
-        <Hint>
-          日の予定で担当を手で変えて「次からもこの人にする」を選ぶと、同じ{data.org.terms.client}
-          ・同じ曜日・同じ時間の訪問は、次に作る案でその担当になります（その日に担当できないときはふつうに決めます）。
-        </Hint>
-        <p className="sub" data-testid="data-prefs-count">
-          {prefCount > 0 ? `いま ${prefCount}件 覚えています` : 'いま覚えている手直しはありません'}
-        </p>
-        <button
-          type="button"
-          className="btn"
-          style={{ alignSelf: 'flex-start' }}
-          disabled={prefCount === 0}
-          onClick={() => void clearPrefs()}
-          data-testid="data-prefs-clear"
-        >
-          <WithIcon icon={Eraser}>すべて消す</WithIcon>
+          <WithIcon icon={Eraser}>古い訪問を消す</WithIcon>
         </button>
       </section>
 

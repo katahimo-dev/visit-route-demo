@@ -1,24 +1,20 @@
 // 訪問の詳細の欄（components/VisitPanel。PRD D301〜D304。ADR-0051）がデータを読む・書く薄い層。どれも純粋関数で、DemoData を書き換えない。
-// 画面はこの層の越しにだけ訪問・繰り返し・担当に触る（段3でデータの形を変えたとき、画面を書き直さずにここを差し替える）。
+// 画面はこの層の越しにだけ訪問・繰り返し・担当に触る。版2（ADR-0053）：担当・開始・ピンは訪問が持ち、繰り返しの回は見るときに計算する
+// （patterns の visitsOn・findVisit）。変えた回だけを保存した回に書く（putVisits）。
 // 書いたデータは呼ぶ側が store の update(fn) で当てる。今日・時刻（now）・新しい ID は引数で受ける（乱数・Date.now を使わない）
-import type { AiPlan, DemoData } from '../contracts/data';
+import type { DemoData } from '../contracts/data';
 import { type Pattern, type Visit, type VisitType, visitSchema } from '../contracts/documents';
-import type { Problem } from '../contracts/problem';
 import { isOnLeave } from '../domain/leaves';
-import { NONE } from '../domain/scheduleModel';
 import { addDays, hhmmToMinutes, weekday } from '../domain/time';
-import { score } from '../evaluate';
 import { bestInsertion, compile } from '../matching';
-import { prefKey } from '../matching/manualPrefs';
-import { timesOn } from '../patterns';
-import { attempt, formError, formErrorField, own, WEEKDAY_LABELS } from './common';
+import { findVisit, keepsOccurrence, putVisits, timesOn, visitsIn, visitsOn } from '../patterns';
+import { attempt, formError, formErrorField, WEEKDAY_LABELS } from './common';
+import { dayProblemOf, pinsOf, routesOf, settleDay, unassignedOf, writeRoutes } from './dayPlan';
 import { isDate } from './isDate';
-import { recordManualPref } from './manualPrefs';
 import { mdText, patternWhenText, typeOf } from './patternText';
 import { type ReassignChoice, reassignChoices, workingStaff } from './reassignMenu';
-import { alignPlan } from './runs';
 import { savedVisit } from './visitEdit';
-import { canMoveVisit, changedDates, moveFollowing } from './week';
+import { canMoveVisit, moveFollowing } from './week';
 
 // ---- 範囲（この回だけ／これ以降／すべて）----
 
@@ -80,24 +76,6 @@ const normalized = (f: VisitDraft): VisitDraft =>
 
 // ---- 読む ----
 
-/** その日の担当（今の案、無ければ確定した割当）。source は数えた案 */
-export type Assignment = { staffId: string | null; source: 'plan' | 'confirmed' | null; pinned: boolean };
-
-const ownerIn = (cols: Record<string, string[]> | undefined, visitId: string): string | null => {
-  if (!cols) return null;
-  for (const [sid, ids] of Object.entries(cols)) if (sid !== NONE && ids.includes(visitId)) return sid;
-  return null;
-};
-
-/** 訪問のその日の担当（今の案があれば今の案、無ければ確定した割当） */
-export function assignmentOf(d: Pick<DemoData, 'aiPlans' | 'manualPlans'>, visitId: string, date: string): Assignment {
-  const plan = own(d.aiPlans, date);
-  if (plan) return { staffId: ownerIn(plan.routes, visitId), source: 'plan', pinned: !!own(plan.pins, visitId) };
-  const saved = own(d.manualPlans, date);
-  if (saved) return { staffId: ownerIn(saved, visitId), source: 'confirmed', pinned: false };
-  return { staffId: null, source: null, pinned: false };
-}
-
 /** パターンのその回の元の形（日付は元の日） */
 function occurrenceOf(p: Pattern, date: string): VisitDraft & { date: string } {
   const t = timesOn(p, weekday(date));
@@ -140,8 +118,9 @@ export type VisitInfo = {
   pattern: Pattern | null;
   /** 「月〜金 14:30（10/22から）」（繰り返しの回だけ） */
   patternText: string | null;
-  assignment: Assignment;
-  /** いつもの担当（パターン、無ければ〈利用者さん〉） */
+  /** 担当とピン（取り消した訪問は担当なし） */
+  assignment: { staffId: string | null; pinned: boolean };
+  /** 繰り返しの担当（いつもの担当。単発の訪問は null） */
   usualStaffId: string | null;
   /** この回の変更（occurrenceChanges） */
   changes: string[];
@@ -153,20 +132,19 @@ export type VisitInfo = {
 
 /** 訪問の情報（無ければ null） */
 export function visitInfo(
-  d: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'aiPlans' | 'manualPlans' | 'clientLeaves' | 'visitTypes'>,
+  d: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves' | 'visitTypes'>,
   visitId: string,
   today: string,
 ): VisitInfo | null {
-  const v = d.visits.find((x) => x.id === visitId);
+  const v = findVisit(d, visitId);
   if (!v) return null;
   const pattern = v.pattern ? (d.patterns.find((p) => p.id === v.pattern!.id) ?? null) : null;
-  const client = d.clients.find((c) => c.id === v.clientId);
   return {
     visit: v,
     pattern,
     patternText: pattern ? `${patternWhenText(pattern)}（${mdText(pattern.from)}から）` : null,
-    assignment: assignmentOf(d, v.id, v.date),
-    usualStaffId: pattern?.usualStaffId ?? client?.usualStaffId ?? null,
+    assignment: { staffId: v.cancelled ? null : v.staffId, pinned: v.pinned },
+    usualStaffId: pattern?.usualStaffId ?? null,
     changes: occurrenceChanges(v, pattern, d.visitTypes),
     onLeave: isOnLeave(d.clientLeaves, v),
     editable: canMoveVisit(v.date, today),
@@ -191,11 +169,11 @@ const sameSeries = (v: Visit, x: Visit) =>
 
 /** 範囲の選択肢の文（繰り返しの回でなければ null）。「これ以降」「すべて」は同じ曜日の回（週のドラッグの「以降すべて」と同じ） */
 export function scopeTexts(
-  d: Pick<DemoData, 'visits' | 'patterns'>,
+  d: Pick<DemoData, 'visits' | 'patterns' | 'clients'>,
   visitId: string,
   today: string,
 ): ScopeTexts | null {
-  const v = d.visits.find((x) => x.id === visitId);
+  const v = findVisit(d, visitId);
   const p = v?.pattern ? d.patterns.find((x) => x.id === v.pattern!.id) : undefined;
   if (!v?.pattern || !p) return null;
   const wd = WEEKDAY_LABELS[weekday(v.pattern.date)];
@@ -221,8 +199,6 @@ export type StaffChoice = ReassignChoice;
 
 export type StaffChoices = {
   date: string;
-  /** その日に今の案がある（担当を替えられるのは今の案がある日だけ） */
-  hasPlan: boolean;
   /** その日の今の担当（日付を変えたら別の日なので null） */
   currentStaffId: string | null;
   choices: StaffChoice[];
@@ -233,69 +209,46 @@ export type StaffChoices = {
 /** 新しい訪問を問題に入れるときの仮の ID */
 export const NEW_VISIT_ID = '__new_visit';
 
-/** 欄の入力のまま、問題に入る訪問を作る（新しい訪問は仮の ID） */
+/** 欄の入力のまま、問題に入る訪問を作る（新しい訪問は仮の ID・担当なし） */
 function draftVisit(base: Visit | null, f: VisitDraft): Visit {
   const n = normalized(f);
   return {
-    ...(base ?? { staffId: null, cancelled: false, cancelKind: null, pattern: null }),
+    ...(base ?? { staffId: null, start: null, pinned: false, cancelled: false, cancelKind: null, pattern: null }),
     ...n,
+    start: null,
     id: base?.id ?? NEW_VISIT_ID,
   } as Visit;
 }
 
 /**
- * その日の問題と今の列（今の案、無ければ確定した割当。この訪問は除く）。問題は日の予定と同じ作り方（useDayModel：データの条件・固定なし）で、
- * 「担当を変える ▾」と同じ判定にする（ADR-0051）
- */
-function dayProblem(
-  d: DemoData,
-  visits: Visit[],
-  date: string,
-  visitId: string,
-): { problem: Problem | null; routes: Record<string, string[]>; plan: AiPlan | undefined } {
-  const plan = own(d.aiPlans, date);
-  const problem = attempt(() => compile({ ...d, visits }, date)).value;
-  const ids = new Set(problem?.visits.map((v) => v.id) ?? []);
-  const src = plan ? plan.routes : (own(d.manualPlans, date) ?? {});
-  const routes: Record<string, string[]> = {};
-  for (const [k, list] of Object.entries(src)) {
-    if (k === NONE) continue;
-    routes[k] = list.filter((id) => id !== visitId && ids.has(id));
-  }
-  return { problem, routes, plan };
-}
-
-/**
  * 欄の日時（変えていればその日時）で、担当の候補を出す（「担当を変える ▾」と同じ関数 reassignChoices。PRD D303）。
+ * 問題は日の予定と同じ作り方（データの条件・ピンなし）。列はその日の担当の並びからこの訪問を除いたもの。
  * 出す人はその日に働く人（稼働時間帯がある・列に訪問がある。workingStaff）と今の担当。選べる人を先に、選べない人は理由つきで後ろ
  */
 export function staffChoices(d: DemoData, visitId: string | null, draft: VisitDraft): StaffChoices {
-  const empty = (why: string, hasPlan = false): StaffChoices => ({
-    date: draft.date,
-    hasPlan,
-    currentStaffId: null,
-    choices: [],
-    why,
-  });
+  const empty = (why: string): StaffChoices => ({ date: draft.date, currentStaffId: null, choices: [], why });
   if (!isDate(draft.date) || !/^\d{2}:\d{2}$/.test(draft.earliestStart) || !(draft.durationMinutes >= 5))
     return empty('日付・時刻・所要を入れると候補が出ます');
   if (!draft.clientId) return empty('〈利用者さん〉を選ぶと候補が出ます');
-  const base = visitId ? (d.visits.find((x) => x.id === visitId) ?? null) : null;
+  const base = visitId ? findVisit(d, visitId) : null;
   const moved = draftVisit(base, draft);
-  const visits = base ? d.visits.map((x) => (x.id === base.id ? moved : x)) : [...d.visits, moved];
-  const { problem, routes, plan } = dayProblem(d, visits, draft.date, moved.id);
-  if (!problem) return empty('その日の計算ができません', !!plan);
-  if (!problem.visits.some((x) => x.id === moved.id))
-    return empty('計算に入らない訪問です（休み・利用中でない など）', !!plan);
-  const current = base && base.date === draft.date ? assignmentOf(d, base.id, draft.date).staffId : null;
-  const working = workingStaff(problem, routes);
-  const choices = reassignChoices(problem, routes, moved.id, current, (sid) => working.has(sid));
-  return { date: draft.date, hasPlan: !!plan, currentStaffId: current, choices, why: null };
+  const input = { ...d, visits: putVisits(d.visits, [moved]) };
+  const problem = attempt(() => compile(input, draft.date)).value;
+  if (!problem) return empty('その日の計算ができません');
+  if (!problem.visits.some((x) => x.id === moved.id)) return empty('計算に入らない訪問です（休み・利用中でない など）');
+  const all = routesOf(
+    problem,
+    visitsOn(input, draft.date).filter((x) => x.id !== moved.id),
+  );
+  const current = base && base.date === draft.date && !base.cancelled ? base.staffId : null;
+  const working = workingStaff(problem, all);
+  const choices = reassignChoices(problem, all, moved.id, current, (sid) => working.has(sid));
+  return { date: draft.date, currentStaffId: current, choices, why: null };
 }
 
 /**
  * 選んだ担当がその入力の日時で選べるか（保存の前に計算し直す。日付を変えたあとに前の日の候補が残っていても当てない）。
- * staff：undefined＝変えない（いつも可）、null＝担当なし（その日に今の案と今の担当があるときだけ）、ID＝候補にあって選べる人。誤りの文か null
+ * staff：undefined＝変えない（いつも可）、null＝担当なし（今の担当があるときだけ）、ID＝候補にあって選べる人。誤りの文か null
  */
 export function staffPickError(
   d: DemoData,
@@ -306,10 +259,9 @@ export function staffPickError(
   if (staff === undefined) return null;
   const c = staffChoices(d, visitId, draft);
   if (staff === null) {
-    return c.hasPlan && c.currentStaffId !== null ? null : '担当なしは、今の担当がいる日の「この回だけ」で選べます';
+    return c.currentStaffId !== null ? null : '担当なしは、今の担当がいる回の「この回だけ」で選べます';
   }
   if (c.why) return `担当を選べません（${c.why}）`;
-  if (!c.hasPlan) return 'この日は今の案が無いので、担当を選べません（「変えない」にしてください）';
   const x = c.choices.find((y) => y.staffId === staff);
   if (!x) return '選んだ担当は、この日時では候補にいません。担当を選び直してください';
   if (x.disabled) return `選んだ担当は、この日時では選べません（${x.disabled}）`;
@@ -322,8 +274,8 @@ export function staffPickError(
 export type AssignFail = { visitId: string; date: string; why: string };
 
 /**
- * 訪問をその日の今の案で担当に当てて固定する（日の予定の「担当を変える ▾」と同じく最も費用の少ない位置。staffId が null なら
- * 列から外して固定も外す）。今の案の無い日・その日に担当できない人（only main 以外）は当てずに failed へ。
+ * 訪問をその日の担当の並びで担当に当ててピンにする（日の予定の「担当を変える ▾」と同じく最も費用の少ない位置。staffId が null なら
+ * 担当なしにしてピンも外す）。その日に担当できない人（force 以外）は当てずに failed へ。
  * force の訪問は可否を見ずに当てる（欄で選んだこの回。保存の前に staffPickError で選べることを見る）。問題にいない人はいつも failed
  */
 export function assignOnDays(
@@ -335,22 +287,17 @@ export function assignOnDays(
   const failed: AssignFail[] = [];
   const byDate = new Map<string, string[]>();
   for (const x of items) byDate.set(x.date, [...(byDate.get(x.date) ?? []), x.visitId]);
-  let aiPlans = d.aiPlans;
+  let data = d;
   for (const [date, ids] of byDate) {
-    const plan = own(d.aiPlans, date);
-    if (!plan) {
-      for (const id of ids) failed.push({ visitId: id, date, why: '今の案が無い日' });
-      continue;
-    }
-    const pins = Object.fromEntries(Object.entries(plan.pins).filter(([id]) => !ids.includes(id)));
-    const problem = attempt(() =>
-      compile({ ...d, rules: plan.rules }, date, Object.keys(pins).length > 0 ? pins : undefined),
-    ).value;
+    const visits = visitsOn(data, date);
+    const pins = pinsOf(visits.filter((v) => !ids.includes(v.id)));
+    const problem = dayProblemOf(data, date, Object.keys(pins).length > 0 ? pins : undefined);
     if (!problem) {
       for (const id of ids) failed.push({ visitId: id, date, why: 'その日の計算ができません' });
       continue;
     }
-    let cur = alignPlan(problem, plan);
+    let routes = routesOf(problem, visits);
+    const nextPins = { ...pins };
     let any = false;
     for (const id of ids) {
       const j = problem.visits.findIndex((v) => v.id === id);
@@ -359,9 +306,8 @@ export function assignOnDays(
         continue;
       }
       if (staffId === null) {
-        const { [id]: _, ...rest } = cur.pins;
-        const routes = Object.fromEntries(Object.entries(cur.routes).map(([s, xs]) => [s, xs.filter((x) => x !== id)]));
-        cur = { ...cur, routes, pins: rest };
+        routes = Object.fromEntries(Object.entries(routes).map(([s, xs]) => [s, xs.filter((x) => x !== id)]));
+        delete nextPins[id];
       } else {
         const i = problem.staff.findIndex((s) => s.id === staffId);
         // force（欄で選んだこの回。選べるかは staffPickError で見た）でも、その日に問題にいない人は当てない
@@ -369,20 +315,14 @@ export function assignOnDays(
           failed.push({ visitId: id, date, why: i < 0 ? 'その日は働かない' : 'その日は担当できない' });
           continue;
         }
-        cur = { ...cur, routes: bestInsertion(problem, cur.routes, id, staffId), pins: { ...cur.pins, [id]: staffId } };
+        routes = bestInsertion(problem, routes, id, staffId);
+        nextPins[id] = staffId;
       }
       any = true;
     }
-    if (!any) continue;
-    const placed = new Set(Object.values(cur.routes).flat());
-    cur = {
-      ...cur,
-      unassigned: problem.visits.map((v) => v.id).filter((id) => !placed.has(id)),
-      score: score(problem, cur.routes).total,
-    };
-    aiPlans = { ...aiPlans, [date]: cur };
+    if (any) data = writeRoutes(data, date, problem, routes, { pins: nextPins });
   }
-  return { data: aiPlans === d.aiPlans ? d : { ...d, aiPlans }, failed };
+  return { data, failed };
 }
 
 // ---- 書く ----
@@ -419,6 +359,8 @@ function checkDraft(f: VisitDraft, id: string): { error: string; field?: keyof V
       ...normalized(f),
       id,
       staffId: null,
+      start: null,
+      pinned: false,
       cancelled: false,
       cancelKind: null,
       pattern: null,
@@ -439,22 +381,29 @@ function checkDraft(f: VisitDraft, id: string): { error: string; field?: keyof V
 const daysBetween = (a: string, b: string) =>
   Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
+/** 日を整える（開始を書き直す）。今日より前の日・同じ日は1回だけ */
+function settleDates(d: DemoData, dates: Iterable<string>, today: string): DemoData {
+  let out = d;
+  for (const date of new Set(dates)) if (date >= today) out = settleDay(out, date);
+  return out;
+}
+
 /**
- * 訪問を保存する（PRD D301〜D303）。
- * - 新しい訪問：単発の訪問を足す（ids.visit）。担当を選んでいればその日の今の案で当てる
- * - この回だけ（単発の訪問も）：lib/visitEdit の savedVisit（日付を変えたら手作業の担当を外す・繰り返しの回は「この回だけ変えた」）
- * - これ以降：週のドラッグの「以降すべて」と同じ lib/week の moveFollowing（同じ曜日の回を新しい曜日・時刻・所要・種類にした
- *   繰り返しに分ける。担当を選んでいれば分けた繰り返しのいつもの担当にする）。この回だけ変えた・取り消した回はそのまま
- * - すべて：今日以降で最初の同じ曜日の回から「これ以降」と同じに変える（過去は変えない）。この回がこの回だけ変えた回なら、この回も変える
- * 担当（staff）は、この回だけならこの回を、これ以降・すべてなら範囲の回を、それぞれの日の今の案で当てて固定する（今の案の無い日は
- * failed）。これ以降・すべてで担当を選んだら、手直しの記憶（ADR-0043）にも書く（作り直しても同じ人にする）
+ * 訪問を保存する（PRD D301〜D303。版2：ADR-0053）。
+ * - 新しい訪問：単発の訪問を足す（ids.visit）。担当を選んでいればその日の担当の並びに入れてピンにする
+ * - この回だけ（単発の訪問も）：lib/visitEdit の savedVisit（担当はそのまま・繰り返しの回は「この回だけ変えた」）
+ * - これ以降：週のドラッグの「これ以降」と同じ lib/week の moveFollowing（同じ曜日の回を新しい曜日・時刻・所要・種類にした
+ *   繰り返しに分ける。担当を選んでいれば分けた繰り返しの担当にする。回は見るときに計算するので、範囲の回はその担当になる）。
+ *   この回だけ変えた・取り消した回はそのまま
+ * - すべて：今日以降で最初の同じ曜日の回から「これ以降」と同じに変える（過去は変えない）
+ * 担当（staff）は、この回だけならこの回を、その日の担当の並びに入れてピンにする。時刻を変えた日は開始を書き直す（settleDay）
  */
 export function applyVisitEdit(
   d: DemoData,
   input: EditInput,
   today: string,
   ids: { visit: string; patterns: readonly [string, string] },
-  now: number,
+  _now?: number,
 ): EditResult {
   const f = normalized(input.draft);
   if (!isDate(f.date)) return fail('日付を入れてください', 'date');
@@ -468,7 +417,16 @@ export function applyVisitEdit(
   // 新しい訪問
   if (input.visitId === null) {
     if (input.staff === null) return fail('担当なしは選べません（「変えない」のままにしてください）');
-    const nv: Visit = { ...f, id: ids.visit, staffId: null, cancelled: false, cancelKind: null, pattern: null };
+    const nv: Visit = {
+      ...f,
+      id: ids.visit,
+      staffId: null,
+      start: null,
+      pinned: false,
+      cancelled: false,
+      cancelKind: null,
+      pattern: null,
+    };
     let data: DemoData = { ...d, visits: [...d.visits, nv] };
     let failed: AssignFail[] = [];
     if (input.staff) {
@@ -479,16 +437,15 @@ export function applyVisitEdit(
     return { ok: true, data, visitId: nv.id, dates: [nv.date], unchanged: false, failed };
   }
 
-  const v0 = d.visits.find((x) => x.id === input.visitId);
-  if (!v0) return fail('この訪問は消されています');
-  const v = v0;
+  const v = findVisit(d, input.visitId);
+  if (!v) return fail('この訪問は消されています');
   // 今ある訪問の〈利用者さん〉は変えない（変えるなら取り消して足し直す。欄にも出さない）
   const fc = { ...f, clientId: v.clientId };
   if (v.cancelled) return fail('取り消した訪問です。先に「取り消しをやめる」を押してください');
   if (!canMoveVisit(v.date, today)) return fail('今日より前の訪問は変えられません');
   const p = v.pattern ? d.patterns.find((x) => x.id === v.pattern!.id) : undefined;
   const scope: VisitScope = p ? input.scope : 'once';
-  const owner = assignmentOf(d, v.id, v.date).staffId;
+  const owner = v.staffId;
   const staffChange = input.staff !== undefined && (input.staff !== owner || fc.date !== v.date || scope !== 'once');
   if (input.staff === null && scope !== 'once') return fail('担当なしは「この回だけ」で選んでください');
   const moved = timeChanged(v, fc);
@@ -500,23 +457,15 @@ export function applyVisitEdit(
   let data = d;
   let id = v.id;
   const dates = new Set([v.date, fc.date]);
-  /** 担当を当てる範囲の繰り返し（これ以降・すべてで分けた繰り返しの ID） */
-  let seriesId: string | null = null;
-  const replace = (x: Visit) => {
-    data = { ...data, visits: data.visits.map((y) => (y.id === x.id ? x : y)) };
+  const put = (x: Visit) => {
+    data = { ...data, visits: putVisits(data.visits, [x]) };
   };
 
   if (range === 'once') {
-    if (moved || fc.note !== v.note) replace(savedVisit(v, fc, v.id));
+    if (moved || fc.note !== v.note) put(savedVisit(v, fc, v.id));
   } else {
     // すべて：今日以降で最初の、この回だけ変えていない・取り消していない同じ曜日の回から。差は元の日から欄の日付まで
-    // （この回だけ日付を変えた回を開いたときも、欄の日付をそのまま使う）
-    const firstPlain =
-      range === 'all'
-        ? d.visits
-            .filter((x) => sameSeries(v, x) && x.pattern!.date >= today && !x.cancelled && !x.pattern!.edited)
-            .sort((a, b) => (a.pattern!.date < b.pattern!.date ? -1 : 1))[0]
-        : undefined;
+    const firstPlain = range === 'all' ? firstPlainOccurrence(d, v, p!, today) : undefined;
     const anchor = firstPlain ?? v;
     const delta = daysBetween(v.pattern!.date, fc.date);
     const target = (x: Visit) => (x.id === v.id ? fc.date : addDays(x.pattern!.date, delta));
@@ -533,71 +482,68 @@ export function applyVisitEdit(
         `「${SCOPE_LABELS[range]}」ではこの日時にできません（今日より前の日になる・毎月の第N週が合わない など）。「この回だけ」で変えてください`,
       );
     data = r.data;
-    for (const x of changedDates(r.change)) dates.add(x);
-    // 範囲の繰り返し：動かした回（作り直した最初の回）のパターン
-    seriesId = data.visits.find((x) => x.id === r.movedVisitId)?.pattern?.id ?? null;
+    for (const x of r.change.removed) dates.add(x.date);
     if (anchor.id === v.id) id = r.movedVisitId ?? v.id;
-    else if (data.visits.some((x) => x.id === v.id)) {
-      // この回だけ変えた回は分けても残るので、この回も同じに変える
-      const cur = data.visits.find((x) => x.id === v.id)!;
-      replace(savedVisit(cur, fc, cur.id));
-    } else {
-      const day = target(v);
-      const found = [ids.patterns[1], ids.patterns[0], v.pattern!.id]
-        .map((pid) => `${day}_${pid}`)
-        .find((x) => data.visits.some((y) => y.id === x && !y.cancelled));
-      if (!found) return fail('この回を作り直せませんでした。「この回だけ」で変えてください');
-      id = found;
+    else {
+      const cur = data.visits.find((x) => x.id === v.id);
+      if (cur) {
+        // この回だけ変えた回は分けても残るので、この回も同じに変える
+        put(savedVisit(cur, fc, cur.id));
+      } else {
+        const day = target(v);
+        const found = [ids.patterns[1], ids.patterns[0], v.pattern!.id]
+          .map((pid) => findVisit(data, `${day}_${pid}`))
+          .find((x) => !!x && !x.cancelled);
+        if (!found) return fail('この回を作り直せませんでした。「この回だけ」で変えてください');
+        id = found.id;
+      }
     }
-    const after = data.visits.find((x) => x.id === id);
-    if (after && fc.note !== after.note) replace({ ...after, note: fc.note });
+    const after = findVisit(data, id);
+    if (after && fc.note !== after.note)
+      put({ ...after, note: fc.note, pattern: after.pattern ? { ...after.pattern, edited: true } : null });
   }
 
-  const result = data.visits.find((x) => x.id === id);
+  const result = findVisit(data, id);
   if (!result) return fail('保存できませんでした');
   let failed: AssignFail[] = [];
-  if (staffChange && input.staff !== undefined) {
-    const targets =
-      range === 'once' || !seriesId
-        ? [{ visitId: id, date: result.date }]
-        : [
-            { visitId: id, date: result.date },
-            ...data.visits
-              .filter(
-                (x) =>
-                  x.id !== id &&
-                  x.pattern?.id === seriesId &&
-                  !x.cancelled &&
-                  x.date >= (range === 'all' ? today : result.date),
-              )
-              .map((x) => ({ visitId: x.id, date: x.date })),
-          ];
-    const r = assignOnDays(data, targets, input.staff, new Set([id]));
+  if (staffChange && input.staff !== undefined && range === 'once') {
+    const r = assignOnDays(data, [{ visitId: id, date: result.date }], input.staff, new Set([id]));
     data = r.data;
     failed = r.failed;
-    for (const t of targets) if (!r.failed.some((x) => x.visitId === t.visitId)) dates.add(t.date);
-    if (range !== 'once' && input.staff)
-      data = { ...data, manualPrefs: recordManualPref(data.manualPrefs, result, input.staff, now) };
   }
+  data = settleDates(data, dates, today);
   return { ok: true, data, visitId: id, dates: [...dates].sort(), unchanged: false, failed };
 }
 
-/** 取り消す（PRD D74。当日キャンセルなら cancelKind 'sameDay'）。繰り返しの回は「この回だけ変えた」。今の案はそのまま（計算から外れる） */
+/** 今日以降で最初の、この回だけ変えていない・取り消していない同じ曜日の回（保存した回と計算した回から） */
+function firstPlainOccurrence(d: DemoData, v: Visit, p: Pattern, today: string): Visit | undefined {
+  const wd = weekday(v.pattern!.date);
+  for (let date = today, i = 0; i < 400; i++, date = addDays(date, 1)) {
+    if (weekday(date) !== wd) continue;
+    const x = findVisit(d, `${date}_${p.id}`);
+    if (x?.pattern && !x.cancelled && !x.pattern.edited) return x;
+    if (p.to !== null && date > p.to) return undefined;
+  }
+  return undefined;
+}
+
+/** 取り消す（PRD D74。当日キャンセルなら cancelKind 'sameDay'）。繰り返しの回は「この回だけ変えた」。ピンは外す */
 export function cancelVisitOp(d: DemoData, visitId: string, sameDay: boolean): DemoData {
-  const v = d.visits.find((x) => x.id === visitId);
+  const v = findVisit(d, visitId);
   if (!v || v.cancelled) return d;
   const next: Visit = {
     ...v,
     cancelled: true,
     cancelKind: sameDay ? 'sameDay' : null,
+    pinned: false,
     pattern: v.pattern ? { ...v.pattern, edited: true } : null,
   };
-  return { ...d, visits: d.visits.map((x) => (x.id === visitId ? next : x)) };
+  return { ...d, visits: putVisits(d.visits, [next]) };
 }
 
-/** 取り消しをやめる。繰り返しの回は、ほかに変えた所が無ければ「この回だけ変えた」も外す */
+/** 取り消しをやめる。繰り返しの回は、ほかに変えた所が無ければ「この回だけ変えた」も外す。担当はそのまま（その日の並びに戻る） */
 export function uncancelVisitOp(d: DemoData, visitId: string): DemoData {
-  const v = d.visits.find((x) => x.id === visitId);
+  const v = findVisit(d, visitId);
   if (!v || !v.cancelled) return d;
   const p = v.pattern ? d.patterns.find((x) => x.id === v.pattern!.id) : undefined;
   const edited = v.pattern ? (p ? occurrenceChanges(v, p, d.visitTypes).length > 0 : v.pattern.edited) : false;
@@ -607,15 +553,15 @@ export function uncancelVisitOp(d: DemoData, visitId: string): DemoData {
     cancelKind: null,
     pattern: v.pattern ? { ...v.pattern, edited } : null,
   };
-  return { ...d, visits: d.visits.map((x) => (x.id === visitId ? next : x)) };
+  return { ...d, visits: putVisits(d.visits, [next]) };
 }
 
 /**
  * この回の変更を戻す：繰り返しの元の日・時刻・所要・種類に戻し、「この回だけ変えた」を外す（取り消しは別の操作）。
- * 日付が変わるときは手作業の担当を外す。元の日か今の日が今日より前・パターンの回でなければそのまま
+ * 担当はそのまま。元の日か今の日が今日より前・パターンの回でなければそのまま。両方の日の開始を書き直す
  */
 export function restoreOccurrenceOp(d: DemoData, visitId: string, today: string): DemoData {
-  const v = d.visits.find((x) => x.id === visitId);
+  const v = findVisit(d, visitId);
   const p = v?.pattern ? d.patterns.find((x) => x.id === v.pattern!.id) : undefined;
   if (!v?.pattern || !p || v.cancelled) return d;
   if (!canMoveVisit(v.date, today) || !canMoveVisit(v.pattern.date, today)) return d;
@@ -628,123 +574,106 @@ export function restoreOccurrenceOp(d: DemoData, visitId: string, today: string)
     latestStart: o.latestStart,
     durationMinutes: o.durationMinutes,
     typeId: o.typeId,
-    staffId: o.date === v.date ? v.staffId : null,
+    start: null,
     pattern: { ...v.pattern, edited: false },
   };
-  return { ...d, visits: d.visits.map((x) => (x.id === visitId ? next : x)) };
+  return settleDates({ ...d, visits: putVisits(d.visits, [next]) }, [v.date, o.date], today);
 }
 
 // ---- 一覧（欄を開く入口） ----
 
-/** 今の案で入らない訪問（今日〜until。日付・開始の順）。ホームの要対応から欄を開く（PRD D304） */
-export function unassignedVisits(
-  d: Pick<DemoData, 'visits' | 'aiPlans' | 'clientLeaves'>,
-  today: string,
-  until: string,
-): Visit[] {
-  const byId = new Map(d.visits.map((v) => [v.id, v]));
+/** 担当なしの訪問（今日〜until。日付・開始の順）。ホームの要対応から欄を開く（PRD D304） */
+export function unassignedVisits(d: DemoData, today: string, until: string): Visit[] {
   const out: Visit[] = [];
-  for (const [date, plan] of Object.entries(d.aiPlans)) {
-    if (date < today || date > until) continue;
-    for (const id of plan.unassigned) {
-      const v = byId.get(id);
-      if (v && v.date === date && !v.cancelled && !isOnLeave(d.clientLeaves, v)) out.push(v);
-    }
+  for (let date = today; date <= until; date = addDays(date, 1)) {
+    const p = dayProblemOf(d, date);
+    if (!p || p.visits.length === 0) continue;
+    const visits = visitsOn(d, date);
+    const ids = new Set(unassignedOf(p, routesOf(p, visits)));
+    for (const v of visits) if (ids.has(v.id)) out.push(v);
   }
-  return out.sort((a, b) =>
-    a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.earliestStart < b.earliestStart ? -1 : 1,
-  );
+  return out;
 }
 
 /** 一覧の1行（担当と印） */
 export type VisitRow = {
   visit: Visit;
   staffId: string | null;
-  /** unassigned＝今の案で入らない（担当なし）、noplan＝その日に案が無い */
-  mark: 'unassigned' | 'noplan' | null;
+  /** unassigned＝担当なし */
+  mark: 'unassigned' | null;
 };
 
 /**
- * その日の訪問の行（ホームの今日の訪問。PRD D304）：取り消し・休みを除き、担当なし → 案なし → これからの近い順 → 済んだ時刻の順。
+ * その日の訪問の行（ホームの今日の訪問。PRD D304）：取り消し・休みを除き、担当なし → これからの近い順 → 済んだ時刻の順。
  * limit 件まで、残りは rest に数だけ
  */
 export function dayVisitRows(
-  d: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans' | 'clientLeaves'>,
+  d: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves'>,
   date: string,
   nowHm: string,
   limit = 5,
 ): { rows: VisitRow[]; rest: number } {
-  const rows = d.visits
-    .filter((v) => v.date === date && !v.cancelled && !isOnLeave(d.clientLeaves, v))
-    .map((v): VisitRow => {
-      const a = assignmentOf(d, v.id, date);
-      return {
-        visit: v,
-        staffId: a.staffId,
-        mark: a.source === null ? 'noplan' : a.staffId === null ? 'unassigned' : null,
-      };
-    });
-  const rank = (r: VisitRow) => (r.mark === 'unassigned' ? 0 : r.mark === 'noplan' ? 1 : 2);
+  const rows = visitsOn(d, date)
+    .filter((v) => !v.cancelled && !isOnLeave(d.clientLeaves, v))
+    .map((v): VisitRow => ({ visit: v, staffId: v.staffId, mark: v.staffId === null ? 'unassigned' : null }));
+  const rank = (r: VisitRow) => (r.mark === 'unassigned' ? 0 : 1);
+  const at = (v: Visit) => v.start ?? v.earliestStart;
   rows.sort(
     (a, b) =>
       rank(a) - rank(b) ||
-      Number(a.visit.earliestStart < nowHm) - Number(b.visit.earliestStart < nowHm) ||
-      (a.visit.earliestStart < b.visit.earliestStart ? -1 : a.visit.earliestStart > b.visit.earliestStart ? 1 : 0),
+      Number(at(a.visit) < nowHm) - Number(at(b.visit) < nowHm) ||
+      (at(a.visit) < at(b.visit) ? -1 : at(a.visit) > at(b.visit) ? 1 : 0),
   );
   return { rows: rows.slice(0, limit), rest: Math.max(0, rows.length - limit) };
 }
 
-/** 〈利用者さん〉の、その期間の訪問（取り消しも。日付・開始の順）。月の予定で〈利用者さん〉を選んだときの回（PRD D304） */
-export function clientVisitsIn(d: Pick<DemoData, 'visits'>, clientId: string, from: string, to: string): Visit[] {
-  return d.visits
-    .filter((v) => v.clientId === clientId && v.date >= from && v.date <= to)
-    .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.earliestStart < b.earliestStart ? -1 : 1));
+/** 〈利用者さん〉の、その期間の訪問（取り消しも。日付・開始の順）。〈利用者さん〉の画面の予定（PRD D304） */
+export function clientVisitsIn(
+  d: Pick<DemoData, 'visits' | 'patterns' | 'clients'>,
+  clientId: string,
+  from: string,
+  to: string,
+): Visit[] {
+  return visitsIn(d, { from, to }).filter((v) => v.clientId === clientId);
 }
 
-/** 手直しの記憶のキー（画面がこの層の越しに使う） */
-export const visitKey = prefKey;
-
 /**
- * 〈スタッフ〉が担当している、その期間の訪問（その日の今の案、無ければ確定した割当の、その人の列。日付・開始の順）。
+ * 〈スタッフ〉が担当している、その期間の訪問（訪問の担当がその人。取り消しを除く。日付・開始の順）。
  * 〈スタッフ〉の画面の予定のカレンダー（PRD D309）
  */
 export function staffVisitsIn(
-  d: Pick<DemoData, 'visits' | 'aiPlans' | 'manualPlans'>,
+  d: Pick<DemoData, 'visits' | 'patterns' | 'clients'>,
   staffId: string,
   from: string,
   to: string,
 ): Visit[] {
-  const ids = new Set<string>();
-  const dates = new Set<string>();
-  for (const v of d.visits) if (v.date >= from && v.date <= to) dates.add(v.date);
-  for (const date of dates) {
-    const plan = own(d.aiPlans, date);
-    const cols = plan ? plan.routes : own(d.manualPlans, date);
-    for (const id of (cols && own(cols, staffId)) ?? []) ids.add(id);
-  }
-  return d.visits
-    .filter((v) => ids.has(v.id) && !v.cancelled)
-    .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.earliestStart < b.earliestStart ? -1 : 1));
+  return visitsIn(d, { from, to }).filter((v) => v.staffId === staffId && !v.cancelled);
 }
 
-/** 繰り返しを終わらせた結果（消す回の数と、確定した割当のある日の数） */
+/** 繰り返しを終わらせた結果（消す保存した回の数と、伝えた日のうち回が無くなる日の数） */
 export type EndPatternResult = { data: DemoData; removed: number; confirmedDays: number };
 
 /**
  * 繰り返しを last の日で終わらせる（PRD D308）：終了日を last にし（今の終了日のほうが早ければそのまま）、last より後で今日以降の、
- * この回だけ変えていない・取り消していない回を消す（この回だけ変えた・取り消した回と、今日より前の回は残す。splitPattern と同じ扱い）。
- * last が開始日より前なら開始日にそろえる
+ * この回だけ変えていない・取り消していない保存した回を消す（この回だけ変えた・取り消した回と、今日より前の回は残す）。
+ * last が開始日・昨日より前なら、開始日か昨日の遅いほうにそろえる（今日より前の回を消さない）。confirmedDays は伝えた日のうち、この繰り返しの回が無くなる日の数
  */
 export function endPatternOp(d: DemoData, patternId: string, last: string, today: string): EndPatternResult {
   const p = d.patterns.find((x) => x.id === patternId);
   if (!p) return { data: d, removed: 0, confirmedDays: 0 };
-  const end = last < p.from ? p.from : last;
+  // 今日より前の回は消さない（版2は繰り返しの回を計算するので、終了日を昨日より前にしない）
+  const yesterday = addDays(today, -1);
+  const floor = p.from > yesterday ? p.from : yesterday;
+  const end = last < floor ? floor : last;
   const to = p.to !== null && p.to < end ? p.to : end;
-  const edited = (v: Visit) => v.cancelled || (v.pattern?.edited ?? false);
-  const gone = d.visits.filter((v) => v.pattern?.id === patternId && v.date > to && v.date >= today && !edited(v));
+  // この回だけ変えた・取り消した回とピンの回は残す（removePattern と同じ）
+  const gone = d.visits.filter(
+    (v) => v.pattern?.id === patternId && v.date > to && v.date >= today && !keepsOccurrence(v),
+  );
   const goneIds = new Set(gone.map((v) => v.id));
-  const days = new Set(gone.map((v) => v.date));
-  const confirmedDays = [...days].filter((x) => own(d.manualPlans, x)).length;
+  const confirmedDays = Object.values(d.snapshots).filter(
+    (s) => s.date > to && s.date >= today && s.visits.some((x) => x.id === `${s.date}_${patternId}`),
+  ).length;
   return {
     data: {
       ...d,

@@ -2,13 +2,17 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import { CLIENT_STAGES, clientSchema, stageOfLegacy } from '../contracts/documents';
-import { client } from '../matching/fixtures';
+import { client, visit } from '../matching/fixtures';
 import { createDemoData } from '../seed';
-import { importJson, isImportError, migrate } from '../store';
+import { importJson } from '../store';
 import { repair } from '../store/repair';
 import { isBeforeActive, stageChoices, stageFlags, withStage } from './clientStage';
 
-const base = () => createDemoData('2026-10-12');
+const base = () => {
+  const d = createDemoData('2026-10-12');
+  // 版2：保存した訪問を1件だけ持たせる（取り消しの種類を見る）
+  return { ...d, visits: [visit('v1', d.clients[1]!.id, '09:00', '09:00')] };
+};
 
 describe('段階と予定の対象（stageFlags・withStage）', () => {
   it('利用中は対象・終了は対象でない・利用中の前は仮押さえのときだけ対象', () => {
@@ -30,7 +34,7 @@ describe('段階と予定の対象（stageFlags・withStage）', () => {
   });
 });
 
-describe('古いデータの読み替え（版は1のまま）', () => {
+describe('段階・取り消しの種類の repair', () => {
   it('段階の無い〈利用者さん〉：休止（active=false）は終了、仮押さえは相談受付（予定には入ったまま）、ほかは利用中', () => {
     expect(stageOfLegacy({ active: false, tentative: true })).toBe('ended');
     expect(stageOfLegacy({ active: true, tentative: true })).toBe('inquiry');
@@ -41,26 +45,6 @@ describe('古いデータの読み替え（版は1のまま）', () => {
     expect(c.referrer).toEqual({ name: '', contact: '', note: '', email: '' });
   });
 
-  it('最終勤務日・段階・紹介元・取り消しの種類・拘束の上限の無い古いデータを既定値で読む', () => {
-    const d = base();
-    const old = JSON.parse(JSON.stringify(d));
-    old.staff = old.staff.map(({ lastDay: _l, ...s }: Record<string, unknown>) => s);
-    old.clients = old.clients.map(({ stage: _s, referrer: _r, ...c }: Record<string, unknown>, i: number) =>
-      i === 0 ? { ...c, active: false } : c,
-    );
-    old.visits = old.visits.map(({ cancelKind: _c, ...v }: Record<string, unknown>) => v);
-    delete old.org.spanLimitHours;
-    const r = migrate(old);
-    expect(isImportError(r)).toBe(false);
-    const x = r as DemoData;
-    expect(x.version).toBe(1);
-    expect(x.staff.every((s) => s.lastDay === null)).toBe(true);
-    expect(x.clients[0]!.stage).toBe('ended');
-    expect(x.clients.slice(1).every((c) => c.stage === 'active')).toBe(true);
-    expect(x.visits.every((v) => v.cancelKind === null)).toBe(true);
-    expect(x.org.spanLimitHours).toBe(10);
-  });
-
   it('repair：active・tentative は段階に合わせ、取り消していない訪問の取り消しの種類は外す。往復で同じに戻る', () => {
     const d = base();
     const bad: DemoData = {
@@ -68,7 +52,7 @@ describe('古いデータの読み替え（版は1のまま）', () => {
       clients: d.clients.map((c, i) =>
         i === 0 ? { ...c, stage: 'ended' as const, active: true, tentative: true } : c,
       ),
-      visits: d.visits.map((v, i) => (i === 0 ? { ...v, cancelKind: 'sameDay' as const } : v)),
+      visits: [{ ...d.visits[0]!, cancelKind: 'sameDay' as const }],
     };
     const r = repair(bad);
     expect([r.clients[0]!.active, r.clients[0]!.tentative]).toEqual([false, false]);
@@ -81,7 +65,7 @@ describe('古いデータの読み替え（版は1のまま）', () => {
           ? withStage({ ...c, referrer: { name: '相談室', contact: '000', note: 'メモ', email: '' } }, 'meeting', true)
           : c,
       ),
-      visits: d.visits.map((v, i) => (i === 0 ? { ...v, cancelled: true, cancelKind: 'sameDay' as const } : v)),
+      visits: [{ ...d.visits[0]!, cancelled: true, cancelKind: 'sameDay' as const }],
       org: { ...d.org, spanLimitHours: 8.5 },
     };
     expect(repair(good)).toEqual(good);

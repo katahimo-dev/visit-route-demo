@@ -6,27 +6,25 @@ import { bandHref, bandMonth, bandNext, urgentCount, visitsText } from './progre
 function pg(x: Partial<MonthProgress> = {}): MonthProgress {
   return { visits: 30, days: 10, planned: 10, confirmed: 10, unconfirmed: [], attention: 0, ...x };
 }
-const base = { canExpand: 0, emptyTargets: 0, urgent: 0 };
+const base = { emptyTargets: 0, urgent: 0 };
 
 describe('bandNext', () => {
-  it('訪問も作れる訪問も無い：ボタンなしで「訪問はありません」', () => {
+  it('訪問が無い：ボタンなしで「訪問はありません」', () => {
     const r = bandNext({ ...base, progress: pg({ visits: 0, days: 0, planned: 0, confirmed: 0 }) });
     expect(r.kind).toBe('empty');
   });
-  it('訪問はまだ無いが定期パターンから作れる：まとめて作る', () => {
-    const r = bandNext({ ...base, canExpand: 40, progress: pg({ visits: 0, days: 0, planned: 0, confirmed: 0 }) });
-    expect(r).toMatchObject({ kind: 'batch', label: 'まとめて作る', short: '作る' });
-  });
-  it('案の無い日がある：要対応・確定していない日より先にまとめて作る', () => {
+  it('担当なしの日が2日以上：要対応・確定していない日より先に担当を AI で組む', () => {
     const r = bandNext({
       ...base,
       emptyTargets: 3,
       urgent: 2,
       progress: pg({ planned: 7, confirmed: 0, unconfirmed: ['2026-10-20'], attention: 2 }),
     });
-    expect(r.kind).toBe('batch');
+    expect(r).toMatchObject({ kind: 'batch', label: '担当を AI で組む', short: '組む' });
+    // 1日だけなら要対応から
+    expect(bandNext({ ...base, emptyTargets: 1, urgent: 1, progress: pg({ attention: 1 }) }).kind).toBe('attention');
   });
-  it('案は全部ある・手当てが要る要対応がある：確定していない日より先に要対応', () => {
+  it('手当てが要る要対応がある：確定していない日より先に要対応', () => {
     const r = bandNext({
       ...base,
       urgent: 1,
@@ -50,16 +48,8 @@ describe('bandNext', () => {
 });
 
 describe('urgentCount', () => {
-  it('入らない・欠勤の人に残る・条件が変わったを数え、拘束・欠勤は数えない', () => {
-    expect(
-      urgentCount([
-        { kind: 'unassigned' },
-        { kind: 'absentLeft' },
-        { kind: 'stale' },
-        { kind: 'overSpan' },
-        { kind: 'absence' },
-      ]),
-    ).toBe(3);
+  it('要対応の訪問（care）だけを数え、未連絡の変更・拘束は数えない', () => {
+    expect(urgentCount([{ kind: 'care' }, { kind: 'care' }, { kind: 'changed' }, { kind: 'overSpan' }])).toBe(2);
     expect(urgentCount([])).toBe(0);
   });
 });
@@ -73,8 +63,7 @@ describe('bandMonth・bandHref・visitsText', () => {
     expect(bandHref('2026-11', 'batch')).toBe('/month?ym=2026-11&do=batch');
     expect(bandHref('2026-10', 'unconfirmed')).toBe('/month?ym=2026-10&do=unconfirmed');
   });
-  it('訪問の件数：作っていない訪問があれば「あと N件」', () => {
-    expect(visitsText(12, 0)).toBe('12件');
-    expect(visitsText(12, 30)).toBe('12件（未作成 30件）');
+  it('訪問の件数', () => {
+    expect(visitsText(12)).toBe('12件');
   });
 });

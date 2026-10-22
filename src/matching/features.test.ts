@@ -5,11 +5,10 @@ import type { Features } from '../contracts/features';
 import type { Problem } from '../contracts/problem';
 import type { VacancyQuery } from '../contracts/vacancy';
 import { achievements, hundredBreakdown, normalize, ruleLowerBounds, score } from '../evaluate';
-import { problemKey } from '../lib/runs';
 import { scoreReason } from '../lib/scoreReason';
 import { fitsOf } from '../reassign';
 import { vacancyOf } from '../vacancy';
-import { client, DATE, makeData, rule, staff, visit } from './fixtures';
+import { client, DATE, makeData, problemKey, rule, staff, visit } from './fixtures';
 import { ALLOWED_STAFF_RULE_ID, compile } from './index';
 
 /** 2人（s1・s2）と〈利用者さん〉2人。c1 は s1 と相性×・s2 と相性◎、c2 は s1 だけに限る */

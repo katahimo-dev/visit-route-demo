@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { Pattern } from '../contracts/documents';
 import { client, DATE, makeData, staff } from '../matching/fixtures';
-import { applyPatterns } from '../patterns';
+import { putVisits, visitsOn } from '../patterns';
 import {
   CLIENT_TABS,
   calDates,
@@ -11,7 +11,6 @@ import {
   clientCalItems,
   clientStaffGroups,
   itemsByDate,
-  lastMadeDate,
   mergeFields,
   monthWeeksMon,
   personPathKind,
@@ -52,7 +51,8 @@ function data(): DemoData {
     clients: [client('c1', 38.27, 140.88)],
     patterns: [p],
   });
-  return { ...d, visits: applyPatterns(d, { from: DATE, to: '2026-10-31' }, DATE).visits };
+  // 版2（ADR-0053）：繰り返しの回は計算する（保存しない）
+  return d;
 }
 
 describe('ルートとタブ', () => {
@@ -108,39 +108,25 @@ describe('カレンダーの期間', () => {
 });
 
 describe('カレンダーの回', () => {
-  it('〈利用者さん〉の回：担当（今の案）・案なし・取り消し・休み、時刻は開始（早）〜＋所要', () => {
+  it('〈利用者さん〉の回：担当あり・担当なし・取り消し・休み、時刻は開始（早）〜＋所要', () => {
     const d0 = data();
     const a = '2026-10-12_p1';
     const b = '2026-10-14_p1';
+    const c0 = cancelVisitOp(d0, '2026-10-19_p1', true);
+    const first = visitsOn(c0, '2026-10-12').find((v) => v.id === a)!;
     const d = {
-      ...cancelVisitOp(d0, '2026-10-19_p1', true),
-      aiPlans: {
-        '2026-10-12': {
-          date: '2026-10-12',
-          createdAt: 1,
-          seed: 1,
-          iterations: 1,
-          routes: { s1: [a] },
-          unassigned: [],
-          score: 0,
-          stopped: false,
-          rules: [],
-          generated: { routes: { s1: [a] }, unassigned: [], score: 0 },
-          pins: {},
-        },
-      },
+      ...c0,
+      visits: putVisits(c0.visits, [{ ...first, staffId: 's1', start: '09:30' }]),
       clientLeaves: [{ id: 'l1', clientId: 'c1', from: '2026-10-21', to: '2026-10-21', note: '' }],
     };
     const items = clientCalItems(d, 'c1', '2026-10-12', '2026-10-25');
     const by = new Map(items.map((it) => [it.visit.id, it]));
     expect(by.get(a)).toMatchObject({ state: 'assigned', staffId: 's1', start: 570, end: 615 });
-    expect(by.get(b)!.state).toBe('noplan');
+    expect(by.get(b)!.state).toBe('unassigned');
     expect(by.get('2026-10-19_p1')!.state).toBe('sameDay');
     expect(by.get('2026-10-21_p1')!.state).toBe('leave');
     expect(itemsByDate(items).get('2026-10-12')).toHaveLength(1);
     expect(staffCalItems(d, 's1', '2026-10-12', '2026-10-25').map((it) => it.visit.id)).toEqual([a]);
-    expect(lastMadeDate(d.visits)).toBe('2026-10-28');
-    expect(lastMadeDate([])).toBeNull();
   });
   it('空き枠：同じ枠なら押しただけ（既定の所要）、枠をまたいだら押した枠と離した枠を含む長さ', () => {
     expect(slotOf(600, 675)).toEqual({ start: 600, duration: 90 });

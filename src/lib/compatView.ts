@@ -218,15 +218,16 @@ export function staffCompatCounts(
   return out;
 }
 
-/** 〈スタッフ〉の画面の相性のタブに名前を並べる〈利用者さん〉（PRD D198）：いつもの担当と、相性の記号ごと（◎・○・△・×）。並びは clients のまま */
-export function staffClientGroups<C extends Pick<Client, 'id' | 'usualStaffId'>>(
+/** 〈スタッフ〉の画面の相性のタブに名前を並べる〈利用者さん〉（PRD D198）：いつもの担当（usual。繰り返しの担当）と、相性の記号ごと（◎・○・△・×）。並びは clients のまま */
+export function staffClientGroups<C extends Pick<Client, 'id'>>(
   compat: Compat,
   staffId: string,
   clients: readonly C[],
+  usual: ReadonlyMap<string, string>,
 ): { usual: C[]; great: C[]; good: C[]; poor: C[]; ng: C[] } {
   const out = { usual: [] as C[], great: [] as C[], good: [] as C[], poor: [] as C[], ng: [] as C[] };
   for (const c of clients) {
-    if (c.usualStaffId === staffId) out.usual.push(c);
+    if (usual.get(c.id) === staffId) out.usual.push(c);
     const r = Object.hasOwn(compat, c.id) ? compat[c.id] : undefined;
     const l = r && Object.hasOwn(r, staffId) ? r[staffId] : 0;
     if (l === 2) out.great.push(c);

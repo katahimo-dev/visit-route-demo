@@ -41,7 +41,7 @@ export function offDayState(
 
 /**
  * 希望休を付け外しする：open なら終日の欠勤（メモ「希望休」・ID は newId）を足し、requested なら外す。
- * ほか（今日より前・勤務の無い日・希望休でない欠勤）は変えない。今の案・確定した割当は変えない（振り直しは日の画面で。ADR-0011）
+ * ほか（今日より前・勤務の無い日・希望休でない欠勤）は変えない。訪問の担当は変えない（担当が休みの訪問は要対応に出る。振り直しは日の画面で。ADR-0011）
  */
 export function toggleRequestedOff(
   d: DemoData,
@@ -81,7 +81,7 @@ export function requestedOffDates(data: Pick<DemoData, 'absences'>, staffId: str
 const ABSENCE_LABELS = new Set([ABSENT_ALL_DAY, ABSENT_NO_HOURS, ABSENCE_OVERLAP, AFTER_LAST_DAY]);
 
 /**
- * 案（今の案か確定した割当。担当 → 訪問ID の列）で、欠勤（希望休も）の時間と重なる・最終勤務日の後（ADR-0015）なのに
+ * 担当の列（その日の訪問の担当。担当 → 訪問ID の列）で、欠勤（希望休も）の時間と重なる・最終勤務日の後（ADR-0015）なのに
  * その人に残っている訪問の ID（列の順）。
  * problem は欠勤を入れたいまのデータの問題。staffId を渡すとその人の列だけ。問題に無い人・訪問は数えない
  */

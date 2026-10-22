@@ -4,7 +4,7 @@
 // 主ボタンは段階ごとに1つ（4段目の「要約をコピー」だけ）、マスの読み方（凡例・用語の説明・×に「約0」を出さない・読み上げ）、
 // × のマスは薄い灰で赤くしない・色の凡例「0人（受けられない）」（PRD D228）、
 // 案の無い日の注意は1か所、案内文ははじめ畳み開くまで計算しない、仮押さえ、390px で収まる、ブラウザの確認を出さない。
-// 答えのカードが結果の1枚目・凡例は1か所・「指定なし」・入力はタブの間だけ残る・その場で［足りない案を作る（N日）］（PRD D258・D259）。
+// 答えのカードが結果の1枚目・凡例は1か所・「指定なし」・入力はタブの間だけ残る・その場で［担当なしを AI で組む（N日）］（PRD D258・D259）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-vacancy-steps.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_VACANCY で結果が出るまでの上限（既定 5000ms。PRD §5。無ければ PERF_MS）
@@ -215,7 +215,7 @@ async function marks(page) {
       /○.*どの週も受けられる/.test(legend[0]) &&
       /△.*受けられない週がある/.test(legend[1]) &&
       /×.*受けられない/.test(legend[2]) &&
-      /？.*案が無く数えていない/.test(legend[3]),
+      /？.*数えられない日/.test(legend[3]),
     'マスの読み方の凡例（○△×？）',
     legend,
   );
@@ -274,7 +274,7 @@ async function marks(page) {
 /** YYYY-MM-DD に n 日足す */
 const plusDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
-// ---- 答えのカード・凡例・指定なし・入力の保持・足りない案を作る（PRD D258・D259）----
+// ---- 答えのカード・凡例・指定なし・入力の保持・担当なしを AI で組む（PRD D258・D259）----
 async function answer(page) {
   await openVacancy(page);
   await settle(page, 500);
@@ -343,25 +343,23 @@ async function answer(page) {
   );
   await other.close();
 
-  // その場で足りない案を作る：1週だけ見て、2日の案を消す
+  // その場で担当なしの日を組む（PRD D259）：1週だけ見て、2日の訪問の担当を外す
   await page.getByLabel('見る週の数').selectOption('1');
-  // 消す2日は、今日から1週の中で案と訪問のある日から選ぶ（FAKE_NOW の曜日・月末に依らない）
+  // 外す2日は、今日から1週の中で担当のある保存した訪問がある日から選ぶ（FAKE_NOW の曜日・月末に依らない）
   const gone = await page.evaluate(
     ({ key, days }) => {
       const d = JSON.parse(localStorage.getItem(key));
-      const visitDays = new Set(d.visits.filter((v) => !v.cancelled).map((v) => v.date));
-      return days.filter((x) => d.aiPlans[x] && !d.manualPlans?.[x] && visitDays.has(x)).slice(0, 2);
+      return days
+        .filter((x) => !d.snapshots[x] && d.visits.some((v) => v.date === x && !v.cancelled && v.staffId))
+        .slice(0, 2);
     },
     { key: STORAGE_KEY, days: Array.from({ length: 7 }, (_, i) => plusDays(TODAY, i)) },
   );
-  check(gone.length === 2, '案を消す2日がある', gone);
+  check(gone.length === 2, '担当を外す2日がある', gone);
   await page.evaluate(
     ({ key, gone }) => {
       const d = JSON.parse(localStorage.getItem(key));
-      for (const x of gone) {
-        delete d.aiPlans[x];
-        delete d.aiRuns[x];
-      }
+      d.visits = d.visits.map((v) => (gone.includes(v.date) ? { ...v, staffId: null, pinned: false } : v));
       localStorage.setItem(key, JSON.stringify(d));
     },
     { key: STORAGE_KEY, gone },
@@ -371,29 +369,31 @@ async function answer(page) {
   await make.waitFor({ timeout: 30000 });
   check((await page.getByTestId('vacancy-duration').inputValue()) === '90', '読み直しても入力が残る（同じタブ）');
   const label = await make.innerText();
-  check(/足りない案を作る（2日）/.test(label), '［足りない案を作る（N日）］', label);
+  const n = Number(/担当なしを AI で組む（(\d+)日）/.exec(label)?.[1] ?? 0);
+  check(n >= 2, '［担当なしを AI で組む（N日）］', label);
   await make.click();
   await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
   check(
-    /月の案を作っています \d+\/2日/.test(await page.getByTestId('batch-band-text').innerText()),
+    new RegExp(`月の担当を組んでいます \\d+/${n}日`).test(await page.getByTestId('batch-band-text').innerText()),
     '上の帯に進み具合',
   );
   // disabled にせず aria-disabled（フォーカスを失わない）。押しても始めない（Playwright は aria-disabled を押さないので直接送る）
   await make.dispatchEvent('click');
   check(
-    (await make.getAttribute('aria-disabled')) === 'true' && /の案を作っています/.test(await make.innerText()),
-    '作っている間は押せない（二重に始めない）',
+    (await make.getAttribute('aria-disabled')) === 'true' && /の担当を組んでいます/.test(await make.innerText()),
+    '組んでいる間は押せない（二重に始めない）',
     await make.innerText(),
   );
   await page
     .locator('.toast')
-    .filter({ hasText: /月の案を2日分作りました/ })
+    .filter({ hasText: new RegExp(`月の担当を${n}日分組みました`) })
     .waitFor({ timeout: 90000 });
-  check(true, '作り終えたら知らせ（◯月の案を2日分作りました）');
-  await page.waitForFunction(() => !document.querySelector('[data-testid="vacancy-noplan-make"]'), null, {
-    timeout: 10000,
-  });
-  check(true, '作ると足りない案のボタンが消える（結果を数え直す）');
+  check(true, '組み終えたら知らせ（◯月の担当を N日分組みました）');
+  const left = await page
+    .getByTestId('vacancy-noplan-make')
+    .getAttribute('data-count', { timeout: 5000 })
+    .catch(() => null);
+  check(left === null || Number(left) < n, '組むと担当なしの日が減る（結果を数え直す）', { n, left });
 }
 
 async function placeLater(page) {

@@ -1,9 +1,10 @@
-// メール連携（PRD D91〜D95。ADR-0017）の件名・本文。本文は文字だけ。担当は確定した割当があればそれ、無ければ今の案
+// メール連携（PRD D91〜D95。ADR-0017）の件名・本文。本文は文字だけ。担当は訪問の今の担当（版2。ADR-0053）
 // （lib/monthPrint の printDay と同じ決め方。どちらかを本文に書く）。鍵の情報は includeKeys のときだけ入れる。
 // 呼び方は org.terms、事業所名は org.name から。データは書き換えない純粋関数
 import type { DemoData } from '../contracts/data';
 import type { Client, Org, Staff, Visit } from '../contracts/documents';
 import { weekday } from '../domain/time';
+import { visitsOn } from '../patterns';
 import { type BuiltMail, buildMail, MAILTO_LIMIT, uniqueRecipients } from './mailto';
 import { BICYCLE_NOTE, dayStops, HOME_LABEL, legLinks, type RouteStop, tripLinks } from './mapsLink';
 import { type PrintDay, printDay } from './monthPrint';
@@ -30,16 +31,16 @@ type MailInput = Parameters<typeof printDay>[0] & Pick<DemoData, 'org'>;
 
 /** 担当の元の言葉（本文に書く） */
 export function sourceWord(source: PrintDay['source']): string {
-  return source === 'confirmed' ? '確定した割当' : source === 'plan' ? '今の案（まだ確定していません）' : '';
+  return source === 'confirmed' ? '確定した担当' : source === 'plan' ? '今の担当（まだ確定していません）' : '';
 }
 
 /** 1人あての1日の訪問（開始の順） */
 export type MailVisit = { start: number; end: number; client: Client | undefined; visit: Visit | undefined };
 
-/** その日の担当ごとの訪問（確定した割当があればそれ、無ければ今の案。printDay と同じ） */
+/** その日の担当ごとの訪問（訪問の担当。printDay と同じ） */
 export function dayByStaff(data: MailInput, date: string): { day: PrintDay; byStaff: Map<string, MailVisit[]> } {
   const day = printDay(data, date, null);
-  const visitById = new Map(data.visits.map((v) => [v.id, v]));
+  const visitById = new Map(visitsOn(data, date).map((v) => [v.id, v]));
   const clientById = new Map(data.clients.map((c) => [c.id, c]));
   const byStaff = new Map<string, MailVisit[]>();
   for (const e of day.entries) {
@@ -238,15 +239,11 @@ export function weekMailText(
   const last = days[days.length - 1]?.date ?? '';
   const subject = `${md(first)}〜${md(last)} の予定`;
   const dayHead = (d: WeekMailDay) => {
-    const tag = d.source === 'plan' && d.visits.length > 0 ? '（案。まだ確定していません）' : '';
+    const tag = d.source === 'plan' && d.visits.length > 0 ? '（まだ確定していません）' : '';
     return `■${mdw(d.date)}${tag}`;
   };
   const emptyWord = (d: WeekMailDay) =>
-    d.off && d.visits.length === 0
-      ? OFF_WORD[d.off]
-      : d.source === null && d.pending > 0
-        ? '予定はまだ決まっていません'
-        : '訪問なし';
+    d.off && d.visits.length === 0 ? OFF_WORD[d.off] : d.pending > 0 ? '予定はまだ決まっていません' : '訪問なし';
   const head = [`${staff.name}さん`, '', `${mdw(first)}〜${mdw(last)}の予定です。`, ''];
   const foot = ['', org.name];
   const full = [
@@ -263,7 +260,7 @@ export function weekMailText(
     ...days.map((d) =>
       d.visits.length === 0
         ? `${mdw(d.date)} ${emptyWord(d)}`
-        : `${mdw(d.date)}${d.source === 'plan' ? '（案）' : ''} ${d.visits.map((v) => clockText(v.start)).join('・')}（${d.visits.length}件）`,
+        : `${mdw(d.date)}${d.source === 'plan' ? '（未確定）' : ''} ${d.visits.map((v) => clockText(v.start)).join('・')}（${d.visits.length}件）`,
     ),
     '',
     `※${org.terms.client}の名前は省きました。`,

@@ -13,9 +13,6 @@ import {
   Lock,
   PencilLine,
   Printer,
-  RefreshCw,
-  Repeat,
-  ShieldAlert,
   SlidersHorizontal,
   Sparkles,
   Square,
@@ -67,7 +64,7 @@ import {
   withEdges,
 } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
-import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { attempt, byDisplayName, byName, newId, WEEKDAY_LABELS } from '../lib/common';
 import { bulkConfirmDialog, bulkConfirmLabel, bulkConfirmTargets, bulkConfirmWhy, confirmDay } from '../lib/confirmDay';
 import { isOn } from '../lib/features';
 import { attentionTarget, type LinkTarget } from '../lib/links';
@@ -84,14 +81,11 @@ import {
   type DayStatus,
   dayMarks,
   dayPlanOf,
-  expandMonth,
-  expandMonthVisits,
   firstDayOf,
-  handledAbsences,
+  issueBreakdown,
   isYm,
   monthDates,
   monthProgress,
-  planEdited,
   type StaffDay,
   shortName,
   staffDay,
@@ -115,7 +109,6 @@ import { attentionCountByDate, showRestMark, usualRestByWeekday } from '../lib/m
 import { scrollBehavior } from '../lib/motion';
 import { mdText } from '../lib/patternText';
 import { type BandOp, urgentCount } from '../lib/progressBand';
-import { rebuildWith } from '../lib/rebuildBand';
 import {
   type OffDayState,
   offDayState,
@@ -127,7 +120,9 @@ import { staffClientMap } from '../lib/search';
 import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
+import { usualStaffMap } from '../lib/usualStaff';
 import { useValueStore } from '../lib/valueStore';
+import { visitsOn } from '../patterns';
 import { scorePresetOf } from '../seed';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
@@ -161,7 +156,7 @@ const hoursText = (minutes: number) => `${Math.round((minutes / 60) * 10) / 10}�
 
 /** 日の状態の言葉（一覧と同じ。lib/monthList） */
 const STATE_TEXT = DAY_STATE_TEXT;
-const STATE_ORDER: DayStatus['state'][] = ['none', 'plan', 'confirmed', 'diff'];
+const STATE_ORDER: DayStatus['state'][] = ['none', 'told', 'changed'];
 
 /** 表示の選択：全体／〈スタッフ〉1人／〈利用者さん〉1人 */
 type Focus = { kind: 'all' } | { kind: 'staff'; id: string } | { kind: 'client'; id: string };
@@ -207,7 +202,7 @@ export default function MonthPage() {
   const bulkWhyId = useId();
   /** マスの読み方の文の置き場（日付 → 文。PRD D177） */
   const tipStore = useMemo(() => createTipStore(), []);
-  const [mode, setMode] = useState<BatchMode>('empty');
+  const [mode, setMode] = useState<BatchMode>('care');
   /** 月まとめ作成の進み具合（画面の外の計算。作っていなければ null。PRD D256） */
   const batch = useValueStore(monthBatch.run);
   /** 最後に終わった月まとめ作成（計算できずに止まった理由を出す） */
@@ -336,16 +331,12 @@ export default function MonthPage() {
 
   const weeks = useMemo(() => calendarWeeks(ym), [ym]);
   const days = useMemo(() => monthDates(ym), [ym]);
-  /** 日ごとの訪問（compile にはその日の訪問だけを渡す。compile はその日の訪問しか読まない） */
+  /** 日ごとの訪問（計算した繰り返しの回も。版2。ADR-0053） */
   const visitsByDate = useMemo(() => {
-    const out = new Map<string, Visit[]>();
-    for (const v of data.visits) {
-      const list = out.get(v.date);
-      if (list) list.push(v);
-      else out.set(v.date, [v]);
-    }
+    const out = new Map<string, readonly Visit[]>();
+    for (const d of days) out.set(d, visitsOn(data, d));
     return out;
-  }, [data.visits]);
+  }, [data, days]);
 
   // ---- 日の問題と状態（lib/useDayStatuses。月とホームで共通）----
   const perDay = useDayStatuses(data, compileInput, days);
@@ -369,13 +360,13 @@ export default function MonthPage() {
   }, [days, visitsByDate, data.clientLeaves]);
   /** 〈スタッフ〉が担当する〈利用者さん〉：この月の数える案（今の案、無ければ確定した割当）の担当と、いつもの担当 */
   const staffClients = useMemo(() => {
-    const clientOf = new Map(data.visits.map((v) => [v.id, v.clientId]));
+    const clientOf = new Map([...visitsByDate.values()].flat().map((v) => [v.id, v.clientId]));
     const pairs: [string, string | undefined][] = [];
     for (const d of days)
       for (const [sid, ids] of Object.entries(dayPlans.get(d)?.routes ?? {}))
         for (const id of ids) pairs.push([sid, clientOf.get(id)]);
-    return staffClientMap(pairs, data.clients);
-  }, [days, dayPlans, data.visits, data.clients]);
+    return staffClientMap(pairs, data.clients, usualStaffMap(data.patterns, today));
+  }, [days, dayPlans, visitsByDate, data.clients, data.patterns, today]);
   const clientsOfStaff = useCallback((sid: string) => staffClients.get(sid) ?? new Set<string>(), [staffClients]);
 
   // ---- 日のマスの印（D53）----
@@ -404,13 +395,13 @@ export default function MonthPage() {
     ];
     for (const d of days) {
       const visits = visitsByDate.get(d) ?? [];
-      const key = [...base, own(data.aiPlans, d), own(data.manualPlans, d), ...visits];
+      const key = [...base, ...visits];
       const hit = loadMemo.current.get(d);
       if (hit && sameList(hit.key, key)) {
         out.set(d, hit.value);
         continue;
       }
-      const value = attempt(() => dayLoad({ ...data, visits }, d, { typeId: loadType })).value ?? null;
+      const value = attempt(() => dayLoad(data, d, { typeId: loadType })).value ?? null;
       loadMemo.current.set(d, { key, value });
       out.set(d, value);
     }
@@ -494,28 +485,8 @@ export default function MonthPage() {
       ),
     [days, ym, marks],
   );
-  /** 欠勤あり（対応済み）の日（PRD D281。要対応に数えず、情報として右の欄・マス・一覧に残す） */
-  const handled = useMemo(
-    () => handledAbsences(data, days.map((d) => statuses.get(d)!).filter(Boolean), today),
-    [data, days, statuses, today],
-  );
-  const handledDates = useMemo(() => new Set(handled.map((h) => h.date)), [handled]);
-  /**
-   * 定期パターンからまだ作っていない訪問の日ごとの件数（「未作成」の日。PRD D282）。読むのは定期パターン・訪問・〈利用者さん〉だけ
-   */
-  const { patterns: allPatterns, visits: allVisits, clients: allClients } = data;
-  /** 定期パターンから作る訪問（月の今日以降。下の preview と未作成の日はこの1回の展開から作る） */
-  const expandedMonth = useMemo(
-    () => expandMonthVisits({ patterns: allPatterns, visits: allVisits, clients: allClients }, ym, today),
-    [allPatterns, allVisits, allClients, ym, today],
-  );
-  const unmadeByDate = expandedMonth.addedByDate;
-
   /** 今月の準備（PRD D59。進み具合の帯に出す。D151）。日の状態は上で compile・採点したものを使う（要対応の欄と同じ数え方） */
-  const progress = useMemo(
-    () => monthProgress(data, ym, today, undefined, (d) => statuses.get(d)),
-    [data, ym, today, statuses],
-  );
+  const progress = useMemo(() => monthProgress(data, ym, today, (d) => statuses.get(d)), [data, ym, today, statuses]);
   /** 右の欄へ移る（要対応・確定していない日） */
   const showAside = (view: 'attention' | 'unconfirmed', extra: Record<string, string | null> = {}) => {
     // 全体の表示にする（pickFocus('all') と同じ。extra は一緒に URL から消すもの）
@@ -542,33 +513,19 @@ export default function MonthPage() {
     return { unassigned, sameDay };
   }, [days, statuses, visitsByDate]);
 
-  /** 先に定期パターンから展開したときのデータ（対象の日数の見込み） */
-  const preview = useMemo(
-    () =>
-      expandedMonth.added === 0
-        ? { data, added: 0 }
-        : { data: { ...data, visits: expandedMonth.visits }, added: expandedMonth.added },
-    [data, expandedMonth],
-  );
-  /** その月の今日以降の訪問（展開したあと） */
-  const futureVisits = useMemo(
-    () => preview.data.visits.filter((v) => !v.cancelled && ymOf(v.date) === ym && v.date >= today).length,
-    [preview, ym, today],
-  );
-  const staleOf = (d: string) => statuses.get(d)?.stale ?? false;
-  const targetsOf = (m: BatchMode) => batchTargets(preview.data, ym, today, m, staleOf);
-  const staleTargets = batchTargets(data, ym, today, 'stale', staleOf);
-  /** 欄の対象の日（条件が変わった日は定期パターンから訪問を作らずに数える。「条件が変わった日を作り直す」と同じ） */
-  const panelTargets = panel ? (mode === 'stale' ? staleTargets : targetsOf(mode)) : [];
-  /** この月の今日以降で、条件が変わったが確定した割当がある日（作り直さない。作り直しの帯の「確定済み」。PRD D163） */
-  const staleConfirmed = days.filter((d) => d >= today && staleOf(d) && !!own(data.manualPlans, d)).length;
+  /** その月の今日以降の訪問 */
+  const futureVisits = progress.visits;
+  const statusOf = (d: string) => statuses.get(d);
+  const targetsOf = (m: BatchMode) => batchTargets(data, days, today, m, statusOf);
+  /** 欄の対象の日 */
+  const panelTargets = panel ? targetsOf(mode) : [];
   const running = batch !== null;
-  const noVisitsWhy = futureVisits === 0 ? '定期パターンが無いか、この月の訪問がありません' : null;
+  const noVisitsWhy = futureVisits === 0 ? '繰り返しが無いか、この月の今日以降の訪問がありません' : null;
 
   /**
-   * まとめて作るの欄を開く（入口は進み具合の帯の1か所と ?do=batch。PRD D153・D154）。既定の対象はいつも「まだ案の無い日だけ」
-   * （0日でも。済んだ数字から開いても、作り直す＝手直しを捨てうる操作を既定にしない。作り直しは欄で利用者が選ぶ）。
-   * 開かないとき：作っている間・この月に訪問が無い・作っていない訪問も、まだ案の無い日も、確定していない日も無い（知らせを出す）
+   * 担当を AI で組む欄を開く（入口は進み具合の帯の1か所と ?do=batch。PRD D153・D154）。既定の対象はいつも「要対応のある日だけ」
+   * （0日でも。組み直す＝手で決めた担当を変えうる操作を既定にしない。組み直しは欄で利用者が選ぶ）。
+   * 開かないとき：組んでいる間・この月に訪問が無い・組む日が無い（知らせを出す）
    */
   const openBatch = () => {
     if (runningNow()) return;
@@ -576,12 +533,12 @@ export default function MonthPage() {
       toast(noVisitsWhy);
       return;
     }
-    if (preview.added === 0 && targetsOf('empty').length === 0 && targetsOf('all').length === 0) {
-      toast('作る日がありません（今日より前の日・確定した日は作りません）');
+    if (targetsOf('care').length === 0 && targetsOf('all').length === 0) {
+      toast('組む日がありません（今日より前の日・確定した日は組みません）');
       return;
     }
     setError(null);
-    setMode('empty');
+    setMode('care');
     setPanel(true);
   };
 
@@ -590,28 +547,14 @@ export default function MonthPage() {
     (): BandModel => ({
       ym,
       progress,
-      canExpand: preview.added,
-      emptyTargets: batchTargets(preview.data, ym, today, 'empty', (d) => statuses.get(d)?.stale ?? false).length,
+      emptyTargets: batchTargets(data, days, today, 'care', (d) => {
+        const s = statuses.get(d);
+        return s && s.unassigned > 0 ? s : undefined;
+      }).length,
       urgent: urgentCount(attention),
     }),
-    [ym, progress, preview, today, statuses, attention],
+    [ym, progress, data, days, today, statuses, attention],
   );
-  /**
-   * 条件が変わった日を作り直す欄を開く（設定の画面の作り直しの帯の［作り直す］＝ ?do=stale。PRD D163）。
-   * 対象は「条件が変わった日を作り直す」と同じ（確定していない日だけ）。作り始めるのは欄の主ボタン（手直しのある日は今どおり確かめる）。
-   * 作っている間は何もしない。対象が0日なら欄を開かず、知らせて要対応を出す
-   */
-  const openStale = () => {
-    if (runningNow()) return;
-    if (staleTargets.length === 0) {
-      toast('作り直す日がありません（確定した日・今日より前の日は作り直しません）');
-      showAside('attention');
-      return;
-    }
-    setError(null);
-    setMode('stale');
-    setPanel(true);
-  };
 
   /** 帯の数字・ボタン：この画面の中で欄を開く（URL の ?staff= などは showAside のとおり） */
   const onBandOp = (op: BandOp) => {
@@ -621,7 +564,6 @@ export default function MonthPage() {
 
   // ---- ホーム・週・日の帯から来たときの操作（PRD D143・D153。?do=）----
   // batch：まとめて作るの欄を開く（openBatch）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
-  // stale：条件が変わった日を作り直す欄を開く（openStale。設定の画面の作り直しの帯から。PRD D163）。
   // 1回だけ行い、URL から ?do= を消す（戻る・再読込で繰り返さない）
   const doParam = params.get('do');
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
@@ -633,20 +575,7 @@ export default function MonthPage() {
     }
     patchParams({ do: null });
     if (doParam === 'batch') openBatch();
-    else if (doParam === 'stale') openStale();
   }, [doParam]);
-
-  // ---- 定期パターンから訪問だけ作る（案は作らない。まとめて作るの欄の「訪問だけ作る」。D154）----
-  const expandOnly = () => {
-    setError(null);
-    const n = preview.added;
-    if (n === 0) {
-      toast('作る訪問はありませんでした（もう作ってあります）');
-      return;
-    }
-    update((d) => expandMonth(d, ym, today).data);
-    toast(`${monthNo}月の訪問を${n}件作りました`);
-  };
 
   // ---- 問題の無い日をまとめて確定（PRD D223。右の欄の「確定していない日」）----
   /** 確定していない日（今日以降）のうち、一度も確定していない日で、必須の違反が無く要対応に出ない日（ADR-0031） */
@@ -666,49 +595,39 @@ export default function MonthPage() {
       confirmLabel: `${targets.length}日を確定する`,
     });
     if (!ok || runningNow()) return;
-    // 確認のあいだに案が消えた日（別のタブ）は飛ばす
     const ready = targets.flatMap((date) => {
       const p = perDay.get(date)?.problem;
-      return p && own(dataRef.current.aiPlans, date) ? [{ date, p }] : [];
+      return p ? [{ date, p }] : [];
     });
     if (ready.length === 0) return;
-    update((d) => ready.reduce((out, x) => (own(out.aiPlans, x.date) ? confirmDay(out, x.date, x.p) : out), d));
+    const at = Date.now();
+    update((d) => ready.reduce((out, x) => confirmDay(out, x.date, x.p, at), d));
     toast(`${ready.length}日を確定しました`);
     // 押したボタンは0日になって押せなくなるので、フォーカスは右の欄へ（確定していない日の一覧の先頭から読める）
     requestAnimationFrame(() => asideRef.current?.focus({ preventScroll: true }));
   };
 
-  // ---- 月まとめ作成（③）----
-  /** 対象の日を1日ずつ作る。expand は先に定期パターンから訪問を作るか（①） */
-  const start = async (m: BatchMode, expand: boolean) => {
+  // ---- 担当を AI で組む（月まとめ。ADR-0012・ADR-0053）----
+  /** 対象の日を1日ずつ組む（ピンの訪問はそのまま。終わったら「元に戻す」で組む前に戻せる） */
+  const start = async (m: BatchMode) => {
     if (runningNow()) return;
     setError(null);
-    const first = expand ? expandMonth(dataRef.current, ym, today).data : dataRef.current;
-    const targets = batchTargets(first, ym, today, m, staleOf);
+    const targets = targetsOf(m);
     if (targets.length === 0) {
-      setError('対象の日がありません（今日より前の日・確定した日は作りません）');
+      setError('対象の日がありません（今日より前の日・確定した日は組みません）');
       return;
     }
-    if (m !== 'empty') {
-      const edited = targets.filter((d) => {
-        const p = own(first.aiPlans, d);
-        return !!p && planEdited(p);
-      }).length;
-      if (
-        edited > 0 &&
-        !(await confirmDialog({
-          title: `手直しのある ${edited}日の手直しを捨てますか？`,
-          body: 'その日の手直しとピンを捨てて、AI案を作り直します。',
-          confirmLabel: '捨てて作り直す',
-          tone: 'danger',
-        }))
-      )
-        return;
-      // 確認のあいだに別の作成が始まっていたら何もしない
-      if (runningNow()) return;
+    if (m === 'all') {
+      const ok = await confirmDialog({
+        title: `伝えていない ${targets.length}日の担当を組み直しますか？`,
+        body: 'ピンの訪問はそのままで、ほかの訪問の担当と時刻を AI で組み直します。終わったあと「元に戻す」で組む前に戻せます。',
+        confirmLabel: '組み直す',
+      });
+      // 確認のあいだに別の計算が始まっていたら何もしない
+      if (!ok || runningNow()) return;
     }
     setPanel(false);
-    // 作っている間は希望休を入れない（Worker の計算とデータの書き込みを混ぜない）
+    // 組んでいる間は希望休を入れない（Worker の計算とデータの書き込みを混ぜない）
     setOffMode(false);
     // 計算は画面の外で続ける（ほかの画面へ移っても止めない。PRD D256。ADR-0042）。二重には始めない
     monthBatch.start({
@@ -716,7 +635,6 @@ export default function MonthPage() {
       label: `${monthNo}月`,
       mode: m,
       days: targets.map((date) => ({ date, mode: m })),
-      expand: expand ? { from: days[0]!, to: days.at(-1)! } : null,
       today,
       source: 'month',
     });
@@ -791,31 +709,13 @@ export default function MonthPage() {
       const off = offStaffId ? offDayState(data, offStaffId, d, today) : undefined;
       if (off) extra.push(OFF_STATE_TEXT[off]);
       out.push({
-        row: monthListRow(s, today, extra, {
-          unmade: unmadeByDate.get(d) ?? 0,
-          absenceDone: handledDates.has(d),
-          attention: attentionByDate.get(d) ?? 0,
-        }),
+        row: monthListRow(s, today, extra, { attention: attentionByDate.get(d) ?? 0 }),
         extra,
         off,
       });
     }
     return out;
-  }, [
-    layout,
-    days,
-    statuses,
-    staffDays,
-    clientDays,
-    focus.kind,
-    staffById,
-    offStaffId,
-    data,
-    today,
-    unmadeByDate,
-    handledDates,
-    attentionByDate,
-  ]);
+  }, [layout, days, statuses, staffDays, clientDays, focus.kind, staffById, offStaffId, data, today, attentionByDate]);
   /** 日ごとの一覧（最初に見せる日へ巻く。PRD D189） */
   const listRef = useRef<HTMLUListElement>(null);
   /** その日の行を見える所へ（上の帯は scroll-margin で避ける）。focus なら行へフォーカス */
@@ -891,18 +791,6 @@ export default function MonthPage() {
         ]
       : []),
     {
-      key: 'stale',
-      label: `条件が変わった日を作り直す（${staleTargets.length}日）`,
-      icon: RefreshCw,
-      disabled: running
-        ? '案を作っている間は押せません'
-        : staleTargets.length === 0
-          ? '条件が変わった日（確定していない日）はありません'
-          : false,
-      onSelect: () => void start('stale', false),
-      testId: 'month-stale',
-    },
-    {
       key: 'help',
       label: helpOpen ? 'マスの見方の説明を閉じる' : 'マスの見方の説明',
       icon: Info,
@@ -917,7 +805,7 @@ export default function MonthPage() {
         nav={<ViewSwitch current="month" />}
         icon={CalendarRange}
         title="月の予定"
-        lead="定期パターンから訪問を作り、一月分の案をまとめて作ります"
+        lead="一月の担当を見て、担当なしの日を AI でまとめて組み、確定します"
       />
 
       {/* 進み具合の帯（PRD D151〜D155）。「まとめて作る」の入口はここの1か所（D154。見出しのボタン・今月の準備の①〜③をまとめた） */}
@@ -967,7 +855,7 @@ export default function MonthPage() {
           {/* 月送り・今月のほかは「その他 ▾」にたたむ（PRD D278。主ボタンは進み具合の帯の1つ） */}
           <MenuButton label="その他" items={moreItems} testId="month-more" className="month-more" />
           <span className="month-summary sub" data-testid="month-summary">
-            月全体：入らない {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
+            月全体：担当なし {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>
         </div>
         {pickersShown && (
@@ -1054,13 +942,14 @@ export default function MonthPage() {
             <ul className="plan-help-list">
               <li>日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。</li>
               <li>
-                赤い枠や「要対応 N」の札の日は、入らない訪問・守れない条件・休みの人に残る訪問がある日です。N
+                赤い枠や「要対応
+                N」の札の日は、担当なし・担当が休み・条件に合わない・時間に間に合わない訪問がある日です。N
                 は右の「要対応」の欄の行の数です。
               </li>
               <li>
-                黄の点線の枠の日（注意）は、訪問があるのにまだ案が無い日です。まとめて作るか、日の予定で作ります。
+                「未連絡
+                N」は、確定（伝えた）あとに担当・時刻が変わった訪問の件数です。日の予定の連絡の一覧で確かめます。
               </li>
-              <li>「条件が変わった」は、案を作ったあとに訪問・{terms.staff}・働ける時間・重みなどが変わった日です。</li>
               <li>
                 混み具合のバーは、{barRangeText()} を3段（
                 {BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}）に分け、30分ごとに空いている{terms.staff}
@@ -1109,14 +998,14 @@ export default function MonthPage() {
             <progress
               value={progressValue}
               max={Math.max(1, batch.targets.length)}
-              aria-label="月まとめ作成の進み具合"
+              aria-label="担当を組む進み具合"
               style={{ width: '100%' }}
             />
             <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
               <span className="sub" aria-live="polite">
                 {current ? '' : `${batch.label}：`}
-                {current ? `${mdText(current)} の案：` : ''}
-                {batch.index + 1}/{batch.targets.length}日（作れた日 {batch.made}日）
+                {current ? `${mdText(current)}：` : ''}
+                {batch.index + 1}/{batch.targets.length}日（組めた日 {batch.made}日）
               </span>
               <button type="button" className="btn btn-small" onClick={stop}>
                 <WithIcon icon={Square} size={14}>
@@ -1159,7 +1048,6 @@ export default function MonthPage() {
                         `is-state-${r.state}`,
                         r.isPast ? 'is-past' : '',
                         r.care ? 'is-care' : '',
-                        r.caution ? 'is-caution' : '',
                         r.isToday ? 'is-today' : '',
                         r.date === date ? 'is-picked' : '',
                         off ? `is-off-${off}` : '',
@@ -1182,8 +1070,8 @@ export default function MonthPage() {
                         {r.isToday && <span className="month-today">今日</span>}
                       </span>
                       <span className="month-list-state">
-                        {r.state === 'confirmed' && <Lock size={12} aria-hidden="true" />}
-                        {r.state === 'diff' && <PencilLine size={12} aria-hidden="true" />}
+                        {r.state === 'told' && <Lock size={12} aria-hidden="true" />}
+                        {r.state === 'changed' && <PencilLine size={12} aria-hidden="true" />}
                         {r.stateText}
                       </span>
                       <span className="month-list-count">{r.count > 0 ? `${r.count}件` : ''}</span>
@@ -1251,8 +1139,6 @@ export default function MonthPage() {
                             clientTerm={terms.client}
                             staffTerm={terms.staff}
                             offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
-                            unmade={unmadeByDate.get(d) ?? 0}
-                            absenceDone={handledDates.has(d)}
                             attention={attentionByDate.get(d) ?? 0}
                             usualRest={usualRest[weekday(d)] ?? 0}
                             onOpen={openDay}
@@ -1344,7 +1230,7 @@ export default function MonthPage() {
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
-                  今日以降で、入らない訪問・守れない条件・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日（確定済みで手当ての要らない日を除く）はありません。
+                  今日以降で、要対応の訪問（担当なし・担当が休み・条件に合わない・時間に間に合わない）・未連絡の変更・出勤〜退勤（拘束）が上限を超える日はありません。
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
@@ -1364,35 +1250,20 @@ export default function MonthPage() {
                             {mdText(a.date)}（{WEEKDAY_LABELS[weekday(a.date)]}）
                           </span>
                           <span>
-                            {a.kind === 'unassigned' && (
+                            {a.kind === 'care' && (
                               <WithIcon icon={CircleAlert} size={14}>
-                                入らない訪問 {a.count}件
+                                要対応 {a.count}件{a.names.length > 0 ? `（${a.names.join('・')}）` : ''}
                               </WithIcon>
                             )}
-                            {a.kind === 'hard' && (
-                              <WithIcon icon={ShieldAlert} size={14}>
-                                守れない条件 {a.count}件
-                              </WithIcon>
-                            )}
-                            {a.kind === 'absentLeft' && (
-                              <WithIcon icon={UserX} size={14}>
-                                休みの人に訪問 {a.count}件
-                              </WithIcon>
-                            )}
-                            {a.kind === 'stale' && (
-                              <WithIcon icon={RefreshCw} size={14}>
-                                条件が変わった
+                            {a.kind === 'changed' && (
+                              <WithIcon icon={PencilLine} size={14}>
+                                未連絡の変更 {a.count}件
                               </WithIcon>
                             )}
                             {a.kind === 'overSpan' && (
                               <WithIcon icon={Timer} size={14}>
                                 出勤〜退勤（拘束）が{data.org.spanLimitHours}時間を超える{' '}
                                 {a.names.map(shortName).join('・')}
-                              </WithIcon>
-                            )}
-                            {a.kind === 'absence' && (
-                              <WithIcon icon={UserX} size={14}>
-                                欠勤 {a.names.map(shortName).join('・') || `${a.count}人`}
                               </WithIcon>
                             )}
                             {/* 行き先を添える（PRD D201） */}
@@ -1403,34 +1274,6 @@ export default function MonthPage() {
                     );
                   })}
                 </ul>
-              )}
-              {/* 欠勤あり（対応済み）（PRD D281）：確定済みで手当ての要らない日。要対応に数えず、情報として残す */}
-              {handled.length > 0 && (
-                <div className="month-handled" data-testid="month-handled">
-                  <h3 className="month-handled-title">欠勤あり（対応済み）</h3>
-                  <ul className="month-attention">
-                    {handled.map((h) => (
-                      <li key={h.date}>
-                        <button
-                          type="button"
-                          className="month-attention-btn is-handled"
-                          onClick={() => openDay(h.date)}
-                          data-date={h.date}
-                          title="確定済みで手当ての要らない日です。押すとその日の「日の予定」を開きます"
-                        >
-                          <span className="month-attention-date">
-                            {mdText(h.date)}（{WEEKDAY_LABELS[weekday(h.date)]}）
-                          </span>
-                          <span>
-                            <WithIcon icon={UserX} size={14}>
-                              欠勤 {h.names.map(shortName).join('・')}（確定済み）
-                            </WithIcon>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
               )}
             </>
           )}
@@ -1485,7 +1328,7 @@ export default function MonthPage() {
                 )}
               </dl>
               <TypeList types={staffSum.types} typeById={typeById} />
-              <p className="sub">数えるのはその日の今の案（無ければ確定した割当）です。</p>
+              <p className="sub">数えるのはその日の今の担当です。</p>
             </>
           )}
           {focus.kind === 'client' && focusClient && (
@@ -1515,7 +1358,7 @@ export default function MonthPage() {
       {panel && (
         <SidePanel
           icon={Layers}
-          title={`${monthNo}月の案をまとめて作る`}
+          title={`${monthNo}月の担当を AI で組む`}
           onClose={() => setPanel(false)}
           footer={
             <>
@@ -1523,9 +1366,9 @@ export default function MonthPage() {
                 type="button"
                 className="btn btn-primary"
                 disabled={panelTargets.length === 0}
-                onClick={() => start(mode, mode !== 'stale')}
+                onClick={() => start(mode)}
               >
-                <WithIcon icon={Sparkles}>作り始める</WithIcon>
+                <WithIcon icon={Sparkles}>組み始める</WithIcon>
               </button>
               <button type="button" className="btn" onClick={() => setPanel(false)}>
                 <WithIcon icon={X}>閉じる</WithIcon>
@@ -1536,7 +1379,7 @@ export default function MonthPage() {
           <div className="stack">
             <p>
               使う
-              <Term k="preset" />：<strong data-testid="batch-preset">{basePreset?.name ?? 'この日だけの重み'}</strong>
+              <Term k="preset" />：<strong data-testid="batch-preset">{basePreset?.name ?? '点数の基準'}</strong>
               <span className="sub">（重みは「条件の重み」の画面で直します）</span>
             </p>
             <fieldset className="stack batch-mode" style={{ gap: 6 }}>
@@ -1545,11 +1388,12 @@ export default function MonthPage() {
                 <input
                   type="radio"
                   name="batch-mode"
-                  checked={mode === 'empty'}
-                  onChange={() => setMode('empty')}
+                  checked={mode === 'care'}
+                  onChange={() => setMode('care')}
                   style={{ width: 'auto' }}
+                  data-testid="batch-mode-care"
                 />
-                まだ案の無い日だけ
+                要対応のある日だけ（{targetsOf('care').length}日）
               </label>
               <label className="check">
                 <input
@@ -1558,22 +1402,10 @@ export default function MonthPage() {
                   checked={mode === 'all'}
                   onChange={() => setMode('all')}
                   style={{ width: 'auto' }}
+                  data-testid="batch-mode-all"
                 />
-                確定していない日をすべて作り直す
+                伝えていない日をすべて組み直す（{targetsOf('all').length}日）
               </label>
-              {(mode === 'stale' || staleTargets.length > 0) && (
-                <label className="check">
-                  <input
-                    type="radio"
-                    name="batch-mode"
-                    checked={mode === 'stale'}
-                    onChange={() => setMode('stale')}
-                    style={{ width: 'auto' }}
-                    data-testid="batch-mode-stale"
-                  />
-                  条件が変わった日だけ作り直す（{staleTargets.length}日）
-                </label>
-              )}
             </fieldset>
             <p data-testid="batch-count">
               対象の日：<strong>{panelTargets.length}日</strong>
@@ -1581,32 +1413,14 @@ export default function MonthPage() {
             </p>
             {panelTargets.length === 0 && (
               <p className="warn-text">
-                {noVisitsWhy ?? '対象の日がありません（今日より前の日・確定した日は作りません）'}
-              </p>
-            )}
-            {mode === 'stale' ? (
-              <p className="sub" data-testid="batch-stale-note">
-                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? 'この日だけの重み')}
-                。手直しのある日は、作る前に確かめます。今日より前の日と確定した日は作りません。
-                {staleConfirmed > 0 && `条件が変わった確定済みの日 ${staleConfirmed}日は、日の予定で確かめてください。`}
-              </p>
-            ) : (
-              <p className="sub">
-                先に定期パターンからこの月の訪問を作ります。今日より前の日・確定した日は作りません。
-              </p>
-            )}
-            {/* 案は作らずに訪問だけ作る（今月の準備の①から移した。PRD D154） */}
-            {preview.added > 0 && (
-              <p className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-small" onClick={expandOnly} data-testid="batch-expand-only">
-                  <WithIcon icon={Repeat} size={14}>
-                    訪問だけ作る（{preview.added}件。案は作らない）
-                  </WithIcon>
-                </button>
+                {noVisitsWhy ?? '対象の日がありません（今日より前の日・確定した日は組みません）'}
               </p>
             )}
             <p className="sub">
-              1日ずつ作り、作れた日はすぐに保存します。ほかの画面へ移っても作り続けます。「止める」かページを閉じると止まり、作れた日は残ります。
+              ピンの訪問はそのままで、ほかの訪問の担当と時刻を組みます。今日より前の日・確定した日は組みません。
+            </p>
+            <p className="sub">
+              1日ずつ組み、組めた日はすぐに保存します。ほかの画面へ移っても組み続けます。「止める」かページを閉じると止まり、組めた日は残ります。終わったら「元に戻す」で組む前に戻せます。
             </p>
           </div>
         </SidePanel>
@@ -1749,7 +1563,7 @@ function MonthLegend({ bar }: { bar: 'load' | 'staff' | null }) {
           <span className="is-opened">凡例を閉じる</span>
         </span>
         <span className="sub month-legend-line">
-          色＝日の状態・黄の点線＝案なし（注意）・赤い枠と「要対応 N」の札＝要対応・▶■＝始まる／終わる
+          色＝日の状態・赤い枠と「要対応 N」の札＝要対応・▶■＝始まる／終わる
           {bar === 'load' ? '・棒＝30分ごとの空き' : bar === 'staff' ? '・棒＝その人の時間帯' : ''}
           。マスにマウスを乗せるかフォーカスすると、そのマスの読み方が出ます
         </span>
@@ -1767,28 +1581,24 @@ function MonthLegendBody({ bar }: { bar: 'load' | 'staff' | null }) {
         {STATE_ORDER.map((st) => (
           <span key={st} className="month-legend-item">
             <span className={`month-swatch is-state-${st}`} aria-hidden="true">
-              {st === 'confirmed' && <Lock size={9} />}
-              {st === 'diff' && <PencilLine size={9} />}
+              {st === 'told' && <Lock size={9} />}
+              {st === 'changed' && <PencilLine size={9} />}
             </span>
-            {/* 確定済み・未確定の変更ありは説明つき（PRD D242） */}
-            {st === 'confirmed' ? (
+            {/* 確定済み・未連絡の変更ありは説明つき（PRD D242） */}
+            {st === 'told' ? (
               <Term k="confirmed">{STATE_TEXT[st]}</Term>
-            ) : st === 'diff' ? (
-              <Term k="confirmDiff" />
+            ) : st === 'changed' ? (
+              <Term k="confirmDiff">{STATE_TEXT[st]}</Term>
             ) : (
               STATE_TEXT[st]
             )}
           </span>
         ))}
         <span className="month-legend-item">
-          <span className="month-swatch is-caution" aria-hidden="true" />
-          注意（今日以降で案なし）
-        </span>
-        <span className="month-legend-item">
           <span className="month-swatch is-care" aria-hidden="true">
             <span className="month-dot" />
           </span>
-          要対応（入らない・違反・休みの人に訪問）
+          要対応（担当なし・担当が休み・条件に合わない・時間に間に合わない）
         </span>
         <span className="month-legend-item">
           <span className="month-attn" aria-hidden="true">
@@ -1811,7 +1621,7 @@ function MonthLegendBody({ bar }: { bar: 'load' | 'staff' | null }) {
           {bar === 'load' ? <LoadLegend /> : <StaffLegend />}
           {bar === 'staff' && (
             <span className="sub" data-testid="month-staff-bar-note">
-              時間帯は今の案（無ければ確定）で出します。混み具合は確定を先に数えるので、未確定の変更がある日は空きの人数が合わないことがあります
+              時間帯は今の担当で出します
             </span>
           )}
         </span>
@@ -1872,10 +1682,6 @@ type CellProps = {
   staffTerm: string;
   /** 「休みを入れる」のときのその日の扱い（PRD D69。それ以外は undefined＝押すと日の画面へ） */
   offState: OffDayState | undefined;
-  /** 定期パターンからまだ作っていない訪問の件数（PRD D282。訪問の無い今日以降の日は「未作成」） */
-  unmade: number;
-  /** 欠勤の手当てが済んだ日（PRD D281。「欠」の印に「済」） */
-  absenceDone: boolean;
   /** 要対応の札「要対応 N」の N（0＝札なし。今日より前の日は出さない。PRD D295） */
   attention: number;
   /** 同じ月の同じ曜日の「ふだん」の休みの人数（「休 N」はこれより多い日だけ出す。PRD D295） */
@@ -1910,64 +1716,49 @@ const DayCell = memo(function DayCell(props: CellProps) {
     staffTerm,
     offState,
   } = props;
-  /** 「休みの人に N」の印（欠勤・希望休・最終勤務日の後の人に残る訪問の事実なので、希望休のまとめ入力を切っても出す。ADR-0028） */
-  const absentLeft = s.absentLeft;
   const past = d < today;
-  // 赤は要対応だけ（PRD D228）。今日以降で訪問があるのに案の無い日は注意（黄の点線）
+  // 赤は要対応だけ（PRD D228）
   const care = s.needsCare && !past;
-  const caution = !care && !past && s.count > 0 && s.state === 'none';
   /** 要対応の札の N（要対応の一覧の行の数。今日より前の日は出さない） */
   const attn = past ? 0 : props.attention;
-  /** 未作成の日（訪問が本当に0件の日と分ける。PRD D282） */
-  const unmade = s.count === 0 && !past ? props.unmade : 0;
-  /** 訪問はあるが、ほかに定期パターンからまだ作っていない訪問がある日（週の見出しの「N件・ほか未作成」と同じ。PRD D282） */
-  const unmadePart = s.count > 0 && !past ? props.unmade : 0;
+  /** 担当なしのほかの要対応の内訳（「担当が休み 1」など） */
+  const otherIssues = issueBreakdown(s.issues).filter((x) => !x.startsWith('担当なし'));
   const typeName = (id: string | null) => (id === null ? '種類なし' : (typeById.get(id)?.name ?? '種類なし'));
   const parts: string[] = [longDate(d)];
   const body: ReactNode[] = [];
 
   if (s.count > 0) parts.push(`訪問 ${s.count}件`, STATE_TEXT[s.state]);
-  if (unmadePart > 0) parts.push(`ほかに定期パターンからまだ作っていない訪問 ${unmadePart}件`);
-  else if (unmade > 0) parts.push(`未作成（定期パターンからまだ作っていない訪問 ${unmade}件）`);
   else parts.push('訪問なし');
   if (attn > 0) parts.push(`要対応 ${attn}`);
   else if (care) parts.push('要対応');
-  if (caution) parts.push('注意：まだ案が無い');
-  if (s.unassigned > 0) parts.push(`入らない ${s.unassigned}件`);
-  if (s.hard > 0) parts.push(`守れない条件 ${s.hard}件`);
-  if (absentLeft > 0) parts.push(`休みの人に訪問 ${absentLeft}件`);
-  if (s.stale) parts.push('条件が変わった');
+  if (s.unassigned > 0) parts.push(`担当なし ${s.unassigned}件`);
+  for (const x of otherIssues) parts.push(`${x}件`);
+  if (s.changes > 0) parts.push(`未連絡の変更 ${s.changes}件`);
   if (s.overSpan.length > 0) parts.push(`出勤〜退勤（拘束）が上限を超える ${s.overSpan.length}人`);
-  if (making) parts.push('作っています');
+  if (making) parts.push('組んでいます');
 
   const flags = (
     <>
       {s.unassigned > 0 && (
-        <span className="month-flag is-red">
+        <span className="month-flag is-red" data-testid="month-unassigned">
           <CircleAlert size={12} aria-hidden="true" />
-          入らない {s.unassigned}
+          担当なし {s.unassigned}
         </span>
       )}
-      {s.hard > 0 && (
-        <span className="month-flag is-red">
+      {otherIssues.map((x) => (
+        <span key={x} className="month-flag is-red" data-testid="month-issue">
           <CircleAlert size={12} aria-hidden="true" />
-          違反 {s.hard}
+          {x}
         </span>
-      )}
-      {absentLeft > 0 && (
+      ))}
+      {s.changes > 0 && (
         <span
-          className="month-flag is-red"
-          title="休み（欠勤・希望休）の人に訪問が残っています。日の予定で振り直してください"
-          data-testid="month-absent-left"
+          className="month-flag is-warn"
+          title="確定（伝えた）あとに担当・時刻が変わった訪問です。日の予定の連絡の一覧で確かめてください"
+          data-testid="month-changed"
         >
-          <UserX size={12} aria-hidden="true" />
-          休みの人に {absentLeft}
-        </span>
-      )}
-      {s.stale && (
-        <span className="month-flag is-warn" data-testid="month-stale">
-          <RefreshCw size={12} aria-hidden="true" />
-          条件が変わった
+          <PencilLine size={12} aria-hidden="true" />
+          未連絡 {s.changes}
         </span>
       )}
       {s.overSpan.length > 0 && (
@@ -1982,7 +1773,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
           拘束超 {s.overSpan.length}
         </span>
       )}
-      {making && <span className="month-flag is-warn">作っています…</span>}
+      {making && <span className="month-flag is-warn">組んでいます…</span>}
     </>
   );
 
@@ -2004,14 +1795,14 @@ const DayCell = memo(function DayCell(props: CellProps) {
       usual: props.usualRest,
     });
     if (resting > 0) parts.push(`休む${staffTerm} ${resting}人（${restDetail}）`);
-    if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}${props.absenceDone ? '（対応済み）' : ''}`);
+    if (mk.absent.length > 0) parts.push(`欠勤 ${mk.absent.join('・')}`);
     if (mk.starts.length > 0) parts.push(`始まる ${mk.starts.join('・')}`);
     if (mk.ends.length > 0) parts.push(`終わる ${mk.ends.join('・')}`);
     if (mk.leaves.length > 0) parts.push(`${clientTerm}の休み ${mk.leaves.join('・')}`);
     if (mk.lastDays.length > 0) parts.push(`最終勤務日 ${mk.lastDays.join('・')}`);
     // 読み上げ：8〜20時のまとめ＋8時より前・20時以降の端の文（PRD D82。二重に読まない）
     if (load) parts.push(withEdges(loadSummary(inBar(load)), loadEdgeTexts(load)));
-    else if (load === null) parts.push('混み具合は案が無いので数えていません');
+    else if (load === null) parts.push('混み具合は数えられません');
     body.push(
       <TypeStack key="types" types={mk.types} typeById={typeById} />,
       <span key="marks" className="month-marks">
@@ -2026,20 +1817,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
             {mk.requested.length > 0 && `（希${mk.requested.length}）`}
           </span>
         )}
-        {unmadePart > 0 && (
-          <span className="month-mark is-unmade" data-testid="month-unmade-part">
-            ほか未作成
-          </span>
-        )}
         {mk.absent.length > 0 && (
-          <span
-            className={`month-mark is-absent${props.absenceDone ? ' is-done' : ''}`}
-            title={`欠勤${props.absenceDone ? '（対応済み：確定済みで手当ての要らない日）' : ''}：${mk.absent.join('・')}`}
-            data-testid="month-absent"
-            data-done={props.absenceDone || undefined}
-          >
+          <span className="month-mark is-absent" title={`欠勤：${mk.absent.join('・')}`} data-testid="month-absent">
             欠 {namesShort(mk.absent)}
-            {props.absenceDone && '（済）'}
           </span>
         )}
         {mk.starts.length > 0 && (
@@ -2100,9 +1880,6 @@ const DayCell = memo(function DayCell(props: CellProps) {
           ? `${shiftShort} ${slotsText(x.slots)}`
           : shiftShort;
     parts.push(shift);
-    // 訪問があるのに案の無い日（今の案も確定も無い）：件数も出す（空いていると誤読させない。PRD D75 の追記）
-    const noPlanText = x.noPlan ? `案なし（訪問 ${s.count}件）` : null;
-    if (noPlanText) parts.push(noPlanText);
     if (x.count > 0 || x.target !== null) {
       parts.push(`担当 ${x.count}件`);
       if (x.target !== null) parts.push(`目安 ${Math.round(x.target * 10) / 10}件`);
@@ -2124,19 +1901,12 @@ const DayCell = memo(function DayCell(props: CellProps) {
           {shiftShort}
         </span>
       ) : null,
-      // 勤務の無い日（バーは全部休み）は「休」などの文字だけにする（案なしは読み上げ・title に残す）
-      noPlanText && x.slots.length > 0 ? (
-        <span key="noplan" className="sub" data-testid="month-staff-noplan">
-          {noPlanText}
-        </span>
-      ) : null,
       <span key="bar" className="month-load is-staff">
         <StaffBar slots={x.bar} />
       </span>,
     );
   } else if (focus === 'client' && props.clientDay) {
     const x = props.clientDay;
-    if (x.noPlan) parts.push('案なし');
     const MAX = 4;
     for (const v of x.visits) {
       const who = v.cancelled
@@ -2147,9 +1917,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
           ? '休みのため無し'
           : v.staffId
             ? `${staffById.get(v.staffId)?.name ?? ''}さん${v.substitute ? '（いつもの担当でない）' : ''}`
-            : v.unassigned
-              ? '入らない'
-              : '担当未定';
+            : '担当なし';
       parts.push(`${hm(v.start)} ${typeName(v.typeId)} ${who}${v.edited ? '（この回だけ変更）' : ''}`);
     }
     body.push(
@@ -2176,9 +1944,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
                     ? '休み'
                     : v.staffId
                       ? shortName(staffById.get(v.staffId)?.name ?? '')
-                      : v.unassigned
-                        ? '入らない'
-                        : '未定'}
+                      : '担当なし'}
               </span>
               {v.substitute && (
                 <span className="month-badge is-sub" title="いつもの担当でない">
@@ -2195,11 +1961,6 @@ const DayCell = memo(function DayCell(props: CellProps) {
         })}
         {x.visits.length > MAX && <span className="sub">ほか{x.visits.length - MAX}件</span>}
       </span>,
-      x.noPlan ? (
-        <span key="noplan" className="sub">
-          案なし
-        </span>
-      ) : null,
     );
   }
   if (focus !== 'all')
@@ -2220,24 +1981,19 @@ const DayCell = memo(function DayCell(props: CellProps) {
     stateText: s.count > 0 ? STATE_TEXT[s.state] : null,
     care,
     attention: attn,
-    caution,
     types: focus === 'all' && mk.types.length > 0,
     resting: restingAll,
     restShown: showRestMark({ resting: restingAll, requested: mk.requested.length, usual: props.usualRest }),
     requested: mk.requested.length,
     absent: mk.absent.length > 0,
-    absentDone: props.absenceDone,
-    unmade: unmade > 0,
-    unmadePart: focus === 'all' && unmadePart > 0,
     starts: mk.starts.length > 0,
     ends: mk.ends.length > 0,
     leaves: mk.leaves.length > 0,
     lastDays: mk.lastDays.length > 0,
     loadBar: focus !== 'all' ? null : load ? 'load' : load === null ? 'noPlan' : null,
     unassigned: s.unassigned > 0,
-    hard: s.hard > 0,
-    absentLeft: absentLeft > 0,
-    stale: s.stale,
+    issues: otherIssues.length > 0,
+    changed: s.changes > 0,
     overSpan: s.overSpan.length > 0,
     substitute: cv.slice(0, 4).some((v) => v.substitute),
     edited: cv.slice(0, 4).some((v) => v.edited && !v.cancelled),
@@ -2259,7 +2015,6 @@ const DayCell = memo(function DayCell(props: CellProps) {
         s.count > 0 ? `is-state-${s.state}` : 'is-novisit',
         past ? 'is-past' : '',
         care ? 'is-care' : '',
-        caution ? 'is-caution' : '',
         d === today ? 'is-today' : '',
         picked ? 'is-picked' : '',
         making ? 'is-making' : '',
@@ -2273,8 +2028,6 @@ const DayCell = memo(function DayCell(props: CellProps) {
         data-testid="month-day"
         data-date={d}
         data-state={s.count > 0 ? s.state : 'empty'}
-        data-unmade={unmade > 0 ? unmade : undefined}
-        data-unmade-part={unmadePart > 0 ? unmadePart : undefined}
         data-off={offState}
         aria-label={label}
         aria-pressed={offState ? offState === 'requested' : undefined}
@@ -2292,9 +2045,9 @@ const DayCell = memo(function DayCell(props: CellProps) {
             {Number(d.slice(8, 10))}
             {d === today && <span className="month-today">今日</span>}
           </span>
-          {s.count > 0 && s.state === 'confirmed' && <Lock size={12} className="month-lock" aria-hidden="true" />}
-          {/* 未確定の変更あり（淡い黄）は案あり（淡い緑）と色だけで分けない */}
-          {s.count > 0 && s.state === 'diff' && (
+          {s.count > 0 && s.state === 'told' && <Lock size={12} className="month-lock" aria-hidden="true" />}
+          {/* 未連絡の変更あり（淡い黄）は色だけで分けない */}
+          {s.count > 0 && s.state === 'changed' && (
             <PencilLine size={12} className="month-diff-icon" aria-hidden="true" data-testid="month-diff-mark" />
           )}
           {attn > 0 ? (
@@ -2305,11 +2058,6 @@ const DayCell = memo(function DayCell(props: CellProps) {
             care && <span className="month-dot" aria-hidden="true" />
           )}
           {s.count > 0 && focus === 'all' && <span className="month-count">{s.count}件</span>}
-          {unmade > 0 && (
-            <span className="month-unmade" data-testid="month-unmade">
-              未作成
-            </span>
-          )}
         </span>
         {body}
       </button>

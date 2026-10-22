@@ -256,7 +256,9 @@ async function plan(page) {
     const col = page.locator(`.tl-col[data-staff="${to}"]`);
     await col.scrollIntoViewIfNeeded();
     const cb = await col.boundingBox();
-    return { x: cb.x + cb.width / 2, y: cb.y + Math.min(cb.height / 2, 120) };
+    // 列の上が上の帯（固定の見出し）の下に隠れていても、見えている所に落とす
+    const top = Math.max(cb.y, 140);
+    return { x: cb.x + cb.width / 2, y: Math.min(top + 120, cb.y + cb.height - 20) };
   });
   check((await staffOf()) === to, '日：帯のドラッグで別の担当へ移せる（今どおり）', { from, to: await staffOf() });
   // 担当ごとの1日の i：押しても列へは移らない（行のボタンの動きを起こさない）

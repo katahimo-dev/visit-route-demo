@@ -69,5 +69,5 @@ self.onmessage = (e: MessageEvent<WorkerRequest>) => {
 function fail(me: Job, err: unknown) {
   if (job === me) job = null;
   console.error(err);
-  post({ type: 'error', requestId: me.requestId, message: 'AI案の計算中に問題が起きました' });
+  post({ type: 'error', requestId: me.requestId, message: 'AI の計算中に問題が起きました' });
 }

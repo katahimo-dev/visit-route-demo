@@ -116,7 +116,7 @@ export function BatchBand(): ReactNode {
   return (
     <section
       className="batch-band"
-      aria-label={run.source === 'week' ? `${run.label}の案づくりの進み具合` : '月まとめ作成の進み具合'}
+      aria-label={run.source === 'week' ? `${run.label}の担当を組む進み具合` : '担当を組む進み具合'}
       data-testid="batch-band"
       onFocus={() => {
         focusInside.current = true;
@@ -139,7 +139,7 @@ export function BatchBand(): ReactNode {
           setStopping(true);
           monthBatch.stop();
         }}
-        aria-label={stopping ? `${run.label}の案づくりを止めています` : `${run.label}の案づくりを止める`}
+        aria-label={stopping ? `${run.label}の担当を組むのを止めています` : `${run.label}の担当を組むのを止める`}
         data-testid="batch-band-stop"
       >
         <Square size={14} aria-hidden="true" />

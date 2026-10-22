@@ -1,14 +1,15 @@
 // コマンドパレット（Ctrl+K。PRD D181〜D183。ADR-0027）の中身と絞り込みを決める純粋関数。
 // 行き先は今ある URL だけ（画面・`?do=` の入口・人の画面）。データは書き換えない
+import type { DemoData } from '../contracts/data';
 import type { Client, Staff, Terms, Visit } from '../contracts/documents';
 import type { Features } from '../contracts/features';
 import { addDays } from '../domain/time';
+import { visitsIn } from '../patterns';
 import { STAGE_LABELS } from './clientStage';
 import { dateText } from './common';
 import { isHrefOn } from './features';
 import { addMonths, ymOf } from './month';
 import { absenceHref, isNavAction, type MenuItem, type NavSection } from './nav';
-import { recreateTodayHref } from './rebuildBand';
 import { normalizeKana } from './search';
 
 /** 候補の種類（出す順）：操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉 → 訪問（PRD D304） */
@@ -63,7 +64,7 @@ const SCREEN_WORDS: Record<string, readonly string[]> = {
   '/month': ['つき', 'げつ', 'かれんだー', 'つきのよてい', '月間', 'げっかん', '月の画面'],
   '/week': ['しゅう', 'しゅうのよてい', 'じかんじく', '週間', 'しゅうかん'],
   '/plan': ['ひ', 'にち', 'ひのよてい', 'わりあて', '予定', '日の画面', 'きょう'],
-  '/compare': ['あんをくらべる', 'ひかく', '比較'],
+  '/compare': ['ていあんをくらべる', 'あんをくらべる', 'ひかく', '比較'],
   '/vacancy': ['あきじょうきょう', 'といあわせ', '問い合わせ'],
   '/clients': ['いちらん'],
   '/compat': ['あいしょう'],
@@ -134,15 +135,11 @@ export function paletteScreens(
 }
 
 /**
- * 操作の候補（区切り1〜5 で足した入口。PRD D182）：欠勤・キャンセルを登録・日の予定（今日）・今月（と来月）の案をまとめて作る・
- * 要対応・確定していない日・条件が変わった日を作り直す・問い合わせに答える。today は日本時間の今日。
- * customRules（この日だけ試す重みがどのプリセットとも違う）なら「今日の案を日の予定の重みで作り直す」（`?do=recreate`。D166・D234）も。
- * features で切った機能の操作（欠勤・キャンセル・問い合わせ・作り直す）は出さない（PRD D213。lib/features の表から引く）
+ * 操作の候補（PRD D182）：欠勤・キャンセルを登録・日の予定（今日）・今月（と来月）の担当を AI で組む・
+ * 要対応・確定していない日・問い合わせに答える。today は日本時間の今日。
+ * features で切った機能の操作（欠勤・キャンセル・問い合わせ）は出さない（PRD D213。lib/features の表から引く）
  */
-export function paletteActions(
-  today: string,
-  { customRules = false, features = {} }: { customRules?: boolean; features?: Features } = {},
-): PaletteItem[] {
+export function paletteActions(today: string, { features = {} }: { features?: Features } = {}): PaletteItem[] {
   const ym = ymOf(today);
   const next = addMonths(ym, 1);
   const monthNo = (m: string) => Number(m.slice(5, 7));
@@ -169,18 +166,18 @@ export function paletteActions(
     paletteItem({
       id: 'action:batch',
       kind: 'action',
-      label: `${monthNo(ym)}月の案をまとめて作る`,
+      label: `${monthNo(ym)}月の担当を AI で組む`,
       hint: '月の予定',
       to: month('batch'),
-      words: ['こんげつ', '今月', 'まとめてつくる', 'あんをつくる', 'つきをくむ'],
+      words: ['こんげつ', '今月', 'まとめてつくる', 'くむ', 'たんとう', 'つきをくむ', 'えーあい'],
     }),
     paletteItem({
       id: 'action:batch-next',
       kind: 'action',
-      label: `${monthNo(next)}月の案をまとめて作る`,
+      label: `${monthNo(next)}月の担当を AI で組む`,
       hint: '月の予定',
       to: month('batch', next),
-      words: ['らいげつ', '来月', 'まとめてつくる', 'あんをつくる', 'つきをくむ'],
+      words: ['らいげつ', '来月', 'まとめてつくる', 'くむ', 'たんとう', 'つきをくむ', 'えーあい'],
     }),
     paletteItem({
       id: 'action:attention',
@@ -198,27 +195,6 @@ export function paletteActions(
       to: month('unconfirmed'),
       words: ['かくてい', 'みかくてい', '未確定'],
     }),
-    paletteItem({
-      id: 'action:stale',
-      kind: 'action',
-      label: '条件が変わった日を作り直す',
-      hint: '月の予定',
-      to: month('stale'),
-      words: ['つくりなおす', 'じょうけんがかわった'],
-    }),
-    ...(customRules
-      ? [
-          paletteItem({
-            id: 'action:recreate',
-            kind: 'action',
-            label: '今日の案を日の予定の重みで作り直す',
-            hint: '日の予定',
-            to: recreateTodayHref(today),
-            date: today,
-            words: ['つくりなおす', 'ためすおもみ', 'いまのじょうけん', 'じょうけんのおもみ'],
-          }),
-        ]
-      : []),
     paletteItem({
       id: 'action:visit-add',
       kind: 'action',
@@ -275,6 +251,18 @@ export function palettePeople(
 
 /** 〈利用者さん〉ごとの訪問（日付・開始の順）。打ってから引くための索引（パレットを開いている間 memo） */
 export type VisitIndex = ReadonlyMap<string, readonly Visit[]>;
+
+/** 索引に入れる期間（今日の前後。繰り返しの回は見るときに計算するので、期間を区切る。版2） */
+export const PALETTE_VISIT_DAYS_BEFORE = 31;
+export const PALETTE_VISIT_DAYS_AFTER = 92;
+
+/** 索引に入れる訪問（今日の前後の期間の、保存した回と計算した回） */
+export function paletteVisitList(data: Pick<DemoData, 'visits' | 'patterns' | 'clients'>, today: string): Visit[] {
+  return visitsIn(data, {
+    from: addDays(today, -PALETTE_VISIT_DAYS_BEFORE),
+    to: addDays(today, PALETTE_VISIT_DAYS_AFTER),
+  });
+}
 
 export function visitIndex(visits: readonly Visit[]): VisitIndex {
   const m = new Map<string, Visit[]>();

@@ -48,12 +48,12 @@ describe('org.features（PRD D216）', () => {
     expect(createDemoData('2026-10-12').org.features).toEqual({});
   });
 
-  it('org.features の無い古いデータは {} で読める（版は1のまま）', () => {
+  it('org.features の無い古いデータは {} で読める（版は2のまま）', () => {
     const d = createDemoData('2026-10-12');
     const { features: _drop, ...oldOrg } = d.org;
     const r = ok(importJson(JSON.stringify({ ...d, org: oldOrg })));
     expect(r.org.features).toEqual({});
-    expect(r.version).toBe(1);
+    expect(r.version).toBe(2);
   });
 
   it('知らない ID・真偽でない値は捨て、検査で落とさない', () => {
@@ -101,9 +101,6 @@ describe('初めて開いたときの入り切り（PRD D276）', () => {
     const r = loadWithStatus();
     expect(r.fresh).toBe(true);
     expect(r.data.org.features).toEqual(applyTemplate('basic'));
-    // 案の記録の計算に効く入り切りも基本（読み直して「条件が変わった」にしない）
-    for (const runs of Object.values(r.data.aiRuns))
-      for (const run of runs) expect(run.calcFeatures).toEqual({ allowedStaff: false });
     expect(loadWithStatus().fresh).toBe(false);
   });
   it('印「all」があれば、すべて入（{}。今までの初期データと同じ）', () => {

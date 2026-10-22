@@ -125,7 +125,7 @@ describe('navTitle（上の帯の名前。画面の一覧から引く）', () =>
     expect(navTitle(screens, '/schedule')).toBe('日の予定');
     expect(navTitle(screens, '/month')).toBe('月の予定');
     expect(navTitle(screens, '/week')).toBe('週の予定');
-    expect(navTitle(screens, '/compare')).toBe('案を比べる');
+    expect(navTitle(screens, '/compare')).toBe('提案を比べる');
     expect(navTitleParts(screens, '/plan')).toEqual({ group: null, item: '日の予定' });
   });
   it('設定のタブは「設定・〜」、見出しの無いグループは項目名だけ', () => {

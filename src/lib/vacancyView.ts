@@ -17,7 +17,7 @@ export const VACANCY_MARK_TEXT: Record<Verdict, string> = {
   ok: 'どの週も受けられる',
   partial: '受けられない週がある',
   ng: '受けられない',
-  unknown: '案が無く数えていない',
+  unknown: '数えられない日',
 };
 
 export type CellFace = {
@@ -69,7 +69,7 @@ export function markLegend(exact: boolean): { verdict: Verdict; mark: string; sa
     },
     { verdict: 'partial', mark: '△', sample: '2/4', text: '受けられない週がある（2/4＝4週のうち2週は受けられる）' },
     { verdict: 'ng', mark: '×', sample: '', text: '受けられない' },
-    { verdict: 'unknown', mark: '？', sample: '', text: '案が無く数えていない' },
+    { verdict: 'unknown', mark: '？', sample: '', text: '数えられない日' },
   ];
 }
 
@@ -168,9 +168,9 @@ export function answerCard(result: VacancyResult, wish: Omit<InquiryWish, 'start
   if (all.every((c) => verdictOf(c) === 'unknown')) {
     return {
       tone: 'unknown',
-      head: '案が無く数えられません',
+      head: '数えられません',
       body: null,
-      note: '希望の曜日・時間帯の日に案がありません。下の［足りない案を作る］で作ると数えます。',
+      note: '希望の曜日・時間帯の日は、働ける人か訪問の場所が無く、空きを数えられません。',
     };
   }
   // 案が無く数えていない（？）曜日。混ざるときは補いに添える（数えた曜日だけの答えなので）
@@ -181,7 +181,7 @@ export function answerCard(result: VacancyResult, wish: Omit<InquiryWish, 'start
   const withUnknown = (note: string) =>
     unknownDays.length === 0
       ? note
-      : `${note}${unknownDays.map((wd) => WEEKDAY_LABELS[wd]).join('・')}は案が無く数えていません（［足りない案を作る］）。`;
+      : `${note}${unknownDays.map((wd) => WEEKDAY_LABELS[wd]).join('・')}は数えられませんでした。`;
   const people: number[] = [];
   const ok = days.flatMap((wd) => {
     const ranges: string[] = [];

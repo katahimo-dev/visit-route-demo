@@ -35,6 +35,7 @@ import {
   type VisitScope,
   visitInfo,
 } from '../lib/visitOps';
+import { findVisit, visitsOn } from '../patterns';
 import { useDemoData } from '../store';
 import { useConfirm } from './ConfirmDialog';
 import { FieldError, invalidAttrs, RequiredMark } from './FieldError';
@@ -143,13 +144,13 @@ function VisitPanel({
    * 開いたときの訪問（欄の中の書き込みのあとは書いた形に差し替える）。保存・取り消しの前にデータの訪問と比べ、別のタブ・別の操作で
    * 変わっていれば古い入力で上書きしない
    */
-  const baseRef = useRef<Visit | null>(req.visitId ? (data.visits.find((y) => y.id === req.visitId) ?? null) : null);
+  const baseRef = useRef<Visit | null>(req.visitId ? findVisit(data, req.visitId) : null);
   const info = useMemo(() => (visitId ? visitInfo(data, visitId, today) : null), [data, visitId, today]);
   const v = info?.visit ?? null;
   const [draft, setDraft] = useState<VisitDraft>(() => {
     const base = req.visitId
       ? (() => {
-          const x = data.visits.find((y) => y.id === req.visitId);
+          const x = req.visitId ? findVisit(data, req.visitId) : null;
           return x ? draftOf(x) : newDraft(data, today);
         })()
       : newDraft(data, req.newVisit?.date ?? today, req.newVisit?.clientId, req.newVisit?.start);
@@ -188,8 +189,8 @@ function VisitPanel({
     if (!choices || pick === KEEP) return;
     const ok =
       pick === NONE_PICK
-        ? choices.hasPlan && choices.currentStaffId !== null
-        : choices.hasPlan && choices.choices.some((c) => c.staffId === pick && !c.disabled && !c.current);
+        ? choices.currentStaffId !== null
+        : choices.choices.some((c) => c.staffId === pick && !c.disabled && !c.current);
     if (!ok) setPick(KEEP);
   }, [choices, pick]);
 
@@ -218,7 +219,7 @@ function VisitPanel({
   /** 別のタブ・別の操作で開いた訪問が変わっていれば、その文（保存・取り消しを止める） */
   const changedElsewhere = (): string | null => {
     if (isNew || !visitId) return null;
-    const now = latest.current.visits.find((x) => x.id === visitId) ?? null;
+    const now = visitId ? findVisit(latest.current, visitId) : null;
     return JSON.stringify(now) !== JSON.stringify(baseRef.current)
       ? 'この訪問は別の操作で変わりました。閉じて開き直してください'
       : null;
@@ -231,7 +232,7 @@ function VisitPanel({
     const before = data;
     if (latest.current !== before) return null;
     update((d) => (d === before ? next : d));
-    if (visitId) baseRef.current = next.visits.find((x) => x.id === visitId) ?? null;
+    if (visitId) baseRef.current = findVisit(next, visitId);
     return undoTo(before, next);
   };
   const STALE = '開いている間にデータが変わりました。閉じて開き直してください';
@@ -265,12 +266,12 @@ function VisitPanel({
     }
     // これ以降・すべてで確定した日の訪問も変わるなら確かめる（週のドラッグと同じ）
     if (scope !== 'once' && !isNew) {
-      const fixed = r.dates.filter((x) => !!own(data.manualPlans, x));
+      const fixed = r.dates.filter((x) => !!own(data.snapshots, x));
       if (
         fixed.length > 0 &&
         !(await confirm({
           title: '確定した日の訪問も変えますか？',
-          body: `確定した日（${fixed.map((x) => dateText(x)).join('・')}）の訪問も変わります。確定した割当はそのままで、その日は「未確定の変更あり」になります。`,
+          body: `確定した日（${fixed.map((x) => dateText(x)).join('・')}）の訪問も変わります。その日は「未連絡の変更あり」になり、連絡の一覧に出ます。`,
           confirmLabel: '変える',
         }))
       )
@@ -281,7 +282,7 @@ function VisitPanel({
       setError({ text: STALE });
       return;
     }
-    const after = r.data.visits.find((x) => x.id === r.visitId);
+    const after = findVisit(r.data, r.visitId);
     const label = after ? `${dateText(after.date)} ${after.earliestStart}` : '';
     const range = info?.pattern && !isNew ? `・${SCOPE_LABELS[scope]}` : '';
     const failText =
@@ -330,7 +331,7 @@ function VisitPanel({
     if (next === data) return;
     const action = write(next);
     if (!action) return setError({ text: STALE });
-    const after = next.visits.find((x) => x.id === v.id);
+    const after = findVisit(next, v.id);
     if (after) setDraft(draftOf(after));
     toast('この回の変更を戻しました（繰り返しのとおり）', { action });
   };
@@ -351,13 +352,13 @@ function VisitPanel({
     if (!v || !info?.assignment.staffId) return null;
     const s = staffById.get(info.assignment.staffId);
     if (!s) return null;
-    const cols = info.assignment.source === 'plan' ? own(data.aiPlans, v.date)?.routes : own(data.manualPlans, v.date);
-    const order = cols ? (own(cols, s.id) ?? []) : [];
-    const i = order.indexOf(v.id);
-    const prev = i > 0 ? data.visits.find((x) => x.id === order[i - 1]) : undefined;
+    // その人のその日の訪問（開始の順）で、この訪問の前の訪問
+    const order = visitsOn(data, v.date).filter((x) => !x.cancelled && x.staffId === s.id);
+    const i = order.findIndex((x) => x.id === v.id);
+    const prev = i > 0 ? order[i - 1] : undefined;
     const prevClient = prev ? data.clients.find((c) => c.id === prev.clientId) : undefined;
     return { staff: s, from: prevClient ? prevClient.place : s.home, fromName: prevClient?.displayName ?? HOME_LABEL };
-  }, [v, info, staffById, data.aiPlans, data.manualPlans, data.visits, data.clients]);
+  }, [v, info, staffById, data]);
 
   const title = isNew ? '訪問を追加' : '訪問の詳細';
   const type = typeOf(data.visitTypes, v?.typeId ?? draft.typeId);
@@ -450,12 +451,9 @@ function VisitPanel({
                       </span>
                     )}
                     {owner === info.usualStaffId && <span className="sub">（いつもの担当）</span>}
-                    {info.assignment.source === 'confirmed' && <span className="sub">（確定した割当）</span>}
                   </span>
                 ) : (
-                  <span className="sub">
-                    {info.assignment.source === null ? '案がありません' : '担当なし（入らなかった訪問）'}
-                  </span>
+                  <span className="sub">担当なし</span>
                 )}
               </dd>
               {info.patternText && (
@@ -671,11 +669,6 @@ function VisitPanel({
               {draft.date !== v?.date && !isNew && <span className="sub">（{dateText(draft.date)}の候補）</span>}
             </legend>
             {choices.why && <p className="sub">{choices.why}</p>}
-            {!choices.why && !choices.hasPlan && (
-              <p className="sub" data-testid="vp-staff-noplan">
-                この日は今の案がありません。担当は案を作ると決まります（候補は目安として出します）。
-              </p>
-            )}
             <div className="vp-choices" role="radiogroup" aria-label="担当">
               <label className="vp-choice">
                 <input
@@ -687,7 +680,7 @@ function VisitPanel({
                 />
                 <span className="vp-choice-text">
                   <span className="vp-choice-name">
-                    {isNew ? '選ばない（案を作るときに決める）' : '変えない'}
+                    {isNew ? '選ばない（担当なし。あとで AI で組める）' : '変えない'}
                     {!isNew && current && <span className="sub">（今：{staffName(current)}）</span>}
                   </span>
                 </span>
@@ -695,7 +688,7 @@ function VisitPanel({
               {choices.choices
                 .filter((c) => !c.current)
                 .map((c) => {
-                  const off = !choices.hasPlan || !!c.disabled;
+                  const off = !!c.disabled;
                   return (
                     <label
                       key={c.staffId}
@@ -721,7 +714,7 @@ function VisitPanel({
                     </label>
                   );
                 })}
-              {!isNew && current && choices.hasPlan && (
+              {!isNew && current && (
                 <label className="vp-choice">
                   <input
                     type="radio"
@@ -737,7 +730,7 @@ function VisitPanel({
                 </label>
               )}
             </div>
-            <p className="sub">選んだ人にピンが付き、作り直しても担当は変わりません。</p>
+            <p className="sub">選んだ人にピンが付き、AI で組んでも担当は変わりません。</p>
           </fieldset>
         )}
 

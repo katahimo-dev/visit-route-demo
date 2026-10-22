@@ -1,6 +1,5 @@
 // 〈利用者さん〉の絞り込み（PRD D108〜D112。ADR-0021）
 import { describe, expect, it } from 'vitest';
-import type { AiPlan } from '../contracts/data';
 import type { Pattern } from '../contracts/documents';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import {
@@ -41,9 +40,8 @@ const people = [
     displayName: 'あおば 一',
     kana: 'あおば',
     place: at('仙台市青葉区国分町3丁目'),
-    usualStaffId: 's1',
   }),
-  client('b', 0, 0, { displayName: 'いずみ 二', kana: 'いずみ', place: at('仙台市青葉区春日町'), usualStaffId: 's2' }),
+  client('b', 0, 0, { displayName: 'いずみ 二', kana: 'いずみ', place: at('仙台市青葉区春日町') }),
   client('c', 0, 0, { displayName: 'うみ 三', kana: 'うみ', place: at('仙台市泉区泉中央'), allowedStaffIds: ['s1'] }),
   client('d', 0, 0, { displayName: 'えき 四', kana: 'えき', place: at(''), stage: 'ended', active: false }),
   client('e', 0, 0, { displayName: 'おか 五', kana: 'おか', place: at('宮城郡七ヶ浜町汐見台'), stage: 'inquiry' }),
@@ -57,6 +55,8 @@ const facts = (over: Partial<FilterFacts> = {}): FilterFacts => ({
   staffClientIds: (id) => new Set(id === 's1' ? ['a', 'c'] : id === 's2' ? ['b'] : []),
   workingStaffIds: new Set(['s1']),
   endedShownIds: new Set(),
+  // 繰り返しの担当（版2。a は s1、b は s2）
+  usualOf: (id) => (id === 'a' ? 's1' : id === 'b' ? 's2' : null),
   ...over,
 });
 const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
@@ -241,7 +241,8 @@ describe('filterFacts（週の帯から作る）', () => {
     durationMinutes: 60,
     from: DATE,
     to: null,
-    usualStaffId: null,
+    // 繰り返しの担当（版2。ADR-0053）：計算した回の担当で、近道「〈スタッフ〉が担当する人」にも入る
+    usualStaffId: 's2',
     note: '',
   };
   const base = () =>
@@ -251,11 +252,7 @@ describe('filterFacts（週の帯から作る）', () => {
         staff('s2', 38.26, 140.87, { lastDay: '2026-10-15' }),
         staff('s3', 38.26, 140.87, { active: false }),
       ],
-      clients: [
-        client('c1', 38.26, 140.87, { usualStaffId: 's2' }),
-        client('c2', 38.27, 140.88, { usualStaffId: 's3' }),
-        client('c3', 38.27, 140.88),
-      ],
+      clients: [client('c1', 38.26, 140.87), client('c2', 38.27, 140.88), client('c3', 38.27, 140.88)],
       visits: [
         visit('v1', 'c1', '09:00', '10:00'),
         visit('v2', 'c2', '11:00', '12:00', { date: '2026-10-14' }),
@@ -264,7 +261,7 @@ describe('filterFacts（週の帯から作る）', () => {
       patterns: [pat],
       clientLeaves: [{ id: 'l1', clientId: 'c3', from: '2026-10-18', to: '2026-10-25', note: '入院' }],
     });
-  it('案の無い日の訪問は担当が決まっていない。取り消しは期間に数えない。休みは期間にかかれば', () => {
+  it('担当なしの訪問は担当が決まっていない。取り消しは期間に数えない。休みは期間にかかれば', () => {
     const d = base();
     const days = dates.map((x) => weekDay(d, x));
     const F = filterFacts({ ...d, days });
@@ -276,34 +273,20 @@ describe('filterFacts（週の帯から作る）', () => {
     expect([...F.workingStaffIds]).toEqual(['s1']);
     expect([...F.staffClientIds('s2')]).toEqual(['c1']);
   });
-  const planOf = (routes: Record<string, string[]>, unassigned: string[] = []): AiPlan => ({
-    date: DATE,
-    createdAt: 1,
-    seed: 1,
-    iterations: 1,
-    routes,
-    unassigned,
-    score: 0,
-    stopped: false,
-    rules: [],
-    generated: { routes, unassigned, score: 0 },
-    pins: {},
+  const assign = (d: ReturnType<typeof base>, id: string, staffId: string) => ({
+    ...d,
+    visits: d.visits.map((v) => (v.id === id ? { ...v, staffId } : v)),
   });
-  it('今の案に入った訪問は担当が決まっている（担当の〈スタッフ〉が担当する人に入る）', () => {
-    const d = base();
-    const withPlan = { ...d, aiPlans: { [DATE]: planOf({ s1: ['v1'] }) } };
-    const days = dates.map((x) => weekDay(withPlan, x));
-    const F = filterFacts({ ...withPlan, days });
+  it('担当のある訪問は担当が決まっている（担当の〈スタッフ〉が担当する人に入る）', () => {
+    const withStaff = assign(base(), 'v1', 's1');
+    const days = dates.map((x) => weekDay(withStaff, x));
+    const F = filterFacts({ ...withStaff, days });
     expect([...F.unassignedIds]).toEqual(['c2']);
     expect([...F.staffClientIds('s1')]).toEqual(['c1']);
   });
-  it('案がある日でも、案に入らない訪問は担当が決まっていない', () => {
-    const d = base();
-    const data = {
-      ...d,
-      visits: [...d.visits, visit('v4', 'c3', '15:00', '16:00')],
-      aiPlans: { [DATE]: planOf({ s1: ['v1'] }, ['v4']) },
-    };
+  it('担当なしの訪問は担当が決まっていない', () => {
+    const d = assign(base(), 'v1', 's1');
+    const data = { ...d, visits: [...d.visits, visit('v4', 'c3', '15:00', '16:00')] };
     const F = filterFacts({ ...data, days: dates.map((x) => weekDay(data, x)) });
     expect([...F.unassignedIds].sort()).toEqual(['c2', 'c3']);
   });
@@ -314,13 +297,6 @@ describe('filterFacts（週の帯から作る）', () => {
     expect([...F.unassignedIds]).toEqual(['c2']);
     expect(F.periodIds.has('c1')).toBe(true);
     expect(F.leaveIds.has('c1')).toBe(true);
-  });
-  it('確定した割当（manualPlans）でも担当が決まっている', () => {
-    const d = base();
-    const data = { ...d, manualPlans: { '2026-10-14': { s1: ['v2'] } } };
-    const F = filterFacts({ ...data, days: dates.map((x) => weekDay(data, x)) });
-    expect([...F.unassignedIds]).toEqual(['c1']);
-    expect(F.staffClientIds('s1').has('c2')).toBe(true);
   });
   it('showEndedInPeriod なら、期間に訪問がある人を endedShownIds に入れる', () => {
     const d = base();
@@ -402,7 +378,7 @@ describe('訪問の種類での絞り込み（PRD D285。複数ならどれか�
       ],
     });
     const days = weekDates(DATE).map((d) => weekDay(data, d));
-    const input = { days, visits: data.visits, clients: data.clients, patterns: [], clientLeaves: [], staff: [] };
+    const input = { days, clients: data.clients, patterns: [], clientLeaves: [], staff: [] };
     const fx = filterFacts({ ...input, visitTypes: [{ id: 't1' }, { id: 't2' }] });
     expect([...(fx.typeClientIds?.get('t1') ?? [])]).toEqual(['c1']);
     expect([...(fx.typeClientIds?.get('t2') ?? [])]).toEqual(['c2']);

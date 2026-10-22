@@ -60,11 +60,12 @@ export function searchClients<T extends Pick<Client, 'displayName' | 'kana'>>(
 /**
  * 近道「〈スタッフ〉が担当する人」の表（〈スタッフ〉の ID → 〈利用者さん〉の ID）。
  * pairs は案の担当（〈スタッフ〉の ID と、その人が担当する訪問の〈利用者さん〉の ID。未知の訪問は undefined で飛ばす）、
- * それに各〈利用者さん〉のいつもの担当を足す
+ * それに各〈利用者さん〉のいつもの担当（usual。lib/usualStaff の usualStaffMap）を足す
  */
 export function staffClientMap(
   pairs: Iterable<readonly [string, string | undefined]>,
-  clients: readonly Pick<Client, 'id' | 'usualStaffId'>[],
+  clients: readonly Pick<Client, 'id'>[],
+  usual: ReadonlyMap<string, string>,
 ): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
   const add = (sid: string, cid: string | undefined) => {
@@ -74,7 +75,10 @@ export function staffClientMap(
     out.set(sid, set);
   };
   for (const [sid, cid] of pairs) add(sid, cid);
-  for (const c of clients) if (c.usualStaffId) add(c.usualStaffId, c.id);
+  for (const c of clients) {
+    const sid = usual.get(c.id);
+    if (sid) add(sid, c.id);
+  }
   return out;
 }
 

@@ -27,6 +27,7 @@ import { formatPostalCode } from '../lib/postalCode';
 import { shouldOpenRow } from '../lib/rowOpen';
 import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
+import { usualStaffMap } from '../lib/usualStaff';
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
 import { PlaceAllPanel } from './PlaceAllPanel';
@@ -60,14 +61,13 @@ export default function ClientsPage() {
     () =>
       filterFacts({
         days,
-        visits: data.visits,
         clients,
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff,
         visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
+    [days, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
   );
   const shown = useMemo(
     () => filterClients(clients, filter, facts, resolveStaffId(filter, activeStaff, facts, clients)),
@@ -85,6 +85,8 @@ export default function ClientsPage() {
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const periodLabel = `${md(dates[0]!)}（${WEEKDAY_LABELS[weekday(dates[0]!)]}）からの週`;
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
+  /** いつもの担当（繰り返しの担当。版2） */
+  const usualMap = useMemo(() => usualStaffMap(data.patterns, date), [data.patterns, date]);
   const clientItems = data.items.filter((i) => i.target === 'client');
   const today = jstDate(Date.now());
   const itemById = new Map(data.items.map((i) => [i.id, i]));
@@ -268,10 +270,10 @@ export default function ClientsPage() {
                   <CondChips requirements={c.requirements} preferences={c.preferences} itemById={itemById} />
                 </td>
                 <td {...narrowRole.cell} className="nowrap" data-label="いつもの担当">
-                  {c.usualStaffId && (
+                  {usualMap.get(c.id) && (
                     <span className="with-staff-mark">
-                      <StaffMarkById id={c.usualStaffId} size="xs" />
-                      {staffName(c.usualStaffId)}
+                      <StaffMarkById id={usualMap.get(c.id)!} size="xs" />
+                      {staffName(usualMap.get(c.id)!)}
                     </span>
                   )}
                   {allowedOn && c.allowedStaffIds.length > 0 && (

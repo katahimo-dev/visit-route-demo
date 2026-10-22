@@ -26,13 +26,13 @@ describe('cellFace（マスの見た目と読み方）', () => {
     const u = cellFace({ min: 0, weeksOk: 0, weeksTotal: 0 }, true, '日 9:00から');
     expect(u.mark).toBe('？');
     expect(u.sub).toBe('');
-    expect(u.label).toBe('日 9:00から：？ 案が無く数えていない');
+    expect(u.label).toBe('日 9:00から：？ 数えられない日');
   });
   it('凡例は4つの印で、目安なら「約」の見本', () => {
     expect(markLegend(false).map((x) => x.mark)).toEqual(['○', '△', '×', '？']);
     expect(markLegend(false)[0]!.sample).toBe('約3');
     expect(markLegend(true)[0]!.sample).toBe('3');
-    expect(markLegend(true)[3]!.text).toBe('案が無く数えていない');
+    expect(markLegend(true)[3]!.text).toBe('数えられない日');
   });
 });
 
@@ -187,7 +187,7 @@ describe('answerCard（結果の1枚目の答え。PRD D258）', () => {
     // 案の無い曜日が混ざるときは補いに添える
     const mixed = answerCard(result({ 2: okRow, 4: unknown }), { ...wish, perWeek: 1 });
     expect(mixed.tone).toBe('ok');
-    expect(mixed.note).toContain('木は案が無く数えていません（［足りない案を作る］）');
+    expect(mixed.note).toContain('木は数えられませんでした');
   });
 
   it('始められる時刻が無い：受けられません', () => {

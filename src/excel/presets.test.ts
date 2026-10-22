@@ -142,12 +142,12 @@ describe('Excel の条件のシート＝この日だけ試す重み（ADR-0035�
     expect(r.rules).toEqual(d.rules);
     expect(presetOf(r.rules, r.presets)?.id).toBe(scorePresetOf(r.presets, r.scorePresetId)?.id);
   });
-  it('試す重みが基準と違うデータは、そのまま試す重みとして戻る（ふだんの重みはプリセットのシートの基準の行）', async () => {
+  it('条件のシートの重みが基準と違っても、読み込むと基準の重みにそろう（版2は試す重みを持たない。ADR-0053）', async () => {
     const d0 = base();
     const d = { ...d0, rules: d0.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 4.5 } : r)) };
     const r = await importWorkbook(await toBuffer(d), d0);
     if (isImportError(r)) throw new Error(r.message);
-    expect(r.rules.find((x) => x.type === 'wait')!.weight).toBe(4.5);
+    expect(r.rules.find((x) => x.type === 'wait')!.weight).toBe(3);
     expect(scorePresetOf(r.presets, r.scorePresetId)!.weights.wait.weight).toBe(3);
   });
 });

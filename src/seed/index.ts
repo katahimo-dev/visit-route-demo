@@ -7,9 +7,9 @@ import { type Client, EMPTY_REFERRER, SPAN_LIMIT_DEFAULT_HOURS, type Staff } fro
 import type { Compat } from '../contracts/rules';
 import { DEFAULT_TERMS } from '../domain/terms';
 import { addDays } from '../domain/time';
-import { applyPatterns } from '../patterns';
+import { expandPattern } from '../patterns';
 import { datesFrom, generateDay, UNASSIGNED_KEY } from './generate';
-import { INITIAL_VISIT_TYPES, seedPatterns, VISIT_TYPE_ID } from './patterns';
+import { INITIAL_VISIT_TYPES, seedPatterns } from './patterns';
 import {
   CLIENT_SEEDS,
   INITIAL_COMPAT,
@@ -56,7 +56,6 @@ function initialClients(): Client[] {
     traits: { pet: c.pet ?? false, smoking: c.smoking ?? false, target: c.target },
     requirements: c.requirements ?? [],
     preferences: c.preferences ?? [],
-    usualStaffId: null,
     tentative: false,
     entryNote: VISIT_RULE_SEEDS[c.id]?.entryNote ?? '',
     keyNote: VISIT_RULE_SEEDS[c.id]?.keyNote ?? '',
@@ -66,6 +65,14 @@ function initialClients(): Client[] {
     stage: 'active' as const,
     referrer: REFERRER_SEEDS[c.id] ?? { ...EMPTY_REFERRER },
   }));
+}
+
+/** 初期データの繰り返しの開始日：today の前の月の1日 */
+export function seedPatternStart(today: string): string {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const [py, pm] = m === 1 ? [y - 1, 12] : [y, m - 1];
+  return `${py}-${String(pm).padStart(2, '0')}-01`;
 }
 
 /** today（YYYY-MM-DD）から14日分。同じ日付なら同じデータ */
@@ -95,84 +102,91 @@ export function createDemoData(today: string): DemoData {
     absences: [],
     clientLeaves: [],
     visitTypes: INITIAL_VISIT_TYPES.map((t) => ({ ...t, requirements: t.requirements.map((c) => ({ ...c })) })),
-    patterns: seedPatterns(today),
-    manualPrefs: {},
-    manualPlans: {},
-    aiPlans: {},
-    aiRuns: {},
+    // 繰り返しは前の月の初めから（月の予定で過去の日の混み具合も見られるように。初期データの過去の日は伝えた状態。seed/plans）
+    patterns: seedPatterns(seedPatternStart(today)),
+    snapshots: {},
+    reassigns: {},
     presets: initialPresets(),
     // 点数の基準は「標準」（ADR-0010）
     scorePresetId: INITIAL_PRESETS[0]!.id,
   };
-  const { data: withDays, owners } = generateDays(base, today, DEMO_DAYS);
-  // いつもの担当：内部で作った手作業らしい割当で最も多く担当した人（同数なら ID の小さい順）
-  const clients = withDays.clients.map((c) => ({ ...c, usualStaffId: usualStaffOf(withDays, owners, c.id) }));
-  return { ...withDays, clients };
+  const { availability, owners } = generateDays(base, today, DEMO_DAYS);
+  return { ...base, availability, patterns: withUsualStaff(base.patterns, owners, staff) };
 }
 
-function usualStaffOf(data: DemoData, owners: Map<string, string>, clientId: string): string | null {
-  const count = new Map<string, number>();
-  for (const v of data.visits) {
-    const sid = owners.get(v.id);
-    if (v.clientId === clientId && sid) count.set(sid, (count.get(sid) ?? 0) + 1);
+/** 繰り返しの担当を決めるときの、前後の訪問との間（分。移動の目安） */
+const USUAL_GAP_MINUTES = 30;
+
+/**
+ * 繰り返しの担当（いつもの担当。版2：〈利用者さん〉は担当を持たない。ADR-0053）：内部で作った手作業らしい割当で多く担当した人の順に、
+ * 繰り返しの曜日にみな勤務し、同じ曜日のその人のほかの繰り返しと時間（前後 USUAL_GAP_MINUTES 分）が重ならない人。
+ * 入る人がいなければ担当なし（AI で組む）。開始の早い繰り返しから決める。リハビリの繰り返しは seed/patterns の担当のまま
+ */
+function withUsualStaff(
+  patterns: DemoData['patterns'],
+  owners: Map<string, { clientId: string; staffId: string }>,
+  staff: readonly Staff[],
+): DemoData['patterns'] {
+  const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+  const span = (p: DemoData['patterns'][number]) => ({
+    start: toMin(p.earliestStart),
+    end: toMin(p.latestStart) + p.durationMinutes,
+  });
+  const taken = new Map<string, DemoData['patterns'][number][]>();
+  const fits = (sid: string, p: DemoData['patterns'][number]) => {
+    const s = staff.find((x) => x.id === sid);
+    if (!s || !p.weekdays.every((w) => s.workDays.includes(w))) return false;
+    const a = span(p);
+    return (taken.get(sid) ?? []).every((q) => {
+      if (!q.weekdays.some((w) => p.weekdays.includes(w))) return true;
+      const b = span(q);
+      return a.end + USUAL_GAP_MINUTES <= b.start || b.end + USUAL_GAP_MINUTES <= a.start;
+    });
+  };
+  for (const p of patterns)
+    if (p.usualStaffId !== null) taken.set(p.usualStaffId, [...(taken.get(p.usualStaffId) ?? []), p]);
+  const order = [...patterns]
+    .filter((p) => p.usualStaffId === null)
+    .sort((a, b) => a.earliestStart.localeCompare(b.earliestStart) || a.id.localeCompare(b.id));
+  const chosen = new Map<string, string | null>();
+  for (const p of order) {
+    const count = new Map<string, number>();
+    for (const o of owners.values())
+      if (o.clientId === p.clientId) count.set(o.staffId, (count.get(o.staffId) ?? 0) + 1);
+    const candidates = [...count].sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).map(([id]) => id);
+    const pick = candidates.find((sid) => fits(sid, p)) ?? null;
+    chosen.set(p.id, pick);
+    if (pick) taken.set(pick, [...(taken.get(pick) ?? []), p]);
   }
-  let best: string | null = null;
-  for (const [id, n] of [...count].sort(([a], [b]) => a.localeCompare(b))) {
-    if (best === null || n > (count.get(best) ?? 0)) best = id;
-  }
-  return best;
+  return patterns.map((p) => (chosen.has(p.id) ? { ...p, usualStaffId: chosen.get(p.id) ?? null } : p));
 }
 
 /**
- * from から n 日分の訪問・稼働時間帯の上書きを足す。訪問は初期の定期パターン（seedPatterns(from)）から展開する（ADR-0012）。
- * 手作業の割当は入れない（訪問の担当は未割当。ADR-0005）。
- * すでに訪問か手作業案がある日は変えない（既存データを壊さない）。元のデータは書き換えない。
- * データに無い種類のパターン（パターンの無い古いデータのリハビリ）は展開しない。展開した訪問の typeId・pattern は、
- * データにその種類・パターンが無ければ null（古いデータは今までどおりの訪問になる）
+ * from から n 日分の稼働時間帯の上書きと、内部で作った手作業らしい割当（訪問ID → 〈利用者さん〉・担当。繰り返しの担当を決めるのに使う）。
+ * 訪問は初期の繰り返し（seedPatterns(from)）の回（〈利用者さん〉の繰り返しだけ。リハビリは入れない）。元のデータは書き換えない
  */
-export function daysFrom(data: DemoData, from: string, n: number): DemoData {
-  return generateDays(data, from, n).data;
-}
-
-/** daysFrom の本体。owners は内部で作った手作業らしい割当（訪問ID → 担当。いつもの担当を決めるのに使う） */
-function generateDays(data: DemoData, from: string, n: number): { data: DemoData; owners: Map<string, string> } {
-  const have = new Set([...data.visits.map((v) => v.date), ...Object.keys(data.manualPlans)]);
-  const typeIds = new Set(data.visitTypes.map((t) => t.id));
-  const patternIds = new Set(data.patterns.map((p) => p.id));
-  const patterns = seedPatterns(from).filter((p) => p.typeId !== VISIT_TYPE_ID.rehab || typeIds.has(p.typeId));
-  const expanded = applyPatterns(
-    { patterns, visits: data.visits, clients: data.clients },
-    { from, to: addDays(from, n - 1) },
-    from,
-  ).visits.slice(data.visits.length);
-  const visits = [...data.visits];
+function generateDays(
+  data: DemoData,
+  from: string,
+  n: number,
+): { availability: DemoData['availability']; owners: Map<string, { clientId: string; staffId: string }> } {
+  const patterns = seedPatterns(from).filter((p) => p.id === p.clientId);
+  const range = { from, to: addDays(from, n - 1) };
+  const expanded = patterns.flatMap((p) => expandPattern(p, range));
   const availability = [...data.availability];
-  const owners = new Map<string, string>();
+  const owners = new Map<string, { clientId: string; staffId: string }>();
   for (const date of datesFrom(from, n)) {
-    if (have.has(date)) continue;
-    const dayVisits = expanded.filter((v) => v.date === date);
-    // 内部の割当は今までどおり、利用者さんのパターン（ID＝利用者さんID）の訪問だけで作る（リハビリは入れない）
-    const day = generateDay(
-      date,
-      dayVisits.filter((v) => v.pattern?.id === v.clientId),
-      data.staff,
-      data.clients,
-      data.compat,
-    );
-    for (const v of day.visits) if (v.staffId) owners.set(v.id, v.staffId);
-    // データに無い種類・パターンは参照しない（パターンの無い古いデータは今までどおりの訪問）
-    visits.push(
-      ...dayVisits.map((v) => ({
-        ...v,
-        typeId: v.typeId !== null && typeIds.has(v.typeId) ? v.typeId : null,
-        pattern: v.pattern !== null && patternIds.has(v.pattern.id) ? v.pattern : null,
-      })),
-    );
+    const dayVisits = expanded
+      .filter((v) => v.date === date)
+      .map((v) => ({ ...v, staffId: null }))
+      .sort((a, b) => a.earliestStart.localeCompare(b.earliestStart) || a.id.localeCompare(b.id));
+    const day = generateDay(date, dayVisits, data.staff, data.clients, data.compat);
+    for (const v of day.visits) if (v.staffId) owners.set(v.id, { clientId: v.clientId, staffId: v.staffId });
     availability.push(
       ...day.availability.filter((a) => !data.availability.some((x) => x.staffId === a.staffId && x.date === date)),
     );
   }
-  return { data: { ...data, visits, availability }, owners };
+  return { availability, owners };
 }
 
 export { UNASSIGNED_KEY };

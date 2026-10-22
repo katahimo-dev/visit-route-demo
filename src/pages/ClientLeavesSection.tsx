@@ -104,7 +104,7 @@ export function ClientLeavesSection({
   const remove = async (l: ClientLeave) => {
     const ok = await confirmDialog({
       title: `${mdText(l.from)}〜${mdText(l.to)}の休みを消しますか？`,
-      body: 'この間の訪問は元に戻ります（案は作り直しません）。',
+      body: 'この間の訪問は元に戻ります（担当なしになった回は、日の予定で組みます）。',
       confirmLabel: '休みを消す',
       tone: 'danger',
     });
@@ -140,7 +140,7 @@ export function ClientLeavesSection({
       </SectionTitle>
       <Hint>
         <ul className="hint-list">
-          <li>休みの間の訪問は消さずに「休みのため無し」にし、案に入れません。</li>
+          <li>休みの間の訪問は消さずに「休みのため無し」にし、担当を組みません。</li>
           <li>休みを消すと元に戻ります。</li>
         </ul>
       </Hint>
@@ -228,7 +228,7 @@ export function ClientLeavesSection({
             <div className="leave-warn" data-testid="leave-warn">
               <WithIcon icon={TriangleAlert} size={14}>
                 確定した日（{draftConfirmed.map(mdText).join('・')}）に{client.displayName}の訪問があります。
-                休みを入れても確定した割当は変わりません。その日の「日の予定」で案を作り直してください。
+                休みを入れた日が確定済みなら「未連絡の変更」になります。その日の「日の予定」の連絡の一覧で確かめてください。
               </WithIcon>
               <ul>
                 {draftConfirmed.map((d) => (

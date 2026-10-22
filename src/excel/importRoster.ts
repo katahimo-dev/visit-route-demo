@@ -322,17 +322,6 @@ export async function importRoster(
         postalCode: pick(CLIENT_POSTAL_COL, () => readPostal(r) ?? '', cur?.place.postalCode ?? ''),
       };
       // ほかの人の参照は、今のデータの〈スタッフ〉の名前で探す（全角半角・空白は同一視）
-      const usualStaffId = pick(
-        C.usualStaff,
-        () => {
-          const t = r.text(C.usualStaff);
-          if (t === '') return null;
-          const sid = staffByKey.get(nameKey(t));
-          if (sid === undefined) noStaff(r, C.usualStaff, t);
-          return sid ?? null;
-        },
-        cur?.usualStaffId ?? null,
-      );
       const allowedStaffIds = pick(
         CLIENT_ALLOWED_COL,
         () => {
@@ -362,7 +351,6 @@ export async function importRoster(
         note: text(C.note, 500, cur?.note),
         color,
         ...p,
-        usualStaffId,
         entryNote: text(CLIENT_RULE_COLS.entry, 200, cur?.entryNote),
         keyNote: text(CLIENT_RULE_COLS.key, 200, cur?.keyNote),
         parkingNote: text(CLIENT_RULE_COLS.parking, 200, cur?.parkingNote),

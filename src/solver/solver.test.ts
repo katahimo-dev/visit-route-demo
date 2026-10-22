@@ -21,7 +21,6 @@ function withConditions(seed: number, nStaff: number, nVisits: number): Problem 
   d.clients.forEach((c, i) => {
     if (i % 5 === 0) c.requirements = [{ itemId: 'gender', op: 'is', value: '女性' }];
     if (i % 3 === 0) c.preferences = [{ itemId: 'years', op: 'gte', value: 3 }];
-    if (i % 4 === 0) c.usualStaffId = d.staff[i % d.staff.length]!.id;
     d.compat[c.id] = { [d.staff[(i * 7) % d.staff.length]!.id]: 2, [d.staff[(i * 3) % d.staff.length]!.id]: -2 };
   });
   return compile(d, DATE);
@@ -106,7 +105,7 @@ describe('solver', () => {
     const d = randomData(3, 8, 5, [rule('req', 'clientRequirement', 0, true)]);
     d.clients[0]!.requirements = [{ itemId: 'license', op: 'hasAny', value: ['看護師'] }];
     const p = compile(d, DATE);
-    expect(p.infeasible.map((x) => x.visit)).toEqual([0]);
+    expect(p.infeasible.map((x) => p.visits[x.visit]!.id)).toEqual(['v1']);
     const r = solve(p, { seed: 1, iterations: 5000 });
     expect(r.unassigned).toContain('v1');
   });

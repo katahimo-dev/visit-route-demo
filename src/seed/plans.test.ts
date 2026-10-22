@@ -1,86 +1,62 @@
 import { describe, expect, it } from 'vitest';
-import { aiPlanSchema, aiRunSchema, demoDataSchema } from '../contracts/data';
+import { demoDataSchema } from '../contracts/data';
 import { addDays } from '../domain/time';
-import { currentRuleKeys, dayStatus, planStale, rulesStale } from '../lib/month';
-import { planOfRun, problemKey, reusableRun } from '../lib/runs';
-import { compile } from '../matching';
-import { applyPreset, createDemoData, INITIAL_PRESETS } from './index';
-import { createInitialData, SEED_ITERATIONS, SEED_PLAN_DAYS, seedCreatedAt, withSeedPlans } from './plans';
+import { dayStatus } from '../lib/month';
+import { visitsOn } from '../patterns';
+import { createDemoData, seedPatternStart } from './index';
+import { createInitialData, SEED_PLAN_DAYS, withSeedPlans } from './plans';
 
 const TODAY = '2026-10-21';
 const data = createInitialData(TODAY);
 const days = Array.from({ length: SEED_PLAN_DAYS }, (_, i) => addDays(TODAY, i));
-const standard = INITIAL_PRESETS[0]!;
 
-describe('createInitialData（PRD D225）', () => {
-  it('今日から続けて7日分の今の案があり、8日目からは無い', () => {
+describe('createInitialData（PRD D225。版2）', () => {
+  it('今日から続けて7日分の担当・開始を訪問に書き、8日目からは書かない', () => {
     expect(SEED_PLAN_DAYS).toBe(7);
-    expect(Object.keys(data.aiPlans).sort()).toEqual(days);
-    expect(Object.keys(data.aiRuns).sort()).toEqual(days);
-    expect(data.aiPlans[addDays(TODAY, 7)]).toBeUndefined();
+    expect([...new Set(data.visits.map((v) => v.date))].sort()).toEqual(days);
+    for (const d of days) {
+      const placed = visitsOn(data, d).filter((v) => !v.cancelled);
+      expect(placed.every((v) => v.start !== null || v.staffId === null)).toBe(true);
+      expect(placed.some((v) => v.staffId !== null)).toBe(true);
+      // AI が組んだ担当にはピンを付けない
+      expect(placed.every((v) => !v.pinned)).toBe(true);
+    }
+    expect(visitsOn(data, addDays(TODAY, 7)).every((v) => v.start === null)).toBe(true);
   });
 
   it('同じ日付なら同じデータ（種と反復回数で決まる）', () => {
     expect(createInitialData(TODAY)).toEqual(data);
   });
 
-  it('案のほかは createDemoData と同じ（確定した割当・訪問の担当は入れない）', () => {
+  it('訪問・伝えた内容のほかは createDemoData と同じ', () => {
     const base = createDemoData(TODAY);
-    expect({ ...data, aiPlans: {}, aiRuns: {} }).toEqual(base);
-    expect(data.manualPlans).toEqual({});
-    expect(data.visits.every((v) => v.staffId === null)).toBe(true);
+    expect({ ...data, visits: [], snapshots: {} }).toEqual(base);
   });
 
-  it('契約（demoDataSchema・aiPlanSchema・aiRunSchema）を通る', () => {
+  it('繰り返しは前の月の初めから。過去の日（前の月の1日〜昨日）は伝えた状態で、今日からは伝えていない', () => {
+    expect(seedPatternStart(TODAY)).toBe('2026-09-01');
+    expect(seedPatternStart('2027-01-05')).toBe('2026-12-01');
+    expect(data.patterns.every((p) => p.from === '2026-09-01')).toBe(true);
+    const told = Object.keys(data.snapshots).sort();
+    expect(told[0]).toBe('2026-09-01');
+    expect(told.at(-1)).toBe(addDays(TODAY, -1));
+    expect(told.every((d) => d < TODAY)).toBe(true);
+    for (const d of ['2026-09-01', '2026-10-01', addDays(TODAY, -1)]) {
+      const s = dayStatus(data, d);
+      expect(s.count).toBeGreaterThan(0);
+      expect(s.state).toBe('told');
+    }
+  });
+
+  it('契約（demoDataSchema）を通る', () => {
     expect(() => demoDataSchema.parse(data)).not.toThrow();
-    for (const d of days) {
-      expect(() => aiPlanSchema.parse(data.aiPlans[d])).not.toThrow();
-      for (const r of data.aiRuns[d]!) expect(() => aiRunSchema.parse(r)).not.toThrow();
-    }
   });
 
-  it('記録は日の画面・まとめて作ると同じ書き方（点数の基準「標準」・記録1件・今の案はその記録）', () => {
-    const rules = applyPreset(data.rules, standard);
-    for (const d of days) {
-      const runs = data.aiRuns[d]!;
-      expect(runs).toHaveLength(1);
-      const run = runs[0]!;
-      expect(run.no).toBe(1);
-      expect(run.label).toBe(standard.name);
-      expect(run.presetId).toBe(standard.id);
-      expect(run.rules).toEqual(rules);
-      expect(run.pins).toEqual({});
-      expect(run.stopped).toBe(false);
-      expect(run.seed).toBe(data.seed);
-      expect(run.iterations).toBeLessThanOrEqual(SEED_ITERATIONS);
-      expect(run.createdAt).toBe(seedCreatedAt(TODAY));
-      expect(run.id).toBe(`${d}#1@${seedCreatedAt(TODAY)}`);
-      expect(run.calcFeatures).toBeUndefined();
-      const p = compile({ ...data, rules }, d);
-      expect(run.inputKey).toBe(problemKey(p));
-      // 今の案は記録をそのまま（AI が出したまま・固定なし）
-      expect(data.aiPlans[d]).toEqual(planOfRun(run));
-      // 同じ条件・いまのデータなら日の画面のプリセットのカードは再計算しない
-      expect(reusableRun(runs, p, rules, data.seed)).toBe(run);
-    }
+  it('作った直後は「まだ伝えていない」', () => {
+    for (const d of days) expect(dayStatus(data, d).state).toBe('none');
   });
 
-  it('作った直後は「案あり（未確定）」で、条件が変わったにならない', () => {
-    const keys = currentRuleKeys(data.rules, data.presets);
-    for (const d of days) {
-      expect(dayStatus(data, d).state).toBe('plan');
-      expect(rulesStale(data, d, keys)).toBe(false);
-      expect(planStale(data, data, d)).toBe(false);
-    }
-  });
-
-  it('案か確定した割当がすでにある日は変えない', () => {
-    const base = createDemoData(TODAY);
-    const d1 = addDays(TODAY, 1);
-    const withSaved = { ...base, manualPlans: { [d1]: {} } };
-    const out = withSeedPlans(withSaved, TODAY);
-    expect(out.aiPlans[d1]).toBeUndefined();
-    expect(out.aiRuns[d1]).toBeUndefined();
-    expect(withSeedPlans(out, TODAY)).toBe(out);
+  it('同じデータにもう一度当てても変わらない（担当・開始が同じなら書かない）', () => {
+    expect(withSeedPlans(data, TODAY).visits).toEqual(data.visits);
   });
 });

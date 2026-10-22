@@ -1,26 +1,23 @@
-// 月まとめ作成の計算を画面の外で回す（PRD D256・D257。ADR-0042。design.md §4 pages「月単位の予定」）。
-// 画面（月の予定・空き状況）は始める・止めるだけを頼み、計算はモジュールの入れ物で続ける（ほかの画面へ移っても止めない）。
-// データの書き込みは App が渡す store の update(fn)（日ごと）。ページを閉じる・読み直すと止まる（再開はしない）
+// 「担当を AI で組む」（月・週・空き状況。PRD D256・D257。ADR-0042・ADR-0053）の計算を画面の外で回す。
+// 画面は始める・止めるだけを頼み、計算はモジュールの入れ物で続ける（ほかの画面へ移っても止めない）。
+// 1日ずつ AI で組み、その日の訪問が組み始めたときのままなら担当・開始を訪問に書く（store の update(fn)。ピンの訪問は動かさない）。
+// 終わったら「元に戻す」（組む前の訪問に戻す1手）を知らせに付ける。ページを閉じる・読み直すと止まる（再開はしない）
 import type { DemoData } from '../contracts/data';
 import type { Problem, SolveOptions, SolveResult } from '../contracts/problem';
-import type { Rule } from '../contracts/rules';
 import { addDays } from '../domain/time';
-import { type CompileInput, compile, withManualPrefs } from '../matching';
-import { scoreRulesOf } from '../seed';
+import type { CompileInput } from '../matching';
+import { visitsOn } from '../patterns';
 import { defaultIterations, runSolve } from '../solver';
-import { attempt, own } from './common';
-import { applyDayRun, type BatchMode, batchTargets, expandRange, planEdited, planStale, ymOf } from './month';
-import { planOfRun, problemKey, reusableRun } from './runs';
+import { own } from './common';
+import { activeDayVisits, dayProblemOf, pinsOf, routesOf, unassignedOf, writeRoutes } from './dayPlan';
+import type { BatchMode } from './month';
 import { createValueStore, type ReadableStore } from './valueStore';
 
-/** 作る日（日ごとの作り方。empty＝まだ案の無い日だけとして作る：作っている間に案ができた日は飛ばし、今の案は変えない） */
+/** 組む日（日ごとの選び方：care＝要対応のある日、all＝伝えていない日すべて） */
 export type BatchDay = { date: string; mode: BatchMode };
 
 /** 始めた画面（月の予定・空き状況・週の予定） */
 export type BatchSource = 'month' | 'vacancy' | 'week';
-
-/** 定期パターンから訪問を作る範囲（両端を含む。今日より前は作らない） */
-export type ExpandRange = { from: string; to: string };
 
 /** 始めるときに渡すもの */
 export type BatchJob = {
@@ -35,8 +32,6 @@ export type BatchJob = {
   source: BatchSource;
   /** 週の予定から始めたときの週の始まり（月曜。知らせ・上の帯の行き先 `/week?d=`。ほかは null） */
   weekStart?: string | null;
-  /** 先に定期パターンから訪問を作る範囲（月の予定はその月、週の予定はその週。expandRange。作らなければ null） */
-  expand: ExpandRange | null;
   today: string;
 };
 
@@ -74,6 +69,10 @@ export type BatchDone = {
   error: string | null;
   /** データを丸ごと差し替えたので止めた（abort。古いデータから作った結果は書かない） */
   aborted: boolean;
+  /**
+   * 元に戻す（組む前の訪問に戻す1手）。組んだあとに訪問が変わっていれば null を返す（戻さない）。何も書かなかったら null
+   */
+  undo: ((d: DemoData) => DemoData | null) | null;
 };
 
 /** データの持ち主（App が store の data と update をつなぐ） */
@@ -104,17 +103,17 @@ export type MonthBatch = {
   connect(host: BatchHost): () => void;
 };
 
-/** 終わった知らせの文（「11月の案を22日分作りました」） */
+/** 終わった知らせの文（「11月の担当を22日分組みました」） */
 export function batchDoneText(d: BatchDone): string {
-  if (d.aborted) return `データを差し替えたので、${d.label}の案づくりを止めました（${d.made}日分は作りました）`;
-  if (d.error) return `${d.label}の案を${d.made}日分作ったところで止まりました（${d.error}）`;
-  if (d.stopped) return `${d.label}の案を${d.made}日分作ったところで止めました`;
-  return `${d.label}の案を${d.made}日分作りました${d.unassignedDays > 0 ? `（入らない訪問がある日 ${d.unassignedDays}日）` : ''}`;
+  if (d.aborted) return `データを差し替えたので、${d.label}の担当を組むのを止めました（${d.made}日分は組みました）`;
+  if (d.error) return `${d.label}の担当を${d.made}日分組んだところで止まりました（${d.error}）`;
+  if (d.stopped) return `${d.label}の担当を${d.made}日分組んだところで止めました`;
+  return `${d.label}の担当を${d.made}日分組みました${d.unassignedDays > 0 ? `（担当なしの訪問がある日 ${d.unassignedDays}日）` : ''}`;
 }
 
-/** 上の帯の文（「11月の案を作っています 8/22日」） */
+/** 上の帯の文（「11月の担当を組んでいます 8/22日」） */
 export function batchBandText(r: BatchRun): string {
-  return `${r.label}の案を作っています ${Math.min(r.index + 1, r.targets.length)}/${r.targets.length}日`;
+  return `${r.label}の担当を組んでいます ${Math.min(r.index + 1, r.targets.length)}/${r.targets.length}日`;
 }
 
 /** 日付の月の名前（「11月」「10・11月」） */
@@ -123,50 +122,39 @@ export function monthsLabel(dates: readonly string[]): string {
   return `${months.join('・')}月`;
 }
 
+/** その日に担当なしの訪問があるか（伝えていない日だけ） */
+function hasUnassigned(data: DemoData, date: string): boolean {
+  if (own(data.snapshots, date)) return false;
+  const p = dayProblemOf(data, date);
+  return !!p && p.visits.length > 0 && unassignedOf(p, routesOf(p, visitsOn(data, date))).length > 0;
+}
+
 /**
- * 足りない案の日（空き状況の［足りない案を作る］。PRD D259）：dates のうち今日以降で、まだ案の無い日（empty）と
- * 条件が変わった日（stale。月の予定の「条件が変わった日を作り直す」と同じ決め方）。確定した日・訪問の無い日は入れない。
- * 手直しのある条件が変わった日は入れない（手直しを捨てるかは月の予定で選ぶ）
+ * 担当の足りない日（空き状況の［足りない担当を組む］。PRD D259）：dates のうち今日以降で、伝えていない、担当なしの訪問がある日
  */
 export function missingDays(data: DemoData, dates: readonly string[], today: string): BatchDay[] {
-  const inRange = new Set(dates.filter((d) => d >= today));
-  const out: BatchDay[] = [];
-  for (const ym of new Set([...inRange].map(ymOf))) {
-    for (const date of batchTargets(data, ym, today, 'empty')) if (inRange.has(date)) out.push({ date, mode: 'empty' });
-    const stale = batchTargets(data, ym, today, 'stale', (d) => inRange.has(d) && planStale(data, data, d));
-    for (const date of stale) {
-      const p = own(data.aiPlans, date);
-      if (p && !planEdited(p)) out.push({ date, mode: 'stale' });
-    }
-  }
-  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return dates
+    .filter((d) => d >= today && hasUnassigned(data, d))
+    .sort()
+    .map((date) => ({ date, mode: 'care' as const }));
 }
 
 /**
- * 週の予定の「この週の案を作る」で作る日（PRD D280）：dates（週の7日）のうち今日以降で、訪問があって（data は定期パターンから
- * 展開したあとのもの）まだ案も確定した割当も無い日。月の予定の「まだ案の無い日だけ」（batchTargets の empty）を週に絞ったもの
+ * 週の予定の「この週の担当を AI で組む」で組む日（PRD D280）：dates（週の7日）のうち今日以降で、伝えていない、
+ * 計算に入れる訪問がある日
  */
-export function weekBatchDays(
-  data: Parameters<typeof batchTargets>[0],
-  dates: readonly string[],
-  today: string,
-): BatchDay[] {
-  const inRange = new Set(dates.filter((d) => d >= today));
-  const out: BatchDay[] = [];
-  for (const ym of new Set([...inRange].map(ymOf)))
-    for (const date of batchTargets(data, ym, today, 'empty')) if (inRange.has(date)) out.push({ date, mode: 'empty' });
-  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+export function weekBatchDays(data: DemoData, dates: readonly string[], today: string): BatchDay[] {
+  return dates
+    .filter((d) => d >= today && !own(data.snapshots, d) && activeDayVisits(data, d).length > 0)
+    .sort()
+    .map((date) => ({ date, mode: 'all' as const }));
 }
 
 /**
- * その日の案を作れるか（1日ずつ作るときに飛ばさない日か）：点数の基準の条件で compile でき、計算に入る訪問と〈スタッフ〉がいる。
- * 月まとめ作成の1日の作り方（step）と同じ決め方。週の予定は作れない日を「作る日」に数えない（PRD D280）
+ * その日の担当を組めるか：compile でき、計算に入る訪問と〈スタッフ〉がいる。週の予定は組めない日を数えない（PRD D280）
  */
-export function canMakeDay(
-  data: CompileInput & Pick<DemoData, 'presets'> & { scorePresetId?: string },
-  date: string,
-): boolean {
-  const base = attempt(() => compile({ ...data, rules: scoreRulesOf(data) }, date)).value;
+export function canMakeDay(data: CompileInput, date: string): boolean {
+  const base = dayProblemOf(data, date);
   return !!base && base.visits.length > 0 && base.staff.length > 0;
 }
 
@@ -205,13 +193,13 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     const gen = ++generation;
     const live = () => gen === generation;
     const targets = job.days.map((x) => x.date);
-    const ex = job.expand;
     const weekStart = job.weekStart ?? null;
-    const today = job.today;
     stopped = false;
     let made = 0;
     let unassignedDays = 0;
-    if (ex) h.update((d) => expandRange(d, ex.from, ex.to, today).data);
+    /** 組む前の訪問（元に戻す）と、最後に書いた訪問（あとから変わっていれば戻さない） */
+    let beforeVisits: DemoData['visits'] | null = null;
+    let lastVisits: DemoData['visits'] | null = null;
     run.set({
       ym: job.ym,
       label: job.label,
@@ -229,6 +217,8 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     const finish = (why?: string) => {
       current = null;
       run.set(null);
+      const before = beforeVisits;
+      const after = lastVisits;
       done.set({
         ym: job.ym,
         label: job.label,
@@ -239,98 +229,70 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         stopped,
         error: why ?? null,
         aborted: false,
+        undo: before && after ? (d) => (d.visits === after ? { ...d, visits: before } : null) : null,
       });
     };
 
-    // ---- 1日ずつ作る（計算の中身は月の予定の画面から写したまま。どの規則で作るかは変えない）----
     const step = (i: number) => {
       if (!live()) return;
       if (i >= job.days.length || stopped) {
         finish();
         return;
       }
-      const { date: day, mode: m } = job.days[i]!;
-      // いちばん新しいデータで（作っている間の編集も入れる）。展開は同じ結果になるので、まだ描画されていなくても同じ訪問になる
-      const latest = ex ? expandRange(h.get(), ex.from, ex.to, today).data : h.get();
+      const day = job.days[i]!.date;
+      const latest = h.get();
       patch({ index: i, iteration: 0, total: 1 });
-      // 作っている間に確定した・（まだ案の無い日だけで）案ができた日は飛ばす
-      if (own(latest.manualPlans, day) || (m === 'empty' && own(latest.aiPlans, day))) {
+      // 組んでいる間に確定した日は飛ばす
+      if (own(latest.snapshots, day)) {
         step(i + 1);
         return;
       }
-      // 作り始めたときのその日の今の案。書く直前に変わっていれば（作っている間に日の予定で手直し・作り直し）、記録だけ足して今の案は変えない
-      const before = own(latest.aiPlans, day);
-      /** その日の今の案を変えないか（まだ案の無い日だけ・作っている間に今の案が変わった・確定した） */
-      const keep = (d: DemoData) =>
-        (m === 'empty' && !!own(d.aiPlans, day)) || own(d.aiPlans, day) !== before || !!own(d.manualPlans, day);
-      // 点数の基準（条件の重みの画面の重み。ADR-0035）で作る
-      const rules = scoreRulesOf(latest);
-      const base = attempt(() => compile({ ...latest, rules }, day)).value;
-      if (!base || base.visits.length === 0 || base.staff.length === 0) {
+      const visits = visitsOn(latest, day);
+      const pins = pinsOf(visits);
+      const p = dayProblemOf(latest, day, Object.keys(pins).length > 0 ? pins : undefined);
+      if (!p || p.visits.length === 0 || p.staff.length === 0) {
         step(i + 1);
         return;
       }
-      // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
-      const { problem: p, applied: prefPins } = withManualPrefs(base, latest);
-      const key = problemKey(p);
-      // 同じ条件・いまのデータで作った記録があれば計算しない（lib/runs の reusableRun）
-      const saved = attempt(() => reusableRun(own(latest.aiRuns, day) ?? [], p, rules, latest.seed, key)).value;
-      if (saved) {
-        h.update((d) => (keep(d) ? d : { ...d, aiPlans: { ...d.aiPlans, [day]: planOfRun(saved) } }));
-        made++;
-        if (saved.unassigned.length > 0) unassignedDays++;
-        patch({ made });
-        // 描画を挟んでから次へ
-        setTimeout(() => step(i + 1), 0);
-        return;
-      }
-      solveDay(p, latest, rules, key, day, keep, i, prefPins);
-    };
-
-    const solveDay = (
-      p: Problem,
-      latest: DemoData,
-      rules: Rule[],
-      key: string,
-      day: string,
-      keep: (d: DemoData) => boolean,
-      i: number,
-      prefPins: Record<string, string>,
-    ) => {
-      const started = attempt(() =>
-        solve(p, { seed: latest.seed, iterations: defaultIterations(p) }, (x) => {
-          if (!live()) return;
-          patch({ iteration: x.iteration, total: x.total });
-        }),
-      );
-      if (!started.value) {
-        finish(started.error ?? 'AI案を作れませんでした');
-        return;
-      }
-      current = started.value;
-      started.value.promise
+      const started = (() => {
+        try {
+          return solve(p, { seed: latest.seed, iterations: defaultIterations(p) }, (x) => {
+            if (!live()) return;
+            patch({ iteration: x.iteration, total: x.total });
+          });
+        } catch (e) {
+          finish(e instanceof Error ? e.message : '担当を組めませんでした');
+          return null;
+        }
+      })();
+      if (!started) return;
+      current = started;
+      started.promise
         .then((result) => {
           if (!live()) return;
-          h.update((d) =>
-            applyDayRun(d, day, {
-              rules,
-              result,
-              createdAt: Date.now(),
-              inputKey: key,
-              // 今の案を変えないとき（applyDayRun の onlyEmpty と同じ扱い：記録だけ足す）
-              onlyEmpty: keep(d),
-              prefPins,
-            }),
-          );
-          made++;
-          if (result.unassigned.length > 0) unassignedDays++;
+          // 組んでいる間にその日の訪問が変わった（日の予定で直した）・確定した日は書かない（組んだ日に数えない）
+          const writable = (d: DemoData) => {
+            const now = visitsOn(d, day);
+            return now.length === visits.length && now.every((v, k) => v === visits[k]) && !own(d.snapshots, day);
+          };
+          if (writable(h.get())) {
+            h.update((d) => {
+              if (!writable(d)) return d;
+              if (beforeVisits === null) beforeVisits = d.visits;
+              const out = writeRoutes(d, day, p, result.routes);
+              lastVisits = out.visits;
+              return out;
+            });
+            made++;
+            if (result.unassigned.length > 0) unassignedDays++;
+          }
           patch({ made });
           current = null;
           step(i + 1);
         })
         .catch((e) => {
           if (!live()) return;
-          finish(e instanceof Error ? e.message : 'AI案を作れませんでした');
+          finish(e instanceof Error ? e.message : '担当を組めませんでした');
         });
     };
 
@@ -362,6 +324,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         stopped: true,
         error: null,
         aborted: true,
+        undo: null,
       });
     },
     connect: (h) => {

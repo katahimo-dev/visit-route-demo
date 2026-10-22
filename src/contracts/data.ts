@@ -5,198 +5,102 @@ import {
   clientLeaveSchema,
   clientSchema,
   dateSchema,
+  hhmmSchema,
   idSchema,
   MAX_VISIT_TYPES,
-  manualRoutesSchema,
   orgSchema,
   patternSchema,
   staffSchema,
   visitSchema,
   visitTypeSchema,
 } from './documents';
-import type { CalcFeatureId } from './features';
 import { compatSchema, itemSchema, presetSchema, ruleSchema } from './rules';
 
-/** localStorage のキー（1つの JSON） */
+/** localStorage のキー（1つの JSON。版2でも同じキーに書く。版1のデータは読み込みで「形が変わった」と知らせて初期データで始める） */
 export const STORAGE_KEY = 'vrdemo:data:v1';
-export const DATA_VERSION = 1;
+/** データの版（版2：担当を訪問に持つ。ADR-0053） */
+export const DATA_VERSION = 2;
 
 const routesSchema = z.record(z.string(), z.array(z.string()));
 
 /**
- * 欠勤の振り直しの情報（ADR-0011）。AiPlan・AiRun に optional で付く（無い＝ふつうの AI案）。
- * baseRoutes は振り直す前の元の案（差の基準・「元の案に戻す」・比較の「欠勤前」）
+ * 欠勤の振り直しの情報（ADR-0011。版2は ADR-0053）。振り直しの提案を当てた日に1つ（DemoData.reassigns）。
+ * baseRoutes は振り直す前の担当の写し（差の基準・「振り直す前に戻す」・連絡の一覧の「前」）
  */
 export const reassignInfoSchema = z.object({
-  /** 今の案（記録）の振り直し方：'insert'＝案A「空き時間に入れるだけ」、'anneal'＝案B「少し動かしてよい」（2回目。PRD D34） */
+  /** 当てた振り直し方：'insert'＝案A「空き時間に入れるだけ」、'anneal'＝案B「少し動かしてよい」（PRD D34） */
   method: z.enum(['insert', 'anneal']),
   /** 案B の「変更を減らす」の重み（0〜5、0.5刻み）。案A には無い */
   stayWeight: z.number().min(0).max(5).optional(),
-  /**
-   * 案A の結果（振り直した直後の列）。案B の初期解・差の欄の「案A」・「案A を今の案にする」に使う。
-   * 2回目より前の古いデータには無い（案A のときは今の案を案A とみなす）
-   */
+  /** 案A の結果（振り直した直後の列）。案B の初期解・差の欄の「案A」に使う */
   insertRoutes: routesSchema.optional(),
-  /** 元の案：確定した割当（manualPlans[date]）か今の案（aiPlans[date].routes） */
-  from: z.enum(['confirmed', 'plan']),
-  /** 元の案（staffId → 訪問IDの列） */
+  /** 振り直す前の担当の並び（staffId → 訪問IDの列。回る順） */
   baseRoutes: routesSchema,
-  /** 元の案の固定（元が確定した割当なら {}） */
+  /** 振り直す前のピン（訪問ID → 担当ID） */
   basePins: z.record(z.string(), z.string()),
-  /**
-   * 振り直す前の今の案の generated（AI が出したまま）と runId（元の記録）。「元の案に戻す」で戻す。
-   * 振り直す前に今の案が無かった・古いデータには無い（戻すときは元の案を generated にし、runId は外す）
-   */
-  baseGenerated: z.object({ routes: routesSchema, unassigned: z.array(z.string()), score: z.number() }).optional(),
-  baseRunId: z.string().max(100).optional(),
   /** 振り直しに使った欠勤（取り消されても残す。続けて振り直したときは最初からの累積） */
   absenceIds: z.array(idSchema),
-  // いまの時刻（now）は持たない（2026-10-14 利用者が決定。過去の欠勤は登録しない前提）。古いデータの now は読み込みで捨てる（z.object が知らないキーを落とす）
 });
 export type ReassignInfo = z.infer<typeof reassignInfoSchema>;
 
+/** 伝えた内容の1件（訪問ID・〈利用者さん〉・担当・開始。開始は移動・待ちを入れた時刻） */
+export const toldVisitSchema = z.object({
+  id: idSchema,
+  clientId: idSchema,
+  staffId: idSchema.nullable(),
+  start: hhmmSchema.nullable(),
+});
+export type ToldVisit = z.infer<typeof toldVisitSchema>;
+
 /**
- * 保存したAI案（作ったときの条件の重みも残し、前回との差・再現に使う）。ADR-0004：
- * routes・unassigned・score は手直し後の今の案（score は保存した時点の費用。画面では点数の基準の物差しで付け直す。ADR-0010）。
- * generated は AI が出したまま（「AI案に戻す」で routes に戻す）。pins は訪問ID → 担当ID（手直しで固定した訪問）。
- * 古い保存データ（generated・pins が無い）は、generated＝routes・unassigned・score の写し、pins＝{} で補う
+ * 確定＝〈スタッフ〉に伝えた内容（PRD。ADR-0053）。日ごとに1つ。確定したあとに変えた訪問は、今の担当・開始と比べて
+ * 「未連絡の変更」になる（lib/dayPlan の toldChanges）。at は確定した時刻（ms）
  */
-const aiPlanObject = z.object({
+export const daySnapshotSchema = z.object({
   date: dateSchema,
-  createdAt: z.number(),
-  seed: z.number().int(),
-  iterations: z.number().int(),
-  routes: routesSchema,
-  unassigned: z.array(z.string()),
-  score: z.number(),
-  stopped: z.boolean(),
-  rules: z.array(ruleSchema),
-  generated: z.object({ routes: routesSchema, unassigned: z.array(z.string()), score: z.number() }),
-  pins: z.record(z.string(), z.string()),
-  /** 今の案の元になった記録（AiRun.id。ADR-0008）。古いデータ・記録に無い案は無し */
-  runId: z.string().max(100).optional(),
-  /** 今の案が欠勤の振り直しの結果なら付く（差の欄を出す。ADR-0011） */
-  reassign: reassignInfoSchema.optional(),
+  at: z.number(),
+  /** 伝えた訪問（取り消し・休みの訪問は入れない） */
+  visits: z.array(toldVisitSchema).max(500),
 });
-export const aiPlanSchema = z.preprocess((raw) => {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
-  const o = raw as Record<string, unknown>;
-  if (o.generated !== undefined && o.pins !== undefined) return raw;
-  return {
-    ...o,
-    generated: o.generated ?? { routes: o.routes, unassigned: o.unassigned, score: o.score },
-    pins: o.pins ?? {},
-  };
-}, aiPlanObject);
-export type AiPlan = z.infer<typeof aiPlanSchema>;
-
-/** その日の記録の上限（古いものから消す。localStorage の容量） */
-export const MAX_RUNS_PER_DAY = 20;
-
-/**
- * 記録を作ったときの、計算に効く機能（CALC_FEATURE_IDS：相性・担当を限る）の入り切り（ADR-0028。PRD D214）。
- * 部分的な表で、無い ID は入。記録に無ければすべて入（古い記録）。知らないキーは捨てる
- */
-export const calcFeaturesSchema = z.object({
-  compat: z.boolean().optional(),
-  allowedStaff: z.boolean().optional(),
-});
-export type CalcFeatures = Partial<Record<CalcFeatureId, boolean>>;
-
-/**
- * AI案の記録（ADR-0005）：AI案を作る・固定を残して組み直すたびに、作ったときの条件と結果を1件残す。
- * 比較の画面で任意の2つを選んで比べる。label はプリセットと一致すればプリセット名、違えば「条件を変えた案」。
- * presetId は最後に作ったとき（同じ記録を使い回したときも）に重みが一致した最初のプリセット（どれとも一致しなければ null。lib/runs の addRun。PR #40 の再レビュー）。pins は組み直しで残した固定（作ったときは {}）
- */
-export const aiRunSchema = z.object({
-  id: z.string().min(1).max(100),
-  /** その日の通し番号（1から） */
-  no: z.number().int().min(1),
-  date: dateSchema,
-  createdAt: z.number(),
-  label: z.string().min(1).max(60),
-  presetId: z.string().nullable(),
-  seed: z.number().int(),
-  iterations: z.number().int(),
-  rules: z.array(ruleSchema),
-  pins: z.record(z.string(), z.string()),
-  routes: routesSchema,
-  unassigned: z.array(z.string()),
-  score: z.number(),
-  stopped: z.boolean(),
-  /**
-   * 計算に使った問題（Problem）の中身から作ったキー（lib/runs の problemKey。ADR-0010）。
-   * 訪問・スタッフ（稼働時間帯）・移動・割当費用・可否・均等など、費用と可否に効くものがすべて同じならキーも同じ。
-   * プリセットのカードで再計算を省くのは、これがいまの問題のキーと一致する記録だけ。無い古い記録は使わない（計算する）
-   */
-  inputKey: z.string().max(100).optional(),
-  /** 記録が欠勤の振り直しなら付く（比較の「欠勤前」。reusableRun の対象外。ADR-0011） */
-  reassign: reassignInfoSchema.optional(),
-  /** 作ったときの計算に効く機能の入り切り（ADR-0028）。切っているものだけを書き、無ければすべて入。記録として書くだけで「条件が変わった」には使わない（入り切りで問題が変われば lib/month の planStale（inputKey）で分かる） */
-  calcFeatures: calcFeaturesSchema.optional(),
-  /**
-   * 作ったときに手直しの記憶（manualPrefs。ADR-0043）で固定した訪問（訪問ID → 担当ID）。当てたものだけを書き、無ければ書かない。
-   * 「条件が変わった」（lib/month の planStale）はこの固定のまま問題を作り直して比べる（記憶が変わっても「条件が変わった」にしない）
-   */
-  prefPins: z.record(z.string(), z.string()).optional(),
-});
-export type AiRun = z.infer<typeof aiRunSchema>;
-
-/** 手直しの記憶の上限（超えたら updatedAt の古い順に消す。store の repair。ADR-0043） */
-export const MAX_MANUAL_PREFS = 2000;
-
-/**
- * 手直しの記憶の1件（PRD D260〜D262。ADR-0043）：手で担当を変えた訪問のキー（matching/manualPrefs の prefKey）→ そのときの担当。
- * 同じキーは上書き（最新だけ）。updatedAt は書いた時刻（ms）
- */
-export const manualPrefSchema = z.object({ staffId: idSchema, updatedAt: z.number() });
-export type ManualPref = z.infer<typeof manualPrefSchema>;
-/** キー（`clientId|曜日0-6|earliestStart-latestStart|typeId または空`）→ 記憶 */
-export type ManualPrefs = Record<string, ManualPref>;
+export type DaySnapshot = z.infer<typeof daySnapshotSchema>;
 
 /** データ一式（store だけが書く。design.md §4） */
 export const demoDataSchema = z.object({
   version: z.literal(DATA_VERSION),
   /** seed で作った日（初期状態の基準日） */
   baseDate: dateSchema,
-  /** AI案の乱数の種（利用者が変えられる） */
+  /** AI の乱数の種 */
   seed: z.number().int(),
   org: orgSchema,
   items: z.array(itemSchema),
+  /**
+   * 条件（名前・型・並び）。重み・必須はいつも点数の基準のプリセットにそろえる（store の repair。ADR-0053）。
+   * AI で組む・点数・訪問ごとの検査はこの重みで計算する
+   */
   rules: z.array(ruleSchema),
   staff: z.array(staffSchema),
   clients: z.array(clientSchema),
   compat: compatSchema,
+  /** 保存した訪問：単発の訪問と、繰り返しのうち変えた回（ADR-0053） */
   visits: z.array(visitSchema),
   availability: z.array(availabilitySchema),
-  /** 当日の急な欠勤（ADR-0011）。無い古いデータは []（版は1のまま） */
-  absences: z.array(absenceSchema).max(2000).default([]),
-  /** 訪問の種類（ADR-0012。最大20）。無い古いデータは []（版は1のまま） */
-  visitTypes: z.array(visitTypeSchema).max(MAX_VISIT_TYPES).default([]),
-  /** 定期パターン（ADR-0012）。無い古いデータは []（版は1のまま） */
-  patterns: z.array(patternSchema).max(2000).default([]),
-  /** 〈利用者さん〉の休み（ADR-0013）。無い古いデータは []（版は1のまま） */
-  clientLeaves: z.array(clientLeaveSchema).max(2000).default([]),
-  /**
-   * 手直しの記憶（PRD D260〜D262。ADR-0043）：同じ〈利用者さん〉・曜日・時間（・種類）の訪問は、次に作る案でその担当に固定する。
-   * 無い古いデータは {}（版は1のまま）。件数（MAX_MANUAL_PREFS）・いない人は store の repair で直す
-   */
-  manualPrefs: z.record(z.string().max(250), manualPrefSchema).default({}),
-  /** date → 手作業案 */
-  manualPlans: z.record(z.string(), manualRoutesSchema),
-  /** date → 最新のAI案 */
-  aiPlans: z.record(z.string(), aiPlanSchema),
-  /** date → AI案の記録（古い順。ADR-0005）。古い保存データ（無い）は {}。前の版の prevAiPlans は読み込みで捨てる */
-  aiRuns: z.record(z.string(), z.array(aiRunSchema)).default({}),
-  /**
-   * 条件のプリセット（ADR-0008。1〜MAX_PRESETS つ）。無い古いデータは store の migrate が初期の3種で補う。
-   * 数・重みの範囲・ID の重複は store の repair で直す（ここでは止めない）
-   */
+  /** 当日の急な欠勤（ADR-0011） */
+  absences: z.array(absenceSchema).max(2000),
+  /** 訪問の種類（ADR-0012。最大20） */
+  visitTypes: z.array(visitTypeSchema).max(MAX_VISIT_TYPES),
+  /** 繰り返し（定期パターン。ADR-0012） */
+  patterns: z.array(patternSchema).max(2000),
+  /** 〈利用者さん〉の休み（ADR-0013） */
+  clientLeaves: z.array(clientLeaveSchema).max(2000),
+  /** date → 伝えた内容（確定。ADR-0053） */
+  snapshots: z.record(z.string(), daySnapshotSchema),
+  /** date → 欠勤の振り直しの情報（当てた振り直しの日だけ。ADR-0011・ADR-0053） */
+  reassigns: z.record(z.string(), reassignInfoSchema),
+  /** 条件のプリセット（ADR-0008。1〜MAX_PRESETS つ）。数・重みの範囲・ID の重複は store の repair で直す */
   presets: z.array(presetSchema).max(100),
   /**
-   * 点数の基準のプリセット（Preset.id。ADR-0010）。点数（100点満点）はいつも、このプリセットの重み・必須を
-   * その日の条件に当てた条件の物差しで付ける（プリセットのカードで条件を変えても点は変わらない）。
-   * 無い古いデータ・存在しない id は store の repair が先頭のプリセットにする（版は1のまま）
+   * 点数の基準のプリセット（Preset.id。ADR-0010）。AI で組む・点数はいつもこのプリセットの重み・必須で計算する。
+   * 存在しない id は store の repair が先頭のプリセットにする
    */
   scorePresetId: z.string().max(100).optional(),
 });

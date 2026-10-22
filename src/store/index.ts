@@ -1,12 +1,9 @@
 // 入口（実装は store 担当）。画面はここだけを import する
 import { z } from 'zod';
 import { DATA_VERSION, type DemoData, demoDataSchema, type ImportError, STORAGE_KEY } from '../contracts/data';
-import type { Features } from '../contracts/features';
-import { addDays, jstDate } from '../domain/time';
-import { applyPatterns } from '../patterns';
-import { DEMO_DAYS, daysFrom, initialPresets } from '../seed';
+import { type Features, featuresSchema } from '../contracts/features';
+import { jstDate } from '../domain/time';
 import { createInitialData } from '../seed/plans';
-import { CONDITIONS_BASE_KEY, conditionsMemory } from './conditions';
 import { repair } from './repair';
 import { startFeatures } from './start';
 
@@ -19,7 +16,7 @@ export const PREV_INFO_KEY = 'vrdemo:data:prev:info';
 /** 保存の間引き間隔（ms） */
 export const SAVE_INTERVAL_MS = 300;
 export const QUOTA_MESSAGE =
-  'ブラウザの保存容量を超えました。データを書き出してから、データの画面の「古い案と記録を片づける」で古い月の AI案と記録を消してください';
+  'ブラウザの保存容量を超えました。データを書き出してから、データの画面の「古い訪問を片づける」で古い月の訪問を消してください';
 
 const today = () => jstDate(Date.now());
 
@@ -29,19 +26,6 @@ function storage(): Storage | null {
   } catch {
     return null;
   }
-}
-
-/**
- * 今日以降の訪問が1件もなければ、今日から14日分を足す（既存の日は変えない）。
- * パターンがあれば patterns の applyPatterns で今日〜今日+13 を展開し、無い古いデータは今までどおり seed の daysFrom（ADR-0012）
- */
-export function extendDays(data: DemoData, todayDate: string): DemoData {
-  if (data.visits.some((v) => v.date >= todayDate)) return data;
-  if (data.patterns.length > 0) {
-    const c = applyPatterns(data, { from: todayDate, to: addDays(todayDate, DEMO_DAYS - 1) }, todayDate);
-    return c.added.length > 0 ? { ...data, visits: c.visits } : data;
-  }
-  return daysFrom(data, todayDate, DEMO_DAYS);
 }
 
 /** zod の最初の問題を日本語の1文にする。例「staff の 3件目の name：…」 */
@@ -63,35 +47,32 @@ function describeIssue(issue: z.core.$ZodIssue): string {
 
 const fail = (message: string): ImportError => ({ code: 'INVALID_ARGUMENT', message });
 
+/** 前の版（版1）のデータの文言（ADR-0053。移行は作らない） */
+export const OUTDATED_MESSAGE =
+  'データの形が変わったため（版1 → 版2）、このデータは読み込めません。初期データで始めてください';
+
+/** 前の版のデータか（版が今より小さい数） */
+export function isOutdated(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return false;
+  const v = (raw as { version?: unknown }).version;
+  return typeof v === 'number' && v < DATA_VERSION;
+}
+
 /**
  * 読み込んだ値を、今の版（DATA_VERSION）のデータにする。通らなければ ImportError。
- * 形が通ったら、中身の食い違い（いないスタッフ・訪問を指す案など）を repair で直す（画面を落とさない）
+ * 前の版（版1）のデータは移行しない（OUTDATED_MESSAGE。ADR-0053）。
+ * 形が通ったら、中身の食い違い（いないスタッフ・訪問を指す担当など）を repair で直す（画面を落とさない）
  */
 export function migrate(raw: unknown): DemoData | ImportError {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return fail('データの形が正しくありません（書き出したファイルではない可能性があります）');
   }
+  if (isOutdated(raw)) return fail(OUTDATED_MESSAGE);
   const version = (raw as { version?: unknown }).version;
   if (version !== DATA_VERSION) {
-    // 今は版1だけ。将来ここで古い版を順に移行する
     return fail(`データの版（${String(version ?? '不明')}）に対応していません。このデモの版は ${DATA_VERSION} です`);
   }
-  // プリセット（ADR-0008）が無い（null も）古いデータは、初期の3種で補う（版は1のまま）
-  // 欠勤（ADR-0011）が無い（null も）古いデータは [] で補う
-  // 訪問の種類・定期パターン（ADR-0012）が null の古いデータも [] で補う（無いときは zod の既定値）
-  // 〈利用者さん〉の休み（ADR-0013）が null の古いデータも [] で補う（無いときは zod の既定値）
-  const o = raw as Record<string, unknown>;
-  const filled = {
-    ...o,
-    ...(o.presets === undefined || o.presets === null ? { presets: initialPresets() } : {}),
-    ...(o.absences === undefined || o.absences === null ? { absences: [] } : {}),
-    ...(o.visitTypes === undefined || o.visitTypes === null ? { visitTypes: [] } : {}),
-    ...(o.patterns === undefined || o.patterns === null ? { patterns: [] } : {}),
-    ...(o.clientLeaves === null ? { clientLeaves: [] } : {}),
-    // 手直しの記憶（ADR-0043）：null は無いのと同じ
-    ...(o.manualPrefs === null ? { manualPrefs: {} } : {}),
-  };
-  const r = demoDataSchema.safeParse(filled, { error: z.locales.ja().localeError });
+  const r = demoDataSchema.safeParse(raw, { error: z.locales.ja().localeError });
   if (!r.success) {
     const first = r.error.issues[0];
     return fail(first ? describeIssue(first) : 'データの形が正しくありません');
@@ -152,25 +133,10 @@ function dropPrevious(ls: Storage): void {
 }
 
 /**
- * 条件の変更の控え（PRD D290。conditions.ts）を消す（容量を空ける）。保存してあったか。
- * 本体の保存のほうが先なので、容量超過では1世代の控えより先にこちらを捨てる
- */
-function dropConditions(ls: Storage): boolean {
-  try {
-    if (ls.getItem(CONDITIONS_BASE_KEY) === null) return false;
-  } catch {
-    return false;
-  }
-  conditionsMemory.clear();
-  return true;
-}
-
-/**
  * 書いた結果。message：失敗したら利用者向けの文言（成功は null）。
- * droppedPrevious：容量が足りず1世代の控えを捨てた（画面は控えの欄を消して知らせる。ADR-0032）。
- * droppedConditions：容量が足りず条件の変更の控えを捨てた（画面は控えを忘れる。PRD D290）
+ * droppedPrevious：容量が足りず1世代の控えを捨てた（画面は控えの欄を消して知らせる。ADR-0032）
  */
-export type WriteResult = { message: string | null; droppedPrevious: boolean; droppedConditions?: boolean };
+export type WriteResult = { message: string | null; droppedPrevious: boolean };
 
 /** 即時に書く。結果の文言は lastSaveError にも残す */
 function writeNow(data: DemoData): WriteResult {
@@ -180,16 +146,10 @@ function writeNow(data: DemoData): WriteResult {
 }
 
 /**
- * 書いてみる。容量超過なら条件の変更の控え（PRD D290）を捨ててもう1回、まだ足りなければ1世代の控えを捨ててもう1回だけ書く
- * （いまのデータを残すほうが先。ADR-0032）
+ * 書いてみる。容量超過なら1世代の控えを捨ててもう1回だけ書く（いまのデータを残すほうが先。ADR-0032）
  */
 function tryWrite(data: DemoData): WriteResult {
-  let droppedConditions = false;
-  const fail = (message: string, droppedPrevious = false): WriteResult => ({
-    message,
-    droppedPrevious,
-    droppedConditions,
-  });
+  const fail = (message: string, droppedPrevious = false): WriteResult => ({ message, droppedPrevious });
   const ls = storage();
   if (!ls) return fail('保存できませんでした（このブラウザでは保存が使えません）。データを書き出してください');
   const text = JSON.stringify(data);
@@ -198,20 +158,11 @@ function tryWrite(data: DemoData): WriteResult {
     return { message: null, droppedPrevious: false };
   } catch (e) {
     if (!isQuota(e)) return fail('保存できませんでした。データを書き出してください');
-    if (dropConditions(ls)) {
-      droppedConditions = true;
-      try {
-        ls.setItem(STORAGE_KEY, text);
-        return { message: null, droppedPrevious: false, droppedConditions };
-      } catch (e1) {
-        if (!isQuota(e1)) return fail('保存できませんでした。データを書き出してください');
-      }
-    }
     if (ls.getItem(PREV_KEY) === null) return fail(QUOTA_MESSAGE);
     dropPrevious(ls);
     try {
       ls.setItem(STORAGE_KEY, text);
-      return { message: null, droppedPrevious: true, droppedConditions };
+      return { message: null, droppedPrevious: true };
     } catch (e2) {
       return fail(isQuota(e2) ? QUOTA_MESSAGE : '保存できませんでした。データを書き出してください', true);
     }
@@ -239,40 +190,51 @@ function keepBroken(ls: Storage, text: string): boolean {
 
 /**
  * 読み込む。broken：保存していたデータが読めず、元の文字を BROKEN_KEY に退避して初期データで開いた（PRD D227。画面が知らせる）。
+ * outdated：読めなかった理由が前の版（版1）のデータ（ADR-0053。画面は「データの形が変わったので初期データで始めます」と知らせる。broken も true）。
  * brokenKept：元の文字を退避できた（できなければ画面は「今すぐ書き出してください」と知らせる。元の文字は開いている間 brokenText で書き出せる）。
- * fresh：保存データが無く、初めて開いた（初期データを作った）。初めての入り切りは「基本」のひな形（startFeatures。PRD D276）。
- * 保存データがある人（features が無い古いデータも）・読めなかったときは今までどおり（無い ID は入）
+ * fresh：保存データが無く、初めて開いた（初期データを作った）。初めての入り切りは「基本」のひな形（startFeatures。PRD D276）
  */
-export function loadWithStatus(): { data: DemoData; broken: boolean; brokenKept: boolean; fresh: boolean } {
+export function loadWithStatus(): {
+  data: DemoData;
+  broken: boolean;
+  outdated: boolean;
+  brokenKept: boolean;
+  fresh: boolean;
+} {
   const ls = storage();
   const todayDate = today();
   const text = ls?.getItem(STORAGE_KEY) ?? null;
   if (text === null) {
-    // 初期データで始めるので、前に残った条件の変更の控えは比べる元が違う（PRD D290）。消して控え無しで始める
-    conditionsMemory.clear();
     const d = createInitialData(todayDate, startFeatures());
     writeNow(d);
     current = d;
-    return { data: d, broken: false, brokenKept: false, fresh: true };
+    return { data: d, broken: false, outdated: false, brokenKept: false, fresh: true };
   }
   const r = importJson(text);
   if (isImportError(r)) {
     brokenOriginal = text;
-    // 初期データで開くので、条件の変更の控えも消す（PRD D290。読めなかったデータの控えと初期データを比べない）
-    conditionsMemory.clear();
+    let outdated = false;
+    let features: Features | undefined;
+    try {
+      const raw = JSON.parse(text) as { org?: { features?: unknown } };
+      outdated = isOutdated(raw);
+      // 前の版のデータは、機能の入り切り（事業所の設定）だけ引き継ぐ（形が通るときだけ）
+      const f = outdated ? featuresSchema.safeParse(raw.org?.features) : null;
+      if (f?.success) features = f.data;
+    } catch {
+      outdated = false;
+    }
     // 退避が容量超過なら1世代の控えを捨ててもう1回（keepBroken）。退避できなくても続ける
     const brokenKept = ls ? keepBroken(ls, text) : false;
-    const d = createInitialData(todayDate);
+    const d = createInitialData(todayDate, features);
     // 退避できたら作った初期データを書く（読み直すたびに初期データの計算と退避を繰り返さない）。
     // 退避できなかったときは元の文字を残す（上書きすると壊れたデータが消える。brokenText が本体のキーから返す）
     if (brokenKept) writeNow(d);
     current = d;
-    return { data: d, broken: true, brokenKept, fresh: false };
+    return { data: d, broken: true, outdated, brokenKept, fresh: false };
   }
-  const extended = extendDays(r, todayDate);
-  if (extended !== r) writeNow(extended);
-  current = extended;
-  return { data: extended, broken: false, brokenKept: false, fresh: false };
+  current = r;
+  return { data: r, broken: false, outdated: false, brokenKept: false, fresh: false };
 }
 
 export function load(): DemoData {
@@ -299,8 +261,8 @@ export function brokenText(): string | null {
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;
-/** 保存の結果を受け取る（成功は message が null。droppedPrevious・droppedConditions は容量のために捨てた控え） */
-export type SaveCallback = (message: string | null, droppedPrevious: boolean, droppedConditions: boolean) => void;
+/** 保存の結果を受け取る（成功は message が null。droppedPrevious は容量のために捨てた控え） */
+export type SaveCallback = (message: string | null, droppedPrevious: boolean) => void;
 let pending: { data: DemoData; onError?: SaveCallback } | null = null;
 
 /** 待っている保存をすぐ書く（ページを閉じる前・テスト用） */
@@ -312,7 +274,7 @@ export function flushSave(): void {
   if (!p) return;
   // onError が無くても書く（p.onError?.(writeNow(...)) だと onError の無いときに書かない）
   const r = writeNow(p.data);
-  p.onError?.(r.message, r.droppedPrevious, r.droppedConditions === true);
+  p.onError?.(r.message, r.droppedPrevious);
 }
 
 /**
@@ -473,12 +435,24 @@ export function previousInfo(): PreviousInfo | null {
   const ls = storage();
   if (!ls) return null;
   try {
-    if (ls.getItem(PREV_KEY) === null) return null;
+    const prev = ls.getItem(PREV_KEY);
+    if (prev === null) return null;
+    // 版1の控えは戻せない（移行は作らない。ADR-0053）ので「直前の状態に戻す」を出さない
+    if (isOutdatedText(prev)) return null;
     const raw = JSON.parse(ls.getItem(PREV_INFO_KEY) ?? 'null') as Partial<PreviousInfo> | null;
     if (!raw || typeof raw.at !== 'number' || !Number.isFinite(raw.at) || typeof raw.reason !== 'string') return null;
     return { at: raw.at, reason: raw.reason };
   } catch {
     return null;
+  }
+}
+
+/** 控えの文字が前の版（版1）のデータか（読めなければ false） */
+function isOutdatedText(text: string): boolean {
+  try {
+    return isOutdated(JSON.parse(text));
+  } catch {
+    return false;
   }
 }
 

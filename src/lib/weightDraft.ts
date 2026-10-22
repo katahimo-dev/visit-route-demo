@@ -4,10 +4,8 @@
 import type { DemoData } from '../contracts/data';
 import { HARDABLE, type Rule, type RuleType } from '../contracts/rules';
 import { scoreRulesOf } from '../seed/presets';
-import { own, weightLocked } from './common';
-import { currentRuleKeys, rulesStale } from './month';
+import { weightLocked } from './common';
 import { setBasisWeight } from './presets';
-import { rebuildDays } from './rebuildBand';
 
 /** 型ごとの重み・必須（必須にできない型は hard を false にそろえる） */
 export type WeightValue = { weight: number; hard: boolean };
@@ -146,40 +144,21 @@ export function applyDraft(d: DemoData, draft: WeightDraft): DemoData {
   return out;
 }
 
-/** 確定したら「条件が変わった」になる日（今日以降・案と取り消しでない訪問のある日。確定した割当の有無で分ける） */
-export type DraftStale = { days: string[]; unconfirmed: string[]; confirmed: string[] };
-
-/**
- * 確定したあとのデータ next で、作った重みがどこにも無くなる日（lib/month の rulesStale。作り直しの帯・月の要対応の
- * 「条件が変わった」のうち重みによるもの）。compile しないので確認を出す前に数えられる
- */
-export function draftStaleDays(next: DemoData, today: string): DraftStale {
-  const keys = currentRuleKeys(next.rules, next.presets);
-  const withVisits = new Set(next.visits.filter((v) => !v.cancelled).map((v) => v.date));
-  const days = rebuildDays(next.aiPlans, today).filter((d) => withVisits.has(d) && rulesStale(next, d, keys));
-  const confirmed = days.filter((d) => own(next.manualPlans, d) !== undefined);
-  return { days, unconfirmed: days.filter((d) => !confirmed.includes(d)), confirmed };
-}
-
 /** 確認の見出し（PRD D286） */
 export const confirmTitle = (n: number): string => `重みの変更（${n}件）を確定しますか？`;
 
 /**
- * 確認の本文（PRD D286）：変わる条件と重み（前→後）、確定するとどうなるか（基準のプリセットの重みになり、月のまとめて作る・
- * 自動作成・作り直し・点数に使う）、影響する日（作り直しの帯と月の要対応に出る・確定済みの日は作り直さない）
+ * 確認の本文（PRD D286）：変わる条件と重み（前→後）、確定するとどうなるか（基準のプリセットの重みになり、AI で組む・点数・
+ * 検査に使う。今の担当は変えない。ADR-0053）
  */
-export function confirmBody(changes: readonly WeightChange[], basis: string, stale: DraftStale): string {
+export function confirmBody(changes: readonly WeightChange[], basis: string): string {
   const lines = changes.map((c) => `・${c.labels.join('・')}：${changeText(c)}`);
-  const effect =
-    stale.days.length > 0
-      ? `今日以降の ${stale.days.length}日（未確定 ${stale.unconfirmed.length}日・確定済み ${stale.confirmed.length}日）が「条件が変わった」になります。未確定の日は作り直せます。確定済みの日は作り直しません。`
-      : '今日以降の案のある日で「条件が変わった」になる日はありません。';
   return [
     '変わる条件：',
     ...lines,
     '',
-    `「${basis}」の重みが変わります。月のまとめて作る・作り直し・点数に、この重みを使います。`,
-    effect,
+    `「${basis}」の重みが変わります。AI で組む・点数・要対応の検査に、この重みを使います。`,
+    '今の担当は変わりません。組み直したいときは、日の予定・月の予定の「AI で組む」で提案を出して当てます。',
   ].join('\n');
 }
 

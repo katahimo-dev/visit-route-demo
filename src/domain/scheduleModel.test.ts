@@ -13,6 +13,8 @@ const visit = (id: string, earliestStart: string, extra: Partial<Visit> = {}): V
   latestStart: earliestStart,
   durationMinutes: 60,
   staffId: null,
+  start: null,
+  pinned: false,
   cancelled: false,
   note: '',
   typeId: null,

@@ -64,7 +64,7 @@ export function DataWatch() {
  * onClose：閉じたあと（フォーカスを画面の見出しへ）
  */
 export function BrokenDataNotice({ onClose }: { onClose: () => void }) {
-  const { broken, brokenKept, dismissBroken } = useDemoData();
+  const { broken, outdated, brokenKept, dismissBroken } = useDemoData();
   const [message, setMessage] = useState('');
   if (!broken) return null;
   const download = () => {
@@ -84,15 +84,23 @@ export function BrokenDataNotice({ onClose }: { onClose: () => void }) {
     <section className="data-broken-notice" aria-label="読めなかったデータの知らせ" data-testid="data-broken-notice">
       <FileWarning size={18} aria-hidden="true" />
       <div className="data-broken-text">
-        <p>
-          <strong>保存していたデータを読めなかったため、初期データで開きました。</strong>
+        <p data-testid={outdated ? 'data-outdated-text' : undefined}>
+          <strong>
+            {outdated
+              ? 'データの形が変わったので（版1 → 版2）、初期データで始めます。'
+              : '保存していたデータを読めなかったため、初期データで開きました。'}
+          </strong>
           {brokenKept
-            ? '元のデータはこのブラウザに残しています。書き出して保管するか、詳しい人に見てもらってください。'
+            ? outdated
+              ? '前の形のデータはこのブラウザに残しています。控えとして書き出せます（このデモでは読み込めません）。'
+              : '元のデータはこのブラウザに残しています。書き出して保管するか、詳しい人に見てもらってください。'
             : '元のデータを退避できませんでした。今すぐ書き出してください。'}
         </p>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-small" onClick={download} data-testid="data-broken-download">
-            <WithIcon icon={Download}>読めなかったデータを書き出す</WithIcon>
+            <WithIcon icon={Download}>
+              {outdated ? '前の形のデータを書き出す' : '読めなかったデータを書き出す'}
+            </WithIcon>
           </button>
           <output className="sub" data-testid="data-broken-message">
             {message}

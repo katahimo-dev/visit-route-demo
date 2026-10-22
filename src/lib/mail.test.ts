@@ -1,6 +1,6 @@
 // メール連携の件名・本文（PRD D91〜D95。ADR-0017）
 import { describe, expect, it } from 'vitest';
-import type { AiPlan, DemoData } from '../contracts/data';
+import type { DemoData } from '../contracts/data';
 import { clientSchema, staffSchema } from '../contracts/documents';
 import { addDays } from '../domain/time';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
@@ -18,21 +18,27 @@ import {
 import { mailtoHref } from './mailto';
 import { REQUESTED_OFF_NOTE } from './requestedOff';
 
-const plan = (date: string, routes: Record<string, string[]>): AiPlan => ({
-  date,
-  createdAt: 1,
-  seed: 1,
-  iterations: 1,
-  routes,
-  unassigned: [],
-  score: 0,
-  stopped: false,
-  rules: [],
-  generated: { routes, unassigned: [], score: 0 },
-  pins: {},
-});
+/** 担当の並び（版2：担当は訪問に持つ。data の aiPlans・manualPlans で訪問に書く） */
+const plan = (_date: string, routes: Record<string, string[]>) => routes;
+type Routes = Record<string, string[]>;
 
-function data(over: Partial<DemoData> = {}): DemoData {
+/**
+ * テストのデータ。aiPlans は日ごとの担当の並び（訪問に担当を書く）、manualPlans はそれに加えて伝えた（確定）日にする
+ */
+function data(
+  over: Partial<DemoData> & { aiPlans?: Record<string, Routes>; manualPlans?: Record<string, Routes> } = {},
+): DemoData {
+  const { aiPlans = {}, manualPlans = {}, ...rest } = over;
+  const owner = new Map<string, string>();
+  for (const routes of [...Object.values(aiPlans), ...Object.values(manualPlans)])
+    for (const [sid, ids] of Object.entries(routes)) for (const id of ids) owner.set(id, sid);
+  const d = base(rest);
+  const visits = d.visits.map((v) => (owner.has(v.id) ? { ...v, staffId: owner.get(v.id)! } : v));
+  const snapshots = Object.fromEntries(Object.keys(manualPlans).map((date) => [date, { date, at: 1, visits: [] }]));
+  return { ...d, visits, snapshots: { ...d.snapshots, ...snapshots } };
+}
+
+function base(over: Partial<DemoData> = {}): DemoData {
   return makeData({
     staff: [
       staff('s1', 38.26, 140.87, { name: '山田 花', email: 'hana@example.com' }),
@@ -66,12 +72,12 @@ describe('mdw', () => {
 });
 
 describe('日の予定（PRD D92）', () => {
-  it('確定した割当があればそれ、無ければ今の案。担当ごとに開始の順', () => {
+  it('訪問の担当で、担当ごとに開始の順。確定（伝えた）日は confirmed', () => {
     const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'], s2: ['v3'] }) } });
     const p = dayByStaff(d, DATE);
     expect(p.day.source).toBe('plan');
     expect(p.byStaff.get('s1')?.map((v) => v.client?.displayName)).toEqual(['泉', '青葉']);
-    const c = dayByStaff({ ...d, manualPlans: { [DATE]: { s2: ['v1', 'v2', 'v3'] } } }, DATE);
+    const c = dayByStaff(data({ manualPlans: { [DATE]: { s2: ['v1', 'v2', 'v3'] } } }), DATE);
     expect(c.day.source).toBe('confirmed');
     expect(c.byStaff.get('s1')).toBeUndefined();
     expect(c.byStaff.get('s2')?.length).toBe(3);
@@ -83,7 +89,7 @@ describe('日の予定（PRD D92）', () => {
     const t = dayMailText(d.org, d.staff[0]!, DATE, day.source, byStaff.get('s1')!, false);
     expect(t.subject).toBe('10/12（月）の訪問予定');
     expect(t.full).toContain('山田 花さん');
-    expect(t.full).toContain('今の案（まだ確定していません）');
+    expect(t.full).toContain('今の担当（まだ確定していません）');
     expect(t.full).toContain('1. 9:00〜10:00 泉様');
     expect(t.full).toContain('2. 13:00〜14:00 青葉様');
     expect(t.full).toContain('住所：仙台市青葉区1-1');
@@ -302,7 +308,7 @@ describe('日の予定の経路のリンク（PRD D97。ADR-0018）', () => {
 
 describe('週の予定（PRD D93）', () => {
   const dates = Array.from({ length: 7 }, (_, i) => addDays(DATE, i));
-  it('件名「10/12〜10/18 の予定」、曜日ごとの訪問。案は「案」と書き、休み・案なし・訪問なしを分ける', () => {
+  it('件名「10/12〜10/18 の予定」、曜日ごとの訪問。確定していない日はそう書き、休み・担当なし・訪問なしを分ける', () => {
     const next = addDays(DATE, 1);
     const d = data({
       visits: [
@@ -318,12 +324,12 @@ describe('週の予定（PRD D93）', () => {
     const t = weekMailText(d.org, d.staff[0]!, days);
     expect(t.subject).toBe('10/12〜10/18 の予定');
     expect(t.full).toContain('■10/12（月）\n  9:00〜10:00 泉様\n  13:00〜14:00 青葉様');
-    expect(t.full).toContain('■10/13（火）（案。まだ確定していません）\n  10:00〜11:00 青葉様');
+    expect(t.full).toContain('■10/13（火）（まだ確定していません）\n  10:00〜11:00 青葉様');
     expect(t.full).toContain('■10/14（水） 予定はまだ決まっていません');
     expect(t.full).toContain('■10/15（木） 希望休');
     expect(t.full).toContain('■10/18（日） 休み');
     expect(t.short).toContain('10/12（月） 9:00・13:00（2件）');
-    expect(t.short).toContain('10/13（火）（案） 10:00（1件）');
+    expect(t.short).toContain('10/13（火）（未確定） 10:00（1件）');
   });
 });
 

@@ -194,14 +194,14 @@ describe('吹き出しの中身', () => {
       c: { s1: 1 as const },
       d: { s1: 2 as const },
     };
-    const clients = [
-      { id: 'd', usualStaffId: 's1' },
-      { id: 'a', usualStaffId: null },
-      { id: 'b', usualStaffId: 's2' },
-      { id: 'c', usualStaffId: 's1' },
-      { id: 'e', usualStaffId: null },
-    ];
-    const g = staffClientGroups(compat, 's1', clients);
+    const clients = [{ id: 'd' }, { id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'e' }];
+    // 繰り返しの担当（版2。lib/usualStaff の usualStaffMap）
+    const usual = new Map([
+      ['d', 's1'],
+      ['b', 's2'],
+      ['c', 's1'],
+    ]);
+    const g = staffClientGroups(compat, 's1', clients, usual);
     expect(g.usual.map((c) => c.id)).toEqual(['d', 'c']);
     expect(g.great.map((c) => c.id)).toEqual(['d', 'a']);
     expect(g.good.map((c) => c.id)).toEqual(['c']);

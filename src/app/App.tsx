@@ -43,7 +43,6 @@ import { CommandPalette, IS_MAC } from '../components/CommandPalette';
 import { BrokenDataNotice, DataWatch } from '../components/DataNotices';
 import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
-import { ConditionsBaseSweep, RebuildBand } from '../components/rebuildBand';
 import { TourProvider } from '../components/Tour';
 import { VisitPanelProvider } from '../components/VisitPanel';
 import { addDays, jstDate } from '../domain/time';
@@ -67,7 +66,6 @@ import {
   tabClick,
   tabLabel,
 } from '../lib/nav';
-import { showsRebuildBand } from '../lib/rebuildBand';
 import { NARROW_QUERY } from '../lib/useMedia';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientPage from '../pages/ClientPage';
@@ -339,8 +337,6 @@ function AdminShell() {
   return (
     // 初回の案内ツアー（PRD D192・D193）：まだ見ていなければ起動したときに中央のカードで出す。データの画面からもう一度開ける
     <TourProvider terms={terms}>
-      {/* 条件の変更の控えを、影響する日が0日になったら消す（どの画面でも。控えが無い間は数えない。PRD D290） */}
-      <ConditionsBaseSweep />
       <div className="app-shell" data-date={pickedDate}>
         <aside ref={sideNavRef} className="side-nav">
           {brand}
@@ -400,8 +396,6 @@ function AdminShell() {
               <Guarded
                 element={
                   <>
-                    {/* 設定の画面：条件が変わった日があれば作り直しの帯（PRD D161。画面ごとに［後で］を戻すので key は画面） */}
-                    {showsRebuildBand(pathname) && <RebuildBand key={pathname} rules={pathname === '/rules'} />}
                     {/* 保存していたデータを読めず初期データで開いた知らせ（PRD D227）。閉じたらフォーカスは画面の見出しへ */}
                     <BrokenDataNotice onClose={focusHeading} />
                     {featureOff && (

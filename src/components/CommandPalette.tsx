@@ -15,14 +15,13 @@ import {
   paletteKindLabel,
   palettePeople,
   paletteScreens,
+  paletteVisitList,
   paletteVisits,
   visitIndex,
 } from '../lib/commandPalette';
 import { trapTarget } from '../lib/confirmDialog';
 import { confirmLeave } from '../lib/leaveGuard';
 import type { MenuItem, NavSection } from '../lib/nav';
-import { assignmentOf } from '../lib/visitOps';
-import { presetOf } from '../seed';
 import { useDemoData } from '../store';
 import { StaffMarkById } from './StaffMark';
 import { FOCUSABLE } from './ui';
@@ -68,24 +67,28 @@ export function CommandPalette({
   const [typed, setTyped] = useState(false);
 
   // 候補（人の名前は比べる形にそろえておき、打つたびにそろえ直さない。300人×60人でも打つたびは絞り込むだけ）
-  // この日だけ試す重みがどのプリセットとも違えば「今日の案を日の予定の重みで作り直す」も出す（PRD D166・D182・D234）
-  const customRules = useMemo(() => presetOf(data.rules, data.presets) === null, [data.rules, data.presets]);
   // 切った機能の操作は出さない（PRD D213。画面は screenSections から引くので、切った画面はもう無い）
   const features = data.org.features;
-  const actions = useMemo(() => paletteActions(today, { customRules, features }), [today, customRules, features]);
+  const actions = useMemo(() => paletteActions(today, { features }), [today, features]);
   const screens = useMemo(() => paletteScreens(sections, terms), [sections, terms]);
   const people = useMemo(() => palettePeople(data.clients, data.staff, terms), [data.clients, data.staff, terms]);
   const items = useMemo(() => [...actions, ...screens, ...people], [actions, screens, people]);
   const base = useMemo(() => filterPalette(items, query), [items, query]);
   // 訪問の候補（PRD D304）：〈利用者さん〉の名前・よみ＋日付。索引は打ってから作り（開いただけでは作らない）、開いている間は使い回す
   const typedAny = query.trim() !== '';
-  const vIndex = useMemo(() => (typedAny ? visitIndex(data.visits) : null), [typedAny, data.visits]);
+  const vIndex = useMemo(
+    () =>
+      typedAny
+        ? visitIndex(paletteVisitList({ visits: data.visits, patterns: data.patterns, clients: data.clients }, today))
+        : null,
+    [typedAny, data.visits, data.patterns, data.clients, today],
+  );
   const result = useMemo(() => {
     if (!vIndex) return base;
     const staffName = new Map(data.staff.map((s) => [s.id, s.name]));
     const visits = paletteVisits(query, people, vIndex, today, (v) => {
       if (v.cancelled) return v.cancelKind === 'sameDay' ? '当日キャンセル' : '取り消し';
-      const sid = assignmentOf(data, v.id, v.date).staffId;
+      const sid = v.staffId;
       return sid ? (staffName.get(sid) ?? '') : '担当なし';
     });
     if (visits.length === 0) return base;

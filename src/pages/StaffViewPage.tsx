@@ -19,7 +19,7 @@ import './schedule.css';
 
 /**
  * スタッフのスマホ画面風の「今日の順番」（D16。表示だけで記録はしない）。
- * 確定した割当（予定の画面の「この割当で確定」）があればそれを、無ければ AI案を出す
+ * その日の訪問の担当と開始の並び（版2）。まだ確定していない（伝えていない）日はそう添える
  */
 export default function StaffViewPage() {
   const { staffId = '' } = useParams();
@@ -30,17 +30,12 @@ export default function StaffViewPage() {
   // 道順のリンク（ADR-0028 の mapsLink）を切っていれば、1日の全行程のリンクと注記を出さない
   const mapsOn = useFeature('mapsLink');
 
-  const manualIds = own(m.savedView.cols, staffId) ?? [];
-  const hasManual = Object.values(m.savedView.cols).some((ids) => ids.length > 0);
-  const ai = data.aiPlans[date];
-  const source: 'manual' | 'ai' | null = hasManual ? 'manual' : ai ? 'ai' : null;
+  /** 確定した（伝えた）日か */
+  const told = !!own(data.snapshots, date);
   // 取り消し・〈利用者さん〉の休み（ADR-0013）の訪問は出さない（visitById はその日の計算に入れる候補の訪問だけ）
   const ids = useMemo(
-    () =>
-      (source === 'manual' ? manualIds : source === 'ai' ? ((ai && own(ai.routes, staffId)) ?? []) : []).filter((id) =>
-        visitById.has(id),
-      ),
-    [source, manualIds, ai, staffId, visitById],
+    () => m.visits.filter((v) => v.staffId === staffId && visitById.has(v.id)).map((v) => v.id),
+    [m.visits, staffId, visitById],
   );
 
   // 時刻：問題があれば移動を入れた時刻（scheduleRoute）、無ければ移動を入れない目安
@@ -112,10 +107,10 @@ export default function StaffViewPage() {
                 <StaffMark staff={me} size="sm" />
                 {me.name}さん・{dateText(date)}
               </span>
-              {source === 'ai' && (
+              {!told && ids.length > 0 && (
                 <span className="chip chip-warn">
                   <Sparkles size={13} aria-hidden="true" />
-                  AI案（まだ決まっていません）
+                  まだ確定していません（変わることがあります）
                 </span>
               )}
             </div>

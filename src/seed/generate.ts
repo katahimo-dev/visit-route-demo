@@ -71,6 +71,8 @@ export function visitsOf(date: string, clientIds: Set<string>): Visit[] {
         latestStart: shiftBy(l, d),
         durationMinutes: mins,
         staffId: null,
+        start: null,
+        pinned: false,
         cancelled: false,
         note: '',
         typeId: null,

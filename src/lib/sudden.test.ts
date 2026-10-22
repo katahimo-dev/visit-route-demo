@@ -31,27 +31,27 @@ const absence = (x: Partial<Absence> = {}): Absence => ({
 
 describe('suddenSteps・suddenHeading（段階の名前と見出し）', () => {
   it('〈スタッフ〉の流れ（選ぶ前も同じ）と〈利用者さん〉の流れ（短い名前）', () => {
-    expect(suddenSteps(null)).toEqual(['起きたこと', '休む人', '影響', '確定', '連絡']);
+    expect(suddenSteps(null)).toEqual(['起きたこと', '休む人', '影響', '選ぶ', '連絡・確定']);
     expect(suddenSteps('staff')).toEqual(suddenSteps(null));
-    expect(suddenSteps('client')).toEqual(['起きたこと', '訪問', '影響', '確定', '連絡']);
+    expect(suddenSteps('client')).toEqual(['起きたこと', '訪問', '影響', '確認', '連絡・確定']);
   });
   it('見出しは段階の名前と重ねない', () => {
     expect(suddenHeading(null, 1, 'スタッフ')).toBe('何が起きましたか？');
     expect(suddenHeading('staff', 2, 'スタッフ')).toBe('休むスタッフと時間帯を選ぶ');
     expect(suddenHeading('staff', 3, 'スタッフ')).toBe('影響を確かめて振り直す');
-    expect(suddenHeading('staff', 4, 'スタッフ')).toBe('案を選んで確定する');
+    expect(suddenHeading('staff', 4, 'スタッフ')).toBe('振り直し方を選ぶ');
     expect(suddenHeading('client', 2, 'スタッフ')).toBe('キャンセルの訪問を選ぶ');
-    expect(suddenHeading('client', 4, 'スタッフ')).toBe('確定する');
-    expect(suddenHeading('staff', 5, 'スタッフ')).toBe('変更を伝える');
-    expect(suddenHeading('client', 5, 'スタッフ')).toBe('変更を伝える');
+    expect(suddenHeading('client', 4, 'スタッフ')).toBe('取り消した結果を確かめる');
+    expect(suddenHeading('staff', 5, 'スタッフ')).toBe('変更を伝えて確定する');
+    expect(suddenHeading('client', 5, 'スタッフ')).toBe('変更を伝えて確定する');
     for (const k of ['staff', 'client'] as const)
       for (const st of [1, 2, 3, 4, 5] as const) expect(suddenSteps(k)).not.toContain(suddenHeading(k, st, 'スタッフ'));
   });
 });
 
 describe('noPlanText・recommendAnneal', () => {
-  it('案の無い日：計算中は「案を作っています」', () => {
-    expect(noPlanText(true)).toBe('案を作っています。終わると振り直せます');
+  it('計算中は「担当を組んでいます」', () => {
+    expect(noPlanText(true)).toBe('担当を組んでいます。終わると振り直せます');
     expect(noPlanText(false)).toContain('欠勤だけ登録できます');
   });
   it('案A で入らない見込みがある案のある日だけ案B を勧める', () => {
@@ -172,19 +172,17 @@ describe('cancelImpact（当日キャンセルの影響）', () => {
     expect(t.at(-1)).toContain('利用者さんごとの月の集計に回数');
     expect(t).toHaveLength(2);
   });
-  it('担当なし・案なし・ふつうの取り消し', () => {
+  it('担当なし・ふつうの取り消し', () => {
     const t = cancelImpact({ owner: null, sameDay: false, clientWord: '利用者さん', hasPlan: false });
     expect(t[0]).toContain('まだ担当が決まっていません');
-    expect(t[1]).toContain('まだ案がありません');
-    expect(t[2]).toBe('ふつうの取り消しは回数に数えません');
+    expect(t[1]).toBe('ふつうの取り消しは回数に数えません');
   });
 });
 
 describe('confirmNote・absenceSummary', () => {
   it('確定の状態ごとの文', () => {
-    expect(confirmNote(null)).toContain('まだ案がありません');
-    expect(confirmNote('same')).toContain('確定済み');
-    expect(confirmNote('diff')).toContain('確定し直して');
+    expect(confirmNote('told')).toContain('確定済み');
+    expect(confirmNote('changed')).toContain('未連絡の変更');
     expect(confirmNote('none')).toContain('まだ確定していません');
   });
   it('欠勤の短い文', () => {

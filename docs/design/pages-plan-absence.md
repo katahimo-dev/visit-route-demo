@@ -2,6 +2,7 @@
 
 > この画面のファイル：`src/pages/SuddenPanel.tsx`・`absenceParts.tsx`（`AbsenceFields`・`AbsenceTargets`・`ReassignBar`・`ReassignSummary`・`ReassignMoves`・`CandidateBox`・`previewOf`）・`reassignParts.tsx`（`AnnealBox`・`ContactPanel`・`ContactButton`・`ReassignDock`）・`PlanPage.tsx`・`plan.css`、`src/lib/sudden.ts`・`absences.ts`・`contacts.ts`・`clipboard.ts`・`runs.ts`。関連 ADR：0011（追記を含む）・0015 追記・0025 追記・0038・0044。関連 PRD：D26〜D35・D167〜D172・D243〜D246・D264・D265。
 > 日の予定の全体は [pages-plan.md](pages-plan.md)。計算（`reassign`・`targetsOf`・`prepareAnneal`・`settleAnneal`）は design.md の「reassign」。
+> 版2（ADR-0053）：振り直しは `writeRoutes` で訪問に書き、振り直す前の担当は `reassigns[date]`。確定は5段目の「連絡したので確定」（伝えた内容 `snapshots`）。下で「今の案」とあるのはその日の訪問の担当、「確定した割当」は伝えた内容
 
 ### 「欠勤・キャンセル」の欄（PRD D167〜D172・D243〜D246）
 
@@ -31,18 +32,18 @@
 
 | 段階 | 〈スタッフ〉が休む（kind `staff`） | 〈利用者さん〉のキャンセル（kind `client`） |
 |---|---|---|
-| 短い名前（`suddenSteps`） | 起きたこと・休む人・影響・確定・連絡 | 起きたこと・訪問・影響・確定・連絡 |
+| 短い名前（`suddenSteps`） | 起きたこと・休む人・影響・選ぶ・連絡・確定 | 起きたこと・訪問・影響・確認・連絡・確定 |
 | 1 見出し「何が起きましたか？」 | `sudden-kind-staff`（「急な欠勤・遅刻・早退。休む人の訪問を、ほかの人へ振り直します」） | `sudden-kind-client` |
 | 2 | 「休む〈スタッフ〉と時間帯を選ぶ」：人（`sudden-staff`）と `AbsenceFields`。人を選ぶまで「次へ」（`sudden-next`）を押せない。時間帯の誤りは理由を出して押せない。既にある欠勤は `sudden-existing` | 「キャンセルの訪問を選ぶ」：訪問（`sudden-visit`）と当日キャンセルか（`sudden-same-day`。既定は当日キャンセル） |
 | 3 | 「影響を確かめて振り直す」：見込み（`absence-preview`・`sudden-impact`）と振り直しのボタン | 「影響を確かめて取り消す」：`cancelImpact` の文（`sudden-cancel-impact`）と「当日キャンセルとして取り消す」／「取り消す」（`sudden-cancel-ok`） |
-| 4 | 「案を選んで確定する」：済んだこと（`sudden-done`「〈欠勤〉を登録して振り直しました」）・`ReassignSummary`・`ReassignMoves`（PRD D265）・`AnnealBox`・`confirmNote`（`sudden-confirm-note`）・「この割当で確定」（`sudden-adopt`。独自の確認。確定したら5段目へ）・確定し直すものが無ければ「次へ：連絡」（`sudden-to-contacts`）・「元の案に戻す」（`sudden-revert`）・「日の予定で差を見る」（`sudden-to-bar`） | 「確定する」：済んだこと（「〈訪問〉 を当日キャンセルとして取り消しました」）・確定（確定したら5段目へ）・「次へ：連絡」 |
-| 5 見出し「変更を伝える」 | 連絡の一覧（下の「5段目の連絡」）。振り直しの差から | 連絡の一覧。取り消した訪問の担当に「中止」と、取り消したときの確定した割当との差から |
+| 4 | 「振り直し方を選ぶ」：済んだこと（`sudden-done`「〈欠勤〉を登録して振り直しました」）・`ReassignSummary`・`ReassignMoves`（PRD D265）・`AnnealBox`（案B を作って選ぶ）。帯は「次へ：連絡」（`sudden-to-contacts`。主ボタン）・「振り直す前に戻す」（`sudden-revert`）・「日の予定で差を見る」（`sudden-to-bar`） | 「取り消した結果を確かめる」：済んだこと。帯は「次へ：連絡」 |
+| 5 見出し「変更を伝えて確定する」 | 連絡の一覧（下の「5段目の連絡」）。振り直しの差から。確定の状態の文（`sudden-confirm-note`）。帯は「連絡したので確定」（`sudden-adopt`。主ボタン。独自の確認のあと `tellDay` で伝えた内容を書き、欄を閉じる）と「あとで確定する」（`sudden-finish`。確定済みなら主ボタン「終わる」だけ） | 連絡の一覧。取り消した訪問の担当に「中止」と、取り消したときの伝えた内容との差から |
 
 #### 5段目の連絡（PRD D243〜D246。ADR-0038）
 
 - 一覧は1人に1枚（`sudden-contacts` の `sudden-contact`。`data-to`＝`staff|client`・`data-kinds`＝種類）：宛名・種類の印（担当が外れる・新しく入る（`chip-move`）・時刻が変わる（`chip-warn`）・中止、〈利用者さん〉は「〈利用者さん〉あて」）・連絡文（`sudden-contact-text`）・［文をコピー］（`sudden-contact-copy`。`copyText` とトースト）・〈スタッフ〉あての「メール」（`MailButton`・`MailLengthNote`。`sudden-contact-mail`。件名は `contactMailText`）・［連絡した］（`sudden-contact-sent`。印の鍵は宛先と文なので、確定し直して文が変われば消える）
 - 上に説明（欠勤とキャンセルで分ける）と、欠勤の人に残る訪問があれば「欠勤の人に残る訪問 N件（連絡文には入りません。日の予定で確かめてください）」（`sudden-contacts-left`。日の予定が `leftCount` で渡す）、「連絡した N/M人」（`sudden-contacts-count`。`aria-live`）。行が無ければ「連絡が要る変更はありません。」、差を出せなければ「日の予定の「連絡の一覧」で確かめてください」（`sudden-contacts-none`）
-- 帯は「終わる」（`sudden-finish`。塗り＝欄の主ボタンはこれ1つ。差の欄へは移らない）と「戻る」（4段目。枠）。行の［文をコピー］・メールは枠の小さなボタン、［連絡した］はチェック（ボタンの3段。PRD D238・ADR-0036）
+- 帯は「連絡したので確定」（`sudden-adopt`。塗り＝欄の主ボタンはこれ1つ）・「あとで確定する」（`sudden-finish`。枠。確定済みなら「終わる」が主ボタン）と「戻る」（4段目。枠）。行の［文をコピー］・メールは枠の小さなボタン、［連絡した］はチェック（ボタンの3段。PRD D238・ADR-0036）
 - 日の予定（`PlanPage`）が作る：
   - 欠勤：差の欄と同じ `contacts`（`contactsOf`。元の案＝確定した割当、無ければ振り直す前の案 → 今の案。確定したあとは今の案＝確定した割当）
   - キャンセル：欄の取り消し（`suddenCancelVisit`）が、取り消す前の担当（確定した割当があればその担当だけ（無ければ担当なし）、確定が無ければ今の案）・開始（今の案の時刻、無ければ約束の開始）と、そのときの確定した割当（`suddenCancel`）を覚えてから `applyCancel`。差は `contactsOf({ problem, routes: orderConfirmed(そのときの確定した割当, 今の案, problem) }, { problem, routes: 今の案 })`（確定した割当の列は訪問データの並びなので、`baseOf` と同じ並べ方にしてから時刻を出す）（取り消した訪問は問題に無いので出ない）。確定が無かった日は中止だけ
@@ -229,4 +230,4 @@
 - [ ] 差の欄の「連絡の一覧」で (1)〜(3) と連絡文が出て、コピー（1件・すべて）でクリップボードに入る。印刷の見た目は一覧だけ
 - [ ] 比較の画面で 欠勤前／案A／案B を選んで比べられる（欠勤前は1つ）
 - [ ] 欠勤・キャンセルの欄で確定すると5段目（連絡）に、休む人・新しく入る人・〈利用者さん〉あての文と［文をコピー］・メール・［連絡した］が出る。キャンセルでは担当に「中止です」（390px で欄の中が横にはみ出さない）
-- [ ] `lib/absences`・`lib/runs`（同じ人・同じ日の置き換え・元の案の並べ方・戻す・`chooseReassign`・`addAnnealRun`・`annealRunOf`）・`lib/contacts`・`lib/clipboard`（失敗の経路）・`lib/sudden` のテストが通る
+- [ ] `lib/absences`（同じ人・同じ日の置き換え・振り直す前の担当・戻す・`chooseReassign`）・`lib/contacts`・`lib/clipboard`（失敗の経路）・`lib/sudden` のテストが通る

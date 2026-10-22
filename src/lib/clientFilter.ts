@@ -1,8 +1,9 @@
 // 〈利用者さん〉の絞り込み（PRD D108〜D112。ADR-0021）。週間の〈利用者さん〉×曜日の表と〈利用者さん〉の画面の一覧で使う。
 // 名前・よみの検索・地区（市区→町名）・絞り込みのチップ（AND）・「終了の人も出す」。純粋関数（データは書き換えない）
-import type { Client, ClientLeave, Pattern, Staff, Visit } from '../contracts/documents';
+import type { Client, ClientLeave, Pattern, Staff } from '../contracts/documents';
 import { type Area, areaOf } from './area';
 import { defaultStaffOf, matchClient, staffClientMap } from './search';
+import { usualStaffMap } from './usualStaff';
 import type { WeekDay } from './week';
 
 /**
@@ -71,6 +72,8 @@ export type FilterFacts = {
   leaveIds: ReadonlySet<string>;
   /** 定期パターンがある〈利用者さん〉 */
   patternClientIds: ReadonlySet<string>;
+  /** 〈利用者さん〉のいつもの担当（繰り返しの担当。lib/usualStaff。無ければ null） */
+  usualOf?: (clientId: string) => string | null;
   /** 〈スタッフ〉が担当する〈利用者さん〉（期間の帯の担当と、いつもの担当） */
   staffClientIds: (staffId: string) => ReadonlySet<string>;
   /** いつもの担当として期間の終わりまで働ける〈スタッフ〉（利用中で、最終勤務日が無いか期間の終わり以降） */
@@ -96,9 +99,8 @@ const EMPTY_SET: ReadonlySet<string> = new Set<string>();
  */
 export function filterFacts(input: {
   days: readonly WeekDay[];
-  visits: readonly Visit[];
-  clients: readonly Pick<Client, 'id' | 'usualStaffId'>[];
-  patterns: readonly Pick<Pattern, 'clientId'>[];
+  clients: readonly Pick<Client, 'id'>[];
+  patterns: readonly Pick<Pattern, 'clientId' | 'usualStaffId' | 'from' | 'to'>[];
   clientLeaves: readonly ClientLeave[];
   staff: readonly Pick<Staff, 'id' | 'active' | 'lastDay'>[];
   /** この期間に訪問がある人は終了でも出す（週間の表） */
@@ -106,10 +108,10 @@ export function filterFacts(input: {
   /** 訪問の種類（data.visitTypes）。渡すと「訪問の種類」のチップで絞れる */
   visitTypes?: readonly { id: string }[];
 }): FilterFacts {
-  const { days, visits, clients, patterns, clientLeaves, staff, showEndedInPeriod = false, visitTypes } = input;
+  const { days, clients, patterns, clientLeaves, staff, showEndedInPeriod = false, visitTypes } = input;
   const from = days[0]?.date ?? '';
   const to = days.at(-1)?.date ?? '';
-  const visitById = new Map(visits.map((v) => [v.id, v]));
+  const visitById = new Map(days.flatMap((d) => d.visits).map((v) => [v.id, v]));
   const periodIds = new Set<string>();
   const unassignedIds = new Set<string>();
   const pairs: [string, string | undefined][] = [];
@@ -127,12 +129,14 @@ export function filterFacts(input: {
   const leaveIds = new Set(
     days.length === 0 ? [] : clientLeaves.filter((l) => l.from <= to && l.to >= from).map((l) => l.clientId),
   );
-  const byStaff = staffClientMap(pairs, clients);
+  const usual = usualStaffMap(patterns, from);
+  const byStaff = staffClientMap(pairs, clients, usual);
   return {
     periodIds,
     unassignedIds,
     leaveIds,
     patternClientIds: new Set(patterns.map((p) => p.clientId)),
+    usualOf: (id) => usual.get(id) ?? null,
     staffClientIds: (id) => byStaff.get(id) ?? EMPTY_SET,
     workingStaffIds: new Set(staff.filter((s) => s.active && (s.lastDay === null || s.lastDay >= to)).map((s) => s.id)),
     endedShownIds: showEndedInPeriod ? periodIds : EMPTY_SET,
@@ -140,10 +144,7 @@ export function filterFacts(input: {
   };
 }
 
-export type FilterClient = Pick<
-  Client,
-  'id' | 'displayName' | 'kana' | 'stage' | 'usualStaffId' | 'allowedStaffIds'
-> & {
+export type FilterClient = Pick<Client, 'id' | 'displayName' | 'kana' | 'stage' | 'allowedStaffIds'> & {
   place: Pick<Client['place'], 'address'>;
 };
 
@@ -156,8 +157,10 @@ export function chipMatches(chip: FilterChip, c: FilterClient, facts: FilterFact
       return staffId !== '' && facts.staffClientIds(staffId).has(c.id);
     case 'unassigned':
       return facts.unassignedIds.has(c.id);
-    case 'noUsual':
-      return !c.usualStaffId || !facts.workingStaffIds.has(c.usualStaffId);
+    case 'noUsual': {
+      const usual = facts.usualOf?.(c.id) ?? null;
+      return !usual || !facts.workingStaffIds.has(usual);
+    }
     case 'limited':
       return c.allowedStaffIds.length > 0;
     case 'leave':
@@ -548,9 +551,9 @@ export function chipHelp(chip: FilterChip, t: { periodLabel: string; staffTerm: 
     case 'period':
       return `${t.periodLabel}に（取り消しでない）訪問がある人`;
     case 'staff':
-      return `${t.periodLabel}の案で担当する人と、いつもの担当がその${t.staffTerm}の人`;
+      return `${t.periodLabel}にその${t.staffTerm}が担当する人と、繰り返しの担当がその${t.staffTerm}の人`;
     case 'unassigned':
-      return `${t.periodLabel}に、案が無い日の訪問か、案に入らない訪問がある人`;
+      return `${t.periodLabel}に、担当なしの訪問がある人`;
     case 'noUsual':
       return `いつもの担当が空か、休止中・${t.periodLabel}の終わりより前に最終勤務日がある${t.staffTerm}の人`;
     case 'limited':

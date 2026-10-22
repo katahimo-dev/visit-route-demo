@@ -4,19 +4,19 @@ import type { Absence, Client, Staff, Visit } from '../contracts/documents';
 import type { Problem, ScoreScale } from '../contracts/problem';
 import { availabilityOf, type Slot, withoutAbsences } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
-import { NONE, reconcile, type View } from '../domain/scheduleModel';
 import { normalize } from '../evaluate';
 import { type CompileInput, compile } from '../matching';
-import { applyPreset, scorePresetOf } from '../seed';
+import { visitsOn } from '../patterns';
+import { scorePresetOf } from '../seed';
 import { useDemoData } from '../store';
 import { attempt, byDisplayName, byName } from './common';
 import { staffColorMap } from './staffMark';
 
 /**
- * その日の画面で共通に使う形（予定・AI案・スタッフの画面）。
+ * その日の画面で共通に使う形（予定・スタッフの画面）。
  * 問題（compile）は useMemo。未実装・データの不整合で投げても problemError に文を入れて画面は続ける。
- * problem はこの日だけ試す重み（solver の費用）、scoreProblem・scoreScale は点数の基準のプリセットの物差し（ADR-0010）。
- * compile の依存は compile が読むフィールドだけ（compileInput）なので、案のドラッグ・固定・記録の更新では作り直さない
+ * 版2（ADR-0053）：条件の重みはいつも点数の基準なので、problem と scoreProblem は同じ。
+ * compile の依存は compile が読むフィールドだけ（compileInput）。担当・開始・ピンは訪問にあるので、担当を替えると作り直す
  */
 export function useDayModel(date: string) {
   const store = useDemoData();
@@ -27,7 +27,11 @@ export function useDayModel(date: string) {
   const clientById = useMemo(() => new Map<string, Client>(clients.map((c) => [c.id, c])), [clients]);
   /** 〈スタッフ〉の色（印 StaffMark・地図の線・時間軸の帯で同じ。lib/staffMark） */
   const colorOfStaff = useMemo(() => staffColorMap(data.staff), [data.staff]);
-  const allVisits = useMemo(() => data.visits.filter((v) => v.date === date), [data.visits, date]);
+  /** その日の訪問（保存した回＋繰り返しから計算した回） */
+  const allVisits = useMemo(
+    () => visitsOn({ visits: data.visits, patterns: data.patterns, clients: data.clients }, date),
+    [data.visits, data.patterns, data.clients, date],
+  );
   /** 計算に入れる候補の訪問（取り消し・〈利用者さん〉の休み（ADR-0013）の訪問を除く） */
   const visits = useMemo(
     () => allVisits.filter((v) => !v.cancelled && !isOnLeave(data.clientLeaves, v)),
@@ -65,38 +69,16 @@ export function useDayModel(date: string) {
   /** compile が読むデータだけ（案・記録・プリセットの更新では変わらない） */
   const compileInput = useCompileInput(data);
   const compiled = useMemo(() => attempt(() => compile(compileInput, date)), [compileInput, date]);
-  /** 点数の基準のプリセット（ADR-0010。プリセットが0件なら null＝この日だけ試す重みそのもの） */
+  /** 点数の基準のプリセット（ADR-0010） */
   const scorePreset = useMemo(
     () => scorePresetOf(data.presets, data.scorePresetId),
     [data.presets, data.scorePresetId],
   );
-  /**
-   * 点数の物差しの問題（ADR-0010）：条件に点数の基準のプリセットの重み・必須を当てて作る。
-   * この日だけ試す重みと同じなら compile し直さずに同じものを使う（重い compile を二重にしない）
-   */
-  const scoreRules = useMemo(
-    () => (scorePreset ? applyPreset(compileInput.rules, scorePreset) : compileInput.rules),
-    [compileInput.rules, scorePreset],
-  );
-  const scoreCompiled = useMemo(() => {
-    if (JSON.stringify(scoreRules) === JSON.stringify(compileInput.rules)) return compiled;
-    return attempt(() => compile({ ...compileInput, rules: scoreRules }, date));
-  }, [compileInput, scoreRules, date, compiled]);
-  /** 100点満点の物差し（下限＝100点、1件あたりの超過で減点。ADR-0007 案A）。点数の基準の条件で作る（ADR-0010） */
+  /** 100点満点の物差し（下限＝100点、1件あたりの超過で減点。ADR-0007 案A） */
   const scoreScale = useMemo(() => {
-    const p = scoreCompiled.value;
+    const p = compiled.value;
     return p ? attempt(() => normalize(p)).value : null;
-  }, [scoreCompiled]);
-  /** 保存してある手作業案（訪問の staffId で補う） */
-  const savedView: View = useMemo(
-    () =>
-      reconcile(
-        data.manualPlans[date] ?? {},
-        visits,
-        staff.map((s) => s.id),
-      ),
-    [data.manualPlans, date, visits, staff],
-  );
+  }, [compiled]);
   return {
     ...store,
     staff,
@@ -109,23 +91,22 @@ export function useDayModel(date: string) {
     leaveVisits,
     visitById,
     slotsOf,
-    /** compile に渡すデータ（compile が読むフィールドだけ。条件を変えて compile し直すときの元。ADR-0010） */
+    /** compile に渡すデータ（compile が読むフィールドだけ。プリセットを当ててみるときの元。ADR-0010） */
     compileInput,
     problem: compiled.value as Problem | null,
     problemError: compiled.error,
-    /** 点数（100点満点）・必須の違反・条件ごとの達成を付ける問題（点数の基準の条件。ADR-0010） */
-    scoreProblem: scoreCompiled.value as Problem | null,
+    /** 点数（100点満点）・必須の違反・条件ごとの達成を付ける問題（点数の基準の条件。版2は problem と同じ） */
+    scoreProblem: compiled.value as Problem | null,
     scoreScale: scoreScale as ScoreScale | null,
     /** 点数の基準の条件（名前・重み。点数の理由の文に使う。PRD D173） */
-    scoreRules,
-    /** 点数の基準のプリセットの名前（「物差し：標準」の表示。プリセットが無ければ「試す重み」） */
-    scoreRulerName: scorePreset?.name ?? 'この日だけの重み',
-    savedView,
+    scoreRules: compileInput.rules,
+    /** 点数の基準のプリセットの名前（「物差し：標準」の表示） */
+    scoreRulerName: scorePreset?.name ?? '点数の基準',
   };
 }
 
 /**
- * compile が読むデータだけを取り出す（案・記録・プリセットの更新では変わらない）。
+ * compile が読むデータだけを取り出す（伝えた内容・プリセットの更新では変わらない）。
  * その日の問題を compile しないので、日を選ばない画面（ホーム。PRD D141）はこれだけを使う
  */
 export function useCompileInput(data: DemoData): CompileInput {
@@ -164,6 +145,6 @@ export function useCompileInput(data: DemoData): CompileInput {
 /** 訪問ID → 担当 */
 export function ownerMap(routes: Record<string, string[]>): Map<string, string> {
   const out = new Map<string, string>();
-  for (const [s, ids] of Object.entries(routes)) if (s !== NONE) for (const id of ids) out.set(id, s);
+  for (const [s, ids] of Object.entries(routes)) if (s !== '__none') for (const id of ids) out.set(id, s);
   return out;
 }

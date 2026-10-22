@@ -2,6 +2,7 @@
 
 > この画面のファイル：`src/pages/WeekPage.tsx`（`week.css`）・`mailPanels.tsx`（`WeekMailPanel`）、`src/components/PickChips.tsx`・`clientBar.tsx`・`staffBar.tsx`、`src/lib/week.ts`・`weekView.ts`・`weekPrep.ts`・`timelineClients.ts`・`fold.ts`・`clientFilter.ts`。関連 ADR：0012 追記・0013・0014・0021・0024 追記・0025 追記・0033・0042・0046。関連 PRD：D49〜D51・D56〜D57・D62・D65・D75・D83・D93・D108・D285・D136〜D140・D175・D188・D221・D222・D228・D280・D282。
 > 3段のバーと〈利用者さん〉の帯の塗りは [pages-bars.md](pages-bars.md)、絞り込みの欄 `ClientFilter` は [pages-clients.md](pages-clients.md)。
+> 版2（ADR-0053）：担当は訪問に持つ。週の帯・表の担当は訪問の担当（`weekDay` は `visitsOn` の訪問から）。「未作成」「案なし」は無い
 
 ### 週の予定（`#/week`）
 
@@ -19,31 +20,30 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 
 #### 見出しと並び
 
-- ［月｜週｜日］・`lead`「この週の案を作って確定し、日時をドラッグでずらして〈スタッフ〉の偏りを見ます」・見出しの右に週の主ボタン（下の「この週の準備」）・週の前後の送り・「今週」
+- ［月｜週｜日］・`lead`「この週の担当なしを AI で組んで確定し、日時をドラッグでずらして〈スタッフ〉の偏りを見ます」・見出しの右に週の主ボタン（下の「この週の準備」）・週の前後の送り・「今週」
 - 表示の切り替え `week-views`（見出しの行。下）
-- 進み具合の帯 `ScheduleBand date={anchor} hideBatch`（週は選んでいる日付の月。次の一手は普通のボタン。週の主ボタンが「作る」「作っています」の間は次の一手の「まとめて作る」を出さない（`hideBatch`。作る入口を1つに）。[pages-home.md](pages-home.md)）
-- 空の画面（`week-empty`。時間軸の上に横1行の帯 `compact`。主ボタンにしない（主ボタンは見出しの1つ））：`periodEmptyGuide` に `makeHere: { canExpand }`（案が無い・未作成・訪問が無い。作るボタンは置かず、文で見出しの［この週の案を作る］を指す。ボタンは日の予定だけ。案ができたら出さない）
+- 進み具合の帯 `ScheduleBand date={anchor} hideBatch`（週は選んでいる日付の月。次の一手は普通のボタン。週の主ボタンが「組む」「組んでいます」の間は次の一手の「担当を AI で組む」を出さない（`hideBatch`。組む入口を1つに）。[pages-home.md](pages-home.md)）
+- 空の画面（`week-empty`。時間軸の上に横1行の帯 `compact`。主ボタンにしない（主ボタンは見出しの1つ））：`periodEmptyGuide({ period: 'この週', dates, today, visitDays })`（この週に訪問が1日も無いとき「この週には訪問がありません」。ボタンは日の予定で訪問を足すだけ）
 
-#### この週の準備（PRD D280・D282。ADR-0046）
+#### この週の準備（PRD D280・D320。ADR-0046・ADR-0053）
 
 - 見出しの主ボタン `week-next`（`data-kind`）を状態で1つ。決まりは `lib/weekPrep.ts` の `weekNext`（純粋関数。テストあり）：
-  1. この週を作っている（`monthBatch.run` の `source==='week'` かつ `weekStart` がこの週）→「この週の案を作っています…」（`making`。主ボタンの見た目のまま `aria-disabled`）
-  2. 今日以降に訪問も未作成も無い → 出さない（`none`）
-  3. 未作成の訪問かまだ案の無い日がある →「この週の案を作る（N日）」（`make`。N は訪問を作ったあとの作る日。作る日が無く未作成だけなら「この週の訪問を作る（N件）」）
-  4. 問題の無い未確定の日がある →「この週の問題の無い日をまとめて確定（N日）」（`confirm`）
-  5. 問題のある日・前に確定した割当と違う日だけ残る →「確定していない N日は日の予定で」（`rest`。ボタンなし。下に理由）
+  1. この週を組んでいる（`monthBatch.run` の `source==='week'` かつ `weekStart` がこの週）→「この週の担当を組んでいます…」（`making`。主ボタンの見た目のまま `aria-disabled`）
+  2. 今日以降に訪問が無い →「この週の今日以降に訪問はありません」（`none`。ボタンなし）
+  3. まだ伝えていない日で担当なしの訪問がある（この画面で組んだ日を除く）→「この週の担当なしを AI で組む（N日）」（`make`。`weekMakeLabel`）
+  4. 問題の無い伝えていない日がある →「この週の問題の無い日をまとめて確定（N日）」（`confirm`）
+  5. 問題のある日・未連絡の変更のある日だけ残る →「確定していない N日は日の予定で」（`rest`。ボタンなし。下に理由）
   6. 何も残っていない →「この週は確定済みです」（`done`。✓）
-  - ほかの案を作っている間（月の予定・空き状況から）は 3・4 を押せず（`aria-disabled`）、下に理由（data-testid `week-next-why`。id は `useId` で `aria-describedby`）
-  - 600px 以下は短い文（作るは同じ・確定は「この週をまとめて確定（N日）」）。印刷では出さない
-- 数え方：週の今日以降の日を `useDayStatuses`（月の予定・ホームと同じ）で数え、確定していない日を `bulkConfirmTargets(unconfirmed, statusOf, attentionList(…))`（月の D223 と同じ決まり）に通す。未作成は `expandRangeVisits(定期パターン・訪問・〈利用者さん〉, 週の月曜, 日曜, 今日)`（定期パターン・訪問・〈利用者さん〉と週で覚える）。作る日は `weekBatchDays({ ...data, visits: 作ったあとの訪問 }, 週の日, 今日)` から作れない日（`lib/monthBatch` の `canMakeDay`：点数の基準の条件で compile して計算に入る訪問か〈スタッフ〉がいない。月まとめも飛ばす日）を除いたもの。作れない日は確定していない日に残り、5 の理由「案を作れない日（担当できる人がいない など）は、日の予定で確かめます」
-- 作る（`makeWeek`）：ほかを作っている間は知らせだけ。`expandRange` で週の訪問を作ったデータから作る日を出し、`monthBatch.start({ ym: 最初の日の月, label: weekLabel(月曜), mode: 'empty', days, expand: 未作成があれば { from: 月曜, to: 日曜 }, source: 'week', weekStart: 月曜 })`（月まとめと同じ入れ物。ADR-0042）。作る日が無く未作成だけなら `update` で訪問だけ作り「この週の訪問を N件作りました」。作っている間も週の予定にとどまり、上の帯 `BatchBand` に「〈M/D〉〜〈M/D〉の週の案を作っています N/M日」（リンクはその週の週の予定）と［止める］。終わった知らせ「〈M/D〉〜〈M/D〉の週の案を N日分作りました」（その週の週の予定を見ていれば［週の予定を見る］を出さない）
-- 確定（`confirmWeek`）：作っている間は何もしない。独自の確認 `bulkConfirmDialog`（月と同じ見出し・日付・残す日）、ボタン「N日を確定する」。1回の `update` で日ごとに `confirmDay`（確認のあいだに案が消えた日は飛ばす）。知らせ「N日を確定しました」。フォーカスは `week-next`（`tabIndex=-1`。ボタンが状態の文に替わっても body に落とさない）
-- 月をまたぐ週も1度に作る・確定する（2つの月の日）。月の予定の「まとめて作る」（月の範囲）は今のまま
+  - ほかの担当を組んでいる間（月の予定・空き状況から）は 3・4 を押せず（`aria-disabled`）、下に理由「ほかの担当を組んでいます。終わってから押せます」（data-testid `week-next-why`。id は `useId` で `aria-describedby`）
+  - 600px 以下は短い文（確定は「この週をまとめて確定（N日）」）。印刷では出さない
+- 数え方：週の今日以降の日を `useDayStatuses`（月の予定・ホームと同じ）で数え、確定していない日を `bulkConfirmTargets(unconfirmed, statusOf, attentionList(…))`（月の D223 と同じ決まり）に通す
+- 組む（`makeWeek`）：ほかを組んでいる間は知らせだけ。`monthBatch.start({ ym: 最初の日の月, label: weekLabel(月曜), mode: 'care', days, today, source: 'week', weekStart })`。終わった知らせ（`batchDone`）で、組めた日（`made` 日）だけを「組んだ日」（`tried`）に入れ、同じ画面ではもう一度数えない（止めた日の残りはまた組める）
+- 確定（`confirmWeek`）：組んでいる間は何もしない。独自の確認 `bulkConfirmDialog`（月と同じ見出し・日付・残す日）。1回の `update` で日ごとに `confirmDay`
+- 月をまたぐ週も1度に組む・確定する（2つの月の日）
 
-#### 未作成の表示（PRD D282）
+#### 日の見出しの件数
 
-- 日の見出しの件数 `week-day-count`（`data-unmade`）は `weekDayCountText`：訪問が無く未作成の訪問があれば「未作成」（点線の枠 `.week-day-unmade`。注意の色にしない）、一部だけ未作成なら「N件・ほか未作成」、案が無ければ「N件・案なし」、本当に無ければ「0件」。title に `weekDayUnmadeNote`（件数と作り方）、見出しのボタンの `aria-label` に件数の文
-- 〈スタッフ〉×曜日の表の日ごとの合計も、訪問が無く未作成なら「未作成」（`week-table-unmade`）
+- 日の見出しの件数 `week-day-count` は `weekDayCountText({ count, unassigned })`：「N件」、担当なしの訪問があれば「N件・担当なしM」、訪問が無ければ「0件」
 
 #### 表示の切り替え（PRD D188）
 
@@ -68,7 +68,7 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 - 列＝月〜日、縦＝`DAY_START` 07:00〜`DAY_END` 20:00（1時間ごとの目盛り。`lib/week`）
 - 訪問の帯：その日の今の案（無ければ確定した割当、どちらも無ければ訪問の開始（早））の lenient の開始〜終了の位置に、種類の色で（文字：時刻・〈利用者さん〉・担当の名前）。帯の縁は〈スタッフ〉で見るとき担当の色、〈利用者さん〉で見るとき〈利用者さん〉の色
 - 全員のとき、同じ時刻に重なる帯は列の中で横に並べる（`laneLayout`）
-- 担当の無い帯は破線の枠で2つに分ける（PRD D228）：その日に案が無い（`source==='visit'`）＝「案なし」・注意の黄の細い破線（`is-noplan`）、案があるのに入らない＝「入らない」・要対応の赤い破線（`is-unassigned`）。凡例も「案なし（担当未定・注意）」「入らない（要対応）」の2つ。担当が `visitType` の理由で可でない帯は赤い枠と「資格✗」
+- 担当の無い帯は「担当なし」・要対応の赤い破線（`is-unassigned`。PRD D228）。凡例も「担当なし（要対応）」。担当が `visitType` の理由で可でない帯は赤い枠と「資格✗」
 - 休みの訪問は薄い破線の帯で、担当の所に「休みのため無し」（ドラッグしない。押すとその日の「日の予定」）
 - 帯を押すとその日の「日の予定」へ（その訪問を選ぶ）。日の見出しを押すとその日の「日の予定」へ
 - 〈スタッフ〉で見る：`PickChips`（複数・全員・全解除。`?staff=`）。資格のチップ（項目「資格」の選択肢。押すとその資格を持つ人を選ぶ。`staffWithQualification`）と名前の資格バッジ（`QualificationBadges`。選択肢の頭文字を2字まで。`title` に正式名。`qualificationBadges`）。チップの i（`detailKind="staff"`）
@@ -92,7 +92,7 @@ URL を書くときは履歴を増やさない `replace`（表示の切り替え
 - マス：3段バー（`WeekCell.bar`。[pages-bars.md](pages-bars.md)）＋件数（小さく）。稼働時間・移動・種類ごとの件数（色の印と数）の内訳は title と読み上げ。表の上に凡例。この表にドラッグは無い
 - 休み（稼働時間帯が無い日）はマスの地 `td.is-off` を淡く。訪問の無い終日の休みは、バーに重ねた「休み」と二重にしないよう、マスの下の「休み」を `sr-only` にする（読み上げは同じ）
 - 行の端に週の合計（件数・稼働時間・移動）と、件数の全員の平均との差（±N件。差が平均の30%を超えると強調）。下の行に日ごとの合計
-- 数えるのは、その日の今の案（無ければ確定した割当）。案の無い日は勤務内を「案なし」
+- 数えるのは、その日の訪問の担当
 - 「週の予定をメールで送る」（`week-mail`）→ 右の欄 `WeekMailPanel`（最終勤務日が週の初めより前の人は出さない。宛先ごとに `MailButton`）
 
 #### 〈利用者さん〉×曜日（PRD D56・D83・D108）

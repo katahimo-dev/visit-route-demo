@@ -342,8 +342,8 @@ async function dragMove(page) {
     moved,
   );
   check(!next || next.earliestStart === v.earliestStart, 'この回だけ：次の週の回はそのまま');
-  // 担当を選ばずに動かし、新しい日に今の案があれば「空き時間に入れる」の知らせ（週の予定と同じ）
-  if (d.aiPlans?.[dest]) {
+  // 担当を選ばずに動かし、動かした回に担当が無ければ「空き時間に入れる」の知らせ（週の予定と同じ）
+  if (!moved.staffId) {
     await page
       .getByTestId('pcal-notice')
       .waitFor({ timeout: 5000 })
@@ -454,23 +454,30 @@ async function patterns(page, dlg) {
   let d = await dataWhen(page, (x) => x.patterns.filter((p) => p.clientId === 'c1').length === p0 + 1);
   const added = d.patterns.find((p) => p.clientId === 'c1' && p.earliestStart === '17:00');
   check(!!added && added.weekdays.join() === '4', '「繰り返しを足す」→ 保存で繰り返しが増える', added);
+  // 版2：繰り返しの回は保存せず、見るときに計算する（ADR-0053）。カレンダーに足した繰り返しの回が出る
+  await page
+    .locator(`[data-testid="pcal-visit"][data-visit$="_${added?.id}"]`)
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
   check(
-    d.visits.some((v) => v.pattern?.id === added?.id),
-    '足した繰り返しの訪問を作る（作ってある最後の日まで）',
+    (await page.locator(`[data-testid="pcal-visit"][data-visit$="_${added?.id}"]`).count()) > 0 &&
+      !d.visits.some((v) => v.pattern?.id === added?.id),
+    '足した繰り返しの回がカレンダーに出る（回は保存しない）',
   );
-  // 直す：時刻を変えて保存 → 確認（作り直す件数）→ 受ける
+  // 直す：時刻を変えて保存 → 確認→ 受ける
   const row = page.locator(`[data-testid="pattern-row"][data-pattern="${added.id}"]`);
   await row.getByTestId('pattern-edit').click();
   await form.getByLabel('開始', { exact: true }).fill('17:30');
   dlg.messages.length = 0;
   await form.getByTestId('pattern-save').click();
   await settle(page, 500);
-  d = await dataWhen(page, (x) => x.visits.some((v) => v.clientId === 'c1' && v.earliestStart === '17:30'));
+  d = await dataWhen(page, (x) => x.patterns.some((p) => p.clientId === 'c1' && p.earliestStart === '17:30'));
   check(
     dlg.messages.length === 1 &&
       /から変えますか/.test(dlg.messages[0]) &&
-      d.visits.filter((v) => v.clientId === 'c1' && v.earliestStart === '17:30' && v.date >= TODAY).length > 0,
-    '「直す」→ 保存で確認（作り直す件数）が出て、受けると回を作り直す',
+      d.patterns.some((p) => p.clientId === 'c1' && p.earliestStart === '17:30'),
+    '「直す」→ 保存で確認が出て、受けると繰り返しが変わる（回は新しい繰り返しのとおり）',
     dlg.messages,
   );
   // 終わらせる：最後の日を今日にして保存 → 確認 → 今日より後の回が消える
@@ -637,8 +644,14 @@ async function staffPage(page) {
   const id = await first.getAttribute('data-visit');
   const d = await stored(page);
   const date = await first.getAttribute('data-date');
-  const plan = d.aiPlans[date]?.routes ?? d.manualPlans[date] ?? {};
-  check((plan.s1 ?? []).includes(id), '出す回はその日の今の案（無ければ確定した割当）でこの人の列にある', id);
+  // 版2：担当は訪問に持つ（保存した回は staffId、計算した回は繰り返しの担当）
+  const own = d.visits.find((x) => x.id === id);
+  const pat = d.patterns.find((p) => id === `${date}_${p.id}`);
+  check(own ? own.staffId === 's1' : pat?.usualStaffId === 's1', '出す回はその日にこの人が担当の回', {
+    id,
+    own: own?.staffId,
+    pat: pat?.usualStaffId,
+  });
   await first.click();
   await panel(page).waitFor();
   check((await panel(page).getAttribute('data-visit')) === id, '〈スタッフ〉のカレンダーの回を押すと訪問の詳細の欄');
@@ -662,8 +675,12 @@ async function narrow(page) {
   const tabsBox = await page.getByTestId('person-tabs').evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
   check(tabsBox.cw <= 390, '390px：タブは画面の中（入りきらなければ横に巻く）', tabsBox);
   await shot(page, 'narrow-client');
-  const item = cal(page).locator('[data-testid="pcal-visit"]').first();
-  if ((await item.count()) > 0) {
+  // 今日以降の回（今日より前の回は見るだけ。初期データの繰り返しは前の月から）
+  const ix = await cal(page)
+    .locator('[data-testid="pcal-visit"]')
+    .evaluateAll((els, today) => els.findIndex((e) => (e.getAttribute('data-date') ?? '') >= today), TODAY);
+  const item = cal(page).locator('[data-testid="pcal-visit"]').nth(Math.max(ix, 0));
+  if (ix >= 0) {
     await item.click();
     await panel(page).waitFor();
     check(

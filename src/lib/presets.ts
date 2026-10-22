@@ -4,14 +4,6 @@ import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleTyp
 import { initialPresets, matchesPreset, presetOf, scorePresetOf, scoreRulesOf } from '../seed';
 import { newId } from './common';
 
-/**
- * AI案を作る条件（ADR-0028。PRD D214）：「条件の重みとプリセット」（rules）が切なら、この日だけ試す重みに点数の基準のプリセットの重みを
- * 当てたもの（月まとめ作成と同じ。切ると基準のプリセットだけで作る）。入ならこの日だけ試す重みそのもの
- */
-export function planRulesOf(d: Pick<DemoData, 'rules' | 'presets' | 'scorePresetId'>, rulesOn: boolean): Rule[] {
-  return rulesOn ? d.rules : scoreRulesOf(d);
-}
-
 /** プリセットの名前の上限（contracts の presetSchema と同じ） */
 export const PRESET_NAME_MAX = 20;
 export const PRESET_NOTE_MAX = 60;

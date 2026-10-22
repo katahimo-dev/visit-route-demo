@@ -249,7 +249,7 @@ export function screenSections(terms: Pick<Terms, 'client' | 'staff'>, features:
         { key: 'month', to: '/month', label: '月の予定', icon: 'month' },
         { key: 'week', to: '/week', label: '週の予定', icon: 'week' },
         { key: 'day', to: '/plan', label: '日の予定', icon: 'day' },
-        { key: 'compare', to: '/compare', label: '案を比べる', icon: 'compare' },
+        { key: 'compare', to: '/compare', label: '提案を比べる', icon: 'compare' },
       ],
     },
     { title: '当日・問い合わせ', items: [{ key: 'vacancy', to: '/vacancy', label: '空き状況', icon: 'vacancy' }] },

@@ -1,14 +1,14 @@
 // 月の予定の印刷（PRD D70。ADR-0014）：紙のカレンダーの代わりに、日ごとのマスへ 時刻・〈利用者さん〉・担当 を並べる。
-// 担当は確定した割当があればそれ、無ければ今の案。休み（〈スタッフ〉の希望休・欠勤・勤務なし、〈利用者さん〉の休み）も出す。
+// 担当は訪問の担当（版2）。休み（〈スタッフ〉の希望休・欠勤・勤務なし、〈利用者さん〉の休み）も出す。
 // 画面の純粋関数（データは書き換えない）
 import type { DemoData } from '../contracts/data';
 import type { Problem } from '../contracts/problem';
 import { afterLastDay, availabilityOf } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
-import { NONE } from '../domain/scheduleModel';
 import { hhmmToMinutes } from '../domain/time';
-import { compile, scheduleRoute } from '../matching';
-import { attempt, own } from './common';
+import { visitsOn } from '../patterns';
+import { own } from './common';
+import { dayProblemOf, dayRoutes, startsOf } from './dayPlan';
 import { calendarWeeks, shortName, ymOf } from './month';
 import { isRequestedOff } from './requestedOff';
 
@@ -35,13 +35,12 @@ export type PrintDay = {
   date: string;
   /** その月の日か（前後の月の日は空のマス） */
   inMonth: boolean;
-  /** 担当の元：確定した割当／今の案／どちらも無い */
+  /** 担当の元：確定した日（伝えた）／まだ伝えていない日／訪問が無い */
   source: 'confirmed' | 'plan' | null;
   /** 開始の順 */
   entries: PrintEntry[];
   /**
-   * 訪問があるのに担当が決まっていない件数（その日の全体）：案も確定も無ければ今ある訪問の全件、あれば担当の無い訪問。
-   * 〈スタッフ〉で絞った印刷でも「案なし（訪問 N件）」「未定 N件」と出す
+   * 訪問があるのに担当が決まっていない件数（その日の全体）。〈スタッフ〉で絞った印刷でも「担当なし N件」と出す
    */
   pending: number;
   /** 休み（ADR-0013）で訪問が無しの〈利用者さん〉の表示名 */
@@ -63,13 +62,8 @@ type PrintInput = Pick<
   | 'visitTypes'
   | 'patterns'
   | 'clientLeaves'
-  | 'manualPlans'
-  | 'aiPlans'
+  | 'snapshots'
 >;
-
-/** 案に、今ある訪問（live）の担当が1件以上あるか（取り消し・休み・休止の〈利用者さん〉の訪問だけなら無い。lib/absences の baseOf と同じ形） */
-const hasAssigned = (routes: Record<string, string[]> | undefined, live: ReadonlySet<string>) =>
-  !!routes && Object.entries(routes).some(([k, ids]) => k !== NONE && ids.some((id) => live.has(id)));
 
 /** 印刷に出す〈スタッフ〉の名前：名字（最初の語）。利用中の人で名字が重なれば、その人たちはフルネーム */
 export function staffLabels(staff: readonly { id: string; name: string; active: boolean }[]): Map<string, string> {
@@ -85,39 +79,22 @@ export function staffLabels(staff: readonly { id: string; name: string; active: 
 export function printDay(data: PrintInput, date: string, staffId: string | null, inMonth = true): PrintDay {
   const empty: PrintDay = { date, inMonth, source: null, entries: [], pending: 0, leaves: [], off: [] };
   if (!inMonth) return empty;
-  const dayVisits = data.visits.filter((v) => v.date === date);
+  const dayVisits = visitsOn(data, date);
   const clientById = new Map(data.clients.map((c) => [c.id, c]));
-  // 今ある訪問：取り消し・〈利用者さん〉の休み・休止中の〈利用者さん〉の訪問を除く
-  const live = new Set(
-    dayVisits
-      .filter((v) => !v.cancelled && clientById.get(v.clientId)?.active && !isOnLeave(data.clientLeaves, v))
-      .map((v) => v.id),
-  );
-  const saved = own(data.manualPlans, date);
-  const plan = own(data.aiPlans, date);
-  const source: PrintDay['source'] = hasAssigned(saved, live) ? 'confirmed' : plan ? 'plan' : null;
-  const routes: Record<string, string[]> =
-    source === 'confirmed' ? (saved ?? {}) : source === 'plan' ? (plan?.routes ?? {}) : {};
-  const ownerOf = new Map<string, string>();
-  for (const [sid, ids] of Object.entries(routes)) if (sid !== NONE) for (const id of ids) ownerOf.set(id, sid);
   const staffName = new Map(data.staff.map((s) => [s.id, s.name]));
   const labelOf = staffLabels(data.staff);
   const typeColor = new Map(data.visitTypes.map((t) => [t.id, t.color]));
-
-  // 開始の時刻：その日の問題で、担当ごとの列を lenient で並べた時刻（確定した割当は開始（早）の順に並べる）
-  const p: Problem | null =
-    dayVisits.length > 0 ? (attempt(() => compile({ ...data, visits: dayVisits }, date)).value ?? null) : null;
+  // 担当と開始の時刻：その日の担当の並びを lenient で並べた時刻（版2：訪問の担当）
+  const p: Problem | null = dayVisits.length > 0 ? dayProblemOf(data, date) : null;
+  const routes = p ? dayRoutes(data, date, p) : {};
+  const ownerOf = new Map<string, string>();
   const startOf = new Map<string, number>();
-  if (p && source) {
-    const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
-    for (const [sid, ids] of Object.entries(routes)) {
-      const s = p.staff.findIndex((x) => x.id === sid);
-      if (sid === NONE || s < 0) continue;
-      let seq = ids.map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
-      if (source === 'confirmed') seq = [...seq].sort((a, b) => p.visits[a]!.earliest - p.visits[b]!.earliest || a - b);
-      for (const st of scheduleRoute(p, s, seq, 'lenient')?.stops ?? []) startOf.set(st.visitId, st.start);
-    }
+  for (const [id, x] of p ? startsOf(p, routes) : []) {
+    ownerOf.set(id, x.staffId);
+    startOf.set(id, x.start);
   }
+  const source: PrintDay['source'] =
+    p && p.visits.length > 0 ? (own(data.snapshots, date) ? 'confirmed' : 'plan') : null;
 
   const entries: PrintEntry[] = [];
   const leaves: string[] = [];
@@ -126,16 +103,20 @@ export function printDay(data: PrintInput, date: string, staffId: string | null,
     if (v.cancelled) continue;
     const c = clientById.get(v.clientId);
     if (!c || !c.active) continue;
-    const owner = ownerOf.get(v.id) ?? null;
+    // 計算に入らない訪問（場所が未登録など）は、訪問に書いた担当のまま
+    const inProblem = p?.visits.some((x) => x.id === v.id) ?? false;
+    const owner = inProblem ? (ownerOf.get(v.id) ?? null) : v.staffId;
     if (isOnLeave(data.clientLeaves, v)) {
-      if ((staffId === null || owner === staffId) && !leaves.includes(c.displayName)) leaves.push(c.displayName);
+      // 休みの訪問は問題に入らないので、訪問に書いた担当で絞る
+      if ((staffId === null || (owner ?? v.staffId) === staffId) && !leaves.includes(c.displayName))
+        leaves.push(c.displayName);
       continue;
     }
     if (owner === null) pending++;
     if (staffId !== null && owner !== staffId) continue;
     entries.push({
       visitId: v.id,
-      start: startOf.get(v.id) ?? hhmmToMinutes(v.earliestStart),
+      start: startOf.get(v.id) ?? hhmmToMinutes(v.start ?? v.earliestStart),
       clientName: c.displayName,
       staffId: owner,
       staffName: owner === null ? null : (staffName.get(owner) ?? null),

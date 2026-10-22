@@ -185,7 +185,7 @@ export function LoadBar({ load }: { load: readonly DayLoadSlot[] | null }) {
     <SlotBar
       slots={load ? load.map((x) => ({ start: x.start, level: loadLevel(x), title: loadSlotText(x) })) : null}
       label={load ? loadSummary(inBar(load)) : ''}
-      emptyText={load ? '' : '案が無いので混み具合を数えていません'}
+      emptyText={load ? '' : 'この日は混み具合を数えられません'}
       testId="load-bar"
       edges={load ? loadEdgeTexts(load) : undefined}
     />

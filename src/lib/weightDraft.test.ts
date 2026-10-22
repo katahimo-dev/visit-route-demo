@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { DemoData } from '../contracts/data';
 import type { Rule } from '../contracts/rules';
 import { createDemoData, scorePresetOf, scoreRulesOf } from '../seed';
-import { withSeedPlans } from '../seed/plans';
 import { leaveTarget } from './leaveGuard';
 import { setBasisWeight } from './presets';
 import {
@@ -10,7 +8,6 @@ import {
   changeText,
   confirmBody,
   draftChanges,
-  draftStaleDays,
   editDraft,
   leaveDialog,
   pruneDraft,
@@ -98,13 +95,7 @@ describe('下書きの差分（PRD D286）', () => {
 });
 
 describe('確定と影響する日（PRD D286）', () => {
-  /** 今日から2日分の案（点数の基準＝標準で作る）。2日目は確定した割当もある */
-  const data = (): DemoData => {
-    const d = withSeedPlans(createDemoData(TODAY), TODAY, 3);
-    const days = Object.keys(d.aiPlans).sort();
-    const second = days[1]!;
-    return { ...d, manualPlans: { ...d.manualPlans, [second]: d.aiPlans[second] as never } };
-  };
+  const data = () => createDemoData(TODAY);
 
   it('確定すると基準のプリセットのその型が下書きの値になり、試す重みも基準にそろう', () => {
     const d = data();
@@ -117,33 +108,14 @@ describe('確定と影響する日（PRD D286）', () => {
     expect(applyDraft(d, {})).toBe(d);
   });
 
-  it('作った重みが無くなる日を数える（未確定・確定済み）。下書きが無ければ0日', () => {
-    const d = data();
-    const n = Object.keys(d.aiPlans).filter((x) => x >= TODAY).length;
-    expect(draftStaleDays(d, TODAY).days).toEqual([]);
-    const saved = savedWeights(scoreRulesOf(d));
-    const t = d.rules.find((r) => r.type === 'wait')?.type ?? d.rules[0]!.type;
-    const w = saved[t]!.weight === 5 ? 4 : saved[t]!.weight + 1;
-    const s = draftStaleDays(applyDraft(d, editDraft({}, saved, t, { weight: w })), TODAY);
-    expect(s.days.length).toBe(n);
-    expect(s.confirmed).toHaveLength(1);
-    expect(s.unconfirmed).toHaveLength(n - 1);
-    // 今日より前の日は数えない
-    expect(draftStaleDays(applyDraft(d, editDraft({}, saved, t, { weight: w })), '2099-01-01').days).toEqual([]);
-  });
-
-  it('確認の本文：変わる条件（前→後）・基準の名前・作り方・影響する日と確定済みは作り直さない', () => {
+  it('確認の本文：変わる条件（前→後）・基準の名前・何に使うか・今の担当は変わらない', () => {
     const rules = [rule('a', 'wait', 3, false, '待ち')];
     const ch = draftChanges(rules, { wait: { weight: 4, hard: false } });
-    const body = confirmBody(ch, '標準', { days: ['x', 'y'], unconfirmed: ['x'], confirmed: ['y'] });
+    const body = confirmBody(ch, '標準');
     expect(body).toContain('・待ち：3→4');
     expect(body).toContain('「標準」の重みが変わります');
-    expect(body).toContain('月のまとめて作る・作り直し・点数に、この重みを使います');
-    expect(body).toContain('2日（未確定 1日・確定済み 1日）');
-    expect(body).toContain('確定済みの日は作り直しません');
-    expect(confirmBody(ch, '標準', { days: [], unconfirmed: [], confirmed: [] })).toContain(
-      '「条件が変わった」になる日はありません',
-    );
+    expect(body).toContain('AI で組む・点数・要対応の検査に、この重みを使います');
+    expect(body).toContain('今の担当は変わりません');
   });
 
   it('離れるときの確認は〈スタッフ〉の変更を捨てる確認と同じ形（危険の色・「編集を続ける」）', () => {

@@ -1,7 +1,6 @@
 // 控え（バックアップ）の書き出しの記録と知らせ（PRD D227。ADR-0032）：最後に書き出した日の文と、起動したときに知らせるかを決める純粋関数。
 // 日付は日本時間の YYYY-MM-DD を引数で受ける（Date.now を読まない）。記録の読み書きは store の backupMemory
 import type { DemoData } from '../contracts/data';
-import { NONE } from '../domain/scheduleModel';
 
 /** この日数以上書き出していなければ知らせる */
 export const BACKUP_REMIND_DAYS = 14;
@@ -24,12 +23,14 @@ export function exportAgoText(last: string | null, today: string): string {
   return `${md}（${n <= 0 ? '今日' : `${n}日前`}）`;
 }
 
-/** 確定した日の数（確定した割当に1件でも担当の決まった訪問がある日） */
-export function confirmedDayCount(data: Pick<DemoData, 'manualPlans'>): number {
+/**
+ * 確定した日の数（伝えた内容に1件でも担当の決まった訪問がある日）。初期データが入れた過去の伝えた日（基準日より前。
+ * seed の withPastTold）は数えない（初期データのまま開いただけで控えの知らせを出さない）
+ */
+export function confirmedDayCount(data: Pick<DemoData, 'snapshots' | 'baseDate'>): number {
   let n = 0;
-  for (const routes of Object.values(data.manualPlans)) {
-    if (Object.entries(routes).some(([staffId, ids]) => staffId !== NONE && ids.length > 0)) n++;
-  }
+  for (const s of Object.values(data.snapshots))
+    if (s.date >= data.baseDate && s.visits.some((v) => v.staffId !== null)) n++;
   return n;
 }
 

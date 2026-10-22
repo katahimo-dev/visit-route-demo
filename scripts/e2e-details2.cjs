@@ -110,32 +110,40 @@ async function fitsNarrow(page, where, sel) {
  * 2件目を欠勤の人に残す。ほかの人の訪問の〈利用者さん〉を今日休みにする。拘束の上限を 0.5時間にする
  */
 function makeDay(d, today) {
-  const plan = d.aiPlans[today];
-  const routes = plan.routes;
-  const [absent, list] = Object.entries(routes).sort((a, b) => b[1].length - a[1].length)[0];
-  const base = JSON.parse(JSON.stringify(routes));
-  const v1 = list[0];
-  const v2 = list[1];
+  // 版2：担当は訪問に持つ。保存した今日の訪問（単発・この回だけ変えた回）の担当ごとにまとめる
+  const by = {};
+  for (const v of d.visits) {
+    if (v.date !== today || v.cancelled || !v.staffId) continue;
+    by[v.staffId] = [...(by[v.staffId] ?? []), v];
+  }
+  const [absent, list] = Object.entries(by).sort((a, b) => b[1].length - a[1].length)[0];
+  const [v1, v2] = list;
   d.absences = d.absences ?? [];
   d.absences.push({ id: 'e2e-abs', staffId: absent, date: today, from: null, to: null, note: '' });
-  routes[absent] = list.filter((v) => v !== v1);
-  plan.unassigned = [...plan.unassigned, v1];
-  plan.reassign = { method: 'insert', from: 'plan', baseRoutes: base, basePins: {}, absenceIds: ['e2e-abs'] };
-  const clientOf = (vid) => d.visits.find((v) => v.id === vid)?.clientId;
-  const used = new Set([clientOf(v1), clientOf(v2)]);
-  let leaveClient = null;
-  for (const [sid, ids] of Object.entries(routes)) {
-    if (sid === absent) continue;
-    const c = ids.map(clientOf).find((x) => x && !used.has(x));
-    if (c) {
-      leaveClient = c;
-      break;
-    }
-  }
+  // 振り直しの案A で入らなかった扱い：v1 は担当なし、v2 は欠勤の人に残す
+  d.reassigns[today] = {
+    method: 'insert',
+    baseRoutes: { [absent]: list.map((v) => v.id) },
+    basePins: {},
+    absenceIds: ['e2e-abs'],
+  };
+  v1.staffId = null;
+  v1.pinned = false;
+  const used = new Set([v1.clientId, v2.clientId]);
+  const wd = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const others = [
+    ...d.visits
+      .filter((v) => v.date === today && !v.cancelled && v.staffId && v.staffId !== absent)
+      .map((v) => v.clientId),
+    ...d.patterns
+      .filter((p) => p.usualStaffId && p.usualStaffId !== absent && p.weekdays.includes(wd) && p.from <= today)
+      .map((p) => p.clientId),
+  ];
+  const leaveClient = others.find((c) => !used.has(c)) ?? null;
   d.clientLeaves = d.clientLeaves ?? [];
   d.clientLeaves.push({ id: 'e2e-leave', clientId: leaveClient, from: today, to: today, note: '入院' });
   d.org.spanLimitHours = 0.5;
-  return { absent, v1: clientOf(v1), v2: clientOf(v2), leaveClient };
+  return { absent, v1: v1.clientId, v2: v2.clientId, leaveClient };
 }
 
 // ---- 日の画面：入らなかった訪問・受けられる人・欠勤の人に残る訪問・休み・上限を超える拘束（2人以上） ----
@@ -169,7 +177,7 @@ async function day(page) {
 
   // D206：受けられる人の候補の名前（「この人に入れる」とは別）
   await openPlan(page);
-  const before = JSON.stringify((await stored(page)).aiPlans[TODAY].routes);
+  const before = JSON.stringify((await stored(page)).visits);
   await page.locator('.route-col-none .candidate-box button', { hasText: '受けられる人' }).first().click();
   await page.getByTestId('candidate-list').waitFor({ timeout: 10000 });
   const cand = page.getByTestId('candidate-list').getByTestId('candidate-name').first();
@@ -180,10 +188,7 @@ async function day(page) {
   await cand.click();
   await pop(page).waitFor({ timeout: 3000 });
   await settle(page, 300);
-  check(
-    JSON.stringify((await stored(page)).aiPlans[TODAY].routes) === before,
-    '受けられる人：名前を押しても訪問は入れない',
-  );
+  check(JSON.stringify((await stored(page)).visits) === before, '受けられる人：名前を押しても訪問は入れない');
   await page.keyboard.press('Escape');
   await settle(page);
   const candId = await cand.getAttribute('data-id');
@@ -332,18 +337,20 @@ async function day(page) {
 // ---- 拘束が上限を超える人が1人なら、今までどおり帯の「稼働の見込み」ボタン ----
 async function overOne(page) {
   await openPlan(page);
-  // 今の案で、いちばん訪問の多い人だけに訪問を残し（ほかの人の訪問は入らない扱い）、上限を 0.5時間にする。
-  // 拘束は今の案から数えるので、上限を超えるのは必ずその1人になる
+  // 今日の訪問を、保存した訪問でいちばん訪問の多い人だけに残し（ほかは担当なし）、上限を 0.5時間にする。
+  // 拘束は今の担当から数えるので、上限を超えるのは必ずその1人になる
   const only = await mutate(
     page,
     (d, today) => {
-      const plan = d.aiPlans[today];
-      const [keep] = Object.entries(plan.routes).sort((x, y) => y[1].length - x[1].length)[0];
-      for (const [sid, ids] of Object.entries(plan.routes)) {
-        if (sid === keep) continue;
-        plan.unassigned.push(...ids);
-        plan.routes[sid] = [];
-      }
+      const count = {};
+      for (const v of d.visits)
+        if (v.date === today && !v.cancelled && v.staffId) count[v.staffId] = (count[v.staffId] ?? 0) + 1;
+      const [keep] = Object.entries(count).sort((x, y) => y[1] - x[1])[0];
+      d.visits = d.visits.map((v) =>
+        v.date === today && v.staffId !== keep ? { ...v, staffId: null, pinned: false } : v,
+      );
+      // ほかの人の繰り返しの回（保存していない回）は担当なしにする（繰り返しの担当を外す）
+      for (const p of d.patterns) if (p.usualStaffId !== keep) p.usualStaffId = null;
       d.org.spanLimitHours = 0.5;
       return keep;
     },
@@ -381,14 +388,14 @@ async function roster(page) {
   await page.goto(`${BASE}#/data`);
   await page.reload();
   await page.getByTestId('excel-kind').waitFor({ timeout: 30000 });
-  // いちばん多くの〈利用者さん〉のいつもの担当の人に最終勤務日を入れて書き出し、外してから読み込む（読み込みで最終勤務日が入る）
+  // いちばん多くの繰り返しの担当の人に最終勤務日を入れて書き出し、外してから読み込む（読み込みで最終勤務日が入る）
   const sid = await mutate(
     page,
     (d, day) => {
       const count = new Map();
-      for (const c of d.clients) {
-        if (c.stage === 'ended' || !c.usualStaffId) continue;
-        count.set(c.usualStaffId, (count.get(c.usualStaffId) ?? 0) + 1);
+      for (const p of d.patterns) {
+        if (!p.usualStaffId) continue;
+        count.set(p.usualStaffId, (count.get(p.usualStaffId) ?? 0) + 1);
       }
       const best = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
       d.staff.find((s) => s.id === best).lastDay = day;

@@ -2,9 +2,9 @@
 // 機能の名前・説明・グループ・依存・その機能の URL・切ると隠れるもの・ひな形の入り切りはここの1か所。
 // メニュー（lib/nav）・ルート（app/App）・パレット（lib/commandPalette）・ホーム（lib/home）・ツアー（lib/tour）・
 // 行き先（lib/links）はここから引く。データは書き換えない（入り切りを書くのは画面の update(fn)）
-import type { CalcFeatures, DemoData } from '../contracts/data';
+import type { DemoData } from '../contracts/data';
 import type { Pattern, Terms } from '../contracts/documents';
-import { CALC_FEATURE_IDS, FEATURE_IDS, type FeatureId, type Features, isFeatureId } from '../contracts/features';
+import { FEATURE_IDS, type FeatureId, type Features, isFeatureId } from '../contracts/features';
 import { isRequestedOff } from './requestedOff';
 
 /** 機能のグループ（管理者設定のスイッチの並び。メニューのグループにそろえる（PRD D232。ADR-0034）。メニューに無い連絡・データは後ろ） */
@@ -70,16 +70,16 @@ export const FEATURES: readonly FeatureDef[] = [
   },
   {
     id: 'compare',
-    label: '案を比べる',
-    description: '同じ日の2つの案を並べて、点数と違いを比べられます',
+    label: '提案を比べる',
+    description: '同じ日の今の担当と AI の提案を並べて、点数と違いを比べられます（提案は保存しません）',
     group: '予定',
     paths: ['/compare'],
-    hides: '比較の画面（パレット・「案を変える ▾」の比べる・戻す）',
+    hides: '比較の画面（パレット・「AI で組む ▾」の比べる）',
   },
   {
     id: 'sudden',
     label: '欠勤・キャンセル',
-    description: '急な欠勤・当日キャンセルを登録し、その日の案を振り直します',
+    description: '急な欠勤・当日キャンセルを登録し、その日の担当を振り直します',
     group: '当日・問い合わせ',
     paths: [],
     doParams: [{ path: '/plan', do: 'absence' }],
@@ -105,7 +105,7 @@ export const FEATURES: readonly FeatureDef[] = [
   {
     id: 'compat',
     label: '相性',
-    description: '{staff}と{client}の相性（◎〜×）を AI案に効かせます',
+    description: '{staff}と{client}の相性（◎〜×）を AI の提案に効かせます',
     group: 'AI の条件',
     paths: ['/compat'],
     hides: '設定の「相性」のタブ・相性の画面、〈スタッフ〉・〈利用者さん〉の画面の相性、条件の「相性」',
@@ -162,13 +162,10 @@ export const FEATURES: readonly FeatureDef[] = [
   {
     id: 'rules',
     label: '条件の重みとプリセット',
-    description: 'AI案の条件の重み・特性の項目・プリセットを変えられます',
+    description: 'AI の条件の重み・特性の項目・プリセットを変えられます',
     group: 'AI の条件',
     paths: ['/rules', '/items'],
-    // 「今日の案を日の予定の重みで作り直す」（lib/rebuildBand の recreateTodayHref）も作り直しの帯の続きなのでこの機能
-    doParams: [{ path: '/plan', do: 'recreate' }],
-    hides:
-      '設定の「条件の重み」「特性の項目」のタブと画面、点数の理由、作り直しの帯（切ると基準のプリセットだけで作る）',
+    hides: '設定の「条件の重み」「特性の項目」のタブと画面、点数の理由（切ると基準のプリセットだけで組む）',
   },
   {
     id: 'mail',
@@ -359,21 +356,6 @@ export function templateDiff(features: Features, id: TemplateId): { on: FeatureI
 /** スイッチを押したあとの入り切り（その機能だけ入・切を明示して書く。ほかは変えない） */
 export const withFeature = (features: Features, id: FeatureId, on: boolean): Features => ({ ...features, [id]: on });
 
-/**
- * 計算に効く入り切り（ADR-0028。PRD D214。AiRun.calcFeatures に書く）：相性・担当を限るのうち、切っているものだけを書く
- * （すべて入なら {}。無い ID は入なので、記録が無い古いデータと同じ）
- */
-export function calcFeaturesOf(features: Features): CalcFeatures {
-  const out: CalcFeatures = {};
-  for (const id of CALC_FEATURE_IDS) if (!isOn(features, id)) out[id] = false;
-  return out;
-}
-
-/** 計算に効く入り切りが同じか（無い ID は入。記録に calcFeatures が無ければすべて入） */
-export function sameCalcFeatures(a: CalcFeatures | undefined, b: CalcFeatures | undefined): boolean {
-  return CALC_FEATURE_IDS.every((id) => (a?.[id] !== false) === (b?.[id] !== false));
-}
-
 /** 切るときに残る・外れるデータ（D215）：件数と、確認ダイアログに出す1行の文 */
 export type TurnOffImpact = { count: number; text: string };
 
@@ -431,7 +413,7 @@ export function turnOffImpact(
     }
     case 'vacancy': {
       const n = data.clients.filter((c) => c.tentative).length;
-      return one(n, `仮押さえ ${n}人（${client}）は残り、AI案に入り続けます`);
+      return one(n, `仮押さえ ${n}人（${client}）は残り、予定に入り続けます`);
     }
     case 'offboard': {
       const n = data.staff.filter((s) => s.lastDay !== null).length;

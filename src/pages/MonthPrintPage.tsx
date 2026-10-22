@@ -85,7 +85,7 @@ export default function MonthPrintPage() {
         <h1>{title}</h1>
         <span className="mprint-org">{data.org.name}</span>
         <span className="mprint-legend">
-          担当は「確」＝確定した割当、「案」＝今の案（確定していない）、「案なし」の日は担当を書きません。休：
+          担当は「確」＝確定（伝えた）日、「未」＝まだ確定していない日の今の担当、「計算できない」日は担当を書きません。休：
           {REQUESTED_OFF_NOTE}
           は「希」、欠勤は「欠」、印の無い人は勤務なし。
           {terms.client}の休みは「{terms.client}休」。印刷日 {today}
@@ -125,8 +125,8 @@ function PrintCell({ day: d, clientTerm, showStaff }: { day: PrintDay; clientTer
     <td className={`mprint-cell${dow === 0 ? ' mprint-sun' : dow === 6 ? ' mprint-sat' : ''}`} data-date={d.date}>
       <div className="mprint-day">
         <span className="mprint-date">{Number(d.date.slice(8, 10))}</span>
-        {d.source && <span className="mprint-src">{d.source === 'confirmed' ? '確' : '案'}</span>}
-        {!d.source && d.pending > 0 && <span className="mprint-src is-none">案なし</span>}
+        {d.source && <span className="mprint-src">{d.source === 'confirmed' ? '確' : '未'}</span>}
+        {!d.source && d.pending > 0 && <span className="mprint-src is-none">計算できない</span>}
         {d.entries.length > 0 && <span className="mprint-count">{d.entries.length}件</span>}
       </div>
       <ul className="mprint-list">
@@ -147,7 +147,7 @@ function PrintCell({ day: d, clientTerm, showStaff }: { day: PrintDay; clientTer
       {/* 〈スタッフ〉で絞ったときも、担当の決まっていない訪問があると分かるように */}
       {!showStaff && d.pending > 0 && (
         <div className="mprint-pending" data-testid="mprint-pending">
-          {d.source ? `未定 ${d.pending}件（全体）` : `案なし（訪問 ${d.pending}件）`}
+          {d.source ? `未定 ${d.pending}件（全体）` : `計算できない（訪問 ${d.pending}件）`}
         </div>
       )}
       {d.off.length > 0 && (

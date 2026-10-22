@@ -1,16 +1,16 @@
-// 稼働の見込み（PRD D72。ADR-0015）：予定（確定した割当、無ければ今の案）から、〈スタッフ〉×日ごとの
+// 稼働の見込み（PRD D72。ADR-0015）：予定（その日の訪問の担当と開始の並び）から、〈スタッフ〉×日ごとの
 // 拘束・訪問・移動・待ちの分と、移動の距離・交通費を見込む。実績ではない（記録・勤怠はやらない。PRD §4）。
 // 拘束＝最初の訪問の開始〜最後の訪問の終わり（直行直帰：自宅との行き帰りは拘束に入れず、距離・交通費には入れる）。
 // 純粋関数（データは書き換えない）
 import type { DemoData } from '../contracts/data';
 import type { Problem } from '../contracts/problem';
-import { NONE } from '../domain/scheduleModel';
-import { type CompileInput, compile, scheduleRoute } from '../matching';
-import { attempt, own } from './common';
+import { type CompileInput, scheduleRoute } from '../matching';
+import { own } from './common';
+import { dayProblemOf, dayRoutes } from './dayPlan';
 import { monthDates } from './month';
 import { type RoutePart, spanParts } from './staffBar';
 
-/** 数える案の元：確定した割当／今の案 */
+/** 見込みの元：伝えた日（確定）／まだ伝えていない日 */
 export type WorkSource = 'confirmed' | 'plan';
 
 /** 〈スタッフ〉のその日の見込み（分。訪問が1件以上ある人だけ） */
@@ -69,7 +69,7 @@ export function workStats(
   const out: WorkStat[] = [];
   problem.staff.forEach((st, s) => {
     const ids = own(routes as Record<string, string[]>, st.id);
-    if (!ids || st.id === NONE) return;
+    if (!ids || st.id === '__none') return;
     let seq = ids.map((id) => vIndex.get(id)).filter((x): x is number => x !== undefined);
     if (seq.length === 0) return;
     if (sortByStart) seq = [...seq].sort((a, b) => problem.visits[a]!.earliest - problem.visits[b]!.earliest || a - b);
@@ -107,38 +107,21 @@ export function workStats(
   return out;
 }
 
-/**
- * その日に数える案：確定した割当に、問題にある訪問の担当が1件以上あればそれ（開始（早）の順に並べ直す）、
- * 無ければ今の案、どちらも無ければ null（印刷の担当の決め方と同じ。ADR-0014）
- */
-export function workRoutesOf(
-  data: Pick<DemoData, 'manualPlans' | 'aiPlans'>,
-  date: string,
-  problem: Problem,
-): { source: WorkSource; routes: Record<string, string[]> } | null {
-  const live = new Set(problem.visits.map((v) => v.id));
-  const saved = own(data.manualPlans, date);
-  if (saved && Object.entries(saved).some(([k, ids]) => k !== NONE && ids.some((id) => live.has(id))))
-    return { source: 'confirmed', routes: saved };
-  const plan = own(data.aiPlans, date);
-  return plan ? { source: 'plan', routes: plan.routes } : null;
-}
-
 export type WorkDay = { date: string; source: WorkSource | null; stats: WorkStat[] };
 
-type WorkInput = CompileInput & Pick<DemoData, 'manualPlans' | 'aiPlans'>;
-
-/** その日の見込み（problem を渡すとそれを使う。無ければその日の訪問だけで compile） */
-export function workDayOf(data: WorkInput, date: string, problem?: Problem | null): WorkDay {
-  const p =
-    problem !== undefined
-      ? problem
-      : attempt(() => compile({ ...data, visits: data.visits.filter((v) => v.date === date) }, date)).value;
-  if (!p) return { date, source: null, stats: [] };
-  const r = workRoutesOf(data, date, p);
-  if (!r) return { date, source: null, stats: [] };
-  return { date, source: r.source, stats: workStats(p, r.routes, data.org, r.source === 'confirmed') };
+/** その日の見込み（problem を渡すとそれを使う。無ければその日の問題を作る）。担当はその日の訪問の担当（版2） */
+export function workDayOf(
+  data: CompileInput & Pick<DemoData, 'snapshots'>,
+  date: string,
+  problem?: Problem | null,
+): WorkDay {
+  const p = problem !== undefined ? problem : dayProblemOf(data, date);
+  if (!p || p.visits.length === 0) return { date, source: null, stats: [] };
+  const routes = dayRoutes(data, date, p);
+  return { date, source: own(data.snapshots, date) ? 'confirmed' : 'plan', stats: workStats(p, routes, data.org) };
 }
+
+type WorkInput = CompileInput & Pick<DemoData, 'snapshots'>;
 
 /** 〈スタッフ〉の月の合計 */
 export type WorkTotal = {
@@ -203,18 +186,9 @@ export function workMonth(
   ym: string,
   problemOf?: (date: string) => Problem | null | undefined,
 ): WorkDay[] {
-  const byDate = new Map<string, DemoData['visits']>();
-  for (const v of data.visits) {
-    const list = byDate.get(v.date);
-    if (list) list.push(v);
-    else byDate.set(v.date, [v]);
-  }
   return monthDates(ym).map((date) => {
-    const visits = byDate.get(date) ?? [];
-    if (!own(data.manualPlans, date) && !own(data.aiPlans, date)) return { date, source: null, stats: [] };
-    if (!visits.some((v) => !v.cancelled)) return { date, source: null, stats: [] };
     const given = problemOf?.(date);
-    return workDayOf({ ...data, visits }, date, given === undefined ? undefined : given);
+    return workDayOf(data, date, given === undefined ? undefined : given);
   });
 }
 

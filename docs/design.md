@@ -137,55 +137,56 @@ flowchart LR
 
 型・関数の形は §5。「決定的」＝乱数・`Date.now` を使わず、今日・今の時刻は引数で受ける純粋関数。
 
+データは版2（ADR-0053）：担当は訪問に持ち（`Visit.staffId`・`start`・`pinned`）、AI は提案を出して「当てる」で訪問に書き、確定は〈スタッフ〉に伝えた内容（`snapshots`）。下の節で「今の案」「確定した割当（無ければ今の案）」とあるところは、その日の訪問の担当（`lib/dayPlan` の `dayRoutes`）と読む。
+
 ### store（データ一式の保存）
-- 責務：`DemoData` の読み込み・保存・検査（zod）・版の移行・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す、置き換える前の1世代の控え（ADR-0032）。画面へは `useDemoData()`（`data`・`update(fn)`・`replace(d)`・`reset(features?)`・`saveError`・`keepPrevious(reason)`・`restorePrevious()`・`previous`・`broken`・`brokenKept`・`dismissBroken()`・`startedFresh`・`externalReloads`・`previousDrops`）。書き換えは update・replace・reset・restorePrevious だけ
-- 持つデータ（持ち主）：`DemoData`（キー `vrdemo:data:v1` の1つの JSON）、読めなかった元の文字（`vrdemo:data:broken`）、1世代の控え（`vrdemo:data:prev`＝置き換える前の `DemoData` の JSON、`vrdemo:data:prev:info`＝`{ at, reason }`（時刻 ms・操作の名前））、案内ツアーを見たか（キー `vrdemo:tour:seen`）、初めて開いたときの入り切りの印（キー `vrdemo:features:start`。`all` だけ意味を持つ。PRD D276）、最後に書き出した日（`vrdemo:backup:last`＝`{ date: 'YYYY-MM-DD', kind: 'json' | 'excel' }`）と控えの知らせを出した日（`vrdemo:backup:reminded`＝'YYYY-MM-DD'）、条件の変更の控え（`vrdemo:conditions:base`＝`{ at, data }`。data は条件の部分。PRD D290。ADR-0049）。`vrdemo:data:v1` 以外はブラウザごとの記録で、DemoData の外（版・書き出し・読み込み・初期状態に戻すの対象外。`src/contracts/` に足さない）
-- 提供するAPI：`load()`・`loadWithStatus()`（無ければ seed の `createInitialData(今日, startFeatures())` で作り `fresh: true`（初めて開いた。入り切りは基本のひな形、印 `all` があればすべて入の `{}`。PRD D276）。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データで `broken: true`（退避が容量超過なら1世代の控えを捨ててもう1回。退避できたら初期データを書き、読み直すたびに作り直さない。それでも退避できなければ元の文字を残して `brokenKept: false`）。読めたら `extendDays`）、`brokenText()`（退避した元の文字。退避できていなければ開いたときに覚えた元の文字、それも無ければ本体のキーの読めない文字）、`save(data, onResult)`（300ms 間引き。`flushSave()`。結果は `(message, droppedPrevious)`：容量のために控えを捨てたか）、`reset(features)`（`createInitialData(今日, features)`。features の既定は今のデータの入り切り＝入り切りは残す。今のデータが無い（読み込みの例外から戻す）ときはすべて入の `{}`。PRD D216）、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`repair`、`extendDays(data, today)`（今日以降の訪問が無ければ、パターンがあれば `applyPatterns` で14日分、無ければ seed の `daysFrom`）
+- 責務：`DemoData` の読み込み・保存・検査（zod）・版の確かめ（版1は移さず初期データで始める。ADR-0053）・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す、置き換える前の1世代の控え（ADR-0032）。画面へは `useDemoData()`（`data`・`update(fn)`・`replace(d)`・`reset(features?)`・`saveError`・`keepPrevious(reason)`・`restorePrevious()`・`previous`・`broken`・`brokenKept`・`dismissBroken()`・`startedFresh`・`externalReloads`・`previousDrops`）。書き換えは update・replace・reset・restorePrevious だけ
+- 持つデータ（持ち主）：`DemoData`（キー `vrdemo:data:v1` の1つの JSON）、読めなかった元の文字（`vrdemo:data:broken`）、1世代の控え（`vrdemo:data:prev`＝置き換える前の `DemoData` の JSON、`vrdemo:data:prev:info`＝`{ at, reason }`（時刻 ms・操作の名前））、案内ツアーを見たか（キー `vrdemo:tour:seen`）、初めて開いたときの入り切りの印（キー `vrdemo:features:start`。`all` だけ意味を持つ。PRD D276）、最後に書き出した日（`vrdemo:backup:last`＝`{ date: 'YYYY-MM-DD', kind: 'json' | 'excel' }`）と控えの知らせを出した日（`vrdemo:backup:reminded`＝'YYYY-MM-DD'）。`vrdemo:data:v1` 以外はブラウザごとの記録で、DemoData の外（版・書き出し・読み込み・初期状態に戻すの対象外。`src/contracts/` に足さない）
+- 提供するAPI：`load()`・`loadWithStatus()`（無ければ seed の `createInitialData(今日, startFeatures())` で作り `fresh: true`（初めて開いた。入り切りは基本のひな形、印 `all` があればすべて入の `{}`。PRD D276）。読めなければ元の文字を `vrdemo:data:broken` に退避して初期データで `broken: true`（退避が容量超過なら1世代の控えを捨ててもう1回。退避できたら初期データを書き、読み直すたびに作り直さない。それでも退避できなければ元の文字を残して `brokenKept: false`）。読めたら `extendDays`）、`brokenText()`（退避した元の文字。退避できていなければ開いたときに覚えた元の文字、それも無ければ本体のキーの読めない文字）、`save(data, onResult)`（300ms 間引き。`flushSave()`。結果は `(message, droppedPrevious)`：容量のために控えを捨てたか）、`reset(features)`（`createInitialData(今日, features)`。features の既定は今のデータの入り切り＝入り切りは残す。今のデータが無い（読み込みの例外から戻す）ときはすべて入の `{}`。PRD D216）、`exportJson`、`backup()`（例外の画面の控え：待っている保存を先に書き、画面の最新のデータ（`rememberCurrent` で Provider が覚える。`load`・`save`・`reset` でも覚える）を、無ければ保存してある文字をそのまま、壊れて退避した文字があればそれも別のファイルとして返し、保存の失敗の文言を添える）、`importJson`（版1の控えは `OUTDATED_MESSAGE` で断る）、`migrate(raw)`（既定値で読み必ず `repair`。§5「版と移行」）、`isOutdated(raw)`（版1か。`loadWithStatus` は版1なら初期データで始め `outdated: true`、画面が「データの形が変わったので初期データで始めます」と知らせる）、`repair`
 - 〈スタッフ〉のアイコン `icon`（PRD D299。ADR-0050）も `DemoData` の中で store が持つ。検査は zod では形だけ（前後の空白なし・32コード単位まで。無い古いデータは ''。形の合わない値は読み込みを止める＝メールアドレスと同じ）。見た目で2文字までは入れる所（画面・Excel）で見る（`Intl.Segmenter` の無い環境で保存データ全体が読めなくならないように）。ほかを指さないので repair は触らない。画像は持たない（localStorage を圧迫するため）
 - repair（いない物を指す参照を除き、ID の重複は最初の1件）：
-  - 割当・相性・上書き・固定・記録・今の案と記録の `reassign` の `base*`（`absenceIds` は残す）。記録は1日20件まで（古いものから捨てる）
+  - 相性・上書き・振り直しの情報（`reassigns`）の `base*`（`absenceIds` は残す）・伝えた内容（`snapshots`。日付とキーがそろわない・いない訪問は外す）
+  - 条件の重み・必須（`data.rules`）はいつも点数の基準のプリセットにそろえる（重みは1組。ADR-0053）
   - プリセット：6つまで・0件なら初期の3種・重みは 0〜5・0.5刻み（`clampWeight`）・必須にできない型の必須は外す。`scorePresetId` が無効なら先頭
   - 欠勤は同じ人・同じ日の最後の1件。種類は20まで
-  - 手直しの記憶（ADR-0043）：いない〈スタッフ〉・〈利用者さん〉（キーの先頭）の記憶を消し、2000件を超えたら `updatedAt` の古い順に消す。記録の `prefPins` は固定と同じ規則
   - パターン：いない〈利用者さん〉のものを除く、無効な `typeId`・`usualStaffId` は null、`weekdays`・`monthWeeks` は重なりなしの昇順（毎週系の `monthWeeks` は `[]`）、`dayTimes` はパターンの曜日だけ・曜日ごと最初の1件・曜日の順
-  - 訪問：無効な `typeId`・`pattern` は null（訪問は残す）。取り消していない訪問の `cancelKind` は null
+  - 訪問：無効な `typeId`・`pattern` は null（訪問は残す）。取り消していない訪問の `cancelKind` は null。いない・休止中の担当は null（ピンも外す）。担当の無い訪問のピンは外す
   - `allowedStaffIds`：いない・休止中の人と重なりを除く（空になれば限らない）。active・tentative を段階に合わせる（`stageFlags`）
 - 案内ツアー：`store/tour.ts` の `tourMemory`（`seen()`・`markSeen()`。値 `'1'`。`createTourMemory(getStorage)`）。DemoData の外（update・版・書き出し・reset の対象外）。保存できなければ開いている間だけ
 - 初めて開いたときの入り切り（PRD D276。ADR-0045）：`store/start.ts` の `startFeatures(getStorage)`：`vrdemo:features:start` が `all` なら `{}`、ほか（無い・読めない）は `applyTemplate('basic')`。読むのは保存データが無いときだけ（`reset` は読まない）。画面からは書かない（e2e の `scripts/lib/startFeatures.cjs` と、全機能を見せるデモの前準備）
 - 1世代の控え（PRD D227。ADR-0032）：`keepPrevious(data, reason, at)` は置き換える前のデータを `vrdemo:data:prev` に書く（次に残すと上書き）。書けなければ前の世代を消して1回だけ試し直し、それでもだめなら残さず `{ kept: false, why: '控えを残せません：容量不足' }`（操作は止めない）。`cancel()` で前の世代に戻す（確認を取り消したとき）。画面は確認で OK になってから残す（確認の本文は見込みの `canKeepPrevious()`：保存が使えない・最後の保存が容量超過なら「容量不足」）。`previousInfo()`・`readPrevious()`（`importJson` を通す）・`samePreviousInfo(a, b)`（同じなら react の state を替えない）。`swapPrevious(now)` は控えを読み、いまのデータを「直前の状態に戻す」として控えてから控えのデータを返す（もう一度戻せる）。いまのデータを控えに残せなければ戻さず（控えは元のまま）「いまのデータを控えに残せないため戻せません：容量不足」。react の `restorePrevious()` はこれを使う。本体の保存（`writeNow`）が容量超過なら控えを捨ててもう1回書き（いまのデータが先）、捨てたら `previousDrops` を1つ増やす（画面がトースト「容量が足りないため、直前の状態の控えを消しました」）
-- 条件の変更の控え（PRD D290〜D292。ADR-0049）：`store/conditions.ts` の `conditionsMemory`（`read()`・`write(base)`・`clear()`。`createConditionsMemory(getStorage)`。保存できなければ開いている間だけ）。控えるのは条件の部分（`CONDITION_KEYS`：`org`・`items`・`rules`・`presets`・`scorePresetId`・`staff`・`clients`・`compat`・`availability`・`visitTypes`・`patterns`・`clientLeaves`。訪問・案・記録・確定した割当・欠勤・手直しの記憶・乱数の種は入れない）。react：`update` で描いたデータの条件の部分が変わり（`captureBase`：キーごとに参照、違えば JSON で比べる）控えが無ければ、変わる前を書いて `conditionsBase` に。`update(fn, { keepBase: true })` は取らない（帯の「戻す」）。`replace`・`reset`・`restorePrevious` は控えを消し、その書き換えでは取らない。別のタブの読み直しでは取らず、控えのキーの `storage` で読み直す。`clearConditionsBase()` は作り直しの帯が今のデータで0日を数えたときに呼ぶ
 - 最後に書き出した日・控えの知らせ：`store/backup.ts` の `backupMemory`（`lastExport()`・`markExported(kind, date)`・`lastReminded()`・`markReminded(date)`。`createBackupMemory(getStorage)`）。ツアーと同じく DemoData の外。知らせるかは `lib/backupReminder` の `shouldRemindBackup`（純粋関数）
-- 別のタブの変更：`storage` イベントで `vrdemo:data:v1` が変われば読み直し（書き戻さない）、`externalReloads` を1つ増やす（画面が知らせを出す）。データを丸ごと差し替えたら（`replace`・`reset`・`restorePrevious`・別のタブの読み直し）`replacedCount` を1つ増やす（作っている月まとめ作成を止めるきっかけ。ADR-0042）。控えのキーが変われば `previous` を読み直す
-- 依存するもの：seed（`seed/plans` の `createInitialData` も）、patterns、zod
+- 別のタブの変更：`storage` イベントで `vrdemo:data:v1` が変われば読み直し（書き戻さない）、`externalReloads` を1つ増やす（画面が知らせを出す）。データを丸ごと差し替えたら（`replace`・`reset`・`restorePrevious`・別のタブの読み直し）`replacedCount` を1つ増やす（組んでいる月の AI で組むを止めるきっかけ。ADR-0042）。控えのキーが変われば `previous` を読み直す
+- 依存するもの：seed（`seed/plans` の `createInitialData` も）、presets（重みをそろえる）、zod
 - 配置：`src/store/`
 - 完了の条件：
-  - [ ] 壊れた・古い版の JSON は移行するか、元のデータを残して日本語のエラーを返す（画面が真っ白にならない）
-  - [ ] 書き出し → 読み込みで同じデータに戻る（欠勤・振り直し・種類・パターン・休みを含む。テスト）
-  - [ ] 容量超過で書き出しと「古い案と記録を片づける」を促す（`QUOTA_MESSAGE`）
+  - [ ] 壊れた JSON は元のデータを残して日本語のエラーを返す（画面が真っ白にならない）。版1のデータは移さず初期データで始め、知らせる（テスト）
+  - [ ] 書き出し → 読み込みで同じデータに戻る（欠勤・振り直し・種類・パターン・休み・伝えた内容を含む。テスト）
+  - [ ] 容量超過で書き出しと「古い訪問を片づける」を促す（`QUOTA_MESSAGE`）
   - [ ] 置き換える前の1世代の控え・取り消しで前の世代・容量超過なら残さず理由（テスト）
   - [ ] 古いデータが §5 の既定値で読め、repair が効き、直す所の無い〈利用者さん〉は同じ物（テスト）
-  - [ ] パターンがあり今日以降の訪問が無いと、起動時に14日分が足される（テスト）
 
 ### seed（デモの初期データ）
-- 責務：PoC本体 `scripts/seedDemo.ts` の生成（仙台・〈スタッフ〉8人・訪問先20か所・稼働時間帯の上書き）を写し、項目・条件・相性・種類・パターン・プリセットの初期値を足す。起動したときの初期データには今日から7日分の AI案も入れる（ADR-0031）。日付だけで結果が決まる
+- 責務：PoC本体 `scripts/seedDemo.ts` の生成（仙台・〈スタッフ〉8人・訪問先20か所・稼働時間帯の上書き）を写し、項目・条件・相性・種類・繰り返し・プリセットの初期値を足す。起動したときの初期データには今日から7日分の担当も入れる（PRD D322。ADR-0053）。日付だけで結果が決まる
 - 持つデータ（持ち主）：なし
-- 提供するAPI：`createDemoData(today)`（14日分＝`DEMO_DAYS`。案は入れない）、`seed/plans` の `createInitialData(today, features = {})`（`createDemoData` に機能の入り切りを入れてから `withSeedPlans`。store が起動・初期化で使う。案の記録の `calcFeatures` が入り切りとそろう）・`withSeedPlans(data, today, days = SEED_PLAN_DAYS)`（7日。案も確定した割当も無い日だけ）・`SEED_ITERATIONS`（100000）・`seedCreatedAt(today)`（その日の日本時間 0:00）、`daysFrom`（`typeId`・`pattern` は null、リハビリは作らない）、`seedPatterns`、`INITIAL_PRESETS`・`applyPreset(rules, preset)`・`presetOf(rules, presets)`・`scorePresetOf(presets, id)`（無ければ先頭）・`scoreRulesOf(data)`（条件に点数の基準のプリセットを当てたもの。0件なら条件そのもの）
+- 提供するAPI：`createDemoData(today)`（繰り返しと繰り返しの担当。担当を組んだ訪問は入れない）、`seed/plans` の `createInitialData(today, features = {})`（`createDemoData` に機能の入り切りを入れてから `withSeedPlans`。store が起動・初期化で使う）・`withSeedPlans(data, today, days = SEED_PLAN_DAYS)`（7日）・`SEED_ITERATIONS`（100000）、`daysFrom`（`typeId`・`pattern` は null、リハビリは作らない）、`seedPatterns`、`withUsualStaff(patterns, owners, staff)`、`INITIAL_PRESETS`・`applyPreset(rules, preset)`・`presetOf(rules, presets)`・`scorePresetOf(presets, id)`（無ければ先頭）・`scoreRulesOf(data)`（条件に点数の基準のプリセットを当てたもの。0件なら条件そのもの）
 - 初期データ：
-  - 手作業の割当・確定した割当は入れない（`staffId` はすべて null、`manualPlans` は `{}`）。`usualStaffId` は内部で作った割当で最も多く担当した人
-  - AI案（`createInitialData`。PRD D225）：今日から7日分、点数の基準のプリセット（`standard`）の重みを当てた条件で compile し、`solve`（種はデータの `seed`、反復は `min(defaultIterations, SEED_ITERATIONS)`。1日 約40ms・7日で 約0.3秒）で解いて、月の「まとめて作る」と同じ `lib/month` の `applyDayRun`（記録1件・`inputKey` 付き・今の案はその記録）で書く。`createdAt` は `seedCreatedAt`。作れない日は飛ばす
+  - 繰り返しは前の月の1日（`seedPatternStart`）から。前の月の1日〜昨日は伝えた内容を入れる（`withPastTold`：その日の取り消していない訪問の繰り返しの担当を写す。開始は null＝時刻の違いを数えない。確定の時刻はその日の18:00（日本時間））。今日からは伝えていない
+  - 繰り返しの担当（`withUsualStaff`）：内部で作った割当でその〈利用者さん〉を多く担当した順に、繰り返しの曜日すべてに勤務があり、同じ人のほかの回と30分（`USUAL_GAP_MINUTES`）より近く重ならない人。いなければ null（担当なし）
+  - 担当（`createInitialData`。PRD D322）：今日から7日分、点数の基準のプリセット（`standard`）の重みを当てた条件で compile し、`solve`（種はデータの `seed`、反復は `min(defaultIterations, SEED_ITERATIONS)`。1日 約40ms・7日で 約0.3秒）で解いて、`lib/dayPlan` の `writeRoutes`（ピンなし）で訪問に書く（変わった回だけ保存した回になる）。作れない日は飛ばす
   - 呼び方は「スタッフ」（`domain/terms.ts` の care の既定「ヘルパー」は写したまま）
   - 訪問は希望の時刻ちょうど（PoC本体の幅は始まりの時刻。c4 だけ終わりの 10:30＝日曜に担当が足りなくなるため）
   - 項目：スタッフ側は性別・資格（介護福祉士/看護師/保育士/初任者研修/理学療法士/作業療法士/言語聴覚士）・経験年数・得意（高齢/子ども/障害/家事/話し相手/料理）・喫煙者・ペット可。訪問先側はペットあり・喫煙環境・対象（高齢/子ども/障害）
   - 性別希望（c6・c18 女性、c11 男性）は性別＋必要条件、NG（c2→s2、c12→s7）は相性 ×
   - 種類：介護（色0。資格に介護福祉士・初任者研修・看護師のどれか）、リハビリ（色3。理学療法士・作業療法士・言語聴覚士のどれか）。理学療法士は s4・s7
-  - パターン：〈利用者さん〉ごとに1つ（ID＝〈利用者さん〉の ID。平日の1曜日だけ休み・`weekend` の印で土日も。毎週。時刻・所要は `slot`。子どもは種類なし、ほかは介護。開始日＝基準日）。リハビリ40分を c7（水 14:00・s4）・c14（金 15:00・s7）。訪問は `applyPatterns` で14日分（ID `${日付}_${利用者さんID}`）
+  - 繰り返し：〈利用者さん〉ごとに1つ（ID＝〈利用者さん〉の ID。平日の1曜日だけ休み・`weekend` の印で土日も。毎週。時刻・所要は `slot`。子どもは種類なし、ほかは介護。開始日＝基準日）。リハビリ40分を c7（水 14:00・s4）・c14（金 15:00・s7）。回は保存せず見るときに計算する（ID `${日付}_${利用者さんID}`）
   - 決まりごとの例は c2・c4・c9・c13（`VISIT_RULE_SEEDS`）。欠勤・休みなし。`scorePresetId` は `standard`
-- 依存するもの：domain、patterns。`seed/plans` だけ matching（compile）・solver（solve）・`lib/month`（`applyDayRun`）・`lib/runs`（`problemKey`）
+- 依存するもの：domain、patterns。`seed/plans` だけ matching（compile）・solver（solve）・`lib/dayPlan`（`dayProblemOf`・`writeRoutes`）
 - 配置：`src/seed/`
 - 完了の条件：
-  - [ ] 同じ日付で同じデータ。手作業の割当なし・`usualStaffId` あり（テスト）
-  - [ ] `createInitialData`：今日から続けて7日分の今の案と記録1件（契約どおり・「標準」・再計算を省ける `inputKey`）、同じ日付で同じ案、条件が変わったにならない（テスト）
-  - [ ] 性別希望・NG・種類・パターン・訪問の ID が上のとおり、プリセットは §5 の3種（テスト）
+  - [ ] 同じ日付で同じデータ。繰り返しの担当は重ならない人（テスト）
+  - [ ] `createInitialData`：今日から7日分の訪問に担当が入り、過去（前の月の1日〜昨日）は確定済み・今日からは伝えた内容が無い、同じ日付で同じ担当（テスト）
+  - [ ] 性別希望・NG・種類・繰り返し・訪問の ID が上のとおり、プリセットは §5 の3種（テスト）
 
 ### domain（PoC本体から写した純粋関数）
 - 責務：時刻（`hhmmToMinutes` など）、距離と移動の概算（`distanceMeters`・`estimateLeg`）、稼働時間帯（`availabilityOf`・`shiftOf`・`withinSlots`）、ルート評価（`evaluateRoute`）、手作業の割当の補助（PoC本体 `web/src/features/admin/schedule/model.ts` の `reconcile`・`assign`・`timesOf`・`warningsOf`）
@@ -279,24 +280,25 @@ flowchart LR
   - [ ] 8人・20件で100ms、30人・150件で1秒以内
   - [ ] 案B：`annealCost` ≤ 案A、`unplaced` ⊆ 案A の `unplaced`（訪問ID の集合。seed の14日×全スタッフの終日、重み0と既定）、`settleAnneal` の3つの場合、重み5は0より変わる訪問が少ない、`SolveResult.score` は stay の無い問題と一致（テスト）
 
-### patterns（定期パターンの展開。ADR-0012・ADR-0013）
-- 責務：定期パターンから訪問を**展開**、「いつから」で分けて直す（以降すべて）、消す。決定的。新しい配列を返し、画面が `update` で入れる
+### patterns（繰り返しの回の計算。ADR-0012・ADR-0013・ADR-0053）
+- 責務：繰り返し（定期パターン）の回を**見るときに計算**し、保存した訪問（単発・変えた回）と合わせてその日・期間の訪問を返す。「いつから」で分けて直す（これ以降）、終わらせる・消す。決定的。新しい配列を返し、画面が `update` で入れる
 - 持つデータ（持ち主）：なし
-- 提供するAPI：`occursOn`・`expandPattern`・`applyPatterns`・`splitPattern`・`removePattern`（§5）、`nthOfMonth`（(日 − 1)÷7 の切り捨て＋1）、`timesOn`（その曜日の開始）
-- 展開：
+- 提供するAPI：`occursOn`・`expandPattern`・`visitsOn`・`visitsIn`・`findVisit`・`putVisits`・`splitPattern`・`removePattern`（§5）、`nthOfMonth`（(日 − 1)÷7 の切り捨て＋1）、`timesOn`（その曜日の開始）、`patternVisitId`・`parsePatternVisitId`、`visitOf`（その日の計算した回）、`byStart`（開始の順）
+- 計算：
   - その日にある＝曜日が `weekdays` にあり `from` ≤ 日 ≤ `to`（null は無限）、かつ `'weekly'` なら `from` を含む週（日曜はじまり）を1週目として (週 − 1) が `everyWeeks` で割り切れる、`'monthly'` なら `nthOfMonth` が `monthWeeks` にある（第5の無い月は作らない）
-  - 利用中でない〈利用者さん〉は展開しない。今日より前には作らない
-  - ID `${元の日}_${パターンID}`。中身はパターンの `clientId`・`typeId`・`windowKind`・開始（その曜日の `dayTimes` 優先）・所要、`staffId: null`・`cancelled: false`・`note: ''`、`pattern: { id, date, edited: false }`。同じ ID があれば作らない
-  - 日付・開始（早）・パターンの並びの順に足す（既存の順は変えない）
-- `splitPattern`：`since` ≤ `from` なら同じ ID・元の `from` で置き換え。後なら元の `to` を min(元の `to`, `since` の前日) にし、新しい ID で `from`＝`since` を足す。作り直す期間は max(`since`, 今日)〜元のパターンを指す訪問の最後の日。`edited`（取り消しを含む）でない訪問を除いて展開し直し、`edited` の回の元の日には作らない。除いた・足した訪問の ID と日を返す
-- `removePattern`：今日以降の `edited` でない訪問を除き、残りの `pattern` は null
-- 画面側：`edited` は訪問の欄で日付・時間の決め方・開始・所要・種類・取り消しを変えたとき（メモは数えない。日付を変えたら `staffId` を null）。前の週からのコピー（`lib/copyDay`）は、コピー先の日にそのパターンの回があれば ID `${日}_${パターンID}` で写し（その ID があれば写さない。時刻などが展開と違えば `edited`）、ほかは単発。休みの訪問は写さない
+  - 利用中でない〈利用者さん〉の回は計算しない
+  - 計算した回：ID `${元の日}_${パターンID}`。中身はパターンの `clientId`・`typeId`・`windowKind`・開始（その曜日の `dayTimes` 優先）・所要、`staffId`＝パターンの `usualStaffId`、`start: null`・`pinned: false`・`cancelled: false`・`note: ''`、`pattern: { id, date, edited: false }`
+  - `visitsOn`：その日の保存した訪問と、同じ ID の保存した回が無い計算した回。開始（組んだ開始、無ければ開始（早））・ID の順。取り消し・休みの訪問も含む
+  - `putVisits(visits, put)`：同じ ID は置き換え、無ければ足す（計算した回を書くと保存した回になる）
+- `splitPattern`：`since` ≤ `from` なら同じ ID・元の `from` で置き換え。後なら元の `to` を min(元の `to`, `since` の前日) にし、新しい ID で `from`＝`since` を足す。max(`since`, 今日) 以降の元のパターンの保存した回のうち、この回だけ変えていない（取り消してもいない）回は消し（新しいパターンで計算し直す）、変えた回は新しいパターンの回として ID を付け直す
+- `removePattern`：開始が今日より前なら昨日で終わらせて残す（今日より前の回はそのまま）。今日以降の保存した回のうち変えていない回は消し、変えた回は単発にする（`pattern` を null）。開始が今日以降ならパターンごと消す
+- 画面側：`edited` は訪問の欄で日付・時間の決め方・開始・所要・種類・メモ・取り消しを変えたとき（担当・組んだ開始・ピンだけの違いは edited にしない）。日付を変えても担当は残す
 - 依存するもの：contracts、domain（`addDays`・`weekday`）
 - 配置：`src/patterns/`
 - 完了の条件：
-  - [ ] 毎週・隔週・4週ごと・第N（第5）・`from`/`to` の端・複数の曜日・曜日ごとの時刻・利用中でない人で、展開が正しい（テスト）
-  - [ ] 同じ入力で同じ訪問、2回で増えない、`edited` は上書きされない、今日より前に作らない（テスト）
-  - [ ] `splitPattern`・`removePattern` が上のとおり（テスト）。seed の20人・14日の展開が1秒以内
+  - [ ] 毎週・隔週・4週ごと・第N（第5）・`from`/`to` の端・複数の曜日・曜日ごとの時刻・利用中でない人で、回が正しい（テスト）
+  - [ ] 保存した回があれば計算した回を出さない、同じ入力で同じ訪問（順も）（テスト）
+  - [ ] `splitPattern`・`removePattern` が上のとおり（テスト）。seed の20人・1か月の計算が1秒以内
 
 ### vacancy（空き状況・問い合わせの試算。ADR-0012・ADR-0013）
 - 責務：先の数週（既定4週）の各日の**元の案**（`lib/absences` の `baseOf`＝確定した割当、無ければ今の案）に、仮の訪問を他の人を変えずに入れられるかを曜日×開始時刻ごとに数える。空き状況の表（目安）・問い合わせの試算（移動込み）・日の混み具合（`dayLoad`）・案内文（`vacancyNotice`）。決定的。データは読むだけ
@@ -400,14 +402,15 @@ flowchart LR
 
 | コンポーネント | メソッド | エンドポイント | 概要 |
 |---|---|---|---|
-| store | 関数 | `load / save / reset / exportJson / importJson / migrate / repair / extendDays / backup / rememberCurrent / keepPrevious / canKeepPrevious / swapPrevious` | 保存・入出力・版の移行・例外の画面の控え |
+| store | 関数 | `load / save / reset / exportJson / importJson / migrate / isOutdated / repair / backup / rememberCurrent / keepPrevious / canKeepPrevious / swapPrevious` | 保存・入出力・版の確かめ・例外の画面の控え |
 | domain | 関数 | `withoutAbsences / afterLastDay / leaveOn / isOnLeave` | 欠勤・最終勤務日・休み（デモ独自） |
 | matching | 関数 | `compile(data, date, pins?) → Problem` | 項目・条件 → 可否・費用表 |
 | solver | Worker | `solve` → `progress`…`done`／`error`、`stop` | AI案を作る。stop で最良案を返す |
 | evaluate | 関数 | `score / explain / diff / normalize / toHundred / hundredBreakdown / naivePlan / achievements` | 採点・理由・差・点数・達成 |
 | reassign | 関数 | `targetsOf / reassign / candidatesFor / placeVisit / reassignDiff / leftOf / fitsOf` | 欠勤の振り直し（案A）・候補・差 |
 | reassign | 関数 | `prepareAnneal / finishAnneal / settleAnneal / annealCost / stayPointsOf / contactsOf` | 案B・連絡の一覧 |
-| patterns | 関数 | `occursOn / expandPattern / applyPatterns / splitPattern / removePattern` | 定期パターン |
+| patterns | 関数 | `occursOn / expandPattern / visitsOn / visitsIn / findVisit / putVisits / splitPattern / removePattern` | 繰り返しの回の計算 |
+| lib/dayPlan | 関数 | `dayProblemOf / routesOf / dayRoutes / pinsOf / unassignedOf / writeRoutes / settleDay / visitIssues / tellDay / toldChanges / toldStateOf / contactsBetween` | 日の割当（訪問の担当）・訪問ごとの検査・確定（伝えた内容） |
 | vacancy | 関数 | `vacancyOf / verdictOf / inquirySummary / dayLoad / vacancyNotice` | 空き状況・試算・混み具合・案内文 |
 | excel | 関数 | `exportWorkbook / importWorkbook / exportRosterWorkbook / importRoster / rosterSummary / rosterWarning` | ブック・名簿 |
 | features | 関数 | `isOn / featureOfLocation / applyTemplate / matchTemplate / templateDiff / turnOffImpact / calcFeaturesOf` | 機能の入り切り |
@@ -420,42 +423,36 @@ PoC本体の documents.ts からログイン・事業所の分離（email・uid�
 |---|---|
 | `Org` | `name` 1〜100・`industry`（`sitter`/`care`/`nursing`/`other`）・`terms`・`fareYenPerKm` 0〜1000（0＝交通費なし）・`spanLimitHours` 0〜24・0.5刻み（10。0＝注意しない）・`features`（`{}`） |
 | `Staff` | `id`・`name` 1〜50・`home`・`travelMode`（`DRIVE`/`BICYCLE`/`WALK`/`TRANSIT`）・`workDays`（0=日〜6=土）・`shiftStart`・`shiftEnd`・`active`・`traits`・`requirements`・`preferences`（訪問先の特性に対して。各20まで）・`lastDay`（最終勤務日。翌日から勤務なし。null）・`email`（''）・`icon`（印の中の1〜2文字。絵文字も可。''＝未設定で苗字の最初の1文字。無い古いデータは ''。版は上げない。schema は形だけ＝前後の空白なし・32コード単位まで。見た目で2文字まで（書記素）は画面の `staffIconError` と Excel の `readStaffIcon` で見る。ADR-0050） |
-| `Client` | `id`・`displayName` 1〜50・`kana` ≤50（''）・`place`（＋`postalCode` 空か7桁。''）・`note` ≤500・`color` 0〜7・`active`・`traits`・`requirements`・`preferences`・`usualStaffId`・`tentative`（仮押さえ。false）・`entryNote`・`keyNote`・`parkingNote`・`cautionNote`（各 ≤200。''）・`allowedStaffIds` ≤50（`[]`＝限らない）・`stage`・`referrer`（`name` ≤50・`contact` ≤100・`note` ≤200・`email`。空＝`EMPTY_REFERRER`） |
+| `Client` | `id`・`displayName` 1〜50・`kana` ≤50（''）・`place`（＋`postalCode` 空か7桁。''）・`note` ≤500・`color` 0〜7・`active`・`traits`・`requirements`・`preferences`・`tentative`（仮押さえ。false）・`entryNote`・`keyNote`・`parkingNote`・`cautionNote`（各 ≤200。''）・`allowedStaffIds` ≤50（`[]`＝限らない）・`stage`・`referrer`（`name` ≤50・`contact` ≤100・`note` ≤200・`email`。空＝`EMPTY_REFERRER`） |
 | `VisitType` | `id`・`name` 1〜20・`color` 0〜7・`durationMinutes` 5〜720（新しい訪問・パターンの初期値だけ）・`requirements` ≤20（常に必須）・`note` ≤200。20まで（`MAX_VISIT_TYPES`） |
-| `Pattern` | `id`・`clientId`・`typeId`（null＝問わない）・`weekdays` 1〜7個・`everyWeeks` 1〜4・`repeat`（`'weekly'`/`'monthly'`。`'weekly'`）・`monthWeeks` 1〜5（`[]`）・`dayTimes`（曜日・開始（早）・開始（遅）。7まで。`[]`）・`windowKind`・`earliestStart`・`latestStart`・`durationMinutes`・`from`・`to`（null＝続く）・`usualStaffId`（null＝〈利用者さん〉の）・`note` |
-| `Visit` | `id`・`date`・`clientId`・`windowKind`（`fixed`/`window`）・`earliestStart`・`latestStart`・`durationMinutes` 5〜720・`staffId`（手作業の担当）・`cancelled`・`note` ≤200・`typeId`（null）・`pattern`＝`{ id, date: 元の日, edited }`（null＝単発）・`cancelKind`（`'sameDay'`＝当日キャンセル。null） |
+| `Pattern` | `id`・`clientId`・`typeId`（null＝問わない）・`weekdays` 1〜7個・`everyWeeks` 1〜4・`repeat`（`'weekly'`/`'monthly'`。`'weekly'`）・`monthWeeks` 1〜5（`[]`）・`dayTimes`（曜日・開始（早）・開始（遅）。7まで。`[]`）・`windowKind`・`earliestStart`・`latestStart`・`durationMinutes`・`from`・`to`（null＝続く）・`usualStaffId`（繰り返しの担当。null＝担当なし。ADR-0053）・`note` |
+| `Visit` | `id`・`date`・`clientId`・`windowKind`（`fixed`/`window`）・`earliestStart`・`latestStart`・`durationMinutes` 5〜720・`staffId`（担当。null＝担当なし）・`start`（組んだ開始。null＝開始（早）で並べる）・`pinned`（AI で組み直しても担当を変えない。false）・`cancelled`・`note` ≤200・`typeId`（null）・`pattern`＝`{ id, date: 元の日, edited }`（null＝単発）・`cancelKind`（`'sameDay'`＝当日キャンセル。null）。保存するのは単発と、繰り返しの変えた回だけ（ADR-0053） |
 | `Availability` | `staffId`・`date`・`slots`（30分単位。空＝休み）。その日だけの上書き |
 | `Absence` | `id`・`staffId`・`date`・`from`・`to`（30分単位。null＝始業から／終業まで、両方 null＝終日）・`note` ≤100。同じ人・同じ日は1件 |
 | `ClientLeave` | `id`・`clientId`・`from`・`to`（両端を含む）・`note` ≤100 |
 
 - 検査の文：「終了日は開始日以降にしてください」（パターン・休み）、「開始（遅）は開始（早）以降にしてください」、「毎月のときは第何週かを1つ以上選んでください」、「同じ曜日の時刻が2つあります」、「終了は開始より後にしてください」（欠勤）、稼働時間帯は `slotsError`
 - メール：`EMAIL_PATTERN`（空白・@・「,;」・山かっこ・「"?&=%#/」を含まない「文字@文字」）、`emailSchema` は空かこの形・254字まで（入力は `normalizeEmail` で直してから）
-- 段階 `CLIENT_STAGES`：`inquiry` 相談受付・`meeting` 顔合わせ・`contract` 契約・`active` 利用中・`ended` 終了。段階が正で `stageFlags(stage, tentative)` が active・tentative を決める（利用中＝true/false、終了＝false/false、その前＝仮押さえしているときだけ予定の対象）。予定・AI案は active だけを見る
+- 段階 `CLIENT_STAGES`：`inquiry` 相談受付・`meeting` 顔合わせ・`contract` 契約・`active` 利用中・`ended` 終了。段階が正で `stageFlags(stage, tentative)` が active・tentative を決める（利用中＝true/false、終了＝false/false、その前＝仮押さえしているときだけ予定の対象）。予定・AI で組むは active だけを見る
 - 休みの訪問は消さず、取り消しとも別（`edited` も立てない）。compile・画面が `isOnLeave` で外す
 - 希望休：終日かつ `note` が `'希望休'`（`REQUESTED_OFF_NOTE`）の欠勤（`isRequestedOff`）
 - `'monthly'` では `everyWeeks` を使わない（1にする）。`'fixed'` の `dayTimes` は `latestStart`＝`earliestStart`
 
-### データ一式・案・記録（`src/contracts/data.ts`。ADR-0004・ADR-0005・ADR-0008・ADR-0010・ADR-0011・ADR-0020・ADR-0028・ADR-0043）
+### データ一式・伝えた内容・振り直し（`src/contracts/data.ts`。ADR-0008・ADR-0010・ADR-0011・ADR-0020・ADR-0028・ADR-0053）
 
-`STORAGE_KEY = 'vrdemo:data:v1'`、`DATA_VERSION = 1`、`MAX_RUNS_PER_DAY = 20`、`MAX_MANUAL_PREFS = 2000`、`ImportError = { code: 'INVALID_ARGUMENT'; message }`。
+`STORAGE_KEY = 'vrdemo:data:v1'`（版2も同じキー）、`DATA_VERSION = 2`、`ImportError = { code: 'INVALID_ARGUMENT'; message }`。
 
 ```ts
-DemoData = { version, baseDate /* seed の基準日 */, seed /* 乱数の種 */, org, items, rules, staff, clients, compat,
-  visits, availability, absences /* ≤2000 */, visitTypes /* ≤20 */, patterns /* ≤2000 */, clientLeaves /* ≤2000 */,
-  manualPrefs /* 手直しの記憶：prefKey → { staffId, updatedAt }。≤2000 */,
-  manualPlans /* date → staffId|'__none' → 訪問IDの列＝確定した割当 */, aiPlans /* date → AiPlan */,
-  aiRuns /* date → AiRun[]（古い順） */, presets /* 1〜6 */, scorePresetId? }
-AiPlan = { date, createdAt, seed, iterations, stopped, rules /* 作ったときの条件 */,
-  routes, unassigned, score /* 手直し後。score は保存時の費用 */, generated: { routes, unassigned, score } /* AI が出したまま */,
-  pins /* 訪問ID → 担当ID */, runId? /* 元の記録 */, reassign?: ReassignInfo }
-AiRun = { id /* `${date}#${no}@${createdAt}` */, no /* 1から */, date, createdAt, seed, iterations, stopped, rules, pins,
-  routes, unassigned, score, label /* プリセット名か「条件を変えた案」。組み直しは「…・固定n件で組み直し」 */,
-  presetId /* 最後に作った・使い回したときに重みが一致した最初のプリセット。無ければ null */,
-  inputKey? /* problemKey。無い記録は使い回さない */, reassign?, calcFeatures? /* 切っているものだけ */,
-  prefPins? /* 手直しの記憶で固定した訪問ID → 担当ID。当てたときだけ */ }
-ManualPref = { staffId, updatedAt /* ms */ }  // キー `clientId|曜日0-6|earliestStart-latestStart|typeId または空`（matching の prefKey）
+DemoData = { version: 2, baseDate /* seed の基準日 */, seed /* 乱数の種 */, org, items,
+  rules /* 重み・必須はいつも点数の基準のプリセットにそろえる */, staff, clients, compat,
+  visits /* 保存した訪問：単発と、繰り返しの変えた回 */, availability, absences /* ≤2000 */, visitTypes /* ≤20 */,
+  patterns /* ≤2000 */, clientLeaves /* ≤2000 */,
+  snapshots /* date → DaySnapshot＝伝えた内容（確定） */, reassigns /* date → ReassignInfo（当てた振り直しの日だけ） */,
+  presets /* 1〜6 */, scorePresetId? }
+DaySnapshot = { date, at /* 確定した時刻 ms */, visits: ToldVisit[] /* ≤500。取り消し・休みは入れない */ }
+ToldVisit = { id, clientId, staffId /* null＝担当なし */, start /* HH:mm。null 可 */ }
 ReassignInfo = { method: 'insert' | 'anneal', stayWeight? /* 案B 0〜5 */, insertRoutes? /* 案A の結果 */,
-  from: 'confirmed' | 'plan', baseRoutes, basePins /* 確定した割当なら {} */, baseGenerated?, baseRunId?,
+  baseRoutes /* 振り直す前の担当の並び */, basePins /* 振り直す前のピン */,
   absenceIds /* 取り消されても残し、続けて振り直すと累積 */ }
 RosterKind = 'client' | 'staff'; RosterMode = 'merge' /* 既定 */ | 'replace' /* ブックに無い人を終了・休止 */
 RosterImportResult = { data /* migrate 済み */, added /* 行の順。「名前（終了）」など */, updated, unchanged: number,
@@ -463,16 +460,14 @@ RosterImportResult = { data /* migrate 済み */, added /* 行の順。「名前
   lastDaySet, activeBefore /* 外せる人の数 */ }
 ```
 
-- 記録は AI案を作る・組み直すたびに `lib/runs` の `addRun` で1件足す。同じ条件・seed・pins・結果があれば足さず、その記録の `inputKey`・`presetId`・`calcFeatures` を今のものに書き直す
-- `problemKey(problem)`：日付・スタッフ（自宅・稼働時間帯）・訪問・行列・可否・割当費用・待ち・均等を決定的に JSON にし、FNV-1a（32bit、basis を変えて2回）と長さで短くしたもの（理由は入れない）
-- `reusableRun(runs, target, rules, seed, key?)`：固定なし・止めていない・`rules` が同じ（名前・ID・重み・必須）・seed が同じ・`inputKey` が `problemKey(target)` と同じ、の最新
-- 手直しの記憶（D260〜D262。ADR-0043）：案を作る問題だけに `withManualPrefs` で当て、当てたものを記録の `prefPins` に残す（同じ結果の記録を使い回すときも書き直す）。`inputKey` は当てた問題のキー（記憶が変われば使い回さない）
-- 「条件が変わった」（D43・D161。`lib/month`）：`planStale`＝記録の `inputKey` がいまの問題（記録の `prefPins` をそのまま当てる。いまの記憶は見ない）と違う。`rulesStale`＝記録の条件が条件に各プリセットを当てたもののどれとも違う（`presetId` が null ならこの日だけ試す重み（`data.rules`）とも違う）。振り直しの記録は判定しない。`calcFeatures` は見ない
-- 比較の画面は記録を点数の基準の物差し（`scoreRulesOf`）で採点し直す（記録の `score` は使わない）
+- その日の割当は訪問から決まる（`lib/dayPlan` の `dayRoutes`：計算に入れる訪問を担当ごとに組んだ開始の順。担当なしは `unassignedOf`）。AI の提案・ドラッグ・担当の変更・振り直し・月や週の AI で組むは `writeRoutes` で担当と開始を訪問に書く
+- 日の状態（`toldStateOf`）：`snapshots` に無ければ `'none'`（まだ伝えていない）、伝えた内容と今の差（`toldChanges`。担当が変わる・開始が四捨五入で1分以上変わる訪問）が無ければ `'told'`（確定済み）、あれば `'changed'`（未連絡の変更あり）
+- 要対応は訪問ごとの検査（`visitIssues`）：担当なし・担当が休み・条件に合わない・時間に間に合わない（担当が休みの訪問には重ねない）。重みだけを変えても要対応にしない（「条件が変わった」の判定は無い）
+- 提案・比較の提案は保存しない（画面の状態）。比較の画面は提案を点数の基準の物差し（`scoreRulesOf`）で採点する
 
 #### 版と移行
 
-版は1のまま。無いものは zod の既定値・`migrate` で読む：`aiRuns` は `{}`（前の版の `prevAiPlans` は捨てる）、`presets` は `INITIAL_PRESETS`、`scorePresetId` は repair が先頭、`AiPlan.generated` は routes・unassigned・score の写しで `pins` は `{}`、`absences`・`visitTypes`・`patterns`・`clientLeaves` は `[]`（null も）、`ReassignInfo.now` は捨てる、〈利用者さん〉の `stage` は `stageOfLegacy`（`active=false`→終了、仮押さえ→相談受付、ほか利用中）、`org.features` は知らない ID・真偽でない値を捨てオブジェクトでなければ `{}`、`AiRun.calcFeatures` が無ければすべて入、`manualPrefs` は `{}`、`AiRun.prefPins` が無ければ記憶なし。ほかは上の表の（　）。
+版2（ADR-0053）。版1（`version: 1`）のデータは移さない：`loadWithStatus` は版1を見つけたら初期データで始め（`outdated: true`）、画面が「データの形が変わったので初期データで始めます」（`OUTDATED_MESSAGE`）と知らせる。控えのファイル（JSON）の読み込みも版1なら同じ文で断る。版2の中で無いものは zod の既定値・`migrate` で読む：`absences`・`visitTypes`・`patterns`・`clientLeaves` は `[]`（null も）、`snapshots`・`reassigns` は `{}`、`presets` は `INITIAL_PRESETS`、`scorePresetId` は repair が先頭、`Visit.start` は null・`pinned` は false、〈利用者さん〉の `stage` は `stageOfLegacy`、`org.features` は知らない ID・真偽でない値を捨てオブジェクトでなければ `{}`。ほかは上の表の（　）。
 
 ### 項目・条件・プリセット（`src/contracts/rules.ts`。ADR-0002・ADR-0008・ADR-0010・ADR-0035）
 
@@ -490,8 +485,8 @@ POINTS_PER_WEIGHT = 10; DROP_POINTS = 10000; KEEP_DROP_POINTS = DROP_POINTS * 10
 ```
 
 - プリセットはデータ。型ごとの重み・必須を条件の同じ型に上書きする（`applyPreset`）。最後の1つは消せない。「試す重みをプリセットとして保存」は型ごとの最初の条件を写す（無ければ0）。「基準の重みを写して保存」は基準のプリセットの重みを写す（`addPresetFromRules(d, name, note, 'basis')`）
-- 点数の基準のプリセット（`scorePresetId`）＝ふだんの考え方（ADR-0035。PRD D233）：点数はいつもこのプリセットを当てた物差し（`scoreRulesOf`）で付ける。月のまとめて作る・開いた日の自動作成・初期データの案・作り直し（月・日）もこれで作る。条件の重みの画面の表はこのプリセットの重み・必須を直す（`setBasisWeight`）
-- `data.rules`＝この日だけ試す重み（PRD D234）：日の予定の「条件を調整する」とプリセットのカードで変わり、「AI にもう一度作らせる」・固定を残して作り直す・比較の「試す重みで作る」だけが使う。基準の重み・必須が変わる（基準のプリセットを直す・基準を替える・基準のプリセットを消して基準が移る・初期値に戻す）と `withBasisRules` で基準にそろえる（`lib/presets` の `patchPreset`・`setScorePreset`・`removePreset`・`resetPresets`）
+- 点数の基準のプリセット（`scorePresetId`）＝ふだんの考え方（ADR-0035。PRD D233）：点数はいつもこのプリセットを当てた物差し（`scoreRulesOf`）で付ける。日の予定の「AI で組む」・月や週の AI で組む・初期データの担当・訪問ごとの検査もこれで計算する。条件の重みの画面の表はこのプリセットの重み・必須を直す（`setBasisWeight`）
+- `data.rules` の重み・必須はいつも点数の基準のプリセットと同じ（この日だけ試す重みは無い。ADR-0053）。基準の重み・必須が変わる（基準のプリセットを直す・基準を替える・基準のプリセットを消して基準が移る・初期値に戻す）と `withBasisRules` で基準にそろえ、store の repair も読み込みのたびにそろえる（`lib/presets` の `patchPreset`・`setScorePreset`・`removePreset`・`resetPresets`）。ほかのプリセットは「当ててみる」（`applyPreset` で提案を出すだけ）
 
 | 初期のプリセット | 必要条件 | 訪問先の希望 | スタッフの希望 | 相性 | いつもの担当 | 負担の均等 | 待ち |
 |---|---|---|---|---|---|---|---|
@@ -555,23 +550,24 @@ ContactList = { staffChanged, timeChanged, staff: { staffId, added, removed, shi
 
 - 実装は `TargetsOf` などの関数の型で注釈する。例外を投げない（問題・元の案に無いものは無視）
 - `problem` は欠勤を差し引いたデータをいまの条件で compile したもの
-- 画面側（`lib/absences`）：元の案は `baseOf`（確定した割当は今の案の順・開始の順に並べ、無い訪問は開始がより遅い最初の訪問の前に挟む）。`applyReassign` で今の案（全部固定）にし記録に `reassign`。続けて振り直す（確定した割当が無い）ときは今の案から、`from`・`base*` は最初のもの、`absenceIds` は累積。`revertReassign` は最初の元の案へ（generated・runId も）
+- 画面側（`lib/absences`）：元の案は `baseOf`（その日の訪問の担当＝`dayRoutes`）。`applyReassign` で振り直した担当を `writeRoutes` で訪問に書き（振り直した訪問と動かしていない訪問はピン）、`reassigns[date]` に振り直す前の担当（`baseRoutes`・`basePins`）を残す（ADR-0053）。続けて振り直すときは `base*` は最初のもの、`absenceIds` は累積。`revertReassign` は振り直す前の担当・ピンへ戻して `reassigns[date]` を消す
 - 案B の流れ：`prepareAnneal` → `runSolve(prep.problem, { seed: data.seed, iterations: defaultIterations(prep.problem), initial: prep.initial })` → `settleAnneal` → `addAnnealRun`（同じ結果なら足さない）→ 差の表（`annealRunOf`）→ `chooseReassign`。作れないとき（欠勤が取り消された・案A が無い・計算中）はボタンを押せなくして理由
 - 欠勤は1人1日1件・30分単位（境は 12:00。欄で丸め、Excel では止める）。振り直しで件数の上限は超えない
 - 連絡文は `lib/contacts`（`staffMessage`・`clientMessages`・`allContactsText`・欠勤・キャンセルの欄の5段目の `contactRows`。コピー・メール・印刷だけ。ひな形と載せる範囲は ADR-0038・PRD D245・D246）
 
-### 定期パターン（`src/contracts/patterns.ts`。ADR-0012・ADR-0013）
+### 繰り返し（`src/contracts/patterns.ts`。ADR-0012・ADR-0013・ADR-0053）
 
 ```ts
 PatternInput = Pick<DemoData, 'patterns' | 'visits' | 'clients'>; DateRange = { from, to }  // 両端を含む
-PatternChange = { patterns, visits, added: { visitId, date }[], removed: { visitId, date }[] }
-occursOn(pattern, date); expandPattern(pattern, range) /* 利用中か・既存は見ない */
-applyPatterns(data, range, today) /* 利用中の全パターンを range ∩ [today, ∞) に。removed は空 */
+PatternChange = { patterns, visits, removed: { visitId, date }[] /* 消した保存した回 */ }
+occursOn(pattern, date); expandPattern(pattern, range) /* 計算した回。利用中か・保存した回は見ない。担当はパターンの担当 */
+visitsOn(data, date) /* 保存した訪問＋保存した回の無い計算した回。開始・ID の順 */; visitsIn(data, range) /* 日付・開始の順 */
+findVisit(data, id) /* 保存した回か計算した回。無ければ null */
 splitPattern(data, patternId, next: Omit<Pattern, 'id' | 'from'>, since, today, newId) /* 無い id は同じデータ */
 removePattern(data, patternId, today)
 ```
 
-- 例外を投げない（いない〈利用者さん〉・パターンは無視）。種類は `Problem` の形を変えない。月まとめ作成は `AiPlan`・`AiRun` のまま書く
+- 例外を投げない（いない〈利用者さん〉・パターンは無視）。種類は `Problem` の形を変えない。月・週の AI で組むは `writeRoutes` で訪問に書く
 
 ### 空き状況・試算・案内文（`src/contracts/vacancy.ts`。PRD D45〜D48・D54・D67・D82。ADR-0012・ADR-0013）
 
@@ -703,7 +699,7 @@ BICYCLE_NOTE = '自転車の経路が出ないときは、Google マップで徒
 | 使い方 | 説明だけ |
 | 事業所 | 項目・値：事業所名・業種（ベビーシッター・介護・訪問看護・その他）・呼び方2つ・1kmあたりの運賃・乱数の種・拘束の上限（10） |
 | 項目 | ID・対象・名前・種類（あり/なし／選択肢から1つ／複数／数値）・選択肢 |
-| 条件 | ID・名前・種類・重み・必須（重み・必須は `data.rules`＝この日だけ試す重み。ふだんの重みはプリセットのシートの点数の基準の行。使い方のシートにも書く。ADR-0035） |
+| 条件 | ID・名前・種類・重み・必須（重み・必須は読み込むとプリセットのシートの点数の基準の行にそろえる。重みは1組。使い方のシートにも書く。ADR-0035・ADR-0053） |
 | プリセット | ID・名前・一言・重み：〈型〉…（空は0）・必須（型の名前）・点数の基準（○ は1行。無印なら先頭。ふだんの重み＝条件の重みの画面の重み）。1〜6行（いまのまま） |
 | 〈スタッフ〉 | ID・名前・移動手段・勤務する曜日・勤務開始・勤務終了・利用中・住所・緯度・経度・最終勤務日・メールアドレス・アイコン（任意の1〜2文字・文字列の書式。列が無い古いブックは未設定・名簿の読み込みで列が無ければ今の値のまま。2文字・32コード単位を超えれば行付きで止める。ADR-0050）・特性：…・必要条件：…・希望：… |
 | 〈利用者さん〉 | ID・表示名・よみ（50字）・色（1〜8）・利用中・仮押さえ・郵便番号（文字列）・住所・緯度・経度・いつもの担当・担当できる人（名前を「、」か改行で。限らない）・メモ・入り方・鍵・駐車場・注意・段階（空なら利用中・仮押さえから）・紹介元・紹介元の連絡先・紹介元のメモ・紹介元のメールアドレス・特性：…・必要条件：…・希望：… |
@@ -756,7 +752,7 @@ BICYCLE_NOTE = '自転車の経路が出ないときは、Google マップで徒
 | FAILED_PRECONDITION | — | 訪問・稼働中のスタッフがいない、担当の候補がいない訪問がある | 原因を出し、解ける訪問だけで解く |
 | FAILED_PRECONDITION | — | 振り直しの元の案が無い | 「先にAI案を作ってください」。欠勤だけは登録できる |
 | FAILED_PRECONDITION | — | 月まとめ作成の対象の日が無い | 理由を出してボタンを押せなくする |
-| RESOURCE_EXHAUSTED | — | localStorage の容量超過 | 書き出しと、データの画面の「古い案と記録を片づける」を促す（`QUOTA_MESSAGE`）。1世代の控えがあれば先に捨てて書き直し、捨てたことを知らせる。控えが残せない見込みなら確認の本文に出し、置き換えは止めない。いまのデータを控えに残せなければ「直前の状態に戻す」はしない（ADR-0032） |
+| RESOURCE_EXHAUSTED | — | localStorage の容量超過 | 書き出しと、データの画面の「古い訪問を片づける」を促す（`QUOTA_MESSAGE`）。1世代の控えがあれば先に捨てて書き直し、捨てたことを知らせる。控えが残せない見込みなら確認の本文に出し、置き換えは止めない。いまのデータを控えに残せなければ「直前の状態に戻す」はしない（ADR-0032） |
 | INVALID_ARGUMENT | — | 起動したとき、保存していたデータが読めない（壊れた JSON・契約に合わない） | 元の文字を `vrdemo:data:broken` に退避して初期データで開き、閉じられる知らせと「読めなかったデータを書き出す」 |
 | ABORTED | — | 計算・月まとめ作成を止めた・画面を離れた（月まとめ作成はページを閉じた・読み直した） | 最良案を出す。月は作れた日を残し「〈M〉月の案をN日分作ったところで止めました」（ADR-0042） |
 | NOT_FOUND | — | 郵便番号・住所の候補が無い | 「見つかりませんでした」。地図のクリックで置ける |
@@ -771,8 +767,8 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 - 保存は上書きのみ（1キー）。読み込み・初期状態に戻すは置き換える前に確認し、確認で OK になってから1世代の控えを残す（次に置き換えると上書き。ADR-0032）
 - 検索は押すごとに8秒で打ち切り、再試行は利用者が押す。まとめて置くの再実行はまだ位置の無い人だけ
 - 展開は2回続けても増えない（ID が決定的）
-- 月まとめ作成は1日ずつ書く（ほかの画面へ移っても続く。ページを閉じて止まった日は残さず、「止める」のときだけ途中の最良を残す。ADR-0042）。使い回せる記録がある日は計算しない。「まだ案の無い日だけ」の再実行は残りの日だけ
-- 振り直しは同じ入力で同じ結果。2回押すと2回目は1回目の結果から振り直し、記録は同じ結果なら足さない
+- 月・週の AI で組むは1日ずつ訪問に書く（ほかの画面へ移っても続く。ページを閉じて止まった日は残さず、「止める」のときだけ途中の最良を残す。ADR-0042）。確定した日・今日より前は組まない。「要対応のある日だけ」の再実行は残りの日だけ。終わった知らせの「元に戻す」は組む前の訪問へ（あとで訪問が変わっていれば戻さない）
+- 振り直しは同じ入力で同じ結果。2回押すと2回目は1回目の結果から振り直す
 
 ## 6. デプロイ構成
 | コンテナ | 実行環境 | 台数・複製 | 理由 |
@@ -796,7 +792,8 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 条件の表し方 | 項目＋条件の型＋重み0〜5＋必須 | 管理者が自分で組める範囲 | 0002 |
 | 最適化 | 焼きなまし（Web Worker） | 依存が軽く任意の費用を入れられる（最適性の保証は失う） | 0003 |
 | 時間の約束 | 必須のまま | PoC本体と同じ前提で比べる | — |
-| 手直し・比較 | AI案を手直しし固定を残して組み直す。比較は条件を変えた記録どうし | 1つの流れで使え、条件の効きが見える | 0004・0005 |
+| 手直し・比較 | 担当は訪問に持ち、AI は提案を出して「当てる」で書く。手で替えた訪問はピン。比較はその場で作った提案どうし（保存しない） | どの画面も同じ訪問を読み、状態が少ない。記録の層が無い | 0004・0005・0053 |
+| データの形（版2） | 担当・開始・ピンを訪問に、確定は伝えた内容（`snapshots`）、繰り返しの回は見るときに計算、要対応は訪問ごとの検査。版1は移さず初期データで始める | 今の案・確定した割当・記録・手直しの記憶・試す重み・未作成・条件が変わったを無くし、言葉を約10語に | 0053 |
 | Excel | マスタと予定だけ・名前で参照・ExcelJS | 手で書き足しやすく古い案と食い違わない | 0006 |
 | 点数 | 100 −（費用 − 下限）÷ 件数、基準のプリセットで固定 | 順位が費用と一致し、押しても点が変わらない | 0007・0010 |
 | プリセット | データに持たせ編集可、開いた日に全プリセットで作る | 事業所ごとの考え方を残せ、開いただけで選べる | 0008 |
@@ -819,7 +816,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 機能の入り切り | 機能ごと（20）を `org.features`、ひな形は一度書き込む、好み・決まりは計算からも外す。初めて開いたときは「基本」で、案内の1枚目で「すべて」も選べる | 欄まで切れ隠れた条件が残らない。初めての画面が軽い。デモなので鍵なし | 0028・0045 |
 | 初期の案・まとめて確定 | 起動で7日分を同期で解く（反復を減らす）、一度も確定していない・要対応に出ない日だけ1度に確定（日の予定と同じ書き方） | 初めから中身が見え決定的。確定の手数が1回になり、要対応の日・確定し直す日は残る | 0031 |
 | 読み込みの分け方 | 重い画面5つと地図を `React.lazy` で分け、画面が出たら残りを先に読む。進み具合は外の入れ物で子だけ描き直す | ホームで地図・重い画面を読まず、移るときは待たせない。ルートの形・URL を変えない | 0039 |
-| 週の作る・確定・要対応・未作成 | 週の主ボタンを状態で1つ（作る → 確定 → 済み）。作るは月まとめの入れ物で範囲を週に、確定は月のまとめて確定と同じ決まり。確定済みで手当ての要らない欠勤は要対応に数えない（情報で残す）。まだ作っていない日は「未作成」 | 週で見ながら1週ぶんだけ作って確定でき、月へ飛ばない。手当てを終えた日が要対応に残らない。0件と未展開を取り違えない | 0046 |
+| 週の組む・確定・要対応 | 週の主ボタンを状態で1つ（担当なしを AI で組む → 確定 → 済み）。組むは月の入れ物で範囲を週に、確定は月のまとめて確定と同じ決まり。要対応は訪問ごとの検査で、訪問の無い人の欠勤は数えない（「未作成」は版2で無くした） | 週で見ながら1週ぶんだけ組んで確定でき、月へ飛ばない | 0046・0053 |
 
 | 訪問を直す欄 | 1つの欄 `VisitPanel`（日時・担当・取り消し・範囲）を殻に置き、読み書きは `lib/visitOps` 越し。見直しは5段で、1段目は今のデータの形のまま | どこから開いても同じで、データの形を変える段で画面を書き直さない | 0051 |
 

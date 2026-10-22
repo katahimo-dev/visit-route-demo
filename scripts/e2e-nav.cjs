@@ -123,7 +123,7 @@ async function menu(page) {
     await open(page, hash);
     check(JSON.stringify(await current()) === '["予定"]', `aria-current：${hash} は「予定」`);
   }
-  check((await page.locator('h1').innerText()).trim() === '案を比べる', '比較の見出しは「案を比べる」');
+  check((await page.locator('h1').innerText()).trim() === '提案を比べる', '比較の見出しは「提案を比べる」');
   await open(page, '/plan', '[data-testid="sudden-open"]');
   check(
     JSON.stringify(await current()) === '["予定"]',
@@ -205,7 +205,7 @@ async function menu(page) {
     await page.getByTestId('compat-table').waitFor();
     check(hashOf(page) === '#/compat', `${h} の「相性の表」で相性の画面へ`, hashOf(page));
   }
-  // メニューから外した画面の入口が残る（PRD D275）：勤務の見込みは勤務時間（シフト）と月の予定の「その他 ▾」、案を比べるは日の予定の「案を変える ▾」
+  // メニューから外した画面の入口が残る（PRD D275）：勤務の見込みは勤務時間（シフト）と月の予定の「その他 ▾」、提案を比べるは日の予定の「AI で組む ▾」
   await open(page, '/availability', '[data-testid="avail-workload"]');
   await page.getByTestId('avail-workload').click();
   await page.locator('h1').filter({ hasText: '勤務の見込み' }).waitFor();
@@ -218,8 +218,8 @@ async function menu(page) {
   await open(page, '/plan', '[data-testid="plan-menu"]');
   await page.getByTestId('plan-menu').click();
   check(
-    (await page.getByTestId('plan-menu-list').getByText('2つの案を比べる').count()) === 1,
-    '日の予定の「案を変える ▾」に「2つの案を比べる」（比較の入口）',
+    (await page.getByTestId('plan-menu-list').getByText('プリセットの提案を比べる').count()) === 1,
+    '日の予定の「AI で組む ▾」に「プリセットの提案を比べる」（比較の入口）',
   );
   await page.keyboard.press('Escape');
   // 欠勤・キャンセル：今日の日の画面で欄が開き、?do=・?date= は消える
@@ -384,7 +384,7 @@ async function keyboard(page) {
   check((await page.evaluate(() => window.__ctrlK)) === true, '開かないときも Ctrl+K の既定の動きは止める');
   await page.keyboard.press('Escape');
 
-  // 操作：今月の案をまとめて作る（月の画面の ?do=batch）
+  // 操作：今月の担当を AI で組む（月の画面の ?do=batch）
   await open(page, '/home');
   await page.keyboard.press('Control+k');
   await palette(page).waitFor();
@@ -392,8 +392,8 @@ async function keyboard(page) {
   list = await listed(page);
   const m = Number(TODAY.slice(5, 7));
   check(
-    list[0]?.label === `${m}月の案をまとめて作る`,
-    '操作：今月の案をまとめて作るが先頭',
+    list[0]?.label === `${m}月の担当を AI で組む`,
+    '操作：今月の担当を AI で組むが先頭',
     list.map((o) => o.label),
   );
   await page.keyboard.press('Enter');
@@ -411,37 +411,7 @@ async function keyboard(page) {
     '呼び方のよみ（りようしゃ）で〈利用者さん〉一覧',
     list.map((o) => o.label),
   );
-  await type(page, 'つくりなおす');
-  list = await listed(page);
-  check(
-    !list.some((o) => o.label === '今日の案を日の予定の重みで作り直す'),
-    'いまの条件がプリセットと同じなら「いまの条件で作り直す」を出さない',
-    list.map((o) => o.label),
-  );
   await page.keyboard.press('Escape');
-  // この日だけ試す重みがどのプリセットとも違えば「今日の案を日の予定の重みで作り直す」（?do=recreate。PRD D234）
-  await page.evaluate((key) => {
-    const d = JSON.parse(localStorage.getItem(key));
-    const r = d.rules.find((x) => typeof x.weight === 'number');
-    r.weight = r.weight >= 4.5 ? r.weight - 1.5 : r.weight + 1.5;
-    localStorage.setItem(key, JSON.stringify(d));
-  }, STORAGE_KEY);
-  await open(page, '/home');
-  await page.keyboard.press('Control+k');
-  await palette(page).waitFor();
-  await type(page, 'つくりなおす');
-  list = await listed(page);
-  const ri = list.findIndex((o) => o.label === '今日の案を日の予定の重みで作り直す');
-  check(
-    ri >= 0 && list[ri].kind === 'action',
-    'いまの条件がプリセットと違えば「今日の案をいまの条件で作り直す」',
-    list.map((o) => o.label),
-  );
-  for (let i = 0; i < ri; i++) await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
-  await page.waitForURL(/#\/plan/);
-  await settle(page, 800);
-  check(!hashOf(page).includes('do='), '日の予定へ移り ?do=recreate は日の予定が消す', hashOf(page));
   await page.evaluate((key) => localStorage.removeItem(key), STORAGE_KEY);
 }
 
@@ -697,9 +667,9 @@ async function mobile(page) {
   );
   await open(page, '/compare');
   check(
-    (await page.getByTestId('screen-name').innerText()) === '案を比べる' &&
+    (await page.getByTestId('screen-name').innerText()) === '提案を比べる' &&
       JSON.stringify(await page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts()) === '["予定"]',
-    '390px：比較は上の帯「案を比べる」、下のタブは「予定」',
+    '390px：比較は上の帯「提案を比べる」、下のタブは「予定」',
   );
   await scheduleTab(page);
   await page.setViewportSize({ width: 1400, height: 1000 });

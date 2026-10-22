@@ -7,11 +7,13 @@ import type { DemoData } from '../contracts/data';
 import type { Client, Staff } from '../contracts/documents';
 import type { Condition } from '../contracts/rules';
 import { timeText } from '../domain/availability';
+import { jstDate } from '../domain/time';
 import { areaOf } from '../lib/area';
 import { STAGE_LABELS } from '../lib/clientStage';
 import { dateText, TRAVEL_MODE_LABELS, WEEKDAY_LABELS } from '../lib/common';
 import { staffCompatCounts, traitText, weeklyHours } from '../lib/compatView';
 import { isOn } from '../lib/features';
+import { usualStaffMap, usualStaffOf } from '../lib/usualStaff';
 import { condText } from './conditions';
 
 /** 〈スタッフ〉の詳細：名前・移動手段・特性・稼働時間・最終勤務日・相性の件数・いつもの担当の人数と「〈スタッフ〉の画面で開く」 */
@@ -142,7 +144,8 @@ export function StaffCompatRows({
     s.id,
     clients.map((c) => c.id),
   );
-  const usual = clients.filter((c) => c.usualStaffId === s.id).length;
+  const usualMap = usualStaffMap(data.patterns, jstDate(Date.now()));
+  const usual = clients.filter((c) => usualMap.get(c.id) === s.id).length;
   // 相性を切っている（ADR-0028）ときは相性の件数を出さない（いつもの担当は残す）
   const compatOn = isOn(data.org.features, 'compat');
   return (
@@ -231,7 +234,8 @@ export function ClientStaffRows({
     return s ? `${s.name}${s.active ? '' : '（休止中）'}` : '（不明）';
   };
   const allowed = c.allowedStaffIds.filter((id) => staffOf(id)?.active);
-  const usual = c.usualStaffId ? staffOf(c.usualStaffId) : undefined;
+  const usualId = usualStaffOf(data.patterns, c.id, jstDate(Date.now()));
+  const usual = usualId ? staffOf(usualId) : undefined;
   return (
     <>
       {/* 担当を限るを切っている（ADR-0028）ときは出さない（計算にも効かない） */}
@@ -252,7 +256,7 @@ export function ClientStaffRows({
       )}
       <DlRow
         term="いつもの担当"
-        value={!c.usualStaffId ? '—' : names && usual ? names([usual], 'view-usual-staff') : nameOf(c.usualStaffId)}
+        value={!usualId ? '—' : names && usual ? names([usual], 'view-usual-staff') : nameOf(usualId)}
       />
     </>
   );

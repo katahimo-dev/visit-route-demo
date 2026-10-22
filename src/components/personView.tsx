@@ -9,6 +9,8 @@ import { clientStaffGroups } from '../lib/personPage';
 import { PersonButton } from './PersonPopover';
 import { DlRow } from './personDetail';
 import './personView.css';
+import { jstDate } from '../domain/time';
+import { usualStaffMap } from '../lib/usualStaff';
 
 /** 位置の文字（座標があれば「あり」と座標、無ければ「未登録」） */
 export const placeText = (p: { lat: number | null; lng: number | null }) =>
@@ -31,6 +33,7 @@ export function StaffClientRows({ staff: s, data, compatOn }: { staff: Staff; da
     data.compat,
     s.id,
     data.clients.filter((c) => c.active),
+    usualStaffMap(data.patterns, jstDate(Date.now())),
   );
   return (
     <>

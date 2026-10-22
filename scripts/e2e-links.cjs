@@ -1,6 +1,6 @@
 // 行き止まりの所から次の画面へ移る道（PRD D201〜D204。ADR-0025 追記）を本物のブラウザで確かめる：
-// 月の要対応の行き先（入らない訪問 → 日の画面の「入らなかった訪問」へ巻く・休みの人に残る訪問 → その日の「欠勤・キャンセル」の欄・
-// 拘束が上限を超える → 稼働の見込みをその月・その人で・そのほか → 日の画面。行き先の文「（〜で開く）」・`?do=` は消える）、
+// 月の要対応の行き先（担当なしの訪問のある日 → 日の画面の「担当なし」の列へ巻く・
+// 拘束が上限を超える → 稼働の見込みをその月・その人で。行き先の文「（〜で開く）」・`?do=` は消える）、
 // 稼働の見込みの日ごとの表の日付と〈スタッフ〉×日の表のマスから日の画面（マスに名前の吹き出しを付けない）、
 // 稼働時間の右の欄から「欠勤・キャンセル」の欄（その人の2段目。欠勤が無ければ登録の文）、空き状況の右の欄の日ごとの結果から日の画面。
 //
@@ -35,18 +35,6 @@ async function onPlan(page, date) {
     .waitForFunction((d) => document.querySelector('.date-switch select')?.value === d, date, { timeout: 10000 })
     .catch(() => {});
   return (await dayOf(page)) === date;
-}
-/** 日の画面の案ができるまで待つ（e2e-rebuild と同じ） */
-async function planReady(page) {
-  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  await page.waitForFunction(
-    () => {
-      const s = document.querySelector('[data-testid="band-day"]')?.dataset.state;
-      return s === 'plan' || s === 'confirmed';
-    },
-    null,
-    { timeout: 60000 },
-  );
 }
 /**
  * 「入らなかった訪問」の列へ巻いたか：ページが巻かれていて（scrollY > 0）、列の上端が画面の上半分にある。
@@ -85,7 +73,7 @@ const setHash = (page, hash) =>
     location.hash = h;
   }, hash);
 
-// ---- 用意：今日より後の、訪問のある日（SECOND）に案を作り、入らない訪問・欠勤の人に残る訪問・拘束の上限超えを作る ----
+// ---- 用意：今日より後の、訪問のある日（SECOND）に、担当なしの訪問・担当が休みの訪問・拘束の上限超えを作る ----
 let SECOND = '';
 let YM2 = '';
 /** 欠勤にした人・その日に欠勤の無い人 */
@@ -100,27 +88,20 @@ async function prepare(page) {
   SECOND = options.find((d) => d > TODAY) ?? '';
   YM2 = SECOND.slice(0, 7);
   check(SECOND !== '', '用意：今日より後の日がある', SECOND);
-  await page.locator('.date-switch select').selectOption(SECOND);
-  await planReady(page);
-  await page.waitForFunction(
-    ({ k, d }) => !!JSON.parse(localStorage.getItem(k) ?? '{}').aiPlans?.[d],
-    { k: STORAGE_KEY, d: SECOND },
-    { timeout: 60000 },
-  );
   // 別のタブで書く（storage の知らせでこのタブのデータも入れ替わる。e2e-view の names() と同じ）
   const other = await page.context().newPage();
   await other.goto(`${BASE}#/data`);
   const picked = await other.evaluate(
     ({ k, d }) => {
       const data = JSON.parse(localStorage.getItem(k));
-      const plan = data.aiPlans[d];
-      const staffWith = Object.keys(plan.routes).filter((s) => s !== '__none' && plan.routes[s].length > 0);
-      // 1人目の最初の訪問を「入らない」にする
-      const a = staffWith[0];
-      const vid = plan.routes[a][0];
-      plan.routes[a] = plan.routes[a].slice(1);
-      plan.unassigned = [...(plan.unassigned ?? []), vid];
-      // 2人目を終日の欠勤にする（訪問が残る）
+      // 版2：担当は訪問に持つ。保存したその日の訪問の担当
+      const mine = data.visits.filter((v) => v.date === d && !v.cancelled && v.staffId);
+      const staffWith = [...new Set(mine.map((v) => v.staffId))];
+      // 1人目の最初の訪問を担当なしにする
+      const v0 = mine.find((v) => v.staffId === staffWith[0]);
+      v0.staffId = null;
+      v0.pinned = false;
+      // 2人目を終日の欠勤にする（担当が休みの訪問が残る）
       const absent = staffWith[1];
       data.absences = [
         ...data.absences.filter((x) => !(x.staffId === absent && x.date === d)),
@@ -154,12 +135,12 @@ async function attentionRow(page, kind) {
 // ---- D201 月の要対応 ----
 async function attention(page) {
   await prepare(page);
-  // 入らない訪問 → 日の画面の「入らなかった訪問」の列へ巻く
-  let row = await attentionRow(page, 'unassigned');
-  check((await row.count()) === 1, '要対応に「入らない訪問」の行がある', SECOND);
+  // 担当なしの訪問のある要対応の行 → 日の画面の「担当なし」の列へ巻く
+  let row = await attentionRow(page, 'care');
+  check((await row.count()) === 1, '要対応に「要対応 N件（担当なし…）」の行がある', SECOND);
   check(
-    (await row.innerText()).includes('（日の予定の「入らなかった訪問」で開く）'),
-    '入らない訪問：行き先の文',
+    (await row.innerText()).includes('（日の予定の「担当なしの訪問」で開く）'),
+    '担当なしの訪問：行き先の文',
     await row.innerText(),
   );
   check((await row.locator('button, a').count()) === 0, '行の中にボタンを入れ子にしない');
@@ -199,24 +180,6 @@ async function attention(page) {
   check(hashOf(page) === '#/plan', '?do=unassigned は読んだら消す', hashOf(page));
   check((await page.getByTestId('tour').count()) === 0, '?do= のリンクでは案内ツアーを出さない');
 
-  // 休みの人に訪問が残る → その日の「欠勤・キャンセル」の欄（1段目）
-  row = await attentionRow(page, 'absentLeft');
-  check((await row.count()) === 1, '要対応に「休みの人に訪問」の行がある');
-  check(
-    (await row.innerText()).includes('（日の予定の「欠勤・キャンセル」で開く）'),
-    '休みの人に訪問：行き先の文',
-    await row.innerText(),
-  );
-  await row.click();
-  check(await onPlan(page, SECOND), '休みの人に訪問 → その日の「日の予定」', await dayOf(page));
-  await page.getByTestId('sudden-panel').waitFor({ timeout: 10000 });
-  check(
-    (await page.locator('h3.sudden-step-title').textContent()) === '何が起きましたか？',
-    '休みの人に訪問 → 「欠勤・キャンセル」の欄の1段目',
-  );
-  check(!/do=|date=/.test(hashOf(page)), '休みの人に訪問 → ?do=・?date= は消える', hashOf(page));
-  await page.screenshot({ path: path.join(OUT_DIR, 'links-absent-left.png') });
-
   // 拘束が上限を超える → 稼働の見込み（その月・その人）
   row = await attentionRow(page, 'overSpan');
   check((await row.count()) === 1, '要対応に「出勤〜退勤（拘束）が上限を超える」の行がある');
@@ -245,68 +208,6 @@ async function attention(page) {
       1,
     '勤務の見込み：選んだ人の日ごとの表にその日がある',
   );
-
-  // そのほか（欠勤がある）→ 今のまま日の画面
-  row = await attentionRow(page, 'absence');
-  check((await row.innerText()).includes('（日の予定で開く）'), 'そのほか：行き先の文', await row.innerText());
-  await row.click();
-  check(await onPlan(page, SECOND), '欠勤がある → その日の「日の予定」', await dayOf(page));
-  check((await page.getByTestId('sudden-panel').count()) === 0, '欠勤がある → 欄は開かない（今のまま）');
-  check(hashOf(page) === '#/plan', '欠勤がある → URL は /plan', hashOf(page));
-}
-
-// ---- D201 案の無い日：自動作成のあとに巻く・自動作成が走らないなら忘れる（PR #48 のレビュー）----
-async function noPlanDay(page) {
-  await prepare(page);
-  const options = await page.locator('.date-switch select option').evaluateAll((os) => os.map((o) => o.value));
-  const third = options.find((d) => d > SECOND) ?? '';
-  check(third !== '', '用意：案の無い日がある', third);
-  // 別のタブで書く（e2e-view の names() と同じ）
-  const edit = async (fn) => {
-    const other = await page.context().newPage();
-    await other.goto(`${BASE}#/data`);
-    await other.evaluate(fn, { k: STORAGE_KEY, d: third });
-    await other.close();
-    await settle(page, 300);
-  };
-  // その日に誰も入れない夜中の訪問を足し（入らない訪問になる）、案を消しておく
-  await edit(({ k, d }) => {
-    const data = JSON.parse(localStorage.getItem(k));
-    const base = data.visits.find((v) => v.date === d && !v.cancelled);
-    data.visits.push({
-      ...base,
-      id: 'e2e-links-night',
-      earliestStart: '03:00',
-      latestStart: '03:00',
-      staffId: null,
-      pattern: null,
-    });
-    delete data.aiPlans[d];
-    localStorage.setItem(k, JSON.stringify(data));
-  });
-  // 案の無い日を ?do=unassigned で開く：自動作成のあとに巻く
-  await open(page, `/plan?date=${third}&do=unassigned`, '.date-switch select');
-  check(await onPlan(page, third), '案の無い日：その日を選ぶ', await dayOf(page));
-  await planReady(page);
-  check(await scrolledToNone(page, 60000), '案の無い日：自動作成のあとに「入らなかった訪問」へ巻く');
-  // 案を消し（この文書ではもう自動作成しない日）、同じ文書で ?do=unassigned を受ける → 巻かずに忘れる
-  await edit(({ k, d }) => {
-    const data = JSON.parse(localStorage.getItem(k));
-    delete data.aiPlans[d];
-    localStorage.setItem(k, JSON.stringify(data));
-  });
-  const makeBtn = page.locator('.card .btn-primary', { hasText: 'AI案を作る' });
-  await makeBtn.waitFor({ timeout: 10000 });
-  await toTop(page);
-  await setHash(page, `#/plan?date=${third}&do=unassigned`);
-  await page.waitForFunction(() => location.hash === '#/plan', null, { timeout: 5000 }).catch(() => {});
-  check(hashOf(page) === '#/plan', '自動作成が走らない日：?do= は消える', hashOf(page));
-  // あとで「AI案を作る」を押しても急に巻かない
-  await settle(page, 500);
-  await makeBtn.click();
-  await planReady(page);
-  await page.locator('.route-col-none').first().waitFor({ timeout: 30000 });
-  check(await notScrolled(page, 2000), '自動作成が走らない日：あとで「AI案を作る」を押しても巻かない');
 }
 
 // ---- D202 稼働の見込み ----
@@ -503,12 +404,12 @@ async function vacancy(page) {
     '日ごとの結果に名前の吹き出しを付けない（D124）',
   );
   const rows = await list.locator('li').count();
-  check((await page.getByTestId('vacancy-day-open').count()) === rows, '日付ごとに「その日の案を見る」', rows);
+  check((await page.getByTestId('vacancy-day-open').count()) === rows, '日付ごとに「その日の予定を見る」', rows);
   const btn = page.getByTestId('vacancy-day-open').last();
   const d = (await btn.getAttribute('data-date')) ?? '';
-  check((await btn.innerText()) === 'その日の案を見る', 'ボタンの文', await btn.innerText());
+  check((await btn.innerText()) === 'その日の予定を見る', 'ボタンの文', await btn.innerText());
   check(
-    /^その日の案を見る（.+・日の予定で開く）$/.test((await btn.getAttribute('aria-label')) ?? ''),
+    /^その日の予定を見る（.+・日の予定で開く）$/.test((await btn.getAttribute('aria-label')) ?? ''),
     '読み上げは見えている文字が先頭で、日付と「日の予定で開く」',
     await btn.getAttribute('aria-label'),
   );
@@ -654,7 +555,7 @@ const steps = pagePerStep({
     return { ctx, page, dlg: await answerConfirms(page) };
   },
   call: (fn, s) => fn(s.page, s.dlg),
-  steps: [attention, noPlanDay, workload, availability, vacancy, monthBadge],
+  steps: [attention, workload, availability, vacancy, monthBadge],
   label: (name) => `${name}：途中で止まった`,
   after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
   end: () => check(errors.length === 0, 'ページのエラーが無い', errors),

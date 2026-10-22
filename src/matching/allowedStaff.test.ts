@@ -1,9 +1,8 @@
 // 担当できる人を限る（PRD D68。ADR-0014）：限った人以外との組は常に必須で外れる
 import { describe, expect, it } from 'vitest';
 import { explain } from '../evaluate';
-import { problemKey } from '../lib/runs';
 import { fitsOf, reassign, targetsOf } from '../reassign';
-import { client, DATE, makeData, staff, visit } from './fixtures';
+import { client, DATE, makeData, problemKey, staff, visit } from './fixtures';
 import { ALLOWED_STAFF_RULE_ID, compile } from './index';
 
 const INF = Number.POSITIVE_INFINITY;

@@ -1,7 +1,7 @@
 // 区切り8b（PRD D189〜D193。ADR-0025 追記）を本物のブラウザで確かめる：
 // 初回の案内ツアー（初めて開くと中央のカード・role="dialog"・aria-modal・見出しと本文・1 / 3・最初のフォーカスは「次へ」・
 // 裏の inert とスクロールのロック・「戻る」は最初の枚で押せずフォーカスを「次へ」へ・Tab と Shift+Tab が中で回る・
-// 開いている間は Ctrl+K でパレットを開かない・3枚（ホーム・予定・欠勤。PRD D277）・予定の枚は3段（AI案 → 手直し（ピン）→ 確定）の説明・
+// 開いている間は Ctrl+K でパレットを開かない・3枚（ホーム・予定・欠勤。PRD D277）・予定の枚は3段（提案（AI）→ ピン → 確定（伝えた））の説明・
 // 最後の枚は主ボタン「今日の予定を開く」・「閉じる」（とばすは出さない。PRD D226）・
 // 初めて開くと機能は「基本」で、1枚目に「どこまで使いますか」（基本／すべて。Tab は選んだ方だけ・矢印で選び直しても当てない）・
 // 「すべて」を選んで「次へ」（とばすでも）でその入り切りで初期データを作り直し「条件が変わった」にならない・「基本」に戻せる・
@@ -154,19 +154,23 @@ async function tourFirst(b) {
       // 予定の枚：3段の説明（PRD D226）と［月｜週｜日］の切り替え
       const points = await page.getByTestId('tour-points').locator('li').allInnerTexts();
       check(
-        (await page.getByTestId('tour-title').innerText()) === '予定で案を作って確定します' &&
+        (await page.getByTestId('tour-title').innerText()) === '予定で担当を組んで確定します' &&
           (await page.getByTestId('tour-body').innerText()).includes('［月｜週｜日］') &&
           points.length === 3 &&
-          /^AI案：/.test(points[0]) &&
-          /^手直し（ピン）：/.test(points[1]) &&
-          /^確定：/.test(points[2]),
-        'ツアー：予定の枚は［月｜週｜日］と3段（AI案 → 手直し（ピン）→ 確定）の説明',
+          /^提案（AI）：/.test(points[0]) &&
+          /^ピン：/.test(points[1]) &&
+          /^確定（伝えた）：/.test(points[2]),
+        'ツアー：予定の枚は［月｜週｜日］と3段（提案（AI）→ ピン → 確定（伝えた））の説明',
         points,
       );
       const body = await tour(page).evaluate(
         (el) => document.getElementById(el.getAttribute('aria-describedby'))?.textContent ?? '',
       );
-      check(/AI案：/.test(body) && /確定：/.test(body), 'ツアー：予定の枚の説明（aria-describedby）に3段も入る', body);
+      check(
+        /提案（AI）：/.test(body) && /確定（伝えた）：/.test(body),
+        'ツアー：予定の枚の説明（aria-describedby）に3段も入る',
+        body,
+      );
     }
     await page.getByTestId('tour-next').click();
   }
@@ -222,13 +226,13 @@ async function tourFirst(b) {
 }
 
 // 初めて開いたときの機能の入り切り（PRD D276。ADR-0045）：保存データが無ければ「基本」で始め、1枚目で「どこまで使いますか」。
-// 「すべて」を選ぶとその入り切りで初期データを作り直し（案の記録の入り切りもそろい「条件が変わった」にならない）、「基本」に戻せる
+// 「すべて」を選ぶとその入り切りで初期データを作り直し（担当もその入り切りで組む）、「基本」に戻せる
 async function tourStart(b) {
   const { ctx, page } = await newPage(b, { human: true });
   await open(page, '/', '[data-testid="tour"]');
   const data = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), STORAGE_KEY);
-  const calcOf = (d) =>
-    Object.values(d?.aiRuns ?? {}).flatMap((runs) => runs.map((r) => JSON.stringify(r.calcFeatures ?? {})));
+  /** 初期データで担当を組んだ訪問（今日から7日。版2：担当は訪問に持つ） */
+  const assignedOf = (d) => (d?.visits ?? []).filter((v) => v.staffId).length;
   let d = await data();
   const f0 = d?.org?.features ?? {};
   check(
@@ -236,11 +240,7 @@ async function tourStart(b) {
     '初めて開くと機能は「基本」（条件の重み・案を比べる・勤務の見込みは切）',
     f0,
   );
-  check(
-    calcOf(d).length > 0 && calcOf(d).every((x) => x === '{"allowedStaff":false}'),
-    '初めて開いたときの案は「基本」の入り切りで作る（記録の calcFeatures がそろう）',
-    calcOf(d).slice(0, 3),
-  );
+  check(assignedOf(d) > 0, '初めて開いたときに初期データの担当（今日から7日）が入っている', assignedOf(d));
   const start = page.getByTestId('tour-start');
   check(await start.isVisible(), '1枚目に「どこまで使いますか」を出す');
   check(
@@ -283,11 +283,7 @@ async function tourStart(b) {
     '「すべて」を選んで「次へ」で、すべての機能を入れる',
     f1,
   );
-  check(
-    calcOf(d).length > 0 && calcOf(d).every((x) => x === '{}'),
-    '「すべて」を当てると初期データを作り直し、案の記録も「すべて」の入り切り（条件が変わったにしない）',
-    calcOf(d).slice(0, 3),
-  );
+  check(assignedOf(d) > 0, '「すべて」を当てると初期データを作り直し、担当も入っている', assignedOf(d));
   // 戻って「基本」に戻せる
   await page.getByTestId('tour-back').click();
   check(await page.getByTestId('tour-start-all').isChecked(), '戻ると「すべて」を選んだ状態');
@@ -302,20 +298,8 @@ async function tourStart(b) {
   await tour(page).waitFor({ state: 'detached' });
   await until(async () => (await data())?.org?.features?.rules === true, 10000);
   check(
-    calcOf(await data()).every((x) => x === '{}'),
-    '「とばす」でも選んだもの（すべて）を当てる',
-  );
-  // 要対応（条件が変わった）が出ていない
-  await open(page, `/month?ym=${YM}`, '[data-testid="month-aside"]');
-  await settle(page, 800);
-  const stale = await page
-    .locator('[data-testid="month-attention"]')
-    .allInnerTexts()
-    .then((x) => x.join(' '));
-  check(
-    !stale.includes('条件が変わった'),
-    '「すべて」を選んだあと、月の要対応に「条件が変わった」が出ない',
-    stale.slice(0, 200),
+    Object.values((await data())?.org?.features ?? {}).every((v) => v === true) && assignedOf(await data()) > 0,
+    '「とばす」でも選んだもの（すべて）を当てる（担当も入っている）',
   );
   // 読み直しても入り切りは残り、ツアーは出ない
   await open(page, '/settings', '[data-testid="settings-tabs"]');
@@ -456,11 +440,11 @@ async function tourToday(b) {
     '「今日の予定を開く」で閉じ、今日の日の予定（?date= は消える）・見たことを覚える',
     st,
   );
-  // 初期データに今日の案がある（PRD D225）ので、そのまま確定の手前まで見える
+  // 初期データに今日の担当がある（PRD D225）ので、そのまま確定の手前まで見える
   await page.getByTestId('confirm-state').waitFor({ timeout: 30000 });
   check(
-    /未確定/.test(await page.getByTestId('confirm-state').innerText()),
-    '「今日の予定を開く」：今日の案が出ている（未確定）',
+    /まだ伝えていない/.test(await page.getByTestId('confirm-state').innerText()),
+    '「今日の予定を開く」：今日の担当が出ている（まだ伝えていない）',
   );
   await ctx.close();
 }
@@ -726,7 +710,9 @@ async function monthList(b) {
   // 行の読み上げ：日付・件数・状態
   const label = await today.getAttribute('aria-label');
   check(
-    /今日/.test(label) && /(訪問 \d+件|訪問なし)/.test(label) && /(案なし|案あり|確定済み|未確定|訪問なし)/.test(label),
+    /今日/.test(label) &&
+      /(訪問 \d+件|訪問なし)/.test(label) &&
+      /(まだ伝えていない|確定済み|未連絡の変更あり|訪問なし)/.test(label),
     '行の読み上げ（日付・今日・件数・状態）',
     label,
   );
@@ -819,23 +805,9 @@ function monthsAgo(n, d) {
   const t = new Date(Date.UTC(y, m - 1 - n, d));
   return t.toISOString().slice(0, 10);
 }
-/** 中身の無い記録（形だけ。古い日付の片づけの確かめ用） */
-const fakeRun = (date, no) => ({
-  id: `${date}#e2e${no}`,
-  no,
-  date,
-  createdAt: Date.parse(`${date}T09:00:00+09:00`),
-  label: '標準',
-  presetId: null,
-  seed: no,
-  iterations: 10,
-  rules: [],
-  pins: {},
-  routes: {},
-  unassigned: [],
-  score: 0,
-  stopped: false,
-});
+/** 伝えた内容（形だけ。古い日付の片づけの確かめ用） */
+const fakeSnap = (date) => ({ date, at: Date.parse(`${date}T09:00:00+09:00`), visits: [] });
+
 /** 同じタブで localStorage のデータを書き換えて読み直す（storage イベントは出ない） */
 async function writeData(page, fn, arg) {
   await page.evaluate(
@@ -919,7 +891,7 @@ async function dataProtect(b) {
     (await page.getByTestId('data-last-export').innerText()).includes('（今日）'),
     '読み直しても最後に書き出した日が残る',
   );
-  // 古い案と記録を片づける：既定は3か月前の月より前。古い記録だけ消え、新しい記録は残る
+  // 古い訪問の記録を片づける：既定は3か月前の月より前。古い確定した内容だけ消え、新しいものは残る
   const old1 = monthsAgo(5, 10);
   const old2 = monthsAgo(4, 3);
   const recent = monthsAgo(1, 12);
@@ -927,25 +899,29 @@ async function dataProtect(b) {
     page,
     (d, a) => ({
       ...d,
-      aiRuns: { ...d.aiRuns, [a.old1]: [a.r1, a.r2], [a.old2]: [a.r3], [a.recent]: [a.r4] },
+      snapshots: { ...d.snapshots, [a.old1]: a.s1, [a.old2]: a.s2, [a.recent]: a.s3 },
     }),
-    { old1, old2, recent, r1: fakeRun(old1, 1), r2: fakeRun(old1, 2), r3: fakeRun(old2, 1), r4: fakeRun(recent, 1) },
+    { old1, old2, recent, s1: fakeSnap(old1), s2: fakeSnap(old2), s3: fakeSnap(recent) },
   );
   await page.getByTestId('data-tidy-card').waitFor();
   await settle(page, 400);
   const sel = await page.getByTestId('data-tidy-month').inputValue();
   check(sel === monthsAgo(3, 1).slice(0, 7), '片づけ：既定は3か月前の月', sel);
   const pv = await page.getByTestId('data-tidy-preview').innerText();
-  check(/2日分の AI案 0件・記録 3件/.test(pv), '片づけ：件数と空く見込み', pv);
+  check(/2日分の訪問 0件・確定した内容 2日分/.test(pv), '片づけ：件数と空く見込み', pv);
   await page.getByTestId('data-tidy-run').click();
   await page.getByTestId('confirm-dialog').waitFor();
-  check(/記録 3件を消します/.test(await page.getByTestId('confirm-body').innerText()), '片づけ：確認つき');
+  check(/確定した内容 2日分を消します/.test(await page.getByTestId('confirm-body').innerText()), '片づけ：確認つき');
   await page.getByTestId('confirm-ok').click();
-  await page.locator('.toast').filter({ hasText: 'AI案と記録を消しました' }).waitFor();
+  await page.locator('.toast').filter({ hasText: '訪問の記録を消しました' }).waitFor();
   await settle(page, 600);
   const after = await stored(page);
-  check(!after.aiRuns[old1] && !after.aiRuns[old2], '片づけ：選んだ月より前の記録が消える', Object.keys(after.aiRuns));
-  check(after.aiRuns[recent]?.length === 1, '片づけ：新しい記録は残る');
+  check(
+    !after.snapshots[old1] && !after.snapshots[old2],
+    '片づけ：選んだ月より前の確定した内容が消える',
+    Object.keys(after.snapshots),
+  );
+  check(!!after.snapshots[recent], '片づけ：新しい確定した内容は残る');
   check(after.seed === 424242, '片づけ：ほかのデータはそのまま');
   check(await page.getByTestId('data-tidy-run').isDisabled(), '片づけ：消せるものが無ければ押せない');
   await page.screenshot({ path: path.join(OUT_DIR, 'data-protect.png'), fullPage: true });
@@ -1019,7 +995,14 @@ async function backupRemind(b) {
     ({ k, last, today }) => {
       const d = JSON.parse(localStorage.getItem(k));
       const v = d.visits.find((x) => x.date === today && !x.cancelled);
-      d.manualPlans = { ...d.manualPlans, [today]: { [d.staff[0].id]: [v.id] } };
+      d.snapshots = {
+        ...d.snapshots,
+        [today]: {
+          date: today,
+          at: 1,
+          visits: [{ id: v.id, clientId: v.clientId, staffId: d.staff[0].id, start: null }],
+        },
+      };
       localStorage.setItem(k, JSON.stringify(d));
       localStorage.setItem(last, JSON.stringify({ date: '2026-01-01', kind: 'json' }));
       localStorage.removeItem('vrdemo:backup:reminded');

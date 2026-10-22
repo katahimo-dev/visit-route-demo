@@ -178,8 +178,6 @@ const clientObject = z.object({
   requirements: z.array(conditionSchema).max(20),
   /** 訪問先の希望（スタッフの特性に対して。例：経験3年以上）。rule 'clientPreference' */
   preferences: z.array(conditionSchema).max(20),
-  /** いつもの担当。rule 'continuity' */
-  usualStaffId: idSchema.nullable(),
   /** 仮押さえ（D47。問い合わせの試算から仮に押さえた〈利用者さん〉。ADR-0012 追記）。無い古いデータは false */
   tentative: z.boolean().default(false),
   /** 訪問先の決まりごと（PRD D66。ADR-0013）：入り方（インターホン等）。無い古いデータは '' */
@@ -264,7 +262,10 @@ export const patternSchema = z
     from: dateSchema,
     /** null＝続く */
     to: dateSchema.nullable(),
-    /** いつもの担当。null＝利用者さんのいつもの担当 */
+    /**
+     * 繰り返しの担当（いつもの担当。版2）。null＝担当なし。計算した回の担当の初期値で、rule 'continuity' の「いつもの担当」。
+     * 〈利用者さん〉には担当を持たない（繰り返しの担当が1つだけ）
+     */
     usualStaffId: idSchema.nullable(),
     note: z.string().max(200),
   })
@@ -295,7 +296,10 @@ export const patternSchema = z
   });
 export type Pattern = z.infer<typeof patternSchema>;
 
-/** 訪問の元の定期パターン（ADR-0012）。date は元の日、edited は「この回だけ変えた」 */
+/**
+ * 訪問の元の定期パターン（ADR-0012）。date は元の日（計算した回の ID `${date}_${パターンID}` の日）、
+ * edited は「この回だけ変えた」（時刻・日付・所要・種類・メモ。担当・開始・ピンだけの違いは edited にしない）
+ */
 export const visitPatternRefSchema = z.object({ id: idSchema, date: dateSchema, edited: z.boolean() });
 export type VisitPatternRef = z.infer<typeof visitPatternRefSchema>;
 
@@ -303,7 +307,11 @@ export type VisitPatternRef = z.infer<typeof visitPatternRefSchema>;
 export const CANCEL_KINDS = ['sameDay'] as const;
 export type CancelKind = (typeof CANCEL_KINDS)[number];
 
-/** 1日の訪問。staffId は手作業の担当 */
+/**
+ * 1回の訪問（版2。ADR-0053）。担当・開始・ピンを訪問が持ち、その日の割当は「その日の訪問の担当と開始の並び」から決まる。
+ * 繰り返しの回は見るときに計算し（patterns の visitsOn）、変えた回（担当・開始・ピン・時刻・取り消し・メモ）だけをここに保存する。
+ * 保存した回の ID は計算した回と同じ（`${元の日}_${パターンID}`）で、保存した回があれば計算した回は出さない
+ */
 export const visitSchema = z.object({
   id: idSchema,
   date: dateSchema,
@@ -312,16 +320,24 @@ export const visitSchema = z.object({
   earliestStart: hhmmSchema,
   latestStart: hhmmSchema,
   durationMinutes: z.number().int().min(5).max(720),
+  /** 担当（null＝担当なし） */
   staffId: idSchema.nullable(),
+  /**
+   * 組んだ開始（HH:mm。移動・待ちを入れた時刻）。その担当の訪問はこの順に回る（null は開始（早）で並べる）。
+   * AI の提案を当てたとき・手で担当を替えたときにその日の担当の並びから書き直す（lib/dayPlan の writeRoutes）
+   */
+  start: hhmmSchema.nullable().default(null),
+  /** ピン：AI で組み直しても担当を変えない（手で担当を替えた訪問は自動でピン） */
+  pinned: z.boolean().default(false),
   cancelled: z.boolean(),
   note: z.string().max(200),
-  /** 訪問の種類（VisitType.id。ADR-0012）。null＝種類なし。無い古いデータは null */
+  /** 訪問の種類（VisitType.id。ADR-0012）。null＝種類なし */
   typeId: idSchema.nullable().default(null),
-  /** 元の定期パターン（ADR-0012）。null＝単発。無い古いデータは null */
+  /** 元の定期パターン（ADR-0012）。null＝単発 */
   pattern: visitPatternRefSchema.nullable().default(null),
   /**
    * 取り消しの種類（PRD D74。ADR-0015）：'sameDay'＝当日キャンセル、null＝ふつうの取り消し（取り消していない訪問も null）。
-   * 回数を数えるだけで、請求はしない。無い古いデータは null
+   * 回数を数えるだけで、請求はしない
    */
   cancelKind: z.enum(CANCEL_KINDS).nullable().default(null),
 });
@@ -385,7 +401,3 @@ export const clientLeaveSchema = z
     if (l.from > l.to) ctx.addIssue({ code: 'custom', path: ['to'], message: '終了日は開始日以降にしてください' });
   });
 export type ClientLeave = z.infer<typeof clientLeaveSchema>;
-
-/** 手作業案。staffId（または未割当 '__none'）→ 訪問IDの列（開始時刻の順） */
-export const manualRoutesSchema = z.record(z.string(), z.array(idSchema));
-export type ManualRoutes = z.infer<typeof manualRoutesSchema>;

@@ -2,22 +2,11 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { ClientLeave, Visit } from '../contracts/documents';
-import { reconcile } from '../domain/scheduleModel';
 import { addDays } from '../domain/time';
 import { compile } from '../matching';
-import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import { copyDayVisits } from './copyDay';
-import {
-  keepLeaveVisits,
-  leaveConfirmedDates,
-  leavesOf,
-  leaveVisits,
-  leaveVisitsOn,
-  removeLeave,
-  saveLeave,
-} from './leaves';
+import { client, DATE, makeData, problemKey, staff, visit } from '../matching/fixtures';
+import { leaveConfirmedDates, leavesOf, leaveVisits, leaveVisitsOn, removeLeave, saveLeave } from './leaves';
 import { activeVisitsOn, batchTargets, clientDay, clientMonth, dayMarks, dayPlanOf, dayStatus } from './month';
-import { problemKey } from './runs';
 import { weekDay } from './week';
 
 const TUE = addDays(DATE, 1);
@@ -61,9 +50,21 @@ describe('lib/leaves', () => {
     expect(leaveVisitsOn(d, WED)).toEqual([]);
   });
 
-  it('leaveConfirmedDates：確定した割当にその〈利用者さん〉の訪問がある日だけ（未割当の列は数えない）', () => {
+  it('leaveConfirmedDates：伝えた内容にその〈利用者さん〉の担当のある訪問がある日だけ（担当なしは数えない）', () => {
+    const snap = (date: string, visits: { id: string; clientId: string; staffId: string | null }[]) => ({
+      date,
+      at: 1,
+      visits: visits.map((v) => ({ ...v, start: v.staffId ? '10:00' : null })),
+    });
     const d = data({
-      manualPlans: { [DATE]: { s1: ['a1', 'a2'] }, [TUE]: { __none: ['b1'] }, [WED]: { s1: ['c1x'] } },
+      snapshots: {
+        [DATE]: snap(DATE, [
+          { id: 'a1', clientId: 'c1', staffId: 's1' },
+          { id: 'a2', clientId: 'c2', staffId: 's1' },
+        ]),
+        [TUE]: snap(TUE, [{ id: 'b1', clientId: 'c1', staffId: null }]),
+        [WED]: snap(WED, [{ id: 'c1x', clientId: 'c1', staffId: 's1' }]),
+      },
     });
     expect(leaveConfirmedDates(d, L1)).toEqual([DATE]);
     expect(leaveConfirmedDates(d, { ...L1, to: WED })).toEqual([DATE, WED]);
@@ -80,56 +81,28 @@ describe('休みの訪問は派生で外す（ADR-0013）', () => {
     expect(problemKey(compile(d, WED))).toBe(problemKey(compile(data(), WED)));
   });
 
-  it('月：件数・まとめて作る対象から外し、日のマスに休みの〈利用者さん〉を出す。選んだ〈利用者さん〉は休みの印', () => {
+  it('月：件数・AI で組む対象から外し、日のマスに休みの〈利用者さん〉を出す。選んだ〈利用者さん〉は休みの印', () => {
     const d = data({ clientLeaves: [L1] });
     expect(activeVisitsOn(d, DATE).map((v) => v.id)).toEqual(['a2']);
     expect(dayStatus(d, DATE).count).toBe(1);
     expect(dayStatus(d, TUE).count).toBe(0);
     expect(dayMarks(d, DATE).leaves).toEqual(['c1']);
     expect(dayMarks(d, WED).leaves).toEqual([]);
-    expect(batchTargets(d, DATE.slice(0, 7), DATE, 'empty')).not.toContain(TUE);
-    expect(batchTargets(data(), DATE.slice(0, 7), DATE, 'empty')).toContain(TUE);
+    const all = (x: DemoData) => batchTargets(x, [DATE, TUE, WED], DATE, 'all', (t) => dayStatus(x, t));
+    expect(all(d)).not.toContain(TUE);
+    expect(all(data())).toContain(TUE);
     const day = clientDay(d, dayPlanOf(d, DATE), 'c1');
     expect(day.visits.map((v) => [v.visitId, v.leave, v.unassigned])).toEqual([['a1', true, false]]);
-    expect(day.noPlan).toBe(false);
     const sum = clientMonth(d, [dayPlanOf(d, DATE), dayPlanOf(d, TUE), dayPlanOf(d, WED)], 'c1');
     expect(sum).toMatchObject({ planned: 1, leave: 2, cancelled: 1 });
   });
 
   it('週：休みの訪問は leave 付きの帯（担当なし・訪問の開始）', () => {
-    const d = data({ clientLeaves: [L1], aiPlans: {} });
+    const d = data({ clientLeaves: [L1] });
     const w = weekDay(d, DATE);
     expect(w.bands.map((b) => [b.visitId, b.leave ?? false, b.staffId])).toEqual([
       ['a1', true, null],
       ['a2', false, null],
     ]);
-  });
-
-  it('前の同じ曜日からコピー：休みの訪問は写さない', () => {
-    const d = data({ clientLeaves: [L1] });
-    let n = 0;
-    const c = copyDayVisits(d, DATE, addDays(DATE, 7), () => `new${++n}`);
-    expect(c.visits.map((v) => v.clientId)).toEqual(['c2']);
-  });
-});
-
-describe('確定し直すときの休みの訪問（ADR-0013）', () => {
-  it('keepLeaveVisits：休みの訪問は前の確定した割当の担当のまま残し、休みを消すと元の確定に戻る（重ならない）', () => {
-    // 前の確定：s1 に a1（のちに休み）・a2。休みのあとの今の案では a2 だけを s2 に確定し直す
-    const before = { s1: ['a1', 'a2'] };
-    const cols = keepLeaveVisits({ s2: ['a2'] }, ['a1'], before);
-    expect(cols).toEqual({ s2: ['a2'], s1: ['a1'] });
-    // 前の確定に無い休みの訪問・未割当だった休みの訪問は足さない
-    expect(keepLeaveVisits({ s2: ['a2'] }, ['zz'], before)).toEqual({ s2: ['a2'] });
-    expect(keepLeaveVisits({ s2: ['a2'] }, ['a1'], { __none: ['a1'] })).toEqual({ s2: ['a2'] });
-    expect(keepLeaveVisits({ s2: ['a2'] }, ['a1'], undefined)).toEqual({ s2: ['a2'] });
-    // 休みを消したあと：a1 は s1、a2 は s2（staffId が残っていても重ならない）
-    const d = data();
-    const visits = d.visits
-      .filter((v) => v.date === DATE)
-      .map((v) => (v.id === 'a1' ? { ...v, staffId: 's1' } : { ...v, staffId: 's2' }));
-    const view = reconcile(cols, visits, ['s1', 's2']);
-    expect(view.cols.s1).toEqual(['a1']);
-    expect(view.cols.s2).toEqual(['a2']);
   });
 });

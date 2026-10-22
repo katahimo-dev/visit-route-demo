@@ -46,9 +46,8 @@ export type LinkTarget = { to: string; date: string; note: string };
 /**
  * 月の画面の要対応の1行の行き先（PRD D201）：
  * - 入らない訪問 → 日の画面の「入らなかった訪問」の列
- * - 欠勤の人に訪問が残る → その日の「欠勤・キャンセル」の欄（1段目。誰が休むかは行に無いので選ばせる）
  * - 拘束が上限を超える → 稼働の見込み（その月・先頭の人）
- * - そのほか（条件が変わった・欠勤がある）→ 今のまま日の画面
+ * - そのほか（担当なしの無い要対応・未連絡の変更）→ その日の日の画面
  *
  * 行き先の機能（欠勤・キャンセル・稼働の見込み）を features で切っていれば、その日の日の画面（土台）にする
  * （要対応の行は日付を持つので、行き先を消さずに日の画面へ。PRD D213）
@@ -64,10 +63,10 @@ const dayTarget = (date: string): LinkTarget => ({ to: '/plan', date, note: '（
 /** すべて入のときの行き先 */
 function attentionTargetAll(a: Attention): LinkTarget {
   switch (a.kind) {
-    case 'unassigned':
-      return { to: unassignedHref(a.date), date: a.date, note: '（日の予定の「入らなかった訪問」で開く）' };
-    case 'absentLeft':
-      return { to: suddenHref(a.date), date: a.date, note: '（日の予定の「欠勤・キャンセル」で開く）' };
+    case 'care':
+      return a.names.some((x) => x.startsWith('担当なし'))
+        ? { to: unassignedHref(a.date), date: a.date, note: '（日の予定の「担当なしの訪問」で開く）' }
+        : dayTarget(a.date);
     case 'overSpan':
       return { to: workloadHref(ymOf(a.date), a.staffIds?.[0]), date: a.date, note: '（勤務の見込みで開く）' };
     default:

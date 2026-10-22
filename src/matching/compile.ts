@@ -8,6 +8,7 @@ import { afterLastDay, availabilityOf, withoutAbsences } from '../domain/availab
 import { estimateLeg } from '../domain/geo';
 import { leaveOn } from '../domain/leaves';
 import { hhmmToMinutes } from '../domain/time';
+import { visitsOn } from '../patterns';
 import { conditionText, matches } from './conditions';
 import { fitStart } from './timing';
 
@@ -88,8 +89,8 @@ function condReasons(
 }
 
 /**
- * compile が読むデータ（これ以外のフィールド：案・記録・プリセット・種などは問題に効かない）。
- * 画面はこれだけを依存にして、案のドラッグ・固定（aiPlans の更新）で compile し直さない
+ * compile が読むデータ（これ以外のフィールド：伝えた内容・プリセット・種などは問題に効かない）。
+ * 訪問の担当・開始・ピンは問題に効かない（ピンは compile の pins で渡す）
  */
 export type CompileInput = Pick<
   DemoData,
@@ -139,8 +140,9 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
   const clients = new Map<string, Client>(data.clients.filter((c) => c.active).map((c) => [c.id, c]));
   // 〈利用者さん〉の休み（ADR-0013）の訪問は、取り消しと同じく問題に入れない（訪問のデータは消さない）
   const leaves = data.clientLeaves.filter((l) => l.from <= date && date <= l.to);
-  const visitDocs = data.visits.filter(
-    (v) => v.date === date && !v.cancelled && clients.has(v.clientId) && leaveOn(leaves, v.clientId, date) === null,
+  // その日の訪問：保存した回と繰り返しから計算した回（版2。ADR-0053）
+  const visitDocs = visitsOn(data, date).filter(
+    (v) => !v.cancelled && clients.has(v.clientId) && leaveOn(leaves, v.clientId, date) === null,
   );
   const items = new Map(data.items.map((it) => [it.id, it]));
   const rules = data.rules.filter(isActive);
@@ -219,9 +221,9 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
     const doc = visitDocs[j]!;
     // 訪問の種類（いない種類の typeId は無視する。ADR-0012）
     const vType = doc.typeId === null ? undefined : visitTypes.get(doc.typeId);
-    // いつもの担当：元のパターンにあればその人、無ければ利用者さんのいつもの担当（ADR-0012）
+    // いつもの担当：元の繰り返しの担当（版2：〈利用者さん〉は担当を持たない。単発の訪問は無し。ADR-0053）
     const pattern = doc.pattern === null ? undefined : patterns.get(doc.pattern.id);
-    const usualStaffId = pattern?.usualStaffId ?? client.usualStaffId;
+    const usualStaffId = pattern?.usualStaffId ?? null;
     const rowAllowed: boolean[] = [];
     const rowCost: number[] = [];
     const rowReasons: Reason[][] = [];

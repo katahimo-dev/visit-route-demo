@@ -12,7 +12,7 @@ import {
 import { type DragEvent, type PointerEvent, type ReactNode, useMemo, useRef, useState } from 'react';
 import type { Visit } from '../contracts/documents';
 import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
-import { dateText, own } from '../lib/common';
+import { dateText } from '../lib/common';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
 import {
@@ -23,7 +23,6 @@ import {
   calTitle,
   clientCalItems,
   itemsByDate,
-  lastMadeDate,
   monthWeeksMon,
   shiftAnchor,
   slotOf,
@@ -86,8 +85,6 @@ export function PersonCalendar({
 }) {
   const { data, update } = useDemoData();
   const terms = data.org.terms;
-  const dataRef = useRef(data);
-  dataRef.current = data;
   /**
    * ドラッグで日時を動かし、担当を選ばずに保存した回の知らせ（新しい日に今の案があるとき。週の予定と同じ「空き時間に入れる」）
    */
@@ -111,7 +108,6 @@ export function PersonCalendar({
   const byDate = useMemo(() => itemsByDate(items), [items]);
   const staffById = useMemo(() => new Map(data.staff.map((s) => [s.id, s])), [data.staff]);
   const clientById = useMemo(() => new Map(data.clients.map((c) => [c.id, c])), [data.clients]);
-  const lastMade = useMemo(() => lastMadeDate(data.visits), [data.visits]);
   const hlCount = highlight ? items.filter((it) => it.visit.pattern?.id === highlight).length : 0;
 
   // ---- 回の文 ----
@@ -196,8 +192,7 @@ export function PersonCalendar({
       draft: { date, earliestStart: hm(start), latestStart: hm(start + width) },
       returnFocus: focusBack,
       onSaved: (r) => {
-        if (r.moved && !r.staffSet && own(dataRef.current.aiPlans, r.date))
-          setNotice({ date: r.date, visitId: r.visitId, label: r.label, error: null });
+        if (r.moved && !r.staffSet) setNotice({ date: r.date, visitId: r.visitId, label: r.label, error: null });
       },
     });
   };
@@ -231,17 +226,16 @@ export function PersonCalendar({
     if (g && v) moveTo(g.visitId, date, hhmmToMinutes(v.earliestStart));
   };
 
-  /** 新しい日の今の案に空き時間で入れる（入る人がいなければ知らせに理由） */
+  /** 新しい日の担当の空き時間に入れる（入る人がいなければ知らせに理由） */
   const insert = () => {
     if (!notice) return;
-    const createdAt = Date.now();
-    const r = insertIntoPlan(data, notice.date, notice.visitId, createdAt);
+    const r = insertIntoPlan(data, notice.date, notice.visitId);
     if (!r.staffId) {
-      setNotice({ ...notice, error: '空き時間に入りません。その日を作り直すか、日の予定で手で入れてください' });
+      setNotice({ ...notice, error: '空き時間に入りません。日の予定で手で入れるか、AI で組んでください' });
       return;
     }
-    update((d) => insertIntoPlan(d, notice.date, notice.visitId, createdAt).data);
-    toast(`${mdText(notice.date)} の案に入れました（担当：${staffById.get(r.staffId)?.name ?? ''}）`);
+    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data);
+    toast(`${mdText(notice.date)} の空き時間に入れました（担当：${staffById.get(r.staffId)?.name ?? ''}）`);
     setNotice(null);
   };
   const noticeBand = notice && (
@@ -249,7 +243,7 @@ export function PersonCalendar({
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <span>
           <WithIcon icon={TriangleAlert} size={16}>
-            {notice.label} へ動かしました。{mdText(notice.date)} の案は担当が決まっていません
+            {notice.label} へ動かしました。担当はそのままです（その日に入らなければ要対応に出ます）
           </WithIcon>
         </span>
         <button type="button" className="icon-btn" aria-label="知らせを閉じる" onClick={() => setNotice(null)}>
@@ -266,7 +260,7 @@ export function PersonCalendar({
           data-testid="pcal-insert"
         >
           <WithIcon icon={Sparkles} size={14}>
-            {mdText(notice.date)} の案に空き時間で入れる
+            {mdText(notice.date)} の空き時間に入る人を当てる
           </WithIcon>
         </button>
       </div>
@@ -349,7 +343,6 @@ export function PersonCalendar({
     <span className="pcal-day-head">
       <span className={`pcal-day-date${d === today ? ' is-today' : ''}`}>{dateText(d)}</span>
       {dayNote?.(d)}
-      {lastMade !== null && d > lastMade && <span className="chip pcal-chip">未作成</span>}
     </span>
   );
 
@@ -423,11 +416,6 @@ export function PersonCalendar({
       {highlight && (
         <p className="sub pcal-hl-note" data-testid="pcal-hl-note">
           選んだ繰り返しの回：この期間に {hlCount}回
-        </p>
-      )}
-      {lastMade !== null && to > lastMade && (
-        <p className="sub" data-testid="pcal-unmade">
-          {mdText(lastMade)}より後の訪問はまだ作っていません（「月の予定」で作ります）。
         </p>
       )}
       {editable && (
@@ -595,8 +583,8 @@ export function PersonCalendar({
       </div>
       <p className="sub pcal-legend">
         {isClient
-          ? `印は担当の${terms.staff}（その日の今の案、無ければ確定した割当）。「変」はこの回だけ変えた回です。`
-          : `この人が担当する訪問（その日の今の案、無ければ確定した割当）。「変」はこの回だけ変えた回です。`}
+          ? `印は担当の${terms.staff}（その日の今の担当）。「変」はこの回だけ変えた回です。`
+          : `この人が担当する訪問（その日の今の担当）。「変」はこの回だけ変えた回です。`}
       </p>
     </div>
   );
