@@ -70,6 +70,7 @@ import { PatternsSection } from './PatternsSection';
 import { PlaceAllPanel } from './PlaceAllPanel';
 import './settings.css';
 import { narrowRole } from '../lib/narrowRoles';
+import { shouldOpenRow } from '../lib/rowOpen';
 
 /** 訪問先の一覧と編集（PoC本体 ClientsPage.tsx を写し、性別希望・NG を特性・条件・相性に置き換えた） */
 
@@ -476,7 +477,17 @@ export default function ClientsPage() {
               </tr>
             )}
             {shown.map((c) => (
-              <tr {...narrowRole.row} key={c.id} data-testid="client-row">
+              <tr
+                {...narrowRole.row}
+                key={c.id}
+                data-testid="client-row"
+                className="row-open"
+                // 行のどこを押しても閲覧の欄を開く（PRD D297。ボタン・リンク・文字の選択は除く。キーボードは右端の「開く」）
+                onClick={(e) => {
+                  if (shouldOpenRow(e.target as Element, e.currentTarget, window.getSelection()?.toString() ?? ''))
+                    openView(c);
+                }}
+              >
                 <td {...narrowRole.cell} className="narrow-title" data-label="名前">
                   <span className="row person-name">
                     <span className="dot dot-sm" style={{ background: colorOf(c.color) }}>

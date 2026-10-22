@@ -48,6 +48,7 @@ import { useDemoData } from '../store';
 import { leavingStaff, OffboardPanel } from './OffboardPanel';
 import './settings.css';
 import { narrowRole } from '../lib/narrowRoles';
+import { shouldOpenRow } from '../lib/rowOpen';
 
 /** スタッフの一覧と編集（PoC本体 StaffPage.tsx を写し、招待・メールを外して特性と条件を足した） */
 
@@ -342,7 +343,17 @@ export default function StaffPage() {
           </thead>
           <tbody {...narrowRole.rowgroup}>
             {staff.map((s) => (
-              <tr {...narrowRole.row} key={s.id}>
+              <tr
+                {...narrowRole.row}
+                key={s.id}
+                data-testid="staff-row"
+                className="row-open"
+                // 行のどこを押しても閲覧の欄を開く（PRD D297。ボタン・リンク・文字の選択は除く。キーボードは右端の「開く」）
+                onClick={(e) => {
+                  if (shouldOpenRow(e.target as Element, e.currentTarget, window.getSelection()?.toString() ?? ''))
+                    openView(s);
+                }}
+              >
                 <td {...narrowRole.cell} className="person-name narrow-title" data-label="名前">
                   <WithIcon icon={UserRound} size={15}>
                     {s.name}
