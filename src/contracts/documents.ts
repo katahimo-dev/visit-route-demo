@@ -56,10 +56,17 @@ export function graphemeCount(s: string): number {
   for (const _ of seg.segment(s)) n++;
   return n;
 }
+/** アイコンのコード単位（UTF-16）の上限。結合した絵文字2つでも収まる長さ */
+export const STAFF_ICON_MAX_UNITS = 32;
+/**
+ * 読み込みの検査は形だけ（文字列・前後の空白なし・32コード単位まで）。見た目で2文字までの検査は Intl.Segmenter に頼るので、
+ * 入れる所（画面の lib/staffMark の staffIconError・Excel の readStaffIcon）で行い、保存データの読み込みでは見ない
+ * （Segmenter の無い環境・数え方の違いで、保存データ全体が読めなくならないように）
+ */
 export const staffIconSchema = z
   .string()
-  .max(32)
-  .refine((s) => s === s.trim() && graphemeCount(s) <= STAFF_ICON_MAX, `アイコンは${STAFF_ICON_MAX}文字までです`);
+  .max(STAFF_ICON_MAX_UNITS)
+  .refine((s) => s === s.trim(), 'アイコンの前後に空白は入れられません');
 
 /**
  * 〈利用者さん〉の場所（PRD D86。ADR-0016）：場所に郵便番号を足したもの。郵便番号は空か7桁の数字（ハイフンなし）。

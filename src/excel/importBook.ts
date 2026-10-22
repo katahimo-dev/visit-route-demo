@@ -13,6 +13,7 @@ import {
   type Pattern,
   SPAN_LIMIT_DEFAULT_HOURS,
   STAFF_ICON_MAX,
+  STAFF_ICON_MAX_UNITS,
   type Staff,
   stageOfLegacy,
   type Visit,
@@ -167,21 +168,25 @@ export function prim(v: ExcelJS.CellValue | undefined): Prim | Bad {
 /**
  * メールアドレスの列（ADR-0017）：空・列が無いなら ''。全角・前後の空白・「mailto:」は直し、形が合わなければ行付きで止めて null
  */
-/** 〈スタッフ〉のアイコンの列（ADR-0050）：列が無い古いブック・空は ''。前後の空白は落とす。2文字を超えれば行付きで止めて null */
-export function readStaffIcon(r: Row, h: string): string | null {
-  const t = r.text(h).trim();
-  if (graphemeCount(t) > STAFF_ICON_MAX) {
-    r.err(h, `アイコンは${STAFF_ICON_MAX}文字までです（いま「${t.slice(0, 20)}」）`);
-    return null;
-  }
-  return t;
-}
-
 export function readEmail(r: Row, h: string): string | null {
   const t = r.text(h);
   const e = normalizeEmail(t);
   if (e === null) r.err(h, `メールアドレスの形ではありません（例 name@example.com。いま「${t.slice(0, 40)}」）`);
   return e;
+}
+
+/**
+ * 〈スタッフ〉のアイコンの列（ADR-0050）：列が無い古いブック・空は ''。前後の空白は落とす。
+ * 見た目で2文字（STAFF_ICON_MAX）・32コード単位（STAFF_ICON_MAX_UNITS）を超えれば行付きで止めて null
+ */
+export function readStaffIcon(r: Row, h: string): string | null {
+  const t = r.text(h).trim();
+  if (t.length > STAFF_ICON_MAX_UNITS || graphemeCount(t) > STAFF_ICON_MAX) {
+    // 誤りの文の引用はコードポイントで切る（サロゲートの途中で切らない）
+    r.err(h, `アイコンは${STAFF_ICON_MAX}文字までです（いま「${Array.from(t).slice(0, 20).join('')}」）`);
+    return null;
+  }
+  return t;
 }
 
 /**

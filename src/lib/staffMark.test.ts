@@ -29,6 +29,7 @@ describe('〈スタッフ〉の印の文字（PRD D299。ADR-0050）', () => {
     expect(staffIconError('🌸👨‍👩‍👧')).toBeNull();
     expect(staffIconError(' 訪 ')).toBeNull();
     expect(staffIconError('訪問者')).toContain('2文字');
+    expect(staffIconError('a'.repeat(33))).toContain('2文字');
   });
 });
 
@@ -55,10 +56,11 @@ describe('〈スタッフ〉の icon の読み込み（schema）', () => {
   it("icon の無い古いデータは未設定（''）で読める", () => {
     expect(staffSchema.parse(raw()).icon).toBe('');
   });
-  it('1〜2文字は読め、3文字以上・前後の空白は読めない', () => {
+  it('読み込みは形だけ見る：32コード単位までは読め（2文字の検査は画面と Excel）、前後の空白・33コード単位以上は読めない', () => {
     expect(staffSchema.parse(raw({ icon: '訪' })).icon).toBe('訪');
     expect(staffSchema.parse(raw({ icon: '🌸' })).icon).toBe('🌸');
-    expect(staffSchema.safeParse(raw({ icon: '訪問者' })).success).toBe(false);
+    expect(staffSchema.parse(raw({ icon: '訪問者' })).icon).toBe('訪問者');
     expect(staffSchema.safeParse(raw({ icon: ' 訪' })).success).toBe(false);
+    expect(staffSchema.safeParse(raw({ icon: 'あ'.repeat(33) })).success).toBe(false);
   });
 });
