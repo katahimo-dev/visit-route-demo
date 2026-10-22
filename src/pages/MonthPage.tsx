@@ -855,7 +855,7 @@ export default function MonthPage() {
           {/* 月送り・今月のほかは「その他 ▾」にたたむ（PRD D278。主ボタンは進み具合の帯の1つ） */}
           <MenuButton label="その他" items={moreItems} testId="month-more" className="month-more" />
           <span className="month-summary sub" data-testid="month-summary">
-            月全体：入らない {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
+            月全体：担当なし {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>
         </div>
         {pickersShown && (

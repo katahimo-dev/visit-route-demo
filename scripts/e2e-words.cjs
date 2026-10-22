@@ -47,12 +47,12 @@ async function resetData(page) {
   await page.reload();
   await page.locator('h1').waitFor();
 }
-/** 初期データの案（今日から7日分。PRD D225）を消して読み直す（案の無い画面を確かめる所だけ） */
-async function clearPlans(page) {
+/** 訪問を全部取り消し、繰り返しを消して読み直す（訪問の無い画面を確かめる所だけ） */
+async function clearVisits(page) {
   await page.evaluate((k) => {
     const d = JSON.parse(localStorage.getItem(k));
-    d.aiPlans = {};
-    d.aiRuns = {};
+    d.visits = d.visits.map((v) => ({ ...v, cancelled: true }));
+    d.patterns = [];
     localStorage.setItem(k, JSON.stringify(d));
   }, STORAGE_KEY);
   await page.reload();
@@ -269,90 +269,48 @@ async function rename(page) {
   check((await page.getByTestId('term-terms').innerText()) === '画面での呼び方', 'データ：画面での呼び方');
 }
 
-// ---- 空の画面 ----
+// ---- 空の画面（版2：訪問の無いとき。繰り返しの回は計算するので「未作成」は無い） ----
 async function empties(page) {
   await resetData(page);
-  // 週：案が1日も無い（初期データの案を消す）
-  await clearPlans(page);
+  // 週：訪問が1件も無い（訪問を取り消し、繰り返しを消す）
+  await clearVisits(page);
   await open(page, `/week?d=${TODAY}`, 'h1');
   const we = page.getByTestId('week-empty');
   await we.waitFor({ timeout: 10000 });
   const wt = await we.innerText();
-  check(/この週(は案がありません|には訪問がありません|の訪問はまだ作っていません)/.test(wt), '週：なぜ空か', wt);
-  // 作る入口は見出しの主ボタンの1つ（PRD D280）：空の画面には作るボタンを置かず（月の「まとめて作る」へのリンクも無い）、
-  // 見出しの［この週の案を作る］を文で指して日の予定のボタンだけ。進み具合の帯の「まとめて作る」も出さない
+  check(/この週には訪問がありません/.test(wt), '週：なぜ空か', wt);
+  // 空の画面のボタンは日の予定（訪問を足す）だけ。進み具合の帯の「担当を AI で組む」も出さない
   const weBtns = await we.locator('.btn').evaluateAll((els) => els.map((e) => e.dataset.testid));
+  check(JSON.stringify(weBtns) === JSON.stringify(['empty-next-day']), '週：空の画面のボタンは日の予定だけ', {
+    weBtns,
+    wt,
+  });
   check(
-    JSON.stringify(weBtns) === JSON.stringify(['empty-next-day']) && /見出しの［この週の案を作る］/.test(wt),
-    '週：空の画面のボタンは日の予定だけで、作るは見出しの主ボタンを文で指す',
-    { weBtns, wt },
-  );
-  check(
-    (await page.locator('.btn-primary').count()) === 1 &&
-      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make',
-    '週：主ボタンは見出しの「この週の案を作る」の1つ',
+    (await page.locator('.btn-primary').count()) <= 1 && (await page.getByTestId('week-next-btn').count()) === 0,
+    '週：訪問が無ければ見出しは「この週の今日以降に訪問はありません」（組むボタンなし）',
     await page.locator('.btn-primary').allInnerTexts(),
   );
-  await page.getByTestId('progress-band').getByTestId('band-attention').waitFor({ timeout: 30000 });
+  await page.getByTestId('progress-band').waitFor({ timeout: 30000 });
   check(
     (await page.locator('[data-testid="band-next"][data-kind="batch"]').count()) === 0,
-    '週：主ボタンが「作る」の間は、進み具合の帯に「まとめて作る」を出さない（作る入口を1つに）',
+    '週：訪問が無ければ進み具合の帯に「担当を AI で組む」を出さない',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'week-empty.png') });
-  await page.getByTestId('week-next-btn').click();
-  await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
-  check(hashOf(page).startsWith('#/week'), '週の［この週の案を作る］：週の予定にとどまる', hashOf(page));
-  check(
-    /\d+\/\d+〜\d+\/\d+の週の案を作っています/.test(await page.getByTestId('batch-band-text').innerText()) &&
-      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'making',
-    '週：作っている間は上の帯に週の進み具合、見出しは「作っています」',
-    await page.getByTestId('batch-band-text').innerText(),
-  );
-  // 時間を取らないよう止め、作った案を消して空の週に戻す（続く確かめは案の無い週から）
-  await page.getByTestId('batch-band-stop').click();
-  await page.getByTestId('batch-band').waitFor({ state: 'detached', timeout: 60000 });
-  // 止めた日の案が保存されてから消す（保存より先に消すと、あとの保存で案が戻る）
-  await page.waitForFunction((k) => Object.keys(JSON.parse(localStorage.getItem(k)).aiPlans).length > 0, STORAGE_KEY, {
-    timeout: 10000,
-  });
-  await clearPlans(page);
   // 週：日の画面のボタンでその日の日の画面
-  await open(page, `/week?d=${TODAY}`, '[data-testid="week-empty"]');
-  const day = page.getByTestId('week-empty').getByTestId('empty-next-day');
+  const day = we.getByTestId('empty-next-day');
   const dayLabel = await day.innerText();
   await day.click();
-  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  check(hashOf(page).startsWith('#/plan'), '週の日の予定のボタンで日の予定（その日の案を自動で作る）', dayLabel);
-  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
-  // 案ができた週は空の画面を出さない
-  await open(page, `/week?d=${TODAY}`, '[data-testid="week-grid"]');
-  check((await page.getByTestId('week-empty').count()) === 0, '週：案のある日があれば空の画面を出さない');
-  // 週：訪問の無い週（ずっと先）
-  const far = addDays(TODAY, 7 * 30);
-  await open(page, `/week?d=${far}`, '[data-testid="week-empty"]');
-  const ft = await page.getByTestId('week-empty').innerText();
-  // 定期パターンからまだ作っていない週（PRD D282）：「0件」でなく「未作成」と出し、［この週の案を作る］へ
-  const heads = await page.getByTestId('week-day-count').allInnerTexts();
-  check(
-    /この週の訪問はまだ作っていません（未作成）/.test(ft) && heads.length === 7 && heads.some((t) => t === '未作成'),
-    '週：まだ作っていない先の週は「未作成」（日の見出しも0件と出さない）',
-    { ft, heads },
-  );
-  check(
-    (await page.getByTestId('week-empty').getByTestId('empty-next-make').count()) === 0 &&
-      (await page.getByTestId('week-next').getAttribute('data-kind')) === 'make',
-    '週：未作成の週は見出しの主ボタンが「この週の案を作る」（空の画面に作るボタンは置かない）',
-  );
-  // 稼働の見込み：来年の月（案が無い）
-  const nextYm = `${Number(YM.slice(0, 4)) + 1}${YM.slice(4)}`;
-  await open(page, `/workload?ym=${nextYm}`, '[data-testid="work-empty"]');
+  await page.waitForURL(/#\/plan/, { timeout: 10000 });
+  check(hashOf(page).startsWith('#/plan'), '週の日の予定のボタンで日の予定（訪問を足す）', dayLabel);
+  // 勤務の見込み：訪問の無い月
+  await open(page, `/workload?ym=${YM}`, '[data-testid="work-empty"]');
   const wk = page.getByTestId('work-empty');
   const wkt = await wk.innerText();
-  check(/この月(は案がありません|には訪問がありません)/.test(wkt), '勤務の見込み：なぜ空か', wkt);
-  check((await wk.getByTestId('empty-next-batch').count()) === 1, '勤務の見込み：月の予定のまとめて作るへのボタン');
+  check(/この月には訪問がありません/.test(wkt), '勤務の見込み：なぜ空か', wkt);
+  check((await wk.getByTestId('empty-next-day').count()) === 1, '勤務の見込み：日の予定で訪問を足すへのボタン');
   check((await wk.locator('.btn-primary').count()) === 1, '勤務の見込み：次の一手が主ボタン');
   await page.screenshot({ path: path.join(OUT_DIR, 'workload-empty.png') });
-  // 比較：案の無い日（明日。週の ?d= で選んでいる日付を明日にし、読み直さずに比較の画面へ）
+  // 比較：訪問の無い日（明日。週の ?d= で選んでいる日付を明日にし、読み直さずに比較の画面へ）
   const tomorrow = addDays(TODAY, 1);
   await open(page, `/week?d=${tomorrow}`, 'h1');
   await page.evaluate(() => {
@@ -360,25 +318,39 @@ async function empties(page) {
   });
   await page.getByTestId('compare-empty').waitFor({ timeout: 10000 });
   const cet = await page.getByTestId('compare-empty').innerText();
-  check(/この日(の案はまだありません|には訪問がありません)/.test(cet), '比較：なぜ空か', cet);
+  check(/この日には訪問がありません/.test(cet), '比較：なぜ空か', cet);
   await page.screenshot({ path: path.join(OUT_DIR, 'compare-empty.png') });
   const cday = page.getByTestId('compare-empty').getByTestId('empty-next-day');
-  check((await cday.count()) === 1, '比較：［日の予定で案を作る］');
+  check((await cday.count()) === 1, '比較：［日の予定で訪問を足す］');
   await cday.click();
-  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  check(hashOf(page).startsWith('#/plan'), '比較の空の画面のボタンで日の予定へ（案を自動で作る）');
-  // 空き状況：案の無い日の注意は1か所（表の上）
+  await page.waitForURL(/#\/plan/, { timeout: 10000 });
+  check(hashOf(page).startsWith('#/plan'), '比較の空の画面のボタンで日の予定へ');
+  // 訪問のある週は空の画面を出さない。ずっと先の週も繰り返しの回が出る（「未作成」は無い）
+  await resetData(page);
+  await open(page, `/week?d=${TODAY}`, '[data-testid="week-grid"]');
+  check((await page.getByTestId('week-empty').count()) === 0, '週：訪問のある週は空の画面を出さない');
+  const far = addDays(TODAY, 7 * 30);
+  await open(page, `/week?d=${far}`, '[data-testid="week-grid"]');
+  const heads = await page.getByTestId('week-day-count').allInnerTexts();
+  check(
+    (await page.getByTestId('week-empty').count()) === 0 &&
+      heads.length === 7 &&
+      heads.every((t) => !/未作成/.test(t)) &&
+      heads.some((t) => /^\d+件/.test(t) && t !== '0件'),
+    '週：ずっと先の週も繰り返しの回が出る（未作成は無い）',
+    heads,
+  );
+  // 空き状況：担当なし・数えなかった日の注意は1か所（表の上）
   await open(page, '/vacancy', 'h1');
   await page.getByTestId('vacancy-table-card').waitFor();
   await page.waitForFunction(() => document.querySelector('[data-testid="vacancy-grid"]'), null, { timeout: 30000 });
   const notes = await page.locator('.vacancy-noplan').count();
-  check(notes <= 1, '空き状況：案の無い日の注意は1か所', notes);
-  if (notes === 1) {
-    // その場で足りない案を作る（PRD D259。月の予定へ移らない）
-    const mk = page.getByTestId('vacancy-noplan-make');
+  check(notes <= 1, '空き状況：担当なし・数えなかった日の注意は1か所', notes);
+  const mk = page.getByTestId('vacancy-noplan-make');
+  if ((await mk.count()) === 1) {
     check(
-      (await mk.evaluate((e) => e.tagName)) === 'BUTTON' && /足りない案を作る（\d+日）/.test(await mk.innerText()),
-      '空き状況：注意から月のまとめて作るへ',
+      (await mk.evaluate((e) => e.tagName)) === 'BUTTON' && /担当なしを AI で組む（\d+日）/.test(await mk.innerText()),
+      '空き状況：注意からその場で担当なしを AI で組む',
     );
   }
 }
@@ -554,7 +526,7 @@ async function reasonWords(page) {
   if ((await next.count()) > 0) {
     const nt = await next.innerText();
     check(
-      /^次の一手：(「移動を短く」で作る|受けられる人を見る|相性の表を開く)$/.test(nt.trim()),
+      /^次の一手：(「移動を短く」で組む|受けられる人を見る|相性の表を開く)$/.test(nt.trim()),
       '理由の下に次の一手を1行',
       nt,
     );
@@ -562,18 +534,14 @@ async function reasonWords(page) {
     check(!['travel', 'dropped'].includes(key ?? ''), '移動・入らないが理由なら次の一手がある', key);
   }
   await page.screenshot({ path: path.join(OUT_DIR, 'plan-reason-lines.png'), fullPage: false });
-  // 比較の画面：記録の表に乱数の種を出さず、表の下の「詳細設定」に畳む
+  // 比較の画面：AI の記録は残さない（版2。提案はその場だけ）ので、乱数の種は出さない
   await open(page, '/compare', 'h1');
-  await page.locator('.runs-table').waitFor({ timeout: 10000 });
-  check(!(await page.locator('.runs-table').innerText()).includes('乱数の種'), '比較：記録の表に乱数の種を出さない');
-  const adv = page.getByTestId('compare-advanced');
-  check((await adv.count()) === 1 && (await adv.getAttribute('open')) === null, '比較：乱数の種は「詳細設定」に畳む');
-  await adv.locator('summary').click();
-  check(/乱数の種 -?\d+/.test(await adv.innerText()), '比較：詳細設定を開くと記録ごとの乱数の種');
+  await page.getByTestId('compare-another').waitFor({ timeout: 10000 });
+  check(!(await page.locator('main').innerText()).includes('乱数の種'), '比較：乱数の種を出さない');
 }
 
 async function unplacedWords(page) {
-  // 入らなかった訪問の理由の札も符号の無い言葉（PRD D229）：今日の案のいちばん長い列の1件目を入らなかったことにする
+  // 担当なしの訪問の理由の札も符号の無い言葉（PRD D229）：今日の訪問の1件の担当を外す
   await openPlan(page);
   await page.goto('about:blank');
   await page.goto(`${BASE}#/home`);
@@ -581,26 +549,24 @@ async function unplacedWords(page) {
   const moved = await page.evaluate(
     ({ k, today }) => {
       const d = JSON.parse(localStorage.getItem(k));
-      const plan = d.aiPlans?.[today];
-      if (!plan) return null;
-      const [sid, list] = Object.entries(plan.routes).sort((a, b) => b[1].length - a[1].length)[0] ?? [];
-      if (!sid || list.length === 0) return null;
-      const vid = list[0];
-      plan.routes[sid] = list.filter((v) => v !== vid);
-      plan.unassigned = [...(plan.unassigned ?? []), vid];
+      // 版2：担当は訪問に持つ。保存した今日の訪問1件を担当なしにする
+      const v = d.visits.find((x) => x.date === today && !x.cancelled && x.staffId);
+      if (!v) return null;
+      v.staffId = null;
+      v.pinned = false;
       localStorage.setItem(k, JSON.stringify(d));
-      return vid;
+      return v.id;
     },
     { k: STORAGE_KEY, today: TODAY },
   );
-  check(!!moved, '入らなかった訪問を作った（今日の案の1件を外す）', moved);
+  check(!!moved, '担当なしの訪問を作った（今日の訪問の1件の担当を外す）', moved);
   await openPlan(page);
   const chips = await page
     .getByTestId('unplaced-reason')
     .evaluateAll((els) =>
       els.map((e) => ({ text: (e.textContent ?? '').trim(), title: e.getAttribute('title') ?? '' })),
     );
-  check(chips.length > 0, '入らなかった訪問：理由の札が出る', chips.length);
+  check(chips.length > 0, '担当なしの訪問：理由の札が出る', chips.length);
   check(
     chips.every(
       (c) =>
@@ -621,24 +587,11 @@ async function unplacedWords(page) {
 }
 
 async function warnColors(page) {
-  // 月：今日以降で訪問があり案の無い日は注意（黄の細い点線）。赤（要対応）にしない
+  // 月：要対応（担当なし・担当が休み など）の日だけ赤。まだ伝えていないだけの日は赤くしない（版2：「案なし」の注意は無い）
   await resetData(page);
-  // 初期データは今日から7日分の案があり（PRD D225）、月末に近い日は今月に案の無い日が残らないので、今日の案を消して作る
-  await page.evaluate(
-    ({ k, today }) => {
-      const d = JSON.parse(localStorage.getItem(k));
-      delete d.aiPlans[today];
-      localStorage.setItem(k, JSON.stringify(d));
-    },
-    { k: STORAGE_KEY, today: TODAY },
-  );
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   const line = await page.locator('.month-legend-line').innerText();
-  check(
-    /黄の点線＝案なし（注意）/.test(line) && /赤い枠と「要対応 N」の札＝要対応/.test(line),
-    '月：凡例の要約に注意と要対応',
-    line,
-  );
+  check(/赤い枠と「要対応 N」の札＝要対応/.test(line), '月：凡例の要約に要対応', line);
   const cells = await page.locator('.month-cell.is-state-none').evaluateAll(
     (els, today) =>
       els
@@ -647,47 +600,46 @@ async function warnColors(page) {
           const cs = getComputedStyle(btn);
           return {
             date: btn?.getAttribute('data-date') ?? '',
-            caution: el.classList.contains('is-caution'),
             care: el.classList.contains('is-care'),
-            count: el.querySelector('[data-testid="month-count"], .month-count')?.textContent ?? '',
+            flags: el.querySelectorAll('.month-flag.is-red').length,
             color: cs.borderTopColor,
-            width: Number.parseFloat(cs.borderTopWidth),
-            dot: !!el.querySelector('.month-dot'),
             label: btn?.getAttribute('aria-label') ?? '',
           };
         })
-        .filter((c) => c.date >= today && c.count !== ''),
+        .filter((c) => c.date >= today),
     TODAY,
   );
-  check(cells.length > 0, '月：今日以降に案の無い日がある（初期データ）', cells.length);
+  check(cells.length > 0, '月：今日以降にまだ伝えていない日がある（初期データ）', cells.length);
+  const calm = cells.filter((c) => !c.care);
   check(
-    cells.every((c) => c.caution && !c.care && !c.dot),
-    '月：今日以降の案なしの日は注意（is-caution）で、要対応の赤い点を付けない',
-    cells.slice(0, 3),
+    calm.every((c) => c.flags === 0 && c.color !== DANGER_RGB),
+    '月：要対応の無い、まだ伝えていない日は赤くしない',
+    calm.slice(0, 3),
   );
   check(
-    cells.every((c) => c.color !== DANGER_RGB && c.width < 2),
-    '月：案なしの日の枠は細く、赤でない',
-    cells.slice(0, 3).map((c) => [c.color, c.width]),
+    cells.filter((c) => c.care).every((c) => c.flags > 0),
+    '月：要対応の日はマスに赤い印（担当なし N など）',
+    cells.filter((c) => c.care).slice(0, 3),
   );
   check(
-    cells.every((c) => /注意：まだ案が無い/.test(c.label)),
-    '月：読み上げに「注意：まだ案が無い」',
+    cells.every((c) => /まだ伝えていない/.test(c.label)),
+    '月：読み上げに「まだ伝えていない」',
+    cells.slice(0, 2).map((c) => c.label),
   );
   await page.getByTestId('month-legend-toggle').click();
   const body = await page.getByTestId('month-legend').innerText();
   check(
-    /注意（今日以降で案なし）/.test(body) && /要対応（入らない・違反・休みの人に訪問）/.test(body),
+    /まだ伝えていない/.test(body) && /要対応（担当なし・担当が休み・条件に合わない・時間に間に合わない）/.test(body),
     '月：凡例の見本',
     body,
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'month-caution.png'), fullPage: false });
-  // 週：担当の無い帯は「案なし」（注意）と「入らない」（要対応）に分ける。
-  // 初期データは今日から7日分の案があるので（PRD D225）、今日の案を消して案の無い日を作る
+  // 週：担当の無い帯は「担当なし（要対応）」。今日の訪問1件の担当を外して作る
   await page.evaluate(
     ({ k, today }) => {
       const d = JSON.parse(localStorage.getItem(k));
-      delete d.aiPlans[today];
+      const v = d.visits.find((x) => x.date === today && !x.cancelled && x.staffId);
+      if (v) v.staffId = null;
       localStorage.setItem(k, JSON.stringify(d));
     },
     { k: STORAGE_KEY, today: TODAY },
@@ -695,20 +647,15 @@ async function warnColors(page) {
   await open(page, '/week', '.week-band');
   const legendText = await page.locator('.week-legend-item').allInnerTexts();
   check(
-    legendText.some((t) => /案なし（担当未定・注意）/.test(t)) && legendText.some((t) => /入らない（要対応）/.test(t)),
-    '週：凡例は「案なし（担当未定・注意）」と「入らない（要対応）」',
+    legendText.some((t) => /担当なし（要対応）/.test(t)),
+    '週：凡例は「担当なし（要対応）」',
     legendText,
   );
-  const noplan = await page
-    .locator('.week-band.is-noplan')
-    .evaluateAll((els) => els.map((e) => ({ color: getComputedStyle(e).borderTopColor, text: e.textContent ?? '' })));
-  check(noplan.length > 0, '週：案の無い日の帯は is-noplan', noplan.length);
-  check(
-    noplan.every((b) => b.color !== DANGER_RGB && /案なし/.test(b.text)),
-    '週：案なしの帯は赤でなく「案なし」の文字',
-    noplan.slice(0, 2),
-  );
-  await page.screenshot({ path: path.join(OUT_DIR, 'week-noplan.png'), fullPage: false });
+  const none = await page
+    .locator('.week-band.is-unassigned')
+    .evaluateAll((els) => els.map((e) => ({ text: e.textContent ?? '' })));
+  check(none.length > 0, '週：担当の無い帯は is-unassigned', none.length);
+  await page.screenshot({ path: path.join(OUT_DIR, 'week-unassigned.png'), fullPage: false });
 }
 
 /**
@@ -782,7 +729,17 @@ async function mobile(browser) {
   await page.emulateMedia({ media: 'print' });
   check(!(await page.locator('.month-legend-open').isVisible()), '印刷：「凡例を見る」を出さない');
   await page.emulateMedia({ media: 'screen' });
-  // 空の画面（ずっと先の週）
+  // 空の画面（ずっと先の週。繰り返しを8週先で終わらせて、訪問の無い週にする）
+  await page.evaluate(
+    ({ k, end }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      for (const p of d.patterns) if (!p.to || p.to > end) p.to = end;
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    { k: STORAGE_KEY, end: addDays(TODAY, 7 * 8) },
+  );
+  await page.goto(`${BASE}#/week?d=${addDays(TODAY, 7 * 30)}`);
+  await page.reload();
   await open(page, `/week?d=${addDays(TODAY, 7 * 30)}`, '[data-testid="week-empty"]');
   const eb = await page.getByTestId('week-empty').boundingBox();
   const sw2 = await page.evaluate(() => document.documentElement.scrollWidth);

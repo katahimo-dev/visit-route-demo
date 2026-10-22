@@ -22,6 +22,7 @@ const {
   JST,
   NOW,
   STORAGE_KEY,
+  TODAY,
   check,
   settle,
   urlOf,
@@ -313,7 +314,8 @@ async function clientsMore(page, dlg) {
   );
   // 別の節を直すと、変更が無ければそのまま替わる・あれば確かめる
   await editSec(page, 'staffing');
-  await sec(page, 'staffing').getByTestId('client-usual').selectOption({ index: 1 });
+  // いつもの担当は繰り返しの担当（版2。ADR-0053）なので、担当できる人を限るで変更を作る
+  await sec(page, 'staffing').getByLabel('担当できる人を限る').check();
   dlg.answer = false;
   dlg.messages.length = 0;
   await sec(page, 'conds').getByTestId('sec-edit').click();
@@ -321,7 +323,7 @@ async function clientsMore(page, dlg) {
   check(
     dlg.messages.length === 1 &&
       /ほかの節を直しますか/.test(dlg.messages[0]) &&
-      (await sec(page, 'staffing').locator('select').count()) > 0,
+      (await sec(page, 'staffing').getByTestId('sec-save').count()) === 1,
     '〈利用者さん〉：変更があるまま別の節を直すと確認が出て、断れば今の節のまま',
     dlg.messages,
   );
@@ -329,7 +331,7 @@ async function clientsMore(page, dlg) {
   await sec(page, 'conds').getByTestId('sec-edit').click();
   await settle(page);
   check(
-    (await sec(page, 'staffing').locator('select').count()) === 0 &&
+    (await sec(page, 'staffing').getByTestId('sec-save').count()) === 0 &&
       (await sec(page, 'conds').getByTestId('sec-save').count()) === 1,
     '〈利用者さん〉：受ければ前の節を捨てて、押した節を直す',
   );
@@ -357,7 +359,7 @@ async function reviewFixes(page, dlg) {
   // 吹き出しのリンクで「捨てて移る」→ 移る（確認で吹き出しが閉じても）
   await goTab(page, 'staffing');
   await editSec(page, 'staffing');
-  await sec(page, 'staffing').getByTestId('client-usual').selectOption({ index: 1 });
+  await sec(page, 'staffing').getByLabel('担当できる人を限る').check();
   const name = page.locator('[data-section="compat"] [data-testid="person-btn"]').first();
   if ((await name.count()) === 0) check(false, '相性の節に名前がある（確かめの前提）');
   else {
@@ -631,6 +633,18 @@ async function links(page) {
   );
 }
 
+/** その〈利用者さん〉のいつもの担当（版2：繰り返しの担当。今日以降も続く繰り返しを先に、開始の遅いものを先に。lib/usualStaff と同じ） */
+function usualOf(d, clientId) {
+  let best = null;
+  for (const p of d.patterns) {
+    if (p.clientId !== clientId || p.usualStaffId === null) continue;
+    const live = p.to === null || p.to >= TODAY;
+    if (!best || (live && !best.live) || (live === best.live && p.from > best.from))
+      best = { live, from: p.from, staffId: p.usualStaffId };
+  }
+  return best?.staffId ?? null;
+}
+
 /** 相性・担当の名前から詳細の吹き出し・相手の画面（PRD D198〜D200） */
 async function names(page) {
   await open(page, '/staff', '.people-table tbody tr');
@@ -643,14 +657,15 @@ async function names(page) {
     for (const c of d.clients) d.compat[c.id] = { ...(d.compat[c.id] ?? {}), s1: 2 };
     d.clients[0].active = false;
     d.clients[0].stage = 'ended';
-    d.clients[1].usualStaffId = 's1';
+    // 版2：いつもの担当は繰り返しの担当
+    for (const p of d.patterns) if (p.clientId === d.clients[1].id) p.usualStaffId = 's1';
     localStorage.setItem(k, JSON.stringify(d));
   }, STORAGE_KEY);
   await other.close();
   await settle(page, 300);
   const data = await stored(page);
   const active = data.clients.filter((c) => c.active);
-  const usual = active.filter((c) => c.usualStaffId === 's1');
+  const usual = active.filter((c) => usualOf(data, c.id) === 's1');
   await open(page, '/staff/s1?tab=compat', '[data-testid="view-compat-great"]');
   const great = page.getByTestId('view-compat-great');
   const btns = great.getByTestId('person-btn');
@@ -720,12 +735,13 @@ async function names(page) {
   const c = data.clients.find((x) => x.id === firstId);
   await goTab(page, 'staffing');
   const usualStaff = page.getByTestId('view-usual-staff').getByTestId('person-btn');
-  if (c.usualStaffId) {
+  const cUsual = usualOf(data, c.id);
+  if (cUsual) {
     await usualStaff.click();
     await page.getByTestId('person-pop-link').click();
     await settle(page, 500);
     check(
-      (await view(page).getAttribute('data-id')) === c.usualStaffId && hashOf(page).startsWith('#/staff/'),
+      (await view(page).getAttribute('data-id')) === cUsual && hashOf(page).startsWith('#/staff/'),
       '〈利用者さん〉：いつもの担当の名前から〈スタッフ〉の画面',
     );
   } else {

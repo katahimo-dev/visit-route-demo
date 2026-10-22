@@ -18,7 +18,46 @@ const { sharedPage, openPage } = require('./lib/steps.cjs');
 const shot = (page, name) => page.screenshot({ path: path.join(OUT_DIR, `${name}.png`) });
 const panel = (page) => page.getByTestId('visit-panel');
 const data = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
-const visitOf = async (page, id) => (await data(page)).visits.find((v) => v.id === id);
+/**
+ * 版2：その日の訪問（保存した訪問と、保存した回の無い繰り返しの計算した回。ADR-0053）。
+ * 初期データの繰り返しは毎週なので、毎週の繰り返しだけを計算する（隔週・毎月は見ない簡易版）
+ */
+function visitsOnDate(d, date) {
+  const wd = new Date(`${date}T00:00:00Z`).getUTCDay();
+  const own = d.visits.filter((v) => v.date === date);
+  const ids = new Set(own.map((v) => v.id));
+  const active = new Set(d.clients.filter((c) => c.active).map((c) => c.id));
+  const calc = d.patterns
+    .filter(
+      (p) =>
+        active.has(p.clientId) &&
+        p.weekdays.includes(wd) &&
+        p.from <= date &&
+        (!p.to || p.to >= date) &&
+        (p.repeat ?? 'weekly') === 'weekly' &&
+        p.everyWeeks === 1 &&
+        !ids.has(`${date}_${p.id}`),
+    )
+    .map((p) => {
+      const t = (p.dayTimes ?? []).find((x) => x.weekday === wd);
+      return {
+        id: `${date}_${p.id}`,
+        date,
+        clientId: p.clientId,
+        earliestStart: t?.earliestStart ?? p.earliestStart,
+        latestStart: t?.latestStart ?? p.latestStart,
+        staffId: p.usualStaffId,
+        pinned: false,
+        cancelled: false,
+        pattern: { id: p.id, date, edited: false },
+      };
+    });
+  return [...own, ...calc];
+}
+/** ID の訪問（保存した回か計算した回） */
+const findIn = (d, id) =>
+  d.visits.find((v) => v.id === id) ?? visitsOnDate(d, id.slice(0, 10)).find((v) => v.id === id);
+const visitOf = async (page, id) => findIn(await data(page), id);
 /** 保存（localStorage へ書くのは少し後）を待って読む：ok(d) が真になるまで（最長5秒） */
 const dataWhen = async (page, ok) =>
   (await until(async () => {
@@ -124,41 +163,34 @@ async function timeAndStaff(page) {
   await choice.locator('input').check();
   await page.getByTestId('vp-save').click();
   await closed(page);
-  const d = await dataWhen(page, (x) => x.visits.find((v) => v.id === id).earliestStart === hhmm(start));
+  const d = await dataWhen(page, (x) => x.visits.find((v) => v.id === id)?.earliestStart === hhmm(start));
   const after = d.visits.find((v) => v.id === id);
   check(after.earliestStart === hhmm(start), '保存で時刻が変わる', after.earliestStart);
-  check(
-    d.aiPlans[TODAY].pins[id] === sid && (d.aiPlans[TODAY].routes[sid] ?? []).includes(id),
-    '担当はその日の案で固定',
-    {
-      sid,
-      pin: d.aiPlans[TODAY].pins[id],
-    },
-  );
+  check(after.staffId === sid && after.pinned, '担当は訪問に書いてピン（版2）', { sid, after });
   const back = await page.evaluate(
     () => document.activeElement?.closest('.tl-band, .route-item')?.dataset.visit ?? document.activeElement?.tagName,
   );
   check(back === id, '保存のあとフォーカスは開いた帯', back);
   // トーストの「元に戻す」
   await page.getByTestId('vp-toast-undo').click();
-  const undone = (
-    await dataWhen(page, (x) => x.visits.find((v) => v.id === id).earliestStart === before.earliestStart)
-  ).visits.find((v) => v.id === id);
+  const undone =
+    (await dataWhen(page, (x) => findIn(x, id)?.earliestStart === before.earliestStart)).visits.find(
+      (v) => v.id === id,
+    ) ?? (await visitOf(page, id));
   check(undone.earliestStart === before.earliestStart, 'トーストの「元に戻す」で時刻が戻る', undone.earliestStart);
 }
 
-/** 今日より後の、繰り返しの回（同じ繰り返しの同じ曜日の回が後にあるもの） */
+/** 今日より後の、繰り返しの回（同じ繰り返しの同じ曜日の回が次の週にもあるもの）。初期データで組んだ7日より後から探す */
 async function seriesVisit(page) {
   const d = await data(page);
-  const future = d.visits.filter((v) => v.pattern && !v.cancelled && !v.pattern.edited && v.date > TODAY);
-  for (const v of future) {
-    const later = future.filter(
-      (x) =>
-        x.pattern.id === v.pattern.id &&
-        x.date > v.date &&
-        (Date.parse(x.date) - Date.parse(v.date)) % (7 * 864e5) === 0,
-    );
-    if (later.length >= 1) return { v, later };
+  for (let i = 8; i <= 21; i++) {
+    const date = addDays(TODAY, i);
+    for (const v of visitsOnDate(d, date)) {
+      if (!v.pattern || v.cancelled || v.pattern.edited) continue;
+      const next = addDays(date, 7);
+      const later = visitsOnDate(d, next).filter((x) => x.pattern?.id === v.pattern.id);
+      if (later.length >= 1) return { v, later };
+    }
   }
   return null;
 }
@@ -186,20 +218,23 @@ async function scopes(page) {
   const base = toMin(v.earliestStart);
   // この回だけ：ほかの回は変えない
   await go('once', base + 15);
-  let d = await dataWhen(page, (x) => x.visits.find((y) => y.id === v.id).earliestStart === hhmm(base + 15));
+  let d = await dataWhen(page, (x) => findIn(x, v.id)?.earliestStart === hhmm(base + 15));
   const same = (x) => x.pattern?.id === v.pattern.id;
   const nextWeek = addDays(v.date, 7);
   check(
-    d.visits.find((x) => x.id === v.id).earliestStart === hhmm(base + 15) &&
-      d.visits.find((x) => same(x) && x.date === nextWeek).earliestStart === v.earliestStart,
+    findIn(d, v.id).earliestStart === hhmm(base + 15) &&
+      visitsOnDate(d, nextWeek).find((x) => same(x)).earliestStart === v.earliestStart,
     'この回だけ：この回だけ変わり、次の週の回はそのまま',
   );
   // これ以降：次の週の回も変わり、前の回は変わらない
   await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
   await go('following', base + 30);
-  d = await dataWhen(page, (x) => x.visits.some((y) => y.date === v.date && y.earliestStart === hhmm(base + 30)));
-  const at = (date) => d.visits.find((x) => x.date === date && x.clientId === v.clientId && !x.cancelled && x.pattern);
-  const prev = d.visits.find((x) => x.pattern?.id === v.pattern.id && x.date < v.date && x.date >= TODAY);
+  d = await dataWhen(page, (x) =>
+    visitsOnDate(x, v.date).some((y) => y.clientId === v.clientId && y.earliestStart === hhmm(base + 30)),
+  );
+  const at = (date) => visitsOnDate(d, date).find((x) => x.clientId === v.clientId && !x.cancelled && x.pattern);
+  const prevDate = addDays(v.date, -7);
+  const prev = prevDate >= TODAY ? at(prevDate) : null;
   check(
     at(v.date)?.earliestStart === hhmm(base + 30) &&
       at(nextWeek)?.earliestStart === hhmm(base + 30) &&
@@ -210,17 +245,19 @@ async function scopes(page) {
   // すべて：今日以降の同じ曜日の回がすべて変わる
   await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
   await go('all', base + 45);
-  d = await dataWhen(page, (x) => x.visits.some((y) => y.date === v.date && y.earliestStart === hhmm(base + 45)));
-  const wd = new Date(`${v.date}T00:00:00Z`).getUTCDay();
-  const series = d.visits.filter(
-    (x) =>
-      x.clientId === v.clientId &&
-      x.pattern &&
-      !x.cancelled &&
-      x.date >= TODAY &&
-      new Date(`${x.date}T00:00:00Z`).getUTCDay() === wd &&
-      Math.abs(toMin(x.earliestStart) - base) <= 45,
+  d = await dataWhen(page, (x) =>
+    visitsOnDate(x, v.date).some((y) => y.clientId === v.clientId && y.earliestStart === hhmm(base + 45)),
   );
+  // 今日以降の同じ曜日の日（今日から4週）の、その〈利用者さん〉の繰り返しの回
+  const wd = new Date(`${v.date}T00:00:00Z`).getUTCDay();
+  const sameDays = Array.from({ length: 28 }, (_, i) => addDays(TODAY, i)).filter(
+    (x) => new Date(`${x}T00:00:00Z`).getUTCDay() === wd,
+  );
+  const series = sameDays
+    .flatMap((x) => visitsOnDate(d, x))
+    .filter(
+      (x) => x.clientId === v.clientId && x.pattern && !x.cancelled && Math.abs(toMin(x.earliestStart) - base) <= 45,
+    );
   check(
     series.length >= 2 && series.every((x) => x.earliestStart === hhmm(base + 45)),
     'すべて：今日以降の同じ曜日の回がすべて変わる',
@@ -434,8 +471,11 @@ async function narrow(page) {
     await choice.locator('input').check();
     await page.getByTestId('vp-save').click();
     await closed(page);
-    const d = await dataWhen(page, (x) => x.aiPlans[TODAY]?.pins[id] === sid);
-    check(d.aiPlans[TODAY].pins[id] === sid, '390px：担当を替えて保存できる');
+    const d = await dataWhen(page, (x) => x.visits.some((v) => v.id === id && v.staffId === sid && v.pinned));
+    check(
+      d.visits.some((v) => v.id === id && v.staffId === sid && v.pinned),
+      '390px：担当を替えて保存できる（訪問に書いてピン）',
+    );
   } else {
     await page.keyboard.press('Escape');
     await closed(page);
@@ -457,9 +497,15 @@ async function pickReset(page) {
   const choice = p.locator('[data-testid="vp-staff-choice"]:not(.is-off)').first();
   await choice.waitFor();
   await choice.locator('input').check();
-  // 今の案の無い先の日へ（候補は目安で、選べない）
-  await p.getByTestId('vp-date').fill(addDays(TODAY, 40));
-  await until(async () => (await p.getByTestId('vp-staff-noplan').count()) === 1);
+  // 選んだ人が働かない曜日へ（その日の候補では選べない）
+  const sid = await choice.getAttribute('data-staff');
+  const d = await data(page);
+  const st = d.staff.find((x) => x.id === sid);
+  const off = Array.from({ length: 14 }, (_, i) => addDays(TODAY, i + 1)).find(
+    (x) => !st.workDays.includes(new Date(`${x}T00:00:00Z`).getUTCDay()),
+  );
+  check(!!off, '選んだ人が働かない日がある（前提）', { sid, workDays: st.workDays });
+  await p.getByTestId('vp-date').fill(off ?? addDays(TODAY, 1));
   const kept = await until(() => p.getByTestId('vp-staff-keep').isChecked());
   check(kept, '日付を変えて選んでいた担当が選べなくなると「変えない」に戻る');
   await page.keyboard.press('Escape');

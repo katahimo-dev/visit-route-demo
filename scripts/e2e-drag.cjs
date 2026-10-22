@@ -237,7 +237,9 @@ async function planMove(page, view, name) {
     async () => {
       await col.scrollIntoViewIfNeeded();
       const cb = await col.boundingBox();
-      return { x: cb.x + cb.width / 2, y: cb.y + Math.min(cb.height / 2, 120) };
+      // 列の上が上の帯（固定の見出し）の下に隠れていても、見えている所に落とす
+      const top = Math.max(cb.y, 140);
+      return { x: cb.x + cb.width / 2, y: Math.min(top + 120, cb.y + cb.height - 20) };
     },
     name,
   );

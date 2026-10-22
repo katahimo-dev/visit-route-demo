@@ -239,7 +239,7 @@ export default function WeekPage() {
   /**
    * 開いて最初の1回だけ、今日の列の見出しが下のタブの裏・画面の下にあれば、上の帯のすぐ下まで縦に巻く（月の日ごとの一覧と同じ）。
    * 画面を移ったときの「上へ」（App の useEffect）のあとに巻くので、useEffect から次の描画で。表示を切り替えたときは巻かない。
-   * 空の画面の案内（week-empty「この週は案がありません」）が出ているときは巻かない（案内と次の一手を先に見せる。ADR-0033）
+   * 空の画面の案内（week-empty「この週には訪問がありません」）が出ているときは巻かない（案内と次の一手を先に見せる。ADR-0033）
    */
   useEffect(() => {
     const target = todayPaged.current;
@@ -320,8 +320,17 @@ export default function WeekPage() {
       weekStart: start,
     });
     if (!ok) toast('ほかの担当を組んでいます。終わってから押してください');
-    else setTried((t) => new Set([...t, ...targets.map((x) => x.date)]));
+    else startedDays.current = targets.map((x) => x.date);
   };
+  /** この週で組み始めた日（終わったら、組んだ日だけを tried に入れる。止めた日の残りはまた組める） */
+  const startedDays = useRef<string[] | null>(null);
+  const batchDone = useValueStore(monthBatch.done);
+  useEffect(() => {
+    const days = startedDays.current;
+    if (!batchDone || !days || batchDone.source !== 'week' || batchDone.weekStart !== start) return;
+    startedDays.current = null;
+    setTried((t) => new Set([...t, ...days.slice(0, batchDone.made)]));
+  }, [batchDone, start]);
   /**
    * この週の問題の無い日をまとめて確定（PRD D280）：月の「問題の無い日をまとめて確定」（D223）と同じ決まり・同じ確認の型で、
    * 範囲をこの週の今日以降にする。1回の update で日ごとに「確定（伝えた）」と同じ書き方（lib/confirmDay）
@@ -963,7 +972,7 @@ export default function WeekPage() {
         </output>
       )}
 
-      {/* 空の画面（PRD D176）：この週に案が1日も無いとき、なぜ空かと次の一手（主ボタンは進み具合の帯に任せる） */}
+      {/* 空の画面（PRD D176）：この週に訪問が1日も無いとき、なぜ空かと次の一手（主ボタンは進み具合の帯に任せる） */}
       {emptyGuide && (
         <div className="card week-empty-card">
           <EmptyNext

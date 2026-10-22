@@ -658,7 +658,7 @@ async function narrowWeek(page) {
   );
   check((await pageWidth(page)) <= 390, '週：横にはみ出さない');
 
-  // 案の無い週（新しい文脈。初期データの案（今日から7日分。PRD D225）を消す）：案内「この週は案がありません」が見え、
+  // 訪問の無い週（新しい文脈。訪問を取り消し、繰り返しを消す）：案内「この週には訪問がありません」が見え、
   // 縦には巻かない。今日の列まで横には巻く
   const ctx2 = await page
     .context()
@@ -666,14 +666,14 @@ async function narrowWeek(page) {
     .newContext({ viewport: { width: 390, height: 844 } });
   await skipTour(ctx2);
   const p2 = await ctx2.newPage();
-  p2.on('pageerror', (e) => check(false, '週（案の無い週）：ページのエラー', String(e)));
+  p2.on('pageerror', (e) => check(false, '週（訪問の無い週）：ページのエラー', String(e)));
   await p2.clock.setFixedTime(NOW);
   try {
     await open(p2, '/home', 'h1');
     await p2.evaluate((k) => {
       const d = JSON.parse(localStorage.getItem(k));
-      d.aiPlans = {};
-      d.aiRuns = {};
+      d.visits = d.visits.map((v) => ({ ...v, cancelled: true }));
+      d.patterns = [];
       localStorage.setItem(k, JSON.stringify(d));
     }, STORAGE_KEY);
     await open(p2, '/week', '[data-testid="week-table"]');
@@ -685,7 +685,7 @@ async function narrowWeek(page) {
     const n2 = await p2.locator('[data-testid="week-table"] thead th').first().boundingBox();
     check(
       empty && empty.y >= vb2.top - 1 && empty.y + empty.height <= vb2.bottom && y === 0 && t2.x >= n2.x + n2.width - 1,
-      '週：案の無い週は案内「この週は案がありません」が見え（縦に巻かない）、表は今日の列まで横に巻く',
+      '週：訪問の無い週は案内「この週には訪問がありません」が見え（縦に巻かない）、表は今日の列まで横に巻く',
       { empty, vb2, y, t2 },
     );
     await p2.screenshot({ path: path.join(OUT_DIR, 'narrow-week-empty.png') });

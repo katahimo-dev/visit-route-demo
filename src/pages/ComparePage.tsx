@@ -113,7 +113,8 @@ export default function ComparePage() {
 
   const reassign = own(data.reassigns, date) ?? null;
   const choices: Choice[] = useMemo(() => {
-    if (!problem) return [];
+    // 計算できる訪問が無い日は比べる担当も無い（空の画面）
+    if (!problem || problem.visits.length === 0) return [];
     const out: Choice[] = [];
     const ids = problem.visits.map((v) => v.id);
     if (reassign) {
@@ -655,7 +656,7 @@ export default function ComparePage() {
             </table>
           </div>
         )}
-        {problem && (
+        {problem && problem.visits.length > 0 && (
           <div className="compare-another stack" data-testid="compare-another">
             {choices.length === 1 && (
               <p className="sub">比べるには2つ要ります。考え方を選んで提案を作ると、今の担当と並べられます。</p>

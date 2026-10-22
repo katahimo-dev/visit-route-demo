@@ -100,9 +100,9 @@ describe('日の状態（dayStatus。版2）', () => {
     const s2 = dayStatus(changed, day);
     expect(s2.state).toBe('changed');
     expect(s2.changes).toBe(1);
-    expect(s2.unassigned).toBe(1);
+    expect(s2.unassigned).toBe(s0.unassigned + 1);
     expect(s2.needsCare).toBe(true);
-    expect(issueBreakdown(s2.issues)).toContain('担当なし 1');
+    expect(issueBreakdown(s2.issues)).toContain(`担当なし ${s0.unassigned + 1}`);
   });
 
   it('欠勤の印・訪問の無い日は手当て不要', () => {

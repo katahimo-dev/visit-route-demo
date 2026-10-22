@@ -115,9 +115,9 @@ describe('scoreReason', () => {
 });
 
 describe('次の一手（PRD D229）', () => {
-  it('移動が長い → 「移動を短く」で作る', () => {
+  it('移動が長い → 「移動を短く」で組む', () => {
     const r = scoreReason([part('travel', 12)], sc());
-    expect(r?.nextStep).toEqual({ kind: 'shortTravel', text: '「移動を短く」で作る' });
+    expect(r?.nextStep).toEqual({ kind: 'shortTravel', text: '「移動を短く」で組む' });
   });
   it('入らない訪問 → 受けられる人を見る', () => {
     expect(scoreReason([part('travel', 30)], sc({ dropped: 2 }))?.nextStep).toEqual({

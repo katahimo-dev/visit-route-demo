@@ -5,7 +5,7 @@
 // 5段目の連絡（人ごとの文・［文をコピー］・メール・［連絡した］の数。PRD D243〜D246）→ 終わる → 確定済み、
 // 当日キャンセル（訪問を選ぶ・当日キャンセルが既定・影響の文・取り消すと cancelKind='sameDay'・4段目・5段目で担当に「中止」）、
 // 列の見出しの「欠勤を直す」で同じ欄が2段目で開き、欠勤を取り消せる、戻る、Esc で閉じて入口のボタンへフォーカス、
-// 案の無い日は欠勤だけ登録できる、390px で入口が見え欄が画面に収まる・下のタブは5つ（ホーム・予定・欠勤・空き状況・メニュー。PRD D274）、印刷で入口を出さない、ブラウザの確認を出さない。
+// 訪問の無い日は欠勤だけ登録できる、390px で入口が見え欄が画面に収まる・下のタブは5つ（ホーム・予定・欠勤・空き状況・メニュー。PRD D274）、印刷で入口を出さない、ブラウザの確認を出さない。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-absence.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -15,10 +15,8 @@ const { answerConfirms } = require('./lib/confirmDialog.cjs');
 const { BASE, OUT_DIR, TODAY, STORAGE_KEY, check, settle, hashOf, stored, runSteps } = require('./lib/env.cjs');
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
-/** 案の無い日を作るのに使う、今日の次の日 */
+/** 訪問の無い日を作るのに使う、今日の次の日 */
 const NEXT = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
-/** 開くと自動で案を作る日（今日の2日後）。初期データでは案があるので、runningDay の用意で案と記録を消す（PRD D225） */
-const DAY2 = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 2 * 86400000).toISOString().slice(0, 10);
 /** 案A で入らない見込みの日を作る日（初期データの案がある日。PRD D225） */
 const DAY3 = new Date(Date.parse(`${TODAY}T00:00:00Z`) + 3 * 86400000).toISOString().slice(0, 10);
 
@@ -225,16 +223,11 @@ async function fromHome(page) {
       !(await panel(page).locator('.anneal-weight input[type="range"]').isVisible()),
     '4段目：「変更を減らす」のスライダーは「詳しく」の中に畳む',
   );
-  const d1 = await waitStored(page, (d) => !!d.aiPlans?.[TODAY]?.reassign);
+  const d1 = await waitStored(page, (d) => !!d.reassigns?.[TODAY]);
   check(
     d1.absences.some((a) => a.staffId === best.value && a.date === TODAY && a.from === null && a.note === '発熱') &&
-      d1.aiPlans[TODAY].reassign.method === 'insert',
-    '欠勤（終日・メモ）を登録し、今の案が案A の振り直し',
-  );
-  check(
-    (await page.getByTestId('sudden-confirm-note').textContent()).includes('確定'),
-    '4段目：確定の状態の文',
-    await page.getByTestId('sudden-confirm-note').textContent(),
+      d1.reassigns[TODAY].method === 'insert',
+    '欠勤（終日・メモ）を登録し、今の担当が案A の振り直し',
   );
   // 案B を作って選ぶ（差の欄と同じ AnnealBox）
   const box = panel(page).getByTestId('anneal-box');
@@ -245,23 +238,29 @@ async function fromHome(page) {
   const chooseB = box.getByRole('button', { name: /^案B.*を今の案にする$/ });
   if ((await chooseB.count()) > 0 && !(await chooseB.isDisabled())) {
     await chooseB.click();
-    const d2 = await waitStored(page, (d) => d.aiPlans?.[TODAY]?.reassign?.method === 'anneal');
-    check(d2.aiPlans[TODAY].reassign.method === 'anneal', '4段目で案B を今の案にできる');
+    const d2 = await waitStored(page, (d) => d.reassigns?.[TODAY]?.method === 'anneal');
+    check(d2.reassigns[TODAY]?.method === 'anneal', '4段目で案B を今の案にできる');
   } else {
     // 案B が案A と同じ（案A のまま）ときは表に選ぶボタンが出ないか、案A が今の案
     check((await box.textContent()).includes('案A'), '案B を作った（案A のままの知らせ）');
   }
   await page.screenshot({ path: path.join(OUT_DIR, 'step4-staff.png') });
-  // 確定（独自の確認ダイアログ。answerConfirms が確定を押す）
-  await page.getByTestId('sudden-adopt').click();
-  const d3 = await waitStored(page, (d) => !!d.manualPlans?.[TODAY]);
-  check(!!d3.manualPlans[TODAY], '「この割当で確定」で確定した割当を書く');
+  // 次へ：連絡（版2：確定＝伝えた内容なので、連絡の段で確定する。ADR-0053）
+  await page.getByTestId('sudden-to-contacts').click();
   // 5段目：連絡（PRD D243〜D246）
   await page.locator('[data-testid="sudden-panel"][data-step="5"]').waitFor({ timeout: 10000 });
   await settle(page, 300);
-  check((await stepOf(page)) === '5', '確定すると5段目（連絡）。欄は閉じない');
-  check((await currentStep(page)) === '連絡', '5段目の段階の名前は「連絡」', await currentStep(page));
-  check((await page.locator('h3.sudden-step-title').textContent()) === '変更を伝える', '5段目の見出し「変更を伝える」');
+  check((await stepOf(page)) === '5', '「次へ：連絡」で5段目（連絡）');
+  check(
+    (await page.getByTestId('sudden-confirm-note').textContent()).includes('確定'),
+    '5段目：確定の状態の文',
+    await page.getByTestId('sudden-confirm-note').textContent(),
+  );
+  check((await currentStep(page)) === '連絡・確定', '5段目の段階の名前は「連絡・確定」', await currentStep(page));
+  check(
+    (await page.locator('h3.sudden-step-title').textContent()) === '変更を伝えて確定する',
+    '5段目の見出し「変更を伝えて確定する」',
+  );
   const rows = await contactRowsOf(page);
   const removed = rows.find((r) => r.to === 'staff' && r.kinds.includes('removed'));
   check(
@@ -306,8 +305,11 @@ async function fromHome(page) {
     .waitFor({ timeout: 5000 });
   check(true, '5段目：［文をコピー］で知らせが出る');
   await page.screenshot({ path: path.join(OUT_DIR, 'step5-staff.png') });
-  await page.getByTestId('sudden-finish').click();
+  // 連絡したので確定（独自の確認ダイアログ。answerConfirms が確定を押す）
+  await page.getByTestId('sudden-adopt').click();
   await panel(page).waitFor({ state: 'detached', timeout: 10000 });
+  const d3 = await waitStored(page, (d) => !!d.snapshots?.[TODAY]);
+  check(!!d3.snapshots[TODAY], '「連絡したので確定」で伝えた内容を書く');
   await settle(page, 300);
   check(
     (await page.getByTestId('confirm-state').textContent()).includes('確定済み'),
@@ -379,55 +381,6 @@ async function reopenFocus(page, best) {
   await page.getByTestId('sudden-back').click();
   await page.getByTestId('sudden-kind-staff').click();
   check((await page.getByTestId('sudden-staff').inputValue()) === '', '種類を変えたら前に選んだ人を消す');
-  await page.keyboard.press('Escape');
-  await panel(page).waitFor({ state: 'detached' });
-}
-
-// ---- 自動作成の計算中に案の無い日を開く：振り直し・欠勤だけ登録は押せず「案を作っています」 ----
-async function runningDay(page) {
-  // 用意：初期データの DAY2 の案と記録を別のタブで消す（案の無い日にして、開くと自動で作らせる）
-  const other = await page.context().newPage();
-  await other.goto(`${BASE}#/data`);
-  await other.evaluate(
-    ([k, day]) => {
-      const d = JSON.parse(localStorage.getItem(k));
-      delete d.aiPlans[day];
-      delete d.aiRuns[day];
-      localStorage.setItem(k, JSON.stringify(d));
-    },
-    [STORAGE_KEY, DAY2],
-  );
-  await other.close();
-  await page.goto('about:blank');
-  await page.goto(`${BASE}#/plan?date=${DAY2}&do=absence`);
-  await panel(page).waitFor({ timeout: 20000 });
-  await page.getByTestId('sudden-kind-staff').click();
-  const v = await page
-    .getByTestId('sudden-staff')
-    .evaluate((sel) => [...sel.options].find((o) => o.value)?.value ?? '');
-  await page.getByTestId('sudden-staff').selectOption(v);
-  await page.getByTestId('sudden-next').click();
-  const computing = (await page.getByTestId('plan-progress').count()) > 0;
-  if (computing && (await page.getByTestId('sudden-no-plan').count()) > 0) {
-    check(
-      (await page.getByTestId('sudden-no-plan').textContent()) === '案を作っています。終わると振り直せます' &&
-        (await page.getByTestId('sudden-save-only').isDisabled()) &&
-        (await page.getByTestId('sudden-reassign').count()) === 0,
-      '計算中：「案を作っています。終わると振り直せます」・欠勤だけ登録は押せず、振り直しのボタンは出さない',
-    );
-  } else {
-    check(true, '計算中の確かめ：開いたときには計算が終わっていた（飛ばす）');
-  }
-  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 60000 });
-  await page.getByTestId('sudden-reassign').waitFor();
-  await page.waitForFunction(() => !document.querySelector('[data-testid="sudden-reassign"]')?.disabled, null, {
-    timeout: 10000,
-  });
-  check(
-    (await page.getByTestId('sudden-no-plan').count()) === 0 &&
-      !(await page.getByTestId('sudden-save-only').isDisabled()),
-    '作り終えると振り直せる（欠勤だけ登録も押せる）',
-  );
   await page.keyboard.press('Escape');
   await panel(page).waitFor({ state: 'detached' });
 }
@@ -517,17 +470,16 @@ async function fromHeader(page, best) {
   check(JSON.stringify((await stored(page)).absences) === before, 'Esc で閉じても何も変わらない');
 }
 
-// ---- 案の無い日：欠勤だけ登録できる ----
+// ---- 訪問の無い日：欠勤だけ登録できる ----
 async function noPlanDay(page) {
-  // 次の日の訪問を消して案の無い日にする（稼働する人は残る）
+  // 次の日の訪問を消して訪問の無い日にする（稼働する人は残る）
   await page.goto(`${BASE}#/home`);
   await page.evaluate(
     ([k, day]) => {
       const d = JSON.parse(localStorage.getItem(k));
       d.visits = d.visits.filter((v) => v.date !== day);
       d.patterns = [];
-      delete d.aiPlans[day];
-      delete d.manualPlans[day];
+      delete d.snapshots[day];
       localStorage.setItem(k, JSON.stringify(d));
     },
     [STORAGE_KEY, NEXT],
@@ -550,13 +502,13 @@ async function noPlanDay(page) {
   await page.getByTestId('sudden-staff').selectOption(v);
   await page.getByTestId('sudden-next').click();
   await settle(page, 400);
-  check(await page.getByTestId('sudden-no-plan').isVisible(), '案の無い日：「欠勤だけ登録できます」');
+  check(await page.getByTestId('sudden-no-plan').isVisible(), '訪問の無い日：「欠勤だけ登録できます」');
   const primaries = await page.locator('.drawer .btn-primary').evaluateAll((els) => els.map((e) => e.dataset.testid));
   check(
     (await page.getByTestId('sudden-reassign').count()) === 0 &&
       (await page.getByTestId('sudden-anneal').count()) === 0 &&
       JSON.stringify(primaries) === '["sudden-save-only"]',
-    '案の無い日：押せない振り直しのボタンは出さず、「欠勤だけ登録」が主ボタン（主ボタンは1つ。PRD D264）',
+    '訪問の無い日：押せない振り直しのボタンは出さず、「欠勤だけ登録」が主ボタン（主ボタンは1つ。PRD D264）',
     primaries,
   );
   await page.getByTestId('sudden-save-only').click();
@@ -564,7 +516,7 @@ async function noPlanDay(page) {
   const d = await waitStored(page, (x) => x.absences.some((a) => a.staffId === v && a.date === NEXT));
   check(
     d.absences.some((a) => a.staffId === v && a.date === NEXT),
-    '案の無い日：欠勤だけ登録する',
+    '訪問の無い日：欠勤だけ登録する',
   );
 }
 
@@ -578,17 +530,28 @@ async function recommendB(page) {
   const staffId = await page.evaluate(
     ([k, day]) => {
       const d = JSON.parse(localStorage.getItem(k));
-      const routes = d.aiPlans[day]?.routes ?? {};
-      const [sid, ids] = Object.entries(routes).sort((a, b) => b[1].length - a[1].length)[0] ?? [];
+      // その日の担当ごとの〈利用者さん〉（保存した訪問の担当と、その曜日の繰り返しの担当）
+      const wd = new Date(`${day}T00:00:00Z`).getUTCDay();
+      const by = new Map();
+      const add = (sid, cid) => {
+        if (!sid) return;
+        if (!by.has(sid)) by.set(sid, new Set());
+        by.get(sid).add(cid);
+      };
+      const own = new Set(d.visits.filter((v) => v.date === day).map((v) => v.id));
+      for (const v of d.visits) if (v.date === day && !v.cancelled) add(v.staffId, v.clientId);
+      for (const p of d.patterns)
+        if (p.weekdays.includes(wd) && p.from <= day && (!p.to || p.to >= day) && !own.has(`${day}_${p.id}`))
+          add(p.usualStaffId, p.clientId);
+      const [sid, clients] = [...by.entries()].sort((a, b) => b[1].size - a[1].size)[0] ?? [];
       if (!sid) return '';
-      const clients = new Set(d.visits.filter((v) => ids.includes(v.id)).map((v) => v.clientId));
       d.clients = d.clients.map((c) => (clients.has(c.id) ? { ...c, allowedStaffIds: [sid] } : c));
       localStorage.setItem(k, JSON.stringify(d));
       return sid;
     },
     [STORAGE_KEY, DAY3],
   );
-  check(!!staffId, `${DAY3} に初期データの案がある`, staffId);
+  check(!!staffId, `${DAY3} に担当の入った訪問がある`, staffId);
   if (!staffId) return;
   await page.goto('about:blank');
   await page.goto(`${BASE}#/plan?date=${DAY3}&do=absence`);
@@ -732,7 +695,6 @@ const steps = sharedPage({
     ],
     ['reopen-focus', (page) => (best ? reopenFocus(page, best) : check(false, 'reopen-focus：前の段が通らない'))],
     ['same-day-cancel', sameDayCancel],
-    ['running-day', runningDay],
     ['from-header', (page) => (best ? fromHeader(page, best) : check(false, 'from-header：前の段が通らない'))],
     ['no-plan', noPlanDay],
     ['recommend-b', recommendB],
@@ -741,7 +703,7 @@ const steps = sharedPage({
   ],
   after: ({ st }) => {
     check(
-      st.messages.some((m) => m.startsWith('この割当で確定しますか？')) &&
+      st.messages.some((m) => m.includes('確定しますか？')) &&
         st.messages.some((m) => m.includes('欠勤を取り消しますか？')),
       '確定・欠勤の取り消しは独自の確認ダイアログで確かめる',
       st.messages,

@@ -260,7 +260,7 @@ async function dataReset(page) {
   );
 }
 
-// ---- 日の画面の「この割当で確定」（#/plan）：取り消しでは未確定のまま、確定で「確定済み」 ----
+// ---- 日の画面の「確定（伝えた）」（#/plan。版2）：取り消しでは未確定のまま、確定で「確定済み」 ----
 async function adopt(page) {
   await open(page, '/plan', '.date-switch select');
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
@@ -269,7 +269,7 @@ async function adopt(page) {
   const s0 = (await state()) ?? '';
   await page.getByTestId('adopt').click();
   const a = await shape(page, 'この割当で確定');
-  check(a.title === 'この割当で確定しますか？', 'この割当で確定：見出し', a.title);
+  check(a.title === 'この担当と時刻を伝えたので、確定しますか？', 'この割当で確定：見出し', a.title);
   await page.keyboard.press('Escape');
   await settle(page);
   check((await state()) === s0 && !/確定済み/.test(s0), 'この割当で確定：Esc では確定しない', s0);

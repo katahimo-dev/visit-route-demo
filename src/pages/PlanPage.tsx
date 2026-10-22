@@ -633,6 +633,8 @@ export default function PlanPage() {
   // 月の要対応の「担当なし」から（?date=…&do=unassigned。PRD D201）：その日を選び、URL から ?date= と ?do= を消し、
   // 担当なしの訪問の列へ巻く（1回だけ。担当なしの訪問が無くなっていれば巻かない）
   const pendingNone = useRef<string | null>(null);
+  /** ?do=unassigned を受けた回数（同じ日を開いたままでも、巻く effect を走らせる） */
+  const [noneAsked, setNoneAsked] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
   useEffect(() => {
     if (doParam !== UNASSIGNED_DO) return;
@@ -640,6 +642,7 @@ export default function PlanPage() {
     const target = raw && isDate(raw) ? raw : date;
     if (target !== date) setDate(target);
     pendingNone.current = target;
+    setNoneAsked((n) => n + 1);
     setParams(
       (p) => {
         p.delete('do');
@@ -1888,7 +1891,7 @@ export default function PlanPage() {
           ruleLower: scoreLower,
         })
       : null;
-  /** 次の一手「「移動を短く」で作る」のプリセット（初期の ID か名前。消していれば出さない。PRD D229） */
+  /** 次の一手「「移動を短く」で組む」のプリセット（初期の ID か名前。消していれば出さない。PRD D229） */
   const travelPreset = data.presets.find((p) => p.id === 'travel') ?? data.presets.find((p) => p.name === '移動を短く');
   /** 訪問の一覧（表示の「一覧」。休みのため無しの訪問も薄く出す。ADR-0013） */
   const visitList = (
@@ -1957,7 +1960,7 @@ export default function PlanPage() {
     if (pendingNone.current === null || pendingNone.current !== date || !problem) return;
     pendingNone.current = null;
     if (unassigned.length > 0) goToNone();
-  }, [date, problem, unassigned.length]);
+  }, [date, problem, unassigned.length, noneAsked]);
 
   const busyWhy = running ? '計算中は選べません' : !problem ? 'この日に計算できる訪問がありません' : false;
   /** 点数の基準のプリセットの ID（当ててみるのは、ほかのプリセット） */

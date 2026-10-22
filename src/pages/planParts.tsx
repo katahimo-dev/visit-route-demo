@@ -65,7 +65,7 @@ export function ScoreReasonText({ reason, testId }: { reason: ScoreReason; testI
 }
 
 /**
- * 点を下げているいちばんの理由の次の一手（PRD D229）。理由の下に1行：「次の一手：［「移動を短く」で作る］」など。
+ * 点を下げているいちばんの理由の次の一手（PRD D229）。理由の下に1行：「次の一手：［「移動を短く」で組む］」など。
  * onShortTravel が無い（「移動を短く」のプリセットが無い・今の案がそれ・計算中）、相性を切っている（compatOn=false）ときは出さない
  */
 export function ScoreNextStep({

@@ -102,23 +102,54 @@ export function createDemoData(today: string): DemoData {
     scorePresetId: INITIAL_PRESETS[0]!.id,
   };
   const { availability, owners } = generateDays(base, today, DEMO_DAYS);
-  // 繰り返しの担当（いつもの担当）：内部で作った手作業らしい割当で最も多く担当した人（同数なら ID の小さい順）。
-  // リハビリの繰り返しは seed/patterns の担当のまま（版2：〈利用者さん〉は担当を持たない。ADR-0053）
-  const patterns = base.patterns.map((p) =>
-    p.usualStaffId !== null ? p : { ...p, usualStaffId: usualStaffOf(owners, p.clientId) },
-  );
-  return { ...base, availability, patterns };
+  return { ...base, availability, patterns: withUsualStaff(base.patterns, owners, staff) };
 }
 
-/** 〈利用者さん〉の訪問で最も多く担当した人 */
-function usualStaffOf(owners: Map<string, { clientId: string; staffId: string }>, clientId: string): string | null {
-  const count = new Map<string, number>();
-  for (const o of owners.values()) if (o.clientId === clientId) count.set(o.staffId, (count.get(o.staffId) ?? 0) + 1);
-  let best: string | null = null;
-  for (const [id, n] of [...count].sort(([a], [b]) => a.localeCompare(b))) {
-    if (best === null || n > (count.get(best) ?? 0)) best = id;
+/** 繰り返しの担当を決めるときの、前後の訪問との間（分。移動の目安） */
+const USUAL_GAP_MINUTES = 30;
+
+/**
+ * 繰り返しの担当（いつもの担当。版2：〈利用者さん〉は担当を持たない。ADR-0053）：内部で作った手作業らしい割当で多く担当した人の順に、
+ * 繰り返しの曜日にみな勤務し、同じ曜日のその人のほかの繰り返しと時間（前後 USUAL_GAP_MINUTES 分）が重ならない人。
+ * 入る人がいなければ担当なし（AI で組む）。開始の早い繰り返しから決める。リハビリの繰り返しは seed/patterns の担当のまま
+ */
+function withUsualStaff(
+  patterns: DemoData['patterns'],
+  owners: Map<string, { clientId: string; staffId: string }>,
+  staff: readonly Staff[],
+): DemoData['patterns'] {
+  const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+  const span = (p: DemoData['patterns'][number]) => ({
+    start: toMin(p.earliestStart),
+    end: toMin(p.latestStart) + p.durationMinutes,
+  });
+  const taken = new Map<string, DemoData['patterns'][number][]>();
+  const fits = (sid: string, p: DemoData['patterns'][number]) => {
+    const s = staff.find((x) => x.id === sid);
+    if (!s || !p.weekdays.every((w) => s.workDays.includes(w))) return false;
+    const a = span(p);
+    return (taken.get(sid) ?? []).every((q) => {
+      if (!q.weekdays.some((w) => p.weekdays.includes(w))) return true;
+      const b = span(q);
+      return a.end + USUAL_GAP_MINUTES <= b.start || b.end + USUAL_GAP_MINUTES <= a.start;
+    });
+  };
+  for (const p of patterns)
+    if (p.usualStaffId !== null) taken.set(p.usualStaffId, [...(taken.get(p.usualStaffId) ?? []), p]);
+  const order = [...patterns]
+    .filter((p) => p.usualStaffId === null)
+    .sort((a, b) => a.earliestStart.localeCompare(b.earliestStart) || a.id.localeCompare(b.id));
+  const chosen = new Map<string, string | null>();
+  for (const p of order) {
+    const count = new Map<string, number>();
+    for (const o of owners.values())
+      if (o.clientId === p.clientId) count.set(o.staffId, (count.get(o.staffId) ?? 0) + 1);
+    const candidates = [...count].sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).map(([id]) => id);
+    const pick = candidates.find((sid) => fits(sid, p)) ?? null;
+    chosen.set(p.id, pick);
+    if (pick) taken.set(pick, [...(taken.get(pick) ?? []), p]);
   }
-  return best;
+  return patterns.map((p) => (chosen.has(p.id) ? { ...p, usualStaffId: chosen.get(p.id) ?? null } : p));
 }
 
 /**

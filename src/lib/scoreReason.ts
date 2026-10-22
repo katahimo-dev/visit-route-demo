@@ -27,7 +27,7 @@ export type ScoreReason = {
 
 /** 次の一手の文 */
 export const NEXT_STEP_TEXT: Record<NextStep['kind'], string> = {
-  shortTravel: '「移動を短く」で作る',
+  shortTravel: '「移動を短く」で組む',
   candidates: '受けられる人を見る',
   compat: '相性の表を開く',
 };
@@ -96,7 +96,7 @@ function assignText(
  * 4. それ以外は減点の内訳 parts（hundredBreakdown）のいちばん大きい成分：移動＝「移動が長め（N分）」、
  *    空き時間（待ち）＝「空き時間（待ち）が長め（N分）」、担当の条件＝assignText（分からなければ「担当の条件に合わない訪問がある」）、
  *    負担の均等＝「件数の偏り（目安から外れた人 N人）」
- * 次の一手（nextStep。PRD D229）：移動＝「移動を短く」で作る、入らない訪問＝受けられる人を見る、相性＝相性の表を開く
+ * 次の一手（nextStep。PRD D229）：移動＝「移動を短く」で組む、入らない訪問＝受けられる人を見る、相性＝相性の表を開く
  */
 export function scoreReason(
   parts: readonly HundredPart[],
