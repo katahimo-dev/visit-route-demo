@@ -20,8 +20,6 @@ import {
   Mail,
   Map as MapIcon,
   MapPin,
-  PanelRightClose,
-  PanelRightOpen,
   Pencil,
   Pin,
   PinOff,
@@ -398,24 +396,11 @@ export default function PlanPage() {
   const shownView = narrowOrPrint && colView === 'timeline' ? 'order' : colView;
   /** 右の欄（PRD D63）：'detail'＝詳しく、'tune'＝条件を調整する */
   const [panel, setPanel] = useState<'detail' | 'tune' | 'mail' | null>(null);
-  /** 地図を時間軸の横に出すか（1280px 以上。畳める）。狭い画面は下に置き、画面の外なら MapDock */
+  /**
+   * 地図は本体（時間軸・順番・一覧）の下に全幅で大きく置く（比較の画面と同じ。PRD D300）。画面の外にあるあいだは MapDock で
+   * 右下に浮かせ、〈スタッフ〉・区間・訪問を選ぶと浮かせた地図が開く。広い画面は地図を高くする
+   */
   const wideMap = useMedia(WIDE_MAP_QUERY);
-  const [mapOpen, setMapOpen] = useState(true);
-  const mapBodyId = useId();
-  const mapCollapseId = useId();
-  const mapExpandId = useId();
-  /** 畳む・開くを切り替えたあと、反対のボタンへフォーカスを渡す（押したボタンは消えるので、フォーカスが落ちない） */
-  const mapFocusNext = useRef<string | null>(null);
-  const toggleMap = (open: boolean) => {
-    mapFocusNext.current = open ? mapCollapseId : mapExpandId;
-    setMapOpen(open);
-  };
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 畳む・開くを切り替えたときだけ
-  useEffect(() => {
-    const id = mapFocusNext.current;
-    mapFocusNext.current = null;
-    if (id) document.getElementById(id)?.focus();
-  }, [mapOpen]);
   /** 「入らなかった訪問」の列（帯の近道の行き先） */
   const noneColId = useId();
   /** 訪問の入力欄（開いたら見える所へ） */
@@ -3135,9 +3120,6 @@ export default function PlanPage() {
     if (suddenToBar.current) requestAnimationFrame(goToBar);
   };
 
-  /** 地図を出すか（1280px 以上で畳んだときだけ出さない。狭い画面は今どおり下に置き、画面の外なら MapDock） */
-  const mapShown = !wideMap || mapOpen;
-
   /** 操作の行の「その他 ▾」（PRD D279）：訪問を追加・メールで送る・使い方（ときどき使う操作） */
   const moreItems: MenuItem[] = [
     {
@@ -3529,7 +3511,7 @@ export default function PlanPage() {
           </Empty>
         </div>
       ) : (
-        <div className={`plan-main ${aiPlan && !mapShown ? 'is-map-closed' : ''} ${aiPlan ? '' : 'is-no-map'}`}>
+        <div className="plan-main">
           <div className="plan-body stack">
             {aiPlan && reassignInfo && (
               <ReassignBar
@@ -3616,64 +3598,27 @@ export default function PlanPage() {
           </div>
 
           {aiPlan && (
-            <aside
-              ref={mapCardRef}
-              className={mapShown ? 'card stack plan-map' : 'plan-map is-closed'}
-              id={mapBodyId}
-              aria-label="地図"
-              data-testid="plan-map"
-            >
-              {mapShown ? (
-                <>
-                  <SectionTitle
-                    icon={MapIcon}
-                    aside={
-                      <span className="row" style={{ gap: 4 }}>
-                        {focusStaff && (
-                          <button type="button" className="btn btn-small" onClick={sel.clear}>
-                            全員のルートを見る
-                          </button>
-                        )}
-                        {wideMap && (
-                          <IconButton
-                            icon={PanelRightClose}
-                            label="地図を畳む"
-                            onClick={() => toggleMap(false)}
-                            id={mapCollapseId}
-                            aria-expanded={true}
-                            aria-controls={mapBodyId}
-                            data-testid="map-collapse"
-                          />
-                        )}
-                      </span>
-                    }
-                  >
-                    地図{focusStaff ? `：${staffName(focusStaff)}` : ''}
-                  </SectionTitle>
-                  <RouteMap points={points} lines={lines} height={wideMap ? 520 : 420} />
-                  <StaffLegend
-                    staffIds={columns.filter((sid) => (own(routes, sid)?.length ?? 0) > 0)}
-                    staffName={staffName}
-                    focusStaff={focusStaff}
-                    onFocus={focusOn}
-                    extra={<span className="nowrap legend-item">「家」＝自宅</span>}
-                  />
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn plan-map-open"
-                  id={mapExpandId}
-                  onClick={() => toggleMap(true)}
-                  aria-expanded={false}
-                  aria-controls={mapBodyId}
-                  data-testid="map-expand"
-                  title="地図を開く"
-                >
-                  <PanelRightOpen size={16} aria-hidden="true" />
-                  <span className="plan-map-open-text">地図</span>
-                </button>
-              )}
+            <aside ref={mapCardRef} className="card stack plan-map" aria-label="地図" data-testid="plan-map">
+              <SectionTitle
+                icon={MapIcon}
+                aside={
+                  focusStaff && (
+                    <button type="button" className="btn btn-small" onClick={sel.clear}>
+                      全員のルートを見る
+                    </button>
+                  )
+                }
+              >
+                地図{focusStaff ? `：${staffName(focusStaff)}` : ''}
+              </SectionTitle>
+              <RouteMap points={points} lines={lines} height={wideMap ? 600 : 420} />
+              <StaffLegend
+                staffIds={columns.filter((sid) => (own(routes, sid)?.length ?? 0) > 0)}
+                staffName={staffName}
+                focusStaff={focusStaff}
+                onFocus={focusOn}
+                extra={<span className="nowrap legend-item">「家」＝自宅</span>}
+              />
             </aside>
           )}
         </div>

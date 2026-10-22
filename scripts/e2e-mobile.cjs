@@ -779,6 +779,24 @@ async function narrowWide(page) {
     '1400px：一覧は表のまま・絞り込みは開いたまま・週の既定は時間軸',
     { ...st, timeline },
   );
+  // 日の予定の地図（PRD D300）：本体の下に全幅で大きく。画面の外のあいだに〈スタッフ〉の列を押すと浮かせた地図が開く
+  await open(page, '/plan', '[data-testid="plan-map"]');
+  const geo = await page.evaluate(() => {
+    const body = document.querySelector('.plan-body').getBoundingClientRect();
+    const map = document.querySelector('[data-testid="plan-map"]').getBoundingClientRect();
+    return { bodyBottom: body.bottom, mapTop: map.top, bodyW: body.width, mapW: map.width, mapH: map.height };
+  });
+  check(
+    geo.mapTop >= geo.bodyBottom && Math.abs(geo.mapW - geo.bodyW) < 2 && geo.mapH >= 600,
+    '1400px：日の予定の地図は本体の下に全幅・高さ 600px 以上',
+    geo,
+  );
+  check((await page.locator('[data-testid="map-collapse"]').count()) === 0, '1400px：地図を畳むボタンは無い');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await settle(page, 400);
+  await page.locator('.tl-head .col-focus').first().click();
+  await page.locator('.map-dock').waitFor({ timeout: 5000 });
+  check(true, '1400px：地図が画面の外のとき〈スタッフ〉の列を押すと浮かせた地図が開く');
   await page.setViewportSize({ width: 390, height: 844 });
 }
 
