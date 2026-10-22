@@ -45,6 +45,8 @@ export type ProposalDay = {
   problem: Problem;
   /** 組み始めたときのその日の訪問（今と違えば当てない） */
   visits: readonly Visit[];
+  /** 組み始めたときのその日の問題の入力（欠勤・希望休・稼働時間・人・休み・条件。今と違えば当てない） */
+  inputs: DayInputs;
   /** 提案の担当の並び */
   routes: Record<string, string[]>;
   /** 組み始めたときの担当 → 提案の差（担当が変わる・時刻が変わる） */
@@ -89,10 +91,33 @@ export function proposalCounts(p: Pick<BatchProposal, 'days'>): {
   return { days: p.days.length, moved, shifted, changedDays, unassignedDays };
 }
 
-/** その日を当ててよいか（組み始めたときの訪問のまま・伝えていない） */
+/**
+ * その日の問題の入力の控え（compile が読むもの。訪問は別に比べる）。人・条件・種類などは参照で、日付ごとの記録（欠勤・希望休・
+ * 稼働時間の上書き・〈利用者さん〉の休み）はその日の分だけを文字で持つ（ほかの日の変更では古くしない）
+ */
+export type DayInputs = { refs: readonly unknown[]; day: string };
+
+export function dayInputsOf(d: DemoData, date: string): DayInputs {
+  return {
+    refs: [d.org, d.items, d.rules, d.staff, d.clients, d.compat, d.visitTypes, d.patterns],
+    day: JSON.stringify([
+      d.absences.filter((a) => a.date === date),
+      d.availability.filter((a) => a.date === date),
+      d.clientLeaves.filter((l) => l.from <= date && date <= l.to),
+    ]),
+  };
+}
+
+/**
+ * その日を当ててよいか（日の予定の提案と同じ判定：組み始めたときの訪問のまま・その日の問題の入力（欠勤・希望休・稼働時間・人・
+ * 休み・条件）が同じ・伝えていない）。入力が変われば休みの人に当たるなどするので当てない
+ */
 export function proposalDayFresh(d: DemoData, day: ProposalDay): boolean {
   const now = visitsOn(d, day.date);
-  return now.length === day.visits.length && now.every((v, k) => v === day.visits[k]) && !own(d.snapshots, day.date);
+  if (now.length !== day.visits.length || !now.every((v, k) => v === day.visits[k])) return false;
+  if (own(d.snapshots, day.date)) return false;
+  const inp = dayInputsOf(d, day.date);
+  return inp.day === day.inputs.day && inp.refs.every((r, k) => r === day.inputs.refs[k]);
 }
 
 /** 提案を当てる（純粋関数）：組み始めたときのままの日だけ訪問に書く。当てた日・当てなかった日 */
@@ -382,6 +407,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
             date: day,
             problem: p,
             visits,
+            inputs: dayInputsOf(latest, day),
             routes: result.routes,
             diff,
             unassigned: result.unassigned.length,

@@ -12,10 +12,12 @@ import {
   batchHref,
   canMakeDay,
   createMonthBatch,
+  dayInputsOf,
   dayLabel,
   missingDays,
   monthsLabel,
   proposalCounts,
+  proposalDayFresh,
   weekBatchDays,
   weekLabel,
 } from './monthBatch';
@@ -185,6 +187,59 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.apply()).toEqual({ applied: [], skipped: [TODAY] });
     expect(h.data()).toBe(edited);
     expect(h.writes()).toBe(1);
+  });
+
+  it('組んだあとにその日の欠勤・希望休・稼働時間・人・休みが変わったら当てない（休みの人に当てない。PR #81 のレビュー）', async () => {
+    const s = fakeSolve();
+    const b = createMonthBatch(s.fn);
+    const h = hostOf(unassigned());
+    b.connect(h.host);
+    b.start({
+      ...job,
+      days: [
+        { date: TODAY, mode: 'care' },
+        { date: days[1]!, mode: 'care' },
+      ],
+    });
+    await finishAll(s.calls);
+    const p = b.proposal.get()!;
+    const sid = h.data().staff.find((x) => x.active)!.id;
+    // 今日だけ欠勤を入れる：今日は当てず、明日は当てる
+    h.host.update((d) => ({
+      ...d,
+      absences: [...d.absences, { id: 'ab-x', staffId: sid, date: TODAY, from: null, to: null, note: '' }],
+    }));
+    expect(proposalDayFresh(h.data(), p.days[0]!)).toBe(false);
+    expect(proposalDayFresh(h.data(), p.days[1]!)).toBe(true);
+    expect(b.apply()).toEqual({ applied: [days[1]], skipped: [TODAY] });
+    // 人（休止）・〈利用者さん〉の休みが変わっても古い
+    const base = unassigned();
+    const day = { ...p.days[1]!, inputs: dayInputsOf(base, days[1]!), visits: visitsOn(base, days[1]!) };
+    expect(proposalDayFresh(base, day)).toBe(true);
+    expect(proposalDayFresh({ ...base, staff: base.staff.map((x) => ({ ...x })) }, day)).toBe(false);
+    const c = base.clients[0]!;
+    expect(
+      proposalDayFresh(
+        {
+          ...base,
+          clientLeaves: [...base.clientLeaves, { id: 'l1', clientId: c.id, from: days[1]!, to: days[1]!, note: '' }],
+        },
+        day,
+      ),
+    ).toBe(false);
+    // ほかの日の欠勤では古くしない
+    expect(
+      proposalDayFresh(
+        {
+          ...base,
+          absences: [
+            ...base.absences,
+            { id: 'ab-y', staffId: sid, date: addDays(TODAY, 9), from: null, to: null, note: '' },
+          ],
+        },
+        day,
+      ),
+    ).toBe(true);
   });
 
   it('組む前に確定した日は飛ばす', async () => {

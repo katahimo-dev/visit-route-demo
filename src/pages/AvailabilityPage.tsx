@@ -79,19 +79,25 @@ export default function AvailabilityPage() {
   const save = (slots: Slot[]) => {
     if (!picked || slotsError(slots) || retiredWhy) return;
     const a: Availability = { staffId: picked.staffId, date: picked.date, slots };
-    update((d) => ({
-      ...d,
-      availability: [...d.availability.filter((x) => !(x.staffId === a.staffId && x.date === a.date)), a],
-    }));
+    update(
+      (d) => ({
+        ...d,
+        availability: [...d.availability.filter((x) => !(x.staffId === a.staffId && x.date === a.date)), a],
+      }),
+      '勤務時間を変える',
+    );
     setDraft(slots);
     toast(slots.length === 0 ? '休みにしました' : '時間帯を保存しました');
   };
   const reset = () => {
     if (!picked || !pickedStaff) return;
-    update((d) => ({
-      ...d,
-      availability: d.availability.filter((x) => !(x.staffId === picked.staffId && x.date === picked.date)),
-    }));
+    update(
+      (d) => ({
+        ...d,
+        availability: d.availability.filter((x) => !(x.staffId === picked.staffId && x.date === picked.date)),
+      }),
+      '基本の時間に戻す',
+    );
     setDraft(toHalfHours(availabilityOf(pickedStaff, picked.date, null).slots));
     toast('基本の時間に戻しました');
   };

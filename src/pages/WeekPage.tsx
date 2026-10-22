@@ -636,7 +636,7 @@ export default function WeekPage() {
       });
       return;
     }
-    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data);
+    update((d) => insertIntoPlan(d, notice.date, notice.visitId).data, '空き時間に入れる');
     toast(`${md(notice.date)} の空き時間に入れました（担当：${staffName(r.staffId)}）`);
     setNotice(null);
   };
@@ -1329,7 +1329,7 @@ export default function WeekPage() {
 
       {mailOpen && mailOn && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
-      <SelectionBar ids={multi.ids} onClear={multi.clear} />
+      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} />
     </div>
   );
 }

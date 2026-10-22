@@ -326,17 +326,20 @@ function StaffPageBody({
           : [...data.staff, s],
       };
       const sc = lastDayChanged && offboardOn ? offboardScope(nextData, s.id, today, false) : null;
-      update((d) => ({
-        ...d,
-        staff: d.staff.some((x) => x.id === s.id) ? d.staff.map((x) => (x.id === s.id ? s : x)) : [...d.staff, s],
-        clients: s.active
-          ? d.clients
-          : d.clients.map((c) =>
-              c.allowedStaffIds.includes(s.id)
-                ? { ...c, allowedStaffIds: c.allowedStaffIds.filter((x) => x !== s.id) }
-                : c,
-            ),
-      }));
+      update(
+        (d) => ({
+          ...d,
+          staff: d.staff.some((x) => x.id === s.id) ? d.staff.map((x) => (x.id === s.id ? s : x)) : [...d.staff, s],
+          clients: s.active
+            ? d.clients
+            : d.clients.map((c) =>
+                c.allowedStaffIds.includes(s.id)
+                  ? { ...c, allowedStaffIds: c.allowedStaffIds.filter((x) => x !== s.id) }
+                  : c,
+              ),
+        }),
+        'スタッフの保存',
+      );
       setEdit(null);
       if (sc && (sc.clients.length > 0 || sc.visits.length > 0)) {
         setOffboard(true);

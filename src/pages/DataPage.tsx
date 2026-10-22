@@ -80,7 +80,7 @@ export default function DataPage() {
   const termsChanged = terms.client.trim() !== data.org.terms.client || terms.staff.trim() !== data.org.terms.staff;
   const saveTerms = () => {
     const next = { client: terms.client.trim(), staff: terms.staff.trim() };
-    update((d) => ({ ...d, org: { ...d.org, terms: next } }));
+    update((d) => ({ ...d, org: { ...d.org, terms: next } }), '呼び方');
     toast('呼び方を変えました');
   };
   const toast = useToast();
@@ -271,7 +271,7 @@ export default function DataPage() {
       lastDay,
       keep,
     };
-    update((d) => (d === base ? r.data : d));
+    update((d) => (d === base ? r.data : d), '名簿の読み込み');
   };
 
   const load = async (file: File) => {
@@ -350,7 +350,8 @@ export default function DataPage() {
     });
     if (!ok) return;
     const ym = tidyYm;
-    update((d) => tidyOld(d, ym));
+    // 戻せない操作：全体の「元に戻す」の履歴に積まず、履歴を捨てる（前の手へ戻すと消した記録が戻り、容量が足りなくなるため。PRD D329）
+    update((d) => tidyOld(d, ym), '古い記録を消す', { history: false });
     toast(`${tidyMonthLabel(ym)}の訪問の記録を消しました`);
   };
 

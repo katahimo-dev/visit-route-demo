@@ -6,7 +6,7 @@ import { type MouseEvent, memo, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { type PrepPart, prepParts } from '../lib/glance';
 import { monthLabel } from '../lib/home';
-import type { DayState, DayStatus, MonthProgress } from '../lib/month';
+import type { MonthProgress } from '../lib/month';
 import { type BandNextKind, type BandOp, bandHref, bandNext, visitsText } from '../lib/progressBand';
 import './glance.css';
 import './progressBand.css';
@@ -21,21 +21,12 @@ export type BandModel = {
   urgent: number;
 };
 
-/** 日の画面で選んでいる日の状態（帯の「この日」） */
-export type BandDay = { date: string; status: DayStatus | null };
-
 const NEXT_ICON: Record<BandNextKind, LucideIcon> = {
   batch: Sparkles,
   attention: CircleAlert,
   unconfirmed: Lock,
   done: Check,
   empty: Check,
-};
-
-const DAY_STATE: Record<DayState, string> = {
-  none: 'まだ伝えていない',
-  changed: '未連絡の変更あり',
-  told: '確定済み',
 };
 
 const PART_LABEL: Record<PrepPart['kind'], string> = {
@@ -51,21 +42,13 @@ const PART_LABEL: Record<PrepPart['kind'], string> = {
 export const ProgressBand = memo(function ProgressBand({
   ym,
   model,
-  day,
   primary = false,
-  hideBatch = false,
   onOp,
 }: {
   ym: string;
   model: BandModel | null;
-  day?: BandDay;
-  /** 次の一手を主ボタンにする（月の画面。週・日は画面の主ボタンと重ねない） */
+  /** 次の一手を主ボタンにする（月の画面） */
   primary?: boolean;
-  /**
-   * 次の一手が「まとめて作る」のときにボタンを出さない（週の予定で、見出しの主ボタンが「この週の案を作る」の間。
-   * 作る入口を1つにする。PRD D280）。数字のリンクは残す
-   */
-  hideBatch?: boolean;
   onOp?: (op: BandOp) => void;
 }) {
   const month = monthLabel(ym);
@@ -96,9 +79,6 @@ export const ProgressBand = memo(function ProgressBand({
   const planDone = p.days > 0 && p.planned === p.days;
   const confirmDone = p.days > 0 && p.confirmed === p.days;
   const parts = prepParts(p);
-  const dayState = day?.status ? (day.status.count === 0 ? '訪問なし' : DAY_STATE[day.status.state]) : null;
-  /** 確定していない日（日の画面の「確定」で確定する。PRD D155） */
-  const dayOpen = !!day?.status && day.status.count > 0 && day.status.state !== 'told';
   const done = (x: boolean) => (x ? '（済）' : '');
   return (
     <section
@@ -180,14 +160,8 @@ export const ProgressBand = memo(function ProgressBand({
           </Link>
         </li>
       </ul>
-      {day && dayState && (
-        <span className={`pb-day${dayOpen ? ' is-open' : ''}`} data-testid="band-day" data-state={day.status?.state}>
-          この日 <strong>{dayState}</strong>
-          {dayOpen && <span className="sub pb-long">（伝えたら「確定」）</span>}
-        </span>
-      )}
       <span className="pb-next">
-        {hideBatch && next.kind === 'batch' ? null : next.kind === 'done' || next.kind === 'empty' ? (
+        {next.kind === 'done' || next.kind === 'empty' ? (
           <span
             className={`pb-status${next.kind === 'done' ? ' is-done' : ''}`}
             data-testid="band-next"

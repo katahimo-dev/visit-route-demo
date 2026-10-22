@@ -162,8 +162,8 @@ import {
 } from './reassignParts';
 import { type SuddenInit, SuddenPanel } from './SuddenPanel';
 
-/** 振り直しの手の名前（「振り直す前に戻す」は直前の手がこれのときだけ全体の「元に戻す」で戻す） */
-const REASSIGN_LABELS = ['欠勤の振り直し', '案A を当てる', '案B を当てる'];
+/** 振り直しの手の名前（「振り直す前に戻す」は直前の手がこの日のこれのときだけ全体の「元に戻す」で戻す） */
+const REASSIGN_LABEL = '欠勤の振り直し';
 
 /** 連絡の一覧が出せない（差を出せない）ときでも、欠勤の人に残る訪問だけで開くための空の一覧 */
 const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: [] };
@@ -953,7 +953,7 @@ export default function PlanPage() {
           base: d === registered ? base : baseOf(d, date, p),
           absenceIds: used.map((a) => a.id),
         }),
-      REASSIGN_LABELS[0],
+      REASSIGN_LABEL,
     );
     if (!stay) setSudden(null);
     sel.reset();
@@ -1216,7 +1216,7 @@ export default function PlanPage() {
     orgName: data.org.name,
   };
   const saveAbsenceOnly = (absence: Absence) => {
-    update((d) => saveAbsence(d, absence));
+    update((d) => saveAbsence(d, absence), '欠勤を登録');
     setSudden(null);
     toast('欠勤を登録しました（担当はそのままです。休む人の訪問は要対応に出ます）');
   };
@@ -1229,9 +1229,14 @@ export default function PlanPage() {
       tone: 'danger',
     });
     if (!ok) return false;
-    update((d) => removeAbsence(d, absence.id));
+    update((d) => removeAbsence(d, absence.id), '欠勤を取り消す');
     setSudden(null);
-    toast(reassignInfo ? '欠勤を取り消しました。担当を戻すには「元に戻す」を押してください' : '欠勤を取り消しました');
+    // 担当は変えない。振り直したあとなら「振り直す前に戻す」で担当を戻せる（「元に戻す」だと欠勤が戻ってしまう。PR #81 のレビュー）
+    if (reassignInfo)
+      toast('欠勤を取り消しました。担当を戻すには「振り直す前に戻す」を押してください', {
+        action: { label: '振り直す前に戻す', onClick: () => void revertRef.current(), testId: 'toast-revert' },
+      });
+    else toast('欠勤を取り消しました');
     return true;
   };
   /**
@@ -1240,7 +1245,16 @@ export default function PlanPage() {
    */
   const revertToBase = async (): Promise<boolean> => {
     if (!problem || !reassignInfo || runRef.current) return false;
-    if (REASSIGN_LABELS.includes(appHistory.state.get().undo ?? '')) {
+    // 近道：直前の手がこの日の「欠勤の振り直し」で、その手の前にこの日の振り直しが無く、手のあとに何も変わっていないときだけ
+    // 全体の「元に戻す」で1手戻す（別の日の振り直し・案A/案B の切り替えのあとで誤って戻さない。PR #81 のレビュー）
+    const last = appHistory.peek();
+    if (
+      last &&
+      last.label === REASSIGN_LABEL &&
+      last.after === dataRef.current &&
+      !!own(last.after.reassigns, date) &&
+      !own(last.before.reassigns, date)
+    ) {
       historyOps.undo();
     } else {
       const ok = await confirmDialog({
@@ -1257,6 +1271,11 @@ export default function PlanPage() {
     sel.reset();
     return true;
   };
+  /** トーストの「振り直す前に戻す」は前の描画の関数を持つので、押したときの最新の revertToBase を呼ぶ */
+  const revertRef = useRef<() => Promise<boolean>>(async () => false);
+  useEffect(() => {
+    revertRef.current = revertToBase;
+  });
   /**
    * 担当なしの訪問を候補の人に入れる（ピン。時刻は変えない。間に合わなければ要対応の赤い枠）。
    * その人の既存の訪問の開始が遅れるときは確認を出す
@@ -2869,7 +2888,7 @@ export default function PlanPage() {
         />
       )}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
-      <SelectionBar ids={multi.ids} onClear={multi.clear} />
+      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />
     </div>
   );
 }

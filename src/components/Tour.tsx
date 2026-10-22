@@ -72,7 +72,7 @@ export function TourProvider({ terms, children }: { terms: Pick<Terms, 'client' 
         awaitReset.current = true;
         reset(features);
       } else {
-        update((d) => ({ ...d, org: { ...d.org, features } }));
+        update((d) => ({ ...d, org: { ...d.org, features } }), '機能の入り切り');
       }
     },
     [data, reset, update],

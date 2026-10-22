@@ -47,6 +47,8 @@ export function PlaceAllPanel({ onEdit }: { onEdit: (c: Client) => void }) {
     setTotal(list.length);
     setResults([]);
     let placed = 0;
+    // 1回の「まとめて探す」は全体の「元に戻す」の1手（PRD D329）
+    const group = {};
     const r = await placeAll(list, {
       search: searchAddress,
       lookup: lookupPostalCode,
@@ -56,11 +58,17 @@ export function PlaceAllPanel({ onEdit }: { onEdit: (c: Client) => void }) {
         setResults((prev) => [...prev, x]);
         if (x.ok) {
           placed += 1;
-          update((d) => withFoundPlace(d, x.clientId, x.from, x));
+          update((d) => withFoundPlace(d, x.clientId, x.from, x), '住所をまとめて探す', { group });
         } else if (x.foundAddress !== null) {
           // 郵便番号で住所は見つかったが位置が見つからない人は、住所だけ書く
           const address = x.foundAddress;
-          update((d) => withFoundPlace(d, x.clientId, x.from, { lat: null, lng: null, address }));
+          update(
+            (d) => withFoundPlace(d, x.clientId, x.from, { lat: null, lng: null, address }),
+            '住所をまとめて探す',
+            {
+              group,
+            },
+          );
         }
       },
     });

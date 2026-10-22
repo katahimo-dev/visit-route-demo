@@ -44,7 +44,7 @@ import { PersonButton } from '../components/PersonPopover';
 import { ClientDot } from '../components/parts';
 import { type BandModel, ProgressBand } from '../components/progressBand';
 import { StaffMark } from '../components/StaffMark';
-import { RangeProposalBand, ScheduleToolbar, useScopeItems } from '../components/scheduleParts';
+import { confirmDropProposal, RangeProposalBand, ScheduleToolbar, useScopeItems } from '../components/scheduleParts';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
@@ -439,7 +439,7 @@ export default function MonthPage() {
       const res = toggleRequestedOff(dataRef.current, offStaffId, d, today, id);
       if (res.result === 'unchanged') return;
       dataRef.current = res.data;
-      update((x) => toggleRequestedOff(x, offStaffId, d, today, id).data);
+      update((x) => toggleRequestedOff(x, offStaffId, d, today, id).data, '希望休');
       const name = staffById.get(offStaffId)?.name ?? '';
       const n = staffDaysRef.current.get(d)?.count ?? 0;
       if (res.result === 'added') {
@@ -618,6 +618,8 @@ export default function MonthPage() {
       setError('対象の日がありません（今日より前の日・確定した日は組みません）');
       return;
     }
+    // 当てていない提案があれば、捨ててよいか確かめる（提案は1つだけ）
+    if (!(await confirmDropProposal(confirmDialog)) || runningNow()) return;
     setPanel(false);
     // 組んでいる間は希望休を入れない（Worker の計算とデータの書き込みを混ぜない）
     setOffMode(false);

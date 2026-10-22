@@ -68,7 +68,7 @@
 
 #### `components/progressBand.tsx`（`progressBand.css`）
 
-- `ProgressBand({ ym, model, day?, primary?, hideBatch?, onOp? })`：見た目だけ（`hideBatch` は次の一手が「担当を AI で組む」のときボタンを出さない）
+- `ProgressBand({ ym, model, primary?, onOp? })`：見た目だけ（月の予定だけで使う。週・日の「この日」・作る入口を隠す引数は無くした。ADR-0054）
   - `model` は `BandModel`＝`monthProgress`・担当なしの訪問がある日の数・手当てが要る要対応の件数。null の間は同じ高さで「数えています…」
   - 数字は4つの `Link`：訪問・担当 → `do=batch`、確定 → `do=unconfirmed`、要対応 → `do=attention`。`onOp` があれば移らずにそれを呼ぶ（修飾キー（Ctrl・⌘・Shift・Alt）と左以外のボタンでは横取りしない。Ctrl+クリックは新しいタブ）
   - 右に次の一手（`Link` のボタン。`primary` なら主ボタン。済み・訪問なしは文だけ。訪問の無い月はボタンなし）

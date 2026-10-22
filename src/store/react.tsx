@@ -20,13 +20,20 @@ import {
   swapPrevious,
 } from './index';
 
+/**
+ * update の扱い：history が false なら履歴に積まず履歴を捨てる（戻せない操作）。group を渡すと、同じ group の続けての update を
+ * 1手にまとめる（1回の操作で何度も書くとき。住所をまとめて探すなど）
+ */
+export type UpdateOptions = { history?: boolean; group?: object };
+
 export type DemoStore = {
   data: DemoData;
   /**
    * データを書き換える唯一の方法（不変更新。fn は新しい DemoData を返す）。変わったら全体の「元に戻す」の履歴に1手積む
-   * （同じ描画の中の続けての update は1手にまとめる。label は手の名前。PRD D329。ADR-0054）
+   * （update の1回が1手。続けて呼べば別の手。label は手の名前。PRD D329。ADR-0054）。
+   * opts.history が false の操作（戻せない操作：古い記録を消すなど）は積まず、履歴を捨てる（前の手へ戻すと消したものが戻るため）
    */
-  update(fn: (d: DemoData) => DemoData, label?: string): void;
+  update(fn: (d: DemoData) => DemoData, label?: string, opts?: UpdateOptions): void;
   /** 1手戻す（全体の履歴。戻した手の名前、戻せなければ null） */
   undo(): string | null;
   /** 1手やり直す（やり直した手の名前、無ければ null） */
@@ -135,11 +142,13 @@ export function DemoDataProvider({ children }: { children: ReactNode }): ReactNo
   // 開いたときの履歴は空（前のページの手は持ち越さない）
   useEffect(() => () => appHistory.clear(), []);
 
-  const update = useCallback((fn: (d: DemoData) => DemoData, label?: string) => {
+  const update = useCallback((fn: (d: DemoData) => DemoData, label?: string, opts?: UpdateOptions) => {
     const token = {};
+    const keep = opts?.history !== false;
+    if (!keep) appHistory.clear();
     setData((d) => {
       const n = fn(d);
-      appHistory.record(d, n, label, token);
+      if (keep) appHistory.record(d, n, label, token, opts?.group);
       return n;
     });
   }, []);

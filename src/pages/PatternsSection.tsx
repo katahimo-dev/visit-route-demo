@@ -223,7 +223,7 @@ export function PatternsSection({
         setError(p);
         return;
       }
-      update((d) => ({ ...d, patterns: [...d.patterns, p] }));
+      update((d) => ({ ...d, patterns: [...d.patterns, p] }), '繰り返しを足す');
       open(null);
       toast(
         p.usualStaffId
@@ -265,7 +265,7 @@ export function PatternsSection({
     update((d) => {
       const x = splitPattern(d, original.id, next, form.since, today, nid);
       return { ...d, patterns: x.patterns, visits: x.visits };
-    });
+    }, '繰り返しを直す');
     open(null);
     toast('繰り返しを直しました');
   };
@@ -286,7 +286,7 @@ export function PatternsSection({
     update((d) => {
       const x = removePattern(d, p.id, today);
       return { ...d, patterns: x.patterns, visits: x.visits };
-    });
+    }, '繰り返しを消す');
     if (form?.id === p.id) open(null);
     if (selected === p.id) onSelect?.(null);
     toast('繰り返しを消しました');
@@ -310,7 +310,7 @@ export function PatternsSection({
       confirmLabel: '終わらせる',
     });
     if (!ok) return;
-    update((d) => endPatternOp(d, ending.id, ending.last, today).data);
+    update((d) => endPatternOp(d, ending.id, ending.last, today).data, '繰り返しを終わらせる');
     setEnding(null);
     toast(`繰り返しを${mdText(ending.last)}で終わらせました`);
   };

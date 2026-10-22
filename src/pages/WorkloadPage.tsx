@@ -137,12 +137,12 @@ export default function WorkloadPage() {
       : null;
   const saveFare = () => {
     if (fareError || fareNum === org.fareYenPerKm) return;
-    update((d) => ({ ...d, org: { ...d.org, fareYenPerKm: fareNum } }));
+    update((d) => ({ ...d, org: { ...d.org, fareYenPerKm: fareNum } }), '交通費の単価');
     toast(fareNum > 0 ? `交通費の単価を ${fareNum}円/km にしました` : '交通費を出さないようにしました');
   };
   const saveLimit = () => {
     if (limitError || limitNum === org.spanLimitHours) return;
-    update((d) => ({ ...d, org: { ...d.org, spanLimitHours: limitNum } }));
+    update((d) => ({ ...d, org: { ...d.org, spanLimitHours: limitNum } }), '拘束の上限');
     toast(
       limitNum > 0
         ? `出勤〜退勤（拘束）の上限を ${limitNum}時間 にしました`

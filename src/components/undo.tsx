@@ -2,8 +2,8 @@
 // トーストに添える「元に戻す」。履歴は lib/history の appHistory（store が積む）
 import { Redo2, Undo2 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo } from 'react';
-import { isMacPlatform } from '../lib/commandPalette';
-import { appHistory, historyKey, isTextTarget } from '../lib/history';
+import { hashPathname, isMacPlatform } from '../lib/commandPalette';
+import { appHistory, historyKey, historyKeysOn, isTextTarget } from '../lib/history';
 import { useValueStore } from '../lib/valueStore';
 import { useDemoData } from '../store';
 import { type ToastAction, useToast } from './Toast';
@@ -58,6 +58,8 @@ export function HistoryKeys(): ReactNode {
       const k = historyKey(e, IS_MAC);
       if (!k || e.isComposing || e.defaultPrevented) return;
       if (isTextTarget(e.target)) return;
+      // 管理の画面の外（〈スタッフ〉のスマホ画面・月の予定の印刷）では効かせない（戻すボタンも知らせの行き先も無いため）
+      if (!historyKeysOn(hashPathname(window.location.hash))) return;
       if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       if (k === 'undo') undo();

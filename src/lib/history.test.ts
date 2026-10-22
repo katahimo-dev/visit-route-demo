@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
-import { createHistory, HISTORY_MAX, historyKey, isTextTarget } from './history';
+import { createHistory, HISTORY_MAX, historyKey, historyKeysOn, isTextTarget } from './history';
 
 /** 中身は見ないので、参照だけ違うデータ */
 const mk = (n: number) => ({ n }) as unknown as DemoData;
@@ -44,6 +44,20 @@ describe('createHistory（全体の元に戻す。PRD D329。ADR-0054）', () =>
     expect(h.state.get().undoCount).toBe(1);
     expect(h.undo(b2)!.data).toBe(a);
   });
+  it('同じ印の手は前の手が別の手のあとでも置き換え、2つ積まない。peek は直前の手', () => {
+    const h = createHistory();
+    const [a, b, c, c2] = [mk(0), mk(1), mk(2), mk(3)];
+    const t = {};
+    h.record(a, b, '一', t);
+    h.record(b, c, '二');
+    // 同じ印の関数が別の前のデータでもう一度呼ばれた（描き直し）
+    h.record(a, c2, '一', t);
+    expect(h.peek()?.label).toBe('二');
+    expect(h.undo(c)!.label).toBe('二');
+    expect(h.undo(b)!.label).toBe('一');
+    expect(h.undo(a)).toBeNull();
+    expect(h.peek()).toBeNull();
+  });
   it(`最大 ${HISTORY_MAX}手。clear で空`, async () => {
     const h = createHistory();
     let cur = mk(0);
@@ -61,6 +75,12 @@ describe('createHistory（全体の元に戻す。PRD D329。ADR-0054）', () =>
 });
 
 describe('historyKey・isTextTarget', () => {
+  it('〈スタッフ〉のスマホ画面・月の予定の印刷では効かせない', () => {
+    expect(historyKeysOn('/plan')).toBe(true);
+    expect(historyKeysOn('/month')).toBe(true);
+    expect(historyKeysOn('/staff-view/s1')).toBe(false);
+    expect(historyKeysOn('/month/print')).toBe(false);
+  });
   const k = (x: Partial<KeyboardEvent>) => ({
     key: 'z',
     ctrlKey: false,

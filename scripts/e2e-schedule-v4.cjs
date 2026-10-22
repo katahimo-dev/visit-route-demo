@@ -249,6 +249,21 @@ async function scope(page) {
     '範囲の提案は日の予定にも出る',
   );
   await openView(page, '/week');
+  // 当てていない提案があるまま組み始めようとすると確かめる（残せば提案はそのまま。PR #81 のレビュー）
+  await page.getByTestId('plan-menu').click();
+  await page.getByTestId('ai-scope-week').click();
+  await page.getByTestId('confirm-dialog').waitFor({ timeout: 5000 });
+  check(
+    /当てていない提案/.test(await page.getByTestId('confirm-title').innerText()),
+    '当てていない提案があるまま組み始めると確かめる',
+  );
+  await page.getByTestId('confirm-cancel').click();
+  await settle(page, 300);
+  check(
+    (await page.locator('[data-testid="proposal-band"][data-kind="range"]').count()) === 1 &&
+      (await page.getByTestId('batch-band').count()) === 0,
+    '「提案を残す」で組み始めず、提案はそのまま',
+  );
   if (moved + shifted === 0) {
     await page.getByTestId('proposal-discard').click();
     await resetData(page);
@@ -386,12 +401,71 @@ async function multi(page) {
   await shot(page, 'multi-week-1400');
   await page.getByTestId('selection-cancel').click();
   await page.getByTestId('confirm-dialog').waitFor();
+  // 確認を待つ間に別のタブで〈利用者さん〉の名前を変える：取り消しはその変更を消さない（PR #81 のレビュー）
+  const other = await page.context().newPage();
+  await other.goto(`${BASE}#/data`);
+  await other.locator('h1').waitFor();
+  const renamed = await other.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.clients[0].displayName = '別のタブで変えた名前';
+    localStorage.setItem(k, JSON.stringify(d));
+    return d.clients[0].id;
+  }, STORAGE_KEY);
+  await other.close();
+  await settle(page, 500);
   await page.getByTestId('confirm-ok').click();
   const cancelled = await waitStored(page, (d) => wids.every((id) => d.visits.some((v) => v.id === id && v.cancelled)));
   check(cancelled, '週：「取り消す」で2件を取り消す');
+  check(
+    (await stored(page)).clients.find((c) => c.id === renamed)?.displayName === '別のタブで変えた名前',
+    '週：確認の間の別のタブの変更を、取り消しが上書きしない',
+  );
   await page.getByTestId('undo-btn').click();
   const restored = await waitStored(page, (d) => !wids.some((id) => d.visits.some((v) => v.id === id && v.cancelled)));
   check(restored, '操作の行の「元に戻す」で取り消しを戻す');
+}
+
+// ---- 戻せない操作（古い記録を消す）は履歴に積まず、Ctrl+Z で消した記録が戻らない（PR #81 のレビュー） ----
+async function tidyUndo(page) {
+  await resetData(page);
+  await openView(page, '/plan');
+  const bands = bandsOf(page);
+  await bands.first().waitFor({ timeout: 30000 });
+  await bands.nth(0).click({ modifiers: ['Shift'] });
+  const before = await stored(page);
+  await page.locator('[data-testid="selection-shift"][data-minutes="15"]').click();
+  await waitStored(page, (d) => visitsKey(d) !== visitsKey(before));
+  // 読み直さずにデータの画面へ（履歴は残っている）
+  await page.evaluate(() => {
+    location.hash = '#/data';
+  });
+  await page.getByTestId('data-tidy-card').waitFor({ timeout: 30000 });
+  await page.getByTestId('data-tidy-month').selectOption(TODAY.slice(0, 7));
+  await settle(page, 300);
+  if (await page.getByTestId('data-tidy-run').isDisabled()) {
+    check(false, '片づけ：前の月に消せる記録がある（前提）');
+    return;
+  }
+  await page.getByTestId('data-tidy-run').click();
+  await page.getByTestId('confirm-dialog').waitFor();
+  await page.getByTestId('confirm-ok').click();
+  await page.locator('.toast').filter({ hasText: '訪問の記録を消しました' }).waitFor();
+  await settle(page, 600);
+  const tidied = await stored(page);
+  await page.locator('h1').click();
+  await page.keyboard.press(`${MOD}+z`);
+  await settle(page, 600);
+  const after = await stored(page);
+  check(
+    JSON.stringify(Object.keys(after.snapshots).sort()) === JSON.stringify(Object.keys(tidied.snapshots).sort()) &&
+      visitsKey(after) === visitsKey(tidied),
+    '古い記録を消したあとの Ctrl+Z では、消した記録も前の手も戻らない（戻せない操作は履歴を捨てる）',
+  );
+  check(
+    (await page.locator('.toast').filter({ hasText: '戻せる操作がありません' }).count()) === 1,
+    '戻せる操作が無いと知らせる',
+  );
+  await resetData(page);
 }
 
 // ---- 390px：メニューの引き出し・操作の行・複数選択の帯 ----
@@ -479,6 +553,7 @@ const steps = sharedPage({
     ['scope', scope],
     ['day-proposal', dayProposal],
     ['multi', multi],
+    ['tidy-undo', tidyUndo],
     ['narrow', narrow],
   ],
   after: ({ native }) => {

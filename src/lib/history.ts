@@ -11,7 +11,7 @@ export const HISTORY_MAX = 50;
 export const DEFAULT_LABEL = '変更';
 
 /** 1手（変える前と後のデータ・操作の名前） */
-export type HistoryEntry = { before: DemoData; after: DemoData; label: string; token?: object };
+export type HistoryEntry = { before: DemoData; after: DemoData; label: string; token?: object; group?: object };
 
 /** 画面が読む今の状態（戻せる手・やり直せる手の名前。無ければ null） */
 export type HistoryState = { undo: string | null; redo: string | null; undoCount: number; redoCount: number };
@@ -22,13 +22,15 @@ export type History = {
    * 変更を1手積む（同じなら積まない）。やり直しの手は捨てる。token は update の1回ごとの印で、同じ印の2回目
    * （StrictMode・描き直しで更新の関数がもう一度呼ばれたとき）は前の手を置き換える
    */
-  record(before: DemoData, after: DemoData, label?: string | null, token?: object): void;
+  record(before: DemoData, after: DemoData, label?: string | null, token?: object, group?: object): void;
   /** 1手戻す：戻した先のデータと手の名前（戻せなければ null）。current は今のデータ（やり直しの先になる） */
   undo(current: DemoData): { data: DemoData; label: string } | null;
   /** 1手やり直す */
   redo(current: DemoData): { data: DemoData; label: string } | null;
-  /** 全部捨てる（データを丸ごと差し替えたとき） */
+  /** 全部捨てる（データを丸ごと差し替えたとき・戻せない操作のあと） */
   clear(): void;
+  /** 直前の手（戻すと戻る手。無ければ null）。中身は変えない */
+  peek(): Readonly<HistoryEntry> | null;
 };
 
 const EMPTY: HistoryState = { undo: null, redo: null, undoCount: 0, redoCount: 0 };
@@ -56,17 +58,29 @@ export function createHistory(max = HISTORY_MAX): History {
   };
   return {
     state,
-    record(before, after, label, token) {
-      const last = past.at(-1);
-      if (token && last?.token === token && last.before === before) {
-        // 同じ update の関数がもう一度呼ばれた：前の手を置き換える（変わらなければ消す）
-        past.pop();
+    record(before, after, label, token, group) {
+      // 同じ update の関数がもう一度呼ばれた（StrictMode・描き直し）：その手を置き換える（変わらなければ消す）。
+      // 同じ印の手を2つ積まない
+      const i = token ? past.findIndex((e) => e.token === token) : -1;
+      if (i >= 0) {
+        if (before === after) past.splice(i, 1);
+        else past[i] = { before, after, label: label || DEFAULT_LABEL, token };
+        emit();
+        return;
       }
       if (before === after) {
         emit();
         return;
       }
-      past.push({ before, after, label: label || DEFAULT_LABEL, token });
+      // 1回の操作の続き（同じ group。住所をまとめて探すなど）は直前の手に足して1手にする
+      const last = past.at(-1);
+      if (group && last?.group === group && last.after === before) {
+        past[past.length - 1] = { ...last, after, token };
+        future = [];
+        emit();
+        return;
+      }
+      past.push({ before, after, label: label || DEFAULT_LABEL, token, group });
       if (past.length > max) past = past.slice(past.length - max);
       future = [];
       emit();
@@ -84,6 +98,9 @@ export function createHistory(max = HISTORY_MAX): History {
       past.push({ before: current, after: e.after, label: e.label });
       emit();
       return { data: e.after, label: e.label };
+    },
+    peek() {
+      return past.at(-1) ?? null;
     },
     clear() {
       past = [];
@@ -123,4 +140,9 @@ export function isTextTarget(t: EventTarget | null): boolean {
   const type = ((el as HTMLInputElement).type || 'text').toLowerCase();
   // 押すだけの入力（チェック・ラジオ・ボタン）は文字を持たないので奪ってよい
   return !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file'].includes(type);
+}
+
+/** 全体の元に戻すのキーを効かせる画面か（〈スタッフ〉のスマホ画面 `/staff-view/:id`・月の予定の印刷 `/month/print` では効かせない） */
+export function historyKeysOn(pathname: string): boolean {
+  return !pathname.startsWith('/staff-view/') && pathname !== '/month/print';
 }

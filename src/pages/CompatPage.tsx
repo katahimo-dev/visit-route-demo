@@ -278,7 +278,7 @@ export default function CompatPage() {
         if (next === 0) delete row[staffId];
         else row[staffId] = next;
         return { ...d, compat: { ...d.compat, [clientId]: row } };
-      }),
+      }, '相性'),
     [update],
   );
 

@@ -98,12 +98,15 @@ export default function TypesPage() {
       return;
     }
     const t = r.data;
-    update((d) => ({
-      ...d,
-      visitTypes: d.visitTypes.some((x) => x.id === t.id)
-        ? d.visitTypes.map((x) => (x.id === t.id ? t : x))
-        : [...d.visitTypes, t],
-    }));
+    update(
+      (d) => ({
+        ...d,
+        visitTypes: d.visitTypes.some((x) => x.id === t.id)
+          ? d.visitTypes.map((x) => (x.id === t.id ? t : x))
+          : [...d.visitTypes, t],
+      }),
+      '訪問の種類を保存',
+    );
     setIsNew(false);
     setForm(null);
     toast('保存しました');
@@ -118,12 +121,15 @@ export default function TypesPage() {
       tone: 'danger',
     });
     if (!ok) return;
-    update((d) => ({
-      ...d,
-      visitTypes: d.visitTypes.filter((x) => x.id !== t.id),
-      visits: d.visits.map((v) => (v.typeId === t.id ? { ...v, typeId: null } : v)),
-      patterns: d.patterns.map((p) => (p.typeId === t.id ? { ...p, typeId: null } : p)),
-    }));
+    update(
+      (d) => ({
+        ...d,
+        visitTypes: d.visitTypes.filter((x) => x.id !== t.id),
+        visits: d.visits.map((v) => (v.typeId === t.id ? { ...v, typeId: null } : v)),
+        patterns: d.patterns.map((p) => (p.typeId === t.id ? { ...p, typeId: null } : p)),
+      }),
+      '訪問の種類を消す',
+    );
     setForm(null);
     toast(`種類「${t.name}」を消しました`);
   };

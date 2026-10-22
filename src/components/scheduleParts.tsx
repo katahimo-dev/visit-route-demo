@@ -50,6 +50,21 @@ export type ScheduleZoom = 'day' | 'week' | 'month';
 /** ほかの計算中に押したときの理由 */
 export const BATCH_BUSY = 'ほかの担当を組んでいます。終わってから押せます';
 
+/**
+ * 新しく組み始める前に、当てていない範囲の提案があれば捨ててよいか確かめる（提案は1つだけ。PR #81 のレビュー）。
+ * 提案が無ければ確かめずに true
+ */
+export async function confirmDropProposal(confirmDialog: ReturnType<typeof useConfirm>): Promise<boolean> {
+  const p = monthBatch.proposal.get();
+  if (!p) return true;
+  return confirmDialog({
+    title: `当てていない提案（${p.label}）を捨てて、組み始めますか？`,
+    body: '提案は1つだけ持てます。組み始めると、今の提案は消えます（訪問は変わっていません）。',
+    confirmLabel: '捨てて組み始める',
+    cancelLabel: '提案を残す',
+  });
+}
+
 /** 範囲の項目に共通の説明 */
 const SCOPE_NOTE = 'ピンの訪問はそのままで、担当・順番の提案を出します（当てるまで担当は変わりません）';
 
@@ -127,7 +142,7 @@ export function ScheduleToolbar({
  * この週は範囲の計算（今日以降で伝えていない、訪問のある日）。この月は月の予定の「N月の担当を AI で組む」の欄（対象を選ぶ）を開く
  */
 export function useScopeItems({
-  zoom,
+  zoom: _zoom,
   date,
   onDay,
   dayBusy,
@@ -144,6 +159,7 @@ export function useScopeItems({
   const { data } = useDemoData();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const run = useValueStore(monthBatch.run);
   const today = jstDate(Date.now());
   const busy = run ? BATCH_BUSY : false;
@@ -159,7 +175,8 @@ export function useScopeItems({
         : activeDayVisits(data, date).length === 0
           ? 'この日に組める訪問がありません'
           : null;
-  const start = (days: string[], source: BatchSource, label: string) => {
+  const start = async (days: string[], source: BatchSource, label: string) => {
+    if (!(await confirmDropProposal(confirmDialog))) return;
     const ok = monthBatch.start({
       ym: ymOf(days[0]!),
       label,
@@ -180,7 +197,8 @@ export function useScopeItems({
       description: SCOPE_NOTE,
       icon: CalendarDays,
       disabled: dayWhy ?? (onDay ? (dayBusy ?? false) : busy),
-      onSelect: () => (onDay ? onDay() : start([date], zoom === 'month' ? 'month' : 'week', dayLabel(date))),
+      // 週・月の予定の「この日」は1日の範囲（source 'day'。週の主ボタンを「この週を組んでいます」にしない）
+      onSelect: () => (onDay ? onDay() : void start([date], 'day', dayLabel(date))),
     },
     {
       key: 'scope-week',
@@ -190,7 +208,7 @@ export function useScopeItems({
       icon: CalendarCheck,
       disabled: weekDays.length === 0 ? 'この週に組める日がありません（今日より前の日・確定した日は組みません）' : busy,
       onSelect: () =>
-        start(
+        void start(
           weekDays.map((x) => x.date),
           'week',
           weekLabel(weekStart),
@@ -405,17 +423,30 @@ const SHIFTS = [-30, -15, 15, 30] as const;
  * 複数選択の帯（画面の下に貼り付く。PRD D330）：「N件を選択：［担当を替える ▾］［時刻をずらす −30・−15・+15・+30］［取り消す］［選択を外す］」。
  * どれも「この回だけ」で、1回の update（全体の「元に戻す」で1手戻る）。できなかった訪問は知らせに理由
  */
-export function SelectionBar({ ids, onClear }: { ids: readonly string[]; onClear: () => void }) {
+export function SelectionBar({
+  ids,
+  onClear,
+  dates,
+}: {
+  ids: readonly string[];
+  onClear: () => void;
+  /** 今見ている日付（日は1日・週は7日）。欄などでこの外へ移した訪問は数えない */
+  dates: readonly string[];
+}) {
   const { data, update } = useDemoData();
   const toast = useToast();
   const confirmDialog = useConfirm();
   const today = jstDate(Date.now());
-  const live = ids.filter((id) => !!findVisit(data, id));
+  const live = ids.filter((id) => {
+    const v = findVisit(data, id);
+    return !!v && dates.includes(v.date);
+  });
   const staff = useMemo(() => data.staff.filter((s) => s.active), [data.staff]);
   if (live.length === 0) return null;
   const run = (what: string, fn: (d: DemoData) => { data: DemoData; done: number; failed: { why: string }[] }) => {
+    // 結果の数は今のデータで見るが、書くのは store の最新のデータに当て直す（確認を待つ間の別のタブの変更を消さない）
     const r = fn(data);
-    if (r.done > 0) update(() => fn(data).data, what);
+    if (r.done > 0) update((d) => fn(d).data, what);
     toast(multiResultText(what, { done: r.done, failed: r.failed.map((f) => ({ visitId: '', why: f.why })) }));
   };
   const staffItems: MenuItem[] = staff.map((s) => ({

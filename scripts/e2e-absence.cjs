@@ -763,6 +763,80 @@ async function headerLabel(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
+/** その日の日の予定で、いちばん訪問の多い人の欠勤を登録して振り直す（欄を閉じる） */
+async function reassignHere(page) {
+  await page.getByTestId('sudden-open').click();
+  await panel(page).waitFor();
+  await page.getByTestId('sudden-kind-staff').click();
+  const who = await busiestStaff(page);
+  await page.getByTestId('sudden-staff').selectOption(who.value);
+  await page.getByTestId('sudden-next').click();
+  await page.getByTestId('sudden-reassign').click();
+  await page.getByTestId('sudden-done').waitFor({ timeout: 10000 });
+  await page.keyboard.press('Escape');
+  await panel(page).waitFor({ state: 'detached' });
+  await settle(page, 300);
+  return who;
+}
+/** 上の帯の日付の選択で日を替える（読み直さない＝全体の元に戻すの履歴は残る） */
+async function pickDate(page, date) {
+  await page.locator('.app-header select[aria-label="日付"]').selectOption(date);
+  await waitPlan(page);
+}
+
+// ---- 「振り直す前に戻す」は別の日の振り直しのあとでは近道で戻さない・欠勤を取り消した知らせから戻す（PR #81 のレビュー） ----
+async function revertCases(page, st) {
+  await page.goto(`${BASE}#/home`);
+  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
+  await openPlan(page);
+  const day2 = await page
+    .locator('.app-header select[aria-label="日付"] option')
+    .evaluateAll((os, t) => os.map((o) => o.value).find((v) => v > t) ?? '', TODAY);
+  await reassignHere(page);
+  await waitStored(page, (d) => !!d.reassigns?.[TODAY]);
+  await pickDate(page, day2);
+  const who2 = await reassignHere(page);
+  await waitStored(page, (d) => !!d.reassigns?.[day2]);
+  // 今日へ戻って「振り直す前に戻す」：直前の手は別の日の振り直しなので、確かめてから今日だけ戻す
+  await pickDate(page, TODAY);
+  const seen = st.messages.length;
+  await page.locator('.plan-main').getByRole('button', { name: '振り直す前に戻す' }).first().click();
+  const back = await waitStored(page, (d) => !d.reassigns?.[TODAY]);
+  check(
+    !back.reassigns?.[TODAY] && !!back.reassigns?.[day2] && back.absences.length === 2,
+    '別の日の振り直しのあとの「振り直す前に戻す」は、その日だけ戻す（別の日の振り直し・欠勤はそのまま）',
+    { today: !!back.reassigns?.[TODAY], day2: !!back.reassigns?.[day2], absences: back.absences.length },
+  );
+  check(
+    st.messages.slice(seen).some((m) => m.includes('振り直す前の担当に戻しますか？')),
+    '近道で戻せないときは確かめてから戻す',
+    st.messages.slice(seen),
+  );
+  // 振り直した日の欠勤を取り消す → 知らせの「振り直す前に戻す」で担当が戻る（欠勤は戻らない）
+  await pickDate(page, day2);
+  const btn = page.locator(`.route-col[data-staff="${who2.value}"] .absence-btn`).first();
+  await btn.click();
+  await panel(page).waitFor();
+  await page.getByTestId('sudden-next').click();
+  await page.getByTestId('sudden-remove').click();
+  await panel(page).waitFor({ state: 'detached', timeout: 10000 });
+  const revert = page.getByTestId('toast-revert');
+  await revert.waitFor({ timeout: 5000 });
+  const tt = await page.locator('.toast').innerText();
+  check(
+    /振り直す前に戻す/.test(tt) && !/「元に戻す」/.test(tt),
+    '欠勤の取り消しの知らせは「振り直す前に戻す」を案内する',
+    tt,
+  );
+  await revert.click();
+  const after = await waitStored(page, (d) => !d.reassigns?.[day2]);
+  check(
+    !after.reassigns?.[day2] && after.absences.length === 1,
+    '知らせの「振り直す前に戻す」で担当が戻り、取り消した欠勤は戻らない',
+    { day2: !!after.reassigns?.[day2], absences: after.absences.length },
+  );
+}
+
 let best = null;
 const steps = sharedPage({
   open: async () => {
@@ -785,7 +859,9 @@ const steps = sharedPage({
     ['mobile', mobile],
     ['header-label', headerLabel],
     ['told-contacts', toldContacts],
+    ['revert-cases', revertCases],
   ],
+  call: (fn, s) => fn(s.page, s.st),
   after: ({ st }) => {
     check(
       st.messages.some((m) => m.includes('確定しますか？')) &&

@@ -94,7 +94,7 @@
 
 #### `lib/history.ts`・`lib/multiEdit.ts`（純粋関数。テストあり）
 
-- `createHistory(max=50)`：`record(before, after, label?, token?)`（同じなら積まない。同じ token の2回目は前の手を置き換える。積むとやり直しは消える）・`undo(current)`・`redo(current)`（戻した先のデータと手の名前）・`clear()`・`state`（`{ undo, redo, undoCount, redoCount }`。知らせは microtask で後へ回す）。`appHistory` はアプリで1つ。`historyKey(e, isMac)`・`isTextTarget(target)`
+- `createHistory(max=50)`：`record(before, after, label?, token?, group?)`（同じなら積まない。同じ token の手は置き換えて2つ積まない。同じ group の続きは直前の手に足す。積むとやり直しは消える）・`peek()`（直前の手）・`undo(current)`・`redo(current)`（戻した先のデータと手の名前）・`clear()`・`state`（`{ undo, redo, undoCount, redoCount }`。知らせは microtask で後へ回す）。`appHistory` はアプリで1つ。`historyKey(e, isMac)`・`isTextTarget(target)`・`historyKeysOn(pathname)`（`/staff-view/:id`・`/month/print` では効かせない）
 - `assignMany(data, ids, staffId, today)`・`shiftMany(data, ids, minutes, today)`・`cancelMany(data, ids, today)`：消えた・取り消した・今日より前の訪問は理由つきで外す。担当は `assignOnDays`（その日に担当できない人は当てない）、時刻は `applyVisitEdit` の「この回だけ」（時間の約束の幅はそのまま）。`selectionText(n)`・`multiResultText(what, r)`
 
 ### 訪問の詳細の欄（`components/VisitPanel.tsx`・`visitPanel.css`。PRD D301〜D305。ADR-0051）
