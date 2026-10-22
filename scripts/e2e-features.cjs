@@ -721,11 +721,8 @@ async function insideEntries(page, dlg, ctx) {
       (await page.locator('.absence-btn').count()) > 0 === on('sudden'),
       `${label}：列の見出しの「この人の欠勤を登録」`,
     );
-    // メールで送るは操作の行の「その他 ▾」の中（PRD D279）
-    await page.getByTestId('plan-more').click();
-    await page.getByTestId('plan-more-list').waitFor({ timeout: 5000 });
-    check((await count('day-mail')) === (on('mail') ? 1 : 0), `${label}：日の予定の「その他 ▾」の「メールで送る」`);
-    await page.keyboard.press('Escape');
+    // 予定をメールで送るは見出しの主ボタンの隣（PRD D306）
+    check((await count('day-mail')) === (on('mail') ? 1 : 0), `${label}：日の予定の見出しの「予定をメールで送る」`);
     if (!on('rules')) check((await count('plan-reason')) === 0, `${label}：点数の横の理由を出さない`);
     await page.getByTestId('plan-menu').click();
     await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });

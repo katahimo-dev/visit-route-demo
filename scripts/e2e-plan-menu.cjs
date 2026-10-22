@@ -11,7 +11,7 @@
 // 「入らなかった訪問へ」のあとの確定の確認の本文の先頭に件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
 // 手直しの記憶（PRD D260〜D262。ADR-0043）：手で動かすと帯で聞く（答える前は記憶しない）・次からも→来週の割当済みもまとめて変える・
 // 「元に戻す」で全部戻る・別の週の同じ曜日で作り直すと同じ人と「記憶」の印・データの画面の件数と［すべて消す］。
-// 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定は訪問を追加・メールで送る・使い方をたたむ（キーボードで開いて訪問の入力・
+// 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定は訪問を追加・使い方をたたむ（メールで送るは見出し。PRD D306）（キーボードで開いて訪問の入力・
 // 閉じるとフォーカスは「その他」・使い方は下に開いてフォーカス）、月の予定は表示を選ぶ・印刷・勤務の見込み・作り直す・マスの見方の説明を
 // たたむ（作り直す日が無ければ押せず理由・表示の選択は開くと欄へフォーカス・〈スタッフ〉を選んでいる間はたためない）。
 //
@@ -853,8 +853,14 @@ async function moreMenus(page) {
       !shown.includes('訪問を追加') &&
       !shown.includes('メールで送る') &&
       !shown.includes('使い方'),
-    '日の予定：操作の行は 欠勤・案を変える ▾・元に戻す・表示・その他 ▾（訪問を追加・メールで送る・使い方はたたむ）',
+    '日の予定：操作の行は 欠勤・案を変える ▾・元に戻す・表示・その他 ▾（訪問を追加・使い方はたたむ）',
     shown,
+  );
+  // 予定をメールで送るは見出しの主ボタンの隣（毎日送るので見つけやすく。PRD D306）
+  const headMail = page.locator('.page-head [data-testid="day-mail"]');
+  check(
+    (await headMail.count()) === 1 && (await headMail.innerText()).includes('予定をメールで送る'),
+    '日の予定：見出しに「予定をメールで送る」（枠のボタン）',
   );
   check(
     (await page.locator('.btn-primary:visible').count()) === 1,
@@ -866,8 +872,8 @@ async function moreMenus(page) {
   await page.getByTestId('plan-more-list').waitFor();
   const items = await page.getByTestId('plan-more-list').locator('[role="menuitem"] .menu-item-label').allInnerTexts();
   check(
-    JSON.stringify(items) === JSON.stringify(['訪問を追加', 'メールで送る', '使い方']),
-    '日の予定の「その他 ▾」：訪問を追加・メールで送る・使い方',
+    JSON.stringify(items) === JSON.stringify(['訪問を追加', '使い方']),
+    '日の予定の「その他 ▾」：訪問を追加・使い方',
     items,
   );
   check((await focusedId()) === 'plan-visit-add', '「その他 ▾」を Enter で開くとフォーカスは先頭の項目');

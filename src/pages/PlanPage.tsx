@@ -3151,7 +3151,7 @@ export default function PlanPage() {
     if (suddenToBar.current) requestAnimationFrame(goToBar);
   };
 
-  /** 操作の行の「その他 ▾」（PRD D279）：訪問を追加・メールで送る・使い方（ときどき使う操作） */
+  /** 操作の行の「その他 ▾」（PRD D279）：訪問を追加・使い方（ときどき使う操作）。メールで送るは見出しへ出した（PRD D306） */
   const moreItems: MenuItem[] = [
     {
       key: 'add',
@@ -3166,10 +3166,6 @@ export default function PlanPage() {
       onSelect: () => openVisit(null),
       testId: 'plan-visit-add',
     },
-    // 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017）
-    ...(mailOn
-      ? [{ key: 'mail', label: 'メールで送る', icon: Mail, onSelect: () => setPanel('mail'), testId: 'day-mail' }]
-      : []),
     {
       key: 'help',
       label: helpOpen ? '使い方を閉じる' : '使い方',
@@ -3203,6 +3199,12 @@ export default function PlanPage() {
                   <TriangleAlert size={12} aria-hidden="true" />
                   {confirmState === 'diff' ? <Term k="confirmDiff" /> : <Term k="unconfirmed" />}
                 </span>
+              )}
+              {/* 担当ごとの予定をメールアプリで開く（PRD D92・D306。ADR-0017）。毎日送るので見出しの主ボタンの隣に枠のボタンで置く */}
+              {mailOn && (
+                <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
+                  <WithIcon icon={Mail}>予定をメールで送る</WithIcon>
+                </button>
               )}
               {/* 主ボタン（塗り）は「この割当で確定」だけ。確定済みの日は枠にして主ボタンを置かない（PRD D238） */}
               <button
@@ -3507,14 +3509,33 @@ export default function PlanPage() {
           </fieldset>
         )}
         {progressView}
-        {/* 訪問を追加・メールで送る・使い方は「その他 ▾」にたたむ（PRD D279） */}
+        {/* 訪問を追加・使い方は「その他 ▾」にたたむ（PRD D279） */}
         <MenuButton label="その他" items={moreItems} testId="plan-more" className="plan-more" />
       </div>
       {helpOpen && (
         <div ref={helpRef} className="hint-body plan-help" tabIndex={-1} data-testid="plan-help">
-          訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
-          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。訪問を押して「担当を変える」から選んでも同じです（キーボード・タッチでも）。直前の手直しは「元に戻す」で1手だけ戻せます。「案を変える」の「固定した訪問は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
-          名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
+          <ul className="plan-help-list">
+            <li>
+              担当を変えるには、訪問を別の{terms.staff}
+              の列へドラッグします。訪問を押して「担当を変える」から選んでも同じです。
+              移した訪問は、その人の回る順番のいちばん無駄の少ない所に入り、ピンが付きます（ピンの付いた訪問は、AI
+              が作り直しても担当を変えません）。
+            </li>
+            <li>「入らなかった訪問」へ移すと、担当なしに戻ります。</li>
+            <li>直前の1回だけ、「元に戻す」で戻せます。</li>
+            <li>
+              ピンの付いた訪問はそのままで、ほかを AI
+              に組み直させるには「案を変える」の「固定した訪問は残して、ほかを作り直す」を使います。
+            </li>
+            <li>直し終わったら「この割当で確定」を押し、「予定をメールで送る」で{terms.staff}に知らせます。</li>
+            <li>
+              名前の下の時間は、その日に働ける時間です。約束の時間に間に合わない訪問や、働ける時間からはみ出す訪問は赤い枠になります。訪問を押すと理由が出ます。
+            </li>
+            <li>「自宅から」「自宅まで」や移動の時間を押すと、地図でその道のりが太くなります。</li>
+            <li>
+              時間軸の灰色は働かない時間・休憩、斜線は欠勤、点線の枠は待ち時間です。ドラッグしている間は、落とす列に入れられるか（緑）入れられないか（赤）が出ます。
+            </li>
+          </ul>
           <div>
             <button type="button" className="btn btn-small btn-text" onClick={() => setHelpOpen(false)}>
               使い方を閉じる

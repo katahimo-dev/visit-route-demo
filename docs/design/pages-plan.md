@@ -25,7 +25,7 @@
 3. 1行のまとめ：訪問 N件・入らない N・必須の違反 N・移動 N分・N点（`plan-oneline-score`・`plan-score`。title「点数の基準：〈名前〉」。点数の文字は地の色で、入らない・必須の違反があるときだけ `.is-alert` で要対応の赤。PRD D266）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」
 4. 担当ごとの1日（`DayLines`。下）。開いているときは1行のまとめと1枚のカードにつなげる（`.plan-oneline:has(+ .daylines)` と `.plan-oneline + .daylines` で間と角を消す。印刷では離す。PRD D237）
 5. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）
-6. 操作の行（`plan-toolbar`。PRD D279）：「欠勤・キャンセルを登録」（`sudden-open`）・「案を変える ▾」は枠、「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・「その他 ▾」（`MenuButton`・`plan-more`：「訪問を追加」（`plan-visit-add`。〈利用者さん〉がいなければ押せず理由）・「メールで送る」（`day-mail`。`mail` が入のとき）・「使い方」（`plan-more-help`。開いていれば「使い方を閉じる」））・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）。「使い方」は操作の行の下に説明 `plan-help` を開きフォーカスを移す（「使い方を閉じる」）
+6. 見出しの右：状態・「予定をメールで送る」（`day-mail`。枠。`mail` が入のとき。PRD D306）・主ボタン「この割当で確定」。操作の行（`plan-toolbar`。PRD D279）：「欠勤・キャンセルを登録」（`sudden-open`）・「案を変える ▾」は枠、「元に戻す」（`plan-reassign-undo`。今の案があるとき。下の「1手戻す」）は文字のボタン（`btn-text`。PRD D238）・表示［時間軸｜順番｜一覧］・「その他 ▾」（`MenuButton`・`plan-more`：「訪問を追加」（`plan-visit-add`。〈利用者さん〉がいなければ押せず理由）・「使い方」（`plan-more-help`。開いていれば「使い方を閉じる」））・計算中の進み具合と止める（回数とバーは `PlanProgressText` が外の入れ物 `lib/valueStore` から読み、画面全体は描き直さない。PRD D249）。「使い方」は操作の行の下に説明 `plan-help` を開きフォーカスを移す（「使い方を閉じる」）
 7. 欠勤の差の欄（本体のすぐ上。[pages-plan-absence.md](pages-plan-absence.md)）
 8. 本体（時間軸か順番か一覧）と、その下に全幅の地図（`plan-map`。1280px 以上は高さ 600px、狭い画面は 420px。比較の画面と同じ形。PRD D300）。地図が画面の外にあるあいだは `MapDock` で右下に浮かせ、〈スタッフ〉・区間・訪問を選ぶと開く
 
