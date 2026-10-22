@@ -1,7 +1,7 @@
 # 月の予定と月の印刷
 
-> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`・`monthBatch.ts`（計算の入れ物）、`src/components/batchBand.tsx`（上の帯の進み具合）。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032・0042。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228・D256・D257・D313。
-> 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)。
+> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`・`monthBatch.ts`（計算の入れ物）、`src/components/batchBand.tsx`（上の帯の進み具合）・`visitParts.tsx`（マスの選ぶ・その日の回の一覧の行・ドラッグ）。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032・0042・0056。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228・D256・D257・D313・D339〜D341。
+> 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)、帯の印・選ぶ・キー・1行1訪問の行 `VisitRow`・ドラッグの落とし先の判定の共通の部品は [pages-common.md](pages-common.md) の「訪問の帯の共通の部品」。
 > 版2（ADR-0053）：担当は訪問に持ち、日の状態は「まだ伝えていない／確定済み／未連絡の変更あり」、要対応は訪問ごとの検査。「案なし・案あり・未作成・条件が変わった・欠勤あり（対応済み）」は無い
 
 ### 月の予定（`#/month`）
@@ -38,13 +38,13 @@
 #### 日の計算（`useDayStatuses`）
 
 - 日ごとの compile と採点は点数の基準の条件で行い、日付・`compileInput`・その日の訪問で覚える（8人・約17件／日の一月で 500ms 以内）
-- `DayStatus`（`lib/month` の `dayStatus`）＝`{ date, count, state, unassigned, issues, care, changes, absence, overSpan, needsCare }`。`issues` は `lib/dayPlan` の `visitIssues`（訪問 ID → 要対応）、`state` は `toldStateOf`、`changes` は未連絡の変更の件数、`overSpan` は拘束が上限を超える人
+- `DayStatus`（`lib/month` の `dayStatus`）＝`{ date, count, state, unassigned, issues, care, changes, absence, overSpan, needsCare }`。`issues` は `lib/dayPlan` の `visitIssues`（訪問 ID → 要対応）、`told` は伝えた内容との違い（`toldChanges` の結果。訪問ごとの未連絡の変更の印 `lib/visitLook` の元。伝えていない日は null）、`state` は `toldStateOf`、`changes` は未連絡の変更の件数、`overSpan` は拘束が上限を超える人
 - 数える割当は その日の訪問の担当（`dayPlanOf`＝`dayRoutes`）
 
 #### カレンダー（日のマス `DayCell`。PRD D53）
 
 - 日曜はじまりの6週×7日の表（`calendarWeeks`）。今日より前の日は薄く。今日は「今日」の印
-- マスはボタン（`month-cell-btn`・data-testid `month-day`）。押すとその日を選んで `#/plan` へ（「休みを入れる」のときは `toggleOff`）
+- マスはボタン（`month-cell-btn`・data-testid `month-day`・`data-date`）。押すとその日を選んで `#/plan` へ（「休みを入れる」のときは `toggleOff`）。キー・まとめて選ぶ・ドラッグの落とし先は下の「マスのキー・その日の回の一覧」
 - 状態は背景・枠と印で（点数は出さない）：
 
 | 状態 | 見た目 |
@@ -62,6 +62,15 @@
   - 旗 `month-flags`：「担当なし N」（赤。`month-unassigned`）・ほかの要対応の内訳（担当が休み N・条件に合わない N・間に合わない N。赤。`month-issue`）・「未連絡 N」（黄。`month-changed`）・「拘束超 N」（`month-over-span`）
   - 混み具合バー `month-load`（`LoadBar`）
 - 始まる・終わるの印の決め方：始まるは基準日（`baseDate`＝データの最初の日）より後に始まり、前日にその〈利用者さん〉のどのパターンの期間でもないもの。終わるは翌日にその〈利用者さん〉のどのパターンの期間でもないもの（初期データの全パターンが基準日に始まるのと、「以降すべて」で分けたパターンの継ぎ目を印にしない）
+
+#### マスのキー・その日の回の一覧・まとめて選ぶ（PRD D339〜D341。ADR-0056）
+
+- マスは日を選ぶ単位（訪問ではない）。マスにフォーカスして `cellKeyOf`（`lib/visitKeys`。[pages-common.md](pages-common.md)）：←→ 前・次の日、↑↓ 前・次の週（月の外へ出たらその月へ `goMonth` してフォーカスを移す）、Enter でその日の回の一覧、Shift／Ctrl＋Enter・Shift／Ctrl＋クリックでその日の選べる訪問をまとめて選ぶ・外す（`toggleGroup`。全部選んでいれば外す）。マスのボタンに `aria-keyshortcuts`。「休みを入れる」の間の Enter は一覧を開かない（一覧を開かず `toggleOff`）
+- 選ぶのは `useVisitSelection(ym)`（月を送ったら外す）。選べる訪問は `canSelectVisit`（今日より前・取り消し・休みは選ばない）。表示の選択が〈スタッフ〉・〈利用者さん〉ならその人の回だけ（`dayItems`）。選んだ日のマスに「選択 N」（`month-selected`・マスに `data-selected`・`aria-label` に「選択中 N件」）。選んだ訪問は画面の下の `SelectionBar`（担当を替える・時刻をずらす・取り消す・選択を外す。`dates` は月のマスの日）
+- その日の回の一覧（`DayVisits`・`section.month-day-visits`・data-testid `month-day-visits`・`data-date`）：右の欄（`month-aside`）の先頭。見出し「M月D日（曜）の訪問 N件」・閉じる（`month-day-visits-close`。Esc でも閉じ、フォーカスはマスへ戻る。選んでいる訪問があれば Esc は先に選択を外す）・行（共通の `VisitRow`。data-testid `month-visit`。開始の順）・説明・「この日の日の予定を開く」（`month-day-visits-plan`）。〈利用者さん〉を選んでいてその日の回が1つなら、一覧でなくその回の訪問の詳細の欄（閉じたらフォーカスはマス）。訪問が無い日は「この日の訪問はありません。」。月を送って別の月の日になったら閉じる
+- 一覧の行：押す・Enter で訪問の詳細の欄、Shift・Ctrl＋クリック／Shift・Ctrl＋Enter で選ぶ・外す、キーで動かす（↑↓ 15分・←→ 1日・Shift+←→ 隣の担当・Delete 取り消し。[pages-common.md](pages-common.md) の「訪問の帯をキーで動かす」。月の外へ動いたらその月へ移って一覧もその日にし、フォーカスは動かした行）。印は共通の判定（`useVisitLooks`。`data-marks`）
+- ドラッグ（広い画面）：一覧の行をほかの日のマスへ（時刻はそのまま）。落とし先の判定・影は共通（`useVisitDrag`・`dropVerdict`。今日より前の日・取り消し・休みは灰の斜線と理由、入れる人が0人は赤い点線）。影はマスの中（`month-drop`・マスに `is-drop-ok|warn|ng`）。落とすと落とした日を入れた訪問の詳細の欄（範囲・確定した日の確かめは欄）。マスの訪問そのものはつかめない
+- スマホ（600px 以下）の日ごとの一覧（下の「日ごとの一覧」）では選ばない・キーを読まない（その日の回の一覧も開かない）
 
 #### 表示の選択（PRD D55）
 
@@ -97,7 +106,7 @@
 - 行は `button.month-list-btn`（data-testid `month-list-day`・`data-date`・`data-state`・`data-off`）。押すとマスと同じ（`openDay`、「休みを入れる」のときは `toggleOff`・押せない日は `aria-disabled`）
 - 表示の選択が〈スタッフ〉なら勤務の状態と担当の件数、〈利用者さん〉なら訪問の時刻と担当、休みを入れるときはその日の扱いを行の下に出す
 - 390px で土曜も見え、はみ出さない
-- スマホの基本は日の予定の日ごとのリスト（PRD D334・D338）。月の日ごとの一覧は数をまとめて見る表示で、行を押すとその日の日の予定。600px 以下の操作の行は1段で、見せ方の切り替え（`month-layout`）はアイコンだけ（名前は読み上げ）
+- スマホの基本は日の予定の日ごとのリスト（PRD D334・D338）。月の日ごとの一覧は数をまとめて見る表示で、行を押すとその日の日の予定（選ばない・キーを読まない）。600px 以下の操作の行は1段で、見せ方の切り替え（`month-layout`）はアイコンだけ（名前は読み上げ）
 
 #### 右の欄（要対応・確定していない日）
 
@@ -192,4 +201,5 @@
 - [ ] 390px ははじめ日ごとの一覧（今日の行が画面に入る・「今日へ」）・`?layout=`・1400px ははじめカレンダー・月の印刷は変わらない（`scripts/e2e-tour.cjs`）
 - [ ] 凡例ははじめ畳む・マスに title を出さない・マウスを重ねる／キーボードでマスの読み方（`scripts/e2e-words.cjs`）
 - [ ] （D223）初期データの月で「問題の無い日をまとめて確定（N日）」を押すと確認に日付が並び、確定するとその日が確定済み・ホームの確定していない日が N日減る。担当が休みの訪問のある日は対象から外れ、確認に日付が出る。未連絡の変更のある日は外れ、そのまま残る（`scripts/e2e-home.cjs`）
+- [ ] （ADR-0056）月のカレンダーのマスで ←→ 日・↑↓ 週・Enter でその日の回の一覧（右の欄の先頭。〈利用者さん〉でその日が1回なら欄）・Shift＋Enter でその日をまとめて選ぶ（マスに「選択 N」・下に選んだ訪問の帯）。一覧の行を押すと欄・↓ で15分後へ・ほかの日のマスへドラッグ（今日より前の日は影と理由で落とせない）。押すとその日の日の予定（`scripts/e2e-shared-parts.cjs`）
 - [ ] `lib/month`（月の日付・6週・対象の日の2つの mode・状態・overSpan の `staffIds`）・`lib/monthList`・`lib/monthGuide`・`lib/requestedOff`・`lib/monthPrint`・`lib/confirmDay` のテストが通る

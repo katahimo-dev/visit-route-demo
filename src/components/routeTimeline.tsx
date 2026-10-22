@@ -37,6 +37,8 @@ export type TimelineBand = {
   drag?: { draggable: boolean; onDragStart: (e: DragEvent) => void; onDragEnd: () => void };
   /** 帯の中の小さな印（アイコン。それぞれ title と読み上げの文を持つ） */
   marks?: ReactNode;
+  /** 共通の印の種類（data-marks。週・月・人の予定表の帯と同じ判定か確かめる） */
+  kinds?: string;
   /** 押したときに帯の下に出す中身（印の説明・理由） */
   detail?: ReactNode;
   /** 読み上げ・title に足す文（印の説明） */
@@ -237,6 +239,7 @@ function Band({
           role="button"
           tabIndex={0}
           className="tl-band-btn"
+          data-marks={b.kinds}
           aria-pressed={b.picked}
           aria-label={`${time} ${b.name}${b.note ? `（${b.note}）` : ''}${b.multi ? '（選択中）' : ''}`}
           title={`${time} ${b.name}${b.note ? `\n${b.note}` : ''}\n押すと理由を見られます。ドラッグで別の担当へ移せます${b.onMulti ? '。Shift・Ctrl＋クリックで複数選べます' : ''}${b.onKey ? '。↑↓で15分・←→で1日・Shift+←→で隣の担当・Enterで詳細・Deleteで取り消し' : ''}`}

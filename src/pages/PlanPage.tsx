@@ -52,7 +52,6 @@ import {
   ScheduleToolbar,
   SelectionBar,
   useScopeItems,
-  useVisitSelection,
 } from '../components/scheduleParts';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
@@ -62,6 +61,7 @@ import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
 import { VisitRules } from '../components/VisitRules';
 import { KeyMoveBand, useVisitKeys } from '../components/visitKeys';
+import { useVisitSelection } from '../components/visitParts';
 import { TypeMark } from '../components/visitType';
 import type { DemoData } from '../contracts/data';
 import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
@@ -114,12 +114,14 @@ import { CURRENT_TEXT, NONE_TEXT, reassignChoices } from '../lib/reassignMenu';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { reasonFace, scoreReason } from '../lib/scoreReason';
 import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
-import { type LegSpan, legsOf, shadowOf, spansOf, typeUnfitOf } from '../lib/timeline';
+import { type LegSpan, legsOf, shadowOf, spansOf } from '../lib/timeline';
 import { useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { createValueStore, type ReadableStore, useValueStore } from '../lib/valueStore';
+import { dayLooks } from '../lib/visitLook';
 import { cancelVisitOp } from '../lib/visitOps';
+import { canSelectVisit } from '../lib/visitSelect';
 import { hmText, workStats } from '../lib/workload';
 import { bestInsertion, compile } from '../matching';
 import {
@@ -904,6 +906,17 @@ export default function PlanPage() {
     for (const c of told?.timeChanged ?? []) out.set(c.visitId, `時刻 ${clock(c.fromStart)}→${clock(c.toStart)}`);
     return out;
   }, [told, staffById]);
+  /** 訪問の見た目（要対応・未連絡の変更・ピンなど。週・月・人の予定表と同じ判定。lib/visitLook） */
+  const looks = useMemo(
+    () =>
+      dayLooks({ issues, told, problem: hasPlan ? problem : null }, m.allVisits, {
+        staffName: (sid) => staffById.get(sid)?.name ?? '（不明）',
+        leaveOf: (v) => m.leaveVisits.some((x) => x.id === v.id),
+        tentativeOf: (cid) => !!clientById.get(cid)?.tentative,
+        past: date < jstDate(Date.now()),
+      }),
+    [date, issues, told, hasPlan, problem, m.allVisits, m.leaveVisits, clientById, staffById],
+  );
   /** 未連絡の変更の連絡の一覧を開いている */
   const [toldOpen, setToldOpen] = useState(false);
   /** 確定する（伝えた内容を残す。確定したら true） */
@@ -1690,7 +1703,6 @@ export default function PlanPage() {
     const subFrom = reassignMarks.substitute.get(id);
     const shift = reassignMarks.shifted.get(id);
     const stay = leftById.get(id);
-    const unfit = typeUnfitOf(problem, id, sid);
     const notes: string[] = [];
     const icons: ReactNode[] = [];
     const mark = (key: string, cls: string, title: string, body: ReactNode, testId?: string) => {
@@ -1710,25 +1722,29 @@ export default function PlanPage() {
         <TriangleAlert size={11} aria-hidden="true" />,
         'left-mark',
       );
-    if (unfit) mark('unfit', 'is-red', '資格✗（種類の担当に必要な条件に合わない）', '資格✗');
-    if (hard && !unfit)
-      mark('hard', 'is-red', `要対応：${hard.join('・')}`, <ShieldAlert size={11} aria-hidden="true" />, 'issue-mark');
+    // 要対応・資格✗／限✗・未連絡の変更・ピン・この回だけ変更・仮押さえは、週・月・人の予定表と同じ判定と印（lib/visitLook）
+    const look = looks.get(id);
+    for (const lm of look?.marks ?? [])
+      mark(
+        `${lm.kind}-${lm.short}`,
+        lm.tone === 'red' ? 'is-red' : lm.tone === 'warn' ? 'is-warn' : lm.tone === 'pin' ? 'is-pin' : 'is-tentative',
+        lm.title,
+        lm.kind === 'issue' ? (
+          <ShieldAlert size={11} aria-hidden="true" />
+        ) : lm.kind === 'told' ? (
+          <MessageSquareText size={11} aria-hidden="true" />
+        ) : lm.kind === 'pin' ? (
+          <Pin size={11} strokeWidth={2.4} aria-hidden="true" />
+        ) : (
+          lm.short
+        ),
+        lm.kind === 'issue' ? 'issue-mark' : lm.kind === 'told' ? 'told-mark' : undefined,
+      );
     if (subFrom) mark('sub', 'is-move', `代行（元の担当：${staffName(subFrom)}さん）`, '代', 'substitute');
     if (shift !== undefined) {
       const txt = shift > 0 ? `+${shift}分` : `−${-shift}分`;
       mark('shift', 'is-warn', `振り直す前の開始時刻からの変化 ${txt}`, txt, 'shifted');
     }
-    if (pin)
-      mark(
-        'pin',
-        'is-pin',
-        'ピン（AI で組み直しても担当を変えない）',
-        <Pin size={11} strokeWidth={2.4} aria-hidden="true" />,
-      );
-    const told = toldMarks.get(id);
-    if (told)
-      mark('told', 'is-warn', `未連絡の変更：${told}`, <MessageSquareText size={11} aria-hidden="true" />, 'told-mark');
-    if (client?.tentative) mark('tentative', 'is-tentative', '仮押さえ（本登録の前）', '仮');
     const x = { id, set: PLAN_SET };
     return {
       visitId: id,
@@ -1736,7 +1752,9 @@ export default function PlanPage() {
       end,
       name: client?.displayName ?? '（不明）',
       color: type ? colorOf(type.color) : null,
-      tone: hard ? 'red' : pin ? 'pinned' : null,
+      // 今日より前の日は要対応の赤にしない（印と同じ。月・ホームと同じ決まり）
+      tone: look?.tone === 'issue' || (hard && date >= jstDate(Date.now())) ? 'red' : pin ? 'pinned' : null,
+      kinds: look?.kinds ?? '',
       picked: sel.isPicked(x),
       dragging: dragging === id,
       onPick: () => sel.togglePick(x),
@@ -2030,32 +2048,22 @@ export default function PlanPage() {
         return {
           visitId: v.id,
           time: `${hm(start)}〜${hm(start + v.durationMinutes)}`,
-          clientName: clientById.get(v.clientId)?.displayName ?? '（不明）',
+          title: clientById.get(v.clientId)?.displayName ?? '（不明）',
           staff: s,
           staffName: sName,
-          issues: (issues.get(v.id) ?? []).map((x) => x.label),
-          told: toldMarks.get(v.id) ?? null,
-          pinned: !!own(pins, v.id),
-          cancelled: v.cancelled ? (v.cancelKind === 'sameDay' ? 'sameDay' : 'normal') : null,
-          leave: leave ? (leaveOn(data.clientLeaves, v.clientId, v.date)?.note ?? '') : null,
+          state: v.cancelled
+            ? v.cancelKind === 'sameDay'
+              ? '当日キャンセル'
+              : '取り消し'
+            : leave
+              ? '休みのため無し'
+              : null,
+          look: looks.get(v.id),
           color: type ? colorOf(type.color) : null,
-          selectable: !v.cancelled && !leave && date >= jstDate(Date.now()),
+          selectable: canSelectVisit(v, leave, jstDate(Date.now())),
         };
       });
-  }, [
-    compact,
-    m.allVisits,
-    m.leaveVisits,
-    explained,
-    owner,
-    staffById,
-    clientById,
-    issues,
-    toldMarks,
-    pins,
-    data,
-    date,
-  ]);
+  }, [compact, m.allVisits, m.leaveVisits, explained, owner, staffById, clientById, looks, data]);
   const dateIndex = dates.indexOf(date);
   const prevDate = dateIndex > 0 ? dates[dateIndex - 1] : undefined;
   const nextDate = dateIndex >= 0 ? dates[dateIndex + 1] : undefined;

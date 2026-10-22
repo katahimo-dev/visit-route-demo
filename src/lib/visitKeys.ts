@@ -57,6 +57,34 @@ export function visitKeyOf(e: {
   }
 }
 
+/** 月のマスのキー（PRD D340）：←→ で前・次の日、↑↓ で前・次の週、Enter でその日の回の一覧、Shift／Ctrl＋Enter でその日をまとめて選ぶ */
+export type CellKey = { kind: 'go'; days: number } | { kind: 'open' } | { kind: 'select' };
+
+/** 月のマスのキーを読み替える（当たらなければ null。Alt つき・Shift＋矢印は読まない） */
+export function cellKeyOf(e: {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+}): CellKey | null {
+  if (e.altKey) return null;
+  if (e.key === 'Enter') return e.shiftKey || e.ctrlKey || e.metaKey ? { kind: 'select' } : { kind: 'open' };
+  if (e.shiftKey || e.ctrlKey || e.metaKey) return null;
+  switch (e.key) {
+    case 'ArrowLeft':
+      return { kind: 'go', days: -1 };
+    case 'ArrowRight':
+      return { kind: 'go', days: 1 };
+    case 'ArrowUp':
+      return { kind: 'go', days: -7 };
+    case 'ArrowDown':
+      return { kind: 'go', days: 7 };
+    default:
+      return null;
+  }
+}
+
 /** 手の名前（全体の「元に戻す」の title・知らせ） */
 export function moveLabel(m: VisitMove, staffName: (id: string) => string): string {
   if (m.kind === 'time') return `訪問を${Math.abs(m.minutes)}分${m.minutes > 0 ? '後' : '前'}へ`;

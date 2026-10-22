@@ -14,7 +14,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { type ReactNode, type Ref, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, type Ref, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { DemoData } from '../contracts/data';
 import { jstDate } from '../domain/time';
@@ -391,41 +391,6 @@ export function RangeProposalBand() {
 
 // ---- 複数選択 ----
 
-/**
- * 選んだ訪問（日・週の予定。Shift・Ctrl（mac は ⌘）＋クリック、帯で Shift／Ctrl＋Enter。PRD D330）。
- * key（日付・週）が変わったら外す。Esc で外す（入力欄の中・欄が開いている間は除く）
- */
-export function useVisitSelection(key: string) {
-  const [ids, setIds] = useState<readonly string[]>([]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付・週が変わったら外す
-  useEffect(() => {
-    setIds([]);
-  }, [key]);
-  const toggle = useCallback(
-    (id: string) => setIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id])),
-    [],
-  );
-  const clear = useCallback(() => setIds([]), []);
-  useEffect(() => {
-    if (ids.length === 0) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (document.querySelector('[aria-modal="true"], .side-panel')) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-      setIds([]);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ids.length]);
-  const set = useMemo(() => new Set(ids), [ids]);
-  return { ids, has: (id: string) => set.has(id), toggle, clear, set: setIds };
-}
-
-/** 複数選択の押し方か（Shift・Ctrl・⌘） */
-export const isMultiClick = (e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): boolean =>
-  e.shiftKey || e.ctrlKey || e.metaKey;
-
 /** ずらす幅（分） */
 const SHIFTS = [-30, -15, 15, 30] as const;
 
@@ -437,11 +402,14 @@ export function SelectionBar({
   ids,
   onClear,
   dates,
+  shift = true,
 }: {
   ids: readonly string[];
   onClear: () => void;
   /** 今見ている日付（日は1日・週は7日）。欄などでこの外へ移した訪問は数えない */
   dates: readonly string[];
+  /** 時刻をずらすを出すか（〈スタッフ〉の画面など動かさない所は false） */
+  shift?: boolean;
 }) {
   const { data, update } = useDemoData();
   const toast = useToast();
@@ -480,7 +448,7 @@ export function SelectionBar({
     >
       <strong data-testid="selection-count">{selectionText(live.length)}</strong>
       <MenuButton label="担当を替える" icon={UserRoundCog} items={staffItems} testId="selection-assign" />
-      {!compact && (
+      {!compact && shift && (
         <fieldset className="row selection-shift" aria-label="時刻をずらす">
           <span className="sub">
             <WithIcon icon={Clock} size={14}>

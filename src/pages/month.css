@@ -869,3 +869,60 @@
     display: none;
   }
 }
+
+/* 選ぶ・キー・ドラッグ（PRD D340・D341。ADR-0056） */
+.month-cell-btn {
+  position: relative;
+}
+.month-cell.is-selected .month-cell-btn {
+  outline: 3px solid var(--primary-dark);
+  outline-offset: -3px;
+}
+.month-cell.is-listed .month-cell-btn {
+  box-shadow: 0 0 0 3px var(--primary);
+}
+.month-selected {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary-dark);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.month-drop {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  padding: 2px;
+}
+.month-cell.is-drop-ok .month-cell-btn,
+.month-cell.is-drop-warn .month-cell-btn {
+  border-color: var(--primary);
+}
+.month-day-visits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.month-day-rows {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.month-day-rows .vrow {
+  min-height: 48px;
+}
+.month-day-visits-help {
+  margin: 0;
+  font-size: 0.78rem;
+}
+@media print {
+  .month-day-visits,
+  .month-selected {
+    display: none;
+  }
+}
