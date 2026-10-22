@@ -44,7 +44,7 @@ describe('reassignItemText（担当を変える ▾ の項目の説明）', () =
   it('件数の上限・いまの予定の必須の違反は時間の代わりに書く', () => {
     expect(reassignItemText(cand({ fits: false, overCap: true }), [], true).description).toBe('件数の上限を超える');
     expect(reassignItemText(cand({ fits: false, routeBroken: true }), [], true).description).toBe(
-      'いまの予定に必須の違反あり',
+      'いまの予定に守れない条件あり',
     );
   });
   it('重みの違反は2つまで（相性は記号で1回だけ）', () => {

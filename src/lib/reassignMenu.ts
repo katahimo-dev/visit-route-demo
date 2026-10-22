@@ -28,7 +28,7 @@ function travelText(n: number): string {
  */
 export function reassignItemText(c: ReassignCandidate, reasons: Reason[], allowed: boolean): ReassignItemText {
   const parts: string[] = [];
-  if (c.routeBroken) parts.push('いまの予定に必須の違反あり');
+  if (c.routeBroken) parts.push('いまの予定に守れない条件あり');
   else if (c.overCap) parts.push('件数の上限を超える');
   else if (c.fits) {
     if (c.addedTravel !== null) parts.push(travelText(c.addedTravel));
@@ -50,4 +50,4 @@ export function reassignItemText(c: ReassignCandidate, reasons: Reason[], allowe
 /** 今の担当の項目の説明（押しても何もしない） */
 export const CURRENT_TEXT = '今の担当です';
 /** 「入らなかった訪問へ」の説明（固定も外れる） */
-export const NONE_TEXT = '担当なしにします（固定も外れます）';
+export const NONE_TEXT = '担当なしにします（ピンも外れます）';

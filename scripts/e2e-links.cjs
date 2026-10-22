@@ -342,8 +342,8 @@ async function workload(page) {
   check(!!(await cell.getAttribute('title')), 'マス：内訳の title は今どおり');
   const note = await page.getByTestId('work-grid-note').innerText();
   check(
-    note.includes('内訳は下の「日ごと」の表で') && !note.includes('指を置く'),
-    'マスの説明：タッチでも成り立つ文（内訳は「日ごと」の表）',
+    note.includes('くわしくは下の「日ごと」の表で') && !note.includes('指を置く'),
+    'マスの説明：タッチでも成り立つ文（くわしくは「日ごと」の表）',
     note,
   );
   // キーボードで押せる

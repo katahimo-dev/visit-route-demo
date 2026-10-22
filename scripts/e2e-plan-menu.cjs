@@ -113,8 +113,8 @@ async function plain(page) {
   );
   check(item(s, 'create')?.name === 'AI にもう一度作らせる', '名前：「AI にもう一度作らせる」', item(s, 'create'));
   check(
-    item(s, 'resolve')?.name === '固定した訪問は残して、ほかを作り直す',
-    '名前：「固定した訪問は残して、ほかを作り直す」',
+    item(s, 'resolve')?.name === 'ピンの付いた訪問は残して、ほかを作り直す',
+    '名前：「ピンの付いた訪問は残して、ほかを作り直す」',
   );
   check(/^2つの案を比べる/.test(item(s, 'compare')?.name ?? ''), '名前：「2つの案を比べる」（件数つき）');
   check(item(s, 'revert')?.name === 'AI が出したままに戻す', '名前：「AI が出したままに戻す」');
@@ -124,18 +124,20 @@ async function plain(page) {
     s.items.filter((x) => !x.desc).map((x) => x.key),
   );
   check(
-    !/消えます/.test(item(s, 'create')?.desc ?? '') && /この日だけ試す重み（標準）/.test(item(s, 'create')?.desc ?? ''),
+    !/消えます/.test(item(s, 'create')?.desc ?? '') && /この日の重み（標準）/.test(item(s, 'create')?.desc ?? ''),
     '説明：手直しが無いときは「消えます」を書かない・今の条件の名前',
     item(s, 'create')?.desc,
   );
   check(
     !item(s, 'resolve')?.disabled &&
-      /固定がありません。AI が出したままの案（戻す先）は残して/.test(item(s, 'resolve')?.visibleDesc ?? ''),
-    '固定が無い：「固定した訪問は残して…」も押せて、戻す先を残すと書く（PR #39 のレビュー）',
+      /ピンの付いた訪問はありません。作り直したあとも「AI が出したままに戻す」で戻せます/.test(
+        item(s, 'resolve')?.visibleDesc ?? '',
+      ),
+    'ピンが無い：「ピンの付いた訪問は残して…」も押せて、戻せると書く（PR #39 のレビュー）',
     item(s, 'resolve'),
   );
   check(
-    item(s, 'revert')?.disabled && /手直し・固定はありません/.test(item(s, 'revert')?.visibleDesc ?? ''),
+    item(s, 'revert')?.disabled && /手直し・ピンはありません/.test(item(s, 'revert')?.visibleDesc ?? ''),
     '手直しが無い：「AI が出したままに戻す」は押せず、理由を見える文で',
     item(s, 'revert'),
   );
@@ -195,22 +197,22 @@ async function edited(page) {
   await menuList(page).waitFor();
   const s = await menuShape(page);
   check(
-    /手直しと固定は消えます/.test(item(s, 'create')?.desc ?? ''),
-    '手直しあり：「AI にもう一度作らせる」の説明に「手直しと固定は消えます」',
+    /手直しとピンは消えます/.test(item(s, 'create')?.desc ?? ''),
+    '手直しあり：「AI にもう一度作らせる」の説明に「手直しとピンは消えます」',
     item(s, 'create')?.desc,
   );
   check(
     !item(s, 'resolve')?.disabled &&
-      /固定した 1件の担当はそのまま/.test(item(s, 'resolve')?.desc ?? '') &&
+      /ピンの付いた 1件はそのまま/.test(item(s, 'resolve')?.desc ?? '') &&
       !/消えます/.test(item(s, 'resolve')?.desc ?? ''),
-    '固定あり：「固定した訪問は残して…」は押せて、固定の件数を書く（固定していない手直しは無いので「消えます」を書かない）',
+    'ピンあり：「ピンの付いた訪問は残して…」は押せて、ピンの件数を書く（ピンの無い手直しは無いので「消えます」を書かない）',
     item(s, 'resolve'),
   );
   check(!item(s, 'revert')?.disabled, '手直しあり：「AI が出したままに戻す」は押せる');
   check(
     s.items
       .filter((x) => x.key.startsWith('preset-') && !x.disabled)
-      .every((x) => /手直しと固定は消えます/.test(x.desc)),
+      .every((x) => /手直しとピンは消えます/.test(x.desc)),
     '手直しあり：考え方に切り替える項目の説明にも「消えます」',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'menu-edited.png') });
@@ -218,7 +220,7 @@ async function edited(page) {
   await page.getByTestId('plan-menu-create').click();
   await dialog(page).waitFor({ timeout: 5000 });
   const title = await page.getByTestId('confirm-title').innerText();
-  check(/手直しと固定を捨てて/.test(title), '作り直す：独自の確認ダイアログで確かめる', title);
+  check(/手直しとピンを捨てて/.test(title), '作り直す：独自の確認ダイアログで確かめる', title);
   await page.keyboard.press('Escape');
   await dialog(page).waitFor({ state: 'detached' });
   await settle(page);
@@ -289,14 +291,14 @@ async function unpinnedEdit(page) {
   await menuList(page).waitFor();
   const s = await menuShape(page);
   check(
-    !item(s, 'resolve')?.disabled && /固定していない手直しは消えます/.test(item(s, 'resolve')?.desc ?? ''),
-    '固定していない手直しあり：説明に「固定していない手直しは消えます」',
+    !item(s, 'resolve')?.disabled && /ピンの無い手直しは消えます/.test(item(s, 'resolve')?.desc ?? ''),
+    'ピンの無い手直しあり：説明に「ピンの無い手直しは消えます」',
     item(s, 'resolve')?.desc,
   );
   await page.getByTestId('plan-menu-resolve').click();
   await dialog(page).waitFor({ timeout: 5000 });
   const title = await page.getByTestId('confirm-title').innerText();
-  check(/固定していない手直しを捨てて/.test(title), '固定した訪問は残して…：確認ダイアログを出す', title);
+  check(/ピンの無い手直しを捨てて/.test(title), 'ピンの付いた訪問は残して…：確認ダイアログを出す', title);
   await page.getByTestId('confirm-cancel').click();
   await dialog(page).waitFor({ state: 'detached' });
   await settle(page, 600);
@@ -486,7 +488,7 @@ async function reassignMenu(page) {
     others.map((x) => `${x.name}：${x.desc}`),
   );
   check(
-    others.filter((x) => !x.disabled).every((x) => /時間の約束|件数の上限|必須の違反/.test(x.desc)),
+    others.filter((x) => !x.disabled).every((x) => /時間の約束|件数の上限|守れない条件/.test(x.desc)),
     '担当を変える：説明に時間の約束（✓／✗）か件数の上限',
   );
   const firstOff = others.findIndex((x) => x.disabled);
@@ -894,7 +896,7 @@ async function moreMenus(page) {
   const help = page.getByTestId('plan-help');
   await help.waitFor();
   check(
-    (await focusedId()) === 'plan-help' && (await help.innerText()).includes('固定'),
+    (await focusedId()) === 'plan-help' && (await help.innerText()).includes('ピン'),
     '「使い方」で操作の行の下に説明が開き、フォーカスが移る',
   );
   await help.getByRole('button', { name: '使い方を閉じる' }).click();

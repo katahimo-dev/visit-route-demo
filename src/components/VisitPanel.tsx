@@ -234,7 +234,7 @@ function VisitPanel({
         fixed.length > 0 &&
         !(await confirm({
           title: '確定した日の訪問も変えますか？',
-          body: `確定した日（${fixed.map((x) => dateText(x)).join('・')}）の訪問も変わります。確定した割当は変えません（「未確定の変更あり」になります）。`,
+          body: `確定した日（${fixed.map((x) => dateText(x)).join('・')}）の訪問も変わります。確定した割当はそのままで、その日は「未確定の変更あり」になります。`,
           confirmLabel: '変える',
         }))
       )
@@ -394,7 +394,7 @@ function VisitPanel({
                     {info.assignment.pinned && (
                       <span className="chip chip-pin">
                         <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
-                        固定
+                        ピン
                       </span>
                     )}
                     {owner === info.usualStaffId && <span className="sub">（いつもの担当）</span>}
@@ -679,12 +679,12 @@ function VisitPanel({
                   />
                   <span className="vp-choice-text">
                     <span className="vp-choice-name">担当なし（入らなかった訪問へ）</span>
-                    <span className="sub vp-choice-desc">固定も外れます（この回だけ）</span>
+                    <span className="sub vp-choice-desc">ピンも外れます（この回だけ）</span>
                   </span>
                 </label>
               )}
             </div>
-            <p className="sub">選んだ人はその日の案で固定になります（作り直しても変わりません）。</p>
+            <p className="sub">選んだ人にピンが付き、作り直しても担当は変わりません。</p>
           </fieldset>
         )}
 

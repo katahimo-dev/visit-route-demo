@@ -202,7 +202,7 @@ export default function DataPage() {
       const counts = `${rt.staff} ${r.staff.length}人・${rt.client} ${r.clients.length}人・訪問 ${r.visits.length}件・項目 ${r.items.length}件・条件 ${r.rules.length}件`;
       const ok = await confirmDialog({
         title: `「${file.name}」でデータを置き換えますか？`,
-        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。AI案・記録・確定した割当・手直しの記憶は消えます。\n${keepNote(canKeepPrevious())}`,
+        body: `「${file.name}」の内容（${counts}）で、いまのデータをすべて置き換えます。作った案と確定した割当も消えます。\n${keepNote(canKeepPrevious())}`,
         confirmLabel: 'すべて置き換える',
         tone: 'danger',
       });
@@ -250,7 +250,7 @@ export default function DataPage() {
       ...(warning ? [warning, ''] : []),
       `「${file.name}」の${term}の名簿を読み込みます（${how}）。`,
       rosterSummary(r, kind, terms),
-      'AI案・記録・確定した割当・訪問はそのままです。',
+      '作った案・確定した割当・訪問はそのままです。',
       keepNote(canKeepPrevious()),
     ].join('\n');
     const ok = await confirmDialog({
@@ -308,7 +308,7 @@ export default function DataPage() {
   const doReset = async () => {
     const ok = await confirmDialog({
       title: 'データを初期状態に戻しますか？',
-      body: `データをデモの初期状態に戻します。いまの変更はすべて消えます（機能の入り切り（管理者設定）はそのままです）。\n${keepNote(canKeepPrevious())}`,
+      body: `データをデモの初期状態に戻します。いまの変更はすべて消えます。管理者設定の機能の入り切りは、そのままです。\n${keepNote(canKeepPrevious())}`,
       confirmLabel: '消して初期状態に戻す',
       tone: 'danger',
     });
@@ -344,7 +344,7 @@ export default function DataPage() {
   const clearPrefs = async () => {
     const ok = await confirmDialog({
       title: '手直しの記憶をすべて消しますか？',
-      body: `覚えている ${prefCount}件を消します。作った案と固定はそのままです。`,
+      body: `覚えている ${prefCount}件を消します。作った案とピンはそのままです。`,
       confirmLabel: 'すべて消す',
       tone: 'danger',
     });
@@ -378,7 +378,7 @@ export default function DataPage() {
         nav={<SettingsTabs />}
         icon={Database}
         title="データ"
-        lead={`書き出し・読み込み（控え（バックアップ）${excelOn ? '・Excel' : ''}）・初期状態に戻す・使い方の案内`}
+        lead={`データの書き出し・読み込み${excelOn ? '（Excel も）' : ''}・初期状態に戻す・使い方の案内`}
       />
       <div className="warn-box">
         <TriangleAlert size={20} strokeWidth={2.2} aria-hidden="true" />
@@ -416,8 +416,7 @@ export default function DataPage() {
             {previousText(previous)}
           </p>
           <Hint>
-            初期状態に戻す・控えや Excel
-            全体の読み込み・名簿の読み込みの前のデータを、このブラウザに1つだけ残しています（次に置き換えると上書きします）。戻すと、いまのデータが代わりに残ります。
+            データを置き換える前の状態を、このブラウザに1つだけ残しています。戻すと、いまのデータが代わりに残ります。
           </Hint>
           <button
             type="button"
@@ -478,8 +477,13 @@ export default function DataPage() {
           （JSON）
         </SectionTitle>
         <Hint>
-          データ一式（AI案・記録・確定した割当も）を1つのファイル（JSON）にします。別の端末・人へ渡すときや、控えに使います。
-          「ファイルを選ぶ」で書き出したファイルを選ぶと、いまのデータと置き換えます（置き換える前に確認します）。
+          <ul className="hint-list">
+            <li>作った案や確定した割当も含めて、データ一式を1つのファイル（JSON）にします。</li>
+            <li>別の端末や人へ渡すときや、控えに使います。</li>
+            <li>
+              「ファイルを選ぶ」で書き出したファイルを選ぶと、いまのデータと置き換えます。置き換える前に確かめます。
+            </li>
+          </ul>
         </Hint>
         <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={download}>
           <WithIcon icon={Download}>ファイルに書き出す</WithIcon>
@@ -513,15 +517,15 @@ export default function DataPage() {
             {excelKind === 'all' ? (
               <>
                 {t.staff}・{t.client}
-                ・項目・条件・相性・稼働時間・訪問を、シートごとの一覧（Excel）にします。Excel
-                で行を足す・直す・消すしてから読み込むと、いまのデータがその内容に置き換わります（AI案・記録・確定した割当・手直しの記憶は消えます）。
-                書き方はブックの「使い方」のシートにあります。
+                ・項目・条件・相性・勤務時間・訪問を、シートごとの一覧（Excel）にします。Excel
+                で直して読み込むと、いまのデータがその内容に置き換わります。作った案と確定した割当は消えます。
+                書き方は、ブックの「使い方」のシートにあります。
               </>
             ) : (
               <>
                 {`${rosterTerm}の一覧（シート1枚）だけを書き出し・読み込みます。列は全体のブックの「${rosterTerm}」シートと同じで、全体のブックも名簿として読めます。`}
                 {
-                  '読み込むと ID か名前で同じ人を探して直し、いない人は足します。AI案・記録・確定した割当・訪問は消えません。'
+                  '読み込むと、ID か名前で同じ人を探して直し、いない人は足します。作った案・確定した割当・訪問は消えません。'
                 }
               </>
             )}
@@ -647,9 +651,7 @@ export default function DataPage() {
           <span id={tidyTitleId}>古い案と記録を片づける</span>
         </SectionTitle>
         <Hint>
-          保存の容量が足りなくなったときに使います。選んだ月より前の日の
-          AI案と記録（比較の画面の記録）を消します。確定した日の
-          AI案・確定した割当・訪問・人・条件は消えません。消す前に控えを書き出してください。
+          保存の容量が足りなくなったときに使います。選んだ月より前の日の、作った案を消します。確定した日の案と割当・訪問・人・条件は消えません。消す前に控えを書き出してください。
         </Hint>
         <label className="data-tidy-month">
           消す範囲
@@ -702,9 +704,7 @@ export default function DataPage() {
 
       <div className="card stack">
         <SectionTitle icon={CircleHelp}>使い方の案内</SectionTitle>
-        <Hint>
-          初めて開いたときに出る短い案内（3枚）を、もう一度見られます。案内を見たかどうかはこのブラウザに覚え、データには入れません（書き出し・初期状態に戻すでは変わりません）。
-        </Hint>
+        <Hint>初めて開いたときの短い案内（3枚）を、もう一度見られます。</Hint>
         <button
           type="button"
           className="btn"
@@ -719,7 +719,7 @@ export default function DataPage() {
       <div className="card stack">
         <SectionTitle icon={RotateCcw}>初期状態に戻す</SectionTitle>
         <Hint>
-          デモの架空の事業所のデータに戻します。いまの変更はすべて消えます（機能の入り切り（管理者設定）と、使い方の案内を見たかどうかはそのままです）。
+          デモの架空の事業所のデータに戻します。いまの変更はすべて消えます。管理者設定の機能の入り切りは、そのままです。
         </Hint>
         <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={doReset}>
           <WithIcon icon={RotateCcw}>デモの初期状態に戻す</WithIcon>

@@ -64,7 +64,7 @@ function notAllowedLabel(reasons: Reason[]): string {
 /** perRule の負担の均等のキー（Problem に条件のIDがないので型の名前。初期データの条件のIDと同じ） */
 export const BALANCE_RULE_KEY = 'balance';
 
-const TIME_LABEL = { time: '時間の約束に間に合わない', slot: '稼働時間帯に作業が収まらない' } as const;
+const TIME_LABEL = { time: '時間の約束に間に合わない', slot: '働ける時間に収まらない' } as const;
 
 function scorePlaced(problem: Problem, p: Placed): PlanScore {
   let travel = 0;

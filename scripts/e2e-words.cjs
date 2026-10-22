@@ -103,7 +103,7 @@ async function reason(page) {
   const sameLine = await page
     .getByTestId('plan-summary')
     .evaluate((el) => el.contains(document.querySelector('[data-testid="plan-reason"]')));
-  check(sameLine, '理由は今の案の帯（訪問・入らない・必須の違反・移動・点数）の中');
+  check(sameLine, '理由は今の案の帯（訪問・入らない・守れない条件・移動・点数）の中');
   await page.screenshot({
     path: path.join(OUT_DIR, 'plan-reason.png'),
     clip: { x: 0, y: 0, width: 1400, height: 400 },
@@ -167,7 +167,7 @@ async function termMouseKeyboard(page) {
   await settle(page, 150);
   check(!(await tip.isVisible()), 'Tab で外へ出ても出さない');
   const hard = page.locator('[data-testid="plan-summary"] [data-term="hard"]');
-  check((await activeTerm(page)) === 'hard', 'Tab で次の用語（必須の違反）へ');
+  check((await activeTerm(page)) === 'hard', 'Tab で次の用語（守れない条件）へ');
   const { loc: hardTip } = await tipOf(page, hard);
   check(await hardTip.isVisible(), '次の用語の説明が出る（前の用語の説明は消える）');
   check((await page.locator('[role="tooltip"]:visible').count()) === 1, '出ている説明は1つ');
@@ -724,13 +724,13 @@ async function scoreColor(page) {
       const sc = el.querySelector('[data-testid="plan-score"]');
       return {
         dropped: Number(/入らない\D*(\d+)/.exec(t)?.[1] ?? -1),
-        hard: Number(/必須の違反\D*(\d+)/.exec(t)?.[1] ?? -1),
+        hard: Number(/守れない条件\D*(\d+)/.exec(t)?.[1] ?? -1),
         alert: sc.classList.contains('is-alert'),
         color: getComputedStyle(sc.querySelector('strong')).color,
       };
     });
   const st = await read();
-  check(st.dropped >= 0 && st.hard >= 0, '点数の色：入らない・必須の違反の数が読める', st);
+  check(st.dropped >= 0 && st.hard >= 0, '点数の色：入らない・守れない条件の数が読める', st);
   const bad = st.dropped > 0 || st.hard > 0;
   check(
     st.alert === bad && (bad ? st.color === DANGER_RGB : st.color !== DANGER_RGB && st.color !== 'rgb(156, 66, 50)'),

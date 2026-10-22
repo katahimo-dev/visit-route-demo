@@ -124,7 +124,7 @@ export function RouteTimeline({
                     className={`tl-bg is-${b.kind}`}
                     style={box}
                     title={
-                      b.kind === 'absent' ? `欠勤 ${minutesToHhmm(b.start)}〜${minutesToHhmm(b.end)}` : '稼働時間帯の外'
+                      b.kind === 'absent' ? `欠勤 ${minutesToHhmm(b.start)}〜${minutesToHhmm(b.end)}` : '働ける時間の外'
                     }
                   >
                     {b.kind === 'absent' && box.height >= 16 && <span className="tl-absent-label">欠勤</span>}

@@ -435,9 +435,7 @@ export function SuddenPanel({
         // （押せない振り直しのボタンは出さない。主ボタンは1つ。PRD D264）
         className={hasBase ? 'btn btn-text' : 'btn btn-primary'}
         disabled={!!error || busy || running}
-        title={
-          running ? '計算中は押せません（作り終えた案で休む人に訪問が残らないよう、終わってから登録します）' : undefined
-        }
+        title={running ? '計算中は押せません。終わってから登録してください' : undefined}
         onClick={() => onSaveOnly(withId(absence))}
         data-testid="sudden-save-only"
       >
@@ -641,9 +639,9 @@ export function SuddenPanel({
         {stepHeading(suddenHeading(done.kind, 5, terms.staff))}
         <p className="sub">
           {done.kind === 'staff'
-            ? '振り直す前の割当（確定した割当、無ければ振り直す前の案）と、新しい割当の差から作っています。'
-            : `取り消した訪問の担当への中止の連絡と、取り消す前の確定した割当との差から作っています（キャンセルした${terms.client}あては作りません）。`}
-          文はコピーするか、メールアプリで開いて送ります（このアプリからは送りません）。
+            ? '振り直す前と後で担当が変わった人への連絡です。'
+            : `取り消した訪問の担当への連絡です。キャンセルした${terms.client}あては作りません。`}
+          文はコピーするか、メールアプリで開いて送ります。
         </p>
         {leftCount > 0 && (
           <p className="warn-text" role="note" data-testid="sudden-contacts-left">

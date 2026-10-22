@@ -28,14 +28,37 @@ describe('glossary', () => {
     expect(GLOSSARY.confirmed.label).toBe('確定');
     expect(glossaryText('confirmed', terms)).toContain('シッターの画面・メール・印刷');
     expect(GLOSSARY.confirmed.text).toContain('変わりません');
-    expect(GLOSSARY.pinned.label).toBe('固定');
-    expect(GLOSSARY.pinned.text).toContain('担当は変わらず');
+    expect(GLOSSARY.pinned.label).toBe('ピン');
+    expect(GLOSSARY.pinned.text).toContain('担当は変わりません');
     expect(GLOSSARY.unconfirmed.label).toBe('未確定');
     expect(GLOSSARY.confirmDiff.label).toBe('未確定の変更あり');
     expect(GLOSSARY.aiPlan.label).toBe('AI案');
     expect(GLOSSARY.preset.label).toBe('プリセット');
     expect(GLOSSARY.attention.label).toBe('要対応');
     expect(GLOSSARY.stale.label).toBe('条件が変わった');
+  });
+  it('画面の文はふつうの言葉（PRD D307）：点数の付け方は「点数」の説明に寄せ、内部の言葉を使わない', () => {
+    expect(GLOSSARY.score.label).toBe('点数');
+    expect(GLOSSARY.score.text).toContain('100点満点');
+    expect(GLOSSARY.hard.label).toBe('守れない条件');
+    for (const [k, e] of Object.entries(GLOSSARY)) {
+      for (const w of [
+        '費用',
+        '内訳',
+        '稼働時間',
+        '必須の違反',
+        'プリセット「',
+        '試す重み',
+        '展開',
+        'inputKey',
+        '固定',
+        '記録',
+      ]) {
+        expect(e.text, `${k}：${w}`).not.toContain(w);
+      }
+      // 括弧の中に括弧を重ねない
+      expect(e.text, k).not.toMatch(/（[^）]*（/);
+    }
   });
   it('説明は「です・ます」で終わる', () => {
     for (const [k, e] of Object.entries(GLOSSARY)) expect(e.text, k).toMatch(/(です|ます|ません)(（[^）]*）)?。$/);

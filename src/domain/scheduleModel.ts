@@ -109,7 +109,7 @@ export const hhmm = (minutes: number) => minutesToHhmm(minutes);
 export type Warning = 'overlap' | 'outside';
 export const WARNING_LABELS: Record<Warning, string> = {
   overlap: '時間が重なる',
-  outside: '稼働時間外',
+  outside: '働ける時間の外',
 };
 export const isRed = (w: Warning[]) => w.length > 0;
 

@@ -304,7 +304,7 @@ describe('そのほか', () => {
     const n = setBasisWeight(d, 'wait', { weight: 1 });
     expect(revertBody(conditionChanges(d, n))).toBe('・条件の重み：空き時間（待ち） 3→1\nを変える前に戻します。');
     expect(revertBody(conditionChanges(d, n), 2)).toMatch(
-      /足した・消したものなど 2件は戻しません（各画面で直してください）。$/,
+      /足した・消したものなど 2件は戻しません。各画面で直してください。$/,
     );
   });
 });

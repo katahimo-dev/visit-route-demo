@@ -68,9 +68,12 @@ export function rebuildText(s: RebuildSummary): string {
 /** 0日になって帯が消えるときに1度だけ読み上げる文（PRD D164） */
 export const REBUILD_CLEARED = '影響する日は無くなりました';
 
-/** 作り直しに使う条件の文（PRD D163）：点数の基準のプリセットで作り直し、この日だけ試す重みで作った案も上書きする */
+/**
+ * 作り直しに使う条件の文（PRD D163・D307）：点数の基準のプリセットの重みで作り直す（この日だけ試す重みで作った案も上書きする）。
+ * 文は「「標準」の重みで作り直します」だけ（仕組みは用語の説明「条件が変わった」「点数」へ）
+ */
 export function rebuildWith(basis: string): string {
-  return `点数の基準のプリセット「${basis}」で作り直します（この日だけ試す重みで作った案も「${basis}」の案になります）`;
+  return `「${basis}」の重みで作り直します`;
 }
 
 /** 帯のボタン（PRD D163） */
@@ -99,16 +102,16 @@ export function rebuildAction(s: RebuildSummary, basis: string): RebuildAction |
       href: `/month?ym=${ym}&do=stale`,
       label: '作り直す',
       note:
-        `${Number(ym.slice(5, 7))}月の「月の予定」で、条件が変わった未確定の日（${inMonth}日）を作り直す欄を開きます。${rebuildWith(basis)}` +
-        (months.size > 1 ? '。ほかの月は、それぞれの月の予定で作り直します' : '') +
-        (s.confirmed.length > 0 ? '。確定済みの日は作り直しません' : ''),
+        `${Number(ym.slice(5, 7))}月の予定で、未確定の${inMonth}日を「${basis}」の重みで作り直します。` +
+        (months.size > 1 ? 'ほかの月は、その月の予定で作り直します。' : '') +
+        (s.confirmed.length > 0 ? '確定済みの日は作り直しません。' : ''),
     };
   }
   const ym = ymOf(s.days[0]!);
   return {
     href: `/month?ym=${ym}&do=attention`,
     label: '要対応を見る',
-    note: `確定済みの日は作り直しません。${Number(ym.slice(5, 7))}月の「月の予定」の要対応を開きます（日の予定で確かめてください）`,
+    note: `確定済みの日は作り直しません。${Number(ym.slice(5, 7))}月の予定の要対応を開きます。`,
   };
 }
 
@@ -118,8 +121,8 @@ export function rebuildAction(s: RebuildSummary, basis: string): RebuildAction |
  * 月のまとめて作る・自動作成・作り直しは、この画面の重み（点数の基準のプリセット）で作る
  */
 export function customRulesText(basis: string): string {
-  return `この日だけ試す重み（日の予定の右の欄の重み）がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「${basis}」）で作ります`;
+  return `日の予定で変えた重みが、どのプリセットとも違います。月のまとめて作る・作り直しは「${basis}」の重みで作ります`;
 }
 
-/** ［今日の案を試す重みで作り直す］の行き先（日の画面の ?do=recreate。PRD D166・D234） */
+/** ［今日の案を日の予定の重みで作り直す］の行き先（日の画面の ?do=recreate。PRD D166・D234） */
 export const recreateTodayHref = (today: string): string => `/plan?date=${today}&do=recreate`;

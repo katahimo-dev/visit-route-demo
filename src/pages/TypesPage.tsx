@@ -148,10 +148,11 @@ export default function TypesPage() {
         }
       />
       <Hint label="種類について">
-        種類の「担当に必要な条件」は、条件の重み・必須にかかわらず、いつも必須です。満たさない{terms.staff}
-        はその訪問の担当になりません（理由に「種類（名前）：…
-        ✗」と出ます）。標準の所要は、新しい訪問・定期パターンの初期値に使います。
-        {full && ` 種類は${MAX_VISIT_TYPES}までです。`}
+        <ul className="hint-list">
+          <li>種類の「担当に必要な条件」は、いつも必須です。合わない{terms.staff}は、その訪問の担当になりません。</li>
+          <li>標準の所要は、新しい訪問と定期パターンの初めの値に使います。</li>
+          {full && <li>種類は{MAX_VISIT_TYPES}までです。</li>}
+        </ul>
       </Hint>
 
       <div className="card table-scroll">

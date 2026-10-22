@@ -113,7 +113,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; onReset: () 
           <ConfirmDialog
             request={{
               title: 'データを初期状態に戻しますか？',
-              body: 'データをデモの初期状態に戻します。いまのデータは消えます（残すときは、先に「控え（バックアップ）を書き出す」）。',
+              body: 'データをデモの初期状態に戻します。いまのデータは消えます。残すときは、先に「控え（バックアップ）を書き出す」を押してください。',
               confirmLabel: '消して初期状態に戻す',
               cancelLabel: '取り消す',
               tone: 'danger',

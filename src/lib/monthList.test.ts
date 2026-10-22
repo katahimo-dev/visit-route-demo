@@ -71,13 +71,13 @@ describe('monthListRow', () => {
     expect(r.care).toBe(true);
     expect(r.flags).toEqual([
       { text: '入らない 2件', tone: 'red' },
-      { text: '必須の違反 1件', tone: 'red' },
+      { text: '守れない条件 1件', tone: 'red' },
       { text: '休みの人に訪問 3件', tone: 'red' },
       { text: '条件が変わった', tone: 'warn' },
       { text: '拘束超 2人', tone: 'warn' },
     ]);
     expect(r.label).toBe(
-      '10月24日（土）・訪問 8件・未確定の変更あり・要対応・入らない 2件・必須の違反 1件・休みの人に訪問 3件・条件が変わった・拘束超 2人',
+      '10月24日（土）・訪問 8件・未確定の変更あり・要対応・入らない 2件・守れない条件 1件・休みの人に訪問 3件・条件が変わった・拘束超 2人',
     );
     // 過ぎた日は要対応にしない
     const past = monthListRow({ ...s, date: '2026-10-20' }, today);

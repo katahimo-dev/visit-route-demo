@@ -130,10 +130,7 @@ export default function AvailabilityPage() {
           </span>
           <span>セルを押すと下で変えられます</span>
         </div>
-        <Hint>
-          薄い字は基本の曜日と時間（{terms.staff}
-          の設定）。色の付いた日は、その日だけ変えた時間です。セルを押すと下で変更できます。
-        </Hint>
+        <Hint>薄い字は、{terms.staff}の設定にあるいつもの時間です。色の付いた日は、その日だけ変えた時間です。</Hint>
         <EdgeScroll className="table-scroll avail-scroll">
           <table className="avail-table">
             <thead>

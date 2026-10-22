@@ -83,7 +83,7 @@
 ### 訪問の詳細の欄（`components/VisitPanel.tsx`・`visitPanel.css`。PRD D301〜D305。ADR-0051）
 
 - `VisitPanelProvider` を App の殻（`DayProvider`・`PersonPopoverProvider` の中、ルートの外）に1つ置き、`useOpenVisit()(req)` でどの画面・コマンドパレットからでも開く（画面を移っても欄は残る）。`req`：`visitId`（見る・直す）か `newVisit: { date, clientId?, start? }`（新規）、`draft?`（はじめの入力の差し替え。週のドラッグの落とした日時）、`onSaved?`（`{ visitId, date, moved, staffSet, isNew, label }`）、`returnFocus?(visitId)`（閉じたあとのフォーカス。保存で作り直した回は新しい ID）
-- `SidePanel`（`narrow`・`onSubmit`）。中身 `visit-panel`（`data-visit`・`data-new`）：内容 `vp-summary`（〈利用者さん〉 `vp-client-name`・種類・取り消し `vp-cancelled`・休み、日時 `vp-when`・所要・種類・担当 `vp-staff-now`（`StaffMark`・固定・いつもの担当・確定した割当）・繰り返し `vp-pattern`・この回の変更 `vp-changes` と「繰り返しのとおりに戻す」 `vp-restore`・メモ、日の予定以外から開いたら「日の予定で見る」 `vp-open-day`）、日時 `vp-time`（新規は〈利用者さん〉 `vp-client` も。種類 `vp-type`・日付 `vp-date`・時間の約束 `vp-window`・開始 `vp-start`（幅を保ってずらす）・遅い開始 `vp-latest`・所要 `vp-duration`・メモ `vp-note`）、担当 `vp-staff`（「変えない」`vp-staff-keep`・候補 `vp-staff-choice`（`data-staff`。選べない人は `is-off` と理由）・「担当なし」`vp-staff-none`。候補は `useDeferredValue` の入力で `staffChoices`）、範囲 `vp-scope`（繰り返しの回だけ。`vp-scope-once|following|all`。範囲の文とそのままにする回 `vp-scope-note`）、誤り `FieldError`、取り消し `vp-cancel-area`（`vp-cancel`・`vp-cancel-sameday`・`vp-uncancel`。欄は開いたまま）、決まりごと・道順（`vp-route`）
+- `SidePanel`（`narrow`・`onSubmit`）。中身 `visit-panel`（`data-visit`・`data-new`）：内容 `vp-summary`（〈利用者さん〉 `vp-client-name`・種類・取り消し `vp-cancelled`・休み、日時 `vp-when`・所要・種類・担当 `vp-staff-now`（`StaffMark`・ピン・いつもの担当・確定した割当）・繰り返し `vp-pattern`・この回の変更 `vp-changes` と「繰り返しのとおりに戻す」 `vp-restore`・メモ、日の予定以外から開いたら「日の予定で見る」 `vp-open-day`）、日時 `vp-time`（新規は〈利用者さん〉 `vp-client` も。種類 `vp-type`・日付 `vp-date`・時間の約束 `vp-window`・開始 `vp-start`（幅を保ってずらす）・遅い開始 `vp-latest`・所要 `vp-duration`・メモ `vp-note`）、担当 `vp-staff`（「変えない」`vp-staff-keep`・候補 `vp-staff-choice`（`data-staff`。選べない人は `is-off` と理由）・「担当なし」`vp-staff-none`。候補は `useDeferredValue` の入力で `staffChoices`）、範囲 `vp-scope`（繰り返しの回だけ。`vp-scope-once|following|all`。範囲の文とそのままにする回 `vp-scope-note`）、誤り `FieldError`、取り消し `vp-cancel-area`（`vp-cancel`・`vp-cancel-sameday`・`vp-uncancel`。欄は開いたまま）、決まりごと・道順（`vp-route`）
 - 帯：保存 `vp-save`（主ボタン。新規は「追加」）・閉じる `vp-close`。見るだけ（今日より前・取り消し済み・スマホ幅の新規）は閉じるだけ
 - 保存：`applyVisitEdit` → これ以降・すべてで確定した日も変わるなら独自の確認 → `update` → トースト（範囲・当てられなかった回の件数）と「元に戻す」（`vp-toast-undo`。殻が今のデータを追い、書いたあとのデータのままなら書く前に戻す）
 - スマホ幅（`COMPACT_QUERY`。600px 以下）：日時 `vp-time`・範囲 `vp-scope` を出さず、新規は文 `vp-narrow-new` だけ
@@ -135,9 +135,10 @@
 - `ClientName` の `detail`：名前を `PersonButton` に（訪問のカードの中では使わない）
 - `DayLines` の `detailName`：渡すと行のボタンの外の右に i。返す名前が空の行には置かず、同じ幅を空ける。目盛りの行も同じ幅だけ右を空ける
 
-### 用語の説明（PRD D173〜D177・D240〜D242。ADR-0025 追記・ADR-0037）
+### 用語の説明（PRD D173〜D177・D240〜D242・D307。ADR-0025 追記・ADR-0037）
 
-- `lib/glossary.ts`（純粋関数。テストあり）：`GLOSSARY`（span＝出勤〜退勤（拘束）・wait＝空き時間（待ち）・seed・scoreBase＝点数の基準・dropped・hard・travel・loadCount＝空きを数える人・freeZero・backup＝控え（バックアップ）・terms＝画面での呼び方・typeUnfit・limitUnfit・vacancyCount・vacancyEstimate、予定の組み方の言葉（D242）：aiPlan＝AI案・pinned＝固定・confirmed＝確定・unconfirmed＝未確定・confirmDiff＝未確定の変更あり・preset＝プリセット・attention＝要対応・stale＝条件が変わった）、`glossaryText(key, terms)`（〈staff〉〈client〉を呼び方に）。表示だけで、契約・データのキー名は変えない（`evaluate` の減点の内訳の `wait` の表示名は「空き時間（待ち）」）
+- `lib/glossary.ts`（純粋関数。テストあり）：`GLOSSARY`（span＝出勤〜退勤（拘束）・wait＝空き時間（待ち）・seed・scoreBase＝点数の基準・dropped・hard＝守れない条件（D307 で「必須の違反」から言い換え）・travel・loadCount＝空きを数える人・freeZero・backup＝控え（バックアップ）・terms＝画面での呼び方・typeUnfit・limitUnfit・vacancyCount・vacancyEstimate、予定の組み方の言葉（D242）：aiPlan＝AI案・pinned＝ピン（D307 で「固定」から言い換え）・confirmed＝確定・unconfirmed＝未確定・confirmDiff＝未確定の変更あり・preset＝プリセット・attention＝要対応・stale＝条件が変わった、D307：score＝点数（100点満点・高いほど良い・いつも点数の基準の重みで付ける。日の予定の1行のまとめの点数に付ける）・dayWeights＝この日だけの重み（日の予定の「条件を調整する」で変えた重み。日の予定の作り直しの帯に付ける））、`glossaryText(key, terms)`（〈staff〉〈client〉を呼び方に）。表示だけで、契約・データのキー名は変えない（`evaluate` の減点の内訳の `wait` の表示名は「空き時間（待ち）」）
+- 説明の文の決まり（D307）：1〜2文・90文字まで・「です・ます」で終わる。内部の言葉（費用・内訳・稼働時間・必須の違反・プリセット「・試す重み・展開・inputKey・固定・記録）を使わず、括弧の中に括弧を重ねない（`glossary.test.ts` で確かめる）。帯・確認から外した仕組みの説明（点数の付け方・この日だけの重みの効き方・条件が変わったとき）はここに寄せる
 - `components/Term.tsx`（`term.css`）：
   - `Term`：用語の文字と後ろの小さな ⓘ（lucide の `Info`。`term-i`・`aria-hidden`）を1つにしたボタン。下線は付けない（D240）。読み上げの名前・`innerText` は用語の文字のまま。`aria-describedby` の先は `role="tooltip"` の説明で、閉じている間も `hidden` で文書に置く
   - フォーカスの輪はボタン全体。`pointer: coarse` では ⓘ のまわり 24px 角を押せる（`term-i::after`。WCAG 2.5.8。見た目は変えない。44px は 390px で隣の操作（選ぶ欄・凡例の開け閉め・畳んだ節）に重なった）。ⓘ は 1em。見出しのアイコンの色には引かれない。flex の中（`WithIcon`・`SectionTitle` の見出し）では文と `Term` を1つの `span` に包む（隙間で文が切れない）
@@ -147,8 +148,8 @@
   - label の中には置かない（入力欄の名前は `id` と `aria-labelledby` でつなぐ）。押しても行・ラベルの動きを起こさない（preventDefault・stopPropagation）
   - `TipBubble`：body の直下の浮かせた説明。位置は `popoverPlace`
   - 印刷では説明も ⓘ も出さない
-- 同じ語は1か所（D241）：同じ画面で同じキーの `Term` は最初の1か所だけ説明つき、ほかは `plain`。勤務の見込みは上限の設定の span・月の合計の表の wait に付け、合計の表の span と日ごとの表の span・wait は `plain`。日の予定の一覧の「固定」は最初の固定の行だけ。開く欄（右の欄・吹き出し）は別に数える
-- 用語を使う所：日の予定の確定の状態（確定済み・未確定・未確定の変更あり）・「固定」の札（`tagsOf(id, pinHint)`。順番のカードは入らなかった訪問 → 列の順で最初の固定の訪問だけ、一覧は最初の固定の行だけ、時間軸の帯を押して開く説明は別に数えて説明つき）・案の無い日の「AI案」・条件が変わった帯（2つ）・条件を調整するの「プリセットごとの案」、月の予定の凡例（確定済み・未確定の変更あり）・右の欄の見出し「要対応」・まとめて作るの「使うプリセット」、条件の重みの「プリセット」の節、作り直しの帯の「条件が変わりました」、日の予定の今の案の帯（入らない・必須の違反・移動）・詳しくの「空き時間（待ち）」と「点数の基準」・条件を調整するの「点数の基準」・比較の画面の「点数の基準」・勤務の見込みの表の見出しと上限の設定・条件の重みの「詳細設定」・月の「混み具合：空きを数える人」と凡例の「空き 0人」・空き状況のマスの読み方・データの「控え（バックアップ）」「画面での呼び方」。点のしくみ・点数の決め方は `Hint`
+- 同じ語は1か所（D241）：同じ画面で同じキーの `Term` は最初の1か所だけ説明つき、ほかは `plain`。勤務の見込みは上限の設定の span・月の合計の表の wait に付け、合計の表の span と日ごとの表の span・wait は `plain`。日の予定の一覧の「ピン」は最初のピンの行だけ。開く欄（右の欄・吹き出し）は別に数える
+- 用語を使う所：日の予定の確定の状態（確定済み・未確定・未確定の変更あり）・「ピン」の札（`tagsOf(id, pinHint)`。順番のカードは入らなかった訪問 → 列の順で最初のピンの訪問だけ、一覧は最初のピンの行だけ、時間軸の帯を押して開く説明は別に数えて説明つき）・案の無い日の「AI案」・条件が変わった帯（`stale`）・この日だけの重みを変えた帯（`dayWeights`）・条件を調整するの「プリセットごとの案」、月の予定の凡例（確定済み・未確定の変更あり）・右の欄の見出し「要対応」・まとめて作るの「使うプリセット」、条件の重みの「プリセット」の節、作り直しの帯の「条件が変わりました」、日の予定の今の案の帯（入らない・守れない条件・移動・点数）・詳しくの「空き時間（待ち）」と「点数の基準」・条件を調整するの「点数の基準」・比較の画面の「点数の基準」・勤務の見込みの表の見出しと上限の設定・条件の重みの「詳細設定」・月の「混み具合：空きを数える人」と凡例の「空き 0人」・空き状況のマスの読み方・データの「控え（バックアップ）」「画面での呼び方」。点のしくみ・点数の決め方は `Hint`
 
 ### 空の画面の次の一手（PRD D175）
 
@@ -159,7 +160,7 @@
 
 ### 初回の案内ツアー（PRD D192・D193・D226・D276・D277。ADR-0045）
 
-- `lib/tour.ts`（純粋関数。テストあり）：`tourSteps(terms, features)`（3枚：home・plan・absence。見出し・本文・場所、plan は `points`（3段の説明：AI案／手直し（固定）／確定）と［月｜週｜日］の切り替え。場所はメニュー・下のタブの名前（「予定」「欠勤・キャンセルを登録」・下のタブの「欠勤」）。切った機能の枚（absence）は出さない）、`TOUR_START_CHOICES`（基本・すべての名前と1行の説明）・`TOUR_START_QUESTION`（「どこまで使いますか」）・`TOUR_START_NOTE`、`tourMove(index, count, 'next'|'back'|'skip')`（閉じるときは null。最初の「戻る」は動かない）、`tourNextLabel`（最後は「閉じる」）、`TOUR_TODAY_LABEL`（「今日の予定を開く」）、`tourCountText`、`shouldAutoOpenTour(seen, search)`（`?id=`・`?do=` があれば開かない）
+- `lib/tour.ts`（純粋関数。テストあり）：`tourSteps(terms, features)`（3枚：home・plan・absence。見出し・本文・場所、plan は `points`（3段の説明：AI案／手直し（ピン。PRD D307）／確定）と［月｜週｜日］の切り替え。場所はメニュー・下のタブの名前（「予定」「欠勤・キャンセルを登録」・下のタブの「欠勤」）。切った機能の枚（absence）は出さない）、`TOUR_START_CHOICES`（基本・すべての名前と1行の説明）・`TOUR_START_QUESTION`（「どこまで使いますか」）・`TOUR_START_NOTE`、`tourMove(index, count, 'next'|'back'|'skip')`（閉じるときは null。最初の「戻る」は動かない）、`tourNextLabel`（最後は「閉じる」）、`TOUR_TODAY_LABEL`（「今日の予定を開く」）、`tourCountText`、`shouldAutoOpenTour(seen, search)`（`?id=`・`?do=` があれば開かない）
 - 見たことは DemoData と別のキーに覚える（`tourMemory`。初期状態に戻しても残る）
 - `components/Tour.tsx`（`tour.css`）：
   - `TourProvider`：`AdminShell` の外側。はじめに `shouldAutoOpenTour(tourMemory.seen(), location.search)` で開く（月の印刷の画面では出ない）。自動で開いたときに store の `startedFresh`（保存データが無く初めて開いた）なら、1枚目に「どこまで使いますか」（`StartChoice`）を出す（「案内をもう一度見る」では出さない。PRD D276）。閉じたら・最後の枚まで進んだら `tourMemory.markSeen()`。「今日の予定を開く」は閉じて `dayHref(今日)`（`/plan?date=今日`）へ移る（PRD D226）
@@ -177,22 +178,22 @@
 
 - `lib/rebuildBand.ts`（純粋関数。テストあり）：
   - `REBUILD_PATHS`（`/rules`・`/compat`・`/availability`・`/types`・`/items`・`/staff`・`/clients`）・`showsRebuildBand(pathname)`
-  - `rebuildDays(aiPlans, today)`・`rebuildSummary(statuses, today, manualPlans)`（`days`・`unconfirmed`（確定した割当なし）・`confirmed`（あり））・`rebuildText`（「影響する日 N日（未確定 a日・確定済み b日）」）・`REBUILD_CLEARED`（「影響する日は無くなりました」）・`rebuildWith(basis)`（「〈基準〉で作り直します」）
+  - `rebuildDays(aiPlans, today)`・`rebuildSummary(statuses, today, manualPlans)`（`days`・`unconfirmed`（確定した割当なし）・`confirmed`（あり））・`rebuildText`（「影響する日 N日（未確定 a日・確定済み b日）」）・`REBUILD_CLEARED`（「影響する日は無くなりました」）・`rebuildWith(basis)`（「「〈基準〉」の重みで作り直します」。PRD D307）
   - `rebuildAction(summary, basis)`（`href`・`label`・`note`）：未確定の最初の日の月の `/month?ym=…&do=stale`「作り直す」、未確定が無ければ最初の日の月の `do=attention`「要対応を見る」
   - `customRulesText(basis)`（この日だけ試す重みの案内。PRD D166・D234）・`recreateTodayHref(today)`（`/plan?date=今日&do=recreate`）
 - `lib/conditionChanges.ts`（純粋関数。テストあり。PRD D290〜D292。ADR-0049）：
   - `conditionChanges(base, now)`：条件の変更の控え（store の `conditionsBase.data`）と今の違いの一覧 `ConditionChange[]`（`key`・`kind`・`head`・`text`・`revert(d)`）。並びと文：点数の基準「「A」→「B」」・条件の重み（基準のプリセット。型ごと「空き時間（待ち） 3→4」「必須でない→必須」）・プリセット「「X」を追加／消した」・`プリセット「名前」`（重み・名前・一言）・条件（足す・消す・名前）・この日だけ試す重み（基準にそろっていれば出さない）・機能「相性を切」・事業所の設定（名前・業種・呼び方・交通費の単価・拘束の上限）・特性の項目・訪問の種類「リハビリを追加」・相性「N組（〈利用者さん〉さんと〈スタッフ〉さん ◎→×、…）」・〈スタッフ〉／〈利用者さん〉は1人ずつ（「山田さんの勤務時間・特性」「…を追加／消した」。見出しは org.terms）・勤務時間（シフト）は人ごと（「山田さん（10/22・…）」）・〈利用者さん〉の休み・定期パターンは〈利用者さん〉ごと。多ければ先頭3件と「ほか N件」
   - 戻す（PRD D291）：`revert` は戻せる変更だけ関数、足した・消したもの（人・定期パターン・特性の項目・訪問の種類・プリセット・条件）と特性の項目の直し（選択肢の名前を変えると人の特性の値も書き換わるので、項目だけ戻すと合わなくなる）は `null`（`canRevert`）。プリセットは `lib/presets` の `patchPreset`・`setScorePreset`（基準の重みを戻すと試す重みもそろう）、条件は名前だけ、訪問の種類・定期パターンは今もある id だけ控えの中身に、人は控えの属性に戻して `fitTraits`（消えた項目・選択肢を指す特性の値を外す。`repair` は特性の値を直さない）、ほかは控えの値。`applyRevert(d, c)`・`revertAll(d, changes)`（戻せるものだけ順に）は最後に `repair`（いなくなった人を指すいつもの担当・担当できる人など）
   - `madeWeightsChange(data, days)`：控えが無い（または一覧に重みの違いが無い）とき、重みで変わった日（`rulesStale`）の記録の重みと点数の基準の重みの違い（いちばん多い組。日によって違えば「（N日分）」）。戻すは基準のプリセットの重みを作ったときの値に
-  - 文：`changesToggleText(n)`（「変更内容を見る（N件）」）・`sinceText(at)`（「M/D H:mm からの変更」）・`NO_RECORD_TEXT`・`NO_MORE_TEXT`・`NO_REVERT_TEXT`（「足した・消したものは戻せません。各画面で直してください」）・`revertBody(cs, skipped)`（確認の本文。すべて戻すで戻さないものがあれば「足した・消したものなど N件は戻しません（各画面で直してください）」）
+  - 文：`changesToggleText(n)`（「変更内容を見る（N件）」）・`sinceText(at)`（「M/D H:mm からの変更」）・`NO_RECORD_TEXT`（「何が変わったかはわかりません。作り直すか、日の予定で確かめてください」）・`NO_MORE_TEXT`（「ほかの変更は、何が変わったかわかりません。…」）・`NO_REVERT_TEXT`（「足した・消したものは戻せません。各画面で直してください」）・`revertBody(cs, skipped)`（確認の本文。すべて戻すで戻さないものがあれば「足した・消したものなど N件は戻しません。各画面で直してください。」）
 - `components/rebuildBand.tsx`（`rebuildBand.css`）：`RebuildBand({ rules })`
   - データが `SETTLE_MS`＝600ms 変わらなくなってから `useDeferredValue` で描いた後に数える（動かしている間は数えない）。最初に数え終わるまでは影響する日の行を出さない
   - 帯は `section` の中に行 `rb-row` を2つまで：
     1. 影響する日：文・未確定があれば `rebuildWith`・［作り直す］は `Link`（主ボタンにしない。説明は title と aria-describedby）・［後で］
-    2. `rules`（`/rules` のとき）でこの日だけ試す重み（`data.rules`）がどのプリセットとも違うときの案内：`customRulesText`・［今日の案を試す重みで作り直す］・`SavePresetForm`（試す重みを保存）。条件の重みの表を動かしても試す重みは基準にそろうので出ない（ADR-0035）
+    2. `rules`（`/rules` のとき）でこの日だけ試す重み（`data.rules`）がどのプリセットとも違うときの案内：`customRulesText`・［今日の案を日の予定の重みで作り直す］・`SavePresetForm`（「この重みをプリセットとして保存」）。案内の文は「日の予定で変えた重みが、どのプリセットとも違います。月のまとめて作る・作り直しは「〈基準〉」の重みで作ります」（PRD D307）。条件の重みの表を動かしても試す重みは基準にそろうので出ない（ADR-0035）
   - 影響する日の行の下に変更内容 `ConditionChanges`（`rb-changes`。`.rb-row` にしない）：一覧があれば開閉のボタン `rebuild-changes-toggle`（文字のボタン・aria-expanded・aria-controls。開くと「変更内容を閉じる」）、開くと「M/D H:mm からの変更」（控えがあるとき）と一覧（高さ 40vh まで中を巻く）の行 `rebuild-change`（`data-kind`）に、戻せる行だけ［戻す］`rebuild-change-revert`（aria-label「〈行の文〉を戻す」）。戻せない行があれば一覧の下に `NO_REVERT_TEXT`（`rebuild-no-revert`）、戻せるものが2件以上なら［すべて戻す］`rebuild-revert-all`（戻せるものだけ）。押すと `useConfirm`（見出し「「〈見出し〉」を戻しますか？」／「戻せる変更をすべて戻しますか？」・本文に戻るものの一覧・確定のボタン「戻す」「すべて戻す」）、確定で `update(fn, { keepBase: true })`（fn の中で最新の控えと今のデータから一覧を作り直し、確認に出したキーの変更だけ戻す）・トースト「〈見出し〉を戻しました」、フォーカスは開閉のボタン（帯が消えたら見出し）。一覧が無ければ文だけ `rebuild-changes-none`（控えが無ければ `NO_RECORD_TEXT`、あれば `NO_MORE_TEXT`）
   - 控えを消すのは帯ではなく `ConditionsBaseSweep`（App の殻にいつも置く。控えが無い間は何も数えない。あれば帯と同じく `SETTLE_MS` 止まってから `useDeferredValue` で、今のデータ（`deferred === data`）・控えより後に止まったデータを数えて0日なら `clearConditionsBase`。日ごとの計算は `useDayStatuses` の覚えを月の予定・帯と分け合う）。帯の無い画面・条件の重みとプリセットを切っているときも、月の予定で作り直して0日になれば消える
-  - ［後で］は状態 `later`（保存しない。その画面の間だけ隠し、ほかの設定の画面では出る。押したらフォーカスを `.app-main h1` へ）
+  - ［後で］（title「この画面にいる間は帯を隠します。要対応には残ります」）は状態 `later`（保存しない。その画面の間だけ隠し、ほかの設定の画面では出る。押したらフォーカスを `.app-main h1` へ）
   - 読み上げは `progressBand` の `BandLive`（`data-ready`・`data-days` など付き。0日になったら1度 `REBUILD_CLEARED`、隠している間は空）
   - 861px 以上は `position: sticky; top: var(--header-h)`。その間は ResizeObserver で `--rebuild-band-h` と html の `scroll-padding-top` を入れ、消えたら戻す（Tab で入った入力欄が帯に隠れない）。600px 以下は文の下にボタン。印刷では出さない
 - `app/App.tsx`：main の `Guarded` の中、`Outlet` の前に `showsRebuildBand(pathname)` のときだけ（key は pathname）。月の予定には出さず要対応に残る

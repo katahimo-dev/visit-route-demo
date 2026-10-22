@@ -78,7 +78,7 @@ export function applyPrefPins(
           ? { ruleId: MANUAL_PREF_RULE_ID, label: `手直しの記憶：前に手で${name}さんにした`, points: 0 }
           : {
               ruleId: MANUAL_PREF_RULE_ID,
-              label: `手直しの記憶（${name}さんに固定）`,
+              label: `手直しの記憶（${name}さん）`,
               points: Number.POSITIVE_INFINITY,
             };
       // compile と同じく点の大きい順（Infinity が先）

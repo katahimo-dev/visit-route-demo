@@ -81,7 +81,7 @@ export function AbsenceFields({
   return (
     <div className="stack" style={{ gap: 10 }}>
       <p className="sub">
-        {date.slice(5).replace('-', '/')} の稼働時間帯：{slotsText(baseSlots)}
+        {date.slice(5).replace('-', '/')} の働ける時間：{slotsText(baseSlots)}
         {existing && `（いま：${absenceText(existing, baseSlots)}）`}
       </p>
       <fieldset className="segmented seg-sm" aria-label="欠勤の長さ">
@@ -269,7 +269,7 @@ export function ReassignBar({
             入らない訪問（{diff.unplaced.length}件）：ほかの人の空き時間に入らない
           </strong>
           <span className="sub">
-            ほかの人の担当・順番・時刻を変えずに入れられる人がいません（時間の約束・稼働時間帯・必須の条件・件数の上限）。下の「少し動かしてよい（案B）」を作るか、「入らなかった訪問」の列の「受けられる人」から入れてください
+            ほかの人の予定を変えずに入れられる人がいません。下の「少し動かしてよい（案B）」を作るか、「入らなかった訪問」の列の「受けられる人」から入れてください
           </span>
           {diff.unplaced.map((id) => (
             <span key={id} className="sub">
@@ -310,7 +310,7 @@ export function ReassignBar({
           ? `。案B（変更を減らす ${info.stayWeight ?? ''}）では、ほかの人の訪問も少し動かしています（薄い列は変わらない人）`
           : '。振り直しでは、ほかの人の担当・順番・時刻は変えていません（「受けられる人」から入れた分・手直しは除く。薄い列は変わらない人）'}
         <Hint>
-          振り直した訪問に「代行」、開始が変わった訪問に「+N分」が付きます。振り直したあとの案は全訪問が固定です。入らない訪問は「受けられる人」から入れられます。
+          振り直した訪問に「代行」、開始が変わった訪問に「+N分」が付きます。振り直したあとは、全部の訪問にピンが付きます。入らない訪問は「受けられる人」から入れられます。
         </Hint>
       </span>
       {cancelled && (
@@ -483,7 +483,7 @@ export function CandidateBox({
                   </span>
                 )}
                 {c.routeBroken && (
-                  <span className="chip chip-red">いまの予定に必須の違反があるため、空き時間に入れられません</span>
+                  <span className="chip chip-red">いまの予定に守れない条件があるため、空き時間に入れられません</span>
                 )}
                 {c.delayedCount > 0 && (
                   <span className="chip chip-warn">
@@ -511,7 +511,7 @@ export function CandidateBox({
             </li>
           )}
           <li className="sub">
-            入れる訪問の時間の約束は変えません。空き時間に入らない人に入れると、その人の後ろの訪問の開始が遅れることがあり（押すと確認します）、間に合わないときは必須の違反として赤い枠になります（時刻は訪問の編集で直せます）
+            入れる訪問の時間の約束は変えません。空き時間に入らない人に入れると、その人の後ろの訪問の開始が遅れることがあり（押すと確認します）、間に合わないときは守れない条件として赤い枠になります（時刻は訪問の編集で直せます）
           </li>
         </ul>
       )}

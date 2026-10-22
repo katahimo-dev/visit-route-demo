@@ -90,7 +90,7 @@ export function monthListRow(
   const caution = !care && !isPast && s.count > 0 && s.state === 'none';
   const flags: { text: string; tone: 'red' | 'warn' | 'info' }[] = [];
   if (s.unassigned > 0) flags.push({ text: `入らない ${s.unassigned}件`, tone: 'red' });
-  if (s.hard > 0) flags.push({ text: `必須の違反 ${s.hard}件`, tone: 'red' });
+  if (s.hard > 0) flags.push({ text: `守れない条件 ${s.hard}件`, tone: 'red' });
   if (s.absentLeft > 0) flags.push({ text: `休みの人に訪問 ${s.absentLeft}件`, tone: 'red' });
   if (s.stale) flags.push({ text: '条件が変わった', tone: 'warn' });
   if (s.overSpan.length > 0) flags.push({ text: `拘束超 ${s.overSpan.length}人`, tone: 'warn' });

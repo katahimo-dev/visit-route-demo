@@ -115,9 +115,7 @@ export function ClientLeavesSection({
         {compact ? '休み' : '休み（入院・ショートステイなど）'}
       </SectionTitle>
       {!compact && (
-        <Hint>
-          休みの期間の訪問は消さずに「休みのため無し」とし、AI案・まとめて作る・空き状況から外します。休みを消すと元に戻ります。
-        </Hint>
+        <Hint>休みの間の訪問は消さずに「休みのため無し」にし、案に入れません。休みを消すと元に戻ります。</Hint>
       )}
       {leaves.length === 0 ? (
         <span className="sub">休みはありません</span>
