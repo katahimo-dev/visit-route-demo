@@ -43,7 +43,7 @@ import { CommandPalette, IS_MAC } from '../components/CommandPalette';
 import { BrokenDataNotice, DataWatch } from '../components/DataNotices';
 import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
-import { RebuildBand } from '../components/rebuildBand';
+import { ConditionsBaseSweep, RebuildBand } from '../components/rebuildBand';
 import { TourProvider } from '../components/Tour';
 import { addDays, jstDate } from '../domain/time';
 import { hashPathname, isPaletteShortcut, keepPaletteOn } from '../lib/commandPalette';
@@ -328,6 +328,8 @@ function AdminShell() {
   return (
     // 初回の案内ツアー（PRD D192・D193）：まだ見ていなければ起動したときに中央のカードで出す。データの画面からもう一度開ける
     <TourProvider terms={terms}>
+      {/* 条件の変更の控えを、影響する日が0日になったら消す（どの画面でも。控えが無い間は数えない。PRD D290） */}
+      <ConditionsBaseSweep />
       <div className="app-shell" data-date={pickedDate}>
         <aside ref={sideNavRef} className="side-nav">
           {brand}

@@ -15,13 +15,16 @@ import {
   ThumbsUp,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { WeightSlider } from '../components/parts';
 import { Term } from '../components/Term';
+import { useToast } from '../components/Toast';
 import { Hint, IconButton, PageHeader, SectionTitle, WithIcon } from '../components/ui';
+import { useLeaveGuard } from '../components/useLeaveGuard';
 import { HARDABLE, MAX_PRESETS, type Preset, RULE_TYPES, type Rule, type RuleType } from '../contracts/rules';
+import { jstDate } from '../domain/time';
 import { newId, ruleTypeHelp, ruleTypeLabel, weightLocked } from '../lib/common';
 import {
   addRule,
@@ -30,11 +33,25 @@ import {
   patchPreset,
   removePreset,
   resetPresets,
-  setBasisWeight,
   setScorePreset,
   trialPresetOf,
 } from '../lib/presets';
 import { useFeature } from '../lib/useFeature';
+import {
+  applyDraft,
+  changeText,
+  confirmBody,
+  confirmedText,
+  confirmTitle,
+  draftChanges,
+  draftStaleDays,
+  editDraft,
+  leaveDialog,
+  pruneDraft,
+  savedWeights,
+  type WeightDraft,
+  withDraft,
+} from '../lib/weightDraft';
 import { scorePresetOf, scoreRulesOf } from '../seed';
 import { useDemoData } from '../store';
 import { SavePresetForm, SCORE_TEXT } from './planParts';
@@ -68,8 +85,10 @@ const DEFAULTS: Record<RuleType, { weight: number; hard: boolean }> = {
 
 /**
  * 条件（ルール）の一覧。ClassClassify の Setup にならい、重み 0〜5（0.5刻み、0 で半透明＝無効）と必須の切り替え。
- * この画面の重み・必須は点数の基準のプリセット（ふだんの考え方）のもの（ADR-0035。PRD D233）：変えると基準のプリセットの
- * その型を直し、この日だけ試す重み（data.rules）も基準にそろえる。月のまとめて作る・自動作成・作り直しはこの重みで作る
+ * この画面の重み・必須は点数の基準のプリセット（ふだんの考え方）のもの（ADR-0035。PRD D233）：確定すると基準のプリセットの
+ * その型を直し、この日だけ試す重み（data.rules）も基準にそろえる。月のまとめて作る・自動作成・作り直しはこの重みで作る。
+ * 表の重み・必須は動かしても保存せず、画面の中の下書きに置く（PRD D286。ADR-0048）。保存済みと違う行は注意の色と「変更あり 3→4」、
+ * 「変更を確定（N件）」で確認（変わる重みと影響する日）のあとまとめて書く。「取り消す」で捨てる。下書きのまま画面を離れるときは確かめる
  */
 /**
  * 相性（ADR-0028 の compat）を切っているときは「相性」の条件を出さない（計算からも外れる。条件のデータは消さない）
@@ -86,15 +105,83 @@ export default function RulesPage() {
   const terms = data.org.terms;
   const [addType, setAddType] = useState<RuleType>('clientPreference');
   const [seedText, setSeedText] = useState<string | null>(null);
+  const toast = useToast();
 
   /** 点数の基準のプリセット（この画面で重みを直す相手。ADR-0035） */
   const basis = scorePresetOf(data.presets, data.scorePresetId);
-  /** 表に出す条件：名前・種類は条件のまま、重み・必須は基準のプリセットのもの */
-  const shownRules = scoreRulesOf(data);
+  /** 保存済みの条件：名前・種類は条件のまま、重み・必須は基準のプリセットのもの */
+  const savedRules = useMemo(() => scoreRulesOf(data), [data]);
+  const saved = useMemo(() => savedWeights(savedRules), [savedRules]);
+  /**
+   * 重みの下書き（PRD D286）。直している基準のプリセットの id と組にし、基準が替わったら（ラジオ・基準のプリセットを消す）捨てる。
+   * その型の条件が無くなった型・保存済みと同じ値になった型は外す（pruneDraft）
+   */
+  const [rawDraft, setRawDraft] = useState<{ basisId: string | null; values: WeightDraft }>({
+    basisId: null,
+    values: {},
+  });
+  const basisId = basis?.id ?? null;
+  /** 最新の基準（確認を待つ間に別のタブで替わったかを見る） */
+  const basisRef = useRef(basisId);
+  basisRef.current = basisId;
+  const draft = useMemo(
+    () => (rawDraft.basisId === basisId ? pruneDraft(rawDraft.values, saved) : NO_DRAFT),
+    [rawDraft, basisId, saved],
+  );
+  // 外した型は state からも消す（同じ型の条件をあとで足しても古い下書きが戻らない）
+  useEffect(() => {
+    if (draft !== rawDraft.values) setRawDraft({ basisId, values: draft });
+  }, [draft, rawDraft.values, basisId]);
+  /** 表に出す条件（下書きを当てたもの） */
+  const shownRules = useMemo(() => withDraft(savedRules, draft), [savedRules, draft]);
+  const changes = useMemo(() => draftChanges(savedRules, draft), [savedRules, draft]);
+  const changeOf = (type: RuleType) => changes.find((c) => c.type === type);
   const setLabel = (id: string, label: string) =>
     update((d) => ({ ...d, rules: d.rules.map((r) => (r.id === id ? { ...r, label } : r)) }));
   const setWeight = (type: RuleType, patch: Partial<{ weight: number; hard: boolean }>) =>
-    update((d) => setBasisWeight(d, type, patch));
+    setRawDraft({ basisId, values: editDraft(draft, saved, type, patch) });
+  /** 確定・取り消しのあと、押したボタンが消えるのでフォーカスを画面の見出しへ（確認が閉じて裏の inert が外れてから） */
+  const [focusHead, setFocusHead] = useState(0);
+  useEffect(() => {
+    if (focusHead === 0) return;
+    const id = requestAnimationFrame(() => {
+      const h = document.querySelector<HTMLElement>('.app-main h1');
+      if (!h) return;
+      if (!h.hasAttribute('tabindex')) h.setAttribute('tabindex', '-1');
+      h.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [focusHead]);
+  const discard = () => {
+    setRawDraft({ basisId, values: {} });
+    setFocusHead((n) => n + 1);
+    toast('重みの変更を取り消しました');
+  };
+  const confirmDraft = async () => {
+    const list = changes;
+    const values = draft;
+    if (list.length === 0) return;
+    const name = basis?.name ?? '試す重み';
+    const stale = draftStaleDays(applyDraft(data, values), jstDate(Date.now()));
+    const ok = await confirmDialog({
+      title: confirmTitle(list.length),
+      body: confirmBody(list, name, stale),
+      confirmLabel: '確定する',
+      cancelLabel: '編集を続ける',
+    });
+    if (!ok) return;
+    // 確認の間に別のタブで点数の基準が替わったら書かない（下書きは前の基準の重み。替わった基準では捨てられる）
+    if (basisRef.current !== basisId) {
+      toast('点数の基準が替わったので、重みの変更は確定しませんでした');
+      return;
+    }
+    update((d) => (scorePresetOf(d.presets, d.scorePresetId)?.id === basisId ? applyDraft(d, values) : d));
+    setRawDraft({ basisId, values: {} });
+    setFocusHead((n) => n + 1);
+    toast(confirmedText(list.length, name));
+  };
+  // 下書きのまま画面を離れる（リンク・パレット・再読込・タブを閉じる）ときは確かめる
+  useLeaveGuard(changes.length > 0, leaveDialog(changes.length));
   const add = () => {
     // 足す条件の重み・必須は、押した時点のデータで決める（試す重みが当てはまるプリセット、無ければ基準のその型。lib/presets の addRule）
     const rule = { id: newId('r'), type: addType, label: ruleTypeLabel(addType, terms) };
@@ -102,7 +189,7 @@ export default function RulesPage() {
   };
   const remove = async (r: Rule) => {
     // 必須の条件は、消すと「守らなければ担当にしない」が無くなることを本文で伝える（PRD D271）
-    const hard = HARDABLE.has(r.type) && shownRules.find((x) => x.id === r.id)?.hard === true;
+    const hard = HARDABLE.has(r.type) && savedRules.find((x) => x.id === r.id)?.hard === true;
     if (
       !(await confirmDialog({
         title: `条件「${r.label}」を消しますか？`,
@@ -167,8 +254,15 @@ export default function RulesPage() {
                   const hardable = HARDABLE.has(r.type);
                   const hard = hardable && r.hard;
                   const locked = weightLocked(r);
+                  const change = changeOf(r.type);
+                  const cls = [r.weight === 0 && !hard ? 'is-dim' : '', change ? 'is-draft' : ''].filter(Boolean);
                   return (
-                    <tr {...narrowRole.row} key={r.id} className={r.weight === 0 && !hard ? 'is-dim' : ''}>
+                    <tr
+                      {...narrowRole.row}
+                      key={r.id}
+                      className={cls.join(' ') || undefined}
+                      data-draft={change ? 1 : undefined}
+                    >
                       <td {...narrowRole.cell} style={{ minWidth: 160 }} className="narrow-title" data-label="名前">
                         <RuleName
                           value={r.label}
@@ -193,6 +287,12 @@ export default function RulesPage() {
                         />
                         {!locked && (
                           <span className="sub">{r.weight === 0 ? '無効' : `移動${r.weight * 10}分ぶん`}</span>
+                        )}
+                        {/* 保存済みと違う行は色だけでなく文字でも（PRD D286） */}
+                        {change && (
+                          <span className="chip chip-warn draft-mark" data-testid="rules-draft-mark">
+                            変更あり {changeText(change)}
+                          </span>
                         )}
                       </td>
                       <td {...narrowRole.cell} className={hardable ? 'nowrap narrow-head' : 'nowrap'} data-label="必須">
@@ -237,14 +337,20 @@ export default function RulesPage() {
               ))}
             </select>
           </label>
-          <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-end' }} onClick={add}>
+          {/* 主ボタンは画面に1つ：重みの下書きがある間は「変更を確定」を主にし、こちらは枠にする（AGENTS.md） */}
+          <button
+            type="button"
+            className={changes.length > 0 ? 'btn' : 'btn btn-primary'}
+            style={{ alignSelf: 'flex-end' }}
+            onClick={add}
+          >
             <WithIcon icon={Plus}>条件を足す</WithIcon>
           </button>
         </div>
         <Hint label="この種類の説明">{ruleTypeHelp(addType, terms)}</Hint>
       </div>
 
-      <PresetSection />
+      <PresetSection draftCount={changes.length} onReset={() => setRawDraft({ basisId, values: {} })} />
 
       {/* 乱数の種はふだん使わないので「詳細設定」に畳む（PRD D174。開いたかどうかは保存しない） */}
       <details className="card seed-card rules-advanced" data-testid="rules-advanced">
@@ -275,9 +381,35 @@ export default function RulesPage() {
           {!seedOk && <span className="error">整数で入れてください</span>}
         </div>
       </details>
+
+      {/* 重みの下書きがある間だけ：画面の下に貼り付く確定の帯（下のタブの上。巻いても押せる。印刷では出さない） */}
+      {changes.length > 0 && (
+        <section className="rules-draft-bar" aria-label="確定していない重みの変更" data-testid="rules-draft-bar">
+          <p className="rules-draft-text">
+            <span className="chip chip-warn">変更あり</span>
+            <span>重みの変更は、確定するまで保存しません</span>
+          </p>
+          <span className="rules-draft-actions">
+            <button type="button" className="btn btn-text" onClick={discard} data-testid="rules-draft-discard">
+              取り消す
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void confirmDraft()}
+              data-testid="rules-draft-confirm"
+            >
+              変更を確定（{changes.length}件）
+            </button>
+          </span>
+        </section>
+      )}
     </div>
   );
 }
+
+/** 下書きが無いとき（基準が替わったとき）の空の下書き */
+const NO_DRAFT: WeightDraft = {};
 
 /**
  * 条件の名前（PRD D271）：ふだんは文字で出し、［名前を変える］で入力欄にする（誤って書き換えない）。Enter・欄を離れると
@@ -357,7 +489,7 @@ function RuleName({ value, onChange, fallback }: { value: string; onChange: (v: 
  * 条件のプリセット（D20・D24・D235。ADR-0008・ADR-0035）。名前・一言・型ごとの重み・必須を変えるとすぐ保存。
  * 消す（最後の1つは消せない）・基準の重みを写して保存（6つまで）・初期値に戻す
  */
-function PresetSection() {
+function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: () => void }) {
   const { shownTypes } = useShownTypes();
   const { data, update } = useDemoData();
   const confirmDialog = useConfirm();
@@ -373,6 +505,23 @@ function PresetSection() {
     if (location.hash === '#presets') ref.current?.scrollIntoView({ block: 'start' });
   }, [location.hash]);
   const set = (id: string, patch: Partial<Omit<Preset, 'id'>>) => update((d) => patchPreset(d, id, patch));
+  /** 確定していない重みの変更を捨てることの断り（基準を替える・基準のプリセットを消すとき） */
+  const dropNote = draftCount > 0 ? `\n確定していない重みの変更（${draftCount}件）は捨てます。` : '';
+  /** 点数の基準を替える。重みの下書きがあれば、捨てることを確かめてから（黙って捨てない。PRD D286） */
+  const choose = async (p: Preset) => {
+    if (ruler?.id === p.id) return;
+    if (draftCount > 0) {
+      const ok = await confirmDialog({
+        title: `点数の基準を「${p.name}」に替えますか？`,
+        body: `確定していない重みの変更（${draftCount}件）は捨てます。`,
+        confirmLabel: '捨てて替える',
+        cancelLabel: '編集を続ける',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    update((d) => setScorePreset(d, p.id));
+  };
   const setWeight = (p: Preset, t: RuleType, w: Partial<{ weight: number; hard: boolean }>) =>
     set(p.id, { weights: { ...p.weights, [t]: { ...p.weights[t], ...w } } });
   const remove = async (p: Preset) => {
@@ -380,7 +529,7 @@ function PresetSection() {
     const next = data.presets.find((x) => x.id !== p.id);
     const moved =
       ruler?.id === p.id && next
-        ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。この日だけ試す重みも基準に戻ります。`
+        ? `\n点数の基準は「${next.name}」に移ります（点数が変わります）。この日だけ試す重みも基準に戻ります。${dropNote}`
         : '';
     const ok = await confirmDialog({
       title: `プリセット「${p.name}」を消しますか？`,
@@ -394,12 +543,14 @@ function PresetSection() {
   const reset = async () => {
     const ok = await confirmDialog({
       title: 'プリセットを初期の3つに戻しますか？',
-      body: '初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。この日だけ試す重みも基準に戻ります。',
+      body: `初期の3つ（標準・移動を短く・人の組み合わせ重視）に戻します。足したプリセットは消え、点数の基準は「標準」になります。この日だけ試す重みも基準に戻ります。${dropNote}`,
       confirmLabel: '初期の3つに戻す',
       tone: 'danger',
     });
     if (!ok) return;
     update(resetPresets);
+    // 初期の3つに戻したら、表の重みの下書きも捨てる（戻した重みと比べる下書きは意味が変わるので）
+    onReset();
   };
   return (
     <div className="card stack" ref={ref} data-testid="preset-section">
@@ -431,7 +582,7 @@ function PresetSection() {
                 name="score-preset"
                 value={p.id}
                 checked={ruler?.id === p.id}
-                onChange={() => update((d) => setScorePreset(d, p.id))}
+                onChange={() => void choose(p)}
               />
               {p.name}
             </label>

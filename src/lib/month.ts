@@ -784,11 +784,11 @@ export function clientMonth(data: CompileInput, days: readonly DayPlan[], client
 }
 
 /** 要対応の種類：入らない訪問がある・欠勤の人に訪問が残る（ADR-0014）・条件が変わった・拘束が上限を超える（ADR-0015）・欠勤がある（希望休だけの日は除く） */
-export type AttentionKind = 'unassigned' | 'absentLeft' | 'stale' | 'overSpan' | 'absence';
+export type AttentionKind = 'unassigned' | 'hard' | 'absentLeft' | 'stale' | 'overSpan' | 'absence';
 export type Attention = {
   date: string;
   kind: AttentionKind;
-  /** 入らない訪問の件数／欠勤の人に残る訪問の件数／欠勤の人数（条件が変わったは 1） */
+  /** 入らない訪問の件数／必須の違反の件数／欠勤の人に残る訪問の件数／欠勤の人数（条件が変わったは 1） */
   count: number;
   /** 欠勤の人の名前（kind が absence のとき）・拘束が上限を超える人の名前（overSpan のとき） */
   names: string[];
@@ -796,7 +796,14 @@ export type Attention = {
   staffIds?: string[];
 };
 
-const KIND_ORDER: Record<AttentionKind, number> = { unassigned: 0, absentLeft: 1, stale: 2, overSpan: 3, absence: 4 };
+const KIND_ORDER: Record<AttentionKind, number> = {
+  unassigned: 0,
+  hard: 1,
+  absentLeft: 2,
+  stale: 3,
+  overSpan: 4,
+  absence: 5,
+};
 
 /**
  * 欠勤の手当てが済んだ日か（PRD D281。ADR-0046）：確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い。
@@ -829,8 +836,10 @@ export function handledAbsences(
 }
 
 /**
- * 選ばないときの右の欄の「要対応」（D55・D281）：今日以降の日の、入らない訪問がある・欠勤の人に訪問が残る・条件が変わった・
- * 拘束が上限を超える（ADR-0015）・欠勤のある日（日付の順、同じ日は 入らない → 欠勤の人に残る → 条件が変わった → 拘束 → 欠勤）。
+ * 選ばないときの右の欄の「要対応」（D55・D281・D295）：今日以降の日の、入らない訪問がある・必須の違反がある・欠勤の人に訪問が残る・
+ * 条件が変わった・拘束が上限を超える（ADR-0015）・欠勤のある日（日付の順、同じ日は 入らない → 必須の違反 → 欠勤の人に残る →
+ * 条件が変わった → 拘束 → 欠勤）。マスの赤（needsCare：入らない・必須の違反・休みの人に残る）はどれも行になるので、
+ * マスの札「要対応 N」と右の欄の行とホーム・進み具合の帯の数がそろう。
  * 希望休（ADR-0014）は前もって入れる休みなので、それだけでは要対応にしない（訪問が残っていれば「欠勤の人に残る」で出る）。
  * 欠勤があっても手当てが済んだ日（absenceHandled：確定済みで、入らない訪問・必須の違反・休みの人に残る訪問が無い）は
  * 欠勤を数えない（ADR-0046。ホーム・進み具合の帯・月の要対応はこの1つで数えるので同じ数になる）
@@ -845,6 +854,7 @@ export function attentionList(
   for (const s of statuses) {
     if (s.date < today) continue;
     if (s.unassigned > 0) out.push({ date: s.date, kind: 'unassigned', count: s.unassigned, names: [] });
+    if (s.hard > 0) out.push({ date: s.date, kind: 'hard', count: s.hard, names: [] });
     if (s.absentLeft > 0) out.push({ date: s.date, kind: 'absentLeft', count: s.absentLeft, names: [] });
     if (s.stale) out.push({ date: s.date, kind: 'stale', count: 1, names: [] });
     // 拘束が上限を超える（ADR-0015）

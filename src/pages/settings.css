@@ -51,6 +51,80 @@
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
+/* 重みの下書き（PRD D286）：保存済みと違う行は左に注意の帯と淡い地、「変更あり 3→4」の印（色だけに頼らない） */
+.rules-table tr.is-draft > td {
+  background: #fffaf0;
+}
+.rules-table tr.is-draft > td:first-child {
+  box-shadow: inset 4px 0 0 var(--warn-line);
+}
+.rules-table tr.is-draft.is-dim {
+  opacity: 0.75;
+}
+.draft-mark {
+  display: inline-block;
+  margin-top: 4px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .rules-table.narrow-cards > tbody > tr.is-draft {
+    background: #fffaf0;
+    border-color: var(--warn-line);
+    box-shadow: inset 4px 0 0 var(--warn-line);
+  }
+  .rules-table.narrow-cards > tbody > tr.is-draft > td:first-child {
+    box-shadow: none;
+  }
+}
+/* 確定の帯：画面の下（下のタブの上）に貼り付き、巻いても押せる。本文の最後まで巻くと本文の後ろに収まり内容を隠さない */
+.rules-draft-bar {
+  position: sticky;
+  bottom: calc(var(--bottom-tabs-h) + 8px);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--warn-line);
+  border-left-width: 6px;
+  border-radius: 12px;
+  background: #fffaf0;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.14);
+}
+.rules-draft-text {
+  flex: 1 1 240px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+}
+.rules-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+@media (max-width: 600px) {
+  .rules-draft-bar {
+    padding: 8px 10px;
+  }
+  .rules-draft-actions {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+  .rules-draft-actions .btn {
+    flex: 1 1 0;
+    white-space: nowrap;
+  }
+}
+@media print {
+  .rules-draft-bar {
+    display: none;
+  }
+}
 .seed-card {
   max-width: 420px;
   padding: 12px 16px;

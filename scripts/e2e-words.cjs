@@ -623,9 +623,22 @@ async function unplacedWords(page) {
 async function warnColors(page) {
   // 月：今日以降で訪問があり案の無い日は注意（黄の細い点線）。赤（要対応）にしない
   await resetData(page);
+  // 初期データは今日から7日分の案があり（PRD D225）、月末に近い日は今月に案の無い日が残らないので、今日の案を消して作る
+  await page.evaluate(
+    ({ k, today }) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      delete d.aiPlans[today];
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    { k: STORAGE_KEY, today: TODAY },
+  );
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   const line = await page.locator('.month-legend-line').innerText();
-  check(/黄の点線＝案なし（注意）/.test(line) && /赤い枠と点＝要対応/.test(line), '月：凡例の要約に注意と要対応', line);
+  check(
+    /黄の点線＝案なし（注意）/.test(line) && /赤い枠と「要対応 N」の札＝要対応/.test(line),
+    '月：凡例の要約に注意と要対応',
+    line,
+  );
   const cells = await page.locator('.month-cell.is-state-none').evaluateAll(
     (els, today) =>
       els

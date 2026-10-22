@@ -1,5 +1,6 @@
 // 右の欄（SidePanel）の確定のボタンの帯が中身に付いてくること（PRD D194〜D197。ADR-0025 追記）を本物のブラウザで確かめる：
-// 中身が短い欄は帯が内容のすぐ下（欄の下端より上）・区切りの線と影を出さない、中身が長い欄は帯が欄の下に貼り付き
+// 中身が短い欄は帯が内容のすぐ下・区切りの線と影を出さない（広い画面は欄の高さが内容に合い、上に寄って角が丸く、画面の下端まで伸びない。
+// PRD D284。狭い画面は欄が画面いっぱいで、帯は欄の下端より上）、中身が長い欄は帯が欄の下に貼り付き
 // 巻いても見え、内容が帯の下に隠れている間だけ区切り（data-stuck="true"）・巻き終えると区切りを消す、
 // 帯の下に隠れた入力欄へ Tab で入ると帯の上まで巻く（scroll-padding-bottom）、Tab が中で回る・Esc で閉じて戻る、
 // 帯の無い欄（閲覧）、390px：2つまでは横に並べ主ボタンが先、3つ以上は主ボタンを1行目に全幅・残りは2つずつ、
@@ -94,6 +95,8 @@ const metrics = (page) =>
       stuck: foot?.getAttribute('data-stuck') ?? null,
       last: Math.round(last),
       innerHeight: window.innerHeight,
+      innerWidth: window.innerWidth,
+      radius: Number.parseFloat(getComputedStyle(dr).borderBottomLeftRadius) || 0,
       btns,
     };
   });
@@ -106,12 +109,32 @@ async function expectShort(page, label) {
   check(!m.body.scrollable, `${label}：中身が短く巻かない`, m.body);
   const gap = m.foot.top - m.last;
   check(gap >= 0 && gap <= 40, `${label}：帯が内容のすぐ下（間 ${gap}px）`, { footTop: m.foot.top, last: m.last });
-  // 短い欄の帯は内容のすぐ下（上の確かめ）にあり、欄の下に貼り付かない（下端が欄の下端より上で、欄の中）。
-  // 空きの幅は中身の量で変わるので決めない。貼り付いた帯は下端が欄の下端と同じ（±1px）なので、それより上なら足りる
-  check(m.foot.top >= m.drawer.top && m.foot.bottom < m.drawer.bottom - 1, `${label}：帯が欄の下端より上`, {
-    foot: m.foot.bottom,
-    drawer: m.drawer.bottom,
-  });
+  if (m.innerWidth > 600) {
+    // 広い画面（PRD D284）：欄の高さが内容に合い、帯の下端が欄の下端（余白の分だけ）で、画面の下端まで伸びない。
+    // 下の角も丸めてカードに見せる
+    check(
+      m.foot.top >= m.drawer.top && m.drawer.bottom - m.foot.bottom <= 2,
+      `${label}：欄の高さが内容に合う（帯の下が欄の下端）`,
+      {
+        foot: m.foot.bottom,
+        drawer: m.drawer.bottom,
+      },
+    );
+    check(m.drawer.bottom < m.innerHeight - 40, `${label}：欄が画面の下端まで伸びない`, {
+      drawer: m.drawer.bottom,
+      innerHeight: m.innerHeight,
+    });
+    check(m.drawer.top <= 16 && m.radius > 0, `${label}：上に寄せ、角を丸める`, {
+      top: m.drawer.top,
+      radius: m.radius,
+    });
+  } else {
+    // 狭い画面：欄は画面いっぱいのまま。帯は内容のすぐ下（欄の下端より上）
+    check(m.foot.top >= m.drawer.top && m.foot.bottom < m.drawer.bottom - 1, `${label}：帯が欄の下端より上`, {
+      foot: m.foot.bottom,
+      drawer: m.drawer.bottom,
+    });
+  }
   check(m.stuck === 'false', `${label}：貼り付いていないので区切り（線・影）を出さない`, m.stuck);
   check(
     m.btns.every((b) => b.hit && b.bottom <= m.innerHeight),

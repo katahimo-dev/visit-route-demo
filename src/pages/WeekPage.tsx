@@ -49,6 +49,7 @@ import {
   encodeFilter,
   filterClients,
   filterFacts,
+  knownTypes,
   resolveStaffId,
   sameFilter,
   WEEK_TABLE_FILTER,
@@ -182,7 +183,11 @@ export default function WeekPage() {
   const clientSel = useMemo(() => selectionOf(clientParam), [clientParam]);
   /** 〈利用者さん〉×曜日の表の絞り込み（PRD D108。?cf=。無ければこの週に訪問がある人） */
   const cfParam = paramOf(params, 'cf');
-  const tableFilter = useMemo(() => decodeFilter(cfParam, WEEK_TABLE_FILTER), [cfParam]);
+  // URL に残った消えた種類の id は外す（今ある種類で絞る）
+  const tableFilter = useMemo(
+    () => knownTypes(decodeFilter(cfParam, WEEK_TABLE_FILTER), data.visitTypes),
+    [cfParam, data.visitTypes],
+  );
   const [draft, setDraft] = useState<MoveDraft | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
@@ -394,8 +399,9 @@ export default function WeekPage() {
         staff,
         // この週に訪問がある人は終了でも表に出す（その訪問をドラッグできるように。PRD D111）
         showEndedInPeriod: true,
+        visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, staff],
+    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
   );
   /** この週に（取り消しでない）訪問がある〈利用者さん〉（検索欄の近道「この週に訪問がある人」） */
   const weekClientIds = facts.periodIds;
@@ -996,6 +1002,7 @@ export default function WeekPage() {
             terms={{ client: terms.client, staff: terms.staff }}
             periodLabel="この週"
             defaults={WEEK_TABLE_FILTER}
+            visitTypes={data.visitTypes}
             testId="week-client-filter"
           />
         )}

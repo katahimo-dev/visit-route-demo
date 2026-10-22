@@ -5,6 +5,7 @@ import {
   ChevronDown,
   DoorOpen,
   Eye,
+  HeartHandshake,
   House,
   ListFilter,
   MapPin,
@@ -19,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -43,7 +44,14 @@ import { VISIT_RULE_FIELDS } from '../components/VisitRules';
 import { type Client, type ClientStage, clientSchema, EMPTY_REFERRER } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
 import { jstDate, weekday } from '../domain/time';
-import { activeFilterCount, EMPTY_FILTER, filterClients, filterFacts, resolveStaffId } from '../lib/clientFilter';
+import {
+  activeFilterCount,
+  EMPTY_FILTER,
+  filterClients,
+  filterFacts,
+  knownTypes,
+  resolveStaffId,
+} from '../lib/clientFilter';
 import { isBeforeActive, STAGE_LABELS, stageChoices, withStage } from '../lib/clientStage';
 import { CLIENT_COLORS, colorOf, initialOf } from '../lib/colors';
 import { byDisplayName, byName, hasLocation, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
@@ -135,8 +143,9 @@ export default function ClientsPage() {
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff,
+        visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, staff],
+    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, staff],
   );
   const shown = useMemo(
     () => filterClients(clients, filter, facts, resolveStaffId(filter, activeStaff, facts, clients)),
@@ -149,7 +158,8 @@ export default function ClientsPage() {
   const narrow = useMedia(COMPACT_QUERY);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterBodyId = useId();
-  const filterCount = activeFilterCount(filter);
+  // 消えた種類を押したままでも数えない（今ある種類で絞る）
+  const filterCount = activeFilterCount(knownTypes(filter, data.visitTypes));
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const periodLabel = `${md(dates[0]!)}（${WEEKDAY_LABELS[weekday(dates[0]!)]}）からの週`;
   const staffName = (id: string | null) => (id ? (staff.find((s) => s.id === id)?.name ?? '（不明）') : '');
@@ -368,17 +378,24 @@ export default function ClientsPage() {
         title={`${terms.client}一覧`}
         lead={`${terms.client}の住所・特性・条件を決めます`}
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={async () => {
-              if (!(await okToDiscard('switch', `新しい${terms.client}`))) return;
-              setViewId(null);
-              openForm(blank(clients.length), true);
-            }}
-          >
-            <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
-          </button>
+          <>
+            {compatOn && (
+              <Link to="/compat" className="btn btn-text" data-testid="to-compat">
+                <WithIcon icon={HeartHandshake}>相性の表</WithIcon>
+              </Link>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                if (!(await okToDiscard('switch', `新しい${terms.client}`))) return;
+                setViewId(null);
+                openForm(blank(clients.length), true);
+              }}
+            >
+              <WithIcon icon={Plus}>{terms.client}を追加</WithIcon>
+            </button>
+          </>
         }
       />
 
@@ -413,6 +430,7 @@ export default function ClientsPage() {
             terms={{ client: terms.client, staff: terms.staff }}
             periodLabel={periodLabel}
             defaults={EMPTY_FILTER}
+            visitTypes={data.visitTypes}
             testId="clients-cf"
           />
           <span className="sub">

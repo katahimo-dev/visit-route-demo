@@ -19,6 +19,7 @@ import {
   encodeFilter,
   filterClients,
   filterFacts,
+  knownTypes,
   resolveStaffId,
   sameFilter,
 } from '../lib/clientFilter';
@@ -43,7 +44,6 @@ import {
 import { weekDates, weekDay } from '../lib/week';
 import { useDemoData } from '../store';
 import './settings.css';
-import { SettingsTabs } from '../components/SettingsTabs';
 
 /** 凡例（◎○△×の意味。色は表のセルと同じ） */
 const LEGEND: { mark: string; cls: string; text: string }[] = [
@@ -188,10 +188,10 @@ export default function CompatPage() {
     ],
   );
   const cfParam = paramOf(params, 'cf');
-  // この画面は休止中の人を出さないので「終了の人も出す」はいつも外す
+  // この画面は休止中の人を出さないので「終了の人も出す」はいつも外す。URL に残った消えた種類の id は外す（URL も書き直す）
   const clientFilter = useMemo(
-    () => ({ ...decodeFilter(cfParam, EMPTY_FILTER, COMPAT_CHIPS), showEnded: false }),
-    [cfParam],
+    () => knownTypes({ ...decodeFilter(cfParam, EMPTY_FILTER, COMPAT_CHIPS), showEnded: false }, data.visitTypes),
+    [cfParam, data.visitTypes],
   );
   const baseFacts = useMemo(
     () =>
@@ -202,8 +202,9 @@ export default function CompatPage() {
         patterns: data.patterns,
         clientLeaves: data.clientLeaves,
         staff: data.staff,
+        visitTypes: data.visitTypes,
       }),
-    [days, data.visits, clients, data.patterns, data.clientLeaves, data.staff],
+    [days, data.visits, clients, data.patterns, data.clientLeaves, data.visitTypes, data.staff],
   );
   /**
    * 相性のチップの判定に使う相性の写し（PRD D116）。絞り込みを変えたときの相性に止め、セルを押しても行を消さない
@@ -303,12 +304,7 @@ export default function CompatPage() {
 
   return (
     <div className="stack">
-      <PageHeader
-        nav={<SettingsTabs />}
-        icon={HeartHandshake}
-        title="相性"
-        lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります"
-      />
+      <PageHeader icon={HeartHandshake} title="相性" lead="セルを押すと ◎ → ○ → 空 → △ → × と変わります" />
       <div className="compat-filters" data-testid="compat-filters">
         <details
           className="card compat-filter"
@@ -353,6 +349,7 @@ export default function CompatPage() {
             terms={filterTerms}
             periodLabel={periodLabel}
             defaults={EMPTY_FILTER}
+            visitTypes={data.visitTypes}
             extraChips={extraChips}
             hideEnded
             testId="compat-cf"

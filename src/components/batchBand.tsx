@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { addDays, weekday } from '../domain/time';
 import { isDate } from '../lib/isDate';
+import { confirmLeave } from '../lib/leaveGuard';
 import { monthShown } from '../lib/month';
 import { batchBandText, batchDoneText, batchHref, monthBatch } from '../lib/monthBatch';
 import { useValueStore } from '../lib/valueStore';
@@ -60,7 +61,10 @@ export function MonthBatchHost(): ReactNode {
         : {
             action: {
               label: week ? '週の予定を見る' : '月の予定を見る',
-              onClick: () => navigate(batchHref(done)),
+              // 下書きのある画面（条件の重み）から移るときは確かめる（PRD D286）
+              onClick: () => {
+                void confirmLeave().then((ok) => ok && navigate(batchHref(done)));
+              },
               testId: 'batch-done-open',
             },
           },

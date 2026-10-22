@@ -34,6 +34,11 @@ export type ClientFilterState = {
   /** 終了の人も出す（既定 false） */
   showEnded: boolean;
   /**
+   * 押している訪問の種類（VisitType.id。PRD D285）。この期間にそのどれかの種類の訪問がある人に絞る（OR）。
+   * 無い・空なら種類で絞らない。チップ「この期間に訪問がある人」などとは AND
+   */
+  types?: readonly string[];
+  /**
    * 画面ごとに足すチップのうち押しているもの（PRD D116。相性の画面だけ。キーは呼ぶ側が決め、判定は FilterFacts の
    * extraTests）。無い・空なら足すチップで絞らない
    */
@@ -75,6 +80,10 @@ export type FilterFacts = {
    * （その訪問を表でドラッグできるように。PRD D111）。〈利用者さん〉の画面は空
    */
   endedShownIds: ReadonlySet<string>;
+  /** 訪問の種類（VisitType.id）→ この期間にその種類の（取り消しでない）訪問がある〈利用者さん〉。無ければ種類で絞らない */
+  typeClientIds?: ReadonlyMap<string, ReadonlySet<string>>;
+  /** 今ある訪問の種類の id（state.types のうち、消えた種類の id は無いものとして扱う）。無ければ種類で絞らない */
+  typeIds?: ReadonlySet<string>;
   /** 画面ごとに足すチップの判定（PRD D116。キー → 当てはまるか）。判定の無いキーは絞らない */
   extraTests?: Readonly<Record<string, (c: FilterClient) => boolean>>;
 };
@@ -94,19 +103,24 @@ export function filterFacts(input: {
   staff: readonly Pick<Staff, 'id' | 'active' | 'lastDay'>[];
   /** この期間に訪問がある人は終了でも出す（週間の表） */
   showEndedInPeriod?: boolean;
+  /** 訪問の種類（data.visitTypes）。渡すと「訪問の種類」のチップで絞れる */
+  visitTypes?: readonly { id: string }[];
 }): FilterFacts {
-  const { days, visits, clients, patterns, clientLeaves, staff, showEndedInPeriod = false } = input;
+  const { days, visits, clients, patterns, clientLeaves, staff, showEndedInPeriod = false, visitTypes } = input;
   const from = days[0]?.date ?? '';
   const to = days.at(-1)?.date ?? '';
   const visitById = new Map(visits.map((v) => [v.id, v]));
   const periodIds = new Set<string>();
   const unassignedIds = new Set<string>();
   const pairs: [string, string | undefined][] = [];
+  const typeClientIds = new Map<string, Set<string>>((visitTypes ?? []).map((t) => [t.id, new Set<string>()]));
   for (const d of days)
     for (const b of d.bands) {
-      const cid = visitById.get(b.visitId)?.clientId;
+      const v = visitById.get(b.visitId);
+      const cid = v?.clientId;
       if (!cid) continue;
       periodIds.add(cid);
+      if (v.typeId) typeClientIds.get(v.typeId)?.add(cid);
       if (b.staffId === null && !b.leave) unassignedIds.add(cid);
       if (b.staffId) pairs.push([b.staffId, cid]);
     }
@@ -122,6 +136,7 @@ export function filterFacts(input: {
     staffClientIds: (id) => byStaff.get(id) ?? EMPTY_SET,
     workingStaffIds: new Set(staff.filter((s) => s.active && (s.lastDay === null || s.lastDay >= to)).map((s) => s.id)),
     endedShownIds: showEndedInPeriod ? periodIds : EMPTY_SET,
+    ...(visitTypes ? { typeClientIds, typeIds: new Set(visitTypes.map((t) => t.id)) } : {}),
   };
 }
 
@@ -178,6 +193,17 @@ export const endedVisible = (
 const extraMatch = (c: FilterClient, state: ClientFilterState, facts: FilterFacts) =>
   (state.extra ?? []).every((k) => facts.extraTests?.[k]?.(c) ?? true);
 
+/** 押している種類のどれかの訪問がこの期間にある人か（種類を押していない・facts に種類が無ければ全員） */
+export function matchTypes(
+  c: Pick<FilterClient, 'id'>,
+  state: Pick<ClientFilterState, 'types'>,
+  facts: FilterFacts,
+): boolean {
+  const on = (state.types ?? []).filter((id) => facts.typeIds?.has(id));
+  if (on.length === 0) return true;
+  return on.some((id) => facts.typeClientIds?.get(id)?.has(c.id));
+}
+
 const baseMatch = (c: FilterClient, state: ClientFilterState, facts: FilterFacts) =>
   endedVisible(c, state, facts) && matchClient(c, state.query) && extraMatch(c, state, facts);
 
@@ -195,6 +221,7 @@ export function filterClients<T extends FilterClient>(
     (c) =>
       baseMatch(c, state, facts) &&
       matchArea(c, state) &&
+      matchTypes(c, state, facts) &&
       state.chips.every((ch) => chipMatches(ch, c, facts, staffId)),
   );
 }
@@ -298,6 +325,40 @@ export function townChips(
     .map((t) => ({ key: townKey(city, t), label: t === '' ? NO_TOWN_LABEL : t, count: counts.get(t) ?? 0 }));
 }
 
+/** 訪問の種類のチップ1つ（count は種類のほかの絞り込みをかけた、その種類の訪問がある人数） */
+export type TypeChip = { id: string; name: string; count: number };
+
+/**
+ * 訪問の種類のチップ（visitTypes の順）。人数は種類を除いたほかの絞り込みをかけた、その種類の訪問がこの期間にある人。
+ * 押しているものは state.types のまま（消えた種類は含めない）
+ */
+export function typeChips(
+  clients: readonly FilterClient[],
+  state: ClientFilterState,
+  facts: FilterFacts,
+  staffId: string,
+  visitTypes: readonly { id: string; name: string }[],
+): TypeChip[] {
+  const base = filterClients(clients, { ...state, types: [] }, facts, staffId);
+  return visitTypes.map((t) => ({
+    id: t.id,
+    name: t.name,
+    count: base.filter((c) => facts.typeClientIds?.get(t.id)?.has(c.id)).length,
+  }));
+}
+
+/** 訪問の種類を付け外しする（並びは visitTypes の順にそろえる） */
+export function toggleType(
+  state: ClientFilterState,
+  id: string,
+  visitTypes: readonly { id: string }[],
+): ClientFilterState {
+  const cur = state.types ?? [];
+  const on = cur.includes(id);
+  const next = visitTypes.map((t) => t.id).filter((x) => (x === id ? !on : cur.includes(x)));
+  return { ...state, types: next };
+}
+
 /** 市区を付け外しする（外すとその市区の町名の選択も外す） */
 export function toggleCity(state: ClientFilterState, city: string): ClientFilterState {
   if (state.cities.includes(city))
@@ -379,6 +440,8 @@ export function encodeFilter(state: ClientFilterState): string {
   // 〈スタッフ〉はチップ「〈スタッフ〉が担当する人」を押しているときだけ書く
   if (state.staffId && state.chips.includes('staff')) parts.push(`staff:${encodeURIComponent(state.staffId)}`);
   if (state.showEnded) parts.push('ended:1');
+  // 訪問の種類は押しているときだけ
+  if (state.types && state.types.length > 0) parts.push(`type:${enc(state.types)}`);
   // 画面ごとに足すチップは押しているときだけ（並びはそろえる）
   if (state.extra && state.extra.length > 0) parts.push(`x:${enc([...state.extra].sort())}`);
   return parts.join(';');
@@ -410,7 +473,10 @@ export function decodeFilter(
       out.chips = FILTER_CHIPS.filter((c) => xs.includes(c));
     } else if (key === 'staff') out.staffId = dec(value)[0] || null;
     else if (key === 'ended') out.showEnded = value === '1';
-    else if (key === 'x') {
+    else if (key === 'type') {
+      const ts = dec(value);
+      if (ts.length > 0) out.types = ts;
+    } else if (key === 'x') {
       const xs = dec(value);
       const extra = extraKeys.filter((k) => xs.includes(k));
       if (extra.length > 0) out.extra = extra;
@@ -420,6 +486,19 @@ export function decodeFilter(
   // 選んでいない市区の町名は捨てる
   out.towns = out.towns.filter((k) => out.cities.includes(cityOfKey(k)));
   return out;
+}
+
+/**
+ * 今ある訪問の種類だけで絞る（URL・画面の状態に残った、消えた種類の id を外す。押している種類が残らなければ types を消す）。
+ * 効いている絞り込みの数・既定と同じかの判定・URL の書き直しは、これを通した状態で行う
+ */
+export function knownTypes(state: ClientFilterState, visitTypes: readonly { id: string }[]): ClientFilterState {
+  if (!state.types || state.types.length === 0) return state;
+  const ids = new Set(visitTypes.map((t) => t.id));
+  const kept = state.types.filter((id) => ids.has(id));
+  if (kept.length === state.types.length) return state;
+  const { types: _drop, ...rest } = state;
+  return kept.length > 0 ? { ...rest, types: kept } : rest;
 }
 
 /** 同じ絞り込みか（URL に書く形で比べる） */
@@ -435,6 +514,7 @@ export function activeFilterCount(state: ClientFilterState): number {
     state.cities.length +
     state.towns.length +
     state.chips.length +
+    (state.types?.length ?? 0) +
     (state.extra?.length ?? 0) +
     (state.showEnded ? 1 : 0)
   );

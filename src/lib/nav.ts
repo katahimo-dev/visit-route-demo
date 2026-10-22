@@ -30,10 +30,9 @@ export const isScheduleView = (pathname: string): boolean => SCHEDULE_VIEWS.incl
 
 /** 設定のタブ（並び。PRD D275）。メニューは「設定」1項目で、画面の上のタブで切り替える */
 export const SETTINGS_TABS: readonly { to: string; label: string }[] = [
-  { to: '/rules', label: '条件の重み' },
-  { to: '/compat', label: '相性' },
   { to: '/types', label: '訪問の種類' },
   { to: '/items', label: '特性の項目' },
+  { to: '/rules', label: '条件の重み' },
   { to: '/settings', label: '管理者設定' },
   { to: '/data', label: 'データ' },
 ];
@@ -142,7 +141,7 @@ export type LastViews = { schedule?: string | null; settings?: string | null };
 
 /**
  * メニューの「設定」で開くタブ：最後に開いた設定のタブ（切っていなければ）、無ければ先頭のタブ
- * （すべて入なら条件の重み、基本なら相性。PRD D275）
+ * （訪問の種類は土台で切れないので、いつも訪問の種類。ADR-0047・PRD D275）
  */
 export function settingsHref(features: Features, last?: string | null): string {
   const tabs = settingsTabs(features);
@@ -155,11 +154,11 @@ export const scheduleHref = (last?: string | null): string =>
   last && SCHEDULE_VIEWS.includes(last) ? last : SCHEDULE_DEFAULT;
 
 /**
- * メニューの並び（PRD D273〜D275。ADR-0045。D178・D232 の並びを置き換え）：よく使う画面だけの8項目
+ * メニューの並び（PRD D273〜D275。ADR-0045。D178・D232 の並びを置き換え）：よく使う画面だけの9項目
  * （見出しなし）ホーム・予定／当日・問い合わせ（欠勤・キャンセルを登録・空き状況）／人（〈利用者さん〉一覧・〈スタッフ〉一覧・
- * 勤務時間（シフト））／（見出しなし）設定。
+ * 相性・勤務時間（シフト））／（見出しなし）設定。
  * 「予定」は月・週・日の予定と比較を受け持ち（今の画面の印）、押すと最後に開いた表示（既定は日の予定）。切り替えは画面の上の［月｜週｜日］。
- * 「設定」は条件の重み・相性・訪問の種類・特性の項目・管理者設定・データを受け持ち、押すと最後に開いたタブ。
+ * 「設定」は訪問の種類・特性の項目・条件の重み・管理者設定・データを受け持ち、押すと最後に開いたタブ。
  * 勤務の見込みは勤務時間（シフト）の続き（印は勤務時間（シフト））で、勤務時間（シフト）・月の予定の「その他 ▾」から開く。
  * 案を比べるは日の予定の「案を変える ▾」から開く。メニューから外した画面もパレット（screenSections）からは引ける。
  * 下のタブに出す項目は短い名前（short）も持つ。呼び方は terms から引く。URL は変えない。today は欠勤・キャンセルの欄を開く日。
@@ -197,6 +196,8 @@ export function menuSections(
       items: [
         { key: 'clients', to: '/clients', label: `${terms.client}一覧`, icon: 'clients' },
         { key: 'staff', to: '/staff', label: `${terms.staff}一覧`, icon: 'staff' },
+        // 相性は〈利用者さん〉と〈スタッフ〉の関係で更新も多いので、設定でなく「人」に置く（ADR-0047）
+        { key: 'compat', to: '/compat', label: '相性', icon: 'compat' },
         {
           key: 'availability',
           to: '/availability',
@@ -230,7 +231,7 @@ export function menuSections(
  * 画面の一覧（PRD D182・D230・D273・D275）：コマンドパレットの「画面」と上の帯の画面の名前はここから引く。
  * メニューから外した画面（月・週・日の予定・案を比べる・勤務の見込み・設定のタブ）も1つずつ持つ。
  * ホーム／予定（月の予定・週の予定・日の予定・案を比べる）／当日・問い合わせ（空き状況）／人（〈利用者さん〉一覧・〈スタッフ〉一覧・
- * 勤務時間（シフト）・勤務の見込み）／設定（条件の重み・相性・訪問の種類・特性の項目・管理者設定・データ）。
+ * 相性・勤務時間（シフト）・勤務の見込み）／設定（訪問の種類・特性の項目・条件の重み・管理者設定・データ）。
  * 項目名は画面の見出しと同じ。切った機能の画面は出さない
  */
 export function screenSections(terms: Pick<Terms, 'client' | 'staff'>, features: Features): NavSection<MenuItem>[] {
@@ -251,6 +252,7 @@ export function screenSections(terms: Pick<Terms, 'client' | 'staff'>, features:
       items: [
         { key: 'clients', to: '/clients', label: `${terms.client}一覧`, icon: 'clients' },
         { key: 'staff', to: '/staff', label: `${terms.staff}一覧`, icon: 'staff' },
+        { key: 'compat', to: '/compat', label: '相性', icon: 'compat' },
         { key: 'availability', to: '/availability', label: '勤務時間（シフト）', icon: 'hours' },
         { key: 'workload', to: '/workload', label: '勤務の見込み', icon: 'workload' },
       ],
@@ -258,10 +260,9 @@ export function screenSections(terms: Pick<Terms, 'client' | 'staff'>, features:
     {
       title: '設定',
       items: [
-        { key: 'rules', to: '/rules', label: '条件の重み', icon: 'rules' },
-        { key: 'compat', to: '/compat', label: '相性', icon: 'compat' },
         { key: 'types', to: '/types', label: '訪問の種類', icon: 'types' },
         { key: 'items', to: '/items', label: '特性の項目', icon: 'items' },
+        { key: 'rules', to: '/rules', label: '条件の重み', icon: 'rules' },
         { key: 'settings', to: '/settings', label: '管理者設定', icon: 'settings' },
         { key: 'data', to: '/data', label: 'データ', icon: 'data' },
       ],

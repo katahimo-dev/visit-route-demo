@@ -33,7 +33,7 @@
 
 #### `components/ui.tsx` の `SidePanel`
 
-- 右から出る欄（`narrow` あり）。z-index 1100。フォーカス：開いたら最初の入力欄（`focusPanel`）、Tab が中で回る、閉じたら戻す（`returnFocus` で戻り先を差し替えられる）。`useBodyScrollLock`
+- 右から出る欄（`narrow` あり）。z-index 1100。広い画面（601px 以上。PRD D284）は高さを内容に合わせる：`.drawer-wrap` に余白 12px（欄の幅は `min(640px, 100%)`・`narrow` は `min(440px, 100%)` で余白の内側に収める。100vw だと 601〜664px ではみ出す）・`align-items: flex-start`、`.drawer` は `height: auto; max-height: 100%`・角丸 12px・全周の影・`overflow: hidden`、`.drawer-body` は `flex: 0 1 auto`。短い欄は内容の高さで上に寄り、長い欄は画面の高さまでで `.drawer-body` が巻き、帯は欄の下に貼り付く。狭い画面（600px 以下）は今のまま画面いっぱい。フォーカス：開いたら最初の入力欄（`focusPanel`）、Tab が中で回る、閉じたら戻す（`returnFocus` で戻り先を差し替えられる）。`useBodyScrollLock`
 - 裏の inert（PRD D252）：開いたとき body の直下のほかの子（`#root`・メニューの引き出し）を `inertLock`（要素ごとに数えるロック。確認ダイアログ・パレット・ツアーと同じ）で inert にし、閉じるときは inert を外してから戻り先へフォーカスする。`data-inert-keep` の付いた子（知らせの置き場 `.toast-layer`、用語の説明 `TipBubble`（`Term.tsx`。body の直下に hidden で常駐するので、z-index 1150 で欄（1100）の上に出し、欄の中の用語の説明の上にマウスを移しても消えない。PRD D175））は外す。後から body の直下に出るもの（確認ダイアログ）はロックの外。名前の詳細（`DetailPopover`）は欄の中に出る。欄の上に欄を重ねたら下の欄も inert（数えるので閉じる順にかかわらず戻る）
 - `onSubmit`（PRD D251）：渡すと `.drawer-body` を `<form noValidate>` にし（無ければ `div`）、内容と帯を包む。帯の保存は `type="submit"`。送信は `submitHandler`（下の「フォームの共通の決まり」）。閲覧 ⇄ 編集で `form` ⇄ `div` が入れ替わるので、`usePanelFoot` に要素の種類（`bodyKind`）を渡して見張り直す。使う欄：〈利用者さん〉・〈スタッフ〉の編集、種類、仮押さえ、欠勤・キャンセルの2段目（「次へ」）。中に `<form>` を持つ欄（条件の調整のプリセット）には渡さない
 - `headActions`：見出しの右・× の前（`drawer-head-actions`）
@@ -155,7 +155,7 @@
   - data-testid：`tour`（`data-step`）・`tour-count`・`tour-title`・`tour-body`・`tour-points`・`tour-next`・`tour-back`・`tour-skip`・`tour-today`
 - e2e は文脈を作ったらすぐ `scripts/lib/tourSeen.cjs` の `skipTour(ctx)` を呼ぶ（e2e-tour は除く）。`skipTour` は既定で `scripts/lib/startFeatures.cjs` の `startAll` も呼び、初めて開いたときの入り切りを「すべて」にする（初回の「基本」を確かめるときは `skipTour(ctx, { start: 'basic' })`）
 
-### 条件を変えたら出す作り直しの帯（ADR-0025 追記。PRD D161〜D166）
+### 条件を変えたら出す作り直しの帯（ADR-0025 追記・ADR-0049。PRD D161〜D166・D290〜D292）
 
 「条件が変わった」の判定（`lib/month` の `ruleSetKey`・`currentRuleKeys`・`rulesStale`、`useDayStatuses` の `withRules`）は [pages-home.md](pages-home.md) の `useDayStatuses` と [pages-month.md](pages-month.md)。
 
@@ -164,11 +164,18 @@
   - `rebuildDays(aiPlans, today)`・`rebuildSummary(statuses, today, manualPlans)`（`days`・`unconfirmed`（確定した割当なし）・`confirmed`（あり））・`rebuildText`（「影響する日 N日（未確定 a日・確定済み b日）」）・`REBUILD_CLEARED`（「影響する日は無くなりました」）・`rebuildWith(basis)`（「〈基準〉で作り直します」）
   - `rebuildAction(summary, basis)`（`href`・`label`・`note`）：未確定の最初の日の月の `/month?ym=…&do=stale`「作り直す」、未確定が無ければ最初の日の月の `do=attention`「要対応を見る」
   - `customRulesText(basis)`（この日だけ試す重みの案内。PRD D166・D234）・`recreateTodayHref(today)`（`/plan?date=今日&do=recreate`）
+- `lib/conditionChanges.ts`（純粋関数。テストあり。PRD D290〜D292。ADR-0049）：
+  - `conditionChanges(base, now)`：条件の変更の控え（store の `conditionsBase.data`）と今の違いの一覧 `ConditionChange[]`（`key`・`kind`・`head`・`text`・`revert(d)`）。並びと文：点数の基準「「A」→「B」」・条件の重み（基準のプリセット。型ごと「空き時間（待ち） 3→4」「必須でない→必須」）・プリセット「「X」を追加／消した」・`プリセット「名前」`（重み・名前・一言）・条件（足す・消す・名前）・この日だけ試す重み（基準にそろっていれば出さない）・機能「相性を切」・事業所の設定（名前・業種・呼び方・交通費の単価・拘束の上限）・特性の項目・訪問の種類「リハビリを追加」・相性「N組（〈利用者さん〉さんと〈スタッフ〉さん ◎→×、…）」・〈スタッフ〉／〈利用者さん〉は1人ずつ（「山田さんの勤務時間・特性」「…を追加／消した」。見出しは org.terms）・勤務時間（シフト）は人ごと（「山田さん（10/22・…）」）・〈利用者さん〉の休み・定期パターンは〈利用者さん〉ごと。多ければ先頭3件と「ほか N件」
+  - 戻す（PRD D291）：`revert` は戻せる変更だけ関数、足した・消したもの（人・定期パターン・特性の項目・訪問の種類・プリセット・条件）と特性の項目の直し（選択肢の名前を変えると人の特性の値も書き換わるので、項目だけ戻すと合わなくなる）は `null`（`canRevert`）。プリセットは `lib/presets` の `patchPreset`・`setScorePreset`（基準の重みを戻すと試す重みもそろう）、条件は名前だけ、訪問の種類・定期パターンは今もある id だけ控えの中身に、人は控えの属性に戻して `fitTraits`（消えた項目・選択肢を指す特性の値を外す。`repair` は特性の値を直さない）、ほかは控えの値。`applyRevert(d, c)`・`revertAll(d, changes)`（戻せるものだけ順に）は最後に `repair`（いなくなった人を指すいつもの担当・担当できる人など）
+  - `madeWeightsChange(data, days)`：控えが無い（または一覧に重みの違いが無い）とき、重みで変わった日（`rulesStale`）の記録の重みと点数の基準の重みの違い（いちばん多い組。日によって違えば「（N日分）」）。戻すは基準のプリセットの重みを作ったときの値に
+  - 文：`changesToggleText(n)`（「変更内容を見る（N件）」）・`sinceText(at)`（「M/D H:mm からの変更」）・`NO_RECORD_TEXT`・`NO_MORE_TEXT`・`NO_REVERT_TEXT`（「足した・消したものは戻せません。各画面で直してください」）・`revertBody(cs, skipped)`（確認の本文。すべて戻すで戻さないものがあれば「足した・消したものなど N件は戻しません（各画面で直してください）」）
 - `components/rebuildBand.tsx`（`rebuildBand.css`）：`RebuildBand({ rules })`
   - データが `SETTLE_MS`＝600ms 変わらなくなってから `useDeferredValue` で描いた後に数える（動かしている間は数えない）。最初に数え終わるまでは影響する日の行を出さない
   - 帯は `section` の中に行 `rb-row` を2つまで：
     1. 影響する日：文・未確定があれば `rebuildWith`・［作り直す］は `Link`（主ボタンにしない。説明は title と aria-describedby）・［後で］
     2. `rules`（`/rules` のとき）でこの日だけ試す重み（`data.rules`）がどのプリセットとも違うときの案内：`customRulesText`・［今日の案を試す重みで作り直す］・`SavePresetForm`（試す重みを保存）。条件の重みの表を動かしても試す重みは基準にそろうので出ない（ADR-0035）
+  - 影響する日の行の下に変更内容 `ConditionChanges`（`rb-changes`。`.rb-row` にしない）：一覧があれば開閉のボタン `rebuild-changes-toggle`（文字のボタン・aria-expanded・aria-controls。開くと「変更内容を閉じる」）、開くと「M/D H:mm からの変更」（控えがあるとき）と一覧（高さ 40vh まで中を巻く）の行 `rebuild-change`（`data-kind`）に、戻せる行だけ［戻す］`rebuild-change-revert`（aria-label「〈行の文〉を戻す」）。戻せない行があれば一覧の下に `NO_REVERT_TEXT`（`rebuild-no-revert`）、戻せるものが2件以上なら［すべて戻す］`rebuild-revert-all`（戻せるものだけ）。押すと `useConfirm`（見出し「「〈見出し〉」を戻しますか？」／「戻せる変更をすべて戻しますか？」・本文に戻るものの一覧・確定のボタン「戻す」「すべて戻す」）、確定で `update(fn, { keepBase: true })`（fn の中で最新の控えと今のデータから一覧を作り直し、確認に出したキーの変更だけ戻す）・トースト「〈見出し〉を戻しました」、フォーカスは開閉のボタン（帯が消えたら見出し）。一覧が無ければ文だけ `rebuild-changes-none`（控えが無ければ `NO_RECORD_TEXT`、あれば `NO_MORE_TEXT`）
+  - 控えを消すのは帯ではなく `ConditionsBaseSweep`（App の殻にいつも置く。控えが無い間は何も数えない。あれば帯と同じく `SETTLE_MS` 止まってから `useDeferredValue` で、今のデータ（`deferred === data`）・控えより後に止まったデータを数えて0日なら `clearConditionsBase`。日ごとの計算は `useDayStatuses` の覚えを月の予定・帯と分け合う）。帯の無い画面・条件の重みとプリセットを切っているときも、月の予定で作り直して0日になれば消える
   - ［後で］は状態 `later`（保存しない。その画面の間だけ隠し、ほかの設定の画面では出る。押したらフォーカスを `.app-main h1` へ）
   - 読み上げは `progressBand` の `BandLive`（`data-ready`・`data-days` など付き。0日になったら1度 `REBUILD_CLEARED`、隠している間は空）
   - 861px 以上は `position: sticky; top: var(--header-h)`。その間は ResizeObserver で `--rebuild-band-h` と html の `scroll-padding-top` を入れ、消えたら戻す（Tab で入った入力欄が帯に隠れない）。600px 以下は文の下にボタン。印刷では出さない
@@ -235,10 +242,10 @@
 - `scripts/e2e-mobile.cjs`（390×844）：上の帯・引き出しの開閉と Esc・外・画面を選ぶ・フォーカスの戻りと閉じ込め・裏を巻かない・下のタブの active と比較・本文の最後が隠れない・浮いている部品と重ならない（同じクラスの箱を置いて確かめ、本物の地図のボタンが出ればそれも）・印刷・1400px で左のメニューと上の帯 72px。今の画面の項目・タブで URL のクエリが残る、`aria-controls`・`aria-haspopup`・inert・h2、本物の地図のボタンと開いた地図、開いたまま広い画面へ戻す、右の欄と引き出しが重なったときのロック。`fabWithToast`（本物の地図ボタンと本物のトースト・本文の下・safe-area）。下のタブは5つ
 - `scripts/e2e-dialog.cjs`：条件を消す（ARIA・中央・最初のフォーカス・Tab が回る・Esc・取り消す・背景で変わらない・閉じたらボタンへフォーカス・inert とロックを戻す・確定（キーボード）で消える）／初期状態に戻す（取り消すと知らせなし・確定で知らせ）／この割当で確定（Esc で未確定のまま・確定で「確定済み」）／確認中に「戻る」（確認が閉じデータが変わらない）／ダブルクリックでも確認が残る／〈スタッフ〉の変更を捨てる（右の欄の上で Esc は確認だけを閉じる・「捨てて閉じる」で保存しない）／選択肢を消す／390px で収まりボタンが縦・印刷で出さない。どれもネイティブのダイアログが出たら失敗
 - `scripts/e2e-nav.cjs`：メニューの並び・名前・aria-current・見出し・欠勤・キャンセルの項目、Ctrl+K で開く・ARIA・inert・↑↓ が回る・Enter で移る・見つからない・Ctrl+K で閉じる・操作（欠勤・まとめて作る）・右の欄の上では開かない、よみ（カタカナ）で〈利用者さん〉・名前で〈スタッフ〉の閲覧の欄、Tab が回る・Esc・背景・×でフォーカスがボタンへ・入力欄の中の Ctrl+K・今の画面は閉じるだけ、390px（「探す」が1段目・パレットが収まる・上の帯の名前（人・利用者さん一覧・予定は項目名だけ）・引き出しの並び・下のタブ5つ・比較は「今日」のタブ・「今日」のタブでほかの日から今日の日の予定へ・日の予定の上でも今日を選び直す（履歴を増やさない））、印刷、300人×60人で1文字の中央値 `PERF_MS_NAV`（既定 100ms）
-- `scripts/e2e-panel-foot.cjs`（1400px・390px）：欠勤・キャンセルの1〜4段目・キャンセルの2・3段目・〈スタッフ〉の閲覧と編集・月の「まとめて作る」・日の差の欄の「連絡の一覧」。短い欄・長い欄・Tab で帯の裏の入力欄が隠れない・Tab が回る・Esc で戻る・裏を巻かない・390px の並び・タブに隠れない・safe-area・visualViewport を差し替えたキーボード・印刷で帯を出さない
+- `scripts/e2e-panel-foot.cjs`（1400px・390px）：欠勤・キャンセルの1〜4段目・キャンセルの2・3段目・〈スタッフ〉の閲覧と編集・月の「まとめて作る」・日の差の欄の「連絡の一覧」。短い欄（広い画面は欄の高さが内容に合い、上に寄り、画面の下端まで伸びない）・長い欄・Tab で帯の裏の入力欄が隠れない・Tab が回る・Esc で戻る・裏を巻かない・390px の並び・タブに隠れない・safe-area・visualViewport を差し替えたキーボード・印刷で帯を出さない
 - `scripts/e2e-tour.cjs`：ツアー（初めて開くと出る・ARIA・中央・フォーカス・inert とロック・Tab が回る・Ctrl+K を開かない・次へ／戻る・3枚・予定の枚の3段・初めて開くと「基本」で1枚目に「どこまで使いますか」・「すべて」を選ぶとメニューと入り切りが変わり「条件が変わった」にならない・もう一度見るでは聞かない・「閉じる」・「今日の予定を開く」で今日の日の予定・覚える（別のキー）・読み直しても出ない・Esc・とばす・月の印刷では出ない・`?id=`・`?do=` のリンクでは出ない・印があれば自動で出ない・最後の枚で覚える・もう一度見る・フォーカスを戻す・初期状態に戻しても残る・390px・印刷）、ファイル選択、月の一覧
 - `scripts/e2e-words.cjs`：点数の理由・用語の説明（マウス・Tab・Esc・タッチ・同時に1つ・入力欄の名前）・言い換え・空の画面・月の凡例・相性のセルの記号・390px・印刷
-- `scripts/e2e-rebuild.cjs`：作り直しの帯（出さない条件・案内・影響する日・数・読み上げ・［後で］・sticky・Tab・月の要対応と同じ数・［作り直す］で月の欄・［今日の案を試す重みで作り直す］で日の予定）
+- `scripts/e2e-rebuild.cjs`：作り直しの帯（出さない条件・案内・影響する日・数・読み上げ・［後で］・sticky・Tab・月の要対応と同じ数・［作り直す］で月の欄・［今日の案を試す重みで作り直す］で日の予定）、変更内容と戻す（控えを取る・畳む・項目の戻す・すべて戻す・控えが無いときの作ったときの重み・記録が無いときの文）
 - `scripts/e2e-links.cjs`：行き先のリンク（月の要対応の4種類・`?do=unassigned`・勤務の見込み・勤務時間（シフト）・空き状況）
 - `scripts/e2e-features.cjs`：機能の入り切り（ひな形ごとのメニュー・下のタブ・パレット・ホーム・画面の中の入口・切った URL・390px・印刷）
 

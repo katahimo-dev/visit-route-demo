@@ -17,6 +17,7 @@ import {
   paletteScreens,
 } from '../lib/commandPalette';
 import { trapTarget } from '../lib/confirmDialog';
+import { confirmLeave } from '../lib/leaveGuard';
 import type { MenuItem, NavSection } from '../lib/nav';
 import { presetOf } from '../seed';
 import { useDemoData } from '../store';
@@ -130,9 +131,11 @@ export function CommandPalette({
     }
   });
 
-  const pick = (it: PaletteItem | undefined) => {
+  const pick = async (it: PaletteItem | undefined) => {
     if (!it) return;
     onClose();
+    // 確定していない下書きのある画面（条件の重み）から移るときは確かめる（PRD D286。断れば移らない）
+    if (it.to.split(/[?#]/)[0] !== pathname && !(await confirmLeave())) return;
     if (it.date) setDate(it.date);
     // 今の画面を選んだら閉じるだけ（URL のクエリ＝画面の状態を消さない。メニューと同じ）
     if (it.to === pathname) return;
@@ -176,7 +179,7 @@ export function CommandPalette({
                 setActive(moveActive(at, flat.length, e.key === 'ArrowDown' ? 1 : -1));
               } else if (e.key === 'Enter') {
                 e.preventDefault();
-                pick(flat[at]);
+                void pick(flat[at]);
               }
             }}
             data-testid="cmdk-input"
@@ -211,7 +214,7 @@ export function CommandPalette({
                       onMouseMove={() => {
                         if (i !== at) setActive(i);
                       }}
-                      onClick={() => pick(it)}
+                      onClick={() => void pick(it)}
                       data-testid="cmdk-option"
                       data-kind={it.kind}
                       data-to={it.to}

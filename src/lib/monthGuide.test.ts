@@ -62,6 +62,22 @@ describe('cellGuide', () => {
     const red = cellGuide({ ...base, count: 3, stateText: '案あり', care: true, unassigned: true });
     expect(red).toContain('赤い点・赤い枠＝要対応（入らない訪問・必須の違反・休みの人に訪問）');
   });
+  it('要対応の札（N）があるときは赤い点を言わず、札の読み方を足す。休 N を出していないときは書かない（PRD D295）', () => {
+    const lines = cellGuide({
+      ...base,
+      count: 3,
+      stateText: '案あり',
+      care: true,
+      attention: 2,
+      resting: 2,
+      restShown: false,
+    });
+    expect(lines).toContain('赤い枠＝要対応（入らない訪問・必須の違反・休みの人に訪問）');
+    expect(lines.some((l) => l.startsWith('赤い「要対応 N」の札'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('「休 N」'))).toBe(false);
+    const shown = cellGuide({ ...base, count: 3, stateText: '案あり', resting: 2, restShown: true });
+    expect(shown).toContain('「休 N」＝休むスタッフの人数');
+  });
   it('手当ての印（入らない・違反・休みの人に・条件が変わった・拘束超）', () => {
     const lines = cellGuide({
       ...base,
