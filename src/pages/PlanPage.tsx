@@ -20,7 +20,7 @@ import {
   Mail,
   Map as MapIcon,
   MapPin,
-  Pencil,
+  PanelRightOpen,
   Pin,
   PinOff,
   Plus,
@@ -58,6 +58,7 @@ import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
+import { useOpenVisit } from '../components/VisitPanel';
 import { VisitRules } from '../components/VisitRules';
 import { TypeMark } from '../components/visitType';
 import type { AiPlan, AiRun, DemoData, ManualPref } from '../contracts/data';
@@ -129,7 +130,7 @@ import {
   revertText,
 } from '../lib/planMenu';
 import { planRulesOf } from '../lib/presets';
-import { CURRENT_TEXT, NONE_TEXT, reassignItemText } from '../lib/reassignMenu';
+import { CURRENT_TEXT, NONE_TEXT, reassignChoices } from '../lib/reassignMenu';
 import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
@@ -146,12 +147,12 @@ import {
 } from '../lib/undoEdit';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
+import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { createValueStore, type ReadableStore, useValueStore } from '../lib/valueStore';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile, prefKey, withManualPrefs } from '../matching';
 import {
   type ContactList,
-  candidatesFor,
   contactsOf,
   leftOf,
   placeVisit,
@@ -181,7 +182,6 @@ import {
   ReasonBox,
   RefMark,
   rulerText,
-  SCORE_TEXT,
   ScoreNextStep,
   ScoreReasonText,
   WeightPanel,
@@ -195,7 +195,6 @@ import {
   type ReassignOption,
 } from './reassignParts';
 import { type SuddenInit, SuddenPanel } from './SuddenPanel';
-import { VisitForm } from './VisitForm';
 
 /** 連絡の一覧が出せない（差を出せない）ときでも、欠勤の人に残る訪問だけで開くための空の一覧 */
 const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: [] };
@@ -345,8 +344,10 @@ export default function PlanPage() {
   /** 地図で見る担当・強調する区間・選んだ訪問（列の見出し・凡例・訪問・区間を押す。予定と比較で共通） */
   const sel = useRouteSelection(date, (_set, id) => owner.get(id));
   const { focusStaff, focusOn } = sel;
-  /** 開いている訪問の入力欄（null：閉じている、'new'：足す、それ以外：直す訪問の ID） */
-  const [editing, setEditing] = useState<string | null>(null);
+  /** 訪問の詳細の欄（PRD D301〜D304。App の殻の欄を開く） */
+  const openVisitPanel = useOpenVisit();
+  /** スマホの幅（600px 以下）は訪問を足さない（ADR-0051 の決定5） */
+  const compact = useMedia(COMPACT_QUERY);
   /** 「その他 ▾」の「使い方」で開いた説明（PRD D279。保存しない） */
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
@@ -403,8 +404,6 @@ export default function PlanPage() {
   const wideMap = useMedia(WIDE_MAP_QUERY);
   /** 「入らなかった訪問」の列（帯の近道の行き先） */
   const noneColId = useId();
-  /** 訪問の入力欄（開いたら見える所へ） */
-  const formRef = useRef<HTMLDivElement>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
   /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
   const pendingAnneal = useRef<string | null>(null);
@@ -458,10 +457,6 @@ export default function PlanPage() {
     // 前の日に「案B も作る」を押して、まだ始まっていなければやめる（別の日で始めない）
     pendingAnneal.current = null;
   }, [date]);
-  // 訪問の入力欄を開いたら見える所へ（一覧の行の「編集」から開いたとき、欄は操作の行のすぐ下に出る）
-  useEffect(() => {
-    if (editing) formRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
-  }, [editing]);
   /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
   const dateRef = useRef(date);
   dateRef.current = date;
@@ -703,8 +698,8 @@ export default function PlanPage() {
 
   /** 手直し・固定を捨てて AI案を作り直すときの確認（PRD D147） */
   const DISCARD_RECREATE = {
-    title: '手直しと固定を捨てて、AI案を作り直しますか？',
-    body: 'この日の手直しと固定は消えます（作った案の記録は残ります）。',
+    title: '手直しとピンを捨てて、AI案を作り直しますか？',
+    body: 'この日の手直しとピンは消えます。',
     confirmLabel: '捨てて作り直す',
     tone: 'danger',
   } as const;
@@ -810,8 +805,8 @@ export default function PlanPage() {
       if (
         edited &&
         !(await confirmDialog({
-          title: `手直しと固定を捨てて、${preset.name}の案を今の案にしますか？`,
-          body: '保存してある案を今の案にします（計算し直しません）。この日の手直しと固定は消えます。',
+          title: `手直しとピンを捨てて、${preset.name}の案を今の案にしますか？`,
+          body: '作ってある案に切り替えます。この日の手直しとピンは消えます。',
           confirmLabel: '捨てて今の案にする',
           tone: 'danger',
         }))
@@ -824,7 +819,7 @@ export default function PlanPage() {
       }));
       endPrefAsk(date);
       sel.reset();
-      toast(`保存してある${preset.name}の案を今の案にしました（再計算なし）`);
+      toast(`${preset.name}の案を今の案にしました`);
       return;
     }
     if (edited && !(await confirmDialog(DISCARD_RECREATE))) return;
@@ -833,7 +828,7 @@ export default function PlanPage() {
     create(rules, 'preset');
   };
 
-  // ---- 設定の画面の帯の［今日の案を試す重みで作り直す］（?date=…&do=recreate。PRD D166・D234）----
+  // ---- 設定の画面の帯の［今日の案を日の予定の重みで作り直す］（?date=…&do=recreate。PRD D166・D234）----
   // その日を選び、URL から ?date= と ?do= を消し、問題ができたら「AI にもう一度作らせる」（recreate。手直しがあれば今どおり確認）。
   // その日の自動作成（基準のプリセット）はしない（この日だけ試す重みで作るため）
   const [params, setParams] = useSearchParams();
@@ -1043,8 +1038,8 @@ export default function PlanPage() {
     if (
       unpinned &&
       !(await confirmDialog({
-        title: '固定していない手直しを捨てて、作り直しますか？',
-        body: '固定した訪問の担当は残し、ほかを試す重みで組み直します。「入らなかった訪問」へ移した訪問や、固定を外した訪問の手直しは消えます（AI が出したままの案は戻す先として残ります）。',
+        title: 'ピンの無い手直しを捨てて、作り直しますか？',
+        body: 'ピンの付いた訪問の担当は残し、ほかを組み直します。「入らなかった訪問」へ移した訪問と、ピンを外した訪問の手直しは消えます。',
         confirmLabel: '捨てて作り直す',
         tone: 'danger',
       }))
@@ -1082,7 +1077,7 @@ export default function PlanPage() {
       });
       endPrefAsk(forDate);
       if (dateRef.current === forDate) sel.reset();
-      toast(result.stopped ? '途中までの最良の案で組み直しました' : '固定を残して組み直しました');
+      toast(result.stopped ? '途中までの最良の案で組み直しました' : 'ピンを残して組み直しました');
     });
   };
 
@@ -1228,7 +1223,7 @@ export default function PlanPage() {
       setPrefBulk({ date, list });
     } else {
       setPrefBulk(null);
-      toast('次からも同じ担当にします（手直しの記憶）', { action: undoAction });
+      toast('次からも同じ担当にします', { action: undoAction });
     }
   };
   /** ［まとめて変える］：来週以降の今の案で担当を差し替えて固定（変えられない日は知らせる）。「元に戻す」で全部戻る */
@@ -1247,7 +1242,7 @@ export default function PlanPage() {
         : null,
     );
     toast(
-      r.changed.length > 0 ? `来週以降の ${r.changed.length}件を変えました（固定）` : '変えられる日がありませんでした',
+      r.changed.length > 0 ? `来週以降の ${r.changed.length}件を変えました` : '変えられる日がありませんでした',
       others.length > 0 ? { action: undoAction } : undefined,
     );
   };
@@ -1310,6 +1305,38 @@ export default function PlanPage() {
       target?.focus();
     });
   };
+  /**
+   * 訪問の詳細の欄を開く（PRD D301。null は新しい訪問をこの日に）。閉じたあとのフォーカスは開いた帯・カード（保存で作り直した回は
+   * 新しい ID の帯）、無ければ一覧の行の「開く」、それも無ければ開く前の要素
+   */
+  const openVisit = (id: string | null) =>
+    openVisitPanel({
+      ...(id ? { visitId: id } : { newVisit: { date } }),
+      returnFocus: (vid) => {
+        const v = vid ? CSS.escape(vid) : null;
+        const el = v
+          ? document.querySelector<HTMLElement>(
+              `.tl-band[data-visit="${v}"] .tl-band-btn, .route-item[data-visit="${v}"] .route-btn, [data-testid="visit-row-open"][data-visit="${v}"]`,
+            )
+          : null;
+        // 「その他 ▾」から足したときは、閉じた一覧の項目の代わりに「その他」のボタンへ
+        return el ?? (id ? null : document.querySelector<HTMLElement>('[data-testid="plan-more"]'));
+      },
+    });
+  /** 帯・カードの詳細の「詳細・変更」（訪問の詳細の欄を開く） */
+  const openOf = (id: string) => (
+    <button
+      type="button"
+      className="btn btn-small"
+      onClick={() => openVisit(id)}
+      title="日時・担当・取り消しを変える欄を開く"
+      data-testid="visit-open"
+    >
+      <WithIcon icon={PanelRightOpen} size={14}>
+        詳細・変更
+      </WithIcon>
+    </button>
+  );
   /** トーストの「元に戻す」（PRD D218）。トーストは前の描画の関数を持つので、押したときの最新の undoEdit を呼ぶ */
   const undoRef = useRef<() => void>(() => {});
   const undoAction = { label: '元に戻す', onClick: () => undoRef.current(), testId: 'plan-reassign-toast-undo' };
@@ -1328,9 +1355,9 @@ export default function PlanPage() {
     sel.follow(visitId, staffId);
     const opts = saved ? { action: undoAction } : undefined;
     if (!allowedFor(visitId, staffId)) {
-      toast(`${staffName(staffId)}さんへ移しました。必須の条件に合いません（組み直すとこの訪問は入りません）`, opts);
+      toast(`${staffName(staffId)}さんへ移しました。必須の条件に合わないので、作り直すとこの訪問は入りません`, opts);
     } else {
-      toast(`${staffName(staffId)}さんへ移しました（固定）`, opts);
+      toast(`${staffName(staffId)}さんへ移しました`, opts);
     }
   };
   /** 未割当へ移す（列から外して「入らなかった訪問」へ。固定は担当の固定なので外す） */
@@ -1411,7 +1438,7 @@ export default function PlanPage() {
     const forgetN = Object.keys(data.manualPrefs).length - remain;
     const ok = await confirmDialog({
       title: 'AIが出したままの案に戻しますか？',
-      body: `手直しと固定を捨てて、AIが出したままの案に戻します。${forgetN > 0 ? `固定と同じ担当の手直しの記憶 ${forgetN}件も消します。` : ''}`,
+      body: `手直しとピンを捨てて、AIが出したままの案に戻します。${forgetN > 0 ? `「次からも同じ担当」の覚え ${forgetN}件も消します。` : ''}`,
       confirmLabel: '捨てて元に戻す',
       tone: 'danger',
     });
@@ -1446,7 +1473,7 @@ export default function PlanPage() {
     const warns = adoptWarnings(curScore?.value?.dropped ?? 0, curScore?.value?.hardViolations.length ?? 0);
     const ok = await confirmDialog({
       title: 'この割当で確定しますか？',
-      body: `${warns.length > 0 ? `${warns.join('\n')}\n\n` : ''}この割当（手直し後）で確定します。各訪問の担当がこのとおりに書き換わり、${terms.staff}の画面にも出ます。\n（計算に入れていない訪問の担当はそのままです）`,
+      body: `${warns.length > 0 ? `${warns.join('\n')}\n\n` : ''}この割当で確定します。担当が決まり、${terms.staff}の画面にも出ます。`,
       confirmLabel: '確定する',
     });
     if (!ok) return false;
@@ -1703,7 +1730,7 @@ export default function PlanPage() {
     // 案A の列が使えない人（必須の違反・回れない列）は、その列だけ案A のまま動かさずに作る
     const heldText =
       x.held.length > 0
-        ? `${x.held.map(staffName).join('・')}さんの列は案A に必須の違反があるため、案A のまま動かしていません（その列は手で直してください）`
+        ? `${x.held.map(staffName).join('・')}さんの列は案A に守れない条件があるため、案A のまま動かしていません（その列は手で直してください）`
         : null;
     setAnnealNote(heldText ? { key, text: heldText } : null);
     run(
@@ -1745,7 +1772,7 @@ export default function PlanPage() {
         const sameAsA = JSON.stringify(alignRoutes(p, got.result.routes)) === JSON.stringify(alignRoutes(p, planA));
         toast(
           sameAsA
-            ? '案B は案A と同じになりました（動かしても良くならないか、変更の減点の方が大きいとき）'
+            ? '案B は案A と同じになりました。動かしても良くなりませんでした'
             : res.stopped
               ? '途中までの案B を出しました。案A と比べて選んでください'
               : '案B を作りました。案A と比べて選んでください',
@@ -1925,7 +1952,7 @@ export default function PlanPage() {
     if (!problem || !reassignInfo) return false;
     const ok = await confirmDialog({
       title: '振り直す前の案に戻しますか？',
-      body: '振り直す前の案（担当・固定）に戻します。',
+      body: '振り直す前の担当に戻します。',
       confirmLabel: '元の案に戻す',
     });
     if (!ok) return false;
@@ -1964,7 +1991,7 @@ export default function PlanPage() {
     });
     noteManual(visitId, staffId);
     sel.follow(visitId, staffId);
-    toast(`${staffName(staffId)}さんに入れました（固定）`, saved ? { action: undoAction } : undefined);
+    toast(`${staffName(staffId)}さんに入れました`, saved ? { action: undoAction } : undefined);
   };
 
   // ---- 訪問の取消・前の同じ曜日からコピー ----
@@ -2172,7 +2199,7 @@ export default function PlanPage() {
 
   /** 手直しの記憶で固定した訪問の説明（ADR-0043） */
   const prefNoteText = (sid: string) =>
-    `手直しの記憶：前に手で${staffName(sid)}さんにした（同じ曜日・同じ時間。作り直してもこの担当）`;
+    `前に手で${staffName(sid)}さんにしました。同じ曜日・時間の訪問は、作り直してもこの担当です`;
   /** 詳細の「なぜこの担当か」の1行（記憶で固定した訪問だけ） */
   const prefNoteOf = (id: string) => {
     const memo = remembered.get(id);
@@ -2201,7 +2228,7 @@ export default function PlanPage() {
           <span
             className="chip chip-red"
             data-testid="left-mark"
-            title="欠勤の時間と重なるのに振り直していない訪問です。差の欄の「もう一度振り直す」か、ドラッグで別の人へ移してください"
+            title="欠勤と重なっています。別の人へドラッグするか、「もう一度振り直す」を押してください"
           >
             <TriangleAlert size={12} aria-hidden="true" />
             {leftReasonText(stay)}（対応が必要）
@@ -2219,7 +2246,7 @@ export default function PlanPage() {
           </span>
         )}
         {pin && (
-          <span className="chip chip-pin" title={pinHint ? undefined : '固定（組み直しても担当を変えない）'}>
+          <span className="chip chip-pin" title={pinHint ? undefined : 'ピン（作り直しても担当を変えない）'}>
             <Pin size={12} strokeWidth={2.4} aria-hidden="true" />
             <Term k="pinned" plain={!pinHint} />
           </span>
@@ -2232,7 +2259,7 @@ export default function PlanPage() {
           </span>
         )}
         {hard?.map((h) => (
-          <span key={h} className="chip chip-red" title="必須の条件の違反">
+          <span key={h} className="chip chip-red" title="守れない条件">
             <ShieldAlert size={12} aria-hidden="true" />
             {h}
           </span>
@@ -2240,7 +2267,7 @@ export default function PlanPage() {
         {pin && (
           <IconButton
             icon={PinOff}
-            label="固定を外す"
+            label="ピンを外す"
             className="icon-btn-sm"
             onClick={() => unpin(id)}
             disabled={!!running}
@@ -2307,6 +2334,7 @@ export default function PlanPage() {
         dragging={dragging === id}
         detail={
           <>
+            {openOf(id)}
             {whoOf(id, ownerId)}
             {prefNoteOf(id)}
             {reassignOf(id, ownerId)}
@@ -2360,7 +2388,7 @@ export default function PlanPage() {
       );
     if (unfit) mark('unfit', 'is-red', '資格✗（種類の担当に必要な条件に合わない）', '資格✗');
     if (hard && !unfit)
-      mark('hard', 'is-red', `必須の条件の違反：${hard.join('・')}`, <ShieldAlert size={11} aria-hidden="true" />);
+      mark('hard', 'is-red', `守れない条件：${hard.join('・')}`, <ShieldAlert size={11} aria-hidden="true" />);
     if (subFrom) mark('sub', 'is-move', `代行（元の担当：${staffName(subFrom)}さん）`, '代', 'substitute');
     if (shift !== undefined) {
       const txt = shift > 0 ? `+${shift}分` : `−${-shift}分`;
@@ -2370,7 +2398,7 @@ export default function PlanPage() {
       mark(
         'pin',
         'is-pin',
-        '固定（組み直しても担当を変えない）',
+        'ピン（作り直しても担当を変えない）',
         <Pin size={11} strokeWidth={2.4} aria-hidden="true" />,
       );
     const memo = remembered.get(id);
@@ -2392,6 +2420,7 @@ export default function PlanPage() {
       note: notes.join('・') || undefined,
       detail: (
         <>
+          {openOf(id)}
           <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
             <strong>
               {client ? <PersonButton kind="client" id={client.id} name={client.displayName} /> : '（不明）'}
@@ -2651,7 +2680,7 @@ export default function PlanPage() {
       typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
       leaveVisits={[...m.leaveVisits].sort((a, b) => a.earliestStart.localeCompare(b.earliestStart))}
       leaveNoteOf={(v) => leaveOn(data.clientLeaves, v.clientId, v.date)?.note ?? ''}
-      onEdit={setEditing}
+      onEdit={(id) => openVisit(id)}
       onCancel={cancelVisit}
     />
   );
@@ -2894,7 +2923,7 @@ export default function PlanPage() {
           : !c.run
             ? `${c.preset.name}の案を作る`
             : remake
-              ? `${c.preset.name}の案を作り直して今の案にする${pt ? `（記録は${pt}）` : ''}`
+              ? `${c.preset.name}の案を作り直して今の案にする${pt ? `（前は${pt}）` : ''}`
               : `${c.preset.name}の案を今の案にする${pt ? `（${pt}）` : ''}`;
         // 詳細（説明・移動などの内訳・達成・作り直しの注記）は aria-describedby で読む
         const idOf = (part: string) => `${cardIdBase}-${i}-${part}`;
@@ -2924,7 +2953,7 @@ export default function PlanPage() {
                 : !c.run
                   ? `押すと「${c.preset.name}」の重みで案を作ります`
                   : remake
-                    ? `記録のあとにデータが変わったので、押すと「${c.preset.name}」の重みで作り直します`
+                    ? `データが変わったので、押すと「${c.preset.name}」の重みで作り直します`
                     : `押すと「${c.preset.name}」の案を今の案にします（計算しません）`
             }
             onClick={() => {
@@ -2958,7 +2987,7 @@ export default function PlanPage() {
                     <CircleOff size={12} aria-hidden="true" /> 入らない {sc.dropped}件
                   </span>
                   <span className={sc.hardViolations.length > 0 ? 'error' : ''}>
-                    <ShieldAlert size={12} aria-hidden="true" /> 必須の違反 {sc.hardViolations.length}件
+                    <ShieldAlert size={12} aria-hidden="true" /> 守れない条件 {sc.hardViolations.length}件
                   </span>
                 </span>
                 {summary && (
@@ -3120,20 +3149,21 @@ export default function PlanPage() {
     if (suddenToBar.current) requestAnimationFrame(goToBar);
   };
 
-  /** 操作の行の「その他 ▾」（PRD D279）：訪問を追加・メールで送る・使い方（ときどき使う操作） */
+  /** 操作の行の「その他 ▾」（PRD D279）：訪問を追加・使い方（ときどき使う操作）。メールで送るは見出しへ出した（PRD D306） */
   const moreItems: MenuItem[] = [
     {
       key: 'add',
       label: '訪問を追加',
       icon: Plus,
-      disabled: m.clients.length === 0 ? `${terms.client}がいません` : false,
-      onSelect: () => setEditing('new'),
+      disabled:
+        m.clients.length === 0
+          ? `${terms.client}がいません`
+          : compact
+            ? 'スマホの幅では訪問を足しません（パソコン・タブレットで）'
+            : false,
+      onSelect: () => openVisit(null),
       testId: 'plan-visit-add',
     },
-    // 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017）
-    ...(mailOn
-      ? [{ key: 'mail', label: 'メールで送る', icon: Mail, onSelect: () => setPanel('mail'), testId: 'day-mail' }]
-      : []),
     {
       key: 'help',
       label: helpOpen ? '使い方を閉じる' : '使い方',
@@ -3167,6 +3197,12 @@ export default function PlanPage() {
                   <TriangleAlert size={12} aria-hidden="true" />
                   {confirmState === 'diff' ? <Term k="confirmDiff" /> : <Term k="unconfirmed" />}
                 </span>
+              )}
+              {/* 担当ごとの予定をメールアプリで開く（PRD D92・D306。ADR-0017）。毎日送るので見出しの主ボタンの隣に枠のボタンで置く */}
+              {mailOn && (
+                <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
+                  <WithIcon icon={Mail}>予定をメールで送る</WithIcon>
+                </button>
               )}
               {/* 主ボタン（塗り）は「この割当で確定」だけ。確定済みの日は枠にして主ボタンを置かない（PRD D238） */}
               <button
@@ -3208,10 +3244,10 @@ export default function PlanPage() {
           {/* 点数の色（PRD D266）：入らない・必須の違反があるときだけ要対応の色。無ければ点が低くても赤にしない（D228） */}
           <span
             className={`plan-oneline-score${cs.dropped > 0 || hardCount > 0 ? ' is-alert' : ''}`}
-            title={`点数の基準：${scoreRulerName}`}
+            title={`「${scoreRulerName}」の重みで付けた点数`}
             data-testid="plan-score"
           >
-            <strong data-testid="plan-total">{hundredNow ?? '—'}</strong>点
+            <Term k="score" /> <strong data-testid="plan-total">{hundredNow ?? '—'}</strong>点
             {hardCount > 0 && (
               <span className="chip chip-warn" title={HARD_NOTE}>
                 参考
@@ -3333,8 +3369,7 @@ export default function PlanPage() {
                   {x.note && `（${x.note}）`}
                 </Fragment>
               ))}
-              {leaveInConfirmed &&
-                '（確定した日です。必要なら案を作り直して確定し直してください。休みの訪問の担当は、休みを消したときのために残します）'}
+              {leaveInConfirmed && '。確定した日なので、必要なら作り直して確定し直してください'}
             </span>
           </WithIcon>
           <button type="button" className="btn btn-small" onClick={() => setColView('list')}>
@@ -3347,7 +3382,7 @@ export default function PlanPage() {
           <WithIcon icon={TriangleAlert} size={16}>
             {/* flex の中で文が切れないよう1つの span に包む */}
             <span>
-              この案を作ったあとに、訪問・{terms.staff}・稼働時間・<Term k="stale">条件が変わりました</Term>
+              作ったあとに、重み・訪問・{terms.staff}の情報などの<Term k="stale">条件が変わりました</Term>。
             </span>
           </WithIcon>
           <span className="sub" data-testid="plan-stale-with">
@@ -3364,7 +3399,7 @@ export default function PlanPage() {
         <div className="plan-band is-warn row" data-testid="band-over-span">
           <WithIcon icon={Timer} size={16}>
             <span className="band-text">
-              出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限の{data.org.spanLimitHours}時間を超える
+              出勤〜退勤（拘束）が上限の{data.org.spanLimitHours}時間を超える
               {terms.staff}：
               {overSpan.map((x, i) => {
                 const name = staffById.get(x.staffId)?.name ?? '';
@@ -3407,17 +3442,20 @@ export default function PlanPage() {
         </div>
       )}
       {aiPlan && stale && !autoMade && !planIsStale && (
-        <div className="plan-band is-warn row">
+        <div className="plan-band is-warn row" data-testid="plan-stale-day">
           <WithIcon icon={TriangleAlert} size={16}>
             <span>
-              作ったあとに<Term k="stale">条件が変わりました</Term>
+              作ったあとに、
+              <Term k="dayWeights" />
+              を変えました。
             </span>
           </WithIcon>
-          <Hint>
-            点数はいつも点数の基準のプリセット「{scoreRulerName}
-            」の重みで付けます（条件を変えても点の付け方は変わりません）。「案を変える」の「AI
-            にもう一度作らせる」か「固定した訪問は残して、ほかを作り直す」で作り直せます。
-          </Hint>
+          <span className="sub">作り直すと、今の重みで組み直します。</span>
+          <button type="button" className="btn btn-small" disabled={!!createT.disabled} onClick={() => recreate()}>
+            <WithIcon icon={RefreshCw} size={14}>
+              作り直す
+            </WithIcon>
+          </button>
         </div>
       )}
 
@@ -3442,7 +3480,7 @@ export default function PlanPage() {
             type="button"
             className="btn btn-text"
             aria-disabled={undoable ? undefined : true}
-            title={undoable ? '直前の手直し（担当を移す・固定を外す）を1手だけ戻します' : `戻せません：${undoWhy}`}
+            title={undoable ? '直前の手直しを1つだけ戻します' : `戻せません：${undoWhy}`}
             onClick={() => undoable && undoEdit()}
             data-testid="plan-reassign-undo"
           >
@@ -3471,14 +3509,33 @@ export default function PlanPage() {
           </fieldset>
         )}
         {progressView}
-        {/* 訪問を追加・メールで送る・使い方は「その他 ▾」にたたむ（PRD D279） */}
+        {/* 訪問を追加・使い方は「その他 ▾」にたたむ（PRD D279） */}
         <MenuButton label="その他" items={moreItems} testId="plan-more" className="plan-more" />
       </div>
       {helpOpen && (
         <div ref={helpRef} className="hint-body plan-help" tabIndex={-1} data-testid="plan-help">
-          訪問を別の{terms.staff}の列へドラッグすると、その{terms.staff}
-          の回る順番の中で最も費用の少ない位置に入り、固定になります（「入らなかった訪問」へ移すと未割当になり、固定も外れます）。訪問を押して「担当を変える」から選んでも同じです（キーボード・タッチでも）。直前の手直しは「元に戻す」で1手だけ戻せます。「案を変える」の「固定した訪問は残して、ほかを作り直す」は、固定した訪問の担当を変えずに残りを組み直します。手直しが済んだら「この割当で確定」を押します。
-          名前の下はその日の稼働時間帯です。時間の約束に間に合わない・稼働時間帯に収まらないと、必須の違反として赤い枠になります。押すと理由（点の内訳）が出ます。ピンは固定。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間を強調します。時間軸では、灰色は稼働時間帯の外・途中の休み、斜線は欠勤、点線の枠は待ちです。ドラッグ中は、落とす列のその訪問の時刻に、入る（緑）か入らない（赤）かの影が出ます。
+          <ul className="plan-help-list">
+            <li>
+              担当を変えるには、訪問を別の{terms.staff}
+              の列へドラッグします。訪問を押して「担当を変える」から選んでも同じです。
+              移した訪問は、その人の回る順番のいちばん無駄の少ない所に入り、ピンが付きます（ピンの付いた訪問は、AI
+              が作り直しても担当を変えません）。
+            </li>
+            <li>「入らなかった訪問」へ移すと、担当なしに戻ります。</li>
+            <li>直前の1回だけ、「元に戻す」で戻せます。</li>
+            <li>
+              ピンの付いた訪問はそのままで、ほかを AI
+              に組み直させるには「案を変える」の「固定した訪問は残して、ほかを作り直す」を使います。
+            </li>
+            <li>直し終わったら「この割当で確定」を押し、「予定をメールで送る」で{terms.staff}に知らせます。</li>
+            <li>
+              名前の下の時間は、その日に働ける時間です。約束の時間に間に合わない訪問や、働ける時間からはみ出す訪問は赤い枠になります。訪問を押すと理由が出ます。
+            </li>
+            <li>「自宅から」「自宅まで」や移動の時間を押すと、地図でその道のりが太くなります。</li>
+            <li>
+              時間軸の灰色は働かない時間・休憩、斜線は欠勤、点線の枠は待ち時間です。ドラッグしている間は、落とす列に入れられるか（緑）入れられないか（赤）が出ます。
+            </li>
+          </ul>
           <div>
             <button type="button" className="btn btn-small btn-text" onClick={() => setHelpOpen(false)}>
               使い方を閉じる
@@ -3487,27 +3544,12 @@ export default function PlanPage() {
         </div>
       )}
 
-      {editing && (
-        <div ref={formRef} className="plan-form">
-          <VisitForm
-            key={editing}
-            date={date}
-            visit={
-              editing !== 'new' ? (visitById.get(editing) ?? m.leaveVisits.find((v) => v.id === editing) ?? null) : null
-            }
-            clients={m.clients}
-            onClose={() => setEditing(null)}
-            onSaved={toast}
-          />
-        </div>
-      )}
-
       {visits.length === 0 && m.leaveVisits.length > 0 ? (
         visitList
       ) : visits.length === 0 ? (
         <div className="card">
           <Empty icon={CalendarDays}>
-            この日の訪問はまだありません（「その他」の「訪問を追加」か、「案を変える」の「前の同じ曜日からコピー」）
+            この日の訪問はまだありません。「その他」の「訪問を追加」か、「案を変える」の「前の同じ曜日からコピー」で足せます。
           </Empty>
         </div>
       ) : (
@@ -3739,7 +3781,7 @@ export default function PlanPage() {
               </fieldset>
               <p className="sub">
                 当日キャンセルは、月の予定と{terms.client}
-                ごとの月の集計に回数が出ます（請求はしません）。今の案はそのままで、この訪問は計算から外れます。
+                ごとの集計に回数が出ます。今の案はそのままで、この訪問だけ外れます。
               </p>
             </>
           )}
@@ -3770,11 +3812,11 @@ export default function PlanPage() {
               {stale && autoMade && (
                 <div className="sub row">
                   <WithIcon icon={TriangleAlert} size={14}>
-                    プリセット「{madeBy?.name}」の条件で作った案です
+                    「{madeBy?.name}」の重みで作った案です
                   </WithIcon>
                   <Hint>
-                    この日だけ試す重みとは違います。点数はいつも点数の基準のプリセット「{scoreRulerName}
-                    」の重みで付けます。試す重みで作るには「案を変える」の「AI にもう一度作らせる」を押してください。
+                    この日だけの重みとは違う重みです。この日だけの重みで作るには、「案を変える」の「AI
+                    にもう一度作らせる」を押します。
                   </Hint>
                 </div>
               )}
@@ -3807,9 +3849,12 @@ export default function PlanPage() {
                     <Term k="scoreBase" />：{scoreRulerName}
                   </span>
                   <Hint>
-                    プリセットごとに、この日の記録のうち、同じ条件・いまのデータで作った案（無ければ重みが一致する最新の案）です。カードを押すと、その日の条件をそのプリセットの重みにして、その案を今の案にします（同じ条件・いまのデータで作った案なら計算せずに切り替えます。記録のあとにデータが変わった案は「データが変わったので押すと作り直します」と出し、押すと計算して作ります）。
-                    {rulerText(scoreRulerName)}（比較の画面と同じ）。
-                    {SCORE_TEXT}。王冠は一番点の高い案です。
+                    <ul className="hint-list">
+                      <li>プリセットごとに、この日に作った案を出します。</li>
+                      <li>カードを押すと、その案を今の案にします。データが変わった案は、押すと作り直します。</li>
+                      <li>{rulerText(scoreRulerName)}。</li>
+                      <li>王冠は、いちばん点の高い案です。</li>
+                    </ul>
                   </Hint>
                 </span>
               }
@@ -3910,19 +3955,6 @@ const NARROW_QUERY = '(max-width: 900px)';
 
 /** 地図を時間軸の横に並べる幅（PRD D63） */
 const WIDE_MAP_QUERY = '(min-width: 1280px)';
-
-/** メディアクエリが合っているか（幅を変えたら追う） */
-function useMedia(query: string): boolean {
-  const [on, setOn] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = () => setOn(mq.matches);
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return on;
-}
 
 /** 狭い幅（900px 以下）か印刷中か。印刷は beforeprint の中ですぐ描き直す（印刷の画像に間に合わせる） */
 function useNarrowOrPrint(): boolean {
@@ -4032,7 +4064,7 @@ function PlanSummary({
         )}
         <Stat
           icon={hard > 0 ? ShieldAlert : ShieldCheck}
-          label="必須の違反"
+          label="守れない条件"
           tone={hard > 0 ? 'danger' : 'ok'}
           value={hard}
           unit="件"
@@ -4085,8 +4117,8 @@ function BalanceChips({
           件数の偏り
         </strong>
         <Hint>
-          {b ? '色のついた帯が目安（稼働時間に比例）です。' : '負担の均等の条件が無効です。'}
-          {b?.cap ? '必須：目安の上＋1件までです。' : ''}
+          {b ? '色のついた帯が目安です。働ける時間が長い人ほど多くなります。' : '負担の均等の条件が無効です。'}
+          {b?.cap ? '必須なので、目安より1件多いところまでです。' : ''}
         </Hint>
       </div>
       {rows.map(({ id, i, n }) => {
@@ -4244,7 +4276,7 @@ function VisitList({
                         </span>
                       )}
                       {n.hard?.map((h) => (
-                        <span key={h} className="chip chip-red" title="必須の条件の違反">
+                        <span key={h} className="chip chip-red" title="守れない条件">
                           <ShieldAlert size={12} aria-hidden="true" />
                           {h}
                         </span>
@@ -4253,7 +4285,13 @@ function VisitList({
                   </td>
                   <td className="nowrap">
                     <div className="actions">
-                      <IconButton icon={Pencil} label={`${label}を編集`} onClick={() => onEdit(id)} />
+                      <IconButton
+                        icon={PanelRightOpen}
+                        label={`${label}を開く`}
+                        onClick={() => onEdit(id)}
+                        data-testid="visit-row-open"
+                        data-visit={id}
+                      />
                       <IconButton icon={Ban} label={`${label}を取り消す`} tone="danger" onClick={() => onCancel(v)} />
                     </div>
                   </td>
@@ -4287,7 +4325,13 @@ function VisitList({
                   </td>
                   <td className="nowrap">
                     <div className="actions">
-                      <IconButton icon={Pencil} label={`${label}を編集`} onClick={() => onEdit(v.id)} />
+                      <IconButton
+                        icon={PanelRightOpen}
+                        label={`${label}を開く`}
+                        onClick={() => onEdit(v.id)}
+                        data-testid="visit-row-open"
+                        data-visit={v.id}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -4334,17 +4378,13 @@ function ReassignMenu({
 }) {
   /** 候補は一覧を開いているときだけ計算する（「受けられる人」の CandidateBox と同じ。訪問を選ぶ・ドラッグのたびに計算しない） */
   const [open, setOpen] = useState(false);
-  const list = useMemo(
-    () => (open ? (attempt(() => candidatesFor(problem, routes, visitId)).value ?? []) : []),
-    [open, problem, routes, visitId],
-  );
-  const vi = problem.visits.findIndex((v) => v.id === visitId);
-  if (vi < 0) return null;
-  const shown = new Set(staffIds);
-  const indexOf = (sid: string) => problem.staff.findIndex((s) => s.id === sid);
-  const allowed = (sid: string) => problem.allowed[vi]?.[indexOf(sid)] === true;
-  const others = list.filter((c) => c.staffId !== ownerId && shown.has(c.staffId));
-  const sorted = [...others.filter((c) => allowed(c.staffId)), ...others.filter((c) => !allowed(c.staffId))];
+  // 判定は訪問の詳細の欄と同じ関数（lib/reassignMenu の reassignChoices。ADR-0051）。出す人は列を出している人
+  const sorted = useMemo(() => {
+    if (!open) return [];
+    const shown = new Set(staffIds);
+    return reassignChoices(problem, routes, visitId, ownerId, (sid) => shown.has(sid)).filter((c) => !c.current);
+  }, [open, problem, routes, visitId, ownerId, staffIds]);
+  if (!problem.visits.some((v) => v.id === visitId)) return null;
   const items: MenuItem[] = [
     ...(ownerId
       ? [
@@ -4353,7 +4393,7 @@ function ReassignMenu({
             group: '今の担当',
             testId: 'plan-reassign-current',
             label: staffName(ownerId),
-            note: pinned ? '固定' : undefined,
+            note: pinned ? 'ピン' : undefined,
             description: CURRENT_TEXT,
             current: true,
             disabled: true,
@@ -4361,18 +4401,17 @@ function ReassignMenu({
           },
         ]
       : []),
-    ...sorted.map((c, i): MenuItem => {
-      const t = reassignItemText(c, problem.reasons[vi]?.[indexOf(c.staffId)] ?? [], allowed(c.staffId));
-      return {
+    ...sorted.map(
+      (c, i): MenuItem => ({
         key: `to-${c.staffId}`,
         group: i === 0 ? `ほかの${staffTerm}へ移す` : undefined,
         testId: 'plan-reassign-item',
         label: staffName(c.staffId),
-        description: t.description,
-        disabled: busy || t.disabled,
+        description: c.description,
+        disabled: busy || c.disabled,
         onSelect: () => onMove(c.staffId),
-      };
-    }),
+      }),
+    ),
     // 担当の無い訪問で移せる人がいなければ、そう書く（一覧を空にしない）
     ...(!ownerId && open && sorted.length === 0
       ? [

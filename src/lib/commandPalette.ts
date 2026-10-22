@@ -1,17 +1,19 @@
 // コマンドパレット（Ctrl+K。PRD D181〜D183。ADR-0027）の中身と絞り込みを決める純粋関数。
 // 行き先は今ある URL だけ（画面・`?do=` の入口・`?id=` の閲覧の欄）。データは書き換えない
-import type { Client, Staff, Terms } from '../contracts/documents';
+import type { Client, Staff, Terms, Visit } from '../contracts/documents';
 import type { Features } from '../contracts/features';
+import { addDays } from '../domain/time';
 import { STAGE_LABELS } from './clientStage';
+import { dateText } from './common';
 import { isHrefOn } from './features';
 import { addMonths, ymOf } from './month';
 import { absenceHref, isNavAction, type MenuItem, type NavSection } from './nav';
 import { recreateTodayHref } from './rebuildBand';
 import { normalizeKana } from './search';
 
-/** 候補の種類（出す順）：操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉 */
-export type PaletteKind = 'action' | 'screen' | 'client' | 'staff';
-export const PALETTE_KINDS: readonly PaletteKind[] = ['action', 'screen', 'client', 'staff'];
+/** 候補の種類（出す順）：操作 → 画面 → 〈利用者さん〉 → 〈スタッフ〉 → 訪問（PRD D304） */
+export type PaletteKind = 'action' | 'screen' | 'client' | 'staff' | 'visit';
+export const PALETTE_KINDS: readonly PaletteKind[] = ['action', 'screen', 'client', 'staff', 'visit'];
 
 /** 候補の1件 */
 export type PaletteItem = {
@@ -28,6 +30,10 @@ export type PaletteItem = {
   date?: string;
   /** 比べる形（normalizeKana）にそろえた語：名前・よみ・別名。先頭が名前 */
   keys: readonly string[];
+  /** 選ぶと画面を移らずに訪問の詳細の欄を開く（訪問の候補。PRD D304） */
+  visitId?: string;
+  /** 選ぶと画面を移らずに行う操作（'visit-add'＝訪問の詳細の欄の新規） */
+  op?: 'visit-add';
 };
 
 /** 人の候補を種類ごとにいくつまで出すか（残りは「ほか N人」） */
@@ -44,6 +50,7 @@ export function paletteItem(raw: Omit<PaletteItem, 'keys'> & { words?: readonly 
 export function paletteKindLabel(kind: PaletteKind, terms: Pick<Terms, 'client' | 'staff'>): string {
   if (kind === 'action') return '操作';
   if (kind === 'screen') return '画面';
+  if (kind === 'visit') return '訪問';
   return kind === 'client' ? terms.client : terms.staff;
 }
 
@@ -129,7 +136,7 @@ export function paletteScreens(
 /**
  * 操作の候補（区切り1〜5 で足した入口。PRD D182）：欠勤・キャンセルを登録・日の予定（今日）・今月（と来月）の案をまとめて作る・
  * 要対応・確定していない日・条件が変わった日を作り直す・問い合わせに答える。today は日本時間の今日。
- * customRules（この日だけ試す重みがどのプリセットとも違う）なら「今日の案を試す重みで作り直す」（`?do=recreate`。D166・D234）も。
+ * customRules（この日だけ試す重みがどのプリセットとも違う）なら「今日の案を日の予定の重みで作り直す」（`?do=recreate`。D166・D234）も。
  * features で切った機能の操作（欠勤・キャンセル・問い合わせ・作り直す）は出さない（PRD D213。lib/features の表から引く）
  */
 export function paletteActions(
@@ -204,7 +211,7 @@ export function paletteActions(
           paletteItem({
             id: 'action:recreate',
             kind: 'action',
-            label: '今日の案を試す重みで作り直す',
+            label: '今日の案を日の予定の重みで作り直す',
             hint: '日の予定',
             to: recreateTodayHref(today),
             date: today,
@@ -212,6 +219,16 @@ export function paletteActions(
           }),
         ]
       : []),
+    paletteItem({
+      id: 'action:visit-add',
+      kind: 'action',
+      label: '訪問を追加',
+      hint: '訪問の詳細の欄',
+      // 選ぶと画面を移らずに欄を開く（to は使わない。機能の表の整合のため日の予定を書く）
+      to: '/plan',
+      op: 'visit-add',
+      words: ['ほうもんをついか', 'ついか', 'ほうもん', 'たんぱつ'],
+    }),
     paletteItem({
       id: 'action:vacancy',
       kind: 'action',
@@ -256,6 +273,111 @@ export function palettePeople(
   ];
 }
 
+/** 〈利用者さん〉ごとの訪問（日付・開始の順）。打ってから引くための索引（パレットを開いている間 memo） */
+export type VisitIndex = ReadonlyMap<string, readonly Visit[]>;
+
+export function visitIndex(visits: readonly Visit[]): VisitIndex {
+  const m = new Map<string, Visit[]>();
+  for (const v of visits) {
+    const list = m.get(v.clientId);
+    if (list) list.push(v);
+    else m.set(v.clientId, [v]);
+  }
+  const key = (v: Visit) => `${v.date} ${v.earliestStart}`;
+  for (const list of m.values()) list.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  return m;
+}
+
+/** 日付の語（「10/28」「10月28日」「2026-10-28」「今日・きょう」「明日・あした」「あさって」）を日付に。日付でなければ null */
+export function paletteDate(term: string, today: string): string | null {
+  const t = term.normalize('NFKC').trim();
+  if (/^(今日|きょう)$/.test(t)) return today;
+  if (/^(明日|あした|あす)$/.test(t)) return addDays(today, 1);
+  if (/^(明後日|あさって)$/.test(t)) return addDays(today, 2);
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+  const md = iso ? null : /^(\d{1,2})(?:\/|月)(\d{1,2})日?$/.exec(t);
+  if (!iso && !md) return null;
+  const y = iso ? Number(iso[1]) : Number(today.slice(0, 4));
+  const m = Number(iso ? iso[2] : md?.[1]);
+  const d = Number(iso ? iso[3] : md?.[2]);
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const valid = (x: string) => {
+    const back = new Date(`${x}T00:00:00Z`);
+    return !Number.isNaN(back.getTime()) && back.toISOString().slice(0, 10) === x;
+  };
+  if (iso) {
+    const date = `${y}-${pad(m)}-${pad(d)}`;
+    return valid(date) ? date : null;
+  }
+  // 年を書かない日付は、去年・今年・来年のうち今日に近い方（12月に「1/5」は来年、1月に「12/28」は去年）
+  const far = (x: string) => Math.abs(Date.parse(`${x}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`));
+  const cands = [y - 1, y, y + 1].map((yy) => `${yy}-${pad(m)}-${pad(d)}`).filter(valid);
+  if (cands.length === 0) return null;
+  return cands.reduce((a, b) => (far(b) < far(a) ? b : a));
+}
+
+/** 訪問の候補をいくつまで出すか */
+export const PALETTE_VISITS_LIMIT = 6;
+
+/**
+ * 訪問の候補（PRD D304）：打った語を日付の語と名前の語に分け、名前の語がすべて〈利用者さん〉の名前・よみに含まれる人の訪問。
+ * 日付があればその日の回（取り消しも）、無ければ今日以降の近い回（取り消しを除く）。名前の語が無ければ出さない。
+ * clients は palettePeople の〈利用者さん〉の候補（語をそろえ済み）。describe は補足（担当・取り消し）
+ */
+export function paletteVisits(
+  query: string,
+  clients: readonly PaletteItem[],
+  index: VisitIndex,
+  today: string,
+  describe: (v: Visit) => string,
+  limit: number = PALETTE_VISITS_LIMIT,
+): PaletteItem[] {
+  const raw = query.split(/[\s　]+/).filter((x) => x !== '');
+  let date: string | null = null;
+  let dateWord: string | null = null;
+  const names: string[] = [];
+  for (const r of raw) {
+    const d: string | null = date === null ? paletteDate(r, today) : null;
+    if (d) {
+      date = d;
+      dateWord = r;
+    } else {
+      const n = normalizeKana(r);
+      if (n) names.push(n);
+    }
+  }
+  // 「あす」「きょう」などのかなの日付の語しか名前が無ければ、名前（「あすか」の打ちかけ）として読む
+  if (names.length === 0 && dateWord && /^[ぁ-ん]+$/.test(normalizeKana(dateWord))) {
+    names.push(normalizeKana(dateWord));
+    date = null;
+  }
+  if (names.length === 0) return [];
+  const hit = clients.filter((c) => c.kind === 'client' && names.every((t) => c.keys.some((k) => k.includes(t))));
+  const found: { v: Visit; name: string }[] = [];
+  for (const c of hit.slice(0, 20)) {
+    const list = index.get(c.id.slice('client:'.length)) ?? [];
+    let n = 0;
+    for (const v of list) {
+      if (date !== null ? v.date !== date : v.date < today || v.cancelled) continue;
+      found.push({ v, name: c.label });
+      n++;
+      if (date === null && n >= limit) break;
+    }
+  }
+  const key = (x: { v: Visit }) => `${x.v.date} ${x.v.earliestStart}`;
+  found.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  return found.slice(0, limit).map(({ v, name }) => ({
+    id: `visit:${v.id}`,
+    kind: 'visit' as const,
+    label: `${name} ${dateText(v.date)} ${v.earliestStart}`,
+    hint: describe(v),
+    to: '',
+    keys: [],
+    visitId: v.id,
+  }));
+}
+
 /** 絞り込んだ結果：種類ごとのまとまり（空のまとまりは出さない）と、上から順の並び（矢印で動く順） */
 export type PaletteResult = {
   groups: { kind: PaletteKind; items: PaletteItem[]; rest: number }[];
@@ -284,6 +406,7 @@ export function filterPalette(
   const whole = terms.join('');
   const groups: PaletteResult['groups'] = [];
   for (const kind of PALETTE_KINDS) {
+    if (kind === 'visit') continue;
     const people = kind === 'client' || kind === 'staff';
     if (people && terms.length === 0) continue;
     const head: PaletteItem[] = [];

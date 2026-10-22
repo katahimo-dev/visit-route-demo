@@ -2457,3 +2457,12 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
 .row-open:hover > td {
   background: #fbf3ec;
 }
+
+/* 説明（Hint）の中の箇条書き（PRD D307：要点を1行ずつ） */
+.hint-list {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

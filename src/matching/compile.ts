@@ -119,14 +119,14 @@ export const ALLOWED_STAFF_RULE_ID = 'allowedStaff';
 /** 欠勤で可にならない組の理由の文（ADR-0011。ruleId は 'slot'） */
 export const ABSENT_ALL_DAY = '欠勤（終日）';
 /** 途中の欠勤で、その日の稼働時間帯が全部なくなったとき */
-export const ABSENT_NO_HOURS = '欠勤で稼働時間がない';
+export const ABSENT_NO_HOURS = '欠勤で働ける時間がない';
 export const ABSENCE_OVERLAP = '欠勤の時間と重なる';
 /** 最終勤務日の後（PRD D71。ADR-0015。ruleId は 'slot'） */
 export const AFTER_LAST_DAY = '最終勤務日の後';
 
 /** 手直しで固定した訪問の、固定した担当以外の可否の原因 */
 export const PIN_RULE_ID = 'pin';
-export const PIN_LABEL = '固定（手直し）';
+export const PIN_LABEL = 'ピン（手直し）';
 
 /**
  * その日の問題を作る（キャンセルした訪問・休止中のスタッフ/訪問先・休み（ADR-0013）の〈利用者さん〉の訪問は入れない）。
@@ -246,7 +246,7 @@ export function compile(data: CompileInput, date: string, pins?: Record<string, 
           points: INF,
         });
       } else if (pv.earliest <= pv.latest && !fits(ps.slots)) {
-        const label = day.absence && fits(day.base) ? ABSENCE_OVERLAP : '稼働時間帯に作業が収まらない';
+        const label = day.absence && fits(day.base) ? ABSENCE_OVERLAP : '働ける時間に収まらない';
         out.push({ ruleId: 'slot', label, points: INF });
       }
       const level = compatOn ? (data.compat[client.id]?.[s.id] ?? 0) : 0;

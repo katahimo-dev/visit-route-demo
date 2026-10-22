@@ -69,7 +69,7 @@ export type HomeInput = {
 
 const ATTENTION_LABEL: Record<AttentionKind, string> = {
   unassigned: '入らない訪問がある日',
-  hard: '必須の違反がある日',
+  hard: '守れない条件がある日',
   absentLeft: '欠勤の人に訪問が残る日',
   stale: '条件が変わった日',
   overSpan: '出勤〜退勤（拘束）が上限を超える日',
@@ -193,7 +193,7 @@ function todayTask(today: string, s: DayStatus | undefined, staff: number): Home
     };
   const issues = [
     s.absentLeft > 0 ? `欠勤の人に残る ${s.absentLeft}件` : '',
-    s.hard > 0 ? `必須の違反 ${s.hard}件` : '',
+    s.hard > 0 ? `守れない条件 ${s.hard}件` : '',
   ].filter(Boolean);
   const warn = s.unassigned > 0 || s.absentLeft > 0 || s.hard > 0;
   const state = s.state === 'confirmed' ? '確定済み' : s.state === 'diff' ? '未確定の変更あり' : '未確定';
@@ -240,7 +240,7 @@ export function homeEntries(today: string, terms: Pick<Terms, 'client' | 'staff'
       key: 'staff',
       to: '/staff',
       title: `${terms.staff}を探す`,
-      detail: '一覧から開いて、稼働時間・特性・休みを見る・直す',
+      detail: '一覧から開いて、勤務の時間・特性・休みを見る・直す',
     },
   ];
   return all.filter((e) => isHrefOn(features, e.to));

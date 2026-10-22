@@ -82,7 +82,7 @@ describe('AI案の記録（ADR-0005）', () => {
         PRESETS,
       ),
     ).toBe('条件を変えた案');
-    expect(runLabel(rules, 2, PRESETS)).toBe('標準・固定2件で組み直し');
+    expect(runLabel(rules, 2, PRESETS)).toBe('標準・ピン2件で組み直し');
   });
 
   it('名前はデータのプリセットから引く（名前を変えたら新しい名前、足したプリセットにも一致する）', () => {

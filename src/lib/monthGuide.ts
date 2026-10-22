@@ -60,7 +60,7 @@ export function cellGuide(x: CellGuideInput): string[] {
     );
   else out.push('白い背景＝訪問の無い日');
   if (x.care)
-    out.push(`${x.attention ? '赤い枠' : '赤い点・赤い枠'}＝要対応（入らない訪問・必須の違反・休みの人に訪問）`);
+    out.push(`${x.attention ? '赤い枠' : '赤い点・赤い枠'}＝要対応（入らない訪問・守れない条件・休みの人に訪問）`);
   if (x.attention)
     out.push(
       '赤い「要対応 N」の札＝要対応の件数（右の「要対応」の欄の行の数。入らない・休みの人に・条件が変わった・拘束超・欠勤）',
@@ -70,11 +70,11 @@ export function cellGuide(x: CellGuideInput): string[] {
     if (x.count > 0) out.push('右上の「N件」＝この日の訪問の件数');
     if (x.types) out.push('色の帯＝訪問の種類ごとの件数');
     if (x.resting > 0 && x.restShown !== false)
-      out.push(`「休 N」＝休む${x.staffTerm}の人数${x.requested > 0 ? '（「（希 N）」はそのうち希望休の人数）' : ''}`);
+      out.push(`「休 N」＝休む${x.staffTerm}の人数${x.requested > 0 ? '・「（希 N）」＝そのうち希望休の人数' : ''}`);
     if (x.unmadePart) out.push('「ほか未作成」＝この日には、定期パターンからまだ作っていない訪問もある');
     if (x.absent)
       out.push(
-        `「欠」＝欠勤の${x.staffTerm}${x.absentDone ? '（「（済）」は確定済みで手当ての要らない日。要対応には数えない）' : ''}`,
+        `「欠」＝欠勤の${x.staffTerm}${x.absentDone ? '・「（済）」＝確定済みで手当ての要らない日（要対応に数えない）' : ''}`,
       );
     if (x.starts || x.ends) out.push(`▶＝この日から始まる${x.staffTerm}・■＝この日で終わる${x.staffTerm}`);
     if (x.leaves) out.push(`ベッドの印＝${x.clientTerm}の休み（訪問は無し）`);

@@ -218,10 +218,6 @@ p.plan-band.error {
 .plan-body {
   min-width: 0;
 }
-.plan-form {
-  scroll-margin-top: calc(var(--header-h) + 8px);
-}
-
 /* 列の見出し（〈スタッフ〉の印は components/staffMark.css） */
 .col-head {
   display: inline-flex;
@@ -1339,4 +1335,12 @@ p.plan-band.error {
   .reassign-moves-box > summary {
     display: none;
   }
+}
+/* 使い方の箇条書き（PRD D306） */
+.plan-help-list {
+  margin: 0 0 8px;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

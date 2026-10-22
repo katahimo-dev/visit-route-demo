@@ -67,6 +67,7 @@
 - 外部送信は地図タイルと、ボタンを押したときの郵便番号・住所の検索（`lib/geocode.ts` の1か所）だけ。Google マップのリンク・mailto は人が押すので外部送信に当たらない
 - 印刷では、メニュー・下のタブ・引き出し・トースト・浮いている帯・確認ダイアログ・ツアー・用語の説明・名前の i・作り直しの帯・進み具合の帯を出さない
 - 用語の説明（`Term`）の目印は用語の後ろの小さな ⓘ（下線は付けない）。同じ画面の同じ語は最初の1か所だけ説明を付ける（PRD D240・D241。ADR-0037。詳細は [pages-common.md](pages-common.md)）
+- 画面の文はふつうの言葉で（PRD D307）：説明（`Hint`）・用語の説明・帯・空の画面の案内・確認の本文・トースト・`title`・ツアー・`lead` に内部の言葉（費用・点の内訳・稼働時間（帯）・必須の違反・点数の基準のプリセット・この日だけ試す重み・展開・inputKey・固定・記録）を使わない。言い換えは 固定 → ピン、必須の違反 → 守れない条件、点数の基準のプリセット「X」→「X」の重み、この日だけ試す重み → この日だけの重み、稼働時間 → 働ける時間。どうしても要る語は用語の説明に1か所だけ。1文を短く、括弧の中に括弧を重ねない。いくつもあることは `Hint` の中を `<ul className="hint-list">`（`styles.css`）の箇条書きにし、要点を1行ずつ。仕組み（なぜそうなるか）は用語の説明か「使い方」へ寄せ、帯・確認にはその場で要ることだけ書く。機能の名前（ボタン・メニューの項目）を変えたら e2e の文字の確かめも直す
 - 確認はブラウザの `confirm`・`alert`・`prompt` を使わず、独自の確認ダイアログ（下）。src の画面に `confirm(`・`alert(`・`prompt(` は0。例外は `beforeunload`（〈スタッフ〉・〈利用者さん〉の変更があるとき）だけ
 - 画面の見出しは `PageHeader`（左に題名と `lead`＝「この画面でやること」の1行、右に主ボタン1つ。予定の3画面は題名の下に［月｜週｜日］のタブ。PRD D236）、節は `SectionTitle`（`SectionLevelProvider` で h2／h3）
 - 狭い画面の境目：860px 以下でスマホのメニュー（左のメニューを隠す・下のタブ）。600px 以下で帯・欄のボタンを詰める
@@ -207,11 +208,12 @@
 
 #### `lib/commandPalette.ts`（純粋関数。テストあり）
 
-- `PaletteItem`：`id`・`kind`（`action|screen|client|staff`）・`label`・`hint`・`to`・`date?`・`keys`（`lib/search` の `normalizeKana` でそろえた名前・よみ・別名）。`paletteItem` で作る
-- `paletteActions(today)`：欠勤・キャンセルを登録・日の予定（今日）を開く・今月／来月の案をまとめて作る（`?do=batch`）・要対応（`attention`）・確定していない日（`unconfirmed`）・条件が変わった日を作り直す（`stale`）・問い合わせに答える。`{ customRules }` なら「今日の案を試す重みで作り直す」（`recreateTodayHref`）も。切った機能の操作は出さない
+- `PaletteItem`：`id`・`kind`（`action|screen|client|staff|visit`）・`label`・`hint`・`to`・`date?`・`visitId?`・`op?`（`'visit-add'`）・`keys`（`lib/search` の `normalizeKana` でそろえた名前・よみ・別名）。`paletteItem` で作る
+- `paletteActions(today)`：欠勤・キャンセルを登録・日の予定（今日）を開く・今月／来月の案をまとめて作る（`?do=batch`）・要対応（`attention`）・確定していない日（`unconfirmed`）・条件が変わった日を作り直す（`stale`）・訪問を追加（`op: 'visit-add'`）・問い合わせに答える。`{ customRules }` なら「今日の案を試す重みで作り直す」（`recreateTodayHref`）も。切った機能の操作は出さない
 - `paletteScreens(sections, terms)`：sections は `screenSections`（メニューから外した画面も1つずつ。PRD D273・D275）。操作でない項目。補足はグループの見出し（グループの見出しも語に入るので「設定」「予定」で各画面を引ける）。読み・言い換え `SCREEN_WORDS`、〈利用者さん〉一覧・〈スタッフ〉一覧には呼び方のよみ `TERM_READINGS`（既定の呼び方の漢字だけ）
 - `palettePeople(clients, staff, terms)`：`/clients?id=`・`/staff?id=`。段階・休止中を補足に
 - `filterPalette(items, query, limit=8)`：語に分けて AND、種類の順・先頭一致を前に、人は種類ごと limit まで（`rest`）。空なら操作と画面だけ
+- 訪問（PRD D304。ADR-0051）：`visitIndex(visits)`（〈利用者さん〉ごとに日付・開始の順）・`paletteDate(term, today)`（「10/28」「10月28日」「2026-10-28」「今日」「明日」「あさって」。年の無い日付は去年・今年・来年のうち今日に近い方）・`paletteVisits(query, clients, index, today, describe, limit=6)`（日付の語と名前の語に分け、名前の語が〈利用者さん〉の名前・よみに含まれる人（20人まで）の、日付があればその日の回（取り消しも）、無ければ今日以降の近い回。名前の語が無ければ出さない。かなの日付の語（「あす」など）しか無ければ名前として読む）。種類の見出しは「訪問」で、`filterPalette` の結果の後ろに足す
 - `paletteTerms`・`moveActive`（端で回る）・`isPaletteShortcut(e, isMac)`（mac は ⌘K、ほかは Ctrl+K。Shift・Alt・変換中は違う）・`isMacPlatform`・`paletteKindLabel`・`hashPathname(hash)`・`keepPaletteOn(openFor, pathname)`
 
 #### `components/CommandPalette.tsx`（`commandPalette.css`）
@@ -223,7 +225,8 @@
 - 選んでいる候補は見える位置へ（先頭なら scrollTop=0、種類の先頭なら見出しごと）
 - `customRules` は `presetOf(data.rules, data.presets) === null`
 - 候補の語は `useMemo`（開いたとき・データが変わったとき）でそろえ、打つたびは `filterPalette` だけ（300人×60人で1文字 100ms 以内）
-- 選ぶと閉じて、`date` があれば `setDate`、今の画面なら移らない、ほかは `navigate(to)`
+- 訪問の索引は打ってから作り（開いただけでは作らない）、開いている間は使い回す。訪問の補足は担当（今の案、無ければ確定した割当）・「担当なし」・取り消し
+- 選ぶと閉じて、訪問（`visitId`）・「訪問を追加」（`op`）は画面を移らずに訪問の詳細の欄（`useOpenVisit`）を開く。ほかは `date` があれば `setDate`、今の画面なら移らない、ほかは `navigate(to)`
 - z-index 1150（引き出し 1100 とトースト 1200 の間）。印刷で出さない。860px 以下は上に寄せ、下の案内（↑↓ Enter Esc）を隠す
 
 ### 確認ダイアログ（ADR-0026。PRD D146〜D150）

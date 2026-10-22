@@ -119,7 +119,7 @@ export function useDayModel(date: string) {
     /** 点数の基準の条件（名前・重み。点数の理由の文に使う。PRD D173） */
     scoreRules,
     /** 点数の基準のプリセットの名前（「物差し：標準」の表示。プリセットが無ければ「試す重み」） */
-    scoreRulerName: scorePreset?.name ?? '試す重み',
+    scoreRulerName: scorePreset?.name ?? 'この日だけの重み',
     savedView,
   };
 }

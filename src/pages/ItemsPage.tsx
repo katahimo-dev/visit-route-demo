@@ -86,10 +86,14 @@ export default function ItemsPage() {
         lead={`${terms.staff}や${terms.client}の特性（資格・ペットなど）を決めます`}
       />
       <Hint label="使い方">
-        {terms.staff}や{terms.client}が持つ特性（資格・経験年数・ペットなど）を決めます。値は「{terms.staff}」「
-        {terms.client}」の画面で入れ、条件（必要条件・希望）で使います。
-        選択肢の横の数字は、その選択肢に当てはまる人数です（ここでは変えられません。「{terms.staff}」「{terms.client}
-        」の画面で特性を直すと変わります）。「使っている条件」は、この項目を条件に使っている数です。
+        <ul className="hint-list">
+          <li>
+            {terms.staff}や{terms.client}が持つ特性（資格・経験年数・ペットなど）を決めます。値は「{terms.staff}」「
+            {terms.client}」の画面で入れます。
+          </li>
+          <li>選択肢の横の数字は、当てはまる人数です。人の画面で特性を直すと変わります。</li>
+          <li>「使っている条件」は、この項目を使っている条件の数です。</li>
+        </ul>
       </Hint>
       <ItemTable
         target="staff"

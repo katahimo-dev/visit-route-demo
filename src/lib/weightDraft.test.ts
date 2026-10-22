@@ -137,8 +137,8 @@ describe('確定と影響する日（PRD D286）', () => {
     const ch = draftChanges(rules, { wait: { weight: 4, hard: false } });
     const body = confirmBody(ch, '標準', { days: ['x', 'y'], unconfirmed: ['x'], confirmed: ['y'] });
     expect(body).toContain('・待ち：3→4');
-    expect(body).toContain('点数の基準のプリセット「標準」の重みになります');
-    expect(body).toContain('月のまとめて作る・開いた日の自動作成・作り直しはこの重みで作り');
+    expect(body).toContain('「標準」の重みが変わります');
+    expect(body).toContain('月のまとめて作る・作り直し・点数に、この重みを使います');
     expect(body).toContain('2日（未確定 1日・確定済み 1日）');
     expect(body).toContain('確定済みの日は作り直しません');
     expect(confirmBody(ch, '標準', { days: [], unconfirmed: [], confirmed: [] })).toContain(

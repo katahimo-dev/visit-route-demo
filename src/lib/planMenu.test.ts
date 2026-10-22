@@ -28,9 +28,9 @@ describe('createText（AI にもう一度作らせる）', () => {
   it('案が無ければ「AI に案を作らせる」', () => {
     expect(createText({ ...base, hasPlan: false })).toMatchObject({ label: 'AI に案を作らせる', disabled: false });
   });
-  it('手直しがあるときだけ「手直しと固定は消えます」を添える', () => {
+  it('手直しがあるときだけ「手直しとピンは消えます」を添える', () => {
     expect(createText(base).description).not.toContain('消えます');
-    expect(createText({ ...base, edited: true }).description).toContain('手直しと固定は消えます');
+    expect(createText({ ...base, edited: true }).description).toContain('手直しとピンは消えます');
     expect(createText(base).description).toContain('標準');
   });
   it('計算中などは押せない理由をそのまま出す', () => {
@@ -38,13 +38,13 @@ describe('createText（AI にもう一度作らせる）', () => {
   });
 });
 
-describe('resolveText（固定した訪問は残して、ほかを作り直す）', () => {
+describe('resolveText（ピンの付いた訪問は残して、ほかを作り直す）', () => {
   it('固定が無くても押せて、戻す先を残すと書く', () => {
     const t = resolveText(base);
-    expect(t.label).toBe('固定した訪問は残して、ほかを作り直す');
+    expect(t.label).toBe('ピンの付いた訪問は残して、ほかを作り直す');
     expect(t.disabled).toBe(false);
-    expect(t.description).toContain('固定がありません');
-    expect(t.description).toContain('戻す先');
+    expect(t.description).toContain('ピンの付いた訪問はありません');
+    expect(t.description).toContain('AI が出したままに戻す');
   });
   it('案が無ければ押せない', () => {
     expect(resolveText({ ...base, hasPlan: false, pinCount: 2 }).disabled).toBe('AI の案がまだありません');
@@ -52,13 +52,11 @@ describe('resolveText（固定した訪問は残して、ほかを作り直す�
   it('固定があれば件数を説明に出す', () => {
     const t = resolveText({ ...base, pinCount: 2, edited: true });
     expect(t.disabled).toBe(false);
-    expect(t.description).toContain('固定した 2件');
+    expect(t.description).toContain('ピンの付いた 2件');
     expect(t.description).not.toContain('消えます');
   });
   it('固定していない手直しがあれば「消えます」と書く', () => {
-    expect(resolveText({ ...base, unpinned: true, edited: true }).description).toContain(
-      '固定していない手直しは消えます',
-    );
+    expect(resolveText({ ...base, unpinned: true, edited: true }).description).toContain('ピンの無い手直しは消えます');
   });
   it('計算中は押せない', () => {
     expect(resolveText({ ...base, pinCount: 1, busy: '計算中は選べません' }).disabled).toBe('計算中は選べません');
@@ -91,7 +89,7 @@ describe('hasUnpinnedEdits（固定していない手直し）', () => {
 
 describe('revertText（AI が出したままに戻す）', () => {
   it('手直し・固定が無ければ押せない', () => {
-    expect(revertText(base).disabled).toContain('手直し・固定はありません');
+    expect(revertText(base).disabled).toContain('手直し・ピンはありません');
   });
   it('手直しがあれば押せる。計算中は押せない', () => {
     expect(revertText({ ...base, edited: true }).disabled).toBe(false);
@@ -123,7 +121,7 @@ describe('presetDescription', () => {
     expect(presetDescription({ ...x, hasRun: true })).toContain('計算しません');
   });
   it('手直しがあれば消えることを添える（今の案のときは添えない）', () => {
-    expect(presetDescription({ ...x, hasRun: true, edited: true })).toContain('手直しと固定は消えます');
+    expect(presetDescription({ ...x, hasRun: true, edited: true })).toContain('手直しとピンは消えます');
     expect(presetDescription({ ...x, isCurrent: true, edited: true })).toBe('今の案です');
   });
 });
@@ -142,7 +140,7 @@ describe('anotherPlanOptions（もう1案作って比べる。D159）', () => {
   it('試す重みがどのプリセットとも違い、今ある案とも違えば「試す重みで作る」を最後に足す', () => {
     const custom = d.rules.map((r) => (r.type === 'wait' ? { ...r, weight: 0.5 } : r));
     const r = anotherPlanOptions(d.presets, applyPreset(d.rules, standard!), custom);
-    expect(r.at(-1)).toMatchObject({ kind: 'rules', key: 'rules', label: '試す重みで作る' });
+    expect(r.at(-1)).toMatchObject({ kind: 'rules', key: 'rules', label: 'この日だけの重みで作る' });
     // 今ある案がその条件なら足さない
     const same = anotherPlanOptions(d.presets, custom, custom);
     expect(same.some((o) => o.kind === 'rules')).toBe(false);
@@ -166,7 +164,7 @@ describe('adoptWarnings（確定の確認の件数）', () => {
   it('入らない訪問・必須の違反があるときだけ、その順に件数の文', () => {
     expect(adoptWarnings(0, 0)).toEqual([]);
     expect(adoptWarnings(2, 0)).toEqual(['入らない訪問が 2件あります（担当なしのまま確定します）']);
-    expect(adoptWarnings(0, 1)).toEqual(['必須の違反が 1件あります（必須の条件に合わないまま確定します）']);
+    expect(adoptWarnings(0, 1)).toEqual(['守れない条件が 1件あります（そのまま確定します）']);
     expect(adoptWarnings(1, 3)).toHaveLength(2);
     expect(adoptWarnings(1, 3)[0]).toContain('入らない訪問が 1件');
   });

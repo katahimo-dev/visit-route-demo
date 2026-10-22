@@ -262,7 +262,7 @@ export function conditionChanges(base: ConditionParts, now: ConditionParts): Con
       out.push({
         key: 'trial',
         kind: 'trial',
-        head: 'この日だけ試す重み',
+        head: 'この日だけの重み',
         text: listText(texts),
         revert: (d) => {
           const was = new Map(base.rules.map((x) => [x.id, x]));
@@ -600,10 +600,9 @@ export function madeWeightsChange(
 /** 一覧の見出し（はじめ畳む。PRD D290） */
 export const changesToggleText = (n: number): string => `変更内容を見る（${n}件）`;
 /** 記録が無いときの文（PRD D292） */
-export const NO_RECORD_TEXT = '何が変わったかの記録がありません（作り直すか、日の予定で確かめてください）';
+export const NO_RECORD_TEXT = '何が変わったかはわかりません。作り直すか、日の予定で確かめてください';
 /** 控えはあるが一覧が空のとき（戻したあとも影響する日が残る：控えを取る前の変更） */
-export const NO_MORE_TEXT =
-  '記録した変更はありません。残りは記録より前の変更です（作り直すか、日の予定で確かめてください）';
+export const NO_MORE_TEXT = 'ほかの変更は、何が変わったかわかりません。作り直すか、日の予定で確かめてください';
 /** 一覧の上の文 */
 export const sinceText = (at: number): string => `${baseAtText(at)} からの変更`;
 /** 戻さない変更（足した・消したもの）があるときの一覧の下の短い文（PRD D291） */
@@ -612,5 +611,5 @@ export const NO_REVERT_TEXT = '足した・消したものは戻せません。�
 /** 戻すの確認の本文（cs は戻す変更。skipped は一覧にあって戻さない変更の件数（すべて戻すのとき）） */
 export function revertBody(cs: readonly ConditionChange[], skipped = 0): string {
   const head = `${cs.map((c) => `・${changeLine(c)}`).join('\n')}\nを変える前に戻します。`;
-  return skipped > 0 ? `${head}\n足した・消したものなど ${skipped}件は戻しません（各画面で直してください）。` : head;
+  return skipped > 0 ? `${head}\n足した・消したものなど ${skipped}件は戻しません。各画面で直してください。` : head;
 }

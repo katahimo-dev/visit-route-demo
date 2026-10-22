@@ -86,7 +86,7 @@ describe('periodEmptyGuide：その場で作る（週の予定。PRD D280・D282
   it('訪問はあるのに案が無い：作るボタンは置かず見出しの主ボタンを文で指し、日の予定だけ', () => {
     const g = periodEmptyGuide({ ...here, visitDays: ['2026-10-19', '2026-10-22'] });
     expect(g?.title).toBe('この週は案がありません');
-    expect(g?.why).toContain('見出しの［この週の案を作る］で、この週の今日以降のまだ案の無い日だけ');
+    expect(g?.why).toContain('見出しの［この週の案を作る］で、この週の今日以降の案の無い日を作ります');
     expect(g?.actions).toEqual([
       { kind: 'day', date: '2026-10-22', label: '10/22の案を日の予定で作る', primary: true },
     ]);

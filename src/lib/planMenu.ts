@@ -55,17 +55,17 @@ export type PlanMenuInput = {
 };
 
 /** 手直し・固定を捨てる項目の説明の後ろに付ける文（手直しが無ければ付けない） */
-const discardNote = (edited: boolean) => (edited ? '手直しと固定は消えます（確かめてから）' : '');
+const discardNote = (edited: boolean) => (edited ? '手直しとピンは消えます' : '');
 
 /** 「AI にもう一度作らせる」（今の案が無ければ「AI に案を作らせる」） */
 export function createText(i: PlanMenuInput): MenuText {
   return i.hasPlan
     ? {
         label: 'AI にもう一度作らせる',
-        description: `この日だけ試す重み（${i.ruleName}）で作り直します。${discardNote(i.edited)}`,
+        description: `この日の重み（${i.ruleName}）で作り直します。${discardNote(i.edited)}`,
         disabled: i.busy,
       }
-    : { label: 'AI に案を作らせる', description: `この日だけ試す重み（${i.ruleName}）で作ります`, disabled: i.busy };
+    : { label: 'AI に案を作らせる', description: `この日の重み（${i.ruleName}）で作ります`, disabled: i.busy };
 }
 
 /**
@@ -75,11 +75,11 @@ export function createText(i: PlanMenuInput): MenuText {
 export function resolveText(i: PlanMenuInput): MenuText {
   const head =
     i.pinCount > 0
-      ? `固定した ${i.pinCount}件の担当はそのままで、ほかを試す重みで組み直します`
-      : '固定がありません。AI が出したままの案（戻す先）は残して、試す重みで作り直します';
+      ? `ピンの付いた ${i.pinCount}件はそのままで、ほかを組み直します`
+      : 'ピンの付いた訪問はありません。作り直したあとも「AI が出したままに戻す」で戻せます';
   return {
-    label: '固定した訪問は残して、ほかを作り直す',
-    description: i.unpinned ? `${head}。固定していない手直しは消えます（確かめてから）` : head,
+    label: 'ピンの付いた訪問は残して、ほかを作り直す',
+    description: i.unpinned ? `${head}。ピンの無い手直しは消えます` : head,
     disabled: !i.hasPlan ? 'AI の案がまだありません' : i.busy,
   };
 }
@@ -88,13 +88,13 @@ export function resolveText(i: PlanMenuInput): MenuText {
 export function revertText(i: PlanMenuInput): MenuText {
   return {
     label: 'AI が出したままに戻す',
-    description: '手直しと固定を捨てて、AI が作ったときの案に戻します（確かめてから）',
+    description: '手直しとピンを捨てて、AI が作ったときの案に戻します',
     disabled: !i.hasPlan
       ? 'AI の案がまだありません'
       : i.running
         ? '計算中は選べません'
         : !i.edited
-          ? '手直し・固定はありません（AI が出したままです）'
+          ? '手直し・ピンはありません（AI が出したままです）'
           : false,
   };
 }
@@ -133,7 +133,7 @@ export function presetDescription(x: {
     : x.remake
       ? 'データが変わったので、作り直して切り替えます'
       : '作ってある案に切り替えます（計算しません）';
-  return x.edited ? `${what}。手直しと固定は消えます` : what;
+  return x.edited ? `${what}。手直しとピンは消えます` : what;
 }
 
 /** 比較の画面の「もう1案作って比べる」の選択肢（D159） */
@@ -160,7 +160,7 @@ export function anotherPlanOptions(
     .map((p) => ({ key: `preset-${p.id}`, kind: 'preset', presetId: p.id, label: `${p.name}で作る` }));
   const custom = !presets.some((p) => matchesPreset(current, p));
   if (custom && (!base || weightsKey(base) !== weightsKey(current)))
-    out.push({ key: 'rules', kind: 'rules', label: '試す重みで作る' });
+    out.push({ key: 'rules', kind: 'rules', label: 'この日だけの重みで作る' });
   return out;
 }
 
@@ -171,6 +171,6 @@ export function anotherPlanOptions(
 export function adoptWarnings(dropped: number, hard: number): string[] {
   const out: string[] = [];
   if (dropped > 0) out.push(`入らない訪問が ${dropped}件あります（担当なしのまま確定します）`);
-  if (hard > 0) out.push(`必須の違反が ${hard}件あります（必須の条件に合わないまま確定します）`);
+  if (hard > 0) out.push(`守れない条件が ${hard}件あります（そのまま確定します）`);
   return out;
 }

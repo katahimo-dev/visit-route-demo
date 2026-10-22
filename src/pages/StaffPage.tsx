@@ -598,9 +598,13 @@ export default function StaffPage() {
                   <>
                     <SectionTitle icon={CalendarX}>最終勤務日（退職・担当替え）</SectionTitle>
                     <Hint>
-                      退職や担当替えで、この日を最後に勤務しなくなるときに入れます。翌日からは勤務なしになり、予定・AI案に入りません。保存すると、その人が担当している
-                      {terms.client}の代わりの{terms.staff}
-                      をまとめて選ぶ欄が開きます（訪問の案は自動では作り直しません）。
+                      <ul className="hint-list">
+                        <li>退職や担当替えで、この日を最後に勤務しなくなるときに入れます。</li>
+                        <li>翌日からは予定に入りません。</li>
+                        <li>
+                          保存すると、その人が担当している{terms.client}の代わりの{terms.staff}を選ぶ欄が開きます。
+                        </li>
+                      </ul>
                     </Hint>
                     <div className="row" style={{ flexWrap: 'wrap' }}>
                       <label className="row" style={{ gap: 6 }}>
@@ -638,9 +642,8 @@ export default function StaffPage() {
                 <SectionTitle icon={SlidersHorizontal}>{terms.client}に求めること：必要条件</SectionTitle>
                 <Hint>
                   {terms.client}
-                  の特性に対する条件です（例：ペットのいる家を避けるなら「ペットあり」を「なし」に）。満たさない
-                  {terms.client}は「条件の重み」の画面の「
-                  {terms.staff}の必要条件」で、点が付くか、必須なら担当にしません。
+                  の特性への条件です。例：ペットのいる家を避けるなら、「ペットあり」を「なし」にします。合わない
+                  {terms.client}は、点が下がるか、必須なら担当になりません。
                 </Hint>
                 <ConditionsEditor
                   items={data.items}

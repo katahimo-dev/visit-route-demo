@@ -266,7 +266,7 @@ async function marks(page) {
   await term.hover();
   await settle(page, 300);
   const tip = await page.locator('[role="tooltip"]:visible').first().textContent();
-  check(/いちばん少ない週の人数/.test(tip ?? ''), '用語の説明が出る', tip);
+  check(/いちばん少ない週の数/.test(tip ?? ''), '用語の説明が出る', tip);
   await page.mouse.move(5, 5);
   check((await page.getByTestId('term-vacancy-estimate').count()) === 1, '場所が無いときは「目安（約）」の用語');
 }

@@ -715,12 +715,11 @@ export default function ClientsPage() {
                 <SectionTitle icon={Route}>{stageOn ? '段階と紹介元' : '段階'}</SectionTitle>
                 {stageOn ? (
                   <Hint>
-                    段階は 相談受付 → 顔合わせ → 契約 → 利用中 → 終了
-                    です。予定・AI案に入るのは「利用中」と、利用中の前で枠を仮押さえしている
-                    {terms.client}だけです（「終了」にすると予定に入りません）。
+                    段階は 相談受付 → 顔合わせ → 契約 → 利用中 → 終了 です。予定に入るのは「利用中」と、仮押さえしている
+                    {terms.client}だけです。
                   </Hint>
                 ) : (
-                  <Hint>予定・AI案に入るのは「利用中」の{terms.client}です（「終了」にすると予定に入りません）。</Hint>
+                  <Hint>予定に入るのは「利用中」の{terms.client}です。「終了」にすると予定に入りません。</Hint>
                 )}
                 <div className="form-grid" data-testid="client-stage-form">
                   <label>
@@ -795,10 +794,15 @@ export default function ClientsPage() {
                   <>
                     <SectionTitle icon={ShieldCheck}>担当できる人（社内の決まり）</SectionTitle>
                     <Hint>
-                      「この方は2人だけで担当する」のような決まりがあれば、担当できる{terms.staff}
-                      を選びます。選んだ人以外は、条件の重みにかかわらず担当になりません（AI案・振り直し・週のドラッグ・空き状況のどれでも）。休止中の
-                      {terms.staff}
-                      は選べず、休止にすると外れます。選んだ人が全員いなくなると、限らない（だれでも担当できる）に戻ります。
+                      <ul className="hint-list">
+                        <li>
+                          「この方は2人だけで担当する」のような決まりがあれば、担当できる{terms.staff}を選びます。
+                        </li>
+                        <li>選んだ人のほかは、担当になりません。</li>
+                        <li>
+                          休止中の{terms.staff}は選べません。選んだ人が全員いなくなると、だれでも担当できるに戻ります。
+                        </li>
+                      </ul>
                     </Hint>
                     <Check
                       checked={limit}

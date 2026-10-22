@@ -80,7 +80,7 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
   if (future.length === 0) {
     return {
       title: `${period}は案がありません`,
-      why: `訪問のある ${visitDays.length}日はもう過ぎています（まとめて作るは今日より前の日を作りません）。日の予定で1日ずつ作れます。`,
+      why: `訪問のある ${visitDays.length}日はもう過ぎています。過ぎた日は、日の予定で1日ずつ作れます。`,
       actions: [{ kind: 'day', date: visitDays[0]!, label: `${mdText(visitDays[0]!)}を日の予定で開く`, primary: true }],
     };
   }
@@ -91,7 +91,7 @@ export function periodEmptyGuide(input: PeriodInput): EmptyGuide | null {
     months.length > 1 ? `${months.map(monthText).join('と')}にまたがるので、月ごとにまとめて作ります。` : '';
   return {
     title: `${period}は案がありません`,
-    why: `訪問のある ${visitDays.length}日に、まだ案（割当）がありません。月の予定の「まとめて作る」で、その月のまだ案の無い日をまとめて作れます。${across}`,
+    why: `訪問のある ${visitDays.length}日に、まだ案がありません。月の予定の「まとめて作る」で、まとめて作れます。${across}`,
     actions: [
       ...months.map((ym, i) => ({
         kind: 'batch' as const,
@@ -128,14 +128,14 @@ function makeHereGuide(input: PeriodInput, canExpand: number, firstFuture: strin
   if (future.length === 0 && canExpand === 0) {
     return {
       title: `${period}は案がありません`,
-      why: `訪問のある ${visitDays.length}日はもう過ぎています（案を作るのは今日以降の日です）。日の予定で1日ずつ作れます。`,
+      why: `訪問のある ${visitDays.length}日はもう過ぎています。過ぎた日は、日の予定で1日ずつ作れます。`,
       actions: [{ kind: 'day', date: visitDays[0]!, label: `${mdText(visitDays[0]!)}を日の予定で開く`, primary: true }],
     };
   }
   const first = future[0] ?? firstFuture ?? dates[0]!;
   return {
     title: `${period}は案がありません`,
-    why: `訪問のある ${visitDays.length}日に、まだ案（割当）がありません。${canExpand > 0 ? `ほかに定期パターンからまだ作っていない訪問が ${canExpand}件あります（未作成）。` : ''}${make}で、${period}の今日以降のまだ案の無い日だけを作ります${canExpand > 0 ? '（未作成の訪問も先に作ります）' : ''}。`,
+    why: `訪問のある ${visitDays.length}日に、まだ案がありません。${canExpand > 0 ? `定期パターンからまだ作っていない訪問も ${canExpand}件あります。` : ''}${make}で、${period}の今日以降の案の無い日を作ります。`,
     actions: [{ kind: 'day', date: first, label: `${mdText(first)}の案を日の予定で作る`, primary: true }],
   };
 }
@@ -156,7 +156,7 @@ export function compareEmptyGuide(input: { date: string; today: string; visits: 
   }
   return {
     title: 'この日の案はまだありません',
-    why: '日の予定を開くと、点数の基準の考え方で案を自動で作ります。案ができたら、ここでもう1案作って比べられます。',
+    why: '日の予定を開くと、案を自動で作ります。案ができたら、ここでもう1案作って比べられます。',
     actions: [
       { kind: 'day', date, label: '日の予定で案を作る', primary: true },
       ...(date >= today

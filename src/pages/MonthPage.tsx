@@ -53,6 +53,7 @@ import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { PageHeader, SidePanel, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
+import { useOpenVisit } from '../components/VisitPanel';
 import type { Staff, Visit, VisitType } from '../contracts/documents';
 import { slotsText, timeText } from '../domain/availability';
 import { isOnLeave } from '../domain/leaves';
@@ -68,7 +69,7 @@ import {
   withEdges,
 } from '../lib/barRows';
 import { colorOf } from '../lib/colors';
-import { attempt, byDisplayName, byName, newId, own, WEEKDAY_LABELS } from '../lib/common';
+import { attempt, byDisplayName, byName, dateText, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { bulkConfirmDialog, bulkConfirmLabel, bulkConfirmTargets, bulkConfirmWhy, confirmDay } from '../lib/confirmDay';
 import { isOn } from '../lib/features';
 import { clientDot } from '../lib/glance';
@@ -131,6 +132,7 @@ import { isAllRest, staffEdgeTexts, staffSlotSummary } from '../lib/staffBar';
 import { useDayModel } from '../lib/useDayModel';
 import { useDayStatuses } from '../lib/useDayStatuses';
 import { useValueStore } from '../lib/valueStore';
+import { assignmentOf, clientVisitsIn } from '../lib/visitOps';
 import { scorePresetOf } from '../seed';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
@@ -175,7 +177,7 @@ const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
 
 export default function MonthPage() {
   const { date, setDate } = useDay();
-  const { data, update, compileInput, scoreRulerName } = useDayModel(date);
+  const { data, update, compileInput } = useDayModel(date);
   const terms = data.org.terms;
   /** 切った機能（月の予定の印刷・稼働の見込み）の画面へ移るボタンは出さない（PRD D213。ADR-0028） */
   const printOn = isOn(data.org.features, 'monthPrint');
@@ -460,7 +462,7 @@ export default function MonthPage() {
           warn: n > 0,
           text:
             n > 0
-              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の予定のその人の列の「欠勤を直す」から振り直してください' : '日の予定で担当を振り直してください'}（自動では振り直しません）`
+              ? `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました。${name}さんにこの日の訪問が ${n}件あります。${suddenOn ? '日の予定のその人の列の「欠勤を直す」から振り直してください' : '日の予定で担当を振り直してください'}`
               : `${mdText(d)} を${REQUESTED_OFF_NOTE}にしました`,
         });
       } else {
@@ -706,7 +708,7 @@ export default function MonthPage() {
         edited > 0 &&
         !(await confirmDialog({
           title: `手直しのある ${edited}日の手直しを捨てますか？`,
-          body: 'その日の手直しと固定を捨てて、AI案を作り直します。',
+          body: 'その日の手直しとピンを捨てて、AI案を作り直します。',
           confirmLabel: '捨てて作り直す',
           tone: 'danger',
         }))
@@ -848,6 +850,13 @@ export default function MonthPage() {
   const progressValue = batch ? batch.index + (batch.total > 0 ? Math.min(1, batch.iteration / batch.total) : 0) : 0;
   /** 選んだ〈利用者さん〉（休みの欄。ADR-0013） */
   const focusClient = focus.kind === 'client' ? data.clients.find((c) => c.id === focus.id) : undefined;
+  /** 訪問の詳細の欄（PRD D304：〈利用者さん〉を選んだときの回から開く） */
+  const openVisit = useOpenVisit();
+  /** 選んだ〈利用者さん〉のこの月の回（取り消しも） */
+  const focusVisits = useMemo(
+    () => (focusClient && days.length > 0 ? clientVisitsIn(data, focusClient.id, days[0]!, days.at(-1)!) : []),
+    [data, focusClient, days],
+  );
   const focusName =
     focus.kind === 'staff'
       ? (staffById.get(focus.id)?.name ?? '')
@@ -1059,17 +1068,26 @@ export default function MonthPage() {
         {noVisitsWhy && <p className="sub">{noVisitsWhy}</p>}
         {helpOpen && (
           <div ref={helpRef} className="hint-body month-help" tabIndex={-1} data-testid="month-help">
-            日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。赤い枠の日や「要対応
-            N」の札の日（N
-            は右の「要対応」の欄の行の数）は、入らない訪問がある・必須の違反がある・休みの人に訪問が残る日です（必須の違反は点数の基準のプリセット「
-            {scoreRulerName}
-            」の条件で見ます）。黄の点線の枠の日（「注意」）は、今日以降で訪問があるのにまだ案が無い日です（まとめて作るか日の予定で作ります）。「条件が変わった」は、案を作ったあとに訪問・
-            {terms.staff}
-            ・稼働時間・条件が変わった日です。混み具合のバーは {barRangeText()} を3段（
-            {BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}）・30分ずつに分け、その30分に空いている
-            {terms.staff}
-            の人数で色を付けます（数えるのは確定した割当、無ければ今の案）。{edgeLabel('early')}・{edgeLabel('late')}
-            に働く人がいる日は、段の端に「◀」「▶」の印を出します（マウスを乗せると時刻）。
+            <ul className="plan-help-list">
+              <li>日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。</li>
+              <li>
+                赤い枠や「要対応 N」の札の日は、入らない訪問・守れない条件・休みの人に残る訪問がある日です。N
+                は右の「要対応」の欄の行の数です。
+              </li>
+              <li>
+                黄の点線の枠の日（注意）は、訪問があるのにまだ案が無い日です。まとめて作るか、日の予定で作ります。
+              </li>
+              <li>「条件が変わった」は、案を作ったあとに訪問・{terms.staff}・働ける時間・重みなどが変わった日です。</li>
+              <li>
+                混み具合のバーは、{barRangeText()} を3段（
+                {BAR_ROWS.map(([a, b]) => `${a}〜${b}時`).join('・')}）に分け、30分ごとに空いている{terms.staff}
+                の人数で色を付けます。
+              </li>
+              <li>
+                {edgeLabel('early')}・{edgeLabel('late')}
+                に働く人がいる日は、段の端に「◀」「▶」が付きます。マウスを乗せると時刻が出ます。
+              </li>
+            </ul>
             <div>
               <button type="button" className="btn btn-small btn-text" onClick={() => setHelpOpen(false)}>
                 説明を閉じる
@@ -1086,10 +1104,10 @@ export default function MonthPage() {
                 </WithIcon>
               </strong>
               ：勤務日のマスを押すと、その日を終日の{REQUESTED_OFF_NOTE}
-              にします。もう一度押すと外します。続けて何日でも押せます。
+              にします。もう一度押すと外します。
               <span className="sub">
-                （この月の{REQUESTED_OFF_NOTE} {offDates.length}
-                日。勤務の無い日・今日より前の日・ほかの欠勤のある日は押せません。案は自動では振り直しません）
+                この月の{REQUESTED_OFF_NOTE}：{offDates.length}
+                日。勤務の無い日・今日より前の日・ほかの欠勤のある日は押せません。
               </span>
             </p>
             <p className={offNote?.warn ? 'warn-text' : 'sub'} aria-live="polite" data-testid="month-off-note">
@@ -1302,7 +1320,7 @@ export default function MonthPage() {
                     </p>
                   ) : (
                     <p className="sub" data-testid="month-confirm-note">
-                      一度も確定していない日のうち、必須の違反が無く、要対応に出ていない日を確定します。
+                      一度も確定していない日のうち、守れない条件が無く、要対応に出ていない日を確定します。
                     </p>
                   )}
                 </div>
@@ -1343,7 +1361,7 @@ export default function MonthPage() {
               </h2>
               {attention.length === 0 ? (
                 <p className="sub">
-                  今日以降で、入らない訪問・必須の違反・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日（確定済みで手当ての要らない日を除く）はありません。
+                  今日以降で、入らない訪問・守れない条件・休みの人に残る訪問・条件が変わった日・出勤〜退勤（拘束）が上限を超える日・欠勤のある日（確定済みで手当ての要らない日を除く）はありません。
                 </p>
               ) : (
                 <ul className="month-attention" data-testid="month-attention">
@@ -1370,7 +1388,7 @@ export default function MonthPage() {
                             )}
                             {a.kind === 'hard' && (
                               <WithIcon icon={ShieldAlert} size={14}>
-                                必須の違反 {a.count}件
+                                守れない条件 {a.count}件
                               </WithIcon>
                             )}
                             {a.kind === 'absentLeft' && (
@@ -1518,6 +1536,44 @@ export default function MonthPage() {
                   return day ? clientDot(day) : 'none';
                 }}
               />
+              <h3 className="month-aside-sub">この月の回</h3>
+              {focusVisits.length === 0 ? (
+                <p className="sub">この月の訪問はありません。</p>
+              ) : (
+                <ul className="month-visits" data-testid="month-client-visits">
+                  {focusVisits.map((v) => {
+                    const sid = assignmentOf(data, v.id, v.date).staffId;
+                    return (
+                      <li key={v.id}>
+                        <button
+                          type="button"
+                          className="month-visit-btn"
+                          onClick={(e) => {
+                            const btn = e.currentTarget;
+                            openVisit({ visitId: v.id, returnFocus: () => (btn.isConnected ? btn : null) });
+                          }}
+                          data-testid="month-client-visit"
+                          data-visit={v.id}
+                        >
+                          <span className="month-visit-when">
+                            {dateText(v.date)} {v.earliestStart}
+                          </span>
+                          <span className="sub">
+                            {v.cancelled
+                              ? v.cancelKind === 'sameDay'
+                                ? '当日キャンセル'
+                                : '取り消し'
+                              : sid
+                                ? (staffById.get(sid)?.name ?? '')
+                                : '担当なし'}
+                            {v.pattern?.edited && !v.cancelled ? '・変' : ''}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               <h3 className="month-aside-sub">担当した人</h3>
               {clientSum.byStaff.length === 0 ? (
                 <p className="sub">この月の訪問はありません。</p>
@@ -1573,8 +1629,8 @@ export default function MonthPage() {
           <div className="stack">
             <p>
               使う
-              <Term k="preset" />：<strong data-testid="batch-preset">{basePreset?.name ?? '試す重み'}</strong>
-              <span className="sub">（点数の基準。重みは「条件の重み」の画面で直します）</span>
+              <Term k="preset" />：<strong data-testid="batch-preset">{basePreset?.name ?? 'この日だけの重み'}</strong>
+              <span className="sub">（重みは「条件の重み」の画面で直します）</span>
             </p>
             <fieldset className="stack batch-mode" style={{ gap: 6 }}>
               <legend>対象</legend>
@@ -1623,11 +1679,9 @@ export default function MonthPage() {
             )}
             {mode === 'stale' ? (
               <p className="sub" data-testid="batch-stale-note">
-                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? '試す重み')}
-                。手直しのある日は、作り始める前に確かめます。今日より前の日・確定した日は作りません
-                {staleConfirmed > 0 &&
-                  `（条件が変わった確定済みの日 ${staleConfirmed}日は、日の予定で確かめてください）`}
-                。
+                案を作ったあとに条件が変わった日を、{rebuildWith(basePreset?.name ?? 'この日だけの重み')}
+                。手直しのある日は、作る前に確かめます。今日より前の日と確定した日は作りません。
+                {staleConfirmed > 0 && `条件が変わった確定済みの日 ${staleConfirmed}日は、日の予定で確かめてください。`}
               </p>
             ) : (
               <p className="sub">
@@ -1645,7 +1699,7 @@ export default function MonthPage() {
               </p>
             )}
             <p className="sub">
-              1日ずつ作り、作れた日はすぐに保存します。「止める」で、作っている日はそれまでの最良の案で残し、残りの日はやめます。ほかの画面へ移っても作り続けます（上の帯に進み具合と［止める］）。ページを閉じる・読み直すと止まります（作れた日は残ります）。
+              1日ずつ作り、作れた日はすぐに保存します。ほかの画面へ移っても作り続けます。「止める」かページを閉じると止まり、作れた日は残ります。
             </p>
           </div>
         </SidePanel>
@@ -1973,7 +2027,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
   else if (care) parts.push('要対応');
   if (caution) parts.push('注意：まだ案が無い');
   if (s.unassigned > 0) parts.push(`入らない ${s.unassigned}件`);
-  if (s.hard > 0) parts.push(`必須の違反 ${s.hard}件`);
+  if (s.hard > 0) parts.push(`守れない条件 ${s.hard}件`);
   if (absentLeft > 0) parts.push(`休みの人に訪問 ${absentLeft}件`);
   if (s.stale) parts.push('条件が変わった');
   if (s.overSpan.length > 0) parts.push(`出勤〜退勤（拘束）が上限を超える ${s.overSpan.length}人`);
@@ -2012,7 +2066,7 @@ const DayCell = memo(function DayCell(props: CellProps) {
       {s.overSpan.length > 0 && (
         <span
           className="month-flag is-warn"
-          title={`出勤〜退勤（拘束。最初の訪問の開始〜最後の訪問の終わり）が上限を超える${staffTerm}：${s.overSpan
+          title={`出勤〜退勤（拘束）が上限を超える${staffTerm}：${s.overSpan
             .map((id) => staffById.get(id)?.name ?? '')
             .join('・')}`}
           data-testid="month-over-span"

@@ -104,7 +104,8 @@ export function scoreReason(
   opts: ScoreReasonOptions = {},
 ): ScoreReason | null {
   const pointsOf = (key: HundredPart['key']) => parts.find((p) => p.key === key)?.points ?? 0;
-  if (sc.hardViolations.length > 0) return { key: 'hard', text: `必須の違反 ${sc.hardViolations.length}件`, points: 0 };
+  if (sc.hardViolations.length > 0)
+    return { key: 'hard', text: `守れない条件 ${sc.hardViolations.length}件`, points: 0 };
   if (sc.dropped > 0)
     return {
       key: 'dropped',

@@ -111,10 +111,7 @@ describe('compile：可否と割当費用', () => {
     expect(p.reasons[0]![1]![0]).toMatchObject({ ruleId: 'slot' });
     expect(p.infeasible).toHaveLength(1);
     expect(p.infeasible[0]!.visit).toBe(0);
-    expect(p.infeasible[0]!.reasons.map((r) => r.label)).toEqual([
-      '休み（1人）',
-      '稼働時間帯に作業が収まらない（1人）',
-    ]);
+    expect(p.infeasible[0]!.reasons.map((r) => r.label)).toEqual(['休み（1人）', '働ける時間に収まらない（1人）']);
   });
   it('位置がない訪問先は noPlace。キャンセル・休止中は入れない', () => {
     const d = twoStaff();
@@ -268,7 +265,7 @@ describe('compile：欠勤（ADR-0011）', () => {
   it('途中の欠勤で稼働時間帯が全部なくなったら「欠勤で稼働時間がない」', () => {
     const p = compile(twoStaff({ absences: [ab('08:00', '18:00')] }), DATE);
     expect(p.staff[0]!.slots).toEqual([]);
-    expect(p.reasons[0]![0]![0]).toEqual({ ruleId: 'slot', label: '欠勤で稼働時間がない', points: Infinity });
+    expect(p.reasons[0]![0]![0]).toEqual({ ruleId: 'slot', label: '欠勤で働ける時間がない', points: Infinity });
   });
   it('欠勤と重ならない訪問は今までどおり。別の日・別の人の欠勤では問題が変わらない', () => {
     const p = compile(twoStaff({ absences: [ab('14:00', null)] }), DATE);

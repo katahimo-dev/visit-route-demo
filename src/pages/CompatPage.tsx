@@ -363,16 +363,20 @@ export default function CompatPage() {
             </span>
           ))}
           <Hint label="点のしくみ">
-            ◎○は点が下がり（選ばれやすい）、△は点が上がります。
-            <span className="red-text">×</span>
-            は「NG」で、重みに関係なく担当にしません。点の大きさは「条件の重み」の画面の「相性」の重みで決まります。
-            相性は人が入れるもので、実績から自動では変わりません。
+            <ul className="hint-list">
+              <li>◎○は選ばれやすく、△は選ばれにくくなります。</li>
+              <li>
+                <span className="red-text">×</span>は「NG」で、担当にしません。
+              </li>
+              <li>効き方の強さは、「条件の重み」の画面の「相性」の重みで決まります。</li>
+              <li>相性は人が入れるもので、自動では変わりません。</li>
+            </ul>
           </Hint>
           {stale && (
             <button
               type="button"
               className="btn btn-small compat-resort"
-              title="相性のチップの絞り込みを、いまの相性で並べ直します（セルを押しても、押した行は消しません）"
+              title="絞り込みを、いまの相性で並べ直します"
               onClick={() => setSnap({ key: filterKey, compat: data.compat })}
               data-testid="compat-resort"
             >

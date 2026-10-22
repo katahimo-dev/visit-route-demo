@@ -171,7 +171,7 @@ async function rules(page) {
   const text = await daysRow(page).innerText();
   check(
     text.replace(/\s+/g, ' ').includes('条件が変わりました：影響する日 2日（未確定 1日・確定済み 1日）') &&
-      /点数の基準のプリセット「標準」で作り直します（この日だけ試す重みで作った案も「標準」の案になります）/.test(text),
+      /「標準」の重みで作り直します/.test(text),
     '帯の文（基準のプリセットで作り直すと書く）',
     text,
   );
@@ -219,12 +219,12 @@ async function rules(page) {
   await customRow(page).waitFor({ timeout: 5000 });
   const ct = await customRow(page).innerText();
   check(
-    /この日だけ試す重み（日の予定の右の欄の重み）がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「標準」）で作ります/.test(
+    /日の予定で変えた重みが、どのプリセットとも違います。月のまとめて作る・作り直しは「標準」の重みで作ります/.test(
       ct,
     ) &&
       (await page.getByTestId('rebuild-today').count()) === 1 &&
-      /今日の案を試す重みで作り直す/.test(ct) &&
-      /試す重みをプリセットとして保存/.test(ct),
+      /今日の案を日の予定の重みで作り直す/.test(ct) &&
+      /この重みをプリセットとして保存/.test(ct),
     'いまの条件がプリセットと違えば案内と［今日の案をいまの条件で作り直す］［プリセットとして保存］',
     ct,
   );
@@ -370,9 +370,9 @@ async function draft(page, { dlg }) {
   check(
     msg.startsWith('重みの変更（1件）を確定しますか？') &&
       msg.includes(`${v.before}→${v.after}`) &&
-      msg.includes('点数の基準のプリセット「標準」の重みになります') &&
-      msg.includes('月のまとめて作る・開いた日の自動作成・作り直しはこの重みで作り') &&
-      msg.includes('作り直しの帯と月の予定の要対応に出ます') &&
+      msg.includes('「標準」の重みが変わります') &&
+      msg.includes('月のまとめて作る・作り直し・点数に、この重みを使います') &&
+      msg.includes('が「条件が変わった」になります') &&
       msg.includes('確定済みの日は作り直しません') &&
       !!nums,
     '確定の確認：変わる条件と重み（前→後）・基準のプリセットになる・作り方・影響する日・確定済みは作り直さない',
@@ -554,7 +554,7 @@ async function rebuild(page) {
   const count = await page.getByTestId('batch-count').innerText();
   check(/対象の日：\s*1日/.test(count), '対象は未確定の日だけ（1日）', count);
   const note = await page.getByTestId('batch-stale-note').innerText();
-  check(/点数の基準のプリセット「標準」で作り直します/.test(note), '欄に基準のプリセットで作り直すと書く', note);
+  check(/「標準」の重みで作り直します/.test(note), '欄に基準のプリセットで作り直すと書く', note);
   // 確定済みの日が同じ月なら欄に書く（月末で来月なら、この月の欄には書かない）
   const sameMonth = SECOND.slice(0, 7) === ym;
   check(
@@ -580,7 +580,7 @@ async function rebuild(page) {
   check(!/do=/.test(hashOf(page)), '［要対応を見る］で月の予定の要対応（?do= は消える）', hashOf(page));
 }
 
-// ---- ［今日の案を試す重みで作り直す］：日の画面で今日の案をこの日だけ試す重みで作る ----
+// ---- ［今日の案を日の予定の重みで作り直す］：日の画面で今日の案をこの日だけ試す重みで作る ----
 async function today(page) {
   // 前の段で基準の重みを直すと試す重みも基準にそろうので、もう一度プリセットと違う試す重みにする（ADR-0035）
   await setTrialWeights(page);
@@ -630,7 +630,7 @@ async function dayRemake(page) {
   await page.reload();
   await page.getByTestId('plan-stale').waitFor({ timeout: 60000 });
   check(
-    /点数の基準のプリセット「標準」で作り直します/.test(await page.getByTestId('plan-stale-with').innerText()),
+    /「標準」の重みで作り直します/.test(await page.getByTestId('plan-stale-with').innerText()),
     '日の予定の作り直すの帯に「標準」で作り直すと書く',
   );
   const runIdOf = () =>
@@ -921,7 +921,7 @@ function changeSteps() {
     const noneText = (await none.count()) > 0 ? await none.innerText() : null;
     check(
       !!noneText &&
-        noneText.includes('何が変わったかの記録がありません（作り直すか、日の予定で確かめてください）') &&
+        noneText.includes('何が変わったかはわかりません。作り直すか、日の予定で確かめてください') &&
         (await toggle(page).count()) === 0,
       '変更内容：記録が無ければ正直に書く（一覧と戻すは出さない）',
       noneText,

@@ -144,15 +144,24 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
       ) : (
         <div className="stack" data-testid="offboard-panel">
           <p>
-            最終勤務日：<strong>{mdText(scope.lastDay)}</strong>（{mdText(addDays(scope.lastDay, 1))}
-            から勤務なし。予定・AI案に入りません）
+            最終勤務日：<strong>{mdText(scope.lastDay)}</strong>。{mdText(addDays(scope.lastDay, 1))}
+            からは予定に入りません。
           </p>
           <Hint label="振り直しのしかた">
-            {terms.client}ごとに代わりの{terms.staff}
-            を選び、「まとめて適用」を押すと、{mdText(scope.from)}
-            からのいつもの担当・定期パターンの担当を選んだ人に移し、担当できる人に選んだ人を足します（それより前の日の担当はそのまま。定期パターンはその日で分けます）。候補は、
-            {mdText(scope.from)}からの{OFFBOARD_SAMPLE_DAYS}日の{terms.client}
-            の訪問に、必須の条件・稼働時間・種類の条件を満たし、ほかの人の予定を変えずに入れられる回の多い順（同じなら、いつもの担当の受け持ちが少ない順）です。訪問の案は自動では作り直しません。
+            <ul className="hint-list">
+              <li>
+                {terms.client}ごとに代わりの{terms.staff}を選び、「まとめて適用」を押します。
+              </li>
+              <li>
+                {mdText(scope.from)}
+                からのいつもの担当と定期パターンの担当が、選んだ人に替わります。それより前の日はそのままです。
+              </li>
+              <li>
+                候補は、{mdText(scope.from)}からの{OFFBOARD_SAMPLE_DAYS}
+                日の訪問に、ほかの人の予定を変えずに入れられる回の多い順です。
+              </li>
+              <li>案は自動では作り直しません。</li>
+            </ul>
           </Hint>
 
           <SectionTitle icon={Users}>

@@ -243,8 +243,8 @@ async function dataReset(page) {
   const a = await shape(page, '初期状態に戻す');
   check(/いまの変更はすべて消えます/.test(a.body), '初期状態に戻す：本文（aria-describedby）', a.body);
   check(
-    /機能の入り切り（管理者設定）はそのまま/.test(a.body),
-    '初期状態に戻す：本文に「機能の入り切り（管理者設定）はそのまま」（PRD D216）',
+    /管理者設定の機能の入り切りは、そのまま/.test(a.body),
+    '初期状態に戻す：本文に「管理者設定の機能の入り切りは、そのまま」（PRD D216）',
     a.body,
   );
   await page.getByTestId('confirm-cancel').click();

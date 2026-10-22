@@ -172,13 +172,13 @@ export function confirmBody(changes: readonly WeightChange[], basis: string, sta
   const lines = changes.map((c) => `・${c.labels.join('・')}：${changeText(c)}`);
   const effect =
     stale.days.length > 0
-      ? `今日以降の案のある日のうち ${stale.days.length}日（未確定 ${stale.unconfirmed.length}日・確定済み ${stale.confirmed.length}日）は作った重みが無くなるので「条件が変わった」になり、作り直しの帯と月の予定の要対応に出ます。作り直すのは未確定の日だけで、確定済みの日は作り直しません。`
+      ? `今日以降の ${stale.days.length}日（未確定 ${stale.unconfirmed.length}日・確定済み ${stale.confirmed.length}日）が「条件が変わった」になります。未確定の日は作り直せます。確定済みの日は作り直しません。`
       : '今日以降の案のある日で「条件が変わった」になる日はありません。';
   return [
     '変わる条件：',
     ...lines,
     '',
-    `点数の基準のプリセット「${basis}」の重みになります。月のまとめて作る・開いた日の自動作成・作り直しはこの重みで作り、画面の点数もこの重みで付けます。日の予定の「この日だけ試す重み」も基準に戻ります。`,
+    `「${basis}」の重みが変わります。月のまとめて作る・作り直し・点数に、この重みを使います。`,
     effect,
   ].join('\n');
 }

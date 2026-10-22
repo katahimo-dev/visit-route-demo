@@ -104,7 +104,7 @@ function RebuildBandOn({ rules }: { rules: boolean }) {
   const settled = useSettled(data, SETTLE_MS);
   const deferred = useDeferredValue<DemoData | null>(settled, null);
   const [later, setLater] = useState(false);
-  const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? '試す重み';
+  const basis = scorePresetOf(data.presets, data.scorePresetId)?.name ?? 'この日だけの重み';
   // 案内は入力のたびに数えても軽い（重み・必須の比べだけ）
   const custom = rules && presetOf(data.rules, data.presets) === null;
   return (
@@ -192,7 +192,7 @@ function RebuildBandBody({
     const keys = currentRuleKeys(data.rules, data.presets);
     return summary.days.filter((d) => rulesStale(data, d, keys));
   }, [data, summary]);
-  /** ［今日の案を試す重みで作り直す］を出すか（条件の重みとプリセットを切っていれば出さない。PRD D213） */
+  /** ［今日の案を日の予定の重みで作り直す］を出すか（条件の重みとプリセットを切っていれば出さない。PRD D213） */
   const todayOn = isHrefOn(useFeatures(), recreateTodayHref(today));
   const action = summary ? rebuildAction(summary, basis) : null;
   const textId = useId();
@@ -270,7 +270,7 @@ function RebuildBandBody({
                 {/* ?do=recreate は条件の重みとプリセット（rules）の入口 */}
                 {todayOn && (
                   <Link to={recreateTodayHref(today)} className="btn btn-small" data-testid="rebuild-today">
-                    今日の案を試す重みで作り直す
+                    今日の案を日の予定の重みで作り直す
                   </Link>
                 )}
                 <SavePresetForm compact />
@@ -430,7 +430,7 @@ function LaterButton({ onLater }: { onLater: () => void }) {
       type="button"
       className="btn btn-small"
       onClick={onLater}
-      title="この画面を出ている間は帯を隠します（要対応・進み具合の帯には残ります）"
+      title="この画面にいる間は帯を隠します。要対応には残ります"
       data-testid="rebuild-later"
     >
       後で

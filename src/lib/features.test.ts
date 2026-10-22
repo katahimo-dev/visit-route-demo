@@ -136,7 +136,7 @@ describe('featureOfLocation（URL に要る機能）', () => {
     expect(featureOfLocation('/items', '')).toBe('rules');
     expect(featureOfLocation('/month/print', '?ym=2026-10')).toBe('monthPrint');
   });
-  it('?do= の入口：欠勤・キャンセルは sudden、今日の案を試す重みで作り直すは rules', () => {
+  it('?do= の入口：欠勤・キャンセルは sudden、今日の案を日の予定の重みで作り直すは rules', () => {
     expect(featureOfLocation('/plan', `?date=${TODAY}&do=absence`)).toBe('sudden');
     expect(featureOfLocation('/plan', '?do=absence&staff=s1')).toBe('sudden');
     expect(featureOfLocation('/plan', `?date=${TODAY}&do=recreate`)).toBe('rules');

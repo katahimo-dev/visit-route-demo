@@ -148,7 +148,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: '{staff}ごとの月の稼働・拘束の見込みを見ます',
     group: '人',
     paths: ['/workload'],
-    hides: '勤務の見込みの画面（勤務時間（シフト）・月の予定から開く入口）、拘束の上限の帯、行き止まりから移るリンク',
+    hides: '勤務の見込みの画面とその入口、拘束の上限の帯、行き止まりから移るリンク',
   },
   {
     id: 'fare',
@@ -165,7 +165,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: 'AI案の条件の重み・特性の項目・プリセットを変えられます',
     group: 'AI の条件',
     paths: ['/rules', '/items'],
-    // 「今日の案を試す重みで作り直す」（lib/rebuildBand の recreateTodayHref）も作り直しの帯の続きなのでこの機能
+    // 「今日の案を日の予定の重みで作り直す」（lib/rebuildBand の recreateTodayHref）も作り直しの帯の続きなのでこの機能
     doParams: [{ path: '/plan', do: 'recreate' }],
     hides:
       '設定の「条件の重み」「特性の項目」のタブと画面、点数の理由、作り直しの帯（切ると基準のプリセットだけで作る）',
@@ -200,7 +200,7 @@ export const FEATURES: readonly FeatureDef[] = [
     description: 'データを Excel のブックで書き出し・読み込みします',
     group: 'データ',
     paths: [],
-    hides: 'データの画面の Excel の欄（控え（JSON）は残る）',
+    hides: 'データの画面の Excel の欄。控え（JSON）は残る',
   },
 ];
 

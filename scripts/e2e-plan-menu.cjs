@@ -11,7 +11,7 @@
 // 「入らなかった訪問へ」のあとの確定の確認の本文の先頭に件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
 // 手直しの記憶（PRD D260〜D262。ADR-0043）：手で動かすと帯で聞く（答える前は記憶しない）・次からも→来週の割当済みもまとめて変える・
 // 「元に戻す」で全部戻る・別の週の同じ曜日で作り直すと同じ人と「記憶」の印・データの画面の件数と［すべて消す］。
-// 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定は訪問を追加・メールで送る・使い方をたたむ（キーボードで開いて訪問の入力・
+// 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定は訪問を追加・使い方をたたむ（メールで送るは見出し。PRD D306）（キーボードで開いて訪問の入力・
 // 閉じるとフォーカスは「その他」・使い方は下に開いてフォーカス）、月の予定は表示を選ぶ・印刷・勤務の見込み・作り直す・マスの見方の説明を
 // たたむ（作り直す日が無ければ押せず理由・表示の選択は開くと欄へフォーカス・〈スタッフ〉を選んでいる間はたためない）。
 //
@@ -113,8 +113,8 @@ async function plain(page) {
   );
   check(item(s, 'create')?.name === 'AI にもう一度作らせる', '名前：「AI にもう一度作らせる」', item(s, 'create'));
   check(
-    item(s, 'resolve')?.name === '固定した訪問は残して、ほかを作り直す',
-    '名前：「固定した訪問は残して、ほかを作り直す」',
+    item(s, 'resolve')?.name === 'ピンの付いた訪問は残して、ほかを作り直す',
+    '名前：「ピンの付いた訪問は残して、ほかを作り直す」',
   );
   check(/^2つの案を比べる/.test(item(s, 'compare')?.name ?? ''), '名前：「2つの案を比べる」（件数つき）');
   check(item(s, 'revert')?.name === 'AI が出したままに戻す', '名前：「AI が出したままに戻す」');
@@ -124,18 +124,20 @@ async function plain(page) {
     s.items.filter((x) => !x.desc).map((x) => x.key),
   );
   check(
-    !/消えます/.test(item(s, 'create')?.desc ?? '') && /この日だけ試す重み（標準）/.test(item(s, 'create')?.desc ?? ''),
+    !/消えます/.test(item(s, 'create')?.desc ?? '') && /この日の重み（標準）/.test(item(s, 'create')?.desc ?? ''),
     '説明：手直しが無いときは「消えます」を書かない・今の条件の名前',
     item(s, 'create')?.desc,
   );
   check(
     !item(s, 'resolve')?.disabled &&
-      /固定がありません。AI が出したままの案（戻す先）は残して/.test(item(s, 'resolve')?.visibleDesc ?? ''),
-    '固定が無い：「固定した訪問は残して…」も押せて、戻す先を残すと書く（PR #39 のレビュー）',
+      /ピンの付いた訪問はありません。作り直したあとも「AI が出したままに戻す」で戻せます/.test(
+        item(s, 'resolve')?.visibleDesc ?? '',
+      ),
+    'ピンが無い：「ピンの付いた訪問は残して…」も押せて、戻せると書く（PR #39 のレビュー）',
     item(s, 'resolve'),
   );
   check(
-    item(s, 'revert')?.disabled && /手直し・固定はありません/.test(item(s, 'revert')?.visibleDesc ?? ''),
+    item(s, 'revert')?.disabled && /手直し・ピンはありません/.test(item(s, 'revert')?.visibleDesc ?? ''),
     '手直しが無い：「AI が出したままに戻す」は押せず、理由を見える文で',
     item(s, 'revert'),
   );
@@ -195,22 +197,22 @@ async function edited(page) {
   await menuList(page).waitFor();
   const s = await menuShape(page);
   check(
-    /手直しと固定は消えます/.test(item(s, 'create')?.desc ?? ''),
-    '手直しあり：「AI にもう一度作らせる」の説明に「手直しと固定は消えます」',
+    /手直しとピンは消えます/.test(item(s, 'create')?.desc ?? ''),
+    '手直しあり：「AI にもう一度作らせる」の説明に「手直しとピンは消えます」',
     item(s, 'create')?.desc,
   );
   check(
     !item(s, 'resolve')?.disabled &&
-      /固定した 1件の担当はそのまま/.test(item(s, 'resolve')?.desc ?? '') &&
+      /ピンの付いた 1件はそのまま/.test(item(s, 'resolve')?.desc ?? '') &&
       !/消えます/.test(item(s, 'resolve')?.desc ?? ''),
-    '固定あり：「固定した訪問は残して…」は押せて、固定の件数を書く（固定していない手直しは無いので「消えます」を書かない）',
+    'ピンあり：「ピンの付いた訪問は残して…」は押せて、ピンの件数を書く（ピンの無い手直しは無いので「消えます」を書かない）',
     item(s, 'resolve'),
   );
   check(!item(s, 'revert')?.disabled, '手直しあり：「AI が出したままに戻す」は押せる');
   check(
     s.items
       .filter((x) => x.key.startsWith('preset-') && !x.disabled)
-      .every((x) => /手直しと固定は消えます/.test(x.desc)),
+      .every((x) => /手直しとピンは消えます/.test(x.desc)),
     '手直しあり：考え方に切り替える項目の説明にも「消えます」',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'menu-edited.png') });
@@ -218,7 +220,7 @@ async function edited(page) {
   await page.getByTestId('plan-menu-create').click();
   await dialog(page).waitFor({ timeout: 5000 });
   const title = await page.getByTestId('confirm-title').innerText();
-  check(/手直しと固定を捨てて/.test(title), '作り直す：独自の確認ダイアログで確かめる', title);
+  check(/手直しとピンを捨てて/.test(title), '作り直す：独自の確認ダイアログで確かめる', title);
   await page.keyboard.press('Escape');
   await dialog(page).waitFor({ state: 'detached' });
   await settle(page);
@@ -289,14 +291,14 @@ async function unpinnedEdit(page) {
   await menuList(page).waitFor();
   const s = await menuShape(page);
   check(
-    !item(s, 'resolve')?.disabled && /固定していない手直しは消えます/.test(item(s, 'resolve')?.desc ?? ''),
-    '固定していない手直しあり：説明に「固定していない手直しは消えます」',
+    !item(s, 'resolve')?.disabled && /ピンの無い手直しは消えます/.test(item(s, 'resolve')?.desc ?? ''),
+    'ピンの無い手直しあり：説明に「ピンの無い手直しは消えます」',
     item(s, 'resolve')?.desc,
   );
   await page.getByTestId('plan-menu-resolve').click();
   await dialog(page).waitFor({ timeout: 5000 });
   const title = await page.getByTestId('confirm-title').innerText();
-  check(/固定していない手直しを捨てて/.test(title), '固定した訪問は残して…：確認ダイアログを出す', title);
+  check(/ピンの無い手直しを捨てて/.test(title), 'ピンの付いた訪問は残して…：確認ダイアログを出す', title);
   await page.getByTestId('confirm-cancel').click();
   await dialog(page).waitFor({ state: 'detached' });
   await settle(page, 600);
@@ -486,7 +488,7 @@ async function reassignMenu(page) {
     others.map((x) => `${x.name}：${x.desc}`),
   );
   check(
-    others.filter((x) => !x.disabled).every((x) => /時間の約束|件数の上限|必須の違反/.test(x.desc)),
+    others.filter((x) => !x.disabled).every((x) => /時間の約束|件数の上限|守れない条件/.test(x.desc)),
     '担当を変える：説明に時間の約束（✓／✗）か件数の上限',
   );
   const firstOff = others.findIndex((x) => x.disabled);
@@ -853,8 +855,14 @@ async function moreMenus(page) {
       !shown.includes('訪問を追加') &&
       !shown.includes('メールで送る') &&
       !shown.includes('使い方'),
-    '日の予定：操作の行は 欠勤・案を変える ▾・元に戻す・表示・その他 ▾（訪問を追加・メールで送る・使い方はたたむ）',
+    '日の予定：操作の行は 欠勤・案を変える ▾・元に戻す・表示・その他 ▾（訪問を追加・使い方はたたむ）',
     shown,
+  );
+  // 予定をメールで送るは見出しの主ボタンの隣（毎日送るので見つけやすく。PRD D306）
+  const headMail = page.locator('.page-head [data-testid="day-mail"]');
+  check(
+    (await headMail.count()) === 1 && (await headMail.innerText()).includes('予定をメールで送る'),
+    '日の予定：見出しに「予定をメールで送る」（枠のボタン）',
   );
   check(
     (await page.locator('.btn-primary:visible').count()) === 1,
@@ -866,19 +874,20 @@ async function moreMenus(page) {
   await page.getByTestId('plan-more-list').waitFor();
   const items = await page.getByTestId('plan-more-list').locator('[role="menuitem"] .menu-item-label').allInnerTexts();
   check(
-    JSON.stringify(items) === JSON.stringify(['訪問を追加', 'メールで送る', '使い方']),
-    '日の予定の「その他 ▾」：訪問を追加・メールで送る・使い方',
+    JSON.stringify(items) === JSON.stringify(['訪問を追加', '使い方']),
+    '日の予定の「その他 ▾」：訪問を追加・使い方',
     items,
   );
   check((await focusedId()) === 'plan-visit-add', '「その他 ▾」を Enter で開くとフォーカスは先頭の項目');
   await page.keyboard.press('Enter');
-  const form = page.locator('.plan-form');
+  // 訪問の詳細の欄の新規の形（PRD D301）
+  const form = page.getByTestId('visit-panel');
   await form.waitFor();
   check(
-    await form.evaluate((el) => el.contains(document.activeElement)),
-    '「訪問を追加」で訪問の入力が開き、最初の欄へフォーカス',
+    (await form.getAttribute('data-new')) === 'true' && (await focusedId()) === 'vp-client',
+    '「訪問を追加」で訪問の詳細の欄（新規）が開き、最初の欄へフォーカス',
   );
-  await form.getByRole('button', { name: 'キャンセル' }).click();
+  await page.getByTestId('vp-close').click();
   await form.waitFor({ state: 'detached' });
   check((await focusedId()) === 'plan-more', '訪問の入力を閉じるとフォーカスは「その他」へ戻る', await focusedId());
   // 使い方：操作の行の下に開き、フォーカスを移す
@@ -887,7 +896,7 @@ async function moreMenus(page) {
   const help = page.getByTestId('plan-help');
   await help.waitFor();
   check(
-    (await focusedId()) === 'plan-help' && (await help.innerText()).includes('固定'),
+    (await focusedId()) === 'plan-help' && (await help.innerText()).includes('ピン'),
     '「使い方」で操作の行の下に説明が開き、フォーカスが移る',
   );
   await help.getByRole('button', { name: '使い方を閉じる' }).click();
@@ -914,7 +923,7 @@ async function moreMenus(page) {
   // aria-disabled（フォーカスは残す）なので、押しても何もしないことを確かめる
   await add.click({ force: true });
   await settle(page, 200);
-  check((await page.locator('.plan-form').count()) === 0, '押せない「訪問を追加」を押しても入力は開かない');
+  check((await page.getByTestId('visit-panel').count()) === 0, '押せない「訪問を追加」を押しても欄は開かない');
   await page.keyboard.press('Escape');
 
   // 月の予定：月送り・今月・その他 ▾ だけ（印刷・勤務の見込み・作り直し・表示の選択・説明はたたむ）。

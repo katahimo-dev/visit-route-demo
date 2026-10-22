@@ -38,7 +38,7 @@ describe('scoreReason', () => {
   });
   it('必須の違反があれば、点の大きさに関わらず先に出す', () => {
     const r = scoreReason([part('travel', 30)], sc({ hardViolations: [hv, hv], dropped: 1 }));
-    expect(r).toMatchObject({ key: 'hard', text: '必須の違反 2件' });
+    expect(r).toMatchObject({ key: 'hard', text: '守れない条件 2件' });
   });
   it('入らない訪問があれば、点の大きさに関わらず先に出す', () => {
     const r = scoreReason([part('travel', 30), part('dropped', 0.1)], sc({ dropped: 1 }));

@@ -227,7 +227,7 @@ export default function ComparePage() {
         JSON.stringify(aiPlan.routes) !== JSON.stringify(aiPlan.generated.routes)) &&
       !(await confirmDialog({
         title: `手直しを捨てて、#${r.no} を今の案にしますか？`,
-        body: '日の予定の手直しと固定を捨てて、この記録を今の案にします。',
+        body: '日の予定の手直しとピンを捨てて、この案を今の案にします。',
         confirmLabel: '捨てて今の案にする',
         tone: 'danger',
       }))
@@ -239,9 +239,9 @@ export default function ComparePage() {
   };
   const applyRules = async (r: AiRun) => {
     const ok = await confirmDialog({
-      title: `この日だけ試す重みを #${r.no} と同じにしますか？`,
-      body: `日の予定の「AI にもう一度作らせる」で使う試す重み・必須を、#${r.no} を作ったときと同じにします。ふだんの重み（条件の重みの画面の点数の基準）は変えません。`,
-      confirmLabel: '試す重みを同じにする',
+      title: `この日だけの重みを #${r.no} と同じにしますか？`,
+      body: `日の予定で使う重みと必須を、#${r.no} を作ったときと同じにします。ふだん使う重みは変えません。`,
+      confirmLabel: '重みを同じにする',
     });
     if (!ok) return;
     const saved = new Map(r.rules.map((x) => [x.id, x]));
@@ -252,12 +252,12 @@ export default function ComparePage() {
         return s ? { ...x, weight: s.weight, hard: s.hard } : x;
       }),
     }));
-    toast(`この日だけ試す重みを #${r.no} と同じにしました`);
+    toast(`この日だけの重みを #${r.no} と同じにしました`);
   };
   const removeRun = async (r: AiRun) => {
     if (
       !(await confirmDialog({
-        title: `記録 #${r.no}「${r.label}」を消しますか？`,
+        title: `#${r.no}「${r.label}」の案を消しますか？`,
         confirmLabel: '消す',
         tone: 'danger',
       }))
@@ -357,7 +357,7 @@ export default function ComparePage() {
     rs.reset();
     toast(
       made.x.result.stopped
-        ? `途中で止めた #${found.no}「${found.label}」（途中までの最良）を記録に足しました。A と B に並べています`
+        ? `途中で止めた #${found.no}「${found.label}」を足しました。A と B に並べています`
         : `#${found.no}「${found.label}」を作りました。A と B に並べています`,
     );
   }, [runs]);
@@ -367,7 +367,7 @@ export default function ComparePage() {
     const preset = another.kind === 'preset' ? data.presets.find((p) => p.id === another.presetId) : undefined;
     if (another.kind === 'preset' && !preset) return;
     const rules = preset ? applyPreset(data.rules, preset) : data.rules;
-    const name = preset ? `「${preset.name}」` : '試す重み';
+    const name = preset ? `「${preset.name}」` : 'この日だけの重み';
     const target = attempt(() => compile({ ...data, rules }, date));
     // 手直しの記憶（ADR-0043）を当てて解く（当てたものは記録の prefPins）
     const prefed = target.value ? withManualPrefs(target.value, data) : null;
@@ -505,7 +505,7 @@ export default function ComparePage() {
                   {hard && (
                     <span className="chip chip-red">
                       <ShieldAlert size={12} aria-hidden="true" />
-                      必須の違反
+                      守れない条件
                     </span>
                   )}
                 </div>
@@ -595,7 +595,7 @@ export default function ComparePage() {
       <PageHeader
         icon={GitCompareArrows}
         title="案を比べる"
-        lead="選んでいる日の、条件を変えたAI案を2つ選んで比べます（案が1つならここでもう1案作れます）"
+        lead="その日に作った AI案を2つ選んで比べます。案が1つなら、ここでもう1案作れます"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
             <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>
@@ -613,14 +613,16 @@ export default function ComparePage() {
                 <Term k="scoreBase" />：{scoreRulerName}
               </span>
               <Hint>
-                日の予定でAI案を作る・組み直すたびに、条件と結果が残ります。{rulerText(scoreRulerName)}
-                （高いほど良い。
-                {SCORE_TEXT}）。理想（届かない下限）は100点です。
+                <ul className="hint-list">
+                  <li>日の予定で AI案を作るたびに、ここに残ります。</li>
+                  <li>{rulerText(scoreRulerName)}。</li>
+                  <li>点数は、{SCORE_TEXT}です。高いほど良い案です。</li>
+                </ul>
               </Hint>
             </span>
           }
         >
-          この日の記録（{runs.length}件）
+          この日に作った案（{runs.length}件）
         </SectionTitle>
         {choices.length === 0 ? (
           // 空の画面（PRD D176）：なぜ空かと次の一手（日の画面で作る・月のまとめて作る）
@@ -724,11 +726,7 @@ export default function ComparePage() {
                             ? '振り直す前'
                             : '手直しを含む'}
                       </td>
-                      <td
-                        className="num"
-                        title={sc ? `費用 ${r0(sc.total)}（内部の値）` : undefined}
-                        data-label="合計点"
-                      >
+                      <td className="num" data-label="合計点">
                         {sc && scale ? `${toHundred(sc.total, scale)}点` : '—'}
                         {sc && scale && <RefMark hard={sc.hardViolations.length} />}
                         {reasons.get(c.id) && (
@@ -753,7 +751,7 @@ export default function ComparePage() {
                             />
                             <IconButton
                               icon={SlidersHorizontal}
-                              label={`試す重みを ${c.title} と同じにする`}
+                              label={`この日だけの重みを ${c.title} と同じにする`}
                               onClick={() => applyRules(run)}
                             />
                             <IconButton
@@ -885,9 +883,9 @@ export default function ComparePage() {
             {(stale(A) || stale(B)) && (
               <div className="sub row">
                 <WithIcon icon={TriangleAlert} size={14}>
-                  この日だけ試す重みと違う条件で作った案があります
+                  この日だけの重みと違う重みで作った案があります
                 </WithIcon>
-                <Hint>下の点数は A・B とも点数の基準のプリセット「{scoreRulerName}」の重みで付けています。</Hint>
+                <Hint>下の点数は、A・B とも「{scoreRulerName}」の重みで付けています。</Hint>
               </div>
             )}
           </div>
@@ -941,9 +939,13 @@ export default function ComparePage() {
               icon={Users}
               aside={
                 <Hint>
-                  訪問を押すと、その担当になった理由（点の内訳）が出て、地図でその訪問先を強調します。{terms.staff}
-                  の名前を押すと地図がその人だけになります（もう一度で全員）。「自宅から」「自宅まで」や移動の分を押すと、地図でその区間（A
-                  は点線、B は実線）を強調します。
+                  <ul className="hint-list">
+                    <li>訪問を押すと、その担当になった理由が出て、地図でその訪問先が目立ちます。</li>
+                    <li>{terms.staff}の名前を押すと、地図がその人だけになります。もう一度押すと全員に戻ります。</li>
+                    <li>
+                      「自宅から」「自宅まで」や移動の分を押すと、地図でその道のりが目立ちます。A は点線、B は実線です。
+                    </li>
+                  </ul>
                 </Hint>
               }
             >

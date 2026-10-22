@@ -80,8 +80,8 @@ describe('rebuildAction', () => {
     const a = rebuildAction(rebuildSummary([st('2026-10-30'), st('2026-11-03'), st('2026-10-31')], TODAY, {}), '標準');
     expect(a?.href).toBe('/month?ym=2026-10&do=stale');
     expect(a?.label).toBe('作り直す');
-    expect(a?.note).toMatch(/10月.*（2日）/);
-    expect(a?.note).toMatch(/「標準」で作り直します/);
+    expect(a?.note).toMatch(/10月.*2日/);
+    expect(a?.note).toMatch(/「標準」の重みで作り直します/);
     expect(a?.note).toMatch(/ほかの月/);
   });
   it('確定済みの日もあれば、作り直さないと書く', () => {
@@ -102,9 +102,9 @@ describe('rebuildAction', () => {
 describe('試す重みの案内', () => {
   it('文と、今日の日の画面で作り直す行き先', () => {
     expect(customRulesText('標準')).toBe(
-      'この日だけ試す重み（日の予定の右の欄の重み）がどのプリセットとも違います。試す重みは日の予定の「AI にもう一度作らせる」だけで使い、月のまとめて作る・自動作成・作り直しはこの画面の重み（「標準」）で作ります',
+      '日の予定で変えた重みが、どのプリセットとも違います。月のまとめて作る・作り直しは「標準」の重みで作ります',
     );
     expect(recreateTodayHref(TODAY)).toBe('/plan?date=2026-10-21&do=recreate');
-    expect(rebuildWith('標準')).toMatch(/この日だけ試す重みで作った案も「標準」の案になります/);
+    expect(rebuildWith('標準')).toBe('「標準」の重みで作り直します');
   });
 });

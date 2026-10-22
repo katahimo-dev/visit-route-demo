@@ -10,7 +10,7 @@ import { calcFeaturesOf, sameCalcFeatures } from './features';
 /** 記録の名前：プリセットと一致すればプリセット名、違えば「条件を変えた案」。固定を残した組み直しは件数を足す */
 export function runLabel(rules: Rule[], pinCount: number, presets: readonly Preset[]): string {
   const base = presetOf(rules, presets)?.name ?? '条件を変えた案';
-  return pinCount > 0 ? `${base}・固定${pinCount}件で組み直し` : base;
+  return pinCount > 0 ? `${base}・ピン${pinCount}件で組み直し` : base;
 }
 
 /**
