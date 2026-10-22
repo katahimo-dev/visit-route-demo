@@ -22,7 +22,6 @@ import {
   MapPin,
   PanelRightClose,
   PanelRightOpen,
-  Pencil,
   Pin,
   PinOff,
   Plus,
@@ -60,6 +59,7 @@ import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
 import { ViewSwitch } from '../components/ViewSwitch';
+import { useOpenVisit } from '../components/VisitPanel';
 import { VisitRules } from '../components/VisitRules';
 import { TypeMark } from '../components/visitType';
 import type { AiPlan, AiRun, DemoData, ManualPref } from '../contracts/data';
@@ -148,6 +148,7 @@ import {
 } from '../lib/undoEdit';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
+import { COMPACT_QUERY } from '../lib/useMedia';
 import { createValueStore, type ReadableStore, useValueStore } from '../lib/valueStore';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile, prefKey, withManualPrefs } from '../matching';
@@ -197,7 +198,6 @@ import {
   type ReassignOption,
 } from './reassignParts';
 import { type SuddenInit, SuddenPanel } from './SuddenPanel';
-import { VisitForm } from './VisitForm';
 
 /** 連絡の一覧が出せない（差を出せない）ときでも、欠勤の人に残る訪問だけで開くための空の一覧 */
 const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: [] };
@@ -347,8 +347,10 @@ export default function PlanPage() {
   /** 地図で見る担当・強調する区間・選んだ訪問（列の見出し・凡例・訪問・区間を押す。予定と比較で共通） */
   const sel = useRouteSelection(date, (_set, id) => owner.get(id));
   const { focusStaff, focusOn } = sel;
-  /** 開いている訪問の入力欄（null：閉じている、'new'：足す、それ以外：直す訪問の ID） */
-  const [editing, setEditing] = useState<string | null>(null);
+  /** 訪問の詳細の欄（PRD D300〜D303。App の殻の欄を開く） */
+  const openVisitPanel = useOpenVisit();
+  /** スマホの幅（600px 以下）は訪問を足さない（ADR-0051 の決定5） */
+  const compact = useMediaLocal(COMPACT_QUERY);
   /** 「その他 ▾」の「使い方」で開いた説明（PRD D279。保存しない） */
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
@@ -399,7 +401,7 @@ export default function PlanPage() {
   /** 右の欄（PRD D63）：'detail'＝詳しく、'tune'＝条件を調整する */
   const [panel, setPanel] = useState<'detail' | 'tune' | 'mail' | null>(null);
   /** 地図を時間軸の横に出すか（1280px 以上。畳める）。狭い画面は下に置き、画面の外なら MapDock */
-  const wideMap = useMedia(WIDE_MAP_QUERY);
+  const wideMap = useMediaLocal(WIDE_MAP_QUERY);
   const [mapOpen, setMapOpen] = useState(true);
   const mapBodyId = useId();
   const mapCollapseId = useId();
@@ -418,8 +420,6 @@ export default function PlanPage() {
   }, [mapOpen]);
   /** 「入らなかった訪問」の列（帯の近道の行き先） */
   const noneColId = useId();
-  /** 訪問の入力欄（開いたら見える所へ） */
-  const formRef = useRef<HTMLDivElement>(null);
   const runRef = useRef<{ stop(): void } | null>(null);
   /** 「登録して、少し動かしてよい（案B）も作る」で、振り直したあとに案B を始める日（日付を変えたら null） */
   const pendingAnneal = useRef<string | null>(null);
@@ -473,10 +473,6 @@ export default function PlanPage() {
     // 前の日に「案B も作る」を押して、まだ始まっていなければやめる（別の日で始めない）
     pendingAnneal.current = null;
   }, [date]);
-  // 訪問の入力欄を開いたら見える所へ（一覧の行の「編集」から開いたとき、欄は操作の行のすぐ下に出る）
-  useEffect(() => {
-    if (editing) formRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
-  }, [editing]);
   /** いま見ている日（計算が終わったときに、まだその日を見ているか） */
   const dateRef = useRef(date);
   dateRef.current = date;
@@ -1325,6 +1321,38 @@ export default function PlanPage() {
       target?.focus();
     });
   };
+  /**
+   * 訪問の詳細の欄を開く（PRD D300。null は新しい訪問をこの日に）。閉じたあとのフォーカスは開いた帯・カード（保存で作り直した回は
+   * 新しい ID の帯）、無ければ一覧の行の「開く」、それも無ければ開く前の要素
+   */
+  const openVisit = (id: string | null) =>
+    openVisitPanel({
+      ...(id ? { visitId: id } : { newVisit: { date } }),
+      returnFocus: (vid) => {
+        const v = vid ? CSS.escape(vid) : null;
+        const el = v
+          ? document.querySelector<HTMLElement>(
+              `.tl-band[data-visit="${v}"] .tl-band-btn, .route-item[data-visit="${v}"] .route-btn, [data-testid="visit-row-open"][data-visit="${v}"]`,
+            )
+          : null;
+        // 「その他 ▾」から足したときは、閉じた一覧の項目の代わりに「その他」のボタンへ
+        return el ?? (id ? null : document.querySelector<HTMLElement>('[data-testid="plan-more"]'));
+      },
+    });
+  /** 帯・カードの詳細の「詳細・変更」（訪問の詳細の欄を開く） */
+  const openOf = (id: string) => (
+    <button
+      type="button"
+      className="btn btn-small"
+      onClick={() => openVisit(id)}
+      title="日時・担当・取り消しを変える欄を開く"
+      data-testid="visit-open"
+    >
+      <WithIcon icon={PanelRightOpen} size={14}>
+        詳細・変更
+      </WithIcon>
+    </button>
+  );
   /** トーストの「元に戻す」（PRD D218）。トーストは前の描画の関数を持つので、押したときの最新の undoEdit を呼ぶ */
   const undoRef = useRef<() => void>(() => {});
   const undoAction = { label: '元に戻す', onClick: () => undoRef.current(), testId: 'plan-reassign-toast-undo' };
@@ -2322,6 +2350,7 @@ export default function PlanPage() {
         dragging={dragging === id}
         detail={
           <>
+            {openOf(id)}
             {whoOf(id, ownerId)}
             {prefNoteOf(id)}
             {reassignOf(id, ownerId)}
@@ -2407,6 +2436,7 @@ export default function PlanPage() {
       note: notes.join('・') || undefined,
       detail: (
         <>
+          {openOf(id)}
           <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
             <strong>
               {client ? <PersonButton kind="client" id={client.id} name={client.displayName} /> : '（不明）'}
@@ -2666,7 +2696,7 @@ export default function PlanPage() {
       typeOfVisit={(v) => typeOf(data.visitTypes, v.typeId)}
       leaveVisits={[...m.leaveVisits].sort((a, b) => a.earliestStart.localeCompare(b.earliestStart))}
       leaveNoteOf={(v) => leaveOn(data.clientLeaves, v.clientId, v.date)?.note ?? ''}
-      onEdit={setEditing}
+      onEdit={(id) => openVisit(id)}
       onCancel={cancelVisit}
     />
   );
@@ -3144,8 +3174,13 @@ export default function PlanPage() {
       key: 'add',
       label: '訪問を追加',
       icon: Plus,
-      disabled: m.clients.length === 0 ? `${terms.client}がいません` : false,
-      onSelect: () => setEditing('new'),
+      disabled:
+        m.clients.length === 0
+          ? `${terms.client}がいません`
+          : compact
+            ? 'スマホの幅では訪問を足しません（パソコン・タブレットで）'
+            : false,
+      onSelect: () => openVisit(null),
       testId: 'plan-visit-add',
     },
     // 担当ごとの予定をメールアプリで開く（PRD D92。ADR-0017）
@@ -3502,21 +3537,6 @@ export default function PlanPage() {
               使い方を閉じる
             </button>
           </div>
-        </div>
-      )}
-
-      {editing && (
-        <div ref={formRef} className="plan-form">
-          <VisitForm
-            key={editing}
-            date={date}
-            visit={
-              editing !== 'new' ? (visitById.get(editing) ?? m.leaveVisits.find((v) => v.id === editing) ?? null) : null
-            }
-            clients={m.clients}
-            onClose={() => setEditing(null)}
-            onSaved={toast}
-          />
         </div>
       )}
 
@@ -3967,7 +3987,7 @@ const NARROW_QUERY = '(max-width: 900px)';
 const WIDE_MAP_QUERY = '(min-width: 1280px)';
 
 /** メディアクエリが合っているか（幅を変えたら追う） */
-function useMedia(query: string): boolean {
+function useMediaLocal(query: string): boolean {
   const [on, setOn] = useState(() => window.matchMedia(query).matches);
   useEffect(() => {
     const mq = window.matchMedia(query);
@@ -4308,7 +4328,13 @@ function VisitList({
                   </td>
                   <td className="nowrap">
                     <div className="actions">
-                      <IconButton icon={Pencil} label={`${label}を編集`} onClick={() => onEdit(id)} />
+                      <IconButton
+                        icon={PanelRightOpen}
+                        label={`${label}を開く`}
+                        onClick={() => onEdit(id)}
+                        data-testid="visit-row-open"
+                        data-visit={id}
+                      />
                       <IconButton icon={Ban} label={`${label}を取り消す`} tone="danger" onClick={() => onCancel(v)} />
                     </div>
                   </td>
@@ -4342,7 +4368,13 @@ function VisitList({
                   </td>
                   <td className="nowrap">
                     <div className="actions">
-                      <IconButton icon={Pencil} label={`${label}を編集`} onClick={() => onEdit(v.id)} />
+                      <IconButton
+                        icon={PanelRightOpen}
+                        label={`${label}を開く`}
+                        onClick={() => onEdit(v.id)}
+                        data-testid="visit-row-open"
+                        data-visit={v.id}
+                      />
                     </div>
                   </td>
                 </tr>

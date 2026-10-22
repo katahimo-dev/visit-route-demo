@@ -207,11 +207,12 @@
 
 #### `lib/commandPalette.ts`（純粋関数。テストあり）
 
-- `PaletteItem`：`id`・`kind`（`action|screen|client|staff`）・`label`・`hint`・`to`・`date?`・`keys`（`lib/search` の `normalizeKana` でそろえた名前・よみ・別名）。`paletteItem` で作る
-- `paletteActions(today)`：欠勤・キャンセルを登録・日の予定（今日）を開く・今月／来月の案をまとめて作る（`?do=batch`）・要対応（`attention`）・確定していない日（`unconfirmed`）・条件が変わった日を作り直す（`stale`）・問い合わせに答える。`{ customRules }` なら「今日の案を試す重みで作り直す」（`recreateTodayHref`）も。切った機能の操作は出さない
+- `PaletteItem`：`id`・`kind`（`action|screen|client|staff|visit`）・`label`・`hint`・`to`・`date?`・`visitId?`・`op?`（`'visit-add'`）・`keys`（`lib/search` の `normalizeKana` でそろえた名前・よみ・別名）。`paletteItem` で作る
+- `paletteActions(today)`：欠勤・キャンセルを登録・日の予定（今日）を開く・今月／来月の案をまとめて作る（`?do=batch`）・要対応（`attention`）・確定していない日（`unconfirmed`）・条件が変わった日を作り直す（`stale`）・訪問を追加（`op: 'visit-add'`）・問い合わせに答える。`{ customRules }` なら「今日の案を試す重みで作り直す」（`recreateTodayHref`）も。切った機能の操作は出さない
 - `paletteScreens(sections, terms)`：sections は `screenSections`（メニューから外した画面も1つずつ。PRD D273・D275）。操作でない項目。補足はグループの見出し（グループの見出しも語に入るので「設定」「予定」で各画面を引ける）。読み・言い換え `SCREEN_WORDS`、〈利用者さん〉一覧・〈スタッフ〉一覧には呼び方のよみ `TERM_READINGS`（既定の呼び方の漢字だけ）
 - `palettePeople(clients, staff, terms)`：`/clients?id=`・`/staff?id=`。段階・休止中を補足に
 - `filterPalette(items, query, limit=8)`：語に分けて AND、種類の順・先頭一致を前に、人は種類ごと limit まで（`rest`）。空なら操作と画面だけ
+- 訪問（PRD D303。ADR-0051）：`visitIndex(visits)`（〈利用者さん〉ごとに日付・開始の順）・`paletteDate(term, today)`（「10/28」「10月28日」「2026-10-28」「今日」「明日」「あさって」。年の無い日付は半年より前なら来年）・`paletteVisits(query, clients, index, today, describe, limit=6)`（日付の語と名前の語に分け、名前の語が〈利用者さん〉の名前・よみに含まれる人（20人まで）の、日付があればその日の回（取り消しも）、無ければ今日以降の近い回。名前の語が無ければ出さない）。種類の見出しは「訪問」で、`filterPalette` の結果の後ろに足す
 - `paletteTerms`・`moveActive`（端で回る）・`isPaletteShortcut(e, isMac)`（mac は ⌘K、ほかは Ctrl+K。Shift・Alt・変換中は違う）・`isMacPlatform`・`paletteKindLabel`・`hashPathname(hash)`・`keepPaletteOn(openFor, pathname)`
 
 #### `components/CommandPalette.tsx`（`commandPalette.css`）
@@ -223,7 +224,8 @@
 - 選んでいる候補は見える位置へ（先頭なら scrollTop=0、種類の先頭なら見出しごと）
 - `customRules` は `presetOf(data.rules, data.presets) === null`
 - 候補の語は `useMemo`（開いたとき・データが変わったとき）でそろえ、打つたびは `filterPalette` だけ（300人×60人で1文字 100ms 以内）
-- 選ぶと閉じて、`date` があれば `setDate`、今の画面なら移らない、ほかは `navigate(to)`
+- 訪問の索引は打ってから作り（開いただけでは作らない）、開いている間は使い回す。訪問の補足は担当（今の案、無ければ確定した割当）・「担当なし」・取り消し
+- 選ぶと閉じて、訪問（`visitId`）・「訪問を追加」（`op`）は画面を移らずに訪問の詳細の欄（`useOpenVisit`）を開く。ほかは `date` があれば `setDate`、今の画面なら移らない、ほかは `navigate(to)`
 - z-index 1150（引き出し 1100 とトースト 1200 の間）。印刷で出さない。860px 以下は上に寄せ、下の案内（↑↓ Enter Esc）を隠す
 
 ### 確認ダイアログ（ADR-0026。PRD D146〜D150）

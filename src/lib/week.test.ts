@@ -207,6 +207,26 @@ describe('moveFollowing（以降すべて）', () => {
     expect(r.data.patterns.map((p) => p.id)).toEqual(['p1', 'np1', 'np2']);
   });
 
+  it('over：動かした曜日の新しいパターンの所要・種類・幅・いつもの担当も変える（訪問の詳細の欄。PRD D300）', () => {
+    const d = withPatterns([pattern('p1', [1, 3])]);
+    const r = moveFollowing(d, '2026-10-19_p1', '2026-10-19', 10 * 60, DATE, ['np1', 'np2'], {
+      durationMinutes: 90,
+      windowKind: 'window',
+      width: 30,
+      usualStaffId: 's1',
+    })!;
+    const np2 = r.data.patterns.find((p) => p.id === 'np2')!;
+    expect(np2).toMatchObject({
+      durationMinutes: 90,
+      windowKind: 'window',
+      earliestStart: '10:00',
+      latestStart: '10:30',
+      usualStaffId: 's1',
+    });
+    // ほかの曜日（水曜）のパターンは変えない
+    expect(r.data.patterns.find((p) => p.id === 'np1')!).toMatchObject({ durationMinutes: 60, usualStaffId: null });
+  });
+
   it('単発の訪問は null', () => {
     const d = makeData({ visits: [visit('v1', 'c1', '09:00', '09:00')] });
     expect(moveFollowing(d, 'v1', DATE, 600, DATE, ['a', 'b'])).toBeNull();

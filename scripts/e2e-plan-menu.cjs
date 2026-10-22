@@ -872,13 +872,14 @@ async function moreMenus(page) {
   );
   check((await focusedId()) === 'plan-visit-add', '「その他 ▾」を Enter で開くとフォーカスは先頭の項目');
   await page.keyboard.press('Enter');
-  const form = page.locator('.plan-form');
+  // 訪問の詳細の欄の新規の形（PRD D300）
+  const form = page.getByTestId('visit-panel');
   await form.waitFor();
   check(
-    await form.evaluate((el) => el.contains(document.activeElement)),
-    '「訪問を追加」で訪問の入力が開き、最初の欄へフォーカス',
+    (await form.getAttribute('data-new')) === 'true' && (await focusedId()) === 'vp-client',
+    '「訪問を追加」で訪問の詳細の欄（新規）が開き、最初の欄へフォーカス',
   );
-  await form.getByRole('button', { name: 'キャンセル' }).click();
+  await page.getByTestId('vp-close').click();
   await form.waitFor({ state: 'detached' });
   check((await focusedId()) === 'plan-more', '訪問の入力を閉じるとフォーカスは「その他」へ戻る', await focusedId());
   // 使い方：操作の行の下に開き、フォーカスを移す
@@ -914,7 +915,7 @@ async function moreMenus(page) {
   // aria-disabled（フォーカスは残す）なので、押しても何もしないことを確かめる
   await add.click({ force: true });
   await settle(page, 200);
-  check((await page.locator('.plan-form').count()) === 0, '押せない「訪問を追加」を押しても入力は開かない');
+  check((await page.getByTestId('visit-panel').count()) === 0, '押せない「訪問を追加」を押しても欄は開かない');
   await page.keyboard.press('Escape');
 
   // 月の予定：月送り・今月・その他 ▾ だけ（印刷・勤務の見込み・作り直し・表示の選択・説明はたたむ）。

@@ -148,9 +148,11 @@ async function weekTimeline(page, by) {
     },
     name,
   );
+  // 落とすと訪問の詳細の欄が落とした日時で開く（PRD D300。週の移動の欄はこの欄にした）
   const summary = await page
-    .getByTestId('move-summary')
-    .innerText()
+    .getByTestId('visit-panel')
+    .getByTestId('vp-date')
+    .inputValue()
     .catch(() => null);
   report(name, r.ev.includes('drop') && !!summary && r.moved === 0, { vid, pickerOpen: open, ...r, summary });
 }
@@ -192,9 +194,11 @@ async function weekClients(page) {
     },
     name,
   );
+  // 落とすと訪問の詳細の欄が落とした日時で開く（PRD D300。週の移動の欄はこの欄にした）
   const summary = await page
-    .getByTestId('move-summary')
-    .innerText()
+    .getByTestId('visit-panel')
+    .getByTestId('vp-date')
+    .inputValue()
     .catch(() => null);
   report(name, r.ev.includes('drop') && !!summary && r.moved === 0, { ...r, summary });
 }

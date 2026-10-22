@@ -851,3 +851,37 @@
     display: none;
   }
 }
+
+/* 〈利用者さん〉を選んだときのこの月の回（押すと訪問の詳細の欄。PRD D303） */
+.month-visits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.month-visit-btn {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.month-visit-btn:hover {
+  background: #faf6f2;
+}
+@media print {
+  .month-visits {
+    display: none;
+  }
+}

@@ -15,15 +15,19 @@ import {
   paletteKindLabel,
   palettePeople,
   paletteScreens,
+  paletteVisits,
+  visitIndex,
 } from '../lib/commandPalette';
 import { trapTarget } from '../lib/confirmDialog';
 import { confirmLeave } from '../lib/leaveGuard';
 import type { MenuItem, NavSection } from '../lib/nav';
+import { assignmentOf } from '../lib/visitOps';
 import { presetOf } from '../seed';
 import { useDemoData } from '../store';
 import { StaffMarkById } from './StaffMark';
 import { FOCUSABLE } from './ui';
 import { inertLock, useBodyScrollLock } from './useBodyScrollLock';
+import { useOpenVisit } from './VisitPanel';
 import './commandPalette.css';
 
 /** このブラウザが mac か（⌘K と Ctrl+K のどちらで開くか・キーの印） */
@@ -72,7 +76,22 @@ export function CommandPalette({
   const screens = useMemo(() => paletteScreens(sections, terms), [sections, terms]);
   const people = useMemo(() => palettePeople(data.clients, data.staff, terms), [data.clients, data.staff, terms]);
   const items = useMemo(() => [...actions, ...screens, ...people], [actions, screens, people]);
-  const result = useMemo(() => filterPalette(items, query), [items, query]);
+  const base = useMemo(() => filterPalette(items, query), [items, query]);
+  // 訪問の候補（PRD D303）：〈利用者さん〉の名前・よみ＋日付。索引は打ってから作り（開いただけでは作らない）、開いている間は使い回す
+  const typedAny = query.trim() !== '';
+  const vIndex = useMemo(() => (typedAny ? visitIndex(data.visits) : null), [typedAny, data.visits]);
+  const result = useMemo(() => {
+    if (!vIndex) return base;
+    const staffName = new Map(data.staff.map((s) => [s.id, s.name]));
+    const visits = paletteVisits(query, people, vIndex, today, (v) => {
+      if (v.cancelled) return v.cancelKind === 'sameDay' ? '当日キャンセル' : '取り消し';
+      const sid = assignmentOf(data, v.id, v.date).staffId;
+      return sid ? (staffName.get(sid) ?? '') : '担当なし';
+    });
+    if (visits.length === 0) return base;
+    const groups = [...base.groups, { kind: 'visit' as const, items: visits, rest: 0 }];
+    return { groups, flat: groups.flatMap((g) => g.items) };
+  }, [base, vIndex, query, people, today, data]);
   const flat = result.flat;
   const at = flat.length === 0 ? -1 : Math.min(active, flat.length - 1);
   const optionId = (i: number) => `${listId}-o${i}`;
@@ -132,9 +151,19 @@ export function CommandPalette({
     }
   });
 
+  const openVisit = useOpenVisit();
   const pick = async (it: PaletteItem | undefined) => {
     if (!it) return;
     onClose();
+    // 訪問・「訪問を追加」は画面を移らずに、今の画面の上で訪問の詳細の欄を開く（PRD D303）
+    if (it.visitId) {
+      openVisit({ visitId: it.visitId });
+      return;
+    }
+    if (it.op === 'visit-add') {
+      openVisit({ newVisit: { date: today } });
+      return;
+    }
     // 確定していない下書きのある画面（条件の重み）から移るときは確かめる（PRD D286。断れば移らない）
     if (it.to.split(/[?#]/)[0] !== pathname && !(await confirmLeave())) return;
     if (it.date) setDate(it.date);
@@ -167,7 +196,7 @@ export function CommandPalette({
             aria-controls={listId}
             aria-activedescendant={at >= 0 ? optionId(at) : undefined}
             aria-autocomplete="list"
-            aria-label={`画面・操作・${terms.client}・${terms.staff}の名前で探す`}
+            aria-label={`画面・操作・${terms.client}・${terms.staff}の名前・訪問（名前と日付）で探す`}
             placeholder={`画面・操作・${terms.client}・${terms.staff}の名前`}
             autoComplete="off"
             spellCheck={false}
@@ -240,7 +269,8 @@ export function CommandPalette({
         </div>
         {flat.length === 0 && (
           <p className="cmdk-empty" data-testid="cmdk-empty">
-            見つかりません。画面の名前・操作・{terms.client}のよみ・{terms.staff}の名前で探せます
+            見つかりません。画面の名前・操作・{terms.client}のよみ・{terms.staff}の名前・訪問（「名前
+            10/28」）で探せます
           </p>
         )}
         <p className="cmdk-foot" aria-hidden="true">

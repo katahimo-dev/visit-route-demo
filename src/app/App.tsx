@@ -45,6 +45,7 @@ import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { ConditionsBaseSweep, RebuildBand } from '../components/rebuildBand';
 import { TourProvider } from '../components/Tour';
+import { VisitPanelProvider } from '../components/VisitPanel';
 import { addDays, jstDate } from '../domain/time';
 import { hashPathname, isPaletteShortcut, keepPaletteOn } from '../lib/commandPalette';
 import { dateText } from '../lib/common';
@@ -125,38 +126,41 @@ export default function App() {
         <DataWatch />
         {/* 月まとめ作成の計算を画面の外で続ける（PRD D256・D257。ADR-0042）：store につなぎ、終わったら知らせる */}
         <MonthBatchHost />
-        {blocked ? (
-          <Navigate to="/home" replace state={{ featureOff: blocked }} />
-        ) : (
-          <Routes>
-            <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
-            {/* 月の予定の印刷（PRD D70）：左のメニューの外（印刷にナビを出さない） */}
-            <Route path="/month/print" element={<Guarded element={<MonthPrintPage />} />} />
-            <Route element={<AdminShell />}>
-              {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
-              <Route path="/schedule" element={<Navigate to="/plan" replace />} />
-              {/* ホーム（見出しの下に「今日やること」。PRD D141・D230。ADR-0025・0034）：起動したとき（#/・知らない URL）の画面 */}
-              <Route path="/home" element={<HomePage />} />
-              <Route path="/plan" element={<PlanPage />} />
-              <Route path="/month" element={<MonthPage />} />
-              <Route path="/week" element={<WeekPage />} />
-              <Route path="/workload" element={<WorkloadPage />} />
-              <Route path="/vacancy" element={<VacancyPage />} />
-              <Route path="/compare" element={<ComparePage />} />
-              <Route path="/rules" element={<RulesPage />} />
-              <Route path="/items" element={<ItemsPage />} />
-              <Route path="/types" element={<TypesPage />} />
-              <Route path="/compat" element={<CompatPage />} />
-              <Route path="/staff" element={<StaffPage />} />
-              <Route path="/clients" element={<ClientsPage />} />
-              <Route path="/availability" element={<AvailabilityPage />} />
-              <Route path="/data" element={<DataPage />} />
-              {/* 管理者設定（PRD D210。ADR-0028）：機能の入り切り。だれでも開ける・切れない */}
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/home" replace />} />
-            </Route>
-          </Routes>
-        )}
+        {/* 訪問の詳細の欄（PRD D300〜D303。ADR-0051）：どの画面・コマンドパレットからでも開ける。欄は画面全体で1つ */}
+        <VisitPanelProvider>
+          {blocked ? (
+            <Navigate to="/home" replace state={{ featureOff: blocked }} />
+          ) : (
+            <Routes>
+              <Route path="/staff-view/:staffId" element={<Guarded element={<StaffViewPage />} />} />
+              {/* 月の予定の印刷（PRD D70）：左のメニューの外（印刷にナビを出さない） */}
+              <Route path="/month/print" element={<Guarded element={<MonthPrintPage />} />} />
+              <Route element={<AdminShell />}>
+                {/* 予定と AI案は1画面（#/plan。ADR-0009）。古いリンクの #/schedule はそこへ */}
+                <Route path="/schedule" element={<Navigate to="/plan" replace />} />
+                {/* ホーム（見出しの下に「今日やること」。PRD D141・D230。ADR-0025・0034）：起動したとき（#/・知らない URL）の画面 */}
+                <Route path="/home" element={<HomePage />} />
+                <Route path="/plan" element={<PlanPage />} />
+                <Route path="/month" element={<MonthPage />} />
+                <Route path="/week" element={<WeekPage />} />
+                <Route path="/workload" element={<WorkloadPage />} />
+                <Route path="/vacancy" element={<VacancyPage />} />
+                <Route path="/compare" element={<ComparePage />} />
+                <Route path="/rules" element={<RulesPage />} />
+                <Route path="/items" element={<ItemsPage />} />
+                <Route path="/types" element={<TypesPage />} />
+                <Route path="/compat" element={<CompatPage />} />
+                <Route path="/staff" element={<StaffPage />} />
+                <Route path="/clients" element={<ClientsPage />} />
+                <Route path="/availability" element={<AvailabilityPage />} />
+                <Route path="/data" element={<DataPage />} />
+                {/* 管理者設定（PRD D210。ADR-0028）：機能の入り切り。だれでも開ける・切れない */}
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="*" element={<Navigate to="/home" replace />} />
+              </Route>
+            </Routes>
+          )}
+        </VisitPanelProvider>
       </PersonPopoverProvider>
     </DayProvider>
   );

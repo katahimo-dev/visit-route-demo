@@ -245,10 +245,6 @@ p.plan-band.error {
 .plan-map-open svg {
   transform: rotate(90deg);
 }
-.plan-form {
-  scroll-margin-top: calc(var(--header-h) + 8px);
-}
-
 /* 列の見出し（〈スタッフ〉の印は components/staffMark.css） */
 .col-head {
   display: inline-flex;

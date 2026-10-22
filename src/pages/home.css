@@ -168,3 +168,71 @@
     display: none;
   }
 }
+
+/* 今日の訪問・これからの入らない訪問（押すと訪問の詳細の欄。PRD D303） */
+.home-section-sub {
+  margin: 4px 0 0;
+  font-size: 0.92rem;
+  color: var(--sub);
+}
+.home-visits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 6px;
+}
+.home-visit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.home-visit.is-warn {
+  border-left-color: var(--danger);
+}
+.home-visit:hover {
+  background: #faf6f2;
+}
+.home-visit-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.home-visit-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-visit-staff {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+button.home-task {
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+@media print {
+  .home-visits {
+    display: none;
+  }
+}
