@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useDeferredValue,
+  useEffect,
   useId,
   useMemo,
   useRef,
@@ -135,8 +136,13 @@ function VisitPanel({
   const narrow = useMedia(COMPACT_QUERY);
   const today = jstDate(Date.now());
   const isNew = !req.visitId;
-  /** 開いている訪問の ID（これ以降・すべてで回を作り直すと変わるので、保存のあとに差し替える） */
+  /** 開いている訪問の ID（欄を開いている間は変えない。保存で作り直した回の ID は savedRef で閉じたあとのフォーカスに使う） */
   const [visitId] = useState<string | null>(req.visitId ?? null);
+  /**
+   * 開いたときの訪問（欄の中の書き込みのあとは書いた形に差し替える）。保存・取り消しの前にデータの訪問と比べ、別のタブ・別の操作で
+   * 変わっていれば古い入力で上書きしない
+   */
+  const baseRef = useRef<Visit | null>(req.visitId ? (data.visits.find((y) => y.id === req.visitId) ?? null) : null);
   const info = useMemo(() => (visitId ? visitInfo(data, visitId, today) : null), [data, visitId, today]);
   const v = info?.visit ?? null;
   const [draft, setDraft] = useState<VisitDraft>(() => {
@@ -176,6 +182,15 @@ function VisitPanel({
     [data, visitId, deferred, editable, newBlocked],
   );
   const current = choices?.currentStaffId ?? null;
+  // 日時を変えて候補が変わり、選んでいた人が候補に無い・選べなくなったら「変えない」に戻す（担当なしも今の担当がいなくなれば戻す）
+  useEffect(() => {
+    if (!choices || pick === KEEP) return;
+    const ok =
+      pick === NONE_PICK
+        ? choices.hasPlan && choices.currentStaffId !== null
+        : choices.hasPlan && choices.choices.some((c) => c.staffId === pick && !c.disabled && !c.current);
+    if (!ok) setPick(KEEP);
+  }, [choices, pick]);
 
   const set = (patch: Partial<VisitDraft>) => {
     setDraft((f) => ({ ...f, ...patch }));
@@ -199,15 +214,35 @@ function VisitPanel({
     },
   });
 
+  /** 別のタブ・別の操作で開いた訪問が変わっていれば、その文（保存・取り消しを止める） */
+  const changedElsewhere = (): string | null => {
+    if (isNew || !visitId) return null;
+    const now = latest.current.visits.find((x) => x.id === visitId) ?? null;
+    return JSON.stringify(now) !== JSON.stringify(baseRef.current)
+      ? 'この訪問は別の操作で変わりました。閉じて開き直してください'
+      : null;
+  };
+  /**
+   * 書く（書く前のデータが今のデータのときだけ。確認を待つ間などに別の変更が入っていれば書かずに null を返し、呼ぶ側が誤りを出す）。
+   * 書いたら「元に戻す」の操作を返す
+   */
   const write = (next: DemoData) => {
     const before = data;
+    if (latest.current !== before) return null;
     update((d) => (d === before ? next : d));
+    if (visitId) baseRef.current = next.visits.find((x) => x.id === visitId) ?? null;
     return undoTo(before, next);
   };
+  const STALE = '開いている間にデータが変わりました。閉じて開き直してください';
 
   const save = async () => {
     if (!editable || newBlocked) {
       onClose();
+      return;
+    }
+    const elsewhere = changedElsewhere();
+    if (elsewhere) {
+      setError({ text: elsewhere });
       return;
     }
     const staff = pick === KEEP ? undefined : pick === NONE_PICK ? null : pick;
@@ -241,6 +276,10 @@ function VisitPanel({
         return;
     }
     const action = write(r.data);
+    if (!action) {
+      setError({ text: STALE });
+      return;
+    }
     const after = r.data.visits.find((x) => x.id === r.visitId);
     const label = after ? `${dateText(after.date)} ${after.earliestStart}` : '';
     const range = info?.pattern && !isNew ? `・${SCOPE_LABELS[scope]}` : '';
@@ -264,23 +303,32 @@ function VisitPanel({
     onClose();
   };
 
+  /** 欄の中の操作の前に、別の操作で変わっていないかを見る（変わっていれば誤りを出して true） */
+  const blocked = () => {
+    const t = changedElsewhere();
+    if (t) setError({ text: t });
+    return !!t;
+  };
   const doCancel = (sameDay: boolean) => {
-    if (!v) return;
+    if (!v || blocked()) return;
     const action = write(cancelVisitOp(data, v.id, sameDay));
+    if (!action) return setError({ text: STALE });
     toast(sameDay ? '当日キャンセルとして取り消しました' : '取り消しました', { action });
     req.onSaved?.({ visitId: v.id, date: v.date, moved: false, staffSet: false, isNew: false, label: '' });
   };
   const doUncancel = () => {
-    if (!v) return;
+    if (!v || blocked()) return;
     const action = write(uncancelVisitOp(data, v.id));
+    if (!action) return setError({ text: STALE });
     toast('取り消しをやめました', { action });
     req.onSaved?.({ visitId: v.id, date: v.date, moved: false, staffSet: false, isNew: false, label: '' });
   };
   const doRestore = () => {
-    if (!v) return;
+    if (!v || blocked()) return;
     const next = restoreOccurrenceOp(data, v.id, today);
     if (next === data) return;
     const action = write(next);
+    if (!action) return setError({ text: STALE });
     const after = next.visits.find((x) => x.id === v.id);
     if (after) setDraft(draftOf(after));
     toast('この回の変更を戻しました（繰り返しのとおり）', { action });
@@ -339,6 +387,7 @@ function VisitPanel({
       onClose={onClose}
       onSubmit={save}
       returnFocus={returnFocus}
+      fallbackFocus={headingOfPage}
       focusPanel={!isNew}
       footer={footer}
     >
@@ -416,16 +465,17 @@ function VisitPanel({
                   </dd>
                 </>
               )}
-              {info.changes.length > 0 && (
+              {(info.changes.length > 0 || (v.pattern?.edited && !cancelled)) && (
                 <>
                   <dt>この回の変更</dt>
                   <dd className="row" style={{ gap: 4, flexWrap: 'wrap' }} data-testid="vp-changes">
+                    {info.changes.length === 0 && <span className="chip chip-warn">この回だけの変更</span>}
                     {info.changes.map((c) => (
                       <span key={c} className="chip chip-warn">
                         {c}
                       </span>
                     ))}
-                    {editable && (
+                    {timeOn && info.changes.length > 0 && (
                       <button
                         type="button"
                         className="btn btn-small btn-text"
@@ -709,12 +759,7 @@ function VisitPanel({
             {scope !== 'once' && (
               <p className="sub" data-testid="vp-scope-note">
                 {scopes.otherDays ? 'ほかの曜日の回は変えません。' : ''}
-                {scopes.keptDates.length > 0
-                  ? `この回だけ変えた・取り消した ${scopes.keptDates.length}回（${scopes.keptDates
-                      .slice(0, 4)
-                      .map((x) => dateText(x))
-                      .join('・')}${scopes.keptDates.length > 4 ? ' など' : ''}）はそのままです。`
-                  : ''}
+                {keptText(scope === 'all' ? scopes.keptDates.all : scopes.keptDates.following)}
                 担当を選ぶと、範囲の回の担当といつもの担当も替わります。
               </p>
             )}
@@ -780,3 +825,20 @@ const toHm = (m: number) => {
   const x = Math.min(Math.max(0, m), 23 * 60 + 59);
   return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`;
 };
+
+/** そのままにする回の文（無ければ空） */
+function keptText(dates: readonly string[]): string {
+  if (dates.length === 0) return '';
+  const head = dates
+    .slice(0, 4)
+    .map((x) => dateText(x))
+    .join('・');
+  return `この回だけ変えた・取り消した ${dates.length}回（${head}${dates.length > 4 ? ' など' : ''}）はそのままです。`;
+}
+
+/** 閉じたときに戻り先が消えていたら、画面の見出しへ（フォーカスを body に落とさない） */
+function headingOfPage(): HTMLElement | null {
+  const h = document.querySelector<HTMLElement>('.app-main h1');
+  if (h && !h.hasAttribute('tabindex')) h.tabIndex = -1;
+  return h;
+}

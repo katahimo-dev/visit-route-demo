@@ -19,7 +19,7 @@ import { useDay } from '../app/day';
 import { StaffMarkById } from '../components/StaffMark';
 import { PageHeader } from '../components/ui';
 import { useOpenVisit } from '../components/VisitPanel';
-import { addDays, jstDate } from '../domain/time';
+import { addDays, jstDate, jstHhmm } from '../domain/time';
 import { dateText } from '../lib/common';
 import {
   type HomeEntryKey,
@@ -89,7 +89,7 @@ export default function HomePage() {
   // 訪問の詳細の欄（PRD D304）：今日の訪問・これからの入らない訪問から1件ずつ開く。スマホの幅では「訪問を追加」を出さない
   const openVisit = useOpenVisit();
   const compact = useMedia(COMPACT_QUERY);
-  const nowHm = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(11, 16);
+  const nowHm = jstHhmm(Date.now());
   const todayRows = useMemo(() => dayVisitRows(data, today, nowHm), [data, today, nowHm]);
   const laterUnassigned = useMemo(() => unassignedVisits(data, addDays(today, 1), addDays(today, 31)), [data, today]);
   const clientName = (id: string) => data.clients.find((c) => c.id === id)?.displayName ?? '（不明）';

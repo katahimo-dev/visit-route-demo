@@ -212,7 +212,7 @@
 - `paletteScreens(sections, terms)`：sections は `screenSections`（メニューから外した画面も1つずつ。PRD D273・D275）。操作でない項目。補足はグループの見出し（グループの見出しも語に入るので「設定」「予定」で各画面を引ける）。読み・言い換え `SCREEN_WORDS`、〈利用者さん〉一覧・〈スタッフ〉一覧には呼び方のよみ `TERM_READINGS`（既定の呼び方の漢字だけ）
 - `palettePeople(clients, staff, terms)`：`/clients?id=`・`/staff?id=`。段階・休止中を補足に
 - `filterPalette(items, query, limit=8)`：語に分けて AND、種類の順・先頭一致を前に、人は種類ごと limit まで（`rest`）。空なら操作と画面だけ
-- 訪問（PRD D304。ADR-0051）：`visitIndex(visits)`（〈利用者さん〉ごとに日付・開始の順）・`paletteDate(term, today)`（「10/28」「10月28日」「2026-10-28」「今日」「明日」「あさって」。年の無い日付は半年より前なら来年）・`paletteVisits(query, clients, index, today, describe, limit=6)`（日付の語と名前の語に分け、名前の語が〈利用者さん〉の名前・よみに含まれる人（20人まで）の、日付があればその日の回（取り消しも）、無ければ今日以降の近い回。名前の語が無ければ出さない）。種類の見出しは「訪問」で、`filterPalette` の結果の後ろに足す
+- 訪問（PRD D304。ADR-0051）：`visitIndex(visits)`（〈利用者さん〉ごとに日付・開始の順）・`paletteDate(term, today)`（「10/28」「10月28日」「2026-10-28」「今日」「明日」「あさって」。年の無い日付は去年・今年・来年のうち今日に近い方）・`paletteVisits(query, clients, index, today, describe, limit=6)`（日付の語と名前の語に分け、名前の語が〈利用者さん〉の名前・よみに含まれる人（20人まで）の、日付があればその日の回（取り消しも）、無ければ今日以降の近い回。名前の語が無ければ出さない。かなの日付の語（「あす」など）しか無ければ名前として読む）。種類の見出しは「訪問」で、`filterPalette` の結果の後ろに足す
 - `paletteTerms`・`moveActive`（端で回る）・`isPaletteShortcut(e, isMac)`（mac は ⌘K、ほかは Ctrl+K。Shift・Alt・変換中は違う）・`isMacPlatform`・`paletteKindLabel`・`hashPathname(hash)`・`keepPaletteOn(openFor, pathname)`
 
 #### `components/CommandPalette.tsx`（`commandPalette.css`）

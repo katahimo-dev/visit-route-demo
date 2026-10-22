@@ -130,7 +130,7 @@ import {
   revertText,
 } from '../lib/planMenu';
 import { planRulesOf } from '../lib/presets';
-import { CURRENT_TEXT, NONE_TEXT, reassignItemText } from '../lib/reassignMenu';
+import { CURRENT_TEXT, NONE_TEXT, reassignChoices } from '../lib/reassignMenu';
 import { rebuildWith } from '../lib/rebuildBand';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { addRun, alignPlan, alignRoutes, findRun, planOfRun, problemKey, reusableRun } from '../lib/runs';
@@ -147,13 +147,12 @@ import {
 } from '../lib/undoEdit';
 import { ownerMap, useDayModel } from '../lib/useDayModel';
 import { useFeature } from '../lib/useFeature';
-import { COMPACT_QUERY } from '../lib/useMedia';
+import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { createValueStore, type ReadableStore, useValueStore } from '../lib/valueStore';
 import { hmText, workRoutesOf, workStats } from '../lib/workload';
 import { bestInsertion, compile, prefKey, withManualPrefs } from '../matching';
 import {
   type ContactList,
-  candidatesFor,
   contactsOf,
   leftOf,
   placeVisit,
@@ -349,7 +348,7 @@ export default function PlanPage() {
   /** 訪問の詳細の欄（PRD D301〜D304。App の殻の欄を開く） */
   const openVisitPanel = useOpenVisit();
   /** スマホの幅（600px 以下）は訪問を足さない（ADR-0051 の決定5） */
-  const compact = useMediaLocal(COMPACT_QUERY);
+  const compact = useMedia(COMPACT_QUERY);
   /** 「その他 ▾」の「使い方」で開いた説明（PRD D279。保存しない） */
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
@@ -403,7 +402,7 @@ export default function PlanPage() {
    * 地図は本体（時間軸・順番・一覧）の下に全幅で大きく置く（比較の画面と同じ。PRD D300）。画面の外にあるあいだは MapDock で
    * 右下に浮かせ、〈スタッフ〉・区間・訪問を選ぶと浮かせた地図が開く。広い画面は地図を高くする
    */
-  const wideMap = useMediaLocal(WIDE_MAP_QUERY);
+  const wideMap = useMedia(WIDE_MAP_QUERY);
   /** 「入らなかった訪問」の列（帯の近道の行き先） */
   const noneColId = useId();
   const runRef = useRef<{ stop(): void } | null>(null);
@@ -3953,19 +3952,6 @@ const NARROW_QUERY = '(max-width: 900px)';
 /** 地図を時間軸の横に並べる幅（PRD D63） */
 const WIDE_MAP_QUERY = '(min-width: 1280px)';
 
-/** メディアクエリが合っているか（幅を変えたら追う） */
-function useMediaLocal(query: string): boolean {
-  const [on, setOn] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const onChange = () => setOn(mq.matches);
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return on;
-}
-
 /** 狭い幅（900px 以下）か印刷中か。印刷は beforeprint の中ですぐ描き直す（印刷の画像に間に合わせる） */
 function useNarrowOrPrint(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
@@ -4388,17 +4374,13 @@ function ReassignMenu({
 }) {
   /** 候補は一覧を開いているときだけ計算する（「受けられる人」の CandidateBox と同じ。訪問を選ぶ・ドラッグのたびに計算しない） */
   const [open, setOpen] = useState(false);
-  const list = useMemo(
-    () => (open ? (attempt(() => candidatesFor(problem, routes, visitId)).value ?? []) : []),
-    [open, problem, routes, visitId],
-  );
-  const vi = problem.visits.findIndex((v) => v.id === visitId);
-  if (vi < 0) return null;
-  const shown = new Set(staffIds);
-  const indexOf = (sid: string) => problem.staff.findIndex((s) => s.id === sid);
-  const allowed = (sid: string) => problem.allowed[vi]?.[indexOf(sid)] === true;
-  const others = list.filter((c) => c.staffId !== ownerId && shown.has(c.staffId));
-  const sorted = [...others.filter((c) => allowed(c.staffId)), ...others.filter((c) => !allowed(c.staffId))];
+  // 判定は訪問の詳細の欄と同じ関数（lib/reassignMenu の reassignChoices。ADR-0051）。出す人は列を出している人
+  const sorted = useMemo(() => {
+    if (!open) return [];
+    const shown = new Set(staffIds);
+    return reassignChoices(problem, routes, visitId, ownerId, (sid) => shown.has(sid)).filter((c) => !c.current);
+  }, [open, problem, routes, visitId, ownerId, staffIds]);
+  if (!problem.visits.some((v) => v.id === visitId)) return null;
   const items: MenuItem[] = [
     ...(ownerId
       ? [
@@ -4415,18 +4397,17 @@ function ReassignMenu({
           },
         ]
       : []),
-    ...sorted.map((c, i): MenuItem => {
-      const t = reassignItemText(c, problem.reasons[vi]?.[indexOf(c.staffId)] ?? [], allowed(c.staffId));
-      return {
+    ...sorted.map(
+      (c, i): MenuItem => ({
         key: `to-${c.staffId}`,
         group: i === 0 ? `ほかの${staffTerm}へ移す` : undefined,
         testId: 'plan-reassign-item',
         label: staffName(c.staffId),
-        description: t.description,
-        disabled: busy || t.disabled,
+        description: c.description,
+        disabled: busy || c.disabled,
         onSelect: () => onMove(c.staffId),
-      };
-    }),
+      }),
+    ),
     // 担当の無い訪問で移せる人がいなければ、そう書く（一覧を空にしない）
     ...(!ownerId && open && sorted.length === 0
       ? [
