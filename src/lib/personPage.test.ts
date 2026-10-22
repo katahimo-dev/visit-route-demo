@@ -142,10 +142,12 @@ describe('カレンダーの回', () => {
     expect(lastMadeDate(d.visits)).toBe('2026-10-28');
     expect(lastMadeDate([])).toBeNull();
   });
-  it('空き枠：ドラッグした長さ（15分以上）か、押しただけなら既定の所要', () => {
-    expect(slotOf(600, 690)).toEqual({ start: 600, duration: 90 });
-    expect(slotOf(690, 600)).toEqual({ start: 600, duration: 90 });
+  it('空き枠：同じ枠なら押しただけ（既定の所要）、枠をまたいだら押した枠と離した枠を含む長さ', () => {
+    expect(slotOf(600, 675)).toEqual({ start: 600, duration: 90 });
+    // 上へ動かしても押した枠（10:00〜10:15）を含む
+    expect(slotOf(675, 600)).toEqual({ start: 600, duration: 90 });
     expect(slotOf(600, 600)).toEqual({ start: 600, duration: 60 });
+    expect(slotOf(600, 615)).toEqual({ start: 600, duration: 30 });
   });
 });
 

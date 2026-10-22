@@ -192,11 +192,13 @@ export function staffAbsencesIn(d: Pick<DemoData, 'absences'>, staffId: string, 
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-/** 空き枠を押した・縦にドラッグした分の範囲から、新しい訪問の開始と所要（短すぎれば既定の所要） */
-export function slotOf(a: number, b: number, fallback = 60): { start: number; duration: number } {
-  const s = Math.min(a, b);
-  const len = Math.abs(b - a);
-  return { start: s, duration: len >= 15 ? len : fallback };
+/**
+ * 空き枠を押した・縦にドラッグした範囲から、新しい訪問の開始と所要。a は押した枠、b は離した枠（どちらも15分の枠の始まり）。
+ * 同じ枠なら押しただけ（開始は押した枠・既定の所要）。枠をまたいだら、押した枠と離した枠を両方含む（上へ動かしても押した枠を含む）
+ */
+export function slotOf(a: number, b: number, fallback = 60, step = 15): { start: number; duration: number } {
+  if (a === b) return { start: a, duration: fallback };
+  return { start: Math.min(a, b), duration: Math.abs(b - a) + step };
 }
 
 /** 確定した割当のある日か（カレンダーの日の見出しの印） */

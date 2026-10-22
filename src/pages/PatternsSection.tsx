@@ -131,14 +131,16 @@ export function PatternsSection({
   /** 開いたときの入力（変更があるかの判定） */
   const [opened, setOpened] = useState<Form | null>(null);
   /** 終わらせる繰り返しと最後の日（null：閉じている） */
-  const [ending, setEnding] = useState<{ id: string; last: string } | null>(null);
+  const [ending, setEnding] = useState<{ id: string; last: string; opened: string } | null>(null);
   const open = (f: Form | null) => {
     setError(null);
     setEnding(null);
     setForm(f);
     setOpened(f);
   };
-  const dirty = (form !== null && JSON.stringify(form) !== JSON.stringify(opened)) || ending !== null;
+  const dirty =
+    (form !== null && JSON.stringify(form) !== JSON.stringify(opened)) ||
+    (ending !== null && ending.last !== ending.opened);
   useEffect(() => {
     onDirty?.(dirty);
   }, [dirty, onDirty]);
@@ -405,7 +407,9 @@ export function PatternsSection({
                       aria-label={`${patternWhenText(p)}の繰り返しを終わらせる`}
                       onClick={() => {
                         open(null);
-                        setEnding({ id: p.id, last: p.to !== null && p.to < today ? p.to : today });
+                        // 既定の最後の日：終わっていればその日、まだ始まっていなければ開始日、ほかは今日
+                        const last = p.to !== null && p.to < today ? p.to : p.from > today ? p.from : today;
+                        setEnding({ id: p.id, last, opened: last });
                       }}
                       data-testid="pattern-end"
                     >
@@ -431,6 +435,12 @@ export function PatternsSection({
                     <span className="sub">
                       この日より後の回を消します（この回だけ変えた回・取り消した回は残します）。
                     </span>
+                    {p.from > today && (
+                      <span className="sub" data-testid="pattern-end-before">
+                        まだ始まっていない繰り返しです（{mdText(p.from)}
+                        から）。開始日の回も要らないときは、「直す」の「この繰り返しを消す」で消します。
+                      </span>
+                    )}
                     <FieldError token={errorState}>{error}</FieldError>
                     <div className="row">
                       <button

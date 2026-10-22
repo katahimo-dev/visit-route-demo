@@ -1,8 +1,18 @@
-import { CalendarClock, CalendarRange, ChevronLeft, ChevronRight, Pin, Plus } from 'lucide-react';
+import {
+  CalendarClock,
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  Pin,
+  Plus,
+  Sparkles,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { type DragEvent, type PointerEvent, type ReactNode, useMemo, useRef, useState } from 'react';
 import type { Visit } from '../contracts/documents';
 import { hhmmToMinutes, jstDate, minutesToHhmm } from '../domain/time';
-import { dateText } from '../lib/common';
+import { dateText, own } from '../lib/common';
 import { ymOf } from '../lib/month';
 import { mdText, typeOf } from '../lib/patternText';
 import {
@@ -20,7 +30,16 @@ import {
   staffCalItems,
 } from '../lib/personPage';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
-import { canMoveVisit, DAY_END, DAY_START, inDayRange, laneLayout, snapMinutes, weekDates } from '../lib/week';
+import {
+  canMoveVisit,
+  DAY_END,
+  DAY_START,
+  inDayRange,
+  insertIntoPlan,
+  laneLayout,
+  snapMinutes,
+  weekDates,
+} from '../lib/week';
 import { useDemoData } from '../store';
 import { StaffMark } from './StaffMark';
 import { useToast } from './Toast';
@@ -65,8 +84,16 @@ export function PersonCalendar({
   /** 道具の行の右に置くもの */
   aside?: ReactNode;
 }) {
-  const { data } = useDemoData();
+  const { data, update } = useDemoData();
   const terms = data.org.terms;
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  /**
+   * ドラッグで日時を動かし、担当を選ばずに保存した回の知らせ（新しい日に今の案があるとき。週の予定と同じ「空き時間に入れる」）
+   */
+  const [notice, setNotice] = useState<{ date: string; visitId: string; label: string; error: string | null } | null>(
+    null,
+  );
   const toast = useToast();
   const openVisit = useOpenVisit();
   const narrow = useMedia(COMPACT_QUERY);
@@ -163,10 +190,15 @@ export function PersonCalendar({
     }
     if (date === v.date && start === hhmmToMinutes(v.earliestStart)) return;
     const width = hhmmToMinutes(v.latestStart) - hhmmToMinutes(v.earliestStart);
+    setNotice(null);
     openVisit({
       visitId,
       draft: { date, earliestStart: hm(start), latestStart: hm(start + width) },
       returnFocus: focusBack,
+      onSaved: (r) => {
+        if (r.moved && !r.staffSet && own(dataRef.current.aiPlans, r.date))
+          setNotice({ date: r.date, visitId: r.visitId, label: r.label, error: null });
+      },
     });
   };
   const onColDragOver = (e: DragEvent<HTMLElement>, date: string) => {
@@ -199,6 +231,48 @@ export function PersonCalendar({
     if (g && v) moveTo(g.visitId, date, hhmmToMinutes(v.earliestStart));
   };
 
+  /** 新しい日の今の案に空き時間で入れる（入る人がいなければ知らせに理由） */
+  const insert = () => {
+    if (!notice) return;
+    const createdAt = Date.now();
+    const r = insertIntoPlan(data, notice.date, notice.visitId, createdAt);
+    if (!r.staffId) {
+      setNotice({ ...notice, error: '空き時間に入りません。その日を作り直すか、日の予定で手で入れてください' });
+      return;
+    }
+    update((d) => insertIntoPlan(d, notice.date, notice.visitId, createdAt).data);
+    toast(`${mdText(notice.date)} の案に入れました（担当：${staffById.get(r.staffId)?.name ?? ''}）`);
+    setNotice(null);
+  };
+  const noticeBand = notice && (
+    <output className="stack pcal-notice" data-testid="pcal-notice">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span>
+          <WithIcon icon={TriangleAlert} size={16}>
+            {notice.label} へ動かしました。{mdText(notice.date)} の案は担当が決まっていません
+          </WithIcon>
+        </span>
+        <button type="button" className="icon-btn" aria-label="知らせを閉じる" onClick={() => setNotice(null)}>
+          <X size={16} aria-hidden="true" />
+        </button>
+      </div>
+      {notice.error && <p className="warn-text">{notice.error}</p>}
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn-small"
+          onClick={insert}
+          disabled={!!notice.error}
+          data-testid="pcal-insert"
+        >
+          <WithIcon icon={Sparkles} size={14}>
+            {mdText(notice.date)} の案に空き時間で入れる
+          </WithIcon>
+        </button>
+      </div>
+    </output>
+  );
+
   // ---- 空き枠から足す（押す・縦にドラッグ） ----
   const [ghost, setGhostState] = useState<{ date: string; a: number; b: number } | null>(null);
   /** 押している間の範囲（描き直しを待たずに離したときも読めるよう、state と同じ値を持つ） */
@@ -222,7 +296,8 @@ export function PersonCalendar({
   const onPointerMove = (e: PointerEvent<HTMLElement>) => {
     const g = ghostRef.current;
     if (!g) return;
-    const m = minuteAt(e) + (minuteAt(e) >= g.a ? 15 : 0);
+    // 押した枠（15分）と今の枠。同じ枠の中で動いただけなら押しただけと同じ
+    const m = minuteAt(e);
     if (m !== g.b) setGhost({ ...g, b: m });
   };
   const onPointerUp = () => {
@@ -344,6 +419,7 @@ export function PersonCalendar({
 
   const notes = (
     <>
+      {noticeBand}
       {highlight && (
         <p className="sub pcal-hl-note" data-testid="pcal-hl-note">
           選んだ繰り返しの回：この期間に {hlCount}回
@@ -496,7 +572,7 @@ export function PersonCalendar({
                   className="pcal-ghost"
                   style={{
                     top: top(Math.min(ghost.a, ghost.b)),
-                    height: Math.max(12, Math.abs(ghost.b - ghost.a) * PX_PER_MIN),
+                    height: Math.max(12, (Math.abs(ghost.b - ghost.a) + 15) * PX_PER_MIN),
                   }}
                   aria-hidden="true"
                   data-testid="pcal-ghost"

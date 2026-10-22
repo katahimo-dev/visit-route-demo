@@ -9,6 +9,7 @@ import { Hint, SectionTitle, WithIcon } from '../components/ui';
 import { type Client, type ClientLeave, clientLeaveSchema } from '../contracts/documents';
 import { jstDate } from '../domain/time';
 import { dateText, newId } from '../lib/common';
+import { confirmLeave } from '../lib/leaveGuard';
 import { leaveConfirmedDates, leavesOf, leaveVisits, removeLeave, saveLeave } from '../lib/leaves';
 import { mdText } from '../lib/patternText';
 import { useDemoData } from '../store';
@@ -60,7 +61,9 @@ export function ClientLeavesSection({
   const leaves = useMemo(() => leavesOf(data, client.id), [data, client.id]);
   const openDay =
     onOpenDay ??
-    ((d: string) => {
+    (async (d: string) => {
+      // 下書きのある画面（入力中の休み）から移るときは確かめる（断れば移らない）
+      if (!(await confirmLeave())) return;
       setDate(d);
       navigate('/plan');
     });

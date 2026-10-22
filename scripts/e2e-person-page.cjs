@@ -256,6 +256,39 @@ async function slotNew(page) {
   );
   await page.keyboard.press('Escape');
   await closed(page);
+  // 同じ枠の中で少し動いただけなら押しただけと同じ（既定の所要）
+  const y3 = box2.y + (16 * 60 + 15 - DAY_START) * PX + 2;
+  await page.mouse.move(box2.x + 6, y3);
+  await page.mouse.down();
+  await page.mouse.move(box2.x + 6, y3 + 3, { steps: 2 });
+  await page.mouse.up();
+  await panel(page).waitFor();
+  check(
+    (await panel(page).getByTestId('vp-start').inputValue()) === '16:15' &&
+      (await panel(page).getByTestId('vp-duration').inputValue()) === '60',
+    '空き枠を押して同じ枠の中で少し動いただけなら、既定の所要 60分（15分にしない）',
+  );
+  await page.keyboard.press('Escape');
+  await closed(page);
+  // 上へドラッグしても押した枠を含む（17:30 の枠を押して 16:15 の枠まで上げる → 16:15〜17:45）
+  const yUp0 = box2.y + (17 * 60 + 40 - DAY_START) * PX;
+  const yUp1 = box2.y + (16 * 60 + 20 - DAY_START) * PX;
+  await page.mouse.move(box2.x + 6, yUp0);
+  await page.mouse.down();
+  await page.mouse.move(box2.x + 6, yUp1, { steps: 5 });
+  await page.mouse.up();
+  await panel(page).waitFor();
+  check(
+    (await panel(page).getByTestId('vp-start').inputValue()) === '16:15' &&
+      (await panel(page).getByTestId('vp-duration').inputValue()) === '90',
+    '上へドラッグしても押した枠を含む長さ（16:15〜17:45 の 90分）',
+    {
+      start: await panel(page).getByTestId('vp-start').inputValue(),
+      dur: await panel(page).getByTestId('vp-duration').inputValue(),
+    },
+  );
+  await page.keyboard.press('Escape');
+  await closed(page);
   // 道具の行の「訪問を足す」（キーボードでも足せる）
   await page.getByTestId('pcal-add').click();
   await panel(page).waitFor();
@@ -309,6 +342,24 @@ async function dragMove(page) {
     moved,
   );
   check(!next || next.earliestStart === v.earliestStart, 'この回だけ：次の週の回はそのまま');
+  // 担当を選ばずに動かし、新しい日に今の案があれば「空き時間に入れる」の知らせ（週の予定と同じ）
+  if (d.aiPlans?.[dest]) {
+    await page
+      .getByTestId('pcal-notice')
+      .waitFor({ timeout: 5000 })
+      .catch(() => {});
+    check(
+      (await page.getByTestId('pcal-notice').count()) === 1 && (await page.getByTestId('pcal-insert').count()) === 1,
+      '担当を選ばずに動かすと「〈日〉の案に空き時間で入れる」の知らせ',
+    );
+    await page.getByTestId('pcal-insert').click();
+    await settle(page, 600);
+    check(
+      (await page.getByTestId('pcal-notice').count()) === 0 ||
+        (await page.getByTestId('pcal-notice').locator('.warn-text').count()) === 1,
+      '「空き時間に入れる」で入れる（入らなければ理由）',
+    );
+  }
   // これ以降：別の回（同じ繰り返し）をつかんで 14:00 へ（同じ日）
   const s2 = (await stored(page)).visits.find(
     (y) =>
@@ -382,6 +433,21 @@ async function patterns(page, dlg) {
     (await stored(page)).patterns.filter((p) => p.clientId === 'c1').length === p0,
     '保存を押すまで繰り返しは変えない',
   );
+  // 入力があるまま、訪問の詳細の欄の「日の予定で見る」でも確かめる（断れば移らない）
+  await cal(page).locator('[data-testid="pcal-visit"]').first().click();
+  await panel(page).waitFor();
+  dlg.messages.length = 0;
+  await page.getByTestId('vp-open-day').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 1 && hashOf(page).startsWith('#/clients/c1') && (await form.count()) === 1,
+    '入力があるまま欄の「日の予定で見る」を押すと確認が出て、断れば移らない',
+    dlg.messages,
+  );
+  if ((await panel(page).count()) === 1) {
+    await page.keyboard.press('Escape');
+    await closed(page);
+  }
   dlg.answer = true;
   await form.getByTestId('pattern-save').click();
   await settle(page, 500);
@@ -424,6 +490,30 @@ async function patterns(page, dlg) {
     '「終わらせる」→ 保存で確認が出て、受けると終了日を入れ、その後の回を消す',
     dlg.messages,
   );
+  // 先の日から始まる繰り返しの「終わらせる」：最後の日の既定は開始日で、消し方を案内する
+  const future = addDays(TODAY, 10);
+  await page.getByTestId('pattern-add').click();
+  await form.getByTestId('pattern-weekdays').getByRole('button', { name: '金' }).click();
+  await form.getByLabel('開始日', { exact: true }).fill(future);
+  await form.getByTestId('pattern-save').click();
+  d = await dataWhen(page, (x) => x.patterns.some((p) => p.clientId === 'c1' && p.from === future));
+  const fut = d.patterns.find((p) => p.clientId === 'c1' && p.from === future);
+  await page.locator(`[data-testid="pattern-row"][data-pattern="${fut.id}"]`).getByTestId('pattern-end').click();
+  check(
+    (await page.getByTestId('pattern-end-last').inputValue()) === future &&
+      (await page.getByTestId('pattern-end-before').count()) === 1,
+    '先の日から始まる繰り返しの「終わらせる」は、最後の日の既定が開始日で、消し方を案内する',
+  );
+  // 開いただけなら変更なし（離れるときに確かめない）
+  dlg.messages.length = 0;
+  await tab(page, 'basic').click();
+  await settle(page);
+  check(
+    dlg.messages.length === 0 && urlOf(page).includes('tab=basic'),
+    '「終わらせる」を開いただけなら確かめずにタブを替える',
+  );
+  await tab(page, 'schedule').click();
+  await settle(page);
   // 直す → この繰り返しを消す（確認）
   await r2.getByTestId('pattern-edit').click();
   dlg.messages.length = 0;
@@ -596,17 +686,21 @@ async function narrow(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
-/** 印刷：タブ・カレンダーの道具・節の「直す」を出さない */
+/** 印刷：タブ・カレンダーの道具のボタン・繰り返しの操作を出さない（期間の見出しは出す） */
 async function print(page) {
   await open(page, '/clients/c1', '[data-testid="pcal"]');
   await page.emulateMedia({ media: 'print' });
-  const shown = async (sel) =>
-    page.locator(sel).evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== 'none').length);
+  const shown = async (sel) => page.locator(sel).evaluateAll((els) => els.filter((e) => e.checkVisibility()).length);
   check(
-    (await shown('[data-testid="person-tabs"]')) === 0 && (await shown('.pcal-tools')) === 0,
-    '印刷：タブとカレンダーの道具を出さない',
+    (await shown('[data-testid="person-tabs"]')) === 0 &&
+      (await shown('.pcal-tools button, .pcal-tools fieldset')) === 0 &&
+      (await shown('.pattern-row .actions, [data-testid="pattern-add"]')) === 0,
+    '印刷：タブ・カレンダーの道具のボタン・繰り返しの「直す」「終わらせる」「足す」を出さない',
   );
-  check((await shown('[data-testid="pcal"]')) === 1, '印刷：カレンダーは出す');
+  check(
+    (await shown('[data-testid="pcal"]')) === 1 && (await page.getByTestId('pcal-title').isVisible()),
+    '印刷：カレンダーと期間の見出しは出す',
+  );
   await page.emulateMedia({ media: 'screen' });
 }
 

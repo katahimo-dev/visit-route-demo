@@ -335,6 +335,106 @@ async function clientsMore(page, dlg) {
   );
 }
 
+/**
+ * レビューの直し（PR #79）：タブを替えて捨てたら戻っても直していない／吹き出しのリンクで捨てて移ると移る／
+ * 誤りの文と入力欄の aria-describedby が合う／ほかの節の古い値で保存を止めない／予定のタブで edit= を開くと節のタブへ／
+ * いない人の URL は一覧で知らせる
+ */
+async function reviewFixes(page, dlg) {
+  dlg.answer = true;
+  // タブを替えて「捨てて替える」→ 戻ると読むだけ
+  await open(page, '/clients/c1?tab=basic', '[data-testid="person-sec"]');
+  await editSec(page, 'basic');
+  await sec(page, 'basic').locator('label', { hasText: 'メモ' }).locator('input').fill('タブで捨てる');
+  dlg.messages.length = 0;
+  await goTab(page, 'schedule');
+  await goTab(page, 'basic');
+  check(
+    dlg.messages.length === 1 && (await secInputs(page)) === 0,
+    'タブを替えて捨てたら、戻っても前の下書きを出さない（読むだけ）',
+    dlg.messages,
+  );
+  // 吹き出しのリンクで「捨てて移る」→ 移る（確認で吹き出しが閉じても）
+  await goTab(page, 'staffing');
+  await editSec(page, 'staffing');
+  await sec(page, 'staffing').getByTestId('client-usual').selectOption({ index: 1 });
+  const name = page.locator('[data-section="compat"] [data-testid="person-btn"]').first();
+  if ((await name.count()) === 0) check(false, '相性の節に名前がある（確かめの前提）');
+  else {
+    const sid = await name.getAttribute('data-id');
+    await name.click();
+    dlg.messages.length = 0;
+    await page.getByTestId('person-pop-link').click();
+    await settle(page, 600);
+    check(
+      dlg.messages.length === 1 && hashOf(page) === `#/staff/${sid}`,
+      '変更があるまま吹き出しのリンクで「捨てて移る」と、その人の画面へ移る',
+      { m: dlg.messages, h: hashOf(page) },
+    );
+  }
+  // 誤りの文と入力欄の aria-describedby（同じ名前で保存）
+  await open(page, '/clients/c1?tab=basic', '[data-testid="person-sec"]');
+  const other = (await stored(page)).clients.find((c) => c.id !== 'c1').displayName;
+  await editSec(page, 'basic');
+  const nameInput = page.getByTestId('client-name');
+  await nameInput.fill(other);
+  await sec(page, 'basic').getByTestId('sec-save').click();
+  await settle(page, 300);
+  const desc = await nameInput.getAttribute('aria-describedby');
+  const errText = desc
+    ? await page
+        .locator(`[id="${desc}"]`)
+        .textContent()
+        .catch(() => '')
+    : '';
+  check(
+    (await nameInput.getAttribute('aria-invalid')) === 'true' && /同じ名前/.test(errText ?? ''),
+    '誤った欄の aria-describedby が節の誤りの文を指す',
+    { desc, errText },
+  );
+  await sec(page, 'basic').getByTestId('sec-cancel').click();
+  await settle(page);
+  // ほかの節の古い値（壊れた郵便番号）があっても、直している節は保存できる
+  const o2 = await page.context().newPage();
+  await o2.goto(`${BASE}#/data`);
+  await o2.evaluate((k) => {
+    const d = JSON.parse(localStorage.getItem(k));
+    d.clients.find((c) => c.id === 'c1').place.postalCode = '12';
+    localStorage.setItem(k, JSON.stringify(d));
+  }, STORAGE_KEY);
+  await o2.close();
+  await settle(page, 400);
+  await editSec(page, 'basic');
+  await sec(page, 'basic').locator('label', { hasText: 'メモ' }).locator('input').fill('ほかの節は検査しない');
+  await sec(page, 'basic').getByTestId('sec-save').click();
+  await settle(page, 500);
+  check(
+    (await stored(page)).clients.find((c) => c.id === 'c1').note === 'ほかの節は検査しない',
+    'ほかの節の古い値（郵便番号）で、直している節の保存を止めない',
+  );
+  // 予定のタブで edit= を開くと、節のあるタブへ移って開く
+  await open(page, '/clients/c2?edit=place', '[data-testid="person-sec"]');
+  check(
+    urlOf(page).includes('tab=basic') &&
+      !urlOf(page).includes('edit=') &&
+      (await sec(page, 'place').locator('input').count()) > 0,
+    'タブの無い URL の edit= は節のあるタブ（基本情報）へ移って開く',
+    urlOf(page),
+  );
+  await sec(page, 'place').getByTestId('sec-cancel').click();
+  // いない人の URL：一覧へ移って知らせる
+  await open(page, '/clients/nobody', '[data-testid="client-row"]');
+  await page
+    .locator('.toast')
+    .filter({ hasText: '見つかりません' })
+    .waitFor({ timeout: 3000 })
+    .catch(() => {});
+  check(
+    hashOf(page) === '#/clients' && (await page.locator('.toast').filter({ hasText: '見つかりません' }).count()) === 1,
+    'いない人の URL は一覧へ移り、見つからないと知らせる',
+  );
+}
+
 /** 休みの見え方・「まとめて地図に置く」の「編集」は住所の節を開く */
 async function seeded(page) {
   await open(page, '/clients', '[data-testid="client-row"]');
@@ -739,7 +839,7 @@ const steps = pagePerStep({
     return { ctx, page, dlg: await answerConfirms(page) };
   },
   call: (fn, s) => fn(s.page, s.dlg),
-  steps: [clients, clientsMore, seeded, staff, staffMore, links, names, rowClick, staffIcon],
+  steps: [clients, clientsMore, reviewFixes, seeded, staff, staffMore, links, names, rowClick, staffIcon],
   label: (name) => `${name}：途中で止まった`,
   after: (name, { dlg }) => check(dlg.native.length === 0, `${name}：ブラウザのダイアログを出さない`, dlg.native),
   end: () => check(errors.length === 0, 'ページのエラーが無い', errors),

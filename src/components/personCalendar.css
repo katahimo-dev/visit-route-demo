@@ -284,10 +284,25 @@
   padding: 6px 8px;
 }
 
+/* 印刷：期間の見出しは残し、道具のボタン・説明・マスの「＋」を出さない */
 @media print {
-  .pcal-tools,
+  .pcal-tools button,
+  .pcal-tools fieldset,
   .pcal-howto,
   .pcal-cell-add {
+    display: none !important;
+  }
+}
+/* ドラッグで動かした回の「空き時間に入れる」の知らせ（週の予定と同じ） */
+.pcal-notice {
+  gap: 6px;
+  padding: 10px 12px;
+  border: 2px solid var(--warn);
+  border-radius: 12px;
+  background: #fffaf0;
+}
+@media print {
+  .pcal-notice {
     display: none !important;
   }
 }

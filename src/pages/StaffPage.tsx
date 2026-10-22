@@ -1,8 +1,9 @@
 import { CalendarX, Clock, Eye, HeartHandshake, MapPin, Plus, Smartphone, UserRound, UserRoundCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { CondChips, TraitChips } from '../components/conditions';
 import { StaffMark } from '../components/StaffMark';
+import { useToast } from '../components/Toast';
 import { PageHeader, WithIcon } from '../components/ui';
 import { jstDate } from '../domain/time';
 import { byName, hasLocation, WEEKDAY_LABELS } from '../lib/common';
@@ -44,6 +45,16 @@ export default function StaffPage() {
   const itemById = new Map(data.items.map((i) => [i.id, i]));
   // ?id= で開いたら（古いリンク・ブックマーク）、その人の画面（`#/staff/:id`）へ移る（PRD D308。いない人なら URL から消すだけ）
   const navigate = useNavigate();
+  // いない人の画面（`/staff/:id`）から移ってきたときは知らせる（state.missing。1回だけ）
+  const toastMissing = useToast();
+  const location = useLocation();
+  const missing = (location.state as { missing?: string } | null)?.missing;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 移ってきたときだけ
+  useEffect(() => {
+    if (!missing) return;
+    toastMissing(`その${terms.staff}は見つかりません（消されたか、URL が違います）`);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [missing]);
   const [params, setParams] = useSearchParams();
   const openId = params.get('id');
   // biome-ignore lint/correctness/useExhaustiveDependencies: URL の id が変わったときだけ

@@ -14,7 +14,7 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { CondChips, ConditionsEditor, TraitsEditor } from '../components/conditions';
@@ -82,6 +82,16 @@ const SECTIONS = {
   conds: ['requirements', 'preferences'],
 } as const satisfies Record<string, readonly (keyof Client)[]>;
 type SecKey = keyof typeof SECTIONS;
+/** 節のあるタブ */
+const SECTION_TAB: Record<SecKey, ClientTab> = {
+  basic: 'basic',
+  stage: 'basic',
+  place: 'basic',
+  traits: 'basic',
+  rules: 'basic',
+  staffing: 'staffing',
+  conds: 'staffing',
+};
 const ALL_FIELDS = [...new Set(Object.values(SECTIONS).flat())] as (keyof Client)[];
 
 const blank = (nextColor: number): Client => ({
@@ -294,7 +304,9 @@ function ClientPageBody({
     setEdit((e) => (e ? { ...e, form: typeof f === 'function' ? f(e.form) : f } : e));
   const setLimit = (on: boolean) => setEdit((e) => (e ? { ...e, limit: on } : e));
   const form = edit?.form ?? null;
-  const bad = (field: string) => invalidAttrs(error?.field === field, `${id}-err`);
+  /** 誤りの文の id（節の誤りの文と入力欄の aria-describedby で同じもの） */
+  const errorId = useId();
+  const bad = (field: string) => invalidAttrs(error?.field === field, errorId);
   // 「まとめて地図に置く」の「編集」などから節を開いて来たとき（`?edit=place`）。開いたら URL から消す
   const editParam = params.get('edit');
   // biome-ignore lint/correctness/useExhaustiveDependencies: URL の edit が替わったときだけ
@@ -310,10 +322,13 @@ function ClientPageBody({
         opened: structuredClone(saved),
       });
     }
+    // 節のあるタブへ移す（予定のタブなど、節の無いタブで開いたとき）
+    const onTab = editParam in SECTIONS ? SECTION_TAB[editParam as SecKey] : null;
     setParams(
       (prev) => {
         const p = new URLSearchParams(prev);
         p.delete('edit');
+        if (onTab) p.set('tab', onTab);
         return p;
       },
       { replace: true },
@@ -325,7 +340,9 @@ function ClientPageBody({
     if (!edit) return;
     setError(null);
     const key = edit.key;
-    const keys = key === 'new' ? ALL_FIELDS : SECTIONS[key];
+    const keys: readonly (keyof Client)[] = key === 'new' ? ALL_FIELDS : SECTIONS[key];
+    /** 検査するのは直している節の項目だけ（ほかの節の古い値で保存を止めない） */
+    const touches = (k: keyof Client) => keys.includes(k);
     const base = key === 'new' || !saved ? edit.form : mergeFields(saved, edit.form, keys);
     // 担当を限るなら利用中の人を1人以上（休止中の人は数えない。保存時に外す。ADR-0014）。切っていれば今の値のまま
     const allowed =
@@ -339,7 +356,7 @@ function ClientPageBody({
       return;
     }
     // 郵便番号はハイフン・全角を受けて7桁に直す（ADR-0016）。直せなければ保存しない
-    const postalCode = normalizePostalCode(base.place.postalCode);
+    const postalCode = touches('place') ? normalizePostalCode(base.place.postalCode) : base.place.postalCode;
     if (postalCode === null) {
       setError({
         text: '郵便番号は7桁の数字で入れてください（ハイフンは有っても無くても構いません。空でも構いません）',
@@ -347,7 +364,7 @@ function ClientPageBody({
       return;
     }
     // 紹介元のメールアドレス（任意。ADR-0017）
-    const referrerEmail = normalizeEmail(base.referrer.email);
+    const referrerEmail = touches('referrer') ? normalizeEmail(base.referrer.email) : base.referrer.email;
     if (referrerEmail === null) {
       setError({
         text: '紹介元のメールアドレスの形ではありません（例 name@example.com）。空でも構いません',
@@ -356,7 +373,7 @@ function ClientPageBody({
       return;
     }
     // 同じ名前は保存しない（Excel では名前で人を引くため。ADR-0006）
-    if (nameTaken(data.clients, (x) => x.displayName, base.displayName, base.id)) {
+    if (touches('displayName') && nameTaken(data.clients, (x) => x.displayName, base.displayName, base.id)) {
       setError({
         text: `「${base.displayName.trim()}」と同じ名前の${terms.client}がいます。名前を変えてください`,
         field: 'displayName',
@@ -838,6 +855,7 @@ function ClientPageBody({
     onSave: save,
     onCancel: () => void cancelEdit(),
     error: editing(key) ? error : null,
+    errorId,
   });
 
   const stateChips = (
@@ -882,7 +900,19 @@ function ClientPageBody({
         }
         lead={isNew ? `${terms.client}の名前と段階を入れて保存します` : stateChips}
         actions={<BackToList to="/clients" label={`${terms.client}一覧`} />}
-        nav={<PersonTabs tabs={tabs} current={tab} ask={() => ask('tab')} label={`${terms.client}の画面の切り替え`} />}
+        nav={
+          <PersonTabs
+            tabs={tabs}
+            current={tab}
+            ask={async () => {
+              // 替えるなら直している節・繰り返し・休みの入力を捨てる（戻ったときに古い下書きを出さない）
+              const ok = await ask('tab');
+              if (ok) discardAll();
+              return ok;
+            }}
+            label={`${terms.client}の画面の切り替え`}
+          />
+        }
       />
 
       {tab === 'schedule' && saved && (
@@ -962,6 +992,7 @@ function ClientPageBody({
               onSave={save}
               onCancel={() => void cancelEdit()}
               error={error}
+              errorId={errorId}
               view={null}
             >
               {basicFields}

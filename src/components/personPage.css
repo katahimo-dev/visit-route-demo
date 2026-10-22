@@ -106,7 +106,16 @@
 @media print {
   .person-tabs,
   .person-sec .section-aside,
-  [data-testid='person-back'] {
+  [data-testid='person-back'],
+  [data-testid='to-staff-view'],
+  [data-testid='patterns-section'] .section-aside,
+  .pattern-row .actions,
+  [data-testid='leaves-section'] .section-aside,
+  .leave-row .actions,
+  [data-testid='to-leaves'],
+  [data-testid='to-workload'],
+  [data-testid='to-sudden'],
+  [data-testid='leaving-open'] {
     display: none !important;
   }
   .person-schedule {

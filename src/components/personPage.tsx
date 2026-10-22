@@ -117,6 +117,7 @@ export function EditSection({
   children,
   aside,
   editLabel = '直す',
+  errorId: givenErrorId,
 }: {
   /** 節の名前（data-section） */
   name: string;
@@ -136,9 +137,12 @@ export function EditSection({
   /** 見出しの右に置く操作（読むとき） */
   aside?: ReactNode;
   editLabel?: string;
+  /** 誤りの文の id（入力欄の aria-describedby と同じ id を画面から渡す。無ければ作る） */
+  errorId?: string;
 }) {
   const hid = useId();
-  const errorId = useId();
+  const ownErrorId = useId();
+  const errorId = givenErrorId ?? ownErrorId;
   const ref = useRef<HTMLElement>(null);
   const was = useRef(editing);
   useEffect(() => {

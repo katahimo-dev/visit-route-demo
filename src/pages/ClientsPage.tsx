@@ -1,11 +1,12 @@
 import { ChevronDown, Eye, HeartHandshake, House, ListFilter, MapPin, Plus, ShieldCheck } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { CondChips, TraitChips } from '../components/conditions';
 import { TentativeMark } from '../components/parts';
 import { StaffMarkById } from '../components/StaffMark';
+import { useToast } from '../components/Toast';
 import { PageHeader, WithIcon } from '../components/ui';
 import type { Client } from '../contracts/documents';
 import { leaveOn } from '../domain/leaves';
@@ -90,6 +91,16 @@ export default function ClientsPage() {
 
   // ?id= で開いたら（古いリンク・ブックマーク）、その人の画面（`#/clients/:id`）へ移る（PRD D308。いない人なら URL から消すだけ）
   const navigate = useNavigate();
+  // いない人の画面（`/clients/:id`）から移ってきたときは知らせる（state.missing。1回だけ）
+  const toastMissing = useToast();
+  const location = useLocation();
+  const missing = (location.state as { missing?: string } | null)?.missing;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 移ってきたときだけ
+  useEffect(() => {
+    if (!missing) return;
+    toastMissing(`その${terms.client}は見つかりません（消されたか、URL が違います）`);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [missing]);
   const [params, setParams] = useSearchParams();
   const openId = params.get('id');
   // biome-ignore lint/correctness/useExhaustiveDependencies: URL の id が変わったときだけ

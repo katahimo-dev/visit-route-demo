@@ -13,7 +13,7 @@ import {
   UserRound,
   UserRoundCog,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useConfirm } from '../components/ConfirmDialog';
 import { ConditionsEditor, TraitsEditor } from '../components/conditions';
@@ -145,7 +145,7 @@ export default function StaffPersonPage() {
   }, [rawId]);
   if (shownId !== NEW_PERSON_ID && !data.staff.some((s) => s.id === shownId)) {
     if (rawId !== shownId) return null;
-    return <Navigate to="/staff" replace />;
+    return <Navigate to="/staff" replace state={{ missing: shownId }} />;
   }
   return (
     <StaffPageBody
@@ -258,7 +258,9 @@ function StaffPageBody({
   const setForm = (f: Staff | ((s: Staff) => Staff)) =>
     setEdit((e) => (e ? { ...e, form: typeof f === 'function' ? f(e.form) : f } : e));
   const form = edit?.form ?? null;
-  const bad = (field: string) => invalidAttrs(error?.field === field, `${id}-err`);
+  /** 誤りの文の id（節の誤りの文と入力欄の aria-describedby で同じもの） */
+  const errorId = useId();
+  const bad = (field: string) => invalidAttrs(error?.field === field, errorId);
   /** 編集中の印の見本の色（保存したあとの名前の並びで決まる色） */
   const previewColor = useMemo(
     () =>
@@ -276,20 +278,23 @@ function StaffPageBody({
     setError(null);
     const key = edit.key;
     const base = key === 'new' || !saved ? edit.form : mergeFields(saved, edit.form, SECTIONS[key]);
-    if (nameTaken(data.staff, (x) => x.name, base.name, base.id)) {
+    /** 検査するのは直している節の項目だけ（ほかの節の古い値で保存を止めない） */
+    const keys: readonly (keyof Staff)[] = key === 'new' ? (Object.keys(base) as (keyof Staff)[]) : SECTIONS[key];
+    const touches = (k: keyof Staff) => keys.includes(k);
+    if (touches('name') && nameTaken(data.staff, (x) => x.name, base.name, base.id)) {
       setError({
         text: `「${base.name.trim()}」と同じ名前の${terms.staff}がいます。名前を変えてください`,
         field: 'name',
       });
       return;
     }
-    const email = normalizeEmail(base.email);
+    const email = touches('email') ? normalizeEmail(base.email) : base.email;
     if (email === null) {
       setError({ text: 'メールアドレスの形ではありません（例 name@example.com）。空でも構いません', field: 'email' });
       return;
     }
     const icon = base.icon.trim();
-    const iconErr = staffIconError(icon);
+    const iconErr = touches('icon') ? staffIconError(icon) : null;
     if (iconErr) {
       setError({ text: iconErr, field: 'icon' });
       return;
@@ -397,6 +402,7 @@ function StaffPageBody({
     onSave: save,
     onCancel: () => void cancelEdit(),
     error: editing(key) ? error : null,
+    errorId,
   });
   const tabs: PersonTabDef<StaffTab>[] = [
     { key: 'schedule', label: '予定', icon: CalendarDays, disabled: isNew ? '保存してから見られます' : false },
@@ -634,7 +640,19 @@ function StaffPageBody({
             <BackToList to="/staff" label={`${terms.staff}一覧`} />
           </>
         }
-        nav={<PersonTabs tabs={tabs} current={tab} ask={() => ask('tab')} label={`${terms.staff}の画面の切り替え`} />}
+        nav={
+          <PersonTabs
+            tabs={tabs}
+            current={tab}
+            ask={async () => {
+              // 替えるなら直している節・繰り返し・休みの入力を捨てる（戻ったときに古い下書きを出さない）
+              const ok = await ask('tab');
+              if (ok) discardAll();
+              return ok;
+            }}
+            label={`${terms.staff}の画面の切り替え`}
+          />
+        }
       />
 
       {tab === 'schedule' && saved && (
@@ -733,6 +751,7 @@ function StaffPageBody({
               onSave={save}
               onCancel={() => void cancelEdit()}
               error={error}
+              errorId={errorId}
               view={null}
             >
               {basicFields}
