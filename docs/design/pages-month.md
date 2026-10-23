@@ -1,7 +1,7 @@
 # 月の予定と月の印刷
 
-> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`・`monthBatch.ts`（計算の入れ物）、`src/components/batchBand.tsx`（上の帯の進み具合）・`visitParts.tsx`（マスの選ぶ・その日の回の一覧の行・ドラッグ）。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032・0042・0056。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228・D256・D257・D313・D339〜D341。
-> 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)、帯の印・選ぶ・キー・1行1訪問の行 `VisitRow`・ドラッグの落とし先の判定の共通の部品は [pages-common.md](pages-common.md) の「訪問の帯の共通の部品」。
+> この画面のファイル：`src/pages/MonthPage.tsx`（`month.css`）・`MonthPrintPage.tsx`（`monthPrint.css`）、`src/lib/month.ts`・`monthList.ts`・`monthGuide.ts`・`monthPrint.ts`・`requestedOff.ts`・`useDayStatuses.ts`・`confirmDay.ts`・`monthBatch.ts`（計算の入れ物）、`src/components/batchBand.tsx`（上の帯の進み具合）・`visitParts.tsx`（マスの選ぶ・その日の回の一覧の行・ドラッグ）・`scheduleParts.tsx`（選択の帯の「別の日へ」）。関連 ADR：0012（追記を含む）・0013・0014・0015・0025 追記・0031・0032・0042・0056・0057。関連 PRD：D36〜D44・D53〜D55・D65・D69・D70・D151〜D155・D161〜D166・D176・D189〜D192・D201〜D204・D223・D228・D256・D257・D313・D339〜D343。
+> 3段のバー・混み具合の塗りは [pages-bars.md](pages-bars.md)、進み具合の帯は [pages-home.md](pages-home.md)、帯の印・選ぶ・キー・1行1訪問の行 `VisitRow`・ドラッグの落とし先の判定の共通の部品は [pages-common.md](pages-common.md) の「訪問の札の共通の部品」。
 > 版2（ADR-0053）：担当は訪問に持ち、日の状態は「まだ伝えていない／確定済み／未連絡の変更あり」、要対応は訪問ごとの検査。「案なし・案あり・未作成・条件が変わった・欠勤あり（対応済み）」は無い
 
 ### 月の予定（`#/month`）
@@ -30,10 +30,11 @@
      - 〈スタッフ〉を選んでいれば「休みを入れる」（`month-off-toggle`。下の「希望休」）
      - 全体なら「混み具合：」と `Term`（`loadCount`）と選ぶ欄 `month-load-type`（数える人：すべて／〈種類〉。名前は aria-labelledby でつなぐ）
    - 訪問の無い月は「定期パターンが無いか、この月の訪問がありません」の1行
-   - マスの見方の説明 `month-help`（「マスの見方の説明」で開き、フォーカスを移す。マスを押すと日の予定・マスの色と印・赤い枠と「要対応 N」の札の「要対応」・黄の点線の「注意」・混み具合のバー。「説明を閉じる」）
+   - マスの見方の説明 `month-help`（「マスの見方の説明」で開き、フォーカスを移す。マスを押すとその日の訪問を右の欄（スマホは下から出る欄）に出し、もう一度押すと日の予定・右の欄の行の押し方と「別の日へ」・マスの色と印・赤い枠と「要対応 N」の札の「要対応」・黄の点線の「注意」・混み具合のバー。「説明を閉じる」）
    - 凡例 `MonthLegend`（今の場所のまま。下の「凡例」）
 5. 本体：カレンダー（`month-grid`）か日ごとの一覧（`month-list`）
-6. 右の欄 `month-aside`：要対応・確定していない日、選んだ人の集計
+6. 右の欄 `month-aside`：その日の回の一覧（マスを押した日。先頭）・要対応・確定していない日、選んだ人の集計
+7. 選択の帯 `SelectionBar`（`moveDay`。画面の下）と、キーで動かした先の読み上げ・範囲の帯 `KeyMoveBand`
 
 #### 日の計算（`useDayStatuses`）
 
@@ -44,7 +45,7 @@
 #### カレンダー（日のマス `DayCell`。PRD D53）
 
 - 日曜はじまりの6週×7日の表（`calendarWeeks`）。今日より前の日は薄く。今日は「今日」の印
-- マスはボタン（`month-cell-btn`・data-testid `month-day`・`data-date`）。押すとその日を選んで `#/plan` へ（「休みを入れる」のときは `toggleOff`）。キー・まとめて選ぶ・ドラッグの落とし先は下の「マスのキー・その日の回の一覧」
+- マスはボタン（`month-cell-btn`・data-testid `month-day`・`data-date`）。押すとその日の回の一覧を右の欄に出し（`pickDay`。右の欄に出している日のマスは `is-listed`）、出している日をもう一度押すとその日を選んで `#/plan` へ（「休みを入れる」のときは `toggleOff`）。キー・まとめて選ぶ・ドラッグの落とし先は下の「マスを押す・キー・その日の回の一覧」
 - 状態は背景・枠と印で（点数は出さない）：
 
 | 状態 | 見た目 |
@@ -63,14 +64,17 @@
   - 混み具合バー `month-load`（`LoadBar`）
 - 始まる・終わるの印の決め方：始まるは基準日（`baseDate`＝データの最初の日）より後に始まり、前日にその〈利用者さん〉のどのパターンの期間でもないもの。終わるは翌日にその〈利用者さん〉のどのパターンの期間でもないもの（初期データの全パターンが基準日に始まるのと、「以降すべて」で分けたパターンの継ぎ目を印にしない）
 
-#### マスのキー・その日の回の一覧・まとめて選ぶ（PRD D339〜D341。ADR-0056）
+#### マスを押す・キー・その日の回の一覧・まとめて選ぶ・別の日へ（PRD D339〜D343。ADR-0056・ADR-0057）
 
-- マスは日を選ぶ単位（訪問ではない）。マスにフォーカスして `cellKeyOf`（`lib/visitKeys`。[pages-common.md](pages-common.md)）：←→ 前・次の日、↑↓ 前・次の週（月の外へ出たらその月へ `goMonth` してフォーカスを移す）、Enter でその日の回の一覧、Shift／Ctrl＋Enter・Shift／Ctrl＋クリックでその日の選べる訪問をまとめて選ぶ・外す（`toggleGroup`。全部選んでいれば外す）。マスのボタンに `aria-keyshortcuts`。「休みを入れる」の間の Enter は一覧を開かない（一覧を開かず `toggleOff`）
-- 選ぶのは `useVisitSelection(ym)`（月を送ったら外す）。選べる訪問は `canSelectVisit`（今日より前・取り消し・休みは選ばない）。表示の選択が〈スタッフ〉・〈利用者さん〉ならその人の回だけ（`dayItems`）。選んだ日のマスに「選択 N」（`month-selected`・マスに `data-selected`・`aria-label` に「選択中 N件」）。選んだ訪問は画面の下の `SelectionBar`（担当を替える・時刻をずらす・取り消す・選択を外す。`dates` は月のマスの日）
-- その日の回の一覧（`DayVisits`・`section.month-day-visits`・data-testid `month-day-visits`・`data-date`）：右の欄（`month-aside`）の先頭。見出し「M月D日（曜）の訪問 N件」・閉じる（`month-day-visits-close`。Esc でも閉じ、フォーカスはマスへ戻る。選んでいる訪問があれば Esc は先に選択を外す）・行（共通の `VisitRow`。data-testid `month-visit`。開始の順）・説明・「この日の日の予定を開く」（`month-day-visits-plan`）。〈利用者さん〉を選んでいてその日の回が1つなら、一覧でなくその回の訪問の詳細の欄（閉じたらフォーカスはマス）。訪問が無い日は「この日の訪問はありません。」。月を送って別の月の日になったら閉じる
-- 一覧の行：押す・Enter で訪問の詳細の欄、Shift・Ctrl＋クリック／Shift・Ctrl＋Enter で選ぶ・外す、キーで動かす（↑↓ 15分・←→ 1日・Shift+←→ 隣の担当・Delete 取り消し。[pages-common.md](pages-common.md) の「訪問の帯をキーで動かす」。月の外へ動いたらその月へ移って一覧もその日にし、フォーカスは動かした行）。印は共通の判定（`useVisitLooks`。`data-marks`）
-- ドラッグ（広い画面）：一覧の行をほかの日のマスへ（時刻はそのまま）。落とし先の判定・影は共通（`useVisitDrag`・`dropVerdict`。今日より前の日・取り消し・休みは灰の斜線と理由、入れる人が0人は赤い点線）。影はマスの中（`month-drop`・マスに `is-drop-ok|warn|ng`）。落とすと落とした日を入れた訪問の詳細の欄（範囲・確定した日の確かめは欄）。マスの訪問そのものはつかめない
-- スマホ（600px 以下）の日ごとの一覧（下の「日ごとの一覧」）では選ばない・キーを読まない（その日の回の一覧も開かない）
+- マスは「その日のまとめ」のまま（上の中身。訪問の札は描かない）。訪問を描くのは右の欄（スマホは下から出る欄）に出した1日の分だけ
+- 押す（`pickDay`。カレンダーのマスと日ごとの一覧の行で同じ）：1回目はその日を右の欄の先頭の「その日の回の一覧」に出す（フォーカスはマスのまま。押したマス・行に `is-listed`）。右の欄に出している日をもう一度押すと `openDay`（その日を選んで日の予定）。マスの吹き出しの文の後ろは「（押すとこの日の訪問を右の欄に出します。もう一度押すと「日の予定」）」、出している日は「（もう一度押すとこの日の「日の予定」を開きます）」。「休みを入れる」の間は今どおり `toggleOff`
+- マスは日を選ぶ単位（訪問ではない）。マスにフォーカスして `cellKeyOf`（`lib/visitKeys`。[pages-common.md](pages-common.md)）：←→ 前・次の日、↑↓ 前・次の週（月の外へ出たらその月へ `goMonth` してフォーカスを移す）、Enter でその日の回の一覧（`openList`。一覧の最初の行へフォーカス、行が無ければ見出し）、Shift／Ctrl＋Enter・Shift／Ctrl＋クリックでその日の選べる訪問をまとめて選ぶ・外す（`toggleGroup`。全部選んでいれば外す）。マスのボタンに `aria-keyshortcuts`。「休みを入れる」の間の Enter は一覧を開かない（一覧を開かず `toggleOff`）
+- 選ぶのは `useVisitSelection(ym)`（月を送ったら外す）。選べる訪問は `canSelectVisit`（今日より前・取り消し・休みは選ばない）。表示の選択が〈スタッフ〉・〈利用者さん〉ならその人の回だけ（`dayItems`）。選んだ日のマスに「選択 N」（`month-selected`・マスに `data-selected`・`aria-label` に「選択中 N件」）。選んだ訪問は画面の下の `SelectionBar`（担当を替える・時刻をずらす・別の日へ・取り消す・選択を外す。`dates` は月のマスの日。`moveDay`）
+- その日の回の一覧（`DayVisits`・`section.month-day-visits`・data-testid `month-day-visits`・`data-date`）：右の欄（`month-aside`）の先頭。見出し「M月D日（曜）の訪問 N件」・閉じる（`month-day-visits-close`。Esc でも閉じ、フォーカスはマスへ戻る。選んでいる訪問があれば Esc は先に選択を外す）・行（共通の `VisitRow`＝中の札。data-testid `month-visit`・`data-size="m"`。開始の順）・説明「行を押すと訪問の詳細。Shift・Ctrl＋クリックで選び、↑↓ で15分・←→ で1日動かせます。行を別の日のマスへドラッグするか、選んで下の「別の日へ」で日付を移せます（時刻はそのまま）」・「この日の日の予定を開く」（`month-day-visits-plan`）。Enter で開いたとき〈利用者さん〉を選んでいてその日の回が1つなら、一覧でなくその回の訪問の詳細の欄（閉じたらフォーカスはマス）。訪問が無い日は「この日の訪問はありません。」。月を送って別の月の日になったら閉じる
+- 一覧の行：押す・Enter で訪問の詳細の欄、Shift・Ctrl＋クリック／Shift・Ctrl＋Enter で選ぶ・外す、キーで動かす（日の予定と同じ ↑↓ 15分・←→ 1日・Shift+←→ 隣の担当・Delete 取り消し。[pages-common.md](pages-common.md) の「訪問の帯をキーで動かす」。月の外へ動いたらその月へ移って一覧もその日にし、フォーカスは動かした行）。印は共通の判定（`useVisitLooks`。`data-marks`）
+- ドラッグ（広い画面）：一覧の行を別の日のマスへ（時刻はそのまま・日付だけ）。落とし先の判定・影は共通（`useVisitDrag`・`dropVerdict`。今日より前の日・取り消し・休みは灰の斜線と理由、入れる人が0人は赤い点線）。影はマスの中（`month-drop`・マスに `is-drop-ok|warn|ng`）。落とすと落とした日を入れた訪問の詳細の欄（範囲・確定した日の確かめは欄）。マスの訪問そのものはつかめない
+- 別の日へ（`SelectionBar` の `moveDay`。広い画面だけ）：［別の日へ］（`selection-move`・`aria-expanded`）を押すと日付の欄（`selection-move-date`。`input type="date"`・既定と最小は今日。Esc で閉じフォーカスは［別の日へ］）と［移す］（`selection-move-go`。日付が無い・今日より前なら押せない）。押すと `lib/multiEdit` の `moveManyToDate` の結果で、確定（伝えた）した日（移す前の日・移す先の日。`toldDaysChanged`）が変わるなら独自の確認「確定した日の訪問も変えますか？」（本文に日付。訪問の詳細の欄・キーと同じ文）。1回の update（手の名前「M/D（曜）へ移しました」）で書き、知らせは「N件のM/D（曜）へ移しました」（できなかった訪問は理由：同じ日・今日より前の日など）。移したら選択を外す
+- スマホ（600px 以下。`MONTH_LIST_QUERY`）：マス・日ごとの一覧の行を押す・Enter で下から出る欄（`SidePanel` の `sheet`。見出し「M月D日（曜）の訪問 N件」・中身 `month-day-sheet`（`data-date`））。中は「選ぶ」（`month-select`。`SelectToggle`）と「長押しでも選べます」・その日の訪問の行（`VisitRow`・`month-visit`。押すと欄を閉じて訪問の詳細の欄（閉じるとフォーカスはマス・行）・長押しか「選ぶ」の間は押すと選ぶ・外す。キー・ドラッグは無い）・欄の中の選択の帯（`SelectionBar` の `inline`：担当を替える・取り消す・選択を外す。時刻をずらす・別の日へは出さない）・下に「この日の日の予定を開く」（`month-day-visits-plan`）。欄が開いている間は画面の下の選択の帯を出さない。月を送ると閉じる。見る・取り消す・担当替えまで（ADR-0051 の決定5）
 
 #### 表示の選択（PRD D55）
 
@@ -103,10 +107,10 @@
 - `lib/monthList.ts`（純粋関数。テストあり）：`MonthLayout`（`calendar`・`list`）・`MONTH_LIST_QUERY`（`(max-width: 600px)`）・`monthLayoutOf(param, narrow)`・`monthListFocusDate`・`DAY_STATE_TEXT`（まだ伝えていない・確定済み・未連絡の変更あり）・`monthListRow`（日付・件数・状態の文・要対応 `care`・旗）
 - 今月の一覧の上に「今日へ」（`month-list-today`）
 - 一覧 `month-list`（`ul`）。開いたとき `monthListFocusDate` の行へ巻く。行は `scroll-margin` で上の帯・下のタブを避ける
-- 行は `button.month-list-btn`（data-testid `month-list-day`・`data-date`・`data-state`・`data-off`）。押すとマスと同じ（`openDay`、「休みを入れる」のときは `toggleOff`・押せない日は `aria-disabled`）
+- 行は `button.month-list-btn`（data-testid `month-list-day`・`data-date`・`data-state`・`data-off`）。押すとマスと同じ（`pickDay`：右の欄（スマホは下から出る欄）にその日の回の一覧・右の欄に出している日はもう一度で日の予定。出している行は `is-listed`。「休みを入れる」のときは `toggleOff`・押せない日は `aria-disabled`）
 - 表示の選択が〈スタッフ〉なら勤務の状態と担当の件数、〈利用者さん〉なら訪問の時刻と担当、休みを入れるときはその日の扱いを行の下に出す
 - 390px で土曜も見え、はみ出さない
-- スマホの基本は日の予定の日ごとのリスト（PRD D334・D338）。月の日ごとの一覧は数をまとめて見る表示で、行を押すとその日の日の予定（選ばない・キーを読まない）。600px 以下の操作の行は1段で、見せ方の切り替え（`month-layout`）はアイコンだけ（名前は読み上げ）
+- スマホの基本は日の予定の日ごとのリスト（PRD D334・D338）。月の日ごとの一覧は数をまとめて見る表示で、行を押すとその日の訪問を下から出る欄に出す（上の「マスを押す・キー・…」のスマホ。キーは読まない）。600px 以下の操作の行は1段で、見せ方の切り替え（`month-layout`）はアイコンだけ（名前は読み上げ）
 
 #### 右の欄（要対応・確定していない日）
 
@@ -193,7 +197,7 @@
 
 - [ ] 翌月を開き「N月の担当を AI で組む」→ 進み具合が出て、終わると提案の帯が出る。「当てる」で日のマスの担当なしが減る。止めるとそこまでの日の提案。確定した日・今日より前の日は組まれない（`scripts/e2e-progress.cjs`）
 - [ ] 担当を AI で組んでいる間にほかの画面へ移っても組み続け、上の帯に進み具合と［止める］が出る。月の予定へ戻ると進み具合が見え、終わると知らせと提案の帯（帯の見えない画面では［月の予定を見る］）。読み直すと止まる（提案は消える）。`lib/monthBatch` のテストが通る
-- [ ] 日のマスを押すとその日の「日の予定」が開き、組んだ担当が出ている
+- [ ] 日のマスを押すとその日の訪問が右の欄に出て、もう一度押すとその日の「日の予定」が開き、組んだ担当が出ている
 - [ ] （ADR-0014）〈スタッフ〉を選び「休みを入れる」で勤務日のマスを続けて押すと希望休が付き、もう一度押すと外れる。勤務の無い日・今日より前の日は押せない。訪問のある日に入れると注意とリンクが出て、担当が休みの訪問として要対応に出る（担当は変わらない）。全体の表示の「休 N」に数が入る
 - [ ] （ADR-0014）「印刷」で `#/month/print` が開き、A4横の1か月の表（〈スタッフ〉で絞れる）が出る。印刷（PDF）にナビ・操作の帯は出ず、週の途中で改ページしない
 - [ ] （ADR-0015）最終勤務日に「最終」、後の日のその人の訪問は担当が休みの要対応。上限を超える日に「拘束超」・要対応
@@ -201,5 +205,7 @@
 - [ ] 390px ははじめ日ごとの一覧（今日の行が画面に入る・「今日へ」）・`?layout=`・1400px ははじめカレンダー・月の印刷は変わらない（`scripts/e2e-tour.cjs`）
 - [ ] 凡例ははじめ畳む・マスに title を出さない・マウスを重ねる／キーボードでマスの読み方（`scripts/e2e-words.cjs`）
 - [ ] （D223）初期データの月で「問題の無い日をまとめて確定（N日）」を押すと確認に日付が並び、確定するとその日が確定済み・ホームの確定していない日が N日減る。担当が休みの訪問のある日は対象から外れ、確認に日付が出る。未連絡の変更のある日は外れ、そのまま残る（`scripts/e2e-home.cjs`）
-- [ ] （ADR-0056）月のカレンダーのマスで ←→ 日・↑↓ 週・Enter でその日の回の一覧（右の欄の先頭。〈利用者さん〉でその日が1回なら欄）・Shift＋Enter でその日をまとめて選ぶ（マスに「選択 N」・下に選んだ訪問の帯）。一覧の行を押すと欄・↓ で15分後へ・ほかの日のマスへドラッグ（今日より前の日は影と理由で落とせない）。押すとその日の日の予定（`scripts/e2e-shared-parts.cjs`）
+- [ ] （ADR-0056）月のカレンダーのマスで ←→ 日・↑↓ 週・Enter でその日の回の一覧（右の欄の先頭。〈利用者さん〉でその日が1回なら欄）・Shift＋Enter でその日をまとめて選ぶ（マスに「選択 N」・下に選んだ訪問の帯）。一覧の行を押すと欄・↓ で15分後へ・ほかの日のマスへドラッグ（今日より前の日は影と理由で落とせない）（`scripts/e2e-shared-parts.cjs`）
+- [ ] （ADR-0057）マスを1回押すと右の欄にその日の行・2回で日の予定、マスの Enter で一覧の最初の行へフォーカス、行を別の日のマスへ落とすと落とした日の欄、2件選んで「別の日へ」で日付を選び［移す］と2件の日付が変わり（時刻・担当はそのまま）Ctrl+Z で1手戻る、確定した日なら確認。390px はマス・一覧の行を押すと下から出る欄（選ぶ・担当を替える・取り消す。「別の日へ」と時刻をずらすは無い）（`scripts/e2e-chip-containers.cjs`）
+- [ ] `lib/multiEdit`（`moveManyToDate`）のテストが通る
 - [ ] `lib/month`（月の日付・6週・対象の日の2つの mode・状態・overSpan の `staffIds`）・`lib/monthList`・`lib/monthGuide`・`lib/requestedOff`・`lib/monthPrint`・`lib/confirmDay` のテストが通る

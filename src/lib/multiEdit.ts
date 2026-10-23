@@ -70,6 +70,37 @@ export function shiftMany(d: DemoData, ids: readonly string[], minutes: number, 
   return { data, done, failed };
 }
 
+/**
+ * 選んだ訪問をまとめて別の日へ移す（月のその日の回の一覧の「別の日へ」。PRD D343）。時刻・担当はそのまま、日付だけ date へ
+ * （担当はその日の並びに入れ直す）。今日より前の日へは移さない。同じ日の訪問は移さない（理由）
+ */
+export function moveManyToDate(d: DemoData, ids: readonly string[], date: string, today: string): MultiResult {
+  const { ok, failed } = usable(d, ids, today);
+  if (date < today)
+    return { data: d, done: 0, failed: [...failed, ...ok.map((x) => ({ visitId: x.visitId, why: '今日より前の日' }))] };
+  let data = d;
+  let done = 0;
+  for (const x of ok) {
+    const v = findVisit(data, x.visitId);
+    if (!v) continue;
+    if (v.date === date) {
+      failed.push({ visitId: x.visitId, why: '同じ日' });
+      continue;
+    }
+    const r = applyVisitEdit(data, { visitId: v.id, draft: { ...draftOf(v), date }, scope: 'once' }, today, {
+      visit: '',
+      patterns: ['', ''],
+    });
+    if (!r.ok) {
+      failed.push({ visitId: x.visitId, why: r.error });
+      continue;
+    }
+    data = r.data;
+    done++;
+  }
+  return { data, done, failed };
+}
+
 /** 選んだ訪問をまとめて取り消す（当日キャンセルではない、ふつうの取り消し） */
 export function cancelMany(d: DemoData, ids: readonly string[], today: string): MultiResult {
   const { ok, failed } = usable(d, ids, today);

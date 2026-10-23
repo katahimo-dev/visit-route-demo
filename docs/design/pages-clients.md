@@ -46,7 +46,7 @@
 
 - 引数：`kind`（client／staff）・`personId`・`view`（week／month）・`anchor`（基準の日）・`onChange`（見せ方・期間を変えた）・`highlight`（強調する繰り返しの ID）・`dayNote`（日の見出しに添える印）。画面は `cal`（month のときだけ）・`d`（今日でないときだけ）を URL に `replace` で書く
 - 回：`lib/personPage` の `clientCalItems`（`visitOps.clientVisitsIn`。取り消しも）・`staffCalItems`（`visitOps.staffVisitsIn`：その日の今の案、無ければ確定した割当でその人の列にある訪問。取り消しは出さない）。担当は `assignmentOf`。様子（`CalState`）は 取り消し（`cancelled`・`sameDay`）→ 休みのため無し（`leave`）→ 担当あり（`assigned`）→ 案はあるが入らない（`unassigned`。赤）→ 案なし（`noplan`。黄の点線）。時刻は訪問の開始（早）〜＋所要
-- 回のボタン（`pcal-visit`・`data-visit`・`data-date`・`data-state`・`data-pattern`・`data-marks`）：時刻・種類の色の点・印（共通の判定 `useVisitLooks`・`VisitMarks`：要対応・資格✗／限✗・未連絡の変更・ピン・「変」（この回だけ変えた）・仮押さえ。PRD D339）、〈利用者さん〉の画面は担当の `StaffMark` と苗字（無ければ様子の文）、〈スタッフ〉の画面は〈利用者さん〉の名前。aria-label は「10/28（水） 09:00〜10:00 〈名前〉（種類・…）・印の説明（選択中）（押すと訪問の詳細）」。押す・Enter で `useOpenVisit()`（閉じたらフォーカスはその回）
+- 回のボタン（大の札。`pcal-visit`・`data-visit`・`data-date`・`data-state`・`data-pattern`・`data-size="l"`・`data-marks`）：時刻・種類の色の点・印（共通の判定 `useVisitLooks`・`VisitMarks`：要対応・資格✗／限✗・未連絡の変更・ピン・「変」（この回だけ変えた）・仮押さえ。PRD D339）、〈利用者さん〉の画面は担当の `StaffMark` と苗字（無ければ様子の文）、〈スタッフ〉の画面は〈利用者さん〉の名前。aria-label は「10/28（水） 09:00〜10:00 〈名前〉（種類・…）・印の説明（選択中）（押すと訪問の詳細）」。押す・Enter で `useOpenVisit()`（閉じたらフォーカスはその回）
 - 強調：`highlight` の繰り返しの回は `is-hl`、ほかは `is-dim`（色と「薄く」。`aria-pressed` は強調でなく選択を表す）。上に「選んだ繰り返しの回：この期間に N回」（`pcal-hl-note`）
 - 道具の行（`pcal-tools`）：前／次（`pcal-prev`・`pcal-next`。週は7日・月は1か月）・見出し（`pcal-title`。「10/26（月）〜11/1（日）」「2026年10月」。aria-live）・今日・［週｜月］（`pcal-view`・`data-view`）・〈利用者さん〉の広い画面は「訪問を足す」（`pcal-add`。期間の今日以降の最初の日の 09:00・60分）
 - 週（`data-layout="week"`）：見出しの行（日付・今日の印・`dayNote`・作ってある最後の日より後は「未作成」）と、左の時刻の目盛り（7:00〜20:00）、日ごとの列（`pcal-col`。1分 0.8px・1時間ごとの線。重なる回は `laneLayout` で横に並べる）。今日より前の列は薄い地

@@ -23,6 +23,16 @@ describe('キーの読み替え（PRD D333）', () => {
     expect(visitKeyOf(key('Delete'))).toEqual({ kind: 'cancel' });
     expect(visitKeyOf(key('Backspace'))).toEqual({ kind: 'cancel' });
   });
+  it('表（PRD D342）：↑↓ は隣の担当の行・←→ は1日（時刻はそのまま）。リストは時間軸と同じ', () => {
+    expect(visitKeyOf(key('ArrowUp'), 'table')).toEqual({ kind: 'staff', step: -1 });
+    expect(visitKeyOf(key('ArrowDown'), 'table')).toEqual({ kind: 'staff', step: 1 });
+    expect(visitKeyOf(key('ArrowLeft'), 'table')).toEqual({ kind: 'day', days: -1 });
+    expect(visitKeyOf(key('ArrowRight'), 'table')).toEqual({ kind: 'day', days: 1 });
+    expect(visitKeyOf(key('Enter'), 'table')).toEqual({ kind: 'open' });
+    expect(visitKeyOf(key('ArrowDown', true), 'table')).toBeNull();
+    expect(visitKeyOf(key('ArrowRight', true), 'table')).toBeNull();
+    expect(visitKeyOf(key('ArrowDown'), 'list')).toEqual({ kind: 'time', minutes: 15 });
+  });
   it('Shift+Enter（複数選択）・Shift+↑↓・Ctrl つき・ほかのキーは読まない', () => {
     expect(visitKeyOf(key('Enter', true))).toBeNull();
     expect(visitKeyOf(key('ArrowUp', true))).toBeNull();
@@ -47,6 +57,9 @@ describe('キーの読み替え（PRD D333）', () => {
     // 担当できる人がいなければ理由
     expect(nextStaffFor(data, rep.id, [rep.staffId ?? 'x', 'nobody'], 1)).toMatchObject({
       why: expect.stringContaining('担当できる人がいません'),
+    });
+    expect(nextStaffFor(data, rep.id, [rep.staffId ?? 'x'], 1, 'row')).toMatchObject({
+      why: expect.stringContaining('下に担当の行はありません'),
     });
     expect(nextStaffFor(data, rep.id, [rep.staffId ?? 'x'], 1)).toMatchObject({
       why: expect.stringContaining('担当の列はありません'),

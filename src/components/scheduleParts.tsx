@@ -1,8 +1,9 @@
 // 予定（日・週・月）に共通の部品（PRD D327・D328・D330。ADR-0054）：操作の行（欠勤・キャンセルを登録／AI で組む ▾／元に戻す・やり直す
 // ／表示の切り替え／その他 ▾）、「AI で組む ▾」の範囲（この日／この週／この月）、提案の帯（変わる件数・点・当てる・捨てる）、
-// 複数選択の帯（N件を選択：担当を替える・時刻をずらす・取り消す）。日・週・月は「拡大率」として同じ部品を並べる。
+// 複数選択の帯（N件を選択：担当を替える・時刻をずらす・別の日へ（月）・取り消す）。日・週・月は「拡大率」として同じ部品を並べる。
 // データを書くのは store の update だけ（複数選択は lib/multiEdit、提案は lib/monthBatch の apply）
 import {
+  CalendarArrowUp,
   CalendarCheck,
   CalendarDays,
   CalendarRange,
@@ -14,7 +15,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { type ReactNode, type Ref, useMemo } from 'react';
+import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { DemoData } from '../contracts/data';
 import { jstDate } from '../domain/time';
@@ -30,10 +31,11 @@ import {
   weekBatchDays,
   weekLabel,
 } from '../lib/monthBatch';
-import { assignMany, cancelMany, multiResultText, selectionText, shiftMany } from '../lib/multiEdit';
+import { assignMany, cancelMany, moveManyToDate, multiResultText, selectionText, shiftMany } from '../lib/multiEdit';
 import { absenceHref } from '../lib/nav';
 import { COMPACT_QUERY, useMedia } from '../lib/useMedia';
 import { useValueStore } from '../lib/valueStore';
+import { toldDaysChanged } from '../lib/visitOps';
 import { weekDates } from '../lib/week';
 import { findVisit } from '../patterns';
 import { useDemoData } from '../store';
@@ -403,6 +405,8 @@ export function SelectionBar({
   onClear,
   dates,
   shift = true,
+  moveDay = false,
+  inline = false,
 }: {
   ids: readonly string[];
   onClear: () => void;
@@ -410,6 +414,10 @@ export function SelectionBar({
   dates: readonly string[];
   /** 時刻をずらすを出すか（〈スタッフ〉の画面など動かさない所は false） */
   shift?: boolean;
+  /** 「別の日へ」（日付を選んでまとめて移す。月の予定。PRD D343）を出すか。スマホでは出さない */
+  moveDay?: boolean;
+  /** 画面の下に貼り付けず、置いた所に出す（スマホの月の下から出る欄の中） */
+  inline?: boolean;
 }) {
   const { data, update } = useDemoData();
   const toast = useToast();
@@ -422,12 +430,21 @@ export function SelectionBar({
     return !!v && dates.includes(v.date);
   });
   const staff = useMemo(() => data.staff.filter((s) => s.active), [data.staff]);
-  if (live.length === 0) return null;
+  /** 「別の日へ」の日付（null は閉じている） */
+  const [moveTo, setMoveTo] = useState<string | null>(null);
+  const moveRef = useRef<HTMLButtonElement>(null);
+  // 選んだ訪問が無くなったら日付の欄も閉じる（次に選んだとき開いたまま出さない）
+  const empty = live.length === 0;
+  useEffect(() => {
+    if (empty) setMoveTo(null);
+  }, [empty]);
+  if (empty) return null;
   const run = (what: string, fn: (d: DemoData) => { data: DemoData; done: number; failed: { why: string }[] }) => {
     // 結果の数は今のデータで見るが、書くのは store の最新のデータに当て直す（確認を待つ間の別のタブの変更を消さない）
     const r = fn(data);
     if (r.done > 0) update((d) => fn(d).data, what);
     toast(multiResultText(what, { done: r.done, failed: r.failed.map((f) => ({ visitId: '', why: f.why })) }));
+    return r.done;
   };
   const staffItems: MenuItem[] = staff.map((s) => ({
     key: s.id,
@@ -442,7 +459,7 @@ export function SelectionBar({
   }));
   return (
     <section
-      className={`selection-bar${compact ? ' is-sheet' : ''}`}
+      className={`selection-bar${inline ? ' is-inline' : compact ? ' is-sheet' : ''}`}
       aria-label="選んだ訪問"
       data-testid="selection-bar"
     >
@@ -472,6 +489,74 @@ export function SelectionBar({
             </button>
           ))}
         </fieldset>
+      )}
+      {!compact && moveDay && (
+        <span className="row selection-move">
+          <button
+            ref={moveRef}
+            type="button"
+            className="btn btn-small"
+            aria-expanded={moveTo !== null}
+            onClick={() => setMoveTo(moveTo === null ? today : null)}
+            data-testid="selection-move"
+          >
+            <WithIcon icon={CalendarArrowUp} size={14}>
+              別の日へ
+            </WithIcon>
+          </button>
+          {moveTo !== null && (
+            // Esc は日付の欄を閉じるだけ（選んだ訪問は外さない）
+            // biome-ignore lint/a11y/noStaticElementInteractions: 中の入力欄・ボタンの Esc を受ける
+            <span
+              className="row selection-move-form"
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return;
+                e.preventDefault();
+                e.stopPropagation();
+                setMoveTo(null);
+                moveRef.current?.focus();
+              }}
+            >
+              <input
+                type="date"
+                aria-label="移す先の日"
+                value={moveTo}
+                min={today}
+                onChange={(e) => setMoveTo(e.target.value)}
+                data-testid="selection-move-date"
+              />
+              <button
+                type="button"
+                className="btn btn-small"
+                disabled={!moveTo || moveTo < today}
+                onClick={async () => {
+                  const to = moveTo;
+                  if (!to) return;
+                  // 確定（伝えた）した日（移す前の日・移す先の日）が変わるなら確かめる（キー・欄と同じ文）
+                  const fixed = toldDaysChanged(data, moveManyToDate(data, live, to, today).data, today);
+                  if (
+                    fixed.length > 0 &&
+                    !(await confirmDialog({
+                      title: '確定した日の訪問も変えますか？',
+                      body: `確定した日（${fixed.map((x) => dateText(x)).join('・')}）の訪問も変わります。その日は「未連絡の変更あり」になり、連絡の一覧に出ます。`,
+                      confirmLabel: '変える',
+                    }))
+                  )
+                    return;
+                  const done = run(`${dateText(to)}へ移しました`, (d) => moveManyToDate(d, live, to, today));
+                  setMoveTo(null);
+                  // 1件も移せなければ選んだまま（選び直さなくてよい）。移したら帯が消えるので、フォーカスは「元に戻す」へ
+                  if (done === 0) return;
+                  onClear();
+                  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus());
+                }}
+                data-testid="selection-move-go"
+              >
+                移す
+              </button>
+            </span>
+          )}
+        </span>
       )}
       <button
         type="button"

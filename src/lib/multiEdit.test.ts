@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays } from '../domain/time';
 import { findVisit, visitsOn } from '../patterns';
 import { createDemoData } from '../seed';
-import { assignMany, cancelMany, multiResultText, selectionText, shiftMany } from './multiEdit';
+import { assignMany, cancelMany, moveManyToDate, multiResultText, selectionText, shiftMany } from './multiEdit';
 
 const TODAY = '2026-10-21';
 const data = createDemoData(TODAY);
@@ -45,6 +45,24 @@ describe('複数選択の操作（PRD D330。ADR-0054）', () => {
       expect(v.staffId).toBe(p.id);
       expect(v.pinned).toBe(true);
     }
+  });
+  it('まとめて別の日へ（PRD D343）：日付だけ変わり時刻はそのまま。同じ日・今日より前の日は理由', () => {
+    const to = addDays(TODAY, 2);
+    const r = moveManyToDate(data, two, to, TODAY);
+    expect(r.done).toBe(2);
+    for (const id of two) {
+      const before = findVisit(data, id)!;
+      const after = visitsOn(r.data, to).find(
+        (v) => v.clientId === before.clientId && v.earliestStart === before.earliestStart && !v.cancelled,
+      );
+      expect(after).toBeTruthy();
+      expect(visitsOn(r.data, TODAY).some((v) => v.id === id && !v.cancelled)).toBe(false);
+    }
+    expect(moveManyToDate(data, two, TODAY, TODAY).failed.map((f) => f.why)).toEqual(['同じ日', '同じ日']);
+    const past = moveManyToDate(data, two, addDays(TODAY, -1), TODAY);
+    expect(past.done).toBe(0);
+    expect(past.data).toBe(data);
+    expect(past.failed.map((f) => f.why)).toEqual(['今日より前の日', '今日より前の日']);
   });
   it('文', () => {
     expect(selectionText(3)).toBe('3件を選択');

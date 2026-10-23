@@ -27,26 +27,39 @@ export type VisitMove =
   | { kind: 'staff'; staffId: string };
 
 /**
- * キーを操作に読み替える（当たらなければ null）。Ctrl・⌘・Alt つきは読まない（ブラウザ・全体の元に戻すのキーに任せる）。
- * Shift は ←→ だけ（隣の担当）。↑↓ の Shift は読まない
+ * 札の入れ物（PRD D342）：時間軸（時刻の位置。↑↓ で時刻）・表（マスに積む。↑↓ で隣の担当の行）・リスト（行。時間軸と同じキー）
  */
-export function visitKeyOf(e: {
-  key: string;
-  shiftKey: boolean;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  altKey: boolean;
-}): VisitKey | null {
+export type KeyLayout = 'timeline' | 'table' | 'list';
+
+/**
+ * キーを操作に読み替える（当たらなければ null）。Ctrl・⌘・Alt つきは読まない（ブラウザ・全体の元に戻すのキーに任せる）。
+ * Shift は ←→ だけ（隣の担当）。↑↓ の Shift は読まない。表（layout が table）は ↑↓ が隣の担当（行が担当なので。時刻はそのまま）
+ */
+export function visitKeyOf(
+  e: {
+    key: string;
+    shiftKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    altKey: boolean;
+  },
+  layout: KeyLayout = 'timeline',
+): VisitKey | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
   switch (e.key) {
     case 'ArrowUp':
-      return e.shiftKey ? null : { kind: 'time', minutes: -KEY_STEP_MINUTES };
+      if (e.shiftKey) return null;
+      return layout === 'table' ? { kind: 'staff', step: -1 } : { kind: 'time', minutes: -KEY_STEP_MINUTES };
     case 'ArrowDown':
-      return e.shiftKey ? null : { kind: 'time', minutes: KEY_STEP_MINUTES };
+      if (e.shiftKey) return null;
+      return layout === 'table' ? { kind: 'staff', step: 1 } : { kind: 'time', minutes: KEY_STEP_MINUTES };
+    // 表は担当が行（↑↓）なので Shift+←→ は読まない
     case 'ArrowLeft':
-      return e.shiftKey ? { kind: 'staff', step: -1 } : { kind: 'day', days: -1 };
+      if (e.shiftKey) return layout === 'table' ? null : { kind: 'staff', step: -1 };
+      return { kind: 'day', days: -1 };
     case 'ArrowRight':
-      return e.shiftKey ? { kind: 'staff', step: 1 } : { kind: 'day', days: 1 };
+      if (e.shiftKey) return layout === 'table' ? null : { kind: 'staff', step: 1 };
+      return { kind: 'day', days: 1 };
     case 'Enter':
       return e.shiftKey ? null : { kind: 'open' };
     case 'Delete':
@@ -163,14 +176,17 @@ export function nextStaffFor(
   visitId: string,
   order: readonly string[],
   step: 1 | -1,
+  /** 担当の並びの向き（時間軸は列＝左右、表は行＝上下） */
+  axis: 'col' | 'row' = 'col',
 ): { staffId: string } | { why: string } {
   const v = findVisit(d, visitId);
-  const side = step > 0 ? '右' : '左';
+  const side = axis === 'row' ? (step > 0 ? '下' : '上') : step > 0 ? '右' : '左';
+  const line = axis === 'row' ? '担当の行' : '担当の列';
   if (!v) return { why: 'この訪問は見つかりません' };
   const c = staffChoices(d, visitId, draftOf(v));
   const byId = new Map(c.choices.map((x) => [x.staffId, x]));
   let at = v.staffId === null ? -1 : order.indexOf(v.staffId);
-  if (at < 0 && step < 0) return { why: `これより${side}に担当の列はありません` };
+  if (at < 0 && step < 0) return { why: `これより${side}に${line}はありません` };
   let skipped = 0;
   for (;;) {
     at += step;
@@ -184,7 +200,7 @@ export function nextStaffFor(
     why:
       skipped > 0
         ? `これより${side}に、この訪問を担当できる人がいません（その日に働かない・必須の条件に合わない）`
-        : `これより${side}に担当の列はありません`,
+        : `これより${side}に${line}はありません`,
   };
 }
 

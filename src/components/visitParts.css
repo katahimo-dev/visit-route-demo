@@ -178,3 +178,132 @@
   color: var(--primary-dark);
   background: var(--primary-soft);
 }
+
+/* 小さな札（表のマス。PRD D342）：「9:00 図」と印。大＝時間軸の帯・中＝リストの行と同じ印 */
+.vchips {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.vchip-slot {
+  display: flex;
+}
+.vchip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 22px;
+  padding: 1px 3px 1px 4px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.vchip:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+.vchip.is-issue {
+  border-color: var(--danger);
+  background: #fff4f2;
+}
+.vchip.is-unassigned {
+  border-style: dashed;
+  border-left-style: solid;
+}
+.vchip.is-off {
+  opacity: 0.6;
+  cursor: default;
+}
+.vchip.is-off .vchip-short {
+  text-decoration: line-through;
+}
+.vchip.is-multi {
+  background: var(--primary-soft);
+}
+.vchip-time {
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.vchip-short {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.vchip-more {
+  align-self: flex-start;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.vchip-more:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+.vchip-more[aria-expanded='true'] {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+  background: var(--primary-soft);
+}
+/* 「+N」の一覧：「+N」の下（入らなければ上）に浮かせる（body の直下・モーダルにしない。ドラッグ中は薄くしてマウスを受けない） */
+.vchip-list {
+  position: fixed;
+  z-index: 900;
+  width: min(300px, 80vw);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+.vchip-list.is-up {
+  transform: translateY(-100%);
+}
+.vchip-list.is-dragging {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.vchip-list-title {
+  margin: 0;
+  padding: 8px 12px 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.vchip-list .vrow {
+  min-height: 44px;
+}
+@media print {
+  .vchip-more {
+    border: 0;
+    padding: 0;
+  }
+  .vchip-list {
+    display: none;
+  }
+  .vchip {
+    min-height: 0;
+  }
+}

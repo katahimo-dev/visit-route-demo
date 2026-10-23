@@ -324,6 +324,7 @@ export function PersonCalendar({
         data-date={it.visit.date}
         data-state={it.state}
         data-pattern={it.visit.pattern?.id ?? ''}
+        data-size="l"
         data-marks={look?.kinds ?? ''}
       >
         <span className="pcal-item-time">

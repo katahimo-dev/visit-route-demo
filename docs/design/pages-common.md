@@ -1,6 +1,6 @@
 # 画面共通の部品
 
-> この部品のファイル：`src/components/ui.tsx`・`FieldError.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/components/visitParts.tsx`（`visitParts.css`）、`src/lib/visitLook.ts`・`visitSelect.ts`・`visitDrop.ts`・`panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0036・0037・0045・0056。関連 PRD：D91〜D101・D122〜D126・D173〜D177・D193〜D197・D201〜D209・D226・D236〜D238・D240〜D242・D250〜D252・D276・D277・D339〜D341。
+> この部品のファイル：`src/components/ui.tsx`・`FieldError.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/components/visitParts.tsx`（`visitParts.css`）、`src/lib/visitLook.ts`・`visitSelect.ts`・`visitDrop.ts`・`visitKeys.ts`・`multiEdit.ts`・`panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0036・0037・0045・0056・0057。関連 PRD：D91〜D101・D122〜D126・D173〜D177・D193〜D197・D201〜D209・D226・D236〜D238・D240〜D242・D250〜D252・D276・D277・D339〜D343。
 > 画面全体の決まり・メニュー・確認ダイアログ・機能の入り切りは [pages.md](pages.md)。
 
 ### 画面の見出しとボタンの3段（ADR-0036。PRD D236〜D238）
@@ -87,19 +87,43 @@
 - `useScopeItems({ zoom, date, onDay?, dayBusy?, onMonth? })`：「AI で組む ▾」の先頭のまとまり「AI で組む（範囲）」（`group`）の3項目。この日（M/D）を組む `ai-scope-day`（今日より前・伝えた日・組める訪問が無い日は押せず理由。日の予定は `onDay`＝その場の提案、週・月は範囲の計算を1日で）・この週（M/D〜M/D）を組む `ai-scope-week`（`weekBatchDays`：今日以降の伝えていない、訪問のある日。0日なら押せず理由）・この月（N月）を組む `ai-scope-month`（月の予定は `onMonth`＝欄「N月の担当を AI で組む」を開く、ほかは `/month?ym=…&do=batch`）。範囲の計算中は押せず「ほかの担当を組んでいます。終わってから押せます」。説明は「ピンの訪問はそのままで、担当・順番の提案を出します（当てるまで担当は変わりません）」
 - `ProposalBand`（`section.plan-band.schedule-band.proposal-band`・`aria-label="AI の提案"`・data-testid `proposal-band`・`data-kind`＝`day`（日の予定のその場の提案）／`range`（範囲の提案））：「提案（名前）：担当が変わる N件（`proposal-moved`）・時刻が変わる M件（`proposal-shifted`）・点 a→b（`proposal-score`。日だけ）」と［当てる］（主ボタン・`proposal-apply`）［捨てる］（`proposal-discard`）、古いときの文（`proposal-stale`）、差の一覧（`details.reassign-moves-box`・`proposal-moves`）
 - `RangeProposalBand`：`lib/monthBatch` の `proposal`（範囲の提案。1つだけ）を日・週・月の予定と空き状況に出す。題は「提案（11月・22日分）」、日ごとの差の一覧（`proposal-days`。日付 `proposal-day` を押すとその日の日の予定）。当てると `monthBatch.apply()`（組み始めたときのままの日だけ1回の update。変わった日は当てず、件数を知らせる）
-- 複数選択（PRD D330・D340）：選ぶ側（`useVisitSelection`・`useVisitItem`）は下の「訪問の帯の共通の部品」。日の時間軸の帯（`RouteTimeline` の `multi`・`onMulti`）・順番のカード（`VisitCard` の `multi`・`onMulti`）・週の時間軸の帯・表・月のその日の回の一覧・人の予定表の回で、Shift・Ctrl（mac は ⌘）＋クリック、帯・行にフォーカスして Shift／Ctrl＋Enter で選ぶ・外す。選んだ帯は `.is-multi`（太い縁）と読み上げの「（選択中）」
-- `SelectionBar`（`section.selection-bar`・`aria-label="選んだ訪問"`・data-testid `selection-bar`。画面の下に貼り付く `position: sticky`。600px 以下は `.is-sheet`：訪問の詳細の欄と同じ下から出る置き場所（下のタブのすぐ上に `position: fixed`・全幅・上の角を丸める。本文の下を空ける）で、時刻をずらすを出さない（スマホでは動かさない。PRD D334）。印刷では出さない）：「N件を選択」（`selection-count`）・［担当を替える ▾］（`selection-assign`。利用中の〈スタッフ〉。項目 `selection-staff`）・時刻をずらす −30・−15・+15・+30（`selection-shift`・`data-minutes`）・［取り消す］（`selection-cancel`。独自の確認）・［選択を外す］（`selection-clear`）。`shift`（既定 true）を false にすると時刻をずらすを出さない（〈スタッフ〉の画面。PRD D340）。どれも「この回だけ」で `lib/multiEdit`（`assignMany`・`shiftMany`・`cancelMany`）を1回の update（手の名前は「担当を替えました」など）。結果は `multiResultText`（「3件の担当を替えました（1件はできませんでした：その日は働かない）」）
+- 複数選択（PRD D330・D340）：選ぶ側（`useVisitSelection`・`useVisitItem`）は下の「訪問の札の共通の部品」。日の時間軸の帯（`RouteTimeline` の `multi`・`onMulti`）・順番のカード（`VisitCard` の `multi`・`onMulti`）・週の時間軸の帯・表の札と「+N」の一覧の行・月のその日の回の一覧（スマホは下から出る欄）・人の予定表の回で、Shift・Ctrl（mac は ⌘）＋クリック、帯・行にフォーカスして Shift／Ctrl＋Enter で選ぶ・外す。選んだ帯は `.is-multi`（太い縁）と読み上げの「（選択中）」
+- `SelectionBar`（`section.selection-bar`・`aria-label="選んだ訪問"`・data-testid `selection-bar`。画面の下に貼り付く `position: sticky`。600px 以下は `.is-sheet`：訪問の詳細の欄と同じ下から出る置き場所（下のタブのすぐ上に `position: fixed`・全幅・上の角を丸める。本文の下を空ける）で、時刻をずらすを出さない（スマホでは動かさない。PRD D334）。印刷では出さない）：「N件を選択」（`selection-count`）・［担当を替える ▾］（`selection-assign`。利用中の〈スタッフ〉。項目 `selection-staff`）・時刻をずらす −30・−15・+15・+30（`selection-shift`・`data-minutes`）・［別の日へ］（`selection-move`。`moveDay` のときだけ。広い画面の月の予定。PRD D343）・［取り消す］（`selection-cancel`。独自の確認）・［選択を外す］（`selection-clear`）。`shift`（既定 true）を false にすると時刻をずらすを出さない（〈スタッフ〉の画面。PRD D340）。`inline` は画面の下に貼り付けず置いた所に出す（`.is-inline`。スマホの月の下から出る欄の中）。どれも「この回だけ」で `lib/multiEdit`（`assignMany`・`shiftMany`・`moveManyToDate`・`cancelMany`）を1回の update（手の名前は「担当を替えました」「M/D（曜）へ移しました」など）。結果は `multiResultText`（「3件の担当を替えました（1件はできませんでした：その日は働かない）」）
 - `UndoButtons`（`components/undo`）：「元に戻す」（`undo-btn`。戻せる手が無ければ `aria-disabled`。title は「「手の名前」を戻します（Ctrl+Z）」）・「やり直す」（`redo-btn`。やり直せる手があるときだけ）。読むのは `lib/history` の `appHistory.state`。押すと store の `undo()`・`redo()` とトースト
 - 進み具合の帯（`components/progressBand` の `ProgressBand`）は月の予定だけ。週は1行の状態（`week-status`）、日は見出しの状態の印（`confirm-state`）と「今の担当」の1行（`plan-summary`）
 
 #### `lib/history.ts`・`lib/multiEdit.ts`（純粋関数。テストあり）
 
 - `createHistory(max=50)`：`record(before, after, label?, token?, group?)`（同じなら積まない。同じ token の手は置き換えて2つ積まない。同じ group の続きは直前の手に足す。積むとやり直しは消える）・`peek()`（直前の手）・`undo(current)`・`redo(current)`（戻した先のデータと手の名前）・`clear()`・`state`（`{ undo, redo, undoCount, redoCount }`。知らせは microtask で後へ回す）。`appHistory` はアプリで1つ。`historyKey(e, isMac)`・`isTextTarget(target)`・`historyKeysOn(pathname)`（`/staff-view/:id`・`/month/print` では効かせない）
-- `assignMany(data, ids, staffId, today)`・`shiftMany(data, ids, minutes, today)`・`cancelMany(data, ids, today)`：消えた・取り消した・今日より前の訪問は理由つきで外す。担当は `assignOnDays`（その日に担当できない人は当てない）、時刻は `applyVisitEdit` の「この回だけ」（時間の約束の幅はそのまま）。`selectionText(n)`・`multiResultText(what, r)`
+- `assignMany(data, ids, staffId, today)`・`shiftMany(data, ids, minutes, today)`・`moveManyToDate(data, ids, date, today)`・`cancelMany(data, ids, today)`：消えた・取り消した・今日より前の訪問は理由つきで外す。担当は `assignOnDays`（その日に担当できない人は当てない）、時刻は `applyVisitEdit` の「この回だけ」（時間の約束の幅はそのまま）。別の日へは日付だけ変える `applyVisitEdit` の「この回だけ」（時刻・担当はそのまま。今日より前の日へは1件も移さず全部「今日より前の日」、同じ日の訪問は「同じ日」）。`selectionText(n)`・`multiResultText(what, r)`
 
-### 訪問の帯の共通の部品（`lib/visitLook.ts`・`visitSelect.ts`・`visitDrop.ts`・`components/visitParts.tsx`・`visitParts.css`。PRD D339〜D341。ADR-0056）
+### 訪問の札の共通の部品（`lib/visitLook.ts`・`visitSelect.ts`・`visitDrop.ts`・`components/visitParts.tsx`・`visitParts.css`。PRD D339〜D342。ADR-0056・ADR-0057）
 
-日・週（時間軸・表）・月・人の予定表の帯・行・マスが同じ判定と部品を使う（本体は画面ごとに残す）。データは書かない（書くのはキーなら `lib/visitKeys` → `lib/visitOps`、選んだ訪問なら `SelectionBar` → `lib/multiEdit`、ドラッグなら訪問の詳細の欄）。
+日・週（時間軸・表）・月・人の予定表の帯・行・札が同じ判定と部品を使う（本体は画面ごとに残す）。データは書かない（書くのはキーなら `lib/visitKeys` → `lib/visitOps`、選んだ訪問なら `SelectionBar` → `lib/multiEdit`、ドラッグなら訪問の詳細の欄）。
+
+#### 札の3段と入れ物（PRD D342。ADR-0057）
+
+- 訪問の札は3段の大きさ（`ChipSize`＝`l`・`m`・`s`。札の要素に `data-size`）。印（`VisitMarks`・`data-marks`）・選ぶ（`useVisitItem`）・キー（`useVisitKeys`）・ドラッグ（`useVisitDrag`）・全体の元に戻すは3段とも同じ
+
+| 大きさ | 札 | 使う所 |
+|---|---|---|
+| 大（`l`） | 時間軸の帯 | 日の予定の時間軸の帯（`routeTimeline` の `tl-band-btn`）・週の時間軸の帯（`week-band`）・人の予定表の回（`pcal-visit`。カレンダーの形） |
+| 中（`m`） | リストの行 `VisitRow` | スマホの日ごとのリスト（`day-row`）・人の予定表の2段目（`pcal-visit`）・月のその日の回の一覧と下から出る欄（`month-visit`）・表の「+N」の一覧（`week-list-visit`） |
+| 小（`s`） | 表のマスの札 `VisitChip` | 週の〈スタッフ〉×曜日（`week-tvisit`）・〈利用者さん〉×曜日（`week-citem`） |
+
+- 入れ物は3種類：時間軸（時刻の位置に置く。日の予定・週の時間軸・人の予定表）・表（マスに積む。`ChipStack`。週の表）・リスト（行。`ul.vrow-list`）。キーの読み方は入れ物で決める（`KeyLayout`。下の「訪問の帯をキーで動かす」）
+- 日の予定の時間軸の帯と人の予定表の回は大の札として印・`data-size` をそろえ、置き方の部品はそれぞれの画面のもの
+
+#### 小さな札（`VisitChip`）
+
+- `VisitChip({ visitId, time, short, label, title?, look, color, selected, unassigned?, off?, props, testId })`（`button.vchip`・`data-visit`・`data-size="s"`・`data-marks`）：時刻（`vchip-time`）・頭文字（`vchip-short`。〈スタッフ〉×曜日は〈利用者さん〉の名前の最初の1字、〈利用者さん〉×曜日は担当の `StaffMark` と「代」・「なし」・休・取消など）・印（`VisitMarks` の小さい形）。左の線は種類の色、要対応は `.is-issue`、担当なしは `.is-unassigned`、取り消し・休みは `.is-off`（薄く）、選んでいれば `.is-multi`。読み上げ `label`（時刻・名前・担当・印・選択中）、`title` は既定で `label`。押し方は呼ぶ側の `props`（`useVisitItem`・`useVisitDrag` の `source`）
+
+#### マスに積む（`ChipStack`）
+
+- `ChipStack({ items, max = CHIPS_PER_CELL, keep?, chip, row, listTitle, dragging?, testId })`（`span.vchips`）：先頭から `max`（3）件の札を出し、残りは「+N」（`button.vchip-more`・data-testid `chip-more`・`data-rest`・`aria-expanded`・`aria-controls`・読み上げ「ほかN件（押すとこのマスの訪問の一覧）」）。`keep` の訪問（キーで動かした・欄で開いた札）が3件の外なら、3件目をその札にして必ず見せる
+- 「+N」を押すとそのマスの一覧（`div.vchip-list`・role=dialog・`aria-label`＝`listTitle`・data-testid `chip-list`。モーダルにしない（裏を inert にしない））：見出し `listTitle` と全部の札の行（`row`。リストの行 `VisitRow`）。`document.body` の直下に出し、「+N」の下（入らなければ上。`.is-up`）に置き、巻く・幅が変わると置き直す。開くと最初の行へフォーカス。Esc で閉じフォーカスは「+N」、一覧と「+N」の外を押すと閉じる（訪問の詳細の欄・確認の中を押したときは閉じない）。札が減って「+N」が無くなったら閉じる
+- `dragging`（ドラッグ中）は一覧を薄くしてマウスを受けない（`.is-dragging`。消すとドラッグが止まるので消さない）
+- 印刷では「+N」は文字だけ、一覧は出さない
 
 #### 帯の見た目（`lib/visitLook.ts`。純粋関数。テストあり）
 
@@ -107,27 +131,27 @@
 - `dayLooks(src, visits, opts)`：1日の訪問 → `VisitLook`。元は `DayLookSource`（`issues`＝`DayStatus.issues`、`told`＝`DayStatus.told`（伝えた内容との違い。`lib/month` の `dayStatus` が持つ）、`problem`＝その日の問題の可否（`unfitMarks`））。今日より前の日（`past`）と取り消し・休みは要対応・資格✗／限✗を出さない。`toldTexts(told, staffName)`：訪問ごとの「担当 A→B」「時刻 9:00→9:30」
 - `useVisitLooks(dates)`（`visitParts`）：`useDayStatuses`（月・週・ホームと同じ覚え）から、期間の訪問ごとの見た目を引く関数 `(visitId) => VisitLook | undefined`。`dates` は useMemo した配列
 - `VisitMarks({ look, size, testIdPrefix?, className? })`：印を並べる `span.vmarks`（data-testid `visit-marks`・`data-marks`・`aria-hidden`。印ごとに `data-kind`・title。`testIdPrefix` を渡すと `${prefix}-${種類}`）。読み上げは帯・行の `aria-label` に `look.text` を入れる。どの帯・行にも `data-marks`
-- 付ける所：日の時間軸の帯・順番のカード・スマホのリスト（`PlanPage` が `dayLooks`）、週の時間軸の帯（`week-band`）・〈スタッフ〉×曜日の表の訪問（`week-tvisit`）・〈利用者さん〉×曜日の表の帯（`week-citem`。印は帯の下の担当の名前のあと）、月のその日の回の一覧（`month-visit`）、人の予定表の回（`pcal-visit`）
+- 付ける所：日の時間軸の帯・順番のカード・スマホのリスト（`PlanPage` が `dayLooks`）、週の時間軸の帯（`week-band`）・表の札（`week-tvisit`・`week-citem`）と「+N」の一覧の行（`week-list-visit`）、月のその日の回の一覧と下から出る欄（`month-visit`）、人の予定表の回（`pcal-visit`）。3段の札で同じ訪問の `data-marks` は同じ
 
 #### 選ぶ（`lib/visitSelect.ts`・`visitParts` の `useVisitSelection`・`useVisitItem`・`SelectToggle`）
 
 - `visitSelect`（純粋関数。テストあり）：`isMultiClick(e)`（Shift・Ctrl・⌘）・`isMultiKey(e)`（それらを押したままの Enter）・`canSelectVisit(visit, leave, today)`（今日より前・取り消し・休みは選ばない）・`toggleId`・`toggleGroup(ids, group)`（まとめて選ぶ・外す。全部選んでいれば外し、足りなければ足す）・`selectedText`
 - `useVisitSelection(key)`：`{ ids, has, toggle, toggleMany, clear, set }`。`key`（日付・週・月・人と期間）が変わったら外す。Esc で外す（入力欄の中・右の欄・モーダルの間は除く）。選んだ訪問の操作は `SelectionBar`（上の「予定の共通の部品」）
 - `useVisitItem({ selection, onOpen, keys?, selecting?, longPress? })` が返す関数に `(visitId, { selectable, movable, selected })` を渡すと、帯・行の button に付ける props を返す：クリック（Shift／Ctrl／⌘ なら選ぶ・外す。選ぶ形なら選ぶ・外す。ほかは `onOpen`）・キー（Shift／Ctrl＋Enter で選ぶ・外す。`movable` なら `keys`＝`useVisitKeys` の関数へ）・長押し（`longPress` を渡したときだけ。`LONG_PRESS_MS`＝500ms、10px 以上動けばやめる。選ぶ形に入ってその訪問を選ぶ。長押しのあとの click は捨て、ブラウザのメニューを出さない）・`aria-pressed`（選ぶ形か選んでいるときだけ。選んでいるか）・`data-selected`・`data-visit-item`
-- `SelectToggle({ selecting, onChange, disabled?, testId })`：スマホ（600px 以下）の「選ぶ」（`aria-pressed`。選んでいる間は「選び終える」。選べる行が無ければ押せない）。data-testid は日ごとのリストが `day-list-select`・週の表が `week-select`・人の予定表が `pcal-select`。スマホではキーで動かさず、長押しか「選ぶ」で選ぶ
+- `SelectToggle({ selecting, onChange, disabled?, testId })`：スマホ（600px 以下）の「選ぶ」（`aria-pressed`。選んでいる間は「選び終える」。選べる行が無ければ押せない）。data-testid は日ごとのリストが `day-list-select`・週の表が `week-select`・月の下から出る欄が `month-select`・人の予定表が `pcal-select`。スマホではキーで動かさず、長押しか「選ぶ」で選ぶ
 - 月のマスの選び方は [pages-month.md](pages-month.md)
 
 #### 1行1訪問の行（`VisitRow`）
 
-- `VisitRow({ row, selecting, selected, props, testId, markPrefix?, extraClass? })`（`button.vrow`。`data-visit`・`data-marks`・選んでいれば `data-selected`）：［選ぶの印］（選ぶ形のとき）｜時刻（「9:00〜10:00」。`vrow-time`）｜名前（`vrow-title`）と担当（`StaffMark` と名前。担当なしは赤い「担当なし」。〈スタッフ〉の画面は `hideStaff` で出さない）・取り消し・休みの札｜印（`VisitMarks`）。左の線は種類の色、取り消し・休みは `.is-off`（薄く名前に線）、要対応は `.is-issue`（淡い赤の地）。読み上げ `visitRowLabel`：「時刻・〈利用者さん〉さん・担当・状態・要対応：…・選択中」
-- 使う所（行の押し方は呼ぶ側が `props` で渡す）：スマホの日ごとのリスト（`day-row`。印は `day-mark-〈種類〉`）・人の予定表の2段目の日ごとのリスト（`pcal-visit`）・月のその日の回の一覧（`month-visit`）
+- `VisitRow({ row, selecting, selected, props, testId, markPrefix?, extraClass? })`（中の札。`button.vrow`。`data-visit`・`data-size="m"`・`data-marks`・選んでいれば `data-selected`）：［選ぶの印］（選ぶ形のとき）｜時刻（「9:00〜10:00」。`vrow-time`）｜名前（`vrow-title`）と担当（`StaffMark` と名前。担当なしは赤い「担当なし」。〈スタッフ〉の画面は `hideStaff` で出さない）・取り消し・休みの札｜印（`VisitMarks`）。左の線は種類の色、取り消し・休みは `.is-off`（薄く名前に線）、要対応は `.is-issue`（淡い赤の地）。読み上げ `visitRowLabel`：「時刻・〈利用者さん〉さん・担当・状態・要対応：…・選択中」
+- 使う所（行の押し方は呼ぶ側が `props` で渡す）：スマホの日ごとのリスト（`day-row`。印は `day-mark-〈種類〉`）・人の予定表の2段目の日ごとのリスト（`pcal-visit`）・月のその日の回の一覧と下から出る欄（`month-visit`）・週の表の「+N」の一覧（`week-list-visit`）
 
 #### ドラッグの落とし先（`lib/visitDrop.ts`・`visitParts` の `useVisitDrag`・`DropShadow`）
 
 - `dropVerdict(data, visitId, target, today, { fit?, staffWhy? })`（純粋関数。テストあり）→ `DropVerdict`。置けない `{ ok: false, why }`：訪問が無い・取り消し・休みのため無し・今日より前の訪問・今日より前の日へ・ほかの人の行へ（`target.clientId` が違う）・7:00〜20:00 の外。置ける `{ ok: true, same, date, start, staffId, warn, told, repeating }`：`warn` は入れる人が0人（`fit===0`）・担当できない人の行（`staffWhy`）のときの理由、`told` は変わる日のうち確定した日、`repeating` は繰り返しの回、`same` は同じ日時・担当（何もしない）。`DropTarget`＝`{ date, start?, staffId?, clientId? }`
 - `dropShadowText(verdict, { fit?, time? })`：置けないとき「置けません：理由」、置けるとき「ここへ（9:15）・入れる人 N人」（数えない落とし先は「入る」。`warn` なら「入らない：理由」）に「確定した日（変えると未連絡の変更）」「繰り返しの回（範囲は欄で選ぶ）」を添える。`dropTone`：`ng`（灰の斜線。落とせない）・`warn`（赤い点線。落とせる。落とすと要対応）・`ok`。`staffWhyOf(data, visitId, date, staffId)`：担当の行・列へ落とすときの担当できない理由（欄の `staffChoices` と同じ。同じ人の行の別の日へ落とすときも見る。`useVisitDrag` が訪問・日・人ごとに覚える）
 - `useVisitDrag({ today, fit?, staffWhy?, onDrop })`：`source(visitId, movable)`（つかむ props。始まりは `deferredDragStart`）・`target(key, at)`（落とし先の props。`at` が落とした位置から `DropTarget` を出す。置けるときだけ `preventDefault` して落とせる。同じ日時・担当なら `onDrop` を呼ばない）・`hover`（`{ key, target, verdict, fit }`）・`dragId`・`offset()`。`fit` なら落とす日・時刻に入れる人の数（`fitCountAt`）を数えて覚える
-- `DropShadow({ hover, style?, className?, testId?, time? })`：落とす前の影（`div.vdrop.is-ok|warn|ng`・`data-tone`・文は `drop-text`）。置き場所：週の時間軸の列・〈スタッフ〉×曜日のマス（`week-tdrop`）・〈利用者さん〉×曜日のマス（`week-cdrop`）・月のマス（`month-drop`）・人の予定表の列とマス
+- `DropShadow({ hover, style?, className?, testId?, time? })`：落とす前の影（`div.vdrop.is-ok|warn|ng`・`data-tone`・文は `drop-text`）。置き場所：週の時間軸の列・〈スタッフ〉×曜日のマス（`week-tdrop`。札を落とすと担当（行）と曜日（列）が変わり時刻はそのまま）・〈利用者さん〉×曜日のマス（`week-cdrop`）・月のマス（`month-drop`）・人の予定表の列とマス
 - 落としたあとは、落とした日時（・担当）を入れた訪問の詳細の欄（`useOpenVisit` の `draft`・`staff`。範囲・確定した日の確かめは欄）。`VisitPanelRequest.staff` は欄の担当をはじめから選んでおく人（候補に無い・選べなければ「変えない」）
 
 ### スマホの日ごとのリスト（`components/dayList.tsx`・`dayList.css`。PRD D334。ADR-0055）
@@ -140,10 +164,10 @@
 
 ### 訪問の帯をキーで動かす（`lib/visitKeys.ts`・`components/visitKeys.tsx`。PRD D333。ADR-0055）
 
-- `lib/visitKeys`（純粋関数。テストあり）：`visitKeyOf(e)`（↑↓＝15分・←→＝1日・Shift+←→＝隣の担当・Enter＝欄・Delete／Backspace＝取り消し。Ctrl・⌘・Alt つき、Shift+↑↓・Shift+Enter は読まない）・`nextStaffFor(data, visitId, order, step)`（その向きに順に見て `staffChoices` で担当できる最初の人。端・いなければ理由）・`issuesAt(data, visitId, date)`（動かした先の要対応）・`keyMove(data, visitId, move, today, scope='once', ids)`（`applyVisitEdit`。時刻は幅を保ってずらし日をまたがない、日付は担当のまま、担当はピン。できなければ理由）・`moveLabel(move, staffName)`（手の名前）・`movedText(r, client, staffName, scope)`（読み上げ）
-- `useVisitKeys({ staffOrder, move?, onOpen?, onMoved?, onCancelled? })`：帯・行の keydown を受けるフック（当たれば `preventDefault` して true）。`move`（既定 true）を false にすると日時を動かすキー（↑↓←→）を読まない（〈スタッフ〉の画面。Shift+←→・Enter・Delete だけ）。動かすのは store の `update(fn, 手の名前)` の1回。取り消しは独自の確認（「訪問を取り消す」・`tone: 'danger'`）のあと `cancelVisitOp` とトーストの「元に戻す」。できない理由は読み上げとトースト
+- `lib/visitKeys`（純粋関数。テストあり）：`KeyLayout`＝`timeline`（時間軸。既定）・`table`（表）・`list`（リスト。時間軸と同じ）。`visitKeyOf(e, layout)`（↑↓＝15分・←→＝1日・Shift+←→＝隣の担当・Enter＝欄・Delete／Backspace＝取り消し。表は ↑↓＝隣の担当（時刻はそのまま）・Shift+←→ は読まない。Ctrl・⌘・Alt つき、Shift+↑↓・Shift+Enter は読まない）・`nextStaffFor(data, visitId, order, step, axis)`（その向きに順に見て `staffChoices` で担当できる最初の人。端・いなければ理由。`axis` は担当の並びの向き：`col`（時間軸の列。「これより右に担当の列はありません」）・`row`（表の行。「これより下に担当の行はありません」））・`issuesAt(data, visitId, date)`（動かした先の要対応）・`keyMove(data, visitId, move, today, scope='once', ids)`（`applyVisitEdit`。時刻は幅を保ってずらし日をまたがない、日付は担当のまま、担当はピン。できなければ理由）・`moveLabel(move, staffName)`（手の名前）・`movedText(r, client, staffName, scope)`（読み上げ）
+- `useVisitKeys({ staffOrder, move?, layout?, onOpen?, onMoved?, onCancelled? })`：帯・行の keydown を受けるフック（当たれば `preventDefault` して true）。`move`（既定 true）を false にすると日時を動かすキー（↑↓←→）を読まない（〈スタッフ〉の画面。Shift+←→・Enter・Delete だけ）。`layout` が `table` なら ↑↓ を隣の担当（`nextStaffFor` の `row`）に読む。動かすのは store の `update(fn, 手の名前)` の1回。取り消しは独自の確認（「訪問を取り消す」・`tone: 'danger'`）のあと `cancelVisitOp` とトーストの「元に戻す」。できない理由は読み上げとトースト
 - `KeyMoveBand`：読み上げの `output`（`aria-live="polite"`・data-testid `key-move-status`）と、繰り返しの回を「この回だけ」動かした直後だけの帯（`section.key-move-band`・data-testid `key-move-band`。画面の下の真ん中に浮かせる）「繰り返しの回をこの回だけ動かしました（手の名前）」［これ以降も］（`key-scope-following`）［すべての回も］（`key-scope-all`）［このまま］（`key-scope-keep`）。帯へは帯の上で Alt+↓、帯の中の Esc で動かした帯へ戻る。範囲を選ぶと、確定（伝えた）した日も変わるなら欄と同じ独自の確認、直前の手（`appHistory.peek().after` が今のデータのときだけ）を store の `undo` で戻し、`keyMove(前のデータ, …, scope)` を「手の名前（これ以降）」の1手で当てる。データが変わったら帯は消える
-- 付ける所：日の予定の時間軸の帯（`TimelineBand.onKey`。並びは列の順。←→ はその日へ `setDate`・フォーカスは動かした帯）、週の予定の時間軸の帯・〈スタッフ〉×曜日の表の訪問・〈利用者さん〉×曜日の表の帯（並びは利用中の〈スタッフ〉。週の外へ出たらその週へ）、月のその日の回の一覧の行（月の外へ出たらその月へ）、人の予定表の回（期間の外へ出たらその期間へ。〈スタッフ〉の画面は `move: false`）。`useVisitItem` の `keys` に渡して `movable` の訪問に効かせ、スマホ（600px 以下）は渡さない。動かしたあとのフォーカスは `focusVisitItem(visitId)`（`data-visit-item` の要素。`visitItemOf`）。今日より前・休みの帯は動かさない
+- 付ける所：日の予定の時間軸の帯（`TimelineBand.onKey`。並びは列の順。←→ はその日へ `setDate`・フォーカスは動かした帯）、週の予定の時間軸の帯と「+N」の一覧の行（並びは利用中の〈スタッフ〉。週の外へ出たらその週へ）・表の札（`layout: 'table'`。並びは〈スタッフ〉×曜日が表の行の順、〈利用者さん〉×曜日が利用中の〈スタッフ〉の順）、月のその日の回の一覧の行（月の外へ出たらその月へ）、人の予定表の回（期間の外へ出たらその期間へ。〈スタッフ〉の画面は `move: false`）。`useVisitItem` の `keys` に渡して `movable` の訪問に効かせ、スマホ（600px 以下）は渡さない。動かしたあとのフォーカスは `focusVisitItem(visitId)`（`data-visit-item` の要素。`visitItemOf`）。今日より前・休みの帯は動かさない
 - 月のマスのキー `cellKeyOf(e)`（`lib/visitKeys`。純粋関数。テストあり）：←→＝前・次の日（`go`）・↑↓＝前・次の週（`go`）・Enter＝その日の回の一覧（`open`）・Shift／Ctrl／⌘＋Enter＝その日をまとめて選ぶ（`select`）。Alt つき・Shift＋矢印は読まない。使い方は [pages-month.md](pages-month.md)
 
 ### 訪問の詳細の欄（`components/VisitPanel.tsx`・`visitPanel.css`。PRD D301〜D305。ADR-0051）
@@ -310,6 +334,7 @@
 - `scripts/e2e-tour.cjs`：ツアー（初めて開くと出る・ARIA・中央・フォーカス・inert とロック・Tab が回る・Ctrl+K を開かない・次へ／戻る・3枚・予定の枚の3段・初めて開くと「基本」で1枚目に「どこまで使いますか」・「すべて」を選ぶとメニューと入り切りが変わり「条件が変わった」にならない・もう一度見るでは聞かない・「閉じる」・「今日の予定を開く」で今日の日の予定・覚える（別のキー）・読み直しても出ない・Esc・とばす・月の印刷では出ない・`?id=`・`?do=` のリンクでは出ない・印があれば自動で出ない・最後の枚で覚える・もう一度見る・フォーカスを戻す・初期状態に戻しても残る・390px・印刷）、ファイル選択、月の一覧
 - `scripts/e2e-words.cjs`：点数の理由・用語の説明（マウス・Tab・Esc・タッチ・同時に1つ・入力欄の名前）・言い換え・空の画面・月の凡例・相性のセルの記号・390px・印刷
 - `scripts/e2e-links.cjs`：行き先のリンク（月の要対応の4種類・`?do=unassigned`・勤務の見込み・勤務時間（シフト）・空き状況）
-- `scripts/e2e-shared-parts.cjs`（1400px・390px）：訪問の帯の共通の部品（ADR-0056）を週の表（〈スタッフ〉×曜日のマスの訪問・〈利用者さん〉×曜日の帯）・月のカレンダー（マスのキー・その日の回の一覧）・人の予定表で確かめる。複数選択（Ctrl＋クリック・Shift＋Enter・Esc）とキー（↓ 15分・Enter 欄・Ctrl+Z）、〈スタッフ〉の画面は日時を動かさない、帯の見た目（`data-marks`）が3画面と週の時間軸で同じ、ドラッグの落とし先の判定（今日より前の日は置けない・同じ理由の文・入る日へ落とすと落とした日の欄）、390px で長押しの選ぶ・2段目の行が日ごとのリストと同じ形
+- `scripts/e2e-shared-parts.cjs`（1400px・390px）：訪問の札の共通の部品（ADR-0056）を週の表の札（〈スタッフ〉×曜日・〈利用者さん〉×曜日）・月のカレンダー（マスのキー・その日の回の一覧）・人の予定表で確かめる。複数選択（Ctrl＋クリック・Shift＋Enter・Esc）とキー（↓ 15分・Enter 欄・Ctrl+Z）、〈スタッフ〉の画面は日時を動かさない、帯の見た目（`data-marks`）が3画面と週の時間軸で同じ、ドラッグの落とし先の判定（今日より前の日は置けない・同じ理由の文・入る日へ落とすと落とした日の欄）、390px で長押しの選ぶ・2段目の行が日ごとのリストと同じ形
+- `scripts/e2e-chip-containers.cjs`（1400px・390px）：札の3段と入れ物（ADR-0057）。週の表の札（「時刻 頭文字」・3件まで・「+N」の一覧と Esc）・選ぶ・表のキー（→ 次の日・↓ 隣の担当・Enter 欄・Ctrl+Z）・ドラッグ（影の文・今日より前は置けない・落とすと欄）・〈利用者さん〉×曜日の札、月のマスを1回で右の欄・2回で日の予定・Enter で一覧の行へ・行をマスへドラッグで欄・2件選んで「別の日へ」と Ctrl+Z・確定した日の確認、3段の札（週の時間軸・週の表・月の一覧・日の予定の帯）で `data-marks` が同じ、390px の週の表の長押し・月の下から出る欄、印刷で「+N」の一覧と選択の帯を出さない
 - `scripts/e2e-features.cjs`：機能の入り切り（ひな形ごとのメニュー・下のタブ・パレット・ホーム・画面の中の入口・切った URL・390px・印刷）
 
