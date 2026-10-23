@@ -13,7 +13,7 @@
 // データの画面のファイル選択（すべて同じ部品・日本語のボタン「ファイルを選ぶ」と未選択の文・ブラウザ標準の input は見えない・
 // input はボタンと同じ大きさ・種類を切り替えると文を消す・入力欄の名前（何を読み込むか＋ファイルを選ぶ）・Tab で届きフォーカスの枠・Space で選ぶ画面・控え（JSON）を選ぶと確認と
 // ファイル名・取り消してもデータはそのまま・確定で読み込む・Excel の壊れたファイルは誤りの文・名簿の見出し）、
-// 月の画面の日ごとの一覧（390px ははじめ一覧で横にはみ出さず土曜も見える・今日の行が画面に入る・「今日へ」・切り替えは操作の欄より上・行の読み上げ・押すとその日の日の画面・
+// 月の画面の日ごとの一覧（390px ははじめ一覧で横にはみ出さず土曜も見える・今日の行が画面に入る・「今日へ」・切り替えは操作の欄より上・行の読み上げ・押すとその日の訪問の下から出る欄（日の予定へは移らない）→ 欄の「この日の日の予定を開く」でその日の日の画面・
 // カレンダーへ切り替えると URL の ?layout=calendar・読み直しても同じ・戻すと ?layout=list（押したら必ず書く）・1400px ははじめカレンダー・
 // ?layout=list で一覧・「休みを入れる」の行は押すと希望休を付け外し・印刷の画面は今のまま）、
 // データを守る（PRD D227。ADR-0032）：初期状態に戻したあと「直前の状態に戻す」で戻る（確認の本文に控えの文・欄の文・もう一度戻せる）・
@@ -727,12 +727,23 @@ async function monthList(b) {
   await page.locator('[data-testid="month-layout"] button[data-layout="list"]').click();
   await page.getByTestId('month-list').waitFor();
   check(/layout=list/.test(hashOf(page)), '一覧へ戻すと URL に ?layout=list（押したら幅の既定でも書く）', hashOf(page));
-  // 行を押すとその日の日の画面
+  // 行を押すとその日の訪問の下から出る欄（スマホ。PRD D343）、欄の「この日の日の予定を開く」でその日の日の画面
   const target = await rows.nth(Math.min(n - 1, 20)).getAttribute('data-date');
   await page.locator(`[data-testid="month-list-day"][data-date="${target}"]`).click();
+  const sheet = page.getByTestId('month-day-sheet');
+  await sheet.waitFor({ timeout: 10000 });
+  check(
+    (await sheet.getAttribute('data-date')) === target,
+    '行を押すとその日の訪問の下から出る欄（日の予定へは移らない）',
+    {
+      date: await sheet.getAttribute('data-date'),
+      hash: hashOf(page),
+    },
+  );
+  await page.getByTestId('month-day-visits-plan').click();
   await page.waitForURL(/#\/plan/);
   const sel = await page.locator('.date-switch select').inputValue();
-  check(sel === target, '行を押すとその日の「日の予定」', { sel, target });
+  check(sel === target, '欄の「この日の日の予定を開く」でその日の「日の予定」', { sel, target });
   // 「休みを入れる」：〈スタッフ〉を選んで、勤務日の行を押すと希望休を付け外し。
   // 希望休を入れられる行（data-off="open"）がある〈スタッフ〉を探す。今月に1つも無ければ（月末で残りの日に働く人がいない）翌月で
   const nextYm = (() => {

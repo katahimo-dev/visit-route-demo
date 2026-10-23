@@ -1,6 +1,7 @@
 // 訪問の帯の共通の部品（ADR-0056。PRD D339〜D341）を本物のブラウザで確かめる：
-// 週の表（〈スタッフ〉×曜日のマスの訪問・〈利用者さん〉×曜日の帯）・月のカレンダー（マスのキー・その日の回の一覧）・人の予定表で
-// 複数選択（Ctrl＋クリック・Shift＋Enter・Esc）とキー（↓ 15分・Enter 欄・Ctrl+Z）が効く、〈スタッフ〉の画面は日時を動かさない、
+// 週の表（〈スタッフ〉×曜日・〈利用者さん〉×曜日のマスの小さな札。PRD D342）・月のカレンダー（マスのキー・その日の回の一覧）・人の予定表で
+// 複数選択（Ctrl＋クリック・Shift＋Enter・Esc）とキー（↓ 15分（表の札は ↑↓ が隣の担当なので → で次の日）・Enter 欄・Ctrl+Z）が効く、
+// 〈スタッフ〉の画面は日時を動かさない、
 // 帯の見た目（data-marks：要対応・ピン）が3画面と週の時間軸で同じ、ドラッグの落とし先の判定（今日より前の日は置けない・
 // 同じ理由の文・入る日へ落とすと落とした日の欄）が週の表・月・人の予定表で同じ、390px で長押しの選ぶ・2段目の行が日ごとのリストと同じ形。
 // スクリーンショット week-table-1400・week-clients-1400・month-list-1400・person-1400・week-table-390・person-390
@@ -81,9 +82,10 @@ async function futureItems(page, selector, n) {
 }
 /**
  * 選ぶ・キーの確かめ（どの画面も同じ手順）：Ctrl＋クリックで2件選ぶ（欄は開かない）・Esc で外す・Shift＋Enter で選ぶ・
- * ↓ で15分後（フォーカスは帯のまま・手の名前）・Ctrl+Z で戻る・Enter で欄（Esc でフォーカスは帯）
+ * ↓ で15分後（フォーカスは帯のまま・手の名前）・Ctrl+Z で戻る・Enter で欄（Esc でフォーカスは帯）。
+ * 表の札（day）は ↑↓ が隣の担当の行なので（PRD D342）、→ で次の日（時刻はそのまま）を確かめる
  */
-async function selectAndKeys(page, where, sel, ids, { move = true } = {}) {
+async function selectAndKeys(page, where, sel, ids, { move = true, day = false } = {}) {
   const item = (id) => page.locator(`${sel}[data-visit="${id}"]`).first();
   await item(ids[0]).scrollIntoViewIfNeeded();
   await item(ids[0]).click({ modifiers: [MOD] });
@@ -127,11 +129,30 @@ async function selectAndKeys(page, where, sel, ids, { move = true } = {}) {
   await panel(page).waitFor({ state: 'detached' });
   await settle(page, 200);
   check((await focusedVisit(page)) === ids[0], `${where}：Esc で閉じるとフォーカスは帯`);
-  // ↓ で15分後（〈スタッフ〉の画面は動かさない）
+  // ↓ で15分後（〈スタッフ〉の画面は動かさない）。表の札は → で次の日
   const before = await stored(page);
+  const date0 = await item(ids[0]).evaluate((el) => el.dataset.date ?? el.closest('[data-date]')?.dataset.date ?? null);
   await item(ids[0]).focus();
-  await page.keyboard.press('ArrowDown');
-  if (move) {
+  await page.keyboard.press(day ? 'ArrowRight' : 'ArrowDown');
+  if (move && day) {
+    // 時刻は保存した訪問の開始（早）。保存していない繰り返しの回は欄で見た開始と比べる
+    const start1 = visitOf(before, ids[0])?.earliestStart ?? start0;
+    const moved = await waitStored(page, (d) => {
+      const v = visitOf(d, ids[0]);
+      return !!v && !!date0 && v.date === addDays(date0, 1) && v.earliestStart === start1;
+    });
+    check(moved, `${where}：→ で次の日（時刻はそのまま・store に書く）`, { date0, start1 });
+    await settle(page, 300);
+    check((await focusedVisit(page)) === ids[0], `${where}：動かしたあともフォーカスは動かした札`);
+    check(
+      /訪問を次の日へ/.test((await page.getByTestId('undo-btn').getAttribute('title')) ?? ''),
+      `${where}：全体の元に戻すの1手（手の名前）`,
+    );
+    await page.locator('h1').click();
+    await page.keyboard.press(`${MOD}+z`);
+    const back = await waitStored(page, (d) => JSON.stringify(d.visits) === JSON.stringify(before.visits));
+    check(back, `${where}：Ctrl+Z で1手戻る`);
+  } else if (move) {
     // 繰り返しの計算した回も、動かすと「この回だけ」の保存した回になる。欄で見た開始と比べる
     const moved = await waitStored(page, (d) => {
       const v = visitOf(d, ids[0]);
@@ -164,7 +185,7 @@ async function weekTable(page) {
   check(ids.length === 2, '週の表：マスに訪問（今日より後に2件以上）', ids);
   if (ids.length < 2) return;
   await shot(page, 'week-table-1400');
-  await selectAndKeys(page, '週の〈スタッフ〉×曜日の表', '[data-testid="week-tvisit"]', ids);
+  await selectAndKeys(page, '週の〈スタッフ〉×曜日の表', '[data-testid="week-tvisit"]', ids, { day: true });
 }
 
 // ---- 週の〈利用者さん〉×曜日の表 ----
@@ -176,7 +197,7 @@ async function weekClients(page) {
   check(ids.length === 2, '週の〈利用者さん〉の表：動かせる帯が2件以上', ids);
   if (ids.length < 2) return;
   await shot(page, 'week-clients-1400');
-  await selectAndKeys(page, '週の〈利用者さん〉×曜日の表', '[data-testid="week-citem"]', ids);
+  await selectAndKeys(page, '週の〈利用者さん〉×曜日の表', '[data-testid="week-citem"]', ids, { day: true });
 }
 
 // ---- 月のカレンダー ----
@@ -254,10 +275,16 @@ async function month(page) {
   await page.keyboard.press('Escape');
   await settle(page, 200);
   check((await list.count()) === 0 && (await focusedDate()) === day, '月：一覧の中の Esc で閉じ、フォーカスはマス');
-  // ふつうに押すと今どおり日の予定
+  // 押すと1回目はその日の一覧（右の欄）、もう一度押すとその日の日の予定（PRD D343）
+  await cell(day).click();
+  await list.waitFor({ timeout: 5000 });
+  check(
+    (await list.getAttribute('data-date')) === day && new URL(page.url()).hash.startsWith('#/month'),
+    '月：マスを1回押すとその日の一覧（日の予定へは移らない）',
+  );
   await cell(day).click();
   await page.waitForURL(/#\/plan/, { timeout: 10000 });
-  check(true, '月：マスを押すと今どおりその日の日の予定');
+  check(true, '月：一覧に出している日のマスをもう一度押すとその日の日の予定');
 }
 
 // ---- 人の予定表 ----

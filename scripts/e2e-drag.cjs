@@ -1,6 +1,6 @@
 // 本物のマウス操作（mouse.down → move → up）で、画面のドラッグが動くかを確かめる（6種類）。
 // 週の〈利用者さん〉で見るでは、初期値で先頭8人のチップが選ばれていることも確かめる（week-client-default。PRD D136・D137）。
-// 週・スタッフ／週・利用者さん／利用者さん×曜日の表／予定の時間軸／予定の順番／月 → 日（予定の時間軸）。
+// 週・スタッフ／週・利用者さん／利用者さん×曜日の表／予定の時間軸／予定の順番／月 → 日（予定の時間軸。月のマスは1回目で右の欄、もう一度押して日の予定）。
 // あわせて、週間の〈利用者さん〉×曜日の表の検索欄で日本語の変換（IME。CDP の Input.imeSetComposition）が壊れないかも確かめる
 // （week-clients-ime。変換中は URL の ?cf= を書かず、確定後に書く。URL が外から変わったら入力欄を合わせる。PRD D109）。
 // Playwright の dragTo や合成の DragEvent では、dragstart の中で画面の高さが変わってドラッグが取り消される不具合
@@ -333,7 +333,10 @@ const steps = sharedPage({
             break;
           }
         }
+        // 1回目の押すはその日の訪問を右の欄に出すだけ、もう一度押すと日の予定（PRD D343）
         await need(d, `${TODAY} より後の月のマス`).click();
+        await page.getByTestId('month-day-visits').waitFor({ timeout: 10000 });
+        await d.click();
         await page.waitForURL(/#\/plan/);
         await planMove(page, 'timeline', 'month-day');
       },
