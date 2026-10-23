@@ -182,7 +182,7 @@ export function AnnealBox({
               {options.map((o) => (
                 <th key={o.key} scope="col">
                   {o.title}
-                  {o.current && <span className="chip chip-ok anneal-current">反映している</span>}
+                  {o.current && <span className="chip chip-ok anneal-current">反映中</span>}
                   {o.key === 'anneal' && stopped && <span className="sub">（途中で止めた）</span>}
                 </th>
               ))}
@@ -207,7 +207,7 @@ export function AnnealBox({
                     disabled={o.current || running}
                     onClick={() => onChoose(o.key)}
                   >
-                    {o.current ? '反映しています' : `${o.title}を反映する`}
+                    {o.current ? '反映済み' : `${o.title}を反映する`}
                   </button>
                 </td>
               ))}
