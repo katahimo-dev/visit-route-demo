@@ -23,7 +23,7 @@
 
 1. 見出し（`PageHeader`。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）：題名・1行の説明・状態の印・主ボタン「この割当で確定」（確定済みの日は枠のボタンにして主ボタンを置かない。PRD D238）。題名の下に［月｜週｜日］のタブ（`ViewSwitch`。PRD D237）
 2. 進み具合の帯は出さない（月の予定だけ。PRD D332）。日の状態は見出しの状態の印と下の1行のまとめ
-3. 1行のまとめ：訪問 N件・入らない N・守れない条件 N・移動 N分・点数 N点（`plan-oneline-score`・`plan-score`。点数に用語の説明「点数」（`Term k="score"`。PRD D307）。title「「〈名前〉」の重みで付けた点数」。点数の文字は地の色で、入らない・必須の違反があるときだけ `.is-alert` で要対応の赤。PRD D266）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」
+3. 1行のまとめ：訪問 N件・入らない N・守れない条件 N・移動 N分・点数 N点（`plan-oneline-score`・`plan-score`。点数に用語の説明「点数」（`Term k="score"`。PRD D307）。title「「〈名前〉」の重みで付けた点数」。点数の文字は地の色で、入らない・必須の違反があるときだけ `.is-alert` で要対応の赤。PRD D266）・点数の理由（`plan-reason`）・次の一手（`reason-next`。理由のすぐ後ろ、同じ行。PRD D237）・「詳しく」。入らない・守れない条件の数（1件以上）は押すと吹き出しの一覧（`components/PlanIssueCount`・`plan-dropped`・`plan-hard`。行の「見る」`-look`・「開く」`-open`・関連の画面 `-link`（`lib/hardLinks`）。入らないの下に「担当なしの列へ」`plan-dropped-none`。PRD D345）
 4. 操作の行（下の 6。日・週・月で同じ位置＝状態の1行のすぐ下。PRD D344。ADR-0058）と、開いていれば使い方の説明（`plan-help`）
 5. 担当ごとの1日（`DayLines`。下）。操作の行が間に入るので、1行のまとめとはつなげず別のカード（PRD D237 のつなげ方は D344 でやめた）
 5b. あるときだけの帯（ドラッグ中には増減しない）：問題を作れない・採点できない・提案の帯（日のその場の提案 `data-kind="day"` と範囲の提案 `data-kind="range"`。[pages-common.md](pages-common.md) の「予定の共通の部品」）・入らない訪問（`band-unassigned`・「見る」）・欠勤の振り直し（`band-reassign`・「差の欄へ」）・休み（`band-leave`）・条件が変わった（`plan-stale`）・拘束超え（`band-over-span`）

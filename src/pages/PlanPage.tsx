@@ -41,6 +41,7 @@ import { MenuButton, type MenuItem } from '../components/MenuButton';
 import { useMailLimit } from '../components/mailParts';
 import { VisitRouteLinks } from '../components/mapsLinks';
 import { PersonButton, PersonInfo } from '../components/PersonPopover';
+import { type IssueRow, PlanIssueCount } from '../components/PlanIssueCount';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
@@ -100,9 +101,10 @@ import {
   writeRoutes,
 } from '../lib/dayPlan';
 import { deferredDragStart } from '../lib/dragStart';
+import { hardLinks } from '../lib/hardLinks';
 import { appHistory } from '../lib/history';
 import { isDate } from '../lib/isDate';
-import { UNASSIGNED_DO, workloadHref } from '../lib/links';
+import { linkIfOn, UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { issueBreakdown } from '../lib/month';
@@ -1997,6 +1999,61 @@ export default function PlanPage() {
 
   // ---- 日の画面の整理（PRD D63）：1行のまとめ・案を変えるメニュー・右の欄・表示の切り替え・地図の横置き ----
   const hardCount = cs?.hardViolations.length ?? 0;
+  /** 一覧の時刻（今の担当の開始。無ければ約束の開始） */
+  const issueTime = (id: string) => {
+    const t = explained.get(id)?.timing;
+    return t ? minutesToHhmm(t.start) : (visitById.get(id)?.earliestStart ?? '');
+  };
+  /** 「入らない N」の一覧（PRD D345）：理由は「担当なしの訪問」の列の札と同じ */
+  const droppedRows: IssueRow[] = unassigned.map((id) => {
+    const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
+    const reasons = inf?.reasons ?? explained.get(id)?.reasons ?? [];
+    return {
+      visitId: id,
+      time: issueTime(id),
+      clientName: clientOf(id)?.displayName ?? '（不明）',
+      reasons: reasons.map((r) => reasonFace(r).text),
+      links: [],
+    };
+  });
+  /** 「守れない条件 N」の一覧（PRD D345）：訪問ごとに1行。関連の画面は lib/hardLinks（切った機能の行き先は出さない） */
+  const hardRows: IssueRow[] = [];
+  for (const h of cs?.hardViolations ?? []) {
+    const client = clientOf(h.visitId);
+    const links = hardLinks(h, client?.id, terms).filter((l) => linkIfOn(data.org.features, l.to) !== null);
+    const row = hardRows.find((r) => r.visitId === h.visitId);
+    if (row) {
+      if (!row.reasons.includes(h.label)) row.reasons.push(h.label);
+      for (const l of links) if (!row.links.some((x) => x.to === l.to)) row.links.push(l);
+      continue;
+    }
+    hardRows.push({
+      visitId: h.visitId,
+      time: issueTime(h.visitId),
+      clientName: client?.displayName ?? '（不明）',
+      staffName: staffName(h.staffId),
+      reasons: [h.label],
+      links,
+    });
+  }
+  hardRows.sort((a, b) => a.time.localeCompare(b.time));
+  /** 「見る」（入らない訪問）：担当なしの列へ移り、その訪問を選ぶ（選んだままなら外さない） */
+  const lookNone = (id: string) => {
+    if (shownView === 'list' || shownView === 'day') setView('timeline');
+    const x = { id, set: PLAN_SET };
+    if (!sel.isPicked(x)) sel.togglePick(x);
+    requestAnimationFrame(() => {
+      const col = document.getElementById(noneColId);
+      const card = col?.querySelector<HTMLElement>(`[data-visit="${CSS.escape(id)}"]`);
+      (card ?? col)?.scrollIntoView({ behavior: scrollBehavior(), block: 'center', inline: 'nearest' });
+    });
+  };
+  /** 「見る」（担当のある訪問）：その人の列の訪問を選んで見える所へ（担当ごとの1日から移るときと同じ） */
+  const lookAt = (id: string) => {
+    const sid = owner.get(id);
+    if (sid) goToStaff(sid, id);
+    else lookNone(id);
+  };
   const hundredNow = cs && scoreScale ? toHundred(cs.total, scoreScale) : null;
   /** 物差しの下限の条件ごとの内訳（点数の理由で条件ごとの超過を比べる） */
   const scoreLower = useMemo(
@@ -2452,11 +2509,41 @@ export default function PlanPage() {
           <span>
             訪問 <strong>{visits.length}</strong>件
           </span>
+          {/* 数を押すと一覧（見る・開く・関連の画面へ。PRD D345）。0 件は数だけ */}
           <span className={cs.dropped > 0 ? 'warn-text' : ''}>
-            <Term k="dropped" /> <strong>{cs.dropped}</strong>
+            <Term k="dropped" />{' '}
+            <PlanIssueCount
+              count={cs.dropped}
+              title={`入らない訪問 ${droppedRows.length}件`}
+              rows={droppedRows}
+              onLook={lookNone}
+              onOpen={(id) => openVisit(id)}
+              footer={(close) => (
+                <button
+                  type="button"
+                  className="btn btn-small btn-text detail-popover-link"
+                  onClick={() => {
+                    close();
+                    requestAnimationFrame(goToNone);
+                  }}
+                  data-testid="plan-dropped-none"
+                >
+                  担当なしの列へ
+                </button>
+              )}
+              testId="plan-dropped"
+            />
           </span>
           <span className={`m-hide${hardCount > 0 ? ' error' : ''}`}>
-            <Term k="hard" /> <strong>{hardCount}</strong>
+            <Term k="hard" />{' '}
+            <PlanIssueCount
+              count={hardCount}
+              title={`守れない条件 ${hardCount}件`}
+              rows={hardRows}
+              onLook={lookAt}
+              onOpen={(id) => openVisit(id)}
+              testId="plan-hard"
+            />
           </span>
           <span className="m-hide">
             <Term k="travel" /> <strong>{r0(cs.travelMinutes)}</strong>分
