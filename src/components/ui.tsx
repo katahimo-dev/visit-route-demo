@@ -261,6 +261,8 @@ export function SidePanel({
     const onKey = (e: KeyboardEvent) => {
       // 日本語の変換中の Esc は変換の取り消しなので閉じない
       if (e.key === 'Escape' && !e.isComposing) {
+        // 裏の Esc（選んだ訪問を外すなど）に渡さない
+        e.preventDefault();
         closeRef.current();
         return;
       }

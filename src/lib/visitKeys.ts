@@ -53,10 +53,13 @@ export function visitKeyOf(
     case 'ArrowDown':
       if (e.shiftKey) return null;
       return layout === 'table' ? { kind: 'staff', step: 1 } : { kind: 'time', minutes: KEY_STEP_MINUTES };
+    // 表は担当が行（↑↓）なので Shift+←→ は読まない
     case 'ArrowLeft':
-      return e.shiftKey ? { kind: 'staff', step: -1 } : { kind: 'day', days: -1 };
+      if (e.shiftKey) return layout === 'table' ? null : { kind: 'staff', step: -1 };
+      return { kind: 'day', days: -1 };
     case 'ArrowRight':
-      return e.shiftKey ? { kind: 'staff', step: 1 } : { kind: 'day', days: 1 };
+      if (e.shiftKey) return layout === 'table' ? null : { kind: 'staff', step: 1 };
+      return { kind: 'day', days: 1 };
     case 'Enter':
       return e.shiftKey ? null : { kind: 'open' };
     case 'Delete':

@@ -691,6 +691,10 @@ export default function MonthPage() {
   useEffect(() => {
     if (!sheetDay) setSelecting(false);
   }, [sheetDay]);
+  // 広い画面へ戻したら下から出る欄は閉じる（狭い画面へ戻しても勝手に開き直さない）
+  useEffect(() => {
+    if (!narrowList) setSheetDay(null);
+  }, [narrowList]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 月を送ったら、下から出る欄も閉じる
   useEffect(() => {
     setSheetDay(null);

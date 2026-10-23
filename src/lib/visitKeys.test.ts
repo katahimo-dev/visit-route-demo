@@ -30,6 +30,7 @@ describe('キーの読み替え（PRD D333）', () => {
     expect(visitKeyOf(key('ArrowRight'), 'table')).toEqual({ kind: 'day', days: 1 });
     expect(visitKeyOf(key('Enter'), 'table')).toEqual({ kind: 'open' });
     expect(visitKeyOf(key('ArrowDown', true), 'table')).toBeNull();
+    expect(visitKeyOf(key('ArrowRight', true), 'table')).toBeNull();
     expect(visitKeyOf(key('ArrowDown'), 'list')).toEqual({ kind: 'time', minutes: 15 });
   });
   it('Shift+Enter（複数選択）・Shift+↑↓・Ctrl つき・ほかのキーは読まない', () => {

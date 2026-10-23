@@ -565,7 +565,13 @@ export function ChipStack<T extends { visitId: string }>({
             style={at ? { left: at.left, top: at.top } : { visibility: 'hidden' }}
             data-testid="chip-list"
             onKeyDown={(e) => {
-              if (e.key !== 'Escape' || e.defaultPrevented) return;
+              if (e.defaultPrevented) return;
+              if (e.key === 'Tab') {
+                // body の直下に出しているので、端の Tab は「+N」へ戻して閉じる（フォーカスを関係ない所へ落とさない）
+                const items = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-visit-item]') ?? [])];
+                const edge = e.shiftKey ? items[0] : items.at(-1);
+                if (items.length > 0 && document.activeElement !== edge) return;
+              } else if (e.key !== 'Escape') return;
               e.preventDefault();
               e.stopPropagation();
               setOpen(false);

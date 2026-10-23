@@ -291,6 +291,9 @@ export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date
 /** 訪問の帯・行の要素（日の予定の時間軸は帯の中のボタン、ほかは共通の部品の data-visit-item）。見えているものを先に */
 export function visitItemOf(visitId: string): HTMLElement | null {
   const v = CSS.escape(visitId);
+  // 表のマスの「+N」の一覧が開いていて、その中にあれば一覧の行（一覧の行のキー・欄はリストの入れ物のまま。PRD D342）
+  const inList = document.querySelector<HTMLElement>(`[data-testid="chip-list"] [data-visit-item][data-visit="${v}"]`);
+  if (inList) return inList;
   const all = document.querySelectorAll<HTMLElement>(
     `.tl-band[data-visit="${v}"] .tl-band-btn, [data-visit-item][data-visit="${v}"]`,
   );

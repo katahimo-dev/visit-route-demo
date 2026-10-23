@@ -15,7 +15,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { type ReactNode, type Ref, useMemo, useRef, useState } from 'react';
+import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { DemoData } from '../contracts/data';
 import { jstDate } from '../domain/time';
@@ -433,12 +433,18 @@ export function SelectionBar({
   /** 「別の日へ」の日付（null は閉じている） */
   const [moveTo, setMoveTo] = useState<string | null>(null);
   const moveRef = useRef<HTMLButtonElement>(null);
-  if (live.length === 0) return null;
+  // 選んだ訪問が無くなったら日付の欄も閉じる（次に選んだとき開いたまま出さない）
+  const empty = live.length === 0;
+  useEffect(() => {
+    if (empty) setMoveTo(null);
+  }, [empty]);
+  if (empty) return null;
   const run = (what: string, fn: (d: DemoData) => { data: DemoData; done: number; failed: { why: string }[] }) => {
     // 結果の数は今のデータで見るが、書くのは store の最新のデータに当て直す（確認を待つ間の別のタブの変更を消さない）
     const r = fn(data);
     if (r.done > 0) update((d) => fn(d).data, what);
     toast(multiResultText(what, { done: r.done, failed: r.failed.map((f) => ({ visitId: '', why: f.why })) }));
+    return r.done;
   };
   const staffItems: MenuItem[] = staff.map((s) => ({
     key: s.id,
@@ -499,20 +505,24 @@ export function SelectionBar({
             </WithIcon>
           </button>
           {moveTo !== null && (
-            <span className="row selection-move-form">
+            // Esc は日付の欄を閉じるだけ（選んだ訪問は外さない）
+            // biome-ignore lint/a11y/noStaticElementInteractions: 中の入力欄・ボタンの Esc を受ける
+            <span
+              className="row selection-move-form"
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return;
+                e.preventDefault();
+                e.stopPropagation();
+                setMoveTo(null);
+                moveRef.current?.focus();
+              }}
+            >
               <input
                 type="date"
                 aria-label="移す先の日"
                 value={moveTo}
                 min={today}
                 onChange={(e) => setMoveTo(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Escape') return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setMoveTo(null);
-                  moveRef.current?.focus();
-                }}
                 data-testid="selection-move-date"
               />
               <button
@@ -533,9 +543,12 @@ export function SelectionBar({
                     }))
                   )
                     return;
-                  run(`${dateText(to)}へ移しました`, (d) => moveManyToDate(d, live, to, today));
+                  const done = run(`${dateText(to)}へ移しました`, (d) => moveManyToDate(d, live, to, today));
                   setMoveTo(null);
+                  // 1件も移せなければ選んだまま（選び直さなくてよい）。移したら帯が消えるので、フォーカスは「元に戻す」へ
+                  if (done === 0) return;
                   onClear();
+                  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus());
                 }}
                 data-testid="selection-move-go"
               >
