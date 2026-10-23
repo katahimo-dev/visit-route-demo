@@ -32,9 +32,12 @@ export function MailButton({
   why,
   testId,
   srLabel,
+  onOpen,
 }: {
   mail: BuiltMail | null;
   label: ReactNode;
+  /** メールアプリを開いたとき（押せないときは呼ばない） */
+  onOpen?: () => void;
   /** 押せない理由（mail が null のとき。長すぎるときは TOO_LONG） */
   why: string;
   testId?: string;
@@ -71,6 +74,7 @@ export function MailButton({
     <a
       className="btn btn-small"
       href={mail.href}
+      onClick={onOpen}
       aria-label={srLabel}
       title="メールアプリが開きます（送信はメールアプリで押します）"
       data-testid={testId}
@@ -119,8 +123,21 @@ export type MailRow = {
   mail: BuiltMail | null;
 };
 
-/** 担当ごとにメールアプリを開く一覧（日・週の予定。PRD D92・D93） */
-export function MailRows({ rows, testId }: { rows: readonly MailRow[]; testId?: string }) {
+/**
+ * 担当ごとにメールアプリを開く一覧（日・週の予定。PRD D92・D93）。onOpen はメールを作った人（行の key）を知らせる。
+ * sent に入っている行には「作成済み」を出す（日の予定の確定に使う。PRD D346）
+ */
+export function MailRows({
+  rows,
+  testId,
+  onOpen,
+  sent,
+}: {
+  rows: readonly MailRow[];
+  testId?: string;
+  onOpen?: (key: string) => void;
+  sent?: ReadonlySet<string>;
+}) {
   return (
     <ul className="mail-rows" data-testid={testId}>
       {rows.map((r) => (
@@ -130,7 +147,14 @@ export function MailRows({ rows, testId }: { rows: readonly MailRow[]; testId?: 
             {/* アドレスの無い人は、ボタンの横の理由だけを出す（二重に出さない） */}
             {r.email && <span className="sub">{r.email}</span>}
           </span>
-          <span className="sub mail-row-summary">{r.summary}</span>
+          <span className="sub mail-row-summary">
+            {r.summary}
+            {sent?.has(r.key) && (
+              <span className="chip chip-ok mail-row-sent" data-testid="mail-sent">
+                作成済み
+              </span>
+            )}
+          </span>
           <span className="mail-row-act">
             <MailButton
               mail={r.mail}
@@ -138,6 +162,7 @@ export function MailRows({ rows, testId }: { rows: readonly MailRow[]; testId?: 
               why={NO_EMAIL}
               srLabel={`${r.name}さんへのメールを作る`}
               testId="mail-open"
+              onOpen={onOpen ? () => onOpen(r.key) : undefined}
             />
             <MailLengthNote mail={r.mail} />
           </span>

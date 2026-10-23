@@ -80,33 +80,60 @@ export function dayRouteLinks(
   staff: Pick<Staff, 'home' | 'travelMode'>,
   visits: readonly MailVisit[],
   terms: Org['terms'],
-): { trip: string[]; notes: string[]; legs: (string | null)[]; back: string | null } {
+): {
+  trip: string[];
+  notes: string[];
+  tripNotes: string[];
+  modeNotes: string[];
+  legs: (string | null)[];
+  back: string | null;
+  shortLegs: (string | null)[];
+  shortBack: string | null;
+} {
   const stops: RouteStop[] = dayStops(
     staff.home,
     visits.map((v) => ({ label: nameOf(v.client), place: v.client?.place ?? NO_PLACE })),
   );
   const t = tripLinks(stops, staff.travelMode);
   const trip = t.links.map((x) => `${x.label}（${x.from}→${x.to}）：${x.href}`);
-  const legs = legLinks(stops, staff.travelMode).map((l) =>
+  const ls = legLinks(stops, staff.travelMode);
+  const legs = ls.map((l) =>
     l.href ? `${l.to === HOME_LABEL ? '帰りの道順' : '道順'}（${l.from}から）：${l.href}` : null,
   );
+  /** 区間ごとの短い行（前の場所の名前を省く。長さの上限があるときに区間ごとの道順を残すため） */
+  const shortLegs = ls.map((l) => (l.href ? `${l.to === HOME_LABEL ? '帰りの道順' : '道順'}：${l.href}` : null));
   const anyLink = trip.length > 0 || legs.some((l) => l !== null);
-  const notes = [
+  /** 全行程についての一言（全行程を入れない段では出さない） */
+  const tripNotes = [
     ...(trip.length > 0 && t.skipped.length > 0
       ? [`（場所が未登録の${terms.client}（${t.skipped.join('・')}）は全行程に入っていません）`]
       : []),
     ...(trip.length > 0 && t.homeSkipped ? ['（自宅の場所が未登録のため、全行程は自宅を通りません）'] : []),
+  ];
+  /** 移動手段についての一言（区間ごとにも効く） */
+  const modeNotes = [
     ...(staff.travelMode === 'TRANSIT' && anyLink ? ['（公共交通のため、道順は区間ごと（各訪問の下）です）'] : []),
     ...(staff.travelMode === 'BICYCLE' && anyLink ? [`（${BICYCLE_NOTE}）`] : []),
   ];
-  return { trip, notes, legs: legs.slice(0, visits.length), back: legs[visits.length] ?? null };
+  return {
+    trip,
+    notes: [...tripNotes, ...modeNotes],
+    tripNotes,
+    modeNotes,
+    legs: legs.slice(0, visits.length),
+    back: legs[visits.length] ?? null,
+    shortLegs: shortLegs.slice(0, visits.length),
+    shortBack: shortLegs[visits.length] ?? null,
+  };
 }
 
 /**
  * 日の予定（担当ごと。PRD D92）の件名・本文。full は 順番・時刻・〈利用者さん〉・住所・入り方・駐車場・注意（鍵は includeKeys のときだけ）と、
  * 〈スタッフ〉の自宅・移動手段があれば Google マップの経路のリンク（全行程と区間ごと。PRD D97。ADR-0018）。
- * short は長い順に試す段階：リンクがあるときは［全行程のリンクだけの全文、要点1＋全行程、要点2＋全行程、要点2（リンクなし）］、
- * 無いときは［要点1、要点2］。要点1＝順番・時刻・〈利用者さん〉・住所（鍵は includeKeys のときだけ残す）、要点2＝順番・時刻・〈利用者さん〉だけ。
+ * short は長い順に試す段階。区間ごとの道順（訪問から次の訪問へ）を最後まで残す（PRD D346）：
+ * 区間ごとがあるとき［要点1＋全行程＋区間（短い行）、要点1＋区間、要点2＋区間、要点2＋区間（リンクだけ・帰りなし）］のあとに、区間を外した
+ * ［全行程だけの全文、要点1＋全行程、要点2＋全行程、要点2（リンクなし）］（全行程が無ければ全行程の段を除く）。
+ * 要点1＝順番・時刻・〈利用者さん〉・住所（鍵は includeKeys のときだけ残す）、要点2＝順番・時刻・〈利用者さん〉だけ。
  * 「鍵の情報は…入れていません」は鍵のメモがある訪問があって鍵を入れないときだけ書く。「本文をコピー」は full（区間ごとのリンクも入る）
  */
 export function dayMailText(
@@ -135,66 +162,104 @@ export function dayMailText(
   const route =
     staff.home && staff.travelMode
       ? dayRouteLinks({ home: staff.home, travelMode: staff.travelMode }, visits, org.terms)
-      : { trip: [], notes: [], legs: [], back: null };
+      : { trip: [], notes: [], tripNotes: [], modeNotes: [], legs: [], back: null, shortLegs: [], shortBack: null };
   const hasTrip = route.trip.length > 0;
-  /** 区間ごとのリンクがあるか（全文に入れる） */
+  /** 区間ごとのリンクがあるか */
   const hasLegs = route.legs.some((l) => l !== null) || route.back !== null;
   /** 道順の見出しと全行程・一言（本文の上。移動の分数・キロ数はアプリの目安で、Google マップで確かめる）。公共交通は一言だけ */
-  const routeBlock = hasTrip || hasLegs ? ['■Google マップの道順', ...route.trip, ...route.notes, ''] : [];
-  /** 全行程だけの段階（要点）に入れる見出し（全行程が無ければ入れない） */
-  const tripBlock = hasTrip ? routeBlock : [];
-  const fullOf = (withLegs: boolean) =>
-    [
+  const routeBlock = (withTrip: boolean) =>
+    (withTrip && hasTrip) || hasLegs
+      ? ['■Google マップの道順', ...(withTrip ? [...route.trip, ...route.tripNotes] : []), ...route.modeNotes, '']
+      : [];
+  /** 訪問の行の中身：all＝決まりごとまで、address＝住所まで（鍵は includeKeys のときだけ）、none＝順番・時刻・名前だけ */
+  type Detail = 'all' | 'address' | 'none';
+  const visitLines = (v: MailVisit, i: number, detail: Detail) =>
+    detail === 'all'
+      ? [line(v, i), ...ruleLines(v.client, includeKeys)]
+      : detail === 'address'
+        ? [
+            `${line(v, i)}${v.client?.place.address ? `（${v.client.place.address}）` : ''}`,
+            // 鍵は「鍵の情報も入れる」を選んだときだけ、要点にも残す（選んだ人が要ると決めたもの）
+            ...(includeKeys && v.client?.keyNote.trim()
+              ? [`   鍵：${v.client.keyNote.replace(/\s*\n\s*/g, ' ')}`]
+              : []),
+          ]
+        : [line(v, i)];
+  /** 本文：detail＝訪問の行、trip＝全行程を入れる、legs＝区間ごと（full＝前の場所の名前つき・short＝短い行・none＝入れない） */
+  /** 区間を残す段の短い冒頭（日付・件数・未確定か） */
+  const shortLead = `${mdw(date)} ${visits.length}件${source === 'confirmed' ? '' : '（未確定）'}`;
+  const bodyOf = (detail: Detail, withTrip: boolean, legs: 'full' | 'short' | 'bare' | 'none') => {
+    // 区間の短い行の段は、冒頭・省いた知らせを短くして区間ごとの道順を残す（長さの上限 2000字の端末向け）。
+    // bare は「道順：」も省いてリンクだけ（訪問の行のすぐ下なので、その訪問への道順と分かる）。帰りの道順も省く
+    const compact = legs === 'short' || legs === 'bare';
+    const bare = (x: string | null | undefined) => (x ? x.slice(x.indexOf('：') + 1) : null);
+    const legOf = (i: number) =>
+      legs === 'full'
+        ? route.legs[i]
+        : legs === 'short'
+          ? route.shortLegs[i]
+          : legs === 'bare'
+            ? bare(route.shortLegs[i])
+            : null;
+    const back = legs === 'full' ? route.back : legs === 'short' ? route.shortBack : null;
+    const dropped = [
+      ...(detail === 'none' ? ['住所'] : []),
+      ...(detail !== 'all' ? ['入り方・駐車場・注意'] : []),
+      ...(hasTrip && !withTrip ? ['1日の全行程の道順'] : []),
+      ...(hasLegs && legs === 'none' ? ['区間ごとの道順'] : []),
+    ];
+    const block =
+      legs === 'none'
+        ? withTrip && hasTrip
+          ? routeBlock(true)
+          : []
+        : compact && !withTrip && route.modeNotes.length === 0
+          ? []
+          : routeBlock(withTrip);
+    return [
       ...head,
-      lead,
+      compact ? shortLead : lead,
       '',
-      ...(withLegs ? routeBlock : tripBlock),
-      ...visits.flatMap((v, i) => [
-        line(v, i),
-        ...ruleLines(v.client, includeKeys),
-        ...(withLegs && route.legs[i] ? [`   ${route.legs[i]}`] : []),
-      ]),
-      ...(withLegs && route.back ? ['', route.back] : []),
-      ...(!withLegs && hasLegs ? ['', '※長いため、区間ごとの道順は省きました。'] : []),
-      ...(keyNote(includeKeys).length > 0 ? ['', ...keyNote(includeKeys)] : []),
+      ...block,
+      ...visits.flatMap((v, i) => {
+        const leg = legOf(i);
+        return [...visitLines(v, i, detail), ...(leg ? [`   ${leg}`] : [])];
+      }),
+      ...(back ? ['', back] : []),
+      ...(dropped.length > 0
+        ? [
+            '',
+            compact
+              ? `※${detail === 'none' ? '住所' : '入り方'}${legs === 'bare' && route.shortBack ? '・帰りの道順' : ''}などは省略`
+              : `※長いため、${dropped.join('・')}は省きました。`,
+          ]
+        : []),
+      ...(compact
+        ? hasKeys && !(includeKeys && detail === 'address')
+          ? ['※鍵は省略']
+          : []
+        : keyNote(detail === 'none' ? false : includeKeys)),
       ...foot,
     ].join('\n');
-  /** 道順を省いたと書くか（リンクがあるのに入れない段階） */
-  const routeDropped = (withTrip: boolean) => (hasTrip && !withTrip) || (!hasTrip && hasLegs);
-  const shortOf = (withTrip: boolean) =>
-    [
-      ...head,
-      lead,
-      '',
-      ...(withTrip ? tripBlock : []),
-      // 鍵は「鍵の情報も入れる」を選んだときだけ、要点にも残す（選んだ人が要ると決めたもの）
-      ...visits.flatMap((v, i) => [
-        `${line(v, i)}${v.client?.place.address ? `（${v.client.place.address}）` : ''}`,
-        ...(includeKeys && v.client?.keyNote.trim() ? [`   鍵：${v.client.keyNote.replace(/\s*\n\s*/g, ' ')}`] : []),
-      ]),
-      '',
-      `※入り方・駐車場・注意${routeDropped(withTrip) ? '・道順' : ''}は省きました。`,
-      ...keyNote(includeKeys),
-      ...foot,
-    ].join('\n');
-  const shorterOf = (withTrip: boolean) =>
-    [
-      ...head,
-      lead,
-      '',
-      ...(withTrip ? tripBlock : []),
-      ...visits.map(line),
-      '',
-      `※住所・入り方・駐車場・注意${routeDropped(withTrip) ? '・道順' : ''}は省きました。`,
-      ...keyNote(false),
-      ...foot,
-    ].join('\n');
-  const full = fullOf(true);
-  // 全行程が無い（公共交通・リンクなし）：区間ごと（全文）→ 要点1 → 要点2
-  if (!hasTrip) return { subject, full, short: [shortOf(false), shorterOf(false)] };
-  // 長いときは全行程のリンクを優先し、区間ごとを先に外す（PRD D97）
-  const stages = [...(hasLegs ? [fullOf(false)] : []), shortOf(true), shorterOf(true), shorterOf(false)];
-  return { subject, full, short: stages };
+  };
+  const full = bodyOf('all', true, 'full');
+  const withLegs = hasLegs
+    ? [
+        ...(hasTrip ? [bodyOf('address', true, 'short')] : []),
+        bodyOf('address', false, 'short'),
+        bodyOf('none', false, 'short'),
+        bodyOf('none', false, 'bare'),
+      ]
+    : [];
+  const withoutLegs = hasTrip
+    ? [
+        ...(hasLegs ? [bodyOf('all', true, 'none')] : []),
+        bodyOf('address', true, 'none'),
+        bodyOf('none', true, 'none'),
+        bodyOf('none', false, 'none'),
+      ]
+    : [bodyOf('address', false, 'none'), bodyOf('none', false, 'none')];
+  return { subject, full, short: [...withLegs, ...withoutLegs] };
 }
 
 /** 週の1日（1人あて） */
@@ -229,7 +294,7 @@ export function weekByStaff(data: MailInput, dates: readonly string[]): Map<stri
 
 const OFF_WORD = { requested: '希望休', absent: '欠勤', noShift: '休み' } as const;
 
-/** 週の予定（担当ごと。PRD D93）の件名・本文。full は曜日ごとの訪問（時刻・〈利用者さん〉）、short は曜日ごとの時刻と件数 */
+/** 週の予定（担当ごと。PRD D93・D346）の件名・本文。full は曜日ごとの訪問（時刻・〈利用者さん〉）、short は曜日ごとの時刻と件数。確定していない日があれば冒頭に1回だけ書く */
 export function weekMailText(
   org: Org,
   staff: Pick<Staff, 'name'>,
@@ -238,13 +303,15 @@ export function weekMailText(
   const first = days[0]?.date ?? '';
   const last = days[days.length - 1]?.date ?? '';
   const subject = `${md(first)}〜${md(last)} の予定`;
-  const dayHead = (d: WeekMailDay) => {
-    const tag = d.source === 'plan' && d.visits.length > 0 ? '（まだ確定していません）' : '';
-    return `■${mdw(d.date)}${tag}`;
-  };
+  /** 日の見出し（確定していない日の印は日ごとに付けず、冒頭に1回だけ書く。PRD D346） */
+  const dayHead = (d: WeekMailDay) => `■${mdw(d.date)}`;
+  /** 確定していない日があるとき冒頭に書く一言（週のメールは見通し。確定は前日の日のメールで知らせる） */
+  const tentative = days.some((d) => d.source === 'plan' && d.visits.length > 0)
+    ? ['※変わることがあります。確定した予定は前日のメールでお知らせします。', '']
+    : [];
   const emptyWord = (d: WeekMailDay) =>
     d.off && d.visits.length === 0 ? OFF_WORD[d.off] : d.pending > 0 ? '予定はまだ決まっていません' : '訪問なし';
-  const head = [`${staff.name}さん`, '', `${mdw(first)}〜${mdw(last)}の予定です。`, ''];
+  const head = [`${staff.name}さん`, '', `${mdw(first)}〜${mdw(last)}の予定です。`, '', ...tentative];
   const foot = ['', org.name];
   const full = [
     ...head,
@@ -260,7 +327,7 @@ export function weekMailText(
     ...days.map((d) =>
       d.visits.length === 0
         ? `${mdw(d.date)} ${emptyWord(d)}`
-        : `${mdw(d.date)}${d.source === 'plan' ? '（未確定）' : ''} ${d.visits.map((v) => clockText(v.start)).join('・')}（${d.visits.length}件）`,
+        : `${mdw(d.date)} ${d.visits.map((v) => clockText(v.start)).join('・')}（${d.visits.length}件）`,
     ),
     '',
     `※${org.terms.client}の名前は省きました。`,

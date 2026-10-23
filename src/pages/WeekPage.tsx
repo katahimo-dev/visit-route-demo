@@ -685,40 +685,53 @@ export default function WeekPage() {
         title="週の予定"
         lead={`この週の担当を見て、日時をドラッグでずらし、${terms.staff}に伝えたら確定します`}
         actions={
-          next.kind === 'none' ? undefined : (
-            <div className="week-next" ref={nextRef} tabIndex={-1} data-testid="week-next" data-kind={next.kind}>
-              {next.kind === 'making' || next.kind === 'confirm' ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  aria-disabled={next.kind === 'making' || next.why !== null || undefined}
-                  aria-describedby={next.why ? whyId : undefined}
-                  onClick={() => {
-                    if (next.kind === 'making' || next.why !== null) return;
-                    void confirmWeek();
-                  }}
-                  data-testid="week-next-btn"
-                >
-                  <WithIcon icon={next.kind === 'confirm' ? Lock : Sparkles}>
-                    <span className="week-next-long">{next.label}</span>
-                    <span className="week-next-short">{next.short}</span>
+          next.kind === 'none' && !mailOn ? undefined : (
+            <>
+              {/* 担当ごとの週の予定をメールアプリで開く（PRD D93・D346）。日の予定と同じく見出しの主ボタンの隣の枠のボタン。
+                  どの表示でも出す。メールを切っていれば出さない（ADR-0028） */}
+              {mailOn && (
+                <button type="button" className="btn" onClick={() => setMailOpen(true)} data-testid="week-mail">
+                  <WithIcon icon={Mail}>
+                    <span className="m-sr">予定をメールで送る</span>
                   </WithIcon>
                 </button>
-              ) : (
-                <span
-                  className={`week-next-status${next.kind === 'done' ? ' is-done' : ''}`}
-                  data-testid="week-next-status"
-                >
-                  {next.kind === 'done' && <Check size={14} strokeWidth={3} aria-hidden="true" />}
-                  {next.label}
-                </span>
               )}
-              {next.why && (
-                <span className="sub week-next-why" id={whyId} data-testid="week-next-why">
-                  {next.why}
-                </span>
+              {next.kind !== 'none' && (
+                <div className="week-next" ref={nextRef} tabIndex={-1} data-testid="week-next" data-kind={next.kind}>
+                  {next.kind === 'making' || next.kind === 'confirm' ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      aria-disabled={next.kind === 'making' || next.why !== null || undefined}
+                      aria-describedby={next.why ? whyId : undefined}
+                      onClick={() => {
+                        if (next.kind === 'making' || next.why !== null) return;
+                        void confirmWeek();
+                      }}
+                      data-testid="week-next-btn"
+                    >
+                      <WithIcon icon={next.kind === 'confirm' ? Lock : Sparkles}>
+                        <span className="week-next-long">{next.label}</span>
+                        <span className="week-next-short">{next.short}</span>
+                      </WithIcon>
+                    </button>
+                  ) : (
+                    <span
+                      className={`week-next-status${next.kind === 'done' ? ' is-done' : ''}`}
+                      data-testid="week-next-status"
+                    >
+                      {next.kind === 'done' && <Check size={14} strokeWidth={3} aria-hidden="true" />}
+                      {next.label}
+                    </span>
+                  )}
+                  {next.why && (
+                    <span className="sub week-next-why" id={whyId} data-testid="week-next-why">
+                      {next.why}
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )
         }
       />
@@ -729,7 +742,7 @@ export default function WeekPage() {
           {weekPrep.line.changed > 0 ? `・未連絡の変更 ${weekPrep.line.changed}日` : ''}・要対応 {weekPrep.line.care}件
         </p>
       )}
-      {/* 操作の行（日・週・月で同じ並び。PRD D327）。メールで送るは表の上のボタンにあるので「その他 ▾」は出さない（PRD D344） */}
+      {/* 操作の行（日・週・月で同じ並び。PRD D327）。メールで送るは見出しのボタンなので「その他 ▾」は出さない（PRD D344・D346） */}
       <ScheduleToolbar zoom="week" absence={suddenOn ? { date: anchor } : null} aiItems={scopeItems} moreItems={[]} />
       {/* 範囲の提案（日・週・月で同じ帯。PRD D328） */}
       <RangeProposalBand />
@@ -1068,21 +1081,6 @@ export default function WeekPage() {
       ) : tab === 'table' ? (
         table && (
           <div className="card week-card">
-            {/* 担当ごとの週の予定をメールアプリで開く（PRD D93。主ボタンにはしない）。メールを切っていれば出さない（ADR-0028） */}
-            {mailOn && (
-              <div className="row week-mail-row">
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  onClick={() => setMailOpen(true)}
-                  data-testid="week-mail"
-                >
-                  <WithIcon icon={Mail} size={14}>
-                    週の予定をメールで送る
-                  </WithIcon>
-                </button>
-              </div>
-            )}
             <div className="week-table-legend" data-testid="week-legend">
               {narrow && <SelectToggle selecting={selecting} onChange={setSelecting} testId="week-select" />}
               <span className="row week-table-legend-rows">

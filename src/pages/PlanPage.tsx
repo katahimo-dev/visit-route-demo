@@ -952,6 +952,25 @@ export default function PlanPage() {
     return true;
   };
 
+  /** 全員分のメールを作ったので確定する（PRD D346。確認は出さず、知らせの「元に戻す」で戻せる） */
+  const confirmByMail = () => {
+    if ((!hasPlan || !problem) && toldState !== 'changed') return;
+    if (runRef.current) return;
+    const p = hasPlan ? problem : null;
+    const at = Date.now();
+    update(
+      (d) =>
+        p ? confirmDay(d, date, p, at) : { ...d, snapshots: { ...d.snapshots, [date]: { date, at, visits: [] } } },
+      '確定（メールを作った）',
+    );
+    setToldOpen(false);
+    const care = hasPlan ? issues.size : 0;
+    toast(
+      `全員分のメールを作ったので、この日を確定（伝えた）にしました${care > 0 ? `（要対応の訪問 ${care}件あり）` : ''}`,
+      { action: undoAction },
+    );
+  };
+
   // ---- 急な欠勤と振り直し（ADR-0011。PRD D26〜D32）----
   /** その日の振り直しの情報（振り直しの提案を反映した日） */
   const reassignInfo = own(data.reassigns, date) ?? null;
@@ -3125,7 +3144,14 @@ export default function PlanPage() {
           )}
         </SidePanel>
       )}
-      {panel === 'mail' && mailOn && <DayMailPanel data={data} date={date} onClose={() => setPanel(null)} />}
+      {panel === 'mail' && mailOn && (
+        <DayMailPanel
+          data={data}
+          date={date}
+          onClose={() => setPanel(null)}
+          confirm={{ state: toldState, onConfirm: (by) => (by === 'mail' ? confirmByMail() : void adopt()) }}
+        />
+      )}
 
       {contactsOpen && (contacts || leftContacts.length > 0) && (
         <ContactPanel
