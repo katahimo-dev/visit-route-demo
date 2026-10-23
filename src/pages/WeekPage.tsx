@@ -527,6 +527,8 @@ export default function WeekPage() {
   const visitKeys = useVisitKeys({
     staffOrder: () => activeStaff.map((s) => s.id),
     onMoved: (r) => {
+      // 表の「+N」の一覧の行から動かしたときも、動かした先のマスで札を隠さない
+      setKeepId(r.visitId);
       if (!dates.includes(r.date)) goWeek(r.date);
       focusVisitItem(r.visitId);
     },
@@ -1415,6 +1417,7 @@ export default function WeekPage() {
       {/* キーで動かした先の読み上げと、繰り返しの回の範囲を選び直す小さな帯（PRD D333） */}
       <KeyMoveBand
         onMoved={(r) => {
+          setKeepId(r.visitId);
           if (!dates.includes(r.date)) goWeek(r.date);
           focusVisitItem(r.visitId);
         }}
