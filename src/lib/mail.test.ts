@@ -309,6 +309,26 @@ describe('日の予定の経路のリンク（PRD D97。ADR-0018）', () => {
     expect(t.short[3]).toContain('※長いため、入り方・駐車場・注意・区間ごとの道順は省きました。');
     expect(t.short[4]).toContain('※長いため、住所・入り方・駐車場・注意・区間ごとの道順は省きました。');
   });
+  it('全行程を外した短い段には、全行程についての一言（自宅が未登録など）を書かない（PRD D346）', () => {
+    const d = data({
+      staff: [staff('s1', 0, 0, { name: '山田 花', home: { address: '', lat: null, lng: null } })],
+      aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) },
+    });
+    const { day, byStaff } = dayByStaff(d, DATE);
+    const t = dayMailText(
+      d.org,
+      { ...d.staff[0]!, travelMode: 'DRIVE' as const },
+      DATE,
+      day.source,
+      byStaff.get('s1')!,
+      false,
+    );
+    expect(t.full).toContain('（自宅の場所が未登録のため、全行程は自宅を通りません）');
+    for (const b of t.short.filter((x) => !x.includes('全行程（'))) {
+      expect(b).not.toContain('全行程は自宅を通りません');
+      expect(b).not.toContain('全行程に入っていません');
+    }
+  });
   it('自転車は「経路が出ないときは徒歩に」と添える', () => {
     const d = data({ aiPlans: { [DATE]: plan(DATE, { s1: ['v2', 'v1'] }) } });
     const s1 = { ...d.staff[0]!, travelMode: 'BICYCLE' as const };

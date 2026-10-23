@@ -83,6 +83,8 @@ export function dayRouteLinks(
 ): {
   trip: string[];
   notes: string[];
+  tripNotes: string[];
+  modeNotes: string[];
   legs: (string | null)[];
   back: string | null;
   shortLegs: (string | null)[];
@@ -101,17 +103,23 @@ export function dayRouteLinks(
   /** 区間ごとの短い行（前の場所の名前を省く。長さの上限があるときに区間ごとの道順を残すため） */
   const shortLegs = ls.map((l) => (l.href ? `${l.to === HOME_LABEL ? '帰りの道順' : '道順'}：${l.href}` : null));
   const anyLink = trip.length > 0 || legs.some((l) => l !== null);
-  const notes = [
+  /** 全行程についての一言（全行程を入れない段では出さない） */
+  const tripNotes = [
     ...(trip.length > 0 && t.skipped.length > 0
       ? [`（場所が未登録の${terms.client}（${t.skipped.join('・')}）は全行程に入っていません）`]
       : []),
     ...(trip.length > 0 && t.homeSkipped ? ['（自宅の場所が未登録のため、全行程は自宅を通りません）'] : []),
+  ];
+  /** 移動手段についての一言（区間ごとにも効く） */
+  const modeNotes = [
     ...(staff.travelMode === 'TRANSIT' && anyLink ? ['（公共交通のため、道順は区間ごと（各訪問の下）です）'] : []),
     ...(staff.travelMode === 'BICYCLE' && anyLink ? [`（${BICYCLE_NOTE}）`] : []),
   ];
   return {
     trip,
-    notes,
+    notes: [...tripNotes, ...modeNotes],
+    tripNotes,
+    modeNotes,
     legs: legs.slice(0, visits.length),
     back: legs[visits.length] ?? null,
     shortLegs: shortLegs.slice(0, visits.length),
@@ -154,14 +162,14 @@ export function dayMailText(
   const route =
     staff.home && staff.travelMode
       ? dayRouteLinks({ home: staff.home, travelMode: staff.travelMode }, visits, org.terms)
-      : { trip: [], notes: [], legs: [], back: null, shortLegs: [], shortBack: null };
+      : { trip: [], notes: [], tripNotes: [], modeNotes: [], legs: [], back: null, shortLegs: [], shortBack: null };
   const hasTrip = route.trip.length > 0;
   /** 区間ごとのリンクがあるか */
   const hasLegs = route.legs.some((l) => l !== null) || route.back !== null;
   /** 道順の見出しと全行程・一言（本文の上。移動の分数・キロ数はアプリの目安で、Google マップで確かめる）。公共交通は一言だけ */
   const routeBlock = (withTrip: boolean) =>
     (withTrip && hasTrip) || hasLegs
-      ? ['■Google マップの道順', ...(withTrip ? route.trip : []), ...route.notes, '']
+      ? ['■Google マップの道順', ...(withTrip ? [...route.trip, ...route.tripNotes] : []), ...route.modeNotes, '']
       : [];
   /** 訪問の行の中身：all＝決まりごとまで、address＝住所まで（鍵は includeKeys のときだけ）、none＝順番・時刻・名前だけ */
   type Detail = 'all' | 'address' | 'none';
@@ -205,7 +213,7 @@ export function dayMailText(
         ? withTrip && hasTrip
           ? routeBlock(true)
           : []
-        : compact && !withTrip && route.notes.length === 0
+        : compact && !withTrip && route.modeNotes.length === 0
           ? []
           : routeBlock(withTrip);
     return [

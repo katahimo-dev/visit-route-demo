@@ -49,6 +49,11 @@ const steps = sharedPage({
           'どの人のメールにも Google マップの道順のリンク',
           bs.map((b) => b.length),
         );
+        // 欄から送るメールは送ると確定になるので、本文は「確定した担当」（「まだ確定していません」「（未確定）」と書かない）
+        check(
+          bs.every((b) => !b.includes('まだ確定していません') && !b.includes('（未確定）')),
+          '日のメールの本文に「まだ確定していません」「（未確定）」と書かない',
+        );
         const fourOrLess = bs.filter((b) => (b.match(/^\d+\. /gm) ?? []).length <= 4);
         check(
           fourOrLess.length > 0 && fourOrLess.every((b) => (b.match(/maps\/dir\//g) ?? []).length >= 2),
@@ -90,6 +95,11 @@ const steps = sharedPage({
         check(
           (await page.getByTestId('confirm-state').innerText()).includes('まだ伝えていない'),
           '知らせの「元に戻す」で確定が戻る',
+        );
+        check(
+          (await progress.innerText()).includes('確定を元に戻しました'),
+          '元に戻したあとの欄は「確定を元に戻しました…「確定（伝えた）にする」を押してください」',
+          await progress.innerText(),
         );
         // 元に戻したあと、同じ欄で押し直しても二重に確定しない（欄を開き直すと数え直す）
         await links.nth(0).click();
