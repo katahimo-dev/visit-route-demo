@@ -48,6 +48,23 @@ export function reassignItemText(c: ReassignCandidate, reasons: Reason[], allowe
   };
 }
 
+/**
+ * その担当に入れると必須で外れる理由の名前（problem.reasons の Infinity の理由。同じ名前は1回）。
+ * 日の予定でドラッグしたときの「ここに移すと」の警告と、移したあとの知らせに使う。訪問・担当が問題に無ければ空
+ */
+export function hardReasonLabels(problem: Problem, visitId: string, staffId: string): string[] {
+  const vi = problem.visits.findIndex((v) => v.id === visitId);
+  const si = problem.staff.findIndex((s) => s.id === staffId);
+  if (vi < 0 || si < 0) return [];
+  const rs = problem.reasons[vi]?.[si] ?? [];
+  return [...new Set(rs.filter((r) => !Number.isFinite(r.points)).map((r) => r.label))];
+}
+
+/** 必須の条件に合わない文（理由があれば括弧で並べる） */
+export function notAllowedText(labels: string[]): string {
+  return labels.length > 0 ? `必須の条件に合わない（${labels.join('・')}）` : '必須の条件に合わない';
+}
+
 /** 今の担当の項目の説明（押しても何もしない） */
 export const CURRENT_TEXT = '今の担当です';
 /** 「入らなかった訪問へ」の説明（固定も外れる） */

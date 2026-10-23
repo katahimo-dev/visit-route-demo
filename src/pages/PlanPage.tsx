@@ -110,7 +110,7 @@ import { type DayInputs, dayInputsOf, proposalDayFresh } from '../lib/monthBatch
 import { scrollBehavior } from '../lib/motion';
 import { typeOf } from '../lib/patternText';
 import { leavePeople } from '../lib/personLinks';
-import { CURRENT_TEXT, NONE_TEXT, reassignChoices } from '../lib/reassignMenu';
+import { CURRENT_TEXT, hardReasonLabels, NONE_TEXT, notAllowedText, reassignChoices } from '../lib/reassignMenu';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { reasonFace, scoreReason } from '../lib/scoreReason';
 import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
@@ -849,7 +849,10 @@ export default function PlanPage() {
     sel.follow(visitId, staffId);
     const opts = saved ? { action: undoMove(visitId, prev) } : undefined;
     if (!allowedFor(visitId, staffId)) {
-      toast(`${staffName(staffId)}さんへ移しました。必須の条件に合わないので、要対応に出ます`, opts);
+      toast(
+        `${staffName(staffId)}さんへ移しました。${notAllowedText(hardReasonLabels(p, visitId, staffId))}ので、要対応に出ます`,
+        opts,
+      );
     } else {
       toast(`${staffName(staffId)}さんへ移しました`, opts);
     }
@@ -1884,7 +1887,11 @@ export default function PlanPage() {
             )}
           </div>
         )}
-        {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
+        {notAllowed && problem && dragging !== null && (
+          <div className="drop-warning" data-testid="drop-warning">
+            ここに移すと：{notAllowedText(hardReasonLabels(problem, dragging, sid))}
+          </div>
+        )}
       </>
     );
   };
