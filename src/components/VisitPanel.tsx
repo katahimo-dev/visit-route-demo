@@ -298,7 +298,7 @@ function VisitPanel({
     const range = info?.pattern && !isNew ? `・${SCOPE_LABELS[scope]}` : '';
     const failText =
       r.failed.length > 0
-        ? `。担当を当てられなかった回が ${r.failed.length}件あります（${r.failed
+        ? `。担当を割り当てられなかった回が ${r.failed.length}件あります（${r.failed
             .slice(0, 3)
             .map((x) => `${dateText(x.date)} ${x.why}`)
             .join('、')}）`

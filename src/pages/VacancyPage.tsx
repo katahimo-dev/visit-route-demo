@@ -614,7 +614,7 @@ export default function VacancyPage() {
   /** 担当の足りない日を、その場で AI で組む（月の「担当を AI で組む」の仕組み。ほかの画面へ移っても続く。ADR-0042） */
   const makeMissing = async () => {
     if (missing.length === 0 || making) return;
-    // 当てていない提案があれば、捨ててよいか確かめる（提案は1つだけ）
+    // 反映していない提案があれば、捨ててよいか確かめる（提案は1つだけ）
     if (!(await confirmDropProposal(confirmDialog)) || monthBatch.running()) return;
     const ok = monthBatch.start({
       ym: ymOf(missing[0]!.date),
@@ -913,7 +913,7 @@ export default function VacancyPage() {
             )}
           </div>
         )}
-        {/* 組んだ提案（日・週・月の予定と同じ帯。当てると担当が変わり、空きの数え直しに入る。PRD D328） */}
+        {/* 組んだ提案（日・週・月の予定と同じ帯。反映すると担当が変わり、空きの数え直しに入る。PRD D328） */}
         <RangeProposalBand />
         {summary && (
           <>

@@ -140,8 +140,8 @@
 - 対象（ラジオ）：「要対応のある日だけ（N日）」（`batch-mode-care`。初期値）／「伝えていない日をすべて組み直す（N日）」（`batch-mode-all`）
 - 対象の日数と見込みの時間（`batch-count`）。0日なら理由
 - 注記「ピンの訪問はそのままで、ほかの訪問の担当と時刻を組みます。今日より前の日・確定した日は組みません」
-- 注記「1日ずつ組み、終わったら提案（担当・時刻の変わる訪問）を出します。見て「当てる」と担当が変わります（「元に戻す」で戻せます）…」
-- 主ボタン「組み始める」（帯 `footer` の先頭）。確認は出さない（提案なので当てるまで変わらない）
+- 注記「1日ずつ組み、終わったら提案（担当・時刻の変わる訪問）を出します。見て「反映する」と担当が変わります（「元に戻す」で戻せます）…」
+- 主ボタン「組み始める」（帯 `footer` の先頭）。確認は出さない（提案なので反映するまで変わらない）
 - 入口：進み具合の帯の次の一手・`?do=batch`・「AI で組む ▾」の「この月」（日・週の予定からは `?do=batch` で開く）
 
 「組み始める」（`start(mode)`）：画面は `lib/month` の `batchTargets(data, dates, today, mode, statusOf)` で対象の日を出し、`monthBatch.start(job)` を呼ぶだけ。入れ物が1日ずつ、点数の基準の重みで compile（ピンを渡す）し、Worker（`runSolve`）で解いて日ごとの提案（組み始めたときの訪問・担当の並び・差）にする。訪問には書かない
@@ -151,13 +151,13 @@
 - 二重には始めない：`monthBatch.start` は組んでいる間 false を返す。帯の次の一手・`?do=batch` も組んでいる間は欄を開かない
 - ほかの画面へ移っても止まらない。上の帯に `BatchBand`：「〈M〉月の担当を組んでいます N/M日」（`batch-band-text`。行き先は月の予定）と［止める］
 - ページを閉じる・読み直すと止まる（提案は消える）。データを丸ごと差し替えたら止めて提案を捨てる（`abort`）
-- 終わったら知らせ（`batchDoneText`）「〈M〉月の提案を出しました（N日分・担当が変わる N件・時刻が変わる N件）。見て「当てる」と担当が変わります」と、範囲の提案の帯（`RangeProposalBand`。日・週・月の予定と空き状況）。帯の見える画面にいれば［月の予定を見る］は出さない（PRD D268）
-- 当てる（`monthBatch.apply()`）：今のデータで、その日の訪問と問題の入力（`dayInputsOf`：その日の欠勤・希望休・稼働時間の上書き・〈利用者さん〉の休み、人・条件・種類・相性・繰り返し）が組み始めと同じ・伝えていない日だけを1回の update（手の名前「AI の提案を当てる（〈M〉月）」）で `writeRoutes`。変わった日は当てず「変わった N日は当てません」。全体の「元に戻す」で1手戻る
+- 終わったら知らせ（`batchDoneText`）「〈M〉月の提案を出しました（N日分・担当が変わる N件・時刻が変わる N件）。見て「反映する」と担当が変わります」と、範囲の提案の帯（`RangeProposalBand`。日・週・月の予定と空き状況）。帯の見える画面にいれば［月の予定を見る］は出さない（PRD D268）
+- 反映する（`monthBatch.apply()`）：今のデータで、その日の訪問と問題の入力（`dayInputsOf`：その日の欠勤・希望休・稼働時間の上書き・〈利用者さん〉の休み、人・条件・種類・相性・繰り返し）が組み始めと同じ・伝えていない日だけを1回の update（手の名前「AI の提案を反映（〈M〉月）」）で `writeRoutes`。変わった日は反映せず「変わった N日は反映しません」。全体の「元に戻す」で1手戻る
 
 #### `lib/monthBatch.ts`（計算の入れ物。テストあり。ADR-0042・ADR-0053）
 
 - `createMonthBatch(solve = runSolve)`：`run`（`BatchRun`＝月・名前・作り方・対象の日・いまの番号・組めた日数・反復。組んでいなければ null）・`done`（`BatchDone`＝`{ ym, label, source, weekStart, made, unassignedDays, stopped, error, aborted, proposal }`。`proposal` は変わる件数 `{ moved, shifted }`）・`proposal`（`BatchProposal`＝`{ id, ym, label, source, weekStart, days: ProposalDay[], stopped }`。`ProposalDay`＝`{ date, problem, visits, routes, diff, unassigned }`）・`start`（前の提案は捨てる）・`apply`・`discard`・`stop`・`abort`・`running`・`connect`（`BatchHost`＝`{ get, update(fn, label?) }`）
-- `proposalCounts(p)`・`proposalDayFresh(data, day)`・`applyProposal(data, p)`（純粋関数：組み始めたときのままの日だけ `writeRoutes`。当てた日・当てなかった日）
+- `proposalCounts(p)`・`proposalDayFresh(data, day)`・`applyProposal(data, p)`（純粋関数：組み始めたときのままの日だけ `writeRoutes`。反映した日・反映しなかった日）
 - `BatchJob`＝`{ ym, label, mode, days: { date, mode }[], source: 'month' | 'vacancy' | 'week' | 'day', weekStart?, today }`
 - `missingDays(data, dates, today)`：空き状況の［担当なしを AI で組む］の日（範囲の今日以降の、伝えていない、担当なしの訪問がある日）
 - `canMakeDay(data, date)`・`weekBatchDays(data, dates, today)`・`batchBandText`・`batchDoneText`・`monthsLabel`（「10・11月」）・`weekLabel`（「11/2〜11/8の週」）・`dayLabel`（「10/28」）・`batchHref`（週・日の範囲は週の予定、ほかは月の予定）
@@ -195,7 +195,7 @@
 
 ### 完了の条件
 
-- [ ] 翌月を開き「N月の担当を AI で組む」→ 進み具合が出て、終わると提案の帯が出る。「当てる」で日のマスの担当なしが減る。止めるとそこまでの日の提案。確定した日・今日より前の日は組まれない（`scripts/e2e-progress.cjs`）
+- [ ] 翌月を開き「N月の担当を AI で組む」→ 進み具合が出て、終わると提案の帯が出る。「反映する」で日のマスの担当なしが減る。止めるとそこまでの日の提案。確定した日・今日より前の日は組まれない（`scripts/e2e-progress.cjs`）
 - [ ] 担当を AI で組んでいる間にほかの画面へ移っても組み続け、上の帯に進み具合と［止める］が出る。月の予定へ戻ると進み具合が見え、終わると知らせと提案の帯（帯の見えない画面では［月の予定を見る］）。読み直すと止まる（提案は消える）。`lib/monthBatch` のテストが通る
 - [ ] 日のマスを押すとその日の訪問が右の欄に出て、もう一度押すとその日の「日の予定」が開き、組んだ担当が出ている
 - [ ] （ADR-0014）〈スタッフ〉を選び「休みを入れる」で勤務日のマスを続けて押すと希望休が付き、もう一度押すと外れる。勤務の無い日・今日より前の日は押せない。訪問のある日に入れると注意とリンクが出て、担当が休みの訪問として要対応に出る（担当は変わらない）。全体の表示の「休 N」に数が入る

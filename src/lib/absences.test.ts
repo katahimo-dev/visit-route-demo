@@ -1,4 +1,4 @@
-// 予定の画面の急な欠勤（ADR-0011。版2は ADR-0053：振り直しは提案を当てる型）：lib/absences
+// 予定の画面の急な欠勤（ADR-0011。版2は ADR-0053：振り直しは提案を反映する型）：lib/absences
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { Absence } from '../contracts/documents';
@@ -82,7 +82,7 @@ describe('元の案（baseOf）', () => {
   });
 });
 
-describe('振り直した結果を当てる・振り直す前に戻す（版2）', () => {
+describe('振り直した結果を反映する・振り直す前に戻す（版2）', () => {
   const setup = () => {
     const d1 = saveAbsence(data(), ab('a1', 's1', null, '12:00'));
     const p = compile(d1, DATE);
@@ -136,7 +136,7 @@ describe('振り直した結果を当てる・振り直す前に戻す（版2）
     const back = revertReassign(d4, DATE, p3);
     expect(['v1', 'v2', 'v3'].map((id) => findVisit(back, id)!.staffId)).toEqual(['s1', 's1', 's1']);
   });
-  it('chooseReassign：案B を当てると method・stayWeight が変わり、元の並びの情報は引き継ぐ。案A に戻せる', () => {
+  it('chooseReassign：案B を反映すると method・stayWeight が変わり、元の並びの情報は引き継ぐ。案A に戻せる', () => {
     const { d2, p, result } = setup();
     const routesB = { s1: [], s2: ['v1', 'v2', 'v3'] };
     const b = { routes: routesB, placed: [], unplaced: [], unassigned: [], pins: {} };

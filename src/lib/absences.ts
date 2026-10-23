@@ -102,7 +102,7 @@ function writeReassign(d: DemoData, date: string, problem: Problem, routes: Rout
 }
 
 /**
- * 振り直した結果（案A）を訪問に書き、振り直しの情報を残す（D30。版2：提案を当てる）。
+ * 振り直した結果（案A）を訪問に書き、振り直しの情報を残す（D30。版2：提案を反映する）。
  * その日がすでに振り直しのあとなら（続けて振り直す）、元の案の情報は最初のものを引き継ぎ、absenceIds は累積する
  * （差・「振り直す前に戻す」は最初の元の案に対して）。ピンは元のピン（担当が同じもの）と担当が変わった訪問。
  * problem は振り直しに使った問題（いまの条件）
@@ -131,7 +131,7 @@ export function applyReassign(
 }
 
 /**
- * 案A・案B のどちらかを当てる（PRD D34。ADR-0011 追記）。その日が振り直しのあとのときだけ（無ければそのまま）。
+ * 案A・案B のどちらかを反映する（PRD D34。ADR-0011 追記）。その日が振り直しのあとのときだけ（無ければそのまま）。
  * 元の案の情報は引き継ぎ、method（案B なら stayWeight も）を変える
  */
 export function chooseReassign(
@@ -158,7 +158,7 @@ export function revertReassign(d: DemoData, date: string, problem: Problem): Dem
   const ids = new Set(problem.visits.map((v) => v.id));
   const routes: Routes = {};
   for (const [k, list] of Object.entries(info.baseRoutes)) routes[k] = list.filter((id) => ids.has(id));
-  // 振り直す前に無かった訪問（あとで足した・担当を当てた訪問）は今の担当・ピンのまま残す（開始の順に足す）
+  // 振り直す前に無かった訪問（あとで足した・担当を割り当てた訪問）は今の担当・ピンのまま残す（開始の順に足す）
   const inBase = new Set(Object.values(info.baseRoutes).flat());
   const visits = visitsOn(d, date);
   const pins: Record<string, string> = { ...info.basePins };

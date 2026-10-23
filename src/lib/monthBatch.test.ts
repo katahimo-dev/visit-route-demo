@@ -55,7 +55,7 @@ function fakeSolve() {
   return { fn, calls };
 }
 
-/** store の代わり（update はすぐ当てる） */
+/** store の代わり（update はすぐ反映する） */
 function hostOf(start: DemoData) {
   let data = start;
   let writes = 0;
@@ -100,7 +100,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.run.get()).toBeNull();
   });
 
-  it('日ごとに組んで提案にし（訪問には書かない）、終わったら知らせる。組んでいる間は二重に始めない。当てると1回の update', async () => {
+  it('日ごとに組んで提案にし（訪問には書かない）、終わったら知らせる。組んでいる間は二重に始めない。反映すると1回の update', async () => {
     const s = fakeSolve();
     const b = createMonthBatch(s.fn);
     const start = unassigned();
@@ -125,7 +125,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     const prop = b.proposal.get()!;
     expect(prop.days.map((x) => x.date)).toEqual(days);
     expect(proposalCounts(prop).moved).toBe(done.proposal!.moved);
-    // 当てる：1回の update で両方の日に書く
+    // 反映する：1回の update で両方の日に書く
     expect(b.apply()).toEqual({ applied: days, skipped: [] });
     expect(h.writes()).toBe(1);
     expect(h.data()).not.toBe(start);
@@ -171,7 +171,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.done.get()).toBeNull();
   });
 
-  it('組んだあとにその日の訪問が変わった（日の予定で直した）・確定した日は当てない', async () => {
+  it('組んだあとにその日の訪問が変わった（日の予定で直した）・確定した日は反映しない', async () => {
     const s = fakeSolve();
     const b = createMonthBatch(s.fn);
     const h = hostOf(unassigned());
@@ -189,7 +189,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(h.writes()).toBe(1);
   });
 
-  it('組んだあとにその日の欠勤・希望休・稼働時間・人・休みが変わったら当てない（休みの人に当てない。PR #81 のレビュー）', async () => {
+  it('組んだあとにその日の欠勤・希望休・稼働時間・人・休みが変わったら当てない（休みの人に反映しない。PR #81 のレビュー）', async () => {
     const s = fakeSolve();
     const b = createMonthBatch(s.fn);
     const h = hostOf(unassigned());
@@ -204,7 +204,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     await finishAll(s.calls);
     const p = b.proposal.get()!;
     const sid = h.data().staff.find((x) => x.active)!.id;
-    // 今日だけ欠勤を入れる：今日は当てず、明日は当てる
+    // 今日だけ欠勤を入れる：今日は反映せず、明日は反映する
     h.host.update((d) => ({
       ...d,
       absences: [...d.absences, { id: 'ab-x', staffId: sid, date: TODAY, from: null, to: null, note: '' }],
@@ -281,7 +281,7 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
       proposal: { moved: 30, shifted: 4 },
     };
     expect(batchDoneText(done)).toBe(
-      '11月の提案を出しました（22日分・担当が変わる 30件・時刻が変わる 4件）。見て「当てる」と担当が変わります',
+      '11月の提案を出しました（22日分・担当が変わる 30件・時刻が変わる 4件）。見て「反映する」と担当が変わります',
     );
     expect(batchDoneText({ ...done, made: 8, stopped: true })).toBe(
       '11月の担当を8日分組んだところで止めました（8日分の提案・担当が変わる 30件・時刻が変わる 4件）',
@@ -373,7 +373,7 @@ describe('週の範囲で組む（PRD D280。ADR-0046）', () => {
 });
 
 describe('日の予定のその場の提案の古さ（PRD D335。画面を移っても残すので、作ったときの入力と比べる）', () => {
-  it('稼働時間の上書き・〈利用者さん〉の休み・人・相性・条件・種類が変われば当てない（訪問だけ・欠勤だけでない）', () => {
+  it('稼働時間の上書き・〈利用者さん〉の休み・人・相性・条件・種類が変われば反映しない（訪問だけ・欠勤だけでない）', () => {
     const base = createDemoData(TODAY);
     const day = { date: TODAY, visits: visitsOn(base, TODAY), inputs: dayInputsOf(base, TODAY) };
     expect(proposalDayFresh(base, day)).toBe(true);

@@ -12,7 +12,7 @@
 // プリセットの数・点数の理由、〈利用者さん〉の欄の段階の選択・紹介元・担当できる人・休み・決まりごと・住所の検索・絞り込みのチップ、
 // 〈利用者さん〉の画面の紹介元・決まりごと・休みのタブ、〈スタッフ〉の画面のメールアドレス・最終勤務日、月の「休みを入れる」・印刷、空き状況の案内文、
 // データの Excel、稼働の見込みの交通費の単価）。相性を切るときの独自の確認（件数と効き方。取り消すと変わらない）と、
-// 相性×の組は AI で組むと担当にならず、切ると担当に入ること（別のタブで×を書き、日の画面で AI で組んで当てる）。
+// 相性×の組は AI で組むと担当にならず、切ると担当に入ること（別のタブで×を書き、日の画面で AI で組んで反映する）。
 // レビューの反映：希望休のまとめ入力を切っても月の「担当が休み」の印は出す、欠勤・キャンセルを切ると稼働時間の凡例で登録の場所を出さない、
 // 切ったまま保存してもデータが残る（段階「契約」・担当できる人・〈スタッフ〉のメールアドレス・毎月のパターンの repeat と monthWeeks）。
 //
@@ -383,7 +383,7 @@ async function checkTemplate(page, t) {
   check(same(s, [t]), `${label}：管理者設定の「いまの設定」`, s);
   const stabs = (await page.getByTestId('settings-tabs').locator('a').allInnerTexts()).map((x) => x.trim());
   check(same(stabs, settingsTabsFor(t)), `${label}：設定のタブ`, stabs);
-  // スイッチの並びはグループ順（メニューのグループにそろえる。ADR-0034）なので、行の data-feature で ID に引き当てる
+  // スイッチの並びはグループ順（メニューのグループにそろえる。ADR-0034）なので、行の data-feature で ID に引き反映する
   const byId = Object.fromEntries(
     await page
       .getByTestId('feature-row')
@@ -705,7 +705,7 @@ async function insideEntries(page, dlg, ctx) {
     await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
     check((await count('ai-scope-day')) === 1, `${label}：「AI で組む」`);
     const presets = await count('plan-menu-preset');
-    // 点数の基準のほかのプリセットを当ててみる（条件の重みを切ると出さない）
+    // 点数の基準のほかのプリセットで試す（条件の重みを切ると出さない）
     check(presets === (on('rules') ? data.presets.length - 1 : 0), `${label}：プリセットの数`, presets);
     check((await count('plan-menu-compare')) === (on('compare') ? 1 : 0), `${label}：「プリセットの提案を比べる」`);
     await page.keyboard.press('Escape');
@@ -926,7 +926,7 @@ async function keepData(page, dlg, ctx) {
   await applyTemplate(page, dlg, 'all');
 }
 
-/** その日の日の画面で「AI で組む」の提案を出して当てる（版2：提案は当てるまで担当を変えない。ADR-0053） */
+/** その日の日の画面で「AI で組む」の提案を出して反映する（版2：提案は反映するまで担当を変えない。ADR-0053） */
 async function proposeAndApply(page, date) {
   await open(page, `/plan?date=${date}`, '.date-switch select');
   await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });

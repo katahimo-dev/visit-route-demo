@@ -1,5 +1,5 @@
 // 予定の複数選択の操作（PRD D330。ADR-0054）の純粋関数：選んだ訪問の担当をまとめて替える・時刻をまとめてずらす・まとめて取り消す。
-// データは書き換えず、新しい DemoData と当てられなかった訪問を返す（書くのは画面の update(fn)。全体の「元に戻す」で1手戻る）。
+// データは書き換えず、新しい DemoData と割り当てられなかった訪問を返す（書くのは画面の update(fn)。全体の「元に戻す」で1手戻る）。
 // どれも「この回だけ」（繰り返しの回は、その回だけ変えた回になる）
 import type { DemoData } from '../contracts/data';
 import { hhmmToMinutes, minutesToHhmm } from '../domain/time';
@@ -13,7 +13,7 @@ function addMinutesHhmm(hhmm: string, minutes: number): string | null {
   return m < 0 || m >= 24 * 60 ? null : minutesToHhmm(m);
 }
 
-/** 当てられなかった訪問と理由 */
+/** 割り当てられなかった訪問と理由 */
 export type MultiFail = { visitId: string; why: string };
 export type MultiResult = { data: DemoData; done: number; failed: MultiFail[] };
 
@@ -31,7 +31,7 @@ function usable(d: DemoData, ids: readonly string[], today: string) {
   return { ok, failed };
 }
 
-/** 選んだ訪問の担当をまとめて替える（その日の並びの最も費用の少ない位置に入れてピン。担当できない日は当てない） */
+/** 選んだ訪問の担当をまとめて替える（その日の並びの最も費用の少ない位置に入れてピン。担当できない日は割り当てない） */
 export function assignMany(d: DemoData, ids: readonly string[], staffId: string, today: string): MultiResult {
   const { ok, failed } = usable(d, ids, today);
   const r = assignOnDays(d, ok, staffId);

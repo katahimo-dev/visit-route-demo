@@ -101,7 +101,7 @@ export function startsOf(problem: Problem, routes: Routes): Map<string, { staffI
 const clockOf = (minutes: number): string => minutesToHhmm(Math.min(23 * 60 + 59, Math.max(0, Math.round(minutes))));
 
 /**
- * 担当の並びを訪問に書く（AI の提案を当てる・手で担当を替える。ADR-0053）。問題の訪問ごとに、担当＝列の人（無ければ null）、
+ * 担当の並びを訪問に書く（AI の提案を反映する・手で担当を替える。ADR-0053）。問題の訪問ごとに、担当＝列の人（無ければ null）、
  * 開始＝列の lenient の時刻（担当なしは null）。pins を渡すとピンをそれにする（pins[訪問] がその担当なら ピン）、無ければ今のまま
  * （担当なしはピンを外す）。変わる訪問だけ保存した回に書く（計算した回も書いた回から保存する）。問題に無い訪問は変えない
  */

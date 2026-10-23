@@ -241,7 +241,7 @@ export default function RulesPage() {
         </p>
         <p className="sub" data-testid="rules-trial-note">
           重みを変えても今の担当は変わりません。日の予定の「AI
-          で組む」で、この重みの提案（点の差つき）を出して当てられます。
+          で組む」で、この重みの提案（点の差つき）を出して反映できます。
         </p>
         {/* 狭い画面（600px 以下）では行をカードにする（PRD D220。名前と必須が1行目、種類・重みは見出し付きの行、消すは右下） */}
         <div className="table-scroll">
@@ -569,7 +569,7 @@ function PresetSection({ draftCount, onReset }: { draftCount: number; onReset: (
         aside={
           <Hint>
             <ul className="hint-list">
-              <li>日の予定で、プリセットを当ててみて提案を比べられます（比べた提案は保存しません）。</li>
+              <li>日の予定で、プリセットで試して提案を比べられます（比べた提案は保存しません）。</li>
               <li>点数の基準に選んだプリセットの重みで、AI で組みます。</li>
               <li>{MAX_PRESETS}つまで作れます。変えるとすぐ保存します。</li>
             </ul>

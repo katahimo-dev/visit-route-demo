@@ -442,7 +442,7 @@ async function keyboard(page) {
   );
   await page.keyboard.press('Escape');
   check(await band().evaluate((el) => document.activeElement === el), '帯の中の Esc で動かした訪問の帯へ戻る');
-  // これ以降も：範囲つきで当て直す（1手のまま）
+  // これ以降も：範囲つきで反映し直す（1手のまま）
   const patternsBefore = (await stored(page)).patterns.length;
   await page.getByTestId('key-scope-following').click();
   const split = await waitStored(page, (d) => d.patterns.length > patternsBefore);

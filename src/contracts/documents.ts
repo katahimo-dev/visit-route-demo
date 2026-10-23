@@ -324,7 +324,7 @@ export const visitSchema = z.object({
   staffId: idSchema.nullable(),
   /**
    * 組んだ開始（HH:mm。移動・待ちを入れた時刻）。その担当の訪問はこの順に回る（null は開始（早）で並べる）。
-   * AI の提案を当てたとき・手で担当を替えたときにその日の担当の並びから書き直す（lib/dayPlan の writeRoutes）
+   * AI の提案を反映したとき・手で担当を替えたときにその日の担当の並びから書き直す（lib/dayPlan の writeRoutes）
    */
   start: hhmmSchema.nullable().default(null),
   /** ピン：AI で組み直しても担当を変えない（手で担当を替えた訪問は自動でピン） */

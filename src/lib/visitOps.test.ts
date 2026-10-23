@@ -257,7 +257,7 @@ describe('applyVisitEdit：これ以降・すべて', () => {
 });
 
 describe('applyVisitEdit：新しい訪問', () => {
-  it('単発の訪問を足す。担当を選べばその人に当ててピンを付ける', () => {
+  it('単発の訪問を足す。担当を選べばその人に割り当ててピンを付ける', () => {
     const d = data();
     const r = applyVisitEdit(
       d,
@@ -345,7 +345,7 @@ describe('一覧', () => {
 });
 
 describe('レビューの直し（PR #78）', () => {
-  it('日付を変えたあと、その日に働かない人は選べない（前の日の候補で当てない）', () => {
+  it('日付を変えたあと、その日に働かない人は選べない（前の日の候補で割り当てない）', () => {
     const id = '2026-10-19_p1';
     const d = put(data(), id, { staffId: 's1' });
     const draft = { ...draftOf(find(d, id)), date: '2026-10-24' }; // 土曜は s1・s2 とも働かない
@@ -356,7 +356,7 @@ describe('レビューの直し（PR #78）', () => {
     expect(staffPickError(d, id, draft, null)).not.toBeNull();
     expect(staffPickError(d, id, draft, undefined)).toBeNull();
   });
-  it('force でも、その日に問題にいない人は当てない', () => {
+  it('force でも、その日に問題にいない人は割り当てない', () => {
     const d = data();
     const r = assignOnDays(d, [{ visitId: '2026-10-19_p1', date: '2026-10-19' }], 'nobody', new Set(['2026-10-19_p1']));
     expect(r.failed.map((x) => x.why)).toEqual(['その日は働かない']);

@@ -1,5 +1,5 @@
 // 予定（日・週・月）に共通の部品（PRD D327・D328・D330。ADR-0054）：操作の行（欠勤・キャンセルを登録／AI で組む ▾／元に戻す・やり直す
-// ／表示の切り替え／その他 ▾）、「AI で組む ▾」の範囲（この日／この週／この月）、提案の帯（変わる件数・点・当てる・捨てる）、
+// ／表示の切り替え／その他 ▾）、「AI で組む ▾」の範囲（この日／この週／この月）、提案の帯（変わる件数・点・反映する・捨てる）、
 // 複数選択の帯（N件を選択：担当を替える・時刻をずらす・別の日へ（月）・取り消す）。日・週・月は「拡大率」として同じ部品を並べる。
 // データを書くのは store の update だけ（複数選択は lib/multiEdit、提案は lib/monthBatch の apply）
 import {
@@ -54,14 +54,14 @@ export type ScheduleZoom = 'day' | 'week' | 'month';
 export const BATCH_BUSY = 'ほかの担当を組んでいます。終わってから押せます';
 
 /**
- * 新しく組み始める前に、当てていない範囲の提案があれば捨ててよいか確かめる（提案は1つだけ。PR #81 のレビュー）。
+ * 新しく組み始める前に、反映していない範囲の提案があれば捨ててよいか確かめる（提案は1つだけ。PR #81 のレビュー）。
  * 提案が無ければ確かめずに true
  */
 export async function confirmDropProposal(confirmDialog: ReturnType<typeof useConfirm>): Promise<boolean> {
   const p = monthBatch.proposal.get();
   if (!p) return true;
   return confirmDialog({
-    title: `当てていない提案（${p.label}）を捨てて、組み始めますか？`,
+    title: `反映していない提案（${p.label}）を捨てて、組み始めますか？`,
     body: '提案は1つだけ持てます。組み始めると、今の提案は消えます（訪問は変わっていません）。',
     confirmLabel: '捨てて組み始める',
     cancelLabel: '提案を残す',
@@ -69,7 +69,7 @@ export async function confirmDropProposal(confirmDialog: ReturnType<typeof useCo
 }
 
 /** 範囲の項目に共通の説明 */
-const SCOPE_NOTE = 'ピンの訪問はそのままで、担当・順番の提案を出します（当てるまで担当は変わりません）';
+const SCOPE_NOTE = 'ピンの訪問はそのままで、担当・順番の提案を出します（反映するまで担当は変わりません）';
 
 // ---- 操作の行 ----
 
@@ -149,7 +149,7 @@ export function ScheduleToolbar({
 
 /**
  * 「AI で組む ▾」の範囲のまとまり（日・週・月で同じ3つ。PRD D328）：この日（M/D）／この週（M/D〜M/D）／この月（N月）。
- * どれもピンの訪問はそのままで提案を出す（当てるまで変わらない）。
+ * どれもピンの訪問はそのままで提案を出す（反映するまで変わらない）。
  * この日は日の予定なら onDay（その場の提案。点の差も出す）、週・月の予定では範囲の計算（lib/monthBatch）を1日で。
  * この週は範囲の計算（今日以降で伝えていない、訪問のある日）。この月は月の予定の「N月の担当を AI で組む」の欄（対象を選ぶ）を開く
  */
@@ -241,8 +241,8 @@ export function useScopeItems({
 // ---- 提案の帯 ----
 
 /**
- * 提案の帯（日・週・月で同じ形。PRD D328）：「提案（名前）：担当が変わる N件・時刻が変わる M件・点 a→b」と［当てる］［捨てる］、
- * 差の一覧（畳む）。当てると全体の「元に戻す」で1手戻せる
+ * 提案の帯（日・週・月で同じ形。PRD D328）：「提案（名前）：担当が変わる N件・時刻が変わる M件・点 a→b」と［反映する］［捨てる］、
+ * 差の一覧（畳む）。反映すると全体の「元に戻す」で1手戻せる
  */
 export function ProposalBand({
   kind,
@@ -301,7 +301,7 @@ export function ProposalBand({
           data-testid="proposal-apply"
         >
           <WithIcon icon={CircleCheck} size={14}>
-            当てる
+            反映する
           </WithIcon>
         </button>
         <button type="button" className="btn btn-small" onClick={onDiscard} data-testid="proposal-discard">
@@ -343,8 +343,8 @@ export function RangeProposalBand() {
     if (!r) return;
     toast(
       r.applied.length === 0
-        ? '提案を出したあとに訪問が変わったので、当てませんでした。もう一度 AI で組んでください'
-        : `${proposal.label}の提案を当てました（${r.applied.length}日${r.skipped.length > 0 ? `・変わった ${r.skipped.length}日は当てません` : ''}）`,
+        ? '提案を出したあとに訪問が変わったので、反映しませんでした。もう一度 AI で組んでください'
+        : `${proposal.label}の提案を反映しました（${r.applied.length}日${r.skipped.length > 0 ? `・変わった ${r.skipped.length}日は反映しません` : ''}）`,
     );
   };
   const changed = proposal.days.filter((d) => (d.diff?.moved.length ?? 0) + (d.diff?.shifted.length ?? 0) > 0);
@@ -360,7 +360,9 @@ export function RangeProposalBand() {
           {counts.unassignedDays > 0 ? `。担当なしの残る日 ${counts.unassignedDays}日` : ''}
         </>
       }
-      stale={staleDays > 0 ? `提案を出したあとに訪問が変わった日が ${staleDays}日あります（その日は当てません）` : null}
+      stale={
+        staleDays > 0 ? `提案を出したあとに訪問が変わった日が ${staleDays}日あります（その日は反映しません）` : null
+      }
       applyDisabled={run !== null || staleDays === proposal.days.length}
       onApply={apply}
       onDiscard={() => monthBatch.discard()}
@@ -440,7 +442,7 @@ export function SelectionBar({
   }, [empty]);
   if (empty) return null;
   const run = (what: string, fn: (d: DemoData) => { data: DemoData; done: number; failed: { why: string }[] }) => {
-    // 結果の数は今のデータで見るが、書くのは store の最新のデータに当て直す（確認を待つ間の別のタブの変更を消さない）
+    // 結果の数は今のデータで見るが、書くのは store の最新のデータに反映し直す（確認を待つ間の別のタブの変更を消さない）
     const r = fn(data);
     if (r.done > 0) update((d) => fn(d).data, what);
     toast(multiResultText(what, { done: r.done, failed: r.failed.map((f) => ({ visitId: '', why: f.why })) }));
