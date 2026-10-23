@@ -1,15 +1,15 @@
 # 時間帯のバーと一目で分かる表示（画面共通）
 
-> この部品のファイル：`src/lib/barRows.ts`・`staffBar.ts`・`glance.ts`・`dayLine.ts`、`src/components/loadBar.tsx`（`loadBar.css`）・`staffBar.tsx`・`clientBar.tsx`（`clientBar.css`）・`workBars.tsx`（`workBars.css`）・`glance.tsx`（`glance.css`）・`dayLines.tsx`（`dayLines.css`）・`barMarks.css`。使う画面：月・週・日・空き状況・勤務の見込み。関連 ADR：0012 追記・0015。関連 PRD：D54・D60・D75〜D85・D228。
+> この部品のファイル：`src/lib/barRows.ts`・`staffBar.ts`・`glance.ts`・`dayLine.ts`、`src/components/loadBar.tsx`（`loadBar.css`）・`staffBar.tsx`・`workBars.tsx`（`workBars.css`）・`glance.tsx`（`glance.css`）・`dayLines.tsx`（`dayLines.css`）・`barMarks.css`。使う画面：月・週・日・空き状況・勤務の見込み。関連 ADR：0012 追記・0015。関連 PRD：D54・D60・D75〜D85・D228。
 
 ### 3段の区切り（`lib/barRows.ts`。PRD D82）
 
-純粋関数。3段の区切りの**ただ1か所**。混み具合バー・〈スタッフ〉の3段バー・〈利用者さん〉の帯・凡例の見本（`LoadRowsSample`）・目盛りの文は全部ここを見る。
+純粋関数。3段の区切りの**ただ1か所**。混み具合バー・〈スタッフ〉の3段バー・凡例の見本（`LoadRowsSample`）・目盛りの文は全部ここを見る。
 
 - `BAR_ROWS`（8〜12・12〜16・16〜20 時）・`BAR_START`・`BAR_END`・`BAR_STEP`（30分）・`DAY_MINUTES`
 - `barRowsOf(slots)`：30分のマスを段に分ける
 - `barEdges(slots, active)`：8時より前・20時以降で active なマス
-- `placeOnRows(items)`：時刻の区間を段ごとの位置（0〜1）に切り分け、段に掛からない区間を early・late に
+- `placeOnRows(items)`：時刻の区間を段ごとの位置（0〜1）に切り分け、段に掛からない区間を early・late に（今は画面からは使っていない）
 - `edgeLabel(side)`：「8時より前」「20時以降」
 - `barRowsText()`：「上から 8〜12時・12〜16時・16〜20時」
 - `rowRuns(slots, from, to)`：同じ level が続く30分を [left, width)（段に対する割合）の1本にまとめる。30分が抜ければ切る
@@ -57,10 +57,6 @@
 - `SpanMini`：〈スタッフ〉×日の表の長さと上限の線
 - `PartsBar`：`SpanBar` と同じ塗り（`work-part bar-seg is-st-*`）。勤務の時間の背景は空き、勤務外は地の薄い灰。日の予定の担当ごとの1日（`DayLines`）
 
-#### `components/clientBar.tsx`（週の〈利用者さん〉×曜日）
-
-- `ClientDayBar`：3段の帯の上に訪問を種類の色で置く（`placeOnRows`）。帯の地と休み・案なし・入らない。中身の動きは [pages-week.md](pages-week.md)
-
 #### 日の予定の担当ごとの1日（`lib/dayLine.ts`・`components/dayLines.tsx`）
 
 [pages-plan.md](pages-plan.md) の「担当ごとの1日」。
@@ -85,8 +81,7 @@
 
 - 連続の塗り `.bar-seg.is-〈level〉`（level は `st-〈状態〉` か混み具合の `none`・`one`・`many`・`off`）
 - 1時間ごとの区切り `.bar-hours`（段の上に重ねる 2px の隙間。1段＝4時間を4ブロック）
-- 使うのは `SlotBar`（`LoadBar`・`StaffBar`）・凡例の見本 `BarSwatch`・`LoadRowsSample`・`ClientDayBar`・`PartsBar`・`glance`（`lv-*`・日ごとの点・`.prep-bar`）
-- `ClientDayBar`：1時間の隙間は帯の下の地（`.cbar-track` の背景）にだけ描き、短い帯を割らない。案なしは種類の色 `--tc` を淡くした地と破線の枠。帯の重なりは `--cz`、フォーカス中は z-index 3
+- 使うのは `SlotBar`（`LoadBar`・`StaffBar`）・凡例の見本 `BarSwatch`・`LoadRowsSample`・`PartsBar`・`glance`（`lv-*`・日ごとの点・`.prep-bar`）
 - `PartsBar`：時間軸の1時間の隙間は軸の中の正時ごとの `.work-hour`（境界の前後 1px。両端には描かない）
 
 #### 形でも分ける（色だけにしない）
@@ -106,7 +101,7 @@
 | 月・全体 | 日のマスに `LoadBar`（`dayLoad`）。見出しに目盛りと凡例 |
 | 月・〈スタッフ〉選択 | `StaffDay.bar`（`staffDay` が数える案＝`dayPlanOf`（今の案、無ければ確定した割当）の lenient の時刻から作る。案の無い日は勤務内を「案なし」）。件数・目安・移動・勤務時間は `aria-label`・title |
 | 週・〈スタッフ〉×曜日 | `WeekCell.bar`（`staffWeekTable` が作る。今の案、無ければ確定した割当。案の無い日は勤務内を「案なし」）。マスは3段バー＋件数。稼働・移動・種類の内訳は title と読み上げ。表の上に凡例 |
-| 週・〈利用者さん〉×曜日 | `ClientDayBar` |
+| 週・〈利用者さん〉×曜日 | バーは使わない（マスに訪問の札。[pages-week.md](pages-week.md)） |
 | 日 | `DayLines` の `PartsBar` |
 | 勤務の見込み | `WorkStat.parts`（`spanParts`）を `SpanBar` で。〈スタッフ〉×日は `SpanMini` |
 | 空き状況 | `lv-*` の段階の色（下） |
@@ -130,4 +125,4 @@
 ### 完了の条件
 
 - [ ] `lib/barRows`（段・端の印・区間の切り分け・`rowRuns`）・`lib/staffBar`（30分の状態の決め方・`dayLoad` の空きの人数と一致（8時より前・20時以降でも）・週と月のバーが同じ・拘束の内訳の合計が訪問・移動・待ちと一致・`isAllRest`）・`lib/dayLine`・`lib/glance`（空き状況の段階・曜日×週のマス・準備の内訳・〈利用者さん〉の日の点）のテストが通る
-- [ ] 週（〈スタッフ〉×曜日・〈利用者さん〉×曜日）・月（全体・〈スタッフ〉選択）・日（担当ごとの1日）・空き状況・勤務の見込みを 1280px・390px で見て、1段が1時間の4ブロック・訪問が一目で分かる・3段とも休みの日が「休み」の1枚に見える
+- [ ] 週（〈スタッフ〉×曜日）・月（全体・〈スタッフ〉選択）・日（担当ごとの1日）・空き状況・勤務の見込みを 1280px・390px で見て、1段が1時間の4ブロック・訪問が一目で分かる・3段とも休みの日が「休み」の1枚に見える
