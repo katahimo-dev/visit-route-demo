@@ -2039,7 +2039,16 @@ export default function PlanPage() {
   hardRows.sort((a, b) => a.time.localeCompare(b.time));
   /** 「見る」（入らない訪問）：担当なしの列へ移り、その訪問を選ぶ（選んだままなら外さない） */
   const lookNone = (id: string) => {
-    if (shownView === 'list' || shownView === 'day') setView('timeline');
+    // スマホの日ごとのリストは表示を変えず、その行へ巻く（「担当なしの列へ」と同じ）
+    if (shownView === 'day') {
+      requestAnimationFrame(() =>
+        document
+          .querySelector(`.day-row[data-visit="${CSS.escape(id)}"]`)
+          ?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }),
+      );
+      return;
+    }
+    if (shownView === 'list') setView('timeline');
     const x = { id, set: PLAN_SET };
     if (!sel.isPicked(x)) sel.togglePick(x);
     requestAnimationFrame(() => {
@@ -2874,8 +2883,9 @@ export default function PlanPage() {
       ) : shownView !== 'day' && visits.length === 0 ? (
         <div className="card">
           <Empty icon={CalendarDays}>
-            この日の訪問はまだありません。「その他」の「訪問を追加」で足せます。繰り返しは{terms.client}
-            の画面で足せます。
+            この日の訪問はまだありません。
+            {compact ? 'パソコン・タブレットで足せます。' : '操作の行の「訪問を追加」で足せます。'}繰り返しは
+            {terms.client}の画面で足せます。
           </Empty>
         </div>
       ) : (

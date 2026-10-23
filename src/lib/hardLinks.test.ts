@@ -10,8 +10,8 @@ describe('必須の違反 → 関連の画面（PRD D345）', () => {
   it('時間の約束に間に合わない：リンクなし（訪問を開いて直す）', () => {
     expect(hardLinks({ kind: 'time', label: '時間の約束に間に合わない', staffId: 's1' }, 'c1', T)).toEqual([]);
   });
-  it('稼働時間帯に収まらない（slot）：勤務時間（シフト）', () => {
-    expect(hardLinks({ kind: 'slot', label: '稼働時間帯に作業が収まらない', staffId: 's1' }, 'c1', T)).toEqual([
+  it('働ける時間に収まらない（slot）：勤務時間（シフト）', () => {
+    expect(hardLinks({ kind: 'slot', label: '働ける時間に収まらない', staffId: 's1' }, 'c1', T)).toEqual([
       { to: '/availability', label: '勤務時間（シフト）' },
     ]);
   });
@@ -47,6 +47,8 @@ describe('必須の違反 → 関連の画面（PRD D345）', () => {
   it('休み・欠勤：勤務時間（シフト）', () => {
     expect(tos('休み')).toEqual(['/availability']);
     expect(tos(ABSENT_ALL_DAY)).toEqual(['/availability']);
+    // 働ける時間に収まらない人へドラッグしたとき（compile の notAllowed の理由）
+    expect(tos('働ける時間に収まらない')).toEqual(['/availability']);
   });
   it('件数の上限：条件の重み', () => {
     expect(tos('件数の上限（5件）を超える')).toEqual(['/rules']);
