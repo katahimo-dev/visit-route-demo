@@ -7,8 +7,8 @@
 // 訪問の詳細の「担当を変える ▾」（PRD D217〜D219。ADR-0030）：まとまりと項目（role="menuitem"・説明・今の担当・押せない理由・
 // 「担当なしにする」）、キーボード（Enter で開いて ↓・Enter）で移すと担当が変わりピン、トーストの「元に戻す」で担当・ピンが戻る、
 // 「担当なしにする」のあとの確定の確認の本文の先頭に要対応の件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
-// 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定は訪問を追加・使い方をたたむ（メールで送るは見出し。PRD D306）（キーボードで開いて訪問の入力・
-// 閉じるとフォーカスは「その他」・使い方は下に開いてフォーカス）、月の予定は表示を選ぶ・印刷・勤務の見込み・マスの見方の説明を
+// 操作の行（PRD D278・D279・D344。ADR-0045）：日の予定は訪問を追加・使い方を操作の行に出し（その他 ▾ はスマホだけ。メールで送るは見出し。PRD D306）
+// （キーボードで訪問の入力・閉じるとフォーカスは「訪問を追加」・使い方は下に開いてフォーカス・操作の行は今の担当のすぐ下）、月の予定は表示を選ぶ・印刷・勤務の見込み・マスの見方の説明を
 // たたむ（表示の選択は開くと欄へフォーカス・〈スタッフ〉を選んでいる間はたためない）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-plan-menu.cjs
@@ -524,11 +524,11 @@ async function mobile(page) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
-// ---- 操作の行の「その他 ▾」（PRD D278・D279。ADR-0045）：日の予定と月の予定 ----
+// ---- 操作の行の「その他 ▾」（PRD D278・D279・D344。ADR-0045）：日の予定（たたまない）と月の予定 ----
 async function moreMenus(page) {
   const focusedId = () => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '');
   await openPlan(page);
-  // 日の予定：見せるのは欠勤・キャンセルを登録・AI で組む ▾・元に戻す・表示・その他 ▾
+  // 日の予定：見せるのは欠勤・キャンセルを登録・AI で組む ▾・元に戻す・表示・訪問を追加・使い方（その他 ▾ はスマホだけ。PRD D344）
   const shown = await page
     .getByTestId('schedule-toolbar')
     .locator('button:visible')
@@ -537,13 +537,20 @@ async function moreMenus(page) {
     shown.includes('欠勤・キャンセルを登録') &&
       shown.includes('AI で組む') &&
       shown.includes('元に戻す') &&
-      shown.includes('その他') &&
-      !shown.includes('訪問を追加') &&
-      !shown.includes('メールで送る') &&
-      !shown.includes('使い方'),
-    '日の予定：操作の行は 欠勤・AI で組む ▾・元に戻す・表示・その他 ▾（訪問を追加・使い方はたたむ）',
+      shown.includes('訪問を追加') &&
+      shown.includes('使い方') &&
+      !shown.includes('その他') &&
+      !shown.includes('メールで送る'),
+    '日の予定：操作の行は 欠勤・AI で組む ▾・元に戻す・表示・訪問を追加・使い方（その他 ▾ は無い）',
     shown,
   );
+  // 操作の行は状態の1行（今の担当）のすぐ下（週・月と同じ位置。PRD D344）
+  const order = await page.evaluate(() => {
+    const sum = document.querySelector('[data-testid="plan-summary"]');
+    const bar = document.querySelector('[data-testid="schedule-toolbar"]');
+    return !!sum && !!bar && sum.nextElementSibling === bar;
+  });
+  check(order, '日の予定：操作の行は「今の担当」の1行のすぐ下');
   // 予定をメールで送るは見出しの主ボタンの隣（毎日送るので見つけやすく。PRD D306）
   const headMail = page.locator('.page-head [data-testid="day-mail"]');
   check(
@@ -554,17 +561,8 @@ async function moreMenus(page) {
     (await page.locator('.btn-primary:visible').count()) === 1,
     '日の予定：主ボタンは見出しの「確定（伝えた）」の1つ',
   );
-  const more = page.getByTestId('plan-more');
-  await more.focus();
-  await page.keyboard.press('Enter');
-  await page.getByTestId('plan-more-list').waitFor();
-  const items = await page.getByTestId('plan-more-list').locator('[role="menuitem"] .menu-item-label').allInnerTexts();
-  check(
-    JSON.stringify(items) === JSON.stringify(['訪問を追加', '使い方']),
-    '日の予定の「その他 ▾」：訪問を追加・使い方',
-    items,
-  );
-  check((await focusedId()) === 'plan-visit-add', '「その他 ▾」を Enter で開くとフォーカスは先頭の項目');
+  const addBtn = page.getByTestId('plan-visit-add');
+  await addBtn.focus();
   await page.keyboard.press('Enter');
   // 訪問の詳細の欄の新規の形（PRD D301）
   const form = page.getByTestId('visit-panel');
@@ -575,10 +573,13 @@ async function moreMenus(page) {
   );
   await page.getByTestId('vp-close').click();
   await form.waitFor({ state: 'detached' });
-  check((await focusedId()) === 'plan-more', '訪問の入力を閉じるとフォーカスは「その他」へ戻る', await focusedId());
+  check(
+    (await focusedId()) === 'plan-visit-add',
+    '訪問の入力を閉じるとフォーカスは「訪問を追加」へ戻る',
+    await focusedId(),
+  );
   // 使い方：操作の行の下に開き、フォーカスを移す
-  await more.click();
-  await page.getByTestId('plan-more-help').click();
+  await page.getByTestId('plan-help-btn').click();
   const help = page.getByTestId('plan-help');
   await help.waitFor();
   check(
@@ -597,13 +598,12 @@ async function moreMenus(page) {
   }, STORAGE_KEY);
   await page.goto(`${BASE}#/plan`);
   await page.reload();
-  await page.getByTestId('plan-more').waitFor({ timeout: 30000 });
+  await page.getByTestId('plan-visit-add').waitFor({ timeout: 30000 });
   await settle(page, 300);
-  await page.getByTestId('plan-more').click();
   const add = page.getByTestId('plan-visit-add');
   check(
     (await add.getAttribute('aria-disabled')) === 'true' && /いません/.test((await add.getAttribute('title')) ?? ''),
-    '「その他 ▾」：〈利用者さん〉が0人なら「訪問を追加」は押せず理由',
+    '〈利用者さん〉が0人なら「訪問を追加」は押せず理由',
     await add.getAttribute('title'),
   );
   // aria-disabled（フォーカスは残す）なので、押しても何もしないことを確かめる

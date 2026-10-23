@@ -326,11 +326,10 @@ async function sameEverywhere(page) {
 async function addNew(page) {
   await freshPlan(page);
   const n0 = (await data(page)).visits.length;
-  await page.getByTestId('plan-more').click();
   await page.getByTestId('plan-visit-add').click();
   await panel(page).waitFor();
   const p = panel(page);
-  check((await p.getAttribute('data-new')) === 'true', '「その他 ▾」の「訪問を追加」で欄の新規の形');
+  check((await p.getAttribute('data-new')) === 'true', '操作の行の「訪問を追加」で欄の新規の形');
   check(
     (await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))) === 'vp-client',
     '新規は最初の欄（〈利用者さん〉）へフォーカス',
@@ -350,8 +349,8 @@ async function addNew(page) {
       '',
   );
   check(
-    at === 'plan-more' || at === d.visits.at(-1).id,
-    '閉じるとフォーカスは足した訪問（帯・カード・行）か「その他」',
+    at === 'plan-visit-add' || at === d.visits.at(-1).id,
+    '閉じるとフォーカスは足した訪問（帯・カード・行）か「訪問を追加」',
     at,
   );
 }

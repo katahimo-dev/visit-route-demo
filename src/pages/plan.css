@@ -38,18 +38,6 @@
   border-radius: 12px;
   font-size: 0.9rem;
 }
-/* 下に担当ごとの1日が続くときは1枚のカードにつなげる（PRD D237。components/dayLines.css） */
-.plan-oneline:has(+ .daylines:not(.is-collapsed)) {
-  border-bottom: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-@media print {
-  .plan-oneline:has(+ .daylines:not(.is-collapsed)) {
-    border-bottom: 1px solid var(--line);
-    border-radius: 12px;
-  }
-}
 .plan-oneline strong {
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
