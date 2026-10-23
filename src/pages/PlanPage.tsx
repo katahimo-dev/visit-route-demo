@@ -41,6 +41,7 @@ import { MenuButton, type MenuItem } from '../components/MenuButton';
 import { useMailLimit } from '../components/mailParts';
 import { VisitRouteLinks } from '../components/mapsLinks';
 import { PersonButton, PersonInfo } from '../components/PersonPopover';
+import { type IssueRow, PlanIssueCount } from '../components/PlanIssueCount';
 import { ClientName } from '../components/parts';
 import { RouteMap } from '../components/RouteMap';
 import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../components/routeTimeline';
@@ -100,9 +101,10 @@ import {
   writeRoutes,
 } from '../lib/dayPlan';
 import { deferredDragStart } from '../lib/dragStart';
+import { hardLinks } from '../lib/hardLinks';
 import { appHistory } from '../lib/history';
 import { isDate } from '../lib/isDate';
-import { UNASSIGNED_DO, workloadHref } from '../lib/links';
+import { linkIfOn, UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { issueBreakdown } from '../lib/month';
@@ -110,7 +112,7 @@ import { type DayInputs, dayInputsOf, proposalDayFresh } from '../lib/monthBatch
 import { scrollBehavior } from '../lib/motion';
 import { typeOf } from '../lib/patternText';
 import { leavePeople } from '../lib/personLinks';
-import { CURRENT_TEXT, NONE_TEXT, reassignChoices } from '../lib/reassignMenu';
+import { CURRENT_TEXT, hardReasonLabels, NONE_TEXT, notAllowedText, reassignChoices } from '../lib/reassignMenu';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { reasonFace, scoreReason } from '../lib/scoreReason';
 import { SUDDEN_DO, staffChoices, visitChoices } from '../lib/sudden';
@@ -309,7 +311,7 @@ export default function PlanPage() {
   const openVisitPanel = useOpenVisit();
   /** スマホの幅（600px 以下）は訪問を足さない（ADR-0051 の決定5） */
   const compact = useMedia(COMPACT_QUERY);
-  /** 「その他 ▾」の「使い方」で開いた説明（PRD D279。保存しない） */
+  /** 操作の行の「使い方」（スマホは「その他 ▾」の中）で開いた説明（PRD D279・D344。保存しない） */
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -771,8 +773,11 @@ export default function PlanPage() {
               `.tl-band[data-visit="${v}"] .tl-band-btn, .route-item[data-visit="${v}"] .route-btn, [data-testid="visit-row-open"][data-visit="${v}"], .day-row[data-visit="${v}"]`,
             )
           : null;
-        // 「その他 ▾」から足したときは、閉じた一覧の項目の代わりに「その他」のボタンへ
-        return el ?? (id ? null : document.querySelector<HTMLElement>('[data-testid="plan-more"]'));
+        // 新しく足したときは「訪問を追加」のボタンへ（スマホの「その他 ▾」は閉じた一覧の項目の代わりに「その他」のボタンへ）
+        return (
+          el ??
+          (id ? null : document.querySelector<HTMLElement>('[data-testid="plan-visit-add"], [data-testid="plan-more"]'))
+        );
       },
     });
   /** 時間軸の帯にフォーカスを戻す（キーで動かしたあと。日付を移ったときは描き終わるまで待つ） */
@@ -849,7 +854,10 @@ export default function PlanPage() {
     sel.follow(visitId, staffId);
     const opts = saved ? { action: undoMove(visitId, prev) } : undefined;
     if (!allowedFor(visitId, staffId)) {
-      toast(`${staffName(staffId)}さんへ移しました。必須の条件に合わないので、要対応に出ます`, opts);
+      toast(
+        `${staffName(staffId)}さんへ移しました。${notAllowedText(hardReasonLabels(p, visitId, staffId))}ので、要対応に出ます`,
+        opts,
+      );
     } else {
       toast(`${staffName(staffId)}さんへ移しました`, opts);
     }
@@ -1884,7 +1892,11 @@ export default function PlanPage() {
             )}
           </div>
         )}
-        {notAllowed && <div className="drop-warning">ここに移すと：必須の条件に合わない</div>}
+        {notAllowed && problem && dragging !== null && (
+          <div className="drop-warning" data-testid="drop-warning">
+            ここに移すと：{notAllowedText(hardReasonLabels(problem, dragging, sid))}
+          </div>
+        )}
       </>
     );
   };
@@ -1987,6 +1999,70 @@ export default function PlanPage() {
 
   // ---- 日の画面の整理（PRD D63）：1行のまとめ・案を変えるメニュー・右の欄・表示の切り替え・地図の横置き ----
   const hardCount = cs?.hardViolations.length ?? 0;
+  /** 一覧の時刻（今の担当の開始。無ければ約束の開始） */
+  const issueTime = (id: string) => {
+    const t = explained.get(id)?.timing;
+    return t ? minutesToHhmm(t.start) : (visitById.get(id)?.earliestStart ?? '');
+  };
+  /** 「入らない N」の一覧（PRD D345）：理由は「担当なしの訪問」の列の札と同じ */
+  const droppedRows: IssueRow[] = unassigned.map((id) => {
+    const inf = problem?.infeasible.find((f) => problem.visits[f.visit]?.id === id);
+    const reasons = inf?.reasons ?? explained.get(id)?.reasons ?? [];
+    return {
+      visitId: id,
+      time: issueTime(id),
+      clientName: clientOf(id)?.displayName ?? '（不明）',
+      reasons: reasons.map((r) => reasonFace(r).text),
+      links: [],
+    };
+  });
+  /** 「守れない条件 N」の一覧（PRD D345）：訪問ごとに1行。関連の画面は lib/hardLinks（切った機能の行き先は出さない） */
+  const hardRows: IssueRow[] = [];
+  for (const h of cs?.hardViolations ?? []) {
+    const client = clientOf(h.visitId);
+    const links = hardLinks(h, client?.id, terms).filter((l) => linkIfOn(data.org.features, l.to) !== null);
+    const row = hardRows.find((r) => r.visitId === h.visitId);
+    if (row) {
+      if (!row.reasons.includes(h.label)) row.reasons.push(h.label);
+      for (const l of links) if (!row.links.some((x) => x.to === l.to)) row.links.push(l);
+      continue;
+    }
+    hardRows.push({
+      visitId: h.visitId,
+      time: issueTime(h.visitId),
+      clientName: client?.displayName ?? '（不明）',
+      staffName: staffName(h.staffId),
+      reasons: [h.label],
+      links,
+    });
+  }
+  hardRows.sort((a, b) => a.time.localeCompare(b.time));
+  /** 「見る」（入らない訪問）：担当なしの列へ移り、その訪問を選ぶ（選んだままなら外さない） */
+  const lookNone = (id: string) => {
+    // スマホの日ごとのリストは表示を変えず、その行へ巻く（「担当なしの列へ」と同じ）
+    if (shownView === 'day') {
+      requestAnimationFrame(() =>
+        document
+          .querySelector(`.day-row[data-visit="${CSS.escape(id)}"]`)
+          ?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }),
+      );
+      return;
+    }
+    if (shownView === 'list') setView('timeline');
+    const x = { id, set: PLAN_SET };
+    if (!sel.isPicked(x)) sel.togglePick(x);
+    requestAnimationFrame(() => {
+      const col = document.getElementById(noneColId);
+      const card = col?.querySelector<HTMLElement>(`[data-visit="${CSS.escape(id)}"]`);
+      (card ?? col)?.scrollIntoView({ behavior: scrollBehavior(), block: 'center', inline: 'nearest' });
+    });
+  };
+  /** 「見る」（担当のある訪問）：その人の列の訪問を選んで見える所へ（担当ごとの1日から移るときと同じ） */
+  const lookAt = (id: string) => {
+    const sid = owner.get(id);
+    if (sid) goToStaff(sid, id);
+    else lookNone(id);
+  };
   const hundredNow = cs && scoreScale ? toHundred(cs.total, scoreScale) : null;
   /** 物差しの下限の条件ごとの内訳（点数の理由で条件ごとの超過を比べる） */
   const scoreLower = useMemo(
@@ -2319,24 +2395,30 @@ export default function PlanPage() {
     if (suddenToBar.current) requestAnimationFrame(goToBar);
   };
 
-  /** 操作の行の「その他 ▾」（PRD D279）：訪問を追加・使い方（ときどき使う操作）。メールで送るは見出しへ出した（PRD D306） */
-  const moreItems: MenuItem[] = [
-    {
-      key: 'add',
-      label: '訪問を追加',
-      icon: Plus,
-      disabled:
-        m.clients.length === 0
-          ? `${terms.client}がいません`
-          : compact
-            ? 'スマホの幅では訪問を足しません（パソコン・タブレットで）'
-            : false,
-      onSelect: () => openVisit(null),
-      testId: 'plan-visit-add',
-    },
-    // スマホは表示の切り替えを「その他 ▾」に入れる（操作の行を1段にする。PRD D334）
-    ...(compact
-      ? (
+  /** 訪問を追加を押せない理由（〈利用者さん〉がいない・スマホの幅） */
+  const addWhy =
+    m.clients.length === 0
+      ? `${terms.client}がいません`
+      : compact
+        ? 'スマホの幅では訪問を足しません（パソコン・タブレットで）'
+        : false;
+  /**
+   * 操作の行の「その他 ▾」（スマホだけ。PRD D334・D344）：訪問を追加・表示・使い方。
+   * パソコン・タブレットは項目が少ないので、訪問を追加・使い方をたたまずに操作の行へ出す（その他 ▾ は出さない）
+   */
+  const moreItems: MenuItem[] = !compact
+    ? []
+    : [
+        {
+          key: 'add',
+          label: '訪問を追加',
+          icon: Plus,
+          disabled: addWhy,
+          onSelect: () => openVisit(null),
+          testId: 'plan-visit-add',
+        },
+        // スマホは表示の切り替えを「その他 ▾」に入れる（操作の行を1段にする。PRD D334）
+        ...(
           [
             ['day', '日ごとのリスト'],
             ['order', '順番'],
@@ -2351,17 +2433,16 @@ export default function PlanPage() {
             onSelect: () => setMView(k),
             testId: `plan-view-${k}`,
           }),
-        )
-      : []),
-    {
-      key: 'help',
-      group: compact ? 'そのほか' : undefined,
-      label: helpOpen ? '使い方を閉じる' : '使い方',
-      icon: Info,
-      onSelect: () => setHelpOpen(!helpOpen),
-      testId: 'plan-more-help',
-    },
-  ];
+        ),
+        {
+          key: 'help',
+          group: 'そのほか',
+          label: helpOpen ? '使い方を閉じる' : '使い方',
+          icon: Info,
+          onSelect: () => setHelpOpen(!helpOpen),
+          testId: 'plan-more-help',
+        },
+      ];
 
   return (
     <div className="plan-page stack">
@@ -2437,11 +2518,41 @@ export default function PlanPage() {
           <span>
             訪問 <strong>{visits.length}</strong>件
           </span>
+          {/* 数を押すと一覧（見る・開く・関連の画面へ。PRD D345）。0 件は数だけ */}
           <span className={cs.dropped > 0 ? 'warn-text' : ''}>
-            <Term k="dropped" /> <strong>{cs.dropped}</strong>
+            <Term k="dropped" />{' '}
+            <PlanIssueCount
+              count={cs.dropped}
+              title={`入らない訪問 ${droppedRows.length}件`}
+              rows={droppedRows}
+              onLook={lookNone}
+              onOpen={(id) => openVisit(id)}
+              footer={(close) => (
+                <button
+                  type="button"
+                  className="btn btn-small btn-text detail-popover-link"
+                  onClick={() => {
+                    close();
+                    requestAnimationFrame(goToNone);
+                  }}
+                  data-testid="plan-dropped-none"
+                >
+                  担当なしの列へ
+                </button>
+              )}
+              testId="plan-dropped"
+            />
           </span>
           <span className={`m-hide${hardCount > 0 ? ' error' : ''}`}>
-            <Term k="hard" /> <strong>{hardCount}</strong>
+            <Term k="hard" />{' '}
+            <PlanIssueCount
+              count={hardCount}
+              title={`守れない条件 ${hardCount}件`}
+              rows={hardRows}
+              onLook={lookAt}
+              onOpen={(id) => openVisit(id)}
+              testId="plan-hard"
+            />
           </span>
           <span className="m-hide">
             <Term k="travel" /> <strong>{r0(cs.travelMinutes)}</strong>分
@@ -2483,6 +2594,116 @@ export default function PlanPage() {
               詳しく
             </WithIcon>
           </button>
+        </div>
+      )}
+      {/* 操作の行（日・週・月で同じ並び・同じ位置＝状態の1行のすぐ下。PRD D327・D344）：欠勤・キャンセルを登録／AI で組む ▾／元に戻す・やり直す／表示／訪問を追加・使い方（スマホは その他 ▾） */}
+      <ScheduleToolbar
+        zoom="day"
+        className="plan-toolbar"
+        absence={
+          suddenOn
+            ? {
+                onClick: () => openSudden({}),
+                disabled: visits.length === 0 && suddenStaff.length === 0,
+                ref: suddenBtnRef,
+              }
+            : null
+        }
+        aiItems={menuItems}
+        moreItems={moreItems}
+        after={progressView}
+      >
+        {!compact && (visits.length > 0 || m.leaveVisits.length > 0) && (
+          <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
+            {(
+              [
+                ['timeline', '時間軸'],
+                ['order', '順番'],
+                ['list', '一覧'],
+              ] as const
+            ).map(([k, text]) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={shownView === k}
+                className={`${shownView === k ? 'is-on' : ''} plan-view-${k}`}
+                onClick={() => setColView(k)}
+              >
+                {text}
+              </button>
+            ))}
+          </fieldset>
+        )}
+        {/* パソコン・タブレットは「その他 ▾」にたたまずに出す（PRD D344） */}
+        {!compact && (
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                if (addWhy === false) openVisit(null);
+              }}
+              aria-disabled={addWhy !== false || undefined}
+              title={addWhy || undefined}
+              data-testid="plan-visit-add"
+            >
+              <WithIcon icon={Plus}>
+                <span className="tb-label">訪問を追加</span>
+              </WithIcon>
+            </button>
+            <button
+              type="button"
+              className="btn"
+              aria-pressed={helpOpen}
+              onClick={() => setHelpOpen(!helpOpen)}
+              data-testid="plan-help-btn"
+            >
+              <WithIcon icon={Info}>
+                <span className="tb-label">{helpOpen ? '使い方を閉じる' : '使い方'}</span>
+              </WithIcon>
+            </button>
+          </>
+        )}
+      </ScheduleToolbar>
+      {/* 使い方は操作の行のすぐ下に開く */}
+      {helpOpen && (
+        <div ref={helpRef} className="hint-body plan-help" tabIndex={-1} data-testid="plan-help">
+          <ul className="plan-help-list">
+            <li>
+              担当を変えるには、訪問を別の{terms.staff}
+              の列へドラッグします。訪問を押して「担当を変える」から選んでも同じです。
+              移した訪問は、その人の回る順番のいちばん無駄の少ない所に入り、ピンが付きます（ピンの付いた訪問は、AI
+              で組み直しても担当を変えません）。
+            </li>
+            <li>「担当なしの訪問」へ移すと、担当なしに戻ります。</li>
+            <li>
+              「元に戻す」（Ctrl+Z）で1手ずつ戻せます（50手まで）。「やり直す」（Ctrl+Shift+Z）で戻した手をやり直せます。
+            </li>
+            <li>
+              Shift か Ctrl
+              を押しながら訪問を押すと、複数を選べます。下に出る帯で、まとめて担当を替える・時刻をずらす・取り消すができます。
+            </li>
+            <li>
+              「AI
+              で組む」は、ピンの付いた訪問はそのままで、ほかの担当・順番の提案を出します。提案を見て「当てる」と担当が変わります。
+            </li>
+            <li>
+              「予定をメールで送る」などで{terms.staff}
+              に伝えたら「確定」を押します。確定のあとに変えた訪問は「未連絡の変更」に出ます。
+            </li>
+            <li>
+              名前の下の時間は、その日に働ける時間です。約束の時間に間に合わない訪問や、働ける時間からはみ出す訪問は赤い枠になります。訪問を押すと理由が出ます。
+            </li>
+            <li>「自宅から」「自宅まで」や移動の時間を押すと、地図でその道のりが太くなります。</li>
+            <li>
+              時間軸の灰色は働かない時間・休憩、斜線は欠勤、点線の枠は待ち時間です。ドラッグしている間は、落とす列に入れられるか（緑）入れられないか（赤）が出ます。
+            </li>
+          </ul>
+          <div>
+            <button type="button" className="btn btn-small btn-text" onClick={() => setHelpOpen(false)}>
+              使い方を閉じる
+            </button>
+          </div>
         </div>
       )}
       {/* 担当ごとの1日（PRD D84）。訪問のある日だけ。狭い幅では畳む */}
@@ -2649,45 +2870,6 @@ export default function PlanPage() {
           )}
         </div>
       )}
-      {/* 操作の行（日・週・月で同じ並び。PRD D327）：欠勤・キャンセルを登録／AI で組む ▾／元に戻す・やり直す／表示／その他 ▾ */}
-      <ScheduleToolbar
-        zoom="day"
-        className="plan-toolbar"
-        absence={
-          suddenOn
-            ? {
-                onClick: () => openSudden({}),
-                disabled: visits.length === 0 && suddenStaff.length === 0,
-                ref: suddenBtnRef,
-              }
-            : null
-        }
-        aiItems={menuItems}
-        moreItems={moreItems}
-        after={progressView}
-      >
-        {!compact && (visits.length > 0 || m.leaveVisits.length > 0) && (
-          <fieldset className="segmented seg-sm plan-view-toggle" aria-label="表示">
-            {(
-              [
-                ['timeline', '時間軸'],
-                ['order', '順番'],
-                ['list', '一覧'],
-              ] as const
-            ).map(([k, text]) => (
-              <button
-                key={k}
-                type="button"
-                aria-pressed={shownView === k}
-                className={`${shownView === k ? 'is-on' : ''} plan-view-${k}`}
-                onClick={() => setColView(k)}
-              >
-                {text}
-              </button>
-            ))}
-          </fieldset>
-        )}
-      </ScheduleToolbar>
       {/* キーで動かした先の読み上げと、繰り返しの回の範囲を選び直す小さな帯（PRD D333） */}
       <KeyMoveBand
         onMoved={(r) => {
@@ -2695,54 +2877,15 @@ export default function PlanPage() {
           focusBand(r.visitId);
         }}
       />
-      {helpOpen && (
-        <div ref={helpRef} className="hint-body plan-help" tabIndex={-1} data-testid="plan-help">
-          <ul className="plan-help-list">
-            <li>
-              担当を変えるには、訪問を別の{terms.staff}
-              の列へドラッグします。訪問を押して「担当を変える」から選んでも同じです。
-              移した訪問は、その人の回る順番のいちばん無駄の少ない所に入り、ピンが付きます（ピンの付いた訪問は、AI
-              で組み直しても担当を変えません）。
-            </li>
-            <li>「担当なしの訪問」へ移すと、担当なしに戻ります。</li>
-            <li>
-              「元に戻す」（Ctrl+Z）で1手ずつ戻せます（50手まで）。「やり直す」（Ctrl+Shift+Z）で戻した手をやり直せます。
-            </li>
-            <li>
-              Shift か Ctrl
-              を押しながら訪問を押すと、複数を選べます。下に出る帯で、まとめて担当を替える・時刻をずらす・取り消すができます。
-            </li>
-            <li>
-              「AI
-              で組む」は、ピンの付いた訪問はそのままで、ほかの担当・順番の提案を出します。提案を見て「当てる」と担当が変わります。
-            </li>
-            <li>
-              「予定をメールで送る」などで{terms.staff}
-              に伝えたら「確定」を押します。確定のあとに変えた訪問は「未連絡の変更」に出ます。
-            </li>
-            <li>
-              名前の下の時間は、その日に働ける時間です。約束の時間に間に合わない訪問や、働ける時間からはみ出す訪問は赤い枠になります。訪問を押すと理由が出ます。
-            </li>
-            <li>「自宅から」「自宅まで」や移動の時間を押すと、地図でその道のりが太くなります。</li>
-            <li>
-              時間軸の灰色は働かない時間・休憩、斜線は欠勤、点線の枠は待ち時間です。ドラッグしている間は、落とす列に入れられるか（緑）入れられないか（赤）が出ます。
-            </li>
-          </ul>
-          <div>
-            <button type="button" className="btn btn-small btn-text" onClick={() => setHelpOpen(false)}>
-              使い方を閉じる
-            </button>
-          </div>
-        </div>
-      )}
 
       {shownView !== 'day' && visits.length === 0 && m.leaveVisits.length > 0 ? (
         visitList
       ) : shownView !== 'day' && visits.length === 0 ? (
         <div className="card">
           <Empty icon={CalendarDays}>
-            この日の訪問はまだありません。「その他」の「訪問を追加」で足せます。繰り返しは{terms.client}
-            の画面で足せます。
+            この日の訪問はまだありません。
+            {compact ? 'パソコン・タブレットで足せます。' : '操作の行の「訪問を追加」で足せます。'}繰り返しは
+            {terms.client}の画面で足せます。
           </Empty>
         </div>
       ) : (

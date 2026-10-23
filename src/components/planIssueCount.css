@@ -1,0 +1,45 @@
+/* 「今の案」の1行の「入らない」「必須の違反」の数のボタンと一覧（PlanIssueCount。PRD D345） */
+/* 数のボタン：行の色（注意・違反）を引き継ぎ、押せる印に下線 */
+.plan-oneline .link-btn.plan-issue-btn {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.plan-issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plan-issue-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.plan-issue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.plan-issue-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--sub);
+}
+.plan-issue-reasons,
+.plan-issue-actions {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+/* 長い理由は折り返す（吹き出しの幅で切れない） */
+.plan-issue-reasons .chip {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media print {
+  .plan-oneline .link-btn.plan-issue-btn {
+    text-decoration: none;
+  }
+}

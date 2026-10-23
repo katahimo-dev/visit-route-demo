@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { Reason } from '../contracts/problem';
+import type { Problem, Reason } from '../contracts/problem';
 import type { ReassignCandidate } from '../contracts/reassign';
 import { compile } from '../matching';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
-import { reassignChoices, reassignItemText, shiftText, workingStaff } from './reassignMenu';
+import {
+  hardReasonLabels,
+  notAllowedText,
+  reassignChoices,
+  reassignItemText,
+  shiftText,
+  workingStaff,
+} from './reassignMenu';
 
 const INF = Number.POSITIVE_INFINITY;
 const cand = (over: Partial<ReassignCandidate> = {}): ReassignCandidate => ({
@@ -95,5 +102,35 @@ describe('reassignChoices（担当を変える ▾ と訪問の詳細の欄の1�
   });
   it('問題に無い訪問は空', () => {
     expect(reassignChoices(problem, {}, 'nope', null, () => true)).toEqual([]);
+  });
+});
+
+describe('hardReasonLabels・notAllowedText（日の予定のドラッグの「ここに移すと」）', () => {
+  const problem = {
+    visits: [{ id: 'v1' }],
+    staff: [{ id: 's1' }, { id: 's2' }],
+    reasons: [
+      [
+        [
+          { ruleId: 'r1', label: '必要条件：入浴 ✗', points: INF },
+          compat('相性×', -2, INF),
+          { ruleId: 'r2', label: '必要条件：入浴 ✗', points: INF },
+          { ruleId: 'r3', label: '希望✗ 女性', points: 20 },
+        ],
+        [],
+      ],
+    ],
+  } as unknown as Problem;
+  it('必須で外れる理由の名前だけを、同じ名前は1回で返す', () => {
+    expect(hardReasonLabels(problem, 'v1', 's1')).toEqual(['必要条件：入浴 ✗', '相性×']);
+    expect(hardReasonLabels(problem, 'v1', 's2')).toEqual([]);
+  });
+  it('訪問・担当が問題に無ければ空', () => {
+    expect(hardReasonLabels(problem, 'nope', 's1')).toEqual([]);
+    expect(hardReasonLabels(problem, 'v1', 'nope')).toEqual([]);
+  });
+  it('理由があれば括弧で並べる', () => {
+    expect(notAllowedText(['必要条件：入浴 ✗', '相性×'])).toBe('必須の条件に合わない（必要条件：入浴 ✗・相性×）');
+    expect(notAllowedText([])).toBe('必須の条件に合わない');
   });
 });

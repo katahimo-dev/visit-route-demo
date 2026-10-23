@@ -19,7 +19,6 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { LoadRowsSample } from '../components/loadBar';
-import type { MenuItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { StaffMark } from '../components/StaffMark';
@@ -677,18 +676,6 @@ export default function WeekPage() {
 
   // ---- 操作の行（日・週・月で同じ。PRD D327）----
   const scopeItems = useScopeItems({ zoom: 'week', date: anchor });
-  /** その他 ▾：週の予定をメールで送る（表の上のボタンと同じ） */
-  const moreItems: MenuItem[] = mailOn
-    ? [
-        {
-          key: 'mail',
-          label: '週の予定をメールで送る',
-          icon: Mail,
-          onSelect: () => setMailOpen(true),
-          testId: 'week-more-mail',
-        },
-      ]
-    : [];
 
   return (
     <div className="stack week-page">
@@ -742,13 +729,8 @@ export default function WeekPage() {
           {weekPrep.line.changed > 0 ? `・未連絡の変更 ${weekPrep.line.changed}日` : ''}・要対応 {weekPrep.line.care}件
         </p>
       )}
-      {/* 操作の行（日・週・月で同じ並び。PRD D327） */}
-      <ScheduleToolbar
-        zoom="week"
-        absence={suddenOn ? { date: anchor } : null}
-        aiItems={scopeItems}
-        moreItems={moreItems}
-      />
+      {/* 操作の行（日・週・月で同じ並び。PRD D327）。メールで送るは表の上のボタンにあるので「その他 ▾」は出さない（PRD D344） */}
+      <ScheduleToolbar zoom="week" absence={suddenOn ? { date: anchor } : null} aiItems={scopeItems} moreItems={[]} />
       {/* 範囲の提案（日・週・月で同じ帯。PRD D328） */}
       <RangeProposalBand />
 

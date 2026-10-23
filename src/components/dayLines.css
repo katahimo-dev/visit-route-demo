@@ -147,18 +147,3 @@
     padding-right: 20px;
   }
 }
-/* 今の案の1行（日の予定の .plan-oneline）のすぐ下では、1枚のカードにつなげる（PRD D237）。
-   上へ詰める量は日の予定の段の間（--plan-gap。pages/plan.css）と区切りの線 1px */
-.plan-oneline + .daylines:not(.is-collapsed) {
-  margin-top: calc(-1 * var(--plan-gap, 10px) - 1px);
-  border-top: 0;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-@media print {
-  .plan-oneline + .daylines:not(.is-collapsed) {
-    margin-top: 0;
-    border-top: 1px solid var(--line);
-    border-radius: 12px;
-  }
-}
