@@ -256,6 +256,92 @@ async function weekChips(page) {
   await page.locator('h1').click();
   await settle(page, 200);
   check((await list.count()) === 0, '週の表：外を押すと一覧を閉じる');
+  // 一覧の行のキー（リストの入れ物なので ↓ は15分。PRD D342）：↓ 2回で30分あと・担当は同じ・フォーカスは一覧の行のまま
+  const rid = 'e2e-chip-2';
+  const before = await stored(page);
+  const r0 = visitOf(before, rid);
+  const inList = (id) =>
+    page.evaluate((id) => {
+      const a = document.activeElement;
+      return (
+        a?.dataset?.testid === 'week-list-visit' &&
+        a.dataset.visit === id &&
+        a.closest('[data-testid="chip-list"]') !== null
+      );
+    }, id);
+  await more.click();
+  await list.waitFor({ timeout: 5000 });
+  await settle(page, 200);
+  const lrow = list.locator(`[data-testid="week-list-visit"][data-visit="${rid}"]`);
+  await lrow.focus();
+  await page.keyboard.press('ArrowDown');
+  await waitStored(page, (d) => visitOf(d, rid)?.earliestStart === '18:15');
+  await settle(page, 300);
+  await page.keyboard.press('ArrowDown');
+  const moved30 = await waitStored(page, (d) => {
+    const v = visitOf(d, rid);
+    return !!v && v.earliestStart === '18:30' && v.staffId === r0.staffId && v.date === r0.date;
+  });
+  check(moved30, '「+N」の一覧：行で ↓ を2回で30分あと（担当・日付は変わらない）', visitOf(await stored(page), rid));
+  await settle(page, 300);
+  check(
+    (await list.count()) === 1 && (await inList(rid)),
+    '「+N」の一覧：↓ で動かしたあともフォーカスは一覧の行（chip-list の中）',
+  );
+  // Enter で欄、Esc で閉じるとフォーカスは一覧の行
+  await page.keyboard.press('Enter');
+  await panel(page).waitFor({ timeout: 5000 });
+  check((await panel(page).getAttribute('data-visit')) === rid, '「+N」の一覧：行で Enter で訪問の詳細の欄');
+  await page.keyboard.press('Escape');
+  await panel(page).waitFor({ state: 'detached', timeout: 5000 });
+  await settle(page, 300);
+  check((await list.count()) === 1 && (await inList(rid)), '「+N」の一覧：欄を Esc で閉じるとフォーカスは一覧の行');
+  // Ctrl+Z で戻す（2手）
+  await page.keyboard.press(`${MOD}+z`);
+  await settle(page, 300);
+  await page.keyboard.press(`${MOD}+z`);
+  check(
+    await waitStored(page, (d) => JSON.stringify(visitOf(d, rid)) === JSON.stringify(r0)),
+    '「+N」の一覧：Ctrl+Z で ↓ の前に戻る',
+  );
+  await settle(page, 300);
+  // 端の Tab（最後の行）・Shift+Tab（最初の行）は一覧を閉じてフォーカスは「+N」
+  if ((await list.count()) === 0) {
+    await more.click();
+    await list.waitFor({ timeout: 5000 });
+    await settle(page, 200);
+  }
+  await list.locator('[data-testid="week-list-visit"]').last().focus();
+  await page.keyboard.press('Tab');
+  await settle(page, 200);
+  check(
+    (await list.count()) === 0 && (await more.evaluate((el) => document.activeElement === el)),
+    '「+N」の一覧：最後の行で Tab は一覧を閉じ、フォーカスは「+N」',
+  );
+  await more.click();
+  await list.waitFor({ timeout: 5000 });
+  await settle(page, 200);
+  await list.locator('[data-testid="week-list-visit"]').first().focus();
+  await page.keyboard.press('Shift+Tab');
+  await settle(page, 200);
+  check(
+    (await list.count()) === 0 && (await more.evaluate((el) => document.activeElement === el)),
+    '「+N」の一覧：最初の行で Shift+Tab は一覧を閉じ、フォーカスは「+N」',
+  );
+  // 一覧の中ほどの Tab は一覧の中を進む（閉じない）
+  await more.click();
+  await list.waitFor({ timeout: 5000 });
+  await settle(page, 200);
+  await list.locator('[data-testid="week-list-visit"]').first().focus();
+  await page.keyboard.press('Tab');
+  await settle(page, 150);
+  check(
+    (await list.count()) === 1 &&
+      (await page.evaluate(() => document.activeElement?.closest('[data-testid="chip-list"]') !== null)),
+    '「+N」の一覧：最初の行で Tab は一覧の中の次へ（閉じない）',
+  );
+  await page.keyboard.press('Escape');
+  await settle(page, 150);
 }
 
 // ---- 週の〈スタッフ〉×曜日の表：選ぶ・キー ----
@@ -345,6 +431,15 @@ async function weekKeys(page) {
   await page.keyboard.press(`${MOD}+z`);
   check(await waitStored(page, (d) => visitOf(d, id)?.staffId === v0.staffId), '週の表：Ctrl+Z で ↓ の前の担当に戻る');
   await settle(page, 300);
+  // 表の札では Shift+→ は読まない（担当は ↑↓）
+  const beforeShift = await stored(page);
+  await chip(id).focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await settle(page, 400);
+  check(
+    JSON.stringify((await stored(page)).visits) === JSON.stringify(beforeShift.visits),
+    '週の表：札で Shift+→ は何もしない（データが変わらない）',
+  );
   // Enter で訪問の詳細の欄
   await chip(id).focus();
   await page.keyboard.press('Enter');
@@ -604,12 +699,75 @@ async function weekClients(page) {
       page.locator(`[data-testid="week-ccell"][data-client="${otherRow}"][data-date="${to}"]`),
     );
     check(
-      (await panel(page).count()) === 0 && (!ng || ng.tone === 'ng'),
-      '〈利用者さん〉の表のドラッグ：ほかの人の行には置けない',
+      (await panel(page).count()) === 0 && !!ng && ng.tone === 'ng' && /ほかの人の行/.test(ng.text ?? ''),
+      '〈利用者さん〉の表のドラッグ：ほかの人の行には置けない影（ng）と理由の文',
       ng,
     );
     await closePanel(page);
+  } else check(false, '〈利用者さん〉の表のドラッグ：同じ日のほかの人の行がある');
+}
+
+// ---- 週の〈利用者さん〉×曜日の表：札のキー（↓ で隣の担当・Shift+→ は読まない） ----
+async function weekClientKeys(page) {
+  // 利用中の〈スタッフ〉の順（画面の並び。〈スタッフ〉×曜日の表の行と同じ）
+  await fresh(page, '/week?view=table', '[data-testid="week-cell"]');
+  const order = await page.$$eval('[data-testid="week-cell"]', (els) => [...new Set(els.map((e) => e.dataset.staff))]);
+  await page.goto(`${BASE}#/week?view=clients`);
+  await page.getByTestId('week-citem').first().waitFor({ timeout: 30000 });
+  await settle(page, 400);
+  const d0 = await stored(page);
+  const ids = await page.$$eval(
+    '[data-testid="week-citem"][draggable="true"]',
+    (els, today) =>
+      els.filter((e) => (e.closest('[data-date]')?.dataset.date ?? '') > today).map((e) => e.dataset.visit),
+    TODAY,
+  );
+  // 下に担当できる人がいる訪問（いなければ次の訪問。理由の知らせはデータを変えない）
+  let done = null;
+  for (const id of ids.filter((x) => visitOf(d0, x)?.staffId).slice(0, 6)) {
+    const v0 = visitOf(await stored(page), id);
+    const chip = page.locator(`[data-testid="week-citem"][data-visit="${id}"]`);
+    await chip.focus();
+    await page.keyboard.press('ArrowDown');
+    const ok = await waitStored(page, (d) => visitOf(d, id)?.staffId !== v0.staffId, 3000);
+    if (ok) {
+      done = { id, v0, v1: visitOf(await stored(page), id) };
+      break;
+    }
+    await settle(page, 200);
   }
+  if (!done) {
+    check(false, '〈利用者さん〉の表：↓ で隣の担当へ動かせる札', ids.slice(0, 6));
+    return;
+  }
+  const { id, v0, v1 } = done;
+  check(
+    v1.date === v0.date &&
+      v1.earliestStart === v0.earliestStart &&
+      order.indexOf(v1.staffId) > order.indexOf(v0.staffId),
+    '〈利用者さん〉の表：札で ↓ で隣の担当（利用中の〈スタッフ〉の順で後ろ・日付と時刻は同じ）',
+    { from: v0.staffId, to: v1.staffId, order },
+  );
+  check(
+    /担当を.+さんへ/.test((await page.getByTestId('undo-btn').getAttribute('title')) ?? ''),
+    '〈利用者さん〉の表：↓ は全体の元に戻すの1手（担当を〜さんへ）',
+  );
+  await settle(page, 300);
+  await page.locator('h1').click();
+  await page.keyboard.press(`${MOD}+z`);
+  check(
+    await waitStored(page, (d) => visitOf(d, id)?.staffId === v0.staffId),
+    '〈利用者さん〉の表：Ctrl+Z で ↓ の前の担当に戻る',
+  );
+  await settle(page, 300);
+  const before = await stored(page);
+  await page.locator(`[data-testid="week-citem"][data-visit="${id}"]`).focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await settle(page, 400);
+  check(
+    JSON.stringify((await stored(page)).visits) === JSON.stringify(before.visits),
+    '〈利用者さん〉の表：札で Shift+→ は何もしない（データが変わらない）',
+  );
 }
 
 // ---- 月：マスの1回目は右の欄・2回目で日の予定・キー ----
@@ -780,6 +938,10 @@ async function monthMove(page, { confirms }) {
   await settle(page, 300);
   const title = (await page.getByTestId('undo-btn').getAttribute('title')) ?? '';
   check(title.includes(`${dateText(to)}へ移しました`), '月の移す：手の名前は「M/D（曜）へ移しました」', title);
+  check(
+    await until(() => page.evaluate(() => document.activeElement?.dataset?.testid === 'undo-btn'), 3000),
+    '月の移す：移したあとフォーカスは「元に戻す」',
+  );
   await page.locator('h1').click();
   await page.keyboard.press(`${MOD}+z`);
   check(
@@ -788,6 +950,45 @@ async function monthMove(page, { confirms }) {
     ),
     '月の移す：Ctrl+Z 1回で2件とも戻る',
   );
+  // 全部同じ日へ移す（1件も移せない）と選んだまま
+  await openList();
+  await pickTwo();
+  const same0 = await stored(page);
+  await page.getByTestId('selection-move').click();
+  await page.getByTestId('selection-move-date').fill(day);
+  await page.getByTestId('selection-move-go').click();
+  await settle(page, 400);
+  check(
+    (await countText(page)) === '2件を選択' &&
+      JSON.stringify((await stored(page)).visits) === JSON.stringify(same0.visits),
+    '月の移す：全部同じ日へ移す（1件も移せない）と何も変えず選んだまま',
+    await countText(page),
+  );
+  // 日付の欄を開いたまま「選択を外す」→ もう一度選ぶと日付の欄は閉じている
+  if ((await page.getByTestId('selection-move-date').count()) === 0) await page.getByTestId('selection-move').click();
+  await page.getByTestId('selection-move-date').waitFor({ timeout: 3000 });
+  await page.getByTestId('selection-clear').click();
+  await settle(page, 200);
+  await pickTwo();
+  check(
+    (await countText(page)) === '2件を選択' &&
+      (await page.getByTestId('selection-move-date').count()) === 0 &&
+      (await page.getByTestId('selection-move').getAttribute('aria-expanded')) === 'false',
+    '月の移す：日付の欄を開いたまま選択を外し、選び直すと日付の欄は閉じている',
+  );
+  // 日付の欄の［移す］で Esc：欄だけ閉じ、選んだまま、フォーカスは「別の日へ」
+  await page.getByTestId('selection-move').click();
+  await page.getByTestId('selection-move-go').focus();
+  await page.keyboard.press('Escape');
+  await settle(page, 200);
+  check(
+    (await page.getByTestId('selection-move-date').count()) === 0 &&
+      (await countText(page)) === '2件を選択' &&
+      (await page.getByTestId('selection-move').evaluate((el) => document.activeElement === el)),
+    '月の移す：［移す］で Esc は日付の欄だけ閉じ（選んだまま）、フォーカスは「別の日へ」',
+  );
+  await page.getByTestId('selection-clear').click();
+  await settle(page, 150);
   // 確定した日へ移すと確認、取り消すと変わらない（確定した日は伝えた内容を書く：別のタブで書き換えたのと同じ）
   await page.evaluate(
     ({ k, to }) => {
@@ -854,15 +1055,22 @@ async function sameMarks(page) {
   await page.goto(`${BASE}#/week?view=table&d=${fx.date}`);
   await page.getByTestId('week-tvisit').first().waitFor({ timeout: 30000 });
   await settle(page, 300);
-  // 札が「+N」に隠れていれば一覧の行（m）で見る
+  // 札が「+N」に隠れていれば、その人のその日のマスの「+N」の一覧を開いて行（m）で必ず見る
   if ((await page.locator(`[data-testid="week-tvisit"][data-visit="${fx.id}"]`).count()) === 0) {
     await page
       .locator(`[data-testid="week-cell"][data-date="${fx.date}"][data-staff="${fx.staff}"]`)
       .getByTestId('chip-more')
       .click();
-    seen.weekTable = await marksOf('[data-testid="week-list-visit"]');
+    await page.getByTestId('chip-list').waitFor({ timeout: 5000 });
+    seen.weekTable = await marksOf('[data-testid="chip-list"] [data-testid="week-list-visit"]');
+    seen.weekTableHidden = true;
     await page.keyboard.press('Escape');
   } else seen.weekTable = await marksOf('[data-testid="week-tvisit"]');
+  check(
+    seen.weekTable.m !== null,
+    '印：週の表でその訪問の札（隠れていれば「+N」の一覧の行）が見つかる',
+    seen.weekTable,
+  );
   await page.goto(`${BASE}#/month?ym=${fx.date.slice(0, 7)}&layout=calendar`);
   await page.getByTestId('month-grid').waitFor({ timeout: 30000 });
   await settle(page, 300);
@@ -877,7 +1085,7 @@ async function sameMarks(page) {
     m: await dayBtn.getAttribute('data-marks', { timeout: 15000 }).catch(() => null),
     s: await dayBtn.getAttribute('data-size').catch(() => null),
   };
-  const ms = Object.values(seen).map((x) => x.m);
+  const ms = [seen.weekTimeline, seen.weekTable, seen.month, seen.day].map((x) => x.m);
   check(
     new Set(ms).size === 1 && /\bpin\b/.test(ms[0] ?? '') && /\b(issue|unfit)\b/.test(ms[0] ?? ''),
     '印：ピンと要対応（限✗）の訪問の data-marks が週の時間軸・週の表の札・月の一覧の行・日の予定の帯で同じ',
@@ -1018,9 +1226,30 @@ async function narrow(page) {
     '390px：欄の選択の帯は担当を替える・取り消すだけ（時刻をずらす・別の日へは出ない）',
   );
   await shot(page, 'month-sheet-390');
-  // 「選ぶ」で選ぶ形を抜けて、行を押すと欄を閉じて訪問の詳細の欄
+  // 「選ぶ」→ 1件選ぶ → Esc で欄を閉じても選択は残る（ページの選択の帯）
   await bar.getByTestId('selection-clear').click();
   await settle(page, 150);
+  if ((await page.getByTestId('month-select').getAttribute('aria-pressed')) !== 'true')
+    await page.getByTestId('month-select').click();
+  await settle(page, 150);
+  await sheet.locator(`[data-testid="month-visit"][data-visit="${sel[0]}"]`).click();
+  await settle(page, 200);
+  check((await countText(page)) === '1件を選択', '390px：「選ぶ」のあと行を押すと選ぶ');
+  await page.keyboard.press('Escape');
+  await sheet.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
+  await settle(page, 300);
+  check(
+    (await sheet.count()) === 0 &&
+      (await page.getByTestId('selection-bar').count()) === 1 &&
+      (await countText(page)) === '1件を選択',
+    '390px：Esc で下から出る欄を閉じても選択は残る（ページの選択の帯に「1件を選択」）',
+  );
+  await page.getByTestId('selection-clear').click();
+  await settle(page, 150);
+  // 欄を開き直し（選ぶ形は抜けている）、行を押すと欄を閉じて訪問の詳細の欄
+  await row.click();
+  await sheet.waitFor({ timeout: 5000 });
+  await settle(page, 300);
   if ((await page.getByTestId('month-select').getAttribute('aria-pressed')) === 'true')
     await page.getByTestId('month-select').click();
   await settle(page, 150);
@@ -1036,6 +1265,15 @@ async function narrow(page) {
     '390px：欄の行を押すと下から出る欄を閉じて訪問の詳細の欄',
   );
   await closePanel(page);
+  await settle(page, 300);
+  check(
+    await page.evaluate((d) => {
+      const a = document.activeElement;
+      return a?.dataset?.testid === 'month-list-day' && a.dataset.date === d;
+    }, day),
+    '390px：訪問の詳細の欄を閉じるとフォーカスはその日の行（month-list-day）',
+    await page.evaluate(() => `${document.activeElement?.dataset?.testid ?? document.activeElement?.tagName}`),
+  );
   // カレンダーのマスでも同じ欄
   await page.goto(`${BASE}#/month?ym=${TODAY.slice(0, 7)}&layout=calendar`);
   await page.getByTestId('month-grid').waitFor({ timeout: 30000 });
@@ -1062,6 +1300,7 @@ const steps = sharedPage({
     ['week-keys', weekKeys],
     ['week-drag', weekDrag],
     ['week-clients', weekClients],
+    ['week-client-keys', weekClientKeys],
     ['month-cells', monthCells],
     ['month-move', monthMove],
     ['same-marks', sameMarks],
