@@ -926,3 +926,16 @@
     display: none;
   }
 }
+
+/* 右の欄・下から出る欄に出している日（日ごとの一覧の行。PRD D343） */
+.month-list-btn.is-listed {
+  box-shadow: inset 0 0 0 3px var(--primary);
+}
+/* スマホの下から出る欄（その日の訪問。PRD D343） */
+.month-day-sheet-tools {
+  gap: 8px;
+  align-items: center;
+}
+.month-day-sheet .vrow {
+  min-height: 56px;
+}

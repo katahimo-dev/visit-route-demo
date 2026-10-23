@@ -8,7 +8,16 @@ import { jstDate } from '../domain/time';
 import { dateText, newId } from '../lib/common';
 import { appHistory } from '../lib/history';
 import { createValueStore, useValueStore } from '../lib/valueStore';
-import { issuesAt, keyMove, movedText, moveLabel, nextStaffFor, type VisitMove, visitKeyOf } from '../lib/visitKeys';
+import {
+  issuesAt,
+  type KeyLayout,
+  keyMove,
+  movedText,
+  moveLabel,
+  nextStaffFor,
+  type VisitMove,
+  visitKeyOf,
+} from '../lib/visitKeys';
 import { cancelVisitOp, SCOPE_LABELS, toldDaysChanged, type VisitScope } from '../lib/visitOps';
 import { findVisit } from '../patterns';
 import { useDemoData } from '../store';
@@ -51,6 +60,8 @@ export function useVisitKeys(opts: {
   staffOrder: (visitId: string) => readonly string[];
   /** 日時を動かす（↑↓←→）か。〈スタッフ〉の画面など動かさない所は false（Shift+←→・Enter・Delete だけ） */
   move?: boolean;
+  /** 札の入れ物（表は ↑↓ で隣の担当の行。PRD D342）。既定は時間軸 */
+  layout?: KeyLayout;
   onOpen?: (visitId: string) => void;
   onMoved?: (r: { visitId: string; date: string }) => void;
   onCancelled?: (visitId: string) => void;
@@ -83,9 +94,9 @@ export function useVisitKeys(opts: {
         first.focus();
         return true;
       }
-      const k = visitKeyOf(e);
-      if (!k) return false;
       const o = optsRef.current;
+      const k = visitKeyOf(e, o.layout);
+      if (!k) return false;
       if (o.move === false && (k.kind === 'time' || k.kind === 'day')) return false;
       if (k.kind === 'open') {
         if (!o.onOpen) return false;
@@ -127,7 +138,7 @@ export function useVisitKeys(opts: {
       let move: VisitMove;
       if (k.kind === 'staff') {
         // その向きに順に見て、この訪問を担当できる最初の人（できない人は飛ばす）
-        const next = nextStaffFor(d, visitId, o.staffOrder(visitId), k.step);
+        const next = nextStaffFor(d, visitId, o.staffOrder(visitId), k.step, o.layout === 'table' ? 'row' : 'col');
         if ('why' in next) {
           fail(next.why);
           return true;

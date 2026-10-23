@@ -663,40 +663,6 @@ export function clientWeekTable(
   }));
 }
 
-/**
- * マスの帯の上下の段（PRD D83 のレビュー）：時刻が重なる帯を段の中で上下に分ける（laneLayout と同じ詰め方）。
- * 重なりのつながりごとに、ふつうの訪問を上のレーン、取り消し・休みの訪問をその下のレーンに入れる
- * （取り消しの白抜きなどが本物の訪問の押す・ドラッグを奪わないように）。重ならない帯は lanes 1
- */
-export function clientLanes(
-  items: readonly Pick<ClientWeekItem, 'visitId' | 'start' | 'end' | 'cancelled' | 'leave'>[],
-): Map<string, Lane> {
-  const out = new Map<string, Lane>();
-  const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end || a.visitId.localeCompare(b.visitId));
-  // 重なりのつながり（長さ0の帯は幅1分として扱う）
-  const clusters: (typeof sorted)[] = [];
-  let end = Number.NEGATIVE_INFINITY;
-  for (const it of sorted) {
-    const e = Math.max(it.end, it.start + 1);
-    if (it.start >= end || clusters.length === 0) clusters.push([]);
-    clusters.at(-1)!.push(it);
-    end = it.start >= end ? e : Math.max(end, e);
-  }
-  for (const c of clusters) {
-    const lay = (xs: typeof c) =>
-      laneLayout(xs.map((x) => ({ id: x.visitId, start: x.start, end: Math.max(x.end, x.start + 1) })));
-    const passive = (x: (typeof c)[number]) => !!x.cancelled || !!x.leave;
-    const top = lay(c.filter((x) => !passive(x)));
-    const bottom = lay(c.filter(passive));
-    const topLanes = Math.max(0, ...[...top.values()].map((x) => x.lanes));
-    const bottomLanes = Math.max(0, ...[...bottom.values()].map((x) => x.lanes));
-    const lanes = topLanes + bottomLanes;
-    for (const [id, l] of top) out.set(id, { lane: l.lane, lanes });
-    for (const [id, l] of bottom) out.set(id, { lane: topLanes + l.lane, lanes });
-  }
-  return out;
-}
-
 /** マスの訪問の印の種類（PRD D83）：形と短い文字で分ける（色だけにしない） */
 export type ClientItemKind = 'visit' | 'leave' | 'cancelled' | 'sameDay' | 'unassigned';
 

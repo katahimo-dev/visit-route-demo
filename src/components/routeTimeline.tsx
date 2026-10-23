@@ -239,6 +239,7 @@ function Band({
           role="button"
           tabIndex={0}
           className="tl-band-btn"
+          data-size="l"
           data-marks={b.kinds}
           aria-pressed={b.picked}
           aria-label={`${time} ${b.name}${b.note ? `（${b.note}）` : ''}${b.multi ? '（選択中）' : ''}`}

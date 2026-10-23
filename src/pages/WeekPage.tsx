@@ -16,7 +16,6 @@ import { useDay } from '../app/day';
 import { ClientFilter } from '../components/ClientFilter';
 import { ClientPicker } from '../components/ClientPicker';
 import { useConfirm } from '../components/ConfirmDialog';
-import { ClientBarLegend, ClientDayBar } from '../components/clientBar';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { EmptyNext } from '../components/EmptyNext';
 import { LoadRowsSample } from '../components/loadBar';
@@ -32,20 +31,24 @@ import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
+  ChipStack,
   DropShadow,
   SelectToggle,
   useVisitDrag,
   useVisitItem,
   useVisitLooks,
   useVisitSelection,
+  VisitChip,
   type VisitDrag,
   VisitMarks,
+  VisitRow,
+  type VisitRowData,
 } from '../components/visitParts';
 import { TypeDot } from '../components/visitType';
 import type { Visit } from '../contracts/documents';
 import { timeText } from '../domain/availability';
 import { addDays, hhmmToMinutes, jstDate, minutesToHhmm, weekday } from '../domain/time';
-import { barEdgeNote, barRowsText, edgeLabel } from '../lib/barRows';
+import { barEdgeNote, barRowsText } from '../lib/barRows';
 import {
   type ClientFilterState,
   decodeFilter,
@@ -84,6 +87,7 @@ import type { VisitLook } from '../lib/visitLook';
 import {
   allowedStaffOf,
   type Band,
+  type ClientWeekItem,
   canMoveVisit,
   clientItemMark,
   clientWeekTable,
@@ -152,6 +156,8 @@ type Notice = { date: string; visitId: string; label: string; error: string | nu
 
 /** 種類なしの帯の色（月の種類の積み上げと同じ） */
 const NO_TYPE_COLOR = '#cfc4bb';
+/** 札の頭文字（表のマスの小さな札。PRD D342） */
+const initialOf = (name: string) => Array.from(name.trim())[0] ?? '？';
 
 export default function WeekPage() {
   const { date, setDate } = useDay();
@@ -186,6 +192,8 @@ export default function WeekPage() {
   /** 訪問の詳細の欄（PRD D301。帯を押す・落とすと開く。週の移動の欄はこの欄にした） */
   const openVisitPanel = useOpenVisit();
   const [notice, setNotice] = useState<Notice | null>(null);
+  /** 表のマスで必ず見せる札（キーで動かした・欄で開いた訪問。「+N」に隠さない） */
+  const [keepId, setKeepId] = useState<string | null>(null);
   /** 欠勤・キャンセルの入口（ADR-0028 の sudden） */
   const suddenOn = useFeature('sudden');
   /** 複数選択（Shift・Ctrl＋クリック。週を送ったら外す。PRD D330） */
@@ -535,6 +543,7 @@ export default function WeekPage() {
     const v = visitById.get(visitId);
     if (!v) return;
     setNotice(null);
+    setKeepId(visitId);
     const changed = d !== undefined && s !== undefined && (d !== v.date || s !== hhmmToMinutes(v.earliestStart));
     const width = hhmmToMinutes(v.latestStart) - hhmmToMinutes(v.earliestStart);
     openVisitPanel({
@@ -579,6 +588,59 @@ export default function WeekPage() {
     selecting,
     longPress: narrow ? { onSelecting: setSelecting } : null,
   });
+  /**
+   * 表（〈スタッフ〉×曜日・〈利用者さん〉×曜日）の札のキー（PRD D342）：←→ で曜日・↑↓ で隣の担当の行（時刻はそのまま）・Enter で欄・
+   * Delete で取り消し。隣の担当は表の行の順（〈スタッフ〉×曜日）・利用中の〈スタッフ〉の順（〈利用者さん〉×曜日）
+   */
+  const tableKeys = useVisitKeys({
+    layout: 'table',
+    staffOrder: () => (table ? table.rows.map((r) => r.staffId) : activeStaff.map((s) => s.id)),
+    onMoved: (r) => {
+      setKeepId(r.visitId);
+      if (!dates.includes(r.date)) goWeek(r.date);
+      focusVisitItem(r.visitId);
+    },
+    onCancelled: () =>
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus()),
+  });
+  const tableItemProps = useVisitItem({
+    selection: multi,
+    onOpen: (id) => openMove(id),
+    keys: narrow ? null : tableKeys,
+    selecting,
+    longPress: narrow ? { onSelecting: setSelecting } : null,
+  });
+  /** 「+N」の一覧の行（リストの行。〈スタッフ〉×曜日の表は行が担当なので担当を出さない） */
+  const bandRow = (b: Band, hideStaff: boolean): VisitRowData => {
+    const v = visitById.get(b.visitId);
+    const t = typeOf(data.visitTypes, v?.typeId);
+    const s = b.staffId ? staffById.get(b.staffId) : undefined;
+    return {
+      visitId: b.visitId,
+      time: `${hm(b.start)}〜${hm(b.end)}`,
+      title: clientName(v),
+      staff: s ?? null,
+      staffName: b.staffId ? (s?.name ?? '（不明）') : '',
+      state: b.leave ? '休みのため無し' : null,
+      look: lookOf(b.visitId),
+      color: t ? colorOf(t.color) : null,
+      hideStaff,
+    };
+  };
+  const itemRow = (it: ClientWeekItem): VisitRowData => {
+    const t = typeOf(data.visitTypes, it.typeId);
+    const s = it.staffId ? staffById.get(it.staffId) : undefined;
+    return {
+      visitId: it.visitId,
+      time: `${hm(it.start)}〜${hm(it.end)}`,
+      title: clientName(visitById.get(it.visitId)),
+      staff: s ?? null,
+      staffName: it.staffId ? (s?.name ?? '（不明）') : '',
+      state: it.cancelled ? (it.sameDay ? '当日キャンセル' : '取り消し') : it.leave ? '休みのため無し' : null,
+      look: lookOf(it.visitId),
+      color: t ? colorOf(t.color) : NO_TYPE_COLOR,
+    };
+  };
   /** 新しい日の今の案に空き時間で入れる（入る人がいなければ知らせに理由を出す） */
   const insert = () => {
     if (!notice) return;
@@ -1109,37 +1171,55 @@ export default function WeekPage() {
                             title={`${staffName(r.staffId)}さん ${dateText(c.date)}：${detail}`}
                           >
                             <StaffBar slots={c.bar} testId="week-bar" />
-                            {chips.length > 0 && (
-                              <span className="week-tchips">
-                                {chips.map((b) => {
-                                  const v = visitById.get(b.visitId);
-                                  const look = lookOf(b.visitId);
-                                  const on = multi.has(b.visitId);
-                                  const movable = canMoveVisit(b.date, today) && !b.leave;
-                                  const t = typeOf(data.visitTypes, v?.typeId);
-                                  const name = clientName(v);
-                                  return (
-                                    <button
-                                      key={b.visitId}
-                                      type="button"
-                                      className={`week-tchip${look?.tone === 'issue' ? ' is-issue' : ''}${on ? ' is-multi' : ''}`}
-                                      style={t ? { borderLeftColor: colorOf(t.color) } : undefined}
-                                      {...drag.source(b.visitId, movable && !narrow)}
-                                      {...itemProps(b.visitId, { selectable: movable, movable, selected: on })}
-                                      aria-label={`${hm(b.start)} ${name}${look?.text ? `・${look.text}` : ''}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
-                                      title={`${hm(b.start)}〜${hm(b.end)} ${name}${look?.text ? `（${look.text}）` : ''}`}
-                                      data-testid="week-tvisit"
-                                      data-visit={b.visitId}
-                                      data-marks={look?.kinds ?? ''}
-                                    >
-                                      <span className="week-tchip-time">{hm(b.start)}</span>
-                                      <span className="week-tchip-name">{name}</span>
-                                      <VisitMarks look={look} size={10} />
-                                    </button>
-                                  );
-                                })}
-                              </span>
-                            )}
+                            {/* 小さな札（時刻と〈利用者さん〉の頭文字）を3件まで積み、残りは「+N」（PRD D342） */}
+                            <ChipStack
+                              items={chips}
+                              keep={keepId}
+                              dragging={dragId !== null}
+                              listTitle={`${dateText(c.date)} ${staffName(r.staffId)}さんの訪問 ${chips.length}件`}
+                              chip={(b) => {
+                                const v = visitById.get(b.visitId);
+                                const look = lookOf(b.visitId);
+                                const on = multi.has(b.visitId);
+                                const movable = canMoveVisit(b.date, today) && !b.leave;
+                                const t = typeOf(data.visitTypes, v?.typeId);
+                                const name = clientName(v);
+                                return (
+                                  <VisitChip
+                                    visitId={b.visitId}
+                                    time={hm(b.start)}
+                                    short={initialOf(name)}
+                                    label={`${hm(b.start)} ${name}さん${look?.text ? `・${look.text}` : ''}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
+                                    title={`${hm(b.start)}〜${hm(b.end)} ${name}${look?.text ? `（${look.text}）` : ''}`}
+                                    look={look}
+                                    color={t ? colorOf(t.color) : null}
+                                    selected={on}
+                                    props={{
+                                      ...drag.source(b.visitId, movable && !narrow),
+                                      ...tableItemProps(b.visitId, { selectable: movable, movable, selected: on }),
+                                    }}
+                                    testId="week-tvisit"
+                                  />
+                                );
+                              }}
+                              row={(b) => {
+                                const movable = canMoveVisit(b.date, today) && !b.leave;
+                                const on = multi.has(b.visitId);
+                                return (
+                                  <VisitRow
+                                    row={bandRow(b, true)}
+                                    selecting={selecting}
+                                    selected={on}
+                                    props={{
+                                      ...drag.source(b.visitId, movable && !narrow),
+                                      ...itemProps(b.visitId, { selectable: movable, movable, selected: on }),
+                                    }}
+                                    testId="week-list-visit"
+                                  />
+                                );
+                              }}
+                              testId="week-tchips"
+                            />
                             {hov && <DropShadow hover={hov} className="week-tdrop" time={false} />}
                             <span className="week-cell-foot">
                               {c.off ? (
@@ -1182,8 +1262,10 @@ export default function WeekPage() {
               </table>
             </EdgeScroll>
             <p className="sub">
-              マスのバーは、その人の30分ごとの状態（訪問・移動・空き・休み・勤務外）です。
-              マスにマウスを乗せると、働ける時間・移動・種類ごとの時間が出ます。スマホでは週の合計の列を見てください。
+              マスのバーは、その人の30分ごとの状態（訪問・移動・空き・休み・勤務外）です。バーの下は訪問の札（時刻と
+              {terms.client}
+              の頭文字）で、3件まで出し、残りは「+N」を押すと一覧で見られます。札を別のマスへドラッグすると担当と曜日が変わり、時刻はそのままです。
+              キーボードでは札の上で ←→ で曜日・↑↓ で隣の担当へ動かし、Enter で訪問の詳細の欄を開きます。
               平均との差が30%を超える人を目立たせます。
             </p>
           </div>
@@ -1193,14 +1275,9 @@ export default function WeekPage() {
           <div className="card week-card">
             <div className="week-table-legend" data-testid="week-client-legend">
               {narrow && <SelectToggle selecting={selecting} onChange={setSelecting} testId="week-select" />}
-              <span className="row week-table-legend-rows">
-                <LoadRowsSample />
-                <span className="sub">
-                  {barRowsText()}
-                  {barEdgeNote()}
-                </span>
+              <span className="sub" data-testid="week-chip-legend">
+                札は「時刻・担当の印」です。代＝いつもの担当でない・なし＝担当なし（要対応）・休＝休みのため無し・取消＝取り消し
               </span>
-              <ClientBarLegend clientTerm={terms.client} />
             </div>
             <EdgeScroll scrollRef={clientScrollRef}>
               <table className="week-table week-clients" data-testid="week-client-table">
@@ -1243,19 +1320,13 @@ export default function WeekPage() {
                               data-client={r.clientId}
                               data-testid="week-ccell"
                             >
-                              <ClientDayBar
+                              {/* 小さな札（時刻と担当の印）を3件まで積み、残りは「+N」（PRD D342） */}
+                              <ChipStack
                                 items={cell.items}
-                                timeText={(it) => `${hm(it.start)}〜${hm(it.end)}`}
-                                markOf={(it) => {
-                                  const type = typeOf(data.visitTypes, it.typeId);
-                                  return {
-                                    ...clientItemMark(it, markNames),
-                                    color: type ? colorOf(type.color) : NO_TYPE_COLOR,
-                                  };
-                                }}
-                                // 帯の印（要対応・資格✗／限✗・未連絡の変更・ピンなど）は担当の名前のあとに、どの画面とも同じ形で
-                                marksOf={(it) => <VisitMarks look={lookOf(it.visitId)} size={10} />}
-                                renderItem={(it, place) => {
+                                keep={keepId}
+                                dragging={dragId !== null}
+                                listTitle={`${dateText(cell.date)} ${c?.displayName ?? ''}さんの訪問 ${cell.items.length}件`}
+                                chip={(it) => {
                                   const type = typeOf(data.visitTypes, it.typeId);
                                   const mk = clientItemMark(it, markNames);
                                   // 〈利用者さん〉の休み（ADR-0013）・取り消しの訪問は動かさない
@@ -1264,22 +1335,53 @@ export default function WeekPage() {
                                   const on = multi.has(it.visitId);
                                   const text = `${hm(it.start)}〜${hm(it.end)} ${type ? `${type.name}・` : ''}${mk.text}${look?.text ? `・${look.text}` : ''}`;
                                   return (
-                                    <button
-                                      type="button"
-                                      className={`${place.className}${look?.tone === 'issue' ? ' is-unfit' : ''}${on ? ' is-multi' : ''}`}
-                                      style={place.style}
-                                      {...drag.source(it.visitId, movable && !narrow)}
-                                      {...itemProps(it.visitId, { selectable: movable, movable, selected: on })}
-                                      aria-label={`${place.edge ? `${edgeLabel(place.edge)}の訪問 ` : ''}${text}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
+                                    <VisitChip
+                                      visitId={it.visitId}
+                                      time={hm(it.start)}
+                                      short={
+                                        mk.kind === 'visit' && it.staffId ? (
+                                          <>
+                                            <StaffMark staff={staffById.get(it.staffId)} size="xs" />
+                                            {it.substitute && <span className="week-chip-sub">代</span>}
+                                          </>
+                                        ) : mk.kind === 'unassigned' ? (
+                                          'なし'
+                                        ) : (
+                                          mk.short
+                                        )
+                                      }
+                                      label={`${text}${on ? '（選択中）' : ''}（押すと訪問の詳細）`}
                                       title={text}
-                                      data-testid="week-citem"
-                                      data-visit={it.visitId}
-                                      data-marks={look?.kinds ?? ''}
-                                    >
-                                      {place.edge === 'early' ? '◀' : place.edge === 'late' ? '▶' : null}
-                                    </button>
+                                      look={look}
+                                      color={type ? colorOf(type.color) : NO_TYPE_COLOR}
+                                      selected={on}
+                                      unassigned={mk.kind === 'unassigned'}
+                                      off={!!it.leave || !!it.cancelled}
+                                      props={{
+                                        ...drag.source(it.visitId, movable && !narrow),
+                                        ...tableItemProps(it.visitId, { selectable: movable, movable, selected: on }),
+                                      }}
+                                      testId="week-citem"
+                                    />
                                   );
                                 }}
+                                row={(it) => {
+                                  const movable = canMoveVisit(it.date, today) && !it.leave && !it.cancelled;
+                                  const on = multi.has(it.visitId);
+                                  return (
+                                    <VisitRow
+                                      row={itemRow(it)}
+                                      selecting={selecting}
+                                      selected={on}
+                                      props={{
+                                        ...drag.source(it.visitId, movable && !narrow),
+                                        ...itemProps(it.visitId, { selectable: movable, movable, selected: on }),
+                                      }}
+                                      testId="week-list-visit"
+                                    />
+                                  );
+                                }}
+                                testId="week-cchips"
                               />
                               {hov && <DropShadow hover={hov} className="week-cdrop" testId="week-cdrop" />}
                             </td>
@@ -1298,9 +1400,10 @@ export default function WeekPage() {
             )}
             <p className="sub">
               絞り込んだ{terms.client}
-              の訪問です（人数の上限はありません。最初はこの週に訪問がある人を全員出します）。マスの帯は訪問の時刻の位置（3段。帯の長さが訪問の時間）で、下に担当の名字などを時刻の順に出します。時刻・種類・担当は、パソコンでは帯にマウスを乗せると出て、読み上げでは帯ごとに読みます。
-              帯を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません。取り消し・休みの訪問は動かせません）。
-              訪問を押すと訪問の詳細の欄が開き、日時・担当・取り消しを変えられます（キーボードでも Enter で開きます）。
+              の訪問です（人数の上限はありません。最初はこの週に訪問がある人を全員出します）。マスには訪問の札（時刻と担当の印）を時刻の順に3件まで出し、残りは「+N」を押すと一覧で見られます。
+              札を同じ行の別の日のマスへドラッグすると、時刻はそのままで日を動かせます（今日より前の日へは動かせません。取り消し・休みの訪問は動かせません）。
+              札を押すと訪問の詳細の欄が開きます。キーボードでは ←→ で曜日・↑↓ で隣の担当へ動かし、Enter
+              で欄を開きます。
             </p>
           </div>
         )
@@ -1415,6 +1518,7 @@ function DayColumn({
             {...itemProps(b.visitId, { selectable: movable, movable, selected: on })}
             data-testid="week-band"
             data-visit={b.visitId}
+            data-size="l"
             data-marks={look?.kinds ?? ''}
           >
             <span className="week-band-time">

@@ -1,5 +1,6 @@
 import {
   BedSingle,
+  CalendarDays,
   CalendarOff,
   CalendarRange,
   ChevronLeft,
@@ -61,6 +62,7 @@ import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
   type DropHover,
+  SelectToggle,
   useVisitDrag,
   useVisitItem,
   useVisitLooks,
@@ -682,6 +684,17 @@ export default function MonthPage() {
   useEffect(() => {
     if (listDay && ymOf(listDay) !== ym) setListDay(null);
   }, [ym]);
+  /** スマホ（600px 以下）の下から出る欄に出している日（PRD D343。null は閉じている） */
+  const [sheetDay, setSheetDay] = useState<string | null>(null);
+  /** 下から出る欄の選ぶ形（長押しか「選ぶ」。PRD D334・D340） */
+  const [selecting, setSelecting] = useState(false);
+  useEffect(() => {
+    if (!sheetDay) setSelecting(false);
+  }, [sheetDay]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 月を送ったら、下から出る欄も閉じる
+  useEffect(() => {
+    setSheetDay(null);
+  }, [ym]);
   const openVisit = useOpenVisit();
   const lookOf = useVisitLooks(days);
   /** マスのボタンへフォーカス（月を送ったときは描き終わるまで待つ） */
@@ -718,8 +731,12 @@ export default function MonthPage() {
       visitId,
       returnFocus: (vid) => (vid ? visitItemOf(vid) : null),
     });
-  /** その日の回の一覧を開く（〈利用者さん〉を選んでいてその日の回が1つなら、その回の欄。PRD D340） */
+  /** その日の回の一覧を開く（〈利用者さん〉を選んでいてその日の回が1つなら、その回の欄。スマホは下から出る欄。PRD D340・D343） */
   const openList = (d: string) => {
+    if (narrowList) {
+      setSheetDay(d);
+      return;
+    }
     const items = dayItems(d);
     if (focus.kind === 'client' && items.length === 1) {
       openVisit({ visitId: items[0]!.id, returnFocus: () => focusCellEl(d) });
@@ -733,7 +750,22 @@ export default function MonthPage() {
       )?.focus(),
     );
   };
-  const focusCellEl = (d: string) => document.querySelector<HTMLElement>(`[data-testid="month-day"][data-date="${d}"]`);
+  /** その日のマス（カレンダー）か行（日ごとの一覧） */
+  const focusCellEl = (d: string) =>
+    document.querySelector<HTMLElement>(
+      `[data-testid="month-day"][data-date="${d}"], [data-testid="month-list-day"][data-date="${d}"]`,
+    );
+  /**
+   * マス・日ごとの一覧の行を押す（PRD D343）：1回目はその日の訪問を右の欄（スマホは下から出る欄）に出し、右の欄に出している日を
+   * もう一度押すと日の予定。フォーカスはマスのまま（Enter はその日の一覧へフォーカスを移す）
+   */
+  const pickRef = useRef<(d: string) => void>(() => {});
+  pickRef.current = (d) => {
+    if (narrowList) setSheetDay(d);
+    else if (listDay === d) openDay(d);
+    else setListDay(d);
+  };
+  const pickDay = useCallback((d: string) => pickRef.current(d), []);
   /** マスのキー（←→ 日・↑↓ 週・Enter でその日の回の一覧・Shift／Ctrl＋Enter でその日をまとめて選ぶ）。休みを入れる間は Enter は今どおり */
   const cellKeyRef = useRef<(e: ReactKeyboardEvent, d: string) => void>(() => {});
   cellKeyRef.current = (e, d) => {
@@ -779,6 +811,40 @@ export default function MonthPage() {
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="undo-btn"]')?.focus()),
   });
   const itemProps = useVisitItem({ selection: multi, onOpen: openPanel, keys: visitKeys });
+  /** 下から出る欄の行（押すと欄を閉じて訪問の詳細の欄・長押しか「選ぶ」で選ぶ。キー・ドラッグは無い。ADR-0051 の決定5） */
+  const sheetItemProps = useVisitItem({
+    selection: multi,
+    onOpen: (id) => {
+      const d = sheetDay;
+      setSheetDay(null);
+      openVisit({ visitId: id, returnFocus: () => (d ? focusCellEl(d) : null) });
+    },
+    selecting,
+    longPress: { onSelecting: setSelecting },
+  });
+  /** その日の回の一覧の行（右の欄・下から出る欄で同じ） */
+  const rowOf = (v: Visit): VisitRowData => {
+    const s = v.staffId ? staffById.get(v.staffId) : undefined;
+    const t = typeById.get(v.typeId ?? '');
+    const leave = isOnLeave(data.clientLeaves, v);
+    const at = hhmmToMinutes(v.start ?? v.earliestStart);
+    return {
+      visitId: v.id,
+      time: `${hm(at).replace(/^0/, '')}〜${hm(at + v.durationMinutes).replace(/^0/, '')}`,
+      title: data.clients.find((c) => c.id === v.clientId)?.displayName ?? '（不明）',
+      staff: v.cancelled ? null : (s ?? null),
+      staffName: v.cancelled || !v.staffId ? '' : (s?.name ?? '（不明）'),
+      state: v.cancelled
+        ? v.cancelKind === 'sameDay'
+          ? '当日キャンセル'
+          : '取り消し'
+        : leave
+          ? '休みのため無し'
+          : null,
+      look: lookOf(v.id),
+      color: t ? colorOf(t.color) : null,
+    };
+  };
   /** 一覧の行をマスへドラッグ（その日へ。時刻はそのまま。落とすと落とした日を入れた訪問の詳細の欄。PRD D341） */
   const drag = useVisitDrag({
     today,
@@ -1086,7 +1152,12 @@ export default function MonthPage() {
         {helpOpen && (
           <div ref={helpRef} className="hint-body month-help" tabIndex={-1} data-testid="month-help">
             <ul className="plan-help-list">
-              <li>日のマスを押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。</li>
+              <li>
+                日のマスを押すと、その日の訪問を右の欄（スマホは下から出る欄）に出します。もう一度押すと、その日の「日の予定」を開きます。マスの色と印は日の状態です（下の凡例）。
+              </li>
+              <li>
+                右の欄の訪問の行は、押すと訪問の詳細、Shift・Ctrl＋クリックで選べます。行を別の日のマスへドラッグするか、選んで「別の日へ」を押すと日付を移せます（時刻はそのまま）。
+              </li>
               <li>
                 赤い枠や「要対応
                 N」の札の日は、担当なし・担当が休み・条件に合わない・時間に間に合わない訪問がある日です。N
@@ -1196,14 +1267,16 @@ export default function MonthPage() {
                         r.care ? 'is-care' : '',
                         r.isToday ? 'is-today' : '',
                         r.date === date ? 'is-picked' : '',
+                        listDay === r.date || sheetDay === r.date ? 'is-listed' : '',
                         off ? `is-off-${off}` : '',
                       ].join(' ')}
                       aria-label={`${r.label}${current === r.date ? '・作っています' : ''}`}
                       aria-pressed={off ? off === 'requested' : undefined}
                       aria-disabled={off !== undefined && !offPress ? true : undefined}
                       onClick={() => {
-                        // カレンダーのマスと同じ動き：ふだんはその日の予定の画面、「休みを入れる」のときは希望休の付け外し
-                        if (!off) openDay(r.date);
+                        // カレンダーのマスと同じ動き：ふだんはその日の訪問（右の欄・スマホは下から出る欄。もう一度で日の予定）、
+                        // 「休みを入れる」のときは希望休の付け外し
+                        if (!off) pickDay(r.date);
                         else if (offPress) toggleOff(r.date);
                       }}
                       data-testid="month-list-day"
@@ -1287,7 +1360,7 @@ export default function MonthPage() {
                             offState={offStaffId ? offDayState(data, offStaffId, d, today) : undefined}
                             attention={attentionByDate.get(d) ?? 0}
                             usualRest={usualRest[weekday(d)] ?? 0}
-                            onOpen={openDay}
+                            onOpen={pickDay}
                             onToggleOff={toggleOff}
                             onKey={onCellKey}
                             onMulti={onCellMulti}
@@ -1313,32 +1386,11 @@ export default function MonthPage() {
           data-testid="month-aside"
           aria-label="右の欄"
         >
-          {listDay && (
+          {listDay && !narrowList && (
             <DayVisits
               date={listDay}
               visits={dayItems(listDay)}
-              rowOf={(v) => {
-                const s = v.staffId ? staffById.get(v.staffId) : undefined;
-                const t = typeById.get(v.typeId ?? '');
-                const leave = isOnLeave(data.clientLeaves, v);
-                const at = hhmmToMinutes(v.start ?? v.earliestStart);
-                return {
-                  visitId: v.id,
-                  time: `${hm(at).replace(/^0/, '')}〜${hm(at + v.durationMinutes).replace(/^0/, '')}`,
-                  title: data.clients.find((c) => c.id === v.clientId)?.displayName ?? '（不明）',
-                  staff: v.cancelled ? null : (s ?? null),
-                  staffName: v.cancelled || !v.staffId ? '' : (s?.name ?? '（不明）'),
-                  state: v.cancelled
-                    ? v.cancelKind === 'sameDay'
-                      ? '当日キャンセル'
-                      : '取り消し'
-                    : leave
-                      ? '休みのため無し'
-                      : null,
-                  look: lookOf(v.id),
-                  color: t ? colorOf(t.color) : null,
-                };
-              }}
+              rowOf={rowOf}
               itemProps={(v) => {
                 const leave = isOnLeave(data.clientLeaves, v);
                 const movable = canSelectVisit(v, leave, today);
@@ -1550,7 +1602,7 @@ export default function MonthPage() {
           )}
         </aside>
         {/* 選んだ訪問の帯と、キーで動かした先の読み上げ・繰り返しの回の範囲の帯（PRD D330・D333。日・週と同じ） */}
-        <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} />
+        {!(narrowList && sheetDay) && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} moveDay />}
         <KeyMoveBand
           onMoved={(r) => {
             setListDay(r.date);
@@ -1559,6 +1611,53 @@ export default function MonthPage() {
           }}
         />
       </div>
+
+      {/* スマホの下から出る欄（PRD D343）：その日の訪問をリストの行で。見る・取り消す・担当替えまで（ADR-0051 の決定5） */}
+      {narrowList && sheetDay && (
+        <SidePanel
+          icon={CalendarDays}
+          title={`${longDate(sheetDay)}の訪問 ${dayItems(sheetDay).length}件`}
+          sheet
+          onClose={() => setSheetDay(null)}
+          returnFocus={() => focusCellEl(sheetDay)}
+          footer={
+            <button type="button" className="btn" onClick={() => openDay(sheetDay)} data-testid="month-day-visits-plan">
+              この日の日の予定を開く
+            </button>
+          }
+        >
+          <div className="stack month-day-sheet" data-testid="month-day-sheet" data-date={sheetDay}>
+            {dayItems(sheetDay).length === 0 ? (
+              <p className="sub">この日の訪問はありません。</p>
+            ) : (
+              <>
+                <div className="row month-day-sheet-tools">
+                  <SelectToggle selecting={selecting} onChange={setSelecting} testId="month-select" />
+                  <span className="sub">長押しでも選べます</span>
+                </div>
+                <ul className="vrow-list month-day-rows">
+                  {dayItems(sheetDay).map((v) => {
+                    const ok = canSelectVisit(v, isOnLeave(data.clientLeaves, v), today);
+                    const on = multi.has(v.id);
+                    return (
+                      <li key={v.id}>
+                        <VisitRow
+                          row={rowOf(v)}
+                          selecting={selecting}
+                          selected={on}
+                          props={sheetItemProps(v.id, { selectable: ok, movable: false, selected: on })}
+                          testId="month-visit"
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+                <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} inline />
+              </>
+            )}
+          </div>
+        </SidePanel>
+      )}
 
       {panel && (
         <SidePanel
@@ -1989,7 +2088,7 @@ function DayVisits({
       )}
       <p className="sub month-day-visits-help">
         行を押すと訪問の詳細。Shift・Ctrl＋クリックで選び、↑↓ で15分・←→
-        で1日動かせます。行をマスへドラッグするとその日へ。
+        で1日動かせます。行を別の日のマスへドラッグするか、選んで下の「別の日へ」で日付を移せます（時刻はそのまま）。
       </p>
       <button type="button" className="btn btn-small" onClick={onOpenDay} data-testid="month-day-visits-plan">
         この日の日の予定を開く
@@ -2300,7 +2399,13 @@ const DayCell = memo(function DayCell(props: CellProps) {
     clientTerm,
   });
   const offPress = offState === 'open' || offState === 'requested';
-  const tipText = `${parts.slice(1).join('・')}${offState ? '' : '（押すとこの日の「日の予定」を開きます）'}`;
+  const tipText = `${parts.slice(1).join('・')}${
+    offState
+      ? ''
+      : props.listed
+        ? '（もう一度押すとこの日の「日の予定」を開きます）'
+        : '（押すとこの日の訪問を右の欄に出します。もう一度押すと「日の予定」）'
+  }`;
   const guideKey = guide.join('\n');
   // 描いたあとに、日付をキーに読み方の文を置く（吹き出しは日付で引く。描画中に DOM を読まない。PR #42 のレビュー）
   // biome-ignore lint/correctness/useExhaustiveDependencies: 文（guideKey）が変わったときだけ置き直す

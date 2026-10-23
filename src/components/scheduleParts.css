@@ -224,3 +224,21 @@
     display: none;
   }
 }
+
+/* 「別の日へ」（月の予定。PRD D343）：日付と［移す］をその場に */
+.selection-move,
+.selection-move-form {
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.selection-move-form input[type='date'] {
+  width: auto;
+  padding: 4px 6px;
+}
+/* 置いた所に出す（スマホの月の下から出る欄の中。貼り付けない） */
+.selection-bar.is-inline {
+  position: static;
+  box-shadow: none;
+  border-width: 1px;
+}
