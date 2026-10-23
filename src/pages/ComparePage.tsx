@@ -49,7 +49,7 @@ import { CompareTable, explainMap, ReasonBox, RefMark, rulerText, SCORE_TEXT, Sc
 /**
  * 提案を比べる（D19・D22・ADR-0005。版2は ADR-0053）：その日の「今の担当」と、この画面で作った提案（プリセットごと。保存しない）
  * から、任意の2つを A・B に選んで比べる。条件の差・合計と条件ごと・担当ごとの順番・地図（A 点線、B 実線）。
- * 提案は「当てる」で訪問の担当・開始に書く（ピンの訪問はそのまま）。採点は A・B とも点数の基準の物差し（ADR-0010）
+ * 提案は「反映する」で訪問の担当・開始に書く（ピンの訪問はそのまま）。採点は A・B とも点数の基準の物差し（ADR-0010）
  */
 
 type Side = 'a' | 'b';
@@ -207,7 +207,7 @@ export default function ComparePage() {
 
   const undoAction = useUndoAction();
   // ---- 提案の操作（保存しない。決定2）----
-  /** 提案を当てる：訪問の担当・開始に書く（ピンの訪問はそのまま） */
+  /** 提案を反映する：訪問の担当・開始に書く（ピンの訪問はそのまま） */
   const applyChoice = (c: Choice) => {
     if (!problem || c.kind !== 'proposal') return;
     if (stale(c)) {
@@ -218,7 +218,7 @@ export default function ComparePage() {
     // 全体の「元に戻す」の1手（トーストと Ctrl+Z・予定の操作の行の「元に戻す」。PRD D329）
     const before = data;
     const next = writeRoutes(before, date, p, c.routes);
-    if (next !== before) update((d) => (d === before ? next : writeRoutes(d, date, p, c.routes)), `${c.title}を当てる`);
+    if (next !== before) update((d) => (d === before ? next : writeRoutes(d, date, p, c.routes)), `${c.title}を反映`);
     setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));
     setSel({ a: null, b: null });
     rs.reset();
@@ -226,7 +226,7 @@ export default function ComparePage() {
       toast(`${c.title}は今の担当と同じです`);
       return;
     }
-    toast(`${c.title}を当てました`, { action: undoAction });
+    toast(`${c.title}を反映しました`, { action: undoAction });
   };
   const removeChoice = (c: Choice) => {
     setProposals((x) => ({ ...x, list: x.list.filter((y) => y.id !== c.id) }));
@@ -505,7 +505,7 @@ export default function ComparePage() {
       <PageHeader
         icon={GitCompareArrows}
         title="提案を比べる"
-        lead="今の担当と、考え方（プリセット）ごとに作った提案を2つ選んで比べます。提案は保存しません。よければ「当てる」"
+        lead="今の担当と、考え方（プリセット）ごとに作った提案を2つ選んで比べます。提案は保存しません。よければ「反映する」"
         actions={
           <NavLink to="/plan" className="plan-compare-link">
             <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>
@@ -646,7 +646,7 @@ export default function ComparePage() {
                               data-testid="compare-apply"
                             >
                               <WithIcon icon={Check} size={14}>
-                                当てる
+                                反映する
                               </WithIcon>
                             </button>
                             <IconButton

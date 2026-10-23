@@ -1,7 +1,7 @@
 // 訪問の詳細の欄（components/VisitPanel。PRD D301〜D304。ADR-0051）がデータを読む・書く薄い層。どれも純粋関数で、DemoData を書き換えない。
 // 画面はこの層の越しにだけ訪問・繰り返し・担当に触る。版2（ADR-0053）：担当・開始・ピンは訪問が持ち、繰り返しの回は見るときに計算する
 // （patterns の visitsOn・findVisit）。変えた回だけを保存した回に書く（putVisits）。
-// 書いたデータは呼ぶ側が store の update(fn) で当てる。今日・時刻（now）・新しい ID は引数で受ける（乱数・Date.now を使わない）
+// 書いたデータは呼ぶ側が store の update(fn) で反映する。今日・時刻（now）・新しい ID は引数で受ける（乱数・Date.now を使わない）
 import type { DemoData } from '../contracts/data';
 import { type Pattern, type Visit, type VisitType, visitSchema } from '../contracts/documents';
 import { isOnLeave } from '../domain/leaves';
@@ -247,7 +247,7 @@ export function staffChoices(d: DemoData, visitId: string | null, draft: VisitDr
 }
 
 /**
- * 選んだ担当がその入力の日時で選べるか（保存の前に計算し直す。日付を変えたあとに前の日の候補が残っていても当てない）。
+ * 選んだ担当がその入力の日時で選べるか（保存の前に計算し直す。日付を変えたあとに前の日の候補が残っていても割り当てない）。
  * staff：undefined＝変えない（いつも可）、null＝担当なし（今の担当があるときだけ）、ID＝候補にあって選べる人。誤りの文か null
  */
 export function staffPickError(
@@ -268,15 +268,15 @@ export function staffPickError(
   return null;
 }
 
-// ---- 担当を当てる ----
+// ---- 担当を割り当てる ----
 
-/** 担当を当てられなかった回と理由 */
+/** 担当を割り当てられなかった回と理由 */
 export type AssignFail = { visitId: string; date: string; why: string };
 
 /**
- * 訪問をその日の担当の並びで担当に当ててピンにする（日の予定の「担当を変える ▾」と同じく最も費用の少ない位置。staffId が null なら
- * 担当なしにしてピンも外す）。その日に担当できない人（force 以外）は当てずに failed へ。
- * force の訪問は可否を見ずに当てる（欄で選んだこの回。保存の前に staffPickError で選べることを見る）。問題にいない人はいつも failed
+ * 訪問をその日の担当の並びで担当に割り当ててピンにする（日の予定の「担当を変える ▾」と同じく最も費用の少ない位置。staffId が null なら
+ * 担当なしにしてピンも外す）。その日に担当できない人（force 以外）は割り当てずに failed へ。
+ * force の訪問は可否を見ずに割り当てる（欄で選んだこの回。保存の前に staffPickError で選べることを見る）。問題にいない人はいつも failed
  */
 export function assignOnDays(
   d: DemoData,
@@ -310,7 +310,7 @@ export function assignOnDays(
         delete nextPins[id];
       } else {
         const i = problem.staff.findIndex((s) => s.id === staffId);
-        // force（欄で選んだこの回。選べるかは staffPickError で見た）でも、その日に問題にいない人は当てない
+        // force（欄で選んだこの回。選べるかは staffPickError で見た）でも、その日に問題にいない人は割り当てない
         if (i < 0 || (!force.has(id) && problem.allowed[j]?.[i] !== true)) {
           failed.push({ visitId: id, date, why: i < 0 ? 'その日は働かない' : 'その日は担当できない' });
           continue;
@@ -345,7 +345,7 @@ export type EditResult =
       dates: string[];
       /** 何も変えていない */
       unchanged: boolean;
-      /** 担当を当てられなかった回 */
+      /** 担当を割り当てられなかった回 */
       failed: AssignFail[];
     }
   | { ok: false; error: string; field?: keyof VisitDraft };
@@ -410,7 +410,7 @@ export function applyVisitEdit(
   if (!canMoveVisit(f.date, today)) return fail('今日より前の日にはできません', 'date');
   const err = checkDraft(f, input.visitId ?? ids.visit);
   if (err) return fail(err.error, err.field);
-  // 選んだ担当を今の入力の日時で確かめ直す（前の日時の候補で当てない）
+  // 選んだ担当を今の入力の日時で確かめ直す（前の日時の候補で割り当てない）
   const pickErr = staffPickError(d, input.visitId, input.draft, input.staff);
   if (pickErr) return fail(pickErr);
 

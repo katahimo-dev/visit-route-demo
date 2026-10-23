@@ -2,7 +2,7 @@
 // メニューの6項目（ホーム・予定・欠勤・キャンセル・空き状況・人・設定）と人のタブ（〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）。
 // 最後に開いたタブ・勤務の見込みは勤務時間（シフト）の印）、パレットに案を比べるが出ない、
 // 日・週・月の切り替えで同じ操作の行（欠勤・キャンセルを登録／AI で組む ▾／元に戻す／（月だけ）その他 ▾）と同じ「AI で組む ▾」の範囲（この日・この週・この月）、
-// 範囲の提案の帯（週の「この週」：当てるまで訪問は変わらない・「当てる」で1回の update・Ctrl+Z で戻る・Ctrl+Shift+Z でやり直す）と
+// 範囲の提案の帯（週の「この週」：反映するまで訪問は変わらない・「反映する」で1回の update・Ctrl+Z で戻る・Ctrl+Shift+Z でやり直す）と
 // 日のその場の提案の帯（同じ形・点の差）、月の「この月」は欄を開く、
 // 全体の元に戻す（入力欄の中では Ctrl+Z を奪わない・操作の行の「元に戻す」の title に手の名前・やり直しのトースト）、
 // 複数選択（日の時間軸の帯を Shift・Ctrl＋クリック、Shift＋Enter で足す、Esc で外す、帯の「時刻をずらす +15分」で2件の時刻が変わり1手で戻る、
@@ -229,7 +229,7 @@ async function scope(page) {
   const band = page.locator('[data-testid="proposal-band"][data-kind="range"]');
   await band.waitFor({ timeout: 170000 });
   await settle(page, 300);
-  check(visitsKey(await stored(page)) === visitsKey(before), '範囲の提案：当てるまで訪問は変わらない');
+  check(visitsKey(await stored(page)) === visitsKey(before), '範囲の提案：反映するまで訪問は変わらない');
   const moved = Number(await band.getByTestId('proposal-moved').innerText());
   const shifted = Number(await band.getByTestId('proposal-shifted').innerText());
   check(
@@ -253,13 +253,13 @@ async function scope(page) {
     '範囲の提案は日の予定にも出る',
   );
   await openView(page, '/week');
-  // 当てていない提案があるまま組み始めようとすると確かめる（残せば提案はそのまま。PR #81 のレビュー）
+  // 反映していない提案があるまま組み始めようとすると確かめる（残せば提案はそのまま。PR #81 のレビュー）
   await page.getByTestId('plan-menu').click();
   await page.getByTestId('ai-scope-week').click();
   await page.getByTestId('confirm-dialog').waitFor({ timeout: 5000 });
   check(
-    /当てていない提案/.test(await page.getByTestId('confirm-title').innerText()),
-    '当てていない提案があるまま組み始めると確かめる',
+    /反映していない提案/.test(await page.getByTestId('confirm-title').innerText()),
+    '反映していない提案があるまま組み始めると確かめる',
   );
   await page.getByTestId('confirm-cancel').click();
   await settle(page, 300);
@@ -275,16 +275,16 @@ async function scope(page) {
   }
   await page.locator('[data-testid="proposal-band"][data-kind="range"]').getByTestId('proposal-apply').click();
   const applied = await waitStored(page, (d) => visitsKey(d) !== visitsKey(before));
-  check(applied, '「当てる」で訪問に担当・開始を書く');
-  check((await page.getByTestId('proposal-band').count()) === 0, '当てたら提案の帯は消える');
+  check(applied, '「反映する」で訪問に担当・開始を書く');
+  check((await page.getByTestId('proposal-band').count()) === 0, '反映したら提案の帯は消える');
   const afterApply = await stored(page);
   const undoTitle = await page.getByTestId('undo-btn').getAttribute('title');
-  check(/AI の提案を当てる/.test(undoTitle ?? ''), '操作の行の「元に戻す」の title に手の名前', undoTitle);
+  check(/AI の提案を反映/.test(undoTitle ?? ''), '操作の行の「元に戻す」の title に手の名前', undoTitle);
   // Ctrl+Z で戻す（本文にフォーカス）
   await page.locator('h1').click();
   await page.keyboard.press(`${MOD}+z`);
   const undone = await waitStored(page, (d) => visitsKey(d) === visitsKey(before));
-  check(undone, 'Ctrl+Z で当てる前の訪問に戻る（1手）');
+  check(undone, 'Ctrl+Z で反映する前の訪問に戻る（1手）');
   check((await page.getByTestId('toast-redo').count()) === 1, '戻したらトーストに「やり直す」');
   await page.keyboard.press(`${MOD}+Shift+z`);
   const redone = await waitStored(page, (d) => visitsKey(d) === visitsKey(afterApply));
@@ -316,7 +316,7 @@ async function dayProposal(page) {
   check(
     (await band.getByTestId('proposal-apply').count()) === 1 &&
       (await band.getByTestId('proposal-discard').count()) === 1,
-    '日の提案の帯：［当てる］［捨てる］（範囲の帯と同じ形）',
+    '日の提案の帯：［反映する］［捨てる］（範囲の帯と同じ形）',
   );
   await shot(page, 'proposal-day-1400');
   await band.getByTestId('proposal-discard').click();

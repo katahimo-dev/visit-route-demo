@@ -240,7 +240,7 @@ async function keepRunning(page) {
     t0,
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'batch-band-home.png') });
-  // 進む（日ごとに提案にたまる。当てるまで訪問は書かない。ADR-0054）
+  // 進む（日ごとに提案にたまる。反映するまで訪問は書かない。ADR-0054）
   const progressed = await page
     .waitForFunction((t) => (document.querySelector('[data-testid="batch-band-text"]')?.textContent ?? t) !== t, t0, {
       timeout: 60000,
@@ -288,10 +288,10 @@ async function keepRunning(page) {
     .catch(() => false);
   check(
     stoppedBand,
-    '止めたあと：そこまでの日の提案の帯が月の予定に出る（当てるまで変わらない）',
+    '止めたあと：そこまでの日の提案の帯が月の予定に出る（反映するまで変わらない）',
     await toast.innerText().catch(() => ''),
   );
-  check((await assignedIn(page, YM)) === 0, '止めても当てるまで訪問は変わらない');
+  check((await assignedIn(page, YM)) === 0, '止めても反映するまで訪問は変わらない');
   // その月の月の予定を見ている間に終わったら、知らせに［月の予定を見る］を出さない（行き先が今の画面。PRD D268）
   // 止めたあとはまだ担当なしの日が残るので、次の一手は「担当を AI で組む」（無ければ確かめられないので NG）。
   // 止める前に残りを組み終えることがある（月末に近い日・速い機械）ので、そのときは繰り返しの担当を外して作る

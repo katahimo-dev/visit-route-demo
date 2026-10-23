@@ -178,8 +178,8 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
 /**
  * 日の予定（D4・D13・D18。版2：ADR-0053）：その日の訪問と担当を1画面で扱う。担当・開始・ピンは訪問が持ち、列はその日の訪問の
  * 担当と開始の並び（lib/dayPlan の routesOf）。担当を替える（ドラッグ・「担当を変える ▾」）と最も費用の少ない位置に入れてピンにし、
- * 訪問に書く（writeRoutes）。「AI で組む」は提案（担当・時刻の変更の一覧と点の差）を出し、「当てる」で訪問に書く（ピンの訪問は動かさない）。
- * 提案はその場だけ（保存しない）。プリセットは「当ててみる」で提案を出すだけ。
+ * 訪問に書く（writeRoutes）。「AI で組む」は提案（担当・時刻の変更の一覧と点の差）を出し、「反映する」で訪問に書く（ピンの訪問は動かさない）。
+ * 提案はその場だけ（保存しない）。プリセットは「プリセットで試す」で提案を出すだけ。
  * 「確定」は〈スタッフ〉に伝えた内容を残す（DaySnapshot）。そのあとに変えた訪問は「未連絡の変更」になり、連絡の一覧に出る。
  * 要対応は訪問ごとの検査（担当なし・担当が休み・条件に合わない・時間に間に合わない）。点数（100点満点）は点数の基準の物差し（ADR-0010）
  */
@@ -205,11 +205,11 @@ type Proposal = {
   label: string;
   /** 提案の担当の並び（ピンの訪問はそのまま） */
   routes: Record<string, string[]>;
-  /** 組み始めたときの訪問（変わっていれば当てない） */
+  /** 組み始めたときの訪問（変わっていれば反映しない） */
   visits: readonly Visit[];
   /**
    * 組み始めたときのその日の問題の入力（欠勤・希望休・稼働時間の上書き・〈利用者さん〉の休みはその日の分、人・条件・種類・相性・
-   * 繰り返しは参照。範囲の提案と同じ lib/monthBatch の dayInputsOf）。画面を移っても提案を残すので、変わっていれば当てない
+   * 繰り返しは参照。範囲の提案と同じ lib/monthBatch の dayInputsOf）。画面を移っても提案を残すので、変わっていれば反映しない
    */
   inputs: DayInputs;
   stopped: boolean;
@@ -217,7 +217,7 @@ type Proposal = {
 
 /**
  * 日の予定のその場の提案（PRD D328・D335。ADR-0055）。画面を移っても、ほかの日を見ても消さない（その日に戻れば帯が出る）。
- * 画面の状態だけで保存しない（読み直すと消える）。提案は1つだけ（新しく組むと置き換える）。出したあとに訪問が変われば「当てない」
+ * 画面の状態だけで保存しない（読み直すと消える）。提案は1つだけ（新しく組むと置き換える）。出したあとに訪問が変われば「反映しない」
  */
 const dayProposalStore = createValueStore<Proposal | null>(null);
 
@@ -264,7 +264,7 @@ export default function PlanPage() {
   const workloadOn = useFeature('workload');
   /**
    * 画面の中の欄・ボタン（ADR-0028）：欠勤・キャンセル（操作の行・列の見出し・当日キャンセルの選択）、メール（ボタン・欄・連絡の一覧）、
-   * 条件の重みとプリセット（プリセットを当ててみる・点数の横の理由）。欠勤の印・帯（事実）は残す
+   * 条件の重みとプリセット（プリセットで試す・点数の横の理由）。欠勤の印・帯（事実）は残す
    */
   const suddenOn = useFeature('sudden');
   const mailOn = useFeature('mail');
@@ -577,7 +577,7 @@ export default function PlanPage() {
 
   /**
    * AI で組む（提案を出す。ADR-0053）：ピンの訪問はそのままで、ほかの担当・順番を組む。preset を渡すとそのプリセットの重みで
-   * （当ててみる。重みは書き換えない）、無ければ点数の基準の重み。終わったら提案（担当・時刻の変更と点の差）を出す。訪問には書かない
+   * （試す。重みは書き換えない）、無ければ点数の基準の重み。終わったら提案（担当・時刻の変更と点の差）を出す。訪問には書かない
    */
   const propose = (preset?: Preset) => {
     if (running) return;
@@ -614,7 +614,7 @@ export default function PlanPage() {
         : null;
     return { stale: !same, diff: diffv, before: hundredOf(routes), after: hundredOf(proposal.routes) };
   }, [proposal, date, problem, routes, data, scoreProblem, scoreScale]);
-  /** 提案を当てる（訪問に担当・開始を書く。ピンはそのまま。「元に戻す」で戻せる） */
+  /** 提案を反映する（訪問に担当・開始を書く。ピンはそのまま。「元に戻す」で戻せる） */
   const applyProposal = () => {
     if (!proposal || !problem || !proposalView || running) return;
     if (proposalView.stale) {
@@ -624,10 +624,10 @@ export default function PlanPage() {
     }
     const p = problem;
     const r = proposal.routes;
-    writeWith(`AI の提案を当てる（${proposal.label}）`, (d) => writeRoutes(d, date, p, r));
+    writeWith(`AI の提案を反映（${proposal.label}）`, (d) => writeRoutes(d, date, p, r));
     setProposal(null);
     sel.reset();
-    toast('提案を当てました', { action: undoAction });
+    toast('提案を反映しました', { action: undoAction });
   };
 
   // ---- ?do= の入口（欠勤・キャンセル・担当なしの訪問）----
@@ -953,7 +953,7 @@ export default function PlanPage() {
   };
 
   // ---- 急な欠勤と振り直し（ADR-0011。PRD D26〜D32）----
-  /** その日の振り直しの情報（振り直しの提案を当てた日） */
+  /** その日の振り直しの情報（振り直しの提案を反映した日） */
   const reassignInfo = own(data.reassigns, date) ?? null;
   /** 振り直す前の時刻を出す問題（振り直しに使った欠勤を除いたデータで compile。差・案B・連絡の一覧の before） */
   const reassignBefore = useMemo(() => {
@@ -1048,7 +1048,7 @@ export default function PlanPage() {
   };
 
   // ---- 案B「少し動かしてよい」・連絡の一覧（PRD D34・D35。ADR-0011 追記）----
-  /** 「変更を減らす」の重み（当てた振り直しが案B ならその重み） */
+  /** 「変更を減らす」の重み（反映した振り直しが案B ならその重み） */
   const [stayWeight, setStayWeight] = useState<number>(STAY_WEIGHT_DEFAULT);
   useEffect(() => {
     if (reassignInfo?.stayWeight !== undefined) setStayWeight(reassignInfo.stayWeight);
@@ -1187,7 +1187,7 @@ export default function PlanPage() {
     pendingAnneal.current = null;
     startAnneal();
   }, [reassignInfo, problem, planA, running, date]);
-  /** 案A・案B のどちらかを当てる */
+  /** 案A・案B のどちらかを反映する */
   const chooseOption = async (key: 'insert' | 'anneal') => {
     if (!problem || !reassignInfo || running) return;
     // 今の並びが案A・案B のどちらとも違う（手直しした）ときだけ確認する
@@ -1206,10 +1206,10 @@ export default function PlanPage() {
     if (key === 'anneal') {
       if (!anneal) return;
       const b = anneal;
-      writeWith('案B を当てる', (d) =>
+      writeWith('案B を反映', (d) =>
         chooseReassign(d, date, { problem: p, result: b.result, method: 'anneal', stayWeight: b.weight }),
       );
-      toast('案B（少し動かした案）を当てました', { action: undoAction });
+      toast('案B（少し動かした案）を反映しました', { action: undoAction });
     } else {
       if (!planA) return;
       const routesA = planA;
@@ -1223,8 +1223,8 @@ export default function PlanPage() {
         unassigned: p.visits.map((v) => v.id).filter((id) => !placed.has(id)),
         pins: pinsA,
       };
-      writeWith('案A を当てる', (d) => chooseReassign(d, date, { problem: p, result: resultA, method: 'insert' }));
-      toast('案A（空き時間に入れた案）を当てました', { action: undoAction });
+      writeWith('案A を反映', (d) => chooseReassign(d, date, { problem: p, result: resultA, method: 'insert' }));
+      toast('案A（空き時間に入れた案）を反映しました', { action: undoAction });
     }
     sel.reset();
   };
@@ -1247,7 +1247,7 @@ export default function PlanPage() {
     const out: ReassignOption[] = [];
     if (planA) out.push(option('insert', '案A（空き時間に入れる）', planA));
     if (anneal) out.push(option('anneal', `案B（変更を減らす ${anneal.weight}）`, anneal.result.routes));
-    // 作った案B が無い（再読込・画面を移った）が当てたのが案B なら、今の並びを案B として並べる（案A に戻せる）
+    // 作った案B が無い（再読込・画面を移った）が反映したのが案B なら、今の並びを案B として並べる（案A に戻せる）
     else if (reassignInfo.method === 'anneal')
       out.push(option('anneal', `案B（変更を減らす ${reassignInfo.stayWeight ?? ''}）`, routes));
     return out;
@@ -1271,7 +1271,7 @@ export default function PlanPage() {
       reason: leftReasonText(x),
     };
   });
-  /** 案B を勧める（案A で入らない訪問があり、当てたのが案A で、まだ案B を作っていない） */
+  /** 案B を勧める（案A で入らない訪問があり、反映したのが案A で、まだ案B を作っていない） */
   const annealRecommended =
     !!reassignInfo && (rDiff?.unplaced.length ?? 0) > 0 && reassignInfo.method === 'insert' && !anneal;
   const contactsTotal = contactCount(contacts) + left.length;
@@ -2215,11 +2215,11 @@ export default function PlanPage() {
 
   const busyWhy = running ? '計算中は選べません' : !problem ? 'この日に計算できる訪問がありません' : false;
   const scopeItems = useScopeItems({ zoom: 'day', date, onDay: () => propose(), dayBusy: busyWhy });
-  /** 点数の基準のプリセットの ID（当ててみるのは、ほかのプリセット） */
+  /** 点数の基準のプリセットの ID（試すのは、ほかのプリセット） */
   const basePresetId = scorePresetOf(data.presets, data.scorePresetId)?.id;
   /**
-   * 「AI で組む ▾」の項目（ADR-0053）：AI で組む（点数の基準の重みで提案を出す）・プリセットを当ててみる（その重みで提案を出す。
-   * 重みは書き換えない）・提案を比べる・ピンをすべて外す。提案は「当てる」まで訪問を変えない
+   * 「AI で組む ▾」の項目（ADR-0053）：AI で組む（点数の基準の重みで提案を出す）・プリセットで試す（その重みで提案を出す。
+   * 重みは書き換えない）・提案を比べる・ピンをすべて外す。提案は「反映する」まで訪問を変えない
    */
   const menuItems: MenuItem[] = [
     // 範囲（この日／この週／この月。日・週・月の予定で同じ。PRD D328）。この日はその場の提案（点の差も出す）
@@ -2230,7 +2230,7 @@ export default function PlanPage() {
           .map(
             (pr, i): MenuItem => ({
               key: `preset-${pr.id}`,
-              group: i === 0 ? 'プリセットを当ててみる' : undefined,
+              group: i === 0 ? 'プリセットで試す' : undefined,
               testId: 'plan-menu-preset',
               label: `「${pr.name}」で組む`,
               description: pr.note
@@ -2360,7 +2360,7 @@ export default function PlanPage() {
     hasPlan && reassignInfo ? (
       <div className="stack" style={{ gap: 8 }} data-testid="sudden-result">
         <strong>
-          当てた振り直し：
+          反映した振り直し：
           {reassignInfo.method === 'anneal' ? '案B（少し動かした案）' : '案A（空き時間に入れた案）'}
         </strong>
         {rDiff && <ReassignSummary diff={rDiff} left={left.length} testId="sudden-summary" />}
@@ -2685,7 +2685,7 @@ export default function PlanPage() {
             </li>
             <li>
               「AI
-              で組む」は、ピンの付いた訪問はそのままで、ほかの担当・順番の提案を出します。提案を見て「当てる」と担当が変わります。
+              で組む」は、ピンの付いた訪問はそのままで、ほかの担当・順番の提案を出します。提案を見て「反映する」と担当が変わります。
             </li>
             <li>
               「予定をメールで送る」などで{terms.staff}
@@ -2735,7 +2735,7 @@ export default function PlanPage() {
           採点できません（{curScore.error}）
         </p>
       )}
-      {/* AI の提案（その場だけ。ADR-0053）：担当・時刻の変更と点の差。「当てる」で訪問に書く（日・週・月で同じ帯。PRD D328） */}
+      {/* AI の提案（その場だけ。ADR-0053）：担当・時刻の変更と点の差。「反映する」で訪問に書く（日・週・月で同じ帯。PRD D328） */}
       {proposal && proposal.date === date && proposalView && (
         <ProposalBand
           kind="day"

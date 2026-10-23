@@ -1,9 +1,9 @@
-// 日の画面の「AI で組む ▾」（版2：AI は提案を出し、当てるまで担当を変えない。ADR-0053。PRD D156〜D159）を本物のブラウザで確かめる：
-// 項目の並び（AI で組む（提案を出す）／プリセットを当ててみる／比べる／そのほか の4つのまとまり。role="group"・aria-label）、
+// 日の画面の「AI で組む ▾」（版2：AI は提案を出し、反映するまで担当を変えない。ADR-0053。PRD D156〜D159）を本物のブラウザで確かめる：
+// 項目の並び（AI で組む（提案を出す）／プリセットで試す／比べる／そのほか の4つのまとまり。role="group"・aria-label）、
 // 各項目の1行の説明（aria-describedby）、ピンが無いときの押せない理由（見える文と aria-disabled。押しても何もしない）、
 // キーボード（開くと先頭・↑↓・Home・End・Esc でボタンへ戻る・↑で開くと最後・Tab で閉じる）、
-// 提案（「AI で組む」で提案の帯が出て、当てるまで訪問は変わらない・「当てる」で訪問に担当を書き、トーストと操作の行の「元に戻す」で1手戻る・
-// 「やめる」で何も変えない・プリセットを当ててみると帯にその名前）、「プリセットの提案を比べる」で比較の画面へ・その場で提案を作って並べる（保存しない）。
+// 提案（「AI で組む」で提案の帯が出て、反映するまで訪問は変わらない・「反映する」で訪問に担当を書き、トーストと操作の行の「元に戻す」で1手戻る・
+// 「やめる」で何も変えない・プリセットで試すと帯にその名前）、「プリセットの提案を比べる」で比較の画面へ・その場で提案を作って並べる（保存しない）。
 // 訪問の詳細の「担当を変える ▾」（PRD D217〜D219。ADR-0030）：まとまりと項目（role="menuitem"・説明・今の担当・押せない理由・
 // 「担当なしにする」）、キーボード（Enter で開いて ↓・Enter）で移すと担当が変わりピン、トーストの「元に戻す」で担当・ピンが戻る、
 // 「担当なしにする」のあとの確定の確認の本文の先頭に要対応の件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
@@ -105,7 +105,7 @@ async function plain(page) {
   check(s.role === 'menu', '一覧：role="menu"');
   check(
     JSON.stringify(s.groups.map((g) => g.label)) ===
-      JSON.stringify(['AI で組む（範囲）', 'プリセットを当ててみる', '比べる', 'そのほか']),
+      JSON.stringify(['AI で組む（範囲）', 'プリセットで試す', '比べる', 'そのほか']),
     '並び：目的の4つのまとまり（先頭は範囲＝日・週・月で同じ。見出しは role="group" の aria-label）',
     s.groups,
   );
@@ -136,8 +136,8 @@ async function plain(page) {
     s.items.filter((x) => !x.desc).map((x) => x.key),
   );
   check(
-    /当てるまで担当は変わりません/.test(item(s, 'scope-day')?.desc ?? ''),
-    '説明：提案を出す（当てるまで担当は変わらない）',
+    /反映するまで担当は変わりません/.test(item(s, 'scope-day')?.desc ?? ''),
+    '説明：提案を出す（反映するまで担当は変わらない）',
     item(s, 'scope-day')?.desc,
   );
   const pins = data.visits.filter((v) => v.date === TODAY && v.pinned).length;
@@ -190,10 +190,10 @@ async function proposeWith(page, testId, nth = 0) {
   await settle(page, 300);
 }
 
-// ---- 提案：出す → 当てるまで変わらない → 当てる → 元に戻す（1手）・やめる・プリセット ----
+// ---- 提案：出す → 反映するまで変わらない → 反映する → 元に戻す（1手）・やめる・プリセット ----
 async function proposal(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
-  // 今日の担当のある訪問1件を担当なしにしておく（提案はそれに担当を入れるので、当てると訪問が変わる）
+  // 今日の担当のある訪問1件を担当なしにしておく（提案はそれに担当を入れるので、反映すると訪問が変わる）
   await openPlan(page);
   await editData(
     page,
@@ -212,7 +212,7 @@ async function proposal(page) {
   const band = page.getByTestId('proposal-band');
   check(
     (await band.innerText()).includes('件') && (await page.getByTestId('proposal-apply').isEnabled()),
-    '提案の帯：変わる件数と「当てる」',
+    '提案の帯：変わる件数と「反映する」',
     await band.innerText(),
   );
   check(visitsKey(await stored(page)) === before, '提案を出しただけでは訪問は変わらない（保存しない）');
@@ -221,30 +221,30 @@ async function proposal(page) {
   await page.getByTestId('proposal-discard').click();
   await band.waitFor({ state: 'detached', timeout: 5000 });
   check(visitsKey(await stored(page)) === before, '「やめる」で帯が消え、訪問は変わらない');
-  // もう一度出して当てる
+  // もう一度出して反映する
   await proposeWith(page, 'ai-scope-day');
   const moved = Number(await page.getByTestId('proposal-moved').innerText());
   await page.getByTestId('proposal-apply').click();
   await band.waitFor({ state: 'detached', timeout: 5000 });
-  await page.locator('.toast').filter({ hasText: '提案を当てました' }).waitFor({ timeout: 5000 });
-  check(true, '「当てる」で知らせ「提案を当てました」');
+  await page.locator('.toast').filter({ hasText: '提案を反映しました' }).waitFor({ timeout: 5000 });
+  check(true, '「反映する」で知らせ「提案を反映しました」');
   await waitStored(page, (d, b) => JSON.stringify(d.visits) !== b, before);
   const applied = await stored(page);
-  check(visitsKey(applied) !== before, '「当てる」で訪問に担当・開始を書く', {
+  check(visitsKey(applied) !== before, '「反映する」で訪問に担当・開始を書く', {
     moved,
     saved: applied.visits.length,
   });
-  // 操作の行の「元に戻す」で1手戻る（当てる前の訪問）
+  // 操作の行の「元に戻す」で1手戻る（反映する前の訪問）
   const undoBtn = page.getByTestId('undo-btn');
-  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '当てたあとは「元に戻す」を押せる');
+  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '反映したあとは「元に戻す」を押せる');
   await undoBtn.click();
   await waitStored(page, (d, b) => JSON.stringify(d.visits) === b, before);
-  check(visitsKey(await stored(page)) === before, '「元に戻す」で当てる前の訪問に戻る');
+  check(visitsKey(await stored(page)) === before, '「元に戻す」で反映する前の訪問に戻る');
   check(
     (await undoBtn.getAttribute('aria-disabled')) === 'true' && (await page.getByTestId('redo-btn').count()) === 1,
     '戻したあとは（ほかに戻せる手が無いので）「元に戻す」を押せず、「やり直す」が出る',
   );
-  // プリセットを当ててみる：帯にその名前
+  // プリセットで試す：帯にその名前
   const presets = await (async () => {
     await menuBtn(page).click();
     await menuList(page).waitFor();
@@ -256,11 +256,11 @@ async function proposal(page) {
   if (presets.n > 0) {
     await proposeWith(page, 'plan-menu-preset');
     const name = /「(.+)」/.exec(presets.name)?.[1] ?? '';
-    check(name !== '' && (await band.innerText()).includes(name), 'プリセットを当ててみる：提案の帯にその名前', {
+    check(name !== '' && (await band.innerText()).includes(name), 'プリセットで試す：提案の帯にその名前', {
       name,
       band: await band.innerText(),
     });
-    check(visitsKey(await stored(page)) === before, 'プリセットの提案も、当てるまで訪問は変えない');
+    check(visitsKey(await stored(page)) === before, 'プリセットの提案も、反映するまで訪問は変えない');
     await page.getByTestId('proposal-discard').click();
   }
 }
@@ -269,7 +269,7 @@ async function proposal(page) {
 async function compare(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
   await openPlan(page);
-  // 今日の担当のある訪問1件を担当なしにしておく（提案はそれに担当を入れるので、当てると訪問が変わる）
+  // 今日の担当のある訪問1件を担当なしにしておく（提案はそれに担当を入れるので、反映すると訪問が変わる）
   await editData(
     page,
     ({ key, date }) => {
@@ -297,10 +297,10 @@ async function compare(page) {
     })
     .catch(() => {});
   const n1 = await page.getByTestId('compare-apply').count();
-  check(n1 === n0 + 1, '「提案を作って比べる」で提案が1つ増え、当てるボタンが出る', { n0, n1 });
+  check(n1 === n0 + 1, '「提案を作って比べる」で提案が1つ増え、反映するボタンが出る', { n0, n1 });
   check(visitsKey(await stored(page)) === before, '比較の提案は保存しない（訪問は変わらない）');
   await page.screenshot({ path: path.join(OUT_DIR, 'compare-proposal.png') });
-  // 当てる → トーストの「元に戻す」で当てる前に戻る（日の予定と同じ控え。PR #80 のレビュー）
+  // 反映する → トーストの「元に戻す」で反映する前に戻る（日の予定と同じ控え。PR #80 のレビュー）
   await page.getByTestId('compare-apply').last().click();
   await page.getByTestId('toast-undo').waitFor({ timeout: 5000 });
   await waitStored(page, (d, b) => JSON.stringify(d.visits) !== b, before);
@@ -309,7 +309,7 @@ async function compare(page) {
   await waitStored(page, (d, b) => JSON.stringify(d.visits) === b, before);
   check(
     applied !== before && visitsKey(await stored(page)) === before,
-    '比較の画面で当てると訪問が変わり、トーストの「元に戻す」で1手戻せる',
+    '比較の画面で反映すると訪問が変わり、トーストの「元に戻す」で1手戻せる',
   );
 }
 

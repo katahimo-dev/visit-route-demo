@@ -186,7 +186,7 @@ export function useVisitKeys(opts: {
 /**
  * 動かした先の読み上げ（role="status"）と、繰り返しの回を「この回だけ」動かした直後の小さな帯
  * 「この回だけ動かしました［これ以降も］［すべての回も］［このまま］」（モーダルにしない。何も選ばなければこの回だけ）。
- * 範囲を選ぶと、この回だけの手を戻してから範囲つきで当て直す（全体の「元に戻す」の1手のまま）。あとから別の変更があれば選び直さない
+ * 範囲を選ぶと、この回だけの手を戻してから範囲つきで反映し直す（全体の「元に戻す」の1手のまま）。あとから別の変更があれば選び直さない
  */
 export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date: string }) => void }) {
   const { data, update, undo } = useDemoData();
@@ -200,7 +200,7 @@ export function KeyMoveBand({ onMoved }: { onMoved?: (r: { visitId: string; date
   const rescope = async (scope: VisitScope) => {
     if (!note) return;
     const today = jstDate(Date.now());
-    // この回だけ動かす前のデータ・訪問の ID（この回だけなら ID は変わらない）で、範囲つきに当て直す
+    // この回だけ動かす前のデータ・訪問の ID（この回だけなら ID は変わらない）で、範囲つきに反映し直す
     const r2 = keyMove(note.before, note.visitId, note.move, today, scope, {
       visit: newId('v'),
       patterns: [newId('pt'), newId('pt')],

@@ -389,7 +389,7 @@ async function answer(page) {
     .filter({ hasText: new RegExp(`月の提案を出しました（${n}日分`) })
     .waitFor({ timeout: 90000 });
   check(true, '組み終えたら知らせ（◯月の提案を出しました（N日分…））');
-  // 提案の帯（日・週・月の予定と同じ形。PRD D328）：当てると担当が入る
+  // 提案の帯（日・週・月の予定と同じ形。PRD D328）：反映すると担当が入る
   const band = page.locator('[data-testid="proposal-band"][data-kind="range"]');
   await band.waitFor({ timeout: 10000 });
   check(true, '空き状況にも提案の帯が出る');

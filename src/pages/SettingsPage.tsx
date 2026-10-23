@@ -66,7 +66,7 @@ export default function SettingsPage() {
     });
     if (!ok) return;
     const next = applyTemplate(t.id);
-    update((d) => ({ ...d, org: { ...d.org, features: next } }), 'ひな形を当てる');
+    update((d) => ({ ...d, org: { ...d.org, features: next } }), 'ひな形を反映する');
     toast(`ひな形「${t.label}」を適用しました`);
   };
 

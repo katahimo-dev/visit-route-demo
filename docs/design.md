@@ -137,7 +137,7 @@ flowchart LR
 
 型・関数の形は §5。「決定的」＝乱数・`Date.now` を使わず、今日・今の時刻は引数で受ける純粋関数。
 
-データは版2（ADR-0053）：担当は訪問に持ち（`Visit.staffId`・`start`・`pinned`）、AI は提案を出して「当てる」で訪問に書き、確定は〈スタッフ〉に伝えた内容（`snapshots`）。下の節で「今の案」「確定した割当（無ければ今の案）」とあるところは、その日の訪問の担当（`lib/dayPlan` の `dayRoutes`）と読む。
+データは版2（ADR-0053）：担当は訪問に持ち（`Visit.staffId`・`start`・`pinned`）、AI は提案を出して「反映する」で訪問に書き、確定は〈スタッフ〉に伝えた内容（`snapshots`）。下の節で「今の案」「確定した割当（無ければ今の案）」とあるところは、その日の訪問の担当（`lib/dayPlan` の `dayRoutes`）と読む。
 
 ### store（データ一式の保存）
 - 責務：`DemoData` の読み込み・保存・検査（zod）・版の確かめ（版1は移さず初期データで始める。ADR-0053）・修復（repair）、JSON の書き出し・読み込み、初期状態に戻す、置き換える前の1世代の控え（ADR-0032）。画面へは `useDemoData()`（`data`・`update(fn, label?)`・`undo()`・`redo()`・`replace(d)`・`reset(features?)`・`saveError`・`keepPrevious(reason)`・`restorePrevious()`・`previous`・`broken`・`brokenKept`・`dismissBroken()`・`startedFresh`・`externalReloads`・`previousDrops`）。書き換えは update・replace・reset・restorePrevious だけ
@@ -203,7 +203,7 @@ flowchart LR
 ### matching（項目・条件 → 費用表）
 - 責務：項目・特性・必要条件・希望・相性・条件を、solver が読む**問題（`Problem`）**に変換する。①可否 ②割当費用（§5「費用の物差し」）③負担の均等の目安 ④移動・待ちの行列と係数。訪問×スタッフごとの**理由**も返す
 - 持つデータ（持ち主）：なし
-- 提供するAPI：`compile(data: CompileInput, date, pins?)`（問題に入る〈スタッフ〉は利用中の人。`pins` の訪問はその担当だけ可＝理由 `pin`「固定（手直し）」）、手直しの記憶（ADR-0043。`matching/manualPrefs.ts`）の `prefKey(visit)`・`requestedPrefPins`・`applyPrefPins(problem, prefPins)`（記憶の担当が可のときだけその担当だけを可に。理由 `manualPref`「手直しの記憶（〈名前〉さんに固定）」／「手直しの記憶：前に手で〈名前〉さんにした」。費用は変えない）・`withManualPrefs(problem, data, pins?)`（固定のある訪問は飛ばす。案を作る問題だけに当て、採点・説明・欠勤の振り直しの問題には当てない）、`matches`・`conditionText`・`scheduleRoute`（時刻の唯一の実装）・`routeCost`・`balancePoints`・`balanceOff`・`totalPoints`・`dropPointsOf`・`fitStart`・`naiveSeqs`、`bestInsertion(problem, routes, visitId, staffId)`（strict で最も安い位置、無ければ開始の順に lenient で入れて違反として見せる）
+- 提供するAPI：`compile(data: CompileInput, date, pins?)`（問題に入る〈スタッフ〉は利用中の人。`pins` の訪問はその担当だけ可＝理由 `pin`「固定（手直し）」）、手直しの記憶（ADR-0043。`matching/manualPrefs.ts`）の `prefKey(visit)`・`requestedPrefPins`・`applyPrefPins(problem, prefPins)`（記憶の担当が可のときだけその担当だけを可に。理由 `manualPref`「手直しの記憶（〈名前〉さんに固定）」／「手直しの記憶：前に手で〈名前〉さんにした」。費用は変えない）・`withManualPrefs(problem, data, pins?)`（固定のある訪問は飛ばす。案を作る問題だけに当て、採点・説明・欠勤の振り直しの問題には反映しない）、`matches`・`conditionText`・`scheduleRoute`（時刻の唯一の実装）・`routeCost`・`balancePoints`・`balanceOff`・`totalPoints`・`dropPointsOf`・`fitStart`・`naiveSeqs`、`bestInsertion(problem, routes, visitId, staffId)`（strict で最も安い位置、無ければ開始の順に lenient で入れて違反として見せる）
 - 可否で外す原因（`points` は Infinity）：
   - 必須の条件、相性 ×（重み・必須によらない）
   - 稼働時間帯（`slot`）：欠勤は差し引き、文は `ABSENT_ALL_DAY`「欠勤（終日）」・`ABSENT_NO_HOURS`「欠勤で稼働時間がない」・`ABSENCE_OVERLAP`「欠勤の時間と重なる」。最終勤務日の後は `AFTER_LAST_DAY`「最終勤務日の後」
@@ -359,7 +359,7 @@ flowchart LR
 
 ### pages（画面）
 - 責務：管理者の画面（ホーム・日・月・週・空き状況・〈利用者さん〉・相性・〈スタッフ〉・稼働・条件・データ・管理者設定）。データの書き換えは store の `update(fn)` を通す
-- 持つデータ（持ち主）：画面の一時状態のみ（空き状況の入力はタブの間だけ sessionStorage の `vrdemo:vacancy:input`。PRD D258）。範囲（日・週・月）の AI で組むの進み具合と提案は画面の外の入れ物 `lib/monthBatch`（ページを開いている間だけ。ADR-0042・ADR-0054。訪問には書かず、提案の帯の「当てる」で1回の update）。日の予定のその場の提案も PlanPage の外の入れ物（画面を移っても残す。PRD D335）。全体の元に戻すの履歴は `lib/history` の `appHistory`（store が積む）
+- 持つデータ（持ち主）：画面の一時状態のみ（空き状況の入力はタブの間だけ sessionStorage の `vrdemo:vacancy:input`。PRD D258）。範囲（日・週・月）の AI で組むの進み具合と提案は画面の外の入れ物 `lib/monthBatch`（ページを開いている間だけ。ADR-0042・ADR-0054。訪問には書かず、提案の帯の「反映する」で1回の update）。日の予定のその場の提案も PlanPage の外の入れ物（画面を移っても残す。PRD D335）。全体の元に戻すの履歴は `lib/history` の `appHistory`（store が積む）
 - 提供するAPI：なし（ルートは [design/pages.md](design/pages.md) の表）
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign・patterns・vacancy・features
 - 配置：`src/pages/`・`src/components/`・画面用の純粋関数は `src/lib/`
@@ -451,7 +451,7 @@ DemoData = { version: 2, baseDate /* seed の基準日 */, seed /* 乱数の種 
   rules /* 重み・必須はいつも点数の基準のプリセットにそろえる */, staff, clients, compat,
   visits /* 保存した訪問：単発と、繰り返しの変えた回 */, availability, absences /* ≤2000 */, visitTypes /* ≤20 */,
   patterns /* ≤2000 */, clientLeaves /* ≤2000 */,
-  snapshots /* date → DaySnapshot＝伝えた内容（確定） */, reassigns /* date → ReassignInfo（当てた振り直しの日だけ） */,
+  snapshots /* date → DaySnapshot＝伝えた内容（確定） */, reassigns /* date → ReassignInfo（反映した振り直しの日だけ） */,
   presets /* 1〜6 */, scorePresetId? }
 DaySnapshot = { date, at /* 確定した時刻 ms */, visits: ToldVisit[] /* ≤500。取り消し・休みは入れない */ }
 ToldVisit = { id, clientId, staffId /* null＝担当なし */, start /* HH:mm。null 可 */ }
@@ -490,7 +490,7 @@ POINTS_PER_WEIGHT = 10; DROP_POINTS = 10000; KEEP_DROP_POINTS = DROP_POINTS * 10
 
 - プリセットはデータ。型ごとの重み・必須を条件の同じ型に上書きする（`applyPreset`）。最後の1つは消せない。「試す重みをプリセットとして保存」は型ごとの最初の条件を写す（無ければ0）。「基準の重みを写して保存」は基準のプリセットの重みを写す（`addPresetFromRules(d, name, note, 'basis')`）
 - 点数の基準のプリセット（`scorePresetId`）＝ふだんの考え方（ADR-0035。PRD D233）：点数はいつもこのプリセットを当てた物差し（`scoreRulesOf`）で付ける。日の予定の「AI で組む」・月や週の AI で組む・初期データの担当・訪問ごとの検査もこれで計算する。条件の重みの画面の表はこのプリセットの重み・必須を直す（`setBasisWeight`）
-- `data.rules` の重み・必須はいつも点数の基準のプリセットと同じ（この日だけ試す重みは無い。ADR-0053）。基準の重み・必須が変わる（基準のプリセットを直す・基準を替える・基準のプリセットを消して基準が移る・初期値に戻す）と `withBasisRules` で基準にそろえ、store の repair も読み込みのたびにそろえる（`lib/presets` の `patchPreset`・`setScorePreset`・`removePreset`・`resetPresets`）。ほかのプリセットは「当ててみる」（`applyPreset` で提案を出すだけ）
+- `data.rules` の重み・必須はいつも点数の基準のプリセットと同じ（この日だけ試す重みは無い。ADR-0053）。基準の重み・必須が変わる（基準のプリセットを直す・基準を替える・基準のプリセットを消して基準が移る・初期値に戻す）と `withBasisRules` で基準にそろえ、store の repair も読み込みのたびにそろえる（`lib/presets` の `patchPreset`・`setScorePreset`・`removePreset`・`resetPresets`）。ほかのプリセットは「試す」（`applyPreset` で提案を出すだけ）
 
 | 初期のプリセット | 必要条件 | 訪問先の希望 | スタッフの希望 | 相性 | いつもの担当 | 負担の均等 | 待ち |
 |---|---|---|---|---|---|---|---|
@@ -796,7 +796,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 条件の表し方 | 項目＋条件の型＋重み0〜5＋必須 | 管理者が自分で組める範囲 | 0002 |
 | 最適化 | 焼きなまし（Web Worker） | 依存が軽く任意の費用を入れられる（最適性の保証は失う） | 0003 |
 | 時間の約束 | 必須のまま | PoC本体と同じ前提で比べる | — |
-| 手直し・比較 | 担当は訪問に持ち、AI は提案を出して「当てる」で書く。手で替えた訪問はピン。比較はその場で作った提案どうし（保存しない） | どの画面も同じ訪問を読み、状態が少ない。記録の層が無い | 0004・0005・0053 |
+| 手直し・比較 | 担当は訪問に持ち、AI は提案を出して「反映する」で書く。手で替えた訪問はピン。比較はその場で作った提案どうし（保存しない） | どの画面も同じ訪問を読み、状態が少ない。記録の層が無い | 0004・0005・0053 |
 | データの形（版2） | 担当・開始・ピンを訪問に、確定は伝えた内容（`snapshots`）、繰り返しの回は見るときに計算、要対応は訪問ごとの検査。版1は移さず初期データで始める | 今の案・確定した割当・記録・手直しの記憶・試す重み・未作成・条件が変わったを無くし、言葉を約10語に | 0053 |
 | Excel | マスタと予定だけ・名前で参照・ExcelJS | 手で書き足しやすく古い案と食い違わない | 0006 |
 | 点数 | 100 −（費用 − 下限）÷ 件数、基準のプリセットで固定 | 順位が費用と一致し、押しても点が変わらない | 0007・0010 |
@@ -823,7 +823,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 初期の案・まとめて確定 | 起動で7日分を同期で解く（反復を減らす）、一度も確定していない・要対応に出ない日だけ1度に確定（日の予定と同じ書き方） | 初めから中身が見え決定的。確定の手数が1回になり、要対応の日・確定し直す日は残る | 0031 |
 | 読み込みの分け方 | 重い画面5つと地図を `React.lazy` で分け、画面が出たら残りを先に読む。進み具合は外の入れ物で子だけ描き直す | ホームで地図・重い画面を読まず、移るときは待たせない。ルートの形・URL を変えない | 0039 |
 | 週の組む・確定・要対応 | 週の主ボタンは確定 → 済み。組むのは操作の行の「AI で組む ▾」の「この週」（月の入れ物で範囲を週に・提案）、確定は月のまとめて確定と同じ決まり。要対応は訪問ごとの検査で、訪問の無い人の欠勤は数えない（「未作成」は版2で無くした） | 週で見ながら1週ぶんだけ組んで確定でき、月へ飛ばない | 0046・0053・0054 |
-| 予定の日・週・月 | 1つのコンポーネントにせず、共通の部品（操作の行・AI で組む ▾ の範囲・提案の帯・複数選択・元に戻す）を3画面で使う。範囲の AI も提案を出して「当てる」 | 拡大率を変えても手が同じ。本体（時間軸・表・カレンダー）の作り直しの危うさを避ける | 0054 |
+| 予定の日・週・月 | 1つのコンポーネントにせず、共通の部品（操作の行・AI で組む ▾ の範囲・提案の帯・複数選択・元に戻す）を3画面で使う。範囲の AI も提案を出して「反映する」 | 拡大率を変えても手が同じ。本体（時間軸・表・カレンダー）の作り直しの危うさを避ける | 0054 |
 | 元に戻す | store の `update` の1回を1手として50手まで積む（画面の状態だけ）。トースト・操作の行・Ctrl+Z の全部が同じ履歴 | 画面ごとの控えと「戻せない」の理由を無くし、何が戻るかを名前で出せる | 0054 |
 
 | 訪問を直す欄 | 1つの欄 `VisitPanel`（日時・担当・取り消し・範囲）を殻に置き、読み書きは `lib/visitOps` 越し。見直しは5段で、1段目は今のデータの形のまま | どこから開いても同じで、データの形を変える段で画面を書き直さない | 0051 |

@@ -91,7 +91,7 @@ export function useDayModel(date: string) {
     leaveVisits,
     visitById,
     slotsOf,
-    /** compile に渡すデータ（compile が読むフィールドだけ。プリセットを当ててみるときの元。ADR-0010） */
+    /** compile に渡すデータ（compile が読むフィールドだけ。プリセットで試すときの元。ADR-0010） */
     compileInput,
     problem: compiled.value as Problem | null,
     problemError: compiled.error,

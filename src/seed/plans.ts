@@ -1,6 +1,6 @@
 // 初期データに今日から7日分の担当を入れる（PRD D225。ADR-0031・ADR-0053）。
 // 起動したとき（データが無い・初期状態に戻す）に1回だけ、点数の基準の重みで1日ずつ AI で組み、担当・開始を訪問に書く
-// （lib/dayPlan の writeRoutes。「AI で組む」の提案を当てたのと同じ）。
+// （lib/dayPlan の writeRoutes。「AI で組む」の提案を反映したのと同じ）。
 // 同じ日付なら同じデータ（乱数はデータの種、止めるのは反復回数。Date.now を使わない）
 import type { DemoData } from '../contracts/data';
 import type { Features } from '../contracts/features';

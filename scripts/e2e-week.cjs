@@ -510,7 +510,7 @@ async function weekMake(page) {
     '組み終えた知らせ（提案の帯が見えるので［週の予定を見る］は出さない）',
     { tt, want },
   );
-  // 提案（範囲）：当てるまで訪問は変わらない → 当てる
+  // 提案（範囲）：反映するまで訪問は変わらない → 反映する
   await rangeBand(page).waitFor({ timeout: 10000 });
   const before = await stored(page);
   check(

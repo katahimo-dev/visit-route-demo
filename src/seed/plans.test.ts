@@ -56,7 +56,7 @@ describe('createInitialData（PRD D225。版2）', () => {
     for (const d of days) expect(dayStatus(data, d).state).toBe('none');
   });
 
-  it('同じデータにもう一度当てても変わらない（担当・開始が同じなら書かない）', () => {
+  it('同じデータにもう一度反映しても変わらない（担当・開始が同じなら書かない）', () => {
     expect(withSeedPlans(data, TODAY).visits).toEqual(data.visits);
   });
 });

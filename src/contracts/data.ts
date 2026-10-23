@@ -24,11 +24,11 @@ export const DATA_VERSION = 2;
 const routesSchema = z.record(z.string(), z.array(z.string()));
 
 /**
- * 欠勤の振り直しの情報（ADR-0011。版2は ADR-0053）。振り直しの提案を当てた日に1つ（DemoData.reassigns）。
+ * 欠勤の振り直しの情報（ADR-0011。版2は ADR-0053）。振り直しの提案を反映した日に1つ（DemoData.reassigns）。
  * baseRoutes は振り直す前の担当の写し（差の基準・「振り直す前に戻す」・連絡の一覧の「前」）
  */
 export const reassignInfoSchema = z.object({
-  /** 当てた振り直し方：'insert'＝案A「空き時間に入れるだけ」、'anneal'＝案B「少し動かしてよい」（PRD D34） */
+  /** 反映した振り直し方：'insert'＝案A「空き時間に入れるだけ」、'anneal'＝案B「少し動かしてよい」（PRD D34） */
   method: z.enum(['insert', 'anneal']),
   /** 案B の「変更を減らす」の重み（0〜5、0.5刻み）。案A には無い */
   stayWeight: z.number().min(0).max(5).optional(),
@@ -94,7 +94,7 @@ export const demoDataSchema = z.object({
   clientLeaves: z.array(clientLeaveSchema).max(2000),
   /** date → 伝えた内容（確定。ADR-0053） */
   snapshots: z.record(z.string(), daySnapshotSchema),
-  /** date → 欠勤の振り直しの情報（当てた振り直しの日だけ。ADR-0011・ADR-0053） */
+  /** date → 欠勤の振り直しの情報（反映した振り直しの日だけ。ADR-0011・ADR-0053） */
   reassigns: z.record(z.string(), reassignInfoSchema),
   /** 条件のプリセット（ADR-0008。1〜MAX_PRESETS つ）。数・重みの範囲・ID の重複は store の repair で直す */
   presets: z.array(presetSchema).max(100),

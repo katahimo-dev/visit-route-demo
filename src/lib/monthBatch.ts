@@ -1,6 +1,6 @@
 // 「AI で組む」の日・週・月の範囲（PRD D256・D257・D328。ADR-0042・ADR-0053・ADR-0054）の計算を画面の外で回す。
 // 画面は始める・止めるだけを頼み、計算はモジュールの入れ物で続ける（ほかの画面へ移っても止めない）。
-// 1日ずつ AI で組み、終わったら提案（日ごとの担当・時刻の変更）を出す。訪問には書かない。「当てる」（apply）で、
+// 1日ずつ AI で組み、終わったら提案（日ごとの担当・時刻の変更）を出す。訪問には書かない。「反映する」（apply）で、
 // 組み始めたときのままの日だけ担当・開始を1回の update で訪問に書く（ピンの訪問は動かさない。全体の「元に戻す」で1手戻せる）。
 // 提案はその場だけ（保存しない）。ページを閉じる・読み直すと止まる（再開はしない）
 import type { DemoData } from '../contracts/data';
@@ -43,9 +43,9 @@ export type BatchJob = {
 export type ProposalDay = {
   date: string;
   problem: Problem;
-  /** 組み始めたときのその日の訪問（今と違えば当てない） */
+  /** 組み始めたときのその日の訪問（今と違えば反映しない） */
   visits: readonly Visit[];
-  /** 組み始めたときのその日の問題の入力（欠勤・希望休・稼働時間・人・休み・条件。今と違えば当てない） */
+  /** 組み始めたときのその日の問題の入力（欠勤・希望休・稼働時間・人・休み・条件。今と違えば反映しない） */
   inputs: DayInputs;
   /** 提案の担当の並び */
   routes: Record<string, string[]>;
@@ -109,8 +109,8 @@ export function dayInputsOf(d: DemoData, date: string): DayInputs {
 }
 
 /**
- * その日を当ててよいか（日の予定の提案と同じ判定：組み始めたときの訪問のまま・その日の問題の入力（欠勤・希望休・稼働時間・人・
- * 休み・条件）が同じ・伝えていない）。入力が変われば休みの人に当たるなどするので当てない。日の予定のその場の提案（画面の外に
+ * その日を反映してよいか（日の予定の提案と同じ判定：組み始めたときの訪問のまま・その日の問題の入力（欠勤・希望休・稼働時間・人・
+ * 休み・条件）が同じ・伝えていない）。入力が変われば休みの人に当たるなどするので反映しない。日の予定のその場の提案（画面の外に
  * 残す。PRD D335）も同じ判定
  */
 export function proposalDayFresh(d: DemoData, day: Pick<ProposalDay, 'date' | 'visits' | 'inputs'>): boolean {
@@ -121,7 +121,7 @@ export function proposalDayFresh(d: DemoData, day: Pick<ProposalDay, 'date' | 'v
   return inp.day === day.inputs.day && inp.refs.every((r, k) => r === day.inputs.refs[k]);
 }
 
-/** 提案を当てる（純粋関数）：組み始めたときのままの日だけ訪問に書く。当てた日・当てなかった日 */
+/** 提案を反映する（純粋関数）：組み始めたときのままの日だけ訪問に書く。反映した日・反映しなかった日 */
 export function applyProposal(
   d: DemoData,
   p: Pick<BatchProposal, 'days'>,
@@ -192,9 +192,9 @@ export type MonthBatch = {
   run: ReadableStore<BatchRun | null>;
   /** 最後に終わった知らせ */
   done: ReadableStore<BatchDone | null>;
-  /** 今の提案（無ければ null。当てる・捨てる・新しく組み始めると消える） */
+  /** 今の提案（無ければ null。反映する・捨てる・新しく組み始めると消える） */
   proposal: ReadableStore<BatchProposal | null>;
-  /** 提案を当てる（1回の update。当てた日・当てなかった日。提案が無ければ null） */
+  /** 提案を反映する（1回の update。反映した日・反映しなかった日。提案が無ければ null） */
   apply(): { applied: string[]; skipped: string[] } | null;
   /** 提案を捨てる */
   discard(): void;
@@ -219,7 +219,7 @@ export function batchDoneText(d: BatchDone): string {
   if (d.error) return `${d.label}の担当を${d.made}日分組んだところで止まりました（${d.error}）`;
   if (d.stopped) return `${d.label}の担当を${d.made}日分組んだところで止めました（${d.made}日分の提案${counts}）`;
   if (d.made === 0) return `${d.label}に組める日がありませんでした`;
-  return `${d.label}の提案を出しました（${d.made}日分${counts}）。見て「当てる」と担当が変わります`;
+  return `${d.label}の提案を出しました（${d.made}日分${counts}）。見て「反映する」と担当が変わります`;
 }
 
 /** 上の帯の文（「11月の担当を組んでいます 8/22日」） */
@@ -439,13 +439,13 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       if (!p || !host || run.get() !== null) return null;
       let result: { applied: string[]; skipped: string[] } = { applied: [], skipped: [] };
       const h = host;
-      // 当てるかどうかを今のデータで決めてから、1回の update で書く（全体の「元に戻す」の1手）
+      // 反映するかどうかを今のデータで決めてから、1回の update で書く（全体の「元に戻す」の1手）
       const r = applyProposal(h.get(), p);
       result = { applied: r.applied, skipped: r.skipped };
       if (r.applied.length > 0)
         h.update(
           (d) => applyProposal(d, { days: p.days.filter((x) => r.applied.includes(x.date)) }).data,
-          `AI の提案を当てる（${p.label}）`,
+          `AI の提案を反映（${p.label}）`,
         );
       proposal.set(null);
       return result;

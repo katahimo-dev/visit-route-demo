@@ -258,7 +258,7 @@ export function PersonCalendar({
           data-testid="pcal-insert"
         >
           <WithIcon icon={Sparkles} size={14}>
-            {mdText(notice.date)} の空き時間に入る人を当てる
+            {mdText(notice.date)} の空き時間に入る人を割り当てる
           </WithIcon>
         </button>
       </div>

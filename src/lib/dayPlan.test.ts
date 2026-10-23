@@ -76,7 +76,7 @@ describe('日の割当（routesOf・pinsOf・unassignedOf）', () => {
   });
 });
 
-describe('writeRoutes（提案を当てる・担当を替える）', () => {
+describe('writeRoutes（提案を反映する・担当を替える）', () => {
   it('担当と lenient の開始を訪問に書く。計算した回も変われば保存した回にする。ピンは渡したとおり', () => {
     const d = data();
     const p = dayProblemOf(d, DATE)!;

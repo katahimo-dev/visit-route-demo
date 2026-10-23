@@ -60,7 +60,7 @@ describe('伝えた日の訪問を全部取り消す（3）', () => {
 });
 
 describe('振り直す前に戻す（5）', () => {
-  it('振り直したあとに足した・担当を当てた訪問は、今の担当のまま残す', () => {
+  it('振り直したあとに足した・担当を割り当てた訪問は、今の担当のまま残す', () => {
     const d0 = base();
     const routes: Record<string, string[]> = {};
     for (const v of visitsOn(d0, TODAY)) if (v.staffId) routes[v.staffId] = [...(routes[v.staffId] ?? []), v.id];
