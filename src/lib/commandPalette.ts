@@ -150,7 +150,7 @@ export function paletteActions(today: string, { features = {} }: { features?: Fe
       kind: 'action',
       label: '欠勤・キャンセルを登録',
       hint: '日の予定（今日）',
-      to: absenceHref(today),
+      to: `${absenceHref(today)}&mode=change`,
       date: today,
       words: ['けっきん', 'きゃんせる', 'やすみ', 'きゅうなけっきん', 'とうじつのたいおう', '当日の対応', 'とうじつ'],
     }),

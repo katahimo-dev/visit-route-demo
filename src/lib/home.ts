@@ -121,7 +121,7 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
         tone: 'todo',
         title: `${m}の担当を AI で組む`,
         detail: `担当なしの訪問がある日 ${unassignedDays.length}日`,
-        to: `/month?ym=${ym}&do=batch`,
+        to: `/month?ym=${ym}&do=batch&mode=plan`,
       });
     }
     // 確定していない日（訪問があって伝えていない・未連絡の変更のある日）
@@ -188,7 +188,7 @@ export function homeEntries(today: string, terms: Pick<Terms, 'client' | 'staff'
   const all: HomeEntry[] = [
     {
       key: 'absence',
-      to: `/plan?date=${today}&do=${SUDDEN_DO}`,
+      to: `/plan?date=${today}&do=${SUDDEN_DO}&mode=change`,
       title: '欠勤・キャンセルを登録',
       detail: '今日の予定で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定・連絡',
       date: today,

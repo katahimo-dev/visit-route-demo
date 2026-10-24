@@ -98,7 +98,13 @@ async function fromHome(page) {
   await page.getByTestId('home-absence').click();
   await panel(page).waitFor({ timeout: 20000 });
   await settle(page, 300);
-  check(hashOf(page) === '#/plan', '開いたら URL から ?do=・?date= が消える', hashOf(page));
+  // 欠勤・キャンセルの入口は変更のモードで開く（?mode=change は残る。PRD D348）
+  check(
+    hashOf(page) === '#/plan?mode=change' &&
+      (await page.getByTestId('mode-switch').getAttribute('data-mode')) === 'change',
+    '開いたら URL から ?do=・?date= が消え、変更のモード',
+    hashOf(page),
+  );
   check((await page.locator('.date-switch select').inputValue()) === TODAY, '今日の日の予定');
   check((await stepOf(page)) === '1', '1段目（何が起きたか）で開く');
   check(

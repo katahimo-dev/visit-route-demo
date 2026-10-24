@@ -363,7 +363,7 @@ flowchart LR
 - 提供するAPI：なし（ルートは [design/pages.md](design/pages.md) の表）
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign・patterns・vacancy・features
 - 配置：`src/pages/`・`src/components/`・画面用の純粋関数は `src/lib/`
-- 予定（日・週・月）の共通の部品（PRD D327〜D330。ADR-0054）：`components/scheduleParts`（操作の行・「AI で組む ▾」の範囲・提案の帯・複数選択の帯 `SelectionBar`。月は「別の日へ」も。書くのは `lib/multiEdit`）と `components/undo`（元に戻す・Ctrl+Z。殻に1つ）。本体は3画面に残す
+- 予定（日・週・月）の共通の部品（PRD D327〜D330。ADR-0054）：`components/scheduleParts`（操作の行・「AI で組む ▾」の範囲・提案の帯・複数選択の帯 `SelectionBar`。月は「別の日へ」も。書くのは `lib/multiEdit`）と `components/undo`（元に戻す・Ctrl+Z。殻に1つ）。予定のモード（PRD D348。ADR-0061）は `lib/scheduleMode`・`components/useScheduleMode`。本体は3画面に残す
 - スマホ・キーボード（PRD D333〜D338。ADR-0055）：600px 以下の日の予定は `components/dayList` の日ごとのリスト（長押し・「選ぶ」で複数選択・スワイプで日を送る）、訪問の詳細の欄は `SidePanel` の `sheet`（下から出る欄）、帯・札をキーで動かすのは `components/visitKeys`（書くのは `lib/visitKeys` → `lib/visitOps`）
 - 訪問の札の共通の部品（PRD D339〜D343。ADR-0056・ADR-0057）：札は3段（大＝時間軸の帯・中＝行 `VisitRow`・小＝表の札 `VisitChip`。`data-size`）、入れ物は時間軸・表（`ChipStack`）・リスト。見た目・選ぶ・キー（入れ物ごとの `KeyLayout`）・落とし先の判定は `lib/visitLook`・`visitSelect`・`visitDrop`・`visitKeys` と `components/visitParts.tsx`（一覧は [design/pages-common.md](design/pages-common.md)）。書くのは `lib/visitOps`・`lib/multiEdit`・訪問の詳細の欄だけ
 - 訪問の詳細の欄（PRD D301〜D305。ADR-0051）：1件の訪問を見る・直す欄は `components/VisitPanel` の1つで、App の殻に置き、どの画面・コマンドパレットからも `useOpenVisit` で開く。欄はデータに `lib/visitOps`（純粋関数）越しにだけ触る（データの形を変えるときはここを差し替える）
@@ -812,7 +812,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 退職・拘束・段階 | 最終勤務日＋一括振り直し、上限は注意だけ、段階が正 | 1か所で勤務なしになり、影響が狭い | 0015 |
 | 住所から位置 | 押したときだけ外部の検索（郵便番号は fetch、だめなら JSONP） | 同梱は重く、送るのは押したときの値だけ | 0016 |
 | メール・道順 | `mailto:` と Maps URLs のリンクだけ | キー・サーバーが要らず、外へ送らない | 0017・0018 |
-| メニュー・パレット | 6項目（ホーム・予定・欠勤・キャンセル・空き状況・人・設定）。予定・人・設定は画面の上のタブで切り替え、最後に開いた表示・タブを開く。パレットは画面を1つずつ引ける（案を比べるは日の予定から） | 仕事の順で探せ、量が少なく移り方が1つ、行き先は今ある URL だけ | 0019・0027・0034・0045・0047・0054 |
+| メニュー・パレット | 5項目（ホーム・予定・空き状況・人・設定）。予定・人・設定は畳める子の項目を持ち（予定の子は予定のモード、人・設定の子はタブ。開け閉めは端末に覚える）。パレットは画面を1つずつ引ける（案を比べるは日の予定から） | 仕事の順で探せ、量が少なく移り方が1つ、行き先は今ある URL だけ | 0019・0027・0034・0045・0047・0054・0061 |
 | 見出し・ボタン | 見出しは `PageHeader` の1つの型（題名・1行の説明・右に主ボタン1つ・予定の3画面はすぐ下のナビの行に［月｜週｜日］。PRD D347）、ボタンは塗り＝主／枠＝副／文字＝ついでの3段 | どの画面でも主の操作が1つに見え、日の予定の本体が初期表示に入る | 0036 |
 | 名簿 | 1シートを ID か名前で突き合わせ、総入れ替えは終了・休止 | 案・記録を消さずに人を直せる | 0020 |
 | 絞り込み・詳細・人の画面 | 共通の `ClientFilter`、吹き出し、人は全画面（タブ・予定のカレンダー・節ごとの「直す → 保存」） | 画面ごとの作りがそろい、見るだけのときに書き換えず、その人の予定を見ながら直せる | 0021・0022・0052 |

@@ -60,6 +60,8 @@ export function useVisitKeys(opts: {
   staffOrder: (visitId: string) => readonly string[];
   /** 日時を動かす（↑↓←→）か。〈スタッフ〉の画面など動かさない所は false（Shift+←→・Enter・Delete だけ） */
   move?: boolean;
+  /** 動かさない（予定のモード「確認」。PRD D348）：日時・担当を変えるキー（↑↓←→・Shift+←→）を受けない */
+  readOnly?: boolean;
   /** 札の入れ物（表は ↑↓ で隣の担当の行。PRD D342）。既定は時間軸 */
   layout?: KeyLayout;
   onOpen?: (visitId: string) => void;
@@ -98,6 +100,7 @@ export function useVisitKeys(opts: {
       const k = visitKeyOf(e, o.layout);
       if (!k) return false;
       if (o.move === false && (k.kind === 'time' || k.kind === 'day')) return false;
+      if (o.readOnly && (k.kind === 'time' || k.kind === 'day' || k.kind === 'staff')) return false;
       if (k.kind === 'open') {
         if (!o.onOpen) return false;
         e.preventDefault();

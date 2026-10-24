@@ -606,6 +606,8 @@ export function useVisitDrag(opts: {
   fit?: boolean;
   staffWhy?: (visitId: string, date: string, staffId: string) => string | null;
   onDrop: (visitId: string, v: Extract<DropVerdict, { ok: true }>) => void;
+  /** 動かさない（予定のモード「確認」。PRD D348）：どの札もつかめない */
+  readOnly?: boolean;
 }) {
   const { data } = useDemoData();
   const compileInput = useCompileInput(data);
@@ -662,20 +664,23 @@ export function useVisitDrag(opts: {
     /** つかんだ帯の上端からの高さ（px。時間軸で落とした開始を出す） */
     offset: () => grab.current?.offset ?? 0,
     /** つかめる帯・行の props */
-    source: (visitId: string, movable: boolean) => ({
-      draggable: movable,
-      onDragStart: (e: DragEvent<HTMLElement>) => {
-        if (!movable) {
-          e.preventDefault();
-          return;
-        }
-        e.dataTransfer.setData('text/plain', visitId);
-        e.dataTransfer.effectAllowed = 'move';
-        grab.current = { visitId, offset: e.clientY - e.currentTarget.getBoundingClientRect().top };
-        later.start(() => setDragId(visitId));
-      },
-      onDragEnd: end,
-    }),
+    source: (visitId: string, canMove: boolean) => {
+      const movable = canMove && !opts.readOnly;
+      return {
+        draggable: movable,
+        onDragStart: (e: DragEvent<HTMLElement>) => {
+          if (!movable) {
+            e.preventDefault();
+            return;
+          }
+          e.dataTransfer.setData('text/plain', visitId);
+          e.dataTransfer.effectAllowed = 'move';
+          grab.current = { visitId, offset: e.clientY - e.currentTarget.getBoundingClientRect().top };
+          later.start(() => setDragId(visitId));
+        },
+        onDragEnd: end,
+      };
+    },
     /** 落とし先の props。at は落とした位置から落とし先（日付・開始・担当・行の〈利用者さん〉）を出す */
     target: (key: string, at: (e: DragEvent<HTMLElement>) => DropTarget | null) => ({
       onDragOver: (e: DragEvent<HTMLElement>) => {

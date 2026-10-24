@@ -59,6 +59,7 @@ import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
 import { useHistoryOps, useUndoAction } from '../components/undo';
+import { useScheduleMode } from '../components/useScheduleMode';
 import { useOpenVisit } from '../components/VisitPanel';
 import { VisitRules } from '../components/VisitRules';
 import { KeyMoveBand, useVisitKeys } from '../components/visitKeys';
@@ -274,6 +275,8 @@ export default function PlanPage() {
    */
   const suddenOn = useFeature('sudden');
   const mailOn = useFeature('mail');
+  /** 予定のモード（PRD D348）：組むではメールのボタンを出さず、確認では札を動かさない */
+  const { tools: modeTools } = useScheduleMode();
   const rulesOn = useFeature('rules');
   const compatOn = useFeature('compat');
   const {
@@ -805,6 +808,7 @@ export default function PlanPage() {
    * Delete で取り消し（確認）。どれも全体の「元に戻す」の1手。動かしたらフォーカスは動かした帯、取り消したら「元に戻す」
    */
   const visitKeys = useVisitKeys({
+    readOnly: !modeTools.move,
     staffOrder: () => columns,
     onOpen: (id) => openVisit(id),
     onMoved: (r) => {
@@ -1494,8 +1498,12 @@ export default function PlanPage() {
     },
   });
   const dragProps = (id: string) => ({
-    draggable: !running,
+    draggable: !running && modeTools.move,
     onDragStart: (e: DragEvent) => {
+      if (!modeTools.move) {
+        e.preventDefault();
+        return;
+      }
       e.dataTransfer.setData('text/plain', id);
       e.dataTransfer.effectAllowed = 'move';
       // ここで setDragging すると、未割当の列が先頭に足されて列がずれ、Chrome がドラッグをすぐ終わらせる
@@ -1866,7 +1874,7 @@ export default function PlanPage() {
             </span>
           )}
           {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
-          {suddenOn && (avail?.baseSlots.length ?? 0) > 0 && (
+          {suddenOn && modeTools.absence && (avail?.baseSlots.length ?? 0) > 0 && (
             <button
               type="button"
               className="link-btn absence-btn"
@@ -2513,7 +2521,7 @@ export default function PlanPage() {
                 </span>
               )}
               {/* 担当ごとの予定をメールアプリで開く（PRD D92・D306。ADR-0017）。毎日送るので見出しの主ボタンの隣に枠のボタンで置く */}
-              {mailOn && (
+              {mailOn && modeTools.mail && (
                 <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
                   <WithIcon icon={Mail}>
                     <span className="m-sr">予定をメールで送る</span>
@@ -3243,7 +3251,8 @@ export default function PlanPage() {
         />
       )}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
-      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />
+      {/* 選んだ訪問をまとめて動かす帯は、確認のモードでは出さない（札を動かさない。PRD D348） */}
+      {modeTools.move && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />}
     </div>
   );
 }

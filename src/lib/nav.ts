@@ -4,6 +4,7 @@
 import type { Terms } from '../contracts/documents';
 import type { Features } from '../contracts/features';
 import { isHrefOn } from './features';
+import { planLabel, planYm, type ScheduleMode } from './scheduleMode';
 import { SUDDEN_DO } from './sudden';
 
 /**
@@ -96,9 +97,18 @@ export function activeNavPath(pathname: string): string {
   return pathname;
 }
 
-/** そのメニューの項目が今の画面か（操作の項目はいつも false。match があればそのどれか。PRD D273・D275） */
-export const isActiveNav = (item: NavEntry, pathname: string): boolean =>
-  !isNavAction(item.to) && (item.match ?? [item.to]).includes(activeNavPath(pathname));
+/**
+ * そのメニューの項目が今の画面か（操作の項目はいつも false。match があればそのどれか。PRD D273・D275）。
+ * 予定のモードの項目（mode を持つ。PRD D349）は、予定の画面でそのモードを選んでいるとき（mode を渡したときだけ）
+ */
+export const isActiveNav = (
+  item: NavEntry & { mode?: ScheduleMode },
+  pathname: string,
+  mode?: ScheduleMode,
+): boolean => {
+  if (item.mode) return mode !== undefined && item.mode === mode && SCHEDULE_PATHS.includes(activeNavPath(pathname));
+  return !isNavAction(item.to) && (item.match ?? [item.to]).includes(activeNavPath(pathname));
+};
 
 /**
  * 上の帯の日付の選択を出す画面（PRD D267）：選んでいる日付で中身が変わる画面だけ。案を比べる・勤務の見込み
@@ -139,9 +149,11 @@ export function navTitleParts(
   return extra ? { group: null, item: extra } : null;
 }
 
-/** 下のタブの項目：メニューから BOTTOM_TABS の順に引く（メニューに無い項目は出さない。PRD D336） */
-export function bottomTabs<T extends NavEntry & { key: string }>(groups: readonly NavSection<T>[]): T[] {
-  const all = groups.flatMap((g) => g.items);
+/** 下のタブの項目：メニュー（子の項目も）から BOTTOM_TABS の順に引く（メニューに無い項目は出さない。PRD D336） */
+export function bottomTabs<T extends NavEntry & { key: string; children?: readonly T[] }>(
+  groups: readonly NavSection<T>[],
+): T[] {
+  const all = groups.flatMap((g) => g.items.flatMap((i) => [i, ...(i.children ?? [])]));
   return BOTTOM_TABS.flatMap((key) => all.find((i) => i.key === key) ?? []);
 }
 
@@ -177,8 +189,39 @@ export type NavIcon =
   | 'items'
   | 'settings'
   | 'data';
-/** メニューの項目（アイコンの名前つき）。key は下のタブで引く名前（URL が覚えた表示で変わる項目があるため） */
-export type MenuItem = NavEntry & { key: string; icon: NavIcon };
+/**
+ * メニューの項目（アイコンの名前つき）。key は下のタブで引く名前（URL が覚えた表示で変わる項目があるため）。
+ * children は畳める子の項目（PRD D349）、mode は予定のモードの項目（今の画面の印はモードで決める）、badge は件数の印
+ */
+export type MenuItem = NavEntry & {
+  key: string;
+  icon: NavIcon;
+  children?: readonly MenuItem[];
+  mode?: ScheduleMode;
+  badge?: { text: string; label: string };
+};
+
+/** メニューの件数の印（PRD D349）：組む月の担当なしの日の数・今日をまだ伝えていないか */
+export type MenuBadges = { planUnassignedDays?: number; todayUntold?: boolean };
+
+/** 畳める項目（親の key）と既定で開いておくか（設定はふだん畳む。PRD D349） */
+export const NAV_OPEN_DEFAULT: Readonly<Record<string, boolean>> = { schedule: true, people: true, settings: false };
+
+/** 設定のタブのアイコン */
+const SETTINGS_ICON: Record<string, NavIcon> = {
+  '/types': 'types',
+  '/items': 'items',
+  '/rules': 'rules',
+  '/settings': 'settings',
+  '/data': 'data',
+};
+/** 人のタブのアイコン */
+const PEOPLE_ICON: Record<string, NavIcon> = {
+  '/clients': 'clients',
+  '/staff': 'staff',
+  '/compat': 'compat',
+  '/availability': 'hours',
+};
 
 /** 欠勤・キャンセルの欄を今日の日の予定で開く URL（ホームのカードと同じ。PRD D172） */
 export const absenceHref = (today: string): string => `/plan?date=${today}&do=${SUDDEN_DO}`;
@@ -201,22 +244,50 @@ export const scheduleHref = (last?: string | null): string =>
   last && SCHEDULE_VIEWS.includes(last) ? last : SCHEDULE_DEFAULT;
 
 /**
- * メニューの並び（PRD D326。ADR-0054。D273〜D275 の9項目を置き換え）：見出しの無い6項目
- * ホーム・予定・欠勤・空き状況・人・設定。
- * 「予定」は月・週・日の予定と比較を受け持ち（今の画面の印）、押すと最後に開いた表示（既定は日の予定）。切り替えは画面の上の［月｜週｜日］。
- * 「欠勤」は今日の日の予定で欠勤・キャンセルの欄を開く操作（今の画面の印は付けない）。
- * 「人」は〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）（と勤務の見込み）を受け持ち、押すと最後に開いた人のタブ（既定は〈利用者さん〉）。
- * 「設定」は訪問の種類・特性の項目・条件の重み・管理者設定・データを受け持ち、押すと最後に開いたタブ。
+ * メニューの並び（PRD D326・D349。ADR-0054・0061）：見出しの無い5項目 ホーム・予定・空き状況・人・設定。
+ * 「予定」「人」「設定」は畳める子の項目を持つ（既定は予定・人を開き、設定を畳む。今の画面の親はいつも開く）。
+ * 「予定」の子は予定のモード（PRD D348）：今日の予定（確認。今日の日の予定）・◯月を組む（組む。月の後半は来月、前半は今月の月の予定）・
+ * 欠勤・キャンセル（変更。今日の日の予定で欠勤・キャンセルの欄を開く）。親を押すと最後に開いた表示（既定は日の予定）。
+ * 「人」の子は人のタブ、「設定」の子は設定のタブ。親を押すと最後に開いたタブ。
  * 案を比べるは日の予定の「AI で組む ▾」から開く（メニュー・パレットには出さない）。
- * 下のタブに出す項目は短い名前（short）も持つ。today は欠勤・キャンセルの欄を開く日。
+ * 下のタブに出す項目は短い名前（short）も持つ。today は今日。badges は件数の印。
  * features で切った機能の項目は出さない（lib/features の表から引く）
  */
 export function menuSections(
-  _terms: Pick<Terms, 'client' | 'staff'>,
+  terms: Pick<Terms, 'client' | 'staff'>,
   today: string,
   features: Features,
   last: LastViews = {},
+  badges: MenuBadges = {},
 ): NavSection<MenuItem>[] {
+  const scheduleChildren: MenuItem[] = [
+    {
+      key: 'mode-check',
+      to: `/plan?date=${today}&mode=check`,
+      label: '今日の予定',
+      icon: 'day',
+      mode: 'check',
+      badge: badges.todayUntold ? { text: '未確定', label: '今日はまだ伝えていない' } : undefined,
+    },
+    {
+      key: 'mode-plan',
+      to: `/month?ym=${planYm(today)}&mode=plan`,
+      label: planLabel(today),
+      icon: 'month',
+      mode: 'plan',
+      badge: badges.planUnassignedDays
+        ? { text: `${badges.planUnassignedDays}日`, label: `担当なしの訪問がある日 ${badges.planUnassignedDays}日` }
+        : undefined,
+    },
+    {
+      key: 'absence',
+      to: `${absenceHref(today)}&mode=change`,
+      label: '欠勤・キャンセル',
+      short: '欠勤',
+      icon: 'absence',
+      mode: 'change',
+    },
+  ];
   const items: MenuItem[] = [
     { key: 'home', to: '/home', label: 'ホーム', short: 'ホーム', icon: 'home' },
     {
@@ -226,8 +297,8 @@ export function menuSections(
       short: '予定',
       icon: 'day',
       match: SCHEDULE_PATHS,
+      children: scheduleChildren.filter((i) => isHrefOn(features, i.to)),
     },
-    { key: 'absence', to: absenceHref(today), label: '欠勤・キャンセル', short: '欠勤', icon: 'absence' },
     { key: 'vacancy', to: '/vacancy', label: '空き状況', short: '空き状況', icon: 'vacancy' },
     {
       key: 'people',
@@ -235,6 +306,13 @@ export function menuSections(
       label: '人',
       icon: 'people',
       match: PEOPLE_PATHS,
+      children: peopleTabs(terms, features).map((t) => ({
+        key: `people:${t.to}`,
+        to: t.to,
+        label: t.label,
+        icon: PEOPLE_ICON[t.to] ?? 'people',
+        match: t.match,
+      })),
     },
     // 設定：訪問の種類・特性の項目・条件の重み・管理者設定（PRD D210。だれでも開ける）・データを1つにまとめる（タブ。PRD D275）
     {
@@ -243,6 +321,12 @@ export function menuSections(
       label: '設定',
       icon: 'settings',
       match: settingsTabs(features).map((t) => t.to),
+      children: settingsTabs(features).map((t) => ({
+        key: `settings:${t.to}`,
+        to: t.to,
+        label: t.label,
+        icon: SETTINGS_ICON[t.to] ?? 'settings',
+      })),
     },
   ];
   const on = items.filter((i) => isHrefOn(features, i.to));

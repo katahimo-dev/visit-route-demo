@@ -75,8 +75,10 @@ const TEMPLATE_LABEL = {
 };
 const asFeatures = (on) => Object.fromEntries(FEATURE_IDS.map((id) => [id, on.includes(id)]));
 
-/** メニュー（6項目。相性は人のタブ。PRD D326。ADR-0054） */
-const MENU = ['ホーム', '予定', '欠勤・キャンセル', '空き状況', '人', '設定'];
+/** メニューの最上位（5項目。予定・人・設定は畳める子の項目を持つ。PRD D349。ADR-0061） */
+const MENU = ['ホーム', '予定', '空き状況', '人', '設定'];
+/** 人の子の項目（人のタブ。相性はどのひな形でも入） */
+const PEOPLE_KIDS = ['利用者さん', 'スタッフ', '相性', '勤務時間（シフト）'];
 /** すべて入の画面の一覧（パレットの画面。メニューから外した画面も1つずつ。PRD D273・D275） */
 const ALL_SCREENS = [
   'ホーム',
@@ -106,11 +108,11 @@ const screensFor = (t) => ALL_SCREENS.filter((l) => !HIDDEN[t].includes(l));
 /** 設定のタブ（ひな形ごと。条件の重み・特性の項目は rules を切ると出さない） */
 const SETTINGS_TABS = ['訪問の種類', '特性の項目', '条件の重み', '管理者設定', 'データ'];
 const settingsTabsFor = (t) => SETTINGS_TABS.filter((l) => !HIDDEN[t].includes(l));
-/** メニューは空き状況・欠勤を切ると減る */
-const menuFor = (on) =>
-  MENU.filter(
-    (l) => (l !== '空き状況' || on.includes('vacancy')) && (l !== '欠勤・キャンセル' || on.includes('sudden')),
-  );
+/** メニューの最上位は空き状況を切ると減る */
+const menuFor = (on) => MENU.filter((l) => l !== '空き状況' || on.includes('vacancy'));
+/** 予定の子の項目の key（今日の予定・◯月を組む・欠勤・キャンセル。欠勤・キャンセルは sudden を切ると出さない） */
+const scheduleKidsFor = (on) =>
+  ['mode-check', 'mode-plan', 'absence'].filter((k) => k !== 'absence' || on.includes('sudden'));
 /** 下のタブ（ホーム・予定・欠勤。「探す」「メニュー」はボタン。空き状況は下のタブに無い。PRD D336） */
 const tabsFor = (on) => ['ホーム', '予定', '欠勤'].filter((l) => l !== '欠勤' || on.includes('sudden'));
 
@@ -136,12 +138,32 @@ async function open(page, hash, ready = 'h1') {
 /** 保存したデータの入り切り */
 const storedFeatures = (page) =>
   page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? '{}').org?.features ?? null, STORAGE_KEY);
-/** 左のメニュー（見出しと項目名） */
-async function menu(page) {
-  const side = page.locator('.side-nav');
+/** メニューの最上位の項目（子の無い項目と、畳める親の行の項目） */
+const TOP_LINKS =
+  '.nav-groups > .nav-group > .nav-link, .nav-groups > .nav-group > .nav-parent > .nav-parent-row > .nav-link';
+/**
+ * 左のメニュー（見出し・最上位の項目名・親ごとの子の項目）。畳んでいる親は ▾ で開いてから子を読む
+ * （子の中身を確かめるため。開け閉めは覚えるが、今の画面の親はいつも開くので以降の確かめには響かない）
+ */
+async function menu(page, root = '.side-nav') {
+  const side = page.locator(root);
+  for (const t of await side.locator('[data-testid="nav-toggle"][aria-expanded="false"]').all()) await t.click();
+  const kids = {};
+  for (const p of await side.locator('.nav-parent').all()) {
+    const key = await p.getAttribute('data-parent');
+    const links = p.locator('.nav-sub > .nav-link.nav-child');
+    const keys = await links.evaluateAll((els) => els.map((el) => el.dataset.key));
+    const names = await links.evaluateAll((els) => els.map((el) => el.querySelector(':scope > span').textContent));
+    kids[key] = keys.map((k, i) => ({ key: k, label: names[i] }));
+  }
   return {
     titles: await side.locator('.nav-group-title').allInnerTexts(),
-    labels: await side.getByTestId('nav-link').allInnerTexts(),
+    labels: await side
+      .locator(TOP_LINKS)
+      .evaluateAll((els) => els.map((el) => el.querySelector(':scope > span:not(.nav-badge)')?.textContent ?? '')),
+    schedule: (kids.schedule ?? []).map((k) => k.key),
+    people: (kids.people ?? []).map((k) => k.label),
+    settings: (kids.settings ?? []).map((k) => k.label),
   };
 }
 /** パレットの候補（打つ前＝操作と画面） */
@@ -202,14 +224,19 @@ async function allOn(page) {
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
   check(m.labels.at(-1) === '設定', 'すべて入：メニューの最後は「設定」', m.labels);
-  check(same(m.labels, MENU), 'すべて入：メニューは6項目', m.labels);
+  check(same(m.labels, MENU), 'すべて入：メニューの最上位は5項目', m.labels);
+  check(
+    same(m.schedule, scheduleKidsFor(FEATURE_IDS)) && same(m.people, PEOPLE_KIDS) && same(m.settings, SETTINGS_TABS),
+    'すべて入：予定・人・設定の子の項目',
+    m,
+  );
   check(
     same(await storedFeatures(page), {}),
     '初期データの入り切りは {}（e2e は初回もすべて入に固定）',
     await storedFeatures(page),
   );
 
-  await page.locator('.side-nav').getByRole('link', { name: '設定' }).click();
+  await page.locator('.side-nav [data-key="settings"]').click();
   await page.getByTestId('settings-tabs').waitFor();
   await page.getByTestId('settings-tabs').getByRole('link', { name: '管理者設定' }).click();
   await page.waitForURL(/#\/settings/);
@@ -220,9 +247,13 @@ async function allOn(page) {
     '管理者設定：説明の文',
   );
   check(
-    (await page.locator('.side-nav [aria-current="page"]').innerText()) === '設定' &&
+    (await page.locator('.side-nav [aria-current="page"]').count()) === 1 &&
+      (await page.locator('.side-nav [aria-current="page"]').getAttribute('data-key')) === 'settings:/settings' &&
+      (await page.locator('.side-nav [data-parent="settings"] > .nav-parent-row > .nav-link').getAttribute('class'))
+        .split(' ')
+        .includes('has-current') &&
       (await page.getByTestId('settings-tabs').locator('[aria-current="page"]').innerText()).trim() === '管理者設定',
-    '管理者設定：メニューの今の画面の印は「設定」、設定のタブは「管理者設定」',
+    '管理者設定：メニューの今の画面の印は設定の子「管理者設定」（親の「設定」は has-current）、設定のタブは「管理者設定」',
   );
   const tmpl = await page.getByTestId('feature-template').evaluateAll((els) => els.map((el) => el.dataset.template));
   check(same(tmpl, ['basic', 'laborContract', 'monthlyField', 'all']), 'ひな形の4つの並び', tmpl);
@@ -287,7 +318,7 @@ async function switches(page) {
   check(!tabs.includes('空き状況'), '下のタブから空き状況が消える（DOM）', tabs);
   const m = await menu(page);
   check(
-    m.labels.includes('欠勤・キャンセル') && !m.labels.includes('空き状況'),
+    m.schedule.includes('absence') && !m.labels.includes('空き状況'),
     '空き状況を切るとメニューから空き状況だけ消える（欠勤・キャンセルは残る）',
     m,
   );
@@ -331,10 +362,11 @@ async function checkTemplate(page, t) {
   const label = TEMPLATE_LABEL[t];
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
+  check(same(m.labels, menuFor(on)), `${label}：メニューの最上位の項目（空き状況の入り切りだけで変わる）`, m.labels);
   check(
-    same(m.labels, menuFor(on)),
-    `${label}：メニューの項目（欠勤・キャンセル・空き状況の入り切りだけで変わる）`,
-    m.labels,
+    same(m.schedule, scheduleKidsFor(on)) && same(m.people, PEOPLE_KIDS) && same(m.settings, settingsTabsFor(t)),
+    `${label}：メニューの子の項目（予定は欠勤・キャンセルの入り切り、設定は設定のタブと同じ）`,
+    m,
   );
   const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
   check(same(tabs, tabsFor(on)), `${label}：下のタブ`, tabs);
@@ -467,8 +499,15 @@ async function mobile(page, dlg) {
   const tabs = await page.getByTestId('bottom-tabs').locator('.bottom-tab').allInnerTexts();
   check(tabs.length === 5, '390px：基本は下のタブ5つ（ホーム・予定・欠勤・探す・メニュー）', tabs);
   await page.getByTestId('menu-btn').click();
-  const drawer = await page.locator('.nav-drawer .nav-link').allInnerTexts();
-  check(same(drawer, menuFor(TEMPLATE_ON.basic)), '390px：引き出しもメニューと同じ項目', drawer);
+  const drawer = await menu(page, '.nav-drawer');
+  check(
+    same(drawer.labels, menuFor(TEMPLATE_ON.basic)) &&
+      same(drawer.schedule, scheduleKidsFor(TEMPLATE_ON.basic)) &&
+      same(drawer.people, PEOPLE_KIDS) &&
+      same(drawer.settings, settingsTabsFor('basic')),
+    '390px：引き出しもメニューと同じ項目（最上位と子）',
+    drawer,
+  );
   await page.keyboard.press('Escape');
   await page.screenshot({ path: path.join(OUT_DIR, 'notice-mobile.png'), fullPage: true });
   await page.emulateMedia({ media: 'print' });
@@ -522,8 +561,10 @@ async function pathVariants(page, dlg, ctx) {
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
   check(
-    same(m.labels, ['ホーム', '予定', '人', '設定']) && m.titles.length === 0,
-    '欠勤・キャンセルと空き状況を切るとメニューは4項目（見出しは無い）',
+    same(m.labels, ['ホーム', '予定', '人', '設定']) &&
+      same(m.schedule, ['mode-check', 'mode-plan']) &&
+      m.titles.length === 0,
+    '欠勤・キャンセルと空き状況を切るとメニューの最上位は4項目・予定の子に欠勤・キャンセルが無い（見出しは無い）',
     m,
   );
   await applyTemplate(page, dlg, 'all');
