@@ -1,70 +1,259 @@
-// 組み方の標準（標準の週。PRD D350〜D354。ADR-0062）の画面。5段の手順：期間 → 考え方で作る → 選ぶ → 直す → 登録。
-// 提案はその場だけ（保存しない。画面を離れると止まり、捨てる）。書くのは store の update の1回ずつ（全体の「元に戻す」で戻せる）
+// 組み方の標準（標準の週。PRD D350〜D354。ADR-0063）の画面。3段：案をくらべる → 表で直す（下書き） → 標準にする。
+// 案・下書きは画面の外の入れ物（lib/standardDraft）に置き、ほかの画面へ移っても残す。実際の予定（訪問）には登録まで書かない。
+// 登録は store の update の1回（全体の「元に戻す」で戻せる）
 import { CalendarCheck, Crown } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrangeTabs } from '../components/ArrangeTabs';
 import { useConfirm } from '../components/ConfirmDialog';
-import { SettingsTabs } from '../components/SettingsTabs';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/ui';
 import { useUndoAction } from '../components/undo';
-import type { DemoData } from '../contracts/data';
-import type { Visit } from '../contracts/documents';
-import type { Preset } from '../contracts/rules';
+import type { Pattern } from '../contracts/documents';
 import { jstDate } from '../domain/time';
-import { normalize, score, toHundred } from '../evaluate';
-import { attempt, newId, own, WEEKDAY_LABELS } from '../lib/common';
-import { pinsOf, writeRoutes } from '../lib/dayPlan';
-import { type DayInputs, dayInputsOf } from '../lib/monthBatch';
-import { setScorePreset } from '../lib/presets';
+import { newId, WEEKDAY_LABELS } from '../lib/common';
+import { patternWhenText } from '../lib/patternText';
 import {
   bestIndex,
+  type CellRef,
+  cellOf,
+  currentTable,
   cycleWeeks,
   defaultSince,
+  diffCounts,
   earliestSince,
-  type ProposalStats,
-  periodDates,
-  proposalStats,
-  registerCounts,
+  mondayOf,
   registerStandard,
-  STANDARD_WARNING_TEXT,
-  type StandardDay,
-  type StandardPeriod,
-  standardDiff,
+  type StandardCell,
+  type StandardTable,
+  setCell,
+  standardPatterns,
   standardPeriod,
+  startError,
   type TemporaryChoice,
+  tableDiff,
   temporaryChanges,
+  WEEKDAY_ORDER,
 } from '../lib/standard';
-import { compile } from '../matching';
-import { visitsOn } from '../patterns';
-import { applyPreset, scorePresetOf, scoreRulesOf } from '../seed';
-import { defaultIterations, runSolve } from '../solver';
+import { patternsKey, runProposals, setDraft, standardWork, stopProposals } from '../lib/standardDraft';
+import { useValueStore } from '../lib/valueStore';
 import { useDemoData } from '../store';
 import './settings.css';
-
-/** 1日の提案（作ったときの訪問を持ち、今と違えば書かない） */
-type ProposalDay = StandardDay & { visits: readonly Visit[]; inputs: DayInputs };
-/** プリセットごとの提案 */
-type Proposal = { presetId: string; days: ProposalDay[]; done: boolean };
-
-/** dayInputsOf の refs のうち条件（d.rules）の位置（書くときに点数の基準を替えるので比べない） */
-const RULES_REF = 2;
+import './standard.css';
 
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+const cellKey = (r: CellRef) => `${r.patternId}|${r.weekday}`;
 
-/** 作ったときの訪問のままで、伝えていない日か */
-function fresh(d: DemoData, day: ProposalDay): boolean {
-  if (own(d.snapshots, day.date)) return false;
-  const now = visitsOn(d, day.date);
-  if (now.length !== day.visits.length || !now.every((v, k) => v === day.visits[k])) return false;
-  // 欠勤・稼働時間・人・条件などの入力が変わっていれば書かない（月の AI で組むと同じ判定。条件は書くときに替えるので見ない）
-  const inp = dayInputsOf(d, day.date);
-  return inp.day === day.inputs.day && inp.refs.every((r, k) => k === RULES_REF || r === day.inputs.refs[k]);
+type TableProps = {
+  rows: readonly Pattern[];
+  weekdays: readonly number[];
+  table: StandardTable | null;
+  current: StandardTable;
+  clientName: (id: string) => string;
+  staffName: (id: string | null) => string;
+  testId: string;
+  /** 直せる表（下書き）だけ */
+  edit?: {
+    open: CellRef | null;
+    onOpen: (ref: CellRef) => void;
+    editor: (p: Pattern, wd: number) => React.ReactNode;
+    cellRefs: React.MutableRefObject<Map<string, HTMLButtonElement>>;
+  };
+};
+
+/** 標準の表（行＝繰り返し・列＝曜日）。今の標準と違うマスに色と「変更」の文字 */
+function StandardTableView({ rows, weekdays, table, current, clientName, staffName, testId, edit }: TableProps) {
+  const changed = useMemo(
+    () => new Map((table ? tableDiff(table, current) : []).map((d) => [cellKey(d), d.kind])),
+    [table, current],
+  );
+  return (
+    <div className="standard-table-scroll">
+      <table className="standard-table" data-testid={testId}>
+        <thead>
+          <tr>
+            <th scope="col">繰り返し</th>
+            {weekdays.map((wd) => (
+              <th key={wd} scope="col">
+                {WEEKDAY_LABELS[wd]}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.flatMap((p) => {
+            const name = clientName(p.clientId);
+            const editing = edit?.open?.patternId === p.id ? edit.open : null;
+            const row = (
+              <tr key={p.id} data-testid="standard-table-row" data-pattern={p.id}>
+                <th scope="row">
+                  <span className="standard-row-name">{name}</span>
+                  <span className="standard-row-when">{patternWhenText(p)}</span>
+                </th>
+                {weekdays.map((wd) => {
+                  const c = cellOf(table, current, p.id, wd);
+                  if (!c || !p.weekdays.includes(wd)) {
+                    return (
+                      <td key={wd} className="standard-cell-none">
+                        <span aria-hidden="true">—</span>
+                        <span className="sr-only">なし</span>
+                      </td>
+                    );
+                  }
+                  const ref = { patternId: p.id, weekday: wd };
+                  const kind = changed.get(cellKey(ref));
+                  const isChanged = kind !== undefined;
+                  const tag = kind === 'staff' ? '担当変更' : '時刻変更';
+                  const body = (
+                    <>
+                      <span className="standard-cell-staff">{staffName(c.staffId)}</span>
+                      <span className="standard-cell-time">{c.start ?? '時刻なし'}</span>
+                      {isChanged && <span className="standard-changed-tag">{tag}</span>}
+                    </>
+                  );
+                  return (
+                    <td
+                      key={wd}
+                      className={kind ? `is-changed is-changed-${kind}` : undefined}
+                      data-testid="standard-cell"
+                      data-pattern={p.id}
+                      data-weekday={wd}
+                      data-changed={isChanged}
+                      data-kind={kind}
+                    >
+                      {edit ? (
+                        <button
+                          type="button"
+                          className="standard-cell-btn"
+                          aria-expanded={editing?.weekday === wd}
+                          aria-label={`${name} ${WEEKDAY_LABELS[wd]}曜：${staffName(c.staffId)} ${c.start ?? '時刻なし'}${isChanged ? `（${tag}）` : ''}。押して直す`}
+                          ref={(el) => {
+                            if (el) edit.cellRefs.current.set(cellKey(ref), el);
+                            else edit.cellRefs.current.delete(cellKey(ref));
+                          }}
+                          onClick={() => edit.onOpen(ref)}
+                        >
+                          {body}
+                        </button>
+                      ) : (
+                        <span className="standard-cell-read">{body}</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+            if (!editing || !edit) return [row];
+            return [
+              row,
+              <tr key={`${p.id}-edit`} className="standard-edit-row">
+                <td colSpan={weekdays.length + 1}>{edit.editor(p, editing.weekday)}</td>
+              </tr>,
+            ];
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
-/** 期間の作る日：今日以降・伝えていない、計算に入る訪問のある日 */
-const targetDays = (d: DemoData, period: StandardPeriod, today: string): string[] =>
-  periodDates(period).filter((x) => x >= today && !own(d.snapshots, x));
+/** マスを直す小さな欄（担当と時刻。Esc で閉じる） */
+function CellEditor({
+  pattern,
+  wd,
+  cell,
+  title,
+  staff,
+  onDone,
+  onClose,
+}: {
+  pattern: Pattern;
+  wd: number;
+  cell: StandardCell;
+  title: string;
+  staff: readonly { id: string; name: string }[];
+  onDone: (cell: StandardCell) => void;
+  onClose: () => void;
+}) {
+  const [staffId, setStaffId] = useState<string>(cell.staffId ?? '');
+  const [start, setStart] = useState<string>(cell.start ?? '');
+  const [tried, setTried] = useState(false);
+  const first = useRef<HTMLSelectElement>(null);
+  const id = useId();
+  useEffect(() => {
+    first.current?.focus();
+  }, []);
+  const error = staffId === '' ? null : startError(pattern, wd, start);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setTried(true);
+    if (error) return;
+    onDone({ staffId: staffId === '' ? null : staffId, start: staffId === '' || start === '' ? null : start });
+  };
+  return (
+    <form
+      className="standard-editor"
+      data-testid="standard-editor"
+      aria-label={title}
+      onSubmit={submit}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <p className="standard-editor-title">{title}</p>
+      <label className="field">
+        担当
+        <select
+          ref={first}
+          value={staffId}
+          onChange={(e) => setStaffId(e.target.value)}
+          data-testid="standard-editor-staff"
+        >
+          {staff.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+          <option value="">担当なし</option>
+        </select>
+      </label>
+      <label className="field">
+        開始（空＝時刻なし）
+        <input
+          type="time"
+          value={start}
+          onChange={(e) => setStart(e.target.value)}
+          aria-invalid={tried && !!error}
+          aria-describedby={`${id}-hint${tried && error ? ` ${id}-err` : ''}`}
+          data-testid="standard-editor-start"
+        />
+      </label>
+      <p className="sub" id={`${id}-hint`}>
+        {(() => {
+          const t = pattern.dayTimes.find((x) => x.weekday === wd) ?? pattern;
+          return `時間の約束：${t.earliestStart === t.latestStart ? `${t.earliestStart}ちょうど` : `${t.earliestStart}〜${t.latestStart}`}`;
+        })()}
+      </p>
+      {tried && error && (
+        <p className="error" id={`${id}-err`} role="alert" data-testid="standard-editor-error">
+          {error}
+        </p>
+      )}
+      <div className="row">
+        <button type="submit" className="btn btn-small" data-testid="standard-editor-ok">
+          決める
+        </button>
+        <button type="button" className="btn btn-small btn-text" onClick={onClose}>
+          やめる
+        </button>
+      </div>
+    </form>
+  );
+}
 
 export default function StandardPage() {
   const { data, update } = useDemoData();
@@ -72,243 +261,204 @@ export default function StandardPage() {
   const confirmDialog = useConfirm();
   const toast = useToast();
   const undoAction = useUndoAction();
-  const dataRef = useRef(data);
-  dataRef.current = data;
+  const work = useValueStore(standardWork);
   const terms = data.org.terms;
   const staffName = (id: string | null) =>
     id === null ? '担当なし' : (data.staff.find((s) => s.id === id)?.name ?? '（いない人）');
   const clientName = (id: string) => data.clients.find((c) => c.id === id)?.displayName ?? id;
+  const presetName = (id: string | null) => data.presets.find((p) => p.id === id)?.name ?? '消したプリセット';
 
-  // 1. 期間
-  const cycle = useMemo(() => cycleWeeks(data, today), [data, today]);
-  const [weeks, setWeeks] = useState<number | null>(null);
-  const period = useMemo(() => standardPeriod(data, today, weeks ?? cycle.weeks), [data, today, weeks, cycle.weeks]);
-  const periodKey = `${period.from}|${period.to}`;
-
-  // 2. 考え方で作る（提案はその場だけ）
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [running, setRunning] = useState<{ preset: string; day: number; days: number } | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
-  const runRef = useRef<{ stopped: boolean; stop: (() => void) | null } | null>(null);
-  // 期間を変えたら提案は捨てる。画面を離れたら止める
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 期間が変わったときだけ
-  useEffect(() => {
-    setProposals([]);
-  }, [periodKey]);
-  useEffect(
-    () => () => {
-      if (runRef.current) {
-        runRef.current.stopped = true;
-        runRef.current.stop?.();
-      }
-    },
-    [],
-  );
-
-  const run = async () => {
-    if (runRef.current) return;
-    const ctl: { stopped: boolean; stop: (() => void) | null } = { stopped: false, stop: null };
-    runRef.current = ctl;
-    setRunError(null);
-    setProposals([]);
-    const presets = dataRef.current.presets;
-    const out: Proposal[] = [];
-    try {
-      for (const preset of presets) {
-        if (ctl.stopped) break;
-        const prop: Proposal = { presetId: preset.id, days: [], done: false };
-        out.push(prop);
-        const d0 = dataRef.current;
-        const days = targetDays(d0, period, today);
-        for (const [i, date] of days.entries()) {
-          if (ctl.stopped) break;
-          setRunning({ preset: preset.name, day: i + 1, days: days.length });
-          const d = dataRef.current;
-          const visits = visitsOn(d, date);
-          const manual = pinsOf(visits);
-          const input = { ...d, rules: applyPreset(d.rules, preset) };
-          const p = attempt(() => compile(input, date, Object.keys(manual).length > 0 ? manual : undefined)).value;
-          if (!p || p.visits.length === 0 || p.staff.length === 0) continue;
-          const started = runSolve(p, { seed: d.seed, iterations: defaultIterations(p) });
-          ctl.stop = started.stop;
-          const res = await started.promise;
-          ctl.stop = null;
-          prop.days.push({ date, problem: p, routes: res.routes, visits, inputs: dayInputsOf(d, date) });
-          setProposals(out.map((x) => ({ ...x, days: [...x.days] })));
-        }
-        prop.done = !ctl.stopped;
-        setProposals(out.map((x) => ({ ...x, days: [...x.days] })));
-      }
-    } catch (e) {
-      setRunError(e instanceof Error ? e.message : '提案を作れませんでした');
-    } finally {
-      runRef.current = null;
-      setRunning(null);
-    }
-  };
-  const stop = () => {
-    if (!runRef.current) return;
-    runRef.current.stopped = true;
-    runRef.current.stop?.();
-  };
-
-  /** カードの数（点は点数の基準の物差し） */
-  const stats = useMemo(() => {
-    const basisRules = scoreRulesOf(data);
-    const toPoints = (day: StandardDay): number | null => {
-      const visits = visitsOn(data, day.date);
-      const manual = pinsOf(visits);
-      const p = attempt(() =>
-        compile({ ...data, rules: basisRules }, day.date, Object.keys(manual).length > 0 ? manual : undefined),
-      ).value;
-      if (!p) return null;
-      const sc = attempt(() => score(p, day.routes)).value;
-      const scale = attempt(() => normalize(p)).value;
-      return sc && scale ? toHundred(sc.total, scale) : null;
-    };
-    return data.presets.map((preset): ProposalStats | null => {
-      const prop = proposals.find((x) => x.presetId === preset.id);
-      return prop && prop.days.length > 0 ? proposalStats(prop.days, toPoints) : null;
-    });
-  }, [proposals, data]);
-  const best = bestIndex(stats);
-  const stale = (prop: Proposal | undefined) => !!prop && prop.days.some((day) => !fresh(data, day));
-
-  // 3. 選ぶ
-  const pick = async (preset: Preset) => {
-    const prop = proposals.find((x) => x.presetId === preset.id);
-    if (!prop || prop.days.length === 0) return;
-    const ok = await confirmDialog({
-      title: `「${preset.name}」で${md(period.from)}〜${md(period.to)}の担当を書きますか？`,
-      body: `期間の担当と時刻を提案のとおりに書きます（ピンの訪問はそのまま）。点数の基準を「${preset.name}」にします。元に戻すで戻せます`,
-      confirmLabel: '書く',
-    });
-    if (!ok) return;
-    let written = 0;
-    update((d) => {
-      const okDays = prop.days.filter((day) => fresh(d, day));
-      written = okDays.length;
-      let out = d;
-      for (const day of okDays) out = writeRoutes(out, day.date, day.problem, day.routes);
-      return setScorePreset(out, preset.id);
-    }, `組み方の標準：${preset.name}で書く`);
-    setProposals([]);
-    toast(
-      written === prop.days.length
-        ? `${written}日分を書きました`
-        : `${written}日分を書きました（作ったあとに変わった日は書いていません）`,
-      { action: undoAction },
+  const current = useMemo(() => currentTable(data, today), [data, today]);
+  const key = useMemo(() => patternsKey(data, today), [data, today]);
+  const rows = useMemo(() => {
+    const names = new Map(data.clients.map((c) => [c.id, c.displayName]));
+    const firstWd = (p: Pattern) => Math.min(...p.weekdays.map((w) => (w + 6) % 7));
+    return [...standardPatterns(data, today)].sort(
+      (a, b) =>
+        (names.get(a.clientId) ?? '').localeCompare(names.get(b.clientId) ?? '', 'ja') || firstWd(a) - firstWd(b),
     );
+  }, [data, today]);
+  const weekdays = useMemo(() => WEEKDAY_ORDER.filter((wd) => rows.some((p) => p.weekdays.includes(wd))), [rows]);
+  const workingStaff = useMemo(
+    () =>
+      data.staff
+        .filter((s) => s.active)
+        .map((s) => ({ id: s.id, name: s.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja')),
+    [data.staff],
+  );
+  const cycle = cycleWeeks(data, today);
+  const period = standardPeriod(data, today);
+  const tableProps = { rows, weekdays, current, clientName, staffName };
+
+  // 1. 案をくらべる
+  const running = work.running;
+  const [viewing, setViewing] = useState<string | null>(null);
+  const viewId = useId();
+  const run = () => {
+    setViewing(null);
+    void runProposals(data, today);
+  };
+  const cards = data.presets.map((preset) => {
+    const prop = work.proposals.find((x) => x.presetId === preset.id);
+    const diff = prop?.table ? diffCounts(tableDiff(prop.table, current)) : null;
+    return { preset, prop, diff };
+  });
+  const best = bestIndex(cards.map((c) => c.prop?.stats ?? null));
+  const proposalsStale = work.proposalsOf !== null && work.proposalsOf.key !== key;
+  const viewed = cards.find((c) => c.preset.id === viewing && c.prop?.table);
+
+  const draftHead = useRef<HTMLHeadingElement>(null);
+  const focusDraft = () =>
+    requestAnimationFrame(() => {
+      draftHead.current?.scrollIntoView({ block: 'start' });
+      draftHead.current?.focus();
+    });
+  const pickProposal = async (presetId: string, table: StandardTable) => {
+    if (work.draft) {
+      const ok = await confirmDialog({
+        title: `下書きを「${presetName(presetId)}」の案で置き換えますか？`,
+        body: '今の下書きで直した所は消えます',
+        confirmLabel: '置き換える',
+      });
+      if (!ok) return;
+    }
+    setDraft({ table, from: presetId }, key);
+    setEditing(null);
+    focusDraft();
   };
 
-  // 5. 登録
-  const rows = useMemo(() => standardDiff(data, period), [data, period]);
-  const changedRows = rows.filter((r) => r.changed);
+  // 2. 表で直す（下書き）
+  const draft = work.draft;
+  const draftDiff = useMemo(() => (draft ? tableDiff(draft.table, current) : []), [draft, current]);
+  const [editing, setEditing] = useState<CellRef | null>(null);
+  const cellRefs = useRef(new Map<string, HTMLButtonElement>());
+  const closeEditor = (ref: CellRef | null) => {
+    setEditing(null);
+    // マスのボタンは残るので、欄を消す前にフォーカスを移す（消えた欄にフォーカスを残さない）
+    if (ref) cellRefs.current.get(cellKey(ref))?.focus();
+  };
+  const fromCurrent = () => {
+    setDraft({ table: current, from: null }, key);
+    setEditing(null);
+    focusDraft();
+  };
+  const discard = async () => {
+    if (!draft) return;
+    if (draftDiff.length > 0) {
+      const ok = await confirmDialog({
+        title: '下書きを捨てますか？',
+        body: `今の標準と違う ${draftDiff.length}か所の直しが消えます。標準と予定は変わりません`,
+        confirmLabel: '捨てる',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    setDraft(null, null);
+    setEditing(null);
+  };
+
+  // 3. 標準にする
   const minSince = earliestSince(data, today);
   const [sinceIn, setSinceIn] = useState<string | null>(null);
-  const since = sinceIn !== null && sinceIn >= minSince ? sinceIn : defaultSince(data, period, today);
-  const temps = useMemo(() => temporaryChanges(data, rows, since, period), [data, rows, since, period]);
-  const [temp, setTemp] = useState<TemporaryChoice>('pin');
-  const [showSame, setShowSame] = useState(false);
+  const since = sinceIn !== null && sinceIn >= minSince ? sinceIn : defaultSince(data, today);
+  const temps = useMemo(
+    () => (draft && draftDiff.length > 0 ? temporaryChanges(data, draft.table, since, today) : []),
+    [data, draft, draftDiff.length, since, today],
+  );
+  const [temp, setTemp] = useState<TemporaryChoice>('drop');
   const register = async () => {
-    if (changedRows.length === 0) return;
-    const c = registerCounts(rows, temps);
+    if (!draft || draftDiff.length === 0) return;
+    const patternsChanged = new Set(draftDiff.map((c) => c.patternId)).size;
     const lines = [
-      `変わる繰り返し ${c.changed}件${c.split > 0 ? `（うち曜日ごとに分ける ${c.split}件）` : ''}`,
-      `${md(since)}以降の計算した回は新しい標準の担当・時刻になります。`,
-      c.temporary > 0
-        ? `標準と違う一時の変更 ${c.temporary}件は${temp === 'pin' ? 'ピンを立てて残します' : '標準に戻します（消します）'}。`
+      `今の標準と違う ${draftDiff.length}か所（繰り返し ${patternsChanged}件）を書き換えます。曜日で担当が違う繰り返しは曜日ごとに分けます。`,
+      `${md(since)}から先の予定は、この表の担当・時刻で並びます。`,
+      temps.length > 0
+        ? temp === 'drop'
+          ? `すでに入っている予定で新しい標準と違う ${temps.length}件は、消して標準どおりにします。`
+          : `すでに入っている予定で新しい標準と違う ${temps.length}件は、今の担当のまま固定（ピン）します。`
         : '',
-      '伝えた日の回とピンの回は変えません。元に戻すで戻せます',
+      draft.from ? `標準の考え方（点数の基準）を「${presetName(draft.from)}」にします。` : '',
+      '伝えた日の予定とピンの予定は変えません。元に戻すで戻せます',
     ].filter(Boolean);
-    const ok = await confirmDialog({ title: '標準を登録しますか？', body: lines.join('\n'), confirmLabel: '登録する' });
+    const ok = await confirmDialog({
+      title: `この表を ${md(since)} から標準にしますか？`,
+      body: lines.join('\n'),
+      confirmLabel: '標準にする',
+    });
     if (!ok) return;
+    const table = draft.table;
+    const presetId = draft.from;
     update(
-      (d) => registerStandard(d, period, since, today, { newId: () => newId('pattern'), temp, at: Date.now() }),
+      (d) =>
+        registerStandard(d, table, since, today, { newId: () => newId('pattern'), temp, at: Date.now(), presetId }),
       '組み方の標準を登録',
     );
-    toast('標準を登録しました', { action: undoAction });
+    setDraft(null, null);
+    standardWork.set((w) => ({ ...w, registered: { since } }));
+    setEditing(null);
+    toast('標準にしました', { action: undoAction });
   };
 
-  const basis = scorePresetOf(data.presets, data.scorePresetId);
   const std = data.standard;
-  const stdPreset = std ? data.presets.find((p) => p.id === std.presetId) : undefined;
-  const weekLinks = Array.from({ length: period.weeks }, (_, i) => periodDates(period)[i * 7]!);
+  const registered = work.registered;
 
   return (
     <div className="stack standard-page">
       <PageHeader
-        nav={<SettingsTabs />}
+        nav={<ArrangeTabs />}
         icon={CalendarCheck}
         title="組み方の標準"
-        lead="誰が・何曜・何時に行くかの標準を決めます。登録すると、先の週・月はこの標準で並び、AI は標準で埋まらない所だけを組みます"
+        lead="誰が・何曜・何時に行くかの標準を表で決めます。登録すると、先の週・月はこの表のとおりに並びます"
       />
       <p className="sub" data-testid="standard-now">
         {std
-          ? `標準：${md(std.from)}から・考え方「${stdPreset?.name ?? '消したプリセット'}」・${std.weeks}週の周期（${md(jstDate(std.at))}に登録）`
+          ? `標準：${md(std.from)}から・考え方「${presetName(std.presetId)}」・${std.weeks}週の周期（${md(jstDate(std.at))}に登録）`
           : 'まだ標準を登録していません'}
       </p>
       <ol className="standard-steps stack" data-testid="standard-steps">
-        <li className="card stack" data-step="period">
-          <h2>1. 期間</h2>
-          <p data-testid="standard-period">
-            {md(period.from)}〜{md(period.to)}（{period.weeks}週）。{cycle.reason}
-          </p>
-          <label className="row">
-            週の数
-            <select
-              value={period.weeks}
-              onChange={(e) => setWeeks(Number(e.target.value))}
-              data-testid="standard-weeks"
-              disabled={running !== null}
-            >
-              {[1, 2, 3, 4].map((w) => (
-                <option key={w} value={w}>
-                  {w}週
-                </option>
-              ))}
-            </select>
-          </label>
-          {period.weeks < cycle.weeks && (
-            <p className="sub warn">周期より短いので、期間に回の無い繰り返しは今の標準のままです</p>
-          )}
-        </li>
-
-        <li className="card stack" data-step="run">
-          <h2>2. 考え方で作る</h2>
-          <p className="sub">
-            プリセットごとに期間の担当の提案を作って比べます。手で付けたピンだけを守り、今の標準の担当にはこだわりません。伝えた日は作りません
+        <li className="card stack" data-step="proposals">
+          <h2>1. 案をくらべる</h2>
+          <p className="sub" data-testid="standard-period">
+            プリセット（考え方）ごとに、{md(period.from)}〜{md(period.to)}（{period.weeks}週。{cycle.reason}）の担当を
+            AI
+            で組み、標準の表の案を作ります。繰り返しだけから作り（ピン・今の予定の手直しは見ません）、今の予定は変わりません
           </p>
           <div className="row">
             <button
               type="button"
-              className="btn btn-primary"
-              onClick={() => void run()}
+              className={draft ? 'btn' : 'btn btn-primary'}
+              onClick={run}
               disabled={running !== null}
               data-testid="standard-run"
             >
-              {data.presets.length}つの考え方で作る
+              {data.presets.length}つの考え方で案を作る
             </button>
             {running && (
               <>
                 <output data-testid="standard-progress">
-                  「{running.preset}」で作っています {running.day}/{running.days}日
+                  「{running.presetName}」で作っています {running.day}/{running.days}日
                 </output>
-                <button type="button" className="btn btn-small" onClick={stop} data-testid="standard-stop">
+                <button type="button" className="btn btn-small" onClick={stopProposals} data-testid="standard-stop">
                   止める
                 </button>
               </>
             )}
           </div>
-          {runError && (
+          {work.error && (
             <p className="error" role="alert">
-              {runError}
+              {work.error}
+            </p>
+          )}
+          {proposalsStale && (
+            <p className="sub warn" data-testid="standard-proposals-stale">
+              案を作ったあとに繰り返しが変わりました。作り直すと今の繰り返しで比べられます
             </p>
           )}
           <ul className="standard-cards">
-            {data.presets.map((preset, i) => {
-              const s = stats[i];
-              const prop = proposals.find((x) => x.presetId === preset.id);
+            {cards.map(({ preset, prop, diff }, i) => {
+              const s = prop?.stats ?? null;
+              const ready = !!prop?.done && !!prop.table;
               return (
                 <li key={preset.id} className="card standard-card" data-testid="standard-card" data-preset={preset.id}>
                   <h3>
@@ -316,169 +466,243 @@ export default function StandardPage() {
                     {preset.name}
                   </h3>
                   {preset.note && <p className="sub">{preset.note}</p>}
-                  {s ? (
+                  {ready ? (
                     <dl className="standard-stats">
                       <dt>点</dt>
-                      <dd data-testid="standard-points">{s.points ?? '—'}</dd>
+                      <dd data-testid="standard-points">{s?.points ?? '—'}</dd>
                       <dt>移動</dt>
-                      <dd>{Math.round(s.travelMinutes / 6) / 10}時間</dd>
+                      <dd>{s ? `${Math.round(s.travelMinutes / 6) / 10}時間` : '—'}</dd>
                       <dt>担当なし</dt>
-                      <dd>{s.unassigned}件</dd>
+                      <dd>{s ? `${s.unassigned}件` : '—'}</dd>
                       <dt>件数の偏り</dt>
                       <dd
                         title={
-                          s.most && s.least
+                          s?.most && s.least
                             ? `いちばん多い：${staffName(s.most.staffId)} ${s.most.count}件・いちばん少ない：${staffName(s.least.staffId)} ${s.least.count}件`
                             : undefined
                         }
                         data-testid="standard-spread"
                       >
-                        {s.spread}件
+                        {s ? `${s.spread}件` : '—'}
                       </dd>
-                      <dt>守れない条件</dt>
-                      <dd>{s.hard}件</dd>
+                      <dt>今の標準と違う</dt>
+                      <dd data-testid="standard-card-diff" data-count={diff?.all ?? 0}>
+                        {diff ? `${diff.all}マス（担当 ${diff.staff}・時刻だけ ${diff.time}）` : '—'}
+                      </dd>
                     </dl>
                   ) : (
-                    <p className="sub">{prop ? '作っています…' : 'まだ作っていません'}</p>
+                    <p className="sub">
+                      {running && prop ? '作っています…' : running ? '順番を待っています' : 'まだ作っていません'}
+                    </p>
                   )}
-                  {stale(prop) && <p className="sub warn">作ったあとに予定が変わりました（変わった日は書きません）</p>}
-                  {s && prop?.done && (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => void pick(preset)}
-                      disabled={running !== null}
-                      data-testid="standard-pick"
-                    >
-                      この考え方で作る
-                    </button>
+                  {ready && prop?.table && (
+                    <div className="row">
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        aria-expanded={viewing === preset.id}
+                        aria-controls={viewId}
+                        onClick={() => setViewing((v) => (v === preset.id ? null : preset.id))}
+                        data-testid="standard-view"
+                      >
+                        {viewing === preset.id ? '表を閉じる' : '表で見る'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => void pickProposal(preset.id, prop.table as StandardTable)}
+                        data-testid="standard-use"
+                      >
+                        この案から作る
+                      </button>
+                    </div>
                   )}
                 </li>
               );
             })}
           </ul>
+          {viewed?.prop?.table && (
+            <section id={viewId} className="stack" aria-label={`「${viewed.preset.name}」の案の表`}>
+              <h3 className="standard-view-title">
+                「{viewed.preset.name}」の案の表（今の標準と違うマス {viewed.diff?.all ?? 0}。担当{' '}
+                {viewed.diff?.staff ?? 0}・時刻だけ {viewed.diff?.time ?? 0}）
+              </h3>
+              <StandardTableView {...tableProps} table={viewed.prop.table} testId="standard-view-table" />
+            </section>
+          )}
         </li>
 
-        <li className="card stack" data-step="edit">
-          <h2>3. 直す</h2>
-          <p className="sub">
-            週の予定で担当・時刻を直してから、下で登録します。今の担当のまま登録してもかまいません（今の点数の基準：「
-            {basis?.name ?? '—'}」）
-          </p>
-          <div className="row">
-            {weekLinks.map((d) => (
-              <Link key={d} to={`/week?d=${d}&mode=change`} className="btn" data-testid="standard-week-link">
-                週の予定で直す（{md(d)}〜）
-              </Link>
-            ))}
-          </div>
-        </li>
-
-        <li className="card stack" data-step="register">
-          <h2>4. 標準として登録</h2>
-          {rows.length === 0 ? (
-            <p className="sub">期間に繰り返しの回がありません</p>
-          ) : (
-            <table className="standard-diff" data-testid="standard-diff">
-              <thead>
-                <tr>
-                  <th scope="col">{terms.client}</th>
-                  <th scope="col">担当</th>
-                  <th scope="col">曜日ごとの開始</th>
-                  <th scope="col">注意</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows
-                  .filter((r) => r.changed || showSame)
-                  .map((r) => (
-                    <tr key={r.patternId} data-changed={r.changed} data-testid="standard-row">
-                      <th scope="row">{clientName(r.clientId)}</th>
-                      <td>
-                        {r.split
-                          ? r.days.map((d) => `${WEEKDAY_LABELS[d.weekday]}：${staffName(d.staffId)}`).join('・')
-                          : r.staff.before === r.staff.after
-                            ? staffName(r.staff.after)
-                            : `${staffName(r.staff.before)} → ${staffName(r.staff.after)}`}
-                      </td>
-                      <td>
-                        {r.starts.length === 0
-                          ? '—'
-                          : r.starts
-                              .map((s) => `${WEEKDAY_LABELS[s.weekday]} ${s.before ?? '—'} → ${s.after ?? '—'}`)
-                              .join('・')}
-                      </td>
-                      <td>{r.warnings.map((w) => STANDARD_WARNING_TEXT[w]).join('。')}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          )}
-          {rows.length > changedRows.length && (
-            <button
-              type="button"
-              className="btn btn-small btn-text"
-              onClick={() => setShowSame((x) => !x)}
-              data-testid="standard-show-same"
-            >
-              {showSame ? '変わらない繰り返しを畳む' : `変わらない ${rows.length - changedRows.length}件を見る`}
-            </button>
-          )}
-          <label className="row">
-            いつから
-            <input
-              type="date"
-              value={since}
-              min={minSince}
-              onChange={(e) => setSinceIn(e.target.value || null)}
-              data-testid="standard-since"
-            />
-          </label>
-          {temps.length > 0 && (
-            <div className="card warn stack" data-testid="standard-temp">
-              <p>
-                <strong>標準と違う一時の変更が {temps.length}件あります</strong>
+        <li className="card stack" data-step="draft">
+          <h2 ref={draftHead} tabIndex={-1}>
+            2. 表で直す（下書き）
+          </h2>
+          {!draft ? (
+            <>
+              <p className="sub">
+                下書きの表で、{terms.client}
+                の繰り返しごと・曜日ごとに担当と時刻を直します。上の案から作るか、今の標準から作ります。下書きは標準にするまで予定に書きません
               </p>
-              <ul>
-                {temps.slice(0, 10).map((t) => (
-                  <li key={t.visitId}>
-                    {md(t.date)} {clientName(t.clientId)}：{staffName(t.now.staffId)} {t.now.start ?? ''} → 標準{' '}
-                    {staffName(t.standard.staffId)} {t.standard.start ?? ''}
-                  </li>
-                ))}
-                {temps.length > 10 && <li>ほか {temps.length - 10}件</li>}
-              </ul>
-              <fieldset data-testid="standard-temp-choice">
-                <legend>一時の変更をどうしますか</legend>
-                <label>
-                  <input type="radio" name="standard-temp" checked={temp === 'pin'} onChange={() => setTemp('pin')} />
-                  ピンを立てて残す
-                </label>
-                <label>
-                  <input type="radio" name="standard-temp" checked={temp === 'drop'} onChange={() => setTemp('drop')} />
-                  標準に戻す（消す）
-                </label>
-              </fieldset>
-            </div>
+              <div className="row">
+                <button type="button" className="btn" onClick={fromCurrent} data-testid="standard-from-current">
+                  今の標準から作る
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="sub" data-testid="standard-draft-from">
+                {draft.from ? `「${presetName(draft.from)}」の案から作った下書き` : '今の標準から作った下書き'}
+                。マスを押すと担当と時刻を直せます
+              </p>
+              <p data-testid="standard-diff-count">
+                <strong>今の標準と違う所 {draftDiff.length}か所</strong>（担当 {diffCounts(draftDiff).staff}・時刻だけ{' '}
+                {diffCounts(draftDiff).time}）
+              </p>
+              {work.draftKey !== key && (
+                <p className="sub warn" data-testid="standard-draft-stale">
+                  下書きを作ったあとに繰り返しが変わりました。無くなった繰り返しは外し、新しい繰り返しは今の標準で出しています
+                </p>
+              )}
+              <StandardTableView
+                {...tableProps}
+                table={draft.table}
+                testId="standard-table"
+                edit={{
+                  open: editing,
+                  onOpen: (ref) => setEditing((e) => (e && cellKey(e) === cellKey(ref) ? null : ref)),
+                  cellRefs,
+                  editor: (p, wd) => {
+                    const c = cellOf(draft.table, current, p.id, wd);
+                    if (!c) return null;
+                    const ref = { patternId: p.id, weekday: wd };
+                    return (
+                      <CellEditor
+                        key={cellKey(ref)}
+                        pattern={p}
+                        wd={wd}
+                        cell={c}
+                        title={`${clientName(p.clientId)} ${WEEKDAY_LABELS[wd]}曜の担当と時刻`}
+                        staff={workingStaff}
+                        onDone={(cell) => {
+                          const w = standardWork.get();
+                          if (w.draft) setDraft({ ...w.draft, table: setCell(w.draft.table, ref, cell) }, w.draftKey);
+                          closeEditor(ref);
+                        }}
+                        onClose={() => closeEditor(ref)}
+                      />
+                    );
+                  },
+                }}
+              />
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-small btn-text"
+                  onClick={() => void discard()}
+                  data-testid="standard-discard"
+                >
+                  下書きを捨てる
+                </button>
+              </div>
+            </>
           )}
-          <div className="row">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void register()}
-              disabled={changedRows.length === 0 || running !== null}
-              data-testid="standard-register"
-            >
-              標準として登録
-            </button>
-            {changedRows.length === 0 && rows.length > 0 && <span className="sub">今の標準と同じです</span>}
-            {std && (
-              <Link to={`/month?ym=${std.from.slice(0, 7)}&mode=change`} className="btn btn-text">
-                先の月の予定を見る
-              </Link>
-            )}
-          </div>
         </li>
+
+        {(draft || registered) && (
+          <li className="card stack" data-step="register">
+            <h2>3. 標準にする</h2>
+            {draft ? (
+              <>
+                <label className="row">
+                  いつから
+                  <input
+                    type="date"
+                    value={since}
+                    min={minSince}
+                    onChange={(e) => setSinceIn(e.target.value || null)}
+                    data-testid="standard-since"
+                  />
+                </label>
+                {temps.length > 0 && (
+                  <fieldset className="standard-temp stack" data-testid="standard-temp-choice">
+                    <legend>
+                      {md(since)}から先ですでに担当が入っている予定のうち、新しい標準と違うもの
+                      <strong data-testid="standard-temp-count"> {temps.length}件</strong>
+                    </legend>
+                    <label className="standard-choice">
+                      <input
+                        type="radio"
+                        name="standard-temp"
+                        checked={temp === 'drop'}
+                        onChange={() => setTemp('drop')}
+                        data-testid="standard-temp-drop"
+                      />
+                      <span>
+                        <strong>標準どおりに入れ替える（おすすめ）</strong>
+                        <span className="sub">その予定を消して、新しい標準の担当・時刻にします</span>
+                      </span>
+                    </label>
+                    <label className="standard-choice">
+                      <input
+                        type="radio"
+                        name="standard-temp"
+                        checked={temp === 'pin'}
+                        onChange={() => setTemp('pin')}
+                        data-testid="standard-temp-pin"
+                      />
+                      <span>
+                        <strong>今のまま残す</strong>
+                        <span className="sub">その予定は今の担当のまま固定（ピン）します</span>
+                      </span>
+                    </label>
+                    <details>
+                      <summary>どの予定か見る</summary>
+                      <ul className="standard-temp-list">
+                        {temps.slice(0, 20).map((t) => (
+                          <li key={t.visitId}>
+                            {md(t.date)}（{WEEKDAY_LABELS[new Date(`${t.date}T00:00:00Z`).getUTCDay()]}）
+                            {clientName(t.clientId)}：今 {staffName(t.now.staffId)} {t.now.start ?? ''} → 標準{' '}
+                            {staffName(t.standard.staffId)} {t.standard.start ?? ''}
+                          </li>
+                        ))}
+                        {temps.length > 20 && <li>ほか {temps.length - 20}件</li>}
+                      </ul>
+                    </details>
+                  </fieldset>
+                )}
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => void register()}
+                    disabled={draftDiff.length === 0}
+                    data-testid="standard-register"
+                  >
+                    この表を標準にする
+                  </button>
+                  {draftDiff.length === 0 && (
+                    <span className="sub" data-testid="standard-same">
+                      今の標準と同じです
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              registered && (
+                <div className="standard-done stack" data-testid="standard-done">
+                  <p>
+                    <strong>{md(registered.since)} から毎週この表のとおりに並びます</strong>
+                  </p>
+                  <div className="row">
+                    <Link to={`/week?d=${mondayOf(registered.since)}`} className="btn" data-testid="standard-week-link">
+                      週の予定で見る
+                    </Link>
+                  </div>
+                </div>
+              )
+            )}
+          </li>
+        )}
       </ol>
     </div>
   );

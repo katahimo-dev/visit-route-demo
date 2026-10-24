@@ -1,32 +1,44 @@
-// 組み方の標準（標準の週。PRD D350〜D354。ADR-0062）の純粋関数。
-// 標準＝繰り返しの担当（usualStaffId）と曜日ごとの標準の開始（usualStarts）。期間の繰り返しの回から差分を出し、
-// 「いつから」で繰り返しを書き換える（曜日で担当が違えば曜日ごとに分ける）。データは書き換えず新しい物を返す
+// 組み方の標準（標準の週。PRD D350〜D354。ADR-0063）の純粋関数。
+// 標準＝繰り返しの担当（usualStaffId）と曜日ごとの標準の開始（usualStarts）。画面では「標準の表」（繰り返し × 曜日のマスに担当と開始）
+// として見せ、AI の案（日ごとの割当）からも表を作る。登録は表を受けて「いつから」で繰り返しを書き換える
+// （曜日で担当が違えば曜日ごとに分ける）。データは書き換えず新しい物を返す
 import type { DemoData, StandardInfo } from '../contracts/data';
 import type { Pattern, PatternUsualStart, Visit } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
-import { addDays, weekday } from '../domain/time';
+import { addDays, minutesToHhmm, weekday } from '../domain/time';
 import { score } from '../evaluate';
-import { occursOn, patternVisitId, timesOn, usualStartOn, visitOf, visitsIn } from '../patterns';
+import { occursOn, parsePatternVisitId, patternVisitId, timesOn, usualStartOn, visitOf } from '../patterns';
 import { own } from './common';
-import { activeDayVisits } from './dayPlan';
+import { ownerOf, startsOf } from './dayPlan';
+import { setScorePreset } from './presets';
 
 /** 標準の期間（両端を含む。from は来週の月曜） */
 export type StandardPeriod = { from: string; to: string; weeks: number };
 
 type PatternData = Pick<DemoData, 'patterns' | 'clients'>;
 
-/** today に続いている（終わっていない）、利用中の〈利用者さん〉の繰り返し */
-const livePatterns = (data: PatternData, today: string): Pattern[] => {
+/**
+ * 標準の表の行にする繰り返し：利用中の〈利用者さん〉の、today 以降に続く（終わっていない）繰り返し。
+ * ただし先で終わり、同じ〈利用者さん〉・種類の後に始まる繰り返しがあるもの（「いつから」で分けた前の側）は除き、後の側を行にする
+ */
+export function standardPatterns(data: PatternData, today: string): Pattern[] {
   const active = new Set(data.clients.filter((c) => c.active).map((c) => c.id));
-  return data.patterns.filter((p) => active.has(p.clientId) && (p.to === null || p.to >= today));
-};
+  const live = data.patterns.filter((p) => active.has(p.clientId) && (p.to === null || p.to >= today));
+  return live.filter(
+    (p) =>
+      p.to === null ||
+      !live.some(
+        (q) => q.id !== p.id && q.clientId === p.clientId && q.typeId === p.typeId && q.from > (p.to as string),
+      ),
+  );
+}
 
 /**
  * 周期の週数：利用中の繰り返しの間隔の最大（毎月の第N週があれば4）。繰り返しが無ければ1。1〜4。
  * reason は画面に出す理由
  */
 export function cycleWeeks(data: PatternData, today: string): { weeks: number; reason: string } {
-  const live = livePatterns(data, today);
+  const live = standardPatterns(data, today);
   if (live.length === 0) return { weeks: 1, reason: '繰り返しが無いので1週' };
   if (live.some((p) => p.repeat === 'monthly')) return { weeks: 4, reason: '毎月の第N週の繰り返しがあるので4週' };
   const max = Math.min(4, Math.max(1, ...live.map((p) => p.everyWeeks)));
@@ -39,6 +51,9 @@ export function nextMonday(today: string): string {
   const wd = weekday(today);
   return addDays(today, wd === 1 ? 7 : (8 - wd) % 7 || 7);
 }
+
+/** その日を含む週の月曜 */
+export const mondayOf = (date: string): string => addDays(date, -((weekday(date) + 6) % 7));
 
 /** 標準の期間：来週の月曜から weeks 週（無ければ周期の週数） */
 export function standardPeriod(data: PatternData, today: string, weeks?: number): StandardPeriod {
@@ -54,107 +69,122 @@ export function periodDates(period: Pick<StandardPeriod, 'from' | 'to'>): string
   return out;
 }
 
-/** 差分の注意（ADR-0062） */
-export type StandardWarning = 'weekdaySplit' | 'weeksDiffer' | 'outsideWindow' | 'unassigned' | 'notSeen';
+/** 標準の表のマス（担当・標準の開始。null は担当なし・開始なし） */
+export type StandardCell = { staffId: string | null; start: string | null };
+/** 標準の表：繰り返し ID → 曜日（0＝日〜6＝土）→ マス */
+export type StandardTable = Record<string, Record<number, StandardCell>>;
+/** マスの位置 */
+export type CellRef = { patternId: string; weekday: number };
+/** 今の標準と違うマス（kind：担当が違う・時刻だけ違う） */
+export type CellDiff = CellRef & { kind: 'staff' | 'time' };
 
-export const STANDARD_WARNING_TEXT: Record<StandardWarning, string> = {
-  weekdaySplit: '曜日で担当が違うので、曜日ごとに分けます',
-  weeksDiffer: '週によって担当が違うので、最初の週の担当にします',
-  outsideWindow: '開始が時間の約束の外なので、開始は書きません',
-  unassigned: '担当なしの回があります',
-  notSeen: '期間に回がありません。今の標準のまま',
-};
+/** 表の曜日の並び（月曜はじまり） */
+export const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
-/** 曜日ごとの標準（担当・開始） */
-export type WeekdayStandard = { weekday: number; staffId: string | null; start: string | null };
+/** その曜日の今の標準の開始（時間の約束の外・無ければ null） */
+const usualStartOf = (p: Pattern, wd: number): string | null => usualStartOn(p, wd, timesOn(p, wd));
 
-/** 差分の1行（繰り返し1つ） */
-export type StandardRow = {
-  patternId: string;
-  clientId: string;
-  /** 担当（曜日で分けるときの after は先頭の曜日の担当） */
-  staff: { before: string | null; after: string | null };
-  /** 曜日ごとの開始（変わる曜日だけ） */
-  starts: { weekday: number; before: string | null; after: string | null }[];
-  /** 曜日ごとの新しい標準（期間に回の無い曜日は今の標準） */
-  days: WeekdayStandard[];
-  /** 曜日で担当が違う（曜日ごとに分ける） */
-  split: boolean;
-  warnings: StandardWarning[];
-  /** 何か変わるか */
-  changed: boolean;
-};
+/** 今の標準の表（standardPatterns の繰り返しの、曜日ごとの担当と標準の開始） */
+export function currentTable(data: PatternData, today: string): StandardTable {
+  const out: StandardTable = {};
+  for (const p of standardPatterns(data, today)) {
+    const row: Record<number, StandardCell> = {};
+    for (const wd of p.weekdays) row[wd] = { staffId: p.usualStaffId, start: usualStartOf(p, wd) };
+    out[p.id] = row;
+  }
+  return out;
+}
 
-/** その曜日の今の標準の開始 */
-const usualStartOf = (p: Pattern, wd: number): string | null =>
-  (p.usualStarts ?? []).find((x) => x.weekday === wd)?.start ?? null;
+/** 表のマス（表に無ければ今の標準。どちらにも無ければ null） */
+export function cellOf(
+  table: StandardTable | null,
+  current: StandardTable,
+  patternId: string,
+  wd: number,
+): StandardCell | null {
+  const cur = own(current, patternId)?.[wd];
+  if (!cur) return null;
+  return (table ? own(table, patternId)?.[wd] : undefined) ?? cur;
+}
+
+const sameCell = (a: StandardCell, b: StandardCell) => a.staffId === b.staffId && a.start === b.start;
+
+/** 違うマスの数（全部・担当が違う・時刻だけ違う） */
+export function diffCounts(diff: readonly CellDiff[]): { all: number; staff: number; time: number } {
+  const staff = diff.filter((d) => d.kind === 'staff').length;
+  return { all: diff.length, staff, time: diff.length - staff };
+}
+
+/** 表のマスを1つ替えた新しい表 */
+export function setCell(table: StandardTable, ref: CellRef, cell: StandardCell): StandardTable {
+  return { ...table, [ref.patternId]: { ...own(table, ref.patternId), [ref.weekday]: cell } };
+}
 
 /**
- * 標準の差分：期間の繰り返しの回（取り消し・休みでない）から、繰り返しごとに曜日ごとの担当・組んだ開始を読む
- * （同じ曜日は最初の週の回）。期間に回が1つも無い繰り返しは出さない
+ * 今の標準と違うマス（今の標準にあるマスだけを見る。表に無いマスは今の標準のまま）。担当が違えば kind は staff、時刻だけなら time。
+ * 並びは今の標準の繰り返しの順・曜日の順
  */
-export function standardDiff(
-  data: Pick<DemoData, 'patterns' | 'clients' | 'visits' | 'clientLeaves'>,
-  period: Pick<StandardPeriod, 'from' | 'to'>,
-): StandardRow[] {
-  const byPattern = new Map<string, Visit[]>();
-  for (const d of periodDates(period)) {
-    for (const v of activeDayVisits(data, d)) {
-      if (!v.pattern) continue;
-      const list = byPattern.get(v.pattern.id) ?? [];
-      list.push(v);
-      byPattern.set(v.pattern.id, list);
+export function tableDiff(table: StandardTable, current: StandardTable): CellDiff[] {
+  const out: CellDiff[] = [];
+  for (const [patternId, row] of Object.entries(current)) {
+    for (const [k, cur] of Object.entries(row)) {
+      const wd = Number(k);
+      const t = own(table, patternId)?.[wd];
+      if (t && !sameCell(t, cur))
+        out.push({ patternId, weekday: wd, kind: t.staffId !== cur.staffId ? 'staff' : 'time' });
     }
   }
-  const rows: StandardRow[] = [];
-  for (const p of data.patterns) {
-    const seen = byPattern.get(p.id);
-    if (!seen || seen.length === 0) continue;
-    const warnings = new Set<StandardWarning>();
-    const first = new Map<number, Visit>();
-    for (const v of seen) {
-      const wd = weekday(v.pattern?.date ?? v.date);
-      const f = first.get(wd);
-      if (!f) first.set(wd, v);
-      else if (f.staffId !== v.staffId) warnings.add('weeksDiffer');
-      if (v.staffId === null) warnings.add('unassigned');
-    }
-    const days: WeekdayStandard[] = [];
-    const starts: StandardRow['starts'] = [];
-    for (const wd of p.weekdays) {
-      const v = first.get(wd);
-      const before = usualStartOf(p, wd);
-      if (!v) {
-        warnings.add('notSeen');
-        days.push({ weekday: wd, staffId: p.usualStaffId, start: before });
-        continue;
-      }
+  return out;
+}
+
+/**
+ * AI の案（日ごとの割当）から標準の表を作る：standardPatterns の繰り返しの回（問題の訪問 ID が計算した回の ID）から、
+ * 曜日ごとに最初の回の担当と lenient の開始を取る（担当なしは担当も開始も無し。開始が時間の約束の外なら開始は無し）。
+ * 期間に回の無いマスは今の標準のまま
+ */
+export function tableFromDays(
+  data: PatternData,
+  days: readonly Pick<StandardDay, 'problem' | 'routes'>[],
+  today: string,
+): StandardTable {
+  const patterns = new Map(standardPatterns(data, today).map((p) => [p.id, p]));
+  const out = currentTable(data, today);
+  const seen = new Set<string>();
+  for (const day of days) {
+    const at = startsOf(day.problem, day.routes);
+    const owner = ownerOf(day.routes);
+    const staffIn = new Set(day.problem.staff.map((s) => s.id));
+    for (const pv of day.problem.visits) {
+      const ref = parsePatternVisitId(pv.id);
+      const p = ref ? patterns.get(ref.patternId) : undefined;
+      if (!ref || !p) continue;
+      const wd = weekday(ref.date);
+      const key = `${p.id}|${wd}`;
+      if (seen.has(key) || !p.weekdays.includes(wd)) continue;
+      seen.add(key);
+      const o = owner.get(pv.id);
+      const staffId = o !== undefined && staffIn.has(o) ? o : null;
+      const x = at.get(pv.id);
       const t = timesOn(p, wd);
-      let after = v.start;
-      if (after !== null && (after < t.earliestStart || after > t.latestStart)) {
-        warnings.add('outsideWindow');
-        after = before;
-      }
-      days.push({ weekday: wd, staffId: v.staffId, start: after });
-      if (after !== before) starts.push({ weekday: wd, before, after });
+      const clock =
+        staffId !== null && x ? minutesToHhmm(Math.min(23 * 60 + 59, Math.max(0, Math.round(x.start)))) : null;
+      const start = clock !== null && t.earliestStart <= clock && clock <= t.latestStart ? clock : null;
+      out[p.id] = { ...own(out, p.id), [wd]: { staffId, start } };
     }
-    const staffSet = new Set(days.map((d) => d.staffId));
-    const split = staffSet.size > 1;
-    if (split) warnings.add('weekdaySplit');
-    const after = days[0]?.staffId ?? p.usualStaffId;
-    const changed = split || after !== p.usualStaffId || starts.length > 0;
-    rows.push({
-      patternId: p.id,
-      clientId: p.clientId,
-      staff: { before: p.usualStaffId, after },
-      starts,
-      days,
-      split,
-      warnings: [...warnings],
-      changed,
-    });
   }
-  return rows;
+  return out;
+}
+
+/** マスの開始の誤り（空は開始なしで可。HH:mm で、その曜日の時間の約束（開始（早）〜（遅））の中だけ） */
+export function startError(p: Pick<Pattern, 'earliestStart' | 'latestStart' | 'dayTimes'>, wd: number, start: string) {
+  if (start === '') return null;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(start)) return '時刻は 9:30 のように入れてください';
+  const t = timesOn(p, wd);
+  if (start < t.earliestStart || start > t.latestStart)
+    return t.earliestStart === t.latestStart
+      ? `時間の約束（${t.earliestStart}ちょうど）と違います`
+      : `時間の約束（${t.earliestStart}〜${t.latestStart}）の外です`;
+  return null;
 }
 
 /**
@@ -178,17 +208,17 @@ export function earliestSince(data: Pick<DemoData, 'snapshots' | 'visits'>, toda
   return next > today ? next : today;
 }
 
-/** 「いつから」の既定：期間の最初の日（選べるいちばん早い日より前ならその日） */
-export function defaultSince(
-  data: Pick<DemoData, 'snapshots' | 'visits'>,
-  period: StandardPeriod,
-  today: string,
-): string {
+/** 「いつから」の既定：来週の月曜（選べるいちばん早い日より前ならその日） */
+export function defaultSince(data: Pick<DemoData, 'snapshots' | 'visits'>, today: string): string {
   const min = earliestSince(data, today);
-  return period.from > min ? period.from : min;
+  const from = nextMonday(today);
+  return from > min ? from : min;
 }
 
-/** 新しい標準の繰り返し（分けた後のグループごと） */
+/** 曜日ごとの新しい標準 */
+type WeekdayStandard = { weekday: number } & StandardCell;
+
+/** 新しい標準の繰り返し（分けた後のまとまりごと） */
 type PatternGroup = { weekdays: number[]; staffId: string | null };
 
 /** 曜日を担当ごとにまとめる（並びは先頭の曜日の順） */
@@ -209,29 +239,39 @@ const usualStartsOf = (days: readonly WeekdayStandard[], weekdays: readonly numb
     .map((d) => ({ weekday: d.weekday, start: d.start as string }))
     .sort((a, b) => a.weekday - b.weekday);
 
-/** 一時の変更の1件（ピンでなく、新しい標準と担当か開始が違う保存した回） */
-export type TemporaryChange = {
-  visitId: string;
-  date: string;
-  clientId: string;
-  now: { staffId: string | null; start: string | null };
-  standard: { staffId: string | null; start: string | null };
-};
+/** 書き換える繰り返し（今の標準と違うマスのある、since 以降に続く繰り返し）と曜日ごとの新しい標準 */
+type ChangedRow = { pattern: Pattern; days: WeekdayStandard[] };
+
+function changedRows(data: PatternData, table: StandardTable, since: string, today: string): ChangedRow[] {
+  const current = currentTable(data, today);
+  const ids = new Set(tableDiff(table, current).map((c) => c.patternId));
+  const out: ChangedRow[] = [];
+  for (const p of data.patterns) {
+    // いつからより前に終わる繰り返しは書き換えない（開始日が終了日より後の繰り返しを作らない）
+    if (!ids.has(p.id) || (p.to !== null && p.to < since)) continue;
+    const days = p.weekdays.map((wd): WeekdayStandard => {
+      const c = cellOf(table, current, p.id, wd) ?? { staffId: p.usualStaffId, start: null };
+      return { weekday: wd, ...c };
+    });
+    out.push({ pattern: p, days });
+  }
+  return out;
+}
 
 /** 登録で見る保存した回（「いつから」以降・伝えていない日・変わる繰り返しの回）と、その回の新しい標準 */
+type Touched = { visit: Visit; std: WeekdayStandard };
+
 function touchedVisits(
-  data: Pick<DemoData, 'patterns' | 'visits' | 'snapshots'>,
-  rows: readonly StandardRow[],
+  data: Pick<DemoData, 'visits' | 'snapshots'>,
+  rows: readonly ChangedRow[],
   since: string,
-  period: Pick<StandardPeriod, 'from' | 'to'>,
 ): Touched[] {
-  const changed = new Map(rows.filter((r) => r.changed).map((r) => [r.patternId, r]));
+  const byId = new Map(rows.map((r) => [r.pattern.id, r]));
   const out: Touched[] = [];
   for (const v of data.visits) {
     if (!v.pattern || v.pattern.date < since || own(data.snapshots, v.date)) continue;
-    const row = changed.get(v.pattern.id);
-    const pattern = data.patterns.find((p) => p.id === v.pattern?.id);
-    if (!row || !pattern) continue;
+    const row = byId.get(v.pattern.id);
+    if (!row) continue;
     const wd = weekday(v.pattern.date);
     const day = row.days.find((d) => d.weekday === wd);
     if (!day) continue;
@@ -239,38 +279,46 @@ function touchedVisits(
     const start = usualStartOn(
       { usualStarts: day.start ? [{ weekday: wd, start: day.start }] : [] },
       wd,
-      timesOn(pattern, wd),
+      timesOn(row.pattern, wd),
     );
-    const inPeriod = period.from <= v.pattern.date && v.pattern.date <= period.to;
-    out.push({ visit: v, std: { weekday: wd, staffId: day.staffId, start }, pattern, inPeriod });
+    out.push({ visit: v, std: { weekday: wd, staffId: day.staffId, start } });
   }
   return out;
 }
 
-/** 登録で見る保存した回 */
-type Touched = { visit: Visit; std: WeekdayStandard; pattern: Pattern; inPeriod: boolean };
-
 /** この回だけ日時などを変えた回か（取り消しも） */
 const isEdited = (v: Visit) => v.cancelled || (v.pattern?.edited ?? false) || v.date !== v.pattern?.date;
 
-/**
- * 標準と同じ回か（担当と組んだ開始）。期間の中の回は標準の元なので、担当が同じなら開始の違いは見ない
- * （AI が週ごとに少し違う時刻を組むため。違う担当は一時の変更として扱う）
- */
-const sameAsStandard = (t: Pick<Touched, 'visit' | 'std' | 'inPeriod'>) =>
-  t.visit.staffId === t.std.staffId && (t.inPeriod || (t.visit.start ?? null) === t.std.start);
+/** 標準と同じ回か（担当と組んだ開始） */
+const sameAsStandard = (t: Touched) => t.visit.staffId === t.std.staffId && (t.visit.start ?? null) === t.std.start;
+
+/** since を選べる日にそろえる（earliestSince より前なら earliestSince） */
+const clampSince = (data: Pick<DemoData, 'snapshots' | 'visits'>, since: string, today: string) => {
+  const min = earliestSince(data, today);
+  return since > min ? since : min;
+};
+
+/** すでに入っている予定のうち新しい標準と違う1件（ピンでなく、この回だけ変えた回でもない保存した回） */
+export type TemporaryChange = {
+  visitId: string;
+  date: string;
+  clientId: string;
+  now: StandardCell;
+  standard: StandardCell;
+};
 
 /**
- * 一時の変更（PRD D351）：「いつから」以降・伝えていない日の、変わる繰り返しの保存した回で、この回だけ変えた回でもピンでもなく、
- * 新しい標準と担当か組んだ開始が違う回。日付・開始の順
+ * 登録で扱いを選ぶ予定（PRD D351）：「いつから」以降・伝えていない日の、書き換える繰り返しの保存した回で、この回だけ変えた回でも
+ * ピンでもなく、新しい標準と担当か組んだ開始が違う回。日付・ID の順
  */
 export function temporaryChanges(
-  data: Pick<DemoData, 'patterns' | 'visits' | 'snapshots'>,
-  rows: readonly StandardRow[],
-  since: string,
-  period: Pick<StandardPeriod, 'from' | 'to'>,
+  data: Pick<DemoData, 'patterns' | 'clients' | 'visits' | 'snapshots'>,
+  table: StandardTable,
+  sinceIn: string,
+  today: string,
 ): TemporaryChange[] {
-  return touchedVisits(data, rows, since, period)
+  const since = clampSince(data, sinceIn, today);
+  return touchedVisits(data, changedRows(data, table, since, today), since)
     .filter((t) => !isEdited(t.visit) && !t.visit.pinned && !sameAsStandard(t))
     .map(({ visit, std }) => ({
       visitId: visit.id,
@@ -296,49 +344,33 @@ function anchorFrom(p: Pattern, since: string): string {
   return since;
 }
 
-/** 一時の変更の扱い：ピンを立てて残す・標準に戻す（消す） */
-export type TemporaryChoice = 'pin' | 'drop';
-
-/** 登録の結果の数（確認の文・知らせ） */
-export type RegisterCounts = { changed: number; split: number; temporary: number };
-
-export function registerCounts(rows: readonly StandardRow[], temporary: readonly TemporaryChange[]): RegisterCounts {
-  return {
-    changed: rows.filter((r) => r.changed).length,
-    split: rows.filter((r) => r.changed && r.split).length,
-    temporary: temporary.length,
-  };
-}
+/** すでに入っている予定で新しい標準と違うものの扱い：標準どおりに入れ替える（消す）・今のまま残す（ピンを立てる） */
+export type TemporaryChoice = 'drop' | 'pin';
 
 /**
- * 標準として登録する（PRD D351。ADR-0062）。変わる繰り返しを「いつから」で分けて担当・標準の開始を書き換え、曜日で担当が違えば
- * 曜日ごとの繰り返しにする。「いつから」以降の保存した回は、この回だけ変えた回は残し（ID を新しい繰り返しに付け直す）、
- * 標準と同じ回は消し、ピンの回は残し、一時の変更は temp で残す（ピンを立てる）か消す。伝えた日の回は変えない
- * （since は earliestSince より前なら earliestSince にする）。newId は新しい繰り返しの ID（呼ぶたびに別の値）
+ * 表を標準として登録する（PRD D351。ADR-0063）。今の標準と違うマスのある繰り返しを「いつから」で分けて担当・標準の開始を書き換え、
+ * 曜日で担当が違えば曜日ごとの繰り返しにする。「いつから」以降の保存した回は、この回だけ変えた回は残し（ID を新しい繰り返しに付け直す）、
+ * 標準と同じ回は消し、ピンの回は残し、新しい標準と違う回は temp で消す（'drop'）か残す（'pin'。ピンを立てる）。伝えた日の回は変えない
+ * （since は earliestSince より前なら earliestSince にする）。newId は新しい繰り返しの ID（呼ぶたびに別の値）。
+ * presetId を渡すと、そのプリセットを点数の基準（標準の考え方）にする。違うマスが無ければ同じデータ
  */
 export function registerStandard(
   data: DemoData,
-  period: StandardPeriod,
+  table: StandardTable,
   sinceIn: string,
   today: string,
-  opts: { newId: () => string; temp: TemporaryChoice; at: number },
+  opts: { newId: () => string; temp: TemporaryChoice; at: number; presetId?: string | null },
 ): DemoData {
-  const min = earliestSince(data, today);
-  const since = sinceIn > min ? sinceIn : min;
-  // いつからより前に終わる繰り返しは書き換えない（開始日が終了日より後の繰り返しを作らない）
-  const rows = standardDiff(data, period).filter((r) => {
-    const p = data.patterns.find((x) => x.id === r.patternId);
-    return r.changed && !!p && (p.to === null || p.to >= since);
-  });
+  const since = clampSince(data, sinceIn, today);
+  const rows = changedRows(data, table, since, today);
   if (rows.length === 0) return data;
   let patterns = data.patterns;
   /** 古い繰り返し ID → 曜日 → 新しい繰り返し */
   const moved = new Map<string, Map<number, Pattern>>();
   // 先に回を見る（古い繰り返しで）
-  const touched = touchedVisits(data, rows, since, period);
+  const touched = touchedVisits(data, rows, since);
   for (const row of rows) {
-    const original = patterns.find((p) => p.id === row.patternId);
-    if (!original) continue;
+    const original = row.pattern;
     const groups = groupsOf(row.days);
     const inPlace = since <= original.from;
     const from = inPlace ? original.from : anchorFrom(original, since);
@@ -385,8 +417,8 @@ export function registerStandard(
       continue;
     }
     if (!visit.pinned && sameAsStandard(t)) continue; // 計算した回と同じになる（ピンは残す）
-    if (!visit.pinned && opts.temp === 'drop') continue; // 標準に戻す
-    // ピンの回・残す一時の変更：新しい繰り返しの回にして、担当・開始・ピンを残す
+    if (!visit.pinned && opts.temp === 'drop') continue; // 標準どおりに入れ替える
+    // ピンの回・残す回：新しい繰り返しの回にして、担当・開始・ピンを残す
     put.push({
       ...visitOf(target, visit.pattern.date),
       staffId: visit.staffId,
@@ -396,13 +428,13 @@ export function registerStandard(
     });
   }
   const visits = [...data.visits.filter((v) => !touchedIds.has(v.id)), ...put];
-  const standard: StandardInfo = {
-    at: opts.at,
-    presetId: data.scorePresetId ?? data.presets[0]?.id ?? '',
-    from: since,
-    weeks: period.weeks,
-  };
-  return { ...data, patterns, visits, standard };
+  const presetId =
+    opts.presetId && data.presets.some((p) => p.id === opts.presetId)
+      ? opts.presetId
+      : (data.scorePresetId ?? data.presets[0]?.id ?? '');
+  const standard: StandardInfo = { at: opts.at, presetId, from: since, weeks: cycleWeeks(data, today).weeks };
+  const out: DemoData = { ...data, patterns, visits, standard };
+  return opts.presetId ? setScorePreset(out, presetId) : out;
 }
 
 /** 考え方のカードの数（PRD D350） */
@@ -477,14 +509,6 @@ export function bestIndex(stats: readonly (ProposalStats | null)[]): number {
     if (b == null || s.points > b) best = i;
   });
   return best;
-}
-
-/** 期間の訪問の今の数（画面の上の1行。期間に計算に入る繰り返しの回） */
-export function periodVisitCount(
-  data: Pick<DemoData, 'patterns' | 'clients' | 'visits' | 'clientLeaves'>,
-  period: Pick<StandardPeriod, 'from' | 'to'>,
-): number {
-  return visitsIn(data, period).filter((v) => !v.cancelled && v.pattern !== null).length;
 }
 
 /** 組み方の標準を登録したか */

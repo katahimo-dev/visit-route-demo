@@ -1,19 +1,29 @@
-// 組み方の標準（PRD D350〜D354。ADR-0062）
+// 組み方の標準（PRD D350〜D354。ADR-0063）
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { Pattern, Visit } from '../contracts/documents';
 import { client, makeData, staff } from '../matching/fixtures';
 import { findVisit, visitOf, visitsOn } from '../patterns';
+import { initialPresets } from '../seed';
 import { aiPinsOf, dayProblemOf, routesOf, standardPinsOf, writeRoutes } from './dayPlan';
 import {
   bestIndex,
+  cellOf,
+  currentTable,
   cycleWeeks,
   defaultSince,
+  diffCounts,
   earliestSince,
+  mondayOf,
   nextMonday,
   registerStandard,
-  standardDiff,
+  type StandardTable,
+  setCell,
+  standardPatterns,
   standardPeriod,
+  startError,
+  tableDiff,
+  tableFromDays,
   temporaryChanges,
 } from './standard';
 
@@ -54,6 +64,14 @@ const saved = (d: DemoData, date: string, over: Partial<Visit>): Visit => ({
 });
 let n = 0;
 const ids = () => `n${++n}`;
+/** 今の標準の表のマスを替えた表 */
+const tableWith = (d: DemoData, cells: [string, number, string | null, string | null][]): StandardTable =>
+  cells.reduce(
+    (t, [patternId, wd, staffId, start]) => setCell(t, { patternId, weekday: wd }, { staffId, start }),
+    currentTable(d, TODAY),
+  );
+const reg = (d: DemoData, t: StandardTable, since = MON, temp: 'drop' | 'pin' = 'drop') =>
+  registerStandard(d, t, since, TODAY, { newId: ids, temp, at: 1 });
 
 describe('周期と期間', () => {
   it('間隔の最大（毎月は4・無ければ1）', () => {
@@ -68,60 +86,119 @@ describe('周期と期間', () => {
     expect(nextMonday('2026-10-07')).toBe(MON);
     expect(nextMonday('2026-10-11')).toBe(MON);
     expect(nextMonday('2026-10-05')).toBe(MON);
+    expect(mondayOf(WED)).toBe(MON);
+    expect(mondayOf('2026-10-18')).toBe(MON);
+    expect(mondayOf(MON)).toBe(MON);
     expect(standardPeriod(data(), TODAY)).toEqual({ from: MON, to: '2026-10-18', weeks: 1 });
     expect(standardPeriod(data(), TODAY, 2).to).toBe('2026-10-25');
   });
-  it('いつから：伝えた日より後', () => {
+  it('いつから：既定は来週の月曜。伝えた日より後', () => {
     const d = data({ snapshots: { '2026-10-13': { date: '2026-10-13', at: 0, visits: [] } } });
     expect(earliestSince(d, TODAY)).toBe(WED);
-    expect(defaultSince(d, standardPeriod(d, TODAY), TODAY)).toBe(WED);
-    expect(defaultSince(data(), standardPeriod(data(), TODAY), TODAY)).toBe(MON);
+    expect(defaultSince(d, TODAY)).toBe(WED);
+    expect(defaultSince(data(), TODAY)).toBe(MON);
   });
 });
 
-describe('standardDiff', () => {
-  it('変わらなければ changed は偽', () => {
-    const rows = standardDiff(data(), standardPeriod(data(), TODAY));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ changed: false, split: false, staff: { before: 's1', after: 's1' } });
+describe('標準の表', () => {
+  it('今の標準の表：曜日ごとの担当と標準の開始（時間の約束の外は無し）', () => {
+    const d = data({
+      patterns: [
+        pattern({
+          usualStarts: [
+            { weekday: 1, start: '10:00' },
+            { weekday: 3, start: '13:00' },
+          ],
+        }),
+      ],
+    });
+    expect(currentTable(d, TODAY)).toEqual({
+      p1: { 1: { staffId: 's1', start: '10:00' }, 3: { staffId: 's1', start: null } },
+    });
   });
-  it('担当と開始が変われば差分。開始は曜日ごと', () => {
-    const d0 = data();
-    const d = { ...d0, visits: [saved(d0, MON, { staffId: 's2', start: '10:00' }), saved(d0, WED, { staffId: 's2' })] };
-    const [r] = standardDiff(d, standardPeriod(d, TODAY));
-    expect(r).toMatchObject({ changed: true, split: false, staff: { before: 's1', after: 's2' } });
-    expect(r!.starts).toEqual([{ weekday: 1, before: null, after: '10:00' }]);
+  it('行にしない繰り返し：終わった・利用中でない〈利用者さん〉・分けた前の側', () => {
+    const d = data({
+      clients: [client('c1', 38.261, 140.871), { ...client('c2', 38.261, 140.871), active: false }],
+      patterns: [
+        pattern({ id: 'old', to: '2026-10-01' }),
+        pattern({ id: 'off', clientId: 'c2' }),
+        pattern({ id: 'before', to: '2026-10-11' }),
+        pattern({ id: 'after', from: MON }),
+      ],
+    });
+    expect(standardPatterns(d, TODAY).map((p) => p.id)).toEqual(['after']);
+    expect(Object.keys(currentTable(d, TODAY))).toEqual(['after']);
   });
-  it('曜日で担当が違えば分ける。週で違えば最初の週。時間の約束の外は書かない', () => {
-    const d0 = data();
-    const period = standardPeriod(d0, TODAY, 2);
-    const d = {
-      ...d0,
-      visits: [saved(d0, MON, { staffId: 's2', start: '13:00' }), saved(d0, '2026-10-19', { staffId: 's1' })],
-    };
-    const [r] = standardDiff(d, period);
-    expect(r!.split).toBe(true);
-    expect(r!.warnings).toEqual(expect.arrayContaining(['weekdaySplit', 'weeksDiffer', 'outsideWindow']));
-    expect(r!.days).toEqual([
-      { weekday: 1, staffId: 's2', start: null },
-      { weekday: 3, staffId: 's1', start: null },
-    ]);
+  it('違うマス・マスを替える・表に無いマスは今の標準', () => {
+    const d = data();
+    const cur = currentTable(d, TODAY);
+    expect(tableDiff(cur, cur)).toEqual([]);
+    const t = setCell(cur, { patternId: 'p1', weekday: 3 }, { staffId: 's2', start: '10:00' });
+    expect(cur.p1?.[3]).toEqual({ staffId: 's1', start: null }); // 元の表は変えない
+    expect(tableDiff(t, cur)).toEqual([{ patternId: 'p1', weekday: 3, kind: 'staff' }]);
+    // 開始だけ違っても違うマス
+    const t2 = setCell(cur, { patternId: 'p1', weekday: 1 }, { staffId: 's1', start: '09:30' });
+    expect(tableDiff(t2, cur)).toEqual([{ patternId: 'p1', weekday: 1, kind: 'time' }]);
+    expect(
+      diffCounts(tableDiff(setCell(t, { patternId: 'p1', weekday: 1 }, { staffId: 's1', start: '09:30' }), cur)),
+    ).toEqual({
+      all: 2,
+      staff: 1,
+      time: 1,
+    });
+    // 表に無い繰り返し・今の標準に無い繰り返し
+    expect(tableDiff({}, cur)).toEqual([]);
+    expect(tableDiff({ gone: { 1: { staffId: 's2', start: null } } }, cur)).toEqual([]);
+    expect(cellOf({}, cur, 'p1', 1)).toEqual({ staffId: 's1', start: null });
+    expect(cellOf(t, cur, 'p1', 3)).toEqual({ staffId: 's2', start: '10:00' });
+    expect(cellOf(t, cur, 'p1', 2)).toBeNull();
+  });
+  it('案から表：曜日ごとに最初の回の担当と lenient の開始。担当なしは無し。回の無い曜日は今の標準', () => {
+    const d = data();
+    const p = dayProblemOf(d, MON)!;
+    expect(tableFromDays(d, [{ problem: p, routes: { s2: [`${MON}_p1`] } }], TODAY)).toEqual({
+      p1: { 1: { staffId: 's2', start: '09:00' }, 3: { staffId: 's1', start: null } },
+    });
+    expect(tableFromDays(d, [{ problem: p, routes: {} }], TODAY).p1?.[1]).toEqual({ staffId: null, start: null });
+    // 2週目の同じ曜日は見ない
+    const p2 = dayProblemOf(d, '2026-10-19')!;
+    const t = tableFromDays(
+      d,
+      [
+        { problem: p, routes: { s2: [`${MON}_p1`] } },
+        { problem: p2, routes: { s1: ['2026-10-19_p1'] } },
+      ],
+      TODAY,
+    );
+    expect(t.p1?.[1]?.staffId).toBe('s2');
+  });
+  it('マスの開始の誤り：空は可・時間の約束の外は受け付けない', () => {
+    const p = pattern({ dayTimes: [{ weekday: 3, earliestStart: '14:00', latestStart: '15:00' }] });
+    expect(startError(p, 1, '')).toBeNull();
+    expect(startError(p, 1, '09:00')).toBeNull();
+    expect(startError(p, 1, '12:30')).toContain('09:00〜12:00');
+    expect(startError(p, 3, '10:00')).toContain('14:00〜15:00');
+    expect(startError(p, 3, '14:30')).toBeNull();
+    expect(startError(p, 1, '9:00')).not.toBeNull();
   });
 });
 
 describe('registerStandard', () => {
-  it('いつからで分けて担当と標準の開始を書く。計算した回はその担当と開始', () => {
+  it('いつからで分けて担当と標準の開始を書く。標準と同じになった保存した回は消える', () => {
     const d0 = data();
-    const period = standardPeriod(d0, TODAY);
     const d = {
       ...d0,
       visits: [saved(d0, MON, { staffId: 's2', start: '10:00' }), saved(d0, WED, { staffId: 's2', start: '11:00' })],
     };
-    const out = registerStandard(d, period, MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
+    const t = tableWith(d, [
+      ['p1', 1, 's2', '10:00'],
+      ['p1', 3, 's2', '11:00'],
+    ]);
+    expect(temporaryChanges(d, t, MON, TODAY)).toEqual([]);
+    const out = reg(d, t);
     expect(out.patterns).toHaveLength(2);
     expect(out.patterns[0]).toMatchObject({ id: 'p1', to: '2026-10-11' });
-    const np = out.patterns[1]!;
-    expect(np).toMatchObject({
+    expect(out.patterns[1]).toMatchObject({
       from: MON,
       usualStaffId: 's2',
       usualStarts: [
@@ -129,18 +206,19 @@ describe('registerStandard', () => {
         { weekday: 3, start: '11:00' },
       ],
     });
-    // 標準と同じになった保存した回は消える
     expect(out.visits).toEqual([]);
-    const next = visitsOn(out, '2026-10-19')[0]!;
-    expect(next).toMatchObject({ staffId: 's2', start: '10:00', pinned: false });
+    expect(visitsOn(out, '2026-10-19')[0]).toMatchObject({ staffId: 's2', start: '10:00', pinned: false });
     expect(out.standard).toMatchObject({ from: MON, weeks: 1, at: 1 });
     // 前の回はそのまま
     expect(visitsOn(out, '2026-10-05')[0]).toMatchObject({ staffId: 's1' });
+    // 登録したあとは今の標準と同じ（分けた前の側は行にしない）
+    const after = currentTable(out, TODAY);
+    expect(Object.keys(after)).toEqual([out.patterns[1]!.id]);
+    expect(Object.values(after)[0]).toEqual(t.p1);
   });
   it('曜日で担当が違えば曜日ごとの繰り返し', () => {
-    const d0 = data();
-    const d = { ...d0, visits: [saved(d0, MON, { staffId: 's2' })] };
-    const out = registerStandard(d, standardPeriod(d, TODAY), MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
+    const d = data();
+    const out = reg(d, tableWith(d, [['p1', 1, 's2', null]]));
     const live = out.patterns.filter((p) => p.from === MON);
     expect(live.map((p) => [p.weekdays, p.usualStaffId])).toEqual([
       [[1], 's2'],
@@ -149,9 +227,8 @@ describe('registerStandard', () => {
     expect(visitsOn(out, '2026-10-19').map((v) => v.staffId)).toEqual(['s2']);
     expect(visitsOn(out, '2026-10-21').map((v) => v.staffId)).toEqual(['s1']);
   });
-  it('一時の変更はピンを立てて残すか消す。ピンの回・この回だけ変えた回は残す', () => {
+  it('違う予定は入れ替える（既定）か残す（ピン）。ピンの回・この回だけ変えた回はどちらでも残す', () => {
     const d0 = data();
-    const period = standardPeriod(d0, TODAY);
     const base = [saved(d0, MON, { staffId: 's2' }), saved(d0, WED, { staffId: 's2' })];
     const temp = saved(d0, '2026-10-19', { staffId: 's1', start: '09:30' });
     const pinned = saved(d0, '2026-10-21', { staffId: 's1', pinned: true });
@@ -160,34 +237,73 @@ describe('registerStandard', () => {
       pattern: { id: 'p1', date: '2026-10-26', edited: true },
     });
     const d = { ...d0, visits: [...base, temp, pinned, edited] };
-    const rows = standardDiff(d, period);
-    expect(temporaryChanges(d, rows, MON, period).map((t) => t.visitId)).toEqual([temp.id]);
-    const kept = registerStandard(d, period, MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
-    const np = kept.patterns.find((p) => p.from === MON)!;
+    const t = tableWith(d, [
+      ['p1', 1, 's2', null],
+      ['p1', 3, 's2', null],
+    ]);
+    expect(temporaryChanges(d, t, MON, TODAY)).toEqual([
+      {
+        visitId: temp.id,
+        date: '2026-10-19',
+        clientId: 'c1',
+        now: { staffId: 's1', start: '09:30' },
+        standard: { staffId: 's2', start: null },
+      },
+    ]);
     const byDate = (x: DemoData, date: string) => visitsOn(x, date)[0]!;
+    const dropped = reg(d, t);
+    const np = dropped.patterns.find((p) => p.from === MON)!;
+    expect(byDate(dropped, '2026-10-19')).toMatchObject({ staffId: 's2', pinned: false });
+    expect(byDate(dropped, '2026-10-21')).toMatchObject({ staffId: 's1', pinned: true });
+    expect(byDate(dropped, '2026-10-26')).toMatchObject({ id: `2026-10-26_${np.id}`, durationMinutes: 90 });
+    const kept = reg(d, t, MON, 'pin');
+    const kp = kept.patterns.find((p) => p.from === MON)!;
     expect(byDate(kept, '2026-10-19')).toMatchObject({
-      id: `2026-10-19_${np.id}`,
+      id: `2026-10-19_${kp.id}`,
       staffId: 's1',
       start: '09:30',
       pinned: true,
     });
     expect(byDate(kept, '2026-10-21')).toMatchObject({ staffId: 's1', pinned: true });
-    expect(byDate(kept, '2026-10-26')).toMatchObject({ id: `2026-10-26_${np.id}`, durationMinutes: 90 });
-    const dropped = registerStandard(d, period, MON, TODAY, { newId: ids, temp: 'drop', at: 1 });
-    expect(byDate(dropped, '2026-10-19')).toMatchObject({ staffId: 's2', pinned: false });
-    expect(byDate(dropped, '2026-10-21')).toMatchObject({ staffId: 's1', pinned: true });
+    expect(byDate(kept, '2026-10-26')).toMatchObject({ id: `2026-10-26_${kp.id}`, durationMinutes: 90 });
+  });
+  it('いつからより前の予定は数えない・変えない', () => {
+    const d0 = data();
+    const temp = saved(d0, MON, { staffId: 's1', start: '09:30' });
+    const d = { ...d0, visits: [temp] };
+    const t = tableWith(d, [['p1', 1, 's2', null]]);
+    expect(temporaryChanges(d, t, MON, TODAY)).toHaveLength(1);
+    expect(temporaryChanges(d, t, '2026-10-13', TODAY)).toEqual([]);
+    const out = reg(d, t, '2026-10-13');
+    expect(out.visits).toContainEqual(temp);
   });
   it('伝えた日の回は変えない（いつからは伝えた日より後）', () => {
     const d0 = data();
     const told = saved(d0, MON, { staffId: 's2' });
     const d = { ...d0, visits: [told], snapshots: { [MON]: { date: MON, at: 0, visits: [] } } };
-    const out = registerStandard(d, standardPeriod(d, TODAY), MON, TODAY, { newId: ids, temp: 'drop', at: 1 });
+    const out = reg(d, tableWith(d, [['p1', 1, 's1', '10:00']]));
     expect(out.visits).toContainEqual(told);
     expect(out.standard?.from).toBe('2026-10-13');
   });
-  it('差分が無ければ同じデータ', () => {
+  it('違うマスが無ければ同じデータ', () => {
     const d = data();
-    expect(registerStandard(d, standardPeriod(d, TODAY), MON, TODAY, { newId: ids, temp: 'pin', at: 1 })).toBe(d);
+    expect(reg(d, currentTable(d, TODAY))).toBe(d);
+  });
+  it('案から作った下書きなら点数の基準をそのプリセットにする。渡さなければ今のまま', () => {
+    const presets = initialPresets();
+    const d = data({ presets, scorePresetId: presets[0]!.id });
+    const t = tableWith(d, [['p1', 1, 's2', null]]);
+    const withPreset = registerStandard(d, t, MON, TODAY, {
+      newId: ids,
+      temp: 'drop',
+      at: 1,
+      presetId: presets[1]!.id,
+    });
+    expect(withPreset.scorePresetId).toBe(presets[1]!.id);
+    expect(withPreset.standard?.presetId).toBe(presets[1]!.id);
+    const without = reg(d, t);
+    expect(without.scorePresetId).toBe(presets[0]!.id);
+    expect(without.standard?.presetId).toBe(presets[0]!.id);
   });
 });
 
@@ -210,12 +326,11 @@ describe('レビューで見つかった場合', () => {
   it('隔週は回のある週から始め、周期をずらさない', () => {
     // 隔週・月曜・10/5 から：回は 10/5・10/19・11/2
     const d0 = data({ patterns: [pattern({ weekdays: [1], everyWeeks: 2, from: '2026-10-05' })] });
-    const period = standardPeriod(d0, TODAY);
-    expect(period).toMatchObject({ from: MON, weeks: 2 });
-    const d = { ...d0, visits: [saved(d0, '2026-10-19', { staffId: 's2' })] };
-    const out = registerStandard(d, period, MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
+    expect(cycleWeeks(d0, TODAY).weeks).toBe(2);
+    const out = reg(d0, tableWith(d0, [['p1', 1, 's2', null]]));
     const np = out.patterns.find((p) => p.usualStaffId === 's2')!;
     expect(np.from).toBe('2026-10-19');
+    expect(out.standard?.weeks).toBe(2);
     const on = (date: string) => visitsOn(out, date).map((v) => v.staffId);
     expect(on('2026-10-12')).toEqual([]);
     expect(on('2026-10-19')).toEqual(['s2']);
@@ -223,14 +338,8 @@ describe('レビューで見つかった場合', () => {
     expect(on('2026-11-02')).toEqual(['s2']);
   });
   it('いつからより前に終わる繰り返しは書き換えない', () => {
-    const d0 = data({ patterns: [pattern({ to: '2026-10-21' })] });
-    const d = { ...d0, visits: [saved(d0, MON, { staffId: 's2' }), saved(d0, WED, { staffId: 's2' })] };
-    const out = registerStandard(d, standardPeriod(d, TODAY, 2), '2026-10-26', TODAY, {
-      newId: ids,
-      temp: 'pin',
-      at: 1,
-    });
-    expect(out).toBe(d);
+    const d = data({ patterns: [pattern({ to: '2026-10-21' })] });
+    expect(reg(d, tableWith(d, [['p1', 1, 's2', null]]), '2026-10-26')).toBe(d);
   });
   it('標準と同じピンの回はピンのまま残す', () => {
     const d0 = data();
@@ -238,7 +347,13 @@ describe('レビューで見つかった場合', () => {
       ...d0,
       visits: [saved(d0, MON, { staffId: 's2', pinned: true }), saved(d0, WED, { staffId: 's2' })],
     };
-    const out = registerStandard(d, standardPeriod(d, TODAY), MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
+    const out = reg(
+      d,
+      tableWith(d, [
+        ['p1', 1, 's2', null],
+        ['p1', 3, 's2', null],
+      ]),
+    );
     expect(visitsOn(out, MON)[0]).toMatchObject({ staffId: 's2', pinned: true });
     expect(visitsOn(out, WED)[0]).toMatchObject({ staffId: 's2', pinned: false });
   });
@@ -247,6 +362,15 @@ describe('レビューで見つかった場合', () => {
     const movedVisit = saved(d0, WED, { date: MON, pattern: { id: 'p1', date: WED, edited: true } });
     const d = { ...d0, visits: [movedVisit], snapshots: { [MON]: { date: MON, at: 0, visits: [] } } };
     expect(earliestSince(d, TODAY)).toBe('2026-10-15');
+  });
+  it('登録し直し：分けた後の側をその場で書き換える', () => {
+    const d = data();
+    const once = reg(d, tableWith(d, [['p1', 1, 's2', null]]));
+    const cur = currentTable(once, TODAY);
+    const [monId] = Object.keys(cur);
+    const twice = reg(once, setCell(cur, { patternId: monId!, weekday: 1 }, { staffId: 's1', start: '10:00' }));
+    expect(twice.patterns.length).toBe(once.patterns.length);
+    expect(twice.patterns.find((p) => p.id === monId)).toMatchObject({ usualStaffId: 's1', from: MON });
   });
   it('AI の提案を反映して保存した回も、担当が標準のままなら標準のピン', () => {
     const d = data();
