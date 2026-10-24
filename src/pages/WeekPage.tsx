@@ -12,11 +12,10 @@ import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
 import { ScheduleNav } from '../components/ScheduleNav';
 import { StaffMark } from '../components/StaffMark';
-import { RangeProposalBand, ScheduleToolbar, SelectionBar, useScopeItems } from '../components/scheduleParts';
+import { RangeProposalBand, ScheduleToolbar, SelectionBar } from '../components/scheduleParts';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, WithIcon } from '../components/ui';
-import { useScheduleMode } from '../components/useScheduleMode';
 import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
@@ -151,7 +150,6 @@ const initialOf = (name: string) => Array.from(name.trim())[0] ?? '？';
 export default function WeekPage() {
   const { date, setDate, dates: dataDates } = useDay();
   /** 予定のモード（PRD D348）：組むではメールを出さず、確認では札を動かさない */
-  const { tools: modeTools } = useScheduleMode();
   const { data, update, compileInput, staff, staffById, clients, clientById, colorOfStaff } = useDayModel(date);
   const terms = data.org.terms;
   const toast = useToast();
@@ -207,7 +205,7 @@ export default function WeekPage() {
   const [mailOpen, setMailOpen] = useState(false);
   const mailOn = useFeature('mail');
   /** ナビの行のメールで送る（組むのモードでは出さない。PRD D348） */
-  const mailBtn = mailOn && modeTools.mail;
+  const mailBtn = mailOn;
 
   // ---- 選んでいる日付との同期（PRD D59）----
   // URL の ?d= で開いた日が選んでいる日付と違えば、選んでいる日付をその日にする
@@ -300,13 +298,12 @@ export default function WeekPage() {
     const care = list.reduce((n, x) => n + x.care, 0);
     return { bulk, futureDays, line: { told, changed, notYet, care } };
   }, [weekStatuses, futureDates, data, today]);
-  /** 担当を組む計算（月の予定と同じ入れ物。ADR-0042）：この週を組んでいるか、ほかを組んでいるか */
+  /** 月の予定の担当を組む計算（ADR-0042）：組んでいる間は確定しない */
   const batchRun = useValueStore(monthBatch.run);
-  const running = batchRun ? (batchRun.source === 'week' && batchRun.weekStart === start ? 'this' : 'other') : null;
   const next = weekNext({
     futureDays: weekPrep.futureDays,
     bulk: weekPrep.bulk,
-    running,
+    running: batchRun !== null,
   });
   /** 確定の確認のあいだに変わったデータを読む */
   const dataRef = useRef(data);
@@ -528,7 +525,6 @@ export default function WeekPage() {
    * Enter で欄（ボタンの既定）・Delete で取り消し（確認）。どれも全体の「元に戻す」の1手
    */
   const visitKeys = useVisitKeys({
-    readOnly: !modeTools.move,
     staffOrder: () => activeStaff.map((s) => s.id),
     onMoved: (r) => {
       // 表の「+N」の一覧の行から動かしたときも、動かした先のマスで札を隠さない
@@ -573,7 +569,6 @@ export default function WeekPage() {
   const drag = useVisitDrag({
     today,
     fit: true,
-    readOnly: !modeTools.move,
     staffWhy: (visitId, d, sid) => staffWhyOf(dataRef.current, visitId, d, sid),
     onDrop: (visitId, v) => openMove(visitId, v.date, v.start, v.staffId),
   });
@@ -600,7 +595,6 @@ export default function WeekPage() {
    * Delete で取り消し。隣の担当は表の行の順（〈スタッフ〉×曜日）・利用中の〈スタッフ〉の順（〈利用者さん〉×曜日）
    */
   const tableKeys = useVisitKeys({
-    readOnly: !modeTools.move,
     layout: 'table',
     staffOrder: () => (table ? table.rows.map((r) => r.staffId) : activeStaff.map((s) => s.id)),
     onMoved: (r) => {
@@ -656,7 +650,7 @@ export default function WeekPage() {
     if (!r.staffId) {
       setNotice({
         ...notice,
-        error: '空き時間に入りません。日の予定の「AI で組む」か、手で担当を選んでください',
+        error: '空き時間に入りません。「担当を組む」の画面の「AI で組む」か、手で担当を選んでください',
       });
       return;
     }
@@ -680,9 +674,6 @@ export default function WeekPage() {
     visitDays: days.filter((d) => d.bands.some((b) => !b.leave)).map((d) => d.date),
   });
   const nothingPicked = by === 'client' ? timelineClients.length === 0 : staffSel?.length === 0;
-
-  // ---- 操作の行（日・週・月で同じ。PRD D327）----
-  const scopeItems = useScopeItems({ zoom: 'week', date: anchor });
 
   return (
     <div className="stack week-page">
@@ -718,19 +709,19 @@ export default function WeekPage() {
               )}
               {next.kind !== 'none' && (
                 <div className="week-next" ref={nextRef} tabIndex={-1} data-testid="week-next" data-kind={next.kind}>
-                  {next.kind === 'making' || next.kind === 'confirm' ? (
+                  {next.kind === 'confirm' ? (
                     <button
                       type="button"
                       className="btn btn-primary"
-                      aria-disabled={next.kind === 'making' || next.why !== null || undefined}
+                      aria-disabled={next.why !== null || undefined}
                       aria-describedby={next.why ? whyId : undefined}
                       onClick={() => {
-                        if (next.kind === 'making' || next.why !== null) return;
+                        if (next.why !== null) return;
                         void confirmWeek();
                       }}
                       data-testid="week-next-btn"
                     >
-                      <WithIcon icon={next.kind === 'confirm' ? Lock : Sparkles}>
+                      <WithIcon icon={Lock}>
                         <span className="week-next-long">{next.label}</span>
                         <span className="week-next-short">{next.short}</span>
                       </WithIcon>
@@ -763,8 +754,8 @@ export default function WeekPage() {
         </p>
       )}
       {/* 操作の行（日・週・月で同じ並び。PRD D327）。メールで送るは見出しのボタンなので「その他 ▾」は出さない（PRD D344・D346） */}
-      <ScheduleToolbar zoom="week" absence={suddenOn ? { date: anchor } : null} aiItems={scopeItems} moreItems={[]} />
-      {/* 範囲の提案（日・週・月で同じ帯。PRD D328） */}
+      <ScheduleToolbar zoom="week" absence={suddenOn ? { date: anchor } : null} moreItems={[]} />
+      {/* 担当を組むの画面で組んだ範囲の提案（日・週・月で同じ帯。PRD D328） */}
       <RangeProposalBand />
 
       <div className="card stack week-head">
@@ -1397,7 +1388,7 @@ export default function WeekPage() {
       {mailOpen && mailOn && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
       {/* 選んだ訪問をまとめて動かす帯は、確認のモードでは出さない（札を動かさない。PRD D348） */}
-      {modeTools.move && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} />}
+      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} />
       {/* キーで動かした先の読み上げと、繰り返しの回の範囲を選び直す小さな帯（PRD D333） */}
       <KeyMoveBand
         onMoved={(r) => {

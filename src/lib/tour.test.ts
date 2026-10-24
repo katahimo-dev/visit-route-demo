@@ -33,13 +33,13 @@ describe('tourSteps（PRD D277）', () => {
     expect(JSON.stringify(s)).not.toContain('利用者さん');
     expect(JSON.stringify(tourSteps(terms))).not.toContain('ヘルパー');
   });
-  it('予定の枚は3段（提案（AI）→ ピン → 確定（伝えた））を順に並べ、［月｜週｜日］で切り替えると書く', () => {
+  it('予定の枚は3段（組む（AI）→ ピン → 確定（伝えた））を順に並べ、［月｜週｜日］で切り替えると書く', () => {
     const plan = tourSteps(terms)[1]!;
     expect(plan.key).toBe('plan');
-    expect(plan.title).toBe('予定で担当を組んで確定します');
+    expect(plan.title).toBe('予定を組んで、直して、確定します');
     expect(plan.body).toContain('［月｜週｜日］');
     expect(plan.points).toHaveLength(3);
-    expect(plan.points![0]).toMatch(/^提案（AI）：/);
+    expect(plan.points![0]).toMatch(/^組む（AI）：/);
     expect(plan.points![1]).toMatch(/^ピン：/);
     expect(plan.points![2]).toMatch(/^確定（伝えた）：/);
   });

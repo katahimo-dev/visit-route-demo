@@ -1,11 +1,12 @@
 // 月の予定の進み具合の帯（PRD D151〜D155・D332。ADR-0025 追記・ADR-0053・ADR-0054。週・日には出さない）を本物のブラウザで確かめる：
 // 月の帯（data-ym・数字がホームの確定していない日と同じ）、月の画面の「担当を AI で組む」の主ボタンは帯の1か所
-// （見出しのボタン・今月の準備は無い。帯の次の一手が主ボタン）、帯の数字・ボタンで月の画面の欄が開く（URL を変えない）、
-// 週・日・ホームからの `?do=`（担当を AI で組む・確定していない日・要対応）で月の画面の欄が開き ?do= が消える、来月も担当なしの日が多ければ「担当を AI で組む」、
+// （見出しのボタン・今月の準備は無い。帯の次の一手が主ボタン）で、押すと担当を組むの画面（#/arrange?ym=。ADR-0063）、
+// 帯の数字で月の画面の欄が開く（URL を変えない）、古い `?do=batch` は担当を組むの画面へ移す、
+// 週・日・ホームからの `?do=`（確定していない日・要対応）で月の画面の欄が開き ?do= が消える、来月も担当なしの日が多ければ「担当を AI で組む」、
 // 日の予定で確定すると状態の印が確定済み・月の帯の確定 +1、週・日に進み具合の帯は無い（週は1行の状態）、
-// 「AI で組む ▾」の「この月」は選んでいる日付の月（月をまたぐ週）、訪問の無いデータは「今日以降の訪問はありません」でボタンなし、
+// 訪問の無いデータは「今日以降の訪問はありません」でボタンなし、
 // 週・日の操作の行が速く出る・確定の操作が待たされない、スマホ（390×844）で月の帯が1行・横にはみ出さない、印刷で出さない。
-// 担当を AI で組むはほかの画面へ移っても続き、上の帯に進み具合と［止める］、戻ると進み具合、知らせから月へ（PRD D256・D257）。
+// 担当を組むの画面で組み始めるとほかの画面へ移っても続き、上の帯に進み具合と［止める］、戻ると進み具合、知らせから担当を組むへ（PRD D256・D257）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-progress.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_PROGRESS で帯が出るまでの上限（既定 3000ms。無ければ PERF_MS）
@@ -23,11 +24,6 @@ function nextYm(ym) {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 }
 const NEXT_YM = nextYm(YM);
-/** その月の末日 */
-function lastDayOf(ym) {
-  const [y, m] = ym.split('-').map(Number);
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-}
 const monthNo = (ym) => Number(ym.slice(5, 7));
 
 /** 帯が数え終わる（data-ym が付く）まで待つ */
@@ -88,23 +84,6 @@ async function bandNumbers(page) {
   });
 }
 /**
- * 帯から担当を AI で組むの欄を開いたときの確かめ：伝えていない日があれば欄が開き、
- * 無ければ開かずに知らせ（月末で今日しか残っていないときなど。PRD D153）
- */
-async function expectBatch(page, n, name) {
-  if (n.unconfirmed > 0) {
-    await batchPanel(page, YM).waitFor({ timeout: 10000 });
-    check(true, `${name}：担当を AI で組むの欄が開く`);
-    return true;
-  }
-  await page.locator('.toast').first().waitFor({ timeout: 5000 });
-  check((await batchPanel(page, YM).count()) === 0, `${name}：組む日が無いので欄を開かず知らせ`);
-  return false;
-}
-/** 担当を AI で組むの欄（SidePanel） */
-const batchPanel = (page, ym) => page.getByRole('dialog', { name: `${monthNo(ym)}月の担当を AI で組む` });
-
-/**
  * 担当をすべて外して読み直す（繰り返しの担当・保存した訪問の担当）。担当なしの日から始める確かめ用
  * （月末の6日以内は今月の残りが初期データの担当で埋まり、次の一手が「担当を AI で組む」にならないため）
  */
@@ -155,10 +134,20 @@ async function monthEntry(page) {
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'month-band.png') });
   await next.click();
-  await batchPanel(page, YM).waitFor({ timeout: 5000 });
-  check(hashOf(page) === `#/month?ym=${YM}`, '月：帯から欄が開く（URL は変えない）', hashOf(page));
-  await page.keyboard.press('Escape');
-  await batchPanel(page, YM).waitFor({ state: 'detached' });
+  await page.waitForURL(/#\/arrange/, { timeout: 10000 });
+  check(
+    hashOf(page) === `#/arrange?ym=${YM}`,
+    '月：帯の「担当を AI で組む」で担当を組むの画面（その月）',
+    hashOf(page),
+  );
+  await page.getByTestId('arrange-start').waitFor({ timeout: 10000 });
+  // 古い ?do=batch は担当を組むの画面へ移す
+  await page.evaluate((ym) => {
+    location.hash = `#/month?ym=${ym}&do=batch`;
+  }, YM);
+  await page.waitForFunction(() => location.hash.startsWith('#/arrange'), null, { timeout: 10000 });
+  check(hashOf(page) === `#/arrange?ym=${YM}`, '月：古い ?do=batch は担当を組むの画面へ', hashOf(page));
+  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   // 帯の数字 → 右の欄（画面の中で開く）
   await page.getByTestId('band-confirm').click();
   await page.getByTestId('month-unconfirmed').waitFor({ timeout: 5000 });
@@ -179,7 +168,7 @@ async function monthEntry(page) {
   // 数字のリンクは押すと何が起きるかを読み上げる
   const label = await page.getByTestId('band-plans').getAttribute('aria-label');
   check(
-    /^担当が全部入った日 \d+\/\d+日.*。担当を AI で組むを開く$/.test(label ?? ''),
+    /^担当が全部入った日 \d+\/\d+日.*。担当を組むの画面を開く$/.test(label ?? ''),
     '月：数字のリンクの aria-label',
     label,
   );
@@ -211,22 +200,30 @@ async function nextMonth(page) {
   check(n.days > 0 && n.planned <= n.days, '来月：担当が全部入った日の数', n);
   if ((await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch') {
     await page.getByTestId('band-next').click();
-    await batchPanel(page, NEXT_YM).waitFor({ timeout: 5000 });
-    check(true, '来月：次の一手「担当を AI で組む」で欄が開く');
-    await page.keyboard.press('Escape');
+    await page.waitForURL(/#\/arrange/, { timeout: 10000 });
+    check(
+      hashOf(page) === `#/arrange?ym=${NEXT_YM}`,
+      '来月：次の一手「担当を AI で組む」で担当を組むの画面（来月）',
+      hashOf(page),
+    );
   }
 }
 
-// ---- 担当を AI で組むは画面を移っても続く（PRD D256・D257。ADR-0042）：上の帯に進み具合と［止める］、戻ると進み具合、知らせから月へ ----
+// ---- 担当を組むで組み始めると画面を移っても続く（PRD D256・D257。ADR-0042）：上の帯に進み具合と［止める］、戻ると進み具合、知らせから担当を組むへ ----
 async function keepRunning(page) {
   await clearPlans(page);
-  await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
-  await page.getByTestId('band-next').click();
-  const panel = batchPanel(page, YM);
-  await panel.waitFor({ timeout: 5000 });
-  await panel.getByRole('button', { name: '組み始める' }).click();
-  await page.getByTestId('month-progress').waitFor({ timeout: 10000 });
-  check((await page.getByTestId('batch-band').count()) === 0, '月の予定では上の帯に出さない（画面の中に進み具合）');
+  await open(page, `/arrange?ym=${YM}`, '[data-testid="arrange-start"]');
+  await settle(page, 500);
+  await page.getByTestId('arrange-start').click();
+  await page.getByTestId('arrange-progress').waitFor({ timeout: 10000 });
+  check(
+    (await page.getByTestId('batch-band').count()) === 0,
+    '担当を組むの画面では上の帯に出さない（画面の中に進み具合）',
+  );
+  check(
+    (await page.getByTestId('arrange-start').getAttribute('aria-disabled')) === 'true',
+    '組んでいる間は「AI で組む」を押せない（二重に始めない）',
+  );
   // 読み直さずにホームへ（HashRouter の中で移る）
   await page.evaluate(() => {
     location.hash = '#/home';
@@ -249,26 +246,18 @@ async function keepRunning(page) {
     .catch(() => false);
   check(progressed, 'ホームにいる間も組み続ける（上の帯の日数が進む）');
   check((await assignedIn(page, YM)) === 0, '組んでいる間は訪問に書かない（提案にためる）');
-  // 帯の文から月の予定へ戻ると、画面の中に進み具合
+  // 帯の文から担当を組むへ戻ると、画面の中に進み具合
   await bandText.click();
-  await page.waitForURL(/#\/month/);
-  await page.getByTestId('month-progress').waitFor({ timeout: 10000 });
-  check(hashOf(page) === `#/month?ym=${YM}`, '帯の文で月の予定（その月）へ戻ると進み具合が見える', hashOf(page));
-  // 作っている間は二重に始めない：帯の次の一手（あれば）も ?do=batch も欄を開かない（飛ばさずに確かめる）
-  if ((await page.getByTestId('band-next').count()) > 0) {
-    await page.getByTestId('band-next').click();
-    await settle(page, 300);
-  }
+  await page.waitForURL(/#\/arrange/);
+  await page.getByTestId('arrange-progress').waitFor({ timeout: 10000 });
+  check(hashOf(page) === `#/arrange?ym=${YM}`, '帯の文で担当を組む（その月）へ戻ると進み具合が見える', hashOf(page));
+  // 月の予定でも画面の中に進み具合（上の帯は出さない）
   await page.evaluate((ym) => {
-    location.hash = `#/month?ym=${ym}&do=batch`;
+    location.hash = `#/month?ym=${ym}`;
   }, YM);
-  await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
-  await settle(page, 300);
-  check(
-    (await panel.count()) === 0 && (await page.getByTestId('month-progress').count()) === 1,
-    '作っている間は二重に始めない',
-  );
-  // ほかの画面（予定でない画面）の帯の［止める］で止め、知らせの［月の予定を見る］で月へ
+  await page.getByTestId('month-progress').waitFor({ timeout: 10000 });
+  check((await page.getByTestId('batch-band').count()) === 0, '月の予定でも上の帯に出さない（画面の中に進み具合）');
+  // ほかの画面（予定でない画面）の帯の［止める］で止め、知らせの［担当を組むを開く］で担当を組むへ
   await page.evaluate(() => {
     location.hash = '#/home';
   });
@@ -278,9 +267,9 @@ async function keepRunning(page) {
   check(true, '［止める］で止まり、知らせ（作った日数）');
   check((await page.getByTestId('batch-band').count()) === 0, '止めたら上の帯は消える');
   await page.getByTestId('batch-done-open').click();
-  await page.waitForURL(/#\/month/);
-  check(hashOf(page) === `#/month?ym=${YM}`, '知らせの［月の予定を見る］で月の予定へ', hashOf(page));
-  check((await page.getByTestId('month-progress').count()) === 0, '止めたあとは進み具合を出さない');
+  await page.waitForURL(/#\/arrange/);
+  check(hashOf(page) === `#/arrange?ym=${YM}`, '知らせの［担当を組むを開く］で担当を組む（その月）へ', hashOf(page));
+  check((await page.getByTestId('arrange-progress').count()) === 0, '止めたあとは進み具合を出さない');
   const stoppedBand = await page
     .locator('[data-testid="proposal-band"][data-kind="range"]')
     .waitFor({ timeout: 10000 })
@@ -288,34 +277,23 @@ async function keepRunning(page) {
     .catch(() => false);
   check(
     stoppedBand,
-    '止めたあと：そこまでの日の提案の帯が月の予定に出る（反映するまで変わらない）',
+    '止めたあと：そこまでの日の提案の帯が出る（反映するまで変わらない）',
     await toast.innerText().catch(() => ''),
   );
   check((await assignedIn(page, YM)) === 0, '止めても反映するまで訪問は変わらない');
-  // その月の月の予定を見ている間に終わったら、知らせに［月の予定を見る］を出さない（行き先が今の画面。PRD D268）
-  // 止めたあとはまだ担当なしの日が残るので、次の一手は「担当を AI で組む」（無ければ確かめられないので NG）。
-  // 止める前に残りを組み終えることがある（月末に近い日・速い機械）ので、そのときは繰り返しの担当を外して作る
-  let kind = await page.getByTestId('band-next').getAttribute('data-kind');
-  if (kind !== 'batch') {
-    await dropLaterPlan(page);
-    await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
-    kind = await page.getByTestId('band-next').getAttribute('data-kind');
-  }
-  check(kind === 'batch', '止めたあと：次の一手は「担当を AI で組む」（D268 を確かめる用意）', kind);
-  if (kind === 'batch') {
-    await page.getByTestId('band-next').click();
-    await panel.waitFor({ timeout: 5000 });
-    await panel.getByRole('button', { name: '組み始める' }).click();
-    const progress = page.getByTestId('month-progress');
-    await progress.waitFor({ timeout: 10000 });
-    await progress.getByRole('button', { name: /止める/ }).click();
-    const toast2 = page.locator('.toast').filter({ hasText: /の担当を\d+日分組んだところで止めました/ });
-    await toast2.waitFor({ timeout: 60000 });
-    check(
-      (await page.getByTestId('batch-done-open').count()) === 0,
-      'その月の月の予定にいるときの知らせには［月の予定を見る］を出さない（PRD D268）',
-    );
-  }
+  // 担当を組むの画面にいる間に終わったら、知らせに［担当を組むを開く］を出さない（行き先が今の画面。PRD D268）
+  await page.getByTestId('arrange-mode-all').check();
+  // 反映していない提案を捨ててよいかの確認は、独自のダイアログで「捨てて組み始める」（answerConfirms が答える）
+  await page.getByTestId('arrange-start').click();
+  const progress = page.getByTestId('arrange-progress');
+  await progress.waitFor({ timeout: 10000 });
+  await page.getByTestId('arrange-stop').click();
+  const toast2 = page.locator('.toast').filter({ hasText: /の担当を\d+日分組んだところで止めました/ });
+  await toast2.waitFor({ timeout: 60000 });
+  check(
+    (await page.getByTestId('batch-done-open').count()) === 0,
+    '担当を組むの画面にいるときの知らせには［担当を組むを開く］を出さない（PRD D268）',
+  );
 }
 
 // ---- 日の画面：確定すると状態の印が確定済み・月の帯の確定が増える（週・日に帯は無い。PRD D332） ----
@@ -367,7 +345,7 @@ async function dayConfirm(page) {
   });
 }
 
-// ---- 週・日・ホームから月の画面の欄へ（?do=。進み具合の帯は月だけになったので、行き先のリンク・「AI で組む ▾」から） ----
+// ---- 週・日・ホームから月の画面の欄へ（?do=。進み具合の帯は月だけ） ----
 async function links(page) {
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   const n = await bandNumbers(page);
@@ -388,45 +366,12 @@ async function links(page) {
   }
   const listed = await page.getByTestId('month-unconfirmed').locator('li').count();
   check(listed === n.unconfirmed, '月の予定の確定していない日＝帯の日数', { listed, band: n.unconfirmed });
-  // 担当なしの日を作る（繰り返しの担当を外す）と、日の予定の「AI で組む ▾」の「この月」で月の予定の欄
+  // 担当なしの日を作る（繰り返しの担当を外す）
   await dropLaterPlan(page);
-  await open(page, '/plan', '[data-testid="confirm-state"]');
-  await page.getByTestId('plan-menu').click();
-  await page.getByTestId('ai-scope-month').click();
-  await page.waitForURL(/#\/month/);
-  await batchPanel(page, YM).waitFor({ timeout: 10000 });
-  await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
-  check(
-    hashOf(page) === `#/month?ym=${YM}&mode=change`,
-    '日の「AI で組む ▾」の「この月」→ 月の予定の欄を変更のモードで（?do= は消える。PRD D348）',
-    hashOf(page),
-  );
-  await page.keyboard.press('Escape');
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
   check(
     (await page.getByTestId('band-next').getAttribute('data-kind')) === 'batch',
     '担当なしの日が多い：月の帯の次の一手は「担当を AI で組む」',
-  );
-}
-
-// ---- 「AI で組む ▾」の「この月」は選んでいる日付の月（月をまたぐ週） ----
-async function crossMonth(page) {
-  const last = lastDayOf(YM);
-  const first = `${NEXT_YM}-01`;
-  const monthItem = async () => {
-    await page.getByTestId('plan-menu').click();
-    const t = (await page.getByTestId('ai-scope-month').innerText()).split('\n')[0];
-    await page.keyboard.press('Escape');
-    return t;
-  };
-  await open(page, `/week?d=${last}`, '[data-testid="week-title"]');
-  const a = await monthItem();
-  await open(page, `/week?d=${first}`, '[data-testid="week-title"]');
-  const b = await monthItem();
-  check(
-    a === `この月（${monthNo(YM)}月）を組む` && b === `この月（${monthNo(NEXT_YM)}月）を組む`,
-    '週：「この月」は選んでいる日付の月（月末の日なら今月、1日なら来月）',
-    { last: a, first: b },
   );
 }
 
@@ -447,18 +392,16 @@ async function perf(page) {
     const bar = Date.now() - t0;
     check(bar < PERF_MS, `${hash}：操作の行が ${PERF_MS}ms 以内に出る`, { bar });
   }
-  // 帯の「担当」から開くと、既定は「要対応のある日だけ」（組み直しは利用者が選んだときだけ。PR #38 のレビュー）
+  // 帯の「担当」から担当を組むの画面へ。既定は「要対応のある日だけ」（組み直しは利用者が選んだときだけ。PR #38 のレビュー）
   await open(page, `/month?ym=${YM}`, '[data-testid="month-grid"]');
-  const nm = await bandNumbers(page);
   await page.getByTestId('band-plans').click();
-  const panel = batchPanel(page, YM);
-  if (!(await expectBatch(page, nm, '帯の「担当」から'))) return;
+  await page.waitForURL(/#\/arrange/, { timeout: 10000 });
+  await page.getByTestId('arrange-mode-care').waitFor({ timeout: 10000 });
   check(
-    await panel.getByTestId('batch-mode-care').isChecked(),
-    '開いたときの既定は「要対応のある日だけ」',
-    await panel.getByTestId('batch-count').innerText(),
+    await page.getByTestId('arrange-mode-care').isChecked(),
+    '帯の「担当」から担当を組むへ。既定は「要対応のある日だけ」',
+    await page.getByTestId('arrange-count').innerText(),
   );
-  await page.keyboard.press('Escape');
 }
 
 // ---- 訪問の無いデータ：ボタンなし ----
@@ -538,7 +481,6 @@ const steps = sharedPage({
     ['keep-running', keepRunning],
     ['day-confirm', dayConfirm],
     ['links', links],
-    ['cross-month', crossMonth],
     ['mobile', mobile],
     ['perf', perf],
     ['empty', empty],

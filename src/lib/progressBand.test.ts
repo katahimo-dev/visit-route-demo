@@ -60,7 +60,7 @@ describe('bandMonth・bandHref・visitsText', () => {
     expect(bandMonth('2026-11-01')).toBe('2026-11');
   });
   it('月の画面の欄へ', () => {
-    expect(bandHref('2026-11', 'batch')).toBe('/month?ym=2026-11&do=batch');
+    expect(bandHref('2026-11', 'batch')).toBe('/arrange?ym=2026-11');
     expect(bandHref('2026-10', 'unconfirmed')).toBe('/month?ym=2026-10&do=unconfirmed');
   });
   it('訪問の件数', () => {

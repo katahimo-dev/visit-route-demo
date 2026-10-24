@@ -2,8 +2,10 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
 import type { Pattern } from '../contracts/documents';
+import { addDays } from '../domain/time';
 import { client, DATE, makeData, staff, visit } from '../matching/fixtures';
 import { findVisit, visitsOn } from '../patterns';
+import { createDemoData } from '../seed';
 import {
   activeDayVisits,
   changeCount,
@@ -16,6 +18,7 @@ import {
   tellDay,
   toldChanges,
   toldStateOf,
+  unassignedDays,
   unassignedOf,
   visitIssues,
   writeRoutes,
@@ -155,5 +158,26 @@ describe('確定（伝えた内容）と未連絡の変更', () => {
     );
     expect(c.timeChanged.map((x) => x.visitId)).toEqual(['b']);
     expect(c.staffChanged).toEqual([]);
+  });
+});
+
+describe('unassignedDays（担当の足りない日。空き状況。PRD D259）', () => {
+  const TODAY = '2026-10-21';
+  /** 繰り返しの担当を外したデモのデータ（どの回も担当なし） */
+  const unassigned = (): DemoData => {
+    const d = createDemoData(TODAY);
+    return { ...d, patterns: d.patterns.map((p) => ({ ...p, usualStaffId: null })) };
+  };
+  it('範囲の今日以降で担当なしの訪問がある日。確定した日・今日より前は入れない', () => {
+    const d = unassigned();
+    const range = Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 2));
+    const withVisits = range.filter((x) => x >= TODAY && visitsOn(d, x).some((v) => !v.cancelled));
+    const all = unassignedDays(d, range, TODAY);
+    expect(all).toEqual(withVisits);
+    const first = all[0]!;
+    const told = { ...d, snapshots: { [first]: { date: first, at: 1, visits: [] } } };
+    expect(unassignedDays(told, range, TODAY)).not.toContain(first);
+    // 繰り返しの担当で全部埋まっていれば足りない日はほぼ無い
+    expect(unassignedDays(createDemoData(TODAY), [TODAY], TODAY).length).toBeLessThanOrEqual(1);
   });
 });

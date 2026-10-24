@@ -17,8 +17,9 @@ import {
   Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
+import { ArrangeTabs } from '../components/ArrangeTabs';
 import { EmptyNext } from '../components/EmptyNext';
 import { FieldError } from '../components/FieldError';
 import { MapDock } from '../components/MapDock';
@@ -36,6 +37,7 @@ import { achievements, diff, hundredBreakdown, ruleLowerBounds, score, toHundred
 import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
 import { aiPinsOf, routesOf, unassignedOf, writeRoutes } from '../lib/dayPlan';
 import { compareEmptyGuide } from '../lib/emptyGuide';
+import { isDate } from '../lib/isDate';
 import { narrowRole } from '../lib/narrowRoles';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
 import { type ScoreReason, scoreReason } from '../lib/scoreReason';
@@ -96,6 +98,12 @@ export default function ComparePage() {
   const terms = data.org.terms;
   const toast = useToast();
   const navigate = useNavigate();
+  /** 担当を組むの画面の「案を比べる」から来たときの日（?date=）。選んでいる日付をその日にする */
+  const dateParam = useSearchParams()[0].get('date');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ?date= が変わったときだけ
+  useEffect(() => {
+    if (dateParam && isDate(dateParam) && dateParam !== date) setDate(dateParam);
+  }, [dateParam]);
   /** 日の予定の「比較の画面で見る」（A＝欠勤前、B＝今の担当。ADR-0011） */
   const asked = (useLocation().state ?? null) as { a?: string; b?: string } | null;
   const [sel, setSel] = useState<{ a: string | null; b: string | null }>({ a: null, b: null });
@@ -503,12 +511,13 @@ export default function ComparePage() {
   return (
     <div className="stack" style={{ minWidth: 0 }}>
       <PageHeader
+        nav={<ArrangeTabs />}
         icon={GitCompareArrows}
         title="提案を比べる"
         lead="今の担当と、考え方（プリセット）ごとに作った提案を2つ選んで比べます。提案は保存しません。よければ「反映する」"
         actions={
-          <NavLink to="/plan" className="plan-compare-link">
-            <WithIcon icon={CalendarDays}>{dateText(date)}の予定に戻る</WithIcon>
+          <NavLink to={`/arrange?date=${date}`} className="plan-compare-link" data-testid="compare-back">
+            <WithIcon icon={CalendarDays}>担当を組むに戻る（{dateText(date)}）</WithIcon>
           </NavLink>
         }
       />

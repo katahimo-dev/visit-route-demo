@@ -28,6 +28,6 @@ describe('compareEmptyGuide', () => {
     expect(g.actions).toEqual([{ kind: 'day', date: '2026-10-22', label: '日の予定で訪問を足す', primary: true }]);
   });
   it('まとめて組むの URL', () => {
-    expect(batchHref('2026-11')).toBe('/month?ym=2026-11&do=batch');
+    expect(batchHref('2026-11')).toBe('/arrange?ym=2026-11');
   });
 });

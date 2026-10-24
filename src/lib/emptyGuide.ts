@@ -1,8 +1,8 @@
 // 空の画面の「なぜ空か」と次の一手（PRD D176。ADR-0025 追記）。週・稼働の見込み・比較で、案や訪問が無いときに出す文とボタンを
-// 決める純粋関数。ボタンは既存の行き先だけ：月の画面のまとめて作る（`?do=batch`。PRD D143）と、日の画面（選んだ日を開く）。
+// 決める純粋関数。ボタンは既存の行き先だけ：担当を組むの画面（`#/arrange?ym=`。ADR-0063）と、日の画面（選んだ日を開く）。
 // データは書き換えない
 
-/** 次の一手のボタン：月の画面のまとめて作る（ym の月）か、日の画面（date の日） */
+/** 次の一手のボタン：担当を組むの画面（ym の月）か、日の画面（date の日） */
 export type EmptyAction = { label: string; primary: boolean } & (
   | { kind: 'batch'; ym: string }
   | { kind: 'day'; date: string }
@@ -17,8 +17,8 @@ export type EmptyGuide = {
   actions: EmptyAction[];
 };
 
-/** 月の画面のまとめて作るの URL（lib/progressBand の bandHref と同じ形） */
-export const batchHref = (ym: string): string => `/month?ym=${ym}&do=batch`;
+/** 担当を組むの画面の URL（lib/progressBand の bandHref と同じ形） */
+export const batchHref = (ym: string): string => `/arrange?ym=${ym}`;
 
 export type PeriodInput = {
   /** 期間の呼び方（「この週」「この月」） */

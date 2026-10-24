@@ -1,0 +1,221 @@
+/* 組み方の標準（PRD D350〜D354。ADR-0063） */
+.standard-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.standard-steps h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+.standard-steps h2:focus {
+  outline: none;
+}
+.standard-steps h2:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.standard-cards {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.standard-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+.standard-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 8px 0;
+}
+.standard-stats dt {
+  color: var(--sub);
+}
+.standard-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.standard-view-title {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+/* 表（行＝繰り返し・列＝曜日）。狭い画面は横に巻く */
+.standard-table-scroll {
+  /* 中の sr-only（position: absolute）を巻く箱の中に収める */
+  position: relative;
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.standard-table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 0.9rem;
+}
+.standard-table th,
+.standard-table td {
+  border: 1px solid var(--line);
+  padding: 4px 6px;
+  vertical-align: top;
+  text-align: left;
+}
+.standard-table thead th {
+  background: var(--soft);
+  white-space: nowrap;
+  text-align: center;
+}
+.standard-table tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--card);
+  min-width: 9em;
+  max-width: 14em;
+  font-weight: normal;
+}
+.standard-row-name {
+  display: block;
+  font-weight: 600;
+}
+.standard-row-when {
+  display: block;
+  color: var(--sub);
+  font-size: 0.8rem;
+}
+.standard-table td {
+  min-width: 6.5em;
+}
+.standard-cell-none {
+  color: var(--sub);
+  text-align: center;
+  background: var(--soft);
+}
+.standard-table td.is-changed {
+  background: var(--primary-soft);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+.standard-cell-btn,
+.standard-cell-read {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+.standard-cell-btn {
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.standard-cell-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.standard-cell-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.standard-cell-btn[aria-expanded='true'] {
+  outline: 2px solid var(--primary);
+}
+.standard-cell-staff {
+  font-weight: 600;
+}
+.standard-cell-time {
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+.standard-changed-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--primary-dark);
+  color: var(--primary-dark);
+  background: var(--card);
+}
+
+/* マスを直す小さな欄（直す行のすぐ下の行） */
+.standard-edit-row > td {
+  background: var(--soft);
+}
+.standard-editor {
+  position: sticky;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  max-width: min(100%, calc(100vw - 64px));
+}
+.standard-editor-title {
+  flex-basis: 100%;
+  margin: 0;
+  font-weight: 600;
+}
+.standard-editor .sub,
+.standard-editor .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* 標準にする */
+.standard-temp {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--warn-line);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin: 0;
+}
+.standard-temp legend {
+  padding: 0 4px;
+}
+.standard-choice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.standard-choice > span {
+  display: flex;
+  flex-direction: column;
+}
+.standard-temp-list {
+  margin: 4px 0 0;
+  padding-left: 1.2em;
+  font-size: 0.9rem;
+}
+.standard-done {
+  border-left: 4px solid var(--ok);
+  padding-left: 12px;
+}
+.standard-done p {
+  margin: 0;
+}
+.standard-page .warn {
+  border-left: 4px solid var(--warn-line);
+  padding-left: 8px;
+}
+/* 時刻だけ違うマスは薄く（文字は「時刻変更」） */
+.standard-table td.is-changed-time {
+  background: var(--soft);
+  box-shadow: inset 3px 0 0 var(--line-strong);
+}
+.standard-table td.is-changed-time .standard-changed-tag {
+  border-color: var(--line-strong);
+  color: var(--sub);
+}

@@ -1,53 +1,65 @@
 # 組み方の標準（標準の週）の画面
 
-> この画面のファイル：`src/pages/StandardPage.tsx`（`settings.css`）、`src/lib/standard.ts`。関連 ADR：0010・0012・0013・0035・0053・0062。関連 PRD：D314・D315・D350〜D354。
-> 契約（`Pattern.usualStarts`・`DemoData.standard`）は design.md §5「データの1件ずつ」「データ一式」。標準の担当を AI で組むときにピンと同じに扱う `standardPinsOf`・`aiPinsOf` は `lib/dayPlan`
+> この画面のファイル：`src/pages/StandardPage.tsx`（`standard.css`）、`src/lib/standard.ts`（純粋関数）、`src/lib/standardDraft.ts`（画面の外の入れ物と案を作る計算）。関連 ADR：0012・0013・0035・0053・0063。関連 PRD：D314・D350〜D354。
+> 契約（`Pattern.usualStarts`・`DemoData.standard`）は design.md §5「データの1件ずつ」「データ一式」
 
 ### 組み方の標準（`#/standard`）
 
-使い始めと見直しのときに、標準の週（繰り返しの担当・曜日ごとの開始）と標準の考え方（点数の基準のプリセット）を決めて登録する画面（PRD D350）。メニューの「設定」の先頭のタブ「組み方の標準」（土台の画面。機能の入り切りで消えない）。`PageHeader` の題名「組み方の標準」・`lead`「誰が・何曜・何時に行くかの標準を決めます。登録すると、先の週・月はこの標準で並び、AI は標準で埋まらない所だけを組みます」。見出しの下に設定のタブ。中身は4段の手順（`ol.standard-steps`・data-testid `standard-steps`。段は `li.card`・`data-step`＝`period|run|edit|register`）。
+使い始めと見直しのときに、標準の週（繰り返しの担当・曜日ごとの開始）を **表** で決めて登録する画面（PRD D350）。メニューの「予定を組む」の子（タブ「担当を組む」「組み方の標準」。`PageHeader` の nav は `ArrangeTabs`）。題名「組み方の標準」・`lead`「誰が・何曜・何時に行くかの標準を表で決めます。登録すると、先の週・月はこの表のとおりに並びます」。中身は3段（`ol.standard-steps`・`standard-steps`。段は `li.card`・`data-step`＝`proposals|draft|register`）。
 
-- 上に今の標準の1行（`standard-now`）：登録していなければ「まだ標準を登録していません」、登録していれば「標準：〈M/D〉から・考え方「〈プリセット名〉」・〈N〉週の周期（〈M/D〉に登録）」（`DemoData.standard`。プリセットが無くなっていれば「消したプリセット」）
+- 上に今の標準の1行（`standard-now`）：「まだ標準を登録していません」／「標準：〈M/D〉から・考え方「〈プリセット名〉」・〈N〉週の周期（〈M/D〉に登録）」
+- 主ボタン（`btn-primary`）は画面に1つ：下書きが無いときは「案を作る」、下書きがあるときは「この表を標準にする」
 
-#### 1. 期間
+#### 標準の表
 
-- `standardPeriod(data, today, weeks)`：来週の月曜（今日が月曜なら7日後。週の予定と同じ区切り）から `weeks` 週。「〈M/D〉〜〈M/D〉（N週）。〈理由〉」（`standard-period`。理由は `cycleWeeks` の `reason`）
-- 週の数（`select`・data-testid `standard-weeks`・1〜4。既定は `cycleWeeks`）。周期より短いと「期間に回の無い繰り返しは今の標準のまま」と注意。作っている間は変えられない。変えると作った提案を捨てる
+- 行＝`standardPatterns(data, today)`：利用中の〈利用者さん〉の、今日以降に続く繰り返し。先で終わり、同じ〈利用者さん〉・種類の後に始まる繰り返しがあるもの（「いつから」で分けた前の側）は除き、後の側を行にする。並びは〈利用者さん〉の名前・最初の曜日。行の見出しは名前と `patternWhenText`（曜日・時間の約束の短い文）。左の列は横に巻いても残る
+- 列＝曜日（月曜はじまり。どれかの行にある曜日だけ）。その繰り返しに無い曜日のマスは「—」
+- マス＝担当の名前と開始（無ければ「時刻なし」）。今の標準と違うマスは色と文字（担当が違う＝「担当変更」、時刻だけ違う＝薄い色で「時刻変更」）。色だけに頼らない（`standard-cell`・`data-pattern`・`data-weekday`・`data-changed`・`data-kind`）
+- 表は `.standard-table-scroll` の中で横に巻く（390px で画面をはみ出さない）
 
-#### 2. 考え方で作る
+#### 1. 案をくらべる
 
-- 主ボタン「〈N〉つの考え方で作る」（N はプリセットの数。`standard-run`）で、`data.presets` の順に、期間の今日以降・伝えていない日を1日ずつ、そのプリセットの重み（`applyPreset`）で Worker で解く（`runSolve`・`defaultIterations`）。手で付けたピン（`pinsOf`）だけを効かせ、標準のピンは効かせない。作っている間は「「〈プリセット名〉」で作っています i/n日」（`standard-progress`）と［止める］（`standard-stop`）
-- 提案は画面の状態（保存しない）。画面を離れると止めて捨てる
-- カード（`standard-card`・`data-preset`＝id）：名前・一言、点（`standard-points`。日ごとの点の平均。点数の基準の物差し：`scoreRulesOf` で作った問題を `score`・`normalize`・`toHundred`）・移動（時間）・担当なし・件数の偏り（`standard-spread`。最も多い人 − 最も少ない人。名前と件数を title）・守れない条件。いちばん点の高いカードに王冠（`standard-crown`。同点は前のカード。`bestIndex`）。作ったあとに訪問が変わった日があれば「作ったあとに予定が変わりました（変わった日は書きません）」
-- 作り終えたカードの［この考え方で作る］（`standard-pick`）：独自の確認「「〈プリセット名〉」で〈M/D〉〜〈M/D〉の担当を書きますか？」、本文「期間の担当と時刻を提案のとおりに書きます（ピンの訪問はそのまま）。点数の基準を「〈プリセット名〉」にします。元に戻すで戻せます」、主ボタン「書く」。store の update の1回（手の名前「組み方の標準：〈プリセット名〉で書く」）で、作ったときの訪問のままの日（伝えていない）だけ `writeRoutes` で書き、`setScorePreset` でそのプリセットを点数の基準にする。書いたら提案を捨て、トースト「N日分を書きました」と［元に戻す］
+- 「プリセット（考え方）ごとに、〈M/D〉〜〈M/D〉（N週。〈理由〉）の担当を AI で組み、標準の表の案を作ります…」（`standard-period`。期間は `standardPeriod`＝来週の月曜から `cycleWeeks` の週数）
+- 「〈N〉つの考え方で案を作る」（`standard-run`）：`runProposals(data, today)`。`data.presets` の順に、期間の日を1日ずつ、そのプリセットの重み（`applyPreset`）で Worker で解く（`runSolve`・`defaultIterations`）。ひな形なので **保存した回・単発の訪問は見ず（訪問を空にして繰り返しから計算した回だけ）、ピン（手のピン・標準のピン）は効かせない**。伝えた日も作る（予定には書かない）。作っている間は「「〈プリセット名〉」で作っています i/n日」（`standard-progress`）と［止める］（`standard-stop`。作り終えた案は残す）
+- 各日の割当から `tableFromDays` で表にする。カード（`standard-card`・`data-preset`）：名前・一言・点（`standard-points`。点数の基準の物差しで作った問題で `score`・`normalize`・`toHundred` の日ごとの平均）・移動・担当なし・件数の偏り（`standard-spread`。title に最も多い人・少ない人）・今の標準と違うマス（`standard-card-diff`。「Nマス（担当 a・時刻だけ b）」）。いちばん点の高いカードに王冠（`standard-crown`・`bestIndex`）
+- ［表で見る］（`standard-view`。aria-expanded。もう一度で閉じる）：その案の表を読み取り専用で出す（`standard-view-table`）
+- ［この案から作る］（`standard-use`）：下書きにその表を入れる（下書きがあれば独自の確認「下書きを「〈名前〉」の案で置き換えますか？」）。入れたら2段目の見出しへ巻いてフォーカス
+- 作ったあとに行の繰り返し（ID・曜日）が変わったら「案を作ったあとに繰り返しが変わりました…」（`standard-proposals-stale`）
 
-#### 3. 直す
+#### 2. 表で直す（下書き）
 
-- 説明と、週ごとのリンク［週の予定で直す（〈M/D〉〜）］（`standard-week-link`。`/week?d=〈その週の月曜〉&mode=change`）。今の点数の基準の名前も添える。2段目を飛ばして今の担当のまま登録してもよい（見直し）
+- 下書きが無いとき：説明と［今の標準から作る］（`standard-from-current`。`currentTable`）
+- 下書きがあるとき：どこから作ったか（`standard-draft-from`）・「今の標準と違う所 N か所（担当 a・時刻だけ b）」（`standard-diff-count`）・下書きの表（`standard-table`）・［下書きを捨てる］（`standard-discard`。直しがあれば確認）。作ったあとに行の繰り返しが変わったら注意（`standard-draft-stale`。無くなった繰り返しは外し、新しい繰り返しは今の標準で出す）
+- マスを押すと、その行のすぐ下に小さな欄（`standard-editor`）：担当（`standard-editor-staff`。勤務中の〈スタッフ〉＋担当なし）・開始（`standard-editor-start`。空＝時刻なし。`startError`：その曜日の時間の約束の外は「時間の約束（9:00〜12:00）の外です」を出して受け付けない）・［決める］［やめる］。開くとフォーカスは担当、Esc・やめる・決めるで閉じてフォーカスはマス。担当なしは開始も無し
 
-#### 4. 標準として登録
+#### 3. 標準にする（下書きがあるとき・登録した直後）
 
-- 差分の表（`standard-diff`。`standardDiff(data, period)`）：繰り返しごとに1行（`standard-row`・`data-changed`）。列は〈利用者さん〉・担当（前 → 後。曜日で分けるときは「月：〈名前〉・水：〈名前〉」）・曜日ごとの開始（前 → 後）・注意（`STANDARD_WARNING_TEXT`）。変わらない行は畳み、［変わらない N件を見る］（`standard-show-same`）で出す
-  - 注意：`weekdaySplit`（曜日で担当が違うので、曜日ごとに分けます）・`weeksDiffer`（週によって担当が違うので、最初の週の担当にします）・`outsideWindow`（開始が時間の約束の外なので、開始は書きません）・`unassigned`（担当なしの回があります）・`notSeen`（期間に回がありません。今の標準のまま）
-- 「いつから」（`input[type=date]`・`standard-since`。既定は `defaultSince`＝期間の最初の日。`min`＝`earliestSince`＝今日と最後に伝えた日の翌日の遅い方。それより前の値は既定に戻す）
-- 一時の変更（`temporaryChanges(data, rows, since)`）があれば注意の枠（`standard-temp`）：「標準と違う一時の変更が N件あります」・一覧（日付・〈利用者さん〉・今の担当と時刻 → 標準の担当と時刻。10件まで、残りは「ほか N件」）・選び（`standard-temp-choice`。radio「ピンを立てて残す」（既定）／「標準に戻す（消す）」）
-- 主ボタン「標準として登録」（`standard-register`。変わる行が0件なら押せず「今の標準と同じです」）：独自の確認「標準を登録しますか？」、本文に 変わる繰り返し N件（うち曜日ごとに分ける N件）・〈M/D〉以降の計算した回は新しい標準になること・一時の変更 N件をどうするか・伝えた日の回とピンの回は変えないこと。主ボタン「登録する」。store の update の1回（手の名前「組み方の標準を登録」）で `registerStandard`。トースト「標準を登録しました」と［元に戻す］。登録したあとは［先の月の予定を見る］（`/month?ym=〈いつからの月〉&mode=change`）
+- 「いつから」（`standard-since`。`min`＝`earliestSince`、既定＝`defaultSince`＝来週の月曜か選べる最初の日の遅い方）
+- いつから以降・伝えていない日の、書き換える繰り返しの保存した回で、ピンでもこの回だけ変えた回でもなく新しい標準と違うもの（`temporaryChanges`）が1件以上なら選び（`standard-temp-choice`・件数 `standard-temp-count`）：「標準どおりに入れ替える（おすすめ）」（既定。`standard-temp-drop`）＝「その予定を消して、新しい標準の担当・時刻にします」／「今のまま残す」（`standard-temp-pin`）＝「その予定は今の担当のまま固定（ピン）します」。［どの予定か見る］で20件まで
+- ［この表を標準にする］（`standard-register`）：違う所0なら押せず「今の標準と同じです」（`standard-same`）。独自の確認「この表を 〈M/D〉 から標準にしますか？」（違う所と繰り返しの数・いつから・選びの結果・案から作った下書きなら「標準の考え方（点数の基準）を「〈名前〉」にします」・伝えた日とピンは変えない）→ store の update の1回（「組み方の標準を登録」）で `registerStandard`。下書きを捨て、段の中に完了の表示（`standard-done`）「〈M/D〉 から毎週この表のとおりに並びます」と［週の予定で見る］（`standard-week-link`・`/week?d=〈いつからの週の月曜〉`）。トースト「標準にしました」と［元に戻す］
+
+#### 画面の外の入れ物（`lib/standardDraft.ts`）
+
+- `standardWork`（`createValueStore`）：案（プリセットごとの表・数字・作り終えたか）・案を作った期間と繰り返しの印（`patternsKey`）・作っている途中の進み具合・誤り・下書き（表と、作った元のプリセット ID か null）と印・登録した直後の完了の表示。ほかの画面へ移っても残り、読み直す・タブを閉じると消える（データには入れない）
+- `runProposals` は始めたときのデータで作り、画面を離れても続ける（1つだけ）。`stopProposals` で止める
 
 #### `lib/standard.ts`（純粋関数。テストあり）
 
-- `cycleWeeks(data, today)`：利用中の〈利用者さん〉の、today 以降に続く繰り返しの `everyWeeks` の最大（毎月があれば4、無ければ1）と理由の文。`nextMonday(today)`・`standardPeriod(data, today, weeks?)`＝`{ from, to, weeks }`・`periodDates(period)`
-- `standardDiff(data, period)`：`StandardRow[]`＝`{ patternId, clientId, staff: { before, after }, starts: { weekday, before, after }[], days: { weekday, staffId, start }[], split, warnings, changed }`。期間の計算に入る（取り消し・休みでない）繰り返しの回から、曜日ごとに最初の週の回の担当・組んだ開始を取る（時間の約束の外の開始は今の標準のまま）。回の無い曜日は今の標準。期間に回の無い繰り返しは行にしない
-- `earliestSince(data, today)`（今日と、最後に伝えた日（伝えた日へ動かした回は元の日も数える）の翌日の遅い方）・`defaultSince(data, period, today)`
-- `temporaryChanges(data, rows, since)`：`since` 以降・伝えていない日の、変わる繰り返しの保存した回で、この回だけ日時などを変えた回（取り消し・`edited`・日付の移動）でもピンでもなく、新しい標準（担当と、計算した回の開始）と違う回。期間の中の回は標準の元なので、担当が同じなら開始の違いは見ない（違う担当だけ数える）
-- `registerStandard(data, period, since, today, { newId, temp, at })`：変わる繰り返しごとに、`since` ≤ `from` ならその場で書き換え（曜日で分けるときは最初のまとまりが元の ID）、後なら元の `to` を `since` の前日にして新しい ID の繰り返しを足す（隔週・3週・4週ごとは `since` 以降で最初に回のある日を開始日にして周期をずらさない）。`since` より前に終わる繰り返しは書き換えない。曜日で担当が違えば担当ごとのまとまり（`weekdays`・`dayTimes`・`usualStarts` をその曜日の分だけ）に分ける。`since` 以降・伝えていない日の、その繰り返しの保存した回は：この回だけ変えた回は残して新しい繰り返しの ID に付け直す、標準と同じ回（ピンでない）は消す、ピンの回と `temp`＝`'pin'` の一時の変更は新しい繰り返しの回にしてピンを立てて残す、`'drop'` の一時の変更は消す。`since` は `earliestSince` より前なら `earliestSince`。`standard`＝`{ at, presetId: scorePresetId, from: since, weeks }`。変わる行が無ければ同じデータ
-- `registerCounts`・`proposalStats(days, toPoints)`・`bestIndex(stats)`・`hasStandard(data)`
+- 型：`StandardCell = { staffId: string | null; start: string | null }`・`StandardTable = Record<繰り返しID, Record<曜日, StandardCell>>`・`CellRef = { patternId, weekday }`・`CellDiff = CellRef & { kind: 'staff' | 'time' }`
+- `standardPatterns`・`cycleWeeks`・`nextMonday`・`mondayOf`・`standardPeriod`・`periodDates`
+- `currentTable(data, today)`（担当＝`usualStaffId`、開始＝`usualStartOn`。時間の約束の外は null）・`cellOf(table, current, patternId, wd)`（表に無ければ今の標準）・`setCell`・`tableDiff(table, current)`（今の標準にあるマスだけ見る）・`diffCounts`
+- `tableFromDays(data, days, today)`：問題の訪問のうち行の繰り返しの計算した回から、曜日ごとに最初の回の担当（列に無ければ担当なし）と lenient の開始（`startsOf`。担当なし・時間の約束の外は null）。回の無いマスは今の標準
+- `startError(pattern, wd, start)`・`earliestSince`（今日と、最後に伝えた日（動かした回は元の日も）の翌日の遅い方）・`defaultSince(data, today)`
+- `temporaryChanges(data, table, since, today)`
+- `registerStandard(data, table, since, today, { newId, temp, at, presetId? })`：違うマスのある、`since` 以降に続く繰り返しごとに、`since` ≤ `from` ならその場で書き換え（分けるときは最初のまとまりが元の ID）、後なら元の `to` を `since` の前日にして新しい ID の繰り返しを足す（隔週・3週・4週ごとは `since` 以降で最初に回のある日を開始日にして周期をずらさない。終わった繰り返しの `to` は延ばさない）。曜日で担当が違えば担当ごとのまとまり（`weekdays`・`dayTimes`・`usualStarts`）に分ける。`since` 以降・伝えていない日のその繰り返しの保存した回は：この回だけ変えた回は残して新しい ID に付け直す、標準と同じ回（ピンでない）は消す、ピンの回は残す、違う回は `temp`＝`'drop'` で消し `'pin'` でピンを立てて残す。`since` は `earliestSince` より前なら `earliestSince`。`standard`＝`{ at, presetId, from: since, weeks: cycleWeeks }`。`presetId` を渡すとそのプリセットを点数の基準にする（`setScorePreset`）。違うマスが無ければ同じデータ
+- `proposalStats(days, toPoints)`・`bestIndex(stats)`・`hasStandard(data)`
 
 #### 確かめ
 
-- 単体：`src/lib/standard.test.ts`（周期・期間・いつから・差分（曜日で分ける・週で違う・時間の約束の外）・登録（分ける・標準と同じ回を消す・一時の変更をピンで残す／消す・ピンとこの回だけ変えた回を残す・伝えた日を変えない・差分0で同じデータ）・標準のピン・王冠）
-- e2e：`scripts/e2e-standard.cjs`（設定のタブから開く・期間・考え方で作る（カード・王冠）・この考え方で作る（点数の基準が替わる・元に戻す）・登録（差分の表・一時の変更の選び）・登録のあと先の週の担当と時刻が標準・ホームの標準のカード・ナビの行のリンク）
+- 単体：`src/lib/standard.test.ts`（周期・期間・いつから・今の標準の表・行にしない繰り返し・違うマス・案から表・開始の誤り・登録（分ける・標準と同じ回を消す・入れ替える／残す・ピンとこの回だけ変えた回を残す・いつからより前・伝えた日・違う所0で同じデータ・点数の基準・隔週・終わった繰り返し・登録し直し）・標準のピン・王冠）
+- e2e：`scripts/e2e-standard.cjs`（予定を組むのタブ・案を作る・カード・表で見る・この案から作る・画面を移っても残る・マスを直す・違う所の数・390px・標準にする（入れ替えるが既定）・完了の表示・登録後は今の標準と同じ）
 
 #### 完了の条件
 
-- [ ] 上の4段が PRD D350〜D354 のとおりに動く
-- [ ] 単体・e2e が通る。書く・登録はそれぞれ1手で、全体の「元に戻す」で前に戻る
+- [ ] 上の3段が PRD D350〜D354 のとおりに動く
+- [ ] 単体・e2e が通る。登録は1手で、全体の「元に戻す」で前に戻る

@@ -89,7 +89,7 @@ describe('homeTasks（版2）', () => {
     expect(r.tasks[0]!.detail).toBe('訪問 3件・担当 2人・要対応 0件');
   });
 
-  it('担当なしの日が2日以上：担当を AI で組むへ（月の画面の ?do=batch）', () => {
+  it('担当なしの日が2日以上：予定を組むの「担当を組む」へ（ADR-0063）', () => {
     const r = homeTasks(
       input([st(TODAY, { state: 'none', ...unassigned(1) }), st('2026-10-15', { state: 'none', ...unassigned(2) })]),
     );
@@ -98,8 +98,8 @@ describe('homeTasks（版2）', () => {
     const c = r.tasks.find((t) => t.kind === 'create')!;
     expect(c).toMatchObject({
       tone: 'todo',
-      title: '10月の担当を AI で組む',
-      to: '/month?ym=2026-10&do=batch&mode=change',
+      title: '10月の担当なしの訪問を組む',
+      to: '/arrange?ym=2026-10',
     });
     expect(c.detail).toBe('担当なしの訪問がある日 2日');
   });
@@ -181,7 +181,7 @@ describe('homeTasks（版2）', () => {
     );
     expect(r.tasks.map((t) => [t.kind, t.title])).toEqual([
       ['attention', '11月の要対応 2件'],
-      ['create', '11月の担当を AI で組む'],
+      ['create', '11月の担当なしの訪問を組む'],
       ['confirm', '11月の確定していない日 2日を確認'],
       ['today', '今日 10/28（水）の予定（確定済み）'],
     ]);

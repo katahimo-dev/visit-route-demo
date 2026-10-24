@@ -27,7 +27,7 @@ export type MenuItem = {
 };
 
 /**
- * 押すと項目の一覧が開くボタン（WAI-ARIA の menu button。予定の画面の「AI で組む ▾」。PRD D63）。
+ * 押すと項目の一覧が開くボタン（WAI-ARIA の menu button。予定の画面の「その他 ▾」など。PRD D63）。
  * キーボード：ボタンで Enter・Space・↓ は先頭、↑ は最後の項目へ。一覧の中は ↑↓・Home・End で移り、Enter・Space で選ぶ、
  * Esc で閉じてボタンへ戻る、Tab で閉じる。押せない項目もフォーカスは移る（理由は title と aria-describedby。説明のある項目は
  * 説明の行に理由を出す）。group のある項目からは見出し付きのまとまり（role="group"・aria-label）にする（PRD D156）。

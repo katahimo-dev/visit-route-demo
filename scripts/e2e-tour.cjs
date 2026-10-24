@@ -1,7 +1,7 @@
 // 区切り8b（PRD D189〜D193。ADR-0025 追記）を本物のブラウザで確かめる：
 // 初回の案内ツアー（初めて開くと中央のカード・role="dialog"・aria-modal・見出しと本文・1 / 3・最初のフォーカスは「次へ」・
 // 裏の inert とスクロールのロック・「戻る」は最初の枚で押せずフォーカスを「次へ」へ・Tab と Shift+Tab が中で回る・
-// 開いている間は Ctrl+K でパレットを開かない・3枚（ホーム・予定・欠勤。PRD D277）・予定の枚は3段（提案（AI）→ ピン → 確定（伝えた））の説明・
+// 開いている間は Ctrl+K でパレットを開かない・3枚（ホーム・予定・欠勤。PRD D277）・予定の枚は「予定を組んで、直して、確定します」と3段（組む（AI。メニューの「予定を組む」）→ ピン → 確定（伝えた））の説明・
 // 最後の枚は主ボタン「今日の予定を開く」・「閉じる」（とばすは出さない。PRD D226）・
 // 初めて開くと機能は「基本」で、1枚目に「どこまで使いますか」（基本／すべて。Tab は選んだ方だけ・矢印で選び直しても当てない）・
 // 「すべて」を選んで「次へ」（とばすでも）でその入り切りで初期データを作り直し「条件が変わった」にならない・「基本」に戻せる・
@@ -151,23 +151,25 @@ async function tourFirst(b) {
     keys.push(await tour(page).getAttribute('data-step'));
     if (i === 1) {
       check((await seenValue(page)) === null, 'ツアー：途中（2枚目まで）は覚えない');
-      // 予定の枚：3段の説明（PRD D226）と［月｜週｜日］の切り替え
+      // 予定の枚：3段の説明（PRD D226。組むのは「予定を組む」。ADR-0063）と［月｜週｜日］の切り替え
       const points = await page.getByTestId('tour-points').locator('li').allInnerTexts();
       check(
-        (await page.getByTestId('tour-title').innerText()) === '予定で担当を組んで確定します' &&
+        (await page.getByTestId('tour-title').innerText()) === '予定を組んで、直して、確定します' &&
           (await page.getByTestId('tour-body').innerText()).includes('［月｜週｜日］') &&
+          (await page.getByTestId('tour-body').innerText()).includes('「予定を組む」') &&
           points.length === 3 &&
-          /^提案（AI）：/.test(points[0]) &&
+          /^組む（AI）：/.test(points[0]) &&
+          points[0].includes('「予定を組む」の「担当を組む」') &&
           /^ピン：/.test(points[1]) &&
           /^確定（伝えた）：/.test(points[2]),
-        'ツアー：予定の枚は［月｜週｜日］と3段（提案（AI）→ ピン → 確定（伝えた））の説明',
+        'ツアー：予定の枚は題名「予定を組んで、直して、確定します」・［月｜週｜日］と3段（組む（AI）→ ピン → 確定（伝えた））の説明',
         points,
       );
       const body = await tour(page).evaluate(
         (el) => document.getElementById(el.getAttribute('aria-describedby'))?.textContent ?? '',
       );
       check(
-        /提案（AI）：/.test(body) && /確定（伝えた）：/.test(body),
+        /組む（AI）：/.test(body) && /確定（伝えた）：/.test(body),
         'ツアー：予定の枚の説明（aria-describedby）に3段も入る',
         body,
       );
@@ -306,8 +308,8 @@ async function tourStart(b) {
   await settle(page, 400);
   const tabs = await page.getByTestId('settings-tabs').locator('a').allInnerTexts();
   check(
-    tabs.length === 6 && (await tour(page).count()) === 0,
-    '読み直しても「すべて」のまま（設定のタブ6つ）・ツアーは出ない',
+    tabs.length === 5 && (await tour(page).count()) === 0,
+    '読み直しても「すべて」のまま（設定のタブ5つ）・ツアーは出ない',
     tabs,
   );
   await ctx.close();
@@ -352,8 +354,8 @@ async function tourStart(b) {
   await h.page.getByTestId('tour-skip').click();
   await open(h.page, '/settings', '[data-testid="settings-tabs"]');
   check(
-    (await h.page.getByTestId('settings-tabs').locator('a').count()) === 6,
-    'features の無い保存データは今までどおりすべて入（設定のタブ6つ）',
+    (await h.page.getByTestId('settings-tabs').locator('a').count()) === 5,
+    'features の無い保存データは今までどおりすべて入（設定のタブ5つ）',
   );
   await h.ctx.close();
 }

@@ -343,11 +343,12 @@ async function empties(page) {
   await page.waitForFunction(() => document.querySelector('[data-testid="vacancy-grid"]'), null, { timeout: 30000 });
   const notes = await page.locator('.vacancy-noplan').count();
   check(notes <= 1, '空き状況：担当なし・数えなかった日の注意は1か所', notes);
-  const mk = page.getByTestId('vacancy-noplan-make');
+  const mk = page.getByTestId('vacancy-noplan-arrange');
   if ((await mk.count()) === 1) {
     check(
-      (await mk.evaluate((e) => e.tagName)) === 'BUTTON' && /担当なしを AI で組む（\d+日）/.test(await mk.innerText()),
-      '空き状況：注意からその場で担当なしを AI で組む',
+      /^#\/arrange\?ym=\d{4}-\d{2}$/.test((await mk.getAttribute('href')) ?? ''),
+      '空き状況：注意から担当を組むの画面へ（その場では組まない。ADR-0063）',
+      await mk.getAttribute('href'),
     );
   }
 }
@@ -517,18 +518,14 @@ async function reasonWords(page) {
     lines.map((l) => l.seen),
   );
   check(!(await page.locator('body').innerText()).includes('費用'), '日の画面に「費用」の文字を出さない');
-  // 点を下げているいちばんの理由の次の一手（理由が移動・入らない・相性のときだけ1行）
+  // 点を下げているいちばんの理由の次の一手（理由が入らない・相性のときだけ1行。日の予定では AI で組まないので移動には出さない。ADR-0063）
   const key = await page.getByTestId('plan-reason').getAttribute('data-key');
   const next = page.getByTestId('reason-next');
   if ((await next.count()) > 0) {
     const nt = await next.innerText();
-    check(
-      /^次の一手：(「移動を短く」で組む|受けられる人を見る|相性の表を開く)$/.test(nt.trim()),
-      '理由の下に次の一手を1行',
-      nt,
-    );
+    check(/^次の一手：(受けられる人を見る|相性の表を開く)$/.test(nt.trim()), '理由の下に次の一手を1行', nt);
   } else {
-    check(!['travel', 'dropped'].includes(key ?? ''), '移動・入らないが理由なら次の一手がある', key);
+    check(key !== 'dropped', '入らないが理由なら次の一手がある', key);
   }
   await page.screenshot({ path: path.join(OUT_DIR, 'plan-reason-lines.png'), fullPage: false });
   // 比較の画面：AI の記録は残さない（版2。提案はその場だけ）ので、乱数の種は出さない

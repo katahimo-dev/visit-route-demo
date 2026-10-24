@@ -4,7 +4,7 @@
 // 主ボタンは段階ごとに1つ（4段目の「要約をコピー」だけ）、マスの読み方（凡例・用語の説明・×に「約0」を出さない・読み上げ）、
 // × のマスは薄い灰で赤くしない・色の凡例「0人（受けられない）」（PRD D228）、
 // 案の無い日の注意は1か所、案内文ははじめ畳み開くまで計算しない、仮押さえ、390px で収まる、ブラウザの確認を出さない。
-// 答えのカードが結果の1枚目・凡例は1か所・「指定なし」・入力はタブの間だけ残る・その場で［担当なしを AI で組む（N日）］（PRD D258・D259）。
+// 答えのカードが結果の1枚目・凡例は1か所・「指定なし」・入力はタブの間だけ残る・担当なしの日の注意から担当を組むの画面へ（PRD D258・D259。ADR-0063）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-vacancy-steps.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）。PERF_MS_VACANCY で結果が出るまでの上限（既定 5000ms。PRD §5。無ければ PERF_MS）
@@ -365,41 +365,24 @@ async function answer(page) {
     { key: STORAGE_KEY, gone },
   );
   await page.reload();
-  const make = page.getByTestId('vacancy-noplan-make');
-  await make.waitFor({ timeout: 30000 });
+  // 担当なしの日の注意から担当を組むの画面へ（その場では組まない。ADR-0063）・日の予定の担当なしへ
+  const go = page.getByTestId('vacancy-noplan-arrange');
+  await go.waitFor({ timeout: 30000 });
   check((await page.getByTestId('vacancy-duration').inputValue()) === '90', '読み直しても入力が残る（同じタブ）');
-  const label = await make.innerText();
-  const n = Number(/担当なしを AI で組む（(\d+)日）/.exec(label)?.[1] ?? 0);
-  check(n >= 2, '［担当なしを AI で組む（N日）］', label);
-  await make.click();
-  await page.getByTestId('batch-band').waitFor({ timeout: 10000 });
+  const n = Number(await go.getAttribute('data-count'));
+  check(n >= 2, '担当なしの訪問がある日の数（data-count）', n);
   check(
-    new RegExp(`月の担当を組んでいます \\d+/${n}日`).test(await page.getByTestId('batch-band-text').innerText()),
-    '上の帯に進み具合',
+    /^#\/arrange\?ym=\d{4}-\d{2}$/.test((await go.getAttribute('href')) ?? ''),
+    '［担当を組むで組む］は担当を組むの画面（その月）へ',
+    await go.getAttribute('href'),
   );
-  // disabled にせず aria-disabled（フォーカスを失わない）。押しても始めない（Playwright は aria-disabled を押さないので直接送る）
-  await make.dispatchEvent('click');
   check(
-    (await make.getAttribute('aria-disabled')) === 'true' && /の担当を組んでいます/.test(await make.innerText()),
-    '組んでいる間は押せない（二重に始めない）',
-    await make.innerText(),
+    /^#\/plan\?date=\d{4}-\d{2}-\d{2}&do=/.test(
+      (await page.getByTestId('vacancy-noplan-open').getAttribute('href')) ?? '',
+    ),
+    '［担当なしの訪問を見る］は日の予定の担当なしへ',
+    await page.getByTestId('vacancy-noplan-open').getAttribute('href'),
   );
-  await page
-    .locator('.toast')
-    .filter({ hasText: new RegExp(`月の提案を出しました（${n}日分`) })
-    .waitFor({ timeout: 90000 });
-  check(true, '組み終えたら知らせ（◯月の提案を出しました（N日分…））');
-  // 提案の帯（日・週・月の予定と同じ形。PRD D328）：反映すると担当が入る
-  const band = page.locator('[data-testid="proposal-band"][data-kind="range"]');
-  await band.waitFor({ timeout: 10000 });
-  check(true, '空き状況にも提案の帯が出る');
-  await band.getByTestId('proposal-apply').click();
-  await band.waitFor({ state: 'detached', timeout: 10000 });
-  const left = await page
-    .getByTestId('vacancy-noplan-make')
-    .getAttribute('data-count', { timeout: 5000 })
-    .catch(() => null);
-  check(left === null || Number(left) < n, '組むと担当なしの日が減る（結果を数え直す）', { n, left });
 }
 
 async function placeLater(page) {

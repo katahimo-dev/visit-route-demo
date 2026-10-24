@@ -5,20 +5,17 @@ import { addDays } from '../domain/time';
 import { putVisits, visitsOn } from '../patterns';
 import { createDemoData } from '../seed';
 import { solve } from '../solver';
+import { dayProblemOf } from './dayPlan';
 import {
   type BatchDone,
   batchBandText,
   batchDoneText,
   batchHref,
-  canMakeDay,
   createMonthBatch,
   dayInputsOf,
   dayLabel,
-  missingDays,
-  monthsLabel,
   proposalCounts,
   proposalDayFresh,
-  weekBatchDays,
   weekLabel,
 } from './monthBatch';
 
@@ -136,6 +133,26 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
     expect(b.proposal.get()).toBeNull();
     expect(b.apply()).toBeNull();
     expect(b.running()).toBe(false);
+  });
+
+  it('考え方（rules）を渡すと、その条件で問題を作る（データの条件は変えない。担当を組むの画面のプリセット）', async () => {
+    const seen: Problem[] = [];
+    const s = fakeSolve();
+    const b = createMonthBatch((p) => {
+      seen.push(p);
+      return s.fn(p);
+    });
+    const start = unassigned();
+    const h = hostOf(start);
+    b.connect(h.host);
+    const rules = start.rules.map((r) => ({ ...r, weight: 0, hard: false }));
+    expect(b.start({ ...job, rules })).toBe(true);
+    await finishAll(s.calls);
+    expect(seen.length).toBe(days.length);
+    const base = dayProblemOf(start, days[0]!)!;
+    expect(JSON.stringify(seen[0])).not.toBe(JSON.stringify(base));
+    expect(h.data().rules).toBe(start.rules);
+    expect(b.proposal.get()?.days.length).toBe(days.length);
   });
 
   it('止める：組んでいる日は最良で残し、残りの日はやめる', async () => {
@@ -265,14 +282,14 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
       iteration: 0,
       total: 1,
       source: 'month' as const,
-      weekStart: null,
+      rangeStart: null,
     };
     expect(batchBandText(run)).toBe('11月の担当を組んでいます 8/22日');
     const done: BatchDone = {
       ym: '2026-11',
       label: '11月',
       source: 'month',
-      weekStart: null,
+      rangeStart: null,
       made: 22,
       unassignedDays: 0,
       stopped: false,
@@ -291,22 +308,6 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
       'データを差し替えたので、11月の担当を組むのを止めました（提案は捨てました）',
     );
     expect(dayLabel('2026-11-03')).toBe('11/3');
-    expect(monthsLabel(['2026-10-30', '2026-11-02'])).toBe('10・11月');
-    expect(monthsLabel(['2026-11-02'])).toBe('11月');
-  });
-
-  it('担当の足りない日（空き状況。PRD D259）：範囲の今日以降で担当なしの訪問がある日。確定した日・今日より前は入れない', () => {
-    const d = unassigned();
-    const range = Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 2));
-    const withVisits = range.filter((x) => x >= TODAY && visitsOn(d, x).some((v) => !v.cancelled));
-    const all = missingDays(d, range, TODAY);
-    expect(all.map((x) => x.date)).toEqual(withVisits);
-    expect(all.every((x) => x.mode === 'care')).toBe(true);
-    const first = all[0]!.date;
-    const told = { ...d, snapshots: { [first]: { date: first, at: 1, visits: [] } } };
-    expect(missingDays(told, range, TODAY).map((x) => x.date)).not.toContain(first);
-    // 繰り返しの担当で全部埋まっていれば足りない日は無い
-    expect(missingDays(createDemoData(TODAY), [TODAY], TODAY).length).toBeLessThanOrEqual(1);
   });
 
   it('データを丸ごと差し替えたら捨てる（abort）：組んでいる日の結果は書かず、止めた知らせ', async () => {
@@ -330,26 +331,20 @@ describe('monthBatch（担当を AI で組む。PRD D256・D257。ADR-0042・ADR
   });
 });
 
-describe('週の範囲で組む（PRD D280。ADR-0046）', () => {
+describe('週・日の範囲で組む（担当を組むの画面。ADR-0063）', () => {
   const today = '2026-10-28';
   const across = Array.from({ length: 7 }, (_, i) => addDays('2026-10-27', i));
 
-  it('組む日：月をまたぐ週は2つの月から。今日より前・確定した日は入れない', () => {
-    const d = createDemoData(today);
-    const t = weekBatchDays(d, across, today).map((x) => x.date);
-    expect(t.some((x) => x.startsWith('2026-10'))).toBe(true);
-    expect(t.some((x) => x.startsWith('2026-11'))).toBe(true);
-    expect(t.every((x) => x >= today && x <= across[6]!)).toBe(true);
-    const first = t[0]!;
-    const told = { ...d, snapshots: { [first]: { date: first, at: 1, visits: [] } } };
-    expect(weekBatchDays(told, across, today).map((x) => x.date)).not.toContain(first);
+  it('週の呼び名', () => {
     expect(weekLabel('2026-11-01')).toBe('11/1〜11/7の週');
-    expect(canMakeDay(d, today)).toBe(true);
   });
 
   it('知らせと行き先は週', async () => {
     const d = unassigned();
-    const targets = weekBatchDays(d, across, today).slice(0, 2);
+    const targets = across
+      .filter((x) => x >= today)
+      .slice(0, 2)
+      .map((date) => ({ date, mode: 'all' as const }));
     const s = fakeSolve();
     const b = createMonthBatch(s.fn);
     const h = hostOf(d);
@@ -361,14 +356,14 @@ describe('週の範囲で組む（PRD D280。ADR-0046）', () => {
       days: targets,
       today,
       source: 'week',
-      weekStart: across[0]!,
+      rangeStart: across[0]!,
     });
-    expect(b.run.get()).toMatchObject({ source: 'week', weekStart: across[0], label: '10/27〜11/2の週' });
+    expect(b.run.get()).toMatchObject({ source: 'week', rangeStart: across[0], label: '10/27〜11/2の週' });
     await finishAll(s.calls);
-    expect(b.done.get()).toMatchObject({ source: 'week', weekStart: across[0], made: targets.length });
-    expect(batchHref({ ym: '2026-10', source: 'week', weekStart: across[0]! })).toBe(`/week?d=${across[0]}`);
-    expect(batchHref({ ym: '2026-11', source: 'month', weekStart: null })).toBe('/month?ym=2026-11');
-    expect(batchHref({ ym: '2026-10', source: 'day', weekStart: across[0]! })).toBe(`/week?d=${across[0]}`);
+    expect(b.done.get()).toMatchObject({ source: 'week', rangeStart: across[0], made: targets.length });
+    expect(batchHref({ ym: '2026-10', source: 'week', rangeStart: across[0]! })).toBe(`/arrange?d=${across[0]}`);
+    expect(batchHref({ ym: '2026-11', source: 'month', rangeStart: null })).toBe('/arrange?ym=2026-11');
+    expect(batchHref({ ym: '2026-10', source: 'day', rangeStart: today })).toBe(`/arrange?date=${today}`);
   });
 });
 

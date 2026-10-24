@@ -9,7 +9,6 @@ import {
   CircleOff,
   Clock,
   Gauge,
-  GitCompareArrows,
   Hourglass,
   Info,
   ListChecks,
@@ -48,18 +47,11 @@ import { RouteTimeline, type TimelineBand, type TimelineColumn } from '../compon
 import { LegLine, StaffLegend, VisitCard } from '../components/routeView';
 import { ScheduleNav } from '../components/ScheduleNav';
 import { StaffMark, StaffMarkById } from '../components/StaffMark';
-import {
-  ProposalBand,
-  RangeProposalBand,
-  ScheduleToolbar,
-  SelectionBar,
-  useScopeItems,
-} from '../components/scheduleParts';
+import { RangeProposalBand, ScheduleToolbar, SelectionBar } from '../components/scheduleParts';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Empty, Hint, IconButton, PageHeader, SectionTitle, SidePanel, Stat, WithIcon } from '../components/ui';
 import { useHistoryOps, useUndoAction } from '../components/undo';
-import { useScheduleMode } from '../components/useScheduleMode';
 import { useOpenVisit } from '../components/VisitPanel';
 import { VisitRules } from '../components/VisitRules';
 import { KeyMoveBand, useVisitKeys } from '../components/visitKeys';
@@ -68,7 +60,6 @@ import { TypeMark } from '../components/visitType';
 import type { DemoData } from '../contracts/data';
 import type { Absence, Client, Visit, VisitType } from '../contracts/documents';
 import type { PlanScore, Problem, ScoreScale, SolveResult } from '../contracts/problem';
-import type { Preset, Rule } from '../contracts/rules';
 import { slotsText, timeText } from '../domain/availability';
 import { leaveOn } from '../domain/leaves';
 import { NONE, timeOrder, windowText } from '../domain/scheduleModel';
@@ -91,7 +82,6 @@ import { confirmDay } from '../lib/confirmDay';
 import { type CancelledContact, type ContactRow, clock, contactCount, contactRows, dateWordOf } from '../lib/contacts';
 import { dayLineRange, dayLines } from '../lib/dayLine';
 import {
-  aiPinsOf,
   changeCount,
   ownerOf,
   pinsOf,
@@ -110,7 +100,6 @@ import { linkIfOn, UNASSIGNED_DO, workloadHref } from '../lib/links';
 import { contactMailText, mailTo } from '../lib/mail';
 import { HOME_LABEL } from '../lib/mapsLink';
 import { issueBreakdown } from '../lib/month';
-import { type DayInputs, dayInputsOf, proposalDayFresh } from '../lib/monthBatch';
 import { scrollBehavior } from '../lib/motion';
 import { typeOf } from '../lib/patternText';
 import { leavePeople } from '../lib/personLinks';
@@ -135,7 +124,6 @@ import {
   placeVisit,
   prepareAnneal,
   type ReassignCandidate,
-  type ReassignDiff,
   type ReassignResult,
   reassign,
   reassignDiff,
@@ -143,7 +131,6 @@ import {
   settleAnneal,
   targetsOf,
 } from '../reassign';
-import { applyPreset, scorePresetOf } from '../seed';
 import { defaultIterations, runSolve } from '../solver';
 import './plan.css';
 import './schedule.css';
@@ -180,8 +167,7 @@ const EMPTY_CONTACTS: ContactList = { staffChanged: [], timeChanged: [], staff: 
 /**
  * 日の予定（D4・D13・D18。版2：ADR-0053）：その日の訪問と担当を1画面で扱う。担当・開始・ピンは訪問が持ち、列はその日の訪問の
  * 担当と開始の並び（lib/dayPlan の routesOf）。担当を替える（ドラッグ・「担当を変える ▾」）と最も費用の少ない位置に入れてピンにし、
- * 訪問に書く（writeRoutes）。「AI で組む」は提案（担当・時刻の変更の一覧と点の差）を出し、「反映する」で訪問に書く（ピンの訪問は動かさない）。
- * 提案はその場だけ（保存しない）。プリセットは「プリセットで試す」で提案を出すだけ。
+ * 訪問に書く（writeRoutes）。日の予定では AI で組まない（手で直す。AI は「担当を組む」の画面。ADR-0063）。そこで組んだ範囲の提案は帯で見て反映できる。
  * 「確定」は〈スタッフ〉に伝えた内容を残す（DaySnapshot）。そのあとに変えた訪問は「未連絡の変更」になり、連絡の一覧に出る。
  * 要対応は訪問ごとの検査（担当なし・担当が休み・条件に合わない・時間に間に合わない）。点数（100点満点）は点数の基準の物差し（ADR-0010）
  */
@@ -199,29 +185,6 @@ type Progress = { iteration: number; total: number; hundred: number | null };
  * 「元に戻す」（1手。PRD D218）の控え：書く前の訪問（と振り直しの情報）と、書いたあとの訪問。
  * 書いたあとに別の操作で訪問が変わっていれば戻さない
  */
-
-/** AI の提案（その場だけ。保存しない。ADR-0053） */
-type Proposal = {
-  date: string;
-  /** 「点数の基準」「移動を短く」など */
-  label: string;
-  /** 提案の担当の並び（ピンの訪問はそのまま） */
-  routes: Record<string, string[]>;
-  /** 組み始めたときの訪問（変わっていれば反映しない） */
-  visits: readonly Visit[];
-  /**
-   * 組み始めたときのその日の問題の入力（欠勤・希望休・稼働時間の上書き・〈利用者さん〉の休みはその日の分、人・条件・種類・相性・
-   * 繰り返しは参照。範囲の提案と同じ lib/monthBatch の dayInputsOf）。画面を移っても提案を残すので、変わっていれば反映しない
-   */
-  inputs: DayInputs;
-  stopped: boolean;
-};
-
-/**
- * 日の予定のその場の提案（PRD D328・D335。ADR-0055）。画面を移っても、ほかの日を見ても消さない（その日に戻れば帯が出る）。
- * 画面の状態だけで保存しない（読み直すと消える）。提案は1つだけ（新しく組むと置き換える）。出したあとに訪問が変われば「反映しない」
- */
-const dayProposalStore = createValueStore<Proposal | null>(null);
 
 /**
  * 計算の進み具合のバーと回数（PRD D249）。進み具合は外の入れ物から読み、変わってもここだけ描き直す
@@ -267,17 +230,14 @@ export default function PlanPage() {
     () => [...new Set([...dates, date])].sort().map((d) => ({ value: d, text: dateText(d) })),
     [dates, date],
   );
-  /** 切った機能（案を比べる・稼働の見込み）の画面へ移るボタン・リンクは出さない（PRD D213。ADR-0028） */
-  const compareOn = useFeature('compare');
+  /** 切った機能（稼働の見込み）の画面へ移るボタン・リンクは出さない（PRD D213。ADR-0028） */
   const workloadOn = useFeature('workload');
   /**
    * 画面の中の欄・ボタン（ADR-0028）：欠勤・キャンセル（操作の行・列の見出し・当日キャンセルの選択）、メール（ボタン・欄・連絡の一覧）、
-   * 条件の重みとプリセット（プリセットで試す・点数の横の理由）。欠勤の印・帯（事実）は残す
+   * 条件の重み（点数の横の理由）。欠勤の印・帯（事実）は残す
    */
   const suddenOn = useFeature('sudden');
   const mailOn = useFeature('mail');
-  /** 予定のモード（PRD D348）：組むではメールのボタンを出さず、確認では札を動かさない */
-  const { tools: modeTools } = useScheduleMode();
   const rulesOn = useFeature('rules');
   const compatOn = useFeature('compat');
   const {
@@ -310,7 +270,7 @@ export default function PlanPage() {
    * 読む子の部品（PlanProgressText・AnnealBox の進み具合）だけを描き直す（PRD D249）
    */
   const [progressStore] = useState(() => createValueStore<Progress | null>(null));
-  const [running, setRunning] = useState<'create' | 'anneal' | null>(null);
+  const [running, setRunning] = useState<'anneal' | null>(null);
   /** 計算している日と条件の名前（「組んでいます」の表示） */
   const [runningFor, setRunningFor] = useState<{ date: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -402,9 +362,6 @@ export default function PlanPage() {
   /** いちばん新しい点数の物差し（計算中の「いまの最良 N点」を基準の物差しで付け直す。ADR-0010） */
   const scoreRef = useRef({ problem: scoreProblem, scale: scoreScale });
   scoreRef.current = { problem: scoreProblem, scale: scoreScale };
-  /** AI の提案（その場だけ。画面を移っても・日付を変えても残し、その日だけ帯に出す。PRD D335） */
-  const proposal = useValueStore(dayProposalStore);
-  const setProposal = dayProposalStore.set;
   /** 複数選択（Shift・Ctrl＋クリック。日付を変えたら外す。PRD D330） */
   const multi = useVisitSelection(date);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたらスマホの「選ぶ」を抜ける（選んだ訪問は useVisitSelection が外す）
@@ -424,7 +381,7 @@ export default function PlanPage() {
     };
     // progressStore は作り直さない（一度だけ）
   }, [progressStore]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた欄を閉じ、前の日のエラーを消す（提案は残す。PRD D335）
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 日付を変えたら開いた欄を閉じ、前の日のエラーを消す
   useEffect(() => {
     setSudden(null);
     setCancelFor(null);
@@ -445,7 +402,6 @@ export default function PlanPage() {
   const routes = useMemo(() => (problem ? routesOf(problem, m.allVisits) : {}), [problem, m.allVisits]);
   /** ピン（訪問ID → 担当） */
   const pins = useMemo(() => pinsOf(m.allVisits), [m.allVisits]);
-  const pinCount = Object.keys(pins).length;
   /** 今の担当の並びがあるか（計算に入れる訪問がある日） */
   const hasPlan = hasVisits && !!problem;
 
@@ -506,26 +462,10 @@ export default function PlanPage() {
     );
   };
 
-  // ---- 計算（AI で組む：提案を出す）----
-  /** 計算できるか（rules を渡すと、その条件で問題を作り直す。pins はピンの訪問） */
-  const check = (rules?: Rule[], quiet = false): Problem | null => {
-    setError(null);
-    const fail = (msg: string) => {
-      if (!quiet) setError(msg);
-      return null;
-    };
-    const latest = dataRef.current;
-    const input = rules ? { ...latest, rules } : latest;
-    const p = aiPinsOf(input, date, m.allVisits);
-    const target = attempt(() => compile(input, date, Object.keys(p).length > 0 ? p : undefined));
-    if (!target.value) return fail(target.error ?? m.problemError ?? '問題を作れませんでした');
-    if (target.value.visits.length === 0) return fail('この日に計算できる訪問がありません');
-    if (target.value.staff.length === 0) return fail(`この日に働ける${terms.staff}がいません`);
-    return target.value;
-  };
+  // ---- 計算（欠勤・キャンセルの振り直しの案B）----
   /** 途中の最良は、解いている条件にかかわらず点数の基準の物差しで点数にする（ADR-0010） */
   const run = (
-    kind: 'create' | 'anneal',
+    kind: 'anneal',
     target: Problem,
     label: string,
     onDone: (r: SolveResult) => void,
@@ -582,61 +522,6 @@ export default function PlanPage() {
   /** 案B の計算だけを止める */
   const stopAnneal = () => {
     runRef.current?.stop();
-  };
-
-  /**
-   * AI で組む（提案を出す。ADR-0053）：ピンの訪問はそのままで、ほかの担当・順番を組む。preset を渡すとそのプリセットの重みで
-   * （試す。重みは書き換えない）、無ければ点数の基準の重み。終わったら提案（担当・時刻の変更と点の差）を出す。訪問には書かない
-   */
-  const propose = (preset?: Preset) => {
-    if (running) return;
-    const rules = preset ? applyPreset(dataRef.current.rules, preset) : undefined;
-    const p = check(rules);
-    if (!p) return;
-    const forDate = date;
-    const label = preset?.name ?? scoreRulerName;
-    const startVisits = m.allVisits;
-    const startInputs = dayInputsOf(dataRef.current, forDate);
-    run('create', p, `${label}の`, (result) => {
-      setProposal({
-        date: forDate,
-        label,
-        routes: result.routes,
-        visits: startVisits,
-        inputs: startInputs,
-        stopped: result.stopped,
-      });
-      if (dateRef.current === forDate) toast(result.stopped ? '途中までの最良で提案を出しました' : '提案を出しました');
-    });
-  };
-  /** 提案の差（今の担当 → 提案）と点数 */
-  const proposalView = useMemo(() => {
-    if (!proposal || proposal.date !== date || !problem) return null;
-    // 提案を出したあとに訪問か、その日の問題の入力（欠勤・稼働時間・人・条件など）が変わったら古い
-    // 範囲の提案と同じ判定（訪問・その日の問題の入力が同じ・伝えていない。lib/monthBatch の proposalDayFresh）
-    const same = proposalDayFresh(data, { date, visits: proposal.visits, inputs: proposal.inputs });
-    const diffv = attempt(() => reassignDiff({ problem, routes }, { problem, routes: proposal.routes }))
-      .value as ReassignDiff | null;
-    const hundredOf = (r: Record<string, string[]>) =>
-      scoreProblem && scoreScale
-        ? (attempt(() => toHundred(score(scoreProblem, r).total, scoreScale)).value ?? null)
-        : null;
-    return { stale: !same, diff: diffv, before: hundredOf(routes), after: hundredOf(proposal.routes) };
-  }, [proposal, date, problem, routes, data, scoreProblem, scoreScale]);
-  /** 提案を反映する（訪問に担当・開始を書く。ピンはそのまま。「元に戻す」で戻せる） */
-  const applyProposal = () => {
-    if (!proposal || !problem || !proposalView || running) return;
-    if (proposalView.stale) {
-      toast('提案を出したあとに訪問が変わりました。もう一度 AI で組んでください');
-      setProposal(null);
-      return;
-    }
-    const p = problem;
-    const r = proposal.routes;
-    writeWith(`AI の提案を反映（${proposal.label}）`, (d) => writeRoutes(d, date, p, r));
-    setProposal(null);
-    sel.reset();
-    toast('提案を反映しました', { action: undoAction });
   };
 
   // ---- ?do= の入口（欠勤・キャンセル・担当なしの訪問）----
@@ -808,7 +693,6 @@ export default function PlanPage() {
    * Delete で取り消し（確認）。どれも全体の「元に戻す」の1手。動かしたらフォーカスは動かした帯、取り消したら「元に戻す」
    */
   const visitKeys = useVisitKeys({
-    readOnly: !modeTools.move,
     staffOrder: () => columns,
     onOpen: (id) => openVisit(id),
     onMoved: (r) => {
@@ -891,19 +775,6 @@ export default function PlanPage() {
     if (!problem) return;
     const { [visitId]: _had, ...rest } = pins;
     writeDay(problem, visitId, routes, rest, 'ピンを外す');
-  };
-  /** すべてのピンを外す（AI で組み直すと担当が変わりうる） */
-  const unpinAll = async () => {
-    if (!problem || pinCount === 0 || running) return;
-    const ok = await confirmDialog({
-      title: `ピン ${pinCount}件をすべて外しますか？`,
-      body: '担当はそのままです。AI で組むと、外した訪問も担当が変わることがあります。',
-      confirmLabel: 'ピンを外す',
-    });
-    if (!ok) return;
-    const p = problem;
-    writeWith('ピンをすべて外す', (d) => writeRoutes(d, date, p, routes, { pins: {} }));
-    toast('ピンを外しました', { action: undoAction });
   };
   // ---- 確定＝〈スタッフ〉に伝えた内容（ADR-0053）----
   /** 伝えた内容と今の違い（未連絡の変更。伝えていない日は null） */
@@ -1498,12 +1369,8 @@ export default function PlanPage() {
     },
   });
   const dragProps = (id: string) => ({
-    draggable: !running && modeTools.move,
+    draggable: !running,
     onDragStart: (e: DragEvent) => {
-      if (!modeTools.move) {
-        e.preventDefault();
-        return;
-      }
       e.dataTransfer.setData('text/plain', id);
       e.dataTransfer.effectAllowed = 'move';
       // ここで setDragging すると、未割当の列が先頭に足されて列がずれ、Chrome がドラッグをすぐ終わらせる
@@ -1874,7 +1741,7 @@ export default function PlanPage() {
             </span>
           )}
           {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
-          {suddenOn && modeTools.absence && (avail?.baseSlots.length ?? 0) > 0 && (
+          {suddenOn && (avail?.baseSlots.length ?? 0) > 0 && (
             <button
               type="button"
               className="link-btn absence-btn"
@@ -2111,8 +1978,6 @@ export default function PlanPage() {
           ruleLower: scoreLower,
         })
       : null;
-  /** 次の一手「「移動を短く」で組む」のプリセット（初期の ID か名前。消していれば出さない。PRD D229） */
-  const travelPreset = data.presets.find((p) => p.id === 'travel') ?? data.presets.find((p) => p.name === '移動を短く');
   /** 訪問の一覧（表示の「一覧」。休みのため無しの訪問も薄く出す。ADR-0013） */
   const visitList = (
     <VisitList
@@ -2246,69 +2111,12 @@ export default function PlanPage() {
     if (unassigned.length > 0) goToNone();
   }, [date, problem, unassigned.length, noneAsked]);
 
-  const busyWhy = running ? '計算中は選べません' : !problem ? 'この日に計算できる訪問がありません' : false;
-  const scopeItems = useScopeItems({ zoom: 'day', date, onDay: () => propose(), dayBusy: busyWhy });
-  /** 点数の基準のプリセットの ID（試すのは、ほかのプリセット） */
-  const basePresetId = scorePresetOf(data.presets, data.scorePresetId)?.id;
-  /**
-   * 「AI で組む ▾」の項目（ADR-0053）：AI で組む（点数の基準の重みで提案を出す）・プリセットで試す（その重みで提案を出す。
-   * 重みは書き換えない）・提案を比べる・ピンをすべて外す。提案は「反映する」まで訪問を変えない
-   */
-  const menuItems: MenuItem[] = [
-    // 範囲（この日／この週／この月。日・週・月の予定で同じ。PRD D328）。この日はその場の提案（点の差も出す）
-    ...scopeItems,
-    ...(rulesOn
-      ? data.presets
-          .filter((pr) => pr.id !== basePresetId)
-          .map(
-            (pr, i): MenuItem => ({
-              key: `preset-${pr.id}`,
-              group: i === 0 ? 'プリセットで試す' : undefined,
-              testId: 'plan-menu-preset',
-              label: `「${pr.name}」で組む`,
-              description: pr.note
-                ? `${pr.note}（この重みの提案を出します。重みは変えません）`
-                : `「${pr.name}」の重みで提案を出します（重みは変えません）`,
-              disabled: busyWhy,
-              onSelect: () => propose(pr),
-            }),
-          )
-      : []),
-    ...(compareOn
-      ? [
-          {
-            key: 'compare',
-            group: '比べる',
-            testId: 'plan-menu-compare',
-            label: '2つの提案を比べる',
-            description: '今の担当と、考え方（プリセット）ごとの提案を2つ選んで並べます（保存しません）',
-            icon: GitCompareArrows,
-            onSelect: () => navigate('/compare'),
-          },
-        ]
-      : []),
-    {
-      key: 'unpin',
-      group: 'そのほか',
-      testId: 'plan-menu-unpin',
-      label: `ピンをすべて外す${pinCount > 0 ? `（${pinCount}件）` : ''}`,
-      description: '担当はそのままです。AI で組むと、外した訪問も担当が変わることがあります',
-      icon: PinOff,
-      disabled: pinCount === 0 ? 'ピンの付いた訪問はありません' : busyWhy,
-      onSelect: () => void unpinAll(),
-    },
-  ];
-
   /** 計算中の進み具合（操作の行） */
   const progressView = running && (
     <div className="plan-progress" data-testid="plan-progress">
       <PlanProgressText
         store={progressStore}
-        prefix={
-          runningFor
-            ? `${shortDate(runningFor.date)} の${runningFor.label}${running === 'anneal' ? '案B・' : '提案・'}`
-            : ''
-        }
+        prefix={runningFor ? `${shortDate(runningFor.date)} の${runningFor.label}案B・` : ''}
       />
       <button type="button" className="btn btn-small" onClick={stop}>
         <WithIcon icon={Square} size={14}>
@@ -2521,7 +2329,7 @@ export default function PlanPage() {
                 </span>
               )}
               {/* 担当ごとの予定をメールアプリで開く（PRD D92・D306。ADR-0017）。毎日送るので見出しの主ボタンの隣に枠のボタンで置く */}
-              {mailOn && modeTools.mail && (
+              {mailOn && (
                 <button type="button" className="btn" onClick={() => setPanel('mail')} data-testid="day-mail">
                   <WithIcon icon={Mail}>
                     <span className="m-sr">予定をメールで送る</span>
@@ -2613,16 +2421,9 @@ export default function PlanPage() {
           {/* 点を下げているいちばん大きい理由（PRD D173） */}
           <span className="plan-oneline-why">
             {rulesOn && reasonNow && <ScoreReasonText reason={reasonNow} testId="plan-reason" />}
-            {/* いちばんの理由の次の一手（PRD D229）：移動が長い → 「移動を短く」で組む（提案）・担当なし → 受けられる人・相性 → 相性の表。
+            {/* いちばんの理由の次の一手（PRD D229）：担当なし → 受けられる人・相性 → 相性の表。
               理由のすぐ後ろに同じ行で（上の段を詰める。PRD D237） */}
-            {rulesOn && reasonNow && (
-              <ScoreNextStep
-                reason={reasonNow}
-                date={date}
-                compatOn={compatOn}
-                onShortTravel={travelPreset && !busyWhy ? () => propose(travelPreset) : undefined}
-              />
-            )}
+            {rulesOn && reasonNow && <ScoreNextStep reason={reasonNow} date={date} compatOn={compatOn} />}
           </span>
           <button
             type="button"
@@ -2636,7 +2437,7 @@ export default function PlanPage() {
           </button>
         </div>
       )}
-      {/* 操作の行（日・週・月で同じ並び・同じ位置＝状態の1行のすぐ下。PRD D327・D344）：欠勤・キャンセルを登録／AI で組む ▾／元に戻す・やり直す／表示／訪問を追加・使い方（スマホは その他 ▾） */}
+      {/* 操作の行（日・週・月で同じ並び・同じ位置＝状態の1行のすぐ下。PRD D327・D344）：欠勤・キャンセルを登録／元に戻す・やり直す／表示／訪問を追加・使い方（スマホは その他 ▾） */}
       <ScheduleToolbar
         zoom="day"
         className="plan-toolbar"
@@ -2649,7 +2450,6 @@ export default function PlanPage() {
               }
             : null
         }
-        aiItems={menuItems}
         moreItems={moreItems}
         after={progressView}
       >
@@ -2724,10 +2524,6 @@ export default function PlanPage() {
               を押しながら訪問を押すと、複数を選べます。下に出る帯で、まとめて担当を替える・時刻をずらす・取り消すができます。
             </li>
             <li>
-              「AI
-              で組む」は、ピンの付いた訪問はそのままで、ほかの担当・順番の提案を出します。提案を見て「反映する」と担当が変わります。
-            </li>
-            <li>
               「予定をメールで送る」などで{terms.staff}
               に伝えたら「確定」を押します。確定のあとに変えた訪問は「未連絡の変更」に出ます。
             </li>
@@ -2775,37 +2571,7 @@ export default function PlanPage() {
           採点できません（{curScore.error}）
         </p>
       )}
-      {/* AI の提案（その場だけ。ADR-0053）：担当・時刻の変更と点の差。「反映する」で訪問に書く（日・週・月で同じ帯。PRD D328） */}
-      {proposal && proposal.date === date && proposalView && (
-        <ProposalBand
-          kind="day"
-          title={`提案（${proposal.label}）`}
-          moved={proposalView.diff?.moved.length ?? 0}
-          shifted={proposalView.diff?.shifted.length ?? 0}
-          score={
-            proposalView.before !== null && proposalView.after !== null
-              ? { before: proposalView.before, after: proposalView.after }
-              : null
-          }
-          note={
-            <>
-              {proposal.stopped ? '（途中までの最良）' : ''}
-              {pinCount > 0 ? `。ピンの ${pinCount}件はそのまま` : ''}
-            </>
-          }
-          stale={proposalView.stale ? '提案を出したあとに訪問が変わりました。もう一度 AI で組んでください' : null}
-          applyDisabled={!!running || proposalView.stale}
-          onApply={applyProposal}
-          onDiscard={() => setProposal(null)}
-          detailsLabel={`担当が変わる訪問を見る（${proposalView.diff?.moved.length ?? 0}件）`}
-          details={
-            proposalView.diff && proposalView.diff.moved.length > 0 ? (
-              <ReassignMoves diff={proposalView.diff} visitLabel={visitLabel} staffName={staffName} />
-            ) : undefined
-          }
-        />
-      )}
-      {/* 週・月の範囲で組んだ提案（日・週・月の予定で同じもの） */}
+      {/* 担当を組むの画面で組んだ範囲の提案（日・週・月の予定で同じもの） */}
       <RangeProposalBand />
       {hasPlan && careCount > 0 && (
         <div className="plan-band is-warn row" data-testid="band-care">
@@ -3252,7 +3018,7 @@ export default function PlanPage() {
       )}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
       {/* 選んだ訪問をまとめて動かす帯は、確認のモードでは出さない（札を動かさない。PRD D348） */}
-      {modeTools.move && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />}
+      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />
     </div>
   );
 }

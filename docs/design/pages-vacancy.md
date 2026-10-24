@@ -1,6 +1,6 @@
 # 空き状況と問い合わせの試算
 
-> この画面のファイル：`src/pages/VacancyPage.tsx`（`vacancy.css`）、`src/lib/vacancyView.ts`・`vacancyInput.ts`・`monthBatch.ts`（`missingDays`）・`glance.ts`・`tentative.ts`・`mail.ts`、`src/components/placeLookup.tsx`（`AddressField`）・`glance.tsx`・`conditions.tsx`。関連 ADR：0012 追記・0013・0015・0016 追記・0017・0025 追記・0042。関連 PRD：D45〜D47・D67・D78〜D81・D118〜D120・D184〜D187・D201〜D204・D221・D228・D258・D259。
+> この画面のファイル：`src/pages/VacancyPage.tsx`（`vacancy.css`）、`src/lib/vacancyView.ts`・`vacancyInput.ts`・`dayPlan.ts`（`unassignedDays`）・`glance.ts`・`tentative.ts`・`mail.ts`、`src/components/placeLookup.tsx`（`AddressField`）・`glance.tsx`・`conditions.tsx`。関連 ADR：0012 追記・0013・0015・0016 追記・0017・0025 追記・0042。関連 PRD：D45〜D47・D67・D78〜D81・D118〜D120・D184〜D187・D201〜D204・D221・D228・D258・D259。
 > 計算（`vacancyOf`・`verdictOf`・`inquirySummary`・`vacancyNotice`）は design.md の「vacancy」。
 
 ### 空き状況（`#/vacancy`）
@@ -15,7 +15,7 @@
 |---|---|---|
 | 1 いつ・何を | `vacancy-step-when` | 種類（選ぶと所要の初期値。選ばないときは「指定なし」。PRD D258）・所要・〈スタッフ〉の条件（`components/conditions.tsx` の1行のチェック表。例：性別）・見る週の数（1〜8、初期値4）・開始日（初期値：今日）・希望の曜日（複数）・希望の時間帯（開始〜終了）・週の回数 |
 | 2 場所（任意） | `vacancy-step-place` | `details`。はじめ畳み、要約の行 `vacancy-place-line`（`placeLine`）・開く `vacancy-place-toggle`。summary の見出しは h2。中の `AddressField` は閉じても置いたまま |
-| 3 受けられる曜日・時間帯 | `vacancy-table-card` | 見出しに「目安（移動を前後15分で見込む）」か「〈場所〉への移動を含む」・`vacancy-when-line`（`whenWhatLine`）・答えのカード `vacancy-answer`（1枚目。PRD D258）・案の無い日・条件が変わった日の注意 `vacancy-noplan`（［足りない案を作る（N日）］。PRD D259）・答える文（`inquiry-summary`）・曜日×週のマス（`InquiryWeeks`）・小見出し「曜日・開始時刻ごとの表」・凡例（1か所 `vacancy-legend`：印 `vacancy-mark-legend`・色 `level-legend`（`VACANCY_LEGEND`。「0人（受けられない）」は薄い灰）・数字の読み方と `Term`（`vacancyCount`、場所が無いときだけ `vacancyEstimate`））・表 |
+| 3 受けられる曜日・時間帯 | `vacancy-table-card` | 見出しに「目安（移動を前後15分で見込む）」か「〈場所〉への移動を含む」・`vacancy-when-line`（`whenWhatLine`）・答えのカード `vacancy-answer`（1枚目。PRD D258）・数えなかった日・担当なしの訪問がある日の注意 `vacancy-noplan`（［担当を組むで組む］［担当なしの訪問を見る］。PRD D259）・答える文（`inquiry-summary`）・曜日×週のマス（`InquiryWeeks`）・小見出し「曜日・開始時刻ごとの表」・凡例（1か所 `vacancy-legend`：印 `vacancy-mark-legend`・色 `level-legend`（`VACANCY_LEGEND`。「0人（受けられない）」は薄い灰）・数字の読み方と `Term`（`vacancyCount`、場所が無いときだけ `vacancyEstimate`））・表 |
 | 4 次の一手 | `vacancy-step-next` | `inquiry-card`（主ボタン「要約をコピー」`copy-summary`・「仮の〈利用者さん〉として押さえる」`hold-open`・できないときの理由 `hold-why`）と `notice-card`（空き枠の案内文。`details`。見出しは h3） |
 
 「開く ▾」「畳む ▴」は `FoldMark`（`aria-hidden`）。
@@ -35,18 +35,18 @@
 - 狭い画面では、表がはじめに出たとき `NARROW_FIRST_START`（`09:00`。朝の早い列はたいてい × のため）の列が曜日の列のすぐ右に来るまで横に巻く（`scrollLeftToShow`）。1回だけで、条件を変えても人が巻いた位置のまま。その列が無い（希望の時間帯が 9:00 を含まない）ときは巻かない
 - マス：段階の色 `lv-*`（`vacancyLevel`）と、`lib/vacancyView` の `cellFace` の印と下の小さい文字（○ は人数（目安は「約」）、△ は `weeksOk/weeksTotal`、×・？ は空。× に「約0」を出さない）。色だけに頼らない。読み上げの文も `cellFace`
 - マスを押すと右の欄に日付ごとの人（名前）と入らない日付（灰の文字。赤にしない。PRD D228）。各行に `Link.vacancy-day-open`（`dayHref(日付)`。「その日の案を見る」・`data-date`・aria-label「その日の案を見る（M/D（曜）・日の予定で開く）」。Ctrl+クリック・中クリックで新しいタブ。`?date=` だけで開く）。名前の吹き出しは付けない
-- 案の無い日の注意は答えのカードの下の1か所（`vacancy-noplan`：日数と日付（6日まで・ほか N日）・「表は「？」、案内文にも載せません」・条件が変わった日があれば「条件が変わった日が N日あります」・［足りない案を作る（N日）］）。案内文の下・日付ごとの欄は短い一言だけ
+- 案の無い日の注意は答えのカードの下の1か所（`vacancy-noplan`：日数と日付（6日まで・ほか N日）・「表は「？」、案内文にも載せません」・担当なしの訪問がある日があれば「担当なしの訪問がある日が N日あります（担当を入れると、空きが減ることがあります）」と［担当を組むで組む］［担当なしの訪問を見る（M/D）］）。案内文の下・日付ごとの欄は短い一言だけ
 
 #### 答えのカード・凡例（PRD D258）
 
-- 答えのカード `vacancy-answer`（`role="status"`。条件を変えると読み上げる。`data-tone`＝`ok`／`partial`／`ng`／`unknown`。`lib/vacancyView` の `answerCard(result, wish)`）：大きい文字で「受けられます：火・木 10:00〜12:00 に 3人」。時刻は開始の時刻（○ の開始時刻を曜日ごとに続いた範囲に。同じ時間の曜日はまとめる）、人数はその ○ のマスのどの週でも受けられる人数の幅（目安は「約」）。○ の曜日が週の回数より少なければ「週N回には足りません」、○ が無く △ があれば「受けられない週があります」、どちらも無ければ「受けられません」、希望の時間帯に始められる時刻が無ければ「受けられません：希望の時間帯に始められる時刻がありません」、案が無く数えられなければ「案が無く数えられません」。案の無い（？）曜日が混ざるときは補いに「〈曜日〉は案が無く数えていません（［足りない案を作る］）」。曜日は月曜はじめ（表・答える文 `inquirySummary` と同じ）。下に短い補い。色は ok＝緑・partial＝黄・それ以外＝灰（赤にしない。PRD D228）。コピーする文は今どおり `inquiry-summary`（答える文）
+- 答えのカード `vacancy-answer`（`role="status"`。条件を変えると読み上げる。`data-tone`＝`ok`／`partial`／`ng`／`unknown`。`lib/vacancyView` の `answerCard(result, wish)`）：大きい文字で「受けられます：火・木 10:00〜12:00 に 3人」。時刻は開始の時刻（○ の開始時刻を曜日ごとに続いた範囲に。同じ時間の曜日はまとめる）、人数はその ○ のマスのどの週でも受けられる人数の幅（目安は「約」）。○ の曜日が週の回数より少なければ「週N回には足りません」、○ が無く △ があれば「受けられない週があります」、どちらも無ければ「受けられません」、希望の時間帯に始められる時刻が無ければ「受けられません：希望の時間帯に始められる時刻がありません」、案が無く数えられなければ「案が無く数えられません」。案の無い（？）曜日が混ざるときは補いに「〈曜日〉は案が無く数えていません」。曜日は月曜はじめ（表・答える文 `inquirySummary` と同じ）。下に短い補い。色は ok＝緑・partial＝黄・それ以外＝灰（赤にしない。PRD D228）。コピーする文は今どおり `inquiry-summary`（答える文）
 - 凡例は表の上の1か所（`vacancy-legend`）：印（○△×？の見本と読み方）・色（人数の段階）・「○ の数字は受けられる人数」と、週ごとのマスも同じ印と色・行の頭は一番良い開始時刻・マスを押すと日付ごとの人。`InquiryWeeks` の下の説明は置かない
 
-#### 足りない案を作る（PRD D259。ADR-0042）
+#### 担当なしの訪問がある日（PRD D259。ADR-0063）
 
-- 対象：`missingDays(data, result.dates, today)`（見ている範囲の今日以降の、案の無い日（`empty`）と条件が変わった日（`stale`）。確定した日・手直しのある条件が変わった日は入れない）。0日ならボタンを出さず、案の無い日が今日より前だけなら［〈M〉月の予定を見る］（`vacancy-noplan-month`）
-- ［足りない案を作る（N日）］（`vacancy-noplan-make`・`data-count`）で、月の予定へ移らずに `monthBatch.start`（名前は日付の月 `monthsLabel`、知らせの［月の予定を見る］は最初の日の月）。上の帯に進み具合と［止める］。作っている間は `aria-disabled`（disabled にしない。フォーカスを失わない）で文を「〈M〉月の案を作っています…」に、月の予定から始めた作成なら「〈M〉月の案を作っています（月の予定）」にする。作り終えてボタンが消えたら、フォーカスがボタンにあれば答えのカードへ。ほかの作成が動いていれば「ほかの案を作っています。終わってから押してください」
-- 作り終えるとデータが変わるので、結果は数え直す（今の条件のまま）
+- 対象：`lib/dayPlan` の `unassignedDays(data, result.dates, today)`（見ている範囲の今日以降の、伝えていない、担当なしの訪問がある日。昇順）
+- 空き状況では担当を組まない（AI で組むのは担当を組むの画面）。1日以上あれば［担当を組むで組む］（`vacancy-noplan-arrange`・`data-count`。最初の日の月の `/arrange?ym=`）と［担当なしの訪問を見る（M/D）］（`vacancy-noplan-open`。最初の日の `unassignedHref`）。0日で数えなかった日だけなら［〈M〉月の予定を見る］（`vacancy-noplan-month`）
+- 担当を入れるとデータが変わるので、戻ると結果は数え直す（今の条件のまま）
 
 #### 入力の保持（PRD D258）
 
@@ -84,12 +84,12 @@
 
 #### 確かめ
 
-`scripts/e2e-vacancy-steps.cjs`：段階の並び・開いて結果まで `PERF_MS_VACANCY`（既定 5000ms）・場所は畳む・主ボタン・案内文は開くまで計算しない・曜日を変えると結果・マスの読み方と用語・場所をあとから足すと表が変わり畳んでも残る・答えのカードが1枚目・凡例は1か所・「指定なし」・入力は画面を移って戻る・読み直すと残り新しいタブは既定・［足りない案を作る（2日）］で上の帯と知らせ・仮押さえ・390px。`scripts/e2e-words.cjs` の注意は1か所と［足りない案を作る（N日）］。`scripts/e2e-address.cjs` の空き状況（郵便番号・ピンのある住所で計算し直さない・ピンで見出しが切り替わる・仮押さえで郵便番号が入る）。`scripts/e2e-links.cjs` の日ごとの結果。
+`scripts/e2e-vacancy-steps.cjs`：段階の並び・開いて結果まで `PERF_MS_VACANCY`（既定 5000ms）・場所は畳む・主ボタン・案内文は開くまで計算しない・曜日を変えると結果・マスの読み方と用語・場所をあとから足すと表が変わり畳んでも残る・答えのカードが1枚目・凡例は1か所・「指定なし」・入力は画面を移って戻る・読み直すと残り新しいタブは既定・担当なしの日の注意から担当を組む・日の予定の担当なしへのリンク・仮押さえ・390px。`scripts/e2e-words.cjs` の注意は1か所と［担当を組むで組む］の行き先。`scripts/e2e-address.cjs` の空き状況（郵便番号・ピンのある住所で計算し直さない・ピンで見出しが切り替わる・仮押さえで郵便番号が入る）。`scripts/e2e-links.cjs` の日ごとの結果。
 
 #### 完了の条件
 
 - [ ] 種類・所要を選ぶと曜日×時刻の表が出て、場所を入れると「移動を含む」になる。マスを押すと日付ごとの人が出る。試算の要約が出てコピーできる
 - [ ] 仮押さえで〈利用者さん〉（仮）と定期パターンができ、展開された訪問が日の予定に「仮」の印で出る。取り消すと消える
 - [ ] 期間・種類を選ぶと案内文が出てコピーできる
-- [ ] 答えのカードが結果の1枚目に出て、凡例は1か所。入力は画面を移って戻っても残る。［足りない案を作る（N日）］でその場で案ができ、結果が数え直される
-- [ ] `lib/vacancyView`・`lib/vacancyInput`・`lib/monthBatch`・`lib/glance` のテストが通る
+- [ ] 答えのカードが結果の1枚目に出て、凡例は1か所。入力は画面を移って戻っても残る。担当なしの訪問がある日は注意から担当を組むの画面・日の予定の担当なしへ移れる
+- [ ] `lib/vacancyView`・`lib/vacancyInput`・`lib/dayPlan`（`unassignedDays`）・`lib/glance` のテストが通る

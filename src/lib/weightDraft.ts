@@ -158,7 +158,7 @@ export function confirmBody(changes: readonly WeightChange[], basis: string): st
     ...lines,
     '',
     `「${basis}」の重みが変わります。AI で組む・点数・要対応の検査に、この重みを使います。`,
-    '今の担当は変わりません。組み直したいときは、日の予定・月の予定の「AI で組む」で提案を出して反映します。',
+    '今の担当は変わりません。組み直したいときは、「担当を組む」の画面の「AI で組む」で提案を出して反映します。',
   ].join('\n');
 }
 
