@@ -19,6 +19,9 @@ const { BASE, OUT_DIR, NOW, STORAGE_KEY, check, isFocused, runSteps, settle } = 
 const { sharedPage, openPage } = require('./lib/steps.cjs');
 
 const drawer = (page) => page.getByTestId('nav-drawer');
+/** メニューの最上位の項目（子の無い項目と、畳める親の行の項目。PRD D349） */
+const TOP_LINKS =
+  '.nav-groups > .nav-group > .nav-link, .nav-groups > .nav-group > .nav-parent > .nav-parent-row > .nav-link';
 const menuBtn = (page) => page.getByTestId('menu-btn');
 const tabs = (page) => page.getByTestId('bottom-tabs');
 const visible = (loc) => loc.isVisible().catch(() => false);
@@ -100,7 +103,7 @@ async function drawerOpenClose(page) {
   check(
     (await page.evaluate(() => document.getElementById('root').inert)) &&
       (await d.locator('h2.nav-group-title').count()) === 0,
-    '引き出し：後ろの画面は inert・グループの見出しは無い（6項目。PRD D326）',
+    '引き出し：後ろの画面は inert・グループの見出しは無い（最上位5項目と子の項目。PRD D349）',
   );
   check(
     (await btn.getAttribute('aria-expanded')) === 'true' &&
@@ -109,24 +112,30 @@ async function drawerOpenClose(page) {
   );
   const titles = await d.locator('.nav-group-title').allInnerTexts();
   check(titles.length === 0, '引き出し：見出しの無い1つの並び', titles);
+  // 最上位は5項目（ホーム・予定・空き状況・人・設定）。開いている親の子の項目も含めて、全部の項目を縦に並べる
+  const top = await d.locator(TOP_LINKS).evaluateAll((els) => els.map((el) => el.dataset.key));
   const links = d.locator('.nav-link');
   const n = await links.count();
   const boxes = [];
   for (let i = 0; i < n; i++) boxes.push(await links.nth(i).boundingBox());
   check(
-    n === 6 && boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
-    '引き出し：全部のメニュー（6項目）を縦に並べる',
-    {
-      n,
-    },
+    JSON.stringify(top) === JSON.stringify(['home', 'schedule', 'vacancy', 'people', 'settings']) &&
+      n > top.length &&
+      boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
+    '引き出し：最上位5項目のメニューと開いた子の項目を縦に並べる',
+    { top, n },
   );
   await settle(page, 400); // 出てくる動きが終わるまで
   const db = await d.boundingBox();
   check(db.x === 0 && db.width < 390, '引き出し：左から出る', db);
+  // 週の予定（モードは「変更」）では、予定の子の「欠勤・キャンセル」（変更のモードの子）に印が付く（親の予定は has-current）
   const current = d.locator('[aria-current="page"]');
   check(
-    (await current.innerText()).trim() === '予定' && (await isFocused(current)),
-    '引き出し：開いたら今の画面の項目（週の予定は「予定」）へフォーカス',
+    (await current.count()) === 1 &&
+      (await current.getAttribute('data-key')) === 'absence' &&
+      (await d.locator('[data-parent="schedule"] > .nav-parent-row > .nav-link.has-current').count()) === 1 &&
+      (await isFocused(current)),
+    '引き出し：開いたら今の画面の項目（週の予定・変更のモードは予定の子「欠勤・キャンセル」）へフォーカス',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-drawer.png') });
 
@@ -173,18 +182,25 @@ async function drawerOpenClose(page) {
   // 画面を選ぶ
   await btn.click();
   await d.waitFor();
-  await d.locator('.nav-link', { hasText: '人' }).click();
+  await d.locator(TOP_LINKS).filter({ hasText: '人' }).click();
   await d.waitFor({ state: 'detached' });
   await page.waitForURL(/#\/clients/);
   check(
     (await isFocused(btn)) && /・利用者さん一覧$/.test(await page.getByTestId('screen-name').innerText()),
     '画面を選ぶと移って閉じ、フォーカスが「メニュー」へ',
   );
-  // 今の画面を選んでも閉じるだけ（URL のクエリ＝画面の状態を消さない）
+  // 今の画面を選んでも閉じるだけ（URL のクエリ＝画面の状態を消さない）。予定を開いていると印はモードの子（別の画面へ移る入口）に
+  // 付くので、予定を畳んで、今の画面そのもの（週の予定）を指す親の「予定」に印を移してから押す
   await open(page, '/week?view=table', '[data-testid="menu-btn"]');
   await btn.click();
   await d.waitFor();
-  await d.locator('[aria-current="page"]').click();
+  await d.locator('[data-parent="schedule"] [data-testid="nav-toggle"]').click();
+  const parent = d.locator('[aria-current="page"]');
+  check(
+    (await parent.count()) === 1 && (await parent.getAttribute('data-key')) === 'schedule',
+    '予定を畳むと今の画面の印は親の「予定」に付く',
+  );
+  await parent.click();
   await d.waitFor({ state: 'detached' });
   check(
     (await isFocused(btn)) &&
@@ -855,9 +871,9 @@ async function wide(page) {
   check(nav.width === 232 && nav.height === 1000, '広い画面：左のメニューは今のまま（幅232px・縦いっぱい）', nav);
   check(
     (await page.locator('.side-nav .nav-group-title').count()) === 0 &&
-      (await page.locator('.side-nav [data-testid="nav-link"]').count()) === 6 &&
+      (await page.locator(`.side-nav :is(${TOP_LINKS})`).count()) === 5 &&
       (await page.locator('.app-header').boundingBox()).height === 72,
-    '広い画面：6項目のメニュー・上の帯の高さ 72px',
+    '広い画面：最上位5項目のメニュー・上の帯の高さ 72px',
   );
   const pad = await page.evaluate(() => getComputedStyle(document.querySelector('.app-main')).paddingBottom);
   check(pad === '48px', '広い画面：本文の下の余白は今のまま', pad);

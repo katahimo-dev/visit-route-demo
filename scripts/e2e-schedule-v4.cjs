@@ -1,12 +1,12 @@
 // 見直しの4段目（ADR-0054。PRD D326〜D332）を本物のブラウザで確かめる：
-// メニューの6項目（ホーム・予定・欠勤・キャンセル・空き状況・人・設定）と人のタブ（〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）。
+// メニューの最上位5項目（ホーム・予定・空き状況・人・設定。予定・人・設定は子の項目を持つ。PRD D349）と人のタブ（〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）。
 // 最後に開いたタブ・勤務の見込みは勤務時間（シフト）の印）、パレットに案を比べるが出ない、
 // 日・週・月の切り替えで同じ操作の行（欠勤・キャンセルを登録／AI で組む ▾／元に戻す／（月だけ）その他 ▾）と同じ「AI で組む ▾」の範囲（この日・この週・この月）、
 // 範囲の提案の帯（週の「この週」：反映するまで訪問は変わらない・「反映する」で1回の update・Ctrl+Z で戻る・Ctrl+Shift+Z でやり直す）と
 // 日のその場の提案の帯（同じ形・点の差）、月の「この月」は欄を開く、
 // 全体の元に戻す（入力欄の中では Ctrl+Z を奪わない・操作の行の「元に戻す」の title に手の名前・やり直しのトースト）、
 // 複数選択（日の時間軸の帯を Shift・Ctrl＋クリック、Shift＋Enter で足す、Esc で外す、帯の「時刻をずらす +15分」で2件の時刻が変わり1手で戻る、
-// 週の時間軸の帯で Ctrl＋クリック → 取り消す（独自の確認））、390px（メニューの引き出しの6項目・操作の行と複数選択の帯がはみ出さない）、印刷（操作の行・帯を出さない）。
+// 週の時間軸の帯で Ctrl＋クリック → 取り消す（独自の確認））、390px（メニューの引き出しの最上位5項目・操作の行と複数選択の帯がはみ出さない）、印刷（操作の行・帯を出さない）。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-schedule-v4.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -18,12 +18,26 @@ const { sharedPage, openPage } = require('./lib/steps.cjs');
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const shot = (page, name) => page.screenshot({ path: path.join(OUT_DIR, `${name}.png`) });
 const visitsKey = (d) => JSON.stringify(d?.visits ?? null);
-const navLabels = (page, scope = '.side-nav') =>
-  page.locator(`${scope} [data-testid="nav-link"]`).evaluateAll((els) => els.map((e) => e.textContent.trim()));
+/** メニューの最上位の項目（子の無い項目と、畳める親の行の項目。PRD D349） */
+const TOP_LINKS =
+  '.nav-groups > .nav-group > .nav-link, .nav-groups > .nav-group > .nav-parent > .nav-parent-row > .nav-link';
+/** 項目の名前（件数の印の文字は除く） */
+const labelsOf = (els) => els.map((e) => e.querySelector(':scope > span:not(.nav-badge)')?.textContent.trim() ?? '');
+/** メニューの最上位の項目名 */
+const navLabels = (page, scope = '.side-nav') => page.locator(`${scope} :is(${TOP_LINKS})`).evaluateAll(labelsOf);
+/** 親ごとの子の項目の key */
+const navKids = (page, parent, scope = '.side-nav') =>
+  page
+    .locator(`${scope} [data-parent="${parent}"] > .nav-sub > .nav-link.nav-child`)
+    .evaluateAll((els) => els.map((e) => e.dataset.key));
+/** 今の画面の印が付いた項目の key */
 const current = (page, scope = '.side-nav') =>
   page
     .locator(`${scope} [data-testid="nav-link"][aria-current="page"]`)
-    .evaluateAll((els) => els.map((e) => e.textContent.trim()));
+    .evaluateAll((els) => els.map((e) => e.dataset.key));
+/** 親の行の項目が has-current（子に今の画面がある）か */
+const parentHasCurrent = async (page, parent, scope = '.side-nav') =>
+  (await page.locator(`${scope} [data-parent="${parent}"] > .nav-parent-row > .nav-link.has-current`).count()) === 1;
 
 /** 保存（少し遅れて書く）が条件を満たすまで待つ */
 async function waitStored(page, pred, timeout = 8000) {
@@ -54,20 +68,30 @@ const closeMenu = async (page) => {
   await page.getByTestId('plan-menu-list').waitFor({ state: 'detached' });
 };
 
-// ---- メニュー6項目・人のタブ・パレット ----
+// ---- メニュー（最上位5項目と子の項目）・人のタブ・パレット ----
 async function menu(page) {
   await page.goto(`${BASE}#/home`);
   await page.locator('h1').waitFor();
   await settle(page, 300);
   const labels = await navLabels(page);
   check(
-    JSON.stringify(labels) === JSON.stringify(['ホーム', '予定', '欠勤・キャンセル', '空き状況', '人', '設定']),
-    'メニューは6項目（ホーム・予定・欠勤・キャンセル・空き状況・人・設定）',
+    JSON.stringify(labels) === JSON.stringify(['ホーム', '予定', '空き状況', '人', '設定']),
+    'メニューの最上位は5項目（ホーム・予定・空き状況・人・設定）',
     labels,
+  );
+  const kids = { schedule: await navKids(page, 'schedule'), people: await navKids(page, 'people') };
+  check(
+    JSON.stringify(kids) ===
+      JSON.stringify({
+        schedule: ['mode-check', 'mode-plan', 'absence'],
+        people: ['people:/clients', 'people:/staff', 'people:/compat', 'people:/availability'],
+      }),
+    '予定の子は今日の予定・◯月を組む・欠勤・キャンセル、人の子は〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）',
+    kids,
   );
   check((await page.locator('.side-nav .nav-group-title').count()) === 0, 'メニューにグループの見出しは無い');
   await shot(page, 'menu-1400');
-  await page.locator('.side-nav [data-testid="nav-link"]', { hasText: '人' }).click();
+  await page.locator('.side-nav [data-key="people"]').click();
   await page.waitForURL(/#\/clients$/);
   const tabs = page.getByTestId('people-tabs');
   await tabs.waitFor();
@@ -82,8 +106,10 @@ async function menu(page) {
     '「人」の既定は〈利用者さん〉のタブ',
   );
   check(
-    JSON.stringify(await current(page)) === JSON.stringify(['人']),
-    '〈利用者さん〉一覧ではメニューの「人」が今の画面',
+    JSON.stringify(await current(page)) === JSON.stringify(['people:/clients']) &&
+      (await parentHasCurrent(page, 'people')),
+    '〈利用者さん〉一覧ではメニューの人の子「利用者さん」が今の画面（親の「人」は has-current）',
+    await current(page),
   );
   check(
     (await page.getByTestId('to-compat').count()) === 0,
@@ -104,12 +130,17 @@ async function menu(page) {
       'availability',
     '勤務の見込みは勤務時間（シフト）のタブに印',
   );
-  check(JSON.stringify(await current(page)) === JSON.stringify(['人']), '勤務の見込みでもメニューの「人」が今の画面');
+  check(
+    JSON.stringify(await current(page)) === JSON.stringify(['people:/availability']) &&
+      (await parentHasCurrent(page, 'people')),
+    '勤務の見込みではメニューの人の子「勤務時間（シフト）」が今の画面（親の「人」は has-current）',
+    await current(page),
+  );
   await page.goto(`${BASE}#/compat`);
   await page.getByTestId('people-tabs').waitFor();
-  await page.locator('.side-nav [data-testid="nav-link"]', { hasText: 'ホーム' }).click();
+  await page.locator('.side-nav [data-key="home"]').click();
   await page.waitForURL(/#\/home/);
-  const peopleHref = await page.locator('.side-nav [data-testid="nav-link"]', { hasText: '人' }).getAttribute('href');
+  const peopleHref = await page.locator('.side-nav [data-key="people"]').getAttribute('href');
   check(/#\/compat$/.test(peopleHref ?? ''), '「人」は最後に開いた人のタブ（相性）を開く', peopleHref);
   // パレット：案を比べるは出ない（日の予定の「AI で組む ▾」から開く）
   await page.keyboard.press(`${MOD}+k`);
@@ -480,10 +511,8 @@ async function narrow(page) {
   await page.getByTestId('menu-btn').click();
   const drawer = page.locator('[role="dialog"][aria-modal="true"]');
   await drawer.waitFor();
-  const labels = await drawer
-    .locator('[data-testid="nav-link"]')
-    .evaluateAll((els) => els.map((e) => e.textContent.trim()));
-  check(labels.length === 6 && labels[4] === '人', '390px：引き出しのメニューも6項目', labels);
+  const labels = await navLabels(page, '[role="dialog"][aria-modal="true"]');
+  check(labels.length === 5 && labels[3] === '人', '390px：引き出しのメニューも最上位5項目', labels);
   await shot(page, 'menu-390');
   await page.keyboard.press('Escape');
   for (const hash of ['/plan', '/week', '/month']) {

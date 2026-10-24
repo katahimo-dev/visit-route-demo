@@ -107,7 +107,8 @@ const steps = sharedPage({
         await settle(page, 300);
         check((await modeOf(page)) === 'check', '画面を移っても選んだモードのまま（週）');
         check(
-          (await count(page, 'main [draggable="true"]')) === 0 && (await count(page, '[data-testid="week-mail"]')) === 1,
+          (await count(page, 'main [draggable="true"]')) === 0 &&
+            (await count(page, '[data-testid="week-mail"]')) === 1,
           '確認：週の札はつかめず、メールで送るはある',
         );
         // 読み直しても覚えている（タブの間）
@@ -128,16 +129,18 @@ const steps = sharedPage({
         await page.reload();
         await page.locator('h1').waitFor();
         const tops = await side(page)
-          .locator('.nav-groups > .nav-group > .nav-link, .nav-groups > .nav-group > .nav-parent > .nav-parent-row > .nav-link')
+          .locator(
+            '.nav-groups > .nav-group > .nav-link, .nav-groups > .nav-group > .nav-parent > .nav-parent-row > .nav-link',
+          )
           .allInnerTexts();
         check(
           JSON.stringify(tops.map((t) => t.trim())) === JSON.stringify(['ホーム', '予定', '空き状況', '人', '設定']),
           'メニューは5項目（予定・人・設定は子の項目を持つ）',
           tops,
         );
-        const kids = await side(page).locator('[data-parent="schedule"] .nav-child').evaluateAll((els) =>
-          els.map((e) => e.dataset.key),
-        );
+        const kids = await side(page)
+          .locator('[data-parent="schedule"] .nav-child')
+          .evaluateAll((els) => els.map((e) => e.dataset.key));
         check(
           JSON.stringify(kids) === JSON.stringify(['mode-check', 'mode-plan', 'absence']),
           '予定の子：今日の予定・◯月を組む・欠勤・キャンセル',
@@ -159,8 +162,9 @@ const steps = sharedPage({
         await page.reload();
         await page.locator('h1').waitFor();
         check(
-          (await side(page).locator('[data-parent="settings"] [data-testid="nav-toggle"]').getAttribute('aria-expanded')) ===
-            'true',
+          (await side(page)
+            .locator('[data-parent="settings"] [data-testid="nav-toggle"]')
+            .getAttribute('aria-expanded')) === 'true',
           '開け閉めを覚える',
         );
         // 今日の予定：今日の日の予定を確認のモードで開き、子に印
@@ -171,8 +175,9 @@ const steps = sharedPage({
           hashOf(page).startsWith('#/plan') &&
             (await modeOf(page)) === 'check' &&
             (await side(page).locator('[data-key="mode-check"]').getAttribute('aria-current')) === 'page' &&
-            (await side(page).locator('[data-parent="schedule"] > .nav-parent-row > .nav-link').getAttribute('aria-current')) ===
-              null,
+            (await side(page)
+              .locator('[data-parent="schedule"] > .nav-parent-row > .nav-link')
+              .getAttribute('aria-current')) === null,
           '「今日の予定」：日の予定を確認で開き、子に今の画面の印（親には付けない）',
           hashOf(page),
         );
@@ -193,8 +198,9 @@ const steps = sharedPage({
         // 予定を畳むと親に印
         await side(page).locator('[data-parent="schedule"] [data-testid="nav-toggle"]').click();
         check(
-          (await side(page).locator('[data-parent="schedule"] > .nav-parent-row > .nav-link').getAttribute('aria-current')) ===
-            'page',
+          (await side(page)
+            .locator('[data-parent="schedule"] > .nav-parent-row > .nav-link')
+            .getAttribute('aria-current')) === 'page',
           '予定を畳むと親に今の画面の印',
         );
         await side(page).locator('[data-parent="schedule"] [data-testid="nav-toggle"]').click();
