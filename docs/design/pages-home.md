@@ -1,6 +1,6 @@
 # ホーム（今日やること）と予定に共通の進み具合の帯
 
-> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）・0038・0044。関連 PRD：D141〜D145・D247・D255・D263（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
+> この画面のファイル：`src/pages/HomePage.tsx`（`home.css`）・`src/components/progressBand.tsx`（`progressBand.css`）・`src/lib/home.ts`・`src/lib/progressBand.ts`・`src/lib/useDayStatuses.ts`。関連 ADR：0025（追記を含む）・0038・0044・0062。関連 PRD：D141〜D145・D247・D255・D263（ホーム）・D151〜D155（進み具合の帯）・D161（条件が変わった）。
 > 版2（ADR-0053）：日の状態は まだ伝えていない／確定済み／未連絡の変更あり、要対応は訪問ごとの検査。「案を作る」は「担当を AI で組む」
 
 ### ホーム（`#/home`。PRD D141〜D145）
@@ -15,10 +15,11 @@
 - `homeEntries(today, terms, features)`（いつでもの入口）
 - `homeTasks({ today, statuses, months, todayStaff, data })`：カード `HomeTask`＝種類・色（`warn`／`todo`／`info`）・題名・内訳・移る先 `to`・日の予定へ移るときの日付 `date`。`ready` は info だけのとき。切った機能のカードは出さない
 
-並びは作業の順（PRD D263。ADR-0044）：要対応（全部の月）→ 月ごとに「担当を AI で組む → 確定していない日」（今月 → 来月）→ 今日。
+並びは作業の順（PRD D263。ADR-0044）：組み方の標準（登録していないときだけ）→ 要対応（全部の月）→ 月ごとに「担当を AI で組む → 確定していない日」（今月 → 来月）→ 今日。
 
 | 並び | カード | 移る先 |
 |---|---|---|
+| 0 | はじめに組み方の標準を決める（`hasStandard(data)` が偽のときだけ。todo。内訳「誰が・何曜・何時に行くかの標準を決めると、先の月はその標準で並びます」。PRD D354） | `/standard` |
 | 1 | 要対応（月ごと。`attentionList`＝要対応の訪問のある日・未連絡の変更のある日・拘束超。月の要対応・帯と同じ数。内訳「要対応の訪問がある日 N日・未連絡の変更がある日 N日」） | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=attention` |
 | 2 | N月の担当を AI で組む（月ごと。担当なしの訪問がある・伝えていない日が2日以上。内訳「担当なしの訪問がある日 N日」） | `/month?ym=…&do=batch` |
 | 3 | 確定していない日（2 と同じ月のすぐ後。訪問があって確定済みでない日。`monthProgress` の `unconfirmed` と同じ日・同じ並び。内訳「まだ伝えていない N日・未連絡の変更あり N日。見直して伝えたら「確定」」） | 1日だけなら `/plan`＋その日、2日以上なら `/month?ym=…&do=unconfirmed` |

@@ -35,6 +35,7 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [pages-compat.md](design/pages-compat.md) | 相性の表 |
 | [pages-staff.md](design/pages-staff.md) | 〈スタッフ〉の一覧と画面・勤務時間（シフト）・勤務の見込み・スマホ画面 |
 | [pages-rules.md](design/pages-rules.md) | 条件・プリセット・訪問の種類・項目・案の比較 |
+| [pages-standard.md](design/pages-standard.md) | 組み方の標準（標準の週の期間・考え方の比較・登録・`lib/standard`） |
 | [pages-data.md](design/pages-data.md) | データ（控え・直前の状態・Excel・初期化・片づけ・データを守る知らせ）・管理者設定 |
 
 ## ADR 一覧
@@ -100,7 +101,8 @@ AI・人が「何を知りたいときに、どのファイルを読むか」を
 | [0058](adr/0058-schedule-toolbar-same-place-more-month-only.md) | 予定の操作の行を日・週・月で同じ位置（状態の1行のすぐ下）にし、「その他 ▾」は月だけ（日は訪問を追加・使い方をボタンで、週はメールを表の上のボタンだけ）（PRD D344） |
 | [0059](adr/0059-mail-confirms-day-keep-leg-routes.md) | 日のメールを全員分作ったらその日を確定にし（週のメールは見通し）、長いときも区間ごとの道順を残す。週のメールのボタンは見出しに（PRD D346） |
 | [0060](adr/0060-schedule-nav-row-same-for-month-week-day.md) | 予定の日・週・月の上に同じナビの行（今日・‹ 期間 ▾ ›・［月｜週｜日］・確定）を置き、広い画面では上の帯に貼り付ける（PRD D347） |
-| [0061](adr/0061-schedule-modes-and-nested-menu.md) | 予定にモード［組む｜変更｜確認］を設けて出す操作を絞り、メニューの予定・人・設定に畳める子の項目と件数の印を置く（PRD D348・D349） |
+| [0061](adr/0061-schedule-modes-and-nested-menu.md) | 予定にモード［組む｜変更｜確認］を設けて出す操作を絞り、メニューの予定・人・設定に畳める子の項目と件数の印を置く（PRD D348・D349。組むは ADR-0062 で変更へ統合） |
+| [0062](adr/0062-standard-week-and-two-modes.md) | （提案）組み方の標準（繰り返しの担当・曜日ごとの開始＋点数の基準）を決めて登録し、以後は標準で組む。標準の担当は AI で組んでも変えない。予定のモードは［変更｜確認］（PRD D350〜D354） |
 
 ## 文書の保ち方
 

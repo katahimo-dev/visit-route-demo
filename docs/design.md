@@ -2,7 +2,7 @@
 
 - PRD：[docs/prd.md](prd.md)
 - 作成者：松浦（草案：Claude）
-- 更新日：2026-10-23
+- 更新日：2026-10-24
 - 状態：合意済み（2026-10-11）
 - 読み方：今の仕様だけを書く。判断の理由は `docs/adr/`、経緯は git の履歴、型の正は `src/contracts/`
 
@@ -281,14 +281,14 @@ flowchart LR
   - [ ] 8人・20件で100ms、30人・150件で1秒以内
   - [ ] 案B：`annealCost` ≤ 案A、`unplaced` ⊆ 案A の `unplaced`（訪問ID の集合。seed の14日×全スタッフの終日、重み0と既定）、`settleAnneal` の3つの場合、重み5は0より変わる訪問が少ない、`SolveResult.score` は stay の無い問題と一致（テスト）
 
-### patterns（繰り返しの回の計算。ADR-0012・ADR-0013・ADR-0053）
+### patterns（繰り返しの回の計算。ADR-0012・ADR-0013・ADR-0053・ADR-0062）
 - 責務：繰り返し（定期パターン）の回を**見るときに計算**し、保存した訪問（単発・変えた回）と合わせてその日・期間の訪問を返す。「いつから」で分けて直す（これ以降）、終わらせる・消す。決定的。新しい配列を返し、画面が `update` で入れる
 - 持つデータ（持ち主）：なし
 - 提供するAPI：`occursOn`・`expandPattern`・`visitsOn`・`visitsIn`・`findVisit`・`putVisits`・`splitPattern`・`removePattern`（§5）、`nthOfMonth`（(日 − 1)÷7 の切り捨て＋1）、`timesOn`（その曜日の開始）、`patternVisitId`・`parsePatternVisitId`、`visitOf`（その日の計算した回）、`byStart`（開始の順）
 - 計算：
   - その日にある＝曜日が `weekdays` にあり `from` ≤ 日 ≤ `to`（null は無限）、かつ `'weekly'` なら `from` を含む週（日曜はじまり）を1週目として (週 − 1) が `everyWeeks` で割り切れる、`'monthly'` なら `nthOfMonth` が `monthWeeks` にある（第5の無い月は作らない）
   - 利用中でない〈利用者さん〉の回は計算しない
-  - 計算した回：ID `${元の日}_${パターンID}`。中身はパターンの `clientId`・`typeId`・`windowKind`・開始（その曜日の `dayTimes` 優先）・所要、`staffId`＝パターンの `usualStaffId`、`start: null`・`pinned: false`・`cancelled: false`・`note: ''`、`pattern: { id, date, edited: false }`
+  - 計算した回：ID `${元の日}_${パターンID}`。中身はパターンの `clientId`・`typeId`・`windowKind`・開始（その曜日の `dayTimes` 優先）・所要、`staffId`＝パターンの `usualStaffId`、`start`＝その曜日の `usualStarts`（標準の開始。無ければ null）・`pinned: false`・`cancelled: false`・`note: ''`、`pattern: { id, date, edited: false }`
   - `visitsOn`：その日の保存した訪問と、同じ ID の保存した回が無い計算した回。開始（組んだ開始、無ければ開始（早））・ID の順。取り消し・休みの訪問も含む
   - `putVisits(visits, put)`：同じ ID は置き換え、無ければ足す（計算した回を書くと保存した回になる）
 - `splitPattern`：`since` ≤ `from` なら同じ ID・元の `from` で置き換え。後なら元の `to` を min(元の `to`, `since` の前日) にし、新しい ID で `from`＝`since` を足す。max(`since`, 今日) 以降の元のパターンの保存した回のうち、この回だけ変えていない（取り消してもいない）回は消し（新しいパターンで計算し直す）、変えた回は新しいパターンの回として ID を付け直す
@@ -363,11 +363,12 @@ flowchart LR
 - 提供するAPI：なし（ルートは [design/pages.md](design/pages.md) の表）
 - 依存するもの：store・matching・solver（Worker）・evaluate・reassign・patterns・vacancy・features
 - 配置：`src/pages/`・`src/components/`・画面用の純粋関数は `src/lib/`
-- 予定（日・週・月）の共通の部品（PRD D327〜D330。ADR-0054）：`components/scheduleParts`（操作の行・「AI で組む ▾」の範囲・提案の帯・複数選択の帯 `SelectionBar`。月は「別の日へ」も。書くのは `lib/multiEdit`）と `components/undo`（元に戻す・Ctrl+Z。殻に1つ）。予定のモード（PRD D348。ADR-0061）は `lib/scheduleMode`・`components/useScheduleMode`。本体は3画面に残す
+- 予定（日・週・月）の共通の部品（PRD D327〜D330。ADR-0054）：`components/scheduleParts`（操作の行・「AI で組む ▾」の範囲・提案の帯・複数選択の帯 `SelectionBar`。月は「別の日へ」も。書くのは `lib/multiEdit`）と `components/undo`（元に戻す・Ctrl+Z。殻に1つ）。予定のモード［変更｜確認］（PRD D348。ADR-0061・ADR-0062）は `lib/scheduleMode`・`components/useScheduleMode`。本体は3画面に残す
+- 組み方の標準（PRD D350〜D354。ADR-0062）：`pages/StandardPage`・`lib/standard`（詳細は下の pages-standard.md）
 - スマホ・キーボード（PRD D333〜D338。ADR-0055）：600px 以下の日の予定は `components/dayList` の日ごとのリスト（長押し・「選ぶ」で複数選択・スワイプで日を送る）、訪問の詳細の欄は `SidePanel` の `sheet`（下から出る欄）、帯・札をキーで動かすのは `components/visitKeys`（書くのは `lib/visitKeys` → `lib/visitOps`）
 - 訪問の札の共通の部品（PRD D339〜D343。ADR-0056・ADR-0057）：札は3段（大＝時間軸の帯・中＝行 `VisitRow`・小＝表の札 `VisitChip`。`data-size`）、入れ物は時間軸・表（`ChipStack`）・リスト。見た目・選ぶ・キー（入れ物ごとの `KeyLayout`）・落とし先の判定は `lib/visitLook`・`visitSelect`・`visitDrop`・`visitKeys` と `components/visitParts.tsx`（一覧は [design/pages-common.md](design/pages-common.md)）。書くのは `lib/visitOps`・`lib/multiEdit`・訪問の詳細の欄だけ
 - 訪問の詳細の欄（PRD D301〜D305。ADR-0051）：1件の訪問を見る・直す欄は `components/VisitPanel` の1つで、App の殻に置き、どの画面・コマンドパレットからも `useOpenVisit` で開く。欄はデータに `lib/visitOps`（純粋関数）越しにだけ触る（データの形を変えるときはここを差し替える）
-- 読み込みの分け方（PRD D248。ADR-0039）：日の予定・空き状況・案を比べる・相性・月の予定は `src/app/lazyPages.tsx` の `React.lazy` で別のチャンク、地図は `RouteMap`（読み込み中の枠と `Suspense`）が本体 `LeafletMap`（Leaflet と leaflet.css）を `lazy` で読む。Excel（ExcelJS）はデータの画面で押したときの `import('../excel')`。`Suspense` は `AdminShell` の本文に1つ（画面ごとの ErrorBoundary の外。移るときは React Router の transition で前の画面のまま待つ）。分けた画面は URL（hash）で直接開いたら起動と並べてすぐ読み始め、地図を出す画面（日・比較・空き状況）は地図の本体も一緒に読み始める。開いた画面が出たら `PreloadWhenShown` が手の空いたとき（最長2秒）に残りのチャンクを1つずつ読む（1つ読み終わったら、また手が空くのを待つ）。読めないとき：`lib/chunkLoad` が失敗を見分け（`isChunkLoadError`）、`app/ErrorBoundary` は再読み込み（`lib/reloadPage`：保存を書いて 500ms 後に読み直す）と［もう一度表示する］（`retryFailedChunks` で lazy を作り直し、失敗の文の URL に `?retry=N` を付けて読み直す）を出す。地図は `RouteMap` の中の小さな境界で枠に「地図を読み込めませんでした」。`lazy` は `src/lib/lazyComponent.tsx`（読み終わったあとは `React.lazy` を通さず直に描き、先読みが済んだ画面へ移るときに止まらない）。ほかの画面（週・〈利用者さん〉・〈スタッフ〉・データなど）は本体のまま
+- 読み込みの分け方（PRD D248。ADR-0039）：重い画面5つ（日の予定・空き状況・案を比べる・相性・月の予定）と地図を `React.lazy` で分け、画面が出たら残りを先に読む。詳細は [design/pages.md](design/pages.md) の「読み込みの分け方」
 - よく変わる値（PRD D249）：AI案の計算の進み具合は画面の state に置かず、`src/lib/valueStore.ts` の入れ物（`useSyncExternalStore`）に置き、バーと回数の部品（`PlanProgressText`・`AnnealProgress`）だけが読む
 - 詳細（画面ごとに分けた。必要な画面のファイルだけ読む）：
   - 共通事項・ルート一覧・メニュー・確認ダイアログ・機能の入り切り（画面側）：[design/pages.md](design/pages.md)
@@ -382,6 +383,7 @@ flowchart LR
   - 相性：[design/pages-compat.md](design/pages-compat.md)
   - 〈スタッフ〉の一覧と画面・勤務時間（シフト）・勤務の見込み・スマホ画面：[design/pages-staff.md](design/pages-staff.md)
   - 条件・プリセット・種類・項目・比較：[design/pages-rules.md](design/pages-rules.md)
+  - 組み方の標準（標準の週の期間・考え方の比較・登録）：[design/pages-standard.md](design/pages-standard.md)
   - データ・管理者設定：[design/pages-data.md](design/pages-data.md)
 - 完了の条件：
   - [ ] 各画面ファイルの「完了の条件」を満たす
@@ -429,7 +431,7 @@ PoC本体の documents.ts からログイン・事業所の分離（email・uid�
 | `Staff` | `id`・`name` 1〜50・`home`・`travelMode`（`DRIVE`/`BICYCLE`/`WALK`/`TRANSIT`）・`workDays`（0=日〜6=土）・`shiftStart`・`shiftEnd`・`active`・`traits`・`requirements`・`preferences`（訪問先の特性に対して。各20まで）・`lastDay`（最終勤務日。翌日から勤務なし。null）・`email`（''）・`icon`（印の中の1〜2文字。絵文字も可。''＝未設定で苗字の最初の1文字。無い古いデータは ''。版は上げない。schema は形だけ＝前後の空白なし・32コード単位まで。見た目で2文字まで（書記素）は画面の `staffIconError` と Excel の `readStaffIcon` で見る。ADR-0050） |
 | `Client` | `id`・`displayName` 1〜50・`kana` ≤50（''）・`place`（＋`postalCode` 空か7桁。''）・`note` ≤500・`color` 0〜7・`active`・`traits`・`requirements`・`preferences`・`tentative`（仮押さえ。false）・`entryNote`・`keyNote`・`parkingNote`・`cautionNote`（各 ≤200。''）・`allowedStaffIds` ≤50（`[]`＝限らない）・`stage`・`referrer`（`name` ≤50・`contact` ≤100・`note` ≤200・`email`。空＝`EMPTY_REFERRER`） |
 | `VisitType` | `id`・`name` 1〜20・`color` 0〜7・`durationMinutes` 5〜720（新しい訪問・パターンの初期値だけ）・`requirements` ≤20（常に必須）・`note` ≤200。20まで（`MAX_VISIT_TYPES`） |
-| `Pattern` | `id`・`clientId`・`typeId`（null＝問わない）・`weekdays` 1〜7個・`everyWeeks` 1〜4・`repeat`（`'weekly'`/`'monthly'`。`'weekly'`）・`monthWeeks` 1〜5（`[]`）・`dayTimes`（曜日・開始（早）・開始（遅）。7まで。`[]`）・`windowKind`・`earliestStart`・`latestStart`・`durationMinutes`・`from`・`to`（null＝続く）・`usualStaffId`（繰り返しの担当。null＝担当なし。ADR-0053）・`note` |
+| `Pattern` | `id`・`clientId`・`typeId`（null＝問わない）・`weekdays` 1〜7個・`everyWeeks` 1〜4・`repeat`（`'weekly'`/`'monthly'`。`'weekly'`）・`monthWeeks` 1〜5（`[]`）・`dayTimes`（曜日・開始（早）・開始（遅）。7まで。`[]`）・`windowKind`・`earliestStart`・`latestStart`・`durationMinutes`・`from`・`to`（null＝続く）・`usualStaffId`（繰り返しの担当。null＝担当なし。ADR-0053）・`usualStarts`（曜日ごとの標準の開始 `{ weekday, start: HH:mm }`。7まで・同じ曜日は1つ。`[]`。ADR-0062）・`note` |
 | `Visit` | `id`・`date`・`clientId`・`windowKind`（`fixed`/`window`）・`earliestStart`・`latestStart`・`durationMinutes` 5〜720・`staffId`（担当。null＝担当なし）・`start`（組んだ開始。null＝開始（早）で並べる）・`pinned`（AI で組み直しても担当を変えない。false）・`cancelled`・`note` ≤200・`typeId`（null）・`pattern`＝`{ id, date: 元の日, edited }`（null＝単発）・`cancelKind`（`'sameDay'`＝当日キャンセル。null）。保存するのは単発と、繰り返しの変えた回だけ（ADR-0053） |
 | `Availability` | `staffId`・`date`・`slots`（30分単位。空＝休み）。その日だけの上書き |
 | `Absence` | `id`・`staffId`・`date`・`from`・`to`（30分単位。null＝始業から／終業まで、両方 null＝終日）・`note` ≤100。同じ人・同じ日は1件 |
@@ -452,7 +454,8 @@ DemoData = { version: 2, baseDate /* seed の基準日 */, seed /* 乱数の種 
   visits /* 保存した訪問：単発と、繰り返しの変えた回 */, availability, absences /* ≤2000 */, visitTypes /* ≤20 */,
   patterns /* ≤2000 */, clientLeaves /* ≤2000 */,
   snapshots /* date → DaySnapshot＝伝えた内容（確定） */, reassigns /* date → ReassignInfo（反映した振り直しの日だけ） */,
-  presets /* 1〜6 */, scorePresetId? }
+  presets /* 1〜6 */, scorePresetId?, standard? /* 組み方の標準を登録した記録。ADR-0062 */ }
+StandardInfo = { at /* 登録した時刻 ms */, presetId /* 登録したときの点数の基準 */, from /* いつから */, weeks /* 周期 1〜4 */ }
 DaySnapshot = { date, at /* 確定した時刻 ms */, visits: ToldVisit[] /* ≤500。取り消し・休みは入れない */ }
 ToldVisit = { id, clientId, staffId /* null＝担当なし */, start /* HH:mm。null 可 */ }
 ReassignInfo = { method: 'insert' | 'anneal', stayWeight? /* 案B 0〜5 */, insertRoutes? /* 案A の結果 */,
@@ -467,11 +470,12 @@ RosterImportResult = { data /* migrate 済み */, added /* 行の順。「名前
 - その日の割当は訪問から決まる（`lib/dayPlan` の `dayRoutes`：計算に入れる訪問を担当ごとに組んだ開始の順。担当なしは `unassignedOf`）。AI の提案・ドラッグ・担当の変更・振り直し・月や週の AI で組むは `writeRoutes` で担当と開始を訪問に書く
 - 日の状態（`toldStateOf`）：`snapshots` に無ければ `'none'`（まだ伝えていない）、伝えた内容と今の差（`toldChanges`。担当が変わる・開始が四捨五入で1分以上変わる訪問）が無ければ `'told'`（確定済み）、あれば `'changed'`（未連絡の変更あり）
 - 要対応は訪問ごとの検査（`visitIssues`）：担当なし・担当が休み・条件に合わない・時間に間に合わない（担当が休みの訪問には重ねない）。重みだけを変えても要対応にしない（「条件が変わった」の判定は無い）
+- 標準のピン（`lib/dayPlan` の `standardPinsOf`。ADR-0062）：担当のある計算した回は、担当が休み・条件に合わない回を除き、AI で組むときにピンと同じに扱う（組み方の標準の画面の提案では効かせない）
 - 提案・比較の提案は保存しない（画面の状態）。比較の画面は提案を点数の基準の物差し（`scoreRulesOf`）で採点する
 
 #### 版と移行
 
-版2（ADR-0053）。版1（`version: 1`）のデータは移さない：`loadWithStatus` は版1を見つけたら初期データで始め（`outdated: true`）、画面が「データの形が変わったので初期データで始めます」（`OUTDATED_MESSAGE`）と知らせる。控えのファイル（JSON）の読み込みも版1なら同じ文で断る。版2の中で無いものは zod の既定値・`migrate` で読む：`absences`・`visitTypes`・`patterns`・`clientLeaves` は `[]`（null も）、`snapshots`・`reassigns` は `{}`、`presets` は `INITIAL_PRESETS`、`scorePresetId` は repair が先頭、`Visit.start` は null・`pinned` は false、〈利用者さん〉の `stage` は `stageOfLegacy`、`org.features` は知らない ID・真偽でない値を捨てオブジェクトでなければ `{}`。ほかは上の表の（　）。
+版2（ADR-0053）。版1（`version: 1`）のデータは移さない：`loadWithStatus` は版1を見つけたら初期データで始め（`outdated: true`）、画面が「データの形が変わったので初期データで始めます」（`OUTDATED_MESSAGE`）と知らせる。控えのファイル（JSON）の読み込みも版1なら同じ文で断る。版2の中で無いものは zod の既定値・`migrate` で読む：`absences`・`visitTypes`・`patterns`・`clientLeaves` は `[]`（null も）、`snapshots`・`reassigns` は `{}`、`presets` は `INITIAL_PRESETS`、`scorePresetId` は repair が先頭、`Visit.start` は null・`pinned` は false、`Pattern.usualStarts` は `[]`、`standard` は無し（登録していない）、〈利用者さん〉の `stage` は `stageOfLegacy`、`org.features` は知らない ID・真偽でない値を捨てオブジェクトでなければ `{}`。ほかは上の表の（　）。
 
 ### 項目・条件・プリセット（`src/contracts/rules.ts`。ADR-0002・ADR-0008・ADR-0010・ADR-0035）
 
@@ -826,6 +830,7 @@ Worker 内の例外は `error` で返し、内部の文言は出さない（「A
 | 予定の日・週・月 | 1つのコンポーネントにせず、共通の部品（操作の行・AI で組む ▾ の範囲・提案の帯・複数選択・元に戻す）を3画面で使う。範囲の AI も提案を出して「反映する」 | 拡大率を変えても手が同じ。本体（時間軸・表・カレンダー）の作り直しの危うさを避ける | 0054 |
 | 元に戻す | store の `update` の1回を1手として50手まで積む（画面の状態だけ）。トースト・操作の行・Ctrl+Z の全部が同じ履歴 | 画面ごとの控えと「戻せない」の理由を無くし、何が戻るかを名前で出せる | 0054 |
 
+| 組み方の標準・予定のモード | 標準＝繰り返しの担当・曜日ごとの開始＋点数の基準。標準の担当は AI で変えない。標準の画面は予定の外、モードは［変更｜確認］ | 担当が週ごとに揺れず、先の月は要対応だけ埋めればよい | 0062 |
 | 訪問を直す欄 | 1つの欄 `VisitPanel`（日時・担当・取り消し・範囲）を殻に置き、読み書きは `lib/visitOps` 越し。見直しは5段で、1段目は今のデータの形のまま | どこから開いても同じで、データの形を変える段で画面を書き直さない | 0051 |
 
 ## 8. 未決事項

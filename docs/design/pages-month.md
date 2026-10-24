@@ -17,9 +17,9 @@
 
 #### 並び
 
-1. 見出し：`lead`「一月の担当を見て、担当なしの日を AI でまとめて組み、確定します」。すぐ下にナビの行（`ScheduleNav`。PRD D347）：［組む｜変更｜確認］（モード。PRD D348）・「今日」・‹ 月を選ぶ欄（`month-title`）›・［月｜週｜日］
+1. 見出し：`lead`「一月の担当を見て、担当なしの日を AI でまとめて組み、確定します」。すぐ下にナビの行（`ScheduleNav`。PRD D347）：［変更｜確認］（モード。PRD D348）・「今日」・‹ 月を選ぶ欄（`month-title`）›・［月｜週｜日］
 2. 進み具合の帯 `ProgressBand`（見出しの下。予定の3画面で月だけ。PRD D332。次の一手は主ボタン、`onOp` で欄を画面の中で開く）
-3. 操作の行（`ScheduleToolbar zoom="month"`。日・週・月で同じ並び。PRD D327。モード（PRD D348）で出し分ける：組むは欠勤・キャンセルを登録を出さず、確認は「AI で組む ▾」を出さず札のドラッグ・キーも止める。[pages-common.md](pages-common.md) の「予定の共通の部品」）：欠勤・キャンセルを登録（`sudden-open`。選んでいる日（今日より前なら今日）の日の予定で欄を開くリンク）・「AI で組む ▾」（範囲：この日・この週・この月（＝下の欄を開く `onMonth`））・元に戻す・やり直す・見せ方の切り替え `month-layout`（`fieldset.segmented`・`aria-label="月の見せ方"`・`aria-pressed`・ボタンの `data-layout`。印刷では出さない）・「その他 ▾」（`MenuButton`・`month-more`）
+3. 操作の行（`ScheduleToolbar zoom="month"`。日・週・月で同じ並び。PRD D327。モード（PRD D348）で出し分ける：確認は「AI で組む ▾」を出さず札のドラッグ・キーも止める。[pages-common.md](pages-common.md) の「予定の共通の部品」）：欠勤・キャンセルを登録（`sudden-open`。選んでいる日（今日より前なら今日）の日の予定で欄を開くリンク）・「AI で組む ▾」（範囲：この日・この週・この月（＝下の欄を開く `onMonth`））・元に戻す・やり直す・見せ方の切り替え `month-layout`（`fieldset.segmented`・`aria-label="月の見せ方"`・`aria-pressed`・ボタンの `data-layout`。印刷では出さない）・「その他 ▾」（`MenuButton`・`month-more`）
 4. 範囲の提案の帯（`RangeProposalBand`）
 5. 操作の欄 `month-head`（PRD D278。ADR-0045）：
    - 操作の行の「その他 ▾」の項目：「表示を選ぶ（〈スタッフ〉・〈利用者さん〉・混み具合）」（`month-more-pickers`。開いていれば「表示の選択をたたむ」、選んでいる間・休みの入力中は押せず理由「表示を「全体」・混み具合を「すべて」に戻すと、たためます」）・「印刷」（`month-print`。選んでいる〈スタッフ〉があれば `&staff=`。`monthPrint` が入のとき）・「勤務の見込み」（`month-workload`。`/workload?ym=`。`workload` が入のとき）・「マスの見方の説明」（`month-more-help`。開いていれば「…を閉じる」）。印刷・勤務の見込みには1行の説明
