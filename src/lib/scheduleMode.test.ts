@@ -1,31 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DemoData } from '../contracts/data';
-import {
-  defaultMode,
-  isLateMonth,
-  modeLead,
-  modeTools,
-  nextYm,
-  parseMode,
-  planLabel,
-  planYm,
-  unassignedDays,
-} from './scheduleMode';
-
-describe('defaultMode（PRD D348）', () => {
-  it('月の後半で来月を組んでいなければ変更', () => {
-    expect(defaultMode('2026-10-24', 5)).toBe('change');
-    expect(defaultMode('2026-10-15', 2)).toBe('change');
-  });
-  it('月の後半でも来月を組んでいれば確認', () => {
-    expect(defaultMode('2026-10-24', 0)).toBe('check');
-    expect(defaultMode('2026-10-24', 1)).toBe('check');
-  });
-  it('月の前半は確認', () => {
-    expect(defaultMode('2026-10-14', 20)).toBe('check');
-    expect(defaultMode('2026-10-01', 20)).toBe('check');
-  });
-});
+import { isLateMonth, nextYm, planLabel, planYm, unassignedDays } from './scheduleMode';
 
 describe('月の後半・組む月', () => {
   it('15日から後半', () => {
@@ -40,26 +15,6 @@ describe('月の後半・組む月', () => {
     expect(planYm('2026-10-24')).toBe('2026-11');
     expect(planYm('2026-10-03')).toBe('2026-10');
     expect(planLabel('2026-10-24')).toBe('11月の予定');
-  });
-});
-
-describe('modeTools', () => {
-  it('変更：すべて', () => {
-    expect(modeTools('change')).toEqual({ absence: true, ai: true, mail: true, move: true });
-  });
-  it('確認：見て伝えるだけ（AI で組む・動かすは出さない）', () => {
-    expect(modeTools('check')).toEqual({ absence: true, ai: false, mail: true, move: false });
-  });
-});
-
-describe('parseMode', () => {
-  it('2つのモードを読み、古い plan（組む）は変更', () => {
-    expect(parseMode('plan')).toBe('change');
-    expect(parseMode('change')).toBe('change');
-    expect(parseMode('check')).toBe('check');
-    expect(parseMode('')).toBeNull();
-    expect(parseMode(null)).toBeNull();
-    expect(parseMode('all')).toBeNull();
   });
 });
 
@@ -99,8 +54,3 @@ describe('unassignedDays', () => {
   });
 });
 
-describe('modeLead', () => {
-  it('呼び方を使う', () => {
-    expect(modeLead('check', 'シッター')).toContain('シッターに伝えたら');
-  });
-});

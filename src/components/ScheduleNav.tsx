@@ -1,9 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { type ReactNode, useLayoutEffect, useRef } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { MODE_LABEL, modeLead, parseMode, SCHEDULE_MODES } from '../lib/scheduleMode';
-import { useDemoData } from '../store';
-import { useScheduleMode } from './useScheduleMode';
 import { type ScheduleView, ViewSwitch } from './ViewSwitch';
 
 /** 貼り付ける幅（styles.css の .sched-nav の sticky と同じ） */
@@ -24,9 +20,8 @@ type Picker = {
 };
 
 /**
- * 予定の上のナビの行（PRD D347・D348。ADR-0060・0061）：日・週・月で同じ1行。
- * 左から［組む｜変更｜確認］（モード）・［今日］［‹］期間 ▾［›］・［月｜週｜日］・右に状態の印と確定のボタン（actions）。
- * 下にモードの1行の説明。URL の ?mode= で開くとそのモードを選ぶ（メニューの項目から）。
+ * 予定の上のナビの行（PRD D347。ADR-0060）：日・週・月で同じ1行。
+ * 左から［今日］［‹］期間 ▾［›］・［月｜週｜日］・右に状態の印と確定のボタン（actions）。
  * 送る単位は表示している単位（月は1か月、週は1週、日は1日）。861px 以上は上の帯（--header-h）の下に貼り付く（sticky）。
  * 日の予定の期間の欄は上の帯の日付の選択と同じ `.date-switch`（上の帯の日付の選択は予定の3画面では出さない）
  */
@@ -47,19 +42,6 @@ export function ScheduleNav({
   actions?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { mode, setMode } = useScheduleMode();
-  const { data } = useDemoData();
-  const staffTerm = data.org.terms.staff;
-  const hasStandard = data.standard !== undefined;
-  // ?mode= の付いた URL を開いた・押したら、そのたびに1回そのモードを選ぶ（メニューの同じ項目を押し直しても効くよう、
-  // 移るごとの location.key で。描く前に選び、前のモードで一度描かない）
-  const [params] = useSearchParams();
-  const urlMode = parseMode(params.get('mode'));
-  const navKey = useLocation().key;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 移るたび（navKey）に1回だけ当てる
-  useLayoutEffect(() => {
-    if (urlMode) setMode(urlMode);
-  }, [navKey]);
   // 貼り付く行の高さ（--sched-nav-h）を測って出す。広い画面でも中身で2段に折り返すことがある（決め打ちにしない）。
   // 貼り付かない幅（860px 以下）・この行の無い画面では 0（html の scroll-padding-top が使う）
   useLayoutEffect(() => {
@@ -87,22 +69,6 @@ export function ScheduleNav({
     <div className="sched-nav" ref={ref} data-testid="sched-nav" data-view={current}>
       {/* 見ている期間の見出し（画面では読み上げだけ、印刷では見せる） */}
       <h2 className="sched-nav-period">{period}</h2>
-      {/* モード（PRD D348）：仕事の段階で出す操作を絞る */}
-      <fieldset className="segmented sched-mode" aria-label="モード" data-testid="mode-switch" data-mode={mode}>
-        {SCHEDULE_MODES.map((m) => (
-          <button
-            key={m}
-            type="button"
-            className={m === mode ? 'is-on' : ''}
-            aria-pressed={m === mode}
-            title={modeLead(m, staffTerm)}
-            onClick={() => setMode(m)}
-            data-mode={m}
-          >
-            {MODE_LABEL[m]}
-          </button>
-        ))}
-      </fieldset>
       <div className="sched-nav-move">
         <button
           type="button"
@@ -149,18 +115,6 @@ export function ScheduleNav({
       </div>
       <ViewSwitch current={current} />
       {actions && <div className="sched-nav-actions">{actions}</div>}
-      <p className="sched-mode-lead sub" data-testid="mode-lead">
-        {modeLead(mode, staffTerm)}
-        {/* 組み方の標準を登録していなければ入口を添える（PRD D348・D354。ADR-0062） */}
-        {!hasStandard && (
-          <>
-            {' '}
-            <Link to="/standard" className="btn btn-small btn-text" data-testid="mode-standard-link">
-              組み方の標準を決める
-            </Link>
-          </>
-        )}
-      </p>
     </div>
   );
 }

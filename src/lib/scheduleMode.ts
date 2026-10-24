@@ -1,5 +1,4 @@
-// 予定のモード［変更｜確認］（PRD D348。ADR-0061・ADR-0062）の決まり。
-// 月・週・日の予定の画面で、仕事の段階ごとに出す操作を絞る。既定のモード・モードごとに出す操作・メニューの件数は純粋関数でここに置く。
+// 予定を組む月の決まり（ADR-0063。予定のモードは廃止）：組む月（月の後半は来月）・担当なしの日の数・メニューの件数の印。
 // データは書き換えない
 import type { DemoData } from '../contracts/data';
 import { addDays } from '../domain/time';
@@ -8,51 +7,13 @@ import { activeDayVisits } from './dayPlan';
 import { HOME_NEXT_MONTH_FROM_DAY, monthLabel } from './home';
 import { monthDates, ymOf } from './month';
 
-/** 予定のモード：変更（先の月の担当を整える・前日と当日の欠勤・キャンセル）・確認（日々の確認と連絡） */
-export type ScheduleMode = 'change' | 'check';
-
-export const SCHEDULE_MODES: readonly ScheduleMode[] = ['change', 'check'];
-
-/** 切り替えの名前 */
-export const MODE_LABEL: Record<ScheduleMode, string> = { change: '変更', check: '確認' };
-
-/** モードの1行の説明（ナビの行の下に出す。staff は〈スタッフ〉の呼び方） */
-export function modeLead(mode: ScheduleMode, staff: string): string {
-  if (mode === 'change') return '担当を AI で組む・動かす、欠勤・キャンセルを登録して影響のある訪問を組み直します';
-  return `その日の担当を見て、${staff}に伝えたら確定します（札は動かしません）`;
-}
-
-/** モードで出す操作（予定の3画面で共通） */
-export type ModeTools = {
-  /** 欠勤・キャンセルを登録 */
-  absence: boolean;
-  /** 「AI で組む ▾」 */
-  ai: boolean;
-  /** 予定をメールで送る */
-  mail: boolean;
-  /** 札をドラッグ・キーで動かす（担当・日時を変える） */
-  move: boolean;
-};
-
-/**
- * モードごとに出す操作：変更＝すべて、確認＝欠勤の登録・メール（AI で組む・札を動かすは出さない。見て伝えるだけ）
- */
-export function modeTools(mode: ScheduleMode): ModeTools {
-  if (mode === 'check') return { absence: true, ai: false, mail: true, move: false };
-  return { absence: true, ai: true, mail: true, move: true };
-}
-
-/** 文字をモードとして読む（古い 'plan'（組む）は変更。読めなければ null） */
-export const parseMode = (s: string | null | undefined): ScheduleMode | null =>
-  s === 'plan' ? 'change' : SCHEDULE_MODES.includes(s as ScheduleMode) ? (s as ScheduleMode) : null;
-
 /** 来月（YYYY-MM） */
 export const nextYm = (today: string): string => ymOf(addDays(`${ymOf(today)}-01`, 31));
 
 /** 月の後半か（ホームが来月の準備を出すのと同じ日から。PRD D255） */
 export const isLateMonth = (today: string): boolean => Number(today.slice(8, 10)) >= HOME_NEXT_MONTH_FROM_DAY;
 
-/** 整える月：月の後半なら来月、前半なら今月（メニューの「◯月の予定」） */
+/** 組む月：月の後半なら来月、前半なら今月（メニューの「◯月の予定」・「担当を組む」） */
 export const planYm = (today: string): string => (isLateMonth(today) ? nextYm(today) : ymOf(today));
 
 /**
@@ -88,16 +49,8 @@ function countUnassigned(
   return n;
 }
 
-/** 来月を組んでいないとみなす日の数（ホームの「担当を AI で組む」のカードと同じ。2日以上） */
+/** 来月を組んでいないとみなす日の数（ホームの「担当なし」のカードと同じ。2日以上） */
 export const PLAN_NEEDED_DAYS = 2;
-
-/**
- * 既定のモード（選んでいないとき。PRD D348）：月の後半で、来月をまだ組んでいなければ（担当なしの訪問がある日が2日以上）変更、
- * それ以外は確認
- */
-export function defaultMode(today: string, nextMonthUnassignedDays: number): ScheduleMode {
-  return isLateMonth(today) && nextMonthUnassignedDays >= PLAN_NEEDED_DAYS ? 'change' : 'check';
-}
 
 /** メニューの「◯月の予定」の名前 */
 export const planLabel = (today: string): string => `${monthLabel(planYm(today))}の予定`;

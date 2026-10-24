@@ -71,6 +71,7 @@ const SCREEN_WORDS: Record<string, readonly string[]> = {
   '/staff': ['いちらん'],
   '/availability': ['きんむじかん', 'しふと', '稼働時間', 'かどうじかん'],
   '/workload': ['きんむのみこみ', '稼働の見込み', 'かどうのみこみ', 'こうつうひ'],
+  '/arrange': ['よていをくむ', 'たんとうをくむ', 'くむ', 'えーあい', 'AI'],
   '/standard': ['くみかたのひょうじゅん', 'ひょうじゅん'],
   '/rules': ['じょうけんのおもみ', 'ぷりせっと'],
   '/types': ['ほうもんのしゅるい'],
@@ -136,7 +137,7 @@ export function paletteScreens(
 }
 
 /**
- * 操作の候補（PRD D182）：欠勤・キャンセルを登録・日の予定（今日）・今月（と来月）の担当を AI で組む・
+ * 操作の候補（PRD D182）：欠勤・キャンセルを登録・日の予定（今日）・今月（と来月）の担当を組む（予定を組む。ADR-0063）・
  * 要対応・確定していない日・問い合わせに答える。today は日本時間の今日。
  * features で切った機能の操作（欠勤・キャンセル・問い合わせ）は出さない（PRD D213。lib/features の表から引く）
  */
@@ -151,7 +152,7 @@ export function paletteActions(today: string, { features = {} }: { features?: Fe
       kind: 'action',
       label: '欠勤・キャンセルを登録',
       hint: '日の予定（今日）',
-      to: `${absenceHref(today)}&mode=change`,
+      to: absenceHref(today),
       date: today,
       words: ['けっきん', 'きゃんせる', 'やすみ', 'きゅうなけっきん', 'とうじつのたいおう', '当日の対応', 'とうじつ'],
     }),
@@ -167,17 +168,17 @@ export function paletteActions(today: string, { features = {} }: { features?: Fe
     paletteItem({
       id: 'action:batch',
       kind: 'action',
-      label: `${monthNo(ym)}月の担当を AI で組む`,
-      hint: '月の予定',
-      to: month('batch'),
+      label: `${monthNo(ym)}月の担当を組む`,
+      hint: '予定を組む',
+      to: `/arrange?ym=${ym}`,
       words: ['こんげつ', '今月', 'まとめてつくる', 'くむ', 'たんとう', 'つきをくむ', 'えーあい'],
     }),
     paletteItem({
       id: 'action:batch-next',
       kind: 'action',
-      label: `${monthNo(next)}月の担当を AI で組む`,
-      hint: '月の予定',
-      to: month('batch', next),
+      label: `${monthNo(next)}月の担当を組む`,
+      hint: '予定を組む',
+      to: `/arrange?ym=${next}`,
       words: ['らいげつ', '来月', 'まとめてつくる', 'くむ', 'たんとう', 'つきをくむ', 'えーあい'],
     }),
     paletteItem({

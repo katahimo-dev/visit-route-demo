@@ -1,4 +1,5 @@
 import {
+  CalendarCheck,
   Clock,
   Database,
   HeartHandshake,
@@ -7,17 +8,20 @@ import {
   type LucideIcon,
   Settings,
   SlidersHorizontal,
+  Sparkles,
   Tags,
   UserRound,
 } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { activeNavPath, peopleTabs, settingsTabs } from '../lib/nav';
+import { ARRANGE_TABS, activeNavPath, peopleTabs, settingsTabs } from '../lib/nav';
 import { useFeatures } from '../lib/useFeature';
 import { useDemoData } from '../store';
 
 /** タブのアイコン（メニューの前の項目と同じ。並びは lib/nav の SETTINGS_TABS と同じ） */
 const ICONS: Record<string, LucideIcon> = {
+  '/arrange': Sparkles,
+  '/standard': CalendarCheck,
   '/types': Layers,
   '/items': Tags,
   '/rules': SlidersHorizontal,
@@ -29,7 +33,7 @@ const ICONS: Record<string, LucideIcon> = {
   '/availability': Clock,
 };
 
-/** タブのナビ（設定・人で共通）。狭い画面でタブが横に巻くとき、今のタブを見える所へ（ページは縦に巻かない） */
+/** タブのナビ（設定・人・予定を組むで共通）。狭い画面でタブが横に巻くとき、今のタブを見える所へ（ページは縦に巻かない） */
 function TabNav({
   tabs,
   on,
@@ -110,6 +114,23 @@ export function SettingsTabs() {
       label="設定の切り替え"
       testId="settings-tabs"
       className="settings-tabs"
+    />
+  );
+}
+
+/**
+ * 予定を組むのタブ（ADR-0063）：担当を組む・組み方の標準。AI で組む機能はこの2つの画面に集める。
+ * 案を比べる（`#/compare`）は担当を組むの続き（印は担当を組む）
+ */
+export function ArrangeTabs() {
+  const { pathname } = useLocation();
+  return (
+    <TabNav
+      tabs={ARRANGE_TABS}
+      on={(to) => to === pathname || (to === '/arrange' && pathname === '/compare')}
+      label="予定を組むの切り替え"
+      testId="arrange-tabs"
+      className="settings-tabs arrange-tabs"
     />
   );
 }

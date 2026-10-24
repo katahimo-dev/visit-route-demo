@@ -1441,23 +1441,8 @@ tbody tr:hover td {
   font-weight: 700;
   background: transparent;
 }
-/* モードの切り替え［組む｜変更｜確認］（PRD D348）：ナビの行の左端。下にモードの1行の説明（行いっぱい） */
-.sched-mode button {
-  padding: 6px 12px;
-}
 .sched-nav-today {
   white-space: nowrap;
-}
-.sched-mode-lead {
-  flex-basis: 100%;
-  margin: -2px 0 0;
-  font-size: 0.82rem;
-}
-/* 組み方の標準への入口（ADR-0062）。スマホは見る・取り消すまでなので出さない（訪問を押し下げない） */
-@media (max-width: 600px) {
-  .sched-mode-lead [data-testid="mode-standard-link"] {
-    display: none;
-  }
 }
 /* ［月｜週｜日］はナビの行の中では枠の切り替え（.segmented と同じ見た目）。今の画面は aria-current と太字・地の色 */
 .sched-nav .view-switch {

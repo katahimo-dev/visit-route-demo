@@ -43,14 +43,11 @@ describe('候補', () => {
   it('操作は今ある入口（?do=）へ。欠勤と今日の予定は今日を選ぶ', () => {
     const a = paletteActions(TODAY);
     const by = (id: string) => a.find((x) => x.id === id)!;
-    expect(by('action:absence').to).toBe('/plan?date=2026-10-21&do=absence&mode=change');
+    expect(by('action:absence').to).toBe('/plan?date=2026-10-21&do=absence');
     expect(by('action:absence').date).toBe(TODAY);
     expect(by('action:today')).toMatchObject({ to: '/plan', date: TODAY });
-    expect(by('action:batch')).toMatchObject({ label: '10月の担当を AI で組む', to: '/month?ym=2026-10&do=batch' });
-    expect(by('action:batch-next')).toMatchObject({
-      label: '11月の担当を AI で組む',
-      to: '/month?ym=2026-11&do=batch',
-    });
+    expect(by('action:batch')).toMatchObject({ label: '10月の担当を組む', to: '/arrange?ym=2026-10' });
+    expect(by('action:batch-next')).toMatchObject({ label: '11月の担当を組む', to: '/arrange?ym=2026-11' });
     expect(by('action:attention').to).toBe('/month?ym=2026-10&do=attention');
     expect(by('action:unconfirmed').to).toBe('/month?ym=2026-10&do=unconfirmed');
     expect(a.some((x) => x.id === 'action:stale')).toBe(false);
@@ -76,7 +73,7 @@ describe('候補', () => {
   });
   it('12月の来月は翌年の1月', () => {
     const next = paletteActions('2026-12-30').find((x) => x.id === 'action:batch-next')!;
-    expect(next).toMatchObject({ label: '1月の担当を AI で組む', to: '/month?ym=2027-01&do=batch' });
+    expect(next).toMatchObject({ label: '1月の担当を組む', to: '/arrange?ym=2027-01' });
   });
   it('画面はメニューと同じ名前・同じ順で、操作の項目（欠勤・キャンセル）は入れない', () => {
     const s = paletteScreens(screenSections(terms, {}), terms);
@@ -85,13 +82,14 @@ describe('候補', () => {
       '月の予定',
       '週の予定',
       '日の予定',
+      '担当を組む',
+      '組み方の標準',
       '空き状況',
       '利用者さん一覧',
       'スタッフ一覧',
       '相性',
       '勤務時間（シフト）',
       '勤務の見込み',
-      '組み方の標準',
       '訪問の種類',
       '特性の項目',
       '条件の重み',
@@ -119,7 +117,7 @@ describe('候補', () => {
     const scr = paletteScreens(screenSections(terms, {}), terms);
     const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
     expect(hit('よてい')).toEqual(expect.arrayContaining(['/month', '/week', '/plan']));
-    expect(hit('せってい')).toEqual(['/standard', '/types', '/items', '/rules', '/settings', '/data']);
+    expect(hit('せってい')).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
     expect(hit('きんむのみこみ')).toEqual(['/workload']);
     // 案を比べるは日の予定の「AI で組む ▾」から開く（パレットには出さない。PRD D331）
     expect(hit('あんをくらべる')).toEqual([]);
@@ -129,7 +127,7 @@ describe('候補', () => {
     const acts = paletteActions(TODAY);
     expect(acts.find((x) => x.id === 'action:absence')!.hint).toBe('日の予定（今日）');
     expect(acts.find((x) => x.id === 'action:today')!.hint).toBe('日の予定');
-    expect(acts.find((x) => x.id === 'action:batch')!.hint).toBe('月の予定');
+    expect(acts.find((x) => x.id === 'action:batch')!.hint).toBe('予定を組む');
     expect(filterPalette(acts, '当日の対応').flat.map((i) => i.id)).toEqual(['action:absence']);
   });
   it('人はその人の画面（/clients/:id・/staff/:id）へ。利用中でなければ段階、休止中の〈スタッフ〉はそう添える', () => {

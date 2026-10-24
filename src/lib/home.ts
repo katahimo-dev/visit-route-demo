@@ -35,7 +35,7 @@ export function homeDays(today: string): string[] {
 /** 見る月ごとの入力 */
 export type HomeMonth = { ym: string };
 
-/** カードの種類：要対応・今日の予定・確定していない日・担当を AI で組む */
+/** カードの種類：組み方の標準・要対応・今日の予定・確定していない日・担当なし（担当を組むへ） */
 export type HomeTaskKind = 'standard' | 'attention' | 'today' | 'confirm' | 'create';
 
 /**
@@ -78,10 +78,10 @@ function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfi
 }
 
 /**
- * 次の一手のカード（PRD D141〜D143・D263）。並びは作業の順：組み方の標準（登録していないときだけ。PRD D354）→ 要対応（月ごと）→ 月ごとに「担当を AI で組む → 確定していない日を確認」
+ * 次の一手のカード（PRD D141〜D143・D263）。並びは作業の順：組み方の標準（登録していないときだけ。PRD D354）→ 要対応（月ごと）→ 月ごとに「担当なしの訪問 → 確定していない日を確認」
  * （今月 → 来月）→ 今日の予定。先頭の1枚を画面で「まずこれ」と大きく見せる（HomePage）。
  * - 要対応：lib/month の attentionList（月の画面の要対応と同じ件数）
- * - 担当を AI で組む：担当なしの訪問がある日が2日以上ある月（月の「担当を AI で組む」へ）
+ * - 担当なしの訪問：担当なしの訪問がある日が2日以上ある月（予定を組むの「担当を組む」へ。ADR-0063）
  * - 確定していない日：訪問があって伝えていない・未連絡の変更のある日（lib/month の monthProgress の unconfirmed と同じ日数）
  * - 今日の予定：訪問の件数・担当の人数・要対応の件数。要対応があれば warn
  * ready は手当て・やることが1つも無いとき（今日の予定の知らせだけ）
@@ -119,9 +119,9 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
       work.push({
         kind: 'create',
         tone: 'todo',
-        title: `${m}の担当を AI で組む`,
+        title: `${m}の担当なしの訪問を組む`,
         detail: `担当なしの訪問がある日 ${unassignedDays.length}日`,
-        to: `/month?ym=${ym}&do=batch&mode=change`,
+        to: `/arrange?ym=${ym}`,
       });
     }
     // 確定していない日（訪問があって伝えていない・未連絡の変更のある日）
@@ -201,7 +201,7 @@ export function homeEntries(today: string, terms: Pick<Terms, 'client' | 'staff'
   const all: HomeEntry[] = [
     {
       key: 'absence',
-      to: `/plan?date=${today}&do=${SUDDEN_DO}&mode=change`,
+      to: `/plan?date=${today}&do=${SUDDEN_DO}`,
       title: '欠勤・キャンセルを登録',
       detail: '今日の予定で「欠勤・キャンセル」の欄を開きます。休む人・キャンセルの訪問を選び、振り直して確定・連絡',
       date: today,
