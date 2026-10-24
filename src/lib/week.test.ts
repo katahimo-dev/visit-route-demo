@@ -197,6 +197,24 @@ describe('moveFollowing（以降すべて）', () => {
     expect(r.data.patterns.map((p) => p.id)).toEqual(['p1', 'np1', 'np2']);
   });
 
+  it('標準の開始：動かした繰り返しは持たず、残す側は動かした曜日の分を除く（ADR-0062）', () => {
+    const base = pattern('p1', [1, 3]);
+    const d = withPatterns([
+      {
+        ...base,
+        usualStarts: [
+          { weekday: 1, start: base.earliestStart },
+          { weekday: 3, start: base.earliestStart },
+        ],
+      },
+    ]);
+    const r = moveFollowing(d, '2026-10-19_p1', '2026-10-20', 10 * 60, DATE, ['np1', 'np2'])!;
+    expect(r.data.patterns.find((p) => p.id === 'np1')!.usualStarts).toEqual([
+      { weekday: 3, start: base.earliestStart },
+    ]);
+    expect(r.data.patterns.find((p) => p.id === 'np2')!.usualStarts).toEqual([]);
+  });
+
   it('over：動かした曜日の新しいパターンの所要・種類・幅・いつもの担当も変える（訪問の詳細の欄。PRD D301）', () => {
     const d = withPatterns([pattern('p1', [1, 3])]);
     const r = moveFollowing(d, '2026-10-19_p1', '2026-10-19', 10 * 60, DATE, ['np1', 'np2'], {
