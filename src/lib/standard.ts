@@ -6,7 +6,7 @@ import type { Pattern, PatternUsualStart, Visit } from '../contracts/documents';
 import type { Problem } from '../contracts/problem';
 import { addDays, weekday } from '../domain/time';
 import { score } from '../evaluate';
-import { patternVisitId, timesOn, usualStartOn, visitOf, visitsIn } from '../patterns';
+import { occursOn, patternVisitId, timesOn, usualStartOn, visitOf, visitsIn } from '../patterns';
 import { own } from './common';
 import { activeDayVisits } from './dayPlan';
 
@@ -157,22 +157,33 @@ export function standardDiff(
   return rows;
 }
 
-/** 伝えた日のうちいちばん後の日（無ければ null） */
-const lastToldDate = (data: Pick<DemoData, 'snapshots'>): string | null => {
+/**
+ * 伝えた日のうちいちばん後の日（無ければ null）。伝えた日へ動かした繰り返しの回は、元の日も数える
+ * （元の日が「いつから」以降だと、新しい繰り返しが元の日に回を計算して2件になるため）
+ */
+const lastToldDate = (data: Pick<DemoData, 'snapshots' | 'visits'>): string | null => {
   let last: string | null = null;
   for (const d of Object.keys(data.snapshots)) if (last === null || d > last) last = d;
+  for (const v of data.visits) {
+    if (!v.pattern || !own(data.snapshots, v.date)) continue;
+    if (last === null || v.pattern.date > last) last = v.pattern.date;
+  }
   return last;
 };
 
 /** 「いつから」に選べるいちばん早い日：今日と、伝えた日の翌日の遅い方（伝えた日の回は変えない） */
-export function earliestSince(data: Pick<DemoData, 'snapshots'>, today: string): string {
+export function earliestSince(data: Pick<DemoData, 'snapshots' | 'visits'>, today: string): string {
   const told = lastToldDate(data);
   const next = told === null ? today : addDays(told, 1);
   return next > today ? next : today;
 }
 
 /** 「いつから」の既定：期間の最初の日（選べるいちばん早い日より前ならその日） */
-export function defaultSince(data: Pick<DemoData, 'snapshots'>, period: StandardPeriod, today: string): string {
+export function defaultSince(
+  data: Pick<DemoData, 'snapshots' | 'visits'>,
+  period: StandardPeriod,
+  today: string,
+): string {
   const min = earliestSince(data, today);
   return period.from > min ? period.from : min;
 }
@@ -212,9 +223,10 @@ function touchedVisits(
   data: Pick<DemoData, 'patterns' | 'visits' | 'snapshots'>,
   rows: readonly StandardRow[],
   since: string,
-): { visit: Visit; std: WeekdayStandard; pattern: Pattern }[] {
+  period: Pick<StandardPeriod, 'from' | 'to'>,
+): Touched[] {
   const changed = new Map(rows.filter((r) => r.changed).map((r) => [r.patternId, r]));
-  const out: { visit: Visit; std: WeekdayStandard; pattern: Pattern }[] = [];
+  const out: Touched[] = [];
   for (const v of data.visits) {
     if (!v.pattern || v.pattern.date < since || own(data.snapshots, v.date)) continue;
     const row = changed.get(v.pattern.id);
@@ -229,16 +241,24 @@ function touchedVisits(
       wd,
       timesOn(pattern, wd),
     );
-    out.push({ visit: v, std: { weekday: wd, staffId: day.staffId, start }, pattern });
+    const inPeriod = period.from <= v.pattern.date && v.pattern.date <= period.to;
+    out.push({ visit: v, std: { weekday: wd, staffId: day.staffId, start }, pattern, inPeriod });
   }
   return out;
 }
 
+/** 登録で見る保存した回 */
+type Touched = { visit: Visit; std: WeekdayStandard; pattern: Pattern; inPeriod: boolean };
+
 /** この回だけ日時などを変えた回か（取り消しも） */
 const isEdited = (v: Visit) => v.cancelled || (v.pattern?.edited ?? false) || v.date !== v.pattern?.date;
 
-/** 標準と同じ回か（担当と組んだ開始） */
-const sameAsStandard = (v: Visit, std: WeekdayStandard) => v.staffId === std.staffId && (v.start ?? null) === std.start;
+/**
+ * 標準と同じ回か（担当と組んだ開始）。期間の中の回は標準の元なので、担当が同じなら開始の違いは見ない
+ * （AI が週ごとに少し違う時刻を組むため。違う担当は一時の変更として扱う）
+ */
+const sameAsStandard = (t: Pick<Touched, 'visit' | 'std' | 'inPeriod'>) =>
+  t.visit.staffId === t.std.staffId && (t.inPeriod || (t.visit.start ?? null) === t.std.start);
 
 /**
  * 一時の変更（PRD D351）：「いつから」以降・伝えていない日の、変わる繰り返しの保存した回で、この回だけ変えた回でもピンでもなく、
@@ -248,9 +268,10 @@ export function temporaryChanges(
   data: Pick<DemoData, 'patterns' | 'visits' | 'snapshots'>,
   rows: readonly StandardRow[],
   since: string,
+  period: Pick<StandardPeriod, 'from' | 'to'>,
 ): TemporaryChange[] {
-  return touchedVisits(data, rows, since)
-    .filter(({ visit, std }) => !isEdited(visit) && !visit.pinned && !sameAsStandard(visit, std))
+  return touchedVisits(data, rows, since, period)
+    .filter((t) => !isEdited(t.visit) && !t.visit.pinned && !sameAsStandard(t))
     .map(({ visit, std }) => ({
       visitId: visit.id,
       date: visit.date,
@@ -259,6 +280,20 @@ export function temporaryChanges(
       standard: { staffId: std.staffId, start: std.start },
     }))
     .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.visitId < b.visitId ? -1 : 1));
+}
+
+/**
+ * 新しい繰り返しの開始日：いつから。ただし隔週・3週・4週ごとの繰り返しは、いつから以降で最初に回のある日にする
+ * （「開始日を含む週」を1週目に数えるので、回の無い週から始めると周期が1週ずれる）
+ */
+function anchorFrom(p: Pattern, since: string): string {
+  if (p.repeat !== 'weekly' || p.everyWeeks <= 1) return since;
+  for (let i = 0; i < 7 * p.everyWeeks; i++) {
+    const d = addDays(since, i);
+    if (p.to !== null && d > p.to) break;
+    if (occursOn(p, d)) return d;
+  }
+  return since;
 }
 
 /** 一時の変更の扱い：ピンを立てて残す・標準に戻す（消す） */
@@ -290,24 +325,29 @@ export function registerStandard(
 ): DemoData {
   const min = earliestSince(data, today);
   const since = sinceIn > min ? sinceIn : min;
-  const rows = standardDiff(data, period).filter((r) => r.changed);
+  // いつからより前に終わる繰り返しは書き換えない（開始日が終了日より後の繰り返しを作らない）
+  const rows = standardDiff(data, period).filter((r) => {
+    const p = data.patterns.find((x) => x.id === r.patternId);
+    return r.changed && !!p && (p.to === null || p.to >= since);
+  });
   if (rows.length === 0) return data;
   let patterns = data.patterns;
   /** 古い繰り返し ID → 曜日 → 新しい繰り返し */
   const moved = new Map<string, Map<number, Pattern>>();
   // 先に回を見る（古い繰り返しで）
-  const touched = touchedVisits(data, rows, since);
+  const touched = touchedVisits(data, rows, since, period);
   for (const row of rows) {
     const original = patterns.find((p) => p.id === row.patternId);
     if (!original) continue;
     const groups = groupsOf(row.days);
     const inPlace = since <= original.from;
+    const from = inPlace ? original.from : anchorFrom(original, since);
     const made: Pattern[] = groups.map((g, i) => {
       const keepId = inPlace && i === 0;
       return {
         ...original,
         id: keepId ? original.id : opts.newId(),
-        from: inPlace ? original.from : since,
+        from,
         weekdays: [...g.weekdays].sort((a, b) => a - b),
         dayTimes: original.dayTimes.filter((t) => g.weekdays.includes(t.weekday)),
         usualStaffId: g.staffId,
@@ -334,7 +374,8 @@ export function registerStandard(
   }
   const touchedIds = new Set(touched.map((t) => t.visit.id));
   const put: Visit[] = [];
-  for (const { visit, std } of touched) {
+  for (const t of touched) {
+    const { visit, std } = t;
     const target = moved.get(visit.pattern?.id ?? '')?.get(std.weekday);
     if (!target || !visit.pattern) continue;
     const id = patternVisitId(visit.pattern.date, target.id);
@@ -343,7 +384,7 @@ export function registerStandard(
       put.push(id === visit.id ? visit : { ...visit, id, pattern: { ...visit.pattern, id: target.id } });
       continue;
     }
-    if (sameAsStandard(visit, std)) continue; // 計算した回と同じになる
+    if (!visit.pinned && sameAsStandard(t)) continue; // 計算した回と同じになる（ピンは残す）
     if (!visit.pinned && opts.temp === 'drop') continue; // 標準に戻す
     // ピンの回・残す一時の変更：新しい繰り返しの回にして、担当・開始・ピンを残す
     put.push({

@@ -67,7 +67,8 @@ export function pinsOf(visits: readonly Visit[]): Record<string, string> {
 }
 
 /**
- * 標準のピン（ADR-0062。PRD D352）：繰り返しの計算した回（保存していない回）で担当があるものは、AI で組むときにピンと同じに扱う。
+ * 標準のピン（ADR-0062。PRD D352）：繰り返しの回で担当が繰り返しの担当（標準）のままのもの（計算した回と、日時を変えていない・
+ * ピンでない保存した回。AI の提案を反映すると開始だけで保存した回になるため）は、AI で組むときにピンと同じに扱う。
  * その担当がその日に担当できない（休み・欠勤・条件に合わない＝問題で可でない）回は外す（AI が代わりを探す）。
  * problem は手で付けたピンだけで作ったその日の問題（無ければ作る）
  */
@@ -77,8 +78,17 @@ export function standardPinsOf(
   visits: readonly Visit[],
   problem?: Problem | null,
 ): Record<string, string> {
-  const saved = new Set(data.visits.filter((v) => v.date === date).map((v) => v.id));
-  const computed = visits.filter((v) => v.pattern !== null && v.staffId !== null && !v.cancelled && !saved.has(v.id));
+  const usual = new Map(data.patterns.map((p) => [p.id, p.usualStaffId]));
+  const computed = visits.filter(
+    (v) =>
+      v.pattern !== null &&
+      v.staffId !== null &&
+      !v.cancelled &&
+      !v.pinned &&
+      !v.pattern.edited &&
+      v.date === v.pattern.date &&
+      usual.get(v.pattern.id) === v.staffId,
+  );
   if (computed.length === 0) return {};
   const manual = pinsOf(visits);
   const p =

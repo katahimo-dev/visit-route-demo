@@ -37,9 +37,9 @@
 
 - `cycleWeeks(data, today)`：利用中の〈利用者さん〉の、today 以降に続く繰り返しの `everyWeeks` の最大（毎月があれば4、無ければ1）と理由の文。`nextMonday(today)`・`standardPeriod(data, today, weeks?)`＝`{ from, to, weeks }`・`periodDates(period)`
 - `standardDiff(data, period)`：`StandardRow[]`＝`{ patternId, clientId, staff: { before, after }, starts: { weekday, before, after }[], days: { weekday, staffId, start }[], split, warnings, changed }`。期間の計算に入る（取り消し・休みでない）繰り返しの回から、曜日ごとに最初の週の回の担当・組んだ開始を取る（時間の約束の外の開始は今の標準のまま）。回の無い曜日は今の標準。期間に回の無い繰り返しは行にしない
-- `earliestSince(data, today)`・`defaultSince(data, period, today)`
-- `temporaryChanges(data, rows, since)`：`since` 以降・伝えていない日の、変わる繰り返しの保存した回で、この回だけ日時などを変えた回（取り消し・`edited`・日付の移動）でもピンでもなく、新しい標準（担当と、計算した回の開始）と違う回
-- `registerStandard(data, period, since, today, { newId, temp, at })`：変わる繰り返しごとに、`since` ≤ `from` ならその場で書き換え（曜日で分けるときは最初のまとまりが元の ID）、後なら元の `to` を `since` の前日にして新しい ID の繰り返しを足す。曜日で担当が違えば担当ごとのまとまり（`weekdays`・`dayTimes`・`usualStarts` をその曜日の分だけ）に分ける。`since` 以降・伝えていない日の、その繰り返しの保存した回は：この回だけ変えた回は残して新しい繰り返しの ID に付け直す、標準と同じ回は消す、ピンの回と `temp`＝`'pin'` の一時の変更は新しい繰り返しの回にしてピンを立てて残す、`'drop'` の一時の変更は消す。`since` は `earliestSince` より前なら `earliestSince`。`standard`＝`{ at, presetId: scorePresetId, from: since, weeks }`。変わる行が無ければ同じデータ
+- `earliestSince(data, today)`（今日と、最後に伝えた日（伝えた日へ動かした回は元の日も数える）の翌日の遅い方）・`defaultSince(data, period, today)`
+- `temporaryChanges(data, rows, since)`：`since` 以降・伝えていない日の、変わる繰り返しの保存した回で、この回だけ日時などを変えた回（取り消し・`edited`・日付の移動）でもピンでもなく、新しい標準（担当と、計算した回の開始）と違う回。期間の中の回は標準の元なので、担当が同じなら開始の違いは見ない（違う担当だけ数える）
+- `registerStandard(data, period, since, today, { newId, temp, at })`：変わる繰り返しごとに、`since` ≤ `from` ならその場で書き換え（曜日で分けるときは最初のまとまりが元の ID）、後なら元の `to` を `since` の前日にして新しい ID の繰り返しを足す（隔週・3週・4週ごとは `since` 以降で最初に回のある日を開始日にして周期をずらさない）。`since` より前に終わる繰り返しは書き換えない。曜日で担当が違えば担当ごとのまとまり（`weekdays`・`dayTimes`・`usualStarts` をその曜日の分だけ）に分ける。`since` 以降・伝えていない日の、その繰り返しの保存した回は：この回だけ変えた回は残して新しい繰り返しの ID に付け直す、標準と同じ回（ピンでない）は消す、ピンの回と `temp`＝`'pin'` の一時の変更は新しい繰り返しの回にしてピンを立てて残す、`'drop'` の一時の変更は消す。`since` は `earliestSince` より前なら `earliestSince`。`standard`＝`{ at, presetId: scorePresetId, from: since, weeks }`。変わる行が無ければ同じデータ
 - `registerCounts`・`proposalStats(days, toPoints)`・`bestIndex(stats)`・`hasStandard(data)`
 
 #### 確かめ

@@ -15,6 +15,7 @@ import { jstDate } from '../domain/time';
 import { normalize, score, toHundred } from '../evaluate';
 import { attempt, newId, own, WEEKDAY_LABELS } from '../lib/common';
 import { pinsOf, writeRoutes } from '../lib/dayPlan';
+import { type DayInputs, dayInputsOf } from '../lib/monthBatch';
 import { setScorePreset } from '../lib/presets';
 import {
   bestIndex,
@@ -42,9 +43,12 @@ import { useDemoData } from '../store';
 import './settings.css';
 
 /** 1日の提案（作ったときの訪問を持ち、今と違えば書かない） */
-type ProposalDay = StandardDay & { visits: readonly Visit[] };
+type ProposalDay = StandardDay & { visits: readonly Visit[]; inputs: DayInputs };
 /** プリセットごとの提案 */
 type Proposal = { presetId: string; days: ProposalDay[]; done: boolean };
+
+/** dayInputsOf の refs のうち条件（d.rules）の位置（書くときに点数の基準を替えるので比べない） */
+const RULES_REF = 2;
 
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 
@@ -52,7 +56,10 @@ const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 function fresh(d: DemoData, day: ProposalDay): boolean {
   if (own(d.snapshots, day.date)) return false;
   const now = visitsOn(d, day.date);
-  return now.length === day.visits.length && now.every((v, k) => v === day.visits[k]);
+  if (now.length !== day.visits.length || !now.every((v, k) => v === day.visits[k])) return false;
+  // 欠勤・稼働時間・人・条件などの入力が変わっていれば書かない（月の AI で組むと同じ判定。条件は書くときに替えるので見ない）
+  const inp = dayInputsOf(d, day.date);
+  return inp.day === day.inputs.day && inp.refs.every((r, k) => k === RULES_REF || r === day.inputs.refs[k]);
 }
 
 /** 期間の作る日：今日以降・伝えていない、計算に入る訪問のある日 */
@@ -126,7 +133,7 @@ export default function StandardPage() {
           ctl.stop = started.stop;
           const res = await started.promise;
           ctl.stop = null;
-          prop.days.push({ date, problem: p, routes: res.routes, visits });
+          prop.days.push({ date, problem: p, routes: res.routes, visits, inputs: dayInputsOf(d, date) });
           setProposals(out.map((x) => ({ ...x, days: [...x.days] })));
         }
         prop.done = !ctl.stopped;
@@ -200,7 +207,7 @@ export default function StandardPage() {
   const minSince = earliestSince(data, today);
   const [sinceIn, setSinceIn] = useState<string | null>(null);
   const since = sinceIn !== null && sinceIn >= minSince ? sinceIn : defaultSince(data, period, today);
-  const temps = useMemo(() => temporaryChanges(data, rows, since), [data, rows, since]);
+  const temps = useMemo(() => temporaryChanges(data, rows, since, period), [data, rows, since, period]);
   const [temp, setTemp] = useState<TemporaryChoice>('pin');
   const [showSame, setShowSame] = useState(false);
   const register = async () => {
@@ -238,7 +245,7 @@ export default function StandardPage() {
       />
       <p className="sub" data-testid="standard-now">
         {std
-          ? `標準：${md(std.from)}から・考え方「${stdPreset?.name ?? '消したプリセット'}」・${std.weeks}週の周期（${md(new Date(std.at).toISOString().slice(0, 10))}に登録）`
+          ? `標準：${md(std.from)}から・考え方「${stdPreset?.name ?? '消したプリセット'}」・${std.weeks}週の周期（${md(jstDate(std.at))}に登録）`
           : 'まだ標準を登録していません'}
       </p>
       <ol className="standard-steps stack" data-testid="standard-steps">

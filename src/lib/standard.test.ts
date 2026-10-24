@@ -4,7 +4,7 @@ import type { DemoData } from '../contracts/data';
 import type { Pattern, Visit } from '../contracts/documents';
 import { client, makeData, staff } from '../matching/fixtures';
 import { findVisit, visitOf, visitsOn } from '../patterns';
-import { aiPinsOf, standardPinsOf } from './dayPlan';
+import { aiPinsOf, dayProblemOf, routesOf, standardPinsOf, writeRoutes } from './dayPlan';
 import {
   bestIndex,
   cycleWeeks,
@@ -161,7 +161,7 @@ describe('registerStandard', () => {
     });
     const d = { ...d0, visits: [...base, temp, pinned, edited] };
     const rows = standardDiff(d, period);
-    expect(temporaryChanges(d, rows, MON).map((t) => t.visitId)).toEqual([temp.id]);
+    expect(temporaryChanges(d, rows, MON, period).map((t) => t.visitId)).toEqual([temp.id]);
     const kept = registerStandard(d, period, MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
     const np = kept.patterns.find((p) => p.from === MON)!;
     const byDate = (x: DemoData, date: string) => visitsOn(x, date)[0]!;
@@ -203,6 +203,58 @@ describe('標準のピン（PRD D352）', () => {
     const withSaved = { ...d, visits: [v] };
     expect(standardPinsOf(withSaved, MON, visitsOn(withSaved, MON))).toEqual({});
     expect(aiPinsOf(withSaved, MON, visitsOn(withSaved, MON))).toEqual({ [v.id]: 's2' });
+  });
+});
+
+describe('レビューで見つかった場合', () => {
+  it('隔週は回のある週から始め、周期をずらさない', () => {
+    // 隔週・月曜・10/5 から：回は 10/5・10/19・11/2
+    const d0 = data({ patterns: [pattern({ weekdays: [1], everyWeeks: 2, from: '2026-10-05' })] });
+    const period = standardPeriod(d0, TODAY);
+    expect(period).toMatchObject({ from: MON, weeks: 2 });
+    const d = { ...d0, visits: [saved(d0, '2026-10-19', { staffId: 's2' })] };
+    const out = registerStandard(d, period, MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
+    const np = out.patterns.find((p) => p.usualStaffId === 's2')!;
+    expect(np.from).toBe('2026-10-19');
+    const on = (date: string) => visitsOn(out, date).map((v) => v.staffId);
+    expect(on('2026-10-12')).toEqual([]);
+    expect(on('2026-10-19')).toEqual(['s2']);
+    expect(on('2026-10-26')).toEqual([]);
+    expect(on('2026-11-02')).toEqual(['s2']);
+  });
+  it('いつからより前に終わる繰り返しは書き換えない', () => {
+    const d0 = data({ patterns: [pattern({ to: '2026-10-21' })] });
+    const d = { ...d0, visits: [saved(d0, MON, { staffId: 's2' }), saved(d0, WED, { staffId: 's2' })] };
+    const out = registerStandard(d, standardPeriod(d, TODAY, 2), '2026-10-26', TODAY, {
+      newId: ids,
+      temp: 'pin',
+      at: 1,
+    });
+    expect(out).toBe(d);
+  });
+  it('標準と同じピンの回はピンのまま残す', () => {
+    const d0 = data();
+    const d = {
+      ...d0,
+      visits: [saved(d0, MON, { staffId: 's2', pinned: true }), saved(d0, WED, { staffId: 's2' })],
+    };
+    const out = registerStandard(d, standardPeriod(d, TODAY), MON, TODAY, { newId: ids, temp: 'pin', at: 1 });
+    expect(visitsOn(out, MON)[0]).toMatchObject({ staffId: 's2', pinned: true });
+    expect(visitsOn(out, WED)[0]).toMatchObject({ staffId: 's2', pinned: false });
+  });
+  it('伝えた日へ動かした回の元の日より前は、いつからに選べない', () => {
+    const d0 = data();
+    const movedVisit = saved(d0, WED, { date: MON, pattern: { id: 'p1', date: WED, edited: true } });
+    const d = { ...d0, visits: [movedVisit], snapshots: { [MON]: { date: MON, at: 0, visits: [] } } };
+    expect(earliestSince(d, TODAY)).toBe('2026-10-15');
+  });
+  it('AI の提案を反映して保存した回も、担当が標準のままなら標準のピン', () => {
+    const d = data();
+    const p = dayProblemOf(d, MON)!;
+    const written = writeRoutes(d, MON, p, { s1: [`${MON}_p1`] });
+    expect(written.visits).toHaveLength(1);
+    expect(standardPinsOf(written, MON, visitsOn(written, MON))).toEqual({ [`${MON}_p1`]: 's1' });
+    expect(routesOf(p, visitsOn(written, MON))).toEqual({ s1: [`${MON}_p1`] });
   });
 });
 
