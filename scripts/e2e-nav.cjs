@@ -232,7 +232,7 @@ async function menu(page) {
     h,
   );
   check(
-    (await page.locator('.app-header select[aria-label="日付"]').inputValue()) === TODAY,
+    (await page.locator('.date-switch select[aria-label="日付"]').inputValue()) === TODAY,
     '欠勤・キャンセル：今日の日付を選ぶ',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'nav-wide-absence.png') });
@@ -675,7 +675,7 @@ async function mobile(page) {
  * 今の表示では何もしない。「欠勤」は今日の日の予定で欠勤・キャンセルの欄を開く（印は付けない）
  */
 async function scheduleTab(page) {
-  const sel = page.locator('.app-header select[aria-label="日付"]');
+  const sel = page.locator('.date-switch select[aria-label="日付"]');
   const tab = (name) => page.getByTestId('bottom-tab').filter({ hasText: new RegExp(`^${name}$`) });
   const active = async () => page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts();
   // 比較から「予定」：まだどの表示も開いていない（読み直した）ので日の予定
@@ -700,9 +700,13 @@ async function scheduleTab(page) {
   await page.locator('h1').filter({ hasText: '週の予定' }).waitFor({ timeout: 10000 });
   check(true, '「予定」のタブ：最後に開いた表示（週の予定）を開く');
   // 「欠勤」：ほかの日を選んでいても今日の日の予定で欠勤・キャンセルの欄
-  const other = (await sel.locator('option').evaluateAll((os) => os.map((o) => o.value))).find((v) => v !== TODAY);
-  await sel.selectOption(other);
+  // 週の予定には日付の選択が無いので（ナビの行は週を選ぶ。PRD D347）、次の週へ送って選んでいる日付を今日から外す
+  await page.getByRole('button', { name: '次の週' }).click();
   await settle(page, 150);
+  check(
+    (await page.locator('.app-shell').getAttribute('data-date')) !== TODAY,
+    '「欠勤」のタブの前：次の週へ送って今日でない日を選ぶ',
+  );
   await tab('欠勤').click();
   await page.getByTestId('sudden-panel').waitFor({ timeout: 15000 });
   check(
@@ -845,9 +849,15 @@ async function screen1366(page) {
   check(side.fits && side.bottom <= side.vh, '1366×768：左のメニューの最後の項目まで巻かずに見える（PRD D270）', side);
   const shown = [];
   const hidden = [];
-  for (const h of ['/plan', '/week', '/month', '/compare', '/workload', '/availability']) {
+  for (const h of ['/compare', '/workload', '/availability']) {
     await open(page, h);
     if ((await page.locator('.app-header .date-switch').count()) !== 1) shown.push(h);
+  }
+  // 日・週・月の予定は画面の中のナビの行で送る（PRD D347）
+  for (const h of ['/plan', '/week', '/month']) {
+    await open(page, h);
+    if ((await page.locator('.app-header .date-switch').count()) !== 0) hidden.push(h);
+    if ((await page.getByTestId('sched-nav').count()) !== 1) shown.push(`${h}（ナビの行）`);
   }
   for (const h of [
     '/home',
@@ -866,7 +876,7 @@ async function screen1366(page) {
   }
   check(
     shown.length === 0 && hidden.length === 0,
-    '上の帯の日付の選択は日・週・月・比較・勤務の見込み・勤務時間（シフト）だけ（PRD D267）',
+    '上の帯の日付の選択は比較・勤務の見込み・勤務時間（シフト）だけ、日・週・月はナビの行（PRD D267・D347）',
     { 出ない: shown, 出る: hidden },
   );
   // 日付を選んでから日付の無い画面へ移り、戻っても同じ日付

@@ -191,11 +191,14 @@ describe('tabClick（下のタブ・メニューを押したとき）', () => {
   });
 });
 
-describe('showsDateSwitch（PRD D267）', () => {
-  it('日付で中身が変わる画面だけ日付の選択を出す', () => {
-    for (const p of ['/plan', '/schedule', '/week', '/month', '/compare', '/workload', '/availability'])
-      expect(showsDateSwitch(p)).toBe(true);
+describe('showsDateSwitch（PRD D267・D347）', () => {
+  it('日付で中身が変わる画面だけ日付の選択を出す（予定の3画面は画面の中のナビの行）', () => {
+    for (const p of ['/compare', '/workload', '/availability']) expect(showsDateSwitch(p)).toBe(true);
     for (const p of [
+      '/plan',
+      '/schedule',
+      '/week',
+      '/month',
       '/home',
       '/vacancy',
       '/clients',

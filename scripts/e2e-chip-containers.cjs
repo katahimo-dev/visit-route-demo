@@ -667,6 +667,8 @@ async function weekClients(page) {
     return;
   }
   const to = later[0];
+  // 行を画面のまんなかへ巻く（画面の端だと同じ行の落とし先のマスが画面の外に出る。上のナビの行で本体が下がった。PRD D347）
+  await cell.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   const sh = await dragOver(
     page,
     src,

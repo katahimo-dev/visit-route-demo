@@ -13,10 +13,17 @@
 - 見出しの右のボタンは上下 9px（`.page-actions .btn:not(.btn-small)`）で、見出しの段を低くする
 - 狭い画面では右の `.page-actions` が題名の下へ折り返す（`flex-wrap`。題名は `min-width: 200px`）
 
-#### `components/ViewSwitch.tsx`（予定の［月｜週｜日］。PRD D59・D237）
+#### `components/ScheduleNav.tsx`（予定の上のナビの行。PRD D347。ADR-0060）
 
-- 月・週・日の予定の `PageHeader` の `nav` に渡し、題名の下のタブにする。`nav.view-switch`（`aria-label`「予定の表示の切り替え」）の中は `Link`（role=tablist・tab にしない。押すと画面が移るリンクのナビ）
-- 今の画面は `aria-current="page"`・太字・朱の下線 3px（`.view-switch-item.is-on`。色だけに頼らない）。タブの行の下に1px の線（`.page-tabs`）
+- 月・週・日の予定の `PageHeader`（`nav` は渡さない）のすぐ下に置く1行（`div.sched-nav`・data-testid `sched-nav`・`data-view`＝`month|week|day`）。並びは ①「今日」（`btn btn-small`・`sched-today`。今日を含む期間を見ていれば押せない）②`.period-switch`（‹ `icon-btn`・期間の `select`・› `icon-btn`。日だけ `.date-switch` も付ける）③`ViewSwitch` ④右に `actions`（`.sched-nav-actions`。日：状態の印・メールで送る・確定、週：メールで送る・まとめて確定、月：無し）
+- `ScheduleNav({ current, today, prev, next, picker, actions? })`：`prev`・`next` は `{ label, onClick, disabled? }`（読み上げ名「前の月／次の月」「前の週／次の週」「前の日／次の日」）、`picker` は `{ label, value, options, onChange, testId? }`（月「月を選ぶ」・`month-title`、週「週を選ぶ」・`week-title`、日「日付」）。`value` が `options` に無ければ末尾に足す
+- 送る単位は表示している単位。月はデータの日付の月、週はデータの日付を含む週の月曜、日はデータの日付から選ぶ。日の ‹ › はデータの日付の端で押せない
+- 861px 以上は `position: sticky; top: var(--header-h)`（z-index 15・半透明の地とぼかし）。高さ `--sched-nav-h`（64px。`:root:has(.sched-nav)`。ほかは 0）を、巻いて止める要素の `scroll-margin-top` に足す。860px 以下は貼り付けず折り返す（600px 以下は右寄せをやめる）。印刷では出さない
+
+#### `components/ViewSwitch.tsx`（予定の［月｜週｜日］。PRD D59・D237・D347）
+
+- `ScheduleNav` の中に置く（`.sched-nav .view-switch` で枠の切り替えの見た目。今の画面は地の色と太字）。`nav.view-switch`（`aria-label`「予定の表示の切り替え」）の中は `Link`（role=tablist・tab にしない。押すと画面が移るリンクのナビ）
+- 今の画面は `aria-current="page"`・太字・地の色（`.view-switch-item.is-on`。色だけに頼らない）。ナビの行の下に1px の線（`.sched-nav`）。ナビの行の外（設定のタブ・人の画面のタブ）では今までどおり朱の下線 3px
 
 #### ボタンの3段（`styles.css`）
 

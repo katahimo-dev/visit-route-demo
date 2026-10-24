@@ -53,11 +53,20 @@ async function header(page) {
     (await page.getByTestId('screen-name').innerText()) === '日の予定',
     '上の帯：日の予定（予定のグループは項目名だけ）',
   );
-  check(await visible(page.locator('.app-header .date-switch')), '上の帯：日付の切り替えがある');
+  check(
+    (await page.locator('.app-header .date-switch').count()) === 0 &&
+      (await visible(page.locator('[data-testid="sched-nav"] .date-switch'))),
+    '日付の切り替えは上の帯でなくナビの行（PRD D347）',
+  );
   check(!(await visible(page.locator('.side-nav'))), '左のメニューは出さない');
   const hb = await page.locator('.app-header').boundingBox();
-  const db = await page.locator('.app-header .date-switch').boundingBox();
-  check(db.x + db.width <= 390 && hb.width <= 390, '上の帯が画面の幅に収まる（横に巻かない）', { hb, db });
+  const nb = await page.getByTestId('sched-nav').boundingBox();
+  const db = await page.locator('[data-testid="sched-nav"] .date-switch').boundingBox();
+  check(
+    db.x + db.width <= 390 && hb.width <= 390 && nb.x + nb.width <= 390,
+    '上の帯とナビの行が画面の幅に収まる（横に巻かない）',
+    { hb, nb, db },
+  );
   check(!(await visible(page.getByTestId('cmdk-open'))), '上の帯に「探す」は出さない（下のタブ。PRD D336）');
   check(
     (await page.locator('.app-header [data-testid="menu-btn"]').count()) === 0 &&

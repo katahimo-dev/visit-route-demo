@@ -34,6 +34,8 @@
   --primary-soft: #fde7e1;
   /* 上の帯（.app-header。sticky）の高さ。この下に貼り付く・スクロールで止める要素が使う */
   --header-h: 72px;
+  /* 予定の上のナビの行（.sched-nav。861px 以上は sticky）の高さ。無い画面・狭い画面では 0 */
+  --sched-nav-h: 0px;
   /* スマホの下のタブ（.bottom-tabs）の高さ。広い画面では 0。浮いている部品・本文の下の余白がこれを避ける（PRD D134） */
   --bottom-tabs-h: 0px;
   /* Mac は丸ゴシック、Windows は BIZ UDPゴシック・游ゴシック（Regular は細いので Medium を先）・メイリオ
@@ -1323,6 +1325,104 @@ tbody tr:hover td {
 @media (max-width: 600px) {
   .settings-tabs .view-switch-item {
     padding: 5px 10px;
+  }
+}
+/* 予定の上のナビの行（components/ScheduleNav.tsx。PRD D347。ADR-0060）：日・週・月で同じ1行。
+   左に［今日］［‹ 期間 ▾ ›］、まんなかに［月｜週｜日］、右に状態の印と確定のボタン。861px 以上は上の帯の下に貼り付く */
+.sched-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.sched-nav-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.period-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.period-switch select {
+  width: auto;
+  padding: 5px 6px;
+  border: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  background: transparent;
+}
+/* ［月｜週｜日］はナビの行の中では枠の切り替え（.segmented と同じ見た目）。今の画面は aria-current と太字・地の色 */
+.sched-nav .view-switch {
+  margin: 0;
+  gap: 0;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.sched-nav .view-switch-item {
+  padding: 6px 14px;
+  border-bottom: 0;
+  background: var(--card);
+}
+.sched-nav .view-switch-item + .view-switch-item {
+  border-left: 2px solid var(--line);
+}
+.sched-nav .view-switch-item:hover {
+  border-bottom-color: transparent;
+  background: var(--soft);
+}
+.sched-nav .view-switch-item.is-on {
+  background: #fde3dd;
+}
+.sched-nav .view-switch-item:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+.sched-nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.sched-nav-actions .btn:not(.btn-small) {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+@media screen and (min-width: 861px) {
+  /* 貼り付く行の高さ。この下に巻いて止める要素（scroll-margin-top）が上の帯と合わせて避ける */
+  :root:has(.sched-nav) {
+    --sched-nav-h: 64px;
+  }
+  .sched-nav {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 15;
+    margin-top: -8px;
+    background: rgba(247, 241, 236, 0.92);
+    backdrop-filter: blur(8px);
+  }
+}
+@media (max-width: 600px) {
+  .sched-nav {
+    gap: 8px;
+  }
+  .sched-nav-actions {
+    margin-left: 0;
+  }
+}
+@media print {
+  .sched-nav {
+    display: none;
   }
 }
 .section-title {

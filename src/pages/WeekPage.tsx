@@ -1,15 +1,4 @@
-import {
-  CalendarClock,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Lock,
-  Mail,
-  RefreshCw,
-  Sparkles,
-  TriangleAlert,
-  X,
-} from 'lucide-react';
+import { CalendarClock, Check, Lock, Mail, RefreshCw, Sparkles, TriangleAlert, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDay } from '../app/day';
@@ -21,12 +10,12 @@ import { EmptyNext } from '../components/EmptyNext';
 import { LoadRowsSample } from '../components/loadBar';
 import { PersonButton } from '../components/PersonPopover';
 import { PickChips, QualificationBadges } from '../components/PickChips';
+import { ScheduleNav } from '../components/ScheduleNav';
 import { StaffMark } from '../components/StaffMark';
 import { RangeProposalBand, ScheduleToolbar, SelectionBar, useScopeItems } from '../components/scheduleParts';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, WithIcon } from '../components/ui';
-import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
@@ -159,7 +148,7 @@ const NO_TYPE_COLOR = '#cfc4bb';
 const initialOf = (name: string) => Array.from(name.trim())[0] ?? '？';
 
 export default function WeekPage() {
-  const { date, setDate } = useDay();
+  const { date, setDate, dates: dataDates } = useDay();
   const { data, update, compileInput, staff, staffById, clients, clientById, colorOfStaff } = useDayModel(date);
   const terms = data.org.terms;
   const toast = useToast();
@@ -171,6 +160,14 @@ export default function WeekPage() {
   const anchor = isDate(rawD) ? rawD : date;
   const dates = useMemo(() => weekDates(anchor), [anchor]);
   const start = dates[0]!;
+  /** 週を選ぶ欄の週（データの日付を含む週の月曜。PRD D347） */
+  const weekOptions = useMemo(() => {
+    const starts = [...new Set([...dataDates, start].map((d) => weekDates(d)[0]!))].sort();
+    return starts.map((s) => {
+      const w = weekDates(s);
+      return { value: s, text: `${dateText(s)}〜${dateText(w[6]!)}` };
+    });
+  }, [dataDates, start]);
   /** 狭い画面（600px 以下）。?view=・?by= が無ければ〈スタッフ〉×曜日の表（PRD D222。URL には書かない） */
   const narrow = useMedia(COMPACT_QUERY);
   /** 表示（PRD D188。1つの切り替え。URL は今までの ?view=・?by= のまま。lib/weekView） */
@@ -680,10 +677,23 @@ export default function WeekPage() {
   return (
     <div className="stack week-page">
       <PageHeader
-        nav={<ViewSwitch current="week" />}
         icon={CalendarClock}
         title="週の予定"
         lead={`この週の担当を見て、日時をドラッグでずらし、${terms.staff}に伝えたら確定します`}
+      />
+      {/* 上のナビの行（日・週・月で同じ。PRD D347。ADR-0060）。週送り・今日・［月｜週｜日］・メールで送る・確定 */}
+      <ScheduleNav
+        current="week"
+        today={{ onClick: () => goWeek(today), disabled: dates.includes(today) }}
+        prev={{ label: '前の週', onClick: () => goWeek(addDays(anchor, -7)) }}
+        next={{ label: '次の週', onClick: () => goWeek(addDays(anchor, 7)) }}
+        picker={{
+          label: '週を選ぶ',
+          value: start,
+          options: weekOptions,
+          onChange: (d) => goWeek(d),
+          testId: 'week-title',
+        }}
         actions={
           next.kind === 'none' && !mailOn ? undefined : (
             <>
@@ -749,23 +759,6 @@ export default function WeekPage() {
 
       <div className="card stack week-head">
         <div className="row week-nav">
-          <button type="button" className="icon-btn" aria-label="前の週" onClick={() => goWeek(addDays(anchor, -7))}>
-            <ChevronLeft size={18} aria-hidden="true" />
-          </button>
-          <h2 className="week-title" data-testid="week-title">
-            {dateText(start)}〜{dateText(dates[6]!)}
-          </h2>
-          <button type="button" className="icon-btn" aria-label="次の週" onClick={() => goWeek(addDays(anchor, 7))}>
-            <ChevronRight size={18} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={dates.includes(today)}
-            onClick={() => goWeek(today)}
-          >
-            今週
-          </button>
           <fieldset className="segmented week-views" aria-label="表示" data-testid="week-views">
             {WEEK_VIEWS.map((v) => (
               <button
