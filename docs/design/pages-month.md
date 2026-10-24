@@ -17,7 +17,7 @@
 
 #### 並び
 
-1. 見出し：`lead`「一月の担当を見て、担当なしや要対応を手で直し、確定します」。すぐ下にナビの行（`ScheduleNav`。PRD D347）：［変更｜確認］（モード。PRD D348）・「今日」・‹ 月を選ぶ欄（`month-title`）›・［月｜週｜日］
+1. 見出し：`lead`「一月の担当を見て、担当なしや要対応を手で直し、確定します」。すぐ下にナビの行（`ScheduleNav`。PRD D347）：「今日」・‹ 月を選ぶ欄（`month-title`）›・［月｜週｜日］
 2. 進み具合の帯 `ProgressBand`（見出しの下。予定の3画面で月だけ。PRD D332。次の一手は主ボタン、`onOp` で要対応・確定していない日は画面の中の右の欄を開き、「担当を AI で組む」は担当を組むの画面 `/arrange?ym=` へ移る。ADR-0063）
 3. 操作の行（`ScheduleToolbar zoom="month"`。日・週・月で同じ並び。PRD D327。「AI で組む ▾」は無い。ADR-0063。[pages-common.md](pages-common.md) の「予定の共通の部品」）：欠勤・キャンセルを登録（`sudden-open`。選んでいる日（今日より前なら今日）の日の予定で欄を開くリンク）・元に戻す・やり直す・見せ方の切り替え `month-layout`（`fieldset.segmented`・`aria-label="月の見せ方"`・`aria-pressed`・ボタンの `data-layout`。印刷では出さない）・「その他 ▾」（`MenuButton`・`month-more`）
 4. 範囲の提案の帯（`RangeProposalBand`。担当を組むの画面で組んだ提案）
