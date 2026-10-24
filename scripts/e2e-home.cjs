@@ -1,7 +1,8 @@
 // ホーム「今日やること」（PRD D141〜D145。ADR-0025・ADR-0053）を本物のブラウザで確かめる：
-// 起動（#/・知らない URL）でホームへ、ほかの画面の URL（人の画面など）はそのまま、カードの並び（作業の順。PRD D263：要対応 →
-// 月ごとに担当を AI で組む → 確定していない日（今月 → 来月）→ 今日）・先頭の「まずこれ」・同じ月の「担当なしの訪問がある日 N日」は
-// 組むカードだけ、今日のカードで日の画面（選んでいる日付が今日）、「担当を AI で組む」のカードで月の画面の欄が開き ?do= が消える、
+// 起動（#/・知らない URL）でホームへ、ほかの画面の URL（人の画面など）はそのまま、カードの並び（作業の順。PRD D263：
+// 組み方の標準（未登録のとき）→ 要対応 → 月ごとに担当なしの訪問を組む → 確定していない日（今月 → 来月）→ 今日）・先頭の「まずこれ」・
+// 同じ月の「担当なしの訪問がある日 N日」は組むカードだけ、今日のカードで日の画面（選んでいる日付が今日）、
+// 「N月の担当なしの訪問を組む」のカードで担当を組むの画面（#/arrange?ym=。ADR-0063）が開く、
 // 月の画面の ?do=attention・?do=unconfirmed で右の欄、確定したらホームの今日のカードが「確定済み」に、
 // いつでもの入口（欠勤・空き状況・探す）、何も無いデータで「今日の準備はできています」、
 // メニューの先頭の「ホーム」（1400px）、スマホ（390×844）で縦に並び横にはみ出さない・先頭に欠勤・キャンセルの入口（PRD D247）・下のタブの「ホーム」、印刷で出さない。
@@ -148,7 +149,7 @@ async function reset(page) {
 /** 担当なしの訪問がある月（作るカードの月。無ければ null） */
 function createMonthOf(list) {
   const t = list.find((x) => x.kind === 'create');
-  const m = t && /^(\d+)月の担当を AI で組む$/.exec(t.title);
+  const m = t && /^(\d+)月の担当なしの訪問を組む$/.exec(t.title);
   if (!m) return null;
   const mm = Number(m[1]);
   const y = Number(YM.slice(0, 4)) + (mm < Number(YM.slice(5, 7)) ? 1 : 0);
@@ -172,7 +173,7 @@ async function firstState(page) {
   const todayText = await page.locator('[data-kind="today"] .sub').innerText();
   check(/^訪問 \d+件・担当 \d+人・要対応 \d+件/.test(todayText), '今日の要約：訪問・担当・要対応', todayText);
   const create = createMonthOf(list);
-  check(!!create, '担当なしの日が多い月の「N月の担当を AI で組む」のカード', list);
+  check(!!create, '担当なしの日が多い月の「N月の担当なしの訪問を組む」のカード', list);
   check(
     !(await page
       .getByTestId('home-ready')
@@ -183,18 +184,16 @@ async function firstState(page) {
   await page.screenshot({ path: path.join(OUT_DIR, 'home-first.png'), fullPage: true });
 
   if (create) {
-    // 「担当を AI で組む」→ 月の画面で欄が開き、?do= は消える
+    // 「N月の担当なしの訪問を組む」→ 担当を組むの画面（その月の範囲。ADR-0063）
     await page.getByTestId('home-task').filter({ hasText: create.title }).click();
-    await page.waitForURL(/#\/month/);
-    const panel = page.getByRole('dialog', { name: create.title });
-    await panel.waitFor({ timeout: 10000 });
-    check(true, '担当を AI で組むの欄が開く');
+    await page.waitForURL(/#\/arrange/);
+    await page.getByTestId('arrange-start').waitFor({ timeout: 30000 });
     await settle(page, 300);
-    // カードは変更のモードで開く（?mode=change は残る。PRD D348）
     check(
-      hashOf(page) === `#/month?ym=${create.ym}&mode=change` &&
-        (await page.getByTestId('mode-switch').getAttribute('data-mode')) === 'change',
-      '月の予定：?ym= の月を変更のモードで、?do= は消える',
+      hashOf(page) === `#/arrange?ym=${create.ym}` &&
+        (await page.locator('h1').innerText()) === '担当を組む' &&
+        (await page.getByTestId('arrange-month').inputValue()) === create.ym,
+      '担当なしの月のカード：担当を組むの画面がその月の範囲で開く',
       hashOf(page),
     );
     await page.goBack();

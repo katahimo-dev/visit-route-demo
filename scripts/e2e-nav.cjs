@@ -1,10 +1,12 @@
 // メニューの用途ごとの並びとコマンドパレット（PRD D178〜D183・D273〜D275。ADR-0027・0045）を本物のブラウザで確かめる：
-// メニュー（最上位5項目の並びと予定・人・設定の子の項目（PRD D349・ADR-0061）・同じ名前が無い・aria-current（月・週・日・比較は
-// 予定の子のうち選んでいるモードの子、設定のタブは設定の子、勤務の見込みは人の子「勤務時間（シフト）」。親は has-current）、
+// メニュー（最上位6項目の並びと予定・予定を組む・人・設定の子の項目（PRD D349・ADR-0063）・同じ名前が無い・aria-current（月・週は
+// 予定の子「◯月の予定」、日は「今日の予定」、担当を組む・比較は予定を組むの子「担当を組む」、組み方の標準は「組み方の標準」、
+// 設定のタブは設定の子、勤務の見込みは人の子「勤務時間（シフト）」。親は has-current。畳むと親に印）、
 // 欠勤・キャンセルは今日の日の画面の欄を開く）・
-// 「予定」「設定」は最後に開いた表示・タブ・設定のタブ・メニューから外した画面の入口・画面の見出しが画面の名前とそろう）、
+// 「予定」「設定」は最後に開いた表示・タブ・設定のタブ（5つ）・予定を組むのタブ（担当を組む・組み方の標準）・メニューから外した画面の入口
+// （勤務の見込み、提案を比べるは担当を組むの「案を比べる」）・画面の見出しが画面の名前とそろう）、
 // コマンドパレット（Ctrl+K で開く・role=dialog・aria-modal・combobox と listbox（aria-activedescendant）・裏の inert とスクロールのロック・
-// 打つと絞り込む・↑↓（端で回る）・Enter で移る・操作（欠勤・キャンセル）・人の名前（よみ・カタカナ）でその人の画面・Esc とフォーカスの戻り・
+// 打つと絞り込む・↑↓（端で回る）・Enter で移る・操作（欠勤・キャンセル・N月の担当を組む）・人の名前（よみ・カタカナ）でその人の画面・Esc とフォーカスの戻り・
 // 背景で閉じる・Tab が中で回る・Ctrl+K で閉じる・入力欄の中の Ctrl+K（入れた文字はそのまま・閉じたら入力欄へ）・右の欄が開いているときは開かない）、
 // 390px（上の帯のボタンから開ける・収まる・上の帯の名前・引き出しの並び・下のタブ（ホーム・予定・欠勤・探す・メニュー）。「探す」は下のタブ）、印刷で出さない、300人×60人で打つたびの速さ。
 //
@@ -74,21 +76,15 @@ async function seedPeople(page) {
 /** ひらがな → カタカナ */
 const toKata = (s) => s.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
 
-// メニューの最上位5項目（PRD D349。ADR-0061）：見出しは無い。予定・人・設定は畳める子の項目を持つ
+// メニューの最上位6項目（PRD D349。ADR-0063）：見出しは無い。予定・予定を組む・人・設定は畳める子の項目を持つ
 const GROUPS = [];
-const LABELS = ['ホーム', '予定', '空き状況', '人', '設定'];
-/** 子の項目の key（予定はモードの入口、人は人のタブ、設定は設定のタブ） */
+const LABELS = ['ホーム', '予定', '予定を組む', '空き状況', '人', '設定'];
+/** 子の項目の key（予定は今日の予定・◯月の予定・欠勤・キャンセル、予定を組むは担当を組む・組み方の標準、人は人のタブ、設定は設定のタブ） */
 const KIDS = {
-  schedule: ['mode-check', 'mode-month', 'absence'],
+  schedule: ['today', 'month-view', 'absence'],
+  arrange: ['arrange:assign', 'arrange:standard'],
   people: ['people:/clients', 'people:/staff', 'people:/compat', 'people:/availability'],
-  settings: [
-    'settings:/standard',
-    'settings:/types',
-    'settings:/items',
-    'settings:/rules',
-    'settings:/settings',
-    'settings:/data',
-  ],
+  settings: ['settings:/types', 'settings:/items', 'settings:/rules', 'settings:/settings', 'settings:/data'],
 };
 /** メニューの最上位の項目（子の無い項目と、畳める親の行の項目） */
 const TOP_LINKS =
@@ -101,12 +97,18 @@ const HEADINGS = [
   ['/month', '月の予定'],
   ['/week', '週の予定'],
   ['/plan', '日の予定'],
+  ['/arrange', '担当を組む'],
+  ['/standard', '組み方の標準'],
   ['/availability', '勤務時間（シフト）'],
   ['/workload', '勤務の見込み'],
 ];
-/** 設定のタブ（PRD D275）：URL と見出し */
+/** 予定を組むのタブ（ADR-0063）：URL・見出し・メニューの子の key（比較は担当を組むの続き） */
+const ARRANGE = [
+  ['/arrange', '担当を組む', 'arrange:assign'],
+  ['/standard', '組み方の標準', 'arrange:standard'],
+];
+/** 設定のタブ（PRD D275。組み方の標準は予定を組むのタブ。ADR-0063）：URL と見出し */
 const SETTINGS = [
-  ['/standard', '組み方の標準'],
   ['/types', '訪問の種類'],
   ['/items', '特性の項目'],
   ['/rules', '条件の重み'],
@@ -119,11 +121,11 @@ async function menu(page) {
   await open(page, '/home');
   const side = page.locator('.side-nav');
   const titles = await side.locator('h2.nav-group-title').allInnerTexts();
-  check(JSON.stringify(titles) === JSON.stringify(GROUPS), 'メニュー：グループの見出しは無い（最上位5項目）', titles);
+  check(JSON.stringify(titles) === JSON.stringify(GROUPS), 'メニュー：グループの見出しは無い（最上位6項目）', titles);
   const labels = await side.locator(TOP_LINKS).evaluateAll(labelsOf);
   check(
     JSON.stringify(labels) === JSON.stringify(LABELS),
-    'メニュー：最上位5項目の並びと名前（予定・人・設定は子の項目を持つ親）',
+    'メニュー：最上位6項目の並びと名前（予定・予定を組む・人・設定は子の項目を持つ親）',
     labels,
   );
   // 子の項目（畳んでいる親は ▾ で開いてから読む。開け閉めは aria-expanded）
@@ -133,7 +135,7 @@ async function menu(page) {
     kids[k] = await side
       .locator(`[data-parent="${k}"] > .nav-sub > .nav-link.nav-child`)
       .evaluateAll((els) => els.map((e) => e.dataset.key));
-  check(JSON.stringify(kids) === JSON.stringify(KIDS), 'メニュー：予定・人・設定の子の項目の並び', kids);
+  check(JSON.stringify(kids) === JSON.stringify(KIDS), 'メニュー：予定・予定を組む・人・設定の子の項目の並び', kids);
   const all = await side.getByTestId('nav-link').evaluateAll(labelsOf);
   check(new Set(all).size === all.length, 'メニュー：同じ名前の項目が無い（子の項目も含めて）', all);
   const current = () => side.locator('[aria-current="page"]').evaluateAll((els) => els.map((e) => e.dataset.key));
@@ -142,36 +144,56 @@ async function menu(page) {
     (await side.locator(`[data-parent="${key}"] > .nav-parent-row > .nav-link.has-current`).count()) === 1;
   const link = (name) => side.getByTestId('nav-link').filter({ hasText: new RegExp(`^${name}$`) });
   check(JSON.stringify(await current()) === '["home"]', 'aria-current：ホーム');
-  // 予定：月・週・日・比較のどれでも、予定の子のうち選んでいるモードの子に印（e2e の既定は変更。月・週・比較の変更は「◯月の予定」。PRD D349）
-  for (const hash of ['/month', '/week', '/compare']) {
+  // 予定：月・週は予定の子「◯月の予定」に印（PRD D349。ADR-0063）
+  for (const hash of ['/month', '/week']) {
     await open(page, hash);
     check(
-      JSON.stringify(await current()) === '["mode-month"]' && (await parentOn('schedule')),
-      `aria-current：${hash} は予定の子の変更のモード（◯月の予定）。親の「予定」は has-current`,
+      JSON.stringify(await current()) === '["month-view"]' && (await parentOn('schedule')),
+      `aria-current：${hash} は予定の子「◯月の予定」。親の「予定」は has-current`,
       await current(),
     );
   }
+  // 比較は担当を組むの続き：予定を組むの子「担当を組む」に印
+  await open(page, '/compare');
+  check(
+    JSON.stringify(await current()) === '["arrange:assign"]' &&
+      (await parentOn('arrange')) &&
+      !(await parentOn('schedule')),
+    'aria-current：/compare は予定を組むの子「担当を組む」。親の「予定を組む」は has-current',
+    await current(),
+  );
   check((await page.locator('h1').innerText()).trim() === '提案を比べる', '比較の見出しは「提案を比べる」');
   await open(page, '/plan', '[data-testid="sudden-open"]');
   check(
-    JSON.stringify(await current()) === '["absence"]' && (await parentOn('schedule')),
-    'aria-current：日の予定は選んでいるモードの子だけ（変更＝欠勤・キャンセル。親の「予定」には付けない）',
+    JSON.stringify(await current()) === '["today"]' && (await parentOn('schedule')),
+    'aria-current：日の予定は予定の子「今日の予定」（親の「予定」は has-current）',
     await current(),
   );
-  // モードを切り替えると印もその子へ移る（日の予定：確認＝今日の予定、変更＝欠勤・キャンセル）。終わったら変更へ戻す
-  for (const [m, key] of [
-    ['check', 'mode-check'],
-    ['change', 'absence'],
-  ]) {
-    await page.locator(`[data-testid="mode-switch"] [data-mode="${m}"]`).click();
-    await settle(page, 200);
-    check(JSON.stringify(await current()) === JSON.stringify([key]), `aria-current：モード ${m} では予定の子 ${key}`);
-  }
+  check((await page.getByTestId('mode-switch').count()) === 0, '日の予定に予定のモードの切り替えは無い（ADR-0063）');
   // 予定を畳むと印は親の「予定」へ（開き直すと子へ戻る）
   await side.locator('[data-parent="schedule"] [data-testid="nav-toggle"]').click();
   check(JSON.stringify(await current()) === '["schedule"]', 'aria-current：予定を畳むと親の「予定」に印');
   await side.locator('[data-parent="schedule"] [data-testid="nav-toggle"]').click();
-  check(JSON.stringify(await current()) === '["absence"]', 'aria-current：予定を開き直すと子に印が戻る');
+  check(JSON.stringify(await current()) === '["today"]', 'aria-current：予定を開き直すと子に印が戻る');
+  // 予定を組むのタブ（ADR-0063）：担当を組む・組み方の標準・比較（担当を組むの続き）で見出しの下にタブ、今のタブに aria-current
+  for (const [hash, h1, key] of [...ARRANGE, ['/compare', '担当を組む', 'arrange:assign']]) {
+    await open(page, hash, '[data-testid="arrange-tabs"]');
+    const tabs = page.getByTestId('arrange-tabs');
+    const names = (await tabs.locator('a').allInnerTexts()).map((x) => x.trim());
+    const on = (await tabs.locator('[aria-current="page"]').allInnerTexts()).map((x) => x.trim());
+    check(
+      JSON.stringify(names) === JSON.stringify(ARRANGE.map((a) => a[1])) &&
+        JSON.stringify(on) === JSON.stringify([h1]) &&
+        JSON.stringify(await current()) === JSON.stringify([key]) &&
+        (await parentOn('arrange')),
+      `予定を組むのタブ ${hash}：2つのタブ（担当を組む・組み方の標準）で「${h1}」に aria-current、メニューは予定を組むの子 ${key}`,
+      { names, on, current: await current() },
+    );
+  }
+  await open(page, '/arrange', '[data-testid="arrange-tabs"]');
+  await page.getByTestId('arrange-tabs').locator('a').filter({ hasText: '組み方の標準' }).click();
+  await page.locator('h1').filter({ hasText: '組み方の標準' }).waitFor();
+  check(hashOf(page) === '#/standard', '予定を組むのタブ「組み方の標準」で #/standard', hashOf(page));
   for (const [hash, h1] of HEADINGS) {
     await open(page, hash);
     check((await page.locator('h1').innerText()).trim() === h1, `見出しは画面の名前「${h1}」`);
@@ -222,8 +244,8 @@ async function menu(page) {
     const tabs = page.getByTestId('settings-tabs');
     const on = await tabs.locator('[aria-current="page"]').allInnerTexts();
     check(
-      (await tabs.locator('a').count()) === 6 && on.length === 1 && on[0].trim() === h1,
-      `設定のタブ ${hash}：6つのタブで今のタブに aria-current`,
+      (await tabs.locator('a').count()) === 5 && on.length === 1 && on[0].trim() === h1,
+      `設定のタブ ${hash}：5つのタブで今のタブに aria-current`,
       on,
     );
   }
@@ -272,7 +294,7 @@ async function menu(page) {
   await link('ホーム').click();
   await page.locator('h1').filter({ hasText: 'ホーム' }).waitFor();
   check((await link('人').getAttribute('href')) === '#/compat', '「人」は最後に開いた人のタブ（相性）');
-  // メニューから外した画面の入口が残る（PRD D275）：勤務の見込みは勤務時間（シフト）と月の予定の「その他 ▾」、提案を比べるは日の予定の「AI で組む ▾」
+  // メニューから外した画面の入口が残る（PRD D275）：勤務の見込みは勤務時間（シフト）と月の予定の「その他 ▾」、提案を比べるは担当を組むの「案を比べる」（ADR-0063）
   await open(page, '/availability', '[data-testid="avail-workload"]');
   await page.getByTestId('avail-workload').click();
   await page.locator('h1').filter({ hasText: '勤務の見込み' }).waitFor();
@@ -282,13 +304,17 @@ async function menu(page) {
   await page.getByTestId('month-workload').click();
   await page.locator('h1').filter({ hasText: '勤務の見込み' }).waitFor();
   check(hashOf(page).startsWith('#/workload'), '月の予定の「その他 ▾」の「勤務の見込み」で勤務の見込み', hashOf(page));
-  await open(page, '/plan', '[data-testid="plan-menu"]');
-  await page.getByTestId('plan-menu').click();
+  await open(page, '/plan', '[data-testid="sudden-open"]');
+  check((await page.getByTestId('plan-menu').count()) === 0, '日の予定に「AI で組む ▾」は無い（ADR-0063）');
+  await open(page, `/arrange?ym=${TODAY.slice(0, 7)}`, '[data-testid="arrange-compare-open"]');
+  const cmpDate = await page.getByTestId('arrange-compare-date').inputValue();
+  await page.getByTestId('arrange-compare-open').click();
+  await page.locator('h1').filter({ hasText: '提案を比べる' }).waitFor({ timeout: 30000 });
   check(
-    (await page.getByTestId('plan-menu-list').getByText('2つの提案を比べる').count()) === 1,
-    '日の予定の「AI で組む ▾」に「2つの提案を比べる」（比較の入口。メニュー・パレットには無い）',
+    hashOf(page) === `#/compare?date=${cmpDate}`,
+    '担当を組むの「案を比べる」で提案を比べる（比較の入口。メニュー・パレットには無い）',
+    hashOf(page),
   );
-  await page.keyboard.press('Escape');
   // 欠勤・キャンセル：今日の日の画面で欄が開き、?do=・?date= は消える
   await open(page, '/week');
   await side.getByTestId('nav-link').filter({ hasText: '欠勤・キャンセル' }).click();
@@ -451,7 +477,7 @@ async function keyboard(page) {
   check((await page.evaluate(() => window.__ctrlK)) === true, '開かないときも Ctrl+K の既定の動きは止める');
   await page.keyboard.press('Escape');
 
-  // 操作：今月の担当を AI で組む（月の画面の ?do=batch）
+  // 操作：今月の担当を組む（担当を組むの画面のその月の範囲。ADR-0063）
   await open(page, '/home');
   await page.keyboard.press('Control+k');
   await palette(page).waitFor();
@@ -459,14 +485,19 @@ async function keyboard(page) {
   list = await listed(page);
   const m = Number(TODAY.slice(5, 7));
   check(
-    list[0]?.label === `${m}月の担当を AI で組む`,
-    '操作：今月の担当を AI で組むが先頭',
+    list[0]?.label === `${m}月の担当を組む`,
+    '操作：今月の「N月の担当を組む」が先頭',
     list.map((o) => o.label),
   );
   await page.keyboard.press('Enter');
-  await page.waitForURL(/#\/month/);
-  await settle(page, 600);
-  check(!hashOf(page).includes('do='), '月の予定へ移り ?do= は月の予定が消す', hashOf(page));
+  await page.waitForURL(/#\/arrange/);
+  await page.getByTestId('arrange-start').waitFor({ timeout: 30000 });
+  check(
+    hashOf(page) === `#/arrange?ym=${TODAY.slice(0, 7)}` &&
+      (await page.locator('h1').innerText()).trim() === '担当を組む',
+    '「N月の担当を組む」で担当を組むの画面（その月の範囲）へ移る',
+    hashOf(page),
+  );
   // 呼び方のよみで画面を引く
   await open(page, '/home');
   await page.keyboard.press('Control+k');
@@ -715,7 +746,7 @@ async function mobile(page) {
   await d.waitFor();
   const titles = await d.locator('h2.nav-group-title').allInnerTexts();
   const labels = await d.locator(TOP_LINKS).evaluateAll(labelsOf);
-  // 人の画面（〈利用者さん〉一覧）なので人は開いていて、子の項目も同じ並び
+  // 人の画面（〈利用者さん〉一覧）なので人は開いていて、子の項目も同じ並び（予定・予定を組むも既定で開く）
   const people = await d
     .locator('[data-parent="people"] > .nav-sub > .nav-link.nav-child')
     .evaluateAll((els) => els.map((e) => e.dataset.key));
@@ -737,8 +768,8 @@ async function mobile(page) {
   await open(page, '/compare');
   check(
     (await page.getByTestId('screen-name').innerText()) === '提案を比べる' &&
-      JSON.stringify(await page.locator('.bottom-tab.active[aria-current="page"]').allInnerTexts()) === '["予定"]',
-    '390px：比較は上の帯「提案を比べる」、下のタブは「予定」',
+      (await page.locator('.bottom-tab.active[aria-current="page"]').count()) === 0,
+    '390px：比較は上の帯「提案を比べる」、下のタブに印は無い（比較は予定を組むの続きで、予定を組むは下のタブに無い）',
   );
   await scheduleTab(page);
   await page.setViewportSize({ width: 1400, height: 1000 });

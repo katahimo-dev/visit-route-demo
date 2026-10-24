@@ -2,17 +2,18 @@
 // すべて入（初期データ。e2e は初回もすべて入に固定。PRD D276）でメニューの最後に「設定」（タブに管理者設定・データ）、管理者設定の画面（見出し・説明・ひな形の4つ・
 // 「いまの設定」とカスタムの印・20のスイッチの role=switch・aria-checked・名前・説明）。
 // ひな形の4通り（基本・月次予定・現場共有・すべては管理者設定で適用する（独自の確認ダイアログに入る機能・切れる機能、取り消すと変わらない）、
-// 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目（相性の機能の入り切りだけで変わる）・設定のタブ・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
+// 労務・契約管理は別のタブで localStorage を書き換えて作る）ごとに、メニューの項目（6項目。空き状況・欠勤・キャンセルの入り切りで変わる。
+// 予定の子は今日の予定・◯月の予定・欠勤・キャンセル、予定を組むの子は担当を組む・組み方の標準。ADR-0063）・設定のタブ・下のタブ・パレットの画面と操作・ホームのいつでもの入口・
 // 切った機能の URL（`?do=` も）を開くとホームへ移り（replace）、ホームの上に閉じられる知らせと管理者設定へのリンク、
 // スイッチ（押すとすぐ保存・トースト・依存先が切なら押せず理由）、390px で横にはみ出さない、印刷で知らせ・メニューを出さない。
 // 末尾の /・大文字の URL（#/vacancy/・#/Vacancy・#/month/print/）もホームへ移す、390px で空き状況を切っても下のタブ5つが全幅を等分、
-// 稼働の見込み・欠勤・キャンセル・月の印刷・提案を比べるを切ると、月の要対応の行・月のボタン・日の画面の拘束の帯と「AI で組む ▾」・
-// 稼働時間の右の欄にそこへ移るリンク・ボタンが無い。
-// その2（PRD D211・D213〜D215）：ひな形の4通りごとに画面の中の入口（日の画面の欠勤・キャンセル・メール・条件を調整する・
-// プリセットの数・点数の理由、〈利用者さん〉の欄の段階の選択・紹介元・担当できる人・休み・決まりごと・住所の検索・絞り込みのチップ、
+// 稼働の見込み・欠勤・キャンセル・月の印刷・提案を比べるを切ると、月の要対応の行・月のボタン・日の画面の拘束の帯・担当を組むの「案を比べる」・
+// 稼働時間の右の欄にそこへ移るリンク・ボタンが無い（日の予定に「AI で組む ▾」は無い。ADR-0063）。
+// その2（PRD D211・D213〜D215）：ひな形の4通りごとに画面の中の入口（日の画面の欠勤・キャンセル・メール・点数の理由、
+// 担当を組むの「AI で組む」・考え方（プリセット）の数・「案を比べる」、〈利用者さん〉の欄の段階の選択・紹介元・担当できる人・休み・決まりごと・住所の検索・絞り込みのチップ、
 // 〈利用者さん〉の画面の紹介元・決まりごと・休みのタブ、〈スタッフ〉の画面のメールアドレス・最終勤務日、月の「休みを入れる」・印刷、空き状況の案内文、
 // データの Excel、稼働の見込みの交通費の単価）。相性を切るときの独自の確認（件数と効き方。取り消すと変わらない）と、
-// 相性×の組は AI で組むと担当にならず、切ると担当に入ること（別のタブで×を書き、日の画面で AI で組んで反映する）。
+// 相性×の組は AI で組むと担当にならず、切ると担当に入ること（別のタブで×を書き、担当を組むの日の範囲（#/arrange?date=）で AI で組んで反映する）。
 // レビューの反映：希望休のまとめ入力を切っても月の「担当が休み」の印は出す、欠勤・キャンセルを切ると稼働時間の凡例で登録の場所を出さない、
 // 切ったまま保存してもデータが残る（段階「契約」・担当できる人・〈スタッフ〉のメールアドレス・毎月のパターンの repeat と monthWeeks）。
 //
@@ -75,8 +76,10 @@ const TEMPLATE_LABEL = {
 };
 const asFeatures = (on) => Object.fromEntries(FEATURE_IDS.map((id) => [id, on.includes(id)]));
 
-/** メニューの最上位（5項目。予定・人・設定は畳める子の項目を持つ。PRD D349。ADR-0061） */
-const MENU = ['ホーム', '予定', '空き状況', '人', '設定'];
+/** メニューの最上位（6項目。予定・予定を組む・人・設定は畳める子の項目を持つ。PRD D349。ADR-0063） */
+const MENU = ['ホーム', '予定', '予定を組む', '空き状況', '人', '設定'];
+/** 予定を組むの子の項目の key（担当を組む・組み方の標準。どのひな形でも同じ。ADR-0063） */
+const ARRANGE_KIDS = ['arrange:assign', 'arrange:standard'];
 /** 人の子の項目（人のタブ。相性はどのひな形でも入） */
 const PEOPLE_KIDS = ['利用者さん', 'スタッフ', '相性', '勤務時間（シフト）'];
 /** すべて入の画面の一覧（パレットの画面。メニューから外した画面も1つずつ。PRD D273・D275） */
@@ -85,13 +88,14 @@ const ALL_SCREENS = [
   '月の予定',
   '週の予定',
   '日の予定',
+  '担当を組む',
+  '組み方の標準',
   '空き状況',
   '利用者さん一覧',
   'スタッフ一覧',
   '相性',
   '勤務時間（シフト）',
   '勤務の見込み',
-  '組み方の標準',
   '訪問の種類',
   '特性の項目',
   '条件の重み',
@@ -106,14 +110,14 @@ const HIDDEN = {
   all: [],
 };
 const screensFor = (t) => ALL_SCREENS.filter((l) => !HIDDEN[t].includes(l));
-/** 設定のタブ（ひな形ごと。条件の重み・特性の項目は rules を切ると出さない） */
-const SETTINGS_TABS = ['組み方の標準', '訪問の種類', '特性の項目', '条件の重み', '管理者設定', 'データ'];
+/** 設定のタブ（ひな形ごと。条件の重み・特性の項目は rules を切ると出さない。組み方の標準は予定を組むのタブ。ADR-0063） */
+const SETTINGS_TABS = ['訪問の種類', '特性の項目', '条件の重み', '管理者設定', 'データ'];
 const settingsTabsFor = (t) => SETTINGS_TABS.filter((l) => !HIDDEN[t].includes(l));
 /** メニューの最上位は空き状況を切ると減る */
 const menuFor = (on) => MENU.filter((l) => l !== '空き状況' || on.includes('vacancy'));
 /** 予定の子の項目の key（今日の予定・◯月の予定・欠勤・キャンセル。欠勤・キャンセルは sudden を切ると出さない） */
 const scheduleKidsFor = (on) =>
-  ['mode-check', 'mode-month', 'absence'].filter((k) => k !== 'absence' || on.includes('sudden'));
+  ['today', 'month-view', 'absence'].filter((k) => k !== 'absence' || on.includes('sudden'));
 /** 下のタブ（ホーム・予定・欠勤。「探す」「メニュー」はボタン。空き状況は下のタブに無い。PRD D336） */
 const tabsFor = (on) => ['ホーム', '予定', '欠勤'].filter((l) => l !== '欠勤' || on.includes('sudden'));
 
@@ -163,6 +167,7 @@ async function menu(page, root = '.side-nav') {
       .locator(TOP_LINKS)
       .evaluateAll((els) => els.map((el) => el.querySelector(':scope > span:not(.nav-badge)')?.textContent ?? '')),
     schedule: (kids.schedule ?? []).map((k) => k.key),
+    arrange: (kids.arrange ?? []).map((k) => k.key),
     people: (kids.people ?? []).map((k) => k.label),
     settings: (kids.settings ?? []).map((k) => k.label),
   };
@@ -225,10 +230,13 @@ async function allOn(page) {
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
   check(m.labels.at(-1) === '設定', 'すべて入：メニューの最後は「設定」', m.labels);
-  check(same(m.labels, MENU), 'すべて入：メニューの最上位は5項目', m.labels);
+  check(same(m.labels, MENU), 'すべて入：メニューの最上位は6項目', m.labels);
   check(
-    same(m.schedule, scheduleKidsFor(FEATURE_IDS)) && same(m.people, PEOPLE_KIDS) && same(m.settings, SETTINGS_TABS),
-    'すべて入：予定・人・設定の子の項目',
+    same(m.schedule, scheduleKidsFor(FEATURE_IDS)) &&
+      same(m.arrange, ARRANGE_KIDS) &&
+      same(m.people, PEOPLE_KIDS) &&
+      same(m.settings, SETTINGS_TABS),
+    'すべて入：予定・予定を組む・人・設定の子の項目',
     m,
   );
   check(
@@ -365,8 +373,11 @@ async function checkTemplate(page, t) {
   const m = await menu(page);
   check(same(m.labels, menuFor(on)), `${label}：メニューの最上位の項目（空き状況の入り切りだけで変わる）`, m.labels);
   check(
-    same(m.schedule, scheduleKidsFor(on)) && same(m.people, PEOPLE_KIDS) && same(m.settings, settingsTabsFor(t)),
-    `${label}：メニューの子の項目（予定は欠勤・キャンセルの入り切り、設定は設定のタブと同じ）`,
+    same(m.schedule, scheduleKidsFor(on)) &&
+      same(m.arrange, ARRANGE_KIDS) &&
+      same(m.people, PEOPLE_KIDS) &&
+      same(m.settings, settingsTabsFor(t)),
+    `${label}：メニューの子の項目（予定は欠勤・キャンセルの入り切り、予定を組むは2つ、設定は設定のタブと同じ）`,
     m,
   );
   const tabs = await page.getByTestId('bottom-tab').allInnerTexts();
@@ -504,6 +515,7 @@ async function mobile(page, dlg) {
   check(
     same(drawer.labels, menuFor(TEMPLATE_ON.basic)) &&
       same(drawer.schedule, scheduleKidsFor(TEMPLATE_ON.basic)) &&
+      same(drawer.arrange, ARRANGE_KIDS) &&
       same(drawer.people, PEOPLE_KIDS) &&
       same(drawer.settings, settingsTabsFor('basic')),
     '390px：引き出しもメニューと同じ項目（最上位と子）',
@@ -562,10 +574,10 @@ async function pathVariants(page, dlg, ctx) {
   await open(page, '/home', '[data-testid="home-tasks"]');
   const m = await menu(page);
   check(
-    same(m.labels, ['ホーム', '予定', '人', '設定']) &&
-      same(m.schedule, ['mode-check', 'mode-month']) &&
+    same(m.labels, ['ホーム', '予定', '予定を組む', '人', '設定']) &&
+      same(m.schedule, ['today', 'month-view']) &&
       m.titles.length === 0,
-    '欠勤・キャンセルと空き状況を切るとメニューの最上位は4項目・予定の子に欠勤・キャンセルが無い（見出しは無い）',
+    '欠勤・キャンセルと空き状況を切るとメニューの最上位は5項目・予定の子に欠勤・キャンセルが無い（見出しは無い）',
     m,
   );
   await applyTemplate(page, dlg, 'all');
@@ -662,9 +674,9 @@ async function deadEnds(page, dlg, ctx) {
     );
   }
 
-  // 日の画面：稼働の見込みを切ると拘束の上限の帯ごと出さない（その2。リンク・ボタンも無い）。「AI で組む ▾」に比べるが無い
+  // 日の画面：稼働の見込みを切ると拘束の上限の帯ごと出さない（その2。リンク・ボタンも無い）
   await open(page, `/plan?date=${second}`, '.date-switch select');
-  await page.getByTestId('plan-menu').waitFor({ timeout: 60000 });
+  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
   await settle(page, 500);
   check(
     (await page.getByTestId('band-over-span').count()) === 0 &&
@@ -672,14 +684,18 @@ async function deadEnds(page, dlg, ctx) {
       (await page.locator('.app-main a[href*="workload"]').count()) === 0,
     '日の予定：勤務の見込みを切ると拘束の上限の帯と勤務の見込みへのリンクを出さない',
   );
-  await page.getByTestId('plan-menu').click();
-  await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
   check(
-    (await page.getByTestId('plan-menu-compare').count()) === 0 &&
-      (await page.getByTestId('ai-scope-day').count()) === 1,
-    '日の予定：「AI で組む ▾」に比べるを出さない（組むは残る）',
+    (await page.getByTestId('plan-menu').count()) === 0,
+    '日の予定：「AI で組む ▾」は無い（AI で組むのは担当を組む。ADR-0063）',
   );
-  await page.keyboard.press('Escape');
+  // 担当を組む：提案を比べるを切ると「案を比べる」の欄を出さない（AI で組むは残る）
+  await open(page, `/arrange?date=${second}`, '[data-testid="arrange-start"]');
+  check(
+    (await page.getByTestId('arrange-compare').count()) === 0 &&
+      (await page.getByTestId('arrange-compare-open').count()) === 0 &&
+      (await page.getByTestId('arrange-start').count()) === 1,
+    '担当を組む：提案を比べるを切ると「案を比べる」を出さない（「AI で組む」は残る）',
+  );
 
   // 稼働時間の右の欄：欠勤・キャンセルの欄へのリンクが無い
   const data = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)), STORAGE_KEY);
@@ -732,7 +748,6 @@ async function insideEntries(page, dlg, ctx) {
 
     // 日の画面（今日）
     await open(page, `/plan?date=${TODAY}`, '.date-switch select');
-    await page.getByTestId('plan-menu').waitFor({ timeout: 60000 });
     await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
     await settle(page, 500);
     check((await count('sudden-open')) === (on('sudden') ? 1 : 0), `${label}：日の予定の「欠勤・キャンセルを登録」`);
@@ -743,14 +758,18 @@ async function insideEntries(page, dlg, ctx) {
     // 予定をメールで送るは見出しの主ボタンの隣（PRD D306）
     check((await count('day-mail')) === (on('mail') ? 1 : 0), `${label}：日の予定の見出しの「予定をメールで送る」`);
     if (!on('rules')) check((await count('plan-reason')) === 0, `${label}：点数の横の理由を出さない`);
-    await page.getByTestId('plan-menu').click();
-    await page.getByTestId('plan-menu-list').waitFor({ timeout: 5000 });
-    check((await count('ai-scope-day')) === 1, `${label}：「AI で組む」`);
-    const presets = await count('plan-menu-preset');
-    // 点数の基準のほかのプリセットで試す（条件の重みを切ると出さない）
-    check(presets === (on('rules') ? data.presets.length - 1 : 0), `${label}：プリセットの数`, presets);
-    check((await count('plan-menu-compare')) === (on('compare') ? 1 : 0), `${label}：「プリセットの提案を比べる」`);
-    await page.keyboard.press('Escape');
+    check((await count('plan-menu')) === 0, `${label}：日の予定に「AI で組む ▾」は無い`);
+    // 担当を組む（日の範囲）：AI で組む・考え方（プリセット）・案を比べる（ADR-0063）
+    await open(page, `/arrange?date=${TODAY}`, '[data-testid="arrange-start"]');
+    check((await count('arrange-start')) === 1, `${label}：担当を組むの「AI で組む」`);
+    // 点数の基準のほかのプリセットで組める（条件の重みを切ると考え方の欄ごと出さない）
+    const presets = await page.locator('[data-testid="arrange-preset"] option:not([value=""])').count();
+    check(presets === (on('rules') ? data.presets.length - 1 : 0), `${label}：考え方（プリセット）の数`, presets);
+    check(
+      (await count('arrange-preset')) === (on('rules') ? 1 : 0),
+      `${label}：考え方（プリセット）の欄（条件の重みの入り切り）`,
+    );
+    check((await count('arrange-compare-open')) === (on('compare') ? 1 : 0), `${label}：担当を組むの「案を比べる」`);
 
     // 〈利用者さん〉：その人の画面の節（PRD D308）
     const client = data.clients.find((c) => c.referrer.name) ?? data.clients[0];
@@ -854,7 +873,7 @@ async function insideEntries(page, dlg, ctx) {
     if (t === 'basic') {
       await page.setViewportSize({ width: 390, height: 844 });
       await open(page, `/plan?date=${TODAY}`, '.date-switch select');
-      await page.getByTestId('plan-menu').waitFor({ timeout: 60000 });
+      await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
       const w = await page.evaluate(() => document.documentElement.scrollWidth);
       check(w <= 390, '390px・基本：日の予定が横にはみ出さない', w);
       await page.screenshot({ path: path.join(OUT_DIR, 'inside-basic-mobile.png') });
@@ -968,15 +987,18 @@ async function keepData(page, dlg, ctx) {
   await applyTemplate(page, dlg, 'all');
 }
 
-/** その日の日の画面で「AI で組む」の提案を出して反映する（版2：提案は反映するまで担当を変えない。ADR-0053） */
+/**
+ * 担当を組む（#/arrange?date=。日の範囲）で「AI で組む」の提案を出して反映する（版2：提案は反映するまで担当を変えない。
+ * ADR-0053・ADR-0063）。担当の入った訪問も組み直すので、組む日は「伝えていない日をすべて組み直す」
+ */
 async function proposeAndApply(page, date) {
-  await open(page, `/plan?date=${date}`, '.date-switch select');
-  await page.getByTestId('confirm-state').waitFor({ timeout: 60000 });
-  await page.getByTestId('plan-menu').click();
-  await page.getByTestId('ai-scope-day').click();
-  await page.getByTestId('proposal-apply').waitFor({ timeout: 90000 });
-  await page.getByTestId('proposal-apply').click();
-  await page.getByTestId('proposal-band').waitFor({ state: 'detached', timeout: 10000 });
+  await open(page, `/arrange?date=${date}`, '[data-testid="arrange-start"]');
+  await page.getByTestId('arrange-mode-all').check();
+  await page.getByTestId('arrange-start').click();
+  const band = page.locator('[data-testid="proposal-band"][data-kind="range"]');
+  await band.getByTestId('proposal-apply').waitFor({ timeout: 90000 });
+  await band.getByTestId('proposal-apply').click();
+  await band.waitFor({ state: 'detached', timeout: 10000 });
   await settle(page, 600);
 }
 
