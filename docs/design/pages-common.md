@@ -1,6 +1,6 @@
 # 画面共通の部品
 
-> この部品のファイル：`src/components/ui.tsx`・`FieldError.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/components/visitParts.tsx`（`visitParts.css`）、`src/components/ScheduleNav.tsx`・`useScheduleMode.ts`、`src/lib/scheduleMode.ts`・`visitLook.ts`・`visitSelect.ts`・`visitDrop.ts`・`visitKeys.ts`・`multiEdit.ts`・`panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0036・0037・0045・0056・0057。関連 PRD：D91〜D101・D122〜D126・D173〜D177・D193〜D197・D201〜D209・D226・D236〜D238・D240〜D242・D250〜D252・D276・D277・D339〜D343・D348。
+> この部品のファイル：`src/components/ui.tsx`・`FieldError.tsx`・`usePanelFoot.ts`・`floating.ts`・`MapDock.tsx`・`Toast.tsx`・`DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx`・`Term.tsx`・`EmptyNext.tsx`・`Tour.tsx`・`mailParts.tsx`・`mapsLinks.tsx`、`src/pages/mailPanels.tsx`、`src/components/visitParts.tsx`（`visitParts.css`）、`src/components/ScheduleNav.tsx`・`useScheduleMode.ts`、`src/lib/scheduleMode.ts`・`visitLook.ts`・`visitSelect.ts`・`visitDrop.ts`・`visitKeys.ts`・`multiEdit.ts`・`panelFit.ts`・`personPopover.ts`・`glossary.ts`・`emptyGuide.ts`・`tour.ts`・`links.ts`・`mailto.ts`・`mail.ts`・`mapsLink.ts`。関連 ADR：0017・0018・0022 追記・0025 追記・0031・0036・0037・0045・0056・0057・0061。関連 PRD：D91〜D101・D122〜D126・D173〜D177・D193〜D197・D201〜D209・D226・D236〜D238・D240〜D242・D250〜D252・D276・D277・D339〜D343・D348。
 > 画面全体の決まり・メニュー・確認ダイアログ・機能の入り切りは [pages.md](pages.md)。
 
 ### 画面の見出しとボタンの3段（ADR-0036。PRD D236〜D238）
@@ -124,7 +124,7 @@
 
 - `useScheduleMode()`：`{ mode, chosen, tools, setMode }`。`mode` は選んだモード、選んでいなければ `defaultMode`（来月の担当なしの日を数えるのは選んでいないときだけ）。`chosen` は選んだか、`tools` は `modeTools(mode)`。メニューの子の印・ナビの行・操作の行・札の動かし方が同じ値を読む（`useSyncExternalStore`）
 - 選んだモードは `sessionStorage` の key `visit-route-demo:schedule-mode`（`MODE_KEY`）に覚える（タブを閉じれば消える。読めない値は選んでいないとみなす）。`chooseMode(mode)` が書き、読んでいる部品を描き直す。`sessionStorage` が使えなければ、そのタブの間だけ変数に覚える
-- e2e：`scripts/lib/env.cjs` の `presetMode` が、文脈を開くたびに（`addInitScript`）key が空なら `change` を入れる（日付で既定が揺れないように。既定を確かめる段は `''` を入れる。`scripts/e2e-modes.cjs`）
+- e2e：`scripts/lib/env.cjs` の `presetMode` が、文脈を開くたびに（`addInitScript`）key が未設定なら `change` を入れる（日付で既定が揺れないように。既定を確かめる段は `''` を入れる。`scripts/e2e-modes.cjs`）
 
 ### 訪問の札の共通の部品（`lib/visitLook.ts`・`visitSelect.ts`・`visitDrop.ts`・`components/visitParts.tsx`・`visitParts.css`。PRD D339〜D342。ADR-0056・ADR-0057）
 
