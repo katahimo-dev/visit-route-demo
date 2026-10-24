@@ -91,6 +91,7 @@ const ALL_SCREENS = [
   '相性',
   '勤務時間（シフト）',
   '勤務の見込み',
+  '組み方の標準',
   '訪問の種類',
   '特性の項目',
   '条件の重み',
@@ -106,13 +107,13 @@ const HIDDEN = {
 };
 const screensFor = (t) => ALL_SCREENS.filter((l) => !HIDDEN[t].includes(l));
 /** 設定のタブ（ひな形ごと。条件の重み・特性の項目は rules を切ると出さない） */
-const SETTINGS_TABS = ['訪問の種類', '特性の項目', '条件の重み', '管理者設定', 'データ'];
+const SETTINGS_TABS = ['組み方の標準', '訪問の種類', '特性の項目', '条件の重み', '管理者設定', 'データ'];
 const settingsTabsFor = (t) => SETTINGS_TABS.filter((l) => !HIDDEN[t].includes(l));
 /** メニューの最上位は空き状況を切ると減る */
 const menuFor = (on) => MENU.filter((l) => l !== '空き状況' || on.includes('vacancy'));
-/** 予定の子の項目の key（今日の予定・◯月を組む・欠勤・キャンセル。欠勤・キャンセルは sudden を切ると出さない） */
+/** 予定の子の項目の key（今日の予定・◯月の予定・欠勤・キャンセル。欠勤・キャンセルは sudden を切ると出さない） */
 const scheduleKidsFor = (on) =>
-  ['mode-check', 'mode-plan', 'absence'].filter((k) => k !== 'absence' || on.includes('sudden'));
+  ['mode-check', 'mode-month', 'absence'].filter((k) => k !== 'absence' || on.includes('sudden'));
 /** 下のタブ（ホーム・予定・欠勤。「探す」「メニュー」はボタン。空き状況は下のタブに無い。PRD D336） */
 const tabsFor = (on) => ['ホーム', '予定', '欠勤'].filter((l) => l !== '欠勤' || on.includes('sudden'));
 
@@ -562,7 +563,7 @@ async function pathVariants(page, dlg, ctx) {
   const m = await menu(page);
   check(
     same(m.labels, ['ホーム', '予定', '人', '設定']) &&
-      same(m.schedule, ['mode-check', 'mode-plan']) &&
+      same(m.schedule, ['mode-check', 'mode-month']) &&
       m.titles.length === 0,
     '欠勤・キャンセルと空き状況を切るとメニューの最上位は4項目・予定の子に欠勤・キャンセルが無い（見出しは無い）',
     m,

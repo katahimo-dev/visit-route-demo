@@ -26,7 +26,12 @@ const unassigned = (n: number): Partial<DayStatus> => ({
   needsCare: true,
   issues: new Map(Array.from({ length: n }, (_, i) => [`v${i}`, [{ kind: 'unassigned' as const, label: '担当なし' }]])),
 });
-const data = { absences: [] as Absence[], staff: [] as Staff[] };
+/** 組み方の標準は登録済み（標準のカードは別の段で確かめる） */
+const data = {
+  absences: [] as Absence[],
+  staff: [] as Staff[],
+  standard: { at: 0, presetId: 'standard', from: '2026-10-01', weeks: 1 },
+};
 const TODAY = '2026-10-14';
 const input = (statuses: DayStatus[], months = ['2026-10'], todayStaff = 2, today = TODAY) => ({
   today,
@@ -58,6 +63,15 @@ describe('homeMonths・homeDays', () => {
 });
 
 describe('homeTasks（版2）', () => {
+  it('組み方の標準を登録していなければ先頭に標準のカード（PRD D354）', () => {
+    const r = homeTasks({
+      ...input([st(TODAY, { count: 0, state: 'none' })], ['2026-10'], 0),
+      data: { absences: [], staff: [] },
+    });
+    expect(r.tasks.map((t) => t.kind)).toEqual(['standard', 'today']);
+    expect(r.tasks[0]).toMatchObject({ tone: 'todo', to: '/standard' });
+    expect(r.ready).toBe(false);
+  });
   it('何も無い：今日の訪問は無い知らせだけで、準備はできている', () => {
     const r = homeTasks(input([st(TODAY, { count: 0, state: 'none' })], ['2026-10'], 0));
     expect(r.ready).toBe(true);
@@ -85,7 +99,7 @@ describe('homeTasks（版2）', () => {
     expect(c).toMatchObject({
       tone: 'todo',
       title: '10月の担当を AI で組む',
-      to: '/month?ym=2026-10&do=batch&mode=plan',
+      to: '/month?ym=2026-10&do=batch&mode=change',
     });
     expect(c.detail).toBe('担当なしの訪問がある日 2日');
   });

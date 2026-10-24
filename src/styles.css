@@ -1453,6 +1453,12 @@ tbody tr:hover td {
   margin: -2px 0 0;
   font-size: 0.82rem;
 }
+/* 組み方の標準への入口（ADR-0062）。スマホは見る・取り消すまでなので出さない（訪問を押し下げない） */
+@media (max-width: 600px) {
+  .sched-mode-lead [data-testid="mode-standard-link"] {
+    display: none;
+  }
+}
 /* ［月｜週｜日］はナビの行の中では枠の切り替え（.segmented と同じ見た目）。今の画面は aria-current と太字・地の色 */
 .sched-nav .view-switch {
   margin: 0;

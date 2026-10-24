@@ -83,10 +83,10 @@ async function menu(page) {
   check(
     JSON.stringify(kids) ===
       JSON.stringify({
-        schedule: ['mode-check', 'mode-plan', 'absence'],
+        schedule: ['mode-check', 'mode-month', 'absence'],
         people: ['people:/clients', 'people:/staff', 'people:/compat', 'people:/availability'],
       }),
-    '予定の子は今日の予定・◯月を組む・欠勤・キャンセル、人の子は〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）',
+    '予定の子は今日の予定・◯月の予定・欠勤・キャンセル、人の子は〈利用者さん〉・〈スタッフ〉・相性・勤務時間（シフト）',
     kids,
   );
   check((await page.locator('.side-nav .nav-group-title').count()) === 0, 'メニューにグループの見出しは無い');

@@ -233,7 +233,8 @@ export function moveFollowing(
     p.repeat === 'monthly' ? p.monthWeeks.map((n) => n + shift).filter((n) => n >= 1 && n <= 5) : p.monthWeeks;
   if (p.repeat === 'monthly' && monthWeeks.length === 0) return null;
   const { width: _width, ...fields } = over;
-  const movedRest = { ...base0, ...fields, monthWeeks };
+  // 動かした繰り返しは標準の開始を持たない（時間の約束が変わる。ADR-0062）
+  const movedRest = { ...base0, ...fields, monthWeeks, usualStarts: [] };
   // 動かす回は除いてから分ける
   const visits = d.visits.filter((x) => x.id !== visitId);
   const input = { patterns: d.patterns, visits, clients: d.clients };
@@ -256,7 +257,12 @@ export function moveFollowing(
     split = splitPattern(
       input,
       p.id,
-      { ...base0, weekdays: others, dayTimes: base0.dayTimes.filter((t) => t.weekday !== fromWd) },
+      {
+        ...base0,
+        weekdays: others,
+        dayTimes: base0.dayTimes.filter((t) => t.weekday !== fromWd),
+        usualStarts: (base0.usualStarts ?? []).filter((t) => t.weekday !== fromWd),
+      },
       since,
       today,
       newIds[0],

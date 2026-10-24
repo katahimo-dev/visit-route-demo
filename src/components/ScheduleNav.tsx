@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { type ReactNode, useLayoutEffect, useRef } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { MODE_LABEL, modeLead, parseMode, SCHEDULE_MODES } from '../lib/scheduleMode';
 import { useDemoData } from '../store';
 import { useScheduleMode } from './useScheduleMode';
@@ -48,7 +48,9 @@ export function ScheduleNav({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { mode, setMode } = useScheduleMode();
-  const staffTerm = useDemoData().data.org.terms.staff;
+  const { data } = useDemoData();
+  const staffTerm = data.org.terms.staff;
+  const hasStandard = data.standard !== undefined;
   // ?mode= の付いた URL を開いた・押したら、そのたびに1回そのモードを選ぶ（メニューの同じ項目を押し直しても効くよう、
   // 移るごとの location.key で。描く前に選び、前のモードで一度描かない）
   const [params] = useSearchParams();
@@ -149,6 +151,15 @@ export function ScheduleNav({
       {actions && <div className="sched-nav-actions">{actions}</div>}
       <p className="sched-mode-lead sub" data-testid="mode-lead">
         {modeLead(mode, staffTerm)}
+        {/* 組み方の標準を登録していなければ入口を添える（PRD D348・D354。ADR-0062） */}
+        {!hasStandard && (
+          <>
+            {' '}
+            <Link to="/standard" className="btn btn-small btn-text" data-testid="mode-standard-link">
+              組み方の標準を決める
+            </Link>
+          </>
+        )}
       </p>
     </div>
   );

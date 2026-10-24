@@ -1022,6 +1022,68 @@ describe('〈利用者さん〉の郵便番号の列（PRD D86。ADR-0016）', (
   });
 });
 
+describe('標準の開始（usualStarts。ADR-0062）', () => {
+  const withUsual = (): DemoData => {
+    const d = base();
+    return {
+      ...d,
+      patterns: d.patterns.map((p, i) =>
+        i === 0
+          ? {
+              ...p,
+              weekdays: [1, 3],
+              usualStarts: [
+                { weekday: 1, start: '10:00' },
+                { weekday: 3, start: '11:00' },
+              ],
+            }
+          : p,
+      ),
+    };
+  };
+
+  it('書き出し → 読み込みで同じに戻る（列は「標準の開始」、書式は「月 10:00、水 11:00」）', async () => {
+    const d = withUsual();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await toBuffer(d));
+    const pws = sheet(wb, '定期パターン');
+    expect(pws.getRow(2).getCell(col(pws, '標準の開始')).value).toBe('月 10:00、水 11:00');
+    expect(pws.getRow(3).getCell(col(pws, '標準の開始')).value ?? '').toBe('');
+    const r = ok(await importWorkbook(await toBuffer(d), d));
+    expect(r).toEqual(withoutPlans(d));
+    expect(r.patterns[1]).not.toHaveProperty('usualStarts');
+  });
+
+  it('列が無い古いブックは標準の開始なし（usualStarts を付けない）', async () => {
+    const d = withUsual();
+    const r = ok(
+      await editAndImport(d, (wb) => {
+        const pws = sheet(wb, '定期パターン');
+        pws.spliceColumns(col(pws, '標準の開始'), 1);
+      }),
+    );
+    expect(r.patterns.every((p) => !('usualStarts' in p))).toBe(true);
+  });
+
+  it('読めない値・曜日に無い曜日・同じ曜日が2つは場所付きのエラー', async () => {
+    const d = withUsual();
+    const msg = fail(
+      await editAndImport(d, (wb) => {
+        const pws = sheet(wb, '定期パターン');
+        pws.getRow(2).getCell(col(pws, '標準の開始')).value = '月曜の朝';
+        pws.getRow(3).getCell(col(pws, '曜日')).value = '月';
+        pws.getRow(3).getCell(col(pws, '標準の開始')).value = '木 9:00';
+        pws.getRow(4).getCell(col(pws, '標準の開始')).value = `${'月'} 9:00、月 10:00`;
+      }),
+    );
+    expect(msg).toContain('シート『定期パターン』の 2行目・『標準の開始』：「月曜の朝」は');
+    expect(msg).toContain(
+      'シート『定期パターン』の 3行目・『標準の開始』：「曜日」の列に無い曜日の標準の開始があります',
+    );
+    expect(msg).toContain('シート『定期パターン』の 4行目・『標準の開始』：');
+  });
+});
+
 describe('第N曜日・曜日ごとの時刻・決まりごと・〈利用者さん〉の休み（ADR-0013）', () => {
   const rich = (): DemoData => {
     const d = base();

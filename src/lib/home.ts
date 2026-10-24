@@ -36,7 +36,7 @@ export function homeDays(today: string): string[] {
 export type HomeMonth = { ym: string };
 
 /** カードの種類：要対応・今日の予定・確定していない日・担当を AI で組む */
-export type HomeTaskKind = 'attention' | 'today' | 'confirm' | 'create';
+export type HomeTaskKind = 'standard' | 'attention' | 'today' | 'confirm' | 'create';
 
 /**
  * 次の一手のカード。to は移る先（URL。クエリ付き）、date があれば移る前に選んでいる日付をその日にする（日の画面）。
@@ -58,7 +58,7 @@ export type HomeInput = {
   months: readonly HomeMonth[];
   /** 今日の担当の人数（訪問がある人） */
   todayStaff: number;
-  data: Pick<DemoData, 'absences' | 'staff'>;
+  data: Pick<DemoData, 'absences' | 'staff' | 'standard'>;
   /** 機能の入り切り（切った機能へ向かうカードは出さない。PRD D213。{} ならすべて入） */
   features: Features;
 };
@@ -78,7 +78,7 @@ function target(dates: readonly string[], ym: string, op: 'attention' | 'unconfi
 }
 
 /**
- * 次の一手のカード（PRD D141〜D143・D263）。並びは作業の順：要対応（月ごと）→ 月ごとに「担当を AI で組む → 確定していない日を確認」
+ * 次の一手のカード（PRD D141〜D143・D263）。並びは作業の順：組み方の標準（登録していないときだけ。PRD D354）→ 要対応（月ごと）→ 月ごとに「担当を AI で組む → 確定していない日を確認」
  * （今月 → 来月）→ 今日の予定。先頭の1枚を画面で「まずこれ」と大きく見せる（HomePage）。
  * - 要対応：lib/month の attentionList（月の画面の要対応と同じ件数）
  * - 担当を AI で組む：担当なしの訪問がある日が2日以上ある月（月の「担当を AI で組む」へ）
@@ -121,7 +121,7 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
         tone: 'todo',
         title: `${m}の担当を AI で組む`,
         detail: `担当なしの訪問がある日 ${unassignedDays.length}日`,
-        to: `/month?ym=${ym}&do=batch&mode=plan`,
+        to: `/month?ym=${ym}&do=batch&mode=change`,
       });
     }
     // 確定していない日（訪問があって伝えていない・未連絡の変更のある日）
@@ -145,8 +145,21 @@ export function homeTasks(input: HomeInput): { tasks: HomeTask[]; ready: boolean
       });
     }
   }
+  // 組み方の標準を登録していなければ先頭に（PRD D354。ADR-0062）
+  const standard: HomeTask[] = data.standard
+    ? []
+    : [
+        {
+          kind: 'standard',
+          tone: 'todo',
+          title: 'はじめに組み方の標準を決める',
+          detail: '誰が・何曜・何時に行くかの標準を決めると、先の月はその標準で並びます',
+          to: '/standard',
+        },
+      ];
   // 切った機能へ向かうカードは出さない（PRD D213）
   const tasks = [
+    ...standard,
     ...attention,
     ...work,
     todayTask(

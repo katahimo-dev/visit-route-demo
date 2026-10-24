@@ -144,8 +144,12 @@ export const patternCols = (t: Terms) => ({
   usualStaff: '担当',
   note: 'メモ',
 });
-/** 定期パターンの列のうち、ADR-0013 で足した任意の列（無い古いブックは毎週系・曜日ごとの時刻なし） */
-export const PATTERN_EXTRA_COLS = { monthWeeks: '第N週', dayTimes: '曜日ごとの時刻' } as const;
+/** 定期パターンの列のうち、ADR-0013 で足した任意の列（無い古いブックは毎週系・曜日ごとの時刻なし・標準の開始なし） */
+export const PATTERN_EXTRA_COLS = {
+  monthWeeks: '第N週',
+  dayTimes: '曜日ごとの時刻',
+  usualStarts: '標準の開始',
+} as const;
 /** 〈利用者さん〉の休み（ADR-0013）：開始日〜終了日（両端を含む）・理由 */
 export const clientLeaveCols = (t: Terms) => ({
   id: 'ID',

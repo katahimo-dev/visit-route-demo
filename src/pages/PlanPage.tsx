@@ -91,6 +91,7 @@ import { confirmDay } from '../lib/confirmDay';
 import { type CancelledContact, type ContactRow, clock, contactCount, contactRows, dateWordOf } from '../lib/contacts';
 import { dayLineRange, dayLines } from '../lib/dayLine';
 import {
+  aiPinsOf,
   changeCount,
   ownerOf,
   pinsOf,
@@ -514,10 +515,9 @@ export default function PlanPage() {
       return null;
     };
     const latest = dataRef.current;
-    const p = pinsOf(m.allVisits);
-    const target = attempt(() =>
-      compile(rules ? { ...latest, rules } : latest, date, Object.keys(p).length > 0 ? p : undefined),
-    );
+    const input = rules ? { ...latest, rules } : latest;
+    const p = aiPinsOf(input, date, m.allVisits);
+    const target = attempt(() => compile(input, date, Object.keys(p).length > 0 ? p : undefined));
     if (!target.value) return fail(target.error ?? m.problemError ?? '問題を作れませんでした');
     if (target.value.visits.length === 0) return fail('この日に計算できる訪問がありません');
     if (target.value.staff.length === 0) return fail(`この日に働ける${terms.staff}がいません`);

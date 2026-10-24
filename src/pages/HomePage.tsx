@@ -1,4 +1,5 @@
 import {
+  CalendarCheck,
   CalendarDays,
   CalendarSearch,
   ChevronRight,
@@ -39,6 +40,7 @@ import { useDemoData } from '../store';
 import './home.css';
 
 const KIND_ICON: Record<HomeTaskKind, LucideIcon> = {
+  standard: CalendarCheck,
   attention: CircleAlert,
   today: CalendarDays,
   confirm: Lock,

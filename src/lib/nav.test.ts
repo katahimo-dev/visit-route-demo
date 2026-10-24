@@ -38,30 +38,42 @@ describe('menuSections（PRD D326・D349。ADR-0054・0061）', () => {
     expect(groups.map((g) => g.title ?? null)).toEqual([null]);
     expect(groups.flatMap((g) => g.items.map((i) => i.label))).toEqual(['ホーム', '予定', '空き状況', '人', '設定']);
   });
-  it('予定の子はモード（今日の予定・◯月を組む・欠勤・キャンセル）、人・設定の子はタブ', () => {
+  it('予定の子はモード（今日の予定・◯月の予定・欠勤・キャンセル）、人・設定の子はタブ', () => {
     expect(item('schedule').children?.map((i) => [i.label, i.mode, i.to])).toEqual([
       ['今日の予定', 'check', '/plan?date=2026-10-21&mode=check'],
-      ['11月を組む', 'plan', '/month?ym=2026-11&mode=plan'],
+      ['11月の予定', 'change', '/month?ym=2026-11&mode=change'],
       ['欠勤・キャンセル', 'change', '/plan?date=2026-10-21&do=absence&mode=change'],
     ]);
     expect(item('people').children?.map((i) => i.to)).toEqual(['/clients', '/staff', '/compat', '/availability']);
-    expect(item('settings').children?.map((i) => i.to)).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
-    // 前半は今月を組む
+    expect(item('settings').children?.map((i) => i.to)).toEqual([
+      '/standard',
+      '/types',
+      '/items',
+      '/rules',
+      '/settings',
+      '/data',
+    ]);
+    // 前半は今月
     const early = menuSections(terms, '2026-10-03', {});
-    expect(item('mode-plan', early).to).toBe('/month?ym=2026-10&mode=plan');
+    expect(item('mode-month', early).to).toBe('/month?ym=2026-10&mode=change');
     expect(NAV_OPEN_DEFAULT).toEqual({ schedule: true, people: true, settings: false });
   });
-  it('件数の印：組む月の担当なしの日・今日をまだ伝えていない', () => {
+  it('件数の印：整える月の担当なしの日・今日をまだ伝えていない', () => {
     const g = menuSections(terms, TODAY, {}, {}, { planUnassignedDays: 3, todayUntold: true });
-    expect(item('mode-plan', g).badge).toEqual({ text: '3日', label: '担当なしの訪問がある日 3日' });
+    expect(item('mode-month', g).badge).toEqual({ text: '3日', label: '担当なしの訪問がある日 3日' });
     expect(item('mode-check', g).badge?.text).toBe('未確定');
-    expect(item('mode-plan').badge).toBeUndefined();
+    expect(item('mode-month').badge).toBeUndefined();
   });
   it('予定のモードの項目は、予定の画面でそのモードのときだけ今の画面', () => {
-    expect(isActiveNav(item('mode-plan'), '/week', 'plan')).toBe(true);
-    expect(isActiveNav(item('mode-plan'), '/week', 'check')).toBe(false);
-    expect(isActiveNav(item('mode-plan'), '/home', 'plan')).toBe(false);
-    expect(isActiveNav(item('mode-plan'), '/week')).toBe(false);
+    expect(isActiveNav(item('mode-month'), '/week', 'change')).toBe(true);
+    expect(isActiveNav(item('mode-month'), '/week', 'check')).toBe(false);
+    expect(isActiveNav(item('mode-month'), '/home', 'change')).toBe(false);
+    expect(isActiveNav(item('mode-month'), '/week')).toBe(false);
+    // 変更は月・週なら「◯月の予定」、日なら「欠勤・キャンセル」
+    expect(isActiveNav(item('mode-month'), '/plan', 'change')).toBe(false);
+    expect(isActiveNav(item('absence'), '/plan', 'change')).toBe(true);
+    expect(isActiveNav(item('absence'), '/month', 'change')).toBe(false);
+    expect(isActiveNav(item('mode-check'), '/month', 'check')).toBe(true);
   });
   it('下のタブは子の項目からも引く（欠勤）', () => {
     expect(bottomTabs(groups).map((i) => i.key)).toEqual(['home', 'schedule', 'absence']);
@@ -96,12 +108,12 @@ describe('menuSections（PRD D326・D349。ADR-0054・0061）', () => {
     expect(scheduleHref('/compare')).toBe('/plan');
     expect(scheduleHref(null)).toBe('/plan');
   });
-  it('「設定」は最後に開いたタブ（切っていれば先頭のタブ）。無ければ訪問の種類（ADR-0047）', () => {
-    expect(item('settings').to).toBe('/types');
-    expect(settingsHref(applyTemplate('basic'))).toBe('/types');
+  it('「設定」は最後に開いたタブ（切っていれば先頭のタブ）。無ければ先頭の組み方の標準（ADR-0047・ADR-0062）', () => {
+    expect(item('settings').to).toBe('/standard');
+    expect(settingsHref(applyTemplate('basic'))).toBe('/standard');
     expect(settingsHref({}, '/data')).toBe('/data');
-    expect(settingsHref({ rules: false }, '/rules')).toBe('/types');
-    expect(settingsHref({}, '/compat')).toBe('/types');
+    expect(settingsHref({ rules: false }, '/rules')).toBe('/standard');
+    expect(settingsHref({}, '/compat')).toBe('/standard');
     expect(item('settings', menuSections(terms, TODAY, {}, { settings: '/types' })).to).toBe('/types');
   });
   it('isScheduleView・isSettingsPath', () => {

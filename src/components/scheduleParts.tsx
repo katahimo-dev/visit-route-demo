@@ -244,7 +244,7 @@ export function useScopeItems({
       description: '要対応のある日だけか、伝えていない日すべてかを選んでから組みます',
       icon: CalendarRange,
       disabled: busy,
-      onSelect: () => (onMonth ? onMonth() : navigate(`/month?ym=${ym}&do=batch&mode=plan`)),
+      onSelect: () => (onMonth ? onMonth() : navigate(`/month?ym=${ym}&do=batch&mode=change`)),
     },
   ];
 }

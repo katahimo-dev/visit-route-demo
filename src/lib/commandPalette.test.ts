@@ -91,6 +91,7 @@ describe('候補', () => {
       '相性',
       '勤務時間（シフト）',
       '勤務の見込み',
+      '組み方の標準',
       '訪問の種類',
       '特性の項目',
       '条件の重み',
@@ -118,7 +119,7 @@ describe('候補', () => {
     const scr = paletteScreens(screenSections(terms, {}), terms);
     const hit = (q: string) => filterPalette(scr, q).flat.map((i) => i.to);
     expect(hit('よてい')).toEqual(expect.arrayContaining(['/month', '/week', '/plan']));
-    expect(hit('せってい')).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
+    expect(hit('せってい')).toEqual(['/standard', '/types', '/items', '/rules', '/settings', '/data']);
     expect(hit('きんむのみこみ')).toEqual(['/workload']);
     // 案を比べるは日の予定の「AI で組む ▾」から開く（パレットには出さない。PRD D331）
     expect(hit('あんをくらべる')).toEqual([]);

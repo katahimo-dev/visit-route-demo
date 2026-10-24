@@ -120,14 +120,26 @@ export function repair(d: DemoData): DemoData {
           return true;
         })
         .sort((a, b) => a.weekday - b.weekday);
+      const seenStarts = new Set<number>();
+      const usualStarts = p.usualStarts
+        ?.filter((t) => {
+          if (!weekdays.includes(t.weekday) || seenStarts.has(t.weekday)) return false;
+          seenStarts.add(t.weekday);
+          return true;
+        })
+        .sort((a, b) => a.weekday - b.weekday);
       const sameList = <T>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
       const same =
         typeId === p.typeId &&
         usualStaffId === p.usualStaffId &&
         sameList(weekdays, p.weekdays) &&
         sameList(monthWeeks, p.monthWeeks) &&
-        sameList(dayTimes, p.dayTimes);
-      return same ? p : { ...p, typeId, usualStaffId, weekdays, monthWeeks, dayTimes };
+        sameList(dayTimes, p.dayTimes) &&
+        (p.usualStarts === undefined || sameList(usualStarts ?? [], p.usualStarts));
+      if (same) return p;
+      return usualStarts === undefined
+        ? { ...p, typeId, usualStaffId, weekdays, monthWeeks, dayTimes }
+        : { ...p, typeId, usualStaffId, weekdays, monthWeeks, dayTimes, usualStarts };
     });
   const patternIds = new Set(patterns.map((p) => p.id));
 

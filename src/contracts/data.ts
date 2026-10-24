@@ -64,6 +64,19 @@ export const daySnapshotSchema = z.object({
 });
 export type DaySnapshot = z.infer<typeof daySnapshotSchema>;
 
+/** 組み方の標準を登録した記録（ADR-0062） */
+export const standardInfoSchema = z.object({
+  /** 登録した時刻（ms） */
+  at: z.number(),
+  /** 登録したときの点数の基準のプリセット */
+  presetId: z.string().max(100),
+  /** いつから */
+  from: dateSchema,
+  /** 周期の週数 */
+  weeks: z.number().int().min(1).max(4),
+});
+export type StandardInfo = z.infer<typeof standardInfoSchema>;
+
 /** データ一式（store だけが書く。design.md §4） */
 export const demoDataSchema = z.object({
   version: z.literal(DATA_VERSION),
@@ -103,6 +116,8 @@ export const demoDataSchema = z.object({
    * 存在しない id は store の repair が先頭のプリセットにする
    */
   scorePresetId: z.string().max(100).optional(),
+  /** 組み方の標準を登録した記録（ADR-0062。無ければ登録していない） */
+  standard: standardInfoSchema.optional(),
 });
 export type DemoData = z.infer<typeof demoDataSchema>;
 
