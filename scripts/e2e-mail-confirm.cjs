@@ -125,12 +125,12 @@ const steps = sharedPage({
       async (page) => {
         await page.goto(`${BASE}#/week`);
         await page.reload();
-        const btn = page.locator('.page-head [data-testid="week-mail"]');
+        const btn = page.locator('[data-testid="sched-nav"] [data-testid="week-mail"]');
         await btn.waitFor({ timeout: 30000 });
-        check((await btn.count()) === 1, '週の予定：見出しに「予定をメールで送る」（日と同じ場所）');
+        check((await btn.count()) === 1, '週の予定：ナビの行に「予定をメールで送る」（日と同じ場所。PRD D347）');
         check(
           (await page.locator('[data-testid="week-mail"]').count()) === 1,
-          '週の予定：メールのボタンは見出しの1つだけ（表の上には無い）',
+          '週の予定：メールのボタンはナビの行の1つだけ（表の上には無い）',
         );
         await btn.click();
         const rows = page.getByTestId('week-mail-rows');

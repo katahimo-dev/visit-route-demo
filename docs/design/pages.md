@@ -72,7 +72,7 @@
 - 用語の説明（`Term`）の目印は用語の後ろの小さな ⓘ（下線は付けない）。同じ画面の同じ語は最初の1か所だけ説明を付ける（PRD D240・D241。ADR-0037。詳細は [pages-common.md](pages-common.md)）
 - 画面の文はふつうの言葉で（PRD D307）：説明（`Hint`）・用語の説明・帯・空の画面の案内・確認の本文・トースト・`title`・ツアー・`lead` に内部の言葉（費用・点の内訳・稼働時間（帯）・必須の違反・点数の基準のプリセット・この日だけ試す重み・展開・inputKey・固定・記録）を使わない。言い換えは 固定 → ピン、必須の違反 → 守れない条件、点数の基準のプリセット「X」→「X」の重み、この日だけ試す重み → この日だけの重み、稼働時間 → 働ける時間。どうしても要る語は用語の説明に1か所だけ。1文を短く、括弧の中に括弧を重ねない。いくつもあることは `Hint` の中を `<ul className="hint-list">`（`styles.css`）の箇条書きにし、要点を1行ずつ。仕組み（なぜそうなるか）は用語の説明か「使い方」へ寄せ、帯・確認にはその場で要ることだけ書く。機能の名前（ボタン・メニューの項目）を変えたら e2e の文字の確かめも直す
 - 確認はブラウザの `confirm`・`alert`・`prompt` を使わず、独自の確認ダイアログ（下）。src の画面に `confirm(`・`alert(`・`prompt(` は0。例外は `beforeunload`（〈スタッフ〉・〈利用者さん〉の変更があるとき）だけ
-- 画面の見出しは `PageHeader`（左に題名と `lead`＝「この画面でやること」の1行、右に主ボタン1つ。予定の3画面は題名の下に［月｜週｜日］のタブ。PRD D236）、節は `SectionTitle`（`SectionLevelProvider` で h2／h3）
+- 画面の見出しは `PageHeader`（左に題名と `lead`＝「この画面でやること」の1行、右に主ボタン1つ。予定の3画面は見出しには主ボタンを置かず、すぐ下のナビの行（`ScheduleNav`）の中に［月｜週｜日］と主ボタン。PRD D236・D347）、節は `SectionTitle`（`SectionLevelProvider` で h2／h3）
 - 狭い画面の境目：860px 以下でスマホのメニュー（左のメニューを隠す・下のタブ）。600px 以下で帯・欄のボタンを詰める
 
 ### 〈スタッフ〉の印（PRD D298・D299。ADR-0050。`components/StaffMark.tsx`・`staffMark.css`・`lib/staffMark.ts`）
@@ -142,7 +142,7 @@
 
 - 広い画面の左のメニュー（`.side-nav`）は詰める：項目（`.nav-link`）は `min-height: 34px`（上下 5px・行の高さ 1.4）、グループの間 10px、メニューの上下 14px・16px。1440×900 で最後の項目（設定）まで巻かずに見える。タッチできる端末（`any-pointer: coarse`。主の入力がマウスでもタッチ・ペンがあれば当たる）では `.nav-link` を `min-height: 44px`、［月｜週｜日］のタブ（見た目 36px）は `::before` で上下 4px 広げて 44px（PRD D237・D239）
 - 高さ 860px 以下の広い画面（1366×768 など）ではさらに詰める：項目 30px（上下 3px・行の高さ 1.3・0.92rem）・グループの間 4px・見出しの下の余白 0・ロゴ 32px。1366×768 で最後の項目（設定）まで見える。それでも入らないときは、`.side-nav` の背景（下の端の影 `scroll` と、中身の終わりで影を隠す `local` の重ね）で下に続きがあると示す（PRD D270）
-- 上の帯の日付の選択（`DateSwitcher`）は `lib/nav` の `showsDateSwitch(pathname)` の画面（`DATE_PAGES`：日・週・月の予定・案を比べる・勤務の見込み・勤務時間（シフト））だけに出す。選んでいる日付は覚えたままで、外枠 `.app-shell` の `data-date` で読める（PRD D267）
+- 上の帯の日付の選択（`DateSwitcher`）は `lib/nav` の `showsDateSwitch(pathname)` の画面（`DATE_PAGES`：案を比べる・勤務の見込み・勤務時間（シフト））だけに出す。日・週・月の予定は画面の中のナビの行（`ScheduleNav`。PRD D347。ADR-0060）で送るので出さない。選んでいる日付は覚えたままで、外枠 `.app-shell` の `data-date` で読める（PRD D267）
 
 #### `lib/nav.ts`（純粋関数。テストあり）
 
@@ -205,10 +205,10 @@
 
 #### 予定の切り替え（`components/ViewSwitch.tsx`）・設定のタブ（`components/SettingsTabs.tsx`）
 
-- 月・週・日の見出しの題名の下に［月｜週｜日］のタブ（リンクのナビ。今の画面を `aria-current`。PRD D237。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）。押すと選んでいる日付（`useDay`）で移る：月は `?ym=` にその日の月、週は `?d=` にその日、日はその日
+- 月・週・日の見出しのすぐ下のナビの行（`ScheduleNav`。PRD D347）に［月｜週｜日］（リンクのナビ。今の画面を `aria-current`。PRD D237。[pages-common.md](pages-common.md) の「画面の見出しとボタンの3段」）。押すと選んでいる日付（`useDay`）で移る：月は `?ym=` にその日の月、週は `?d=` にその日、日はその日
 - 月・週で日付を変えたら（月のマスを押して日の予定へ移る・帯・日の見出しを押す、週・月を送る）選んでいる日付も合わせる（月を送ったときはその月の1日、ただし今月なら今日）
 - 各画面の `lead`：月「一月の担当を見て、担当なしの日を AI でまとめて組み、確定します」、週「この週の担当を見て、日時をドラッグでずらし、〈スタッフ〉に伝えたら確定します」、日「その日の担当を見て直し、〈スタッフ〉に伝えたら確定します」
-- 予定の日・週・月は「拡大率」として同じ部品を並べる（PRD D327〜D332。ADR-0054。詳細は [pages-common.md](pages-common.md) の「予定の共通の部品」）：見出し（題名・［月｜週｜日］・状態・主ボタン）→（月だけ）進み具合の帯／（週）1行の状態 → 操作の行 `ScheduleToolbar` → 提案の帯 → 本体 → 複数選択の帯（日・週・月・人の予定表。札の3段（大＝時間軸の帯・中＝リストの行・小＝表のマスの札）と入れ物（時間軸・表・リスト）、印・選ぶ・キー・ドラッグの落とし先の判定は共通の部品。日・週・月は同じ札をどの入れ物で何日分見せるか。PRD D339〜D343。ADR-0056・ADR-0057。[pages-common.md](pages-common.md) の「訪問の札の共通の部品」）
+- 予定の日・週・月は「拡大率」として同じ部品を並べる（PRD D327〜D332。ADR-0054。詳細は [pages-common.md](pages-common.md) の「予定の共通の部品」）：見出し（題名・1行の説明）→ ナビの行（今日・‹ 期間 ▾ ›・［月｜週｜日］・状態・主ボタン。PRD D347）→（月だけ）進み具合の帯／（週）1行の状態 → 操作の行 `ScheduleToolbar` → 提案の帯 → 本体 → 複数選択の帯（日・週・月・人の予定表。札の3段（大＝時間軸の帯・中＝リストの行・小＝表のマスの札）と入れ物（時間軸・表・リスト）、印・選ぶ・キー・ドラッグの落とし先の判定は共通の部品。日・週・月は同じ札をどの入れ物で何日分見せるか。PRD D339〜D343。ADR-0056・ADR-0057。[pages-common.md](pages-common.md) の「訪問の札の共通の部品」）
 - 設定のタブ（PRD D275・D283）：訪問の種類・特性の項目・条件の重み・管理者設定・データの見出しの題名の下（`PageHeader` の `nav`）に、`settingsTabs(features)` のタブ（`nav.view-switch.settings-tabs`・`aria-label="設定の切り替え"`・data-testid `settings-tabs`・各タブ `data-tab`。今の画面を `aria-current`。見た目は［月｜週｜日］と同じ）。狭い画面では横に巻き（`overflow-x: auto`・折り返さない）、画面を開いたら今のタブを真ん中へ巻く（ページは縦に巻かない）
 
 ### コマンドパレット（ADR-0027。PRD D180〜D183）
@@ -286,6 +286,7 @@
 | `DetailPopover.tsx`・`PersonPopover.tsx`・`personDetail.tsx` | 名前から開く詳細 | [pages-common.md](pages-common.md) |
 | `personPage.tsx`・`PersonCalendar.tsx`・`personView.tsx` | 人の画面のタブ・節（`EditSection`）・予定のカレンダー・読むときの名前の並び（`PersonNames`・`StaffClientRows`・`ClientCompatRows`） | [pages-clients.md](pages-clients.md) |
 | `ViewSwitch.tsx` | ［月｜週｜日］ | このファイル |
+| `ScheduleNav.tsx` | 予定の上のナビの行（PRD D347） | [pages-common.md](pages-common.md) |
 | `EdgeScroll.tsx` | 横に巻く格子の表の箱（右に続きがある印 `has-more-right`） | このファイル（狭い画面の表） |
 | `progressBand.tsx` | `ProgressBand`・`BandLive` | [pages-home.md](pages-home.md) |
 | `scheduleParts.tsx`・`undo.tsx` | 予定の共通の部品（`ScheduleToolbar`・`useScopeItems`・`ProposalBand`・`RangeProposalBand`・`SelectionBar`）・全体の元に戻す（`UndoButtons`・`useUndoAction`・`HistoryKeys`） | [pages-common.md](pages-common.md) |

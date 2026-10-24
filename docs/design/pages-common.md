@@ -13,10 +13,18 @@
 - 見出しの右のボタンは上下 9px（`.page-actions .btn:not(.btn-small)`）で、見出しの段を低くする
 - 狭い画面では右の `.page-actions` が題名の下へ折り返す（`flex-wrap`。題名は `min-width: 200px`）
 
-#### `components/ViewSwitch.tsx`（予定の［月｜週｜日］。PRD D59・D237）
+#### `components/ScheduleNav.tsx`（予定の上のナビの行。PRD D347。ADR-0060）
 
-- 月・週・日の予定の `PageHeader` の `nav` に渡し、題名の下のタブにする。`nav.view-switch`（`aria-label`「予定の表示の切り替え」）の中は `Link`（role=tablist・tab にしない。押すと画面が移るリンクのナビ）
-- 今の画面は `aria-current="page"`・太字・朱の下線 3px（`.view-switch-item.is-on`。色だけに頼らない）。タブの行の下に1px の線（`.page-tabs`）
+- 月・週・日の予定の `PageHeader`（題名・1行の説明だけ。`nav` も `actions` も渡さない）のすぐ下に置く1行（`div.sched-nav`・data-testid `sched-nav`・`data-view`＝`month|week|day`）。［月｜週｜日］は見出しの下ではなくこの行の中。並びは ①「今日」（`btn btn-small`・`sched-today`。今日を含む期間を見ていれば押せない）②`.period-switch`（‹ `icon-btn`・期間の `select`・› `icon-btn`。日だけ `.date-switch` も付ける）③`ViewSwitch` ④右に `actions`（`.sched-nav-actions`。日：状態の印・メールで送る・確定、週：メールで送る・まとめて確定、月：無し）
+- `ScheduleNav({ current, today, prev, next, picker, actions? })`：`prev`・`next` は `{ label, onClick, disabled? }`（読み上げ名「前の月／次の月」「前の週／次の週」「前の日／次の日」）、`picker` は `{ label, value, options, onChange, testId? }`（月「月を選ぶ」・`month-title`、週「週を選ぶ」・`week-title`、日「日付」）。`options` は `value` を含めて呼ぶ側が渡す（部品は足さない。日の「今日」はデータに無い日でも選べるので、呼ぶ側が選んだ日を足す）
+- 期間の見出し：見ている期間の文を `h2.sched-nav-period` に入れる（`picker` の今の `option` の文）。画面では見えず読み上げだけ（`.sr-only` と同じ）。印刷では見せる（印刷ではナビの行のほかの部分は出さない）
+- 送る単位は表示している単位。月はデータの日付の月、週はデータの日付を含む週の月曜、日はデータの日付から選ぶ。日の ‹ › はデータの日付の端で押せない
+- 861px 以上は `position: sticky; top: var(--header-h)`（z-index 15・半透明の地とぼかし）。高さ `--sched-nav-h` は `ScheduleNav` が `ResizeObserver` で測って `html` に入れる（決め打ちにしない。中身で2段に折り返すことがある。貼り付かない幅・この行の無い画面では 0）。`html` の `scroll-padding-top: var(--sched-nav-h)` が、巻いて止める要素（`scrollIntoView`・アンカー）を貼り付いた行の裏に入れない。860px 以下は貼り付けず折り返す（600px 以下は右寄せをやめる）。印刷では期間の文（`h2.sched-nav-period`）だけ出し、ほかは出さない
+
+#### `components/ViewSwitch.tsx`（予定の［月｜週｜日］。PRD D59・D237・D347）
+
+- `ScheduleNav` の中に置く（`.sched-nav .view-switch` で枠の切り替えの見た目。今の画面は地の色と太字）。`nav.view-switch`（`aria-label`「予定の表示の切り替え」）の中は `Link`（role=tablist・tab にしない。押すと画面が移るリンクのナビ）
+- 今の画面は `aria-current="page"`・太字・地の色（`.view-switch-item.is-on`。色だけに頼らない）。ナビの行の下に1px の線（`.sched-nav`）。ナビの行の外（設定のタブ・人の画面のタブ）では今までどおり朱の下線 3px
 
 #### ボタンの3段（`styles.css`）
 
@@ -81,7 +89,7 @@
 
 ### 予定の共通の部品（`components/scheduleParts.tsx`・`scheduleParts.css`・`components/undo.tsx`。PRD D327〜D332。ADR-0054）
 
-日・週・月の予定は「拡大率」として、同じ見出しの型（`PageHeader`＋［月｜週｜日］）と次の部品を並べる。本体（日の時間軸・順番・一覧、週の時間軸・表、月のカレンダー・日ごとの一覧）は各画面に残す。
+日・週・月の予定は「拡大率」として、同じ見出しの型（`PageHeader`＝題名・1行の説明だけ。［月｜週｜日］は下のナビの行 `ScheduleNav`。PRD D347）と次の部品を並べる。本体（日の時間軸・順番・一覧、週の時間軸・表、月のカレンダー・日ごとの一覧）は各画面に残す。
 
 - `ScheduleToolbar`（日・週・月とも見出しと状態の1行のすぐ下に置く。PRD D344。`div.row.schedule-toolbar`・data-testid `schedule-toolbar`・`data-zoom`＝`day|week|month`。印刷では出さない。600px 以下は1段（折り返さず、ボタンの名前 `.tb-label` を読み上げだけに残してアイコンだけ・押せる所 44px。「その他 ▾」は右端。日の予定の表示の切り替えは「その他 ▾」の「表示」へ移る。PRD D334））：並びは ①欠勤・キャンセルを登録（`sudden-open`。日は欄を開くボタン、週・月は `absenceHref(その日。今日より前なら今日)` へのリンク。`sudden` を切れば出さない）②「AI で組む ▾」（`MenuButton`・`plan-menu`）③「元に戻す」「やり直す」（`UndoButtons`）④表示の切り替え（日：時間軸・順番・一覧、月：カレンダー・日ごとの一覧（`month-layout`）。children）⑤「その他 ▾」（`plan-more`・`month-more`。項目が無ければ出さない。日はスマホだけ、週は出さない。PRD D344。ADR-0058）⑥計算の進み具合（日。after）
 - `useScopeItems({ zoom, date, onDay?, dayBusy?, onMonth? })`：「AI で組む ▾」の先頭のまとまり「AI で組む（範囲）」（`group`）の3項目。この日（M/D）を組む `ai-scope-day`（今日より前・伝えた日・組める訪問が無い日は押せず理由。日の予定は `onDay`＝その場の提案、週・月は範囲の計算を1日で）・この週（M/D〜M/D）を組む `ai-scope-week`（`weekBatchDays`：今日以降の伝えていない、訪問のある日。0日なら押せず理由）・この月（N月）を組む `ai-scope-month`（月の予定は `onMonth`＝欄「N月の担当を AI で組む」を開く、ほかは `/month?ym=…&do=batch`）。範囲の計算中は押せず「ほかの担当を組んでいます。終わってから押せます」。説明は「ピンの訪問はそのままで、担当・順番の提案を出します（反映するまで担当は変わりません）」

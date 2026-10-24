@@ -784,9 +784,9 @@ async function reassignHere(page) {
   await settle(page, 300);
   return who;
 }
-/** 上の帯の日付の選択で日を替える（読み直さない＝全体の元に戻すの履歴は残る） */
+/** ナビの行の日付の選択で日を替える（PRD D347）（読み直さない＝全体の元に戻すの履歴は残る） */
 async function pickDate(page, date) {
-  await page.locator('.app-header select[aria-label="日付"]').selectOption(date);
+  await page.locator('.date-switch select[aria-label="日付"]').selectOption(date);
   await waitPlan(page);
 }
 
@@ -796,7 +796,7 @@ async function revertCases(page, st) {
   await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
   await openPlan(page);
   const day2 = await page
-    .locator('.app-header select[aria-label="日付"] option')
+    .locator('.date-switch select[aria-label="日付"] option')
     .evaluateAll((os, t) => os.map((o) => o.value).find((v) => v > t) ?? '', TODAY);
   await reassignHere(page);
   await waitStored(page, (d) => !!d.reassigns?.[TODAY]);

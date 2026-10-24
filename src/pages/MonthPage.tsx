@@ -3,8 +3,6 @@ import {
   CalendarDays,
   CalendarOff,
   CalendarRange,
-  ChevronLeft,
-  ChevronRight,
   CircleAlert,
   Info,
   Layers,
@@ -45,6 +43,7 @@ import type { MenuItem as MoreItem } from '../components/MenuButton';
 import { PersonButton } from '../components/PersonPopover';
 import { ClientDot } from '../components/parts';
 import { type BandModel, ProgressBand } from '../components/progressBand';
+import { ScheduleNav } from '../components/ScheduleNav';
 import { StaffMark } from '../components/StaffMark';
 import {
   confirmDropProposal,
@@ -57,7 +56,6 @@ import { StaffBar, StaffLegend } from '../components/staffBar';
 import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { PageHeader, SidePanel, WithIcon } from '../components/ui';
-import { ViewSwitch } from '../components/ViewSwitch';
 import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
@@ -189,7 +187,7 @@ const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
 
 export default function MonthPage() {
-  const { date, setDate } = useDay();
+  const { date, setDate, dates: dataDates } = useDay();
   const { data, update, compileInput } = useDayModel(date);
   const terms = data.org.terms;
   /** 切った機能（月の予定の印刷・稼働の見込み）の画面へ移るボタンは出さない（PRD D213。ADR-0028） */
@@ -659,6 +657,11 @@ export default function MonthPage() {
 
   const stop = () => monthBatch.stop();
 
+  /** 月を選ぶ欄の月（データの日付の月。PRD D347） */
+  const monthOptions = useMemo(
+    () => [...new Set([...dataDates.map(ymOf), ym])].sort().map((v) => ({ value: v, text: ymText(v) })),
+    [dataDates, ym],
+  );
   /** 月を送る：選んでいる日付もその月の1日（今月なら今日）にする（PRD D59） */
   const goMonth = (next: string) => {
     const d = firstDayOf(next, today);
@@ -1015,10 +1018,17 @@ export default function MonthPage() {
   return (
     <div className="stack">
       <PageHeader
-        nav={<ViewSwitch current="month" />}
         icon={CalendarRange}
         title="月の予定"
         lead="一月の担当を見て、担当なしの日を AI でまとめて組み、確定します"
+      />
+      {/* 上のナビの行（日・週・月で同じ。PRD D347。ADR-0060）。月送り・今日・［月｜週｜日］。主ボタンは進み具合の帯（D154） */}
+      <ScheduleNav
+        current="month"
+        today={{ onClick: () => goMonth(ymOf(today)), disabled: ym === ymOf(today) }}
+        prev={{ label: '前の月', onClick: () => goMonth(addMonths(ym, -1)) }}
+        next={{ label: '次の月', onClick: () => goMonth(addMonths(ym, 1)) }}
+        picker={{ label: '月を選ぶ', value: ym, options: monthOptions, onChange: goMonth, testId: 'month-title' }}
       />
 
       {/* 進み具合の帯（PRD D151〜D155）。「まとめて作る」の入口はここの1か所（D154。見出しのボタン・今月の準備の①〜③をまとめた） */}
@@ -1053,23 +1063,6 @@ export default function MonthPage() {
 
       <div className="card stack month-head">
         <div className="row month-nav">
-          <button type="button" className="icon-btn" aria-label="前の月" onClick={() => goMonth(addMonths(ym, -1))}>
-            <ChevronLeft size={18} aria-hidden="true" />
-          </button>
-          <h2 className="month-title" data-testid="month-title">
-            {ymText(ym)}
-          </h2>
-          <button type="button" className="icon-btn" aria-label="次の月" onClick={() => goMonth(addMonths(ym, 1))}>
-            <ChevronRight size={18} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={ym === ymOf(today)}
-            onClick={() => goMonth(ymOf(today))}
-          >
-            今月
-          </button>
           <span className="month-summary sub" data-testid="month-summary">
             月全体：担当なし {summary.unassigned}件{summary.sameDay > 0 ? `・当日キャンセル ${summary.sameDay}件` : ''}
           </span>

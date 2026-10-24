@@ -551,15 +551,16 @@ async function moreMenus(page) {
     return !!sum && !!bar && sum.nextElementSibling === bar;
   });
   check(order, '日の予定：操作の行は「今の担当」の1行のすぐ下');
-  // 予定をメールで送るは見出しの主ボタンの隣（毎日送るので見つけやすく。PRD D306）
-  const headMail = page.locator('.page-head [data-testid="day-mail"]');
+  // 予定をメールで送るはナビの行の主ボタンの隣（毎日送るので見つけやすく。PRD D306・D347）
+  const headMail = page.locator('[data-testid="sched-nav"] [data-testid="day-mail"]');
   check(
     (await headMail.count()) === 1 && (await headMail.innerText()).includes('予定をメールで送る'),
-    '日の予定：見出しに「予定をメールで送る」（枠のボタン）',
+    '日の予定：ナビの行に「予定をメールで送る」（枠のボタン）',
   );
   check(
-    (await page.locator('.btn-primary:visible').count()) === 1,
-    '日の予定：主ボタンは見出しの「確定（伝えた）」の1つ',
+    (await page.locator('.btn-primary:visible').count()) === 1 &&
+      (await page.locator('[data-testid="sched-nav"] [data-testid="adopt"]').count()) === 1,
+    '日の予定：主ボタンはナビの行の「確定（伝えた）」の1つ',
   );
   const addBtn = page.getByTestId('plan-visit-add');
   await addBtn.focus();
@@ -612,12 +613,16 @@ async function moreMenus(page) {
   check((await page.getByTestId('visit-panel').count()) === 0, '押せない「訪問を追加」を押しても欄は開かない');
   await page.keyboard.press('Escape');
 
-  // 月の予定：月送り・今月・その他 ▾ だけ（印刷・勤務の見込み・表示の選択・説明はたたむ）。初期データに戻して開く
+  // 月の予定：月送り・今日はナビの行（PRD D347）、操作の欄は その他 ▾ だけ（印刷・勤務の見込み・表示の選択・説明はたたむ）。初期データに戻して開く
   await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
   await page.goto(`${BASE}#/month`);
   await page.reload();
   await page.getByTestId('month-more').waitFor({ timeout: 30000 });
   await settle(page, 300);
+  const nav = await page
+    .getByTestId('sched-nav')
+    .locator('button:visible')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? el.textContent.trim()));
   const head = await page
     .locator('.month-head button:visible, .month-head select:visible')
     .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? el.textContent.trim()));
@@ -626,15 +631,17 @@ async function moreMenus(page) {
     .locator('button:visible, a:visible')
     .evaluateAll((els) => els.map((el) => el.textContent.trim()));
   check(
-    head.includes('前の月') &&
-      head.includes('次の月') &&
-      head.includes('今月') &&
+    nav.includes('前の月') &&
+      nav.includes('次の月') &&
+      nav.includes('今日') &&
+      !head.includes('前の月') &&
+      !head.includes('今月') &&
       bar.includes('その他') &&
       !head.some((x) => /印刷|勤務の見込み|全体/.test(x)) &&
       !bar.some((x) => /印刷|勤務の見込み/.test(x)) &&
       (await page.getByTestId('month-focus').count()) === 0,
-    '月の予定：月送り・今月と、操作の行の「その他 ▾」（表示の選択・印刷・勤務の見込み はたたむ。PRD D327）',
-    { head, bar },
+    '月の予定：月送り・今日はナビの行、操作の行の「その他 ▾」（表示の選択・印刷・勤務の見込み はたたむ。PRD D327・D347）',
+    { nav, head, bar },
   );
   await page.getByTestId('month-more').click();
   const mItems = await page
