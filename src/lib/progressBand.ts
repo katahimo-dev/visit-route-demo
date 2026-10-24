@@ -4,7 +4,7 @@
 import type { Attention, AttentionKind, MonthProgress } from './month';
 import { ymOf } from './month';
 
-/** 帯から月の画面で行う操作（月の画面の ?do=。PRD D143） */
+/** 帯から行う操作：batch＝担当を組むの画面（#/arrange）、attention・unconfirmed＝月の画面の欄（?do=。PRD D143） */
 export type BandOp = 'batch' | 'attention' | 'unconfirmed';
 
 /**
@@ -58,8 +58,9 @@ export function bandNext(input: BandInput): BandNext {
 /** 帯が見る月（PRD D151）：選んでいる日付の月。週の画面も選んでいる日付（週の中の日）の月で、［月｜週｜日］の「月」と同じ月 */
 export const bandMonth = (date: string): string => ymOf(date);
 
-/** 帯の数字・ボタンから移る先（月の画面の欄。PRD D153） */
-export const bandHref = (ym: string, op: BandOp): string => `/month?ym=${ym}&do=${op}`;
+/** 帯の数字・ボタンから移る先（担当を組むは担当を組むの画面のその月、ほかは月の画面の欄。PRD D153。ADR-0063） */
+export const bandHref = (ym: string, op: BandOp): string =>
+  op === 'batch' ? `/arrange?ym=${ym}` : `/month?ym=${ym}&do=${op}`;
 
 /** 訪問の欄の文 */
 export function visitsText(visits: number): string {

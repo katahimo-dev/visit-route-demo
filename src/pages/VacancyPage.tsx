@@ -1,24 +1,12 @@
-import {
-  BookmarkPlus,
-  CalendarSearch,
-  ClipboardList,
-  Copy,
-  MapPin,
-  MessageSquareText,
-  Sparkles,
-  Users,
-  X,
-} from 'lucide-react';
+import { BookmarkPlus, CalendarSearch, ClipboardList, Copy, MapPin, MessageSquareText, Users, X } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useConfirm } from '../components/ConfirmDialog';
 import { ConditionsEditor } from '../components/conditions';
 import { EdgeScroll } from '../components/EdgeScroll';
 import { FieldError, invalidAttrs, RequiredMark } from '../components/FieldError';
 import { LevelLegend } from '../components/glance';
 import { MailButton, MailLengthNote, MailNotice, useMailLimit } from '../components/mailParts';
 import { AddressField } from '../components/placeLookup';
-import { confirmDropProposal, RangeProposalBand } from '../components/scheduleParts';
 import { Term } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, SidePanel, WithIcon } from '../components/ui';
@@ -45,12 +33,12 @@ import { pinnedAddressAfter, toPlace } from '../lib/addressLookup';
 import { copyText } from '../lib/clipboard';
 import { CLIENT_COLORS } from '../lib/colors';
 import { attempt, dateText, nameTaken, newId, WEEKDAY_LABELS } from '../lib/common';
+import { unassignedDays } from '../lib/dayPlan';
 import { type InquiryDayMark, type InquiryRow, inquiryDayLevel, inquiryRows, vacancyLevel } from '../lib/glance';
-import { dayHref } from '../lib/links';
+import { dayHref, unassignedHref } from '../lib/links';
 import { referrerRecipients, vacancySubject } from '../lib/mail';
 import { buildBccMails } from '../lib/mailto';
 import { ymOf } from '../lib/month';
-import { missingDays, monthBatch, monthsLabel } from '../lib/monthBatch';
 import { mdText, typeOf } from '../lib/patternText';
 import { normalizePostalCode } from '../lib/postalCode';
 import { scrollLeftToShow } from '../lib/scrollEdge';
@@ -69,7 +57,6 @@ import {
   VACANCY_MARK_TEXT,
   whenWhatLine,
 } from '../lib/vacancyView';
-import { useValueStore } from '../lib/valueStore';
 import { insertAllIntoPlans, weekStart } from '../lib/week';
 import { visitsIn } from '../patterns';
 import { useDemoData } from '../store';
@@ -239,7 +226,6 @@ export default function VacancyPage() {
   /** 段階・紹介元（ADR-0028 の clientStage）：切なら紹介元の名前・メールアドレスの一覧と BCC のメールを出さない（データは残す） */
   const stageOn = useFeature('clientStage');
   const toast = useToast();
-  const confirmDialog = useConfirm();
   const today = jstDate(Date.now());
 
   /** 入力はタブの間だけ覚える（sessionStorage。ほかの画面へ移って戻っても残り、閉じれば消える。PRD D258） */
@@ -591,41 +577,10 @@ export default function VacancyPage() {
   const noPlan = result?.noPlanDates ?? [];
   /** 答えのカード（PRD D258） */
   const answer = result && wishOk ? answerCard(result, wish) : null;
-  /** 担当の足りない日（範囲の今日以降の、担当なしの訪問がある・伝えていない日。PRD D259） */
+  /** 担当の足りない日（範囲の今日以降の、担当なしの訪問がある・伝えていない日。PRD D259）。担当は担当を組むの画面か日の予定で入れる（ADR-0063） */
   const rangeKey = result ? result.dates.join(',') : '';
   // biome-ignore lint/correctness/useExhaustiveDependencies: 範囲は日付の並び（rangeKey）で見る
-  const missing = useMemo(() => (result ? missingDays(data, result.dates, today) : []), [data, rangeKey, today]);
-  /** 月まとめ作成の進み具合（作っている間は押せない。PRD D256） */
-  const batchRun = useValueStore(monthBatch.run);
-  const making = batchRun !== null;
-  /** 作っている間のボタンの文（月の予定から始めた作成は「（月の予定）」で分ける） */
-  const makingText = batchRun
-    ? `${batchRun.label}の担当を組んでいます${batchRun.source === 'month' ? '（月の予定）' : batchRun.source === 'week' || batchRun.source === 'day' ? '（週の予定）' : '…'}`
-    : '';
-  /** 答えのカード（足りない案を作り終えてボタンが消えたとき、フォーカスをここへ） */
-  const answerRef = useRef<HTMLDivElement>(null);
-  /** ［足りない案を作る］にフォーカスがあるか */
-  const makeFocused = useRef(false);
-  useEffect(() => {
-    if (missing.length > 0 || !makeFocused.current) return;
-    makeFocused.current = false;
-    answerRef.current?.focus({ preventScroll: true });
-  }, [missing.length]);
-  /** 担当の足りない日を、その場で AI で組む（月の「担当を AI で組む」の仕組み。ほかの画面へ移っても続く。ADR-0042） */
-  const makeMissing = async () => {
-    if (missing.length === 0 || making) return;
-    // 反映していない提案があれば、捨ててよいか確かめる（提案は1つだけ）
-    if (!(await confirmDropProposal(confirmDialog)) || monthBatch.running()) return;
-    const ok = monthBatch.start({
-      ym: ymOf(missing[0]!.date),
-      label: monthsLabel(missing.map((x) => x.date)),
-      mode: 'care',
-      days: missing,
-      today,
-      source: 'vacancy',
-    });
-    if (!ok) toast('ほかの担当を組んでいます。終わってから押してください');
-  };
+  const missing = useMemo(() => (result ? unassignedDays(data, result.dates, today) : []), [data, rangeKey, today]);
   // 段階の要約の行（PRD D184・D185）
   const placeSummary = placeLine(
     { address: place.address, pinnedAddress: place.pinnedAddress, hasPin: exactPlace !== null },
@@ -851,8 +806,6 @@ export default function VacancyPage() {
           // 条件を変えると答えが変わるので読み上げる（role="status"）
           // biome-ignore lint/a11y/useSemanticElements: 中に段落があるので output ではなく div
           <div
-            ref={answerRef}
-            tabIndex={-1}
             role="status"
             className={`vacancy-answer is-${answer.tone}`}
             data-testid="vacancy-answer"
@@ -865,7 +818,7 @@ export default function VacancyPage() {
             <p className="sub vacancy-answer-note">{answer.note}</p>
           </div>
         )}
-        {/* 数えなかった日・担当なしの訪問がある日の注意はここ1か所（PRD D176）。その場で担当を組む（PRD D259） */}
+        {/* 数えなかった日・担当なしの訪問がある日の注意はここ1か所（PRD D176）。担当なしは担当を組むの画面か日の予定で入れる（PRD D259） */}
         {(noPlan.length > 0 || missing.length > 0) && (
           <div className="vacancy-noplan" data-testid="vacancy-noplan">
             <p>
@@ -877,30 +830,27 @@ export default function VacancyPage() {
                 </>
               ) : null}
               {missing.length > 0
-                ? `担当なしの訪問がある日が${missing.length}日あります（担当を組むと、空きが減ることがあります）。`
+                ? `担当なしの訪問がある日が${missing.length}日あります（担当を入れると、空きが減ることがあります）。`
                 : ''}
             </p>
             {missing.length > 0 ? (
-              <button
-                type="button"
-                className="btn btn-small"
-                onClick={() => void makeMissing()}
-                // 作っている間も押せる見た目を変えるだけ（disabled にするとフォーカスを失う）
-                aria-disabled={making || undefined}
-                onFocus={() => {
-                  makeFocused.current = true;
-                }}
-                onBlur={(e) => {
-                  // 消えるときは blur が来ないことがあるので、ほかへ移ったときだけ下ろす
-                  if (e.relatedTarget) makeFocused.current = false;
-                }}
-                data-testid="vacancy-noplan-make"
-                data-count={missing.length}
-              >
-                <WithIcon icon={Sparkles} size={14}>
-                  {making ? makingText : `担当なしを AI で組む（${missing.length}日）`}
-                </WithIcon>
-              </button>
+              <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <Link
+                  className="btn btn-small"
+                  to={`/arrange?ym=${ymOf(missing[0]!)}`}
+                  data-testid="vacancy-noplan-arrange"
+                  data-count={missing.length}
+                >
+                  担当を組むで組む
+                </Link>
+                <Link
+                  className="btn btn-small btn-text"
+                  to={unassignedHref(missing[0]!)}
+                  data-testid="vacancy-noplan-open"
+                >
+                  担当なしの訪問を見る（{mdText(missing[0]!)}）
+                </Link>
+              </span>
             ) : (
               // 今日より前の日だけ・確定した日だけのときは、月の予定で見る
               <Link
@@ -913,8 +863,6 @@ export default function VacancyPage() {
             )}
           </div>
         )}
-        {/* 組んだ提案（日・週・月の予定と同じ帯。反映すると担当が変わり、空きの数え直しに入る。PRD D328） */}
-        <RangeProposalBand />
         {summary && (
           <>
             <h3 className="vacancy-sub-title">答える文（下の「要約をコピー」でコピー）</h3>

@@ -157,7 +157,7 @@ export function OffboardPanel({ staffId, onClose }: { staffId: string; onClose: 
                 候補は、{mdText(scope.from)}からの{OFFBOARD_SAMPLE_DAYS}
                 日の訪問に、ほかの人の予定を変えずに入れられる回の多い順です。
               </li>
-              <li>入らない回は要対応に出ます。日の予定・月の予定の「AI で組む」で組み直せます。</li>
+              <li>入らない回は要対応に出ます。「担当を組む」の画面の「AI で組む」で組み直せます。</li>
             </ul>
           </Hint>
 

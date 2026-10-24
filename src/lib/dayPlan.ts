@@ -117,6 +117,19 @@ export function unassignedOf(problem: Problem, routes: Routes): string[] {
   return problem.visits.filter((v) => !placed.has(v.id)).map((v) => v.id);
 }
 
+/**
+ * 担当の足りない日（空き状況の注意。PRD D259）：dates のうち今日以降で、伝えていない、担当なしの訪問がある日（昇順）
+ */
+export function unassignedDays(data: DemoData, dates: readonly string[], today: string): string[] {
+  return dates
+    .filter((date) => {
+      if (date < today || own(data.snapshots, date)) return false;
+      const p = dayProblemOf(data, date);
+      return !!p && p.visits.length > 0 && unassignedOf(p, routesOf(p, visitsOn(data, date))).length > 0;
+    })
+    .sort();
+}
+
 /** 訪問ID → 担当 */
 export function ownerOf(routes: Routes): Map<string, string> {
   const out = new Map<string, string>();

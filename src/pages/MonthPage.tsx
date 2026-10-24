@@ -5,7 +5,6 @@ import {
   CalendarRange,
   CircleAlert,
   Info,
-  Layers,
   LayoutGrid,
   List,
   ListChecks,
@@ -13,7 +12,6 @@ import {
   PencilLine,
   Printer,
   SlidersHorizontal,
-  Sparkles,
   Square,
   Timer,
   UserX,
@@ -45,18 +43,11 @@ import { ClientDot } from '../components/parts';
 import { type BandModel, ProgressBand } from '../components/progressBand';
 import { ScheduleNav } from '../components/ScheduleNav';
 import { StaffMark } from '../components/StaffMark';
-import {
-  confirmDropProposal,
-  RangeProposalBand,
-  ScheduleToolbar,
-  SelectionBar,
-  useScopeItems,
-} from '../components/scheduleParts';
+import { RangeProposalBand, ScheduleToolbar, SelectionBar } from '../components/scheduleParts';
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { PageHeader, SidePanel, WithIcon } from '../components/ui';
-import { useScheduleMode } from '../components/useScheduleMode';
 import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
@@ -91,7 +82,6 @@ import { attentionTarget, type LinkTarget } from '../lib/links';
 import {
   addMonths,
   attentionList,
-  type BatchMode,
   batchTargets,
   type ClientDay,
   calendarWeeks,
@@ -128,7 +118,7 @@ import {
 import { attentionCountByDate, showRestMark, usualRestByWeekday } from '../lib/monthRest';
 import { scrollBehavior } from '../lib/motion';
 import { mdText } from '../lib/patternText';
-import { type BandOp, urgentCount } from '../lib/progressBand';
+import { type BandOp, bandHref, urgentCount } from '../lib/progressBand';
 import {
   type OffDayState,
   offDayState,
@@ -146,7 +136,6 @@ import { dropShadowText, dropTone } from '../lib/visitDrop';
 import { cellKeyOf } from '../lib/visitKeys';
 import { canSelectVisit, isMultiClick } from '../lib/visitSelect';
 import { findVisit, visitsOn } from '../patterns';
-import { scorePresetOf } from '../seed';
 import { type DayLoadSlot, dayLoad } from '../vacancy';
 import './month.css';
 import './settings.css';
@@ -156,20 +145,9 @@ import './settings.css';
  * 日のマスは点数を出さず、状態を背景・枠と印で（凡例あり。読み上げには状態の文字）、種類の積み上げバー・休み欠勤の印・
  * 始まる▶終わる■の印・混み具合バー（vacancy の dayLoad）。「表示」で〈スタッフ〉か〈利用者さん〉を1人選ぶと、日のマスと
  * 右の欄がその人のものになる（?staff= ?client=）。選ばないときの右の欄は要対応。押すとその日の予定の画面へ。
- * 月まとめ作成は、基準のプリセットの重みで1日ずつ Worker で解き、その日の今の案と記録を1回の update で書く。
- * 計算は画面の外（lib/monthBatch。ADR-0042）で回し、画面は始める・止める・進み具合を見るだけ（ほかの画面へ移っても続く。PRD D256）
+ * 担当を AI で組むのは「担当を組む」の画面（#/arrange。ADR-0063）。この画面は組んでいる間の進み具合と止めるだけを出し
+ * （計算は画面の外の lib/monthBatch。ADR-0042）、出た提案は範囲の提案の帯で反映する
  */
-
-/** 1日あたりの見込み（秒）。design.md：1日 約3〜5秒 */
-const SEC_MIN = 3;
-const SEC_MAX = 5;
-
-function etaText(days: number): string {
-  const lo = days * SEC_MIN;
-  const hi = days * SEC_MAX;
-  if (hi < 60) return `約${lo}〜${hi}秒`;
-  return `約${Math.max(1, Math.round(lo / 60))}〜${Math.ceil(hi / 60)}分`;
-}
 
 const longDate = (d: string) =>
   `${Number(d.slice(5, 7))}月${Number(d.slice(8, 10))}日（${WEEKDAY_LABELS[weekday(d)]}）`;
@@ -190,7 +168,6 @@ const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
 export default function MonthPage() {
   const { date, setDate, dates: dataDates } = useDay();
   /** 予定のモード（PRD D348）：確認では札を動かさない */
-  const { tools: modeTools } = useScheduleMode();
   const { data, update, compileInput } = useDayModel(date);
   const terms = data.org.terms;
   /** 切った機能（月の予定の印刷・稼働の見込み）の画面へ移るボタンは出さない（PRD D213。ADR-0028） */
@@ -215,7 +192,6 @@ export default function MonthPage() {
   const narrowList = useMedia(MONTH_LIST_QUERY);
   const layout = monthLayoutOf(params.get(MONTH_LAYOUT_PARAM), narrowList);
 
-  const [panel, setPanel] = useState(false);
   /** 選ばないときの右の欄：要対応／確定していない日（進み具合の帯の「確定」から。PRD D153） */
   const [asideView, setAsideView] = useState<'attention' | 'unconfirmed'>('attention');
   const asideRef = useRef<HTMLElement>(null);
@@ -227,7 +203,6 @@ export default function MonthPage() {
   const bulkWhyId = useId();
   /** マスの読み方の文の置き場（日付 → 文。PRD D177） */
   const tipStore = useMemo(() => createTipStore(), []);
-  const [mode, setMode] = useState<BatchMode>('care');
   /** 月まとめ作成の進み具合（画面の外の計算。作っていなければ null。PRD D256） */
   const batch = useValueStore(monthBatch.run);
   /** 最後に終わった月まとめ作成（計算できずに止まった理由を出す） */
@@ -350,9 +325,6 @@ export default function MonthPage() {
     if (next === layout) return;
     patchParams({ [MONTH_LAYOUT_PARAM]: next });
   };
-
-  /** 点数の基準のプリセット（月まとめ作成に使う。ADR-0012） */
-  const basePreset = useMemo(() => scorePresetOf(data.presets, data.scorePresetId), [data.presets, data.scorePresetId]);
 
   const weeks = useMemo(() => calendarWeeks(ym), [ym]);
   const days = useMemo(() => monthDates(ym), [ym]);
@@ -539,33 +511,8 @@ export default function MonthPage() {
   }, [days, statuses, visitsByDate]);
 
   /** その月の今日以降の訪問 */
-  const futureVisits = progress.visits;
-  const statusOf = (d: string) => statuses.get(d);
-  const targetsOf = (m: BatchMode) => batchTargets(data, days, today, m, statusOf);
-  /** 欄の対象の日 */
-  const panelTargets = panel ? targetsOf(mode) : [];
   const running = batch !== null;
-  const noVisitsWhy = futureVisits === 0 ? '繰り返しが無いか、この月の今日以降の訪問がありません' : null;
-
-  /**
-   * 担当を AI で組む欄を開く（入口は進み具合の帯の1か所と ?do=batch。PRD D153・D154）。既定の対象はいつも「要対応のある日だけ」
-   * （0日でも。組み直す＝手で決めた担当を変えうる操作を既定にしない。組み直しは欄で利用者が選ぶ）。
-   * 開かないとき：組んでいる間・この月に訪問が無い・組む日が無い（知らせを出す）
-   */
-  const openBatch = () => {
-    if (runningNow()) return;
-    if (noVisitsWhy) {
-      toast(noVisitsWhy);
-      return;
-    }
-    if (targetsOf('care').length === 0 && targetsOf('all').length === 0) {
-      toast('組む日がありません（今日より前の日・確定した日は組みません）');
-      return;
-    }
-    setError(null);
-    setMode('care');
-    setPanel(true);
-  };
+  const noVisitsWhy = progress.visits === 0 ? '繰り返しが無いか、この月の今日以降の訪問がありません' : null;
 
   /** 進み具合の帯（PRD D151〜D155）：今月の準備と同じ数え方。週・日の画面の帯と同じもの */
   const band = useMemo(
@@ -581,14 +528,16 @@ export default function MonthPage() {
     [ym, progress, data, days, today, statuses, attention],
   );
 
-  /** 帯の数字・ボタン：この画面の中で欄を開く（URL の ?staff= などは showAside のとおり） */
+  /** 担当を組むの画面へ（その月。ADR-0063） */
+  const openArrange = () => navigate(bandHref(ym, 'batch'));
+  /** 帯の数字・ボタン：担当を組むは担当を組むの画面へ、ほかはこの画面の中で欄を開く（URL の ?staff= などは showAside のとおり） */
   const onBandOp = (op: BandOp) => {
-    if (op === 'batch') openBatch();
+    if (op === 'batch') openArrange();
     else showAside(op);
   };
 
   // ---- ホーム・週・日の帯から来たときの操作（PRD D143・D153。?do=）----
-  // batch：まとめて作るの欄を開く（openBatch）。attention・unconfirmed：右の欄の要対応・確定していない日へ。
+  // batch（古いリンク）：担当を組むの画面へ移す。attention・unconfirmed：右の欄の要対応・確定していない日へ。
   // 1回だけ行い、URL から ?do= を消す（戻る・再読込で繰り返さない）
   const doParam = params.get('do');
   // biome-ignore lint/correctness/useExhaustiveDependencies: ?do= が付いたときだけ
@@ -598,8 +547,11 @@ export default function MonthPage() {
       showAside(doParam, { do: null });
       return;
     }
+    if (doParam === 'batch') {
+      navigate(bandHref(ym, 'batch'), { replace: true });
+      return;
+    }
     patchParams({ do: null });
-    if (doParam === 'batch') openBatch();
   }, [doParam]);
 
   // ---- 問題の無い日をまとめて確定（PRD D223。右の欄の「確定していない日」）----
@@ -630,32 +582,6 @@ export default function MonthPage() {
     toast(`${ready.length}日を確定しました`);
     // 押したボタンは0日になって押せなくなるので、フォーカスは右の欄へ（確定していない日の一覧の先頭から読める）
     requestAnimationFrame(() => asideRef.current?.focus({ preventScroll: true }));
-  };
-
-  // ---- 担当を AI で組む（月まとめ。ADR-0012・ADR-0053）----
-  /** 対象の日を1日ずつ組む（ピンの訪問はそのまま。終わったら提案の帯。反映するまで訪問は変わらない。PRD D328） */
-  const start = async (m: BatchMode) => {
-    if (runningNow()) return;
-    setError(null);
-    const targets = targetsOf(m);
-    if (targets.length === 0) {
-      setError('対象の日がありません（今日より前の日・確定した日は組みません）');
-      return;
-    }
-    // 反映していない提案があれば、捨ててよいか確かめる（提案は1つだけ）
-    if (!(await confirmDropProposal(confirmDialog)) || runningNow()) return;
-    setPanel(false);
-    // 組んでいる間は希望休を入れない（Worker の計算とデータの書き込みを混ぜない）
-    setOffMode(false);
-    // 計算は画面の外で続ける（ほかの画面へ移っても止めない。PRD D256。ADR-0042）。二重には始めない
-    monthBatch.start({
-      ym,
-      label: `${monthNo}月`,
-      mode: m,
-      days: targets.map((date) => ({ date, mode: m })),
-      today,
-      source: 'month',
-    });
   };
 
   const stop = () => monthBatch.stop();
@@ -810,7 +736,6 @@ export default function MonthPage() {
   }, [days, visitsByDate, multi.ids]);
   /** 一覧の行のキー（↑↓ 15分・←→ 1日・Shift+←→ 隣の担当・Enter 欄・Delete 取り消し。PRD D333） */
   const visitKeys = useVisitKeys({
-    readOnly: !modeTools.move,
     staffOrder: () => activeStaff.map((s) => s.id),
     onOpen: openPanel,
     onMoved: (r) => {
@@ -860,7 +785,6 @@ export default function MonthPage() {
   const drag = useVisitDrag({
     today,
     fit: true,
-    readOnly: !modeTools.move,
     onDrop: (visitId, v) => {
       const x = findVisit(dataRef.current, visitId);
       const width = x ? hhmmToMinutes(x.latestStart) - hhmmToMinutes(x.earliestStart) : 0;
@@ -1018,8 +942,6 @@ export default function MonthPage() {
     },
   ];
 
-  const scopeItems = useScopeItems({ zoom: 'month', date, onMonth: openBatch });
-
   return (
     <div className="stack">
       <PageHeader
@@ -1039,7 +961,7 @@ export default function MonthPage() {
       {/* 進み具合の帯（PRD D151〜D155）。「まとめて作る」の入口はここの1か所（D154。見出しのボタン・今月の準備の①〜③をまとめた） */}
       <ProgressBand ym={ym} model={band} primary onOp={onBandOp} />
       {/* 操作の行（日・週・月で同じ並び。PRD D327）。月送り・今月のほかのときどき使う操作は「その他 ▾」（PRD D278） */}
-      <ScheduleToolbar zoom="month" absence={suddenOn ? { date } : null} aiItems={scopeItems} moreItems={moreItems}>
+      <ScheduleToolbar zoom="month" absence={suddenOn ? { date } : null} moreItems={moreItems}>
         {/* カレンダーと日ごとの一覧の切り替え（PRD D189。600px 以下ははじめ一覧。URL の ?layout=。操作の欄より上） */}
         <fieldset className="segmented seg-sm month-layout" aria-label="月の見せ方" data-testid="month-layout">
           {(
@@ -1063,7 +985,7 @@ export default function MonthPage() {
           ))}
         </fieldset>
       </ScheduleToolbar>
-      {/* 範囲の提案（日・週・月で同じ帯。PRD D328） */}
+      {/* 担当を組むの画面で組んだ範囲の提案（日・週・月で同じ帯。PRD D328） */}
       <RangeProposalBand />
 
       <div className="card stack month-head">
@@ -1604,9 +1526,7 @@ export default function MonthPage() {
           )}
         </aside>
         {/* 選んだ訪問の帯と、キーで動かした先の読み上げ・繰り返しの回の範囲の帯（PRD D330・D333。日・週と同じ） */}
-        {modeTools.move && !(narrowList && sheetDay) && (
-          <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} moveDay />
-        )}
+        {!(narrowList && sheetDay) && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} moveDay />}
         <KeyMoveBand
           onMoved={(r) => {
             setListDay(r.date);
@@ -1656,80 +1576,9 @@ export default function MonthPage() {
                     );
                   })}
                 </ul>
-                {modeTools.move && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} inline />}
+                <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} inline />
               </>
             )}
-          </div>
-        </SidePanel>
-      )}
-
-      {panel && (
-        <SidePanel
-          icon={Layers}
-          title={`${monthNo}月の担当を AI で組む`}
-          onClose={() => setPanel(false)}
-          footer={
-            <>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={panelTargets.length === 0}
-                onClick={() => start(mode)}
-              >
-                <WithIcon icon={Sparkles}>組み始める</WithIcon>
-              </button>
-              <button type="button" className="btn" onClick={() => setPanel(false)}>
-                <WithIcon icon={X}>閉じる</WithIcon>
-              </button>
-            </>
-          }
-        >
-          <div className="stack">
-            <p>
-              使う
-              <Term k="preset" />：<strong data-testid="batch-preset">{basePreset?.name ?? '点数の基準'}</strong>
-              <span className="sub">（重みは「条件の重み」の画面で直します）</span>
-            </p>
-            <fieldset className="stack batch-mode" style={{ gap: 6 }}>
-              <legend>対象</legend>
-              <label className="check">
-                <input
-                  type="radio"
-                  name="batch-mode"
-                  checked={mode === 'care'}
-                  onChange={() => setMode('care')}
-                  style={{ width: 'auto' }}
-                  data-testid="batch-mode-care"
-                />
-                要対応のある日だけ（{targetsOf('care').length}日）
-              </label>
-              <label className="check">
-                <input
-                  type="radio"
-                  name="batch-mode"
-                  checked={mode === 'all'}
-                  onChange={() => setMode('all')}
-                  style={{ width: 'auto' }}
-                  data-testid="batch-mode-all"
-                />
-                伝えていない日をすべて組み直す（{targetsOf('all').length}日）
-              </label>
-            </fieldset>
-            <p data-testid="batch-count">
-              対象の日：<strong>{panelTargets.length}日</strong>
-              {panelTargets.length > 0 && <span className="sub">（見込み {etaText(panelTargets.length)}）</span>}
-            </p>
-            {panelTargets.length === 0 && (
-              <p className="warn-text">
-                {noVisitsWhy ?? '対象の日がありません（今日より前の日・確定した日は組みません）'}
-              </p>
-            )}
-            <p className="sub">
-              ピンの訪問はそのままで、ほかの訪問の担当と時刻を組みます。今日より前の日・確定した日は組みません。
-            </p>
-            <p className="sub">
-              1日ずつ組み、終わったら提案（担当・時刻の変わる訪問）を出します。見て「反映する」と担当が変わります（「元に戻す」で戻せます）。ほかの画面へ移っても組み続けます。「止める」と、そこまでの提案を出します。
-            </p>
           </div>
         </SidePanel>
       )}

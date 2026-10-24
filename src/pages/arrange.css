@@ -1,0 +1,17 @@
+/* 担当を組むの画面（ArrangePage。ADR-0063） */
+.arrange-title {
+  margin: 0;
+  font-size: 1rem;
+}
+.arrange-range-row {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+.arrange-counts {
+  margin: 0;
+}
+.arrange-preset select {
+  max-width: 100%;
+  width: fit-content;
+}

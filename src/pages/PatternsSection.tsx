@@ -249,7 +249,7 @@ export function PatternsSection({
       toast(
         p.usualStaffId
           ? `繰り返しを足しました（担当：${staffName(p.usualStaffId)}）`
-          : '繰り返しを足しました（担当なし。日の予定・月の予定で AI で組めます）',
+          : '繰り返しを足しました（担当なし。「担当を組む」の画面で AI で組めます）',
       );
       return;
     }

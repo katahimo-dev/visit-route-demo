@@ -36,7 +36,7 @@ const PART_LABEL: Record<PrepPart['kind'], string> = {
 };
 
 /**
- * 進み具合の帯（見た目だけ）。数字とボタンは月の画面の欄へのリンク（`?do=`）。onOp を渡すと移らずにそれを呼ぶ（月の画面）。
+ * 進み具合の帯（見た目だけ）。数字とボタンは月の画面の欄（`?do=`）か担当を組むの画面（`#/arrange?ym=`）へのリンク。onOp を渡すと移らずにそれを呼ぶ（月の画面）。
  * model が null の間（数えている間）は同じ高さで「数えています」
  */
 export const ProgressBand = memo(function ProgressBand({
@@ -97,8 +97,8 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${visitsDone ? ' is-done' : ''}`}
-            title={`今日以降の訪問 ${p.visits}件。押すと月の予定の「担当を AI で組む」の欄を開きます`}
-            aria-label={`訪問 ${visitsText(p.visits)}${done(visitsDone)}。担当を AI で組むを開く`}
+            title={`今日以降の訪問 ${p.visits}件。押すと「担当を組む」の画面を開きます`}
+            aria-label={`訪問 ${visitsText(p.visits)}${done(visitsDone)}。担当を組むの画面を開く`}
             data-testid="band-visits"
           >
             {visitsDone && <DoneMark />}
@@ -110,11 +110,11 @@ export const ProgressBand = memo(function ProgressBand({
             to={bandHref(ym, 'batch')}
             onClick={click('batch')}
             className={`pb-item${planDone ? ' is-done' : ''}`}
-            title={`担当が全部入った日（要対応の無い日） ${p.planned}/${p.days}日（訪問のある日のうち）。押すと月の予定の「担当を AI で組む」の欄を開きます`}
+            title={`担当が全部入った日（要対応の無い日） ${p.planned}/${p.days}日（訪問のある日のうち）。押すと「担当を組む」の画面を開きます`}
             data-testid="band-plans"
             data-planned={p.planned}
             data-days={p.days}
-            aria-label={`担当が全部入った日 ${p.planned}/${p.days}日${done(planDone)}。担当を AI で組むを開く`}
+            aria-label={`担当が全部入った日 ${p.planned}/${p.days}日${done(planDone)}。担当を組むの画面を開く`}
           >
             {planDone && <DoneMark />}担当
             <strong>

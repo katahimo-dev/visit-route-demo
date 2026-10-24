@@ -21,6 +21,7 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
+  Sparkles,
   Tags,
   Timer,
   TriangleAlert,
@@ -50,7 +51,6 @@ import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { TourProvider } from '../components/Tour';
 import { HistoryKeys } from '../components/undo';
-import { useScheduleMode } from '../components/useScheduleMode';
 import { VisitPanelProvider } from '../components/VisitPanel';
 import { addDays, jstDate } from '../domain/time';
 import { hashPathname, isPaletteShortcut, keepPaletteOn } from '../lib/commandPalette';
@@ -75,8 +75,9 @@ import {
   tabClick,
   tabLabel,
 } from '../lib/nav';
-import { menuBadges, type ScheduleMode } from '../lib/scheduleMode';
+import { menuBadges } from '../lib/scheduleMode';
 import { NARROW_QUERY } from '../lib/useMedia';
+import ArrangePage from '../pages/ArrangePage';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientPage from '../pages/ClientPage';
 import ClientsPage from '../pages/ClientsPage';
@@ -158,6 +159,8 @@ export default function App() {
                 <Route path="/week" element={<WeekPage />} />
                 <Route path="/workload" element={<WorkloadPage />} />
                 <Route path="/vacancy" element={<VacancyPage />} />
+                {/* 担当を組む（AI で範囲の担当を組む・提案を比べる。ADR-0063） */}
+                <Route path="/arrange" element={<ArrangePage />} />
                 <Route path="/compare" element={<ComparePage />} />
                 <Route path="/standard" element={<StandardPage />} />
                 <Route path="/rules" element={<RulesPage />} />
@@ -216,6 +219,7 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
   week: CalendarClock,
   day: CalendarDays,
   compare: GitCompareArrows,
+  arrange: Sparkles,
   absence: UserX,
   vacancy: CalendarSearch,
   clients: House,
@@ -330,8 +334,7 @@ function AdminShell() {
   const lastSettings = last.settings;
   const lastPeople = last.people;
   // 切った機能の項目は出さない（PRD D213）。下のタブもここから引く
-  // 予定のモード（PRD D348）と件数の印（PRD D349。compile しないので軽い）
-  const { mode } = useScheduleMode();
+  // 件数の印（PRD D349。compile しないので軽い）
   const badges = useMemo(() => menuBadges(data, today), [data, today]);
   const groups = useMemo(
     () =>
@@ -368,7 +371,7 @@ function AdminShell() {
       <div className="app-shell" data-date={pickedDate}>
         <aside ref={sideNavRef} className="side-nav">
           {brand}
-          <NavGroups groups={groups} pathname={pathname} mode={mode} />
+          <NavGroups groups={groups} pathname={pathname} />
         </aside>
         <div className="app-body">
           <header ref={headerRef} className="app-header">
@@ -449,7 +452,7 @@ function AdminShell() {
             {bottomTabs(groups).map((item) => {
               const { key, to, icon } = item;
               const Icon = NAV_ICONS[icon];
-              // 「予定」は月・週・日の予定と比較で印（PRD D273）。欠勤は操作なので印を付けない
+              // 「予定」は月・週・日の予定で印（PRD D273）。欠勤は操作なので印を付けない
               const on = isActiveNav(item, pathname);
               const click = tabClick(item, pathname);
               return (
@@ -517,7 +520,6 @@ function AdminShell() {
             <NavGroups
               groups={groups}
               pathname={pathname}
-              mode={mode}
               onPick={(e, item) => {
                 // 今の画面の項目は閉じるだけ（移り直して URL のクエリ＝画面の状態を消さない）
                 if (tabClick(item, pathname) === 'stay') e.preventDefault();
@@ -572,17 +574,15 @@ const subscribeNavOpen = (fn: () => void) => {
  * メニューの並び（左のメニューとスマホの引き出しで共通。グループの見出し付きの縦並び）。
  * 子の項目を持つ項目は ▾ で畳める（PRD D349）。押して変えた開け閉めは覚える。今の画面の親は、その親へ移ったときに開いて見せる
  * （覚えない。同じ親の中で画面を移っても、畳んだら畳んだまま）。
- * 今の画面の印は、開いていれば子に、畳んでいれば親に付ける（予定の子は予定のモードで決める）
+ * 今の画面の印は、開いていれば子に、畳んでいれば親に付ける
  */
 function NavGroups({
   groups,
   pathname,
-  mode,
   onPick,
 }: {
   groups: readonly NavSection<NavItem>[];
   pathname: string;
-  mode: ScheduleMode;
   /** 項目を押したとき（引き出しを閉じる。今の画面なら移らない） */
   onPick?: (e: MouseEvent<HTMLAnchorElement>, item: NavItem) => void;
 }) {
@@ -626,12 +626,12 @@ function NavGroups({
         <div key={g.items[0]!.key} className="nav-group">
           {g.title && <h2 className="nav-group-title">{g.title}</h2>}
           {g.items.map((item) => {
-            // 今の画面の印（「予定」は月・週・日の予定と比較、「設定」は設定のタブ。PRD D273・D275）
+            // 今の画面の印（「予定」は月・週・日の予定、「設定」は設定のタブ。PRD D273・D275）
             const on = isActiveNav(item, pathname);
             const kids = item.children ?? [];
             if (kids.length === 0) return <Fragment key={item.key}>{link(item, on)}</Fragment>;
             const open = isOpen(item.key);
-            const kidOn = kids.map((k) => isActiveNav(k, pathname, mode));
+            const kidOn = kids.map((k) => isActiveNav(k, pathname));
             const subId = `nav-sub-${item.key}`;
             return (
               <div key={item.key} className={`nav-parent${open ? ' is-open' : ''}`} data-parent={item.key}>

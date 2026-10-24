@@ -1,4 +1,4 @@
-// 「AI で組む」の日・週・月の範囲（PRD D256・D257・D328。ADR-0042・ADR-0053・ADR-0054）の計算を画面の外で回す。
+// 「担当を組む」の画面（#/arrange。ADR-0063）の「AI で組む」：日・週・月の範囲（PRD D256・D257・D328。ADR-0042・ADR-0053）の計算を画面の外で回す。
 // 画面は始める・止めるだけを頼み、計算はモジュールの入れ物で続ける（ほかの画面へ移っても止めない）。
 // 1日ずつ AI で組み、終わったら提案（日ごとの担当・時刻の変更）を出す。訪問には書かない。「反映する」（apply）で、
 // 組み始めたときのままの日だけ担当・開始を1回の update で訪問に書く（ピンの訪問は動かさない。全体の「元に戻す」で1手戻せる）。
@@ -7,21 +7,21 @@ import type { DemoData } from '../contracts/data';
 import type { Visit } from '../contracts/documents';
 import type { Problem, SolveOptions, SolveResult } from '../contracts/problem';
 import type { ReassignDiff } from '../contracts/reassign';
+import type { Rule } from '../contracts/rules';
 import { addDays } from '../domain/time';
-import type { CompileInput } from '../matching';
 import { visitsOn } from '../patterns';
 import { reassignDiff } from '../reassign';
 import { defaultIterations, runSolve } from '../solver';
 import { own } from './common';
-import { activeDayVisits, aiPinsOf, dayProblemOf, routesOf, unassignedOf, writeRoutes } from './dayPlan';
+import { aiPinsOf, dayProblemOf, routesOf, writeRoutes } from './dayPlan';
 import type { BatchMode } from './month';
 import { createValueStore, type ReadableStore } from './valueStore';
 
 /** 組む日（日ごとの選び方：care＝要対応のある日、all＝伝えていない日すべて） */
 export type BatchDay = { date: string; mode: BatchMode };
 
-/** 範囲（月・週・日）か始めた画面（空き状況）。知らせ・帯の行き先と文を分ける */
-export type BatchSource = 'month' | 'vacancy' | 'week' | 'day';
+/** 範囲（月・週・日）。知らせ・帯の行き先と文を分ける */
+export type BatchSource = 'month' | 'week' | 'day';
 
 /** 始めるときに渡すもの */
 export type BatchJob = {
@@ -32,10 +32,12 @@ export type BatchJob = {
   /** 欄で選んだ作り方（月の予定の進み具合の表示用） */
   mode: BatchMode;
   days: readonly BatchDay[];
-  /** 始めた画面（月の予定・空き状況・週の予定。ほかの画面のボタンの文・知らせの行き先を分ける） */
+  /** 範囲（月・週・日。知らせ・上の帯の行き先を分ける） */
   source: BatchSource;
-  /** 週の予定から始めたときの週の始まり（月曜。知らせ・上の帯の行き先 `/week?d=`。ほかは null） */
-  weekStart?: string | null;
+  /** 週・日の範囲の始まり（週は月曜、日はその日。知らせ・上の帯の行き先。月は null） */
+  rangeStart?: string | null;
+  /** 考え方（プリセット）を当てた条件（無ければ今の条件＝点数の基準の重み。データの条件は書き換えない） */
+  rules?: Rule[];
   today: string;
 };
 
@@ -62,7 +64,7 @@ export type BatchProposal = {
   ym: string;
   label: string;
   source: BatchSource;
-  weekStart: string | null;
+  rangeStart: string | null;
   days: ProposalDay[];
   /** ［止める］で途中まで */
   stopped: boolean;
@@ -146,8 +148,8 @@ export type BatchRun = {
   label: string;
   mode: BatchMode;
   source: BatchSource;
-  /** 週の予定から始めたときの週の始まり（ほかは null） */
-  weekStart: string | null;
+  /** 週・日の範囲の始まり（月は null） */
+  rangeStart: string | null;
   /** 作る日の日付（順に） */
   targets: string[];
   /** いま作っている日の番号（0から） */
@@ -163,8 +165,8 @@ export type BatchDone = {
   ym: string;
   label: string;
   source: BatchSource;
-  /** 週の予定から始めたときの週の始まり（ほかは null） */
-  weekStart: string | null;
+  /** 週・日の範囲の始まり（月は null） */
+  rangeStart: string | null;
   made: number;
   /** 入らない訪問がある日の数 */
   unassignedDays: number;
@@ -227,48 +229,6 @@ export function batchBandText(r: BatchRun): string {
   return `${r.label}の担当を組んでいます ${Math.min(r.index + 1, r.targets.length)}/${r.targets.length}日`;
 }
 
-/** 日付の月の名前（「11月」「10・11月」） */
-export function monthsLabel(dates: readonly string[]): string {
-  const months = [...new Set(dates.map((d) => Number(d.slice(5, 7))))];
-  return `${months.join('・')}月`;
-}
-
-/** その日に担当なしの訪問があるか（伝えていない日だけ） */
-function hasUnassigned(data: DemoData, date: string): boolean {
-  if (own(data.snapshots, date)) return false;
-  const p = dayProblemOf(data, date);
-  return !!p && p.visits.length > 0 && unassignedOf(p, routesOf(p, visitsOn(data, date))).length > 0;
-}
-
-/**
- * 担当の足りない日（空き状況の［足りない担当を組む］。PRD D259）：dates のうち今日以降で、伝えていない、担当なしの訪問がある日
- */
-export function missingDays(data: DemoData, dates: readonly string[], today: string): BatchDay[] {
-  return dates
-    .filter((d) => d >= today && hasUnassigned(data, d))
-    .sort()
-    .map((date) => ({ date, mode: 'care' as const }));
-}
-
-/**
- * 週の予定の「この週の担当を AI で組む」で組む日（PRD D280）：dates（週の7日）のうち今日以降で、伝えていない、
- * 計算に入れる訪問がある日
- */
-export function weekBatchDays(data: DemoData, dates: readonly string[], today: string): BatchDay[] {
-  return dates
-    .filter((d) => d >= today && !own(data.snapshots, d) && activeDayVisits(data, d).length > 0)
-    .sort()
-    .map((date) => ({ date, mode: 'all' as const }));
-}
-
-/**
- * その日の担当を組めるか：compile でき、計算に入る訪問と〈スタッフ〉がいる。週の予定は組めない日を数えない（PRD D280）
- */
-export function canMakeDay(data: CompileInput, date: string): boolean {
-  const base = dayProblemOf(data, date);
-  return !!base && base.visits.length > 0 && base.staff.length > 0;
-}
-
 /** 日の呼び名（「10/28」。範囲が1日のとき） */
 export function dayLabel(date: string): string {
   return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
@@ -280,9 +240,11 @@ export function weekLabel(start: string): string {
   return `${md(start)}〜${md(addDays(start, 6))}の週`;
 }
 
-/** 進み具合の帯の文・知らせのボタンの行き先（週の予定から始めたならその週、日ならその日の週、ほかは月の予定のその月） */
-export function batchHref(x: Pick<BatchRun, 'ym' | 'source' | 'weekStart'>): string {
-  return (x.source === 'week' || x.source === 'day') && x.weekStart ? `/week?d=${x.weekStart}` : `/month?ym=${x.ym}`;
+/** 進み具合の帯の文・知らせのボタンの行き先（担当を組むの画面の、組んだ範囲。ADR-0063） */
+export function batchHref(x: Pick<BatchRun, 'ym' | 'source' | 'rangeStart'>): string {
+  if (x.source === 'week' && x.rangeStart) return `/arrange?d=${x.rangeStart}`;
+  if (x.source === 'day' && x.rangeStart) return `/arrange?date=${x.rangeStart}`;
+  return `/arrange?ym=${x.ym}`;
 }
 
 /** 入れ物を作る（solve は差し替えられる。テストは Worker なしで解く） */
@@ -311,7 +273,9 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
     const gen = ++generation;
     const live = () => gen === generation;
     const targets = job.days.map((x) => x.date);
-    const weekStart = job.weekStart ?? null;
+    const rangeStart = job.rangeStart ?? null;
+    /** 組む条件（プリセットを当てた条件か、今の条件） */
+    const withRules = (d: DemoData): DemoData => (job.rules ? { ...d, rules: job.rules } : d);
     stopped = false;
     // 新しく組み始めたら前の提案は捨てる（提案は1つだけ）
     proposal.set(null);
@@ -323,7 +287,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       label: job.label,
       mode: job.mode,
       source: job.source,
-      weekStart,
+      rangeStart,
       targets,
       index: 0,
       made: 0,
@@ -342,7 +306,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
           ym: job.ym,
           label: job.label,
           source: job.source,
-          weekStart,
+          rangeStart,
           days: [...days],
           stopped,
         });
@@ -350,7 +314,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         ym: job.ym,
         label: job.label,
         source: job.source,
-        weekStart,
+        rangeStart,
         made,
         unassignedDays,
         stopped,
@@ -376,8 +340,8 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
       }
       const visits = visitsOn(latest, day);
       // 手で付けたピンと標準のピン（ADR-0062）
-      const pins = aiPinsOf(latest, day, visits);
-      const p = dayProblemOf(latest, day, Object.keys(pins).length > 0 ? pins : undefined);
+      const pins = aiPinsOf(withRules(latest), day, visits);
+      const p = dayProblemOf(withRules(latest), day, Object.keys(pins).length > 0 ? pins : undefined);
       if (!p || p.visits.length === 0 || p.staff.length === 0) {
         step(i + 1);
         return;
@@ -467,7 +431,7 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         ym: r.ym,
         label: r.label,
         source: r.source,
-        weekStart: r.weekStart,
+        rangeStart: r.rangeStart,
         made: r.made,
         unassignedDays: 0,
         stopped: true,
