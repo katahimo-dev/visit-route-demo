@@ -19,18 +19,19 @@
 案C。
 - 共通の部品 `components/ScheduleNav.tsx`（`div.sched-nav`・data-testid `sched-nav`・`data-view`）を見出し（`PageHeader`。`nav` は渡さない）のすぐ下に置く
 - 左から「今日」（`sched-today`。今日を含む期間を見ていれば押せない）・`.period-switch`（‹ 期間の select ›。読み上げ名「前の月／次の月」「前の週／次の週」「前の日／次の日」）・`ViewSwitch`（枠の切り替えの見た目）・右に `actions`（日：状態の印・メールで送る・確定。週：メールで送る・まとめて確定。月：無し）
-- 期間の select：月はデータの日付の月（data-testid `month-title`）、週はデータの日付を含む週の月曜（`week-title`）、日はデータの日付（日だけ `.date-switch` も付け、上の帯の日付の選択と同じ見た目・同じ値）
+- 期間の select（`options` は `value` を含めて呼ぶ側が渡す。日の「今日」はデータに無い日でも選べる）：月はデータの日付の月（data-testid `month-title`）、週はデータの日付を含む週の月曜（`week-title`）、日はデータの日付（日だけ `.date-switch` も付け、上の帯の日付の選択と同じ見た目・同じ値）
 - 上の帯の日付の選択（`DateSwitcher`）は `/plan`・`/week`・`/month` では出さない（`DATE_PAGES` から外す）
 - 月・週のカードの中の送り・「今月」「今週」はやめる（月の要約・週の表示の切り替えは残す）
-- 861px 以上で `position: sticky; top: var(--header-h)`。高さは `--sched-nav-h`（64px）で、巻いて止める要素の `scroll-margin-top` が上の帯と合わせて避ける。860px 以下は貼り付けず折り返す。印刷では出さない
+- 861px 以上で `position: sticky; top: var(--header-h)`。高さ `--sched-nav-h` は `ScheduleNav` が `ResizeObserver` で測り、`html` の `scroll-padding-top` が使って巻いて止める要素を避ける（決め打ちにしない）。860px 以下は貼り付けず折り返す。印刷では期間の文（読み上げ用の `h2.sched-nav-period`）だけ出し、ナビの行のほかは出さない
 - 週の「この週の問題の無い日をまとめて確定（N日）」は 1400px 未満のナビの行では短い文「この週をまとめて確定（N日）」
 
 ## 理由とトレードオフ
 - 得るもの：送り・切り替え・確定が3画面で同じ位置。表示している単位で送るので、月で「次の日」を押して迷うことが無い。巻いても送り・確定が押せる
-- 失うもの：広い画面では1行（約 64px）を上に使い続ける。案を比べる・勤務の見込みなどでは上の帯の日付の選択が残るので、予定の3画面とほかの画面で日付の場所が違う。案B は変更が少ないが、［月｜週｜日］と送りが離れたままなので取らない
+- 失うもの：広い画面では1行（約 64px。中身で折り返せば測った高さ）を上に使い続ける。案を比べる・勤務の見込みなどでは上の帯の日付の選択が残るので、予定の3画面とほかの画面で日付の場所が違う。案B は変更が少ないが、［月｜週｜日］と送りが離れたままなので取らない
 - キーボードの送り（←→ など）は札のキー（ADR-0056）とぶつかるので入れない
 
 ## 影響
+- 月の「作っている間は月を送れない」は以前から実装されていなかったので設計から外した
 - `src/components/ScheduleNav.tsx`（新しい部品）・`ViewSwitch.tsx`（そのまま。見た目は `.sched-nav .view-switch`）・`src/pages/MonthPage.tsx`・`WeekPage.tsx`・`PlanPage.tsx`・`src/lib/nav.ts`（`DATE_PAGES`）・`styles.css`・`pages/week.css`・`month.css`・`plan.css`
 - e2e：上の帯の `.date-switch` を週・月で読んでいた所・月のカードの「前の月」「今月」を見ていた所
 - 見直す条件：ほかの日付の画面（案を比べる・勤務の見込み）でも同じ行が欲しくなったら、上の帯の日付の選択をやめてこの部品に寄せる

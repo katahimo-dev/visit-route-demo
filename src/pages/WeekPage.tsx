@@ -261,8 +261,10 @@ export default function WeekPage() {
     requestAnimationFrame(() => {
       const tabsH = document.querySelector('.bottom-tabs')?.getBoundingClientRect().height ?? 0;
       const headBottom = document.querySelector('.app-header')?.getBoundingClientRect().bottom ?? 0;
+      // 貼り付いたナビの行（PRD D347。狭い画面では 0）の下まで
+      const navH = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sched-nav-h')) || 0;
       const r = target.getBoundingClientRect();
-      if (r.bottom > window.innerHeight - tabsH) window.scrollBy(0, r.top - Math.max(0, headBottom) - 8);
+      if (r.bottom > window.innerHeight - tabsH) window.scrollBy(0, r.top - Math.max(0, headBottom) - navH - 8);
     });
   });
 

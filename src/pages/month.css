@@ -599,7 +599,7 @@
 }
 .month-list-btn {
   /* 最初に見せる日・「今日へ」で巻いたとき、上の帯（--header-h）と下のタブに隠れない */
-  scroll-margin-top: calc(var(--header-h, 72px) + var(--sched-nav-h, 0px) + 12px);
+  scroll-margin-top: calc(var(--header-h, 72px) + 12px);
   scroll-margin-bottom: calc(var(--bottom-tabs-h, 0px) + 12px);
 }
 .month-list-btn:hover {

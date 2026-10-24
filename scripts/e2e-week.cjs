@@ -740,9 +740,10 @@ async function weekDoneElsewhere(page) {
     location.hash = `#/week?d=${w}`;
   }, CROSS.start);
   await page
-    .getByTestId('week-title')
-    .filter({ hasText: md(CROSS.start) })
-    .waitFor({ timeout: 10000 });
+    // 週を選ぶ欄（select。PRD D347）の値がその週の月曜になるまで（textContent は全部の週をつないだ文なので使わない）
+    .waitForFunction((v) => document.querySelector('[data-testid="week-title"]')?.value === v, CROSS.start, {
+      timeout: 10000,
+    });
   const toast = page.locator('.toast').filter({ hasText: `${W2_LABEL}の提案を出しました` });
   await toast.first().waitFor({ timeout: 150000 });
   // 提案の帯は日・週・月の予定のどこにも出るので、別の週を見ていても帯で見られる（［週の予定を見る］は出さない）
@@ -776,9 +777,10 @@ async function weekDoneElsewhere(page) {
   check(urlOf(page).includes(`#/week?d=${W2}`), '［週の予定を見る］で作った週の週の予定へ', urlOf(page));
   // hash が変わってから週の予定を描き終わるまで（移るのは transition なので、遅い機械では前の画面がしばらく残る）を目印で待つ
   await page
-    .getByTestId('week-title')
-    .filter({ hasText: md(W2) })
-    .waitFor({ timeout: 15000 })
+    // 週を選ぶ欄（select。PRD D347）の値がその週の月曜になるまで（textContent は全部の週をつないだ文なので使わない）
+    .waitForFunction((v) => document.querySelector('[data-testid="week-title"]')?.value === v, W2, {
+      timeout: 15000,
+    })
     .catch(() => {});
   await rangeBand(page)
     .waitFor({ timeout: 10000 })

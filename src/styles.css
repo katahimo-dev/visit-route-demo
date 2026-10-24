@@ -34,7 +34,7 @@
   --primary-soft: #fde7e1;
   /* 上の帯（.app-header。sticky）の高さ。この下に貼り付く・スクロールで止める要素が使う */
   --header-h: 72px;
-  /* 予定の上のナビの行（.sched-nav。861px 以上は sticky）の高さ。無い画面・狭い画面では 0 */
+  /* 予定の上のナビの行（.sched-nav。861px 以上は sticky）の高さ。ScheduleNav が測って入れる。無い画面・狭い画面では 0 */
   --sched-nav-h: 0px;
   /* スマホの下のタブ（.bottom-tabs）の高さ。広い画面では 0。浮いている部品・本文の下の余白がこれを避ける（PRD D134） */
   --bottom-tabs-h: 0px;
@@ -1398,11 +1398,25 @@ tbody tr:hover td {
   padding-top: 9px;
   padding-bottom: 9px;
 }
-@media screen and (min-width: 861px) {
-  /* 貼り付く行の高さ。この下に巻いて止める要素（scroll-margin-top）が上の帯と合わせて避ける */
-  :root:has(.sched-nav) {
-    --sched-nav-h: 64px;
+/* 見ている期間の見出し：画面では読み上げだけ（.sr-only と同じ）、印刷では見せる */
+@media screen {
+  .sched-nav-period {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
+}
+/* 巻いて見せる要素（scrollIntoView・アンカー）が貼り付いたナビの行の裏に入らない。高さは ScheduleNav が測る */
+html {
+  scroll-padding-top: var(--sched-nav-h);
+}
+@media screen and (min-width: 861px) {
   .sched-nav {
     position: sticky;
     top: var(--header-h);
@@ -1420,9 +1434,19 @@ tbody tr:hover td {
     margin-left: 0;
   }
 }
+/* 印刷では見ている期間の文だけ残す（ボタン・切り替えは出さない） */
 @media print {
   .sched-nav {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .sched-nav > :not(.sched-nav-period) {
     display: none;
+  }
+  .sched-nav-period {
+    margin: 0;
+    font-size: 1.05rem;
   }
 }
 .section-title {

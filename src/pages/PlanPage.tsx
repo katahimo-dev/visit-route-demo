@@ -259,10 +259,12 @@ function routesOfIds(problem: Problem, r: Record<string, string[]>): Record<stri
 export default function PlanPage() {
   const { date, setDate, dates } = useDay();
   const m = useDayModel(date);
-  /** 上のナビの行の日付（PRD D347）：データの日付から選ぶ。今日・前後の日 */
+  /** 上のナビの行の日付（PRD D347）：データの日付から選ぶ。今日はデータに無くても選べる（setDate は選んだ日を足す） */
   const todayDate = jstDate(Date.now());
-  const dayAt = dates.indexOf(date);
-  const dayOptions = useMemo(() => dates.map((d) => ({ value: d, text: dateText(d) })), [dates]);
+  const dayOptions = useMemo(
+    () => [...new Set([...dates, date])].sort().map((d) => ({ value: d, text: dateText(d) })),
+    [dates, date],
+  );
   /** 切った機能（案を比べる・稼働の見込み）の画面へ移るボタン・リンクは出さない（PRD D213。ADR-0028） */
   const compareOn = useFeature('compare');
   const workloadOn = useFeature('workload');
@@ -2477,13 +2479,9 @@ export default function PlanPage() {
       {/* 上のナビの行（日・週・月で同じ。PRD D347。ADR-0060）。日送り・今日・［月｜週｜日］・状態の印・メールで送る・確定 */}
       <ScheduleNav
         current="day"
-        today={{ onClick: () => setDate(todayDate), disabled: date === todayDate || !dates.includes(todayDate) }}
-        prev={{ label: '前の日', onClick: () => setDate(dates[dayAt - 1] ?? date), disabled: dayAt <= 0 }}
-        next={{
-          label: '次の日',
-          onClick: () => setDate(dates[dayAt + 1] ?? date),
-          disabled: dayAt < 0 || dayAt >= dates.length - 1,
-        }}
+        today={{ onClick: () => setDate(todayDate), disabled: date === todayDate }}
+        prev={{ label: '前の日', onClick: () => prevDate && setDate(prevDate), disabled: !prevDate }}
+        next={{ label: '次の日', onClick: () => nextDate && setDate(nextDate), disabled: !nextDate }}
         picker={{ label: '日付', value: date, options: dayOptions, onChange: setDate }}
         actions={
           (hasPlan || toldState === 'changed') && (

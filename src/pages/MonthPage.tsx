@@ -657,12 +657,12 @@ export default function MonthPage() {
 
   const stop = () => monthBatch.stop();
 
-  /** 月を送る：選んでいる日付もその月の1日（今月なら今日）にする（PRD D59） */
   /** 月を選ぶ欄の月（データの日付の月。PRD D347） */
   const monthOptions = useMemo(
     () => [...new Set([...dataDates.map(ymOf), ym])].sort().map((v) => ({ value: v, text: ymText(v) })),
     [dataDates, ym],
   );
+  /** 月を送る：選んでいる日付もその月の1日（今月なら今日）にする（PRD D59） */
   const goMonth = (next: string) => {
     const d = firstDayOf(next, today);
     lastDate.current = d;

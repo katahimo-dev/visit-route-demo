@@ -746,14 +746,14 @@ p.plan-band.error {
 }
 .route-col-none {
   /* 「入らなかった訪問」へ移る近道で、上の帯に隠れない */
-  scroll-margin-top: calc(var(--header-h) + var(--sched-nav-h, 0px) + 8px);
+  scroll-margin-top: calc(var(--header-h) + 8px);
 }
 .route-col.is-unchanged .staff-mark {
   opacity: 0.4;
 }
 .reassign-bar {
   border-left: 4px solid var(--accent);
-  scroll-margin-top: calc(var(--header-h) + var(--sched-nav-h, 0px) + 8px);
+  scroll-margin-top: calc(var(--header-h) + 8px);
 }
 .reassign-bar:focus-visible {
   outline: 3px solid var(--focus);
