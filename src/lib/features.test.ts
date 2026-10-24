@@ -248,11 +248,20 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
   const labels = (f: Features) => menuSections(terms, TODAY, f).flatMap((g) => g.items.map((i) => i.label));
   const titles = (f: Features) => menuSections(terms, TODAY, f).map((g) => g.title ?? null);
   const screens = (f: Features) => screenSections(terms, f).flatMap((g) => g.items.map((i) => i.label));
-  it('すべて：6項目（{} と同じ。PRD D326）', () => {
+  it('すべて：5項目（{} と同じ。欠勤・キャンセルは予定の子。PRD D326・D349）', () => {
     expect(labels(applyTemplate('all'))).toEqual(labels({}));
-    expect(labels({})).toHaveLength(6);
+    expect(labels({})).toHaveLength(5);
   });
-  it('基本も6項目（人・設定はタブ）。画面の一覧は勤務の見込み・条件の重み・特性の項目が無い（案を比べるはいつも無い）', () => {
+  it('欠勤・キャンセルを切ると予定の子から消える', () => {
+    const kids = (f: Features) =>
+      menuSections(terms, TODAY, f)
+        .flatMap((g) => g.items)
+        .find((i) => i.key === 'schedule')
+        ?.children?.map((i) => i.key);
+    expect(kids({})).toEqual(['mode-check', 'mode-plan', 'absence']);
+    expect(kids({ sudden: false })).toEqual(['mode-check', 'mode-plan']);
+  });
+  it('基本も5項目（人・設定はタブ）。画面の一覧は勤務の見込み・条件の重み・特性の項目が無い（案を比べるはいつも無い）', () => {
     expect(labels(applyTemplate('basic'))).toEqual(labels({}));
     expect(screens(applyTemplate('basic'))).toEqual([
       'ホーム',

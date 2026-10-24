@@ -45,6 +45,7 @@ import { StaffMark } from './StaffMark';
 import { useToast } from './Toast';
 import { WithIcon } from './ui';
 import { UndoButtons } from './undo';
+import { useScheduleMode } from './useScheduleMode';
 import './scheduleParts.css';
 
 /** 予定の拡大率（日・週・月） */
@@ -97,9 +98,17 @@ export function ScheduleToolbar({
   className?: string;
 }) {
   const today = jstDate(Date.now());
+  // 予定のモードで出す操作を絞る（PRD D348）：組むは欠勤の登録を、確認は「AI で組む ▾」を出さない
+  const { mode, tools } = useScheduleMode();
   return (
-    <div className={`row schedule-toolbar ${className}`} data-testid="schedule-toolbar" data-zoom={zoom}>
+    <div
+      className={`row schedule-toolbar ${className}`}
+      data-testid="schedule-toolbar"
+      data-zoom={zoom}
+      data-mode={mode}
+    >
       {absence &&
+        tools.absence &&
         ('onClick' in absence ? (
           <button
             ref={absence.ref}
@@ -124,12 +133,14 @@ export function ScheduleToolbar({
             </WithIcon>
           </Link>
         ))}
-      <MenuButton
-        label={<span className="tb-label">AI で組む</span>}
-        icon={Sparkles}
-        items={aiItems}
-        testId="plan-menu"
-      />
+      {tools.ai && (
+        <MenuButton
+          label={<span className="tb-label">AI で組む</span>}
+          icon={Sparkles}
+          items={aiItems}
+          testId="plan-menu"
+        />
+      )}
       <UndoButtons />
       {children}
       {moreItems.length > 0 && (

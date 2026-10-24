@@ -16,6 +16,7 @@ import { RangeProposalBand, ScheduleToolbar, SelectionBar, useScopeItems } from 
 import { StaffBar, StaffLegend } from '../components/staffBar';
 import { useToast } from '../components/Toast';
 import { Hint, PageHeader, WithIcon } from '../components/ui';
+import { useScheduleMode } from '../components/useScheduleMode';
 import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
@@ -149,6 +150,8 @@ const initialOf = (name: string) => Array.from(name.trim())[0] ?? '？';
 
 export default function WeekPage() {
   const { date, setDate, dates: dataDates } = useDay();
+  /** 予定のモード（PRD D348）：組むではメールを出さず、確認では札を動かさない */
+  const { tools: modeTools } = useScheduleMode();
   const { data, update, compileInput, staff, staffById, clients, clientById, colorOfStaff } = useDayModel(date);
   const terms = data.org.terms;
   const toast = useToast();
@@ -203,6 +206,8 @@ export default function WeekPage() {
   /** 週の予定をメールで送る欄（PRD D93。ADR-0017） */
   const [mailOpen, setMailOpen] = useState(false);
   const mailOn = useFeature('mail');
+  /** ナビの行のメールで送る（組むのモードでは出さない。PRD D348） */
+  const mailBtn = mailOn && modeTools.mail;
 
   // ---- 選んでいる日付との同期（PRD D59）----
   // URL の ?d= で開いた日が選んでいる日付と違えば、選んでいる日付をその日にする
@@ -523,6 +528,7 @@ export default function WeekPage() {
    * Enter で欄（ボタンの既定）・Delete で取り消し（確認）。どれも全体の「元に戻す」の1手
    */
   const visitKeys = useVisitKeys({
+    readOnly: !modeTools.move,
     staffOrder: () => activeStaff.map((s) => s.id),
     onMoved: (r) => {
       // 表の「+N」の一覧の行から動かしたときも、動かした先のマスで札を隠さない
@@ -567,6 +573,7 @@ export default function WeekPage() {
   const drag = useVisitDrag({
     today,
     fit: true,
+    readOnly: !modeTools.move,
     staffWhy: (visitId, d, sid) => staffWhyOf(dataRef.current, visitId, d, sid),
     onDrop: (visitId, v) => openMove(visitId, v.date, v.start, v.staffId),
   });
@@ -593,6 +600,7 @@ export default function WeekPage() {
    * Delete で取り消し。隣の担当は表の行の順（〈スタッフ〉×曜日）・利用中の〈スタッフ〉の順（〈利用者さん〉×曜日）
    */
   const tableKeys = useVisitKeys({
+    readOnly: !modeTools.move,
     layout: 'table',
     staffOrder: () => (table ? table.rows.map((r) => r.staffId) : activeStaff.map((s) => s.id)),
     onMoved: (r) => {
@@ -697,11 +705,11 @@ export default function WeekPage() {
           testId: 'week-title',
         }}
         actions={
-          next.kind === 'none' && !mailOn ? undefined : (
+          next.kind === 'none' && !mailBtn ? undefined : (
             <>
               {/* 担当ごとの週の予定をメールアプリで開く（PRD D93・D346）。日の予定と同じく見出しの主ボタンの隣の枠のボタン。
                   どの表示でも出す。メールを切っていれば出さない（ADR-0028） */}
-              {mailOn && (
+              {mailBtn && (
                 <button type="button" className="btn" onClick={() => setMailOpen(true)} data-testid="week-mail">
                   <WithIcon icon={Mail}>
                     <span className="m-sr">予定をメールで送る</span>

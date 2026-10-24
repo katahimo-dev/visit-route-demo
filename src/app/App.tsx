@@ -3,6 +3,7 @@ import {
   CalendarDays,
   CalendarRange,
   CalendarSearch,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -27,6 +28,7 @@ import {
   UserX,
 } from 'lucide-react';
 import {
+  Fragment,
   type MouseEvent,
   type ReactElement,
   Suspense,
@@ -46,6 +48,7 @@ import { FeatureOffNotice } from '../components/FeatureOffNotice';
 import { PersonPopoverProvider } from '../components/PersonPopover';
 import { TourProvider } from '../components/Tour';
 import { HistoryKeys } from '../components/undo';
+import { useScheduleMode } from '../components/useScheduleMode';
 import { VisitPanelProvider } from '../components/VisitPanel';
 import { addDays, jstDate } from '../domain/time';
 import { hashPathname, isPaletteShortcut, keepPaletteOn } from '../lib/commandPalette';
@@ -61,6 +64,7 @@ import {
   type LastViews,
   type MenuItem,
   menuSections,
+  NAV_OPEN_DEFAULT,
   type NavIcon,
   type NavSection,
   navTitleParts,
@@ -69,6 +73,7 @@ import {
   tabClick,
   tabLabel,
 } from '../lib/nav';
+import { menuBadges, type ScheduleMode } from '../lib/scheduleMode';
 import { NARROW_QUERY } from '../lib/useMedia';
 import AvailabilityPage from '../pages/AvailabilityPage';
 import ClientPage from '../pages/ClientPage';
@@ -320,9 +325,19 @@ function AdminShell() {
   const lastSettings = last.settings;
   const lastPeople = last.people;
   // 切った機能の項目は出さない（PRD D213）。下のタブもここから引く
+  // 予定のモード（PRD D348）と件数の印（PRD D349。compile しないので軽い）
+  const { mode } = useScheduleMode();
+  const badges = useMemo(() => menuBadges(data, today), [data, today]);
   const groups = useMemo(
-    () => menuSections(terms, today, features, { schedule: lastSchedule, settings: lastSettings, people: lastPeople }),
-    [terms, today, features, lastSchedule, lastSettings, lastPeople],
+    () =>
+      menuSections(
+        terms,
+        today,
+        features,
+        { schedule: lastSchedule, settings: lastSettings, people: lastPeople },
+        badges,
+      ),
+    [terms, today, features, lastSchedule, lastSettings, lastPeople, badges],
   );
   // 画面の一覧（メニューから外した画面も1つずつ）：上の帯の名前・パレットの画面（PRD D273・D275）
   const screens = useMemo(() => screenSections(terms, features), [terms, features]);
@@ -348,7 +363,7 @@ function AdminShell() {
       <div className="app-shell" data-date={pickedDate}>
         <aside ref={sideNavRef} className="side-nav">
           {brand}
-          <NavGroups groups={groups} pathname={pathname} />
+          <NavGroups groups={groups} pathname={pathname} mode={mode} />
         </aside>
         <div className="app-body">
           <header ref={headerRef} className="app-header">
@@ -497,6 +512,7 @@ function AdminShell() {
             <NavGroups
               groups={groups}
               pathname={pathname}
+              mode={mode}
               onPick={(e, item) => {
                 // 今の画面の項目は閉じるだけ（移り直して URL のクエリ＝画面の状態を消さない）
                 if (tabClick(item, pathname) === 'stay') e.preventDefault();
@@ -510,39 +526,111 @@ function AdminShell() {
   );
 }
 
-/** メニューの並び（左のメニューとスマホの引き出しで共通。グループの見出し付きの縦並び） */
+/** 畳める項目の開け閉めを覚える所（PRD D349。この端末に残す） */
+const NAV_OPEN_KEY = 'visit-route-demo:nav-open';
+const readNavOpen = (): Record<string, boolean> => {
+  try {
+    const v = JSON.parse(localStorage.getItem(NAV_OPEN_KEY) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * メニューの並び（左のメニューとスマホの引き出しで共通。グループの見出し付きの縦並び）。
+ * 子の項目を持つ項目は ▾ で畳める（PRD D349）。開け閉めは覚え、今の画面の親へ移ったら開く。
+ * 今の画面の印は、開いていれば子に、畳んでいれば親に付ける（予定の子は予定のモードで決める）
+ */
 function NavGroups({
   groups,
   pathname,
+  mode,
   onPick,
 }: {
   groups: readonly NavSection<NavItem>[];
   pathname: string;
+  mode: ScheduleMode;
   /** 項目を押したとき（引き出しを閉じる。今の画面なら移らない） */
   onPick?: (e: MouseEvent<HTMLAnchorElement>, item: NavItem) => void;
 }) {
+  const [stored, setStored] = useState(readNavOpen);
+  const isOpen = (key: string) => stored[key] ?? NAV_OPEN_DEFAULT[key] ?? true;
+  const setOpen = (key: string, v: boolean) =>
+    setStored((o) => {
+      const next = { ...o, [key]: v };
+      try {
+        localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(next));
+      } catch {
+        // 覚えられなくても、開いている間は今の開け閉めを使う
+      }
+      return next;
+    });
+  // 今の画面の親（畳んでいれば）を開く。画面を移ったときだけ（開いたまま畳んだのは覚える）
+  const currentParent = groups.flatMap((g) => g.items).find((i) => i.children?.length && isActiveNav(i, pathname))?.key;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 画面を移ったときだけ開く（開け閉めのたびには開き直さない）
+  useEffect(() => {
+    if (currentParent && !isOpen(currentParent)) setOpen(currentParent, true);
+  }, [currentParent, pathname]);
+  const link = (item: NavItem, on: boolean, extra = '') => {
+    const Icon = NAV_ICONS[item.icon];
+    return (
+      <Link
+        to={item.to}
+        className={`nav-link${on ? ' active' : ''}${extra}`}
+        aria-current={on ? 'page' : undefined}
+        onClick={(e) => onPick?.(e, item)}
+        data-testid="nav-link"
+        data-key={item.key}
+      >
+        <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
+        <span>{item.label}</span>
+        {item.badge && (
+          <span className="nav-badge" title={item.badge.label} data-testid="nav-badge">
+            <span aria-hidden="true">{item.badge.text}</span>
+            <span className="sr-only">{item.badge.label}</span>
+          </span>
+        )}
+      </Link>
+    );
+  };
   return (
     <nav className="nav-groups" aria-label="画面の一覧">
       {groups.map((g) => (
         <div key={g.items[0]!.key} className="nav-group">
           {g.title && <h2 className="nav-group-title">{g.title}</h2>}
           {g.items.map((item) => {
-            const { key, to, label, icon } = item;
-            const Icon = NAV_ICONS[icon];
-            // 今の画面の印（「予定」は月・週・日の予定と比較、「設定」は設定のタブ。操作の項目（欠勤・キャンセル）には付けない。PRD D273・D275）
+            // 今の画面の印（「予定」は月・週・日の予定と比較、「設定」は設定のタブ。PRD D273・D275）
             const on = isActiveNav(item, pathname);
+            const kids = item.children ?? [];
+            if (kids.length === 0) return <Fragment key={item.key}>{link(item, on)}</Fragment>;
+            const open = isOpen(item.key);
+            const kidOn = kids.map((k) => isActiveNav(k, pathname, mode));
+            const subId = `nav-sub-${item.key}`;
             return (
-              <Link
-                key={key}
-                to={to}
-                className={on ? 'nav-link active' : 'nav-link'}
-                aria-current={on ? 'page' : undefined}
-                onClick={(e) => onPick?.(e, item)}
-                data-testid="nav-link"
-              >
-                <Icon size={18} strokeWidth={2.1} aria-hidden="true" />
-                <span>{label}</span>
-              </Link>
+              <div key={item.key} className={`nav-parent${open ? ' is-open' : ''}`} data-parent={item.key}>
+                <div className="nav-parent-row">
+                  {link(item, on && (!open || !kidOn.includes(true)), on ? ' has-current' : '')}
+                  <button
+                    type="button"
+                    className="nav-toggle"
+                    aria-expanded={open}
+                    aria-controls={subId}
+                    aria-label={`${item.label}の項目を${open ? '畳む' : '開く'}`}
+                    onClick={() => setOpen(item.key, !open)}
+                    data-testid="nav-toggle"
+                  >
+                    <ChevronDown size={16} aria-hidden="true" />
+                  </button>
+                </div>
+                {open && (
+                  <div id={subId} className="nav-sub">
+                    {kids.map((k, n) => (
+                      <Fragment key={k.key}>{link(k, kidOn[n]!, ' nav-child')}</Fragment>
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

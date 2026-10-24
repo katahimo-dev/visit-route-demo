@@ -56,6 +56,7 @@ import { StaffBar, StaffLegend } from '../components/staffBar';
 import { Term, TipBubble } from '../components/Term';
 import { useToast } from '../components/Toast';
 import { PageHeader, SidePanel, WithIcon } from '../components/ui';
+import { useScheduleMode } from '../components/useScheduleMode';
 import { useOpenVisit } from '../components/VisitPanel';
 import { focusVisitItem, KeyMoveBand, useVisitKeys, visitItemOf } from '../components/visitKeys';
 import {
@@ -188,6 +189,8 @@ const sameList = (a: readonly unknown[], b: readonly unknown[]) =>
 
 export default function MonthPage() {
   const { date, setDate, dates: dataDates } = useDay();
+  /** 予定のモード（PRD D348）：確認では札を動かさない */
+  const { tools: modeTools } = useScheduleMode();
   const { data, update, compileInput } = useDayModel(date);
   const terms = data.org.terms;
   /** 切った機能（月の予定の印刷・稼働の見込み）の画面へ移るボタンは出さない（PRD D213。ADR-0028） */
@@ -807,6 +810,7 @@ export default function MonthPage() {
   }, [days, visitsByDate, multi.ids]);
   /** 一覧の行のキー（↑↓ 15分・←→ 1日・Shift+←→ 隣の担当・Enter 欄・Delete 取り消し。PRD D333） */
   const visitKeys = useVisitKeys({
+    readOnly: !modeTools.move,
     staffOrder: () => activeStaff.map((s) => s.id),
     onOpen: openPanel,
     onMoved: (r) => {
@@ -856,6 +860,7 @@ export default function MonthPage() {
   const drag = useVisitDrag({
     today,
     fit: true,
+    readOnly: !modeTools.move,
     onDrop: (visitId, v) => {
       const x = findVisit(dataRef.current, visitId);
       const width = x ? hhmmToMinutes(x.latestStart) - hhmmToMinutes(x.earliestStart) : 0;

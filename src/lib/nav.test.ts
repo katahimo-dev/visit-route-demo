@@ -11,6 +11,7 @@ import {
   isSettingsPath,
   type MenuItem,
   menuSections,
+  NAV_OPEN_DEFAULT,
   navTitle,
   navTitleParts,
   peopleHref,
@@ -28,20 +29,42 @@ const terms = { client: '利用者さん', staff: 'スタッフ' };
 const TODAY = '2026-10-21';
 const groups = menuSections(terms, TODAY, {});
 const screens = screenSections(terms, {});
-/** key でメニューの項目を引く */
-const item = (key: string, g = groups): MenuItem => g.flatMap((x) => x.items).find((i) => i.key === key)!;
+/** key でメニューの項目を引く（子の項目も） */
+const item = (key: string, g = groups): MenuItem =>
+  g.flatMap((x) => x.items.flatMap((i) => [i, ...(i.children ?? [])])).find((i) => i.key === key)!;
 
-describe('menuSections（PRD D326。ADR-0054）', () => {
-  it('見出しの無い6項目：ホーム・予定・欠勤・空き状況・人・設定', () => {
+describe('menuSections（PRD D326・D349。ADR-0054・0061）', () => {
+  it('見出しの無い5項目：ホーム・予定・空き状況・人・設定', () => {
     expect(groups.map((g) => g.title ?? null)).toEqual([null]);
-    expect(groups.flatMap((g) => g.items.map((i) => i.label))).toEqual([
-      'ホーム',
-      '予定',
-      '欠勤・キャンセル',
-      '空き状況',
-      '人',
-      '設定',
+    expect(groups.flatMap((g) => g.items.map((i) => i.label))).toEqual(['ホーム', '予定', '空き状況', '人', '設定']);
+  });
+  it('予定の子はモード（今日の予定・◯月を組む・欠勤・キャンセル）、人・設定の子はタブ', () => {
+    expect(item('schedule').children?.map((i) => [i.label, i.mode, i.to])).toEqual([
+      ['今日の予定', 'check', '/plan?date=2026-10-21&mode=check'],
+      ['11月を組む', 'plan', '/month?ym=2026-11&mode=plan'],
+      ['欠勤・キャンセル', 'change', '/plan?date=2026-10-21&do=absence&mode=change'],
     ]);
+    expect(item('people').children?.map((i) => i.to)).toEqual(['/clients', '/staff', '/compat', '/availability']);
+    expect(item('settings').children?.map((i) => i.to)).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
+    // 前半は今月を組む
+    const early = menuSections(terms, '2026-10-03', {});
+    expect(item('mode-plan', early).to).toBe('/month?ym=2026-10&mode=plan');
+    expect(NAV_OPEN_DEFAULT).toEqual({ schedule: true, people: true, settings: false });
+  });
+  it('件数の印：組む月の担当なしの日・今日をまだ伝えていない', () => {
+    const g = menuSections(terms, TODAY, {}, {}, { planUnassignedDays: 3, todayUntold: true });
+    expect(item('mode-plan', g).badge).toEqual({ text: '3日', label: '担当なしの訪問がある日 3日' });
+    expect(item('mode-check', g).badge?.text).toBe('未確定');
+    expect(item('mode-plan').badge).toBeUndefined();
+  });
+  it('予定のモードの項目は、予定の画面でそのモードのときだけ今の画面', () => {
+    expect(isActiveNav(item('mode-plan'), '/week', 'plan')).toBe(true);
+    expect(isActiveNav(item('mode-plan'), '/week', 'check')).toBe(false);
+    expect(isActiveNav(item('mode-plan'), '/home', 'plan')).toBe(false);
+    expect(isActiveNav(item('mode-plan'), '/week')).toBe(false);
+  });
+  it('下のタブは子の項目からも引く（欠勤）', () => {
+    expect(bottomTabs(groups).map((i) => i.key)).toEqual(['home', 'schedule', 'absence']);
   });
   it('同じ名前の項目が無い', () => {
     const labels = menuSections({ client: 'お客様', staff: 'シッター' }, TODAY, {}).flatMap((g) =>
@@ -60,11 +83,10 @@ describe('menuSections（PRD D326。ADR-0054）', () => {
       expect(isPeoplePath(p)).toBe(true);
     expect(isPeoplePath('/plan')).toBe(false);
   });
-  it('欠勤・キャンセルを登録は今日の日の予定の欄を開く操作（URL は今のまま）', () => {
-    const tos = groups.flatMap((g) => g.items.map((i) => i.to));
-    expect(tos).toContain(absenceHref(TODAY));
+  it('欠勤・キャンセルを登録は今日の日の予定の欄を開く操作（変更のモードで開く）', () => {
+    expect(item('absence').to).toBe(`${absenceHref(TODAY)}&mode=change`);
     expect(absenceHref(TODAY)).toBe('/plan?date=2026-10-21&do=absence');
-    expect(tos.filter(isNavAction)).toEqual([absenceHref(TODAY)]);
+    expect(isNavAction(item('absence').to)).toBe(true);
   });
   it('「予定」は最後に開いた表示（無ければ日の予定）。比較は覚えない', () => {
     expect(item('schedule').to).toBe(SCHEDULE_DEFAULT);

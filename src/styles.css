@@ -940,6 +940,77 @@ tbody tr:hover td {
 .nav-link.active svg {
   color: var(--primary);
 }
+/* 畳める項目（PRD D349）：親の行の右に ▾。子は字下げした少し小さな行。親は子が今の画面のとき太字だけ（地の色は子に） */
+.nav-parent-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav-parent-row .nav-link {
+  flex: 1;
+  min-width: 0;
+}
+.nav-link.has-current:not(.active) {
+  font-weight: 700;
+}
+.nav-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.nav-toggle:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+.nav-toggle svg {
+  transition: transform 0.15s;
+}
+.nav-parent:not(.is-open) .nav-toggle svg {
+  transform: rotate(-90deg);
+}
+.nav-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 4px 18px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+.nav-link.nav-child span {
+  white-space: nowrap;
+}
+.nav-link.nav-child {
+  min-height: 30px;
+  padding: 3px 8px;
+  font-size: 0.88rem;
+}
+.nav-link.nav-child svg {
+  width: 16px;
+  height: 16px;
+}
+/* 件数の印（担当なし N日・未確定）：右寄せの小さな札。色だけに頼らず文字で書く */
+.nav-badge {
+  position: relative;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fbe7c4;
+  color: #7a4a0c;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
 /* 低い画面（高さ 860px 以下。1366×768 など）では左のメニューをさらに詰め、最後の項目（データ）まで巻かずに見せる（PRD D270）。
    タッチできる端末は下の any-pointer: coarse で押せる所 44px のまま */
 @media (min-width: 861px) and (max-height: 860px) {
@@ -967,6 +1038,13 @@ tbody tr:hover td {
     padding: 3px 10px;
     font-size: 0.92rem;
     line-height: 1.3;
+  }
+  .nav-link.nav-child {
+    min-height: 26px;
+    padding: 2px 8px;
+  }
+  .nav-sub {
+    margin-bottom: 2px;
   }
 }
 /* 左のメニューに続きがある（下に巻ける）間は下の端に影（巻き切ると消える。背景の local と scroll の重ね。PRD D270） */
@@ -1359,6 +1437,18 @@ tbody tr:hover td {
   font-size: 1.02rem;
   font-weight: 700;
   background: transparent;
+}
+/* モードの切り替え［組む｜変更｜確認］（PRD D348）：ナビの行の左端。下にモードの1行の説明（行いっぱい） */
+.sched-mode button {
+  padding: 6px 12px;
+}
+.sched-nav-today {
+  white-space: nowrap;
+}
+.sched-mode-lead {
+  flex-basis: 100%;
+  margin: -2px 0 0;
+  font-size: 0.82rem;
 }
 /* ［月｜週｜日］はナビの行の中では枠の切り替え（.segmented と同じ見た目）。今の画面は aria-current と太字・地の色 */
 .sched-nav .view-switch {
@@ -2294,6 +2384,12 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
 @media (any-pointer: coarse) {
   .nav-link {
     min-height: 44px;
+  }
+  /* 畳む ▾（見た目 28px）は押せる所を 44px に（PRD D349） */
+  .nav-toggle::before {
+    content: "";
+    position: absolute;
+    inset: -8px;
   }
   .view-switch-item::before {
     content: "";
