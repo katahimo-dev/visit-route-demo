@@ -43,7 +43,7 @@ describe('候補', () => {
   it('操作は今ある入口（?do=）へ。欠勤と今日の予定は今日を選ぶ', () => {
     const a = paletteActions(TODAY);
     const by = (id: string) => a.find((x) => x.id === id)!;
-    expect(by('action:absence').to).toBe('/plan?date=2026-10-21&do=absence');
+    expect(by('action:absence').to).toBe('/plan?date=2026-10-21&do=absence&mode=change');
     expect(by('action:absence').date).toBe(TODAY);
     expect(by('action:today')).toMatchObject({ to: '/plan', date: TODAY });
     expect(by('action:batch')).toMatchObject({ label: '10月の担当を AI で組む', to: '/month?ym=2026-10&do=batch' });

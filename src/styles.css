@@ -978,6 +978,9 @@ tbody tr:hover td {
 .nav-parent:not(.is-open) .nav-toggle svg {
   transform: rotate(-90deg);
 }
+.nav-sub[hidden] {
+  display: none;
+}
 .nav-sub {
   display: flex;
   flex-direction: column;
@@ -2383,6 +2386,10 @@ html[data-drawer-toast="side"] body:has(.drawer-wrap) .toast {
    ［月｜週｜日］のタブ（見た目 36px）は ::before で上下に 4px 広げて 44px（PRD D237・D239） */
 @media (any-pointer: coarse) {
   .nav-link {
+    min-height: 44px;
+  }
+  /* 子の項目も 44px（.nav-link.nav-child の 30px より強く） */
+  .nav-link.nav-child {
     min-height: 44px;
   }
   /* 畳む ▾（見た目 28px）は押せる所を 44px に（PRD D349） */

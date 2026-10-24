@@ -1874,7 +1874,7 @@ export default function PlanPage() {
             </span>
           )}
           {avail?.overridden && <span className="chip chip-warn">この日だけ変更</span>}
-          {suddenOn && (avail?.baseSlots.length ?? 0) > 0 && (
+          {suddenOn && modeTools.absence && (avail?.baseSlots.length ?? 0) > 0 && (
             <button
               type="button"
               className="link-btn absence-btn"
@@ -3251,7 +3251,8 @@ export default function PlanPage() {
         />
       )}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
-      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />
+      {/* 選んだ訪問をまとめて動かす帯は、確認のモードでは出さない（札を動かさない。PRD D348） */}
+      {modeTools.move && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={[date]} />}
     </div>
   );
 }

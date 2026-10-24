@@ -1604,7 +1604,9 @@ export default function MonthPage() {
           )}
         </aside>
         {/* 選んだ訪問の帯と、キーで動かした先の読み上げ・繰り返しの回の範囲の帯（PRD D330・D333。日・週と同じ） */}
-        {!(narrowList && sheetDay) && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} moveDay />}
+        {modeTools.move && !(narrowList && sheetDay) && (
+          <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} moveDay />
+        )}
         <KeyMoveBand
           onMoved={(r) => {
             setListDay(r.date);
@@ -1654,7 +1656,7 @@ export default function MonthPage() {
                     );
                   })}
                 </ul>
-                <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} inline />
+                {modeTools.move && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={days} inline />}
               </>
             )}
           </div>

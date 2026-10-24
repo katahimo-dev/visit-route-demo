@@ -39,6 +39,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { BatchBand, MonthBatchHost } from '../components/batchBand';
@@ -526,20 +527,47 @@ function AdminShell() {
   );
 }
 
-/** 畳める項目の開け閉めを覚える所（PRD D349。この端末に残す） */
+/** 畳める項目の開け閉めを覚える所（PRD D349。この端末に残す。左のメニューと引き出しで1つ） */
 const NAV_OPEN_KEY = 'visit-route-demo:nav-open';
+const navOpenListeners = new Set<() => void>();
+/** 覚えた開け閉め（読めなければ空。同じ文字なら同じ物を返す＝描き直さない） */
+let navOpenCache: { raw: string | null; value: Record<string, boolean> } = { raw: null, value: {} };
 const readNavOpen = (): Record<string, boolean> => {
+  let raw: string | null = null;
   try {
-    const v = JSON.parse(localStorage.getItem(NAV_OPEN_KEY) ?? '{}');
-    return v && typeof v === 'object' ? v : {};
+    raw = localStorage.getItem(NAV_OPEN_KEY);
   } catch {
-    return {};
+    return navOpenCache.value;
   }
+  if (raw === navOpenCache.raw) return navOpenCache.value;
+  let value: Record<string, boolean> = {};
+  try {
+    const v = JSON.parse(raw ?? '{}');
+    if (v && typeof v === 'object') value = v;
+  } catch {
+    // 読めなければ既定
+  }
+  navOpenCache = { raw, value };
+  return value;
+};
+const writeNavOpen = (key: string, open: boolean) => {
+  const next = { ...readNavOpen(), [key]: open };
+  try {
+    localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(next));
+  } catch {
+    navOpenCache = { raw: navOpenCache.raw, value: next };
+  }
+  for (const fn of navOpenListeners) fn();
+};
+const subscribeNavOpen = (fn: () => void) => {
+  navOpenListeners.add(fn);
+  return () => navOpenListeners.delete(fn);
 };
 
 /**
  * メニューの並び（左のメニューとスマホの引き出しで共通。グループの見出し付きの縦並び）。
- * 子の項目を持つ項目は ▾ で畳める（PRD D349）。開け閉めは覚え、今の画面の親へ移ったら開く。
+ * 子の項目を持つ項目は ▾ で畳める（PRD D349）。押して変えた開け閉めは覚える。今の画面の親は、その親へ移ったときに開いて見せる
+ * （覚えない。同じ親の中で画面を移っても、畳んだら畳んだまま）。
  * 今の画面の印は、開いていれば子に、畳んでいれば親に付ける（予定の子は予定のモードで決める）
  */
 function NavGroups({
@@ -554,24 +582,18 @@ function NavGroups({
   /** 項目を押したとき（引き出しを閉じる。今の画面なら移らない） */
   onPick?: (e: MouseEvent<HTMLAnchorElement>, item: NavItem) => void;
 }) {
-  const [stored, setStored] = useState(readNavOpen);
-  const isOpen = (key: string) => stored[key] ?? NAV_OPEN_DEFAULT[key] ?? true;
-  const setOpen = (key: string, v: boolean) =>
-    setStored((o) => {
-      const next = { ...o, [key]: v };
-      try {
-        localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(next));
-      } catch {
-        // 覚えられなくても、開いている間は今の開け閉めを使う
-      }
-      return next;
-    });
-  // 今の画面の親（畳んでいれば）を開く。画面を移ったときだけ（開いたまま畳んだのは覚える）
+  const stored = useSyncExternalStore(subscribeNavOpen, readNavOpen, () => navOpenCache.value);
+  // 今の画面の親。その親へ移ったときだけ開いて見せる（auto）。押して畳めば auto を外す
   const currentParent = groups.flatMap((g) => g.items).find((i) => i.children?.length && isActiveNav(i, pathname))?.key;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 画面を移ったときだけ開く（開け閉めのたびには開き直さない）
+  const [auto, setAuto] = useState(currentParent);
   useEffect(() => {
-    if (currentParent && !isOpen(currentParent)) setOpen(currentParent, true);
-  }, [currentParent, pathname]);
+    setAuto(currentParent);
+  }, [currentParent]);
+  const isOpen = (key: string) => (key === auto ? true : (stored[key] ?? NAV_OPEN_DEFAULT[key] ?? true));
+  const toggle = (key: string, open: boolean) => {
+    if (key === auto) setAuto(undefined);
+    writeNavOpen(key, !open);
+  };
   const link = (item: NavItem, on: boolean, extra = '') => {
     const Icon = NAV_ICONS[item.icon];
     return (
@@ -616,20 +638,16 @@ function NavGroups({
                     className="nav-toggle"
                     aria-expanded={open}
                     aria-controls={subId}
-                    aria-label={`${item.label}の項目を${open ? '畳む' : '開く'}`}
-                    onClick={() => setOpen(item.key, !open)}
+                    aria-label={`${item.label}の項目`}
+                    onClick={() => toggle(item.key, open)}
                     data-testid="nav-toggle"
                   >
                     <ChevronDown size={16} aria-hidden="true" />
                   </button>
                 </div>
-                {open && (
-                  <div id={subId} className="nav-sub">
-                    {kids.map((k, n) => (
-                      <Fragment key={k.key}>{link(k, kidOn[n]!, ' nav-child')}</Fragment>
-                    ))}
-                  </div>
-                )}
+                <div id={subId} className="nav-sub" hidden={!open}>
+                  {open && kids.map((k, n) => <Fragment key={k.key}>{link(k, kidOn[n]!, ' nav-child')}</Fragment>)}
+                </div>
               </div>
             );
           })}

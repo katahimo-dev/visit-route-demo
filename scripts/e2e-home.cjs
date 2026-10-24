@@ -188,7 +188,13 @@ async function firstState(page) {
     await panel.waitFor({ timeout: 10000 });
     check(true, '担当を AI で組むの欄が開く');
     await settle(page, 300);
-    check(hashOf(page) === `#/month?ym=${create.ym}`, '月の予定：?ym= の月、?do= は消える', hashOf(page));
+    // カードは組むのモードで開く（?mode=plan は残る。PRD D348）
+    check(
+      hashOf(page) === `#/month?ym=${create.ym}&mode=plan` &&
+        (await page.getByTestId('mode-switch').getAttribute('data-mode')) === 'plan',
+      '月の予定：?ym= の月を組むのモードで、?do= は消える',
+      hashOf(page),
+    );
     await page.goBack();
     await settle(page, 500);
     check(hashOf(page) === '#/home', '戻るでホームへ（?do= を残さないので欄を繰り返し開かない）', hashOf(page));

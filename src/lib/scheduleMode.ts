@@ -67,6 +67,22 @@ export function unassignedDays(
   ym: string,
   today: string,
 ): number {
+  // 同じデータ・月・今日なら覚えた数（メニュー・既定のモードで何度も数えない。データは書き換えず新しい物になる）
+  const key = `${ym}|${today}`;
+  const memo = UNASSIGNED_MEMO.get(data);
+  const hit = memo?.get(key);
+  if (hit !== undefined) return hit;
+  const n = countUnassigned(data, ym, today);
+  if (memo) memo.set(key, n);
+  else UNASSIGNED_MEMO.set(data, new Map([[key, n]]));
+  return n;
+}
+const UNASSIGNED_MEMO = new WeakMap<object, Map<string, number>>();
+function countUnassigned(
+  data: Pick<DemoData, 'visits' | 'patterns' | 'clients' | 'clientLeaves' | 'snapshots'>,
+  ym: string,
+  today: string,
+): number {
   let n = 0;
   for (const d of monthDates(ym)) {
     if (d < today || own(data.snapshots, d)) continue;

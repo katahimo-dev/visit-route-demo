@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { type ReactNode, useLayoutEffect, useRef } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { MODE_LABEL, modeLead, parseMode, SCHEDULE_MODES } from '../lib/scheduleMode';
 import { useDemoData } from '../store';
 import { useScheduleMode } from './useScheduleMode';
@@ -49,12 +49,15 @@ export function ScheduleNav({
   const ref = useRef<HTMLDivElement>(null);
   const { mode, setMode } = useScheduleMode();
   const staffTerm = useDemoData().data.org.terms.staff;
-  // ?mode= で開いたらそのモードを選ぶ（URL には残す。同じ値なら何もしない）
+  // ?mode= の付いた URL を開いた・押したら、そのたびに1回そのモードを選ぶ（メニューの同じ項目を押し直しても効くよう、
+  // 移るごとの location.key で。描く前に選び、前のモードで一度描かない）
   const [params] = useSearchParams();
   const urlMode = parseMode(params.get('mode'));
-  useEffect(() => {
+  const navKey = useLocation().key;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 移るたび（navKey）に1回だけ当てる
+  useLayoutEffect(() => {
     if (urlMode) setMode(urlMode);
-  }, [urlMode, setMode]);
+  }, [navKey]);
   // 貼り付く行の高さ（--sched-nav-h）を測って出す。広い画面でも中身で2段に折り返すことがある（決め打ちにしない）。
   // 貼り付かない幅（860px 以下）・この行の無い画面では 0（html の scroll-padding-top が使う）
   useLayoutEffect(() => {

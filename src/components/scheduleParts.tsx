@@ -124,7 +124,7 @@ export function ScheduleToolbar({
           </button>
         ) : (
           <Link
-            to={absenceHref(absence.date < today ? today : absence.date)}
+            to={`${absenceHref(absence.date < today ? today : absence.date)}&mode=change`}
             className="btn plan-sudden-btn"
             data-testid="sudden-open"
           >
@@ -244,7 +244,7 @@ export function useScopeItems({
       description: '要対応のある日だけか、伝えていない日すべてかを選んでから組みます',
       icon: CalendarRange,
       disabled: busy,
-      onSelect: () => (onMonth ? onMonth() : navigate(`/month?ym=${ym}&do=batch`)),
+      onSelect: () => (onMonth ? onMonth() : navigate(`/month?ym=${ym}&do=batch&mode=plan`)),
     },
   ];
 }

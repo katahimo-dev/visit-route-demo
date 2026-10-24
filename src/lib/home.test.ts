@@ -82,7 +82,11 @@ describe('homeTasks（版2）', () => {
     expect(r.ready).toBe(false);
     expect(r.tasks.map((t) => t.kind)).toEqual(['attention', 'create', 'confirm', 'today']);
     const c = r.tasks.find((t) => t.kind === 'create')!;
-    expect(c).toMatchObject({ tone: 'todo', title: '10月の担当を AI で組む', to: '/month?ym=2026-10&do=batch' });
+    expect(c).toMatchObject({
+      tone: 'todo',
+      title: '10月の担当を AI で組む',
+      to: '/month?ym=2026-10&do=batch&mode=plan',
+    });
     expect(c.detail).toBe('担当なしの訪問がある日 2日');
   });
 

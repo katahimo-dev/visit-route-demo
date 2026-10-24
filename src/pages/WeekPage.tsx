@@ -1396,7 +1396,8 @@ export default function WeekPage() {
 
       {mailOpen && mailOn && <WeekMailPanel data={data} dates={dates} onClose={() => setMailOpen(false)} />}
       {/* 複数選択の帯（PRD D330。画面の下に貼り付く） */}
-      <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} />
+      {/* 選んだ訪問をまとめて動かす帯は、確認のモードでは出さない（札を動かさない。PRD D348） */}
+      {modeTools.move && <SelectionBar ids={multi.ids} onClear={multi.clear} dates={dates} />}
       {/* キーで動かした先の読み上げと、繰り返しの回の範囲を選び直す小さな帯（PRD D333） */}
       <KeyMoveBand
         onMoved={(r) => {

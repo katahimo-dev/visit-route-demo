@@ -13,9 +13,10 @@ const listeners = new Set<() => void>();
 let memo: ScheduleMode | null = null;
 const read = (): string | null => {
   try {
-    return typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(MODE_KEY);
+    const v = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(MODE_KEY);
+    return v ?? memo;
   } catch {
-    return null;
+    return memo;
   }
 };
 const subscribe = (fn: () => void) => {
@@ -37,7 +38,7 @@ export function chooseMode(mode: ScheduleMode): void {
 /** 今のモード・選んだか・既定・モードで出す操作・選ぶ関数 */
 export function useScheduleMode() {
   const raw = useSyncExternalStore(subscribe, read, () => null);
-  const chosen = parseMode(raw) ?? memo;
+  const chosen = parseMode(raw);
   const { data } = useDemoData();
   const today = jstDate(Date.now());
   // 既定は選んでいないときだけ数える（来月の担当なしの日。compile しないので軽い）
