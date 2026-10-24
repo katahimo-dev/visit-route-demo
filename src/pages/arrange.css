@@ -15,3 +15,19 @@
   max-width: 100%;
   width: fit-content;
 }
+/* 狭い画面（390px）で横にはみ出さない：行は折り返し、入力欄・文は幅に収める */
+.arrange-page {
+  min-width: 0;
+}
+.arrange-page .row {
+  flex-wrap: wrap;
+}
+.arrange-page .card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.arrange-page input,
+.arrange-page select {
+  max-width: 100%;
+  min-width: 0;
+}

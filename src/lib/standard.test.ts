@@ -26,6 +26,7 @@ import {
   tableFromDays,
   temporaryChanges,
 } from './standard';
+import { patternsKey } from './standardDraft';
 
 const TODAY = '2026-10-07'; // 水曜
 const MON = '2026-10-12';
@@ -379,6 +380,24 @@ describe('レビューで見つかった場合', () => {
     expect(written.visits).toHaveLength(1);
     expect(standardPinsOf(written, MON, visitsOn(written, MON))).toEqual({ [`${MON}_p1`]: 's1' });
     expect(routesOf(p, visitsOn(written, MON))).toEqual({ s1: [`${MON}_p1`] });
+  });
+});
+
+describe('PR #92 のレビュー', () => {
+  it('いつからで分けた後の側の繰り返しがあれば、その開始日より前はいつからに選べない', () => {
+    const d = data({
+      patterns: [pattern({ to: '2026-10-18' }), pattern({ id: 'n1', from: '2026-10-19', usualStaffId: 's2' })],
+    });
+    expect(earliestSince(d, TODAY)).toBe('2026-10-19');
+    // 前の側がもう終わっていれば制限しない
+    expect(earliestSince(d, '2026-10-19')).toBe('2026-10-19');
+  });
+  it('繰り返しの担当・標準の開始が同じ ID のまま変わったら、下書きの印が変わる', () => {
+    const d = data();
+    const changed = data({ patterns: [pattern({ usualStaffId: 's2' })] });
+    const started = data({ patterns: [pattern({ usualStarts: [{ weekday: 1, start: '10:00' }] })] });
+    expect(patternsKey(changed, TODAY)).not.toBe(patternsKey(d, TODAY));
+    expect(patternsKey(started, TODAY)).not.toBe(patternsKey(d, TODAY));
   });
 });
 

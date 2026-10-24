@@ -170,8 +170,18 @@ async function compare(page) {
 async function mobile(page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, `/arrange?ym=${YM}`);
-  const w = await page.evaluate(() => document.documentElement.scrollWidth);
-  check(w <= 390, '390px：横にはみ出さない', w);
+  const w = await page.evaluate(() => {
+    // はみ出したときに、どの要素かを添える（フォントで幅が変わるので CI だけで起きることがある）
+    const wide = [...document.querySelectorAll('body *')]
+      .filter((el) => {
+        const b = el.getBoundingClientRect();
+        return b.width > 0 && b.right > 391 && getComputedStyle(el).position !== 'fixed';
+      })
+      .slice(0, 5)
+      .map((el) => `${el.tagName}.${String(el.className).slice(0, 30)}[${el.getAttribute('data-testid') ?? ''}]`);
+    return { width: document.documentElement.scrollWidth, wide };
+  });
+  check(w.width <= 390, '390px：横にはみ出さない', w);
   await page.screenshot({ path: path.join(OUT_DIR, 'arrange-390.png'), fullPage: true });
   await page.setViewportSize({ width: 1400, height: 1000 });
 }

@@ -218,6 +218,10 @@ function CellEditor({
               {s.name}
             </option>
           ))}
+          {/* 今の担当が勤務中の人でない（休止・退職）ときも、選んでいる値を見せる */}
+          {cell.staffId !== null && !staff.some((s) => s.id === cell.staffId) && (
+            <option value={cell.staffId}>（勤務中でない人）</option>
+          )}
           <option value="">担当なし</option>
         </select>
       </label>
@@ -362,16 +366,24 @@ export default function StandardPage() {
   const minSince = earliestSince(data, today);
   const [sinceIn, setSinceIn] = useState<string | null>(null);
   const since = sinceIn !== null && sinceIn >= minSince ? sinceIn : defaultSince(data, today);
+  // いつからより前に終わる繰り返しのマスは登録で書き換えないので、違う所に数えない（レビュー #92）
+  const endsBefore = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of data.patterns) if (p.to !== null && p.to < since) ids.add(p.id);
+    return ids;
+  }, [data.patterns, since]);
+  const effectiveDiff = useMemo(() => draftDiff.filter((c) => !endsBefore.has(c.patternId)), [draftDiff, endsBefore]);
+  const skippedDiff = draftDiff.length - effectiveDiff.length;
   const temps = useMemo(
-    () => (draft && draftDiff.length > 0 ? temporaryChanges(data, draft.table, since, today) : []),
-    [data, draft, draftDiff.length, since, today],
+    () => (draft && effectiveDiff.length > 0 ? temporaryChanges(data, draft.table, since, today) : []),
+    [data, draft, effectiveDiff.length, since, today],
   );
   const [temp, setTemp] = useState<TemporaryChoice>('drop');
   const register = async () => {
-    if (!draft || draftDiff.length === 0) return;
-    const patternsChanged = new Set(draftDiff.map((c) => c.patternId)).size;
+    if (!draft || effectiveDiff.length === 0) return;
+    const patternsChanged = new Set(effectiveDiff.map((c) => c.patternId)).size;
     const lines = [
-      `今の標準と違う ${draftDiff.length}か所（繰り返し ${patternsChanged}件）を書き換えます。曜日で担当が違う繰り返しは曜日ごとに分けます。`,
+      `今の標準と違う ${effectiveDiff.length}か所（繰り返し ${patternsChanged}件）を書き換えます。曜日で担当が違う繰り返しは曜日ごとに分けます。`,
       `${md(since)}から先の予定は、この表の担当・時刻で並びます。`,
       temps.length > 0
         ? temp === 'drop'
@@ -389,19 +401,27 @@ export default function StandardPage() {
     if (!ok) return;
     const table = draft.table;
     const presetId = draft.from;
-    update(
-      (d) =>
-        registerStandard(d, table, since, today, { newId: () => newId('pattern'), temp, at: Date.now(), presetId }),
-      '組み方の標準を登録',
-    );
+    const at = Date.now();
+    let changed = false;
+    update((d) => {
+      const next = registerStandard(d, table, since, today, { newId: () => newId('pattern'), temp, at, presetId });
+      changed = next !== d;
+      return next;
+    }, '組み方の標準を登録');
+    // 書き換える所が無かった（別のタブで同じ標準になった・いつからより前に終わる行だけ）ときは完了にしない
+    if (!changed) {
+      toast('書き換える所がありませんでした');
+      return;
+    }
     setDraft(null, null);
-    standardWork.set((w) => ({ ...w, registered: { since } }));
+    standardWork.set((w) => ({ ...w, registered: { since, at } }));
     setEditing(null);
     toast('標準にしました', { action: undoAction });
   };
 
   const std = data.standard;
-  const registered = work.registered;
+  // 元に戻したら（登録の時刻が今のデータと違えば）完了の表示を出さない
+  const registered = work.registered && data.standard?.at === work.registered.at ? work.registered : null;
 
   return (
     <div className="stack standard-page">
@@ -675,7 +695,7 @@ export default function StandardPage() {
                     type="button"
                     className="btn btn-primary"
                     onClick={() => void register()}
-                    disabled={draftDiff.length === 0}
+                    disabled={effectiveDiff.length === 0}
                     data-testid="standard-register"
                   >
                     この表を標準にする
@@ -683,6 +703,11 @@ export default function StandardPage() {
                   {draftDiff.length === 0 && (
                     <span className="sub" data-testid="standard-same">
                       今の標準と同じです
+                    </span>
+                  )}
+                  {skippedDiff > 0 && (
+                    <span className="sub" data-testid="standard-skipped">
+                      {md(since)}より前に終わる繰り返しの直し {skippedDiff}か所は書き換えません
                     </span>
                   )}
                 </div>

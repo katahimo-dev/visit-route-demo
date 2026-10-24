@@ -43,7 +43,8 @@ export type StandardWork = {
   /** 下書きを作ったときの繰り返しの印 */
   draftKey: string | null;
   /** 登録した直後の完了の表示（いつから） */
-  registered: { since: string } | null;
+  /** 登録した「いつから」と登録の時刻（元に戻したら data.standard.at と合わなくなり、完了の表示を出さない） */
+  registered: { since: string; at: number } | null;
 };
 
 const EMPTY: StandardWork = {
@@ -58,10 +59,13 @@ const EMPTY: StandardWork = {
 
 export const standardWork = createValueStore<StandardWork>(EMPTY);
 
-/** 表の行にする繰り返しの印（ID と曜日。これが変わったら案・下書きは古い） */
+/** 表の行にする繰り返しの印（ID・曜日・担当・標準の開始。これが変わったら案・下書きは古い。ほかの画面で担当を替えたときも） */
 export function patternsKey(data: Pick<DemoData, 'patterns' | 'clients'>, today: string): string {
   return standardPatterns(data, today)
-    .map((p) => `${p.id}:${p.weekdays.join(',')}`)
+    .map(
+      (p) =>
+        `${p.id}:${p.weekdays.join(',')}:${p.usualStaffId ?? ''}:${(p.usualStarts ?? []).map((x) => `${x.weekday}@${x.start}`).join(',')}`,
+    )
     .sort()
     .join('|');
 }

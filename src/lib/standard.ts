@@ -202,14 +202,36 @@ const lastToldDate = (data: Pick<DemoData, 'snapshots' | 'visits'>): string | nu
 };
 
 /** 「いつから」に選べるいちばん早い日：今日と、伝えた日の翌日の遅い方（伝えた日の回は変えない） */
-export function earliestSince(data: Pick<DemoData, 'snapshots' | 'visits'>, today: string): string {
+export function earliestSince(
+  data: Pick<DemoData, 'snapshots' | 'visits'> & Partial<Pick<DemoData, 'patterns'>>,
+  today: string,
+): string {
   const told = lastToldDate(data);
-  const next = told === null ? today : addDays(told, 1);
-  return next > today ? next : today;
+  let min = told === null ? today : addDays(told, 1);
+  if (min < today) min = today;
+  // 「いつから」で分けた後の側の繰り返し（前の側が今日以降まで続く）は、その開始日より前に当てられない
+  // （表の行は後の側だけなので、前の側の期間の回を書き換えられない。レビュー #92）
+  const patterns = data.patterns ?? [];
+  for (const p of patterns) {
+    const split = patterns.some(
+      (q) =>
+        q.id !== p.id &&
+        q.clientId === p.clientId &&
+        q.typeId === p.typeId &&
+        q.to !== null &&
+        q.to >= today &&
+        q.to < p.from,
+    );
+    if (split && p.from > min) min = p.from;
+  }
+  return min;
 }
 
 /** 「いつから」の既定：来週の月曜（選べるいちばん早い日より前ならその日） */
-export function defaultSince(data: Pick<DemoData, 'snapshots' | 'visits'>, today: string): string {
+export function defaultSince(
+  data: Pick<DemoData, 'snapshots' | 'visits'> & Partial<Pick<DemoData, 'patterns'>>,
+  today: string,
+): string {
   const min = earliestSince(data, today);
   const from = nextMonday(today);
   return from > min ? from : min;
