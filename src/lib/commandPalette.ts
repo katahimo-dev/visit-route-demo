@@ -71,6 +71,7 @@ const SCREEN_WORDS: Record<string, readonly string[]> = {
   '/staff': ['いちらん'],
   '/availability': ['きんむじかん', 'しふと', '稼働時間', 'かどうじかん'],
   '/workload': ['きんむのみこみ', '稼働の見込み', 'かどうのみこみ', 'こうつうひ'],
+  '/standard': ['くみかたのひょうじゅん', 'ひょうじゅん'],
   '/rules': ['じょうけんのおもみ', 'ぷりせっと'],
   '/types': ['ほうもんのしゅるい'],
   '/items': ['とくせいのこうもく'],

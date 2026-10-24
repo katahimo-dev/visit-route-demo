@@ -24,6 +24,8 @@ const YM = TODAY.slice(0, 7);
 const RANK = { attention: 0, create: 1, confirm: 2, today: 9 };
 /** カードの並びの鍵：要対応は先頭、今日は最後、そのほかは 月 → 作る・確認 の順（年をまたぐ月は今月より後に数える） */
 function orderKey(t, ym = YM) {
+  // 組み方の標準を登録していなければ、その案内がいちばん先（PRD D354）
+  if (t.kind === 'standard') return -1;
   if (t.kind === 'attention') return 0;
   if (t.kind === 'today') return 1e6;
   const m = Number(/(\d+)月/.exec(t.title)?.[1] ?? 0);
@@ -161,7 +163,7 @@ async function firstState(page) {
   const keys = list.map((t) => orderKey(t));
   check(
     keys.every((k, i) => i === 0 || keys[i - 1] <= k),
-    '並び：要対応 → 月ごとに担当を組む → 確定していない日（今月 → 来月）→ 今日（PRD D263）',
+    '並び：組み方の標準 → 要対応 → 月ごとに担当を組む → 確定していない日（今月 → 来月）→ 今日（PRD D263）',
     list,
   );
   await checkLead(page, list);
@@ -188,11 +190,11 @@ async function firstState(page) {
     await panel.waitFor({ timeout: 10000 });
     check(true, '担当を AI で組むの欄が開く');
     await settle(page, 300);
-    // カードは組むのモードで開く（?mode=plan は残る。PRD D348）
+    // カードは変更のモードで開く（?mode=change は残る。PRD D348）
     check(
-      hashOf(page) === `#/month?ym=${create.ym}&mode=plan` &&
-        (await page.getByTestId('mode-switch').getAttribute('data-mode')) === 'plan',
-      '月の予定：?ym= の月を組むのモードで、?do= は消える',
+      hashOf(page) === `#/month?ym=${create.ym}&mode=change` &&
+        (await page.getByTestId('mode-switch').getAttribute('data-mode')) === 'change',
+      '月の予定：?ym= の月を変更のモードで、?do= は消える',
       hashOf(page),
     );
     await page.goBack();
@@ -382,7 +384,9 @@ async function seedPlans(page) {
     await open(p, '/home');
     await p.locator('[data-kind="attention"]').first().waitFor({ timeout: 30000 });
     const withAttention = await tasks(p);
-    check(withAttention[0]?.kind === 'attention', '要対応があれば先頭は要対応のカード', withAttention[0]);
+    // 組み方の標準の案内（登録していないとき）の次が要対応
+    const firstWork = withAttention.find((t) => t.kind !== 'standard');
+    check(firstWork?.kind === 'attention', '要対応があれば（標準の案内の次の）先頭は要対応のカード', withAttention);
     await checkLead(p, withAttention);
 
     // 月の右の欄の「確定していない日」：問題の無い日をまとめて確定（N日）。要対応の訪問のある日は数えない
@@ -621,6 +625,8 @@ async function ready(page) {
     d.patterns = [];
     d.snapshots = {};
     d.absences = [];
+    // 組み方の標準は登録済み（標準の案内のカードを出さない。PRD D354）
+    d.standard = { at: 1, presetId: d.scorePresetId ?? 'standard', from: d.baseDate, weeks: 1 };
     localStorage.setItem(key, JSON.stringify(d));
   }, STORAGE_KEY);
   await page.reload();

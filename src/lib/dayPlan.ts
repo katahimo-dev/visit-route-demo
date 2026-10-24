@@ -66,6 +66,40 @@ export function pinsOf(visits: readonly Visit[]): Record<string, string> {
   return out;
 }
 
+/**
+ * 標準のピン（ADR-0062。PRD D352）：繰り返しの計算した回（保存していない回）で担当があるものは、AI で組むときにピンと同じに扱う。
+ * その担当がその日に担当できない（休み・欠勤・条件に合わない＝問題で可でない）回は外す（AI が代わりを探す）。
+ * problem は手で付けたピンだけで作ったその日の問題（無ければ作る）
+ */
+export function standardPinsOf(
+  data: CompileInput,
+  date: string,
+  visits: readonly Visit[],
+  problem?: Problem | null,
+): Record<string, string> {
+  const saved = new Set(data.visits.filter((v) => v.date === date).map((v) => v.id));
+  const computed = visits.filter((v) => v.pattern !== null && v.staffId !== null && !v.cancelled && !saved.has(v.id));
+  if (computed.length === 0) return {};
+  const manual = pinsOf(visits);
+  const p =
+    problem === undefined ? dayProblemOf(data, date, Object.keys(manual).length > 0 ? manual : undefined) : problem;
+  if (!p) return {};
+  const vIndex = new Map(p.visits.map((v, i) => [v.id, i]));
+  const sIndex = new Map(p.staff.map((s, i) => [s.id, i]));
+  const out: Record<string, string> = {};
+  for (const v of computed) {
+    const vi = vIndex.get(v.id);
+    const si = sIndex.get(v.staffId as string);
+    if (vi !== undefined && si !== undefined && p.allowed[vi]?.[si]) out[v.id] = v.staffId as string;
+  }
+  return out;
+}
+
+/** AI で組むときのピン（手で付けたピン＋標準のピン。ADR-0062） */
+export function aiPinsOf(data: CompileInput, date: string, visits: readonly Visit[]): Record<string, string> {
+  return { ...standardPinsOf(data, date, visits), ...pinsOf(visits) };
+}
+
 /** 担当なしの訪問（問題の訪問のうち、どの列にも無いもの。問題の順） */
 export function unassignedOf(problem: Problem, routes: Routes): string[] {
   const placed = new Set<string>();

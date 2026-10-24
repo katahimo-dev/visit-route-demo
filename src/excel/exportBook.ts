@@ -64,6 +64,7 @@ import {
   slotsCellText,
   traitToCell,
   travelModeLabels,
+  usualStartsText,
   WINDOW_LABELS,
   workDaysText,
   YES,
@@ -665,8 +666,9 @@ export async function exportWorkbook(data: DemoData): Promise<Blob> {
       p.note,
       p.repeat === 'monthly' ? monthWeeksText(p.monthWeeks) : '',
       dayTimesText(p.dayTimes, p.windowKind),
+      usualStartsText(p.usualStarts),
     ]),
-    textCols: [1, 4, 7, 8, 10, 11, 14, 15],
+    textCols: [1, 4, 7, 8, 10, 11, 14, 15, 16],
     lists: [
       { col: 2, ref: clientNameRef, strict: false },
       { col: 3, ref: typeNameRef, strict: false },

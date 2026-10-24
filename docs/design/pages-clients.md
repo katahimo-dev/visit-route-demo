@@ -92,8 +92,8 @@
 #### 繰り返し（`pages/PatternsSection.tsx`。ADR-0012・0013。PRD D37・D64・D310）
 
 - 見出し「繰り返し」と「繰り返しを足す」（`pattern-add`）。説明は箇条書き（押すとカレンダーで目立たせる・足すと作ってある最後の日まで作る・その先は月の予定）
-- 一覧の行（`pattern-row`・`data-pattern`）：押せる文（`pattern-pick`。`aria-pressed`。種類・`patternWhenText`・所要・`periodText`・いつもの担当）と「直す」（`pattern-edit`）・「終わらせる」（`pattern-end`）
-- 直す・足すの入力（`pattern-form`）：種類（選ぶと所要の初期値）・繰り返し（毎週／隔週／3週ごと／4週ごと／毎月（第N週）。`pattern-repeat`）・曜日（`pattern-weekdays`）・第何週（`pattern-month-weeks`）・時間の決め方・開始（早・遅）・曜日ごとの時刻（`pattern-per-day`・`pattern-daytimes`）・所要・開始日／いつから変えますか・終了日・いつもの担当・メモ。「保存」（`pattern-save`）・「取り消し」（`pattern-cancel`）・直すときは「この繰り返しを消す」（`pattern-remove`）
+- 一覧の行（`pattern-row`・`data-pattern`）：押せる文（`pattern-pick`。`aria-pressed`。種類・`patternWhenText`・所要・`periodText`・いつもの担当・標準の開始「標準の開始：月 10:00・水 11:00」（無ければ出さない。`pattern-usual-starts`））と「直す」（`pattern-edit`）・「終わらせる」（`pattern-end`）
+- 直す・足すの入力（`pattern-form`）：種類（選ぶと所要の初期値）・繰り返し（毎週／隔週／3週ごと／4週ごと／毎月（第N週）。`pattern-repeat`）・曜日（`pattern-weekdays`）・第何週（`pattern-month-weeks`）・時間の決め方・開始（早・遅）・曜日ごとの時刻（`pattern-per-day`・`pattern-daytimes`）・曜日ごとの標準の開始（`pattern-usual-starts-form`。選んだ曜日ごとに時刻を入れる・消す。その曜日の開始（早）〜（遅）の外なら文を出して保存させない）・所要・開始日／いつから変えますか・終了日・いつもの担当・メモ。「保存」（`pattern-save`）・「取り消し」（`pattern-cancel`）・直すときは「この繰り返しを消す」（`pattern-remove`）
 - 足す：`applyPatterns` で今日から作ってある最後の日まで作る。直す：`splitPattern`（作り直す N件・確定した日 M日を確かめる）。消す：`removePattern`（今日以降の N件を確かめる）
 - 終わらせる（`pattern-end-form`）：最後の日（`pattern-end-last`。初期値は今日。終わっていればその終了日、まだ始まっていなければ開始日で、そのときは「開始日の回も要らないときは「直す」の「この繰り返しを消す」で消します」（`pattern-end-before`））と「保存」（`pattern-end-save`）。`visitOps` の `endPatternOp`（終了日を入れ、最後の日より後で今日以降の、この回だけ変えていない・取り消していない回を消す。確定した日の数）を確かめてから入れる
 - 毎月のパターンは `patternMonthly` を切っても `repeat` と `monthWeeks` を残し、読むだけと注記（`pattern-monthly-off`）

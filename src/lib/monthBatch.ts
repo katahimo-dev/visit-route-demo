@@ -13,7 +13,7 @@ import { visitsOn } from '../patterns';
 import { reassignDiff } from '../reassign';
 import { defaultIterations, runSolve } from '../solver';
 import { own } from './common';
-import { activeDayVisits, dayProblemOf, pinsOf, routesOf, unassignedOf, writeRoutes } from './dayPlan';
+import { activeDayVisits, aiPinsOf, dayProblemOf, pinsOf, routesOf, unassignedOf, writeRoutes } from './dayPlan';
 import type { BatchMode } from './month';
 import { createValueStore, type ReadableStore } from './valueStore';
 
@@ -37,6 +37,10 @@ export type BatchJob = {
   /** 週の予定から始めたときの週の始まり（月曜。知らせ・上の帯の行き先 `/week?d=`。ほかは null） */
   weekStart?: string | null;
   today: string;
+  /** 標準のピンを効かせない（組み方の標準の画面の提案。ADR-0062）。既定は効かせる */
+  ignoreStandard?: boolean;
+  /** 解くときの条件（組み方の標準の画面でプリセットの重みを試す。無ければデータの条件） */
+  rules?: DemoData['rules'];
 };
 
 /** 提案の1日（組み始めたときの訪問と、組んだ担当の並び・今との差） */
@@ -375,8 +379,9 @@ export function createMonthBatch(solve: Solve = runSolve): MonthBatch {
         return;
       }
       const visits = visitsOn(latest, day);
-      const pins = pinsOf(visits);
-      const p = dayProblemOf(latest, day, Object.keys(pins).length > 0 ? pins : undefined);
+      const input = job.rules ? { ...latest, rules: job.rules } : latest;
+      const pins = job.ignoreStandard ? pinsOf(visits) : aiPinsOf(input, day, visits);
+      const p = dayProblemOf(input, day, Object.keys(pins).length > 0 ? pins : undefined);
       if (!p || p.visits.length === 0 || p.staff.length === 0) {
         step(i + 1);
         return;

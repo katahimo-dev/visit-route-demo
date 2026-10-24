@@ -31,6 +31,7 @@ export const isScheduleView = (pathname: string): boolean => SCHEDULE_VIEWS.incl
 
 /** 設定のタブ（並び。PRD D275）。メニューは「設定」1項目で、画面の上のタブで切り替える */
 export const SETTINGS_TABS: readonly { to: string; label: string }[] = [
+  { to: '/standard', label: '組み方の標準' },
   { to: '/types', label: '訪問の種類' },
   { to: '/items', label: '特性の項目' },
   { to: '/rules', label: '条件の重み' },
@@ -99,14 +100,18 @@ export function activeNavPath(pathname: string): string {
 
 /**
  * そのメニューの項目が今の画面か（操作の項目はいつも false。match があればそのどれか。PRD D273・D275）。
- * 予定のモードの項目（mode を持つ。PRD D349）は、予定の画面でそのモードを選んでいるとき（mode を渡したときだけ）
+ * 予定のモードの項目（mode を持つ。PRD D349）は、予定の画面でそのモードを選んでいるとき（mode を渡したときだけ。match があればその画面だけ。
+ * 変更は月・週の「◯月の予定」と日の「欠勤・キャンセル」に分かれる）
  */
 export const isActiveNav = (
   item: NavEntry & { mode?: ScheduleMode },
   pathname: string,
   mode?: ScheduleMode,
 ): boolean => {
-  if (item.mode) return mode !== undefined && item.mode === mode && SCHEDULE_PATHS.includes(activeNavPath(pathname));
+  if (item.mode) {
+    const path = activeNavPath(pathname);
+    return mode !== undefined && item.mode === mode && (item.match ?? SCHEDULE_PATHS).includes(path);
+  }
   return !isNavAction(item.to) && (item.match ?? [item.to]).includes(activeNavPath(pathname));
 };
 
@@ -184,6 +189,7 @@ export type NavIcon =
   | 'staff'
   | 'hours'
   | 'workload'
+  | 'standard'
   | 'rules'
   | 'types'
   | 'items'
@@ -209,6 +215,7 @@ export const NAV_OPEN_DEFAULT: Readonly<Record<string, boolean>> = { schedule: t
 
 /** 設定のタブのアイコン */
 const SETTINGS_ICON: Record<string, NavIcon> = {
+  '/standard': 'standard',
   '/types': 'types',
   '/items': 'items',
   '/rules': 'rules',
@@ -270,11 +277,12 @@ export function menuSections(
       badge: badges.todayUntold ? { text: '未確定', label: '今日はまだ伝えていない' } : undefined,
     },
     {
-      key: 'mode-plan',
-      to: `/month?ym=${planYm(today)}&mode=plan`,
+      key: 'mode-month',
+      to: `/month?ym=${planYm(today)}&mode=change`,
       label: planLabel(today),
       icon: 'month',
-      mode: 'plan',
+      mode: 'change',
+      match: ['/month', '/week', '/compare'],
       badge: badges.planUnassignedDays
         ? { text: `${badges.planUnassignedDays}日`, label: `担当なしの訪問がある日 ${badges.planUnassignedDays}日` }
         : undefined,
@@ -286,6 +294,7 @@ export function menuSections(
       short: '欠勤',
       icon: 'absence',
       mode: 'change',
+      match: ['/plan'],
     },
   ];
   const items: MenuItem[] = [
@@ -365,6 +374,7 @@ export function screenSections(terms: Pick<Terms, 'client' | 'staff'>, features:
     {
       title: '設定',
       items: [
+        { key: 'standard', to: '/standard', label: '組み方の標準', icon: 'standard' },
         { key: 'types', to: '/types', label: '訪問の種類', icon: 'types' },
         { key: 'items', to: '/items', label: '特性の項目', icon: 'items' },
         { key: 'rules', to: '/rules', label: '条件の重み', icon: 'rules' },

@@ -128,14 +128,14 @@ async function drawerOpenClose(page) {
   await settle(page, 400); // 出てくる動きが終わるまで
   const db = await d.boundingBox();
   check(db.x === 0 && db.width < 390, '引き出し：左から出る', db);
-  // 週の予定（モードは「変更」）では、予定の子の「欠勤・キャンセル」（変更のモードの子）に印が付く（親の予定は has-current）
+  // 週の予定（モードは「変更」）では、予定の子の「◯月の予定」（月・週の変更の子）に印が付く（親の予定は has-current）
   const current = d.locator('[aria-current="page"]');
   check(
     (await current.count()) === 1 &&
-      (await current.getAttribute('data-key')) === 'absence' &&
+      (await current.getAttribute('data-key')) === 'mode-month' &&
       (await d.locator('[data-parent="schedule"] > .nav-parent-row > .nav-link.has-current').count()) === 1 &&
       (await isFocused(current)),
-    '引き出し：開いたら今の画面の項目（週の予定・変更のモードは予定の子「欠勤・キャンセル」）へフォーカス',
+    '引き出し：開いたら今の画面の項目（週の予定・変更のモードは予定の子「◯月の予定」）へフォーカス',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-drawer.png') });
 

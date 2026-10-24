@@ -477,3 +477,31 @@ export function parseConds(item: Item, cell: string): Parsed<Condition[]> {
 }
 
 export type { Parsed };
+
+/** 曜日ごとの標準の開始の文（「月 10:00、水 11:00」。ADR-0062） */
+export function usualStartsText(usualStarts: readonly { weekday: number; start: string }[] | undefined): string {
+  return [...(usualStarts ?? [])]
+    .sort((a, b) => a.weekday - b.weekday)
+    .map((x) => `${WEEKDAY_LABELS[x.weekday]} ${x.start.replace(/^0(\d)/, '$1')}`)
+    .join('、');
+}
+
+/**
+ * 「月 10:00、水 11:00」→ 曜日ごとの標準の開始（曜日の順）。区切りは「、」か改行。「月曜 10:00」も読む。
+ * 読めなければ理由の文
+ */
+export function parseUsualStarts(s: string): { weekday: number; start: string }[] | string {
+  const out: { weekday: number; start: string }[] = [];
+  for (const raw of s.split(/[、\r\n]/)) {
+    const x = nfkc(raw);
+    if (x === '') continue;
+    const m = /^(.)曜?\s*(\d{1,2}[:：]\d{2})$/.exec(x);
+    const wd = m ? (WEEKDAY_LABELS as readonly string[]).indexOf(m[1]!) : -1;
+    if (!m || wd < 0) return `「${x}」は「月 10:00」の形で書いてください`;
+    const a = parseTimeText(m[2]!);
+    if (!a) return `「${x}」の時刻が読めません`;
+    if (out.some((y) => y.weekday === wd)) return `「${WEEKDAY_LABELS[wd]}」の標準の開始が2つあります`;
+    out.push({ weekday: wd, start: a });
+  }
+  return out.sort((p, q) => p.weekday - q.weekday);
+}

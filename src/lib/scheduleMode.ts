@@ -1,4 +1,4 @@
-// 予定のモード［組む｜変更｜確認］（PRD D348。ADR-0061）の決まり。
+// 予定のモード［変更｜確認］（PRD D348。ADR-0061・ADR-0062）の決まり。
 // 月・週・日の予定の画面で、仕事の段階ごとに出す操作を絞る。既定のモード・モードごとに出す操作・メニューの件数は純粋関数でここに置く。
 // データは書き換えない
 import type { DemoData } from '../contracts/data';
@@ -8,18 +8,17 @@ import { activeDayVisits } from './dayPlan';
 import { HOME_NEXT_MONTH_FROM_DAY, monthLabel } from './home';
 import { monthDates, ymOf } from './month';
 
-/** 予定のモード：組む（事前に月の担当を組む）・変更（前日・当日の欠勤・キャンセル）・確認（日々の確認と連絡） */
-export type ScheduleMode = 'plan' | 'change' | 'check';
+/** 予定のモード：変更（先の月の担当を整える・前日と当日の欠勤・キャンセル）・確認（日々の確認と連絡） */
+export type ScheduleMode = 'change' | 'check';
 
-export const SCHEDULE_MODES: readonly ScheduleMode[] = ['plan', 'change', 'check'];
+export const SCHEDULE_MODES: readonly ScheduleMode[] = ['change', 'check'];
 
 /** 切り替えの名前 */
-export const MODE_LABEL: Record<ScheduleMode, string> = { plan: '組む', change: '変更', check: '確認' };
+export const MODE_LABEL: Record<ScheduleMode, string> = { change: '変更', check: '確認' };
 
 /** モードの1行の説明（ナビの行の下に出す。staff は〈スタッフ〉の呼び方） */
 export function modeLead(mode: ScheduleMode, staff: string): string {
-  if (mode === 'plan') return '先の月の担当を AI で組み、条件の合わない所を直します';
-  if (mode === 'change') return '欠勤・キャンセルを登録して、影響のある訪問を組み直します';
+  if (mode === 'change') return '担当を AI で組む・動かす、欠勤・キャンセルを登録して影響のある訪問を組み直します';
   return `その日の担当を見て、${staff}に伝えたら確定します（札は動かしません）`;
 }
 
@@ -36,18 +35,16 @@ export type ModeTools = {
 };
 
 /**
- * モードごとに出す操作：組む＝AI で組む・札を動かす（欠勤の登録とメールは出さない）、変更＝すべて、
- * 確認＝欠勤の登録・メール（AI で組む・札を動かすは出さない。見て伝えるだけ）
+ * モードごとに出す操作：変更＝すべて、確認＝欠勤の登録・メール（AI で組む・札を動かすは出さない。見て伝えるだけ）
  */
 export function modeTools(mode: ScheduleMode): ModeTools {
-  if (mode === 'plan') return { absence: false, ai: true, mail: false, move: true };
   if (mode === 'check') return { absence: true, ai: false, mail: true, move: false };
   return { absence: true, ai: true, mail: true, move: true };
 }
 
-/** 文字をモードとして読む（読めなければ null） */
+/** 文字をモードとして読む（古い 'plan'（組む）は変更。読めなければ null） */
 export const parseMode = (s: string | null | undefined): ScheduleMode | null =>
-  SCHEDULE_MODES.includes(s as ScheduleMode) ? (s as ScheduleMode) : null;
+  s === 'plan' ? 'change' : SCHEDULE_MODES.includes(s as ScheduleMode) ? (s as ScheduleMode) : null;
 
 /** 来月（YYYY-MM） */
 export const nextYm = (today: string): string => ymOf(addDays(`${ymOf(today)}-01`, 31));
@@ -55,7 +52,7 @@ export const nextYm = (today: string): string => ymOf(addDays(`${ymOf(today)}-01
 /** 月の後半か（ホームが来月の準備を出すのと同じ日から。PRD D255） */
 export const isLateMonth = (today: string): boolean => Number(today.slice(8, 10)) >= HOME_NEXT_MONTH_FROM_DAY;
 
-/** 組む月：月の後半なら来月、前半なら今月（メニューの「◯月を組む」） */
+/** 整える月：月の後半なら来月、前半なら今月（メニューの「◯月の予定」） */
 export const planYm = (today: string): string => (isLateMonth(today) ? nextYm(today) : ymOf(today));
 
 /**
@@ -95,15 +92,15 @@ function countUnassigned(
 export const PLAN_NEEDED_DAYS = 2;
 
 /**
- * 既定のモード（選んでいないとき。PRD D348）：月の後半で、来月をまだ組んでいなければ（担当なしの訪問がある日が2日以上）組む、
+ * 既定のモード（選んでいないとき。PRD D348）：月の後半で、来月をまだ組んでいなければ（担当なしの訪問がある日が2日以上）変更、
  * それ以外は確認
  */
 export function defaultMode(today: string, nextMonthUnassignedDays: number): ScheduleMode {
-  return isLateMonth(today) && nextMonthUnassignedDays >= PLAN_NEEDED_DAYS ? 'plan' : 'check';
+  return isLateMonth(today) && nextMonthUnassignedDays >= PLAN_NEEDED_DAYS ? 'change' : 'check';
 }
 
-/** メニューの「◯月を組む」の名前 */
-export const planLabel = (today: string): string => `${monthLabel(planYm(today))}を組む`;
+/** メニューの「◯月の予定」の名前 */
+export const planLabel = (today: string): string => `${monthLabel(planYm(today))}の予定`;
 
 /**
  * メニューの件数の印（PRD D349）：組む月の担当なしの日の数（unassignedDays）と、今日に訪問があってまだ伝えていないか。

@@ -1,4 +1,5 @@
 import {
+  CalendarCheck,
   CalendarClock,
   CalendarDays,
   CalendarRange,
@@ -88,6 +89,7 @@ import SettingsPage from '../pages/SettingsPage';
 import StaffPage from '../pages/StaffPage';
 import StaffPersonPage from '../pages/StaffPersonPage';
 import StaffViewPage from '../pages/StaffViewPage';
+import StandardPage from '../pages/StandardPage';
 import TypesPage from '../pages/TypesPage';
 import WeekPage from '../pages/WeekPage';
 import WorkloadPage from '../pages/WorkloadPage';
@@ -157,6 +159,7 @@ export default function App() {
                 <Route path="/workload" element={<WorkloadPage />} />
                 <Route path="/vacancy" element={<VacancyPage />} />
                 <Route path="/compare" element={<ComparePage />} />
+                <Route path="/standard" element={<StandardPage />} />
                 <Route path="/rules" element={<RulesPage />} />
                 <Route path="/items" element={<ItemsPage />} />
                 <Route path="/types" element={<TypesPage />} />
@@ -221,6 +224,7 @@ const NAV_ICONS: Record<NavIcon, LucideIcon> = {
   staff: UserRound,
   hours: Clock,
   workload: Timer,
+  standard: CalendarCheck,
   rules: SlidersHorizontal,
   types: Layers,
   items: Tags,

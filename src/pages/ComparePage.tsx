@@ -34,7 +34,7 @@ import type { Reason, VisitExplain } from '../contracts/problem';
 import { HARDABLE, type Rule } from '../contracts/rules';
 import { achievements, diff, hundredBreakdown, ruleLowerBounds, score, toHundred } from '../evaluate';
 import { attempt, dateText, deltaText, formError, newId, own, pointsText, r0 } from '../lib/common';
-import { pinsOf, routesOf, unassignedOf, writeRoutes } from '../lib/dayPlan';
+import { aiPinsOf, routesOf, unassignedOf, writeRoutes } from '../lib/dayPlan';
 import { compareEmptyGuide } from '../lib/emptyGuide';
 import { narrowRole } from '../lib/narrowRoles';
 import { buildRouteMap, homeLegKey, homeTravel, useRouteSelection } from '../lib/routeView';
@@ -267,7 +267,7 @@ export default function ComparePage() {
     setMakeError(null);
     const rules = applyPreset(data.rules, preset);
     const name = `「${preset.name}」`;
-    const pins = pinsOf(m.allVisits);
+    const pins = aiPinsOf({ ...data, rules }, date, m.allVisits);
     const target = attempt(() => compile({ ...data, rules }, date, Object.keys(pins).length > 0 ? pins : undefined));
     const p = target.value;
     if (!p) {

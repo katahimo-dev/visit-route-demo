@@ -56,9 +56,20 @@ export function timesOn(
 /** 計算した回の ID（元の日とパターン ID から決まる。保存した回も同じ ID） */
 export const patternVisitId = (date: string, patternId: string) => `${date}_${patternId}`;
 
-/** パターンの1回分の訪問（計算した回）。担当はパターンの担当、開始は未定（null）、ピンなし */
+/** その曜日の標準の開始（ADR-0062）。無い・時間の約束（開始（早）〜（遅））の外なら null */
+export function usualStartOn(
+  pattern: Pick<Pattern, 'usualStarts'>,
+  wd: number,
+  t: { earliestStart: string; latestStart: string },
+): string | null {
+  const s = (pattern.usualStarts ?? []).find((x) => x.weekday === wd)?.start ?? null;
+  return s !== null && t.earliestStart <= s && s <= t.latestStart ? s : null;
+}
+
+/** パターンの1回分の訪問（計算した回）。担当はパターンの担当、開始はその曜日の標準の開始（時間の約束の外・無ければ null）、ピンなし */
 export function visitOf(pattern: Pattern, date: string): Visit {
-  const t = timesOn(pattern, weekday(date));
+  const wd = weekday(date);
+  const t = timesOn(pattern, wd);
   return {
     id: patternVisitId(date, pattern.id),
     date,
@@ -68,7 +79,7 @@ export function visitOf(pattern: Pattern, date: string): Visit {
     latestStart: t.latestStart,
     durationMinutes: pattern.durationMinutes,
     staffId: pattern.usualStaffId,
-    start: null,
+    start: usualStartOn(pattern, wd, t),
     pinned: false,
     cancelled: false,
     note: '',

@@ -95,6 +95,7 @@ import {
   parseSlots,
   parseTimeText,
   parseTrait,
+  parseUsualStarts,
   parseWorkDays,
   personSheetNames,
   ruleTypeLabels,
@@ -1183,6 +1184,14 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
         else if (weekdays && dtParsed.some((t) => !weekdays.includes(t.weekday)))
           r.err(PATTERN_EXTRA_COLS.dayTimes, '「曜日」の列に無い曜日の時刻があります');
         else dayTimes = dtParsed.map((t) => (windowKind === 'fixed' ? { ...t, latestStart: t.earliestStart } : t));
+        // 標準の開始（ADR-0062）：列が無い・空ならなし（usualStarts を付けない）
+        const usText = r.text(PATTERN_EXTRA_COLS.usualStarts);
+        const usParsed = usText === '' ? [] : parseUsualStarts(usText);
+        let usualStarts: Pattern['usualStarts'] | null = null;
+        if (typeof usParsed === 'string') r.err(PATTERN_EXTRA_COLS.usualStarts, usParsed);
+        else if (weekdays && usParsed.some((t) => !weekdays.includes(t.weekday)))
+          r.err(PATTERN_EXTRA_COLS.usualStarts, '「曜日」の列に無い曜日の標準の開始があります');
+        else usualStarts = usParsed.length > 0 ? usParsed : undefined;
         if (
           cid &&
           tid !== undefined &&
@@ -1199,7 +1208,8 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
           datesOk &&
           sid !== undefined &&
           monthWeeks !== null &&
-          dayTimes !== null
+          dayTimes !== null &&
+          usualStarts !== null
         ) {
           patterns.push({
             id,
@@ -1217,6 +1227,7 @@ export async function importWorkbook(buf: ArrayBuffer, base: DemoData): Promise<
             from,
             to,
             usualStaffId: sid,
+            ...(usualStarts ? { usualStarts } : {}),
             note,
           });
         }

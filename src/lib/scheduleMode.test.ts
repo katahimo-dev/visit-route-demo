@@ -13,9 +13,9 @@ import {
 } from './scheduleMode';
 
 describe('defaultMode（PRD D348）', () => {
-  it('月の後半で来月を組んでいなければ組む', () => {
-    expect(defaultMode('2026-10-24', 5)).toBe('plan');
-    expect(defaultMode('2026-10-15', 2)).toBe('plan');
+  it('月の後半で来月を組んでいなければ変更', () => {
+    expect(defaultMode('2026-10-24', 5)).toBe('change');
+    expect(defaultMode('2026-10-15', 2)).toBe('change');
   });
   it('月の後半でも来月を組んでいれば確認', () => {
     expect(defaultMode('2026-10-24', 0)).toBe('check');
@@ -39,14 +39,11 @@ describe('月の後半・組む月', () => {
   it('組む月は後半なら来月、前半なら今月', () => {
     expect(planYm('2026-10-24')).toBe('2026-11');
     expect(planYm('2026-10-03')).toBe('2026-10');
-    expect(planLabel('2026-10-24')).toBe('11月を組む');
+    expect(planLabel('2026-10-24')).toBe('11月の予定');
   });
 });
 
 describe('modeTools', () => {
-  it('組む：AI で組む・動かす。欠勤の登録・メールは出さない', () => {
-    expect(modeTools('plan')).toEqual({ absence: false, ai: true, mail: false, move: true });
-  });
   it('変更：すべて', () => {
     expect(modeTools('change')).toEqual({ absence: true, ai: true, mail: true, move: true });
   });
@@ -56,8 +53,9 @@ describe('modeTools', () => {
 });
 
 describe('parseMode', () => {
-  it('3つのモードだけ読む', () => {
-    expect(parseMode('plan')).toBe('plan');
+  it('2つのモードを読み、古い plan（組む）は変更', () => {
+    expect(parseMode('plan')).toBe('change');
+    expect(parseMode('change')).toBe('change');
     expect(parseMode('check')).toBe('check');
     expect(parseMode('')).toBeNull();
     expect(parseMode(null)).toBeNull();

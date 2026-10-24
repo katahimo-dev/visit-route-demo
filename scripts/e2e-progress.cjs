@@ -397,8 +397,8 @@ async function links(page) {
   await batchPanel(page, YM).waitFor({ timeout: 10000 });
   await page.waitForFunction(() => !/do=/.test(decodeURIComponent(location.hash)), null, { timeout: 10000 });
   check(
-    hashOf(page) === `#/month?ym=${YM}&mode=plan`,
-    '日の「AI で組む ▾」の「この月」→ 月の予定の欄を組むのモードで（?do= は消える。PRD D348）',
+    hashOf(page) === `#/month?ym=${YM}&mode=change`,
+    '日の「AI で組む ▾」の「この月」→ 月の予定の欄を変更のモードで（?do= は消える。PRD D348）',
     hashOf(page),
   );
   await page.keyboard.press('Escape');

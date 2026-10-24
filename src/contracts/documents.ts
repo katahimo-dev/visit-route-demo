@@ -238,6 +238,14 @@ export const patternDayTimeSchema = z.object({
 });
 export type PatternDayTime = z.infer<typeof patternDayTimeSchema>;
 
+/** 曜日ごとの標準の開始（組み方の標準。ADR-0062） */
+export const patternUsualStartSchema = z.object({
+  /** 0=日〜6=土 */
+  weekday: z.number().int().min(0).max(6),
+  start: hhmmSchema,
+});
+export type PatternUsualStart = z.infer<typeof patternUsualStartSchema>;
+
 /** 定期パターン（ADR-0012。利用者さんごと。複数持てる） */
 export const patternSchema = z
   .object({
@@ -267,6 +275,8 @@ export const patternSchema = z
      * 〈利用者さん〉には担当を持たない（繰り返しの担当が1つだけ）
      */
     usualStaffId: idSchema.nullable(),
+    /** 曜日ごとの標準の開始（ADR-0062）。計算した回の組んだ開始。無い曜日は null（開始（早）で並べる）。無い＝[] と同じ */
+    usualStarts: z.array(patternUsualStartSchema).max(7).optional(),
     note: z.string().max(200),
   })
   .superRefine((p, ctx) => {

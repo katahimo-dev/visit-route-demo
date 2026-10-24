@@ -79,9 +79,16 @@ const GROUPS = [];
 const LABELS = ['ホーム', '予定', '空き状況', '人', '設定'];
 /** 子の項目の key（予定はモードの入口、人は人のタブ、設定は設定のタブ） */
 const KIDS = {
-  schedule: ['mode-check', 'mode-plan', 'absence'],
+  schedule: ['mode-check', 'mode-month', 'absence'],
   people: ['people:/clients', 'people:/staff', 'people:/compat', 'people:/availability'],
-  settings: ['settings:/types', 'settings:/items', 'settings:/rules', 'settings:/settings', 'settings:/data'],
+  settings: [
+    'settings:/standard',
+    'settings:/types',
+    'settings:/items',
+    'settings:/rules',
+    'settings:/settings',
+    'settings:/data',
+  ],
 };
 /** メニューの最上位の項目（子の無い項目と、畳める親の行の項目） */
 const TOP_LINKS =
@@ -99,6 +106,7 @@ const HEADINGS = [
 ];
 /** 設定のタブ（PRD D275）：URL と見出し */
 const SETTINGS = [
+  ['/standard', '組み方の標準'],
   ['/types', '訪問の種類'],
   ['/items', '特性の項目'],
   ['/rules', '条件の重み'],
@@ -134,12 +142,12 @@ async function menu(page) {
     (await side.locator(`[data-parent="${key}"] > .nav-parent-row > .nav-link.has-current`).count()) === 1;
   const link = (name) => side.getByTestId('nav-link').filter({ hasText: new RegExp(`^${name}$`) });
   check(JSON.stringify(await current()) === '["home"]', 'aria-current：ホーム');
-  // 予定：月・週・日・比較のどれでも、予定の子のうち選んでいるモードの子に印（e2e の既定は変更＝欠勤・キャンセル。PRD D349）
+  // 予定：月・週・日・比較のどれでも、予定の子のうち選んでいるモードの子に印（e2e の既定は変更。月・週・比較の変更は「◯月の予定」。PRD D349）
   for (const hash of ['/month', '/week', '/compare']) {
     await open(page, hash);
     check(
-      JSON.stringify(await current()) === '["absence"]' && (await parentOn('schedule')),
-      `aria-current：${hash} は予定の子の変更のモード（欠勤・キャンセル）。親の「予定」は has-current`,
+      JSON.stringify(await current()) === '["mode-month"]' && (await parentOn('schedule')),
+      `aria-current：${hash} は予定の子の変更のモード（◯月の予定）。親の「予定」は has-current`,
       await current(),
     );
   }
@@ -150,9 +158,8 @@ async function menu(page) {
     'aria-current：日の予定は選んでいるモードの子だけ（変更＝欠勤・キャンセル。親の「予定」には付けない）',
     await current(),
   );
-  // モードを切り替えると印もその子へ移る（組む＝◯月を組む、確認＝今日の予定）。終わったら変更へ戻す
+  // モードを切り替えると印もその子へ移る（日の予定：確認＝今日の予定、変更＝欠勤・キャンセル）。終わったら変更へ戻す
   for (const [m, key] of [
-    ['plan', 'mode-plan'],
     ['check', 'mode-check'],
     ['change', 'absence'],
   ]) {
@@ -215,8 +222,8 @@ async function menu(page) {
     const tabs = page.getByTestId('settings-tabs');
     const on = await tabs.locator('[aria-current="page"]').allInnerTexts();
     check(
-      (await tabs.locator('a').count()) === 5 && on.length === 1 && on[0].trim() === h1,
-      `設定のタブ ${hash}：5つのタブで今のタブに aria-current`,
+      (await tabs.locator('a').count()) === 6 && on.length === 1 && on[0].trim() === h1,
+      `設定のタブ ${hash}：6つのタブで今のタブに aria-current`,
       on,
     );
   }

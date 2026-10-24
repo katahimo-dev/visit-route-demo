@@ -159,7 +159,7 @@
 | 予定（`schedule`・`scheduleHref(last.schedule)`＝最後に開いた `/month`・`/week`・`/plan`、無ければ `/plan`。short「予定」。`match`＝`SCHEDULE_PATHS`：月・週・日・比較） | 予定のモード（下の3つ） |
 | 空き状況（`vacancy`・`/vacancy`。short「空き状況」） | なし |
 | 人（`people`・`peopleHref(features, last.people)`＝最後に開いた人のタブ（勤務の見込みは `/availability`）、無ければ `/clients`。`match`＝`PEOPLE_PATHS`：`/clients`・`/staff`・`/compat`・`/availability`・`/workload`（`/clients/:id`・`/staff/:id` は `activeNavPath` で一覧に当てる）。アイコンは `Users`） | 人のタブ（`peopleTabs`。key `people:<to>`。勤務時間（シフト）の `match` に `/workload` も） |
-| 設定（`settings`・`settingsHref(features, last.settings)`＝最後に開いた設定のタブ、無ければ先頭の訪問の種類。`match`＝切っていない設定のタブ） | 設定のタブ（`settingsTabs`。key `settings:<to>`） |
+| 設定（`settings`・`settingsHref(features, last.settings)`＝最後に開いた設定のタブ、無ければ先頭の組み方の標準。`match`＝切っていない設定のタブ） | 設定のタブ（`settingsTabs`。key `settings:<to>`） |
 
 予定の子（予定のモード。`mode` を持つ。PRD D348・D349）：
 

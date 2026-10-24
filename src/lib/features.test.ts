@@ -41,6 +41,7 @@ const BASE_PATHS = new Set([
   '/clients',
   '/staff',
   '/availability',
+  '/standard',
   '/types',
   '/data',
   '/settings',
@@ -258,8 +259,8 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
         .flatMap((g) => g.items)
         .find((i) => i.key === 'schedule')
         ?.children?.map((i) => i.key);
-    expect(kids({})).toEqual(['mode-check', 'mode-plan', 'absence']);
-    expect(kids({ sudden: false })).toEqual(['mode-check', 'mode-plan']);
+    expect(kids({})).toEqual(['mode-check', 'mode-month', 'absence']);
+    expect(kids({ sudden: false })).toEqual(['mode-check', 'mode-month']);
   });
   it('基本も5項目（人・設定はタブ）。画面の一覧は勤務の見込み・条件の重み・特性の項目が無い（案を比べるはいつも無い）', () => {
     expect(labels(applyTemplate('basic'))).toEqual(labels({}));
@@ -273,6 +274,7 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
       'スタッフ一覧',
       '相性',
       '勤務時間（シフト）',
+      '組み方の標準',
       '訪問の種類',
       '管理者設定',
       'データ',
@@ -292,9 +294,21 @@ describe('menuSections（ひな形ごとの項目。PRD D213・D275）', () => {
     expect(labels({ sudden: false, vacancy: false })).toEqual(['ホーム', '予定', '人', '設定']);
   });
   it('「設定」のタブは切った機能を出さない（基本は条件の重み・特性の項目が無い）', () => {
-    expect(settingsTabs({}).map((t) => t.to)).toEqual(['/types', '/items', '/rules', '/settings', '/data']);
-    expect(settingsTabs(applyTemplate('basic')).map((t) => t.to)).toEqual(['/types', '/settings', '/data']);
-    expect(settingsTabs({ rules: false }).map((t) => t.to)).toEqual(['/types', '/settings', '/data']);
+    expect(settingsTabs({}).map((t) => t.to)).toEqual([
+      '/standard',
+      '/types',
+      '/items',
+      '/rules',
+      '/settings',
+      '/data',
+    ]);
+    expect(settingsTabs(applyTemplate('basic')).map((t) => t.to)).toEqual([
+      '/standard',
+      '/types',
+      '/settings',
+      '/data',
+    ]);
+    expect(settingsTabs({ rules: false }).map((t) => t.to)).toEqual(['/standard', '/types', '/settings', '/data']);
   });
   it('相性を切ると「人」のタブ・画面の一覧の相性が消える（設定のタブには元からない）', () => {
     expect(screens({ compat: false })).not.toContain('相性');

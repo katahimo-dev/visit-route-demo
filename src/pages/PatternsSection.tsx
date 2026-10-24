@@ -13,7 +13,7 @@ import { byName, newId, WEEKDAY_LABELS } from '../lib/common';
 import { EVERY_WEEKS_LABELS, mdText, patternWhenText, periodText, typeOf } from '../lib/patternText';
 import { useFeature } from '../lib/useFeature';
 import { endPatternOp } from '../lib/visitOps';
-import { removePattern, splitPattern } from '../patterns';
+import { removePattern, splitPattern, timesOn } from '../patterns';
 import { useDemoData } from '../store';
 
 /**
@@ -38,6 +38,8 @@ type Form = {
   perDay: boolean;
   /** 曜日 → 開始（早・遅）。perDay のとき、選んだ曜日のうち入れたものだけを使う */
   dayTimes: Record<number, { earliestStart: string; latestStart: string }>;
+  /** 曜日 → 標準の開始（ADR-0062。空＝なし）。選んだ曜日のうち入れたものだけを使う */
+  usualStarts: Record<number, string>;
   windowKind: Pattern['windowKind'];
   earliestStart: string;
   latestStart: string;
@@ -64,6 +66,7 @@ const formOf = (p: Pattern | null, today: string, defaultDuration: number): Form
         dayTimes: Object.fromEntries(
           p.dayTimes.map((t) => [t.weekday, { earliestStart: t.earliestStart, latestStart: t.latestStart }]),
         ),
+        usualStarts: Object.fromEntries((p.usualStarts ?? []).map((u) => [u.weekday, u.start])),
         windowKind: p.windowKind,
         earliestStart: p.earliestStart,
         latestStart: p.latestStart,
@@ -83,6 +86,7 @@ const formOf = (p: Pattern | null, today: string, defaultDuration: number): Form
         monthWeeks: [],
         perDay: false,
         dayTimes: {},
+        usualStarts: {},
         windowKind: 'fixed',
         earliestStart: '10:00',
         latestStart: '10:00',
@@ -93,6 +97,12 @@ const formOf = (p: Pattern | null, today: string, defaultDuration: number): Form
         usualStaffId: '',
         note: '',
       };
+
+/** 標準の開始の文（「標準の開始：月 10:00・水 11:00」。無ければ空。ADR-0062） */
+const usualStartsLabel = (p: Pick<Pattern, 'usualStarts'>): string => {
+  const us = [...(p.usualStarts ?? [])].sort((a, b) => a.weekday - b.weekday);
+  return us.length === 0 ? '' : `標準の開始：${us.map((u) => `${WEEKDAY_LABELS[u.weekday]} ${u.start}`).join('・')}`;
+};
 
 /** 確定した（伝えた）日のうち、since 以降でその繰り返しの回がある日の数（変えると「未連絡の変更」になる） */
 function confirmedDays(d: DemoData, patternId: string, since: string, c?: PatternChange): number {
@@ -182,6 +192,16 @@ export function PatternsSection({
       : [];
     const badDay = dayTimes.find((t) => t.earliestStart > t.latestStart);
     if (badDay) return `${WEEKDAY_LABELS[badDay.weekday]}曜の開始（遅）は開始（早）以降にしてください`;
+    // 曜日ごとの標準の開始（ADR-0062）：選んだ曜日のうち入れたものだけ。その曜日の時間の約束（開始（早）〜（遅））の中
+    const usualStarts: { weekday: number; start: string }[] = [];
+    for (const w of [...f.weekdays].sort((a, b) => a - b)) {
+      const start = f.usualStarts[w];
+      if (!start) continue;
+      const tw = timesOn({ earliestStart: f.earliestStart, latestStart: latest, dayTimes }, w);
+      if (start < tw.earliestStart || start > tw.latestStart)
+        return `${WEEKDAY_LABELS[w]}曜の標準の開始は、開始（${tw.earliestStart}〜${tw.latestStart}）の間にしてください`;
+      usualStarts.push({ weekday: w, start });
+    }
     if (f.to && f.to < from)
       return f.id ? '終了日は「いつから」以降にしてください' : '終了日は開始日以降にしてください';
     const r = patternSchema.safeParse({
@@ -200,13 +220,14 @@ export function PatternsSection({
       from,
       to: f.to || null,
       usualStaffId: f.usualStaffId || null,
+      ...(usualStarts.length > 0 ? { usualStarts } : {}),
       note: f.note,
     });
     if (!r.success) {
       const where = r.error.issues[0]?.path[0];
       if (where === 'durationMinutes') return '所要は5〜720分で入れてください';
       if (where === 'from' || where === 'to') return '日付を正しく入れてください';
-      if (where === 'earliestStart' || where === 'latestStart' || where === 'dayTimes')
+      if (where === 'earliestStart' || where === 'latestStart' || where === 'dayTimes' || where === 'usualStarts')
         return '時刻を正しく入れてください';
       return r.error.issues[0]?.message ?? '入力を確かめてください';
     }
@@ -387,6 +408,11 @@ export function PatternsSection({
                     {p.durationMinutes}分・{periodText(p)}
                     {usual ? `・いつもの担当 ${usual}` : ''}
                   </span>
+                  {usualStartsLabel(p) && (
+                    <span className="sub" data-testid="pattern-usual-starts">
+                      {usualStartsLabel(p)}
+                    </span>
+                  )}
                 </button>
                 {!readOnly && (
                   <span className="actions">
@@ -724,6 +750,42 @@ export function PatternsSection({
                 </div>
               ))}
           </div>
+          {form.weekdays.length > 0 && (
+            <div className="stack" style={{ gap: 4 }}>
+              <span className="sub">
+                曜日ごとの標準の開始（空＝なし。開始（早）〜（遅）の間。組んだ開始の初期値になります）
+              </span>
+              <div className="pattern-daytimes" data-testid="pattern-usual-starts-form">
+                {[...form.weekdays]
+                  .sort((a, b) => a - b)
+                  .map((w) => (
+                    <div key={w} className="row pattern-daytime">
+                      <strong className="pattern-daytime-day">{WEEKDAY_LABELS[w]}</strong>
+                      <label className="pattern-daytime-col">
+                        <span className="sr-only">{WEEKDAY_LABELS[w]}曜の標準の開始</span>
+                        <input
+                          type="time"
+                          value={form.usualStarts[w] ?? ''}
+                          onChange={(e) =>
+                            setForm({ ...form, usualStarts: { ...form.usualStarts, [w]: e.target.value } })
+                          }
+                        />
+                      </label>
+                      {form.usualStarts[w] && (
+                        <button
+                          type="button"
+                          className="btn btn-small btn-text"
+                          aria-label={`${WEEKDAY_LABELS[w]}曜の標準の開始を消す`}
+                          onClick={() => setForm({ ...form, usualStarts: { ...form.usualStarts, [w]: '' } })}
+                        >
+                          消す
+                        </button>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
           {form.id && (
             <span className="sub">
               「いつから」より前の訪問と、この回だけ変えた訪問・取り消した訪問は変えません。それ以外の訪問を新しい中身で作り直します。
