@@ -2,7 +2,7 @@
 // 上の帯（ロゴと今の画面の名前・日付の切り替え。「探す」は下のタブ。〈利用者さん〉一覧と〈スタッフ〉一覧を見分ける。PRD D179・D336）、
 // 引き出し（下のタブの「メニュー」で開く。role="dialog"・aria-modal・名前、ボタンの aria-expanded・aria-controls、グループの見出し付きの縦並び、
 // 画面を選ぶ・外を押す・Esc で閉じてフォーカスが「メニュー」へ、Tab・Shift+Tab が中で回る、開いているあいだ裏を巻かない）、
-// 下のタブ（ホーム・予定・欠勤・探す・メニュー（PRD D336）、active と aria-current、月・週・日・比較では「予定」、本文の最後がタブに隠れない）、
+// 下のタブ（ホーム・予定・欠勤・探す・メニュー（PRD D336）、active と aria-current、月・週・日では「予定」（比較は予定を組むなのでどれも付けない）、本文の最後がタブに隠れない）、
 // 浮いている部品（地図の MapDock・欠勤の振り直しの ReassignDock・トースト）がタブに重ならない、
 // 本物の地図のボタンと本物のトースト（PRD D190。ボタンはタブのすぐ上・トーストが出ても互いに隠れない・本文の下を空ける・safe-area）、印刷で上の帯・下のタブ・引き出しを出さない、
 // 広い画面（1400px）では今の左のメニューのままで、上の帯の部品・下のタブを出さない。
@@ -103,7 +103,7 @@ async function drawerOpenClose(page) {
   check(
     (await page.evaluate(() => document.getElementById('root').inert)) &&
       (await d.locator('h2.nav-group-title').count()) === 0,
-    '引き出し：後ろの画面は inert・グループの見出しは無い（最上位5項目と子の項目。PRD D349）',
+    '引き出し：後ろの画面は inert・グループの見出しは無い（最上位6項目と子の項目。PRD D349）',
   );
   check(
     (await btn.getAttribute('aria-expanded')) === 'true' &&
@@ -112,30 +112,30 @@ async function drawerOpenClose(page) {
   );
   const titles = await d.locator('.nav-group-title').allInnerTexts();
   check(titles.length === 0, '引き出し：見出しの無い1つの並び', titles);
-  // 最上位は5項目（ホーム・予定・空き状況・人・設定）。開いている親の子の項目も含めて、全部の項目を縦に並べる
+  // 最上位は6項目（ホーム・予定・予定を組む・空き状況・人・設定。ADR-0063）。開いている親の子の項目も含めて、全部の項目を縦に並べる
   const top = await d.locator(TOP_LINKS).evaluateAll((els) => els.map((el) => el.dataset.key));
   const links = d.locator('.nav-link');
   const n = await links.count();
   const boxes = [];
   for (let i = 0; i < n; i++) boxes.push(await links.nth(i).boundingBox());
   check(
-    JSON.stringify(top) === JSON.stringify(['home', 'schedule', 'vacancy', 'people', 'settings']) &&
+    JSON.stringify(top) === JSON.stringify(['home', 'schedule', 'arrange', 'vacancy', 'people', 'settings']) &&
       n > top.length &&
       boxes.every((b, i) => i === 0 || b.y > boxes[i - 1].y),
-    '引き出し：最上位5項目のメニューと開いた子の項目を縦に並べる',
+    '引き出し：最上位6項目のメニューと開いた子の項目を縦に並べる',
     { top, n },
   );
   await settle(page, 400); // 出てくる動きが終わるまで
   const db = await d.boundingBox();
   check(db.x === 0 && db.width < 390, '引き出し：左から出る', db);
-  // 週の予定（モードは「変更」）では、予定の子の「◯月の予定」（月・週の変更の子）に印が付く（親の予定は has-current）
+  // 週の予定では、予定の子の「◯月の予定」（月・週の子）に印が付く（親の予定は has-current）
   const current = d.locator('[aria-current="page"]');
   check(
     (await current.count()) === 1 &&
-      (await current.getAttribute('data-key')) === 'mode-month' &&
+      (await current.getAttribute('data-key')) === 'month-view' &&
       (await d.locator('[data-parent="schedule"] > .nav-parent-row > .nav-link.has-current').count()) === 1 &&
       (await isFocused(current)),
-    '引き出し：開いたら今の画面の項目（週の予定・変更のモードは予定の子「◯月の予定」）へフォーカス',
+    '引き出し：開いたら今の画面の項目（週の予定は予定の子「◯月の予定」）へフォーカス',
   );
   await page.screenshot({ path: path.join(OUT_DIR, 'mobile-drawer.png') });
 
@@ -247,7 +247,7 @@ async function bottom(page) {
   await page.keyboard.press('Escape');
   await page.getByTestId('cmdk-input').waitFor({ state: 'detached' });
   await open(page, '/compare', '[data-testid="bottom-tabs"]');
-  check(JSON.stringify(await active()) === '["予定"]', '下のタブ：比較では「予定」');
+  check((await active()).length === 0, '下のタブ：比較（予定を組む）ではどれも active にしない');
   await open(page, '/clients', '[data-testid="bottom-tabs"]');
   check((await active()).length === 0, '下のタブ：タブに無い画面ではどれも active にしない');
   // 「メニュー」のボタンもタブと同じ大きさで並ぶ
@@ -871,9 +871,9 @@ async function wide(page) {
   check(nav.width === 232 && nav.height === 1000, '広い画面：左のメニューは今のまま（幅232px・縦いっぱい）', nav);
   check(
     (await page.locator('.side-nav .nav-group-title').count()) === 0 &&
-      (await page.locator(`.side-nav :is(${TOP_LINKS})`).count()) === 5 &&
+      (await page.locator(`.side-nav :is(${TOP_LINKS})`).count()) === 6 &&
       (await page.locator('.app-header').boundingBox()).height === 72,
-    '広い画面：最上位5項目のメニュー・上の帯の高さ 72px',
+    '広い画面：最上位6項目のメニュー・上の帯の高さ 72px',
   );
   const pad = await page.evaluate(() => getComputedStyle(document.querySelector('.app-main')).paddingBottom);
   check(pad === '48px', '広い画面：本文の下の余白は今のまま', pad);

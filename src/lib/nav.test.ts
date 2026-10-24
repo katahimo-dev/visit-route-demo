@@ -131,8 +131,7 @@ describe('menuSections（PRD D326・D349。ADR-0054・0063）', () => {
 
 describe('isActiveNav（今の画面の印。PRD D273・D275）', () => {
   it('「予定」は月・週・日の予定（古い #/schedule も）。比較は予定を組む', () => {
-    for (const p of ['/month', '/week', '/plan', '/schedule'])
-      expect(isActiveNav(item('schedule'), p)).toBe(true);
+    for (const p of ['/month', '/week', '/plan', '/schedule']) expect(isActiveNav(item('schedule'), p)).toBe(true);
     expect(isActiveNav(item('schedule'), '/home')).toBe(false);
   });
   it('「設定」は設定のタブ。勤務の見込みは勤務時間（シフト）', () => {

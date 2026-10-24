@@ -64,31 +64,31 @@
   5. 無ければ済み。今日以降に訪問が無ければ empty
 - `urgentCount(attention)`：要対応の訪問のある日（`care`）
 - `bandMonth(date)`：選んでいる日付の月（週は週の中の選んでいる日の月）
-- `bandHref(ym, op)`：`/month?ym=…&do=…`
+- `bandHref(ym, op)`：`batch` は担当を組むの画面 `/arrange?ym=…`（ADR-0063）、ほかは `/month?ym=…&do=…`
 - `visitsText`：「N件」
 
 #### `components/progressBand.tsx`（`progressBand.css`）
 
 - `ProgressBand({ ym, model, primary?, onOp? })`：見た目だけ（月の予定だけで使う。週・日の「この日」・作る入口を隠す引数は無くした。ADR-0054）
   - `model` は `BandModel`＝`monthProgress`・担当なしの訪問がある日の数・手当てが要る要対応の件数。null の間は同じ高さで「数えています…」
-  - 数字は4つの `Link`：訪問・担当 → `do=batch`、確定 → `do=unconfirmed`、要対応 → `do=attention`。`onOp` があれば移らずにそれを呼ぶ（修飾キー（Ctrl・⌘・Shift・Alt）と左以外のボタンでは横取りしない。Ctrl+クリックは新しいタブ）
+  - 数字は4つの `Link`：訪問・担当 → 担当を組むの画面（`/arrange?ym=`）、確定 → `do=unconfirmed`、要対応 → `do=attention`。`onOp` があれば移らずにそれを呼ぶ（修飾キー（Ctrl・⌘・Shift・Alt）と左以外のボタンでは横取りしない。Ctrl+クリックは新しいタブ）
   - 右に次の一手（`Link` のボタン。`primary` なら主ボタン。済み・訪問なしは文だけ。訪問の無い月はボタンなし）
   - 日の予定は「この日」（`dayStatus` の状態。まだ伝えていない → 確定で確定済み・未連絡の変更あり）
   - 下の縁に `prepParts` の細い積み上げ（`.prep-bar`・`.prep-part` の色）
   - 600px 以下は1行（訪問・この日・「日」「件」を省き、ボタンは短い文）
-  - 読み上げ：数字のリンクに aria-label（「担当が全部入った日 x/y日（済）。担当を AI で組むを開く」など）、✓ に sr-only の「済」、手当てが要る要対応に「要手当て」
+  - 読み上げ：数字のリンクに aria-label（「担当が全部入った日 x/y日（済）。担当を組むの画面を開く」など）、✓ に sr-only の「済」、手当てが要る要対応に「要手当て」
 - `BandLive`：aria-live。最初は空で置き、数え直して文が変わったときだけ中身を入れる
   - `useCompileInput`・`useDayStatuses`（その月の今日以降の日と、日の予定で選んでいる日）・`monthProgress`（statusOf）・`attentionList`・担当なしの訪問がある日の数
-  - 数字とボタンは月の予定の欄へ移る（`?do=` は月の予定が消す）
+  - 数字とボタンは月の予定の欄（`?do=` は月の予定が消す）か担当を組むの画面へ移る
   - 速く出す（e2e の上限 `PERF_MS_PROGRESS` 既定 3000ms）
 
 #### 置く所
 
 | 画面 | 置き方 |
 |---|---|
-| 月（`pages/MonthPage`） | 見出しの下に `ProgressBand`（自分で数えた `progress`・`preview`・`attention` から作る）。次の一手は主ボタン、`onOp` で欄を画面の中で開く（URL は変えない）。「担当を AI で組む」の入口は帯と操作の行の「AI で組む ▾」の「この月」。詳しくは [pages-month.md](pages-month.md) |
-| 週・日 | 出さない（PRD D332。ADR-0054）。週は1行の状態 `week-status`、日は見出しの状態の印と今の担当の1行。「担当を AI で組む」は操作の行の「AI で組む ▾」の範囲（[pages-common.md](pages-common.md)） |
+| 月（`pages/MonthPage`） | 見出しの下に `ProgressBand`（自分で数えた `progress`・`preview`・`attention` から作る）。次の一手は主ボタン、`onOp` で要対応・確定していない日は欄を画面の中で開く（URL は変えない）。「担当を AI で組む」は担当を組むの画面（その月）へ移る（ADR-0063）。詳しくは [pages-month.md](pages-month.md) |
+| 週・日 | 出さない（PRD D332。ADR-0054）。週は1行の状態 `week-status`、日は見出しの状態の印と今の担当の1行。担当を組むのは担当を組むの画面（[pages-arrange.md](pages-arrange.md)） |
 
 #### 確かめ
 
-`scripts/e2e-progress.cjs`：月の帯・見出しに組むボタンが無い・入口が1つ・主ボタン・帯から欄（URL は変えない）・右の欄と同じ日数／来月は繰り返しから数え未作成は無い／担当を AI で組むは画面を移っても続く／日の「この日」と確定 +1／月・週・日とホームが同じ数／390px・印刷／週・日の帯が速く出る（AGENTS.md の e2e の説明）
+`scripts/e2e-progress.cjs`：月の帯・見出しに組むボタンが無い・入口が1つ・主ボタン・帯の「担当を AI で組む」で担当を組むの画面へ・古い `?do=batch` も同じ・帯の数字から右の欄（URL は変えない）・右の欄と同じ日数／来月は繰り返しから数え未作成は無い／担当を組むで組み始めると画面を移っても続く／日の「この日」と確定 +1／月・週・日とホームが同じ数／390px・印刷／週・日の帯が速く出る（AGENTS.md の e2e の説明）

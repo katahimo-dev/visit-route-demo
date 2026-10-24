@@ -1,9 +1,5 @@
-// 日の画面の「AI で組む ▾」（版2：AI は提案を出し、反映するまで担当を変えない。ADR-0053。PRD D156〜D159）を本物のブラウザで確かめる：
-// 項目の並び（AI で組む（提案を出す）／プリセットで試す／比べる／そのほか の4つのまとまり。role="group"・aria-label）、
-// 各項目の1行の説明（aria-describedby）、ピンが無いときの押せない理由（見える文と aria-disabled。押しても何もしない）、
-// キーボード（開くと先頭・↑↓・Home・End・Esc でボタンへ戻る・↑で開くと最後・Tab で閉じる）、
-// 提案（「AI で組む」で提案の帯が出て、反映するまで訪問は変わらない・「反映する」で訪問に担当を書き、トーストと操作の行の「元に戻す」で1手戻る・
-// 「やめる」で何も変えない・プリセットで試すと帯にその名前）、「プリセットの提案を比べる」で比較の画面へ・その場で提案を作って並べる（保存しない）。
+// 日の予定の手で直す操作と比較の画面を本物のブラウザで確かめる（日の予定に「AI で組む ▾」は無い。ADR-0063）：
+// 担当を組むの「案を比べる」で比較の画面へ・その場で提案を作って並べる（保存しない）・反映するとトーストの「元に戻す」で1手戻る。
 // 訪問の詳細の「担当を変える ▾」（PRD D217〜D219。ADR-0030）：まとまりと項目（role="menuitem"・説明・今の担当・押せない理由・
 // 「担当なしにする」）、キーボード（Enter で開いて ↓・Enter）で移すと担当が変わりピン、トーストの「元に戻す」で担当・ピンが戻る、
 // 「担当なしにする」のあとの確定の確認の本文の先頭に要対応の件数、操作の行の「元に戻す」（キーボード）、390px で押せて収まる。
@@ -28,8 +24,6 @@ async function waitStored(page, pred, arg, timeout = 5000) {
   }
 }
 const dialog = (page) => page.getByTestId('confirm-dialog');
-const menuBtn = (page) => page.getByTestId('plan-menu');
-const menuList = (page) => page.getByTestId('plan-menu-list');
 /** いまフォーカスのある要素の data-testid（無ければ data-key） */
 const focusedId = (page) =>
   page.evaluate(() => {
@@ -54,33 +48,6 @@ async function editData(page, fn, arg) {
   await page.reload();
   await page.locator('h1').waitFor();
 }
-/** 開いたメニューの中身：まとまり（見出し）と項目（名前・説明・押せないか） */
-async function menuShape(page) {
-  return menuList(page).evaluate((list) => {
-    const text = (ids) =>
-      (ids ?? '')
-        .split(' ')
-        .filter(Boolean)
-        .map((id) => document.getElementById(id)?.textContent ?? '')
-        .join(' ')
-        .trim();
-    return {
-      role: list.getAttribute('role'),
-      groups: [...list.querySelectorAll('[role="group"]')].map((g) => ({
-        label: g.getAttribute('aria-label'),
-        items: g.querySelectorAll('[role="menuitem"]').length,
-      })),
-      items: [...list.querySelectorAll('[role="menuitem"]')].map((el) => ({
-        key: el.getAttribute('data-key'),
-        name: text(el.getAttribute('aria-labelledby')),
-        desc: text(el.getAttribute('aria-describedby')),
-        disabled: el.getAttribute('aria-disabled') === 'true',
-        visibleDesc: el.querySelector('.menu-item-desc')?.textContent ?? '',
-      })),
-    };
-  });
-}
-const item = (shape, key) => shape.items.find((x) => x.key === key);
 
 /** 訪問の担当（版2：保存した訪問は staffId、計算した繰り返しの回は繰り返しの担当）とピン */
 function staffOf(d, vid) {
@@ -91,181 +58,7 @@ function staffOf(d, vid) {
 }
 const visitsKey = (d) => JSON.stringify(d.visits);
 
-// ---- 並び・説明・押せない理由・キーボード ----
-async function plain(page) {
-  await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
-  await openPlan(page);
-  const data = await stored(page);
-  const btn = menuBtn(page);
-  check((await btn.getAttribute('aria-haspopup')) === 'menu', 'ボタン：aria-haspopup="menu"');
-  check((await btn.innerText()).includes('AI で組む'), 'ボタンの名前は「AI で組む」', await btn.innerText());
-  await btn.click();
-  await menuList(page).waitFor();
-  const s = await menuShape(page);
-  check(s.role === 'menu', '一覧：role="menu"');
-  check(
-    JSON.stringify(s.groups.map((g) => g.label)) ===
-      JSON.stringify(['AI で組む（範囲）', 'プリセットで試す', '比べる', 'そのほか']),
-    '並び：目的の4つのまとまり（先頭は範囲＝日・週・月で同じ。見出しは role="group" の aria-label）',
-    s.groups,
-  );
-  const keys = s.items.map((x) => x.key);
-  check(
-    JSON.stringify(keys.slice(0, 3)) === JSON.stringify(['scope-day', 'scope-week', 'scope-month']) &&
-      keys.slice(3, -2).every((k) => k.startsWith('preset-')) &&
-      keys.slice(3, -2).length === data.presets.length - 1 &&
-      JSON.stringify(keys.slice(-2)) === JSON.stringify(['compare', 'unpin']),
-    '並び：この日・この週・この月→ほかのプリセット（点数の基準のほか）→比べる→ピンを外す',
-    keys,
-  );
-  check(
-    /^この日（\d+\/\d+）を組む$/.test(item(s, 'scope-day')?.name ?? '') &&
-      /^この週（\d+\/\d+〜\d+\/\d+）を組む$/.test(item(s, 'scope-week')?.name ?? '') &&
-      /^この月（\d+月）を組む$/.test(item(s, 'scope-month')?.name ?? ''),
-    '名前：「この日（M/D）を組む」「この週（M/D〜M/D）を組む」「この月（N月）を組む」',
-    [item(s, 'scope-day'), item(s, 'scope-week'), item(s, 'scope-month')],
-  );
-  check(
-    s.items.filter((x) => x.key.startsWith('preset-')).every((x) => /^「.+」で組む$/.test(x.name)),
-    '名前：プリセットは「「名前」で組む」',
-  );
-  check(item(s, 'compare')?.name === '2つの提案を比べる', '名前：「2つの提案を比べる」');
-  check(
-    s.items.every((x) => x.desc.length > 0 && x.visibleDesc.length > 0) || item(s, 'unpin')?.disabled,
-    'どの項目にも1行の説明（見える文と aria-describedby）',
-    s.items.filter((x) => !x.desc).map((x) => x.key),
-  );
-  check(
-    /反映するまで担当は変わりません/.test(item(s, 'scope-day')?.desc ?? ''),
-    '説明：提案を出す（反映するまで担当は変わらない）',
-    item(s, 'scope-day')?.desc,
-  );
-  const pins = data.visits.filter((v) => v.date === TODAY && v.pinned).length;
-  if (pins === 0)
-    check(
-      item(s, 'unpin')?.disabled && /ピンの付いた訪問はありません/.test(item(s, 'unpin')?.visibleDesc ?? ''),
-      'ピンが無い：「ピンをすべて外す」は押せず、理由を見える文で',
-      item(s, 'unpin'),
-    );
-  await page.screenshot({ path: path.join(OUT_DIR, 'menu-plain.png') });
-  // キーボード：開くと先頭・↓・End・Home・Esc でボタンへ
-  check((await focusedId(page)) === 'ai-scope-day', 'キーボード：開くと先頭の項目へフォーカス', await focusedId(page));
-  await page.keyboard.press('ArrowDown');
-  check((await focusedId(page)) === 'ai-scope-week', 'キーボード：↓で次', await focusedId(page));
-  await page.keyboard.press('End');
-  check((await focusedId(page)) === 'plan-menu-unpin', 'キーボード：End で最後（押せない項目にも移る）');
-  await page.keyboard.press('ArrowDown');
-  check((await focusedId(page)) === 'ai-scope-day', 'キーボード：最後から↓で先頭へ回る');
-  await page.keyboard.press('Home');
-  check((await focusedId(page)) === 'ai-scope-day', 'キーボード：Home で先頭');
-  if (pins === 0) {
-    // 押せない項目は押しても何もしない（一覧も閉じない・確認も出ない）
-    await page.getByTestId('plan-menu-unpin').click({ force: true });
-    await settle(page);
-    check(
-      (await menuList(page).isVisible()) && (await dialog(page).count()) === 0,
-      '押せない項目を押しても何もしない（閉じない・確認を出さない）',
-    );
-  }
-  await page.getByTestId('plan-menu-unpin').focus();
-  await page.keyboard.press('Escape');
-  await menuList(page).waitFor({ state: 'detached' });
-  check((await focusedId(page)) === 'plan-menu', 'キーボード：Esc で閉じてボタンへ戻る');
-  check((await btn.getAttribute('aria-expanded')) === 'false', 'ボタン：閉じたら aria-expanded="false"');
-  await page.keyboard.press('ArrowUp');
-  await menuList(page).waitFor();
-  check((await focusedId(page)) === 'plan-menu-unpin', 'キーボード：ボタンで↑を押すと最後の項目から開く');
-  await page.keyboard.press('Tab');
-  await menuList(page).waitFor({ state: 'detached' });
-  check(true, 'キーボード：Tab で閉じる');
-}
-
-/** 「AI で組む ▾」の項目を押して、提案の帯が出るまで待つ */
-async function proposeWith(page, testId, nth = 0) {
-  await menuBtn(page).click();
-  await menuList(page).waitFor();
-  await page.getByTestId(testId).nth(nth).click();
-  await page.getByTestId('proposal-band').waitFor({ timeout: 90000 });
-  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 90000 });
-  await settle(page, 300);
-}
-
-// ---- 提案：出す → 反映するまで変わらない → 反映する → 元に戻す（1手）・やめる・プリセット ----
-async function proposal(page) {
-  await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
-  // 今日の担当のある訪問1件を担当なしにしておく（提案はそれに担当を入れるので、反映すると訪問が変わる）
-  await openPlan(page);
-  await editData(
-    page,
-    ({ key, date }) => {
-      const d = JSON.parse(localStorage.getItem(key));
-      const v = d.visits.find((x) => x.date === date && !x.cancelled && x.staffId);
-      v.staffId = null;
-      v.pinned = false;
-      localStorage.setItem(key, JSON.stringify(d));
-    },
-    { key: STORAGE_KEY, date: TODAY },
-  );
-  await openPlan(page);
-  const before = visitsKey(await stored(page));
-  await proposeWith(page, 'ai-scope-day');
-  const band = page.getByTestId('proposal-band');
-  check(
-    (await band.innerText()).includes('件') && (await page.getByTestId('proposal-apply').isEnabled()),
-    '提案の帯：変わる件数と「反映する」',
-    await band.innerText(),
-  );
-  check(visitsKey(await stored(page)) === before, '提案を出しただけでは訪問は変わらない（保存しない）');
-  await page.screenshot({ path: path.join(OUT_DIR, 'proposal-band.png') });
-  // やめる：何も変えずに帯が消える
-  await page.getByTestId('proposal-discard').click();
-  await band.waitFor({ state: 'detached', timeout: 5000 });
-  check(visitsKey(await stored(page)) === before, '「やめる」で帯が消え、訪問は変わらない');
-  // もう一度出して反映する
-  await proposeWith(page, 'ai-scope-day');
-  const moved = Number(await page.getByTestId('proposal-moved').innerText());
-  await page.getByTestId('proposal-apply').click();
-  await band.waitFor({ state: 'detached', timeout: 5000 });
-  await page.locator('.toast').filter({ hasText: '提案を反映しました' }).waitFor({ timeout: 5000 });
-  check(true, '「反映する」で知らせ「提案を反映しました」');
-  await waitStored(page, (d, b) => JSON.stringify(d.visits) !== b, before);
-  const applied = await stored(page);
-  check(visitsKey(applied) !== before, '「反映する」で訪問に担当・開始を書く', {
-    moved,
-    saved: applied.visits.length,
-  });
-  // 操作の行の「元に戻す」で1手戻る（反映する前の訪問）
-  const undoBtn = page.getByTestId('undo-btn');
-  check((await undoBtn.getAttribute('aria-disabled')) !== 'true', '反映したあとは「元に戻す」を押せる');
-  await undoBtn.click();
-  await waitStored(page, (d, b) => JSON.stringify(d.visits) === b, before);
-  check(visitsKey(await stored(page)) === before, '「元に戻す」で反映する前の訪問に戻る');
-  check(
-    (await undoBtn.getAttribute('aria-disabled')) === 'true' && (await page.getByTestId('redo-btn').count()) === 1,
-    '戻したあとは（ほかに戻せる手が無いので）「元に戻す」を押せず、「やり直す」が出る',
-  );
-  // プリセットで試す：帯にその名前
-  const presets = await (async () => {
-    await menuBtn(page).click();
-    await menuList(page).waitFor();
-    const n = await page.getByTestId('plan-menu-preset').count();
-    const name = n > 0 ? await page.getByTestId('plan-menu-preset').first().innerText() : '';
-    await page.keyboard.press('Escape');
-    return { n, name };
-  })();
-  if (presets.n > 0) {
-    await proposeWith(page, 'plan-menu-preset');
-    const name = /「(.+)」/.exec(presets.name)?.[1] ?? '';
-    check(name !== '' && (await band.innerText()).includes(name), 'プリセットで試す：提案の帯にその名前', {
-      name,
-      band: await band.innerText(),
-    });
-    check(visitsKey(await stored(page)) === before, 'プリセットの提案も、反映するまで訪問は変えない');
-    await page.getByTestId('proposal-discard').click();
-  }
-}
-
-// ---- 「プリセットの提案を比べる」→ 比較の画面でその場で提案を作って並べる（保存しない） ----
+// ---- 担当を組むの「案を比べる」→ 比較の画面でその場で提案を作って並べる（保存しない） ----
 async function compare(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
   await openPlan(page);
@@ -283,9 +76,9 @@ async function compare(page) {
   );
   await openPlan(page);
   const before = visitsKey(await stored(page));
-  await menuBtn(page).click();
-  await menuList(page).waitFor();
-  await page.getByTestId('plan-menu-compare').click();
+  // 比較の画面へは担当を組むの画面の「案を比べる」から（ADR-0063）
+  await page.goto(`${BASE}#/arrange?date=${TODAY}`);
+  await page.getByTestId('arrange-compare-open').click();
   await page.waitForURL(/#\/compare/, { timeout: 10000 });
   await page.getByTestId('compare-another').waitFor({ timeout: 30000 });
   check((await page.locator('h1').innerText()).trim() === '提案を比べる', '比較の画面「提案を比べる」');
@@ -482,16 +275,8 @@ async function mobile(page) {
   await editData(page, (key) => localStorage.removeItem(key), STORAGE_KEY);
   await page.setViewportSize({ width: 390, height: 844 });
   await openPlan(page);
-  await menuBtn(page).scrollIntoViewIfNeeded();
-  await menuBtn(page).click();
-  await menuList(page).waitFor();
-  await settle(page);
-  const r = await menuList(page).boundingBox();
-  check(r && r.x >= 0 && r.x + r.width <= 390, '390px：一覧が画面の幅に収まる', r);
   const scrollW = await page.evaluate(() => document.documentElement.scrollWidth);
   check(scrollW <= 390, '390px：横にはみ出さない', scrollW);
-  await page.screenshot({ path: path.join(OUT_DIR, 'mobile-menu.png') });
-  await page.keyboard.press('Escape');
   // 担当を変える（PRD D217）：390px の既定は日ごとのリスト（ADR-0055）。「その他 ▾」の「表示」で順番にすると、
   // カードを押すと詳細に出て、押して開ける・収まる
   await page.getByTestId('plan-more').click();
@@ -528,20 +313,20 @@ async function mobile(page) {
 async function moreMenus(page) {
   const focusedId = () => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '');
   await openPlan(page);
-  // 日の予定：見せるのは欠勤・キャンセルを登録・AI で組む ▾・元に戻す・表示・訪問を追加・使い方（その他 ▾ はスマホだけ。PRD D344）
+  // 日の予定：見せるのは欠勤・キャンセルを登録・元に戻す・表示・訪問を追加・使い方（その他 ▾ はスマホだけ。PRD D344。AI で組む ▾ は無い。ADR-0063）
   const shown = await page
     .getByTestId('schedule-toolbar')
     .locator('button:visible')
     .evaluateAll((els) => els.map((el) => el.textContent.trim()));
   check(
     shown.includes('欠勤・キャンセルを登録') &&
-      shown.includes('AI で組む') &&
+      !shown.includes('AI で組む') &&
       shown.includes('元に戻す') &&
       shown.includes('訪問を追加') &&
       shown.includes('使い方') &&
       !shown.includes('その他') &&
       !shown.includes('メールで送る'),
-    '日の予定：操作の行は 欠勤・AI で組む ▾・元に戻す・表示・訪問を追加・使い方（その他 ▾ は無い）',
+    '日の予定：操作の行は 欠勤・元に戻す・表示・訪問を追加・使い方（AI で組む ▾・その他 ▾ は無い）',
     shown,
   );
   // 操作の行は状態の1行（今の担当）のすぐ下（週・月と同じ位置。PRD D344）
@@ -724,8 +509,6 @@ const steps = sharedPage({
     return { ...s, native };
   },
   steps: [
-    ['plain', plain],
-    ['proposal', proposal],
     ['compare', compare],
     ['reassign-menu', reassignMenu],
     ['more-menus', moreMenus],

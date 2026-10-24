@@ -3,10 +3,10 @@
 // 上の帯の日付送りとスワイプで日を送る、行を押すと下から出る欄（大きな4つのボタン：担当を替える・取り消す・道順・日の予定で見る。
 // 日時の変更・範囲は出ない。担当を替えて保存・取り消すと書き、元に戻すで戻る）、複数選択（長押し・「選ぶ」。帯は下から出る置き場所で
 // 時刻をずらすは出ない・まとめて取り消す）、下のタブ（ホーム・予定・欠勤・探す・メニュー。「探す」でパレット・上の帯に「探す」は無い・
-// 空き状況はパレットから）、日のその場の提案が画面を移っても・日付を変えても残る。
+// 空き状況はパレットから）。
 // 1400×1000：日の予定の時間軸の帯のキーボード（↑↓ 15分・Shift+→ 隣の担当の列・→ 次の日（その日へ移る）・Enter で欄・Esc で帯へ・
 // Delete で取り消し（確認）・どれも全体の元に戻すの1手で手の名前・Ctrl+Z で全部戻る）、繰り返しの回の範囲の小さな帯（これ以降も）、
-// 週の時間軸の帯の ↓、パレットで担当の名前＋日付・「担当なし」で訪問を引く、範囲の提案が画面を移っても残る。
+// 週の時間軸の帯の ↓、パレットで担当の名前＋日付・「担当なし」で訪問を引く、担当を組むで出した範囲の提案が画面を移っても残る。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-mobile-v5.cjs
 // 環境変数は scripts/lib/env.cjs（PLAYWRIGHT・CHROMIUM・BASE・OUT_DIR・FAKE_NOW）
@@ -338,43 +338,6 @@ async function tabs(page) {
     'パレットを閉じるとフォーカスは「探す」',
   );
   await shot(page, 'tabs-390');
-}
-
-// ---- 390px：日のその場の提案は画面を移っても・日付を変えても残る ----
-async function keepProposal(page) {
-  await page.getByTestId('plan-menu').click();
-  await page.getByTestId('ai-scope-day').click();
-  const band = page.locator('[data-testid="proposal-band"][data-kind="day"]');
-  await band.waitFor({ timeout: 90000 });
-  await page.getByTestId('plan-progress').waitFor({ state: 'detached', timeout: 90000 });
-  const text = await band.innerText();
-  // 下のタブでホームへ移って戻る
-  await page.locator('[data-testid="bottom-tab"][data-tab="home"]').click();
-  await page.waitForURL(/#\/home/);
-  await page.locator('[data-testid="bottom-tab"][data-tab="schedule"]').click();
-  await page.waitForURL(/#\/plan/);
-  await page.getByTestId('day-list').waitFor();
-  await settle(page, 300);
-  check(
-    (await page.locator('[data-testid="proposal-band"][data-kind="day"]').count()) === 1,
-    '日のその場の提案：ホームへ移って戻っても残る',
-  );
-  await page.getByRole('button', { name: '次の日' }).click();
-  await settle(page, 300);
-  check(
-    (await page.locator('[data-testid="proposal-band"][data-kind="day"]').count()) === 0,
-    'ほかの日には帯を出さない',
-  );
-  await page.getByRole('button', { name: '前の日' }).click();
-  await settle(page, 300);
-  const again = page.locator('[data-testid="proposal-band"][data-kind="day"]');
-  check(
-    (await again.count()) === 1 && (await again.innerText()) === text,
-    '日付を戻すと同じ提案の帯',
-    await again.innerText().catch(() => ''),
-  );
-  await again.getByTestId('proposal-discard').click();
-  await page.setViewportSize({ width: 1400, height: 1000 });
 }
 
 // ---- 1400px：時間軸の帯のキーボード ----
@@ -712,8 +675,10 @@ async function palette(page) {
 // ---- 1400px：範囲の提案は画面を移っても残る ----
 async function keepRange(page) {
   await freshPlan(page, '/week');
-  await page.getByTestId('plan-menu').click();
-  await page.getByTestId('ai-scope-day').click();
+  // 範囲の提案は担当を組むの画面で出す（ADR-0063）
+  await page.goto(`${BASE}#/arrange?date=${TODAY}`);
+  await page.getByTestId('arrange-mode-all').check();
+  await page.getByTestId('arrange-start').click();
   const band = page.locator('[data-testid="proposal-band"][data-kind="range"]');
   await band.waitFor({ timeout: 120000 });
   await page.locator('.side-nav [data-testid="nav-link"]', { hasText: 'ホーム' }).click();
@@ -751,7 +716,6 @@ const steps = sharedPage({
     ['sheet', sheet],
     ['multi', multi],
     ['tabs', tabs],
-    ['keep-proposal', keepProposal],
     ['maps-off', mapsOff],
     ['keyboard', keyboard],
     ['rescope-confirm', rescopeConfirm],

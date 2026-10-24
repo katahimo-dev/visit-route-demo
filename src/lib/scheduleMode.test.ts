@@ -53,4 +53,3 @@ describe('unassignedDays', () => {
     expect(unassignedDays(data, '2026-11', '2026-11-03')).toBe(1);
   });
 });
-

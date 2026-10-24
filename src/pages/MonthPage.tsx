@@ -947,7 +947,7 @@ export default function MonthPage() {
       <PageHeader
         icon={CalendarRange}
         title="月の予定"
-        lead="一月の担当を見て、担当なしの日を AI でまとめて組み、確定します"
+        lead="一月の担当を見て、担当なしや要対応を手で直し、確定します"
       />
       {/* 上のナビの行（日・週・月で同じ。PRD D347。ADR-0060）。月送り・今日・［月｜週｜日］。主ボタンは進み具合の帯（D154） */}
       <ScheduleNav

@@ -5,7 +5,7 @@
 // 帯の下に隠れた入力欄へ Tab で入ると帯の上まで巻く（scroll-padding-bottom）、Tab が中で回る・Esc で閉じて戻る、
 // 390px：2つまでは横に並べ主ボタンが先、3つ以上は主ボタンを1行目に全幅・残りは2つずつ、
 // 下のタブ・safe-area に隠れない、キーボード（visualViewport が縮む）が出ても帯が見える、印刷（連絡の一覧）で帯を出さない。
-// 代表の欄：欠勤・キャンセル（1〜4段目・キャンセルの3段目）、訪問の詳細の欄（〈利用者さん〉の画面の予定の回から）、月の「まとめて作る」、日の差の欄の「連絡の一覧」。
+// 代表の欄：欠勤・キャンセル（1〜4段目・キャンセルの3段目）、訪問の詳細の欄（〈利用者さん〉の画面の予定の回から）、日の差の欄の「連絡の一覧」。
 // 1400×1000 と 390×844 の両方で見る。
 //
 // 使い方：npm run build && npx vite preview --port 4183 のあとで node scripts/e2e-panel-foot.cjs
@@ -16,8 +16,6 @@ const { skipTour } = require('./lib/tourSeen.cjs');
 const { answerConfirms } = require('./lib/confirmDialog.cjs');
 const { launch, BASE, OUT_DIR, NOW, TODAY, STORAGE_KEY, check, settle, runSteps } = require('./lib/env.cjs');
 const { guard, closeContext, firstLine } = require('./lib/steps.cjs');
-
-const YM = TODAY.slice(0, 7);
 
 const drawer = (page) => page.locator('.drawer');
 const sudden = (page) => page.getByTestId('sudden-panel');
@@ -504,20 +502,6 @@ async function visitPanel(page, w) {
   await drawer(page).waitFor({ state: 'detached' });
 }
 
-// ---- 月の「まとめて作る」 ----
-async function monthBatch(page, w) {
-  await page.goto(`${BASE}#/home`);
-  await page.evaluate((k) => localStorage.removeItem(k), STORAGE_KEY);
-  await open(page, `/month?ym=${YM}&do=batch`, '.drawer');
-  await page.getByTestId('batch-preset').waitFor();
-  if (w === '1400') await expectShort(page, `${w}・月の「まとめて作る」`);
-  else await expectFits(page, `${w}・月の「まとめて作る」`);
-  if (w === '390') await expectMobileRow(page, `${w}・まとめて作る（ボタン2つ）`);
-  await shot(page, `${w}-month-batch`);
-  await page.keyboard.press('Escape');
-  await drawer(page).waitFor({ state: 'detached' });
-}
-
 // ---- キーボード（スマホ）：visualViewport が縮んだら欄を見えている所に合わせ、帯を見える所に置く ----
 async function keyboard(browser) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -618,7 +602,6 @@ const widthStep = (w, vp) => async () => {
   for (const [name, fn] of [
     ['sudden', suddenSteps],
     ['visit', visitPanel],
-    ['month', monthBatch],
   ]) {
     await guard(() => fn(page, w), {
       label: `${w}・${name} が最後まで動く`,

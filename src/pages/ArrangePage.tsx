@@ -11,6 +11,7 @@ import { FieldError } from '../components/FieldError';
 import { confirmDropProposal, RangeProposalBand } from '../components/scheduleParts';
 import { useToast } from '../components/Toast';
 import { PageHeader, WithIcon } from '../components/ui';
+import { UndoButtons } from '../components/undo';
 import type { Rule } from '../contracts/rules';
 import { jstDate } from '../domain/time';
 import { dateText } from '../lib/common';
@@ -282,6 +283,8 @@ export default function ArrangePage() {
           >
             <WithIcon icon={Sparkles}>{run ? '組んでいます…' : 'AI で組む'}</WithIcon>
           </button>
+          {/* 反映した提案は全体の「元に戻す」で1手戻せる（PRD D329） */}
+          <UndoButtons />
         </div>
         {run && (
           <div className="stack month-progress" style={{ gap: 4 }} data-testid="arrange-progress">

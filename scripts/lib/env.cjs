@@ -96,22 +96,8 @@ function trackTimers() {
   );
 }
 
-/** 予定のモードを覚える所（src/components/useScheduleMode.ts の MODE_KEY） */
-const MODE_KEY = 'visit-route-demo:schedule-mode';
 /**
- * 予定のモード（PRD D348）を、まだ選んでいないタブでは「変更」（すべての操作を出す）にしておく。既定のモードは日付で変わるので、
- * モードを見ない段が日付で揺れないように。既定を確かめる段は sessionStorage に '' を入れる（読めない値＝選んでいない。上書きしない）
- */
-function presetMode(key) {
-  try {
-    if (sessionStorage.getItem(key) === null) sessionStorage.setItem(key, 'change');
-  } catch {
-    // 読めなければ何もしない
-  }
-}
-
-/**
- * 文脈を開くときに、タイマーの数え（trackTimers）・予定のモードの既定（presetMode）と、動画の置き場所があれば recordVideo を足す
+ * 文脈を開くときに、タイマーの数え（trackTimers）と、動画の置き場所があれば recordVideo を足す
  */
 function instrument(b) {
   const add = (o = {}) => (hooks.videoDir && !o.recordVideo ? { ...o, recordVideo: { dir: hooks.videoDir } } : o);
@@ -120,7 +106,6 @@ function instrument(b) {
   b.newContext = async (o) => {
     const ctx = await newContext(add(o));
     if (process.env.E2E_SETTLE !== 'fixed') await ctx.addInitScript(trackTimers);
-    await ctx.addInitScript(presetMode, MODE_KEY);
     return ctx;
   };
   // Browser.newPage は中で this.newContext（上の包み）を呼ぶので、タイマーの数え・動画はそちらで足される
@@ -363,7 +348,6 @@ module.exports = {
   TODAY,
   perfMs,
   STORAGE_KEY,
-  MODE_KEY,
   check,
   note,
   pageErrors,
