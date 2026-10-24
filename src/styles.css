@@ -1526,6 +1526,20 @@ html {
   .sched-nav-actions {
     margin-left: 0;
   }
+  /* 狭い画面では「今日」と期間の欄で行いっぱい。期間の select は縮めて、長い週の文でも横にはみ出さない */
+  .sched-nav-move {
+    width: 100%;
+    min-width: 0;
+  }
+  .period-switch {
+    flex: 1;
+    min-width: 0;
+  }
+  .period-switch select {
+    flex: 1;
+    min-width: 0;
+    text-overflow: ellipsis;
+  }
 }
 /* 印刷では見ている期間の文だけ残す（ボタン・切り替えは出さない） */
 @media print {
